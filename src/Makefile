@@ -10,4 +10,4 @@ all:
 	$(CC) $(CFLAGS) $(INCDIR) $(SOURCE) -o ../bin/fluent-bit
 
 clean:
-	rm -rf ../bin/fluent-bit *.o *~
+	rm -rf ../bin/fluent-bit *.o *~ ../lib/mk_config/*.o
