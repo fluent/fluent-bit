@@ -9,3 +9,7 @@ The tool do not have any dependency besides the standard C library, to build it 
 ```bash
 $ make
 ```
+
+## License
+
+This program is under the terms of the [Apache License v2.0](http://www.apache.org/licenses/LICENSE-2.0).
