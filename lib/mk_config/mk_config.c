@@ -20,52 +20,32 @@
 /* isblank is not in C89 */
 #define _GNU_SOURCE
 
-#include <dirent.h>
 #include <stdio.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
 #include <stdlib.h>
-#include <sys/stat.h>
 #include <unistd.h>
 #include <string.h>
 #include <fcntl.h>
 #include <ctype.h>
 #include <limits.h>
+#include <time.h>
 
-#include <monkey/monkey.h>
-#include <monkey/mk_kernel.h>
-#include <monkey/mk_config.h>
-#include <monkey/mk_string.h>
-#include <monkey/mk_utils.h>
-#include <monkey/mk_mimetype.h>
-#include <monkey/mk_info.h>
-#include <monkey/mk_memory.h>
-#include <monkey/mk_server.h>
-#include <monkey/mk_plugin.h>
-#include <monkey/mk_macros.h>
-#include <monkey/mk_vhost.h>
-#include <monkey/mk_mimetype.h>
-
-struct mk_server_config *mk_config;
-gid_t EGID;
-gid_t EUID;
-
+#include <mk_config/mk_config.h>
+#include <mk_config/mk_string.h>
 
 /* Raise a configuration schema error */
 void mk_config_error(const char *path, int line, const char *msg)
 {
-    mk_err("File %s", path);
-    mk_err("Error in line %i: %s", line, msg);
+    fprintf(stderr, "File %s", path);
+    fprintf(stderr, "Error in line %i: %s", line, msg);
     exit(EXIT_FAILURE);
 }
 
 /* Raise a warning */
 void mk_config_warning(const char *path, int line, const char *msg)
 {
-    mk_warn("Config file warning '%s':\n"
-            "\t\t\t\tat line %i: %s",
-            path, line, msg);
+    printf("Config file warning '%s':\n"
+           "\t\t\t\tat line %i: %s",
+           path, line, msg);
 }
 
 /* Returns a configuration section by [section name] */
@@ -109,7 +89,7 @@ static void mk_config_entry_add(struct mk_config *conf,
     struct mk_list *head = &conf->sections;
 
     if (mk_list_is_empty(&conf->sections) == 0) {
-        mk_err("Error: there are not sections available on %s!", conf->file);
+        printf("Error: there are not sections available on %s!", conf->file);
         return;
     }
 
@@ -141,7 +121,7 @@ struct mk_config *mk_config_create(const char *path)
 
     /* Open configuration file */
     if ((f = fopen(path, "r")) == NULL) {
-        mk_warn("Config: I cannot open %s file", path);
+        printf("Config: I cannot open %s file", path);
         return NULL;
     }
 
@@ -325,8 +305,8 @@ void *mk_config_section_getval(struct mk_config_section *section, char *key, int
             case MK_CONFIG_VAL_NUM:
                 return (void *) strtol(entry->val, (char **) NULL, 10);
             case MK_CONFIG_VAL_BOOL:
-                on = strcasecmp(entry->val, VALUE_ON);
-                off = strcasecmp(entry->val, VALUE_OFF);
+                on = strcasecmp(entry->val, "On");
+                off = strcasecmp(entry->val, "Off");
 
                 if (on != 0 && off != 0) {
                     return (void *) -1;
@@ -338,7 +318,7 @@ void *mk_config_section_getval(struct mk_config_section *section, char *key, int
                     return (void *) MK_FALSE;
                 }
             case MK_CONFIG_VAL_LIST:
-                return (void *)mk_string_split_line(entry->val);
+                return (void *) mk_string_split_line(entry->val);
             }
         }
     }
@@ -348,7 +328,7 @@ void *mk_config_section_getval(struct mk_config_section *section, char *key, int
 /* Print a specific error */
 static void mk_config_print_error_msg(char *variable, char *path)
 {
-    mk_err("Error in %s variable under %s, has an invalid value",
+    printf("Error in %s variable under %s, has an invalid value",
            variable, path);
     mk_mem_free(path);
     exit(EXIT_FAILURE);

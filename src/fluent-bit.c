@@ -17,10 +17,54 @@
  *  limitations under the License.
  */
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <getopt.h>
+
+#include <mk_config/mk_config.h>
+#include <fluent-bit/flb_macros.h>
 #include <fluent-bit/in_kmsg.h>
+
+static void flb_help(int rc)
+{
+    printf("Usage: fluent-bit [OPTION]\n\n");
+    printf("%sAvailable Options%s\n", ANSI_BOLD, ANSI_RESET);
+    printf("  -v, --version\t\t\t\tshow version number\n");
+    printf("  -h, --help\t\t\t\tprint this help\n\n");
+    exit(rc);
+}
+
+static void flb_version()
+{
+    printf("Fluent Bit v0.1\n");
+    printf("Copyright (C) Treasure Data");
+    exit(EXIT_SUCCESS);
+}
 
 int main(int argc, char **argv)
 {
+    int opt;
+
+    static const struct option long_opts[] = {
+        { "version",   no_argument, NULL, 'v' },
+        { "help",      no_argument, NULL, 'h' },
+        { NULL, 0, NULL, 0 }
+    };
+
+    while ((opt = getopt_long(argc, argv, "hv",
+                              long_opts, NULL)) != -1) {
+
+        switch (opt) {
+        case 'h':
+            flb_help(EXIT_SUCCESS);
+        case 'v':
+            flb_version();
+            exit(EXIT_SUCCESS);
+        default:
+            flb_help(EXIT_FAILURE);
+        }
+    }
+
     in_kmsg_start();
 
     return 0;
