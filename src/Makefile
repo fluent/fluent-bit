@@ -4,6 +4,7 @@ INCDIR = -I../include/ -I../lib/
 SOURCE = ../lib/mk_config/mk_config.c \
 	 ../lib/mk_config/mk_string.c \
 	 in_kmsg.c \
+	 flb_network.c \
 	 fluent-bit.c
 
 all:
