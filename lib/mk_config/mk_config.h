@@ -23,7 +23,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 
-#include <mk_config/mk_list.h>
+#include "mk_list.h"
 
 #define MK_FALSE   0
 #define MK_TRUE    !MK_FALSE

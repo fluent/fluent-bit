@@ -4,11 +4,17 @@ __Fluent-Bit__ is a [Fluentd](http://fluentd.org) collection tool designed for E
 
 ## Build
 
-The tool do not have any dependency besides the standard C library, to build it just type _make_:
+To build _fluent-bit_, you need __cmake__ and a C compiler such as __GCC__ or __Clang__. If you already have the requirements proceed with the following steps:
 
 ```bash
+$ cd build/
+$ cmake ..
 $ make
 ```
+
+## Running
+
+Once the tool have been compiled, a binary file called __fluent-bit__ will be found on the _bin/_ directory.
 
 ## License
 

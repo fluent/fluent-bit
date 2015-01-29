@@ -50,6 +50,7 @@ int in_kmsg_start()
             break;
         }
         else if (bytes > 0) {
+            /* Always set a delimiter to avoid buffer trash */
             line[bytes - 1] = '\0';
             printf("%s\n", line);
         }

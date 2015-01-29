@@ -29,8 +29,8 @@
 #include <limits.h>
 #include <time.h>
 
-#include <mk_config/mk_config.h>
-#include <mk_config/mk_string.h>
+#include "mk_config.h"
+#include "mk_string.h"
 
 /* Raise a configuration schema error */
 void mk_config_error(const char *path, int line, const char *msg)
