@@ -1,0 +1,148 @@
+//
+// MessagePack for C++ static resolution routine
+//
+// Copyright (C) 2008-2009 FURUHASHI Sadayuki
+//
+//    Licensed under the Apache License, Version 2.0 (the "License");
+//    you may not use this file except in compliance with the License.
+//    You may obtain a copy of the License at
+//
+//        http://www.apache.org/licenses/LICENSE-2.0
+//
+//    Unless required by applicable law or agreed to in writing, software
+//    distributed under the License is distributed on an "AS IS" BASIS,
+//    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//    See the License for the specific language governing permissions and
+//    limitations under the License.
+//
+#ifndef MSGPACK_TYPE_DEFINE_HPP__
+#define MSGPACK_TYPE_DEFINE_HPP__
+
+#define MSGPACK_DEFINE(...) \
+	template <typename Packer> \
+	void msgpack_pack(Packer& pk) const \
+	{ \
+		msgpack::type::make_define(__VA_ARGS__).msgpack_pack(pk); \
+	} \
+	void msgpack_unpack(msgpack::object o) \
+	{ \
+		msgpack::type::make_define(__VA_ARGS__).msgpack_unpack(o); \
+	}\
+	template <typename MSGPACK_OBJECT> \
+	void msgpack_object(MSGPACK_OBJECT* o, msgpack::zone* z) const \
+	{ \
+		msgpack::type::make_define(__VA_ARGS__).msgpack_object(o, z); \
+	}
+
+// MSGPACK_ADD_ENUM must be used in the global namespace.
+#define MSGPACK_ADD_ENUM(enum) \
+  namespace msgpack { \
+    template <> \
+    inline enum& operator>> (object o, enum& v) \
+    { \
+      int tmp; \
+      o >> tmp; \
+      v = static_cast<enum>(tmp); \
+      return v; \
+    } \
+    template <> \
+    inline void operator<< (object::with_zone& o, const enum& v) \
+    { \
+      o << static_cast<int>(v); \
+    } \
+    namespace detail { \
+      template <typename Stream> \
+      struct packer_serializer<Stream, enum> { \
+        static packer<Stream>& pack(packer<Stream>& o, const enum& v) { \
+          return o << static_cast<int>(v); \
+        } \
+      }; \
+    } \
+  }
+
+namespace msgpack {
+namespace type {
+
+
+<% GENERATION_LIMIT = 31 %>
+template <typename A0 = void<%1.upto(GENERATION_LIMIT+1) {|i|%>, typename A<%=i%> = void<%}%>>
+struct define;
+
+
+template <>
+struct define<> {
+	typedef define<> value_type;
+	typedef tuple<> tuple_type;
+	template <typename Packer>
+	void msgpack_pack(Packer& pk) const
+	{
+		pk.pack_array(0);
+	}
+	void msgpack_unpack(msgpack::object o)
+	{
+		if(o.type != type::ARRAY) { throw type_error(); }
+	}
+	void msgpack_object(msgpack::object* o, msgpack::zone* z) const
+	{
+		o->type = type::ARRAY;
+		o->via.array.ptr = NULL;
+		o->via.array.size = 0;
+	}
+};
+<%0.upto(GENERATION_LIMIT) {|i|%>
+template <typename A0<%1.upto(i) {|j|%>, typename A<%=j%><%}%>>
+struct define<A0<%1.upto(i) {|j|%>, A<%=j%><%}%>> {
+	typedef define<A0<%1.upto(i) {|j|%>, A<%=j%><%}%>> value_type;
+	typedef tuple<A0<%1.upto(i) {|j|%>, A<%=j%><%}%>> tuple_type;
+	define(A0& _a0<%1.upto(i) {|j|%>, A<%=j%>& _a<%=j%><%}%>) :
+		a0(_a0)<%1.upto(i) {|j|%>, a<%=j%>(_a<%=j%>)<%}%> {}
+	template <typename Packer>
+	void msgpack_pack(Packer& pk) const
+	{
+		pk.pack_array(<%=i+1%>);
+		<%0.upto(i) {|j|%>
+		pk.pack(a<%=j%>);<%}%>
+	}
+	void msgpack_unpack(msgpack::object o)
+	{
+		if(o.type != type::ARRAY) { throw type_error(); }
+		const size_t size = o.via.array.size;
+		if(size > 0) {
+			msgpack::object *ptr = o.via.array.ptr;
+			switch(size) {
+			default:<%(i).downto(0) {|j|%>
+			case <%=j+1%>: ptr[<%=j%>].convert(&a<%=j%>);<%}%>
+			}
+		}
+	}
+	void msgpack_object(msgpack::object* o, msgpack::zone* z) const
+	{
+		o->type = type::ARRAY;
+		o->via.array.ptr = (object*)z->malloc(sizeof(object)*<%=i+1%>);
+		o->via.array.size = <%=i+1%>;
+		<%0.upto(i) {|j|%>
+		o->via.array.ptr[<%=j%>] = object(a<%=j%>, z);<%}%>
+	}
+	<%0.upto(i) {|j|%>
+	A<%=j%>& a<%=j%>;<%}%>
+};
+<%}%>
+
+inline define<> make_define()
+{
+	return define<>();
+}
+<%0.upto(GENERATION_LIMIT) {|i|%>
+template <typename A0<%1.upto(i) {|j|%>, typename A<%=j%><%}%>>
+define<A0<%1.upto(i) {|j|%>, A<%=j%><%}%>> make_define(A0& a0<%1.upto(i) {|j|%>, A<%=j%>& a<%=j%><%}%>)
+{
+	return define<A0<%1.upto(i) {|j|%>, A<%=j%><%}%>>(a0<%1.upto(i) {|j|%>, a<%=j%><%}%>);
+}
+<%}%>
+
+}  // namespace type
+}  // namespace msgpack
+
+
+#endif /* msgpack/type/define.hpp */
+

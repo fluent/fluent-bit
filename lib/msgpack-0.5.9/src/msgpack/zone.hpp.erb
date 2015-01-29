@@ -1,0 +1,164 @@
+//
+// MessagePack for C++ memory pool
+//
+// Copyright (C) 2008-2010 FURUHASHI Sadayuki
+//
+//    Licensed under the Apache License, Version 2.0 (the "License");
+//    you may not use this file except in compliance with the License.
+//    You may obtain a copy of the License at
+//
+//        http://www.apache.org/licenses/LICENSE-2.0
+//
+//    Unless required by applicable law or agreed to in writing, software
+//    distributed under the License is distributed on an "AS IS" BASIS,
+//    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//    See the License for the specific language governing permissions and
+//    limitations under the License.
+//
+#ifndef MSGPACK_ZONE_HPP__
+#define MSGPACK_ZONE_HPP__
+
+#include "zone.h"
+#include <cstdlib>
+#include <memory>
+#include <vector>
+
+<% GENERATION_LIMIT = 15 %>
+namespace msgpack {
+
+
+class zone : public msgpack_zone {
+public:
+	zone(size_t chunk_size = MSGPACK_ZONE_CHUNK_SIZE);
+	~zone();
+
+public:
+	void* malloc(size_t size);
+	void* malloc_no_align(size_t size);
+
+	void push_finalizer(void (*func)(void*), void* data);
+
+	template <typename T>
+	void push_finalizer(std::auto_ptr<T> obj);
+
+	void clear();
+
+	void swap(zone& o);
+	static void* operator new(std::size_t size) throw(std::bad_alloc)
+	{
+		void* p = ::malloc(size);
+		if (!p) throw std::bad_alloc();
+		return p;
+	}
+	static void operator delete(void *p) throw()
+	{
+		::free(p);
+	}
+	<%0.upto(GENERATION_LIMIT) {|i|%>
+	template <typename T<%1.upto(i) {|j|%>, typename A<%=j%><%}%>>
+	T* allocate(<%=(1..i).map{|j|"A#{j} a#{j}"}.join(', ')%>);
+	<%}%>
+
+private:
+	void undo_malloc(size_t size);
+
+	template <typename T>
+	static void object_destructor(void* obj);
+
+	typedef msgpack_zone base;
+
+private:
+	zone(const zone&);
+};
+
+
+
+inline zone::zone(size_t chunk_size)
+{
+	msgpack_zone_init(this, chunk_size);
+}
+
+inline zone::~zone()
+{
+	msgpack_zone_destroy(this);
+}
+
+inline void* zone::malloc(size_t size)
+{
+	void* ptr = msgpack_zone_malloc(this, size);
+	if(!ptr) {
+		throw std::bad_alloc();
+	}
+	return ptr;
+}
+
+inline void* zone::malloc_no_align(size_t size)
+{
+	void* ptr = msgpack_zone_malloc_no_align(this, size);
+	if(!ptr) {
+		throw std::bad_alloc();
+	}
+	return ptr;
+}
+
+inline void zone::push_finalizer(void (*func)(void*), void* data)
+{
+	if(!msgpack_zone_push_finalizer(this, func, data)) {
+		throw std::bad_alloc();
+	}
+}
+
+template <typename T>
+inline void zone::push_finalizer(std::auto_ptr<T> obj)
+{
+	if(!msgpack_zone_push_finalizer(this, &zone::object_destructor<T>, obj.get())) {
+		throw std::bad_alloc();
+	}
+	obj.release();
+}
+
+inline void zone::clear()
+{
+	msgpack_zone_clear(this);
+}
+
+inline void zone::swap(zone& o)
+{
+	msgpack_zone_swap(this, &o);
+}
+
+template <typename T>
+void zone::object_destructor(void* obj)
+{
+	reinterpret_cast<T*>(obj)->~T();
+}
+
+inline void zone::undo_malloc(size_t size)
+{
+	base::chunk_list.ptr  -= size;
+	base::chunk_list.free += size;
+}
+
+<%0.upto(GENERATION_LIMIT) {|i|%>
+template <typename T<%1.upto(i) {|j|%>, typename A<%=j%><%}%>>
+T* zone::allocate(<%=(1..i).map{|j|"A#{j} a#{j}"}.join(', ')%>)
+{
+	void* x = malloc(sizeof(T));
+	if(!msgpack_zone_push_finalizer(this, &zone::object_destructor<T>, x)) {
+		undo_malloc(sizeof(T));
+		throw std::bad_alloc();
+	}
+	try {
+		return new (x) T(<%=(1..i).map{|j|"a#{j}"}.join(', ')%>);
+	} catch (...) {
+		--base::finalizer_array.tail;
+		undo_malloc(sizeof(T));
+		throw;
+	}
+}
+<%}%>
+
+}  // namespace msgpack
+
+#endif /* msgpack/zone.hpp */
+

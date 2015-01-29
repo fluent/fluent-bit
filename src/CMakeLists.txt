@@ -6,4 +6,4 @@ set(src
 
 include_directories(../lib/)
 add_executable(fluent-bit ${src})
-target_link_libraries(fluent-bit mk_config)
+target_link_libraries(fluent-bit msgpack mk_config)
