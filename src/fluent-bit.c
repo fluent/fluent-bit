@@ -32,7 +32,7 @@ static void flb_help(int rc)
 {
     printf("Usage: fluent-bit [OPTION]\n\n");
     printf("%sAvailable Options%s\n", ANSI_BOLD, ANSI_RESET);
-    printf("  -t, --tag=TAG\t\tset a Tag\n");
+    printf("  -t, --tag=TAG\t\tset a Tag (default: %s)\n", FLB_CONFIG_DEFAULT_TAG);
     printf("  -v, --version\t\tshow version number\n");
     printf("  -h, --help\t\tprint this help\n\n");
     exit(rc);
