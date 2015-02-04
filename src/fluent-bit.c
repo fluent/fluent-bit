@@ -40,14 +40,14 @@ static void flb_help(int rc)
 
 static void flb_version()
 {
-    printf("Fluent Bit v0.1\n");
-    printf("Copyright (C) Treasure Data");
+    printf("Fluent Bit v%s\n", FLB_VERSION_STR);
     exit(EXIT_SUCCESS);
 }
 
 static void flb_banner()
 {
-    printf("%sFluent-Bit v%s%s\n\n", ANSI_BOLD, FLB_VERSION_STR, ANSI_RESET);
+    printf("%sFluent-Bit v%s%s\n", ANSI_BOLD, FLB_VERSION_STR, ANSI_RESET);
+    printf("%sCopyright (C) Treasure Data%s\n\n", ANSI_BOLD ANSI_YELLOW, ANSI_RESET);
 }
 
 int main(int argc, char **argv)
