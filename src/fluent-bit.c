@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/in_kmsg.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_version.h>
 
 static void flb_help(int rc)
 {
@@ -42,6 +43,11 @@ static void flb_version()
     printf("Fluent Bit v0.1\n");
     printf("Copyright (C) Treasure Data");
     exit(EXIT_SUCCESS);
+}
+
+static void flb_banner()
+{
+    printf("%sFluent-Bit v%s%s\n\n", ANSI_BOLD, FLB_VERSION_STR, ANSI_RESET);
 }
 
 int main(int argc, char **argv)
@@ -89,6 +95,7 @@ int main(int argc, char **argv)
         config->tag = strdup(FLB_CONFIG_DEFAULT_TAG);
     }
 
+    flb_banner();
     in_kmsg_start();
 
     return 0;
