@@ -144,4 +144,3 @@ inline void msgpack_packer_free(msgpack_packer* pk)
 #endif
 
 #endif /* msgpack/pack.h */
-

@@ -25,6 +25,7 @@
 #include <mk_config/mk_config.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/in_kmsg.h>
+#include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_version.h>
 
