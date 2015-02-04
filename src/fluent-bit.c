@@ -19,18 +19,21 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <getopt.h>
 
 #include <mk_config/mk_config.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/in_kmsg.h>
+#include <fluent-bit/flb_config.h>
 
 static void flb_help(int rc)
 {
     printf("Usage: fluent-bit [OPTION]\n\n");
     printf("%sAvailable Options%s\n", ANSI_BOLD, ANSI_RESET);
-    printf("  -v, --version\t\t\t\tshow version number\n");
-    printf("  -h, --help\t\t\t\tprint this help\n\n");
+    printf("  -t, --tag=TAG\t\tset a Tag\n");
+    printf("  -v, --version\t\tshow version number\n");
+    printf("  -h, --help\t\tprint this help\n\n");
     exit(rc);
 }
 
@@ -44,17 +47,25 @@ static void flb_version()
 int main(int argc, char **argv)
 {
     int opt;
+    struct flb_config *config;
+
+    /* local variables to handle config options */
+    char *cfg_tag = NULL;
 
     static const struct option long_opts[] = {
-        { "version",   no_argument, NULL, 'v' },
-        { "help",      no_argument, NULL, 'h' },
+        { "tag",     required_argument, NULL, 't' },
+        { "version", no_argument      , NULL, 'v' },
+        { "help",    no_argument      , NULL, 'h' },
         { NULL, 0, NULL, 0 }
     };
 
-    while ((opt = getopt_long(argc, argv, "hv",
+    while ((opt = getopt_long(argc, argv, "tvh",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
+        case 't':
+            cfg_tag = optarg;
+            break;
         case 'h':
             flb_help(EXIT_SUCCESS);
         case 'v':
@@ -63,6 +74,19 @@ int main(int argc, char **argv)
         default:
             flb_help(EXIT_FAILURE);
         }
+    }
+
+    config = malloc(sizeof(struct flb_config));
+    if (!config) {
+        perror("malloc");
+        exit(EXIT_FAILURE);
+    }
+
+    if (cfg_tag) {
+        config->tag = cfg_tag;
+    }
+    else {
+        config->tag = strdup(FLB_CONFIG_DEFAULT_TAG);
     }
 
     in_kmsg_start();
