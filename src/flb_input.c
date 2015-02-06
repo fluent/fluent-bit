@@ -22,6 +22,7 @@
 
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_error.h>
 #include <fluent-bit/in_kmsg.h>
 
 static void add_input(char *name,
@@ -55,6 +56,9 @@ int flb_input_enable(char *input, struct flb_config *config)
     mk_list_foreach(head, &config->inputs) {
         handler = mk_list_entry(head, struct flb_input_handler, _head);
         if (strncmp(handler->name, input, strlen(input)) == 0) {
+            if (!handler->cb_init) {
+                flb_utils_error(FLB_ERR_INPUT_UNSUP);
+            }
             handler->active = FLB_TRUE;
             return 0;
         }
