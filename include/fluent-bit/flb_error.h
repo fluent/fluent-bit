@@ -21,6 +21,7 @@
 #define FLB_ERROR_H
 
 #define FLB_ERR_INPUT_INVALID        050
+#define FLB_ERR_INPUT_UNDEF          051
 #define FLB_ERR_OUTPUT_UNDEF         100
 #define FLB_ERR_OUTPUT_INVALID       101
 

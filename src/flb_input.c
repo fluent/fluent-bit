@@ -62,3 +62,19 @@ int flb_input_enable(char *input, struct flb_config *config)
 
     return -1;
 }
+
+/* Check that at least one Input is enabled */
+int flb_input_check(struct flb_config *config)
+{
+    struct mk_list *head;
+    struct flb_input_handler *handler;
+
+    mk_list_foreach(head, &config->inputs) {
+        handler = mk_list_entry(head, struct flb_input_handler, _head);
+        if (handler->active == FLB_TRUE) {
+            return 0;
+        }
+    }
+
+    return -1;
+}

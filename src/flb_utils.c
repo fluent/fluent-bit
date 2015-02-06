@@ -62,6 +62,9 @@ void flb_utils_error(int err)
     case FLB_ERR_INPUT_INVALID:
         msg = "Invalid input type";
         break;
+    case FLB_ERR_INPUT_UNDEF:
+        msg = "No Input(s) have been defined";
+        break;
     case FLB_ERR_OUTPUT_UNDEF:
         msg = "You must specify an output target";
         break;

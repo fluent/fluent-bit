@@ -32,5 +32,6 @@ struct flb_input_handler {
 
 int flb_input_register_all(struct flb_config *config);
 int flb_input_enable(char *input, struct flb_config *config);
+int flb_input_check(struct flb_config *config);
 
 #endif

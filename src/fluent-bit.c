@@ -129,6 +129,12 @@ int main(int argc, char **argv)
         config->tag = strdup(FLB_CONFIG_DEFAULT_TAG);
     }
 
+    /* Inputs */
+    ret = flb_input_check(config);
+    if (ret == -1) {
+        flb_utils_error(FLB_ERR_INPUT_UNDEF);
+    }
+
     /* Output */
     ret = flb_output_check(config, cfg_output);
     if (ret == -1) {
