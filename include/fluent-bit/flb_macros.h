@@ -20,6 +20,9 @@
 #ifndef FLB_MACROS_H
 #define FLB_MACROS_H
 
+#define FLB_FALSE  0
+#define FLB_TRUE   !FLB_FALSE
+
 /* ANSI Colors */
 #define ANSI_RESET "\033[0m"
 #define ANSI_BOLD  "\033[1m"

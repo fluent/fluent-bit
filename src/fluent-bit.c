@@ -24,18 +24,28 @@
 
 #include <mk_config/mk_config.h>
 #include <fluent-bit/flb_macros.h>
-#include <fluent-bit/in_kmsg.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_version.h>
+#include <fluent-bit/flb_error.h>
+#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_output.h>
 
 static void flb_help(int rc)
 {
     printf("Usage: fluent-bit [OPTION]\n\n");
     printf("%sAvailable Options%s\n", ANSI_BOLD, ANSI_RESET);
+    printf("  -i, --input=INPUT\tset an input\n");
+    printf("  -o, --output=OUTPUT\tset an output\n");
     printf("  -t, --tag=TAG\t\tset a Tag (default: %s)\n", FLB_CONFIG_DEFAULT_TAG);
     printf("  -v, --version\t\tshow version number\n");
     printf("  -h, --help\t\tprint this help\n\n");
+    printf("%sInputs%s\n", ANSI_BOLD, ANSI_RESET);
+    printf("  CPU Usage\t\tcpu\n");
+    printf("  Kernel Ring Buffer\tkmsg\n\n");
+
+    printf("%sOutputs%s\n", ANSI_BOLD, ANSI_RESET);
+    printf("  Fluentd\t\tfluentd://host:port  (in_forward)\n\n");
     exit(rc);
 }
 
@@ -54,22 +64,46 @@ static void flb_banner()
 int main(int argc, char **argv)
 {
     int opt;
+    int ret;
     struct flb_config *config;
 
     /* local variables to handle config options */
+    char *cfg_output = NULL;
     char *cfg_tag = NULL;
 
+    /* Setup long-options */
     static const struct option long_opts[] = {
+        { "input",   required_argument, NULL, 'i' },
+        { "output",  required_argument, NULL, 'o' },
         { "tag",     required_argument, NULL, 't' },
         { "version", no_argument      , NULL, 'v' },
         { "help",    no_argument      , NULL, 'h' },
         { NULL, 0, NULL, 0 }
     };
 
-    while ((opt = getopt_long(argc, argv, "tvh",
+    /* Create configuration context */
+    config = calloc(1, sizeof(struct flb_config));
+    if (!config) {
+        perror("malloc");
+        exit(EXIT_FAILURE);
+    }
+
+    /* Register all supported inputs */
+    flb_input_register_all(config);
+
+    /* Parse the command line options */
+    while ((opt = getopt_long(argc, argv, "i:o:tvh",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
+        case 'i':
+            ret = flb_input_enable(optarg, config);
+            if (ret != 0) {
+                flb_utils_error(FLB_ERR_INPUT_INVALID);
+            }
+        case 'o':
+            cfg_output = optarg;
+            break;
         case 't':
             cfg_tag = optarg;
             break;
@@ -83,12 +117,11 @@ int main(int argc, char **argv)
         }
     }
 
-    config = malloc(sizeof(struct flb_config));
-    if (!config) {
-        perror("malloc");
-        exit(EXIT_FAILURE);
+    if (!cfg_output) {
+        flb_utils_error(FLB_ERR_OUTPUT_UNDEF);
     }
 
+    /* Tag */
     if (cfg_tag) {
         config->tag = cfg_tag;
     }
@@ -96,8 +129,14 @@ int main(int argc, char **argv)
         config->tag = strdup(FLB_CONFIG_DEFAULT_TAG);
     }
 
-    flb_banner();
-    in_kmsg_start();
+    /* Output */
+    ret = flb_output_check(config, cfg_output);
+    if (ret == -1) {
+        flb_utils_error(FLB_ERR_OUTPUT_INVALID);
+    }
 
+    flb_banner();
+
+    /* Validate input */
     return 0;
 }

@@ -17,25 +17,20 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_CONFIG_H
-#define FLB_CONFIG_H
+#ifndef FLB_INPUT_H
+#define FLB_INPUT_H
 
-#include <mk_config/mk_list.h>
+#include <fluent-bit/flb_config.h>
 
-#define FLB_CONFIG_DEFAULT_TAG  "fluent_bit"
+struct flb_input_handler {
+    int  active;
+    char *name;
+    int (*cb_init)(struct flb_config *);
 
-/* Main struct to hold the configuration of the runtime service */
-struct flb_config {
-    char *tag;          /* Message Tag, used by Fluentd   */
-
-    /* Inputs */
-    struct mk_list inputs;
-
-    /* Output */
-    int  out_protocol;  /* Output protocol                */
-    char *out_address;  /* Original Output address (full) */
-    char *out_host;     /* Output host if any             */
-    char *out_port;     /* Output TCP port                */
+    struct mk_list _head;
 };
+
+int flb_input_register_all(struct flb_config *config);
+int flb_input_enable(char *input, struct flb_config *config);
 
 #endif

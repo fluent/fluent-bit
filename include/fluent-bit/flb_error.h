@@ -17,25 +17,11 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_CONFIG_H
-#define FLB_CONFIG_H
+#ifndef FLB_ERROR_H
+#define FLB_ERROR_H
 
-#include <mk_config/mk_list.h>
-
-#define FLB_CONFIG_DEFAULT_TAG  "fluent_bit"
-
-/* Main struct to hold the configuration of the runtime service */
-struct flb_config {
-    char *tag;          /* Message Tag, used by Fluentd   */
-
-    /* Inputs */
-    struct mk_list inputs;
-
-    /* Output */
-    int  out_protocol;  /* Output protocol                */
-    char *out_address;  /* Original Output address (full) */
-    char *out_host;     /* Output host if any             */
-    char *out_port;     /* Output TCP port                */
-};
+#define FLB_ERR_INPUT_INVALID        050
+#define FLB_ERR_OUTPUT_UNDEF         100
+#define FLB_ERR_OUTPUT_INVALID       101
 
 #endif

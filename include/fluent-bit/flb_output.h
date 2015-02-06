@@ -17,25 +17,26 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_CONFIG_H
-#define FLB_CONFIG_H
+#ifndef FLB_OUTPUT_H
+#define FLB_OUTPUT_H
 
-#include <mk_config/mk_list.h>
+#include <fluent-bit/flb_config.h>
 
-#define FLB_CONFIG_DEFAULT_TAG  "fluent_bit"
+#define FLB_OUTPUT_FLUENT      0
+#define FLB_OUTPUT_HTTP        1
+#define FLB_OUTPUT_HTTPS       2
+#define FLB_OUTPUT_TD_HTTP     3
+#define FLB_OUTPUT_TD_HTTPS    4
 
-/* Main struct to hold the configuration of the runtime service */
-struct flb_config {
-    char *tag;          /* Message Tag, used by Fluentd   */
+#define FLB_OUTPUT_FLUENT_Z    (sizeof("fluentd")  - 1) + 3
+#define FLB_OUTPUT_HTTP_Z      (sizeof("http")     - 1) + 3
+#define FLB_OUTPUT_HTTPS_Z     (sizeof("https")    - 1) + 3
+#define FLB_OUTPUT_TD_HTTP_Z   (sizeof("td+http")  - 1) + 3
+#define FLB_OUTPUT_TD_HTTPS_Z  (sizeof("td+https") - 1) + 3
 
-    /* Inputs */
-    struct mk_list inputs;
+/* Default TCP port for Fluentd */
+#define FLB_OUTPUT_FLUENT_PORT  "12224"
 
-    /* Output */
-    int  out_protocol;  /* Output protocol                */
-    char *out_address;  /* Original Output address (full) */
-    char *out_host;     /* Output host if any             */
-    char *out_port;     /* Output TCP port                */
-};
+int flb_output_check(struct flb_config *config, char *output);
 
 #endif

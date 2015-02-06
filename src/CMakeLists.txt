@@ -1,5 +1,7 @@
 set(src
   in_kmsg.c
+  flb_input.c
+  flb_output.c
   flb_network.c
   flb_utils.c
   fluent-bit.c
