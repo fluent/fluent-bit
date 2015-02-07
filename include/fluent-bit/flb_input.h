@@ -23,15 +23,31 @@
 #include <fluent-bit/flb_config.h>
 
 struct flb_input_handler {
+    /* Is this Input an active one ? */
     int  active;
-    char *name;
-    int (*cb_init)(struct flb_config *);
 
+    /* The Input name */
+    char *name;
+
+    /* Initalization */
+    int (*cb_init)    (struct flb_config *);
+
+    /*
+     * Collect: every certain amount of time, Fluent Bit
+     * trigger this callback.
+     */
+    int (*cb_collect) (void *);
+
+    /* Input handler configuration */
+    void *in_context;
+
+    /* Link to global list from flb_config->inputs */
     struct mk_list _head;
 };
 
 int flb_input_register_all(struct flb_config *config);
 int flb_input_enable(char *input, struct flb_config *config);
 int flb_input_check(struct flb_config *config);
+int flb_input_set_context(char *input, void *in_context, struct flb_config *config);
 
 #endif

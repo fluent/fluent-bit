@@ -17,14 +17,21 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_UTILS_H
-#define FLB_UTILS_H
+#ifndef FLB_IN_CPU_H
+#define FLB_IN_CPU_H
 
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_input.h>
 
-char *flb_utils_pack_hello(struct flb_config *config, int *size);
-void flb_utils_error(int err);
-void flb_utils_error_c(const char *msg);
-void flb_utils_warn_c(const char *msg);
+/* CPU Input configuration context */
+struct flb_in_cpu_config {
+    int n_processors;  /* number of core processors  */
+    int cpu_ticks;     /* CPU ticks (Kernel setting) */
+    double load_now;   /* CPU load now               */
+    double load_pre;   /* CPU load previously        */
+};
+
+int in_cpu_init(struct flb_config *config);
+int in_cpu_collect(void *in_context);
 
 #endif

@@ -23,18 +23,24 @@
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_error.h>
+
+/* Inputs */
+#include <fluent-bit/in_cpu.h>
 #include <fluent-bit/in_kmsg.h>
 
 static void add_input(char *name,
                       struct flb_config *config,
-                      int (*init) (struct flb_config *))
+                      int (*cb_init)    (struct flb_config *),
+                      int (*cb_collect) (void *))
 {
     struct flb_input_handler *in;
 
-    in = malloc(sizeof(struct flb_input_handler));
+    in = calloc(1, sizeof(struct flb_input_handler));
     in->name = strdup(name);
-    in->cb_init = init;
+    in->cb_init    = cb_init;
+    in->cb_collect = cb_collect;
 
+    /* Register this Input in the global config */
     mk_list_add(&in->_head, &config->inputs);
 }
 
@@ -43,13 +49,14 @@ int flb_input_register_all(struct flb_config *config)
 {
     mk_list_init(&config->inputs);
 
-    add_input("cpu" , config, NULL);
-    add_input("kmsg", config, in_kmsg_start);
+    add_input("cpu" , config, in_cpu_init, in_cpu_collect);
+    add_input("kmsg", config, in_kmsg_start, NULL);
 }
 
 /* Enable an input */
 int flb_input_enable(char *input, struct flb_config *config)
 {
+    int ret;
     struct mk_list *head;
     struct flb_input_handler *handler;
 
@@ -60,6 +67,15 @@ int flb_input_enable(char *input, struct flb_config *config)
                 flb_utils_error(FLB_ERR_INPUT_UNSUP);
             }
             handler->active = FLB_TRUE;
+
+            /* Initialize the input */
+            if (handler->cb_init) {
+                ret = handler->cb_init(config);
+                if (ret != 0) {
+                    flb_utils_error_c("Failed ininitalize Input %s",
+                                      handler->name);
+                }
+            }
             return 0;
         }
     }
@@ -76,6 +92,23 @@ int flb_input_check(struct flb_config *config)
     mk_list_foreach(head, &config->inputs) {
         handler = mk_list_entry(head, struct flb_input_handler, _head);
         if (handler->active == FLB_TRUE) {
+            return 0;
+        }
+    }
+
+    return -1;
+}
+
+/* Assign an Configuration context to an Input */
+int flb_input_set_context(char *input, void *in_context, struct flb_config *config)
+{
+    struct mk_list *head;
+    struct flb_input_handler *handler;
+
+    mk_list_foreach(head, &config->inputs) {
+        handler = mk_list_entry(head, struct flb_input_handler, _head);
+        if (strncmp(handler->name, input, strlen(input)) == 0) {
+            handler->in_context = in_context;
             return 0;
         }
     }

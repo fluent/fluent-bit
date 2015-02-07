@@ -1,4 +1,5 @@
 set(src
+  in_cpu.c
   in_kmsg.c
   flb_input.c
   flb_output.c

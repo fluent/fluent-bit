@@ -89,3 +89,19 @@ void flb_utils_error(int err)
 
     exit(EXIT_FAILURE);
 }
+
+/* Custom error */
+void flb_utils_error_c(const char *msg)
+{
+    fprintf(stderr,
+            "%sError%s: %s. Aborting",
+            ANSI_BOLD ANSI_RED, ANSI_RESET, msg);
+    exit(EXIT_FAILURE);
+}
+
+void flb_utils_warn_c(const char *msg)
+{
+    fprintf(stderr,
+            "%sWarning%s: %s",
+            ANSI_BOLD ANSI_YELLOW, ANSI_RESET, msg);
+}

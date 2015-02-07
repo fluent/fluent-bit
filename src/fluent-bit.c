@@ -143,6 +143,19 @@ int main(int argc, char **argv)
 
     flb_banner();
 
+    while (1) {
+        sleep(1.5);
+        struct mk_list *head;
+        struct flb_input_handler *handler;
+
+        mk_list_foreach(head, &config->inputs) {
+            handler = mk_list_entry(head, struct flb_input_handler, _head);
+            if (handler->cb_collect) {
+                handler->cb_collect(handler->in_context);
+            }
+        }
+    }
+
     /* Validate input */
     return 0;
 }
