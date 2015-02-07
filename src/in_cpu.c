@@ -73,6 +73,12 @@ int in_cpu_init(struct flb_config *config)
         flb_utils_error_c("Could not set configuration for CPU input");
     }
 
+    /* Set our collector, CPU usage every 1 second */
+    ret = flb_input_set_collector("cpu",
+                                  in_cpu_collect,
+                                  IN_CPU_COLLECT_SEC,
+                                  IN_CPU_COLLECT_NSEC,
+                                  config);
     return 0;
 }
 

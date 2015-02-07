@@ -28,6 +28,9 @@
 struct flb_config {
     char *tag;          /* Message Tag, used by Fluentd   */
 
+    /* Collectors */
+    struct mk_list collectors;
+
     /* Inputs */
     struct mk_list inputs;
 

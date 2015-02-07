@@ -30,6 +30,7 @@
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_engine.h>
 
 static void flb_help(int rc)
 {
@@ -142,20 +143,7 @@ int main(int argc, char **argv)
     }
 
     flb_banner();
+    flb_engine_start();
 
-    while (1) {
-        sleep(1.5);
-        struct mk_list *head;
-        struct flb_input_handler *handler;
-
-        mk_list_foreach(head, &config->inputs) {
-            handler = mk_list_entry(head, struct flb_input_handler, _head);
-            if (handler->cb_collect) {
-                handler->cb_collect(handler->in_context);
-            }
-        }
-    }
-
-    /* Validate input */
     return 0;
 }

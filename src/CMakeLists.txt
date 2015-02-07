@@ -5,6 +5,7 @@ set(src
   flb_output.c
   flb_network.c
   flb_utils.c
+  flb_engine.c
   fluent-bit.c
   )
 

@@ -22,7 +22,7 @@
 
 #include <fluent-bit/flb_config.h>
 
-struct flb_input_handler {
+struct flb_input_plugin {
     /* Is this Input an active one ? */
     int  active;
 
@@ -45,9 +45,22 @@ struct flb_input_handler {
     struct mk_list _head;
 };
 
+struct flb_input_collector {
+    int (*cb_collect) (void *);
+    time_t seconds;
+    time_t nanoseconds;
+    struct flb_input_plugin *plugin;
+    struct mk_list _head;
+};
+
 int flb_input_register_all(struct flb_config *config);
-int flb_input_enable(char *input, struct flb_config *config);
+int flb_input_enable(char *name, struct flb_config *config);
 int flb_input_check(struct flb_config *config);
-int flb_input_set_context(char *input, void *in_context, struct flb_config *config);
+int flb_input_set_context(char *name, void *in_context, struct flb_config *config);
+int flb_input_set_collector(char *name,
+                            int (*cb_collect) (void *),
+                            time_t seconds,
+                            long   nanoseconds,
+                            struct flb_config *config);
 
 #endif
