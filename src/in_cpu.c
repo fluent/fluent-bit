@@ -70,7 +70,7 @@ int in_cpu_init(struct flb_config *config)
     /* Set the context */
     ret = flb_input_set_context("cpu", cpu_config, config);
     if (ret == -1) {
-        flb_utils_error_c("Could not set configuration for CPU input");
+        flb_utils_error_c("Could not set configuration for CPU input plugin");
     }
 
     /* Set our collector, CPU usage every 1 second */
@@ -79,7 +79,11 @@ int in_cpu_init(struct flb_config *config)
                                   IN_CPU_COLLECT_SEC,
                                   IN_CPU_COLLECT_NSEC,
                                   config);
-    return 0;
+    if (ret == -1) {
+        flb_utils_error_c("Could not set collector for CPU input plugin");
+    }
+
+        return 0;
 }
 
 /* Callback to gather CPU usage between now and previous snapshot */

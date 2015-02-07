@@ -171,4 +171,5 @@ int flb_input_set_collector(char *name,
     collector->plugin      = plugin;
 
     mk_list_add(&collector->_head, &config->collectors);
+    return 0;
 }
