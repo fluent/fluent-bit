@@ -48,7 +48,7 @@ struct flb_input_plugin {
 struct flb_input_collector {
     int (*cb_collect) (void *);
     time_t seconds;
-    time_t nanoseconds;
+    long nanoseconds;
     struct flb_input_plugin *plugin;
     struct mk_list _head;
 };

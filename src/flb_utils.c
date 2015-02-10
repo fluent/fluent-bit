@@ -171,21 +171,21 @@ void flb_utils_print_setup(struct flb_config *config)
     char *p;
     struct mk_list *head;
     struct flb_input_plugin *plugin;
+    struct flb_input_collector *collector;
 
     flb_info("Configuration");
 
-    printf(" verbose mode   : %s\n",
-           (config->verbose == FLB_TRUE) ? "True": "False");
+    /* Inputs */
     printf(" input plugins  : ");
-
     mk_list_foreach(head, &config->inputs) {
         plugin = mk_list_entry(head, struct flb_input_plugin, _head);
         if (plugin->active == FLB_TRUE) {
             printf("%s ", plugin->name);
         }
     }
-
     printf("\n");
+
+    /* Outputs */
     printf(" output tag     : %s\n", config->tag);
     printf(" output protocol: ");
 
@@ -196,9 +196,21 @@ void flb_utils_print_setup(struct flb_config *config)
     case FLB_OUTPUT_TD_HTTP: p="td+http";  break;
     case FLB_OUTPUT_TD_HTTPS:p="td+https"; break;
     }
-
     printf("%s\n", p);
+
     printf(" output host    : %s\n", config->out_host);
     printf(" output port    : %s\n", config->out_port);
     printf(" output address : %s\n", config->out_address);
+
+    /* Collectors */
+    printf(" collectors     : ");
+    mk_list_foreach(head, &config->collectors) {
+        collector = mk_list_entry(head, struct flb_input_collector, _head);
+        plugin = collector->plugin;
+        printf("[%s %lus,%luns] ",
+               plugin->name,
+               collector->seconds,
+               collector->nanoseconds);
+    }
+    printf("\n");
 }
