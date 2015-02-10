@@ -46,6 +46,7 @@ struct flb_input_plugin {
 };
 
 struct flb_input_collector {
+    int timer;
     int (*cb_collect) (void *);
     time_t seconds;
     long nanoseconds;
