@@ -21,9 +21,10 @@
 #define MK_STR_H
 
 #include <stdint.h>
-#include <monkey/mk_memory.h>
-#include <monkey/mk_list.h>
-#include <monkey/mk_macros.h>
+
+#include "mk_list.h"
+#include "mk_memory.h"
+#include "mk_macros.h"
 
 /* Case sensitive OFF */
 #define MK_STR_SENSITIVE 0

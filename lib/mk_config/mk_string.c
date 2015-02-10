@@ -20,6 +20,7 @@
  */
 
 #define _GNU_SOURCE
+#include <stdio.h>
 #include <string.h>
 
 #include <ctype.h>
@@ -27,12 +28,7 @@
 #include <stdarg.h>
 
 #include "mk_macros.h"
-#include "mk_request.h"
-#include "mk_utils.h"
-#include "mk_memory.h"
 #include "mk_string.h"
-
-#include <stdio.h>
 
 /*
  * Base function for search routines, it accept modifiers to enable/disable
@@ -156,7 +152,7 @@ char *mk_string_dup(const char *s)
         return NULL;
 
     len = strlen(s);
-    p = mk_mem_malloc(len + 1);
+    p = malloc(len + 1);
     memcpy(p, s, len);
     p[len] = '\0';
 
@@ -175,7 +171,7 @@ struct mk_list *mk_string_split_line(const char *line)
         return NULL;
     }
 
-    list = mk_mem_malloc(sizeof(struct mk_list));
+    list = malloc(sizeof(struct mk_list));
     mk_list_init(list);
 
     len = strlen(line);
@@ -202,7 +198,7 @@ struct mk_list *mk_string_split_line(const char *line)
         }
 
         /* Alloc node */
-        new = mk_mem_malloc(sizeof(struct mk_string_line));
+        new = malloc(sizeof(struct mk_string_line));
         new->val = val;
         new->len = val_len;
 
@@ -238,7 +234,7 @@ char *mk_string_build(char **buffer, unsigned long *len,
     size_t alloc = 0;
 
     /* *buffer *must* be an empty/NULL buffer */
-    *buffer = (char *) mk_mem_malloc(_mem_alloc);
+    *buffer = (char *) malloc(_mem_alloc);
 
     if (!*buffer) {
         return NULL;
@@ -342,7 +338,7 @@ char *mk_string_copy_substr(const char *string, int pos_init, int pos_end)
     if (size <= 2)
         size = 4;
 
-    buffer = mk_mem_malloc(size);
+    buffer = malloc(size);
 
     if (!buffer) {
         return NULL;

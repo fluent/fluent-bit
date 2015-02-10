@@ -72,7 +72,7 @@ struct mk_config_section *mk_config_section_add(struct mk_config *conf,
     struct mk_config_section *new;
 
     /* Alloc section node */
-    new = mk_mem_malloc(sizeof(struct mk_config_section));
+    new = malloc(sizeof(struct mk_config_section));
     new->name = mk_string_dup(section_name);
     mk_list_init(&new->entries);
     mk_list_add(&new->_head, &conf->sections);
@@ -97,7 +97,7 @@ static void mk_config_entry_add(struct mk_config *conf,
     section = mk_list_entry_last(head, struct mk_config_section, _head);
 
     /* Alloc new entry */
-    new = mk_mem_malloc(sizeof(struct mk_config_entry));
+    new = malloc(sizeof(struct mk_config_entry));
     new->key = mk_string_dup(key);
     new->val = mk_string_dup(val);
 
@@ -126,7 +126,7 @@ struct mk_config *mk_config_create(const char *path)
     }
 
     /* Alloc configuration node */
-    conf = mk_mem_malloc_z(sizeof(struct mk_config));
+    conf = calloc(1, sizeof(struct mk_config));
     conf->created = time(NULL);
     conf->file = mk_string_dup(path);
     mk_list_init(&conf->sections);
