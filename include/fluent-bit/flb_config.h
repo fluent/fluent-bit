@@ -20,12 +20,15 @@
 #ifndef FLB_CONFIG_H
 #define FLB_CONFIG_H
 
+#include <time.h>
 #include <mk_config/mk_list.h>
 
 #define FLB_CONFIG_DEFAULT_TAG  "fluent_bit"
 
 /* Main struct to hold the configuration of the runtime service */
 struct flb_config {
+    time_t init_time;   /* Time when Fluent Bit started   */
+    int verbose;        /* Verbose mode (default OFF)     */
     char *tag;          /* Message Tag, used by Fluentd   */
 
     /* Collectors */
@@ -40,5 +43,9 @@ struct flb_config {
     char *out_host;     /* Output host if any             */
     char *out_port;     /* Output TCP port                */
 };
+
+int __flb_config_verbose;
+
+struct flb_config *flb_config_init();
 
 #endif

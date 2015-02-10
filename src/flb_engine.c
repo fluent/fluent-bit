@@ -20,7 +20,7 @@
 #include <stdio.h>
 #include <fluent-bit/flb_config.h>
 
-int flb_engine_start()
+int flb_engine_start(struct flb_config *config)
 {
-    printf("Engine is in work in process...");
+    flb_info("starting engine");
 }

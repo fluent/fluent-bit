@@ -17,11 +17,23 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_ENGINE_H
-#define FLB_ENGINE_H
+#include <stdlib.h>
 
+#include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_config.h>
 
-int flb_engine_start(struct flb_config *config);
+struct flb_config *flb_config_init()
+{
+    struct flb_config *config;
 
-#endif
+    __flb_config_verbose = FLB_FALSE;
+
+    config = calloc(1, sizeof(struct flb_config));
+    if (!config) {
+        perror("malloc");
+        return NULL;
+    }
+
+    config->init_time = time(NULL);
+    return config;
+}

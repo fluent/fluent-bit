@@ -39,8 +39,10 @@ static void flb_help(int rc)
     printf("  -i, --input=INPUT\tset an input\n");
     printf("  -o, --output=OUTPUT\tset an output\n");
     printf("  -t, --tag=TAG\t\tset a Tag (default: %s)\n", FLB_CONFIG_DEFAULT_TAG);
+    printf("  -V, --verbose\t\tenable verbose mode\n");
     printf("  -v, --version\t\tshow version number\n");
     printf("  -h, --help\t\tprint this help\n\n");
+
     printf("%sInputs%s\n", ANSI_BOLD, ANSI_RESET);
     printf("  CPU Usage\t\tcpu\n");
     printf("  Kernel Ring Buffer\tkmsg\n\n");
@@ -78,6 +80,7 @@ int main(int argc, char **argv)
         { "output",  required_argument, NULL, 'o' },
         { "tag",     required_argument, NULL, 't' },
         { "version", no_argument      , NULL, 'v' },
+        { "verbose", no_argument      , NULL, 'V' },
         { "help",    no_argument      , NULL, 'h' },
         { NULL, 0, NULL, 0 }
     };
@@ -85,7 +88,6 @@ int main(int argc, char **argv)
     /* Create configuration context */
     config = calloc(1, sizeof(struct flb_config));
     if (!config) {
-        perror("malloc");
         exit(EXIT_FAILURE);
     }
 
@@ -93,7 +95,7 @@ int main(int argc, char **argv)
     flb_input_register_all(config);
 
     /* Parse the command line options */
-    while ((opt = getopt_long(argc, argv, "i:o:tvh",
+    while ((opt = getopt_long(argc, argv, "i:o:tvVh",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
@@ -113,6 +115,9 @@ int main(int argc, char **argv)
         case 'v':
             flb_version();
             exit(EXIT_SUCCESS);
+        case 'V':
+            config->verbose = __flb_config_verbose = FLB_TRUE;
+            break;
         default:
             flb_help(EXIT_FAILURE);
         }
@@ -143,7 +148,10 @@ int main(int argc, char **argv)
     }
 
     flb_banner();
-    flb_engine_start();
+    if (config->verbose == FLB_TRUE) {
+        flb_utils_print_setup(config);
+    }
 
+    flb_engine_start(config);
     return 0;
 }

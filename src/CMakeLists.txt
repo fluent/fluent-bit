@@ -3,6 +3,7 @@ set(src
   in_kmsg.c
   flb_input.c
   flb_output.c
+  flb_config.c
   flb_network.c
   flb_utils.c
   flb_engine.c

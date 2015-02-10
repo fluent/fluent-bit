@@ -17,12 +17,21 @@
  *  limitations under the License.
  */
 
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
+#include <unistd.h>
+#include <time.h>
+#include <sys/time.h>
 #include <msgpack.h>
 
+#include <mk_config/mk_list.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_error.h>
+#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_output.h>
 
 char *flb_utils_pack_hello(struct flb_config *config, int *size)
 {
@@ -104,4 +113,92 @@ void flb_utils_warn_c(const char *msg)
     fprintf(stderr,
             "%sWarning%s: %s",
             ANSI_BOLD ANSI_YELLOW, ANSI_RESET, msg);
+}
+
+void flb_info(char *fmt, ...)
+{
+    time_t now;
+    struct tm *current;
+
+    const char *header_color = NULL;
+    const char *header_title = NULL;
+    const char *bold_color = ANSI_BOLD;
+    const char *reset_color = ANSI_RESET;
+    const char *white_color = ANSI_WHITE;
+    va_list args;
+
+    if (__flb_config_verbose == FLB_FALSE) {
+        return;
+    }
+
+    va_start(args, fmt);
+
+    header_title = "info";
+    header_color = ANSI_GREEN;
+
+    /* Only print colors to a terminal */
+    if (!isatty(STDOUT_FILENO)) {
+        header_color = "";
+        bold_color = "";
+        reset_color = "";
+        white_color = "";
+    }
+
+    now = time(NULL);
+    struct tm result;
+    current = localtime_r(&now, &result);
+    printf("%s[%s%i/%02i/%02i %02i:%02i:%02i%s]%s ",
+           bold_color, reset_color,
+           current->tm_year + 1900,
+           current->tm_mon + 1,
+           current->tm_mday,
+           current->tm_hour,
+           current->tm_min,
+           current->tm_sec,
+           bold_color, reset_color);
+
+    printf("%s[%s%s%s]%s ",
+           "", ANSI_YELLOW, header_title, white_color, reset_color);
+
+    vprintf(fmt, args);
+    va_end(args);
+    printf("%s\n", reset_color);
+    fflush(stdout);
+}
+
+void flb_utils_print_setup(struct flb_config *config)
+{
+    char *p;
+    struct mk_list *head;
+    struct flb_input_plugin *plugin;
+
+    flb_info("Configuration");
+
+    printf(" verbose mode   : %s\n",
+           (config->verbose == FLB_TRUE) ? "True": "False");
+    printf(" input plugins  : ");
+
+    mk_list_foreach(head, &config->inputs) {
+        plugin = mk_list_entry(head, struct flb_input_plugin, _head);
+        if (plugin->active == FLB_TRUE) {
+            printf("%s ", plugin->name);
+        }
+    }
+
+    printf("\n");
+    printf(" output tag     : %s\n", config->tag);
+    printf(" output protocol: ");
+
+    switch (config->out_protocol) {
+    case FLB_OUTPUT_FLUENT:  p="fluentd";  break;
+    case FLB_OUTPUT_HTTP:    p="http";     break;
+    case FLB_OUTPUT_HTTPS:   p="https";    break;
+    case FLB_OUTPUT_TD_HTTP: p="td+http";  break;
+    case FLB_OUTPUT_TD_HTTPS:p="td+https"; break;
+    }
+
+    printf("%s\n", p);
+    printf(" output host    : %s\n", config->out_host);
+    printf(" output port    : %s\n", config->out_port);
+    printf(" output address : %s\n", config->out_address);
 }
