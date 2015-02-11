@@ -34,6 +34,7 @@ struct flb_config *flb_config_init()
         return NULL;
     }
 
+    config->flush     = FLB_CONFIG_FLUSH_SECS;
     config->init_time = time(NULL);
     return config;
 }

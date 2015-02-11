@@ -103,6 +103,5 @@ int in_cpu_collect(void *in_context)
     /* Put current load back */
     in_ctx->load_pre = in_ctx->load_now;
 
-    printf("CPU total: %0.2f%%\n", total);
-    fflush(stdout);
+    flb_info("in_cpu: CPU %0.2f%%", total);
 }

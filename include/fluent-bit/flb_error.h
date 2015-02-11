@@ -20,6 +20,7 @@
 #ifndef FLB_ERROR_H
 #define FLB_ERROR_H
 
+#define FLB_ERR_CFG_FLUSH            020
 #define FLB_ERR_INPUT_INVALID        050
 #define FLB_ERR_INPUT_UNDEF          051
 #define FLB_ERR_INPUT_UNSUP          052

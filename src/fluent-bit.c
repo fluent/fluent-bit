@@ -36,6 +36,8 @@ static void flb_help(int rc)
 {
     printf("Usage: fluent-bit [OPTION]\n\n");
     printf("%sAvailable Options%s\n", ANSI_BOLD, ANSI_RESET);
+    printf("  -f, --flush=SECONDS\tflush timeout in seconds (default: %i)\n",
+           FLB_CONFIG_FLUSH_SECS);
     printf("  -i, --input=INPUT\tset an input\n");
     printf("  -o, --output=OUTPUT\tset an output\n");
     printf("  -t, --tag=TAG\t\tset a Tag (default: %s)\n", FLB_CONFIG_DEFAULT_TAG);
@@ -76,6 +78,7 @@ int main(int argc, char **argv)
 
     /* Setup long-options */
     static const struct option long_opts[] = {
+        { "flush",   required_argument, NULL, 'f' },
         { "input",   required_argument, NULL, 'i' },
         { "output",  required_argument, NULL, 'o' },
         { "tag",     required_argument, NULL, 't' },
@@ -86,7 +89,7 @@ int main(int argc, char **argv)
     };
 
     /* Create configuration context */
-    config = calloc(1, sizeof(struct flb_config));
+    config = flb_config_init();
     if (!config) {
         exit(EXIT_FAILURE);
     }
@@ -95,10 +98,13 @@ int main(int argc, char **argv)
     flb_input_register_all(config);
 
     /* Parse the command line options */
-    while ((opt = getopt_long(argc, argv, "i:o:tvVh",
+    while ((opt = getopt_long(argc, argv, "f:i:o:tvVh",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
+        case 'f':
+            config->flush = atoi(optarg);
+            break;
         case 'i':
             ret = flb_input_enable(optarg, config);
             if (ret != 0) {
@@ -125,6 +131,10 @@ int main(int argc, char **argv)
 
     if (!cfg_output) {
         flb_utils_error(FLB_ERR_OUTPUT_UNDEF);
+    }
+
+    if (config->flush <= 1) {
+        flb_utils_error(FLB_ERR_CFG_FLUSH);
     }
 
     /* Tag */

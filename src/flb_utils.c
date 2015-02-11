@@ -68,6 +68,9 @@ void flb_utils_error(int err)
     char *msg = NULL;
 
     switch (err) {
+    case FLB_ERR_CFG_FLUSH:
+        msg = "Invalid flush value";
+        break;
     case FLB_ERR_INPUT_INVALID:
         msg = "Invalid input type";
         break;
@@ -174,6 +177,9 @@ void flb_utils_print_setup(struct flb_config *config)
     struct flb_input_collector *collector;
 
     flb_info("Configuration");
+
+    /* general */
+    printf(" flush time     : %i seconds\n", config->flush);
 
     /* Inputs */
     printf(" input plugins  : ");

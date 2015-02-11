@@ -23,13 +23,14 @@
 #include <time.h>
 #include <mk_config/mk_list.h>
 
+#define FLB_CONFIG_FLUSH_SECS   5
 #define FLB_CONFIG_DEFAULT_TAG  "fluent_bit"
 
 /* Main struct to hold the configuration of the runtime service */
 struct flb_config {
-    time_t init_time;   /* Time when Fluent Bit started   */
+    int flush;          /* Flush timeout                  */
     int verbose;        /* Verbose mode (default OFF)     */
-    char *tag;          /* Message Tag, used by Fluentd   */
+    time_t init_time;   /* Time when Fluent Bit started   */
 
     /* Collectors */
     struct mk_list collectors;
@@ -38,6 +39,7 @@ struct flb_config {
     struct mk_list inputs;
 
     /* Output */
+    char *tag;          /* Message Tag, used by Fluentd   */
     int  out_protocol;  /* Output protocol                */
     char *out_address;  /* Original Output address (full) */
     char *out_host;     /* Output host if any             */
