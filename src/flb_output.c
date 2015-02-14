@@ -48,6 +48,7 @@ static int split_address(struct flb_config *config)
     int len;
     char *sep;
     char *tmp;
+    char *buf;
 
     if (config->out_protocol == FLB_OUTPUT_FLUENT) {
         tmp = config->out_address + FLB_OUTPUT_FLUENT_Z;
@@ -64,10 +65,12 @@ static int split_address(struct flb_config *config)
             tmp += len + 1;
             len = strlen(tmp);
             if (len == 0) {
-                config->out_port = strdup(FLB_OUTPUT_FLUENT_PORT);
+                config->out_port = atoi(FLB_OUTPUT_FLUENT_PORT);
                 return 0;
             }
-            config->out_port = copy_substr(tmp, len);
+            buf = copy_substr(tmp, len);
+            config->out_port = atoi(buf);
+            free(buf);
         }
         else {
             if (strlen(tmp) == 0) {
@@ -76,7 +79,7 @@ static int split_address(struct flb_config *config)
             }
 
             config->out_host = strdup(tmp);
-            config->out_port = strdup(FLB_OUTPUT_FLUENT_PORT);
+            config->out_port = atoi(FLB_OUTPUT_FLUENT_PORT);
             return 0;
         }
     }

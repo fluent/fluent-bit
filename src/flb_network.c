@@ -114,7 +114,6 @@ int flb_net_tcp_connect(char *host, unsigned long port)
     if (connect(sock_fd,
                 (struct sockaddr *) remote, sizeof(struct sockaddr)) == -1) {
         close(sock_fd);
-        printf("Error connecting to %s:%lu\n", host, port);
         free(remote);
         return -1;
     }

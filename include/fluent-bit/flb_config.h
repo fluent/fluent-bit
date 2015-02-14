@@ -29,6 +29,7 @@
 /* Main struct to hold the configuration of the runtime service */
 struct flb_config {
     int flush;          /* Flush timeout                  */
+    int flush_fd;       /* Timer FD associated to flush   */
     int verbose;        /* Verbose mode (default OFF)     */
     time_t init_time;   /* Time when Fluent Bit started   */
 
@@ -43,7 +44,7 @@ struct flb_config {
     int  out_protocol;  /* Output protocol                */
     char *out_address;  /* Original Output address (full) */
     char *out_host;     /* Output host if any             */
-    char *out_port;     /* Output TCP port                */
+    int   out_port;     /* Output TCP port                */
 };
 
 int __flb_config_verbose;

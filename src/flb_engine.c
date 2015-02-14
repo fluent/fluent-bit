@@ -25,10 +25,11 @@
 #include <sys/timerfd.h>
 
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_engine.h>
 
-static int collector_fd(time_t sec, long nsec)
+static int timer_fd(time_t sec, long nsec)
 {
     int ret;
     int timer_fd;
@@ -87,6 +88,26 @@ static int flb_engine_loop_add(int efd, int fd, int mode)
     }
 }
 
+static int flb_engine_flush(struct flb_config *config)
+{
+    int fd;
+
+    /*
+     * Lazy flush: it does a connect in blocking mode, this needs
+     * to be changed later and be integrated with the main loop.
+     */
+    fd = flb_net_tcp_connect(config->out_host, config->out_port);
+    if (fd == -1) {
+        flb_utils_warn_c("Error connecting to output service\n");
+        return -1;
+    }
+
+    flb_info("Flushing to %s:%i (dummy test connection)",
+             config->out_host, config->out_port);
+    close(fd);
+    return 0;
+}
+
 static int flb_engine_handle_event(int fd, int mask, struct flb_config *config)
 {
     int ret;
@@ -99,6 +120,11 @@ static int flb_engine_handle_event(int fd, int mask, struct flb_config *config)
         if (ret <= 0) {
             perror("read");
             return -1;
+        }
+
+        /* Check if is our timer for flushing */
+        if (config->flush_fd == fd) {
+            flb_engine_flush(config);
         }
 
         /* As of now, it should be a collector */
@@ -127,21 +153,33 @@ int flb_engine_start(struct flb_config *config)
 
     flb_info("starting engine");
 
+    /* main loop */
     loop = flb_engine_loop_create();
     if (loop == -1) {
         return -1;
     }
 
+    /* Allocate space for the events */
     events = malloc(sizeof(struct epoll_event) * size);
     if (!events) {
         perror("malloc");
         exit(EXIT_FAILURE);
     }
 
+    /* Create and register the timer fd for flush procedure */
+    config->flush_fd = timer_fd(config->flush, 0);
+    if (config->flush_fd == -1) {
+        flb_utils_error(FLB_ERR_CFG_FLUSH_CREATE);
+    }
+    ret = flb_engine_loop_add(loop, config->flush_fd, FLB_ENGINE_READ);
+    if (ret == -1) {
+        flb_utils_error(FLB_ERR_CFG_FLUSH_REGISTER);
+    }
+
     /* For each Collector, register the event into the main loop */
     mk_list_foreach(head, &config->collectors) {
         collector = mk_list_entry(head, struct flb_input_collector, _head);
-        fd = collector_fd(collector->seconds, collector->nanoseconds);
+        fd = timer_fd(collector->seconds, collector->nanoseconds);
         if (fd == -1) {
             continue;
         }

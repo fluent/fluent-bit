@@ -45,14 +45,28 @@ char *flb_utils_pack_hello(struct flb_config *config, int *size)
     /* initialize buffers */
     msgpack_sbuffer_init(&sbuf);
     msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
-    msgpack_pack_array(&pck, 3);
+
+    msgpack_pack_array(&pck, 2);
 
     /* pack Tag, Time and Record */
+
+    /* TAG */
     msgpack_pack_raw(&pck, tag_len);
     msgpack_pack_raw_body(&pck, config->tag, tag_len);
+
+    /* Primary Array: ['TAG', [ */
+    msgpack_pack_array(&pck, 1);
+
+    /* Array entry #0: ['TAG', [[time, {'key': 'val'}]]] */
+    msgpack_pack_array(&pck, 2);
     msgpack_pack_uint64(&pck, time(NULL));
+
+    msgpack_pack_map(&pck, 1);
+
     msgpack_pack_raw(&pck, 5);
-    msgpack_pack_raw_body(&pck, "hello", 5);
+    msgpack_pack_raw_body(&pck, "dummy", 5);
+
+    msgpack_pack_uint64(&pck, time(NULL));
 
     /* dump data back to a new buffer */
     *size = sbuf.size;
@@ -70,6 +84,12 @@ void flb_utils_error(int err)
     switch (err) {
     case FLB_ERR_CFG_FLUSH:
         msg = "Invalid flush value";
+        break;
+    case FLB_ERR_CFG_FLUSH_CREATE:
+        msg = "Could not create timer for flushing";
+        break;
+    case FLB_ERR_CFG_FLUSH_REGISTER:
+        msg = "Could not register timer for flushing";
         break;
     case FLB_ERR_INPUT_INVALID:
         msg = "Invalid input type";
@@ -205,7 +225,7 @@ void flb_utils_print_setup(struct flb_config *config)
     printf("%s\n", p);
 
     printf(" output host    : %s\n", config->out_host);
-    printf(" output port    : %s\n", config->out_port);
+    printf(" output port    : %i\n", config->out_port);
     printf(" output address : %s\n", config->out_address);
 
     /* Collectors */
