@@ -28,15 +28,36 @@
 #define IN_CPU_COLLECT_SEC    1
 #define IN_CPU_COLLECT_NSEC   0
 
-/* CPU Input configuration context */
+struct in_cpu_data {
+    time_t time;
+    double cpu_usage;
+};
+
+/* CPU Input configuration & context */
 struct flb_in_cpu_config {
-    int n_processors;  /* number of core processors  */
-    int cpu_ticks;     /* CPU ticks (Kernel setting) */
-    double load_now;   /* CPU load now               */
-    double load_pre;   /* CPU load previously        */
+    /* setup */
+    int n_processors;   /* number of core processors  */
+    int cpu_ticks;      /* CPU ticks (Kernel setting) */
+
+    /* Tag: used to extend original tag */
+    int  tag_len;       /* The real string length     */
+    char tag[32];       /* Custom Tag for this input  */
+
+    /* runtime data */
+    double load_now;    /* CPU load now               */
+    double load_pre;    /* CPU load previously        */
+
+    /* Buffered data */
+    int data_idx;       /* next position available    */
+    int data_size;      /* array size, # of entries   */
+
+    /* the data */
+    struct in_cpu_data *data_array;
 };
 
 int in_cpu_init(struct flb_config *config);
+int in_cpu_pre_run(void *in_context, struct flb_config *config);
 int in_cpu_collect(void *in_context);
+void *in_cpu_flush(void *in_context, int *size);
 
 #endif

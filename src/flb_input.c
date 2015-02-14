@@ -46,14 +46,18 @@ static struct flb_input_plugin *plugin_lookup(char *name, struct flb_config *con
 static void add_input(char *name,
                       struct flb_config *config,
                       int (*cb_init)    (struct flb_config *),
-                      int (*cb_collect) (void *))
+                      int (*cb_pre_run) (void *, struct flb_config *),
+                      int (*cb_collect) (void *),
+                      void *(cb_flush)  (void *, int *))
 {
     struct flb_input_plugin *in;
 
     in = calloc(1, sizeof(struct flb_input_plugin));
     in->name = strdup(name);
     in->cb_init    = cb_init;
+    in->cb_pre_run = cb_pre_run;
     in->cb_collect = cb_collect;
+    in->cb_flush   = cb_flush;
 
     /* Register this Input in the global config */
     mk_list_add(&in->_head, &config->inputs);
@@ -65,8 +69,8 @@ int flb_input_register_all(struct flb_config *config)
     mk_list_init(&config->inputs);
     mk_list_init(&config->collectors);
 
-    add_input("cpu" , config, in_cpu_init, in_cpu_collect);
-    add_input("kmsg", config, in_kmsg_start, NULL);
+    add_input("cpu" , config, in_cpu_init, in_cpu_pre_run, in_cpu_collect, in_cpu_flush);
+    add_input("kmsg", config, NULL, NULL, NULL, NULL);
 }
 
 /* Enable an input */
@@ -95,6 +99,21 @@ int flb_input_enable(char *name, struct flb_config *config)
     }
 
     return 0;
+}
+
+/* Invoke all pre-run input callbacks */
+void flb_input_pre_run_all(struct flb_config *config)
+{
+    struct mk_list *head;
+    struct flb_input_plugin *in;
+
+    mk_list_foreach(head, &config->inputs) {
+        in = mk_list_entry(head, struct flb_input_plugin, _head);
+        if (in->cb_pre_run) {
+            in->cb_pre_run(in->in_context, config);
+        }
+    }
+
 }
 
 /* Check that at least one Input is enabled */

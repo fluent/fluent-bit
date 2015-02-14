@@ -32,11 +32,23 @@ struct flb_input_plugin {
     /* Initalization */
     int (*cb_init)    (struct flb_config *);
 
+    /* Pre run */
+    int (*cb_pre_run) (void *, struct flb_config *);
+
     /*
      * Collect: every certain amount of time, Fluent Bit
      * trigger this callback.
      */
     int (*cb_collect) (void *);
+
+    /*
+     * Flush: each plugin during a collection, it does some buffering,
+     * when the Flush timer takes place on the Engine, it will trigger
+     * the cb_flush(...) to obtain the plugin buffer data. This data is
+     * a MsgPack buffer which will be processed by the Engine and delivered
+     * to the target output.
+     */
+    void *(*cb_flush) (void *, int *);
 
     /* Input handler configuration */
     void *in_context;
@@ -63,5 +75,6 @@ int flb_input_set_collector(char *name,
                             time_t seconds,
                             long   nanoseconds,
                             struct flb_config *config);
+void flb_input_pre_run_all(struct flb_config *config);
 
 #endif

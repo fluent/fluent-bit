@@ -178,7 +178,6 @@ void flb_message(int type, char *fmt, ...)
         break;
     }
 
-
     /* Only print colors to a terminal */
     if (!isatty(STDOUT_FILENO)) {
         header_color = "";

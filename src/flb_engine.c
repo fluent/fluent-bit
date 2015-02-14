@@ -92,6 +92,11 @@ static int flb_engine_loop_add(int efd, int fd, int mode)
 static int flb_engine_flush(struct flb_config *config)
 {
     int fd;
+    int size;
+    int bytes;
+    char *buf;
+    struct mk_list *head;
+    struct flb_input_plugin *in;
 
     /*
      * Lazy flush: it does a connect in blocking mode, this needs
@@ -103,8 +108,24 @@ static int flb_engine_flush(struct flb_config *config)
         return -1;
     }
 
-    flb_info("Flushing to %s:%i (dummy test connection)",
-             config->out_host, config->out_port);
+    mk_list_foreach(head, &config->inputs) {
+        in = mk_list_entry(head, struct flb_input_plugin, _head);
+        if (in->cb_flush) {
+            buf = in->cb_flush(in->in_context, &size);
+            if (!buf) {
+                continue;
+            }
+            bytes = write(fd, buf, size);
+            if (bytes <= 0) {
+                perror("write");
+            }
+            else {
+                flb_info("Flush %i bytes", bytes);
+            }
+            free(buf);
+        }
+    }
+
     close(fd);
     return 0;
 }
@@ -123,11 +144,6 @@ static int flb_engine_handle_event(int fd, int mask, struct flb_config *config)
             return -1;
         }
 
-        /* Check if is our timer for flushing */
-        if (config->flush_fd == fd) {
-            flb_engine_flush(config);
-        }
-
         /* As of now, it should be a collector */
         mk_list_foreach(head, &config->collectors) {
             collector = mk_list_entry(head, struct flb_input_collector, _head);
@@ -135,6 +151,11 @@ static int flb_engine_handle_event(int fd, int mask, struct flb_config *config)
                 collector->cb_collect(collector->plugin->in_context);
                 return 0;
             }
+        }
+
+        /* Check if is our timer for flushing */
+        if (config->flush_fd == fd) {
+            flb_engine_flush(config);
         }
     }
 }
@@ -153,6 +174,9 @@ int flb_engine_start(struct flb_config *config)
     struct flb_input_collector *collector;
 
     flb_info("starting engine");
+
+    /* Inputs pre-run */
+    flb_input_pre_run_all(config);
 
     /* main loop */
     loop = flb_engine_loop_create();
