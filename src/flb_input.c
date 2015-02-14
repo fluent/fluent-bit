@@ -89,8 +89,8 @@ int flb_input_enable(char *name, struct flb_config *config)
     if (plugin->cb_init) {
         ret = plugin->cb_init(config);
         if (ret != 0) {
-            flb_utils_error_c("Failed ininitalize Input %s",
-                              plugin->name);
+            flb_error("Failed ininitalize Input %s",
+                      plugin->name);
         }
     }
 

@@ -103,5 +103,5 @@ int in_cpu_collect(void *in_context)
     /* Put current load back */
     in_ctx->load_pre = in_ctx->load_now;
 
-    flb_info("in_cpu: CPU %0.2f%%", total);
+    flb_debug("in_cpu: CPU %0.2f%%", total);
 }

@@ -32,6 +32,7 @@
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_utils.h>
 
 char *flb_utils_pack_hello(struct flb_config *config, int *size)
 {
@@ -138,7 +139,7 @@ void flb_utils_warn_c(const char *msg)
             ANSI_BOLD ANSI_YELLOW, ANSI_RESET, msg);
 }
 
-void flb_info(char *fmt, ...)
+void flb_message(int type, char *fmt, ...)
 {
     time_t now;
     struct tm *current;
@@ -150,14 +151,33 @@ void flb_info(char *fmt, ...)
     const char *white_color = ANSI_WHITE;
     va_list args;
 
-    if (__flb_config_verbose == FLB_FALSE) {
-        return;
+    if (type == FLB_MSG_DEBUG) {
+        if (__flb_config_verbose == FLB_FALSE) {
+            return;
+        }
     }
 
     va_start(args, fmt);
 
-    header_title = "info";
-    header_color = ANSI_GREEN;
+    switch (type) {
+    case FLB_MSG_INFO:
+        header_title = "info";
+        header_color = ANSI_GREEN;
+        break;
+    case FLB_MSG_WARN:
+        header_title = "warn";
+        header_color = ANSI_YELLOW;
+        break;
+    case FLB_MSG_ERROR:
+        header_title = "error";
+        header_color = ANSI_RED;
+        break;
+    case FLB_MSG_DEBUG:
+        header_title = "debug";
+        header_color = ANSI_YELLOW;
+        break;
+    }
+
 
     /* Only print colors to a terminal */
     if (!isatty(STDOUT_FILENO)) {
@@ -180,8 +200,8 @@ void flb_info(char *fmt, ...)
            current->tm_sec,
            bold_color, reset_color);
 
-    printf("%s[%s%s%s]%s ",
-           "", ANSI_YELLOW, header_title, white_color, reset_color);
+    printf("%s[%s%5s%s]%s ",
+           "", header_color, header_title, white_color, reset_color);
 
     vprintf(fmt, args);
     va_end(args);

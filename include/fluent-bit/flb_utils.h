@@ -22,9 +22,21 @@
 
 #include <fluent-bit/flb_config.h>
 
+/* Message types */
+#define FLB_MSG_INFO    0
+#define FLB_MSG_WARN    1
+#define FLB_MSG_ERROR   2
+#define FLB_MSG_DEBUG   3
+
+#define flb_info(fmt, ...)    flb_message(FLB_MSG_INFO, fmt, ##__VA_ARGS__)
+#define flb_warn(fmt, ...)    flb_message(FLB_MSG_WARN, fmt, ##__VA_ARGS__)
+#define flb_error(fmt, ...)   flb_message(FLB_MSG_ERROR, fmt, ##__VA_ARGS__)
+#define flb_debug(fmt, ...)   flb_message(FLB_MSG_DEBUG, fmt, ##__VA_ARGS__)
+
 char *flb_utils_pack_hello(struct flb_config *config, int *size);
 void flb_utils_error(int err);
 void flb_utils_error_c(const char *msg);
 void flb_utils_warn_c(const char *msg);
+void flb_message(int type, char *fmt, ...);
 
 #endif

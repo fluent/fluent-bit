@@ -26,6 +26,7 @@
 
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_error.h>
+#include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_engine.h>
 
@@ -98,7 +99,7 @@ static int flb_engine_flush(struct flb_config *config)
      */
     fd = flb_net_tcp_connect(config->out_host, config->out_port);
     if (fd == -1) {
-        flb_utils_warn_c("Error connecting to output service\n");
+        flb_error("Error connecting to output service");
         return -1;
     }
 

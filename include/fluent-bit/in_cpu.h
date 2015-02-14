@@ -22,6 +22,7 @@
 
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_utils.h>
 
 /* Collection time: every 1 second (0 nanoseconds) */
 #define IN_CPU_COLLECT_SEC    1
