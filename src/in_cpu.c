@@ -82,12 +82,12 @@ int in_cpu_init(struct flb_config *config)
         flb_utils_error_c("Could not set configuration for CPU input plugin");
     }
 
-    /* Set our collector, CPU usage every 1 second */
-    ret = flb_input_set_collector("cpu",
-                                  in_cpu_collect,
-                                  IN_CPU_COLLECT_SEC,
-                                  IN_CPU_COLLECT_NSEC,
-                                  config);
+    /* Set our collector based on time, CPU usage every 1 second */
+    ret = flb_input_set_collector_time("cpu",
+                                       in_cpu_collect,
+                                       IN_CPU_COLLECT_SEC,
+                                       IN_CPU_COLLECT_NSEC,
+                                       config);
     if (ret == -1) {
         flb_utils_error_c("Could not set collector for CPU input plugin");
     }
@@ -182,6 +182,7 @@ void *in_cpu_flush(void *in_context, int *size)
     return buf;
 }
 
+/* Plugin reference */
 struct flb_input_plugin in_cpu_plugin = {
     .name       = "cpu",
     .cb_init    = in_cpu_init,

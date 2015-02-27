@@ -24,6 +24,7 @@
 #include <sys/epoll.h>
 #include <sys/timerfd.h>
 
+#include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
@@ -110,7 +111,7 @@ static int flb_engine_flush(struct flb_config *config)
 
     mk_list_foreach(head, &config->inputs) {
         in = mk_list_entry(head, struct flb_input_plugin, _head);
-        if (in->cb_flush) {
+        if (in->active == FLB_TRUE && in->cb_flush) {
             buf = in->cb_flush(in->in_context, &size);
             if (!buf) {
                 continue;
@@ -130,6 +131,21 @@ static int flb_engine_flush(struct flb_config *config)
     return 0;
 }
 
+static inline int consume_byte(int fd)
+{
+    int ret;
+    uint64_t val;
+
+    /* We need to consume the byte */
+    ret = read(fd, &val, sizeof(val));
+    if (ret <= 0) {
+        perror("read");
+        return -1;
+    }
+
+    return 0;
+}
+
 static int flb_engine_handle_event(int fd, int mask, struct flb_config *config)
 {
     int ret;
@@ -138,24 +154,23 @@ static int flb_engine_handle_event(int fd, int mask, struct flb_config *config)
     struct flb_input_collector *collector;
 
     if (mask & FLB_ENGINE_READ) {
-        ret = read(fd, &val, sizeof(val));
-        if (ret <= 0) {
-            perror("read");
-            return -1;
+        /* Check if we need to flush */
+        if (config->flush_fd == fd) {
+            consume_byte(fd);
+            flb_engine_flush(config);
+            return 0;
         }
 
-        /* As of now, it should be a collector */
+        /* Determinate what is this file descriptor */
         mk_list_foreach(head, &config->collectors) {
             collector = mk_list_entry(head, struct flb_input_collector, _head);
-            if (collector->timer == fd) {
-                collector->cb_collect(collector->plugin->in_context);
-                return 0;
+            if (collector->fd_event == fd) {
+                return collector->cb_collect(collector->plugin->in_context);
             }
-        }
-
-        /* Check if is our timer for flushing */
-        if (config->flush_fd == fd) {
-            flb_engine_flush(config);
+            else if (collector->fd_timer == fd) {
+                consume_byte(fd);
+                return collector->cb_collect(collector->plugin->in_context);
+            }
         }
     }
 }
@@ -204,17 +219,28 @@ int flb_engine_start(struct flb_config *config)
     /* For each Collector, register the event into the main loop */
     mk_list_foreach(head, &config->collectors) {
         collector = mk_list_entry(head, struct flb_input_collector, _head);
-        fd = timer_fd(collector->seconds, collector->nanoseconds);
-        if (fd == -1) {
-            continue;
-        }
 
-        ret = flb_engine_loop_add(loop, fd, FLB_ENGINE_READ);
-        if (ret == -1) {
-            close(fd);
-            continue;
+        if (collector->type == FLB_COLLECT_TIME) {
+            fd = timer_fd(collector->seconds, collector->nanoseconds);
+            if (fd == -1) {
+                continue;
+            }
+            ret = flb_engine_loop_add(loop, fd, FLB_ENGINE_READ);
+            if (ret == -1) {
+                close(fd);
+                continue;
+            }
+            collector->fd_timer = fd;
         }
-        collector->timer = fd;
+        else if (collector->type == FLB_COLLECT_FD_EVENT) {
+            ret = flb_engine_loop_add(loop, collector->fd_event,
+                                      FLB_ENGINE_READ);
+            printf("fd=%i\n", collector->fd_event);
+            if (ret == -1) {
+                close(fd);
+                continue;
+            }
+        }
     }
 
     while (1) {

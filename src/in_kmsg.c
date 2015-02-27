@@ -60,11 +60,66 @@ int in_kmsg_start()
     return 0;
 }
 
+/* Callback triggered when some Kernel Ring buffer msgs are available */
+int in_kmsg_collect(void *in_context)
+{
+    int bytes;
+    char line[1024];
+    struct flb_in_kmsg_config *ctx = in_context;
+
+    bytes = read(ctx->fd, line, sizeof(line) -1);
+    if (bytes == -1) {
+        if (errno == -EPIPE) {
+            return -1;
+        }
+    }
+    else if (bytes > 0) {
+        /* Always set a delimiter to avoid buffer trash */
+        line[bytes - 1] = '\0';
+        printf("%s\n", line);
+    }
+}
+
+/* Init kmsg input */
+int in_kmsg_init(struct flb_config *config)
+{
+    int fd;
+    int ret;
+    struct flb_in_kmsg_config *ctx;
+
+    ctx = malloc(sizeof(struct flb_in_kmsg_config));
+    if (!ctx) {
+        return -1;
+    }
+
+    fd = open(FLB_KMSG_DEV, O_RDONLY);
+    if (fd == -1) {
+        perror("open");
+        flb_utils_error_c("Could not open kernel ring buffer on kmsg plugin");
+    }
+
+    ctx->fd = fd;
+    ret = flb_input_set_context("kmsg", ctx, config);
+    if (ret == -1) {
+        flb_utils_error_c("Could not set configuration for kmsg input plugin");
+    }
+
+    /* Set our collector based on time, CPU usage every 1 second */
+    ret = flb_input_set_collector_event("kmsg",
+                                        in_kmsg_collect,
+                                        ctx->fd,
+                                        config);
+    if (ret == -1) {
+        flb_utils_error_c("Could not set collector for kmsg input plugin");
+    }
+}
+
+
 /* Plugin reference */
 struct flb_input_plugin in_kmsg_plugin = {
     .name       = "kmsg",
-    .cb_init    = NULL,
+    .cb_init    = in_kmsg_init,
     .cb_pre_run = NULL,
-    .cb_collect = NULL,
+    .cb_collect = in_kmsg_collect,
     .cb_flush   = NULL
 };

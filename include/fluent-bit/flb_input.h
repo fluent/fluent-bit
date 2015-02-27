@@ -22,6 +22,9 @@
 
 #include <fluent-bit/flb_config.h>
 
+#define FLB_COLLECT_TIME        0
+#define FLB_COLLECT_FD_EVENT    1
+
 struct flb_input_plugin {
     /* Is this Input an active one ? */
     int  active;
@@ -58,23 +61,37 @@ struct flb_input_plugin {
 };
 
 struct flb_input_collector {
-    int timer;
-    int (*cb_collect) (void *);
-    time_t seconds;
-    long nanoseconds;
-    struct flb_input_plugin *plugin;
-    struct mk_list _head;
+    int type;                            /* collector type             */
+
+    /* FLB_COLLECT_FD_EVENT */
+    int fd_event;                        /* fd being watched           */
+
+    /* FLB_COLLECT_TIME */
+    int fd_timer;                        /* timer fd                   */
+    time_t seconds;                      /* expire time in seconds     */
+    long nanoseconds;                    /* expire nanoseconds         */
+
+    /* Callbacks */
+    int (*cb_collect) (void *);          /* collect callback           */
+
+    /* General references */
+    struct flb_input_plugin *plugin;     /* owner plugin               */
+    struct mk_list _head;                /* link to list of collectors */
 };
 
 int flb_input_register_all(struct flb_config *config);
 int flb_input_enable(char *name, struct flb_config *config);
 int flb_input_check(struct flb_config *config);
 int flb_input_set_context(char *name, void *in_context, struct flb_config *config);
-int flb_input_set_collector(char *name,
-                            int (*cb_collect) (void *),
-                            time_t seconds,
-                            long   nanoseconds,
-                            struct flb_config *config);
+int flb_input_set_collector_time(char *name,
+                                 int (*cb_collect) (void *),
+                                 time_t seconds,
+                                 long   nanoseconds,
+                                 struct flb_config *config);
+int flb_input_set_collector_event(char *name,
+                                  int (*cb_collect) (void *),
+                                  int fd,
+                                  struct flb_config *config);
 void flb_input_pre_run_all(struct flb_config *config);
 
 #endif

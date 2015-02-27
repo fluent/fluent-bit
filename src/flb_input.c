@@ -43,14 +43,6 @@ static struct flb_input_plugin *plugin_lookup(char *name, struct flb_config *con
     return NULL;
 }
 
-/*
-static void add_input(char *name,
-                      struct flb_config *config,
-                      int (*cb_init)    (struct flb_config *),
-                      int (*cb_pre_run) (void *, struct flb_config *),
-                      int (*cb_collect) (void *),
-                      void *(cb_flush)  (void *, int *))
-*/
 static void register_input_plugin(struct flb_input_plugin *plugin,
                                   struct flb_config *config)
 {
@@ -108,11 +100,12 @@ void flb_input_pre_run_all(struct flb_config *config)
 
     mk_list_foreach(head, &config->inputs) {
         in = mk_list_entry(head, struct flb_input_plugin, _head);
-        if (in->cb_pre_run) {
-            in->cb_pre_run(in->in_context, config);
+        if (in->active == FLB_TRUE) {
+            if (in->cb_pre_run) {
+                in->cb_pre_run(in->in_context, config);
+            }
         }
     }
-
 }
 
 /* Check that at least one Input is enabled */
@@ -142,7 +135,7 @@ int flb_input_check(struct flb_config *config)
  *     let an Input plugin set a context data reference that can be used
  *     later when invoking other callbacks.
  *
- *  2. flb_input_set_collector()
+ *  2. flb_input_set_collector_time()
  *
  *     request the Engine to trigger a specific collector callback at a
  *     certain interval time. Note that this callback will run in the main
@@ -152,6 +145,12 @@ int flb_input_check(struct flb_config *config)
  *     The collector can runs in timeouts of the order of seconds.nanoseconds
  *
  *      note: 1 Second = 1000000000 Nanosecond
+ *
+ *  3. flb_input_set_collector_event()
+ *
+ *     for a registered file descriptor, associate the READ events to a
+ *     specified plugin. Every time there is some data to read, the collector
+ *     callback will be triggered.
  */
 
 /* Assign an Configuration context to an Input */
@@ -168,11 +167,11 @@ int flb_input_set_context(char *name, void *in_context, struct flb_config *confi
     return 0;
 }
 
-int flb_input_set_collector(char *name,
-                            int (*cb_collect) (void *),
-                            time_t seconds,
-                            long   nanoseconds,
-                            struct flb_config *config)
+int flb_input_set_collector_time(char *name,
+                                 int (*cb_collect) (void *),
+                                 time_t seconds,
+                                 long   nanoseconds,
+                                 struct flb_config *config)
 {
     struct flb_input_plugin *plugin;
     struct flb_input_collector *collector;
@@ -183,9 +182,33 @@ int flb_input_set_collector(char *name,
     }
 
     collector = malloc(sizeof(struct flb_input_collector));
+    collector->type        = FLB_COLLECT_TIME;
     collector->cb_collect  = cb_collect;
     collector->seconds     = seconds;
     collector->nanoseconds = nanoseconds;
+    collector->plugin      = plugin;
+
+    mk_list_add(&collector->_head, &config->collectors);
+    return 0;
+}
+
+int flb_input_set_collector_event(char *name,
+                                  int (*cb_collect) (void *),
+                                  int fd,
+                                  struct flb_config *config)
+{
+    struct flb_input_plugin *plugin;
+    struct flb_input_collector *collector;
+
+    plugin = plugin_lookup(name, config);
+    if (!plugin) {
+        return -1;
+    }
+
+    collector = malloc(sizeof(struct flb_input_collector));
+    collector->type        = FLB_COLLECT_FD_EVENT;
+    collector->cb_collect  = cb_collect;
+    collector->fd_event    = fd;
     collector->plugin      = plugin;
 
     mk_list_add(&collector->_head, &config->collectors);

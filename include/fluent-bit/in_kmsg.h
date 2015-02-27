@@ -22,6 +22,10 @@
 
 #define FLB_KMSG_DEV  "/dev/kmsg"
 
+struct flb_in_kmsg_config {
+    int fd;     /* descriptor associated to FLB_KMSG_DEV */
+};
+
 int in_kmsg_start();
 
 extern struct flb_input_plugin in_kmsg_plugin;
