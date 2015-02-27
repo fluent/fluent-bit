@@ -20,10 +20,39 @@
 #ifndef FLB_IN_KMSG
 #define FLB_IN_KMSG
 
+#include <stdint.h>
+
 #define FLB_KMSG_DEV  "/dev/kmsg"
+
+/* Alert levels, taken from util-linux sources */
+#define FLB_LOG_EMERG      0
+#define FLB_LOG_ALERT      1
+#define FLB_LOG_CRIT       2
+#define FLB_LOG_ERR        3
+#define FLB_LOG_WARNING    4
+#define FLB_LOG_NOTICE     5
+#define FLB_LOG_INFO       6
+#define FLB_LOG_DEBUG      7
+
+#define FLB_LOG_PRIMASK    0x07
+#define FLB_LOG_PRI(p)     ((p) & FLB_LOG_PRIMASK)
+
+#define KMSG_BUFFER_SIZE   256
+
+struct kmsg_line {
+    int priority;            /* log priority                */
+    uint64_t sequence;       /* sequence number             */
+    struct timeval tv;       /* time value                  */
+    int new_line;            /* is this a new line ? (bool) */
+
+};
 
 struct flb_in_kmsg_config {
     int fd;     /* descriptor associated to FLB_KMSG_DEV */
+
+    /* Line processing */
+    int buffer_id;
+    struct kmsg_line buffer[KMSG_BUFFER_SIZE];
 };
 
 int in_kmsg_start();

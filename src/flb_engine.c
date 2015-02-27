@@ -29,6 +29,7 @@
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_engine.h>
 
 static int timer_fd(time_t sec, long nsec)
@@ -73,6 +74,8 @@ static int flb_engine_loop_create()
         perror("epoll_create");
         return -1;
     }
+
+    return efd;
 }
 
 static int flb_engine_loop_add(int efd, int fd, int mode)
@@ -88,6 +91,8 @@ static int flb_engine_loop_add(int efd, int fd, int mode)
         perror("epoll_ctl");
         return -1;
     }
+
+    return ret;
 }
 
 static int flb_engine_flush(struct flb_config *config)
@@ -148,8 +153,6 @@ static inline int consume_byte(int fd)
 
 static int flb_engine_handle_event(int fd, int mask, struct flb_config *config)
 {
-    int ret;
-    uint64_t val;
     struct mk_list *head;
     struct flb_input_collector *collector;
 
@@ -173,6 +176,8 @@ static int flb_engine_handle_event(int fd, int mask, struct flb_config *config)
             }
         }
     }
+
+    return -1;
 }
 
 int flb_engine_start(struct flb_config *config)
@@ -235,7 +240,6 @@ int flb_engine_start(struct flb_config *config)
         else if (collector->type == FLB_COLLECT_FD_EVENT) {
             ret = flb_engine_loop_add(loop, collector->fd_event,
                                       FLB_ENGINE_READ);
-            printf("fd=%i\n", collector->fd_event);
             if (ret == -1) {
                 close(fd);
                 continue;

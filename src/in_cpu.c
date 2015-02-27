@@ -106,6 +106,8 @@ int in_cpu_pre_run(void *in_context, struct flb_config *config)
     if (ctx->tag_len == -1) {
         flb_utils_error_c("Could not set custom tag on CPU input plugin");
     }
+
+    return 0;
 }
 
 /* Callback to gather CPU usage between now and previous snapshot */
@@ -136,6 +138,8 @@ int in_cpu_collect(void *in_context)
 
     ctx->data_idx++;
     flb_debug("in_cpu: CPU %0.2f%% (buffer=%i)", total, ctx->data_idx - 1);
+
+    return 0;
 }
 
 void *in_cpu_flush(void *in_context, int *size)

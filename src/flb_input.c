@@ -62,6 +62,8 @@ int flb_input_register_all(struct flb_config *config)
      */
     register_input_plugin(&in_cpu_plugin, config);
     register_input_plugin(&in_kmsg_plugin, config);
+
+    return 0;
 }
 
 /* Enable an input */
