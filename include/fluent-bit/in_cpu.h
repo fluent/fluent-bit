@@ -60,4 +60,6 @@ int in_cpu_pre_run(void *in_context, struct flb_config *config);
 int in_cpu_collect(void *in_context);
 void *in_cpu_flush(void *in_context, int *size);
 
+extern struct flb_input_plugin in_cpu_plugin;
+
 #endif

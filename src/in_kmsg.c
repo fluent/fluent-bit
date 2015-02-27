@@ -26,6 +26,7 @@
 #include <unistd.h>
 
 #include <fluent-bit/in_kmsg.h>
+#include <fluent-bit/flb_input.h>
 
 int in_kmsg_start()
 {
@@ -58,3 +59,12 @@ int in_kmsg_start()
 
     return 0;
 }
+
+/* Plugin reference */
+struct flb_input_plugin in_kmsg_plugin = {
+    .name       = "kmsg",
+    .cb_init    = NULL,
+    .cb_pre_run = NULL,
+    .cb_collect = NULL,
+    .cb_flush   = NULL
+};

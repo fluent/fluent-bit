@@ -181,3 +181,11 @@ void *in_cpu_flush(void *in_context, int *size)
 
     return buf;
 }
+
+struct flb_input_plugin in_cpu_plugin = {
+    .name       = "cpu",
+    .cb_init    = in_cpu_init,
+    .cb_pre_run = in_cpu_pre_run,
+    .cb_collect = in_cpu_collect,
+    .cb_flush   = in_cpu_flush
+};

@@ -24,4 +24,6 @@
 
 int in_kmsg_start();
 
+extern struct flb_input_plugin in_kmsg_plugin;
+
 #endif

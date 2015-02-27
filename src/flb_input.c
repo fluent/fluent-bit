@@ -43,24 +43,19 @@ static struct flb_input_plugin *plugin_lookup(char *name, struct flb_config *con
     return NULL;
 }
 
+/*
 static void add_input(char *name,
                       struct flb_config *config,
                       int (*cb_init)    (struct flb_config *),
                       int (*cb_pre_run) (void *, struct flb_config *),
                       int (*cb_collect) (void *),
                       void *(cb_flush)  (void *, int *))
+*/
+static void register_input_plugin(struct flb_input_plugin *plugin,
+                                  struct flb_config *config)
 {
-    struct flb_input_plugin *in;
-
-    in = calloc(1, sizeof(struct flb_input_plugin));
-    in->name = strdup(name);
-    in->cb_init    = cb_init;
-    in->cb_pre_run = cb_pre_run;
-    in->cb_collect = cb_collect;
-    in->cb_flush   = cb_flush;
-
     /* Register this Input in the global config */
-    mk_list_add(&in->_head, &config->inputs);
+    mk_list_add(&plugin->_head, &config->inputs);
 }
 
 /* Register all supported inputs */
@@ -69,8 +64,12 @@ int flb_input_register_all(struct flb_config *config)
     mk_list_init(&config->inputs);
     mk_list_init(&config->collectors);
 
-    add_input("cpu" , config, in_cpu_init, in_cpu_pre_run, in_cpu_collect, in_cpu_flush);
-    add_input("kmsg", config, NULL, NULL, NULL, NULL);
+    /*
+     * All plugins now register a struct references that points
+     * it's name and general callbacks.
+     */
+    register_input_plugin(&in_cpu_plugin, config);
+    register_input_plugin(&in_kmsg_plugin, config);
 }
 
 /* Enable an input */
