@@ -30,38 +30,6 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
 
-int in_kmsg_start()
-{
-    int fd;
-    int bytes;
-    char line[1024];
-
-    fd = open(FLB_KMSG_DEV, O_RDONLY);
-    if (fd == -1) {
-        perror("open");
-        exit(EXIT_FAILURE);
-    }
-
-    while (1) {
-        bytes = read(fd, line, sizeof(line) - 1);
-
-        if (bytes == -1) {
-            if (errno == -EPIPE) {
-                /* Message overwritten / circular buffer */
-                continue;
-            }
-            break;
-        }
-        else if (bytes > 0) {
-            /* Always set a delimiter to avoid buffer trash */
-
-            printf("%s\n", line);
-        }
-    }
-
-    return 0;
-}
-
 static inline int process_line(char *line, struct flb_in_kmsg_config *ctx)
 {
     uint64_t val;
