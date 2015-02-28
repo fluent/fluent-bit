@@ -38,21 +38,39 @@
 #define FLB_LOG_PRI(p)     ((p) & FLB_LOG_PRIMASK)
 
 #define KMSG_BUFFER_SIZE   256
+#define KMSG_USEC_PER_SEC  1000000
 
 struct kmsg_line {
-    int priority;            /* log priority                */
+    char priority;           /* log priority                */
     uint64_t sequence;       /* sequence number             */
+    uint64_t microsec;       /* time in microseconds        */
     struct timeval tv;       /* time value                  */
     int new_line;            /* is this a new line ? (bool) */
 
 };
 
 struct flb_in_kmsg_config {
-    int fd;     /* descriptor associated to FLB_KMSG_DEV */
+    int fd;                    /* descriptor -> FLB_KMSG_DEV */
+    struct timeval boot_time;  /* System boot time           */
+
+    /* Tag: used to extend original tag */
+    int  tag_len;              /* The real string length     */
+    char tag[32];              /* Custom Tag for this input  */
 
     /* Line processing */
     int buffer_id;
+
+    /*
+     * Parsed and buffered lines, the buffer have entries until
+     * it's full or the Engine requires a flush. The next step
+     * is that data is packaged into msgpack and stored
+     * into pack_buf.
+     */
     struct kmsg_line buffer[KMSG_BUFFER_SIZE];
+
+    /* Packaged data ready for flush */
+    ssize_t pack_size;
+    void *pack_buf;
 };
 
 int in_kmsg_start();
