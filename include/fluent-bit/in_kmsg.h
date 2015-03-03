@@ -47,6 +47,8 @@ struct kmsg_line {
     struct timeval tv;       /* time value                  */
     int new_line;            /* is this a new line ? (bool) */
 
+    int line_len;
+    char line[1024];
 };
 
 struct flb_in_kmsg_config {

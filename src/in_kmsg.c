@@ -129,18 +129,25 @@ void *in_kmsg_flush(void *in_context, int *size)
         msgpack_pack_array(&pck, 2);
         msgpack_pack_uint64(&pck, t);
 
-        msgpack_pack_map(&pck, 1);
+        msgpack_pack_map(&pck, 3);
 
         /* Priority */
-        msgpack_pack_raw(&pck, 3);
-        msgpack_pack_raw_body(&pck, "priority", 3);
+        msgpack_pack_raw(&pck, 8);
+        msgpack_pack_raw_body(&pck, "priority", 8);
         msgpack_pack_char(&pck, entry->priority);
 
         /* Sequence */
-        msgpack_pack_raw(&pck, 3);
-        msgpack_pack_raw_body(&pck, "priority", 3);
-        msgpack_pack_uint64(&pck, entry->priority);
+        msgpack_pack_raw(&pck, 8);
+        msgpack_pack_raw_body(&pck, "sequence", 8);
+        msgpack_pack_uint64(&pck, entry->sequence);
 
+        /* Time: FIXME */
+
+        /* Data message (line) */
+        msgpack_pack_raw(&pck, 3);
+        msgpack_pack_raw_body(&pck, "msg", 3);
+        msgpack_pack_raw(&pck, entry->line_len);
+        msgpack_pack_raw_body(&pck, entry->line, entry->line_len);
     }
 
     *size = sbuf.size;
@@ -222,6 +229,10 @@ static inline int process_line(char *line, struct flb_in_kmsg_config *ctx)
     }
     p++;
 
+
+    buf->line_len = strlen(p);
+    strncpy(buf->line, p, buf->line_len);
+
     flb_debug("pri=%i seq=%lu sec=%lu usec=%lu '%s'",
               buf->priority, buf->sequence, buf->tv.tv_sec, buf->tv.tv_usec, p);
     return 0;
@@ -239,7 +250,7 @@ int in_kmsg_pre_run(void *in_context, struct flb_config *config)
 
     /* Tag */
     ctx->tag_len = snprintf(ctx->tag, sizeof(ctx->tag) - 1,
-                            "%s.cpu", config->tag);
+                            "%s.kmsg", config->tag);
     if (ctx->tag_len == -1) {
         flb_utils_error_c("Could not set custom tag on kmsg input plugin");
     }
@@ -319,5 +330,5 @@ struct flb_input_plugin in_kmsg_plugin = {
     .cb_init    = in_kmsg_init,
     .cb_pre_run = in_kmsg_pre_run,
     .cb_collect = in_kmsg_collect,
-    .cb_flush   = NULL
+    .cb_flush   = in_kmsg_flush
 };
