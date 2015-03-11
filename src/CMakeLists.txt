@@ -12,4 +12,4 @@ set(src
 
 include_directories(../lib/ ../lib/msgpack-0.5.9/src)
 add_executable(fluent-bit ${src})
-target_link_libraries(fluent-bit msgpack mk_config)
+target_link_libraries(fluent-bit msgpack mk_config xbee)
