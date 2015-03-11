@@ -252,10 +252,17 @@ void flb_utils_print_setup(struct flb_config *config)
     mk_list_foreach(head, &config->collectors) {
         collector = mk_list_entry(head, struct flb_input_collector, _head);
         plugin = collector->plugin;
-        printf("[%s %lus,%luns] ",
-               plugin->name,
-               collector->seconds,
-               collector->nanoseconds);
+
+        if (collector->seconds > 0) {
+            printf("[%s %lus,%luns] ",
+                   plugin->name,
+                   collector->seconds,
+                   collector->nanoseconds);
+        }
+        else {
+            printf("[%s] ", plugin->name);
+        }
+
     }
     printf("\n");
 }
