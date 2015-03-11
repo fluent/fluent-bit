@@ -211,6 +211,8 @@ int flb_input_set_collector_event(char *name,
     collector->type        = FLB_COLLECT_FD_EVENT;
     collector->cb_collect  = cb_collect;
     collector->fd_event    = fd;
+    collector->seconds     = -1;
+    collector->nanoseconds = -1;
     collector->plugin      = plugin;
 
     mk_list_add(&collector->_head, &config->collectors);

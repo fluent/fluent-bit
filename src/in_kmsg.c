@@ -27,6 +27,7 @@
 #include <ctype.h>
 #include <sys/stat.h>
 #include <sys/time.h>
+#include <inttypes.h>
 
 #include <msgpack.h>
 #include <fluent-bit/in_kmsg.h>
@@ -229,12 +230,17 @@ static inline int process_line(char *line, struct flb_in_kmsg_config *ctx)
     }
     p++;
 
-
     buf->line_len = strlen(p);
     strncpy(buf->line, p, buf->line_len);
+    buf->line[buf->line_len] = '\0';
 
-    flb_debug("pri=%i seq=%lu sec=%lu usec=%lu '%s'",
-              buf->priority, buf->sequence, buf->tv.tv_sec, buf->tv.tv_usec, p);
+    flb_debug("pri=%i seq=%" PRIu64 " sec=%ld usec=%ld '%s'",
+              buf->priority,
+              buf->sequence,
+              (long int) buf->tv.tv_sec,
+              (long int) buf->tv.tv_usec,
+              (const char *) buf->line);
+
     return 0;
 
 
@@ -287,7 +293,7 @@ int in_kmsg_init(struct flb_config *config)
     int ret;
     struct flb_in_kmsg_config *ctx;
 
-    ctx = malloc(sizeof(struct flb_in_kmsg_config));
+    ctx = calloc(1, sizeof(struct flb_in_kmsg_config));
     if (!ctx) {
         return -1;
     }
