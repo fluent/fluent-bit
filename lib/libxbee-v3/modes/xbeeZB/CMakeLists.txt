@@ -9,4 +9,4 @@ set(src
   sensor.c
   )
 
-add_library(xbeeZB ${src})
+add_library(xbeeZB_mode ${src})

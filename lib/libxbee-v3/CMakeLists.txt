@@ -36,5 +36,5 @@ set(src
   )
 
 # Linking...
-add_library(xbee ${src})
-target_link_libraries(xbee xbeeZB)
+add_library(xbee STATIC ${src})
+target_link_libraries(xbee xbeeZB_mode)

@@ -8,6 +8,7 @@ include_directories(include/)
 
 # Lib: mk_config
 add_subdirectory(lib/msgpack-0.5.9)
+add_subdirectory(lib/libxbee-v3)
 add_subdirectory(lib/mk_config)
 
 # Fluent Bit Core
