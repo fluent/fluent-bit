@@ -1,20 +1,29 @@
 # Fluent Bit
 
-__Fluent-Bit__ is a [Fluentd](http://fluentd.org) collection tool designed for Embedded Linux that collects Kernel messages (Kernel Ring Buffer) and Hardware metrics such as CPU and Memory usage.
+__Fluent-Bit__ is an events collector for Embedded Linux and is part of the [Fluentd](http://fluentd.org) project ecosystem. It allows to collects information from different sources, package them and dispatch to [Fluentd](http://fluentd.org) collector Instances.
 
 ## Build
 
-To build _fluent-bit_, you need __cmake__ and a C compiler such as __GCC__ or __Clang__. If you already have the requirements proceed with the following steps:
+To build _Fluent-Bit_, you need __cmake__ and a C compiler such as __GCC__ or __Clang__. If you already have the requirements proceed with the following steps:
 
 ```bash
 $ cd build/
 $ cmake ..
 $ make
 ```
+### XBee Support
+
+As an optional feature that needs to be enabled at build time, _Fluent-Bit_ supports Xbee devices (ZigBee protocol). To make it available run _cmake_ with the following additional option:
+
+```bash
+$ cd build/
+$ cmake -DFLB_XBEE=1 ..
+$ make
+```
 
 ## Using Fluent Bit
 
-Once the tool have been compiled, a binary file called __fluent-bit__ will be found on the _bin/_ directory. The tool is designed with the same philosophy than [Fluentd](http://fluentd.org), it requires an _Input_ type (or many) from where the data will be collected and an _Output_ where it will be flushed.
+Once the tool have been compiled, a binary file called __Fluent-Bit__ will be found on the _bin/_ directory. The tool is designed with the same philosophy than [Fluentd](http://fluentd.org), it requires an _Input_ type (or many) from where the data will be collected and an _Output_ where it will be flushed.
 
 ### Input Plugins
 
@@ -34,7 +43,7 @@ Once the tool have been compiled, a binary file called __fluent-bit__ will be fo
 ### Flush CPU usage to a Fluentd service
 
 ```bash
-$ fluent-bit -i cpu -o fluentd://localhost:12224
+$ Fluent-Bit -i cpu -o fluentd://localhost:12224
 ```
 
 ## License
