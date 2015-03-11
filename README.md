@@ -1,6 +1,6 @@
 # Fluent Bit
 
-__Fluent-Bit__ is an events collector for Embedded Linux and is part of the [Fluentd](http://fluentd.org) project ecosystem. It allows to collects information from different sources, package them and dispatch to [Fluentd](http://fluentd.org) collector Instances.
+_Fluent-Bit_ is an events collector for Embedded Linux and is part of the [Fluentd](http://fluentd.org) project ecosystem. It allows to collects information from different sources, package them and dispatch to [Fluentd](http://fluentd.org) collector Instances.
 
 ## Build
 
@@ -13,7 +13,7 @@ $ make
 ```
 ### XBee Support
 
-As an optional feature that needs to be enabled at build time, _Fluent-Bit_ supports Xbee devices (ZigBee protocol). To make it available run _cmake_ with the following additional option:
+As an optional feature that needs to be enabled at build time, _Fluent-Bit_ supports [Xbee devices](http://www.digi.com/products/wireless-wired-embedded-solutions/zigbee-rf-modules/zigbee-mesh-module/xbee-zb-module#overview) (ZigBee protocol). To make it available run _cmake_ with the following additional option:
 
 ```bash
 $ cd build/
@@ -23,7 +23,7 @@ $ make
 
 ## Using Fluent Bit
 
-Once the tool have been compiled, a binary file called __Fluent-Bit__ will be found on the _bin/_ directory. The tool is designed with the same philosophy than [Fluentd](http://fluentd.org), it requires an _Input_ type (or many) from where the data will be collected and an _Output_ where it will be flushed.
+Once the tool have been compiled, a binary file called _Fluent-Bit_ will be found on the _bin/_ directory. The tool is designed with the same philosophy than [Fluentd](http://fluentd.org), it requires an _Input_ type (or many) from where the data will be collected and an _Output_ where it will be flushed.
 
 ### Input Plugins
 
