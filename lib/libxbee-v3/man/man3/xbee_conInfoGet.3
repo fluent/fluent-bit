@@ -1,0 +1,74 @@
+.\" libxbee - a C library to aid the use of Digi's XBee wireless modules
+.\"           running in API mode.
+.\" 
+.\" Copyright (C) 2009 onwards  Attie Grande (attie@attie.co.uk)
+.\" 
+.\" libxbee is free software: you can redistribute it and/or modify it
+.\" under the terms of the GNU Lesser General Public License as published by
+.\" the Free Software Foundation, either version 3 of the License, or
+.\" (at your option) any later version.
+.\" 
+.\" libxbee is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+.\" GNU Lesser General Public License for more details.
+.\" 
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this program. If not, see <http://www.gnu.org/licenses/>.
+.TH XBEE_CONINFOGET 3  31-Mar-2013 "GNU" "Linux Programmer's Manual"
+.SH NAME
+xbee_conInfoGet, xbee_conInfo
+.SH SYNOPSIS
+.B #include <xbee.h>
+.sp
+.BI "xbee_err xbee_conInfoGet(struct xbee_con *" con ", struct xbee_conInfo *" info ");"
+.sp
+.BI "xbee_err xbee_conTypeGet(struct xbee_con *" con ", char **" type ");"
+.sp
+.nf
+struct xbee_conInfo {
+	int countRx;
+	int countTx;
+	
+	time_t lastRxTime;
+};
+.fi
+.SH DESCRIPTION
+.BR xbee_conInfoGet ()
+provides you with access to the statistical information stored with the connection.
+.I info
+should be pre-allocated storage to receive the
+.IR "struct xbee_conInfo" .
+.sp
+.BR xbee_conTypeGet ()
+allows you to retrieve the type of the connection that was provided when calling
+.BR xbee_conNew ().
+.SS Return Value
+On success this function will return XBEE_ENONE, otherwise an error number from
+.IR "enum xbee_errors" " (as specified in " <xbee.h> )
+.SH EXAMPLE
+.in +4n
+.nf
+#include <xbee.h>
+
+struct xbee *xbee;
+struct xbee_con *con;
+struct xbee_conInfo info;
+
+/* initialize xbee, using xbee_setup() */
+
+/* initialize con, using xbee_conNew() */
+
+if (xbee_conInfoGet(con, &info) != XBEE_ENONE) return;
+
+printf("Tx count: %d\\n", info.countTx);
+printf("Rx count: %d\\n", info.countRx);
+printf("Last Rx was at: %s\\n", ctime(&info.lastRxTime));
+.fi
+.in
+.SH AUTHOR
+Attie Grande <attie@attie.co.uk> 
+.SH "SEE ALSO"
+.BR libxbee (3),
+.BR xbee_setup (3),
+.BR xbee_conNew (3)

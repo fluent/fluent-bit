@@ -1,0 +1,161 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML><HEAD><TITLE>Man page of XBEE_PKTDATAGET</TITLE>
+</HEAD><BODY>
+<H1>XBEE_PKTDATAGET</H1>
+Section: Linux Programmer's Manual (3)<BR>Updated: 04-Mar-2012<BR><A HREF="#index">Index</A>
+<A HREF="../index.html">Return to Main Contents</A><HR>
+
+<A NAME="lbAB">&nbsp;</A>
+<H2>NAME</H2>
+
+xbee_pktDataGet, xbee_pktAnalogGet, xbee_pktDigitalGet
+<A NAME="lbAC">&nbsp;</A>
+<H2>SYNOPSIS</H2>
+
+<B>#include &lt;<A HREF="file:///usr/include/xbee.h">xbee.h</A>&gt;</B>
+
+<P>
+<B>xbee_err xbee_pktDataGet(struct xbee_pkt *</B><I>pkt</I><B>, const char *</B><I>key</I><B>, int </B><I>id</I><B>, int </B><I>index</I><B>, void **</B><I>retData</I><B>);</B>
+
+<P>
+<B>xbee_err xbee_pktAnalogGet(struct xbee_pkt *</B><I>pkt</I><B>, int </B><I>channel</I><B>, int </B><I>index</I><B>, int *</B><I>retVal</I><B>);</B>
+
+<P>
+<B>xbee_err xbee_pktDigitalGet(struct xbee_pkt *</B><I>pkt</I><B>, int </B><I>channel</I><B>, int </B><I>index</I><B>, int *</B><I>retVal</I><B>);</B>
+
+<A NAME="lbAD">&nbsp;</A>
+<H2>DESCRIPTION</H2>
+
+These functions provide access to data that has been parsed out of the packet's body by libxbee.
+In general, the raw data is still accessible though the packet, but this creates a more friendly interface.
+<P>
+<B>xbee_pktDataGet</B>()
+
+will search the packet's
+<I>dataItems</I>
+
+(see 
+<B><A HREF="../man3/xbee_pkt.3.html">xbee_pkt</A></B>(3)
+
+for more) for a named
+<I>key</I>.
+
+The
+<I>id</I>
+
+and
+<I>index</I>
+
+are used to give a 2D-esque layout to the
+<I>key</I>.
+
+However if
+<I>id</I>
+
+is given as -1, then it is ignored, and the first 'column' is used.
+This allows for similar data - e.g: analog samples - to be stored using a single key, with differing channel numbers
+(<I>id</I>'s).
+
+<P>
+<B>xbee_pktAnalogGet</B>(w,x,y,&amp;z)
+
+is nearly synonymous with
+<B>xbee_pktDataGet</B>(w,analog,x,y,&amp;z),
+
+though due to internal magic, it is strongly recommended that you use
+<B>xbee_pktAnalogGet</B>().
+
+<P>
+Similarly,
+<B>xbee_pktDigitalGet</B>(w,x,y,&amp;z)
+
+is nearly synonymous with
+<B>xbee_pktDataGet</B>(w,digital,x,y,&amp;z).
+
+<A NAME="lbAE">&nbsp;</A>
+<H3>Keys</H3>
+
+Below is a list of keys that libxbee uses, 'analog' and 'digital' are not included, because you should use the relative functions instead.
+<P>
+The list is keyed - &lt;xbee mode&gt;:&lt;connection type&gt;
+<DL COMPACT>
+<DT>xbee2:Identify<DD>
+&quot;Address (16-bit)&quot; - the raw 16-bit address
+<P>
+&quot;Address (64-bit)&quot; - the raw 64-bit address
+<P>
+&quot;Address&quot; - a
+<I>struct xbee_conAddress</I>
+
+containing the full address information. This is not stored within the packet's data field
+<P>
+&quot;NI&quot; - the node identifier
+</DL>
+<A NAME="lbAF">&nbsp;</A>
+<H3>Return Value</H3>
+
+On success these functions will return XBEE_ENONE, otherwise an error number from
+<I>enum xbee_errors</I> (as specified in <I>&lt;<A HREF="file:///usr/include/xbee.h">xbee.h</A>&gt;</I>)
+
+<A NAME="lbAG">&nbsp;</A>
+<H2>EXAMPLE</H2>
+
+
+<PRE>
+#include &lt;<A HREF="file:///usr/include/xbee.h">xbee.h</A>&gt;
+
+struct xbee *xbee;
+struct xbee_con *con;
+struct xbee_pkt *pkt;
+int value;
+
+/* initialize xbee, using xbee_setup() */
+
+/* initialize con, using xbee_conNew() to an I/O connection */
+
+/* receive a packet with analog I/O data, using xbee_conRx() */
+
+if (xbee_pktAnalogGet(pkt, 3, 0, &amp;value) != XBEE_ENONE) return;
+
+/* 'value' now contains the ADC value from the A3 pin */
+</PRE>
+
+
+<A NAME="lbAH">&nbsp;</A>
+<H2>AUTHOR</H2>
+
+Attie Grande &lt;<A HREF="mailto:attie@attie.co.uk">attie@attie.co.uk</A>&gt; 
+<A NAME="lbAI">&nbsp;</A>
+<H2>SEE ALSO</H2>
+
+<B><A HREF="../man3/libxbee.3.html">libxbee</A></B>(3),
+
+<B><A HREF="../man3/xbee_setup.3.html">xbee_setup</A></B>(3),
+
+<B><A HREF="../man3/xbee_conNew.3.html">xbee_conNew</A></B>(3),
+
+<B><A HREF="../man3/xbee_conRx.3.html">xbee_conRx</A></B>(3)
+
+<P>
+
+<HR>
+<A NAME="index">&nbsp;</A><H2>Index</H2>
+<DL>
+<DT><A HREF="#lbAB">NAME</A><DD>
+<DT><A HREF="#lbAC">SYNOPSIS</A><DD>
+<DT><A HREF="#lbAD">DESCRIPTION</A><DD>
+<DL>
+<DT><A HREF="#lbAE">Keys</A><DD>
+<DT><A HREF="#lbAF">Return Value</A><DD>
+</DL>
+<DT><A HREF="#lbAG">EXAMPLE</A><DD>
+<DT><A HREF="#lbAH">AUTHOR</A><DD>
+<DT><A HREF="#lbAI">SEE ALSO</A><DD>
+</DL>
+<HR>
+This document was created by
+<A HREF="/cgi-bin/man/man2html">man2html</A>,
+using the manual pages.<BR>
+Time: 18:19:28 GMT, September 04, 2013
+</BODY>
+</HTML>

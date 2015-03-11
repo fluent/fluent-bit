@@ -1,0 +1,143 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML><HEAD><TITLE>Man page of XBEE_LOG</TITLE>
+</HEAD><BODY>
+<H1>XBEE_LOG</H1>
+Section: Linux Programmer's Manual (3)<BR>Updated: 04-Mar-2012<BR><A HREF="#index">Index</A>
+<A HREF="../index.html">Return to Main Contents</A><HR>
+
+<A NAME="lbAB">&nbsp;</A>
+<H2>NAME</H2>
+
+xbee_log
+<A NAME="lbAC">&nbsp;</A>
+<H2>SYNOPSIS</H2>
+
+<B>#include &lt;<A HREF="file:///usr/include/xbee.h">xbee.h</A>&gt;</B>
+
+<P>
+<B>xbee_err xbee_log(struct xbee *</B><I>xbee</I><B>, int </B><I>minLevel</I><B>, const char *</B><I>format</I><B>, </B><I>...</I><B>);</B>
+
+<A NAME="lbAD">&nbsp;</A>
+<H2>DESCRIPTION</H2>
+
+<B>xbee_log</B>()
+
+provides a means for you to write messages to libxbee's log.
+<DL COMPACT>
+<DT><I>xbee</I>
+
+<DD>
+is required, and will indicate which log to use
+<DT><I>minLevel</I>
+
+<DD>
+is a value that determines whether the message will be output or not.
+The lower this value, the more likely.
+libxbee defaults to a log level of 0, but this may be changed by specifying
+<B>XBEE_LOG_LEVEL</B>
+
+at build time, by specifying
+<B>XBEE_LOG_LEVEL</B>
+
+in the environment at run-time, or by calling
+<B><A HREF="../man3/xbee_logLevelSet.3.html">xbee_logLevelSet</A></B>(3)
+
+at run-time.
+These options are applied in this order.
+<DT><I>format</I>, <I>...</I>
+
+<DD>
+these options are exectly the same as those used by
+<B><A HREF="../man3/printf.3.html">printf</A></B>(3).
+
+You do not need to add a newline ('\n') character to the end, libxbee will do this for you.
+</DL>
+<A NAME="lbAE">&nbsp;</A>
+<H3>Return Value</H3>
+
+On success this function will return XBEE_ENONE, otherwise an error number from
+<I>enum xbee_errors</I> (as specified in <I>&lt;<A HREF="file:///usr/include/xbee.h">xbee.h</A>&gt;</I>)
+
+<A NAME="lbAF">&nbsp;</A>
+<H2>EXAMPLE</H2>
+
+
+<PRE>
+#include &lt;<A HREF="file:///usr/include/xbee.h">xbee.h</A>&gt;
+
+struct xbee *xbee;
+
+/* initialize xbee, using xbee_setup() */
+
+xbee_log(xbee, -1, &quot;Hello World!&quot;);
+</PRE>
+
+
+<A NAME="lbAG">&nbsp;</A>
+<H3>Output</H3>
+
+<PRE>
+DEV: -1#[main.c:14] main() 0x82dd128: Hello World!
+</PRE>
+
+<P>
+Where:
+<DL COMPACT>
+<DT>DEV:<DD>
+indicates that this was a message logged from outside libxbee (within your program)
+<DT>-1<DD>
+indicates the log level for the message
+<DT>[main.c:14]<DD>
+indicates the filename and line number
+<DT>main()<DD>
+indicates the function that the call to
+<B>xbee_log</B>()
+
+was made from
+<DT>0x82dd128<DD>
+indicates the address of the libxbee instance
+<DT>Hello World!<DD>
+is the message
+</DL>
+<A NAME="lbAH">&nbsp;</A>
+<H2>AUTHOR</H2>
+
+Attie Grande &lt;<A HREF="mailto:attie@attie.co.uk">attie@attie.co.uk</A>&gt; 
+<A NAME="lbAI">&nbsp;</A>
+<H2>SEE ALSO</H2>
+
+<B><A HREF="../man3/libxbee.3.html">libxbee</A></B>(3),
+
+<B><A HREF="../man3/xbee_setup.3.html">xbee_setup</A></B>(3),
+
+<B><A HREF="../man3/xbee_logTargetSet.3.html">xbee_logTargetSet</A></B>(3),
+
+<B><A HREF="../man3/xbee_logLevelSet.3.html">xbee_logLevelSet</A></B>(3),
+
+<B><A HREF="../man3/printf.3.html">printf</A></B>(3)
+
+<P>
+
+<HR>
+<A NAME="index">&nbsp;</A><H2>Index</H2>
+<DL>
+<DT><A HREF="#lbAB">NAME</A><DD>
+<DT><A HREF="#lbAC">SYNOPSIS</A><DD>
+<DT><A HREF="#lbAD">DESCRIPTION</A><DD>
+<DL>
+<DT><A HREF="#lbAE">Return Value</A><DD>
+</DL>
+<DT><A HREF="#lbAF">EXAMPLE</A><DD>
+<DL>
+<DT><A HREF="#lbAG">Output</A><DD>
+</DL>
+<DT><A HREF="#lbAH">AUTHOR</A><DD>
+<DT><A HREF="#lbAI">SEE ALSO</A><DD>
+</DL>
+<HR>
+This document was created by
+<A HREF="/cgi-bin/man/man2html">man2html</A>,
+using the manual pages.<BR>
+Time: 18:19:28 GMT, September 04, 2013
+</BODY>
+</HTML>

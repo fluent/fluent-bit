@@ -1,0 +1,100 @@
+.\" libxbee - a C library to aid the use of Digi's XBee wireless modules
+.\"           running in API mode.
+.\" 
+.\" Copyright (C) 2009 onwards  Attie Grande (attie@attie.co.uk)
+.\" 
+.\" libxbee is free software: you can redistribute it and/or modify it
+.\" under the terms of the GNU Lesser General Public License as published by
+.\" the Free Software Foundation, either version 3 of the License, or
+.\" (at your option) any later version.
+.\" 
+.\" libxbee is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+.\" GNU Lesser General Public License for more details.
+.\" 
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this program. If not, see <http://www.gnu.org/licenses/>.
+.TH XBEE_CONTX 3  04-Mar-2012 "GNU" "Linux Programmer's Manual"
+.SH NAME
+xbee_conTx, xbee_convTx, xbee_connTx, xbee_conxTx, xbee_convxTx, xbee_connxTx
+.SH SYNOPSIS
+.B #include <xbee.h>
+.sp
+.BI "xbee_err xbee_conTx(struct xbee_con *" con ", unsigned char *" retVal ", const char *" format ", " ... ");"
+.sp 0
+.BI "xbee_err xbee_convTx(struct xbee_con *" con ", unsigned char *" retVal ", const char *" format ", va_list " args ");"
+.sp 0
+.BI "xbee_err xbee_connTx(struct xbee_con *" con ", unsigned char *" retVal ", const unsigned char *" buf ", int " len ");"
+.sp
+.BI "xbee_err xbee_conxTx(struct xbee_con *" con ", unsigned char *" retVal ", unsigned char *" frameId ", const char *" format ", " ... ");"
+.sp 0
+.BI "xbee_err xbee_convxTx(struct xbee_con *" con ", unsigned char *" retVal ", unsigned char *" frameId ", const char *" format ", va_list " args ");"
+.sp 0
+.BI "xbee_err xbee_connxTx(struct xbee_con *" con ", unsigned char *" retVal ", unsigned char *" frameId ", const unsigned char *" buf ", int " len ");"
+.SH DESCRIPTION
+This collection of functions allow you to transmit data via an existing connection.
+.sp
+When calling
+.BR xbee_conTx (),
+you may use a
+.BR printf (3)
+style format string and parameters. Similarly,
+.BR xbee_convTx ()
+makes use of 
+.BR vprintf (3).
+When using these two functions, the length of the message is determined from the return value of
+.BR vprintf (3).
+This means that by using
+.RB ' %c '
+conversion specifiers within the format string, you may achieve zero value - 0x00 - bytes before the end of your message. Do not use
+.RB ' \\\\\0 '
+as this will terminate the format string early
+.sp
+.BR xbee_connTx ()
+accepts a buffer and a length instead, allowing you to build the message yourself.
+.sp
+The 'x' variants namely
+.BR xbee_conxTx "(), " xbee_convxTx "() and " xbee_connxTx
+can be used if you want to know what frame ID was used for the transmission.
+.sp
+If the connection type supports ACKs, and they are not disabled for the connection, and if
+.I retVal
+is non-NULL, it will be updated with the return value. E.g: 0x04 - No response for a Remote AT connection.
+You should consult the manual for the remote device for information on the values that this may return.
+.sp
+.B NOTE:
+not all connection types are able to transmit. For example the 'Modem Status', 'Transmit Status' and 'I/O' connections.
+.SS Return Value
+On success these functions will return XBEE_ENONE, otherwise an error number from
+.IR "enum xbee_errors" " (as specified in " <xbee.h> )
+.SH EXAMPLE
+.in +4n
+.nf
+#include <xbee.h>
+
+struct xbee *xbee;
+struct xbee_con *con;
+xbee_err ret;
+unsigned char retVal;
+
+/* initialize xbee, using xbee_setup() */
+
+/* initialize con, using xbee_conNew() */
+
+if ((ret = xbee_conTx(con, &retVal, "Hello World! it is %d!", 2012)) != XBEE_ENONE) {
+	if (ret == XBEE_ETX) {
+		fprintf(stderr, "a transmission error occured... (0x%02X)\\n", retVal);
+	} else {
+		fprintf(stderr, "an error occured... %s\\n", xbee_errorToStr(ret));
+	}
+	return ret;
+}
+.fi
+.in
+.SH AUTHOR
+Attie Grande <attie@attie.co.uk> 
+.SH "SEE ALSO"
+.BR libxbee (3),
+.BR xbee_setup (3),
+.BR xbee_conNew (3)

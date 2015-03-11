@@ -1,0 +1,95 @@
+Welcome to libxbee v3!
+
+Please note that development for this this project is on going, and the use of
+it is free, but please don't hold me responsible for any damage or injuries that
+may occur.
+
+Feel free to contact me directly with any queries, bugs, etc:
+  attie@attie.co.uk
+Alternatively, feel free to file an 'issue' on the project site:
+  http://code.google.com/p/libxbee/issues/list
+
+####################
+### PLEASE NOTE: ###
+####################
+  Digi chose some rather unfortunate (re-)names for thier XBee modules.
+  To keep backwards compatibility, some modes are not named as intuitavely as
+   you might expect. Please see the information below to match your module
+   to the correct libxbee mode.
+		
+  'xbee1'  => XBee Series 1   (802.15.4 / no meshing)
+      http://goo.gl/10a45
+      http://sprkfn.com/p8665
+      http://doc.libxbee.attie.co.uk/images/xbee1.jpg
+  'xbee2'  => XBee Series 2.5 (ZNet / DigiMesh) - formerly 'Series 2'
+      http://goo.gl/fQbkt
+      http://sprkfn.com/p8876
+      http://doc.libxbee.attie.co.uk/images/xbee2.jpg
+  'xbeeZB' => XBee Series 2   (ZigBee)
+      http://goo.gl/TJmeQ
+      http://sprkfn.com/p10414
+      http://doc.libxbee.attie.co.uk/images/xbeeZB.jpg
+  'xbee3'  => XBee Series 3   (900 MHz)
+      http://goo.gl/Wdghyq
+  'xbee5'  => XBee Series 5   (868 MHz)
+      http://goo.gl/66FZI
+  'xbee6b' => XBee Series 6B  (WiFi)
+      http://goo.gl/gV9XwN
+
+
+=== Licensing ===
+libxbee v3 is licensed using LGPLv3 from v3.0.5 onwards. For more
+information on what this means for you, please see COPYING and COPYING.LESSER.
+
+
+=== Building ===
+If you are building libxbee, then there are a number of options avaliable to you.
+Initially you should run the following command:
+	$ make configure
+This will retrieve a default 'config.mk' that is suitable for your system. You
+should review this file and then run the following command:
+	$ make all
+
+After the build process has completed, you should find suitable files in ./lib.
+E.g: for a Unix-like OS you can expect to find .so and .a files
+     for Windows you can expect to find a .dll file
+
+It is highly recommended that you don't modify any of the build system.
+
+If you have any issues while building libxbee, please feel free to contact me,
+or alternatively, you can file an 'issue' on the project site:
+  http://code.google.com/p/libxbee/issues/list
+
+
+=== Installation ===
+To install libxbee simply type (you will require root permissions):
+  $ sudo make install
+
+This option is not avaliable on all systems (namely Windows).
+
+
+=== Usage ===
+Compile your applications, including "xbee.h" in the relevant source files.
+Ensure you link with libxbee (e.g: using 'gcc -lxbee')
+
+If you are compiling the object file directly into your executable instead
+of making use of the library, you must include the following link flags. These
+flags are also necessary for newer versions of Ubuntu, and possibly others.
+  -lpthread -lrt
+
+
+=== Interfacing ===
+I have provided the ability to interface with libxbee from a number of languages
+other than 'C'. The source, and sample code for these interfaces  can be found
+in '/interfaces'. Currently the following languages are supported or in
+development:
+  C++ (see /xbeep.cpp and /xbeep.h)
+  Java
+
+
+=== Samples ===
+I have proveded sample code in the ./sample directory. Hopefully this will help
+get you up and running with libxbee. If you would like samples showing a different
+aspect of libxbee, then please do not hesitate to get in contact, or file an
+'issue' on the project site, and I will get to it ASAP:
+  http://code.google.com/p/libxbee/issues/list

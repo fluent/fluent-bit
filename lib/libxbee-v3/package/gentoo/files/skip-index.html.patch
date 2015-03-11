@@ -1,0 +1,12 @@
+diff -rupN libxbee-v3-3.0.9/make/build.unix.mk libxbee-v3-3.0.9-patched/make/build.unix.mk
+--- libxbee-v3-3.0.9/make/build.unix.mk	2013-05-28 00:00:08.747013885 -0400
++++ libxbee-v3-3.0.9-patched/make/build.unix.mk	2013-05-28 00:00:52.467467627 -0400
+@@ -85,6 +85,6 @@ $(addprefix $(HTMLDIR)/,$(filter-out ind
+ else                                           \
+ 	$(SYMLINK) -fs $(shell readlink $^).html $@; \
+ fi
+-$(HTMLDIR)/index.html: $(filter %libxbee.3.html,$(HTMLDIR)/$(SYS_HTMLPAGES))
+-	$(SYMLINK) -fs $(subst $(HTMLDIR)/,,$^) $@
++#$(HTMLDIR)/index.html: $(filter %libxbee.3.html,$(HTMLDIR)/$(SYS_HTMLPAGES))
++#	$(SYMLINK) -fs $(subst $(HTMLDIR)/,,$^) $@
+ endif

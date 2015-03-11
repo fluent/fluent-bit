@@ -1,0 +1,85 @@
+.\" libxbee - a C library to aid the use of Digi's XBee wireless modules
+.\"           running in API mode.
+.\" 
+.\" Copyright (C) 2009 onwards  Attie Grande (attie@attie.co.uk)
+.\" 
+.\" libxbee is free software: you can redistribute it and/or modify it
+.\" under the terms of the GNU Lesser General Public License as published by
+.\" the Free Software Foundation, either version 3 of the License, or
+.\" (at your option) any later version.
+.\" 
+.\" libxbee is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+.\" GNU Lesser General Public License for more details.
+.\" 
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this program. If not, see <http://www.gnu.org/licenses/>.
+.TH XBEE_MODEGETLIST 3  02-Mar-2012 "GNU" "Linux Programmer's Manual"
+.SH NAME
+xbee_modeGetList, xbee_modeGet
+.SH SYNOPSIS
+.B #include <xbee.h>
+.sp
+.BI "xbee_err xbee_modeGetList(char ***" retList ");"
+.sp 0
+.BI "xbee_err xbee_modeGet(struct xbee *" xbee ", const char **" mode ");"
+.ad b
+.SH DESCRIPTION
+.sp
+.BR xbee_modeGetList ()
+allows you to retrieve a list of modes that are build into libxbee. Once you have used the returned array, you should
+.BR free ()
+the pointer to avoid memory leaks. The last item in the array is set to
+.B NULL
+to mark the end.
+.sp
+.BR xbee_modeGet ()
+returnes the mode that the given libxbee instance is running. The pointer returned should
+.I NOT
+.RB "be " free ()'d.
+.SS Return Value
+On success these functions will return XBEE_ENONE, otherwise an error number from
+.IR "enum xbee_errors" " (as specified in " <xbee.h> )
+.SH EXAMPLE
+.BR xbee_modeGetList ()
+.sp
+.in +4n
+.nf
+#include <xbee.h>
+
+char **modes;
+int i;
+
+if (xbee_modeGetList(&modes) != XBEE_ENONE) return;
+
+for (i = 0; modes[i]; i++) {
+	printf("mode %d: %s\\n", i, modes[i]);
+}
+
+free(modes);
+.fi
+.in
+.sp 2
+.BR xbee_modeGet ()
+.sp
+.in +4n
+.nf
+#include <xbee.h>
+
+struct xbee *xbee;
+char *mode;
+
+/* initialize xbee, using xbee_setup() */
+
+if (xbee_modeGet(xbee, &mode) != XBEE_ENONE) return;
+
+printf("libxbee is running in '%s' mode\\n", mode);
+.fi
+.in
+.SH AUTHOR
+Attie Grande <attie@attie.co.uk> 
+.SH "SEE ALSO"
+.BR libxbee (3),
+.BR xbee_setup (3),
+.BR xbee_conGetTypes (3)

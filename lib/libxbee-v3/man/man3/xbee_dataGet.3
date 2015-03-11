@@ -1,0 +1,71 @@
+.\" libxbee - a C library to aid the use of Digi's XBee wireless modules
+.\"           running in API mode.
+.\" 
+.\" Copyright (C) 2009 onwards  Attie Grande (attie@attie.co.uk)
+.\" 
+.\" libxbee is free software: you can redistribute it and/or modify it
+.\" under the terms of the GNU Lesser General Public License as published by
+.\" the Free Software Foundation, either version 3 of the License, or
+.\" (at your option) any later version.
+.\" 
+.\" libxbee is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+.\" GNU Lesser General Public License for more details.
+.\" 
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this program. If not, see <http://www.gnu.org/licenses/>.
+.TH XBEE_DATAGET 3  16-Dec-2012 "GNU" "Linux Programmer's Manual"
+.SH NAME
+xbee_dataGet, xbee_dataSet
+.SH SYNOPSIS
+.B #include <xbee.h>
+.sp
+.BI "xbee_err xbee_dataSet(struct xbee *" xbee ", void *" newData ", void **" oldData ");"
+.sp
+.BI "xbee_err xbee_dataGet(struct xbee *" xbee ", void **" curData ");"
+.ad b
+.SH DESCRIPTION
+.BR xbee_dataSet ()
+allows you to associate any data you wish with a libxbee instance.
+This data will then be avaliable from anywhere that you have access to the instance, and works identically to the functions
+.BR xbee_conDataSet (3) "and xbee_conDataGet" (3) .
+.sp
+.I xbee
+indicates which instance you would like to use, and
+.I newData
+indicates the data you wish to associate.
+.sp
+The
+.I oldData
+parameter allows you to retrieve the data that was assigned before you assigned new data.
+If it is
+.B NULL
+then the data will not be returned.
+.sp
+The
+.BR xbee_dataGet ()
+function allows you to retrieve the current data, without assigning new data to the instance.
+.SS Return Value
+On success these functions will return XBEE_ENONE, otherwise an error number from
+.IR "enum xbee_errors" " (as specified in " <xbee.h> )
+.SH EXAMPLE
+.in +4n
+.nf
+#include <xbee.h>
+
+struct xbee *xbee;
+struct my_struct my_info;
+
+/* initialize xbee, using xbee_setup() */
+
+/* keep scope in mind! if this function returns, the pointer will be invalid */
+if (xbee_dataSet(xbee, &my_info, NULL) != XBEE_ENONE) return;
+.fi
+.in
+.SH AUTHOR
+Attie Grande <attie@attie.co.uk> 
+.SH "SEE ALSO"
+.BR libxbee (3),
+.BR xbee_setup (3)
+

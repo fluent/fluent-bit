@@ -1,0 +1,82 @@
+.\" libxbee - a C library to aid the use of Digi's XBee wireless modules
+.\"           running in API mode.
+.\" 
+.\" Copyright (C) 2009 onwards  Attie Grande (attie@attie.co.uk)
+.\" 
+.\" libxbee is free software: you can redistribute it and/or modify it
+.\" under the terms of the GNU Lesser General Public License as published by
+.\" the Free Software Foundation, either version 3 of the License, or
+.\" (at your option) any later version.
+.\" 
+.\" libxbee is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+.\" GNU Lesser General Public License for more details.
+.\" 
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this program. If not, see <http://www.gnu.org/licenses/>.
+.TH XBEE_CONSLEEPGET 3  04-Mar-2012 "GNU" "Linux Programmer's Manual"
+.SH NAME
+xbee_conSleepGet, xbee_conSleepSet, xbee_conSleepStates
+.SH SYNOPSIS
+.B #include <xbee.h>
+.sp
+.nf
+enum xbee_conSleepStates {
+	CON_AWAKE,
+	CON_SNOOZE,
+	CON_SLEEP
+};
+.fi
+.sp
+.BI "xbee_err xbee_conSleepSet(struct xbee_con *" con ", enum xbee_conSleepStates " state ");"
+.sp
+.BI "xbee_err xbee_conSleepGet(struct xbee_con *" con ", enum xbee_conSleepStates *" state ");"
+.ad b
+.SH DESCRIPTION
+.BR xbee_conSleepSet ()
+allows you to put a connection to sleep.
+If a connection is sleeping, another connection may be created with the same address.
+.sp
+If a connection is set to 
+.B CON_SNOOZE
+then inbound packets, and calling
+.BR xbee_conTx (3)
+will wake it up 
+.I ONLY
+if there are no other awake connections with the same address.
+.sp
+If a connection is set to
+.B CON_SLEEP
+then inbound packets will not wake it up, and it must be explicitly woken before
+.BR xbee_conTx (3)
+will succeed.
+.sp
+Waking a connection will 
+.I ONLY
+succeed if there are no other connections that are currently awake that share the same address.
+.SS Return Value
+On success these functions will return XBEE_ENONE, otherwise an error number from
+.IR "enum xbee_errors" " (as specified in " <xbee.h> )
+.SH EXAMPLE
+.in +4n
+.nf
+#include <xbee.h>
+
+struct xbee *xbee;
+struct xbee_con *con;
+
+/* initialize xbee, using xbee_setup() */
+
+/* initialize con, using xbee_conNew() */
+
+if (xbee_conSleepSet(con, &my_info, NULL) != XBEE_ENONE) return;
+.fi
+.in
+.SH AUTHOR
+Attie Grande <attie@attie.co.uk> 
+.SH "SEE ALSO"
+.BR libxbee (3),
+.BR xbee_setup (3),
+.BR xbee_conNew (3),
+.BR xbee_conTx (3)

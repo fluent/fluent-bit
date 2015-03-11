@@ -1,0 +1,14 @@
+/config.mk
+/tags
+/cscope.out
+*~
+.*.swp
+
+lib
+.build
+.*.dir
+
+*.d
+*.o
+*.so
+main

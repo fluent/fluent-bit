@@ -1,0 +1,101 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML><HEAD><TITLE>Man page of XBEE_CONADDRESS</TITLE>
+</HEAD><BODY>
+<H1>XBEE_CONADDRESS</H1>
+Section: Linux Programmer's Manual (3)<BR>Updated: 04-Mar-2012<BR><A HREF="#index">Index</A>
+<A HREF="../index.html">Return to Main Contents</A><HR>
+
+<A NAME="lbAB">&nbsp;</A>
+<H2>NAME</H2>
+
+xbee_conAddress
+<A NAME="lbAC">&nbsp;</A>
+<H2>SYNOPSIS</H2>
+
+<PRE>
+#include &lt;<A HREF="file:///usr/include/xbee.h">xbee.h</A>&gt;
+
+struct xbee_conAddress {
+        unsigned char addr16_enabled;
+        unsigned char addr16[2];
+        
+        unsigned char addr64_enabled;
+        unsigned char addr64[8];
+        
+        unsigned char endpoints_enabled;
+        unsigned char endpoint_local;
+        unsigned char endpoint_remote;
+
+        unsigned char cluster_enabled;
+        unsigned short cluster_id;
+
+        unsigned char profile_enabled;
+        unsigned short profile_id;
+};
+</PRE>
+
+<A NAME="lbAD">&nbsp;</A>
+<H2>DESCRIPTION</H2>
+
+The
+<B>xbee_conAddress</B>
+
+struct contains details on the network address for a remote node. It is recommended that you initialize it to zero by calling
+<B>memset</B>()
+
+before you fill it in and call
+<B><A HREF="../man3/xbee_conNew.3.html">xbee_conNew</A></B>(3).
+
+<P>
+The data is ordered with the MSB of the address, in the first byte of the array.
+<P>
+E.g: the 64-bit address 0x0013A200 0x40081826 would be initialized like so:
+
+<PRE>
+memset(&amp;address, 0, sizeof(address));
+
+address.addr64_enabled = 1;
+address.addr64[0] = 0x00;
+address.addr64[1] = 0x13;
+address.addr64[2] = 0xA2;
+address.addr64[3] = 0x00;
+address.addr64[4] = 0x40;
+address.addr64[5] = 0x08;
+address.addr64[6] = 0x18;
+address.addr64[7] = 0x26;
+</PRE>
+
+
+<P>
+Endpoints are a feature of XBee Series 2 ZNet and ZigBee modules that are not present with XBee Series 1 modules.
+<A NAME="lbAE">&nbsp;</A>
+<H2>AUTHOR</H2>
+
+Attie Grande &lt;<A HREF="mailto:attie@attie.co.uk">attie@attie.co.uk</A>&gt; 
+<A NAME="lbAF">&nbsp;</A>
+<H2>SEE ALSO</H2>
+
+<B><A HREF="../man3/libxbee.3.html">libxbee</A></B>(3),
+
+<B><A HREF="../man3/xbee_conNew.3.html">xbee_conNew</A></B>(3),
+
+<B><A HREF="../man3/xbee_conSleepGet.3.html">xbee_conSleepGet</A></B>(3)
+
+<P>
+
+<HR>
+<A NAME="index">&nbsp;</A><H2>Index</H2>
+<DL>
+<DT><A HREF="#lbAB">NAME</A><DD>
+<DT><A HREF="#lbAC">SYNOPSIS</A><DD>
+<DT><A HREF="#lbAD">DESCRIPTION</A><DD>
+<DT><A HREF="#lbAE">AUTHOR</A><DD>
+<DT><A HREF="#lbAF">SEE ALSO</A><DD>
+</DL>
+<HR>
+This document was created by
+<A HREF="/cgi-bin/man/man2html">man2html</A>,
+using the manual pages.<BR>
+Time: 18:19:27 GMT, September 04, 2013
+</BODY>
+</HTML>

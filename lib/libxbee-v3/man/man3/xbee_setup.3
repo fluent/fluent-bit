@@ -1,0 +1,123 @@
+.\" libxbee - a C library to aid the use of Digi's XBee wireless modules
+.\"           running in API mode.
+.\" 
+.\" Copyright (C) 2009 onwards  Attie Grande (attie@attie.co.uk)
+.\" 
+.\" libxbee is free software: you can redistribute it and/or modify it
+.\" under the terms of the GNU Lesser General Public License as published by
+.\" the Free Software Foundation, either version 3 of the License, or
+.\" (at your option) any later version.
+.\" 
+.\" libxbee is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+.\" GNU Lesser General Public License for more details.
+.\" 
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this program. If not, see <http://www.gnu.org/licenses/>.
+.TH XBEE_SETUP 3  02-Mar-2012 "GNU" "Linux Programmer's Manual"
+.SH NAME
+xbee_setup, xbee_vsetup, xbee_validate, xbee_shutdown
+.SH SYNOPSIS
+.B #include <xbee.h>
+.sp
+.BI "xbee_err xbee_setup(struct xbee **" retXbee ", const char *" mode ", ...);"
+.sp 0
+.BI "xbee_err xbee_vsetup(struct xbee **" retXbee ", const char *" mode ", va_list " ap ");"
+.sp
+.BI "xbee_err xbee_validate(struct xbee *" xbee ");"
+.sp
+.BI "xbee_err xbee_shutdown(struct xbee *" xbee ");"
+.ad b
+.SH DESCRIPTION
+.sp
+The functions
+.BR xbee_setup "() and " xbee_vsetup "()"
+start an instance of libxbee.
+.I retXbee
+is the returned pointer to the libxbee instance.
+.I mode
+specifies which mode should be started. Three modes are currently provided and supported:
+.in +2n
+.nf
+.RB ' xbee1 "'   the mode used for Series 1 XBee modules"
+.RB ' xbee2 "'   the mode used for Series 2 XBee modules"
+.RB ' xbee3 "'   the mode used for Series 3 XBee modules"
+.RB ' xbee5 "'   the mode used for Series 5 XBee modules (868 MHz)"
+.RB ' xbee6b "'  the mode used for Series 6B XBee modules (Wi-Fi)"
+.RB ' xbeeZB "'  the mode used for ZigBee XBee modules"
+.RB ' net "'     the network client"
+.RB ' debug "'   the debugger"
+.fi
+.in
+.sp
+Each mode can require different initialization parameters, which are provided by the 
+.IR ... " or " ap " arguments."
+The arguments for the modes listed above are detailed below in the 'Modes' section.
+.sp
+.BR xbee_validate ()
+allows you to confirm that your handle points to a valid libxbee instance.
+.sp
+.BR xbee_shutdown ()
+will terminate all remaining connections and free all data associated with the instance of libxbee.
+.SS Modes
+.RB "'" xbee1 "', '" xbee2 "', '" xbee3 "', '" xbee5 "', '" xbee6b "' and '" xbeeZB "'"
+- these modes require two parameters:
+.in +4n
+.BR "char *" "device             e.g: "
+"/dev/ttyUSB0"
+.sp 0
+.BR "int " "  baudrate           e.g:"
+57600
+.fi
+.in
+.sp
+.RB "'" net "'"
+- this mode required two parameters:
+.in +4n
+.BR "char *" "hostname           e.g:"
+"localhost", "127.0.0.1"
+.sp 0
+.BR "int " "  port               e.g:"
+27015
+.fi
+.in
+.sp
+.RB "'" debug "'"
+- this mode required one parameter:
+.in +4n
+.BR "char *" "target_mode        e.g:"
+"xbee1"
+.fi
+.in
+.SS Return Value
+On success these functions will return XBEE_ENONE, otherwise an error number from
+.IR "enum xbee_errors" " (as specified in " <xbee.h> )
+.SH EXAMPLE
+To setup libxbee with a Series 1 XBee, using /dev/ttyUSB0 at 57600 baud:
+.sp
+.in +4n
+.nf
+#include <xbee.h>
+
+xbee_err ret;
+struct xbee *xbee;
+
+if ((ret = xbee_setup(&xbee, "xbee1", "/dev/ttyUSB0", 57600)) != XBEE_ENONE) {
+	printf("xbee_setup(): %d - %s\\n", ret, xbee_errorToStr(ret));
+	return ret;
+}
+
+/* use libxbee */
+
+if (xbee_shutdown(xbee) != XBEE_ENONE) return;
+.fi
+.in
+.SH AUTHOR
+Attie Grande <attie@attie.co.uk> 
+.SH "SEE ALSO"
+.BR libxbee (3),
+.BR xbee_modeGetList (3),
+.BR xbee_conGetTypes (3),
+.BR xbee_conNew (3),
+.BR xbee_attachEOFCallback (3)

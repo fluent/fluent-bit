@@ -1,0 +1,347 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML><HEAD><TITLE>Man page of XBEE_CONNEW</TITLE>
+</HEAD><BODY>
+<H1>XBEE_CONNEW</H1>
+Section: Linux Programmer's Manual (3)<BR>Updated: 02-Mar-2012<BR><A HREF="#index">Index</A>
+<A HREF="../index.html">Return to Main Contents</A><HR>
+
+<A NAME="lbAB">&nbsp;</A>
+<H2>NAME</H2>
+
+xbee_conNew, xbee_conValidate, xbee_conGetXBee, xbee_conEnd
+<A NAME="lbAC">&nbsp;</A>
+<H2>SYNOPSIS</H2>
+
+<B>#include &lt;<A HREF="file:///usr/include/xbee.h">xbee.h</A>&gt;</B>
+
+<P>
+<B>xbee_err xbee_conNew(struct xbee *</B><I>xbee</I><B>, struct xbee_con **</B><I>retCon</I><B>, const char *</B><I>type</I><B>, struct xbee_conAddress *</B><I>address</I><B>);</B>
+
+<P>
+<B>xbee_err xbee_conValidate(struct xbee_con *</B><I>con</I><B>);</B>
+
+<P>
+<B>xbee_err xbee_conGetXBee(struct xbee_con *</B><I>con</I><B>, struct xbee **</B><I>xbee</I><B>);</B>
+
+<P>
+<B>xbee_err xbee_conEnd(struct xbee_con *</B><I>con</I><B>);</B>
+
+
+<A NAME="lbAD">&nbsp;</A>
+<H2>DESCRIPTION</H2>
+
+<P>
+<B>xbee_conNew</B>()
+
+will create new connection via the given libxbee instance
+<I>xbee</I>.
+
+The new connection will be returned via
+<I>retCon</I>,
+
+and the connection's type is provided by
+<I>type</I>.
+
+A list of avaliable connection types can be obtained by using
+<B><A HREF="../man3/xbee_conGetTypes.3.html">xbee_conGetTypes</A></B>(3).
+
+The
+<I>address</I>
+
+indicates which remote device you wish to communicate with - it is not always appropriate to use this (e.g: with a &quot;Local AT&quot; connection), in which case
+<B>NULL</B>
+
+may be safely provided.
+<P>
+<B>xbee_conValidate</B>()
+
+allows you to confirm that your handle points to a valid libxbee connection.
+<P>
+<B>xbee_conGetXBee</B>()
+
+allows you to retrieve the libxbee instance that was provided when the connection was created by calling
+<B>xbee_conNew</B>().
+
+<P>
+<B>xbee_conEnd</B>()
+
+will terminate a connection, and free any memory that is associated with it, including any un-fetched packets.
+If a callback is active when
+<B>xbee_conEnd</B>()
+
+is called, it will be permitted to complete, and then the connection will be terminated.
+<A NAME="lbAE">&nbsp;</A>
+<H3>Avaliable Types</H3>
+
+<B>xbee1</B>
+
+
+&quot;Modem Status&quot;
+- Rx Only. Status updates from the XBee module.
+<P>
+&quot;Transmit Status&quot;
+- Rx Only. Transmit status responses. These are handled for you, but you may wish to access them anyway.
+<P>
+&quot;Local AT&quot;
+- Set/Get AT configuration from the local module.
+<P>
+&quot;Remote AT&quot;
+- Set/Get AT configuration from a remote module.
+<P>
+&quot;16-bit Data&quot;
+- 2-way communication with a remote module, using 16-bit addressing.
+<P>
+&quot;64-bit Data&quot;
+- 2-way communication with a remote module, using 64-bit addressing.
+<P>
+&quot;16-bit I/O&quot;
+- Rx Only. I/O samples received from a remote module, using 16-bit addressing.
+<P>
+&quot;64-bit I/O&quot;
+- Rx Only. I/O samples received from a remote module, using 64-bit addressing.
+
+
+<P>
+<B>xbee2</B>
+
+
+&quot;Modem Status&quot;
+- Rx Only. Status updates from the XBee module.
+<P>
+&quot;Transmit Status&quot;
+- Rx Only. Transmit status responses. These are handled for you, but you may wish to access them anyway.
+<P>
+&quot;Local AT&quot;
+- Set/Get AT configuration from the local module.
+<P>
+&quot;Remote AT&quot;
+- Set/Get AT configuration from a remote module.
+<P>
+&quot;Data&quot;
+- 2-way communication with a remote module. All data will be recieved using this connection type if AO=0.
+<P>
+&quot;Data (explicit)&quot;
+- 2-way communication with a remote module, with configurable endpoints. All data will be recieved using this connection type if AO=1.
+<P>
+&quot;I/O&quot;
+- Rx Only. I/O samples received from a remote module. Only if AO=0.
+<P>
+&quot;Sensor&quot;
+- Rx Only. Used for receiving sensor samples. Only if AO=0.
+<P>
+&quot;Identify&quot;
+- Rx on the Coordinator Only. Identifies new nodes as they join the network. Only if AO=0.
+
+
+<P>
+<B>xbee3</B>
+
+
+&quot;Modem Status&quot;
+- Rx Only. Status updates from the XBee module.
+<P>
+&quot;Transmit Status&quot;
+- Rx Only. Transmit status responses. These are handled for you, but you may wish to access them anyway.
+<P>
+&quot;Local AT&quot;
+- Set/Get AT configuration from the local module.
+<P>
+&quot;Remote AT&quot;
+- Set/Get AT configuration from a remote module.
+<P>
+&quot;Data&quot;
+- 2-way communication with a remote module. All data will be recieved using this connection type if AO=0.
+<P>
+&quot;Data (explicit)&quot;
+- 2-way communication with a remote module, with configurable endpoints. All data will be recieved using this connection type if AO=1.
+<P>
+&quot;Identify&quot;
+- Rx on the Coordinator Only. Identifies new nodes as they join the network. Only if AO=0.
+
+
+<P>
+<B>xbee5</B>
+
+
+&quot;Modem Status&quot;
+- Rx Only. Status updates from the XBee module.
+<P>
+&quot;Transmit Status&quot;
+- Rx Only. Transmit status responses. These are handled for you, but you may wish to access them anyway.
+<P>
+&quot;Local AT&quot;
+- Set/Get AT configuration from the local module.
+<P>
+&quot;Remote AT&quot;
+- Set/Get AT configuration from a remote module.
+<P>
+&quot;Data&quot;
+- 2-way communication with a remote module. All data will be recieved using this connection type if AO=0.
+<P>
+&quot;Data (explicit)&quot;
+- 2-way communication with a remote module, with configurable endpoints. All data will be recieved using this connection type if AO=1.
+<P>
+&quot;Identify&quot;
+- Rx on the Coordinator Only. Identifies new nodes as they join the network. Only if AO=0.
+
+
+<P>
+<B>xbee6b</B>
+
+
+&quot;Modem Status&quot;
+- Rx Only. Status updates from the XBee module.
+<P>
+&quot;Transmit Status&quot;
+- Rx Only. Transmit status responses. These are handled for you, but you may wish to access them anyway.
+<P>
+&quot;Frame Error&quot;
+- Rx Only. Framing errors are received by this connection type, though they are currently of limited use because they aren't referenced to a specific frame...
+<P>
+&quot;Local AT&quot;
+- Set/Get AT configuration from the local module.
+<P>
+&quot;Remote AT&quot;
+- Set/Get AT configuration from a remote module.
+<P>
+&quot;Data&quot;
+- 2-way communication with a remote module.
+<P>
+&quot;I/O&quot;
+- Rx Only. I/O samples received from a remote module.
+
+
+<P>
+<B>xbeeZB</B>
+
+
+&quot;Modem Status&quot;
+- Rx Only. Status updates from the XBee module.
+<P>
+&quot;Transmit Status&quot;
+- Rx Only. Transmit status responses. These are handled for you, but you may wish to access them anyway.
+<P>
+&quot;Local AT&quot;
+- Set/Get AT configuration from the local module.
+<P>
+&quot;Remote AT&quot;
+- Set/Get AT configuration from a remote module.
+<P>
+&quot;Data&quot;
+- 2-way communication with a remote module. All data will be recieved using this connection type if AO=0.
+<P>
+&quot;Data (explicit)&quot;
+- 2-way communication with a remote module, with configurable endpoint, cluster and profile IDs. All data will be recieved using this connection type if AO=1.
+<P>
+&quot;I/O&quot;
+- Rx Only. I/O samples received from a remote module. Only if AO=0.
+<P>
+&quot;Identify&quot;
+- Rx on the Coordinator Only. Identifies new nodes as they join the network. Only if AO=0.
+<P>
+&quot;Sensor&quot;
+- Rx Only. Used for receiving sensor samples. Only if AO=0.
+<P>
+&quot;OTA Update Status&quot;
+- Rx on the Coordinator Only. Identifies new nodes as they join the network. Only if AO=0.
+
+
+<P>
+<B>net</B>
+
+
+the connection types for
+<B>net</B>
+
+mode are determined by the mode running on the server. See
+<B><A HREF="../man3/xbee_conGetTypes.3.html">xbee_conGetTypes</A></B>(3).
+
+<A NAME="lbAF">&nbsp;</A>
+<H3>Return Value</H3>
+
+On success these functions will return XBEE_ENONE, otherwise an error number from
+<I>enum xbee_errors</I> (as specified in <I>&lt;<A HREF="file:///usr/include/xbee.h">xbee.h</A>&gt;</I>).
+
+Postponed termination due to an active callback is considered a success.
+<A NAME="lbAG">&nbsp;</A>
+<H2>EXAMPLE</H2>
+
+
+<PRE>
+#include &lt;<A HREF="file:///usr/include/xbee.h">xbee.h</A>&gt;
+
+struct xbee *xbee;
+struct xbee_con *con;
+struct xbee_conAddress address;
+
+/* initialize xbee, using xbee_setup() */
+
+memset(&amp;address, 0, sizeof(address));
+address.addr64_enabled = 1;
+address.addr64[0] = 0x00;
+address.addr64[1] = 0x13;
+address.addr64[2] = 0xA2;
+address.addr64[3] = 0x00;
+address.addr64[4] = 0x40;
+address.addr64[5] = 0x08;
+address.addr64[6] = 0x18;
+address.addr64[7] = 0x26;
+
+if (xbee_conNew(xbee, &amp;con, &quot;64-bit Data&quot;, &amp;address) != XBEE_ENONE) return;
+
+/* make use of the connection... */
+
+if (xbee_conEnd(con) != XBEE_ENONE) return;
+</PRE>
+
+
+<A NAME="lbAH">&nbsp;</A>
+<H2>AUTHOR</H2>
+
+Attie Grande &lt;<A HREF="mailto:attie@attie.co.uk">attie@attie.co.uk</A>&gt; 
+<A NAME="lbAI">&nbsp;</A>
+<H2>SEE ALSO</H2>
+
+<B><A HREF="../man3/libxbee.3.html">libxbee</A></B>(3),
+
+<B><A HREF="../man3/xbee_setup.3.html">xbee_setup</A></B>(3),
+
+<B><A HREF="../man3/xbee_conGetTypes.3.html">xbee_conGetTypes</A></B>(3),
+
+<B><A HREF="../man3/xbee_conTx.3.html">xbee_conTx</A></B>(3),
+
+<B><A HREF="../man3/xbee_conRx.3.html">xbee_conRx</A></B>(3),
+
+<B><A HREF="../man3/xbee_conSleepGet.3.html">xbee_conSleepGet</A></B>(3),
+
+<B><A HREF="../man3/xbee_conDataGet.3.html">xbee_conDataGet</A></B>(3),
+
+<B><A HREF="../man3/xbee_conInfoGet.3.html">xbee_conInfoGet</A></B>(3),
+
+<B><A HREF="../man3/xbee_conCallbackGet.3.html">xbee_conCallbackGet</A></B>(3),
+
+<B><A HREF="../man3/xbee_conSettings.3.html">xbee_conSettings</A></B>(3)
+
+<P>
+
+<HR>
+<A NAME="index">&nbsp;</A><H2>Index</H2>
+<DL>
+<DT><A HREF="#lbAB">NAME</A><DD>
+<DT><A HREF="#lbAC">SYNOPSIS</A><DD>
+<DT><A HREF="#lbAD">DESCRIPTION</A><DD>
+<DL>
+<DT><A HREF="#lbAE">Avaliable Types</A><DD>
+<DT><A HREF="#lbAF">Return Value</A><DD>
+</DL>
+<DT><A HREF="#lbAG">EXAMPLE</A><DD>
+<DT><A HREF="#lbAH">AUTHOR</A><DD>
+<DT><A HREF="#lbAI">SEE ALSO</A><DD>
+</DL>
+<HR>
+This document was created by
+<A HREF="/cgi-bin/man/man2html">man2html</A>,
+using the manual pages.<BR>
+Time: 18:19:27 GMT, September 04, 2013
+</BODY>
+</HTML>

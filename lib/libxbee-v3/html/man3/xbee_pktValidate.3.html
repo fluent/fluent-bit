@@ -1,0 +1,96 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML><HEAD><TITLE>Man page of XBEE_PKTVALIDATE</TITLE>
+</HEAD><BODY>
+<H1>XBEE_PKTVALIDATE</H1>
+Section: Linux Programmer's Manual (3)<BR>Updated: 04-Mar-2012<BR><A HREF="#index">Index</A>
+<A HREF="../index.html">Return to Main Contents</A><HR>
+
+<A NAME="lbAB">&nbsp;</A>
+<H2>NAME</H2>
+
+xbee_pktValidate, xbee_pktFree
+<A NAME="lbAC">&nbsp;</A>
+<H2>SYNOPSIS</H2>
+
+<B>#include &lt;<A HREF="file:///usr/include/xbee.h">xbee.h</A>&gt;</B>
+
+<P>
+<B>xbee_err xbee_pktValidate(struct xbee_pkt *</B><I>pkt</I><B>);</B>
+
+<P>
+<B>xbee_err xbee_pktFree(struct xbee_pkt *</B><I>pkt</I><B>);</B>
+
+<A NAME="lbAD">&nbsp;</A>
+<H2>DESCRIPTION</H2>
+
+These functions allow you to confirm your handle points to a valid libxbee packet, and free the memory associated with a packet.
+<A NAME="lbAE">&nbsp;</A>
+<H3>Return Value</H3>
+
+On success these functions will return XBEE_ENONE, otherwise an error number from
+<I>enum xbee_errors</I> (as specified in <I>&lt;<A HREF="file:///usr/include/xbee.h">xbee.h</A>&gt;</I>)
+
+<A NAME="lbAF">&nbsp;</A>
+<H2>EXAMPLE</H2>
+
+
+<PRE>
+#include &lt;<A HREF="file:///usr/include/xbee.h">xbee.h</A>&gt;
+
+struct xbee *xbee;
+struct xbee_con *con;
+struct xbee_pkt *pkt;
+
+/* initialize xbee, using xbee_setup() */
+
+/* initialize con, using xbee_conNew() */
+
+/* receive some data */
+
+if (xbee_conRx(con, &amp;pkt, NULL) != XBEE_ENONE) return;
+
+if (xbee_pktValidate(pkt) != XBEE_ENONE) return;
+
+/* use the packet's contents */
+
+if (xbee_pktFree(pkt) != XBEE_ENONE) return;
+</PRE>
+
+
+<A NAME="lbAG">&nbsp;</A>
+<H2>AUTHOR</H2>
+
+Attie Grande &lt;<A HREF="mailto:attie@attie.co.uk">attie@attie.co.uk</A>&gt; 
+<A NAME="lbAH">&nbsp;</A>
+<H2>SEE ALSO</H2>
+
+<B><A HREF="../man3/libxbee.3.html">libxbee</A></B>(3),
+
+<B><A HREF="../man3/xbee_setup.3.html">xbee_setup</A></B>(3),
+
+<B><A HREF="../man3/xbee_conNew.3.html">xbee_conNew</A></B>(3),
+
+<B><A HREF="../man3/xbee_conRx.3.html">xbee_conRx</A></B>(3)
+
+<P>
+
+<HR>
+<A NAME="index">&nbsp;</A><H2>Index</H2>
+<DL>
+<DT><A HREF="#lbAB">NAME</A><DD>
+<DT><A HREF="#lbAC">SYNOPSIS</A><DD>
+<DT><A HREF="#lbAD">DESCRIPTION</A><DD>
+<DL>
+<DT><A HREF="#lbAE">Return Value</A><DD>
+</DL>
+<DT><A HREF="#lbAF">EXAMPLE</A><DD>
+<DT><A HREF="#lbAG">AUTHOR</A><DD>
+<DT><A HREF="#lbAH">SEE ALSO</A><DD>
+</DL>
+<HR>
+This document was created by
+<A HREF="/cgi-bin/man/man2html">man2html</A>,
+using the manual pages.<BR>
+Time: 18:19:28 GMT, September 04, 2013
+</BODY>
+</HTML>

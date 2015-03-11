@@ -1,0 +1,6 @@
+The debug mode is not compiled in by default.
+This mode is only really useful for debugging the packet generation aspect of libxbee.
+If you don't know if you want this mode, you probrably don't.
+
+If you want a go anyway, then you must add this line to your 'config.mk' file, and rebuild libxbee:
+	MODELIST+= debug

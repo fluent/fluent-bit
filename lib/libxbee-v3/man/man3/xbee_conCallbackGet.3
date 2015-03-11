@@ -1,0 +1,172 @@
+.\" libxbee - a C library to aid the use of Digi's XBee wireless modules
+.\"           running in API mode.
+.\" 
+.\" Copyright (C) 2009 onwards  Attie Grande (attie@attie.co.uk)
+.\" 
+.\" libxbee is free software: you can redistribute it and/or modify it
+.\" under the terms of the GNU Lesser General Public License as published by
+.\" the Free Software Foundation, either version 3 of the License, or
+.\" (at your option) any later version.
+.\" 
+.\" libxbee is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+.\" GNU Lesser General Public License for more details.
+.\" 
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this program. If not, see <http://www.gnu.org/licenses/>.
+.TH XBEE_CONCALLBACKGET 3  04-Mar-2012 "GNU" "Linux Programmer's Manual"
+.SH NAME
+xbee_conCallbackGet, xbee_conCallbackSet
+.SH SYNOPSIS
+.B #include <xbee.h>
+.sp
+.BI "typedef void(*xbee_t_conCallback)(struct xbee *" xbee ", struct xbee_con *" con ", struct xbee_pkt **" pkt ", void **" data ");"
+.sp
+.BI "xbee_err xbee_conCallbackSet(struct xbee_con *" con ", xbee_t_conCallback " newCallback ", xbee_t_conCallback *" oldCallback ");"
+.sp 0
+.BI "xbee_err xbee_conCallbackGet(struct xbee_con *" con ", xbee_t_conCallback *" curCallback ");"
+.ad b
+.SH DESCRIPTION
+.sp
+.BR xbee_conCallbackSet ()
+allows you to associate a callback function with a connection, whilst retrieving the current callback.
+.sp
+.I con
+must be a valid connection, returned from
+.BR xbee_conNew ().
+.I newCallback
+must be either
+.B NULL
+(to disable callbacks), or non-NULL to enable callbacks, with the given function address.
+.I oldCallback
+can be
+.B NULL
+to indicate that you do not wish to retrieve the previously assigned callback.
+.sp
+.BR xbee_conCallbackGet ()
+allows you to retrieve the callback function that is currently assigned to the given connection.
+.SS Return Value
+On success these functions will return XBEE_ENONE, otherwise an error number from
+.IR "enum xbee_errors" " (as specified in " <xbee.h> )
+.SS Note
+While a connection has a callback function assigned, use of
+.BR xbee_conRx ()
+will be disabled, and it will return
+.BR XBEE_EINVAL .
+.SS Callback Behavior
+For each connection, one callback thread may be active.
+Within this thread, the connection's callback function will be executed once for each packet that is received, in the order that they were received.
+.sp
+This means that if a single callback function is associated with multiple connections, static variables will be unsafe, and the developer should instead use the
+.BI "void **" data
+that is provided. The
+.I data
+parameter is initialized to
+.BR NULL,
+so you may safely initialize this from within the callback function, or alternatively from outside, by calling
+.BR xbee_conDataSet ().
+.SS Callback Parameters
+The callback function's parameters are detailed below:
+.TP
+.I xbee
+provides the libxbee instance from which the connection is derived.
+.TP
+.I con 
+provides the connection that the packet was received by (you may call a variant of
+.BR xbee_conTx ()
+with this from within the callback function).
+.TP
+.I pkt
+provides access to the packet that was received.
+.sp 0
+.BR NOTE: " you must dereference this argument once."
+If you leave the argument alone, then libxbee will automatically call
+.BR xbee_pktFree ()
+on the packet after the callback has completed. If you instead re-assign
+.B NULL
+to it, libxbee will not call
+.BR xbee_pktFree ()
+on the packet. This is useful if you wish to postpone processing, in which case you must later call
+.BR xbee_pktFree ().
+See the EXAMPLE section for more information.
+.TP
+.I data
+provides the data item that you have assigned to the connection, either from within a callback, or by using
+.BR xbee_conDataSet ().
+Again, you must dereference this argument once before use, and you may re-assign it from within the callback function, without calling
+.BR xbee_conDataSet ().
+.PP
+.SH EXAMPLE
+.SS A simple callback
+.in +4n
+.nf
+#include <xbee.h>
+
+void myCallback(struct xbee *xbee, struct xbee_con *con, struct xbee_pkt **pkt, void **data) {
+	printf("received data for connection @ %p\\n", con);
+	xbee_conTx(con, "Hello!\\n");
+}
+
+struct xbee *xbee;
+struct xbee_con *con;
+
+/* initialize xbee, using xbee_setup() */
+
+/* initialize con, using xbee_conNew() */
+
+if (xbee_conCallbackSet(con, myCallback, NULL) != XBEE_ENONE) return;
+.fi
+.in
+.SS A callback that uses the connection's data
+.in +4n
+.nf
+
+struct myStruct {
+	int counter;
+	struct xbee_pkt *pkt;
+};
+
+void myCallback(struct xbee *xbee, struct xbee_con *con, struct xbee_pkt **pkt, void **data) {
+	struct myStruct *ms;
+	
+	/* allocate storage for the counter & packet */
+	if (!(*data)) {
+		if ((ms = malloc(sizeof(*ms))) == NULL) return; /* error */
+		/* keep hold of the storage */
+		*data = ms;
+	} else {
+		ms = *data;
+	}
+	
+	/* if we are already holding a packet, print a message and return (libxbee will free the packet) */
+	if (ms->pkt) {
+		printf("already holding a packet...\\n");
+		return;
+	}
+	
+	/* otherwise increment the counter, and hold on to the packet */
+	ms->counter++;
+	ms->pkt = *pkt;
+	
+	printf("received %d packets for connection @ %p\\n", ms->a, con);
+	xbee_conTx(con, "Hello!\\n");
+	
+	/* don't let libxbee free our packet */
+	*pkt = NULL;
+}
+
+/* observe the data using xbee_conDataGet() */
+.fi
+.in
+.SH AUTHOR
+Attie Grande <attie@attie.co.uk> 
+.SH "SEE ALSO"
+.BR libxbee (3),
+.BR xbee_setup (3),
+.BR xbee_conNew (3),
+.BR xbee_conTx (3),
+.BR xbee_conRx (3),
+.BR xbee_conDataGet (3),
+.BR xbee_conDataSet (3),
+.BR xbee_pktFree (3)

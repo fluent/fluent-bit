@@ -1,0 +1,93 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML><HEAD><TITLE>Man page of XBEE_ATTACHEOFCALLBACK</TITLE>
+</HEAD><BODY>
+<H1>XBEE_ATTACHEOFCALLBACK</H1>
+Section: Linux Programmer's Manual (3)<BR>Updated: 02-Mar-2012<BR><A HREF="#index">Index</A>
+<A HREF="../index.html">Return to Main Contents</A><HR>
+
+<A NAME="lbAB">&nbsp;</A>
+<H2>NAME</H2>
+
+xbee_attachEOFCallback
+<A NAME="lbAC">&nbsp;</A>
+<H2>SYNOPSIS</H2>
+
+<B>#include &lt;<A HREF="file:///usr/include/xbee.h">xbee.h</A>&gt;</B>
+
+<P>
+<B>xbee_err xbee_attachEOFCallback(struct xbee *</B><I>xbee</I><B>, void (*</B><I>eofCallback</I><B>)(struct xbee *</B><I>xbee</I><B>, void *</B><I>rxInfo</I><B>));</B>
+
+
+<A NAME="lbAD">&nbsp;</A>
+<H2>DESCRIPTION</H2>
+
+<P>
+<B>xbee_attachEOFCallback</B>()
+
+allows you to be notified if an EOF occurs on the device. An EOF can occur if a USB Serial Adaptor is unplugged, or if the network server closes the connection.
+It is useful to know that an EOF has occured so that you can take action (e.g: warn the user).
+<A NAME="lbAE">&nbsp;</A>
+<H3>Return Value</H3>
+
+On success this function will return XBEE_ENONE, otherwise an error number from
+<I>enum xbee_errors</I> (as specified in <I>&lt;<A HREF="file:///usr/include/xbee.h">xbee.h</A>&gt;</I>)
+
+<A NAME="lbAF">&nbsp;</A>
+<H2>EXAMPLE</H2>
+
+To configure an EOF callback:
+<P>
+
+<PRE>
+#include &lt;<A HREF="file:///usr/include/xbee.h">xbee.h</A>&gt;
+
+void eek_eof(struct xbee *xbee, void *rxInfo) {
+        printf(&quot;device failed - EOF\n&quot;);
+        xbee_shutdown(xbee);
+}
+
+struct xbee *xbee;
+
+/* initialize xbee, using xbee_setup() */
+
+if (xbee_attachEOFCallback(xbee, eek_eof) != XBEE_ENONE) {
+        /* alert of error */
+}
+</PRE>
+
+
+<A NAME="lbAG">&nbsp;</A>
+<H2>AUTHOR</H2>
+
+Attie Grande &lt;<A HREF="mailto:attie@attie.co.uk">attie@attie.co.uk</A>&gt; 
+<A NAME="lbAH">&nbsp;</A>
+<H2>SEE ALSO</H2>
+
+<B><A HREF="../man3/libxbee.3.html">libxbee</A></B>(3),
+
+<B><A HREF="../man3/xbee_setup.3.html">xbee_setup</A></B>(3),
+
+<B><A HREF="../man3/xbee_shutdown.3.html">xbee_shutdown</A></B>(3)
+
+<P>
+
+<HR>
+<A NAME="index">&nbsp;</A><H2>Index</H2>
+<DL>
+<DT><A HREF="#lbAB">NAME</A><DD>
+<DT><A HREF="#lbAC">SYNOPSIS</A><DD>
+<DT><A HREF="#lbAD">DESCRIPTION</A><DD>
+<DL>
+<DT><A HREF="#lbAE">Return Value</A><DD>
+</DL>
+<DT><A HREF="#lbAF">EXAMPLE</A><DD>
+<DT><A HREF="#lbAG">AUTHOR</A><DD>
+<DT><A HREF="#lbAH">SEE ALSO</A><DD>
+</DL>
+<HR>
+This document was created by
+<A HREF="/cgi-bin/man/man2html">man2html</A>,
+using the manual pages.<BR>
+Time: 18:19:27 GMT, September 04, 2013
+</BODY>
+</HTML>

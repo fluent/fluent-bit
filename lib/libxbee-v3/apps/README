@@ -1,0 +1,7 @@
+These are applications that I have written that use libxbee.
+
+In order for them to run, you will need to have executed 'make install' in the
+source root so that libxbee is avaliable for use at runtime.
+
+Alternatively you can use the LD_LIBRARY_PATH environment variable to specify
+an alternate (out of system dirs) location for libxbee.

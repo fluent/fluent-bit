@@ -1,0 +1,87 @@
+.\" libxbee - a C library to aid the use of Digi's XBee wireless modules
+.\"           running in API mode.
+.\" 
+.\" Copyright (C) 2009 onwards  Attie Grande (attie@attie.co.uk)
+.\" 
+.\" libxbee is free software: you can redistribute it and/or modify it
+.\" under the terms of the GNU Lesser General Public License as published by
+.\" the Free Software Foundation, either version 3 of the License, or
+.\" (at your option) any later version.
+.\" 
+.\" libxbee is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+.\" GNU Lesser General Public License for more details.
+.\" 
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this program. If not, see <http://www.gnu.org/licenses/>.
+.TH XBEE_NETSTART 3  04-Mar-2012 "GNU" "Linux Programmer's Manual"
+.SH NAME
+xbee_netStart, xbee_netvStart, xbee_netStop
+.SH SYNOPSIS
+.B #include <xbee.h>
+.sp
+.BI "xbee_err xbee_netStart(struct xbee *" xbee ", int " port ", int(*" clientFilter ")(struct xbee *xbee, const char *remoteHost));"
+.sp
+.BI "xbee_err xbee_netvStart(struct xbee *" xbee ", int " fd ", int(*" clientFilter ")(struct xbee *xbee, const char *remoteHost));"
+.sp
+.BI "xbee_err xbee_netStop(struct xbee *" xbee ");"
+.SH DESCRIPTION
+These functions allow you to start and stop the network interface for libxbee.
+.sp
+If you use
+.BR xbee_netStart ()
+libxbee will listen on all avaliable interfaces, you can only specify which port to listen on.
+.sp
+If you use
+.BR xbee_netvStart ()
+you must provide a file descriptor for a socket that has been bound to an interface and port - using
+.BR socket (2)
+and
+.BR bind (2)
+- but is not yet listening. 
+.sp
+For both of these functions, you may specify a
+.I clientFilter
+that may decide if the client will be granted access, or denied. If the function returns 0, then the connection will be permitted, otherwise it will be terminated. See the example for more details.
+.sp
+If you wish to terminate the network interface before calling 
+.BR xbee_shutdown (3),
+you may use
+.BR xbee_netStop ().
+If you do not call
+.BR xbee_netStop ()
+before
+.BR xbee_shutdown (3),
+then libxbee will call it for you.
+.SS Return Value
+On success these functions will return XBEE_ENONE, otherwise an error number from
+.IR "enum xbee_errors" " (as specified in " <xbee.h> )
+.SH EXAMPLE
+.in +4n
+.nf
+#include <xbee.h>
+
+int myClientFilter(struct xbee *xbee, const char *remoteHost) {
+	printf("Connection request from [%s]\\n", remoteHost);
+	return 0; /* return 0 - accept, anything else means deny  */
+}
+
+struct xbee *xbee;
+
+/* initialize xbee, using xbee_setup() */
+
+xbee_netStart(xbee, 27015, myClientFilter);
+
+/* use the network interface... */
+
+xbee_netStop(xbee);
+.fi
+.in
+.SH AUTHOR
+Attie Grande <attie@attie.co.uk> 
+.SH "SEE ALSO"
+.BR libxbee (3),
+.BR xbee_setup (3),
+.BR socket (2),
+.BR bind (2)

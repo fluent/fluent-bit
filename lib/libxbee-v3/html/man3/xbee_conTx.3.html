@@ -1,0 +1,148 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML><HEAD><TITLE>Man page of XBEE_CONTX</TITLE>
+</HEAD><BODY>
+<H1>XBEE_CONTX</H1>
+Section: Linux Programmer's Manual (3)<BR>Updated: 04-Mar-2012<BR><A HREF="#index">Index</A>
+<A HREF="../index.html">Return to Main Contents</A><HR>
+
+<A NAME="lbAB">&nbsp;</A>
+<H2>NAME</H2>
+
+xbee_conTx, xbee_convTx, xbee_connTx, xbee_conxTx, xbee_convxTx, xbee_connxTx
+<A NAME="lbAC">&nbsp;</A>
+<H2>SYNOPSIS</H2>
+
+<B>#include &lt;<A HREF="file:///usr/include/xbee.h">xbee.h</A>&gt;</B>
+
+<P>
+<B>xbee_err xbee_conTx(struct xbee_con *</B><I>con</I><B>, unsigned char *</B><I>retVal</I><B>, const char *</B><I>format</I><B>, </B><I>...</I><B>);</B>
+
+<P>
+<B>xbee_err xbee_convTx(struct xbee_con *</B><I>con</I><B>, unsigned char *</B><I>retVal</I><B>, const char *</B><I>format</I><B>, va_list </B><I>args</I><B>);</B>
+
+<P>
+<B>xbee_err xbee_connTx(struct xbee_con *</B><I>con</I><B>, unsigned char *</B><I>retVal</I><B>, const unsigned char *</B><I>buf</I><B>, int </B><I>len</I><B>);</B>
+
+<P>
+<B>xbee_err xbee_conxTx(struct xbee_con *</B><I>con</I><B>, unsigned char *</B><I>retVal</I><B>, unsigned char *</B><I>frameId</I><B>, const char *</B><I>format</I><B>, </B><I>...</I><B>);</B>
+
+<P>
+<B>xbee_err xbee_convxTx(struct xbee_con *</B><I>con</I><B>, unsigned char *</B><I>retVal</I><B>, unsigned char *</B><I>frameId</I><B>, const char *</B><I>format</I><B>, va_list </B><I>args</I><B>);</B>
+
+<P>
+<B>xbee_err xbee_connxTx(struct xbee_con *</B><I>con</I><B>, unsigned char *</B><I>retVal</I><B>, unsigned char *</B><I>frameId</I><B>, const unsigned char *</B><I>buf</I><B>, int </B><I>len</I><B>);</B>
+
+<A NAME="lbAD">&nbsp;</A>
+<H2>DESCRIPTION</H2>
+
+This collection of functions allow you to transmit data via an existing connection.
+<P>
+When calling
+<B>xbee_conTx</B>(),
+
+you may use a
+<B><A HREF="../man3/printf.3.html">printf</A></B>(3)
+
+style format string and parameters. Similarly,
+<B>xbee_convTx</B>()
+
+makes use of 
+<B><A HREF="../man3/vprintf.3.html">vprintf</A></B>(3).
+
+When using these two functions, the length of the message is determined from the return value of
+<B><A HREF="../man3/vprintf.3.html">vprintf</A></B>(3).
+
+This means that by using
+'<B>%c</B>'
+
+conversion specifiers within the format string, you may achieve zero value - 0x00 - bytes before the end of your message. Do not use
+'<B>\\&nbsp;</B>'
+
+as this will terminate the format string early
+<P>
+<B>xbee_connTx</B>()
+
+accepts a buffer and a length instead, allowing you to build the message yourself.
+<P>
+The 'x' variants namely
+<B>xbee_conxTx</B>(), <B>xbee_convxTx</B>() and <B>xbee_connxTx</B>
+
+can be used if you want to know what frame ID was used for the transmission.
+<P>
+If the connection type supports ACKs, and they are not disabled for the connection, and if
+<I>retVal</I>
+
+is non-NULL, it will be updated with the return value. E.g: 0x04 - No response for a Remote AT connection.
+You should consult the manual for the remote device for information on the values that this may return.
+<P>
+<B>NOTE:</B>
+
+not all connection types are able to transmit. For example the 'Modem Status', 'Transmit Status' and 'I/O' connections.
+<A NAME="lbAE">&nbsp;</A>
+<H3>Return Value</H3>
+
+On success these functions will return XBEE_ENONE, otherwise an error number from
+<I>enum xbee_errors</I> (as specified in <I>&lt;<A HREF="file:///usr/include/xbee.h">xbee.h</A>&gt;</I>)
+
+<A NAME="lbAF">&nbsp;</A>
+<H2>EXAMPLE</H2>
+
+
+<PRE>
+#include &lt;<A HREF="file:///usr/include/xbee.h">xbee.h</A>&gt;
+
+struct xbee *xbee;
+struct xbee_con *con;
+xbee_err ret;
+unsigned char retVal;
+
+/* initialize xbee, using xbee_setup() */
+
+/* initialize con, using xbee_conNew() */
+
+if ((ret = xbee_conTx(con, &amp;retVal, &quot;Hello World! it is %d!&quot;, 2012)) != XBEE_ENONE) {
+        if (ret == XBEE_ETX) {
+                fprintf(stderr, &quot;a transmission error occured... (0x%02X)\n&quot;, retVal);
+        } else {
+                fprintf(stderr, &quot;an error occured... %s\n&quot;, xbee_errorToStr(ret));
+        }
+        return ret;
+}
+</PRE>
+
+
+<A NAME="lbAG">&nbsp;</A>
+<H2>AUTHOR</H2>
+
+Attie Grande &lt;<A HREF="mailto:attie@attie.co.uk">attie@attie.co.uk</A>&gt; 
+<A NAME="lbAH">&nbsp;</A>
+<H2>SEE ALSO</H2>
+
+<B><A HREF="../man3/libxbee.3.html">libxbee</A></B>(3),
+
+<B><A HREF="../man3/xbee_setup.3.html">xbee_setup</A></B>(3),
+
+<B><A HREF="../man3/xbee_conNew.3.html">xbee_conNew</A></B>(3)
+
+<P>
+
+<HR>
+<A NAME="index">&nbsp;</A><H2>Index</H2>
+<DL>
+<DT><A HREF="#lbAB">NAME</A><DD>
+<DT><A HREF="#lbAC">SYNOPSIS</A><DD>
+<DT><A HREF="#lbAD">DESCRIPTION</A><DD>
+<DL>
+<DT><A HREF="#lbAE">Return Value</A><DD>
+</DL>
+<DT><A HREF="#lbAF">EXAMPLE</A><DD>
+<DT><A HREF="#lbAG">AUTHOR</A><DD>
+<DT><A HREF="#lbAH">SEE ALSO</A><DD>
+</DL>
+<HR>
+This document was created by
+<A HREF="/cgi-bin/man/man2html">man2html</A>,
+using the manual pages.<BR>
+Time: 18:19:28 GMT, September 04, 2013
+</BODY>
+</HTML>

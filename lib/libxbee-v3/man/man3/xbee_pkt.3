@@ -1,0 +1,108 @@
+.\" libxbee - a C library to aid the use of Digi's XBee wireless modules
+.\"           running in API mode.
+.\" 
+.\" Copyright (C) 2009 onwards  Attie Grande (attie@attie.co.uk)
+.\" 
+.\" libxbee is free software: you can redistribute it and/or modify it
+.\" under the terms of the GNU Lesser General Public License as published by
+.\" the Free Software Foundation, either version 3 of the License, or
+.\" (at your option) any later version.
+.\" 
+.\" libxbee is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+.\" GNU Lesser General Public License for more details.
+.\" 
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this program. If not, see <http://www.gnu.org/licenses/>.
+.TH XBEE_PKT 3  04-Mar-2012 "GNU" "Linux Programmer's Manual"
+.SH NAME
+xbee_pkt
+.SH SYNOPSIS
+.nf
+#include <xbee.h>
+
+struct xbee_pkt {
+	struct xbee *xbee;
+	struct xbee_con *con;
+	const char *conType;
+
+	unsigned char status;
+	unsigned char options;
+	unsigned char rssi; /* print as "RSSI: -%d\n" - only valid for XBee 1 */
+	unsigned char frameId;
+
+	struct timespec timestamp;
+
+	struct xbee_conAddress address;
+	
+	unsigned char atCommand[2];
+	
+	void *dataItems; /* do NOT access this item */
+	
+	int dataLen;
+	unsigned char data[1];
+};
+.fi
+.SH DESCRIPTION
+The
+.I xbee_pkt
+structure provides access to the information contained within a packet.
+.TP
+.I xbee
+provides a handle to the related libxbee instance
+.TP
+.I con
+provides a handle to the related libxbee connection
+.TP
+.I status
+provides the returned status information. This is not populated for all connection types, but is populated for
+.BR "Local AT" ", " "Remote AT"
+and possibly others (refer to the XBee datasheet for more information).
+.TP
+.I options
+like
+.IR status ,
+this field isn't populated for every connection type, but is populated for
+.BR "Data" " and " "I/O" 
+(refer to the XBee datasheet for more information).
+.TP
+.I rssi
+this field contains the 'Received Signal Strength Indication' value.
+.sp 0
+If populated, this can be printed like so:
+.in +2n
+.nf
+printf("RSSI: -%d dBm\\n", pkt->rssi);
+.fi
+.in
+.TP
+.I atCommand
+this is only populated for AT connection types, and contains the 2 character AT command.
+.TP
+.I dataItems
+you should not dereference this pointer, it is for internal use
+.IR only .
+To access data, use 
+.BR xbee_pktDataGet (3)
+and its variations.
+.TP
+.I dataLen
+this indicates the length of the
+.I data
+field.
+.TP
+.I data
+this contains the body of the packet. This can contain 
+.B zero
+bytes, and libxbee will nul terminate it, so that data may be treated as a string (using
+.BR printf (3)
+for example).
+.SH AUTHOR
+Attie Grande <attie@attie.co.uk> 
+.SH "SEE ALSO"
+.BR libxbee (3),
+.BR xbee_setup (3),
+.BR xbee_conNew (3),
+.BR xbee_conRx (3),
+.BR xbee_pktFree (3)

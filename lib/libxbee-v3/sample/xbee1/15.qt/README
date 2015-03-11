@@ -1,0 +1,5 @@
+Please run the following to build this project (or open with QtCreator):
+
+	qmake
+	make
+	./15qt

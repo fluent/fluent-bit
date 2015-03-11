@@ -1,0 +1,107 @@
+.\" libxbee - a C library to aid the use of Digi's XBee wireless modules
+.\"           running in API mode.
+.\" 
+.\" Copyright (C) 2009 onwards  Attie Grande (attie@attie.co.uk)
+.\" 
+.\" libxbee is free software: you can redistribute it and/or modify it
+.\" under the terms of the GNU Lesser General Public License as published by
+.\" the Free Software Foundation, either version 3 of the License, or
+.\" (at your option) any later version.
+.\" 
+.\" libxbee is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+.\" GNU Lesser General Public License for more details.
+.\" 
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this program. If not, see <http://www.gnu.org/licenses/>.
+.TH XBEE_PKTDATAGET 3  04-Mar-2012 "GNU" "Linux Programmer's Manual"
+.SH NAME
+xbee_pktDataGet, xbee_pktAnalogGet, xbee_pktDigitalGet
+.SH SYNOPSIS
+.B #include <xbee.h>
+.sp
+.BI "xbee_err xbee_pktDataGet(struct xbee_pkt *" pkt ", const char *" key ", int " id ", int " index ", void **" retData ");"
+.sp
+.BI "xbee_err xbee_pktAnalogGet(struct xbee_pkt *" pkt ", int " channel ", int " index ", int *" retVal ");"
+.sp
+.BI "xbee_err xbee_pktDigitalGet(struct xbee_pkt *" pkt ", int " channel ", int " index ", int *" retVal ");"
+.SH DESCRIPTION
+These functions provide access to data that has been parsed out of the packet's body by libxbee.
+In general, the raw data is still accessible though the packet, but this creates a more friendly interface.
+.sp
+.BR xbee_pktDataGet ()
+will search the packet's
+.I dataItems
+(see 
+.BR xbee_pkt (3)
+for more) for a named
+.IR key .
+The
+.I id
+and
+.I index
+are used to give a 2D-esque layout to the
+.IR key .
+However if
+.I id
+is given as -1, then it is ignored, and the first 'column' is used.
+This allows for similar data - e.g: analog samples - to be stored using a single key, with differing channel numbers
+.RI ( id 's).
+.sp
+.BR xbee_pktAnalogGet (w,x,y,&z)
+is nearly synonymous with
+.BR xbee_pktDataGet (w,"analog",x,y,&z),
+though due to internal magic, it is strongly recommended that you use
+.BR xbee_pktAnalogGet ().
+.sp
+Similarly,
+.BR xbee_pktDigitalGet (w,x,y,&z)
+is nearly synonymous with
+.BR xbee_pktDataGet (w,"digital",x,y,&z).
+.SS Keys
+Below is a list of keys that libxbee uses, 'analog' and 'digital' are not included, because you should use the relative functions instead.
+.sp 0
+The list is keyed - <xbee mode>:<connection type>
+.TP
+xbee2:Identify
+"Address (16-bit)" - the raw 16-bit address
+.sp
+"Address (64-bit)" - the raw 64-bit address
+.sp
+"Address" - a
+.I struct xbee_conAddress
+containing the full address information. This is not stored within the packet's data field
+.sp
+"NI" - the node identifier
+.SS Return Value
+On success these functions will return XBEE_ENONE, otherwise an error number from
+.IR "enum xbee_errors" " (as specified in " <xbee.h> )
+.SH EXAMPLE
+.in +4n
+.nf
+#include <xbee.h>
+
+struct xbee *xbee;
+struct xbee_con *con;
+struct xbee_pkt *pkt;
+int value;
+
+/* initialize xbee, using xbee_setup() */
+
+/* initialize con, using xbee_conNew() to an I/O connection */
+
+/* receive a packet with analog I/O data, using xbee_conRx() */
+
+if (xbee_pktAnalogGet(pkt, 3, 0, &value) != XBEE_ENONE) return;
+
+/* 'value' now contains the ADC value from the A3 pin */
+.fi
+.in
+.SH AUTHOR
+Attie Grande <attie@attie.co.uk> 
+.SH "SEE ALSO"
+.BR libxbee (3),
+.BR xbee_setup (3),
+.BR xbee_conNew (3),
+.BR xbee_conRx (3)

@@ -1,0 +1,281 @@
+.\" libxbee - a C library to aid the use of Digi's XBee wireless modules
+.\"           running in API mode.
+.\" 
+.\" Copyright (C) 2009 onwards  Attie Grande (attie@attie.co.uk)
+.\" 
+.\" libxbee is free software: you can redistribute it and/or modify it
+.\" under the terms of the GNU Lesser General Public License as published by
+.\" the Free Software Foundation, either version 3 of the License, or
+.\" (at your option) any later version.
+.\" 
+.\" libxbee is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+.\" GNU Lesser General Public License for more details.
+.\" 
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this program. If not, see <http://www.gnu.org/licenses/>.
+.TH XBEE_CONNEW 3  02-Mar-2012 "GNU" "Linux Programmer's Manual"
+.SH NAME
+xbee_conNew, xbee_conValidate, xbee_conGetXBee, xbee_conEnd
+.SH SYNOPSIS
+.B #include <xbee.h>
+.sp
+.BI "xbee_err xbee_conNew(struct xbee *" xbee ", struct xbee_con **" retCon ", const char *" type ", struct xbee_conAddress *" address ");"
+.sp
+.BI "xbee_err xbee_conValidate(struct xbee_con *" con ");"
+.sp
+.BI "xbee_err xbee_conGetXBee(struct xbee_con *" con ", struct xbee **" xbee ");"
+.sp
+.BI "xbee_err xbee_conEnd(struct xbee_con *" con ");"
+.ad b
+.SH DESCRIPTION
+.sp
+.BR xbee_conNew ()
+will create new connection via the given libxbee instance
+.IR xbee .
+The new connection will be returned via
+.IR retCon ,
+and the connection's type is provided by
+.IR type .
+A list of avaliable connection types can be obtained by using
+.BR xbee_conGetTypes (3).
+The
+.I address
+indicates which remote device you wish to communicate with - it is not always appropriate to use this (e.g: with a "Local AT" connection), in which case
+.B NULL
+may be safely provided.
+.sp
+.BR xbee_conValidate ()
+allows you to confirm that your handle points to a valid libxbee connection.
+.sp
+.BR xbee_conGetXBee ()
+allows you to retrieve the libxbee instance that was provided when the connection was created by calling
+.BR xbee_conNew ().
+.sp
+.BR xbee_conEnd ()
+will terminate a connection, and free any memory that is associated with it, including any un-fetched packets.
+If a callback is active when
+.BR xbee_conEnd ()
+is called, it will be permitted to complete, and then the connection will be terminated.
+.SS Avaliable Types
+.B xbee1
+.in +4n
+"Modem Status"
+- Rx Only. Status updates from the XBee module.
+.sp 0
+"Transmit Status"
+- Rx Only. Transmit status responses. These are handled for you, but you may wish to access them anyway.
+.sp 0
+"Local AT"
+- Set/Get AT configuration from the local module.
+.sp 0
+"Remote AT"
+- Set/Get AT configuration from a remote module.
+.sp 0
+"16-bit Data"
+- 2-way communication with a remote module, using 16-bit addressing.
+.sp 0
+"64-bit Data"
+- 2-way communication with a remote module, using 64-bit addressing.
+.sp 0
+"16-bit I/O"
+- Rx Only. I/O samples received from a remote module, using 16-bit addressing.
+.sp 0
+"64-bit I/O"
+- Rx Only. I/O samples received from a remote module, using 64-bit addressing.
+.fi
+.in
+.sp
+.B xbee2
+.in +4n
+"Modem Status"
+- Rx Only. Status updates from the XBee module.
+.sp 0
+"Transmit Status"
+- Rx Only. Transmit status responses. These are handled for you, but you may wish to access them anyway.
+.sp 0
+"Local AT"
+- Set/Get AT configuration from the local module.
+.sp 0
+"Remote AT"
+- Set/Get AT configuration from a remote module.
+.sp 0
+"Data"
+- 2-way communication with a remote module. All data will be recieved using this connection type if AO=0.
+.sp 0
+"Data (explicit)"
+- 2-way communication with a remote module, with configurable endpoints. All data will be recieved using this connection type if AO=1.
+.sp 0
+"I/O"
+- Rx Only. I/O samples received from a remote module. Only if AO=0.
+.sp 0
+"Sensor"
+- Rx Only. Used for receiving sensor samples. Only if AO=0.
+.sp 0
+"Identify"
+- Rx on the Coordinator Only. Identifies new nodes as they join the network. Only if AO=0.
+.fi
+.in
+.sp
+.B xbee3
+.in +4n
+"Modem Status"
+- Rx Only. Status updates from the XBee module.
+.sp 0
+"Transmit Status"
+- Rx Only. Transmit status responses. These are handled for you, but you may wish to access them anyway.
+.sp 0
+"Local AT"
+- Set/Get AT configuration from the local module.
+.sp 0
+"Remote AT"
+- Set/Get AT configuration from a remote module.
+.sp 0
+"Data"
+- 2-way communication with a remote module. All data will be recieved using this connection type if AO=0.
+.sp 0
+"Data (explicit)"
+- 2-way communication with a remote module, with configurable endpoints. All data will be recieved using this connection type if AO=1.
+.sp 0
+"Identify"
+- Rx on the Coordinator Only. Identifies new nodes as they join the network. Only if AO=0.
+.fi
+.in
+.sp
+.B xbee5
+.in +4n
+"Modem Status"
+- Rx Only. Status updates from the XBee module.
+.sp 0
+"Transmit Status"
+- Rx Only. Transmit status responses. These are handled for you, but you may wish to access them anyway.
+.sp 0
+"Local AT"
+- Set/Get AT configuration from the local module.
+.sp 0
+"Remote AT"
+- Set/Get AT configuration from a remote module.
+.sp 0
+"Data"
+- 2-way communication with a remote module. All data will be recieved using this connection type if AO=0.
+.sp 0
+"Data (explicit)"
+- 2-way communication with a remote module, with configurable endpoints. All data will be recieved using this connection type if AO=1.
+.sp 0
+"Identify"
+- Rx on the Coordinator Only. Identifies new nodes as they join the network. Only if AO=0.
+.fi
+.in
+.sp
+.B xbee6b
+.in +4n
+"Modem Status"
+- Rx Only. Status updates from the XBee module.
+.sp 0
+"Transmit Status"
+- Rx Only. Transmit status responses. These are handled for you, but you may wish to access them anyway.
+.sp 0
+"Frame Error"
+- Rx Only. Framing errors are received by this connection type, though they are currently of limited use because they aren't referenced to a specific frame...
+.sp 0
+"Local AT"
+- Set/Get AT configuration from the local module.
+.sp 0
+"Remote AT"
+- Set/Get AT configuration from a remote module.
+.sp 0
+"Data"
+- 2-way communication with a remote module.
+.sp 0
+"I/O"
+- Rx Only. I/O samples received from a remote module.
+.fi
+.in
+.sp
+.B xbeeZB
+.in +4n
+"Modem Status"
+- Rx Only. Status updates from the XBee module.
+.sp 0
+"Transmit Status"
+- Rx Only. Transmit status responses. These are handled for you, but you may wish to access them anyway.
+.sp 0
+"Local AT"
+- Set/Get AT configuration from the local module.
+.sp 0
+"Remote AT"
+- Set/Get AT configuration from a remote module.
+.sp 0
+"Data"
+- 2-way communication with a remote module. All data will be recieved using this connection type if AO=0.
+.sp 0
+"Data (explicit)"
+- 2-way communication with a remote module, with configurable endpoint, cluster and profile IDs. All data will be recieved using this connection type if AO=1.
+.sp 0
+"I/O"
+- Rx Only. I/O samples received from a remote module. Only if AO=0.
+.sp 0
+"Identify"
+- Rx on the Coordinator Only. Identifies new nodes as they join the network. Only if AO=0.
+.sp 0
+"Sensor"
+- Rx Only. Used for receiving sensor samples. Only if AO=0.
+.sp 0
+"OTA Update Status"
+- Rx on the Coordinator Only. Identifies new nodes as they join the network. Only if AO=0.
+.fi
+.in
+.sp
+.B net
+.in +4n
+the connection types for
+.B net
+mode are determined by the mode running on the server. See
+.BR xbee_conGetTypes (3).
+.SS Return Value
+On success these functions will return XBEE_ENONE, otherwise an error number from
+.IR "enum xbee_errors" " (as specified in " <xbee.h> ).
+Postponed termination due to an active callback is considered a success.
+.SH EXAMPLE
+.in +4n
+.nf
+#include <xbee.h>
+
+struct xbee *xbee;
+struct xbee_con *con;
+struct xbee_conAddress address;
+
+/* initialize xbee, using xbee_setup() */
+
+memset(&address, 0, sizeof(address));
+address.addr64_enabled = 1;
+address.addr64[0] = 0x00;
+address.addr64[1] = 0x13;
+address.addr64[2] = 0xA2;
+address.addr64[3] = 0x00;
+address.addr64[4] = 0x40;
+address.addr64[5] = 0x08;
+address.addr64[6] = 0x18;
+address.addr64[7] = 0x26;
+
+if (xbee_conNew(xbee, &con, "64-bit Data", &address) != XBEE_ENONE) return;
+
+/* make use of the connection... */
+
+if (xbee_conEnd(con) != XBEE_ENONE) return;
+.fi
+.in
+.SH AUTHOR
+Attie Grande <attie@attie.co.uk> 
+.SH "SEE ALSO"
+.BR libxbee (3),
+.BR xbee_setup (3),
+.BR xbee_conGetTypes (3),
+.BR xbee_conTx (3),
+.BR xbee_conRx (3),
+.BR xbee_conSleepGet (3),
+.BR xbee_conDataGet (3),
+.BR xbee_conInfoGet (3),
+.BR xbee_conCallbackGet (3),
+.BR xbee_conSettings (3)

@@ -1,0 +1,60 @@
+.\" libxbee - a C library to aid the use of Digi's XBee wireless modules
+.\"           running in API mode.
+.\" 
+.\" Copyright (C) 2009 onwards  Attie Grande (attie@attie.co.uk)
+.\" 
+.\" libxbee is free software: you can redistribute it and/or modify it
+.\" under the terms of the GNU Lesser General Public License as published by
+.\" the Free Software Foundation, either version 3 of the License, or
+.\" (at your option) any later version.
+.\" 
+.\" libxbee is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+.\" GNU Lesser General Public License for more details.
+.\" 
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this program. If not, see <http://www.gnu.org/licenses/>.
+.TH XBEE_ATTACHEOFCALLBACK 3  02-Mar-2012 "GNU" "Linux Programmer's Manual"
+.SH NAME
+xbee_attachEOFCallback
+.SH SYNOPSIS
+.B #include <xbee.h>
+.sp
+.BI "xbee_err xbee_attachEOFCallback(struct xbee *" xbee ", void (*" eofCallback ")(struct xbee *" xbee ", void *" rxInfo "));"
+.ad b
+.SH DESCRIPTION
+.sp
+.BR xbee_attachEOFCallback ()
+allows you to be notified if an EOF occurs on the device. An EOF can occur if a USB Serial Adaptor is unplugged, or if the network server closes the connection.
+It is useful to know that an EOF has occured so that you can take action (e.g: warn the user).
+.SS Return Value
+On success this function will return XBEE_ENONE, otherwise an error number from
+.IR "enum xbee_errors" " (as specified in " <xbee.h> )
+.SH EXAMPLE
+To configure an EOF callback:
+.sp
+.in +4n
+.nf
+#include <xbee.h>
+
+void eek_eof(struct xbee *xbee, void *rxInfo) {
+	printf("device failed - EOF\\n");
+	xbee_shutdown(xbee);
+}
+
+struct xbee *xbee;
+
+/* initialize xbee, using xbee_setup() */
+
+if (xbee_attachEOFCallback(xbee, eek_eof) != XBEE_ENONE) {
+	/* alert of error */
+}
+.fi
+.in
+.SH AUTHOR
+Attie Grande <attie@attie.co.uk> 
+.SH "SEE ALSO"
+.BR libxbee (3),
+.BR xbee_setup (3),
+.BR xbee_shutdown (3)

@@ -1,0 +1,152 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML><HEAD><TITLE>Man page of XBEE_PKT</TITLE>
+</HEAD><BODY>
+<H1>XBEE_PKT</H1>
+Section: Linux Programmer's Manual (3)<BR>Updated: 04-Mar-2012<BR><A HREF="#index">Index</A>
+<A HREF="../index.html">Return to Main Contents</A><HR>
+
+<A NAME="lbAB">&nbsp;</A>
+<H2>NAME</H2>
+
+xbee_pkt
+<A NAME="lbAC">&nbsp;</A>
+<H2>SYNOPSIS</H2>
+
+<PRE>
+#include &lt;<A HREF="file:///usr/include/xbee.h">xbee.h</A>&gt;
+
+struct xbee_pkt {
+        struct xbee *xbee;
+        struct xbee_con *con;
+        const char *conType;
+
+        unsigned char status;
+        unsigned char options;
+        unsigned char rssi; /* print as &quot;RSSI: -%d - only valid for XBee 1 */
+        unsigned char frameId;
+
+        struct timespec timestamp;
+
+        struct xbee_conAddress address;
+        
+        unsigned char atCommand[2];
+        
+        void *dataItems; /* do NOT access this item */
+        
+        int dataLen;
+        unsigned char data[1];
+};
+</PRE>
+
+<A NAME="lbAD">&nbsp;</A>
+<H2>DESCRIPTION</H2>
+
+The
+<I>xbee_pkt</I>
+
+structure provides access to the information contained within a packet.
+<DL COMPACT>
+<DT><I>xbee</I>
+
+<DD>
+provides a handle to the related libxbee instance
+<DT><I>con</I>
+
+<DD>
+provides a handle to the related libxbee connection
+<DT><I>status</I>
+
+<DD>
+provides the returned status information. This is not populated for all connection types, but is populated for
+<B>Local AT</B>, <B>Remote AT</B>
+
+and possibly others (refer to the XBee datasheet for more information).
+<DT><I>options</I>
+
+<DD>
+like
+<I>status</I>,
+
+this field isn't populated for every connection type, but is populated for
+<B>Data</B> and <B>I/O</B>
+
+(refer to the XBee datasheet for more information).
+<DT><I>rssi</I>
+
+<DD>
+this field contains the 'Received Signal Strength Indication' value.
+<P>
+If populated, this can be printed like so:
+
+<PRE>
+printf(&quot;RSSI: -%d dBm\n&quot;, pkt-&gt;rssi);
+</PRE>
+
+
+<DT><I>atCommand</I>
+
+<DD>
+this is only populated for AT connection types, and contains the 2 character AT command.
+<DT><I>dataItems</I>
+
+<DD>
+you should not dereference this pointer, it is for internal use
+<I>only</I>.
+
+To access data, use 
+<B><A HREF="../man3/xbee_pktDataGet.3.html">xbee_pktDataGet</A></B>(3)
+
+and its variations.
+<DT><I>dataLen</I>
+
+<DD>
+this indicates the length of the
+<I>data</I>
+
+field.
+<DT><I>data</I>
+
+<DD>
+this contains the body of the packet. This can contain 
+<B>zero</B>
+
+bytes, and libxbee will nul terminate it, so that data may be treated as a string (using
+<B><A HREF="../man3/printf.3.html">printf</A></B>(3)
+
+for example).
+</DL>
+<A NAME="lbAE">&nbsp;</A>
+<H2>AUTHOR</H2>
+
+Attie Grande &lt;<A HREF="mailto:attie@attie.co.uk">attie@attie.co.uk</A>&gt; 
+<A NAME="lbAF">&nbsp;</A>
+<H2>SEE ALSO</H2>
+
+<B><A HREF="../man3/libxbee.3.html">libxbee</A></B>(3),
+
+<B><A HREF="../man3/xbee_setup.3.html">xbee_setup</A></B>(3),
+
+<B><A HREF="../man3/xbee_conNew.3.html">xbee_conNew</A></B>(3),
+
+<B><A HREF="../man3/xbee_conRx.3.html">xbee_conRx</A></B>(3),
+
+<B><A HREF="../man3/xbee_pktFree.3.html">xbee_pktFree</A></B>(3)
+
+<P>
+
+<HR>
+<A NAME="index">&nbsp;</A><H2>Index</H2>
+<DL>
+<DT><A HREF="#lbAB">NAME</A><DD>
+<DT><A HREF="#lbAC">SYNOPSIS</A><DD>
+<DT><A HREF="#lbAD">DESCRIPTION</A><DD>
+<DT><A HREF="#lbAE">AUTHOR</A><DD>
+<DT><A HREF="#lbAF">SEE ALSO</A><DD>
+</DL>
+<HR>
+This document was created by
+<A HREF="/cgi-bin/man/man2html">man2html</A>,
+using the manual pages.<BR>
+Time: 18:19:28 GMT, September 04, 2013
+</BODY>
+</HTML>

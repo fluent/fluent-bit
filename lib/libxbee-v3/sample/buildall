@@ -1,0 +1,9 @@
+#!/bin/bash
+cd $(dirname $0)
+for dir in $(find . -mindepth 2 \( -type l -o -type f \) -name makefile | sed -e 's/makefile$//'); do
+	make -C $dir main;
+	if [ $? != 0 ]; then
+		exit 1;
+	fi
+done
+

@@ -1,0 +1,62 @@
+.\" libxbee - a C library to aid the use of Digi's XBee wireless modules
+.\"           running in API mode.
+.\" 
+.\" Copyright (C) 2009 onwards  Attie Grande (attie@attie.co.uk)
+.\" 
+.\" libxbee is free software: you can redistribute it and/or modify it
+.\" under the terms of the GNU Lesser General Public License as published by
+.\" the Free Software Foundation, either version 3 of the License, or
+.\" (at your option) any later version.
+.\" 
+.\" libxbee is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+.\" GNU Lesser General Public License for more details.
+.\" 
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this program. If not, see <http://www.gnu.org/licenses/>.
+.TH XBEE_PKTVALIDATE 3  04-Mar-2012 "GNU" "Linux Programmer's Manual"
+.SH NAME
+xbee_pktValidate, xbee_pktFree
+.SH SYNOPSIS
+.B #include <xbee.h>
+.sp
+.BI "xbee_err xbee_pktValidate(struct xbee_pkt *" pkt ");"
+.sp
+.BI "xbee_err xbee_pktFree(struct xbee_pkt *" pkt ");"
+.SH DESCRIPTION
+These functions allow you to confirm your handle points to a valid libxbee packet, and free the memory associated with a packet.
+.SS Return Value
+On success these functions will return XBEE_ENONE, otherwise an error number from
+.IR "enum xbee_errors" " (as specified in " <xbee.h> )
+.SH EXAMPLE
+.in +4n
+.nf
+#include <xbee.h>
+
+struct xbee *xbee;
+struct xbee_con *con;
+struct xbee_pkt *pkt;
+
+/* initialize xbee, using xbee_setup() */
+
+/* initialize con, using xbee_conNew() */
+
+/* receive some data */
+
+if (xbee_conRx(con, &pkt, NULL) != XBEE_ENONE) return;
+
+if (xbee_pktValidate(pkt) != XBEE_ENONE) return;
+
+/* use the packet's contents */
+
+if (xbee_pktFree(pkt) != XBEE_ENONE) return;
+.fi
+.in
+.SH AUTHOR
+Attie Grande <attie@attie.co.uk> 
+.SH "SEE ALSO"
+.BR libxbee (3),
+.BR xbee_setup (3),
+.BR xbee_conNew (3),
+.BR xbee_conRx (3)

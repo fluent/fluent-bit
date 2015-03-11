@@ -1,0 +1,187 @@
+.\" libxbee - a C library to aid the use of Digi's XBee wireless modules
+.\"           running in API mode.
+.\" 
+.\" Copyright (C) 2009 onwards  Attie Grande (attie@attie.co.uk)
+.\" 
+.\" libxbee is free software: you can redistribute it and/or modify it
+.\" under the terms of the GNU Lesser General Public License as published by
+.\" the Free Software Foundation, either version 3 of the License, or
+.\" (at your option) any later version.
+.\" 
+.\" libxbee is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+.\" GNU Lesser General Public License for more details.
+.\" 
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this program. If not, see <http://www.gnu.org/licenses/>.
+.TH LIBXBEE 3  01-Mar-2012 "GNU" "Linux Programmer's Manual"
+.SH DESCRIPTION
+libxbee is a C library to aid the use of Digi XBee wireless modules radios running in API mode.
+.sp
+libxbee has been designed with flexibility in mind.
+libxbee does all of the hard work, and provides you with a very friendly interface for creating connections, and sending and receiving data.
+.sp
+Development is ongoing, so if you find any bugs or have any enhancement requests, please feel free to submit an issue on the project page:
+.in +4n
+.nf
+http://code.google.com/p/libxbee/issues/list
+.fi
+.in
+or contact me (Attie) directly:
+.in +4n
+.nf
+attie@attie.co.uk
+.fi
+.in
+.sp
+Download the source from the Google Code site here:
+.in +4n
+http://code.google.com/p/libxbee/source/list?repo=libxbee-v3
+.fi
+.in
+.SH "MAN PAGES"
+Documentation is available via the following man pages, or by examples in the 'sample' folder in the Git repository
+.sp
+libxbee structs and enums
+.in +4n
+.sp
+.BR xbee_pkt "(3)             - a packet"
+.sp                 
+.BR xbee_conAddress "(3)      - connection address"
+.sp 0
+.BR xbee_conInfo "(3)         - connection info (e.g: Tx counter)"
+.sp 0
+.BR xbee_conSettings "(3)     - connection settings (e.g: disable ACK)"
+.sp
+.BR xbee_conSleepStates "(3)  - a list of sleep states for a connection"
+.sp                 
+.BR xbee_errors "(3)          - a list of potential errors, returned by functions"
+.fi
+.in
+.sp 2
+libxbee global variables
+.in +4n
+.sp                 
+.BR libxbee_revision "(3)     - the revision of the installed library (e.g: v3.0.4)"
+.sp 0                 
+.BR libxbee_commit "(3)       - the Git commit id that the source was built from"
+.sp 0               
+.BR libxbee_committer "(3)    - the name of the developer who performed the last commit"
+.sp 0               
+.BR libxbee_buildtime "(3)    - the time that the library was build, as output by `date`"
+.fi
+.in
+.sp 2
+libxbee instance functions
+.in +4n
+.sp
+.BR xbee_modeGetList "(3)     - retrieve a list of available modes"
+.sp                           
+.BR xbee_setup "(3)           - setup an instance of libxbee"
+.sp 0                         
+.BR xbee_validate "(3)        - validate a libxbee handle"
+.sp 0                         
+.BR xbee_modeGet "(3)         - retrieve the mode of a given libxbee instance"
+.sp 0                         
+.BR xbee_shutdown "(3)        - shutdown an instance of libxbee"
+.sp 0                         
+.BR xbee_dataSet "(3)         - associate data with a libxbee instance"
+.sp 0                         
+.BR xbee_dataGet "(3)         - retrieve the data associated with a libxbee instance"
+.fi                           
+.in                           
+.sp 2                         
+libxbee connection functions  
+.in +4n                       
+.sp                           
+.BR xbee_conGetTypes "(3)     - retrieve a list of available connection types"
+.sp                           
+.BR xbee_conNew "(3)          - create a new connection"
+.sp 0                         
+.BR xbee_conValidate "(3)     - validate a connection handle"
+.sp 0                         
+.BR xbee_conGetXBee "(3)      - retrieve the libxbee instance associated with a connection"
+.sp 0                         
+.BR xbee_conEnd "(3)          - close a connection"
+.sp                           
+.BR xbee_conTx "(3)           - transmit a message (using printf-style arguments) - see also:"
+.BR xbee_conxTx (3)
+.sp 0                         
+.BR xbee_convTx "(3)          - transmit a message (using vprintf-style arguments) - see also:"
+.BR xbee_convxTx (3)
+.sp 0                         
+.BR xbee_connTx "(3)          - transmit a message (using a buffer and length) - see also:"
+.BR xbee_connxTx (3)
+.sp                           
+.BR xbee_conRx "(3)           - receive a message"
+.sp 0                         
+.BR xbee_conRxWait "(3)       - receive a message (waiting upto 1 second before returning an error)"
+.sp                           
+.BR xbee_conSleepSet "(3)     - configure sleep settings for a connection"
+.sp 0                         
+.BR xbee_conSleepGet "(3)     - retrieve sleep settings for a connection"
+.sp                           
+.BR xbee_conDataSet "(3)      - associate data with a connection (useful with callbacks)"
+.sp 0                         
+.BR xbee_conDataGet "(3)      - retrieve the data associated with a connection"
+.sp                           
+.BR xbee_conCallbackSet "(3)  - configure a callback for a connection"
+.sp 0                         
+.BR xbee_conCallbackGet "(3)  - retrieve the callback configured for a connection"
+.sp                           
+.BR xbee_conTypeGet "(3)      - retrieve the type of the connection, as provided when calling " xbee_conNew (3)
+.sp                           
+.BR xbee_conInfoGet "(3)      - retrieve the information stored with a connection (e.g: tx/rx counters)"
+.sp                           
+.BR xbee_conSettings "(3)     - configure and retrieve the settings for a connection"
+.fi                           
+.in                           
+.sp 2                         
+libxbee packet functions      
+.in +4n                       
+.sp                           
+.BR xbee_pktFree "(3)         - free the storage associated with a packet retrieved using " xbee_conRx ()
+.sp                           
+.BR xbee_pktValidate "(3)     - validate a packet handle"
+.sp                           
+.BR xbee_pktDataGet "(3)      - retrieve formatted data from a packet"
+.sp 0                         
+.BR xbee_pktAnalogGet "(3)    - retrieve an analog sample from an I/O packet"
+.sp 0                         
+.BR xbee_pktDigitalGet "(3)   - retrieve a digital sample from an I/O packet"
+.fi                           
+.in                           
+.sp 2                         
+libxbee network server functions
+.in +4n                       
+.sp                           
+.BR xbee_netStart "(3)        - start sharing the libxbee instance"
+.sp 0                         
+.BR xbee_netvStart "(3)       - start sharing the libxbee instance (with a pre-bound socket)"
+.sp 0                         
+.BR xbee_netStop "(3)         - stop sharing the libxbee instance"
+.fi                           
+.in                           
+.sp 2                         
+libxbee log functions         
+.in +4n                       
+.sp                           
+.BR xbee_logTargetSet "(3)    - redirect the libxbee log output"
+.sp 0                         
+.BR xbee_logTargetGet "(3)    - retrieve the libxbee log target"
+.sp                           
+.BR xbee_logLevelSet "(3)     - set the log level (higher is more verbose)"
+.sp 0                         
+.BR xbee_logLevelGet "(3)     - retrieve the current log level"
+.sp                           
+.BR xbee_log "(3)             - write a message to the libxbee log"
+.fi
+.in
+.sp 2
+miscellaneous functions
+.in +4n
+.sp
+.BR xbee_errorToStr "(3)      - translate an error number to a string"
+.fi
+.in

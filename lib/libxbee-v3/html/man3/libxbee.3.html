@@ -1,0 +1,250 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML><HEAD><TITLE>Man page of LIBXBEE</TITLE>
+</HEAD><BODY>
+<H1>LIBXBEE</H1>
+Section: Linux Programmer's Manual (3)<BR>Updated: 01-Mar-2012<BR><A HREF="#index">Index</A>
+<A HREF="../index.html">Return to Main Contents</A><HR>
+
+<A NAME="lbAB">&nbsp;</A>
+<H2>DESCRIPTION</H2>
+
+libxbee is a C library to aid the use of Digi XBee wireless modules radios running in API mode.
+<P>
+libxbee has been designed with flexibility in mind.
+libxbee does all of the hard work, and provides you with a very friendly interface for creating connections, and sending and receiving data.
+<P>
+Development is ongoing, so if you find any bugs or have any enhancement requests, please feel free to submit an issue on the project page:
+
+<PRE>
+<A HREF="http://code.google.com/p/libxbee/issues/list">http://code.google.com/p/libxbee/issues/list</A>
+</PRE>
+
+
+or contact me (Attie) directly:
+
+<PRE>
+<A HREF="mailto:attie@attie.co.uk">attie@attie.co.uk</A>
+</PRE>
+
+
+<P>
+Download the source from the Google Code site here:
+
+<A HREF="http://code.google.com/p/libxbee/source/list?repo=libxbee-v3">http://code.google.com/p/libxbee/source/list?repo=libxbee-v3</A>
+
+
+<A NAME="lbAC">&nbsp;</A>
+<H2>MAN PAGES</H2>
+
+Documentation is available via the following man pages, or by examples in the 'sample' folder in the Git repository
+<P>
+libxbee structs and enums
+
+<P>
+<B><A HREF="../man3/xbee_pkt.3.html">xbee_pkt</A></B>(3)             - a packet
+
+<P>
+<B><A HREF="../man3/xbee_conAddress.3.html">xbee_conAddress</A></B>(3)      - connection address
+
+<P>
+<B><A HREF="../man3/xbee_conInfo.3.html">xbee_conInfo</A></B>(3)         - connection info (e.g: Tx counter)
+
+<P>
+<B><A HREF="../man3/xbee_conSettings.3.html">xbee_conSettings</A></B>(3)     - connection settings (e.g: disable ACK)
+
+<P>
+<B><A HREF="../man3/xbee_conSleepStates.3.html">xbee_conSleepStates</A></B>(3)  - a list of sleep states for a connection
+
+<P>
+<B><A HREF="../man3/xbee_errors.3.html">xbee_errors</A></B>(3)          - a list of potential errors, returned by functions
+
+
+
+<P>
+libxbee global variables
+
+<P>
+<B><A HREF="../man3/libxbee_revision.3.html">libxbee_revision</A></B>(3)     - the revision of the installed library (e.g: v3.0.4)
+
+<P>
+<B><A HREF="../man3/libxbee_commit.3.html">libxbee_commit</A></B>(3)       - the Git commit id that the source was built from
+
+<P>
+<B><A HREF="../man3/libxbee_committer.3.html">libxbee_committer</A></B>(3)    - the name of the developer who performed the last commit
+
+<P>
+<B><A HREF="../man3/libxbee_buildtime.3.html">libxbee_buildtime</A></B>(3)    - the time that the library was build, as output by `date`
+
+
+
+<P>
+libxbee instance functions
+
+<P>
+<B><A HREF="../man3/xbee_modeGetList.3.html">xbee_modeGetList</A></B>(3)     - retrieve a list of available modes
+
+<P>
+<B><A HREF="../man3/xbee_setup.3.html">xbee_setup</A></B>(3)           - setup an instance of libxbee
+
+<P>
+<B><A HREF="../man3/xbee_validate.3.html">xbee_validate</A></B>(3)        - validate a libxbee handle
+
+<P>
+<B><A HREF="../man3/xbee_modeGet.3.html">xbee_modeGet</A></B>(3)         - retrieve the mode of a given libxbee instance
+
+<P>
+<B><A HREF="../man3/xbee_shutdown.3.html">xbee_shutdown</A></B>(3)        - shutdown an instance of libxbee
+
+<P>
+<B><A HREF="../man3/xbee_dataSet.3.html">xbee_dataSet</A></B>(3)         - associate data with a libxbee instance
+
+<P>
+<B><A HREF="../man3/xbee_dataGet.3.html">xbee_dataGet</A></B>(3)         - retrieve the data associated with a libxbee instance
+
+
+
+<P>
+libxbee connection functions  
+
+<P>
+<B><A HREF="../man3/xbee_conGetTypes.3.html">xbee_conGetTypes</A></B>(3)     - retrieve a list of available connection types
+
+<P>
+<B><A HREF="../man3/xbee_conNew.3.html">xbee_conNew</A></B>(3)          - create a new connection
+
+<P>
+<B><A HREF="../man3/xbee_conValidate.3.html">xbee_conValidate</A></B>(3)     - validate a connection handle
+
+<P>
+<B><A HREF="../man3/xbee_conGetXBee.3.html">xbee_conGetXBee</A></B>(3)      - retrieve the libxbee instance associated with a connection
+
+<P>
+<B><A HREF="../man3/xbee_conEnd.3.html">xbee_conEnd</A></B>(3)          - close a connection
+
+<P>
+<B><A HREF="../man3/xbee_conTx.3.html">xbee_conTx</A></B>(3)           - transmit a message (using printf-style arguments) - see also:
+
+<B><A HREF="../man3/xbee_conxTx.3.html">xbee_conxTx</A></B>(3)
+
+<P>
+<B><A HREF="../man3/xbee_convTx.3.html">xbee_convTx</A></B>(3)          - transmit a message (using vprintf-style arguments) - see also:
+
+<B><A HREF="../man3/xbee_convxTx.3.html">xbee_convxTx</A></B>(3)
+
+<P>
+<B><A HREF="../man3/xbee_connTx.3.html">xbee_connTx</A></B>(3)          - transmit a message (using a buffer and length) - see also:
+
+<B><A HREF="../man3/xbee_connxTx.3.html">xbee_connxTx</A></B>(3)
+
+<P>
+<B><A HREF="../man3/xbee_conRx.3.html">xbee_conRx</A></B>(3)           - receive a message
+
+<P>
+<B><A HREF="../man3/xbee_conRxWait.3.html">xbee_conRxWait</A></B>(3)       - receive a message (waiting upto 1 second before returning an error)
+
+<P>
+<B><A HREF="../man3/xbee_conSleepSet.3.html">xbee_conSleepSet</A></B>(3)     - configure sleep settings for a connection
+
+<P>
+<B><A HREF="../man3/xbee_conSleepGet.3.html">xbee_conSleepGet</A></B>(3)     - retrieve sleep settings for a connection
+
+<P>
+<B><A HREF="../man3/xbee_conDataSet.3.html">xbee_conDataSet</A></B>(3)      - associate data with a connection (useful with callbacks)
+
+<P>
+<B><A HREF="../man3/xbee_conDataGet.3.html">xbee_conDataGet</A></B>(3)      - retrieve the data associated with a connection
+
+<P>
+<B><A HREF="../man3/xbee_conCallbackSet.3.html">xbee_conCallbackSet</A></B>(3)  - configure a callback for a connection
+
+<P>
+<B><A HREF="../man3/xbee_conCallbackGet.3.html">xbee_conCallbackGet</A></B>(3)  - retrieve the callback configured for a connection
+
+<P>
+<B><A HREF="../man3/xbee_conTypeGet.3.html">xbee_conTypeGet</A></B>(3)      - retrieve the type of the connection, as provided when calling <B><A HREF="../man3/xbee_conNew.3.html">xbee_conNew</A></B>(3)
+
+<P>
+<B><A HREF="../man3/xbee_conInfoGet.3.html">xbee_conInfoGet</A></B>(3)      - retrieve the information stored with a connection (e.g: tx/rx counters)
+
+<P>
+<B><A HREF="../man3/xbee_conSettings.3.html">xbee_conSettings</A></B>(3)     - configure and retrieve the settings for a connection
+
+
+
+<P>
+libxbee packet functions      
+
+<P>
+<B><A HREF="../man3/xbee_pktFree.3.html">xbee_pktFree</A></B>(3)         - free the storage associated with a packet retrieved using <B>xbee_conRx</B>()
+
+<P>
+<B><A HREF="../man3/xbee_pktValidate.3.html">xbee_pktValidate</A></B>(3)     - validate a packet handle
+
+<P>
+<B><A HREF="../man3/xbee_pktDataGet.3.html">xbee_pktDataGet</A></B>(3)      - retrieve formatted data from a packet
+
+<P>
+<B><A HREF="../man3/xbee_pktAnalogGet.3.html">xbee_pktAnalogGet</A></B>(3)    - retrieve an analog sample from an I/O packet
+
+<P>
+<B><A HREF="../man3/xbee_pktDigitalGet.3.html">xbee_pktDigitalGet</A></B>(3)   - retrieve a digital sample from an I/O packet
+
+
+
+<P>
+libxbee network server functions
+
+<P>
+<B><A HREF="../man3/xbee_netStart.3.html">xbee_netStart</A></B>(3)        - start sharing the libxbee instance
+
+<P>
+<B><A HREF="../man3/xbee_netvStart.3.html">xbee_netvStart</A></B>(3)       - start sharing the libxbee instance (with a pre-bound socket)
+
+<P>
+<B><A HREF="../man3/xbee_netStop.3.html">xbee_netStop</A></B>(3)         - stop sharing the libxbee instance
+
+
+
+<P>
+libxbee log functions         
+
+<P>
+<B><A HREF="../man3/xbee_logTargetSet.3.html">xbee_logTargetSet</A></B>(3)    - redirect the libxbee log output
+
+<P>
+<B><A HREF="../man3/xbee_logTargetGet.3.html">xbee_logTargetGet</A></B>(3)    - retrieve the libxbee log target
+
+<P>
+<B><A HREF="../man3/xbee_logLevelSet.3.html">xbee_logLevelSet</A></B>(3)     - set the log level (higher is more verbose)
+
+<P>
+<B><A HREF="../man3/xbee_logLevelGet.3.html">xbee_logLevelGet</A></B>(3)     - retrieve the current log level
+
+<P>
+<B><A HREF="../man3/xbee_log.3.html">xbee_log</A></B>(3)             - write a message to the libxbee log
+
+
+
+<P>
+miscellaneous functions
+
+<P>
+<B><A HREF="../man3/xbee_errorToStr.3.html">xbee_errorToStr</A></B>(3)      - translate an error number to a string
+
+
+
+<P>
+
+<HR>
+<A NAME="index">&nbsp;</A><H2>Index</H2>
+<DL>
+<DT><A HREF="#lbAB">DESCRIPTION</A><DD>
+<DT><A HREF="#lbAC">MAN PAGES</A><DD>
+</DL>
+<HR>
+This document was created by
+<A HREF="/cgi-bin/man/man2html">man2html</A>,
+using the manual pages.<BR>
+Time: 18:19:27 GMT, September 04, 2013
+</BODY>
+</HTML>

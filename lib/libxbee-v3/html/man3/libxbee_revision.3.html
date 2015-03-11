@@ -1,0 +1,107 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML><HEAD><TITLE>Man page of LIBXBEE_REVISION</TITLE>
+</HEAD><BODY>
+<H1>LIBXBEE_REVISION</H1>
+Section: Linux Programmer's Manual (3)<BR>Updated: 04-Mar-2012<BR><A HREF="#index">Index</A>
+<A HREF="../index.html">Return to Main Contents</A><HR>
+
+<A NAME="lbAB">&nbsp;</A>
+<H2>NAME</H2>
+
+libxbee_revision, libxbee_commit, libxbee_committer, libxbee_buildtime
+<A NAME="lbAC">&nbsp;</A>
+<H2>SYNOPSIS</H2>
+
+<B>#include &lt;<A HREF="file:///usr/include/xbee.h">xbee.h</A>&gt;</B>
+
+<P>
+<B>extern const char libxbee_revision[];</B>
+
+<P>
+<B>extern const char libxbee_commit[];</B>
+
+<P>
+<B>extern const char libxbee_committer[];</B>
+
+<P>
+<B>extern const char libxbee_buildtime[];</B>
+
+<A NAME="lbAD">&nbsp;</A>
+<H2>DESCRIPTION</H2>
+
+These are static strings that are compiled into the library. These are intended to help with debugging (when you contact me).
+<DL COMPACT>
+<DT><B>libxbee_revision</B>
+
+<DD>
+contains a version string
+<P>
+e.g: &quot;v3.0.4&quot;
+<DT><B>libxbee_commit</B>
+
+<DD>
+contains the Git commit ID that the library was built from.
+<P>
+e.g: &quot;9e8da59e41a6e901d2568861ea6323119927c9cc&quot;
+<P>
+This string is used to ensure compatibility between the network server and clients.
+This check can be disabled by specifying
+<B>XBEE_NO_NET_STRICT_VERSIONS</B>
+
+at build time.
+<DT><B>libxbee_committer</B>
+
+<DD>
+contains the name and email of the committer
+<P>
+e.g: &quot;Attie Grande &lt;<A HREF="mailto:attie@attie.co.uk">attie@attie.co.uk</A>&gt;&quot;
+<DT><B>libxbee_buildtime</B>
+
+<DD>
+contains the buildtime, as output by `date`
+<P>
+e.g: &quot;Sun Mar  4 17:43:26 GMT 2012&quot;
+</DL>
+<A NAME="lbAE">&nbsp;</A>
+<H2>EXAMPLE</H2>
+
+
+<PRE>
+
+#include &lt;<A HREF="file:///usr/include/xbee.h">xbee.h</A>&gt;
+
+printf(&quot;Libxbee revision: %s\n&quot;,   libxbee_revision);
+printf(&quot;Libxbee commit: %s\n&quot;,     libxbee_commit);
+printf(&quot;Libxbee committer: %s\n&quot;,  libxbee_committer);
+printf(&quot;Libxbee build time: %s\n&quot;, libxbee_buildtime);
+</PRE>
+
+
+<A NAME="lbAF">&nbsp;</A>
+<H2>AUTHOR</H2>
+
+Attie Grande &lt;<A HREF="mailto:attie@attie.co.uk">attie@attie.co.uk</A>&gt; 
+<A NAME="lbAG">&nbsp;</A>
+<H2>SEE ALSO</H2>
+
+<B><A HREF="../man3/libxbee.3.html">libxbee</A></B>(3)
+
+<P>
+
+<HR>
+<A NAME="index">&nbsp;</A><H2>Index</H2>
+<DL>
+<DT><A HREF="#lbAB">NAME</A><DD>
+<DT><A HREF="#lbAC">SYNOPSIS</A><DD>
+<DT><A HREF="#lbAD">DESCRIPTION</A><DD>
+<DT><A HREF="#lbAE">EXAMPLE</A><DD>
+<DT><A HREF="#lbAF">AUTHOR</A><DD>
+<DT><A HREF="#lbAG">SEE ALSO</A><DD>
+</DL>
+<HR>
+This document was created by
+<A HREF="/cgi-bin/man/man2html">man2html</A>,
+using the manual pages.<BR>
+Time: 18:19:27 GMT, September 04, 2013
+</BODY>
+</HTML>

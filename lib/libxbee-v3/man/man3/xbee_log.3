@@ -1,0 +1,96 @@
+.\" libxbee - a C library to aid the use of Digi's XBee wireless modules
+.\"           running in API mode.
+.\" 
+.\" Copyright (C) 2009 onwards  Attie Grande (attie@attie.co.uk)
+.\" 
+.\" libxbee is free software: you can redistribute it and/or modify it
+.\" under the terms of the GNU Lesser General Public License as published by
+.\" the Free Software Foundation, either version 3 of the License, or
+.\" (at your option) any later version.
+.\" 
+.\" libxbee is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+.\" GNU Lesser General Public License for more details.
+.\" 
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this program. If not, see <http://www.gnu.org/licenses/>.
+.TH XBEE_LOG 3  04-Mar-2012 "GNU" "Linux Programmer's Manual"
+.SH NAME
+xbee_log
+.SH SYNOPSIS
+.B #include <xbee.h>
+.sp
+.BI "xbee_err xbee_log(struct xbee *" xbee ", int " minLevel ", const char *" format ", " ... ");"
+.SH DESCRIPTION
+.BR xbee_log ()
+provides a means for you to write messages to libxbee's log.
+.TP
+.I xbee
+is required, and will indicate which log to use
+.TP
+.I minLevel
+is a value that determines whether the message will be output or not.
+The lower this value, the more likely.
+libxbee defaults to a log level of 0, but this may be changed by specifying
+.B XBEE_LOG_LEVEL
+at build time, by specifying
+.B XBEE_LOG_LEVEL
+in the environment at run-time, or by calling
+.BR xbee_logLevelSet (3)
+at run-time.
+These options are applied in this order.
+.TP
+.IR format ", " ...
+these options are exectly the same as those used by
+.BR printf (3).
+You do not need to add a newline ('\\n') character to the end, libxbee will do this for you.
+.SS Return Value
+On success this function will return XBEE_ENONE, otherwise an error number from
+.IR "enum xbee_errors" " (as specified in " <xbee.h> )
+.SH EXAMPLE
+.in +4n
+.nf
+#include <xbee.h>
+
+struct xbee *xbee;
+
+/* initialize xbee, using xbee_setup() */
+
+xbee_log(xbee, -1, "Hello World!");
+.fi
+.in
+.SS Output
+.nf
+DEV: -1#[main.c:14] main() 0x82dd128: Hello World!
+.fi
+.sp 2
+Where:
+.TP
+DEV:
+indicates that this was a message logged from outside libxbee (within your program)
+.TP
+-1
+indicates the log level for the message
+.TP
+[main.c:14]
+indicates the filename and line number
+.TP
+main()
+indicates the function that the call to
+.BR xbee_log ()
+was made from
+.TP
+0x82dd128
+indicates the address of the libxbee instance
+.TP
+Hello World!
+is the message
+.SH AUTHOR
+Attie Grande <attie@attie.co.uk> 
+.SH "SEE ALSO"
+.BR libxbee (3),
+.BR xbee_setup (3),
+.BR xbee_logTargetSet (3),
+.BR xbee_logLevelSet (3),
+.BR printf (3)

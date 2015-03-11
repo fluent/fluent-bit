@@ -1,0 +1,73 @@
+.\" libxbee - a C library to aid the use of Digi's XBee wireless modules
+.\"           running in API mode.
+.\" 
+.\" Copyright (C) 2009 onwards  Attie Grande (attie@attie.co.uk)
+.\" 
+.\" libxbee is free software: you can redistribute it and/or modify it
+.\" under the terms of the GNU Lesser General Public License as published by
+.\" the Free Software Foundation, either version 3 of the License, or
+.\" (at your option) any later version.
+.\" 
+.\" libxbee is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+.\" GNU Lesser General Public License for more details.
+.\" 
+.\" You should have received a copy of the GNU Lesser General Public License
+.\" along with this program. If not, see <http://www.gnu.org/licenses/>.
+.TH LIBXBEE_REVISION 3  04-Mar-2012 "GNU" "Linux Programmer's Manual"
+.SH NAME
+libxbee_revision, libxbee_commit, libxbee_committer, libxbee_buildtime
+.SH SYNOPSIS
+.B #include <xbee.h>
+.sp
+.B extern const char libxbee_revision[];
+.sp 0
+.B extern const char libxbee_commit[];
+.sp 0
+.B extern const char libxbee_committer[];
+.sp 0
+.B extern const char libxbee_buildtime[];
+.SH DESCRIPTION
+These are static strings that are compiled into the library. These are intended to help with debugging (when you contact me).
+.TP
+.B libxbee_revision
+contains a version string
+.sp 0
+e.g: "v3.0.4"
+.TP
+.B libxbee_commit
+contains the Git commit ID that the library was built from.
+.sp 0
+e.g: "9e8da59e41a6e901d2568861ea6323119927c9cc"
+.sp
+This string is used to ensure compatibility between the network server and clients.
+This check can be disabled by specifying
+.B XBEE_NO_NET_STRICT_VERSIONS
+at build time.
+.TP
+.B libxbee_committer
+contains the name and email of the committer
+.sp 0
+e.g: "Attie Grande <attie@attie.co.uk>"
+.TP
+.B libxbee_buildtime
+contains the buildtime, as output by `date`
+.sp 0
+e.g: "Sun Mar  4 17:43:26 GMT 2012"
+.SH EXAMPLE
+.in +4n
+.nf
+
+#include <xbee.h>
+
+printf("Libxbee revision: %s\\n",   libxbee_revision);
+printf("Libxbee commit: %s\\n",     libxbee_commit);
+printf("Libxbee committer: %s\\n",  libxbee_committer);
+printf("Libxbee build time: %s\\n", libxbee_buildtime);
+.fi
+.in
+.SH AUTHOR
+Attie Grande <attie@attie.co.uk> 
+.SH "SEE ALSO"
+.BR libxbee (3)
