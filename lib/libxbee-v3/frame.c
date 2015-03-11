@@ -35,13 +35,13 @@ xbee_err xbee_frameBlockAlloc(struct xbee_frameBlock **nfBlock) {
 	size_t memSize;
 	struct xbee_frameBlock *fBlock;
 	int i;
-	
+
 	if (!nfBlock) return XBEE_EMISSINGPARAM;
-	
+
 	memSize = sizeof(*fBlock);
-	
+
 	if (!(fBlock = malloc(memSize))) return XBEE_ENOMEM;
-	
+
 	memset(fBlock, 0, memSize);
 	xsys_mutex_init(&fBlock->mutex);
 	fBlock->numFrames = sizeof(fBlock->frame) / sizeof(fBlock->frame[0]);
@@ -49,23 +49,23 @@ xbee_err xbee_frameBlockAlloc(struct xbee_frameBlock **nfBlock) {
 		fBlock->frame[i].id = i;
 		xsys_sem_init(&fBlock->frame[i].sem);
 	}
-	
+
 	*nfBlock = fBlock;
-	
+
 	return XBEE_ENONE;
 }
 
 xbee_err xbee_frameBlockFree(struct xbee_frameBlock *fBlock) {
 	int i;
 	if (!fBlock) return XBEE_EMISSINGPARAM;
-	
+
 	for (i = 0; i < fBlock->numFrames; i++) {
 		xsys_sem_destroy(&fBlock->frame[i].sem);
 	}
 	xsys_mutex_destroy(&fBlock->mutex);
-	
+
 	free(fBlock);
-	
+
 	return XBEE_ENONE;
 }
 
@@ -74,16 +74,16 @@ xbee_err xbee_frameBlockFree(struct xbee_frameBlock *fBlock) {
 xbee_err xbee_frameGetFreeID(struct xbee_frameBlock *fBlock, struct xbee_con *con, char abandon) {
 	xbee_err ret;
 	int i, o;
-	
+
 	if (!fBlock || !con) return XBEE_EMISSINGPARAM;
 	ret = XBEE_EFAILED;
-	
+
 	xbee_mutex_lock(&fBlock->mutex);
 	for (i = 0, o = fBlock->lastFrame + 1; i < fBlock->numFrames; i++, o++) {
 		o %= fBlock->numFrames;
 		if (o == 0) continue; /* skip '0x00', this indicates that no ACK is requested */
 		if (fBlock->frame[o].status) continue;
-		
+
 		fBlock->lastFrame = o;
 		fBlock->frame[o].status = XBEE_FRAME_STATUS_SCHEDULED;
 		if (abandon) {
@@ -96,7 +96,7 @@ xbee_err xbee_frameGetFreeID(struct xbee_frameBlock *fBlock, struct xbee_con *co
 		break;
 	}
 	xbee_mutex_unlock(&fBlock->mutex);
-	
+
 	return ret;
 }
 
@@ -104,7 +104,7 @@ xbee_err xbee_frameWait(struct xbee_frameBlock *fBlock, struct xbee_con *con, un
 	xbee_err ret;
 	struct xbee_frame *frame;
 	int i, o;
-	
+
 	if (!fBlock || !con) return XBEE_EMISSINGPARAM;
 
 	ret = XBEE_EINVAL;
@@ -139,7 +139,7 @@ xbee_err xbee_frameWait(struct xbee_frameBlock *fBlock, struct xbee_con *con, un
 			ret = XBEE_ESEMAPHORE;
 		}
 	}
-	
+
 	xbee_mutex_lock(&fBlock->mutex);
 	con->frameId = 0;
 	frame->con = NULL;
@@ -150,18 +150,18 @@ xbee_err xbee_frameWait(struct xbee_frameBlock *fBlock, struct xbee_con *con, un
 		frame->status &= ~XBEE_FRAME_STATUS_WAITING;
 	}
 	xbee_mutex_unlock(&fBlock->mutex);
-	
+
 	return ret;
 }
 
 xbee_err xbee_framePost(struct xbee_frameBlock *fBlock, unsigned char frameId, unsigned char retVal) {
-	xbee_err ret;
+	xbee_err ret = XBEE_ENONE;
 	struct xbee_frame *frame;
 	int i;
-	
+
 	if (!fBlock) return XBEE_EMISSINGPARAM;
 	if (frameId == 0) return XBEE_ENONE;
-	
+
 	xbee_mutex_lock(&fBlock->mutex);
 
 	frame = NULL;
@@ -171,7 +171,7 @@ xbee_err xbee_framePost(struct xbee_frameBlock *fBlock, unsigned char frameId, u
 		if (fBlock->frame[i].status != 0) {
 			frame = &fBlock->frame[i];
 		}
-		
+
 		break;
 	}
 
@@ -194,6 +194,6 @@ xbee_err xbee_framePost(struct xbee_frameBlock *fBlock, unsigned char frameId, u
 	}
 
 	xbee_mutex_unlock(&fBlock->mutex);
-	
+
 	return ret;
 }

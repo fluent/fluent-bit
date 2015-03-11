@@ -33,28 +33,28 @@
 xbee_err xbee_sZB_ota_rx_func(struct xbee *xbee, void *arg, unsigned char identifier, struct xbee_tbuf *buf, struct xbee_frameInfo *frameInfo, struct xbee_conAddress *address, struct xbee_pkt **pkt) {
 	struct xbee_pkt *iPkt;
 	xbee_err ret;
-	
+
 	if (!xbee || !frameInfo || !buf || !address || !pkt) return XBEE_EMISSINGPARAM;
-	
+
 	if (buf->len !=  22) return XBEE_ELENGTH;
-	
+
 	if ((ret = xbee_pktAlloc(&iPkt, NULL, 2)) != XBEE_ENONE) return ret;
-	
-#warning TODO - check that these are the correct addresses to be using
+
+        //#warning TODO - check that these are the correct addresses to be using
 	address->addr64_enabled = 1;
 	memcpy(address->addr64, &(buf->data[1]), 8);
 	address->addr16_enabled = 1;
 	memcpy(address->addr16, &(buf->data[9]), 2);
-	
+
 	iPkt->options = buf->data[11];
-	
+
 	iPkt->dataLen = 2;
 	iPkt->data[0] = buf->data[12]; /* bootloader message type */
 	iPkt->data[1] = buf->data[13]; /* block number */
 	iPkt->data[iPkt->dataLen] = '\0';
-	
+
 	*pkt = iPkt;
-	
+
 	return XBEE_ENONE;
 }
 

@@ -43,31 +43,31 @@ xbee_err xbee_conAlloc(struct xbee_con **nCon) {
 	size_t memSize;
 	struct xbee_con *con;
 	xbee_err ret;
-	
+
 	if (!nCon) return XBEE_EMISSINGPARAM;
-	
+
 	memSize = sizeof(*con);
-	
+
 	if (!(con = malloc(memSize))) return XBEE_ENOMEM;
-	
+
 	memset(con, 0, memSize);
 	con->pktList = xbee_ll_alloc();
 	xsys_sem_init(&con->callbackSem);
 	xsys_mutex_init(&con->txMutex);
-	
+
 	if ((ret = xbee_ll_add_tail(conList, con)) != XBEE_ENONE) {
 		_xbee_conFree(con);
 		ret = XBEE_ELINKEDLIST;
 	} else {
 		*nCon = con;
 	}
-	
+
 	return ret;
 }
 
 xbee_err xbee_conFree(struct xbee_con *con) {
 	xbee_err ret;
-	
+
 	if (!con) return XBEE_EMISSINGPARAM;
 #ifndef XBEE_DISABLE_STRICT_OBJECTS
 	if (xbee_conValidate(con) != XBEE_ENONE) return XBEE_EINVAL;
@@ -80,7 +80,7 @@ xbee_err xbee_conFree(struct xbee_con *con) {
 		if ((ret = xbee_threadJoin(con->xbee, con->callbackThread, NULL)) != XBEE_ENONE) {
 			int i;
 			if (ret != XBEE_EINUSE) return ret;
-			
+
 			/* wait patiently upto 50ms for the callback to finish its stuff */
 			for (i = 10; i > 0; i--) {
 				usleep(5000);
@@ -88,27 +88,27 @@ xbee_err xbee_conFree(struct xbee_con *con) {
 				if (ret == XBEE_EINUSE) continue;
 				return ret;
 			}
-			
+
 			/* if it's still not dead, then just kill it! */
 			if (i == 0 && (ret = xbee_threadKillJoin(con->xbee, con->callbackThread, NULL)) != XBEE_ENONE) return ret;
 		}
 		con->callbackThread = NULL;
 	}
-	
+
 	return _xbee_conFree(con);
 }
-	
+
 static xbee_err _xbee_conFree(struct xbee_con *con) {
 	xbee_ll_ext_item(conList, con);
-	
+
 	xbee_mutex_lock(&con->txMutex);
-	
+
 	xsys_mutex_destroy(&con->txMutex);
 	xsys_sem_destroy(&con->callbackSem);
 	xbee_ll_free(con->pktList, (void(*)(void*))xbee_pktFree);
-	
+
 	free(con);
-	
+
 	return XBEE_ENONE;
 }
 
@@ -123,10 +123,10 @@ xbee_err xbee_conLink(struct xbee *xbee, struct xbee_modeConType *conType, struc
 	if (xbee_validate(xbee) != XBEE_ENONE) return XBEE_EINVAL;
 	if (xbee_conValidate(con) != XBEE_ENONE) return XBEE_EINVAL;
 #endif /* XBEE_DISABLE_STRICT_OBJECTS */
-	
+
 	ret = XBEE_ENONE;
 	xbee_ll_lock(conType->conList);
-	
+
 	do {
 		if ((ret = _xbee_ll_get_item(conType->conList, con, 0)) != XBEE_ENOTEXISTS) {
 			if (ret == XBEE_ENONE) {
@@ -134,8 +134,8 @@ xbee_err xbee_conLink(struct xbee *xbee, struct xbee_modeConType *conType, struc
 			}
 			break;
 		}
-		
-		if ((ret = _xbee_conLocate(conType->conList, address, &matchRating, NULL, -1, 0)) != XBEE_ENOTEXISTS && 
+
+		if ((ret = _xbee_conLocate(conType->conList, address, &matchRating, NULL, -1, 0)) != XBEE_ENOTEXISTS &&
 		     ret != XBEE_ESLEEPING &&
 		     ret != XBEE_ECATCHALL) {
 			if (ret == XBEE_ENONE && matchRating == 255) {
@@ -143,17 +143,17 @@ xbee_err xbee_conLink(struct xbee *xbee, struct xbee_modeConType *conType, struc
 				break;
 			}
 		}
-	
+
 		if ((ret = _xbee_ll_add_tail(conType->conList, con, 0)) != XBEE_ENONE) {
 			break;
 		}
-		
+
 		con->xbee = xbee;
 		con->conType = conType;
 	} while (0);
-	
+
 	xbee_ll_unlock(conType->conList);
-	
+
 	return ret;
 }
 
@@ -170,7 +170,7 @@ xbee_err xbee_conUnlink(struct xbee_con *con) {
 	if (xbee_conValidate(con) != XBEE_ENONE) return XBEE_EINVAL;
 #endif /* XBEE_DISABLE_STRICT_OBJECTS */
 	if ((ret = xbee_ll_ext_item(conType->conList, con)) != XBEE_ENONE) return ret;
-	
+
 	return ret;
 }
 
@@ -259,9 +259,9 @@ xbee_err xbee_conAddressCmpDefault(struct xbee_conAddress *addr1, struct xbee_co
 			goto got1;
 		}
 	}
-	
+
 	return XBEE_EFAILED; /* --- no address match --- */
-	
+
 got1:
 	/** next try to match the endpoints **/
 	/* no endpoints */
@@ -269,11 +269,11 @@ got1:
 	/* both have endpoints */
 	if (addr1->endpoints_enabled && addr2->endpoints_enabled) {
 		if (addr1->endpoint_local == addr2->endpoint_local) goto got2;
-#warning TODO - handle broadcast endpoint, but probably not here...
+                //#warning TODO - handle broadcast endpoint, but probably not here...
 	}
-	
+
 	return XBEE_EFAILED; /* --- endpoints didn't match --- */
-	
+
 got2:
 	/** try to match the profile id **/
 	/* no profile IDs */
@@ -287,9 +287,9 @@ got2:
 	} else if (addr2->profile_enabled) {
 		if (addr2->profile_id == 0xC105) goto got3;
 	}
-	
+
 	return XBEE_EFAILED; /* --- profile id didn't match / isn't the default (0xC105) */
-	
+
 got3:
 	/** try to match cluster id **/
 	/* no cluster IDs */
@@ -303,9 +303,9 @@ got3:
 	} else if (addr2->cluster_enabled) {
 		if (addr2->cluster_id == 0x0011) goto got4;
 	}
-	
+
 	return XBEE_EFAILED; /* --- cluster id didn't match / isn't the default (0x0011) */
-	
+
 got4:
 	if (matchRating != NULL && *matchRating == 0) *matchRating = 255;
 	return XBEE_ENONE;   /* --- everything matched --- */
@@ -327,31 +327,31 @@ xbee_err _xbee_conLocate(struct xbee_ll_head *conList, struct xbee_conAddress *a
 	struct xbee_con *tCon;
 
 	xbee_err ret;
-	
+
 	if (!conList || !address) return XBEE_EMISSINGPARAM;
-	
+
 	tRating = 0;
 	matchRating = 0;
 	con = NULL;
 	sCon = NULL;
 	cCon = NULL;
-	
+
 	if (needsLLLock) xbee_ll_lock(conList);
 	for (tCon = NULL; (ret = _xbee_ll_get_next(conList, tCon, (void**)&tCon, 0)) == XBEE_ENONE && tCon; ) {
 
 		/* skip ending connections */
 		if (tCon->ending) continue;
-		
+
 		/* next see if the connection and can be woken */
 		if (tCon->sleepState > alertLevel) continue; /* this connection is outside the 'acceptable wake limit' */
-		
+
 		/* keep track of the latest catch-all */
 		if (tCon->settings.catchAll) cCon = tCon;
-		
+
 		/* try to match the address */
 		if (tCon->conType->addressCmp(&tCon->address, address, &tRating) != XBEE_ENONE) continue;
 		if (tRating == 0) continue;
-		
+
 		/* is the connection dozing? */
 		if (tCon->sleepState != CON_AWAKE) {
 			/* this is designed to get the most recently created sleeping connection, NOT THE FIRST FOUND */
@@ -364,14 +364,14 @@ xbee_err _xbee_conLocate(struct xbee_ll_head *conList, struct xbee_conAddress *a
 			matchRating = tRating;
 			con = tCon;
 		}
-		
+
 		if (matchRating == 255) {
 			/* found a willing participant, and it was indicated that it would be the best match! */
 			break;
 		}
 	}
 	if (needsLLLock) xbee_ll_unlock(conList);
-	
+
 	/* did we find a sleepy/catchall connection? */
 	if (!con) {
 		if (sCon) {
@@ -386,10 +386,10 @@ xbee_err _xbee_conLocate(struct xbee_ll_head *conList, struct xbee_conAddress *a
 	}
 
 	if (!con) return XBEE_ENOTEXISTS;
-	
+
 	if (retCon) *retCon = con;
 	if (retRating) *retRating = matchRating;
-	
+
 	return ret;
 }
 xbee_err xbee_conLocate(struct xbee_ll_head *conList, struct xbee_conAddress *address, struct xbee_con **retCon, enum xbee_conSleepStates alertLevel) {
@@ -456,10 +456,10 @@ xbee_err _xbee_conNew(struct xbee *xbee, struct xbee_interface *iface, int allow
 #ifndef XBEE_DISABLE_STRICT_OBJECTS
 	if (xbee_validate(xbee) != XBEE_ENONE) return XBEE_EINVAL;
 #endif /* XBEE_DISABLE_STRICT_OBJECTS */
-	
+
 	if ((ret = xbee_modeLocateConType(iface->conTypes, allowInternal, type, NULL, NULL, &conType)) != XBEE_ENONE) return ret;
 	if (!conType) return XBEE_EUNKNOWN;
-	
+
 	if (conType->addressPrep && (ret = conType->addressPrep(address)) != XBEE_ENONE)                                    return ret;
 	if (conType->addressRules & ADDR_EP_NOTALLOW && ( address &&  address->endpoints_enabled))                          return XBEE_EINVAL;
 	if (conType->addressRules & ADDR_EP_REQUIRED && (!address || !address->endpoints_enabled))                          return XBEE_EINVAL;
@@ -469,33 +469,33 @@ xbee_err _xbee_conNew(struct xbee *xbee, struct xbee_interface *iface, int allow
 	if (conType->addressRules & ADDR_16_REQUIRED && (!address || !address->addr16_enabled))                             return XBEE_EINVAL;
 	if (conType->addressRules & ADDR_16OR64      && (!address || !(address->addr16_enabled | address->addr64_enabled))) return XBEE_EINVAL;
 	if (conType->addressRules & ADDR_16XOR64     && (!address || !(address->addr16_enabled ^ address->addr64_enabled))) return XBEE_EINVAL;
-	
+
 	conIdentifier = 0;
 	if (xbee->mode->support.conNew) {
 		/* check with support system */
 		if ((ret = xbee->mode->support.conNew(xbee, iface, conType, address, &conIdentifier)) != XBEE_ENONE) return ret;
 	}
-	
+
 	if ((ret = xbee_conAlloc(&con)) != XBEE_ENONE) return ret;
 	con->iface = iface;
 	con->conIdentifier = conIdentifier;
-	
+
 	if (address) {
 		memcpy(&con->address, address, sizeof(*address));
 	} else {
 		memset(&con->address, 0, sizeof(*address));
 	}
-	
+
 	if ((ret = xbee_conLink(xbee, conType, &con->address, con)) != XBEE_ENONE) {
 		xbee_conFree(con);
 		return ret;
 	}
-	
+
 	xbee_log(6, "Created new '%s' type connection", conType->name);
 	xbee_conLogAddress(xbee, 8, address);
-	
+
 	*retCon = con;
-	
+
 	return XBEE_ENONE;
 }
 EXPORT xbee_err xbee_conNew(struct xbee *xbee, struct xbee_con **retCon, const char *type, struct xbee_conAddress *address) {
@@ -504,9 +504,9 @@ EXPORT xbee_err xbee_conNew(struct xbee *xbee, struct xbee_con **retCon, const c
 
 EXPORT xbee_err xbee_conValidate(struct xbee_con *con) {
 	xbee_err ret;
-	
+
 	if (xbee_ll_get_item(conList, con) != XBEE_ENONE) return XBEE_EINVAL;
-	
+
 	if (con->xbee && con->xbee->mode->support.conValidate) {
 		/* check with support system */
 		if ((ret = con->xbee->mode->support.conValidate(con)) != XBEE_ENONE) return ret;
@@ -535,20 +535,20 @@ xbee_err xbee_conWake(struct xbee_con *con) {
 	if (!con) return XBEE_EMISSINGPARAM;
 	if (!con->conType) return XBEE_EINVAL;
 	if (con->sleepState == CON_AWAKE) return XBEE_ENONE;
-	
+
 	ret = XBEE_ENONE;
-	
+
 	for (iCon = NULL; _xbee_ll_get_next(con->conType->conList, iCon, (void**)&iCon, 0) == XBEE_ENONE && iCon != NULL; ) {
 		/* discount ourselves */
 		if (iCon == con) continue;
-		
+
 		/* try to match the addresses */
 		if (con->conType->addressCmp(&con->address, &iCon->address, &iRating) != XBEE_ENONE) continue;
 		if (iRating != 255) continue;
-		
+
 		/* check if it's awake */
 		if (iCon->sleepState != CON_AWAKE) continue;
-		
+
 		/* if it is, then we can't wake up */
 		ret = XBEE_EFAILED;
 		break;
@@ -557,7 +557,7 @@ xbee_err xbee_conWake(struct xbee_con *con) {
 		/* we can wakeup! */
 		con->sleepState = CON_AWAKE;
 	}
-	
+
 	xbee_ll_unlock(con->conType->conList);
 	return ret;
 }
@@ -570,31 +570,31 @@ xbee_err _xbee_convxTx(struct xbee_con *con, unsigned char *retVal, unsigned cha
 EXPORT xbee_err xbee_conTx(struct xbee_con *con, unsigned char *retVal, const char *format, ...) {
 	xbee_err ret;
 	va_list ap;
-	
+
 	if (!con || !format) return XBEE_EMISSINGPARAM;
 #ifndef XBEE_DISABLE_STRICT_OBJECTS
 	if (xbee_conValidate(con) != XBEE_ENONE) return XBEE_EINVAL;
 #endif /* XBEE_DISABLE_STRICT_OBJECTS */
-	
+
 	va_start(ap, format);
 	ret = _xbee_convxTx(con, retVal, NULL, format, ap);
 	va_end(ap);
-	
+
 	return ret;
 }
 EXPORT xbee_err xbee_conxTx(struct xbee_con *con, unsigned char *retVal, unsigned char *frameId, const char *format, ...) {
 	xbee_err ret;
 	va_list ap;
-	
+
 	if (!con || !format) return XBEE_EMISSINGPARAM;
 #ifndef XBEE_DISABLE_STRICT_OBJECTS
 	if (xbee_conValidate(con) != XBEE_ENONE) return XBEE_EINVAL;
 #endif /* XBEE_DISABLE_STRICT_OBJECTS */
-	
+
 	va_start(ap, format);
 	ret = _xbee_convxTx(con, retVal, frameId, format, ap);
 	va_end(ap);
-	
+
 	return ret;
 }
 
@@ -613,11 +613,11 @@ xbee_err _xbee_convxTx(struct xbee_con *con, unsigned char *retVal, unsigned cha
 	int bufLen, outLen;
 	char *buf;
 	va_list args1;
-	
+
 	va_copy(args1, args);
 	bufLen = vsnprintf(NULL, 0, format, args1);
 	va_end(args1);
-	
+
 	if (bufLen > 0) {
 		if (!(buf = malloc(bufLen + 1))) { /* +1 for the terminating '\0' */
 			return XBEE_ENOMEM;
@@ -631,9 +631,9 @@ xbee_err _xbee_convxTx(struct xbee_con *con, unsigned char *retVal, unsigned cha
 		buf = NULL;
 		outLen = 0;
 	}
-	
+
 	ret = _xbee_connxTx(con, retVal, frameId, (unsigned char*)buf, outLen);
-	
+
 die:
 	if (buf) free(buf);
 	return ret;
@@ -648,7 +648,7 @@ EXPORT xbee_err xbee_connxTx(struct xbee_con *con, unsigned char *retVal, unsign
 #ifndef XBEE_DISABLE_STRICT_OBJECTS
 	if (xbee_conValidate(con) != XBEE_ENONE) return XBEE_EINVAL;
 #endif /* XBEE_DISABLE_STRICT_OBJECTS */
-	
+
 	return _xbee_connxTx(con, retVal, frameId, buf, len);
 }
 xbee_err _xbee_connxTx(struct xbee_con *con, unsigned char *retVal, unsigned char *frameId, const unsigned char *buf, int len) {
@@ -657,7 +657,7 @@ xbee_err _xbee_connxTx(struct xbee_con *con, unsigned char *retVal, unsigned cha
 	xbee_err ret;
 	unsigned char myret;
 	unsigned char *pret;
-	
+
 	if (!con) return XBEE_EMISSINGPARAM;
 	if (len < 0) return XBEE_EINVAL;
 
@@ -687,7 +687,7 @@ xbee_err _xbee_connxTx(struct xbee_con *con, unsigned char *retVal, unsigned cha
 		xbee_mutex_lock(&con->txMutex);
 	}
 	abandonFrame = !!con->settings.noWaitForAck;
-	
+
 	if (!con->conType->allowFrameId) {
 		waitForAck = 0;
 		con->frameId = 0;
@@ -703,7 +703,7 @@ xbee_err _xbee_connxTx(struct xbee_con *con, unsigned char *retVal, unsigned cha
 		}
 	}
 	if (frameId) *frameId = con->frameId;
-	
+
 	if ((ret = xbee_txHandler(con, buf, len, waitForAck)) != XBEE_ENONE) goto done;
 
 	if (waitForAck && !abandonFrame) {
@@ -723,10 +723,10 @@ xbee_err _xbee_connxTx(struct xbee_con *con, unsigned char *retVal, unsigned cha
 			if (*pret != 0) ret = XBEE_ETX;
 		}
 	}
-	
+
 done:
 	xbee_mutex_unlock(&con->txMutex);
-	
+
 	return ret;
 }
 
@@ -750,10 +750,10 @@ EXPORT xbee_err xbee_conRx(struct xbee_con *con, struct xbee_pkt **retPkt, int *
 	if (xbee_conValidate(con) != XBEE_ENONE) return XBEE_EINVAL;
 #endif /* XBEE_DISABLE_STRICT_OBJECTS */
 	if (retPkt != NULL && con->callback != NULL) return XBEE_EINVAL;
-	
+
 	ret = XBEE_ENONE;
 	remain = 0;
-	
+
 	xbee_ll_lock(con->pktList);
 	if ((ret = _xbee_ll_count_items(con->pktList, &remain, 0)) != XBEE_ENONE) goto die;
 	if (retPkt != NULL) {
@@ -771,7 +771,7 @@ die:
 	xbee_ll_unlock(con->pktList);
 
 	if (remainingPackets) *remainingPackets = remain;
-	
+
 	return ret;
 }
 EXPORT xbee_err xbee_conRxWait(struct xbee_con *con, struct xbee_pkt **retPkt, int *remainingPackets) {
@@ -819,21 +819,21 @@ EXPORT xbee_err xbee_conSleepSet(struct xbee_con *con, enum xbee_conSleepStates 
 #ifndef XBEE_DISABLE_STRICT_OBJECTS
 	if (xbee_conValidate(con) != XBEE_ENONE) return XBEE_EINVAL;
 #endif /* XBEE_DISABLE_STRICT_OBJECTS */
-	
+
 	if (con->xbee->mode->support.conSleepSet) {
 		/* check with support system */
 		if ((ret = con->xbee->mode->support.conSleepSet(con, state)) != XBEE_ENONE) return ret;
 	}
-	
+
 	ret = XBEE_ENONE;
-	
+
 	if (state == CON_AWAKE) {
 		/* we need to check if we can wakeup */
 		ret = xbee_conWake(con); /* <-- this will set us to awake if it is successful */
 	} else {
 		con->sleepState = state;
 	}
-	
+
 	return ret;
 }
 
@@ -843,12 +843,12 @@ EXPORT xbee_err xbee_conSleepGet(struct xbee_con *con, enum xbee_conSleepStates 
 #ifndef XBEE_DISABLE_STRICT_OBJECTS
 	if (xbee_conValidate(con) != XBEE_ENONE) return XBEE_EINVAL;
 #endif /* XBEE_DISABLE_STRICT_OBJECTS */
-	
+
 	if (con->xbee->mode->support.conSleepGet) {
 		/* check with support system */
 		if ((ret = con->xbee->mode->support.conSleepGet(con)) != XBEE_ENONE) return ret;
 	}
-	
+
 	*state = con->sleepState;
 	return XBEE_ENONE;
 }
@@ -935,7 +935,7 @@ xbee_err xbee_conCallbackHandler(struct xbee *xbee, int *restart, void *arg) {
 			}
 		}
 	}
-	
+
 	*restart = 0;
 	return XBEE_ENONE;
 }
@@ -957,19 +957,19 @@ xbee_err xbee_conCallbackProd(struct xbee_con *con) {
 
 	if (con->callbackThread) {
 		xbee_err ret2;
-		
-#warning TODO - there is a gap here, needs a mutex
+
+                //#warning TODO - there is a gap here, needs a mutex
 		if (con->callbackThread->active) return XBEE_ENONE;
-		
+
 		if ((ret = xbee_threadJoin(con->xbee, con->callbackThread, &ret2)) != XBEE_ENONE) return ret;
 		con->callbackThread = NULL;
 		if (ret2 != XBEE_ENONE) {
 			xbee_log(3, "dead callback for con @ %p returned %d...", con, ret2);
 		}
 	}
-	
+
 	if ((ret = xbee_threadStart(con->xbee, &con->callbackThread, 0, 0, xbee_conCallbackHandler, con)) != XBEE_ENONE) return ret;
-	
+
 	return XBEE_ENONE;
 }
 
@@ -1001,17 +1001,17 @@ EXPORT xbee_err xbee_conSettings(struct xbee_con *con, struct xbee_conSettings *
 #ifndef XBEE_DISABLE_STRICT_OBJECTS
 	if (xbee_conValidate(con) != XBEE_ENONE) return XBEE_EINVAL;
 #endif /* XBEE_DISABLE_STRICT_OBJECTS */
-	
+
 	if (oldSettings) memcpy(&tempOld, &con->settings, sizeof(con->settings));
-	
+
 	if (con->xbee->mode->support.conSettings) {
 		/* check with support system - this will update the current settings of the con */
 		if ((ret = con->xbee->mode->support.conSettings(con, newSettings)) != XBEE_ENONE) return ret;
 	}
-	
+
 	if (oldSettings) memcpy(oldSettings, &tempOld, sizeof(con->settings));
 	if (newSettings) memcpy(&con->settings, newSettings, sizeof(con->settings));
-	
+
 	return XBEE_ENONE;
 }
 
@@ -1027,8 +1027,8 @@ EXPORT xbee_err xbee_conEnd(struct xbee_con *con) {
 		ret = con->xbee->mode->support.conEnd(con);
 		if (ret != XBEE_ENONE && ret != XBEE_ESTALE) return ret;
 	}
-	
+
 	if ((ret2 = xbee_conFree(con)) != XBEE_ENONE) return ret2;
-	
+
 	return ret;
 }

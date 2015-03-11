@@ -48,24 +48,24 @@ static xbee_err init(struct xbee *xbee, va_list ap) {
 	xbee_err ret;
 	char *t;
 	struct xbee_modeData *data;
-	
+
 	if (!xbee) return XBEE_EMISSINGPARAM;
-	
+
 	if ((data = malloc(sizeof(*data))) == NULL) return XBEE_ENOMEM;
 	memset(data, 0, sizeof(*data));
 	xbee->modeData = data;
-	
+
 	ret = XBEE_ENONE;
-	
-	/* currently I don't see a better way than this - using va_arg()... which is gross */	
+
+	/* currently I don't see a better way than this - using va_arg()... which is gross */
 	t = va_arg(ap, char*);
 	if ((data->serialInfo.device = malloc(strlen(t) + 1)) == NULL) { ret = XBEE_ENOMEM; goto die; }
 	strcpy(data->serialInfo.device, t);
-	
+
 	data->serialInfo.baudrate = va_arg(ap, int);
-	
+
 	if ((ret = xsys_serialSetup(&data->serialInfo)) != XBEE_ENONE) goto die;
-	
+
 	return XBEE_ENONE;
 die:
 	mode_shutdown(xbee);
@@ -74,18 +74,18 @@ die:
 
 static xbee_err mode_shutdown(struct xbee *xbee) {
 	struct xbee_modeData *data;
-	
+
 	if (!xbee) return XBEE_EMISSINGPARAM;
 	if (!xbee->mode || !xbee->modeData) return XBEE_EINVAL;
-	
+
 	data = xbee->modeData;
-	
+
 	xsys_serialShutdown(&data->serialInfo);
 	if (data->serialInfo.device) free(data->serialInfo.device);
 	if (data->serialInfo.txBuf) free(data->serialInfo.txBuf);
 	free(xbee->modeData);
 	xbee->modeData = NULL;
-	
+
 	return XBEE_ENONE;
 }
 
@@ -95,31 +95,31 @@ xbee_err xbee_sZB_transmitStatus_rx_func(struct xbee *xbee, void *arg, unsigned 
 	struct xbee_pkt *iPkt;
 	int i;
 	xbee_err ret;
-	
+
 	if (!xbee || !frameInfo || !buf || !address || !pkt) return XBEE_EMISSINGPARAM;
-	
+
 	ret = XBEE_ENONE;
-	
+
 	if (buf->len != 7) {
 		ret = XBEE_ELENGTH;
 		goto die1;
 	}
-	
-#warning TODO - currently missing out on the resolved network address, retry count, and discovery status
+
+        //#warning TODO - currently missing out on the resolved network address, retry count, and discovery status
 	frameInfo->active = 1;
 	frameInfo->id = buf->data[1];
 	frameInfo->retVal = buf->data[5];
-	
+
 	if ((ret = xbee_pktAlloc(&iPkt, NULL, 6)) != XBEE_ENONE) return ret;
-	
+
 	iPkt->dataLen = 6;
 	for (i = 0; i < 6; i++) {
 		iPkt->data[i] = buf->data[i+1];
 	}
 	iPkt->data[iPkt->dataLen] = '\0';
-	
+
 	*pkt = iPkt;
-	
+
 	goto done;
 die1:
 done:
@@ -148,17 +148,17 @@ xbee_err xbee_sZB_modemStatus_rx_func(struct xbee *xbee, void *arg, unsigned cha
 	xbee_err ret;
 
 	if (!xbee || !frameInfo || !buf || !address || !pkt) return XBEE_EMISSINGPARAM;
-	
+
 	if (buf->len != 2) return XBEE_ELENGTH;
-	
+
 	if ((ret = xbee_pktAlloc(&iPkt, NULL, 1)) != XBEE_ENONE) return ret;
-	
+
 	iPkt->dataLen = 1;
 	iPkt->data[0] = buf->data[1];
 	iPkt->data[iPkt->dataLen] = '\0';
-	
+
 	*pkt = iPkt;
-	
+
 	return 0;
 }
 
@@ -195,15 +195,15 @@ static const struct xbee_modeConType *conTypes[] = {
 
 const struct xbee_mode mode_xbeeZB = {
 	.name = "xbeeZB",
-	
+
 	.conTypes = conTypes,
-	
+
 	.init = init,
 	.prepare = NULL,
 	.shutdown = mode_shutdown,
-	
+
 	.rx_io = xbee_xbeeRxIo,
 	.tx_io = xbee_xbeeTxIo,
-	
+
 	.thread = NULL,
 };
