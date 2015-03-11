@@ -2,18 +2,17 @@ cmake_minimum_required(VERSION 2.6)
 project(LIBXBEE C)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
 
-# General Headers
-#include_directories(include/)
-
+# Definitions
 add_definitions(-DLIBXBEE_BUILD)
 add_definitions(-DLIB_REVISION="")
 add_definitions(-DLIB_COMMIT="")
 add_definitions(-DLIB_COMMITTER="")
 add_definitions(-DLIB_BUILDTIME="")
-add_definitions(-DMODELIST="&mode_net, &mode_debug, &mode_xbeeZB")
 
+# Subdirectory for xbeeZB mode
 add_subdirectory(modes/xbeeZB)
 
+# XBee core sources
 set(src
   conn.c
   frame.c
@@ -36,5 +35,6 @@ set(src
   xbee.c
   )
 
+# Linking...
 add_library(xbee ${src})
 target_link_libraries(xbee xbeeZB)

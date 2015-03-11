@@ -28,7 +28,9 @@
 #include "conn.h"
 #include "ll.h"
 
-const struct xbee_mode * const modeList[] = { MODELIST };
+const struct xbee_mode * const modeList[] = { &mode_net,   \
+                                              &mode_debug, \
+                                              &mode_xbeeZB};
 
 /* ######################################################################### */
 
@@ -36,21 +38,21 @@ xbee_err xbee_modeRetrieve(const char *name, const struct xbee_mode **retMode) {
 	const struct xbee_mode *mode;
 	int i;
 	if (!name || !retMode) return XBEE_EMISSINGPARAM;
-	
+
 	for (i = 0; modeList[i]; i++) {
 		if (!modeList[i]->name) continue;
 		if (strcasecmp(modeList[i]->name, name)) continue;
 		mode = modeList[i];
-		
+
 		/* check compulsory functionality */
 		if (!mode->init) return XBEE_EINVAL;
 		if (!mode->rx_io) return XBEE_EINVAL;
 		if (!mode->tx_io) return XBEE_EINVAL;
-		
+
 		*retMode = mode;
 		return XBEE_ENONE;
 	}
-	
+
 	return XBEE_EFAILED;
 }
 
@@ -60,29 +62,29 @@ xbee_err xbee_modeRetrieve(const char *name, const struct xbee_mode **retMode) {
 xbee_err xbee_modeImport(struct xbee_modeConType **retConTypes, const struct xbee_mode *mode) {
 	int i, n;
 	struct xbee_modeConType *conTypes;
-	
+
 	if (!retConTypes || !mode) return XBEE_EMISSINGPARAM;
 	if (*retConTypes) return XBEE_EINVAL;
-	
+
 	for (n = 0; mode->conTypes && mode->conTypes[n] && mode->conTypes[n]->name; n++);
-	
+
 	if ((conTypes = malloc(sizeof(*conTypes) * (n + 1))) == NULL) return XBEE_ENOMEM;
 	memset(&conTypes[n], 0, sizeof(*conTypes));
-	
+
 	for (i = 0; i < n; i++) {
 		/* keep the pointers (they are const after all) */
 		memcpy(&conTypes[i], mode->conTypes[i], sizeof(*conTypes));
-		
+
 		/* setup the addressCmp function */
 		if (conTypes[i].addressCmp == NULL) conTypes[i].addressCmp = xbee_conAddressCmpDefault;
 		/* initialization added for microsoft compiler support */
 		if (conTypes[i].init) conTypes[i].init(&(conTypes[i]));
-		
+
 		conTypes[i].conList = xbee_ll_alloc();
 	}
-	
+
 	*retConTypes = conTypes;
-	
+
 	return XBEE_ENONE;
 }
 
@@ -92,7 +94,7 @@ static void prepare_repopConTypes(struct xbee_modeConType *conTypes) {
 	struct xbee_modeConType *conType;
 	struct xbee_con *con;
 	int i;
-	
+
 	for (i = 0; conTypes[i].name; i++) {
 		conType = &conTypes[i];
 		for (con = NULL; xbee_ll_get_next(conType->conList, con, (void**)&con) == XBEE_ENONE && con; ) {
@@ -104,24 +106,24 @@ static void prepare_repopConTypes(struct xbee_modeConType *conTypes) {
 xbee_err xbee_modeAddConType(struct xbee_modeConType **extConTypes, const struct xbee_modeConType *newConType) {
 	int n;
 	struct xbee_modeConType *conTypes;
-	
+
 	if (!extConTypes || !newConType) return XBEE_EMISSINGPARAM;
 	if (!*extConTypes) return XBEE_EINVAL;
 	if (!newConType->name) return XBEE_EINVAL;
 	if (!newConType->rxHandler && !newConType->txHandler) return XBEE_EINVAL;
-	
+
 	for (n = 0; (*extConTypes)[n].name; n++);
-	
+
 	if ((conTypes = realloc(*extConTypes, sizeof(*conTypes) * (n + 2))) == NULL) return XBEE_ENOMEM;
 	*extConTypes = conTypes;
 	prepare_repopConTypes(conTypes);
-	
+
 	memset(&conTypes[n + 1], 0, sizeof(*conTypes));
 	memcpy(&conTypes[n], newConType, sizeof(*newConType));
 	conTypes[n].conList = xbee_ll_alloc();
 	/* setup the addressCmp function */
 	if (conTypes[n].addressCmp == NULL) conTypes[n].addressCmp = xbee_conAddressCmpDefault;
-	
+
 	return XBEE_ENONE;
 }
 
@@ -130,7 +132,7 @@ xbee_err xbee_modeAddConType(struct xbee_modeConType **extConTypes, const struct
 xbee_err xbee_modeCleanup(struct xbee_modeConType *conTypes) {
 	int i;
 	if (!conTypes) return XBEE_EMISSINGPARAM;
-	
+
 	for (i = 0; conTypes[i].name; i++) {
 		xbee_ll_free(conTypes[i].conList, (void(*)(void*))xbee_conFree);
 		/* i know, casting to void* to avoid the const keyword is naughty... */
@@ -138,7 +140,7 @@ xbee_err xbee_modeCleanup(struct xbee_modeConType *conTypes) {
 		if (conTypes[i].rxHandler && conTypes[i].rxHandler->needsFree) free((void*)conTypes[i].rxHandler);
 		if (conTypes[i].txHandler && conTypes[i].txHandler->needsFree) free((void*)conTypes[i].txHandler);
 	}
-	
+
 	free(conTypes);
 	return XBEE_ENONE;
 }
@@ -147,10 +149,10 @@ xbee_err xbee_modeCleanup(struct xbee_modeConType *conTypes) {
 
 xbee_err xbee_modeLocateConType(struct xbee_modeConType *conTypes, int allowInternal, const char *name, const unsigned char *rxId, const unsigned char *txId, struct xbee_modeConType **retType) {
 	int i;
-	
+
 	if (!retType) return XBEE_EMISSINGPARAM;
 	if (!name && !rxId && !txId) return XBEE_EMISSINGPARAM;
-	
+
 	for (i = 0; conTypes[i].name; i++) {
 		if (name) {
 			if (strcasecmp(conTypes[i].name, name)) continue;
@@ -166,11 +168,11 @@ xbee_err xbee_modeLocateConType(struct xbee_modeConType *conTypes, int allowInte
 			if (conTypes[i].txHandler->identifier != *txId) continue;
 		}
 		if (!allowInternal && conTypes[i].internal) return XBEE_EINVAL;
-		
+
 		*retType = &conTypes[i];
 		return XBEE_ENONE;
 	}
-	
+
 	return XBEE_ENOTEXISTS;
 }
 
@@ -182,7 +184,7 @@ EXPORT xbee_err xbee_modeGetList(char ***retList) {
 	char **mList;
 	char *mName;
 	if (!retList) return XBEE_EMISSINGPARAM;
-	
+
 	memSize = 0;
 	for (i = 0, o = 0; modeList[i]; i++) {
 		if (!modeList[i]->name) continue;
@@ -191,11 +193,11 @@ EXPORT xbee_err xbee_modeGetList(char ***retList) {
 		o++;
 	}
 	memSize += sizeof(char *);
-	
+
 	if ((mList = malloc(memSize)) == NULL) {
 		return XBEE_ENOMEM;
 	}
-	
+
 	mName = (char *)&(mList[o+1]);
 	for (i = 0, o = 0; modeList[i]; i++) {
 		if (!modeList[i]->name) continue;
@@ -205,9 +207,9 @@ EXPORT xbee_err xbee_modeGetList(char ***retList) {
 		o++;
 	}
 	mList[o] = NULL;
-	
+
 	*retList = mList;
-	
+
 	return XBEE_ENONE;
 }
 
