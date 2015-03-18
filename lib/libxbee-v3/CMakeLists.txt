@@ -11,6 +11,7 @@ add_definitions(-DLIB_BUILDTIME="")
 
 # Subdirectory for xbeeZB mode
 add_subdirectory(modes/net)
+add_subdirectory(modes/debug)
 add_subdirectory(modes/xbeeZB)
 
 # XBee core sources
@@ -38,4 +39,4 @@ set(src
 
 # Linking...
 add_library(xbee STATIC ${src})
-target_link_libraries(xbee xbeeZB_mode xbeeNet_mode)
+target_link_libraries(xbee xbeeZB_mode xbeeNet_mode xbeeDebug_mode)
