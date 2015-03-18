@@ -7,6 +7,8 @@ set(src
   mode.c
   ota.c
   sensor.c
+  ../common.c
+  ../../xsys.c
   )
 
 add_library(xbeeZB_mode ${src})
