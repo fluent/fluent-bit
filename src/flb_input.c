@@ -28,6 +28,10 @@
 #include <fluent-bit/in_cpu.h>
 #include <fluent-bit/in_kmsg.h>
 
+#ifdef FLB_XBEE_ENABLED
+#include <fluent-bit/in_xbee.h>
+#endif
+
 static struct flb_input_plugin *plugin_lookup(char *name, struct flb_config *config)
 {
     struct mk_list *head;
@@ -62,6 +66,10 @@ int flb_input_register_all(struct flb_config *config)
      */
     register_input_plugin(&in_cpu_plugin, config);
     register_input_plugin(&in_kmsg_plugin, config);
+
+#ifdef FLB_XBEE_ENABLED
+    register_input_plugin(&in_xbee_plugin, config);
+#endif
 
     return 0;
 }

@@ -31,6 +31,7 @@ Once the tool have been compiled, a binary file called _Fluent-Bit_ will be foun
 |--------------------|---------|---------------------------------------------------------------------------------|
 | CPU                | cpu     | gather CPU usage between snapshots of one second. It support multiple cores     |
 | Kernel Ring Buffer | kmsg    | read Linux Kernel messages, same behavior as the __dmesg__ command line program |
+| XBee               | xbee | listen for incoming messages over a Xbee device |
 
 ### Output Plugins
 

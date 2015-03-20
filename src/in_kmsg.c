@@ -295,6 +295,7 @@ int in_kmsg_init(struct flb_config *config)
 
     ctx = calloc(1, sizeof(struct flb_in_kmsg_config));
     if (!ctx) {
+        perror("calloc");
         return -1;
     }
 
@@ -318,7 +319,7 @@ int in_kmsg_init(struct flb_config *config)
         flb_utils_error_c("Could not set configuration for kmsg input plugin");
     }
 
-    /* Set our collector based on time, CPU usage every 1 second */
+    /* Set our collector based on a file descriptor event */
     ret = flb_input_set_collector_event("kmsg",
                                         in_kmsg_collect,
                                         ctx->fd,
