@@ -29,20 +29,50 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
 
+void in_xbee_cb(struct xbee *xbee, struct xbee_con *con,
+                struct xbee_pkt **pkt, void **data)
+{
+
+	if ((*pkt)->dataLen == 0) {
+		flb_debug("xbee data length too short, skip");
+		return;
+	}
+
+	printf("rx: [%s]\n", ((*pkt)->data));
+}
 
 /* Callback invoked after setup but before to join the main loop */
 int in_xbee_pre_run(void *in_context, struct flb_config *config)
 {
+    (void) in_context;
+    (void) config;
+
+    return 0;
 }
 
 
 /* Callback triggered when some Kernel Log buffer msgs are available */
 int in_xbee_collect(void *in_context)
 {
+    int ret;
+    void *p;
+    struct flb_in_xbee_config *ctx = in_context;
+
+    if ((ret = xbee_conCallbackGet(ctx->con,
+                                   (xbee_t_conCallback*) &p)) != XBEE_ENONE) {
+        flb_debug("xbee_conCallbackGet() returned: %d", ret);
+        return ret;
+    }
+
+    return 0;
 }
 
 void *in_xbee_flush(void *in_context, int *size)
 {
+    (void) in_context;
+    (void) size;
+
+    return 0;
 }
 
 /* Init kmsg input */
@@ -54,6 +84,8 @@ int in_xbee_init(struct flb_config *config)
     char *opt_device = FLB_XBEE_DEFAULT_DEVICE;
     struct stat dev_st;
 	struct xbee *xbee;
+	struct xbee_con *con;
+	struct xbee_conAddress address;
     struct flb_in_xbee_config *ctx;
 
     /* Check an optional baudrate */
@@ -95,14 +127,43 @@ int in_xbee_init(struct flb_config *config)
 		return ret;
 	}
 
+    /* FIXME: just a built-in example */
+	memset(&address, 0, sizeof(address));
+	address.addr64_enabled = 1;
+	address.addr64[0] = 0x00;
+	address.addr64[1] = 0x13;
+	address.addr64[2] = 0xA2;
+	address.addr64[3] = 0x00;
+    address.addr64[4] = 0x40;
+    address.addr64[5] = 0xB7;
+    address.addr64[6] = 0xB1;
+    address.addr64[7] = 0xEB;
+
+    /* Prepare a connection with the peer XBee */
+	if ((ret = xbee_conNew(xbee, &con, "Data", &address)) != XBEE_ENONE) {
+		xbee_log(xbee, -1, "xbee_conNew() returned: %d (%s)", ret, xbee_errorToStr(ret));
+		return ret;
+	}
+
+	if ((ret = xbee_conDataSet(con, xbee, NULL)) != XBEE_ENONE) {
+		xbee_log(xbee, -1, "xbee_conDataSet() returned: %d", ret);
+		return ret;
+	}
+
+	if ((ret = xbee_conCallbackSet(con, in_xbee_cb, NULL)) != XBEE_ENONE) {
+		xbee_log(xbee, -1, "xbee_conCallbackSet() returned: %d", ret);
+		return ret;
+	}
+
     /* Prepare the configuration context */
     ctx = calloc(1, sizeof(struct flb_in_xbee_config));
     if (!ctx) {
         perror("calloc");
         return -1;
     }
-    ctx->device = opt_device;
+    ctx->device   = opt_device;
     ctx->baudrate = opt_baudrate;
+    ctx->con      = con;
 
     /* Set the context */
     ret = flb_input_set_context("xbee", ctx, config);

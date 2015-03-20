@@ -24,11 +24,12 @@
 #define FLB_XBEE_DEFAULT_BAUDRATE  9600
 
 #define IN_XBEE_COLLECT_SEC    0
-#define IN_XBEE_COLLECT_NSEC   1000
+#define IN_XBEE_COLLECT_NSEC   15000
 
 struct flb_in_xbee_config {
     int  baudrate;
     char *device;
+	struct xbee_con *con;
 };
 
 extern struct flb_input_plugin in_xbee_plugin;
