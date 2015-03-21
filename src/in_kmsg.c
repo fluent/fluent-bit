@@ -333,9 +333,9 @@ int in_kmsg_init(struct flb_config *config)
 
 /* Plugin reference */
 struct flb_input_plugin in_kmsg_plugin = {
-    .name       = "kmsg",
-    .cb_init    = in_kmsg_init,
-    .cb_pre_run = in_kmsg_pre_run,
-    .cb_collect = in_kmsg_collect,
-    .cb_flush   = in_kmsg_flush
+    .name         = "kmsg",
+    .cb_init      = in_kmsg_init,
+    .cb_pre_run   = in_kmsg_pre_run,
+    .cb_collect   = in_kmsg_collect,
+    .cb_flush_buf = in_kmsg_flush
 };

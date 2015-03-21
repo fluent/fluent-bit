@@ -116,8 +116,8 @@ static int flb_engine_flush(struct flb_config *config)
 
     mk_list_foreach(head, &config->inputs) {
         in = mk_list_entry(head, struct flb_input_plugin, _head);
-        if (in->active == FLB_TRUE && in->cb_flush) {
-            buf = in->cb_flush(in->in_context, &size);
+        if (in->active == FLB_TRUE && in->cb_flush_buf) {
+            buf = in->cb_flush_buf(in->in_context, &size);
             if (!buf) {
                 continue;
             }

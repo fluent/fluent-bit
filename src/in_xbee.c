@@ -64,7 +64,6 @@ int in_xbee_collect(void *in_context)
     void *p = NULL;
     struct flb_in_xbee_config *ctx = in_context;
 
-
     if ((ret = xbee_conCallbackGet(ctx->con,
                                    (xbee_t_conCallback*) &p)) != XBEE_ENONE) {
         flb_debug("xbee_conCallbackGet() returned: %d", ret);
@@ -202,9 +201,9 @@ int in_xbee_init(struct flb_config *config)
 
 /* Plugin reference */
 struct flb_input_plugin in_xbee_plugin = {
-    .name       = "xbee",
-    .cb_init    = in_xbee_init,
-    .cb_pre_run = NULL,
-    .cb_collect = in_xbee_collect,
-    .cb_flush   = in_xbee_flush
+    .name         = "xbee",
+    .cb_init      = in_xbee_init,
+    .cb_pre_run   = NULL,
+    .cb_collect   = in_xbee_collect,
+    .cb_flush_buf = in_xbee_flush
 };

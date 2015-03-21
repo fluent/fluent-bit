@@ -51,7 +51,12 @@ struct flb_input_plugin {
      * a MsgPack buffer which will be processed by the Engine and delivered
      * to the target output.
      */
-    void *(*cb_flush) (void *, int *);
+
+    /* Flush a buffer type (raw data) */
+    void *(*cb_flush_buf) (void *, int *);
+
+    /* Flush an iovec struct array */
+    void *(*cb_flush_iov) (void *, int *);
 
     /* Input handler configuration */
     void *in_context;
