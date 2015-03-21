@@ -122,7 +122,7 @@ static int flb_engine_flush(struct flb_config *config)
             if (in->cb_flush_buf) {
                 buf = in->cb_flush_buf(in->in_context, &size);
                 if (!buf) {
-                    continue;
+                    goto flush_done;
                 }
 
                 bytes = write(fd, buf, size);
@@ -138,7 +138,7 @@ static int flb_engine_flush(struct flb_config *config)
             if (in->cb_flush_iov) {
                 iov = in->cb_flush_iov(in->in_context, &len);
                 if (len <= 0) {
-                    continue;
+                    goto flush_done;
                 }
 
                 bytes = writev(fd, iov, len);
@@ -148,6 +148,11 @@ static int flb_engine_flush(struct flb_config *config)
                 else {
                     flb_info("Flush iov %i bytes", bytes);
                 }
+            }
+
+        flush_done:
+            if (in->cb_flush_end) {
+                in->cb_flush_end(in->in_context);
             }
         }
     }

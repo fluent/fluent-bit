@@ -58,6 +58,9 @@ struct flb_input_plugin {
     /* Flush an iovec struct array */
     void *(*cb_flush_iov) (void *, int *);
 
+    /* Notify that a flush have completed on the collector (buf + iov) */
+    void (*cb_flush_end) (void *);
+
     /* Input handler configuration */
     void *in_context;
 
