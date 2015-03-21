@@ -146,7 +146,7 @@ static int flb_engine_flush(struct flb_config *config)
                     perror("writev");
                 }
                 else {
-                    flb_info("Flush iov %i bytes", bytes);
+                    flb_info("Flush iov %i bytes (%i entries)", bytes, len);
                 }
             }
 
