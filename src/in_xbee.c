@@ -22,6 +22,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+
 #include <unistd.h>
 
 #include <xbee.h>
@@ -32,31 +33,37 @@
 void in_xbee_cb(struct xbee *xbee, struct xbee_con *con,
                 struct xbee_pkt **pkt, void **data)
 {
+    struct iovec *v;
+    struct flb_in_xbee_config *ctx;
 
 	if ((*pkt)->dataLen == 0) {
 		flb_debug("xbee data length too short, skip");
 		return;
 	}
 
-	printf("rx: [%s]\n", ((*pkt)->data));
+    ctx = *data;
+
+    if (ctx->buffer_len + 1 >= FLB_XBEE_BUFFER_SIZE) {
+        /* FIXME: flush! */
+        ctx->buffer_len = 0;
+        return;
+    }
+
+    /* Insert entry into the iovec */
+    v = &ctx->buffer[ctx->buffer_len];
+    v->iov_base = malloc((*pkt)->dataLen);
+    memcpy(v->iov_base, (*pkt)->data, (*pkt)->dataLen);
+    v->iov_len = (*pkt)->dataLen;
+    ctx->buffer_len++;
 }
 
-/* Callback invoked after setup but before to join the main loop */
-int in_xbee_pre_run(void *in_context, struct flb_config *config)
-{
-    (void) in_context;
-    (void) config;
-
-    return 0;
-}
-
-
-/* Callback triggered when some Kernel Log buffer msgs are available */
+/* Callback triggered by timer */
 int in_xbee_collect(void *in_context)
 {
     int ret;
-    void *p;
+    void *p = NULL;
     struct flb_in_xbee_config *ctx = in_context;
+
 
     if ((ret = xbee_conCallbackGet(ctx->con,
                                    (xbee_t_conCallback*) &p)) != XBEE_ENONE) {
@@ -69,8 +76,9 @@ int in_xbee_collect(void *in_context)
 
 void *in_xbee_flush(void *in_context, int *size)
 {
-    (void) in_context;
     (void) size;
+    struct flb_in_xbee_config *ctx = in_context;
+
 
     return 0;
 }
@@ -145,25 +153,28 @@ int in_xbee_init(struct flb_config *config)
 		return ret;
 	}
 
-	if ((ret = xbee_conDataSet(con, xbee, NULL)) != XBEE_ENONE) {
-		xbee_log(xbee, -1, "xbee_conDataSet() returned: %d", ret);
-		return ret;
-	}
-
-	if ((ret = xbee_conCallbackSet(con, in_xbee_cb, NULL)) != XBEE_ENONE) {
-		xbee_log(xbee, -1, "xbee_conCallbackSet() returned: %d", ret);
-		return ret;
-	}
-
     /* Prepare the configuration context */
     ctx = calloc(1, sizeof(struct flb_in_xbee_config));
     if (!ctx) {
         perror("calloc");
         return -1;
     }
-    ctx->device   = opt_device;
-    ctx->baudrate = opt_baudrate;
-    ctx->con      = con;
+    ctx->device     = opt_device;
+    ctx->baudrate   = opt_baudrate;
+    ctx->con        = con;
+    ctx->buffer_len = 0;
+
+	if ((ret = xbee_conDataSet(con, ctx, NULL)) != XBEE_ENONE) {
+		xbee_log(xbee, -1, "xbee_conDataSet() returned: %d", ret);
+		return ret;
+	}
+
+
+	if ((ret = xbee_conCallbackSet(con, in_xbee_cb, NULL)) != XBEE_ENONE) {
+		xbee_log(xbee, -1, "xbee_conCallbackSet() returned: %d", ret);
+		return ret;
+	}
+
 
     /* Set the context */
     ret = flb_input_set_context("xbee", ctx, config);
@@ -193,7 +204,7 @@ int in_xbee_init(struct flb_config *config)
 struct flb_input_plugin in_xbee_plugin = {
     .name       = "xbee",
     .cb_init    = in_xbee_init,
-    .cb_pre_run = in_xbee_pre_run,
+    .cb_pre_run = NULL,
     .cb_collect = in_xbee_collect,
     .cb_flush   = in_xbee_flush
 };
