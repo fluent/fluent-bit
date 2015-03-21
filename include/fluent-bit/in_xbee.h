@@ -25,7 +25,7 @@
 #define FLB_XBEE_DEFAULT_DEVICE    "/dev/ttyUSB0"
 #define FLB_XBEE_DEFAULT_BAUDRATE  9600
 
-#define IN_XBEE_COLLECT_SEC        1
+#define IN_XBEE_COLLECT_SEC        0
 #define IN_XBEE_COLLECT_NSEC       15000
 
 #define FLB_XBEE_BUFFER_SIZE       64

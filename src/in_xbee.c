@@ -73,13 +73,12 @@ int in_xbee_collect(void *in_context)
     return 0;
 }
 
-void *in_xbee_flush(void *in_context, int *size)
+void *in_xbee_flush_iov(void *in_context, int *size)
 {
-    (void) size;
     struct flb_in_xbee_config *ctx = in_context;
 
-
-    return 0;
+    *size = ctx->buffer_len;
+    return ctx->buffer;
 }
 
 /* Init kmsg input */
@@ -205,5 +204,6 @@ struct flb_input_plugin in_xbee_plugin = {
     .cb_init      = in_xbee_init,
     .cb_pre_run   = NULL,
     .cb_collect   = in_xbee_collect,
-    .cb_flush_buf = in_xbee_flush
+    .cb_flush_buf = NULL,
+    .cb_flush_iov = in_xbee_flush_iov,
 };

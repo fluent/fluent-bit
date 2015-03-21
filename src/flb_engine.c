@@ -99,8 +99,10 @@ static int flb_engine_flush(struct flb_config *config)
 {
     int fd;
     int size;
+    int len;
     int bytes;
     char *buf;
+    struct iovec *iov;
     struct mk_list *head;
     struct flb_input_plugin *in;
 
@@ -116,22 +118,39 @@ static int flb_engine_flush(struct flb_config *config)
 
     mk_list_foreach(head, &config->inputs) {
         in = mk_list_entry(head, struct flb_input_plugin, _head);
-        if (in->active == FLB_TRUE && in->cb_flush_buf) {
-            buf = in->cb_flush_buf(in->in_context, &size);
-            if (!buf) {
-                continue;
+        if (in->active == FLB_TRUE) {
+            if (in->cb_flush_buf) {
+                buf = in->cb_flush_buf(in->in_context, &size);
+                if (!buf) {
+                    continue;
+                }
+
+                bytes = write(fd, buf, size);
+                if (bytes <= 0) {
+                    perror("write");
+                }
+                else {
+                    flb_info("Flush buf %i bytes", bytes);
+                }
+                free(buf);
             }
-            bytes = write(fd, buf, size);
-            if (bytes <= 0) {
-                perror("write");
+
+            if (in->cb_flush_iov) {
+                iov = in->cb_flush_iov(in->in_context, &len);
+                if (len <= 0) {
+                    continue;
+                }
+
+                bytes = writev(fd, iov, len);
+                if (bytes <= 0) {
+                    perror("writev");
+                }
+                else {
+                    flb_info("Flush iov %i bytes", bytes);
+                }
             }
-            else {
-                flb_info("Flush %i bytes", bytes);
-            }
-            free(buf);
         }
     }
-
     close(fd);
     return 0;
 }
