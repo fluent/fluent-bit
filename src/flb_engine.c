@@ -95,7 +95,7 @@ static int flb_engine_loop_add(int efd, int fd, int mode)
     return ret;
 }
 
-static int flb_engine_flush(struct flb_config *config)
+int flb_engine_flush(struct flb_config *config, struct flb_input_plugin *in_force)
 {
     int fd;
     int size;
@@ -118,6 +118,11 @@ static int flb_engine_flush(struct flb_config *config)
 
     mk_list_foreach(head, &config->inputs) {
         in = mk_list_entry(head, struct flb_input_plugin, _head);
+
+        if (in_force != NULL && in != in_force) {
+            continue;
+        }
+
         if (in->active == FLB_TRUE) {
             if (in->cb_flush_buf) {
                 buf = in->cb_flush_buf(in->in_context, &size);
@@ -184,7 +189,7 @@ static int flb_engine_handle_event(int fd, int mask, struct flb_config *config)
         /* Check if we need to flush */
         if (config->flush_fd == fd) {
             consume_byte(fd);
-            flb_engine_flush(config);
+            flb_engine_flush(config, NULL);
             return 0;
         }
 
@@ -192,11 +197,13 @@ static int flb_engine_handle_event(int fd, int mask, struct flb_config *config)
         mk_list_foreach(head, &config->collectors) {
             collector = mk_list_entry(head, struct flb_input_collector, _head);
             if (collector->fd_event == fd) {
-                return collector->cb_collect(collector->plugin->in_context);
+                return collector->cb_collect(config,
+                                             collector->plugin->in_context);
             }
             else if (collector->fd_timer == fd) {
                 consume_byte(fd);
-                return collector->cb_collect(collector->plugin->in_context);
+                return collector->cb_collect(config,
+                                             collector->plugin->in_context);
             }
         }
     }

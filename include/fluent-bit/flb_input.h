@@ -20,6 +20,7 @@
 #ifndef FLB_INPUT_H
 #define FLB_INPUT_H
 
+#include <inttypes.h>
 #include <fluent-bit/flb_config.h>
 
 #define FLB_COLLECT_TIME        0
@@ -28,6 +29,9 @@
 struct flb_input_plugin {
     /* Is this Input an active one ? */
     int  active;
+
+    /* Unique ID for this input plugin */
+    uint32_t id;
 
     /* The Input name */
     char *name;
@@ -42,7 +46,7 @@ struct flb_input_plugin {
      * Collect: every certain amount of time, Fluent Bit
      * trigger this callback.
      */
-    int (*cb_collect) (void *);
+    int (*cb_collect) (struct flb_config *, void *);
 
     /*
      * Flush: each plugin during a collection, it does some buffering,
@@ -80,7 +84,8 @@ struct flb_input_collector {
     long nanoseconds;                    /* expire nanoseconds         */
 
     /* Callbacks */
-    int (*cb_collect) (void *);          /* collect callback           */
+    int (*cb_collect) (struct flb_config *, /* collect callback           */
+                       void *);
 
     /* General references */
     struct flb_input_plugin *plugin;     /* owner plugin               */
@@ -92,12 +97,12 @@ int flb_input_enable(char *name, struct flb_config *config);
 int flb_input_check(struct flb_config *config);
 int flb_input_set_context(char *name, void *in_context, struct flb_config *config);
 int flb_input_set_collector_time(char *name,
-                                 int (*cb_collect) (void *),
+                                 int (*cb_collect) (struct flb_config *, void *),
                                  time_t seconds,
                                  long   nanoseconds,
                                  struct flb_config *config);
 int flb_input_set_collector_event(char *name,
-                                  int (*cb_collect) (void *),
+                                  int (*cb_collect) (struct flb_config *, void *),
                                   int fd,
                                   struct flb_config *config);
 void flb_input_pre_run_all(struct flb_config *config);

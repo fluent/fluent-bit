@@ -33,6 +33,7 @@
 #include <fluent-bit/in_kmsg.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_engine.h>
 
 /*
  * Note: Functions timeval_diff() and in_kmsg_boot_time() are based
@@ -171,11 +172,6 @@ static inline int process_line(char *line, struct flb_in_kmsg_config *ctx)
     /* Increase buffer position */
     ctx->buffer_id++;
 
-    if (ctx->buffer_id == KMSG_BUFFER_SIZE) {
-        /* fixme: FLUSH RIGHT AWAY */
-        ctx->buffer_id = 0;
-    }
-
     errno = 0;
     val = strtol(p, &end, 10);
     if ((errno == ERANGE && (val == INT_MAX || val == INT_MIN))
@@ -265,7 +261,7 @@ int in_kmsg_pre_run(void *in_context, struct flb_config *config)
 }
 
 /* Callback triggered when some Kernel Log buffer msgs are available */
-int in_kmsg_collect(void *in_context)
+int in_kmsg_collect(struct flb_config *config, void *in_context)
 {
     int bytes;
     char line[2024];
@@ -280,6 +276,11 @@ int in_kmsg_collect(void *in_context)
     }
     /* Always set a delimiter to avoid buffer trash */
     line[bytes - 1] = '\0';
+
+    /* Check if our buffer is full */
+    if (ctx->buffer_id + 1 == KMSG_BUFFER_SIZE) {
+        flb_engine_flush(config, &in_kmsg_plugin);
+    }
 
     /* Process and enqueue the received line */
     process_line(line, ctx);
@@ -334,6 +335,7 @@ int in_kmsg_init(struct flb_config *config)
 /* Plugin reference */
 struct flb_input_plugin in_kmsg_plugin = {
     .name         = "kmsg",
+    .id           = 2,
     .cb_init      = in_kmsg_init,
     .cb_pre_run   = in_kmsg_pre_run,
     .cb_collect   = in_kmsg_collect,

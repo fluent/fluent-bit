@@ -58,10 +58,11 @@ void in_xbee_cb(struct xbee *xbee, struct xbee_con *con,
 }
 
 /* Callback triggered by timer */
-int in_xbee_collect(void *in_context)
+int in_xbee_collect(struct flb_config *config, void *in_context)
 {
     int ret;
     void *p = NULL;
+    (void) config;
     struct flb_in_xbee_config *ctx = in_context;
 
     if ((ret = xbee_conCallbackGet(ctx->con,
@@ -216,6 +217,7 @@ int in_xbee_init(struct flb_config *config)
 /* Plugin reference */
 struct flb_input_plugin in_xbee_plugin = {
     .name         = "xbee",
+    .id           = 3,
     .cb_init      = in_xbee_init,
     .cb_pre_run   = NULL,
     .cb_collect   = in_xbee_collect,

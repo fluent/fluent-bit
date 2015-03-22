@@ -111,10 +111,11 @@ int in_cpu_pre_run(void *in_context, struct flb_config *config)
 }
 
 /* Callback to gather CPU usage between now and previous snapshot */
-int in_cpu_collect(void *in_context)
+int in_cpu_collect(struct flb_config *config, void *in_context)
 {
     double usage;
     double total;
+    (void) config;
     struct flb_in_cpu_config *ctx = in_context;
     struct in_cpu_data *buf;
 
@@ -189,6 +190,7 @@ void *in_cpu_flush(void *in_context, int *size)
 /* Plugin reference */
 struct flb_input_plugin in_cpu_plugin = {
     .name         = "cpu",
+    .id           = 1,
     .cb_init      = in_cpu_init,
     .cb_pre_run   = in_cpu_pre_run,
     .cb_collect   = in_cpu_collect,

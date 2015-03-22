@@ -26,5 +26,6 @@
 #define FLB_ENGINE_WRITE   EPOLLOUT
 
 int flb_engine_start(struct flb_config *config);
+int flb_engine_flush(struct flb_config *config, struct flb_input_plugin *in_force);
 
 #endif

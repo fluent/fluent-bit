@@ -178,7 +178,7 @@ int flb_input_set_context(char *name, void *in_context, struct flb_config *confi
 }
 
 int flb_input_set_collector_time(char *name,
-                                 int (*cb_collect) (void *),
+                                 int (*cb_collect) (struct flb_config *, void *),
                                  time_t seconds,
                                  long   nanoseconds,
                                  struct flb_config *config)
@@ -203,7 +203,7 @@ int flb_input_set_collector_time(char *name,
 }
 
 int flb_input_set_collector_event(char *name,
-                                  int (*cb_collect) (void *),
+                                  int (*cb_collect) (struct flb_config *, void *),
                                   int fd,
                                   struct flb_config *config)
 {
