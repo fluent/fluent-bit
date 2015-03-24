@@ -29,6 +29,7 @@
 #include <fluent-bit/in_xbee.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_engine.h>
 
 void in_xbee_cb(struct xbee *xbee, struct xbee_con *con,
                 struct xbee_pkt **pkt, void **data)
@@ -44,8 +45,7 @@ void in_xbee_cb(struct xbee *xbee, struct xbee_con *con,
     ctx = *data;
 
     if (ctx->buffer_len + 1 >= FLB_XBEE_BUFFER_SIZE) {
-        /* FIXME: flush! */
-        ctx->buffer_len = 0;
+        /* fixme: use flb_engine_flush() */
         return;
     }
 

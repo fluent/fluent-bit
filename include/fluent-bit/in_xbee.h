@@ -28,7 +28,7 @@
 #define IN_XBEE_COLLECT_SEC        0
 #define IN_XBEE_COLLECT_NSEC       15000
 
-#define FLB_XBEE_BUFFER_SIZE       64
+#define FLB_XBEE_BUFFER_SIZE       128
 
 struct flb_in_xbee_config {
     /* XBee setup */

@@ -135,7 +135,7 @@ int main(int argc, char **argv)
     }
 
     /* Validate flush time (seconds) */
-    if (config->flush <= 1) {
+    if (config->flush < 1) {
         flb_utils_error(FLB_ERR_CFG_FLUSH);
     }
 
