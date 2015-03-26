@@ -30,6 +30,7 @@
 #include <netinet/tcp.h>
 #include <errno.h>
 #include <sys/types.h>          /* See NOTES */
+#include <arpa/inet.h>
 
 #include <fluent-bit/flb_network.h>
 
@@ -120,4 +121,116 @@ int flb_net_tcp_connect(char *host, unsigned long port)
 
     free(remote);
     return sock_fd;
+}
+
+int flb_net_server(char *port, char *listen_addr)
+{
+    int socket_fd = -1;
+    int ret;
+    struct addrinfo hints;
+    struct addrinfo *res, *rp;
+
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE;
+
+    ret = getaddrinfo(listen_addr, port, &hints, &res);
+    if(ret != 0) {
+        fprintf(stderr, "Can't get addr info: %s", gai_strerror(ret));
+        return -1;
+    }
+
+    for (rp = res; rp != NULL; rp = rp->ai_next) {
+        socket_fd = flb_net_socket_create();
+        if (socket_fd == -1) {
+            fprintf(stderr, "Error creating server socket, retrying");
+            continue;
+        }
+
+        flb_net_socket_tcp_nodelay(socket_fd);
+        flb_net_socket_reset(socket_fd);
+
+        ret = flb_net_bind(socket_fd, rp->ai_addr, rp->ai_addrlen, 128);
+        if(ret == -1) {
+            fprintf(stderr, "Cannot listen on %s:%s\n", listen_addr, port);
+            continue;
+        }
+        break;
+    }
+    freeaddrinfo(res);
+
+    if (rp == NULL) {
+        return -1;
+    }
+
+    return socket_fd;
+}
+
+int flb_net_bind(int socket_fd, const struct sockaddr *addr,
+                 socklen_t addrlen, int backlog)
+{
+    int ret;
+
+    ret = bind(socket_fd, addr, addrlen);
+    if( ret == -1 ) {
+        fprintf(stderr, "Error binding socket");
+        return ret;
+    }
+
+    ret = listen(socket_fd, backlog);
+    if(ret == -1 ) {
+        fprintf(stderr, "Error setting up the listener");
+        return -1;
+    }
+
+    return ret;
+}
+
+int flb_net_accept(int server_fd)
+{
+    int remote_fd;
+    struct sockaddr sock_addr;
+    socklen_t socket_size = sizeof(struct sockaddr);
+
+    remote_fd = accept4(server_fd, &sock_addr, &socket_size,
+                        SOCK_NONBLOCK | SOCK_CLOEXEC);
+
+    if (remote_fd == -1) {
+        perror("accept4");
+    }
+
+    return remote_fd;
+}
+
+int flb_net_socket_ip_str(int socket_fd, char **buf, int size, unsigned long *len)
+{
+    int ret;
+    struct sockaddr_storage addr;
+    socklen_t s_len = sizeof(addr);
+
+    ret = getpeername(socket_fd, (struct sockaddr *) &addr, &s_len);
+    if (ret == -1) {
+        return -1;
+    }
+
+    errno = 0;
+
+    if(addr.ss_family == AF_INET) {
+        if((inet_ntop(AF_INET, &((struct sockaddr_in *)&addr)->sin_addr,
+                      *buf, size)) == NULL) {
+            fprintf(stderr, "socket_ip_str: Can't get the IP text form (%i)", errno);
+            return -1;
+        }
+    }
+    else if(addr.ss_family == AF_INET6) {
+        if((inet_ntop(AF_INET6, &((struct sockaddr_in6 *)&addr)->sin6_addr,
+                      *buf, size)) == NULL) {
+            fprintf(stderr, "socket_ip_str: Can't get the IP text form (%i)", errno);
+            return -1;
+        }
+    }
+
+    *len = strlen(*buf);
+    return 0;
 }
