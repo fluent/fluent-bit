@@ -324,12 +324,3 @@ void *mk_config_section_getval(struct mk_config_section *section, char *key, int
     }
     return NULL;
 }
-
-/* Print a specific error */
-static void mk_config_print_error_msg(char *variable, char *path)
-{
-    printf("Error in %s variable under %s, has an invalid value",
-           variable, path);
-    mk_mem_free(path);
-    exit(EXIT_FAILURE);
-}
