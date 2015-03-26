@@ -158,7 +158,7 @@ ENDIF ()
 INSTALL (TARGETS msgpack msgpack DESTINATION lib)
 INSTALL (DIRECTORY src/msgpack DESTINATION include)
 INSTALL (FILES src/msgpack.h src/msgpack.hpp DESTINATION include)
-INSTALL (FILES msgpack.pc DESTINATION lib/pkgconfig)
+#INSTALL (FILES msgpack.pc DESTINATION lib/pkgconfig)
 
 # Doxygen
 FIND_PACKAGE (Doxygen)
