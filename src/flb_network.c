@@ -33,6 +33,7 @@
 #include <arpa/inet.h>
 
 #include <fluent-bit/flb_network.h>
+#include <fluent-bit/flb_utils.h>
 
 int flb_net_socket_reset(int sockfd)
 {
@@ -136,15 +137,15 @@ int flb_net_server(char *port, char *listen_addr)
     hints.ai_flags = AI_PASSIVE;
 
     ret = getaddrinfo(listen_addr, port, &hints, &res);
-    if(ret != 0) {
-        fprintf(stderr, "Can't get addr info: %s", gai_strerror(ret));
+    if (ret != 0) {
+        flb_message(FLB_MSG_ERROR, "net_server: Can't get addr info");
         return -1;
     }
 
     for (rp = res; rp != NULL; rp = rp->ai_next) {
         socket_fd = flb_net_socket_create();
         if (socket_fd == -1) {
-            fprintf(stderr, "Error creating server socket, retrying");
+            flb_message(FLB_MSG_ERROR, "Error creating server socket, retrying");
             continue;
         }
 
@@ -153,7 +154,7 @@ int flb_net_server(char *port, char *listen_addr)
 
         ret = flb_net_bind(socket_fd, rp->ai_addr, rp->ai_addrlen, 128);
         if(ret == -1) {
-            fprintf(stderr, "Cannot listen on %s:%s\n", listen_addr, port);
+            flb_message(FLB_MSG_WARN, "Cannot listen on %s:%s\n", listen_addr, port);
             continue;
         }
         break;
@@ -174,13 +175,13 @@ int flb_net_bind(int socket_fd, const struct sockaddr *addr,
 
     ret = bind(socket_fd, addr, addrlen);
     if( ret == -1 ) {
-        fprintf(stderr, "Error binding socket");
+        flb_message(FLB_MSG_ERROR, "Error binding socket");
         return ret;
     }
 
     ret = listen(socket_fd, backlog);
     if(ret == -1 ) {
-        fprintf(stderr, "Error setting up the listener");
+        flb_message(FLB_MSG_ERROR, "Error setting up the listener");
         return -1;
     }
 
@@ -216,17 +217,21 @@ int flb_net_socket_ip_str(int socket_fd, char **buf, int size, unsigned long *le
 
     errno = 0;
 
-    if(addr.ss_family == AF_INET) {
-        if((inet_ntop(AF_INET, &((struct sockaddr_in *)&addr)->sin_addr,
+    if (addr.ss_family == AF_INET) {
+        if ((inet_ntop(AF_INET, &((struct sockaddr_in *)&addr)->sin_addr,
                       *buf, size)) == NULL) {
-            fprintf(stderr, "socket_ip_str: Can't get the IP text form (%i)", errno);
+            flb_message(FLB_MSG_ERROR,
+                        "socket_ip_str: Can't get the IP text form (%i)",
+                        errno);
             return -1;
         }
     }
-    else if(addr.ss_family == AF_INET6) {
-        if((inet_ntop(AF_INET6, &((struct sockaddr_in6 *)&addr)->sin6_addr,
-                      *buf, size)) == NULL) {
-            fprintf(stderr, "socket_ip_str: Can't get the IP text form (%i)", errno);
+    else if (addr.ss_family == AF_INET6) {
+        if ((inet_ntop(AF_INET6, &((struct sockaddr_in6 *)&addr)->sin6_addr,
+                       *buf, size)) == NULL) {
+            flb_message(FLB_MSG_ERROR,
+                        "socket_ip_str: Can't get the IP text form (%i)",
+                        errno);
             return -1;
         }
     }
