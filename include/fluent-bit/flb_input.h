@@ -23,8 +23,9 @@
 #include <inttypes.h>
 #include <fluent-bit/flb_config.h>
 
-#define FLB_COLLECT_TIME        0
-#define FLB_COLLECT_FD_EVENT    1
+#define FLB_COLLECT_TIME        1
+#define FLB_COLLECT_FD_EVENT    2
+#define FLB_COLLECT_FD_SERVER   4
 
 struct flb_input_plugin {
     /* Is this Input an active one ? */

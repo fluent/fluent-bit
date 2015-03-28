@@ -160,7 +160,14 @@ int flb_input_check(struct flb_config *config)
  *
  *     for a registered file descriptor, associate the READ events to a
  *     specified plugin. Every time there is some data to read, the collector
- *     callback will be triggered.
+ *     callback will be triggered. Oriented to a file descriptor that already
+ *     have information that may be read through iotctl(..FIONREAD..);
+ *
+ *  4. flb_input_set_collector_server()
+ *
+ *     it register a collector based on TCP socket events. It register a socket
+ *     who did bind() and listen() and for each event on the socket it triggers
+ *     the registered callbacks.
  */
 
 /* Assign an Configuration context to an Input */
@@ -218,6 +225,31 @@ int flb_input_set_collector_event(char *name,
     collector = malloc(sizeof(struct flb_input_collector));
     collector->type        = FLB_COLLECT_FD_EVENT;
     collector->cb_collect  = cb_collect;
+    collector->fd_event    = fd;
+    collector->seconds     = -1;
+    collector->nanoseconds = -1;
+    collector->plugin      = plugin;
+
+    mk_list_add(&collector->_head, &config->collectors);
+    return 0;
+}
+
+int flb_input_set_collector_socket(char *name,
+                                   int (*cb_new_connection) (struct flb_config *, void*),
+                                   int fd,
+                                   struct flb_config *config)
+{
+    struct flb_input_plugin *plugin;
+    struct flb_input_collector *collector;
+
+    plugin = plugin_lookup(name, config);
+    if (!plugin) {
+        return -1;
+    }
+
+    collector = malloc(sizeof(struct flb_input_collector));
+    collector->type        = FLB_COLLECT_FD_SERVER;
+    collector->cb_collect  = cb_new_connection;
     collector->fd_event    = fd;
     collector->seconds     = -1;
     collector->nanoseconds = -1;

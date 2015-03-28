@@ -268,7 +268,7 @@ int flb_engine_start(struct flb_config *config)
             }
             collector->fd_timer = fd;
         }
-        else if (collector->type == FLB_COLLECT_FD_EVENT) {
+        else if (collector->type & (FLB_COLLECT_FD_EVENT | FLB_COLLECT_FD_SERVER)) {
             ret = flb_engine_loop_add(loop, collector->fd_event,
                                       FLB_ENGINE_READ);
             if (ret == -1) {
