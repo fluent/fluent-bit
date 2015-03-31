@@ -32,8 +32,11 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_engine.h>
 
-static void flb_help(int rc)
+static void flb_help(int rc, struct flb_config *config)
 {
+    struct mk_list *head;
+    struct flb_input_plugin *in;
+
     printf("Usage: fluent-bit [OPTION]\n\n");
     printf("%sAvailable Options%s\n", ANSI_BOLD, ANSI_RESET);
     printf("  -f, --flush=SECONDS\tflush timeout in seconds (default: %i)\n",
@@ -46,10 +49,13 @@ static void flb_help(int rc)
     printf("  -h, --help\t\tprint this help\n\n");
 
     printf("%sInputs%s\n", ANSI_BOLD, ANSI_RESET);
-    printf("  CPU Usage\t\tcpu\n");
-    printf("  Kernel Ring Buffer\tkmsg\n\n");
 
-    printf("%sOutputs%s\n", ANSI_BOLD, ANSI_RESET);
+    /* Iterate each supported input */
+    mk_list_foreach(head, &config->inputs) {
+        in = mk_list_entry(head, struct flb_input_plugin, _head);
+        printf("  %-22s\n", in->name);
+    }
+    printf("\n%sOutputs%s\n", ANSI_BOLD, ANSI_RESET);
     printf("  Fluentd\t\tfluentd://host:port  (in_forward)\n\n");
     exit(rc);
 }
@@ -114,7 +120,7 @@ int main(int argc, char **argv)
             cfg_tag = optarg;
             break;
         case 'h':
-            flb_help(EXIT_SUCCESS);
+            flb_help(EXIT_SUCCESS, config);
         case 'v':
             flb_version();
             exit(EXIT_SUCCESS);
@@ -122,7 +128,7 @@ int main(int argc, char **argv)
             config->verbose = __flb_config_verbose = FLB_TRUE;
             break;
         default:
-            flb_help(EXIT_FAILURE);
+            flb_help(EXIT_FAILURE, config);
         }
     }
 
