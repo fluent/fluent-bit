@@ -218,7 +218,6 @@ int in_xbee_init(struct flb_config *config)
 struct flb_input_plugin in_xbee_plugin = {
     .name         = "xbee",
     .description  = "XBee Device",
-    .id           = 3,
     .cb_init      = in_xbee_init,
     .cb_pre_run   = NULL,
     .cb_collect   = in_xbee_collect,

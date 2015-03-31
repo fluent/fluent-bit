@@ -31,9 +31,6 @@ struct flb_input_plugin {
     /* Is this Input an active one ? */
     int  active;
 
-    /* Unique ID for this input plugin */
-    uint32_t id;
-
     /* The Input name */
     char *name;
 

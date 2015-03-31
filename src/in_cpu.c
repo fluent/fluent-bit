@@ -191,7 +191,6 @@ void *in_cpu_flush(void *in_context, int *size)
 struct flb_input_plugin in_cpu_plugin = {
     .name         = "cpu",
     .description  = "CPU Usage",
-    .id           = 1,
     .cb_init      = in_cpu_init,
     .cb_pre_run   = in_cpu_pre_run,
     .cb_collect   = in_cpu_collect,
