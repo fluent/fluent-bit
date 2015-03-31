@@ -1,10 +1,10 @@
-if (DEFINED FLB_XBEE)
-  set(src ${src} in_xbee.c)
-  set(extra_headers ../lib/libxbee-v3)
-  set(extra_libs pthread rt)
-endif (DEFINED FLB_XBEE)
+IF(WITH_XBEE)
+  SET(src ${src} in_xbee.c)
+  SET(extra_headers ../lib/libxbee-v3)
+  SET(extra_libs pthread rt)
+ENDIF()
 
-set(src
+SET(src
   ${src}
   in_cpu.c
   in_kmsg.c
@@ -17,13 +17,12 @@ set(src
   fluent-bit.c
   )
 
+INCLUDE_DIRECTORIES(../lib/ ../lib/msgpack-0.5.9/src ${extra_headers})
+ADD_EXECUTABLE(fluent-bit ${src})
+TARGET_LINK_LIBRARIES(fluent-bit msgpack mk_config)
 
-include_directories(../lib/ ../lib/msgpack-0.5.9/src ${extra_headers})
-add_executable(fluent-bit ${src})
-target_link_libraries(fluent-bit msgpack mk_config)
-
-if (DEFINED FLB_XBEE)
-  set_target_properties(fluent-bit PROPERTIES
+IF(WITH_XBEE)
+  SET_TARGET_PROPERTIES(fluent-bit PROPERTIES
     COMPILE_FLAGS -DFLB_XBEE_ENABLED)
-  target_link_libraries(fluent-bit xbee ${extra_libs})
-endif (DEFINED FLB_XBEE)
+  TARGET_LINK_LIBRARIES(fluent-bit xbee ${extra_libs})
+ENDIF ()

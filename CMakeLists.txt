@@ -1,18 +1,28 @@
-cmake_minimum_required(VERSION 2.6)
-project(FLUENT-BIT C)
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin")
+CMAKE_MINIMUM_REQUIRED(VERSION 2.6)
+PROJECT(FLUENT-BIT C)
+SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
+SET(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin")
+
+# Build Options
+OPTION(WITH_XBEE  "Enable XBee support" OFF)
+OPTION(WITH_DEBUG "Build with debug symbols" OFF)
+
+# Enable Debug symbols if specified
+IF(WITH_DEBUG)
+  SET(CMAKE_BUILD_TYPE "Debug")
+ENDIF()
 
 # General Headers
-include_directories(include/)
+INCLUDE_DIRECTORIES(include/)
 
-# Lib: mk_config
-add_subdirectory(lib/msgpack-0.5.9)
-add_subdirectory(lib/mk_config)
+# Lib: build the core libraries used by Fluent-Bit
+ADD_SUBDIRECTORY(lib/msgpack-0.5.9)
+ADD_SUBDIRECTORY(lib/mk_config)
 
-if (DEFINED FLB_XBEE)
-  add_subdirectory(lib/libxbee-v3)
-endif (DEFINED FLB_XBEE)
+# XBee library: add support for XBee devices
+IF(WITH_XBEE)
+  ADD_SUBDIRECTORY(lib/libxbee-v3)
+ENDIF()
 
-# Fluent Bit Core
-add_subdirectory(src/)
+# Instruct CMake to build the Fluent Bit Core
+ADD_SUBDIRECTORY(src/)

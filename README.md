@@ -17,7 +17,7 @@ As an optional feature that needs to be enabled at build time, _Fluent-Bit_ supp
 
 ```bash
 $ cd build/
-$ cmake -DFLB_XBEE=1 ..
+$ cmake -DWITH_XBEE ..
 $ make
 ```
 
