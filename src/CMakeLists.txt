@@ -16,9 +16,6 @@ SET(src
   flb_engine.c
   )
 
-#IF(NOT WITHOUT_BIN)
-#  SET(src ${src} fluent-bit.c)
-#ENDIF()
 
 INCLUDE_DIRECTORIES(../lib/ ../lib/msgpack-0.5.9/src ${extra_headers})
 
@@ -29,8 +26,10 @@ SET_TARGET_PROPERTIES(fluent-bit-shared
 
 # Static Library
 ADD_LIBRARY(fluent-bit-static STATIC ${src})
-SET_TARGET_PROPERTIES(fluent-bit-static
-  PROPERTIES OUTPUT_NAME fluent-bit)
+SET_TARGET_PROPERTIES(fluent-bit-static PROPERTIES
+  OUTPUT_NAME fluent-bit)
+SET_TARGET_PROPERTIES(fluent-bit-static PROPERTIES
+  ARCHIVE_OUTPUT_DIRECTORY "${FLB_ROOT}/library")
 
 IF(WITH_XBEE)
   SET_TARGET_PROPERTIES(fluent-bit-shared PROPERTIES
