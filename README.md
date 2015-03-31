@@ -11,15 +11,25 @@ $ cd build/
 $ cmake ..
 $ make
 ```
-### XBee Support
 
-As an optional feature that needs to be enabled at build time, _Fluent-Bit_ supports [Xbee devices](http://www.digi.com/products/wireless-wired-embedded-solutions/zigbee-rf-modules/zigbee-mesh-module/xbee-zb-module#overview) (ZigBee protocol). To make it available run _cmake_ with the following additional option:
+When building _Fluent-Bit_, the following options are available when running __cmake__:
+
+ option     | value type | description                                 | default
+------------|------------|---------------------------------------------|---------
+WITH_ALL    | bool       | Enable all features available               | off
+WITH_XBEE   | bool       | Enable XBee support (input)                 | off
+WITH_DEBUG  | bool       | Include debug symbols when building targets | off
+WITHOUT_BIN | bool       | Do not build the fluent-bit executable      | off
+
+In order to active one of these features, you need to set a boolean value. As an example if we would like to build _Fluent-Bit_ with _XBee_ support we should do:
 
 ```bash
 $ cd build/
-$ cmake -DWITH_XBEE ..
+$ cmake -DWITH_XBEE=1 ..
 $ make
 ```
+
+Multiple features can be enabled with _cmake_, just not that the _WITH\_ALL_ option will activate and override any previous value for all of them.
 
 ## Using Fluent Bit
 
@@ -44,7 +54,7 @@ Once the tool have been compiled, a binary file called _Fluent-Bit_ will be foun
 ### Flush CPU usage to a Fluentd service
 
 ```bash
-$ Fluent-Bit -i cpu -o fluentd://localhost:12224
+$ fluent-bit -i cpu -o fluentd://localhost:12224
 ```
 
 ## License
