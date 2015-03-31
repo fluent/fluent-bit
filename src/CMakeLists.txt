@@ -16,7 +16,6 @@ SET(src
   flb_engine.c
   )
 
-
 INCLUDE_DIRECTORIES(../lib/ ../lib/msgpack-0.5.9/src ${extra_headers})
 
 # Shared Library

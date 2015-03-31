@@ -94,9 +94,6 @@ int main(int argc, char **argv)
         exit(EXIT_FAILURE);
     }
 
-    /* Register all supported inputs */
-    flb_input_register_all(config);
-
     /* Parse the command line options */
     while ((opt = getopt_long(argc, argv, "f:i:o:t:vVh",
                               long_opts, NULL)) != -1) {
