@@ -2,6 +2,10 @@ cmake_minimum_required(VERSION 2.6)
 project(LIBXBEE C)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
 
+IF(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64" )
+  SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
+ENDIF()
+
 # Definitions
 add_definitions(-DLIBXBEE_BUILD)
 add_definitions(-DLIB_REVISION="")
