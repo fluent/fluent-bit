@@ -28,6 +28,7 @@ INCLUDE_DIRECTORIES(include/)
 # Lib: build the core libraries used by Fluent-Bit
 ADD_SUBDIRECTORY(lib/msgpack-0.5.9)
 ADD_SUBDIRECTORY(lib/mk_config)
+ADD_SUBDIRECTORY(lib/jsmn)
 
 # XBee library: add support for XBee devices
 IF(WITH_XBEE)
