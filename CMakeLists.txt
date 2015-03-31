@@ -4,8 +4,14 @@ SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
 SET(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin")
 
 # Build Options
-OPTION(WITH_XBEE  "Enable XBee support" OFF)
-OPTION(WITH_DEBUG "Build with debug symbols" OFF)
+OPTION(WITH_ALL    "Enable all features" OFF)
+OPTION(WITH_XBEE   "Enable XBee support" OFF)
+OPTION(WITH_DEBUG  "Build with debug symbols" OFF)
+OPTION(WITHOUT_BIN "Do not build executable" OFF)
+
+IF(WITH_ALL)
+  SET(WITH_XBEE ON)
+ENDIF()
 
 # Enable Debug symbols if specified
 IF(WITH_DEBUG)
