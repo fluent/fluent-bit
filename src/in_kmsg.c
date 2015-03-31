@@ -335,6 +335,7 @@ int in_kmsg_init(struct flb_config *config)
 /* Plugin reference */
 struct flb_input_plugin in_kmsg_plugin = {
     .name         = "kmsg",
+    .description  = "Kernel Log Buffer",
     .id           = 2,
     .cb_init      = in_kmsg_init,
     .cb_pre_run   = in_kmsg_pre_run,

@@ -37,6 +37,9 @@ struct flb_input_plugin {
     /* The Input name */
     char *name;
 
+    /* Plugin Description */
+    char *description;
+
     /* Initalization */
     int (*cb_init)    (struct flb_config *);
 
