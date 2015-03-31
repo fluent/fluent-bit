@@ -1,6 +1,8 @@
 # Fluent Bit
 
-_Fluent-Bit_ is an events collector for Embedded Linux and is part of the [Fluentd](http://fluentd.org) project ecosystem. It allows to collects information from different sources, package them and dispatch to [Fluentd](http://fluentd.org) collector Instances.
+_Fluent-Bit_ is an events collector for Embedded Linux and is part of the [Fluentd](http://fluentd.org) project ecosystem. It allows to collects information from different sources, package and dispatch them to different outputs such as [Fluentd](http://fluentd.org).
+
+The current project builds an executable called _fluent-bit_, a shared library _libfluent-bit.so_ and a static library _libfluent-bit.a_. Please refer to the build options described below for more details.
 
 ## Build
 
