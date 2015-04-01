@@ -17,20 +17,9 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_ERROR_H
-#define FLB_ERROR_H
+#ifndef FLB_PACK_H
+#define FLB_PACK_H
 
-#define FLB_ERR_CFG_FLUSH            020
-#define FLB_ERR_CFG_FLUSH_CREATE     021
-#define FLB_ERR_CFG_FLUSH_REGISTER   022
-#define FLB_ERR_INPUT_INVALID        050
-#define FLB_ERR_INPUT_UNDEF          051
-#define FLB_ERR_INPUT_UNSUP          052
-#define FLB_ERR_OUTPUT_UNDEF         100
-#define FLB_ERR_OUTPUT_INVALID       101
-
-/* JSON errors */
-#define FLB_ERR_JSON_INVAL           200
-#define FLB_ERR_JSON_PART            201
+char *flb_pack_json(char *js, int length, int *size);
 
 #endif

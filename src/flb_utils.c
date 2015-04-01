@@ -107,6 +107,12 @@ void flb_utils_error(int err)
     case FLB_ERR_OUTPUT_INVALID:
         msg = "Invalid output target";
         break;
+    case FLB_ERR_JSON_INVAL:
+        msg = "Invalid JSON string";
+        break;
+    case FLB_ERR_JSON_PART:
+        msg = "Truncated JSON string";
+        break;
     }
 
     if (!msg) {
@@ -120,7 +126,9 @@ void flb_utils_error(int err)
                 ANSI_BOLD ANSI_RED, ANSI_RESET, msg);
     }
 
-    exit(EXIT_FAILURE);
+    if (err <= FLB_ERR_OUTPUT_INVALID) {
+        exit(EXIT_FAILURE);
+    }
 }
 
 /* Custom error */

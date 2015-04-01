@@ -8,6 +8,7 @@ SET(src
   ${src}
   in_cpu.c
   in_kmsg.c
+  flb_pack.c
   flb_input.c
   flb_output.c
   flb_config.c
@@ -16,7 +17,12 @@ SET(src
   flb_engine.c
   )
 
-INCLUDE_DIRECTORIES(../lib/ ../lib/msgpack-0.5.9/src ${extra_headers})
+INCLUDE_DIRECTORIES(
+  ../lib/
+  ../lib/jsmn
+  ../lib/msgpack-0.5.9/src
+  ${extra_headers}
+  )
 
 # Shared Library
 ADD_LIBRARY(fluent-bit-shared SHARED ${src})
