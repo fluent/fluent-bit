@@ -1,39 +1,39 @@
-CMAKE_MINIMUM_REQUIRED(VERSION 2.6)
-SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall ")
-PROJECT(FLUENT-BIT C)
+cmake_minimum_required(VERSION 2.6)
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall ")
+project(FLUENT-BIT C)
 
 # Output paths
-SET(FLB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
-SET(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
-SET(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/library")
+set(FLB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/library")
 
 # Build Options
-OPTION(WITH_ALL    "Enable all features" OFF)
-OPTION(WITH_XBEE   "Enable XBee support" OFF)
-OPTION(WITH_DEBUG  "Build with debug symbols" OFF)
-OPTION(WITHOUT_BIN "Do not build executable" OFF)
+option(WITH_ALL    "Enable all features" OFF)
+option(WITH_XBEE   "Enable XBee support" OFF)
+option(WITH_DEBUG  "Build with debug symbols" OFF)
+option(WITHOUT_BIN "Do not build executable" OFF)
 
-IF(WITH_ALL)
-  SET(WITH_XBEE ON)
-ENDIF()
+if(WITH_ALL)
+  set(WITH_XBEE ON)
+endif()
 
 # Enable Debug symbols if specified
-IF(WITH_DEBUG)
-  SET(CMAKE_BUILD_TYPE "Debug")
-ENDIF()
+if(WITH_DEBUG)
+  set(CMAKE_BUILD_TYPE "Debug")
+endif()
 
 # General Headers
-INCLUDE_DIRECTORIES(include/)
+include_directories(include/)
 
 # Lib: build the core libraries used by Fluent-Bit
-ADD_SUBDIRECTORY(lib/msgpack-0.5.9)
-ADD_SUBDIRECTORY(lib/mk_config)
-ADD_SUBDIRECTORY(lib/jsmn)
+add_subdirectory(lib/msgpack-0.5.9)
+add_subdirectory(lib/mk_config)
+add_subdirectory(lib/jsmn)
 
 # XBee library: add support for XBee devices
-IF(WITH_XBEE)
-  ADD_SUBDIRECTORY(lib/libxbee-v3)
-ENDIF()
+if(WITH_XBEE)
+  add_subdirectory(lib/libxbee-v3)
+endif()
 
 # Instruct CMake to build the Fluent Bit Core
-ADD_SUBDIRECTORY(src/)
+add_subdirectory(src/)

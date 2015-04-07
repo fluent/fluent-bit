@@ -1,10 +1,10 @@
-IF(WITH_XBEE)
-  SET(src ${src} in_xbee.c)
-  SET(extra_headers ../lib/libxbee-v3)
-  SET(extra_libs pthread rt)
-ENDIF()
+if(WITH_XBEE)
+  set(src ${src} in_xbee.c)
+  set(extra_headers ../lib/libxbee-v3)
+  set(extra_libs pthread rt)
+endif()
 
-SET(src
+set(src
   ${src}
   in_cpu.c
   in_kmsg.c
@@ -17,7 +17,7 @@ SET(src
   flb_engine.c
   )
 
-INCLUDE_DIRECTORIES(
+include_directories(
   ../lib/
   ../lib/jsmn
   ../lib/msgpack-0.5.9/src
@@ -25,35 +25,35 @@ INCLUDE_DIRECTORIES(
   )
 
 # Shared Library
-ADD_LIBRARY(fluent-bit-shared SHARED ${src})
-SET_TARGET_PROPERTIES(fluent-bit-shared
+add_library(fluent-bit-shared SHARED ${src})
+set_target_properties(fluent-bit-shared
   PROPERTIES OUTPUT_NAME fluent-bit)
 
 # Static Library
-ADD_LIBRARY(fluent-bit-static STATIC ${src})
-SET_TARGET_PROPERTIES(fluent-bit-static PROPERTIES
+add_library(fluent-bit-static STATIC ${src})
+set_target_properties(fluent-bit-static PROPERTIES
   OUTPUT_NAME fluent-bit)
-SET_TARGET_PROPERTIES(fluent-bit-static PROPERTIES
+set_target_properties(fluent-bit-static PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${FLB_ROOT}/library")
 
-IF(WITH_XBEE)
-  SET_TARGET_PROPERTIES(fluent-bit-shared PROPERTIES
+if(WITH_XBEE)
+  set_target_properties(fluent-bit-shared PROPERTIES
     COMPILE_FLAGS -DFLB_HAVE_XBEE)
-  TARGET_LINK_LIBRARIES(fluent-bit-shared xbee ${extra_libs})
+  target_link_libraries(fluent-bit-shared xbee ${extra_libs})
 
-  SET_TARGET_PROPERTIES(fluent-bit-static PROPERTIES
+  set_target_properties(fluent-bit-static PROPERTIES
     COMPILE_FLAGS -DFLB_HAVE_XBEE)
-  TARGET_LINK_LIBRARIES(fluent-bit-static xbee ${extra_libs})
-ENDIF()
+  target_link_libraries(fluent-bit-static xbee ${extra_libs})
+endif()
 
 # Link dependencies to Fluent-Bit library core
-TARGET_LINK_LIBRARIES(fluent-bit-shared msgpack mk_config jsmn)
-TARGET_LINK_LIBRARIES(fluent-bit-static msgpack mk_config jsmn)
+target_link_libraries(fluent-bit-shared msgpack mk_config jsmn)
+target_link_libraries(fluent-bit-static msgpack mk_config jsmn)
 
 # Executable
-IF(NOT WITHOUT_BIN)
-  ADD_EXECUTABLE(fluent-bit-bin fluent-bit.c)
-  TARGET_LINK_LIBRARIES(fluent-bit-bin fluent-bit-static)
-  SET_TARGET_PROPERTIES(fluent-bit-bin
+if(NOT WITHOUT_BIN)
+  add_executable(fluent-bit-bin fluent-bit.c)
+  target_link_libraries(fluent-bit-bin fluent-bit-static)
+  set_target_properties(fluent-bit-bin
     PROPERTIES OUTPUT_NAME fluent-bit)
-ENDIF()
+endif()
