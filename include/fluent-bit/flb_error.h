@@ -30,7 +30,7 @@
 #define FLB_ERR_OUTPUT_INVALID       101
 
 /* JSON errors */
-#define FLB_ERR_JSON_INVAL           200
-#define FLB_ERR_JSON_PART            201
+#define FLB_ERR_JSON_INVAL           501
+#define FLB_ERR_JSON_PART            502
 
 #endif

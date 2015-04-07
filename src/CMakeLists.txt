@@ -47,9 +47,8 @@ IF(WITH_XBEE)
 ENDIF()
 
 # Link dependencies to Fluent-Bit library core
-TARGET_LINK_LIBRARIES(fluent-bit-shared msgpack mk_config)
-TARGET_LINK_LIBRARIES(fluent-bit-static msgpack mk_config)
-
+TARGET_LINK_LIBRARIES(fluent-bit-shared msgpack mk_config jsmn)
+TARGET_LINK_LIBRARIES(fluent-bit-static msgpack mk_config jsmn)
 
 # Executable
 IF(NOT WITHOUT_BIN)

@@ -72,11 +72,29 @@ static void flb_banner()
     printf("%sCopyright (C) Treasure Data%s\n\n", ANSI_BOLD ANSI_YELLOW, ANSI_RESET);
 }
 
+#include <fluent-bit/flb_pack.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
 int main(int argc, char **argv)
 {
     int opt;
     int ret;
     struct flb_config *config;
+
+    int s;
+    char *b = flb_pack_json("flb", argv[1], strlen(argv[1]), &s);
+    if (!b) {
+        printf("fail\n");
+        exit(1);
+    }
+
+    int fd = open("flb.dat", O_CREAT | O_TRUNC | O_WRONLY, 0644);
+    int n= write(fd, b, s);
+    close(fd);
+    printf("wrote: %i bytes\n", n);
+    exit(0);
 
     /* local variables to handle config options */
     char *cfg_output = NULL;

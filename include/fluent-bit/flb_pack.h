@@ -20,6 +20,6 @@
 #ifndef FLB_PACK_H
 #define FLB_PACK_H
 
-char *flb_pack_json(char *js, int length, int *size);
+char *flb_pack_json(char *tag, char *js, size_t len, int *size);
 
 #endif
