@@ -33,8 +33,6 @@ set_target_properties(fluent-bit-shared
 add_library(fluent-bit-static STATIC ${src})
 set_target_properties(fluent-bit-static PROPERTIES
   OUTPUT_NAME fluent-bit)
-set_target_properties(fluent-bit-static PROPERTIES
-  ARCHIVE_OUTPUT_DIRECTORY "${FLB_ROOT}/library")
 
 if(WITH_XBEE)
   set_target_properties(fluent-bit-shared PROPERTIES
