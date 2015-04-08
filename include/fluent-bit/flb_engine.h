@@ -21,11 +21,13 @@
 #define FLB_ENGINE_H
 
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_output.h>
 
 #define FLB_ENGINE_READ    EPOLLIN
 #define FLB_ENGINE_WRITE   EPOLLOUT
 
 int flb_engine_start(struct flb_config *config);
-int flb_engine_flush(struct flb_config *config, struct flb_input_plugin *in_force);
-
+int flb_engine_flush(struct flb_config *config,
+                     struct flb_input_plugin *in_force,
+                     struct flb_output_plugin *out_force);
 #endif

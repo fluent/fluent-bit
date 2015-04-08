@@ -43,48 +43,47 @@ static char *copy_substr(char *str, int s)
  * It parse the out_address, split the hostname, port (if any)
  * or set the default port based on the matched protocol
  */
-static int split_address(struct flb_config *config)
+static int split_address(struct flb_output_plugin *plugin, char *output)
 {
     int len;
     char *sep;
     char *tmp;
     char *buf;
 
-    if (config->out_protocol == FLB_OUTPUT_FLUENT) {
-        tmp = config->out_address + FLB_OUTPUT_FLUENT_Z;
-        sep = strchr(tmp, ':');
+    len = strlen(plugin->name);
+    tmp = output + len;
+    sep = strchr(tmp, ':');
 
-        if (sep == tmp) {
+    if (sep == tmp) {
+        return -1;
+    }
+
+    if (sep) {
+        len = (sep - tmp);
+        plugin->host = copy_substr(tmp, sep - tmp);
+
+        tmp += len + 1;
+        len = strlen(tmp);
+        if (len == 0) {
+            plugin->port = atoi(FLB_OUTPUT_FLUENT_PORT);
+            return 0;
+        }
+        buf = copy_substr(tmp, len);
+        plugin->port = atoi(buf);
+        free(buf);
+    }
+    else {
+        if (strlen(tmp) == 0) {
+            printf("?\n");
             return -1;
         }
 
-        if (sep) {
-            len = (sep - tmp);
-            config->out_host = copy_substr(tmp, sep - tmp);
-
-            tmp += len + 1;
-            len = strlen(tmp);
-            if (len == 0) {
-                config->out_port = atoi(FLB_OUTPUT_FLUENT_PORT);
-                return 0;
-            }
-            buf = copy_substr(tmp, len);
-            config->out_port = atoi(buf);
-            free(buf);
-        }
-        else {
-            if (strlen(tmp) == 0) {
-                printf("?\n");
-                return -1;
-            }
-
-            config->out_host = strdup(tmp);
-            config->out_port = atoi(FLB_OUTPUT_FLUENT_PORT);
-            return 0;
-        }
+        plugin->host = strdup(tmp);
+        plugin->port = atoi(FLB_OUTPUT_FLUENT_PORT);
+        return 0;
     }
 
-    return 0;
+    return -1;
 }
 
 /* Validate the the output address protocol */
@@ -116,18 +115,20 @@ static int check_protocol(char *prot, char *output)
 int flb_output_check(struct flb_config *config, char *output)
 {
     int ret = -1;
+    struct flb_output_plugin *plugin;
+    struct mk_list *head;
 
     if (!output) {
         return -1;
     }
 
-    config->out_address = output;
-
-    /* Fluentd */
-    if (check_protocol("fluentd", output)) {
-        config->out_protocol = FLB_OUTPUT_FLUENT;
-        ret = split_address(config);
+    mk_list_foreach(head, &config->outputs) {
+        plugin = mk_list_entry(head, struct flb_output_plugin, _head);
+        if (check_protocol(plugin->name, output)) {
+            ret = split_address(plugin, output);
+            return ret;
+        }
     }
 
-    return ret;
+    return -1;
 }

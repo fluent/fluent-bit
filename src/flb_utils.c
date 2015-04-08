@@ -238,7 +238,7 @@ void flb_utils_print_setup(struct flb_config *config)
     }
     printf("\n");
 
-    /* Outputs */
+    /* Outputs
     printf(" output tag     : %s\n", config->tag);
     printf(" output protocol: ");
 
@@ -254,6 +254,7 @@ void flb_utils_print_setup(struct flb_config *config)
     printf(" output host    : %s\n", config->out_host);
     printf(" output port    : %i\n", config->out_port);
     printf(" output address : %s\n", config->out_address);
+    */
 
     /* Collectors */
     printf(" collectors     : ");

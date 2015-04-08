@@ -34,6 +34,33 @@
 #define FLB_OUTPUT_TD_HTTP_Z   (sizeof("td+http")  - 1) + 3
 #define FLB_OUTPUT_TD_HTTPS_Z  (sizeof("td+https") - 1) + 3
 
+struct flb_output_plugin {
+    /* The plugin name */
+    char *name;
+
+    /* Plugin description */
+    char *description;
+
+    /* Original output address */
+    char *address;
+
+    /* Output backend address */
+    int   port;
+    char *host;
+
+    /* Initalization */
+    int (*cb_init)    (struct flb_config *);
+
+    /* Pre run */
+    int (*cb_pre_run) (void *, struct flb_config *);
+
+    /* Input handler configuration */
+    void *in_context;
+
+    /* Link to global list from flb_config->inputs */
+    struct mk_list _head;
+};
+
 /* Default TCP port for Fluentd */
 #define FLB_OUTPUT_FLUENT_PORT  "12224"
 

@@ -39,12 +39,10 @@ struct flb_config {
     /* Inputs */
     struct mk_list inputs;
 
-    /* Output */
+    /* Outputs */
+    struct mk_list outputs;
+
     char *tag;          /* Message Tag, used by Fluentd   */
-    int  out_protocol;  /* Output protocol                */
-    char *out_address;  /* Original Output address (full) */
-    char *out_host;     /* Output host if any             */
-    int   out_port;     /* Output TCP port                */
 };
 
 int __flb_config_verbose;

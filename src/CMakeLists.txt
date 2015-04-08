@@ -8,6 +8,7 @@ set(src
   ${src}
   in_cpu.c
   in_kmsg.c
+  out_fluentd.c
   flb_pack.c
   flb_input.c
   flb_output.c

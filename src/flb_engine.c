@@ -26,6 +26,7 @@
 
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
@@ -95,7 +96,9 @@ static int flb_engine_loop_add(int efd, int fd, int mode)
     return ret;
 }
 
-int flb_engine_flush(struct flb_config *config, struct flb_input_plugin *in_force)
+int flb_engine_flush(struct flb_config *config,
+                     struct flb_input_plugin *in_force,
+                     struct flb_output_plugin *out_force)
 {
     int fd;
     int size;
@@ -110,7 +113,7 @@ int flb_engine_flush(struct flb_config *config, struct flb_input_plugin *in_forc
      * Lazy flush: it does a connect in blocking mode, this needs
      * to be changed later and be integrated with the main loop.
      */
-    fd = flb_net_tcp_connect(config->out_host, config->out_port);
+    fd = flb_net_tcp_connect(out_force->host, out_force->port);
     if (fd == -1) {
         flb_error("Error connecting to output service");
         return -1;
@@ -189,7 +192,7 @@ static int flb_engine_handle_event(int fd, int mask, struct flb_config *config)
         /* Check if we need to flush */
         if (config->flush_fd == fd) {
             consume_byte(fd);
-            flb_engine_flush(config, NULL);
+            flb_engine_flush(config, NULL, NULL);
             return 0;
         }
 
