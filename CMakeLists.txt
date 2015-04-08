@@ -39,6 +39,7 @@ add_subdirectory(lib/jsmn)
 
 # SSL/TLS: add encryption support
 if(WITH_SSL_TLS)
+  add_definitions(-DHAVE_SSL_TLS)
   add_subdirectory(lib/mbedtls-1.3.10)
 endif()
 
