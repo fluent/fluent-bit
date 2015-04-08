@@ -56,4 +56,5 @@ if(NOT WITHOUT_BIN)
   target_link_libraries(fluent-bit-bin fluent-bit-static)
   set_target_properties(fluent-bit-bin
     PROPERTIES OUTPUT_NAME fluent-bit)
+  install(TARGETS fluent-bit-bin RUNTIME DESTINATION bin)
 endif()

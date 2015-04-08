@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 2.6)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall ")
-project(FLUENT-BIT C)
+project(fluent-bit C)
 
 # Output paths
 set(FLB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -8,10 +8,10 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/library")
 
 # Build Options
-option(WITH_ALL    "Enable all features" OFF)
-option(WITH_XBEE   "Enable XBee support" OFF)
-option(WITH_DEBUG  "Build with debug symbols" OFF)
-option(WITHOUT_BIN "Do not build executable" OFF)
+option(WITH_ALL    "Enable all features"      No)
+option(WITH_XBEE   "Enable XBee support"      No)
+option(WITH_DEBUG  "Build with debug symbols" No)
+option(WITHOUT_BIN "Do not build executable"  No)
 
 if(WITH_ALL)
   set(WITH_XBEE ON)
