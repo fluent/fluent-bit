@@ -33,6 +33,7 @@ set(MSGPACK_NO_INSTALL 1)
 add_subdirectory(lib/msgpack-0.5.9)
 add_subdirectory(lib/mk_config)
 add_subdirectory(lib/jsmn)
+add_subdirectory(lib/mbedtls-1.3.10)
 
 # XBee library: add support for XBee devices
 if(WITH_XBEE)

@@ -1,0 +1,662 @@
+Microsoft Developer Studio Workspace File, Format Version 6.00
+# WARNING: DO NOT EDIT OR DELETE THIS WORKSPACE FILE!
+
+###############################################################################
+
+Project: "aescrypt2"=.\aescrypt2.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "crypt_and_hash"=.\crypt_and_hash.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "hello"=.\hello.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "generic_sum"=.\generic_sum.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "md5sum"=.\md5sum.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "sha1sum"=.\sha1sum.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "sha2sum"=.\sha2sum.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "dh_client"=.\dh_client.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "dh_genprime"=.\dh_genprime.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "dh_server"=.\dh_server.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "gen_key"=.\gen_key.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "key_app"=.\key_app.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "key_app_writer"=.\key_app_writer.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "mpi_demo"=.\mpi_demo.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "pk_decrypt"=.\pk_decrypt.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "pk_encrypt"=.\pk_encrypt.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "pk_sign"=.\pk_sign.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "pk_verify"=.\pk_verify.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "rsa_genkey"=.\rsa_genkey.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "rsa_decrypt"=.\rsa_decrypt.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "rsa_encrypt"=.\rsa_encrypt.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "rsa_sign"=.\rsa_sign.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "rsa_verify"=.\rsa_verify.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "rsa_sign_pss"=.\rsa_sign_pss.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "rsa_verify_pss"=.\rsa_verify_pss.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "ssl_client1"=.\ssl_client1.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "ssl_client2"=.\ssl_client2.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "ssl_server"=.\ssl_server.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "ssl_server2"=.\ssl_server2.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "ssl_fork_server"=.\ssl_fork_server.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "ssl_mail_client"=.\ssl_mail_client.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "gen_entropy"=.\gen_entropy.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "gen_random_havege"=.\gen_random_havege.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "gen_random_ctr_drbg"=.\gen_random_ctr_drbg.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "ssl_cert_test"=.\ssl_cert_test.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "benchmark"=.\benchmark.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "selftest"=.\selftest.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "ssl_test"=.\ssl_test.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "pem2der"=.\pem2der.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "strerror"=.\strerror.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "cert_app"=.\cert_app.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "crl_app"=.\crl_app.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "cert_req"=.\cert_req.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name mbedtls
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Global:
+
+Package=<5>
+{{{
+}}}
+
+Package=<3>
+{{{
+}}}
+
+###############################################################################
+
