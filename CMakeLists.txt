@@ -39,4 +39,5 @@ if(WITH_XBEE)
 endif()
 
 # Instruct CMake to build the Fluent Bit Core
-add_subdirectory(src/)
+add_subdirectory(src)
+add_subdirectory(include)

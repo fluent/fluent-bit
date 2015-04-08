@@ -50,6 +50,9 @@ endif()
 target_link_libraries(fluent-bit-shared msgpack mk_config jsmn)
 target_link_libraries(fluent-bit-static msgpack mk_config jsmn)
 
+# Library install routines
+install(TARGETS fluent-bit-shared LIBRARY DESTINATION lib)
+
 # Executable
 if(NOT WITHOUT_BIN)
   add_executable(fluent-bit-bin fluent-bit.c)
