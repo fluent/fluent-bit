@@ -9,13 +9,16 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/library")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/library")
 
 # Build Options
-option(WITH_ALL    "Enable all features"      No)
-option(WITH_XBEE   "Enable XBee support"      No)
-option(WITH_DEBUG  "Build with debug symbols" No)
-option(WITHOUT_BIN "Do not build executable"  No)
+option(WITH_ALL     "Enable all features"        No)
+option(WITH_XBEE    "Enable XBee support"        No)
+option(WITH_DEBUG   "Build with debug symbols"   No)
+option(WITH_SSL_TLS "Build with SSL/TLS support" No)
+option(WITHOUT_BIN  "Do not build executable"    No)
 
 if(WITH_ALL)
-  set(WITH_XBEE ON)
+  set(WITH_XBEE    1)
+  set(WITH_DEBUG   1)
+  set(WITH_SSL_TLS 1)
 endif()
 
 # Enable Debug symbols if specified
@@ -33,7 +36,11 @@ set(MSGPACK_NO_INSTALL 1)
 add_subdirectory(lib/msgpack-0.5.9)
 add_subdirectory(lib/mk_config)
 add_subdirectory(lib/jsmn)
-add_subdirectory(lib/mbedtls-1.3.10)
+
+# SSL/TLS: add encryption support
+if(WITH_SSL_TLS)
+  add_subdirectory(lib/mbedtls-1.3.10)
+endif()
 
 # XBee library: add support for XBee devices
 if(WITH_XBEE)
