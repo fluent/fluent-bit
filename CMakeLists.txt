@@ -25,6 +25,9 @@ endif()
 # General Headers
 include_directories(include/)
 
+# Tweaks
+set(MSGPACK_NO_INSTALL 1)
+
 # Lib: build the core libraries used by Fluent-Bit
 add_subdirectory(lib/msgpack-0.5.9)
 add_subdirectory(lib/mk_config)

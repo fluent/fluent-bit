@@ -155,10 +155,12 @@ IF ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
 	ENDIF ()
 ENDIF ()
 
-INSTALL (TARGETS msgpack msgpack DESTINATION lib)
-INSTALL (DIRECTORY src/msgpack DESTINATION include)
-INSTALL (FILES src/msgpack.h src/msgpack.hpp DESTINATION include)
-#INSTALL (FILES msgpack.pc DESTINATION lib/pkgconfig)
+IF(NOT MSGPACK_NO_INSTALL)
+  INSTALL (TARGETS msgpack msgpack DESTINATION lib)
+  INSTALL (DIRECTORY src/msgpack DESTINATION include)
+  INSTALL (FILES src/msgpack.h src/msgpack.hpp DESTINATION include)
+  INSTALL (FILES msgpack.pc DESTINATION lib/pkgconfig)
+ENDIF()
 
 # Doxygen
 FIND_PACKAGE (Doxygen)
