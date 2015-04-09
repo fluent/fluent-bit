@@ -9,16 +9,26 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/library")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/library")
 
 # Build Options
-option(WITH_ALL     "Enable all features"        No)
-option(WITH_XBEE    "Enable XBee support"        No)
-option(WITH_DEBUG   "Build with debug symbols"   No)
-option(WITH_SSL_TLS "Build with SSL/TLS support" No)
-option(WITHOUT_BIN  "Do not build executable"    No)
+option(WITH_ALL     "Enable all features"         No)
+option(WITH_DEBUG   "Build with debug symbols"    No)
+option(WITH_SSL_TLS "Build with SSL/TLS support"  No)
+option(WITHOUT_BIN  "Do not build executable"     No)
 
+# Build Plugins
+option(WITH_IN_XBEE     "Enable XBee input plugin"            No)
+option(WITH_IN_CPU      "Enable CPU input plugin"            Yes)
+option(WITH_IN_KMSG     "Enable Kernel log input plugin"     Yes)
+option(WITH_OUT_FLUENTD "Enable Fluentd output plugin"       Yes)
+option(WITH_OUT_TD      "Enable Treasure Data output plugin"  No)
+
+# Enable all features
 if(WITH_ALL)
-  set(WITH_XBEE    1)
-  set(WITH_DEBUG   1)
-  set(WITH_SSL_TLS 1)
+  set(WITH_DEBUG       1)
+  set(WITH_SSL_TLS     1)
+  set(WITH_IN_XBEE     1)
+  set(WITH_IN_CPU      1)
+  set(WITH_OUT_FLUENTD 1)
+  set(WITH_OUT_TD      1)
 endif()
 
 # Enable Debug symbols if specified

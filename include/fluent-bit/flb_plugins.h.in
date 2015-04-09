@@ -17,32 +17,24 @@
  *  limitations under the License.
  */
 
-#include <stdio.h>
-#include <stdlib.h>
+#ifndef FLB_PLUGINS_H
+#define FLB_PLUGINS_H
 
-#include <fluent-bit/flb_macros.h>
+#include <mk_config/mk_config.h>
+#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_config.h>
-#include <fluent-bit/flb_plugins.h>
 
-struct flb_config *flb_config_init()
+@FLB_IN_PLUGINS_DECL@
+@FLB_OUT_PLUGINS_DECL@
+
+void flb_register_plugins(struct flb_config *config)
 {
-    int ret;
-    struct flb_config *config;
+    struct flb_input_plugin *in;
+    struct flb_output_plugin *out;
 
-    __flb_config_verbose = FLB_FALSE;
-
-    config = calloc(1, sizeof(struct flb_config));
-    if (!config) {
-        perror("malloc");
-        return NULL;
-    }
-
-    config->flush     = FLB_CONFIG_FLUSH_SECS;
-    config->init_time = time(NULL);
-    mk_list_init(&config->inputs);
-    mk_list_init(&config->outputs);
-
-    /* Register plugins */
-    flb_register_plugins(config);
-    return config;
+@FLB_IN_PLUGINS_ADD@
+@FLB_OUT_PLUGINS_ADD@
 }
+
+#endif
