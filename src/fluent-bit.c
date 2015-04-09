@@ -36,6 +36,7 @@ static void flb_help(int rc, struct flb_config *config)
 {
     struct mk_list *head;
     struct flb_input_plugin *in;
+    struct flb_output_plugin *out;
 
     printf("Usage: fluent-bit [OPTION]\n\n");
     printf("%sAvailable Options%s\n", ANSI_BOLD, ANSI_RESET);
@@ -56,7 +57,12 @@ static void flb_help(int rc, struct flb_config *config)
         printf("  %-22s%s\n", in->name, in->description);
     }
     printf("\n%sOutputs%s\n", ANSI_BOLD, ANSI_RESET);
-    printf("  Fluentd\t\tfluentd://host:port  (in_forward)\n\n");
+    mk_list_foreach(head, &config->outputs) {
+        out = mk_list_entry(head, struct flb_output_plugin, _head);
+        printf("  %-22s%s\n", out->name, out->description);
+    }
+
+    //printf("  Fluentd\t\tfluentd://host:port  (in_forward)\n\n");
     exit(rc);
 }
 
