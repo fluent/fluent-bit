@@ -21,13 +21,14 @@ macro(REGISTER_OUT_PLUGIN name)
 endmacro()
 
 # FLB_PLUGIN: used by plugins to perform registration and linking
-macro(FLB_PLUGIN name src)
+macro(FLB_PLUGIN name src deps)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
   add_library(flb-plugin-${name} STATIC ${src})
+  target_link_libraries(flb-plugin-${name} ${deps})
 endmacro()
 
 # Try to register each plugin
-#REGISTER_IN_PLUGIN("xbee")
+REGISTER_IN_PLUGIN("in_xbee")
 REGISTER_IN_PLUGIN("in_cpu")
 #REGISTER_IN_PLUGIN("kmsg")
 #REGISTER_OUT_PLUGIN("fluentd")

@@ -32,16 +32,6 @@ add_library(fluent-bit-static STATIC ${src})
 set_target_properties(fluent-bit-static PROPERTIES
   OUTPUT_NAME fluent-bit)
 
-if(WITH_XBEE)
-  set_target_properties(fluent-bit-shared PROPERTIES
-    COMPILE_FLAGS -DFLB_HAVE_XBEE)
-  target_link_libraries(fluent-bit-shared xbee ${extra_libs} ${FLB_PLUGINS})
-
-  set_target_properties(fluent-bit-static PROPERTIES
-    COMPILE_FLAGS -DFLB_HAVE_XBEE)
-  target_link_libraries(fluent-bit-static xbee ${extra_libs} ${FLB_PLUGINS})
-endif()
-
 # Link dependencies to Fluent-Bit library core
 target_link_libraries(fluent-bit-shared msgpack mk_config jsmn "${FLB_PLUGINS}")
 target_link_libraries(fluent-bit-static msgpack mk_config jsmn "${FLB_PLUGINS}")

@@ -53,11 +53,6 @@ if(WITH_SSL_TLS)
   add_subdirectory(lib/mbedtls-1.3.10)
 endif()
 
-# XBee library: add support for XBee devices
-if(WITH_XBEE)
-  add_subdirectory(lib/libxbee-v3)
-endif()
-
 # Instruct CMake to build the Fluent Bit Core
 set(FLB_PLUGINS "")
 add_subdirectory(include)
