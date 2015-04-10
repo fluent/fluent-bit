@@ -30,7 +30,7 @@ endmacro()
 # Try to register each plugin
 REGISTER_IN_PLUGIN("in_xbee")
 REGISTER_IN_PLUGIN("in_cpu")
-#REGISTER_IN_PLUGIN("kmsg")
+REGISTER_IN_PLUGIN("in_kmsg")
 #REGISTER_OUT_PLUGIN("fluentd")
 #REGISTER_OUT_PLUGIN("td")
 
