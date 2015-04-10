@@ -218,7 +218,6 @@ void flb_message(int type, char *fmt, ...)
 
 void flb_utils_print_setup(struct flb_config *config)
 {
-    char *p;
     struct mk_list *head;
     struct flb_input_plugin *plugin;
     struct flb_input_collector *collector;

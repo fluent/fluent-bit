@@ -47,33 +47,6 @@ static struct flb_input_plugin *plugin_lookup(char *name, struct flb_config *con
     return NULL;
 }
 
-static void register_input_plugin(struct flb_input_plugin *plugin,
-                                  struct flb_config *config)
-{
-    /* Register this Input in the global config */
-    mk_list_add(&plugin->_head, &config->inputs);
-}
-
-/* Register all supported inputs */
-int flb_input_register_all(struct flb_config *config)
-{
-    mk_list_init(&config->inputs);
-    mk_list_init(&config->collectors);
-
-    /*
-     * All plugins now register a struct references that points
-     * it's name and general callbacks.
-     */
-    register_input_plugin(&in_cpu_plugin, config);
-    register_input_plugin(&in_kmsg_plugin, config);
-
-#ifdef FLB_HAVE_XBEE
-    register_input_plugin(&in_xbee_plugin, config);
-#endif
-
-    return 0;
-}
-
 /* Enable an input */
 int flb_input_enable(char *name, struct flb_config *config)
 {

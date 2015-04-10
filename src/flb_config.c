@@ -26,7 +26,6 @@
 
 struct flb_config *flb_config_init()
 {
-    int ret;
     struct flb_config *config;
 
     __flb_config_verbose = FLB_FALSE;

@@ -61,8 +61,7 @@ static void flb_help(int rc, struct flb_config *config)
         out = mk_list_entry(head, struct flb_output_plugin, _head);
         printf("  %-22s%s\n", out->name, out->description);
     }
-
-    //printf("  Fluentd\t\tfluentd://host:port  (in_forward)\n\n");
+    printf("\n");
     exit(rc);
 }
 
