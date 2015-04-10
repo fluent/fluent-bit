@@ -37,9 +37,9 @@ if(WITH_DEBUG)
 endif()
 
 # General Headers
-include_directories(include/)
+include_directories(include/ lib/ lib/msgpack-0.5.9/src)
 
-# Tweaks
+# MSGPACK modification: disable the install routines.z
 set(MSGPACK_NO_INSTALL 1)
 
 # Lib: build the core libraries used by Fluent-Bit
