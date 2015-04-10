@@ -59,6 +59,7 @@ if(WITH_XBEE)
 endif()
 
 # Instruct CMake to build the Fluent Bit Core
+set(FLB_PLUGINS "")
 add_subdirectory(include)
 add_subdirectory(plugins)
 add_subdirectory(src)
