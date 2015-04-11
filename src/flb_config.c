@@ -38,6 +38,7 @@ struct flb_config *flb_config_init()
 
     config->flush     = FLB_CONFIG_FLUSH_SECS;
     config->init_time = time(NULL);
+    mk_list_init(&config->collectors);
     mk_list_init(&config->inputs);
     mk_list_init(&config->outputs);
 
