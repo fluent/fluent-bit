@@ -1,9 +1,3 @@
-if(WITH_XBEE)
-  set(src ${src} in_xbee.c)
-  set(extra_headers ../lib/libxbee-v3)
-  set(extra_libs pthread rt)
-endif()
-
 set(src
   ${src}
   flb_pack.c

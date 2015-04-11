@@ -41,6 +41,8 @@ set(src
   xbee.c
   )
 
+find_package(Threads)
+
 # Linking...
 add_library(xbee STATIC ${src})
-target_link_libraries(xbee xbeeZB_mode xbeeNet_mode xbeeDebug_mode)
+target_link_libraries(xbee xbeeZB_mode xbeeNet_mode xbeeDebug_mode ${CMAKE_THREAD_LIBS_INIT})
