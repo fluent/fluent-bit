@@ -1,3 +1,5 @@
+set(flb_plugins "" CACHE INTERNAL "flb_plugins")
+
 # REGISTER_IN_PLUGIN
 macro(REGISTER_IN_PLUGIN name)
   string(TOUPPER ${name} NAME)
@@ -5,7 +7,7 @@ macro(REGISTER_IN_PLUGIN name)
     set(FLB_IN_PLUGINS_DECL "${FLB_IN_PLUGINS_DECL}struct flb_input_plugin ${name}_plugin;\n")
     set(FLB_IN_PLUGINS_ADD "${FLB_IN_PLUGINS_ADD}    in = &${name}_plugin;\n    mk_list_add(&in->_head, &config->inputs);\n\n")
     add_subdirectory(${name})
-    set(FLB_PLUGINS "${FLB_PLUGINS}flb-plugin-${name};" PARENT_SCOPE)
+    set(flb_plugins "${flb_plugins}flb-plugin-${name};")
   endif()
 endmacro()
 
@@ -16,7 +18,7 @@ macro(REGISTER_OUT_PLUGIN name)
     set(FLB_OUT_PLUGINS_DECL "${FLB_OUT_PLUGINS_DECL}struct flb_output_plugin ${name}_plugin;\n")
     set(FLB_OUT_PLUGINS_ADD "${FLB_OUT_PLUGINS_ADD}    out = &${name}_plugin;\n    mk_list_add(&out->_head, &config->outputs);\n\n")
     add_subdirectory(${name})
-    set(FLB_PLUGINS "${FLB_PLUGINS}flb-plugin-${name};" PARENT_SCOPE)
+    set(flb_plugins "${flb_plugins}flb-plugin-${name};")
   endif()
 endmacro()
 
@@ -26,6 +28,7 @@ macro(FLB_PLUGIN name src deps)
   add_library(flb-plugin-${name} STATIC ${src})
   target_link_libraries(flb-plugin-${name} ${deps})
 endmacro()
+
 
 # Try to register each plugin
 REGISTER_IN_PLUGIN("in_xbee")
@@ -39,3 +42,5 @@ configure_file(
   "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_plugins.h.in"
   "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_plugins.h"
   )
+
+set(FLB_PLUGINS "${flb_plugins}" PARENT_SCOPE)

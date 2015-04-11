@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.6)
+cmake_minimum_required(VERSION 2.8)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall ")
 project(fluent-bit C)
 
@@ -54,7 +54,6 @@ if(WITH_SSL_TLS)
 endif()
 
 # Instruct CMake to build the Fluent Bit Core
-set(FLB_PLUGINS "")
 add_subdirectory(include)
 add_subdirectory(plugins)
 add_subdirectory(src)

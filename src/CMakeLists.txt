@@ -33,8 +33,8 @@ set_target_properties(fluent-bit-static PROPERTIES
   OUTPUT_NAME fluent-bit)
 
 # Link dependencies to Fluent-Bit library core
-target_link_libraries(fluent-bit-shared msgpack mk_config jsmn "${FLB_PLUGINS}")
-target_link_libraries(fluent-bit-static msgpack mk_config jsmn "${FLB_PLUGINS}")
+target_link_libraries(fluent-bit-shared msgpack mk_config jsmn ${FLB_PLUGINS})
+target_link_libraries(fluent-bit-static msgpack mk_config jsmn ${FLB_PLUGINS})
 
 # Library install routines
 install(TARGETS fluent-bit-shared LIBRARY DESTINATION lib)
