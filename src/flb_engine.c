@@ -98,22 +98,25 @@ static int flb_engine_loop_add(int efd, int fd, int mode)
 
 int flb_engine_flush(struct flb_config *config,
                      struct flb_input_plugin *in_force,
-                     struct flb_output_plugin *out_force)
+                     struct flb_output_plugin *tmp)
 {
     int fd;
     int size;
     int len;
     int bytes;
     char *buf;
+    struct flb_input_plugin *in;
+    struct flb_output_plugin *out;
     struct iovec *iov;
     struct mk_list *head;
-    struct flb_input_plugin *in;
 
+
+    out = mk_list_entry_first(&config->outputs, struct flb_output_plugin, _head);
     /*
      * Lazy flush: it does a connect in blocking mode, this needs
      * to be changed later and be integrated with the main loop.
      */
-    fd = flb_net_tcp_connect(out_force->host, out_force->port);
+    fd = flb_net_tcp_connect(out->host, out->port);
     if (fd == -1) {
         flb_error("Error connecting to output service");
         return -1;
