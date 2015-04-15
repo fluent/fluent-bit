@@ -50,14 +50,14 @@ static int split_address(struct flb_output_plugin *plugin, char *output)
     char *tmp;
     char *buf;
 
-    len = strlen(plugin->name);
-    tmp = output + len;
-    sep = strchr(tmp, ':');
 
-    if (sep == tmp) {
+    len = strlen(plugin->name) + 3;
+    if (strlen(output) <= len) {
         return -1;
     }
 
+    tmp = output + len;
+    sep = strchr(output + len, ':');
     if (sep) {
         len = (sep - tmp);
         plugin->host = copy_substr(tmp, sep - tmp);
@@ -71,10 +71,10 @@ static int split_address(struct flb_output_plugin *plugin, char *output)
         buf = copy_substr(tmp, len);
         plugin->port = atoi(buf);
         free(buf);
+        return 0;
     }
     else {
         if (strlen(tmp) == 0) {
-            printf("?\n");
             return -1;
         }
 
@@ -82,16 +82,15 @@ static int split_address(struct flb_output_plugin *plugin, char *output)
         plugin->port = atoi(FLB_OUTPUT_FLUENT_PORT);
         return 0;
     }
-
-    return -1;
 }
 
 /* Validate the the output address protocol */
 static int check_protocol(char *prot, char *output)
 {
-    int len = strlen(prot);
+    int len;
 
-    if (strlen(prot) > strlen(output)) {
+    len = strlen(prot);
+    if (len > strlen(output)) {
         return 0;
     }
 
