@@ -263,6 +263,7 @@ int in_kmsg_pre_run(void *in_context, struct flb_config *config)
 /* Callback triggered when some Kernel Log buffer msgs are available */
 int in_kmsg_collect(struct flb_config *config, void *in_context)
 {
+    int ret;
     int bytes;
     char line[2024];
     struct flb_in_kmsg_config *ctx = in_context;
@@ -279,7 +280,10 @@ int in_kmsg_collect(struct flb_config *config, void *in_context)
 
     /* Check if our buffer is full */
     if (ctx->buffer_id + 1 == KMSG_BUFFER_SIZE) {
-        flb_engine_flush(config, &in_kmsg_plugin, NULL);
+        ret = flb_engine_flush(config, &in_kmsg_plugin, NULL);
+        if (ret == -1) {
+            ctx->buffer_id = 0;
+        }
     }
 
     /* Process and enqueue the received line */
