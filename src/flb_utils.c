@@ -107,6 +107,9 @@ void flb_utils_error(int err)
     case FLB_ERR_OUTPUT_INVALID:
         msg = "Invalid output target";
         break;
+    case FLB_ERR_OUTPUT_UNIQ:
+        msg = "Just one output type is supported";
+        break;
     case FLB_ERR_JSON_INVAL:
         msg = "Invalid JSON string";
         break;

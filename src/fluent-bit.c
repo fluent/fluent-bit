@@ -124,6 +124,9 @@ int main(int argc, char **argv)
                 flb_utils_error(FLB_ERR_INPUT_INVALID);
             }
         case 'o':
+            if (cfg_output) {
+                flb_utils_error(FLB_ERR_OUTPUT_UNIQ);
+            }
             cfg_output = optarg;
             break;
         case 't':

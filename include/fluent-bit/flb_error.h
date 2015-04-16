@@ -28,6 +28,7 @@
 #define FLB_ERR_INPUT_UNSUP          052
 #define FLB_ERR_OUTPUT_UNDEF         100
 #define FLB_ERR_OUTPUT_INVALID       101
+#define FLB_ERR_OUTPUT_UNIQ          102
 
 /* JSON errors */
 #define FLB_ERR_JSON_INVAL           501
