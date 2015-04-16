@@ -22,6 +22,11 @@
 
 #include <fluent-bit/flb_config.h>
 
+/* Output plugin masks */
+#define FLB_OUTPUT_TCP         1
+#define FLB_OUTPUT_SSL         2
+
+/* Internal macros for setup */
 #define FLB_OUTPUT_FLUENT      0
 #define FLB_OUTPUT_HTTP        1
 #define FLB_OUTPUT_HTTPS       2
@@ -35,6 +40,8 @@
 #define FLB_OUTPUT_TD_HTTPS_Z  (sizeof("td+https") - 1) + 3
 
 struct flb_output_plugin {
+    int flags;
+
     /* The plugin name */
     char *name;
 
@@ -48,16 +55,19 @@ struct flb_output_plugin {
     int   port;
     char *host;
 
+    /* Socket connection */
+    int conn;
+
     /* Initalization */
     int (*cb_init)    (struct flb_config *);
 
     /* Pre run */
     int (*cb_pre_run) (void *, struct flb_config *);
 
-    /* Input handler configuration */
-    void *in_context;
+    /* Output handler configuration */
+    void *out_context;
 
-    /* Link to global list from flb_config->inputs */
+    /* Link to global list from flb_config->outputs */
     struct mk_list _head;
 };
 
@@ -65,5 +75,7 @@ struct flb_output_plugin {
 #define FLB_OUTPUT_FLUENT_PORT  "12224"
 
 int flb_output_check(struct flb_config *config, char *output);
+void flb_output_pre_run(struct flb_config *config);
+int flb_output_set_context(char *name, void *out_context, struct flb_config *config);
 
 #endif

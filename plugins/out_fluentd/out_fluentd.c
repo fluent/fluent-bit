@@ -20,9 +20,16 @@
 
 #include <fluent-bit/flb_output.h>
 
+int cb_fluentd_init(struct flb_config *config)
+{
+
+}
 
 /* Plugin reference */
 struct flb_output_plugin out_fluentd_plugin = {
     .name         = "fluentd",
     .description  = "Fluentd log collector",
+    .cb_init      = cb_fluentd_init,
+    .cb_pre_run   = NULL,
+    .flags        = FLB_OUTPUT_TCP | FLB_OUTPUT_SSL,
 };

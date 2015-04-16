@@ -23,14 +23,7 @@
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_error.h>
-
-/* Inputs */
-#include <fluent-bit/in_cpu.h>
-#include <fluent-bit/in_kmsg.h>
-
-#ifdef FLB_HAVE_XBEE
-#include <fluent-bit/in_xbee.h>
-#endif
+#include <fluent-bit/flb_utils.h>
 
 static struct flb_input_plugin *plugin_lookup(char *name, struct flb_config *config)
 {
