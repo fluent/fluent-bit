@@ -17,12 +17,45 @@
  *  limitations under the License.
  */
 
+#include <stdlib.h>
 
 #include <fluent-bit/flb_output.h>
+#include "out_fluentd.h"
+
+struct flb_output_plugin out_fluentd_plugin;
 
 int cb_fluentd_init(struct flb_config *config)
 {
+    int ret;
+    struct flb_out_fluentd_config *ctx;
 
+    ctx = calloc(1, sizeof(struct flb_out_fluentd_config));
+    if (!ctx) {
+        perror("calloc");
+        return -1;
+    }
+
+    ret = flb_output_set_context("fluentd", ctx, config);
+    if (ret == -1) {
+        flb_utils_error_c("Could not set configuration for fluentd output plugin");
+    }
+
+    return 0;
+}
+
+int cb_fluentd_pre_run(void *out_context, struct flb_config *config)
+{
+    int fd;
+    struct flb_out_fluentd_config *ctx = out_context;
+
+    fd = flb_net_tcp_connect(out_fluentd_plugin.host,
+                             out_fluentd_plugin.port);
+    if (fd <= 0) {
+        return -1;
+    }
+
+    ctx->fd = fd;
+    return 0;
 }
 
 /* Plugin reference */
@@ -30,6 +63,6 @@ struct flb_output_plugin out_fluentd_plugin = {
     .name         = "fluentd",
     .description  = "Fluentd log collector",
     .cb_init      = cb_fluentd_init,
-    .cb_pre_run   = NULL,
+    .cb_pre_run   = cb_fluentd_pre_run,
     .flags        = FLB_OUTPUT_TCP | FLB_OUTPUT_SSL,
 };
