@@ -16,6 +16,11 @@ include_directories(
   ${extra_headers}
   )
 
+# Let the core aware about TLS/SSL if enabled
+if(WITH_SSL_TLS)
+  add_definitions(-DHAVE_SSL_TLS)
+endif()
+
 # Shared Library
 add_library(fluent-bit-shared SHARED ${src})
 set_target_properties(fluent-bit-shared
