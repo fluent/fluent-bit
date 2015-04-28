@@ -31,6 +31,13 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_engine.h>
 
+/*
+ * We need to declare the xbee_init() function here as for some reason the
+ * libxbee-v3 on prepare.h file is not exporting the symbol or something
+ * is wrong when linking.
+ */
+void xbee_init(void);
+
 void in_xbee_cb(struct xbee *xbee, struct xbee_con *con,
                 struct xbee_pkt **pkt, void **data)
 {
