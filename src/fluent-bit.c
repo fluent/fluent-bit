@@ -123,6 +123,7 @@ int main(int argc, char **argv)
             if (ret != 0) {
                 flb_utils_error(FLB_ERR_INPUT_INVALID);
             }
+            break;
         case 'o':
             if (cfg_output) {
                 flb_utils_error(FLB_ERR_OUTPUT_UNIQ);
