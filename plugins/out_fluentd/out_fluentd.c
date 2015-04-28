@@ -17,9 +17,13 @@
  *  limitations under the License.
  */
 
+#include <stdio.h>
 #include <stdlib.h>
 
 #include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_network.h>
+
 #include "out_fluentd.h"
 
 struct flb_output_plugin out_fluentd_plugin;
