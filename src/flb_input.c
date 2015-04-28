@@ -167,6 +167,8 @@ int flb_input_set_collector_time(char *name,
     collector = malloc(sizeof(struct flb_input_collector));
     collector->type        = FLB_COLLECT_TIME;
     collector->cb_collect  = cb_collect;
+    collector->fd_event    = -1;
+    collector->fd_timer    = -1;
     collector->seconds     = seconds;
     collector->nanoseconds = nanoseconds;
     collector->plugin      = plugin;
@@ -192,6 +194,7 @@ int flb_input_set_collector_event(char *name,
     collector->type        = FLB_COLLECT_FD_EVENT;
     collector->cb_collect  = cb_collect;
     collector->fd_event    = fd;
+    collector->fd_timer    = -1;
     collector->seconds     = -1;
     collector->nanoseconds = -1;
     collector->plugin      = plugin;
@@ -217,6 +220,7 @@ int flb_input_set_collector_socket(char *name,
     collector->type        = FLB_COLLECT_FD_SERVER;
     collector->cb_collect  = cb_new_connection;
     collector->fd_event    = fd;
+    collector->fd_timer    = -1;
     collector->seconds     = -1;
     collector->nanoseconds = -1;
     collector->plugin      = plugin;
