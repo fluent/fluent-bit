@@ -138,7 +138,7 @@ int in_cpu_collect(struct flb_config *config, void *in_context)
     buf->cpu_usage = total;
 
     ctx->data_idx++;
-    flb_debug("in_cpu: CPU %0.2f%% (buffer=%i)", total, ctx->data_idx - 1);
+    flb_debug("[in_cpu] CPU %0.2f%% (buffer=%i)", total, ctx->data_idx - 1);
 
     return 0;
 }

@@ -230,7 +230,7 @@ static inline int process_line(char *line, struct flb_in_kmsg_config *ctx)
     strncpy(buf->line, p, buf->line_len);
     buf->line[buf->line_len] = '\0';
 
-    flb_debug("pri=%i seq=%" PRIu64 " sec=%ld usec=%ld '%s'",
+    flb_debug("[in_kmsg] pri=%i seq=%" PRIu64 " sec=%ld usec=%ld '%s'",
               buf->priority,
               buf->sequence,
               (long int) buf->tv.tv_sec,
