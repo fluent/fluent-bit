@@ -35,7 +35,7 @@ REGISTER_IN_PLUGIN("in_xbee")
 REGISTER_IN_PLUGIN("in_cpu")
 REGISTER_IN_PLUGIN("in_kmsg")
 REGISTER_OUT_PLUGIN("out_fluentd")
-#REGISTER_OUT_PLUGIN("td")
+REGISTER_OUT_PLUGIN("out_td")
 
 # Generate the header from the template
 configure_file(

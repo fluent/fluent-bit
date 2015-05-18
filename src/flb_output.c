@@ -23,6 +23,7 @@
 
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_macros.h>
 
 #define protcmp(a, b)  strncasecmp(a, b, strlen(a))
 
@@ -98,12 +99,6 @@ static int check_protocol(char *prot, char *output)
         return 0;
     }
 
-    if (output[len] != ':' ||
-        output[len + 1] != '/' ||
-        output[len + 1] != '/') {
-        return 0;
-    }
-
     return 1;
 }
 
@@ -115,7 +110,7 @@ void flb_output_pre_run(struct flb_config *config)
 
     mk_list_foreach(head, &config->outputs) {
         out = mk_list_entry(head, struct flb_output_plugin, _head);
-        if (out->cb_pre_run) {
+        if (out->cb_pre_run && out->active == FLB_TRUE) {
             out->cb_pre_run(out->out_context, config);
         }
     }
@@ -125,7 +120,7 @@ void flb_output_pre_run(struct flb_config *config)
  * It validate an output type given the string, it return the
  * proper type and if valid, populate the global config.
  */
-int flb_output_check(struct flb_config *config, char *output)
+int flb_output_set(struct flb_config *config, char *output)
 {
     int ret = -1;
     struct flb_output_plugin *plugin;
@@ -137,7 +132,14 @@ int flb_output_check(struct flb_config *config, char *output)
 
     mk_list_foreach(head, &config->outputs) {
         plugin = mk_list_entry(head, struct flb_output_plugin, _head);
+
         if (check_protocol(plugin->name, output)) {
+            plugin->active = FLB_TRUE;
+            config->output = plugin;
+            if (plugin->flags & FLB_OUTPUT_NOPROT) {
+                return 0;
+            }
+
             ret = split_address(plugin, output);
             return ret;
         }
@@ -149,18 +151,21 @@ int flb_output_check(struct flb_config *config, char *output)
 /* Trigger the output plugins setup callbacks to prepare them. */
 int flb_output_init(struct flb_config *config)
 {
+    struct mk_list *head;
     struct flb_output_plugin *out;
 
     /* We need at least one output */
-    if (mk_list_is_empty(&config->outputs) != 0) {
+    if (mk_list_is_empty(&config->outputs) == 0) {
         return -1;
     }
 
     /* Retrieve the plugin reference */
-    out = mk_list_entry_first(&config->outputs,
-                              struct flb_output_plugin,
-                              _head);
-
+    mk_list_foreach(head, &config->outputs) {
+        out = mk_list_entry(head, struct flb_output_plugin, _head);
+        if (out->active == FLB_TRUE) {
+            out->cb_init(config);
+        }
+    }
     return 0;
 }
 

@@ -20,6 +20,8 @@
 #ifndef FLB_ERROR_H
 #define FLB_ERROR_H
 
+#define FLB_ERR_CFG_FILE             010
+#define FLB_ERR_CFG_FILE_FORMAT      011
 #define FLB_ERR_CFG_FLUSH            020
 #define FLB_ERR_CFG_FLUSH_CREATE     021
 #define FLB_ERR_CFG_FLUSH_REGISTER   022

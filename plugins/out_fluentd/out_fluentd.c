@@ -19,6 +19,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <assert.h>
 
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_utils.h>
@@ -62,11 +63,28 @@ int cb_fluentd_pre_run(void *out_context, struct flb_config *config)
     return 0;
 }
 
+int cb_fluentd_flush(void *data, size_t bytes, void *out_context)
+{
+    int fd;
+    struct flb_out_fluentd_config *ctx = out_context;
+    (void) ctx;
+
+    fd = flb_net_tcp_connect(out_fluentd_plugin.host,
+                             out_fluentd_plugin.port);
+    if (fd <= 0) {
+        return -1;
+    }
+
+    /* FIXME: plain TCP write */
+    return write(fd, data, bytes);
+}
+
 /* Plugin reference */
 struct flb_output_plugin out_fluentd_plugin = {
     .name         = "fluentd",
     .description  = "Fluentd log collector",
     .cb_init      = cb_fluentd_init,
     .cb_pre_run   = cb_fluentd_pre_run,
-    .flags        = FLB_OUTPUT_TCP | FLB_OUTPUT_SSL,
+    .cb_flush     = cb_fluentd_flush,
+    .flags        = FLB_OUTPUT_TCP,
 };

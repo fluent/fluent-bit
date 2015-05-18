@@ -110,8 +110,14 @@ int flb_engine_flush(struct flb_config *config,
     struct iovec *iov;
     struct mk_list *head;
 
+    if (!tmp) {
+        out = mk_list_entry_first(&config->outputs,
+                                  struct flb_output_plugin, _head);
+    }
+    else {
+        out = tmp;
+    }
 
-    out = mk_list_entry_first(&config->outputs, struct flb_output_plugin, _head);
     /*
      * Lazy flush: it does a connect in blocking mode, this needs
      * to be changed later and be integrated with the main loop.
@@ -136,9 +142,10 @@ int flb_engine_flush(struct flb_config *config,
                     goto flush_done;
                 }
 
-                bytes = write(fd, buf, size);
+                bytes = config->output->cb_flush(buf, size,
+                                                 config->output->out_context);
                 if (bytes <= 0) {
-                    perror("write");
+                    flb_error("Error flushing data");
                 }
                 else {
                     flb_info("Flush buf %i bytes", bytes);
@@ -195,7 +202,7 @@ static int flb_engine_handle_event(int fd, int mask, struct flb_config *config)
         /* Check if we need to flush */
         if (config->flush_fd == fd) {
             consume_byte(fd);
-            flb_engine_flush(config, NULL, NULL);
+            flb_engine_flush(config, NULL, config->output);
             return 0;
         }
 
@@ -236,6 +243,7 @@ int flb_engine_start(struct flb_config *config)
     flb_input_pre_run_all(config);
 
     /* Outputs pre-run */
+    flb_output_init(config);
     flb_output_pre_run(config);
 
     /* main loop */

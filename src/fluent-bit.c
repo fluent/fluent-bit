@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <getopt.h>
 
 #include <mk_config/mk_config.h>
@@ -40,6 +41,7 @@ static void flb_help(int rc, struct flb_config *config)
 
     printf("Usage: fluent-bit [OPTION]\n\n");
     printf("%sAvailable Options%s\n", ANSI_BOLD, ANSI_RESET);
+    printf("  -c  --config=FILE\tspecify an optional configuration file\n");
     printf("  -f, --flush=SECONDS\tflush timeout in seconds (default: %i)\n",
            FLB_CONFIG_FLUSH_SECS);
     printf("  -i, --input=INPUT\tset an input\n");
@@ -89,11 +91,13 @@ int main(int argc, char **argv)
     struct flb_config *config;
 
     /* local variables to handle config options */
+    char *cfg_file = NULL;
     char *cfg_output = NULL;
     char *cfg_tag = NULL;
 
     /* Setup long-options */
     static const struct option long_opts[] = {
+        { "config",  required_argument, NULL, 'c' },
         { "flush",   required_argument, NULL, 'f' },
         { "input",   required_argument, NULL, 'i' },
         { "output",  required_argument, NULL, 'o' },
@@ -111,10 +115,13 @@ int main(int argc, char **argv)
     }
 
     /* Parse the command line options */
-    while ((opt = getopt_long(argc, argv, "f:i:o:t:vVh",
+    while ((opt = getopt_long(argc, argv, "c:f:i:o:t:vVh",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
+        case 'c':
+            cfg_file = optarg;
+            break;
         case 'f':
             config->flush = atoi(optarg);
             break;
@@ -151,6 +158,17 @@ int main(int argc, char **argv)
         flb_utils_error(FLB_ERR_OUTPUT_UNDEF);
     }
 
+    /* Validate config file */
+    if (cfg_file) {
+        if (access(cfg_file, R_OK) != 0) {
+            flb_utils_error(FLB_ERR_CFG_FILE);
+        }
+        config->file = mk_config_create(cfg_file);
+        if (!config->file) {
+            flb_utils_error(FLB_ERR_CFG_FILE_FORMAT);
+        }
+    }
+
     /* Validate flush time (seconds) */
     if (config->flush < 1) {
         flb_utils_error(FLB_ERR_CFG_FLUSH);
@@ -171,7 +189,7 @@ int main(int argc, char **argv)
     }
 
     /* Output */
-    ret = flb_output_check(config, cfg_output);
+    ret = flb_output_set(config, cfg_output);
     if (ret == -1) {
         flb_utils_error(FLB_ERR_OUTPUT_INVALID);
     }

@@ -217,11 +217,11 @@ void mk_string_split_free(struct mk_list *list)
     mk_list_foreach_safe(head, tmp, list) {
         entry = mk_list_entry(head, struct mk_string_line, _head);
         mk_list_del(&entry->_head);
-        mk_mem_free(entry->val);
-        mk_mem_free(entry);
+        free(entry->val);
+        free(entry);
     }
 
-    mk_mem_free(list);
+    free(list);
 }
 
 char *mk_string_build(char **buffer, unsigned long *len,

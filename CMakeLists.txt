@@ -19,7 +19,7 @@ option(WITH_IN_XBEE     "Enable XBee input plugin"            No)
 option(WITH_IN_CPU      "Enable CPU input plugin"            Yes)
 option(WITH_IN_KMSG     "Enable Kernel log input plugin"     Yes)
 option(WITH_OUT_FLUENTD "Enable Fluentd output plugin"       Yes)
-option(WITH_OUT_TD      "Enable Treasure Data output plugin"  No)
+option(WITH_OUT_TD      "Enable Treasure Data output plugin" Yes)
 
 # Enable all features
 if(WITH_ALL)

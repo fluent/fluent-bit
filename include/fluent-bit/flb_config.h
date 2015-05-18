@@ -21,6 +21,7 @@
 #define FLB_CONFIG_H
 
 #include <time.h>
+#include <mk_config/mk_config.h>
 #include <mk_config/mk_list.h>
 
 #define FLB_CONFIG_FLUSH_SECS   5
@@ -32,6 +33,7 @@ struct flb_config {
     int flush_fd;       /* Timer FD associated to flush   */
     int verbose;        /* Verbose mode (default OFF)     */
     time_t init_time;   /* Time when Fluent Bit started   */
+    struct mk_config *file;
 
     /* Collectors */
     struct mk_list collectors;
@@ -40,7 +42,8 @@ struct flb_config {
     struct mk_list inputs;
 
     /* Outputs */
-    struct mk_list outputs;
+    struct mk_list outputs;             /* list of output plugins */
+    struct flb_output_plugin *output;   /* output plugin in use   */
 
     char *tag;          /* Message Tag, used by Fluentd   */
 };

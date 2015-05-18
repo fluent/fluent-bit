@@ -23,8 +23,9 @@
 #include <fluent-bit/flb_config.h>
 
 /* Output plugin masks */
-#define FLB_OUTPUT_TCP         1
-#define FLB_OUTPUT_SSL         2
+#define FLB_OUTPUT_TCP         1  /* it uses TCP   */
+#define FLB_OUTPUT_SSL         2  /* use SSL layer */
+#define FLB_OUTPUT_NOPROT      4  /* do not validate protocol info */
 
 /* Internal macros for setup */
 #define FLB_OUTPUT_FLUENT      0
@@ -33,13 +34,9 @@
 #define FLB_OUTPUT_TD_HTTP     3
 #define FLB_OUTPUT_TD_HTTPS    4
 
-#define FLB_OUTPUT_FLUENT_Z    (sizeof("fluentd")  - 1) + 3
-#define FLB_OUTPUT_HTTP_Z      (sizeof("http")     - 1) + 3
-#define FLB_OUTPUT_HTTPS_Z     (sizeof("https")    - 1) + 3
-#define FLB_OUTPUT_TD_HTTP_Z   (sizeof("td+http")  - 1) + 3
-#define FLB_OUTPUT_TD_HTTPS_Z  (sizeof("td+https") - 1) + 3
-
 struct flb_output_plugin {
+    int active;
+
     int flags;
 
     /* The plugin name */
@@ -64,6 +61,9 @@ struct flb_output_plugin {
     /* Pre run */
     int (*cb_pre_run) (void *, struct flb_config *);
 
+    /* Flush callback */
+    int (*cb_flush) (void *, size_t, void *);
+
     /* Output handler configuration */
     void *out_context;
 
@@ -74,8 +74,9 @@ struct flb_output_plugin {
 /* Default TCP port for Fluentd */
 #define FLB_OUTPUT_FLUENT_PORT  "12224"
 
-int flb_output_check(struct flb_config *config, char *output);
+int flb_output_set(struct flb_config *config, char *output);
 void flb_output_pre_run(struct flb_config *config);
 int flb_output_set_context(char *name, void *out_context, struct flb_config *config);
+int flb_output_init(struct flb_config *config);
 
 #endif

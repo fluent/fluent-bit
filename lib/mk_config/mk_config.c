@@ -169,7 +169,7 @@ struct mk_config *mk_config_create(const char *path)
                 /* Create new section */
                 section = mk_string_copy_substr(buf, 1, end);
                 current = mk_config_section_add(conf, section);
-                mk_mem_free(section);
+                free(section);
                 n_keys = 0;
                 continue;
             }
@@ -221,8 +221,8 @@ struct mk_config *mk_config_create(const char *path)
         mk_config_entry_add(conf, key, val);
 
         /* Free temporal key and val */
-        mk_mem_free(key);
-        mk_mem_free(val);
+        free(key);
+        free(val);
 
         n_keys++;
     }
@@ -248,7 +248,7 @@ struct mk_config *mk_config_create(const char *path)
     fflush(stdout);
     */
     fclose(f);
-    if (indent) mk_mem_free(indent);
+    if (indent) free(indent);
     return conf;
 }
 
@@ -266,11 +266,11 @@ void mk_config_free(struct mk_config *conf)
         mk_config_free_entries(section);
 
         /* Free section node */
-        mk_mem_free(section->name);
-        mk_mem_free(section);
+        free(section->name);
+        free(section);
     }
-    if (conf->file) mk_mem_free(conf->file);
-    if (conf) mk_mem_free(conf);
+    if (conf->file) free(conf->file);
+    if (conf) free(conf);
 }
 
 void mk_config_free_entries(struct mk_config_section *section)
@@ -283,9 +283,9 @@ void mk_config_free_entries(struct mk_config_section *section)
         mk_list_del(&entry->_head);
 
         /* Free memory assigned */
-        mk_mem_free(entry->key);
-        mk_mem_free(entry->val);
-        mk_mem_free(entry);
+        free(entry->key);
+        free(entry->val);
+        free(entry);
     }
 }
 

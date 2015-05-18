@@ -83,6 +83,12 @@ void flb_utils_error(int err)
     char *msg = NULL;
 
     switch (err) {
+    case FLB_ERR_CFG_FILE:
+        msg = "Could not open configuration file";
+        break;
+    case FLB_ERR_CFG_FILE_FORMAT:
+        msg = "Configuration file contains format errors";
+        break;
     case FLB_ERR_CFG_FLUSH:
         msg = "Invalid flush value";
         break;
@@ -138,7 +144,7 @@ void flb_utils_error(int err)
 void flb_utils_error_c(const char *msg)
 {
     fprintf(stderr,
-            "%sError%s: %s. Aborting",
+            "%sError%s: %s. Aborting\n\n",
             ANSI_BOLD ANSI_RED, ANSI_RESET, msg);
     exit(EXIT_FAILURE);
 }
