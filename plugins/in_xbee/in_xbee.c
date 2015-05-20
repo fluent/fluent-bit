@@ -26,10 +26,11 @@
 #include <unistd.h>
 
 #include <xbee.h>
-#include <fluent-bit/in_xbee.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_engine.h>
+
+#include "in_xbee.h"
 
 /*
  * We need to declare the xbee_init() function here as for some reason the
