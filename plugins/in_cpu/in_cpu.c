@@ -25,7 +25,8 @@
 #include <msgpack.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_config.h>
-#include <fluent-bit/in_cpu.h>
+
+#include "in_cpu.h"
 
 /* Retrieve CPU load from the system (through ProcFS) */
 static inline double proc_cpu_load()
