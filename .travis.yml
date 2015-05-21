@@ -7,7 +7,6 @@ notifications:
   irc: "irc.freenode.net#fluentbit"
 
 before_script:
-  - mkdir build
   - cd build
   - cmake -DWITH_ALL=1 ../
 
