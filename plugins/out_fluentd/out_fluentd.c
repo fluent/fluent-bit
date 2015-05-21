@@ -65,7 +65,7 @@ int cb_fluentd_pre_run(void *out_context, struct flb_config *config)
 
 int cb_fluentd_flush(void *data, size_t bytes, void *out_context)
 {
-    int fd;
+    int fd, len;
     struct flb_out_fluentd_config *ctx = out_context;
     (void) ctx;
 
@@ -76,7 +76,10 @@ int cb_fluentd_flush(void *data, size_t bytes, void *out_context)
     }
 
     /* FIXME: plain TCP write */
-    return write(fd, data, bytes);
+    len = write(fd, data, bytes);
+    close(fd);
+
+    return len;
 }
 
 /* Plugin reference */
