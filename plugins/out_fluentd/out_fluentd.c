@@ -66,8 +66,7 @@ int cb_fluentd_pre_run(void *out_context, struct flb_config *config)
 int cb_fluentd_flush(void *data, size_t bytes, void *out_context)
 {
     int fd, len;
-    struct flb_out_fluentd_config *ctx = out_context;
-    (void) ctx;
+    (void) out_context;
 
     fd = flb_net_tcp_connect(out_fluentd_plugin.host,
                              out_fluentd_plugin.port);
