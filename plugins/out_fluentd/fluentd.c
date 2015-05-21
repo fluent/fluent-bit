@@ -25,7 +25,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_network.h>
 
-#include "out_fluentd.h"
+#include "fluentd.h"
 
 struct flb_output_plugin out_fluentd_plugin;
 

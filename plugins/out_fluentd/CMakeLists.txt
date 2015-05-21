@@ -1,4 +1,5 @@
 set(src
-  out_fluentd.c)
+  ../../src/flb_network.c
+  fluentd.c)
 
 FLB_PLUGIN(out_fluentd "${src}" "")
