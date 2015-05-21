@@ -62,6 +62,11 @@ Once the tool have been compiled, a binary file called _Fluent-Bit_ will be foun
 $ fluent-bit -i cpu -o fluentd://localhost:12224
 ```
 
+## Contributing
+
+In order to contribute to the project please refer to the [CONTRIBUTING](CONTRIBUTING.md) guidelines.
+
+
 ## License
 
 This program is under the terms of the [Apache License v2.0](http://www.apache.org/licenses/LICENSE-2.0).
