@@ -76,7 +76,7 @@ int cb_fluentd_flush(void *data, size_t bytes, void *out_context)
     }
 
     /* FIXME: plain TCP write */
-    len = write(ctx->fd, data, bytes);
+    len = write(fd, data, bytes);
     close(fd);
 
     return len;
