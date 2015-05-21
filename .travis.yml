@@ -4,7 +4,7 @@ compiler:
   - clang
 
 notifications:
-  irc: "irc.freenode.net#fluentbit"
+  irc: "irc.freenode.net#fluent-bit"
 
 before_script:
   - cd build
