@@ -70,3 +70,7 @@ In order to contribute to the project please refer to the [CONTRIBUTING](CONTRIB
 ## License
 
 This program is under the terms of the [Apache License v2.0](http://www.apache.org/licenses/LICENSE-2.0).
+
+## Contact
+
+irc.freenode.net #fluent-bit
