@@ -133,7 +133,8 @@ int flb_engine_flush(struct flb_config *config,
                 }
 
                 bytes = config->output->cb_flush(buf, size,
-                                                 config->output->out_context);
+                                                 config->output->out_context,
+                                                 config);
                 if (bytes <= 0) {
                     flb_error("Error flushing data");
                 }
