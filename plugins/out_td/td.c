@@ -67,7 +67,8 @@ int cb_td_pre_run(void *out_context, struct flb_config *config)
     return 0;
 }
 
-int cb_td_flush(void *data, size_t bytes, void *out_context)
+int cb_td_flush(void *data, size_t bytes, void *out_context,
+                struct flb_config *config)
 {
     return 0;
 }
