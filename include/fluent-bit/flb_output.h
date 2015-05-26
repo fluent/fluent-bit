@@ -62,7 +62,7 @@ struct flb_output_plugin {
     int (*cb_pre_run) (void *, struct flb_config *);
 
     /* Flush callback */
-    int (*cb_flush) (void *, size_t, void *);
+    int (*cb_flush) (void *, size_t, void *, struct flb_config *);
 
     /* Output handler configuration */
     void *out_context;
