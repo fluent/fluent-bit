@@ -68,11 +68,10 @@ int in_cpu_init(struct flb_config *config)
 
     /* We need to prepare our buffer */
     ctx->data_idx   = 0;
-    ctx->data_size  = config->flush;
-    ctx->data_array = malloc(sizeof(struct in_cpu_data) * ctx->data_size);
-    if (!ctx->data_array) {
-        flb_utils_error_c("Could not create data array for CPU input plugin");
-    }
+
+    /* initialize MessagePack buffers */
+    msgpack_sbuffer_init(&ctx->mp_sbuf);
+    msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
 
     /* Get CPU load, ready to be updated once fired the calc callback */
     ctx->load_pre = proc_cpu_load();
@@ -118,7 +117,6 @@ int in_cpu_collect(struct flb_config *config, void *in_context)
     double total;
     (void) config;
     struct flb_in_cpu_config *ctx = in_context;
-    struct in_cpu_data *buf;
 
     /* Get the current CPU usage */
     ctx->load_now = proc_cpu_load();
@@ -130,13 +128,23 @@ int in_cpu_collect(struct flb_config *config, void *in_context)
     /* Put current load back */
     ctx->load_pre = ctx->load_now;
 
-    /* Register the value into the buffer */
-    if (ctx->data_idx == ctx->data_size) {
-        ctx->data_idx = 0;
-    }
+    /*
+     * Store the new data into the MessagePack buffer,
+     * we handle this as a list of maps.
+     */
+    msgpack_pack_map(&ctx->mp_pck, 2);
+    msgpack_pack_raw(&ctx->mp_pck, 4);
+    msgpack_pack_raw_body(&ctx->mp_pck, "time", 4);
+    msgpack_pack_uint64(&ctx->mp_pck, time(NULL));
+    msgpack_pack_raw(&ctx->mp_pck, 3);
+    msgpack_pack_raw_body(&ctx->mp_pck, "cpu", 3);
+    msgpack_pack_double(&ctx->mp_pck, total);
+
+    /*
     buf = &ctx->data_array[ctx->data_idx];
     buf->time      = time(NULL);
     buf->cpu_usage = total;
+    */
 
     ctx->data_idx++;
     flb_debug("[in_cpu] CPU %0.2f%% (buffer=%i)", total, ctx->data_idx - 1);
@@ -146,42 +154,22 @@ int in_cpu_collect(struct flb_config *config, void *in_context)
 
 void *in_cpu_flush(void *in_context, int *size)
 {
-    int i;
     char *buf;
-    msgpack_packer pck;
-    msgpack_sbuffer sbuf;
+    msgpack_sbuffer *sbuf;
     struct flb_in_cpu_config *ctx = in_context;
-    struct in_cpu_data *data;
 
-    /* initialize buffers */
-    msgpack_sbuffer_init(&sbuf);
-    msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
-
-    msgpack_pack_array(&pck, 2);
-
-    /* Tag */
-    msgpack_pack_raw(&pck, ctx->tag_len);
-    msgpack_pack_raw_body(&pck, ctx->tag, ctx->tag_len);
-
-    /* Primary Array: ['TAG', [ */
-    msgpack_pack_array(&pck, ctx->data_idx);
-
-    /* Pack each data_array entry */
-    for (i = 0; i < ctx->data_idx; i++) {
-        data = &ctx->data_array[i];
-        msgpack_pack_array(&pck, 2);
-        msgpack_pack_uint64(&pck, data->time);
-
-        msgpack_pack_map(&pck, 1);
-        msgpack_pack_raw(&pck, 3);
-        msgpack_pack_raw_body(&pck, "cpu", 3);
-        msgpack_pack_double(&pck, data->cpu_usage);
+    sbuf = &ctx->mp_sbuf;
+    *size = sbuf->size;
+    buf = malloc(sbuf->size);
+    if (!buf) {
+        return NULL;
     }
 
-    *size = sbuf.size;
-    buf = malloc(sbuf.size);
-    memcpy(buf, sbuf.data, sbuf.size);
-    msgpack_sbuffer_destroy(&sbuf);
+    /* set a new buffer and re-initialize our MessagePack context */
+    memcpy(buf, sbuf->data, sbuf->size);
+    msgpack_sbuffer_destroy(&ctx->mp_sbuf);
+    msgpack_sbuffer_init(&ctx->mp_sbuf);
+    msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
 
     ctx->data_idx = 0;
 

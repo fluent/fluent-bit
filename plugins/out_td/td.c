@@ -20,12 +20,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <errno.h>
 
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_network.h>
 
 #include "td.h"
+#include "td_http.h"
 #include "td_config.h"
 
 struct flb_output_plugin out_td_plugin;
@@ -70,7 +72,32 @@ int cb_td_pre_run(void *out_context, struct flb_config *config)
 int cb_td_flush(void *data, size_t bytes, void *out_context,
                 struct flb_config *config)
 {
-    return 0;
+    int n;
+    char buf[1024];
+    size_t w_bytes;
+    size_t out_len;
+    char *request;
+    struct flb_out_td_config *ctx = out_context;
+
+    request = td_http_request(data, bytes, &out_len, ctx, config);
+    w_bytes = write(ctx->fd, request, out_len);
+    if (w_bytes < 0) {
+        perror("write");
+        /* FIXME: handle connection timeout */
+        if (errno == EBADF) {
+            close(ctx->fd);
+            ctx->fd = flb_net_tcp_connect(out_td_plugin.host,
+                                          out_td_plugin.port);
+        }
+    }
+    free(request);
+
+    n = read(ctx->fd, buf, 4096);
+    buf[n] = '\0';
+
+    flb_debug("[TD] API server response:\n%s", buf);
+
+    return w_bytes;
 }
 
 /* Plugin reference */

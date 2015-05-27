@@ -49,10 +49,10 @@ struct flb_in_cpu_config {
 
     /* Buffered data */
     int data_idx;       /* next position available    */
-    int data_size;      /* array size, # of entries   */
 
-    /* the data */
-    struct in_cpu_data *data_array;
+    /* MessagePack buffers */
+    msgpack_packer  mp_pck;
+    msgpack_sbuffer mp_sbuf;
 };
 
 int in_cpu_init(struct flb_config *config);
