@@ -103,60 +103,22 @@ static int boot_time(struct timeval *boot_time)
 
 void *in_kmsg_flush(void *in_context, int *size)
 {
-    int i;
     char *buf;
-    msgpack_packer pck;
-    msgpack_sbuffer sbuf;
-    struct kmsg_line *entry;
+    msgpack_sbuffer *sbuf;
     struct flb_in_kmsg_config *ctx = in_context;
 
-    /* initialize buffers */
-    msgpack_sbuffer_init(&sbuf);
-    msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
-
-    msgpack_pack_array(&pck, 2);
-
-    /* Tag */
-    msgpack_pack_raw(&pck, ctx->tag_len);
-    msgpack_pack_raw_body(&pck, ctx->tag, ctx->tag_len);
-
-    /* Primary Array: ['TAG', [ */
-    msgpack_pack_array(&pck, ctx->buffer_id);
-
-    /* Pack each data_array entry */
-    for (i = 0; i < ctx->buffer_id; i++) {
-        entry = &ctx->buffer[i];
-
-        uint64_t t = ctx->boot_time.tv_sec + entry->tv.tv_sec;
-
-        msgpack_pack_array(&pck, 2);
-        msgpack_pack_uint64(&pck, t);
-
-        msgpack_pack_map(&pck, 3);
-
-        /* Priority */
-        msgpack_pack_raw(&pck, 8);
-        msgpack_pack_raw_body(&pck, "priority", 8);
-        msgpack_pack_char(&pck, entry->priority);
-
-        /* Sequence */
-        msgpack_pack_raw(&pck, 8);
-        msgpack_pack_raw_body(&pck, "sequence", 8);
-        msgpack_pack_uint64(&pck, entry->sequence);
-
-        /* Time: FIXME */
-
-        /* Data message (line) */
-        msgpack_pack_raw(&pck, 3);
-        msgpack_pack_raw_body(&pck, "msg", 3);
-        msgpack_pack_raw(&pck, entry->line_len);
-        msgpack_pack_raw_body(&pck, entry->line, entry->line_len);
+    sbuf = &ctx->mp_sbuf;
+    *size = sbuf->size;
+    buf = malloc(sbuf->size);
+    if (!buf) {
+        return NULL;
     }
 
-    *size = sbuf.size;
-    buf = malloc(sbuf.size);
-    memcpy(buf, sbuf.data, sbuf.size);
-    msgpack_sbuffer_destroy(&sbuf);
+    /* set a new buffer and re-initialize our MessagePack context */
+    memcpy(buf, sbuf->data, sbuf->size);
+    msgpack_sbuffer_destroy(&ctx->mp_sbuf);
+    msgpack_sbuffer_init(&ctx->mp_sbuf);
+    msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
 
     ctx->buffer_id = 0;
 
@@ -165,10 +127,15 @@ void *in_kmsg_flush(void *in_context, int *size)
 
 static inline int process_line(char *line, struct flb_in_kmsg_config *ctx)
 {
+    char priority;           /* log priority                */
+    uint64_t sequence;       /* sequence number             */
+    time_t ts;               /* unix timestamp              */
+    struct timeval tv;       /* time value                  */
+    int line_len;
     uint64_t val;
     char *p = line;
     char *end = NULL;
-    struct kmsg_line *buf;
+    char msg[1024];
 
     /* Increase buffer position */
     ctx->buffer_id++;
@@ -180,11 +147,8 @@ static inline int process_line(char *line, struct flb_in_kmsg_config *ctx)
         goto fail;
     }
 
-    /* Lookup */
-    buf = &ctx->buffer[ctx->buffer_id];
-
     /* Priority */
-    buf->priority = FLB_LOG_PRI(val);
+    priority = FLB_LOG_PRI(val);
 
     /* Sequence */
     p = strchr(p, ',');
@@ -196,7 +160,7 @@ static inline int process_line(char *line, struct flb_in_kmsg_config *ctx)
         goto fail;
     }
 
-    buf->sequence = val;
+    sequence = val;
     p = ++end;
 
     /* Timestamp */
@@ -205,7 +169,7 @@ static inline int process_line(char *line, struct flb_in_kmsg_config *ctx)
         || (errno != 0 && val == 0)) {
         goto fail;
     }
-    buf->tv.tv_sec = val;
+    tv.tv_sec = val/1000000;
 
     if (*end == '.') {
         p = ++end;
@@ -214,11 +178,12 @@ static inline int process_line(char *line, struct flb_in_kmsg_config *ctx)
             || (errno != 0 && val == 0)) {
             goto fail;
         }
-        buf->tv.tv_usec = val;
+        tv.tv_usec = val;
     }
     else {
-        buf->tv.tv_usec = 0;
+        tv.tv_usec = 0;
     }
+    ts = ctx->boot_time.tv_sec + tv.tv_sec;
 
     /* Now process the human readable message */
     p = strchr(p, ';');
@@ -227,19 +192,50 @@ static inline int process_line(char *line, struct flb_in_kmsg_config *ctx)
     }
     p++;
 
-    buf->line_len = strlen(p);
-    strncpy(buf->line, p, buf->line_len);
-    buf->line[buf->line_len] = '\0';
+    line_len = strlen(p);
+    strncpy(msg, p, line_len);
+    msg[line_len] = '\0';
 
-    flb_debug("[in_kmsg] pri=%i seq=%" PRIu64 " sec=%ld usec=%ld '%s'",
-              buf->priority,
-              buf->sequence,
-              (long int) buf->tv.tv_sec,
-              (long int) buf->tv.tv_usec,
-              (const char *) buf->line);
+    /*
+     * Store the new data into the MessagePack buffer,
+     * we handle this as a list of maps.
+     */
+    msgpack_pack_map(&ctx->mp_pck, 6);
+
+    msgpack_pack_raw(&ctx->mp_pck, 4);
+    msgpack_pack_raw_body(&ctx->mp_pck, "time", 4);
+    msgpack_pack_uint64(&ctx->mp_pck, ts);
+
+    msgpack_pack_raw(&ctx->mp_pck, 8);
+    msgpack_pack_raw_body(&ctx->mp_pck, "priority", 8);
+    msgpack_pack_char(&ctx->mp_pck, priority);
+
+    msgpack_pack_raw(&ctx->mp_pck, 8);
+    msgpack_pack_raw_body(&ctx->mp_pck, "sequence", 8);
+    msgpack_pack_uint64(&ctx->mp_pck, sequence);
+
+    msgpack_pack_raw(&ctx->mp_pck, 3);
+    msgpack_pack_raw_body(&ctx->mp_pck, "sec", 3);
+    msgpack_pack_uint64(&ctx->mp_pck, tv.tv_sec);
+
+    msgpack_pack_raw(&ctx->mp_pck, 4);
+    msgpack_pack_raw_body(&ctx->mp_pck, "usec", 4);
+    msgpack_pack_uint64(&ctx->mp_pck, tv.tv_usec);
+
+    msgpack_pack_raw(&ctx->mp_pck, 3);
+    msgpack_pack_raw_body(&ctx->mp_pck, "msg", 3);
+    msgpack_pack_raw(&ctx->mp_pck, line_len);
+    msgpack_pack_raw_body(&ctx->mp_pck, p, line_len);
+
+    flb_debug("[in_kmsg] pri=%i seq=%" PRIu64 " ts=%ld sec=%ld usec=%ld '%s'",
+              priority,
+              sequence,
+              ts,
+              (long int) tv.tv_sec,
+              (long int) tv.tv_usec,
+              (const char *) msg);
 
     return 0;
-
 
  fail:
     ctx->buffer_id--;
@@ -333,6 +329,10 @@ int in_kmsg_init(struct flb_config *config)
     if (ret == -1) {
         flb_utils_error_c("Could not set collector for kmsg input plugin");
     }
+
+    /* initialize MessagePack buffers */
+    msgpack_sbuffer_init(&ctx->mp_sbuf);
+    msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
 
     return 0;
 }
