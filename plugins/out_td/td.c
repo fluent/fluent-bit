@@ -96,7 +96,6 @@ int cb_td_flush(void *data, size_t bytes, void *out_context,
     buf[n] = '\0';
 
     flb_debug("[TD] API server response:\n%s", buf);
-
     return w_bytes;
 }
 
