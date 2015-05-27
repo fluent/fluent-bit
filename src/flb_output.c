@@ -47,42 +47,40 @@ static char *copy_substr(char *str, int s)
 static int split_address(struct flb_output_plugin *plugin, char *output)
 {
     int len;
-    char *sep;
-    char *tmp;
-    char *buf;
-
+    char *s, *e;
 
     len = strlen(plugin->name) + 3;
     if (strlen(output) <= len) {
         return -1;
     }
 
-    tmp = output + len;
-    sep = strchr(output + len, ':');
-    if (sep) {
-        len = (sep - tmp);
-        plugin->host = copy_substr(tmp, sep - tmp);
-
-        tmp += len + 1;
-        len = strlen(tmp);
-        if (len == 0) {
-            plugin->port = atoi(FLB_OUTPUT_FLUENT_PORT);
-            return 0;
-        }
-        buf = copy_substr(tmp, len);
-        plugin->port = atoi(buf);
-        free(buf);
-        return 0;
-    }
-    else {
-        if (strlen(tmp) == 0) {
+    s = output + len;
+    if (*s == '[') {
+        /* IPv6 address (RFC 3986) */
+        e = strchr(++s, ']');
+        if (!e) {
             return -1;
         }
-
-        plugin->host = strdup(tmp);
-        plugin->port = atoi(FLB_OUTPUT_FLUENT_PORT);
-        return 0;
+        plugin->host = copy_substr(s, e - s);
+        s = e + 1;
+    } else {
+        e = s;
+        while (!(*e == '\0' || *e == ':')) {
+            ++e;
+        }
+        if (e == s) {
+            return -1;
+        }
+        plugin->host = copy_substr(s, e - s);
+        s = e;
     }
+    if (*s == ':') {
+        plugin->port = atoi(++s);
+    }
+    else {
+        plugin->port = atoi(FLB_OUTPUT_FLUENT_PORT);
+    }
+    return 0;
 }
 
 /* Validate the the output address protocol */
