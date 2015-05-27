@@ -75,17 +75,19 @@ int flb_net_socket_tcp_fastopen(int sockfd)
     return setsockopt(sockfd, SOL_TCP, TCP_FASTOPEN, &qlen, sizeof(qlen));
 }
 
-int flb_net_socket_create()
+int flb_net_socket_create(int family, int nonblock)
 {
     int fd;
 
     /* create the socket and set the nonblocking flag status */
-    fd = socket(AF_INET, SOCK_STREAM, 0);
+    fd = socket(family, SOCK_STREAM, 0);
     if (fd <= 0) {
         perror("socket");
         return -1;
     }
-    flb_net_socket_tcp_nodelay(fd);
+    if (nonblock) {
+        flb_net_socket_tcp_nodelay(fd);
+    }
 
     return fd;
 }
@@ -93,35 +95,45 @@ int flb_net_socket_create()
 /* Connect to a TCP socket server and returns the file descriptor */
 int flb_net_tcp_connect(char *host, unsigned long port)
 {
-    int sock_fd;
-    struct sockaddr_in *remote;
-    struct hostent *hostp;
+    int socket_fd = -1;
+    int ret;
+    struct addrinfo hints;
+    struct addrinfo *res, *rp;
+    char _port[6];
 
-    sock_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock_fd <= 0) {
-        printf("Error: could not create socket\n");
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+
+    snprintf(_port, sizeof(_port), "%lu", port);
+    ret = getaddrinfo(host, _port, &hints, &res);
+    if (ret != 0) {
+        flb_message(FLB_MSG_ERROR, "net_tcp_connect: Can't get addr info");
         return -1;
     }
 
-    remote = (struct sockaddr_in *) malloc(sizeof(struct sockaddr_in));
-    remote->sin_family = AF_INET;
+    for (rp = res; rp != NULL; rp = rp->ai_next) {
+        socket_fd = flb_net_socket_create(rp->ai_family, 0);
+        if (socket_fd == -1) {
+            flb_message(FLB_MSG_ERROR, "Error creating client socket, retrying");
+            continue;
+        }
 
-    hostp = gethostbyname(host);
-    if (hostp == NULL) {
-        close(sock_fd);
-        return -1;
-    }
-    memcpy(&remote->sin_addr, hostp->h_addr, sizeof(remote->sin_addr));
-    remote->sin_port = htons(port);
-    if (connect(sock_fd,
-                (struct sockaddr *) remote, sizeof(struct sockaddr)) == -1) {
-        close(sock_fd);
-        free(remote);
-        return -1;
+        if (connect(socket_fd, rp->ai_addr, rp->ai_addrlen) == -1) {
+            flb_message(FLB_MSG_ERROR, "Cannot connect to %s port %s", host, _port);
+            close(socket_fd);
+            continue;
+        }
+        break;
     }
 
-    free(remote);
-    return sock_fd;
+    freeaddrinfo(res);
+
+    if (rp == NULL) {
+        return -1;
+    }
+
+    return socket_fd;
 }
 
 int flb_net_server(char *port, char *listen_addr)
@@ -143,7 +155,7 @@ int flb_net_server(char *port, char *listen_addr)
     }
 
     for (rp = res; rp != NULL; rp = rp->ai_next) {
-        socket_fd = flb_net_socket_create();
+        socket_fd = flb_net_socket_create(rp->ai_family, 1);
         if (socket_fd == -1) {
             flb_message(FLB_MSG_ERROR, "Error creating server socket, retrying");
             continue;
@@ -154,7 +166,8 @@ int flb_net_server(char *port, char *listen_addr)
 
         ret = flb_net_bind(socket_fd, rp->ai_addr, rp->ai_addrlen, 128);
         if(ret == -1) {
-            flb_message(FLB_MSG_WARN, "Cannot listen on %s:%s\n", listen_addr, port);
+            flb_message(FLB_MSG_WARN, "Cannot listen on %s port %s", listen_addr, port);
+            close(socket_fd);
             continue;
         }
         break;
