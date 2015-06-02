@@ -9,6 +9,7 @@ SET (prefix ${CMAKE_INSTALL_PREFIX})
 SET (exec_prefix "\${prefix}")
 SET (libdir "\${exec_prefix}/lib")
 SET (includedir "\${prefix}/include")
+SET (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
 
 FIND_PACKAGE (GTest)
 FIND_PACKAGE (ZLIB)
