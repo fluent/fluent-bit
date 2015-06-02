@@ -20,6 +20,7 @@ option(WITH_IN_CPU      "Enable CPU input plugin"            Yes)
 option(WITH_IN_KMSG     "Enable Kernel log input plugin"     Yes)
 option(WITH_OUT_FLUENTD "Enable Fluentd output plugin"       Yes)
 option(WITH_OUT_TD      "Enable Treasure Data output plugin" Yes)
+option(WITH_OUT_STDOUT  "Enable STDOUT output plugin"        Yes)
 
 # Enable all features
 if(WITH_ALL)
@@ -29,6 +30,7 @@ if(WITH_ALL)
   set(WITH_IN_CPU      1)
   set(WITH_OUT_FLUENTD 1)
   set(WITH_OUT_TD      1)
+  set(WITH_OUT_STDOUT  1)
 endif()
 
 # Enable Debug symbols if specified

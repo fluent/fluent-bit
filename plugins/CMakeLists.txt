@@ -36,6 +36,7 @@ REGISTER_IN_PLUGIN("in_cpu")
 REGISTER_IN_PLUGIN("in_kmsg")
 REGISTER_OUT_PLUGIN("out_fluentd")
 REGISTER_OUT_PLUGIN("out_td")
+REGISTER_OUT_PLUGIN("out_stdout")
 
 # Generate the header from the template
 configure_file(
