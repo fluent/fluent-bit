@@ -21,8 +21,7 @@
 #define FLB_CONFIG_H
 
 #include <time.h>
-#include <mk_config/mk_config.h>
-#include <mk_config/mk_list.h>
+#include <mk_core/mk_core.h>
 
 #define FLB_CONFIG_FLUSH_SECS   5
 #define FLB_CONFIG_DEFAULT_TAG  "fluent_bit"
@@ -33,7 +32,7 @@ struct flb_config {
     int flush_fd;       /* Timer FD associated to flush   */
     int verbose;        /* Verbose mode (default OFF)     */
     time_t init_time;   /* Time when Fluent Bit started   */
-    struct mk_config *file;
+    struct mk_rconf *file;
 
     /* Collectors */
     struct mk_list collectors;

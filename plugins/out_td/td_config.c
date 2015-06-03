@@ -18,28 +18,28 @@
  */
 
 #include <stdlib.h>
-#include <mk_config/mk_config.h>
+#include <mk_core/mk_core.h>
 #include <fluent-bit/flb_utils.h>
 
 #include "td_config.h"
 
-struct flb_out_td_config *td_config_init(struct mk_config *conf)
+struct flb_out_td_config *td_config_init(struct mk_rconf *conf)
 {
     char *api;
     char *db_name;
     char *db_table;
-    struct mk_config_section *section;
+    struct mk_rconf_section *section;
     struct flb_out_td_config *config;
 
-    section = mk_config_section_get(conf, "TD");
+    section = mk_rconf_section_get(conf, "TD");
     if (!section) {
         return NULL;
     }
 
     /* Validate TD section keys */
-    api = mk_config_section_getval(section, "API", MK_CONFIG_VAL_STR);
-    db_name = mk_config_section_getval(section, "Database", MK_CONFIG_VAL_STR);
-    db_table = mk_config_section_getval(section, "Table", MK_CONFIG_VAL_STR);
+    api = mk_rconf_section_get_key(section, "API", MK_RCONF_STR);
+    db_name = mk_rconf_section_get_key(section, "Database", MK_RCONF_STR);
+    db_table = mk_rconf_section_get_key(section, "Table", MK_RCONF_STR);
 
     if (!api) {
         flb_utils_error_c("[TD] error reading API key value");

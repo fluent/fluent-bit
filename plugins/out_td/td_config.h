@@ -20,7 +20,7 @@
 #ifndef FLB_TD_CONFIG_H
 #define FLB_TD_CONFIG_H
 
-#include <mk_config/mk_config.h>
+#include <mk_core/mk_core.h>
 
 struct flb_out_td_config {
     int fd;           /* Socket to destination/backend */
@@ -30,6 +30,6 @@ struct flb_out_td_config {
     char *db_table;
 };
 
-struct flb_out_td_config *td_config_init(struct mk_config *conf);
+struct flb_out_td_config *td_config_init(struct mk_rconf *conf);
 
 #endif
