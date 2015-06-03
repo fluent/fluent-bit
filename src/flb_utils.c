@@ -26,7 +26,7 @@
 #include <sys/time.h>
 #include <msgpack.h>
 
-#include <mk_config/mk_list.h>
+#include <mk_core/mk_core.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_error.h>
