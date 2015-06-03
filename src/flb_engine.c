@@ -21,10 +21,9 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/time.h>
-#include <sys/epoll.h>
-#include <sys/timerfd.h>
 #include <sys/uio.h>
 
+#include <mk_core/mk_core.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
@@ -32,69 +31,6 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_engine.h>
-
-static int timer_fd(time_t sec, long nsec)
-{
-    int ret;
-    int timer_fd;
-    struct timeval tv;
-    struct timezone tz;
-    struct itimerspec its;
-
-    gettimeofday(&tv, &tz);
-
-    /* expiration interval */
-    its.it_interval.tv_sec  = sec;
-    its.it_interval.tv_nsec = nsec;
-
-    /* initial expiration */
-    its.it_value.tv_sec  = tv.tv_sec + sec;
-    its.it_value.tv_nsec = (tv.tv_usec * 1000) + nsec;
-
-    timer_fd = timerfd_create(CLOCK_REALTIME, 0);
-    if (timer_fd == -1) {
-        perror("timerfd");
-        return -1;
-    }
-
-    ret = timerfd_settime(timer_fd, TFD_TIMER_ABSTIME, &its, NULL);
-    if (ret < 0) {
-        perror("timerfd_settime");
-        return -1;
-    }
-
-    return timer_fd;
-}
-
-static int flb_engine_loop_create()
-{
-    int efd;
-
-    efd = epoll_create(1000);
-    if (efd == -1) {
-        perror("epoll_create");
-        return -1;
-    }
-
-    return efd;
-}
-
-static int flb_engine_loop_add(int efd, int fd, int mode)
-{
-    int ret;
-    struct epoll_event event = {0, {0}};
-
-    event.data.fd = fd;
-    event.events = EPOLLERR | EPOLLHUP | EPOLLRDHUP | mode;
-
-    ret = epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
-    if (ret == -1) {
-        perror("epoll_ctl");
-        return -1;
-    }
-
-    return ret;
-}
 
 int flb_engine_flush(struct flb_config *config,
                      struct flb_input_plugin *in_force,
@@ -217,15 +153,11 @@ static int flb_engine_handle_event(int fd, int mask, struct flb_config *config)
 
 int flb_engine_start(struct flb_config *config)
 {
-    int i;
     int fd;
     int ret;
-    int mask;
-    int loop;
-    int nfds;
-    int size = 64;
     struct mk_list *head;
-    struct epoll_event *events;
+    struct mk_event *event;
+    struct mk_event_loop *evl;
     struct flb_input_collector *collector;
 
     flb_info("starting engine");
@@ -238,26 +170,17 @@ int flb_engine_start(struct flb_config *config)
     flb_output_pre_run(config);
 
     /* main loop */
-    loop = flb_engine_loop_create();
-    if (loop == -1) {
+    evl = mk_event_loop_create(256);
+    if (!evl) {
         return -1;
     }
 
-    /* Allocate space for the events */
-    events = malloc(sizeof(struct epoll_event) * size);
-    if (!events) {
-        perror("malloc");
-        exit(EXIT_FAILURE);
-    }
-
     /* Create and register the timer fd for flush procedure */
-    config->flush_fd = timer_fd(config->flush, 0);
+    event = malloc(sizeof(struct mk_event));
+    event->mask = MK_EVENT_EMPTY;
+    config->flush_fd = mk_event_timeout_create(evl, config->flush, event);
     if (config->flush_fd == -1) {
         flb_utils_error(FLB_ERR_CFG_FLUSH_CREATE);
-    }
-    ret = flb_engine_loop_add(loop, config->flush_fd, FLB_ENGINE_READ);
-    if (ret == -1) {
-        flb_utils_error(FLB_ERR_CFG_FLUSH_REGISTER);
     }
 
     /* For each Collector, register the event into the main loop */
@@ -265,20 +188,18 @@ int flb_engine_start(struct flb_config *config)
         collector = mk_list_entry(head, struct flb_input_collector, _head);
 
         if (collector->type == FLB_COLLECT_TIME) {
-            fd = timer_fd(collector->seconds, collector->nanoseconds);
+            event = malloc(sizeof(struct mk_event));
+            event->mask = MK_EVENT_EMPTY;
+            fd = mk_event_timeout_create(evl, collector->seconds, event);
             if (fd == -1) {
-                continue;
-            }
-            ret = flb_engine_loop_add(loop, fd, FLB_ENGINE_READ);
-            if (ret == -1) {
-                close(fd);
                 continue;
             }
             collector->fd_timer = fd;
         }
         else if (collector->type & (FLB_COLLECT_FD_EVENT | FLB_COLLECT_FD_SERVER)) {
-            ret = flb_engine_loop_add(loop, collector->fd_event,
-                                      FLB_ENGINE_READ);
+            event = malloc(sizeof(struct mk_event));
+            event->mask = MK_EVENT_EMPTY;
+            ret = mk_event_add(evl, collector->fd_event, 0, MK_EVENT_READ, event);
             if (ret == -1) {
                 close(fd);
                 continue;
@@ -287,13 +208,9 @@ int flb_engine_start(struct flb_config *config)
     }
 
     while (1) {
-        nfds = epoll_wait(loop, events, size, -1);
-
-        for (i = 0; i < nfds; i++) {
-            fd = events[i].data.fd;
-            mask = events[i].events;
-
-            flb_engine_handle_event(fd, mask, config);
+        mk_event_wait(evl);
+        mk_event_foreach(event, evl) {
+            flb_engine_handle_event(event->fd, event->mask, config);
         }
     }
 }
