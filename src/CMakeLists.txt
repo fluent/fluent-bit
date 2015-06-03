@@ -40,8 +40,9 @@ install(TARGETS fluent-bit-shared LIBRARY DESTINATION lib)
 
 # Executable
 if(NOT WITHOUT_BIN)
+  find_package (Threads)
   add_executable(fluent-bit-bin fluent-bit.c)
-  target_link_libraries(fluent-bit-bin fluent-bit-static)
+  target_link_libraries(fluent-bit-bin fluent-bit-static ${CMAKE_THREAD_LIBS_INIT})
   set_target_properties(fluent-bit-bin
     PROPERTIES OUTPUT_NAME fluent-bit)
   install(TARGETS fluent-bit-bin RUNTIME DESTINATION bin)
