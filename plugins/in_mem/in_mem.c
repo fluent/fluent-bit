@@ -104,6 +104,7 @@ void *in_mem_flush(void *in_context, int *size)
         return NULL;
     }
     memcpy(buf, ctx->sbuf.data, ctx->sbuf.size);
+    *size = ctx->sbuf.size;
     msgpack_sbuffer_destroy(&ctx->sbuf);
     msgpack_sbuffer_init(&ctx->sbuf);
     msgpack_packer_init(&ctx->pckr, &ctx->sbuf, msgpack_sbuffer_write);
