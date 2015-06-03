@@ -44,6 +44,7 @@ Once the tool have been compiled, a binary file called _Fluent-Bit_ will be foun
 | name               | option  | description  |
 |--------------------|---------|---------------------------------------------------------------------------------|
 | CPU                | cpu     | gather CPU usage between snapshots of one second. It support multiple cores     |
+| Memory             | mem     | usage of system memory |
 | Kernel Ring Buffer | kmsg    | read Linux Kernel messages, same behavior as the __dmesg__ command line program |
 | XBee               | xbee | listen for incoming messages over a Xbee device |
 
@@ -53,6 +54,7 @@ Once the tool have been compiled, a binary file called _Fluent-Bit_ will be foun
 |--------------------|-------------------------|---------------------------------------------------------------------------------|
 | Fluentd            | fluentd://host:port     | flush content to a [Fluentd](http://fluentd.org) service. On the [Fluentd](http://fluentd.org) side, it requires an __in_forward__.|
 | TreasureData       | td                      | flush data collected to [TreasureData](http://treasuredata.com) service (cloud analytics platform) |
+| STDOUT             | stdout                  | prints the collected data to standard output stream |
 
 ### Usage
 
