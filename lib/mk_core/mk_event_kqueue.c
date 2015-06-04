@@ -166,7 +166,13 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
     event->type = MK_EVENT_NOTIFICATION;
     event->mask = MK_EVENT_EMPTY;
 
+#ifdef NOTE_SECONDS
+    /* FreeBSD or LINUX_KQUEUE defined */
     EV_SET(&ke, fd, EVFILT_TIMER, EV_ADD, NOTE_SECONDS, expire, event);
+#else
+    /* Other BSD have no NOTE_SECONDS & specify milliseconds */
+    EV_SET(&ke, fd, EVFILT_TIMER, EV_ADD, 0, expire * 1000, event);
+#endif
     ret = kevent(ctx->kfd, &ke, 1, NULL, 0, NULL);
     if (ret < 0) {
         close(fd);
