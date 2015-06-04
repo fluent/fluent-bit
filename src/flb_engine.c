@@ -125,7 +125,7 @@ static int flb_engine_handle_event(int fd, int mask, struct flb_config *config)
     struct mk_list *head;
     struct flb_input_collector *collector;
 
-    if (mask & FLB_ENGINE_READ) {
+    if (mask & MK_EVENT_READ) {
         /* Check if we need to flush */
         if (config->flush_fd == fd) {
             consume_byte(fd);

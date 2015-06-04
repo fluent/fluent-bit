@@ -16,6 +16,8 @@ include_directories(
   ${extra_headers}
   )
 
+check_symbol_exists(accept4 "sys/socket.h" HAVE_ACCEPT4)
+
 # Let the core aware about TLS/SSL if enabled
 if(WITH_SSL_TLS)
   add_definitions(-DHAVE_SSL_TLS)
