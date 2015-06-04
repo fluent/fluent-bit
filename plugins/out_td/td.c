@@ -19,6 +19,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <assert.h>
 #include <errno.h>
 
@@ -74,7 +75,7 @@ int cb_td_flush(void *data, size_t bytes, void *out_context,
 {
     int n;
     char buf[1024];
-    size_t w_bytes;
+    ssize_t w_bytes;
     size_t out_len;
     char *request;
     struct flb_out_td_config *ctx = out_context;

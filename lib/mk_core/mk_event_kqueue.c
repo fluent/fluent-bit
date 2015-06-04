@@ -184,6 +184,7 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
      * FIXME: the timeout event is not triggered when using libkqueue, need
      * to confirm how it behave on native OSX.
      */
+    event->mask = MK_EVENT_READ;
 
     return fd;
 }

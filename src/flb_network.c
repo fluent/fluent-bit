@@ -35,6 +35,10 @@
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_utils.h>
 
+#ifndef SOL_TCP
+#define SOL_TCP IPPROTO_TCP
+#endif
+
 int flb_net_socket_reset(int sockfd)
 {
     int status = 1;
@@ -207,8 +211,13 @@ int flb_net_accept(int server_fd)
     struct sockaddr sock_addr;
     socklen_t socket_size = sizeof(struct sockaddr);
 
+#ifdef HAVE_ACCEPT4
     remote_fd = accept4(server_fd, &sock_addr, &socket_size,
                         SOCK_NONBLOCK | SOCK_CLOEXEC);
+#else
+    remote_fd = accept(server_fd, &sock_addr, &socket_size);
+    flb_net_socket_nonblocking(remote_fd);
+#endif
 
     if (remote_fd == -1) {
         perror("accept4");
