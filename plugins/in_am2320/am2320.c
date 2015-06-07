@@ -153,14 +153,14 @@ int in_am2320_read(struct flb_config *config, void *in_context) {
     msgpack_pack_raw(&ctx->pckr, 4);
     msgpack_pack_raw_body(&ctx->pckr, "time", 4);
     msgpack_pack_uint64(&ctx->pckr, time(NULL));
-    msgpack_pack_raw(&ctx->pckr, 10);
-    msgpack_pack_raw_body(&ctx->pckr, "temprature", 10);
+    msgpack_pack_raw(&ctx->pckr, 11);
+    msgpack_pack_raw_body(&ctx->pckr, "temperature", 11);
     msgpack_pack_double(&ctx->pckr, temp);
     msgpack_pack_raw(&ctx->pckr, 8);
     msgpack_pack_raw_body(&ctx->pckr, "humidity", 8);
     msgpack_pack_double(&ctx->pckr, humidity);
 
-    flb_debug("[in_am2320] temprature %f humidity %f (buffer=%i)",
+    flb_debug("[in_am2320] temperature %f humidity %f (buffer=%i)",
         temp, humidity, ctx->idx);
     ctx->idx++;
 
