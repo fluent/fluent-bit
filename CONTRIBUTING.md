@@ -17,6 +17,28 @@ Our development coding style for C is based on the Apache C style guidelines, we
 
 You have to pay attention to the code indentation, tabs are 4 spaces, spaces on conditionals, etc. If your code submission is not aligned, it will be rejected.
 
+## Licensing
+
+[Fluent-Bit](http://fluentbit.io) is an Open Source project and all it code base _must_ be under the terms of the [Apache License v2.0](http://www.apache.org/licenses/LICENSE-2.0). When submitting changes to the core or any new plugin, you agreed to share that code under the license mentioned. All your source code files must have the following header:
+
+```
+/*
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+```
+
+Despite some licenses can be compatible with Apache, we want to keep things easy and clear avoiding a mix of Licenses across the project.
+
 ## Commit Changes
 
 When you commit your local changes in your repository (before to push to Github), we need you take care of the following:
