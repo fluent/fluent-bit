@@ -22,6 +22,7 @@ When building _Fluent-Bit_, the following options are available when running __c
 ------------|------------|---------------------------------------------|---------
 WITH_ALL    | bool       | Enable all features available               | off
 WITH_XBEE   | bool       | Enable XBee support (input)                 | off
+WITH_AM2320 | bool       | Enable AM2320/2321 Sensor support (input)   | off
 WITH_DEBUG  | bool       | Include debug symbols when building targets | off
 WITHOUT_BIN | bool       | Do not build the fluent-bit executable      | off
 
@@ -47,6 +48,7 @@ Once the tool have been compiled, a binary file called _Fluent-Bit_ will be foun
 | Memory             | mem     | usage of system memory |
 | Kernel Ring Buffer | kmsg    | read Linux Kernel messages, same behavior as the __dmesg__ command line program |
 | XBee               | xbee | listen for incoming messages over a Xbee device |
+| AM2320             | am2320  | read temperature and humidity from AM2320/2321 from I2C senor device |
 
 ### Output Plugins
 

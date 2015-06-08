@@ -1,0 +1,20 @@
+AM2320/AM2321 input support for Fluent Bit
+Developed and tested on Raspbian and Raspberry Pi Type B+
+
+Remarks:
+- needs i2c-dev.h in i2c-tools (or equivalent) to comple this plug-in.
+- I2C device path is hard-coded to /dev/i2c-1.
+- fluent-bit process needs access to /dev/i2c-1.
+
+License:
+- am2320.[ch] is licensed under LGPL.
+- in_am2320.[ch] is licensed under Apache License 2.0.
+
+Thanks to:
+- original authors of am2320.c
+  https://github.com/takagi/am2321
+  https://gist.github.com/yenjoji/40d135519a0741d3718b
+
+--
+Takeshi HASEGAWA
+<hasegaw at gmail dot com>
