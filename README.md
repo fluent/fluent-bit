@@ -19,17 +19,17 @@ $ make
 When building _Fluent-Bit_, the following options are available when running __cmake__:
 
  option     | value type | description                                 | default
-------------|------------|---------------------------------------------|---------
-WITH_ALL    | bool       | Enable all features available               | off
-WITH_XBEE   | bool       | Enable XBee support (input)                 | off
-WITH_DEBUG  | bool       | Include debug symbols when building targets | off
-WITHOUT_BIN | bool       | Do not build the fluent-bit executable      | off
+-------------|------------|---------------------------------------------|---------
+WITH_ALL     | bool       | Enable all features available               | off
+WITH_IN_XBEE | bool       | Enable XBee support (input)                 | off
+WITH_DEBUG   | bool       | Include debug symbols when building targets | off
+WITHOUT_BIN  | bool       | Do not build the fluent-bit executable      | off
 
 In order to active one of these features, you need to set a boolean value. As an example if we would like to build _Fluent-Bit_ with _XBee_ support we should do:
 
 ```bash
 $ cd build/
-$ cmake -DWITH_XBEE=1 ..
+$ cmake -DWITH_IN_XBEE=1 ..
 $ make
 ```
 
@@ -46,11 +46,11 @@ Once the tool have been compiled, a binary file called _Fluent-Bit_ will be foun
 | CPU                | cpu     | gather CPU usage between snapshots of one second. It support multiple cores     |
 | Memory             | mem     | usage of system memory |
 | Kernel Ring Buffer | kmsg    | read Linux Kernel messages, same behavior as the __dmesg__ command line program |
-| XBee               | xbee | listen for incoming messages over a Xbee device |
+| XBee               | xbee    | listen for incoming messages over a Xbee device |
 
 ### Output Plugins
 
-| name               | option  | description  |
+| name               | option                  | description  |
 |--------------------|-------------------------|---------------------------------------------------------------------------------|
 | Fluentd            | fluentd://host:port     | flush content to a [Fluentd](http://fluentd.org) service. On the [Fluentd](http://fluentd.org) side, it requires an __in_forward__.|
 | TreasureData       | td                      | flush data collected to [TreasureData](http://treasuredata.com) service (cloud analytics platform) |

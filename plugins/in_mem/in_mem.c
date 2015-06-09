@@ -99,6 +99,9 @@ void *in_mem_flush(void *in_context, int *size)
     char *buf;
     struct flb_in_mem_config *ctx = in_context;
 
+    if (ctx->idx == 0)
+        return NULL;
+
     buf = malloc(ctx->sbuf.size);
     if (!buf) {
         return NULL;

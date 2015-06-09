@@ -64,4 +64,8 @@ char *mk_string_copy_substr(const char *string, int pos_init, int pos_end);
 
 char *mk_string_tolower(const char *in);
 
+#if defined (__APPLE__)
+void *memrchr(const void *s, int c, size_t n);
+#endif
+
 #endif

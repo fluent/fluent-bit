@@ -48,6 +48,10 @@ include_directories(include/ lib/ lib/msgpack-0.5.9/src)
 # MSGPACK modification: disable the install routines.z
 set(MSGPACK_NO_INSTALL 1)
 
+# mk_core is aware about jemalloc usage, we need to disable this as
+# fluent-bit do not use it.
+set(WITH_SYSTEM_MALLOC 1)
+
 # Lib: build the core libraries used by Fluent-Bit
 add_subdirectory(lib/msgpack-0.5.9)
 add_subdirectory(lib/mk_core)
