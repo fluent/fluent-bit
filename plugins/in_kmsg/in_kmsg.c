@@ -107,6 +107,9 @@ void *in_kmsg_flush(void *in_context, int *size)
     msgpack_sbuffer *sbuf;
     struct flb_in_kmsg_config *ctx = in_context;
 
+    if (ctx->buffer_id == 0)
+        return NULL;
+
     sbuf = &ctx->mp_sbuf;
     *size = sbuf->size;
     buf = malloc(sbuf->size);

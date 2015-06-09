@@ -158,6 +158,9 @@ void *in_cpu_flush(void *in_context, int *size)
     msgpack_sbuffer *sbuf;
     struct flb_in_cpu_config *ctx = in_context;
 
+    if (ctx->data_idx == 0)
+        return NULL;
+
     sbuf = &ctx->mp_sbuf;
     *size = sbuf->size;
     buf = malloc(sbuf->size);
