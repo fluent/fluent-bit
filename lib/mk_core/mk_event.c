@@ -89,14 +89,14 @@ int mk_event_add(struct mk_event_loop *loop, int fd,
 }
 
 /* Remove an event */
-int mk_event_del(struct mk_event_loop *loop, int fd)
+int mk_event_del(struct mk_event_loop *loop, struct mk_event *event)
 {
     int ret;
     struct mk_event_ctx *ctx;
 
     ctx = loop->data;
 
-    ret = _mk_event_del(ctx, fd);
+    ret = _mk_event_del(ctx, event);
     if (ret == -1) {
         return -1;
     }

@@ -118,26 +118,31 @@ static inline int _mk_event_add(struct mk_event_ctx *ctx, int fd,
         }
     }
 
+    event->mask = events;
     return 0;
 }
 
-static inline int _mk_event_del(struct mk_event_ctx *ctx, int fd)
+static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event)
 {
     int ret;
     struct kevent ke = {0, 0, 0, 0, 0, 0};
 
-    EV_SET(&ke, fd, EVFILT_READ, EV_DELETE, 0, 0, NULL);
-    ret = kevent(ctx->kfd, &ke, 1, NULL, 0, NULL);
-    if (ret < 0) {
-        mk_libc_error("kevent");
-        return ret;
+    if (event->mask & MK_EVENT_READ) {
+        EV_SET(&ke, event->fd, EVFILT_READ, EV_DELETE, 0, 0, NULL);
+        ret = kevent(ctx->kfd, &ke, 1, NULL, 0, NULL);
+        if (ret < 0) {
+            mk_libc_error("kevent");
+            return ret;
+        }
     }
 
-    EV_SET(&ke, fd, EVFILT_WRITE, EV_DELETE, 0, 0, NULL);
-    ret = kevent(ctx->kfd, &ke, 1, NULL, 0, NULL);
-    if (ret < 0) {
-        mk_libc_error("kevent");
-        return ret;
+    if (event->mask & MK_EVENT_WRITE) {
+        EV_SET(&ke, event->fd, EVFILT_WRITE, EV_DELETE, 0, 0, NULL);
+        ret = kevent(ctx->kfd, &ke, 1, NULL, 0, NULL);
+        if (ret < 0) {
+            mk_libc_error("kevent");
+            return ret;
+        }
     }
 
     return 0;
@@ -185,7 +190,6 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
      * to confirm how it behave on native OSX.
      */
     event->mask = MK_EVENT_READ;
-
     return fd;
 }
 

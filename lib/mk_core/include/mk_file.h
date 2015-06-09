@@ -17,22 +17,32 @@
  *  limitations under the License.
  */
 
-#ifndef MK_CORE_H
-#define MK_CORE_H
+#ifndef MK_FILE_H
+#define MK_FILE_H
 
-#include <sys/types.h>
+#include <time.h>
 
-/* Process UID/GID */
-extern gid_t EGID;
-extern gid_t EUID;
+#define MK_FILE_EXISTS 1
+#define MK_FILE_READ   2
+#define MK_FILE_EXEC   4
 
-#include "include/mk_iov.h"
-#include "include/mk_file.h"
-#include "include/mk_event.h"
-#include "include/mk_rbtree.h"
-#include "include/mk_rconf.h"
-#include "include/mk_string.h"
-#include "include/mk_macros.h"
-#include "include/mk_utils.h"
+struct file_info
+{
+    off_t size;
+    time_t last_modification;
+
+    /* Suggest flags to open this file */
+    int flags_read_only;
+
+    unsigned char exists;
+    unsigned char is_file;
+    unsigned char is_link;
+    unsigned char is_directory;
+    unsigned char exec_access;
+    unsigned char read_access;
+};
+
+int mk_file_get_info(const char *path, struct file_info *f_info, int mode);
+char *mk_file_to_buffer(const char *path);
 
 #endif
