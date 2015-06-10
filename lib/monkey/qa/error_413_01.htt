@@ -1,0 +1,28 @@
+################################################################################
+# DESCRIPTION
+#	Exercise error 413
+#
+# AUTHOR
+#	Eduardo Silva <edsiper@gmail.com>
+#
+# DATE
+#	July 11 2010
+#
+# COMMENTS
+#	A POST request with a higher content-lengt header, it should 
+#	return "413 Request Entity Too Large"
+################################################################################
+
+
+INCLUDE __CONFIG
+
+CLIENT
+_REQ $HOST $PORT
+__POST / $HTTPVER
+__Host: $HOST
+__Content-Length: 999999999999999999999
+__Connection: close
+__
+_EXPECT . "HTTP/1.1 413 Request Entity Too Large"
+_WAIT
+END

@@ -20,7 +20,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <linux/kernel.h>
 #include <sys/sysinfo.h>
 
 #include "in_mem.h"

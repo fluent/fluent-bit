@@ -1,0 +1,18 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@ --with autotools_dev
+
+override_dh_auto_configure:
+	./configure --prefix=/usr	\
+		--bindir=/usr/sbin		\
+		--mandir=/usr/share/man		\
+		--sysconfdir=/etc/monkey	\
+		--datadir=/usr/share/monkey	\
+		--logdir=/var/log/monkey	\
+		--incdir=/usr/include/monkey    \
+		--default-user=www-data 	\
+		--plugdir=/usr/lib/monkey	\
+		--enable-plugins="auth,liana,mandril,cheetah,cgi,fastcgi,logger,dirlisting,polarssl"    \
+		--disable-plugins="*"		\
+                --pidfile=/var/run/monkey.pid

@@ -1,0 +1,37 @@
+###############################################################################
+# DESCRIPTION
+#	Test partial content request. Range type: -1 (last byte)
+#
+# AUTHOR
+#	Carlos Ghan <charlie.brown.uy@gmail.com>
+#
+# DATE
+#	February 02 2010	
+#
+# COMMENTS
+#	RFC 2616 Section 14.35
+###############################################################################
+
+
+INCLUDE __CONFIG
+INCLUDE __MACROS
+
+CLIENT
+_CALL INIT
+_CALL TESTDOC_GETSIZE
+
+# Last offset = document_length - 1
+_OP $TEST_DOC_LEN SUB 1 TEST_DOC_LAST
+
+_REQ $HOST $PORT
+__GET /$TEST_DOC $HTTPVER
+__Host: $HOST
+__Range: bytes=-1
+__Connection: close
+__
+_EXPECT . "HTTP/1.1 206 Partial Content"
+_EXPECT . "Date:"
+_EXPECT . "Content-Range: bytes ${TEST_DOC_LAST}-${TEST_DOC_LAST}/${TEST_DOC_LEN}"
+_EXPECT . "Content-Length: 1"
+_WAIT
+END

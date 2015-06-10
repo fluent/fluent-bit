@@ -1,0 +1,27 @@
+################################################################################
+# DESCRIPTION
+#	Validation for TCP port in the Host header
+#
+# AUTHOR
+#	Eduardo Silva <edsiper@gmail.com>	
+#
+# DATE
+#	Jun 15 2012
+#
+# COMMENTS
+#       It send a valid host TCP port with the max length allowed
+# 
+################################################################################
+
+INCLUDE __CONFIG
+
+CLIENT
+_REQ $HOST $PORT
+__HEAD / $HTTPVER
+__Host: $HOST:20000
+__
+_EXPECT . "HTTP/1.1 200 OK"
+_EXPECT . "Content-Length"
+_EXPECT . "Content-Type"
+_WAIT 0
+END
