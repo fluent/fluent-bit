@@ -1,3 +1,5 @@
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
+
 set(src
   monkey.c
   mk_mimetype.c

@@ -43,7 +43,7 @@ if(WITH_DEBUG)
 endif()
 
 # General Headers
-include_directories(include/ lib/ lib/msgpack-0.5.9/src)
+include_directories(include/ lib/ lib/msgpack-0.5.9/src lib/monkey/include)
 
 # MSGPACK modification: disable the install routines.z
 set(MSGPACK_NO_INSTALL 1)

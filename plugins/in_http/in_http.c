@@ -22,6 +22,7 @@
 #include <unistd.h>
 
 #include <msgpack.h>
+#include <monkey/monkey.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_config.h>
 
@@ -30,6 +31,9 @@
 /* Init CPU input */
 int in_http_init(struct flb_config *config)
 {
+    mk_config = mk_server_init();
+    mk_server_loop();
+
     return 0;
 }
 
