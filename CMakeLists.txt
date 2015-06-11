@@ -50,22 +50,14 @@ set(MSGPACK_NO_INSTALL 1)
 
 # mk_core is aware about jemalloc usage, we need to disable this as
 # fluent-bit do not use it.
-set(WITH_SYSTEM_MALLOC 1)
+set(WITH_SYSTEM_MALLOC  1 CACHE BOOL "Use system memory allocator")
 
 # Lib: build the core libraries used by Fluent-Bit
 add_subdirectory(lib/msgpack-0.5.9)
 add_subdirectory(lib/jsmn)
 if(WITH_IN_HTTP)
-  set(WITH_PLUGIN_AUTH        0)
-  set(WITH_PLUGIN_CGI         0)
-  set(WITH_PLUGIN_CHEETAH     0)
-  set(WITH_PLUGIN_DIRLISTING  0)
-  set(WITH_PLUGIN_FASTCGI     0)
-  set(WITH_PLUGIN_LIANA       1)
-  set(WITH_PLUGIN_LOGGER      0)
-  set(WITH_PLUGIN_MANDRIL     0)
-  set(WITH_PLUGIN_TLS         0)
-  set(WITH_SYSTEM_MALLOC      1)
+  set(WITHOUT_BIN     1 CACHE BOOL "Do not build binary")
+  set(WITHOUT_PLUGINS "auth,cgi,cheetah,dirlisting,fastcgi,logger,mandril,tls")
   add_subdirectory(lib/monkey)
 else()
   add_subdirectory(lib/monkey/mk_core)
