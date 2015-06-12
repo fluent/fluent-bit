@@ -17,22 +17,27 @@
  *  limitations under the License.
  */
 
+#include <monkey/monkey.h>
+#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_config.h>
+#include <msgpack.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 
-#include <msgpack.h>
-#include <monkey/monkey.h>
-#include <fluent-bit/flb_input.h>
-#include <fluent-bit/flb_config.h>
-
 #include "in_http.h"
+#include "in_http_info.h"
 
 /* Init CPU input */
 int in_http_init(struct flb_config *config)
 {
     mk_config = mk_server_init();
-    mk_server_loop();
+    mk_config->server_conf_file = FLB_HTTP_CONFIG;
+    mk_config->path_config      = FLB_HTTP_CONF_PATH;
+    mk_config->sites_conf_dir   = FLB_HTTP_SITES;
+    mk_config->mimes_conf_file  = FLB_HTTP_MIMES;
+    mk_server_setup();
 
     return 0;
 }
