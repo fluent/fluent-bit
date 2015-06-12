@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 #
 #  Monkey HTTP Server
 #  ==================
@@ -17,12 +17,19 @@
 #  limitations under the License.
 #
 
-BOLD="\033[1m"
-END_COLOR="\033[0m"
-GREEN="\033[0;32m"
-YELLOW="\033[1;33m"
-RED="\033[0;31m"
-BLUE="\033[0;34m"
+if [ "x$(uname)" = "xLinux" ]; then
+ BOLD="\033[1m"
+ END_COLOR="\033[0m"
+ GREEN="\033[0;32m"
+ YELLOW="\033[1;33m"
+ RED="\033[0;31m"
+ BLUE="\033[0;34m"
+ ECHO_OPTS="-en"
+ ECHO_LF="\n"
+else
+  ECHO_OPTS=""
+  ECHO_LF=""
+fi
 
 #---------------------------#
 # Starting configure
@@ -130,6 +137,9 @@ for arg in $*; do
         --static-lib-mode*)
             cmake_opts+="-DWITH_STATIC_LIB_MODE=1 "
             ;;
+        --skip-config*)
+            cmake_opts+="-DWITHOUT_CONF=1 "
+            ;;
 	--version*)
 	    echo -e $bldgrn"Monkey HTTP Server v$VERSION" $txtrst
 	    echo "Copyright 2001-2015, Eduardo Silva <eduardo@monkey.io>"
@@ -156,6 +166,7 @@ for arg in $*; do
 	    echo "  --pthread-tls           Use Posix thread keys instead of compiler TLS"
             echo "  --no-binary             Do not build binary"
             echo "  --static-lib-mode       Build static library mode"
+            echo "  --skip-config           Do not include configuration files"
 	    echo
 	    echo -e $bldwht"Installation Directories:" $txtrst
 	    echo "  --prefix=PREFIX         Root prefix directory"
@@ -183,20 +194,22 @@ for arg in $*; do
     esac
 done
 
-echo -en $RED"********************************************\n"
-echo -en $RED"*"$GREEN$BOLD"           Monkey HTTP Server             "$RED"*\n"
-echo -en $RED"*"$YELLOW"           monkey-project.com             "$RED"*\n"
-echo -en "*"$BLUE" ---------------------------------------- "$RED"*\n"
-echo -en "*"$YELLOW"      Monkey is the next generation       "$RED"*\n"
-echo -en "*"$YELLOW"  Web Server for Linux and Embedded Linux "$RED"*\n"
-echo -en "*"$YELLOW"                                          "$RED"*\n"
-echo -en "*"$YELLOW"        Feel free to reach us at:         "$RED"*\n"
-echo -en "*"$YELLOW"                                          "$RED"*\n"
-echo -en "*"$YELLOW"        irc.freenode.net #monkey          "$RED"*\n"
-echo -en "*"$YELLOW"                                          "$RED"*\n"
-echo -en "*"$YELLOW"        Thanks for using Monkey!!!        "$RED"*\n"
-echo -en "*"$YELLOW"                                          "$RED"*\n"
-echo -en "********************************************"$END_COLOR"\n"
+echo $ECHO_OPTS $RED"********************************************"$ECHO_LF
+echo $ECHO_OPTS $RED"*"$GREEN$BOLD"           Monkey HTTP Server             "$RED"*"$ECHO_LF
+echo $ECHO_OPTS $RED"*"$YELLOW"           monkey-project.com             "$RED"*"$ECHO_LF
+echo $ECHO_OPTS "*"$BLUE" ---------------------------------------- "$RED"*"$ECHO_LF
+echo $ECHO_OPTS "*"$YELLOW"      Monkey is the next generation       "$RED"*"$ECHO_LF
+echo $ECHO_OPTS "*"$YELLOW"   Web Server for Unix and Embedded Unix  "$RED"*"$ECHO_LF
+echo $ECHO_OPTS "*"$YELLOW"     Supports Linux, FreeBSD, and MacOS   "$RED"*"$ECHO_LF
+echo $ECHO_OPTS "*"$YELLOW"                                          "$RED"*"$ECHO_LF
+echo $ECHO_OPTS "*"$YELLOW"        Feel free to reach us at:         "$RED"*"$ECHO_LF
+echo $ECHO_OPTS "*"$YELLOW"                                          "$RED"*"$ECHO_LF
+echo $ECHO_OPTS "*"$YELLOW"        irc.freenode.net #monkey          "$RED"*"$ECHO_LF
+echo $ECHO_OPTS "*"$YELLOW"                                          "$RED"*"$ECHO_LF
+echo $ECHO_OPTS "*"$YELLOW"        Thanks for using Monkey!!!        "$RED"*"$ECHO_LF
+echo $ECHO_OPTS "*"$YELLOW"                                          "$RED"*"$ECHO_LF
+echo $ECHO_OPTS "********************************************"$END_COLOR$ECHO_LF
+echo $ECHO_OPTS "Build: $(uname)"$ECHO_LF
 
 cd build/
 rm -rf CMakeCache.txt

@@ -95,9 +95,11 @@ configure_file(
   )
 
 # Generate conf/plugins.load
-configure_file(
-  "${PROJECT_SOURCE_DIR}/conf/plugins.load.in"
-  "${PROJECT_BINARY_DIR}/conf/plugins.load"
-  )
+if(NOT WITHOUT_CONF)
+  configure_file(
+    "${PROJECT_SOURCE_DIR}/conf/plugins.load.in"
+    "${PROJECT_BINARY_DIR}/conf/plugins.load"
+    )
+endif()
 
 set(STATIC_PLUGINS_LIBS "${static_plugins}" PARENT_SCOPE)

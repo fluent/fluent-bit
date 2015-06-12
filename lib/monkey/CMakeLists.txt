@@ -56,8 +56,9 @@ option(WITH_PLUGIN_TLS           "TLS/SSL support"          No)
 # Options to build Monkey with/without binary and
 # static/dynamic library modes (default is always just
 # one target binary).
-option(WITHOUT_BIN               "Do not build binary"     No)
-option(WITH_STATIC_LIB_MODE      "Static library mode"     No)
+option(WITHOUT_BIN               "Do not build binary"      No)
+option(WITHOUT_CONF              "Skip configuration files" No)
+option(WITH_STATIC_LIB_MODE      "Static library mode"      No)
 
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set(WITH_ACCEPT        1)
@@ -309,7 +310,9 @@ if(NOT WITHOUT_BIN)
 endif()
 
 # Configuration, headers generation and others
-add_subdirectory(conf)
+if(NOT WITHOUT_CONF)
+  add_subdirectory(conf)
+endif()
 add_subdirectory(htdocs)
 add_subdirectory(include)
 

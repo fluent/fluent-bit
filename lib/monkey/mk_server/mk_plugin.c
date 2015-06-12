@@ -382,6 +382,11 @@ void mk_plugin_load_all()
         }
     }
 
+    /* In case there are not dynamic plugins */
+    if (!mk_config->plugin_load_conf_file) {
+        return;
+    }
+
     /* Read configuration file */
     path = mk_mem_malloc_z(1024);
     snprintf(path, 1024, "%s/%s", mk_config->serverconf,
@@ -393,9 +398,9 @@ void mk_plugin_load_all()
 
     cnf = mk_rconf_create(path);
     if (!cnf) {
-        mk_err("Configuration error, aborting.");
+        mk_warn("No dynamic plugins loaded.");
         mk_mem_free(path);
-        exit(EXIT_FAILURE);
+        return;
     }
 
     /* Read section 'PLUGINS' */

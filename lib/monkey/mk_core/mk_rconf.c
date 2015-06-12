@@ -97,6 +97,11 @@ struct mk_rconf *mk_rconf_create(const char *path)
     struct mk_rconf_section *current = NULL;
     FILE *f;
 
+    if (!path) {
+        mk_warn("Config: invalid path file");
+        return NULL;
+    }
+
     /* Open configuration file */
     if ((f = fopen(path, "r")) == NULL) {
         mk_warn("Config: I cannot open %s file", path);

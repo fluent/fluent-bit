@@ -100,6 +100,20 @@ int mk_liana_send_file(int socket_fd, int file_fd, off_t *file_offset,
         return len;
     }
     return ret;
+#elif defined (__FreeBSD__)
+    off_t offset = *file_offset;
+    off_t len = (off_t) file_count;
+
+    ret = sendfile(file_fd, socket_fd, offset, len, NULL, 0, 0);
+    if (ret == -1 && errno != EAGAIN) {
+        PLUGIN_TRACE("[FD %i] error from sendfile(): %s",
+                     socket_fd, strerror(errno));
+    }
+    else if (len > 0) {
+        *file_offset += len;
+        return len;
+    }
+    return ret;
 #else
 #error Sendfile not supported on platform
 #endif

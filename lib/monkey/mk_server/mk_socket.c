@@ -39,10 +39,10 @@ int mk_socket_set_cork_flag(int fd, int state)
 {
     MK_TRACE("Socket, set Cork Flag FD %i to %s", fd, (state ? "ON" : "OFF"));
 
-#if defined (__linux__)
+#if defined (TCP_CORK)
     return setsockopt(fd, SOL_TCP, TCP_CORK, &state, sizeof(state));
-#elif defined (__APPLE__)
-    return setsockopt(fd, SOL_TCP, TCP_NOPUSH, &state, sizeof(state));
+#elif defined (TCP_NOPUSH)
+    return setsockopt(fd, SOL_SOCKET, TCP_NOPUSH, &state, sizeof(state));
 #endif
 }
 

@@ -139,7 +139,8 @@ void mk_mimetype_read_config()
 
     cnf = mk_rconf_create(path);
     if (!cnf) {
-        exit(EXIT_FAILURE);
+        mk_warn("No mimetypes loaded");
+        return;
     }
 
     /* Get MimeTypes tag */

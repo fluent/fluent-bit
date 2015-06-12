@@ -23,7 +23,7 @@ set(src
 # Always build a static library, thats our core :)
 add_library(monkey-core-static STATIC ${src})
 set_target_properties(monkey-core-static PROPERTIES OUTPUT_NAME monkey)
-target_link_libraries(monkey-core-static dl mk_core ${CMAKE_THREAD_LIBS_INIT} ${STATIC_PLUGINS_LIBS})
+target_link_libraries(monkey-core-static mk_core ${CMAKE_THREAD_LIBS_INIT} ${STATIC_PLUGINS_LIBS} ${CMAKE_DL_LIBS})
 
 # Linux Kqueue emulation
 if(WITH_LINUX_KQUEUE)
