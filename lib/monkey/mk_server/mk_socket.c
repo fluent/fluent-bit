@@ -248,7 +248,11 @@ int mk_socket_server(char *port, char *listen_addr,
             continue;
         }
 
-        mk_socket_set_tcp_nodelay(socket_fd);
+        ret = mk_socket_set_tcp_nodelay(socket_fd);
+        if (ret == -1) {
+            mk_warn("Could not set TCP_NODELAY");
+        }
+
         mk_socket_reset(socket_fd);
 
         /* Check if reuse port can be enabled on this socket */

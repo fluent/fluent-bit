@@ -309,7 +309,7 @@ int main(int argc, char **argv)
     mk_utils_register_pid(mk_config->pid_file_path);
 
     /* Print server details */
-    mk_details();
+    mk_server_info();
 
     /* Change process owner */
     mk_user_set_uidgid();

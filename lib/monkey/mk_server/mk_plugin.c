@@ -124,6 +124,7 @@ struct mk_plugin *mk_plugin_load(int type, const char *shortname,
         plugin  = mk_plugin_load_symbol(handler, symbol);
         if (!plugin) {
             mk_warn("Plugin '%s' is not registering properly", path);
+            dlclose(handler);
             return NULL;
         }
         plugin->load_type = MK_PLUGIN_DYNAMIC;
@@ -133,6 +134,10 @@ struct mk_plugin *mk_plugin_load(int type, const char *shortname,
     else if (type == MK_PLUGIN_STATIC) {
         plugin = (struct mk_plugin *) data;
         plugin->load_type = MK_PLUGIN_STATIC;
+    }
+
+    if (!plugin) {
+        return NULL;
     }
 
     /* Validate all callbacks are set */
@@ -171,7 +176,7 @@ struct mk_plugin *mk_plugin_load(int type, const char *shortname,
         }
         if (stage->stage40) {
             st = mk_mem_malloc(sizeof(struct mk_plugin_stage));
-            st->stage40 = stage->stage20;
+            st->stage40 = stage->stage40;
             st->plugin  = plugin;
             mk_list_add(&st->_head, &mk_config->stage40_handler);
         }
@@ -673,7 +678,7 @@ int mk_plugin_sched_remove_client(int socket)
         return -1;
     }
 
-    return mk_sched_remove_client(sched, conn);
+    return mk_sched_remove_client(conn, sched);
 }
 
 int mk_plugin_header_add(struct mk_http_request *sr, char *row, int len)

@@ -24,6 +24,41 @@
 #include <monkey/mk_plugin.h>
 #include <monkey/mk_clock.h>
 
+void mk_server_info()
+{
+    struct mk_list *head;
+    struct mk_plugin *p;
+    struct mk_config_listener *l;
+
+    printf(MK_BANNER_ENTRY "Process ID is %i\n", getpid());
+    mk_list_foreach(head, &mk_config->listeners) {
+        l = mk_list_entry(head, struct mk_config_listener, _head);
+        printf(MK_BANNER_ENTRY "Server listening on %s:%s\n",
+               l->address, l->port);
+    }
+    printf(MK_BANNER_ENTRY
+           "%i threads, may handle up to %i client connections\n",
+           mk_config->workers, mk_config->server_capacity);
+
+    /* List loaded plugins */
+    printf(MK_BANNER_ENTRY "Loaded Plugins: ");
+    mk_list_foreach(head, &mk_config->plugins) {
+        p = mk_list_entry(head, struct mk_plugin, _head);
+        printf("%s ", p->shortname);
+    }
+    printf("\n");
+
+#ifdef __linux__
+    char tmp[64];
+
+    if (mk_kernel_features_print(tmp, sizeof(tmp)) > 0) {
+        printf(MK_BANNER_ENTRY "Linux Features: %s\n", tmp);
+    }
+#endif
+
+    fflush(stdout);
+}
+
 /* Initialize Monkey Server */
 struct mk_server_config *mk_server_init()
 {
@@ -96,7 +131,7 @@ void mk_exit_all()
     uint64_t val;
 
     /* Distribute worker signals to stop working */
-    val = MK_SCHEDULER_SIGNAL_FREE_ALL;
+    val = MK_SCHED_SIGNAL_FREE_ALL;
     for (i = 0; i < mk_config->workers; i++) {
         n = write(sched_list[i].signal_channel_w, &val, sizeof(val));
         if (n < 0) {

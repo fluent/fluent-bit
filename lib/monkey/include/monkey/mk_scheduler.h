@@ -24,11 +24,11 @@
 #ifndef MK_SCHEDULER_H
 #define MK_SCHEDULER_H
 
-#define MK_SCHEDULER_CONN_AVAILABLE  -1
-#define MK_SCHEDULER_CONN_PENDING     0
-#define MK_SCHEDULER_CONN_PROCESS     1
-#define MK_SCHEDULER_SIGNAL_DEADBEEF  0xDEADBEEF
-#define MK_SCHEDULER_SIGNAL_FREE_ALL  0xFFEE0000
+#define MK_SCHED_CONN_TIMEOUT    -1
+#define MK_SCHED_CONN_CLOSED     -2
+
+#define MK_SCHED_SIGNAL_DEADBEEF  0xDEADBEEF
+#define MK_SCHED_SIGNAL_FREE_ALL  0xFFEE0000
 
 /*
  * Scheduler balancing mode:
@@ -67,12 +67,12 @@ struct mk_sched_worker
     struct rb_root rb_queue;
 
     /*
-     * The incoming queue represents client connections that
+     * The timeout queue represents client connections that
      * have not initiated it requests or the request status
      * is incomplete. This linear lists allows the scheduler
      * to perform a fast check upon every timeout.
      */
-    struct mk_list incoming_queue;
+    struct mk_list timeout_queue;
 
     short int idx;
     unsigned char initialized;
@@ -104,7 +104,7 @@ struct mk_sched_conn
     struct mk_sched_handler *protocol; /* protocol handler           */
     struct mk_plugin_network *net;     /* I/O network layer          */
     struct mk_channel channel;         /* stream channel             */
-    struct mk_list status_queue;       /* link to the incoming queue */
+    struct mk_list timeout_head;       /* link to the incoming queue */
     struct rb_node _rb_head;           /* red-black tree head        */
 };
 
@@ -203,13 +203,15 @@ static inline struct mk_event_loop *mk_sched_loop()
 void mk_sched_update_thread_status(struct mk_sched_worker *sched,
                                    int active, int closed);
 
-int mk_sched_drop_connection(int socket);
+int mk_sched_drop_connection(struct mk_sched_conn *conn,
+                             struct mk_sched_worker *sched);
+
 int mk_sched_check_timeouts(struct mk_sched_worker *sched);
 struct mk_sched_conn *mk_sched_add_connection(int remote_fd,
                                               struct mk_server_listen *listener,
                                               struct mk_sched_worker *sched);
-int mk_sched_remove_client(struct mk_sched_worker *sched,
-                           struct mk_sched_conn *conn);
+int mk_sched_remove_client(struct mk_sched_conn *conn,
+                           struct mk_sched_worker *sched);
 
 struct mk_sched_conn *mk_sched_get_connection(struct mk_sched_worker
                                                      *sched, int remote_fd);
@@ -228,6 +230,18 @@ int mk_sched_event_write(struct mk_sched_conn *conn,
 int mk_sched_event_close(struct mk_sched_conn *conn,
                          struct mk_sched_worker *sched,
                          int type);
+
+static inline void mk_sched_conn_timeout_add(struct mk_sched_conn *conn,
+                                             struct mk_sched_worker *sched)
+{
+    mk_list_add(&conn->timeout_head, &sched->timeout_queue);
+}
+
+static inline void mk_sched_conn_timeout_del(struct mk_sched_conn *conn)
+{
+    mk_list_del(&conn->timeout_head);
+}
+
 
 #define mk_sched_conn_read(conn, buf, s)        \
     conn->net->read(conn->event.fd, buf, s)

@@ -85,8 +85,8 @@ enum mk_request_methods {
     MK_METHOD_PUT        ,
     MK_METHOD_DELETE     ,
     MK_METHOD_OPTIONS    ,
-    MK_METHOD_UNKNOWN    ,
-    MK_METHOD_SIZEOF
+    MK_METHOD_SIZEOF     ,
+    MK_METHOD_UNKNOWN
 };
 
 /*

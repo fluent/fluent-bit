@@ -122,49 +122,6 @@ void mk_config_free_all()
     mk_mem_free(mk_config);
 }
 
-static void mk_details_listen(struct mk_list *listen)
-{
-
-    struct mk_list *head;
-    struct mk_config_listener *l;
-
-    mk_list_foreach(head, listen) {
-        l = mk_list_entry(head, struct mk_config_listener, _head);
-        printf(MK_BANNER_ENTRY "Server listening on %s:%s\n",
-               l->address, l->port);
-    }
-}
-
-void mk_details(void)
-{
-    struct mk_list *head;
-    struct mk_plugin *p;
-
-    printf(MK_BANNER_ENTRY "Process ID is %i\n", getpid());
-    mk_details_listen(&mk_config->listeners);
-    printf(MK_BANNER_ENTRY
-           "%i threads, may handle up to %i client connections\n",
-           mk_config->workers, mk_config->server_capacity);
-
-    /* List loaded plugins */
-    printf(MK_BANNER_ENTRY "Loaded Plugins: ");
-    mk_list_foreach(head, &mk_config->plugins) {
-        p = mk_list_entry(head, struct mk_plugin, _head);
-        printf("%s ", p->shortname);
-    }
-    printf("\n");
-
-#ifdef __linux__
-    char tmp[64];
-
-    if (mk_kernel_features_print(tmp, sizeof(tmp)) > 0) {
-        printf(MK_BANNER_ENTRY "Linux Features: %s\n", tmp);
-    }
-#endif
-
-    fflush(stdout);
-}
-
 /* Print a specific error */
 static void mk_config_print_error_msg(char *variable, char *path)
 {
@@ -211,7 +168,7 @@ static int mk_config_listen_read(struct mk_rconf_section *section)
     char *address = NULL;
     char *port = NULL;
     char *divider;
-    struct mk_list *list;
+    struct mk_list *list = NULL;
     struct mk_list *cur;
     struct mk_string_line *listener;
     struct mk_rconf_entry *entry;
@@ -289,8 +246,15 @@ static int mk_config_listen_read(struct mk_rconf_section *section)
     }
 
 error:
-    if (address) mk_mem_free(address);
-    if (port) mk_mem_free(port);
+    if (address) {
+        mk_mem_free(address);
+    }
+    if (port) {
+        mk_mem_free(port);
+    }
+    if (list) {
+        mk_string_split_free(list);
+    }
 
 
     if (mk_list_is_empty(&mk_config->listeners) == 0) {

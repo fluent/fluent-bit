@@ -65,7 +65,8 @@ unsigned int mk_server_capacity()
     return cur;
 }
 
-static inline struct mk_sched_conn *mk_server_listen_handler(struct mk_sched_worker *sched,
+static inline
+struct mk_sched_conn *mk_server_listen_handler(struct mk_sched_worker *sched,
                                                void *data)
 {
     int ret;
@@ -122,7 +123,7 @@ struct mk_list *mk_server_listen_init(struct mk_server_config *config)
 {
     int i = 0;
     int server_fd;
-    int reuse_port;
+    int reuse_port = MK_FALSE;
     struct mk_list *head;
     struct mk_list *listeners;
     struct mk_event *event;
@@ -437,11 +438,11 @@ void mk_server_worker_loop()
                 }
 
                 if (event->fd == sched->signal_channel_r) {
-                    if (val == MK_SCHEDULER_SIGNAL_DEADBEEF) {
+                    if (val == MK_SCHED_SIGNAL_DEADBEEF) {
                         //FIXME:mk_sched_sync_counters();
                         continue;
                     }
-                    else if (val == MK_SCHEDULER_SIGNAL_FREE_ALL) {
+                    else if (val == MK_SCHED_SIGNAL_FREE_ALL) {
                         mk_event_loop_destroy(evl);
                         mk_sched_worker_free();
                         return;

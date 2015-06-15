@@ -429,9 +429,15 @@ int mk_logger_master_init(struct mk_server_config *config)
                         mk_err("Could not create pipe");
                         exit(EXIT_FAILURE);
                     }
-                    fcntl(new->fd_access[1], F_SETFL, O_NONBLOCK);
-                    fcntl(new->fd_access[0], F_SETFD, FD_CLOEXEC);
-                    fcntl(new->fd_access[1], F_SETFD, FD_CLOEXEC);
+                    if (fcntl(new->fd_access[1], F_SETFL, O_NONBLOCK) == -1) {
+                        mk_libc_error("fcntl");
+                    }
+                    if (fcntl(new->fd_access[0], F_SETFD, FD_CLOEXEC) == -1) {
+                        mk_libc_error("fcntl");
+                    }
+                    if (fcntl(new->fd_access[1], F_SETFD, FD_CLOEXEC) == -1) {
+                        mk_libc_error("fcntl");
+                    }
                     new->file_access = access_file_name;
                 }
                 /* Set error pipe */
@@ -440,9 +446,15 @@ int mk_logger_master_init(struct mk_server_config *config)
                         mk_err("Could not create pipe");
                         exit(EXIT_FAILURE);
                     }
-                    fcntl(new->fd_error[1], F_SETFL, O_NONBLOCK);
-                    fcntl(new->fd_error[0], F_SETFD, FD_CLOEXEC);
-                    fcntl(new->fd_error[1], F_SETFD, FD_CLOEXEC);
+                    if (fcntl(new->fd_error[1], F_SETFL, O_NONBLOCK) == -1) {
+                        mk_libc_error("fcntl");
+                    }
+                    if (fcntl(new->fd_error[0], F_SETFD, FD_CLOEXEC) == -1) {
+                        mk_libc_error("fcntl");
+                    }
+                    if (fcntl(new->fd_error[1], F_SETFD, FD_CLOEXEC) == -1 ){
+                        mk_libc_error("fcntl");
+                    }
                     new->file_error = error_file_name;
                 }
 

@@ -63,6 +63,8 @@
 extern const mk_ptr_t mk_monkey_protocol;
 
 struct mk_server_config *mk_server_init();
+
+void mk_server_info();
 int mk_server_setup();
 void mk_thread_keys_init();
 void mk_exit_all();

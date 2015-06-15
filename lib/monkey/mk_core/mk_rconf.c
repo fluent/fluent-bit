@@ -252,8 +252,10 @@ void mk_rconf_free(struct mk_rconf *conf)
         mk_mem_free(section->name);
         mk_mem_free(section);
     }
-    if (conf->file) mk_mem_free(conf->file);
-    if (conf) mk_mem_free(conf);
+    if (conf->file) {
+        mk_mem_free(conf->file);
+    }
+    mk_mem_free(conf);
 }
 
 void mk_rconf_free_entries(struct mk_rconf_section *section)

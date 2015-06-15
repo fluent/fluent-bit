@@ -189,7 +189,6 @@ struct mk_sched_conn *mk_sched_add_connection(int remote_fd,
     event->fd         = remote_fd;
     event->type       = MK_EVENT_CONNECTION;
     event->mask       = MK_EVENT_EMPTY;
-    conn->status      = MK_SCHEDULER_CONN_PENDING;
     conn->arrive_time = log_current_utime;
     conn->protocol    = handler;
     conn->net         = listener->network->network;
@@ -222,6 +221,19 @@ struct mk_sched_conn *mk_sched_add_connection(int remote_fd,
     /* Add new node and rebalance tree. */
     rb_link_node(&conn->_rb_head, parent, new);
     rb_insert_color(&conn->_rb_head, &sched->rb_queue);
+
+    /*
+     * Register the connections into the timeout_queue:
+     *
+     * When a new connection arrives, we cannot assume it contains some data
+     * to read, meaning the event loop may not get notifications and the protocol
+     * handler will never be called. So in order to avoid DDoS we always register
+     * this session in the timeout_queue for further lookup.
+     *
+     * The protocol handler is in charge to remove the session from the
+     * timeout_queue.
+     */
+    mk_sched_conn_timeout_add(conn, sched);
 
     /* Linux trace message */
     MK_LT_SCHED(remote_fd, "REGISTERED");
@@ -278,7 +290,7 @@ static int mk_sched_register_thread()
 
     /* Initialize lists */
     sl->rb_queue = RB_ROOT;
-    mk_list_init(&sl->incoming_queue);
+    mk_list_init(&sl->timeout_queue);
     sl->request_handler = NULL;
 
     return sl->idx;
@@ -419,8 +431,8 @@ void mk_sched_set_request_list(struct rb_root *list)
     cs_list = list;
 }
 
-int mk_sched_remove_client(struct mk_sched_worker *sched,
-                           struct mk_sched_conn *conn)
+int mk_sched_remove_client(struct mk_sched_conn *conn,
+                           struct mk_sched_worker *sched)
 {
     struct mk_event *event;
 
@@ -500,61 +512,33 @@ struct mk_sched_conn *mk_sched_get_connection(struct mk_sched_worker *sched,
  * used on any context such as: timeout, I/O errors, request finished,
  * exceptions, etc.
  */
-int mk_sched_drop_connection(int socket)
+int mk_sched_drop_connection(struct mk_sched_conn *conn,
+                             struct mk_sched_worker *sched)
 {
-    struct mk_sched_conn *conn;
-    struct mk_sched_worker *sched;
 
-    sched = mk_sched_get_thread_conf();
-    conn = mk_sched_get_connection(sched, socket);
-    if (conn) {
-        mk_sched_remove_client(sched, conn);
-    }
-    else {
-        MK_TRACE("[FD %i] Not found", socket);
-        MK_LT_SCHED(socket, "DELETE_NOT_FOUND");
-    }
-
-    return 0;
+    return mk_sched_remove_client(conn, sched);
 }
 
 int mk_sched_check_timeouts(struct mk_sched_worker *sched)
 {
     int client_timeout;
-    struct mk_http_session *cs_node;
-    struct mk_sched_conn *sched_conn;
+    struct mk_sched_conn *conn;
     struct mk_list *head;
     struct mk_list *temp;
 
     /* PENDING CONN TIMEOUT */
-    mk_list_foreach_safe(head, temp, &sched->incoming_queue) {
-        sched_conn = mk_list_entry(head, struct mk_sched_conn, status_queue);
-        client_timeout = sched_conn->arrive_time + mk_config->timeout;
+    mk_list_foreach_safe(head, temp, &sched->timeout_queue) {
+        conn = mk_list_entry(head, struct mk_sched_conn, timeout_head);
+        client_timeout = conn->arrive_time + mk_config->timeout;
 
         /* Check timeout */
         if (client_timeout <= log_current_utime) {
-            MK_TRACE("Scheduler, closing fd %i due TIMEOUT (incoming queue)",
-                     sched_conn->event.fd);
-            MK_LT_SCHED(entry_conn->event.fd, "TIMEOUT_CONN_PENDING");
-            mk_sched_drop_connection(sched_conn->event.fd);
-        }
-    }
+            MK_TRACE("Scheduler, closing fd %i due TIMEOUT",
+                     conn->event.fd);
+            MK_LT_SCHED(conn->event.fd, "TIMEOUT_CONN_PENDING");
 
-    mk_list_foreach_safe(head, temp, cs_incomplete) {
-        cs_node = mk_list_entry(head, struct mk_http_session, request_incomplete);
-        if (cs_node->counter_connections == 0) {
-            client_timeout = cs_node->init_time + mk_config->timeout;
-        }
-        else {
-            client_timeout = cs_node->init_time + mk_config->keep_alive_timeout;
-        }
-
-        /* Check timeout */
-        if (client_timeout <= log_current_utime) {
-            MK_TRACE("[FD %i] Scheduler, closing due to timeout (incomplete)",
-                     cs_node->socket);
-            MK_LT_SCHED(cs_node->socket, "TIMEOUT_REQ_INCOMPLETE");
-            mk_sched_drop_connection(cs_node->socket);
+            conn->protocol->cb_close(conn, sched, MK_SCHED_CONN_TIMEOUT);
+            mk_sched_drop_connection(conn, sched);
         }
     }
 
@@ -673,19 +657,16 @@ int mk_sched_event_write(struct mk_sched_conn *conn,
 }
 
 int mk_sched_event_close(struct mk_sched_conn *conn,
-                         struct mk_sched_worker *worker,
+                         struct mk_sched_worker *sched,
                          int type)
 {
-    int socket = conn->event.fd;
-
-    MK_TRACE("[FD %i] Connection Handler, closed", socket);
-
-    conn->protocol->cb_close(conn, worker, type);
+    MK_TRACE("[FD %i] Connection Handler, closed", conn->event.fd);
+    conn->protocol->cb_close(conn, sched, type);
 
     /*
      * Remove the socket from the scheduler and make sure
      * to disable all notifications.
      */
-    mk_sched_drop_connection(socket);
+    mk_sched_drop_connection(conn, sched);
     return 0;
 }

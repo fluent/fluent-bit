@@ -130,9 +130,6 @@ struct mk_http_session
     /* head for mk_http_request list nodes, each request is linked here */
     struct mk_list request_list;
 
-    /* while a http_request don't complete a request, it's linked here */
-    struct mk_list request_incomplete;
-
     /* creation time for this HTTP session */
     time_t init_time;
 
@@ -160,12 +157,12 @@ struct mk_http_session
     struct mk_http_parser parser;
 };
 
-static inline void mk_http_status_completed(struct mk_http_session *cs)
+static inline void mk_http_status_completed(struct mk_http_session *cs,
+                                            struct mk_sched_conn *conn)
 {
     mk_bug(cs->status == MK_REQUEST_STATUS_COMPLETED);
-
     cs->status = MK_REQUEST_STATUS_COMPLETED;
-    mk_list_del(&cs->request_incomplete);
+    mk_list_del(&conn->timeout_head);
 }
 
 int mk_http_error(int http_status, struct mk_http_session *cs,
@@ -197,7 +194,6 @@ int mk_http_handler_write(int socket, struct mk_http_session *cs);
 void mk_http_request_free(struct mk_http_request *sr);
 void mk_http_request_free_list(struct mk_http_session *cs);
 
-void mk_http_request_ka_next(struct mk_http_session *cs);
 void mk_http_request_init(struct mk_http_session *session,
                           struct mk_http_request *request);
 struct mk_http_header *mk_http_header_get(int name, struct mk_http_request *req,

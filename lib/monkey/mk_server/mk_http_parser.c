@@ -93,7 +93,7 @@ static inline int str_searchr(char *buf, char c, int len)
 static inline int method_lookup(struct mk_http_request *req,
                                 struct mk_http_parser *p, char *buffer)
 {
-    int i;
+    int i = 0;
     int len;
 
     /* Method lenght */
@@ -385,7 +385,6 @@ int mk_http_parser(struct mk_http_request *req, struct mk_http_parser *p,
                     }
                     request_set(&req->uri, p, buffer);
                     parse_next();
-                    continue;
                 }
                 else if (buffer[i] == '?') {
                     mark_end();
