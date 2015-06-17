@@ -54,7 +54,15 @@ int flb_net_socket_reset(int sockfd)
 int flb_net_socket_tcp_nodelay(int sockfd)
 {
     int on = 1;
-    return setsockopt(sockfd, SOL_TCP, TCP_NODELAY, &on, sizeof(on));
+    int ret;
+
+    ret = setsockopt(sockfd, SOL_TCP, TCP_NODELAY, &on, sizeof(on));
+    if (ret == -1) {
+        perror("setsockopt");
+        return -1;
+    }
+
+    return 0;
 }
 
 int flb_net_socket_nonblocking(int sockfd)
