@@ -111,7 +111,7 @@ int in_xbee_init(struct flb_config *config)
     int ret;
     int opt_baudrate = 9600;
     char *tmp;
-    char *opt_device = FLB_XBEE_DEFAULT_DEVICE;
+    char *opt_device;
     struct stat dev_st;
 	struct xbee *xbee;
 	struct xbee_con *con;
@@ -129,22 +129,29 @@ int in_xbee_init(struct flb_config *config)
     if (tmp) {
         opt_device = strdup(tmp);
     }
+    else {
+        opt_device = strdup(FLB_XBEE_DEFAULT_DEVICE);
+    }
+
     flb_info("XBee device=%s, baudrate=%i", opt_device, opt_baudrate);
 
     ret = stat(opt_device, &dev_st);
     if (ret < 0) {
         printf("Error: could not open %s device\n", opt_device);
+        free(opt_device);
         exit(EXIT_FAILURE);
     }
 
     if (!S_ISCHR(dev_st.st_mode)) {
         printf("Error: invalid device %s \n", opt_device);
+        free(opt_device);
         exit(EXIT_FAILURE);
     }
 
     if (access(opt_device, R_OK | W_OK) == -1) {
         printf("Error: cannot open the device %s (permission denied ?)\n",
                opt_device);
+        free(opt_device);
         exit(EXIT_FAILURE);
     }
 
@@ -179,6 +186,7 @@ int in_xbee_init(struct flb_config *config)
     ctx = calloc(1, sizeof(struct flb_in_xbee_config));
     if (!ctx) {
         perror("calloc");
+        free(opt_device);
         return -1;
     }
     ctx->device     = opt_device;
