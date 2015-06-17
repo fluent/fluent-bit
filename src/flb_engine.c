@@ -201,7 +201,7 @@ int flb_engine_start(struct flb_config *config)
             event->mask = MK_EVENT_EMPTY;
             ret = mk_event_add(evl, collector->fd_event, 0, MK_EVENT_READ, event);
             if (ret == -1) {
-                close(fd);
+                close(collector->fd_event);
                 continue;
             }
         }
