@@ -85,10 +85,11 @@ int flb_net_socket_create(int family, int nonblock)
 
     /* create the socket and set the nonblocking flag status */
     fd = socket(family, SOCK_STREAM, 0);
-    if (fd <= 0) {
+    if (fd == -1) {
         perror("socket");
         return -1;
     }
+
     if (nonblock) {
         flb_net_socket_tcp_nodelay(fd);
     }
