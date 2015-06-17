@@ -151,7 +151,7 @@ void mk_iov_print(struct mk_iov *mk_io)
     for (i = 0; i < mk_io->iov_idx; i++) {
         printf("\n[index=%i len=%i]\n'", i, (int) mk_io->io[i].iov_len);
         fflush(stdout);
-        continue;
+
         for (j=0; j < mk_io->io[i].iov_len; j++) {
             c = mk_io->io[i].iov_base;
             printf("%c", c[j]);

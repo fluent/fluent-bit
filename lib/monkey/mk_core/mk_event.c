@@ -47,11 +47,13 @@ struct mk_event_loop *mk_event_loop_create(int size)
 
     loop = mk_mem_malloc_z(sizeof(struct mk_event_loop));
     if (!loop) {
+        _mk_event_loop_destroy(backend);
         return NULL;
     }
 
     loop->events = mk_mem_malloc_z(sizeof(struct mk_event) * size);
     if (!loop->events) {
+        _mk_event_loop_destroy(backend);
         mk_mem_free(loop);
         return NULL;
     }

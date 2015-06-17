@@ -306,13 +306,19 @@ int mk_utils_set_daemon()
 int mk_utils_register_pid(char *path)
 {
     int fd;
+    int ret;
     char pidstr[MK_MAX_PID_LEN];
     struct flock lock;
     struct stat sb;
 
-    if (!stat(path, &sb)) {
+    if (stat(path, &sb) == 0) {
         /* file exists, perhaps previously kepts by SIGKILL */
-        unlink(path);
+        ret = unlink(path);
+        if (ret == -1) {
+            mk_err("Could not remove old PID-file path");
+            exit(EXIT_FAILURE);
+        }
+
     }
 
     if ((fd = open(path,
@@ -341,6 +347,7 @@ int mk_utils_register_pid(char *path)
         exit(EXIT_FAILURE);
     }
 
+    close(fd);
     return 0;
 }
 
