@@ -60,11 +60,10 @@ int flb_net_socket_tcp_nodelay(int sockfd)
 int flb_net_socket_nonblocking(int sockfd)
 {
     if (fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFL, 0) | O_NONBLOCK) == -1) {
+        perror("fcntl");
         return -1;
     }
-    fcntl(sockfd, F_SETFD, FD_CLOEXEC);
-
-    return 0;
+    return fcntl(sockfd, F_SETFD, FD_CLOEXEC);
 }
 
 /*
