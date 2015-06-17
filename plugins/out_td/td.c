@@ -62,7 +62,7 @@ int cb_td_pre_run(void *out_context, struct flb_config *config)
 
     fd = flb_net_tcp_connect(out_td_plugin.host,
                              out_td_plugin.port);
-    if (fd <= 0) {
+    if (fd == -1) {
         return -1;
     }
 
