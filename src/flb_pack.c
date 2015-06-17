@@ -39,6 +39,9 @@ static jsmntok_t *json_tokenise(char *js, size_t len, int *arr_size)
     while (ret == JSMN_ERROR_NOMEM) {
         n = n * 2 + 1;
         tokens = realloc(tokens, sizeof(jsmntok_t) * n);
+        if (!tokens) {
+            goto error;
+        }
         ret = jsmn_parse(&parser, js, len, tokens, n);
     }
 
