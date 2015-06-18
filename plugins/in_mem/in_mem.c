@@ -75,16 +75,17 @@ int in_mem_collect(struct flb_config *config, void *in_context)
     sysinfo(&info);
     totalram = info.totalram / 1024;
     freeram  = info.freeram  / 1024;
-    msgpack_pack_map(&ctx->pckr, 3);
-    msgpack_pack_raw(&ctx->pckr, 4);
-    msgpack_pack_raw_body(&ctx->pckr, "time", 4);
+
+    msgpack_pack_array(&ctx->pckr, 2);
     msgpack_pack_uint64(&ctx->pckr, time(NULL));
+    msgpack_pack_map(&ctx->pckr, 2);
     msgpack_pack_raw(&ctx->pckr, 5);
     msgpack_pack_raw_body(&ctx->pckr, "total", 5);
     msgpack_pack_uint32(&ctx->pckr, totalram);
     msgpack_pack_raw(&ctx->pckr, 4);
     msgpack_pack_raw_body(&ctx->pckr, "free", 4);
     msgpack_pack_uint32(&ctx->pckr, freeram);
+
     flb_debug("[in_mem] memory total %d kb, free %d kb (buffer=%i)",
               info.totalram,
               info.freeram,
