@@ -203,12 +203,10 @@ static inline int process_line(char *line, struct flb_in_kmsg_config *ctx)
      * Store the new data into the MessagePack buffer,
      * we handle this as a list of maps.
      */
-    msgpack_pack_map(&ctx->mp_pck, 6);
-
-    msgpack_pack_raw(&ctx->mp_pck, 4);
-    msgpack_pack_raw_body(&ctx->mp_pck, "time", 4);
+    msgpack_pack_array(&ctx->mp_pck, 2);
     msgpack_pack_uint64(&ctx->mp_pck, ts);
 
+    msgpack_pack_map(&ctx->mp_pck, 5);
     msgpack_pack_raw(&ctx->mp_pck, 8);
     msgpack_pack_raw_body(&ctx->mp_pck, "priority", 8);
     msgpack_pack_char(&ctx->mp_pck, priority);
