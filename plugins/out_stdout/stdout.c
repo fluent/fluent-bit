@@ -70,15 +70,9 @@ int cb_stdout_flush(void *data, size_t bytes, void *out_context,
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
         /* FIXME: lazy output */
-        if (cnt % 2 == 0) {
-            printf("[%zd] ", cnt/2);
-        }
+        printf("[%zd] ", cnt++);
         msgpack_object_print(stdout, result.data);
-
-        if (cnt % 2 > 0) {
-            printf("\n");
-        }
-        cnt++;
+        printf("\n");
     }
     msgpack_unpacked_destroy(&result);
     return bytes;
