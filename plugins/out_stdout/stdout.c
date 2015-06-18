@@ -40,6 +40,7 @@ int cb_stdout_flush(void *data, size_t bytes, void *out_context,
 
     (void) out_context;
     (void) config;
+
     /* See: in_forward.rb of fluentd.
      *
      * message Entry {
@@ -69,9 +70,15 @@ int cb_stdout_flush(void *data, size_t bytes, void *out_context,
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
         /* FIXME: lazy output */
-        printf("[%zd] ", cnt++);
+        if (cnt % 2 == 0) {
+            printf("[%zd] ", cnt/2);
+        }
         msgpack_object_print(stdout, result.data);
-        printf("\n");
+
+        if (cnt % 2 > 0) {
+            printf("\n");
+        }
+        cnt++;
     }
     msgpack_unpacked_destroy(&result);
     return bytes;
