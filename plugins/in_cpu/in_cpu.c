@@ -132,7 +132,7 @@ int in_cpu_collect(struct flb_config *config, void *in_context)
     /*
      * Store the new data into the MessagePack buffer,
      */
-    msgpack_pack_array(&ctx->mp_pck, 1);
+    msgpack_pack_array(&ctx->mp_pck, 2);
     msgpack_pack_uint64(&ctx->mp_pck, time(NULL));
     msgpack_pack_map(&ctx->mp_pck, 1);
     msgpack_pack_raw(&ctx->mp_pck, 3);
