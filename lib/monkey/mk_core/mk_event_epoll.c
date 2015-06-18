@@ -17,6 +17,8 @@
  *  limitations under the License.
  */
 
+#include <unistd.h>
+#include <fcntl.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/timerfd.h>
@@ -27,6 +29,7 @@
 
 static inline void *_mk_event_loop_create(int size)
 {
+    int efd;
     struct mk_event_ctx *ctx;
 
     /* Main event context */
@@ -36,12 +39,23 @@ static inline void *_mk_event_loop_create(int size)
     }
 
     /* Create the epoll instance */
-    ctx->efd = epoll_create1(EPOLL_CLOEXEC);
-    if (ctx->efd == -1) {
+ #ifdef EPOLL_CLOEXEC
+    efd = epoll_create1(EPOLL_CLOEXEC);
+ #else
+    efd = epoll_create(1);
+    if (efd > 0) {
+        if (fcntl(efd, F_SETFD, FD_CLOEXEC) == -1) {
+            perror("fcntl");
+        }
+    }
+ #endif
+
+    if (efd == -1) {
         mk_libc_error("epoll_create");
         mk_mem_free(ctx);
         return NULL;
     }
+    ctx->efd = efd;
 
     /* Allocate space for events queue */
     ctx->events = mk_mem_malloc_z(sizeof(struct epoll_event) * size);
