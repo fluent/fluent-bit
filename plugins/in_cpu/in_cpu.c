@@ -131,21 +131,14 @@ int in_cpu_collect(struct flb_config *config, void *in_context)
 
     /*
      * Store the new data into the MessagePack buffer,
-     * we handle this as a list of maps.
      */
-    msgpack_pack_map(&ctx->mp_pck, 2);
-    msgpack_pack_raw(&ctx->mp_pck, 4);
-    msgpack_pack_raw_body(&ctx->mp_pck, "time", 4);
+    msgpack_pack_array(&ctx->mp_pck, 1);
     msgpack_pack_uint64(&ctx->mp_pck, time(NULL));
+    msgpack_pack_map(&ctx->mp_pck, 1);
     msgpack_pack_raw(&ctx->mp_pck, 3);
     msgpack_pack_raw_body(&ctx->mp_pck, "cpu", 3);
     msgpack_pack_double(&ctx->mp_pck, total);
 
-    /*
-    buf = &ctx->data_array[ctx->data_idx];
-    buf->time      = time(NULL);
-    buf->cpu_usage = total;
-    */
 
     ctx->data_idx++;
     flb_debug("[in_cpu] CPU %0.2f%% (buffer=%i)", total, ctx->data_idx - 1);
