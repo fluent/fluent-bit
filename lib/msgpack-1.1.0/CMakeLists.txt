@@ -1,5 +1,6 @@
 CMAKE_MINIMUM_REQUIRED (VERSION 2.8.6)
 PROJECT (msgpack)
+SET (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
 
 FILE (READ ${CMAKE_CURRENT_SOURCE_DIR}/include/msgpack/version_master.h contents)
 STRING (REGEX MATCH "#define MSGPACK_VERSION_MAJOR *([0-9a-zA-Z_]*)" NULL_OUT ${contents})
