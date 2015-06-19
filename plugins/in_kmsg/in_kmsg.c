@@ -207,26 +207,26 @@ static inline int process_line(char *line, struct flb_in_kmsg_config *ctx)
     msgpack_pack_uint64(&ctx->mp_pck, ts);
 
     msgpack_pack_map(&ctx->mp_pck, 5);
-    msgpack_pack_raw(&ctx->mp_pck, 8);
-    msgpack_pack_raw_body(&ctx->mp_pck, "priority", 8);
+    msgpack_pack_bin(&ctx->mp_pck, 8);
+    msgpack_pack_bin_body(&ctx->mp_pck, "priority", 8);
     msgpack_pack_char(&ctx->mp_pck, priority);
 
-    msgpack_pack_raw(&ctx->mp_pck, 8);
-    msgpack_pack_raw_body(&ctx->mp_pck, "sequence", 8);
+    msgpack_pack_bin(&ctx->mp_pck, 8);
+    msgpack_pack_bin_body(&ctx->mp_pck, "sequence", 8);
     msgpack_pack_uint64(&ctx->mp_pck, sequence);
 
-    msgpack_pack_raw(&ctx->mp_pck, 3);
-    msgpack_pack_raw_body(&ctx->mp_pck, "sec", 3);
+    msgpack_pack_bin(&ctx->mp_pck, 3);
+    msgpack_pack_bin_body(&ctx->mp_pck, "sec", 3);
     msgpack_pack_uint64(&ctx->mp_pck, tv.tv_sec);
 
-    msgpack_pack_raw(&ctx->mp_pck, 4);
-    msgpack_pack_raw_body(&ctx->mp_pck, "usec", 4);
+    msgpack_pack_bin(&ctx->mp_pck, 4);
+    msgpack_pack_bin_body(&ctx->mp_pck, "usec", 4);
     msgpack_pack_uint64(&ctx->mp_pck, tv.tv_usec);
 
-    msgpack_pack_raw(&ctx->mp_pck, 3);
-    msgpack_pack_raw_body(&ctx->mp_pck, "msg", 3);
-    msgpack_pack_raw(&ctx->mp_pck, line_len);
-    msgpack_pack_raw_body(&ctx->mp_pck, p, line_len);
+    msgpack_pack_bin(&ctx->mp_pck, 3);
+    msgpack_pack_bin_body(&ctx->mp_pck, "msg", 3);
+    msgpack_pack_bin(&ctx->mp_pck, line_len);
+    msgpack_pack_bin_body(&ctx->mp_pck, p, line_len);
 
     flb_debug("[in_kmsg] pri=%i seq=%" PRIu64 " ts=%ld sec=%ld usec=%ld '%s'",
               priority,
