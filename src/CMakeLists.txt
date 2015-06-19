@@ -12,7 +12,7 @@ set(src
 include_directories(
   ../lib/
   ../lib/jsmn
-  ../lib/msgpack-0.5.9/src
+  ../lib/msgpack-1.1.0/src
   ${extra_headers}
   )
 

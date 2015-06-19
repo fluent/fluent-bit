@@ -42,7 +42,7 @@ if(WITH_DEBUG)
 endif()
 
 # General Headers
-include_directories(include/ lib/ lib/msgpack-0.5.9/src lib/monkey/include)
+include_directories(include/ lib/ lib/msgpack-1.1.0/src lib/monkey/include)
 
 # MSGPACK modification: disable the install routines.z
 set(MSGPACK_NO_INSTALL 1)
@@ -52,7 +52,7 @@ set(MSGPACK_NO_INSTALL 1)
 set(WITH_SYSTEM_MALLOC  1 CACHE BOOL "Use system memory allocator")
 
 # Lib: build the core libraries used by Fluent-Bit
-add_subdirectory(lib/msgpack-0.5.9)
+add_subdirectory(lib/msgpack-1.1.0)
 add_subdirectory(lib/jsmn)
 if(WITH_IN_HTTP)
   set(WITHOUT_BIN     1 CACHE BOOL "Do not build binary")
