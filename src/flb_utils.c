@@ -52,8 +52,8 @@ char *flb_utils_pack_hello(struct flb_config *config, int *size)
     /* pack Tag, Time and Record */
 
     /* TAG */
-    msgpack_pack_raw(&pck, tag_len);
-    msgpack_pack_raw_body(&pck, config->tag, tag_len);
+    msgpack_pack_bin(&pck, tag_len);
+    msgpack_pack_bin_body(&pck, config->tag, tag_len);
 
     /* Primary Array: ['TAG', [ */
     msgpack_pack_array(&pck, 1);
@@ -64,8 +64,8 @@ char *flb_utils_pack_hello(struct flb_config *config, int *size)
 
     msgpack_pack_map(&pck, 1);
 
-    msgpack_pack_raw(&pck, 5);
-    msgpack_pack_raw_body(&pck, "dummy", 5);
+    msgpack_pack_bin(&pck, 5);
+    msgpack_pack_bin_body(&pck, "dummy", 5);
 
     msgpack_pack_uint64(&pck, time(NULL));
 
