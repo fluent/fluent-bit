@@ -79,11 +79,11 @@ int in_mem_collect(struct flb_config *config, void *in_context)
     msgpack_pack_array(&ctx->pckr, 2);
     msgpack_pack_uint64(&ctx->pckr, time(NULL));
     msgpack_pack_map(&ctx->pckr, 2);
-    msgpack_pack_raw(&ctx->pckr, 5);
-    msgpack_pack_raw_body(&ctx->pckr, "total", 5);
+    msgpack_pack_bin(&ctx->pckr, 5);
+    msgpack_pack_bin_body(&ctx->pckr, "total", 5);
     msgpack_pack_uint32(&ctx->pckr, totalram);
-    msgpack_pack_raw(&ctx->pckr, 4);
-    msgpack_pack_raw_body(&ctx->pckr, "free", 4);
+    msgpack_pack_bin(&ctx->pckr, 4);
+    msgpack_pack_bin_body(&ctx->pckr, "free", 4);
     msgpack_pack_uint32(&ctx->pckr, freeram);
 
     flb_debug("[in_mem] memory total %d kb, free %d kb (buffer=%i)",
