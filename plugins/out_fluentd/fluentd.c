@@ -22,6 +22,7 @@
 #include <unistd.h>
 #include <assert.h>
 
+#include <msgpack.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_network.h>
@@ -67,21 +68,83 @@ int cb_fluentd_pre_run(void *out_context, struct flb_config *config)
 int cb_fluentd_flush(void *data, size_t bytes, void *out_context,
                      struct flb_config *config)
 {
-    int fd, len;
+    int fd;
+    int ret = -1;
+    int maps = 0;
+    size_t total;
+    char *buf = NULL;
+    msgpack_packer   mp_pck;
+    msgpack_sbuffer  mp_sbuf;
+    msgpack_unpacked mp_umsg;
+    size_t mp_upos = 0;
     (void) out_context;
     (void) config;
+
+    /*
+     * The incoming data comes in Fluent Bit format an array of objects, as we
+     * aim to send this information to Fluentd through it in_forward plugin, we
+     * need to transform the data. The Fluentd in_forward plugin allows one
+     * of the following formats:
+     *
+     *   1. [tag, time, record]
+     *
+     *    or
+     *
+     *   2. [tag, [[time,record], [time,record], ...]]
+     *
+     *   we use the format #2
+     */
+
+    /* Initialize packager */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    /*
+     * Count the number of map entries
+     *
+     * FIXME: Fluent Bit should expose the number of maps into the
+     * data, so we avoid this silly counting.
+     */
+    msgpack_unpacked_init(&mp_umsg);
+    while (msgpack_unpack_next(&mp_umsg, data, bytes, &mp_upos)) {
+        maps++;
+    }
+    msgpack_unpacked_destroy(&mp_umsg);
+
+    /* Output: root array */
+    msgpack_pack_array(&mp_pck, 2);
+    msgpack_pack_bin(&mp_pck, sizeof(FLB_CONFIG_DEFAULT_TAG) - 1);
+    msgpack_pack_bin_body(&mp_pck,
+                          FLB_CONFIG_DEFAULT_TAG,
+                          sizeof(FLB_CONFIG_DEFAULT_TAG) - 1);
+    msgpack_pack_array(&mp_pck, maps);
+
+    /* Allocate a new buffer to merge data */
+    total = bytes + mp_sbuf.size;
+    buf = malloc(total);
+    if (!buf) {
+        perror("malloc");
+        return -1;
+    }
+
+    memcpy(buf, mp_sbuf.data, mp_sbuf.size);
+    memcpy(buf + mp_sbuf.size, data, bytes);
+    msgpack_sbuffer_destroy(&mp_sbuf);
 
     fd = flb_net_tcp_connect(out_fluentd_plugin.host,
                              out_fluentd_plugin.port);
     if (fd <= 0) {
+        free(buf);
         return -1;
     }
 
-    /* FIXME: plain TCP write */
-    len = write(fd, data, bytes);
-    close(fd);
 
-    return len;
+    /* FIXME: plain TCP write */
+    ret = write(fd, buf, total);
+    close(fd);
+    free(buf);
+
+    return ret;
 }
 
 /* Plugin reference */
