@@ -45,6 +45,8 @@ int in_http_init(struct flb_config *config)
 /* Callback invoked after setup but before to join the main loop */
 int in_http_pre_run(void *in_context, struct flb_config *config)
 {
+    /* EXPERIMENTAL!!! */
+    mk_server_loop();
     return 0;
 }
 
