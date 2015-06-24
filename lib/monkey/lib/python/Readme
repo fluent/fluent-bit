@@ -1,0 +1,28 @@
+Requirements
+============
+
+- python
+- python-dev (Python development files)
+- cython
+
+
+Compile the Monkey C Library
+============================
+
+$ cd ../..
+$ ./configure --enable-shared --python
+
+
+Build the python extension
+==========================
+
+$ python setup.py build_ext -i
+
+
+Install the python extension
+============================
+
+# python setup.py install
+
+In order to use the monkey module aftewards,
+install the C library to a system default location.

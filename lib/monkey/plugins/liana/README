@@ -1,0 +1,7 @@
+Liana Networking Plugin
+=======================
+
+Liana is the base network plugin for Monkey, it provides the
+most basic socket calls such as: accept(), read(), write() etc.
+
+Without Liana do not expect a default HTTP Server working :)

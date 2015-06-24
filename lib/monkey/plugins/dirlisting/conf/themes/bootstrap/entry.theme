@@ -1,0 +1,5 @@
+<tr>
+  <td><a title='%_target_title_%' href='%_target_url_%'>%_target_name_%</a></td>
+  <td>%_target_time_%</td>
+  <td>%_target_size_%</td>
+</tr>

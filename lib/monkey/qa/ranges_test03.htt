@@ -1,0 +1,45 @@
+###############################################################################
+# DESCRIPTION
+#	Test partial content request. Range type: x-y (between offsets x and y inc.)
+#
+# AUTHOR
+#	Carlos Ghan <charlie.brown.uy@gmail.com>
+#
+# DATE
+#	February 02 2010	
+#
+# COMMENTS
+#	RFC 2616 Section 14.35
+###############################################################################
+
+
+INCLUDE __CONFIG
+INCLUDE __MACROS
+
+# Start offset
+SET OFF_START=100
+
+# End offset
+SET OFF_END=200
+
+CLIENT
+_CALL INIT
+_CALL TESTDOC_GETSIZE
+
+_REQ $HOST $PORT
+__GET /$TEST_DOC $HTTPVER
+__Host: $HOST
+__Range: bytes=${OFF_START}-${OFF_END}
+__Connection: close
+__
+
+# Content length = end_offset - start_offset + 1
+_OP $OFF_END SUB $OFF_START CLEN
+_OP $CLEN ADD 1 CLEN
+
+_EXPECT . "HTTP/1.1 206 Partial Content"
+_EXPECT . "Date:"
+_EXPECT . "Content-Range: bytes ${OFF_START}-${OFF_END}/${TEST_DOC_LEN}"
+_EXPECT . "Content-Length: $CLEN"
+_WAIT
+END

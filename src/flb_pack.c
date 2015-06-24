@@ -39,6 +39,9 @@ static jsmntok_t *json_tokenise(char *js, size_t len, int *arr_size)
     while (ret == JSMN_ERROR_NOMEM) {
         n = n * 2 + 1;
         tokens = realloc(tokens, sizeof(jsmntok_t) * n);
+        if (!tokens) {
+            goto error;
+        }
         ret = jsmn_parse(&parser, js, len, tokens, n);
     }
 
@@ -106,8 +109,8 @@ char *flb_pack_json(char *tag, char *js, size_t len, int *size)
             break;
         case JSMN_STRING:
             flb_debug("json_pack: token=%i is STRING (len=%i)\n", i, flen);
-            msgpack_pack_raw(&pck, flen);
-            msgpack_pack_raw_body(&pck, js + t->start, flen);
+            msgpack_pack_bin(&pck, flen);
+            msgpack_pack_bin_body(&pck, js + t->start, flen);
             break;
         case JSMN_PRIMITIVE:
             p = js + t->start;

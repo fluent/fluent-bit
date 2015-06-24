@@ -62,7 +62,7 @@ int cb_td_pre_run(void *out_context, struct flb_config *config)
 
     fd = flb_net_tcp_connect(out_td_plugin.host,
                              out_td_plugin.port);
-    if (fd <= 0) {
+    if (fd == -1) {
         return -1;
     }
 
@@ -93,7 +93,7 @@ int cb_td_flush(void *data, size_t bytes, void *out_context,
     }
     free(request);
 
-    n = read(ctx->fd, buf, 4096);
+    n = read(ctx->fd, buf, sizeof(buf) - 1);
     buf[n] = '\0';
 
     flb_debug("[TD] API server response:\n%s", buf);

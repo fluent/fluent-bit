@@ -142,6 +142,7 @@ int main(int argc, char **argv)
             break;
         case 'h':
             flb_help(EXIT_SUCCESS, config);
+            break;
         case 'v':
             flb_version();
             exit(EXIT_SUCCESS);

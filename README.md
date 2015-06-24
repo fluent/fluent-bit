@@ -75,4 +75,7 @@ This program is under the terms of the [Apache License v2.0](http://www.apache.o
 
 ## Contact
 
-irc.freenode.net #fluent-bit
+Feel free to join us on our Mailing List or IRC:
+
+ - Mailing List: https://groups.google.com/forum/#!forum/fluent-bit
+ - IRC: irc.freenode.net #fluent-bit

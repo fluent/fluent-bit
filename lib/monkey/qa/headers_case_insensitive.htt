@@ -1,0 +1,36 @@
+################################################################################
+# DESCRIPTION
+#	Test that headers are treated as case insensitive. (RFC2616 Section 4.2)	
+#
+# AUTHOR
+#	Carlos Ghan <charlie.brown.uy@gmail.com>	
+#
+# DATE
+#	June 29 2009
+################################################################################
+
+
+INCLUDE __CONFIG
+CLIENT
+_REQ $HOST $PORT
+__GET / $HTTPVER
+__HOST: $HOST
+__CONNECTION: close
+__
+_EXPECT . "HTTP/1.1 200 OK"
+_WAIT
+_CLOSE
+
+_REQ $HOST $PORT
+__POST / $HTTPVER
+__HOST: $HOST
+__CONNECTION: close
+__CONTENT-TYPE: text/plain
+__CONTENT-LENGTH: AUTO
+__
+_-This is a test entity body.
+_EXPECT . "HTTP/1.1 200 OK"
+_WAIT
+_CLOSE
+
+END

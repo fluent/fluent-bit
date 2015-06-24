@@ -1,0 +1,19 @@
+language: c
+
+os:
+  - linux
+  - osx
+
+compiler:
+  - gcc
+  - clang
+
+notifications:
+  irc: "irc.freenode.net#monkey"
+
+# Disable SSL as the test box have a old PolarSSL version (Ubuntu 12.04)
+# before_install:
+#  - sudo apt-get update -qq
+#  - sudo apt-get install -y libpolarssl-dev
+
+script: ./configure --trace && make

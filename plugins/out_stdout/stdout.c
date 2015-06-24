@@ -40,6 +40,7 @@ int cb_stdout_flush(void *data, size_t bytes, void *out_context,
 
     (void) out_context;
     (void) config;
+
     /* See: in_forward.rb of fluentd.
      *
      * message Entry {

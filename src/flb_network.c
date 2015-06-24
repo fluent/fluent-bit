@@ -54,17 +54,24 @@ int flb_net_socket_reset(int sockfd)
 int flb_net_socket_tcp_nodelay(int sockfd)
 {
     int on = 1;
-    return setsockopt(sockfd, SOL_TCP, TCP_NODELAY, &on, sizeof(on));
+    int ret;
+
+    ret = setsockopt(sockfd, SOL_TCP, TCP_NODELAY, &on, sizeof(on));
+    if (ret == -1) {
+        perror("setsockopt");
+        return -1;
+    }
+
+    return 0;
 }
 
 int flb_net_socket_nonblocking(int sockfd)
 {
     if (fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFL, 0) | O_NONBLOCK) == -1) {
+        perror("fcntl");
         return -1;
     }
-    fcntl(sockfd, F_SETFD, FD_CLOEXEC);
-
-    return 0;
+    return fcntl(sockfd, F_SETFD, FD_CLOEXEC);
 }
 
 /*
@@ -85,10 +92,11 @@ int flb_net_socket_create(int family, int nonblock)
 
     /* create the socket and set the nonblocking flag status */
     fd = socket(family, SOCK_STREAM, 0);
-    if (fd <= 0) {
+    if (fd == -1) {
         perror("socket");
         return -1;
     }
+
     if (nonblock) {
         flb_net_socket_tcp_nodelay(fd);
     }

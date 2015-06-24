@@ -1,0 +1,58 @@
+<HTML>
+	<HEAD>
+		<META http-equiv="content-type" content="text/html; charset=UTF-8">
+		<STYLE type="text/css">
+		H1.header {
+			    text-align: center;
+			    color: #4a77a0;
+			    font-size: 12pt;
+			    font-weight: bold;
+		}
+		.row {
+			color: #6c95bc;
+			font-size: 10pt;
+			background-color: #ffffff;
+			padding-left: 0.4em;
+		}
+		.title {color: #617691; font-size: 10pt; font-weight: bold;}
+
+		a:link { 
+			color: #475f7e;
+		}
+		a:visited { 
+			color: #ac7a2a;
+		}
+		a:hover { 
+			color: #475f7e;
+			background-color: #dbdbdb;
+			text-decoration: none;
+		}
+		a:active { 
+			color: #333333;
+		}
+		</STYLE>
+
+		<TITLE>Index of %_html_title_%</TITLE>
+	</HEAD>
+<BODY>
+
+<CENTER>
+<IMG src="/imgs/monkey_logo.png">
+<BR>
+<h1 class="header">Index of %_html_title_%</h1>
+<TABLE cellpadding="0" cellspacing="0" border="0" bgcolor="#000000" width="50%">
+<TR>
+<TD>
+
+<TABLE cellpadding="2" cellspacing="1" border="0" bgcolor="#e7e7e7" width="100%">
+<TR bgcolor="#ececec">
+	<TD class="title">
+		Name
+	</TD>
+	<TD class="title">
+		Last time modified
+	</TD>
+	<TD class="title">
+		Size
+	</TD>
+</TR>
