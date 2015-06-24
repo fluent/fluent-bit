@@ -69,8 +69,6 @@ void *in_serial_flush(void *in_context, int *size)
 static inline int process_line(char *line, struct flb_in_serial_config *ctx)
 {
     char priority;           /* log priority                */
-    struct timeval tv;       /* time value                  */
-    double ts;               /* epoch time                  */
     int line_len;
     uint64_t val;
     char *p = line;
@@ -87,11 +85,6 @@ static inline int process_line(char *line, struct flb_in_serial_config *ctx)
         goto fail;
     }
 
-    /* timestamp */
-
-    gettimeofday(&tv, NULL);
-    ts = ((double)(tv.tv_sec) + (double)(tv.tv_usec) * 0.001 * 0.001);
-
     /* Now process the human readable message */
 
     line_len = strlen(p);
@@ -102,20 +95,16 @@ static inline int process_line(char *line, struct flb_in_serial_config *ctx)
      * Store the new data into the MessagePack buffer,
      * we handle this as a list of maps.
      */
-    msgpack_pack_map(&ctx->mp_pck, 2);
+    msgpack_pack_array(&ctx->mp_pck, 2);
+    msgpack_pack_uint64(&ctx->mp_pck, time(NULL));
 
-    msgpack_pack_bin(&ctx->mp_pck, 4);
-    msgpack_pack_bin_body(&ctx->mp_pck, "time", 4);
-    msgpack_pack_uint64(&ctx->mp_pck, ts);
-    //msgpack_pack_double(&ctx->mp_pck, ts);
-
+    msgpack_pack_map(&ctx->mp_pck, 1);
     msgpack_pack_bin(&ctx->mp_pck, 3);
     msgpack_pack_bin_body(&ctx->mp_pck, "msg", 3);
     msgpack_pack_bin(&ctx->mp_pck, line_len);
     msgpack_pack_bin_body(&ctx->mp_pck, p, line_len);
 
-    flb_debug("[in_serial] ts=%f '%s'",
-              ts,
+    flb_debug("[in_serial] '%s'",
               (const char *) msg);
 
     return 0;
