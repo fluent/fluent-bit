@@ -162,6 +162,9 @@ int flb_engine_start(struct flb_config *config)
 
     flb_info("starting engine");
 
+    /* Initialize input plugins */
+    flb_input_initialize_all(config);
+
     /* Inputs pre-run */
     flb_input_pre_run_all(config);
 
