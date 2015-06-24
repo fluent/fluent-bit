@@ -160,9 +160,9 @@ struct mk_http_session
 static inline void mk_http_status_completed(struct mk_http_session *cs,
                                             struct mk_sched_conn *conn)
 {
+    (void) conn;
     mk_bug(cs->status == MK_REQUEST_STATUS_COMPLETED);
     cs->status = MK_REQUEST_STATUS_COMPLETED;
-    mk_list_del(&conn->timeout_head);
 }
 
 int mk_http_error(int http_status, struct mk_http_session *cs,

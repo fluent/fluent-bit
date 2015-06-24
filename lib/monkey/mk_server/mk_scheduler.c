@@ -186,12 +186,13 @@ struct mk_sched_conn *mk_sched_add_connection(int remote_fd,
     }
 
     event = &conn->event;
-    event->fd         = remote_fd;
-    event->type       = MK_EVENT_CONNECTION;
-    event->mask       = MK_EVENT_EMPTY;
-    conn->arrive_time = log_current_utime;
-    conn->protocol    = handler;
-    conn->net         = listener->network->network;
+    event->fd           = remote_fd;
+    event->type         = MK_EVENT_CONNECTION;
+    event->mask         = MK_EVENT_EMPTY;
+    conn->arrive_time   = log_current_utime;
+    conn->protocol      = handler;
+    conn->net           = listener->network->network;
+    conn->is_timeout_on = MK_FALSE;
 
     /* Stream channel */
     conn->channel.type = MK_CHANNEL_SOCKET;    /* channel type  */
@@ -435,7 +436,6 @@ int mk_sched_remove_client(struct mk_sched_conn *conn,
                            struct mk_sched_worker *sched)
 {
     struct mk_event *event;
-
     /*
      * Close socket and change status: we must invoke mk_epoll_del()
      * because when the socket is closed is cleaned from the queue by
@@ -454,20 +454,14 @@ int mk_sched_remove_client(struct mk_sched_conn *conn,
 
     /* Unlink from the red-black tree */
     rb_erase(&conn->_rb_head, &sched->rb_queue);
+    mk_sched_conn_timeout_del(conn);
 
-
-    /* Only close if this was our connection.
-     *
-     * This has to happen _after_ the busy list removal,
-     * otherwise we could get a new client accept()ed with
-     * the same FD before we do the removal from the busy list,
-     * causing ghosts.
-     */
+    /* Close - network layer */
     conn->net->close(event->fd);
 
+    /* Release and return */
     mk_mem_free(conn);
     MK_LT_SCHED(remote_fd, "DELETE_CLIENT");
-
     return 0;
 }
 
@@ -536,7 +530,6 @@ int mk_sched_check_timeouts(struct mk_sched_worker *sched)
             MK_TRACE("Scheduler, closing fd %i due TIMEOUT",
                      conn->event.fd);
             MK_LT_SCHED(conn->event.fd, "TIMEOUT_CONN_PENDING");
-
             conn->protocol->cb_close(conn, sched, MK_SCHED_CONN_TIMEOUT);
             mk_sched_drop_connection(conn, sched);
         }

@@ -98,14 +98,15 @@ struct mk_sched_worker
 /* Every connection in the server is represented by this structure */
 struct mk_sched_conn
 {
-    struct mk_event event;             /* event loop context         */
-    int status;                        /* connection status          */
-    time_t arrive_time;                /* arrive time                */
-    struct mk_sched_handler *protocol; /* protocol handler           */
-    struct mk_plugin_network *net;     /* I/O network layer          */
-    struct mk_channel channel;         /* stream channel             */
-    struct mk_list timeout_head;       /* link to the incoming queue */
-    struct rb_node _rb_head;           /* red-black tree head        */
+    struct mk_event event;             /* event loop context           */
+    int status;                        /* connection status            */
+    char is_timeout_on;                /* registered to timeout queue? */
+    time_t arrive_time;                /* arrive time                  */
+    struct mk_sched_handler *protocol; /* protocol handler             */
+    struct mk_plugin_network *net;     /* I/O network layer            */
+    struct mk_channel channel;         /* stream channel               */
+    struct mk_list timeout_head;       /* link to the timeout queue    */
+    struct rb_node _rb_head;           /* red-black tree head          */
 };
 
 /*
@@ -234,14 +235,19 @@ int mk_sched_event_close(struct mk_sched_conn *conn,
 static inline void mk_sched_conn_timeout_add(struct mk_sched_conn *conn,
                                              struct mk_sched_worker *sched)
 {
-    mk_list_add(&conn->timeout_head, &sched->timeout_queue);
+    if (conn->is_timeout_on == MK_FALSE) {
+        mk_list_add(&conn->timeout_head, &sched->timeout_queue);
+        conn->is_timeout_on = MK_TRUE;
+    }
 }
 
 static inline void mk_sched_conn_timeout_del(struct mk_sched_conn *conn)
 {
-    mk_list_del(&conn->timeout_head);
+    if (conn->is_timeout_on == MK_TRUE) {
+        mk_list_del(&conn->timeout_head);
+        conn->is_timeout_on = MK_FALSE;
+    }
 }
-
 
 #define mk_sched_conn_read(conn, buf, s)        \
     conn->net->read(conn->event.fd, buf, s)
