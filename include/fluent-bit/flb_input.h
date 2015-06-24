@@ -106,6 +106,7 @@ int flb_input_set_collector_event(char *name,
                                   int (*cb_collect) (struct flb_config *, void *),
                                   int fd,
                                   struct flb_config *config);
+void flb_input_initialize_all(struct flb_config *config);
 void flb_input_pre_run_all(struct flb_config *config);
 
 #endif
