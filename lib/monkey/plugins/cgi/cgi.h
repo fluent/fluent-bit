@@ -29,6 +29,7 @@
 #include <libgen.h>
 
 enum {
+    BUFLEN  = 4096,
     PATHLEN = 1024,
     SHORTLEN = 64
 };
@@ -61,8 +62,10 @@ struct mk_list cgi_global_matches;
 
 
 struct cgi_request {
+    /* Built-in reference for the event loop */
+    struct mk_event  event;
 
-    char in_buf[PATHLEN];
+    char in_buf[BUFLEN];
 
     struct mk_list _head;
 
@@ -85,6 +88,7 @@ pthread_key_t cgi_request_list;
 extern struct cgi_request **requests_by_socket;
 
 int swrite(const int fd, const void *buf, const size_t count);
+int channel_write(struct mk_http_session *session, void *buf, size_t count);
 
 struct cgi_request *cgi_req_create(int fd, int socket,
                                    struct mk_http_request *sr,
@@ -118,5 +122,7 @@ static inline struct cgi_request *cgi_req_get_by_fd(int fd)
 
     return NULL;
 }
+
+int cb_cgi_read(void *data);
 
 #endif

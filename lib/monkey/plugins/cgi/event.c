@@ -18,7 +18,6 @@
  */
 
 #include "cgi.h"
-#include <fcntl.h>
 
 /* Get the earliest break between headers and content.
 
@@ -56,225 +55,122 @@ static char *getearliestbreak(const char buf[], const unsigned bufsize,
     return crend;
 }
 
-static void done(struct cgi_request * const r) {
-
-    if (!r)
-        return;
-
-    /* If the CGI app is fast, we might get a hangup event before
-     * a write event. Try to write things out first. */
-    _mkp_event_write(r->socket);
-
-    mk_api->event_del(r->fd);
-
-    if (r->chunked)
-    {
-        swrite(r->socket, "0\r\n\r\n", 5);
+static void cgi_done(struct cgi_request *r)
+{
+    mk_api->ev_del(mk_api->sched_loop(), (struct mk_event *) r);
+    if (r->chunked) {
+        channel_write(r->sr->session, "0\r\n\r\n", 5);
     }
 
     /* XXX Fixme: this needs to be atomic */
     requests_by_socket[r->socket] = NULL;
 
     /* Note: Must make sure we ignore the close event caused by this line */
-    mk_api->http_request_end(r->socket);
-    mk_api->socket_close(r->fd);
-
-
+    mk_api->http_session_end(r->cs);
+    //mk_api->socket_close(r->fd);
     cgi_req_del(r);
 }
 
-static int hangup(const int socket)
+int process_cgi_data(struct cgi_request *r)
 {
-    struct cgi_request *r = cgi_req_get_by_fd(socket);
+    int ret;
+    int len;
+    int status;
+    char *buf = r->in_buf;
+    char *outptr = r->in_buf;
+    char *end;
+    char *endl;
+    unsigned char advance;
 
-    if (r) {
-
-        /* This kind of sucks, but epoll can give a hangup while
-           we still have a lot of data to read.
-
-           At this point we must turn the socket to blocking, otherwise
-           the data won't get across fully.
-        */
-
-        fcntl(r->socket, F_SETFL, fcntl(r->socket, F_GETFL, 0) & ~O_NONBLOCK);
-        while (1) {
-            int ret = _mkp_event_read(socket);
-            if (ret == MK_PLUGIN_RET_EVENT_CLOSE) {
-                done(r);
-                break;
+    mk_api->socket_cork_flag(r->cs->socket, TCP_CORK_OFF);
+    if (!r->status_done && r->in_len >= 8) {
+        if (memcmp(buf, "Status: ", 8) == 0) {
+            status = atoi(buf + 8);
+            mk_api->header_set_http_status(r->sr, status);
+            endl = memchr(buf + 8, '\n', r->in_len - 8);
+            if (!endl) {
+                return MK_PLUGIN_RET_EVENT_OWNED;
             }
-
-            ret = _mkp_event_write(r->socket);
-            if (ret == MK_PLUGIN_RET_EVENT_CLOSE) {
-                done(r);
-                break;
+            else {
+                endl++;
+                outptr = endl;
+                r->in_len -= endl - buf;
             }
         }
+        else if (memcmp(buf, "HTTP", 4) == 0) {
+            status = atoi(buf + 9);
+            mk_api->header_set_http_status(r->sr, status);
 
-        return MK_PLUGIN_RET_EVENT_OWNED;
-
-    } else if ((r = cgi_req_get(socket))) {
-
-        /* If this was closed by us, do nothing */
-        if (!requests_by_socket[r->socket])
-            return MK_PLUGIN_RET_EVENT_OWNED;
-
-        mk_api->event_del(r->fd);
-        mk_api->socket_close(r->fd);
-
-        /* XXX Fixme: this needs to be atomic */
-        requests_by_socket[r->socket] = NULL;
-
-        cgi_req_del(r);
-
-        return MK_PLUGIN_RET_EVENT_OWNED;
+            endl = memchr(buf + 8, '\n', r->in_len - 8);
+            if (!endl) {
+                return MK_PLUGIN_RET_EVENT_OWNED;
+            }
+            else {
+                endl++;
+                outptr = endl;
+                r->in_len -= endl - buf;
+            }
+        }
+        mk_api->header_prepare(r->cs, r->sr);
+        r->status_done = 1;
     }
 
-    return MK_PLUGIN_RET_EVENT_CONTINUE;
-}
+    if (!r->all_headers_done) {
+        advance = 4;
 
-int _mkp_event_write(int socket)
-{
-    struct cgi_request *r = cgi_req_get(socket);
-    if (!r) return MK_PLUGIN_RET_EVENT_NEXT;
-
-    if (r->in_len > 0) {
-
-        mk_api->socket_cork_flag(socket, TCP_CORK_ON);
-
-        const char * const buf = r->in_buf, *outptr = r->in_buf;
-
-        if (!r->status_done && r->in_len >= 8) {
-            if (memcmp(buf, "Status: ", 8) == 0) {
-                int status = atoi(buf + 8);
-                mk_api->header_set_http_status(r->sr, status);
-
-                char *endl = memchr(buf + 8, '\n', r->in_len - 8);
-                if (!endl) {
-                    return MK_PLUGIN_RET_EVENT_OWNED;
-                }
-                else {
-                    endl++;
-                    outptr = endl;
-                    r->in_len -= endl - buf;
-                }
-
-            }
-            else if (memcmp(buf, "HTTP", 4) == 0) {
-                int status = atoi(buf + 9);
-                mk_api->header_set_http_status(r->sr, status);
-
-                char *endl = memchr(buf + 8, '\n', r->in_len - 8);
-                if (!endl) {
-                    return MK_PLUGIN_RET_EVENT_OWNED;
-                }
-                else {
-                    endl++;
-                    outptr = endl;
-                    r->in_len -= endl - buf;
-                }
-            }
-
-            mk_api->header_send(socket, r->cs, r->sr);
-
-            r->status_done = 1;
+        /* Write the rest of the headers without chunking */
+        end = getearliestbreak(outptr, r->in_len, &advance);
+        if (!end) {
+            channel_write(r->cs, outptr, r->in_len);
+            r->in_len = 0;
+            return MK_PLUGIN_RET_EVENT_OWNED;
         }
+        end += advance;
+        len = end - outptr;
+        channel_write(r->cs, outptr, len);
+        outptr += len;
+        r->in_len -= len;
 
-        if (!r->all_headers_done)
-        {
-            unsigned char advance = 4;
-
-            // Write the rest of the headers without chunking
-            char *end = getearliestbreak(outptr, r->in_len, &advance);
-            if (!end)
-            {
-                swrite(socket, outptr, r->in_len);
-                r->in_len = 0;
-                mk_api->event_socket_change_mode(socket, MK_EVENT_SLEEP, -1);
-                return MK_PLUGIN_RET_EVENT_OWNED;
-            }
-
-            end += advance;
-
-            int len = end - outptr;
-
-            swrite(socket, outptr, len);
-            outptr += len;
-            r->in_len -= len;
-
-            r->all_headers_done = 1;
-
-            if (r->in_len == 0)
-            {
-                mk_api->event_socket_change_mode(socket, MK_EVENT_SLEEP, -1);
-                return MK_PLUGIN_RET_EVENT_OWNED;
-            }
+        r->all_headers_done = 1;
+        if (r->in_len == 0) {
+            return MK_PLUGIN_RET_EVENT_OWNED;
         }
+    }
 
-        int ret;
-
-        if (r->chunked)
-        {
-            char tmp[16];
-            int len = snprintf(tmp, 16, "%x%s", r->in_len, MK_CRLF);
-            ret = swrite(socket, tmp, len);
-            if (ret < 0)
-                return MK_PLUGIN_RET_EVENT_CLOSE;
-        }
-
-        ret = swrite(socket, outptr, r->in_len);
+    if (r->chunked) {
+        char tmp[16];
+        len = snprintf(tmp, 16, "%x%s", r->in_len, MK_CRLF);
+        ret = channel_write(r->cs, tmp, len);
         if (ret < 0)
             return MK_PLUGIN_RET_EVENT_CLOSE;
-
-        r->in_len = 0;
-        mk_api->event_socket_change_mode(socket, MK_EVENT_SLEEP, -1);
-        mk_api->event_socket_change_mode(r->fd, MK_EVENT_READ, -1);
-
-        if (r->chunked)
-        {
-            swrite(socket, MK_CRLF, 2);
-        }
-
-        mk_api->socket_cork_flag(socket, TCP_CORK_OFF);
     }
 
-    return MK_PLUGIN_RET_EVENT_OWNED;
-}
-
-int _mkp_event_read(int fd)
-{
-    struct cgi_request *r = cgi_req_get_by_fd(fd);
-    if (!r) return MK_PLUGIN_RET_EVENT_NEXT;
-
-    size_t count = PATHLEN - r->in_len;
-
-    /* Too much to read? Start writing. */
-    if (count < 1)
-    {
-        mk_api->event_socket_change_mode(r->fd, MK_EVENT_SLEEP, -1);
-        goto out;
-    }
-
-    int n = read(r->fd, r->in_buf + r->in_len, count);
-
-    if (n <=0)
+    ret = channel_write(r->cs, outptr, r->in_len);
+    if (ret < 0) {
         return MK_PLUGIN_RET_EVENT_CLOSE;
+    }
 
-    r->in_len += n;
-
-out:
-    /* Now we do have something to write */
-    mk_api->event_socket_change_mode(r->socket, MK_EVENT_WRITE, -1);
-
+    r->in_len = 0;
+    if (r->chunked) {
+        channel_write(r->sr->session, MK_CRLF, 2);
+    }
     return MK_PLUGIN_RET_EVENT_OWNED;
 }
 
-int _mkp_event_close(int socket)
+int cb_cgi_read(void *data)
 {
-    return hangup(socket);
-}
+    int n;
+    struct cgi_request *r = data;
 
-int _mkp_event_error(int socket)
-{
-    return hangup(socket);
+    /* Read data from the CGI process */
+    n = read(r->fd, r->in_buf, BUFLEN);
+    PLUGIN_TRACE("CGI returned %lu bytes", n);
+    if (n <= 0) {
+        cgi_done(r);
+        return MK_PLUGIN_RET_EVENT_CLOSE;
+    }
+    r->in_len = n;
+
+    process_cgi_data(r);
+    return 0;
 }

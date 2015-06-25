@@ -545,7 +545,7 @@ int mk_sched_check_timeouts(struct mk_sched_worker *sched)
 int mk_sched_event_read(struct mk_sched_conn *conn,
                         struct mk_sched_worker *sched)
 {
-    int ret;
+    int ret = 0;
     size_t count;
     size_t total = 0;
     struct mk_event *event;

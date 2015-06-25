@@ -77,6 +77,60 @@ static inline size_t channel_write_stream_file(struct mk_channel *channel,
     return bytes;
 }
 
+static inline void mk_copybuf_consume(struct mk_stream *stream, size_t bytes)
+{
+    /*
+     * Copybuf is a dynamic buffer allocated when the stream was configured,
+     * if the number of bytes consumed is equal to the total size, the buffer
+     * can be freed, otherwise we need to adjust the buffer for the next
+     * round of 'write'.
+     *
+     * Note: we don't touch the stream->bytes_total field as this is adjusted
+     * on the caller mk_channel_write().
+     */
+    if (bytes == stream->bytes_total) {
+        mk_mem_free(stream->buffer);
+    }
+    else {
+        memmove(stream->buffer,
+                stream->buffer + bytes,
+                stream->bytes_total - bytes);
+    }
+}
+
+/*
+ * It 'intent' to write a few streams over the channel and alter the
+ * channel notification side if required: READ -> WRITE.
+ */
+int mk_channel_flush(struct mk_channel *channel)
+{
+    int ret = 0;
+    size_t count;
+    size_t total = 0;
+
+    do {
+        ret = mk_channel_write(channel, &count);
+        total += count;
+    } while (total <= 4096 && //sched->mem_pagesize &&
+             (ret & ~(MK_CHANNEL_DONE | MK_CHANNEL_ERROR | MK_CHANNEL_EMPTY)));
+
+    if (ret == MK_CHANNEL_DONE) {
+        return ret;
+    }
+    else if (ret & (MK_CHANNEL_FLUSH | MK_CHANNEL_BUSY)) {
+        if (channel->event.mask & ~MK_EVENT_WRITE) {
+            mk_event_add(mk_sched_loop(),
+                         channel->event.fd,
+                         MK_EVENT_CONNECTION,
+                         MK_EVENT_WRITE,
+                         (void *) &channel->event);
+        }
+    }
+
+    return ret;
+}
+
+/* It perform a direct stream I/O write through the network layer */
 int mk_channel_write(struct mk_channel *channel, size_t *count)
 {
     ssize_t bytes = -1;
@@ -119,6 +173,15 @@ int mk_channel_write(struct mk_channel *channel, size_t *count)
             bytes = mk_sched_conn_write(channel, ptr->data, ptr->len);
             if (bytes > 0) {
                 /* FIXME OFFSET */
+            }
+        }
+        else if (stream->type == MK_STREAM_COPYBUF) {
+            MK_TRACE("[CH %i] STREAM_COPYBUF, bytes=%lu",
+                     channel->fd, stream->bytes_total);
+            bytes = mk_sched_conn_write(channel,
+                                        stream->buffer, stream->bytes_total);
+            if (bytes > 0) {
+                mk_copybuf_consume(stream, bytes);
             }
         }
 

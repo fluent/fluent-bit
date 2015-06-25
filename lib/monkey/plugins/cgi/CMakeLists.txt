@@ -5,3 +5,4 @@ set(src
   )
 
 MONKEY_PLUGIN(cgi "${src}")
+add_subdirectory(conf)

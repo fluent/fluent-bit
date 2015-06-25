@@ -30,15 +30,26 @@ int swrite(const int fd, const void *buf, const size_t count)
 
     while (pos > 0 && ret >= 0) {
         ret = write(fd, buf, pos);
-
-        if (ret < 0)
+        if (ret < 0) {
             return ret;
+        }
 
         pos -= ret;
         buf += ret;
     }
-
     return count;
+}
+
+int channel_write(struct mk_http_session *session, void *buf, size_t count)
+{
+    mk_stream_set(NULL,
+                  MK_STREAM_COPYBUF,
+                  session->channel,
+                  buf,
+                  count,
+                  NULL, NULL, NULL, NULL);
+    mk_api->channel_flush(session->channel);
+    return 0;
 }
 
 static void cgi_write_post(void *p)
@@ -59,17 +70,21 @@ static int do_cgi(const char *const __restrict__ file,
     int ret;
     const int socket = cs->socket;
     struct file_info finfo;
-
+    struct cgi_request *r = NULL;
+    struct mk_event *event;
     char *env[30];
+    int writepipe[2], readpipe[2];
+    (void) plugin;
 
     /* Unchanging env vars */
     env[0] = "PATH_INFO=";
     env[1] = "GATEWAY_INTERFACE=CGI/1.1";
     env[2] = "REDIRECT_STATUS=200";
     const int env_start = 3;
+    char *protocol;
+    unsigned long len;
 
     /* Dynamic env vars */
-
     unsigned short envpos = env_start;
 
     char method[SHORTLEN];
@@ -108,7 +123,6 @@ static int do_cgi(const char *const __restrict__ file,
     snprintf(http_host, SHORTLEN, "HTTP_HOST=%.*s", (int) sr->host.len, sr->host.data);
     env[envpos++] = http_host;
 
-    char *protocol;
     if (sr->protocol == MK_HTTP_PROTOCOL_11)
         protocol = MK_HTTP_PROTOCOL_11_STR;
     else
@@ -139,7 +153,6 @@ static int do_cgi(const char *const __restrict__ file,
         mk_api->mem_free(query);
     }
 
-    unsigned long len;
     if (mk_api->socket_ip_str(socket, &ptr, INET6_ADDRSTRLEN, &len) < 0)
         tmpaddr[0] = '\0';
     snprintf(remote_addr, INET6_ADDRSTRLEN+SHORTLEN, "REMOTE_ADDR=%s", tmpaddr);
@@ -163,7 +176,6 @@ static int do_cgi(const char *const __restrict__ file,
     env[envpos] = NULL;
 
     /* pipes, from monkey's POV */
-    int writepipe[2], readpipe[2];
     if (pipe(writepipe) || pipe(readpipe)) {
         mk_err("Failed to create pipe");
         return 403;
@@ -246,8 +258,10 @@ static int do_cgi(const char *const __restrict__ file,
     }
 
 
-    struct cgi_request *r = cgi_req_create(readpipe[0], socket, sr, cs);
-    if (!r) return 403;
+    r = cgi_req_create(readpipe[0], socket, sr, cs);
+    if (!r) {
+        return 403;
+    }
 
     if (r->sr->protocol >= MK_HTTP_PROTOCOL_11 &&
         (r->sr->headers.status < MK_REDIR_MULTIPLE ||
@@ -257,16 +271,28 @@ static int do_cgi(const char *const __restrict__ file,
         r->chunked = 1;
     }
 
-
+    /* Register the 'request' context */
     cgi_req_add(r);
-    mk_api->event_add(readpipe[0], MK_EVENT_READ, plugin, -1);
+
+    /* Prepare the built-in event structure */
+    event = &r->event;
+    event->fd      = readpipe[0];
+    event->type    = MK_EVENT_CUSTOM;
+    event->mask    = MK_EVENT_EMPTY;
+    event->data    = r;
+    event->handler = cb_cgi_read;
+
+    /* Register the event into the worker event-loop */
+    ret = mk_api->ev_add(mk_sched_loop(),
+                         readpipe[0],
+                         MK_EVENT_CUSTOM, MK_EVENT_READ, r);
+    if (ret != 0) {
+        return 403;
+    }
+
 
     /* XXX Fixme: this needs to be atomic */
     requests_by_socket[socket] = r;
-
-    /* We have nothing to write yet */
-    mk_api->event_socket_change_mode(socket, MK_EVENT_SLEEP, -1);
-
     return 200;
 }
 
@@ -286,19 +312,19 @@ static void str_to_regex(char *str, regex_t *reg)
     }
 }
 
-static int cgi_link_matches(struct mk_config_section *section, struct mk_list *list)
+static int cgi_link_matches(struct mk_rconf_section *section, struct mk_list *list)
 {
     int i;
     int n = 0;
     struct mk_list *head;
     struct mk_list *line;
     struct mk_list *head_match;
-    struct mk_config_entry *entry;
+    struct mk_rconf_entry *entry;
     struct mk_string_line *entry_match;
     struct cgi_match_t *match_line = NULL;
 
     mk_list_foreach(head, &section->entries) {
-        entry = mk_list_entry(head, struct mk_config_entry, _head);
+        entry = mk_list_entry(head, struct mk_rconf_entry, _head);
         if (strncasecmp(entry->key, "Match", strlen(entry->key)) == 0) {
             line = mk_api->str_split_line(entry->val);
             if (!line) {
@@ -352,8 +378,8 @@ static void cgi_read_config(const char * const path)
 {
     char *file = NULL;
     unsigned long len;
-    struct mk_config *conf;
-    struct mk_config_section *section;
+    struct mk_rconf *conf;
+    struct mk_rconf_section *section;
 
     mk_api->str_build(&file, &len, "%scgi.conf", path);
     conf = mk_api->config_create(file);
@@ -503,12 +529,11 @@ int mk_cgi_stage30(struct mk_plugin *plugin,
 
     /* These are just for the other plugins, such as logger; bogus data */
     mk_api->header_set_http_status(sr, status);
-
-    if (status != 200)
+    if (status != 200) {
         return MK_PLUGIN_RET_CLOSE_CONX;
+    }
 
     sr->headers.cgi = SH_CGI;
-
     return MK_PLUGIN_RET_CONTINUE;
 }
 

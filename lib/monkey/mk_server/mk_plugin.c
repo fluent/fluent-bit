@@ -222,7 +222,7 @@ void mk_plugin_api_init()
     api->_error = mk_print;
 
     /* HTTP callbacks */
-    api->http_request_end = mk_plugin_http_request_end;
+    api->http_session_end = mk_plugin_http_session_end;
     //    api->http_request_error = mk_http_error;
 
     /* Memory callbacks */
@@ -259,6 +259,7 @@ void mk_plugin_api_init()
     /* Channels / Streams */
     api->stream_new    = mk_stream_new;
     api->channel_new   = mk_channel_new;
+    api->channel_flush = mk_channel_flush;
     api->channel_write = mk_channel_write;
     api->channel_append_stream = mk_channel_append_stream;
     api->stream_set = mk_stream_set;
@@ -317,11 +318,6 @@ void mk_plugin_api_init()
     api->sched_get_connection = mk_sched_get_connection;
     api->sched_remove_client  = mk_plugin_sched_remove_client;
     api->sched_worker_info    = mk_plugin_sched_get_thread_conf;
-
-    //api->event_add = mk_plugin_event_add;
-    //api->event_del = mk_plugin_event_del;
-    //api->event_get = mk_plugin_event_get;
-    //api->event_socket_change_mode = mk_plugin_event_socket_change_mode;
 
     /* Worker functions */
     api->worker_spawn = mk_utils_worker_spawn;
@@ -548,22 +544,16 @@ void mk_plugin_preworker_calls()
     }
 }
 
-int mk_plugin_http_request_end(int socket)
+int mk_plugin_http_session_end(struct mk_http_session *cs)
 {
     int ret;
     int con;
-    struct mk_http_session *cs;
     struct mk_http_request *sr;
 
-    MK_TRACE("[FD %i] PLUGIN HTTP REQUEST END", socket);
-
-    cs = mk_http_session_get(NULL);
-    if (!cs) {
-        return -1;
-    }
+    MK_TRACE("[FD %i] PLUGIN HTTP REQUEST END", cs->socket);
 
     if (!mk_list_is_empty(&cs->request_list)) {
-        mk_err("[FD %i] Tried to end non-existing request.", socket);
+        mk_err("[FD %i] Tried to end non-existing request.", cs->socket);
         return -1;
     }
 
@@ -584,23 +574,6 @@ int mk_plugin_http_request_end(int socket)
         }
     }
 
-    return 0;
-}
-
-int mk_plugin_event_socket_change_mode(int socket, int mode, unsigned int behavior)
-{
-    struct mk_sched_worker *sched;
-    (void) mode;
-    (void) socket;
-    (void) behavior;
-
-    sched = mk_sched_get_thread_conf();
-
-    if (!sched) {
-        return -1;
-    }
-
-    //return mk_event_add(sched->loop, socket, mode, NULL);
     return 0;
 }
 
