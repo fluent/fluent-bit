@@ -43,7 +43,6 @@ static struct flb_input_plugin *plugin_lookup(char *name, struct flb_config *con
 /* Enable an input */
 int flb_input_enable(char *name, struct flb_config *config)
 {
-    int ret;
     struct flb_input_plugin *plugin;
 
     plugin = plugin_lookup(name, config);
@@ -51,21 +50,29 @@ int flb_input_enable(char *name, struct flb_config *config)
         return -1;
     }
 
-    if (!plugin->cb_init) {
-        flb_utils_error(FLB_ERR_INPUT_UNSUP);
-    }
     plugin->active = FLB_TRUE;
 
-    /* Initialize the input */
-    if (plugin->cb_init) {
-        ret = plugin->cb_init(config);
-        if (ret != 0) {
-            flb_error("Failed ininitalize Input %s",
-                      plugin->name);
+    return 0;
+}
+
+/* Initialize all inputs */
+void flb_input_initialize_all(struct flb_config *config)
+{
+    int ret;
+    struct mk_list *head;
+    struct flb_input_plugin *in;
+
+    mk_list_foreach(head, &config->inputs) {
+        in = mk_list_entry(head, struct flb_input_plugin, _head);
+        /* Initialize the input */
+        if (in->active == FLB_TRUE && in->cb_init) {
+            ret = in->cb_init(config);
+            if (ret != 0) {
+                flb_error("Failed ininitalize input %s",
+                in->name);
+            }
         }
     }
-
-    return 0;
 }
 
 /* Invoke all pre-run input callbacks */
