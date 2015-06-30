@@ -31,6 +31,7 @@
 #include <fluent-bit/flb_engine.h>
 
 #include "in_xbee.h"
+#include "in_xbee_config.h"
 
 /*
  * We need to declare the xbee_init() function here as for some reason the
@@ -118,20 +119,34 @@ int in_xbee_init(struct flb_config *config)
 	struct xbee_conAddress address;
     struct flb_in_xbee_config *ctx;
 
-    /* Check an optional baudrate */
-    tmp = getenv("FLB_XBEE_BAUDRATE");
-    if (tmp) {
-        opt_baudrate = atoi(tmp);
+    if (!config->file) {
+        flb_utils_error_c("XBee input plugin needs configuration file");
+        return -1;
     }
 
-    /* Get the target device entry */
-    tmp = getenv("FLB_XBEE_DEVICE");
-    if (tmp) {
-        opt_device = strdup(tmp);
-    }
-    else {
+    xbee_config_read(ctx, config->file);
+
+    /* Device name */
+    if (ctx->file) {
+        opt_device = strdup(ctx->file);
+    } else {
         opt_device = strdup(FLB_XBEE_DEFAULT_DEVICE);
     }
+
+    /* Check an optional baudrate */
+    if (ctx->baudrate)
+        opt_baudrate = atoi((char*) ctx->baudrate);
+
+    /* set context */
+    ret = flb_input_set_context("xbee", ctx, config);
+    if (ret == -1) {
+        flb_utils_error_c("Could not set configuration for"
+                "XBee input plugin");
+    }
+
+    /* initialize MessagePack buffers */
+    msgpack_sbuffer_init(&ctx->mp_sbuf);
+    msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
 
     flb_info("XBee device=%s, baudrate=%i", opt_device, opt_baudrate);
 
