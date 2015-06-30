@@ -74,9 +74,11 @@ struct cgi_request {
 
     unsigned int in_len;
 
-    int fd;			/* From the CGI app */
-    int socket;
-
+    int   fd;			/* Pipe the CGI proc */
+    int   socket;       /* Client connection */
+    int   hangup;       /* Should close connection when done ? */
+    int   active;       /* Active session ?  */
+    pid_t child;        /* child process ID  */
     unsigned char status_done;
     unsigned char all_headers_done;
     unsigned char chunked;
@@ -86,6 +88,8 @@ struct cgi_request {
 pthread_key_t cgi_request_list;
 
 extern struct cgi_request **requests_by_socket;
+
+void cgi_finish(struct cgi_request *r);
 
 int swrite(const int fd, const void *buf, const size_t count);
 int channel_write(struct mk_http_session *session, void *buf, size_t count);

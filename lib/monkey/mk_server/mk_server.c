@@ -387,23 +387,25 @@ void mk_server_worker_loop()
                 conn = (struct mk_sched_conn *) event;
 
                 if (event->mask & MK_EVENT_WRITE) {
-                    MK_TRACE("[FD %i] EPoll Event WRITE", event->fd);
+                    MK_TRACE("[FD %i] Event WRITE", event->fd);
                     ret = mk_sched_event_write(conn, sched);
                     //printf("event write ret=%i\n", ret);
 
                 }
 
                 if (event->mask & MK_EVENT_READ) {
+                    MK_TRACE("[FD %i] Event READ", event->fd);
                     ret = mk_sched_event_read(conn, sched);
                 }
 
 
-                if (event->mask & MK_EVENT_CLOSE) {
+                if (event->mask & MK_EVENT_CLOSE && ret != -1) {
+                    MK_TRACE("[FD %i] Event CLOSE", event->fd);
                     ret = -1;
                 }
 
                 if (ret < 0) {
-                    MK_TRACE("[FD %i] Epoll Event FORCE CLOSE | ret = %i",
+                    MK_TRACE("[FD %i] Event FORCE CLOSE | ret = %i",
                              event->fd, ret);
                     mk_sched_event_close(conn, sched, MK_EP_SOCKET_CLOSED);
                 }

@@ -275,6 +275,10 @@ int mk_http_handler_read(struct mk_sched_conn *conn, struct mk_http_session *cs)
     int total_bytes = 0;
     char *tmp = 0;
 
+#ifdef TRACE
+    int socket = conn->event.fd;
+#endif
+
     MK_TRACE("MAX REQUEST SIZE: %i", mk_config->max_request_size);
 
  try_pending:
@@ -299,11 +303,11 @@ int mk_http_handler_read(struct mk_sched_conn *conn, struct mk_http_session *cs)
             cs->body_size = new_size;
             memcpy(cs->body, cs->body_fixed, cs->body_length);
             MK_TRACE("[FD %i] New size: %i, length: %i",
-                     cs->socket, new_size, cs->body_length);
+                     socket, new_size, cs->body_length);
         }
         else {
             MK_TRACE("[FD %i] Realloc from %i to %i",
-                     cs->socket, cs->body_size, new_size);
+                     socket, cs->body_size, new_size);
             tmp = mk_mem_realloc(cs->body, new_size + 1);
             if (tmp) {
                 cs->body = tmp;
@@ -321,40 +325,28 @@ int mk_http_handler_read(struct mk_sched_conn *conn, struct mk_http_session *cs)
     bytes = mk_sched_conn_read(conn, cs->body + cs->body_length, max_read);
 
     MK_TRACE("[FD %i] read %i", socket, bytes);
-
-    if (bytes < 0) {
-        mk_http_session_remove(cs);
+    if (bytes <= 0) {
         return -1;
     }
 
-    if (bytes == 0) {
-        return -1;
+    if (bytes > max_read) {
+        MK_TRACE("[FD %i] Buffer still have data: %i",
+                 socket, bytes - max_read);
+        cs->body_length += max_read;
+        cs->body[cs->body_length] = '\0';
+        total_bytes += max_read;
+
+        goto try_pending;
+    }
+    else {
+        cs->body_length += bytes;
+        cs->body[cs->body_length] = '\0';
+
+        total_bytes += bytes;
     }
 
-    if (bytes > 0) {
-        if (bytes > max_read) {
-            MK_TRACE("[FD %i] Buffer still have data: %i",
-                     cs->socket, bytes - max_read);
-
-            cs->body_length += max_read;
-            cs->body[cs->body_length] = '\0';
-            total_bytes += max_read;
-
-            goto try_pending;
-        }
-        else {
-            cs->body_length += bytes;
-            cs->body[cs->body_length] = '\0';
-
-            total_bytes += bytes;
-        }
-
-        MK_TRACE("[FD %i] Retry total bytes: %i",
-                 cs->socket, total_bytes);
-        return total_bytes;
-    }
-
-    return bytes;
+    MK_TRACE("[FD %i] Retry total bytes: %i", socket, total_bytes);
+    return total_bytes;
 }
 
 /* Build error page */
@@ -700,6 +692,7 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
 {
     int ret;
     struct mimetype *mime;
+    struct mk_plugin *handler = NULL;
 
     MK_TRACE("[FD %i] HTTP Protocol Init, session %p", cs->socket, sr);
 
@@ -760,7 +753,7 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
          * check if some plugin would like to handle it
          */
         MK_TRACE("No file, look for handler plugin");
-        ret = mk_plugin_stage_run_30(cs, sr);
+        ret = mk_plugin_stage_run_30(cs, sr, &handler);
         if (ret == MK_PLUGIN_RET_CLOSE_CONX) {
             if (sr->headers.status > 0) {
                 return mk_http_error(sr->headers.status, cs, sr);
@@ -838,10 +831,11 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
 
     /* Plugin Stage 30: look for handlers for this request */
     if (sr->stage30_blocked == MK_FALSE) {
-        ret = mk_plugin_stage_run_30(cs, sr);
+        ret = mk_plugin_stage_run_30(cs, sr, &handler);
         MK_TRACE("[FD %i] STAGE_30 returned %i", cs->socket, ret);
         switch (ret) {
         case MK_PLUGIN_RET_CONTINUE:
+            sr->stage30_handler = handler;
             return MK_PLUGIN_RET_CONTINUE;
         case MK_PLUGIN_RET_CLOSE_CONX:
             if (sr->headers.status > 0) {
@@ -911,7 +905,13 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
         return mk_http_error(MK_CLIENT_NOT_FOUND, cs, sr);
     }
 
+    /* Configure some headers */
     sr->headers.last_modified = sr->file_info.last_modification;
+    sr->headers.etag_len = snprintf(sr->headers.etag_buf,
+                                    MK_HEADER_ETAG_SIZE,
+                                    "ETag: \"%x-%zx\"\r\n",
+                                    (unsigned int) sr->file_info.last_modification,
+                                    sr->file_info.size);
 
     if (sr->if_modified_since.data && sr->method == MK_METHOD_GET) {
         time_t date_client;       /* Date sent by client */
@@ -1060,24 +1060,15 @@ static inline void mk_http_request_ka_next(struct mk_http_session *cs)
     mk_http_parser_init(&cs->parser);
 }
 
-static inline int mk_http_request_end(struct mk_sched_conn *conn,
-                                      struct mk_sched_worker *sched)
+int mk_http_request_end(struct mk_http_session *cs)
 {
-    struct mk_http_session *cs;
     struct mk_http_request *sr;
-    (void) sched;
-
-    cs = mk_http_session_get(conn);
-    if (!cs) {
-        MK_TRACE("[FD %i] Not found", conn->event.fd);
-        return -1;
-    }
 
     /* Check if we have some enqueued pipeline requests */
     if (cs->pipelined == MK_TRUE) {
         sr =  mk_list_entry_first(&cs->request_list, struct mk_http_request, _head);
         MK_TRACE("[FD %i] Pipeline finishing %p",
-                 conn->event.fd, sr);
+                 cs->conn->event.fd, sr);
 
         /* Remove node and release resources */
         mk_list_del(&sr->_head);
@@ -1085,8 +1076,9 @@ static inline int mk_http_request_end(struct mk_sched_conn *conn,
 
         if (mk_list_is_empty(&cs->request_list) != 0) {
 #ifdef TRACE
-            sr = mk_list_entry_first(&cs->request_list, struct mk_http_request, _head);
-            MK_TRACE("[FD %i] Pipeline next is %p", conn->event.fd, sr);
+            sr = mk_list_entry_first(&cs->request_list,
+                                     struct mk_http_request, _head);
+            MK_TRACE("[FD %i] Pipeline next is %p", cs->conn->event.fd, sr);
 #endif
             return 0;
         }
@@ -1099,14 +1091,14 @@ static inline int mk_http_request_end(struct mk_sched_conn *conn,
      * close it.
      */
     if (cs->close_now == MK_TRUE) {
-        MK_TRACE("[FD %i] No KeepAlive mode, remove", conn->event.fd);
+        MK_TRACE("[FD %i] No KeepAlive mode, remove", cs->conn->event.fd);
         mk_http_session_remove(cs);
         return -1;
     }
     else {
         mk_http_request_free_list(cs);
         mk_http_request_ka_next(cs);
-        mk_sched_conn_timeout_add(conn, sched);
+        mk_sched_conn_timeout_add(cs->conn, mk_sched_get_thread_conf());
         return 0;
     }
 
@@ -1266,10 +1258,24 @@ int mk_http_error(int http_status, struct mk_http_session *cs,
  */
 void mk_http_session_remove(struct mk_http_session *cs)
 {
-    MK_TRACE("[FD %i] HTTP Session remove", cs->socket);
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct mk_plugin *handler;
+    struct mk_http_request *sr;
 
+    MK_TRACE("[FD %i] HTTP Session remove", cs->socket);
     if (cs->_sched_init == MK_FALSE) {
         return;
+    }
+
+    /* On session remove, make sure to cleanup any handler */
+    mk_list_foreach_safe(head, tmp, &cs->request_list) {
+        sr = mk_list_entry(head, struct mk_http_request, _head);
+        if (sr->stage30_handler) {
+            MK_TRACE("Hangup stage30 handler");
+            handler = sr->stage30_handler;
+            handler->stage->stage30_hangup(handler, cs, sr);
+        }
     }
 
     if (cs->body != cs->body_fixed) {
@@ -1314,6 +1320,9 @@ int mk_http_session_init(struct mk_http_session *cs, struct mk_sched_conn *conn)
 
     /* Map the channel, just for protocol-handler internal stuff */
     cs->channel = &conn->channel;
+
+    /* Map the connection instance, required to handle exceptions */
+    cs->conn = conn;
 
     /* creation time in unix time */
     cs->init_time = conn->arrive_time;
@@ -1367,7 +1376,6 @@ void mk_http_request_free_list(struct mk_http_session *cs)
 
     /* sr = last node */
     MK_TRACE("[FD %i] Free struct client_session", cs->socket);
-
     mk_list_foreach_safe(sr_head, temp, &cs->request_list) {
         sr_node = mk_list_entry(sr_head, struct mk_http_request, _head);
         mk_list_del(sr_head);
@@ -1427,6 +1435,10 @@ int mk_http_sched_read(struct mk_sched_conn *conn,
     struct mk_http_session *cs;
     struct mk_http_request *sr;
 
+#ifdef TRACE
+    int socket = conn->event.fd;
+#endif
+
     cs = mk_http_session_get(conn);
     if (cs->_sched_init == MK_FALSE) {
         /* Create session for the client */
@@ -1474,6 +1486,7 @@ int mk_http_sched_read(struct mk_sched_conn *conn,
     return ret;
 }
 
+/* The scheduler got a connection close event from the remote client */
 int mk_http_sched_close(struct mk_sched_conn *conn,
                         struct mk_sched_worker *sched,
                         int type)
@@ -1486,16 +1499,21 @@ int mk_http_sched_close(struct mk_sched_conn *conn,
 #else
     (void) type;
 #endif
+
+    /* Release resources of the requests and session */
     cs = mk_http_session_get(conn);
     mk_http_session_remove(cs);
-
     return 0;
 }
 
 int mk_http_sched_done(struct mk_sched_conn *conn,
                        struct mk_sched_worker *worker)
 {
-    return mk_http_request_end(conn, worker);
+    (void) worker;
+    struct mk_http_session *cs;
+
+    cs = mk_http_session_get(conn);
+    return mk_http_request_end(cs);
 }
 
 struct mk_sched_handler mk_http_handler = {

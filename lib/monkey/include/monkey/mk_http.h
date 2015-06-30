@@ -120,6 +120,7 @@ struct mk_http_session
     int close_now;              /* Close the session ASAP */
 
     struct mk_channel *channel;
+    struct mk_sched_conn *conn;
 
     unsigned int body_size;
     unsigned int body_length;
@@ -198,6 +199,7 @@ void mk_http_request_init(struct mk_http_session *session,
                           struct mk_http_request *request);
 struct mk_http_header *mk_http_header_get(int name, struct mk_http_request *req,
                                           const char *key, unsigned int len);
+int mk_http_request_end(struct mk_http_session *cs);
 
 #define mk_http_session_get(conn)               \
     (struct mk_http_session *)                  \

@@ -24,6 +24,43 @@
 #include <sys/resource.h>
 #include <sys/stat.h>
 
+void cgi_finish(struct cgi_request *r)
+{
+#ifdef TRACE
+    if (r->active == MK_TRUE) {
+        if (mk_list_is_empty(&r->cs->request_list) != 0 ) {
+            PLUGIN_TRACE("CGI Finish / request_list is empty");
+        }
+        PLUGIN_TRACE("CGI Finish / session_fd=%i child_fd=%i child_pid=%l",
+                     r->cs->socket, r->fd, r->child);
+    }
+#endif
+
+    /*
+     * Unregister & close the CGI child process pipe reader fd from the
+     * thread event loop, otherwise we may get unexpected notifications.
+     */
+    mk_api->ev_del(mk_api->sched_loop(), (struct mk_event *) r);
+    close(r->fd);
+    if (r->chunked && r->active) {
+        channel_write(r->sr->session, "0\r\n\r\n", 5);
+    }
+
+    /* Try to kill any child process */
+    if (r->child > 0) {
+        kill(r->child, SIGKILL);
+        r->child = 0;
+    }
+
+    /* Invalidte our socket handler */
+    requests_by_socket[r->socket] = NULL;
+
+    if (r->active) {
+        mk_api->http_request_end(r->cs, r->hangup);
+    }
+    cgi_req_del(r);
+}
+
 int swrite(const int fd, const void *buf, const size_t count)
 {
     ssize_t pos = count, ret = 0;
@@ -262,11 +299,23 @@ static int do_cgi(const char *const __restrict__ file,
     if (!r) {
         return 403;
     }
+    r->child = pid;
 
+    /*
+     * Hang up?: by default Monkey assumes the CGI scripts generate
+     * content dynamically (no Content-Length header), so for such HTTP/1.0
+     * clients we should close the connection as KeepAlive is not supported
+     * by specification, only on HTTP/1.1 where the Chunked Transfer encoding
+     * exists.
+     */
+    if (r->sr->protocol >= MK_HTTP_PROTOCOL_11) {
+        r->hangup = MK_FALSE;
+    }
+
+    /* Set transfer encoding */
     if (r->sr->protocol >= MK_HTTP_PROTOCOL_11 &&
         (r->sr->headers.status < MK_REDIR_MULTIPLE ||
-         r->sr->headers.status > MK_REDIR_USE_PROXY))
-    {
+         r->sr->headers.status > MK_REDIR_USE_PROXY)) {
         r->sr->headers.transfer_encoding = MK_HEADER_TE_TYPE_CHUNKED;
         r->chunked = 1;
     }
@@ -436,13 +485,20 @@ static void cgi_read_config(const char * const path)
 
 int mk_cgi_plugin_init(struct plugin_api **api, char *confdir)
 {
-    mk_api = *api;
+    struct rlimit lim;
 
+    mk_api = *api;
     mk_list_init(&cgi_global_matches);
+
+    /* Read configuration files */
     cgi_read_config(confdir);
     pthread_key_create(&cgi_request_list, NULL);
 
-    struct rlimit lim;
+    /*
+     * We try to perform some quick lookup over the list of CGI
+     * instances. We do this with a fixed length array, if you use CGI
+     * you don't care too much about performance anyways.
+     */
     getrlimit(RLIMIT_NOFILE, &lim);
     requests_by_socket = mk_api->mem_alloc_z(sizeof(struct cgi_request *) * lim.rlim_cur);
 
@@ -521,7 +577,7 @@ int mk_cgi_stage30(struct mk_plugin *plugin,
  run_cgi:
     /* start running the CGI */
     if (cgi_req_get(cs->socket)) {
-        printf("Error, someone tried to retry\n");
+        PLUGIN_TRACE("Error, someone tried to retry\n");
         return MK_PLUGIN_RET_CONTINUE;
     }
 
@@ -537,6 +593,32 @@ int mk_cgi_stage30(struct mk_plugin *plugin,
     return MK_PLUGIN_RET_CONTINUE;
 }
 
+/*
+ * Invoked everytime a remote client drop the active connection, this
+ * callback is triggered by the Monkey Scheduler
+ */
+int mk_cgi_stage30_hangup(struct mk_plugin *plugin,
+                          struct mk_http_session *cs,
+                          struct mk_http_request *sr)
+{
+    struct cgi_request *r;
+    (void) plugin;
+
+    r = requests_by_socket[cs->socket];
+    if (!r) {
+        return -1;
+    }
+
+    cgi_finish(r);
+
+    /*
+     * FIXME: do we need this here ?, at some point we may need
+     * to invalidate the handler
+     */
+    sr->stage30_handler = NULL;
+    return 0;
+}
+
 void mk_cgi_worker_init()
 {
     struct mk_list *list = mk_api->mem_alloc_z(sizeof(struct mk_list));
@@ -547,7 +629,8 @@ void mk_cgi_worker_init()
 
 
 struct mk_plugin_stage mk_plugin_stage_cgi = {
-    .stage30      = &mk_cgi_stage30
+    .stage30        = &mk_cgi_stage30,
+    .stage30_hangup = &mk_cgi_stage30_hangup
 };
 
 struct mk_plugin mk_plugin_cgi = {

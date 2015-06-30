@@ -446,7 +446,6 @@ int mk_sched_remove_client(struct mk_sched_conn *conn,
     MK_TRACE("[FD %i] Scheduler remove", event->fd);
     mk_event_del(sched->loop, event);
 
-
     /* Invoke plugins in stage 50 */
     mk_plugin_stage_run_50(event->fd);
 
@@ -456,7 +455,7 @@ int mk_sched_remove_client(struct mk_sched_conn *conn,
     rb_erase(&conn->_rb_head, &sched->rb_queue);
     mk_sched_conn_timeout_del(conn);
 
-    /* Close - network layer */
+    /* Close at network layer level */
     conn->net->close(event->fd);
 
     /* Release and return */
@@ -546,7 +545,7 @@ int mk_sched_event_read(struct mk_sched_conn *conn,
                         struct mk_sched_worker *sched)
 {
     int ret = 0;
-    size_t count;
+    size_t count = 0;
     size_t total = 0;
     struct mk_event *event;
 

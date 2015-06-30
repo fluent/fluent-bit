@@ -284,6 +284,11 @@ int mk_header_prepare(struct mk_http_session *cs,
         }
     }
 
+    /* E-Tag */
+    if (sh->etag_len > 0) {
+        mk_iov_add(iov, sh->etag_buf, sh->etag_len, MK_FALSE);
+    }
+
     /* Content-Encoding */
     if (sh->content_encoding.len > 0) {
         mk_iov_add(iov, mk_header_content_encoding.data,

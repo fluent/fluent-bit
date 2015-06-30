@@ -105,7 +105,7 @@ static inline void mk_copybuf_consume(struct mk_stream *stream, size_t bytes)
 int mk_channel_flush(struct mk_channel *channel)
 {
     int ret = 0;
-    size_t count;
+    size_t count = 0;
     size_t total = 0;
 
     do {

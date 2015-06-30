@@ -22,6 +22,8 @@
 
 #include <monkey/mk_stream.h>
 
+#define MK_HEADER_ETAG_SIZE   32
+
 struct response_headers
 {
     int status;
@@ -54,6 +56,9 @@ struct response_headers
     mk_ptr_t content_type;
     mk_ptr_t content_encoding;
     char *location;
+
+    int  etag_len;
+    char etag_buf[MK_HEADER_ETAG_SIZE];
 
     /*
      * This field allow plugins to add their own response
@@ -139,6 +144,13 @@ struct mk_http_request
      * and do not trigger more STAGE_30's.
      */
     int stage30_blocked;
+
+    /*
+     * If the connection is being managed by a plugin (e.g: CGI), associate the
+     * plugin reference to the stage30_handler field. This is useful to handle
+     * protocol exception and notify the handlers about it.
+     */
+    void *stage30_handler;
 
     /* Static file information */
     struct file_info file_info;

@@ -24,29 +24,43 @@ struct cgi_request *cgi_req_create(int fd, int socket,
                                    struct mk_http_request *sr,
                                    struct mk_http_session *cs)
 {
-    struct cgi_request *newcgi = mk_api->mem_alloc_z(sizeof(struct cgi_request));
-    if (!newcgi) return NULL;
+    struct cgi_request *cgi;
 
-    newcgi->fd = fd;
-    newcgi->socket = socket;
-    newcgi->sr = sr;
-    newcgi->cs = cs;
+    cgi = mk_api->mem_alloc_z(sizeof(struct cgi_request));
+    if (!cgi) {
+        return NULL;
+    }
 
-    return newcgi;
+    cgi->fd = fd;
+    cgi->socket = socket;
+    cgi->sr = sr;
+    cgi->cs = cs;
+    cgi->hangup = MK_TRUE;
+    cgi->active = MK_TRUE;
+
+    return cgi;
 }
 
 void cgi_req_add(struct cgi_request *r)
 {
-    struct mk_list *list = pthread_getspecific(cgi_request_list);
+    struct mk_list *list;
+
+    list = pthread_getspecific(cgi_request_list);
     mk_list_add(&r->_head, list);
 }
 
 int cgi_req_del(struct cgi_request *r)
 {
-    if (!r) return 1;
+    PLUGIN_TRACE("[R] child_fd=%i child_pid=%lu\n",
+                 r->fd, r->child);
 
-    mk_list_del(&r->_head);
-    mk_api->mem_free(r);
+    if (r->active == MK_TRUE) {
+        mk_list_del(&r->_head);
+        r->active = MK_FALSE;
+    }
+    else {
+        mk_mem_free(r);
+    }
 
     return 0;
 }

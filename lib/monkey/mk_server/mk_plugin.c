@@ -222,7 +222,7 @@ void mk_plugin_api_init()
     api->_error = mk_print;
 
     /* HTTP callbacks */
-    api->http_session_end = mk_plugin_http_session_end;
+    api->http_request_end = mk_plugin_http_request_end;
     //    api->http_request_error = mk_http_error;
 
     /* Memory callbacks */
@@ -544,7 +544,7 @@ void mk_plugin_preworker_calls()
     }
 }
 
-int mk_plugin_http_session_end(struct mk_http_session *cs)
+int mk_plugin_http_request_end(struct mk_http_session *cs, int close)
 {
     int ret;
     int con;
@@ -552,20 +552,25 @@ int mk_plugin_http_session_end(struct mk_http_session *cs)
 
     MK_TRACE("[FD %i] PLUGIN HTTP REQUEST END", cs->socket);
 
-    if (!mk_list_is_empty(&cs->request_list)) {
-        mk_err("[FD %i] Tried to end non-existing request.", cs->socket);
+    if (mk_list_is_empty(&cs->request_list) != 0) {
+        MK_TRACE("[FD %i] Tried to end non-existing request.", cs->socket);
+        cs->status = MK_REQUEST_STATUS_INCOMPLETE;
         return -1;
     }
 
     sr = mk_list_entry_last(&cs->request_list, struct mk_http_request, _head);
     mk_plugin_stage_run_40(cs, sr);
 
-    ret = 0; /* FIXME */
-    //ret = mk_http_request_end(NULL, NULL);
-    MK_TRACE(" ret = %i", ret);
+    if (close == MK_TRUE) {
+        cs->close_now = MK_TRUE;
+    }
 
+    /* Let's check if we should ask to finalize the connection or not */
+    ret = mk_http_request_end(cs);
+    MK_TRACE("[FD %i] HTTP session end = %i", cs->socket, ret);
     if (ret < 0) {
-        con = mk_sched_event_close(NULL, NULL, MK_EP_SOCKET_CLOSED);
+        con = mk_sched_event_close(cs->conn, mk_sched_get_thread_conf(),
+                                   MK_EP_SOCKET_CLOSED);
         if (con != 0) {
             return con;
         }
