@@ -29,6 +29,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_engine.h>
+#include <msgpack.h>
 
 #include "in_xbee.h"
 #include "in_xbee_config.h"
@@ -40,36 +41,101 @@
  */
 void xbee_init(void);
 
+
+
+void in_xbee_rx_queue_raw(struct flb_in_xbee_config *ctx, const char *buf ,int len)
+{
+    /* Increase buffer position */
+    ctx->buffer_id++;
+
+    msgpack_pack_array(&ctx->mp_pck, 2);
+    msgpack_pack_uint64(&ctx->mp_pck, time(NULL));
+    msgpack_pack_map(&ctx->mp_pck, 1);
+    msgpack_pack_bin(&ctx->mp_pck, 4);
+    msgpack_pack_bin_body(&ctx->mp_pck, "data", 4);
+    msgpack_pack_bin(&ctx->mp_pck, len);
+    msgpack_pack_bin_body(&ctx->mp_pck, buf, len);
+}
+
+
+void in_xbee_rx_queue_msgpack(struct flb_in_xbee_config *ctx, const char *buf ,int len)
+{
+    /* Increase buffer position */
+    ctx->buffer_id++;
+
+    msgpack_pack_array(&ctx->mp_pck, 2);
+    msgpack_pack_uint64(&ctx->mp_pck, time(NULL));
+    msgpack_pack_bin_body(&ctx->mp_pck, buf, len);
+}
+
+int in_xbee_rx_validate_msgpack(const char *buf, int len)
+{
+    msgpack_unpacked result;
+    msgpack_unpacked_init(&result);
+
+    size_t off = 0;
+    if (! msgpack_unpack_next(&result, buf, len, &off)) {
+        goto fail;
+    }
+
+    if (result.data.type != MSGPACK_OBJECT_MAP) {
+        goto fail;
+    }
+    /* ToDo: validate msgpack length */
+
+    /* can handle as MsgPack */
+
+    msgpack_unpacked_destroy(&result);
+    return 1;
+
+fail:
+    msgpack_unpacked_destroy(&result);
+    return 0;
+}
+
 void in_xbee_cb(struct xbee *xbee, struct xbee_con *con,
                 struct xbee_pkt **pkt, void **data)
 {
-    struct iovec *v;
     struct flb_in_xbee_config *ctx;
+    int ret;
 
-	if ((*pkt)->dataLen == 0) {
-		flb_debug("xbee data length too short, skip");
-		return;
-	}
-
-    ctx = *data;
-
-    if (ctx->buffer_len + 1 >= FLB_XBEE_BUFFER_SIZE) {
-        /* fixme: use flb_engine_flush() */
+    if ((*pkt)->dataLen == 0) {
+        flb_debug("xbee data length too short, skip");
         return;
     }
 
-    /* Insert entry into the iovec */
-    v = &ctx->buffer[ctx->buffer_len];
-    v->iov_base = malloc((*pkt)->dataLen);
-    memcpy(v->iov_base, (*pkt)->data, (*pkt)->dataLen);
-    v->iov_len = (*pkt)->dataLen;
-    ctx->buffer_len++;
+    ctx = *data;
+
+#if 0
+    int i;
+    for (i = 0; i < (*pkt)->dataLen; i++) {
+        printf("%2.2x ", *((unsigned char*) (*pkt)->data + i));
+    }
+    printf("\n");
+#endif
+
+    if (ctx->buffer_id + 1 >= FLB_XBEE_BUFFER_SIZE) {
+        flb_debug("buffer is full (FixMe)");
+        return;
+#if 0
+        ret = flb_engine_flush(config, &in_xbee_plugin, NULL);
+        if (ret == -1) {
+            ctx->buffer_id = 0;
+        } 
+#endif
+    }
+
+    if (in_xbee_rx_validate_msgpack((const char*) (*pkt)->data, (*pkt)->dataLen)) {
+        in_xbee_rx_queue_msgpack(ctx, (const char*) (*pkt)->data, (*pkt)->dataLen);
+    } else {
+        in_xbee_rx_queue_raw(ctx, (const char*) (*pkt)->data, (*pkt)->dataLen);
+    }
 }
 
 /* Callback triggered by timer */
 int in_xbee_collect(struct flb_config *config, void *in_context)
 {
-    int ret;
+    int ret = 0;
     void *p = NULL;
     (void) config;
     struct flb_in_xbee_config *ctx = in_context;
@@ -83,41 +149,52 @@ int in_xbee_collect(struct flb_config *config, void *in_context)
     return 0;
 }
 
-void *in_xbee_flush_iov(void *in_context, int *size)
+void *in_xbee_flush(void *in_context, int *size)
 {
+    char *buf;
+    msgpack_sbuffer *sbuf;
     struct flb_in_xbee_config *ctx = in_context;
 
-    *size = ctx->buffer_len;
-    return ctx->buffer;
-}
+    if (ctx->buffer_id == 0)
+        return NULL;
 
-void in_xbee_flush_end(void *in_context)
-{
-    int i;
-    struct iovec *iov;
-    struct flb_in_xbee_config *ctx = in_context;
-
-    for (i = 0; i < ctx->buffer_len; i++) {
-        iov = &ctx->buffer[i];
-        free(iov->iov_base);
-        iov->iov_len = 0;
+    sbuf = &ctx->mp_sbuf;
+    *size = sbuf->size;
+    buf = malloc(sbuf->size);
+    if (!buf) {
+        return NULL;
     }
 
-    ctx->buffer_len = 0;
+    /* set a new buffer and re-initialize our MessagePack context */
+    memcpy(buf, sbuf->data, sbuf->size);
+    msgpack_sbuffer_destroy(&ctx->mp_sbuf);
+    msgpack_sbuffer_init(&ctx->mp_sbuf);
+    msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
+
+    ctx->buffer_id = 0;
+
+    return buf;
 }
 
-/* Init kmsg input */
+/* Init xbee input */
 int in_xbee_init(struct flb_config *config)
 {
     int ret;
     int opt_baudrate = 9600;
-    char *tmp;
     char *opt_device;
     struct stat dev_st;
-	struct xbee *xbee;
-	struct xbee_con *con;
-	struct xbee_conAddress address;
+    struct xbee *xbee;
+    struct xbee_con *con;
+    struct xbee_conAddress address;
     struct flb_in_xbee_config *ctx;
+    struct xbee_conSettings settings;
+
+    /* Prepare the configuration context */
+    ctx = calloc(1, sizeof(struct flb_in_xbee_config));
+    if (!ctx) {
+        perror("calloc");
+        return -1;
+    }
 
     if (!config->file) {
         flb_utils_error_c("XBee input plugin needs configuration file");
@@ -136,13 +213,6 @@ int in_xbee_init(struct flb_config *config)
     /* Check an optional baudrate */
     if (ctx->baudrate)
         opt_baudrate = atoi((char*) ctx->baudrate);
-
-    /* set context */
-    ret = flb_input_set_context("xbee", ctx, config);
-    if (ret == -1) {
-        flb_utils_error_c("Could not set configuration for"
-                "XBee input plugin");
-    }
 
     /* initialize MessagePack buffers */
     msgpack_sbuffer_init(&ctx->mp_sbuf);
@@ -173,52 +243,57 @@ int in_xbee_init(struct flb_config *config)
     /* Init library */
     xbee_init();
 
-	ret = xbee_setup(&xbee, "xbeeZB", opt_device, opt_baudrate);
+    ret = xbee_setup(&xbee, "xbeeZB", opt_device, opt_baudrate);
     if (ret != XBEE_ENONE) {
         flb_utils_error_c("xbee_setup");
-		return ret;
-	}
+        return ret;
+    }
 
     /* FIXME: just a built-in example */
-	memset(&address, 0, sizeof(address));
-	address.addr64_enabled = 1;
-	address.addr64[0] = 0x00;
-	address.addr64[1] = 0x13;
-	address.addr64[2] = 0xA2;
-	address.addr64[3] = 0x00;
+    memset(&address, 0, sizeof(address));
+    address.addr64_enabled = 1;
+#if 0
+    address.addr64[0] = 0x00;
+    address.addr64[1] = 0x13;
+    address.addr64[2] = 0xA2;
+    address.addr64[3] = 0x00;
     address.addr64[4] = 0x40;
     address.addr64[5] = 0xB7;
-    address.addr64[6] = 0xB1;
-    address.addr64[7] = 0xEB;
+#endif
+    address.addr64[6] = 0xFF;
+    address.addr64[7] = 0xFF;
+
+    if (ctx->xbeeLogLevel >= 0)
+        xbee_logLevelSet(xbee, ctx->xbeeLogLevel);
 
     /* Prepare a connection with the peer XBee */
-	if ((ret = xbee_conNew(xbee, &con, "Data", &address)) != XBEE_ENONE) {
-		xbee_log(xbee, -1, "xbee_conNew() returned: %d (%s)", ret, xbee_errorToStr(ret));
-		return ret;
-	}
-
-    /* Prepare the configuration context */
-    ctx = calloc(1, sizeof(struct flb_in_xbee_config));
-    if (!ctx) {
-        perror("calloc");
-        free(opt_device);
-        return -1;
+    if ((ret = xbee_conNew(xbee, &con, "Data", &address)) != XBEE_ENONE) {
+        xbee_log(xbee, -1, "xbee_conNew() returned: %d (%s)", ret, xbee_errorToStr(ret));
+        return ret;
     }
+
+
+    xbee_conSettings(con, NULL, &settings);
+    settings.disableAck = 1;
+    settings.catchAll = 1;
+    xbee_conSettings(con, &settings, NULL);
+
+
     ctx->device     = opt_device;
     ctx->baudrate   = opt_baudrate;
     ctx->con        = con;
     ctx->buffer_len = 0;
 
-	if ((ret = xbee_conDataSet(con, ctx, NULL)) != XBEE_ENONE) {
-		xbee_log(xbee, -1, "xbee_conDataSet() returned: %d", ret);
-		return ret;
-	}
+    if ((ret = xbee_conDataSet(con, ctx, NULL)) != XBEE_ENONE) {
+        xbee_log(xbee, -1, "xbee_conDataSet() returned: %d", ret);
+        return ret;
+    }
 
 
-	if ((ret = xbee_conCallbackSet(con, in_xbee_cb, NULL)) != XBEE_ENONE) {
-		xbee_log(xbee, -1, "xbee_conCallbackSet() returned: %d", ret);
-		return ret;
-	}
+    if ((ret = xbee_conCallbackSet(con, in_xbee_cb, NULL)) != XBEE_ENONE) {
+        xbee_log(xbee, -1, "xbee_conCallbackSet() returned: %d", ret);
+        return ret;
+    }
 
 
     /* Set the context */
@@ -252,7 +327,5 @@ struct flb_input_plugin in_xbee_plugin = {
     .cb_init      = in_xbee_init,
     .cb_pre_run   = NULL,
     .cb_collect   = in_xbee_collect,
-    .cb_flush_buf = NULL,
-    .cb_flush_iov = in_xbee_flush_iov,
-    .cb_flush_end = in_xbee_flush_end,
+    .cb_flush_buf = in_xbee_flush,
 };

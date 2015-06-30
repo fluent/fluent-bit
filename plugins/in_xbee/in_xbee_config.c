@@ -27,6 +27,7 @@ struct flb_in_xbee_config *xbee_config_read(struct flb_in_xbee_config *config, s
 {
     char *file;
     char *baudrate;
+    char *xbee_loglevel;
     struct mk_rconf_section *section;
 
     section = mk_rconf_section_get(conf, "xbee");
@@ -37,6 +38,7 @@ struct flb_in_xbee_config *xbee_config_read(struct flb_in_xbee_config *config, s
     /* Validate xbee section keys */
     file = mk_rconf_section_get_key(section, "file", MK_RCONF_STR);
     baudrate = mk_rconf_section_get_key(section, "baudrate", MK_RCONF_STR);
+    xbee_loglevel = mk_rconf_section_get_key(section, "XBeeLogLevel", MK_RCONF_STR);
 
     if (!file) {
         flb_utils_error_c("[xbee] error reading filename from "
@@ -51,6 +53,7 @@ struct flb_in_xbee_config *xbee_config_read(struct flb_in_xbee_config *config, s
     config->fd       = -1;
     config->file     = file;
     config->baudrate  = baudrate;
+    config->xbeeLogLevel = xbee_loglevel ? atoi(xbee_loglevel) : -1;
 
     flb_debug("[xbee] / device='%s' baudrate='%s'",
               config->file, config->baudrate);
