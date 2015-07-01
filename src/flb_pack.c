@@ -33,7 +33,7 @@ static jsmntok_t *json_tokenise(char *js, size_t len, int *arr_size)
     jsmn_parser parser;
 
     jsmn_init(&parser);
-    tokens = malloc(sizeof(jsmntok_t) * n);
+    tokens = calloc(1, sizeof(jsmntok_t) * n);
     ret = jsmn_parse(&parser, js, len, tokens, n);
 
     while (ret == JSMN_ERROR_NOMEM) {
