@@ -51,6 +51,7 @@ static jsmntok_t *json_tokenise(char *js, size_t len, int *arr_size)
     }
 
     if (ret == JSMN_ERROR_PART) {
+        /* Hmm, should we error for partial JSONs ? */
         flb_utils_error(FLB_ERR_JSON_PART);
         goto error;
     }
@@ -65,7 +66,7 @@ static jsmntok_t *json_tokenise(char *js, size_t len, int *arr_size)
 }
 
 /* It parse a JSON string and convert it to MessagePack format */
-char *flb_pack_json(char *tag, char *js, size_t len, int *size)
+char *flb_pack_json(char *js, size_t len, int *size)
 {
     int i;
     int flen;
@@ -77,7 +78,7 @@ char *flb_pack_json(char *tag, char *js, size_t len, int *size)
     msgpack_packer pck;
     msgpack_sbuffer sbuf;
 
-    if (!tag || !js) {
+    if (!js) {
         return NULL;
     }
 
@@ -86,7 +87,7 @@ char *flb_pack_json(char *tag, char *js, size_t len, int *size)
         return NULL;
     }
 
-    flb_debug("JSON to pack: %s", js);
+    flb_debug("JSON to pack: '%s'", js);
 
     /* initialize buffers */
     msgpack_sbuffer_init(&sbuf);
@@ -101,6 +102,7 @@ char *flb_pack_json(char *tag, char *js, size_t len, int *size)
 
         switch (t->type) {
         case JSMN_OBJECT:
+            flb_debug("json_pack: token=%i is OBJECT (size=%i)", i, t->size);
             msgpack_pack_map(&pck, t->size);
             break;
         case JSMN_ARRAY:

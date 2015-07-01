@@ -67,6 +67,10 @@ int flb_engine_flush(struct flb_config *config,
                 if (!buf) {
                     goto flush_done;
                 }
+                if (size == 0) {
+                    flb_warn("No input data");
+                    continue;
+                }
 
                 bytes = config->output->cb_flush(buf, size,
                                                  config->output->out_context,
