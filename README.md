@@ -47,6 +47,7 @@ Once the tool have been compiled, a binary file called _Fluent-Bit_ will be foun
 | Memory             | mem     | usage of system memory |
 | Kernel Ring Buffer | kmsg    | read Linux Kernel messages, same behavior as the __dmesg__ command line program |
 | Serial Port        | serial  | read from serial port |
+| Standard Input     | stdin   | read from the standard input |
 | XBee               | xbee    | listen for incoming messages over a Xbee device |
 
 ### Output Plugins
@@ -55,7 +56,7 @@ Once the tool have been compiled, a binary file called _Fluent-Bit_ will be foun
 |--------------------|-------------------------|---------------------------------------------------------------------------------|
 | Fluentd            | fluentd://host:port     | flush content to a [Fluentd](http://fluentd.org) service. On the [Fluentd](http://fluentd.org) side, it requires an __in_forward__.|
 | TreasureData       | td                      | flush data collected to [TreasureData](http://treasuredata.com) service (cloud analytics platform) |
-| STDOUT             | stdout                  | prints the collected data to standard output stream |
+| Standard Output    | stdout                  | prints the collected data to standard output stream |
 
 ### Usage
 
