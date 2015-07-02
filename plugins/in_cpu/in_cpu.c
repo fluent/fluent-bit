@@ -96,21 +96,6 @@ int in_cpu_init(struct flb_config *config)
     return 0;
 }
 
-/* Callback invoked after setup but before to join the main loop */
-int in_cpu_pre_run(void *in_context, struct flb_config *config)
-{
-    struct flb_in_cpu_config *ctx = in_context;
-
-    /* Tag */
-    ctx->tag_len = snprintf(ctx->tag, sizeof(ctx->tag) - 1,
-                            "%s.cpu", config->tag);
-    if (ctx->tag_len == -1) {
-        flb_utils_error_c("Could not set custom tag on CPU input plugin");
-    }
-
-    return 0;
-}
-
 /* Callback to gather CPU usage between now and previous snapshot */
 int in_cpu_collect(struct flb_config *config, void *in_context)
 {
@@ -178,7 +163,7 @@ struct flb_input_plugin in_cpu_plugin = {
     .name         = "cpu",
     .description  = "CPU Usage",
     .cb_init      = in_cpu_init,
-    .cb_pre_run   = in_cpu_pre_run,
+    .cb_pre_run   = NULL,
     .cb_collect   = in_cpu_collect,
     .cb_flush_buf = in_cpu_flush
 };
