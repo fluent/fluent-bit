@@ -263,7 +263,7 @@ int in_kmsg_collect(struct flb_config *config, void *in_context)
 
     /* Check if our buffer is full */
     if (ctx->buffer_id + 1 == KMSG_BUFFER_SIZE) {
-        ret = flb_engine_flush(config, &in_kmsg_plugin, NULL);
+        ret = flb_engine_flush(config, &in_kmsg_plugin);
         if (ret == -1) {
             ctx->buffer_id = 0;
         }
