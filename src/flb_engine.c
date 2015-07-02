@@ -198,7 +198,10 @@ int flb_engine_start(struct flb_config *config)
         else if (collector->type & (FLB_COLLECT_FD_EVENT | FLB_COLLECT_FD_SERVER)) {
             event = malloc(sizeof(struct mk_event));
             event->mask = MK_EVENT_EMPTY;
-            ret = mk_event_add(evl, collector->fd_event, 0, MK_EVENT_READ, event);
+            ret = mk_event_add(evl,
+                               collector->fd_event,
+                               FLB_ENGINE_EV_CORE,
+                               MK_EVENT_READ, event);
             if (ret == -1) {
                 close(collector->fd_event);
                 continue;

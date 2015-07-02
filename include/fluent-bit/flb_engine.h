@@ -21,10 +21,12 @@
 #define FLB_ENGINE_H
 
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
 
-#define FLB_ENGINE_READ    EPOLLIN
-#define FLB_ENGINE_WRITE   EPOLLOUT
+/* Types of events handled by the Server engine */
+#define FLB_ENGINE_EV_CORE     0
+#define FLB_ENGINE_EV_CUSTOM   1
 
 int flb_engine_start(struct flb_config *config);
 int flb_engine_flush(struct flb_config *config,
