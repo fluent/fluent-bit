@@ -123,7 +123,7 @@ static int flb_engine_handle_event(int fd, int mask, struct flb_config *config)
         /* Check if we need to flush */
         if (config->flush_fd == fd) {
             consume_byte(fd);
-            flb_engine_flush(config, NULL, config->output);
+            flb_engine_flush(config, NULL);
             return 0;
         }
 
