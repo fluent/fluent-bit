@@ -157,6 +157,13 @@ int flb_engine_start(struct flb_config *config)
 
     flb_info("starting engine");
 
+    /* Create the event loop and set it in the global configuration */
+    evl = mk_event_loop_create(256);
+    if (!evl) {
+        return -1;
+    }
+    config->evl = evl;
+
     /* Initialize input plugins */
     flb_input_initialize_all(config);
 
@@ -167,12 +174,6 @@ int flb_engine_start(struct flb_config *config)
     flb_output_init(config);
     flb_output_pre_run(config);
 
-    /* Create the event loop and set it in the global configuration */
-    evl = mk_event_loop_create(256);
-    if (!evl) {
-        return -1;
-    }
-    config->evl = evl;
 
     /* Create and register the timer fd for flush procedure */
     event = malloc(sizeof(struct mk_event));
@@ -212,7 +213,12 @@ int flb_engine_start(struct flb_config *config)
     while (1) {
         mk_event_wait(evl);
         mk_event_foreach(event, evl) {
-            flb_engine_handle_event(event->fd, event->mask, config);
+            if (event->type == FLB_ENGINE_EV_CORE) {
+                flb_engine_handle_event(event->fd, event->mask, config);
+            }
+            else if (event->type == FLB_ENGINE_EV_CUSTOM) {
+                event->handler(event);
+            }
         }
     }
 }
