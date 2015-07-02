@@ -76,44 +76,37 @@ void in_xbee_rx_queue_raw(struct flb_in_xbee_config *ctx, const char *buf ,int l
 }
 
 
-void in_xbee_rx_queue_msgpack(struct flb_in_xbee_config *ctx, const char *buf ,int len)
-{
-    pthread_mutex_lock(&ctx->mtx_mp);
-
-    in_xbee_flush_if_needed(ctx);
-
-    /* Increase buffer position */
-    ctx->buffer_id++;
-
-    msgpack_pack_array(&ctx->mp_pck, 2);
-    msgpack_pack_uint64(&ctx->mp_pck, time(NULL));
-    msgpack_pack_bin_body(&ctx->mp_pck, buf, len);
-
-    pthread_mutex_unlock(&ctx->mtx_mp);
-}
-
-int in_xbee_rx_validate_msgpack(const char *buf, int len)
+int in_xbee_rx_queue_msgpack(struct flb_in_xbee_config *ctx, const char *buf ,int len)
 {
     msgpack_unpacked result;
     msgpack_unpacked_init(&result);
 
     size_t off = 0;
-    if (! msgpack_unpack_next(&result, buf, len, &off)) {
-        goto fail;
+    size_t start = 0;
+    int queued = 0;
+
+    pthread_mutex_lock(&ctx->mtx_mp);
+
+    while (msgpack_unpack_next(&result, buf, len, &off)) {
+        if (result.data.type != MSGPACK_OBJECT_MAP)
+            break;
+
+        in_xbee_flush_if_needed(ctx);
+
+        /* Increase buffer position */
+        ctx->buffer_id++;
+
+        msgpack_pack_array(&ctx->mp_pck, 2);
+        msgpack_pack_uint64(&ctx->mp_pck, time(NULL));
+        msgpack_pack_bin_body(&ctx->mp_pck, buf + start, off - start);
+
+        start = off;
+        queued++;
     }
 
-    if (result.data.type != MSGPACK_OBJECT_MAP) {
-        goto fail;
-    }
-    /* ToDo: validate msgpack length */
-
-    /* can handle as MsgPack */
     msgpack_unpacked_destroy(&result);
-    return 1;
-
-fail:
-    msgpack_unpacked_destroy(&result);
-    return 0;
+    pthread_mutex_unlock(&ctx->mtx_mp);
+    return queued;
 }
 
 void in_xbee_cb(struct xbee *xbee, struct xbee_con *con,
@@ -136,9 +129,7 @@ void in_xbee_cb(struct xbee *xbee, struct xbee_con *con,
     printf("\n");
 #endif
 
-    if (in_xbee_rx_validate_msgpack((const char*) (*pkt)->data, (*pkt)->dataLen)) {
-        in_xbee_rx_queue_msgpack(ctx, (const char*) (*pkt)->data, (*pkt)->dataLen);
-    } else {
+    if (! in_xbee_rx_queue_msgpack(ctx, (const char*) (*pkt)->data, (*pkt)->dataLen)) {
         in_xbee_rx_queue_raw(ctx, (const char*) (*pkt)->data, (*pkt)->dataLen);
     }
 }
