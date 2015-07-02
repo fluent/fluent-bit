@@ -34,50 +34,6 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_utils.h>
 
-char *flb_utils_pack_hello(struct flb_config *config, int *size)
-{
-    int tag_len;
-    char *buf;
-    msgpack_packer pck;
-    msgpack_sbuffer sbuf;
-
-    tag_len = strlen(config->tag);
-
-    /* initialize buffers */
-    msgpack_sbuffer_init(&sbuf);
-    msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
-
-    msgpack_pack_array(&pck, 2);
-
-    /* pack Tag, Time and Record */
-
-    /* TAG */
-    msgpack_pack_bin(&pck, tag_len);
-    msgpack_pack_bin_body(&pck, config->tag, tag_len);
-
-    /* Primary Array: ['TAG', [ */
-    msgpack_pack_array(&pck, 1);
-
-    /* Array entry #0: ['TAG', [[time, {'key': 'val'}]]] */
-    msgpack_pack_array(&pck, 2);
-    msgpack_pack_uint64(&pck, time(NULL));
-
-    msgpack_pack_map(&pck, 1);
-
-    msgpack_pack_bin(&pck, 5);
-    msgpack_pack_bin_body(&pck, "dummy", 5);
-
-    msgpack_pack_uint64(&pck, time(NULL));
-
-    /* dump data back to a new buffer */
-    *size = sbuf.size;
-    buf = malloc(sbuf.size);
-    memcpy(buf, sbuf.data, sbuf.size);
-    msgpack_sbuffer_destroy(&sbuf);
-
-    return buf;
-}
-
 void flb_utils_error(int err)
 {
     char *msg = NULL;
