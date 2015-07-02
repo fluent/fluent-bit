@@ -46,7 +46,6 @@ static void flb_help(int rc, struct flb_config *config)
            FLB_CONFIG_FLUSH_SECS);
     printf("  -i, --input=INPUT\tset an input\n");
     printf("  -o, --output=OUTPUT\tset an output\n");
-    printf("  -t, --tag=TAG\t\tset a Tag (default: %s)\n", FLB_CONFIG_DEFAULT_TAG);
     printf("  -V, --verbose\t\tenable verbose mode\n");
     printf("  -v, --version\t\tshow version number\n");
     printf("  -h, --help\t\tprint this help\n\n");
@@ -101,7 +100,6 @@ int main(int argc, char **argv)
         { "flush",   required_argument, NULL, 'f' },
         { "input",   required_argument, NULL, 'i' },
         { "output",  required_argument, NULL, 'o' },
-        { "tag",     required_argument, NULL, 't' },
         { "version", no_argument      , NULL, 'v' },
         { "verbose", no_argument      , NULL, 'V' },
         { "help",    no_argument      , NULL, 'h' },
@@ -115,7 +113,7 @@ int main(int argc, char **argv)
     }
 
     /* Parse the command line options */
-    while ((opt = getopt_long(argc, argv, "c:f:i:o:t:vVh",
+    while ((opt = getopt_long(argc, argv, "c:f:i:o:vVh",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
@@ -136,9 +134,6 @@ int main(int argc, char **argv)
                 flb_utils_error(FLB_ERR_OUTPUT_UNIQ);
             }
             cfg_output = optarg;
-            break;
-        case 't':
-            cfg_tag = optarg;
             break;
         case 'h':
             flb_help(EXIT_SUCCESS, config);
@@ -173,14 +168,6 @@ int main(int argc, char **argv)
     /* Validate flush time (seconds) */
     if (config->flush < 1) {
         flb_utils_error(FLB_ERR_CFG_FLUSH);
-    }
-
-    /* Tag */
-    if (cfg_tag) {
-        config->tag = cfg_tag;
-    }
-    else {
-        config->tag = strdup(FLB_CONFIG_DEFAULT_TAG);
     }
 
     /* Inputs */

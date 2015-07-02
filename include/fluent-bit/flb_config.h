@@ -43,8 +43,6 @@ struct flb_config {
     /* Outputs */
     struct mk_list outputs;             /* list of output plugins */
     struct flb_output_plugin *output;   /* output plugin in use   */
-
-    char *tag;          /* Message Tag, used by Fluentd   */
 };
 
 int __flb_config_verbose;
