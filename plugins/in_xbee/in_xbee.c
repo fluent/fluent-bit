@@ -47,10 +47,10 @@ void in_xbee_flush_if_needed(struct flb_in_xbee_config *ctx)
     int ret;
 
     if (ctx->buffer_id + 1 >= FLB_XBEE_BUFFER_SIZE) {
-        ret = flb_engine_flush(ctx->config, &in_xbee_plugin, NULL);
+        ret = flb_engine_flush(ctx->config, &in_xbee_plugin);
         if (ret == -1) {
             ctx->buffer_id = 0;
-        } 
+        }
     }
 }
 
@@ -95,7 +95,7 @@ int in_xbee_rx_queue_msgpack(struct flb_in_xbee_config *ctx, const char *buf ,in
     uint64_t t;
 
     pthread_mutex_lock(&ctx->mtx_mp);
-    
+
     while (msgpack_unpack_next(&record, buf, len, &off)) {
         if (record.data.type == MSGPACK_OBJECT_ARRAY && record.data.via.array.size == 2) {
             /*  [ time, { map => val, map => val, map => val } ] */
@@ -125,7 +125,7 @@ int in_xbee_rx_queue_msgpack(struct flb_in_xbee_config *ctx, const char *buf ,in
             msgpack_pack_array(&ctx->mp_pck, 2);
             msgpack_pack_uint64(&ctx->mp_pck, t);
             msgpack_pack_bin_body(&ctx->mp_pck, (char*) buf + 1 + mp_offset, off2 - mp_offset);
-            
+
         } else if (record.data.type == MSGPACK_OBJECT_MAP) {
             /*  { map => val, map => val, map => val } */
 
