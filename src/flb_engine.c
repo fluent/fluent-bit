@@ -33,8 +33,7 @@
 #include <fluent-bit/flb_engine.h>
 
 int flb_engine_flush(struct flb_config *config,
-                     struct flb_input_plugin *in_force,
-                     struct flb_output_plugin *tmp)
+                     struct flb_input_plugin *in_force)
 {
     int fd;
     int size;
@@ -42,17 +41,8 @@ int flb_engine_flush(struct flb_config *config,
     int bytes;
     char *buf;
     struct flb_input_plugin *in;
-    struct flb_output_plugin *out;
     struct iovec *iov;
     struct mk_list *head;
-
-    if (!tmp) {
-        out = mk_list_entry_first(&config->outputs,
-                                  struct flb_output_plugin, _head);
-    }
-    else {
-        out = tmp;
-    }
 
     mk_list_foreach(head, &config->inputs) {
         in = mk_list_entry(head, struct flb_input_plugin, _head);
