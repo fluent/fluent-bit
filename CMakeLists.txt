@@ -67,11 +67,6 @@ else()
   add_subdirectory(lib/monkey/mk_core)
 endif()
 
-if(WITH_IN_MQTT)
-  unset(WITH_SRV CACHE)
-  add_subdirectory(lib/mosquitto-1.4.2)
-endif()
-
 # SSL/TLS: add encryption support
 if(WITH_SSL_TLS)
   add_definitions(-DHAVE_SSL_TLS)
