@@ -41,11 +41,27 @@
  */
 void xbee_init(void);
 
+void in_xbee_flush_if_needed(struct flb_in_xbee_config *ctx)
+{
+    /* a caller should acquire mutex before calling this function */
+    int ret;
 
+    if (ctx->buffer_id + 1 >= FLB_XBEE_BUFFER_SIZE) {
+        ret = flb_engine_flush(ctx->config, &in_xbee_plugin, NULL);
+        if (ret == -1) {
+            ctx->buffer_id = 0;
+        } 
+    }
+}
 
 void in_xbee_rx_queue_raw(struct flb_in_xbee_config *ctx, const char *buf ,int len)
 {
     /* Increase buffer position */
+
+    pthread_mutex_lock(&ctx->mtx_mp);
+
+    in_xbee_flush_if_needed(ctx);
+
     ctx->buffer_id++;
 
     msgpack_pack_array(&ctx->mp_pck, 2);
@@ -55,17 +71,25 @@ void in_xbee_rx_queue_raw(struct flb_in_xbee_config *ctx, const char *buf ,int l
     msgpack_pack_bin_body(&ctx->mp_pck, "data", 4);
     msgpack_pack_bin(&ctx->mp_pck, len);
     msgpack_pack_bin_body(&ctx->mp_pck, buf, len);
+
+    pthread_mutex_unlock(&ctx->mtx_mp);
 }
 
 
 void in_xbee_rx_queue_msgpack(struct flb_in_xbee_config *ctx, const char *buf ,int len)
 {
+    pthread_mutex_lock(&ctx->mtx_mp);
+
+    in_xbee_flush_if_needed(ctx);
+
     /* Increase buffer position */
     ctx->buffer_id++;
 
     msgpack_pack_array(&ctx->mp_pck, 2);
     msgpack_pack_uint64(&ctx->mp_pck, time(NULL));
     msgpack_pack_bin_body(&ctx->mp_pck, buf, len);
+
+    pthread_mutex_unlock(&ctx->mtx_mp);
 }
 
 int in_xbee_rx_validate_msgpack(const char *buf, int len)
@@ -84,7 +108,6 @@ int in_xbee_rx_validate_msgpack(const char *buf, int len)
     /* ToDo: validate msgpack length */
 
     /* can handle as MsgPack */
-
     msgpack_unpacked_destroy(&result);
     return 1;
 
@@ -97,7 +120,6 @@ void in_xbee_cb(struct xbee *xbee, struct xbee_con *con,
                 struct xbee_pkt **pkt, void **data)
 {
     struct flb_in_xbee_config *ctx;
-    int ret;
 
     if ((*pkt)->dataLen == 0) {
         flb_debug("xbee data length too short, skip");
@@ -113,17 +135,6 @@ void in_xbee_cb(struct xbee *xbee, struct xbee_con *con,
     }
     printf("\n");
 #endif
-
-    if (ctx->buffer_id + 1 >= FLB_XBEE_BUFFER_SIZE) {
-        flb_debug("buffer is full (FixMe)");
-        return;
-#if 0
-        ret = flb_engine_flush(config, &in_xbee_plugin, NULL);
-        if (ret == -1) {
-            ctx->buffer_id = 0;
-        } 
-#endif
-    }
 
     if (in_xbee_rx_validate_msgpack((const char*) (*pkt)->data, (*pkt)->dataLen)) {
         in_xbee_rx_queue_msgpack(ctx, (const char*) (*pkt)->data, (*pkt)->dataLen);
@@ -155,15 +166,16 @@ void *in_xbee_flush(void *in_context, int *size)
     msgpack_sbuffer *sbuf;
     struct flb_in_xbee_config *ctx = in_context;
 
+    pthread_mutex_lock(&ctx->mtx_mp);
+
     if (ctx->buffer_id == 0)
-        return NULL;
+        goto fail;
 
     sbuf = &ctx->mp_sbuf;
     *size = sbuf->size;
     buf = malloc(sbuf->size);
-    if (!buf) {
-        return NULL;
-    }
+    if (!buf)
+        goto fail;
 
     /* set a new buffer and re-initialize our MessagePack context */
     memcpy(buf, sbuf->data, sbuf->size);
@@ -173,22 +185,24 @@ void *in_xbee_flush(void *in_context, int *size)
 
     ctx->buffer_id = 0;
 
+    pthread_mutex_unlock(&ctx->mtx_mp);
     return buf;
+
+fail:
+    pthread_mutex_lock(&ctx->mtx_mp);
+    return NULL;
 }
 
 /* Init xbee input */
 int in_xbee_init(struct flb_config *config)
 {
     int ret;
-    int opt_baudrate = 9600;
-    char *opt_device;
     struct stat dev_st;
     struct xbee *xbee;
     struct xbee_con *con;
     struct xbee_conAddress address;
     struct flb_in_xbee_config *ctx;
     struct xbee_conSettings settings;
-
     /* Prepare the configuration context */
     ctx = calloc(1, sizeof(struct flb_in_xbee_config));
     if (!ctx) {
@@ -203,63 +217,53 @@ int in_xbee_init(struct flb_config *config)
 
     xbee_config_read(ctx, config->file);
 
-    /* Device name */
-    if (ctx->file) {
-        opt_device = strdup(ctx->file);
-    } else {
-        opt_device = strdup(FLB_XBEE_DEFAULT_DEVICE);
-    }
-
-    /* Check an optional baudrate */
-    if (ctx->baudrate)
-        opt_baudrate = atoi((char*) ctx->baudrate);
-
     /* initialize MessagePack buffers */
     msgpack_sbuffer_init(&ctx->mp_sbuf);
     msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
 
-    flb_info("XBee device=%s, baudrate=%i", opt_device, opt_baudrate);
+    flb_info("XBee device=%s, baudrate=%i", ctx->file, ctx->baudrate);
 
-    ret = stat(opt_device, &dev_st);
+    ret = stat(ctx->file, &dev_st);
     if (ret < 0) {
-        printf("Error: could not open %s device\n", opt_device);
-        free(opt_device);
+        printf("Error: could not open %s device\n", ctx->file);
+        free(ctx->file);
         exit(EXIT_FAILURE);
     }
 
     if (!S_ISCHR(dev_st.st_mode)) {
-        printf("Error: invalid device %s \n", opt_device);
-        free(opt_device);
+        printf("Error: invalid device %s \n", ctx->file);
+        free(ctx->file);
         exit(EXIT_FAILURE);
     }
 
-    if (access(opt_device, R_OK | W_OK) == -1) {
+    if (access(ctx->file, R_OK | W_OK) == -1) {
         printf("Error: cannot open the device %s (permission denied ?)\n",
-               opt_device);
-        free(opt_device);
+               ctx->file);
+        free(ctx->file);
         exit(EXIT_FAILURE);
     }
+
+    ctx->config = config;
+    pthread_mutex_init(&ctx->mtx_mp, NULL);
 
     /* Init library */
     xbee_init();
 
-    ret = xbee_setup(&xbee, "xbeeZB", opt_device, opt_baudrate);
+    ret = xbee_setup(&xbee, ctx->xbeeMode, ctx->file, ctx->baudrate);
     if (ret != XBEE_ENONE) {
         flb_utils_error_c("xbee_setup");
         return ret;
     }
 
-    /* FIXME: just a built-in example */
+    /* 000000000000FFFF: broadcast address */
     memset(&address, 0, sizeof(address));
     address.addr64_enabled = 1;
-#if 0
     address.addr64[0] = 0x00;
-    address.addr64[1] = 0x13;
-    address.addr64[2] = 0xA2;
+    address.addr64[1] = 0x00;
+    address.addr64[2] = 0x00;
     address.addr64[3] = 0x00;
-    address.addr64[4] = 0x40;
-    address.addr64[5] = 0xB7;
-#endif
+    address.addr64[4] = 0x00;
+    address.addr64[5] = 0x00;
     address.addr64[6] = 0xFF;
     address.addr64[7] = 0xFF;
 
@@ -272,15 +276,11 @@ int in_xbee_init(struct flb_config *config)
         return ret;
     }
 
-
     xbee_conSettings(con, NULL, &settings);
-    settings.disableAck = 1;
-    settings.catchAll = 1;
+    settings.disableAck = ctx->xbeeDisableAck ? 1 : 0;
+    settings.catchAll = ctx->xbeeCatchAll ? 1 : 0;
     xbee_conSettings(con, &settings, NULL);
 
-
-    ctx->device     = opt_device;
-    ctx->baudrate   = opt_baudrate;
     ctx->con        = con;
     ctx->buffer_len = 0;
 
@@ -289,12 +289,10 @@ int in_xbee_init(struct flb_config *config)
         return ret;
     }
 
-
     if ((ret = xbee_conCallbackSet(con, in_xbee_cb, NULL)) != XBEE_ENONE) {
         xbee_log(xbee, -1, "xbee_conCallbackSet() returned: %d", ret);
         return ret;
     }
-
 
     /* Set the context */
     ret = flb_input_set_context("xbee", ctx, config);

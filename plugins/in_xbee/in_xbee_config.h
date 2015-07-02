@@ -27,19 +27,20 @@
 #define FLB_XBEE_BUFFER_SIZE       128
 
 struct flb_in_xbee_config {
-    int fd;           /* Socket to destination/backend */
-
-    char *file;
-    char *bitrate;
+    struct flb_config *config;
 
     /* Tag: used to extend original tag */
     int  tag_len;              /* The real string length     */
     char tag[32];              /* Custom Tag for this input  */
 
     /* XBee setup */
+    char *file;
     int  baudrate;
-    char *device;
+
     int xbeeLogLevel;
+    int xbeeDisableAck;
+    int xbeeCatchAll;
+    char *xbeeMode;
 
     /* Active connection context */
     struct xbee_con *con;
@@ -51,7 +52,9 @@ struct flb_in_xbee_config {
     msgpack_packer  mp_pck;
     msgpack_sbuffer mp_sbuf;
     int buffer_id;
+    pthread_mutex_t mtx_mp;
 };
 
+struct flb_in_xbee_config *xbee_config_read(struct flb_in_xbee_config *config, struct mk_rconf *conf);
 
 #endif

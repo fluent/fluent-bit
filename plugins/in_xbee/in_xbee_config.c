@@ -23,11 +23,22 @@
 
 #include "in_xbee_config.h"
 
+int in_xbee_config_read_int(int *dest, struct mk_rconf_section *section, char *key, int default_val)
+{
+    char *val;
+
+    val = mk_rconf_section_get_key(section, key, MK_RCONF_STR);
+    *dest = val ? atoi(val) : default_val;
+
+    return (val != NULL);
+}
+
 struct flb_in_xbee_config *xbee_config_read(struct flb_in_xbee_config *config, struct mk_rconf *conf)
 {
-    char *file;
-    char *baudrate;
-    char *xbee_loglevel;
+    char *file = NULL;
+    char *baudrate = NULL;
+    char *xbee_mode = NULL;
+
     struct mk_rconf_section *section;
 
     section = mk_rconf_section_get(conf, "xbee");
@@ -37,25 +48,20 @@ struct flb_in_xbee_config *xbee_config_read(struct flb_in_xbee_config *config, s
 
     /* Validate xbee section keys */
     file = mk_rconf_section_get_key(section, "file", MK_RCONF_STR);
-    baudrate = mk_rconf_section_get_key(section, "baudrate", MK_RCONF_STR);
-    xbee_loglevel = mk_rconf_section_get_key(section, "XBeeLogLevel", MK_RCONF_STR);
 
     if (!file) {
         flb_utils_error_c("[xbee] error reading filename from "
                 "configuration");
     }
 
-    if (!baudrate) {
-        flb_utils_error_c("[xbee] error reading baudrate from "
-                "configuration");
-    }
+    config->file      = file;
+    in_xbee_config_read_int(&config->baudrate, section, "baudrate", 9600);
+    in_xbee_config_read_int(&config->xbeeLogLevel, section, "xbeeloglevel", -1);
+    in_xbee_config_read_int(&config->xbeeDisableAck, section, "xbeedisableack", 1);
+    in_xbee_config_read_int(&config->xbeeCatchAll, section, "xbeecatchall", 1);
+    config->xbeeMode  = xbee_mode ? xbee_mode : "xbeeZB";
 
-    config->fd       = -1;
-    config->file     = file;
-    config->baudrate  = baudrate;
-    config->xbeeLogLevel = xbee_loglevel ? atoi(xbee_loglevel) : -1;
-
-    flb_debug("[xbee] / device='%s' baudrate='%s'",
+    flb_debug("[xbee] / device='%s' baudrate=%d",
               config->file, config->baudrate);
 
     return config;
