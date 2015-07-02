@@ -19,12 +19,14 @@
 
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_network.h>
+
 #include "in_mqtt.h"
+#include "mqtt_conn.h"
 
 /* Initialize plugin */
 int in_mqtt_init(struct flb_config *config)
 {
-    int fd;
     int ret;
     struct flb_in_mqtt_config *ctx;
 
@@ -39,6 +41,18 @@ int in_mqtt_init(struct flb_config *config)
     if (ret == -1) {
         flb_utils_error_c("Could not set configuration for MQTT input plugin");
     }
+
+    /* Create TCP server */
+    ctx->server_fd = flb_net_server(FLB_MQTT_PORT, FLB_MQTT_ADDR);
+    if (ctx->server_fd > 0) {
+        flb_debug("[mqtt] binding %s:%s", FLB_MQTT_ADDR, FLB_MQTT_PORT);
+    }
+    else {
+        flb_error("[mqtt] could not bind address %s:%s. Aborting",
+                  FLB_MQTT_ADDR, FLB_MQTT_PORT);
+        exit(EXIT_FAILURE);
+    }
+    ctx->evl = config->evl;
 
     /* Collect upon data available on the standard input */
     ret = flb_input_set_collector_event("mqtt",
@@ -55,12 +69,23 @@ int in_mqtt_init(struct flb_config *config)
 
 int in_mqtt_collect(struct flb_config *config, void *in_context)
 {
-    int bytes;
-    int out_size;
-    char *pack;
+    int fd;
     struct flb_in_mqtt_config *ctx = in_context;
+    struct mqtt_conn *conn;
 
-    return 0;
+    /* Accept the new connection */
+    fd = flb_net_accept(ctx->server_fd);
+    if (fd == -1) {
+        flb_error("[mqtt] could not accept new connection");
+        return -1;
+    }
+
+    flb_debug("[mqtt] new TCP connection arrived FD=%i", fd);
+    conn = mqtt_conn_add(fd, ctx);
+    if (!conn) {
+        return 0;
+    }
+    return -1;
 }
 
 /* Plugin reference */

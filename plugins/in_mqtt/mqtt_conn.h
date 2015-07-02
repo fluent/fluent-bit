@@ -17,19 +17,21 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_IN_MQTT_H
-#define FLB_IN_MQTT_H
+#ifndef FLB_MQTT_CONN_H
+#define FLB_MQTT_CONN_H
 
 #include <mk_core/mk_core.h>
 
-#define FLB_MQTT_ADDR    "0.0.0.0"
-#define FLB_MQTT_PORT    "8082"
-
-struct flb_in_mqtt_config {
-    int server_fd;               /* TCP server file descriptor           */
-    struct mk_event_loop *evl;   /* Event loop file descriptor (mk_core) */
+/* This structure respresents a MQTT connection */
+struct mqtt_conn {
+    struct mk_event event;           /* Built-in event data for mk_events */
+    int fd;                          /* Socket file descriptor            */
+    int  buf_len;                    /* Buffer content length             */
+    char buf[1024];                  /* Buffer data                       */
+    struct flb_in_mqtt_config *ctx;  /* Plugin configuration context      */
 };
 
-int in_mqtt_collect(struct flb_config *config, void *in_context);
+struct mqtt_conn *mqtt_conn_add(int fd, struct flb_in_mqtt_config *ctx);
+int mqtt_conn_del(struct mqtt_conn *conn);
 
 #endif
