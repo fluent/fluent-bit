@@ -221,7 +221,7 @@ void *in_xbee_flush(void *in_context, int *size)
     return buf;
 
 fail:
-    pthread_mutex_lock(&ctx->mtx_mp);
+    pthread_mutex_unlock(&ctx->mtx_mp);
     return NULL;
 }
 
