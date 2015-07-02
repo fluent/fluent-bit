@@ -29,8 +29,6 @@
 #define IN_MEM_COLLECT_NSEC 0
 
 struct flb_in_mem_config {
-    int  tag_len;
-    char tag[32];
     int  idx;
     msgpack_packer  pckr;
     msgpack_sbuffer sbuf;

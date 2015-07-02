@@ -54,17 +54,6 @@ int in_mem_init(struct flb_config *config)
     return 0;
 }
 
-int in_mem_pre_run(void *in_context, struct flb_config *config)
-{
-    struct flb_in_mem_config *ctx = in_context;
-
-    ctx->tag_len = snprintf(ctx->tag, sizeof(ctx->tag), "%s.mem", config->tag);
-    if (ctx->tag_len == -1) {
-        flb_utils_error_c("Could not set custom tag on memory input plugin");
-    }
-    return 0;
-}
-
 int in_mem_collect(struct flb_config *config, void *in_context)
 {
     struct sysinfo info;
@@ -119,7 +108,7 @@ struct flb_input_plugin in_mem_plugin = {
     .name         = "mem",
     .description  = "Memory Usage",
     .cb_init      = in_mem_init,
-    .cb_pre_run   = in_mem_pre_run,
+    .cb_pre_run   = NULL,
     .cb_collect   = in_mem_collect,
     .cb_flush_buf = in_mem_flush
 };
