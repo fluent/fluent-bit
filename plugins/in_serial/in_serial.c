@@ -133,7 +133,7 @@ int in_serial_collect(struct flb_config *config, void *in_context)
 
     /* Check if our buffer is full */
     if (ctx->buffer_id + 1 == SERIAL_BUFFER_SIZE) {
-        ret = flb_engine_flush(config, &in_serial_plugin, NULL);
+        ret = flb_engine_flush(config, &in_serial_plugin);
         if (ret == -1) {
             ctx->buffer_id = 0;
         }
