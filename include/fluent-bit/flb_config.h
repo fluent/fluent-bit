@@ -41,8 +41,9 @@ struct flb_config {
     struct mk_list inputs;
 
     /* Outputs */
-    struct mk_list outputs;             /* list of output plugins */
-    struct flb_output_plugin *output;   /* output plugin in use   */
+    struct mk_list outputs;             /* list of output plugins   */
+    struct flb_output_plugin *output;   /* output plugin in use     */
+    struct mk_event_loop *evl;          /* the event loop (mk_core) */
 };
 
 int __flb_config_verbose;

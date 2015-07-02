@@ -167,11 +167,12 @@ int flb_engine_start(struct flb_config *config)
     flb_output_init(config);
     flb_output_pre_run(config);
 
-    /* main loop */
+    /* Create the event loop and set it in the global configuration */
     evl = mk_event_loop_create(256);
     if (!evl) {
         return -1;
     }
+    config->evl = evl;
 
     /* Create and register the timer fd for flush procedure */
     event = malloc(sizeof(struct mk_event));
