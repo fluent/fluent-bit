@@ -175,23 +175,6 @@ void in_xbee_cb(struct xbee *xbee, struct xbee_con *con,
     }
 }
 
-/* Callback triggered by timer */
-int in_xbee_collect(struct flb_config *config, void *in_context)
-{
-    int ret = 0;
-    void *p = NULL;
-    (void) config;
-    struct flb_in_xbee_config *ctx = in_context;
-
-    if ((ret = xbee_conCallbackGet(ctx->con,
-                                   (xbee_t_conCallback*) &p)) != XBEE_ENONE) {
-        flb_debug("xbee_conCallbackGet() returned: %d", ret);
-        return ret;
-    }
-
-    return 0;
-}
-
 void *in_xbee_flush(void *in_context, int *size)
 {
     char *buf;
@@ -332,21 +315,6 @@ int in_xbee_init(struct flb_config *config)
         flb_utils_error_c("Could not set configuration for xbee input plugin");
     }
 
-    /*
-     * Set our collector based on time. We will trigger a collection at certain
-     * intervals. For now it works but it's not the ideal implementation. I am
-     * talking with libxbee maintainer to check possible workarounds and use
-     * proper events mechanism.
-     */
-    ret = flb_input_set_collector_time("xbee",
-                                       in_xbee_collect,
-                                       IN_XBEE_COLLECT_SEC,
-                                       IN_XBEE_COLLECT_NSEC,
-                                       config);
-    if (ret == -1) {
-        flb_utils_error_c("Could not set collector for xbee input plugin");
-    }
-
     return 0;
 }
 
@@ -356,6 +324,5 @@ struct flb_input_plugin in_xbee_plugin = {
     .description  = "XBee Device",
     .cb_init      = in_xbee_init,
     .cb_pre_run   = NULL,
-    .cb_collect   = in_xbee_collect,
     .cb_flush_buf = in_xbee_flush,
 };
