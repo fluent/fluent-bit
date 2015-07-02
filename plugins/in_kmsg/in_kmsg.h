@@ -44,10 +44,6 @@ struct flb_in_kmsg_config {
     int fd;                    /* descriptor -> FLB_KMSG_DEV */
     struct timeval boot_time;  /* System boot time           */
 
-    /* Tag: used to extend original tag */
-    int  tag_len;              /* The real string length     */
-    char tag[32];              /* Custom Tag for this input  */
-
     /* Line processing */
     int buffer_id;
 

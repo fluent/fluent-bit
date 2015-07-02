@@ -243,21 +243,6 @@ static inline int process_line(char *line, struct flb_in_kmsg_config *ctx)
     return -1;
 }
 
-/* Callback invoked after setup but before to join the main loop */
-int in_kmsg_pre_run(void *in_context, struct flb_config *config)
-{
-    struct flb_in_kmsg_config *ctx = in_context;
-
-    /* Tag */
-    ctx->tag_len = snprintf(ctx->tag, sizeof(ctx->tag) - 1,
-                            "%s.kmsg", config->tag);
-    if (ctx->tag_len == -1) {
-        flb_utils_error_c("Could not set custom tag on kmsg input plugin");
-    }
-
-    return 0;
-}
-
 /* Callback triggered when some Kernel Log buffer msgs are available */
 int in_kmsg_collect(struct flb_config *config, void *in_context)
 {
@@ -343,7 +328,7 @@ struct flb_input_plugin in_kmsg_plugin = {
     .name         = "kmsg",
     .description  = "Kernel Log Buffer",
     .cb_init      = in_kmsg_init,
-    .cb_pre_run   = in_kmsg_pre_run,
+    .cb_pre_run   = NULL,
     .cb_collect   = in_kmsg_collect,
     .cb_flush_buf = in_kmsg_flush
 };
