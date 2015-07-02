@@ -68,7 +68,6 @@ void *in_serial_flush(void *in_context, int *size)
 
 static inline int process_line(char *line, struct flb_in_serial_config *ctx)
 {
-    char priority;           /* log priority                */
     int line_len;
     uint64_t val;
     char *p = line;

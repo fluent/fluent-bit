@@ -46,4 +46,6 @@ struct flb_in_serial_config {
     msgpack_sbuffer mp_sbuf;
 };
 
+struct flb_in_serial_config *serial_config_read(struct flb_in_serial_config *config,
+                                                struct mk_rconf *conf);
 #endif

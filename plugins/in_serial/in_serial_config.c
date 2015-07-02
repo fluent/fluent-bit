@@ -24,7 +24,8 @@
 
 #include "in_serial_config.h"
 
-struct flb_in_serial_config *serial_config_read(struct flb_in_serial_config *config, struct mk_rconf *conf)
+struct flb_in_serial_config *serial_config_read(struct flb_in_serial_config *config,
+                                                struct mk_rconf *conf)
 {
     char *file;
     char *bitrate;
