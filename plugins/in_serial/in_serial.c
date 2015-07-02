@@ -114,21 +114,6 @@ static inline int process_line(char *line, struct flb_in_serial_config *ctx)
     return -1;
 }
 
-/* Callback invoked after setup but before to join the main loop */
-int in_serial_pre_run(void *in_context, struct flb_config *config)
-{
-    struct flb_in_serial_config *ctx = in_context;
-
-    /* Tag */
-    ctx->tag_len = snprintf(ctx->tag, sizeof(ctx->tag) - 1,
-                            "%s.serial", config->tag);
-    if (ctx->tag_len == -1) {
-        flb_utils_error_c("Could not set custom tag on serial input plugin");
-    }
-
-    return 0;
-}
-
 /* Callback triggered when some serial msgs are available */
 int in_serial_collect(struct flb_config *config, void *in_context)
 {
@@ -259,7 +244,7 @@ struct flb_input_plugin in_serial_plugin = {
     .name         = "serial",
     .description  = "Serial input",
     .cb_init      = in_serial_init,
-    .cb_pre_run   = in_serial_pre_run,
+    .cb_pre_run   = NULL,
     .cb_collect   = in_serial_collect,
     .cb_flush_buf = in_serial_flush
 };
