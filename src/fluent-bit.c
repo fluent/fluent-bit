@@ -92,7 +92,6 @@ int main(int argc, char **argv)
     /* local variables to handle config options */
     char *cfg_file = NULL;
     char *cfg_output = NULL;
-    char *cfg_tag = NULL;
 
     /* Setup long-options */
     static const struct option long_opts[] = {
