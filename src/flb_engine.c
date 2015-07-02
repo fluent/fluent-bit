@@ -114,7 +114,8 @@ static inline int consume_byte(int fd)
     return 0;
 }
 
-static int flb_engine_handle_event(int fd, int mask, struct flb_config *config)
+static inline int flb_engine_handle_event(int fd, int mask,
+                                          struct flb_config *config)
 {
     struct mk_list *head;
     struct flb_input_collector *collector;
