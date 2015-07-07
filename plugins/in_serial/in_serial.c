@@ -121,7 +121,7 @@ int in_serial_collect(struct flb_config *config, void *in_context)
     char line[2024];
     struct flb_in_serial_config *ctx = in_context;
 
-    bytes = read(ctx->fd, line, sizeof(line) - 1);
+    bytes = read(ctx->fd, &line, sizeof(line) - 1);
     if (bytes == -1) {
         if (errno == -EPIPE) {
             return -1;
