@@ -39,53 +39,61 @@ const mk_ptr_t mk_iov_equal = mk_ptr_init(MK_IOV_EQUAL);
 
 struct mk_iov *mk_iov_create(int n, int offset)
 {
-    int i;
+    int s_all;
+    int s_iovec;
+    int s_free_buf;
+    void *p;
     struct mk_iov *iov;
 
-    iov = mk_mem_malloc_z(sizeof(struct mk_iov));
-    iov->iov_idx = offset;
-    iov->io = mk_mem_malloc(n * sizeof(struct iovec));
-    iov->buf_to_free = mk_mem_malloc(n * sizeof(void *));
-    iov->buf_idx = 0;
-    iov->total_len = 0;
-    iov->size = n;
+    s_all      = sizeof(struct mk_iov);       /* main mk_iov structure */
+    s_iovec    = (n * sizeof(struct iovec));  /* iovec array size      */
+    s_free_buf = (n * sizeof(void *));        /* free buf array        */
 
-    /*
-     * Make sure to set to zero initial entries when an offset
-     * is specified
-     */
-    if (offset > 0) {
-        for (i=0; i < offset; i++) {
-            iov->io[i].iov_base = NULL;
-            iov->io[i].iov_len = 0;
-        }
+    p = mk_mem_malloc_z(s_all + s_iovec + s_free_buf);
+    if (!p) {
+        return NULL;
     }
 
+    /* Set pointer address */
+    iov = p;
+    iov->io = p + s_all - (s_iovec - s_free_buf);
+    iov->buf_to_free = (void *) (iov->io + s_iovec);
+
+    mk_iov_init(iov, n, offset);
     return iov;
 }
 
-int mk_iov_realloc(struct mk_iov *mk_io, int new_size)
+struct mk_iov *mk_iov_realloc(struct mk_iov *mk_io, int new_size)
 {
-    void **new_buf;
-    struct iovec *new_io;
+    int i;
+    struct mk_iov *iov;
 
-    new_io  = mk_mem_realloc(mk_io->io, sizeof(struct iovec) * new_size) ;
-    new_buf = mk_mem_realloc(mk_io->buf_to_free, sizeof(void *) * new_size);
-
-    if (!new_io || !new_buf) {
-        MK_TRACE("could not reallocate IOV");
-        mk_mem_free(new_io);
-        mk_mem_free(new_buf);
-        return -1;
+    /*
+     * We do not perform a memory realloc because our struct iov have
+     * self references on it 'io' and 'buf_to_free' pointers. So we create a
+     * new mk_iov and perform a data migration.
+     */
+    iov = mk_iov_create(new_size, 0);
+    if (!iov) {
+        return NULL;
     }
 
-    /* update data */
-    mk_io->io = new_io;
-    mk_io->buf_to_free = new_buf;
+    /* Migrate data */
+    iov->iov_idx   = mk_io->iov_idx;
+    iov->buf_idx   = mk_io->buf_idx;
+    iov->size      = new_size;
+    iov->total_len = mk_io->total_len;
 
-    mk_io->size = new_size;
+    for (i = 0; i < mk_io->iov_idx; i++) {
+        iov->io[i].iov_base = mk_io->io[i].iov_base;
+        iov->io[i].iov_len  = mk_io->io[i].iov_len;
+    }
 
-    return 0;
+    for (i = 0; i < mk_io->buf_idx; i++) {
+        iov->buf_to_free[i] = mk_io->buf_to_free[i];
+    }
+
+    return iov;
 }
 
 int mk_iov_set_entry(struct mk_iov *mk_io, void *buf, int len,
@@ -116,8 +124,6 @@ ssize_t mk_iov_send(int fd, struct mk_iov *mk_io)
 void mk_iov_free(struct mk_iov *mk_io)
 {
     mk_iov_free_marked(mk_io);
-    mk_mem_free(mk_io->buf_to_free);
-    mk_mem_free(mk_io->io);
     mk_mem_free(mk_io);
 }
 

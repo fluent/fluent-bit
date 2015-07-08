@@ -85,6 +85,9 @@ struct mk_sched_worker
 
     struct mk_http_session *request_handler;
 
+
+    struct mk_list event_free_queue;
+
     /*
      * This variable is used to signal the active workers,
      * just available because of ULONG_MAX bug described
@@ -231,6 +234,21 @@ int mk_sched_event_write(struct mk_sched_conn *conn,
 int mk_sched_event_close(struct mk_sched_conn *conn,
                          struct mk_sched_worker *sched,
                          int type);
+void mk_sched_event_free(struct mk_event *event);
+
+
+static inline void mk_sched_event_free_all(struct mk_sched_worker *sched)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct mk_event *event;
+
+    mk_list_foreach_safe(head, tmp, &sched->event_free_queue) {
+        event = mk_list_entry(head, struct mk_event, _head);
+        mk_list_del(&event->_head);
+        mk_mem_free(event);
+    }
+}
 
 static inline void mk_sched_conn_timeout_add(struct mk_sched_conn *conn,
                                              struct mk_sched_worker *sched)
@@ -248,6 +266,7 @@ static inline void mk_sched_conn_timeout_del(struct mk_sched_conn *conn)
         conn->is_timeout_on = MK_FALSE;
     }
 }
+
 
 #define mk_sched_conn_read(conn, buf, s)        \
     conn->net->read(conn->event.fd, buf, s)

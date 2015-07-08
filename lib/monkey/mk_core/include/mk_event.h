@@ -19,17 +19,18 @@
 
 #include <stdint.h>
 #include "mk_macros.h"
+#include "mk_list.h"
 
 #ifndef MK_EVENT_H
 #define MK_EVENT_H
 
-/* Events family */
-#define MK_EVENT_NOTIFICATION    0    /* notification channel (pipe) */
-#define MK_EVENT_LISTENER        1    /* listener socket             */
-#define MK_EVENT_CONNECTION      2    /* data on active connection   */
-#define MK_EVENT_CUSTOM          3    /* custom fd registered        */
+/* Events type family */
+#define MK_EVENT_NOTIFICATION    0    /* notification channel (pipe)      */
+#define MK_EVENT_LISTENER        1    /* listener socket                  */
+#define MK_EVENT_CONNECTION      2    /* data on active connection        */
+#define MK_EVENT_CUSTOM          3    /* custom fd registered             */
 
-/* Event types for file descriptors  */
+/* Event triggered for file descriptors  */
 #define MK_EVENT_EMPTY           0
 #define MK_EVENT_READ            1
 #define MK_EVENT_WRITE           4
@@ -53,7 +54,7 @@
 #define MK_EP_SOCKET_CLOSED   0
 #define MK_EP_SOCKET_ERROR    1
 #define MK_EP_SOCKET_TIMEOUT  2
-
+#define MK_EP_SOCKET_DONE     3
 /* ---- end ---- */
 
 #if defined(__linux__) && !defined(LINUX_KQUEUE)
@@ -71,6 +72,7 @@ struct mk_event {
 
     /* function handler for custom type */
     int     (*handler)(void *data);
+    struct mk_list _head;
 };
 
 struct mk_event_loop {
@@ -79,7 +81,6 @@ struct mk_event_loop {
     struct mk_event *events;   /* copy or reference of events triggered */
     void *data;                /* mk_event_ctx_t from backend */
 };
-
 
 int mk_event_initialize();
 struct mk_event_loop *mk_event_loop_create(int size);

@@ -45,18 +45,17 @@ extern const mk_ptr_t mk_iov_slash;
 extern const mk_ptr_t mk_iov_none;
 extern const mk_ptr_t mk_iov_equal;
 
-struct mk_iov
-{
-    struct iovec *io;
-    void **buf_to_free;
+struct mk_iov {
     int iov_idx;
     int buf_idx;
     int size;
     unsigned long total_len;
+    struct iovec *io;
+    void **buf_to_free;
 };
 
 struct mk_iov *mk_iov_create(int n, int offset);
-int mk_iov_realloc(struct mk_iov *mk_io, int new_size);
+struct mk_iov *mk_iov_realloc(struct mk_iov *mk_io, int new_size);
 
 int mk_iov_add_separator(struct mk_iov *mk_io, mk_ptr_t sep);
 
@@ -74,6 +73,30 @@ void mk_iov_separators_init(void);
 void mk_iov_free_marked(struct mk_iov *mk_io);
 void mk_iov_print(struct mk_iov *mk_io);
 int mk_iov_consume(struct mk_iov *mk_io, size_t bytes);
+
+/* Initialize an IOV instance */
+static inline int mk_iov_init(struct mk_iov *iov, int n, int offset)
+{
+    int i;
+
+    iov->iov_idx    = offset;
+    iov->buf_idx    = 0;
+    iov->total_len  = 0;
+    iov->size       = n;
+
+    /*
+     * Make sure to set to zero initial entries when an offset
+     * is specified
+     */
+    if (offset > 0) {
+        for (i = 0; i < offset; i++) {
+            iov->io[i].iov_base = NULL;
+            iov->io[i].iov_len = 0;
+        }
+    }
+
+    return 0;
+}
 
 static inline void _mk_iov_set_free(struct mk_iov *mk_io, void *buf)
 {
@@ -99,8 +122,12 @@ static inline int mk_iov_add(struct mk_iov *mk_io, void *buf, int len,
     }
 #endif
 
-    mk_bug(mk_io->iov_idx > mk_io->size);
+    if (mk_io->iov_idx > mk_io->size){
+        printf("IOV_IDX=%i > IO_SIZE=%i\n", mk_io->iov_idx, mk_io->size);
+        mk_iov_print(mk_io);
+    }
 
+    mk_bug(mk_io->iov_idx > mk_io->size);
     return mk_io->iov_idx;
 }
 

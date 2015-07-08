@@ -111,6 +111,19 @@ int mk_channel_flush(struct mk_channel *channel)
     do {
         ret = mk_channel_write(channel, &count);
         total += count;
+
+#ifdef TRACE
+        MK_TRACE("Channel flush: %d bytes", count);
+        if (ret & MK_CHANNEL_DONE) {
+            MK_TRACE("Channel was empty");
+        }
+        if (ret & MK_CHANNEL_ERROR) {
+            MK_TRACE("Channel error");
+        }
+        if (ret & MK_CHANNEL_EMPTY) {
+            MK_TRACE("Channel empty");
+        }
+#endif
     } while (total <= 4096 && //sched->mem_pagesize &&
              (ret & ~(MK_CHANNEL_DONE | MK_CHANNEL_ERROR | MK_CHANNEL_EMPTY)));
 
@@ -176,10 +189,10 @@ int mk_channel_write(struct mk_channel *channel, size_t *count)
             }
         }
         else if (stream->type == MK_STREAM_COPYBUF) {
-            MK_TRACE("[CH %i] STREAM_COPYBUF, bytes=%lu",
-                     channel->fd, stream->bytes_total);
             bytes = mk_sched_conn_write(channel,
                                         stream->buffer, stream->bytes_total);
+            MK_TRACE("[CH %i] STREAM_COPYBUF, bytes=%lu/%lu",
+                     channel->fd, bytes, stream->bytes_total);
             if (bytes > 0) {
                 mk_copybuf_consume(stream, bytes);
             }

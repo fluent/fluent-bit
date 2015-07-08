@@ -159,7 +159,7 @@ static void cb_stream_iov_extended_free(struct mk_stream *stream)
 int mk_header_prepare(struct mk_http_session *cs,
                       struct mk_http_request *sr)
 {
-    int i=0;
+    int i = 0;
     unsigned long len = 0;
     char *buffer = 0;
     mk_ptr_t response;
@@ -167,8 +167,7 @@ int mk_header_prepare(struct mk_http_session *cs,
     struct mk_iov *iov;
 
     sh = &sr->headers;
-
-    iov = MK_TLS_GET(mk_tls_cache_iov_header);
+    iov = &sh->headers_iov;
 
     /* HTTP Status Code */
     if (sh->status == MK_CUSTOM_STATUS) {
@@ -400,6 +399,8 @@ void mk_header_set_http_status(struct mk_http_request *sr, int status)
 
 void mk_header_response_reset(struct response_headers *header)
 {
+    struct mk_iov *iov;
+
     header->status = 0;
     header->sent = MK_FALSE;
     header->ranges[0] = -1;
@@ -414,4 +415,10 @@ void mk_header_response_reset(struct response_headers *header)
     header->location = NULL;
     header->_extra_rows = NULL;
     header->allow_methods.len = 0;
+
+    /* Initialize headers IOV */
+    iov = &header->headers_iov;
+    iov->io          = (struct iovec *) &header->__iov_io;
+    iov->buf_to_free = (void *) &header->__iov_buf;
+    mk_iov_init(&header->headers_iov, MK_HEADER_IOV, 0);
 }

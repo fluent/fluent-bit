@@ -15,6 +15,10 @@ This is a draft document which lists the changes on this major version.
 - Event File Descriptor Table dropped.
 - Event Loop now support backends (epoll for linux and kqueue for OSX).
 
+## Portability
+
+- Monkey and it subcomponents have multiplatform support: Linux, FreeBSD and OSX.
+
 ## HTTP
 
 - New HTTP Parser (rewritten and optimized)

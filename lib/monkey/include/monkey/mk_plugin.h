@@ -161,7 +161,7 @@ struct plugin_api
 
     /* iov functions */
     struct mk_iov *(*iov_create) (int, int);
-    int (*iov_realloc) (struct mk_iov *, int);
+    struct mk_iov *(*iov_realloc) (struct mk_iov *, int);
     void (*iov_free) (struct mk_iov *);
     void (*iov_free_marked) (struct mk_iov *);
     int (*iov_add) (struct mk_iov *, void *, int, int);
@@ -202,6 +202,7 @@ struct plugin_api
     int (*sched_remove_client) (int);
     struct mk_sched_conn *(*sched_get_connection)(struct mk_sched_worker *,
                                                   int);
+    void (*sched_event_free) (struct mk_event *);
     struct mk_sched_worker *(*sched_worker_info)();
 
     /* worker's functions */

@@ -151,12 +151,13 @@ size_t fcgi_env_write(uint8_t *ptr,
 		__write_param(ptr, len, pos, key, value);
 	}
 
+    /* FIXME
 	if (!strcmp(mk_api->config->transport, MK_TRANSPORT_HTTPS)) {
 		mk_api->pointer_set(&key, "HTTPS");
 		mk_api->pointer_set(&value, "on");
 		__write_param(ptr, len, pos, key, value);
 	}
-
+    */
 	strcpy(buffer, "HTTP_");
 
     mk_list_foreach(head, &parser->header_list) {

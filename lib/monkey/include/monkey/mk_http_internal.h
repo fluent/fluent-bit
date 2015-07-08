@@ -22,6 +22,7 @@
 
 #include <monkey/mk_stream.h>
 
+#define MK_HEADER_IOV         32
 #define MK_HEADER_ETAG_SIZE   32
 
 struct response_headers
@@ -69,6 +70,10 @@ struct response_headers
     /* Flag to track if the response headers were sent */
     int sent;
 
+    /* IOV dirty hack */
+    struct mk_iov headers_iov;
+    struct iovec __iov_io[MK_HEADER_IOV];
+    void *__iov_buf[MK_HEADER_IOV];
 };
 
 struct mk_http_request
@@ -166,10 +171,11 @@ struct mk_http_request
     /* Parent Session */
     struct mk_http_session *session;
 
+    /* Head to list of requests */
+    struct mk_list _head;
+
     /* Response headers */
     struct response_headers headers;
-
-    struct mk_list _head;
 };
 
 #endif

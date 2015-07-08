@@ -316,6 +316,7 @@ void mk_plugin_api_init()
     /* Scheduler and Event callbacks */
     api->sched_loop           = mk_sched_loop;
     api->sched_get_connection = mk_sched_get_connection;
+    api->sched_event_free     = mk_sched_event_free;
     api->sched_remove_client  = mk_plugin_sched_remove_client;
     api->sched_worker_info    = mk_plugin_sched_get_thread_conf;
 
@@ -552,7 +553,7 @@ int mk_plugin_http_request_end(struct mk_http_session *cs, int close)
 
     MK_TRACE("[FD %i] PLUGIN HTTP REQUEST END", cs->socket);
 
-    if (mk_list_is_empty(&cs->request_list) != 0) {
+    if (mk_list_is_empty(&cs->request_list) == 0) {
         MK_TRACE("[FD %i] Tried to end non-existing request.", cs->socket);
         cs->status = MK_REQUEST_STATUS_INCOMPLETE;
         return -1;
@@ -570,7 +571,7 @@ int mk_plugin_http_request_end(struct mk_http_session *cs, int close)
     MK_TRACE("[FD %i] HTTP session end = %i", cs->socket, ret);
     if (ret < 0) {
         con = mk_sched_event_close(cs->conn, mk_sched_get_thread_conf(),
-                                   MK_EP_SOCKET_CLOSED);
+                                   MK_EP_SOCKET_DONE);
         if (con != 0) {
             return con;
         }

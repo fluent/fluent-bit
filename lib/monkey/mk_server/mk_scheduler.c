@@ -349,6 +349,8 @@ void *mk_sched_launch_worker_loop(void *thread_conf)
         exit(EXIT_FAILURE);
     }
 
+    mk_list_init(&sched->event_free_queue);
+
     /*
      * ULONG_MAX BUG test only
      * =======================
@@ -508,7 +510,6 @@ struct mk_sched_conn *mk_sched_get_connection(struct mk_sched_worker *sched,
 int mk_sched_drop_connection(struct mk_sched_conn *conn,
                              struct mk_sched_worker *sched)
 {
-
     return mk_sched_remove_client(conn, sched);
 }
 
@@ -653,12 +654,21 @@ int mk_sched_event_close(struct mk_sched_conn *conn,
                          int type)
 {
     MK_TRACE("[FD %i] Connection Handler, closed", conn->event.fd);
-    conn->protocol->cb_close(conn, sched, type);
+    mk_event_del(sched->loop, &conn->event);
 
+    if (type != MK_EP_SOCKET_DONE) {
+        conn->protocol->cb_close(conn, sched, type);
+    }
     /*
      * Remove the socket from the scheduler and make sure
      * to disable all notifications.
      */
     mk_sched_drop_connection(conn, sched);
     return 0;
+}
+
+void mk_sched_event_free(struct mk_event *event)
+{
+    struct mk_sched_worker *sched = mk_sched_get_thread_conf();
+    mk_list_add(&event->_head, &sched->event_free_queue);
 }

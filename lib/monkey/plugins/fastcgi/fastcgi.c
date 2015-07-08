@@ -37,8 +37,6 @@ const mk_ptr_t mk_fcgi_iov_none = {
 	.len = 0,
 };
 
-static struct mk_plugin *fcgi_global_plugin;
-
 static struct fcgi_config fcgi_global_config;
 static struct fcgi_context_list fcgi_global_context_list;
 
@@ -179,7 +177,6 @@ int fcgi_server_connect(const struct fcgi_server *server)
 
 int fcgi_new_connection(int location_id)
 {
-	struct mk_plugin *plugin = fcgi_global_plugin;
 	struct fcgi_context *cntx;
 	struct fcgi_fd_list *fdl;
 	struct fcgi_fd *fd;
@@ -202,10 +199,11 @@ int fcgi_new_connection(int location_id)
 	check_debug(fd->fd != -1, "Failed to connect to server.");
 
 	mk_api->socket_set_nonblocking(fd->fd);
-	check(!mk_api->event_add(fd->fd,
-                             MK_EVENT_WRITE,
-                             plugin, -1),
-                             "[FD %d] Failed to add event.", fd->fd);
+
+	//check(!mk_api->event_add(fd->fd,
+    //                         MK_EVENT_WRITE,
+    //                         plugin, -1),
+    //                         "[FD %d] Failed to add event.", fd->fd);
 
 	fcgi_fd_set_state(fd, FCGI_FD_READY);
 
@@ -411,7 +409,7 @@ int fcgi_send_response(struct request *req)
 		request_recycle(req);
 
 		mk_api->socket_cork_flag(fd, TCP_CORK_OFF);
-		mk_api->http_request_end(fd);
+		mk_api->http_request_end(req->cs, MK_FALSE);
 	}
 	else {
 		check(!chunk_iov_drop(&req->iov, ret),
@@ -662,16 +660,6 @@ int mk_fastcgi_stage30(struct mk_plugin *plugin, struct mk_http_session *cs,
 	check(cntx, "No fcgi context on thread.");
 	rl = &cntx->rl;
 
-	req = request_list_get_by_fd(rl, cs->socket);
-	if (req) {
-#ifdef TRACE
-		req_id = request_list_index_of(rl, req);
-		PLUGIN_TRACE("[FD %d] Ghost event on req_id %d.",
-                     cs->socket, req_id);
-#endif
-		return MK_PLUGIN_RET_CONTINUE;
-	}
-
 	uri = mk_api->mem_alloc_z(sr->real_path.len + 1);
 	memcpy(uri, sr->real_path.data, sr->real_path.len);
 
@@ -746,23 +734,11 @@ int mk_fastcgi_plugin_exit()
 
 int mk_fastcgi_master_init(struct mk_server_config *config)
 {
-	struct mk_list *h;
-	struct mk_plugin *p;
-
 	check(!fcgi_context_list_init(&fcgi_global_context_list,
                                   &fcgi_global_config,
                                   config->workers,
                                   config->server_capacity),
           "Failed to init thread data list.");
-
-	mk_list_foreach(h, config->plugins) {
-		p = mk_list_entry(h, struct mk_plugin, _head);
-
-		if (strcmp(p->shortname, "fastcgi") == 0) {
-			fcgi_global_plugin = p;
-		}
-	}
-
 	return 0;
 
  error:
@@ -897,7 +873,7 @@ int _mkp_event_write(int socket)
 		if (req->fcgi_fd == -1) {
 			request_recycle(req);
 		}
-		mk_api->http_request_end(socket);
+		mk_api->http_request_end(req->cs, MK_FALSE);
 
 		return MK_PLUGIN_RET_EVENT_OWNED;
 	}
@@ -1056,7 +1032,7 @@ struct mk_plugin mk_plugin_fastcgi = {
     /* Identification */
     .shortname     = "fastcgi",
     .name          = "FastCGI Client",
-    .version       = "0.3",
+    .version       = "0.4",
     .hooks         = MK_PLUGIN_STAGE,
 
     /* Init / Exit */
@@ -1064,7 +1040,7 @@ struct mk_plugin mk_plugin_fastcgi = {
     .exit_plugin   = mk_fastcgi_plugin_exit,
 
     /* Init Levels */
-    .master_init   = NULL,
+    .master_init   = mk_fastcgi_master_init,
     .worker_init   = NULL,
 
     /* Type */

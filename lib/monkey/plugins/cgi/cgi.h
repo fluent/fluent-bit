@@ -104,7 +104,6 @@ int cgi_req_del(struct cgi_request *r);
 static inline struct cgi_request *cgi_req_get(int socket)
 {
     struct cgi_request *r = requests_by_socket[socket];
-
     return r;
 }
 

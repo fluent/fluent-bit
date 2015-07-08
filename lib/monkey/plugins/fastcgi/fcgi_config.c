@@ -132,46 +132,49 @@ error:
 }
 
 int fcgi_config_read_server(struct fcgi_server *srv,
-		struct mk_config_section *section)
+                            struct mk_rconf_section *section)
 {
 	char *tmp = NULL;
 
-	srv->name = mk_api->config_section_getval(section,
-		"ServerName", MK_CONFIG_VAL_STR);
+	srv->name = mk_api->config_section_get_key(section,
+                                               "ServerName", MK_RCONF_STR);
 	check(srv->name,
-		"Server has no ServerName.");
+          "Server has no ServerName.");
 
-	srv->path = mk_api->config_section_getval(section,
-		"ServerPath", MK_CONFIG_VAL_STR);
+	srv->path = mk_api->config_section_get_key(section,
+                                               "ServerPath", MK_RCONF_STR);
 
-	srv->addr = mk_api->config_section_getval(section,
-		"ServerAddr", MK_CONFIG_VAL_STR);
+	srv->addr = mk_api->config_section_get_key(section,
+                                               "ServerAddr", MK_RCONF_STR);
 	if (srv->addr) {
 		tmp = strchr(srv->addr, ':');
 		check(tmp, "No :port in ServerAddr %s", srv->addr);
 		*tmp = '\0';
 		tmp++;
 		check(sscanf(tmp, "%d", &srv->port) == 1,
-			"Failed to read :port of ServerAddr %s", srv->addr);
+              "Failed to read :port of ServerAddr %s", srv->addr);
 	}
 
-	tmp = mk_api->config_section_getval(section,
-		"Multiplexing", MK_CONFIG_VAL_BOOL);
+	tmp = mk_api->config_section_get_key(section,
+                                         "Multiplexing",
+                                         MK_RCONF_BOOL);
 	if (tmp) {
-		srv->mpx_connection = !strcasecmp(tmp, VALUE_ON);
+		srv->mpx_connection = !strcasecmp(tmp, MK_RCONF_ON);
 		mk_api->mem_free(tmp);
 	} else {
 		srv->mpx_connection = MK_FALSE;
 	}
 
-	srv->max_connections = (long int)mk_api->config_section_getval(section,
-		"MaxConnections", MK_CONFIG_VAL_NUM);
+	srv->max_connections = (long int)mk_api->config_section_get_key(section,
+                                                                    "MaxConnections",
+                                                                    MK_RCONF_NUM);
 	if (srv->max_connections <= 0) {
 		srv->max_connections = 1;
 	}
 
-	srv->max_requests = (long int)mk_api->config_section_getval(section,
-		"MaxRequests", MK_CONFIG_VAL_NUM);
+	srv->max_requests = (long int) mk_api->config_section_get_key(section,
+                                                                  "MaxRequests",
+                                                                  MK_RCONF_NUM);
 
 	check(srv->addr || srv->path,
 		"[SRV %s] No ServerAddr or ServerPath.", srv->name);
@@ -182,9 +185,9 @@ error:
 }
 
 int fcgi_config_read_location(struct fcgi_location *loc,
-		struct fcgi_server *servers,
-		int server_count,
-		struct mk_config_section *section)
+                              struct fcgi_server *servers,
+                              int server_count,
+                              struct mk_rconf_section *section)
 {
 	static int unamed_loc_count = 0;
 	int ret = 0;
@@ -197,14 +200,14 @@ int fcgi_config_read_location(struct fcgi_location *loc,
 	char *keep_alive = NULL;
 	char *tok;
 
-	loc->name = mk_api->config_section_getval(section, "LocationName",
-			MK_CONFIG_VAL_STR);
-	regex = mk_api->config_section_getval(section, "Match",
-			MK_CONFIG_VAL_STR);
-	keep_alive = mk_api->config_section_getval(section, "KeepAlive",
-			MK_CONFIG_VAL_STR);
-	server_names = mk_api->config_section_getval(section, "ServerNames",
-			MK_CONFIG_VAL_STR);
+	loc->name = mk_api->config_section_get_key(section, "LocationName",
+                                               MK_RCONF_STR);
+	regex = mk_api->config_section_get_key(section, "Match",
+                                           MK_RCONF_STR);
+	keep_alive = mk_api->config_section_get_key(section, "KeepAlive",
+                                                MK_RCONF_STR);
+	server_names = mk_api->config_section_get_key(section, "ServerNames",
+                                                  MK_RCONF_STR);
 
         if (!loc->name) {
             loc->name = mk_api->mem_alloc_z(24);
@@ -222,7 +225,7 @@ int fcgi_config_read_location(struct fcgi_location *loc,
 	regex = NULL;
 
 	if (keep_alive) {
-		loc->keep_alive = !strcasecmp(keep_alive, VALUE_ON);
+		loc->keep_alive = !strcasecmp(keep_alive, MK_RCONF_ON);
 		mk_api->mem_free(keep_alive);
 	} else {
 		loc->keep_alive = MK_FALSE;
@@ -272,8 +275,8 @@ int fcgi_config_read(struct fcgi_config *fconf, char *confdir)
 	unsigned long len;
 	char *conf_path = NULL;
 
-	struct mk_config *config = NULL;
-	struct mk_config_section *section;
+	struct mk_rconf *config = NULL;
+	struct mk_rconf_section *section;
 	struct mk_list *head;
 
 	struct fcgi_server *serverp = NULL;
@@ -288,7 +291,7 @@ int fcgi_config_read(struct fcgi_config *fconf, char *confdir)
 	mk_api->mem_free(conf_path);
 
 	mk_list_foreach(head, &config->sections) {
-		section = mk_list_entry(head, struct mk_config_section, _head);
+		section = mk_list_entry(head, struct mk_rconf_section, _head);
 
 		if (!strcasecmp(section->name, "FASTCGI")) {
 			global_count += 1;
@@ -313,7 +316,7 @@ int fcgi_config_read(struct fcgi_config *fconf, char *confdir)
 	fconf->servers = serverp;
 
 	mk_list_foreach(head, &config->sections) {
-		section = mk_list_entry(head, struct mk_config_section, _head);
+		section = mk_list_entry(head, struct mk_rconf_section, _head);
 
 		if (!strcasecmp(section->name, "FASTCGI_SERVER")) {
 			check(!fcgi_config_read_server(serverp, section),
@@ -326,7 +329,7 @@ int fcgi_config_read(struct fcgi_config *fconf, char *confdir)
 	fconf->locations = locationp;
 
 	mk_list_foreach(head, &config->sections) {
-		section = mk_list_entry(head, struct mk_config_section, _head);
+		section = mk_list_entry(head, struct mk_rconf_section, _head);
 
 		if (!strcasecmp(section->name, "FASTCGI_LOCATION")) {
 			check(!fcgi_config_read_location(locationp,

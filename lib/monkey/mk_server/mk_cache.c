@@ -51,9 +51,6 @@ void mk_cache_worker_init()
     p_tmp->len = -1;
     MK_TLS_SET(mk_tls_cache_header_cl, p_tmp);
 
-    /* Cache iov header struct */
-    MK_TLS_SET(mk_tls_cache_iov_header, mk_iov_create(32, 0));
-
     /* Cache gmtime buffer */
     MK_TLS_SET(mk_tls_cache_gmtime, mk_mem_malloc(sizeof(struct tm)));
 
@@ -80,9 +77,6 @@ void mk_cache_worker_exit()
     /* Cache header request -> content length */
     mk_ptr_free(MK_TLS_GET(mk_tls_cache_header_cl));
     mk_mem_free(MK_TLS_GET(mk_tls_cache_header_cl));
-
-    /* Cache iov header struct */
-    mk_iov_free(MK_TLS_GET(mk_tls_cache_iov_header));
 
     /* Cache gmtime buffer */
     mk_mem_free(MK_TLS_GET(mk_tls_cache_gmtime));

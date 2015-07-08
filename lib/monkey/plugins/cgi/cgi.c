@@ -26,23 +26,14 @@
 
 void cgi_finish(struct cgi_request *r)
 {
-#ifdef TRACE
-    if (r->active == MK_TRUE) {
-        if (mk_list_is_empty(&r->cs->request_list) != 0 ) {
-            PLUGIN_TRACE("CGI Finish / request_list is empty");
-        }
-        PLUGIN_TRACE("CGI Finish / session_fd=%i child_fd=%i child_pid=%l",
-                     r->cs->socket, r->fd, r->child);
-    }
-#endif
-
     /*
      * Unregister & close the CGI child process pipe reader fd from the
      * thread event loop, otherwise we may get unexpected notifications.
      */
     mk_api->ev_del(mk_api->sched_loop(), (struct mk_event *) r);
     close(r->fd);
-    if (r->chunked && r->active) {
+    if (r->chunked && r->active == MK_TRUE) {
+        PLUGIN_TRACE("CGI sending Chunked EOF");
         channel_write(r->sr->session, "0\r\n\r\n", 5);
     }
 
@@ -54,8 +45,7 @@ void cgi_finish(struct cgi_request *r)
 
     /* Invalidte our socket handler */
     requests_by_socket[r->socket] = NULL;
-
-    if (r->active) {
+    if (r->active == MK_TRUE) {
         mk_api->http_request_end(r->cs, r->hangup);
     }
     cgi_req_del(r);
@@ -79,6 +69,8 @@ int swrite(const int fd, const void *buf, const size_t count)
 
 int channel_write(struct mk_http_session *session, void *buf, size_t count)
 {
+    PLUGIN_TRACE("Channel write: %d bytes", count);
+
     mk_stream_set(NULL,
                   MK_STREAM_COPYBUF,
                   session->channel,
@@ -602,20 +594,17 @@ int mk_cgi_stage30_hangup(struct mk_plugin *plugin,
                           struct mk_http_request *sr)
 {
     struct cgi_request *r;
+    (void) sr;
     (void) plugin;
 
+    PLUGIN_TRACE("CGI / Parent connection closed (hangup)");
     r = requests_by_socket[cs->socket];
     if (!r) {
         return -1;
     }
 
+    r->active = MK_FALSE;
     cgi_finish(r);
-
-    /*
-     * FIXME: do we need this here ?, at some point we may need
-     * to invalidate the handler
-     */
-    sr->stage30_handler = NULL;
     return 0;
 }
 

@@ -37,6 +37,7 @@ struct cgi_request *cgi_req_create(int fd, int socket,
     cgi->cs = cs;
     cgi->hangup = MK_TRUE;
     cgi->active = MK_TRUE;
+    cgi->in_len = 0;
 
     return cgi;
 }
@@ -51,12 +52,12 @@ void cgi_req_add(struct cgi_request *r)
 
 int cgi_req_del(struct cgi_request *r)
 {
-    PLUGIN_TRACE("[R] child_fd=%i child_pid=%lu\n",
+    PLUGIN_TRACE("Delete request child_fd=%i child_pid=%lu",
                  r->fd, r->child);
 
-    if (r->active == MK_TRUE) {
-        mk_list_del(&r->_head);
-        r->active = MK_FALSE;
+    mk_list_del(&r->_head);
+    if (r->active == MK_FALSE) {
+        mk_api->sched_event_free(&r->event);
     }
     else {
         mk_mem_free(r);

@@ -20,7 +20,6 @@
 #ifndef MK_CACHE_TLS_H
 #define MK_CACHE_TLS_H
 
-__thread struct mk_iov *mk_tls_cache_iov_header;
 __thread mk_ptr_t *mk_tls_cache_header_cl;
 __thread mk_ptr_t *mk_tls_cache_header_lm;
 __thread struct tm *mk_tls_cache_gmtime;

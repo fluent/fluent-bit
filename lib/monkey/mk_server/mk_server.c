@@ -361,9 +361,6 @@ void mk_server_worker_loop()
                 }
             }
         }
-        else {
-            /* FIXME */
-        }
     }
 
     if (mk_config->scheduler_mode == MK_SCHEDULER_REUSEPORT) {
@@ -383,6 +380,7 @@ void mk_server_worker_loop()
     while (1) {
         mk_event_wait(evl);
         mk_event_foreach(event, evl) {
+            ret = 0;
             if (event->type == MK_EVENT_CONNECTION) {
                 conn = (struct mk_sched_conn *) event;
 
@@ -456,6 +454,7 @@ void mk_server_worker_loop()
                 continue;
             }
         }
+        mk_sched_event_free_all(sched);
     }
 }
 

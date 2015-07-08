@@ -124,7 +124,7 @@ int process_cgi_data(struct cgi_request *r)
 
     if (r->chunked) {
         char tmp[16];
-        len = snprintf(tmp, 16, "%x%s", r->in_len, MK_CRLF);
+        len = snprintf(tmp, 16, "%x\r\n", r->in_len);
         ret = channel_write(r->cs, tmp, len);
         if (ret < 0)
             return MK_PLUGIN_RET_EVENT_CLOSE;
@@ -134,6 +134,7 @@ int process_cgi_data(struct cgi_request *r)
     if (ret < 0) {
         return MK_PLUGIN_RET_EVENT_CLOSE;
     }
+
     r->in_len = 0;
     if (r->chunked) {
         channel_write(r->sr->session, MK_CRLF, 2);
@@ -146,28 +147,24 @@ int cb_cgi_read(void *data)
     int n;
     struct cgi_request *r = data;
 
+    if (r->active == MK_FALSE) {
+        return -1;
+    }
+
     if ((BUFLEN - r->in_len) < 1) {
         PLUGIN_TRACE("CLOSE BY SIZE");
         cgi_finish(r);
         return -1;
     }
 
-    /* Read data from the CGI process */
-    if (r->active == MK_FALSE) {
-        cgi_finish(r);
-        return -1;
-    }
-
     n = read(r->fd, r->in_buf + r->in_len, BUFLEN - r->in_len);
-    PLUGIN_TRACE("CGI returned %d bytes (parent CS_FD=%i)", n,
-                 r->cs->socket);
+    PLUGIN_TRACE("FD=%i CGI READ=%d", r->fd, n);
     if (n <= 0) {
         /* It most of cases this means the child process finished */
         cgi_finish(r);
         return MK_PLUGIN_RET_EVENT_CLOSE;
     }
     r->in_len += n;
-
     process_cgi_data(r);
     return 0;
 }

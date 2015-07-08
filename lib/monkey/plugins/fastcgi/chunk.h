@@ -2,7 +2,7 @@
 #define _CHUNK_H_
 
 #include <stdint.h>
-#include <monkey/mk_list.h>
+#include <mk_core/mk_core.h>
 
 /**
  * struct chunk - Contains a chunk of data.
