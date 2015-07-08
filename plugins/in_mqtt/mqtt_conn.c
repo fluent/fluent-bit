@@ -38,12 +38,11 @@ int mqtt_conn_event(void *data)
         bytes = read(conn->fd, conn->buf, sizeof(conn->buf));
         if (bytes > 0) {
             conn->buf_len = bytes;
-            flb_debug("[mqtt] in:\n%s", conn->buf);
+            flb_debug("[mqtt] %i bytes in:\n%s", bytes, conn->buf);
         }
         else {
             mqtt_conn_del(conn);
         }
-
     }
     else if (event->mask & MK_EVENT_CLOSE) {
         flb_debug("[mqtt] fd=%i hangup", event->fd);
@@ -74,6 +73,7 @@ struct mqtt_conn *mqtt_conn_add(int fd, struct flb_in_mqtt_config *ctx)
     conn->fd      = fd;
     conn->ctx     = ctx;
     conn->buf_len = 0;
+    conn->status  = MQTT_NEW;
 
     /* Register instance into the event loop */
     ret = mk_event_add(ctx->evl, fd, FLB_ENGINE_EV_CUSTOM, MK_EVENT_READ, conn);

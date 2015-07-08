@@ -22,10 +22,16 @@
 
 #include <mk_core/mk_core.h>
 
+enum {
+    MQTT_NEW        = 0,
+    MQTT_CONNECTED
+};
+
 /* This structure respresents a MQTT connection */
 struct mqtt_conn {
     struct mk_event event;           /* Built-in event data for mk_events */
     int fd;                          /* Socket file descriptor            */
+    int status;                      /* Connection status                 */
     int  buf_len;                    /* Buffer content length             */
     char buf[1024];                  /* Buffer data                       */
     struct flb_in_mqtt_config *ctx;  /* Plugin configuration context      */
