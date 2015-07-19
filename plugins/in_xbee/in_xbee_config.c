@@ -36,7 +36,6 @@ int in_xbee_config_read_int(int *dest, struct mk_rconf_section *section, char *k
 struct flb_in_xbee_config *xbee_config_read(struct flb_in_xbee_config *config, struct mk_rconf *conf)
 {
     char *file = NULL;
-    char *baudrate = NULL;
     char *xbee_mode = NULL;
 
     struct mk_rconf_section *section;

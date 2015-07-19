@@ -86,7 +86,7 @@ int in_xbee_iosampling_count_maps(unsigned int mask_din, unsigned int mask_ain)
 int in_xbee_iosampling_decode_ios(struct msgpack_packer *buf, unsigned char *p, unsigned int mask_din, unsigned int mask_ain)
 {
     int i;
-    int din, ain;
+    int din;
 
     /*
      * Digital pins data comes first.
@@ -129,8 +129,7 @@ void in_xbee_iosampling_cb(struct xbee *xbee, struct xbee_con *con,
                 struct xbee_pkt **pkt, void **data)
 {
     struct flb_in_xbee_config *ctx = *data;
-    int i;
-    int map_len = 0; 
+    int map_len = 0;
     unsigned int mask_din, mask_ain;
     char source_addr[8 * 2 + 1];
 
