@@ -121,7 +121,7 @@ int in_serial_collect(struct flb_config *config, void *in_context)
     char line[2024];
     struct flb_in_serial_config *ctx = in_context;
 
-    bytes = read(ctx->fd, line, sizeof(line) - 1);
+    bytes = read(ctx->fd, &line, sizeof(line) - 1);
     if (bytes == -1) {
         if (errno == -EPIPE) {
             return -1;
@@ -179,41 +179,8 @@ int in_serial_init(struct flb_config *config)
     msgpack_sbuffer_init(&ctx->mp_sbuf);
     msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
 
-    tcgetattr(fd, &ctx->tio_orig);
     memset(&ctx->tio, 0, sizeof(ctx->tio));
-    switch (atoi(ctx->bitrate)) {
-        case 1200:
-            ctx->tio.c_cflag = B1200;
-            break;
-        case 2400:
-            ctx->tio.c_cflag = B2400;
-            break;
-        case 4800:
-            ctx->tio.c_cflag = B4800;
-            break;
-        case 9600:
-            ctx->tio.c_cflag = B9600;
-            break;
-        case 19200:
-            ctx->tio.c_cflag = B19200;
-            break;
-        case 38400:
-            ctx->tio.c_cflag = B38400;
-            break;
-
-#ifdef __LINUX__
-        case 576000:
-            ctx->tio.c_cflag = B576000;
-            break;
-        case 115200:
-            ctx->tio.c_cflag = B115200;
-            break;
-#endif
-
-        default:
-            flb_utils_error_c("Invalid bitrate for serial plugin");
-    }
-
+    ctx->tio.c_cflag = atoi(ctx->bitrate);
     ctx->tio.c_cflag |= CRTSCTS | CS8 | CLOCAL | CREAD;
     ctx->tio.c_iflag = IGNPAR | IGNCR;
     ctx->tio.c_oflag = 0;
