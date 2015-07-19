@@ -34,6 +34,7 @@
 #include "in_xbee.h"
 #include "in_xbee_iosampling.h"
 #include "in_xbee_config.h"
+#include "in_xbee_utils.h"
 
 struct xbee_ioport {
     unsigned int mask;
@@ -131,6 +132,7 @@ void in_xbee_iosampling_cb(struct xbee *xbee, struct xbee_con *con,
     int i;
     int map_len = 0; 
     unsigned int mask_din, mask_ain;
+    char source_addr[8 * 2 + 1];
 
     if ((*pkt)->dataLen == 0) {
         flb_debug("xbee data length too short, skip");
@@ -146,8 +148,11 @@ void in_xbee_iosampling_cb(struct xbee *xbee, struct xbee_con *con,
     mask_ain = *(p + 3);
 
     map_len = in_xbee_iosampling_count_maps(mask_din, mask_ain);
+    map_len++; /* for addr field */
 
     p += 4;
+
+    in_xbee_conAddress2str((char*) &source_addr, sizeof(source_addr), &(*pkt)->address);
 
     flb_debug("[xbee] IO sample: mask_din=0x%x mask_ain=%x map_len=%d", mask_din, mask_ain, map_len);
 
@@ -159,6 +164,12 @@ void in_xbee_iosampling_cb(struct xbee *xbee, struct xbee_con *con,
     msgpack_pack_array(&ctx->mp_pck, 2);
     msgpack_pack_uint64(&ctx->mp_pck, time(NULL));
     msgpack_pack_map(&ctx->mp_pck, map_len);
+
+    /* source address */
+    msgpack_pack_bin(&ctx->mp_pck, 8);
+    msgpack_pack_bin_body(&ctx->mp_pck, "src_addr", 8);
+    msgpack_pack_bin(&ctx->mp_pck, strlen((char*) &source_addr));
+    msgpack_pack_bin_body(&ctx->mp_pck, (char*) &source_addr, strlen((char*) &source_addr));
 
     in_xbee_iosampling_decode_ios(&ctx->mp_pck, p, mask_din, mask_ain);
 
