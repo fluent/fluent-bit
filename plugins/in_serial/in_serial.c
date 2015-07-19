@@ -179,7 +179,6 @@ int in_serial_init(struct flb_config *config)
     msgpack_sbuffer_init(&ctx->mp_sbuf);
     msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
 
-    tcgetattr(fd, &ctx->tio_orig);
     memset(&ctx->tio, 0, sizeof(ctx->tio));
     ctx->tio.c_cflag = atoi(ctx->bitrate);
     ctx->tio.c_cflag |= CRTSCTS | CS8 | CLOCAL | CREAD;
