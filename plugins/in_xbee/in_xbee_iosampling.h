@@ -17,18 +17,10 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_IN_XBEE
-#define FLB_IN_XBEE
+#ifndef FLB_IN_XBEE_IOSAMPLING
+#define FLB_IN_XBEE_IOSAMPLING
 
-#include <sys/uio.h>
-
-#define FLB_XBEE_DEFAULT_DEVICE    "/dev/ttyUSB0"
-#define FLB_XBEE_DEFAULT_BAUDRATE  9600
-
-#define IN_XBEE_COLLECT_SEC        0
-#define IN_XBEE_COLLECT_NSEC       15000
-
-
-extern struct flb_input_plugin in_xbee_plugin;
+void in_xbee_iosampling_cb(struct xbee *xbee, struct xbee_con *con,
+                struct xbee_pkt **pkt, void **data);
 
 #endif

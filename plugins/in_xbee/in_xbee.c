@@ -32,6 +32,7 @@
 #include <msgpack.h>
 
 #include "in_xbee.h"
+#include "in_xbee_iosampling.h"
 #include "in_xbee_config.h"
 
 /*
@@ -170,104 +171,6 @@ void in_xbee_cb(struct xbee *xbee, struct xbee_con *con,
     printf("\n");
 #endif
 
-}
-
-void in_xbee_io_sample_cb(struct xbee *xbee, struct xbee_con *con,
-                struct xbee_pkt **pkt, void **data)
-{
-    struct flb_in_xbee_config *ctx;
-    int i;
-    int map_len = 0; 
-    unsigned int mask_din, mask_ain;
-
-
-    if ((*pkt)->dataLen == 0) {
-        flb_debug("xbee data length too short, skip");
-        return;
-    }
-
-    ctx = *data;
-
-    unsigned char *p = (unsigned char*) (*pkt)->data;
-
-    if (*p != 1)
-        return;
-
-    mask_din = *(p + 1) << 8 | *(p + 2);
-    mask_ain = *(p + 3);
-
-    for (i = 0; i < 15; i++) {
-        if (mask_din & (1 << i))
-            map_len++;
-        if (mask_ain & (1 << i))
-            map_len++;
-    }
-
-    p += 4;
-
-    flb_debug("[xbee] IO sample: mask_din=0x%x mask_ain=%x map_len=%d", mask_din, mask_ain, map_len);
-
-    pthread_mutex_lock(&ctx->mtx_mp);
-
-    in_xbee_flush_if_needed(ctx);
-    ctx->buffer_id++;
-
-    msgpack_pack_array(&ctx->mp_pck, 2);
-    msgpack_pack_uint64(&ctx->mp_pck, time(NULL));
-    msgpack_pack_map(&ctx->mp_pck, map_len);
-
-    if (mask_din) {
-        /* sampled digital data sets */
-        int din = *p << 8 | *(p + 1);
-        p += 2;
-
-        for (i = 0; i < 15; i++) {
-            if (mask_din & (1 << i)) {
-                char name[6];
-                snprintf((char*) &name, sizeof(name), "DIO%d", i);
-
-                msgpack_pack_bin(&ctx->mp_pck, strlen((char*) &name));
-                msgpack_pack_bin_body(&ctx->mp_pck, (char*) &name, strlen((char*) &name));
-                msgpack_pack_int(&ctx->mp_pck, (din & (1 << i)) > 0);
-            }
-        }
-    }
- 
-    if (mask_ain & 0x01) {
-        msgpack_pack_bin(&ctx->mp_pck, 3);
-        msgpack_pack_bin_body(&ctx->mp_pck, "AD0", 3);
-        msgpack_pack_int(&ctx->mp_pck, *p << 8 | *(p + 1));
-        p += 2;
-    }
-
-    if (mask_ain & 0x02) {
-        msgpack_pack_bin(&ctx->mp_pck, 3);
-        msgpack_pack_bin_body(&ctx->mp_pck, "AD1", 3);
-        msgpack_pack_int(&ctx->mp_pck, *p << 8 | *(p + 1));
-        p += 2;
-    }
-
-    if (mask_ain & 0x04) {
-        msgpack_pack_bin(&ctx->mp_pck, 3);
-        msgpack_pack_bin_body(&ctx->mp_pck, "AD2", 3);
-        msgpack_pack_int(&ctx->mp_pck, *p << 8 | *(p + 1));
-        p += 2;
-    }
-
-    if (mask_ain & 0x08) {
-        msgpack_pack_bin(&ctx->mp_pck, 3);
-        msgpack_pack_bin_body(&ctx->mp_pck, "AD3", 3);
-        msgpack_pack_int(&ctx->mp_pck, *p << 8 | *(p + 1));
-        p += 2;
-    }
-
-    if (mask_ain & 0x80) {
-        msgpack_pack_bin(&ctx->mp_pck, 3);
-        msgpack_pack_bin_body(&ctx->mp_pck, "VCC", 3);
-        msgpack_pack_int(&ctx->mp_pck, *p << 8 | *(p + 1));
-        p += 2;
-    }
-    pthread_mutex_unlock(&ctx->mtx_mp);
 }
 
 void *in_xbee_flush(void *in_context, int *size)
@@ -418,7 +321,7 @@ int in_xbee_init(struct flb_config *config)
         return ret;
     }
 
-    if ((ret = xbee_conCallbackSet(ctx->con_io, in_xbee_io_sample_cb, NULL)) != XBEE_ENONE) {
+    if ((ret = xbee_conCallbackSet(ctx->con_io, in_xbee_iosampling_cb, NULL)) != XBEE_ENONE) {
         xbee_log(xbee, -1, "xbee_conCallbackSet() returned: %d", ret);
         return ret;
     }
