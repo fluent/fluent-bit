@@ -171,6 +171,9 @@ void in_xbee_cb(struct xbee *xbee, struct xbee_con *con,
     printf("\n");
 #endif
 
+    if (! in_xbee_rx_queue_msgpack(ctx, (const char*) (*pkt)->data, (*pkt)->dataLen)) {
+        in_xbee_rx_queue_raw(ctx, (const char*) (*pkt)->data, (*pkt)->dataLen);
+    }
 }
 
 void *in_xbee_flush(void *in_context, int *size)
