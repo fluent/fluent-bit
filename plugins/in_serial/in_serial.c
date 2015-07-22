@@ -197,11 +197,21 @@ int in_serial_init(struct flb_config *config)
     tcflush(fd, TCIFLUSH);
     tcsetattr(fd, TCSANOW, &ctx->tio);
 
+#if __linux__
     /* Set our collector based on a file descriptor event */
     ret = flb_input_set_collector_event("serial",
                                         in_serial_collect,
                                         ctx->fd,
                                         config);
+#else
+    /* Set our collector based on a timer event */
+    ret = flb_input_set_collector_time("serial",
+                                       in_serial_collect,
+                                       IN_SERIAL_COLLECT_SEC,
+                                       IN_SERIAL_COLLECT_NSEC,
+                                       config);
+#endif
+
     return 0;
 }
 

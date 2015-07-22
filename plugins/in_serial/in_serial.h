@@ -24,7 +24,8 @@
 #include <stdint.h>
 
 #define SERIAL_BUFFER_SIZE   256
-#define SERIAL_USEC_PER_SEC  1000000
+#define IN_SERIAL_COLLECT_SEC  1
+#define IN_SERIAL_COLLECT_NSEC 0
 
 int in_serial_start();
 
