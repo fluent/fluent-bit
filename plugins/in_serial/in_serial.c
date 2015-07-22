@@ -69,22 +69,12 @@ void *in_serial_flush(void *in_context, int *size)
 static inline int process_line(char *line, struct flb_in_serial_config *ctx)
 {
     int line_len;
-    uint64_t val;
     char *p = line;
     char *end = NULL;
     char msg[1024];
 
     /* Increase buffer position */
     ctx->buffer_id++;
-
-    errno = 0;
-    val = strtol(p, &end, 10);
-    if ((errno == ERANGE && (val == INT_MAX || val == INT_MIN))
-        || (errno != 0 && val == 0)) {
-        goto fail;
-    }
-
-    /* Now process the human readable message */
 
     line_len = strlen(p);
     strncpy(msg, p, line_len);
@@ -107,10 +97,6 @@ static inline int process_line(char *line, struct flb_in_serial_config *ctx)
               (const char *) msg);
 
     return 0;
-
- fail:
-    ctx->buffer_id--;
-    return -1;
 }
 
 /* Callback triggered when some serial msgs are available */
@@ -118,30 +104,31 @@ int in_serial_collect(struct flb_config *config, void *in_context)
 {
     int ret;
     int bytes;
-    char line[2024];
+    char line[1024];
     struct flb_in_serial_config *ctx = in_context;
 
-    bytes = read(ctx->fd, line, sizeof(line) - 1);
-    if (bytes == -1) {
-        if (errno == -EPIPE) {
-            return -1;
+    while (1) {
+        bytes = read(ctx->fd, line, sizeof(line) - 1);
+        if (bytes == -1) {
+            if (errno == -EPIPE) {
+                return -1;
+            }
+            return 0;
         }
-        return 0;
-    }
-    /* Always set a delimiter to avoid buffer trash */
-    line[bytes - 1] = '\0';
+        /* Always set a delimiter to avoid buffer trash */
+        line[bytes - 1] = '\0';
 
-    /* Check if our buffer is full */
-    if (ctx->buffer_id + 1 == SERIAL_BUFFER_SIZE) {
-        ret = flb_engine_flush(config, &in_serial_plugin);
-        if (ret == -1) {
-            ctx->buffer_id = 0;
+        /* Check if our buffer is full */
+        if (ctx->buffer_id + 1 == SERIAL_BUFFER_SIZE) {
+            ret = flb_engine_flush(config, &in_serial_plugin);
+            if (ret == -1) {
+                ctx->buffer_id = 0;
+            }
         }
-    }
 
-    /* Process and enqueue the received line */
-    process_line(line, ctx);
-    return 0;
+        /* Process and enqueue the received line */
+        process_line(line, ctx);
+   }
 }
 
 /* Init serial input */
@@ -187,7 +174,7 @@ int in_serial_init(struct flb_config *config)
     ctx->tio.c_lflag = ICANON;
 
     /* open device */
-    fd = open(ctx->file, O_RDWR | O_NOCTTY);
+    fd = open(ctx->file, O_RDWR | O_NOCTTY | O_NONBLOCK);
     if (fd == -1) {
         perror("open");
         flb_utils_error_c("Could not open serial port device");
