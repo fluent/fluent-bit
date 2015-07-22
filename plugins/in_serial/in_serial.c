@@ -180,7 +180,7 @@ int in_serial_init(struct flb_config *config)
     msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
 
     memset(&ctx->tio, 0, sizeof(ctx->tio));
-    ctx->tio.c_cflag = atoi(ctx->bitrate);
+    ctx->tio.c_cflag = ctx->tio.c_ispeed = ctx->tio.c_ospeed = atoi(ctx->bitrate);
     ctx->tio.c_cflag |= CRTSCTS | CS8 | CLOCAL | CREAD;
     ctx->tio.c_iflag = IGNPAR | IGNCR;
     ctx->tio.c_oflag = 0;
