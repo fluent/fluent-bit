@@ -16,4 +16,4 @@ Data collection matters and nowadays the scenarios from where the information ca
 
 As described in the table, if the target environment is a server with common capacity, [Fluentd](http://fluentd.org) is a great option due to it flexibility and availability of plugins (more than 300 extensions!) but if the _data collection_ will happen in an Embedded environment or an IoT device where the system capacity is restricted, [Fluent Bit](http://fluentbit.io) is the solution to use.
 
-Both tools are not mutual exclusive, [Fluent Bit](http://fluentbit.io) provides and _output_ plugin to flush the information to a [Fluentd](http://fluentd.org) instance, so they can work together in your architecture or as standalone services.
+Both tools are not mutual exclusive, [Fluent Bit](http://fluentbit.io) provides and _output_ plugin to flush the information to a [Fluentd](http://fluentd.org) instance, so they can work together in your architecture or as independent services.
