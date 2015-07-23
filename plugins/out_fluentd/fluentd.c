@@ -57,7 +57,7 @@ int cb_fluentd_pre_run(void *out_context, struct flb_config *config)
 
     fd = flb_net_tcp_connect(out_fluentd_plugin.host,
                              out_fluentd_plugin.port);
-    if (fd <= 0) {
+    if (fd == -1) {
         return -1;
     }
 
