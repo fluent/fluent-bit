@@ -28,6 +28,7 @@
 #define IN_XBEE_COLLECT_SEC        0
 #define IN_XBEE_COLLECT_NSEC       15000
 
+
 extern struct flb_input_plugin in_xbee_plugin;
 
 #endif

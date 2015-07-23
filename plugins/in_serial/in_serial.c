@@ -69,22 +69,12 @@ void *in_serial_flush(void *in_context, int *size)
 static inline int process_line(char *line, struct flb_in_serial_config *ctx)
 {
     int line_len;
-    uint64_t val;
     char *p = line;
     char *end = NULL;
     char msg[1024];
 
     /* Increase buffer position */
     ctx->buffer_id++;
-
-    errno = 0;
-    val = strtol(p, &end, 10);
-    if ((errno == ERANGE && (val == INT_MAX || val == INT_MIN))
-        || (errno != 0 && val == 0)) {
-        goto fail;
-    }
-
-    /* Now process the human readable message */
 
     line_len = strlen(p);
     strncpy(msg, p, line_len);
@@ -107,10 +97,6 @@ static inline int process_line(char *line, struct flb_in_serial_config *ctx)
               (const char *) msg);
 
     return 0;
-
- fail:
-    ctx->buffer_id--;
-    return -1;
 }
 
 /* Callback triggered when some serial msgs are available */
@@ -118,30 +104,31 @@ int in_serial_collect(struct flb_config *config, void *in_context)
 {
     int ret;
     int bytes;
-    char line[2024];
+    char line[1024];
     struct flb_in_serial_config *ctx = in_context;
 
-    bytes = read(ctx->fd, line, sizeof(line) - 1);
-    if (bytes == -1) {
-        if (errno == -EPIPE) {
-            return -1;
+    while (1) {
+        bytes = read(ctx->fd, line, sizeof(line) - 1);
+        if (bytes == -1) {
+            if (errno == -EPIPE) {
+                return -1;
+            }
+            return 0;
         }
-        return 0;
-    }
-    /* Always set a delimiter to avoid buffer trash */
-    line[bytes - 1] = '\0';
+        /* Always set a delimiter to avoid buffer trash */
+        line[bytes - 1] = '\0';
 
-    /* Check if our buffer is full */
-    if (ctx->buffer_id + 1 == SERIAL_BUFFER_SIZE) {
-        ret = flb_engine_flush(config, &in_serial_plugin);
-        if (ret == -1) {
-            ctx->buffer_id = 0;
+        /* Check if our buffer is full */
+        if (ctx->buffer_id + 1 == SERIAL_BUFFER_SIZE) {
+            ret = flb_engine_flush(config, &in_serial_plugin);
+            if (ret == -1) {
+                ctx->buffer_id = 0;
+            }
         }
-    }
 
-    /* Process and enqueue the received line */
-    process_line(line, ctx);
-    return 0;
+        /* Process and enqueue the received line */
+        process_line(line, ctx);
+   }
 }
 
 /* Init serial input */
@@ -179,48 +166,15 @@ int in_serial_init(struct flb_config *config)
     msgpack_sbuffer_init(&ctx->mp_sbuf);
     msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
 
-    tcgetattr(fd, &ctx->tio_orig);
     memset(&ctx->tio, 0, sizeof(ctx->tio));
-    switch (atoi(ctx->bitrate)) {
-        case 1200:
-            ctx->tio.c_cflag = B1200;
-            break;
-        case 2400:
-            ctx->tio.c_cflag = B2400;
-            break;
-        case 4800:
-            ctx->tio.c_cflag = B4800;
-            break;
-        case 9600:
-            ctx->tio.c_cflag = B9600;
-            break;
-        case 19200:
-            ctx->tio.c_cflag = B19200;
-            break;
-        case 38400:
-            ctx->tio.c_cflag = B38400;
-            break;
-
-#ifdef __LINUX__
-        case 576000:
-            ctx->tio.c_cflag = B576000;
-            break;
-        case 115200:
-            ctx->tio.c_cflag = B115200;
-            break;
-#endif
-
-        default:
-            flb_utils_error_c("Invalid bitrate for serial plugin");
-    }
-
+    ctx->tio.c_cflag = ctx->tio.c_ispeed = ctx->tio.c_ospeed = atoi(ctx->bitrate);
     ctx->tio.c_cflag |= CRTSCTS | CS8 | CLOCAL | CREAD;
     ctx->tio.c_iflag = IGNPAR | IGNCR;
     ctx->tio.c_oflag = 0;
     ctx->tio.c_lflag = ICANON;
 
     /* open device */
-    fd = open(ctx->file, O_RDWR | O_NOCTTY);
+    fd = open(ctx->file, O_RDWR | O_NOCTTY | O_NONBLOCK);
     if (fd == -1) {
         perror("open");
         flb_utils_error_c("Could not open serial port device");
@@ -230,11 +184,21 @@ int in_serial_init(struct flb_config *config)
     tcflush(fd, TCIFLUSH);
     tcsetattr(fd, TCSANOW, &ctx->tio);
 
+#if __linux__
     /* Set our collector based on a file descriptor event */
     ret = flb_input_set_collector_event("serial",
                                         in_serial_collect,
                                         ctx->fd,
                                         config);
+#else
+    /* Set our collector based on a timer event */
+    ret = flb_input_set_collector_time("serial",
+                                       in_serial_collect,
+                                       IN_SERIAL_COLLECT_SEC,
+                                       IN_SERIAL_COLLECT_NSEC,
+                                       config);
+#endif
+
     return 0;
 }
 
