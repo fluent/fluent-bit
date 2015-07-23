@@ -32,6 +32,7 @@
 static inline double proc_cpu_load()
 {
     int ret;
+    double total;
     double user, nice, system, idle, iowait, irq, softirq;
     FILE *f;
 
@@ -48,7 +49,8 @@ static inline double proc_cpu_load()
     }
 
     fclose(f);
-    return (user + nice + system);
+    total = (user + nice + system);
+    return total;
 }
 
 /* Init CPU input */
