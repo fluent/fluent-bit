@@ -71,7 +71,8 @@ int flb_net_socket_nonblocking(int sockfd)
         perror("fcntl");
         return -1;
     }
-    return fcntl(sockfd, F_SETFD, FD_CLOEXEC);
+
+    return 0;
 }
 
 /*
