@@ -1,8 +1,7 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
-/*  Serial input plugin for Fluent Bit
- *  ==================================
- *  Copyright (C) 2015 Takeshi HASEGAWA
+/*  Fluent Bit
+ *  ==========
  *  Copyright (C) 2015 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,17 +17,10 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_IN_SERIAL
-#define FLB_IN_SERIAL
+#ifndef FLB_IN_XBEE_IOSAMPLING
+#define FLB_IN_XBEE_IOSAMPLING
 
-#include <stdint.h>
-
-#define SERIAL_BUFFER_SIZE   256
-#define IN_SERIAL_COLLECT_SEC  1
-#define IN_SERIAL_COLLECT_NSEC 0
-
-int in_serial_start();
-
-extern struct flb_input_plugin in_serial_plugin;
+void in_xbee_iosampling_cb(struct xbee *xbee, struct xbee_con *con,
+                struct xbee_pkt **pkt, void **data);
 
 #endif

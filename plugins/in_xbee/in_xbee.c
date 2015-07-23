@@ -32,6 +32,7 @@
 #include <msgpack.h>
 
 #include "in_xbee.h"
+#include "in_xbee_iosampling.h"
 #include "in_xbee_config.h"
 
 /*
@@ -175,23 +176,6 @@ void in_xbee_cb(struct xbee *xbee, struct xbee_con *con,
     }
 }
 
-/* Callback triggered by timer */
-int in_xbee_collect(struct flb_config *config, void *in_context)
-{
-    int ret = 0;
-    void *p = NULL;
-    (void) config;
-    struct flb_in_xbee_config *ctx = in_context;
-
-    if ((ret = xbee_conCallbackGet(ctx->con,
-                                   (xbee_t_conCallback*) &p)) != XBEE_ENONE) {
-        flb_debug("xbee_conCallbackGet() returned: %d", ret);
-        return ret;
-    }
-
-    return 0;
-}
-
 void *in_xbee_flush(void *in_context, int *size)
 {
     char *buf;
@@ -221,7 +205,7 @@ void *in_xbee_flush(void *in_context, int *size)
     return buf;
 
 fail:
-    pthread_mutex_lock(&ctx->mtx_mp);
+    pthread_mutex_unlock(&ctx->mtx_mp);
     return NULL;
 }
 
@@ -231,7 +215,6 @@ int in_xbee_init(struct flb_config *config)
     int ret;
     struct stat dev_st;
     struct xbee *xbee;
-    struct xbee_con *con;
     struct xbee_conAddress address;
     struct flb_in_xbee_config *ctx;
     struct xbee_conSettings settings;
@@ -277,6 +260,7 @@ int in_xbee_init(struct flb_config *config)
 
     ctx->config = config;
     pthread_mutex_init(&ctx->mtx_mp, NULL);
+    ctx->buffer_len = 0;
 
     /* Init library */
     xbee_init();
@@ -303,25 +287,44 @@ int in_xbee_init(struct flb_config *config)
         xbee_logLevelSet(xbee, ctx->xbeeLogLevel);
 
     /* Prepare a connection with the peer XBee */
-    if ((ret = xbee_conNew(xbee, &con, "Data", &address)) != XBEE_ENONE) {
+
+    if ((ret = xbee_conNew(xbee, &ctx->con_data, "Data", &address)) != XBEE_ENONE) {
         xbee_log(xbee, -1, "xbee_conNew() returned: %d (%s)", ret, xbee_errorToStr(ret));
         return ret;
     }
 
-    xbee_conSettings(con, NULL, &settings);
+    xbee_conSettings(ctx->con_data, NULL, &settings);
     settings.disableAck = ctx->xbeeDisableAck ? 1 : 0;
     settings.catchAll = ctx->xbeeCatchAll ? 1 : 0;
-    xbee_conSettings(con, &settings, NULL);
+    xbee_conSettings(ctx->con_data, &settings, NULL);
 
-    ctx->con        = con;
-    ctx->buffer_len = 0;
-
-    if ((ret = xbee_conDataSet(con, ctx, NULL)) != XBEE_ENONE) {
+    if ((ret = xbee_conDataSet(ctx->con_data, ctx, NULL)) != XBEE_ENONE) {
         xbee_log(xbee, -1, "xbee_conDataSet() returned: %d", ret);
         return ret;
     }
 
-    if ((ret = xbee_conCallbackSet(con, in_xbee_cb, NULL)) != XBEE_ENONE) {
+    if ((ret = xbee_conCallbackSet(ctx->con_data, in_xbee_cb, NULL)) != XBEE_ENONE) {
+        xbee_log(xbee, -1, "xbee_conCallbackSet() returned: %d", ret);
+        return ret;
+    }
+
+
+    if ((ret = xbee_conNew(xbee, &ctx->con_io, "I/O", &address)) != XBEE_ENONE) {
+        xbee_log(xbee, -1, "xbee_conNew() returned: %d (%s)", ret, xbee_errorToStr(ret));
+        return ret;
+    }
+
+    xbee_conSettings(ctx->con_io, NULL, &settings);
+    settings.disableAck = ctx->xbeeDisableAck ? 1 : 0;
+    settings.catchAll = ctx->xbeeCatchAll ? 1 : 0;
+    xbee_conSettings(ctx->con_io, &settings, NULL);
+
+    if ((ret = xbee_conDataSet(ctx->con_io, ctx, NULL)) != XBEE_ENONE) {
+        xbee_log(xbee, -1, "xbee_conDataSet() returned: %d", ret);
+        return ret;
+    }
+
+    if ((ret = xbee_conCallbackSet(ctx->con_io, in_xbee_iosampling_cb, NULL)) != XBEE_ENONE) {
         xbee_log(xbee, -1, "xbee_conCallbackSet() returned: %d", ret);
         return ret;
     }
@@ -330,21 +333,6 @@ int in_xbee_init(struct flb_config *config)
     ret = flb_input_set_context("xbee", ctx, config);
     if (ret == -1) {
         flb_utils_error_c("Could not set configuration for xbee input plugin");
-    }
-
-    /*
-     * Set our collector based on time. We will trigger a collection at certain
-     * intervals. For now it works but it's not the ideal implementation. I am
-     * talking with libxbee maintainer to check possible workarounds and use
-     * proper events mechanism.
-     */
-    ret = flb_input_set_collector_time("xbee",
-                                       in_xbee_collect,
-                                       IN_XBEE_COLLECT_SEC,
-                                       IN_XBEE_COLLECT_NSEC,
-                                       config);
-    if (ret == -1) {
-        flb_utils_error_c("Could not set collector for xbee input plugin");
     }
 
     return 0;
@@ -356,6 +344,5 @@ struct flb_input_plugin in_xbee_plugin = {
     .description  = "XBee Device",
     .cb_init      = in_xbee_init,
     .cb_pre_run   = NULL,
-    .cb_collect   = in_xbee_collect,
     .cb_flush_buf = in_xbee_flush,
 };

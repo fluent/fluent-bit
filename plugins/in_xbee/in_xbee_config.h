@@ -43,7 +43,8 @@ struct flb_in_xbee_config {
     char *xbeeMode;
 
     /* Active connection context */
-    struct xbee_con *con;
+    struct xbee_con *con_data;
+    struct xbee_con *con_io;
 
     /* buffering */
     int buffer_len;
