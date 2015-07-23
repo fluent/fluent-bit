@@ -133,11 +133,10 @@ int cb_fluentd_flush(void *data, size_t bytes, void *out_context,
 
     fd = flb_net_tcp_connect(out_fluentd_plugin.host,
                              out_fluentd_plugin.port);
-    if (fd <= 0) {
+    if (fd == -1) {
         free(buf);
         return -1;
     }
-
 
     /* FIXME: plain TCP write */
     ret = write(fd, buf, total);
