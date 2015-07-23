@@ -89,6 +89,12 @@ int cb_td_flush(void *data, size_t bytes, void *out_context,
             close(ctx->fd);
             ctx->fd = flb_net_tcp_connect(out_td_plugin.host,
                                           out_td_plugin.port);
+            if (ctx->fd == -1) {
+                flb_error("[TD] could not connect to server");
+                free(request);
+                return -1;
+            }
+
         }
     }
     free(request);
