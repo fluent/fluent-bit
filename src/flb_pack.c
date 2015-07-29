@@ -114,7 +114,7 @@ char *flb_pack_json(char *js, size_t len, int *size)
             msgpack_pack_array(&pck, t->size);
             break;
         case JSMN_STRING:
-            flb_debug("json_pack: token=%i is STRING (len=%i)\n", i, flen);
+            flb_debug("json_pack: token=%i is STRING (len=%i)", i, flen);
             msgpack_pack_bin(&pck, flen);
             msgpack_pack_bin_body(&pck, js + t->start, flen);
             break;
