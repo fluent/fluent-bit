@@ -4,7 +4,7 @@ The __cpu__ input plugin, measure the overall CPU usage of the system between ce
 
 In order to measure the CPU usage of your system with [Fluent Bit](http://fluentbit.io), specify the following command line arguments:
 
-```
+```bash
 $ ./bin/fluent-bit -i cpu -o stdout -V
 Fluent-Bit v0.1.0
 Copyright (C) Treasure Data

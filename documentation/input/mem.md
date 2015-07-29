@@ -4,7 +4,7 @@ The __mem__ input plugin, gather the information about the memory usage of the r
 
 In order to measure read the Kernel log messages with [Fluent Bit](http://fluentbit.io), specify the following command line arguments:
 
-```
+```bash
 $ bin/fluent-bit -i mem -o stdout -V
 Fluent-Bit v0.1.0
 Copyright (C) Treasure Data

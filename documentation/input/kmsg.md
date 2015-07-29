@@ -4,7 +4,7 @@ The __kmsg__ input plugin reads the Linux Kernel log buffer since the beginning,
 
 In order to read the Kernel log messages with [Fluent Bit](http://fluentbit.io), specify the following command line arguments:
 
-```
+```bash
 $ ./bin/fluent-bit -i kmsg -o stdout -V
 Fluent-Bit v0.1.0
 Copyright (C) Treasure Data
