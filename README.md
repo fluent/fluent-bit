@@ -1,45 +1,12 @@
 # Fluent Bit
 
-> The project is under active development, so changes on the API and internal mechanism are expected.
+[Fluent Bit](http://fluentbit.io) is an events collector for Linux, Embedded Linux, OSX and BSD family operating systems. It's part of the [Fluentd](http://fluentd.org) project ecosystem, it allows to collects information from different sources, package and dispatch them to different outputs such as [Fluentd](http://fluentd.org). It have a strong focus on Embedded & IoT environments.
 
-[Fluent-Bit](http://fluentbit.io) is an events collector for Linux, Embedded Linux, OSX and BSD family operating systems. It's part of the [Fluentd](http://fluentd.org) project ecosystem. It allows to collects information from different sources, package and dispatch them to different outputs such as [Fluentd](http://fluentd.org).
+## Features
 
-The current project builds an executable called _fluent-bit_, a shared library _libfluent-bit.so_ and a static library _libfluent-bit.a_. Please refer to the build options described below for more details.
+[Fluent Bit](http://fluentbit.io) support the following features through plugins:
 
-## Build
-
-To build _Fluent-Bit_, you need __cmake__ and a C compiler such as __GCC__ or __Clang__. If you already have the requirements proceed with the following steps:
-
-```bash
-$ cd build/
-$ cmake ..
-$ make
-```
-
-When building _Fluent-Bit_, the following options are available when running __cmake__:
-
- option     | value type | description                                 | default
--------------|------------|---------------------------------------------|---------
-WITH_ALL     | bool       | Enable all features available               | off
-WITH_IN_XBEE | bool       | Enable XBee support (input)                 | off
-WITH_DEBUG   | bool       | Include debug symbols when building targets | off
-WITHOUT_BIN  | bool       | Do not build the fluent-bit executable      | off
-
-In order to active one of these features, you need to set a boolean value. As an example if we would like to build _Fluent-Bit_ with _XBee_ support we should do:
-
-```bash
-$ cd build/
-$ cmake -DWITH_IN_XBEE=1 ..
-$ make
-```
-
-Multiple features can be enabled with _cmake_, just not that the _WITH\_ALL_ option will activate and override any previous value for all of them.
-
-## Using Fluent Bit
-
-Once the tool have been compiled, a binary file called _Fluent-Bit_ will be found on the _bin/_ directory. The tool is designed with the same philosophy than [Fluentd](http://fluentd.org), it requires an _Input_ type (or many) from where the data will be collected and an _Output_ where it will be flushed.
-
-### Input Plugins
+### Input plugins
 
 | name               | option  | description  |
 |--------------------|---------|---------------------------------------------------------------------------------|
@@ -55,25 +22,19 @@ Once the tool have been compiled, a binary file called _Fluent-Bit_ will be foun
 | name               | option                  | description  |
 |--------------------|-------------------------|---------------------------------------------------------------------------------|
 | Fluentd            | fluentd://host:port     | flush content to a [Fluentd](http://fluentd.org) service. On the [Fluentd](http://fluentd.org) side, it requires an __in_forward__.|
-| TreasureData       | td                      | flush data collected to [TreasureData](http://treasuredata.com) service (cloud analytics platform) |
 | Standard Output    | stdout                  | prints the collected data to standard output stream |
 
-### Usage
+## Documentation
 
-### Flush CPU usage to a Fluentd service
+The official documentation of [Fluent Bit](http://fluentbit.io) can be found in the following site:
 
-```bash
-$ fluent-bit -i cpu -o fluentd://localhost:12224
-```
+http://fluentbit.io/documentation
+
+Or you can browse directly on this repository [here](documentation/SUMMARY.md)
 
 ## Contributing
 
 In order to contribute to the project please refer to the [CONTRIBUTING](CONTRIBUTING.md) guidelines.
-
-
-## License
-
-This program is under the terms of the [Apache License v2.0](http://www.apache.org/licenses/LICENSE-2.0).
 
 ## Contact
 
@@ -81,3 +42,12 @@ Feel free to join us on our Mailing List or IRC:
 
  - Mailing List: https://groups.google.com/forum/#!forum/fluent-bit
  - IRC: irc.freenode.net #fluent-bit
+
+## License
+
+This program is under the terms of the [Apache License v2.0](http://www.apache.org/licenses/LICENSE-2.0).
+
+## Authors
+
+[Fluent Bit](http://fluentbit.io) is made and sponsored by [Treasure Data](http://treasuredata.com) among
+other [contributors](https://github.com/fluent/fluent-bit/graphs/contributors).
