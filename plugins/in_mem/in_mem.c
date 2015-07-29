@@ -75,9 +75,9 @@ int in_mem_collect(struct flb_config *config, void *in_context)
     msgpack_pack_bin_body(&ctx->pckr, "free", 4);
     msgpack_pack_uint32(&ctx->pckr, freeram);
 
-    flb_debug("[in_mem] memory total %d kb, free %d kb (buffer=%i)",
-              info.totalram,
-              info.freeram,
+    flb_debug("[in_mem] memory total %lu kb, free %d kb (buffer=%i)",
+              info.totalram/1024,
+              info.freeram/1024,
               ctx->idx);
     ++ctx->idx;
     return 0;
