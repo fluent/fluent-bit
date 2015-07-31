@@ -33,6 +33,27 @@ pthread_mutex_t mk_vhost_fdt_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static __thread struct mk_list *mk_vhost_fdt_key;
 
+static int str_to_regex(char *str, regex_t *reg)
+{
+    int ret;
+    char tmp[80];
+    char *p = str;
+
+    while (*p) {
+        if (*p == ' ') *p = '|';
+        p++;
+    }
+
+    ret = regcomp(reg, str, REG_EXTENDED|REG_ICASE|REG_NOSUB);
+    if (ret) {
+        regerror(ret, reg, tmp, sizeof(tmp));
+        mk_err("Handler config: Failed to compile regex: %s", tmp);
+        return -1;
+    }
+
+    return 0;
+}
+
 /*
  * This function is triggered upon thread creation (inside the thread
  * context), here we configure per-thread data.
@@ -164,7 +185,7 @@ static inline int mk_vhost_fdt_open(int id, unsigned int hash,
                                     struct mk_http_request *sr)
 {
     int i;
-    int fd;
+    int fd = -1;
     struct vhost_fdt_hash_table *ht = NULL;
     struct vhost_fdt_hash_chain *hc;
 
@@ -220,7 +241,7 @@ static inline int mk_vhost_fdt_open(int id, unsigned int hash,
         }
     }
 
-    return -1;
+    return fd;
 }
 
 static inline int mk_vhost_fdt_close(struct mk_http_request *sr)
@@ -291,6 +312,7 @@ int mk_vhost_close(struct mk_http_request *sr)
  */
 struct host *mk_vhost_read(char *path)
 {
+    int ret;
     char *tmp;
     char *host_low;
     struct stat checkdir;
@@ -300,9 +322,12 @@ struct host *mk_vhost_read(char *path)
     struct mk_rconf *cnf;
     struct mk_rconf_section *section_host;
     struct mk_rconf_section *section_ep;
+    struct mk_rconf_section *section_handlers;
     struct mk_rconf_entry *entry_ep;
     struct mk_string_line *entry;
-    struct mk_list *head, *list;
+    struct mk_list *head, *list, *line;
+    struct mk_host_handler *h_handler;
+    struct mk_handler_param *h_param;
 
     /* Read configuration file */
     cnf = mk_rconf_create(path);
@@ -311,7 +336,7 @@ struct host *mk_vhost_read(char *path)
         exit(EXIT_FAILURE);
     }
 
-    /* Read tag 'HOST' */
+    /* Read 'HOST' section */
     section_host = mk_rconf_section_get(cnf, "HOST");
     if (!section_host) {
         mk_err("Invalid config file %s", path);
@@ -323,11 +348,14 @@ struct host *mk_vhost_read(char *path)
     host->config = cnf;
     host->file = mk_string_dup(path);
 
+    /* Init list for host name aliases */
+    mk_list_init(&host->server_names);
+
     /* Init list for custom error pages */
     mk_list_init(&host->error_pages);
 
-    /* Init list for host name aliases */
-    mk_list_init(&host->server_names);
+    /* Init list for content handlers */
+    mk_list_init(&host->handlers);
 
     /* Lookup Servername */
     list = mk_rconf_section_get_key(section_host, "Servername", MK_RCONF_LIST);
@@ -434,7 +462,98 @@ struct host *mk_vhost_read(char *path)
         }
     }
 
+    /* Handlers */
+    int i;
+    int params;
+    struct mk_list *head_line;
+
+    section_handlers = mk_rconf_section_get(cnf, "HANDLERS");
+    if (!section_handlers) {
+        return host;
+    }
+    mk_list_foreach(head, &section_handlers->entries) {
+        entry_ep = mk_list_entry(head, struct mk_rconf_entry, _head);
+        if (strncasecmp(entry_ep->key, "Match", strlen(entry_ep->key)) == 0) {
+            line = mk_string_split_line(entry_ep->val);
+            if (!line) {
+                continue;
+            }
+            h_handler = mk_mem_malloc(sizeof(struct mk_host_handler));
+            if (!h_handler) {
+                exit(EXIT_FAILURE);
+            }
+            mk_list_init(&h_handler->params);
+
+            i = 0;
+            params = 0;
+            mk_list_foreach(head_line, line) {
+                entry = mk_list_entry(head_line, struct mk_string_line, _head);
+                switch (i) {
+                case 0:
+                    ret = str_to_regex(entry->val, &h_handler->match);
+                    if (ret == -1) {
+                        exit(EXIT_FAILURE);
+                    }
+                    break;
+                case 1:
+                    h_handler->name = mk_string_dup(entry->val);
+                    break;
+                default:
+                    /* link parameters */
+                    h_param = mk_mem_malloc(sizeof(struct mk_handler_param));
+                    h_param->p.data = mk_string_dup(entry->val);
+                    h_param->p.len  = entry->len;
+                    mk_list_add(&h_param->_head, &h_handler->params);
+                    params++;
+                };
+                i++;
+            }
+            h_handler->n_params = params;
+
+            if (i < 2) {
+                mk_err("[Host Handlers] invalid Match value\n");
+                exit(EXIT_FAILURE);
+            }
+            mk_list_add(&h_handler->_head, &host->handlers);
+        }
+    }
+
+
     return host;
+}
+
+int mk_vhost_map_handlers()
+{
+    int n = 0;
+    struct mk_list *head;
+    struct mk_list *head_handler;
+    struct host *host;
+    struct mk_host_handler *h_handler;
+    struct mk_plugin *p;
+
+    mk_list_foreach(head, &mk_config->hosts) {
+        host = mk_list_entry(head, struct host, _head);
+        mk_list_foreach(head_handler, &host->handlers) {
+            h_handler = mk_list_entry(head_handler, struct mk_host_handler, _head);
+
+            /* Lookup plugin by name */
+            p = mk_plugin_lookup(h_handler->name);
+            if (!p) {
+                mk_err("Plugin '%s' was not loaded", h_handler->name);
+                exit(EXIT_FAILURE);
+            }
+
+            if (p->hooks != MK_PLUGIN_STAGE) {
+                mk_err("Plugin '%s' is not a handler", h_handler->name);
+                exit(EXIT_FAILURE);
+            }
+
+            h_handler->handler = p;
+            n++;
+        }
+    }
+
+    return n;
 }
 
 void mk_vhost_set_single(char *path)

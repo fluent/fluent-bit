@@ -35,10 +35,10 @@ pthread_mutex_t mutex_trace;
 
 #define MK_TRACE_CORE 0
 #define MK_TRACE_PLUGIN 1
-#define MK_TRACE_COMP_CORE "core"
+#define MK_TRACE_COMP_CORE "mk"
 
 #define MK_TRACE(...) mk_utils_trace(MK_TRACE_COMP_CORE, MK_TRACE_CORE, \
-                                     __FUNCTION__, __FILE__, __LINE__, __VA_ARGS__)
+                                     __FUNCTION__, __FILENAME__, __LINE__, __VA_ARGS__)
 
 #else
 #define MK_TRACE(...) do {} while (0)

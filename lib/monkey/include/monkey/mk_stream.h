@@ -75,6 +75,7 @@ struct mk_stream {
     int fd;                /* file descriptor                  */
     int preserve;          /* preserve stream? (do not unlink) */
     int encoding;          /* some output encoding ?           */
+    int dynamic;           /* dynamic allocated ?              */
 
     /* bytes info */
     size_t bytes_total;
@@ -94,7 +95,6 @@ struct mk_stream {
 
     /* callbacks */
     void (*cb_finished) (struct mk_stream *);
-    void (*cb_ok) (struct mk_stream *);
     void (*cb_bytes_consumed) (struct mk_stream *, long);
     void (*cb_exception) (struct mk_stream *, int);
 
@@ -133,8 +133,12 @@ static inline void mk_stream_set(struct mk_stream *stream, int type,
      * performance and aim to make things easier. The COPYBUF type is not
      * used by Monkey core, at the moment the only caller is the CGI plugin.
      */
-    if (!stream && type == MK_STREAM_COPYBUF) {
+    if (!stream) {
         stream = mk_mem_malloc(sizeof(struct mk_stream));
+        stream->dynamic = MK_TRUE;
+    }
+    else {
+        stream->dynamic = MK_FALSE;
     }
 
     stream->type         = type;
@@ -147,15 +151,18 @@ static inline void mk_stream_set(struct mk_stream *stream, int type,
     if (type == MK_STREAM_IOV) {
         iov = buffer;
         stream->bytes_total = iov->total_len;
+        MK_TRACE("IOV ENQUEUE %i bytes", iov->total_len);
     }
     else if (type == MK_STREAM_PTR) {
         ptr = buffer;
         stream->bytes_total = ptr->len;
+        MK_TRACE("PTR ENQUEUE %i bytes", stream->bytes_total);
     }
     else if (type == MK_STREAM_COPYBUF) {
         stream->buffer = mk_mem_malloc(size);
         stream->bytes_total = size;
         memcpy(stream->buffer, buffer, size);
+        MK_TRACE("COP ENQUEUE %i bytes", stream->bytes_total);
     }
     else {
         stream->bytes_total = size;
@@ -243,13 +250,14 @@ static inline void mk_channel_debug(struct mk_channel *channel)
 }
 
 struct mk_stream *mk_stream_new(int type, struct mk_channel *channel,
-                           void *buffer, size_t size, void *data,
-                           void (*cb_finished) (struct mk_stream *),
-                           void (*cb_bytes_consumed) (struct mk_stream *, long),
-                           void (*cb_exception) (struct mk_stream *, int));
+                                void *buffer, size_t size, void *data,
+                                void (*cb_finished) (struct mk_stream *),
+                                void (*cb_bytes_consumed) (struct mk_stream *, long),
+                                void (*cb_exception) (struct mk_stream *, int));
 struct mk_channel *mk_channel_new(int type, int fd);
 
 int mk_channel_flush(struct mk_channel *channel);
 int mk_channel_write(struct mk_channel *channel, size_t *count);
+int mk_channel_clean(struct mk_channel *channel);
 
 #endif

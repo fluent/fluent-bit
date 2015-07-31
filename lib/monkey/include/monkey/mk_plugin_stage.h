@@ -59,36 +59,6 @@ static inline int mk_plugin_stage_run_20(struct mk_http_session *cs,
     return -1;
 }
 
-static inline int mk_plugin_stage_run_30(struct mk_http_session *cs,
-                                         struct mk_http_request *sr,
-                                         struct mk_plugin **handler)
-{
-    int ret;
-    struct mk_list *head;
-    struct mk_plugin_stage *stage;
-
-    mk_list_foreach(head, &mk_config->stage30_handler) {
-        stage = mk_list_entry(head, struct mk_plugin_stage, _head);
-        ret = stage->stage30(stage->plugin, cs, sr);
-        switch (ret) {
-        case MK_PLUGIN_RET_NOT_ME:
-            break;
-        case MK_PLUGIN_RET_END:
-            mk_bug(sr->headers.sent == MK_FALSE);
-            return ret;
-        case MK_PLUGIN_RET_CLOSE_CONX:
-        case MK_PLUGIN_RET_CONTINUE:
-            *handler = stage->plugin;
-            return ret;
-        default:
-            mk_err("Plugin returns invalid value %i", ret);
-            exit(EXIT_FAILURE);
-        }
-    }
-
-    return -1;
-}
-
 static inline int mk_plugin_stage_run_40(struct mk_http_session *cs,
                                          struct mk_http_request *sr)
 {

@@ -65,12 +65,15 @@ struct mk_server_config *mk_server_init()
     /* setup basic configurations */
     mk_config = mk_config_init();
 
+#ifdef TRACE
+    mk_core_init();
+#endif
+
     /* Init Kernel version data */
     mk_kernel_init();
     mk_kernel_features();
 
 #ifdef TRACE
-    mk_core_init();
     MK_TRACE("Monkey TRACE is enabled");
     env_trace_filter = getenv("MK_TRACE_FILTER");
     pthread_mutex_init(&mutex_trace, (pthread_mutexattr_t *) NULL);

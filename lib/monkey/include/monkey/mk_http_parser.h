@@ -187,6 +187,7 @@ struct mk_http_parser {
     struct mk_http_header      headers[MK_HEADER_SIZEOF];
 
     /* Head of linked list for all headers found in the request */
+    int                        header_count;
     struct mk_list             header_list;
 
     /* Extra headers */
@@ -310,6 +311,7 @@ static inline void mk_http_parser_init(struct mk_http_parser *p)
     p->header_content_length = -1;
 
     /* init list header */
+    p->header_count = 0;
     mk_list_init(&p->header_list);
 }
 

@@ -18,7 +18,7 @@
  */
 
 /*
- * Some history about this module
+ * Some history about this plugin
  * ------------------------------
  * 2008 - Rewrite module, suport dynamic themes by Eduardo Silva
  * 2008 - Felipe Astroza (max) provided the mk_dirhtml_human_readable_size_func()
@@ -39,10 +39,9 @@ const mk_ptr_t mk_dir_iov_none  = mk_ptr_init("");
 const mk_ptr_t mk_dir_iov_slash = mk_ptr_init("/");
 
 /* Function wrote by Max (Felipe Astroza), thanks! */
-static char *mk_dirhtml_human_readable_size(off_t size)
+static char *mk_dirhtml_human_readable_size(char *buf, size_t size, int len)
 {
-    unsigned long u = 1024, i, len;
-    char *buf = NULL;
+    unsigned long u = 1024, i;
     static const char *__units[] = {
         "b", "K", "M", "G",
         "T", "P", "E", "Z", "Y", NULL
@@ -55,20 +54,20 @@ static char *mk_dirhtml_human_readable_size(off_t size)
         u *= 1024;
     }
     if (!i) {
-        mk_api->str_build(&buf, &len, "%lu%s", (long unsigned int) size, __units[0]);
+        snprintf(buf, size, "%lu%s", (long unsigned int) len, __units[0]);
     }
     else {
-        float fsize = (float) ((double) size / (u / 1024));
-        mk_api->str_build(&buf, &len, "%.1f%s", fsize, __units[i]);
+        float fsize = (float) ((double) len / (u / 1024));
+        snprintf(buf, size, "%.1f%s", fsize, __units[i]);
     }
 
     return buf;
 }
 
 static struct mk_f_list *mk_dirhtml_create_element(char *file,
-                                            unsigned char type,
-                                            char *full_path,
-                                            unsigned long *list_len)
+                                                   unsigned char type,
+                                                   char *full_path,
+                                                   unsigned long *list_len)
 {
     int n;
     struct tm *st_time;
@@ -83,7 +82,6 @@ static struct mk_f_list *mk_dirhtml_create_element(char *file,
 
     strcpy(entry->name, file);
     entry->type = type;
-    entry->next = NULL;
 
     st_time = localtime((time_t *) & entry->info.last_modification);
     n = strftime(entry->ft_modif, MK_DIRHTML_FMOD_LEN, "%d-%b-%G %H:%M", st_time);
@@ -93,10 +91,13 @@ static struct mk_f_list *mk_dirhtml_create_element(char *file,
     }
 
     if (type != DT_DIR) {
-        entry->size = mk_dirhtml_human_readable_size(entry->info.size);
+        mk_dirhtml_human_readable_size(entry->size,
+                                       sizeof(entry->size),
+                                       entry->info.size);
     }
     else {
-        entry->size = MK_DIRHTML_SIZE_DIR;
+        entry->size[0] = '-';
+        entry->size[1] = '\0';
     }
 
     *list_len = *list_len + 1;
@@ -104,13 +105,16 @@ static struct mk_f_list *mk_dirhtml_create_element(char *file,
     return entry;
 }
 
-static struct mk_f_list *mk_dirhtml_create_list(DIR * dir, char *path,
-                                                unsigned long *list_len)
+static struct mk_list *mk_dirhtml_create_list(DIR * dir, char *path,
+                                              unsigned long *list_len)
 {
-    unsigned long len;
-    char *full_path = NULL;
+    char full_path[PATH_MAX];
+    struct mk_list *list;
     struct dirent *ent;
-    struct mk_f_list *list = 0, *entry = 0, *last = 0;
+    struct mk_f_list *entry = 0;
+
+    list = mk_api->mem_alloc(sizeof(struct mk_list));
+    mk_list_init(list);
 
     while ((ent = readdir(dir)) != NULL) {
         if ((ent->d_name[0] == '.') && (strcmp(ent->d_name, "..") != 0))
@@ -122,24 +126,14 @@ static struct mk_f_list *mk_dirhtml_create_list(DIR * dir, char *path,
             continue;
         }
 
-        mk_api->str_build(&full_path, &len, "%s%s", path, ent->d_name);
+        snprintf(full_path, PATH_MAX, "%s%s", path, ent->d_name);
         entry = mk_dirhtml_create_element(ent->d_name,
                                           ent->d_type, full_path, list_len);
-
-        mk_api->mem_free(full_path);
-        full_path = NULL;
-
         if (!entry) {
             continue;
         }
 
-        if (!list) {
-            list = entry;
-        }
-        else {
-            last->next = entry;
-        }
-        last = entry;
+        mk_list_add(&entry->_head, list);
     }
 
     return list;
@@ -157,12 +151,14 @@ int mk_dirhtml_conf(char *confdir)
     /* Read configuration */
     ret = mk_dirhtml_read_config(conf_file);
     if (ret < 0) {
+        mk_mem_free(conf_file);
         return -1;
     }
 
     /*
      * This function will load the default theme setted in dirhtml_conf struct
      */
+    mk_mem_free(conf_file);
     return mk_dirhtml_theme_load();
 }
 
@@ -198,7 +194,6 @@ int mk_dirhtml_read_config(char *path)
 
     mk_api->str_build(&dirhtml_conf->theme_path, &len,
                       "%sthemes/%s/", path, dirhtml_conf->theme);
-
     mk_api->mem_free(default_file);
 
     if (mk_api->file_get_info(dirhtml_conf->theme_path,
@@ -208,6 +203,7 @@ int mk_dirhtml_read_config(char *path)
         return -1;
     }
 
+    mk_api->config_free(conf);
     return 0;
 }
 
@@ -371,7 +367,8 @@ struct dirhtml_template *mk_dirhtml_template_create(char *content)
 }
 
 struct dirhtml_template *mk_dirhtml_template_list_add(struct dirhtml_template **header,
-                                                      char *buf, int len, char **tpl, int tag_id)
+                                                      char *buf, int len, char **tpl,
+                                                      int tag_id)
 {
     struct dirhtml_template *node, *aux;
 
@@ -414,30 +411,30 @@ static int mk_dirhtml_template_len(struct dirhtml_template *tpl)
 }
 
 static struct mk_iov *mk_dirhtml_theme_compose(struct dirhtml_template *template,
-                                               struct dirhtml_value *values)
+                                               struct mk_list *list)
 {
     /*
      * template = struct { char buf ; int len, int tag }
      * values = struct {int tag, char *value, struct *next}
      */
-
     struct mk_iov *iov;
     struct dirhtml_template *tpl = template;
-    struct dirhtml_value *val = values;
+    struct dirhtml_value *val;
+    struct mk_list *head;
 
     int tpl_len;
 
     tpl_len = mk_dirhtml_template_len(template);
 
     /* we duplicate the lenght in case we get separators */
-    iov = (struct mk_iov *) mk_api->iov_create(1 + tpl_len * 2, 1);
+    iov = mk_api->iov_create(1 + tpl_len * 2, 1);
     tpl = template;
 
     while (tpl) {
         /* check for dynamic value */
         if (!tpl->buf && tpl->tag_id >= 0) {
-            val = values;
-            while (val) {
+            mk_list_foreach(head, list) {
+                val = mk_list_entry(head, struct dirhtml_value, _head);
                 if (val->tags == tpl->tags && val->tag_id == tpl->tag_id) {
                     mk_api->iov_add(iov,
                                     val->value, val->len,
@@ -446,9 +443,6 @@ static struct mk_iov *mk_dirhtml_theme_compose(struct dirhtml_template *template
                                     val->sep.data, val->sep.len,
                                     MK_FALSE);
                     break;
-                }
-                else {
-                    val = val->next;
                 }
             }
         }
@@ -464,11 +458,11 @@ static struct mk_iov *mk_dirhtml_theme_compose(struct dirhtml_template *template
     return iov;
 }
 
-struct dirhtml_value *mk_dirhtml_tag_assign(struct dirhtml_value **values,
+struct dirhtml_value *mk_dirhtml_tag_assign(struct mk_list *list,
                                             int tag_id, mk_ptr_t sep,
                                             char *value, char **tags)
 {
-    struct dirhtml_value *check, *aux = 0;
+    struct dirhtml_value *aux = NULL;
 
     aux = mk_api->mem_alloc(sizeof(struct dirhtml_value));
     if (!aux) {
@@ -487,43 +481,21 @@ struct dirhtml_value *mk_dirhtml_tag_assign(struct dirhtml_value **values,
         aux->len = -1;
     }
 
-    aux->next = NULL;
-
-    if (!values) {
-        return (struct dirhtml_value *) aux;
-    }
-
-    check = *values;
-    while ((*check).next) {
-        check = (*check).next;
-    }
-
-    (*check).next = aux;
-
-
+    mk_list_add(&aux->_head, list);
     return (struct dirhtml_value *) aux;
 }
 
-static void mk_dirhtml_tag_free_list(struct dirhtml_value **list)
+static void mk_dirhtml_tag_free_list(struct mk_list *list)
 {
-    struct dirhtml_value *prev=0, *target;
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct dirhtml_value *target;
 
-    target = *list;
-    while (target) {
-        while ((*target).next) {
-            prev = target;
-            target = (*target).next;
-        }
-
+    mk_list_foreach_safe(head, tmp, list) {
+        target = mk_list_entry(head, struct dirhtml_value, _head);
+        mk_list_del(&target->_head);
         mk_api->mem_free(target);
-
-        if (target == *list) {
-            break;
-        }
-        (*prev).next = NULL;
-        target = *list;
     }
-    *list = NULL;
 }
 
 char *mk_dirhtml_load_file(char *filename)
@@ -555,28 +527,27 @@ static int mk_dirhtml_entry_cmp(const void *a, const void *b)
     return strcasecmp((*f_a)->name, (*f_b)->name);
 }
 
-static void mk_dirhtml_free_list(struct mk_f_list **toc, unsigned long len)
+static void mk_dirhtml_free_list(struct mk_dirhtml_request *request)
 {
-    unsigned int i;
+    struct mk_list *tmp;
+    struct mk_list *head;
     struct mk_f_list *entry;
 
-    for (i = 0; i < len; i++) {
-        entry = toc[i];
-
-        if (entry->type != DT_DIR) {
-            mk_api->mem_free(entry->size);
-        }
+    mk_list_foreach_safe(head, tmp, request->file_list) {
+        entry = mk_list_entry(head, struct mk_f_list, _head);
+        mk_list_del(&entry->_head);
         mk_api->mem_free(entry);
     }
 
-    mk_api->mem_free(toc);
+    mk_api->mem_free(request->file_list);
+    mk_api->mem_free(request->toc);
 }
 
 static inline struct mk_iov *enqueue_row(int i, struct mk_dirhtml_request *request)
 {
     mk_ptr_t sep;
+    struct mk_list list;
     struct mk_iov *iov_entry;
-    struct dirhtml_value *values_entry = NULL;
 
     /* %_target_title_% */
     if (request->toc[i]->type == DT_DIR) {
@@ -586,32 +557,33 @@ static inline struct mk_iov *enqueue_row(int i, struct mk_dirhtml_request *reque
         sep = mk_dir_iov_none;
     }
 
+    mk_list_init(&list);
+
     /* target title */
-    values_entry = mk_dirhtml_tag_assign(NULL, 0, sep,
-                                         request->toc[i]->name,
-                                         (char **) _tags_entry);
+    mk_dirhtml_tag_assign(&list, 0, sep,
+                          request->toc[i]->name,
+                          (char **) _tags_entry);
 
     /* target url */
-    mk_dirhtml_tag_assign(&values_entry, 1, sep,
+    mk_dirhtml_tag_assign(&list, 1, sep,
                           request->toc[i]->name, (char **) _tags_entry);
 
     /* target name */
-    mk_dirhtml_tag_assign(&values_entry, 2, sep,
+    mk_dirhtml_tag_assign(&list, 2, sep,
                           request->toc[i]->name, (char **) _tags_entry);
 
     /* target modification time */
-    mk_dirhtml_tag_assign(&values_entry, 3, mk_dir_iov_none,
+    mk_dirhtml_tag_assign(&list, 3, mk_dir_iov_none,
                           request->toc[i]->ft_modif, (char **) _tags_entry);
 
     /* target size */
-    mk_dirhtml_tag_assign(&values_entry, 4, mk_dir_iov_none,
+    mk_dirhtml_tag_assign(&list, 4, mk_dir_iov_none,
                           request->toc[i]->size, (char **) _tags_entry);
 
-    iov_entry = mk_dirhtml_theme_compose(mk_dirhtml_tpl_entry,
-                                         values_entry);
+    iov_entry = mk_dirhtml_theme_compose(mk_dirhtml_tpl_entry, &list);
 
     /* free entry list */
-    mk_dirhtml_tag_free_list(&values_entry);
+    mk_dirhtml_tag_free_list(&list);
     return iov_entry;
 }
 
@@ -620,19 +592,33 @@ void mk_dirhtml_cleanup(struct mk_dirhtml_request *req)
 {
     PLUGIN_TRACE("release resources");
 
-    mk_api->iov_free(req->iov_header);
+    if (req->iov_header) {
+        mk_api->iov_free(req->iov_header);
+        req->iov_header = NULL;
+    }
     if (req->iov_entry) {
         mk_api->iov_free(req->iov_entry);
+        req->iov_entry = NULL;
     }
-    mk_api->iov_free(req->iov_footer);
-    mk_dirhtml_free_list(req->toc, req->toc_len);
+    if (req->iov_footer) {
+        mk_api->iov_free(req->iov_footer);
+        req->iov_footer = NULL;
+    }
+    mk_dirhtml_free_list(req);
+    closedir(req->dir);
+
+    req->sr->handler_data = NULL;
     mk_api->mem_free(req);
+    req = NULL;
 }
 
 void mk_dirhtml_cb_complete(struct mk_stream *stream)
 {
     struct mk_dirhtml_request *req = stream->data;
-    mk_dirhtml_cleanup(req);
+
+    if (req) {
+        mk_dirhtml_cleanup(req);
+    }
 }
 
 void mk_dirhtml_cb_error(struct mk_stream *stream, int status)
@@ -643,46 +629,92 @@ void mk_dirhtml_cb_error(struct mk_stream *stream, int status)
     struct mk_dirhtml_request *req = stream->data;
 
     PLUGIN_TRACE("exception: %i", status);
-    mk_dirhtml_cleanup(req);
+
+    if (req) {
+        mk_dirhtml_cleanup(req);
+    }
 }
 
 void mk_dirhtml_cb_body_rows(struct mk_stream *stream)
 {
+    int len;
+    char tmp[16];
     struct mk_dirhtml_request *req = stream->data;
     struct mk_channel *channel = stream->channel;
+    void (*cb_ok)(struct mk_stream* ) = NULL;
+
+    if (req->iov_entry) {
+        mk_api->iov_free(req->iov_entry);
+        req->iov_entry = NULL;
+    }
 
     if (req->toc_idx >= req->toc_len) {
-        req->body.preserve = MK_FALSE;
+        if (req->chunked) {
+            len = snprintf(tmp, sizeof(tmp), "%x\r\n",
+                           (int) req->iov_footer->total_len);
+            mk_api->stream_set(NULL,
+                               MK_STREAM_COPYBUF,
+                               channel,
+                               tmp, len, req, NULL, NULL, mk_dirhtml_cb_error);
+            cb_ok  = NULL;
+        }
+        else {
+            cb_ok  = mk_dirhtml_cb_complete;
+        }
 
         /* No more rows to add, just link the page footer */
-        mk_api->stream_set(&req->footer,           /* stream            */
+        mk_api->stream_set(NULL,                   /* stream            */
                            MK_STREAM_IOV,          /* type              */
                            channel,                /* channel           */
                            req->iov_footer,        /* buffer            */
                            -1,                     /* buffer size       */
                            req,                    /* custom data       */
-                           mk_dirhtml_cb_complete, /* on_finish         */
+                           cb_ok,                  /* on_finish         */
                            NULL,                   /* on_bytes_consumed */
                            mk_dirhtml_cb_error);   /* on_error          */
+
+        if (req->chunked) {
+            mk_api->stream_set(NULL,
+                               MK_STREAM_COPYBUF,
+                               channel,
+                               "\r\n0\r\n\r\n", 7, req,
+                               mk_dirhtml_cb_complete, NULL, mk_dirhtml_cb_error);
+        }
+
         return;
     }
 
-    if (req->toc_idx > 0) {
-        mk_api->iov_free(req->iov_entry);
-        mk_list_del(&stream->_head);
+    req->iov_entry = enqueue_row(req->toc_idx, req);
+    if (req->chunked) {
+        len = snprintf(tmp, sizeof(tmp), "%x\r\n",
+                       (int) req->iov_entry->total_len);
+        mk_api->stream_set(NULL,
+                           MK_STREAM_COPYBUF,
+                           channel,
+                           tmp, len, req, NULL, NULL, mk_dirhtml_cb_error);
+        cb_ok = NULL;
+    }
+    else {
+        cb_ok = mk_dirhtml_cb_body_rows;
     }
 
-    req->iov_entry = enqueue_row(req->toc_idx, req);
-    mk_api->stream_set(&req->body,
+    mk_api->stream_set(NULL,
                        MK_STREAM_IOV,
                        channel,
                        req->iov_entry,
                        -1,
-                       (void *) req,
-                       mk_dirhtml_cb_body_rows,
+                       req,
+                       cb_ok,
                        NULL,
                        mk_dirhtml_cb_error);
-    req->body.preserve = MK_TRUE;
+
+    if (req->chunked) {
+        mk_api->stream_set(NULL,
+                           MK_STREAM_COPYBUF,
+                           channel,
+                           "\r\n", 2, (void *) req,
+                           mk_dirhtml_cb_body_rows, NULL, mk_dirhtml_cb_error);
+    }
     req->toc_idx++;
 }
 
@@ -692,16 +724,25 @@ void mk_dirhtml_cb_body_rows(struct mk_stream *stream)
  */
 void cb_header_finish(struct mk_stream *stream)
 {
+    struct mk_dirhtml_request *req;
+
+    req = stream->data;
+    if (req->iov_header) {
+        mk_api->iov_free(req->iov_header);
+        req->iov_header = NULL;
+    }
     mk_dirhtml_cb_body_rows(stream);
 }
 
 int mk_dirhtml_init(struct mk_http_session *cs, struct mk_http_request *sr)
 {
     DIR *dir;
+    int len;
+    char tmp[16];
     unsigned int i = 0;
-    char *title = 0;
-    struct mk_f_list *file_list, *entry;
-    struct dirhtml_value *values_global = 0;
+    struct mk_list *head;
+    struct mk_list list;
+    struct mk_f_list *entry;
     struct mk_dirhtml_request *request;
 
     if (!(dir = opendir(sr->real_path.data))) {
@@ -715,9 +756,15 @@ int mk_dirhtml_init(struct mk_http_session *cs, struct mk_http_request *sr)
     request->toc_idx = 0;
     request->cs      = cs;
     request->sr      = sr;
+    request->toc_len = 0;
+    request->chunked = MK_FALSE;
+    request->iov_header = NULL;
+    request->iov_entry = NULL;
+    request->iov_footer = NULL;
+    sr->handler_data = request;
 
-    file_list = mk_dirhtml_create_list(dir, sr->real_path.data,
-                                       &request->toc_len);
+    request->file_list = mk_dirhtml_create_list(dir, sr->real_path.data,
+                                                &request->toc_len);
 
     /* Building headers */
     mk_api->header_set_http_status(sr, MK_HTTP_OK);
@@ -728,40 +775,43 @@ int mk_dirhtml_init(struct mk_http_session *cs, struct mk_http_request *sr)
 
     if (sr->protocol >= MK_HTTP_PROTOCOL_11) {
         sr->headers.transfer_encoding = MK_HEADER_TE_TYPE_CHUNKED;
+        request->chunked = MK_TRUE;
     }
 
     /*
      * Creating response template
      */
 
+    mk_list_init(&list);
+
     /* Set %_html_title_% */
-    title = mk_api->pointer_to_buf(sr->uri_processed);
-    values_global = mk_dirhtml_tag_assign(NULL, 0, mk_dir_iov_none,
-                                          title,
-                                          (char **) _tags_global);
+    mk_dirhtml_tag_assign(&list, 0, mk_dir_iov_none,
+                          sr->uri_processed.data,
+                          (char **) _tags_global);
 
     /* Set %_theme_path_% */
-    mk_dirhtml_tag_assign(&values_global, 1, mk_dir_iov_none,
+    mk_dirhtml_tag_assign(&list, 1, mk_dir_iov_none,
                           dirhtml_conf->theme_path, (char **) _tags_global);
 
     /* HTML Header */
     request->iov_header = mk_dirhtml_theme_compose(mk_dirhtml_tpl_header,
-                                                   values_global);
+                                                   &list);
 
     /* HTML Footer */
     request->iov_footer = mk_dirhtml_theme_compose(mk_dirhtml_tpl_footer,
-                                                   values_global);
+                                                   &list);
+    mk_dirhtml_tag_free_list(&list);
 
     /* Creating table of contents and sorting */
     request->toc = mk_api->mem_alloc(sizeof(struct mk_f_list *) * request->toc_len);
-    entry = file_list;
 
     i = 0;
-    while (entry) {
+    mk_list_foreach(head, request->file_list) {
+        entry = mk_list_entry(head, struct mk_f_list, _head);
         request->toc[i] = entry;
         i++;
-        entry = entry->next;
     }
+
     qsort(request->toc,
           request->toc_len,
           sizeof(*request->toc),
@@ -770,9 +820,18 @@ int mk_dirhtml_init(struct mk_http_session *cs, struct mk_http_request *sr)
     /* Prepare HTTP response headers */
     mk_api->header_prepare(cs, sr);
 
-    mk_api->stream_set(&request->header,     /* stream            */
+    if (request->chunked) {
+        len = snprintf(tmp, sizeof(tmp), "%x\r\n",
+                       (int) request->iov_header->total_len);
+        mk_api->stream_set(NULL,
+                           MK_STREAM_COPYBUF,
+                           cs->channel,
+                           tmp, len, request, NULL, NULL, mk_dirhtml_cb_error);
+    }
+
+    mk_api->stream_set(NULL,                 /* stream            */
                        MK_STREAM_IOV,        /* type              */
-                       cs->channel,         /* channel           */
+                       cs->channel,          /* channel           */
                        request->iov_header,  /* buffer            */
                        -1,                   /* buffer size       */
                        request,              /* custom data       */
@@ -780,6 +839,12 @@ int mk_dirhtml_init(struct mk_http_session *cs, struct mk_http_request *sr)
                        NULL,                 /* on_bytes_consumed */
                        mk_dirhtml_cb_error); /* on_error          */
 
+    if (request->chunked) {
+        mk_api->stream_set(NULL,
+                           MK_STREAM_COPYBUF,
+                           cs->channel,
+                           "\r\n", 2, request, NULL, NULL, mk_dirhtml_cb_error);
+    }
     return 0;
 }
 
@@ -792,13 +857,21 @@ int mk_dirlisting_plugin_init(struct plugin_api **api, char *confdir)
 
 int mk_dirlisting_plugin_exit()
 {
+    mk_api->mem_free(dirhtml_conf->theme);
+    mk_api->mem_free(dirhtml_conf->theme_path);
+    mk_api->mem_free(dirhtml_conf);
     return 0;
 }
 
-int mk_dirlisting_stage30(struct mk_plugin *plugin, struct mk_http_session *cs,
-                          struct mk_http_request *sr)
+int mk_dirlisting_stage30(struct mk_plugin *plugin,
+                          struct mk_http_session *cs,
+                          struct mk_http_request *sr,
+                          int n_param,
+                          struct mk_list *params)
 {
     (void) plugin;
+    (void) n_param;
+    (void) params;
 
     /* validate file_info */
     if (sr->file_info.size < 0) {
@@ -823,8 +896,22 @@ int mk_dirlisting_stage30(struct mk_plugin *plugin, struct mk_http_session *cs,
     return MK_PLUGIN_RET_END;
 }
 
+int mk_dirlisting_stage30_hangup(struct mk_plugin *plugin,
+                                 struct mk_http_session *cs,
+                                 struct mk_http_request *sr)
+{
+    (void) cs;
+    (void) plugin;
+
+    if (sr->handler_data) {
+        mk_dirhtml_cleanup(sr->handler_data);
+    }
+    return 0;
+}
+
 struct mk_plugin_stage mk_plugin_stage_dirlisting = {
-    .stage30      = &mk_dirlisting_stage30
+    .stage30        = &mk_dirlisting_stage30,
+    .stage30_hangup = &mk_dirlisting_stage30_hangup
 };
 
 struct mk_plugin mk_plugin_dirlisting = {

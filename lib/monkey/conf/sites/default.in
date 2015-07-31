@@ -47,6 +47,11 @@
 [ERROR_PAGES]
     404  404.html
 
-#[CGI]
-    # Per-vhost CGI matching, same rules as with the global match
-    # Match /cgi-bin/.*\.cgi
+[HANDLERS]
+    # FastCGI
+    # =======
+    # Match /.*\.php fastcgi
+
+    # CGI
+    # ===
+    # Match /cgi-bin/.*\.cgi cgi

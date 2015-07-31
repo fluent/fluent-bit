@@ -342,10 +342,15 @@ int mk_mandril_stage10(int socket)
 
 int mk_mandril_stage30(struct mk_plugin *p,
                        struct mk_http_session *cs,
-                       struct mk_http_request *sr)
+                       struct mk_http_request *sr,
+                       int n_params,
+                       struct mk_list *params)
 {
     (void) p;
     (void) cs;
+    (void) n_params;
+    (void) params;
+
     struct mk_http_header *header;
 
     PLUGIN_TRACE("[FD %i] Mandril validating URL", cs->socket);

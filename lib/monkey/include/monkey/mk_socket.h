@@ -63,7 +63,8 @@ int mk_socket_set_tcp_reuseport(int sockfd);
 int mk_socket_set_nonblocking(int sockfd);
 
 int mk_socket_create(int domain, int type, int protocol);
-int mk_socket_connect(char *host, int port);
+int mk_socket_connect(char *host, int port, int async);
+int mk_socket_open(char *path, int async);
 int mk_socket_reset(int socket);
 int mk_socket_bind(int socket_fd, const struct sockaddr *addr,
                    socklen_t addrlen, int backlog);

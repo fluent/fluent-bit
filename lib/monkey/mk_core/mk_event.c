@@ -77,9 +77,17 @@ int mk_event_add(struct mk_event_loop *loop, int fd,
                  int type, uint32_t mask, void *data)
 {
     int ret;
+    struct mk_event *event;
     struct mk_event_ctx *ctx;
 
+#ifdef TRACE
     mk_bug(!data);
+#endif
+
+    event = (struct mk_event *) data;
+    if (event->status & ~MK_EVENT_NONE) {
+        return -1;
+    }
 
     ctx = loop->data;
     ret = _mk_event_add(ctx, fd, type, mask, data);
@@ -98,11 +106,17 @@ int mk_event_del(struct mk_event_loop *loop, struct mk_event *event)
 
     ctx = loop->data;
 
+    /* just remove a registered event */
+    if (event->status & ~MK_EVENT_REGISTERED) {
+        return -1;
+    }
+
     ret = _mk_event_del(ctx, event);
     if (ret == -1) {
         return -1;
     }
 
+    event->status = MK_EVENT_NONE;
     return 0;
 }
 

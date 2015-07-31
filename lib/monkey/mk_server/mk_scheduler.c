@@ -46,6 +46,7 @@ __thread struct mk_list *cs_incomplete;
 __thread struct mk_sched_notif *worker_sched_notif;
 __thread struct mk_sched_worker *worker_sched_node;
 
+
 /*
  * Returns the worker id which should take a new incomming connection,
  * it returns the worker id with less active connections. Just used
@@ -134,6 +135,7 @@ void mk_sched_worker_free()
     /* Free master array (av queue & busy queue) */
     mk_mem_free(cs_list);
     mk_mem_free(cs_incomplete);
+    mk_mem_free(worker_sched_notif);
     pthread_mutex_unlock(&mutex_worker_exit);
 }
 
@@ -182,6 +184,7 @@ struct mk_sched_conn *mk_sched_add_connection(int remote_fd,
     }
 
     if (!conn) {
+        mk_err("[server] Could not register client");
         return NULL;
     }
 
@@ -189,6 +192,7 @@ struct mk_sched_conn *mk_sched_add_connection(int remote_fd,
     event->fd           = remote_fd;
     event->type         = MK_EVENT_CONNECTION;
     event->mask         = MK_EVENT_EMPTY;
+    event->status       = MK_EVENT_NONE;
     conn->arrive_time   = log_current_utime;
     conn->protocol      = handler;
     conn->net           = listener->network->network;
@@ -373,7 +377,8 @@ void *mk_sched_launch_worker_loop(void *thread_conf)
     mk_plugin_core_thread();
 
     if (mk_config->scheduler_mode == MK_SCHEDULER_REUSEPORT) {
-        if (mk_server_listen_init(mk_config) == NULL) {
+        sched->listeners = mk_server_listen_init(mk_config);
+        if (!sched->listeners) {
             mk_err("[sched] Failed to initialize listen sockets.");
             return 0;
         }
@@ -446,6 +451,7 @@ int mk_sched_remove_client(struct mk_sched_conn *conn,
      */
     event = &conn->event;
     MK_TRACE("[FD %i] Scheduler remove", event->fd);
+
     mk_event_del(sched->loop, event);
 
     /* Invoke plugins in stage 50 */
@@ -461,7 +467,9 @@ int mk_sched_remove_client(struct mk_sched_conn *conn,
     conn->net->close(event->fd);
 
     /* Release and return */
-    mk_mem_free(conn);
+    mk_channel_clean(&conn->channel);
+    mk_sched_event_free(&conn->event);
+
     MK_LT_SCHED(remote_fd, "DELETE_CLIENT");
     return 0;
 }
@@ -523,6 +531,10 @@ int mk_sched_check_timeouts(struct mk_sched_worker *sched)
     /* PENDING CONN TIMEOUT */
     mk_list_foreach_safe(head, temp, &sched->timeout_queue) {
         conn = mk_list_entry(head, struct mk_sched_conn, timeout_head);
+        if (conn->event.type & MK_EVENT_IDLE) {
+            continue;
+        }
+
         client_timeout = conn->arrive_time + mk_config->timeout;
 
         /* Check timeout */
@@ -566,6 +578,10 @@ int mk_sched_event_read(struct mk_sched_conn *conn,
      */
     ret = conn->protocol->cb_read(conn, sched);
     if (ret == -1) {
+        if (errno == EAGAIN) {
+            MK_TRACE("EAGAIN: need to read more data");
+            return 1;
+        }
         return -1;
     }
 
@@ -641,7 +657,7 @@ int mk_sched_event_write(struct mk_sched_conn *conn,
                      conn);
         return 0;
     }
-    else if (ret == MK_CHANNEL_ERROR) {
+    else if (ret & MK_CHANNEL_ERROR) {
         return -1;
     }
 
@@ -670,5 +686,7 @@ int mk_sched_event_close(struct mk_sched_conn *conn,
 void mk_sched_event_free(struct mk_event *event)
 {
     struct mk_sched_worker *sched = mk_sched_get_thread_conf();
+
+    event->type |= MK_EVENT_IDLE;
     mk_list_add(&event->_head, &sched->event_free_queue);
 }

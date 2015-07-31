@@ -55,9 +55,9 @@ struct mk_iov *mk_iov_create(int n, int offset)
     }
 
     /* Set pointer address */
-    iov = p;
-    iov->io = p + s_all - (s_iovec - s_free_buf);
-    iov->buf_to_free = (void *) (iov->io + s_iovec);
+    iov     = p;
+    iov->io = p + sizeof(struct mk_iov);
+    iov->buf_to_free = (void *) (p + sizeof(struct mk_iov) + s_iovec);
 
     mk_iov_init(iov, n, offset);
     return iov;

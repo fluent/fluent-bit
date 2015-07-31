@@ -37,18 +37,16 @@ FILE *mk_logger_master_stderr;
 pthread_key_t cache_content_length;
 pthread_key_t cache_status;
 pthread_key_t cache_ip_str;
+pthread_key_t cache_iov;
 
 struct log_target
 {
     struct mk_event event;
 
     /* Pipes */
-    int fd_access[2];
-    int fd_error[2];
-
-    /* File paths */
-    char *file_access;
-    char *file_error;
+    int is_ok;
+    int pipe[2];
+    char *file;
 
     struct host *host;
     struct mk_list _head;

@@ -95,6 +95,9 @@ struct mk_sched_worker
      */
     int signal_channel_r;
     int signal_channel_w;
+
+    /* If using REUSEPORT, this points to the list of listeners */
+    struct mk_list *listeners;
 };
 
 
@@ -111,6 +114,8 @@ struct mk_sched_conn
     struct mk_list timeout_head;       /* link to the timeout queue    */
     struct rb_node _rb_head;           /* red-black tree head          */
 };
+
+#define MK_SCHED_CONN_CAP(conn)  conn->protocol->capabilities
 
 /*
  * It defines a Handler for a connection in questions. This struct

@@ -158,12 +158,18 @@ struct mk_http_session
     struct mk_http_parser parser;
 };
 
-static inline void mk_http_status_completed(struct mk_http_session *cs,
-                                            struct mk_sched_conn *conn)
+static inline int mk_http_status_completed(struct mk_http_session *cs,
+                                           struct mk_sched_conn *conn)
 {
     (void) conn;
-    mk_bug(cs->status == MK_REQUEST_STATUS_COMPLETED);
+
+    if (cs->status == MK_REQUEST_STATUS_COMPLETED) {
+        MK_TRACE("HTTP Completed but already completed, aborting conx");
+        return -1;
+    }
+
     cs->status = MK_REQUEST_STATUS_COMPLETED;
+    return 0;
 }
 
 int mk_http_error(int http_status, struct mk_http_session *cs,

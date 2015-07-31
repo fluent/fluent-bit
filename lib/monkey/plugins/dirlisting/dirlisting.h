@@ -71,9 +71,10 @@ struct mk_f_list
     char ft_modif[MK_DIRHTML_FMOD_LEN];
     struct file_info info;
     char name[NAME_MAX + 1]; /* The name can be up to NAME_MAX long; include NULL. */
-    char *size;
-    struct mk_f_list *next;
+    char size[16];
     unsigned char type;
+
+    struct mk_list _head;
 };
 
 /* Main configuration of dirhtml module */
@@ -88,6 +89,7 @@ struct mk_dirhtml_request
 {
     /* State */
     int state;
+    int chunked;
 
     /* Target directory */
     DIR *dir;
@@ -96,11 +98,7 @@ struct mk_dirhtml_request
     unsigned int toc_idx;
     unsigned long toc_len;
     struct mk_f_list **toc;
-
-    /* Streams to be used */
-    struct mk_stream header;
-    struct mk_stream body;
-    struct mk_stream footer;
+    struct mk_list *file_list;
 
     /* Reference IOV stuff */
     struct mk_iov *iov_header;
@@ -144,7 +142,7 @@ struct dirhtml_value
     char *value;
 
     /* next node */
-    struct dirhtml_value *next;
+    struct mk_list _head;
 
     char **tags;                /* array of tags which values correspond */
 };
@@ -171,7 +169,7 @@ int mk_dirhtml_read_config(char *path);
 int mk_dirhtml_theme_load();
 int mk_dirhtml_theme_debug(struct dirhtml_template **st_tpl);
 
-struct dirhtml_value *mk_dirhtml_tag_assign(struct dirhtml_value **values,
+struct dirhtml_value *mk_dirhtml_tag_assign(struct mk_list *list,
                                             int tag_id, mk_ptr_t sep,
                                             char *value, char **tags);
 

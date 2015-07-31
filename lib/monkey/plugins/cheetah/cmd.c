@@ -186,7 +186,7 @@ void mk_cheetah_cmd_plugins()
 
     if (mk_list_is_empty(&mk_config->stage10_handler)) {
         CHEETAH_WRITE("%s[%sSTAGE_10%s]%s",
-                      ANSI_BOLD ANSI_YELLOW, ANSI_WHITE, ANSI_RESET);
+                      ANSI_BOLD, ANSI_YELLOW, ANSI_WHITE, ANSI_RESET);
         mk_list_foreach(head, &mk_api->config->stage10_handler) {
             s = mk_list_entry(head, struct mk_plugin_stage, _head);
             p = s->plugin;
@@ -197,7 +197,7 @@ void mk_cheetah_cmd_plugins()
 
     if (mk_list_is_empty(&mk_api->config->stage20_handler)) {
         CHEETAH_WRITE("%s[%sSTAGE_20%s]%s",
-                      ANSI_BOLD ANSI_YELLOW, ANSI_WHITE, ANSI_RESET);
+                      ANSI_BOLD, ANSI_YELLOW, ANSI_WHITE, ANSI_RESET);
         mk_list_foreach(head, &mk_api->config->stage20_handler) {
             s = mk_list_entry(head, struct mk_plugin_stage, _head);
             p = s->plugin;
@@ -208,7 +208,7 @@ void mk_cheetah_cmd_plugins()
 
     if (mk_list_is_empty(&mk_api->config->stage30_handler)) {
         CHEETAH_WRITE("%s[%sSTAGE_30%s]%s",
-                      ANSI_BOLD ANSI_YELLOW, ANSI_WHITE, ANSI_RESET);
+                      ANSI_BOLD, ANSI_YELLOW, ANSI_WHITE, ANSI_RESET);
         mk_list_foreach(head, &mk_api->config->stage30_handler) {
             s = mk_list_entry(head, struct mk_plugin_stage, _head);
             p = s->plugin;
@@ -219,7 +219,7 @@ void mk_cheetah_cmd_plugins()
 
     if (mk_list_is_empty(&mk_api->config->stage40_handler)) {
         CHEETAH_WRITE("%s[%sSTAGE_40%s]%s",
-                      ANSI_BOLD ANSI_YELLOW, ANSI_WHITE, ANSI_RESET);
+                      ANSI_BOLD, ANSI_YELLOW, ANSI_WHITE, ANSI_RESET);
         mk_list_foreach(head, &mk_api->config->stage40_handler) {
             s = mk_list_entry(head, struct mk_plugin_stage, _head);
             p = s->plugin;
@@ -230,7 +230,7 @@ void mk_cheetah_cmd_plugins()
 
     if (mk_list_is_empty(&mk_api->config->stage50_handler)) {
         CHEETAH_WRITE("%s[%sSTAGE_50%s]%s",
-                      ANSI_BOLD ANSI_YELLOW, ANSI_WHITE, ANSI_RESET);
+                      ANSI_BOLD, ANSI_YELLOW, ANSI_WHITE, ANSI_RESET);
         mk_list_foreach(head, &mk_api->config->stage50_handler) {
             s = mk_list_entry(head, struct mk_plugin_stage, _head);
             p = s->plugin;

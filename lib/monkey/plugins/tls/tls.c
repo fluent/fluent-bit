@@ -30,36 +30,32 @@
 #include <netdb.h>
 #include <pthread.h>
 
-#include <polarssl/version.h>
-#include <polarssl/error.h>
-#include <polarssl/net.h>
-#include <polarssl/ssl.h>
-#include <polarssl/bignum.h>
-#include <polarssl/entropy.h>
-#include <polarssl/ctr_drbg.h>
-#include <polarssl/certs.h>
-#include <polarssl/x509.h>
-#include <polarssl/ssl_cache.h>
-#include <polarssl/pk.h>
-
+#include <mbedtls/version.h>
+#include <mbedtls/error.h>
+#include <mbedtls/net.h>
+#include <mbedtls/ssl.h>
+#include <mbedtls/bignum.h>
+#include <mbedtls/entropy.h>
+#include <mbedtls/ctr_drbg.h>
+#include <mbedtls/certs.h>
+#include <mbedtls/x509.h>
+#include <mbedtls/ssl_cache.h>
+#include <mbedtls/pk.h>
+#include <mbedtls/dhm.h>
 #include <monkey/mk_api.h>
 
 #ifndef SENDFILE_BUF_SIZE
-#define SENDFILE_BUF_SIZE SSL_MAX_CONTENT_LEN
+#define SENDFILE_BUF_SIZE MBEDTLS_SSL_MAX_CONTENT_LEN
 #endif
 
 #ifndef POLAR_DEBUG_LEVEL
 #define POLAR_DEBUG_LEVEL 0
 #endif
 
-#if (POLARSSL_VERSION_NUMBER < 0x01030000)
-#error "Require tls 1.3.10 or higher."
-#endif
-
-#if (!defined(POLARSSL_BIGNUM_C) || !defined(POLARSSL_ENTROPY_C) || \
-        !defined(POLARSSL_SSL_TLS_C) || !defined(POLARSSL_SSL_SRV_C) || \
-        !defined(POLARSSL_NET_C) || !defined(POLARSSL_RSA_C) || \
-        !defined(POLARSSL_CTR_DRBG_C))
+#if (!defined(MBEDTLS_BIGNUM_C) || !defined(MBEDTLS_ENTROPY_C) || \
+        !defined(MBEDTLS_SSL_TLS_C) || !defined(MBEDTLS_SSL_SRV_C) || \
+        !defined(MBEDTLS_NET_C) || !defined(MBEDTLS_RSA_C) || \
+        !defined(MBEDTLS_CTR_DRBG_C))
 #error "One or more required POLARSSL modules not built."
 #endif
 
@@ -70,10 +66,10 @@ struct polar_config {
     char *dh_param_file;
 };
 
-#if defined(POLARSSL_SSL_CACHE_C)
+#if defined(MBEDTLS_SSL_CACHE_C)
 struct polar_sessions {
     pthread_mutex_t _mutex;
-    ssl_cache_context cache;
+    mbedtls_ssl_cache_context cache;
 };
 
 static struct polar_sessions global_sessions = {
@@ -83,7 +79,7 @@ static struct polar_sessions global_sessions = {
 #endif
 
 struct polar_context_head {
-    ssl_context context;
+    mbedtls_ssl_context context;
     int fd;
     struct polar_context_head *_next;
 };
@@ -91,9 +87,9 @@ struct polar_context_head {
 struct polar_thread_context {
 
     struct polar_context_head *contexts;
-
-    ctr_drbg_context ctr_drbg;
-    pk_context pkey;
+    mbedtls_ctr_drbg_context ctr_drbg;
+    mbedtls_pk_context pkey;
+    mbedtls_ssl_config conf;
 
     struct mk_list _head;
 };
@@ -101,18 +97,17 @@ struct polar_thread_context {
 struct polar_server_context {
 
     struct polar_config config;
-    x509_crt cert;
-    x509_crt ca_cert;
+    mbedtls_x509_crt cert;
+    mbedtls_x509_crt ca_cert;
     pthread_mutex_t mutex;
-    dhm_context dhm;
-    entropy_context entropy;
-
+    mbedtls_dhm_context dhm;
+    mbedtls_entropy_context entropy;
     struct polar_thread_context threads;
 };
 
 struct polar_server_context *server_context;
-static const char *my_dhm_P = POLARSSL_DHM_RFC5114_MODP_1024_P;
-static const char *my_dhm_G = POLARSSL_DHM_RFC5114_MODP_1024_G;
+static const char *my_dhm_P = MBEDTLS_DHM_RFC5114_MODP_2048_P;
+static const char *my_dhm_G = MBEDTLS_DHM_RFC5114_MODP_2048_G;
 
 static pthread_key_t local_context;
 
@@ -123,7 +118,7 @@ static pthread_key_t local_context;
  * We copy this to make it inline and avoid extra context switches
  * on each read routine.
  */
-static inline size_t polar_get_bytes_avail(const ssl_context *ssl)
+static inline size_t polar_get_bytes_avail(const mbedtls_ssl_context *ssl)
 {
     return (ssl->in_offt == NULL ? 0 : ssl->in_msglen);
 }
@@ -131,17 +126,6 @@ static inline size_t polar_get_bytes_avail(const ssl_context *ssl)
 static struct polar_thread_context *local_thread_context(void)
 {
     return pthread_getspecific(local_context);
-}
-
-static int entropy_func_safe(void *data, unsigned char *output, size_t len)
-{
-    int ret;
-
-    pthread_mutex_lock(&server_context->mutex);
-    ret = entropy_func(data, output, len);
-    pthread_mutex_unlock(&server_context->mutex);
-
-    return ret;
 }
 
 #if (POLAR_DEBUG_LEVEL > 0)
@@ -160,19 +144,19 @@ static int handle_return(int ret)
 #if defined(TRACE)
     char err_buf[72];
     if (ret < 0) {
-        error_strerror(ret, err_buf, sizeof(err_buf));
+        mbedtls_strerror(ret, err_buf, sizeof(err_buf));
         PLUGIN_TRACE("[tls] SSL error: %s", err_buf);
     }
 #endif
     if (ret < 0) {
         switch( ret )
         {
-            case POLARSSL_ERR_NET_WANT_READ:
-            case POLARSSL_ERR_NET_WANT_WRITE:
+            case MBEDTLS_ERR_SSL_WANT_READ:
+            case MBEDTLS_ERR_SSL_WANT_WRITE:
                 if (errno != EAGAIN)
                     errno = EAGAIN;
 		return -1;
-            case POLARSSL_ERR_SSL_CONN_EOF:
+            case MBEDTLS_ERR_SSL_CONN_EOF:
                 return 0;
             default:
                 if (errno == EAGAIN)
@@ -183,6 +167,32 @@ static int handle_return(int ret)
     else {
         return ret;
     }
+}
+
+static int tls_cache_get(void *p, mbedtls_ssl_session *session)
+{
+    struct polar_sessions *session_cache;
+    int ret;
+
+    session_cache = p;
+    pthread_mutex_lock(&session_cache->_mutex);
+    ret = mbedtls_ssl_cache_get(&session_cache->cache, session);
+    pthread_mutex_unlock(&session_cache->_mutex);
+
+    return ret;
+}
+
+static int tls_cache_set(void *p, const mbedtls_ssl_session *session)
+{
+    struct polar_sessions *session_cache;
+    int ret;
+
+    session_cache = p;
+    pthread_mutex_lock(&session_cache->_mutex);
+    ret = mbedtls_ssl_cache_set(&session_cache->cache, session);
+    pthread_mutex_unlock(&session_cache->_mutex);
+
+    return ret;
 }
 
 static int config_parse(const char *confdir, struct polar_config *conf)
@@ -244,22 +254,22 @@ static int polar_load_certs(const struct polar_config *conf)
     char err_buf[72];
     int ret = -1;
 
-    ret = x509_crt_parse_file(&server_context->cert, conf->cert_file);
+    ret = mbedtls_x509_crt_parse_file(&server_context->cert, conf->cert_file);
     if (ret < 0) {
-        error_strerror(ret, err_buf, sizeof(err_buf));
+        mbedtls_strerror(ret, err_buf, sizeof(err_buf));
         mk_warn("[tls] Load cert '%s' failed: %s",
                conf->cert_file,
                err_buf);
 
-#if defined(POLARSSL_CERTS_C)
+#if defined(MBEDTLS_CERTS_C)
         mk_warn("[tls] Using test certificates, "
                 "please set 'CertificateFile' in tls.conf");
 
-        ret = x509_crt_parse(&server_context->cert,
-                             (unsigned char *)test_srv_crt, strlen(test_srv_crt));
+        ret = mbedtls_x509_crt_parse(&server_context->cert,
+                             (unsigned char *)mbedtls_test_srv_crt, strlen(mbedtls_test_srv_crt));
 
         if (ret) {
-            error_strerror(ret, err_buf, sizeof(err_buf));
+            mbedtls_strerror(ret, err_buf, sizeof(err_buf));
             mk_err("[tls] Load built-in cert failed: %s", err_buf);
             return -1;
         }
@@ -267,14 +277,14 @@ static int polar_load_certs(const struct polar_config *conf)
         return 0;
 #else
         return -1;
-#endif // defined(POLARSSL_CERTS_C)
+#endif // defined(MBEDTLS_CERTS_C)
     }
     else if (conf->cert_chain_file != NULL) {
-        ret = x509_crt_parse_file(server_context->ca_cert.next,
+        ret = mbedtls_x509_crt_parse_file(server_context->ca_cert.next,
                                   conf->cert_chain_file);
 
         if (ret) {
-            error_strerror(ret, err_buf, sizeof(err_buf));
+            mbedtls_strerror(ret, err_buf, sizeof(err_buf));
             mk_warn("[tls] Load cert chain '%s' failed: %s",
                     conf->cert_chain_file,
                     err_buf);
@@ -292,26 +302,26 @@ static int polar_load_key(struct polar_thread_context *thread_context,
 
     assert(conf->key_file);
 
-    ret = pk_parse_keyfile(&thread_context->pkey, conf->key_file, NULL);
+    ret = mbedtls_pk_parse_keyfile(&thread_context->pkey, conf->key_file, NULL);
     if (ret < 0) {
-        error_strerror(ret, err_buf, sizeof(err_buf));
+        mbedtls_strerror(ret, err_buf, sizeof(err_buf));
         MK_TRACE("[tls] Load key '%s' failed: %s",
                 conf->key_file,
                 err_buf);
 
-#if defined(POLARSSL_CERTS_C)
+#if defined(MBEDTLS_CERTS_C)
 
-        ret = pk_parse_key(&thread_context->pkey,
-                           (unsigned char *)test_srv_key,
-                           strlen(test_srv_key), NULL, 0);
+        ret = mbedtls_pk_parse_key(&thread_context->pkey,
+                           (unsigned char *)mbedtls_test_srv_key,
+                           strlen(mbedtls_test_srv_key), NULL, 0);
         if (ret) {
-            error_strerror(ret, err_buf, sizeof(err_buf));
+            mbedtls_strerror(ret, err_buf, sizeof(err_buf));
             mk_err("[tls] Failed to load built-in RSA key: %s", err_buf);
             return -1;
         }
 #else
         return -1;
-#endif // defined(POLARSSL_CERTS_C)
+#endif // defined(MBEDTLS_CERTS_C)
     }
     return 0;
 }
@@ -323,19 +333,19 @@ static int polar_load_dh_param(const struct polar_config *conf)
 
     assert(conf->dh_param_file);
 
-    ret = dhm_parse_dhmfile(&server_context->dhm, conf->dh_param_file);
+    ret = mbedtls_dhm_parse_dhmfile(&server_context->dhm, conf->dh_param_file);
     if (ret < 0) {
-        error_strerror(ret, err_buf, sizeof(err_buf));
+        mbedtls_strerror(ret, err_buf, sizeof(err_buf));
 
-        ret = mpi_read_string(&server_context->dhm.P, 16, my_dhm_P);
+        ret = mbedtls_mpi_read_string(&server_context->dhm.P, 16, my_dhm_P);
         if (ret < 0) {
-            error_strerror(ret, err_buf, sizeof(err_buf));
+            mbedtls_strerror(ret, err_buf, sizeof(err_buf));
             mk_err("[tls] Load DH parameter failed: %s", err_buf);
             return -1;
         }
-        ret = mpi_read_string(&server_context->dhm.G, 16, my_dhm_G);
+        ret = mbedtls_mpi_read_string(&server_context->dhm.G, 16, my_dhm_G);
         if (ret < 0) {
-            error_strerror(ret, err_buf, sizeof(err_buf));
+            mbedtls_strerror(ret, err_buf, sizeof(err_buf));
             mk_err("[tls] Load DH parameter failed: %s", err_buf);
             return -1;
         }
@@ -344,17 +354,17 @@ static int polar_load_dh_param(const struct polar_config *conf)
     return 0;
 }
 
-static int polar_init(void)
+static int mk_tls_init()
 {
     pthread_key_create(&local_context, NULL);
 
-#if defined(POLARSSL_SSL_CACHE_C)
-    ssl_cache_init(&global_sessions.cache);
+#if defined(MBEDTLS_SSL_CACHE_C)
+    mbedtls_ssl_cache_init(&global_sessions.cache);
 #endif
 
     pthread_mutex_lock(&server_context->mutex);
     mk_list_init(&server_context->threads._head);
-    entropy_init(&server_context->entropy);
+    mbedtls_entropy_init(&server_context->entropy);
     pthread_mutex_unlock(&server_context->mutex);
 
     PLUGIN_TRACE("[tls] Load certificates.");
@@ -369,44 +379,16 @@ static int polar_init(void)
     return 0;
 }
 
-static int polar_thread_init(const struct polar_config *conf)
+
+static int entropy_func_safe(void *data, unsigned char *output, size_t len)
 {
-    struct polar_thread_context *thctx;
     int ret;
 
-    PLUGIN_TRACE("[tls] Init thread context.");
-
-    thctx = mk_api->mem_alloc(sizeof(*thctx));
-    if (thctx == NULL) {
-        return -1;
-    }
-    thctx->contexts = NULL;
-    mk_list_init(&thctx->_head);
-
     pthread_mutex_lock(&server_context->mutex);
-    mk_list_add(&thctx->_head, &server_context->threads._head);
+    ret = mbedtls_entropy_func(data, output, len);
     pthread_mutex_unlock(&server_context->mutex);
 
-    ret = ctr_drbg_init(&thctx->ctr_drbg,
-            entropy_func_safe, &server_context->entropy,
-            NULL, 0);
-    if (ret) {
-        mk_err("crt_drbg_init failed: %d", ret);
-        mk_api->mem_free(thctx);
-        return -1;
-    }
-
-    pk_init(&thctx->pkey);
-
-    PLUGIN_TRACE("[tls] Load RSA key.");
-    if (polar_load_key(thctx, conf)) {
-        return -1;
-    }
-
-    PLUGIN_TRACE("[tls] Set local thread context.");
-    pthread_setspecific(local_context, thctx);
-
-    return 0;
+    return ret;
 }
 
 static void contexts_free(struct polar_context_head *ctx)
@@ -418,12 +400,12 @@ static void contexts_free(struct polar_context_head *ctx)
         next = cur->_next;
 
         for (; next; cur = next, next = next->_next) {
-            ssl_free(&cur->context);
+            mbedtls_ssl_free(&cur->context);
             memset(cur, 0, sizeof(*cur));
             mk_api->mem_free(cur);
         }
 
-        ssl_free(&cur->context);
+        mbedtls_ssl_free(&cur->context);
         memset(cur, 0, sizeof(*cur));
         mk_api->mem_free(cur);
     }
@@ -437,38 +419,10 @@ static void config_free(struct polar_config *conf)
     if (conf->dh_param_file) mk_api->mem_free(conf->dh_param_file);
 }
 
-static int polar_exit(void)
-{
-    struct mk_list *cur, *tmp;
-    struct polar_thread_context *thctx;
-
-    x509_crt_free(&server_context->cert);
-    x509_crt_free(&server_context->ca_cert);
-    dhm_free(&server_context->dhm);
-
-    mk_list_foreach_safe(cur, tmp, &server_context->threads._head) {
-        thctx = mk_list_entry(cur, struct polar_thread_context, _head);
-        contexts_free(thctx->contexts);
-        mk_api->mem_free(thctx);
-
-        pk_free(&thctx->pkey);
-    }
-    pthread_mutex_destroy(&server_context->mutex);
-
-#if defined(POLARSSL_SSL_CACHE_C)
-    ssl_cache_free(&global_sessions.cache);
-#endif
-
-    config_free(&server_context->config);
-    mk_api->mem_free(server_context);
-
-    return 0;
-}
-
 /* Contexts may be requested from outside workers on exit so we should
  * be prepared for an empty context.
  */
-static ssl_context *context_get(int fd)
+static mbedtls_ssl_context *context_get(int fd)
 {
     struct polar_thread_context *thctx = local_thread_context();
     struct polar_context_head **cur = &thctx->contexts;
@@ -486,37 +440,14 @@ static ssl_context *context_get(int fd)
     return NULL;
 }
 
-static int polar_cache_get(void *p, ssl_session *session)
-{
-    struct polar_sessions *session_cache;
-    int ret;
-
-    session_cache = p;
-    pthread_mutex_lock(&session_cache->_mutex);
-    ret = ssl_cache_get(&session_cache->cache, session);
-    pthread_mutex_unlock(&session_cache->_mutex);
-
-    return ret;
-}
-
-static int polar_cache_set(void *p, const ssl_session *session)
-{
-    struct polar_sessions *session_cache;
-    int ret;
-
-    session_cache = p;
-    pthread_mutex_lock(&session_cache->_mutex);
-    ret = ssl_cache_set(&session_cache->cache, session);
-    pthread_mutex_unlock(&session_cache->_mutex);
-
-    return ret;
-}
-
-static ssl_context *context_new(int fd)
+static mbedtls_ssl_context *context_new(int fd)
 {
     struct polar_thread_context *thctx = local_thread_context();
     struct polar_context_head **cur = &thctx->contexts;
-    ssl_context *ssl = NULL;
+    mbedtls_ssl_context *ssl = NULL;
+    mbedtls_ssl_cache_context cache;
+
+    mbedtls_ssl_cache_init(&cache);
 
     assert(cur != NULL);
 
@@ -537,25 +468,27 @@ static ssl_context *context_new(int fd)
 
         ssl = &(*cur)->context;
 
-        ssl_init(ssl);
-        ssl_set_endpoint(ssl, SSL_IS_SERVER);
-        ssl_set_authmode(ssl, SSL_VERIFY_NONE);
+        mbedtls_ssl_init(ssl);
+        mbedtls_ssl_setup(ssl, &thctx->conf);
 
-        ssl_set_rng(ssl, ctr_drbg_random, &thctx->ctr_drbg);
+        mbedtls_ssl_conf_session_cache(&thctx->conf,
+                                       &global_sessions,
+                                       tls_cache_get,
+                                       tls_cache_set);
+
+        mbedtls_ssl_set_bio(ssl, &(*cur)->fd,
+                            mbedtls_net_send, mbedtls_net_recv, NULL);
+
+        mbedtls_ssl_conf_rng(&thctx->conf, mbedtls_ctr_drbg_random,
+                             &thctx->ctr_drbg);
 
 #if (POLAR_DEBUG_LEVEL > 0)
-        ssl_set_dbg(ssl, polar_debug, 0);
+        mbedtls_ssl_conf_dbg(ssl, polar_debug, 0);
 #endif
 
-        ssl_set_own_cert(ssl, &server_context->cert, &thctx->pkey);
-        ssl_set_session_tickets(ssl, SSL_SESSION_TICKETS_ENABLED);
-        ssl_set_ca_chain(ssl, &server_context->ca_cert, NULL, NULL);
-        ssl_set_dh_param_ctx(ssl, &server_context->dhm);
-
-        ssl_set_session_cache(ssl, polar_cache_get, &global_sessions,
-                              polar_cache_set, &global_sessions);
-
-        ssl_set_bio(ssl, net_recv, &(*cur)->fd, net_send, &(*cur)->fd);
+        mbedtls_ssl_conf_own_cert(&thctx->conf, &server_context->cert, &thctx->pkey);
+        mbedtls_ssl_conf_ca_chain(&thctx->conf, &server_context->ca_cert, NULL);
+        mbedtls_ssl_conf_dh_param_ctx(&thctx->conf, &server_context->dhm);
     }
     else {
         ssl = &(*cur)->context;
@@ -566,7 +499,7 @@ static ssl_context *context_new(int fd)
     return ssl;
 }
 
-static int context_unset(int fd, ssl_context *ssl)
+static int context_unset(int fd, mbedtls_ssl_context *ssl)
 {
     struct polar_context_head *head;
 
@@ -574,7 +507,7 @@ static int context_unset(int fd, ssl_context *ssl)
 
     if (head->fd == fd) {
         head->fd = -1;
-        ssl_session_reset(ssl);
+        mbedtls_ssl_session_reset(ssl);
     }
     else {
         mk_err("[polarssl %d] Context already unset.", fd);
@@ -586,13 +519,13 @@ static int context_unset(int fd, ssl_context *ssl)
 int mk_tls_read(int fd, void *buf, int count)
 {
     size_t avail;
-    ssl_context *ssl = context_get(fd);
+    mbedtls_ssl_context *ssl = context_get(fd);
 
     if (!ssl) {
         ssl = context_new(fd);
     }
 
-    int ret =  handle_return(ssl_read(ssl, buf, count));
+    int ret = handle_return(mbedtls_ssl_read(ssl, buf, count));
     PLUGIN_TRACE("IN: %i SSL READ: %i ; CORE COUNT: %i",
                  ssl->in_msglen,
                  ret, count);
@@ -614,17 +547,17 @@ int mk_tls_read(int fd, void *buf, int count)
 
 int mk_tls_write(int fd, const void *buf, size_t count)
 {
-    ssl_context *ssl = context_get(fd);
+    mbedtls_ssl_context *ssl = context_get(fd);
     if (!ssl) {
         ssl = context_new(fd);
     }
 
-    return handle_return(ssl_write(ssl, buf, count));
+    return handle_return(mbedtls_ssl_write(ssl, buf, count));
 }
 
 int mk_tls_writev(int fd, struct mk_iov *mk_io)
 {
-    ssl_context *ssl = context_get(fd);
+    mbedtls_ssl_context *ssl = context_get(fd);
     const int iov_len = mk_io->iov_idx;
     const struct iovec *io = mk_io->io;
     const size_t len = mk_io->total_len;
@@ -648,7 +581,7 @@ int mk_tls_writev(int fd, struct mk_iov *mk_io)
     }
 
     assert(used == len);
-    ret = ssl_write(ssl, buf, len);
+    ret = mbedtls_ssl_write(ssl, buf, len);
     mk_api->mem_free(buf);
 
     return handle_return(ret);
@@ -657,7 +590,7 @@ int mk_tls_writev(int fd, struct mk_iov *mk_io)
 int mk_tls_send_file(int fd, int file_fd, off_t *file_offset,
         size_t file_count)
 {
-    ssl_context *ssl = context_get(fd);
+    mbedtls_ssl_context *ssl = context_get(fd);
     unsigned char *buf;
     ssize_t used, remain = file_count, sent = 0;
     int ret;
@@ -681,10 +614,10 @@ int mk_tls_send_file(int fd, int file_fd, off_t *file_offset,
             ret = -1;
         }
         else if (remain > 0) {
-            ret = ssl_write(ssl, buf, used < remain ? used : remain);
+            ret = mbedtls_ssl_write(ssl, buf, used < remain ? used : remain);
         }
         else {
-            ret = ssl_write(ssl, buf, used);
+            ret = mbedtls_ssl_write(ssl, buf, used);
         }
 
         if (ret > 0) {
@@ -708,17 +641,16 @@ int mk_tls_send_file(int fd, int file_fd, off_t *file_offset,
 
 int mk_tls_close(int fd)
 {
-    ssl_context *ssl = context_get(fd);
+    mbedtls_ssl_context *ssl = context_get(fd);
 
     PLUGIN_TRACE("[fd %d] Closing connection", fd);
 
     if (ssl) {
-        ssl_close_notify(ssl);
+        mbedtls_ssl_close_notify(ssl);
         context_unset(fd, ssl);
     }
 
-    net_close(fd);
-
+    close(fd);
     return 0;
 }
 
@@ -733,23 +665,90 @@ int mk_tls_plugin_init(struct plugin_api **api, char *confdir)
     if (config_parse(confdir, &server_context->config)) {
         ret = -1;
     }
-    polar_init();
+    mk_tls_init();
 
     return ret;
 }
 
 void mk_tls_worker_init(void)
 {
-    if (polar_thread_init(&server_context->config)) {
-        abort();
+    int ret;
+    struct polar_thread_context *thctx;
+    const char *pers = "monkey";
+
+    PLUGIN_TRACE("[tls] Init thread context.");
+
+    thctx = mk_api->mem_alloc(sizeof(*thctx));
+    if (thctx == NULL) {
+        goto error;
     }
+    thctx->contexts = NULL;
+    mk_list_init(&thctx->_head);
+
+
+    /* SSL confniguration */
+    mbedtls_ssl_config_init(&thctx->conf);
+    mbedtls_ssl_config_defaults(&thctx->conf,
+                                MBEDTLS_SSL_IS_SERVER,
+                                MBEDTLS_SSL_TRANSPORT_STREAM,
+                                MBEDTLS_SSL_PRESET_DEFAULT);
+
+    pthread_mutex_lock(&server_context->mutex);
+    mk_list_add(&thctx->_head, &server_context->threads._head);
+    pthread_mutex_unlock(&server_context->mutex);
+
+    mbedtls_ctr_drbg_init(&thctx->ctr_drbg);
+    ret = mbedtls_ctr_drbg_seed(&thctx->ctr_drbg,
+                                entropy_func_safe, &server_context->entropy,
+                                (const unsigned char *) pers,
+                                strlen(pers));
+    if (ret != 0) {
+        goto error;
+    }
+
+    mbedtls_pk_init(&thctx->pkey);
+
+    PLUGIN_TRACE("[tls] Load RSA key.");
+    if (polar_load_key(thctx, &server_context->config)) {
+        goto error;
+    }
+
+    PLUGIN_TRACE("[tls] Set local thread context.");
+    pthread_setspecific(local_context, thctx);
+
+    return;
+
+ error:
+    abort();
 }
 
 int mk_tls_plugin_exit()
 {
-    return polar_exit();
-}
+    struct mk_list *cur, *tmp;
+    struct polar_thread_context *thctx;
 
+    mbedtls_x509_crt_free(&server_context->cert);
+    mbedtls_x509_crt_free(&server_context->ca_cert);
+    mbedtls_dhm_free(&server_context->dhm);
+
+    mk_list_foreach_safe(cur, tmp, &server_context->threads._head) {
+        thctx = mk_list_entry(cur, struct polar_thread_context, _head);
+        contexts_free(thctx->contexts);
+        mk_api->mem_free(thctx);
+
+        mbedtls_pk_free(&thctx->pkey);
+    }
+    pthread_mutex_destroy(&server_context->mutex);
+
+#if defined(MBEDTLS_SSL_CACHE_C)
+    mbedtls_ssl_cache_free(&global_sessions.cache);
+#endif
+
+    config_free(&server_context->config);
+    mk_api->mem_free(server_context);
+
+    return 0;
+}
 
 /* Network Layer plugin Callbacks */
 struct mk_plugin_network mk_plugin_network_tls = {
@@ -758,7 +757,7 @@ struct mk_plugin_network mk_plugin_network_tls = {
     .writev        = mk_tls_writev,
     .close         = mk_tls_close,
     .send_file     = mk_tls_send_file,
-    .buffer_size   = SSL_MAX_CONTENT_LEN
+    .buffer_size   = MBEDTLS_SSL_MAX_CONTENT_LEN
 };
 
 struct mk_plugin mk_plugin_tls = {

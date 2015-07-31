@@ -58,6 +58,11 @@ void dump_file(char *filename)
     struct mk_list *it, *tmp;
     struct mk_passwd_user *entry;
 
+    if (!fileout) {
+        printf("Error opening: %s", filename);
+        exit(EXIT_FAILURE);
+    }
+
     mk_list_foreach_safe(it, tmp, &passwd_file) {
         entry = mk_list_entry(it, struct mk_passwd_user, _head);
         fprintf(fileout, "%s", entry->row);

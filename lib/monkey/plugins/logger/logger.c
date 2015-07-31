@@ -29,8 +29,6 @@
 #include "logger.h"
 #include "pointers.h"
 
-pthread_key_t _mkp_data;
-
 struct status_response {
     int   i_status;
     char *s_status;
@@ -53,34 +51,14 @@ static struct status_response response_codes[] = {
     {505, "505"},
 };
 
-
-static char *mk_logger_match_by_fd(int fd)
+static struct log_target *mk_logger_match_by_host(struct host *host, int is_ok)
 {
     struct mk_list *head;
     struct log_target *entry;
 
     mk_list_foreach(head, &targets_list) {
         entry = mk_list_entry(head, struct log_target, _head);
-
-        if (entry->fd_access[0] == fd) {
-            return entry->file_access;
-        }
-        if (entry->fd_error[0] == fd) {
-            return entry->file_error;
-        }
-    }
-
-    return NULL;
-}
-
-static struct log_target *mk_logger_match_by_host(struct host *host)
-{
-    struct mk_list *head;
-    struct log_target *entry;
-
-    mk_list_foreach(head, &targets_list) {
-        entry = mk_list_entry(head, struct log_target, _head);
-        if (entry->host == host) {
+        if (entry->host == host && entry->is_ok == is_ok) {
             return entry;
         }
     }
@@ -90,7 +68,7 @@ static struct log_target *mk_logger_match_by_host(struct host *host)
 
 static struct iov *mk_logger_get_cache()
 {
-    return pthread_getspecific(_mkp_data);
+    return pthread_getspecific(cache_iov);
 }
 
 static ssize_t _mk_logger_append(int pipe_fd_in,
@@ -174,17 +152,15 @@ static void mk_logger_start_worker(void *args)
     mk_list_foreach(head, &targets_list) {
         entry = mk_list_entry(head, struct log_target, _head);
         event = &entry->event;
+        event->mask  = MK_EVENT_EMPTY;
+        event->data  = entry;
+        event->handler = NULL;
+        event->status = MK_EVENT_NONE;
 
         /* Add access log file */
-        if (entry->fd_access[0] > 0) {
-            event->mask = MK_EVENT_EMPTY;
-            mk_api->ev_add(evl, entry->fd_access[0],
-                           MK_EVENT_CONNECTION, MK_EVENT_READ, entry);
-        }
-        /* Add error log file */
-        if (entry->fd_error[0] > 0) {
-            event->mask = MK_EVENT_EMPTY;
-            mk_api->ev_add(evl, entry->fd_error[0],
+        if (entry->pipe[0] > 0) {
+            event->fd = entry->pipe[0];
+            mk_api->ev_add(evl, entry->pipe[0],
                            MK_EVENT_CONNECTION, MK_EVENT_READ, entry);
         }
     }
@@ -204,13 +180,9 @@ static void mk_logger_start_worker(void *args)
 
         /* translate the backend events triggered */
         mk_event_foreach(event, evl) {
-            fd = event->fd;
-
-            target = mk_logger_match_by_fd(fd);
-            if (!target) {
-                mk_warn("Could not match host/epoll_fd");
-                continue;
-            }
+            entry = (struct log_target *) event;
+            target = entry->file;
+            fd = entry->pipe[0];
 
             err = ioctl(fd, FIONREAD, &bytes);
             if (mk_unlikely(err == -1)){
@@ -248,7 +220,7 @@ static void mk_logger_start_worker(void *args)
                 mk_warn("Could not write to log file: splice() = %ld", slen);
             }
 
-            PLUGIN_TRACE("written %i bytes", bytes);
+            MK_TRACE("written %i bytes", bytes);
             close(flog);
         }
     }
@@ -281,7 +253,7 @@ static int mk_logger_read_config(char *path)
             exit(EXIT_FAILURE);
         }
         mk_logger_timeout = timeout;
-        PLUGIN_TRACE("FlushTimeout %i seconds", mk_logger_timeout);
+        MK_TRACE("FlushTimeout %i seconds", mk_logger_timeout);
 
         /* MasterLog */
         logfilename = mk_api->config_section_get_key(section,
@@ -293,7 +265,7 @@ static int mk_logger_read_config(char *path)
         }
 
         mk_logger_master_path = logfilename;
-        PLUGIN_TRACE("MasterLog '%s'", mk_logger_master_path);
+        MK_TRACE("MasterLog '%s'", mk_logger_master_path);
     }
 
     mk_api->mem_free(default_file);
@@ -341,6 +313,7 @@ int mk_logger_plugin_init(struct plugin_api **api, char *confdir)
     mk_api = *api;
 
     /* Specific thread key */
+    pthread_key_create(&cache_iov, NULL);
     pthread_key_create(&cache_content_length, NULL);
     pthread_key_create(&cache_status, NULL);
     pthread_key_create(&cache_ip_str, NULL);
@@ -375,8 +348,9 @@ int mk_logger_plugin_exit()
     mk_list_foreach_safe(head, tmp, &targets_list) {
         entry = mk_list_entry(head, struct log_target, _head);
         mk_list_del(&entry->_head);
-        mk_api->mem_free(entry->file_access);
-        mk_api->mem_free(entry->file_error);
+        if (entry->pipe[0] > 0) close(entry->pipe[0]);
+        if (entry->pipe[1] > 0) close(entry->pipe[1]);
+        mk_api->mem_free(entry->file);
         mk_api->mem_free(entry);
     }
 
@@ -403,7 +377,7 @@ int mk_logger_master_init(struct mk_server_config *config)
         mk_logger_print_details();
     }
 
-    PLUGIN_TRACE("Reading virtual hosts");
+    MK_TRACE("Reading virtual hosts");
 
     mk_list_init(&targets_list);
 
@@ -421,45 +395,51 @@ int mk_logger_master_init(struct mk_server_config *config)
                                                                       "ErrorLog",
                                                                       MK_RCONF_STR);
 
-            if (access_file_name || error_file_name) {
+            if (access_file_name) {
                 new = mk_api->mem_alloc(sizeof(struct log_target));
-                /* Set access pipe */
-                if (access_file_name) {
-                    if (pipe(new->fd_access) < 0) {
-                        mk_err("Could not create pipe");
-                        exit(EXIT_FAILURE);
-                    }
-                    if (fcntl(new->fd_access[1], F_SETFL, O_NONBLOCK) == -1) {
-                        mk_libc_error("fcntl");
-                    }
-                    if (fcntl(new->fd_access[0], F_SETFD, FD_CLOEXEC) == -1) {
-                        mk_libc_error("fcntl");
-                    }
-                    if (fcntl(new->fd_access[1], F_SETFD, FD_CLOEXEC) == -1) {
-                        mk_libc_error("fcntl");
-                    }
-                    new->file_access = access_file_name;
-                }
-                /* Set error pipe */
-                if (error_file_name) {
-                    if (pipe(new->fd_error) < 0) {
-                        mk_err("Could not create pipe");
-                        exit(EXIT_FAILURE);
-                    }
-                    if (fcntl(new->fd_error[1], F_SETFL, O_NONBLOCK) == -1) {
-                        mk_libc_error("fcntl");
-                    }
-                    if (fcntl(new->fd_error[0], F_SETFD, FD_CLOEXEC) == -1) {
-                        mk_libc_error("fcntl");
-                    }
-                    if (fcntl(new->fd_error[1], F_SETFD, FD_CLOEXEC) == -1 ){
-                        mk_libc_error("fcntl");
-                    }
-                    new->file_error = error_file_name;
-                }
+                new->is_ok = MK_TRUE;
 
+                /* Set access pipe */
+                if (pipe(new->pipe) < 0) {
+                    mk_err("Could not create pipe");
+                    exit(EXIT_FAILURE);
+                }
+                if (fcntl(new->pipe[1], F_SETFL, O_NONBLOCK) == -1) {
+                    mk_libc_error("fcntl");
+                }
+                if (fcntl(new->pipe[0], F_SETFD, FD_CLOEXEC) == -1) {
+                    mk_libc_error("fcntl");
+                }
+                if (fcntl(new->pipe[1], F_SETFD, FD_CLOEXEC) == -1) {
+                    mk_libc_error("fcntl");
+                }
+                new->file = access_file_name;
                 new->host = entry_host;
                 mk_list_add(&new->_head, &targets_list);
+            }
+
+            /* Set error pipe */
+            if (error_file_name) {
+                new = mk_api->mem_alloc(sizeof(struct log_target));
+                new->is_ok = MK_FALSE;
+
+                if (pipe(new->pipe) < 0) {
+                    mk_err("Could not create pipe");
+                    exit(EXIT_FAILURE);
+                }
+                if (fcntl(new->pipe[1], F_SETFL, O_NONBLOCK) == -1) {
+                    mk_libc_error("fcntl");
+                }
+                if (fcntl(new->pipe[0], F_SETFD, FD_CLOEXEC) == -1) {
+                    mk_libc_error("fcntl");
+                }
+                if (fcntl(new->pipe[1], F_SETFD, FD_CLOEXEC) == -1 ){
+                    mk_libc_error("fcntl");
+                }
+                new->file = error_file_name;
+                new->host = entry_host;
+                mk_list_add(&new->_head, &targets_list);
+
             }
         }
     }
@@ -475,11 +455,12 @@ void mk_logger_worker_init()
     mk_ptr_t *status;
     mk_ptr_t *ip_str;
 
-    PLUGIN_TRACE("Creating thread cache");
+
+    MK_TRACE("Creating thread cache");
 
     /* Cache iov log struct */
     iov_log = mk_api->iov_create(15, 0);
-    pthread_setspecific(_mkp_data, (void *) iov_log);
+    pthread_setspecific(cache_iov, (void *) iov_log);
 
     /* Cache content length */
     content_length = mk_api->mem_alloc_z(sizeof(mk_ptr_t));
@@ -504,6 +485,7 @@ int mk_logger_stage40(struct mk_http_session *cs, struct mk_http_request *sr)
 {
     int i, http_status, ret, tmp;
     int array_len = ARRAY_SIZE(response_codes);
+    int access;
     struct log_target *target;
     struct mk_iov *iov;
     mk_ptr_t *date;
@@ -514,10 +496,17 @@ int mk_logger_stage40(struct mk_http_session *cs, struct mk_http_request *sr)
     /* Set response status */
     http_status = sr->headers.status;
 
+    if (http_status < 400) {
+        access = MK_TRUE;
+    }
+    else {
+        access = MK_FALSE;
+    }
+
     /* Look for target log file */
-    target = mk_logger_match_by_host(sr->host_conf);
+    target = mk_logger_match_by_host(sr->host_conf, access);
     if (!target) {
-        PLUGIN_TRACE("No target found");
+        MK_TRACE("No target found");
         return 0;
     }
 
@@ -563,7 +552,7 @@ int mk_logger_stage40(struct mk_http_session *cs, struct mk_http_request *sr)
     /* Access Log */
     if (http_status < 400) {
         /* No access file defined */
-        if (!target->file_access) {
+        if (!target->file) {
             return 0;
         }
 
@@ -651,10 +640,10 @@ int mk_logger_stage40(struct mk_http_session *cs, struct mk_http_request *sr)
         }
 
         /* Write iov array to pipe */
-        mk_api->iov_send(target->fd_access[1], iov);
+        mk_api->iov_send(target->pipe[1], iov);
     }
     else {
-        if (mk_unlikely(!target->file_error)) {
+        if (mk_unlikely(!target->file)) {
             return 0;
         }
 
@@ -823,8 +812,9 @@ int mk_logger_stage40(struct mk_http_session *cs, struct mk_http_request *sr)
             break;
         }
 
+
         /* Write iov array to pipe */
-        mk_api->iov_send(target->fd_error[1], iov);
+        mk_api->iov_send(target->pipe[1], iov);
     }
 
     return 0;

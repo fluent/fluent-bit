@@ -81,6 +81,7 @@ void mk_http_request_init(struct mk_http_session *session,
     request->host_conf = mk_list_entry_first(host_list, struct host, _head);
     request->uri_processed.data = NULL;
     request->real_path.data = NULL;
+    request->handler_data = NULL;
 
     /* Response Headers */
     mk_header_response_reset(&request->headers);
@@ -630,7 +631,6 @@ static int mk_http_directory_redirect_check(struct mk_http_session *cs,
     sr->headers.pconnections_left =
         (mk_config->max_keep_alive_request - cs->counter_connections);
 
-
     mk_header_prepare(cs, sr);
 
     /* we do not free() real_location as it's freed by iov */
@@ -692,7 +692,10 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
 {
     int ret;
     struct mimetype *mime;
-    struct mk_plugin *handler = NULL;
+    struct mk_list *head;
+    struct mk_list *handlers;
+    struct mk_plugin *plugin;
+    struct mk_host_handler *h_handler;
 
     MK_TRACE("[FD %i] HTTP Protocol Init, session %p", cs->socket, sr);
 
@@ -749,9 +752,14 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
     if (mk_file_get_info(sr->real_path.data,
                          &sr->file_info,
                          MK_FILE_READ) != 0) {
-        /* if the requested resource doesn't exist,
-         * check if some plugin would like to handle it
-         */
+
+        /*
+         * FIXME: commenting out this routine where we used to let
+         * plugins to handle missing resources on the file system.
+         *
+         * As the only caller on this context is Duda plugin, this will
+         * be disabled until Duda DST-2 becomes available.
+
         MK_TRACE("No file, look for handler plugin");
         ret = mk_plugin_stage_run_30(cs, sr, &handler);
         if (ret == MK_PLUGIN_RET_CLOSE_CONX) {
@@ -775,6 +783,8 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
         else if (sr->stage30_blocked == MK_FALSE) {
             return mk_http_error(MK_CLIENT_FORBIDDEN, cs, sr);
         }
+        */
+        return mk_http_error(MK_CLIENT_NOT_FOUND, cs, sr);
     }
 
     /* is it a valid directory ? */
@@ -810,7 +820,11 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
                 sr->real_path.data = mk_string_dup(index_file.data);
             }
 
-            mk_file_get_info(sr->real_path.data, &sr->file_info, MK_FILE_READ);
+            ret = mk_file_get_info(sr->real_path.data, &sr->file_info, MK_FILE_READ);
+            if (ret != 0) {
+                return mk_http_error(MK_CLIENT_FORBIDDEN, cs, sr);
+            }
+
         }
     }
 
@@ -831,21 +845,36 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
 
     /* Plugin Stage 30: look for handlers for this request */
     if (sr->stage30_blocked == MK_FALSE) {
-        ret = mk_plugin_stage_run_30(cs, sr, &handler);
-        MK_TRACE("[FD %i] STAGE_30 returned %i", cs->socket, ret);
-        switch (ret) {
-        case MK_PLUGIN_RET_CONTINUE:
-            sr->stage30_handler = handler;
-            return MK_PLUGIN_RET_CONTINUE;
-        case MK_PLUGIN_RET_CLOSE_CONX:
-            if (sr->headers.status > 0) {
-                return mk_http_error(sr->headers.status, cs, sr);
+        sr->uri_processed.data[sr->uri_processed.len] = '\0';
+
+        handlers = &sr->host_conf->handlers;
+        mk_list_foreach(head, handlers) {
+            h_handler = mk_list_entry(head, struct mk_host_handler, _head);
+            if (regexec(&h_handler->match,
+                        sr->uri_processed.data, 0, NULL, 0) != 0) {
+                continue;
             }
-            else {
-                return mk_http_error(MK_CLIENT_FORBIDDEN, cs, sr);
+
+            plugin = h_handler->handler;
+            sr->stage30_handler = h_handler->handler;
+            ret = plugin->stage->stage30(plugin, cs, sr,
+                                         h_handler->n_params,
+                                         &h_handler->params);
+
+            MK_TRACE("[FD %i] STAGE_30 returned %i", cs->socket, ret);
+            switch (ret) {
+            case MK_PLUGIN_RET_CONTINUE:
+                return MK_PLUGIN_RET_CONTINUE;
+            case MK_PLUGIN_RET_CLOSE_CONX:
+                if (sr->headers.status > 0) {
+                    return mk_http_error(sr->headers.status, cs, sr);
+                }
+                else {
+                    return mk_http_error(MK_CLIENT_FORBIDDEN, cs, sr);
+                }
+            case MK_PLUGIN_RET_END:
+                return MK_EXIT_OK;
             }
-        case MK_PLUGIN_RET_END:
-            return MK_EXIT_OK;
         }
     }
 
@@ -1084,7 +1113,6 @@ int mk_http_request_end(struct mk_http_session *cs)
         }
     }
 
-
     /*
      * We need to ask to http_keepalive if this
      * connection can continue working or we must
@@ -1117,6 +1145,7 @@ void cb_stream_page_finished(struct mk_stream *stream)
 int mk_http_error(int http_status, struct mk_http_session *cs,
                   struct mk_http_request *sr) {
     int ret, fd;
+    size_t count;
     mk_ptr_t message;
     mk_ptr_t *page = NULL;
     struct error_page *entry;
@@ -1218,7 +1247,7 @@ int mk_http_error(int http_status, struct mk_http_session *cs,
         break;
     }
 
-    if (page) {
+    if (page && sr->method != MK_METHOD_HEAD) {
         sr->headers.content_length = page->len;
     }
     else {
@@ -1248,7 +1277,13 @@ int mk_http_error(int http_status, struct mk_http_session *cs,
                           NULL,
                           cb_stream_page_finished, NULL, NULL);
         }
+        else {
+            mk_ptr_free(page);
+            mk_mem_free(page);
+        }
     }
+
+    mk_channel_write(cs->channel, &count);
     return MK_EXIT_OK;
 }
 
@@ -1285,6 +1320,7 @@ void mk_http_session_remove(struct mk_http_session *cs)
     mk_list_del(&cs->request_list);
 
     cs->_sched_init = MK_FALSE;
+
 }
 
 struct mk_http_session *mk_http_session_lookup(int socket)
@@ -1466,7 +1502,10 @@ int mk_http_sched_read(struct mk_sched_conn *conn,
                                 cs->body, cs->body_length);
         if (status == MK_HTTP_PARSER_OK) {
             MK_TRACE("[FD %i] HTTP_PARSER_OK", socket);
-            mk_http_status_completed(cs, conn);
+            if (mk_http_status_completed(cs, conn) == -1) {
+                mk_http_session_remove(cs);
+                return -1;
+            }
             mk_http_request_prepare(cs, sr);
         }
         else if (status == MK_HTTP_PARSER_ERROR) {
@@ -1511,8 +1550,13 @@ int mk_http_sched_done(struct mk_sched_conn *conn,
 {
     (void) worker;
     struct mk_http_session *cs;
+    struct mk_http_request *sr;
 
     cs = mk_http_session_get(conn);
+    sr = mk_list_entry_first(&cs->request_list, struct mk_http_request, _head);
+
+    mk_plugin_stage_run_40(cs, sr);
+
     return mk_http_request_end(cs);
 }
 

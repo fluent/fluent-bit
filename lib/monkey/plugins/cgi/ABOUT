@@ -1,5 +1,0 @@
-CGI
-===
-This plugin enable the CGI support in Monkey. CGI is an old
-interface and not recommended for production enviroments, due
-to it nature, it lack of performance.

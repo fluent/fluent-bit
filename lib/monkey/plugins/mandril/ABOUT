@@ -1,4 +1,0 @@
-Mandril Security Plugin
-=======================
-Provides a security layer to restrict incoming connections
-using as pattern the IP address or a specific URI request.

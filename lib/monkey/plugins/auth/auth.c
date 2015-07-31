@@ -136,7 +136,9 @@ void mk_auth_worker_init()
 /* Object handler */
 int mk_auth_stage30(struct mk_plugin *plugin,
                     struct mk_http_session *cs,
-                    struct mk_http_request *sr)
+                    struct mk_http_request *sr,
+                    int n_params,
+                    struct mk_list *params)
 {
     int val;
     short int is_restricted = MK_FALSE;
@@ -146,6 +148,8 @@ int mk_auth_stage30(struct mk_plugin *plugin,
     struct location *loc_entry;
     struct mk_http_header *header;
     (void) plugin;
+    (void) n_params;
+    (void) params;
 
     PLUGIN_TRACE("[FD %i] Handler received request");
 

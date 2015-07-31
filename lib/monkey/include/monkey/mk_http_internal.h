@@ -168,6 +168,12 @@ struct mk_http_request
     struct host       *host_conf;     /* root vhost config */
     struct host_alias *host_alias;    /* specific vhost matched */
 
+    /*
+     * Reference used outside of Monkey Core, e.g: Plugins. It can be used
+     * to store some relevant information associated to a request.
+     */
+    void *handler_data;
+
     /* Parent Session */
     struct mk_http_session *session;
 

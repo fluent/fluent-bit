@@ -24,10 +24,10 @@
 
 /* Create a new stream instance */
 struct mk_stream *mk_stream_new(int type, struct mk_channel *channel,
-                           void *buffer, size_t size, void *data,
-                           void (*cb_finished) (struct mk_stream *),
-                           void (*cb_bytes_consumed) (struct mk_stream *, long),
-                           void (*cb_exception) (struct mk_stream *, int))
+                                void *buffer, size_t size, void *data,
+                                void (*cb_finished) (struct mk_stream *),
+                                void (*cb_bytes_consumed) (struct mk_stream *, long),
+                                void (*cb_exception) (struct mk_stream *, int))
 {
     struct mk_stream *stream;
 
@@ -90,6 +90,7 @@ static inline void mk_copybuf_consume(struct mk_stream *stream, size_t bytes)
      */
     if (bytes == stream->bytes_total) {
         mk_mem_free(stream->buffer);
+        stream->buffer = NULL;
     }
     else {
         memmove(stream->buffer,
@@ -143,13 +144,31 @@ int mk_channel_flush(struct mk_channel *channel)
     return ret;
 }
 
+int mk_stream_release(struct mk_stream *stream)
+{
+    if (stream->type == MK_STREAM_COPYBUF) {
+        if (stream->buffer) {
+            mk_mem_free(stream->buffer);
+        }
+    }
+
+    if (stream->preserve == MK_FALSE) {
+        mk_stream_unlink(stream);
+        if (stream->dynamic == MK_TRUE) {
+            mk_mem_free(stream);
+        }
+    }
+
+    return 0;
+}
+
 /* It perform a direct stream I/O write through the network layer */
 int mk_channel_write(struct mk_channel *channel, size_t *count)
 {
     ssize_t bytes = -1;
     struct mk_iov *iov;
     mk_ptr_t *ptr;
-    struct mk_stream *stream;
+    struct mk_stream *stream = NULL;
 
     if (mk_list_is_empty(&channel->streams) == 0) {
         MK_TRACE("[CH %i] CHANNEL_EMPTY", channel->fd);
@@ -213,10 +232,7 @@ int mk_channel_write(struct mk_channel *channel, size_t *count)
                 if (stream->cb_finished) {
                     stream->cb_finished(stream);
                 }
-
-                if (stream->preserve == MK_FALSE) {
-                    mk_stream_unlink(stream);
-                }
+                mk_stream_release(stream);
             }
 
             if (mk_list_is_empty(&channel->streams) == 0) {
@@ -231,15 +247,30 @@ int mk_channel_write(struct mk_channel *channel, size_t *count)
             if (errno == EAGAIN) {
                 return MK_CHANNEL_BUSY;
             }
+
+            mk_stream_release(stream);
             return MK_CHANNEL_ERROR;
         }
         else if (bytes == 0) {
-            if (stream->cb_exception) {
-                stream->cb_exception(stream, errno);
-            }
+            mk_stream_release(stream);
             return MK_CHANNEL_ERROR;
         }
     }
 
     return MK_CHANNEL_UNKNOWN;
+}
+
+/* Remove any dynamic memory associated */
+int mk_channel_clean(struct mk_channel *channel)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct mk_stream *stream;
+
+    mk_list_foreach_safe(head, tmp, &channel->streams) {
+        stream = mk_list_entry(head, struct mk_stream, _head);
+        mk_stream_release(stream);
+    }
+
+    return 0;
 }

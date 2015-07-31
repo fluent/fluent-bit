@@ -82,7 +82,6 @@ struct mk_sched_conn *mk_server_listen_handler(struct mk_sched_worker *sched,
 
     conn = mk_sched_add_connection(client_fd, listener, sched);
     if (mk_unlikely(!conn)) {
-        mk_err("[server] Failed to register client.");
         goto error;
     }
 
@@ -117,6 +116,22 @@ void mk_server_listen_free()
         mk_list_del(&listener->_head);
         mk_mem_free(listener);
     }
+}
+
+void mk_server_listen_exit(struct mk_list *list)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct mk_server_listen *listen;
+
+    mk_list_foreach_safe(head, tmp, list) {
+        listen = mk_list_entry(head, struct mk_server_listen, _head);
+        close(listen->server_fd);
+        mk_list_del(&listen->_head);
+        mk_mem_free(listen);
+    }
+
+    mk_mem_free(list);
 }
 
 struct mk_list *mk_server_listen_init(struct mk_server_config *config)
@@ -164,6 +179,7 @@ struct mk_list *mk_server_listen_init(struct mk_server_config *config)
             event->fd   = server_fd;
             event->type = MK_EVENT_LISTENER;
             event->mask = MK_EVENT_EMPTY;
+            event->status = MK_EVENT_NONE;
 
             /* continue with listener setup and linking */
             listener->server_fd = server_fd;
@@ -381,6 +397,10 @@ void mk_server_worker_loop()
         mk_event_wait(evl);
         mk_event_foreach(event, evl) {
             ret = 0;
+            if (event->type & MK_EVENT_IDLE) {
+                continue;
+            }
+
             if (event->type == MK_EVENT_CONNECTION) {
                 conn = (struct mk_sched_conn *) event;
 
@@ -388,7 +408,6 @@ void mk_server_worker_loop()
                     MK_TRACE("[FD %i] Event WRITE", event->fd);
                     ret = mk_sched_event_write(conn, sched);
                     //printf("event write ret=%i\n", ret);
-
                 }
 
                 if (event->mask & MK_EVENT_READ) {
@@ -443,6 +462,11 @@ void mk_server_worker_loop()
                         continue;
                     }
                     else if (val == MK_SCHED_SIGNAL_FREE_ALL) {
+                        if (timeout_fd > 0) {
+                            close(timeout_fd);
+                        }
+                        mk_mem_free(server_timeout);
+                        mk_server_listen_exit(sched->listeners);
                         mk_event_loop_destroy(evl);
                         mk_sched_worker_free();
                         return;

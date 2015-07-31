@@ -41,6 +41,21 @@ struct plugin_api *api;
 
 __thread struct mk_list *worker_plugin_event_list;
 
+struct mk_plugin *mk_plugin_lookup(char *shortname)
+{
+    struct mk_list *head;
+    struct mk_plugin *p = NULL;
+
+    mk_list_foreach(head, &mk_config->plugins) {
+        p = mk_list_entry(head, struct mk_plugin, _head);
+        if (strcmp(p->shortname, shortname) == 0){
+            return p;
+        }
+    }
+
+    return NULL;
+}
+
 void *mk_plugin_load_dynamic(const char *path)
 {
     void *handle;
@@ -223,7 +238,7 @@ void mk_plugin_api_init()
 
     /* HTTP callbacks */
     api->http_request_end = mk_plugin_http_request_end;
-    //    api->http_request_error = mk_http_error;
+    api->http_request_error = mk_http_error;
 
     /* Memory callbacks */
     api->pointer_set = mk_ptr_set;
@@ -294,17 +309,13 @@ void mk_plugin_api_init()
     /* Socket callbacks */
     api->socket_cork_flag = mk_socket_set_cork_flag;
     api->socket_connect = mk_socket_connect;
+    api->socket_open = mk_socket_open;
     api->socket_reset = mk_socket_reset;
     api->socket_set_tcp_fastopen = mk_socket_set_tcp_fastopen;
     api->socket_set_tcp_reuseport = mk_socket_set_tcp_reuseport;
     api->socket_set_tcp_nodelay = mk_socket_set_tcp_nodelay;
     api->socket_set_nonblocking = mk_socket_set_nonblocking;
     api->socket_create = mk_socket_create;
-    //api->socket_close = mk_socket_close;
-    //api->socket_sendv = mk_socket_sendv;
-    //api->socket_send = mk_socket_send;
-    //api->socket_read = mk_socket_read;
-    //api->socket_send_file = mk_socket_send_file;
     api->socket_ip_str = mk_socket_ip_str;
 
     /* Config Callbacks */
@@ -342,6 +353,9 @@ void mk_plugin_api_init()
     api->kernel_version = mk_kernel_version;
     api->kernel_features_print = mk_kernel_features_print;
     api->plugins = &mk_config->plugins;
+
+    /* handler */
+    api->handler_param_get = mk_handler_param_get;
 }
 
 void mk_plugin_load_static()
@@ -443,6 +457,7 @@ void mk_plugin_load_all()
 
     /* Look for plugins thread key data */
     mk_plugin_preworker_calls();
+    mk_vhost_map_handlers();
     mk_mem_free(path);
     mk_rconf_free(cnf);
 }
@@ -553,9 +568,9 @@ int mk_plugin_http_request_end(struct mk_http_session *cs, int close)
 
     MK_TRACE("[FD %i] PLUGIN HTTP REQUEST END", cs->socket);
 
+    cs->status = MK_REQUEST_STATUS_INCOMPLETE;
     if (mk_list_is_empty(&cs->request_list) == 0) {
         MK_TRACE("[FD %i] Tried to end non-existing request.", cs->socket);
-        cs->status = MK_REQUEST_STATUS_INCOMPLETE;
         return -1;
     }
 
@@ -699,6 +714,21 @@ struct mk_plugin *mk_plugin_cap(char cap, struct mk_server_config *config)
         if (plugin->capabilities & cap) {
             return plugin;
         }
+    }
+
+    return NULL;
+}
+
+struct mk_handler_param *mk_handler_param_get(int id, struct mk_list *params)
+{
+    int i = 0;
+    struct mk_list *head;
+
+    mk_list_foreach(head, params) {
+        if (i == id) {
+            return mk_list_entry(head, struct mk_handler_param, _head);
+        }
+        i++;
     }
 
     return NULL;

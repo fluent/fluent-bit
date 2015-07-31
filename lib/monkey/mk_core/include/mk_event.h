@@ -36,6 +36,7 @@
 #define MK_EVENT_WRITE           4
 #define MK_EVENT_SLEEP           8
 #define MK_EVENT_CLOSE          (16 | 8 | 8192)
+#define MK_EVENT_IDLE           (16 | 8)
 
 /* The event queue size */
 #define MK_EVENT_QUEUE_SIZE    256
@@ -44,6 +45,9 @@
 #define MK_EVENT_LEVEL         256
 #define MK_EVENT_EDGE          512
 
+/* Event status */
+#define MK_EVENT_NONE            1    /* nothing */
+#define MK_EVENT_REGISTERED      2    /* event is registered into the ev loop */
 
 /* Legacy definitions: temporal
  *  ----------------------------
@@ -68,6 +72,7 @@ struct mk_event {
     int      fd;       /* monitored file descriptor */
     int      type;     /* event type  */
     uint32_t mask;     /* events mask */
+    uint8_t  status;   /* internal status */
     void    *data;     /* custom data reference */
 
     /* function handler for custom type */
@@ -81,6 +86,17 @@ struct mk_event_loop {
     struct mk_event *events;   /* copy or reference of events triggered */
     void *data;                /* mk_event_ctx_t from backend */
 };
+
+static inline void MK_EVENT_INIT(struct mk_event *ev, int fd, void *data,
+                                 int (*callback)(void *))
+{
+    ev->fd      = fd;
+    ev->type    = MK_EVENT_CUSTOM;
+    ev->mask    = MK_EVENT_EMPTY;
+    ev->status  = MK_EVENT_NONE;
+    ev->data    = data;
+    ev->handler = callback;
+}
 
 int mk_event_initialize();
 struct mk_event_loop *mk_event_loop_create(int size);
