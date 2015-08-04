@@ -1,0 +1,123 @@
+/*
+ *  Error message information
+ *
+ *  Copyright (C) 2006-2014, ARM Limited, All Rights Reserved
+ *
+ *  This file is part of mbed TLS (https://tls.mbed.org)
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License along
+ *  with this program; if not, write to the Free Software Foundation, Inc.,
+ *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
+#if !defined(MBEDTLS_CONFIG_FILE)
+#include "mbedtls/config.h"
+#else
+#include MBEDTLS_CONFIG_FILE
+#endif
+
+#if defined(MBEDTLS_ERROR_C) || defined(MBEDTLS_ERROR_STRERROR_DUMMY)
+#include "mbedtls/error.h"
+#include <string.h>
+#endif
+
+#if defined(MBEDTLS_PLATFORM_C)
+#include "mbedtls/platform.h"
+#else
+#define mbedtls_snprintf snprintf
+#endif
+
+#if defined(MBEDTLS_ERROR_C)
+
+#include <stdio.h>
+
+HEADER_INCLUDED
+
+void mbedtls_strerror( int ret, char *buf, size_t buflen )
+{
+    size_t len;
+    int use_ret;
+
+    if( buflen == 0 )
+        return;
+
+    memset( buf, 0x00, buflen );
+
+    if( ret < 0 )
+        ret = -ret;
+
+    if( ret & 0xFF80 )
+    {
+        use_ret = ret & 0xFF80;
+
+        // High level error codes
+        //
+        // BEGIN generated code
+HIGH_LEVEL_CODE_CHECKS
+        // END generated code
+
+        if( strlen( buf ) == 0 )
+            mbedtls_snprintf( buf, buflen, "UNKNOWN ERROR CODE (%04X)", use_ret );
+    }
+
+    use_ret = ret & ~0xFF80;
+
+    if( use_ret == 0 )
+        return;
+
+    // If high level code is present, make a concatenation between both
+    // error strings.
+    //
+    len = strlen( buf );
+
+    if( len > 0 )
+    {
+        if( buflen - len < 5 )
+            return;
+
+        mbedtls_snprintf( buf + len, buflen - len, " : " );
+
+        buf += len + 3;
+        buflen -= len + 3;
+    }
+
+    // Low level error codes
+    //
+    // BEGIN generated code
+LOW_LEVEL_CODE_CHECKS
+    // END generated code
+
+    if( strlen( buf ) != 0 )
+        return;
+
+    mbedtls_snprintf( buf, buflen, "UNKNOWN ERROR CODE (%04X)", use_ret );
+}
+
+#else /* MBEDTLS_ERROR_C */
+
+#if defined(MBEDTLS_ERROR_STRERROR_DUMMY)
+
+/*
+ * Provide an non-function in case MBEDTLS_ERROR_C is not defined
+ */
+void mbedtls_strerror( int ret, char *buf, size_t buflen )
+{
+    ((void) ret);
+
+    if( buflen > 0 )
+        buf[0] = '\0';
+}
+
+#endif /* MBEDTLS_ERROR_STRERROR_DUMMY */
+
+#endif /* MBEDTLS_ERROR_C */

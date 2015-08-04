@@ -1,0 +1,371 @@
+#include <string.h>
+
+#if defined(MBEDTLS_PLATFORM_C)
+#include "mbedtls/platform.h"
+#else
+#include <stdio.h>
+#include <stdlib.h>
+#define mbedtls_exit       exit
+#define mbedtls_free       free
+#define mbedtls_calloc     calloc
+#define mbedtls_fprintf    fprintf
+#define mbedtls_printf     printf
+#define mbedtls_snprintf   snprintf
+#endif
+
+#if defined(MBEDTLS_MEMORY_BUFFER_ALLOC_C)
+#include "mbedtls/memory_buffer_alloc.h"
+#endif
+
+static int test_errors = 0;
+
+SUITE_PRE_DEP
+#define TEST_SUITE_ACTIVE
+
+static void test_fail( const char *test )
+{
+    test_errors++;
+    if( test_errors == 1 )
+        mbedtls_printf( "FAILED\n" );
+    mbedtls_printf( "  %s\n", test );
+}
+
+#define TEST_ASSERT( TEST )                         \
+    do {                                            \
+        if( ! (TEST) )                              \
+        {                                           \
+            test_fail( #TEST );                     \
+            goto exit;                              \
+        }                                           \
+    } while( 0 )
+
+int verify_string( char **str )
+{
+    if( (*str)[0] != '"' ||
+        (*str)[strlen( *str ) - 1] != '"' )
+    {
+        mbedtls_printf( "Expected string (with \"\") for parameter and got: %s\n", *str );
+        return( -1 );
+    }
+
+    (*str)++;
+    (*str)[strlen( *str ) - 1] = '\0';
+
+    return( 0 );
+}
+
+int verify_int( char *str, int *value )
+{
+    size_t i;
+    int minus = 0;
+    int digits = 1;
+    int hex = 0;
+
+    for( i = 0; i < strlen( str ); i++ )
+    {
+        if( i == 0 && str[i] == '-' )
+        {
+            minus = 1;
+            continue;
+        }
+
+        if( ( ( minus && i == 2 ) || ( !minus && i == 1 ) ) &&
+            str[i - 1] == '0' && str[i] == 'x' )
+        {
+            hex = 1;
+            continue;
+        }
+
+        if( ! ( ( str[i] >= '0' && str[i] <= '9' ) ||
+                ( hex && ( ( str[i] >= 'a' && str[i] <= 'f' ) ||
+                           ( str[i] >= 'A' && str[i] <= 'F' ) ) ) ) )
+        {
+            digits = 0;
+            break;
+        }
+    }
+
+    if( digits )
+    {
+        if( hex )
+            *value = strtol( str, NULL, 16 );
+        else
+            *value = strtol( str, NULL, 10 );
+
+        return( 0 );
+    }
+
+MAPPING_CODE
+
+    mbedtls_printf( "Expected integer for parameter and got: %s\n", str );
+    return( -1 );
+}
+
+FUNCTION_CODE
+SUITE_POST_DEP
+
+int dep_check( char *str )
+{
+    if( str == NULL )
+        return( 1 );
+
+DEP_CHECK_CODE
+
+    return( 1 );
+}
+
+int dispatch_test(int cnt, char *params[50])
+{
+    int ret;
+    ((void) cnt);
+    ((void) params);
+
+#if defined(TEST_SUITE_ACTIVE)
+DISPATCH_FUNCTION
+    {
+        mbedtls_fprintf( stdout, "FAILED\nSkipping unknown test function '%s'\n", params[0] );
+        fflush( stdout );
+        return( 1 );
+    }
+#else
+    return( 3 );
+#endif
+    return( ret );
+}
+
+int get_line( FILE *f, char *buf, size_t len )
+{
+    char *ret;
+
+    ret = fgets( buf, len, f );
+    if( ret == NULL )
+        return( -1 );
+
+    if( strlen( buf ) && buf[strlen(buf) - 1] == '\n' )
+        buf[strlen(buf) - 1] = '\0';
+    if( strlen( buf ) && buf[strlen(buf) - 1] == '\r' )
+        buf[strlen(buf) - 1] = '\0';
+
+    return( 0 );
+}
+
+int parse_arguments( char *buf, size_t len, char *params[50] )
+{
+    int cnt = 0, i;
+    char *cur = buf;
+    char *p = buf, *q;
+
+    params[cnt++] = cur;
+
+    while( *p != '\0' && p < buf + len )
+    {
+        if( *p == '\\' )
+        {
+            p++;
+            p++;
+            continue;
+        }
+        if( *p == ':' )
+        {
+            if( p + 1 < buf + len )
+            {
+                cur = p + 1;
+                params[cnt++] = cur;
+            }
+            *p = '\0';
+        }
+
+        p++;
+    }
+
+    // Replace newlines, question marks and colons in strings
+    for( i = 0; i < cnt; i++ )
+    {
+        p = params[i];
+        q = params[i];
+
+        while( *p != '\0' )
+        {
+            if( *p == '\\' && *(p + 1) == 'n' )
+            {
+                p += 2;
+                *(q++) = '\n';
+            }
+            else if( *p == '\\' && *(p + 1) == ':' )
+            {
+                p += 2;
+                *(q++) = ':';
+            }
+            else if( *p == '\\' && *(p + 1) == '?' )
+            {
+                p += 2;
+                *(q++) = '?';
+            }
+            else
+                *(q++) = *(p++);
+        }
+        *q = '\0';
+    }
+
+    return( cnt );
+}
+
+static int test_snprintf( size_t n, const char ref_buf[10], int ref_ret )
+{
+    int ret;
+    char buf[10] = "xxxxxxxxx";
+    const char ref[10] = "xxxxxxxxx";
+
+    ret = mbedtls_snprintf( buf, n, "%s", "123" );
+    if( ret < 0 || (size_t) ret >= n )
+        ret = -1;
+
+    if( strncmp( ref_buf, buf, sizeof( buf ) ) != 0 ||
+        ref_ret != ret ||
+        memcmp( buf + n, ref + n, sizeof( buf ) - n ) != 0 )
+    {
+        return( 1 );
+    }
+
+    return( 0 );
+}
+
+static int run_test_snprintf( void )
+{
+    return( test_snprintf( 0, "xxxxxxxxx",  -1 ) != 0 ||
+            test_snprintf( 1, "",           -1 ) != 0 ||
+            test_snprintf( 2, "1",          -1 ) != 0 ||
+            test_snprintf( 3, "12",         -1 ) != 0 ||
+            test_snprintf( 4, "123",         3 ) != 0 ||
+            test_snprintf( 5, "123",         3 ) != 0 );
+}
+
+int main()
+{
+    int ret, i, cnt, total_errors = 0, total_tests = 0, total_skipped = 0;
+    const char *filename = "TEST_FILENAME";
+    FILE *file;
+    char buf[5000];
+    char *params[50];
+    void *pointer;
+
+#if defined(MBEDTLS_MEMORY_BUFFER_ALLOC_C) && \
+    !defined(TEST_SUITE_MEMORY_BUFFER_ALLOC)
+    unsigned char alloc_buf[1000000];
+    mbedtls_memory_buffer_alloc_init( alloc_buf, sizeof(alloc_buf) );
+#endif
+
+    /*
+     * The C standard doesn't guarantee that all-bits-0 is the representation
+     * of a NULL pointer. We do however use that in our code for initializing
+     * structures, which should work on every modern platform. Let's be sure.
+     */
+    memset( &pointer, 0, sizeof( void * ) );
+    if( pointer != NULL )
+    {
+        mbedtls_fprintf( stderr, "all-bits-zero is not a NULL pointer\n" );
+        return( 1 );
+    }
+
+    /*
+     * Make sure we have a snprintf that correctly zero-terminates
+     */
+    if( run_test_snprintf() != 0 )
+    {
+        mbedtls_fprintf( stderr, "the snprintf implementation is broken\n" );
+        return( 0 );
+    }
+
+    file = fopen( filename, "r" );
+    if( file == NULL )
+    {
+        mbedtls_fprintf( stderr, "Failed to open\n" );
+        return( 1 );
+    }
+
+    while( !feof( file ) )
+    {
+        int skip = 0;
+
+        if( ( ret = get_line( file, buf, sizeof(buf) ) ) != 0 )
+            break;
+        mbedtls_fprintf( stdout, "%s%.66s", test_errors ? "\n" : "", buf );
+        mbedtls_fprintf( stdout, " " );
+        for( i = strlen( buf ) + 1; i < 67; i++ )
+            mbedtls_fprintf( stdout, "." );
+        mbedtls_fprintf( stdout, " " );
+        fflush( stdout );
+
+        total_tests++;
+
+        if( ( ret = get_line( file, buf, sizeof(buf) ) ) != 0 )
+            break;
+        cnt = parse_arguments( buf, strlen(buf), params );
+
+        if( strcmp( params[0], "depends_on" ) == 0 )
+        {
+            for( i = 1; i < cnt; i++ )
+                if( dep_check( params[i] ) != 0 )
+                    skip = 1;
+
+            if( ( ret = get_line( file, buf, sizeof(buf) ) ) != 0 )
+                break;
+            cnt = parse_arguments( buf, strlen(buf), params );
+        }
+
+        if( skip == 0 )
+        {
+            test_errors = 0;
+            ret = dispatch_test( cnt, params );
+        }
+
+        if( skip == 1 || ret == 3 )
+        {
+            total_skipped++;
+            mbedtls_fprintf( stdout, "----\n" );
+            fflush( stdout );
+        }
+        else if( ret == 0 && test_errors == 0 )
+        {
+            mbedtls_fprintf( stdout, "PASS\n" );
+            fflush( stdout );
+        }
+        else if( ret == 2 )
+        {
+            mbedtls_fprintf( stderr, "FAILED: FATAL PARSE ERROR\n" );
+            fclose(file);
+            mbedtls_exit( 2 );
+        }
+        else
+            total_errors++;
+
+        if( ( ret = get_line( file, buf, sizeof(buf) ) ) != 0 )
+            break;
+        if( strlen(buf) != 0 )
+        {
+            mbedtls_fprintf( stderr, "Should be empty %d\n", (int) strlen(buf) );
+            return( 1 );
+        }
+    }
+    fclose(file);
+
+    mbedtls_fprintf( stdout, "\n----------------------------------------------------------------------------\n\n");
+    if( total_errors == 0 )
+        mbedtls_fprintf( stdout, "PASSED" );
+    else
+        mbedtls_fprintf( stdout, "FAILED" );
+
+    mbedtls_fprintf( stdout, " (%d / %d tests (%d skipped))\n",
+             total_tests - total_errors, total_tests, total_skipped );
+
+#if defined(MBEDTLS_MEMORY_BUFFER_ALLOC_C) && \
+    !defined(TEST_SUITE_MEMORY_BUFFER_ALLOC)
+#if defined(MBEDTLS_MEMORY_DEBUG)
+    mbedtls_memory_buffer_alloc_status();
+#endif
+    mbedtls_memory_buffer_alloc_free();
+#endif
+
+    return( total_errors != 0 );
+}
+
