@@ -186,10 +186,10 @@ int flb_engine_start(struct flb_config *config)
     /* For each Collector, register the event into the main loop */
     mk_list_foreach(head, &config->collectors) {
         collector = mk_list_entry(head, struct flb_input_collector, _head);
-
         if (collector->type == FLB_COLLECT_TIME) {
             event = malloc(sizeof(struct mk_event));
             event->mask = MK_EVENT_EMPTY;
+            event->status = MK_EVENT_NONE;
             fd = mk_event_timeout_create(evl, collector->seconds, event);
             if (fd == -1) {
                 continue;
@@ -198,7 +198,9 @@ int flb_engine_start(struct flb_config *config)
         }
         else if (collector->type & (FLB_COLLECT_FD_EVENT | FLB_COLLECT_FD_SERVER)) {
             event = malloc(sizeof(struct mk_event));
-            event->mask = MK_EVENT_EMPTY;
+            event->mask   = MK_EVENT_EMPTY;
+            event->status = MK_EVENT_NONE;
+
             ret = mk_event_add(evl,
                                collector->fd_event,
                                FLB_ENGINE_EV_CORE,
