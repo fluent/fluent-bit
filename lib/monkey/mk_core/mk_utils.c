@@ -318,7 +318,6 @@ int mk_utils_register_pid(char *path)
             mk_err("Could not remove old PID-file path");
             exit(EXIT_FAILURE);
         }
-
     }
 
     if ((fd = open(path,

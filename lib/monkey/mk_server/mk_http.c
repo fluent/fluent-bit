@@ -121,6 +121,7 @@ static int mk_http_request_prepare(struct mk_http_session *cs,
      * it returns NULL
      */
     temp = mk_utils_url_decode(sr->uri);
+
     if (temp) {
         sr->uri_processed.data = temp;
         sr->uri_processed.len  = strlen(temp);
@@ -324,9 +325,14 @@ int mk_http_handler_read(struct mk_sched_conn *conn, struct mk_http_session *cs)
     /* Read content */
     max_read = (cs->body_size - cs->body_length);
     bytes = mk_sched_conn_read(conn, cs->body + cs->body_length, max_read);
-
     MK_TRACE("[FD %i] read %i", socket, bytes);
-    if (bytes <= 0) {
+
+    if (bytes == 0) {
+        MK_TRACE("[FD %i] broken pipe?", socket);
+        errno = 0;
+        return -1;
+    }
+    else if (bytes == -1) {
         return -1;
     }
 
@@ -374,54 +380,6 @@ static mk_ptr_t *mk_http_error_page(char *title, mk_ptr_t *message,
         mk_mem_free(temp);
     }
     return p;
-}
-
-int mk_http_method_check(mk_ptr_t method)
-{
-    if (strncmp(method.data, MK_METHOD_GET_STR, method.len) == 0) {
-        return MK_METHOD_GET;
-    }
-
-    if (strncmp(method.data, MK_METHOD_POST_STR, method.len) == 0) {
-        return MK_METHOD_POST;
-    }
-
-    if (strncmp(method.data, MK_METHOD_HEAD_STR, method.len) == 0) {
-        return MK_METHOD_HEAD;
-    }
-
-    if (strncmp(method.data, MK_METHOD_PUT_STR, method.len) == 0) {
-        return MK_METHOD_PUT;
-    }
-
-    if (strncmp(method.data, MK_METHOD_DELETE_STR, method.len) == 0) {
-        return MK_METHOD_DELETE;
-    }
-
-    if (strncmp(method.data, MK_METHOD_OPTIONS_STR, method.len) == 0) {
-        return MK_METHOD_OPTIONS;
-    }
-
-    return MK_METHOD_UNKNOWN;
-}
-
-mk_ptr_t mk_http_method_check_str(int method)
-{
-    switch (method) {
-    case MK_METHOD_GET:
-        return mk_http_method_get_p;
-    case MK_METHOD_POST:
-        return mk_http_method_post_p;
-    case MK_METHOD_HEAD:
-        return mk_http_method_head_p;
-    case MK_METHOD_PUT:
-        return mk_http_method_put_p;
-    case MK_METHOD_DELETE:
-        return mk_http_method_delete_p;
-    case MK_METHOD_OPTIONS:
-        return mk_http_method_options_p;
-    }
-    return mk_http_method_null_p;
 }
 
 static int mk_http_range_set(struct mk_http_request *sr, size_t file_size)
@@ -522,56 +480,6 @@ static int mk_http_range_parse(struct mk_http_request *sr)
     }
 
     return -1;
-}
-
-int mk_http_method_get(char *body)
-{
-    int int_method, pos = 0;
-    int max_len_method = 8;
-    mk_ptr_t method;
-
-    /* Max method length is 7 (GET/POST/HEAD/PUT/DELETE/OPTIONS) */
-    pos = mk_string_char_search(body, ' ', max_len_method);
-    if (mk_unlikely(pos <= 2 || pos >= max_len_method)) {
-        return MK_METHOD_UNKNOWN;
-    }
-
-    method.data = body;
-    method.len = (unsigned long) pos;
-
-    int_method = mk_http_method_check(method);
-
-    return int_method;
-}
-
-int mk_http_protocol_check(char *protocol, int len)
-{
-    if (strncmp(protocol, MK_HTTP_PROTOCOL_11_STR, len) == 0) {
-        return MK_HTTP_PROTOCOL_11;
-    }
-    if (strncmp(protocol, MK_HTTP_PROTOCOL_10_STR, len) == 0) {
-        return MK_HTTP_PROTOCOL_10;
-    }
-    if (strncmp(protocol, MK_HTTP_PROTOCOL_09_STR, len) == 0) {
-        return MK_HTTP_PROTOCOL_09;
-    }
-
-    return MK_HTTP_PROTOCOL_UNKNOWN;
-}
-
-mk_ptr_t mk_http_protocol_check_str(int protocol)
-{
-    if (protocol == MK_HTTP_PROTOCOL_11) {
-        return mk_http_protocol_11_p;
-    }
-    if (protocol == MK_HTTP_PROTOCOL_10) {
-        return mk_http_protocol_10_p;
-    }
-    if (protocol == MK_HTTP_PROTOCOL_09) {
-        return mk_http_protocol_09_p;
-    }
-
-    return mk_http_protocol_null_p;
 }
 
 static int mk_http_directory_redirect_check(struct mk_http_session *cs,
@@ -930,7 +838,7 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
     }
 
     /* get file size */
-    if (sr->file_info.size < 0) {
+    if (sr->file_info.size == 0) {
         return mk_http_error(MK_CLIENT_NOT_FOUND, cs, sr);
     }
 
@@ -1091,28 +999,50 @@ static inline void mk_http_request_ka_next(struct mk_http_session *cs)
 
 int mk_http_request_end(struct mk_http_session *cs)
 {
+    int ret;
+    int status;
     struct mk_http_request *sr;
 
+    if (mk_config->max_keep_alive_request <= cs->counter_connections) {
+        cs->close_now = MK_TRUE;
+        goto shutdown;
+    }
+
     /* Check if we have some enqueued pipeline requests */
-    if (cs->pipelined == MK_TRUE) {
-        sr =  mk_list_entry_first(&cs->request_list, struct mk_http_request, _head);
-        MK_TRACE("[FD %i] Pipeline finishing %p",
-                 cs->conn->event.fd, sr);
+    ret = mk_http_parser_more(&cs->parser, cs->body_length);
+    if (ret == MK_TRUE) {
 
-        /* Remove node and release resources */
-        mk_list_del(&sr->_head);
+        /* Our pipeline request limit is the same that our keepalive limit */
+        cs->counter_connections++;
+
+        memmove(cs->body,
+                cs->body + cs->parser.i + 1,
+                abs(cs->body_length - cs->parser.i) -1);
+        cs->body_length = abs(cs->body_length - cs->parser.i) -1;
+
+        /* Prepare for next one */
+        sr = mk_list_entry_first(&cs->request_list, struct mk_http_request, _head);
         mk_http_request_free(sr);
-
-        if (mk_list_is_empty(&cs->request_list) != 0) {
-#ifdef TRACE
-            sr = mk_list_entry_first(&cs->request_list,
-                                     struct mk_http_request, _head);
-            MK_TRACE("[FD %i] Pipeline next is %p", cs->conn->event.fd, sr);
-#endif
+        mk_http_request_init(cs, sr);
+        mk_http_parser_init(&cs->parser);
+        status = mk_http_parser(sr, &cs->parser, cs->body, cs->body_length);
+        if (status == MK_HTTP_PARSER_OK) {
+            mk_http_request_prepare(cs, sr);
+            /*
+             * Return 1 means, we still have more data to send in a different
+             * scheduler round.
+             */
+            return 1;
+        }
+        else if (status == MK_HTTP_PARSER_PENDING) {
             return 0;
+        }
+        else if (status == MK_HTTP_PARSER_ERROR) {
+            cs->close_now = MK_TRUE;
         }
     }
 
+ shutdown:
     /*
      * We need to ask to http_keepalive if this
      * connection can continue working or we must
@@ -1129,6 +1059,7 @@ int mk_http_request_end(struct mk_http_session *cs)
         mk_sched_conn_timeout_add(cs->conn, mk_sched_get_thread_conf());
         return 0;
     }
+
 
     return -1;
 }
@@ -1247,7 +1178,7 @@ int mk_http_error(int http_status, struct mk_http_session *cs,
         break;
     }
 
-    if (page && sr->method != MK_METHOD_HEAD) {
+    if (page && sr->method != MK_METHOD_HEAD && sr->method != MK_METHOD_UNKNOWN) {
         sr->headers.content_length = page->len;
     }
     else {
@@ -1497,7 +1428,6 @@ int mk_http_sched_read(struct mk_sched_conn *conn,
         else {
             sr = mk_list_entry_first(&cs->request_list, struct mk_http_request, _head);
         }
-
         status = mk_http_parser(sr, &cs->parser,
                                 cs->body, cs->body_length);
         if (status == MK_HTTP_PARSER_OK) {

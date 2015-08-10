@@ -405,13 +405,13 @@ int mk_logger_master_init(struct mk_server_config *config)
                     exit(EXIT_FAILURE);
                 }
                 if (fcntl(new->pipe[1], F_SETFL, O_NONBLOCK) == -1) {
-                    mk_libc_error("fcntl");
+                    perror("fcntl");
                 }
                 if (fcntl(new->pipe[0], F_SETFD, FD_CLOEXEC) == -1) {
-                    mk_libc_error("fcntl");
+                    perror("fcntl");
                 }
                 if (fcntl(new->pipe[1], F_SETFD, FD_CLOEXEC) == -1) {
-                    mk_libc_error("fcntl");
+                    perror("fcntl");
                 }
                 new->file = access_file_name;
                 new->host = entry_host;
@@ -428,13 +428,13 @@ int mk_logger_master_init(struct mk_server_config *config)
                     exit(EXIT_FAILURE);
                 }
                 if (fcntl(new->pipe[1], F_SETFL, O_NONBLOCK) == -1) {
-                    mk_libc_error("fcntl");
+                    perror("fcntl");
                 }
                 if (fcntl(new->pipe[0], F_SETFD, FD_CLOEXEC) == -1) {
-                    mk_libc_error("fcntl");
+                    perror("fcntl");
                 }
                 if (fcntl(new->pipe[1], F_SETFD, FD_CLOEXEC) == -1 ){
-                    mk_libc_error("fcntl");
+                    perror("fcntl");
                 }
                 new->file = error_file_name;
                 new->host = entry_host;

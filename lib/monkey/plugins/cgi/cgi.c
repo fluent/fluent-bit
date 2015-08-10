@@ -335,7 +335,7 @@ static int do_cgi(const char *const __restrict__ file,
     event->handler = cb_cgi_read;
 
     /* Register the event into the worker event-loop */
-    ret = mk_api->ev_add(mk_sched_loop(),
+    ret = mk_api->ev_add(mk_api->sched_loop(),
                          readpipe[0],
                          MK_EVENT_CUSTOM, MK_EVENT_READ, r);
     if (ret != 0) {

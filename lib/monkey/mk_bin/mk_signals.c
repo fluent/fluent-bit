@@ -34,6 +34,7 @@ static void mk_signal_exit()
     signal(SIGINT,  SIG_IGN);
     signal(SIGHUP,  SIG_IGN);
 
+    mk_user_undo_uidgid();
     mk_utils_remove_pid(mk_config->pid_file_path);
     mk_exit_all();
 

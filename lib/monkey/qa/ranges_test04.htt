@@ -29,7 +29,7 @@ _CALL INIT
 _CALL TESTDOC_GETSIZE
 
 _REQ $HOST $PORT
-__GET /imgs/monkey_logo.png $HTTPVER
+__GET /img/mk_logo.png $HTTPVER
 __Host: $HOST
 __Range: bytes=${OFF_START}-${OFF_END}
 __Connection: close

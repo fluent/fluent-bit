@@ -379,8 +379,7 @@ void *mk_sched_launch_worker_loop(void *thread_conf)
     if (mk_config->scheduler_mode == MK_SCHEDULER_REUSEPORT) {
         sched->listeners = mk_server_listen_init(mk_config);
         if (!sched->listeners) {
-            mk_err("[sched] Failed to initialize listen sockets.");
-            return 0;
+            exit(EXIT_FAILURE);
         }
     }
 
@@ -614,7 +613,17 @@ int mk_sched_event_read(struct mk_sched_conn *conn,
 
     if (ret == MK_CHANNEL_DONE) {
         if (conn->protocol->cb_done) {
-            return conn->protocol->cb_done(conn, sched);
+            ret = conn->protocol->cb_done(conn, sched);
+            if (ret == 1) {
+                /* Protocol handler want to send more data */
+                event = &conn->event;
+                mk_event_add(sched->loop, event->fd,
+                             MK_EVENT_CONNECTION,
+                             MK_EVENT_WRITE,
+                             conn);
+                return 0;
+            }
+            return ret;
         }
     }
     else if (ret & (MK_CHANNEL_FLUSH | MK_CHANNEL_BUSY)) {
@@ -640,7 +649,7 @@ int mk_sched_event_write(struct mk_sched_conn *conn,
     MK_TRACE("[FD %i] Connection Handler / write", socket);
 
     ret = mk_channel_write(&conn->channel, &count);
-    if (ret == MK_CHANNEL_FLUSH) {
+    if (ret == MK_CHANNEL_FLUSH || ret == MK_CHANNEL_BUSY) {
         return 0;
     }
     else if (ret == MK_CHANNEL_DONE || ret == MK_CHANNEL_EMPTY) {
@@ -650,11 +659,13 @@ int mk_sched_event_write(struct mk_sched_conn *conn,
         if (ret == -1) {
             return -1;
         }
-        event = &conn->event;
-        mk_event_add(sched->loop, event->fd,
-                     MK_EVENT_CONNECTION,
-                     MK_EVENT_READ,
-                     conn);
+        else if (ret == 0) {
+            event = &conn->event;
+            mk_event_add(sched->loop, event->fd,
+                         MK_EVENT_CONNECTION,
+                         MK_EVENT_READ,
+                         conn);
+        }
         return 0;
     }
     else if (ret & MK_CHANNEL_ERROR) {

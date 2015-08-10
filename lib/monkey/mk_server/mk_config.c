@@ -64,6 +64,8 @@ struct mk_server_config *mk_config_init()
     mk_list_init(&config->stage40_handler);
     mk_list_init(&config->stage50_handler);
 
+    config->scheduler_mode = -1;
+
     return config;
 }
 
@@ -558,11 +560,13 @@ void mk_config_set_init_values(void)
     mk_config->user_dir = NULL;
 
     /* TCP REUSEPORT: available on Linux >= 3.9 */
-    if (mk_config->kernel_features & MK_KERNEL_SO_REUSEPORT) {
-        mk_config->scheduler_mode = MK_SCHEDULER_REUSEPORT;
-    }
-    else {
-        mk_config->scheduler_mode = MK_SCHEDULER_FAIR_BALANCING;
+    if (mk_config->scheduler_mode == -1) {
+        if (mk_config->kernel_features & MK_KERNEL_SO_REUSEPORT) {
+            mk_config->scheduler_mode = MK_SCHEDULER_REUSEPORT;
+        }
+        else {
+            mk_config->scheduler_mode = MK_SCHEDULER_FAIR_BALANCING;
+        }
     }
 
     /* Max request buffer size allowed

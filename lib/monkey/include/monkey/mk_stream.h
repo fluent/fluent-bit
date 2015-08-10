@@ -205,7 +205,7 @@ static inline void mk_stream_bytes_consumed(struct mk_stream *stream, long bytes
     else {
         fmt = "[STREAM_UNKW %p] bytes consumed %lu/%lu";
     }
-    MK_TRACE(fmt, stream, stream->bytes_total, bytes);
+    MK_TRACE(fmt, stream, bytes, stream->bytes_total);
 #endif
 
     stream->bytes_total -= bytes;
@@ -243,7 +243,7 @@ static inline void mk_channel_debug(struct mk_channel *channel)
 #if defined(__APPLE__)
         printf("bytes=%lld/%lu\n", stream->bytes_offset, stream->bytes_total);
 #else
-        printf("bytes=%ld/%lu\n", stream->bytes_offset, stream->bytes_total);
+        printf("bytes=%ld/%zu\n", stream->bytes_offset, stream->bytes_total);
 #endif
         i++;
     }

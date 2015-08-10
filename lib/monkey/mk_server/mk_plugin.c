@@ -613,42 +613,6 @@ void mk_plugin_event_bad_return(const char *hook, int ret)
     mk_err("[%s] Not allowed return value %i", hook, ret);
 }
 
-static inline int mk_plugin_event_check_return(const char *hook, int ret)
-{
-#ifdef TRACE
-    MK_TRACE("Hook '%s' returned %i", hook, ret);
-    switch(ret) {
-    case MK_PLUGIN_RET_EVENT_NEXT:
-        MK_TRACE("ret = MK_PLUGIN_RET_EVENT_NEXT");
-        break;
-    case MK_PLUGIN_RET_EVENT_OWNED:
-        MK_TRACE("ret = MK_PLUGIN_RET_EVENT_OWNED");
-        break;
-    case MK_PLUGIN_RET_EVENT_CLOSE:
-        MK_TRACE("ret = MK_PLUGIN_RET_EVENT_CLOSE");
-        break;
-    case MK_PLUGIN_RET_EVENT_CONTINUE:
-        MK_TRACE("ret = MK_PLUGIN_RET_EVENT_CONTINUE");
-        break;
-    default:
-        MK_TRACE("ret = UNKNOWN, bad monkey!, follow the spec! >:D");
-    }
-#endif
-
-    switch(ret) {
-    case MK_PLUGIN_RET_EVENT_NEXT:
-    case MK_PLUGIN_RET_EVENT_OWNED:
-    case MK_PLUGIN_RET_EVENT_CLOSE:
-    case MK_PLUGIN_RET_EVENT_CONTINUE:
-        return 0;
-    default:
-        mk_plugin_event_bad_return(hook, ret);
-    }
-
-    /* don't cry gcc :_( */
-    return -1;
-}
-
 int mk_plugin_time_now_unix()
 {
     return log_current_utime;

@@ -29,8 +29,8 @@
 
 /* General status */
 #define MK_HTTP_PARSER_PENDING -10  /* cannot complete until more data arrives */
-#define MK_HTTP_PARSER_ERROR    -1  /* found an error when parsing the string */
-#define MK_HTTP_PARSER_OK        0
+#define MK_HTTP_PARSER_ERROR    -1  /* found an error when parsing the string  */
+#define MK_HTTP_PARSER_OK        0  /* parser OK, ready to go                  */
 
 /* Connection header values */
 #define MK_HTTP_PARSER_CONN_EMPTY    0
@@ -314,6 +314,16 @@ static inline void mk_http_parser_init(struct mk_http_parser *p)
     p->header_count = 0;
     mk_list_init(&p->header_list);
 }
+
+static inline int mk_http_parser_more(struct mk_http_parser *p, int len)
+{
+    if (abs(len - p->i) - 1 > 0) {
+        return MK_TRUE;
+    }
+
+    return MK_FALSE;
+}
+
 
 int mk_http_parser(struct mk_http_request *req, struct mk_http_parser *p,
                    char *buffer, int len);

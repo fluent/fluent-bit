@@ -17,32 +17,20 @@
  *  limitations under the License.
  */
 
-#ifndef MK_FILE_H
-#define MK_FILE_H
+#ifndef MK_FASTCGI_H
+#define MK_FASTCGI_H
 
-#include <time.h>
+struct mk_fcgi_conf {
+    char *server_name;
 
-#define MK_FILE_EXISTS 1
-#define MK_FILE_READ   2
-#define MK_FILE_EXEC   4
+    /* Unix Socket */
+    char *server_path;
 
-struct file_info
-{
-    size_t size;
-    time_t last_modification;
-
-    /* Suggest flags to open this file */
-    int flags_read_only;
-
-    unsigned char exists;
-    unsigned char is_file;
-    unsigned char is_link;
-    unsigned char is_directory;
-    unsigned char exec_access;
-    unsigned char read_access;
+    /* TCP Server */
+    char *server_addr;
+    char *server_port;
 };
 
-int mk_file_get_info(const char *path, struct file_info *f_info, int mode);
-char *mk_file_to_buffer(const char *path);
+struct mk_fcgi_conf fcgi_conf;
 
 #endif

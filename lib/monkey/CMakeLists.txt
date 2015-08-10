@@ -18,7 +18,7 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__='\"$(subst ${CMAKE_SOURCE_DIR
 
 # Monkey Version
 set(MK_VERSION_MAJOR  1)
-set(MK_VERSION_MINOR  6)
+set(MK_VERSION_MINOR  7)
 set(MK_VERSION_PATCH  0)
 set(MK_VERSION_STR "${MK_VERSION_MAJOR}.${MK_VERSION_MINOR}.${MK_VERSION_PATCH}")
 
@@ -41,6 +41,7 @@ option(WITH_BACKTRACE      "Enable Backtrace feature"    Yes)
 option(WITH_LINUX_TRACE    "Enable Lttng support"         No)
 option(WITH_PTHREAD_TLS    "Use old Pthread TLS mode"     No)
 option(WITH_SYSTEM_MALLOC  "Use system memory allocator"  No)
+option(WITH_MBEDTLS_SHARED "User mbedtls shared lib"      No)
 
 # Plugins: what should be build ?, these options
 # will be processed later on the plugins/CMakeLists.txt file
@@ -232,6 +233,10 @@ set(MK_VH_LOG_ERROR      MK_LOGDIR)
 
 
 # Paths
+if(APPLE)
+  set(CMAKE_MACOSX_RPATH ${CMAKE_MACOSX_RPATH};${CMAKE_INSTALL_FULL_LIBDIR}/monkey)
+endif()
+
 if(BUILD_LOCAL)
   # This mode aims to be backward compatible with older versions of Monkey where
   # a './configure && make' were enough to have the server running without installing
@@ -302,7 +307,7 @@ include_directories(monkey)
 # plugins  : plugins for mk_server
 # mk_server: server code base: plugins, protocols, scheduler.. (no executable)
 # mk_bin   : server executable
-#
+
 add_subdirectory(mk_core)
 add_subdirectory(plugins)
 add_subdirectory(mk_server)

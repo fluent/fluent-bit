@@ -264,7 +264,6 @@ int mk_socket_bind(int socket_fd, const struct sockaddr *addr,
 
     ret = listen(socket_fd, backlog);
     if(ret == -1 ) {
-        mk_warn("Error setting up the listener");
         return -1;
     }
 
@@ -294,7 +293,7 @@ int mk_socket_server(char *port, char *listen_addr,
     for (rp = res; rp != NULL; rp = rp->ai_next) {
         socket_fd = mk_socket_create(rp->ai_family,
                                      rp->ai_socktype, rp->ai_protocol);
-        if( socket_fd == -1) {
+        if (socket_fd == -1) {
             mk_warn("Error creating server socket, retrying");
             continue;
         }
@@ -318,8 +317,9 @@ int mk_socket_server(char *port, char *listen_addr,
 
         ret = mk_socket_bind(socket_fd, rp->ai_addr, rp->ai_addrlen, MK_SOMAXCONN);
         if(ret == -1) {
-            mk_err("Cannot listen on %s:%s\n", listen_addr, port);
-            continue;
+            mk_err("Cannot listen on %s:%s", listen_addr, port);
+            freeaddrinfo(res);
+            return -1;
         }
         break;
     }

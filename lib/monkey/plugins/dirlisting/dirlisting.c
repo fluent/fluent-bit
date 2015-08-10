@@ -874,7 +874,7 @@ int mk_dirlisting_stage30(struct mk_plugin *plugin,
     (void) params;
 
     /* validate file_info */
-    if (sr->file_info.size < 0) {
+    if (sr->file_info.size == 0) {
         return MK_PLUGIN_RET_NOT_ME;
     }
 

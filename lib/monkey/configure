@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 #  Monkey HTTP Server
 #  ==================
@@ -140,6 +140,9 @@ for arg in $*; do
         --skip-config*)
             cmake_opts+="-DWITHOUT_CONF=1 "
             ;;
+        --mbedtls-shared*)
+            cmake_opts+="-DWITH_MBEDTLS_SHARED=1 "
+            ;;
 	--version*)
 	    echo -e $bldgrn"Monkey HTTP Server v$VERSION" $txtrst
 	    echo "Copyright 2001-2015, Eduardo Silva <eduardo@monkey.io>"
@@ -167,6 +170,7 @@ for arg in $*; do
             echo "  --no-binary             Do not build binary"
             echo "  --static-lib-mode       Build static library mode"
             echo "  --skip-config           Do not include configuration files"
+            echo "  --mbedtls-shared        Use system mbedtls shared lib instead of the static one"
 	    echo
 	    echo -e $bldwht"Installation Directories:" $txtrst
 	    echo "  --prefix=PREFIX         Root prefix directory"
@@ -199,8 +203,7 @@ echo $ECHO_OPTS $RED"*"$GREEN$BOLD"           Monkey HTTP Server             "$R
 echo $ECHO_OPTS $RED"*"$YELLOW"           monkey-project.com             "$RED"*"$ECHO_LF
 echo $ECHO_OPTS "*"$BLUE" ---------------------------------------- "$RED"*"$ECHO_LF
 echo $ECHO_OPTS "*"$YELLOW"      Monkey is the next generation       "$RED"*"$ECHO_LF
-echo $ECHO_OPTS "*"$YELLOW"   Web Server for Unix and Embedded Unix  "$RED"*"$ECHO_LF
-echo $ECHO_OPTS "*"$YELLOW"     Supports Linux, FreeBSD, and MacOS   "$RED"*"$ECHO_LF
+echo $ECHO_OPTS "*"$YELLOW"  Web Server for Linux and Unix variants  "$RED"*"$ECHO_LF
 echo $ECHO_OPTS "*"$YELLOW"                                          "$RED"*"$ECHO_LF
 echo $ECHO_OPTS "*"$YELLOW"        Feel free to reach us at:         "$RED"*"$ECHO_LF
 echo $ECHO_OPTS "*"$YELLOW"                                          "$RED"*"$ECHO_LF

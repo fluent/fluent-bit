@@ -124,6 +124,10 @@ void mk_server_listen_exit(struct mk_list *list)
     struct mk_list *head;
     struct mk_server_listen *listen;
 
+    if (!list) {
+        return;
+    }
+
     mk_list_foreach_safe(head, tmp, list) {
         listen = mk_list_entry(head, struct mk_server_listen, _head);
         close(listen->server_fd);
@@ -213,9 +217,10 @@ struct mk_list *mk_server_listen_init(struct mk_server_config *config)
             mk_list_add(&listener->_head, listeners);
         }
         else {
-            mk_warn("[server] Failed to bind server socket to %s:%s.",
-                    listen->address,
-                    listen->port);
+            mk_err("[server] Failed to bind server socket to %s:%s.",
+                   listen->address,
+                   listen->port);
+            return NULL;
         }
         i += 1;
     }
