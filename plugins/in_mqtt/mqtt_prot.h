@@ -22,6 +22,41 @@
 
 #include "mqtt_conn.h"
 
-int mqtt_prot_handle(struct mqtt_conn *conn);
+/*
+ * Specs definition from 2.2.1 MQTT Control Packet:
+ *
+ * http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718021
+ */
+#define MQTT_CONNECT      1
+#define MQTT_CONNACK      2
+#define MQTT_PUBLISH      3
+#define MQTT_PUBACK       4
+#define MQTT_PUBREC       5
+#define MQTT_PUBREL       6
+#define MQTT_PUBCOMP      7
+#define MQTT_PINGREQ     12
+#define MQTT_PINGRESP    13
+#define MQTT_DISCONNECT  14
+
+/* CONNACK status codes */
+#define MQTT_CONN_ACCEPTED         0
+#define MQTT_CONN_REFUSED_PROTOCOL 1
+#define MQTT_CONN_REFUSED_IDENTIF  2
+#define MQTT_CONN_REFUSED_SERVER   3
+#define MQTT_CONN_REFUSED_BADCRED  4
+#define MQTT_CONN_REFUSED_NOAUTH   5
+
+/* QOS Flag status */
+#define MQTT_QOS_LEV0              0  /* no reply      */
+#define MQTT_QOS_LEV1              1  /* PUBACK packet */
+#define MQTT_QOS_LEV2              2  /* PUBREC packet */
+
+/* Specific macros for Fluent Bit handling, not related to MQTT spec */
+#define MQTT_HANGUP      -2  /* MQTT client is closing      */
+#define MQTT_ERROR       -1  /* MQTT protocol error, hangup */
+#define MQTT_OK           0  /* Everything is OK            */
+#define MQTT_MORE         1  /* need to read more data      */
+
+int mqtt_prot_parser(struct mqtt_conn *conn);
 
 #endif

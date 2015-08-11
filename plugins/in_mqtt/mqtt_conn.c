@@ -23,24 +23,38 @@
 #include <fluent-bit/flb_network.h>
 
 #include "in_mqtt.h"
+#include "mqtt_prot.h"
 #include "mqtt_conn.h"
 
-/* Callback triggered every time an event is triggered for a connection */
+/* Callback invoked every time an event is triggered for a connection */
 int mqtt_conn_event(void *data)
 {
+    int ret;
     int bytes;
     struct mk_event *event;
     struct mqtt_conn *conn = data;
 
     event = &conn->event;
     if (event->mask & MK_EVENT_READ) {
-        flb_debug("[mqtt] fd=%i read", event->fd);
         bytes = read(conn->fd, conn->buf, sizeof(conn->buf));
         if (bytes > 0) {
             conn->buf_len = bytes;
-            flb_debug("[mqtt] %i bytes in:\n%s", bytes, conn->buf);
+            flb_debug("[mqtt] %i bytes in", bytes);
+            ret = mqtt_prot_parser(conn);
+            if (ret == MQTT_ERROR) {
+                flb_debug("[mqtt] fd=%i protocol error", event->fd);
+            }
+            else if (ret == MQTT_HANGUP) {
+                flb_debug("[mqtt] fd=%i client hangup", event->fd);
+            }
+
+            if (ret < 0) {
+                mqtt_conn_del(conn);
+                return -1;
+            }
         }
         else {
+            flb_debug("[mqtt] fd=%i closed connection", event->fd);
             mqtt_conn_del(conn);
         }
     }
@@ -72,6 +86,7 @@ struct mqtt_conn *mqtt_conn_add(int fd, struct flb_in_mqtt_config *ctx)
     /* Connection info */
     conn->fd      = fd;
     conn->ctx     = ctx;
+    conn->buf_pos = 0;
     conn->buf_len = 0;
     conn->status  = MQTT_NEW;
 

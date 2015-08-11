@@ -23,8 +23,9 @@
 #include <mk_core/mk_core.h>
 
 enum {
-    MQTT_NEW        = 0,
-    MQTT_CONNECTED
+    MQTT_NEW        = 1,  /* it's a new connection                */
+    MQTT_CONNECTED  = 2,  /* MQTT connection per protocol spec OK */
+    MQTT_NEXT       = 4   /* Waiting for Control packets          */
 };
 
 /* This structure respresents a MQTT connection */
@@ -32,6 +33,9 @@ struct mqtt_conn {
     struct mk_event event;           /* Built-in event data for mk_events */
     int fd;                          /* Socket file descriptor            */
     int status;                      /* Connection status                 */
+    int packet_type;                 /* MQTT packet type                  */
+    int packet_length;
+    int  buf_pos;                    /* Index position                    */
     int  buf_len;                    /* Buffer content length             */
     char buf[1024];                  /* Buffer data                       */
     struct flb_in_mqtt_config *ctx;  /* Plugin configuration context      */
