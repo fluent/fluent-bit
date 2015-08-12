@@ -23,6 +23,7 @@
 
 #include "mqtt.h"
 #include "mqtt_conn.h"
+#include "mqtt_config.h"
 
 /* Initialize plugin */
 int in_mqtt_init(struct flb_config *config)
@@ -31,7 +32,7 @@ int in_mqtt_init(struct flb_config *config)
     struct flb_in_mqtt_config *ctx;
 
     /* Allocate space for the configuration */
-    ctx = malloc(sizeof(struct flb_in_mqtt_config));
+    ctx = mqtt_config_init(config->file);
     if (!ctx) {
         return -1;
     }
@@ -44,13 +45,13 @@ int in_mqtt_init(struct flb_config *config)
     }
 
     /* Create TCP server */
-    ctx->server_fd = flb_net_server(FLB_MQTT_PORT, FLB_MQTT_ADDR);
+    ctx->server_fd = flb_net_server(ctx->tcp_port, ctx->listen);
     if (ctx->server_fd > 0) {
-        flb_debug("[mqtt] binding %s:%s", FLB_MQTT_ADDR, FLB_MQTT_PORT);
+        flb_debug("[mqtt] binding %s:%s", ctx->listen, ctx->tcp_port);
     }
     else {
         flb_error("[mqtt] could not bind address %s:%s. Aborting",
-                  FLB_MQTT_ADDR, FLB_MQTT_PORT);
+                  ctx->listen, ctx->tcp_port);
         exit(EXIT_FAILURE);
     }
     ctx->evl = config->evl;

@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_utils.h>
 
 #include "mqtt.h"
 #include "mqtt_prot.h"
@@ -137,7 +138,7 @@ static int mqtt_data_append(char *buf, int len, void *in_context)
 
     pack = flb_pack_json(buf, len, &out);
     if (!pack) {
-        //flb_debug("MQTT Packet incomplete or is not JSON");
+        flb_debug("MQTT Packet incomplete or is not JSON");
         return -1;
     }
 

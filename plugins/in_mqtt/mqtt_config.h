@@ -17,22 +17,13 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_IN_MQTT_H
-#define FLB_IN_MQTT_H
+#ifndef FLB_MQTT_CONFIG_H
+#define FLB_MQTT_CONFIG_H
 
 #include <mk_core/mk_core.h>
 
-struct flb_in_mqtt_config {
-    int server_fd;               /* TCP server file descriptor  */
+#include "mqtt.h"
 
-    char *listen;                /* Listen interface            */
-    char *tcp_port;              /* TCP Port                    */
-
-    int msgp_len;                /* msgpack data length         */
-    char msgp[8192];             /* msgpack static buffer       */
-    struct mk_event_loop *evl;   /* Event loop file descriptor  */
-};
-
-int in_mqtt_collect(struct flb_config *config, void *in_context);
+struct flb_in_mqtt_config *mqtt_config_init(struct mk_rconf *conf);
 
 #endif
