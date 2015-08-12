@@ -109,26 +109,6 @@ static inline int mqtt_packet_header(int type, int length, char *buf)
     return i;
 }
 
-/*
- * Handle a CONNECT request control packet:
- *
- * basically we need to acknoledge the sender so it can start
- * publishing messages to our service.
- */
-static int mqtt_handle_connect(struct mqtt_conn *conn)
-{
-    int i;
-    char buf[4] = {0, 0, 0, 0};
-
-    i = mqtt_packet_header(MQTT_CONNACK, 2 , (char *) &buf);
-    BIT_SET(buf[i], 0);
-    i++;
-    buf[i] = MQTT_CONN_ACCEPTED;
-
-    /* write CONNACK message */
-    return write(conn->event.fd, buf, 4);
-}
-
 /* Collect a buffer of JSON data and convert it to MsgPack */
 static int mqtt_data_append(char *buf, int len, void *in_context)
 {
@@ -147,6 +127,27 @@ static int mqtt_data_append(char *buf, int len, void *in_context)
     free(pack);
 
     return 0;
+}
+
+
+/*
+ * Handle a CONNECT request control packet:
+ *
+ * basically we need to acknoledge the sender so it can start
+ * publishing messages to our service.
+ */
+static int mqtt_handle_connect(struct mqtt_conn *conn)
+{
+    int i;
+    char buf[4] = {0, 0, 0, 0};
+
+    i = mqtt_packet_header(MQTT_CONNACK, 2 , (char *) &buf);
+    BIT_SET(buf[i], 0);
+    i++;
+    buf[i] = MQTT_CONN_ACCEPTED;
+
+    /* write CONNACK message */
+    return write(conn->event.fd, buf, 4);
 }
 
 /*
@@ -200,6 +201,17 @@ static int mqtt_handle_publish(struct mqtt_conn *conn)
                      conn->buf_len - conn->buf_pos,
                      conn->ctx);
     return 0;
+}
+
+/* Handle a PINGREQ control packet */
+static int mqtt_handle_ping(struct mqtt_conn *conn)
+{
+    char buf[2] = {0, 0};
+
+    mqtt_packet_header(MQTT_PINGRESP, 2 , (char *) &buf);
+
+    /* write PINGRESP message */
+    return write(conn->event.fd, buf, 2);
 }
 
 int mqtt_prot_parser(struct mqtt_conn *conn)
@@ -264,6 +276,10 @@ int mqtt_prot_parser(struct mqtt_conn *conn)
             else if (conn->packet_type == MQTT_PUBLISH) {
                 mqtt_handle_publish(conn);
             }
+            else if (conn->packet_type == MQTT_PINGREQ) {
+                mqtt_handle_ping(conn);
+            }
+
             else if (conn->packet_type == MQTT_DISCONNECT) {
                 return MQTT_HANGUP;
             }
