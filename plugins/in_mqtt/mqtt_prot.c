@@ -24,7 +24,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_pack.h>
 
-#include "in_mqtt.h"
+#include "mqtt.h"
 #include "mqtt_prot.h"
 
 #define BUFC()          conn->buf[conn->buf_pos]

@@ -1,5 +1,5 @@
 set(src
-  in_mqtt.c
+  mqtt.c
   mqtt_conn.c
   mqtt_prot.c)
 

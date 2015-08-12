@@ -22,7 +22,7 @@
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_network.h>
 
-#include "in_mqtt.h"
+#include "mqtt.h"
 #include "mqtt_prot.h"
 #include "mqtt_conn.h"
 

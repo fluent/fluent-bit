@@ -21,7 +21,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_network.h>
 
-#include "in_mqtt.h"
+#include "mqtt.h"
 #include "mqtt_conn.h"
 
 /* Initialize plugin */
