@@ -82,6 +82,7 @@ struct mqtt_conn *mqtt_conn_add(int fd, struct flb_in_mqtt_config *ctx)
     event->type         = MK_EVENT_CONNECTION;
     event->mask         = MK_EVENT_EMPTY;
     event->handler      = mqtt_conn_event;
+    event->status       = MK_EVENT_NONE;
 
     /* Connection info */
     conn->fd      = fd;

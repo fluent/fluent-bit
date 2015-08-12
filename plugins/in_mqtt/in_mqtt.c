@@ -35,6 +35,7 @@ int in_mqtt_init(struct flb_config *config)
     if (!ctx) {
         return -1;
     }
+    ctx->msgp_len = 0;
 
     /* Set the context */
     ret = flb_input_set_context("mqtt", ctx, config);
@@ -66,7 +67,24 @@ int in_mqtt_init(struct flb_config *config)
     return 0;
 }
 
+void *in_mqtt_flush(void *in_context, int *size)
+{
+    char *buf;
+    struct flb_in_mqtt_config *ctx = in_context;
 
+    buf = malloc(ctx->msgp_len);
+    memcpy(buf, ctx->msgp, ctx->msgp_len);
+    *size = ctx->msgp_len;
+    ctx->msgp_len = 0;
+
+    return buf;
+}
+
+/*
+ * For a server event, the collection event means a new client have arrived, we
+ * accept the connection and create a new MQTT instance which will wait for
+ * events/data (MQTT control packages)
+ */
 int in_mqtt_collect(struct flb_config *config, void *in_context)
 {
     int fd;
@@ -95,5 +113,5 @@ struct flb_input_plugin in_mqtt_plugin = {
     .cb_init      = in_mqtt_init,
     .cb_pre_run   = NULL,
     .cb_collect   = in_mqtt_collect,
-    .cb_flush_buf = NULL
+    .cb_flush_buf = in_mqtt_flush,
 };

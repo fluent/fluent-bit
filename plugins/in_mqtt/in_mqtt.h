@@ -26,8 +26,10 @@
 #define FLB_MQTT_PORT    "8082"
 
 struct flb_in_mqtt_config {
-    int server_fd;               /* TCP server file descriptor           */
-    struct mk_event_loop *evl;   /* Event loop file descriptor (mk_core) */
+    int server_fd;               /* TCP server file descriptor  */
+    int msgp_len;                /* msgpack data length         */
+    char msgp[8192];             /* msgpack static buffer       */
+    struct mk_event_loop *evl;   /* Event loop file descriptor  */
 };
 
 int in_mqtt_collect(struct flb_config *config, void *in_context);

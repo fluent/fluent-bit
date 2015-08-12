@@ -17,6 +17,14 @@
  *  limitations under the License.
  */
 
+#include <unistd.h>
+#include <msgpack.h>
+
+#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_pack.h>
+
+#include "in_mqtt.h"
 #include "mqtt_prot.h"
 
 #define BUFC()          conn->buf[conn->buf_pos]
@@ -32,6 +40,18 @@ static inline void print_hex(struct mqtt_conn *conn)
     printf("buf_pos=%i buf_len=%i\n", conn->buf_pos, conn->buf_len);
     for (x = conn->buf_pos; x < conn->buf_len; x++) {
         printf("%x ", conn->buf[x]);
+    }
+    printf("\n--------------------\n\n");
+}
+
+static inline void print_str(struct mqtt_conn *conn)
+{
+    int x;
+
+    printf("\n--------HEX--------> ");
+    printf("buf_pos=%i buf_len=%i\n", conn->buf_pos, conn->buf_len);
+    for (x = conn->buf_pos; x < conn->buf_len; x++) {
+        printf("%c", conn->buf[x]);
     }
     printf("\n--------------------\n\n");
 }
@@ -55,7 +75,6 @@ static inline int mqtt_packet_drop(struct mqtt_conn *conn, int content_len)
             conn->buf + conn->buf_pos,
             drop);
 
-    printf("drop = %i\n", drop);
     conn->buf_pos  = 0;
     conn->buf_len -= drop;
     return 0;
@@ -98,7 +117,7 @@ static inline int mqtt_packet_header(int type, int length, char *buf)
 static int mqtt_handle_connect(struct mqtt_conn *conn)
 {
     int i;
-    char buf[4];
+    char buf[4] = {0, 0, 0, 0};
 
     i = mqtt_packet_header(MQTT_CONNACK, 2 , (char *) &buf);
     BIT_SET(buf[i], 0);
@@ -106,7 +125,27 @@ static int mqtt_handle_connect(struct mqtt_conn *conn)
     buf[i] = MQTT_CONN_ACCEPTED;
 
     /* write CONNACK message */
-    write(conn->event.fd, buf, 4);
+    return write(conn->event.fd, buf, 4);
+}
+
+/* Collect a buffer of JSON data and convert it to MsgPack */
+static int mqtt_data_append(char *buf, int len, void *in_context)
+{
+    int out;
+    char *pack;
+    struct flb_in_mqtt_config *ctx = in_context;
+
+    pack = flb_pack_json(buf, len, &out);
+    if (!pack) {
+        //flb_debug("MQTT Packet incomplete or is not JSON");
+        return -1;
+    }
+
+    memcpy(ctx->msgp + ctx->msgp_len, pack, out);
+    ctx->msgp_len += out;
+    free(pack);
+
+    return 0;
 }
 
 /*
@@ -114,10 +153,7 @@ static int mqtt_handle_connect(struct mqtt_conn *conn)
  */
 static int mqtt_handle_publish(struct mqtt_conn *conn)
 {
-    uint8_t start;
     uint8_t qos;
-    uint8_t msb;
-    uint8_t lsb;
     uint16_t hlen;
     uint16_t packet_id;
     char buf[4];
@@ -138,34 +174,35 @@ static int mqtt_handle_publish(struct mqtt_conn *conn)
     conn->buf_pos++;
     conn->buf_pos += hlen;
 
-    /* Packet Identifier */
-    packet_id = BUFC() << 8;
-    conn->buf_pos++;
-    packet_id |= BUFC();
-    conn->buf_pos++;
-
-    /* Message */
-    //    print_hex(conn);
-    //    printf("msg len=%i\n", conn->packet_length - conn->buf_pos);
-
     /* Check QOS flag and respond if required */
     if (qos > MQTT_QOS_LEV0) {
+        /* Packet Identifier */
+        packet_id = BUFC() << 8;
+        conn->buf_pos++;
+        packet_id |= BUFC();
+        conn->buf_pos++;
+
         if (qos == MQTT_QOS_LEV1) {
             mqtt_packet_header(MQTT_PUBACK, 2 , (char *) &buf);
         }
         else if (qos == MQTT_QOS_LEV2) {
             mqtt_packet_header(MQTT_PUBREC, 2 , (char *) &buf);
         }
-        /* Set the identifier we are replying */
+        /* Set the identifier that we are replying to */
         buf[2] = (packet_id & 0xf0) >> 4;
         buf[3] = (packet_id & 0xf);
         write(conn->event.fd, buf, 4);
     }
+
+    /* Message */
+    mqtt_data_append(conn->buf + conn->buf_pos,
+                     conn->buf_len - conn->buf_pos,
+                     conn->ctx);
+    return 0;
 }
 
 int mqtt_prot_parser(struct mqtt_conn *conn)
 {
-    int i;
     int bytes;
     int length;
     int mult;
