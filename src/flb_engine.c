@@ -261,5 +261,12 @@ int flb_engine_start(struct flb_config *config)
     }
 terminate:
     /* TODO: cleanup resources */
+
+    /* Outputs pre-exit */
+    flb_output_pre_exit(config);
+
+    /* Inputs pre-exit */
+    flb_input_pre_exit_all(config);
+
     return 0;
 }

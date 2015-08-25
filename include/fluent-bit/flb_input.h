@@ -43,6 +43,9 @@ struct flb_input_plugin {
     /* Pre run */
     int (*cb_pre_run) (void *, struct flb_config *);
 
+    /* Pre exit */
+    int (*cb_pre_exit) (void *, struct flb_config *);
+
     /*
      * Collect: every certain amount of time, Fluent Bit
      * trigger this callback.
@@ -108,5 +111,6 @@ int flb_input_set_collector_event(char *name,
                                   struct flb_config *config);
 void flb_input_initialize_all(struct flb_config *config);
 void flb_input_pre_run_all(struct flb_config *config);
+void flb_input_pre_exit_all(struct flb_config *config);
 
 #endif

@@ -114,6 +114,21 @@ void flb_output_pre_run(struct flb_config *config)
     }
 }
 
+/* Invoke pre-exit call for the output plugin */
+void flb_output_pre_exit(struct flb_config *config)
+{
+    struct mk_list *head;
+    struct flb_output_plugin *out;
+
+    mk_list_foreach(head, &config->outputs) {
+        out = mk_list_entry(head, struct flb_output_plugin, _head);
+        if (out->cb_pre_exit && out->active == FLB_TRUE) {
+            out->cb_pre_exit(out->out_context, config);
+        }
+    }
+}
+
+
 /*
  * It validate an output type given the string, it return the
  * proper type and if valid, populate the global config.
