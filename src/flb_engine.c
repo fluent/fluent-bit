@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <signal.h>
 #include <sys/time.h>
 #include <sys/uio.h>
 
@@ -31,6 +32,8 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_engine.h>
+
+static int __flb_engine_signal_channel[2];
 
 int flb_engine_flush(struct flb_config *config,
                      struct flb_input_plugin *in_force)
@@ -146,10 +149,19 @@ static inline int flb_engine_handle_event(int fd, int mask,
     return -1;
 }
 
+static inline void flb_engine_signal_handler(int sig)
+{
+    uint64_t val;
+
+    val = (uint64_t)sig;
+    write(__flb_engine_signal_channel[1], &val, sizeof(val));
+}
+
 int flb_engine_start(struct flb_config *config)
 {
     int fd;
     int ret;
+    struct sigaction sa;
     struct mk_list *head;
     struct mk_event *event;
     struct mk_event_loop *evl;
@@ -182,6 +194,25 @@ int flb_engine_start(struct flb_config *config)
     if (config->flush_fd == -1) {
         flb_utils_error(FLB_ERR_CFG_FLUSH_CREATE);
     }
+
+    /* Create and register the event fd for signal handling */
+    event = malloc(sizeof(struct mk_event));
+    event->mask = MK_EVENT_EMPTY;
+    ret = mk_event_channel_create(evl,
+                                  &__flb_engine_signal_channel[0],
+                                  &__flb_engine_signal_channel[1],
+                                  event);
+    if (ret < 0) {
+        flb_utils_error_c("Could not create event channel");
+    }
+
+    /* Set signal handler */
+    sigemptyset(&sa.sa_mask);
+    sa.sa_handler = flb_engine_signal_handler;
+    sa.sa_flags = SA_RESTART;
+    sigaction(SIGINT,  &sa, NULL);
+    sigaction(SIGHUP,  &sa, NULL);
+    sigaction(SIGTERM, &sa, NULL);
 
     /* For each Collector, register the event into the main loop */
     mk_list_foreach(head, &config->collectors) {
@@ -216,6 +247,11 @@ int flb_engine_start(struct flb_config *config)
         mk_event_wait(evl);
         mk_event_foreach(event, evl) {
             if (event->type == FLB_ENGINE_EV_CORE) {
+                /* Check if received signal */
+                if (__flb_engine_signal_channel[0] == event->fd) {
+                    flb_utils_warn_c("receive signal\n");
+                    goto terminate;
+                }
                 flb_engine_handle_event(event->fd, event->mask, config);
             }
             else if (event->type == FLB_ENGINE_EV_CUSTOM) {
@@ -223,4 +259,7 @@ int flb_engine_start(struct flb_config *config)
             }
         }
     }
+terminate:
+    /* TODO: cleanup resources */
+    return 0;
 }
