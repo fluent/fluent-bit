@@ -32,7 +32,10 @@ struct flb_config {
     int flush_fd;       /* Timer FD associated to flush   */
     int verbose;        /* Verbose mode (default OFF)     */
     time_t init_time;   /* Time when Fluent Bit started   */
+
+    /* Used in library mode */
     pthread_t worker;   /* worker tid */
+    int channel[2];     /* pipe to communicate caller with worker */
 
     struct mk_rconf *file;
 

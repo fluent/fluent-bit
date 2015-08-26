@@ -18,6 +18,8 @@
  */
 
 #include <signal.h>
+#include <unistd.h>
+
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
@@ -38,6 +40,12 @@ int flb_lib_init(struct flb_config *config, char *output)
         return -1;
     }
 
+    ret = pipe(config->channel);
+    if (ret == -1) {
+        perror("pipe");
+        return -1;
+    }
+
     ret = flb_output_set(config, output);
     if (ret == -1) {
         return -1;
@@ -48,12 +56,7 @@ int flb_lib_init(struct flb_config *config, char *output)
 
 int flb_lib_push(struct flb_config *config, void *data, size_t len)
 {
-    struct flb_input_plugin *p;
-
-    p = &in_lib_plugin;
-    p->cb_ingest(p->in_context, data, len);
-
-    return 0;
+    return write(config->channel[1], data, len);
 }
 
 static void flb_lib_worker(void *data)
@@ -72,6 +75,7 @@ int flb_lib_start(struct flb_config *config)
     }
 
     config->worker = tid;
+    sleep(0.5);
     return 0;
 }
 
