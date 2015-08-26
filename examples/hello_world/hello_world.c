@@ -45,13 +45,14 @@ int main()
     /* Start the background worker */
     flb_lib_start(config);
 
+    sleep(1);
+
     /* Push some data */
     for (i = 0; i < 100; i++) {
         n = snprintf(tmp, sizeof(tmp) - 1, "{\"key\": \"val %i\"}", i);
         flb_lib_push(config, tmp, n);
     }
 
-    sleep(15);
     flb_lib_stop(config);
 
     return 0;

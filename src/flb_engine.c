@@ -146,6 +146,29 @@ static inline int flb_engine_handle_event(int fd, int mask,
     return -1;
 }
 
+static int flb_engine_manager(struct mk_event *event)
+{
+    int fd = event->fd;
+    int bytes;
+    uint64_t val;
+    struct flb_config *config = (struct flb_config *) event;
+
+    bytes = read(fd, &val, sizeof(uint64_t));
+    if (bytes == -1) {
+        perror("read");
+        return -1;
+    }
+
+    /* Flush all remaining data */
+    if (val == FLB_ENGINE_STOP) {
+        flb_debug("[engine] flush enqueued data");
+        flb_engine_flush(config, NULL);
+        return -1;
+    }
+
+    return 0;
+}
+
 int flb_engine_start(struct flb_config *config)
 {
     int fd;
@@ -164,6 +187,20 @@ int flb_engine_start(struct flb_config *config)
     }
     config->evl = evl;
 
+    /*
+     * Create a communication channel: this routine creates a channel to
+     * signal the Engine event loop. It's useful to stop the event loop
+     * or to instruct anything else without break.
+     */
+    ret = mk_event_channel_create(config->evl,
+                                  &config->ch_manager[0],
+                                  &config->ch_manager[1],
+                                  config);
+    if (ret != 0) {
+        flb_error("[engine] could not create manager channels");
+        exit(EXIT_FAILURE);
+    }
+
     /* Initialize input plugins */
     flb_input_initialize_all(config);
 
@@ -174,10 +211,10 @@ int flb_engine_start(struct flb_config *config)
     flb_output_init(config);
     flb_output_pre_run(config);
 
-
     /* Create and register the timer fd for flush procedure */
     event = malloc(sizeof(struct mk_event));
     event->mask = MK_EVENT_EMPTY;
+    event->status = MK_EVENT_NONE;
     config->flush_fd = mk_event_timeout_create(evl, config->flush, event);
     if (config->flush_fd == -1) {
         flb_utils_error(FLB_ERR_CFG_FLUSH_CREATE);
@@ -220,6 +257,13 @@ int flb_engine_start(struct flb_config *config)
             }
             else if (event->type == FLB_ENGINE_EV_CUSTOM) {
                 event->handler(event);
+            }
+            else if (event->type == MK_EVENT_NOTIFICATION) {
+                ret = flb_engine_manager(event);
+                if (ret == -1) {
+                    flb_debug("[manager] stopping Fluent Bit");
+                    return 0;
+                }
             }
         }
     }

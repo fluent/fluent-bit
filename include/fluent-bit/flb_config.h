@@ -28,6 +28,8 @@
 
 /* Main struct to hold the configuration of the runtime service */
 struct flb_config {
+    struct mk_event ch_event;
+
     int flush;          /* Flush timeout                  */
     int flush_fd;       /* Timer FD associated to flush   */
     int verbose;        /* Verbose mode (default OFF)     */
@@ -35,7 +37,8 @@ struct flb_config {
 
     /* Used in library mode */
     pthread_t worker;   /* worker tid */
-    int channel[2];     /* pipe to communicate caller with worker */
+    int ch_data[2];     /* pipe to communicate caller with worker */
+    int ch_manager[2];  /* channel to administrate fluent bit     */
 
     struct mk_rconf *file;
 

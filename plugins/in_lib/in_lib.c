@@ -44,7 +44,7 @@ int in_lib_init(struct flb_config *config)
         return -1;
     }
     ctx->msgp_len = 0;
-    ctx->fd = config->channel[0];
+    ctx->fd = config->ch_data[0];
 
     /* Set the context */
     ret = flb_input_set_context("lib", ctx, config);

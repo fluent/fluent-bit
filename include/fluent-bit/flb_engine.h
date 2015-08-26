@@ -25,8 +25,12 @@
 #include <fluent-bit/flb_output.h>
 
 /* Types of events handled by the Server engine */
-#define FLB_ENGINE_EV_CORE     0
-#define FLB_ENGINE_EV_CUSTOM   1
+#define FLB_ENGINE_EV_CORE      64
+#define FLB_ENGINE_EV_CUSTOM   128
+#define FLB_ENGINE_EV_MANAGER  256
+
+/* Engine signals */
+#define FLB_ENGINE_STOP        0xdeadbeed
 
 int flb_engine_start(struct flb_config *config);
 int flb_engine_flush(struct flb_config *config,

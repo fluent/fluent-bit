@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_utils.h>
 
 extern struct flb_input_plugin in_lib_plugin;
 
@@ -40,7 +41,7 @@ int flb_lib_init(struct flb_config *config, char *output)
         return -1;
     }
 
-    ret = pipe(config->channel);
+    ret = pipe(config->ch_data);
     if (ret == -1) {
         perror("pipe");
         return -1;
@@ -56,7 +57,7 @@ int flb_lib_init(struct flb_config *config, char *output)
 
 int flb_lib_push(struct flb_config *config, void *data, size_t len)
 {
-    return write(config->channel[1], data, len);
+    return write(config->ch_data[1], data, len);
 }
 
 static void flb_lib_worker(void *data)
@@ -75,12 +76,20 @@ int flb_lib_start(struct flb_config *config)
     }
 
     config->worker = tid;
-    sleep(0.5);
     return 0;
 }
 
 int flb_lib_stop(struct flb_config *config)
 {
-    /* FIXME: we need to perform a better cleanup here */
-    return pthread_kill(config->worker, SIGKILL);
+    int ret;
+    uint64_t val;
+    int n;
+
+    flb_debug("[lib] sending STOP signal to the engine");
+    val = FLB_ENGINE_STOP;
+    n = write(config->ch_manager[1], &val, sizeof(uint64_t));
+    ret = pthread_join(config->worker, NULL);
+
+    flb_debug("[lib] Fluent Bit engine stopped");
+    return ret;
 }

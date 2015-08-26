@@ -26,6 +26,7 @@
 
 struct flb_config *flb_config_init()
 {
+    int ret;
     struct flb_config *config;
 
     __flb_config_verbose = FLB_FALSE;
@@ -38,6 +39,7 @@ struct flb_config *flb_config_init()
 
     config->flush     = FLB_CONFIG_FLUSH_SECS;
     config->init_time = time(NULL);
+
     mk_list_init(&config->collectors);
     mk_list_init(&config->inputs);
     mk_list_init(&config->outputs);
