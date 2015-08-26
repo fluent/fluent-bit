@@ -20,6 +20,10 @@
 #ifndef FLUENT_BIT_H
 #define FLUENT_BIT_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <mk_core/mk_core.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_utils.h>
@@ -29,4 +33,9 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_lib.h>
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif

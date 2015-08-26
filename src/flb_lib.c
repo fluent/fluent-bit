@@ -107,6 +107,10 @@ int flb_lib_start(struct flb_config *config)
     mk_event_foreach(event, config->ch_evl) {
         fd = event->fd;
         bytes = read(fd, &val, sizeof(uint64_t));
+        if (bytes <= 0) {
+            return -1;
+        }
+
         if (val == FLB_ENGINE_STARTED) {
             flb_debug("[lib] backend started");
             break;
