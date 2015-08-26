@@ -30,6 +30,7 @@
 #define FLB_ENGINE_EV_MANAGER  256
 
 /* Engine signals */
+#define FLB_ENGINE_STARTED     0x00110aa0
 #define FLB_ENGINE_STOP        0xdeadbeed
 
 int flb_engine_start(struct flb_config *config);

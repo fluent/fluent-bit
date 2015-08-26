@@ -35,21 +35,43 @@ extern struct flb_input_plugin in_lib_plugin;
 int flb_lib_init(struct flb_config *config, char *output)
 {
     int ret;
+    struct mk_event *event;
+    struct mk_event_loop *evl;
 
     ret = flb_input_set(config, "lib");
     if (ret == -1) {
         return -1;
     }
 
+    /* Initialize our pipe to send data to our worker */
     ret = pipe(config->ch_data);
     if (ret == -1) {
         perror("pipe");
         return -1;
     }
 
+    /* Set the output interface */
     ret = flb_output_set(config, output);
     if (ret == -1) {
         return -1;
+    }
+
+    /* Create the event loop to receive notifications */
+    evl = mk_event_loop_create(256);
+    if (!evl) {
+        return -1;
+    }
+    config->ch_evl = evl;
+
+    /* Prepare the notification channels */
+    event = calloc(1, sizeof(struct mk_event));
+    ret = mk_event_channel_create(config->ch_evl,
+                                  &config->ch_notif[0],
+                                  &config->ch_notif[1],
+                                  event);
+    if (ret != 0) {
+        flb_error("[lib] could not create notification channels");
+        exit(EXIT_FAILURE);
     }
 
     return 0;
@@ -68,14 +90,29 @@ static void flb_lib_worker(void *data)
 
 int flb_lib_start(struct flb_config *config)
 {
+    int fd;
+    int bytes;
+    uint64_t val;
     pthread_t tid;
+    struct mk_event *event;
 
     tid = mk_utils_worker_spawn(flb_lib_worker, config);
     if (tid == -1) {
         return -1;
     }
-
     config->worker = tid;
+
+    /* Wait for the started signal so we can return to the caller */
+    mk_event_wait(config->ch_evl);
+    mk_event_foreach(event, config->ch_evl) {
+        fd = event->fd;
+        bytes = read(fd, &val, sizeof(uint64_t));
+        if (val == FLB_ENGINE_STARTED) {
+            flb_debug("[lib] backend started");
+            break;
+        }
+    }
+
     return 0;
 }
 
@@ -83,11 +120,10 @@ int flb_lib_stop(struct flb_config *config)
 {
     int ret;
     uint64_t val;
-    int n;
 
     flb_debug("[lib] sending STOP signal to the engine");
     val = FLB_ENGINE_STOP;
-    n = write(config->ch_manager[1], &val, sizeof(uint64_t));
+    write(config->ch_manager[1], &val, sizeof(uint64_t));
     ret = pthread_join(config->worker, NULL);
 
     flb_debug("[lib] Fluent Bit engine stopped");

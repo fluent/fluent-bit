@@ -169,6 +169,14 @@ static int flb_engine_manager(struct mk_event *event)
     return 0;
 }
 
+static int flb_engine_started(struct flb_config *config)
+{
+    uint64_t val;
+
+    val = FLB_ENGINE_STARTED;
+    return write(config->ch_notif[1], &val, sizeof(uint64_t));
+}
+
 int flb_engine_start(struct flb_config *config)
 {
     int fd;
@@ -248,6 +256,9 @@ int flb_engine_start(struct flb_config *config)
             }
         }
     }
+
+    /* Signal that we have started */
+    flb_engine_started(config);
 
     while (1) {
         mk_event_wait(evl);

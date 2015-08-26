@@ -39,6 +39,10 @@ struct flb_config {
     pthread_t worker;   /* worker tid */
     int ch_data[2];     /* pipe to communicate caller with worker */
     int ch_manager[2];  /* channel to administrate fluent bit     */
+    int ch_notif[2];    /* channel to receive notifications       */
+
+    /* Channel event loop (just for ch_notif) */
+    struct mk_event_loop *ch_evl;
 
     struct mk_rconf *file;
 
