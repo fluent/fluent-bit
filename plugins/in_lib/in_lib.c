@@ -45,48 +45,25 @@ int in_lib_init(struct flb_config *config)
     }
     ctx->msgp_len = 0;
 
-    /* Clone the standard input file descriptor */
-    fd = dup(STDIN_FILENO);
-    if (fd == -1) {
-        perror("dup");
-        flb_utils_error_c("Could not open standard input!");
-    }
-    ctx->fd = fd;
-
     /* Set the context */
-    ret = flb_input_set_context("stdin", ctx, config);
+    ret = flb_input_set_context("lib", ctx, config);
     if (ret == -1) {
         flb_utils_error_c("Could not set configuration for STDIN input plugin");
     }
 
-    /* Collect upon data available on the standard input */
-    ret = flb_input_set_collector_event("lib",
-                                        in_lib_collect,
-                                        ctx->fd,
-                                        config);
-    if (ret == -1) {
-        flb_utils_error_c("Could not set collector for LIB input plugin");
-    }
-
+    printf("input lib plugin: context = %p\n", ctx);
     return 0;
 }
 
-int in_lib_collect(struct flb_config *config, void *in_context)
+int in_lib_ingest(void *in_context, void *data, size_t bytes)
 {
-    int bytes;
     int out_size;
     char *pack;
     struct flb_in_lib_config *ctx = in_context;
 
-    bytes = read(ctx->fd,
-                 ctx->buf + ctx->buf_len,
-                 sizeof(ctx->buf) - ctx->buf_len);
-    flb_debug("in_lib read() = %i", bytes);
+    flb_debug("lib_push() = %i", bytes);
     if (bytes == -1) {
-        if (errno == -EPIPE) {
-            return -1;
-        }
-        return 0;
+        return -1;
     }
     ctx->buf_len += bytes;
 
@@ -94,7 +71,7 @@ int in_lib_collect(struct flb_config *config, void *in_context)
     pack = flb_pack_json(ctx->buf, ctx->buf_len, &out_size);
     if (!pack) {
         flb_debug("LIB data incomplete, waiting for more data...");
-        return 0;
+        return -1;
     }
     ctx->buf_len = 0;
 
@@ -124,6 +101,7 @@ struct flb_input_plugin in_lib_plugin = {
     .description  = "Library mode Input",
     .cb_init      = in_lib_init,
     .cb_pre_run   = NULL,
-    .cb_collect   = in_lib_collect,
+    .cb_collect   = NULL,
+    .cb_ingest    = in_lib_ingest,
     .cb_flush_buf = in_lib_flush
 };
