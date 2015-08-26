@@ -1,5 +1,6 @@
 set(src
   ${src}
+  flb_lib.c
   flb_pack.c
   flb_input.c
   flb_output.c
@@ -35,7 +36,7 @@ set_target_properties(fluent-bit-static PROPERTIES
   OUTPUT_NAME fluent-bit)
 
 # Link dependencies to Fluent-Bit library core
-target_link_libraries(fluent-bit-shared msgpack mk_core jsmn ${FLB_PLUGINS})
+target_link_libraries(fluent-bit-shared msgpack mk_core jsmn ${FLB_PLUGINS} ${CMAKE_THREAD_LIBS_INIT} ${CMAKE_DL_LIBS})
 target_link_libraries(fluent-bit-static msgpack mk_core jsmn dl ${FLB_PLUGINS})
 
 # Library install routines

@@ -66,6 +66,12 @@ struct flb_input_plugin {
     /* Notify that a flush have completed on the collector (buf + iov) */
     void (*cb_flush_end) (void *);
 
+    /*
+     * Optional callback that can be used from a parent caller to ingest
+     * data into the engine.
+     */
+    int (*cb_ingest) (void *in_context, void *, size_t);
+
     /* Input handler configuration */
     void *in_context;
 
@@ -84,9 +90,8 @@ struct flb_input_collector {
     time_t seconds;                      /* expire time in seconds     */
     long nanoseconds;                    /* expire nanoseconds         */
 
-    /* Callbacks */
-    int (*cb_collect) (struct flb_config *, /* collect callback           */
-                       void *);
+    /* Callback */
+    int (*cb_collect) (struct flb_config *, void *);
 
     /* General references */
     struct flb_input_plugin *plugin;     /* owner plugin               */
@@ -94,7 +99,7 @@ struct flb_input_collector {
 };
 
 int flb_input_register_all(struct flb_config *config);
-int flb_input_enable(char *name, struct flb_config *config);
+int flb_input_set(struct flb_config *config, char *name);
 int flb_input_check(struct flb_config *config);
 int flb_input_set_context(char *name, void *in_context, struct flb_config *config);
 int flb_input_set_collector_time(char *name,

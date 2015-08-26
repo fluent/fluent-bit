@@ -41,7 +41,7 @@ static struct flb_input_plugin *plugin_lookup(char *name, struct flb_config *con
 }
 
 /* Enable an input */
-int flb_input_enable(char *name, struct flb_config *config)
+int flb_input_set(struct flb_config *config, char *name)
 {
     struct flb_input_plugin *plugin;
 
