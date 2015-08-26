@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_config.h>
 
 int flb_lib_init(struct flb_config *config, char *output);
+int flb_lib_config_file(struct flb_config *config, char *path);
 int flb_lib_push(struct flb_config *config, void *data, size_t len);
 int flb_lib_start(struct flb_config *config);
 int flb_lib_stop(struct flb_config *config);

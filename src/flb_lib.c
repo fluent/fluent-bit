@@ -77,6 +77,24 @@ int flb_lib_init(struct flb_config *config, char *output)
     return 0;
 }
 
+/* Load a configuration file that may be used by the input or output plugin */
+int flb_lib_config_file(struct flb_config *config, char *path)
+{
+    if (access(path, R_OK) != 0) {
+        perror("access");
+        return -1;
+    }
+
+    config->file = mk_rconf_create(path);
+    if (!config->file) {
+        fprintf(stderr, "Error reading configuration file: %s\n", path);
+        return -1;
+    }
+
+    return 0;
+}
+
+/* Push some data into the Engine */
 int flb_lib_push(struct flb_config *config, void *data, size_t len)
 {
     return write(config->ch_data[1], data, len);
@@ -88,6 +106,7 @@ static void flb_lib_worker(void *data)
     flb_engine_start(config);
 }
 
+/* Start the engine */
 int flb_lib_start(struct flb_config *config)
 {
     int fd;
@@ -120,6 +139,7 @@ int flb_lib_start(struct flb_config *config)
     return 0;
 }
 
+/* Stop the engine */
 int flb_lib_stop(struct flb_config *config)
 {
     int ret;
