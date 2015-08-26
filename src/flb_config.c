@@ -47,3 +47,8 @@ struct flb_config *flb_config_init()
 
     return config;
 }
+
+void flb_config_verbose(int status)
+{
+    __flb_config_verbose = status;
+}

@@ -49,5 +49,6 @@ struct flb_config {
 int __flb_config_verbose;
 
 struct flb_config *flb_config_init();
+void flb_config_verbose(int status);
 
 #endif
