@@ -35,13 +35,11 @@ int flb_lib_init(struct flb_config *config, char *output)
 
     ret = flb_input_set(config, "lib");
     if (ret == -1) {
-        printf("failed plugin lib\n");
         return -1;
     }
 
     ret = flb_output_set(config, output);
     if (ret == -1) {
-        printf("failed plugin output\n");
         return -1;
     }
 
@@ -53,7 +51,6 @@ int flb_lib_push(struct flb_config *config, void *data, size_t len)
     struct flb_input_plugin *p;
 
     p = &in_lib_plugin;
-    printf("in context=%p\n", p->in_context);
     p->cb_ingest(p->in_context, data, len);
 
     return 0;
