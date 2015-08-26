@@ -34,7 +34,6 @@
 /* Initialize plugin */
 int in_lib_init(struct flb_config *config)
 {
-    int fd;
     int ret;
     struct flb_in_lib_config *ctx;
 

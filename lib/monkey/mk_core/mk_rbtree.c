@@ -495,20 +495,20 @@ struct rb_node *rb_prev(const struct rb_node *node)
 	return parent;
 }
 
-void rb_replace_node(struct rb_node *victim, struct rb_node *new,
+void rb_replace_node(struct rb_node *victim, struct rb_node *_new,
 		     struct rb_root *root)
 {
 	struct rb_node *parent = rb_parent(victim);
 
 	/* Set the surrounding nodes to point to the replacement */
-	__rb_change_child(victim, new, parent, root);
+	__rb_change_child(victim, _new, parent, root);
 	if (victim->rb_left)
-		rb_set_parent(victim->rb_left, new);
+		rb_set_parent(victim->rb_left, _new);
 	if (victim->rb_right)
-		rb_set_parent(victim->rb_right, new);
+		rb_set_parent(victim->rb_right, _new);
 
 	/* Copy the pointers/colour from the victim to the replacement */
-	*new = *victim;
+	*_new = *victim;
 }
 
 static struct rb_node *rb_left_deepest_node(const struct rb_node *node)
