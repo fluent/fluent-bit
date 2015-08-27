@@ -69,6 +69,10 @@ else()
 endif()
 
 # SSL/TLS: add encryption support
+if(WITH_OUT_TD)
+  set(WITH_SSL_TLS ON)
+endif()
+
 if(WITH_SSL_TLS)
   add_definitions(-DHAVE_SSL_TLS)
   option(ENABLE_TESTING OFF)

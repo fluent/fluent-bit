@@ -230,6 +230,7 @@ int flb_engine_start(struct flb_config *config)
     event->mask = MK_EVENT_EMPTY;
     event->status = MK_EVENT_NONE;
     config->flush_fd = mk_event_timeout_create(evl, config->flush, event);
+
     if (config->flush_fd == -1) {
         flb_utils_error(FLB_ERR_CFG_FLUSH_CREATE);
     }
