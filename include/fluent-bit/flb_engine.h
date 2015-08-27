@@ -25,9 +25,8 @@
 #include <fluent-bit/flb_output.h>
 
 /* Types of events handled by the Server engine */
-#define FLB_ENGINE_EV_CORE      64
-#define FLB_ENGINE_EV_CUSTOM   128
-#define FLB_ENGINE_EV_MANAGER  256
+#define FLB_ENGINE_EV_CORE      MK_EVENT_NOTIFICATION
+#define FLB_ENGINE_EV_CUSTOM    MK_EVENT_CUSTOM
 
 /* Engine signals */
 #define FLB_ENGINE_STARTED     0x00110aa0

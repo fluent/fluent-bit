@@ -114,9 +114,31 @@ static inline int consume_byte(int fd)
     return 0;
 }
 
+static inline int flb_engine_manager(int fd, struct flb_config *config)
+{
+    int bytes;
+    uint64_t val;
+
+    bytes = read(fd, &val, sizeof(uint64_t));
+    if (bytes == -1) {
+        perror("read");
+        return -1;
+    }
+
+    /* Flush all remaining data */
+    if (val == FLB_ENGINE_STOP) {
+        flb_debug("[engine] flush enqueued data");
+        flb_engine_flush(config, NULL);
+        return -1;
+    }
+
+    return 0;
+}
+
 static inline int flb_engine_handle_event(int fd, int mask,
                                           struct flb_config *config)
 {
+    int ret;
     struct mk_list *head;
     struct flb_input_collector *collector;
 
@@ -126,6 +148,13 @@ static inline int flb_engine_handle_event(int fd, int mask,
             consume_byte(fd);
             flb_engine_flush(config, NULL);
             return 0;
+        }
+        else if (config->ch_manager[0] == fd) {
+            ret = flb_engine_manager(fd, config);
+            if (ret == -1) {
+                flb_debug("[manager] stopping Fluent Bit");
+                return -1;
+            }
         }
 
         /* Determinate what is this file descriptor */
@@ -141,29 +170,6 @@ static inline int flb_engine_handle_event(int fd, int mask,
                                              collector->plugin->in_context);
             }
         }
-    }
-
-    return -1;
-}
-
-static int flb_engine_manager(struct mk_event *event)
-{
-    int fd = event->fd;
-    int bytes;
-    uint64_t val;
-    struct flb_config *config = (struct flb_config *) event;
-
-    bytes = read(fd, &val, sizeof(uint64_t));
-    if (bytes == -1) {
-        perror("read");
-        return -1;
-    }
-
-    /* Flush all remaining data */
-    if (val == FLB_ENGINE_STOP) {
-        flb_debug("[engine] flush enqueued data");
-        flb_engine_flush(config, NULL);
-        return -1;
     }
 
     return 0;
@@ -264,17 +270,13 @@ int flb_engine_start(struct flb_config *config)
         mk_event_wait(evl);
         mk_event_foreach(event, evl) {
             if (event->type == FLB_ENGINE_EV_CORE) {
-                flb_engine_handle_event(event->fd, event->mask, config);
+                ret = flb_engine_handle_event(event->fd, event->mask, config);
+                if (ret == -1) {
+                    return 0;
+                }
             }
             else if (event->type == FLB_ENGINE_EV_CUSTOM) {
                 event->handler(event);
-            }
-            else if (event->type == MK_EVENT_NOTIFICATION) {
-                ret = flb_engine_manager(event);
-                if (ret == -1) {
-                    flb_debug("[manager] stopping Fluent Bit");
-                    return 0;
-                }
             }
         }
     }
