@@ -304,9 +304,9 @@ static inline int header_lookup(struct mk_http_parser *p, char *buffer)
 
         header_extra->val.data = buffer + p->header_val;
         header_extra->val.len  = p->end - p->header_val;
-        mk_list_add(&header_extra->_head, &p->header_list);
         p->headers_extra_count++;
-
+        p->header_count++;
+        mk_list_add(&header_extra->_head, &p->header_list);
         return 0;
     }
 

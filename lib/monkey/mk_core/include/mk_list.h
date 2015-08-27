@@ -21,10 +21,6 @@
 #ifndef   	MK_LIST_H_
 #define   	MK_LIST_H_
 
-#ifdef __cplusplus /* If this is a C++ compiler, use C linkage */
-extern "C" {
-#endif
-
 #include <stddef.h>
 
 #ifndef offsetof
@@ -140,9 +136,5 @@ static inline int mk_list_entry_orphan(struct mk_list *head)
 #define mk_list_entry_next(ptr, type, member, head)                     \
     (ptr)->next == (head) ? container_of((head)->next, type, member) :  \
         container_of((ptr)->next, type, member);
-
-#ifdef __cplusplus /* If this is a C++ compiler, use C linkage */
-}
-#endif
 
 #endif /* !MK_LIST_H_ */

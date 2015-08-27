@@ -9,6 +9,8 @@ set(src
   mk_event.c
   mk_utils.c
   mk_rbtree.c
+  mk_thread.c
+  mk_thread_channel.c
   )
 
 include_directories(include)

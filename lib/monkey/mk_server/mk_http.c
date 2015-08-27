@@ -357,29 +357,24 @@ int mk_http_handler_read(struct mk_sched_conn *conn, struct mk_http_session *cs)
 }
 
 /* Build error page */
-static mk_ptr_t *mk_http_error_page(char *title, mk_ptr_t *message,
-                                    char *signature)
+static int mk_http_error_page(char *title, mk_ptr_t *message, char *signature,
+                              char **out_buf, unsigned long *out_size)
 {
     char *temp;
-    mk_ptr_t *p;
 
-    p = mk_mem_malloc(sizeof(mk_ptr_t));
-    p->data = NULL;
+    *out_buf = NULL;
 
     if (message) {
         temp = mk_ptr_to_buf(*message);
     }
     else {
-        temp = "";
+        temp = mk_string_dup("");
     }
 
-    mk_string_build(&p->data, &p->len,
+    mk_string_build(out_buf, out_size,
                     MK_REQUEST_DEFAULT_PAGE, title, temp, signature);
-
-    if (message) {
-        mk_mem_free(temp);
-    }
-    return p;
+    mk_mem_free(temp);
+    return 0;
 }
 
 static int mk_http_range_set(struct mk_http_request *sr, size_t file_size)
@@ -1078,12 +1073,14 @@ int mk_http_error(int http_status, struct mk_http_session *cs,
     int ret, fd;
     size_t count;
     mk_ptr_t message;
-    mk_ptr_t *page = NULL;
+    mk_ptr_t page;
     struct error_page *entry;
     struct mk_list *head;
     struct file_info finfo;
+    struct mk_iov *iov;
 
     mk_header_set_http_status(sr, http_status);
+    mk_ptr_reset(&page);
 
     /*
      * We are nice sending error pages for clients who at least respect
@@ -1141,45 +1138,51 @@ int mk_http_error(int http_status, struct mk_http_session *cs,
 
     switch (http_status) {
     case MK_CLIENT_FORBIDDEN:
-        page = mk_http_error_page("Forbidden",
-                                  &sr->uri,
-                                  mk_config->server_signature);
+        ret = mk_http_error_page("Forbidden",
+                                 &sr->uri,
+                                 mk_config->server_signature,
+                                 &page.data, &page.len);
         break;
     case MK_CLIENT_NOT_FOUND:
         mk_string_build(&message.data, &message.len,
                         "The requested URL was not found on this server.");
-        page = mk_http_error_page("Not Found",
-                                  &message,
-                                  mk_config->server_signature);
+        ret = mk_http_error_page("Not Found",
+                                 &message,
+                                 mk_config->server_signature,
+                                 &page.data, &page.len);
         mk_ptr_free(&message);
         break;
     case MK_CLIENT_REQUEST_ENTITY_TOO_LARGE:
         mk_string_build(&message.data, &message.len,
                         "The request entity is too large.");
-        page = mk_http_error_page("Entity too large",
-                                  &message,
-                                  mk_config->server_signature);
+        ret = mk_http_error_page("Entity too large",
+                                 &message,
+                                 mk_config->server_signature,
+                                 &page.data, &page.len);
         mk_ptr_free(&message);
         break;
     case MK_CLIENT_METHOD_NOT_ALLOWED:
-        page = mk_http_error_page("Method Not Allowed",
-                                  &sr->uri,
-                                  mk_config->server_signature);
+        ret = mk_http_error_page("Method Not Allowed",
+                                 &sr->uri,
+                                 mk_config->server_signature,
+                                 &page.data, &page.len);
         break;
     case MK_SERVER_NOT_IMPLEMENTED:
-        page = mk_http_error_page("Method Not Implemented",
-                                  &sr->uri,
-                                  mk_config->server_signature);
+        ret = mk_http_error_page("Method Not Implemented",
+                                 &sr->uri,
+                                 mk_config->server_signature,
+                                 &page.data, &page.len);
         break;
     case MK_SERVER_INTERNAL_ERROR:
-        page = mk_http_error_page("Internal Server Error",
-                                  &sr->uri,
-                                  mk_config->server_signature);
+        ret = mk_http_error_page("Internal Server Error",
+                                 &sr->uri,
+                                 mk_config->server_signature,
+                                 &page.data, &page.len);
         break;
     }
 
-    if (page && sr->method != MK_METHOD_HEAD && sr->method != MK_METHOD_UNKNOWN) {
-        sr->headers.content_length = page->len;
+    if (page.len > 0 && sr->method != MK_METHOD_HEAD && sr->method != MK_METHOD_UNKNOWN) {
+        sr->headers.content_length = page.len;
     }
     else {
         sr->headers.content_length = 0;
@@ -1190,7 +1193,7 @@ int mk_http_error(int http_status, struct mk_http_session *cs,
     sr->headers.pconnections_left = 0;
     sr->headers.last_modified = -1;
 
-    if (!page) {
+    if (!page.data) {
         mk_ptr_reset(&sr->headers.content_type);
     }
     else {
@@ -1198,19 +1201,22 @@ int mk_http_error(int http_status, struct mk_http_session *cs,
     }
 
     mk_header_prepare(cs, sr);
-    if (page) {
+    if (page.data) {
         if (sr->method != MK_METHOD_HEAD) {
-            mk_stream_set(&sr->page_stream,
-                          MK_STREAM_PTR,
-                          cs->channel,
-                          page,
-                          -1,
-                          NULL,
-                          cb_stream_page_finished, NULL, NULL);
+            if (sr->headers._extra_rows) {
+                iov = sr->headers._extra_rows;
+                sr->headers_extra_stream.bytes_total += page.len;
+            }
+            else {
+                iov = &sr->headers.headers_iov;
+                sr->headers_stream.bytes_total += page.len;
+            }
+
+            mk_iov_add(iov, page.data, page.len, MK_TRUE);
+
         }
         else {
-            mk_ptr_free(page);
-            mk_mem_free(page);
+            mk_mem_free(page.data);
         }
     }
 

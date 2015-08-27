@@ -41,7 +41,7 @@
 #define MK_CAP_HTTP        1
 #define MK_CAP_HTTP2       2
 #define MK_CAP_SOCK_PLAIN  4
-#define MK_CAP_SOCK_SSL    8
+#define MK_CAP_SOCK_TLS    8
 
 struct mk_config_listener
 {

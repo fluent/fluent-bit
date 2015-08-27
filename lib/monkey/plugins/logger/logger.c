@@ -17,6 +17,8 @@
  *  limitations under the License.
  */
 
+#define _GNU_SOURCE
+
 #include <monkey/mk_api.h>
 
 /* System Headers */

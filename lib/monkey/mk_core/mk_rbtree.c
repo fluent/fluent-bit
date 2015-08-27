@@ -56,22 +56,22 @@ static inline struct rb_node *rb_red_parent(struct rb_node *red)
 
 /*
  * Helper function for rotations:
- * - old's parent and color get assigned to new
- * - old gets assigned new as a parent and 'color' as a color.
+ * - old's parent and color get assigned to _new
+ * - old gets assigned _new as a parent and 'color' as a color.
  */
 static inline void
-__rb_rotate_set_parents(struct rb_node *old, struct rb_node *new,
+__rb_rotate_set_parents(struct rb_node *old, struct rb_node *_new,
 			struct rb_root *root, int color)
 {
 	struct rb_node *parent = rb_parent(old);
-	new->__rb_parent_color = old->__rb_parent_color;
-	rb_set_parent_color(old, new, color);
-	__rb_change_child(old, new, parent, root);
+	_new->__rb_parent_color = old->__rb_parent_color;
+	rb_set_parent_color(old, _new, color);
+	__rb_change_child(old, _new, parent, root);
 }
 
 static inline  __attribute__((always_inline)) void
 __rb_insert(struct rb_node *node, struct rb_root *root,
-	    void (*augment_rotate)(struct rb_node *old, struct rb_node *new))
+	    void (*augment_rotate)(struct rb_node *old, struct rb_node *_new))
 {
 	struct rb_node *parent = rb_red_parent(node), *gparent, *tmp;
 
@@ -200,7 +200,7 @@ __rb_insert(struct rb_node *node, struct rb_root *root,
  */
 static inline  __attribute__((always_inline)) void
 ____rb_erase_color(struct rb_node *parent, struct rb_root *root,
-                   void (*augment_rotate)(struct rb_node *old, struct rb_node *new))
+                   void (*augment_rotate)(struct rb_node *old, struct rb_node *_new))
 {
 	struct rb_node *node = NULL, *sibling, *tmp1, *tmp2;
 
@@ -362,7 +362,7 @@ ____rb_erase_color(struct rb_node *parent, struct rb_root *root,
 
 /* Non-inline version for rb_erase_augmented() use */
 void __rb_erase_color(struct rb_node *parent, struct rb_root *root,
-	void (*augment_rotate)(struct rb_node *old, struct rb_node *new))
+	void (*augment_rotate)(struct rb_node *old, struct rb_node *_new))
 {
 	____rb_erase_color(parent, root, augment_rotate);
 }
@@ -375,8 +375,8 @@ void __rb_erase_color(struct rb_node *parent, struct rb_root *root,
  */
 
 static inline void dummy_propagate(struct rb_node *node, struct rb_node *stop) {(void) node; (void) stop;}
-static inline void dummy_copy(struct rb_node *old, struct rb_node *new) {(void) old; (void) new;}
-static inline void dummy_rotate(struct rb_node *old, struct rb_node *new) {(void) old; (void) new;}
+static inline void dummy_copy(struct rb_node *old, struct rb_node *_new) {(void) old; (void) _new;}
+static inline void dummy_rotate(struct rb_node *old, struct rb_node *_new) {(void) old; (void) _new;}
 
 static const struct rb_augment_callbacks dummy_callbacks = {
 	dummy_propagate, dummy_copy, dummy_rotate
@@ -404,7 +404,7 @@ void rb_erase(struct rb_node *node, struct rb_root *root)
  */
 
 void __rb_insert_augmented(struct rb_node *node, struct rb_root *root,
-	void (*augment_rotate)(struct rb_node *old, struct rb_node *new))
+	void (*augment_rotate)(struct rb_node *old, struct rb_node *_new))
 {
 	__rb_insert(node, root, augment_rotate);
 }

@@ -220,7 +220,6 @@ set(MK_CONF_KA_TIMEOUT   "5")
 set(MK_CONF_KA_MAXREQ    "1000")
 set(MK_CONF_REQ_SIZE     "32")
 set(MK_CONF_SYMLINK      "Off")
-set(MK_CONF_TRANSPORT    "liana")
 set(MK_CONF_DEFAULT_MIME "text/plain")
 set(MK_CONF_FDT          "On")
 set(MK_CONF_OVERCAPACITY "Resist")
@@ -237,6 +236,14 @@ if(APPLE)
   set(CMAKE_MACOSX_RPATH ${CMAKE_MACOSX_RPATH};${CMAKE_INSTALL_FULL_LIBDIR}/monkey)
 endif()
 
+if(DEFAULT_PORT)
+  set(MK_CONF_LISTEN  ${DEFAULT_PORT})
+endif()
+
+if(DEFAULT_USER)
+  set(MK_CONF_USER ${DEFAULT_USER})
+endif()
+
 if(BUILD_LOCAL)
   # This mode aims to be backward compatible with older versions of Monkey where
   # a './configure && make' were enough to have the server running without installing
@@ -244,7 +251,8 @@ if(BUILD_LOCAL)
   set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
   set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/lib/monkey")
   set(MK_PATH_CONF     "${CMAKE_CURRENT_BINARY_DIR}/conf/")
-  set(MK_PATH_PIDFILE  "${CMAKE_CURRENT_BINARY_DIR}")
+  set(MK_PATH_PIDPATH  "${CMAKE_CURRENT_BINARY_DIR}")
+  set(MK_PIDFILE       "${MK_CONF_PIDFILE}")
   set(MK_PATH_WWW      "${CMAKE_CURRENT_SOURCE_DIR}/htdocs/")
   set(MK_PATH_LOG      "${CMAKE_CURRENT_BINARY_DIR}/log/")
   file(MAKE_DIRECTORY  ${MK_PATH_LOG})
@@ -263,12 +271,19 @@ else()
     set(MK_PATH_LOG ${INSTALL_LOGDIR} CACHE STRING "Server logs")
   endif()
 
+  # Custom PIDPATH
+  if(NOT PID_PATH)
+    set(MK_PATH_PIDPATH ${CMAKE_INSTALL_FULL_LOCALSTATEDIR}/run/ CACHE STRING "Server PID path")
+  else()
+    set(MK_PATH_PIDPATH ${PID_PATH} CACHE STRING "Server PID path")
+  endif()
+
   # Custom PIDFILE
   if(NOT PID_FILE)
-    set(MK_PATH_PIDFILE ${CMAKE_INSTALL_FULL_LOCALSTATEDIR}/run CACHE STRING "Server PID")
+    set(MK_PIDFILE ${MK_CONF_PIDFILE} CACHE STRING "Server pid file name")
   else()
-    set(MK_PATH_PIDFILE ${PID_FILE} CACHE STRING "Server PID")
-  endif()
+    set(MK_PIDFILE ${PID_FILE} CACHE STRING "Server pid file name")
+endif()
 
   # Custom WEBROOT
   if(NOT INSTALL_WEBROOTDIR)
@@ -308,6 +323,7 @@ include_directories(monkey)
 # mk_server: server code base: plugins, protocols, scheduler.. (no executable)
 # mk_bin   : server executable
 
+add_subdirectory(man)
 add_subdirectory(mk_core)
 add_subdirectory(plugins)
 add_subdirectory(mk_server)
@@ -324,5 +340,5 @@ add_subdirectory(include)
 
 # Install (missings ?) paths
 install(DIRECTORY DESTINATION ${MK_PATH_LOG})
-install(DIRECTORY DESTINATION ${MK_PATH_PIDFILE})
+install(DIRECTORY DESTINATION ${MK_PATH_PIDPATH})
 install(DIRECTORY DESTINATION ${MK_PATH_WWW})

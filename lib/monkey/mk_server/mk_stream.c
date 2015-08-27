@@ -167,7 +167,6 @@ int mk_channel_write(struct mk_channel *channel, size_t *count)
 {
     ssize_t bytes = -1;
     struct mk_iov *iov;
-    mk_ptr_t *ptr;
     struct mk_stream *stream = NULL;
 
     if (mk_list_is_empty(&channel->streams) == 0) {
@@ -195,16 +194,6 @@ int mk_channel_write(struct mk_channel *channel, size_t *count)
             if (bytes > 0) {
                 /* Perform the adjustment on mk_iov */
                 mk_iov_consume(iov, bytes);
-            }
-        }
-        else if (stream->type == MK_STREAM_PTR) {
-            MK_TRACE("[CH %i] STREAM_PTR, bytes=%lu",
-                     channel->fd, stream->bytes_total);
-
-            ptr = stream->buffer;
-            bytes = mk_sched_conn_write(channel, ptr->data, ptr->len);
-            if (bytes > 0) {
-                /* FIXME OFFSET */
             }
         }
         else if (stream->type == MK_STREAM_COPYBUF) {

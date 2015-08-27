@@ -235,12 +235,16 @@ static int mk_config_listen_read(struct mk_rconf_section *section)
             flags |= ~MK_CAP_HTTP;
         }
 
-        if (mk_config_key_have(list, "http2")) {
+        if (mk_config_key_have(list, "h2")) {
+            flags |= (MK_CAP_HTTP2 | MK_CAP_SOCK_TLS);
+        }
+
+        if (mk_config_key_have(list, "h2c")) {
             flags |= MK_CAP_HTTP2;
         }
 
-        if (mk_config_key_have(list, "ssl")) {
-            flags |= MK_CAP_SOCK_SSL;
+        if (mk_config_key_have(list, "tls")) {
+            flags |= MK_CAP_SOCK_TLS;
         }
 
         /* register the new listener */

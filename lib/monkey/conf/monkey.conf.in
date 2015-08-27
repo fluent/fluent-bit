@@ -41,7 +41,7 @@
     # --------
     # File where the server guards the process number when starting.
 
-    PidFile @MK_PATH_PIDFILE@/@MK_CONF_PIDFILE@
+    PidFile @MK_PATH_PIDPATH@/@MK_PIDFILE@
 
     # UserDir:
     # --------

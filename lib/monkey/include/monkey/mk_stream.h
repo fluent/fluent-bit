@@ -30,10 +30,9 @@
  */
 #define MK_STREAM_RAW       0  /* raw data from buffer */
 #define MK_STREAM_IOV       1  /* mk_iov struct        */
-#define MK_STREAM_PTR       2  /* mk_ptr               */
-#define MK_STREAM_FILE      3  /* opened file          */
-#define MK_STREAM_SOCKET    4  /* socket, scared..     */
-#define MK_STREAM_COPYBUF   5  /* raw data, copy data into a dynamic buffer */
+#define MK_STREAM_FILE      2  /* opened file          */
+#define MK_STREAM_SOCKET    3  /* socket, scared..     */
+#define MK_STREAM_COPYBUF   4  /* raw data, copy data into a dynamic buffer */
 
 /* Channel return values for write event */
 #define MK_CHANNEL_DONE     1  /* channel consumed all streams */
@@ -123,7 +122,6 @@ static inline void mk_stream_set(struct mk_stream *stream, int type,
                                  void (*cb_bytes_consumed) (struct mk_stream *, long),
                                  void (*cb_exception) (struct mk_stream *, int))
 {
-    mk_ptr_t *ptr;
     struct mk_iov *iov;
 
     /*
@@ -152,11 +150,6 @@ static inline void mk_stream_set(struct mk_stream *stream, int type,
         iov = buffer;
         stream->bytes_total = iov->total_len;
         MK_TRACE("IOV ENQUEUE %i bytes", iov->total_len);
-    }
-    else if (type == MK_STREAM_PTR) {
-        ptr = buffer;
-        stream->bytes_total = ptr->len;
-        MK_TRACE("PTR ENQUEUE %i bytes", stream->bytes_total);
     }
     else if (type == MK_STREAM_COPYBUF) {
         stream->buffer = mk_mem_malloc(size);
@@ -226,9 +219,6 @@ static inline void mk_channel_debug(struct mk_channel *channel)
             break;
         case MK_STREAM_IOV:
             printf("%i) [%p] STREAM IOV    : ", i, stream);
-            break;
-        case MK_STREAM_PTR:
-            printf("%i) [%p] STREAM PTR    : ", i, stream);
             break;
         case MK_STREAM_FILE:
             printf("%i) [%p] STREAM FILE   : ", i, stream);

@@ -171,7 +171,6 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
     event->fd   = timer_fd;
     event->type = MK_EVENT_NOTIFICATION;
     event->mask = MK_EVENT_EMPTY;
-    event->status = MK_EVENT_NONE;
 
     /* register the timer into the epoll queue */
     ret = _mk_event_add(ctx, timer_fd,
@@ -202,12 +201,10 @@ static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
     event->fd   = fd;
     event->type = MK_EVENT_NOTIFICATION;
     event->mask = MK_EVENT_EMPTY;
-    event->status = MK_EVENT_NONE;
 
     ret = _mk_event_add(ctx, fd,
                         MK_EVENT_NOTIFICATION, MK_EVENT_READ, data);
     if (ret != 0) {
-        printf("error creating channel!\n");
         close(fd);
         return ret;
     }

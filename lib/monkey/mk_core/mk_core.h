@@ -20,6 +20,10 @@
 #ifndef MK_CORE_H
 #define MK_CORE_H
 
+#ifdef __cplusplus /* If this is a C++ compiler, use C linkage */
+extern "C" {
+#endif
+
 #include <sys/types.h>
 
 /* Process UID/GID */
@@ -34,5 +38,9 @@ extern gid_t EUID;
 #include "include/mk_string.h"
 #include "include/mk_macros.h"
 #include "include/mk_utils.h"
+
+#ifdef __cplusplus /* If this is a C++ compiler, use C linkage */
+}
+#endif
 
 #endif

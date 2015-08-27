@@ -301,7 +301,7 @@ static int fcgi_encode_request(struct fcgi_handler *handler)
     }
 
     /* HTTPS */
-    if (MK_SCHED_CONN_CAP(handler->cs->conn) & MK_CAP_SOCK_SSL) {
+    if (MK_SCHED_CONN_CAP(handler->cs->conn) & MK_CAP_SOCK_TLS) {
         fcgi_add_param(handler,
                        FCGI_PARAM_CONST("HTTPS"),
                        FCGI_PARAM_CONST("on"));

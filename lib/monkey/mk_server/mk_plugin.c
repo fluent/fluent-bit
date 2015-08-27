@@ -124,6 +124,8 @@ struct mk_plugin *mk_plugin_load(int type, const char *shortname,
     char *path;
     char symbol[64];
     void *handler;
+    struct mk_list *head;
+    struct mk_plugin *tmp;
     struct mk_plugin *plugin = NULL;
     struct mk_plugin_stage *stage;
 
@@ -142,6 +144,19 @@ struct mk_plugin *mk_plugin_load(int type, const char *shortname,
             dlclose(handler);
             return NULL;
         }
+
+        /* Make sure this is not loaded twice (ref #218) */
+        mk_list_foreach(head, &mk_config->plugins) {
+            tmp = mk_list_entry(head, struct mk_plugin, _head);
+            if (tmp->load_type == MK_PLUGIN_STATIC &&
+                strcmp(tmp->name, plugin->name) == 0){
+                mk_warn("Plugin '%s' have been built-in.",
+                        tmp->shortname);
+                dlclose(handler);
+                return NULL;
+            }
+        }
+
         plugin->load_type = MK_PLUGIN_DYNAMIC;
         plugin->handler   = handler;
         plugin->path      = mk_string_dup(path);

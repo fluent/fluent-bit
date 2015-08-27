@@ -205,8 +205,8 @@ struct mk_list *mk_server_listen_init(struct mk_server_config *config)
 
             listener->network = mk_plugin_cap(MK_CAP_SOCK_PLAIN, config);
 
-            if (listen->flags & MK_CAP_SOCK_SSL) {
-                plugin = mk_plugin_cap(MK_CAP_SOCK_SSL, config);
+            if (listen->flags & MK_CAP_SOCK_TLS) {
+                plugin = mk_plugin_cap(MK_CAP_SOCK_TLS, config);
                 if (!plugin) {
                     mk_err("SSL/TLS not supported");
                     exit(EXIT_FAILURE);

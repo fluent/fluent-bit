@@ -69,6 +69,9 @@ for arg in $*; do
 	--logdir*)
 	    cmake_opts+="-DINSTALL_LOGDIR='$optarg' "
 	    ;;
+        --pidpath*)
+            cmake_opts+="-DPID_PATH='$optarg' "
+            ;;
 	--pidfile*)
             cmake_opts+="-DPID_FILE='$optarg' "
 	    ;;
@@ -119,17 +122,13 @@ for arg in $*; do
             cmake_opts+="-DWITH_LINUX_KQUEUE=1 "
 	    ;;
 	--default-port*)
-	    default_port=$optarg
+            cmake_opts+="-DDEFAULT_PORT='$optarg' "
 	    ;;
 	--default-user*)
-	    default_user=$optarg
+            cmake_opts+="-DDEFAULT_USER='$optarg' "
 	    ;;
 	--systemddir*)
-	    if [ $optarg ] ; then
-		systemddir=$optarg
-	    else
-		systemddir=/lib/systemd/system
-	    fi
+            cmake_opts+="-DSYSTEMD_DIR='$optarg' "
 	    ;;
         --no-binary*)
             cmake_opts+="-DWITHOUT_BIN=1 "
@@ -176,7 +175,7 @@ for arg in $*; do
 	    echo "  --prefix=PREFIX         Root prefix directory"
 	    echo "  --sbindir=BINDIR        Binary files (executables)"
 	    echo "  --libdir=LIBDIR         Libraries"
-	    echo "  --incdir=INCDIR         Header install path"
+	    echo "  --includedir=INCDIR     Header install path"
 	    echo "  --sysconfdir=SYSCONFDIR Configuration files"
 	    echo "  --webroot=WEB_ROOT      Path to default web site files"
 	    echo "  --mandir=MANDIR         Manpages - documentation"
