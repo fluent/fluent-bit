@@ -8,6 +8,7 @@ set(src
   flb_network.c
   flb_utils.c
   flb_engine.c
+  flb_io.c
   )
 
 include_directories(

@@ -21,9 +21,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_macros.h>
+#include <fluent-bit/flb_utils.h>
 
 #define protcmp(a, b)  strncasecmp(a, b, strlen(a))
 
@@ -108,8 +110,27 @@ void flb_output_pre_run(struct flb_config *config)
 
     mk_list_foreach(head, &config->outputs) {
         out = mk_list_entry(head, struct flb_output_plugin, _head);
-        if (out->cb_pre_run && out->active == FLB_TRUE) {
-            out->cb_pre_run(out->out_context, config);
+        if (out->active == FLB_TRUE) {
+            /* Check a pre-run callback */
+            if (out->cb_pre_run) {
+                out->cb_pre_run(out->out_context, config);
+            }
+
+            /* Check if the plugin requires an upstream context */
+            if (out->flags & (FLB_OUTPUT_TCP | FLB_OUTPUT_TLS)) {
+                if (!out->host || out->port <= 0) {
+                    flb_error("[output] invalid host:port details");
+                    exit(EXIT_FAILURE);
+                }
+
+                out->upstream = flb_io_upstream_new(out->host,
+                                                    out->port,
+                                                    out->flags);
+                if (!out->upstream) {
+                    flb_error("[output] could not allocate upstream");
+                    exit(EXIT_FAILURE);
+                }
+            }
         }
     }
 }
