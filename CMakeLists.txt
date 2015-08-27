@@ -11,7 +11,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/library")
 # Build Options
 option(WITH_ALL     "Enable all features"         No)
 option(WITH_DEBUG   "Build with debug symbols"    No)
-option(WITH_SSL_TLS "Build with SSL/TLS support"  No)
+option(WITH_TLS     "Build with SSL/TLS support"  No)
 option(WITHOUT_BIN  "Do not build executable"     No)
 
 # Build Plugins
@@ -31,7 +31,7 @@ option(WITH_OUT_STDOUT  "Enable STDOUT output plugin"        Yes)
 # Enable all features
 if(WITH_ALL)
   set(WITH_DEBUG       1)
-  set(WITH_SSL_TLS     1)
+  set(WITH_TLS         1)
   set(WITH_IN_XBEE     1)
   set(WITH_IN_CPU      1)
   set(WITH_IN_MEM      1)
@@ -70,11 +70,11 @@ endif()
 
 # SSL/TLS: add encryption support
 if(WITH_OUT_TD)
-  set(WITH_SSL_TLS ON)
+  set(WITH_TLS ON)
 endif()
 
-if(WITH_SSL_TLS)
-  add_definitions(-DHAVE_SSL_TLS)
+if(WITH_TLS)
+  add_definitions(-DHAVE_TLS)
   option(ENABLE_TESTING  OFF)
   option(ENABLE_PROGRAMS OFF)
   add_subdirectory(lib/mbedtls-2.0.0)
