@@ -75,7 +75,8 @@ endif()
 
 if(WITH_SSL_TLS)
   add_definitions(-DHAVE_SSL_TLS)
-  option(ENABLE_TESTING OFF)
+  option(ENABLE_TESTING  OFF)
+  option(ENABLE_PROGRAMS OFF)
   add_subdirectory(lib/mbedtls-2.0.0)
 endif()
 
