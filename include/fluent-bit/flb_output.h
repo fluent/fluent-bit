@@ -20,11 +20,12 @@
 #ifndef FLB_OUTPUT_H
 #define FLB_OUTPUT_H
 
+#include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_config.h>
 
 /* Output plugin masks */
-#define FLB_OUTPUT_TCP         1  /* it uses TCP   */
-#define FLB_OUTPUT_SSL         2  /* use SSL layer */
+#define FLB_OUTPUT_TCP         1  /* use plain TCP     */
+#define FLB_OUTPUT_TLS         2  /* use TLS/SSL layer */
 #define FLB_OUTPUT_NOPROT      4  /* do not validate protocol info */
 
 /* Internal macros for setup */
@@ -66,6 +67,9 @@ struct flb_output_plugin {
 
     /* Output handler configuration */
     void *out_context;
+
+    /* IO upstream context, if flags & (FLB_OUTPUT_TCP | FLB_OUTPUT TLS)) */
+    struct flb_io_upstream *upstream;
 
     /* Link to global list from flb_config->outputs */
     struct mk_list _head;

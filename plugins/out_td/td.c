@@ -55,56 +55,31 @@ int cb_td_init(struct flb_config *config)
     return 0;
 }
 
-int cb_td_pre_run(void *out_context, struct flb_config *config)
-{
-    int fd;
-    struct flb_out_td_config *ctx = out_context;
-
-    fd = flb_net_tcp_connect(out_td_plugin.host,
-                             out_td_plugin.port);
-    if (fd == -1) {
-        return -1;
-    }
-
-    ctx->fd = fd;
-    return 0;
-}
-
 int cb_td_flush(void *data, size_t bytes, void *out_context,
                 struct flb_config *config)
 {
     int n;
+    int ret;
+    size_t bytes_sent;
     char buf[1024];
-    ssize_t w_bytes;
-    size_t out_len;
+
+    size_t len;
     char *request;
     struct flb_out_td_config *ctx = out_context;
 
-    request = td_http_request(data, bytes, &out_len, ctx, config);
-    w_bytes = write(ctx->fd, request, out_len);
-    if (w_bytes < 0) {
+    request = td_http_request(data, bytes, &len, ctx, config);
+    ret = flb_io_write(out_td_plugin.upstream, request, len, &bytes_sent);
+    if (ret == -1) {
         perror("write");
-        /* FIXME: handle connection timeout */
-        if (errno == EBADF) {
-            close(ctx->fd);
-            ctx->fd = flb_net_tcp_connect(out_td_plugin.host,
-                                          out_td_plugin.port);
-            if (ctx->fd == -1) {
-                flb_error("[TD] could not connect to server");
-                free(request);
-                return -1;
-            }
-
-        }
     }
     free(request);
 
-    n = read(ctx->fd, buf, sizeof(buf) - 1);
+    n = read(out_td_plugin.upstream->fd, buf, sizeof(buf) - 1);
     if (n > 0) {
         buf[n] = '\0';
         flb_debug("[TD] API server response:\n%s", buf);
     }
-    return w_bytes;
+    return bytes_sent;
 }
 
 /* Plugin reference */
@@ -112,9 +87,9 @@ struct flb_output_plugin out_td_plugin = {
     .name           = "td",
     .description    = "Treasure Data",
     .cb_init        = cb_td_init,
-    .cb_pre_run     = cb_td_pre_run,
+    .cb_pre_run     = NULL,
     .cb_flush       = cb_td_flush,
-    .flags          = FLB_OUTPUT_TCP | FLB_OUTPUT_SSL | FLB_OUTPUT_NOPROT,
+    .flags          = FLB_OUTPUT_TCP | FLB_OUTPUT_TLS | FLB_OUTPUT_NOPROT,
     .host           = "api.treasuredata.com",
     .port           = 80,
 };
