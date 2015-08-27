@@ -120,6 +120,12 @@ struct mk_thread_scheduler *mk_thread_open()
     return sch;
 }
 
+/* Initialize co-routine thread internals */
+int mk_thread_init()
+{
+    return pthread_key_create(&mk_thread_scheduler, NULL);
+}
+
 void mk_thread_close(struct mk_thread_scheduler *sch)
 {
     struct mk_thread *dt;
