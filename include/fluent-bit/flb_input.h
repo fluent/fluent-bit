@@ -72,6 +72,9 @@ struct flb_input_plugin {
      */
     int (*cb_ingest) (void *in_context, void *, size_t);
 
+    /* Pre exit */
+    int (*cb_pre_exit) (void *, struct flb_config *);
+
     /* Input handler configuration */
     void *in_context;
 
@@ -113,5 +116,6 @@ int flb_input_set_collector_event(char *name,
                                   struct flb_config *config);
 void flb_input_initialize_all(struct flb_config *config);
 void flb_input_pre_run_all(struct flb_config *config);
+void flb_input_pre_exit_all(struct flb_config *config);
 
 #endif
