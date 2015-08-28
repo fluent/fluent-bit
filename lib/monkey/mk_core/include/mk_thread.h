@@ -21,6 +21,7 @@
 #ifndef MK_THREAD_H
 #define MK_THREAD_H
 
+#include <pthread.h>
 #include "mk_thread_channel.h"
 
 #define MK_THREAD_DEAD       0
