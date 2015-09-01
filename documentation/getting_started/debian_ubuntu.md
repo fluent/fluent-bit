@@ -12,7 +12,7 @@ $ wget -qO - http://apt.fluentbit.io/fluentbit.key | sudo apt-key add -
 
 ## Update your sources lists
 
-On Debian and derivated systems such as Ubuntu, you need to add our APT server entry to your sources lists files, please add the following content at bottom of your __/etc/apt/sources.list__ file:
+On Debian and derivated systems such as Ubuntu, you need to add our APT server entry to your sources lists, please add the following content at bottom of your __/etc/apt/sources.list__ file:
 
 #### Ubuntu 15.04 (vivid)
 
