@@ -1,0 +1,18 @@
+Source: fluentbit
+Section: net
+Priority: optional
+Maintainer: Eduardo Silva <eduardo@treasure-data.com>
+Build-Depends: debhelper (>= 7.0.50~)
+Standards-Version: 3.9.1
+Homepage: http://fluentbit.io
+Vcs-Git: https://github.com/fluent/fluent-bit
+Vcs-Browser: https://github.com/fluent/fluent-bit
+
+Package: fluentbit
+Architecture: any
+Depends: ${misc:Depends}
+Description: Fast data collector for Linux.
+ Fluent Bit is a high performance data collector for Linux and Embedded Linux,
+ it have a strong focus on IoT and related devices. It provides a flexible
+ architecture and plugins to collect and dispatch events to different backends
+ types.
