@@ -6,6 +6,8 @@
 * [Getting Started](getting_started/README.md)
     * [Requirements](getting_started/requirements.md)
     * [Build and Install](getting_started/installation.md)
+    * [Debian/Ubuntu](getting_started/debian_ubuntu.md)
+    * [Raspberry Pi](getting_started/raspberry_pi.md)
 * [Input Plugins](input/README.md)
     * [CPU Usage](input/cpu.md)
     * [Kernel Log Buffer](input/kmsg.md)
