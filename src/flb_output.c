@@ -123,7 +123,8 @@ void flb_output_pre_run(struct flb_config *config)
                     exit(EXIT_FAILURE);
                 }
 
-                out->upstream = flb_io_upstream_new(out->host,
+                out->upstream = flb_io_upstream_new(config,
+                                                    out->host,
                                                     out->port,
                                                     out->flags);
                 if (!out->upstream) {

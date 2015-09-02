@@ -194,6 +194,9 @@ int flb_engine_start(struct flb_config *config)
 
     flb_info("starting engine");
 
+    /* Initialize mk_thread (co-routines) internals */
+    mk_thread_init();
+
     /* Create the event loop and set it in the global configuration */
     evl = mk_event_loop_create(256);
     if (!evl) {
@@ -278,6 +281,10 @@ int flb_engine_start(struct flb_config *config)
             }
             else if (event->type == FLB_ENGINE_EV_CUSTOM) {
                 event->handler(event);
+            }
+            else if (event->type == FLB_ENGINE_EV_UPSTREAM) {
+                printf("upstream: fd=%i!\n", event->fd);
+                exit(1);
             }
         }
     }

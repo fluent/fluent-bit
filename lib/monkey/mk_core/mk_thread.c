@@ -256,6 +256,7 @@ void mk_thread_yield()
     assert(sch);
 
     id = sch->running_id;
+    printf("running id=%i\n", sch->running_id);
     assert(id >= 0);
 
     dt = sch->dt[id];

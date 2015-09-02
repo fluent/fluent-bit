@@ -36,6 +36,7 @@ int flb_net_socket_tcp_fastopen(int sockfd);
 /* Socket handling */
 int flb_net_socket_create(int family, int nonblock);
 int flb_net_tcp_connect(char *host, unsigned long port);
+int flb_net_tcp_fd_connect(int fd, char *host, unsigned long port);
 int flb_net_server(char *port, char *listen_addr);
 int flb_net_bind(int socket_fd, const struct sockaddr *addr,
                  socklen_t addrlen, int backlog);

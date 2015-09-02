@@ -149,6 +149,31 @@ int flb_net_tcp_connect(char *host, unsigned long port)
     return socket_fd;
 }
 
+/* Connect to a TCP socket server and returns the file descriptor */
+int flb_net_tcp_fd_connect(int fd, char *host, unsigned long port)
+{
+    int ret;
+    struct addrinfo hints;
+    struct addrinfo *res;
+    char _port[6];
+
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+
+    snprintf(_port, sizeof(_port), "%lu", port);
+    ret = getaddrinfo(host, _port, &hints, &res);
+    if (ret != 0) {
+        flb_message(FLB_MSG_ERROR, "net_tcp_connect: Can't get addr info");
+        return -1;
+    }
+
+    ret = connect(fd, res->ai_addr, res->ai_addrlen);
+    freeaddrinfo(res);
+
+    return ret;
+}
+
 int flb_net_server(char *port, char *listen_addr)
 {
     int socket_fd = -1;

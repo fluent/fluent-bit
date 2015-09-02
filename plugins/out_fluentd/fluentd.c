@@ -50,21 +50,6 @@ int cb_fluentd_init(struct flb_config *config)
     return 0;
 }
 
-int cb_fluentd_pre_run(void *out_context, struct flb_config *config)
-{
-    int fd;
-    struct flb_out_fluentd_config *ctx = out_context;
-
-    fd = flb_net_tcp_connect(out_fluentd_plugin.host,
-                             out_fluentd_plugin.port);
-    if (fd == -1) {
-        return -1;
-    }
-
-    ctx->fd = fd;
-    return 0;
-}
-
 int cb_fluentd_flush(void *data, size_t bytes, void *out_context,
                      struct flb_config *config)
 {
@@ -72,6 +57,7 @@ int cb_fluentd_flush(void *data, size_t bytes, void *out_context,
     int ret = -1;
     int maps = 0;
     size_t total;
+    size_t bytes_sent;
     char *buf = NULL;
     msgpack_packer   mp_pck;
     msgpack_sbuffer  mp_sbuf;
@@ -131,16 +117,7 @@ int cb_fluentd_flush(void *data, size_t bytes, void *out_context,
     memcpy(buf + mp_sbuf.size, data, bytes);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
-    fd = flb_net_tcp_connect(out_fluentd_plugin.host,
-                             out_fluentd_plugin.port);
-    if (fd == -1) {
-        free(buf);
-        return -1;
-    }
-
-    /* FIXME: plain TCP write */
-    ret = write(fd, buf, total);
-    close(fd);
+    ret = flb_io_write(out_fluentd_plugin.upstream, buf, total, &bytes_sent);
     free(buf);
 
     return ret;
@@ -151,7 +128,7 @@ struct flb_output_plugin out_fluentd_plugin = {
     .name         = "fluentd",
     .description  = "Fluentd log collector",
     .cb_init      = cb_fluentd_init,
-    .cb_pre_run   = cb_fluentd_pre_run,
+    .cb_pre_run   = NULL,
     .cb_flush     = cb_fluentd_flush,
     .flags        = FLB_OUTPUT_TCP,
 };

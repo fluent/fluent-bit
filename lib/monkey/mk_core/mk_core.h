@@ -38,6 +38,7 @@ extern gid_t EUID;
 #include "include/mk_string.h"
 #include "include/mk_macros.h"
 #include "include/mk_utils.h"
+#include "include/mk_thread.h"
 
 #ifdef __cplusplus /* If this is a C++ compiler, use C linkage */
 }
