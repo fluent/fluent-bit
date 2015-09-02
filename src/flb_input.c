@@ -91,8 +91,8 @@ void flb_input_pre_run_all(struct flb_config *config)
     }
 }
 
-/* Invoke all pre-exit input callbacks */
-void flb_input_pre_exit_all(struct flb_config *config)
+/* Invoke all exit input callbacks */
+void flb_input_exit_all(struct flb_config *config)
 {
     struct mk_list *head;
     struct flb_input_plugin *in;
@@ -100,8 +100,8 @@ void flb_input_pre_exit_all(struct flb_config *config)
     mk_list_foreach(head, &config->inputs) {
         in = mk_list_entry(head, struct flb_input_plugin, _head);
         if (in->active == FLB_TRUE) {
-            if (in->cb_pre_exit) {
-                in->cb_pre_exit(in->in_context, config);
+            if (in->cb_exit) {
+                in->cb_exit(in->in_context, config);
             }
         }
     }

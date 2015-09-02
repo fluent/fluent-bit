@@ -136,8 +136,8 @@ void flb_output_pre_run(struct flb_config *config)
     }
 }
 
-/* Invoke pre-exit call for the output plugin */
-void flb_output_pre_exit(struct flb_config *config)
+/* Invoke exit call for the output plugin */
+void flb_output_exit(struct flb_config *config)
 {
     struct mk_list *head;
     struct flb_output_plugin *out;
@@ -145,9 +145,9 @@ void flb_output_pre_exit(struct flb_config *config)
     mk_list_foreach(head, &config->outputs) {
         out = mk_list_entry(head, struct flb_output_plugin, _head);
         if (out->active == FLB_TRUE) {
-            /* Check a pre-exit callback */
-            if (out->cb_pre_exit) {
-                out->cb_pre_exit(out->out_context, config);
+            /* Check a exit callback */
+            if (out->cb_exit) {
+                out->cb_exit(out->out_context, config);
             }
 
             if (out->upstream) {
