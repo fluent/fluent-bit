@@ -273,6 +273,10 @@ int flb_engine_start(struct flb_config *config)
             if (event->type == FLB_ENGINE_EV_CORE) {
                 ret = flb_engine_handle_event(event->fd, event->mask, config);
                 if (ret == -1) {
+                    /* Inputs exit */
+                    flb_input_exit_all(config);
+                    /* Outputs exit */
+                    flb_output_exit(config);
                     return 0;
                 }
             }
