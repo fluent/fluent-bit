@@ -43,7 +43,11 @@ int in_stdin_init(struct flb_config *config)
     if (!ctx) {
         return -1;
     }
-    ctx->msgp_len = 0;
+
+    /* initialize MessagePack buffers */
+    msgpack_sbuffer_init(&ctx->mp_sbuf);
+    msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
+    ctx->buffer_id = 0;
 
     /* Clone the standard input file descriptor */
     fd = dup(STDIN_FILENO);
@@ -76,6 +80,8 @@ int in_stdin_collect(struct flb_config *config, void *in_context)
     int bytes;
     int out_size;
     char *pack;
+    msgpack_unpacked result;
+    size_t start = 0, off = 0;
     struct flb_in_stdin_config *ctx = in_context;
 
     bytes = read(ctx->fd,
@@ -98,24 +104,55 @@ int in_stdin_collect(struct flb_config *config, void *in_context)
     }
     ctx->buf_len = 0;
 
-    memcpy(ctx->msgp + ctx->msgp_len, pack, out_size);
-    ctx->msgp_len += out_size;
-    free(pack);
+    /* Queue the data with time field */
+    msgpack_unpacked_init(&result);
 
+    while (msgpack_unpack_next(&result, pack, out_size, &off)) {
+        if (result.data.type == MSGPACK_OBJECT_MAP) {
+            /* { map => val, map => val, map => val } */
+            msgpack_pack_array(&ctx->mp_pck, 2);
+            msgpack_pack_uint64(&ctx->mp_pck, time(NULL));
+            msgpack_pack_bin_body(&ctx->mp_pck, pack + start, off - start);
+        } else {
+            msgpack_pack_bin_body(&ctx->mp_pck, pack + start, off - start);
+        }
+        ctx->buffer_id++;
+
+        start = off;
+    }
+    msgpack_unpacked_destroy(&result);
+
+    free(pack);
     return 0;
 }
 
 void *in_stdin_flush(void *in_context, int *size)
 {
     char *buf;
+    msgpack_sbuffer *sbuf;
     struct flb_in_stdin_config *ctx = in_context;
 
-    buf = malloc(ctx->msgp_len);
-    memcpy(buf, ctx->msgp, ctx->msgp_len);
-    *size = ctx->msgp_len;
-    ctx->msgp_len = 0;
+    if (ctx->buffer_id == 0)
+        goto fail;
+
+    sbuf = &ctx->mp_sbuf;
+    *size = sbuf->size;
+    buf = malloc(sbuf->size);
+    if (!buf)
+        goto fail;
+
+    /* set a new buffer and re-initialize our MessagePack context */
+    memcpy(buf, sbuf->data, sbuf->size);
+    msgpack_sbuffer_destroy(&ctx->mp_sbuf);
+    msgpack_sbuffer_init(&ctx->mp_sbuf);
+    msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
+
+    ctx->buffer_id = 0;
 
     return buf;
+
+fail:
+    return NULL;
 }
 
 /* Plugin reference */
