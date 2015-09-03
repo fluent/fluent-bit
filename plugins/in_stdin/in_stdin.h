@@ -26,12 +26,13 @@
 
 /* STDIN Input configuration & context */
 struct flb_in_stdin_config {
-    int fd;                     /* stdin file descriptor */
-    int buf_len;                /* read buffer length    */
-    char buf[8192 * 2];         /* read buffer: 16Kb max */
+    int fd;                           /* stdin file descriptor */
+    int buf_len;                      /* read buffer length    */
+    char buf[8192 * 2];               /* read buffer: 16Kb max */
 
-    int  msgp_len;              /* msgpack data length   */
-    char msgp[8192];            /* msgpack static buffer */
+    int buffer_id;
+    struct msgpack_sbuffer mp_sbuf;  /* msgpack sbuffer        */
+    struct msgpack_packer mp_pck;    /* msgpack packer         */
 };
 
 int in_stdin_init(struct flb_config *config);
