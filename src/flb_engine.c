@@ -256,10 +256,7 @@ int flb_engine_start(struct flb_config *config)
             if (event->type == FLB_ENGINE_EV_CORE) {
                 ret = flb_engine_handle_event(event->fd, event->mask, config);
                 if (ret == -1) {
-                    /* Inputs exit */
-                    flb_input_exit_all(config);
-                    /* Outputs exit */
-                    flb_output_exit(config);
+                    flb_engine_shutdown(config);
                     return 0;
                 }
             }
@@ -280,4 +277,45 @@ int flb_engine_start(struct flb_config *config)
             }
         }
     }
+}
+
+/* Release all resources associated to the engine */
+int flb_engine_shutdown(struct flb_config *config)
+{
+    /* cleanup plugins */
+    flb_input_exit_all(config);
+    flb_output_exit(config);
+
+    /* release resources */
+    if (config->ch_event.fd) {
+        close(config->ch_event.fd);
+    }
+
+    /* Pipe */
+    if (config->ch_data[0]) {
+        close(config->ch_data[0]);
+        close(config->ch_data[1]);
+    }
+
+    /* Channel manager */
+    if (config->ch_manager[0] > 0) {
+        close(config->ch_manager[0]);
+        if (config->ch_manager[0] != config->ch_manager[1]) {
+            close(config->ch_manager[1]);
+        }
+    }
+
+    /* Channel notifications */
+    if (config->ch_notif[0] > 0) {
+        close(config->ch_notif[0]);
+        if (config->ch_notif[0] != config->ch_notif[1]) {
+            close(config->ch_notif[1]);
+        }
+    }
+
+    close(config->flush_fd);
+    mk_event_loop_destroy(config->evl);
+    free(config);
+
+    return 0;
 }
