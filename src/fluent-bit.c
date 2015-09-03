@@ -21,6 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <signal.h>
 #include <getopt.h>
 
 #include <mk_core/mk_core.h>
@@ -32,6 +33,8 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_engine.h>
+
+struct flb_config *config;
 
 static void flb_help(int rc, struct flb_config *config)
 {
@@ -78,16 +81,34 @@ static void flb_banner()
     printf("%sCopyright (C) Treasure Data%s\n\n", ANSI_BOLD ANSI_YELLOW, ANSI_RESET);
 }
 
-#include <fluent-bit/flb_pack.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
+
+int flb_signal_handler(int signal)
+{
+    flb_debug("[engine] caught signal %d", signal);
+    switch (signal) {
+    case SIGINT:
+    case SIGQUIT:
+    case SIGHUP:
+    case SIGTERM:
+        flb_engine_shutdown(config);
+        _exit(EXIT_SUCCESS);
+    default:
+        break;
+    }
+}
+
+void flb_signal_init()
+{
+    signal(SIGINT, (__sighandler_t) &flb_signal_handler);
+    signal(SIGQUIT, (__sighandler_t) &flb_signal_handler);
+    signal(SIGHUP, (__sighandler_t) &flb_signal_handler);
+    signal(SIGTERM, (__sighandler_t) &flb_signal_handler);
+}
 
 int main(int argc, char **argv)
 {
     int opt;
     int ret;
-    struct flb_config *config;
 
     /* local variables to handle config options */
     char *cfg_file = NULL;
@@ -104,6 +125,9 @@ int main(int argc, char **argv)
         { "help",    no_argument      , NULL, 'h' },
         { NULL, 0, NULL, 0 }
     };
+
+    /* Signal handler */
+    flb_signal_init();
 
     /* Create configuration context */
     config = flb_config_init();
