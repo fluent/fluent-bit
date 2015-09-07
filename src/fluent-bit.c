@@ -58,6 +58,10 @@ static void flb_help(int rc, struct flb_config *config)
     /* Iterate each supported input */
     mk_list_foreach(head, &config->inputs) {
         in = mk_list_entry(head, struct flb_input_plugin, _head);
+        if (strcmp(in->name, "lib") == 0) {
+            /* useless..., just skip it. */
+            continue;
+        }
         printf("  %-22s%s\n", in->name, in->description);
     }
     printf("\n%sOutputs%s\n", ANSI_BOLD, ANSI_RESET);
@@ -95,6 +99,8 @@ int flb_signal_handler(int signal)
     default:
         break;
     }
+
+    return 0;
 }
 
 void flb_signal_init()
