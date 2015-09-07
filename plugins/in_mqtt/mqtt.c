@@ -102,9 +102,9 @@ int in_mqtt_collect(struct flb_config *config, void *in_context)
     flb_debug("[mqtt] new TCP connection arrived FD=%i", fd);
     conn = mqtt_conn_add(fd, ctx);
     if (!conn) {
-        return 0;
+        return -1;
     }
-    return -1;
+    return 0;
 }
 
 /* Plugin reference */

@@ -161,7 +161,7 @@ static int mqtt_handle_publish(struct mqtt_conn *conn)
     char buf[4];
 
     /*
-     * DUP: we skip dplicated messages.
+     * DUP: we skip duplicated messages.
      * QOS: We process this.
      * Retain: skipped
      */

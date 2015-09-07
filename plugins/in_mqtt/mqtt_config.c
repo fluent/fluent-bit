@@ -31,6 +31,7 @@ struct flb_in_mqtt_config *mqtt_config_init(struct mk_rconf *conf)
     struct flb_in_mqtt_config *config;
 
     config = malloc(sizeof(struct flb_in_mqtt_config));
+    memset(config, '\0', sizeof(struct flb_in_mqtt_config));
 
     if (conf) {
       section = mk_rconf_section_get(conf, "MQTT");
