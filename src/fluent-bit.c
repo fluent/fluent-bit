@@ -17,6 +17,8 @@
  *  limitations under the License.
  */
 
+#define _GNU_SOURCE
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -86,7 +88,7 @@ static void flb_banner()
 }
 
 
-int flb_signal_handler(int signal)
+void flb_signal_handler(int signal)
 {
     flb_debug("[engine] caught signal %d", signal);
     switch (signal) {
@@ -99,16 +101,14 @@ int flb_signal_handler(int signal)
     default:
         break;
     }
-
-    return 0;
 }
 
 void flb_signal_init()
 {
-    signal(SIGINT, (__sighandler_t) &flb_signal_handler);
-    signal(SIGQUIT, (__sighandler_t) &flb_signal_handler);
-    signal(SIGHUP, (__sighandler_t) &flb_signal_handler);
-    signal(SIGTERM, (__sighandler_t) &flb_signal_handler);
+    signal(SIGINT,  &flb_signal_handler);
+    signal(SIGQUIT, &flb_signal_handler);
+    signal(SIGHUP,  &flb_signal_handler);
+    signal(SIGTERM, &flb_signal_handler);
 }
 
 int main(int argc, char **argv)
