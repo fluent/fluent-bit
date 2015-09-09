@@ -20,8 +20,6 @@
 #ifndef FLB_MQTT_CONFIG_H
 #define FLB_MQTT_CONFIG_H
 
-#include <mk_core/mk_core.h>
-
 #include "mqtt.h"
 
 struct flb_in_mqtt_config *mqtt_config_init(struct mk_rconf *conf);

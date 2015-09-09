@@ -20,8 +20,6 @@
 #ifndef FLB_IN_MQTT_H
 #define FLB_IN_MQTT_H
 
-#include <mk_core/mk_core.h>
-
 struct flb_in_mqtt_config {
     int server_fd;               /* TCP server file descriptor  */
 
