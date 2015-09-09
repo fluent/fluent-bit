@@ -79,6 +79,7 @@ if(WITH_TLS)
   add_definitions(-DHAVE_TLS)
   option(ENABLE_TESTING  OFF)
   option(ENABLE_PROGRAMS OFF)
+  option(INSTALL_MBEDTLS_HEADERS OFF)
   add_subdirectory(lib/mbedtls-2.0.0)
 endif()
 
