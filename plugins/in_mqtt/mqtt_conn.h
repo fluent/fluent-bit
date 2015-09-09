@@ -20,8 +20,6 @@
 #ifndef FLB_MQTT_CONN_H
 #define FLB_MQTT_CONN_H
 
-#include <mk_core/mk_core.h>
-
 enum {
     MQTT_NEW        = 1,  /* it's a new connection                */
     MQTT_CONNECTED  = 2,  /* MQTT connection per protocol spec OK */
