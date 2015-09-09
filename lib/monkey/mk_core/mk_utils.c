@@ -39,8 +39,8 @@
  */
 #define MK_MAX_PID_LEN 10
 
-#include "include/mk_macros.h"
-#include "include/mk_utils.h"
+#include <mk_core/mk_macros.h>
+#include <mk_core/mk_utils.h>
 
 #ifdef TRACE
 #include <sys/time.h>
