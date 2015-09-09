@@ -18,7 +18,6 @@
  */
 
 #include <stdlib.h>
-#include <mk_core/mk_core.h>
 #include <fluent-bit/flb_utils.h>
 
 #include "in_xbee_config.h"
