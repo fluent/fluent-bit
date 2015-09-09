@@ -1,3 +1,9 @@
+fluentbit (0.2.0-1) stable; urgency=low
+
+  * Fluent Bit v0.2.0
+
+ -- Eduardo Silva <eduardo@treasure-data.com>  Wed, 09 Sep 2015 10:00:00 -0600
+
 fluentbit (0.1.0-1) stable; urgency=low
 
   * Fluent Bit v0.1.0
