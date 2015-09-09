@@ -21,7 +21,6 @@
 #ifndef FLB_IN_SERIAL_CONFIG_H
 #define FLB_IN_SERIAL_CONFIG_H
 
-#include <mk_core/mk_core.h>
 #include <termios.h>
 #include <msgpack.h>
 
