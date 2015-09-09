@@ -33,7 +33,6 @@ endmacro()
 # Try to register each plugin
 REGISTER_IN_PLUGIN("in_xbee")
 REGISTER_IN_PLUGIN("in_cpu")
-REGISTER_IN_PLUGIN("in_http")
 REGISTER_IN_PLUGIN("in_mem")
 REGISTER_IN_PLUGIN("in_kmsg")
 REGISTER_IN_PLUGIN("in_serial")
@@ -41,7 +40,6 @@ REGISTER_IN_PLUGIN("in_stdin")
 REGISTER_IN_PLUGIN("in_mqtt")
 REGISTER_IN_PLUGIN("in_lib")
 REGISTER_OUT_PLUGIN("out_fluentd")
-REGISTER_OUT_PLUGIN("out_td")
 REGISTER_OUT_PLUGIN("out_stdout")
 
 # Generate the header from the template
