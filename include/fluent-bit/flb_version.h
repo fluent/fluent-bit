@@ -26,7 +26,7 @@
 
 /* Fluent Bit Version */
 #define __FLB__             0
-#define __FLB_MINOR__       2
+#define __FLB_MINOR__       3
 #define __FLB_PATCHLEVEL__  0
 
 
