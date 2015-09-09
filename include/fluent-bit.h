@@ -24,7 +24,7 @@
 extern "C" {
 #endif
 
-#include <mk_core/mk_core.h>
+#include <mk_core.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
