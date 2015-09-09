@@ -22,9 +22,9 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-#include "mk_event.h"
-#include "mk_memory.h"
-#include "mk_utils.h"
+#include <mk_core/mk_event.h>
+#include <mk_core/mk_memory.h>
+#include <mk_core/mk_utils.h>
 
 static inline void *_mk_event_loop_create(int size)
 {

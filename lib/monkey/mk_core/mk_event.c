@@ -24,9 +24,9 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 
-#include "mk_memory.h"
-#include "mk_utils.h"
-#include "mk_event.h"
+#include <mk_core/mk_memory.h>
+#include <mk_core/mk_utils.h>
+#include <mk_core/mk_event.h>
 
 #if defined(__linux__) && !defined(LINUX_KQUEUE)
     #include "mk_event_epoll.c"

@@ -26,9 +26,9 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "mk_macros.h"
-#include "mk_memory.h"
-#include "mk_iov.h"
+#include <mk_core/mk_macros.h>
+#include <mk_core/mk_memory.h>
+#include <mk_core/mk_iov.h>
 
 const mk_ptr_t mk_iov_crlf = mk_ptr_init(MK_IOV_CRLF);
 const mk_ptr_t mk_iov_lf = mk_ptr_init(MK_IOV_LF);

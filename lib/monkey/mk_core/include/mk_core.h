@@ -30,15 +30,15 @@ extern "C" {
 extern gid_t EGID;
 extern gid_t EUID;
 
-#include "include/mk_iov.h"
-#include "include/mk_file.h"
-#include "include/mk_event.h"
-#include "include/mk_rbtree.h"
-#include "include/mk_rconf.h"
-#include "include/mk_string.h"
-#include "include/mk_macros.h"
-#include "include/mk_utils.h"
-#include "include/mk_thread.h"
+#include <mk_core/mk_iov.h>
+#include <mk_core/mk_file.h>
+#include <mk_core/mk_event.h>
+#include <mk_core/mk_rbtree.h>
+#include <mk_core/mk_rconf.h>
+#include <mk_core/mk_string.h>
+#include <mk_core/mk_macros.h>
+#include <mk_core/mk_utils.h>
+#include <mk_core/mk_thread.h>
 
 #ifdef __cplusplus /* If this is a C++ compiler, use C linkage */
 }
