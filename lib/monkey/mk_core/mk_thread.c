@@ -30,8 +30,8 @@
 #include <limits.h>
 #include <pthread.h>
 
-#include "mk_memory.h"
-#include "mk_thread.h"
+#include <mk_core/mk_memory.h>
+#include <mk_core/mk_thread.h>
 
 /*
  * @OBJ_NAME: dthread

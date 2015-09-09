@@ -21,9 +21,9 @@
 #include <stdlib.h>
 #include <assert.h>
 
-#include "mk_memory.h"
-#include "mk_thread.h"
-#include "mk_thread_channel.h"
+#include <mk_core/mk_memory.h>
+#include <mk_core/mk_thread.h>
+#include <mk_core/mk_thread_channel.h>
 
 struct mk_thread_channel_elem {
     void *data;

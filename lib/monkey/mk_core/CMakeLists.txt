@@ -20,3 +20,5 @@ target_link_libraries(mk_core ${CMAKE_THREAD_LIBS_INIT})
 if(NOT WITH_SYSTEM_MALLOC)
   target_link_libraries(mk_core libjemalloc)
 endif()
+
+add_subdirectory(include)

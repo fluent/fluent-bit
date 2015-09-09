@@ -20,6 +20,6 @@
 #ifndef MK_CORE_HELPER_H
 #define MK_CORE_HELPER_H
 
-#include <mk_core/mk_core.h>
+#include <mk_core.h>
 
 #endif
