@@ -21,7 +21,7 @@
 #define FLB_CONFIG_H
 
 #include <time.h>
-#include <mk_core/mk_core.h>
+#include <mk_core.h>
 
 #define FLB_CONFIG_FLUSH_SECS   5
 #define FLB_CONFIG_DEFAULT_TAG  "fluent_bit"

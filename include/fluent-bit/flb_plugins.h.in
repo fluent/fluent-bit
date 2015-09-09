@@ -20,7 +20,7 @@
 #ifndef FLB_PLUGINS_H
 #define FLB_PLUGINS_H
 
-#include <mk_core/mk_core.h>
+#include <mk_core.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_config.h>
