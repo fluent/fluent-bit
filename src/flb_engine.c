@@ -23,7 +23,7 @@
 #include <sys/time.h>
 #include <sys/uio.h>
 
-#include <mk_core/mk_core.h>
+#include <mk_core.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
