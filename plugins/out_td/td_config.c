@@ -18,7 +18,7 @@
  */
 
 #include <stdlib.h>
-#include <mk_core/mk_core.h>
+#include <mk_core.h>
 #include <fluent-bit/flb_utils.h>
 
 #include "td_config.h"
