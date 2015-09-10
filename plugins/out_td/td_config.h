@@ -20,7 +20,7 @@
 #ifndef FLB_TD_CONFIG_H
 #define FLB_TD_CONFIG_H
 
-#include <mk_core/mk_core.h>
+#include <mk_core.h>
 
 struct flb_out_td_config {
     int fd;           /* Socket to destination/backend */
