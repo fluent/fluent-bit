@@ -117,7 +117,7 @@ int cb_fluentd_flush(void *data, size_t bytes, void *out_context,
     memcpy(buf + mp_sbuf.size, data, bytes);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
-    ret = flb_io_write(out_fluentd_plugin.upstream, buf, total, &bytes_sent);
+    ret = flb_io_write(&out_fluentd_plugin, buf, total, &bytes_sent);
     free(buf);
 
     return ret;

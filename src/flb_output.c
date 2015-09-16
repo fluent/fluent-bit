@@ -184,6 +184,7 @@ int flb_output_init(struct flb_config *config)
         out = mk_list_entry(head, struct flb_output_plugin, _head);
         if (out->active == FLB_TRUE) {
             out->cb_init(config);
+            mk_list_init(&out->th_queue);
         }
     }
     return 0;

@@ -22,6 +22,7 @@
 #include <unistd.h>
 #include <sys/time.h>
 #include <sys/uio.h>
+#include <ucontext.h>
 
 #include <mk_core/mk_core.h>
 #include <fluent-bit/flb_macros.h>
@@ -62,9 +63,20 @@ int flb_engine_flush(struct flb_config *config,
                     continue;
                 }
 
+                /* Save the current stack context into the output plugin */
+                getcontext(&config->output->th_context);
+
+                //printf("pre-thread\n");
+                //th = flb_engine_thread_flush(config->output, buf, size, config);
+                //printf("pos-thread: %p\n", th);
+                //flb_engine_thread_run(th);
+                //printf("after thread run\n");
+
                 bytes = config->output->cb_flush(buf, size,
                                                  config->output->out_context,
                                                  config);
+
+                /*
                 if (bytes <= 0) {
                     flb_error("Error flushing data");
                 }
@@ -72,6 +84,7 @@ int flb_engine_flush(struct flb_config *config,
                     flb_info("Flush buf %i bytes", bytes);
                 }
                 free(buf);
+                */
             }
 
             if (in->cb_flush_iov) {

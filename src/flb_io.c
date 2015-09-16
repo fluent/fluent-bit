@@ -42,12 +42,33 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <limits.h>
 
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_engine.h>
+
+#include <ucontext.h>
+
+struct flb_thread {
+    ucontext_t parent;
+    ucontext_t context;
+    int (*function) (struct flb_output_plugin *, void *data, size_t, size_t *);
+    void *data;
+};
+
+#define FLB_THREAD_STACK_SIZE  ((3 * PTHREAD_STACK_MIN) / 2)
+#define FLB_THREAD_STACK(t)    (t + sizeof(struct flb_thread))
+
+int flb_io_thread_run(struct flb_thread *th)
+{
+    ucontext_t main;
+
+    swapcontext(&th->parent, &th->context);
+    printf("after swap\n");
+}
 
 /* Creates a new upstream context */
 struct flb_io_upstream *flb_io_upstream_new(struct flb_config *config,
@@ -61,7 +82,6 @@ struct flb_io_upstream *flb_io_upstream_new(struct flb_config *config,
         perror("malloc");
         return NULL;
     }
-
 
     /* Upon upstream creation, we always try to perform a connection */
     flb_debug("[upstream] connecting to %s:%i", host, port);
@@ -84,13 +104,15 @@ struct flb_io_upstream *flb_io_upstream_new(struct flb_config *config,
     return u;
 }
 
-/* Write data to an upstream connection/server */
-int flb_io_write(struct flb_io_upstream *u, void *data, size_t len, size_t *out_len)
+/* This routine is called from a co-routine thread */
+static int io_write(struct flb_output_plugin *out, void *data,
+                    size_t len, size_t *out_len)
 {
     int ret;
     ssize_t bytes;
+    struct flb_io_upstream *u;
 
- retry:
+    u = out->upstream;
 
     bytes = write(u->fd, data, len);
     if (bytes == -1) {
@@ -103,11 +125,72 @@ int flb_io_write(struct flb_io_upstream *u, void *data, size_t len, size_t *out_
             if (ret == -1) {
                 return -1;
             }
+
+            /* A connection is in progress, we must yield here and try to
+             * write again when the socket is available for that.
+             *
+             * Note: the connect() routine registered a notification request
+             * the event loop.
+             */
+            printf("we should YIELD!\n");
         }
     }
 
     *out_len = bytes;
     return bytes;
+}
+
+static struct flb_thread *flb_io_thread_write(struct flb_output_plugin *out,
+                                              char *buf, int size,
+                                              struct flb_config *config)
+{
+    int ret;
+    void *p;
+    struct flb_thread *th;
+
+    /* Create a thread context and initialize */
+    p = malloc(sizeof(struct flb_thread) + FLB_THREAD_STACK_SIZE);
+    if (!p) {
+        perror("malloc");
+        return NULL;
+    }
+
+    th = p;
+    ret = getcontext(&th->context);
+    if (ret == -1) {
+        perror("getcontext");
+        free(th);
+        return NULL;
+    }
+
+    th->context.uc_stack.ss_sp    = FLB_THREAD_STACK(p);
+    th->context.uc_stack.ss_size  = FLB_THREAD_STACK_SIZE;
+    th->context.uc_stack.ss_flags = 0;
+    th->context.uc_link           = NULL;
+    th->function                  = io_write;
+
+    makecontext(&th->context, (void (*)()) th->function, 4,
+                buf, size, out->out_context, config);
+    return th;
+}
+
+/* Write data to an upstream connection/server */
+int flb_io_write(struct flb_output_plugin *out, void *data,
+                 size_t len, size_t *out_len)
+{
+    int ret;
+    ssize_t bytes;
+    struct flb_thread *th;
+
+    flb_debug("[io] trying...");
+
+    th = flb_io_thread_write(out, data, len, out->out_context);
+    memcpy(&th->parent, &out->th_context, sizeof(ucontext_t));
+
+    /* Switch to the co-routine */
+    flb_io_thread_run(th);
+    printf("post coro\n");
+
 }
 
 int flb_io_connect(struct flb_io_upstream *u)
@@ -155,19 +238,20 @@ int flb_io_connect(struct flb_io_upstream *u)
             close(fd);
             return -1;
         }
-
+        printf("event registered\n");
         /*
          * We are OK, we are going to yield here and wait for the
          * event loop to notify when we can continue.
          */
-        printf("going to yield\n");
-        id = mk_thread_create(NULL, NULL);
-        printf("status = %i\n", mk_thread_status(id));
-        mk_thread_yield();
-        printf("thread id=%i\n", id);
+        //printf("going to yield\n");
+        //id = mk_thread_create(NULL, NULL);
+        //printf("status = %i\n", mk_thread_status(id));
+        //mk_thread_yield();
+        //printf("thread id=%i\n", id);
     }
     else {
     }
 
+    printf("returning 0\n");
     return 0;
 }

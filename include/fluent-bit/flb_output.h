@@ -20,6 +20,8 @@
 #ifndef FLB_OUTPUT_H
 #define FLB_OUTPUT_H
 
+#include <ucontext.h>
+
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_config.h>
 
@@ -70,6 +72,32 @@ struct flb_output_plugin {
 
     /* IO upstream context, if flags & (FLB_OUTPUT_TCP | FLB_OUTPUT TLS)) */
     struct flb_io_upstream *upstream;
+
+    /*
+     * Co-routines specific data
+     * =========================
+     *
+     */
+
+    /*
+     * th_context: when the event loop (flb_engine.c) have to flush some
+     * data through an output plugin, the output plugin 'may' use the
+     * flb_io.c interface which handle all I/O operations with co-routines.
+     *
+     * The core is not aware of that until flb_io_write() is called, so this
+     * variable helps to set the stack context of the caller in the engine. If
+     * for some reason the flb_io_write() needs to yield, it will know how to
+     * return to the event loop.
+     *
+     * This variable is only used when creating the co-routine.
+     */
+    ucontext_t th_context;
+
+    /*
+     * The threads_queue is the head for the linked list that holds co-routines
+     * nodes information that needs to be processed.
+     */
+    struct mk_list th_queue;
 
     /* Link to global list from flb_config->outputs */
     struct mk_list _head;
