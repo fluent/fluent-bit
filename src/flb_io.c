@@ -52,22 +52,18 @@
 
 #include <ucontext.h>
 
-struct flb_thread {
-    ucontext_t parent;
-    ucontext_t context;
-    int (*function) (struct flb_output_plugin *, void *data, size_t, size_t *);
-    void *data;
-};
-
 #define FLB_THREAD_STACK_SIZE  ((3 * PTHREAD_STACK_MIN) / 2)
 #define FLB_THREAD_STACK(t)    (t + sizeof(struct flb_thread))
+
+static inline int flb_io_thread_yield(struct flb_thread *th)
+{
+    swapcontext(&th->context, &th->parent);
+}
 
 int flb_io_thread_run(struct flb_thread *th)
 {
     ucontext_t main;
-
-    swapcontext(&th->parent, &th->context);
-    printf("after swap\n");
+    return swapcontext(&th->parent, &th->context);
 }
 
 /* Creates a new upstream context */
@@ -105,14 +101,17 @@ struct flb_io_upstream *flb_io_upstream_new(struct flb_config *config,
 }
 
 /* This routine is called from a co-routine thread */
-static int io_write(struct flb_output_plugin *out, void *data,
-                    size_t len, size_t *out_len)
+static int io_write(struct flb_thread *th, struct flb_output_plugin *out,
+                    void *data, size_t len, size_t *out_len)
 {
     int ret;
     ssize_t bytes;
+    ssize_t total = 0;
     struct flb_io_upstream *u;
 
     u = out->upstream;
+
+ retry:
 
     bytes = write(u->fd, data, len);
     if (bytes == -1) {
@@ -121,19 +120,31 @@ static int io_write(struct flb_output_plugin *out, void *data,
         }
         else {
             flb_debug("[io] try to reconnect");
-            ret = flb_io_connect(u);
+            ret = flb_io_connect(th, u);
             if (ret == -1) {
                 return -1;
             }
 
-            /* A connection is in progress, we must yield here and try to
-             * write again when the socket is available for that.
+            /*
+             * Reach here means the connection was successful, let's retry
+             * to write(2).
              *
-             * Note: the connect() routine registered a notification request
-             * the event loop.
+             * note: the flb_io_connect() uses asyncronous sockets, register
+             * the file descriptor with the main event loop and yields until
+             * the main event loop returns the control back (resume), doing a
+             * 'retry' it's pretty safe.
              */
-            printf("we should YIELD!\n");
+            goto retry;
         }
+    }
+    else if (bytes == 0) {
+        /* FIXME */
+    }
+
+    total += bytes;
+    if (total == len) {
+        printf("done!\n");
+        exit(1);
     }
 
     *out_len = bytes;
@@ -169,8 +180,8 @@ static struct flb_thread *flb_io_thread_write(struct flb_output_plugin *out,
     th->context.uc_link           = NULL;
     th->function                  = io_write;
 
-    makecontext(&th->context, (void (*)()) th->function, 4,
-                buf, size, out->out_context, config);
+    makecontext(&th->context, (void (*)()) th->function, 5,
+                th, out, buf, size, config);
     return th;
 }
 
@@ -189,15 +200,17 @@ int flb_io_write(struct flb_output_plugin *out, void *data,
 
     /* Switch to the co-routine */
     flb_io_thread_run(th);
-    printf("post coro\n");
+    flb_debug("[io] thread has finished");
 
 }
 
-int flb_io_connect(struct flb_io_upstream *u)
+int flb_io_connect(struct flb_thread *th, struct flb_io_upstream *u)
 {
     int id;
     int fd;
     int ret;
+    int error = 0;
+    socklen_t len = sizeof(error);
 
     if (u->fd > 0) {
         close(u->fd);
@@ -225,11 +238,12 @@ int flb_io_connect(struct flb_io_upstream *u)
 
         u->event.mask = MK_EVENT_EMPTY;
         u->event.status = MK_EVENT_NONE;
-        printf("REG FD=%i\n", fd);
+        u->thread = th;
+
         ret = mk_event_add(u->evl,
                            fd,
-                           FLB_ENGINE_EV_UPSTREAM,
-                           MK_EVENT_WRITE, &u->event);
+                           FLB_ENGINE_EV_THREAD,
+                           MK_EVENT_WRITE, u);
         if (ret == -1) {
             /*
              * If we failed here there no much that we can do, just
@@ -238,20 +252,29 @@ int flb_io_connect(struct flb_io_upstream *u)
             close(fd);
             return -1;
         }
-        printf("event registered\n");
+
         /*
-         * We are OK, we are going to yield here and wait for the
-         * event loop to notify when we can continue.
+         * Return the control to the parent caller, we need to wait for
+         * the event loop to get back to us.
          */
-        //printf("going to yield\n");
-        //id = mk_thread_create(NULL, NULL);
-        //printf("status = %i\n", mk_thread_status(id));
-        //mk_thread_yield();
-        //printf("thread id=%i\n", id);
-    }
-    else {
+        th->status = FLB_IO_CONNECT;
+        flb_io_thread_yield(th);
+
+        /* Check the connection status */
+        if (u->event.mask & MK_EVENT_WRITE) {
+            ret = getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len);
+            if (error != 0) {
+                /* Connection is broken, not much to do here */
+                flb_debug("[io] connection failed");
+                mk_event_del(u->evl, &u->event);
+                return -1;
+            }
+        }
+        else {
+            return -1;
+        }
     }
 
-    printf("returning 0\n");
+    flb_debug("[io] connection OK");
     return 0;
 }

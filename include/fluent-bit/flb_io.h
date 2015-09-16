@@ -20,11 +20,26 @@
 #ifndef FLB_IO_H
 #define FLB_IO_H
 
+#include <ucontext.h>
 #include <fluent-bit/flb_config.h>
+
+/* Coroutine status 'flb_thread.status' */
+#define FLB_IO_CONNECT    0   /* thread issue a connection request */
+#define FLB_IO_WRITE      1   /* thread wants to write() data      */
+
+struct flb_thread {
+    int status;
+    ucontext_t parent;
+    ucontext_t context;
+    int (*function) (struct flb_thread *, struct flb_output_plugin *,
+                     void *data, size_t, size_t *);
+    void *data;
+};
 
 struct flb_io_upstream {
     struct mk_event event;
     struct mk_event_loop *evl;
+    struct flb_thread *thread;
 
     int fd;
     int flags;
@@ -36,6 +51,6 @@ struct flb_io_upstream *flb_io_upstream_new(struct flb_config *config,
                                             char *host, int port, int flags);
 int flb_io_write(struct flb_output_plugin *out, void *data,
                  size_t len, size_t *out_len);
-int flb_io_connect(struct flb_io_upstream *u);
+int flb_io_connect(struct flb_thread *th, struct flb_io_upstream *u);
 
 #endif

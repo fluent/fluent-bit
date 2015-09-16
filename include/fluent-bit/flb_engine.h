@@ -27,7 +27,7 @@
 /* Types of events handled by the Server engine */
 #define FLB_ENGINE_EV_CORE      MK_EVENT_NOTIFICATION
 #define FLB_ENGINE_EV_CUSTOM    MK_EVENT_CUSTOM
-#define FLB_ENGINE_EV_UPSTREAM  1024
+#define FLB_ENGINE_EV_THREAD    1024
 
 /* Engine signals */
 #define FLB_ENGINE_STARTED     0x00110aa0

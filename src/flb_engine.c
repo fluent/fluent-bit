@@ -204,6 +204,8 @@ int flb_engine_start(struct flb_config *config)
     struct mk_event *event;
     struct mk_event_loop *evl;
     struct flb_input_collector *collector;
+    struct flb_io_upstream *u;
+    struct flb_thread *th;
 
     flb_info("starting engine");
 
@@ -295,9 +297,17 @@ int flb_engine_start(struct flb_config *config)
             else if (event->type == FLB_ENGINE_EV_CUSTOM) {
                 event->handler(event);
             }
-            else if (event->type == FLB_ENGINE_EV_UPSTREAM) {
-                printf("upstream: fd=%i!\n", event->fd);
-                exit(1);
+            else if (event->type == FLB_ENGINE_EV_THREAD) {
+                /*
+                 * Check if we have some co-routine associated to this event,
+                 * if so, resume the co-routine
+                 */
+                u = (struct flb_io_upstream *) event;
+                th = u->thread;
+                u->event.mask += 1;
+
+                flb_debug("[engine] resuming thread");
+                flb_io_thread_run(th);
             }
         }
     }
