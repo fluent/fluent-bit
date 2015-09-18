@@ -64,18 +64,16 @@ int flb_engine_flush(struct flb_config *config,
                 }
 
                 /* Save the current stack context into the output plugin */
+                config->output->th_yield = MK_FALSE;
                 getcontext(&config->output->th_context);
 
-                //printf("pre-thread\n");
-                //th = flb_engine_thread_flush(config->output, buf, size, config);
-                //printf("pos-thread: %p\n", th);
-                //flb_engine_thread_run(th);
-                //printf("after thread run\n");
-
+                if (config->output->th_yield == MK_TRUE) {
+                    continue;
+                }
                 bytes = config->output->cb_flush(buf, size,
                                                  config->output->out_context,
                                                  config);
-
+                printf("bytes=%lu\n", bytes);
                 /*
                 if (bytes <= 0) {
                     flb_error("Error flushing data");
@@ -291,8 +289,11 @@ int flb_engine_start(struct flb_config *config)
             if (event->type == FLB_ENGINE_EV_CORE) {
                 ret = flb_engine_handle_event(event->fd, event->mask, config);
                 if (ret == -1) {
+                    printf("engine handle event=%i\n", ret);
                     return 0;
                 }
+                    printf("engine handle event=%i\n", ret);
+
             }
             else if (event->type == FLB_ENGINE_EV_CUSTOM) {
                 event->handler(event);
@@ -307,7 +308,7 @@ int flb_engine_start(struct flb_config *config)
                 u->event.mask += 1;
 
                 flb_debug("[engine] resuming thread");
-                flb_io_thread_run(th);
+                flb_io_thread_resume(th);
             }
         }
     }

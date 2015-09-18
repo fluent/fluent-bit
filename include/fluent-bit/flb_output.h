@@ -93,6 +93,8 @@ struct flb_output_plugin {
      */
     ucontext_t th_context;
 
+    int th_yield;
+
     /*
      * The threads_queue is the head for the linked list that holds co-routines
      * nodes information that needs to be processed.

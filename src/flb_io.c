@@ -55,15 +55,12 @@
 #define FLB_THREAD_STACK_SIZE  ((3 * PTHREAD_STACK_MIN) / 2)
 #define FLB_THREAD_STACK(t)    (t + sizeof(struct flb_thread))
 
-static inline int flb_io_thread_yield(struct flb_thread *th)
+static inline int flb_io_thread_yield(struct flb_output_plugin *out,
+                                      struct flb_thread *th)
 {
-    swapcontext(&th->context, &th->parent);
-}
-
-int flb_io_thread_run(struct flb_thread *th)
-{
-    ucontext_t main;
-    return swapcontext(&th->parent, &th->context);
+    flb_debug("[io] back to parent");
+    out->th_yield = MK_TRUE;
+    return swapcontext(&th->context, &th->caller);
 }
 
 /* Creates a new upstream context */
@@ -101,7 +98,7 @@ struct flb_io_upstream *flb_io_upstream_new(struct flb_config *config,
 }
 
 /* This routine is called from a co-routine thread */
-static int io_write(struct flb_thread *th, struct flb_output_plugin *out,
+int io_write(struct flb_thread *th, struct flb_output_plugin *out,
                     void *data, size_t len, size_t *out_len)
 {
     int ret;
@@ -120,11 +117,12 @@ static int io_write(struct flb_thread *th, struct flb_output_plugin *out,
         }
         else {
             flb_debug("[io] try to reconnect");
-            ret = flb_io_connect(th, u);
+            ret = flb_io_connect(out, th, u);
+            printf("io_write connect()=%i\n", ret);
             if (ret == -1) {
                 return -1;
             }
-
+            printf("going to retry\n");
             /*
              * Reach here means the connection was successful, let's retry
              * to write(2).
@@ -143,17 +141,16 @@ static int io_write(struct flb_thread *th, struct flb_output_plugin *out,
 
     total += bytes;
     if (total == len) {
-        printf("done!\n");
-        exit(1);
+
     }
 
-    *out_len = bytes;
+    *out_len = total;
     return bytes;
 }
 
-static struct flb_thread *flb_io_thread_write(struct flb_output_plugin *out,
-                                              char *buf, int size,
-                                              struct flb_config *config)
+static struct flb_thread *flb_io_thread_write_new(struct flb_output_plugin *out,
+                                                  char *buf, int size,
+                                                  struct flb_config *config)
 {
     int ret;
     void *p;
@@ -177,8 +174,8 @@ static struct flb_thread *flb_io_thread_write(struct flb_output_plugin *out,
     th->context.uc_stack.ss_sp    = FLB_THREAD_STACK(p);
     th->context.uc_stack.ss_size  = FLB_THREAD_STACK_SIZE;
     th->context.uc_stack.ss_flags = 0;
-    th->context.uc_link           = NULL;
-    th->function                  = io_write;
+    th->context.uc_link           = &th->callee;
+    th->function                 = io_write;
 
     makecontext(&th->context, (void (*)()) th->function, 5,
                 th, out, buf, size, config);
@@ -189,22 +186,20 @@ static struct flb_thread *flb_io_thread_write(struct flb_output_plugin *out,
 int flb_io_write(struct flb_output_plugin *out, void *data,
                  size_t len, size_t *out_len)
 {
-    int ret;
-    ssize_t bytes;
     struct flb_thread *th;
 
     flb_debug("[io] trying...");
 
-    th = flb_io_thread_write(out, data, len, out->out_context);
-    memcpy(&th->parent, &out->th_context, sizeof(ucontext_t));
+    th = flb_io_thread_write_new(out, data, len, out->out_context);
+    memcpy(&th->caller, &out->th_context, sizeof(ucontext_t));
 
     /* Switch to the co-routine */
     flb_io_thread_run(th);
     flb_debug("[io] thread has finished");
-
 }
 
-int flb_io_connect(struct flb_thread *th, struct flb_io_upstream *u)
+int flb_io_connect(struct flb_output_plugin *out,
+                   struct flb_thread *th, struct flb_io_upstream *u)
 {
     int id;
     int fd;
@@ -231,7 +226,7 @@ int flb_io_connect(struct flb_thread *th, struct flb_io_upstream *u)
     ret = flb_net_tcp_fd_connect(fd, u->tcp_host, u->tcp_port);
     if (ret == -1) {
         if (errno == EINPROGRESS) {
-            flb_debug("[upstream] connection in progress");
+            flb_debug("[upstream] connection in process");
         }
         else {
         }
@@ -258,7 +253,9 @@ int flb_io_connect(struct flb_thread *th, struct flb_io_upstream *u)
          * the event loop to get back to us.
          */
         th->status = FLB_IO_CONNECT;
-        flb_io_thread_yield(th);
+        flb_io_thread_yield(out, th);
+
+        mk_event_del(u->evl, &u->event);
 
         /* Check the connection status */
         if (u->event.mask & MK_EVENT_WRITE) {
@@ -266,7 +263,6 @@ int flb_io_connect(struct flb_thread *th, struct flb_io_upstream *u)
             if (error != 0) {
                 /* Connection is broken, not much to do here */
                 flb_debug("[io] connection failed");
-                mk_event_del(u->evl, &u->event);
                 return -1;
             }
         }

@@ -22,6 +22,7 @@
 
 #include <ucontext.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_output.h>
 
 /* Coroutine status 'flb_thread.status' */
 #define FLB_IO_CONNECT    0   /* thread issue a connection request */
@@ -29,8 +30,10 @@
 
 struct flb_thread {
     int status;
-    ucontext_t parent;
+    ucontext_t caller;
+    ucontext_t callee;
     ucontext_t context;
+
     int (*function) (struct flb_thread *, struct flb_output_plugin *,
                      void *data, size_t, size_t *);
     void *data;
@@ -47,10 +50,21 @@ struct flb_io_upstream {
     char *tcp_host;
 };
 
+static inline int flb_io_thread_run(struct flb_thread *th)
+{
+    return swapcontext(&th->caller, &th->context);
+}
+
+static inline int flb_io_thread_resume(struct flb_thread *th)
+{
+    return swapcontext(&th->caller, &th->context);
+}
+
 struct flb_io_upstream *flb_io_upstream_new(struct flb_config *config,
                                             char *host, int port, int flags);
 int flb_io_write(struct flb_output_plugin *out, void *data,
                  size_t len, size_t *out_len);
-int flb_io_connect(struct flb_thread *th, struct flb_io_upstream *u);
+int flb_io_connect(struct flb_output_plugin *out,
+                   struct flb_thread *th, struct flb_io_upstream *u);
 
 #endif
