@@ -24,6 +24,7 @@
 
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_thread.h>
 
 /* Output plugin masks */
 #define FLB_OUTPUT_TCP         1  /* use plain TCP     */
@@ -107,6 +108,26 @@ struct flb_output_plugin {
 
 /* Default TCP port for Fluentd */
 #define FLB_OUTPUT_FLUENT_PORT  "12224"
+
+static FLB_INLINE struct flb_thread *flb_output_thread(struct flb_output_plugin *out,
+                                                       struct flb_config *config,
+                                                       void *buf, size_t size)
+{
+    struct flb_thread *th;
+
+    th = flb_thread_new();
+    if (!th) {
+        return NULL;
+    }
+
+    makecontext(&th->context, (void (*)()) out->cb_flush,
+                //5, th, out, buf, size, config);
+                4, buf, size, out->out_context, config);
+
+    pthread_setspecific(flb_thread_key, (void *) th);
+    return th;
+}
+
 
 int flb_output_set(struct flb_config *config, char *output);
 void flb_output_pre_run(struct flb_config *config);

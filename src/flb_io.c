@@ -49,19 +49,7 @@
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_engine.h>
-
-#include <ucontext.h>
-
-#define FLB_THREAD_STACK_SIZE  ((3 * PTHREAD_STACK_MIN) / 2)
-#define FLB_THREAD_STACK(t)    (t + sizeof(struct flb_thread))
-
-static inline int flb_io_thread_yield(struct flb_output_plugin *out,
-                                      struct flb_thread *th)
-{
-    flb_debug("[io] back to parent");
-    out->th_yield = MK_TRUE;
-    return swapcontext(&th->context, &th->caller);
-}
+#include <fluent-bit/flb_thread.h>
 
 /* Creates a new upstream context */
 struct flb_io_upstream *flb_io_upstream_new(struct flb_config *config,
@@ -98,8 +86,8 @@ struct flb_io_upstream *flb_io_upstream_new(struct flb_config *config,
 }
 
 /* This routine is called from a co-routine thread */
-int io_write(struct flb_thread *th, struct flb_output_plugin *out,
-                    void *data, size_t len, size_t *out_len)
+FLB_INLINE int io_write(struct flb_thread *th, struct flb_output_plugin *out,
+                        void *data, size_t len, size_t *out_len)
 {
     int ret;
     ssize_t bytes;
@@ -148,58 +136,32 @@ int io_write(struct flb_thread *th, struct flb_output_plugin *out,
     return bytes;
 }
 
-static struct flb_thread *flb_io_thread_write_new(struct flb_output_plugin *out,
-                                                  char *buf, int size,
-                                                  struct flb_config *config)
-{
-    int ret;
-    void *p;
-    struct flb_thread *th;
-
-    /* Create a thread context and initialize */
-    p = malloc(sizeof(struct flb_thread) + FLB_THREAD_STACK_SIZE);
-    if (!p) {
-        perror("malloc");
-        return NULL;
-    }
-
-    th = p;
-    ret = getcontext(&th->context);
-    if (ret == -1) {
-        perror("getcontext");
-        free(th);
-        return NULL;
-    }
-
-    th->context.uc_stack.ss_sp    = FLB_THREAD_STACK(p);
-    th->context.uc_stack.ss_size  = FLB_THREAD_STACK_SIZE;
-    th->context.uc_stack.ss_flags = 0;
-    th->context.uc_link           = &th->callee;
-    th->function                 = io_write;
-
-    makecontext(&th->context, (void (*)()) th->function, 5,
-                th, out, buf, size, config);
-    return th;
-}
 
 /* Write data to an upstream connection/server */
 int flb_io_write(struct flb_output_plugin *out, void *data,
                  size_t len, size_t *out_len)
 {
+    size_t bytes;
     struct flb_thread *th;
 
     flb_debug("[io] trying...");
 
-    th = flb_io_thread_write_new(out, data, len, out->out_context);
-    memcpy(&th->caller, &out->th_context, sizeof(ucontext_t));
+    th = pthread_getspecific(flb_thread_key);
+    bytes = io_write(th, out, data, len, out_len);
+
+    //th = flb_io_thread_write_new(out, data, len, out->out_context);
+    //memcpy(&th->parent, &out->th_context, sizeof(ucontext_t));
 
     /* Switch to the co-routine */
-    flb_io_thread_run(th);
+    //flb_io_thread_run(th);
+    //flb_io_thread_resume(th);
     flb_debug("[io] thread has finished");
+
+    return 0;
 }
 
-int flb_io_connect(struct flb_output_plugin *out,
-                   struct flb_thread *th, struct flb_io_upstream *u)
+FLB_INLINE int flb_io_connect(struct flb_output_plugin *out,
+                              struct flb_thread *th, struct flb_io_upstream *u)
 {
     int id;
     int fd;
@@ -253,8 +215,9 @@ int flb_io_connect(struct flb_output_plugin *out,
          * the event loop to get back to us.
          */
         th->status = FLB_IO_CONNECT;
-        flb_io_thread_yield(out, th);
-
+        //flb_io_thread_yield(out, th);
+        out->th_yield = MK_TRUE;
+        swapcontext(&th->callee, &th->caller);
         mk_event_del(u->evl, &u->event);
 
         /* Check the connection status */

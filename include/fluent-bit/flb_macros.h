@@ -42,4 +42,6 @@
 #define ANSI_WHITE         "\033[37m"
 #define ANSI_BOLD_WHITE    ANSI_BOLD ANSI_WHITE
 
+#define FLB_INLINE inline __attribute__((always_inline))
+
 #endif

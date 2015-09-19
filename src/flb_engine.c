@@ -64,16 +64,27 @@ int flb_engine_flush(struct flb_config *config,
                 }
 
                 /* Save the current stack context into the output plugin */
-                config->output->th_yield = MK_FALSE;
-                getcontext(&config->output->th_context);
+                struct flb_thread *th;
 
-                if (config->output->th_yield == MK_TRUE) {
-                    continue;
-                }
+                //getcontext(&config->output->th_context);
+                th = flb_output_thread(config->output,
+                                       config,
+                                       buf, size);
+                printf("th=%p\n", th);
+                flb_thread_resume(th);
+
+                config->output->th_yield = MK_FALSE;
+
+                printf("ending\n");
+                exit(1);
+
+                //if (config->output->th_yield == MK_TRUE) {
+                //continue;
+                    //}
                 bytes = config->output->cb_flush(buf, size,
                                                  config->output->out_context,
                                                  config);
-                printf("bytes=%lu\n", bytes);
+                printf("bytes=%d\n", bytes);
                 /*
                 if (bytes <= 0) {
                     flb_error("Error flushing data");
@@ -207,8 +218,7 @@ int flb_engine_start(struct flb_config *config)
 
     flb_info("starting engine");
 
-    /* Initialize mk_thread (co-routines) internals */
-    mk_thread_init();
+    pthread_key_create(&flb_thread_key, NULL);
 
     /* Create the event loop and set it in the global configuration */
     evl = mk_event_loop_create(256);
@@ -308,7 +318,7 @@ int flb_engine_start(struct flb_config *config)
                 u->event.mask += 1;
 
                 flb_debug("[engine] resuming thread");
-                flb_io_thread_resume(th);
+                flb_thread_resume(th);
             }
         }
     }
