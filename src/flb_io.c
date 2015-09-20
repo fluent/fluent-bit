@@ -43,6 +43,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <limits.h>
+#include <assert.h>
 
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_utils.h>
@@ -104,13 +105,13 @@ FLB_INLINE int io_write(struct flb_thread *th, struct flb_output_plugin *out,
             return 0;
         }
         else {
+            /* The connection routine may yield */
             flb_debug("[io] try to reconnect");
             ret = flb_io_connect(out, th, u);
-            printf("io_write connect()=%i\n", ret);
             if (ret == -1) {
                 return -1;
             }
-            printf("going to retry\n");
+            printf("going to retry to write(2)\n");
             /*
              * Reach here means the connection was successful, let's retry
              * to write(2).
@@ -132,6 +133,7 @@ FLB_INLINE int io_write(struct flb_thread *th, struct flb_output_plugin *out,
 
     }
 
+    flb_debug("[io] write=%zd bytes", total);
     *out_len = total;
     return bytes;
 }
@@ -141,23 +143,18 @@ FLB_INLINE int io_write(struct flb_thread *th, struct flb_output_plugin *out,
 int flb_io_write(struct flb_output_plugin *out, void *data,
                  size_t len, size_t *out_len)
 {
+    int ret;
     size_t bytes;
     struct flb_thread *th;
 
     flb_debug("[io] trying...");
 
     th = pthread_getspecific(flb_thread_key);
-    bytes = io_write(th, out, data, len, out_len);
+    ret = io_write(th, out, data, len, out_len);
 
-    //th = flb_io_thread_write_new(out, data, len, out->out_context);
-    //memcpy(&th->parent, &out->th_context, sizeof(ucontext_t));
-
-    /* Switch to the co-routine */
-    //flb_io_thread_run(th);
-    //flb_io_thread_resume(th);
     flb_debug("[io] thread has finished");
 
-    return 0;
+    return bytes;
 }
 
 FLB_INLINE int flb_io_connect(struct flb_output_plugin *out,
@@ -200,7 +197,7 @@ FLB_INLINE int flb_io_connect(struct flb_output_plugin *out,
         ret = mk_event_add(u->evl,
                            fd,
                            FLB_ENGINE_EV_THREAD,
-                           MK_EVENT_WRITE, u);
+                           MK_EVENT_WRITE, &u->event);
         if (ret == -1) {
             /*
              * If we failed here there no much that we can do, just
@@ -214,11 +211,11 @@ FLB_INLINE int flb_io_connect(struct flb_output_plugin *out,
          * Return the control to the parent caller, we need to wait for
          * the event loop to get back to us.
          */
-        th->status = FLB_IO_CONNECT;
-        //flb_io_thread_yield(out, th);
-        out->th_yield = MK_TRUE;
-        swapcontext(&th->callee, &th->caller);
-        mk_event_del(u->evl, &u->event);
+        flb_thread_yield(th);
+
+        /* We got a notification, remove the event registered */
+        ret = mk_event_del(u->evl, &u->event);
+        assert(ret == 0);
 
         /* Check the connection status */
         if (u->event.mask & MK_EVENT_WRITE) {

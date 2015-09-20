@@ -120,10 +120,8 @@ static FLB_INLINE struct flb_thread *flb_output_thread(struct flb_output_plugin 
         return NULL;
     }
 
-    makecontext(&th->context, (void (*)()) out->cb_flush,
-                //5, th, out, buf, size, config);
+    makecontext(&th->callee, (void (*)()) out->cb_flush,
                 4, buf, size, out->out_context, config);
-
     pthread_setspecific(flb_thread_key, (void *) th);
     return th;
 }

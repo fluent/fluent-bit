@@ -44,6 +44,7 @@ int flb_engine_flush(struct flb_config *config,
     struct flb_input_plugin *in;
     struct iovec *iov;
     struct mk_list *head;
+    struct flb_thread *th;
 
     mk_list_foreach(head, &config->inputs) {
         in = mk_list_entry(head, struct flb_input_plugin, _head);
@@ -63,37 +64,13 @@ int flb_engine_flush(struct flb_config *config,
                     continue;
                 }
 
-                /* Save the current stack context into the output plugin */
-                struct flb_thread *th;
 
-                //getcontext(&config->output->th_context);
+                /* Create a thread context for an output plugin call */
                 th = flb_output_thread(config->output,
                                        config,
                                        buf, size);
-                printf("th=%p\n", th);
                 flb_thread_resume(th);
-
-                config->output->th_yield = MK_FALSE;
-
-                printf("ending\n");
-                exit(1);
-
-                //if (config->output->th_yield == MK_TRUE) {
-                //continue;
-                    //}
-                bytes = config->output->cb_flush(buf, size,
-                                                 config->output->out_context,
-                                                 config);
-                printf("bytes=%d\n", bytes);
-                /*
-                if (bytes <= 0) {
-                    flb_error("Error flushing data");
-                }
-                else {
-                    flb_info("Flush buf %i bytes", bytes);
-                }
-                free(buf);
-                */
+                continue;
             }
 
             if (in->cb_flush_iov) {
@@ -299,11 +276,8 @@ int flb_engine_start(struct flb_config *config)
             if (event->type == FLB_ENGINE_EV_CORE) {
                 ret = flb_engine_handle_event(event->fd, event->mask, config);
                 if (ret == -1) {
-                    printf("engine handle event=%i\n", ret);
                     return 0;
                 }
-                    printf("engine handle event=%i\n", ret);
-
             }
             else if (event->type == FLB_ENGINE_EV_CUSTOM) {
                 event->handler(event);
@@ -317,8 +291,9 @@ int flb_engine_start(struct flb_config *config)
                 th = u->thread;
                 u->event.mask += 1;
 
-                flb_debug("[engine] resuming thread");
+                flb_debug("[engine] resuming thread: %i", u->event.fd);
                 flb_thread_resume(th);
+                printf("resume finished!\n");
             }
         }
     }

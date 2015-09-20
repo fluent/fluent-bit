@@ -30,10 +30,9 @@ pthread_key_t flb_thread_key;
 
 struct flb_thread {
     int status;
-    ucontext_t parent;
     ucontext_t caller;
     ucontext_t callee;
-    ucontext_t context;
+    //ucontext_t context;
 
     //int (*start)(void);
     //int (*function) (struct flb_thread *, struct flb_output_plugin *,
@@ -43,8 +42,8 @@ struct flb_thread {
 #define FLB_THREAD_STACK(p)    (((char *) p) + sizeof(struct flb_thread))
 #define FLB_THREAD_STACK_SIZE  ((3 * PTHREAD_STACK_MIN) / 2)
 
-#define flb_thread_resume(th)  swapcontext(&th->caller, &th->context)
-#define flb_thread_yield(th)   swapcontext(&th->context, &th->caller)
+#define flb_thread_resume(th) swapcontext(&th->caller, &th->callee)
+#define flb_thread_yield(th)  swapcontext(&th->callee, &th->caller)
 
 static struct flb_thread *flb_thread_new()
 {
@@ -60,17 +59,17 @@ static struct flb_thread *flb_thread_new()
     }
 
     th = (struct flb_thread *) p;
-    ret = getcontext(&th->context);
+    ret = getcontext(&th->callee);
     if (ret == -1) {
         perror("getcontext");
         free(th);
         return NULL;
     }
 
-    th->context.uc_stack.ss_sp    = FLB_THREAD_STACK(p);
-    th->context.uc_stack.ss_size  = FLB_THREAD_STACK_SIZE;
-    th->context.uc_stack.ss_flags = 0;
-    th->context.uc_link           = &th->caller;
+    th->callee.uc_stack.ss_sp    = FLB_THREAD_STACK(p);
+    th->callee.uc_stack.ss_size  = FLB_THREAD_STACK_SIZE;
+    th->callee.uc_stack.ss_flags = 0;
+    th->callee.uc_link           = &th->caller;
 
     return th;
 }
