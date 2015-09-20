@@ -53,7 +53,7 @@ int cb_fluentd_init(struct flb_config *config)
 int cb_fluentd_flush(void *data, size_t bytes, void *out_context,
                      struct flb_config *config)
 {
-    int fd;
+    int fd = ((struct flb_out_fluentd_config*) out_context)->fd;
     int ret = -1;
     int maps = 0;
     size_t total;
