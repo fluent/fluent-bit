@@ -80,7 +80,7 @@ if(WITH_TLS)
   option(ENABLE_TESTING  OFF)
   option(ENABLE_PROGRAMS OFF)
   option(INSTALL_MBEDTLS_HEADERS OFF)
-  add_subdirectory(lib/mbedtls-2.0.0)
+  add_subdirectory(lib/mbedtls-2.1.1)
 endif()
 
 # Instruct CMake to build the Fluent Bit Core
