@@ -30,8 +30,9 @@
 #define FLB_ENGINE_EV_THREAD    1024
 
 /* Engine signals */
-#define FLB_ENGINE_STARTED     0x00110aa0
-#define FLB_ENGINE_STOP        0xdeadbeed
+#define FLB_ENGINE_STARTED     0x00110aa0  /* Notify Fluent Bit started    */
+#define FLB_ENGINE_STOP        0xdeadbeef  /* Requested to stop Fluent Bit */
+#define FLB_ENGINE_SHUTDOWN    0xdead0000  /* Started shutdown phase       */
 
 int flb_engine_start(struct flb_config *config);
 int flb_engine_flush(struct flb_config *config,

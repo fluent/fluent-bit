@@ -108,7 +108,7 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
     if (val == FLB_ENGINE_STOP) {
         flb_debug("[engine] flush enqueued data");
         flb_engine_flush(config, NULL);
-        return -1;
+        return FLB_ENGINE_STOP;
     }
 
     return 0;
@@ -128,11 +128,13 @@ static inline int flb_engine_handle_event(int fd, int mask,
             flb_engine_flush(config, NULL);
             return 0;
         }
+        else if (config->shutdown_fd == fd) {
+            return FLB_ENGINE_SHUTDOWN;
+        }
         else if (config->ch_manager[0] == fd) {
             ret = flb_engine_manager(fd, config);
-            if (ret == -1) {
-                flb_debug("[manager] stopping Fluent Bit");
-                return -1;
+            if (ret == FLB_ENGINE_STOP) {
+                return FLB_ENGINE_STOP;
             }
         }
 
@@ -249,15 +251,25 @@ int flb_engine_start(struct flb_config *config)
 
     /* Signal that we have started */
     flb_engine_started(config);
-
     while (1) {
         mk_event_wait(evl);
         mk_event_foreach(event, evl) {
             if (event->type == FLB_ENGINE_EV_CORE) {
                 ret = flb_engine_handle_event(event->fd, event->mask, config);
-                if (ret == -1) {
-                    flb_engine_shutdown(config);
-                    return 0;
+                if (ret == FLB_ENGINE_STOP) {
+                    /*
+                     * We are preparing to shutdown, we give a graceful time
+                     * of 5 seconds to process any pending event.
+                     */
+                    event = malloc(sizeof(struct mk_event));
+                    event->mask = MK_EVENT_EMPTY;
+                    event->status = MK_EVENT_NONE;
+                    config->shutdown_fd = mk_event_timeout_create(evl, 5, event);
+                    flb_debug("[engine] service will stop in 5 seconds");
+                }
+                else if (ret == FLB_ENGINE_SHUTDOWN) {
+                    flb_debug("[engine] service stopped");
+                    return flb_engine_shutdown(config);
                 }
             }
             else if (event->type == FLB_ENGINE_EV_CUSTOM) {
