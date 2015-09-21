@@ -29,21 +29,37 @@
 pthread_key_t flb_thread_key;
 
 struct flb_thread {
-    int status;
+    int ended;
     ucontext_t caller;
     ucontext_t callee;
-    //ucontext_t context;
-
-    //int (*start)(void);
-    //int (*function) (struct flb_thread *, struct flb_output_plugin *,
-    //                 void *data, size_t, size_t *);
 };
 
 #define FLB_THREAD_STACK(p)    (((char *) p) + sizeof(struct flb_thread))
 #define FLB_THREAD_STACK_SIZE  ((3 * PTHREAD_STACK_MIN) / 2)
 
-#define flb_thread_resume(th) swapcontext(&th->caller, &th->callee)
-#define flb_thread_yield(th)  swapcontext(&th->callee, &th->caller)
+//#define flb_thread_resume(th) swapcontext(&th->caller, &th->callee)
+
+FLB_INLINE void flb_thread_resume(struct flb_thread *th)
+{
+    /*
+     * Always assume the coroutine will end, the callee can change
+     * this behavior when yielding.
+     */
+    th->ended = MK_TRUE;
+    swapcontext(&th->caller, &th->callee);
+
+    /* It ended, destroy the thread (coroutine) */
+    if (th->ended == MK_TRUE) {
+        flb_debug("[thread %p] ended", th);
+        free(th);
+    }
+}
+
+FLB_INLINE void flb_thread_yield(struct flb_thread *th, int ended)
+{
+    th->ended = ended;
+    swapcontext(&th->callee, &th->caller);
+}
 
 static struct flb_thread *flb_thread_new()
 {
@@ -70,6 +86,9 @@ static struct flb_thread *flb_thread_new()
     th->callee.uc_stack.ss_size  = FLB_THREAD_STACK_SIZE;
     th->callee.uc_stack.ss_flags = 0;
     th->callee.uc_link           = &th->caller;
+    th->ended                    = MK_FALSE;
+
+    flb_debug("[thread %p] created", th);
 
     return th;
 }

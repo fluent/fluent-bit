@@ -112,7 +112,7 @@ void flb_utils_warn_c(const char *msg)
             ANSI_BOLD ANSI_YELLOW, ANSI_RESET, msg);
 }
 
-void flb_message(int type, char *fmt, ...)
+void flb_message(int type, const char *fmt, ...)
 {
     time_t now;
     struct tm *current;

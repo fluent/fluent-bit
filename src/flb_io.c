@@ -129,7 +129,7 @@ FLB_INLINE int io_write(struct flb_thread *th, struct flb_output_plugin *out,
     }
 
     total += bytes;
-    if (total == len) {
+    if (total < len) {
 
     }
 
@@ -211,7 +211,7 @@ FLB_INLINE int flb_io_connect(struct flb_output_plugin *out,
          * Return the control to the parent caller, we need to wait for
          * the event loop to get back to us.
          */
-        flb_thread_yield(th);
+        flb_thread_yield(th, MK_FALSE);
 
         /* We got a notification, remove the event registered */
         ret = mk_event_del(u->evl, &u->event);

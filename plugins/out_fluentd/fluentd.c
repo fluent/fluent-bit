@@ -121,7 +121,7 @@ int cb_fluentd_flush(void *data, size_t bytes, void *out_context,
     free(buf);
 
     /* FIXME: just for debug purposes */
-    flb_debug("[fluentd] ended write(2)");
+    flb_debug("[fluentd] ended write()=%d bytes", bytes_sent);
     return ret;
 }
 
