@@ -52,6 +52,11 @@ int cb_fluentd_init(struct flb_config *config)
 
 int cb_fluentd_pre_run(void *out_context, struct flb_config *config)
 {
+    return connect_fluentd(out_context);
+}
+
+int connect_fluentd(void *out_context)
+{
     int fd;
     struct flb_out_fluentd_config *ctx = out_context;
 
@@ -68,7 +73,7 @@ int cb_fluentd_pre_run(void *out_context, struct flb_config *config)
 int cb_fluentd_flush(void *data, size_t bytes, void *out_context,
                      struct flb_config *config)
 {
-    int fd;
+    int fd = ((struct flb_out_fluentd_config*) out_context)->fd;
     int ret = -1;
     int maps = 0;
     size_t total;
@@ -131,16 +136,29 @@ int cb_fluentd_flush(void *data, size_t bytes, void *out_context,
     memcpy(buf + mp_sbuf.size, data, bytes);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
-    fd = flb_net_tcp_connect(out_fluentd_plugin.host,
-                             out_fluentd_plugin.port);
-    if (fd == -1) {
-        free(buf);
-        return -1;
+    /* If the tcp connection is not successfully created in pre run */
+    if (fd == 0) {
+        if (connect_fluentd(out_context) == -1) {
+          free(buf);
+          return -1;
+        }
+        fd = ((struct flb_out_fluentd_config*) out_context)->fd;
     }
 
     /* FIXME: plain TCP write */
-    ret = write(fd, buf, total);
-    close(fd);
+    ret = send(fd, buf, total, MSG_NOSIGNAL);
+    if (ret == -1) {
+        /* Disconnected from server, trying to re-connect */
+        if (errno == EPIPE) {
+          if (connect_fluentd(out_context) == -1) {
+            free(buf);
+            return -1;
+          }
+
+          fd = ((struct flb_out_fluentd_config*) out_context)->fd;
+          ret = write(fd, buf, total);
+        }
+    }
     free(buf);
 
     return ret;
