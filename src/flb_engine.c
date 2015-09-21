@@ -35,13 +35,9 @@
 int flb_engine_flush(struct flb_config *config,
                      struct flb_input_plugin *in_force)
 {
-    int fd;
     int size;
-    int len;
-    int bytes;
     char *buf;
     struct flb_input_plugin *in;
-    struct iovec *iov;
     struct mk_list *head;
     struct flb_thread *th;
 
@@ -70,21 +66,6 @@ int flb_engine_flush(struct flb_config *config,
                                        buf, size);
                 flb_thread_resume(th);
                 continue;
-            }
-
-            if (in->cb_flush_iov) {
-                iov = in->cb_flush_iov(in->in_context, &len);
-                if (len <= 0) {
-                    goto flush_done;
-                }
-
-                bytes = writev(fd, iov, len);
-                if (bytes <= 0) {
-                    perror("writev");
-                }
-                else {
-                    flb_info("Flush iov %i bytes (%i entries)", bytes, len);
-                }
             }
 
         flush_done:
