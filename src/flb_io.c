@@ -92,26 +92,27 @@ FLB_INLINE int io_write(struct flb_thread *th, struct flb_output_plugin *out,
 {
     int ret;
     ssize_t bytes;
-    ssize_t total = 0;
+    size_t total = 0;
     struct flb_io_upstream *u;
 
     u = out->upstream;
 
  retry:
+    bytes = write(u->fd, data + total, len - total);
+    flb_debug("[io] write(2)=%d", bytes);
 
-    bytes = write(u->fd, data, len);
     if (bytes == -1) {
         if (errno == EAGAIN) {
             return 0;
         }
         else {
             /* The connection routine may yield */
-            flb_debug("[io] try to reconnect");
+            flb_debug("[io] trying to reconnect");
             ret = flb_io_connect(out, th, u);
             if (ret == -1) {
                 return -1;
             }
-            printf("going to retry to write(2)\n");
+
             /*
              * Reach here means the connection was successful, let's retry
              * to write(2).
@@ -124,16 +125,35 @@ FLB_INLINE int io_write(struct flb_thread *th, struct flb_output_plugin *out,
             goto retry;
         }
     }
-    else if (bytes == 0) {
-        /* FIXME */
-    }
 
     total += bytes;
     if (total < len) {
-
+        if (u->event.status == MK_EVENT_NONE) {
+            u->event.mask = MK_EVENT_EMPTY;
+            u->thread = th;
+            ret = mk_event_add(u->evl,
+                               u->fd,
+                               FLB_ENGINE_EV_THREAD,
+                               MK_EVENT_WRITE, &u->event);
+            if (ret == -1) {
+                /*
+                 * If we failed here there no much that we can do, just
+                 * let the caller we failed
+                 */
+                close(u->fd);
+                return -1;
+            }
+        }
+        flb_thread_yield(th, MK_FALSE);
+        goto retry;
     }
 
-    flb_debug("[io] write=%zd bytes", total);
+    if (u->event.status != MK_EVENT_NONE) {
+        /* We got a notification, remove the event registered */
+        ret = mk_event_del(u->evl, &u->event);
+        assert(ret == 0);
+    }
+
     *out_len = total;
     return bytes;
 }
@@ -144,23 +164,21 @@ int flb_io_write(struct flb_output_plugin *out, void *data,
                  size_t len, size_t *out_len)
 {
     int ret;
-    size_t bytes;
     struct flb_thread *th;
 
-    flb_debug("[io] trying...");
+    flb_debug("[io] trying to write %zd bytes");
 
     th = pthread_getspecific(flb_thread_key);
     ret = io_write(th, out, data, len, out_len);
 
     flb_debug("[io] thread has finished");
 
-    return bytes;
+    return ret;
 }
 
 FLB_INLINE int flb_io_connect(struct flb_output_plugin *out,
                               struct flb_thread *th, struct flb_io_upstream *u)
 {
-    int id;
     int fd;
     int ret;
     int error = 0;
@@ -211,7 +229,7 @@ FLB_INLINE int flb_io_connect(struct flb_output_plugin *out,
          * Return the control to the parent caller, we need to wait for
          * the event loop to get back to us.
          */
-        flb_thread_yield(th, MK_FALSE);
+        flb_thread_yield(th, FLB_FALSE);
 
         /* We got a notification, remove the event registered */
         ret = mk_event_del(u->evl, &u->event);
@@ -225,6 +243,9 @@ FLB_INLINE int flb_io_connect(struct flb_output_plugin *out,
                 flb_debug("[io] connection failed");
                 return -1;
             }
+            u->event.mask   = MK_EVENT_EMPTY;
+            u->event.status = MK_EVENT_NONE;
+
         }
         else {
             return -1;

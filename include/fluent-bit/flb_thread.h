@@ -89,7 +89,7 @@ static struct flb_thread *flb_thread_new()
     th->callee.uc_stack.ss_size  = FLB_THREAD_STACK_SIZE;
     th->callee.uc_stack.ss_flags = 0;
     th->callee.uc_link           = &th->caller;
-    th->ended                    = MK_FALSE;
+    th->ended                    = MK_TRUE;
 
     flb_debug("[thread %p] created", th);
 

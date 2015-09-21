@@ -292,7 +292,6 @@ int flb_engine_start(struct flb_config *config)
 
                 flb_debug("[engine] resuming thread: %i", u->event.fd);
                 flb_thread_resume(th);
-                printf("resume finished!\n");
             }
         }
     }
