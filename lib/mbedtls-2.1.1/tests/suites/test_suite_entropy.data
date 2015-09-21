@@ -1,0 +1,41 @@
+Entropy write/update seed file
+entropy_seed_file:"data_files/entropy_seed":0
+
+Entropy write/update seed file
+entropy_seed_file:"no_such_dir/file":MBEDTLS_ERR_ENTROPY_FILE_IO_ERROR
+
+Entropy too many sources
+entropy_too_many_sources:
+
+Entropy output length #1
+entropy_func_len:0:0
+
+Entropy output length #2
+entropy_func_len:1:0
+
+Entropy output length #3
+entropy_func_len:2:0
+
+Entropy output length #4
+entropy_func_len:31:0
+
+Entropy output length #5
+entropy_func_len:65:MBEDTLS_ERR_ENTROPY_SOURCE_FAILED
+
+Entropy failing source
+entropy_source_fail:"data_files/entropy_seed"
+
+Entropy threshold #1
+entropy_threshold:16:2:8
+
+Entropy threshold #2
+entropy_threshold:32:1:32
+
+Entropy thershold #3
+entropy_threshold:16:0:MBEDTLS_ERR_ENTROPY_SOURCE_FAILED
+
+Entropy thershold #4
+entropy_threshold:1024:1:MBEDTLS_ERR_ENTROPY_SOURCE_FAILED
+
+Entropy self test
+entropy_selftest:
