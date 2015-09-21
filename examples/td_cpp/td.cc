@@ -56,7 +56,8 @@ int main(int argc, char **argv)
 
     /* Push some data */
     for (i = 0; i < 100; i++) {
-        n = snprintf(tmp, sizeof(tmp) - 1, "{\"key\": \"val %i\"}", i);
+        n = snprintf(tmp, sizeof(tmp) - 1,
+                     "{\"time\": 1442875576, \"key\": \"val %i\"}", i);
         flb_lib_push(config, tmp, n);
     }
 
