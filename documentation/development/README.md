@@ -89,7 +89,7 @@ Upon successful completion it returns the number of bytes processed, otherwise i
 
 #### 7. flb_lib_stop
 
-This function instruct the Engine to stop processing events and perform a cleanup of the internal data. Before to return it will force a data flush to the output plugin in question to avoid data loss, then the worker thread will be stopped. It prototype is the following:
+This function instruct the Engine to stop processing events and perform a cleanup of the internal data. Before to return it will force a data flush to the output plugin in question to avoid data loss, after 5 seconds the worker thread will be stopped. It prototype is the following:
 
 ```C
 int flb_lib_stop(struct flb_config *config);
