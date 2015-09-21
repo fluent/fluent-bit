@@ -22,7 +22,6 @@
 #include <unistd.h>
 #include <sys/time.h>
 #include <sys/uio.h>
-#include <ucontext.h>
 
 #include <mk_core/mk_core.h>
 #include <fluent-bit/flb_macros.h>

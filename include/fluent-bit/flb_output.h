@@ -20,6 +20,9 @@
 #ifndef FLB_OUTPUT_H
 #define FLB_OUTPUT_H
 
+#ifndef _XOPEN_SOURCE
+#define _XOPEN_SOURCE
+#endif
 #include <ucontext.h>
 
 #include <fluent-bit/flb_io.h>

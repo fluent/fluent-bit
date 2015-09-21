@@ -20,6 +20,11 @@
 #ifndef FLB_THREAD_H
 #define FLB_THREAD_H
 
+#ifndef _XOPEN_SOURCE
+#define _XOPEN_SOURCE
+#endif
+#include <ucontext.h>
+
 #include <limits.h>
 #include <inttypes.h>
 
