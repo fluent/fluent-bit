@@ -68,7 +68,7 @@ int cb_td_flush(void *data, size_t bytes, void *out_context,
     struct flb_out_td_config *ctx = out_context;
 
     request = td_http_request(data, bytes, &len, ctx, config);
-    ret = flb_io_write(out_td_plugin.upstream, request, len, &bytes_sent);
+    ret = flb_io_write(&out_td_plugin, request, len, &bytes_sent);
     if (ret == -1) {
         perror("write");
     }

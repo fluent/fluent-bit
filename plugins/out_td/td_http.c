@@ -39,13 +39,10 @@ static inline void strm_init(z_stream *strm)
 
 static void *gzip_compress(void *data, size_t len, size_t *out_len)
 {
-    int res;
     int flush;
-    int err;
     int status;
     int buf_len;
     void *buf;
-    ssize_t ret = 0;
     z_stream strm;
 
     strm_init(&strm);
