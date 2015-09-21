@@ -95,6 +95,7 @@ int mk_event_add(struct mk_event_loop *loop, int fd,
         return -1;
     }
 
+    event->status = MK_EVENT_REGISTERED;
     return 0;
 }
 
