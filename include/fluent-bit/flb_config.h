@@ -23,6 +23,10 @@
 #include <time.h>
 #include <mk_core.h>
 
+#ifdef HAVE_TLS
+#include <fluent-bit/flb_io_tls.h>
+#endif
+
 #define FLB_CONFIG_FLUSH_SECS   5
 #define FLB_CONFIG_DEFAULT_TAG  "fluent_bit"
 
@@ -57,6 +61,10 @@ struct flb_config {
     struct mk_list outputs;             /* list of output plugins   */
     struct flb_output_plugin *output;   /* output plugin in use     */
     struct mk_event_loop *evl;          /* the event loop (mk_core) */
+
+#ifdef HAVE_TLS
+    struct flb_tls_context *tls_context;
+#endif
 };
 
 int __flb_config_verbose;

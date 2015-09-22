@@ -46,6 +46,10 @@
 #include <assert.h>
 
 #include <fluent-bit/flb_io.h>
+#ifdef HAVE_TLS
+#include <fluent-bit/flb_io_tls.h>
+#endif
+
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_network.h>
@@ -158,7 +162,6 @@ FLB_INLINE int io_write(struct flb_thread *th, struct flb_output_plugin *out,
     return bytes;
 }
 
-
 /* Write data to an upstream connection/server */
 int flb_io_write(struct flb_output_plugin *out, void *data,
                  size_t len, size_t *out_len)
@@ -169,10 +172,17 @@ int flb_io_write(struct flb_output_plugin *out, void *data,
     flb_debug("[io] trying to write %zd bytes");
 
     th = pthread_getspecific(flb_thread_key);
-    ret = io_write(th, out, data, len, out_len);
+
+    if (out->flags & FLB_OUTPUT_TCP) {
+        ret = io_write(th, out, data, len, out_len);
+    }
+#ifdef HAVE_TLS
+    else if (out->flags & FLB_OUTPUT_TLS) {
+        ret = io_tls_write(th, out, data, len, out_len);
+    }
+#endif
 
     flb_debug("[io] thread has finished");
-
     return ret;
 }
 

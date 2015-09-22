@@ -18,6 +18,13 @@ include_directories(
   ${extra_headers}
   )
 
+if(WITH_TLS)
+  set(src
+    ${src}
+    "flb_io_tls.c"
+    )
+endif()
+
 include(CheckSymbolExists)
 check_symbol_exists(accept4 "sys/socket.h" HAVE_ACCEPT4)
 
