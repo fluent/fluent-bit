@@ -85,7 +85,7 @@ int mk_event_add(struct mk_event_loop *loop, int fd,
 #endif
 
     event = (struct mk_event *) data;
-    if (event->status & ~MK_EVENT_NONE) {
+    if (event->status & ~(MK_EVENT_NONE | MK_EVENT_REGISTERED)) {
         return -1;
     }
 
