@@ -50,5 +50,6 @@ int flb_io_connect(struct flb_output_plugin *out,
 
 int flb_io_write(struct flb_output_plugin *out, void *data,
                  size_t len, size_t *out_len);
+ssize_t flb_io_read(struct flb_output_plugin *out, void *buf, size_t len);
 
 #endif

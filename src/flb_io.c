@@ -162,6 +162,15 @@ FLB_INLINE int io_write(struct flb_thread *th, struct flb_output_plugin *out,
     return bytes;
 }
 
+FLB_INLINE ssize_t io_read(struct flb_thread *th, struct flb_output_plugin *out,
+                           void *buf, size_t len)
+{
+    struct flb_io_upstream *u;
+
+    u = out->upstream;
+    return read(u->fd, buf, len);
+}
+
 /* Write data to an upstream connection/server */
 int flb_io_write(struct flb_output_plugin *out, void *data,
                  size_t len, size_t *out_len)
@@ -169,7 +178,7 @@ int flb_io_write(struct flb_output_plugin *out, void *data,
     int ret = -1;
     struct flb_thread *th;
 
-    flb_debug("[io] trying to write %zd bytes");
+    flb_debug("[io] trying to write %zd bytes", len);
 
     th = pthread_getspecific(flb_thread_key);
 
@@ -185,6 +194,28 @@ int flb_io_write(struct flb_output_plugin *out, void *data,
     flb_debug("[io] thread has finished");
     return ret;
 }
+
+ssize_t flb_io_read(struct flb_output_plugin *out, void *buf, size_t len)
+{
+    int ret = -1;
+    struct flb_thread *th;
+
+    flb_debug("[io] trying to read up to %zd bytes", len);
+
+    th = pthread_getspecific(flb_thread_key);
+    if (out->flags & FLB_OUTPUT_TCP) {
+        ret = io_read(th, out, buf, len);
+    }
+#ifdef HAVE_TLS
+    else if (out->flags & FLB_OUTPUT_TLS) {
+        /* FIXME */
+    }
+#endif
+
+    flb_debug("[io] thread has finished");
+    return ret;
+}
+
 
 FLB_INLINE int flb_io_connect(struct flb_output_plugin *out,
                               struct flb_thread *th, struct flb_io_upstream *u)
