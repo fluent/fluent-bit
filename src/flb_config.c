@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_plugins.h>
+#include <fluent-bit/flb_io_tls.h>
 
 struct flb_config *flb_config_init()
 {

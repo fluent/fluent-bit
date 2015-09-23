@@ -18,10 +18,18 @@ include_directories(
   ${extra_headers}
   )
 
+# Fluent Bit have TLS support
 if(WITH_TLS)
+  # Register the TLS interface and functions
   set(src
     ${src}
     "flb_io_tls.c"
+    )
+
+  # Make sure our output targets links to the TLS library
+  set(extra_libs
+    ${extra_libs}
+    "mbedtls"
     )
 endif()
 
@@ -44,8 +52,8 @@ set_target_properties(fluent-bit-static PROPERTIES
   OUTPUT_NAME fluent-bit)
 
 # Link dependencies to Fluent-Bit library core
-target_link_libraries(fluent-bit-shared msgpack mk_core jsmn ${FLB_PLUGINS} ${CMAKE_THREAD_LIBS_INIT} ${CMAKE_DL_LIBS})
-target_link_libraries(fluent-bit-static msgpack mk_core jsmn dl ${FLB_PLUGINS})
+target_link_libraries(fluent-bit-shared msgpack mk_core jsmn ${extra_libs} ${FLB_PLUGINS} ${CMAKE_THREAD_LIBS_INIT} ${CMAKE_DL_LIBS})
+target_link_libraries(fluent-bit-static msgpack mk_core jsmn ${extra_libs} dl ${FLB_PLUGINS})
 
 # Library install routines
 install(TARGETS fluent-bit-shared LIBRARY DESTINATION lib)

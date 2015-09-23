@@ -206,6 +206,13 @@ int flb_output_init(struct flb_config *config)
         if (out->active == FLB_TRUE) {
             out->cb_init(config);
             mk_list_init(&out->th_queue);
+
+#ifdef HAVE_TLS
+            if (out->flags & FLB_OUTPUT_TLS) {
+                out->tls_context = flb_tls_context_new();
+                mk_list_init(&out->tls_sessions);
+            }
+#endif
         }
     }
     return 0;

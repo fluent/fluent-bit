@@ -61,10 +61,6 @@ struct flb_config {
     struct mk_list outputs;             /* list of output plugins   */
     struct flb_output_plugin *output;   /* output plugin in use     */
     struct mk_event_loop *evl;          /* the event loop (mk_core) */
-
-#ifdef HAVE_TLS
-    struct flb_tls_context *tls_context;
-#endif
 };
 
 int __flb_config_verbose;

@@ -17,35 +17,16 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_IO_TLS_H
-#define FLB_IO_TLS_H
+#ifndef FLB_TLS_H
+#define FLB_TLS_H
 
 #ifdef HAVE_TLS
 
-#include <mbedtls/net.h>
-#include <mbedtls/ssl.h>
-#include <mbedtls/entropy.h>
-#include <mbedtls/ctr_drbg.h>
+#include <fluent-bit/flb_thread.h>
+#include <fluent-bit/flb_output.h>
 
-struct flb_tls_context {
-    /* unused */
-    mbedtls_x509_crt cert;
-    mbedtls_x509_crt ca_cert;
-    mbedtls_dhm_context dhm;
-    /* ------ */
-
-    mbedtls_entropy_context entropy;
-    mbedtls_ctr_drbg_context ctr_drbg;
-};
-
-struct flb_tls_session {
-    struct mbedtls_ssl_context ssl;
-    struct mbedtls_ssl_config conf;
-
-    struct flb_tls_context *tls_context;
-};
-
-struct flb_tls_context *flb_tls_context_new();
+int io_tls_write(struct flb_thread *th, struct flb_output_plugin *out,
+                 void *data, size_t len, size_t *out_len);
 
 #endif /* HAVE_TLS */
 #endif

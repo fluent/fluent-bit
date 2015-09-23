@@ -78,6 +78,7 @@ if(ENABLE_ZLIB_SUPPORT)
     endif(ZLIB_FOUND)
 endif(ENABLE_ZLIB_SUPPORT)
 
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
 add_subdirectory(library)
 add_subdirectory(include)
 

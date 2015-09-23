@@ -108,6 +108,11 @@ struct flb_output_plugin {
      */
     struct mk_list th_queue;
 
+#ifdef HAVE_TLS
+    struct flb_tls_context *tls_context;
+    struct mk_list tls_sessions;
+#endif
+
     /* Link to global list from flb_config->outputs */
     struct mk_list _head;
 };

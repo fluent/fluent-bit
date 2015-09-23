@@ -23,31 +23,90 @@
 #include <mbedtls/ctr_drbg.h>
 #include <mbedtls/debug.h>
 
+#include <fluent-bit/flb_io.h>
+#include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
 
-static int tls_config_init(struct flb_config *config)
+#define FLB_TLS_CLIENT   "Fluent Bit"
+
+struct flb_tls_context *flb_tls_context_new()
 {
+    int ret;
     struct flb_tls_context *tls;
 
     tls = malloc(sizeof(struct flb_tls_context));
     if (!tls) {
         perror("malloc");
-        return -1;
-    }
-
-    mbedtls_entropy_init(&tls->entropy);
-}
-
-static struct mbedtls_ssl_context *tls_context_new()
-{
-    struct mbedtls_ssl_context *ssl;
-    struct mbedtls_ssl_config conf;
-
-    ssl = malloc(sizeof(struct mbedtls_ssl_context));
-    if (!ssl) {
         return NULL;
     }
 
-    mbedtls_ssl_init(ssl);
-    mbedtls_ssl_config_init(&conf);
+    mbedtls_entropy_init(&tls->entropy);
+    ret = mbedtls_ctr_drbg_seed(&tls->ctr_drbg,
+                                mbedtls_entropy_func,
+                                &tls->entropy,
+                                (const unsigned char *) FLB_TLS_CLIENT,
+                                sizeof(FLB_TLS_CLIENT) -1);
+    if (ret == -1) {
+        flb_error("[tls] failed drbg_seed");
+        goto error;
+    }
+
+    return tls;
+
+ error:
+    free(tls);
+    return NULL;
+}
+
+struct flb_tls_session *flb_tls_session_new(struct flb_tls_context *tls)
+{
+    int ret;
+    struct flb_tls_session *session;
+
+    session = malloc(sizeof(struct flb_tls_session));
+    if (!session) {
+        return NULL;
+    }
+
+    session->tls_context = tls;
+    mbedtls_ssl_init(&session->ssl);
+    mbedtls_ssl_config_init(&session->conf);
+
+    mbedtls_ssl_conf_rng(&session->conf,
+                         mbedtls_ctr_drbg_random,
+                         &tls->ctr_drbg);
+    mbedtls_ssl_conf_authmode(&session->conf, MBEDTLS_SSL_VERIFY_NONE);
+
+    ret = mbedtls_ssl_setup(&session->ssl, &session->conf);
+    if (ret == -1) {
+        flb_error("[tls] ssl_setup");
+        goto error;
+    }
+
+ error:
+    free(session);
+    return NULL;
+}
+
+int tls_session_destroy(struct flb_tls_session *session)
+{
+    mbedtls_ssl_free(&session->ssl);
+    mbedtls_ssl_config_free(&session->conf);
+
+    return 0;
+}
+
+
+int io_tls_write(struct flb_thread *th, struct flb_output_plugin *out,
+                 void *data, size_t len, size_t *out_len)
+{
+    struct flb_io_upstream *u;
+
+    u = out->upstream;
+    if (!u->tls_session) {
+        u->tls_session = flb_tls_session_new(&out->tls_context);
+
+    }
+    printf("tls write!\n");
+    return 0;
 }

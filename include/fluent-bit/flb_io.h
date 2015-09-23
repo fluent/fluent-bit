@@ -20,7 +20,8 @@
 #ifndef FLB_IO_H
 #define FLB_IO_H
 
-#include <fluent-bit/flb_config.h>
+#include <mk_core.h>
+#include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_output.h>
 
 /* Coroutine status 'flb_thread.status' */
@@ -36,6 +37,10 @@ struct flb_io_upstream {
     int flags;
     int tcp_port;
     char *tcp_host;
+
+#ifdef HAVE_TLS
+    struct tls_session *tls_session;
+#endif
 };
 
 struct flb_io_upstream *flb_io_upstream_new(struct flb_config *config,

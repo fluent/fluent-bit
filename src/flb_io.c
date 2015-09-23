@@ -45,10 +45,10 @@
 #include <limits.h>
 #include <assert.h>
 
+#include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_io.h>
-#ifdef HAVE_TLS
 #include <fluent-bit/flb_io_tls.h>
-#endif
+#include <fluent-bit/flb_tls.h>
 
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_macros.h>
@@ -166,7 +166,7 @@ FLB_INLINE int io_write(struct flb_thread *th, struct flb_output_plugin *out,
 int flb_io_write(struct flb_output_plugin *out, void *data,
                  size_t len, size_t *out_len)
 {
-    int ret;
+    int ret = -1;
     struct flb_thread *th;
 
     flb_debug("[io] trying to write %zd bytes");
