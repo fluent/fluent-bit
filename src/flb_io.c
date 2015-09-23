@@ -208,7 +208,7 @@ ssize_t flb_io_read(struct flb_output_plugin *out, void *buf, size_t len)
     }
 #ifdef HAVE_TLS
     else if (out->flags & FLB_OUTPUT_TLS) {
-        /* FIXME */
+        ret = io_tls_read(th, out, buf, len);
     }
 #endif
 

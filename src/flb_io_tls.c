@@ -144,6 +144,15 @@ int tls_session_destroy(struct flb_tls_session *session)
 }
 
 
+FLB_INLINE ssize_t io_tls_read(struct flb_thread *th, struct flb_output_plugin *out,
+                               void *buf, size_t len)
+{
+    struct flb_io_upstream *u;
+
+    u = out->upstream;
+    return mbedtls_ssl_read(&u->tls_session->ssl, buf, len);
+}
+
 int io_tls_write(struct flb_thread *th, struct flb_output_plugin *out,
                  void *data, size_t len, size_t *out_len)
 {

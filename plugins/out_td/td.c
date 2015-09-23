@@ -74,7 +74,7 @@ int cb_td_flush(void *data, size_t bytes, void *out_context,
     }
     free(request);
 
-    n = read(out_td_plugin.upstream->fd, buf, sizeof(buf) - 1);
+    n = flb_io_read(&out_td_plugin, buf, sizeof(buf) - 1);
     if (n > 0) {
         buf[n] = '\0';
         flb_debug("[TD] API server response:\n%s", buf);
