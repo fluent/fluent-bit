@@ -91,5 +91,5 @@ struct flb_output_plugin out_td_plugin = {
     .cb_flush       = cb_td_flush,
     .flags          = FLB_OUTPUT_TLS | FLB_OUTPUT_NOPROT,
     .host           = "api.treasuredata.com",
-    .port           = 80,
+    .port           = 443,
 };
