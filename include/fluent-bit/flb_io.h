@@ -39,7 +39,7 @@ struct flb_io_upstream {
     char *tcp_host;
 
 #ifdef HAVE_TLS
-    struct tls_session *tls_session;
+    struct flb_tls_session *tls_session;
 #endif
 };
 
