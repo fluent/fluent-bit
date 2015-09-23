@@ -28,5 +28,9 @@
 int io_tls_write(struct flb_thread *th, struct flb_output_plugin *out,
                  void *data, size_t len, size_t *out_len);
 
+int flb_io_tls_connect(struct flb_output_plugin *out,
+                       struct flb_thread *th,
+                       struct flb_io_upstream *u);
+
 #endif /* HAVE_TLS */
 #endif

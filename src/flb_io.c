@@ -152,7 +152,7 @@ FLB_INLINE int io_write(struct flb_thread *th, struct flb_output_plugin *out,
         goto retry;
     }
 
-    if (u->event.status != MK_EVENT_NONE) {
+    if (u->event.status == MK_EVENT_REGISTERED) {
         /* We got a notification, remove the event registered */
         ret = mk_event_del(u->evl, &u->event);
         assert(ret == 0);
