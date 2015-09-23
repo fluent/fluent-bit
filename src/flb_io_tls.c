@@ -137,20 +137,30 @@ struct flb_tls_session *flb_tls_session_new(struct flb_tls_context *tls)
 
 int tls_session_destroy(struct flb_tls_session *session)
 {
-    mbedtls_ssl_free(&session->ssl);
-    mbedtls_ssl_config_free(&session->conf);
+    if (session) {
+        mbedtls_ssl_free(&session->ssl);
+        mbedtls_ssl_config_free(&session->conf);
+        free(session);
+    }
 
     return 0;
 }
 
 
-FLB_INLINE ssize_t io_tls_read(struct flb_thread *th, struct flb_output_plugin *out,
+FLB_INLINE int io_tls_read(struct flb_thread *th, struct flb_output_plugin *out,
                                void *buf, size_t len)
 {
+    int ret;
     struct flb_io_upstream *u;
 
     u = out->upstream;
-    return mbedtls_ssl_read(&u->tls_session->ssl, buf, len);
+    ret = mbedtls_ssl_read(&u->tls_session->ssl, buf, len);
+    if (ret <= 0) {
+        tls_session_destroy(u->tls_session);
+        u->tls_session = NULL;
+    }
+
+    return -1;
 }
 
 int io_tls_write(struct flb_thread *th, struct flb_output_plugin *out,
@@ -192,8 +202,9 @@ int io_tls_write(struct flb_thread *th, struct flb_output_plugin *out,
     else if (ret < 0) {
         /* There was an error transmitting data */
         mk_event_del(u->evl, &u->event);
+        tls_session_destroy(u->tls_session);
+        u->tls_session = NULL;
         return -1;
-
     }
 
     /* Update counter and check if we need to continue writing */
@@ -245,6 +256,12 @@ FLB_INLINE int flb_io_tls_connect(struct flb_output_plugin *out,
             flb_debug("[upstream] connection in process");
         }
         else {
+            close(u->fd);
+            if (u->tls_session) {
+                tls_session_destroy(u->tls_session);
+                u->tls_session = NULL;
+            }
+            return -1;
         }
 
         u->event.mask = MK_EVENT_EMPTY;
@@ -305,6 +322,9 @@ FLB_INLINE int flb_io_tls_connect(struct flb_output_plugin *out,
         }
         else if (ret == MBEDTLS_ERR_SSL_WANT_READ) {
             flag = MK_EVENT_READ;
+        }
+        else {
+
         }
 
         /*
