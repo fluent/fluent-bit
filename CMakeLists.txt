@@ -15,6 +15,7 @@ option(WITH_ALL     "Enable all features"         No)
 option(WITH_DEBUG   "Build with debug symbols"    No)
 option(WITH_TLS     "Build with SSL/TLS support"  No)
 option(WITHOUT_BIN  "Do not build executable"     No)
+option(WITH_STATS   "Enable stats support"       Yes)
 
 # Build Plugins
 option(WITH_IN_XBEE     "Enable XBee input plugin"            No)
@@ -82,6 +83,10 @@ if(WITH_TLS)
   option(INSTALL_MBEDTLS_HEADERS OFF)
   add_subdirectory(lib/mbedtls-2.1.1)
   include_directories(lib/mbedtls-2.1.1/include)
+endif()
+
+if(WITH_STATS)
+  add_definitions(-DHAVE_STATS)
 endif()
 
 # Instruct CMake to build the Fluent Bit Core

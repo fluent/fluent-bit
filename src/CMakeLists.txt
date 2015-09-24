@@ -33,6 +33,13 @@ if(WITH_TLS)
     )
 endif()
 
+if(WITH_STATS)
+  set(src
+    ${src}
+    "flb_stats.c"
+    )
+endif()
+
 include(CheckSymbolExists)
 check_symbol_exists(accept4 "sys/socket.h" HAVE_ACCEPT4)
 
