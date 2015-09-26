@@ -213,6 +213,10 @@ int flb_output_init(struct flb_config *config)
                 mk_list_init(&out->tls_sessions);
             }
 #endif
+
+#ifdef HAVE_STATS
+            memset(&out->stats, '\0', sizeof(struct flb_stats));
+#endif
         }
     }
     return 0;

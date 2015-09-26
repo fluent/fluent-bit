@@ -19,6 +19,54 @@
 
 #ifdef HAVE_STATS
 
+#ifndef FLB_STATS_H
+#define FLB_STATS_H
 
+#include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_config.h>
 
-#endif /* HAVE_STATS */
+#define FLB_STATS_SIZE    60        /* Latest 60 entries */
+
+struct flb_stats_table {
+    time_t  time;
+    ssize_t events;
+    ssize_t bytes;
+};
+
+struct flb_stats {
+    int n;
+    struct flb_stats_table data[FLB_STATS_SIZE];
+};
+
+/* Simple function to update the stats counters */
+static inline void flb_stats_update(ssize_t bytes, ssize_t events,
+                                    struct flb_stats *st)
+{
+    struct flb_stats_table *table;
+
+    table = &st->data[st->n];
+    table->bytes  += bytes;
+    table->events += events;
+}
+
+/*
+ * Reset the stats counter, this function is used everytime the stats
+ * are collected.
+ */
+static inline void flb_stats_reset(struct flb_stats *st)
+{
+    st->n = 0;
+}
+
+int flb_stats_collect(struct flb_config *config);
+int flb_stats_register(struct mk_event_loop *evl, struct flb_config *config);
+
+#endif /* FLB_STATS_H */
+#else
+
+/* A dummy define to avoid some macros conditions into the core */
+#define flb_stats_update(a, b, c) do {} while(0)
+#define flb_stats_reset(a) do {} while(0)
+#define flb_stats_register(a, b) do{} while(0)
+
+#endif /* HAVE_STATS  */

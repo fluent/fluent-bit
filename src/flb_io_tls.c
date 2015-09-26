@@ -27,6 +27,7 @@
 
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_tls.h>
+#include <fluent-bit/flb_stats.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_network.h>
@@ -206,6 +207,9 @@ int io_tls_write(struct flb_thread *th, struct flb_output_plugin *out,
         u->tls_session = NULL;
         return -1;
     }
+
+    /* Update statistics */
+    flb_stats_update(ret, 0, &out->stats);
 
     /* Update counter and check if we need to continue writing */
     total += ret;

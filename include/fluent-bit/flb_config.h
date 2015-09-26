@@ -37,6 +37,10 @@ struct flb_config {
     int flush;          /* Flush timeout                  */
     int flush_fd;       /* Timer FD associated to flush   */
     int shutdown_fd;    /* Shutdown FD, 5 seconds         */
+#ifdef HAVE_STATS
+    int stats_fd;       /* Stats FD, 1 second             */
+#endif
+
     int verbose;        /* Verbose mode (default OFF)     */
     time_t init_time;   /* Time when Fluent Bit started   */
 

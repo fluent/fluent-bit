@@ -26,6 +26,7 @@
 #include <ucontext.h>
 
 #include <fluent-bit/flb_io.h>
+#include <fluent-bit/flb_stats.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_thread.h>
 
@@ -111,6 +112,10 @@ struct flb_output_plugin {
 #ifdef HAVE_TLS
     struct flb_tls_context *tls_context;
     struct mk_list tls_sessions;
+#endif
+
+#ifdef HAVE_STATS
+    struct flb_stats stats;
 #endif
 
     /* Link to global list from flb_config->outputs */

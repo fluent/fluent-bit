@@ -130,6 +130,10 @@ FLB_INLINE int io_write(struct flb_thread *th, struct flb_output_plugin *out,
         }
     }
 
+    /* Update statistics */
+    flb_stats_update(bytes, 0, &out->stats);
+
+    /* Update counters */
     total += bytes;
     if (total < len) {
         if (u->event.status == MK_EVENT_NONE) {

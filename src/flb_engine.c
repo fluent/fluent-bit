@@ -110,12 +110,19 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
         flb_engine_flush(config, NULL);
         return FLB_ENGINE_STOP;
     }
+#ifdef HAVE_STATS
+    else if (val == FLB_ENGINE_STATS) {
+        flb_debug("[engine] collect stats");
+        flb_stats_collect(config);
+        return FLB_ENGINE_STATS;
+    }
+#endif
 
     return 0;
 }
 
-static inline int flb_engine_handle_event(int fd, int mask,
-                                          struct flb_config *config)
+static FLB_INLINE int flb_engine_handle_event(int fd, int mask,
+                                              struct flb_config *config)
 {
     int ret;
     struct mk_list *head;
@@ -131,6 +138,12 @@ static inline int flb_engine_handle_event(int fd, int mask,
         else if (config->shutdown_fd == fd) {
             return FLB_ENGINE_SHUTDOWN;
         }
+#ifdef HAVE_STATS
+        else if (config->stats_fd == fd) {
+            consume_byte(fd);
+            return FLB_ENGINE_STATS;
+        }
+#endif
         else if (config->ch_manager[0] == fd) {
             ret = flb_engine_manager(fd, config);
             if (ret == FLB_ENGINE_STOP) {
@@ -210,15 +223,19 @@ int flb_engine_start(struct flb_config *config)
     flb_output_init(config);
     flb_output_pre_run(config);
 
+
     /* Create and register the timer fd for flush procedure */
     event = malloc(sizeof(struct mk_event));
     event->mask = MK_EVENT_EMPTY;
     event->status = MK_EVENT_NONE;
-    config->flush_fd = mk_event_timeout_create(evl, config->flush, event);
 
+    config->flush_fd = mk_event_timeout_create(evl, config->flush, event);
     if (config->flush_fd == -1) {
         flb_utils_error(FLB_ERR_CFG_FLUSH_CREATE);
     }
+
+    /* Register statistics handler (just if HAVE_STATS is enabled */
+    flb_stats_register(evl, config);
 
     /* For each Collector, register the event into the main loop */
     mk_list_foreach(head, &config->collectors) {
@@ -271,6 +288,11 @@ int flb_engine_start(struct flb_config *config)
                     flb_debug("[engine] service stopped");
                     return flb_engine_shutdown(config);
                 }
+#ifdef HAVE_STATS
+                else if (ret == FLB_ENGINE_STATS) {
+                    flb_stats_collect(config);
+                }
+#endif
             }
             else if (event->type == FLB_ENGINE_EV_CUSTOM) {
                 event->handler(event);
