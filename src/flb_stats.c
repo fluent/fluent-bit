@@ -50,7 +50,7 @@ int flb_stats_collect(struct flb_config *config)
 
         /* Update index and counters */
         stats = &out->stats;
-        if (stats->n == FLB_STATS_SIZE) {
+        if (stats->n + 1 == FLB_STATS_SIZE) {
             stats->n = 0;
         }
         else {
