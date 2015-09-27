@@ -60,7 +60,7 @@
 struct flb_io_upstream *flb_io_upstream_new(struct flb_config *config,
                                             char *host, int port, int flags)
 {
-    int fd;
+    int fd = -1;
     struct flb_io_upstream *u;
 
     u = malloc(sizeof(struct flb_io_upstream));
@@ -71,7 +71,7 @@ struct flb_io_upstream *flb_io_upstream_new(struct flb_config *config,
 
     /* Upon upstream creation, we always try to perform a connection */
     flb_debug("[upstream] connecting to %s:%i", host, port);
-    fd = flb_net_tcp_connect(host, port);
+    //fd = flb_net_tcp_connect(host, port);
     if (fd == -1) {
         flb_warn("[upstream] could not connect to %s:%i", host, port);
     }

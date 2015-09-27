@@ -48,14 +48,13 @@ int flb_stats_collect(struct flb_config *config)
             continue;
         }
 
-        /* Update index and counters */
         stats = &out->stats;
-        if (stats->n + 1 == FLB_STATS_SIZE) {
+        stats->n++;
+        if (stats->n == FLB_STATS_SIZE) {
             stats->n = 0;
         }
-        else {
-            stats->n++;
-        }
+
+        /* Update index and counters */
         stats->data[stats->n].time   = time(NULL);
         stats->data[stats->n].bytes  = 0;
         stats->data[stats->n].events = 0;
@@ -64,12 +63,13 @@ int flb_stats_collect(struct flb_config *config)
         char s[256];
         struct tm t;
 
-        for(i = 0; i < stats->n; i++) {
+        for (i = 0; i < stats->n; i++) {
             localtime_r(&stats->data[i].time, &t);
             strftime(s, sizeof(s) - 1, "%H:%M:%S", &t);
             printf("%i) %s -> bytes=%zd\n",
                    i, s, stats->data[i].bytes);
         }
+
 
     }
 }
