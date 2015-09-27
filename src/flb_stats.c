@@ -37,9 +37,12 @@
 /* Collect statistics from different components */
 int flb_stats_collect(struct flb_config *config)
 {
+    time_t t;
     struct mk_list *head;
     struct flb_output_plugin *out;
     struct flb_stats *stats;
+
+    t = time(NULL);
 
     /* Active output plugins */
     mk_list_foreach(head, &config->outputs) {
@@ -54,11 +57,11 @@ int flb_stats_collect(struct flb_config *config)
             stats->n = 0;
         }
 
-        /* Update index and counters */
-        stats->data[stats->n].time   = time(NULL);
-        stats->data[stats->n].bytes  = 0;
-        stats->data[stats->n].events = 0;
+        stats->data[stats->n].time    = t;
+        stats->data[stats->n].bytes   = 0;
+        stats->data[stats->n].events  = 0;
 
+        /* FIXME: Dummy dump, needs to be removed later */
         int i;
         char s[256];
         struct tm t;

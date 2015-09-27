@@ -216,12 +216,8 @@ int flb_output_init(struct flb_config *config)
 
 #ifdef HAVE_STATS
             struct flb_stats *stats;
-
             stats = &out->stats;
-            stats->n = 0;
-            stats->data[0].time   = time(NULL);
-            stats->data[0].bytes  = 0;
-            stats->data[0].events = 0;
+            stats->n = -1;
 #endif
         }
     }
