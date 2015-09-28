@@ -113,7 +113,7 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
 #ifdef HAVE_STATS
     else if (val == FLB_ENGINE_STATS) {
         flb_debug("[engine] collect stats");
-        flb_stats_collect(config);
+        //flb_stats_collect(config);
         return FLB_ENGINE_STATS;
     }
 #endif

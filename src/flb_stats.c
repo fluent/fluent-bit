@@ -42,6 +42,51 @@
 #define SDP(s)       &s->data[s->n_data]
 #define SDP_TIME(s)  *SDP(s).time
 
+static FLB_INLINE int consume_byte(int fd)
+{
+    int ret;
+    uint64_t val;
+
+    /* We need to consume the byte */
+    ret = read(fd, &val, sizeof(val));
+    if (ret <= 0) {
+        perror("read");
+        return -1;
+    }
+
+    return 0;
+}
+
+static int stats_userver_timer(struct flb_stats *stats)
+{
+    int fd;
+    struct mk_event *event;
+    struct flb_stats_userver_t *timer;
+    struct flb_stats_userver *userver;
+
+    userver = stats->userver;
+    timer = malloc(sizeof(struct flb_stats_userver_t));
+    if (!timer) {
+        return -1;
+    }
+
+    /* Create a timeout caller every one second */
+    event = &timer->event;
+    event->mask   = MK_EVENT_EMPTY;
+    event->status = MK_EVENT_NONE;
+    fd = mk_event_timeout_create(stats->evl, 5, event);
+    if (fd == -1) {
+        flb_error("[stats_usrv] could not create timeout handler");
+        free(timer);
+        return -1;
+    }
+
+    timer->fd = fd;
+    userver->timer = timer;
+
+    return 0;
+}
+
 static int stats_unix_server(char *path)
 {
     int n, ret;
@@ -199,6 +244,13 @@ static void stats_userver_remove(struct flb_stats_userver_c *uc,
     free(uc);
 }
 
+static int flb_stats_userver_deliver(struct flb_stats *stats)
+{
+    //struct mk_list *head;
+    //struct flb_stats_userver_c *client;
+
+}
+
 /* Create and register unix socket server */
 static int flb_stats_userver(struct flb_stats *stats)
 {
@@ -249,6 +301,7 @@ static void stats_worker(void *data)
 
     /* Initialize the unix socket server */
     flb_stats_userver(stats);
+    stats_userver_timer(stats);
 
     while (1) {
         mk_event_wait(stats->evl);
@@ -268,6 +321,15 @@ static void stats_worker(void *data)
                 /* userver client disconnected */
                 stats_userver_remove((struct flb_stats_userver_c *) event,
                                      stats);
+            }
+            else if (event->type == MK_EVENT_NOTIFICATION) {
+                /*
+                 * The only notification that we have registered is to
+                 * collect the statistic and write them to the userver
+                 * clients.
+                 */
+                consume_byte(event->fd);
+                flb_stats_userver_deliver(stats);
             }
         }
     }
@@ -427,43 +489,4 @@ int flb_stats_init(struct flb_config *config)
     stats->worker_tid = mk_utils_worker_spawn(stats_worker, stats);
 
     return 0;
-}
-
-/* Collect statistics from different components */
-int flb_stats_collect(struct flb_config *config)
-{
-    time_t t;
-    struct mk_list *head;
-    struct flb_output_plugin *out;
-    struct flb_stats *stats;
-
-    t = time(NULL);
-
-    /* Active output plugins */
-    mk_list_foreach(head, &config->outputs) {
-        out = mk_list_entry(head, struct flb_output_plugin, _head);
-        if (out->active == FLB_FALSE) {
-            continue;
-        }
-    }
-}
-
-int flb_stats_register(struct mk_event_loop *evl, struct flb_config *config)
-{
-    int fd;
-    struct mk_event *event;
-
-    event = malloc(sizeof(struct mk_event));
-    event->mask = MK_EVENT_EMPTY;
-    event->status = MK_EVENT_NONE;
-
-    /* Create a timeout caller every one second */
-    fd = mk_event_timeout_create(evl, 1, event);
-    if (fd == -1) {
-        flb_utils_error(FLB_ERR_CFG_FLUSH_CREATE);
-        return -1;
-    }
-
-    config->stats_fd = fd;
-    return fd;
 }

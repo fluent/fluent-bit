@@ -30,8 +30,9 @@
 
 #define FLB_STATS_USERVER        1  /* Unix socket server        */
 #define FLB_STATS_USERVER_C      2  /* Unix socket server client */
-#define FLB_STATS_INPUT_PLUGIN   3  /* Input plugin type         */
-#define FLB_STATS_OUTPUT_PLUGIN  4  /* Output plugin type        */
+#define FLB_STATS_USERVER_PRINT  3  /* Write statistics          */
+#define FLB_STATS_INPUT_PLUGIN   4  /* Input plugin type         */
+#define FLB_STATS_OUTPUT_PLUGIN  5  /* Output plugin type        */
 
 #define FLB_STATS_USERVER_PATH   "/tmp/fluentbit.sock"
 
@@ -45,18 +46,30 @@
  *                             context;
  *
  * struct flb_stats_userver_c: represents a client connected to our userver.
+ *
+ * struct flb_stats_userver_t: the timer context to deliver data to clients.
  */
 
+/* Unix server client context */
 struct flb_stats_userver_c {
     struct mk_event event;
     int fd;
     struct mk_list _head;
 };
 
+/* Unix server timer: used to write data to clients */
+struct flb_stats_userver_t {
+    struct mk_event event;
+    int fd;
+};
+
+/* Unix server context */
 struct flb_stats_userver {
     struct mk_event event;
     int fd;
+
     struct mk_list clients;
+    struct flb_stats_userver_t *timer;
 };
 
 struct flb_stats_datapoint {
@@ -89,9 +102,10 @@ struct flb_stats_out_plugin {
 struct flb_stats {
     struct mk_event_loop *evl;
     struct flb_config *config;
-    struct flb_stats_userver *userver;
-
     pthread_t worker_tid;
+
+    /* Unix server */
+    struct flb_stats_userver *userver;
 
     /* References to components that can deliver statistics */
     struct mk_list in_plugins;
