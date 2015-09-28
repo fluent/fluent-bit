@@ -42,7 +42,7 @@
 #define SDP(s)       &s->data[s->n_data]
 #define SDP_TIME(s)  *SDP(s).time
 
-static FLB_INLINE int flb_stats_server(char *path)
+static int stats_unix_server(char *path)
 {
     int n, ret;
     int buf_len;
@@ -60,10 +60,11 @@ static FLB_INLINE int flb_stats_server(char *path)
     server_fd = socket(PF_UNIX, SOCK_STREAM, 0);
     if (server_fd < 0) {
         perror("socket() failed");
-        exit(EXIT_FAILURE);
+        return -1;
     }
     unlink(path);
 
+    len = strlen(path);
     address.sun_family = AF_UNIX;
     sprintf(address.sun_path, "%s", path);
     address_length = sizeof(address.sun_family) + len + 1;
@@ -108,9 +109,6 @@ static FLB_INLINE int handle_input_plugin(void *event)
         }
     }
     memcpy(SDP(sp), &data, sizeof(struct flb_stats_datapoint));
-
-    printf("STORE: N=%i BYTES=%zd TIME=%i\n",
-           sp->n_data, sp->data[sp->n_data].bytes, sp->data[sp->n_data].time);
 }
 
 static FLB_INLINE int handle_output_plugin(void *event)
@@ -143,16 +141,114 @@ static FLB_INLINE int handle_output_plugin(void *event)
         }
     }
     memcpy(SDP(sp), &data, sizeof(struct flb_stats_datapoint));
+}
 
-    printf("STORE: N=%i BYTES=%zd TIME=%i\n",
-           sp->n_data, sp->data[sp->n_data].bytes, sp->data[sp->n_data].time);
+static FLB_INLINE stats_userver_accept(struct flb_stats *stats)
+{
+    int remote_fd;
+    struct sockaddr sock_addr;
+    socklen_t socket_size = sizeof(struct sockaddr);
 
+    remote_fd = accept(stats->userver->fd, &sock_addr, &socket_size);
+    return remote_fd;
+}
+
+static int stats_userver_add(int fd, struct flb_stats *stats)
+{
+    int ret;
+    struct flb_stats_userver_c *client;
+    struct flb_stats_userver *userver = stats->userver;
+
+    /* Allocate connection node */
+    client = malloc(sizeof(struct flb_stats_userver_c));
+    if (!client) {
+        return -1;
+    }
+    client->fd = fd;
+    mk_list_add(&client->_head, &userver->clients);
+
+    /*
+     * Register the events into the event loop, we only want to know
+     * when it disconnects to release resources.
+     */
+    ret = mk_event_add(stats->evl,
+                       client->fd,
+                       FLB_STATS_USERVER_C,
+                       0,
+                       client);
+    if (ret == -1) {
+        close(client->fd);
+        mk_list_del(&client->_head);
+        free(client);
+        return -1;
+    }
+
+    return 0;
+}
+
+static void stats_userver_remove(struct flb_stats_userver_c *uc,
+                                 struct flb_stats *stats)
+{
+    int ret;
+    struct flb_stats_userver *userver = stats->userver;
+
+    /* Unregister and release resources */
+    mk_event_del(stats->evl, &uc->event);
+    close(uc->fd);
+    mk_list_del(&uc->_head);
+    free(uc);
+}
+
+/* Create and register unix socket server */
+static int flb_stats_userver(struct flb_stats *stats)
+{
+    int fd;
+    int ret;
+    struct mk_event *event;
+    struct flb_stats_userver *userver;
+
+    /* Create a TCP server based on unix sockets */
+    userver = malloc(sizeof(struct flb_stats_userver));
+    if (!userver) {
+        flb_error("[stats_usrv] no mem!");
+        return -1;
+    }
+
+    fd = stats_unix_server(FLB_STATS_USERVER_PATH);
+    if (fd == -1) {
+        flb_error("[stats_usrv] could not create unix server");
+        return -1;
+    }
+
+    mk_list_init(&userver->clients);
+    userver->fd = fd;
+    event = &userver->event;
+    event->fd     = fd;
+    event->mask   = MK_EVENT_EMPTY;
+    event->status = MK_EVENT_NONE;
+    ret = mk_event_add(stats->evl,
+                       userver->fd,
+                       FLB_STATS_USERVER,
+                       MK_EVENT_READ,
+                       userver);
+    if (ret == -1) {
+        flb_error("[stats_usrv] could not registrate userver fd");
+        return -1;
+    }
+
+    stats->userver = userver;
+    return 0;
 }
 
 static void stats_worker(void *data)
 {
+    int fd;
+    int ret;
     struct mk_event *event;
     struct flb_stats *stats = (struct flb_stats *) data;
+
+    /* Initialize the unix socket server */
+    flb_stats_userver(stats);
 
     while (1) {
         mk_event_wait(stats->evl);
@@ -162,6 +258,16 @@ static void stats_worker(void *data)
             }
             else if (event->type == FLB_STATS_OUTPUT_PLUGIN) {
                 handle_output_plugin(event);
+            }
+            else if (event->type == FLB_STATS_USERVER) {
+                /* userver connection arrived */
+                fd = stats_userver_accept(stats);
+                ret = stats_userver_add(fd, stats);
+            }
+            else if (event->type == FLB_STATS_USERVER_C) {
+                /* userver client disconnected */
+                stats_userver_remove((struct flb_stats_userver_c *) event,
+                                     stats);
             }
         }
     }

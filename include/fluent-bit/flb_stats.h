@@ -27,8 +27,37 @@
 #include <fluent-bit/flb_output.h>
 
 #define FLB_STATS_SIZE          60  /* Datapoints buffer size */
-#define FLB_STATS_INPUT_PLUGIN   1  /* Input plugin type      */
-#define FLB_STATS_OUTPUT_PLUGIN  2  /* Output plugin type     */
+
+#define FLB_STATS_USERVER        1  /* Unix socket server        */
+#define FLB_STATS_USERVER_C      2  /* Unix socket server client */
+#define FLB_STATS_INPUT_PLUGIN   3  /* Input plugin type         */
+#define FLB_STATS_OUTPUT_PLUGIN  4  /* Output plugin type        */
+
+#define FLB_STATS_USERVER_PATH   "/tmp/fluentbit.sock"
+
+/*
+ * Unix Socket Server: the Stats interface launch a TCP unix socket
+ * domain server, for every connected client the interface will dispatch
+ * a summary of statistics in JSON format every five seconds. The following
+ * structures holds the server info and the connection references:
+ *
+ * struct flb_stats_userver:   linked from flb_stats, represents the userver
+ *                             context;
+ *
+ * struct flb_stats_userver_c: represents a client connected to our userver.
+ */
+
+struct flb_stats_userver_c {
+    struct mk_event event;
+    int fd;
+    struct mk_list _head;
+};
+
+struct flb_stats_userver {
+    struct mk_event event;
+    int fd;
+    struct mk_list clients;
+};
 
 struct flb_stats_datapoint {
     time_t  time;
@@ -60,6 +89,7 @@ struct flb_stats_out_plugin {
 struct flb_stats {
     struct mk_event_loop *evl;
     struct flb_config *config;
+    struct flb_stats_userver *userver;
 
     pthread_t worker_tid;
 
