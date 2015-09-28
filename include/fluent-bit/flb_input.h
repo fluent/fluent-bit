@@ -75,6 +75,10 @@ struct flb_input_plugin {
     /* Input handler configuration */
     void *in_context;
 
+#ifdef HAVE_STATS
+    int stats_fd;
+#endif
+
     /* Link to global list from flb_config->inputs */
     struct mk_list _head;
 };

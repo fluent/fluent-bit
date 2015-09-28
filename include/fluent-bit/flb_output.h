@@ -115,7 +115,7 @@ struct flb_output_plugin {
 #endif
 
 #ifdef HAVE_STATS
-    struct flb_stats stats;
+    int stats_fd;
 #endif
 
     /* Link to global list from flb_config->outputs */

@@ -209,7 +209,7 @@ int io_tls_write(struct flb_thread *th, struct flb_output_plugin *out,
     }
 
     /* Update statistics */
-    flb_stats_update(ret, 0, &out->stats);
+    flb_stats_update(out->stats_fd, ret, 0);
 
     /* Update counter and check if we need to continue writing */
     total += ret;

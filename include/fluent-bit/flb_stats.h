@@ -24,40 +24,64 @@
 
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_output.h>
 
-#define FLB_STATS_SIZE    60        /* Latest 60 entries */
+#define FLB_STATS_SIZE          60  /* Datapoints buffer size */
+#define FLB_STATS_INPUT_PLUGIN   1  /* Input plugin type      */
+#define FLB_STATS_OUTPUT_PLUGIN  2  /* Output plugin type     */
 
-struct flb_stats_table {
+struct flb_stats_datapoint {
     time_t  time;
     ssize_t events;
     ssize_t bytes;
 };
 
+/* Statistics for input plugins */
+struct flb_stats_in_plugin {
+    struct mk_event event;
+    int pipe[2];
+    int n_data;
+
+    struct flb_stats_datapoint data[FLB_STATS_SIZE];
+    struct flb_input_plugin *plugin;
+    struct mk_list _head;
+};
+
+/* Statistics for output plugins */
+struct flb_stats_out_plugin {
+    struct mk_event event;
+    int pipe[2];
+    int n_data;
+    struct flb_stats_datapoint data[FLB_STATS_SIZE];
+    struct flb_output_plugin *plugin;
+    struct mk_list _head;
+};
+
 struct flb_stats {
-    int n;
-    struct flb_stats_table data[FLB_STATS_SIZE];
+    struct mk_event_loop *evl;
+    struct flb_config *config;
+
+    pthread_t worker_tid;
+
+    /* References to components that can deliver statistics */
+    struct mk_list in_plugins;
+    struct mk_list out_plugins;
 };
 
 /* Simple function to update the stats counters */
-static inline void flb_stats_update(ssize_t bytes, ssize_t events,
-                                    struct flb_stats *st)
+static inline void flb_stats_update(int stats_fd,
+                                    ssize_t bytes, ssize_t events)
 {
-    struct flb_stats_table *table;
+    struct flb_stats_datapoint d;
 
-    table = &st->data[st->n];
-    table->bytes  += bytes;
-    table->events += events;
+    d.time   = time(NULL);
+    d.bytes  = bytes;
+    d.events = events;
+
+    write(stats_fd, &d, sizeof(struct flb_stats_datapoint));
 }
 
-/*
- * Reset the stats counter, this function is used everytime the stats
- * are collected.
- */
-static inline void flb_stats_reset(struct flb_stats *st)
-{
-    st->n = 0;
-}
-
+int flb_stats_init(struct flb_config *config);
 int flb_stats_collect(struct flb_config *config);
 int flb_stats_register(struct mk_event_loop *evl, struct flb_config *config);
 
@@ -65,6 +89,7 @@ int flb_stats_register(struct mk_event_loop *evl, struct flb_config *config);
 #else
 
 /* A dummy define to avoid some macros conditions into the core */
+#define flb_stats_init(a) do{} while(0)
 #define flb_stats_update(a, b, c) do {} while(0)
 #define flb_stats_reset(a) do {} while(0)
 #define flb_stats_register(a, b) do{} while(0)

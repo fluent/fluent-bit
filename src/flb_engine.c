@@ -234,8 +234,8 @@ int flb_engine_start(struct flb_config *config)
         flb_utils_error(FLB_ERR_CFG_FLUSH_CREATE);
     }
 
-    /* Register statistics handler (just if HAVE_STATS is enabled */
-    flb_stats_register(evl, config);
+    /* Initialize the stats interface (just if HAVE_STATS is defined) */
+    flb_stats_init(config);
 
     /* For each Collector, register the event into the main loop */
     mk_list_foreach(head, &config->collectors) {
@@ -290,7 +290,7 @@ int flb_engine_start(struct flb_config *config)
                 }
 #ifdef HAVE_STATS
                 else if (ret == FLB_ENGINE_STATS) {
-                    flb_stats_collect(config);
+                    //flb_stats_collect(config);
                 }
 #endif
             }
