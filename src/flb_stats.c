@@ -242,10 +242,12 @@ static int flb_stats_userver_deliver(struct flb_stats *stats)
     struct mk_list *head;
     struct flb_stats_userver *userver = stats->userver;
     struct flb_stats_userver_c *client;
+    struct flb_stats_in_plugin *in;
     struct flb_stats_out_plugin *out;
     struct flb_stats_datapoint *dp;
 
     json_t *j_root;
+    json_t *j_inp;
     json_t *j_outp;
 
     /* Collect statistics */
@@ -253,6 +255,34 @@ static int flb_stats_userver_deliver(struct flb_stats *stats)
     if (!j_root) {
         return -1;
     }
+
+    /* Input plugins */
+    j_inp = json_create_object();
+    mk_list_foreach(head, &stats->in_plugins) {
+        in = mk_list_entry(head, struct flb_stats_in_plugin, _head);
+
+        json_t *j_bytes = json_create_object();
+        json_t *j_datap = json_create_array();
+
+        json_add_to_object(j_bytes, "data", j_datap);
+
+        /* Go around each data point */
+        for (i = 0; i < in->n_data; i++) {
+            json_t *j_dp;
+
+            dp = &in->data[in->n_data];
+
+            j_dp = json_create_object();
+            json_add_to_object(j_dp, "time",   json_create_number(dp->time));
+            json_add_to_object(j_dp, "bytes",  json_create_number(dp->bytes));
+            json_add_to_object(j_dp, "events", json_create_number(dp->events));
+
+            json_add_to_array(j_datap, j_dp);
+        }
+
+        json_add_to_object(j_inp, in->plugin->name, j_bytes);
+    }
+    json_add_to_object(j_root, "input_plugins", j_inp);
 
     /* Output plugins */
     j_outp = json_create_object();
