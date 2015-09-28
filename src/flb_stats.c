@@ -28,6 +28,9 @@
 
 #include <time.h>
 #include <unistd.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <netinet/in.h>
 
 #include <mk_core.h>
 #include <fluent-bit/flb_config.h>
@@ -38,6 +41,46 @@
 
 #define SDP(s)       &s->data[s->n_data]
 #define SDP_TIME(s)  *SDP(s).time
+
+static FLB_INLINE int flb_stats_server(char *path)
+{
+    int n, ret;
+    int buf_len;
+    unsigned long len;
+    char buf[1024];
+    char cmd[1024];
+    int server_fd;
+    int remote_fd;
+    size_t address_length;
+    struct sockaddr_un address;
+    socklen_t socket_size = sizeof(struct sockaddr_in);
+    struct mk_config_listener *listener;
+
+    /* Create listening socket */
+    server_fd = socket(PF_UNIX, SOCK_STREAM, 0);
+    if (server_fd < 0) {
+        perror("socket() failed");
+        exit(EXIT_FAILURE);
+    }
+    unlink(path);
+
+    address.sun_family = AF_UNIX;
+    sprintf(address.sun_path, "%s", path);
+    address_length = sizeof(address.sun_family) + len + 1;
+    if (bind(server_fd, (struct sockaddr *) &address, address_length) != 0) {
+        perror("bind");
+        close(server_fd);
+        return -1;
+    }
+
+    if (listen(server_fd, 5) != 0) {
+        perror("listen");
+        close(server_fd);
+        return -1;
+    }
+
+    return server_fd;
+}
 
 static FLB_INLINE int handle_input_plugin(void *event)
 {
