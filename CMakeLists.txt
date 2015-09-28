@@ -87,6 +87,8 @@ endif()
 
 if(WITH_STATS)
   add_definitions(-DHAVE_STATS)
+  add_subdirectory(lib/cjson)
+  include_directories(lib/cjson)
 endif()
 
 # Instruct CMake to build the Fluent Bit Core

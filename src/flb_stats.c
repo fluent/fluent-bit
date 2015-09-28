@@ -33,6 +33,7 @@
 #include <netinet/in.h>
 
 #include <mk_core.h>
+#include <cjson.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
@@ -89,17 +90,10 @@ static int stats_userver_timer(struct flb_stats *stats)
 
 static int stats_unix_server(char *path)
 {
-    int n, ret;
-    int buf_len;
     unsigned long len;
-    char buf[1024];
-    char cmd[1024];
     int server_fd;
-    int remote_fd;
     size_t address_length;
     struct sockaddr_un address;
-    socklen_t socket_size = sizeof(struct sockaddr_in);
-    struct mk_config_listener *listener;
 
     /* Create listening socket */
     server_fd = socket(PF_UNIX, SOCK_STREAM, 0);
@@ -161,7 +155,6 @@ static FLB_INLINE int handle_output_plugin(void *event)
     ssize_t bytes;
     struct flb_stats_out_plugin *sp = (struct flb_stats_out_plugin *) event;
     struct flb_stats_datapoint data;
-    struct flb_stats_datapoint *p_data;
 
     /* We have a READ notification */
     bytes = read(sp->pipe[0],
@@ -188,7 +181,7 @@ static FLB_INLINE int handle_output_plugin(void *event)
     memcpy(SDP(sp), &data, sizeof(struct flb_stats_datapoint));
 }
 
-static FLB_INLINE stats_userver_accept(struct flb_stats *stats)
+static FLB_INLINE int stats_userver_accept(struct flb_stats *stats)
 {
     int remote_fd;
     struct sockaddr sock_addr;
@@ -234,9 +227,6 @@ static int stats_userver_add(int fd, struct flb_stats *stats)
 static void stats_userver_remove(struct flb_stats_userver_c *uc,
                                  struct flb_stats *stats)
 {
-    int ret;
-    struct flb_stats_userver *userver = stats->userver;
-
     /* Unregister and release resources */
     mk_event_del(stats->evl, &uc->event);
     close(uc->fd);
@@ -246,9 +236,66 @@ static void stats_userver_remove(struct flb_stats_userver_c *uc,
 
 static int flb_stats_userver_deliver(struct flb_stats *stats)
 {
-    //struct mk_list *head;
-    //struct flb_stats_userver_c *client;
+    int i;
+    int len;
+    char *raw;
+    struct mk_list *head;
+    struct flb_stats_userver *userver = stats->userver;
+    struct flb_stats_userver_c *client;
+    struct flb_stats_out_plugin *out;
+    struct flb_stats_datapoint *dp;
 
+    json_t *j_root;
+    json_t *j_outp;
+
+    /* Collect statistics */
+    j_root = json_create_object();
+    if (!j_root) {
+        return -1;
+    }
+
+    /* Output plugins */
+    j_outp = json_create_object();
+    mk_list_foreach(head, &stats->out_plugins) {
+        out = mk_list_entry(head, struct flb_stats_out_plugin, _head);
+
+        json_t *j_bytes = json_create_object();
+        json_t *j_datap = json_create_array();
+
+        json_add_to_object(j_bytes, "data", j_datap);
+
+        /* Go around each data point */
+        for (i = 0; i < out->n_data; i++) {
+            json_t *j_dp;
+
+            dp = &out->data[out->n_data];
+
+            j_dp = json_create_object();
+            json_add_to_object(j_dp, "time",   json_create_number(dp->time));
+            json_add_to_object(j_dp, "bytes",  json_create_number(dp->bytes));
+            json_add_to_object(j_dp, "events", json_create_number(dp->events));
+
+            json_add_to_array(j_datap, j_dp);
+        }
+
+        json_add_to_object(j_outp, out->plugin->name, j_bytes);
+    }
+
+    json_add_to_object(j_root, "output_plugins", j_outp);
+    raw = json_print_unformatted(j_root);
+    flb_debug("[stats] dump\n%s", raw);
+
+    /* Deliver data */
+    len = strlen(raw);
+    mk_list_foreach(head, &userver->clients) {
+        client = mk_list_entry(head, struct flb_stats_userver_c, _head);
+        write(client->fd, raw, len);
+    }
+
+    json_delete(j_root);
+    free(raw);
+
+    return 0;
 }
 
 /* Create and register unix socket server */
@@ -315,7 +362,12 @@ static void stats_worker(void *data)
             else if (event->type == FLB_STATS_USERVER) {
                 /* userver connection arrived */
                 fd = stats_userver_accept(stats);
-                ret = stats_userver_add(fd, stats);
+                if (fd) {
+                    ret = stats_userver_add(fd, stats);
+                    if (ret == -1) {
+                        close(fd);
+                    }
+                }
             }
             else if (event->type == FLB_STATS_USERVER_C) {
                 /* userver client disconnected */
@@ -457,6 +509,8 @@ static int flb_stats_components_init(struct flb_stats *stats)
             register_output_plugin(out, stats);
         }
     }
+
+    return 0;
 }
 
 /*

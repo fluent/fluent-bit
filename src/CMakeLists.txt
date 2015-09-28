@@ -38,6 +38,11 @@ if(WITH_STATS)
     ${src}
     "flb_stats.c"
     )
+  set(extra_libs
+    ${extra_libs}
+    "cJSON"
+    "m"
+    )
 endif()
 
 include(CheckSymbolExists)
