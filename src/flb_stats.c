@@ -154,22 +154,24 @@ static FLB_INLINE int handle_output_plugin(void *event)
 {
     ssize_t bytes;
     struct flb_stats_out_plugin *sp = (struct flb_stats_out_plugin *) event;
-    struct flb_stats_datapoint data;
+    struct flb_stats_datapoint *out_data;
+    struct flb_stats_datapoint in_data;
 
     /* We have a READ notification */
     bytes = read(sp->pipe[0],
-                 &data,
+                 &in_data,
                  sizeof(struct flb_stats_datapoint));
     if (bytes <= 0) {
         sp->n_data--;
         return -1;
     }
 
+    out_data = &sp->data[sp->n_data];
     if (sp->n_data == -1) {
         sp->n_data = 0;
     }
     else {
-        if (SDP_TIME(sp) != data.time) {
+        if (out_data->time != in_data.time) {
             if (sp->n_data + 1 == FLB_STATS_SIZE) {
                 sp->n_data = 0;
             }
@@ -178,7 +180,9 @@ static FLB_INLINE int handle_output_plugin(void *event)
             }
         }
     }
-    memcpy(SDP(sp), &data, sizeof(struct flb_stats_datapoint));
+
+    out_data = &sp->data[sp->n_data];
+    memcpy(out_data, &in_data, sizeof(struct flb_stats_datapoint));
 }
 
 static FLB_INLINE int stats_userver_accept(struct flb_stats *stats)
@@ -270,7 +274,7 @@ static int flb_stats_userver_deliver(struct flb_stats *stats)
         for (i = 0; i < in->n_data; i++) {
             json_t *j_dp;
 
-            dp = &in->data[in->n_data];
+            dp = &in->data[i];
 
             j_dp = json_create_object();
             json_add_to_object(j_dp, "time",   json_create_number(dp->time));
@@ -298,7 +302,7 @@ static int flb_stats_userver_deliver(struct flb_stats *stats)
         for (i = 0; i < out->n_data; i++) {
             json_t *j_dp;
 
-            dp = &out->data[out->n_data];
+            dp = &out->data[i];
 
             j_dp = json_create_object();
             json_add_to_object(j_dp, "time",   json_create_number(dp->time));

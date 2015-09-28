@@ -22,6 +22,7 @@
 #ifndef FLB_STATS_H
 #define FLB_STATS_H
 
+#include <unistd.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_output.h>
