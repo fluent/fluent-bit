@@ -91,8 +91,6 @@ char *flb_pack_json(char *js, size_t len, int *size)
         return NULL;
     }
 
-    //flb_debug("JSON to pack: '%s'", js);
-
     /* initialize buffers */
     msgpack_sbuffer_init(&sbuf);
     msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
@@ -106,34 +104,27 @@ char *flb_pack_json(char *js, size_t len, int *size)
 
         switch (t->type) {
         case JSMN_OBJECT:
-            //flb_debug("json_pack: token=%i is OBJECT (size=%i)", i, t->size);
             msgpack_pack_map(&pck, t->size);
             break;
         case JSMN_ARRAY:
-            //flb_debug("json_pack: token=%i is ARRAY (size=%i)", i, t->size);
             msgpack_pack_array(&pck, t->size);
             break;
         case JSMN_STRING:
-            //flb_debug("json_pack: token=%i is STRING (len=%i)", i, flen);
             msgpack_pack_bin(&pck, flen);
             msgpack_pack_bin_body(&pck, js + t->start, flen);
             break;
         case JSMN_PRIMITIVE:
             p = js + t->start;
             if (strncmp(p, "false", 5) == 0) {
-                //flb_debug("json_pack: token=%i is FALSE", i);
                 msgpack_pack_false(&pck);
             }
             else if (strncmp(p, "true", 4) == 0) {
-                //flb_debug("json_pack: token=%i is TRUE", i);
                 msgpack_pack_true(&pck);
             }
             else if (strncmp(p, "null", 4) == 0) {
-                //flb_debug("json_pack: token=%i is NULL", i);
                 msgpack_pack_nil(&pck);
             }
             else {
-                //flb_debug("json_pack: token=%i is INT64", i);
                 msgpack_pack_int64(&pck, atol(p));
             }
             break;
@@ -148,4 +139,19 @@ char *flb_pack_json(char *js, size_t len, int *size)
 
     free(tokens);
     return buf;
+}
+
+void flb_pack_print(char *data, size_t bytes)
+{
+    msgpack_unpacked result;
+    size_t off = 0, cnt = 0;
+
+    msgpack_unpacked_init(&result);
+    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+        /* FIXME: lazy output */
+        printf("[%zd] ", cnt++);
+        msgpack_object_print(stdout, result.data);
+        printf("\n");
+    }
+    msgpack_unpacked_destroy(&result);
 }

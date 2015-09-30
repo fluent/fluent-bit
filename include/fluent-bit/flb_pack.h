@@ -21,5 +21,6 @@
 #define FLB_PACK_H
 
 char *flb_pack_json(char *js, size_t len, int *size);
+void flb_pack_print(char *data, size_t bytes);
 
 #endif
