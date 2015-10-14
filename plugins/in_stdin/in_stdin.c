@@ -88,11 +88,8 @@ int in_stdin_collect(struct flb_config *config, void *in_context)
                  ctx->buf + ctx->buf_len,
                  sizeof(ctx->buf) - ctx->buf_len);
     flb_debug("in_stdin read() = %i", bytes);
-    if (bytes == -1) {
-        if (errno == -EPIPE) {
-            return -1;
-        }
-        return 0;
+    if (bytes <= 0) {
+        return -1;
     }
     ctx->buf_len += bytes;
 
