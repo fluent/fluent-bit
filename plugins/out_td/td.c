@@ -49,11 +49,13 @@ static char *td_format(void *data, size_t bytes, int *out_size)
     int n_size;
     size_t off = 0;
     time_t atime;
+    char *buf;
     struct msgpack_sbuffer mp_sbuf;
     struct msgpack_packer mp_pck;
     msgpack_unpacked result;
     msgpack_object root;
     msgpack_object map;
+    msgpack_sbuffer *sbuf;
 
     /* Initialize contexts for new output */
     msgpack_sbuffer_init(&mp_sbuf);
@@ -67,8 +69,21 @@ static char *td_format(void *data, size_t bytes, int *out_size)
     if (!ret) {
         return NULL;
     }
+
+    /* We 'should' get an array */
     if (result.data.type != MSGPACK_OBJECT_ARRAY) {
-        return NULL;
+        /*
+         * If we got a different format, we assume the caller knows what he is
+         * doing, we just duplicate the content in a new buffer and cleanup.
+         */
+        buf = malloc(bytes);
+        if (!buf) {
+            return NULL;
+        }
+
+        memcpy(buf, data, bytes);
+        *out_size = bytes;
+        return buf;
     }
 
     root = result.data;
@@ -106,9 +121,7 @@ static char *td_format(void *data, size_t bytes, int *out_size)
     }
     msgpack_unpacked_destroy(&result);
 
-    char *buf;
-    msgpack_sbuffer *sbuf;
-
+ done:
     sbuf = &mp_sbuf;
     *out_size = sbuf->size;
     buf = malloc(sbuf->size);
