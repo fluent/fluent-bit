@@ -109,22 +109,80 @@ static inline int mqtt_packet_header(int type, int length, char *buf)
     return i;
 }
 
-/* Collect a buffer of JSON data and convert it to MsgPack */
-static int mqtt_data_append(char *buf, int len, void *in_context)
+/* Collect a buffer of JSON data and convert it to Fluent Bit format */
+static int mqtt_data_append(char *buf, int len,
+                            char *topic, size_t topic_len,
+                            void *in_context)
 {
+    int i;
     int out;
+    int n_size;
+    size_t off = 0;
+    time_t atime;
     char *pack;
+    msgpack_sbuffer *sbuf;
+    msgpack_object root;
+    msgpack_unpacked result;
+    struct msgpack_sbuffer mp_sbuf;
+    struct msgpack_packer mp_pck;
     struct flb_in_mqtt_config *ctx = in_context;
 
+    /* Convert our incoming JSON to MsgPack */
     pack = flb_pack_json(buf, len, &out);
     if (!pack) {
         flb_debug("MQTT Packet incomplete or is not JSON");
         return -1;
     }
 
-    memcpy(ctx->msgp + ctx->msgp_len, pack, out);
-    ctx->msgp_len += out;
+    /* Convert MsgPack to internal representation */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    off = 0;
+    msgpack_unpacked_init(&result);
+    if (!msgpack_unpack_next(&result, pack, out, &off)) {
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+
+    if (result.data.type != MSGPACK_OBJECT_MAP){
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+    root = result.data;
+
+    msgpack_pack_array(&mp_pck, 2);
+    msgpack_pack_int32(&mp_pck, time(NULL));
+
+    n_size = root.via.map.size;
+    msgpack_pack_map(&mp_pck, n_size + 1);
+    msgpack_pack_bin(&mp_pck, 5);
+    msgpack_pack_bin_body(&mp_pck, "topic", 5);
+    msgpack_pack_bin(&mp_pck, topic_len);
+    msgpack_pack_bin_body(&mp_pck, topic, topic_len);
+
+    /* Re-pack original KVs */
+    for (i = 0; i < n_size; i++) {
+        msgpack_pack_object(&mp_pck, root.via.map.ptr[i].key);
+        msgpack_pack_object(&mp_pck, root.via.map.ptr[i].val);
+    }
+    msgpack_unpacked_destroy(&result);
+
     free(pack);
+    sbuf = &mp_sbuf;
+    buf = malloc(sbuf->size);
+    if (!buf) {
+        return -1;
+    }
+
+    /* set a new buffer and re-initialize our MessagePack context */
+    out = sbuf->size;
+    memcpy(buf, sbuf->data, sbuf->size);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+
+    memcpy(ctx->msgp + ctx->msgp_len, buf, out);
+    ctx->msgp_len += out;
+    free(buf);
 
     return 0;
 }
@@ -155,6 +213,8 @@ static int mqtt_handle_connect(struct mqtt_conn *conn)
  */
 static int mqtt_handle_publish(struct mqtt_conn *conn)
 {
+    int topic;
+    int topic_len;
     uint8_t qos;
     uint16_t hlen;
     uint16_t packet_id;
@@ -174,6 +234,8 @@ static int mqtt_handle_publish(struct mqtt_conn *conn)
     conn->buf_pos++;
     hlen |= BUFC();
     conn->buf_pos++;
+    topic     = conn->buf_pos;
+    topic_len = hlen;
     conn->buf_pos += hlen;
 
     /* Check QOS flag and respond if required */
@@ -199,6 +261,7 @@ static int mqtt_handle_publish(struct mqtt_conn *conn)
     /* Message */
     mqtt_data_append(conn->buf + conn->buf_pos,
                      conn->buf_len - conn->buf_pos,
+                     conn->buf + topic, topic_len,
                      conn->ctx);
     return 0;
 }

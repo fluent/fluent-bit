@@ -59,7 +59,6 @@ int flb_engine_flush(struct flb_config *config,
                     continue;
                 }
 
-
                 /* Create a thread context for an output plugin call */
                 th = flb_output_thread(config->output,
                                        config,
