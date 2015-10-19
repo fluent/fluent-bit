@@ -25,6 +25,7 @@ int main(int argc, char **argv)
     int i;
     int n;
     int ret;
+    int time_field;
     char tmp[256];
     struct flb_config *config;
 
@@ -55,10 +56,12 @@ int main(int argc, char **argv)
     flb_lib_start(config);
 
     /* Push some data */
+    time_field = time(NULL) - 100;
     for (i = 0; i < 100; i++) {
         n = snprintf(tmp, sizeof(tmp) - 1,
-                     "{\"time\": 1442875576, \"key\": \"val %i\"}", i);
+                     "{\"time\": %i, \"key\": \"val %i\"}", time_field, i);
         flb_lib_push(config, tmp, n);
+        time_field++;
     }
 
     flb_lib_stop(config);
