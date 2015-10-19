@@ -121,7 +121,7 @@ static char *td_format(void *data, size_t bytes, int *out_size)
     }
     msgpack_unpacked_destroy(&result);
 
- done:
+    /* Create new buffer */
     sbuf = &mp_sbuf;
     *out_size = sbuf->size;
     buf = malloc(sbuf->size);
