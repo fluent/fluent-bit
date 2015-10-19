@@ -70,7 +70,6 @@ static inline int process_line(char *line, struct flb_in_serial_config *ctx)
 {
     int line_len;
     char *p = line;
-    char *end = NULL;
     char msg[1024];
 
     /* Increase buffer position */
@@ -138,6 +137,8 @@ int in_serial_exit(void *in_context, struct flb_config *config)
 
     flb_debug("[in_serial] Restoring original termios...");
     tcsetattr(ctx->fd, TCSANOW, &ctx->tio_orig);
+
+    return 0;
 }
 
 /* Init serial input */
@@ -175,7 +176,6 @@ int in_serial_init(struct flb_config *config)
     msgpack_sbuffer_init(&ctx->mp_sbuf);
     msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
 
-    tcgetattr(fd, &ctx->tio_orig);
     memset(&ctx->tio, 0, sizeof(ctx->tio));
     ctx->tio.c_cflag = ctx->tio.c_ispeed = ctx->tio.c_ospeed = atoi(ctx->bitrate);
     ctx->tio.c_cflag |= CRTSCTS | CS8 | CLOCAL | CREAD;
