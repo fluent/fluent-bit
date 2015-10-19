@@ -118,7 +118,6 @@ static int mqtt_data_append(char *buf, int len,
     int out;
     int n_size;
     size_t off = 0;
-    time_t atime;
     char *pack;
     msgpack_sbuffer *sbuf;
     msgpack_object root;
