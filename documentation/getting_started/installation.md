@@ -106,5 +106,6 @@ The _output plugins_ gives the capacity to flush the information to some externa
 
 | option           |  description                         | default  |
 |------------------|--------------------------------------|----------|
-| WITH_OUT_FLUENTD | Enable Fluentd output plugin         | On       |
-| WITH_OUT_STDOUT  | Enable STDOUT output plugin          | On       |
+| [WITH_OUT_FLUENTD](../output/fluentd.md) | Enable [Fluentd](http://www.fluentd.org) output plugin | On |
+| [WITH_OUT_STDOUT](../output/stdout.md) | Enable STDOUT output plugin          | On       |
+| [WITH_OUT_TD](../output/td.md) | Enable [Treasure Data](http://www.treasuredata.com) output plugin | On |
