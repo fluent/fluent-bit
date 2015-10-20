@@ -30,7 +30,7 @@
  *   https://github.com/kbranigan/cJSON
  */
 
-#include "cJSON.h"
+#include "src/cJSON.h"
 
 #define json_t                  cJSON
 #define json_create_null        cJSON_CreateNull
