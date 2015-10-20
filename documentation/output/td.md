@@ -1,4 +1,4 @@
-# Treasure Data Output
+# Treasure Data
 
 The __td__ output plugin, allows to flush your records to the [Treasure Data](http://treasuredata.com) cloud service.
 
