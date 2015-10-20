@@ -54,47 +54,27 @@ int cb_fluentd_flush(void *data, size_t bytes, void *out_context,
                      struct flb_config *config)
 {
     int ret = -1;
-    int maps = 0;
+    int entries = 0;
+    size_t off = 0;
     size_t total;
     size_t bytes_sent;
     char *buf = NULL;
     msgpack_packer   mp_pck;
     msgpack_sbuffer  mp_sbuf;
-    msgpack_unpacked mp_umsg;
-    size_t mp_upos = 0;
+    msgpack_unpacked result;
     (void) out_context;
     (void) config;
-
-    /*
-     * The incoming data comes in Fluent Bit format an array of objects, as we
-     * aim to send this information to Fluentd through it in_forward plugin, we
-     * need to transform the data. The Fluentd in_forward plugin allows one
-     * of the following formats:
-     *
-     *   1. [tag, time, record]
-     *
-     *    or
-     *
-     *   2. [tag, [[time,record], [time,record], ...]]
-     *
-     *   we use the format #2
-     */
 
     /* Initialize packager */
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    /*
-     * Count the number of map entries
-     *
-     * FIXME: Fluent Bit should expose the number of maps into the
-     * data, so we avoid this silly counting.
-     */
-    msgpack_unpacked_init(&mp_umsg);
-    while (msgpack_unpack_next(&mp_umsg, data, bytes, &mp_upos)) {
-        maps++;
+    /* Count number of entries, is there a better way to do this ? */
+    msgpack_unpacked_init(&result);
+    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+        entries++;
     }
-    msgpack_unpacked_destroy(&mp_umsg);
+    msgpack_unpacked_destroy(&result);
 
     /* Output: root array */
     msgpack_pack_array(&mp_pck, 2);
@@ -102,11 +82,11 @@ int cb_fluentd_flush(void *data, size_t bytes, void *out_context,
     msgpack_pack_bin_body(&mp_pck,
                           FLB_CONFIG_DEFAULT_TAG,
                           sizeof(FLB_CONFIG_DEFAULT_TAG) - 1);
-    msgpack_pack_array(&mp_pck, maps);
+
+    msgpack_pack_array(&mp_pck, entries);
 
     /* Allocate a new buffer to merge data */
-    total = bytes + mp_sbuf.size;
-    buf = malloc(total);
+    buf = malloc(mp_sbuf.size + bytes);
     if (!buf) {
         perror("malloc");
         return -1;
@@ -114,12 +94,11 @@ int cb_fluentd_flush(void *data, size_t bytes, void *out_context,
 
     memcpy(buf, mp_sbuf.data, mp_sbuf.size);
     memcpy(buf + mp_sbuf.size, data, bytes);
-    msgpack_sbuffer_destroy(&mp_sbuf);
+    total = mp_sbuf.size + bytes;
 
     ret = flb_io_write(&out_fluentd_plugin, buf, total, &bytes_sent);
     free(buf);
 
-    /* FIXME: just for debug purposes */
     flb_debug("[fluentd] ended write()=%d bytes", bytes_sent);
     return ret;
 }
