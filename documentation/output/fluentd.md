@@ -65,7 +65,7 @@ $ bin/fluent-bit -i cpu -o fluentd://127.0.0.1:12225
 In [Fluent Bit](http://fluentbit.io) we should see the following output:
 
 ```
-Fluent-Bit v0.1.0
+Fluent Bit v0.3.0
 Copyright (C) Treasure Data
 
 [2015/07/29 14:58:02] [ info] Configuration

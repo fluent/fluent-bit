@@ -6,7 +6,7 @@ In order to measure read the Kernel log messages with [Fluent Bit](http://fluent
 
 ```bash
 $ bin/fluent-bit -i mem -o stdout -V
-Fluent-Bit v0.1.0
+Fluent Bit v0.3.0
 Copyright (C) Treasure Data
 
 [2015/07/17 15:48:28] [ info] Configuration

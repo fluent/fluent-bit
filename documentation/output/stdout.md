@@ -9,7 +9,7 @@ $ bin/fluent-bit -i cpu -o stdout -V
 We have specified to gather [CPU](../input/cpu.md) usage metrics and print them out to the standard output in a human readable way:
 
 ```bash
-Fluent-Bit v0.1.0
+Fluent Bit v0.3.0
 Copyright (C) Treasure Data
 
 [2015/07/29 15:06:06] [ info] Configuration

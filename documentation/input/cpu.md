@@ -6,7 +6,7 @@ In order to measure the CPU usage of your system with [Fluent Bit](http://fluent
 
 ```bash
 $ ./bin/fluent-bit -i cpu -o stdout -V
-Fluent-Bit v0.1.0
+Fluent Bit v0.3.0
 Copyright (C) Treasure Data
 
 [2015/07/17 15:36:09] [ info] Configuration

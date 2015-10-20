@@ -35,7 +35,7 @@ Once the configuration file is in place, collecting data from the _Serial_ inter
 
 ```bash
 $ bin/fluent-bit -c serial.conf -i serial -o stdout -V
-Fluent-Bit v0.1.0
+Fluent Bit v0.3.0
 Copyright (C) Treasure Data
 
 [2015/07/29 12:39:37] [ info] Configuration
@@ -52,7 +52,7 @@ Now every message that arrives to the _/dev/ttyS0_ interface will be printed to 
 
 ```bash
 $ bin/fluent-bit -c serial.conf -i serial -o stdout -V
-Fluent-Bit v0.1.0
+Fluent Bit v0.3.0
 Copyright (C) Treasure Data
 
 [2015/07/29 12:39:37] [ info] Configuration
@@ -118,7 +118,7 @@ Now you can configure [Fluent Bit](http://fluentbit.io) to listen on _/dev/tnt0_
 
 ```bash
 $ sudo bin/fluent-bit -c serial.conf -i serial -o stdout -V
-Fluent-Bit v0.1.0
+Fluent Bit v0.3.0
 Copyright (C) Treasure Data
 
 [2015/07/29 12:50:03] [ info] Configuration

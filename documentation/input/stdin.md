@@ -34,7 +34,7 @@ Now lets start the script and [Fluent Bit](http://fluentbit.io) in the following
 
 ```bash
 $ ./test.sh | bin/fluent-bit -i stdin -o stdout -V
-Fluent-Bit v0.2.0
+Fluent Bit v0.3.0
 Copyright (C) Treasure Data
 
 [2015/09/03 17:34:27] [ info] Configuration
