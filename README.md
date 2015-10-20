@@ -12,10 +12,12 @@
 |--------------------|---------|---------------------------------------------------------------------------------|
 | CPU                | cpu     | gather CPU usage between snapshots of one second. It support multiple cores     |
 | Memory             | mem     | usage of system memory |
+| MQTT               | mqtt    | start a MQTT server and receive publish messages |
 | Kernel Ring Buffer | kmsg    | read Linux Kernel messages, same behavior as the __dmesg__ command line program |
 | Serial Port        | serial  | read from serial port |
 | Standard Input     | stdin   | read from the standard input |
 | XBee               | xbee    | listen for incoming messages over a Xbee device |
+
 
 ### Output Plugins
 
@@ -23,6 +25,7 @@
 |--------------------|-------------------------|---------------------------------------------------------------------------------|
 | Fluentd            | fluentd://host:port     | flush content to a [Fluentd](http://fluentd.org) service. On the [Fluentd](http://fluentd.org) side, it requires an __in_forward__.|
 | Standard Output    | stdout                  | prints the collected data to standard output stream |
+| Treasure Data      | td                      | flush records to [Treasure Data](http://treasuredata.com) service (cloud analytics)|
 
 ## Documentation
 
