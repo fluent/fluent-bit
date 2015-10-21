@@ -10,6 +10,12 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/library")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/library")
 
+# Fluent Bit Version
+set(FLB_VERSION_MAJOR  0)
+set(FLB_VERSION_MINOR  4)
+set(FLB_VERSION_PATCH  0)
+set(FLB_VERSION_STR "${MK_VERSION_MAJOR}.${MK_VERSION_MINOR}.${MK_VERSION_PATCH}")
+
 # Build Options
 option(WITH_ALL     "Enable all features"         No)
 option(WITH_DEBUG   "Build with debug symbols"    No)
@@ -90,6 +96,11 @@ if(WITH_STATS)
   add_subdirectory(lib/cjson)
   include_directories(lib/cjson)
 endif()
+
+configure_file(
+  "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_version.h.in"
+  "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_version.h"
+  )
 
 # Instruct CMake to build the Fluent Bit Core
 add_subdirectory(include)

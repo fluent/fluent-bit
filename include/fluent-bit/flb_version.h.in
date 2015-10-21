@@ -25,16 +25,12 @@
 #define STR(s)             STR_HELPER(s)
 
 /* Fluent Bit Version */
-#define __FLB__             0
-#define __FLB_MINOR__       4
-#define __FLB_PATCHLEVEL__  0
-
-
-/* Macros really used by Fluent Bit core */
-#define FLB_VERSION (                           \
-                     __FLB__ * 10000            \
-                     __FLB_MINOR__ * 100        \
-                     __FLB_PATCHLEVEL__)
-#define FLB_VERSION_STR  STR(__FLB__) "." STR(__FLB_MINOR__) "." STR(__FLB_PATCHLEVEL__)
+#define FLB_VERSION_MAJOR   @FLB_VERSION_MAJOR@
+#define FLB_VERSION_MINOR   @FLB_VERSION_MINOR@
+#define FLB_VERSION_PATCH   @FLB_VERSION_PATCH@
+#define FLB_VERSION         (FLB_VERSION_MAJOR * 10000 \
+                             FLB_VERSION_MINOR * 100   \
+                             FLB_VERSION_PATCH)
+#define FLB_VERSION_STR     "@FLB_VERSION_STR@"
 
 #endif
