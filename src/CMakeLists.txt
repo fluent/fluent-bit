@@ -14,7 +14,7 @@ set(src
 include_directories(
   ../lib/
   ../lib/jsmn
-  ../lib/msgpack-1.1.0/include
+  ../lib/msgpack-1.2.0/include
   ${extra_headers}
   )
 
@@ -53,8 +53,19 @@ if(WITH_SSL_TLS)
   add_definitions(-DHAVE_SSL_TLS)
 endif()
 
+# Core dependencies
+set(FLB_DEPS
+  mk_core
+  jsmn
+  ${extra_libs}
+  ${FLB_PLUGINS}
+  msgpack-static
+  )
+
 # Shared Library
 add_library(fluent-bit-shared SHARED ${src})
+target_link_libraries(fluent-bit-shared ${FLB_DEPS})
+
 set_target_properties(fluent-bit-shared
   PROPERTIES OUTPUT_NAME fluent-bit)
 
@@ -62,10 +73,7 @@ set_target_properties(fluent-bit-shared
 add_library(fluent-bit-static STATIC ${src})
 set_target_properties(fluent-bit-static PROPERTIES
   OUTPUT_NAME fluent-bit)
-
-# Link dependencies to Fluent-Bit library core
-target_link_libraries(fluent-bit-shared msgpack mk_core jsmn ${extra_libs} ${FLB_PLUGINS} ${CMAKE_THREAD_LIBS_INIT} ${CMAKE_DL_LIBS})
-target_link_libraries(fluent-bit-static msgpack mk_core jsmn ${extra_libs} dl ${FLB_PLUGINS})
+target_link_libraries(fluent-bit-static ${FLB_DEPS})
 
 # Library install routines
 install(TARGETS fluent-bit-shared LIBRARY DESTINATION lib)

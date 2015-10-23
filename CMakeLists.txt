@@ -56,17 +56,26 @@ if(WITH_DEBUG)
 endif()
 
 # General Headers
-include_directories(include/ lib/ lib/msgpack-1.1.0/include lib/monkey/ lib/monkey/mk_core/include)
-
-# MSGPACK modification: disable the install routines.z
-set(MSGPACK_NO_INSTALL 1)
+include_directories(
+  include/
+  lib/
+  lib/msgpack-1.2.0/include
+  lib/monkey/
+  lib/monkey/mk_core/include
+  )
 
 # mk_core is aware about jemalloc usage, we need to disable this as
 # fluent-bit do not use it.
 set(WITH_SYSTEM_MALLOC  1 CACHE BOOL "Use system memory allocator")
 
+# MsgPack options
+option(MSGPACK_ENABLE_CXX             OFF)
+option(MSGPACK_ENABLE_SHARED          OFF)
+option(MSGPACK_BUILD_TESTS            OFF)
+option(MSGPACK_BUILD_EXAMPLES         OFF)
+add_subdirectory(lib/msgpack-1.2.0)
+
 # Lib: build the core libraries used by Fluent-Bit
-add_subdirectory(lib/msgpack-1.1.0)
 add_subdirectory(lib/jsmn)
 if(WITH_IN_HTTP)
   option(WITHOUT_BIN     ON)
