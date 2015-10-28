@@ -21,8 +21,10 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/sysinfo.h>
+#include <fluent-bit/flb_stats.h>
 
 #include "in_mem.h"
+struct flb_input_plugin in_mem_plugin;
 
 int in_mem_collect(struct flb_config *config, void *in_context);
 
@@ -80,6 +82,8 @@ int in_mem_collect(struct flb_config *config, void *in_context)
               info.freeram/1024,
               ctx->idx);
     ++ctx->idx;
+
+    flb_stats_update(in_mem_plugin.stats_fd, 0, 1);
     return 0;
 }
 
