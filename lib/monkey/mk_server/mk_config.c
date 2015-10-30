@@ -222,10 +222,11 @@ static int mk_config_listen_read(struct mk_rconf_section *section)
             port = mk_string_dup(listener->val);
         }
 
+        errno = 0;
         port_num = strtol(port, NULL, 10);
         if (errno != 0 || port_num == LONG_MAX || port_num == LONG_MIN) {
             mk_warn("Using defaults, could not understand \"Listen %s\"",
-                    entry->val);
+                    listener->val);
             port = NULL;
         }
 
@@ -516,12 +517,11 @@ struct mk_config_listener *mk_config_listener_add(char *address,
 
     /* Set the port */
     if (!port) {
-        listen->port = mk_string_dup(MK_DEFAULT_LISTEN_PORT);
-    }
-    else {
-        listen->port = mk_string_dup(port);
+        mk_err("[listen_add] TCP port not defined");
+        exit(EXIT_FAILURE);
     }
 
+    listen->port = mk_string_dup(port);
     listen->flags = flags;
 
     /* Before to add a new listener, lets make sure it's not a duplicated */

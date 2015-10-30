@@ -11,11 +11,11 @@ if(BUILD_LOCAL)
   set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "../${CMAKE_CURRENT_BINARY_DIR}/")
 else()
   install(TARGETS monkey-bin RUNTIME DESTINATION ${CMAKE_INSTALL_FULL_SBINDIR})
+  configure_file (
+    "${CMAKE_CURRENT_SOURCE_DIR}/systemd.in"
+    "${PROJECT_SOURCE_DIR}/monkey.service"
+    )
   if(SYSTEMD_DIR)
-    configure_file (
-      "${CMAKE_CURRENT_SOURCE_DIR}/systemd.in"
-      "${CMAKE_CURRENT_BINARY_DIR}/monkey.service"
-      )
-    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/monkey.service DESTINATION ${SYSTEMD_DIR})
+    install(FILES ${PROJECT_SOURCE_DIR}/monkey.service DESTINATION ${SYSTEMD_DIR})
   endif()
 endif()

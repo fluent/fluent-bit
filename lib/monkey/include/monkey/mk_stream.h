@@ -149,13 +149,11 @@ static inline void mk_stream_set(struct mk_stream *stream, int type,
     if (type == MK_STREAM_IOV) {
         iov = buffer;
         stream->bytes_total = iov->total_len;
-        MK_TRACE("IOV ENQUEUE %i bytes", iov->total_len);
     }
     else if (type == MK_STREAM_COPYBUF) {
         stream->buffer = mk_mem_malloc(size);
         stream->bytes_total = size;
         memcpy(stream->buffer, buffer, size);
-        MK_TRACE("COP ENQUEUE %i bytes", stream->bytes_total);
     }
     else {
         stream->bytes_total = size;

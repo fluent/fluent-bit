@@ -317,14 +317,14 @@ int mk_utils_register_pid(char *path)
         /* file exists, perhaps previously kepts by SIGKILL */
         ret = unlink(path);
         if (ret == -1) {
-            mk_err("Could not remove old PID-file path");
+            mk_err("Could not remove old PID-file path: %s", path);
             exit(EXIT_FAILURE);
         }
     }
 
     if ((fd = open(path,
                    O_WRONLY | O_CREAT | O_CLOEXEC, 0444)) < 0) {
-        mk_err("Error: I can't log pid of monkey");
+        mk_err("I cannot create PID file '%s'", path);
         exit(EXIT_FAILURE);
     }
 
@@ -336,7 +336,7 @@ int mk_utils_register_pid(char *path)
 
     if (fcntl(fd, F_SETLK, &lock) < 0) {
         close(fd);
-        mk_err("Error: I cannot set the lock for the pid of monkey");
+        mk_err("I cannot set the lock for the PID file '%s'", path);
         exit(EXIT_FAILURE);
     }
 
@@ -344,7 +344,7 @@ int mk_utils_register_pid(char *path)
     ssize_t write_len = strlen(pidstr);
     if (write(fd, pidstr, write_len) != write_len) {
         close(fd);
-        mk_err("Error: I cannot write the lock for the pid of monkey");
+        mk_err("I cannot write PID number at '%s' file", path);
         exit(EXIT_FAILURE);
     }
 

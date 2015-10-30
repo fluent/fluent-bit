@@ -218,8 +218,20 @@ int mk_auth_stage30(struct mk_plugin *plugin,
     return MK_PLUGIN_RET_END;
 }
 
+int mk_auth_stage30_hangup(struct mk_plugin *plugin,
+                           struct mk_http_session *cs,
+                           struct mk_http_request *sr)
+{
+    (void) plugin;
+    (void) cs;
+    (void) sr;
+
+    return 0;
+}
+
 struct mk_plugin_stage mk_plugin_stage_auth = {
-    .stage30      = &mk_auth_stage30
+    .stage30        = &mk_auth_stage30,
+    .stage30_hangup = &mk_auth_stage30_hangup
 };
 
 struct mk_plugin mk_plugin_auth = {

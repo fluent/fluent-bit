@@ -3,8 +3,11 @@ set(src
 )
 
 if(NOT WITH_MBEDTLS_SHARED)
-  set(MK_MBEDTLS_SRC ../../deps/mbedtls-2.0.0)
-  add_subdirectory(${MK_MBEDTLS_SRC} ${CMAKE_BINARY_DIR}/mbedtls-2.0.0)
+  option(ENABLE_TESTING  OFF)
+  option(ENABLE_PROGRAMS OFF)
+  option(INSTALL_MBEDTLS_HEADERS OFF)
+  set(MK_MBEDTLS_SRC ../../deps/mbedtls-2.1.2)
+  add_subdirectory(${MK_MBEDTLS_SRC} ${CMAKE_BINARY_DIR}/mbedtls-2.1.2)
   include_directories(${MK_MBEDTLS_SRC}/include)
 endif()
 

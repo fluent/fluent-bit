@@ -226,6 +226,7 @@ static inline int header_lookup(struct mk_http_parser *p, char *buffer)
                     memcpy(&port, header->val.data + sep + 1, plen);
                     port[plen] = '\0';
 
+                    errno = 0;
                     val = strtol(port, &endptr, 10);
                     if ((errno == ERANGE && (val == LONG_MAX || val == LONG_MIN))
                         || (errno != 0 && val == 0)) {
@@ -243,6 +244,7 @@ static inline int header_lookup(struct mk_http_parser *p, char *buffer)
                 }
             }
             else if (i == MK_HEADER_CONTENT_LENGTH) {
+                errno = 0;
                 val = strtol(header->val.data, &endptr, 10);
                 if ((errno == ERANGE && (val == LONG_MAX || val == LONG_MIN))
                     || (errno != 0 && val == 0)) {

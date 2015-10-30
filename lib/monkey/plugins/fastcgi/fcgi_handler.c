@@ -738,6 +738,8 @@ struct fcgi_handler *fcgi_handler_new(struct mk_http_session *cs,
  error:
     mk_api->iov_free(h->iov);
     mk_api->mem_free(h);
+    sr->handler_data = NULL;
     mk_api->http_request_error(500, cs, sr);
+
     return NULL;
 }

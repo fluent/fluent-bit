@@ -405,9 +405,14 @@ void mk_plugin_load_all()
             continue;
         }
         ret = mk_plugin_init(api, p);
-        if (ret < 0) {
-            /* Free plugin, do not register */
+        if (ret == -1) {
+            /* Free plugin, do not register, error initializing */
             mk_warn("Plugin initialization failed: %s", p->shortname);
+            mk_plugin_unregister(p);
+            continue;
+        }
+        else if (ret == -2) {
+            /* Do not register, just skip it */
             mk_plugin_unregister(p);
             continue;
         }

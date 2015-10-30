@@ -586,6 +586,7 @@ void mk_vhost_set_single(char *path)
         exit(EXIT_FAILURE);
     }
     mk_list_add(&host->_head, &mk_config->hosts);
+    mk_list_init(&host->handlers);
 }
 
 /* Given a configuration directory, start reading the virtual host entries */
