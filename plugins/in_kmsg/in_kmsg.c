@@ -33,8 +33,10 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_engine.h>
+#include <fluent-bit/flb_stats.h>
 
 #include "in_kmsg.h"
+struct flb_input_plugin in_kmsg_plugin;
 
 /*
  * Note: Functions timeval_diff() and in_kmsg_boot_time() are based
@@ -271,6 +273,8 @@ int in_kmsg_collect(struct flb_config *config, void *in_context)
 
     /* Process and enqueue the received line */
     process_line(line, ctx);
+
+    flb_stats_update(in_kmsg_plugin.stats_fd, bytes, 1);
     return 0;
 }
 
