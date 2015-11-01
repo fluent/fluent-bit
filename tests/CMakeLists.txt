@@ -16,7 +16,7 @@ foreach(source_file ${check_PROGRAMS})
     ${source_file}
     )
   target_link_libraries(${source_file_we}
-    fluent-bit
+    fluent-bit-static
     ${GTEST_BOTH_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}
     )
