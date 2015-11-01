@@ -55,8 +55,7 @@ static jsmntok_t *json_tokenise(char *js, size_t len, int *arr_size)
     }
 
     if (ret == JSMN_ERROR_PART) {
-        /* Hmm, should we error for partial JSONs ? */
-        flb_utils_error(FLB_ERR_JSON_PART);
+        /* This is a partial JSON message, just stop */
         goto error;
     }
 
