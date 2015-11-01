@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 2.8)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -fPIC -Wno-deprecated-declarations ")
-project(fluent-bit C)
+project(fluent-bit)
 
 include(GNUInstallDirs)
 
@@ -116,3 +116,8 @@ add_subdirectory(include)
 add_subdirectory(plugins)
 add_subdirectory(src)
 add_subdirectory(examples)
+
+if(ENABLE_TESTS)
+  enable_testing()
+  add_subdirectory(tests)
+endif()
