@@ -36,7 +36,9 @@ option(WITH_IN_MQTT     "Enable MQTT Broker input plugin"     No)
 option(WITH_OUT_FLUENTD "Enable Fluentd output plugin"       Yes)
 option(WITH_OUT_TD      "Enable Treasure Data output plugin" Yes)
 option(WITH_OUT_STDOUT  "Enable STDOUT output plugin"        Yes)
-
+if(ENABLE_TESTS)
+  option(WITH_OUT_NULL  "Enable dev null output plugin"        Yes)
+endif()
 # Enable all features
 if(WITH_ALL)
   set(WITH_DEBUG       1)
@@ -118,6 +120,7 @@ add_subdirectory(src)
 add_subdirectory(examples)
 
 if(ENABLE_TESTS)
+
   enable_testing()
   add_subdirectory(tests)
 endif()

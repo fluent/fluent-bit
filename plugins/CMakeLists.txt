@@ -44,6 +44,10 @@ REGISTER_OUT_PLUGIN("out_fluentd")
 REGISTER_OUT_PLUGIN("out_td")
 REGISTER_OUT_PLUGIN("out_stdout")
 
+if(ENABLE_TESTS)
+  REGISTER_OUT_PLUGIN("out_null")
+endif()
+
 # Generate the header from the template
 configure_file(
   "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_plugins.h.in"
