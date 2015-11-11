@@ -97,7 +97,12 @@ int flb_lib_config_file(struct flb_config *config, char *path)
 /* Push some data into the Engine */
 int flb_lib_push(struct flb_config *config, void *data, size_t len)
 {
-    return write(config->ch_data[1], data, len);
+    int ret;
+    ret = write(config->ch_data[1], data, len);
+    if (ret == -1) {
+        perror("write");
+    }
+    return ret;
 }
 
 static void flb_lib_worker(void *data)

@@ -24,16 +24,18 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
 
-#define LIB_BUF_SIZE   65536*2
+#define LIB_BUF_CHUNK   65536
 
 /* Library input configuration & context */
 struct flb_in_lib_config {
     int fd;                     /* channel file descriptor */
+    int buf_size;               /* buffer size / capacity  */
     int buf_len;                /* read buffer length      */
-    char buf[LIB_BUF_SIZE];     /* read buffer: 65Kb max   */
+    char *buf_data;             /* the real buffer         */
 
+    int  msgp_size;             /* msgpack buffer size   */
     int  msgp_len;              /* msgpack data length   */
-    char msgp[LIB_BUF_SIZE];    /* msgpack static buffer */
+    char *msgp_data;            /* msgpack static buffer */
 };
 
 int in_lib_init(struct flb_config *config);

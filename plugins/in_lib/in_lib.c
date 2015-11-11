@@ -42,8 +42,23 @@ int in_lib_init(struct flb_config *config)
     if (!ctx) {
         return -1;
     }
+
+    ctx->buf_size = LIB_BUF_CHUNK;
+    ctx->buf_data = malloc(LIB_BUF_CHUNK);
+    ctx->buf_len = 0;
+
+    if (!ctx->buf_data) {
+        flb_utils_error_c("Could not allocate initial buf memory buffer");
+    }
+
+    ctx->msgp_size = LIB_BUF_CHUNK;
+    ctx->msgp_data = malloc(LIB_BUF_CHUNK);
     ctx->msgp_len = 0;
     ctx->fd = config->ch_data[0];
+
+    if (!ctx->msgp_data) {
+        flb_utils_error_c("Could not allocate initial msgp memory buffer");
+    }
 
     /* Set the context */
     ret = flb_input_set_context("lib", ctx, config);
@@ -67,14 +82,34 @@ int in_lib_collect(struct flb_config *config, void *in_context)
 {
     int bytes;
     int out_size;
+    int capacity;
+    int size;
+    char *ptr;
     char *pack;
     struct flb_in_lib_config *ctx = in_context;
 
+    capacity = (ctx->buf_size - ctx->buf_len);
+
+    /* Allocate memory as required (FIXME: this will be limited in later) */
+    if (capacity == 0) {
+        size = ctx->buf_size + LIB_BUF_CHUNK;
+        ptr = realloc(ctx->buf_data, size);
+        if (!ptr) {
+            perror("realloc");
+            return -1;
+        }
+        printf("ralloc to %i\n", size);
+        ctx->buf_data = ptr;
+        ctx->buf_size = size;
+    }
+
     bytes = read(ctx->fd,
-                 ctx->buf + ctx->buf_len,
-                 sizeof(ctx->buf) - ctx->buf_len);
+                 ctx->buf_data + ctx->buf_len,
+                 capacity);
+    printf("read %i\n", bytes);
     flb_debug("in_lib read() = %i", bytes);
     if (bytes == -1) {
+        perror("read");
         if (errno == -EPIPE) {
             return -1;
         }
@@ -82,15 +117,18 @@ int in_lib_collect(struct flb_config *config, void *in_context)
     }
     ctx->buf_len += bytes;
 
-    /* Initially we should support JSON input */
-    pack = flb_pack_json(ctx->buf, ctx->buf_len, &out_size);
+    /* initially we should support json input */
+    printf("pack start\n");
+    pack = flb_pack_json(ctx->buf_data, ctx->buf_len, &out_size);
     if (!pack) {
-        flb_debug("LIB data incomplete, waiting for more data...");
+        flb_debug("lib data incomplete, waiting for more data...");
         return 0;
     }
+    printf("pack end\n");
+    printf("out size=%i\n", out_size);
     ctx->buf_len = 0;
 
-    memcpy(ctx->msgp + ctx->msgp_len, pack, out_size);
+    memcpy(ctx->msgp_data + ctx->msgp_len, pack, out_size);
     ctx->msgp_len += out_size;
     free(pack);
 
@@ -103,7 +141,7 @@ void *in_lib_flush(void *in_context, int *size)
     struct flb_in_lib_config *ctx = in_context;
 
     buf = malloc(ctx->msgp_len);
-    memcpy(buf, ctx->msgp, ctx->msgp_len);
+    memcpy(buf, ctx->msgp_data, ctx->msgp_len);
     *size = ctx->msgp_len;
     ctx->msgp_len = 0;
 

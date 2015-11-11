@@ -120,7 +120,6 @@ add_subdirectory(src)
 add_subdirectory(examples)
 
 if(ENABLE_TESTS)
-
   enable_testing()
   add_subdirectory(tests)
 endif()
