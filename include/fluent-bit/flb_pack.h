@@ -20,7 +20,20 @@
 #ifndef FLB_PACK_H
 #define FLB_PACK_H
 
+#include <jsmn/jsmn.h>
+
+struct flb_pack_state {
+    int tokens_count;     /* number of parsed tokens */
+    int tokens_size;      /* array size of tokens    */
+    jsmntok_t *tokens;    /* tokens array            */
+    jsmn_parser parser;   /* parser state            */
+};
+
 char *flb_pack_json(char *js, size_t len, int *size);
+int flb_pack_state_init(struct flb_pack_state *s);
+char *flb_pack_json_state(char *js, size_t len, int *size,
+                          struct flb_pack_state *state);
+
 void flb_pack_print(char *data, size_t bytes);
 
 #endif
