@@ -1,3 +1,36 @@
+#define JSON_SMALL  "{"                         \
+  "\"somekey\": \"somevalue\","                 \
+  "\"somekey\": \"somevalue\","                 \
+  "\"somekey\": \"somevalue\","                 \
+  "\"somekey\": \"somevalue\","                 \
+  "\"somekey\": \"somevalue\","                 \
+  "\"somekey\": \"somevalue\","                 \
+  "\"somekey\": \"somevalue\","                 \
+  "\"somekey\": \"somevalue\","                 \
+  "\"somekey\": \"somevalue\","                 \
+  "\"somekey\": \"somevalue\","                 \
+  "\"somekey\": \"somevalue\","                 \
+  "\"somekey\": \"somevalue\","                 \
+  "\"somekey\": \"somevalue\","                 \
+  "\"somekey\": \"somevalue\","                 \
+  "\"somekey\": \"somevalue\","                 \
+  "\"somekey\": \"somevalue\","                 \
+  "\"somekey\": \"somevalue\","                 \
+  "\"somekey\": \"somevalue\","                 \
+  "\"somekey\": \"somevalue\","                 \
+  "\"somekey\": \"somevalue\","                 \
+  "\"somekey\": \"somevalue\","                 \
+  "\"somekey\": \"somevalue\","                 \
+  "\"somekey\": \"somevalue\","                 \
+  "\"somekey\": \"somevalue\","                 \
+  "\"somekey\": \"somevalue\","                 \
+  "\"somekey\": \"somevalue\","                 \
+  "\"somekey\": \"somevalue\","                 \
+  "\"somekey\": \"somevalue\","                 \
+  "\"somekey\": \"somevalue\","                 \
+  "\"somekey\": \"somevalue\","                 \
+  "\"somekey\": \"JSON_SMALL_END\""             \
+  "}"
 
 #define JSON_LONG  "{"                          \
   "\"somekey\": \"somevalue\","                 \
@@ -4967,5 +5000,5 @@
   "\"somekey\": \"somevalue\","                 \
   "\"somekey\": \"somevalue\","                 \
   "\"somekey\": \"somevalue\","                 \
-  "\"somekey\": \"somevalue\","                 \
+  "\"somekey\": \"JSON_LONG_END\""              \
   "}"
