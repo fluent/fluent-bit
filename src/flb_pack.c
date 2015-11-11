@@ -25,28 +25,28 @@
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
 
-static jsmntok_t *json_tokenise(char *js, size_t len, int *arr_size)
+static int json_tokenise(char *js, size_t len, int *arr_size,
+                         jsmn_parser *parser, jsmntok_t **tokens)
 {
     int ret;
     unsigned int n = 256;
-    jsmntok_t *tokens;
-    jsmn_parser parser;
+    jsmntok_t *t;
 
-    jsmn_init(&parser);
-    tokens = calloc(1, sizeof(jsmntok_t) * n);
+    t = *tokens;
+    t = calloc(1, sizeof(jsmntok_t) * n);
     if (!tokens) {
-        return NULL;
+        return -1;
     }
 
-    ret = jsmn_parse(&parser, js, len, tokens, n);
-
+    ret = jsmn_parse(parser, js, len, t, n);
     while (ret == JSMN_ERROR_NOMEM) {
         n = n * 2 + 1;
-        tokens = realloc(tokens, sizeof(jsmntok_t) * n);
-        if (!tokens) {
+        t = realloc(t, sizeof(jsmntok_t) * n);
+        if (!t) {
             goto error;
         }
-        ret = jsmn_parse(&parser, js, len, tokens, n);
+        *tokens = t;
+        ret = jsmn_parse(parser, js, len, t, n);
     }
 
     if (ret == JSMN_ERROR_INVAL) {
@@ -61,34 +61,24 @@ static jsmntok_t *json_tokenise(char *js, size_t len, int *arr_size)
 
     /* Store the array length */
     *arr_size = n;
-    return tokens;
+    *tokens = t;
+    return 0;
 
  error:
-    free(tokens);
-    return NULL;
+    free(t);
+    return -1;
 }
 
-/* It parse a JSON string and convert it to MessagePack format */
-char *flb_pack_json(char *js, size_t len, int *size)
+static char *tokens_to_msgpack(char *js,
+                               jsmntok_t *tokens, int arr_size, int *out_size)
 {
     int i;
     int flen;
-    int arr_size;
     char *p;
     char *buf;
     jsmntok_t *t;
-    jsmntok_t *tokens;
     msgpack_packer pck;
     msgpack_sbuffer sbuf;
-
-    if (!js) {
-        return NULL;
-    }
-
-    tokens = json_tokenise(js, len, &arr_size);
-    if (!tokens) {
-        return NULL;
-    }
 
     /* initialize buffers */
     msgpack_sbuffer_init(&sbuf);
@@ -131,12 +121,42 @@ char *flb_pack_json(char *js, size_t len, int *size)
     }
 
     /* dump data back to a new buffer */
-    *size = sbuf.size;
+    *out_size = sbuf.size;
     buf = malloc(sbuf.size);
     memcpy(buf, sbuf.data, sbuf.size);
     msgpack_sbuffer_destroy(&sbuf);
 
+    return buf;
+}
+
+/* It parse a JSON string and convert it to MessagePack format */
+char *flb_pack_json(char *js, size_t len, int *size)
+{
+    int ret;
+    int arr_size;
+    int out;
+    char *buf;
+    jsmntok_t *tokens;
+    jsmn_parser parser;
+
+    if (!js) {
+        return NULL;
+    }
+
+    jsmn_init(&parser);
+    ret = json_tokenise(js, len, &arr_size, &parser, &tokens);
+    if (ret != 0) {
+        return NULL;
+    }
+
+    buf = tokens_to_msgpack(js, tokens, arr_size, &out);
     free(tokens);
+
+    if (!buf) {
+        return NULL;
+    }
+
+    *size = out;
     return buf;
 }
 
