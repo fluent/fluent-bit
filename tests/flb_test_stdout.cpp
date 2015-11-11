@@ -33,3 +33,32 @@ TEST(Outputs, json_long_stdout) {
     printf("total=%i\n", total);
     flb_lib_stop(config);
 }
+
+TEST(Outputs, json_small_stdout) {
+    int i;
+    int ret;
+    int total;
+    int bytes;
+    char *p = (char *) JSON_SMALL;
+    struct flb_config *config;
+
+    config = flb_config_init();
+    EXPECT_TRUE(config != NULL);
+
+    ret = flb_lib_init(config, (char *) "stdout");
+    EXPECT_EQ(ret, 0);
+
+    ret = flb_lib_start(config);
+    EXPECT_EQ(ret, 0);
+
+    printf("JSON LONG=%lu\n", sizeof(JSON_SMALL) - 1);
+
+    total = 0;
+    for (i = 0; i < (int) sizeof(JSON_SMALL) - 1; i++) {
+        bytes = flb_lib_push(config, p + i, 1);
+        EXPECT_EQ(bytes, 1);
+        total++;
+    }
+    printf("total=%i\n", total);
+    flb_lib_stop(config);
+}
