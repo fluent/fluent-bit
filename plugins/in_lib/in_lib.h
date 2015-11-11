@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_pack.h>
 
 #define LIB_BUF_CHUNK   65536
 
@@ -36,6 +37,8 @@ struct flb_in_lib_config {
     int  msgp_size;             /* msgpack buffer size   */
     int  msgp_len;              /* msgpack data length   */
     char *msgp_data;            /* msgpack static buffer */
+
+    struct flb_pack_state state;
 };
 
 int in_lib_init(struct flb_config *config);

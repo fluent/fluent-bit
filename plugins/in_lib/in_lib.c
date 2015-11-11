@@ -75,6 +75,7 @@ int in_lib_init(struct flb_config *config)
         flb_utils_error_c("Could not set collector for LIB input plugin");
     }
 
+    flb_pack_state_init(&ctx->state);
     return 0;
 }
 
@@ -98,7 +99,6 @@ int in_lib_collect(struct flb_config *config, void *in_context)
             perror("realloc");
             return -1;
         }
-        printf("ralloc to %i\n", size);
         ctx->buf_data = ptr;
         ctx->buf_size = size;
     }
@@ -106,7 +106,6 @@ int in_lib_collect(struct flb_config *config, void *in_context)
     bytes = read(ctx->fd,
                  ctx->buf_data + ctx->buf_len,
                  capacity);
-    printf("read %i\n", bytes);
     flb_debug("in_lib read() = %i", bytes);
     if (bytes == -1) {
         perror("read");
@@ -118,14 +117,12 @@ int in_lib_collect(struct flb_config *config, void *in_context)
     ctx->buf_len += bytes;
 
     /* initially we should support json input */
-    printf("pack start\n");
-    pack = flb_pack_json(ctx->buf_data, ctx->buf_len, &out_size);
+    pack = flb_pack_json_state(ctx->buf_data, ctx->buf_len, &out_size,
+                               &ctx->state);
     if (!pack) {
         flb_debug("lib data incomplete, waiting for more data...");
         return 0;
     }
-    printf("pack end\n");
-    printf("out size=%i\n", out_size);
     ctx->buf_len = 0;
 
     memcpy(ctx->msgp_data + ctx->msgp_len, pack, out_size);
