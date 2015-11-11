@@ -24,51 +24,45 @@
 #include <jsmn/jsmn.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_pack.h>
 
-static int json_tokenise(char *js, size_t len, int *arr_size,
-                         jsmn_parser *parser, jsmntok_t **tokens)
+static int json_tokenise(char *js, size_t len,
+                         struct flb_pack_state *state)
 {
     int ret;
-    unsigned int n = 256;
+    int n;
     jsmntok_t *t;
 
-    t = *tokens;
-    t = calloc(1, sizeof(jsmntok_t) * n);
-    if (!tokens) {
-        return -1;
-    }
-
-    ret = jsmn_parse(parser, js, len, t, n);
+    ret = jsmn_parse(&state->parser, js, len,
+                     state->tokens, state->tokens_size);
     while (ret == JSMN_ERROR_NOMEM) {
-        n = n * 2 + 1;
-        t = realloc(t, sizeof(jsmntok_t) * n);
+        n = state->tokens_size += 256;
+        t = realloc(state->tokens, sizeof(jsmntok_t) * n);
         if (!t) {
-            goto error;
+            perror("realloc");
+            return -1;
         }
-        *tokens = t;
-        ret = jsmn_parse(parser, js, len, t, n);
+        state->tokens = t;
+        state->tokens_size = n;
+        ret = jsmn_parse(&state->parser, js, len,
+                         state->tokens, state->tokens_size);
     }
 
     if (ret == JSMN_ERROR_INVAL) {
         flb_utils_error(FLB_ERR_JSON_INVAL);
-        goto error;
+        return ret;
     }
 
     if (ret == JSMN_ERROR_PART) {
         /* This is a partial JSON message, just stop */
-        goto error;
+        return ret;
     }
 
-    /* Store the array length */
-    *arr_size = n;
-    *tokens = t;
+    state->tokens_count += ret;
     return 0;
-
- error:
-    free(t);
-    return -1;
 }
 
+/* Receive a tokenized JSON message and convert it to MsgPack */
 static char *tokens_to_msgpack(char *js,
                                jsmntok_t *tokens, int arr_size, int *out_size)
 {
@@ -129,28 +123,86 @@ static char *tokens_to_msgpack(char *js,
     return buf;
 }
 
-/* It parse a JSON string and convert it to MessagePack format */
+/*
+ * It parse a JSON string and convert it to MessagePack format, this packer is
+ * useful when a complete JSON message exists, otherwise it will fail until
+ * the message is complete.
+ *
+ * This routine do not keep a state in the parser, do not use it for big
+ * JSON messages.
+ */
 char *flb_pack_json(char *js, size_t len, int *size)
 {
     int ret;
-    int arr_size;
     int out;
     char *buf;
-    jsmntok_t *tokens;
-    jsmn_parser parser;
+    struct flb_pack_state state;
 
     if (!js) {
         return NULL;
     }
 
-    jsmn_init(&parser);
-    ret = json_tokenise(js, len, &arr_size, &parser, &tokens);
+    ret = flb_pack_state_init(&state);
+    if (ret != 0) {
+        return NULL;
+    }
+    ret = json_tokenise(js, len, &state);
     if (ret != 0) {
         return NULL;
     }
 
-    buf = tokens_to_msgpack(js, tokens, arr_size, &out);
-    free(tokens);
+    buf = tokens_to_msgpack(js, state.tokens, state.tokens_size, &out);
+    free(state.tokens);
+
+    if (!buf) {
+        return NULL;
+    }
+
+    *size = out;
+    return buf;
+}
+
+/* Initialize a JSON packer state */
+int flb_pack_state_init(struct flb_pack_state *s)
+{
+    int size = 256;
+
+    jsmn_init(&s->parser);
+    s->tokens = calloc(1, sizeof(jsmntok_t) * size);
+    if (!s->tokens) {
+        perror("calloc");
+        return -1;
+    }
+    s->tokens_size  = size;
+    s->tokens_count = 0;
+
+    return 0;
+}
+
+/*
+ * It parse a JSON string and convert it to MessagePack format. The main
+ * difference of this function and the previous flb_pack_json() is that it
+ * keeps a parser and tokens state, allowing to process big messages and
+ * resume the parsing process instead of start from zero.
+ */
+char *flb_pack_json_state(char *js, size_t len, int *size,
+                          struct flb_pack_state *state)
+{
+    int ret;
+    int out;
+    char *buf;
+
+    if (!js) {
+        return NULL;
+    }
+
+    ret = json_tokenise(js, len, state);
+    if (ret != 0) {
+        return NULL;
+    }
+
+    buf = tokens_to_msgpack(js, state->tokens, state->tokens_count, &out);
+    free(state->tokens);
 
     if (!buf) {
         return NULL;
