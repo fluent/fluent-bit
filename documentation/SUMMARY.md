@@ -8,6 +8,7 @@
     * [Build and Install](getting_started/installation.md)
     * [Debian/Ubuntu](getting_started/debian_ubuntu.md)
     * [Raspberry Pi](getting_started/raspberry_pi.md)
+    * [Unit Tests](getting_started/unit_tests.md)
 * [Input Plugins](input/README.md)
     * [CPU Usage](input/cpu.md)
     * [Kernel Log Buffer](input/kmsg.md)
