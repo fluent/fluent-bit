@@ -49,13 +49,12 @@ static int json_tokenise(char *js, size_t len,
     }
 
     if (ret == JSMN_ERROR_INVAL) {
-        flb_utils_error(FLB_ERR_JSON_INVAL);
-        return ret;
+        return FLB_ERR_JSON_INVAL;
     }
 
     if (ret == JSMN_ERROR_PART) {
         /* This is a partial JSON message, just stop */
-        return ret;
+        return FLB_ERR_JSON_PART;
     }
 
     state->tokens_count += ret;
@@ -131,35 +130,31 @@ static char *tokens_to_msgpack(char *js,
  * This routine do not keep a state in the parser, do not use it for big
  * JSON messages.
  */
-char *flb_pack_json(char *js, size_t len, int *size)
+int flb_pack_json(char *js, size_t len, char **buffer, int *size)
 {
     int ret;
     int out;
     char *buf;
     struct flb_pack_state state;
 
-    if (!js) {
-        return NULL;
-    }
-
     ret = flb_pack_state_init(&state);
     if (ret != 0) {
-        return NULL;
+        return -1;
     }
     ret = json_tokenise(js, len, &state);
     if (ret != 0) {
-        return NULL;
+        return ret;
     }
 
     buf = tokens_to_msgpack(js, state.tokens, state.tokens_size, &out);
     free(state.tokens);
-
     if (!buf) {
-        return NULL;
+        return -1;
     }
 
     *size = out;
-    return buf;
+    *buffer = buf;
+    return 0;
 }
 
 /* Initialize a JSON packer state */
@@ -185,31 +180,28 @@ int flb_pack_state_init(struct flb_pack_state *s)
  * keeps a parser and tokens state, allowing to process big messages and
  * resume the parsing process instead of start from zero.
  */
-char *flb_pack_json_state(char *js, size_t len, int *size,
-                          struct flb_pack_state *state)
+int flb_pack_json_state(char *js, size_t len,
+                        char **buffer, int *size,
+                        struct flb_pack_state *state)
 {
     int ret;
     int out;
     char *buf;
 
-    if (!js) {
-        return NULL;
-    }
-
     ret = json_tokenise(js, len, state);
     if (ret != 0) {
-        return NULL;
+        return ret;
     }
 
     buf = tokens_to_msgpack(js, state->tokens, state->tokens_count, &out);
     free(state->tokens);
-
     if (!buf) {
-        return NULL;
+        return -1;
     }
 
     *size = out;
-    return buf;
+    *buffer = buf;
+    return 0;
 }
 
 void flb_pack_print(char *data, size_t bytes)
