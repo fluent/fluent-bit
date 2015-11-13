@@ -51,6 +51,10 @@ static int split_address(struct flb_output_plugin *plugin, char *output)
     int len;
     char *s, *e;
 
+    if (!plugin || !output) {
+        return -1;
+    }
+
     len = strlen(plugin->name) + 3;
     if (strlen(output) <= len) {
         return -1;
