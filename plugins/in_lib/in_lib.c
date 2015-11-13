@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_error.h>
 
 #include "in_lib.h"
 
@@ -81,6 +82,7 @@ int in_lib_init(struct flb_config *config)
 
 int in_lib_collect(struct flb_config *config, void *in_context)
 {
+    int ret;
     int bytes;
     int out_size;
     int capacity;
@@ -117,9 +119,13 @@ int in_lib_collect(struct flb_config *config, void *in_context)
     ctx->buf_len += bytes;
 
     /* initially we should support json input */
-    pack = flb_pack_json_state(ctx->buf_data, ctx->buf_len, &out_size,
-                               &ctx->state);
-    if (!pack) {
+    ret = flb_pack_json_state(ctx->buf_data, ctx->buf_len,
+                              &pack, &out_size, &ctx->state);
+    if (ret == FLB_ERR_JSON_INVAL) {
+        flb_debug("lib data invalid");
+        return -1;
+    }
+    else if (ret == FLB_ERR_JSON_PART) {
         flb_debug("lib data incomplete, waiting for more data...");
         return 0;
     }
