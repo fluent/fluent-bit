@@ -1,3 +1,5 @@
+#define JSON_INVALID "{\"12345678\"\"\"}}}}}"
+
 #define JSON_SMALL  "{"                         \
   "\"somekey\": \"somevalue\","                 \
   "\"somekey\": \"somevalue\","                 \
