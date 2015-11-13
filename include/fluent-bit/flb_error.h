@@ -33,7 +33,7 @@
 #define FLB_ERR_OUTPUT_UNIQ          102
 
 /* JSON errors */
-#define FLB_ERR_JSON_INVAL           501
-#define FLB_ERR_JSON_PART            502
+#define FLB_ERR_JSON_INVAL           -501
+#define FLB_ERR_JSON_PART            -502
 
 #endif
