@@ -106,11 +106,6 @@ int mk_event_del(struct mk_event_loop *loop, struct mk_event *event)
 
     ctx = loop->data;
 
-    /* just remove a registered event */
-    if (event->status & ~MK_EVENT_REGISTERED) {
-        return -1;
-    }
-
     ret = _mk_event_del(ctx, event);
     if (ret == -1) {
         return -1;
