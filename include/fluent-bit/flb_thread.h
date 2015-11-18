@@ -50,6 +50,20 @@ struct flb_thread {
 #define FLB_THREAD_STACK(p)    (((char *) p) + sizeof(struct flb_thread))
 #define FLB_THREAD_STACK_SIZE  ((3 * PTHREAD_STACK_MIN) / 2)
 
+static FLB_INLINE void flb_thread_yield(struct flb_thread *th, int ended)
+{
+    th->ended = ended;
+    swapcontext(&th->callee, &th->caller);
+}
+
+static FLB_INLINE void flb_thread_destroy(struct flb_thread *th)
+{
+#ifdef USE_VALGRIND
+    VALGRIND_STACK_DEREGISTER(th->valgrind_stack_id);
+#endif
+    free(th);
+}
+
 static FLB_INLINE void flb_thread_resume(struct flb_thread *th)
 {
     /*
@@ -62,14 +76,8 @@ static FLB_INLINE void flb_thread_resume(struct flb_thread *th)
     /* It ended, destroy the thread (coroutine) */
     if (th->ended == MK_TRUE) {
         flb_debug("[thread %p] ended", th);
-        free(th);
+        flb_thread_destroy(th);
     }
-}
-
-static FLB_INLINE void flb_thread_yield(struct flb_thread *th, int ended)
-{
-    th->ended = ended;
-    swapcontext(&th->callee, &th->caller);
 }
 
 static struct flb_thread *flb_thread_new()
