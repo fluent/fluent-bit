@@ -303,7 +303,6 @@ int flb_engine_start(struct flb_config *config)
                  */
                 u = (struct flb_io_upstream *) event;
                 th = u->thread;
-                u->event.mask += 1;
 
                 flb_debug("[engine] resuming thread: %i", u->event.fd);
                 flb_thread_resume(th);
