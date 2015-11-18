@@ -14,14 +14,15 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/library")
 set(FLB_VERSION_MAJOR  0)
 set(FLB_VERSION_MINOR  4)
 set(FLB_VERSION_PATCH  0)
-set(FLB_VERSION_STR "${MK_VERSION_MAJOR}.${MK_VERSION_MINOR}.${MK_VERSION_PATCH}")
+set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 # Build Options
-option(WITH_ALL     "Enable all features"         No)
-option(WITH_DEBUG   "Build with debug symbols"    No)
-option(WITH_TLS     "Build with SSL/TLS support"  No)
-option(WITHOUT_BIN  "Do not build executable"     No)
-option(WITH_STATS   "Enable stats support"       Yes)
+option(WITH_ALL      "Enable all features"         No)
+option(WITH_DEBUG    "Build with debug symbols"    No)
+option(WITH_TLS      "Build with SSL/TLS support"  No)
+option(WITHOUT_BIN   "Do not build executable"     No)
+option(WITH_STATS    "Enable stats support"       Yes)
+option(WITH_VALGRIND "Enable Valgrind support"     No)
 
 # Build Plugins
 option(WITH_IN_XBEE     "Enable XBee input plugin"            No)
@@ -39,6 +40,7 @@ option(WITH_OUT_STDOUT  "Enable STDOUT output plugin"        Yes)
 if(ENABLE_TESTS)
   option(WITH_OUT_NULL  "Enable dev null output plugin"        Yes)
 endif()
+
 # Enable all features
 if(WITH_ALL)
   set(WITH_DEBUG       1)
@@ -106,6 +108,10 @@ if(WITH_STATS)
   add_definitions(-DHAVE_STATS)
   add_subdirectory(lib/cjson)
   include_directories(lib/cjson)
+endif()
+
+if(WITH_VALGRIND)
+  add_definitions(-DUSE_VALGRIND)
 endif()
 
 configure_file(
