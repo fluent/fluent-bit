@@ -45,6 +45,12 @@ struct flb_thread {
 #endif
     ucontext_t caller;
     ucontext_t callee;
+
+    /*
+     * Link to the buffer data originally passed for flushing, when the thread
+     * exits this reference must be freed.
+     */
+    void *output_buffer;
 };
 
 #define FLB_THREAD_STACK(p)    (((char *) p) + sizeof(struct flb_thread))
@@ -61,6 +67,9 @@ static FLB_INLINE void flb_thread_destroy(struct flb_thread *th)
 #ifdef USE_VALGRIND
     VALGRIND_STACK_DEREGISTER(th->valgrind_stack_id);
 #endif
+    if (th->output_buffer) {
+        free(th->output_buffer);
+    }
     free(th);
 }
 
