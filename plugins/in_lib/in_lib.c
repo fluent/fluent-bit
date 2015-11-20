@@ -144,6 +144,11 @@ void *in_lib_flush(void *in_context, int *size)
     char *buf;
     struct flb_in_lib_config *ctx = in_context;
 
+    if (ctx->msgp_len == 0) {
+        *size = 0;
+        return NULL;
+    }
+
     buf = malloc(ctx->msgp_len);
     memcpy(buf, ctx->msgp_data, ctx->msgp_len);
     *size = ctx->msgp_len;
