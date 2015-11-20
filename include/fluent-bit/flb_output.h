@@ -136,6 +136,7 @@ static FLB_INLINE struct flb_thread *flb_output_thread(struct flb_output_plugin 
         return NULL;
     }
 
+    th->output_buffer = buf;
     makecontext(&th->callee, (void (*)()) out->cb_flush,
                 4, buf, size, out->out_context, config);
     pthread_setspecific(flb_thread_key, (void *) th);
