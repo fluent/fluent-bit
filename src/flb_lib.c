@@ -20,12 +20,43 @@
 #include <signal.h>
 #include <unistd.h>
 
+#include <fluent-bit/flb_lib.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_utils.h>
 
 extern struct flb_input_plugin in_lib_plugin;
+
+static struct flb_lib_ctx *flb_lib_context_create()
+{
+    struct flb_lib_ctx *ctx;
+
+    ctx = calloc(1, sizeof(struct flb_lib_ctx));
+    if (!ctx) {
+        perror("malloc");
+        return NULL;
+    }
+
+    return ctx;
+}
+
+static void flb_lib_context_destroy(struct flb_lib_ctx *ctx)
+{
+
+    if (!ctx) {
+        return;
+    }
+
+    if (ctx->event_channel) {
+        mk_event_del(ctx->event_loop, ctx->event_channel);
+        free(ctx->event_channel);
+    }
+
+    /* Remove resources from the event loop */
+    mk_event_loop_destroy(ctx->event_loop);
+    free(ctx);
+}
 
 /*
  * The library initialization routine basically register the in_lib
@@ -35,8 +66,12 @@ extern struct flb_input_plugin in_lib_plugin;
 int flb_lib_init(struct flb_config *config, char *output)
 {
     int ret;
-    struct mk_event *event;
-    struct mk_event_loop *evl;
+    struct flb_lib_ctx *ctx;
+
+    ctx = flb_lib_context_create();
+    if (!ctx) {
+        return -1;
+    }
 
     ret = flb_input_set(config, "lib");
     if (ret == -1) {
@@ -57,21 +92,23 @@ int flb_lib_init(struct flb_config *config, char *output)
     }
 
     /* Create the event loop to receive notifications */
-    evl = mk_event_loop_create(256);
-    if (!evl) {
+    ctx->event_loop = mk_event_loop_create(256);
+    if (!ctx->event_loop) {
+        free(ctx);
         return -1;
     }
-    config->ch_evl = evl;
+    config->ch_evl = ctx->event_loop;
 
     /* Prepare the notification channels */
-    event = calloc(1, sizeof(struct mk_event));
+    ctx->event_channel = calloc(1, sizeof(struct mk_event));
     ret = mk_event_channel_create(config->ch_evl,
                                   &config->ch_notif[0],
                                   &config->ch_notif[1],
-                                  event);
+                                  ctx->event_channel);
     if (ret != 0) {
         flb_error("[lib] could not create notification channels");
-        exit(EXIT_FAILURE);
+        flb_lib_context_destroy(ctx);
+        return -1;
     }
 
     return 0;
@@ -157,4 +194,10 @@ int flb_lib_stop(struct flb_config *config)
 
     flb_debug("[lib] Fluent Bit engine stopped");
     return ret;
+}
+
+/* Release resources associated to the library context */
+void flb_lib_exit(struct flb_config *config)
+{
+    flb_lib_context_destroy(config->lib_ctx);
 }

@@ -22,10 +22,17 @@
 
 #include <fluent-bit/flb_config.h>
 
+/* Library mode context data */
+struct flb_lib_ctx {
+    struct mk_event_loop *event_loop;
+    struct mk_event *event_channel;
+};
+
 int flb_lib_init(struct flb_config *config, char *output);
 int flb_lib_config_file(struct flb_config *config, char *path);
 int flb_lib_push(struct flb_config *config, void *data, size_t len);
 int flb_lib_start(struct flb_config *config);
 int flb_lib_stop(struct flb_config *config);
+void flb_lib_exit(struct flb_config *config);
 
 #endif
