@@ -45,7 +45,7 @@ int in_lib_init(struct flb_config *config)
     }
 
     ctx->buf_size = LIB_BUF_CHUNK;
-    ctx->buf_data = malloc(LIB_BUF_CHUNK);
+    ctx->buf_data = calloc(1, LIB_BUF_CHUNK);
     ctx->buf_len = 0;
 
     if (!ctx->buf_data) {
@@ -133,6 +133,7 @@ int in_lib_collect(struct flb_config *config, void *in_context)
 
     memcpy(ctx->msgp_data + ctx->msgp_len, pack, out_size);
     ctx->msgp_len += out_size;
+
     free(pack);
 
     return 0;
