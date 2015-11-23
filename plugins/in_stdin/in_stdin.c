@@ -79,6 +79,7 @@ int in_stdin_collect(struct flb_config *config, void *in_context)
 {
     int bytes;
     int out_size;
+    int ret;
     char *pack;
     msgpack_unpacked result;
     size_t start = 0, off = 0;
@@ -94,8 +95,8 @@ int in_stdin_collect(struct flb_config *config, void *in_context)
     ctx->buf_len += bytes;
 
     /* Initially we should support JSON input */
-    pack = flb_pack_json(ctx->buf, ctx->buf_len, &out_size);
-    if (!pack) {
+    ret = flb_pack_json(ctx->buf, ctx->buf_len, &pack, &out_size);
+    if (ret != 0) {
         flb_debug("STDIN data incomplete, waiting for more data...");
         return 0;
     }
