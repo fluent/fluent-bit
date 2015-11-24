@@ -26,32 +26,24 @@ int main()
     int n;
     int ret;
     char tmp[256];
-    struct flb_config *config;
-
-    /* Create configuration context */
-    config = flb_config_init();
-    if (!config) {
-        exit(EXIT_FAILURE);
-    }
-
-    flb_config_verbose(FLB_TRUE);
+    struct flb_lib_ctx *ctx;
 
     /* Initialize library */
-    ret = flb_lib_init(config, (char *) "stdout");
-    if (ret != 0) {
+    ctx = flb_lib_init((char *) "stdout");
+    if (!ctx) {
         exit(EXIT_FAILURE);
     }
 
     /* Start the background worker */
-    flb_lib_start(config);
+    flb_lib_start(ctx);
 
     /* Push some data */
     for (i = 0; i < 100; i++) {
         n = snprintf(tmp, sizeof(tmp) - 1, "{\"key\": \"val %i\"}", i);
-        flb_lib_push(config, tmp, n);
+        flb_lib_push(ctx, tmp, n);
     }
 
-    flb_lib_stop(config);
+    flb_lib_stop(ctx);
 
     return 0;
 }
