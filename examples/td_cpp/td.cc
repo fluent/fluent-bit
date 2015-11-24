@@ -27,44 +27,38 @@ int main(int argc, char **argv)
     int ret;
     int time_field;
     char tmp[256];
-    struct flb_config *config;
+    struct flb_lib_ctx *ctx;
 
     if (argc < 2) {
         fprintf(stderr, "Usage: td /path/to/configuration.file\n");
         exit(EXIT_FAILURE);
     }
 
-    /* Create configuration context */
-    config = flb_config_init();
-    if (!config) {
+    /* Initialize library */
+    ctx = flb_lib_init((char *) "td");
+    if (!ctx) {
         exit(EXIT_FAILURE);
     }
 
-    /* Enable verbose messages */
-    flb_config_verbose(FLB_TRUE);
-
     /* Load a configuration file (required by TD output plugin) */
-    ret = flb_lib_config_file(config, argv[1]);
-
-    /* Initialize library */
-    ret = flb_lib_init(config, (char *) "td");
+    ret = flb_lib_config_file(ctx, argv[1]);
     if (ret != 0) {
         exit(EXIT_FAILURE);
     }
 
     /* Start the background worker */
-    flb_lib_start(config);
+    flb_lib_start(ctx);
 
     /* Push some data */
     time_field = time(NULL) - 100;
     for (i = 0; i < 100; i++) {
         n = snprintf(tmp, sizeof(tmp) - 1,
                      "{\"time\": %i, \"key\": \"val %i\"}", time_field, i);
-        flb_lib_push(config, tmp, n);
+        flb_lib_push(ctx, tmp, n);
         time_field++;
     }
 
-    flb_lib_stop(config);
+    flb_lib_stop(ctx);
 
     return 0;
 }
