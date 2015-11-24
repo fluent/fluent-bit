@@ -27,23 +27,13 @@ int main()
     int ret;
     char tmp[256];
     struct flb_config *config;
-
-    /* Create configuration context */
-    config = flb_config_init();
-    if (!config) {
-        exit(EXIT_FAILURE);
-    }
-
-    flb_config_verbose(FLB_TRUE);
+    struct flb_lib_ctx *ctx;
 
     /* Initialize library */
-    ret = flb_lib_init(config, "stdout");
-    if (ret != 0) {
+    ctx = flb_lib_init("stdout");
+    if (!ctx) {
         exit(EXIT_FAILURE);
     }
-
-    /* Start the background worker */
-    flb_lib_start(config);
 
     /* Push some data */
     for (i = 0; i < 100; i++) {
