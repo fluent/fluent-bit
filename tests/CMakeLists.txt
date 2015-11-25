@@ -8,6 +8,7 @@ include_directories (
 list(APPEND check_PROGRAMS
   flb_lib_push.cpp
   flb_test_stdout.cpp
+  flb_test_fluentd.cpp
   )
 
 foreach(source_file ${check_PROGRAMS})
