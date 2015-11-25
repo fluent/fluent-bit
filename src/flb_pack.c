@@ -54,6 +54,7 @@ static int json_tokenise(char *js, size_t len,
 
     if (ret == JSMN_ERROR_PART) {
         /* This is a partial JSON message, just stop */
+        flb_debug("[json tokenise] incomplete");
         return FLB_ERR_JSON_PART;
     }
 
@@ -110,6 +111,9 @@ static char *tokens_to_msgpack(char *js,
                 msgpack_pack_int64(&pck, atol(p));
             }
             break;
+        case JSMN_UNDEFINED:
+            msgpack_sbuffer_destroy(&sbuf);
+            return NULL;
         }
     }
 
@@ -146,7 +150,7 @@ int flb_pack_json(char *js, size_t len, char **buffer, int *size)
         return ret;
     }
 
-    buf = tokens_to_msgpack(js, state.tokens, state.tokens_size, &out);
+    buf = tokens_to_msgpack(js, state.tokens, state.tokens_count, &out);
     free(state.tokens);
     if (!buf) {
         return -1;
@@ -154,6 +158,7 @@ int flb_pack_json(char *js, size_t len, char **buffer, int *size)
 
     *size = out;
     *buffer = buf;
+
     return 0;
 }
 
