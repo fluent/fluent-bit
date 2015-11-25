@@ -6,23 +6,16 @@
 
 /* It writes a big JSON message (> 3.5MB) */
 TEST(Lib, push_big_json) {
-    int i;
     int ret;
-    int total;
-    int bytes;
     char *p = (char *) JSON_TD;
-    struct flb_config *config;
+    struct flb_lib_ctx *ctx;
 
-    config = flb_config_init();
-    EXPECT_TRUE(config != NULL);
+    ctx = flb_lib_init((char *) "stdout");
+    EXPECT_TRUE(ctx != NULL);
 
-    ret = flb_lib_init(config, (char *) "stdout");
+    ret = flb_lib_start(ctx);
     EXPECT_EQ(ret, 0);
 
-    ret = flb_lib_start(config);
-    EXPECT_EQ(ret, 0);
-
-    total = 0;
-    bytes = flb_lib_push(config, p, (int) sizeof(JSON_TD) - 1);
-    flb_lib_stop(config);
+    flb_lib_push(ctx, p, (int) sizeof(JSON_TD) - 1);
+    flb_lib_stop(ctx);
 }
