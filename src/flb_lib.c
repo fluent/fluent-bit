@@ -38,13 +38,21 @@ static struct flb_lib_ctx *flb_lib_context_create()
         return NULL;
     }
 
+    ctx->config = flb_config_init();
+    if (!ctx->config) {
+        return NULL;
+    }
+
+    ctx->config->lib_ctx = ctx;
     return ctx;
 }
 
+/* Release resources associated to a flb_lib context */
 static void flb_lib_context_destroy(struct flb_lib_ctx *ctx)
 {
 
     if (!ctx) {
+        flb_error("[lib] invalid context");
         return;
     }
 
@@ -63,39 +71,41 @@ static void flb_lib_context_destroy(struct flb_lib_ctx *ctx)
  * plugin for the configuration context in question. This is a mandatory step
  * for callers who wants to ingest data directly into the engine.
  */
-int flb_lib_init(struct flb_config *config, char *output)
+struct flb_lib_ctx *flb_lib_init(char *output)
 {
     int ret;
     struct flb_lib_ctx *ctx;
+    struct flb_config *config;
 
     ctx = flb_lib_context_create();
     if (!ctx) {
-        return -1;
+        return NULL;
     }
+    config = ctx->config;
 
     ret = flb_input_set(config, "lib");
     if (ret == -1) {
-        return -1;
+        return NULL;
     }
 
     /* Initialize our pipe to send data to our worker */
     ret = pipe(config->ch_data);
     if (ret == -1) {
         perror("pipe");
-        return -1;
+        return NULL;
     }
 
     /* Set the output interface */
     ret = flb_output_set(config, output);
     if (ret == -1) {
-        return -1;
+        return NULL;
     }
 
     /* Create the event loop to receive notifications */
     ctx->event_loop = mk_event_loop_create(256);
     if (!ctx->event_loop) {
         free(ctx);
-        return -1;
+        return NULL;
     }
     config->ch_evl = ctx->event_loop;
 
@@ -108,22 +118,22 @@ int flb_lib_init(struct flb_config *config, char *output)
     if (ret != 0) {
         flb_error("[lib] could not create notification channels");
         flb_lib_context_destroy(ctx);
-        return -1;
+        return NULL;
     }
 
-    return 0;
+    return ctx;
 }
 
 /* Load a configuration file that may be used by the input or output plugin */
-int flb_lib_config_file(struct flb_config *config, char *path)
+int flb_lib_config_file(struct flb_lib_ctx *ctx, char *path)
 {
     if (access(path, R_OK) != 0) {
         perror("access");
         return -1;
     }
 
-    config->file = mk_rconf_create(path);
-    if (!config->file) {
+    ctx->config->file = mk_rconf_create(path);
+    if (!ctx->config->file) {
         fprintf(stderr, "Error reading configuration file: %s\n", path);
         return -1;
     }
@@ -132,10 +142,11 @@ int flb_lib_config_file(struct flb_config *config, char *path)
 }
 
 /* Push some data into the Engine */
-int flb_lib_push(struct flb_config *config, void *data, size_t len)
+int flb_lib_push(struct flb_lib_ctx *ctx, void *data, size_t len)
 {
     int ret;
-    ret = write(config->ch_data[1], data, len);
+
+    ret = write(ctx->config->ch_data[1], data, len);
     if (ret == -1) {
         perror("write");
     }
@@ -149,14 +160,16 @@ static void flb_lib_worker(void *data)
 }
 
 /* Start the engine */
-int flb_lib_start(struct flb_config *config)
+int flb_lib_start(struct flb_lib_ctx *ctx)
 {
     int fd;
     int bytes;
     uint64_t val;
     pthread_t tid;
     struct mk_event *event;
+    struct flb_config *config;
 
+    config = ctx->config;
     tid = mk_utils_worker_spawn(flb_lib_worker, config);
     if (tid == -1) {
         return -1;
@@ -182,22 +195,22 @@ int flb_lib_start(struct flb_config *config)
 }
 
 /* Stop the engine */
-int flb_lib_stop(struct flb_config *config)
+int flb_lib_stop(struct flb_lib_ctx *ctx)
 {
     int ret;
     uint64_t val;
 
     flb_debug("[lib] sending STOP signal to the engine");
     val = FLB_ENGINE_STOP;
-    write(config->ch_manager[1], &val, sizeof(uint64_t));
-    ret = pthread_join(config->worker, NULL);
+    write(ctx->config->ch_manager[1], &val, sizeof(uint64_t));
+    ret = pthread_join(ctx->config->worker, NULL);
 
     flb_debug("[lib] Fluent Bit engine stopped");
     return ret;
 }
 
 /* Release resources associated to the library context */
-void flb_lib_exit(struct flb_config *config)
+void flb_lib_exit(struct flb_lib_ctx *ctx)
 {
-    flb_lib_context_destroy(config->lib_ctx);
+    flb_lib_context_destroy(ctx);
 }
