@@ -210,7 +210,7 @@ int in_serial_init(struct flb_config *config)
                                        config);
 #endif
 
-    return 0;
+    return ret;
 }
 
 /* Plugin reference */
