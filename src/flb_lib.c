@@ -40,6 +40,7 @@ static struct flb_lib_ctx *flb_lib_context_create()
 
     ctx->config = flb_config_init();
     if (!ctx->config) {
+        free(ctx);
         return NULL;
     }
 
