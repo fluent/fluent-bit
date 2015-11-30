@@ -156,6 +156,7 @@ int in_serial_init(struct flb_config *config)
 
     if (!config->file) {
         flb_utils_error_c("serial input plugin needs configuration file");
+        free(ctx);
         return -1;
     }
 
