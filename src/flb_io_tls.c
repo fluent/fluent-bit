@@ -340,10 +340,14 @@ FLB_INLINE int flb_io_tls_connect(struct flb_output_plugin *out,
          * FIXME: if we need multiple reads we are invoking the same
          * system call multiple times.
          */
-        mk_event_add(u->evl,
-                     u->event.fd,
-                     FLB_ENGINE_EV_THREAD,
-                     flag, &u->event);
+        ret = mk_event_add(u->evl,
+                           u->event.fd,
+                           FLB_ENGINE_EV_THREAD,
+                           flag, &u->event);
+        if (ret == -1) {
+            goto error;
+        }
+
         flb_thread_yield(th, FLB_FALSE);
         goto retry_handshake;
     }
