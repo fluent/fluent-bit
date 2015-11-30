@@ -166,11 +166,11 @@ static FLB_INLINE int handle_output_plugin(void *event)
         return -1;
     }
 
-    out_data = &sp->data[sp->n_data];
     if (sp->n_data == -1) {
         sp->n_data = 0;
     }
     else {
+        out_data = &sp->data[sp->n_data];
         if (out_data->time != in_data.time) {
             if (sp->n_data + 1 == FLB_STATS_SIZE) {
                 sp->n_data = 0;
