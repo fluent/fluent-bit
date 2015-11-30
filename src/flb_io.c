@@ -94,7 +94,7 @@ struct flb_io_upstream *flb_io_upstream_new(struct flb_config *config,
 FLB_INLINE int io_write(struct flb_thread *th, struct flb_output_plugin *out,
                         void *data, size_t len, size_t *out_len)
 {
-    int ret;
+    int ret = 0;
     ssize_t bytes;
     size_t total = 0;
     struct flb_io_upstream *u;
