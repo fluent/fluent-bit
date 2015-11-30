@@ -26,7 +26,6 @@ int main()
     int n;
     int ret;
     char tmp[256];
-    struct flb_config *config;
     struct flb_lib_ctx *ctx;
 
     /* Initialize library */
@@ -38,10 +37,10 @@ int main()
     /* Push some data */
     for (i = 0; i < 100; i++) {
         n = snprintf(tmp, sizeof(tmp) - 1, "{\"key\": \"val %i\"}", i);
-        flb_lib_push(config, tmp, n);
+        flb_lib_push(ctx, tmp, n);
     }
 
-    flb_lib_stop(config);
+    flb_lib_stop(ctx);
 
     return 0;
 }
