@@ -349,6 +349,7 @@ static int flb_stats_userver(struct flb_stats *stats)
     fd = stats_unix_server(FLB_STATS_USERVER_PATH);
     if (fd == -1) {
         flb_error("[stats_usrv] could not create unix server");
+        free(userver);
         return -1;
     }
 
