@@ -219,7 +219,6 @@ static int stats_userver_add(int fd, struct flb_stats *stats)
                        0,
                        client);
     if (ret == -1) {
-        close(client->fd);
         mk_list_del(&client->_head);
         free(client);
         return -1;
