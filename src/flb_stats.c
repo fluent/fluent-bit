@@ -183,6 +183,7 @@ static FLB_INLINE int handle_output_plugin(void *event)
 
     out_data = &sp->data[sp->n_data];
     memcpy(out_data, &in_data, sizeof(struct flb_stats_datapoint));
+    return 0;
 }
 
 static FLB_INLINE int stats_userver_accept(struct flb_stats *stats)
