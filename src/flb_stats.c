@@ -148,6 +148,7 @@ static FLB_INLINE int handle_input_plugin(void *event)
         }
     }
     memcpy(SDP(sp), &data, sizeof(struct flb_stats_datapoint));
+    return 0;
 }
 
 static FLB_INLINE int handle_output_plugin(void *event)
