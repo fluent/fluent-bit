@@ -283,6 +283,11 @@ FLB_INLINE int flb_io_connect(struct flb_output_plugin *out,
         /* Check the connection status */
         if (u->event.mask & MK_EVENT_WRITE) {
             ret = getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len);
+            if (ret == -1) {
+                flb_error("[io] could not validate socket status");
+                return -1;
+            }
+
             if (error != 0) {
                 /* Connection is broken, not much to do here */
                 flb_debug("[io] connection failed");
