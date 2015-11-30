@@ -295,6 +295,11 @@ FLB_INLINE int flb_io_tls_connect(struct flb_output_plugin *out,
         /* Check the connection status */
         if (u->event.mask & MK_EVENT_WRITE) {
             ret = getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len);
+            if (ret == -1) {
+                flb_error("[io_tls] could not validate socket status");
+                goto error;
+            }
+
             if (error != 0) {
                 /* Connection is broken, not much to do here */
                 flb_error("[io_tls] connection failed");
