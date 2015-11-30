@@ -29,7 +29,6 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_error.h>
-
 #include "in_lib.h"
 
 /* Initialize plugin */
@@ -103,6 +102,7 @@ int in_lib_collect(struct flb_config *config, void *in_context)
         }
         ctx->buf_data = ptr;
         ctx->buf_size = size;
+        capacity = LIB_BUF_CHUNK;
     }
 
     bytes = read(ctx->fd,
@@ -131,9 +131,20 @@ int in_lib_collect(struct flb_config *config, void *in_context)
     }
     ctx->buf_len = 0;
 
+    capacity = (ctx->msgp_size - ctx->msgp_len);
+    if (capacity < out_size) {
+        size = ctx->msgp_size + (((out_size - capacity) % LIB_BUF_CHUNK) + LIB_BUF_CHUNK);
+        ptr = realloc(ctx->msgp_data, size);
+        if (!ptr) {
+            free(pack);
+            return -1;
+        }
+        ctx->msgp_data = ptr;
+        ctx->msgp_size = size;
+    }
+
     memcpy(ctx->msgp_data + ctx->msgp_len, pack, out_size);
     ctx->msgp_len += out_size;
-
     free(pack);
 
     return 0;
