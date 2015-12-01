@@ -81,6 +81,7 @@ int in_lib_init(struct flb_config *config)
 
 int in_lib_collect(struct flb_config *config, void *in_context)
 {
+    int n;
     int ret;
     int bytes;
     int out_size;
@@ -133,9 +134,11 @@ int in_lib_collect(struct flb_config *config, void *in_context)
 
     capacity = (ctx->msgp_size - ctx->msgp_len);
     if (capacity < out_size) {
-        size = ctx->msgp_size + (((out_size - capacity) % LIB_BUF_CHUNK) + LIB_BUF_CHUNK);
+        n = ((out_size - capacity) / LIB_BUF_CHUNK) + 1;
+        size = ctx->msgp_size + (LIB_BUF_CHUNK * n);
         ptr = realloc(ctx->msgp_data, size);
         if (!ptr) {
+            perror("realloc");
             free(pack);
             return -1;
         }
