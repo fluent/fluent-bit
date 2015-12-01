@@ -37,8 +37,10 @@ struct flb_config {
     int flush;          /* Flush timeout                  */
     int flush_fd;       /* Timer FD associated to flush   */
     int shutdown_fd;    /* Shutdown FD, 5 seconds         */
+
 #ifdef HAVE_STATS
     int stats_fd;       /* Stats FD, 1 second             */
+    struct flb_stats *stats_ctx;
 #endif
 
     int verbose;        /* Verbose mode (default OFF)     */
@@ -54,6 +56,10 @@ struct flb_config {
     struct mk_event_loop *ch_evl;
 
     struct mk_rconf *file;
+
+    /* Event */
+    struct mk_event event_flush;
+    struct mk_event event_shutdown;
 
     /* Collectors */
     struct mk_list collectors;
