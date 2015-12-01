@@ -79,6 +79,23 @@ int in_lib_init(struct flb_config *config)
     return 0;
 }
 
+int in_lib_exit(void *data, struct flb_config *config)
+{
+    (void) config;
+    struct flb_in_lib_config *ctx = data;
+
+    if (ctx->buf_data) {
+        free(ctx->buf_data);
+    }
+
+    if (ctx->msgp_data) {
+        free(ctx->msgp_data);
+    }
+
+    free(ctx);
+    return 0;
+}
+
 int in_lib_collect(struct flb_config *config, void *in_context)
 {
     int n;
@@ -179,5 +196,6 @@ struct flb_input_plugin in_lib_plugin = {
     .cb_pre_run   = NULL,
     .cb_collect   = NULL,
     .cb_ingest    = NULL,
-    .cb_flush_buf = in_lib_flush
+    .cb_flush_buf = in_lib_flush,
+    .cb_exit      = in_lib_exit
 };
