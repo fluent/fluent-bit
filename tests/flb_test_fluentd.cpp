@@ -17,4 +17,5 @@ TEST(Outputs, json_long_fluentd) {
 
     flb_lib_push(ctx, (char *)JSON_LONG, size);
     flb_lib_stop(ctx);
+    flb_lib_exit(ctx);
 }
