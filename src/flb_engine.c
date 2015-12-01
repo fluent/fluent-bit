@@ -31,6 +31,9 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_engine.h>
+#ifdef HAVE_STATS
+#include <fluent-bit/flb_stats.h>
+#endif
 
 int flb_engine_flush(struct flb_config *config,
                      struct flb_input_plugin *in_force)
@@ -349,6 +352,7 @@ int flb_engine_shutdown(struct flb_config *config)
         }
     }
 
+    /* Collectors */
     mk_list_foreach_safe(head, tmp, &config->collectors) {
         collector = mk_list_entry(head, struct flb_input_collector, _head);
         mk_event_del(config->evl, &collector->event);
@@ -361,8 +365,14 @@ int flb_engine_shutdown(struct flb_config *config)
         free(collector);
     }
 
+    /* Event flush */
     mk_event_del(config->evl, &config->event_flush);
     close(config->flush_fd);
+
+#ifdef HAVE_STATS
+    flb_stats_exit(config);
+#endif
+
     mk_event_loop_destroy(config->evl);
     free(config);
 
