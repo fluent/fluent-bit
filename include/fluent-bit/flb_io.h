@@ -45,6 +45,7 @@ struct flb_io_upstream {
 
 struct flb_io_upstream *flb_io_upstream_new(struct flb_config *config,
                                             char *host, int port, int flags);
+int flb_io_upstream_destroy(struct flb_io_upstream *u);
 int flb_io_connect(struct flb_output_plugin *out,
                    struct flb_thread *th, struct flb_io_upstream *u);
 

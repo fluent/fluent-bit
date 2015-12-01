@@ -90,6 +90,17 @@ struct flb_io_upstream *flb_io_upstream_new(struct flb_config *config,
     return u;
 }
 
+int flb_io_upstream_destroy(struct flb_io_upstream *u)
+{
+    if (u->fd) {
+        close(u->fd);
+    }
+    free(u->tcp_host);
+    free(u);
+
+    return 0;
+}
+
 /* This routine is called from a co-routine thread */
 FLB_INLINE int io_write(struct flb_thread *th, struct flb_output_plugin *out,
                         void *data, size_t len, size_t *out_len)

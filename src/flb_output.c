@@ -158,7 +158,7 @@ void flb_output_exit(struct flb_config *config)
         }
 
         if (out->upstream) {
-            /* TODO: close/destroy out->upstream */
+            flb_io_upstream_destroy(out->upstream);
         }
 
         if (out->flags & ~FLB_OUTPUT_NOPROT) {
