@@ -224,7 +224,7 @@ int flb_engine_start(struct flb_config *config)
 
 
     /* Create and register the timer fd for flush procedure */
-    event = malloc(sizeof(struct mk_event));
+    event = &config->event_flush;
     event->mask = MK_EVENT_EMPTY;
     event->status = MK_EVENT_NONE;
 
@@ -277,7 +277,7 @@ int flb_engine_start(struct flb_config *config)
                      * We are preparing to shutdown, we give a graceful time
                      * of 5 seconds to process any pending event.
                      */
-                    event = malloc(sizeof(struct mk_event));
+                    event = &config->event_shutdown;
                     event->mask = MK_EVENT_EMPTY;
                     event->status = MK_EVENT_NONE;
                     config->shutdown_fd = mk_event_timeout_create(evl, 5, event);
@@ -349,10 +349,19 @@ int flb_engine_shutdown(struct flb_config *config)
         }
     }
 
-    mk_list_foreach(head, &config->collectors) {
+    mk_list_foreach_safe(head, tmp, &config->collectors) {
         collector = mk_list_entry(head, struct flb_input_collector, _head);
+        mk_event_del(config->evl, &collector->event);
+
+        if (collector->type == FLB_COLLECT_TIME) {
+            close(collector->fd_timer);
+        }
+
+        mk_list_del(&collector->_head);
+        free(collector);
     }
 
+    mk_event_del(config->evl, &config->event_flush);
     close(config->flush_fd);
     mk_event_loop_destroy(config->evl);
     free(config);
