@@ -186,6 +186,7 @@ int cb_td_flush(void *data, size_t bytes, void *out_context,
         perror("write");
     }
     free(request);
+    free(pack);
 
     n = flb_io_read(&out_td_plugin, buf, sizeof(buf) - 1);
     if (n > 0) {
