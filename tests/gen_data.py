@@ -38,7 +38,7 @@ f.close()
 # Long JSON
 f = open("data/json_long.h", 'w')
 write_header(f, "JSON_LONG")
-for i in range(0, 10000):
+for i in range(0, 50000):
     write_entry(f, "key_%i" % i, "val_%i" % i, None)
 write_footer(f)
 f.close()
