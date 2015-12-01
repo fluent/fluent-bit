@@ -97,6 +97,8 @@ struct flb_input_collector {
     /* Callback */
     int (*cb_collect) (struct flb_config *, void *);
 
+    struct mk_event event;
+
     /* General references */
     struct flb_input_plugin *plugin;     /* owner plugin               */
     struct mk_list _head;                /* link to list of collectors */

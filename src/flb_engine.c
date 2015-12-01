@@ -239,8 +239,9 @@ int flb_engine_start(struct flb_config *config)
     /* For each Collector, register the event into the main loop */
     mk_list_foreach(head, &config->collectors) {
         collector = mk_list_entry(head, struct flb_input_collector, _head);
+        event = &collector->event;
+
         if (collector->type == FLB_COLLECT_TIME) {
-            event = malloc(sizeof(struct mk_event));
             event->mask = MK_EVENT_EMPTY;
             event->status = MK_EVENT_NONE;
             fd = mk_event_timeout_create(evl, collector->seconds, event);
@@ -250,7 +251,6 @@ int flb_engine_start(struct flb_config *config)
             collector->fd_timer = fd;
         }
         else if (collector->type & (FLB_COLLECT_FD_EVENT | FLB_COLLECT_FD_SERVER)) {
-            event = malloc(sizeof(struct mk_event));
             event->mask   = MK_EVENT_EMPTY;
             event->status = MK_EVENT_NONE;
 
@@ -314,6 +314,10 @@ int flb_engine_start(struct flb_config *config)
 /* Release all resources associated to the engine */
 int flb_engine_shutdown(struct flb_config *config)
 {
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_input_collector *collector;
+
     /* cleanup plugins */
     flb_input_exit_all(config);
     flb_output_exit(config);
@@ -343,6 +347,10 @@ int flb_engine_shutdown(struct flb_config *config)
         if (config->ch_notif[0] != config->ch_notif[1]) {
             close(config->ch_notif[1]);
         }
+    }
+
+    mk_list_foreach(head, &config->collectors) {
+        collector = mk_list_entry(head, struct flb_input_collector, _head);
     }
 
     close(config->flush_fd);
