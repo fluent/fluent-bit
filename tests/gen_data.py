@@ -35,6 +35,14 @@ write_entry(f, "key2", None, "false", True)
 write_footer(f)
 f.close()
 
+# A small JSON
+f = open("data/json_small.h", 'w')
+write_header(f, "JSON_SMALL")
+for i in range(0, 250):
+    write_entry(f, "key_%i" % i, None, "false", True)
+write_footer(f)
+f.close()
+
 # Long JSON
 f = open("data/json_long.h", 'w')
 write_header(f, "JSON_LONG")
