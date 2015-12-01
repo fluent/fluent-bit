@@ -155,6 +155,9 @@ int cb_td_init(struct flb_config *config)
         flb_utils_error_c("Could not set configuration for td output plugin");
     }
 
+    out_td_plugin.host = strdup("api.treasuredata.com");
+    out_td_plugin.port = 443;
+
     return 0;
 }
 
@@ -201,6 +204,4 @@ struct flb_output_plugin out_td_plugin = {
     .cb_pre_run     = NULL,
     .cb_flush       = cb_td_flush,
     .flags          = FLB_OUTPUT_TLS | FLB_OUTPUT_NOPROT,
-    .host           = "api.treasuredata.com",
-    .port           = 443,
 };
