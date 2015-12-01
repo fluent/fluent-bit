@@ -201,6 +201,10 @@ int flb_lib_stop(struct flb_lib_ctx *ctx)
     int ret;
     uint64_t val;
 
+    if (ctx->config->file) {
+        mk_rconf_free(ctx->config->file);
+    }
+
     flb_debug("[lib] sending STOP signal to the engine");
     val = FLB_ENGINE_STOP;
     write(ctx->config->ch_manager[1], &val, sizeof(uint64_t));
