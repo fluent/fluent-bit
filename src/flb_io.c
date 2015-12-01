@@ -63,7 +63,7 @@ struct flb_io_upstream *flb_io_upstream_new(struct flb_config *config,
     int fd = -1;
     struct flb_io_upstream *u;
 
-    u = malloc(sizeof(struct flb_io_upstream));
+    u = calloc(1, sizeof(struct flb_io_upstream));
     if (!u) {
         perror("malloc");
         return NULL;
