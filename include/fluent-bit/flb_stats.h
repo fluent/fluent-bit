@@ -101,11 +101,14 @@ struct flb_stats_out_plugin {
 };
 
 struct flb_stats {
+    struct mk_event event;
+
     struct mk_event_loop *evl;
     struct flb_config *config;
     pthread_t worker_tid;
 
     /* Unix server */
+    int ch_manager[2];
     struct flb_stats_userver *userver;
 
     /* References to components that can deliver statistics */
@@ -135,6 +138,7 @@ int flb_stats_register(struct mk_event_loop *evl, struct flb_config *config);
 
 /* A dummy define to avoid some macros conditions into the core */
 #define flb_stats_init(a) do{} while(0)
+int flb_stats_exit(struct flb_config *config);
 #define flb_stats_update(a, b, c) do {} while(0)
 #define flb_stats_reset(a) do {} while(0)
 #define flb_stats_register(a, b) do{} while(0)

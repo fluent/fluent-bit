@@ -375,7 +375,26 @@ static int flb_stats_userver(struct flb_stats *stats)
     return 0;
 }
 
-static void stats_worker(void *data)
+static void stats_worker_exit(struct flb_stats *stats)
+{
+    struct flb_stats_userver *u;
+
+    /* Unix Server */
+    u = stats->userver;
+
+    /* Remove and close unix socket */
+    mk_event_del(stats->evl, &u->event);
+    close(u->fd);
+
+    /* Release the timer */
+    mk_event_del(stats->evl, &u->timer->event);
+    close(u->timer->fd);
+    free(u->timer);
+
+    free(u);
+}
+
+static void stats_worker_init(void *data)
 {
     int fd;
     int ret;
@@ -409,6 +428,15 @@ static void stats_worker(void *data)
                 /* userver client disconnected */
                 stats_userver_remove((struct flb_stats_userver_c *) event,
                                      stats);
+            }
+            else if (event->fd == stats->ch_manager[1]) {
+                /*
+                 * Once we get a signal on the manager channel, we start
+                 * our shutdown procedure and return (pthread exit).
+                 */
+                consume_byte(event->fd);
+                stats_worker_exit(stats);
+                return;
             }
             else if (event->type == MK_EVENT_NOTIFICATION) {
                 /*
@@ -555,6 +583,7 @@ static int flb_stats_components_init(struct flb_stats *stats)
  */
 int flb_stats_init(struct flb_config *config)
 {
+    int ret;
     struct flb_stats *stats;
 
     stats = malloc(sizeof(struct flb_stats));
@@ -562,9 +591,10 @@ int flb_stats_init(struct flb_config *config)
         flb_error("[stats] could not initialize");
         return -1;
     }
-    stats->config = config;
+    config->stats_ctx = stats;
 
     /* Create the event loop */
+    stats->config = config;
     stats->evl = mk_event_loop_create(64);
     if (!stats->evl) {
         flb_error("[stats] could not initialize event loop");
@@ -575,8 +605,64 @@ int flb_stats_init(struct flb_config *config)
     /* Register components into the stats interface */
     flb_stats_components_init(stats);
 
+    /* Channel manager */
+    ret = mk_event_channel_create(stats->evl,
+                                  &stats->ch_manager[0],
+                                  &stats->ch_manager[1],
+                                  stats);
+    if (ret != 0) {
+        flb_error("[stats] could not create manager channels");
+        free(stats);
+        return -1;
+    }
+
     /* Spawn a worker thread*/
-    stats->worker_tid = mk_utils_worker_spawn(stats_worker, stats);
+    stats->worker_tid = mk_utils_worker_spawn(stats_worker_init, stats);
+
+    return 0;
+}
+
+int flb_stats_exit(struct flb_config *config)
+{
+    uint64_t val = 1;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_stats *ctx;
+    struct flb_input_plugin *in;
+    struct flb_output_plugin *out;
+    struct flb_stats_in_plugin *s_in;
+    struct flb_stats_out_plugin *s_out;
+
+    ctx = config->stats_ctx;
+
+    /* Shutdown the userver thread */
+    write(ctx->ch_manager[1], &val, sizeof(uint64_t));
+
+    /* Release components / Input plugins */
+    mk_list_foreach_safe(head, tmp, &ctx->in_plugins) {
+        s_in = mk_list_entry(head, struct flb_stats_in_plugin, _head);
+        mk_event_del(ctx->evl, &s_in->event);
+        close(s_in->pipe[0]);
+        close(s_in->pipe[1]);
+        mk_list_del(&s_in->_head);
+        free(s_in);
+    }
+
+    /* Release components / Output plugins */
+    mk_list_foreach_safe(head, tmp, &ctx->out_plugins) {
+        s_out = mk_list_entry(head, struct flb_stats_out_plugin, _head);
+        mk_event_del(ctx->evl, &s_out->event);
+        close(s_out->pipe[0]);
+        close(s_out->pipe[1]);
+        mk_list_del(&s_out->_head);
+        free(s_out);
+    }
+
+    pthread_join(ctx->worker_tid, NULL);
+
+    mk_event_loop_destroy(ctx->evl);
+    config->stats_ctx = NULL;
+    free(ctx);
 
     return 0;
 }
