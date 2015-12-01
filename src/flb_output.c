@@ -161,7 +161,7 @@ void flb_output_exit(struct flb_config *config)
             flb_io_upstream_destroy(out->upstream);
         }
 
-        if (out->flags & ~FLB_OUTPUT_NOPROT) {
+        if (out->host) {
             free(out->host);
         }
     }
