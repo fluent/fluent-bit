@@ -50,6 +50,15 @@ int cb_fluentd_init(struct flb_config *config)
     return 0;
 }
 
+int cb_fluentd_exit(void *data, struct flb_config *config)
+{
+    (void) config;
+    struct flb_out_flientd_config *ctx = data;
+    free(data);
+
+    return 0;
+}
+
 int cb_fluentd_flush(void *data, size_t bytes, void *out_context,
                      struct flb_config *config)
 {
@@ -111,5 +120,6 @@ struct flb_output_plugin out_fluentd_plugin = {
     .cb_init      = cb_fluentd_init,
     .cb_pre_run   = NULL,
     .cb_flush     = cb_fluentd_flush,
+    .cb_exit      = cb_fluentd_exit,
     .flags        = FLB_OUTPUT_TCP,
 };
