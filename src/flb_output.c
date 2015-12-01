@@ -148,15 +148,21 @@ void flb_output_exit(struct flb_config *config)
 
     mk_list_foreach(head, &config->outputs) {
         out = mk_list_entry(head, struct flb_output_plugin, _head);
-        if (out->active == FLB_TRUE) {
-            /* Check a exit callback */
-            if (out->cb_exit) {
-                out->cb_exit(out->out_context, config);
-            }
+        if (out->active == FLB_FALSE) {
+            continue;
+        }
 
-            if (out->upstream) {
-                /* TODO: close/destroy out->upstream */
-            }
+        /* Check a exit callback */
+        if (out->cb_exit) {
+            out->cb_exit(out->out_context, config);
+        }
+
+        if (out->upstream) {
+            /* TODO: close/destroy out->upstream */
+        }
+
+        if (out->flags & ~FLB_OUTPUT_NOPROT) {
+            free(out->host);
         }
     }
 }
