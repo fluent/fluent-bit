@@ -31,18 +31,18 @@ static int json_tokenise(char *js, size_t len,
 {
     int ret;
     int n;
-    jsmntok_t *t;
+    void *tmp;
 
     ret = jsmn_parse(&state->parser, js, len,
                      state->tokens, state->tokens_size);
     while (ret == JSMN_ERROR_NOMEM) {
         n = state->tokens_size += 256;
-        t = realloc(state->tokens, sizeof(jsmntok_t) * n);
-        if (!t) {
+        tmp = realloc(state->tokens, sizeof(jsmntok_t) * n);
+        if (!tmp) {
             perror("realloc");
             return -1;
         }
-        state->tokens = t;
+        state->tokens = tmp;
         state->tokens_size = n;
         ret = jsmn_parse(&state->parser, js, len,
                          state->tokens, state->tokens_size);
@@ -151,7 +151,6 @@ int flb_pack_json(char *js, size_t len, char **buffer, int *size)
     }
 
     buf = tokens_to_msgpack(js, state.tokens, state.tokens_count, &out);
-    free(state.tokens);
     if (!buf) {
         return -1;
     }
