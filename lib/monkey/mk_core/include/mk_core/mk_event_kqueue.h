@@ -58,15 +58,15 @@ static inline int filter_mask(int16_t f)
 
 #define mk_event_foreach(event, evl)                                    \
     int __i;                                                            \
-    struct mk_event_ctx *ctx = evl->data;                               \
+    struct mk_event_ctx *__ctx = evl->data;                             \
                                                                         \
     if (evl->n_events > 0) {                                            \
-        event = ctx->events[0].udata;                                   \
+        event = __ctx->events[0].udata;                                 \
     }                                                                   \
                                                                         \
     for (__i = 0;                                                       \
          __i < evl->n_events;                                           \
          __i++,                                                         \
-             event = ctx->events[__i].udata                             \
+             event = __ctx->events[__i].udata                           \
          )
 #endif
