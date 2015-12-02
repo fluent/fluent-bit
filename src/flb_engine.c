@@ -175,6 +175,11 @@ static int flb_engine_started(struct flb_config *config)
 {
     uint64_t val;
 
+    /* Check the channel is valid (enabled by library mode) */
+    if (config->ch_notif[1] <= 0) {
+        return -1;
+    }
+
     val = FLB_ENGINE_STARTED;
     return write(config->ch_notif[1], &val, sizeof(uint64_t));
 }
