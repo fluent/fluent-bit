@@ -204,7 +204,7 @@ static int stats_userver_add(int fd, struct flb_stats *stats)
     struct flb_stats_userver *userver = stats->userver;
 
     /* Allocate connection node */
-    client = malloc(sizeof(struct flb_stats_userver_c));
+    client = calloc(1, sizeof(struct flb_stats_userver_c));
     if (!client) {
         return -1;
     }
