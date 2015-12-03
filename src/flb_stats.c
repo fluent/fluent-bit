@@ -628,8 +628,6 @@ int flb_stats_exit(struct flb_config *config)
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_stats *ctx;
-    struct flb_input_plugin *in;
-    struct flb_output_plugin *out;
     struct flb_stats_in_plugin *s_in;
     struct flb_stats_out_plugin *s_out;
 
