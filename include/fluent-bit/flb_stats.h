@@ -130,6 +130,7 @@ static inline void flb_stats_update(int stats_fd,
 }
 
 int flb_stats_init(struct flb_config *config);
+int flb_stats_exit(struct flb_config *config);
 int flb_stats_collect(struct flb_config *config);
 int flb_stats_register(struct mk_event_loop *evl, struct flb_config *config);
 
@@ -138,7 +139,7 @@ int flb_stats_register(struct mk_event_loop *evl, struct flb_config *config);
 
 /* A dummy define to avoid some macros conditions into the core */
 #define flb_stats_init(a) do{} while(0)
-int flb_stats_exit(struct flb_config *config);
+#define flb_stats_exit(a) do{} while(0)
 #define flb_stats_update(a, b, c) do {} while(0)
 #define flb_stats_reset(a) do {} while(0)
 #define flb_stats_register(a, b) do{} while(0)
