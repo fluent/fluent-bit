@@ -14,13 +14,13 @@ $ wget -qO - http://apt.fluentbit.io/fluentbit.key | sudo apt-key add -
 
 On Debian and derivated systems such as Ubuntu, you need to add our APT server entry to your sources lists, please add the following content at bottom of your __/etc/apt/sources.list__ file:
 
-#### Ubuntu 15.04 (vivid)
+#### Ubuntu 15.10 (Wily Werewolf)
 
 ```
-deb http://apt.fluentbit.io/ubuntu vivid main
+deb http://apt.fluentbit.io/ubuntu wily main
 ```
 
-#### Debian 8 (jessie)
+#### Debian 8 (Jessie)
 
 ```
 deb http://apt.fluentbit.io/debian jessie main
