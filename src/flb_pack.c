@@ -98,13 +98,13 @@ static char *tokens_to_msgpack(char *js,
             break;
         case JSMN_PRIMITIVE:
             p = js + t->start;
-            if (strncmp(p, "false", 5) == 0) {
+            if (*p == 'f') {
                 msgpack_pack_false(&pck);
             }
-            else if (strncmp(p, "true", 4) == 0) {
+            else if (*p == 't') {
                 msgpack_pack_true(&pck);
             }
-            else if (strncmp(p, "null", 4) == 0) {
+            else if (*p == 'n') {
                 msgpack_pack_nil(&pck);
             }
             else {
