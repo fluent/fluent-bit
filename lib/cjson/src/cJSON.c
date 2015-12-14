@@ -166,9 +166,10 @@ static char *print_number(cJSON *item,printbuffer *p)
 		else	str=(char*)cJSON_malloc(64);	/* This is a nice tradeoff. */
 		if (str)
 		{
-			if (fabs(floor(d)-d)<=DBL_EPSILON && fabs(d)<1.0e60)sprintf(str,"%.0f",d);
-			else if (fabs(d)<1.0e-6 || fabs(d)>1.0e9)			sprintf(str,"%e",d);
-			else												sprintf(str,"%f",d);
+			if (fpclassify(d) != FP_ZERO && !isnormal(d))				sprintf(str,"null");
+			else if (fabs(floor(d)-d)<=DBL_EPSILON && fabs(d)<1.0e60)	sprintf(str,"%.0f",d);
+			else if (fabs(d)<1.0e-6 || fabs(d)>1.0e9)					sprintf(str,"%e",d);
+			else														sprintf(str,"%f",d);
 		}
 	}
 	return str;
@@ -252,6 +253,15 @@ static const char *parse_string(cJSON *item,const char *str)
 static char *print_string_ptr(const char *str,printbuffer *p)
 {
 	const char *ptr;char *ptr2,*out;int len=0,flag=0;unsigned char token;
+
+	if (!str)
+	{
+		if (p)	out=ensure(p,3);
+		else	out=(char*)cJSON_malloc(3);
+		if (!out) return 0;
+		strcpy(out,"\"\"");
+		return out;
+	}
 	
 	for (ptr=str;*ptr;ptr++) flag|=((*ptr>0 && *ptr<32)||(*ptr=='\"')||(*ptr=='\\'))?1:0;
 	if (!flag)
@@ -267,14 +277,6 @@ static char *print_string_ptr(const char *str,printbuffer *p)
 		return out;
 	}
 	
-	if (!str)
-	{
-		if (p)	out=ensure(p,3);
-		else	out=(char*)cJSON_malloc(3);
-		if (!out) return 0;
-		strcpy(out,"\"\"");
-		return out;
-	}
 	ptr=str;while ((token=*ptr) && ++len) {if (strchr("\"\\\b\f\n\r\t",token)) len++; else if (token<32) len+=5;ptr++;}
 	
 	if (p)	out=ensure(p,len+3);
@@ -349,7 +351,6 @@ char *cJSON_PrintBuffered(cJSON *item,int prebuffer,int fmt)
 	p.length=prebuffer;
 	p.offset=0;
 	return print_value(item,0,fmt,&p);
-	return p.buffer;
 }
 
 
@@ -563,7 +564,7 @@ static char *print_object(cJSON *item,int depth,int fmt,printbuffer *p)
 		else	out=(char*)cJSON_malloc(fmt?depth+4:3);
 		if (!out)	return 0;
 		ptr=out;*ptr++='{';
-		if (fmt) {*ptr++='\n';for (i=0;i<depth-1;i++) *ptr++='\t';}
+		if (fmt) {*ptr++='\n';for (i=0;i<depth;i++) *ptr++='\t';}
 		*ptr++='}';*ptr++=0;
 		return out;
 	}
@@ -661,6 +662,17 @@ static char *print_object(cJSON *item,int depth,int fmt,printbuffer *p)
 int    cJSON_GetArraySize(cJSON *array)							{cJSON *c=array->child;int i=0;while(c)i++,c=c->next;return i;}
 cJSON *cJSON_GetArrayItem(cJSON *array,int item)				{cJSON *c=array->child;  while (c && item>0) item--,c=c->next; return c;}
 cJSON *cJSON_GetObjectItem(cJSON *object,const char *string)	{cJSON *c=object->child; while (c && cJSON_strcasecmp(c->string,string)) c=c->next; return c;}
+int cJSON_HasObjectItem(cJSON *object,const char *string)	{
+	cJSON *c=object->child;
+	while (c )
+	{
+		if(cJSON_strcasecmp(c->string,string)==0){
+			return 1;
+		}
+	c=c->next;
+	}
+	return 0;
+}
 
 /* Utility for array list handling. */
 static void suffix_object(cJSON *prev,cJSON *item) {prev->next=item;item->prev=prev;}
