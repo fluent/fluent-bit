@@ -46,17 +46,23 @@ static char *copy_substr(char *str, int s)
  * It parse the out_address, split the hostname, port (if any)
  * or set the default port based on the matched protocol
  */
-static int split_address(struct flb_output_plugin *plugin, char *output)
+static int parse_net_address(struct flb_output_plugin *plugin, char *output)
 {
     int len;
-    char *s, *e;
+    int olen;
+    char *s, *e, *u;
 
     if (!plugin || !output) {
         return -1;
     }
 
+    olen = strlen(output);
+    if (olen == strlen(plugin->name)) {
+        return 0;
+    }
+
     len = strlen(plugin->name) + 3;
-    if (strlen(output) <= len) {
+    if (olen < len) {
         return -1;
     }
 
@@ -67,25 +73,29 @@ static int split_address(struct flb_output_plugin *plugin, char *output)
         if (!e) {
             return -1;
         }
-        plugin->host = copy_substr(s, e - s);
+        plugin->net_host = copy_substr(s, e - s);
         s = e + 1;
     } else {
         e = s;
-        while (!(*e == '\0' || *e == ':')) {
+        while (!(*e == '\0' || *e == ':' || *e == '/')) {
             ++e;
         }
         if (e == s) {
             return -1;
         }
-        plugin->host = copy_substr(s, e - s);
+        plugin->net_host = copy_substr(s, e - s);
         s = e;
     }
     if (*s == ':') {
-        plugin->port = atoi(++s);
+        plugin->net_port = atoi(++s);
     }
-    else {
-        plugin->port = atoi(FLB_OUTPUT_FLUENT_PORT);
+
+    u = strchr(s, '/');
+    if (u) {
+        plugin->net_uri = strdup(u);
     }
+    plugin->net_address = strdup(output);
+
     return 0;
 }
 
@@ -119,23 +129,6 @@ void flb_output_pre_run(struct flb_config *config)
             if (out->cb_pre_run) {
                 out->cb_pre_run(out->out_context, config);
             }
-
-            /* Check if the plugin requires an upstream context */
-            if (out->flags & (FLB_OUTPUT_TCP | FLB_OUTPUT_TLS)) {
-                if (!out->host || out->port <= 0) {
-                    flb_error("[output] invalid host:port details");
-                    exit(EXIT_FAILURE);
-                }
-
-                out->upstream = flb_io_upstream_new(config,
-                                                    out->host,
-                                                    out->port,
-                                                    out->flags);
-                if (!out->upstream) {
-                    flb_error("[output] could not allocate upstream");
-                    exit(EXIT_FAILURE);
-                }
-            }
         }
     }
 }
@@ -161,8 +154,8 @@ void flb_output_exit(struct flb_config *config)
             flb_io_upstream_destroy(out->upstream);
         }
 
-        if (out->host) {
-            free(out->host);
+        if (out->net_host) {
+            free(out->net_host);
         }
     }
 }
@@ -187,12 +180,17 @@ int flb_output_set(struct flb_config *config, char *output)
         if (check_protocol(plugin->name, output)) {
             plugin->active = FLB_TRUE;
             config->output = plugin;
-            if (plugin->flags & FLB_OUTPUT_NOPROT) {
-                return 0;
+
+            if (plugin->flags & FLB_OUTPUT_NET) {
+                plugin->net_address = NULL;
+                plugin->net_host = NULL;
+                plugin->net_port = 0;
+                plugin->net_uri = NULL;
+                ret = parse_net_address(plugin, output);
+                return ret;
             }
 
-            ret = split_address(plugin, output);
-            return ret;
+            return 0;
         }
     }
 
@@ -214,7 +212,7 @@ int flb_output_init(struct flb_config *config)
     mk_list_foreach(head, &config->outputs) {
         out = mk_list_entry(head, struct flb_output_plugin, _head);
         if (out->active == FLB_TRUE) {
-            out->cb_init(config);
+            out->cb_init(out, config);
             mk_list_init(&out->th_queue);
 
 #ifdef HAVE_TLS

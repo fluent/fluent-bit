@@ -31,9 +31,7 @@
 #include <fluent-bit/flb_thread.h>
 
 /* Output plugin masks */
-#define FLB_OUTPUT_TCP         1  /* use plain TCP     */
-#define FLB_OUTPUT_TLS         2  /* use TLS/SSL layer */
-#define FLB_OUTPUT_NOPROT      4  /* do not validate protocol info */
+#define FLB_OUTPUT_NET         4  /* output address may set host and port */
 
 /* Internal macros for setup */
 #define FLB_OUTPUT_FLUENT      0
@@ -53,18 +51,32 @@ struct flb_output_plugin {
     /* Plugin description */
     char *description;
 
+    /*
+     * Output network address:
+     *
+     * An output plugin can be specified just using it shortname or using the
+     * complete network address format, e.g:
+     *
+     *  $ fluent-bit -i cpu -o plugin://hostname:port/uri
+     *
+     * where:
+     *
+     *   plugin   = the output plugin shortname
+     *   hostname = IP address or hostname of the target
+     *   port     = target TCP port
+     *   uri      = extra information that may be used by the plugin
+     */
     /* Original output address */
-    char *address;
-
-    /* Output backend address */
-    int   port;
-    char *host;
+    char *net_address;         /* Original address  */
+    int   net_port;            /* TCP port          */
+    char *net_host;            /* Hostname          */
+    char *net_uri;             /* extra information */
 
     /* Socket connection */
     int conn;
 
     /* Initalization */
-    int (*cb_init)    (struct flb_config *);
+    int (*cb_init)    (struct flb_output_plugin *, struct flb_config *);
 
     /* Pre run */
     int (*cb_pre_run) (void *, struct flb_config *);
