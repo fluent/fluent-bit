@@ -25,10 +25,21 @@
 
 #include "es.h"
 #include "es_http.h"
-#include "es_config.h"
 #include "es_bulk.h"
 
 struct flb_output_plugin out_es_plugin;
+
+/* Copy a sub-string in a new memory buffer */
+static char *copy_substr(char *str, int s)
+{
+    char *buf;
+
+    buf = malloc(s + 1);
+    strncpy(buf, str, s);
+    buf[s] = '\0';
+
+    return buf;
+}
 
 /*
  * Convert the internal Fluent Bit data representation to the required
@@ -36,7 +47,8 @@ struct flb_output_plugin out_es_plugin;
  *
  * 'Sadly' this process involves to convert from Msgpack to JSON.
  */
-static char *es_format(void *data, size_t bytes, int *out_size)
+static char *es_format(void *data, size_t bytes, int *out_size,
+                       struct flb_out_es_config *ctx)
 {
     int i;
     int ret;
@@ -96,7 +108,7 @@ static char *es_format(void *data, size_t bytes, int *out_size)
     index_len = snprintf(j_index,
                          ES_BULK_HEADER,
                          ES_BULK_INDEX_FMT,
-                         "bulk", "test");
+                         ctx->index, ctx->type);
 
     off = 0;
     msgpack_unpacked_destroy(&result);
@@ -215,18 +227,82 @@ static char *es_format(void *data, size_t bytes, int *out_size)
     return buf;
 }
 
-int cb_es_init(struct flb_config *config)
+int cb_es_init(struct flb_output_plugin *plugin,
+               struct flb_config *config)
 {
     int ret;
+    int ulen;
+    char *index;
+    char *type;
+    char *tmp;
     struct flb_out_es_config *ctx = NULL;
+    struct flb_io_upstream *upstream;
+
+    /*
+     * Validate that we have a complete URI as that one specifies the
+     * the 'index' and 'type'.
+     */
+    if (!plugin->net_uri) {
+        plugin->net_uri = strdup("/fluentbit/test");
+    }
+    else {
+        index = plugin->net_uri + 1;
+        ulen = strlen(plugin->net_uri);
+        if (ulen < 4 || !strchr(index, '/')) {
+            free(plugin->net_uri);
+            plugin->net_uri = strdup("/fluentbit/test");
+        }
+    }
+
+    /* Set default network configuration */
+    if (!plugin->net_host) {
+        plugin->net_host = strdup("127.0.0.1");
+    }
+    if (plugin->net_port == 0) {
+        plugin->net_port = 9200;
+    }
+
+    /* Allocate plugin context */
+    ctx = malloc(sizeof(struct flb_out_es_config));
+    if (!ctx) {
+        perror("malloc");
+        return -1;
+    }
+
+    /* Parse ES uri */
+    ulen = strlen(plugin->net_uri);
+    index = plugin->net_uri;
+    index++;
+
+    tmp = strchr(index, '/');
+    index = copy_substr(plugin->net_uri + 1,
+                        (tmp - index));
+    type = strdup(++tmp);
+
+    flb_info("[es] host=%s port=%i index=%s type=%s",
+             plugin->net_host, plugin->net_port,
+             index, type);
+
+    /* Prepare an upstream handler */
+    upstream = flb_io_upstream_new(config,
+                                   plugin->net_host,
+                                   plugin->net_port,
+                                   FLB_IO_TCP);
+    if (!upstream) {
+        free(ctx);
+        return -1;
+    }
+
+
+    /* Set the context */
+    ctx->u = upstream;
+    ctx->index = index;
+    ctx->type  = type;
 
     ret = flb_output_set_context("es", ctx, config);
     if (ret == -1) {
         flb_utils_error_c("Could not set configuration for es output plugin");
     }
-
-    out_es_plugin.host = strdup("127.0.0.1");
-    out_es_plugin.port = 9200;
 
     return 0;
 }
@@ -245,20 +321,20 @@ int cb_es_flush(void *data, size_t bytes, void *out_context,
     struct flb_out_es_config *ctx = out_context;
 
     /* Convert format */
-    pack = es_format(data, bytes, &bytes_out);
+    pack = es_format(data, bytes, &bytes_out, ctx);
     if (!pack) {
         return -1;
     }
 
     request = es_http_request(pack, bytes_out, &len, ctx, config);
-    ret = flb_io_write(&out_es_plugin, request, len, &bytes_sent);
+    ret = flb_io_net_write(ctx->u, request, len, &bytes_sent);
     if (ret == -1) {
         perror("write");
     }
     free(request);
     free(pack);
 
-    n = flb_io_read(&out_es_plugin, buf, sizeof(buf) - 1);
+    n = flb_io_net_read(ctx->u, buf, sizeof(buf) - 1);
     if (n > 0) {
         buf[n] = '\0';
         flb_debug("[ES] API server response:\n%s", buf);
@@ -274,5 +350,7 @@ struct flb_output_plugin out_es_plugin = {
     .cb_init        = cb_es_init,
     .cb_pre_run     = NULL,
     .cb_flush       = cb_es_flush,
-    .flags          = FLB_OUTPUT_TCP,
+
+    /* Plugin flags */
+    .flags          = FLB_OUTPUT_NET,
 };

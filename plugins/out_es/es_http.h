@@ -21,7 +21,7 @@
 #define FLB_OUT_ES_HTTP_H
 
 #include <fluent-bit/flb_config.h>
-#include "es_config.h"
+#include "es.h"
 
 char *es_http_request(char *data, size_t len,
                       size_t *out_len,

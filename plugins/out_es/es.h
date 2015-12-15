@@ -23,4 +23,13 @@
 #define FLB_ES_DEFAULT_HOST   "127.0.0.1"
 #define FLB_ES_DEFAULT_PORT   92000
 
+struct flb_out_es_config {
+    /* Elasticsearch index (database) and type (table) */
+    char *index;
+    char *type;
+
+    /* Upstream connection to the backend server */
+    struct flb_io_upstream *u;
+};
+
 #endif

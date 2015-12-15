@@ -23,7 +23,7 @@
 #include <zlib.h>
 
 #include <fluent-bit/flb_config.h>
-#include "es_config.h"
+#include "es.h"
 
 #define ES_HTTP_HEADER_SIZE  512
 
@@ -32,7 +32,6 @@ char *es_http_request(char *data, size_t len,
                       struct flb_out_es_config *ctx, struct flb_config *config)
 {
     int bytes;
-    int f_len;
     char *req;
     char *fmt =
         "POST /_bulk HTTP/1.1\r\n"
