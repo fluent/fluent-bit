@@ -56,13 +56,13 @@ struct flb_thread {
 #define FLB_THREAD_STACK(p)    (((char *) p) + sizeof(struct flb_thread))
 #define FLB_THREAD_STACK_SIZE  ((3 * PTHREAD_STACK_MIN) / 2)
 
-static FLB_INLINE void flb_thread_yield(struct flb_thread *th, int ended)
+FLB_INLINE void flb_thread_yield(struct flb_thread *th, int ended)
 {
     th->ended = ended;
     swapcontext(&th->callee, &th->caller);
 }
 
-static FLB_INLINE void flb_thread_destroy(struct flb_thread *th)
+FLB_INLINE void flb_thread_destroy(struct flb_thread *th)
 {
 #ifdef USE_VALGRIND
     VALGRIND_STACK_DEREGISTER(th->valgrind_stack_id);
@@ -73,7 +73,7 @@ static FLB_INLINE void flb_thread_destroy(struct flb_thread *th)
     free(th);
 }
 
-static FLB_INLINE void flb_thread_resume(struct flb_thread *th)
+FLB_INLINE void flb_thread_resume(struct flb_thread *th)
 {
     /*
      * Always assume the coroutine will end, the callee can change
