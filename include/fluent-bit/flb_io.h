@@ -25,8 +25,12 @@
 #include <fluent-bit/flb_output.h>
 
 /* Coroutine status 'flb_thread.status' */
-#define FLB_IO_CONNECT    0   /* thread issue a connection request */
-#define FLB_IO_WRITE      1   /* thread wants to write() data      */
+#define FLB_IO_CONNECT     0  /* thread issue a connection request */
+#define FLB_IO_WRITE       1  /* thread wants to write() data      */
+
+/* Network operation modes */
+#define FLB_IO_TCP         1  /* use plain TCP     */
+#define FLB_IO_TLS         2  /* use TLS/SSL layer */
 
 struct flb_io_upstream {
     struct mk_event event;
@@ -49,8 +53,8 @@ int flb_io_upstream_destroy(struct flb_io_upstream *u);
 int flb_io_connect(struct flb_output_plugin *out,
                    struct flb_thread *th, struct flb_io_upstream *u);
 
-int flb_io_write(struct flb_output_plugin *out, void *data,
-                 size_t len, size_t *out_len);
-ssize_t flb_io_read(struct flb_output_plugin *out, void *buf, size_t len);
+int flb_io_net_write(struct flb_io_upstream *u, void *data,
+                     size_t len, size_t *out_len);
+ssize_t flb_io_net_read(struct flb_io_upstream *u, void *buf, size_t len);
 
 #endif
