@@ -26,9 +26,11 @@
 
 #include "stdout.h"
 
-int cb_stdout_init(struct flb_config *config)
+int cb_stdout_init(struct flb_output_plugin *plugin, struct flb_config *config)
 {
-    /* do nothing */
+    (void) plugin;
+    (void) config;
+
     return 0;
 }
 
@@ -83,5 +85,5 @@ struct flb_output_plugin out_stdout_plugin = {
     .description  = "Prints events to STDOUT",
     .cb_init      = cb_stdout_init,
     .cb_flush     = cb_stdout_flush,
-    .flags        = FLB_OUTPUT_NOPROT,
+    .flags        = 0,
 };
