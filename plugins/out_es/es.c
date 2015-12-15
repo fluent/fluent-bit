@@ -186,7 +186,17 @@ static char *es_format(void *data, size_t bytes, int *out_size)
             j_entry = json_print_unformatted(j_map);
             json_delete(j_map);
 
-            es_bulk_append(bulk, j_index, index_len, j_entry, strlen(j_entry));
+            ret = es_bulk_append(bulk,
+                                 j_index, index_len,
+                                 j_entry, strlen(j_entry));
+            free(j_entry);
+            if (ret == -1) {
+                /* We likely ran out of memory, abort here */
+                msgpack_unpacked_destroy(&result);
+                *out_size = 0;
+                es_bulk_destroy(bulk);
+                return NULL;
+            }
         }
     }
 
@@ -194,6 +204,12 @@ static char *es_format(void *data, size_t bytes, int *out_size)
 
     *out_size = bulk->len;
     buf = bulk->ptr;
+
+    /*
+     * Note: we don't destroy the bulk as we need to keep the allocated
+     * buffer with the data. Instead we just release the bulk context and
+     * return the bulk->ptr buffer
+     */
     free(bulk);
 
     return buf;

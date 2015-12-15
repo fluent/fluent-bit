@@ -46,6 +46,14 @@ struct es_bulk *es_bulk_create()
     return b;
 }
 
+void es_bulk_destroy(struct es_bulk *bulk)
+{
+    if (bulk->size > 0) {
+        free(bulk->ptr);
+    }
+    free(bulk);
+}
+
 int es_bulk_append(struct es_bulk *bulk, char *index, int i_len, char *json, int j_len)
 {
     int available;
