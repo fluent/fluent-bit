@@ -30,12 +30,19 @@ macro(FLB_PLUGIN name src deps)
 endmacro()
 
 
-# Try to register each plugin
+# ======================
+#  Plugins Registration
+# ======================
+
+# These plugins works only on Linux
+if(${CMAKE_SYSTEM_NAME} MATCHES "LinuxA")
+  REGISTER_IN_PLUGIN("in_cpu")
+  REGISTER_IN_PLUGIN("in_mem")
+  REGISTER_IN_PLUGIN("in_kmsg")
+endif()
+
 REGISTER_IN_PLUGIN("in_xbee")
-REGISTER_IN_PLUGIN("in_cpu")
 REGISTER_IN_PLUGIN("in_http")
-REGISTER_IN_PLUGIN("in_mem")
-REGISTER_IN_PLUGIN("in_kmsg")
 REGISTER_IN_PLUGIN("in_serial")
 REGISTER_IN_PLUGIN("in_stdin")
 REGISTER_IN_PLUGIN("in_mqtt")
