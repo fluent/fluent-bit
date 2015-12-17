@@ -46,6 +46,14 @@ struct flb_thread {
     ucontext_t caller;
     ucontext_t callee;
 
+
+    /*
+     * Reference to some internal data, for output plugins it usually
+     * reference the associated plugin in question where this thread
+     * should help.
+     */
+    void *data;
+
     /*
      * Link to the buffer data originally passed for flushing, when the thread
      * exits this reference must be freed.
