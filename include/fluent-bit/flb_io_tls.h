@@ -27,6 +27,7 @@
 #include <mbedtls/entropy.h>
 #include <mbedtls/ctr_drbg.h>
 
+/* mbedTLS library context */
 struct flb_tls_context {
     /* unused */
     mbedtls_x509_crt cert;
@@ -38,11 +39,16 @@ struct flb_tls_context {
     mbedtls_ctr_drbg_context ctr_drbg;
 };
 
+/* TLS connected session */
 struct flb_tls_session {
     struct mbedtls_ssl_context ssl;
     struct mbedtls_ssl_config conf;
+};
 
-    struct flb_tls_context *tls_context;
+/* TLS instance, library context + active sessions */
+struct flb_tls {
+    struct flb_tls_context *context;
+    struct mk_list sessions;
 };
 
 struct flb_tls_context *flb_tls_context_new();

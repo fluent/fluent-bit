@@ -34,9 +34,10 @@
 #include <fluent-bit/flb_engine.h>
 
 #define FLB_TLS_CLIENT   "Fluent Bit"
+
 #define io_tls_error(ret) _io_tls_error(ret, __FILE__, __LINE__)
 
-static inline void _io_tls_error(int ret, char *file, int line)
+void _io_tls_error(int ret, char *file, int line)
 {
     char err_buf[72];
 
@@ -67,20 +68,20 @@ static inline int io_tls_event_switch(struct flb_io_upstream *u, int mask)
 struct flb_tls_context *flb_tls_context_new()
 {
     int ret;
-    struct flb_tls_context *tls;
+    struct flb_tls_context *ctx;
 
-    tls = malloc(sizeof(struct flb_tls_context));
-    if (!tls) {
+    ctx = malloc(sizeof(struct flb_tls_context));
+    if (!ctx) {
         perror("malloc");
         return NULL;
     }
 
-    mbedtls_entropy_init(&tls->entropy);
-    mbedtls_ctr_drbg_init(&tls->ctr_drbg);
+    mbedtls_entropy_init(&ctx->entropy);
+    mbedtls_ctr_drbg_init(&ctx->ctr_drbg);
 
-    ret = mbedtls_ctr_drbg_seed(&tls->ctr_drbg,
+    ret = mbedtls_ctr_drbg_seed(&ctx->ctr_drbg,
                                 mbedtls_entropy_func,
-                                &tls->entropy,
+                                &ctx->entropy,
                                 (const unsigned char *) FLB_TLS_CLIENT,
                                 sizeof(FLB_TLS_CLIENT) -1);
     if (ret == -1) {
@@ -88,14 +89,14 @@ struct flb_tls_context *flb_tls_context_new()
         goto error;
     }
 
-    return tls;
+    return ctx;
 
  error:
-    free(tls);
+    free(ctx);
     return NULL;
 }
 
-struct flb_tls_session *flb_tls_session_new(struct flb_tls_context *tls)
+struct flb_tls_session *flb_tls_session_new(struct flb_tls_context *ctx)
 {
     int ret;
     struct flb_tls_session *session;
@@ -105,7 +106,6 @@ struct flb_tls_session *flb_tls_session_new(struct flb_tls_context *tls)
         return NULL;
     }
 
-    session->tls_context = tls;
     mbedtls_ssl_init(&session->ssl);
     mbedtls_ssl_config_init(&session->conf);
 
@@ -119,7 +119,7 @@ struct flb_tls_session *flb_tls_session_new(struct flb_tls_context *tls)
 
     mbedtls_ssl_conf_rng(&session->conf,
                          mbedtls_ctr_drbg_random,
-                         &tls->ctr_drbg);
+                         &ctx->ctr_drbg);
     mbedtls_ssl_conf_authmode(&session->conf, MBEDTLS_SSL_VERIFY_NONE);
 
     ret = mbedtls_ssl_setup(&session->ssl, &session->conf);
@@ -127,7 +127,6 @@ struct flb_tls_session *flb_tls_session_new(struct flb_tls_context *tls)
         flb_error("[tls] ssl_setup");
         goto error;
     }
-
 
     return session;
 
@@ -147,89 +146,12 @@ int tls_session_destroy(struct flb_tls_session *session)
     return 0;
 }
 
-
-FLB_INLINE int io_tls_read(struct flb_thread *th, struct flb_output_plugin *out,
-                               void *buf, size_t len)
-{
-    int ret;
-    struct flb_io_upstream *u;
-
-    u = out->upstream;
-    ret = mbedtls_ssl_read(&u->tls_session->ssl, buf, len);
-    if (ret <= 0) {
-        tls_session_destroy(u->tls_session);
-        u->tls_session = NULL;
-    }
-
-    return -1;
-}
-
-int io_tls_write(struct flb_thread *th, struct flb_output_plugin *out,
-                 void *data, size_t len, size_t *out_len)
-{
-    int ret;
-    size_t total = 0;
-    struct flb_io_upstream *u;
-
-    u = out->upstream;
-    if (!u->tls_session) {
-        u->tls_session = flb_tls_session_new(out->tls_context);
-        if (!u->tls_session) {
-            flb_error("[io_tls] could not create tls session");
-            return -1;
-        }
-
-        ret = flb_io_tls_connect(out, th, u);
-        if (ret == -1) {
-            flb_error("[io_tls] could not connect/initiate TLS session");
-            return -1;
-        }
-    }
-
- retry_write:
-    ret = mbedtls_ssl_write(&u->tls_session->ssl,
-                            data + total,
-                            len - total);
-    if (ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
-        io_tls_event_switch(u, MK_EVENT_WRITE);
-        flb_thread_yield(th, FLB_FALSE);
-        goto retry_write;
-    }
-    else if (ret == MBEDTLS_ERR_SSL_WANT_READ) {
-        io_tls_event_switch(u, MK_EVENT_READ);
-        flb_thread_yield(th, FLB_FALSE);
-        goto retry_write;
-    }
-    else if (ret < 0) {
-        /* There was an error transmitting data */
-        mk_event_del(u->evl, &u->event);
-        tls_session_destroy(u->tls_session);
-        u->tls_session = NULL;
-        return -1;
-    }
-
-    /* Update statistics */
-    flb_stats_update(out->stats_fd, ret, 0);
-
-    /* Update counter and check if we need to continue writing */
-    total += ret;
-    if (total < len) {
-        io_tls_event_switch(u, MK_EVENT_WRITE);
-        flb_thread_yield(th, FLB_FALSE);
-        goto retry_write;
-    }
-
-    mk_event_del(u->evl, &u->event);
-    return 0;
-}
-
 /*
  * This routine perform a TCP connection and the required TLS/SSL
  * handshake,
  */
-FLB_INLINE int flb_io_tls_connect(struct flb_output_plugin *out,
-                                  struct flb_thread *th,
-                                  struct flb_io_upstream *u)
+FLB_INLINE int flb_io_net_tls_connect(struct flb_io_upstream *u,
+                                      struct flb_thread *th)
 {
     int fd;
     int ret;
@@ -319,6 +241,7 @@ FLB_INLINE int flb_io_tls_connect(struct flb_output_plugin *out,
 
  retry_handshake:
     ret = mbedtls_ssl_handshake(&session->ssl);
+
     if (ret != 0) {
         if (ret != MBEDTLS_ERR_SSL_WANT_READ &&
             ret !=  MBEDTLS_ERR_SSL_WANT_WRITE) {
@@ -367,4 +290,80 @@ FLB_INLINE int flb_io_tls_connect(struct flb_output_plugin *out,
         mk_event_del(u->evl, &u->event);
     }
     return -1;
+}
+
+FLB_INLINE int net_io_tls_read(struct flb_thread *th,
+                               struct flb_io_upstream *u,
+                               void *buf, size_t len)
+{
+    int ret;
+
+    ret = mbedtls_ssl_read(&u->tls_session->ssl, buf, len);
+    if (ret <= 0) {
+        tls_session_destroy(u->tls_session);
+        u->tls_session = NULL;
+    }
+
+    return -1;
+}
+
+FLB_INLINE int net_io_tls_write(struct flb_thread *th, struct flb_io_upstream *u,
+                     void *data, size_t len, size_t *out_len)
+{
+    int ret;
+    size_t total = 0;
+
+    if (!u->tls_session) {
+        u->tls_session = flb_tls_session_new(u->tls->context);
+        if (!u->tls_session) {
+            flb_error("[io_tls] could not create tls session");
+            return -1;
+        }
+
+        ret = flb_io_net_tls_connect(u, th);
+        if (ret == -1) {
+            flb_error("[io_tls] could not connect/initiate TLS session");
+            return -1;
+        }
+    }
+
+ retry_write:
+    ret = mbedtls_ssl_write(&u->tls_session->ssl,
+                            data + total,
+                            len - total);
+    if (ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
+        io_tls_event_switch(u, MK_EVENT_WRITE);
+        flb_thread_yield(th, FLB_FALSE);
+        goto retry_write;
+    }
+    else if (ret == MBEDTLS_ERR_SSL_WANT_READ) {
+        io_tls_event_switch(u, MK_EVENT_READ);
+        flb_thread_yield(th, FLB_FALSE);
+        goto retry_write;
+    }
+    else if (ret < 0) {
+        char err_buf[72];
+        mbedtls_strerror(ret, err_buf, sizeof(err_buf));
+        flb_debug("[tls] SSL error: %s", err_buf);
+
+        /* There was an error transmitting data */
+        mk_event_del(u->evl, &u->event);
+        tls_session_destroy(u->tls_session);
+        u->tls_session = NULL;
+        return -1;
+    }
+
+    /* Update statistics */
+    //flb_stats_update(out->stats_fd, ret, 0);
+
+    /* Update counter and check if we need to continue writing */
+    total += ret;
+    if (total < len) {
+        io_tls_event_switch(u, MK_EVENT_WRITE);
+        flb_thread_yield(th, FLB_FALSE);
+        goto retry_write;
+    }
+
+    mk_event_del(u->evl, &u->event);
+    return 0;
 }
