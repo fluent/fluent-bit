@@ -24,7 +24,6 @@ int main()
 {
     int i;
     int n;
-    int ret;
     char tmp[256];
     struct flb_lib_ctx *ctx;
 
