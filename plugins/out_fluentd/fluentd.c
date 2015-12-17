@@ -31,16 +31,36 @@
 
 struct flb_output_plugin out_fluentd_plugin;
 
-int cb_fluentd_init(struct flb_config *config)
+int cb_fluentd_init(struct flb_output_plugin *plugin, struct flb_config *config)
 {
     int ret;
     struct flb_out_fluentd_config *ctx;
+    struct flb_io_upstream *upstream;
 
     ctx = calloc(1, sizeof(struct flb_out_fluentd_config));
     if (!ctx) {
         perror("calloc");
         return -1;
     }
+
+    /* Set default network configuration */
+    if (!plugin->net_host) {
+        plugin->net_host = strdup("127.0.0.1");
+    }
+    if (plugin->net_port == 0) {
+        plugin->net_port = 24224;
+    }
+
+    /* Prepare an upstream handler */
+    upstream = flb_io_upstream_new(config,
+                                   plugin->net_host,
+                                   plugin->net_port,
+                                   FLB_IO_TCP, NULL);
+    if (!upstream) {
+        free(ctx);
+        return -1;
+    }
+    ctx->u = upstream;
 
     ret = flb_output_set_context("fluentd", ctx, config);
     if (ret == -1) {
@@ -54,7 +74,7 @@ int cb_fluentd_exit(void *data, struct flb_config *config)
 {
     (void) config;
     struct flb_out_flientd_config *ctx = data;
-    free(data);
+    free(ctx);
 
     return 0;
 }
@@ -71,7 +91,7 @@ int cb_fluentd_flush(void *data, size_t bytes, void *out_context,
     msgpack_packer   mp_pck;
     msgpack_sbuffer  mp_sbuf;
     msgpack_unpacked result;
-    (void) out_context;
+    struct flb_out_fluentd_config *ctx = out_context;
     (void) config;
 
     /* Initialize packager */
@@ -106,7 +126,7 @@ int cb_fluentd_flush(void *data, size_t bytes, void *out_context,
     total = mp_sbuf.size + bytes;
     msgpack_sbuffer_destroy(&mp_sbuf);
 
-    ret = flb_io_write(&out_fluentd_plugin, buf, total, &bytes_sent);
+    ret = flb_io_net_write(ctx->u, buf, total, &bytes_sent);
     free(buf);
 
     flb_debug("[fluentd] ended write()=%d bytes", bytes_sent);
@@ -116,10 +136,10 @@ int cb_fluentd_flush(void *data, size_t bytes, void *out_context,
 /* Plugin reference */
 struct flb_output_plugin out_fluentd_plugin = {
     .name         = "fluentd",
-    .description  = "Fluentd log collector",
+    .description  = "Fluentd data collector",
     .cb_init      = cb_fluentd_init,
     .cb_pre_run   = NULL,
     .cb_flush     = cb_fluentd_flush,
     .cb_exit      = cb_fluentd_exit,
-    .flags        = FLB_OUTPUT_TCP,
+    .flags        = FLB_OUTPUT_NET,
 };

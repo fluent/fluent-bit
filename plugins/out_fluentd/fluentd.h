@@ -20,9 +20,8 @@
 #ifndef FLB_OUT_FLUENTD
 #define FLB_OUT_FLUENTD
 
-
 struct flb_out_fluentd_config {
-    int fd;           /* Socket to destination/backend */
+    struct flb_io_upstream *u;
 };
 
 #endif
