@@ -58,7 +58,8 @@
 
 /* Creates a new upstream context */
 struct flb_io_upstream *flb_io_upstream_new(struct flb_config *config,
-                                            char *host, int port, int flags)
+                                            char *host, int port, int flags,
+                                            void *tls)
 {
     struct flb_io_upstream *u;
 
@@ -73,6 +74,11 @@ struct flb_io_upstream *flb_io_upstream_new(struct flb_config *config,
     u->tcp_port = port;
     u->flags    = flags;
     u->evl      = config->evl;
+
+#ifdef HAVE_TLS
+    u->tls      = (struct flb_tls *) tls;
+    u->tls_session = NULL;
+#endif
 
     return u;
 }
@@ -162,7 +168,6 @@ FLB_INLINE int flb_io_net_connect(struct flb_io_upstream *u,
             }
             u->event.mask   = MK_EVENT_EMPTY;
             u->event.status = MK_EVENT_NONE;
-
         }
         else {
             return -1;
@@ -263,15 +268,19 @@ int flb_io_net_write(struct flb_io_upstream *u, void *data,
     flb_debug("[io] trying to write %zd bytes", len);
 
     th = pthread_getspecific(flb_thread_key);
-
     if (u->flags & FLB_IO_TCP) {
         ret = net_io_write(th, u, data, len, out_len);
     }
 #ifdef HAVE_TLS
     else if (u->flags & FLB_IO_TLS) {
-        ret = net_io_tls_write(th, out, data, len, out_len);
+        ret = net_io_tls_write(th, u, data, len, out_len);
     }
 #endif
+
+    if (ret == -1 && u->fd > 0) {
+        close(u->fd);
+        u->fd = -1;
+    }
 
     flb_debug("[io] thread has finished");
     return ret;
@@ -289,8 +298,8 @@ ssize_t flb_io_net_read(struct flb_io_upstream *u, void *buf, size_t len)
         ret = net_io_read(th, u, buf, len);
     }
 #ifdef HAVE_TLS
-    else if (out->flags & FLB_IO_TLS) {
-        ret = net_io_tls_read(th, out, buf, len);
+    else if (u->flags & FLB_IO_TLS) {
+        ret = net_io_tls_read(th, u, buf, len);
     }
 #endif
 
