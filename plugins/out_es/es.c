@@ -287,7 +287,8 @@ int cb_es_init(struct flb_output_plugin *plugin,
     upstream = flb_io_upstream_new(config,
                                    plugin->net_host,
                                    plugin->net_port,
-                                   FLB_IO_TCP);
+                                   FLB_IO_TCP,
+                                   NULL);
     if (!upstream) {
         free(ctx);
         return -1;
