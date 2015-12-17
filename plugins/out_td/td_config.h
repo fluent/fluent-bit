@@ -21,6 +21,7 @@
 #define FLB_TD_CONFIG_H
 
 #include <mk_core.h>
+#include <fluent-bit/flb_io.h>
 
 struct flb_out_td_config {
     int fd;           /* Socket to destination/backend */
@@ -28,6 +29,8 @@ struct flb_out_td_config {
     char *api;
     char *db_name;
     char *db_table;
+
+    struct flb_io_upstream *u;
 };
 
 struct flb_out_td_config *td_config_init(struct mk_rconf *conf);

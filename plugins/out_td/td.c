@@ -136,10 +136,11 @@ static char *td_format(void *data, size_t bytes, int *out_size)
     return buf;
 }
 
-int cb_td_init(struct flb_config *config)
+int cb_td_init(struct flb_output_plugin *plugin, struct flb_config *config)
 {
     int ret;
     struct flb_out_td_config *ctx;
+    struct flb_io_upstream *upstream;
 
     if (!config->file) {
         flb_utils_error_c("TD output requires a configuration file");
@@ -150,13 +151,24 @@ int cb_td_init(struct flb_config *config)
         return -1;
     }
 
+    /* Default server */
+    plugin->net_host = strdup("api.treasuredata.com");
+    plugin->net_port = 443;
+
+    upstream = flb_io_upstream_new(config,
+                                   plugin->net_host,
+                                   plugin->net_port,
+                                   FLB_IO_TLS, (void *) &plugin->tls);
+    if (!upstream) {
+        free(ctx);
+        return -1;
+    }
+    ctx->u = upstream;
+
     ret = flb_output_set_context("td", ctx, config);
     if (ret == -1) {
         flb_utils_error_c("Could not set configuration for td output plugin");
     }
-
-    out_td_plugin.host = strdup("api.treasuredata.com");
-    out_td_plugin.port = 443;
 
     return 0;
 }
@@ -181,14 +193,14 @@ int cb_td_flush(void *data, size_t bytes, void *out_context,
     }
 
     request = td_http_request(pack, bytes_out, &len, ctx, config);
-    ret = flb_io_write(&out_td_plugin, request, len, &bytes_sent);
+    ret = flb_io_net_write(ctx->u, request, len, &bytes_sent);
     if (ret == -1) {
         perror("write");
     }
     free(request);
     free(pack);
 
-    n = flb_io_read(&out_td_plugin, buf, sizeof(buf) - 1);
+    n = flb_io_net_read(ctx->u, buf, sizeof(buf) - 1);
     if (n > 0) {
         buf[n] = '\0';
         flb_debug("[TD] API server response:\n%s", buf);
@@ -204,5 +216,5 @@ struct flb_output_plugin out_td_plugin = {
     .cb_init        = cb_td_init,
     .cb_pre_run     = NULL,
     .cb_flush       = cb_td_flush,
-    .flags          = FLB_OUTPUT_TLS | FLB_OUTPUT_NOPROT,
+    .flags          = FLB_IO_TLS,
 };
