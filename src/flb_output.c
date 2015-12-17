@@ -212,15 +212,15 @@ int flb_output_init(struct flb_config *config)
     mk_list_foreach(head, &config->outputs) {
         out = mk_list_entry(head, struct flb_output_plugin, _head);
         if (out->active == FLB_TRUE) {
+#ifdef HAVE_TLS
+            if (out->flags & FLB_IO_TLS) {
+                out->tls.context = flb_tls_context_new();
+                mk_list_init(&out->tls.sessions);
+            }
+#endif
             out->cb_init(out, config);
             mk_list_init(&out->th_queue);
 
-#ifdef HAVE_TLS
-            if (out->flags & FLB_OUTPUT_TLS) {
-                out->tls_context = flb_tls_context_new();
-                mk_list_init(&out->tls_sessions);
-            }
-#endif
 
 #ifdef HAVE_STATS
             //struct flb_stats *stats;
