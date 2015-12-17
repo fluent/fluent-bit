@@ -25,14 +25,13 @@
 #include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_output.h>
 
-int io_tls_write(struct flb_thread *th, struct flb_output_plugin *out,
-                 void *data, size_t len, size_t *out_len);
-int io_tls_read(struct flb_thread *th, struct flb_output_plugin *out,
-                void *buf, size_t len);
+int net_io_tls_write(struct flb_thread *th, struct flb_io_upstream *u,
+                     void *data, size_t len, size_t *out_len);
+int net_io_tls_read(struct flb_thread *th, struct flb_io_upstream *u,
+                    void *buf, size_t len);
 
-int flb_io_tls_connect(struct flb_output_plugin *out,
-                       struct flb_thread *th,
-                       struct flb_io_upstream *u);
+int flb_io_tls_connect(struct flb_io_upstream *u,
+                       struct flb_thread *th);
 
 #endif /* HAVE_TLS */
 #endif
