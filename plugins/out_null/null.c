@@ -24,9 +24,11 @@
 
 #include <fluent-bit/flb_output.h>
 
-int cb_null_init(struct flb_config *config)
+int cb_null_init(struct flb_output_plugin *plugin, struct flb_config *config)
 {
-    /* do nothing */
+    (void) plugin;
+    (void) config;
+
     return 0;
 }
 
@@ -62,5 +64,5 @@ struct flb_output_plugin out_null_plugin = {
     .description  = "Flush data to /dev/null",
     .cb_init      = cb_null_init,
     .cb_flush     = cb_null_flush,
-    .flags        = FLB_OUTPUT_NOPROT,
+    .flags        = 0,
 };
