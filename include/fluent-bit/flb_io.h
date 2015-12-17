@@ -43,15 +43,16 @@ struct flb_io_upstream {
     char *tcp_host;
 
 #ifdef HAVE_TLS
+    struct flb_tls *tls;
     struct flb_tls_session *tls_session;
 #endif
 };
 
 struct flb_io_upstream *flb_io_upstream_new(struct flb_config *config,
-                                            char *host, int port, int flags);
+                                            char *host, int port, int flags,
+                                            void *tls);
 int flb_io_upstream_destroy(struct flb_io_upstream *u);
-int flb_io_connect(struct flb_output_plugin *out,
-                   struct flb_thread *th, struct flb_io_upstream *u);
+int flb_io_net_connect(struct flb_io_upstream *u, struct flb_thread *th);
 
 int flb_io_net_write(struct flb_io_upstream *u, void *data,
                      size_t len, size_t *out_len);
