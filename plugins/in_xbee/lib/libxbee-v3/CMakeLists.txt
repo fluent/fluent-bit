@@ -43,6 +43,10 @@ set(src
 
 find_package(Threads)
 
+if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+  set(xbee_link "rt")
+endif()
+
 # Linking...
 add_library(xbee STATIC ${src})
-target_link_libraries(xbee xbeeZB_mode xbeeNet_mode xbeeDebug_mode ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(xbee xbeeZB_mode xbeeNet_mode xbeeDebug_mode ${CMAKE_THREAD_LIBS_INIT} ${xbee_link})
