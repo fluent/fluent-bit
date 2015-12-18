@@ -35,14 +35,6 @@ $ cmake ../
 -- Build files have been written to: /home/edsiper/coding/fluent-bit/build
 ```
 
-For OSX, pass the `-DWITH_IN_MEM=OFF` option as follows
-
-```bash
-$ cmake -DWITH_IN_MEM=OFF ../
-...
-...
-```
-
 Now you are ready to start the compilation process through the simple _make_ command:
 
 ```bash
