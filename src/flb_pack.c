@@ -62,6 +62,19 @@ static int json_tokenise(char *js, size_t len,
     return 0;
 }
 
+static inline int is_float(char *buf, int len)
+{
+    char *p;
+
+    p = strchr(buf, '.');
+    if (p) {
+        if (p < (buf + len)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /* Receive a tokenized JSON message and convert it to MsgPack */
 static char *tokens_to_msgpack(char *js,
                                jsmntok_t *tokens, int arr_size, int *out_size)
@@ -108,7 +121,12 @@ static char *tokens_to_msgpack(char *js,
                 msgpack_pack_nil(&pck);
             }
             else {
-                msgpack_pack_int64(&pck, atol(p));
+                if (is_float(p, flen)) {
+                    msgpack_pack_double(&pck, atof(p));
+                }
+                else {
+                    msgpack_pack_int64(&pck, atol(p));
+                }
             }
             break;
         case JSMN_UNDEFINED:
