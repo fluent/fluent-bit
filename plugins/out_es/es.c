@@ -58,14 +58,15 @@ static char *es_format(void *data, size_t bytes, int *out_size,
     size_t off = 0;
     time_t atime;
     char *buf;
-    char *p;
-    char ptr[256];
+    char *ptr_key = NULL;
+    char *ptr_val = NULL;
+    char buf_key[256];
+    char buf_val[512];
     msgpack_unpacked result;
     msgpack_object root;
     msgpack_object map;
     char *j_entry;
     char j_index[ES_BULK_HEADER];
-    json_t *j_root;
     json_t *j_map;
     struct es_bulk *bulk;
 
@@ -89,12 +90,6 @@ static char *es_format(void *data, size_t bytes, int *out_size,
 
     root = result.data;
     if (root.via.array.size == 0) {
-        return NULL;
-    }
-
-    /* JSON root object */
-    j_root = json_create_object();
-    if (!j_root) {
         return NULL;
     }
 
@@ -143,72 +138,102 @@ static char *es_format(void *data, size_t bytes, int *out_size,
 
             /* Store key */
             psize = k->via.bin.size;
-            if (psize <= (sizeof(ptr) - 1)) {
-                memcpy(ptr, k->via.bin.ptr, psize);
-                ptr[psize] = '\0';
-                p = ptr;
+            if (psize <= (sizeof(buf_key) - 1)) {
+                memcpy(buf_key, k->via.bin.ptr, psize);
+                buf_key[psize] = '\0';
+                ptr_key = buf_key;
             }
             else {
                 /* Long JSON map keys have a performance penalty */
-                p = malloc(psize + 1);
-                memcpy(p, k->via.bin.ptr, psize);
-                p[psize] = '\0';
+                ptr_key = malloc(psize + 1);
+                memcpy(ptr_key, k->via.bin.ptr, psize);
+                ptr_key[psize] = '\0';
             }
 
             /* Store value */
             if (v->type == MSGPACK_OBJECT_NIL) {
-                json_add_to_object(j_map, p, json_create_null());
+                json_add_to_object(j_map, ptr_key, json_create_null());
             }
             else if (v->type == MSGPACK_OBJECT_BOOLEAN) {
-                if (v->via.boolean) {
-                    json_add_to_object(j_map, p, json_create_true());
-                }
-                else {
-                    json_add_to_object(j_map, p, json_create_false());
-                }
+                json_add_to_object(j_map, ptr_key,
+                                   json_create_bool(v->via.boolean));
             }
             else if (v->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-                json_add_to_object(j_map, p,
+                json_add_to_object(j_map, ptr_key,
                                    json_create_number(v->via.u64));
             }
             else if (v->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
-                json_add_to_object(j_map, p,
+                json_add_to_object(j_map, ptr_key,
                                    json_create_number(v->via.i64));
             }
             else if (v->type == MSGPACK_OBJECT_FLOAT) {
-                json_add_to_object(j_map, p,
+                json_add_to_object(j_map, ptr_key,
                                    json_create_number(v->via.f64));
             }
             else if (v->type == MSGPACK_OBJECT_STR) {
+                /* String value */
+                psize = v->via.str.size;
+                if (psize <= (sizeof(buf_val) - 1)) {
+                    memcpy(buf_val, v->via.str.ptr, psize);
+                    buf_val[psize] = '\0';
+                    ptr_val = buf_val;
+                }
+                else {
+                    ptr_val = malloc(psize + 1);
+                    memcpy(ptr_val, k->via.str.ptr, psize);
+                    ptr_val[psize] = '\0';
+                }
+                json_add_to_object(j_map, ptr_key,
+                                   json_create_string(ptr_val));
             }
             else if (v->type == MSGPACK_OBJECT_BIN) {
+                /* Bin value */
+                psize = v->via.bin.size;
+                if (psize <= (sizeof(buf_val) - 1)) {
+                    memcpy(buf_val, v->via.bin.ptr, psize);
+                    buf_val[psize] = '\0';
+                    ptr_val = buf_val;
+                }
+                else {
+                    ptr_val = malloc(psize + 1);
+                    memcpy(ptr_val, k->via.bin.ptr, psize);
+                    ptr_val[psize] = '\0';
+                }
+                json_add_to_object(j_map, ptr_key,
+                                   json_create_string(ptr_val));
             }
 
-            if (p != ptr) {
-                free(p);
+            if (ptr_key && ptr_key != buf_key) {
+                free(ptr_key);
             }
+            ptr_key = NULL;
 
-            /*
-             * At this point we have our JSON message, but in order to
-             * ingest this data into Elasticsearch we need to compose the
-             * Bulk API request, sadly it requires to prepend a JSON entry
-             * with details about the target 'index' and 'type' for EVERY
-             * message.
-             */
-            j_entry = json_print_unformatted(j_map);
-            json_delete(j_map);
-
-            ret = es_bulk_append(bulk,
-                                 j_index, index_len,
-                                 j_entry, strlen(j_entry));
-            free(j_entry);
-            if (ret == -1) {
-                /* We likely ran out of memory, abort here */
-                msgpack_unpacked_destroy(&result);
-                *out_size = 0;
-                es_bulk_destroy(bulk);
-                return NULL;
+            if (ptr_val && ptr_val != buf_val) {
+                free(ptr_val);
             }
+            ptr_val = NULL;
+        }
+
+        /*
+         * At this point we have our JSON message, but in order to
+         * ingest this data into Elasticsearch we need to compose the
+         * Bulk API request, sadly it requires to prepend a JSON entry
+         * with details about the target 'index' and 'type' for EVERY
+         * message.
+         */
+        j_entry = json_print_unformatted(j_map);
+        json_delete(j_map);
+
+        ret = es_bulk_append(bulk,
+                             j_index, index_len,
+                             j_entry, strlen(j_entry));
+        free(j_entry);
+        if (ret == -1) {
+            /* We likely ran out of memory, abort here */
+            msgpack_unpacked_destroy(&result);
+            *out_size = 0;
+            es_bulk_destroy(bulk);
+            return NULL;
         }
     }
 
