@@ -18,6 +18,7 @@
     * [Standard Input](input/stdin.md)
     * [XBee Radio](input/xbee.md)
 * [Output Plugins](output/README.md)
+    * [Elastic Search](output/elasticsearch.md)
     * [Fluentd](output/fluentd.md)
     * [Standard Output](output/stdout.md)
     * [Treasure Data](output/td.md)
