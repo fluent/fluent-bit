@@ -35,7 +35,7 @@ endmacro()
 # ======================
 
 # These plugins works only on Linux
-if(${CMAKE_SYSTEM_NAME} MATCHES "LinuxA")
+if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   REGISTER_IN_PLUGIN("in_cpu")
   REGISTER_IN_PLUGIN("in_mem")
   REGISTER_IN_PLUGIN("in_kmsg")
