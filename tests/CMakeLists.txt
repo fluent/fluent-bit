@@ -9,6 +9,7 @@ list(APPEND check_PROGRAMS
   flb_test_td.cpp
   flb_test_stdout.cpp
   flb_test_fluentd.cpp
+  flb_test_elasticsearch.cpp
   )
 
 foreach(source_file ${check_PROGRAMS})
