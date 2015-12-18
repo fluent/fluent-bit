@@ -2,6 +2,9 @@ language: c
 compiler:
   - gcc
   - clang
+os:
+  - linux
+  - osx
 
 notifications:
   irc: "irc.freenode.net#fluent-bit"
