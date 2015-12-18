@@ -90,6 +90,7 @@ available:
 | [WITH_IN_MEM](../input/mem.md)      | Enable Memory input plugin           | On       |
 | [WITH_IN_SERIAL](../input/serial.md)| Enable Serial input plugin           | On       |
 | [WITH_IN_STDIN](../input/stdin.md)  | Enable Standard input plugin         | On       |
+| [WITH_IN_MQTT](../input/mqtt.md)    | Enable MQTT input plugin             | No       |
 | [WITH_IN_XBEE](../input/xbee.md)    | Enable Xbee input plugin             | No       |
 
 ### Output Plugins
@@ -101,3 +102,4 @@ The _output plugins_ gives the capacity to flush the information to some externa
 | [WITH_OUT_FLUENTD](../output/fluentd.md) | Enable [Fluentd](http://www.fluentd.org) output plugin | On |
 | [WITH_OUT_STDOUT](../output/stdout.md) | Enable STDOUT output plugin          | On       |
 | [WITH_OUT_TD](../output/td.md) | Enable [Treasure Data](http://www.treasuredata.com) output plugin | On |
+| [WITH_OUT_ES](../output/elasticsearch.md) | Enable [Elastic Search](http://www.elastic.co) output plugin | On |
