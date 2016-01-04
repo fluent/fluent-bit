@@ -26,6 +26,7 @@
 #include <ucontext.h>
 
 #include <fluent-bit/flb_io.h>
+#include <fluent-bit/flb_uri.h>
 #include <fluent-bit/flb_stats.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_thread.h>
@@ -67,10 +68,10 @@ struct flb_output_plugin {
      *   uri      = extra information that may be used by the plugin
      */
     /* Original output address */
-    char *net_address;         /* Original address  */
-    int   net_port;            /* TCP port          */
-    char *net_host;            /* Hostname          */
-    char *net_uri;             /* extra information */
+    char *net_address;         /* Original address     */
+    int   net_port;            /* TCP port             */
+    char *net_host;            /* Hostname             */
+    struct flb_uri *net_uri;   /* Extra URI parameters */
 
     /* Socket connection */
     int conn;

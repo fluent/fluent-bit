@@ -22,6 +22,7 @@
 #include <string.h>
 
 #include <fluent-bit/flb_io.h>
+#include <fluent-bit/flb_uri.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_macros.h>
@@ -92,7 +93,12 @@ static int parse_net_address(struct flb_output_plugin *plugin, char *output)
 
     u = strchr(s, '/');
     if (u) {
-        plugin->net_uri = strdup(u);
+        plugin->net_uri = flb_uri_create(u);
+        if (__flb_config_verbose == FLB_TRUE) {
+            flb_debug("[URI dump] entries=%i '%s'",
+                      plugin->net_uri->count, u);
+            flb_uri_dump(plugin->net_uri);
+        }
     }
     plugin->net_address = strdup(output);
 

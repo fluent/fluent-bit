@@ -1,6 +1,7 @@
 set(src
   ${src}
   flb_lib.c
+  flb_uri.c
   flb_pack.c
   flb_input.c
   flb_output.c
