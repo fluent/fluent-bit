@@ -36,6 +36,7 @@ int cb_fluentd_init(struct flb_output_plugin *plugin, struct flb_config *config)
     int ret;
     struct flb_out_fluentd_config *ctx;
     struct flb_io_upstream *upstream;
+    struct flb_uri_field *f_tag = NULL;
 
     ctx = calloc(1, sizeof(struct flb_out_fluentd_config));
     if (!ctx) {
@@ -61,6 +62,16 @@ int cb_fluentd_init(struct flb_output_plugin *plugin, struct flb_config *config)
         return -1;
     }
     ctx->u = upstream;
+    ctx->tag = FLB_CONFIG_DEFAULT_TAG;
+    ctx->tag_len = sizeof(FLB_CONFIG_DEFAULT_TAG) - 1;
+
+    if (plugin->net_uri) {
+        if (plugin->net_uri->count > 0) {
+            f_tag = flb_uri_get(plugin->net_uri, 0);
+            ctx->tag     = f_tag->value;
+            ctx->tag_len = f_tag->length;
+        }
+    }
 
     ret = flb_output_set_context("fluentd", ctx, config);
     if (ret == -1) {
@@ -107,11 +118,8 @@ int cb_fluentd_flush(void *data, size_t bytes, void *out_context,
 
     /* Output: root array */
     msgpack_pack_array(&mp_pck, 2);
-    msgpack_pack_bin(&mp_pck, sizeof(FLB_CONFIG_DEFAULT_TAG) - 1);
-    msgpack_pack_bin_body(&mp_pck,
-                          FLB_CONFIG_DEFAULT_TAG,
-                          sizeof(FLB_CONFIG_DEFAULT_TAG) - 1);
-
+    msgpack_pack_bin(&mp_pck, ctx->tag_len);
+    msgpack_pack_bin_body(&mp_pck, ctx->tag, ctx->tag_len);
     msgpack_pack_array(&mp_pck, entries);
 
     /* Allocate a new buffer to merge data */

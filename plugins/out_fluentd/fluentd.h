@@ -21,6 +21,8 @@
 #define FLB_OUT_FLUENTD
 
 struct flb_out_fluentd_config {
+    size_t tag_len;
+    char *tag;
     struct flb_io_upstream *u;
 };
 
