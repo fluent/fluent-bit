@@ -257,25 +257,16 @@ int cb_es_init(struct flb_output_plugin *plugin,
 {
     int ret;
     int ulen;
-    char *index;
-    char *type;
-    char *tmp;
+    struct flb_uri *uri = plugin->net_uri;
+    struct flb_uri_field *f_index = NULL;
+    struct flb_uri_field *f_type = NULL;
     struct flb_out_es_config *ctx = NULL;
     struct flb_io_upstream *upstream;
 
-    /*
-     * Validate that we have a complete URI as that one specifies the
-     * the 'index' and 'type'.
-     */
-    if (!plugin->net_uri) {
-        plugin->net_uri = strdup("/fluentbit/test");
-    }
-    else {
-        index = plugin->net_uri + 1;
-        ulen = strlen(plugin->net_uri);
-        if (ulen < 4 || !strchr(index, '/')) {
-            free(plugin->net_uri);
-            plugin->net_uri = strdup("/fluentbit/test");
+    if (uri) {
+        if (uri->count >= 2) {
+            f_index = flb_uri_get(uri, 0);
+            f_type  = flb_uri_get(uri, 1);
         }
     }
 
@@ -294,20 +285,6 @@ int cb_es_init(struct flb_output_plugin *plugin,
         return -1;
     }
 
-    /* Parse ES uri */
-    ulen = strlen(plugin->net_uri);
-    index = plugin->net_uri;
-    index++;
-
-    tmp = strchr(index, '/');
-    index = copy_substr(plugin->net_uri + 1,
-                        (tmp - index));
-    type = strdup(++tmp);
-
-    flb_info("[es] host=%s port=%i index=%s type=%s",
-             plugin->net_host, plugin->net_port,
-             index, type);
-
     /* Prepare an upstream handler */
     upstream = flb_io_upstream_new(config,
                                    plugin->net_host,
@@ -322,8 +299,25 @@ int cb_es_init(struct flb_output_plugin *plugin,
 
     /* Set the context */
     ctx->u = upstream;
-    ctx->index = index;
-    ctx->type  = type;
+
+    if (f_index) {
+        ctx->index = f_index->value;
+    }
+    else {
+        ctx->index = "fluentbit";
+    }
+
+    if (f_type) {
+        ctx->type = f_type->value;
+    }
+    else {
+        ctx->type = "test";
+    }
+
+    flb_info("[es] host=%s port=%i index=%s type=%s",
+             plugin->net_host, plugin->net_port,
+             ctx->index, ctx->type);
+
 
     ret = flb_output_set_context("es", ctx, config);
     if (ret == -1) {
