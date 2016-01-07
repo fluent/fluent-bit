@@ -75,7 +75,6 @@ if(NOT WITHOUT_SHARED_LIB)
   install(TARGETS fluent-bit-shared LIBRARY DESTINATION lib)
 endif()
 
-
 # Static Library
 add_library(fluent-bit-static STATIC ${src})
 set_target_properties(fluent-bit-static PROPERTIES

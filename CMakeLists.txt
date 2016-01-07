@@ -17,12 +17,14 @@ set(FLB_VERSION_PATCH  0)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 # Build Options
-option(WITH_ALL      "Enable all features"         No)
-option(WITH_DEBUG    "Build with debug symbols"    No)
-option(WITH_TLS      "Build with SSL/TLS support"  No)
-option(WITHOUT_BIN   "Do not build executable"     No)
-option(WITH_STATS    "Enable stats support"       Yes)
-option(WITH_VALGRIND "Enable Valgrind support"     No)
+option(WITH_ALL           "Enable all features"         No)
+option(WITH_DEBUG         "Build with debug symbols"    No)
+option(WITH_TLS           "Build with SSL/TLS support"  No)
+option(WITHOUT_BIN        "Do not build executable"     No)
+option(WITHOUT_EXAMPLES   "Do not build examples"       No)
+option(WITHOUT_SHARED_LIB "Do not build shared library" No)
+option(WITH_STATS         "Enable stats support"       Yes)
+option(WITH_VALGRIND      "Enable Valgrind support"     No)
 
 # Build Plugins
 option(WITH_IN_XBEE     "Enable XBee input plugin"            No)
