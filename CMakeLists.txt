@@ -127,7 +127,10 @@ configure_file(
 add_subdirectory(include)
 add_subdirectory(plugins)
 add_subdirectory(src)
-add_subdirectory(examples)
+
+if(NOT WITHOUT_EXAMPLES)
+  add_subdirectory(examples)
+endif()
 
 if(ENABLE_TESTS)
   enable_testing()

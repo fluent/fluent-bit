@@ -64,11 +64,17 @@ set(FLB_DEPS
   )
 
 # Shared Library
-add_library(fluent-bit-shared SHARED ${src})
-target_link_libraries(fluent-bit-shared ${FLB_DEPS})
+if(NOT WITHOUT_SHARED_LIB)
+  add_library(fluent-bit-shared SHARED ${src})
+  target_link_libraries(fluent-bit-shared ${FLB_DEPS})
 
-set_target_properties(fluent-bit-shared
-  PROPERTIES OUTPUT_NAME fluent-bit)
+  set_target_properties(fluent-bit-shared
+    PROPERTIES OUTPUT_NAME fluent-bit)
+
+  # Library install routines
+  install(TARGETS fluent-bit-shared LIBRARY DESTINATION lib)
+endif()
+
 
 # Static Library
 add_library(fluent-bit-static STATIC ${src})
@@ -76,8 +82,6 @@ set_target_properties(fluent-bit-static PROPERTIES
   OUTPUT_NAME fluent-bit)
 target_link_libraries(fluent-bit-static ${FLB_DEPS})
 
-# Library install routines
-install(TARGETS fluent-bit-shared LIBRARY DESTINATION lib)
 
 # Executable
 if(NOT WITHOUT_BIN)
