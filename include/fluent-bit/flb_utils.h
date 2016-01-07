@@ -33,6 +33,7 @@
 #define flb_error(fmt, ...)   flb_message(FLB_MSG_ERROR, fmt, ##__VA_ARGS__)
 #define flb_debug(fmt, ...)   flb_message(FLB_MSG_DEBUG, fmt, ##__VA_ARGS__)
 
+int flb_debug_enabled();
 void flb_utils_error(int err);
 void flb_utils_error_c(const char *msg);
 void flb_utils_warn_c(const char *msg);

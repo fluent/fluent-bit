@@ -112,6 +112,12 @@ void flb_utils_warn_c(const char *msg)
             ANSI_BOLD ANSI_YELLOW, ANSI_RESET, msg);
 }
 
+int flb_debug_enabled()
+{
+    return __flb_config_verbose;
+
+}
+
 void flb_message(int type, const char *fmt, ...)
 {
     time_t now;
