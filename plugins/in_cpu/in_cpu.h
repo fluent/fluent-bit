@@ -30,47 +30,39 @@
 #define IN_CPU_KEY_LEN       16
 
 struct cpu_key {
-    size_t length;
+    uint8_t length;
     char name[IN_CPU_KEY_LEN];
 };
 
 struct cpu_snapshot {
-    char   val_cpuid[8];
-    double val_user;
-    double val_nice;
-    double val_system;
-    double val_idle;
-    double val_iowait;
-    double val_irq;
-    double val_softirq;
+    /* data snapshots */
+    char          v_cpuid[8];
+    unsigned long v_user;
+    unsigned long v_nice;
+    unsigned long v_system;
+    unsigned long v_idle;
+    unsigned long v_iowait;
+
+    /* percent values */
+    double p_cpu;           /* Overall CPU usage        */
+    double p_user;          /* user space (user + nice) */
+    double p_system;        /* kernel space percent     */
 
     /* necessary... */
-    struct cpu_key key_user;
-    struct cpu_key key_nice;
-    struct cpu_key key_system;
-    struct cpu_key key_idle;
-    struct cpu_key key_iowait;
-    struct cpu_key key_irq;
-    struct cpu_key key_softirq;
+    struct cpu_key k_cpu;
+    struct cpu_key k_user;
+    struct cpu_key k_system;
 };
 
-#define CPU_KEY_FORMAT(s, key, i)                                   \
-    s->key_##key.length = snprintf(s->key_##key.name,               \
-                                   IN_CPU_KEY_LEN,                  \
-                                   "cpu%i.%s", i - 1, #key);
-
-#define CPU_PACK_SNAP(s, key)                                           \
-    msgpack_pack_bin(&ctx->mp_pck, s->key_##key.length);                \
-    msgpack_pack_bin_body(&ctx->mp_pck, s->key_##key.name, s->key_##key.length); \
-    msgpack_pack_double(&ctx->mp_pck, s->val_##key)
+#define CPU_SNAP_ACTIVE_A    0
+#define CPU_SNAP_ACTIVE_B    1
 
 struct cpu_stats {
-    /* runtime data */
-    double load_now;    /* CPU load now               */
-    double load_pre;    /* CPU load previously        */
+    uint8_t snap_active;
 
-    /* CPU snapshots */
-    struct cpu_snapshot *info;
+    /* CPU snapshots, we always keep two snapshots */
+    struct cpu_snapshot *snap_a;
+    struct cpu_snapshot *snap_b;
 };
 
 /* CPU Input configuration & context */
@@ -79,15 +71,62 @@ struct flb_in_cpu_config {
     int n_processors;   /* number of core processors  */
     int cpu_ticks;      /* CPU ticks (Kernel setting) */
 
-    /* Buffered data */
-    int data_idx;       /* next position available    */
-
     struct cpu_stats cstats;
 
     /* MessagePack buffers */
     msgpack_packer  mp_pck;
     msgpack_sbuffer mp_sbuf;
 };
+
+
+#define CPU_KEY_FORMAT(s, key, i)                                   \
+    s->k_##key.length = snprintf(s->k_##key.name,                   \
+                                 IN_CPU_KEY_LEN,                    \
+                                 "cpu%i.p_%s", i - 1, #key)
+
+#define CPU_PACK_SNAP(s, key)                                           \
+    msgpack_pack_bin(&ctx->mp_pck, s->k_##key.length);                  \
+    msgpack_pack_bin_body(&ctx->mp_pck, s->k_##key.name, s->k_##key.length); \
+    msgpack_pack_double(&ctx->mp_pck, s->p_##key)
+
+#define ULL_ABS(a, b)  (a > b) ? a - b : b - a
+
+/*
+ * This routine calculate the average CPU utilization of the system, it
+ * takes in consideration the number CPU cores, so it return a value
+ * between 0 and 100 based on 'capacity'.
+ */
+static inline double CPU_METRIC_SYS_AVERAGE(unsigned long pre, unsigned long now,
+                                            struct flb_in_cpu_config *ctx)
+{
+    double diff;
+    double total = 0;
+
+    if (pre == now) {
+        return 0.0;
+    }
+
+    diff = ULL_ABS(now, pre);
+    total = ((diff / ctx->cpu_ticks) * 100) / ctx->n_processors;
+
+    return total;
+}
+
+/* Returns the CPU % utilization of a given CPU core */
+static inline double CPU_METRIC_USAGE(unsigned long pre, unsigned long now,
+                                      struct flb_in_cpu_config *ctx)
+{
+    double diff;
+    double total = 0;
+
+    if (pre == now) {
+        return 0.0;
+    }
+
+    diff = ULL_ABS(now, pre);
+    total = (diff * 100) / ctx->cpu_ticks;
+    return total;
+}
 
 int in_cpu_init(struct flb_config *config);
 int in_cpu_pre_run(void *in_context, struct flb_config *config);

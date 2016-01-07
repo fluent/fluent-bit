@@ -31,6 +31,58 @@
 
 struct flb_input_plugin in_cpu_plugin;
 
+static inline void snapshot_key_format(int cpus, struct cpu_snapshot *snap_arr)
+{
+    int i;
+    struct cpu_snapshot *snap;
+
+    snap = &snap_arr[0];
+    strncpy(snap->k_cpu.name, "cpu", 3);
+    snap->k_cpu.name[3] = '\0';
+
+    for (i = 1; i <= cpus; i++) {
+        snap = (struct cpu_snapshot *) &snap_arr[i];
+        CPU_KEY_FORMAT(snap, cpu, i);
+        CPU_KEY_FORMAT(snap, user, i);
+        CPU_KEY_FORMAT(snap, system, i);
+    }
+}
+
+static int snapshots_init(int cpus, struct cpu_stats *cstats)
+{
+    int i;
+    void *p;
+    struct cpu_snapshot *snap;
+
+    cstats->snap_a = calloc(1, sizeof(struct cpu_snapshot) * (cpus + 1));
+    if (!cstats->snap_a) {
+        perror("malloc");
+        return -1;
+    }
+
+    cstats->snap_b = malloc(sizeof(struct cpu_snapshot) * (cpus + 1));
+    if (!cstats->snap_b) {
+        perror("malloc");
+        return -1;
+    }
+
+    /* Initialize each array */
+    snapshot_key_format(cpus, cstats->snap_a);
+    snapshot_key_format(cpus, cstats->snap_b);
+    cstats->snap_active = CPU_SNAP_ACTIVE_A;
+    return 0;
+}
+
+static inline void snapshots_switch(struct cpu_stats *cstats)
+{
+    if (cstats->snap_active == CPU_SNAP_ACTIVE_A) {
+        cstats->snap_active = CPU_SNAP_ACTIVE_B;
+    }
+    else {
+        cstats->snap_active = CPU_SNAP_ACTIVE_A;
+    }
+}
+
 /* Retrieve CPU load from the system (through ProcFS) */
 static inline double proc_cpu_load(int cpus, struct cpu_stats *cstats)
 {
@@ -46,10 +98,18 @@ static inline double proc_cpu_load(int cpus, struct cpu_stats *cstats)
     char *fmt;
     FILE *f;
     struct cpu_snapshot *s;
+    struct cpu_snapshot *snap_arr;
 
     f = fopen("/proc/stat", "r");
     if (f == NULL) {
         return -1;
+    }
+
+    if (cstats->snap_active == CPU_SNAP_ACTIVE_A) {
+        snap_arr = cstats->snap_a;
+    }
+    else {
+        snap_arr = cstats->snap_b;
     }
 
     /* Always read (n_cpus + 1) lines */
@@ -59,34 +119,30 @@ static inline double proc_cpu_load(int cpus, struct cpu_stats *cstats)
             break;
         }
 
-        s = &cstats->info[i];
+        s = &snap_arr[i];
         if (i == 0) {
-            fmt = " cpu  %lf %lf %lf %lf %lf %lf %lf";
+            fmt = " cpu  %lu %lu %lu %lu %lu";
             ret = sscanf(line,
                          fmt,
-                         &s->val_user,
-                         &s->val_nice,
-                         &s->val_system,
-                         &s->val_idle,
-                         &s->val_iowait,
-                         &s->val_irq,
-                         &s->val_softirq);
+                         &s->v_user,
+                         &s->v_nice,
+                         &s->v_system,
+                         &s->v_idle,
+                         &s->v_iowait);
         }
         else {
-            fmt = " %s %lf %lf %lf %lf %lf %lf %lf";
+            fmt = " %s %lu %lu %lu %lu %lu";
             ret = sscanf(line,
                          fmt,
-                         &s->val_cpuid,
-                         &s->val_user,
-                         &s->val_nice,
-                         &s->val_system,
-                         &s->val_idle,
-                         &s->val_iowait,
-                         &s->val_irq,
-                         &s->val_softirq);
+                         &s->v_cpuid,
+                         &s->v_user,
+                         &s->v_nice,
+                         &s->v_system,
+                         &s->v_idle,
+                         &s->v_iowait);
         }
 
-        if (ret < 7) {
+        if (ret < 5) {
             fclose(f);
             return -1;
         }
@@ -97,10 +153,7 @@ static inline double proc_cpu_load(int cpus, struct cpu_stats *cstats)
     }
 
     fclose(f);
-    s = &cstats->info[0];
-    total = (s->val_user + s->val_nice + s->val_system);
-
-    return total;
+    return 0;
 }
 
 /* Init CPU input */
@@ -115,9 +168,9 @@ int in_cpu_init(struct flb_config *config)
     struct cpu_snapshot *snap;
 
     /* Allocate space for the configuration */
-    ctx = malloc(sizeof(struct flb_in_cpu_config));
+    ctx = calloc(1, sizeof(struct flb_in_cpu_config));
     if (!ctx) {
-        perror("malloc");
+        perror("calloc");
         return -1;
     }
 
@@ -126,36 +179,21 @@ int in_cpu_init(struct flb_config *config)
     ctx->cpu_ticks    = sysconf(_SC_CLK_TCK);
 
     /* Initialize buffers for CPU stats */
-    cstats = &ctx->cstats;
-    cstats->info = malloc(sizeof(struct cpu_snapshot) * (ctx->n_processors + 1));
-    if (!cstats->info) {
-        perror("malloc");
+    ret = snapshots_init(ctx->n_processors, &ctx->cstats);
+    if (ret != 0) {
         return -1;
     }
-
-    for (i = 1; i <= ctx->n_processors; i++) {
-        snap = &cstats->info[i];
-
-        CPU_KEY_FORMAT(snap, user, i);
-        CPU_KEY_FORMAT(snap, nice, i);
-        CPU_KEY_FORMAT(snap, system, i);
-        CPU_KEY_FORMAT(snap, idle, i);
-        CPU_KEY_FORMAT(snap, iowait, i);
-        CPU_KEY_FORMAT(snap, irq, i);
-        CPU_KEY_FORMAT(snap, softirq, i);
-    }
-
 
     /* initialize MessagePack buffers */
     msgpack_sbuffer_init(&ctx->mp_sbuf);
     msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
 
     /* Get CPU load, ready to be updated once fired the calc callback */
-    total = proc_cpu_load(ctx->n_processors, &ctx->cstats);
-    if (total == -1) {
+    ret = proc_cpu_load(ctx->n_processors, &ctx->cstats);
+    if (ret != 0) {
         flb_utils_error_c("Could not obtain CPU data");
     }
-    ctx->cstats.load_pre = total;
+    ctx->cstats.snap_active = CPU_SNAP_ACTIVE_B;
 
     /* Set the context */
     ret = flb_input_set_context("cpu", ctx, config);
@@ -176,23 +214,85 @@ int in_cpu_init(struct flb_config *config)
     return 0;
 }
 
-static inline int key_field(char *buf,
-                            char *cpu, int c_len,
-                            char *field, int f_len)
+/*
+ * Given the two snapshots, calculate the % used in user and kernel space,
+ * it returns the active snapshot.
+ */
+struct cpu_snapshot *snapshot_percent(struct cpu_stats *cstats,
+                                      struct flb_in_cpu_config *ctx)
 {
-    int len = 0;
+    int i;
+    int procs;
+    unsigned long sum_pre;
+    unsigned long sum_now;
+    double diff;
+    struct cpu_snapshot *arr_pre = NULL;
+    struct cpu_snapshot *arr_now = NULL;
+    struct cpu_snapshot *snap_pre = NULL;
+    struct cpu_snapshot *snap_now = NULL;
 
-    strncpy(buf, cpu, c_len);
-    len = c_len;
+    if (cstats->snap_active == CPU_SNAP_ACTIVE_A) {
+        arr_now = cstats->snap_a;
+        arr_pre = cstats->snap_b;
+    }
+    else if (cstats->snap_active == CPU_SNAP_ACTIVE_B) {
+        arr_now = cstats->snap_b;
+        arr_pre = cstats->snap_a;
+    }
 
-    buf[len] = '.';
-    len++;
+    for (i = 0; i <= ctx->n_processors; i++) {
+        snap_pre = &arr_pre[i];
+        snap_now = &arr_now[i];
 
-    strncpy(buf + len, field, f_len);
-    len += f_len;
+        /* Calculate overall CPU usage (user space + kernel space */
+        sum_pre = (snap_pre->v_user + snap_pre->v_nice + snap_pre->v_system);
+        sum_now = (snap_now->v_user + snap_now->v_nice + snap_now->v_system);
 
-    buf[len] = '\0';
-    return len;
+        if (i == 0) {
+            snap_now->p_cpu = CPU_METRIC_SYS_AVERAGE(sum_pre, sum_now, ctx);
+        }
+        else {
+            snap_now->p_cpu = CPU_METRIC_USAGE(sum_pre, sum_now, ctx);
+        }
+
+        /* User space CPU% */
+        sum_pre = (snap_pre->v_user + snap_pre->v_nice);
+        sum_now = (snap_now->v_user + snap_now->v_nice);
+        if (i == 0) {
+            snap_now->p_user = CPU_METRIC_SYS_AVERAGE(sum_pre, sum_now, ctx);
+        }
+        else {
+            snap_now->p_user = CPU_METRIC_USAGE(sum_pre, sum_now, ctx);
+        }
+
+        /* Kernel space CPU% */
+        if (i == 0) {
+            snap_now->p_system = CPU_METRIC_SYS_AVERAGE(snap_pre->v_system,
+                                                        snap_now->v_system,
+                                                        ctx);
+        }
+        else {
+            snap_now->p_system = CPU_METRIC_USAGE(snap_pre->v_system,
+                                                  snap_now->v_system,
+                                                  ctx);
+        }
+
+        if (flb_debug_enabled()) {
+            if (i == 0) {
+                printf("cpu[all] all=%s%f%s user=%s%f%s system=%s%f%s\n",
+                       ANSI_BOLD, snap_now->p_cpu, ANSI_RESET,
+                       ANSI_BOLD, snap_now->p_user, ANSI_RESET,
+                       ANSI_BOLD, snap_now->p_system, ANSI_RESET);
+            }
+            else {
+                printf("cpu[i=%i] all=%f user=%f system=%f\n",
+                       i-1, snap_now->p_cpu,
+                       snap_now->p_user, snap_now->p_system);
+            }
+        }
+    }
+
+    return arr_now;
 }
 
 
@@ -200,25 +300,23 @@ static inline int key_field(char *buf,
 int in_cpu_collect(struct flb_config *config, void *in_context)
 {
     int i;
-    int maps;
     int len;
+    int ret;
+    int maps;
     double usage;
     double total;
-    (void) config;
     struct flb_in_cpu_config *ctx = in_context;
     struct cpu_stats *cstats = &ctx->cstats;
     struct cpu_snapshot *s;
+    (void) config;
 
     /* Get the current CPU usage */
-    total = proc_cpu_load(ctx->n_processors, cstats);
-    cstats->load_now = total;
+    ret = proc_cpu_load(ctx->n_processors, cstats);
+    if (ret != 0) {
+        return -1;
+    }
 
-    /* Calculate the difference between the two samples */
-    usage = fabs(cstats->load_now - cstats->load_pre) / ctx->cpu_ticks;
-    total = (usage * 100) / ctx->n_processors;
-
-    /* Put current load back */
-    cstats->load_pre = cstats->load_now;
+    s = snapshot_percent(cstats, ctx);
 
     /*
      * Store the new data into the MessagePack buffer,
@@ -226,26 +324,37 @@ int in_cpu_collect(struct flb_config *config, void *in_context)
     msgpack_pack_array(&ctx->mp_pck, 2);
     msgpack_pack_uint64(&ctx->mp_pck, time(NULL));
 
-    msgpack_pack_map(&ctx->mp_pck, (ctx->n_processors * 7 ) + 1);
-    msgpack_pack_bin(&ctx->mp_pck, 3);
-    msgpack_pack_bin_body(&ctx->mp_pck, "cpu", 3);
-    msgpack_pack_double(&ctx->mp_pck, total);
+    msgpack_pack_map(&ctx->mp_pck, (ctx->n_processors * 3 ) + 3);
+
+    /* All CPU */
+    msgpack_pack_bin(&ctx->mp_pck, 5);
+    msgpack_pack_bin_body(&ctx->mp_pck, "cpu_p", 5);
+    msgpack_pack_double(&ctx->mp_pck, s[0].p_cpu);
+
+    /* User space CPU % */
+    msgpack_pack_bin(&ctx->mp_pck, 6);
+    msgpack_pack_bin_body(&ctx->mp_pck, "user_p", 6);
+    msgpack_pack_double(&ctx->mp_pck, s[0].p_user);
+
+    /* System CPU % */
+    msgpack_pack_bin(&ctx->mp_pck, 8);
+    msgpack_pack_bin_body(&ctx->mp_pck, "system_p", 8);
+    msgpack_pack_double(&ctx->mp_pck, s[0].p_system);
+
 
     for (i = 1; i < ctx->n_processors + 1; i++) {
-        s = &cstats->info[i];
+        struct cpu_snapshot *e = &s[i];
 
-        CPU_PACK_SNAP(s, user);
-        CPU_PACK_SNAP(s, nice);
-        CPU_PACK_SNAP(s, system);
-        CPU_PACK_SNAP(s, idle);
-        CPU_PACK_SNAP(s, iowait);
-        CPU_PACK_SNAP(s, irq);
-        CPU_PACK_SNAP(s, softirq);
+        CPU_PACK_SNAP(e, cpu);
+        CPU_PACK_SNAP(e, user);
+        CPU_PACK_SNAP(e, system);
     }
 
-    flb_debug("[in_cpu] CPU %0.2f%%", total);
+    snapshots_switch(cstats);
+    flb_debug("[in_cpu] CPU %0.2f%%", s->p_cpu);
 
     flb_stats_update(in_cpu_plugin.stats_fd, 0, 1);
+
     return 0;
 }
 
@@ -267,8 +376,6 @@ void *in_cpu_flush(void *in_context, int *size)
     msgpack_sbuffer_destroy(&ctx->mp_sbuf);
     msgpack_sbuffer_init(&ctx->mp_sbuf);
     msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
-
-    ctx->data_idx = 0;
 
     return buf;
 }
