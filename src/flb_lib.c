@@ -86,9 +86,13 @@ struct flb_lib_ctx *flb_lib_init(char *input, char *output)
 
     if (!input) {
         ret = flb_input_set(config, "lib");
-        if (ret == -1) {
-            return NULL;
-        }
+    }
+    else {
+        ret = flb_input_set(config, input);
+    }
+
+    if (ret == -1) {
+        return NULL;
     }
 
     /* Initialize our pipe to send data to our worker */
