@@ -72,7 +72,7 @@ static void flb_lib_context_destroy(struct flb_lib_ctx *ctx)
  * plugin for the configuration context in question. This is a mandatory step
  * for callers who wants to ingest data directly into the engine.
  */
-struct flb_lib_ctx *flb_lib_init(char *output)
+struct flb_lib_ctx *flb_lib_init(char *input, char *output)
 {
     int ret;
     struct flb_lib_ctx *ctx;
@@ -84,9 +84,11 @@ struct flb_lib_ctx *flb_lib_init(char *output)
     }
     config = ctx->config;
 
-    ret = flb_input_set(config, "lib");
-    if (ret == -1) {
-        return NULL;
+    if (!input) {
+        ret = flb_input_set(config, "lib");
+        if (ret == -1) {
+            return NULL;
+        }
     }
 
     /* Initialize our pipe to send data to our worker */

@@ -29,7 +29,7 @@ struct flb_lib_ctx {
     struct flb_config *config;
 };
 
-struct flb_lib_ctx *flb_lib_init(char *output);
+struct flb_lib_ctx *flb_lib_init(char *input, char *output);
 int flb_lib_config_file(struct flb_lib_ctx *ctx, char *path);
 int flb_lib_push(struct flb_lib_ctx *ctx, void *data, size_t len);
 int flb_lib_start(struct flb_lib_ctx *ctx);
