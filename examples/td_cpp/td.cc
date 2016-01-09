@@ -35,7 +35,7 @@ int main(int argc, char **argv)
     }
 
     /* Initialize library */
-    ctx = flb_lib_init((char *) "td");
+    ctx = flb_lib_init(NULL, (char *) "td");
     if (!ctx) {
         exit(EXIT_FAILURE);
     }

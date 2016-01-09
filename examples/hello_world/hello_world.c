@@ -28,7 +28,7 @@ int main()
     struct flb_lib_ctx *ctx;
 
     /* Initialize library */
-    ctx = flb_lib_init("stdout");
+    ctx = flb_lib_init(NULL, "stdout");
     if (!ctx) {
         exit(EXIT_FAILURE);
     }
