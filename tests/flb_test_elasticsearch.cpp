@@ -9,7 +9,7 @@ TEST(Outputs, json_es) {
     int size = sizeof(JSON_ES) - 1;
     struct flb_lib_ctx *ctx;
 
-    ctx = flb_lib_init((char *) "es");
+    ctx = flb_lib_init(NULL, (char *) "es");
     EXPECT_TRUE(ctx != NULL);
 
     ret = flb_lib_start(ctx);
