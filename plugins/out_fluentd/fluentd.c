@@ -31,12 +31,14 @@
 
 struct flb_output_plugin out_fluentd_plugin;
 
-int cb_fluentd_init(struct flb_output_plugin *plugin, struct flb_config *config)
+int cb_fluentd_init(struct flb_output_plugin *plugin, struct flb_config *config,
+                    void *data)
 {
     int ret;
     struct flb_out_fluentd_config *ctx;
     struct flb_io_upstream *upstream;
     struct flb_uri_field *f_tag = NULL;
+    (void) data;
 
     ctx = calloc(1, sizeof(struct flb_out_fluentd_config));
     if (!ctx) {
