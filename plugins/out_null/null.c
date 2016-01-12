@@ -24,10 +24,12 @@
 
 #include <fluent-bit/flb_output.h>
 
-int cb_null_init(struct flb_output_plugin *plugin, struct flb_config *config)
+int cb_null_init(struct flb_output_plugin *plugin, struct flb_config *config,
+                 void *data)
 {
     (void) plugin;
     (void) config;
+    (void) data;
 
     return 0;
 }
