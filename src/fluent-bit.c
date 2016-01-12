@@ -206,7 +206,7 @@ int main(int argc, char **argv)
     }
 
     /* Output */
-    ret = flb_output_set(config, cfg_output);
+    ret = flb_output_set(config, cfg_output, NULL);
     if (ret == -1) {
         flb_utils_error(FLB_ERR_OUTPUT_INVALID);
     }

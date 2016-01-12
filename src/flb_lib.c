@@ -103,7 +103,7 @@ struct flb_lib_ctx *flb_lib_init(char *input, char *output, void *data)
     }
 
     /* Set the output interface */
-    ret = flb_output_set(config, output);
+    ret = flb_output_set(config, output, data);
     if (ret == -1) {
         return NULL;
     }

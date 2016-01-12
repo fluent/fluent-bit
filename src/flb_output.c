@@ -170,7 +170,7 @@ void flb_output_exit(struct flb_config *config)
  * It validate an output type given the string, it return the
  * proper type and if valid, populate the global config.
  */
-int flb_output_set(struct flb_config *config, char *output)
+int flb_output_set(struct flb_config *config, char *output, void *data)
 {
     int ret = -1;
     struct flb_output_plugin *plugin;
@@ -185,6 +185,7 @@ int flb_output_set(struct flb_config *config, char *output)
 
         if (check_protocol(plugin->name, output)) {
             plugin->active = FLB_TRUE;
+            plugin->data   = data;
             config->output = plugin;
 
             if (plugin->flags & FLB_OUTPUT_NET) {
@@ -224,9 +225,8 @@ int flb_output_init(struct flb_config *config)
                 mk_list_init(&out->tls.sessions);
             }
 #endif
-            out->cb_init(out, config);
+            out->cb_init(out, config, out->data);
             mk_list_init(&out->th_queue);
-
 
 #ifdef HAVE_STATS
             //struct flb_stats *stats;

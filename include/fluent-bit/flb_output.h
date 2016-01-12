@@ -77,7 +77,7 @@ struct flb_output_plugin {
     int conn;
 
     /* Initalization */
-    int (*cb_init)    (struct flb_output_plugin *, struct flb_config *);
+    int (*cb_init)    (struct flb_output_plugin *, struct flb_config *, void *);
 
     /* Pre run */
     int (*cb_pre_run) (void *, struct flb_config *);
@@ -130,6 +130,13 @@ struct flb_output_plugin {
     int stats_fd;
 #endif
 
+    /*
+     * Optional data passed to the plugin, this info is useful when
+     * running Fluent Bit in library mode and the target plugin needs
+     * some specific data from it caller.
+     */
+    void *data;
+
     /* Link to global list from flb_config->outputs */
     struct mk_list _head;
 };
@@ -157,7 +164,7 @@ static FLB_INLINE struct flb_thread *flb_output_thread(struct flb_output_plugin 
 }
 
 
-int flb_output_set(struct flb_config *config, char *output);
+int flb_output_set(struct flb_config *config, char *output, void *data);
 void flb_output_pre_run(struct flb_config *config);
 void flb_output_exit(struct flb_config *config);
 int flb_output_set_context(char *name, void *out_context, struct flb_config *config);
