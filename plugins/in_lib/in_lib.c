@@ -32,10 +32,11 @@
 #include "in_lib.h"
 
 /* Initialize plugin */
-int in_lib_init(struct flb_config *config)
+int in_lib_init(struct flb_config *config, void *data)
 {
     int ret;
     struct flb_in_lib_config *ctx;
+    (void) data;
 
     /* Allocate space for the configuration */
     ctx = malloc(sizeof(struct flb_in_lib_config));
