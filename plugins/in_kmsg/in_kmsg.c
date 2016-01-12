@@ -279,11 +279,12 @@ int in_kmsg_collect(struct flb_config *config, void *in_context)
 }
 
 /* Init kmsg input */
-int in_kmsg_init(struct flb_config *config)
+int in_kmsg_init(struct flb_config *config, void *data)
 {
     int fd;
     int ret;
     struct flb_in_kmsg_config *ctx;
+    (void) data;
 
     ctx = calloc(1, sizeof(struct flb_in_kmsg_config));
     if (!ctx) {

@@ -210,7 +210,7 @@ fail:
 }
 
 /* Init xbee input */
-int in_xbee_init(struct flb_config *config)
+int in_xbee_init(struct flb_config *config, void *data)
 {
     int ret;
     struct stat dev_st;
@@ -218,6 +218,8 @@ int in_xbee_init(struct flb_config *config)
     struct xbee_conAddress address;
     struct flb_in_xbee_config *ctx;
     struct xbee_conSettings settings;
+    (void) data;
+
     /* Prepare the configuration context */
     ctx = calloc(1, sizeof(struct flb_in_xbee_config));
     if (!ctx) {
