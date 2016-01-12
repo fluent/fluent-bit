@@ -32,11 +32,12 @@
 #include "in_stdin.h"
 
 /* Initialize plugin */
-int in_stdin_init(struct flb_config *config)
+int in_stdin_init(struct flb_config *config, void *data)
 {
     int fd;
     int ret;
     struct flb_in_stdin_config *ctx;
+    (void) data;
 
     /* Allocate space for the configuration */
     ctx = malloc(sizeof(struct flb_in_stdin_config));

@@ -35,9 +35,7 @@ struct flb_in_stdin_config {
     struct msgpack_packer mp_pck;    /* msgpack packer         */
 };
 
-int in_stdin_init(struct flb_config *config);
 int in_stdin_collect(struct flb_config *config, void *in_context);
-void *in_stdin_flush(void *in_context, int *size);
 
 extern struct flb_input_plugin in_stdin_plugin;
 
