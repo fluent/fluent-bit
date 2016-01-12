@@ -26,10 +26,11 @@
 #include "mqtt_config.h"
 
 /* Initialize plugin */
-int in_mqtt_init(struct flb_config *config)
+int in_mqtt_init(struct flb_config *config, void *data)
 {
     int ret;
     struct flb_in_mqtt_config *ctx;
+    (void) data;
 
     /* Allocate space for the configuration */
     ctx = mqtt_config_init(config->file);
