@@ -41,7 +41,6 @@ struct flb_in_lib_config {
     struct flb_pack_state state;
 };
 
-int in_lib_init(struct flb_config *config);
 int in_lib_collect(struct flb_config *config, void *in_context);
 void *in_lib_flush(void *in_context, int *size);
 
