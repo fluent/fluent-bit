@@ -253,7 +253,8 @@ static char *es_format(void *data, size_t bytes, int *out_size,
 }
 
 int cb_es_init(struct flb_output_plugin *plugin,
-               struct flb_config *config)
+               struct flb_config *config,
+               void *data)
 {
     int ret;
     int ulen;
@@ -262,6 +263,7 @@ int cb_es_init(struct flb_output_plugin *plugin,
     struct flb_uri_field *f_type = NULL;
     struct flb_out_es_config *ctx = NULL;
     struct flb_io_upstream *upstream;
+    (void) data;
 
     if (uri) {
         if (uri->count >= 2) {
