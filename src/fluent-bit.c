@@ -153,7 +153,7 @@ int main(int argc, char **argv)
             config->flush = atoi(optarg);
             break;
         case 'i':
-            ret = flb_input_set(config, optarg);
+            ret = flb_input_set(config, optarg, NULL);
             if (ret != 0) {
                 flb_utils_error(FLB_ERR_INPUT_INVALID);
             }

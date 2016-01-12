@@ -41,7 +41,7 @@ static struct flb_input_plugin *plugin_lookup(char *name, struct flb_config *con
 }
 
 /* Enable an input */
-int flb_input_set(struct flb_config *config, char *name)
+int flb_input_set(struct flb_config *config, char *name, void *data)
 {
     struct flb_input_plugin *plugin;
 
@@ -51,6 +51,7 @@ int flb_input_set(struct flb_config *config, char *name)
     }
 
     plugin->active = FLB_TRUE;
+    plugin->data   = data;
 
     return 0;
 }
@@ -66,7 +67,7 @@ void flb_input_initialize_all(struct flb_config *config)
         in = mk_list_entry(head, struct flb_input_plugin, _head);
         /* Initialize the input */
         if (in->active == FLB_TRUE && in->cb_init) {
-            ret = in->cb_init(config);
+            ret = in->cb_init(config, in->data);
             if (ret != 0) {
                 flb_error("Failed ininitalize input %s",
                 in->name);

@@ -38,7 +38,7 @@ struct flb_input_plugin {
     char *description;
 
     /* Initalization */
-    int (*cb_init)    (struct flb_config *);
+    int (*cb_init)    (struct flb_config *, void *);
 
     /* Pre run */
     int (*cb_pre_run) (void *, struct flb_config *);
@@ -79,6 +79,13 @@ struct flb_input_plugin {
     int stats_fd;
 #endif
 
+    /*
+     * Optional data passed to the plugin, this info is useful when
+     * running Fluent Bit in library mode and the target plugin needs
+     * some specific data from it caller.
+     */
+    void *data;
+
     /* Link to global list from flb_config->inputs */
     struct mk_list _head;
 };
@@ -105,7 +112,7 @@ struct flb_input_collector {
 };
 
 int flb_input_register_all(struct flb_config *config);
-int flb_input_set(struct flb_config *config, char *name);
+int flb_input_set(struct flb_config *config, char *name, void *data);
 int flb_input_check(struct flb_config *config);
 int flb_input_set_context(char *name, void *in_context, struct flb_config *config);
 int flb_input_set_collector_time(char *name,
