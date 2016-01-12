@@ -28,10 +28,11 @@ struct flb_input_plugin in_mem_plugin;
 
 int in_mem_collect(struct flb_config *config, void *in_context);
 
-int in_mem_init(struct flb_config *config)
+int in_mem_init(struct flb_config *config, void *data)
 {
     int ret;
     struct flb_in_mem_config *ctx;
+    (void) data;
 
     ctx = malloc(sizeof(struct flb_in_mem_config));
     if (!ctx) {
