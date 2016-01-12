@@ -136,11 +136,13 @@ static char *td_format(void *data, size_t bytes, int *out_size)
     return buf;
 }
 
-int cb_td_init(struct flb_output_plugin *plugin, struct flb_config *config)
+int cb_td_init(struct flb_output_plugin *plugin, struct flb_config *config,
+               void *data)
 {
     int ret;
     struct flb_out_td_config *ctx;
     struct flb_io_upstream *upstream;
+    (void) data;
 
     if (!config->file) {
         flb_utils_error_c("TD output requires a configuration file");
