@@ -149,12 +149,11 @@ static inline double proc_cpu_load(int cpus, struct cpu_stats *cstats)
 }
 
 /* Init CPU input */
-int in_cpu_init(struct flb_config *config)
+int in_cpu_init(struct flb_config *config, void *data)
 {
     int ret;
     struct flb_in_cpu_config *ctx;
-
-
+    (void) data;
 
     /* Allocate space for the configuration */
     ctx = calloc(1, sizeof(struct flb_in_cpu_config));
