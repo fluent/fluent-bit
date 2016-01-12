@@ -50,10 +50,6 @@ static inline void snapshot_key_format(int cpus, struct cpu_snapshot *snap_arr)
 
 static int snapshots_init(int cpus, struct cpu_stats *cstats)
 {
-    int i;
-    void *p;
-    struct cpu_snapshot *snap;
-
     cstats->snap_a = calloc(1, sizeof(struct cpu_snapshot) * (cpus + 1));
     if (!cstats->snap_a) {
         perror("malloc");
@@ -88,10 +84,6 @@ static inline double proc_cpu_load(int cpus, struct cpu_stats *cstats)
 {
     int i;
     int ret;
-    int fd;
-    int cpu_id=-1;
-    double total;
-    double user, nice, system, idle, iowait, irq, softirq;
     ssize_t read;
     char *line = NULL;
     size_t len = 0;
@@ -159,13 +151,10 @@ static inline double proc_cpu_load(int cpus, struct cpu_stats *cstats)
 /* Init CPU input */
 int in_cpu_init(struct flb_config *config)
 {
-    int i;
     int ret;
-    int len;
-    double total;
     struct flb_in_cpu_config *ctx;
-    struct cpu_stats *cstats;
-    struct cpu_snapshot *snap;
+
+
 
     /* Allocate space for the configuration */
     ctx = calloc(1, sizeof(struct flb_in_cpu_config));
@@ -222,10 +211,8 @@ struct cpu_snapshot *snapshot_percent(struct cpu_stats *cstats,
                                       struct flb_in_cpu_config *ctx)
 {
     int i;
-    int procs;
     unsigned long sum_pre;
     unsigned long sum_now;
-    double diff;
     struct cpu_snapshot *arr_pre = NULL;
     struct cpu_snapshot *arr_now = NULL;
     struct cpu_snapshot *snap_pre = NULL;
@@ -300,11 +287,7 @@ struct cpu_snapshot *snapshot_percent(struct cpu_stats *cstats,
 int in_cpu_collect(struct flb_config *config, void *in_context)
 {
     int i;
-    int len;
     int ret;
-    int maps;
-    double usage;
-    double total;
     struct flb_in_cpu_config *ctx = in_context;
     struct cpu_stats *cstats = &ctx->cstats;
     struct cpu_snapshot *s;
