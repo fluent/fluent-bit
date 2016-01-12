@@ -9,7 +9,7 @@ TEST(Outputs, json_long_fluentd) {
     int size = sizeof(JSON_LONG) - 1;
     struct flb_lib_ctx *ctx;
 
-    ctx = flb_lib_init(NULL, (char *) "fluentd://127.0.0.1:12225");
+    ctx = flb_lib_init(NULL, (char *) "fluentd://127.0.0.1:12225", NULL);
     EXPECT_TRUE(ctx != NULL);
 
     ret = flb_lib_start(ctx);

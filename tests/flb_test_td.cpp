@@ -9,7 +9,7 @@ TEST(TD, json_long) {
     int ret;
     struct flb_lib_ctx *ctx;
 
-    ctx = flb_lib_init(NULL, (char *) "td");
+    ctx = flb_lib_init(NULL, (char *) "td", NULL);
     EXPECT_TRUE(ctx != NULL);
 
     flb_config_verbose(FLB_TRUE);

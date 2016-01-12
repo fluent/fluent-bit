@@ -14,7 +14,7 @@ TEST(Outputs, json_invalid) {
     char *p = (char *) JSON_INVALID;
     struct flb_lib_ctx *ctx;
 
-    ctx = flb_lib_init(NULL, (char *) "stdout");
+    ctx = flb_lib_init(NULL, (char *) "stdout", NULL);
     EXPECT_TRUE(ctx != NULL);
 
     ret = flb_lib_start(ctx);
@@ -39,7 +39,7 @@ TEST(Outputs, json_long) {
     char *p = (char *) JSON_LONG;
     struct flb_lib_ctx *ctx;
 
-    ctx = flb_lib_init(NULL, (char *) "stdout");
+    ctx = flb_lib_init(NULL, (char *) "stdout", NULL);
     EXPECT_TRUE(ctx != NULL);
 
     ret = flb_lib_start(ctx);
@@ -63,7 +63,7 @@ TEST(Outputs, json_small) {
     char *p = (char *) JSON_SMALL;
     struct flb_lib_ctx *ctx;
 
-    ctx = flb_lib_init(NULL, (char *) "stdout");
+    ctx = flb_lib_init(NULL, (char *) "stdout", NULL);
     EXPECT_TRUE(ctx != NULL);
 
     ret = flb_lib_start(ctx);
