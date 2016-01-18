@@ -127,7 +127,7 @@ static char *es_format(void *data, size_t bytes, int *out_size,
 
         n_size = map.via.map.size + 1;
 
-        json_add_to_object(j_map, "timestamp", json_create_number(atime));
+        json_add_to_object(j_map, "date", json_create_number(atime));
         for (i = 0; i < n_size - 1; i++) {
             msgpack_object *k = &map.via.map.ptr[i].key;
             msgpack_object *v = &map.via.map.ptr[i].val;
