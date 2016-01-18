@@ -1,0 +1,180 @@
+/* BEGIN_HEADER */
+#include "mbedtls/entropy.h"
+
+/*
+ * Number of calls made to entropy_dummy_source()
+ */
+static size_t entropy_dummy_calls;
+
+/*
+ * Dummy entropy source
+ *
+ * If data is NULL, write exactly the requested length.
+ * Otherwise, write the length indicated by data or error if negative
+ */
+static int entropy_dummy_source( void *data, unsigned char *output,
+                                 size_t len, size_t *olen )
+{
+    entropy_dummy_calls++;
+
+    if( data == NULL )
+        *olen = len;
+    else
+    {
+        int *d = (int *) data;
+
+        if( *d < 0 )
+            return( MBEDTLS_ERR_ENTROPY_SOURCE_FAILED );
+        else
+            *olen = *d;
+    }
+
+    memset( output, 0x2a, *olen );
+
+    return( 0 );
+}
+/* END_HEADER */
+
+/* BEGIN_DEPENDENCIES
+ * depends_on:MBEDTLS_ENTROPY_C
+ * END_DEPENDENCIES
+ */
+
+/* BEGIN_CASE depends_on:MBEDTLS_FS_IO */
+void entropy_seed_file( char *path, int ret )
+{
+    mbedtls_entropy_context ctx;
+
+    mbedtls_entropy_init( &ctx );
+
+    TEST_ASSERT( mbedtls_entropy_write_seed_file( &ctx, path ) == ret );
+    TEST_ASSERT( mbedtls_entropy_update_seed_file( &ctx, path ) == ret );
+
+exit:
+    mbedtls_entropy_free( &ctx );
+}
+/* END_CASE */
+
+/* BEGIN_CASE */
+void entropy_too_many_sources( )
+{
+    mbedtls_entropy_context ctx;
+    size_t i;
+
+    mbedtls_entropy_init( &ctx );
+
+    /*
+     * It's hard to tell precisely when the error will occur,
+     * since we don't know how many sources were automatically added.
+     */
+    for( i = 0; i < MBEDTLS_ENTROPY_MAX_SOURCES; i++ )
+        (void) mbedtls_entropy_add_source( &ctx, entropy_dummy_source, NULL,
+                                           16, MBEDTLS_ENTROPY_SOURCE_WEAK );
+
+    TEST_ASSERT( mbedtls_entropy_add_source( &ctx, entropy_dummy_source, NULL,
+                                             16, MBEDTLS_ENTROPY_SOURCE_WEAK )
+                 == MBEDTLS_ERR_ENTROPY_MAX_SOURCES );
+
+exit:
+    mbedtls_entropy_free( &ctx );
+}
+/* END_CASE */
+
+/* BEGIN_CASE */
+void entropy_func_len( int len, int ret )
+{
+    mbedtls_entropy_context ctx;
+    unsigned char buf[MBEDTLS_ENTROPY_BLOCK_SIZE + 10] = { 0 };
+    unsigned char acc[MBEDTLS_ENTROPY_BLOCK_SIZE + 10] = { 0 };
+    size_t i, j;
+
+    mbedtls_entropy_init( &ctx );
+
+    /*
+     * See comments in mbedtls_entropy_self_test()
+     */
+    for( i = 0; i < 8; i++ )
+    {
+        TEST_ASSERT( mbedtls_entropy_func( &ctx, buf, len ) == ret );
+        for( j = 0; j < sizeof( buf ); j++ )
+            acc[j] |= buf[j];
+    }
+
+    if( ret == 0 )
+        for( j = 0; j < (size_t) len; j++ )
+            TEST_ASSERT( acc[j] != 0 );
+
+    for( j = len; j < sizeof( buf ); j++ )
+        TEST_ASSERT( acc[j] == 0 );
+}
+/* END_CASE */
+
+/* BEGIN_CASE */
+void entropy_source_fail( char *path )
+{
+    mbedtls_entropy_context ctx;
+    int fail = -1;
+    unsigned char buf[16];
+
+    mbedtls_entropy_init( &ctx );
+
+    TEST_ASSERT( mbedtls_entropy_add_source( &ctx, entropy_dummy_source,
+                                             &fail, 16,
+                                             MBEDTLS_ENTROPY_SOURCE_WEAK )
+                 == 0 );
+
+    TEST_ASSERT( mbedtls_entropy_func( &ctx, buf, sizeof( buf ) )
+                 == MBEDTLS_ERR_ENTROPY_SOURCE_FAILED );
+    TEST_ASSERT( mbedtls_entropy_gather( &ctx )
+                 == MBEDTLS_ERR_ENTROPY_SOURCE_FAILED );
+#if defined(MBEDTLS_FS_IO)
+    TEST_ASSERT( mbedtls_entropy_write_seed_file( &ctx, path )
+                 == MBEDTLS_ERR_ENTROPY_SOURCE_FAILED );
+    TEST_ASSERT( mbedtls_entropy_update_seed_file( &ctx, path )
+                 == MBEDTLS_ERR_ENTROPY_SOURCE_FAILED );
+#else
+    ((void) path);
+#endif
+
+exit:
+    mbedtls_entropy_free( &ctx );
+}
+/* END_CASE */
+
+/* BEGIN_CASE */
+void entropy_threshold( int threshold, int chunk_size, int result )
+{
+    mbedtls_entropy_context ctx;
+    unsigned char buf[MBEDTLS_ENTROPY_BLOCK_SIZE] = { 0 };
+    int ret;
+
+    mbedtls_entropy_init( &ctx );
+
+    TEST_ASSERT( mbedtls_entropy_add_source( &ctx, entropy_dummy_source,
+                                     &chunk_size, threshold,
+                                     MBEDTLS_ENTROPY_SOURCE_WEAK ) == 0 );
+
+    entropy_dummy_calls = 0;
+    ret = mbedtls_entropy_func( &ctx, buf, sizeof( buf ) );
+
+    if( result >= 0 )
+    {
+        TEST_ASSERT( ret == 0 );
+        TEST_ASSERT( entropy_dummy_calls == (size_t) result );
+    }
+    else
+    {
+        TEST_ASSERT( ret == result );
+    }
+
+exit:
+    mbedtls_entropy_free( &ctx );
+}
+/* END_CASE */
+
+/* BEGIN_CASE depends_on:MBEDTLS_SELF_TEST */
+void entropy_selftest( )
+{
+    TEST_ASSERT( mbedtls_entropy_self_test( 0 ) == 0 );
+}
+/* END_CASE */
