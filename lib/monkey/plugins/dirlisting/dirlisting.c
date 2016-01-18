@@ -175,7 +175,7 @@ int mk_dirhtml_read_config(char *path)
     struct file_info finfo;
 
     mk_api->str_build(&default_file, &len, "%sdirhtml.conf", path);
-    conf = mk_api->config_create(default_file);
+    conf = mk_api->config_open(default_file);
     if (!conf) {
         return -1;
     }

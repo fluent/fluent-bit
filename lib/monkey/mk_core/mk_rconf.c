@@ -82,7 +82,21 @@ static void mk_rconf_section_entry_add(struct mk_rconf *conf,
     mk_list_add(&new->_head, &section->entries);
 }
 
-struct mk_rconf *mk_rconf_create(const char *path)
+/* Create a configuration schema */
+struct mk_rconf *mk_rconf_create(const char *name)
+{
+    struct mk_rconf *conf = NULL;
+
+    /* Alloc configuration node */
+    conf = mk_mem_malloc_z(sizeof(struct mk_rconf));
+    conf->created = time(NULL);
+    conf->file = mk_string_dup(name);
+    mk_list_init(&conf->sections);
+
+    return conf;
+}
+
+struct mk_rconf *mk_rconf_open(const char *path)
 {
     int i;
     int len;

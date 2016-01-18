@@ -17,6 +17,8 @@
  *  limitations under the License.
  */
 
+#define _GNU_SOURCE
+
 #include <monkey/mk_core.h>
 #include <monkey/mk_server.h>
 #include <monkey/mk_stream.h>
@@ -106,16 +108,23 @@ struct mk_sched_conn
 {
     struct mk_event event;             /* event loop context           */
     int status;                        /* connection status            */
+    uint32_t properties;
     char is_timeout_on;                /* registered to timeout queue? */
     time_t arrive_time;                /* arrive time                  */
     struct mk_sched_handler *protocol; /* protocol handler             */
+    struct mk_server_listen *server_listen;
     struct mk_plugin_network *net;     /* I/O network layer            */
     struct mk_channel channel;         /* stream channel               */
     struct mk_list timeout_head;       /* link to the timeout queue    */
     struct rb_node _rb_head;           /* red-black tree head          */
+    void *data;                        /* optional ref for protocols   */
 };
 
+/* Protocol capabilities */
 #define MK_SCHED_CONN_CAP(conn)  conn->protocol->capabilities
+
+/* Connection properties */
+#define MK_SCHED_CONN_PROP(conn) conn->server_listen->listen->flags
 
 /*
  * It defines a Handler for a connection in questions. This struct
@@ -140,6 +149,7 @@ struct mk_sched_handler
     int (*cb_read)  (struct mk_sched_conn *, struct mk_sched_worker *);
     int (*cb_close) (struct mk_sched_conn *, struct mk_sched_worker *, int);
     int (*cb_done)  (struct mk_sched_conn *, struct mk_sched_worker *);
+    int (*cb_upgrade) (void *, void *);
 
     /*
      * This extra field is a small hack. The scheduler connection context
@@ -281,5 +291,8 @@ static inline void mk_sched_conn_timeout_del(struct mk_sched_conn *conn)
     ch->io->writev(ch->fd, iov)
 #define mk_sched_conn_sendfile(ch, f_fd, f_offs, f_count)   \
     ch->io->send_file(ch->fd, f_fd, f_offs, f_count)
+
+#define mk_sched_switch_protocol(conn, cap)     \
+    conn->protocol = mk_sched_handler_cap(cap)
 
 #endif

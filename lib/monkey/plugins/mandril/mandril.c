@@ -51,7 +51,7 @@ static int mk_security_conf(char *confdir)
 
     /* Read configuration */
     mk_api->str_build(&conf_path, &len, "%s/mandril.conf", confdir);
-    conf = mk_api->config_create(conf_path);
+    conf = mk_api->config_open(conf_path);
     if (!conf) {
         return -1;
     }
@@ -159,7 +159,7 @@ static int mk_security_check_ip(int socket)
     struct mk_secure_ip_t *entry;
     struct mk_list *head;
     struct in_addr *addr;
-    struct sockaddr_in addr_t;
+    struct sockaddr_in addr_t = {0};
     socklen_t len = sizeof(addr_t);
 
     if (getpeername(socket, (struct sockaddr *) &addr_t, &len) != 0) {

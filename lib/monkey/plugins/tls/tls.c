@@ -199,51 +199,104 @@ static int config_parse(const char *confdir, struct polar_config *conf)
 {
     long unsigned int len;
     char *conf_path = NULL;
+    char *cert_file = NULL;
+    char *cert_chain_file = NULL;
+    char *key_file = NULL;
+    char *dh_param_file = NULL;
     struct mk_rconf_section *section;
     struct mk_rconf *conf_head;
-    struct mk_list *head;
 
     mk_api->str_build(&conf_path, &len, "%stls.conf", confdir);
-    conf_head = mk_api->config_create(conf_path);
+    conf_head = mk_api->config_open(conf_path);
     mk_api->mem_free(conf_path);
 
     if (conf_head == NULL) {
         goto fallback;
     }
 
-    mk_list_foreach(head, &conf_head->sections) {
-        section = mk_list_entry(head, struct mk_rconf_section, _head);
-
-        if (strcasecmp(section->name, "TLS")) {
-            continue;
-        }
-        conf->cert_file = mk_api->config_section_get_key(section,
-                "CertificateFile",
-                MK_RCONF_STR);
-        conf->cert_chain_file = mk_api->config_section_get_key(section,
-                "CertificateChainFile",
-                MK_RCONF_STR);
-        conf->key_file = mk_api->config_section_get_key(section,
-                "RSAKeyFile",
-                MK_RCONF_STR);
-        conf->dh_param_file = mk_api->config_section_get_key(section,
-                "DHParameterFile",
-                MK_RCONF_STR);
+    section = mk_api->config_section_get(conf_head, "TLS");
+    if (!section) {
+        goto fallback;
     }
-    mk_api->config_free(conf_head);
 
+    cert_file = mk_api->config_section_get_key(section,
+                                               "CertificateFile",
+                                               MK_RCONF_STR);
+    cert_chain_file = mk_api->config_section_get_key(section,
+                                                     "CertificateChainFile",
+                                                     MK_RCONF_STR);
+    key_file = mk_api->config_section_get_key(section,
+                                              "RSAKeyFile",
+                                              MK_RCONF_STR);
+    dh_param_file = mk_api->config_section_get_key(section,
+                                                   "DHParameterFile",
+                                                   MK_RCONF_STR);
 fallback:
-    if (conf->cert_file == NULL) {
+    /* Set default name if not specified */
+    if (!cert_file) {
         mk_api->str_build(&conf->cert_file, &len,
                           "%ssrv_cert.pem", confdir);
     }
-    if (conf->key_file == NULL) {
+    else {
+        /* Set absolute path or compose a new one based on the relative */
+        if (*cert_file == '/') {
+            conf->cert_file = cert_file;
+        }
+        else {
+            mk_api->str_build(&conf->cert_file, &len,
+                              "%s/%s", confdir, cert_file);
+        }
+    }
+
+    /* Set default name if not specified */
+    if (cert_chain_file) {
+        /* Set absolute path or compose a new one based on the relative */
+        if (*cert_chain_file == '/') {
+            conf->cert_chain_file = cert_chain_file;
+        }
+        else {
+            mk_api->str_build(&conf->cert_chain_file, &len,
+                              "%s/%s", confdir, cert_chain_file);
+        }
+    }
+    else {
+        conf->cert_chain_file = NULL;
+    }
+
+    /* Set default name if not specified */
+    if (!key_file) {
         mk_api->str_build(&conf->key_file, &len,
                           "%srsa.pem", confdir);
     }
-    if (conf->dh_param_file == NULL) {
+    else {
+        /* Set absolute path or compose a new one based on the relative */
+        if (*key_file == '/') {
+            conf->key_file = key_file;
+        }
+        else {
+            mk_api->str_build(&conf->key_file, &len,
+                              "%s/%s", confdir, key_file);
+        }
+    }
+
+    /* Set default name if not specified */
+    if (!dh_param_file) {
         mk_api->str_build(&conf->dh_param_file, &len,
                           "%sdhparam.pem", confdir);
+    }
+    else {
+        /* Set absolute path or compose a new one based on the relative */
+        if (*dh_param_file == '/') {
+            conf->dh_param_file = dh_param_file;
+        }
+        else {
+            mk_api->str_build(&conf->dh_param_file, &len,
+                              "%s/%s", confdir, dh_param_file);
+        }
+    }
+
+    if (conf_head) {
+        mk_api->config_free(conf_head);
     }
 
     return 0;
@@ -734,7 +787,7 @@ void mk_tls_worker_init(void)
     return;
 
  error:
-    abort();
+    exit(EXIT_FAILURE);
 }
 
 int mk_tls_plugin_exit()

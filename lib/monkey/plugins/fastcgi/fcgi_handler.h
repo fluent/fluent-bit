@@ -83,6 +83,8 @@ struct fcgi_handler {
     int active;                  /* is this handler active ?       */
     int hangup;                  /* hangup connection once ready ? */
     int headers_set;             /* headers set ?                  */
+    int eof;                     /* exiting: MK_TRUE / MK_FALSE    */
+
     struct mk_http_session *cs;  /* HTTP session context           */
     struct mk_http_request *sr;  /* HTTP request context           */
 

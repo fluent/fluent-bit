@@ -22,6 +22,8 @@
 #ifndef MONKEY_PLUGIN_API_H
 #define MONKEY_PLUGIN_API_H
 
+#define _GNU_SOURCE
+
 /* Monkey Headers */
 #include <monkey/monkey.h>
 #include <monkey/mk_socket.h>

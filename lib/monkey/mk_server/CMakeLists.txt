@@ -11,6 +11,7 @@ set(src
   mk_stream.c
   mk_scheduler.c
   mk_http.c
+  mk_http2.c
   mk_http_parser.c
   mk_socket.c
   mk_clock.c

@@ -39,6 +39,9 @@ struct cgi_request *cgi_req_create(int fd, int socket,
     cgi->active = MK_TRUE;
     cgi->in_len = 0;
 
+    cgi->event.mask   = MK_EVENT_EMPTY;
+    cgi->event.status = MK_EVENT_NONE;
+
     return cgi;
 }
 

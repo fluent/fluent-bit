@@ -50,6 +50,8 @@ struct response_headers
 
     int transfer_encoding;
 
+    int upgrade;
+
     int ranges[2];
 
     time_t last_modified;

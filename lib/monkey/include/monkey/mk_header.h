@@ -86,7 +86,9 @@ struct header_status_response {
     char *response;
 };
 
-#define MK_HEADER_TE_TYPE_CHUNKED 0
+#define MK_HEADER_TE_TYPE_CHUNKED   0
+#define MK_HEADER_CONN_UPGRADED    11
+#define MK_HEADER_UPGRADED_H2C     20
 
 extern const mk_ptr_t mk_header_short_date;
 extern const mk_ptr_t mk_header_short_location;

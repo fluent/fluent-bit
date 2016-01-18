@@ -36,6 +36,7 @@
 
 struct mk_sched_worker *sched_list;
 struct mk_sched_handler mk_http_handler;
+struct mk_sched_handler mk_http2_handler;
 
 static pthread_mutex_t mutex_sched_init = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t mutex_worker_init = PTHREAD_MUTEX_INITIALIZER;
@@ -144,6 +145,9 @@ struct mk_sched_handler *mk_sched_handler_cap(char cap)
     if (cap == MK_CAP_HTTP) {
         return &mk_http_handler;
     }
+    else if (cap == MK_CAP_HTTP2) {
+        return &mk_http2_handler;
+    }
 
     return NULL;
 }
@@ -197,11 +201,13 @@ struct mk_sched_conn *mk_sched_add_connection(int remote_fd,
     conn->protocol      = handler;
     conn->net           = listener->network->network;
     conn->is_timeout_on = MK_FALSE;
+    conn->server_listen = listener;
 
     /* Stream channel */
-    conn->channel.type = MK_CHANNEL_SOCKET;    /* channel type  */
-    conn->channel.fd   = remote_fd;            /* socket conn   */
-    conn->channel.io   = conn->net;            /* network layer */
+    conn->channel.type  = MK_CHANNEL_SOCKET;    /* channel type     */
+    conn->channel.fd    = remote_fd;            /* socket conn      */
+    conn->channel.io    = conn->net;            /* network layer    */
+    conn->channel.event = event;                /* parent event ref */
     mk_list_init(&conn->channel.streams);
 
     /* Register the entry in the red-black tree queue for fast lookup */
@@ -442,6 +448,7 @@ int mk_sched_remove_client(struct mk_sched_conn *conn,
                            struct mk_sched_worker *sched)
 {
     struct mk_event *event;
+
     /*
      * Close socket and change status: we must invoke mk_epoll_del()
      * because when the socket is closed is cleaned from the queue by
@@ -468,6 +475,7 @@ int mk_sched_remove_client(struct mk_sched_conn *conn,
     /* Release and return */
     mk_channel_clean(&conn->channel);
     mk_sched_event_free(&conn->event);
+    conn->status = MK_SCHED_CONN_CLOSED;
 
     MK_LT_SCHED(remote_fd, "DELETE_CLIENT");
     return 0;
@@ -560,10 +568,10 @@ int mk_sched_event_read(struct mk_sched_conn *conn,
     size_t count = 0;
     size_t total = 0;
     struct mk_event *event;
+    uint32_t stop = (MK_CHANNEL_DONE | MK_CHANNEL_ERROR | MK_CHANNEL_EMPTY);
 
 #ifdef TRACE
-    int socket = conn->event.fd;
-    MK_TRACE("[FD %i] Connection Handler / read", socket);
+    MK_TRACE("[FD %i] Connection Handler / read", conn->event.fd);
 #endif
 
     /*
@@ -608,8 +616,7 @@ int mk_sched_event_read(struct mk_sched_conn *conn,
     do {
         ret = mk_channel_write(&conn->channel, &count);
         total += count;
-    } while (total <= sched->mem_pagesize &&
-             (ret & ~(MK_CHANNEL_DONE | MK_CHANNEL_ERROR | MK_CHANNEL_EMPTY)));
+    } while (total <= sched->mem_pagesize && ((ret & stop) == 0));
 
     if (ret == MK_CHANNEL_DONE) {
         if (conn->protocol->cb_done) {
@@ -628,13 +635,18 @@ int mk_sched_event_read(struct mk_sched_conn *conn,
     }
     else if (ret & (MK_CHANNEL_FLUSH | MK_CHANNEL_BUSY)) {
         event = &conn->event;
-        if (event->mask & ~MK_EVENT_WRITE) {
+        if ((event->mask & MK_EVENT_WRITE) == 0) {
             mk_event_add(sched->loop, event->fd,
                          MK_EVENT_CONNECTION,
                          MK_EVENT_WRITE,
                          conn);
         }
     }
+#ifdef TRACE
+    else if (ret & MK_CHANNEL_ERROR) {
+        MK_TRACE("[FD %i] CHANNEL_ERROR", conn->event.fd);
+    }
+#endif
 
     return ret;
 }
@@ -646,7 +658,8 @@ int mk_sched_event_write(struct mk_sched_conn *conn,
     size_t count;
     struct mk_event *event;
 
-    MK_TRACE("[FD %i] Connection Handler / write", socket);
+    MK_TRACE("[FD %i] Connection Handler / write", conn->event.fd);
+
 
     ret = mk_channel_write(&conn->channel, &count);
     if (ret == MK_CHANNEL_FLUSH || ret == MK_CHANNEL_BUSY) {
@@ -697,6 +710,10 @@ int mk_sched_event_close(struct mk_sched_conn *conn,
 void mk_sched_event_free(struct mk_event *event)
 {
     struct mk_sched_worker *sched = mk_sched_get_thread_conf();
+
+    if ((event->type & MK_EVENT_IDLE) != 0) {
+        return;
+    }
 
     event->type |= MK_EVENT_IDLE;
     mk_list_add(&event->_head, &sched->event_free_queue);

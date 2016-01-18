@@ -94,8 +94,6 @@ struct plugin_api
     int (*socket_set_nonblocking) (int);
     int (*socket_create) ();
     int (*socket_close) (int);
-    int (*socket_sendv) (int, struct mk_iov *);
-    int (*socket_send) (int, const void *, size_t);
     int (*socket_read) (int, void *, int);
     int (*socket_send_file) (int, int, off_t *, size_t);
     int (*socket_ip_str) (int, char **, int, unsigned long *);
@@ -192,6 +190,7 @@ struct plugin_api
     void (*rb_link_node) (struct rb_node *, struct rb_node *, struct rb_node **);
 
     /* configuration reader functions */
+    struct mk_rconf *(*config_open) (const char *);
     struct mk_rconf *(*config_create) (const char *);
     void (*config_free) (struct mk_rconf *);
     struct mk_rconf_section *(*config_section_get) (struct mk_rconf *,

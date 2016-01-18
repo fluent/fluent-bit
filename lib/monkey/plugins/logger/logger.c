@@ -238,7 +238,7 @@ static int mk_logger_read_config(char *path)
     struct mk_rconf_section *section;
 
     mk_api->str_build(&default_file, &len, "%slogger.conf", path);
-    conf = mk_api->config_create(default_file);
+    conf = mk_api->config_open(default_file);
     if (!conf) {
         return -1;
     }

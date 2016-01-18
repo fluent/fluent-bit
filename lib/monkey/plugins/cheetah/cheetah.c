@@ -52,7 +52,7 @@ static int mk_cheetah_config(char *path)
 
     /* read configuration file */
     mk_api->str_build(&default_file, &len, "%scheetah.conf", path);
-    conf = mk_api->config_create(default_file);
+    conf = mk_api->config_open(default_file);
     if (!conf) {
         return -1;
     }

@@ -290,7 +290,7 @@ static void mk_config_read_files(char *path_conf, char *file_conf)
     }
 
     mk_string_build(&tmp, &len, "%s/%s", path_conf, file_conf);
-    cnf = mk_rconf_create(tmp);
+    cnf = mk_rconf_open(tmp);
     if (!cnf) {
         mk_mem_free(tmp);
         mk_err("Cannot read '%s'", mk_config->server_conf_file);

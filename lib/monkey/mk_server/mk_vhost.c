@@ -330,7 +330,7 @@ struct host *mk_vhost_read(char *path)
     struct mk_handler_param *h_param;
 
     /* Read configuration file */
-    cnf = mk_rconf_create(path);
+    cnf = mk_rconf_open(path);
     if (!cnf) {
         mk_err("Configuration error, aborting.");
         exit(EXIT_FAILURE);

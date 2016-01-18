@@ -137,7 +137,7 @@ void mk_mimetype_read_config()
     if (ret == -1 || f_info.is_file == MK_FALSE)
         snprintf(path, MK_MAX_PATH, "%s", mk_config->mimes_conf_file);
 
-    cnf = mk_rconf_create(path);
+    cnf = mk_rconf_open(path);
     if (!cnf) {
         mk_warn("No mimetypes loaded");
         return;

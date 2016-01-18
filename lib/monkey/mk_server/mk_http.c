@@ -484,6 +484,7 @@ static int mk_http_directory_redirect_check(struct mk_http_session *cs,
     char *host;
     char *location = 0;
     char *real_location = 0;
+    char *protocol = "http";
     unsigned long len;
 
     /*
@@ -511,18 +512,20 @@ static int mk_http_directory_redirect_check(struct mk_http_session *cs,
         }
     }
 
-    char *fixme = "http";
+    if (MK_SCHED_CONN_PROP(cs->conn) & MK_CAP_SOCK_TLS) {
+        protocol = "https";
+    }
+
     if (port_redirect > 0) {
         mk_string_build(&real_location, &len, "%s://%s:%i%s\r\n",
-                        fixme, host, port_redirect, location);
+                        protocol, host, port_redirect, location);
     }
     else {
         mk_string_build(&real_location, &len, "%s://%s%s\r\n",
-                        fixme, host, location);
+                        protocol, host, location);
     }
 
     MK_TRACE("Redirecting to '%s'", real_location);
-
     mk_mem_free(host);
 
     mk_header_set_http_status(sr, MK_REDIR_MOVED);
@@ -543,33 +546,42 @@ static int mk_http_directory_redirect_check(struct mk_http_session *cs,
 }
 
 /* Look for some  index.xxx in pathfile */
-mk_ptr_t mk_http_index_file(char *pathfile, char *file_aux,
-                            const unsigned int flen)
+static inline char *mk_http_index_lookup(mk_ptr_t *path_base,
+                                         char *buf, size_t buf_size,
+                                         size_t *out, size_t *bytes)
 {
-    unsigned long len;
-    mk_ptr_t f;
+    off_t off = 0;
+    size_t len;
     struct mk_string_line *entry;
     struct mk_list *head;
 
-    mk_ptr_reset(&f);
-    if (!mk_config->index_files) return f;
+    if (!mk_config->index_files) {
+        return NULL;
+    }
+
+    off = path_base->len;
+    memcpy(buf, path_base->data, off);
 
     mk_list_foreach(head, mk_config->index_files) {
         entry = mk_list_entry(head, struct mk_string_line, _head);
-        len = snprintf(file_aux, flen, "%s%s", pathfile, entry->val);
-        if (mk_unlikely(len > flen)) {
-            len = flen - 1;
-            mk_warn("Path too long, truncated! '%s'", file_aux);
+
+        len = off + entry->len + 1;
+        if (len >= buf_size) {
+            continue;
         }
 
-        if (access(file_aux, F_OK) == 0) {
-            f.data = file_aux;
-            f.len = len;
-            return f;
+        memcpy(buf + off, entry->val, entry->len);
+        buf[off + entry->len] = '\0';
+
+        if (access(buf, F_OK) == 0) {
+            MK_TRACE("Index lookup OK '%s'", buf);
+            *out = off + entry->len;
+            *bytes = path_base->len - 1;
+            return buf;
         }
     }
 
-    return f;
+    return NULL;
 }
 
 #if defined (__linux__)
@@ -594,11 +606,16 @@ static inline void mk_http_cb_file_on_consume(struct mk_stream *stream, long byt
 int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
 {
     int ret;
+    int ret_file;
     struct mimetype *mime;
     struct mk_list *head;
     struct mk_list *handlers;
     struct mk_plugin *plugin;
     struct mk_host_handler *h_handler;
+    size_t index_length;
+    size_t index_bytes;
+    char *index_path = NULL;
+
 
     MK_TRACE("[FD %i] HTTP Protocol Init, session %p", cs->socket, sr);
 
@@ -638,6 +655,32 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
         }
     }
 
+    /* Check if this is related to a protocol upgrade */
+    if (cs->parser.header_connection & MK_HTTP_PARSER_CONN_UPGRADE) {
+        /* HTTP/2.0 upgrade ? */
+        if (cs->parser.header_connection & MK_HTTP_PARSER_CONN_HTTP2_SE) {
+            MK_TRACE("Connection Upgrade request: HTTP/2.0");
+            /*
+             * This is a HTTP/2.0 upgrade, we need to validate that we
+             * have at least the 'Upgrade' and 'HTTP2-Settings' headers.
+             */
+            struct mk_http_header *p;
+            p = &cs->parser.headers[MK_HEADER_HTTP2_SETTINGS];
+            if (cs->parser.header_upgrade == MK_HTTP_PARSER_UPGRADE_H2C &&
+                p->key.data) {
+                /*
+                 * Switch protocols and invoke the callback upgrade to prepare
+                 * the new protocol internals.
+                 */
+                mk_sched_switch_protocol(cs->conn, MK_CAP_HTTP2);
+                return cs->conn->protocol->cb_upgrade(cs, sr);
+            }
+            else {
+                MK_TRACE("Invalid client upgrade request, skip it");
+            }
+        }
+    }
+
     /* Check backward directory request */
     if (memmem(sr->uri_processed.data, sr->uri_processed.len,
                MK_HTTP_DIRECTORY_BACKWARD,
@@ -652,41 +695,45 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
     }
 
 
-    if (mk_file_get_info(sr->real_path.data,
-                         &sr->file_info,
-                         MK_FILE_READ) != 0) {
+    ret_file = mk_file_get_info(sr->real_path.data, &sr->file_info, MK_FILE_READ);
 
-        /*
-         * FIXME: commenting out this routine where we used to let
-         * plugins to handle missing resources on the file system.
-         *
-         * As the only caller on this context is Duda plugin, this will
-         * be disabled until Duda DST-2 becomes available.
+    /* Plugin Stage 30: look for handlers for this request */
+    if (sr->stage30_blocked == MK_FALSE) {
+        sr->uri_processed.data[sr->uri_processed.len] = '\0';
 
-        MK_TRACE("No file, look for handler plugin");
-        ret = mk_plugin_stage_run_30(cs, sr, &handler);
-        if (ret == MK_PLUGIN_RET_CLOSE_CONX) {
-            if (sr->headers.status > 0) {
-                return mk_http_error(sr->headers.status, cs, sr);
+        handlers = &sr->host_conf->handlers;
+        mk_list_foreach(head, handlers) {
+            h_handler = mk_list_entry(head, struct mk_host_handler, _head);
+            if (regexec(&h_handler->match,
+                        sr->uri_processed.data, 0, NULL, 0) != 0) {
+                continue;
             }
-            else {
-                return mk_http_error(MK_CLIENT_FORBIDDEN, cs, sr);
+
+            plugin = h_handler->handler;
+            sr->stage30_handler = h_handler->handler;
+            ret = plugin->stage->stage30(plugin, cs, sr,
+                                         h_handler->n_params,
+                                         &h_handler->params);
+
+            MK_TRACE("[FD %i] STAGE_30 returned %i", cs->socket, ret);
+            switch (ret) {
+            case MK_PLUGIN_RET_CONTINUE:
+                return MK_PLUGIN_RET_CONTINUE;
+            case MK_PLUGIN_RET_CLOSE_CONX:
+                if (sr->headers.status > 0) {
+                    return mk_http_error(sr->headers.status, cs, sr);
+                }
+                else {
+                    return mk_http_error(MK_CLIENT_FORBIDDEN, cs, sr);
+                }
+            case MK_PLUGIN_RET_END:
+                return MK_EXIT_OK;
             }
         }
-        else if (ret == MK_PLUGIN_RET_CONTINUE) {
-            return MK_PLUGIN_RET_CONTINUE;
-        }
-        else if (ret == MK_PLUGIN_RET_END) {
-            return MK_EXIT_OK;
-        }
+    }
 
-        if (sr->file_info.exists == MK_FALSE) {
-            return mk_http_error(MK_CLIENT_NOT_FOUND, cs, sr);
-        }
-        else if (sr->stage30_blocked == MK_FALSE) {
-            return mk_http_error(MK_CLIENT_FORBIDDEN, cs, sr);
-        }
-        */
+    /* If there is no handler and the resource don't exists, raise a 404 */
+    if (ret_file == -1) {
         return mk_http_error(MK_CLIENT_NOT_FOUND, cs, sr);
     }
 
@@ -701,29 +748,28 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
         }
 
         /* looking for an index file */
-        mk_ptr_t index_file;
         char tmppath[MK_MAX_PATH];
-        index_file = mk_http_index_file(sr->real_path.data, tmppath, MK_MAX_PATH);
-
-        if (index_file.data) {
+        index_path = mk_http_index_lookup(&sr->real_path,
+                                          tmppath, MK_MAX_PATH,
+                                          &index_length, &index_bytes);
+        if (index_path) {
             if (sr->real_path.data != sr->real_path_static) {
                 mk_ptr_free(&sr->real_path);
-                sr->real_path = index_file;
-                sr->real_path.data = mk_string_dup(index_file.data);
+                sr->real_path.data = mk_string_dup(index_path);
             }
             /* If it's static and it still fits */
-            else if (index_file.len < MK_PATH_BASE) {
-                memcpy(sr->real_path_static, index_file.data, index_file.len);
-                sr->real_path_static[index_file.len] = '\0';
-                sr->real_path.len = index_file.len;
+            else if (index_length < MK_PATH_BASE) {
+                memcpy(sr->real_path_static, index_path, index_length);
+                sr->real_path_static[index_length] = '\0';
             }
             /* It was static, but didn't fit */
             else {
-                sr->real_path = index_file;
-                sr->real_path.data = mk_string_dup(index_file.data);
+                sr->real_path.data = mk_string_dup(index_path);
             }
+            sr->real_path.len  = index_length;
 
-            ret = mk_file_get_info(sr->real_path.data, &sr->file_info, MK_FILE_READ);
+            ret = mk_file_get_info(sr->real_path.data,
+                                   &sr->file_info, MK_FILE_READ);
             if (ret != 0) {
                 return mk_http_error(MK_CLIENT_FORBIDDEN, cs, sr);
             }
@@ -748,13 +794,21 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
 
     /* Plugin Stage 30: look for handlers for this request */
     if (sr->stage30_blocked == MK_FALSE) {
-        sr->uri_processed.data[sr->uri_processed.len] = '\0';
+        char *uri;
+
+        if (!index_path) {
+            sr->uri_processed.data[sr->uri_processed.len] = '\0';
+            uri = sr->uri_processed.data;
+        }
+        else {
+            uri = sr->real_path.data + index_bytes;
+        }
 
         handlers = &sr->host_conf->handlers;
         mk_list_foreach(head, handlers) {
             h_handler = mk_list_entry(head, struct mk_host_handler, _head);
             if (regexec(&h_handler->match,
-                        sr->uri_processed.data, 0, NULL, 0) != 0) {
+                        uri, 0, NULL, 0) != 0) {
                 continue;
             }
 
@@ -1140,46 +1194,46 @@ int mk_http_error(int http_status, struct mk_http_session *cs,
 
     switch (http_status) {
     case MK_CLIENT_FORBIDDEN:
-        ret = mk_http_error_page("Forbidden",
-                                 &sr->uri,
-                                 mk_config->server_signature,
-                                 &page.data, &page.len);
+        mk_http_error_page("Forbidden",
+                           &sr->uri,
+                           mk_config->server_signature,
+                           &page.data, &page.len);
         break;
     case MK_CLIENT_NOT_FOUND:
         mk_string_build(&message.data, &message.len,
                         "The requested URL was not found on this server.");
-        ret = mk_http_error_page("Not Found",
-                                 &message,
-                                 mk_config->server_signature,
-                                 &page.data, &page.len);
+        mk_http_error_page("Not Found",
+                           &message,
+                           mk_config->server_signature,
+                           &page.data, &page.len);
         mk_ptr_free(&message);
         break;
     case MK_CLIENT_REQUEST_ENTITY_TOO_LARGE:
         mk_string_build(&message.data, &message.len,
                         "The request entity is too large.");
-        ret = mk_http_error_page("Entity too large",
-                                 &message,
-                                 mk_config->server_signature,
-                                 &page.data, &page.len);
+        mk_http_error_page("Entity too large",
+                           &message,
+                           mk_config->server_signature,
+                           &page.data, &page.len);
         mk_ptr_free(&message);
         break;
     case MK_CLIENT_METHOD_NOT_ALLOWED:
-        ret = mk_http_error_page("Method Not Allowed",
-                                 &sr->uri,
-                                 mk_config->server_signature,
-                                 &page.data, &page.len);
+        mk_http_error_page("Method Not Allowed",
+                           &sr->uri,
+                           mk_config->server_signature,
+                           &page.data, &page.len);
         break;
     case MK_SERVER_NOT_IMPLEMENTED:
-        ret = mk_http_error_page("Method Not Implemented",
-                                 &sr->uri,
-                                 mk_config->server_signature,
-                                 &page.data, &page.len);
+        mk_http_error_page("Method Not Implemented",
+                           &sr->uri,
+                           mk_config->server_signature,
+                           &page.data, &page.len);
         break;
     case MK_SERVER_INTERNAL_ERROR:
-        ret = mk_http_error_page("Internal Server Error",
-                                 &sr->uri,
-                                 mk_config->server_signature,
-                                 &page.data, &page.len);
+        mk_http_error_page("Internal Server Error",
+                           &sr->uri,
+                           mk_config->server_signature,
+                           &page.data, &page.len);
         break;
     }
 
@@ -1448,6 +1502,7 @@ int mk_http_sched_read(struct mk_sched_conn *conn,
                 mk_http_session_remove(cs);
                 return -1;
             }
+            mk_sched_conn_timeout_del(conn);
             mk_http_request_prepare(cs, sr);
         }
         else if (status == MK_HTTP_PARSER_ERROR) {

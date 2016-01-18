@@ -68,6 +68,7 @@ struct row_entry mk_headers_table[] = {
     { 13, "content-range"       },
     { 12, "content-type"        },
     {  4, "host"                },
+    { 14, "http2-settings"      },
     { 17, "if-modified-since"   },
     { 13, "last-modified"       },
     { 19, "last-modified-since" },
@@ -182,6 +183,7 @@ static inline int header_lookup(struct mk_http_parser *p, char *buffer)
 {
     int i;
     int len;
+    int pos;
     long val;
     char *endptr;
     char *tmp;
@@ -275,17 +277,37 @@ static inline int header_lookup(struct mk_http_parser *p, char *buffer)
                         p->header_connection = MK_HTTP_PARSER_CONN_CLOSE;
                     }
                 }
-                /* Check Connection: Upgrade */
-                else if (header->val.len == sizeof(MK_CONN_UPGRADE) -1) {
-                    if (header_cmp(MK_CONN_UPGRADE,
-                                   header->val.data, header->val.len) == 0) {
-                        p->header_connection = MK_HTTP_PARSER_CONN_UPGRADE;
-                    }
-                }
                 else {
                     p->header_connection = MK_HTTP_PARSER_CONN_UNKNOWN;
+
+                    /* Try to find some known values */
+
+                    /* Connection: upgrade */
+                    pos = mk_string_search_n(header->val.data,
+                                             "Upgrade",
+                                             MK_STR_INSENSITIVE,
+                                             header->val.len);
+                    if (pos >= 0) {
+                        p->header_connection = MK_HTTP_PARSER_CONN_UPGRADE;
+                    }
+
+                    /* Connection: HTTP2-Settings */
+                    pos = mk_string_search_n(header->val.data,
+                                             "HTTP2-Settings",
+                                             MK_STR_INSENSITIVE,
+                                             header->val.len);
+                    if (pos >= 0) {
+                        p->header_connection |= MK_HTTP_PARSER_CONN_HTTP2_SE;
+                    }
                 }
             }
+            else if (i == MK_HEADER_UPGRADE) {
+                    if (header_cmp(MK_UPGRADE_H2C,
+                                   header->val.data, header->val.len) == 0) {
+                        p->header_upgrade = MK_HTTP_PARSER_UPGRADE_H2C;
+                    }
+            }
+
             return 0;
         }
     }
@@ -355,7 +377,7 @@ int mk_http_parser(struct mk_http_request *req, struct mk_http_parser *p,
     int s;
     int tmp;
     int ret;
-    int len = p->i + buf_len;
+    int len;
 
     /* lazy test
 
@@ -554,7 +576,8 @@ int mk_http_parser(struct mk_http_request *req, struct mk_http_parser *p,
                         p->header_max = MK_HEADER_CONTENT_TYPE;
                         break;
                     case 'h':
-                        header_scope_eq(p, MK_HEADER_HOST);
+                        p->header_min = MK_HEADER_HOST;
+                        p->header_max = MK_HEADER_HTTP2_SETTINGS;
                         break;
                     case 'i':
                         header_scope_eq(p, MK_HEADER_IF_MODIFIED_SINCE);

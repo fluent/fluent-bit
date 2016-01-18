@@ -33,6 +33,7 @@
 #define MK_STREAM_FILE      2  /* opened file          */
 #define MK_STREAM_SOCKET    3  /* socket, scared..     */
 #define MK_STREAM_COPYBUF   4  /* raw data, copy data into a dynamic buffer */
+#define MK_STREAM_EOF       5  /* end of stream, trigger callback */
 
 /* Channel return values for write event */
 #define MK_CHANNEL_DONE     1  /* channel consumed all streams */
@@ -60,7 +61,8 @@ struct mk_channel {
     int type;
     int fd;
     int status;
-    struct mk_event event;
+
+    struct mk_event *event;
     struct mk_plugin_network *io;
     struct mk_list streams;
 };
@@ -113,7 +115,8 @@ static inline void mk_channel_append_stream(struct mk_channel *channel,
     mk_list_add(&stream->_head, &channel->streams);
 }
 
-static inline void mk_stream_set(struct mk_stream *stream, int type,
+static inline void mk_stream_set(struct mk_stream *stream,
+                                 int type,
                                  struct mk_channel *channel,
                                  void *buffer,
                                  size_t size,

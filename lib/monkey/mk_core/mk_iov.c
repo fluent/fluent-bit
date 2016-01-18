@@ -170,7 +170,7 @@ void mk_iov_print(struct mk_iov *mk_io)
 
 int mk_iov_consume(struct mk_iov *mk_io, size_t bytes)
 {
-    int idx;
+    int i;
     size_t len;
 
     if (mk_io->total_len == bytes) {
@@ -179,21 +179,25 @@ int mk_iov_consume(struct mk_iov *mk_io, size_t bytes)
         return 0;
     }
 
-    for (idx = 0; idx < mk_io->iov_idx; idx++) {
-        len = mk_io->io[idx].iov_len;
+    for (i = 0; i < mk_io->iov_idx; i++) {
+        len = mk_io->io[i].iov_len;
+        if (len == 0) {
+            continue;
+        }
 
         if (bytes < len) {
-            mk_io->io[idx].iov_base += bytes;
-            mk_io->io[idx].iov_len   = (len - bytes);
+            mk_io->io[i].iov_base += bytes;
+            mk_io->io[i].iov_len   = (len - bytes);
             break;
         }
         else if (bytes == len) {
             /* this entry was consumed */
-            mk_io->io[idx].iov_len = 0;
+            mk_io->io[i].iov_len = 0;
             break;
         }
-        else if (bytes > len) {
-            mk_io->io[idx].iov_len = 0;
+        else {
+            /* bytes > 0, consume this entry */
+            mk_io->io[i].iov_len = 0;
             bytes -= len;
         }
     }

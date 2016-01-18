@@ -92,6 +92,7 @@ MK_BUILD_PLUGIN("liana")
 MK_BUILD_PLUGIN("logger")
 MK_BUILD_PLUGIN("mandril")
 MK_BUILD_PLUGIN("tls")
+MK_BUILD_PLUGIN("duda")
 
 # Generate include/monkey/mk_static_plugins.h
 configure_file(

@@ -199,8 +199,12 @@ struct mk_list *mk_server_listen_init(struct mk_server_config *config)
             }
 
             if (listen->flags & MK_CAP_HTTP2) {
-                mk_err("HTTP/2 not supported");
-                exit(EXIT_FAILURE);
+                protocol = mk_sched_handler_cap(MK_CAP_HTTP2);
+                if (!protocol) {
+                    mk_err("HTTP2 protocol not supported");
+                    exit(EXIT_FAILURE);
+                }
+                listener->protocol = protocol;
             }
 
             listener->network = mk_plugin_cap(MK_CAP_SOCK_PLAIN, config);
@@ -426,7 +430,7 @@ void mk_server_worker_loop()
                     ret = -1;
                 }
 
-                if (ret < 0) {
+                if (ret < 0 && conn->status != MK_SCHED_CONN_CLOSED) {
                     MK_TRACE("[FD %i] Event FORCE CLOSE | ret = %i",
                              event->fd, ret);
                     mk_sched_event_close(conn, sched, MK_EP_SOCKET_CLOSED);

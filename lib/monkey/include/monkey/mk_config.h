@@ -47,7 +47,7 @@ struct mk_config_listener
 {
     char *address;                /* address to bind */
     char *port;                   /* TCP port        */
-    int flags;                    /* properties: http | http2 | ssl */
+    uint32_t flags;               /* properties: http | http2 | ssl */
     struct mk_list _head;
 };
 

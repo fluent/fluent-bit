@@ -102,6 +102,16 @@ static inline int mk_list_entry_orphan(struct mk_list *head)
     return -1;
 }
 
+static inline void mk_list_cat(struct mk_list *list, struct mk_list *head)
+{
+    struct mk_list *last;
+
+    last = head->prev;
+    last->next = list->next;
+    list->next->prev = last;
+    list->prev->next = head;
+    head->prev = list->prev;
+}
 
 #define mk_list_foreach(curr, head) for( curr = (head)->next; curr != (head); curr = curr->next )
 #define mk_list_foreach_safe(curr, n, head) \

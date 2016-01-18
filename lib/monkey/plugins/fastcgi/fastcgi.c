@@ -37,7 +37,7 @@ static int mk_fastcgi_config(char *path)
     struct mk_rconf_section *section;
 
     mk_api->str_build(&file, &len, "%sfastcgi.conf", path);
-    conf = mk_api->config_create(file);
+    conf = mk_api->config_open(file);
     if (!conf) {
         return -1;
     }
@@ -144,6 +144,10 @@ int mk_fastcgi_stage30_hangup(struct mk_plugin *plugin,
     handler = sr->handler_data;
     if (!handler) {
         return -1;
+    }
+
+    if (handler->hangup == MK_TRUE) {
+        return 0;
     }
 
     handler->active = MK_FALSE;

@@ -45,16 +45,6 @@
 #ifdef TRACE
 #include <sys/time.h>
 
-/*robust get environment variable that also checks __secure_getenv() */
-static char *mk_utils_getenv(const char *arg)
-{
-#ifdef HAVE___SECURE_GETENV
-    return __secure_getenv(arg);
-#else
-    return getenv(arg);
-#endif
-}
-
 void mk_utils_trace(const char *component, int color, const char *function,
                     char *file, int line, const char* format, ...)
 {
@@ -64,9 +54,9 @@ void mk_utils_trace(const char *component, int color, const char *function,
     char *color_component = NULL;
 
     char *reset_color   = ANSI_RESET;
-    char *magenta_color = ANSI_RESET ANSI_BOLD_MAGENTA;
-    char *red_color     = ANSI_RESET ANSI_BOLD_RED;
-    char *cyan_color    = ANSI_RESET ANSI_CYAN;
+    char *magenta_color = ANSI_RESET ANSI_MAGENTA;
+    char *red_color     = ANSI_RESET ANSI_RED;
+    char *time_color    = ANSI_RESET "\033[38;5;241m";
 
     struct timeval tv;
     struct timezone tz;
@@ -82,40 +72,17 @@ void mk_utils_trace(const char *component, int color, const char *function,
 
     gettimeofday(&tv, &tz);
 
-    /* Switch message color */
-    char* bgcolortype = mk_utils_getenv("MK_TRACE_BACKGROUND");
-
-    if (!bgcolortype) {
-        bgcolortype = "dark";
-    }
-
-    if (!strcmp(bgcolortype, "light")) {
-        switch(color) {
-        case MK_TRACE_CORE:
-            color_component = ANSI_BOLD_GREEN;
-            color_function  = ANSI_BOLD_MAGENTA;
-            color_fileline  = ANSI_GREEN;
-            break;
-        case MK_TRACE_PLUGIN:
-            color_component = ANSI_BOLD_GREEN;
-            color_function  = ANSI_BLUE;
-            color_fileline  = ANSI_GREEN;
-            break;
-        }
-    }
-    else { /* covering 'dark' and garbage values defaulting to 'dark' cases */
-        switch(color) {
-        case MK_TRACE_CORE:
-            color_component = ANSI_BOLD_GREEN;
-            color_function  = ANSI_YELLOW;
-            color_fileline  = ANSI_BOLD_WHITE;
-            break;
-        case MK_TRACE_PLUGIN:
-            color_component = ANSI_BOLD_BLUE;
-            color_function  = ANSI_BLUE;
-            color_fileline  = ANSI_BOLD_WHITE;
-            break;
-        }
+    switch(color) {
+    case MK_TRACE_CORE:
+        color_component = ANSI_GREEN;
+        color_function  = ANSI_YELLOW;
+        color_fileline  = ANSI_WHITE;
+        break;
+    case MK_TRACE_PLUGIN:
+        color_component = ANSI_BLUE;
+        color_function  = ANSI_BLUE;
+        color_fileline  = ANSI_WHITE;
+        break;
     }
 
     /* Only print colors to a terminal */
@@ -125,13 +92,13 @@ void mk_utils_trace(const char *component, int color, const char *function,
         reset_color    = "";
         magenta_color  = "";
         red_color      = "";
-        cyan_color     = "";
+        time_color     = "";
     }
 
     va_start( args, format );
 
     printf("~ %s%2lu.%lu%s %s[%s%s%s|%s:%-3i%s] %s%s()%s ",
-           cyan_color, (tv.tv_sec - mk_core_init_time),
+           time_color, (tv.tv_sec - mk_core_init_time),
            tv.tv_usec, reset_color,
            magenta_color, color_component, component, color_fileline, file,
            line, magenta_color,
