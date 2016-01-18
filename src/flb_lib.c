@@ -139,7 +139,7 @@ int flb_lib_config_file(struct flb_lib_ctx *ctx, char *path)
         return -1;
     }
 
-    ctx->config->file = mk_rconf_create(path);
+    ctx->config->file = mk_rconf_open(path);
     if (!ctx->config->file) {
         fprintf(stderr, "Error reading configuration file: %s\n", path);
         return -1;
