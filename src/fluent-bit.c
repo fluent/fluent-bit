@@ -188,7 +188,8 @@ int main(int argc, char **argv)
         if (access(cfg_file, R_OK) != 0) {
             flb_utils_error(FLB_ERR_CFG_FILE);
         }
-        config->file = mk_rconf_create(cfg_file);
+
+        config->file = mk_rconf_open(cfg_file);
         if (!config->file) {
             flb_utils_error(FLB_ERR_CFG_FILE_FORMAT);
         }
