@@ -75,6 +75,8 @@ struct flb_io_upstream *flb_io_upstream_new(struct flb_config *config,
     u->flags    = flags;
     u->evl      = config->evl;
 
+    MK_EVENT_NEW(&u->event);
+
 #ifdef HAVE_TLS
     u->tls      = (struct flb_tls *) tls;
     u->tls_session = NULL;
@@ -123,11 +125,8 @@ FLB_INLINE int flb_io_net_connect(struct flb_io_upstream *u,
         if (errno == EINPROGRESS) {
             flb_debug("[upstream] connection in process");
         }
-        else {
-        }
 
-        u->event.mask = MK_EVENT_EMPTY;
-        u->event.status = MK_EVENT_NONE;
+        MK_EVENT_NEW(&u->event);
         u->thread = th;
 
         ret = mk_event_add(u->evl,
@@ -166,8 +165,8 @@ FLB_INLINE int flb_io_net_connect(struct flb_io_upstream *u,
                 flb_debug("[io] connection failed");
                 return -1;
             }
-            u->event.mask   = MK_EVENT_EMPTY;
-            u->event.status = MK_EVENT_NONE;
+
+            MK_EVENT_NEW(&u->event);
         }
         else {
             return -1;
@@ -241,7 +240,7 @@ FLB_INLINE int net_io_write(struct flb_thread *th, struct flb_io_upstream *u,
         goto retry;
     }
 
-    if (u->event.status == MK_EVENT_REGISTERED) {
+    if (u->event.status & MK_EVENT_REGISTERED) {
         /* We got a notification, remove the event registered */
         ret = mk_event_del(u->evl, &u->event);
         assert(ret == 0);
@@ -276,7 +275,6 @@ int flb_io_net_write(struct flb_io_upstream *u, void *data,
         ret = net_io_tls_write(th, u, data, len, out_len);
     }
 #endif
-
     if (ret == -1 && u->fd > 0) {
         close(u->fd);
         u->fd = -1;

@@ -190,8 +190,7 @@ FLB_INLINE int flb_io_net_tls_connect(struct flb_io_upstream *u,
             return -1;
         }
 
-        u->event.mask = MK_EVENT_EMPTY;
-        u->event.status = MK_EVENT_NONE;
+        MK_EVENT_NEW(&u->event);
         u->thread = th;
 
         ret = mk_event_add(u->evl,
@@ -280,7 +279,6 @@ FLB_INLINE int flb_io_net_tls_connect(struct flb_io_upstream *u,
 
     if (u->event.status == MK_EVENT_REGISTERED) {
         mk_event_del(u->evl, &u->event);
-        u->event.status = MK_EVENT_NONE;
     }
     flb_debug("[io_tls] connection OK");
     return 0;
@@ -289,6 +287,7 @@ FLB_INLINE int flb_io_net_tls_connect(struct flb_io_upstream *u,
     if (u->event.status == MK_EVENT_REGISTERED) {
         mk_event_del(u->evl, &u->event);
     }
+
     return -1;
 }
 
