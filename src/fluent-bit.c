@@ -47,6 +47,7 @@ static void flb_help(int rc, struct flb_config *config)
     printf("Usage: fluent-bit [OPTION]\n\n");
     printf("%sAvailable Options%s\n", ANSI_BOLD, ANSI_RESET);
     printf("  -c  --config=FILE\tspecify an optional configuration file\n");
+    printf("  -d, --daemon\t\trun Fluent Bit in background mode\n");
     printf("  -f, --flush=SECONDS\tflush timeout in seconds (default: %i)\n",
            FLB_CONFIG_FLUSH_SECS);
     printf("  -i, --input=INPUT\tset an input\n");
@@ -117,12 +118,14 @@ int main(int argc, char **argv)
     int ret;
 
     /* local variables to handle config options */
+    int cfg_daemon = FLB_FALSE;
     char *cfg_file = NULL;
     char *cfg_output = NULL;
 
     /* Setup long-options */
     static const struct option long_opts[] = {
         { "config",  required_argument, NULL, 'c' },
+        { "daemon",  no_argument      , NULL, 'd' },
         { "flush",   required_argument, NULL, 'f' },
         { "input",   required_argument, NULL, 'i' },
         { "output",  required_argument, NULL, 'o' },
@@ -142,12 +145,15 @@ int main(int argc, char **argv)
     }
 
     /* Parse the command line options */
-    while ((opt = getopt_long(argc, argv, "c:f:i:o:vVh",
+    while ((opt = getopt_long(argc, argv, "c:df:i:o:vVh",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
         case 'c':
             cfg_file = optarg;
+            break;
+        case 'd':
+            cfg_daemon = FLB_TRUE;
             break;
         case 'f':
             config->flush = atoi(optarg);
@@ -215,6 +221,11 @@ int main(int argc, char **argv)
     flb_banner();
     if (config->verbose == FLB_TRUE) {
         flb_utils_print_setup(config);
+    }
+
+    /* Run in background/daemon mode */
+    if (cfg_daemon == FLB_TRUE) {
+        flb_utils_set_daemon();
     }
 
     flb_engine_start(config);

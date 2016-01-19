@@ -24,6 +24,8 @@
 #include <unistd.h>
 #include <time.h>
 #include <sys/time.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <msgpack.h>
 
 #include <mk_core.h>
@@ -185,6 +187,40 @@ void flb_message(int type, const char *fmt, ...)
     va_end(args);
     printf("%s\n", reset_color);
     fflush(stdout);
+}
+
+/* Run current process in background mode */
+int flb_utils_set_daemon()
+{
+    pid_t pid;
+
+    if ((pid = fork()) < 0){
+		flb_error("Failed creating to switch to daemon mode (fork failed)");
+        exit(EXIT_FAILURE);
+	}
+
+    if (pid > 0) { /* parent */
+        exit(EXIT_SUCCESS);
+    }
+
+    /* set files mask */
+    umask(0);
+
+    /* Create new session */
+    setsid();
+
+    if (chdir("/") < 0) { /* make sure we can unmount the inherited filesystem */
+        flb_error("Unable to unmount the inherited filesystem");
+        exit(EXIT_FAILURE);
+	}
+
+    /* Our last STDOUT messages */
+    flb_info("switching to background mode (PID=%lu)", getpid());
+
+    fclose(stderr);
+    fclose(stdout);
+
+    return 0;
 }
 
 void flb_utils_print_setup(struct flb_config *config)

@@ -38,6 +38,7 @@ void flb_utils_error(int err);
 void flb_utils_error_c(const char *msg);
 void flb_utils_warn_c(const char *msg);
 void flb_message(int type, const char *fmt, ...);
+int flb_utils_set_daemon();
 void flb_utils_print_setup(struct flb_config *config);
 
 #endif
