@@ -20,7 +20,8 @@
 #ifndef FLB_KERNEL_H
 #define FLB_KERNEL_H
 
-#include <fluent-bit.h>
+#include <inttypes.h>
+#include <mk_core.h>
 
 /* Numeric kernel version */
 #define FLB_KERNEL_VERSION(a, b, c) (((a) << 16) + ((b) << 8) + (c))

@@ -21,6 +21,7 @@
 #include <sys/utsname.h>
 
 #include <fluent-bit/flb_kernel.h>
+#include <fluent-bit/flb_utils.h>
 
 /*
  * Routine taken from Monkey Project, Eduardo says it's ok ;)
@@ -93,7 +94,7 @@ struct flb_kernel *flb_kernel_info()
     kernel->s_version.len = len;
     kernel->n_version = FLB_KERNEL_VERSION(a, b, c);
 
-    flb_debug("Linux Kernel = %i.%i.%i\n", a, b, c);
+    flb_debug("Linux Kernel = %i.%i.%i", a, b, c);
 
     return kernel;
 }

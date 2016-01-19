@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_plugins.h>
 #include <fluent-bit/flb_io_tls.h>
+#include <fluent-bit/flb_kernel.h>
 
 struct flb_config *flb_config_init()
 {
@@ -39,6 +40,7 @@ struct flb_config *flb_config_init()
 
     config->flush     = FLB_CONFIG_FLUSH_SECS;
     config->init_time = time(NULL);
+    config->kernel    = flb_kernel_info();
 
     mk_list_init(&config->collectors);
     mk_list_init(&config->inputs);

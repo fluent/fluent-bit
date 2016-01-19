@@ -72,6 +72,9 @@ struct flb_config {
     struct flb_output_plugin *output;   /* output plugin in use     */
     struct mk_event_loop *evl;          /* the event loop (mk_core) */
 
+    /* Kernel info */
+    struct flb_kernel *kernel;
+
     /* Lib mode data */
     struct flb_lib_ctx *lib_ctx;
 };
