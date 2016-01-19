@@ -29,18 +29,6 @@
 
 struct flb_output_plugin out_es_plugin;
 
-/* Copy a sub-string in a new memory buffer */
-static char *copy_substr(char *str, int s)
-{
-    char *buf;
-
-    buf = malloc(s + 1);
-    strncpy(buf, str, s);
-    buf[s] = '\0';
-
-    return buf;
-}
-
 /*
  * Convert the internal Fluent Bit data representation to the required
  * one by Elasticsearch.
@@ -160,7 +148,7 @@ static char *es_format(void *data, size_t bytes, int *out_size,
             char *end = ptr_key + psize;
             while (p != end) {
                 if (*p == '.') *p = '_';
-                *p++;
+                p++;
             }
 
             /* Store value */
