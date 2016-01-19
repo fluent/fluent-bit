@@ -7,7 +7,7 @@ In order to flush records, the __es__ plugin requires to know a few parameters, 
 | parameter   | description          | default           |
 |-------------|----------------------|-------------------|
 | host        | IP address or hostname of the target Elasticsearch instance | 127.0.0.1 |
-| port        | TCP port of the target Elasticsearch instance | 92000 |
+| port        | TCP port of the target Elasticsearch instance | 9200 |
 | index       | Elastic index | fluentbit |
 | type        | Elastic type      | test      |
 
@@ -25,7 +25,7 @@ es://host:port/index/type
 
 ```bash
 $ bin/fluent-bit -i cpu -o es
-Fluent-Bit v0.5.0
+Fluent-Bit v0.6.0
 Copyright (C) Treasure Data
 
 [2015/12/18 10:27:23] [ info] starting engine
@@ -37,7 +37,7 @@ As described above, the target service and storage point can be changed, e.g:
 
 ```bash
 $ bin/fluent-bit -i cpu -o es://192.168.9.3/metrics/cpu
-Fluent-Bit v0.5.0
+Fluent-Bit v0.6.0
 Copyright (C) Treasure Data
 
 [2015/12/18 10:33:03] [ info] starting engine
@@ -46,3 +46,17 @@ Copyright (C) Treasure Data
 ```
 
 In order to check your incoming data, make sure to setup a Kibana service that visualize the rights _index_ and _types_ used by [Fluent Bit](http://fluentbit.io).
+
+## Elasticsearch field names
+
+Some input plugins may generate messages where the field names contains dots, since Elasticsearch 2.0 this is not longer allowed, so the current __es__ plugin replace them with an underscore, e.g:
+
+```
+{"cpu0.p_cpu"=>17.000000}
+```
+
+becomes
+
+```
+{"cpu0_p_cpu"=>17.000000}
+```
