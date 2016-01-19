@@ -3,6 +3,7 @@ set(src
   flb_lib.c
   flb_uri.c
   flb_pack.c
+  flb_kernel.c
   flb_input.c
   flb_output.c
   flb_config.c
