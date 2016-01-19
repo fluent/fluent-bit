@@ -86,10 +86,6 @@ int mk_event_add(struct mk_event_loop *loop, int fd,
 
     event = (struct mk_event *) data;
 
-    if ((event->status & MK_EVENT_NONE) == 0) {
-        return -1;
-    }
-
     ctx = loop->data;
     ret = _mk_event_add(ctx, fd, type, mask, data);
     if (ret == -1) {

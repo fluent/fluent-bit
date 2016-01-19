@@ -1,4 +1,3 @@
-
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 /*  Monkey HTTP Server
@@ -97,6 +96,12 @@ static inline void MK_EVENT_INIT(struct mk_event *ev, int fd, void *data,
     ev->status  = MK_EVENT_NONE;
     ev->data    = data;
     ev->handler = callback;
+}
+
+static inline void MK_EVENT_NEW(struct mk_event *e)
+{
+    e->mask   = MK_EVENT_EMPTY;
+    e->status = MK_EVENT_NONE;
 }
 
 int mk_event_initialize();

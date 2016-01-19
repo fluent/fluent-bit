@@ -75,13 +75,13 @@ static inline int _mk_event_add(struct mk_event_ctx *ctx, int fd,
     if (event->mask == MK_EVENT_EMPTY) {
         event->fd   = fd;
         event->type = type;
+        event->status = MK_EVENT_REGISTERED;
     }
 
     /* Read flag */
     if ((event->mask ^ MK_EVENT_READ) && (events & MK_EVENT_READ)) {
         EV_SET(&ke, fd, EVFILT_READ, EV_ADD, 0, 0, event);
         set = MK_TRUE;
-        //printf("[ADD] fd=%i READ\n", fd);
     }
     else if ((event->mask & MK_EVENT_READ) && (events ^ MK_EVENT_READ)) {
         EV_SET(&ke, fd, EVFILT_READ, EV_DELETE, 0, 0, event);
