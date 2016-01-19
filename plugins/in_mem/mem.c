@@ -188,7 +188,7 @@ int in_mem_collect(struct flb_config *config, void *in_context)
     msgpack_pack_bin_body(&ctx->pckr, "free", 4);
     msgpack_pack_uint32(&ctx->pckr, free);
 
-    flb_debug("[in_mem] memory total=%lu kb, available=%d",
+    flb_debug("[in_mem] memory total=%lu kb, available=%d kb",
               total, free);
     ++ctx->idx;
 
