@@ -33,6 +33,9 @@ int main()
         exit(EXIT_FAILURE);
     }
 
+    /* Start the background worker */
+    flb_lib_start(ctx);
+
     /* Push some data */
     for (i = 0; i < 100; i++) {
         n = snprintf(tmp, sizeof(tmp) - 1, "{\"key\": \"val %i\"}", i);
