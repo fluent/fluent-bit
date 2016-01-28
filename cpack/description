@@ -1,0 +1,4 @@
+Fluent Bit is a high performance data collector for Linux and Embedded Linux,
+it have a strong focus on IoT and related devices. It provides a flexible
+architecture and plugins to collect and dispatch events to different backends
+types.
