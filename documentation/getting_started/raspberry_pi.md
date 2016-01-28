@@ -15,7 +15,7 @@ $ wget -qO - http://apt.fluentbit.io/fluentbit.key | sudo apt-key add -
 On Debian and derivated systems such as Raspbian, you need to add our APT server entry to your sources lists, please add the following content at bottom of your __/etc/apt/sources.list__ file:
 
 ```
-deb http://apt.fluentbit.io/raspbian wheezy main
+deb http://apt.fluentbit.io/raspbian jessie main
 ```
 
 ### Update your repositories database
