@@ -56,7 +56,6 @@ static int in_head_collect(struct flb_config *config, void *in_context)
         perror("read");
         goto collect_fin;
     }
-    head_config->buf[head_config->buf_len -1] = '\0';
 
     msgpack_pack_array(&head_config->mp_pck,2);
     msgpack_pack_uint64(&head_config->mp_pck, time(NULL));
