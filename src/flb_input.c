@@ -87,6 +87,7 @@ int flb_input_new(struct flb_config *config, char *input, void *data)
                  "%s.%i", plugin->name, instance_id(plugin, config));
         instance->p = plugin;
         instance->context = NULL;
+        instance->data = data;
 
         if (plugin->flags & FLB_INPUT_NET) {
             ret = flb_net_host_set(plugin->name, &instance->host, input);

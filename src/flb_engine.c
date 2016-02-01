@@ -64,7 +64,13 @@ int flb_engine_flush(struct flb_config *config,
             }
 
             /* Create a thread context for an output plugin call */
-            th = flb_output_thread(config->output,
+
+            /* FIXME: always flushing to the first output instance, need routing */
+            struct flb_output_instance *out;
+            out = mk_list_entry_first(&config->outputs,
+                                      struct flb_output_instance,
+                                      _head);
+            th = flb_output_thread(out,
                                    config,
                                    buf, size);
             flb_thread_resume(th);

@@ -34,9 +34,9 @@
 /* Output plugin masks */
 #define FLB_OUTPUT_NET         4  /* output address may set host and port */
 
-struct flb_output_plugin {
-    int active;
+struct flb_output_instance;
 
+struct flb_output_plugin {
     int flags;
 
     /* The plugin name */
@@ -63,10 +63,10 @@ struct flb_output_plugin {
     struct flb_net_host host;
 
     /* Socket connection */
-    int conn;
+    //int conn;
 
     /* Initalization */
-    int (*cb_init)    (struct flb_output_plugin *, struct flb_config *, void *);
+    int (*cb_init)    (struct flb_output_instance *, struct flb_config *, void *);
 
     /* Pre run */
     int (*cb_pre_run) (void *, struct flb_config *);
@@ -77,7 +77,48 @@ struct flb_output_plugin {
     /* Exit */
     int (*cb_exit) (void *, struct flb_config *);
 
-    /* Output handler configuration */
+    /* Link to global list from flb_config->outputs */
+    struct mk_list _head;
+};
+
+/*
+ * Each initialized plugin must have an instance, same plugin may be
+ * loaded more than one time.
+ *
+ * An instance try to contain plugin data separating what is fixed data
+ * and the variable one that is generated when the plugin is invoked.
+ */
+struct flb_output_instance {
+    char name[16];                       /* numbered name (cpu -> cpu.0) */
+    struct flb_output_plugin *p;         /* original plugin              */
+    void *context;                       /* plugin configuration context */
+
+
+    /*
+     * network info:
+     *
+     * An input plugin can be specified just using it shortname or using the
+     * complete network address format, e.g:
+     *
+     *  $ fluent-bit -i cpu -o plugin://hostname:port/uri
+     *
+     * where:
+     *
+     *   plugin   = the output plugin shortname
+     *   name     = IP address or hostname of the target
+     *   port     = target TCP port
+     *   uri      = extra information that may be used by the plugin
+     */
+    struct flb_net_host host;
+
+    /*
+     * Optional data passed to the plugin, this info is useful when
+     * running Fluent Bit in library mode and the target plugin needs
+     * some specific data from it caller.
+     */
+    void *data;
+
+        /* Output handler configuration */
     void *out_context;
 
     /* IO upstream context, if flags & (FLB_OUTPUT_TCP | FLB_OUTPUT TLS)) */
@@ -111,26 +152,18 @@ struct flb_output_plugin {
      */
     struct mk_list th_queue;
 
-#ifdef HAVE_TLS
-    struct flb_tls tls;
-#endif
-
 #ifdef HAVE_STATS
     int stats_fd;
 #endif
 
-    /*
-     * Optional data passed to the plugin, this info is useful when
-     * running Fluent Bit in library mode and the target plugin needs
-     * some specific data from it caller.
-     */
-    void *data;
+#ifdef HAVE_TLS
+    struct flb_tls tls;
+#endif
 
-    /* Link to global list from flb_config->outputs */
-    struct mk_list _head;
+    struct mk_list _head;                /* link to config->inputs       */
 };
 
-static FLB_INLINE struct flb_thread *flb_output_thread(struct flb_output_plugin *out,
+static FLB_INLINE struct flb_thread *flb_output_thread(struct flb_output_instance *out,
                                                        struct flb_config *config,
                                                        void *buf, size_t size)
 {
@@ -143,8 +176,8 @@ static FLB_INLINE struct flb_thread *flb_output_thread(struct flb_output_plugin 
 
     th->data = out;
     th->output_buffer = buf;
-    makecontext(&th->callee, (void (*)()) out->cb_flush,
-                4, buf, size, out->out_context, config);
+    makecontext(&th->callee, (void (*)()) out->p->cb_flush,
+                4, buf, size, out->context, config);
     pthread_setspecific(flb_thread_key, (void *) th);
     return th;
 }
@@ -153,7 +186,7 @@ static FLB_INLINE struct flb_thread *flb_output_thread(struct flb_output_plugin 
 int flb_output_set(struct flb_config *config, char *output, void *data);
 void flb_output_pre_run(struct flb_config *config);
 void flb_output_exit(struct flb_config *config);
-int flb_output_set_context(char *name, void *out_context, struct flb_config *config);
+void flb_output_set_context(struct flb_output_instance *ins, void *context);
 int flb_output_init(struct flb_config *config);
 
 #endif

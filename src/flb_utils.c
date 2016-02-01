@@ -228,6 +228,7 @@ void flb_utils_print_setup(struct flb_config *config)
     struct mk_list *head;
     struct flb_input_plugin *plugin;
     struct flb_input_collector *collector;
+    struct flb_input_instance *in;
 
     flb_info("Configuration");
 
@@ -237,10 +238,8 @@ void flb_utils_print_setup(struct flb_config *config)
     /* Inputs */
     printf(" input plugins  : ");
     mk_list_foreach(head, &config->inputs) {
-        plugin = mk_list_entry(head, struct flb_input_plugin, _head);
-        if (plugin->active == FLB_TRUE) {
-            printf("%s ", plugin->name);
-        }
+        in = mk_list_entry(head, struct flb_input_instance, _head);
+        printf("%s ", in->p->name);
     }
     printf("\n");
 

@@ -34,9 +34,6 @@
 struct flb_input_instance;
 
 struct flb_input_plugin {
-    /* Is this Input an active one ? */
-    int  active;
-
     int flags;
 
     /* The Input name */
