@@ -66,11 +66,12 @@ void flb_output_pre_run(struct flb_config *config)
 /* Invoke exit call for the output plugin */
 void flb_output_exit(struct flb_config *config)
 {
+    struct mk_list *tmp;
     struct mk_list *head;
     struct flb_output_instance *ins;
     struct flb_output_plugin *p;
 
-    mk_list_foreach(head, &config->outputs) {
+    mk_list_foreach_safe(head, tmp, &config->outputs) {
         ins = mk_list_entry(head, struct flb_output_instance, _head);
         p = ins->p;
 
@@ -86,6 +87,9 @@ void flb_output_exit(struct flb_config *config)
         if (ins->host.name) {
             free(ins->host.name);
         }
+
+        mk_list_del(&ins->_head);
+        free(ins);
     }
 }
 

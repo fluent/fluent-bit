@@ -147,17 +147,21 @@ void flb_input_pre_run_all(struct flb_config *config)
 /* Invoke all exit input callbacks */
 void flb_input_exit_all(struct flb_config *config)
 {
+    struct mk_list *tmp;
     struct mk_list *head;
     struct flb_input_instance *in;
     struct flb_input_plugin *p;
 
-    mk_list_foreach(head, &config->inputs) {
+    mk_list_foreach_safe(head, tmp, &config->inputs) {
         in = mk_list_entry(head, struct flb_input_instance, _head);
         p = in->p;
 
         if (p->cb_exit) {
             p->cb_exit(in->context, config);
         }
+
+        mk_list_del(&in->_head);
+        free(in);
     }
 }
 
