@@ -45,5 +45,8 @@ int main()
 
     flb_lib_stop(ctx);
 
+    /* Release Resources */
+    flb_lib_exit(ctx);
+
     return 0;
 }
