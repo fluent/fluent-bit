@@ -26,10 +26,10 @@
 
 #include "stdout.h"
 
-int cb_stdout_init(struct flb_output_plugin *plugin, struct flb_config *config,
+int cb_stdout_init(struct flb_output_instance *ins, struct flb_config *config,
                    void *data)
 {
-    (void) plugin;
+    (void) ins;
     (void) config;
     (void) data;
 
