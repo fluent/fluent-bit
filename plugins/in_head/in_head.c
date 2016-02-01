@@ -36,29 +36,28 @@
 static int in_head_collect(struct flb_config *config, void *in_context)
 {
     struct flb_in_head_config *head_config = in_context;
-    int     fd        = -1;
-    int     ret = -1;
+    int fd = -1;
+    int ret = -1;
 
     /* open at every collect callback */
     fd = open(head_config->filepath, O_RDONLY);
-    if ( fd < 0) {
+    if (fd < 0) {
         perror("open");
         goto collect_fin;
     }
 
-    head_config->buf_len = read(fd, head_config->buf,
-                                head_config->buf_size);
-    flb_debug("%s read_len=%d buf_size=%d",__FUNCTION__,
+    head_config->buf_len = read(fd, head_config->buf, head_config->buf_size);
+    flb_debug("%s read_len=%d buf_size=%d", __FUNCTION__,
               head_config->buf_len, head_config->buf_size);
 
-    if (head_config->buf_len < 0){
+    if (head_config->buf_len < 0) {
         perror("read");
         goto collect_fin;
     }
 
-    msgpack_pack_array(&head_config->mp_pck,2);
+    msgpack_pack_array(&head_config->mp_pck, 2);
     msgpack_pack_uint64(&head_config->mp_pck, time(NULL));
-    msgpack_pack_map(&head_config->mp_pck,1);
+    msgpack_pack_map(&head_config->mp_pck, 1);
 
     msgpack_pack_bin(&head_config->mp_pck, 4);
     msgpack_pack_bin_body(&head_config->mp_pck, "head", 4);
@@ -69,8 +68,8 @@ static int in_head_collect(struct flb_config *config, void *in_context)
     ret = 0;
     head_config->idx++;
     flb_stats_update(in_head_plugin.stats_fd, 0, 1);
- collect_fin:
-    if ( fd > 0 ) {
+  collect_fin:
+    if (fd > 0) {
         close(fd);
     }
     return ret;
@@ -78,43 +77,46 @@ static int in_head_collect(struct flb_config *config, void *in_context)
 
 /* read config file and*/
 static int in_head_config_read(struct flb_in_head_config *head_config,
-                               struct mk_rconf *config )
+                               struct mk_rconf *config)
 {
     struct mk_rconf_section *section = NULL;
-    char     *filepath  = NULL;
-    char     *pval = NULL;
+    char *filepath = NULL;
+    char *pval = NULL;
 
     section = mk_rconf_section_get(config, "head");
-    if ( section == NULL ) {
+    if (section == NULL) {
         return -1;
     }
 
     /* filepath setting */
     filepath = mk_rconf_section_get_key(section, "file", MK_RCONF_STR);
-    if ( filepath == NULL ) {
+    if (filepath == NULL) {
         return -1;
     }
     head_config->filepath = filepath;
 
     /* buffer size setting */
     pval = mk_rconf_section_get_key(section, "buf_size", MK_RCONF_STR);
-    if ( pval != NULL && atoi(pval) > 0 ) {
+    if (pval != NULL && atoi(pval) > 0) {
         head_config->buf_size = atoi(pval);
-    } else {
+    }
+    else {
         head_config->buf_size = DEFAULT_BUF_SIZE;
     }
 
     /* interval settings */
     pval = mk_rconf_section_get_key(section, "interval_sec", MK_RCONF_STR);
-    if ( pval != NULL && atoi(pval) > 0 ) {
+    if (pval != NULL && atoi(pval) > 0) {
         head_config->interval_sec = atoi(pval);
-    } else {
+    }
+    else {
         head_config->interval_sec = DEFAULT_INTERVAL_SEC;
     }
     pval = mk_rconf_section_get_key(section, "interval_nsec", MK_RCONF_STR);
-    if ( pval != NULL && atoi(pval) > 0 ) {
+    if (pval != NULL && atoi(pval) > 0) {
         head_config->interval_nsec = atoi(pval);
-    } else {
+    }
+    else {
         head_config->interval_nsec = DEFAULT_INTERVAL_NSEC;
     }
 
@@ -129,10 +131,10 @@ static int in_head_config_read(struct flb_in_head_config *head_config,
 static void delete_head_config(struct flb_in_head_config *head_config)
 {
     /* release buffer */
-    if ( head_config->buf != NULL ){
+    if (head_config->buf != NULL) {
         free(head_config->buf);
     }
-    if ( head_config != NULL ) {
+    if (head_config != NULL) {
         free(head_config);
     }
 }
@@ -142,76 +144,74 @@ static void delete_head_config(struct flb_in_head_config *head_config)
 static int in_head_init(struct flb_config *config, void *data)
 {
     struct flb_in_head_config *head_config = NULL;
-    int ret      = -1;
+    int ret = -1;
 
     /* Initialize head config */
-    if ( config->file == NULL ) {
+    if (config->file == NULL) {
         flb_utils_error_c("config file not found");
         return -1;
     }
 
     /* Allocate space for the configuration */
-    head_config = malloc( sizeof( struct flb_in_head_config) );
-    if ( head_config == NULL ){
+    head_config = malloc(sizeof(struct flb_in_head_config));
+    if (head_config == NULL) {
         return -1;
     }
-    head_config->buf     = NULL;
+    head_config->buf = NULL;
     head_config->buf_len = 0;
-    head_config->idx     = 0;
+    head_config->idx = 0;
 
     /* Initialize head config */
     ret = in_head_config_read(head_config, config->file);
-    if ( ret < 0 ) {
+    if (ret < 0) {
         goto init_error;
     }
 
-    head_config->buf      = malloc( head_config->buf_size );
-    if ( head_config->buf == NULL ) {
+    head_config->buf = malloc(head_config->buf_size);
+    if (head_config->buf == NULL) {
         flb_utils_error_c("could not allocate head buffer");
         goto init_error;
     }
 
-    flb_debug("%s read_len=%d buf_size=%d",__FUNCTION__,
+    flb_debug("%s read_len=%d buf_size=%d", __FUNCTION__,
               head_config->buf_len, sizeof(head_config->buf));
 
     ret = flb_input_set_context("head", head_config, config);
-    if ( ret < 0 ){
+    if (ret < 0) {
         flb_utils_error_c("could not set context for head plugin");
         goto init_error;
     }
 
     ret = flb_input_set_collector_time("head",
-				       in_head_collect,
-				       head_config->interval_sec,
-				       head_config->interval_nsec,
-				       config);
+                                       in_head_collect,
+                                       head_config->interval_sec,
+                                       head_config->interval_nsec, config);
 
     /* Initialize msgpack buffer */
     msgpack_sbuffer_init(&head_config->mp_sbuf);
     msgpack_packer_init(&head_config->mp_pck,
-                        &head_config->mp_sbuf,
-                        msgpack_sbuffer_write);
+                        &head_config->mp_sbuf, msgpack_sbuffer_write);
 
-    if ( ret < 0 ){
+    if (ret < 0) {
         flb_utils_error_c("could not set collector for head input plugin");
         goto init_error;
     }
 
     return 0;
 
- init_error:
+  init_error:
     delete_head_config(head_config);
 
     return -1;
 }
 
 /* cb_flush callback */
-static void *in_head_flush(void* in_context, int* size)
+static void *in_head_flush(void *in_context, int *size)
 {
     char *buf = NULL;
     struct flb_in_head_config *head_config = in_context;
 
-    if ( head_config->idx == 0 ) {
+    if (head_config->idx == 0) {
         head_config = 0;
         return NULL;
     }
