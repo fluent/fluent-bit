@@ -37,6 +37,9 @@ struct flb_net_host {
 #define TCP_FASTOPEN  23
 #endif
 
+/* Generic functions */
+int flb_net_host_set(char *plugin_name, struct flb_net_host *host, char *address);
+
 /* TCP options */
 int flb_net_socket_reset(int sockfd);
 int flb_net_socket_tcp_nodelay(int sockfd);

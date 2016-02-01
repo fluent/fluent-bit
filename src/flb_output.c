@@ -30,80 +30,10 @@
 
 #define protcmp(a, b)  strncasecmp(a, b, strlen(a))
 
-/* Copy a sub-string in a new memory buffer */
-static char *copy_substr(char *str, int s)
-{
-    char *buf;
-
-    buf = malloc(s + 1);
-    strncpy(buf, str, s);
-    buf[s] = '\0';
-
-    return buf;
-}
-
-
 /*
  * It parse the out_address, split the hostname, port (if any)
  * or set the default port based on the matched protocol
  */
-static int parse_net_address(struct flb_output_plugin *plugin, char *output)
-{
-    int len;
-    int olen;
-    char *s, *e, *u;
-
-    if (!plugin || !output) {
-        return -1;
-    }
-
-    olen = strlen(output);
-    if (olen == strlen(plugin->name)) {
-        return 0;
-    }
-
-    len = strlen(plugin->name) + 3;
-    if (olen < len) {
-        return -1;
-    }
-
-    s = output + len;
-    if (*s == '[') {
-        /* IPv6 address (RFC 3986) */
-        e = strchr(++s, ']');
-        if (!e) {
-            return -1;
-        }
-        plugin->host.name = copy_substr(s, e - s);
-        s = e + 1;
-    } else {
-        e = s;
-        while (!(*e == '\0' || *e == ':' || *e == '/')) {
-            ++e;
-        }
-        if (e == s) {
-            return -1;
-        }
-        plugin->host.name = copy_substr(s, e - s);
-        s = e;
-    }
-    if (*s == ':') {
-        plugin->host.port = atoi(++s);
-    }
-
-    u = strchr(s, '/');
-    if (u) {
-        plugin->host.uri = flb_uri_create(u);
-        if (__flb_config_verbose == FLB_TRUE) {
-            flb_debug("[URI dump] entries=%i '%s'",
-                      plugin->host.uri->count, u);
-            flb_uri_dump(plugin->host.uri);
-        }
-    }
-    plugin->host.address = strdup(output);
-
-    return 0;
-}
 
 /* Validate the the output address protocol */
 static int check_protocol(char *prot, char *output)
@@ -189,11 +119,7 @@ int flb_output_set(struct flb_config *config, char *output, void *data)
             config->output = plugin;
 
             if (plugin->flags & FLB_OUTPUT_NET) {
-                plugin->host.address = NULL;
-                plugin->host.name = NULL;
-                plugin->host.port = 0;
-                plugin->host.uri = NULL;
-                ret = parse_net_address(plugin, output);
+                ret = flb_net_host_set(plugin->name, &plugin->host, output);
                 return ret;
             }
 

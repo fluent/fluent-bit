@@ -34,10 +34,82 @@
 
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_macros.h>
 
 #ifndef SOL_TCP
 #define SOL_TCP IPPROTO_TCP
 #endif
+
+/* Copy a sub-string in a new memory buffer */
+static char *copy_substr(char *str, int s)
+{
+    char *buf;
+
+    buf = malloc(s + 1);
+    strncpy(buf, str, s);
+    buf[s] = '\0';
+
+    return buf;
+}
+
+int flb_net_host_set(char *plugin_name, struct flb_net_host *host, char *address)
+{
+    int len;
+    int olen;
+    char *s, *e, *u;
+
+    host->address = NULL;
+    host->name = NULL;
+    host->port = 0;
+    host->uri = NULL;
+
+    olen = strlen(address);
+    if (olen == strlen(plugin_name)) {
+        return 0;
+    }
+
+    len = strlen(plugin_name) + 3;
+    if (olen < len) {
+        return -1;
+    }
+
+    s = address + len;
+    if (*s == '[') {
+        /* IPv6 address (RFC 3986) */
+        e = strchr(++s, ']');
+        if (!e) {
+            return -1;
+        }
+        host->name = copy_substr(s, e - s);
+        s = e + 1;
+    } else {
+        e = s;
+        while (!(*e == '\0' || *e == ':' || *e == '/')) {
+            ++e;
+        }
+        if (e == s) {
+            return -1;
+        }
+        host->name = copy_substr(s, e - s);
+        s = e;
+    }
+    if (*s == ':') {
+        host->port = atoi(++s);
+    }
+
+    u = strchr(s, '/');
+    if (u) {
+        host->uri = flb_uri_create(u);
+        if (__flb_config_verbose == FLB_TRUE) {
+            flb_debug("[URI dump] entries=%i '%s'",
+                      host->uri->count, u);
+            flb_uri_dump(host->uri);
+        }
+    }
+    host->address = strdup(address);
+
+    return 0;
+}
 
 int flb_net_socket_reset(int sockfd)
 {
