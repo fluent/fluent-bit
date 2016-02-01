@@ -34,13 +34,6 @@
 /* Output plugin masks */
 #define FLB_OUTPUT_NET         4  /* output address may set host and port */
 
-/* Internal macros for setup */
-#define FLB_OUTPUT_FLUENT      0
-#define FLB_OUTPUT_HTTP        1
-#define FLB_OUTPUT_HTTPS       2
-#define FLB_OUTPUT_TD_HTTP     3
-#define FLB_OUTPUT_TD_HTTPS    4
-
 struct flb_output_plugin {
     int active;
 
@@ -53,7 +46,7 @@ struct flb_output_plugin {
     char *description;
 
     /*
-     * Output network address:
+     * Output network info:
      *
      * An output plugin can be specified just using it shortname or using the
      * complete network address format, e.g:
@@ -63,11 +56,10 @@ struct flb_output_plugin {
      * where:
      *
      *   plugin   = the output plugin shortname
-     *   hostname = IP address or hostname of the target
+     *   name     = IP address or hostname of the target
      *   port     = target TCP port
      *   uri      = extra information that may be used by the plugin
      */
-    /* Original output address */
     struct flb_net_host host;
 
     /* Socket connection */

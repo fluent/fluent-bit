@@ -22,20 +22,43 @@
 
 #include <inttypes.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_network.h>
 
 #define FLB_COLLECT_TIME        1
 #define FLB_COLLECT_FD_EVENT    2
 #define FLB_COLLECT_FD_SERVER   4
 
+/* Input plugin masks */
+#define FLB_INPUT_NET         4  /* input address may set host and port */
+
 struct flb_input_plugin {
     /* Is this Input an active one ? */
     int  active;
+
+    int flags;
 
     /* The Input name */
     char *name;
 
     /* Plugin Description */
     char *description;
+
+    /*
+     * Input network info:
+     *
+     * An input plugin can be specified just using it shortname or using the
+     * complete network address format, e.g:
+     *
+     *  $ fluent-bit -i cpu -o plugin://hostname:port/uri
+     *
+     * where:
+     *
+     *   plugin   = the output plugin shortname
+     *   name     = IP address or hostname of the target
+     *   port     = target TCP port
+     *   uri      = extra information that may be used by the plugin
+     */
+    struct flb_net_host host;
 
     /* Initalization */
     int (*cb_init)    (struct flb_config *, void *);

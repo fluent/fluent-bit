@@ -25,6 +25,24 @@
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
 
+#define protcmp(a, b)  strncasecmp(a, b, strlen(a))
+
+static int check_protocol(char *prot, char *output)
+{
+    int len;
+
+    len = strlen(prot);
+    if (len > strlen(output)) {
+        return 0;
+    }
+
+    if (protcmp(prot, output) != 0) {
+        return 0;
+    }
+
+    return 1;
+}
+
 static struct flb_input_plugin *plugin_lookup(char *name, struct flb_config *config)
 {
     struct mk_list *head;
@@ -41,17 +59,24 @@ static struct flb_input_plugin *plugin_lookup(char *name, struct flb_config *con
 }
 
 /* Enable an input */
-int flb_input_set(struct flb_config *config, char *name, void *data)
+int flb_input_set(struct flb_config *config, char *input, void *data)
 {
+    int ret;
+    struct mk_list *head;
     struct flb_input_plugin *plugin;
 
-    plugin = plugin_lookup(name, config);
-    if (!plugin) {
-        return -1;
-    }
+    mk_list_foreach(head, &config->inputs) {
+        plugin = mk_list_entry(head, struct flb_input_plugin, _head);
+        if (check_protocol(plugin->name, input)) {
+            plugin->active = FLB_TRUE;
+            plugin->data   = data;
+        }
 
-    plugin->active = FLB_TRUE;
-    plugin->data   = data;
+        if (plugin->flags & FLB_INPUT_NET) {
+            ret = flb_net_host_set(plugin->name, &plugin->host, input);
+            return ret;
+        }
+    }
 
     return 0;
 }

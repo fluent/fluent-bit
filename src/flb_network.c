@@ -58,10 +58,7 @@ int flb_net_host_set(char *plugin_name, struct flb_net_host *host, char *address
     int olen;
     char *s, *e, *u;
 
-    host->address = NULL;
-    host->name = NULL;
-    host->port = 0;
-    host->uri = NULL;
+    memset(host, '\0', sizeof(struct flb_net_host));
 
     olen = strlen(address);
     if (olen == strlen(plugin_name)) {

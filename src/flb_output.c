@@ -30,11 +30,6 @@
 
 #define protcmp(a, b)  strncasecmp(a, b, strlen(a))
 
-/*
- * It parse the out_address, split the hostname, port (if any)
- * or set the default port based on the matched protocol
- */
-
 /* Validate the the output address protocol */
 static int check_protocol(char *prot, char *output)
 {
