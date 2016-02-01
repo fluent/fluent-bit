@@ -149,7 +149,7 @@ static inline double proc_cpu_load(int cpus, struct cpu_stats *cstats)
 }
 
 /* Init CPU input */
-int in_cpu_init(struct flb_config *config, void *data)
+int in_cpu_init(struct flb_input_instance *in, struct flb_config *config, void *data)
 {
     int ret;
     struct flb_in_cpu_config *ctx;
@@ -184,13 +184,10 @@ int in_cpu_init(struct flb_config *config, void *data)
     ctx->cstats.snap_active = CPU_SNAP_ACTIVE_B;
 
     /* Set the context */
-    ret = flb_input_set_context("cpu", ctx, config);
-    if (ret == -1) {
-        flb_utils_error_c("Could not set configuration for CPU input plugin");
-    }
+    flb_input_set_context(in, ctx);
 
     /* Set our collector based on time, CPU usage every 1 second */
-    ret = flb_input_set_collector_time("cpu",
+    ret = flb_input_set_collector_time(in,
                                        in_cpu_collect,
                                        IN_CPU_COLLECT_SEC,
                                        IN_CPU_COLLECT_NSEC,
