@@ -37,7 +37,6 @@ static int in_head_collect(struct flb_config *config, void *in_context)
 {
     struct flb_in_head_config *head_config = in_context;
     int     fd        = -1;
-    ssize_t read_size = 0;
     int     ret = -1;
 
     /* open at every collect callback */
@@ -84,7 +83,6 @@ static int in_head_config_read(struct flb_in_head_config *head_config,
     struct mk_rconf_section *section = NULL;
     char     *filepath  = NULL;
     char     *pval = NULL;
-    size_t   buf_size = -1;
 
     section = mk_rconf_section_get(config, "head");
     if ( section == NULL ) {
@@ -166,16 +164,16 @@ static int in_head_init(struct flb_config *config, void *data)
     if ( ret < 0 ) {
         goto init_error;
     }
-    
+
     head_config->buf      = malloc( head_config->buf_size );
     if ( head_config->buf == NULL ) {
         flb_utils_error_c("could not allocate head buffer");
         goto init_error;
     }
-    
+
     flb_debug("%s read_len=%d buf_size=%d",__FUNCTION__,
               head_config->buf_len, sizeof(head_config->buf));
-    
+
     ret = flb_input_set_context("head", head_config, config);
     if ( ret < 0 ){
         flb_utils_error_c("could not set context for head plugin");
@@ -206,7 +204,7 @@ static int in_head_init(struct flb_config *config, void *data)
 
     return -1;
 }
-  
+
 /* cb_flush callback */
 static void *in_head_flush(void* in_context, int* size)
 {
@@ -242,7 +240,7 @@ int in_head_exit(void *data, struct flb_config *config)
 
     return 0;
 }
-    
+
 
 struct flb_input_plugin in_head_plugin = {
     .name         = "head",
