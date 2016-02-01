@@ -130,9 +130,6 @@ struct flb_output_plugin {
     struct mk_list _head;
 };
 
-/* Default TCP port for Fluentd */
-#define FLB_OUTPUT_FLUENT_PORT  "12224"
-
 static FLB_INLINE struct flb_thread *flb_output_thread(struct flb_output_plugin *out,
                                                        struct flb_config *config,
                                                        void *buf, size_t size)

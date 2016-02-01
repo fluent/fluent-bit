@@ -105,7 +105,7 @@ int flb_output_set(struct flb_config *config, char *output, void *data)
         return -1;
     }
 
-    mk_list_foreach(head, &config->outputs) {
+    mk_list_foreach(head, &config->out_plugins) {
         plugin = mk_list_entry(head, struct flb_output_plugin, _head);
 
         if (check_protocol(plugin->name, output)) {

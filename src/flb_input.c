@@ -43,39 +43,60 @@ static int check_protocol(char *prot, char *output)
     return 1;
 }
 
-static struct flb_input_plugin *plugin_lookup(char *name, struct flb_config *config)
+static inline int instance_id(struct flb_input_plugin *p,
+                              struct flb_config *config) \
 {
+    int c = 0;
     struct mk_list *head;
-    struct flb_input_plugin *plugin;
+    struct flb_input_instance *entry;
 
     mk_list_foreach(head, &config->inputs) {
-        plugin = mk_list_entry(head, struct flb_input_plugin, _head);
-        if (strncmp(plugin->name, name, strlen(name)) == 0) {
-            return plugin;
+        entry = mk_list_entry(head, struct flb_input_instance, _head);
+        if (entry->p == p) {
+            c++;
         }
     }
 
-    return NULL;
+    return c;
 }
 
+
 /* Enable an input */
-int flb_input_set(struct flb_config *config, char *input, void *data)
+int flb_input_new(struct flb_config *config, char *input, void *data)
 {
     int ret;
     struct mk_list *head;
     struct flb_input_plugin *plugin;
+    struct flb_input_instance *instance;
 
-    mk_list_foreach(head, &config->inputs) {
+    mk_list_foreach(head, &config->in_plugins) {
         plugin = mk_list_entry(head, struct flb_input_plugin, _head);
-        if (check_protocol(plugin->name, input)) {
-            plugin->active = FLB_TRUE;
-            plugin->data   = data;
+        if (!check_protocol(plugin->name, input)) {
+            continue;
         }
+
+        /* Create plugin instance */
+        instance = malloc(sizeof(struct flb_input_instance));
+        if (!instance) {
+            perror("malloc");
+            return -1;
+        }
+
+        /* format name (with instance id) */
+        snprintf(instance->name, sizeof(instance->name) - 1,
+                 "%s.%i", plugin->name, instance_id(plugin, config));
+        instance->p = plugin;
+        instance->context = NULL;
 
         if (plugin->flags & FLB_INPUT_NET) {
-            ret = flb_net_host_set(plugin->name, &plugin->host, input);
-            return ret;
+            ret = flb_net_host_set(plugin->name, &instance->host, input);
+            if (ret != 0) {
+                free(instance);
+                return -1;
+            }
         }
+
+        mk_list_add(&instance->_head, &config->inputs);
     }
 
     return 0;
@@ -86,13 +107,17 @@ void flb_input_initialize_all(struct flb_config *config)
 {
     int ret;
     struct mk_list *head;
-    struct flb_input_plugin *in;
+    struct flb_input_instance *in;
+    struct flb_input_plugin *p;
 
+    /* Iterate all active input instance plugins */
     mk_list_foreach(head, &config->inputs) {
-        in = mk_list_entry(head, struct flb_input_plugin, _head);
+        in = mk_list_entry(head, struct flb_input_instance, _head);
+        p = in->p;
+
         /* Initialize the input */
-        if (in->active == FLB_TRUE && in->cb_init) {
-            ret = in->cb_init(config, in->data);
+        if (p->cb_init) {
+            ret = p->cb_init(in, config, in->data);
             if (ret != 0) {
                 flb_error("Failed ininitalize input %s",
                 in->name);
@@ -105,14 +130,15 @@ void flb_input_initialize_all(struct flb_config *config)
 void flb_input_pre_run_all(struct flb_config *config)
 {
     struct mk_list *head;
-    struct flb_input_plugin *in;
+    struct flb_input_instance *in;
+    struct flb_input_plugin *p;
 
     mk_list_foreach(head, &config->inputs) {
-        in = mk_list_entry(head, struct flb_input_plugin, _head);
-        if (in->active == FLB_TRUE) {
-            if (in->cb_pre_run) {
-                in->cb_pre_run(in->in_context, config);
-            }
+        in = mk_list_entry(head, struct flb_input_instance, _head);
+        p = in->p;
+
+        if (p->cb_pre_run) {
+            p->cb_pre_run(in->context, config);
         }
     }
 }
@@ -121,14 +147,15 @@ void flb_input_pre_run_all(struct flb_config *config)
 void flb_input_exit_all(struct flb_config *config)
 {
     struct mk_list *head;
-    struct flb_input_plugin *in;
+    struct flb_input_instance *in;
+    struct flb_input_plugin *p;
 
     mk_list_foreach(head, &config->inputs) {
-        in = mk_list_entry(head, struct flb_input_plugin, _head);
-        if (in->active == FLB_TRUE) {
-            if (in->cb_exit) {
-                in->cb_exit(in->in_context, config);
-            }
+        in = mk_list_entry(head, struct flb_input_instance, _head);
+        p = in->p;
+
+        if (p->cb_exit) {
+            p->cb_exit(in->context, config);
         }
     }
 }
@@ -136,17 +163,11 @@ void flb_input_exit_all(struct flb_config *config)
 /* Check that at least one Input is enabled */
 int flb_input_check(struct flb_config *config)
 {
-    struct mk_list *head;
-    struct flb_input_plugin *plugin;
-
-    mk_list_foreach(head, &config->inputs) {
-        plugin = mk_list_entry(head, struct flb_input_plugin, _head);
-        if (plugin->active == FLB_TRUE) {
-            return 0;
-        }
+    if (mk_list_is_empty(&config->inputs) == 0) {
+        return -1;
     }
 
-    return -1;
+    return 0;
 }
 
 /*
@@ -186,32 +207,18 @@ int flb_input_check(struct flb_config *config)
  */
 
 /* Assign an Configuration context to an Input */
-int flb_input_set_context(char *name, void *in_context, struct flb_config *config)
+void flb_input_set_context(struct flb_input_instance *in, void *context)
 {
-    struct flb_input_plugin *plugin;
-
-    plugin = plugin_lookup(name, config);
-    if (!plugin) {
-        return -1;
-    }
-
-    plugin->in_context = in_context;
-    return 0;
+    in->context = context;
 }
 
-int flb_input_set_collector_time(char *name,
+int flb_input_set_collector_time(struct flb_input_instance *in,
                                  int (*cb_collect) (struct flb_config *, void *),
                                  time_t seconds,
                                  long   nanoseconds,
                                  struct flb_config *config)
 {
-    struct flb_input_plugin *plugin;
     struct flb_input_collector *collector;
-
-    plugin = plugin_lookup(name, config);
-    if (!plugin) {
-        return -1;
-    }
 
     collector = malloc(sizeof(struct flb_input_collector));
     collector->type        = FLB_COLLECT_TIME;
@@ -220,24 +227,18 @@ int flb_input_set_collector_time(char *name,
     collector->fd_timer    = -1;
     collector->seconds     = seconds;
     collector->nanoseconds = nanoseconds;
-    collector->plugin      = plugin;
+    collector->instance    = in;
 
     mk_list_add(&collector->_head, &config->collectors);
     return 0;
 }
 
-int flb_input_set_collector_event(char *name,
+int flb_input_set_collector_event(struct flb_input_instance *in,
                                   int (*cb_collect) (struct flb_config *, void *),
                                   int fd,
                                   struct flb_config *config)
 {
-    struct flb_input_plugin *plugin;
     struct flb_input_collector *collector;
-
-    plugin = plugin_lookup(name, config);
-    if (!plugin) {
-        return -1;
-    }
 
     collector = malloc(sizeof(struct flb_input_collector));
     collector->type        = FLB_COLLECT_FD_EVENT;
@@ -246,24 +247,18 @@ int flb_input_set_collector_event(char *name,
     collector->fd_timer    = -1;
     collector->seconds     = -1;
     collector->nanoseconds = -1;
-    collector->plugin      = plugin;
+    collector->instance    = in;
 
     mk_list_add(&collector->_head, &config->collectors);
     return 0;
 }
 
-int flb_input_set_collector_socket(char *name,
+int flb_input_set_collector_socket(struct flb_input_instance *in,
                                    int (*cb_new_connection) (struct flb_config *, void*),
                                    int fd,
                                    struct flb_config *config)
 {
-    struct flb_input_plugin *plugin;
     struct flb_input_collector *collector;
-
-    plugin = plugin_lookup(name, config);
-    if (!plugin) {
-        return -1;
-    }
 
     collector = malloc(sizeof(struct flb_input_collector));
     collector->type        = FLB_COLLECT_FD_SERVER;
@@ -272,7 +267,7 @@ int flb_input_set_collector_socket(char *name,
     collector->fd_timer    = -1;
     collector->seconds     = -1;
     collector->nanoseconds = -1;
-    collector->plugin      = plugin;
+    collector->instance    = in;
 
     mk_list_add(&collector->_head, &config->collectors);
     return 0;

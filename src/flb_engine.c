@@ -40,40 +40,40 @@ int flb_engine_flush(struct flb_config *config,
 {
     int size;
     char *buf;
-    struct flb_input_plugin *in;
+    struct flb_input_instance *in;
+    struct flb_input_plugin *p;
     struct mk_list *head;
     struct flb_thread *th;
 
     mk_list_foreach(head, &config->inputs) {
-        in = mk_list_entry(head, struct flb_input_plugin, _head);
+        in = mk_list_entry(head, struct flb_input_instance, _head);
+        p = in->p;
 
-        if (in_force != NULL && in != in_force) {
+        if (in_force != NULL && p != in_force) {
             continue;
         }
 
-        if (in->active == FLB_TRUE) {
-            if (in->cb_flush_buf) {
-                buf = in->cb_flush_buf(in->in_context, &size);
-                if (!buf) {
-                    goto flush_done;
-                }
-                if (size == 0) {
-                    flb_warn("No input data");
-                    continue;
-                }
-
-                /* Create a thread context for an output plugin call */
-                th = flb_output_thread(config->output,
-                                       config,
-                                       buf, size);
-                flb_thread_resume(th);
+        if (p->cb_flush_buf) {
+            buf = p->cb_flush_buf(in->context, &size);
+            if (!buf) {
+                goto flush_done;
+            }
+            if (size == 0) {
+                flb_warn("No input data");
                 continue;
             }
 
-        flush_done:
-            if (in->cb_flush_end) {
-                in->cb_flush_end(in->in_context);
-            }
+            /* Create a thread context for an output plugin call */
+            th = flb_output_thread(config->output,
+                                   config,
+                                   buf, size);
+            flb_thread_resume(th);
+            continue;
+        }
+
+    flush_done:
+        if (p->cb_flush_end) {
+            p->cb_flush_end(in->context);
         }
     }
 
@@ -158,12 +158,12 @@ static FLB_INLINE int flb_engine_handle_event(int fd, int mask,
             collector = mk_list_entry(head, struct flb_input_collector, _head);
             if (collector->fd_event == fd) {
                 return collector->cb_collect(config,
-                                             collector->plugin->in_context);
+                                             collector->instance->context);
             }
             else if (collector->fd_timer == fd) {
                 consume_byte(fd);
                 return collector->cb_collect(config,
-                                             collector->plugin->in_context);
+                                             collector->instance->context);
             }
         }
     }

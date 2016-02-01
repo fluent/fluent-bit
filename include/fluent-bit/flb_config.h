@@ -64,10 +64,14 @@ struct flb_config {
     /* Collectors */
     struct mk_list collectors;
 
-    /* Inputs */
+    /* Input and Output plugins */
+    struct mk_list in_plugins;
+    struct mk_list out_plugins;
+
+    /* Inputs instances */
     struct mk_list inputs;
 
-    /* Outputs */
+    /* Outputs instances */
     struct mk_list outputs;             /* list of output plugins   */
     struct flb_output_plugin *output;   /* output plugin in use     */
     struct mk_event_loop *evl;          /* the event loop (mk_core) */

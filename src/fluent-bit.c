@@ -52,6 +52,7 @@ static void flb_help(int rc, struct flb_config *config)
            FLB_CONFIG_FLUSH_SECS);
     printf("  -i, --input=INPUT\tset an input\n");
     printf("  -o, --output=OUTPUT\tset an output\n");
+    printf("  -p, --prop=\"A=B\"\tset plugin configuration property\n");
     printf("  -V, --verbose\t\tenable verbose mode\n");
     printf("  -v, --version\t\tshow version number\n");
     printf("  -h, --help\t\tprint this help\n\n");
@@ -59,7 +60,7 @@ static void flb_help(int rc, struct flb_config *config)
     printf("%sInputs%s\n", ANSI_BOLD, ANSI_RESET);
 
     /* Iterate each supported input */
-    mk_list_foreach(head, &config->inputs) {
+    mk_list_foreach(head, &config->in_plugins) {
         in = mk_list_entry(head, struct flb_input_plugin, _head);
         if (strcmp(in->name, "lib") == 0) {
             /* useless..., just skip it. */
@@ -68,7 +69,7 @@ static void flb_help(int rc, struct flb_config *config)
         printf("  %-22s%s\n", in->name, in->description);
     }
     printf("\n%sOutputs%s\n", ANSI_BOLD, ANSI_RESET);
-    mk_list_foreach(head, &config->outputs) {
+    mk_list_foreach(head, &config->out_plugins) {
         out = mk_list_entry(head, struct flb_output_plugin, _head);
         printf("  %-22s%s\n", out->name, out->description);
     }
@@ -129,6 +130,7 @@ int main(int argc, char **argv)
         { "flush",   required_argument, NULL, 'f' },
         { "input",   required_argument, NULL, 'i' },
         { "output",  required_argument, NULL, 'o' },
+        { "prop",    required_argument, NULL, 'p' },
         { "version", no_argument      , NULL, 'v' },
         { "verbose", no_argument      , NULL, 'V' },
         { "help",    no_argument      , NULL, 'h' },
@@ -145,7 +147,7 @@ int main(int argc, char **argv)
     }
 
     /* Parse the command line options */
-    while ((opt = getopt_long(argc, argv, "c:df:i:o:vVh",
+    while ((opt = getopt_long(argc, argv, "c:df:i:o:p:vVh",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
@@ -159,7 +161,7 @@ int main(int argc, char **argv)
             config->flush = atoi(optarg);
             break;
         case 'i':
-            ret = flb_input_set(config, optarg, NULL);
+            ret = flb_input_new(config, optarg, NULL);
             if (ret != 0) {
                 flb_utils_error(FLB_ERR_INPUT_INVALID);
             }
@@ -169,6 +171,9 @@ int main(int argc, char **argv)
                 flb_utils_error(FLB_ERR_OUTPUT_UNIQ);
             }
             cfg_output = optarg;
+            break;
+        case 'p':
+            /* FIXME */
             break;
         case 'h':
             flb_help(EXIT_SUCCESS, config);

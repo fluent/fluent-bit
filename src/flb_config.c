@@ -43,6 +43,8 @@ struct flb_config *flb_config_init()
     config->kernel    = flb_kernel_info();
 
     mk_list_init(&config->collectors);
+    mk_list_init(&config->in_plugins);
+    mk_list_init(&config->out_plugins);
     mk_list_init(&config->inputs);
     mk_list_init(&config->outputs);
 

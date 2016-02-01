@@ -31,6 +31,8 @@
 /* Input plugin masks */
 #define FLB_INPUT_NET         4  /* input address may set host and port */
 
+struct flb_input_instance;
+
 struct flb_input_plugin {
     /* Is this Input an active one ? */
     int  active;
@@ -43,25 +45,8 @@ struct flb_input_plugin {
     /* Plugin Description */
     char *description;
 
-    /*
-     * Input network info:
-     *
-     * An input plugin can be specified just using it shortname or using the
-     * complete network address format, e.g:
-     *
-     *  $ fluent-bit -i cpu -o plugin://hostname:port/uri
-     *
-     * where:
-     *
-     *   plugin   = the output plugin shortname
-     *   name     = IP address or hostname of the target
-     *   port     = target TCP port
-     *   uri      = extra information that may be used by the plugin
-     */
-    struct flb_net_host host;
-
     /* Initalization */
-    int (*cb_init)    (struct flb_config *, void *);
+    int (*cb_init)    (struct flb_input_instance *, struct flb_config *, void *);
 
     /* Pre run */
     int (*cb_pre_run) (void *, struct flb_config *);
@@ -95,12 +80,38 @@ struct flb_input_plugin {
     /* Exit */
     int (*cb_exit) (void *, struct flb_config *);
 
-    /* Input handler configuration */
-    void *in_context;
+    struct mk_list _head;
+};
 
-#ifdef HAVE_STATS
-    int stats_fd;
-#endif
+/*
+ * Each initialized plugin must have an instance, same plugin may be
+ * loaded more than one time.
+ *
+ * An instance try to contain plugin data separating what is fixed data
+ * and the variable one that is generated when the plugin is invoked.
+ */
+struct flb_input_instance {
+    char name[16];                       /* numbered name (cpu -> cpu.0) */
+    struct flb_input_plugin *p;          /* original plugin              */
+    void *context;                       /* plugin configuration context */
+
+
+    /*
+     * Input network info:
+     *
+     * An input plugin can be specified just using it shortname or using the
+     * complete network address format, e.g:
+     *
+     *  $ fluent-bit -i cpu -o plugin://hostname:port/uri
+     *
+     * where:
+     *
+     *   plugin   = the output plugin shortname
+     *   name     = IP address or hostname of the target
+     *   port     = target TCP port
+     *   uri      = extra information that may be used by the plugin
+     */
+    struct flb_net_host host;
 
     /*
      * Optional data passed to the plugin, this info is useful when
@@ -109,8 +120,11 @@ struct flb_input_plugin {
      */
     void *data;
 
-    /* Link to global list from flb_config->inputs */
-    struct mk_list _head;
+#ifdef HAVE_STATS
+    int stats_fd;
+#endif
+
+    struct mk_list _head;                /* link to config->inputs       */
 };
 
 struct flb_input_collector {
@@ -130,23 +144,27 @@ struct flb_input_collector {
     struct mk_event event;
 
     /* General references */
-    struct flb_input_plugin *plugin;     /* owner plugin               */
+    struct flb_input_instance *instance; /* plugin instance            */
     struct mk_list _head;                /* link to list of collectors */
 };
 
 int flb_input_register_all(struct flb_config *config);
-int flb_input_set(struct flb_config *config, char *name, void *data);
+int flb_input_new(struct flb_config *config, char *input, void *data);
 int flb_input_check(struct flb_config *config);
-int flb_input_set_context(char *name, void *in_context, struct flb_config *config);
-int flb_input_set_collector_time(char *name,
+void flb_input_set_context(struct flb_input_instance *in, void *context);
+int flb_input_set_collector_time(struct flb_input_instance *in,
                                  int (*cb_collect) (struct flb_config *, void *),
                                  time_t seconds,
                                  long   nanoseconds,
                                  struct flb_config *config);
-int flb_input_set_collector_event(char *name,
+int flb_input_set_collector_event(struct flb_input_instance *in,
                                   int (*cb_collect) (struct flb_config *, void *),
                                   int fd,
                                   struct flb_config *config);
+int flb_input_set_collector_socket(struct flb_input_instance *in,
+                                   int (*cb_new_connection) (struct flb_config *, void*),
+                                   int fd,
+                                   struct flb_config *config);
 void flb_input_initialize_all(struct flb_config *config);
 void flb_input_pre_run_all(struct flb_config *config);
 void flb_input_exit_all(struct flb_config *config);
