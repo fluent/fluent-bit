@@ -23,6 +23,16 @@
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 
+#include <fluent-bit/flb_uri.h>
+
+/* Defines a host service and it properties */
+struct flb_net_host {
+    char *address;         /* Original address     */
+    int   port;            /* TCP port             */
+    char *name;            /* Hostname             */
+    struct flb_uri *uri;   /* Extra URI parameters */
+};
+
 #ifndef TCP_FASTOPEN
 #define TCP_FASTOPEN  23
 #endif

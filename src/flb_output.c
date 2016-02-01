@@ -74,7 +74,7 @@ static int parse_net_address(struct flb_output_plugin *plugin, char *output)
         if (!e) {
             return -1;
         }
-        plugin->net_host = copy_substr(s, e - s);
+        plugin->host.name = copy_substr(s, e - s);
         s = e + 1;
     } else {
         e = s;
@@ -84,23 +84,23 @@ static int parse_net_address(struct flb_output_plugin *plugin, char *output)
         if (e == s) {
             return -1;
         }
-        plugin->net_host = copy_substr(s, e - s);
+        plugin->host.name = copy_substr(s, e - s);
         s = e;
     }
     if (*s == ':') {
-        plugin->net_port = atoi(++s);
+        plugin->host.port = atoi(++s);
     }
 
     u = strchr(s, '/');
     if (u) {
-        plugin->net_uri = flb_uri_create(u);
+        plugin->host.uri = flb_uri_create(u);
         if (__flb_config_verbose == FLB_TRUE) {
             flb_debug("[URI dump] entries=%i '%s'",
-                      plugin->net_uri->count, u);
-            flb_uri_dump(plugin->net_uri);
+                      plugin->host.uri->count, u);
+            flb_uri_dump(plugin->host.uri);
         }
     }
-    plugin->net_address = strdup(output);
+    plugin->host.address = strdup(output);
 
     return 0;
 }
@@ -160,8 +160,8 @@ void flb_output_exit(struct flb_config *config)
             flb_io_upstream_destroy(out->upstream);
         }
 
-        if (out->net_host) {
-            free(out->net_host);
+        if (out->host.name) {
+            free(out->host.name);
         }
     }
 }
@@ -189,10 +189,10 @@ int flb_output_set(struct flb_config *config, char *output, void *data)
             config->output = plugin;
 
             if (plugin->flags & FLB_OUTPUT_NET) {
-                plugin->net_address = NULL;
-                plugin->net_host = NULL;
-                plugin->net_port = 0;
-                plugin->net_uri = NULL;
+                plugin->host.address = NULL;
+                plugin->host.name = NULL;
+                plugin->host.port = 0;
+                plugin->host.uri = NULL;
                 ret = parse_net_address(plugin, output);
                 return ret;
             }
