@@ -161,6 +161,10 @@ void flb_input_initialize_all(struct flb_config *config)
         in = mk_list_entry(head, struct flb_input_instance, _head);
         p = in->p;
 
+        if (!in->tag) {
+            in->tag = strdup(in->p->name);
+        }
+
         /* Initialize the input */
         if (p->cb_init) {
             ret = p->cb_init(in, config, in->data);
