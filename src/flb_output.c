@@ -220,6 +220,10 @@ int flb_output_init(struct flb_config *config)
         ins = mk_list_entry(head, struct flb_output_instance, _head);
         p = ins->p;
 
+        if (!ins->tag) {
+            ins->tag = strdup("*");
+        }
+
 #ifdef HAVE_TLS
         if (p->flags & FLB_IO_TLS) {
             ins->tls.context = flb_tls_context_new();
