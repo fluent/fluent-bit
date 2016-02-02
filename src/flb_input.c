@@ -61,13 +61,14 @@ static inline int instance_id(struct flb_input_plugin *p,
 }
 
 
-/* Enable an input */
-int flb_input_new(struct flb_config *config, char *input, void *data)
+/* Create an input plugin instance */
+struct flb_input_instance *flb_input_new(struct flb_config *config,
+                                         char *input, void *data)
 {
     int ret;
     struct mk_list *head;
     struct flb_input_plugin *plugin;
-    struct flb_input_instance *instance;
+    struct flb_input_instance *instance = NULL;
 
     mk_list_foreach(head, &config->in_plugins) {
         plugin = mk_list_entry(head, struct flb_input_plugin, _head);
@@ -79,7 +80,7 @@ int flb_input_new(struct flb_config *config, char *input, void *data)
         instance = malloc(sizeof(struct flb_input_instance));
         if (!instance) {
             perror("malloc");
-            return -1;
+            return NULL;
         }
 
         /* format name (with instance id) */
@@ -93,14 +94,58 @@ int flb_input_new(struct flb_config *config, char *input, void *data)
             ret = flb_net_host_set(plugin->name, &instance->host, input);
             if (ret != 0) {
                 free(instance);
-                return -1;
+                return NULL;
             }
         }
 
         mk_list_add(&instance->_head, &config->inputs);
+        break;
     }
 
-    return 0;
+    return instance;
+}
+
+static inline int prop_key_check(char *key, char *kv, int k_len)
+{
+    int len;
+
+    len = strlen(key);
+    if (strncmp(key, kv, k_len) == 0 && len == k_len) {
+        return 0;
+    }
+
+    return -1;
+}
+
+/* Override a configuration property for the given input_instance plugin */
+int flb_input_property(struct flb_input_instance *in, char *kv)
+{
+    int sep;
+    int len;
+    int k_len;
+    char *value;
+
+    /*
+     * This function receives a key=value string, the 'key' aims to be a
+     * known configuration property by the plugin, expected format:
+     *
+     *   key=value
+     *
+     * note: no quotes, no spaces
+     */
+
+    len = strlen(kv);
+    sep = mk_string_char_search(kv, '=', len);
+    if (sep == -1) {
+        return -1;
+    }
+    k_len = sep;
+    value = kv + sep + 1;
+
+    /* Check if the key is a known/shared property */
+    if (prop_key_check("tag", kv, k_len) == 0) {        /* instance.tag */
+        in->tag = strdup(value);
+    }
 }
 
 /* Initialize all inputs */

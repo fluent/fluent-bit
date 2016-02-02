@@ -38,6 +38,9 @@
 
 struct flb_config *config;
 
+#define PLUGIN_INPUT    0
+#define PLUGIN_OUTPUT   1
+
 static void flb_help(int rc, struct flb_config *config)
 {
     struct mk_list *head;
@@ -118,10 +121,15 @@ int main(int argc, char **argv)
     int opt;
     int ret;
 
+    /* handle plugin properties:  -1 = none, 0 = input, 1 = output */
+    int last_plugin = -1;
+
     /* local variables to handle config options */
     int cfg_daemon = FLB_FALSE;
     char *cfg_file = NULL;
     char *cfg_output = NULL;
+    struct flb_input_instance *in = NULL;
+    struct flb_output_instance *out = NULL;
 
     /* Setup long-options */
     static const struct option long_opts[] = {
@@ -161,19 +169,26 @@ int main(int argc, char **argv)
             config->flush = atoi(optarg);
             break;
         case 'i':
-            ret = flb_input_new(config, optarg, NULL);
-            if (ret != 0) {
+            in = flb_input_new(config, optarg, NULL);
+            if (!in) {
                 flb_utils_error(FLB_ERR_INPUT_INVALID);
             }
+            last_plugin = PLUGIN_INPUT;
             break;
         case 'o':
-            if (cfg_output) {
-                flb_utils_error(FLB_ERR_OUTPUT_UNIQ);
+            out = flb_output_new(config, optarg, NULL);
+            if (!out) {
+                flb_utils_error(FLB_ERR_OUTPUT_INVALID);
             }
-            cfg_output = optarg;
+            last_plugin = PLUGIN_OUTPUT;
             break;
         case 'p':
-            /* FIXME */
+            if (last_plugin == PLUGIN_INPUT) {
+                flb_input_property(in, optarg);
+            }
+            else if (last_plugin == PLUGIN_OUTPUT) {
+                flb_output_property(out, optarg);
+            }
             break;
         case 'h':
             flb_help(EXIT_SUCCESS, config);
@@ -187,11 +202,6 @@ int main(int argc, char **argv)
         default:
             flb_help(EXIT_FAILURE, config);
         }
-    }
-
-    /* We need an output */
-    if (!cfg_output) {
-        flb_utils_error(FLB_ERR_OUTPUT_UNDEF);
     }
 
     /* Validate config file */
@@ -215,12 +225,6 @@ int main(int argc, char **argv)
     ret = flb_input_check(config);
     if (ret == -1) {
         flb_utils_error(FLB_ERR_INPUT_UNDEF);
-    }
-
-    /* Output */
-    ret = flb_output_set(config, cfg_output, NULL);
-    if (ret == -1) {
-        flb_utils_error(FLB_ERR_OUTPUT_INVALID);
     }
 
     flb_banner();

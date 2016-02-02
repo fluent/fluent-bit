@@ -89,9 +89,11 @@ struct flb_input_plugin {
  */
 struct flb_input_instance {
     char name[16];                       /* numbered name (cpu -> cpu.0) */
-    struct flb_input_plugin *p;          /* original plugin              */
     void *context;                       /* plugin configuration context */
+    struct flb_input_plugin *p;          /* original plugin              */
 
+    /* Plugin properties */
+    char *tag;
 
     /*
      * Input network info:
@@ -146,7 +148,10 @@ struct flb_input_collector {
 };
 
 int flb_input_register_all(struct flb_config *config);
-int flb_input_new(struct flb_config *config, char *input, void *data);
+struct flb_input_instance *flb_input_new(struct flb_config *config,
+                                         char *input, void *data);
+int flb_input_property(struct flb_input_instance *in, char *kv);
+
 int flb_input_check(struct flb_config *config);
 void flb_input_set_context(struct flb_input_instance *in, void *context);
 int flb_input_set_collector_time(struct flb_input_instance *in,

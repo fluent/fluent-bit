@@ -114,15 +114,16 @@ static inline int instance_id(struct flb_output_plugin *p,
  * It validate an output type given the string, it return the
  * proper type and if valid, populate the global config.
  */
-int flb_output_set(struct flb_config *config, char *output, void *data)
+struct flb_output_instance *flb_output_new(struct flb_config *config,
+                                           char *output, void *data)
 {
     int ret = -1;
     struct mk_list *head;
     struct flb_output_plugin *plugin;
-    struct flb_output_instance *instance;
+    struct flb_output_instance *instance = NULL;
 
     if (!output) {
-        return -1;
+        return NULL;
     }
 
     mk_list_foreach(head, &config->out_plugins) {
@@ -135,7 +136,7 @@ int flb_output_set(struct flb_config *config, char *output, void *data)
         instance = malloc(sizeof(struct flb_output_instance));
         if (!instance) {
             perror("malloc");
-            return -1;
+            return NULL;
         }
 
         /* format name (with instance id) */
@@ -149,13 +150,57 @@ int flb_output_set(struct flb_config *config, char *output, void *data)
             ret = flb_net_host_set(plugin->name, &instance->host, output);
             if (ret != 0) {
                 free(instance);
-                return -1;
+                return NULL;
             }
         }
         mk_list_add(&instance->_head, &config->outputs);
+        break;
     }
 
-    return 0;
+    return instance;
+}
+
+static inline int prop_key_check(char *key, char *kv, int k_len)
+{
+    int len;
+
+    len = strlen(key);
+    if (strncmp(key, kv, k_len) == 0 && len == k_len) {
+        return 0;
+    }
+
+    return -1;
+}
+
+/* Override a configuration property for the given input_instance plugin */
+int flb_output_property(struct flb_output_instance *out, char *kv)
+{
+    int sep;
+    int len;
+    int k_len;
+    char *value;
+
+    /*
+     * This function receives a key=value string, the 'key' aims to be a
+     * known configuration property by the plugin, expected format:
+     *
+     *   key=value
+     *
+     * note: no quotes, no spaces
+     */
+
+    len = strlen(kv);
+    sep = mk_string_char_search(kv, '=', len);
+    if (sep == -1) {
+        return -1;
+    }
+    k_len = sep;
+    value = kv + sep + 1;
+
+    /* Check if the key is a known/shared property */
+    if (prop_key_check("tag", kv, k_len) == 0) {        /* instance.tag */
+        out->tag = strdup(value);
+    }
 }
 
 /* Trigger the output plugins setup callbacks to prepare them. */

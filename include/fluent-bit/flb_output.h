@@ -93,6 +93,8 @@ struct flb_output_instance {
     struct flb_output_plugin *p;         /* original plugin              */
     void *context;                       /* plugin configuration context */
 
+    /* Plugin properties */
+    char *tag;
 
     /*
      * network info:
@@ -183,7 +185,10 @@ static FLB_INLINE struct flb_thread *flb_output_thread(struct flb_output_instanc
 }
 
 
-int flb_output_set(struct flb_config *config, char *output, void *data);
+struct flb_output_instance *flb_output_new(struct flb_config *config,
+                                           char *output, void *data);
+int flb_output_property(struct flb_output_instance *out, char *kv);
+
 void flb_output_pre_run(struct flb_config *config);
 void flb_output_exit(struct flb_config *config);
 void flb_output_set_context(struct flb_output_instance *ins, void *context);
