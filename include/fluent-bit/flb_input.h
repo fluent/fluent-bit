@@ -123,7 +123,14 @@ struct flb_input_instance {
     int stats_fd;
 #endif
 
-    struct mk_list _head;                /* link to config->inputs       */
+    struct mk_list _head;                /* link to config->inputs     */
+    struct mk_list routes;               /* flb_router_path's list     */
+
+    /*
+     * Every co-routine created by the engine when flushing data, it's
+     * linked into this list header.
+     */
+    struct mk_list tasks;                /* engine taskslist           */
 };
 
 struct flb_input_collector {
