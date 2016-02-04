@@ -129,7 +129,6 @@ void flb_message(int type, const char *fmt, ...)
     const char *header_title = NULL;
     const char *bold_color = ANSI_BOLD;
     const char *reset_color = ANSI_RESET;
-    const char *white_color = ANSI_WHITE;
     va_list args;
 
     if (type == FLB_MSG_DEBUG) {
@@ -164,7 +163,6 @@ void flb_message(int type, const char *fmt, ...)
         header_color = "";
         bold_color = "";
         reset_color = "";
-        white_color = "";
     }
 
     now = time(NULL);
@@ -181,7 +179,7 @@ void flb_message(int type, const char *fmt, ...)
            bold_color, reset_color);
 
     printf("%s[%s%5s%s]%s ",
-           "", header_color, header_title, white_color, reset_color);
+           "", header_color, header_title, reset_color, "");
 
     vprintf(fmt, args);
     va_end(args);

@@ -33,6 +33,11 @@ int main()
         exit(EXIT_FAILURE);
     }
 
+    /* Verbose mode */
+    /*
+    flb_config_verbose(FLB_TRUE);
+    */
+
     /* Start the background worker */
     flb_lib_start(ctx);
 
@@ -43,6 +48,9 @@ int main()
     }
 
     flb_lib_stop(ctx);
+
+    /* Release Resources */
+    flb_lib_exit(ctx);
 
     return 0;
 }
