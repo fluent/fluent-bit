@@ -89,6 +89,10 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->p = plugin;
         instance->context = NULL;
         instance->data = data;
+        instance->host.name = NULL;
+
+        mk_list_init(&instance->routes);
+        mk_list_init(&instance->tasks);
 
         if (plugin->flags & FLB_INPUT_NET) {
             ret = flb_net_host_set(plugin->name, &instance->host, input);

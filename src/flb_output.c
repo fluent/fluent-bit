@@ -143,10 +143,14 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         snprintf(instance->name, sizeof(instance->name) - 1,
                  "%s.%i", plugin->name, instance_id(plugin, config));
         instance->p = plugin;
-        instance->context = NULL;
-        instance->data = data;
+        instance->context   = NULL;
+        instance->data      = data;
+        instance->upstream  = NULL;
+        instance->tag       = NULL;
+        instance->host.name = NULL;
 
         if (plugin->flags & FLB_OUTPUT_NET) {
+            printf("[%s] plugin output: %s\n", plugin->name, output);
             ret = flb_net_host_set(plugin->name, &instance->host, output);
             if (ret != 0) {
                 free(instance);

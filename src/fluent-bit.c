@@ -127,7 +127,6 @@ int main(int argc, char **argv)
     /* local variables to handle config options */
     int cfg_daemon = FLB_FALSE;
     char *cfg_file = NULL;
-    char *cfg_output = NULL;
     struct flb_input_instance *in = NULL;
     struct flb_output_instance *out = NULL;
 
