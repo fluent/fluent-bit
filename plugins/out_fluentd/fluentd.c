@@ -31,7 +31,7 @@
 
 struct flb_output_plugin out_fluentd_plugin;
 
-int cb_fluentd_init(struct flb_output_plugin *plugin, struct flb_config *config,
+int cb_fluentd_init(struct flb_output_instance *ins, struct flb_config *config,
                     void *data)
 {
     int ret;
@@ -47,17 +47,17 @@ int cb_fluentd_init(struct flb_output_plugin *plugin, struct flb_config *config,
     }
 
     /* Set default network configuration */
-    if (!plugin->net_host) {
-        plugin->net_host = strdup("127.0.0.1");
+    if (!ins->host.name) {
+        ins->host.name = strdup("127.0.0.1");
     }
-    if (plugin->net_port == 0) {
-        plugin->net_port = 24224;
+    if (ins->host.port == 0) {
+        ins->host.port = 24224;
     }
 
     /* Prepare an upstream handler */
     upstream = flb_io_upstream_new(config,
-                                   plugin->net_host,
-                                   plugin->net_port,
+                                   ins->host.name,
+                                   ins->host.port,
                                    FLB_IO_TCP, NULL);
     if (!upstream) {
         free(ctx);
@@ -67,19 +67,15 @@ int cb_fluentd_init(struct flb_output_plugin *plugin, struct flb_config *config,
     ctx->tag = FLB_CONFIG_DEFAULT_TAG;
     ctx->tag_len = sizeof(FLB_CONFIG_DEFAULT_TAG) - 1;
 
-    if (plugin->net_uri) {
-        if (plugin->net_uri->count > 0) {
-            f_tag = flb_uri_get(plugin->net_uri, 0);
+    if (ins->host.uri) {
+        if (ins->host.uri->count > 0) {
+            f_tag = flb_uri_get(ins->host.uri, 0);
             ctx->tag     = f_tag->value;
             ctx->tag_len = f_tag->length;
         }
     }
 
-    ret = flb_output_set_context("fluentd", ctx, config);
-    if (ret == -1) {
-        flb_utils_error_c("Could not set configuration for fluentd output plugin");
-    }
-
+    flb_output_set_context(ins, ctx);
     return 0;
 }
 
