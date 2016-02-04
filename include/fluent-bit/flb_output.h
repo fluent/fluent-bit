@@ -30,6 +30,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_network.h>
+#include <fluent-bit/flb_engine.h>
 
 /* Output plugin masks */
 #define FLB_OUTPUT_NET         4  /* output address may set host and port */
@@ -165,9 +166,11 @@ struct flb_output_instance {
     struct mk_list _head;                /* link to config->inputs       */
 };
 
-static FLB_INLINE struct flb_thread *flb_output_thread(struct flb_output_instance *out,
-                                                       struct flb_config *config,
-                                                       void *buf, size_t size)
+static FLB_INLINE
+struct flb_thread *flb_output_thread(struct flb_engine_task *task,
+                                     struct flb_output_instance *o_ins,
+                                     struct flb_config *config,
+                                     void *buf, size_t size)
 {
     struct flb_thread *th;
 
@@ -176,11 +179,12 @@ static FLB_INLINE struct flb_thread *flb_output_thread(struct flb_output_instanc
         return NULL;
     }
 
-    th->data = out;
+    th->data = o_ins;
     th->output_buffer = buf;
-    makecontext(&th->callee, (void (*)()) out->p->cb_flush,
-                4, buf, size, out->context, config);
-    pthread_setspecific(flb_thread_key, (void *) th);
+    th->task = task;
+
+    makecontext(&th->callee, (void (*)()) o_ins->p->cb_flush,
+                4, buf, size, o_ins->context, config);
     return th;
 }
 
