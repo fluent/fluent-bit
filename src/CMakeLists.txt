@@ -11,6 +11,8 @@ set(src
   flb_utils.c
   flb_engine.c
   flb_io.c
+  flb_router.c
+
   )
 
 include_directories(

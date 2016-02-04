@@ -31,6 +31,8 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_engine.h>
+#include <fluent-bit/flb_router.h>
+
 #ifdef HAVE_STATS
 #include <fluent-bit/flb_stats.h>
 #endif
@@ -42,8 +44,13 @@ int flb_engine_flush(struct flb_config *config,
     char *buf;
     struct flb_input_instance *in;
     struct flb_input_plugin *p;
+    struct mk_list *tmp;
     struct mk_list *head;
+    struct mk_list *r_head;
     struct flb_thread *th;
+    struct flb_output_instance *o_ins;
+    struct flb_router_path *path;
+    struct flb_engine_task *task;
 
     mk_list_foreach(head, &config->inputs) {
         in = mk_list_entry(head, struct flb_input_instance, _head);
@@ -63,17 +70,34 @@ int flb_engine_flush(struct flb_config *config,
                 continue;
             }
 
-            /* Create a thread context for an output plugin call */
+            /*
+             * Create an engine task, the task will hold the buffer reference
+             * and the co-routines associated to the output instance plugins
+             * that needs to handle the data.
+             */
+            task = flb_engine_task_create(buf, size, in);
+            if (!task) {
+                free(buf);
+                continue;
+            }
 
-            /* FIXME: always flushing to the first output instance, need routing */
-            struct flb_output_instance *out;
-            out = mk_list_entry_first(&config->outputs,
-                                      struct flb_output_instance,
-                                      _head);
-            th = flb_output_thread(out,
-                                   config,
-                                   buf, size);
-            flb_thread_resume(th);
+            /* Create a thread context for an output plugin call */
+            mk_list_foreach(r_head, &in->routes) {
+                path = mk_list_entry(r_head, struct flb_router_path, _head);
+                o_ins = path->ins;
+
+                th = flb_output_thread(task,
+                                       o_ins,
+                                       config,
+                                       buf, size);
+                flb_engine_task_add(&th->_head, task);
+                flb_thread_resume(th);
+            }
+
+            if (task->delete == FLB_TRUE) {
+                flb_engine_task_destroy(task);
+            }
+
             continue;
         }
 
@@ -200,6 +224,7 @@ int flb_engine_start(struct flb_config *config)
     struct flb_input_collector *collector;
     struct flb_io_upstream *u;
     struct flb_thread *th;
+    struct flb_engine_task *task;
 
     flb_info("starting engine");
 
@@ -279,6 +304,12 @@ int flb_engine_start(struct flb_config *config)
         }
     }
 
+    /* Prepare routing paths */
+    ret = flb_router_io_set(config);
+    if (ret == -1) {
+        return -1;
+    }
+
     /* Signal that we have started */
     flb_engine_started(config);
     while (1) {
@@ -317,9 +348,14 @@ int flb_engine_start(struct flb_config *config)
                  */
                 u = (struct flb_io_upstream *) event;
                 th = u->thread;
+                task = th->task;
 
                 flb_debug("[engine] resuming thread: %i", u->event.fd);
                 flb_thread_resume(th);
+
+                if (task->delete == FLB_TRUE) {
+                    flb_engine_task_destroy(task);
+                }
             }
         }
     }
