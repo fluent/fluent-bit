@@ -35,6 +35,7 @@
 
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_engine_task.h>
 
 pthread_key_t flb_thread_key;
 
@@ -59,6 +60,12 @@ struct flb_thread {
      * exits this reference must be freed.
      */
     void *output_buffer;
+
+    /* Parent flb_engine_task */
+    struct flb_engine_task *task;
+
+    /* Link to struct flb_engine_task->threads */
+    struct mk_list _head;
 };
 
 #define FLB_THREAD_STACK(p)    (((char *) p) + sizeof(struct flb_thread))
@@ -75,14 +82,15 @@ static FLB_INLINE void flb_thread_destroy(struct flb_thread *th)
 #ifdef USE_VALGRIND
     VALGRIND_STACK_DEREGISTER(th->valgrind_stack_id);
 #endif
-    if (th->output_buffer) {
-        free(th->output_buffer);
-    }
+
+    mk_list_del(&th->_head);
     free(th);
 }
 
 static FLB_INLINE void flb_thread_resume(struct flb_thread *th)
 {
+    pthread_setspecific(flb_thread_key, (void *) th);
+
     /*
      * Always assume the coroutine will end, the callee can change
      * this behavior when yielding.
@@ -93,7 +101,7 @@ static FLB_INLINE void flb_thread_resume(struct flb_thread *th)
     /* It ended, destroy the thread (coroutine) */
     if (th->ended == MK_TRUE) {
         flb_debug("[thread %p] ended", th);
-        flb_thread_destroy(th);
+        flb_engine_task_remove(th->task);
     }
 }
 
