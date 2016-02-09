@@ -28,7 +28,9 @@
 #include <mk_core/mk_utils.h>
 #include <mk_core/mk_event.h>
 
-#if defined(__linux__) && !defined(LINUX_KQUEUE)
+#if defined(EVENT_SELECT)
+    #include "mk_event_select.c"
+#elif defined(__linux__) && !defined(LINUX_KQUEUE)
     #include "mk_event_epoll.c"
 #else
     #include "mk_event_kqueue.c"
@@ -77,14 +79,11 @@ int mk_event_add(struct mk_event_loop *loop, int fd,
                  int type, uint32_t mask, void *data)
 {
     int ret;
-    struct mk_event *event;
     struct mk_event_ctx *ctx;
 
 #ifdef TRACE
     mk_bug(!data);
 #endif
-
-    event = (struct mk_event *) data;
 
     ctx = loop->data;
     ret = _mk_event_add(ctx, fd, type, mask, data);
