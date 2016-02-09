@@ -61,7 +61,9 @@
 #define MK_EP_SOCKET_DONE     3
 /* ---- end ---- */
 
-#if defined(__linux__) && !defined(LINUX_KQUEUE)
+#if defined(EVENT_SELECT)
+    #include "mk_event_select.h"
+#elif defined(__linux__) && !defined(LINUX_KQUEUE)
     #include "mk_event_epoll.h"
 #else
     #include "mk_event_kqueue.h"
