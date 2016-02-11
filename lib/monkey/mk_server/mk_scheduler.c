@@ -21,6 +21,7 @@
 #include <monkey/mk_core.h>
 #include <monkey/mk_vhost.h>
 #include <monkey/mk_scheduler.h>
+#include <monkey/mk_scheduler_tls.h>
 #include <monkey/mk_server.h>
 #include <monkey/mk_cache.h>
 #include <monkey/mk_config.h>
@@ -41,12 +42,6 @@ struct mk_sched_handler mk_http2_handler;
 static pthread_mutex_t mutex_sched_init = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t mutex_worker_init = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t mutex_worker_exit = PTHREAD_MUTEX_INITIALIZER;
-
-__thread struct rb_root *cs_list;
-__thread struct mk_list *cs_incomplete;
-__thread struct mk_sched_notif *worker_sched_notif;
-__thread struct mk_sched_worker *worker_sched_node;
-
 
 /*
  * Returns the worker id which should take a new incomming connection,
@@ -134,9 +129,9 @@ void mk_sched_worker_free()
     mk_bug(!sl);
 
     /* Free master array (av queue & busy queue) */
-    mk_mem_free(cs_list);
-    mk_mem_free(cs_incomplete);
-    mk_mem_free(worker_sched_notif);
+    mk_mem_free(MK_TLS_GET(mk_tls_sched_cs));
+    mk_mem_free(MK_TLS_GET(mk_tls_sched_cs_incomplete));
+    mk_mem_free(MK_TLS_GET(mk_tls_sched_worker_notif));
     pthread_mutex_unlock(&mutex_worker_exit);
 }
 
@@ -254,10 +249,17 @@ struct mk_sched_conn *mk_sched_add_connection(int remote_fd,
 
 static void mk_sched_thread_lists_init()
 {
-    /* client_session mk_list */
-    cs_list = mk_mem_malloc_z(sizeof(struct rb_root));
-    cs_incomplete = mk_mem_malloc(sizeof(struct mk_list));
-    mk_list_init(cs_incomplete);
+    struct rb_root *sched_cs;
+    struct mk_list *sched_cs_incomplete;
+
+    /* mk_tls_sched_cs */
+    sched_cs = mk_mem_malloc_z(sizeof(struct rb_root));
+    MK_TLS_SET(mk_tls_sched_cs, sched_cs);
+
+    /* mk_tls_sched_cs_incomplete */
+    sched_cs_incomplete = mk_mem_malloc(sizeof(struct mk_list));
+    mk_list_init(sched_cs_incomplete);
+    MK_TLS_SET(mk_tls_sched_cs_incomplete, sched_cs_incomplete);
 }
 
 /* Register thread information. The caller thread is the thread information's owner */
@@ -325,6 +327,7 @@ void *mk_sched_launch_worker_loop(void *thread_conf)
     unsigned long len;
     char *thread_name = 0;
     struct mk_sched_worker *sched = NULL;
+    struct mk_sched_notif *notif = NULL;
 
     /* Avoid SIGPIPE signals on this thread */
     mk_signal_thread_sigpipe_safe();
@@ -348,13 +351,14 @@ void *mk_sched_launch_worker_loop(void *thread_conf)
      * Create the notification instance and link it to the worker
      * thread-scope list.
      */
-    worker_sched_notif = mk_mem_malloc(sizeof(struct mk_sched_notif));
+    notif = mk_mem_malloc(sizeof(struct mk_sched_notif));
+    MK_TLS_SET(mk_tls_sched_worker_notif, notif);
 
     /* Register the scheduler channel to signal active workers */
     ret = mk_event_channel_create(sched->loop,
                                   &sched->signal_channel_r,
                                   &sched->signal_channel_w,
-                                  worker_sched_notif);
+                                  notif);
     if (ret < 0) {
         exit(EXIT_FAILURE);
     }
@@ -379,7 +383,7 @@ void *mk_sched_launch_worker_loop(void *thread_conf)
     mk_mem_free(thread_name);
 
     /* Export known scheduler node to context thread */
-    worker_sched_node = sched;
+    MK_TLS_SET(mk_tls_sched_worker_node, sched);
     mk_plugin_core_thread();
 
     if (mk_config->scheduler_mode == MK_SCHEDULER_REUSEPORT) {
@@ -388,9 +392,6 @@ void *mk_sched_launch_worker_loop(void *thread_conf)
             exit(EXIT_FAILURE);
         }
     }
-
-    __builtin_prefetch(sched);
-    __builtin_prefetch(&worker_sched_node);
 
     pthread_mutex_lock(&mutex_worker_init);
     sched->initialized = 1;
@@ -441,7 +442,7 @@ void mk_sched_init()
 
 void mk_sched_set_request_list(struct rb_root *list)
 {
-    cs_list = list;
+    MK_TLS_SET(mk_tls_sched_cs, list);
 }
 
 int mk_sched_remove_client(struct mk_sched_conn *conn,

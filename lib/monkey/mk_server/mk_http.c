@@ -1323,8 +1323,10 @@ void mk_http_session_remove(struct mk_http_session *cs)
 struct mk_http_session *mk_http_session_lookup(int socket)
 {
     struct mk_http_session *cs;
+    struct rb_root *cs_list;
     struct rb_node *node;
 
+    cs_list = MK_TLS_GET(mk_tls_sched_cs);
     node = cs_list->rb_node;
   	while (node) {
   		cs = container_of(node, struct mk_http_session, _rb_head);

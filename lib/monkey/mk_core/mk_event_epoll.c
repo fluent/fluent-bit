@@ -27,6 +27,11 @@
 #include <mk_core/mk_memory.h>
 #include <mk_core/mk_utils.h>
 
+/* For old systems */
+#ifndef EPOLLRDHUP
+#define EPOLLRDHUP  0x2000
+#endif
+
 static inline void *_mk_event_loop_create(int size)
 {
     int efd;
@@ -137,6 +142,7 @@ static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event
     return ret;
 }
 
+#ifdef HAVE_TIMERFD_CREATE
 /* Register a timeout file descriptor */
 static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
                                            int expire, void *data)
@@ -183,6 +189,82 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
 
     return timer_fd;
 }
+#else /* HAVE_TIMERFD_CREATE */
+
+struct fd_timer {
+    int fd;
+    int expiration;
+};
+
+/*
+ * Timeout worker, it writes a byte every certain amount of seconds, it finish
+ * once the other end of the pipe closes the fd[0].
+ */
+void _timeout_worker(void *arg)
+{
+    int ret;
+    uint64_t val = 1;
+    struct fd_timer *timer;
+
+    timer = (struct fd_timer *) arg;
+    while (1) {
+        /* sleep for a while */
+        sleep(timer->expiration);
+
+        /* send notification */
+        ret = write(timer->fd, &val, sizeof(uint64_t));
+        if (ret == -1) {
+            perror("write");
+            break;
+        }
+    }
+
+    close(timer->fd);
+    free(timer);
+}
+
+/*
+ * This routine creates a timer, since timerfd_create(2) is not available (as
+ * Monkey could be be compiled in a very old Linux system), we implement a similar
+ * function through a thread and a pipe(2).
+ */
+static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
+                                           int expire, void *data)
+{
+    int ret;
+    int fd[2];
+    struct mk_event *event;
+    struct fd_timer *timer;
+
+    timer = mk_mem_malloc(sizeof(struct fd_timer));
+    if (!timer) {
+        return -1;
+    }
+
+    ret = pipe(fd);
+    if (ret < 0) {
+        mk_mem_free(timer);
+        mk_libc_error("pipe");
+        return ret;
+    }
+
+    event = (struct mk_event *) data;
+    event->fd = fd[0];
+    event->type = MK_EVENT_NOTIFICATION;
+    event->mask = MK_EVENT_EMPTY;
+
+    _mk_event_add(ctx, fd[0], MK_EVENT_NOTIFICATION, MK_EVENT_READ, data);
+    event->mask = MK_EVENT_READ;
+
+    /* Compose the timer context, this is released inside the worker thread */
+    timer->fd = fd[1];
+    timer->expiration = expire;
+
+    /* Now the dirty workaround, create a thread */
+    mk_utils_worker_spawn(_timeout_worker, timer);
+    return fd[0];
+}
+#endif /* HAVE_TIMERFD_CREATE */
 
 static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
                                            int *r_fd, int *w_fd,

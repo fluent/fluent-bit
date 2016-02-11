@@ -22,6 +22,7 @@
 #include <monkey/mk_core.h>
 #include <monkey/mk_server.h>
 #include <monkey/mk_stream.h>
+#include <monkey/mk_tls.h>
 
 #ifndef MK_SCHEDULER_H
 #define MK_SCHEDULER_H
@@ -45,9 +46,6 @@
  */
 #define MK_SCHEDULER_FAIR_BALANCING   0
 #define MK_SCHEDULER_REUSEPORT        1
-
-extern __thread struct rb_root *cs_list;
-extern __thread struct mk_list *cs_incomplete;
 
 /*
  * Thread-scope structure/variable that holds the Scheduler context for the
@@ -183,9 +181,6 @@ struct mk_sched_notif {
     struct mk_event event;
 };
 
-extern __thread struct mk_sched_notif  *worker_sched_notif;
-extern __thread struct mk_sched_worker *worker_sched_node;
-
 /* global scheduler list */
 struct mk_sched_worker *sched_list;
 
@@ -206,17 +201,20 @@ struct mk_sched_worker *mk_sched_get_handler_owner(void);
 
 static inline struct rb_root *mk_sched_get_request_list()
 {
-    return cs_list;
+    return MK_TLS_GET(mk_tls_sched_cs);
 }
 
 static inline struct mk_sched_worker *mk_sched_get_thread_conf()
 {
-    return worker_sched_node;
+    return MK_TLS_GET(mk_tls_sched_worker_node);
 }
 
 static inline struct mk_event_loop *mk_sched_loop()
 {
-    return worker_sched_node->loop;
+    struct mk_sched_worker *w;
+
+    w = MK_TLS_GET(mk_tls_sched_worker_node);
+    return w->loop;
 }
 
 void mk_sched_update_thread_status(struct mk_sched_worker *sched,

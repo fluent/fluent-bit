@@ -39,8 +39,6 @@ static struct plugin_stagemap *plg_stagemap;
 struct plugin_network_io *plg_netiomap;
 struct plugin_api *api;
 
-__thread struct mk_list *worker_plugin_event_list;
-
 struct mk_plugin *mk_plugin_lookup(char *shortname)
 {
     struct mk_list *head;
@@ -686,7 +684,7 @@ int mk_plugin_header_add(struct mk_http_request *sr, char *row, int len)
 
 struct mk_sched_worker *mk_plugin_sched_get_thread_conf()
 {
-    return worker_sched_node;
+    return MK_TLS_GET(mk_tls_sched_worker_node);
 }
 
 struct mk_plugin *mk_plugin_cap(char cap, struct mk_server_config *config)
