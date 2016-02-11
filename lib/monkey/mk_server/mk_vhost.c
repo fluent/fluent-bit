@@ -20,6 +20,7 @@
 #include <monkey/monkey.h>
 #include <monkey/mk_core.h>
 #include <monkey/mk_vhost.h>
+#include <monkey/mk_vhost_tls.h>
 #include <monkey/mk_utils.h>
 #include <monkey/mk_http_status.h>
 #include <monkey/mk_info.h>
@@ -30,8 +31,6 @@
 
 /* Initialize Virtual Host FDT mutex */
 pthread_mutex_t mk_vhost_fdt_mutex = PTHREAD_MUTEX_INITIALIZER;
-
-static __thread struct mk_list *mk_vhost_fdt_key;
 
 static int str_to_regex(char *str, regex_t *reg)
 {
@@ -116,7 +115,7 @@ int mk_vhost_fdt_worker_init()
         mk_list_add(&fdt->_head, list);
     }
 
-    mk_vhost_fdt_key = list;
+    MK_TLS_SET(mk_tls_vhost_fdt, list);
     pthread_mutex_unlock(&mk_vhost_fdt_mutex);
 
     return 0;
@@ -124,6 +123,7 @@ int mk_vhost_fdt_worker_init()
 
 int mk_vhost_fdt_worker_exit()
 {
+    struct mk_list *list;
     struct mk_list *head;
     struct mk_list *tmp;
     struct vhost_fdt_host *fdt;
@@ -132,13 +132,14 @@ int mk_vhost_fdt_worker_exit()
         return -1;
     }
 
-    mk_list_foreach_safe(head, tmp, mk_vhost_fdt_key) {
+    list = MK_TLS_GET(mk_tls_vhost_fdt);
+    mk_list_foreach_safe(head, tmp, list) {
         fdt = mk_list_entry(head, struct vhost_fdt_host, _head);
         mk_list_del(&fdt->_head);
         mk_mem_free(fdt);
     }
 
-    mk_mem_free(mk_vhost_fdt_key);
+    mk_mem_free(list);
     return 0;
 }
 
@@ -147,12 +148,12 @@ static inline
 struct vhost_fdt_hash_table *mk_vhost_fdt_table_lookup(int id, struct host *host)
 {
     struct mk_list *head;
-    struct mk_list *vhost_list;
+    struct mk_list *list;
     struct vhost_fdt_host *fdt_host;
     struct vhost_fdt_hash_table *ht = NULL;
 
-    vhost_list = mk_vhost_fdt_key;
-    mk_list_foreach(head, vhost_list) {
+    list = MK_TLS_GET(mk_tls_vhost_fdt);
+    mk_list_foreach(head, list) {
         fdt_host = mk_list_entry(head, struct vhost_fdt_host, _head);
         if (fdt_host->host == host) {
             ht = &fdt_host->hash_table[id];

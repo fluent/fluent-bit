@@ -145,6 +145,11 @@
  #define MK_EXPORT
 #endif
 
+/* Some old libc do not declare O_CLOEXEC */
+#ifndef O_CLOEXEC
+#define O_CLOEXEC      02000000 /* set close_on_exec */
+#endif
+
 /* Wrapper (mk_utils) libc error helpers */
 #define mk_libc_error(c)    mk_utils_libc_error(c, __FILE__, __LINE__)
 #define mk_libc_warn(c)     mk_utils_libc_warn(c, __FILE__, __LINE__)

@@ -31,8 +31,6 @@
 #include <monkey/mk_plugin_net.h>
 #include <monkey/mk_core.h>
 
-extern __thread struct mk_list *worker_plugin_event_list;
-
 #define MK_PLUGIN_ERROR -1      /* plugin execution error */
 #define MK_PLUGIN_
 
