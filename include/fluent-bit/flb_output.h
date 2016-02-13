@@ -191,7 +191,8 @@ struct flb_thread *flb_output_thread(struct flb_engine_task *task,
 
 struct flb_output_instance *flb_output_new(struct flb_config *config,
                                            char *output, void *data);
-int flb_output_property(struct flb_output_instance *out, char *kv);
+
+int flb_output_set_property(struct flb_output_instance *out, char *k, char *v);
 
 void flb_output_pre_run(struct flb_config *config);
 void flb_output_exit(struct flb_config *config);

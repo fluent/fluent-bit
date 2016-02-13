@@ -150,7 +150,6 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         instance->host.name = NULL;
 
         if (plugin->flags & FLB_OUTPUT_NET) {
-            printf("[%s] plugin output: %s\n", plugin->name, output);
             ret = flb_net_host_set(plugin->name, &instance->host, output);
             if (ret != 0) {
                 free(instance);
@@ -177,34 +176,19 @@ static inline int prop_key_check(char *key, char *kv, int k_len)
 }
 
 /* Override a configuration property for the given input_instance plugin */
-int flb_output_property(struct flb_output_instance *out, char *kv)
+int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
 {
-    int sep;
     int len;
-    int k_len;
-    char *value;
 
-    /*
-     * This function receives a key=value string, the 'key' aims to be a
-     * known configuration property by the plugin, expected format:
-     *
-     *   key=value
-     *
-     * note: no quotes, no spaces
-     */
-
-    len = strlen(kv);
-    sep = mk_string_char_search(kv, '=', len);
-    if (sep == -1) {
-        return -1;
-    }
-    k_len = sep;
-    value = kv + sep + 1;
+    len = strlen(k);
 
     /* Check if the key is a known/shared property */
-    if (prop_key_check("tag", kv, k_len) == 0) {        /* instance.tag */
-        out->tag = strdup(value);
+    if (prop_key_check("tag", k, len) == 0) {
+        out->tag = strdup(v);
     }
+
+    /* FIXME: map plugin internal properties */
+    return 0;
 }
 
 /* Trigger the output plugins setup callbacks to prepare them. */
