@@ -114,10 +114,13 @@ if(WITH_TLS)
   include_directories(lib/mbedtls-2.2.1/include)
 endif()
 
-if(WITH_STATS)
-  add_definitions(-DHAVE_STATS)
+if(WITH_STATS OR WITH_OUT_ES)
   add_subdirectory(lib/cjson)
   include_directories(lib/cjson)
+endif()
+
+if(WITH_STATS)
+  add_definitions(-DHAVE_STATS)
 endif()
 
 if(WITH_VALGRIND)
