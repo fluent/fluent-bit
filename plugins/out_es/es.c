@@ -253,12 +253,12 @@ static char *es_format(void *data, size_t bytes, int *out_size,
     return buf;
 }
 
-int cb_es_init(struct flb_output_plugin *plugin,
+int cb_es_init(struct flb_output_instance *ins,
                struct flb_config *config,
                void *data)
 {
     int ret;
-    struct flb_uri *uri = plugin->net_uri;
+    struct flb_uri *uri = ins->host.uri;
     struct flb_uri_field *f_index = NULL;
     struct flb_uri_field *f_type = NULL;
     struct flb_out_es_config *ctx = NULL;
@@ -273,11 +273,11 @@ int cb_es_init(struct flb_output_plugin *plugin,
     }
 
     /* Set default network configuration */
-    if (!plugin->net_host) {
-        plugin->net_host = strdup("127.0.0.1");
+    if (!ins->host.name) {
+        ins->host.name = strdup("127.0.0.1");
     }
-    if (plugin->net_port == 0) {
-        plugin->net_port = 9200;
+    if (ins->host.port == 0) {
+        ins->host.port = 9200;
     }
 
     /* Allocate plugin context */
@@ -289,8 +289,8 @@ int cb_es_init(struct flb_output_plugin *plugin,
 
     /* Prepare an upstream handler */
     upstream = flb_io_upstream_new(config,
-                                   plugin->net_host,
-                                   plugin->net_port,
+                                   ins->host.name,
+                                   ins->host.port,
                                    FLB_IO_TCP,
                                    NULL);
     if (!upstream) {
@@ -301,7 +301,6 @@ int cb_es_init(struct flb_output_plugin *plugin,
 
     /* Set the context */
     ctx->u = upstream;
-
     if (f_index) {
         ctx->index = f_index->value;
     }
@@ -317,15 +316,11 @@ int cb_es_init(struct flb_output_plugin *plugin,
     }
 
     flb_info("[es] host=%s port=%i index=%s type=%s",
-             plugin->net_host, plugin->net_port,
+             ins->host.name, ins->host.port,
              ctx->index, ctx->type);
 
 
-    ret = flb_output_set_context("es", ctx, config);
-    if (ret == -1) {
-        flb_utils_error_c("Could not set configuration for es output plugin");
-    }
-
+    flb_output_set_context(ins, ctx);
     return 0;
 }
 
