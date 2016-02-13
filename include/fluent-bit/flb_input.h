@@ -157,7 +157,7 @@ struct flb_input_collector {
 int flb_input_register_all(struct flb_config *config);
 struct flb_input_instance *flb_input_new(struct flb_config *config,
                                          char *input, void *data);
-int flb_input_property(struct flb_input_instance *in, char *kv);
+int flb_input_set_property(struct flb_input_instance *in, char *k, char *v);
 
 int flb_input_check(struct flb_config *config);
 void flb_input_set_context(struct flb_input_instance *in, void *context);

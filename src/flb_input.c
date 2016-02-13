@@ -73,6 +73,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
     mk_list_foreach(head, &config->in_plugins) {
         plugin = mk_list_entry(head, struct flb_input_plugin, _head);
         if (!check_protocol(plugin->name, input)) {
+            plugin = NULL;
             continue;
         }
 
@@ -122,34 +123,19 @@ static inline int prop_key_check(char *key, char *kv, int k_len)
 }
 
 /* Override a configuration property for the given input_instance plugin */
-int flb_input_property(struct flb_input_instance *in, char *kv)
+int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
 {
-    int sep;
     int len;
-    int k_len;
-    char *value;
 
-    /*
-     * This function receives a key=value string, the 'key' aims to be a
-     * known configuration property by the plugin, expected format:
-     *
-     *   key=value
-     *
-     * note: no quotes, no spaces
-     */
-
-    len = strlen(kv);
-    sep = mk_string_char_search(kv, '=', len);
-    if (sep == -1) {
-        return -1;
-    }
-    k_len = sep;
-    value = kv + sep + 1;
+    len = strlen(k);
 
     /* Check if the key is a known/shared property */
-    if (prop_key_check("tag", kv, k_len) == 0) {        /* instance.tag */
-        in->tag = strdup(value);
+    if (prop_key_check("tag", k, len) == 0) {
+        in->tag = strdup(v);
     }
+
+    /* FIXME: map plugin internal properties */
+    return 0;
 }
 
 /* Initialize all inputs */
