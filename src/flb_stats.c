@@ -561,17 +561,13 @@ static int flb_stats_components_init(struct flb_stats *stats)
     /* Register input plugins */
     mk_list_foreach(head, &stats->config->inputs) {
         in = mk_list_entry(head, struct flb_input_plugin, _head);
-        if (in->active == FLB_TRUE) {
-            register_input_plugin(in, stats);
-        }
+        register_input_plugin(in, stats);
     }
 
     /* Register output plugins */
     mk_list_foreach(head, &stats->config->outputs) {
         out = mk_list_entry(head, struct flb_output_plugin, _head);
-        if (out->active == FLB_TRUE) {
-            register_output_plugin(out, stats);
-        }
+        register_output_plugin(out, stats);
     }
 
     return 0;
