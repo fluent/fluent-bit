@@ -25,4 +25,10 @@
 
 #define FLB_INLINE inline __attribute__((always_inline))
 
+#if __GNUC__ >= 4
+ #define FLB_EXPORT __attribute__ ((visibility ("default")))
+#else
+ #define FLB_EXPORT
+#endif
+
 #endif
