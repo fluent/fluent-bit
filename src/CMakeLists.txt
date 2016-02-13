@@ -1,3 +1,6 @@
+set(CMAKE_C_VISIBILITY_PRESET hidden)
+set(CMAKE_CXX_VISIBILITY_PRESET hidden)
+
 set(src
   ${src}
   flb_lib.c
