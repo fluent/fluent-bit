@@ -19,6 +19,7 @@
 
 #include <signal.h>
 #include <unistd.h>
+#include <stdarg.h>
 
 #include <fluent-bit/flb_lib.h>
 #include <fluent-bit/flb_engine.h>
@@ -28,83 +29,30 @@
 
 extern struct flb_input_plugin in_lib_plugin;
 
-static struct flb_lib_ctx *flb_lib_context_create()
+flb_ctx_t *flb_create()
 {
-    struct flb_lib_ctx *ctx;
+    int ret;
+    flb_ctx_t *ctx;
+    struct flb_config *config;
 
-    ctx = calloc(1, sizeof(struct flb_lib_ctx));
+    ctx = calloc(1, sizeof(flb_ctx_t));
     if (!ctx) {
         perror("malloc");
         return NULL;
     }
 
-    ctx->config = flb_config_init();
-    if (!ctx->config) {
+    config = flb_config_init();
+    if (!config) {
         free(ctx);
         return NULL;
     }
-
-    ctx->config->lib_ctx = ctx;
-    return ctx;
-}
-
-/* Release resources associated to a flb_lib context */
-static void flb_lib_context_destroy(struct flb_lib_ctx *ctx)
-{
-
-    if (!ctx) {
-        flb_error("[lib] invalid context");
-        return;
-    }
-
-    if (ctx->event_channel) {
-        mk_event_del(ctx->event_loop, ctx->event_channel);
-        free(ctx->event_channel);
-    }
-
-    /* Remove resources from the event loop */
-    mk_event_loop_destroy(ctx->event_loop);
-    free(ctx);
-}
-
-/*
- * The library initialization routine basically register the in_lib
- * plugin for the configuration context in question. This is a mandatory step
- * for callers who wants to ingest data directly into the engine.
- */
-struct flb_lib_ctx *flb_lib_init(char *input, char *output, void *data)
-{
-    int ret;
-    struct flb_lib_ctx *ctx;
-    struct flb_config *config;
-
-    ctx = flb_lib_context_create();
-    if (!ctx) {
-        return NULL;
-    }
-    config = ctx->config;
-
-    if (!input) {
-        ret = flb_input_set(config, "lib", data);
-    }
-    else {
-        ret = flb_input_set(config, input, data);
-    }
-
-    if (ret == -1) {
-        return NULL;
-    }
+    ctx->config = config;
+    config->lib_ctx = ctx;
 
     /* Initialize our pipe to send data to our worker */
     ret = pipe(config->ch_data);
     if (ret == -1) {
         perror("pipe");
-        return NULL;
-    }
-
-    /* Set the output interface */
-    ret = flb_output_set(config, output, data);
-    if (ret == -1) {
         return NULL;
     }
 
@@ -124,11 +72,91 @@ struct flb_lib_ctx *flb_lib_init(char *input, char *output, void *data)
                                   ctx->event_channel);
     if (ret != 0) {
         flb_error("[lib] could not create notification channels");
-        flb_lib_context_destroy(ctx);
+        flb_destroy(ctx);
         return NULL;
     }
 
     return ctx;
+}
+
+/* Release resources associated to the library context */
+void flb_destroy(flb_ctx_t *ctx)
+{
+    if (ctx->event_channel) {
+        mk_event_del(ctx->event_loop, ctx->event_channel);
+        free(ctx->event_channel);
+    }
+
+    /* Remove resources from the event loop */
+    mk_event_loop_destroy(ctx->event_loop);
+    free(ctx);
+}
+
+/* Defines a new input instance */
+flb_input_t *flb_input(flb_ctx_t *ctx, char *input, void *data)
+{
+    return (flb_input_t *) flb_input_new(ctx->config, input, data);
+}
+
+/* Defines a new output instance */
+flb_output_t *flb_output(flb_ctx_t *ctx, char *output, void *data)
+{
+    return (flb_output_t *) flb_output_new(ctx->config, output, data);
+}
+
+/* Set an input interface property */
+int flb_input_set(flb_input_t *input, ...)
+{
+    int ret;
+    char *key;
+    char *value;
+    va_list va;
+
+    va_start(va, input);
+
+    while ((key = va_arg(va, char *))) {
+        value = va_arg(va, char *);
+        if (!value) {
+            /* Wrong parameter */
+            return -1;
+        }
+        ret = flb_input_set_property(input, key, value);
+        if (ret != 0) {
+            va_end(va);
+            return -1;
+        }
+    }
+
+    va_end(va);
+    return 0;
+}
+
+/* Set an input interface property */
+int flb_output_set(flb_output_t *output, ...)
+{
+    int ret;
+    char *key;
+    char *value;
+    va_list va;
+
+    va_start(va, output);
+
+    while ((key = va_arg(va, char *))) {
+        value = va_arg(va, char *);
+        if (!value) {
+            /* Wrong parameter */
+            return -1;
+        }
+
+        ret = flb_output_set_property(output, key, value);
+        if (ret != 0) {
+            va_end(va);
+            return -1;
+        }
+    }
+
+    va_end(va);
+    return 0;
 }
 
 /* Load a configuration file that may be used by the input or output plugin */
@@ -167,7 +195,7 @@ static void flb_lib_worker(void *data)
 }
 
 /* Start the engine */
-int flb_lib_start(struct flb_lib_ctx *ctx)
+int flb_start(flb_ctx_t *ctx)
 {
     int fd;
     int bytes;
@@ -202,7 +230,7 @@ int flb_lib_start(struct flb_lib_ctx *ctx)
 }
 
 /* Stop the engine */
-int flb_lib_stop(struct flb_lib_ctx *ctx)
+int flb_stop(flb_ctx_t *ctx)
 {
     int ret;
     uint64_t val;
@@ -218,10 +246,4 @@ int flb_lib_stop(struct flb_lib_ctx *ctx)
 
     flb_debug("[lib] Fluent Bit engine stopped");
     return ret;
-}
-
-/* Release resources associated to the library context */
-void flb_lib_exit(struct flb_lib_ctx *ctx)
-{
-    flb_lib_context_destroy(ctx);
 }

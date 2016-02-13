@@ -20,6 +20,7 @@
 #ifndef FLB_LIB_H
 #define FLB_LIB_H
 
+#include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_config.h>
 
 /* Library mode context data */
@@ -29,11 +30,22 @@ struct flb_lib_ctx {
     struct flb_config *config;
 };
 
-struct flb_lib_ctx *flb_lib_init(char *input, char *output, void *data);
+/* For Fluent Bit library callers, we only export the following symbols */
+typedef struct flb_lib_ctx         flb_ctx_t;
+typedef struct flb_input_instance  flb_input_t;
+typedef struct flb_output_instance flb_output_t;
+
+FLB_EXPORT flb_ctx_t *flb_create();
+FLB_EXPORT void flb_destroy(flb_ctx_t *ctx);
+FLB_EXPORT flb_input_t *flb_input(flb_ctx_t *ctx, char *input, void *data);
+FLB_EXPORT flb_output_t *flb_output(flb_ctx_t *ctx, char *output, void *data);
+FLB_EXPORT int flb_input_set(flb_input_t *input, ...);
+FLB_EXPORT int flb_output_set(flb_output_t *output, ...);
+
+FLB_EXPORT int flb_start(flb_ctx_t *ctx);
+FLB_EXPORT int flb_stop(flb_ctx_t *ctx);
+
 int flb_lib_config_file(struct flb_lib_ctx *ctx, char *path);
 int flb_lib_push(struct flb_lib_ctx *ctx, void *data, size_t len);
-int flb_lib_start(struct flb_lib_ctx *ctx);
-int flb_lib_stop(struct flb_lib_ctx *ctx);
-void flb_lib_exit(struct flb_lib_ctx *ctx);
 
 #endif
