@@ -44,7 +44,6 @@ int flb_engine_flush(struct flb_config *config,
     char *buf;
     struct flb_input_instance *in;
     struct flb_input_plugin *p;
-    struct mk_list *tmp;
     struct mk_list *head;
     struct mk_list *r_head;
     struct flb_thread *th;
