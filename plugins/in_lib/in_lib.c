@@ -32,7 +32,8 @@
 #include "in_lib.h"
 
 /* Initialize plugin */
-int in_lib_init(struct flb_config *config, void *data)
+int in_lib_init(struct flb_input_instance *in,
+                struct flb_config *config, void *data)
 {
     int ret;
     struct flb_in_lib_config *ctx;
@@ -62,13 +63,10 @@ int in_lib_init(struct flb_config *config, void *data)
     }
 
     /* Set the context */
-    ret = flb_input_set_context("lib", ctx, config);
-    if (ret == -1) {
-        flb_utils_error_c("Could not set configuration for STDIN input plugin");
-    }
+    flb_input_set_context(in, ctx);
 
     /* Collect upon data available on the standard input */
-    ret = flb_input_set_collector_event("lib",
+    ret = flb_input_set_collector_event(in,
                                         in_lib_collect,
                                         ctx->fd,
                                         config);
