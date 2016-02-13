@@ -19,6 +19,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -140,8 +141,8 @@ static void delete_head_config(struct flb_in_head_config *head_config)
 }
 
 /* Initialize plugin */
-/* cb_init callback  */
-static int in_head_init(struct flb_config *config, void *data)
+static int in_head_init(struct flb_input_instance *in,
+                        struct flb_config *config, void *data)
 {
     struct flb_in_head_config *head_config = NULL;
     int ret = -1;
@@ -176,13 +177,9 @@ static int in_head_init(struct flb_config *config, void *data)
     flb_debug("%s read_len=%d buf_size=%d", __FUNCTION__,
               head_config->buf_len, sizeof(head_config->buf));
 
-    ret = flb_input_set_context("head", head_config, config);
-    if (ret < 0) {
-        flb_utils_error_c("could not set context for head plugin");
-        goto init_error;
-    }
+    flb_input_set_context(in, head_config);
 
-    ret = flb_input_set_collector_time("head",
+    ret = flb_input_set_collector_time(in,
                                        in_head_collect,
                                        head_config->interval_sec,
                                        head_config->interval_nsec, config);
