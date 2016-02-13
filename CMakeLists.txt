@@ -23,7 +23,7 @@ option(WITH_TLS           "Build with SSL/TLS support"  No)
 option(WITHOUT_BIN        "Do not build executable"     No)
 option(WITHOUT_EXAMPLES   "Do not build examples"       No)
 option(WITHOUT_SHARED_LIB "Do not build shared library" No)
-option(WITH_STATS         "Enable stats support"       Yes)
+option(WITH_STATS         "Enable stats support"        No)
 option(WITH_VALGRIND      "Enable Valgrind support"     No)
 
 # Build Plugins
