@@ -142,7 +142,8 @@ int in_serial_exit(void *in_context, struct flb_config *config)
 }
 
 /* Init serial input */
-int in_serial_init(struct flb_config *config, void *data)
+int in_serial_init(struct flb_input_instance *in,
+                   struct flb_config *config, void *data)
 {
     int fd;
     int ret;
@@ -164,15 +165,7 @@ int in_serial_init(struct flb_config *config, void *data)
     serial_config_read(ctx, config->file);
 
     /* set context */
-    ret = flb_input_set_context("serial", ctx, config);
-    if (ret == -1) {
-        flb_utils_error_c("Could not set configuration for"
-                "serial input plugin");
-    }
-
-    if (ret == -1) {
-        flb_utils_error_c("Could not set collector for serial input plugin");
-    }
+    flb_input_set_context(in, ctx);
 
     /* initialize MessagePack buffers */
     msgpack_sbuffer_init(&ctx->mp_sbuf);
@@ -198,13 +191,13 @@ int in_serial_init(struct flb_config *config, void *data)
 
 #if __linux__
     /* Set our collector based on a file descriptor event */
-    ret = flb_input_set_collector_event("serial",
+    ret = flb_input_set_collector_event(in,
                                         in_serial_collect,
                                         ctx->fd,
                                         config);
 #else
     /* Set our collector based on a timer event */
-    ret = flb_input_set_collector_time("serial",
+    ret = flb_input_set_collector_time(in,
                                        in_serial_collect,
                                        IN_SERIAL_COLLECT_SEC,
                                        IN_SERIAL_COLLECT_NSEC,
