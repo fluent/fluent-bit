@@ -279,7 +279,8 @@ int in_kmsg_collect(struct flb_config *config, void *in_context)
 }
 
 /* Init kmsg input */
-int in_kmsg_init(struct flb_config *config, void *data)
+int in_kmsg_init(struct flb_input_instance *in,
+                 struct flb_config *config, void *data)
 {
     int fd;
     int ret;
@@ -307,13 +308,10 @@ int in_kmsg_init(struct flb_config *config, void *data)
     }
 
     /* set context */
-    ret = flb_input_set_context("kmsg", ctx, config);
-    if (ret == -1) {
-        flb_utils_error_c("Could not set configuration for kmsg input plugin");
-    }
+    flb_input_set_context(in, ctx);
 
     /* Set our collector based on a file descriptor event */
-    ret = flb_input_set_collector_event("kmsg",
+    ret = flb_input_set_collector_event(in,
                                         in_kmsg_collect,
                                         ctx->fd,
                                         config);
