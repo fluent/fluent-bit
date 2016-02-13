@@ -122,7 +122,8 @@ static int mem_calc(uint64_t *total, uint64_t *available)
     return 0;
 }
 
-int in_mem_init(struct flb_config *config, void *data)
+int in_mem_init(struct flb_input_instance *in,
+                struct flb_config *config, void *data)
 {
     int ret;
     struct flb_in_mem_config *ctx;
@@ -140,13 +141,10 @@ int in_mem_init(struct flb_config *config, void *data)
     msgpack_packer_init(&ctx->pckr, &ctx->sbuf, msgpack_sbuffer_write);
 
     /* Set the context */
-    ret = flb_input_set_context("mem", ctx, config);
-    if (ret == -1) {
-        flb_utils_error_c("could not set context for mem plugin");
-    }
+    flb_input_set_context(in, ctx);
 
     /* Set the collector */
-    ret = flb_input_set_collector_time("mem",
+    ret = flb_input_set_collector_time(in,
                                        in_mem_collect,
                                        IN_MEM_COLLECT_SEC,
                                        IN_MEM_COLLECT_NSEC,
