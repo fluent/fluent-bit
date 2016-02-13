@@ -136,10 +136,9 @@ static char *td_format(void *data, size_t bytes, int *out_size)
     return buf;
 }
 
-int cb_td_init(struct flb_output_plugin *plugin, struct flb_config *config,
+int cb_td_init(struct flb_output_instance *ins, struct flb_config *config,
                void *data)
 {
-    int ret;
     struct flb_out_td_config *ctx;
     struct flb_io_upstream *upstream;
     (void) data;
@@ -153,25 +152,24 @@ int cb_td_init(struct flb_output_plugin *plugin, struct flb_config *config,
         return -1;
     }
 
-    /* Default server */
-    plugin->net_host = strdup("api.treasuredata.com");
-    plugin->net_port = 443;
+    if (!ins->host.name) {
+        ins->host.name = strdup("api.treasuredata.com");
+    }
+    if (ins->host.port == 0) {
+        ins->host.port = 443;
+    }
 
     upstream = flb_io_upstream_new(config,
-                                   plugin->net_host,
-                                   plugin->net_port,
-                                   FLB_IO_TLS, (void *) &plugin->tls);
+                                   ins->host.name,
+                                   ins->host.port,
+                                   FLB_IO_TLS, (void *) &ins->tls);
     if (!upstream) {
         free(ctx);
         return -1;
     }
     ctx->u = upstream;
 
-    ret = flb_output_set_context("td", ctx, config);
-    if (ret == -1) {
-        flb_utils_error_c("Could not set configuration for td output plugin");
-    }
-
+    flb_output_set_context(ins, ctx);
     return 0;
 }
 
