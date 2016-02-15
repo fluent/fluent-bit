@@ -19,6 +19,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_config.h>
