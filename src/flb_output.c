@@ -88,6 +88,10 @@ void flb_output_exit(struct flb_config *config)
             free(ins->host.name);
         }
 
+        if (ins->tag) {
+            free(ins->tag);
+        }
+
         mk_list_del(&ins->_head);
         free(ins);
     }
