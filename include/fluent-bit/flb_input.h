@@ -88,6 +88,7 @@ struct flb_input_plugin {
  * and the variable one that is generated when the plugin is invoked.
  */
 struct flb_input_instance {
+    int channel[2];                      /* pipe(2) channel              */
     char name[16];                       /* numbered name (cpu -> cpu.0) */
     void *context;                       /* plugin configuration context */
     struct flb_input_plugin *p;          /* original plugin              */
@@ -161,6 +162,8 @@ int flb_input_set_property(struct flb_input_instance *in, char *k, char *v);
 
 int flb_input_check(struct flb_config *config);
 void flb_input_set_context(struct flb_input_instance *in, void *context);
+int flb_input_channel_init(struct flb_input_instance *in);
+
 int flb_input_set_collector_time(struct flb_input_instance *in,
                                  int (*cb_collect) (struct flb_config *, void *),
                                  time_t seconds,

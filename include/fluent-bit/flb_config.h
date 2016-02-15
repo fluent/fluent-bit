@@ -78,9 +78,6 @@ struct flb_config {
 
     /* Kernel info */
     struct flb_kernel *kernel;
-
-    /* Lib mode data */
-    struct flb_lib_ctx *lib_ctx;
 };
 
 int __flb_config_verbose;

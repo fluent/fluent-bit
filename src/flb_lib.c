@@ -47,7 +47,6 @@ flb_ctx_t *flb_create()
         return NULL;
     }
     ctx->config = config;
-    config->lib_ctx = ctx;
 
     /* Initialize our pipe to send data to our worker */
     ret = pipe(config->ch_data);
@@ -177,11 +176,12 @@ int flb_lib_config_file(struct flb_lib_ctx *ctx, char *path)
 }
 
 /* Push some data into the Engine */
-int flb_lib_push(struct flb_lib_ctx *ctx, void *data, size_t len)
+int flb_lib_push(flb_input_t *input, void *data, size_t len)
 {
     int ret;
 
-    ret = write(ctx->config->ch_data[1], data, len);
+    ret = write(input->channel[1], data, len);
+    printf("wrote: %lu/%lu\n", ret, len);
     if (ret == -1) {
         perror("write");
     }
