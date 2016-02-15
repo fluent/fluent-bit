@@ -210,7 +210,8 @@ fail:
 }
 
 /* Init xbee input */
-int in_xbee_init(struct flb_config *config, void *data)
+int in_xbee_init(struct flb_input_instance *in,
+                 struct flb_config *config, void *data)
 {
     int ret;
     struct stat dev_st;
@@ -332,10 +333,7 @@ int in_xbee_init(struct flb_config *config, void *data)
     }
 
     /* Set the context */
-    ret = flb_input_set_context("xbee", ctx, config);
-    if (ret == -1) {
-        flb_utils_error_c("Could not set configuration for xbee input plugin");
-    }
+    flb_input_set_context(in, ctx);
 
     return 0;
 }
