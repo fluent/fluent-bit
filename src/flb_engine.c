@@ -93,7 +93,7 @@ int flb_engine_flush(struct flb_config *config,
                 flb_thread_resume(th);
             }
 
-            if (task->delete == FLB_TRUE) {
+            if (task->deleted == FLB_TRUE) {
                 flb_engine_task_destroy(task);
             }
 
@@ -352,7 +352,7 @@ int flb_engine_start(struct flb_config *config)
                 flb_debug("[engine] resuming thread: %i", u->event.fd);
                 flb_thread_resume(th);
 
-                if (task->delete == FLB_TRUE) {
+                if (task->deleted == FLB_TRUE) {
                     flb_engine_task_destroy(task);
                 }
             }

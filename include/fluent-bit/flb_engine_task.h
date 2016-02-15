@@ -27,7 +27,7 @@ struct flb_thread;
 
 /* A task takes a buffer and sync input and output instances to handle it */
 struct flb_engine_task {
-    int delete;                            /* should be deleted ?       */
+    int deleted;                           /* should be deleted ?       */
     int users;                             /* number of users (threads) */
     char *buf;                             /* buffer                    */
     size_t size;                           /* buffer data size          */
@@ -44,18 +44,18 @@ struct flb_engine_task *flb_engine_task_create(char *buf,
 {
     struct flb_engine_task *task;
 
-    task = calloc(1, sizeof(struct flb_engine_task));
+    task = (struct flb_engine_task *) calloc(1, sizeof(struct flb_engine_task));
     if (!task) {
         perror("malloc");
         return NULL;
     }
 
     /* Keep track of origins */
-    task->delete = FLB_FALSE;
-    task->users  = 0;
-    task->buf    = buf;
-    task->size   = size;
-    task->i_ins  = i_ins;
+    task->deleted = FLB_FALSE;
+    task->users   = 0;
+    task->buf     = buf;
+    task->size    = size;
+    task->i_ins   = i_ins;
     mk_list_init(&task->threads);
     mk_list_add(&task->_head, &i_ins->tasks);
 
@@ -68,7 +68,7 @@ static inline int flb_engine_task_remove(struct flb_engine_task *task)
     /* Handle task users */
     task->users--;
     if (task->users == 0) {
-        task->delete = FLB_TRUE;
+        task->deleted = FLB_TRUE;
     }
 
     return 1;
@@ -90,13 +90,12 @@ static inline void flb_engine_task_add(struct mk_list *head,
      * we must check this usual condition that could happen when one input
      * instance must flush the data to many destinations.
      */
-    if (task->delete == FLB_TRUE) {
-        task->delete = FLB_FALSE;
+    if (task->deleted == FLB_TRUE) {
+        task->deleted = FLB_FALSE;
     }
 
     mk_list_add(head, &task->threads);
     task->users++;
 }
-
 
 #endif
