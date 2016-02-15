@@ -56,7 +56,66 @@ struct flb_config *flb_config_init()
 
 void flb_config_exit(struct flb_config *config)
 {
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_input_collector *collector;
 
+    if (config->kernel) {
+        free(config->kernel->s_version.data);
+        free(config->kernel);
+    }
+
+        /* release resources */
+    if (config->ch_event.fd) {
+        close(config->ch_event.fd);
+    }
+
+    /* Pipe */
+    if (config->ch_data[0]) {
+        close(config->ch_data[0]);
+        close(config->ch_data[1]);
+    }
+
+    /* Channel manager */
+    if (config->ch_manager[0] > 0) {
+        close(config->ch_manager[0]);
+        if (config->ch_manager[0] != config->ch_manager[1]) {
+            close(config->ch_manager[1]);
+        }
+    }
+
+    /* Channel notifications */
+    if (config->ch_notif[0] > 0) {
+        close(config->ch_notif[0]);
+        if (config->ch_notif[0] != config->ch_notif[1]) {
+            close(config->ch_notif[1]);
+        }
+    }
+
+    /* Collectors */
+    mk_list_foreach_safe(head, tmp, &config->collectors) {
+        collector = mk_list_entry(head, struct flb_input_collector, _head);
+        mk_event_del(config->evl, &collector->event);
+
+        if (collector->type == FLB_COLLECT_TIME) {
+            close(collector->fd_timer);
+        }
+
+        mk_list_del(&collector->_head);
+        free(collector);
+    }
+
+    /* Event flush */
+    mk_event_del(config->evl, &config->event_flush);
+    close(config->flush_fd);
+
+#ifdef HAVE_STATS
+    flb_stats_exit(config);
+#endif
+
+    mk_event_loop_destroy(config->evl);
+
+    free(config);
 }
 
 void flb_config_verbose(int status)
