@@ -33,11 +33,11 @@ int main()
     /* Initialize library */
     ctx = flb_create();
 
-    input = flb_input(ctx, "lib", NULL);
-    flb_input_set(input, "test");
+    input = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(input, (char *) "test");
 
-    output = flb_output(ctx, "stdout", NULL);
-    flb_output_set(output, "test");
+    output = flb_output(ctx, (char *) "stdout", NULL);
+    flb_output_set(output, (char *) "test");
 
     /* Start the background worker */
     flb_start(ctx);

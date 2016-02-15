@@ -181,7 +181,6 @@ int flb_lib_push(flb_input_t *input, void *data, size_t len)
     int ret;
 
     ret = write(input->channel[1], data, len);
-    printf("wrote: %lu/%lu\n", ret, len);
     if (ret == -1) {
         perror("write");
     }
