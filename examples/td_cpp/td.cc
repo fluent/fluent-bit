@@ -27,7 +27,9 @@ int main(int argc, char **argv)
     int ret;
     int time_field;
     char tmp[256];
-    struct flb_lib_ctx *ctx;
+    flb_ctx_t *ctx;
+    flb_input_t *input;
+    flb_output_t *output;
 
     if (argc < 2) {
         fprintf(stderr, "Usage: td /path/to/configuration.file\n");
@@ -35,10 +37,16 @@ int main(int argc, char **argv)
     }
 
     /* Initialize library */
-    ctx = flb_lib_init(NULL, (char *) "td", NULL);
+    ctx = flb_create();
     if (!ctx) {
         exit(EXIT_FAILURE);
     }
+
+    input = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(input, "tag", "test");
+
+    output = flb_output(ctx, (char *) "td", NULL);
+    flb_output_set(output, "tag", "test");
 
     /* Load a configuration file (required by TD output plugin) */
     ret = flb_lib_config_file(ctx, argv[1]);
@@ -47,18 +55,19 @@ int main(int argc, char **argv)
     }
 
     /* Start the background worker */
-    flb_lib_start(ctx);
+    flb_start(ctx);
 
     /* Push some data */
     time_field = time(NULL) - 100;
     for (i = 0; i < 100; i++) {
         n = snprintf(tmp, sizeof(tmp) - 1,
-                     "{\"time\": %i, \"key\": \"val %i\"}", time_field, i);
-        flb_lib_push(ctx, tmp, n);
+                     "[%i, {\"key\": \"val %i\"}]",
+                     time_field, i);
+        flb_lib_push(input, tmp, n);
         time_field++;
     }
 
-    flb_lib_stop(ctx);
+    flb_stop(ctx);
 
     return 0;
 }
