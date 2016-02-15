@@ -196,6 +196,14 @@ int flb_pack_state_init(struct flb_pack_state *s)
     return 0;
 }
 
+void flb_pack_state_reset(struct flb_pack_state *s)
+{
+    free(s->tokens);
+    s->tokens_size  = 0;
+    s->tokens_count = 0;
+}
+
+
 /*
  * It parse a JSON string and convert it to MessagePack format. The main
  * difference of this function and the previous flb_pack_json() is that it
@@ -216,7 +224,6 @@ int flb_pack_json_state(char *js, size_t len,
     }
 
     buf = tokens_to_msgpack(js, state->tokens, state->tokens_count, &out);
-    free(state->tokens);
     if (!buf) {
         return -1;
     }

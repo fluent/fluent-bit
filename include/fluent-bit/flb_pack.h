@@ -31,6 +31,8 @@ struct flb_pack_state {
 
 int flb_pack_json(char *js, size_t len, char **buffer, int *size);
 int flb_pack_state_init(struct flb_pack_state *s);
+void flb_pack_state_reset(struct flb_pack_state *s);
+
 int flb_pack_json_state(char *js, size_t len,
                         char **buffer, int *size,
                         struct flb_pack_state *state);
