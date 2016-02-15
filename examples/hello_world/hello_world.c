@@ -25,32 +25,39 @@ int main()
     int i;
     int n;
     char tmp[256];
-    struct flb_lib_ctx *ctx;
+    flb_ctx_t *ctx;
+    flb_input_t *input;
+    flb_output_t *output;
 
     /* Initialize library */
-    ctx = flb_lib_init(NULL, "stdout", NULL);
+    ctx = flb_create();
     if (!ctx) {
         exit(EXIT_FAILURE);
     }
 
-    /* Verbose mode */
-    /*
-    flb_config_verbose(FLB_TRUE);
-    */
+    __flb_config_verbose = FLB_TRUE;
+
+    input = flb_input(ctx, "lib", NULL);
+    flb_input_set(input, "tag", "test");
+
+    output = flb_output(ctx, "stdout", NULL);
+    flb_output_set(output, "tag", "test");
 
     /* Start the background worker */
-    flb_lib_start(ctx);
+    flb_start(ctx);
 
     /* Push some data */
     for (i = 0; i < 100; i++) {
-        n = snprintf(tmp, sizeof(tmp) - 1, "{\"key\": \"val %i\"}", i);
-        flb_lib_push(ctx, tmp, n);
+        n = snprintf(tmp, sizeof(tmp) - 1,
+                     "[%lu, {\"key\": \"val %i\"}]",
+                     time(NULL), i);
+        flb_lib_push(input, tmp, n);
     }
 
-    flb_lib_stop(ctx);
+    flb_stop(ctx);
 
     /* Release Resources */
-    flb_lib_exit(ctx);
+    flb_destroy(ctx);
 
     return 0;
 }
