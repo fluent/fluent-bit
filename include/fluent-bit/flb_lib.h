@@ -42,10 +42,13 @@ FLB_EXPORT flb_output_t *flb_output(flb_ctx_t *ctx, char *output, void *data);
 FLB_EXPORT int flb_input_set(flb_input_t *input, ...);
 FLB_EXPORT int flb_output_set(flb_output_t *output, ...);
 
+/* start stop the engine */
 FLB_EXPORT int flb_start(flb_ctx_t *ctx);
 FLB_EXPORT int flb_stop(flb_ctx_t *ctx);
 
+/* data ingestion for "lib" input instance */
+FLB_EXPORT int flb_lib_push(flb_input_t *input, void *data, size_t len);
+
 int flb_lib_config_file(struct flb_lib_ctx *ctx, char *path);
-int flb_lib_push(struct flb_lib_ctx *ctx, void *data, size_t len);
 
 #endif
