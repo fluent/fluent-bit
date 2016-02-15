@@ -56,7 +56,10 @@ int in_lib_init(struct flb_input_instance *in,
     ctx->msgp_size = LIB_BUF_CHUNK;
     ctx->msgp_data = malloc(LIB_BUF_CHUNK);
     ctx->msgp_len = 0;
-    ctx->fd = config->ch_data[0];
+
+    /* Init communication channel */
+    flb_input_channel_init(in);
+    ctx->fd = in->channel[0];
 
     if (!ctx->msgp_data) {
         flb_utils_error_c("Could not allocate initial msgp memory buffer");
@@ -138,13 +141,15 @@ int in_lib_collect(struct flb_config *config, void *in_context)
     /* initially we should support json input */
     ret = flb_pack_json_state(ctx->buf_data, ctx->buf_len,
                               &pack, &out_size, &ctx->state);
-    if (ret == FLB_ERR_JSON_INVAL) {
-        flb_debug("lib data invalid");
-        return -1;
-    }
-    else if (ret == FLB_ERR_JSON_PART) {
+    if (ret == FLB_ERR_JSON_PART) {
         flb_debug("lib data incomplete, waiting for more data...");
         return 0;
+    }
+    else if (ret == FLB_ERR_JSON_INVAL) {
+        flb_debug("lib data invalid");
+        flb_pack_state_reset(&ctx->state);
+        flb_pack_state_init(&ctx->state);
+        return -1;
     }
     ctx->buf_len = 0;
 
@@ -156,6 +161,8 @@ int in_lib_collect(struct flb_config *config, void *in_context)
         if (!ptr) {
             perror("realloc");
             free(pack);
+            flb_pack_state_reset(&ctx->state);
+            flb_pack_state_init(&ctx->state);
             return -1;
         }
         ctx->msgp_data = ptr;
@@ -165,6 +172,9 @@ int in_lib_collect(struct flb_config *config, void *in_context)
     memcpy(ctx->msgp_data + ctx->msgp_len, pack, out_size);
     ctx->msgp_len += out_size;
     free(pack);
+
+    flb_pack_state_reset(&ctx->state);
+    flb_pack_state_init(&ctx->state);
 
     return 0;
 }

@@ -29,7 +29,7 @@
 
 /* Library input configuration & context */
 struct flb_in_lib_config {
-    int fd;                     /* channel file descriptor */
+    int fd;                     /* instance input channel  */
     int buf_size;               /* buffer size / capacity  */
     int buf_len;                /* read buffer length      */
     char *buf_data;             /* the real buffer         */
