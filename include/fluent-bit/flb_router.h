@@ -28,5 +28,6 @@ struct flb_router_path {
 };
 
 int flb_router_io_set(struct flb_config *config);
+void flb_router_exit(struct flb_config *config);
 
 #endif

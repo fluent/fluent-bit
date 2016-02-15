@@ -72,3 +72,25 @@ int flb_router_io_set(struct flb_config *config)
 
     return 0;
 }
+
+void flb_router_exit(struct flb_config *config)
+{
+    struct mk_list *tmp;
+    struct mk_list *r_tmp;
+    struct mk_list *head;
+    struct mk_list *r_head;
+    struct flb_input_instance *in;
+    struct flb_router_path *r;
+
+    /* Iterate input plugins */
+    mk_list_foreach_safe(head, tmp, &config->inputs) {
+        in = mk_list_entry(head, struct flb_input_instance, _head);
+
+        /* Iterate instance routes */
+        mk_list_foreach_safe(r_head, r_tmp, &in->routes) {
+            r = mk_list_entry(r_head, struct flb_router_path, _head);
+            mk_list_del(&r->_head);
+            free(r);
+        }
+    }
+}
