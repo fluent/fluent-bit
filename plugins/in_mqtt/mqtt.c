@@ -26,7 +26,8 @@
 #include "mqtt_config.h"
 
 /* Initialize plugin */
-int in_mqtt_init(struct flb_config *config, void *data)
+int in_mqtt_init(struct flb_input_instance *in,
+                 struct flb_config *config, void *data)
 {
     int ret;
     struct flb_in_mqtt_config *ctx;
@@ -40,10 +41,7 @@ int in_mqtt_init(struct flb_config *config, void *data)
     ctx->msgp_len = 0;
 
     /* Set the context */
-    ret = flb_input_set_context("mqtt", ctx, config);
-    if (ret == -1) {
-        flb_utils_error_c("Could not set configuration for MQTT input plugin");
-    }
+    flb_input_set_context(in, ctx);
 
     /* Create TCP server */
     ctx->server_fd = flb_net_server(ctx->tcp_port, ctx->listen);
@@ -58,7 +56,7 @@ int in_mqtt_init(struct flb_config *config, void *data)
     ctx->evl = config->evl;
 
     /* Collect upon data available on the standard input */
-    ret = flb_input_set_collector_event("mqtt",
+    ret = flb_input_set_collector_event(in,
                                         in_mqtt_collect,
                                         ctx->server_fd,
                                         config);
