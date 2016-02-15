@@ -7,15 +7,26 @@
 TEST(Outputs, json_es) {
     int ret;
     int size = sizeof(JSON_ES) - 1;
-    struct flb_lib_ctx *ctx;
+    flb_ctx_t *ctx;
+    flb_input_t *input;
+    flb_output_t *output;
 
-    ctx = flb_lib_init(NULL, (char *) "es", NULL);
+    ctx = flb_create();
     EXPECT_TRUE(ctx != NULL);
 
-    ret = flb_lib_start(ctx);
+    input = flb_input(ctx, (char *) "lib", NULL);
+    EXPECT_TRUE(input != NULL);
+    flb_input_set(input, "tag", "test");
+
+    output = flb_output(ctx, (char *) "es", NULL);
+    EXPECT_TRUE(output != NULL);
+    flb_output_set(output, "tag", "test");
+
+    ret = flb_start(ctx);
     EXPECT_EQ(ret, 0);
 
-    flb_lib_push(ctx, (char *) JSON_ES, size);
-    flb_lib_stop(ctx);
-    flb_lib_exit(ctx);
+    flb_lib_push(input, (char *) JSON_ES, size);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
 }
