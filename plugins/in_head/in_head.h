@@ -32,7 +32,7 @@
 struct flb_in_head_config {
     int       idx;
     size_t    buf_size; /* size of buf */
-    size_t    buf_len;  /* read size */
+    ssize_t   buf_len;  /* read size */
     char     *buf;      /* read buf */
 
     char     *filepath; /* to read */
