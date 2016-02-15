@@ -18,16 +18,18 @@
  */
 
 #include <stdio.h>
+#include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 
 #include <fluent-bit/flb_output.h>
 
-int cb_null_init(struct flb_output_plugin *plugin, struct flb_config *config,
+int cb_null_init(struct flb_output_instance *ins,
+                 struct flb_config *config,
                  void *data)
 {
-    (void) plugin;
+    (void) ins;
     (void) config;
     (void) data;
 
