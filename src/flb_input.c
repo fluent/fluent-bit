@@ -19,6 +19,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_input.h>
@@ -88,6 +89,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         snprintf(instance->name, sizeof(instance->name) - 1,
                  "%s.%i", plugin->name, instance_id(plugin, config));
         instance->p = plugin;
+        instance->tag = NULL;
         instance->context = NULL;
         instance->data = data;
         instance->host.name = NULL;
@@ -199,6 +201,10 @@ void flb_input_exit_all(struct flb_config *config)
             p->cb_exit(in->context, config);
         }
 
+        if (in->tag) {
+            free(in->tag);
+        }
+
         mk_list_del(&in->_head);
         free(in);
     }
@@ -254,6 +260,11 @@ int flb_input_check(struct flb_config *config)
 void flb_input_set_context(struct flb_input_instance *in, void *context)
 {
     in->context = context;
+}
+
+int flb_input_channel_init(struct flb_input_instance *in)
+{
+    return pipe(in->channel);
 }
 
 int flb_input_set_collector_time(struct flb_input_instance *in,
