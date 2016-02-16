@@ -85,6 +85,7 @@ int in_lib_exit(void *data, struct flb_config *config)
 {
     (void) config;
     struct flb_in_lib_config *ctx = data;
+    struct flb_pack_state *s;
 
     if (ctx->buf_data) {
         free(ctx->buf_data);
@@ -92,6 +93,11 @@ int in_lib_exit(void *data, struct flb_config *config)
 
     if (ctx->msgp_data) {
         free(ctx->msgp_data);
+    }
+
+    s = &ctx->state;
+    if (s->tokens) {
+        free(s->tokens);
     }
 
     free(ctx);
