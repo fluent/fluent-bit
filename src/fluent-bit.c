@@ -56,6 +56,7 @@ static void flb_help(int rc, struct flb_config *config)
     printf("  -i, --input=INPUT\tset an input\n");
     printf("  -o, --output=OUTPUT\tset an output\n");
     printf("  -p, --prop=\"A=B\"\tset plugin configuration property\n");
+    printf("  -t, --tag=TAG\t\tset plugin tag, shortcut for '-p tag=abc'\n");
     printf("  -V, --verbose\t\tenable verbose mode\n");
     printf("  -v, --version\t\tshow version number\n");
     printf("  -h, --help\t\tprint this help\n\n");
@@ -200,6 +201,7 @@ int main(int argc, char **argv)
         { "input",   required_argument, NULL, 'i' },
         { "output",  required_argument, NULL, 'o' },
         { "prop",    required_argument, NULL, 'p' },
+        { "tag",     required_argument, NULL, 't' },
         { "version", no_argument      , NULL, 'v' },
         { "verbose", no_argument      , NULL, 'V' },
         { "help",    no_argument      , NULL, 'h' },
@@ -216,7 +218,7 @@ int main(int argc, char **argv)
     }
 
     /* Parse the command line options */
-    while ((opt = getopt_long(argc, argv, "c:df:i:o:p:vVh",
+    while ((opt = getopt_long(argc, argv, "c:df:i:o:p:t:vVh",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
@@ -251,6 +253,15 @@ int main(int argc, char **argv)
                 output_set_property(out, optarg);
             }
             break;
+        case 't':
+            if (last_plugin == PLUGIN_INPUT) {
+                flb_input_set_property(in, "tag", optarg);
+            }
+            else if (last_plugin == PLUGIN_OUTPUT) {
+                flb_output_set_property(out, "tag", optarg);
+            }
+            break;
+
         case 'h':
             flb_help(EXIT_SUCCESS, config);
             break;
