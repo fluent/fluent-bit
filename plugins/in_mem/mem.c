@@ -218,11 +218,26 @@ void *in_mem_flush(void *in_context, int *size)
     return buf;
 }
 
+int in_mem_exit(void *data, struct flb_config *config)
+{
+    (void) *config;
+    struct flb_in_mem_config *ctx = data;
+
+    /* Remove msgpack buffer */
+    msgpack_sbuffer_destroy(&ctx->sbuf);
+
+    /* done */
+    free(ctx);
+
+    return 0;
+}
+
 struct flb_input_plugin in_mem_plugin = {
     .name         = "mem",
     .description  = "Memory Usage",
     .cb_init      = in_mem_init,
     .cb_pre_run   = NULL,
     .cb_collect   = in_mem_collect,
-    .cb_flush_buf = in_mem_flush
+    .cb_flush_buf = in_mem_flush,
+    .cb_exit      = in_mem_exit
 };
