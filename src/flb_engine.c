@@ -37,6 +37,38 @@
 #include <fluent-bit/flb_stats.h>
 #endif
 
+int flb_engine_destroy_threads(struct mk_list *threads)
+{
+    int c = 0;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_thread *th;
+
+    mk_list_foreach_safe(head, tmp, threads) {
+        th = mk_list_entry(head, struct flb_thread, _head);
+        flb_thread_destroy(th);
+        c++;
+    }
+
+    return c;
+}
+
+int flb_engine_destroy_tasks(struct mk_list *tasks)
+{
+    int c = 0;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_engine_task *task;
+
+    mk_list_foreach_safe(head, tmp, tasks) {
+        task = mk_list_entry(head, struct flb_engine_task, _head);
+        flb_engine_task_destroy(task);
+        c++;
+    }
+
+    return c;
+}
+
 int flb_engine_flush(struct flb_config *config,
                      struct flb_input_plugin *in_force)
 {
@@ -94,6 +126,7 @@ int flb_engine_flush(struct flb_config *config,
             }
 
             if (task->deleted == FLB_TRUE) {
+                flb_engine_destroy_threads(&task->threads);
                 flb_engine_task_destroy(task);
             }
 
@@ -354,6 +387,7 @@ int flb_engine_start(struct flb_config *config)
                 flb_thread_resume(th);
 
                 if (task->deleted == FLB_TRUE) {
+                    flb_engine_destroy_threads(&task->threads);
                     flb_engine_task_destroy(task);
                 }
             }

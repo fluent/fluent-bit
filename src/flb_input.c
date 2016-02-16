@@ -193,6 +193,7 @@ void flb_input_exit_all(struct flb_config *config)
     struct flb_input_instance *in;
     struct flb_input_plugin *p;
 
+    /* Iterate instances */
     mk_list_foreach_safe(head, tmp, &config->inputs) {
         in = mk_list_entry(head, struct flb_input_instance, _head);
         p = in->p;
@@ -205,6 +206,10 @@ void flb_input_exit_all(struct flb_config *config)
             free(in->tag);
         }
 
+        /* Let the engine remove any pending task */
+        flb_engine_destroy_tasks(&in->tasks);
+
+        /* Unlink and release */
         mk_list_del(&in->_head);
         free(in);
     }
