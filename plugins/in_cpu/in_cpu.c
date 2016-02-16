@@ -359,6 +359,26 @@ void *in_cpu_flush(void *in_context, int *size)
     return buf;
 }
 
+int in_cpu_exit(void *data, struct flb_config *config)
+{
+    (void) *config;
+    struct flb_in_cpu_config *ctx = data;
+    struct cpu_stats *cs;
+
+    /* Release snapshots */
+    cs = &ctx->cstats;
+    free(cs->snap_a);
+    free(cs->snap_b);
+
+    /* Remove msgpack buffer */
+    msgpack_sbuffer_destroy(&ctx->mp_sbuf);
+
+    /* done */
+    free(ctx);
+
+    return 0;
+}
+
 /* Plugin reference */
 struct flb_input_plugin in_cpu_plugin = {
     .name         = "cpu",
@@ -366,5 +386,6 @@ struct flb_input_plugin in_cpu_plugin = {
     .cb_init      = in_cpu_init,
     .cb_pre_run   = NULL,
     .cb_collect   = in_cpu_collect,
-    .cb_flush_buf = in_cpu_flush
+    .cb_flush_buf = in_cpu_flush,
+    .cb_exit      = in_cpu_exit
 };
