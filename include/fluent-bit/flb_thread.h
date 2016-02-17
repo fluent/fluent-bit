@@ -37,7 +37,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_engine_task.h>
 
-pthread_key_t flb_thread_key;
+FLB_EXPORT pthread_key_t flb_thread_key;
 
 struct flb_thread {
     int ended;
