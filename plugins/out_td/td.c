@@ -152,12 +152,8 @@ int cb_td_init(struct flb_output_instance *ins, struct flb_config *config,
         return -1;
     }
 
-    if (!ins->host.name) {
-        ins->host.name = strdup("api.treasuredata.com");
-    }
-    if (ins->host.port == 0) {
-        ins->host.port = 443;
-    }
+    ins->host.name = strdup("api.treasuredata.com");
+    ins->host.port = 443;
 
     upstream = flb_io_upstream_new(config,
                                    ins->host.name,
