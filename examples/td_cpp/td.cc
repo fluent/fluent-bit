@@ -68,6 +68,7 @@ int main(int argc, char **argv)
     }
 
     flb_stop(ctx);
+    flb_destroy(ctx);
 
     return 0;
 }
