@@ -78,7 +78,7 @@ REGISTER_IN_PLUGIN("in_lib")
 REGISTER_IN_PLUGIN("in_head")
 REGISTER_OUT_PLUGIN("out_es")
 REGISTER_OUT_PLUGIN("out_fluentd")
-#REGISTER_OUT_PLUGIN("out_nats")
+REGISTER_OUT_PLUGIN("out_nats")
 REGISTER_OUT_PLUGIN("out_td")
 REGISTER_OUT_PLUGIN("out_stdout")
 
