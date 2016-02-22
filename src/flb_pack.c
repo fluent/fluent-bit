@@ -64,13 +64,14 @@ static int json_tokenise(char *js, size_t len,
 
 static inline int is_float(char *buf, int len)
 {
-    char *p;
+    char *end = buf + len;
+    char *p = buf;
 
-    p = strchr(buf, '.');
-    if (p) {
-        if (p < (buf + len)) {
+    while (p <= end) {
+        if (*p == '.') {
             return 1;
         }
+        p++;
     }
     return 0;
 }
