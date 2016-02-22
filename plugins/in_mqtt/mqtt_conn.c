@@ -31,14 +31,18 @@ int mqtt_conn_event(void *data)
 {
     int ret;
     int bytes;
+    int available;
     struct mk_event *event;
     struct mqtt_conn *conn = data;
 
     event = &conn->event;
     if (event->mask & MK_EVENT_READ) {
-        bytes = read(conn->fd, conn->buf, sizeof(conn->buf));
+        available = sizeof(conn->buf) - conn->buf_len;
+
+        bytes = read(conn->fd,
+                     conn->buf + conn->buf_len, available);
         if (bytes > 0) {
-            conn->buf_len = bytes;
+            conn->buf_len += bytes;
             flb_debug("[mqtt] %i bytes in", bytes);
             ret = mqtt_prot_parser(conn);
             if (ret == MQTT_ERROR) {
@@ -46,6 +50,9 @@ int mqtt_conn_event(void *data)
             }
             else if (ret == MQTT_HANGUP) {
                 flb_debug("[mqtt] fd=%i client hangup", event->fd);
+            }
+            else if (ret == MQTT_MORE) {
+                flb_debug("[mqtt] fd=%i need more data", event->fd);
             }
 
             if (ret < 0) {
@@ -89,6 +96,7 @@ struct mqtt_conn *mqtt_conn_add(int fd, struct flb_in_mqtt_config *ctx)
     conn->ctx     = ctx;
     conn->buf_pos = 0;
     conn->buf_len = 0;
+    conn->buf_frame_end = 0;
     conn->status  = MQTT_NEW;
 
     /* Register instance into the event loop */

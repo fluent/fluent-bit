@@ -61,23 +61,20 @@ static inline void print_str(struct mqtt_conn *conn)
  * It drop the current packet from the buffer, it move the remaining bytes
  * from right-to-left and adjust the new length.
  */
-static inline int mqtt_packet_drop(struct mqtt_conn *conn, int content_len)
+static inline int mqtt_packet_drop(struct mqtt_conn *conn)
 {
     int drop;
+    int move_bytes;
 
-    if (conn->buf_len - content_len == 0) {
-        conn->buf_pos = 0;
-        conn->buf_len = 0;
-        return 0;
-    }
-
-    drop = conn->buf_len - content_len;
+    move_bytes = conn->buf_pos + 1;
     memmove(conn->buf,
-            conn->buf + conn->buf_pos,
-            drop);
+            conn->buf + move_bytes,
+            conn->buf_len - move_bytes);
 
+    conn->buf_frame_end = 0;
+    conn->buf_len -= move_bytes;
     conn->buf_pos  = 0;
-    conn->buf_len -= drop;
+
     return 0;
 }
 
@@ -259,9 +256,9 @@ static int mqtt_handle_publish(struct mqtt_conn *conn)
     }
 
     /* Message */
-    mqtt_data_append(conn->buf + conn->buf_pos,
-                     conn->buf_len - conn->buf_pos,
-                     conn->buf + topic, topic_len,
+    mqtt_data_append((char *) (conn->buf + conn->buf_pos),
+                     conn->buf_frame_end - conn->buf_pos + 1,
+                     (char *) (conn->buf + topic), topic_len,
                      conn->ctx);
     return 0;
 }
@@ -279,16 +276,19 @@ static int mqtt_handle_ping(struct mqtt_conn *conn)
 
 int mqtt_prot_parser(struct mqtt_conn *conn)
 {
-    int bytes;
-    int length;
+    int bytes = 0;
+    int length = 0;
+    int pos = conn->buf_pos;
     int mult;
 
     for (; conn->buf_pos < conn->buf_len; conn->buf_pos++) {
         if (conn->status & (MQTT_NEW | MQTT_NEXT)) {
             /*
              * Do we have at least the Control Packet fixed header
-             * and the remaining length byte field ? */
+             * and the remaining length byte field ?
+             */
             if (BUF_AVAIL() < 2) {
+                conn->buf_pos = pos;
                 return MQTT_MORE;
             }
 
@@ -305,6 +305,11 @@ int mqtt_prot_parser(struct mqtt_conn *conn)
             length = 0;
             bytes  = 0;
             do {
+                if (conn->buf_pos + 1 >= conn->buf_len) {
+                    conn->buf_pos = pos;
+                    return MQTT_MORE;
+                }
+
                 bytes++;
                 length += (BUFC() & 127) * mult;
                 mult *= 128;
@@ -312,11 +317,18 @@ int mqtt_prot_parser(struct mqtt_conn *conn)
                     return MQTT_ERROR;
                 }
 
+                if (length + 2 > (conn->buf_len - pos)) {
+                    conn->buf_pos = pos;
+                    return MQTT_MORE;
+                }
+
                 if ((BUFC() & 128) == 0) {
-                    if (length < conn->buf_len - 2) {
+                    if (conn->buf_len - 2 < length) {
+                        conn->buf_pos = pos;
                         return MQTT_MORE;
                     }
                     else {
+                        conn->buf_frame_end = conn->buf_pos + length;
                         break;
                     }
                 }
@@ -325,6 +337,7 @@ int mqtt_prot_parser(struct mqtt_conn *conn)
                     conn->buf_pos++;
                 }
                 else {
+                    conn->buf_pos = pos;
                     return MQTT_MORE;
                 }
             } while (1);
@@ -342,14 +355,20 @@ int mqtt_prot_parser(struct mqtt_conn *conn)
             else if (conn->packet_type == MQTT_PINGREQ) {
                 mqtt_handle_ping(conn);
             }
-
             else if (conn->packet_type == MQTT_DISCONNECT) {
                 return MQTT_HANGUP;
+            }
+            else {
             }
 
             /* Prepare for next round */
             conn->status = MQTT_NEXT;
-            mqtt_packet_drop(conn, 1 + bytes + length);
+            conn->buf_pos = conn->buf_frame_end;
+            mqtt_packet_drop(conn);
+
+            if (conn->buf_len > 0) {
+                conn->buf_pos = -1;
+            }
         }
     }
     conn->buf_pos--;

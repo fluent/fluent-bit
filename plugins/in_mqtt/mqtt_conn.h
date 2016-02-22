@@ -33,9 +33,9 @@ struct mqtt_conn {
     int status;                      /* Connection status                 */
     int packet_type;                 /* MQTT packet type                  */
     int packet_length;
-    int  buf_pos;                    /* Index position                    */
+    int  buf_frame_end;              /* Frame end position                */            int  buf_pos;                    /* Index position                    */
     int  buf_len;                    /* Buffer content length             */
-    char buf[1024];                  /* Buffer data                       */
+    unsigned char buf[1024];                  /* Buffer data                       */
     struct flb_in_mqtt_config *ctx;  /* Plugin configuration context      */
 };
 
