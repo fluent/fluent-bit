@@ -257,7 +257,6 @@ int cb_es_init(struct flb_output_instance *ins,
                struct flb_config *config,
                void *data)
 {
-    int ret;
     struct flb_uri *uri = ins->host.uri;
     struct flb_uri_field *f_index = NULL;
     struct flb_uri_field *f_type = NULL;
