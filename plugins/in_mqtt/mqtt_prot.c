@@ -63,7 +63,6 @@ static inline void print_str(struct mqtt_conn *conn)
  */
 static inline int mqtt_packet_drop(struct mqtt_conn *conn)
 {
-    int drop;
     int move_bytes;
 
     move_bytes = conn->buf_pos + 1;
