@@ -29,7 +29,6 @@
 int cb_nats_init(struct flb_output_instance *ins, struct flb_config *config,
                    void *data)
 {
-    int ret;
     struct flb_io_upstream *upstream;
     struct flb_out_nats_config *ctx;
 
@@ -73,7 +72,7 @@ int cb_nats_flush(void *data, size_t bytes, void *out_context,
     int len;
     int n_size;
     size_t off = 0;
-    ssize_t bytes_sent;
+    size_t bytes_sent;
     time_t atime;
     json_t *j_root;
     json_t *j_arr;
