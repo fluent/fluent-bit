@@ -11,7 +11,7 @@ Data collection matters and nowadays the scenarios from where the information ca
 | Memory                | ~20MB                 | ~150KB                |
 | Performance           | High Performance      | High Performance      |
 | Dependencies          | Built as a Ruby Gem, it requires a certain number of gems. | Zero dependencies, unless some special plugin requires them. |
-| Plugins               | More than 300 plugins available | Less than 10 plugins available|
+| Plugins               | More than 300 plugins available | Around 15 plugins available|
 | License               | [Apache License v2.0](http://www.apache.org/licenses/LICENSE-2.0) | [Apache License v2.0](http://www.apache.org/licenses/LICENSE-2.0)|
 
 As described in the table, if the target environment is a server with common capacity, [Fluentd](http://fluentd.org) is a great option due to it flexibility and availability of plugins (more than 300 extensions!) but if the _data collection_ will happen in an Embedded environment or an IoT device where the system capacity is restricted, [Fluent Bit](http://fluentbit.io) is the solution to use.

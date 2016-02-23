@@ -5,6 +5,7 @@
     * [License](about/license.md)
 * [Getting Started](getting_started/README.md)
     * [Requirements](getting_started/requirements.md)
+    * [Download Sources](getting_started/download_sources.md)
     * [Build and Install](getting_started/installation.md)
     * [Debian/Ubuntu](getting_started/debian_ubuntu.md)
     * [Raspberry Pi](getting_started/raspberry_pi.md)
