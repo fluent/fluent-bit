@@ -95,7 +95,7 @@ struct flb_output_instance {
     void *context;                       /* plugin configuration context */
 
     /* Plugin properties */
-    char *tag;
+    char *match;
 
     /*
      * network info:

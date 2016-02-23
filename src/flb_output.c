@@ -88,8 +88,8 @@ void flb_output_exit(struct flb_config *config)
             free(ins->host.name);
         }
 
-        if (ins->tag) {
-            free(ins->tag);
+        if (ins->match) {
+            free(ins->match);
         }
 
 #ifdef HAVE_TLS
@@ -154,7 +154,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         instance->context   = NULL;
         instance->data      = data;
         instance->upstream  = NULL;
-        instance->tag       = NULL;
+        instance->match     = NULL;
         instance->host.name = NULL;
 
         if (plugin->flags & FLB_OUTPUT_NET) {
@@ -191,8 +191,8 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
     len = strlen(k);
 
     /* Check if the key is a known/shared property */
-    if (prop_key_check("tag", k, len) == 0) {
-        out->tag = strdup(v);
+    if (prop_key_check("match", k, len) == 0) {
+        out->match = strdup(v);
     }
 
     /* FIXME: map plugin internal properties */
@@ -217,8 +217,8 @@ int flb_output_init(struct flb_config *config)
         ins = mk_list_entry(head, struct flb_output_instance, _head);
         p = ins->p;
 
-        if (!ins->tag) {
-            ins->tag = strdup("*");
+        if (!ins->match) {
+            ins->match = strdup("*");
         }
 
 #ifdef HAVE_TLS

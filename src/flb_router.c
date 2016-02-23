@@ -64,7 +64,7 @@ int flb_router_io_set(struct flb_config *config)
             o_ins = mk_list_entry(o_head, struct flb_output_instance, _head);
 
             /* FIXME: no wildcards support 'yet' */
-            if (strcmp(i_ins->tag, o_ins->tag) == 0) {
+            if (strcmp(i_ins->tag, o_ins->match) == 0) {
                 flb_router_connect(i_ins, o_ins);
             }
         }
