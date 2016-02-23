@@ -290,7 +290,12 @@ int flb_engine_start(struct flb_config *config)
     flb_input_pre_run_all(config);
 
     /* Outputs pre-run */
-    flb_output_init(config);
+    ret = flb_output_init(config);
+    if (ret == -1) {
+        flb_engine_shutdown(config);
+        return -1;
+    }
+
     flb_output_pre_run(config);
 
 
