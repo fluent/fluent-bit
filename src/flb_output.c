@@ -92,6 +92,10 @@ void flb_output_exit(struct flb_config *config)
             free(ins->tag);
         }
 
+#ifdef HAVE_TLS
+        flb_tls_context_destroy(ins->tls.context);
+#endif
+
         mk_list_del(&ins->_head);
         free(ins);
     }
@@ -198,6 +202,7 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
 /* Trigger the output plugins setup callbacks to prepare them. */
 int flb_output_init(struct flb_config *config)
 {
+    int ret;
     struct mk_list *head;
     struct flb_output_instance *ins;
     struct flb_output_plugin *p;
@@ -222,8 +227,13 @@ int flb_output_init(struct flb_config *config)
             mk_list_init(&ins->tls.sessions);
         }
 #endif
-        p->cb_init(ins, config, ins->data);
+        ret = p->cb_init(ins, config, ins->data);
         mk_list_init(&ins->th_queue);
+
+        if (ret == -1) {
+            return -1;
+        }
+
 
 #ifdef HAVE_STATS
         //struct flb_stats *stats;
