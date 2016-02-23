@@ -144,11 +144,13 @@ int cb_td_init(struct flb_output_instance *ins, struct flb_config *config,
     (void) data;
 
     if (!config->file) {
-        flb_utils_error_c("TD output requires a configuration file");
+        flb_utils_warn_c("[TD] output requires a configuration file");
+        return -1;
     }
 
     ctx = td_config_init(config->file);
     if (!ctx) {
+        flb_utils_warn_c("[TD] Error reading configuration file");
         return -1;
     }
 
