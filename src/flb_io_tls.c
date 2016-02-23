@@ -96,6 +96,11 @@ struct flb_tls_context *flb_tls_context_new()
     return NULL;
 }
 
+void flb_tls_context_destroy(struct flb_tls_context *ctx)
+{
+    free(ctx);
+}
+
 struct flb_tls_session *flb_tls_session_new(struct flb_tls_context *ctx)
 {
     int ret;
