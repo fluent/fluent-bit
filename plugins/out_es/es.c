@@ -323,7 +323,8 @@ int cb_es_init(struct flb_output_instance *ins,
     return 0;
 }
 
-int cb_es_flush(void *data, size_t bytes, void *out_context,
+int cb_es_flush(void *data, size_t bytes,
+                struct flb_input_instance *i_ins, void *out_context,
                 struct flb_config *config)
 {
     int n;
@@ -335,6 +336,7 @@ int cb_es_flush(void *data, size_t bytes, void *out_context,
     size_t len;
     char *request;
     struct flb_out_es_config *ctx = out_context;
+    (void) i_ins;
 
     /* Convert format */
     pack = es_format(data, bytes, &bytes_out, ctx);
