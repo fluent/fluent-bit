@@ -47,12 +47,33 @@ static int flb_router_connect(struct flb_input_instance *in,
  */
 int flb_router_io_set(struct flb_config *config)
 {
+    int in_count = 0;
+    int out_count = 0;
     struct mk_list *i_head;
     struct mk_list *o_head;
     struct flb_input_instance *i_ins;
     struct flb_output_instance *o_ins;
 
-    /* Iterate all input instances */
+    /* Quick setup for 1:1 */
+    mk_list_foreach(i_head, &config->inputs) {
+        in_count++;
+    }
+    mk_list_foreach(o_head, &config->outputs) {
+        out_count++;
+    }
+    if (in_count == 1 && out_count == 1) {
+        i_ins = mk_list_entry_first(&config->inputs,
+                                    struct flb_input_instance, _head);
+        o_ins = mk_list_entry_first(&config->outputs,
+                                    struct flb_output_instance, _head);
+        if (!i_ins->tag && !o_ins->match) {
+            flb_router_connect(i_ins, o_ins);
+            return 0;
+        }
+    }
+
+
+    /* N:M case, iterate all input instances */
     mk_list_foreach(i_head, &config->inputs) {
         i_ins = mk_list_entry(i_head, struct flb_input_instance, _head);
         if (!i_ins->tag) {
