@@ -64,26 +64,18 @@ int cb_nats_init(struct flb_output_instance *ins, struct flb_config *config,
     return 0;
 }
 
-int cb_nats_flush(void *data, size_t bytes,
-                  struct flb_input_instance *i_ins,
-                  void *out_context,
-                  struct flb_config *config)
+static int msgpack_to_json(void *data, size_t bytes, char *tag,
+                           char **out_json, size_t *out_len)
 {
     int i;
-    int ret;
-    int len;
     int n_size;
     size_t off = 0;
-    size_t bytes_sent;
     time_t atime;
-    json_t *j_root;
-    json_t *j_arr;
     char tmp_key[32];
     char tmp_val[256];
     char *tmp_ext;
-    char *json_msg;
-    char *request;
-    int req_len;
+    json_t *j_root;
+    json_t *j_arr;
     msgpack_object map;
     msgpack_object root;
     msgpack_object m_key;
@@ -91,18 +83,6 @@ int cb_nats_flush(void *data, size_t bytes,
     msgpack_packer   mp_pck;
     msgpack_sbuffer  mp_sbuf;
     msgpack_unpacked result;
-    struct flb_out_nats_config *ctx = out_context;
-
-    /* Before to flush the content check if we need to start the handshake */
-    if (ctx->u->fd <= 0) {
-        ret = flb_io_net_write(ctx->u,
-                               NATS_CONNECT,
-                               sizeof(NATS_CONNECT) - 1,
-                               &bytes_sent);
-        if (ret == -1) {
-            return -1;
-        }
-    }
 
     /* Convert MsgPack to JSON */
     msgpack_sbuffer_init(&mp_sbuf);
@@ -132,7 +112,7 @@ int cb_nats_flush(void *data, size_t bytes,
         json_t *j_obj = json_create_object();
 
         json_add_to_object(j_obj, "tag",
-                           json_create_string(i_ins->tag));
+                           json_create_string(tag));
 
         for (i = 0; i < n_size - 1; i++) {
             m_key = map.via.map.ptr[i].key;
@@ -198,15 +178,56 @@ int cb_nats_flush(void *data, size_t bytes,
     }
     msgpack_unpacked_destroy(&result);
 
-    json_msg = json_print_unformatted(j_root);
+    *out_json = json_print_unformatted(j_root);
     json_delete(j_root);
 
+    *out_len = strlen(*out_json);
+    return 0;
+}
+
+
+int cb_nats_flush(void *data, size_t bytes,
+                  struct flb_input_instance *i_ins,
+                  void *out_context,
+                  struct flb_config *config)
+{
+    int i;
+    int ret;
+    int len;
+    size_t bytes_sent;
+    size_t json_len;
+    char *json_msg;
+    char *request;
+    int req_len;
+    struct flb_out_nats_config *ctx = out_context;
+
+    /* Before to flush the content check if we need to start the handshake */
+    if (ctx->u->fd <= 0) {
+        ret = flb_io_net_write(ctx->u,
+                               NATS_CONNECT,
+                               sizeof(NATS_CONNECT) - 1,
+                               &bytes_sent);
+        if (ret == -1) {
+            return -1;
+        }
+    }
+
+    /* Convert original Fluent Bit MsgPack format to JSON */
+    ret = msgpack_to_json(data, bytes, i_ins->tag, &json_msg, &json_len);
+    if (ret == -1) {
+        return -1;
+    }
+
     /* Compose the NATS Publish request */
-    len = strlen(json_msg);
-    request = malloc(len + 32);
-    req_len = snprintf(request, len + 32,
-                       "PUB %s %i\r\n%s\r\n",
-                       i_ins->tag, len, json_msg);
+    request = malloc(json_len + 32);
+    req_len = snprintf(request, len + 32, "PUB %s %zu\r\n",
+                       i_ins->tag, json_len);
+
+    /* Append JSON message and ending CRLF */
+    memcpy(request + req_len, json_msg, json_len);
+    req_len += json_len;
+    request[req_len++] = '\r';
+    request[req_len++] = '\n';
     free(json_msg);
 
     ret = flb_io_net_write(ctx->u, request, req_len, &bytes_sent);
