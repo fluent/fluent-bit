@@ -87,7 +87,8 @@ int cb_fluentd_exit(void *data, struct flb_config *config)
     return 0;
 }
 
-int cb_fluentd_flush(void *data, size_t bytes, void *out_context,
+int cb_fluentd_flush(void *data, size_t bytes,
+                     struct flb_input_instance *i_ins, void *out_context,
                      struct flb_config *config)
 {
     int ret = -1;
@@ -100,6 +101,7 @@ int cb_fluentd_flush(void *data, size_t bytes, void *out_context,
     msgpack_sbuffer  mp_sbuf;
     msgpack_unpacked result;
     struct flb_out_fluentd_config *ctx = out_context;
+    (void) i_ins;
     (void) config;
 
     /* Initialize packager */
