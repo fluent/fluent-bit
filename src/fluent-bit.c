@@ -54,9 +54,10 @@ static void flb_help(int rc, struct flb_config *config)
     printf("  -f, --flush=SECONDS\tflush timeout in seconds (default: %i)\n",
            FLB_CONFIG_FLUSH_SECS);
     printf("  -i, --input=INPUT\tset an input\n");
+    printf("  -m, --match=MATCH\tset plugin match, same as '-p match=abc'\n");
     printf("  -o, --output=OUTPUT\tset an output\n");
     printf("  -p, --prop=\"A=B\"\tset plugin configuration property\n");
-    printf("  -t, --tag=TAG\t\tset plugin tag, shortcut for '-p tag=abc'\n");
+    printf("  -t, --tag=TAG\t\tset plugin tag, same as '-p tag=abc'\n");
     printf("  -V, --verbose\t\tenable verbose mode\n");
     printf("  -v, --version\t\tshow version number\n");
     printf("  -h, --help\t\tprint this help\n\n");
@@ -199,6 +200,7 @@ int main(int argc, char **argv)
         { "daemon",  no_argument      , NULL, 'd' },
         { "flush",   required_argument, NULL, 'f' },
         { "input",   required_argument, NULL, 'i' },
+        { "match",   required_argument, NULL, 'm' },
         { "output",  required_argument, NULL, 'o' },
         { "prop",    required_argument, NULL, 'p' },
         { "tag",     required_argument, NULL, 't' },
@@ -218,7 +220,7 @@ int main(int argc, char **argv)
     }
 
     /* Parse the command line options */
-    while ((opt = getopt_long(argc, argv, "c:df:i:o:p:t:vVh",
+    while ((opt = getopt_long(argc, argv, "c:df:i:m:o:p:t:vVh",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
@@ -238,6 +240,11 @@ int main(int argc, char **argv)
             }
             last_plugin = PLUGIN_INPUT;
             break;
+        case 'm':
+            if (out) {
+                flb_output_set_property(out, "match", optarg);
+            }
+            break;
         case 'o':
             out = flb_output_new(config, optarg, NULL);
             if (!out) {
@@ -254,14 +261,10 @@ int main(int argc, char **argv)
             }
             break;
         case 't':
-            if (last_plugin == PLUGIN_INPUT) {
+            if (in) {
                 flb_input_set_property(in, "tag", optarg);
             }
-            else if (last_plugin == PLUGIN_OUTPUT) {
-                flb_output_set_property(out, "tag", optarg);
-            }
             break;
-
         case 'h':
             flb_help(EXIT_SUCCESS, config);
             break;
