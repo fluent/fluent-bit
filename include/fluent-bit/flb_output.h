@@ -73,7 +73,8 @@ struct flb_output_plugin {
     int (*cb_pre_run) (void *, struct flb_config *);
 
     /* Flush callback */
-    int (*cb_flush) (void *, size_t, void *, struct flb_config *);
+    int (*cb_flush) (void *, size_t, void *,
+                     struct flb_input_instance *, struct flb_config *);
 
     /* Exit */
     int (*cb_exit) (void *, struct flb_config *);
@@ -168,6 +169,7 @@ struct flb_output_instance {
 
 static FLB_INLINE
 struct flb_thread *flb_output_thread(struct flb_engine_task *task,
+                                     struct flb_input_instance *i_ins,
                                      struct flb_output_instance *o_ins,
                                      struct flb_config *config,
                                      void *buf, size_t size)
@@ -184,7 +186,7 @@ struct flb_thread *flb_output_thread(struct flb_engine_task *task,
     th->task = task;
 
     makecontext(&th->callee, (void (*)()) o_ins->p->cb_flush,
-                4, buf, size, o_ins->context, config);
+                5, buf, size, i_ins, o_ins->context, config);
     return th;
 }
 

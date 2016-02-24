@@ -118,6 +118,7 @@ int flb_engine_flush(struct flb_config *config,
                 o_ins = path->ins;
 
                 th = flb_output_thread(task,
+                                       in,
                                        o_ins,
                                        config,
                                        buf, size);
