@@ -64,7 +64,9 @@ int cb_nats_init(struct flb_output_instance *ins, struct flb_config *config,
     return 0;
 }
 
-int cb_nats_flush(void *data, size_t bytes, void *out_context,
+int cb_nats_flush(void *data, size_t bytes,
+                  struct flb_input_instance *i_ins,
+                  void *out_context,
                   struct flb_config *config)
 {
     int i;
@@ -130,7 +132,7 @@ int cb_nats_flush(void *data, size_t bytes, void *out_context,
         json_t *j_obj = json_create_object();
 
         json_add_to_object(j_obj, "tag",
-                           json_create_string(ctx->ins->tag));
+                           json_create_string(i_ins->tag));
 
         for (i = 0; i < n_size - 1; i++) {
             m_key = map.via.map.ptr[i].key;
@@ -204,7 +206,7 @@ int cb_nats_flush(void *data, size_t bytes, void *out_context,
     request = malloc(len + 32);
     req_len = snprintf(request, len + 32,
                        "PUB %s %i\r\n%s\r\n",
-                       ctx->ins->tag, len, json_msg);
+                       i_ins->tag, len, json_msg);
     free(json_msg);
 
     ret = flb_io_net_write(ctx->u, request, req_len, &bytes_sent);
