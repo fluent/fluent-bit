@@ -48,7 +48,6 @@ struct flb_tls_session {
 /* TLS instance, library context + active sessions */
 struct flb_tls {
     struct flb_tls_context *context;
-    struct mk_list sessions;
 };
 
 struct flb_tls_context *flb_tls_context_new();
