@@ -29,8 +29,9 @@
 #define FLB_IO_WRITE       1  /* thread wants to write() data      */
 
 /* Network operation modes */
-#define FLB_IO_TCP         1  /* use plain TCP     */
-#define FLB_IO_TLS         2  /* use TLS/SSL layer */
+#define FLB_IO_TCP         1  /* use plain TCP            */
+#define FLB_IO_TLS         2  /* use TLS/SSL layer        */
+#define FLB_IO_OPT_TLS     3  /* use TCP and optional TLS */
 
 struct flb_io_upstream {
     struct mk_event event;

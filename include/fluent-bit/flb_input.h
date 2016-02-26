@@ -94,7 +94,7 @@ struct flb_input_instance {
     struct flb_input_plugin *p;          /* original plugin              */
 
     /* Plugin properties */
-    char *tag;
+    char *tag;                           /* Input tag for routing        */
 
     /*
      * Input network info:

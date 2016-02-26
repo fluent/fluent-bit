@@ -33,7 +33,7 @@
 #include <fluent-bit/flb_engine.h>
 
 /* Output plugin masks */
-#define FLB_OUTPUT_NET         4  /* output address may set host and port */
+#define FLB_OUTPUT_NET         32  /* output address may set host and port */
 
 struct flb_output_instance;
 
@@ -98,7 +98,8 @@ struct flb_output_instance {
     void *context;                       /* plugin configuration context */
 
     /* Plugin properties */
-    char *match;
+    int use_tls;                         /* bool, try to use TLS for I/O */
+    char *match;                         /* match rule for tag/routing   */
 
     /*
      * network info:

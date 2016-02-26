@@ -194,6 +194,14 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
     if (prop_key_check("match", k, len) == 0) {
         out->match = strdup(v);
     }
+    else if (prop_key_check("tls", k, len) == 0) {
+        if (strcasecmp(v, "true") == 0 || strcasecmp(v, "on") == 0) {
+            out->use_tls = FLB_TRUE;
+        }
+        else {
+            out->use_tls = FLB_FALSE;
+        }
+    }
 
     /* FIXME: map plugin internal properties */
     return 0;
@@ -220,7 +228,6 @@ int flb_output_init(struct flb_config *config)
 #ifdef HAVE_TLS
         if (p->flags & FLB_IO_TLS) {
             ins->tls.context = flb_tls_context_new();
-            mk_list_init(&ins->tls.sessions);
         }
 #endif
         ret = p->cb_init(ins, config, ins->data);
