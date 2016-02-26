@@ -132,7 +132,7 @@ static int input_set_property(struct flb_input_instance *in, char *kv)
         return -1;
     }
 
-    key = mk_string_copy_substr(kv, 0, sep - 1);
+    key = mk_string_copy_substr(kv, 0, sep);
     value = kv + sep + 1;
 
     if (!key) {
@@ -163,7 +163,7 @@ static int output_set_property(struct flb_output_instance *out, char *kv)
         return -1;
     }
 
-    key = mk_string_copy_substr(kv, 0, sep - 1);
+    key = mk_string_copy_substr(kv, 0, sep);
     value = kv + sep + 1;
 
     if (!key) {
