@@ -83,6 +83,9 @@ int flb_router_io_set(struct flb_config *config)
         /* Try to find a match with output instances */
         mk_list_foreach(o_head, &config->outputs) {
             o_ins = mk_list_entry(o_head, struct flb_output_instance, _head);
+            if (!o_ins->match) {
+                continue;
+            }
 
             /* FIXME: no wildcards support 'yet' */
             if (strcmp(i_ins->tag, o_ins->match) == 0) {
