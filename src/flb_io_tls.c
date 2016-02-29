@@ -65,7 +65,9 @@ static inline int io_tls_event_switch(struct flb_io_upstream *u, int mask)
     return 0;
 }
 
-struct flb_tls_context *flb_tls_context_new()
+struct flb_tls_context *flb_tls_context_new(int verify,
+                                            char *ca_file, char *crt_file,
+                                            char *key_file, char *key_passwd)
 {
     int ret;
     struct flb_tls_context *ctx;
@@ -75,6 +77,8 @@ struct flb_tls_context *flb_tls_context_new()
         perror("malloc");
         return NULL;
     }
+    ctx->verify    = verify;
+    ctx->certs_set = 0;
 
     mbedtls_entropy_init(&ctx->entropy);
     mbedtls_ctr_drbg_init(&ctx->ctr_drbg);
@@ -87,6 +91,37 @@ struct flb_tls_context *flb_tls_context_new()
     if (ret == -1) {
         io_tls_error(ret);
         goto error;
+    }
+
+    /* Load certificates if any */
+    if (ca_file) {
+        mbedtls_x509_crt_init(&ctx->ca_cert);
+        ret = mbedtls_x509_crt_parse_file(&ctx->ca_cert, ca_file);
+        if (ret != 0) {
+            flb_error("[TLS] Invalid CA file: %s", ca_file);
+            goto error;
+        }
+        ctx->certs_set |= FLB_TLS_CA_ROOT;
+    }
+
+    if (crt_file) {
+        mbedtls_x509_crt_init(&ctx->cert);
+        ret = mbedtls_x509_crt_parse_file(&ctx->cert, crt_file);
+        if (ret != 0) {
+            flb_error("[TLS] Invalid Certificate file: %s", crt_file);
+            goto error;
+        }
+        ctx->certs_set |= FLB_TLS_CERT;
+    }
+
+    if (key_file) {
+        mbedtls_pk_init(&ctx->priv_key);
+        ret = mbedtls_pk_parse_keyfile(&ctx->priv_key, key_file, key_passwd);
+        if (ret != 0) {
+            flb_error("[TLS] Invalid Key file: %s", key_file);
+            goto error;
+        }
+        ctx->certs_set |= FLB_TLS_PRIV_KEY;
     }
 
     return ctx;
@@ -125,7 +160,31 @@ struct flb_tls_session *flb_tls_session_new(struct flb_tls_context *ctx)
     mbedtls_ssl_conf_rng(&session->conf,
                          mbedtls_ctr_drbg_random,
                          &ctx->ctr_drbg);
-    mbedtls_ssl_conf_authmode(&session->conf, MBEDTLS_SSL_VERIFY_NONE);
+
+    if (ctx->verify == FLB_TRUE) {
+        mbedtls_ssl_conf_authmode(&session->conf, MBEDTLS_SSL_VERIFY_REQUIRED);
+    }
+    else {
+        mbedtls_ssl_conf_authmode(&session->conf, MBEDTLS_SSL_VERIFY_NONE);
+    }
+
+
+    /* CA Root */
+    if (ctx->certs_set & FLB_TLS_CA_ROOT) {
+        mbedtls_ssl_conf_ca_chain(&session->conf, &ctx->ca_cert, NULL);
+    }
+
+    /* Specific Cert */
+    if (ctx->certs_set & FLB_TLS_CERT) {
+        ret = mbedtls_ssl_conf_own_cert(&session->conf,
+                                        &ctx->cert,
+                                        &ctx->priv_key);
+        if (ret != 0) {
+            flb_error("[TLS] Error loading certificate with private key");
+            goto error;
+        }
+    }
+
 
     ret = mbedtls_ssl_setup(&session->ssl, &session->conf);
     if (ret == -1) {

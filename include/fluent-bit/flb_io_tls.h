@@ -27,14 +27,18 @@
 #include <mbedtls/entropy.h>
 #include <mbedtls/ctr_drbg.h>
 
+#define FLB_TLS_CA_ROOT          1
+#define FLB_TLS_CERT             2
+#define FLB_TLS_PRIV_KEY         4
+
 /* mbedTLS library context */
 struct flb_tls_context {
-    /* unused */
-    mbedtls_x509_crt cert;
-    mbedtls_x509_crt ca_cert;
+    int verify;                    /* FLB_TRUE | FLB_FALSE      */
+    uint16_t    certs_set;         /* CA_ROOT | CERT | PRIV_KEY */
+    mbedtls_x509_crt ca_cert;      /* CA Root      */
+    mbedtls_x509_crt cert;         /* Certificate  */
+    mbedtls_pk_context priv_key;   /* Private key  */
     mbedtls_dhm_context dhm;
-    /* ------ */
-
     mbedtls_entropy_context entropy;
     mbedtls_ctr_drbg_context ctr_drbg;
 };

@@ -101,6 +101,14 @@ struct flb_output_instance {
     int use_tls;                         /* bool, try to use TLS for I/O */
     char *match;                         /* match rule for tag/routing   */
 
+#ifdef HAVE_TLS
+    int tls_verify;                      /* Verify certs (default: true) */
+    char *tls_ca_file;                   /* CA root cert                 */
+    char *tls_crt_file;                  /* Certificate                  */
+    char *tls_key_file;                  /* Cert Key                     */
+    char *tls_key_passwd;                /* Cert Key Password            */
+#endif
+
     /*
      * network info:
      *

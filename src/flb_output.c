@@ -157,6 +157,14 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         instance->match     = NULL;
         instance->host.name = NULL;
 
+#ifdef HAVE_TLS
+        instance->tls_verify     = FLB_TRUE;
+        instance->tls_ca_file    = NULL;
+        instance->tls_crt_file   = NULL;
+        instance->tls_key_file   = NULL;
+        instance->tls_key_passwd = NULL;
+#endif
+
         if (plugin->flags & FLB_OUTPUT_NET) {
             ret = flb_net_host_set(plugin->name, &instance->host, output);
             if (ret != 0) {
@@ -194,6 +202,7 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
     if (prop_key_check("match", k, len) == 0) {
         out->match = strdup(v);
     }
+#ifdef HAVE_TLS
     else if (prop_key_check("tls", k, len) == 0) {
         if (strcasecmp(v, "true") == 0 || strcasecmp(v, "on") == 0) {
             out->use_tls = FLB_TRUE;
@@ -202,6 +211,27 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
             out->use_tls = FLB_FALSE;
         }
     }
+    else if (prop_key_check("tls.verify", k, len) == 0) {
+        if (strcasecmp(v, "true") == 0 || strcasecmp(v, "on") == 0) {
+            out->tls_verify = FLB_TRUE;
+        }
+        else {
+            out->tls_verify = FLB_FALSE;
+        }
+    }
+    else if (prop_key_check("tls.ca_file", k, len) == 0) {
+        out->tls_ca_file = strdup(v);
+    }
+    else if (prop_key_check("tls.crt_file", k, len) == 0) {
+        out->tls_crt_file = strdup(v);
+    }
+    else if (prop_key_check("tls.key_file", k, len) == 0) {
+        out->tls_key_file = strdup(v);
+    }
+    else if (prop_key_check("tls.key_passwd", k, len) == 0) {
+        out->tls_key_passwd = strdup(v);
+    }
+#endif
 
     /* FIXME: map plugin internal properties */
     return 0;
@@ -227,7 +257,11 @@ int flb_output_init(struct flb_config *config)
 
 #ifdef HAVE_TLS
         if (p->flags & FLB_IO_TLS) {
-            ins->tls.context = flb_tls_context_new();
+            ins->tls.context = flb_tls_context_new(ins->tls_verify,
+                                                   ins->tls_ca_file,
+                                                   ins->tls_crt_file,
+                                                   ins->tls_key_file,
+                                                   ins->tls_key_passwd);
         }
 #endif
         ret = p->cb_init(ins, config, ins->data);
