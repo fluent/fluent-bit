@@ -257,6 +257,7 @@ int cb_es_init(struct flb_output_instance *ins,
                struct flb_config *config,
                void *data)
 {
+    int io_type = FLB_IO_TLS;
     struct flb_uri *uri = ins->host.uri;
     struct flb_uri_field *f_index = NULL;
     struct flb_uri_field *f_type = NULL;
@@ -286,12 +287,19 @@ int cb_es_init(struct flb_output_instance *ins,
         return -1;
     }
 
+    if (ins->use_tls == FLB_TRUE) {
+        io_type = FLB_IO_TLS;
+    }
+    else {
+        io_type = FLB_IO_TCP;
+    }
+
     /* Prepare an upstream handler */
     upstream = flb_io_upstream_new(config,
                                    ins->host.name,
                                    ins->host.port,
-                                   FLB_IO_TCP,
-                                   NULL);
+                                   io_type,
+                                   &ins->tls);
     if (!upstream) {
         free(ctx);
         return -1;
@@ -370,5 +378,5 @@ struct flb_output_plugin out_es_plugin = {
     .cb_flush       = cb_es_flush,
 
     /* Plugin flags */
-    .flags          = FLB_OUTPUT_NET,
+    .flags          = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
 };
