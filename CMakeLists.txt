@@ -123,7 +123,14 @@ if(WITH_STATS)
   add_definitions(-DHAVE_STATS)
 endif()
 
-if(WITH_VALGRIND)
+# Valgrind support
+check_c_source_compiles("
+  #include <valgrind/valgrind.h>
+  int main() {
+     return 0;
+  }" HAVE_VALGRIND)
+
+if(WITH_VALGRIND OR HAVE_VALGRIND)
   add_definitions(-DUSE_VALGRIND)
 endif()
 
