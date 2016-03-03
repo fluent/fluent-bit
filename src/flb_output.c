@@ -84,13 +84,8 @@ void flb_output_exit(struct flb_config *config)
             flb_io_upstream_destroy(ins->upstream);
         }
 
-        if (ins->host.name) {
-            free(ins->host.name);
-        }
-
-        if (ins->match) {
-            free(ins->match);
-        }
+        free(ins->host.name);
+        free(ins->match);
 
 #ifdef HAVE_TLS
         flb_tls_context_destroy(ins->tls.context);

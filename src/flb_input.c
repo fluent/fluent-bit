@@ -198,9 +198,8 @@ void flb_input_exit_all(struct flb_config *config)
             p->cb_exit(in->context, config);
         }
 
-        if (in->tag) {
-            free(in->tag);
-        }
+        /* release the tag if any */
+        free(in->tag);
 
         /* Let the engine remove any pending task */
         flb_engine_destroy_tasks(&in->tasks);
