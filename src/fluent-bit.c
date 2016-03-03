@@ -97,7 +97,8 @@ static void flb_banner()
 
 static void flb_signal_handler(int signal)
 {
-    flb_debug("[engine] caught signal %d", signal);
+    write(STDERR_FILENO, "[engine] caught signal\n", 23);
+
     switch (signal) {
     case SIGINT:
     case SIGQUIT:
