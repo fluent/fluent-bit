@@ -111,8 +111,14 @@ static int msgpack_to_json(void *data, size_t bytes, char *tag,
 
         json_t *j_obj = json_create_object();
 
-        json_add_to_object(j_obj, "tag",
-                           json_create_string(tag));
+        if (!tag) {
+            json_add_to_object(j_obj, "tag",
+                               json_create_string("fluentbit"));
+        }
+        else {
+            json_add_to_object(j_obj, "tag",
+                               json_create_string(tag));
+        }
 
         for (i = 0; i < n_size - 1; i++) {
             m_key = map.via.map.ptr[i].key;
