@@ -24,6 +24,7 @@
 * [Output Plugins](output/README.md)
     * [Elastic Search](output/elasticsearch.md)
     * [Fluentd](output/fluentd.md)
+    * [NATS](output/nats.md)
     * [Standard Output](output/stdout.md)
     * [Treasure Data](output/td.md)
 * [Development](development/README.md)
