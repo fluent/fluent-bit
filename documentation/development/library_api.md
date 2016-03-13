@@ -242,3 +242,23 @@ __Usage__
 ```C
 flb_destroy(ctx);
 ```
+
+## Ingest Data Manually
+
+There are some cases where the caller application may want to ingest data into Fluent Bit, for this purpose exists the function __flb_lib_push()__.
+
+__Prototype__
+
+```C
+int flb_lib_push(flb_input_t *input, void *data, size_t len);
+```
+
+The first argument __input__ is a reference to an input instance of the __lib__ plugin, __data__ is a reference to the message to be ingested and __len__ the number of bytes to take from it.
+
+__Return Value__
+
+On success, it returns the number of bytes written; on error it returns -1.
+
+__Usage__
+
+For more details and an example about how to use this function properly please refer to the next section [Ingest Records Manually](ingest_records_manually.md).

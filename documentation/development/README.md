@@ -125,7 +125,7 @@ int main()
     /* Stop */
     flb_lib_stop(ctx);
 
-    /* Exit */
+/* Exit */
     flb_lib_exit(ctx);
 
     return 0;

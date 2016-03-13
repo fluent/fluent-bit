@@ -29,3 +29,4 @@
     * [Treasure Data](output/td.md)
 * [Fluent Bit for Developers](development/README.md)
     * [Library API](development/library_api.md)
+    * [Ingest Records Manually](development/ingest_records_manually.md)
