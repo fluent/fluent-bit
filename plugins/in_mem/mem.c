@@ -95,13 +95,14 @@ static int mem_calc(uint64_t *total, uint64_t *available)
         return -1;
     }
 
-    bytes = read(fd, buf, sizeof(buf));
+    bytes = read(fd, buf, sizeof(buf) - 1);
     if (bytes == -1) {
         perror("read");
         close(fd);
         return -1;
     }
     close(fd);
+    buf[bytes] = '\0';
 
     /* Total Memory */
     tmp = field(buf, "MemTotal");
