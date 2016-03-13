@@ -27,4 +27,5 @@
     * [NATS](output/nats.md)
     * [Standard Output](output/stdout.md)
     * [Treasure Data](output/td.md)
-* [Development](development/README.md)
+* [Fluent Bit for Developers](development/README.md)
+    * [Library API](development/library_api.md)

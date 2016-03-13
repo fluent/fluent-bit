@@ -1,10 +1,8 @@
 # Fluent Bit for Developers
 
-[Fluent Bit](http://fluentbit.io) have been designed and built to be used not just as a standalone tool, it can also be embedded in your C or C++ applications.
+[Fluent Bit](http://fluentbit.io) have been designed and built to be used not only as a standalone tool, it can also be embedded in your C or C++ applications. The following section presents details about how you can use it inside your own programs. We assume that you have some basic knowledge of C language, ideally experience compiling programs on Unix/Linux environments.
 
-The following section presents details about how you can use [Fluent Bit](http://fluentbit.io) inside your own application.
-
-## Internals
+## Internals (to be deprecated)
 
 When Fluent Bit is built, it creates the final binary but also it creates a shared library version called _libfluent-bit.so_ which can be linked in your projects. The library allows you to enqueue data into the engine and return as quickly as possible, all hard job is done in _one_ posix thread who works in asynchronous mode, your caller process or thread will not be blocked.
 
