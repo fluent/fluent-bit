@@ -9,6 +9,7 @@
     * [Download Sources](installation/download_sources.md)
     * [Build and Install](installation/build_install.md)
     * [Debian/Ubuntu](installation/debian_ubuntu.md)
+    * [Redhat/Centos](installation/redhat_centos.md)
     * [Raspberry Pi](installation/raspberry_pi.md)
     * [Unit Tests](installation/unit_tests.md)
 * [Getting Started](getting_started/README.md)
