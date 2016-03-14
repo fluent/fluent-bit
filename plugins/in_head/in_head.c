@@ -44,7 +44,7 @@ static int in_head_collect(struct flb_config *config, void *in_context)
     fd = open(head_config->filepath, O_RDONLY);
     if (fd < 0) {
         perror("open");
-        goto collect_fin;
+        return -1;
     }
 
     head_config->buf_len = read(fd, head_config->buf, head_config->buf_size);
