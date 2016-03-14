@@ -131,11 +131,11 @@ static int in_head_config_read(struct flb_in_head_config *head_config,
 
 static void delete_head_config(struct flb_in_head_config *head_config)
 {
-    /* release buffer */
-    if (head_config->buf != NULL) {
-        free(head_config->buf);
-    }
-    if (head_config != NULL) {
+    if (head_config) {
+        /* release buffer */
+        if (head_config->buf != NULL) {
+            free(head_config->buf);
+        }
         free(head_config);
     }
 }
