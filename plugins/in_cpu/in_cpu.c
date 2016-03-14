@@ -172,6 +172,7 @@ int in_cpu_init(struct flb_input_instance *in, struct flb_config *config, void *
     /* Initialize buffers for CPU stats */
     ret = snapshots_init(ctx->n_processors, &ctx->cstats);
     if (ret != 0) {
+        free(ctx);
         return -1;
     }
 
