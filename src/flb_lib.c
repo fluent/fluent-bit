@@ -52,6 +52,7 @@ flb_ctx_t *flb_create()
     ret = pipe(config->ch_data);
     if (ret == -1) {
         perror("pipe");
+        free(ctx);
         return NULL;
     }
 
