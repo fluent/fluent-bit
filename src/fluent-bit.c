@@ -140,11 +140,6 @@ static int input_set_property(struct flb_input_instance *in, char *kv)
         return -1;
     }
 
-    if (!value) {
-        free(key);
-        return -1;
-    }
-
     ret = flb_input_set_property(in, key, value);
     free(key);
     return ret;
