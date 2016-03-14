@@ -171,11 +171,6 @@ static int output_set_property(struct flb_output_instance *out, char *kv)
         return -1;
     }
 
-    if (!value) {
-        free(key);
-        return -1;
-    }
-
     ret = flb_output_set_property(out, key, value);
     free(key);
     return ret;
