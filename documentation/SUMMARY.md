@@ -22,6 +22,7 @@
     * [Serial Interface](input/serial.md)
     * [Standard Input](input/stdin.md)
     * [XBee Radio](input/xbee.md)
+    * [File](input/head.md)
 * [Output Plugins](output/README.md)
     * [Elastic Search](output/elasticsearch.md)
     * [Fluentd](output/fluentd.md)
