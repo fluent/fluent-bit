@@ -17,6 +17,7 @@
 | Serial Port        | serial  | read from serial port |
 | Standard Input     | stdin   | read from the standard input |
 | XBee               | xbee    | listen for incoming messages over a Xbee device |
+| Head               | head    | read from a file |
 
 
 ### Output Plugins
