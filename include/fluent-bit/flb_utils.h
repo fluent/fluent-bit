@@ -38,7 +38,7 @@
 
 #ifdef FLB_TRACE
 #define flb_trace(fmt, ...) \
-    flb_message(FLB_MSG_TRACE, __FILENAME__, __LINE__, \
+    flb_message(FLB_MSG_TRACE, __FILE__, __LINE__, \
                 fmt, ##__VA_ARGS__)
 #else
 #define flb_trace(fmt, ...)  do {} while(0)
