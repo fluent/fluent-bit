@@ -169,10 +169,9 @@ void flb_message(int type, char *file, int line, const char *fmt, ...)
     fprintf(stderr, "%s[%s%5s%s]%s ",
             "", header_color, header_title, reset_color, "");
 
-    vfprintf(stdout, fmt, args);
+    vfprintf(stderr, fmt, args);
     va_end(args);
-    fprintf(stdout, "%s\n", reset_color);
-    fflush(stdout);
+    fprintf(stderr, "%s\n", reset_color);
 }
 
 /* Run current process in background mode */
