@@ -266,13 +266,13 @@ struct cpu_snapshot *snapshot_percent(struct cpu_stats *cstats,
 
 #ifdef FLB_TRACE
         if (i == 0) {
-            flb_trace("cpu[all] all=%s%f%s user=%s%f%s system=%s%f%s\n",
+            flb_trace("cpu[all] all=%s%f%s user=%s%f%s system=%s%f%s",
                       ANSI_BOLD, snap_now->p_cpu, ANSI_RESET,
                       ANSI_BOLD, snap_now->p_user, ANSI_RESET,
                       ANSI_BOLD, snap_now->p_system, ANSI_RESET);
         }
         else {
-            flb_trace("cpu[i=%i] all=%f user=%f system=%f\n",
+            flb_trace("cpu[i=%i] all=%f user=%f system=%f",
                       i-1, snap_now->p_cpu,
                       snap_now->p_user, snap_now->p_system);
         }
