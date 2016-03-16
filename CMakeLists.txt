@@ -25,6 +25,7 @@ option(WITHOUT_EXAMPLES   "Do not build examples"       No)
 option(WITHOUT_SHARED_LIB "Do not build shared library" No)
 option(WITH_STATS         "Enable stats support"        No)
 option(WITH_VALGRIND      "Enable Valgrind support"     No)
+option(WITH_TRACE         "Enable trace mode"           No)
 
 # Build Plugins
 option(WITH_IN_XBEE     "Enable XBee input plugin"            No)
@@ -117,6 +118,10 @@ endif()
 if(WITH_STATS OR WITH_OUT_ES)
   add_subdirectory(lib/cjson)
   include_directories(lib/cjson)
+endif()
+
+if(WITH_TRACE)
+  add_definitions(-DFLB_TRACE)
 endif()
 
 if(WITH_STATS)
