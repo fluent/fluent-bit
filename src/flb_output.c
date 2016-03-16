@@ -153,6 +153,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         instance->host.name = NULL;
 
 #ifdef HAVE_TLS
+        instance->tls.context    = NULL;
         instance->tls_verify     = FLB_TRUE;
         instance->tls_ca_file    = NULL;
         instance->tls_crt_file   = NULL;
