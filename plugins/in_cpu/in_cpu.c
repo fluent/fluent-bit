@@ -272,7 +272,7 @@ struct cpu_snapshot *snapshot_percent(struct cpu_stats *cstats,
                       ANSI_BOLD, snap_now->p_system, ANSI_RESET);
         }
         else {
-            flb_trace(stderr, "cpu[i=%i] all=%f user=%f system=%f\n",
+            flb_trace("cpu[i=%i] all=%f user=%f system=%f\n",
                       i-1, snap_now->p_cpu,
                       snap_now->p_user, snap_now->p_system);
         }
