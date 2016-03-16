@@ -241,7 +241,6 @@ void flb_pack_print(char *data, size_t bytes)
 
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
-        /* FIXME: lazy output */
         printf("[%zd] ", cnt++);
         msgpack_object_print(stdout, result.data);
         printf("\n");
