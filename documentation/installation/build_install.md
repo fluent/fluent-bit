@@ -75,6 +75,12 @@ Fluent Bit provides certain options to CMake that can be enabled or disabled whe
 |------------------|--------------------------------------|----------|
 | WITH_ALL         | Enable all features available        | No       |
 | WITH_DEBUG       | Build binaries with debug symbols    | No       |
+| WITH_TLS         | Buils with SSL/TLS support           | No       |
+| WITHOUT_BIN      | Do not build executable              | No       |
+| WITHOUT_EXAMPLES | Do not build examples                | No       |
+| WITHOUT_SHARED_LIB | Do not build shared library        | No       |
+| WITH_VALGRIND    | Enable Valgrind support              | No       |
+| WITH_TRACE       | Enable trace mode"                   | No       |
 
 
 ### Input Plugins
@@ -83,15 +89,16 @@ The _input plugins_ provides certain features to gather information from a speci
 network interface, some built-in metric or through a specific input device, the following input plugins are
 available:
 
-| option           |  description                         | default  |
-|-------------------------------------|--------------------------------------|----------|
-| [WITH_IN_CPU](../input/cpu.md)      | Enable CPU input plugin              | On       |
-| [WITH_IN_KMSG](../input/kmsg.md)    | Enable Kernel log input plugin       | On       |
-| [WITH_IN_MEM](../input/mem.md)      | Enable Memory input plugin           | On       |
-| [WITH_IN_SERIAL](../input/serial.md)| Enable Serial input plugin           | On       |
-| [WITH_IN_STDIN](../input/stdin.md)  | Enable Standard input plugin         | On       |
-| [WITH_IN_MQTT](../input/mqtt.md)    | Enable MQTT input plugin             | No       |
-| [WITH_IN_XBEE](../input/xbee.md)    | Enable Xbee input plugin             | No       |
+| option           |  description                                      | default  |
+|------------------|---------------------------------------------------|----------|
+| [WITH_IN_CPU](../input/cpu.md)      | Enable CPU input plugin              | On |
+| [WITH_IN_HEAD](../input/head.md)    | Enable Head input plugin             | On |
+| [WITH_IN_KMSG](../input/kmsg.md)    | Enable Kernel log input plugin       | On |
+| [WITH_IN_MEM](../input/mem.md)      | Enable Memory input plugin           | On |
+| [WITH_IN_SERIAL](../input/serial.md)| Enable Serial input plugin           | On |
+| [WITH_IN_STDIN](../input/stdin.md)  | Enable Standard input plugin         | On |
+| [WITH_IN_MQTT](../input/mqtt.md)    | Enable MQTT input plugin             | No |
+| [WITH_IN_XBEE](../input/xbee.md)    | Enable Xbee input plugin             | No |
 
 ### Output Plugins
 
@@ -99,7 +106,8 @@ The _output plugins_ gives the capacity to flush the information to some externa
 
 | option           |  description                         | default  |
 |------------------|--------------------------------------|----------|
+| [WITH_OUT_ES](../output/elasticsearch.md) | Enable [Elastic Search](http://www.elastic.co) output plugin | On |
 | [WITH_OUT_FLUENTD](../output/fluentd.md) | Enable [Fluentd](http://www.fluentd.org) output plugin | On |
+| [WITH_OUT_NATS](../output/nats.md) | Enable [NATS](http://www.nats.io) output plugin | On |
 | [WITH_OUT_STDOUT](../output/stdout.md) | Enable STDOUT output plugin          | On       |
 | [WITH_OUT_TD](../output/td.md) | Enable [Treasure Data](http://www.treasuredata.com) output plugin | On |
-| [WITH_OUT_ES](../output/elasticsearch.md) | Enable [Elastic Search](http://www.elastic.co) output plugin | On |

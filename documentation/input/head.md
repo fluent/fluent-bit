@@ -1,4 +1,4 @@
-# File
+# Head
 
 The __head__ input plugin, allows to read events from the head of file. It's behavior is similar to the _tail_ command.
 
@@ -32,7 +32,7 @@ Here is an example of configuration file:
     # Buffer size to read file. Default 256
     Buf_Size 256
 
-    # Total Interval 
+    # Total Interval
     #     = Interval Sec + ( Interval Nsec * 1000 * 1000 * 1000 )
     #
     # Interval Sec
@@ -58,8 +58,8 @@ Copyright (C) Treasure Data
 
 [2016/03/15 22:21:16] [ info] Configuration
  flush time     : 5 seconds
- input plugins  : head 
- collectors     : 
+ input plugins  : head
+ collectors     :
 [2016/03/15 22:21:16] [ info] starting engine
 [2016/03/15 22:21:16] [debug] Head config: buf_size=10 path=/proc/uptime
 [2016/03/15 22:21:16] [debug] Head config: interval_sec=1 interval_nsec=0
