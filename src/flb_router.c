@@ -61,34 +61,44 @@ int flb_router_io_set(struct flb_config *config)
     mk_list_foreach(o_head, &config->outputs) {
         out_count++;
     }
+
     if (in_count == 1 && out_count == 1) {
         i_ins = mk_list_entry_first(&config->inputs,
                                     struct flb_input_instance, _head);
         o_ins = mk_list_entry_first(&config->outputs,
                                     struct flb_output_instance, _head);
         if (!i_ins->tag && !o_ins->match) {
+            flb_trace("[router] default match rule %s:%s",
+                      i_ins->name, o_ins->name);
             flb_router_connect(i_ins, o_ins);
             return 0;
         }
     }
 
-
     /* N:M case, iterate all input instances */
     mk_list_foreach(i_head, &config->inputs) {
         i_ins = mk_list_entry(i_head, struct flb_input_instance, _head);
         if (!i_ins->tag) {
+            flb_warn("[router] NO tag for %s input instance",
+                     i_ins->name);
             continue;
         }
+
+        flb_trace("[router] input=%s tag=%s", i_ins->name, i_ins->tag);
 
         /* Try to find a match with output instances */
         mk_list_foreach(o_head, &config->outputs) {
             o_ins = mk_list_entry(o_head, struct flb_output_instance, _head);
             if (!o_ins->match) {
+                flb_warn("[router] NO match for %s output instance",
+                          o_ins->name);
                 continue;
             }
 
             /* FIXME: no wildcards support 'yet' */
             if (strcmp(i_ins->tag, o_ins->match) == 0) {
+                flb_trace("[router] match rule %s:%s",
+                          i_ins->name, o_ins->name);
                 flb_router_connect(i_ins, o_ins);
             }
         }
