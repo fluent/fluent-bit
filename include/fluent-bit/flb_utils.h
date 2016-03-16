@@ -33,6 +33,7 @@
 #define flb_warn(fmt, ...)    flb_message(FLB_MSG_WARN, NULL, 0, fmt, ##__VA_ARGS__)
 #define flb_error(fmt, ...)   flb_message(FLB_MSG_ERROR, NULL, 0, fmt, ##__VA_ARGS__)
 #define flb_debug(c,fmt, ...) if (c->verbose) flb_message(FLB_MSG_DEBUG, \
+                                                          NULL, 0,      \
                                                           fmt, ##__VA_ARGS__)
 
 #ifdef FLB_TRACE
@@ -47,7 +48,7 @@ int flb_debug_enabled();
 void flb_utils_error(int err);
 void flb_utils_error_c(const char *msg);
 void flb_utils_warn_c(const char *msg);
-void flb_message(int type, const char *fmt, ...);
+void flb_message(int type, char *file, int line, const char *fmt, ...);
 int flb_utils_set_daemon();
 void flb_utils_print_setup(struct flb_config *config);
 

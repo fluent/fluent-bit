@@ -162,7 +162,7 @@ FLB_INLINE int flb_io_net_connect(struct flb_io_upstream *u,
 
             if (error != 0) {
                 /* Connection is broken, not much to do here */
-                flb_trace("[io] connection failed");
+                flb_error("[io] connection failed");
                 return -1;
             }
 

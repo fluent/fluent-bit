@@ -114,15 +114,15 @@ void flb_utils_warn_c(const char *msg)
             ANSI_BOLD ANSI_YELLOW, ANSI_RESET, msg);
 }
 
-void flb_message(int type, const char *fmt, ...)
+void flb_message(int type, char *file, int line, const char *fmt, ...)
 {
     time_t now;
-    struct tm *current;
-
     const char *header_color = NULL;
     const char *header_title = NULL;
     const char *bold_color = ANSI_BOLD;
     const char *reset_color = ANSI_RESET;
+    struct tm result;
+    struct tm *current;
     va_list args;
 
     va_start(args, fmt);
@@ -154,24 +154,24 @@ void flb_message(int type, const char *fmt, ...)
     }
 
     now = time(NULL);
-    struct tm result;
     current = localtime_r(&now, &result);
-    printf("%s[%s%i/%02i/%02i %02i:%02i:%02i%s]%s ",
-           bold_color, reset_color,
-           current->tm_year + 1900,
-           current->tm_mon + 1,
-           current->tm_mday,
-           current->tm_hour,
-           current->tm_min,
-           current->tm_sec,
-           bold_color, reset_color);
 
-    printf("%s[%s%5s%s]%s ",
-           "", header_color, header_title, reset_color, "");
+    fprintf(stderr, "%s[%s%i/%02i/%02i %02i:%02i:%02i%s]%s ",
+            bold_color, reset_color,
+            current->tm_year + 1900,
+            current->tm_mon + 1,
+            current->tm_mday,
+            current->tm_hour,
+            current->tm_min,
+            current->tm_sec,
+            bold_color, reset_color);
 
-    vprintf(fmt, args);
+    fprintf(stderr, "%s[%s%5s%s]%s ",
+            "", header_color, header_title, reset_color, "");
+
+    vfprintf(stdout, fmt, args);
     va_end(args);
-    printf("%s\n", reset_color);
+    fprintf(stdout, "%s\n", reset_color);
     fflush(stdout);
 }
 

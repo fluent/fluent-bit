@@ -260,7 +260,6 @@ int flb_engine_start(struct flb_config *config)
     struct flb_engine_task *task;
 
     flb_info("starting engine");
-
     pthread_key_create(&flb_thread_key, NULL);
 
     /* Create the event loop and set it in the global configuration */
