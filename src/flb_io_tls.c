@@ -243,7 +243,7 @@ FLB_INLINE int flb_io_net_tls_connect(struct flb_io_upstream *u,
     ret = flb_net_tcp_fd_connect(fd, u->tcp_host, u->tcp_port);
     if (ret == -1) {
         if (errno == EINPROGRESS) {
-            flb_debug("[upstream] connection in process");
+            flb_trace("[upstream] connection in process");
         }
         else {
             close(u->fd);
@@ -338,13 +338,13 @@ FLB_INLINE int flb_io_net_tls_connect(struct flb_io_upstream *u,
         goto retry_handshake;
     }
     else {
-        flb_debug("[io_tls] Handshake OK");
+        flb_trace("[io_tls] Handshake OK");
     }
 
     if (u->event.status == MK_EVENT_REGISTERED) {
         mk_event_del(u->evl, &u->event);
     }
-    flb_debug("[io_tls] connection OK");
+    flb_trace("[io_tls] connection OK");
     return 0;
 
  error:
@@ -407,7 +407,7 @@ FLB_INLINE int net_io_tls_write(struct flb_thread *th, struct flb_io_upstream *u
     else if (ret < 0) {
         char err_buf[72];
         mbedtls_strerror(ret, err_buf, sizeof(err_buf));
-        flb_debug("[tls] SSL error: %s", err_buf);
+        flb_error("[tls] SSL error: %s", err_buf);
 
         /* There was an error transmitting data */
         mk_event_del(u->evl, &u->event);

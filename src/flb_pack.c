@@ -54,7 +54,7 @@ static int json_tokenise(char *js, size_t len,
 
     if (ret == JSMN_ERROR_PART) {
         /* This is a partial JSON message, just stop */
-        flb_debug("[json tokenise] incomplete");
+        flb_trace("[json tokenise] incomplete");
         return FLB_ERR_JSON_PART;
     }
 

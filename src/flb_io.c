@@ -123,7 +123,7 @@ FLB_INLINE int flb_io_net_connect(struct flb_io_upstream *u,
     ret = flb_net_tcp_fd_connect(fd, u->tcp_host, u->tcp_port);
     if (ret == -1) {
         if (errno == EINPROGRESS) {
-            flb_debug("[upstream] connection in process");
+            flb_trace("[upstream] connection in process");
         }
 
         MK_EVENT_NEW(&u->event);
@@ -162,7 +162,7 @@ FLB_INLINE int flb_io_net_connect(struct flb_io_upstream *u,
 
             if (error != 0) {
                 /* Connection is broken, not much to do here */
-                flb_debug("[io] connection failed");
+                flb_trace("[io] connection failed");
                 return -1;
             }
 
@@ -173,7 +173,7 @@ FLB_INLINE int flb_io_net_connect(struct flb_io_upstream *u,
         }
     }
 
-    flb_debug("[io] connection OK");
+    flb_trace("[io] connection OK");
     return 0;
 }
 
@@ -187,7 +187,7 @@ FLB_INLINE int net_io_write(struct flb_thread *th, struct flb_io_upstream *u,
 
  retry:
     bytes = write(u->fd, data + total, len - total);
-    flb_debug("[io] write(2)=%d", bytes);
+    flb_trace("[io] write(2)=%d", bytes);
 
     if (bytes == -1) {
         if (errno == EAGAIN) {
@@ -195,7 +195,7 @@ FLB_INLINE int net_io_write(struct flb_thread *th, struct flb_io_upstream *u,
         }
         else {
             /* The connection routine may yield */
-            flb_debug("[io] trying to reconnect");
+            flb_trace("[io] trying to reconnect");
             ret = flb_io_net_connect(u, th);
             if (ret == -1) {
                 return -1;
@@ -264,7 +264,7 @@ int flb_io_net_write(struct flb_io_upstream *u, void *data,
     int ret = -1;
     struct flb_thread *th;
 
-    flb_debug("[io] trying to write %zd bytes", len);
+    flb_trace("[io] trying to write %zd bytes", len);
 
     th = pthread_getspecific(flb_thread_key);
     if (u->flags & FLB_IO_TCP) {
@@ -280,7 +280,7 @@ int flb_io_net_write(struct flb_io_upstream *u, void *data,
         u->fd = -1;
     }
 
-    flb_debug("[io] thread has finished");
+    flb_trace("[io] thread has finished");
     return ret;
 }
 
@@ -289,7 +289,7 @@ ssize_t flb_io_net_read(struct flb_io_upstream *u, void *buf, size_t len)
     int ret = -1;
     struct flb_thread *th;
 
-    flb_debug("[io] trying to read up to %zd bytes", len);
+    flb_trace("[io] trying to read up to %zd bytes", len);
 
     th = pthread_getspecific(flb_thread_key);
     if (u->flags & FLB_IO_TCP) {
@@ -301,6 +301,6 @@ ssize_t flb_io_net_read(struct flb_io_upstream *u, void *buf, size_t len)
     }
 #endif
 
-    flb_debug("[io] thread has finished");
+    flb_trace("[io] thread has finished");
     return ret;
 }

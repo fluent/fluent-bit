@@ -221,7 +221,7 @@ int flb_start(flb_ctx_t *ctx)
         }
 
         if (val == FLB_ENGINE_STARTED) {
-            flb_debug("[lib] backend started");
+            flb_debug(config, "[lib] backend started");
             break;
         }
     }
@@ -239,11 +239,11 @@ int flb_stop(flb_ctx_t *ctx)
         mk_rconf_free(ctx->config->file);
     }
 
-    flb_debug("[lib] sending STOP signal to the engine");
+    flb_debug(ctx->config, "[lib] sending STOP signal to the engine");
     val = FLB_ENGINE_STOP;
     write(ctx->config->ch_manager[1], &val, sizeof(uint64_t));
     ret = pthread_join(ctx->config->worker, NULL);
 
-    flb_debug("[lib] Fluent Bit engine stopped");
+    flb_debug(ctx->config, "[lib] Fluent Bit engine stopped");
     return ret;
 }

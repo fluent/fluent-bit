@@ -31,8 +31,6 @@ struct flb_config *flb_config_init()
 {
     struct flb_config *config;
 
-    __flb_config_verbose = FLB_FALSE;
-
     config = calloc(1, sizeof(struct flb_config));
     if (!config) {
         perror("malloc");
@@ -42,6 +40,7 @@ struct flb_config *flb_config_init()
     config->flush     = FLB_CONFIG_FLUSH_SECS;
     config->init_time = time(NULL);
     config->kernel    = flb_kernel_info();
+    config->verbose   = FLB_FALSE;
 
     mk_list_init(&config->collectors);
     mk_list_init(&config->in_plugins);
@@ -117,9 +116,4 @@ void flb_config_exit(struct flb_config *config)
     mk_event_loop_destroy(config->evl);
 
     free(config);
-}
-
-void flb_config_verbose(int status)
-{
-    __flb_config_verbose = status;
 }

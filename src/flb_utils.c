@@ -114,12 +114,6 @@ void flb_utils_warn_c(const char *msg)
             ANSI_BOLD ANSI_YELLOW, ANSI_RESET, msg);
 }
 
-int flb_debug_enabled()
-{
-    return __flb_config_verbose;
-
-}
-
 void flb_message(int type, const char *fmt, ...)
 {
     time_t now;
@@ -130,12 +124,6 @@ void flb_message(int type, const char *fmt, ...)
     const char *bold_color = ANSI_BOLD;
     const char *reset_color = ANSI_RESET;
     va_list args;
-
-    if (type == FLB_MSG_DEBUG) {
-        if (__flb_config_verbose == FLB_FALSE) {
-            return;
-        }
-    }
 
     va_start(args, fmt);
 

@@ -263,7 +263,7 @@ int main(int argc, char **argv)
             flb_version();
             exit(EXIT_SUCCESS);
         case 'V':
-            config->verbose = __flb_config_verbose = FLB_TRUE;
+            config->verbose = FLB_TRUE;
             break;
         default:
             flb_help(EXIT_FAILURE, config);

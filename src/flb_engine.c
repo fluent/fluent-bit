@@ -171,13 +171,13 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
 
     /* Flush all remaining data */
     if (val == FLB_ENGINE_STOP) {
-        flb_debug("[engine] flush enqueued data");
+        flb_trace("[engine] flush enqueued data");
         flb_engine_flush(config, NULL);
         return FLB_ENGINE_STOP;
     }
 #ifdef HAVE_STATS
     else if (val == FLB_ENGINE_STATS) {
-        flb_debug("[engine] collect stats");
+        flb_trace("[engine] collect stats");
         //flb_stats_collect(config);
         return FLB_ENGINE_STATS;
     }
@@ -365,10 +365,10 @@ int flb_engine_start(struct flb_config *config)
                     event->mask = MK_EVENT_EMPTY;
                     event->status = MK_EVENT_NONE;
                     config->shutdown_fd = mk_event_timeout_create(evl, 5, event);
-                    flb_debug("[engine] service will stop in 5 seconds");
+                    flb_warn("[engine] service will stop in 5 seconds");
                 }
                 else if (ret == FLB_ENGINE_SHUTDOWN) {
-                    flb_debug("[engine] service stopped");
+                    flb_info("[engine] service stopped");
                     return flb_engine_shutdown(config);
                 }
 #ifdef HAVE_STATS
@@ -389,7 +389,7 @@ int flb_engine_start(struct flb_config *config)
                 th = u->thread;
                 task = th->task;
 
-                flb_debug("[engine] resuming thread: %i", u->event.fd);
+                flb_trace("[engine] resuming thread: %i", u->event.fd);
                 flb_thread_resume(th);
 
                 if (task->deleted == FLB_TRUE) {
