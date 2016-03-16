@@ -195,6 +195,7 @@ struct flb_thread *flb_output_thread(struct flb_engine_task *task,
     th->data = o_ins;
     th->output_buffer = buf;
     th->task = task;
+    th->config = config;
 
     makecontext(&th->callee, (void (*)()) o_ins->p->cb_flush,
                 5, buf, size, i_ins, o_ins->context, config);

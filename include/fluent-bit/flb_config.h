@@ -80,11 +80,7 @@ struct flb_config {
     struct flb_kernel *kernel;
 };
 
-int __flb_config_verbose;
-
 struct flb_config *flb_config_init();
 void flb_config_exit(struct flb_config *config);
-
-void flb_config_verbose(int status);
 
 #endif

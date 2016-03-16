@@ -64,6 +64,8 @@ struct flb_thread {
     /* Parent flb_engine_task */
     struct flb_engine_task *task;
 
+    struct flb_config *config;
+
     /* Link to struct flb_engine_task->threads */
     struct mk_list _head;
 };
@@ -100,7 +102,6 @@ static FLB_INLINE void flb_thread_resume(struct flb_thread *th)
 
     /* It ended, destroy the thread (coroutine) */
     if (th->ended == MK_TRUE) {
-        flb_debug("[thread %p] ended", th);
         flb_engine_task_remove(th->task);
     }
 }
@@ -137,7 +138,7 @@ static struct flb_thread *flb_thread_new()
                                                     FLB_THREAD_STACK(p) + FLB_THREAD_STACK_SIZE);
 #endif
 
-    flb_debug("[thread %p] created", th);
+    flb_trace("[thread %p] created", th);
 
     return th;
 }
