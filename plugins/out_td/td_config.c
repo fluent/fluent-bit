@@ -59,8 +59,8 @@ struct flb_out_td_config *td_config_init(struct mk_rconf *conf)
     config->db_name  = db_name;
     config->db_table = db_table;
 
-    flb_debug("TreasureData / database='%s' table='%s'",
-              config->db_name, config->db_table);
+    flb_info("TreasureData / database='%s' table='%s'",
+             config->db_name, config->db_table);
 
     return config;
 }

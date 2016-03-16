@@ -230,7 +230,7 @@ static inline int process_line(char *line, struct flb_in_kmsg_config *ctx)
     msgpack_pack_bin(&ctx->mp_pck, line_len);
     msgpack_pack_bin_body(&ctx->mp_pck, p, line_len);
 
-    flb_debug("[in_kmsg] pri=%i seq=%" PRIu64 " ts=%ld sec=%ld usec=%ld '%s'",
+    flb_trace("[in_kmsg] pri=%i seq=%" PRIu64 " ts=%ld sec=%ld usec=%ld '%s'",
               priority,
               sequence,
               ts,

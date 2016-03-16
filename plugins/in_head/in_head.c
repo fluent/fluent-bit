@@ -48,7 +48,7 @@ static int in_head_collect(struct flb_config *config, void *in_context)
     }
 
     head_config->buf_len = read(fd, head_config->buf, head_config->buf_size);
-    flb_debug("%s read_len=%d buf_size=%d", __FUNCTION__,
+    flb_trace("%s read_len=%d buf_size=%d", __FUNCTION__,
               head_config->buf_len, head_config->buf_size);
 
     if (head_config->buf_len < 0) {
@@ -121,9 +121,9 @@ static int in_head_config_read(struct flb_in_head_config *head_config,
         head_config->interval_nsec = DEFAULT_INTERVAL_NSEC;
     }
 
-    flb_debug("Head config: buf_size=%d path=%s",
+    flb_trace("Head config: buf_size=%d path=%s",
               head_config->buf_size, head_config->filepath);
-    flb_debug("Head config: interval_sec=%d interval_nsec=%d",
+    flb_trace("Head config: interval_sec=%d interval_nsec=%d",
               head_config->interval_sec, head_config->interval_nsec);
 
     return 0;
@@ -174,7 +174,7 @@ static int in_head_init(struct flb_input_instance *in,
         goto init_error;
     }
 
-    flb_debug("%s read_len=%d buf_size=%d", __FUNCTION__,
+    flb_trace("%s read_len=%d buf_size=%d", __FUNCTION__,
               head_config->buf_len, sizeof(head_config->buf));
 
     flb_input_set_context(in, head_config);

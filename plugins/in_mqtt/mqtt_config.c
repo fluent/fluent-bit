@@ -47,8 +47,8 @@ struct flb_in_mqtt_config *mqtt_config_init(struct mk_rconf *conf)
       config->tcp_port = strdup("1883");
     }
 
-    flb_debug("MQTT Listen='%s' TCP_Port=%s",
-              config->listen, config->tcp_port);
+    flb_info("MQTT Listen='%s' TCP_Port=%s",
+             config->listen, config->tcp_port);
 
     return config;
 }

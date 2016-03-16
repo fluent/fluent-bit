@@ -59,8 +59,8 @@ struct flb_in_xbee_config *xbee_config_read(struct flb_in_xbee_config *config, s
     in_xbee_config_read_int(&config->xbeeCatchAll, section, "xbeecatchall", 1);
     config->xbeeMode  = xbee_mode ? xbee_mode : "xbeeZB";
 
-    flb_debug("[xbee] / device='%s' baudrate=%d",
-              config->file, config->baudrate);
+    flb_info("[xbee] / device='%s' baudrate=%d",
+             config->file, config->baudrate);
 
     return config;
 }

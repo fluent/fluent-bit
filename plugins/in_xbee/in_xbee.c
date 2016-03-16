@@ -157,7 +157,7 @@ void in_xbee_cb(struct xbee *xbee, struct xbee_con *con,
     struct flb_in_xbee_config *ctx;
 
     if ((*pkt)->dataLen == 0) {
-        flb_debug("xbee data length too short, skip");
+        flb_warn("xbee data length too short, skip");
         return;
     }
 

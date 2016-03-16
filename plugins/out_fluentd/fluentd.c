@@ -136,7 +136,7 @@ int cb_fluentd_flush(void *data, size_t bytes,
     ret = flb_io_net_write(ctx->u, buf, total, &bytes_sent);
     free(buf);
 
-    flb_debug("[fluentd] ended write()=%d bytes", bytes_sent);
+    flb_trace("[fluentd] ended write()=%d bytes", bytes_sent);
     return ret;
 }
 

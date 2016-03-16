@@ -107,7 +107,7 @@ int in_xbee_iosampling_decode_ios(struct msgpack_packer *buf, unsigned char *p, 
     }
 
     /*
-     * Analog pins 
+     * Analog pins
      */
     for (i = 0; i < sizeof(analog_ports) / sizeof(struct xbee_ioport); i++) {
         struct xbee_ioport *port = &analog_ports[i];
@@ -134,7 +134,7 @@ void in_xbee_iosampling_cb(struct xbee *xbee, struct xbee_con *con,
     char source_addr[8 * 2 + 1];
 
     if ((*pkt)->dataLen == 0) {
-        flb_debug("xbee data length too short, skip");
+        flb_warn("xbee data length too short, skip");
         return;
     }
 
@@ -153,7 +153,8 @@ void in_xbee_iosampling_cb(struct xbee *xbee, struct xbee_con *con,
 
     in_xbee_conAddress2str((char*) &source_addr, sizeof(source_addr), &(*pkt)->address);
 
-    flb_debug("[xbee] IO sample: mask_din=0x%x mask_ain=%x map_len=%d", mask_din, mask_ain, map_len);
+    flb_trace("[xbee] IO sample: mask_din=0x%x mask_ain=%x map_len=%d",
+              mask_din, mask_ain, map_len);
 
     pthread_mutex_lock(&ctx->mtx_mp);
 

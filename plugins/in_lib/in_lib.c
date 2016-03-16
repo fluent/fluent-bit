@@ -134,7 +134,7 @@ int in_lib_collect(struct flb_config *config, void *in_context)
     bytes = read(ctx->fd,
                  ctx->buf_data + ctx->buf_len,
                  capacity);
-    flb_debug("in_lib read() = %i", bytes);
+    flb_trace("in_lib read() = %i", bytes);
     if (bytes == -1) {
         perror("read");
         if (errno == -EPIPE) {
@@ -148,11 +148,11 @@ int in_lib_collect(struct flb_config *config, void *in_context)
     ret = flb_pack_json_state(ctx->buf_data, ctx->buf_len,
                               &pack, &out_size, &ctx->state);
     if (ret == FLB_ERR_JSON_PART) {
-        flb_debug("lib data incomplete, waiting for more data...");
+        flb_warn("lib data incomplete, waiting for more data...");
         return 0;
     }
     else if (ret == FLB_ERR_JSON_INVAL) {
-        flb_debug("lib data invalid");
+        flb_warn("lib data invalid");
         flb_pack_state_reset(&ctx->state);
         flb_pack_state_init(&ctx->state);
         return -1;

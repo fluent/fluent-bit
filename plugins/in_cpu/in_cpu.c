@@ -264,19 +264,19 @@ struct cpu_snapshot *snapshot_percent(struct cpu_stats *cstats,
                                                   ctx);
         }
 
-        if (flb_debug_enabled()) {
-            if (i == 0) {
-                printf("cpu[all] all=%s%f%s user=%s%f%s system=%s%f%s\n",
-                       ANSI_BOLD, snap_now->p_cpu, ANSI_RESET,
-                       ANSI_BOLD, snap_now->p_user, ANSI_RESET,
-                       ANSI_BOLD, snap_now->p_system, ANSI_RESET);
-            }
-            else {
-                printf("cpu[i=%i] all=%f user=%f system=%f\n",
-                       i-1, snap_now->p_cpu,
-                       snap_now->p_user, snap_now->p_system);
-            }
+#ifdef FLB_TRACE
+        if (i == 0) {
+            flb_trace("cpu[all] all=%s%f%s user=%s%f%s system=%s%f%s\n",
+                      ANSI_BOLD, snap_now->p_cpu, ANSI_RESET,
+                      ANSI_BOLD, snap_now->p_user, ANSI_RESET,
+                      ANSI_BOLD, snap_now->p_system, ANSI_RESET);
         }
+        else {
+            flb_trace(stderr, "cpu[i=%i] all=%f user=%f system=%f\n",
+                      i-1, snap_now->p_cpu,
+                      snap_now->p_user, snap_now->p_system);
+        }
+#endif
     }
 
     return arr_now;
@@ -334,7 +334,7 @@ int in_cpu_collect(struct flb_config *config, void *in_context)
     }
 
     snapshots_switch(cstats);
-    flb_debug("[in_cpu] CPU %0.2f%%", s->p_cpu);
+    flb_trace("[in_cpu] CPU %0.2f%%", s->p_cpu);
 
     flb_stats_update(in_cpu_plugin.stats_fd, 0, 1);
 

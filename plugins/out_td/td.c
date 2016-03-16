@@ -204,7 +204,7 @@ int cb_td_flush(void *data, size_t bytes,
     n = flb_io_net_read(ctx->u, buf, sizeof(buf) - 1);
     if (n > 0) {
         buf[n] = '\0';
-        flb_debug("[TD] API server response:\n%s", buf);
+        flb_trace("[TD] API server response:\n%s", buf);
     }
 
     return bytes_sent;

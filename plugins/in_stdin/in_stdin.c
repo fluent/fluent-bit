@@ -87,7 +87,7 @@ int in_stdin_collect(struct flb_config *config, void *in_context)
     bytes = read(ctx->fd,
                  ctx->buf + ctx->buf_len,
                  sizeof(ctx->buf) - ctx->buf_len);
-    flb_debug("in_stdin read() = %i", bytes);
+    flb_trace("in_stdin read() = %i", bytes);
     if (bytes <= 0) {
         return -1;
     }
@@ -96,7 +96,7 @@ int in_stdin_collect(struct flb_config *config, void *in_context)
     /* Initially we should support JSON input */
     ret = flb_pack_json(ctx->buf, ctx->buf_len, &pack, &out_size);
     if (ret != 0) {
-        flb_debug("STDIN data incomplete, waiting for more data...");
+        flb_warn("STDIN data incomplete, waiting for more data...");
         return 0;
     }
     ctx->buf_len = 0;

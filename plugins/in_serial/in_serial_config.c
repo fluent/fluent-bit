@@ -53,8 +53,8 @@ struct flb_in_serial_config *serial_config_read(struct flb_in_serial_config *con
     config->file     = file;
     config->bitrate  = bitrate;
 
-    flb_debug("Serial / file='%s' bitrate='%s'",
-              config->file, config->bitrate);
+    flb_info("Serial / file='%s' bitrate='%s'",
+             config->file, config->bitrate);
 
     return config;
 }

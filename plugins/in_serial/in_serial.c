@@ -92,7 +92,7 @@ static inline int process_line(char *line, struct flb_in_serial_config *ctx)
     msgpack_pack_bin(&ctx->mp_pck, line_len);
     msgpack_pack_bin_body(&ctx->mp_pck, p, line_len);
 
-    flb_debug("[in_serial] '%s'",
+    flb_trace("[in_serial] '%s'",
               (const char *) msg);
 
     return 0;
@@ -135,7 +135,7 @@ int in_serial_exit(void *in_context, struct flb_config *config)
 {
     struct flb_in_serial_config *ctx = in_context;
 
-    flb_debug("[in_serial] Restoring original termios...");
+    flb_trace("[in_serial] Restoring original termios...");
     tcsetattr(ctx->fd, TCSANOW, &ctx->tio_orig);
 
     return 0;

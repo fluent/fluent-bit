@@ -46,7 +46,7 @@ int in_mqtt_init(struct flb_input_instance *in,
     /* Create TCP server */
     ctx->server_fd = flb_net_server(ctx->tcp_port, ctx->listen);
     if (ctx->server_fd > 0) {
-        flb_debug("[mqtt] binding %s:%s", ctx->listen, ctx->tcp_port);
+        flb_info("[mqtt] binding %s:%s", ctx->listen, ctx->tcp_port);
     }
     else {
         flb_error("[mqtt] could not bind address %s:%s. Aborting",
@@ -98,7 +98,7 @@ int in_mqtt_collect(struct flb_config *config, void *in_context)
         return -1;
     }
 
-    flb_debug("[mqtt] new TCP connection arrived FD=%i", fd);
+    flb_trace("[mqtt] new TCP connection arrived FD=%i", fd);
     conn = mqtt_conn_add(fd, ctx);
     if (!conn) {
         return -1;

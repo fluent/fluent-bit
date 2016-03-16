@@ -43,16 +43,16 @@ int mqtt_conn_event(void *data)
                      conn->buf + conn->buf_len, available);
         if (bytes > 0) {
             conn->buf_len += bytes;
-            flb_debug("[mqtt] %i bytes in", bytes);
+            flb_trace("[mqtt] %i bytes in", bytes);
             ret = mqtt_prot_parser(conn);
             if (ret == MQTT_ERROR) {
-                flb_debug("[mqtt] fd=%i protocol error", event->fd);
+                flb_trace("[mqtt] fd=%i protocol error", event->fd);
             }
             else if (ret == MQTT_HANGUP) {
-                flb_debug("[mqtt] fd=%i client hangup", event->fd);
+                flb_trace("[mqtt] fd=%i client hangup", event->fd);
             }
             else if (ret == MQTT_MORE) {
-                flb_debug("[mqtt] fd=%i need more data", event->fd);
+                flb_trace("[mqtt] fd=%i need more data", event->fd);
             }
 
             if (ret < 0) {
@@ -61,12 +61,12 @@ int mqtt_conn_event(void *data)
             }
         }
         else {
-            flb_debug("[mqtt] fd=%i closed connection", event->fd);
+            flb_trace("[mqtt] fd=%i closed connection", event->fd);
             mqtt_conn_del(conn);
         }
     }
     else if (event->mask & MK_EVENT_CLOSE) {
-        flb_debug("[mqtt] fd=%i hangup", event->fd);
+        flb_trace("[mqtt] fd=%i hangup", event->fd);
     }
     return 0;
 }

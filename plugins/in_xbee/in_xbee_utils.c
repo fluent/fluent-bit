@@ -52,7 +52,7 @@ int in_xbee_conAddress2str(char *buf, int size, struct xbee_conAddress *addr) {
         addr_len = 1;
         src = (char*) &addr->addr16;
     } else {
-        flb_debug("xbee_conAddress has no address data?\n");
+        flb_error("xbee_conAddress has no address data?\n");
         return 0;
     }
 
@@ -64,4 +64,3 @@ int in_xbee_conAddress2str(char *buf, int size, struct xbee_conAddress *addr) {
 
    return 1;
 }
-
