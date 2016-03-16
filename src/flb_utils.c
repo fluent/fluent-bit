@@ -144,6 +144,10 @@ void flb_message(int type, char *file, int line, const char *fmt, ...)
         header_title = "debug";
         header_color = ANSI_YELLOW;
         break;
+    case FLB_MSG_TRACE:
+        header_title = "trace";
+        header_color = ANSI_BLUE;
+        break;
     }
 
     /* Only print colors to a terminal */
