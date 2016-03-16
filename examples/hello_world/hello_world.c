@@ -35,8 +35,6 @@ int main()
         exit(EXIT_FAILURE);
     }
 
-    __flb_config_verbose = FLB_TRUE;
-
     input = flb_input(ctx, "lib", NULL);
     flb_input_set(input, "tag", "test");
 

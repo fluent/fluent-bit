@@ -21,7 +21,6 @@ TEST(TD, json_long) {
     EXPECT_TRUE(output != NULL);
     flb_output_set(output, "tag", "test");
 
-    flb_config_verbose(FLB_TRUE);
     ret = flb_lib_config_file(ctx, (char *) "/tmp/td.conf");
 
     ret = flb_start(ctx);
