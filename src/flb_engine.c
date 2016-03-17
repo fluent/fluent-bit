@@ -304,7 +304,7 @@ int flb_engine_start(struct flb_config *config)
     event->mask = MK_EVENT_EMPTY;
     event->status = MK_EVENT_NONE;
 
-    config->flush_fd = mk_event_timeout_create(evl, config->flush, event);
+    config->flush_fd = mk_event_timeout_create(evl, config->flush, 0, event);
     if (config->flush_fd == -1) {
         flb_utils_error(FLB_ERR_CFG_FLUSH_CREATE);
     }
@@ -320,7 +320,7 @@ int flb_engine_start(struct flb_config *config)
         if (collector->type == FLB_COLLECT_TIME) {
             event->mask = MK_EVENT_EMPTY;
             event->status = MK_EVENT_NONE;
-            fd = mk_event_timeout_create(evl, collector->seconds, event);
+            fd = mk_event_timeout_create(evl, collector->seconds, 0, event);
             if (fd == -1) {
                 continue;
             }
@@ -363,7 +363,7 @@ int flb_engine_start(struct flb_config *config)
                     event = &config->event_shutdown;
                     event->mask = MK_EVENT_EMPTY;
                     event->status = MK_EVENT_NONE;
-                    config->shutdown_fd = mk_event_timeout_create(evl, 5, event);
+                    config->shutdown_fd = mk_event_timeout_create(evl, 5, 0, event);
                     flb_warn("[engine] service will stop in 5 seconds");
                 }
                 else if (ret == FLB_ENGINE_SHUTDOWN) {
