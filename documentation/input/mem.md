@@ -1,6 +1,6 @@
 # Memory Usage
 
-The __mem__ input plugin, gather the information about the memory usage of the running system every certain interval of time and reports the total amount of memory and the amount of free available.
+The __mem__ input plugin, gathers the information about the memory usage of the running system every certain interval of time and reports the total amount of memory and the amount of free available.
 
 In order to measure read the memory usage with [Fluent Bit](http://fluentbit.io), use the  following command line arguments:
 

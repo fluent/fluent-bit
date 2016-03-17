@@ -9,7 +9,7 @@ When a __plugin__ is loaded, multiple instances of it can be started and in orde
 - Input plugin instances are _tagged_
 - Output plugin instances defines a _match_
 
-When a record is buffered it contains a __tag__, then the router lookup the output instances that have a __match__ for it, then it deliver the data as required.
+When a record is buffered it contains a __tag__, then the router lookup the output instances that have a __match__ for it, then it delivers the data as required.
 
 In order to understand more _how it works_ we will introduce some concepts:
 

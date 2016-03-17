@@ -4,7 +4,7 @@ The __MQTT__ input plugin, allows to retrieve messages/data from MQTT control pa
 
 ## Configuration File
 
-[Fluent Bit](http://fluentbit.io) sources distribute an example configuration file for the MQTT plugin and it's located under _conf/in_mqtt.conf_. The plugin recognize the following setup under a __MQTT__ section:
+[Fluent Bit](http://fluentbit.io) sources distribute an example configuration file for the MQTT plugin and it's located under _conf/in_mqtt.conf_. The plugin recognizes the following setup under a __MQTT__ section:
 
 | Key      | Description       |
 | ---------|-------------------|
