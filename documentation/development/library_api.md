@@ -21,7 +21,7 @@ There are three main data types exposed by the library. All of them including fu
 
 | Type    | Description          |
 |--------------|----------------------|
-| flb_ctx_t    | Main library context. It aim to reference the context returned by _flb\_create();_|
+| flb_ctx_t    | Main library context. It aims to reference the context returned by _flb\_create();_|
 | flb_input_t  | Reference an enabled _input_ plugin instance. Used to store the output of _flb\_input(...);_ function. |
 | flb_output_t | Reference an enabled _output_ plugin instance. Used to store the output of _flb\_output(...);_ function. |
 

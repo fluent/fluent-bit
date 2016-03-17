@@ -2,7 +2,7 @@
 
 Data collection is hard.
 
-Nowadays the number of sources of information that we get in our environments often increase. From an _Embedded/IoT_ perspective the scenario is more complex, devices also provides their own data which can come from sensors, custom applications or the system in general. Considering that these environments may be restrictive in terms of capacity, we need a fast and optimized solution that can deal with:
+Nowadays the number of sources of information that we get in our environments often increase. From an _Embedded/IoT_ perspective the scenario is more complex, devices also provide their own data which can come from sensors, custom applications or the system in general. Considering that these environments may be restrictive in terms of capacity, we need a fast and optimized solution that can deal with:
 
 - Different sources of information.
 - Different data formats.

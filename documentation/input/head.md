@@ -1,6 +1,6 @@
 # Head
 
-The __head__ input plugin, allows to read events from the head of file. It's behavior is similar to the _tail_ command.
+The __head__ input plugin, allows to read events from the head of file. It's behavior is similar to the _head_ command.
 
 ## Configuration File
 
@@ -33,7 +33,7 @@ Here is an example of configuration file:
     Buf_Size 256
 
     # Total Interval
-    #     = Interval Sec + ( Interval Nsec * 1000 * 1000 * 1000 )
+    #     = Interval Sec + ( Interval Nsec / 1000 / 1000 / 1000 )
     #
     # Interval Sec
     # ====

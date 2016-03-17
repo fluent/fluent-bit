@@ -1,6 +1,6 @@
 # Kernel Log Messages
 
-The __kmsg__ input plugin reads the Linux Kernel log buffer since the beginning, it get every record and parse it field as priority, sequence, seconds, useconds, and message.
+The __kmsg__ input plugin reads the Linux Kernel log buffer since the beginning, it gets every record and parse it field as priority, sequence, seconds, useconds, and message.
 
 In order to read the Kernel log messages with [Fluent Bit](http://fluentbit.io), specify the following command line arguments:
 
