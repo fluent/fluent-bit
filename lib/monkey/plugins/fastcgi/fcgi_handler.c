@@ -80,6 +80,7 @@ static inline int fcgi_add_param(struct fcgi_handler *handler,
                                  char *key, int key_len, int key_free,
                                  char *val, int val_len, int val_free)
 {
+    int ret;
     int len;
     int diff;
     int padding;
@@ -106,7 +107,11 @@ static inline int fcgi_add_param(struct fcgi_handler *handler,
 
     diff = (p - buf);
     handler->buf_len += diff;
-    mk_api->iov_add(handler->iov, buf, diff, MK_FALSE);
+    ret = mk_api->iov_add(handler->iov, buf, diff, MK_FALSE);
+    if (ret == -1) {
+        return -1;
+    }
+
     mk_api->iov_add(handler->iov, key, key_len, key_free);
     mk_api->iov_add(handler->iov, val, val_len, val_free);
 
@@ -224,26 +229,39 @@ static inline int fcgi_add_param_net(struct fcgi_handler *handler)
     return 0;
 }
 
-static inline int fcgi_add_stdin(struct fcgi_handler *handler)
+static inline int fcgi_stdin_chunk(struct fcgi_handler *handler)
 {
     int padding = 0;
+    uint16_t max = 65535;
+    uint16_t chunk;
+    uint64_t total;
     char *p;
     char *eof;
     struct fcgi_record_header *h;
 
+    total = handler->stdin_length - handler->stdin_offset;
+    if (total > max) {
+        chunk = max;
+    }
+    else {
+        chunk = total;
+    }
+
     p = FCGI_BUF(handler);
     h = (struct fcgi_record_header *) p;
-    fcgi_build_header(h, FCGI_STDIN, 1, handler->sr->data.len);
-    h->padding_length = ~(handler->sr->data.len - 1) & 7;
+    fcgi_build_header(h, FCGI_STDIN, 1, chunk);
+    h->padding_length = ~(chunk - 1) & 7;
+
+    MK_TRACE("[fastcgi] STDIN: length=%i", chunk);
 
     mk_api->iov_add(handler->iov, p, FCGI_RECORD_HEADER_SIZE, MK_FALSE);
     handler->buf_len += FCGI_RECORD_HEADER_SIZE;
 
 
-    if (handler->sr->data.len > 0) {
+    if (chunk > 0) {
         mk_api->iov_add(handler->iov,
-                        handler->sr->data.data,
-                        handler->sr->data.len,
+                        handler->stdin_buffer + handler->stdin_offset,
+                        chunk,
                         MK_FALSE);
     }
 
@@ -251,13 +269,31 @@ static inline int fcgi_add_stdin(struct fcgi_handler *handler)
         mk_api->iov_add(handler->iov,
                         fcgi_pad, h->padding_length,
                         MK_FALSE);
-
     }
 
-    eof = FCGI_BUF(handler);
-    fcgi_build_header((struct fcgi_record_header *) eof, FCGI_STDIN, 1, 0);
-    mk_api->iov_add(handler->iov, eof, FCGI_RECORD_HEADER_SIZE, MK_FALSE);
-    handler->buf_len += FCGI_RECORD_HEADER_SIZE + padding;
+    if (handler->stdin_offset + chunk == handler->stdin_length) {
+        eof = FCGI_BUF(handler);
+        fcgi_build_header((struct fcgi_record_header *) eof, FCGI_STDIN, 1, 0);
+        mk_api->iov_add(handler->iov, eof, FCGI_RECORD_HEADER_SIZE, MK_FALSE);
+        handler->buf_len += FCGI_RECORD_HEADER_SIZE + padding;
+    }
+
+    handler->stdin_offset += chunk;
+    return 0;
+}
+
+static inline int fcgi_add_stdin(struct fcgi_handler *handler)
+{
+    uint64_t bytes = handler->sr->data.len;
+
+    if (bytes <= 0) {
+        return -1;
+    }
+
+    handler->stdin_length = bytes;
+    handler->stdin_offset = 0;
+    handler->stdin_buffer = handler->sr->data.data;
+    fcgi_stdin_chunk(handler);
 
     return 0;
 }
@@ -267,6 +303,8 @@ static int fcgi_encode_request(struct fcgi_handler *handler)
     int ret;
     struct mk_http_header *header;
     struct fcgi_begin_request_record *request;
+
+    MK_TRACE("ENCODE REQUEST");
 
     request = &handler->header_request;
     fcgi_build_header(&request->header, FCGI_BEGIN_REQUEST, 1,
@@ -376,6 +414,7 @@ static int fcgi_encode_request(struct fcgi_handler *handler)
         http_header = mk_list_entry(head, struct mk_http_header, _head);
         fcgi_add_param_http_header(handler, http_header);
     }
+
     /* Append the empty params record */
     fcgi_add_param_empty(handler);
 
@@ -652,7 +691,21 @@ int cb_fastcgi_on_read(void *data)
         case FCGI_STDOUT:
             MK_TRACE("[fastcgi=%i] FCGI_STDOUT content_length=%i",
                      handler->server_fd, header.content_length);
-            ret = fcgi_response(handler, body, header.content_length);
+            /*
+             * Issue seen with Chrome & Firefox browsers:
+             * Sometimes content length is coming as ZERO and we are encoding a
+             * HTTP response packet with ZERO size data. This makes Chrome & Firefox
+             * browsers fail to proceed furhter and subsequent content loading fails.
+             * However, IE/Safari discards the packets with ZERO size data.
+             */
+            if (0 != header.content_length) {
+                ret = fcgi_response(handler, body, header.content_length);
+            }
+            else {
+                MK_TRACE("[fastcgi=%i] ZERO byte content length in FCGI_STDOUT, discard!!",
+                         handler->server_fd);
+                ret = 0;
+            }
             break;
         case FCGI_STDERR:
             MK_TRACE("[fastcgi=%i] FCGI_STDERR content_length=%i",
@@ -682,7 +735,7 @@ int cb_fastcgi_on_read(void *data)
     return n;
 }
 
-void cb_fastcgi_request_flush(void *data)
+int cb_fastcgi_request_flush(void *data)
 {
     int ret;
     size_t count = 0;
@@ -691,9 +744,25 @@ void cb_fastcgi_request_flush(void *data)
     ret = mk_api->channel_write(&handler->fcgi_channel, &count);
 
     MK_TRACE("[fastcgi=%i] %lu bytes, ret=%i",
-                 handler->server_fd, count, ret);
+             handler->server_fd, count, ret);
 
     if (ret == MK_CHANNEL_DONE || ret == MK_CHANNEL_EMPTY) {
+        /* Do we have more data for the stdin ? */
+        if (handler->stdin_length - handler->stdin_offset > 0) {
+            mk_api->iov_free(handler->iov);
+            handler->iov = mk_api->iov_create(64, 0);
+            fcgi_stdin_chunk(handler);
+
+            mk_api->stream_set(&handler->fcgi_stream,
+                               MK_STREAM_IOV,
+                               &handler->fcgi_channel,
+                               handler->iov,
+                               -1,
+                               handler,
+                               NULL, NULL, NULL);
+            return MK_CHANNEL_FLUSH;
+        }
+
         /* Request done, switch the event side to receive the FCGI response */
         handler->buf_len = 0;
         handler->event.handler = cb_fastcgi_on_read;
@@ -707,9 +776,14 @@ void cb_fastcgi_request_flush(void *data)
     else if (ret == MK_CHANNEL_ERROR) {
         fcgi_exit(handler);
     }
+    else if (ret == MK_CHANNEL_BUSY) {
+        return -1;
+    }
+
+    return ret;
 
  error:
-    return;
+    return -1;
 }
 
 /* Callback: on connect to the backend server */
@@ -769,7 +843,9 @@ int cb_fastcgi_on_connect(void *data)
                        handler,
                        NULL, NULL, NULL);
 
-    cb_fastcgi_request_flush(handler);
+    handler->event.handler = cb_fastcgi_request_flush;
+    handler->event.data = handler;
+
     return 0;
 
  error:
@@ -797,9 +873,12 @@ struct fcgi_handler *fcgi_handler_new(struct mk_http_session *cs,
     h->active = MK_TRUE;
     h->server_fd = -1;
     h->eof = MK_FALSE;
+    h->stdin_length = 0;
+    h->stdin_offset = 0;
+    h->stdin_buffer = NULL;
 
     /* Allocate enough space for our data */
-    entries =  96 + (cs->parser.header_count * 3);
+    entries = 128 + (cs->parser.header_count * 3);
     h->iov = mk_api->iov_create(entries, 0);
 
     /* Associate the handler with the Session Request */

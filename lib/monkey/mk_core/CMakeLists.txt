@@ -43,6 +43,17 @@ if (HAVE_TIMERFD_CREATE)
   add_definitions(-DHAVE_TIMERFD_CREATE)
 endif()
 
+# Validate eventfd()
+check_c_source_compiles("
+  #include <sys/eventfd.h>
+  int main() {
+     return eventfd(0, EFD_CLOEXEC);
+  }" HAVE_EVENTFD)
+
+if (HAVE_EVENTFD)
+  add_definitions(-DHAVE_EVENTFD)
+endif()
+
 include_directories(include)
 add_library(mk_core STATIC ${src})
 target_link_libraries(mk_core ${CMAKE_THREAD_LIBS_INIT})

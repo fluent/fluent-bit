@@ -404,7 +404,7 @@ void mk_server_worker_loop()
     /* create a new timeout file descriptor */
     server_timeout = mk_mem_malloc(sizeof(struct mk_server_timeout));
     MK_TLS_SET(mk_tls_server_timeout, server_timeout);
-    timeout_fd = mk_event_timeout_create(evl, mk_config->timeout, server_timeout);
+    timeout_fd = mk_event_timeout_create(evl, mk_config->timeout, 0, server_timeout);
 
     while (1) {
         mk_event_wait(evl);

@@ -174,7 +174,7 @@ struct plugin_api
     struct mk_event_fdt *(*ev_get_fdt) ();
     int (*ev_add) (struct mk_event_loop *, int, int, uint32_t, void *);
     int (*ev_del) (struct mk_event_loop *, struct mk_event *);
-    int (*ev_timeout_create) (struct mk_event_loop *, int, void *);
+    int (*ev_timeout_create) (struct mk_event_loop *, time_t, long, void *);
     int (*ev_channel_create) (struct mk_event_loop *, int *, int *, void *);
     int (*ev_wait) (struct mk_event_loop *);
     char *(*ev_backend) ();

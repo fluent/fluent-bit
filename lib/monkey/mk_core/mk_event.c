@@ -117,12 +117,13 @@ int mk_event_del(struct mk_event_loop *loop, struct mk_event *event)
 }
 
 /* Create a new timer in the loop */
-int mk_event_timeout_create(struct mk_event_loop *loop, int expire, void *data)
+int mk_event_timeout_create(struct mk_event_loop *loop,
+                            time_t sec, long nsec, void *data)
 {
     struct mk_event_ctx *ctx;
 
     ctx = loop->data;
-    return _mk_event_timeout_create(ctx, expire, data);
+    return _mk_event_timeout_create(ctx, sec, nsec, data);
 }
 
 /* Create a new channel to distribute signals */

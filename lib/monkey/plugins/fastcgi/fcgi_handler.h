@@ -85,6 +85,11 @@ struct fcgi_handler {
     int headers_set;             /* headers set ?                  */
     int eof;                     /* exiting: MK_TRUE / MK_FALSE    */
 
+    /* stdin data */
+    uint64_t stdin_length;
+    uint64_t stdin_offset;
+    char *stdin_buffer;
+
     struct mk_http_session *cs;  /* HTTP session context           */
     struct mk_http_request *sr;  /* HTTP request context           */
 

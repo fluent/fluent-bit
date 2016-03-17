@@ -22,6 +22,7 @@
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/timerfd.h>
+#include <time.h>
 
 #include <mk_core/mk_event.h>
 #include <mk_core/mk_memory.h>
@@ -145,7 +146,7 @@ static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event
 #ifdef HAVE_TIMERFD_CREATE
 /* Register a timeout file descriptor */
 static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
-                                           int expire, void *data)
+                                           time_t sec, long nsec, void *data)
 {
     int ret;
     int timer_fd;
@@ -155,11 +156,11 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
     mk_bug(!data);
 
     /* expiration interval */
-    its.it_interval.tv_sec  = expire;
-    its.it_interval.tv_nsec = 0;
+    its.it_interval.tv_sec  = sec;
+    its.it_interval.tv_nsec = nsec;
 
     /* initial expiration */
-    its.it_value.tv_sec  = time(NULL) + expire;
+    its.it_value.tv_sec  = time(NULL) + sec;
     its.it_value.tv_nsec = 0;
 
     timer_fd = timerfd_create(CLOCK_REALTIME, 0);
@@ -193,7 +194,8 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
 
 struct fd_timer {
     int fd;
-    int expiration;
+    time_t sec;
+    long   nsec;
 };
 
 /*
@@ -205,11 +207,15 @@ void _timeout_worker(void *arg)
     int ret;
     uint64_t val = 1;
     struct fd_timer *timer;
+    struct timespec t_spec;
 
     timer = (struct fd_timer *) arg;
+    t_spec.tv_sec  = timer->sec;
+    t_spec.tv_nsec = timer->nsec;
+
     while (1) {
         /* sleep for a while */
-        sleep(timer->expiration);
+        nanosleep(&t_spec, NULL);
 
         /* send notification */
         ret = write(timer->fd, &val, sizeof(uint64_t));
@@ -229,7 +235,7 @@ void _timeout_worker(void *arg)
  * function through a thread and a pipe(2).
  */
 static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
-                                           int expire, void *data)
+                                           time_t sec, long nsec, void *data)
 {
     int ret;
     int fd[2];
@@ -257,8 +263,9 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
     event->mask = MK_EVENT_READ;
 
     /* Compose the timer context, this is released inside the worker thread */
-    timer->fd = fd[1];
-    timer->expiration = expire;
+    timer->fd   = fd[1];
+    timer->sec  = sec;
+    timer->nsec = nsec;
 
     /* Now the dirty workaround, create a thread */
     mk_utils_worker_spawn(_timeout_worker, timer);
@@ -266,6 +273,7 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
 }
 #endif /* HAVE_TIMERFD_CREATE */
 
+#ifdef HAVE_EVENTFD
 static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
                                            int *r_fd, int *w_fd,
                                            void *data)
@@ -295,6 +303,39 @@ static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
     *w_fd = *r_fd = fd;
     return 0;
 }
+#else /* !HAVE_EVENT_FD */
+static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
+                                           int *r_fd, int *w_fd, void *data)
+{
+    int ret;
+    int fd[2];
+    struct mk_event *event;
+
+    ret = pipe(fd);
+    if (ret < 0) {
+        mk_libc_error("pipe");
+        return ret;
+    }
+
+    event = data;
+    event->fd = fd[0];
+    event->type = MK_EVENT_NOTIFICATION;
+    event->mask = MK_EVENT_EMPTY;
+
+    ret = _mk_event_add(ctx, fd[0],
+                        MK_EVENT_NOTIFICATION, MK_EVENT_READ, event);
+    if (ret != 0) {
+        close(fd[0]);
+        close(fd[1]);
+        return ret;
+    }
+
+    *r_fd = fd[0];
+    *w_fd = fd[1];
+
+    return 0;
+}
+#endif
 
 static inline int _mk_event_wait(struct mk_event_loop *loop)
 {

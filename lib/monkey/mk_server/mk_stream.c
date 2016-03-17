@@ -182,6 +182,8 @@ int mk_channel_write(struct mk_channel *channel, size_t *count)
     struct mk_iov *iov;
     struct mk_stream *stream = NULL;
 
+    errno = 0;
+
     if (mk_list_is_empty(&channel->streams) == 0) {
         MK_TRACE("[CH %i] CHANNEL_EMPTY", channel->fd);
         return MK_CHANNEL_EMPTY;
@@ -199,11 +201,12 @@ int mk_channel_write(struct mk_channel *channel, size_t *count)
             bytes = channel_write_stream_file(channel, stream);
         }
         else if (stream->type == MK_STREAM_IOV) {
-            MK_TRACE("[CH %i] STREAM_IOV, wrote %lu bytes",
-                     channel->fd, stream->bytes_total);
-
             iov   = stream->buffer;
+
             bytes = mk_sched_conn_writev(channel, iov);
+
+            MK_TRACE("[CH %i] STREAM_IOV, wrote %d bytes",
+                     channel->fd, bytes);
             if (bytes > 0) {
                 /* Perform the adjustment on mk_iov */
                 mk_iov_consume(iov, bytes);
@@ -212,7 +215,7 @@ int mk_channel_write(struct mk_channel *channel, size_t *count)
         else if (stream->type == MK_STREAM_COPYBUF) {
             bytes = mk_sched_conn_write(channel,
                                         stream->buffer, stream->bytes_total);
-            MK_TRACE("[CH %i] STREAM_COPYBUF, bytes=%lu/%lu",
+            MK_TRACE("[CH %i] STREAM_COPYBUF, bytes=%zd/%lu",
                      channel->fd, bytes, stream->bytes_total);
             if (bytes > 0) {
                 consume_copybuf(stream, bytes);

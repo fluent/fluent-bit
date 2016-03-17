@@ -78,7 +78,7 @@ static ssize_t _mk_logger_append(int pipe_fd_in,
         size_t bytes)
 {
     ssize_t ret;
-#if defined(__linux__)
+#ifdef HAVE_SPLICE
     ret = splice(pipe_fd_in, NULL, file_fd_out,
             NULL, bytes, SPLICE_F_MOVE);
     return ret;

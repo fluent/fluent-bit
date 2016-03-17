@@ -149,7 +149,7 @@ static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event
 }
 
 static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
-                                           int expire, void *data)
+                                           time_t sec, long nsec, void *data)
 {
     int fd;
     int ret;
@@ -173,10 +173,11 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
 
 #ifdef NOTE_SECONDS
     /* FreeBSD or LINUX_KQUEUE defined */
-    EV_SET(&ke, fd, EVFILT_TIMER, EV_ADD, NOTE_SECONDS, expire, event);
+    /* TODO : high resolution interval support. */
+    EV_SET(&ke, fd, EVFILT_TIMER, EV_ADD, NOTE_SECONDS, sec, event);
 #else
     /* Other BSD have no NOTE_SECONDS & specify milliseconds */
-    EV_SET(&ke, fd, EVFILT_TIMER, EV_ADD, 0, expire * 1000, event);
+    EV_SET(&ke, fd, EVFILT_TIMER, EV_ADD, 0, (sec * 1000) + (nsec / 1000000) , event);
 #endif
     ret = kevent(ctx->kfd, &ke, 1, NULL, 0, NULL);
     if (ret < 0) {

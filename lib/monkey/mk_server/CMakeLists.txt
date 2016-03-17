@@ -21,6 +21,11 @@ set(src
   mk_plugin.c
   )
 
+check_symbol_exists(backtrace "execinfo.h" HAVE_BACKTRACE)
+if(HAVE_BACKTRACE)
+  add_definitions(-DHAVE_BACKTRACE)
+endif()
+
 # Always build a static library, thats our core :)
 add_library(monkey-core-static STATIC ${src})
 set_target_properties(monkey-core-static PROPERTIES OUTPUT_NAME monkey)

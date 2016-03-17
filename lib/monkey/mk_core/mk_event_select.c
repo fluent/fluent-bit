@@ -19,10 +19,12 @@
 
 #include <sys/select.h>
 #include <mk_core/mk_event.h>
+#include <time.h>
 
 struct fd_timer {
-    int fd;
-    int expiration;
+    int    fd;
+    time_t sec;
+    long   nsec;
 };
 
 static inline void *_mk_event_loop_create(int size)
@@ -144,11 +146,15 @@ void _timeout_worker(void *arg)
     int ret;
     uint64_t val = 1;
     struct fd_timer *timer;
+    struct timespec t_spec;
 
     timer = (struct fd_timer *) arg;
+    t_spec.tv_sec  = timer->sec;
+    t_spec.tv_nsec = timer->nsec;
+
     while (1) {
         /* sleep for a while */
-        sleep(timer->expiration);
+        nanosleep(&t_spec, NULL);        
 
         /* send notification */
         ret = write(timer->fd, &val, sizeof(uint64_t));
@@ -169,7 +175,7 @@ void _timeout_worker(void *arg)
  * and a thread, this thread writes a byte upon the expiration time is reached.
  */
 static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
-                                           int expire, void *data)
+                                           time_t sec, long nsec, void *data)
 {
     int ret;
     int fd[2];
@@ -198,8 +204,9 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
     event->mask = MK_EVENT_READ;
 
     /* Compose the timer context, this is released inside the worker thread */
-    timer->fd = fd[1];
-    timer->expiration = expire;
+    timer->fd   = fd[1];
+    timer->sec  = sec;
+    timer->nsec = nsec;
 
     /* Now the dirty workaround, create a thread */
     mk_utils_worker_spawn(_timeout_worker, timer);
