@@ -22,6 +22,7 @@
 
 #include <time.h>
 #include <mk_core.h>
+#include <fluent-bit/flb_log.h>
 
 #ifdef HAVE_TLS
 #include <fluent-bit/flb_io_tls.h>
@@ -78,6 +79,9 @@ struct flb_config {
 
     /* Kernel info */
     struct flb_kernel *kernel;
+
+    /* Logging */
+    struct flb_log *log;
 };
 
 struct flb_config *flb_config_init();
