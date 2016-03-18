@@ -20,7 +20,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdarg.h>
 #include <unistd.h>
 #include <time.h>
 #include <sys/time.h>
@@ -28,7 +27,6 @@
 #include <sys/stat.h>
 #include <msgpack.h>
 
-#include <mk_core.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_error.h>
@@ -114,72 +112,8 @@ void flb_utils_warn_c(const char *msg)
             ANSI_BOLD ANSI_YELLOW, ANSI_RESET, msg);
 }
 
-void flb_message(int type, char *file, int line, const char *fmt, ...)
-{
-    time_t now;
-    const char *header_color = NULL;
-    const char *header_title = NULL;
-    const char *bold_color = ANSI_BOLD;
-    const char *reset_color = ANSI_RESET;
-    struct tm result;
-    struct tm *current;
-    va_list args;
-
-    va_start(args, fmt);
-
-    switch (type) {
-    case FLB_MSG_INFO:
-        header_title = "info";
-        header_color = ANSI_GREEN;
-        break;
-    case FLB_MSG_WARN:
-        header_title = "warn";
-        header_color = ANSI_YELLOW;
-        break;
-    case FLB_MSG_ERROR:
-        header_title = "error";
-        header_color = ANSI_RED;
-        break;
-    case FLB_MSG_DEBUG:
-        header_title = "debug";
-        header_color = ANSI_YELLOW;
-        break;
-    case FLB_MSG_TRACE:
-        header_title = "trace";
-        header_color = ANSI_BLUE;
-        break;
-    }
-
-    /* Only print colors to a terminal */
-    if (!isatty(STDOUT_FILENO)) {
-        header_color = "";
-        bold_color = "";
-        reset_color = "";
-    }
-
-    now = time(NULL);
-    current = localtime_r(&now, &result);
-
-    fprintf(stderr, "%s[%s%i/%02i/%02i %02i:%02i:%02i%s]%s ",
-            bold_color, reset_color,
-            current->tm_year + 1900,
-            current->tm_mon + 1,
-            current->tm_mday,
-            current->tm_hour,
-            current->tm_min,
-            current->tm_sec,
-            bold_color, reset_color);
-
-    fprintf(stderr, "%s[%s%5s%s]%s ",
-            "", header_color, header_title, reset_color, "");
-
-    vfprintf(stderr, fmt, args);
-    va_end(args);
-    fprintf(stderr, "%s\n", reset_color);
-}
-
 /* Run current process in background mode */
-int flb_utils_set_daemon()
+int flb_utils_set_daemon(struct flb_config *config)
 {
     pid_t pid;
 
@@ -222,15 +156,14 @@ void flb_utils_print_setup(struct flb_config *config)
     flb_info("Configuration");
 
     /* general */
-    printf(" flush time     : %i seconds\n", config->flush);
+    flb_info(" flush time     : %i seconds", config->flush);
 
     /* Inputs */
-    printf(" input plugins  : ");
+    flb_info(" input plugins  : ");
     mk_list_foreach(head, &config->inputs) {
         in = mk_list_entry(head, struct flb_input_instance, _head);
-        printf("%s ", in->p->name);
+        flb_info("%s ", in->p->name);
     }
-    printf("\n");
 
     /* Outputs
     printf(" output tag     : %s\n", config->tag);
@@ -251,21 +184,20 @@ void flb_utils_print_setup(struct flb_config *config)
     */
 
     /* Collectors */
-    printf(" collectors     : ");
+    flb_info(" collectors     : ");
     mk_list_foreach(head, &config->collectors) {
         collector = mk_list_entry(head, struct flb_input_collector, _head);
         plugin = collector->instance->p;
 
         if (collector->seconds > 0) {
-            printf("[%s %lus,%luns] ",
-                   plugin->name,
-                   collector->seconds,
-                   collector->nanoseconds);
+            flb_info("[%s %lus,%luns] ",
+                     plugin->name,
+                     collector->seconds,
+                     collector->nanoseconds);
         }
         else {
             printf("[%s] ", plugin->name);
         }
 
     }
-    printf("\n");
 }
