@@ -22,29 +22,6 @@
 
 #include <fluent-bit/flb_config.h>
 
-/* Message types */
-#define FLB_MSG_INFO    0
-#define FLB_MSG_WARN    1
-#define FLB_MSG_ERROR   2
-#define FLB_MSG_DEBUG   3
-#define FLB_MSG_TRACE   4
-
-#define flb_info(fmt, ...)    flb_message(FLB_MSG_INFO, NULL, 0, fmt, ##__VA_ARGS__)
-#define flb_warn(fmt, ...)    flb_message(FLB_MSG_WARN, NULL, 0, fmt, ##__VA_ARGS__)
-#define flb_error(fmt, ...)   flb_message(FLB_MSG_ERROR, NULL, 0, fmt, ##__VA_ARGS__)
-#define flb_debug(c,fmt, ...) if (c->verbose) flb_message(FLB_MSG_DEBUG, \
-                                                          NULL, 0,      \
-                                                          fmt, ##__VA_ARGS__)
-
-#ifdef FLB_TRACE
-#define flb_trace(fmt, ...) \
-    flb_message(FLB_MSG_TRACE, __FILE__, __LINE__, \
-                fmt, ##__VA_ARGS__)
-#else
-#define flb_trace(fmt, ...)  do {} while(0)
-#endif
-
-int flb_debug_enabled();
 void flb_utils_error(int err);
 void flb_utils_error_c(const char *msg);
 void flb_utils_warn_c(const char *msg);
