@@ -48,10 +48,6 @@ struct flb_log *flb_log_init(int type, int level, char *out)
     FLB_TLS_INIT();
     FLB_TLS_SET(flb_log_ctx, log);
 
-    struct flb_log *a;
-
-    //a = FLB_TLS_GET(flb_log_ctx);
-    //printf("level = %i\n", a->level);
     return log;
 }
 
