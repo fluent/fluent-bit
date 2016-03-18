@@ -92,7 +92,7 @@ static inline int process_line(char *line, struct flb_in_serial_config *ctx)
     msgpack_pack_bin(&ctx->mp_pck, line_len);
     msgpack_pack_bin_body(&ctx->mp_pck, p, line_len);
 
-    flb_trace("[in_serial] '%s'",
+    flb_debug("[in_serial] message '%s'",
               (const char *) msg);
 
     return 0;
@@ -157,7 +157,7 @@ int in_serial_init(struct flb_input_instance *in,
     }
 
     if (!config->file) {
-        flb_utils_error_c("serial input plugin needs configuration file");
+        flb_error("[in_serial] missing configuration file");
         free(ctx);
         return -1;
     }
