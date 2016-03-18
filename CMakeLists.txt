@@ -13,7 +13,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/library")
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  0)
 set(FLB_VERSION_MINOR  7)
-set(FLB_VERSION_PATCH  0)
+set(FLB_VERSION_PATCH  1)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 # Build Options
@@ -160,6 +160,16 @@ check_c_source_compiles("
 if (NOT HAVE_EPOLL AND NOT HAVE_KQUEUE)
   message(STATUS "Event loop backend > select(2)")
   add_definitions(-DEVENT_SELECT)
+endif()
+
+check_c_source_compiles("
+   __thread int a;
+   int main() {
+       return 0;
+   }" HAVE_C_TLS)
+
+if (HAVE_C_TLS)
+  add_definitions(-DHAVE_C_TLS)
 endif()
 
 # Instruct CMake to build the Fluent Bit Core
