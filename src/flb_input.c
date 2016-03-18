@@ -144,12 +144,13 @@ int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
 void flb_input_initialize_all(struct flb_config *config)
 {
     int ret;
+    struct mk_list *tmp;
     struct mk_list *head;
     struct flb_input_instance *in;
     struct flb_input_plugin *p;
 
     /* Iterate all active input instance plugins */
-    mk_list_foreach(head, &config->inputs) {
+    mk_list_foreach_safe(head, tmp, &config->inputs) {
         in = mk_list_entry(head, struct flb_input_instance, _head);
         p = in->p;
 
@@ -158,7 +159,9 @@ void flb_input_initialize_all(struct flb_config *config)
             ret = p->cb_init(in, config, in->data);
             if (ret != 0) {
                 flb_error("Failed ininitalize input %s",
-                in->name);
+                          in->name);
+                mk_list_del(&in->_head);
+                free(in);
             }
         }
     }
