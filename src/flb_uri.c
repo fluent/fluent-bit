@@ -26,7 +26,7 @@
 struct flb_uri_field *flb_uri_get(struct flb_uri *uri, int pos)
 {
     if (pos >= FLB_URI_MAX || pos > uri->count) {
-        flb_error("[uri] requested position > FLB_URI_MAX");
+        flb_trace("[uri] requested position > FLB_URI_MAX");
         return NULL;
     }
 
