@@ -162,6 +162,16 @@ if (NOT HAVE_EPOLL AND NOT HAVE_KQUEUE)
   add_definitions(-DEVENT_SELECT)
 endif()
 
+check_c_source_compiles("
+   __thread int a;
+   int main() {
+       return 0;
+   }" HAVE_C_TLS)
+
+if (HAVE_C_TLS)
+  add_definitions(-DHAVE_C_TLS)
+endif()
+
 # Instruct CMake to build the Fluent Bit Core
 add_subdirectory(include)
 add_subdirectory(plugins)
