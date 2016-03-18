@@ -13,7 +13,7 @@
     * [Raspberry Pi](installation/raspberry_pi.md)
     * [Unit Tests](installation/unit_tests.md)
 * [Getting Started](getting_started/README.md)
-
+    * [Logging](getting_started/logging.md)
 * [Input Plugins](input/README.md)
     * [CPU Usage](input/cpu.md)
     * [Head](input/head.md)
