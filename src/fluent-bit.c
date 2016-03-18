@@ -58,8 +58,9 @@ static void flb_help(int rc, struct flb_config *config)
     printf("  -o, --output=OUTPUT\tset an output\n");
     printf("  -p, --prop=\"A=B\"\tset plugin configuration property\n");
     printf("  -t, --tag=TAG\t\tset plugin tag, same as '-p tag=abc'\n");
-    printf("  -V, --verbose\t\tenable verbose mode\n");
-    printf("  -v, --version\t\tshow version number\n");
+    printf("  -v, --verbose\t\tenable verbose mode\n");
+    printf("  -q, --quiet\t\tquiet mode\n");
+    printf("  -V, --version\t\tshow version number\n");
     printf("  -h, --help\t\tprint this help\n\n");
 
     printf("%sInputs%s\n", ANSI_BOLD, ANSI_RESET);
@@ -180,6 +181,7 @@ int main(int argc, char **argv)
     int last_plugin = -1;
 
     /* local variables to handle config options */
+    int cfg_verbose = FLB_LOG_INFO;
     int cfg_daemon = FLB_FALSE;
     char *cfg_file = NULL;
     struct flb_input_instance *in = NULL;
@@ -195,8 +197,9 @@ int main(int argc, char **argv)
         { "output",  required_argument, NULL, 'o' },
         { "prop",    required_argument, NULL, 'p' },
         { "tag",     required_argument, NULL, 't' },
-        { "version", no_argument      , NULL, 'v' },
-        { "verbose", no_argument      , NULL, 'V' },
+        { "version", no_argument      , NULL, 'V' },
+        { "verbose", no_argument      , NULL, 'v' },
+        { "quiet",   no_argument      , NULL, 'q' },
         { "help",    no_argument      , NULL, 'h' },
         { NULL, 0, NULL, 0 }
     };
@@ -211,7 +214,7 @@ int main(int argc, char **argv)
     }
 
     /* Parse the command line options */
-    while ((opt = getopt_long(argc, argv, "c:df:i:m:o:p:t:vVh",
+    while ((opt = getopt_long(argc, argv, "c:df:i:m:o:p:t:vqVh",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
@@ -259,16 +262,21 @@ int main(int argc, char **argv)
         case 'h':
             flb_help(EXIT_SUCCESS, config);
             break;
-        case 'v':
+        case 'V':
             flb_version();
             exit(EXIT_SUCCESS);
-        case 'V':
-            config->verbose = FLB_TRUE;
+        case 'v':
+            cfg_verbose++;
+            break;
+        case 'q':
+            cfg_verbose = FLB_LOG_OFF;
             break;
         default:
             flb_help(EXIT_FAILURE, config);
         }
     }
+
+    config->log = flb_log_init(FLB_LOG_STDERR, cfg_verbose, NULL);
 
     /* Validate config file */
     if (cfg_file) {
@@ -300,7 +308,7 @@ int main(int argc, char **argv)
 
     /* Run in background/daemon mode */
     if (cfg_daemon == FLB_TRUE) {
-        flb_utils_set_daemon();
+        flb_utils_set_daemon(config);
     }
 
     flb_engine_start(config);
