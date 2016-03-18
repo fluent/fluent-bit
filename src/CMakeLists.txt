@@ -4,6 +4,7 @@ set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 set(src
   ${src}
   flb_lib.c
+  flb_log.c
   flb_uri.c
   flb_pack.c
   flb_kernel.c
