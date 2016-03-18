@@ -25,17 +25,17 @@
 #define FLB_KMSG_DEV  "/dev/kmsg"
 
 /* Alert levels, taken from util-linux sources */
-#define FLB_LOG_EMERG      0
-#define FLB_LOG_ALERT      1
-#define FLB_LOG_CRIT       2
-#define FLB_LOG_ERR        3
-#define FLB_LOG_WARNING    4
-#define FLB_LOG_NOTICE     5
-#define FLB_LOG_INFO       6
-#define FLB_LOG_DEBUG      7
+#define FLB_KLOG_EMERG      0
+#define FLB_KLOG_ALERT      1
+#define FLB_KLOG_CRIT       2
+#define FLB_KLOG_ERR        3
+#define FLB_KLOG_WARNING    4
+#define FLB_KLOG_NOTICE     5
+#define FLB_KLOG_INFO       6
+#define FLB_KLOG_DEBUG      7
 
-#define FLB_LOG_PRIMASK    0x07
-#define FLB_LOG_PRI(p)     ((p) & FLB_LOG_PRIMASK)
+#define FLB_KLOG_PRIMASK    0x07
+#define FLB_KLOG_PRI(p)     ((p) & FLB_KLOG_PRIMASK)
 
 #define KMSG_BUFFER_SIZE   256
 #define KMSG_USEC_PER_SEC  1000000
