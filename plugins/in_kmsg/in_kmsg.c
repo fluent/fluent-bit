@@ -153,7 +153,7 @@ static inline int process_line(char *line, struct flb_in_kmsg_config *ctx)
     }
 
     /* Priority */
-    priority = FLB_LOG_PRI(val);
+    priority = FLB_KLOG_PRI(val);
 
     /* Sequence */
     p = strchr(p, ',');
