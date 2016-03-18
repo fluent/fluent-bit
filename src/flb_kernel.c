@@ -94,7 +94,5 @@ struct flb_kernel *flb_kernel_info()
     kernel->s_version.len = len;
     kernel->n_version = FLB_KERNEL_VERSION(a, b, c);
 
-    flb_trace("Linux Kernel = %i.%i.%i", a, b, c);
-
     return kernel;
 }
