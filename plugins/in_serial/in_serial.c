@@ -115,7 +115,7 @@ int in_serial_collect(struct flb_config *config, void *in_context)
             return 0;
         }
         /* Always set a delimiter to avoid buffer trash */
-        line[bytes - 1] = '\0';
+        line[bytes] = '\0';
 
         /* Check if our buffer is full */
         if (ctx->buffer_id + 1 == SERIAL_BUFFER_SIZE) {
@@ -147,6 +147,7 @@ int in_serial_init(struct flb_input_instance *in,
 {
     int fd;
     int ret;
+    int br;
     struct flb_in_serial_config *ctx;
     (void) data;
 
@@ -171,13 +172,6 @@ int in_serial_init(struct flb_input_instance *in,
     msgpack_sbuffer_init(&ctx->mp_sbuf);
     msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
 
-    memset(&ctx->tio, 0, sizeof(ctx->tio));
-    ctx->tio.c_cflag = ctx->tio.c_ispeed = ctx->tio.c_ospeed = atoi(ctx->bitrate);
-    ctx->tio.c_cflag |= CRTSCTS | CS8 | CLOCAL | CREAD;
-    ctx->tio.c_iflag = IGNPAR | IGNCR;
-    ctx->tio.c_oflag = 0;
-    ctx->tio.c_lflag = ICANON;
-
     /* open device */
     fd = open(ctx->file, O_RDWR | O_NOCTTY | O_NONBLOCK);
     if (fd == -1) {
@@ -185,6 +179,26 @@ int in_serial_init(struct flb_input_instance *in,
         flb_utils_error_c("Could not open serial port device");
     }
     ctx->fd = fd;
+
+    /* Store original settings */
+    tcgetattr(fd, &ctx->tio_orig);
+
+    /* Reset for new... */
+    memset(&ctx->tio, 0, sizeof(ctx->tio));
+    tcgetattr(fd, &ctx->tio);
+
+    br = atoi(ctx->bitrate);
+    cfsetospeed(&ctx->tio, (speed_t) flb_serial_speed(br));
+    cfsetispeed(&ctx->tio, (speed_t) flb_serial_speed(br));
+
+    /* Settings */
+    ctx->tio.c_cflag     &=  ~PARENB;        /* 8N1 */
+    ctx->tio.c_cflag     &=  ~CSTOPB;
+    ctx->tio.c_cflag     &=  ~CSIZE;
+    ctx->tio.c_cflag     |=  CS8;
+    ctx->tio.c_cflag     &=  ~CRTSCTS;       /* No flow control */
+    ctx->tio.c_cc[VMIN]   =  ctx->min_bytes; /* Min number of bytes to read  */
+    ctx->tio.c_cflag     |=  CREAD | CLOCAL; /* Enable READ & ign ctrl lines */
 
     tcflush(fd, TCIFLUSH);
     tcsetattr(fd, TCSANOW, &ctx->tio);
