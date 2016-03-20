@@ -27,6 +27,7 @@
 struct flb_in_serial_config {
     int fd;           /* Socket to destination/backend */
 
+    int min_bytes;
     char *file;
     char *bitrate;
 
