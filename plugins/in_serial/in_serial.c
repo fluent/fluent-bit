@@ -114,6 +114,15 @@ int in_serial_collect(struct flb_config *config, void *in_context)
             }
             return 0;
         }
+        else if (bytes == 0) {
+            return 0;
+        }
+
+        /* Handle FTDI handshake */
+        if (line[0] == '\0') {
+            return 0;
+        }
+
         /* Always set a delimiter to avoid buffer trash */
         line[bytes] = '\0';
 
