@@ -10,7 +10,7 @@ The __serial__ input plugin, allows to retrieve messages/data from a _Serial_ in
 | ----------------|-------------------|
 | File            | Absolute path to the device entry, e.g: /dev/ttyS0 |
 | Bitrate         | The bitrate for the communication, e.g: 9600, 38400, 115200, etc |
-
+| Min_Bytes       | The serial interface will expect at least _Min\_Bytes_ to be available before to process the message (default: 1) |
 
 Here is an example:
 
@@ -27,6 +27,11 @@ Here is an example:
     # Specify the bitrate to communicate using the port.
 
     Bitrate 9600
+
+    # Min_Bytes
+    # =========
+    # Specify the minimal number of bytes for each read call.
+    Min_Bytes 1
 ```
 
 ## Running
