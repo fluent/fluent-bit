@@ -51,7 +51,7 @@ struct flb_in_serial_config *serial_config_read(struct flb_in_serial_config *con
                 "configuration");
     }
 
-    if (min_bytes < 0) {
+    if (min_bytes <= 0) {
         min_bytes = 1;
     }
 
