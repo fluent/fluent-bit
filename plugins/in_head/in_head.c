@@ -107,19 +107,26 @@ static int in_head_config_read(struct flb_in_head_config *head_config,
 
     /* interval settings */
     pval = mk_rconf_section_get_key(section, "interval_sec", MK_RCONF_STR);
-    if (pval != NULL && atoi(pval) > 0) {
+    if (pval != NULL && atoi(pval) >= 0) {
         head_config->interval_sec = atoi(pval);
     }
     else {
         head_config->interval_sec = DEFAULT_INTERVAL_SEC;
     }
     pval = mk_rconf_section_get_key(section, "interval_nsec", MK_RCONF_STR);
-    if (pval != NULL && atoi(pval) > 0) {
+    if (pval != NULL && atoi(pval) >= 0) {
         head_config->interval_nsec = atoi(pval);
     }
     else {
         head_config->interval_nsec = DEFAULT_INTERVAL_NSEC;
     }
+
+    if ( head_config->interval_sec <= 0 && head_config->interval_nsec <= 0){
+        /* Illegal settings. Override them. */
+        head_config->interval_sec = DEFAULT_INTERVAL_SEC;
+        head_config->interval_nsec = DEFAULT_INTERVAL_NSEC;
+    }
+        
 
     flb_trace("Head config: buf_size=%d path=%s",
               head_config->buf_size, head_config->filepath);
