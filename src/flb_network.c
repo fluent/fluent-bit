@@ -97,11 +97,6 @@ int flb_net_host_set(char *plugin_name, struct flb_net_host *host, char *address
     u = strchr(s, '/');
     if (u) {
         host->uri = flb_uri_create(u);
-#ifdef FLB_TRACE
-        flb_trace("[URI dump] entries=%i '%s'",
-                  host->uri->count, u);
-        flb_uri_dump(host->uri);
-#endif
     }
     host->address = strdup(address);
 
