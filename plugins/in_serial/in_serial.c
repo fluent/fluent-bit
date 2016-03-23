@@ -123,6 +123,15 @@ int in_serial_collect(struct flb_config *config, void *in_context)
             return 0;
         }
 
+        /* Strip CR or LF if found at first byte */
+        if (bytes == 1) {
+            if (line[0] == '\r' || line[0] == '\n') {
+                /* Skip message with one byte with CR or LF */
+                flb_trace("[in_serial] skip one byte message with ASCII code=%i", line[0]);
+                return 0;
+            }
+        }
+
         /* Always set a delimiter to avoid buffer trash */
         line[bytes] = '\0';
 
