@@ -174,20 +174,10 @@ static inline int process_line(char *line, struct flb_in_kmsg_config *ctx)
         || (errno != 0 && val == 0)) {
         goto fail;
     }
-    tv.tv_sec = val/1000000;
 
-    if (*end == '.') {
-        p = ++end;
-        val = strtol(p, &end, 10);
-        if ((errno == ERANGE && (val == INT_MAX || val == INT_MIN))
-            || (errno != 0 && val == 0)) {
-            goto fail;
-        }
-        tv.tv_usec = val;
-    }
-    else {
-        tv.tv_usec = 0;
-    }
+    tv.tv_sec  = val/1000000;
+    tv.tv_usec = val - (tv.tv_sec * 1000000);
+
     ts = ctx->boot_time.tv_sec + tv.tv_sec;
 
     /* Now process the human readable message */
