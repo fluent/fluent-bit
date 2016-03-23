@@ -186,7 +186,7 @@ static inline int process_line(char *line, struct flb_in_kmsg_config *ctx)
         tv.tv_usec = val;
     }
     else {
-        tv.tv_usec = 0;
+        tv.tv_usec = val % 1000000;
     }
     ts = ctx->boot_time.tv_sec + tv.tv_sec;
 
