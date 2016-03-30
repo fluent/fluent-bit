@@ -21,10 +21,10 @@
 #include <assert.h>
 #include <string.h>
 
-#if defined (__linux__)
-#include <ucontext.h>
-#elif defined (__APPLE__)
+#if defined (__APPLE__)
 #include <sys/ucontext.h>
+#else
+#include <ucontext.h>
 #endif
 
 #include <limits.h>
