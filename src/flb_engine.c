@@ -97,7 +97,7 @@ int flb_engine_flush(struct flb_config *config,
                 goto flush_done;
             }
             if (size == 0) {
-                flb_warn("No input data");
+                flb_warn("[engine] no input data");
                 continue;
             }
 
@@ -320,7 +320,7 @@ int flb_engine_start(struct flb_config *config)
         if (collector->type == FLB_COLLECT_TIME) {
             event->mask = MK_EVENT_EMPTY;
             event->status = MK_EVENT_NONE;
-            fd = mk_event_timeout_create(evl, collector->seconds, 
+            fd = mk_event_timeout_create(evl, collector->seconds,
                                          collector->nanoseconds, event);
             if (fd == -1) {
                 continue;
