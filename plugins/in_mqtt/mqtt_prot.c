@@ -176,8 +176,13 @@ static int mqtt_data_append(char *buf, int len,
     memcpy(buf, sbuf->data, sbuf->size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
-    memcpy(ctx->msgp + ctx->msgp_len, buf, out);
-    ctx->msgp_len += out;
+    if ( ctx->msgp_len + out <= MQTT_MSGP_BUF_SIZE ) {
+        memcpy(ctx->msgp + ctx->msgp_len, buf, out);
+        ctx->msgp_len += out;
+    }else{
+        /* Drop incoming JSON */
+        /* FIXME */
+    }
     free(buf);
 
     return 0;
