@@ -603,12 +603,18 @@ void mk_vhost_init(char *path)
     struct file_info f_info;
     int ret;
 
+    if (!mk_config->conf_sites) {
+        mk_warn("[vhost] skipping default site");
+        return;
+    }
+
     /* Read default virtual host file */
-    mk_string_build(&sites, &len, "%s/%s/", path, mk_config->sites_conf_dir);
+    mk_string_build(&sites, &len, "%s/%s/",
+                    path, mk_config->conf_sites);
     ret = mk_file_get_info(sites, &f_info, MK_FILE_EXISTS);
     if (ret == -1 || f_info.is_directory == MK_FALSE) {
         mk_mem_free(sites);
-        sites = mk_config->sites_conf_dir;
+        sites = mk_config->conf_sites;
     }
 
     mk_string_build(&buf, &len, "%s/default", sites);

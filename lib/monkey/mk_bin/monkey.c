@@ -210,25 +210,25 @@ int main(int argc, char **argv)
 
     /* set configuration path */
     if (!path_config) {
-        mk_config->path_config = MK_PATH_CONF;
+        mk_config->path_conf_root = MK_PATH_CONF;
     }
     else {
-        mk_config->path_config = path_config;
+        mk_config->path_conf_root = path_config;
     }
 
     /* set target configuration file for the server */
     if (!server_conf_file) {
-        mk_config->server_conf_file = MK_DEFAULT_CONFIG_FILE;
+        mk_config->conf_main = MK_DEFAULT_CONFIG_FILE;
     }
     else {
-        mk_config->server_conf_file = server_conf_file;
+        mk_config->conf_main = server_conf_file;
     }
 
     if (!pid_file) {
-        mk_config->pid_file_path = NULL;
+        mk_config->path_conf_pidfile = NULL;
     }
     else {
-        mk_config->pid_file_path = pid_file;
+        mk_config->path_conf_pidfile = pid_file;
     }
 
     if (run_daemon) {
@@ -239,31 +239,31 @@ int main(int argc, char **argv)
     }
 
     if (!mimes_conf_file) {
-        mk_config->mimes_conf_file = MK_DEFAULT_MIMES_CONF_FILE;
+        mk_config->conf_mimetype = MK_DEFAULT_MIMES_CONF_FILE;
     }
     else {
-        mk_config->mimes_conf_file = mimes_conf_file;
+        mk_config->conf_mimetype = mimes_conf_file;
     }
 
     if (!plugin_load_conf_file) {
-        mk_config->plugin_load_conf_file = MK_DEFAULT_PLUGIN_LOAD_CONF_FILE;
+        mk_config->conf_plugin_load = MK_DEFAULT_PLUGIN_LOAD_CONF_FILE;
     }
     else {
-        mk_config->plugin_load_conf_file = plugin_load_conf_file;
+        mk_config->conf_plugin_load = plugin_load_conf_file;
     }
 
     if (!sites_conf_dir) {
-        mk_config->sites_conf_dir = MK_DEFAULT_SITES_CONF_DIR;
+        mk_config->conf_sites = MK_DEFAULT_SITES_CONF_DIR;
     }
     else {
-        mk_config->sites_conf_dir = sites_conf_dir;
+        mk_config->conf_sites = sites_conf_dir;
     }
 
     if (!plugins_conf_dir) {
-        mk_config->plugins_conf_dir = MK_DEFAULT_PLUGINS_CONF_DIR;
+        mk_config->conf_plugins = MK_DEFAULT_PLUGINS_CONF_DIR;
     }
     else {
-        mk_config->plugins_conf_dir = plugins_conf_dir;
+        mk_config->conf_plugins = plugins_conf_dir;
     }
 
     /* Override some configuration */
@@ -306,7 +306,7 @@ int main(int argc, char **argv)
     mk_server_setup();
 
     /* Register PID of Monkey */
-    mk_utils_register_pid(mk_config->pid_file_path);
+    mk_utils_register_pid(mk_config->path_conf_pidfile);
 
     /* Print server details */
     mk_server_info();

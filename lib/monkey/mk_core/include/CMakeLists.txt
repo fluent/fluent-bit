@@ -1,3 +1,8 @@
+configure_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/mk_core/mk_core_info.h.in"
+  "${CMAKE_CURRENT_SOURCE_DIR}/mk_core/mk_core_info.h"
+  )
+
 # Install headers
 if(NOT WITHOUT_HEADERS)
   install(FILES "mk_core.h"

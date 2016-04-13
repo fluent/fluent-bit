@@ -112,13 +112,13 @@ struct mk_rconf *mk_rconf_open(const char *path)
     FILE *f;
 
     if (!path) {
-        mk_warn("Config: invalid path file");
+        mk_warn("[config] invalid path file");
         return NULL;
     }
 
     /* Open configuration file */
     if ((f = fopen(path, "r")) == NULL) {
-        mk_warn("Config: I cannot open %s file", path);
+        mk_warn("[config] I cannot open %s file", path);
         return NULL;
     }
 

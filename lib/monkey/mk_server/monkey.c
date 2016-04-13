@@ -62,6 +62,9 @@ void mk_server_info()
 /* Initialize Monkey Server */
 struct mk_server_config *mk_server_init()
 {
+    int kern_version;
+    int kern_features;
+
     /* setup basic configurations */
     mk_config = mk_config_init();
 
@@ -70,8 +73,11 @@ struct mk_server_config *mk_server_init()
 #endif
 
     /* Init Kernel version data */
-    mk_kernel_init();
-    mk_kernel_features();
+    kern_version = mk_kernel_version();
+    kern_features = mk_kernel_features(kern_version);
+
+    mk_config->kernel_version = kern_version;
+    mk_config->kernel_features = kern_features;
 
 #ifdef TRACE
     MK_TRACE("Monkey TRACE is enabled");
