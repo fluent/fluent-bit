@@ -70,6 +70,12 @@ if(WITH_DEBUG)
   set(CMAKE_BUILD_TYPE "Debug")
 endif()
 
+# Macro to set definitions
+macro(FLB_DEFINITION var)
+  add_definitions(-D${var})
+  set(FLB_BUILD_FLAGS "${FLB_BUILD_FLAGS}#ifndef ${var}\n#define ${var}\n#endif\n")
+endmacro()
+
 # General Headers
 include_directories(
   include/
@@ -107,7 +113,7 @@ if(WITH_OUT_TD)
 endif()
 
 if(WITH_TLS)
-  add_definitions(-DHAVE_TLS)
+  FLB_DEFINITION(HAVE_TLS)
   option(ENABLE_TESTING  OFF)
   option(ENABLE_PROGRAMS OFF)
   option(INSTALL_MBEDTLS_HEADERS OFF)
@@ -121,11 +127,11 @@ if(WITH_STATS OR WITH_OUT_ES)
 endif()
 
 if(WITH_TRACE)
-  add_definitions(-DFLB_TRACE)
+  FLB_DEFINITION(FLB_TRACE)
 endif()
 
 if(WITH_STATS)
-  add_definitions(-DHAVE_STATS)
+  FLB_DEFINITION(HAVE_STATS)
 endif()
 
 # Valgrind support
@@ -136,8 +142,13 @@ check_c_source_compiles("
   }" HAVE_VALGRIND)
 
 if(WITH_VALGRIND OR HAVE_VALGRIND)
-  add_definitions(-DUSE_VALGRIND)
+  FLB_DEFINITION(USE_VALGRIND)
 endif()
+
+configure_file(
+  "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_info.h.in"
+  "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_info.h"
+  )
 
 configure_file(
   "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_version.h.in"
@@ -151,7 +162,7 @@ check_c_source_compiles("
    }" HAVE_C_TLS)
 
 if (HAVE_C_TLS)
-  add_definitions(-DHAVE_C_TLS)
+  FLB_DEFINITION(HAVE_C_TLS)
 endif()
 
 # Instruct CMake to build the Fluent Bit Core

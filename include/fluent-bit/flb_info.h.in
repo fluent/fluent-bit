@@ -1,8 +1,8 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
-/*  Fluent Bit demo
- *  ===============
- *  Copyright (C) 2015-2016 Treasure Data Inc.
+/*  Fluent Bit
+ *  ==========
+ *  Copyright (C) 2015 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -17,26 +17,9 @@
  *  limitations under the License.
  */
 
-#ifndef FLUENT_BIT_H
-#define FLUENT_BIT_H
+#ifndef FLB_INFO_H
+#define FLB_INFO_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-#include <mk_core.h>
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_macros.h>
-#include <fluent-bit/flb_utils.h>
-#include <fluent-bit/flb_config.h>
-#include <fluent-bit/flb_version.h>
-#include <fluent-bit/flb_error.h>
-#include <fluent-bit/flb_output.h>
-#include <fluent-bit/flb_engine.h>
-#include <fluent-bit/flb_lib.h>
-
-#ifdef __cplusplus
-}
-#endif
-
+/* General flags set by CMakeLists.txt */
+@FLB_BUILD_FLAGS@
 #endif
