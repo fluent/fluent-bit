@@ -144,24 +144,6 @@ configure_file(
   "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_version.h"
   )
 
-# Lookup event-loop mechanism: do we need to fallback to select(2) ?
-check_c_source_compiles("
-  #include <sys/epoll.h>
-  int main() {
-     return epoll_create(1);
-  }" HAVE_EPOLL)
-
-check_c_source_compiles("
-  #include <sys/event.h>
-  int main() {
-     return kqueue();
-  }" HAVE_KQUEUE)
-
-if (NOT HAVE_EPOLL AND NOT HAVE_KQUEUE)
-  message(STATUS "Event loop backend > select(2)")
-  add_definitions(-DEVENT_SELECT)
-endif()
-
 check_c_source_compiles("
    __thread int a;
    int main() {
