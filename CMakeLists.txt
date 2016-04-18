@@ -30,6 +30,7 @@ option(WITH_TRACE         "Enable trace mode"           No)
 # Build Plugins
 option(WITH_IN_XBEE     "Enable XBee input plugin"            No)
 option(WITH_IN_CPU      "Enable CPU input plugin"            Yes)
+option(WITH_IN_FORWARD  "Enable Forward input plugin"        Yes)
 option(WITH_IN_HTTP     "Enable HTTP input plugin"            No)
 option(WITH_IN_MEM      "Enable Memory input plugin"         Yes)
 option(WITH_IN_KMSG     "Enable Kernel log input plugin"     Yes)
