@@ -36,10 +36,10 @@ int main()
     }
 
     input = flb_input(ctx, "lib", NULL);
-    flb_input_set(input, "tag", "test");
+    flb_input_set(input, "tag", "test", NULL);
 
     output = flb_output(ctx, "stdout", NULL);
-    flb_output_set(output, "tag", "test");
+    flb_output_set(output, "match", "test", NULL);
 
     /* Start the background worker */
     flb_start(ctx);

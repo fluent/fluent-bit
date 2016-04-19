@@ -34,10 +34,10 @@ int main()
     ctx = flb_create();
 
     input = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(input, (char *) "test");
+    flb_input_set(input, (char *) "test", NULL);
 
     output = flb_output(ctx, (char *) "stdout", NULL);
-    flb_output_set(output, (char *) "test");
+    flb_output_set(output, (char *) "test", NULL);
 
     /* Start the background worker */
     flb_start(ctx);
