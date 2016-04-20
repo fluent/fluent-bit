@@ -41,6 +41,4 @@
 #define MK_PATH_CONF       "@MK_PATH_CONF@"
 #define MK_PLUGIN_DIR      "/home/edsiper/coding/monkey/plugins"
 
-/* General flags set by CMakeLists.txt */
-@MK_BUILD_FLAGS@
 #endif

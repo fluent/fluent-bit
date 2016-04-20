@@ -14,12 +14,6 @@ set(src
   mk_thread_channel.c
   )
 
-# It set's a definition and register into the mk_core_info.h file */
-macro(MK_DEFINITION var)
-  add_definitions(-D${var})
-  set(MK_CORE_BUILD_FLAGS "${MK_CORE_BUILD_FLAGS}#ifndef ${var}\n#define ${var}\n#endif\n")
-endmacro()
-
 # Lookup event-loop mechanism: do we need to fallback to select(2) ?
 check_c_source_compiles("
   #include <sys/epoll.h>
@@ -35,7 +29,7 @@ check_c_source_compiles("
 
 if (NOT HAVE_EPOLL AND NOT HAVE_KQUEUE)
   message(STATUS "Event loop backend > select(2)")
-  MK_DEFINITION(EVENT_SELECT)
+  add_definitions(-DEVENT_SELECT)
 endif()
 
 # Validate timerfd_create()
@@ -46,7 +40,7 @@ check_c_source_compiles("
   }" HAVE_TIMERFD_CREATE)
 
 if (HAVE_TIMERFD_CREATE)
-  MK_DEFINITION(HAVE_TIMERFD_CREATE)
+  add_definitions(-DHAVE_TIMERFD_CREATE)
 endif()
 
 # Validate eventfd()
@@ -57,7 +51,7 @@ check_c_source_compiles("
   }" HAVE_EVENTFD)
 
 if (HAVE_EVENTFD)
-  MK_DEFINITION(HAVE_EVENTFD)
+  add_definitions(-DHAVE_EVENTFD)
 endif()
 
 include_directories(include)

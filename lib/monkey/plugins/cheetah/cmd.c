@@ -369,10 +369,9 @@ void mk_cheetah_cmd_config()
     CHEETAH_WRITE("\nWorkers            : %i threads", mk_api->config->workers);
     CHEETAH_WRITE("\nTimeout            : %i seconds", mk_api->config->timeout);
     CHEETAH_WRITE("\nPidFile            : %s.%s",
-                  mk_api->config->path_conf_pidfile,
+                  mk_api->config->pid_file_path,
                   listener->port);
-    CHEETAH_WRITE("\nUserDir            : %s",
-                  mk_api->config->conf_user_pub);
+    CHEETAH_WRITE("\nUserDir            : %s", mk_api->config->user_dir);
 
 
     if (mk_list_is_empty(mk_api->config->index_files) == 0) {
@@ -434,7 +433,7 @@ void mk_cheetah_cmd_status()
     char tmp[64];
 
     CHEETAH_WRITE("Monkey Version     : %s\n", MK_VERSION_STR);
-    CHEETAH_WRITE("Configuration path : %s\n", mk_api->config->path_conf_root);
+    CHEETAH_WRITE("Configuration path : %s\n", mk_api->config->serverconf);
 
     CHEETAH_WRITE("Cheetah! mode      : ");
     if (listen_mode == LISTEN_STDIN) {

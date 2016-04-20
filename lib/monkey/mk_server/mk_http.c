@@ -133,6 +133,7 @@ static int mk_http_request_prepare(struct mk_http_session *cs,
 
     /* Always assign the default vhost' */
     sr->host_conf = mk_list_entry_first(hosts, struct host, _head);
+
     sr->user_home = MK_FALSE;
 
     /* Valid request URI? */
@@ -200,7 +201,7 @@ static int mk_http_request_prepare(struct mk_http_session *cs,
     }
 
     /* Is requesting an user home directory ? */
-    if (mk_config->conf_user_pub &&
+    if (mk_config->user_dir &&
         sr->uri_processed.len > 2 &&
         sr->uri_processed.data[1] == MK_USER_HOME) {
 
@@ -933,9 +934,7 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
 
     /* Process methods */
     if (sr->method == MK_METHOD_GET || sr->method == MK_METHOD_HEAD) {
-        if (mime) {
-            sr->headers.content_type = mime->header_type;
-        }
+        sr->headers.content_type = mime->header_type;
 
         /* HTTP Ranges */
         if (sr->range.data != NULL && mk_config->resume == MK_TRUE) {

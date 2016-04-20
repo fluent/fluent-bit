@@ -41,7 +41,7 @@ struct rb_root mimetype_rb_head;
 extern struct mimetype *mimetype_default;
 
 int mk_mimetype_add(char *name, const char *type);
-int mk_mimetype_read_config();
+void mk_mimetype_read_config(void);
 struct mimetype *mk_mimetype_find(mk_ptr_t * filename);
 struct mimetype *mk_mimetype_lookup(char *name);
 void mk_mimetype_free_all();

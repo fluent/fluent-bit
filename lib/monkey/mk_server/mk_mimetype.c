@@ -114,7 +114,7 @@ int mk_mimetype_add(char *name, const char *type)
 }
 
 /* Load the two mime arrays into memory */
-int mk_mimetype_read_config()
+void mk_mimetype_read_config()
 {
     char path[MK_MAX_PATH];
     struct mk_rconf *cnf;
@@ -124,34 +124,30 @@ int mk_mimetype_read_config()
     struct file_info f_info;
     int ret;
 
-    if (!mk_config->conf_mimetype) {
-        return -1;
-    }
-
     /* Initialize the heads */
     mk_list_init(&mimetype_list);
     mimetype_rb_head = RB_ROOT;
 
     /* Read mime types configuration file */
     snprintf(path, MK_MAX_PATH, "%s/%s",
-             mk_config->path_conf_root,
-             mk_config->conf_mimetype);
+             mk_config->serverconf,
+             mk_config->mimes_conf_file);
 
     ret = mk_file_get_info(path, &f_info, MK_FILE_EXISTS);
-    if (ret == -1 || f_info.is_file == MK_FALSE) {
-        snprintf(path, MK_MAX_PATH, "%s", mk_config->conf_mimetype);
-    }
+    if (ret == -1 || f_info.is_file == MK_FALSE)
+        snprintf(path, MK_MAX_PATH, "%s", mk_config->mimes_conf_file);
+
     cnf = mk_rconf_open(path);
     if (!cnf) {
-        mk_warn("[mime] skipping mimetype configuration file");
-        return -1;
+        mk_warn("No mimetypes loaded");
+        return;
     }
 
     /* Get MimeTypes tag */
     section = mk_rconf_section_get(cnf, "MIMETYPES");
     if (!section) {
-        mk_err("[mime] Invalid mime type file");
-        return -1;
+        mk_err("Error: Invalid mime type file");
+        exit(EXIT_FAILURE);
     }
 
     mk_list_foreach(head, &section->entries) {
@@ -161,8 +157,8 @@ int mk_mimetype_read_config()
         }
 
         if (mk_mimetype_add(entry->key, entry->val) != 0) {
-            mk_err("[mime] Error loading Mime Types");
-            return -1;
+            mk_err("Error loading Mime Types");
+            exit(EXIT_FAILURE);
         }
     }
 
@@ -172,8 +168,6 @@ int mk_mimetype_read_config()
     mk_ptr_set(&mimetype_default->type, mk_config->default_mimetype);
 
     mk_rconf_free(cnf);
-
-    return 0;
 }
 
 struct mimetype *mk_mimetype_find(mk_ptr_t *filename)

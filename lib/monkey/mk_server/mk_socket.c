@@ -71,9 +71,11 @@ int mk_socket_set_tcp_fastopen(int sockfd)
 {
 #if defined (__linux__)
     int qlen = 5;
-    return setsockopt(sockfd, SOL_TCP, TCP_FASTOPEN, &qlen, sizeof(qlen));
-#endif
 
+    if (mk_kernel_runver >= MK_KERNEL_VERSION(3, 7, 0)) {
+        return setsockopt(sockfd, SOL_TCP, TCP_FASTOPEN, &qlen, sizeof(qlen));
+    }
+#endif
     (void) sockfd;
     return -1;
 }

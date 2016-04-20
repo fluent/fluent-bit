@@ -1,4 +1,5 @@
 # Let's have fun!
+
 cmake_minimum_required(VERSION 2.8)
 project(monkey C)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/")
@@ -110,16 +111,10 @@ if(WITH_DEBUG)
   set(CMAKE_BUILD_TYPE "Debug")
 endif()
 
-# It set's a definition and register into the mk_info.h file */
-macro(MK_DEFINITION var)
-  add_definitions(-D${var})
-  set(MK_BUILD_FLAGS "${MK_BUILD_FLAGS}#ifndef ${var}\n#define ${var}\n#endif\n")
-endmacro()
-
 # Check for accept(2) v/s accept(4)
 if(WITH_ACCEPT)
   set(WITH_ACCEPT4 No)
-  MK_DEFINITION(ACCEPT_GENERIC)
+  add_definitions(-DACCEPT_GENERIC)
 elseif(WITH_ACCEPT4)
   # accept(4) requires _GNU_SOURCE defined
   list(APPEND CMAKE_REQUIRED_DEFINITIONS -D_GNU_SOURCE)
@@ -139,23 +134,23 @@ if(WITH_LINUX_KQUEUE)
   if(NOT LIBKQUEUE_FOUND)
     message(FATAL_ERROR "Linux libkqueue was not found." )
   else()
-    MK_DEFINITION(LINUX_KQUEUE)
+    add_definitions(-DLINUX_KQUEUE)
   endif()
 endif()
 
 # Check Trace
 if(WITH_TRACE)
-  MK_DEFINITION(TRACE)
+  add_definitions(-DTRACE)
 endif()
 
 # Check Uclib library
 if(WITH_UCLIB)
-  MK_DEFINITION(UCLIB_MODE)
+  add_definitions(-DUCLIB_MODE)
 endif()
 
 # Check Musl library
 if(WITH_MUSL)
-  MK_DEFINITION(MUSL_MODE)
+  add_definitions(-DMUSL_MODE)
 endif()
 
 # Check Backtrace support
@@ -164,10 +159,10 @@ if(WITH_BACKTRACE)
   if (NOT HAVE_BACKTRACE)
     set(WITH_BACKTRACE No)
   else()
-    MK_DEFINITION(HAVE_BACKTRACE)
+      add_definitions(-DHAVE_BACKTRACE)
   endif()
 else()
-  MK_DEFINITION(NO_BACKTRACE)
+  add_definitions(-DNO_BACKTRACE)
 endif()
 
 # Check for LTTng-UST
@@ -176,22 +171,22 @@ if(WITH_LINUX_TRACE)
   if (NOT HAVE_LTTNG)
     message(FATAL_ERROR "LTTng-UST is not installed in your system." )
   else()
-    MK_DEFINITION(LINUX_TRACE)
+    add_definitions(-DLINUX_TRACE)
   endif()
 endif()
 
 # Use old Pthread TLS
 if(WITH_PTHREAD_TLS)
-  MK_DEFINITION(-DPTHREAD_TLS)
+  add_definitions(-DPTHREAD_TLS)
 endif()
 
 # Use system memory allocator instead of Jemalloc
 if(WITH_SYSTEM_MALLOC)
-  MK_DEFINITION(MALLOC_LIBC)
+  add_definitions(-DMALLOC_LIBC)
 else()
   # Prepare the Jemalloc build
-  MK_DEFINITION(MALLOC_JEMALLOC)
-  MK_DEFINITION(JEMALLOC_MANGLE)
+  add_definitions(-DMALLOC_JEMALLOC)
+  add_definitions(-DJEMALLOC_MANGLE)
 
   # Link to Jemalloc as an external dependency
   ExternalProject_Add(jemalloc

@@ -93,16 +93,16 @@ void mk_config_free_all()
         mk_rconf_free(mk_config->config);
     }
 
-    if (mk_config->path_conf_root) {
-        mk_mem_free(mk_config->path_conf_root);
+    if (mk_config->serverconf) {
+        mk_mem_free(mk_config->serverconf);
     }
 
-    if (mk_config->path_conf_pidfile) {
-        mk_mem_free(mk_config->path_conf_pidfile);
+    if (mk_config->pid_file_path) {
+        mk_mem_free(mk_config->pid_file_path);
     }
 
-    if (mk_config->conf_user_pub) {
-        mk_mem_free(mk_config->conf_user_pub);
+    if (mk_config->user_dir) {
+        mk_mem_free(mk_config->user_dir);
     }
 
     /* free config->index_files */
@@ -127,7 +127,7 @@ void mk_config_free_all()
 /* Print a specific error */
 static void mk_config_print_error_msg(char *variable, char *path)
 {
-    mk_err("[config] %s at %s has an invalid value",
+    mk_err("Error in %s variable under %s, has an invalid value",
            variable, path);
     mk_mem_free(path);
     exit(EXIT_FAILURE);
@@ -190,7 +190,7 @@ static int mk_config_listen_read(struct mk_rconf_section *section)
         listener = mk_list_entry_first(list, struct mk_string_line, _head);
         if (listener->val[0] == '[') {
             /* IPv6 address */
-            divider = strchr(entry->val, ']');
+            divider = strchr(listener->val, ']');
             if (divider == NULL) {
                 mk_err("[config] Expected closing ']' in IPv6 address.");
                 goto error;
@@ -200,7 +200,7 @@ static int mk_config_listen_read(struct mk_rconf_section *section)
                 goto error;
             }
 
-            address = mk_string_copy_substr(entry->val + 1, 0,
+            address = mk_string_copy_substr(listener->val + 1, 0,
                                             divider - listener->val - 1);
             port = mk_string_dup(divider + 2);
         }
@@ -274,7 +274,7 @@ error:
 }
 
 /* Read configuration files */
-static int mk_config_read_files(char *path_conf, char *file_conf)
+static void mk_config_read_files(char *path_conf, char *file_conf)
 {
     unsigned long len;
     char *tmp = NULL;
@@ -282,33 +282,24 @@ static int mk_config_read_files(char *path_conf, char *file_conf)
     struct mk_rconf *cnf;
     struct mk_rconf_section *section;
 
-    if (!path_conf) {
-        mk_warn("[config] skip configuration file");
-        return -1;
-    }
+    mk_config->serverconf = mk_string_dup(path_conf);
 
-    if (!file_conf) {
-        file_conf = "monkey.conf";
-    }
-
-    mk_config->path_conf_root = mk_string_dup(path_conf);
-
-    if (stat(mk_config->path_conf_root, &checkdir) == -1) {
-        mk_err("ERROR: Cannot find/open '%s'", mk_config->path_conf_root);
-        return -1;
+    if (stat(mk_config->serverconf, &checkdir) == -1) {
+        mk_err("ERROR: Cannot find/open '%s'", mk_config->serverconf);
+        exit(EXIT_FAILURE);
     }
 
     mk_string_build(&tmp, &len, "%s/%s", path_conf, file_conf);
     cnf = mk_rconf_open(tmp);
     if (!cnf) {
         mk_mem_free(tmp);
-        mk_err("Cannot read '%s'", mk_config->conf_main);
-        return -1;
+        mk_err("Cannot read '%s'", mk_config->server_conf_file);
+        exit(EXIT_FAILURE);
     }
     section = mk_rconf_section_get(cnf, "SERVER");
     if (!section) {
         mk_err("ERROR: No 'SERVER' section defined");
-        return -1;
+        exit(EXIT_FAILURE);
     }
 
     /* Map source configuration */
@@ -372,16 +363,15 @@ static int mk_config_read_files(char *path_conf, char *file_conf)
     }
 
     /* Pid File */
-    if (!mk_config->path_conf_pidfile) {
-        mk_config->path_conf_pidfile = mk_rconf_section_get_key(section,
-                                                                "PidFile",
-                                                                MK_RCONF_STR);
+    if (!mk_config->pid_file_path) {
+        mk_config->pid_file_path = mk_rconf_section_get_key(section,
+                                                            "PidFile",
+                                                            MK_RCONF_STR);
     }
 
     /* Home user's directory /~ */
-    mk_config->conf_user_pub = mk_rconf_section_get_key(section,
-                                                        "UserDir",
-                                                        MK_RCONF_STR);
+    mk_config->user_dir = mk_rconf_section_get_key(section,
+                                                   "UserDir", MK_RCONF_STR);
 
     /* Index files */
     mk_config->index_files = mk_rconf_section_get_key(section,
@@ -482,12 +472,10 @@ static int mk_config_read_files(char *path_conf, char *file_conf)
 /* read main configuration from monkey.conf */
 void mk_config_start_configure(void)
 {
-    int ret;
     unsigned long len;
 
     mk_config_set_init_values();
-    ret = mk_config_read_files(mk_config->path_conf_root,
-                               mk_config->conf_main);
+    mk_config_read_files(mk_config->path_config, mk_config->server_conf_file);
 
     /* Load mimes */
     mk_mimetype_read_config();
@@ -573,8 +561,7 @@ void mk_config_set_init_values(void)
     mk_config->user = NULL;
     mk_config->open_flags = O_RDONLY | O_NONBLOCK;
     mk_config->index_files = NULL;
-    mk_config->conf_user_pub = NULL;
-    mk_config->workers = -1;
+    mk_config->user_dir = NULL;
 
     /* TCP REUSEPORT: available on Linux >= 3.9 */
     if (mk_config->scheduler_mode == -1) {
@@ -610,7 +597,7 @@ void mk_config_sanity_check()
     int fd, flags = mk_config->open_flags;
 
     flags |= O_NOATIME;
-    fd = open(mk_config->path_conf_root, flags);
+    fd = open(mk_config->path_config, flags);
 
     if (fd > -1) {
         mk_config->open_flags = flags;
