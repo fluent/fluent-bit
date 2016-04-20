@@ -77,6 +77,10 @@ static void flb_help(int rc, struct flb_config *config)
     printf("\n%sOutputs%s\n", ANSI_BOLD, ANSI_RESET);
     mk_list_foreach(head, &config->out_plugins) {
         out = mk_list_entry(head, struct flb_output_plugin, _head);
+        if (strcmp(out->name, "lib") == 0) {
+            /* useless..., just skip it. */
+            continue;
+        }
         printf("  %-22s%s\n", out->name, out->description);
     }
     printf("\n");

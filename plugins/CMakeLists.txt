@@ -82,6 +82,7 @@ REGISTER_OUT_PLUGIN("out_fluentd")
 REGISTER_OUT_PLUGIN("out_nats")
 REGISTER_OUT_PLUGIN("out_td")
 REGISTER_OUT_PLUGIN("out_stdout")
+REGISTER_OUT_PLUGIN("out_lib")
 
 if(ENABLE_TESTS)
   REGISTER_OUT_PLUGIN("out_null")
