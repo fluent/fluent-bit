@@ -20,6 +20,8 @@
 #ifndef MK_UTILS_H
 #define MK_UTILS_H
 
+#define _GNU_SOURCE
+
 #include <string.h>
 #include <pthread.h>
 #include <sys/types.h>

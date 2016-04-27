@@ -370,7 +370,7 @@ void mk_server_worker_loop()
     /*
      * The worker will NOT process any connection until the master
      * process through mk_server_loop() send us the green light
-     * signal MK_SERVER_SIGNAL_START.
+     * signal MK_SERVER_S;IGNAL_START.
      */
     mk_event_wait(evl);
     mk_event_foreach(event, evl) {

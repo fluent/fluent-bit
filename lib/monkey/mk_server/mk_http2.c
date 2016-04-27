@@ -61,6 +61,7 @@ static struct mk_http2_session *mk_http2_session_create()
     return h2s;
 }
 
+/* FIXME
 static int mk_http2_session_destroy(struct mk_http2_session *h2s)
 {
     if (h2s->buffer != h2s->buffer_fixed) {
@@ -81,6 +82,8 @@ static int mk_http2_frame_header(char *buf, uint32_t length, uint8_t type,
 
     return sizeof(struct mk_http2_frame);
 }
+
+*/
 
 /* Handle an upgraded session */
 static int mk_http2_upgrade(void *cs, void *sr)
@@ -105,7 +108,7 @@ static int mk_http2_upgrade(void *cs, void *sr)
     return MK_HTTP_OK;
 }
 
-/* Decode a frame header, no more... no less */
+/* FIXME Decode a frame header, no more... no less
 static inline void mk_http2_frame_decode_header(uint8_t *buf,
                                                 struct mk_http2_frame *frame)
 {
@@ -125,6 +128,7 @@ static inline void mk_http2_frame_decode_header(uint8_t *buf,
            frame->stream_id);
 #endif
 }
+*/
 
 static inline int mk_http2_handle_settings(struct mk_sched_conn *conn,
                                            struct mk_http2_frame *frame)
@@ -234,9 +238,10 @@ static inline int mk_http2_handle_settings(struct mk_sched_conn *conn,
         }
     }
 
-    /* No errors, send the ACK */
+    /* FIXME // No errors, send the ACK
     mk_http2_send_raw(conn, MK_HTTP2_SETTINGS_ACK_FRAME,
                       sizeof(MK_HTTP2_SETTINGS_ACK_FRAME) - 1);
+    */
     return 0;
 }
 
@@ -252,7 +257,7 @@ static inline int mk_http2_frame_run(struct mk_sched_conn *conn,
     h2s = conn->data;
 
     /* Decode the frame header */
-    mk_http2_frame_decode_header(h2s->buffer, &frame);
+    //FIXME mk_http2_frame_decode_header(h2s->buffer, &frame);
 
     /* Do some validations */
     if (h2s->buffer_length < (MK_HTTP2_HEADER_SIZE + (frame.len_type >> 8))) {
@@ -338,7 +343,7 @@ static int mk_http2_sched_read(struct mk_sched_conn *conn,
             buffer_consume(h2s, http2_preface.len);
             h2s->status = MK_HTTP2_OK;
 
-            /* Send out our default settings */
+            /* Send out our default settings
             mk_stream_set(&h2s->stream_settings,
                           MK_STREAM_RAW,
                           &conn->channel,
@@ -346,6 +351,7 @@ static int mk_http2_sched_read(struct mk_sched_conn *conn,
                           sizeof(MK_HTTP2_SETTINGS_DEFAULT_FRAME) - 1,
                           NULL,
                           NULL, NULL, NULL);
+            */
         }
         else {
             /* We need more data */

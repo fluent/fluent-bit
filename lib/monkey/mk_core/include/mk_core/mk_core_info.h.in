@@ -17,33 +17,10 @@
  *  limitations under the License.
  */
 
-#include <monkey/mk_core.h>
+#ifndef MK_CORE_INFO_H
+#define MK_CORE_INFO_H
 
-#ifndef MK_MIMETYPE_H
-#define MK_MIMETYPE_H
-
-#define MIMETYPE_DEFAULT_TYPE "text/plain\r\n"
-#define MIMETYPE_DEFAULT_NAME "default"
-
-struct mimetype
-{
-    char *name;
-    mk_ptr_t type;
-    mk_ptr_t header_type;
-    struct mk_list _head;
-    struct rb_node _rb_head;
-};
-
-/* Head for RBT */
-struct mk_list mimetype_list;
-struct rb_root mimetype_rb_head;
-
-extern struct mimetype *mimetype_default;
-
-int mk_mimetype_add(char *name, const char *type);
-int mk_mimetype_read_config();
-struct mimetype *mk_mimetype_find(mk_ptr_t * filename);
-struct mimetype *mk_mimetype_lookup(char *name);
-void mk_mimetype_free_all();
+/* General flags set by CMakeLists.txt */
+@MK_CORE_BUILD_FLAGS@
 
 #endif

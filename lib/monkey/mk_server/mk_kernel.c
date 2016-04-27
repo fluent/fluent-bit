@@ -27,12 +27,6 @@
 #include <ctype.h>
 #include <sys/utsname.h>
 
-int mk_kernel_init()
-{
-    mk_kernel_runver = mk_kernel_version();
-    return 0;
-}
-
 int mk_kernel_version()
 {
     int a, b, c;
@@ -86,7 +80,7 @@ int mk_kernel_version()
 }
 
 /* Detect specific Linux Kernel features that we may use */
-int mk_kernel_features()
+int mk_kernel_features(int version)
 {
     int flags = 0;
 
@@ -109,16 +103,15 @@ int mk_kernel_features()
     */
 
     /* SO_REUSEPORT */
-    if (mk_kernel_runver >= MK_KERNEL_VERSION(3, 9, 0)) {
+    if (version >= MK_KERNEL_VERSION(3, 9, 0)) {
         flags |= MK_KERNEL_SO_REUSEPORT;
     }
 
     /* TCP_FASTOPEN */
-    if (mk_kernel_runver >= MK_KERNEL_VERSION(3, 7, 0)) {
+    if (version >= MK_KERNEL_VERSION(3, 7, 0)) {
         flags |= MK_KERNEL_TCP_FASTOPEN;
     }
 
-    mk_config->kernel_features = flags;
     return flags;
 }
 

@@ -27,12 +27,8 @@
 
 #define MK_KERNEL_VERSION(a, b, c) (((a) << 16) + ((b) << 8) + (c))
 
-/* Current running version of the Kernel */
-int mk_kernel_runver;
-
-int mk_kernel_init();
 int mk_kernel_version();
-int mk_kernel_features();
+int mk_kernel_features(int version);
 int mk_kernel_features_print(char *buffer, size_t size);
 
 #endif

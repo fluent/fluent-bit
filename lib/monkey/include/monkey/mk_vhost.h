@@ -40,16 +40,16 @@ struct mk_handler_param {
 };
 
 struct mk_host_handler {
-    /* we only support a regex match for now */
-    regex_t match;
+    regex_t match;                         /* regex match rule               */
+    char *name;                            /* plugin handler name            */
+    int n_params;                          /* number of parameters           */
 
-    /* plugin handler */
-    char *name;
+    /* optional callback for lib mode */
+    void (*cb) (struct mk_http_session *, struct mk_http_request *);
 
-    int n_params;
-    struct mk_list params;
-    struct mk_plugin *handler;
-    struct mk_list _head;
+    struct mk_list params;                 /* parameters given by config     */
+    struct mk_plugin *handler;             /* handler plugin                 */
+    struct mk_list _head;                  /* link to vhost->handlers        */
 };
 
 struct host
@@ -115,5 +115,8 @@ int mk_vhost_open(struct mk_http_request *sr);
 int mk_vhost_close(struct mk_http_request *sr);
 void mk_vhost_free_all();
 int mk_vhost_map_handlers();
+struct mk_host_handler *mk_vhost_handler_match(char *match,
+                                               void (*cb) (struct mk_http_session *,
+                                                           struct mk_http_request *));
 
 #endif

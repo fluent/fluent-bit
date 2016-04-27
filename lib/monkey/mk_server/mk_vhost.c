@@ -253,8 +253,8 @@ static inline int mk_vhost_fdt_close(struct mk_http_request *sr)
     struct vhost_fdt_hash_chain *hc;
 
     if (mk_config->fdt == MK_FALSE || sr->vhost_fdt_enabled == MK_FALSE) {
-        if (sr->file_stream.fd > 0) {
-            return close(sr->file_stream.fd);
+        if (sr->in_file.fd > 0) {
+            return close(sr->in_file.fd);
         }
         return -1;
     }
@@ -264,7 +264,7 @@ static inline int mk_vhost_fdt_close(struct mk_http_request *sr)
 
     ht = mk_vhost_fdt_table_lookup(id, sr->host_conf);
     if (mk_unlikely(!ht)) {
-        return close(sr->file_stream.fd);
+        return close(sr->in_file.fd);
     }
 
     /* We got the hash table, now look around the chains array */
@@ -278,13 +278,13 @@ static inline int mk_vhost_fdt_close(struct mk_http_request *sr)
             hc->fd   = -1;
             hc->hash = 0;
             ht->av_slots++;
-            return close(sr->file_stream.fd);
+            return close(sr->in_file.fd);
         }
         else {
             return 0;
         }
     }
-    return close(sr->file_stream.fd);
+    return close(sr->in_file.fd);
 }
 
 
@@ -305,6 +305,30 @@ int mk_vhost_open(struct mk_http_request *sr)
 int mk_vhost_close(struct mk_http_request *sr)
 {
     return mk_vhost_fdt_close(sr);
+}
+
+struct mk_host_handler *mk_vhost_handler_match(char *match,
+                                               void (*cb) (struct mk_http_session *,
+                                                           struct mk_http_request *))
+{
+    int ret;
+    struct mk_host_handler *h;
+
+    h = mk_mem_malloc(sizeof(struct mk_host_handler));
+    if (!h) {
+        return NULL;
+    }
+    h->name = NULL;
+    h->cb   = cb;
+    mk_list_init(&h->params);
+
+    ret = str_to_regex(match, &h->match);
+    if (ret == -1) {
+        mk_mem_free(h);
+        return NULL;
+    }
+
+    return h;
 }
 
 /*
@@ -483,6 +507,7 @@ struct host *mk_vhost_read(char *path)
             if (!h_handler) {
                 exit(EXIT_FAILURE);
             }
+            h_handler->cb = NULL;
             mk_list_init(&h_handler->params);
 
             i = 0;
@@ -493,7 +518,7 @@ struct host *mk_vhost_read(char *path)
                 case 0:
                     ret = str_to_regex(entry->val, &h_handler->match);
                     if (ret == -1) {
-                        exit(EXIT_FAILURE);
+                        return NULL;
                     }
                     break;
                 case 1:
@@ -603,12 +628,18 @@ void mk_vhost_init(char *path)
     struct file_info f_info;
     int ret;
 
+    if (!mk_config->conf_sites) {
+        mk_warn("[vhost] skipping default site");
+        return;
+    }
+
     /* Read default virtual host file */
-    mk_string_build(&sites, &len, "%s/%s/", path, mk_config->sites_conf_dir);
+    mk_string_build(&sites, &len, "%s/%s/",
+                    path, mk_config->conf_sites);
     ret = mk_file_get_info(sites, &f_info, MK_FILE_EXISTS);
     if (ret == -1 || f_info.is_directory == MK_FALSE) {
         mk_mem_free(sites);
-        sites = mk_config->sites_conf_dir;
+        sites = mk_config->conf_sites;
     }
 
     mk_string_build(&buf, &len, "%s/default", sites);

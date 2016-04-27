@@ -76,12 +76,13 @@ int mk_user_init(struct mk_http_session *cs, struct mk_http_request *sr)
         user_uri[sr->uri_processed.len - offset - limit] = '\0';
 
         mk_string_build(&sr->real_path.data, &sr->real_path.len,
-                        "%s/%s%s", s_user->pw_dir, mk_config->user_dir, user_uri);
+                        "%s/%s%s",
+                        s_user->pw_dir, mk_config->conf_user_pub, user_uri);
         mk_mem_free(user_uri);
     }
     else {
         mk_string_build(&sr->real_path.data, &sr->real_path.len,
-                        "%s/%s", s_user->pw_dir, mk_config->user_dir);
+                        "%s/%s", s_user->pw_dir, mk_config->conf_user_pub);
     }
 
     sr->user_home = MK_TRUE;

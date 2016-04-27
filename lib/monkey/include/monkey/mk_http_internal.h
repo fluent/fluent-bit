@@ -91,10 +91,11 @@ struct mk_http_request
     /*------------*/
 
     /* Streams handling: headers and static file */
-    struct mk_stream headers_stream;
-    struct mk_stream headers_extra_stream;
-    struct mk_stream file_stream;
-    struct mk_stream page_stream;
+    struct mk_stream stream;
+    struct mk_stream_input in_headers;
+    struct mk_stream_input in_headers_extra;
+    struct mk_stream_input in_file;
+    struct mk_stream_input page_stream;
 
     int headers_len;
 
@@ -160,6 +161,7 @@ struct mk_http_request
     void *stage30_handler;
 
     /* Static file information */
+    int file_fd;
     struct file_info file_info;
 
     /* Vhost */

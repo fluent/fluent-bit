@@ -55,7 +55,9 @@
 
 /*
  * A channel represents an end-point of a stream, for short
- * where the stream data consumed is send to.
+ * where the stream data consumed and is send to. The channel
+ * knows how to read/write to a TCP connection through a
+ * defined network plugin.
  */
 struct mk_channel {
     int type;
@@ -67,37 +69,55 @@ struct mk_channel {
     struct mk_list streams;
 };
 
+/* Stream input source */
+struct mk_stream_input {
+    int type;              /* input type                      */
+    int fd;                /* file descriptor (files)         */
+    int dynamic;
+
+    size_t bytes_total;    /* Total of data from the input    */
+    off_t  bytes_offset;   /* Data already sent               */
+
+    /*
+     * Based on the stream input type, 'data' could reference a RAW buffer
+     * or a mk_iov struct.
+     */
+    void *buffer;
+    void *context;
+
+    /* callbacks */
+    void (*cb_consumed)(struct mk_stream_input *, long);
+    void (*cb_finished)(struct mk_stream_input *);
+
+    struct mk_stream *stream; /* reference to parent stream */
+    struct mk_list _head;     /* link to inputs stream list */
+};
+
 /*
- * A stream represents an Input of data that can be consumed
- * from a specific resource given it's type.
+ * A stream holds a queue of components that refers to different
+ * data sources such as: static file, raw buffer, etc.
  */
 struct mk_stream {
-    int type;              /* stream type                      */
-    int fd;                /* file descriptor                  */
     int preserve;          /* preserve stream? (do not unlink) */
     int encoding;          /* some output encoding ?           */
     int dynamic;           /* dynamic allocated ?              */
 
-    /* bytes info */
-    size_t bytes_total;
-    off_t  bytes_offset;
+    size_t bytes_total;    /* Total of data from stream_input  */
+    off_t  bytes_offset;   /* Data already sent                */
 
     /* the outgoing channel, we do this for all streams */
     struct mk_channel *channel;
 
-    /*
-     * Based on the stream type, 'data' could reference a RAW buffer
-     * or a mk_iov struct.
-     */
-    void *buffer;
-
-    /* Some data the user may want to reference with the stream (optional) */
-    void *data;
+    /* Context the caller may want to reference with the stream (optional) */
+    void *context;
 
     /* callbacks */
     void (*cb_finished) (struct mk_stream *);
     void (*cb_bytes_consumed) (struct mk_stream *, long);
     void (*cb_exception) (struct mk_stream *, int);
+
+    /* Head of stream_input nodes */
+    struct mk_list inputs;
 
     /* Link to the Channel parent */
     struct mk_list _head;
@@ -115,18 +135,140 @@ static inline void mk_channel_append_stream(struct mk_channel *channel,
     mk_list_add(&stream->_head, &channel->streams);
 }
 
+static inline void mk_stream_append(struct mk_stream_input *in,
+                                    struct mk_stream *stream)
+{
+    mk_list_add(&in->_head, &stream->inputs);
+}
+
+static inline int mk_stream_input(struct mk_stream *stream,
+                                  struct mk_stream_input *in,
+                                  int type,
+                                  int fd,
+                                  void *buffer, size_t size,
+                                  off_t offset,
+                                  void (*cb_consumed) (struct mk_stream_input *, long),
+                                  void (*cb_finished)(struct mk_stream_input *))
+
+{
+    struct mk_iov *iov;
+
+    if (!in) {
+        in = mk_mem_malloc(sizeof(struct mk_stream_input));
+        if (!in) {
+            return -1;
+        }
+        in->dynamic  = MK_TRUE;
+    }
+    else {
+        in->dynamic  = MK_FALSE;
+    }
+
+    in->fd           = fd;
+    in->type         = type;
+    in->bytes_offset = offset;
+    in->buffer       = buffer;
+    in->cb_consumed  = cb_consumed;
+    in->cb_finished  = cb_finished;
+    in->stream       = stream;
+
+    if (type == MK_STREAM_IOV) {
+        iov = buffer;
+        in->bytes_total = iov->total_len;
+    }
+    else if (type == MK_STREAM_COPYBUF) {
+        in->buffer = mk_mem_malloc(size);
+        in->bytes_total = size;
+        memcpy(in->buffer, buffer, size);
+    }
+    else {
+        in->bytes_total = size;
+    }
+
+    mk_list_add(&in->_head, &stream->inputs);
+    return 0;
+}
+
+static inline int mk_stream_in_file(struct mk_stream *stream,
+                                    struct mk_stream_input *in, int fd,
+                                    size_t total_bytes,
+                                    off_t offset,
+                                    void (*cb_consumed)(struct mk_stream_input *, long),
+                                    void (*cb_finished)(struct mk_stream_input *))
+
+{
+    return mk_stream_input(stream,
+                           in,
+                           MK_STREAM_FILE,
+                           fd,
+                           NULL, total_bytes, offset,
+                           cb_consumed, cb_finished);
+}
+
+static inline int mk_stream_in_iov(struct mk_stream *stream,
+                                   struct mk_stream_input *in,
+                                   struct mk_iov *iov,
+                                   void (*cb_consumed)(struct mk_stream_input *, long),
+                                   void (*cb_finished)(struct mk_stream_input *))
+
+{
+    return mk_stream_input(stream,
+                           in,
+                           MK_STREAM_IOV,
+                           0,
+                           iov, 0, 0,
+                           cb_consumed, cb_finished);
+}
+
+static inline int mk_stream_in_raw(struct mk_stream *stream,
+                                   struct mk_stream_input *in,
+                                   char *buf, size_t length,
+                                   void (*cb_consumed)(struct mk_stream_input *, long),
+                                   void (*cb_finished)(struct mk_stream_input *))
+{
+    return mk_stream_input(stream,
+                           in,
+                           MK_STREAM_RAW,
+                           -1,
+                           buf, length,
+                           0,
+                           cb_consumed, cb_finished);
+}
+
+static inline int mk_stream_in_cbuf(struct mk_stream *stream,
+                                    struct mk_stream_input *in,
+                                    char *buf, size_t length,
+                                    void (*cb_consumed)(struct mk_stream_input *, long),
+                                    void (*cb_finished)(struct mk_stream_input *))
+{
+    return mk_stream_input(stream,
+                           in,
+                           MK_STREAM_COPYBUF,
+                           -1,
+                           buf, length,
+                           0,
+                           cb_consumed, cb_finished);
+}
+
+static inline void mk_stream_release(struct mk_stream *stream)
+{
+    if (stream->cb_finished) {
+        stream->cb_finished(stream);
+    }
+
+    mk_list_del(&stream->_head);
+    if (stream->dynamic == MK_TRUE) {
+        mk_mem_free(stream);
+    }
+}
+
 static inline void mk_stream_set(struct mk_stream *stream,
-                                 int type,
                                  struct mk_channel *channel,
-                                 void *buffer,
-                                 size_t size,
                                  void *data,
                                  void (*cb_finished) (struct mk_stream *),
                                  void (*cb_bytes_consumed) (struct mk_stream *, long),
                                  void (*cb_exception) (struct mk_stream *, int))
 {
-    struct mk_iov *iov;
-
     /*
      * The copybuf stream type it's a lazy stream mechanism on which the
      * stream it self and the buffer are allocated dynamically. It just
@@ -142,103 +284,101 @@ static inline void mk_stream_set(struct mk_stream *stream,
         stream->dynamic = MK_FALSE;
     }
 
-    stream->type         = type;
     stream->channel      = channel;
     stream->bytes_offset = 0;
-    stream->buffer       = buffer;
-    stream->data         = data;
+    stream->context      = data;
     stream->preserve     = MK_FALSE;
-
-    if (type == MK_STREAM_IOV) {
-        iov = buffer;
-        stream->bytes_total = iov->total_len;
-    }
-    else if (type == MK_STREAM_COPYBUF) {
-        stream->buffer = mk_mem_malloc(size);
-        stream->bytes_total = size;
-        memcpy(stream->buffer, buffer, size);
-    }
-    else {
-        stream->bytes_total = size;
-    }
 
     /* callbacks */
     stream->cb_finished       = cb_finished;
     stream->cb_bytes_consumed = cb_bytes_consumed;
     stream->cb_exception      = cb_exception;
 
+    mk_list_init(&stream->inputs);
     mk_list_add(&stream->_head, &channel->streams);
 }
 
-static inline void mk_stream_unlink(struct mk_stream *stream)
+static inline void mk_stream_input_unlink(struct mk_stream_input *in)
 {
-    mk_list_del(&stream->_head);
+    mk_list_del(&in->_head);
 }
 
 /* Mark a specific number of bytes served (just on successfull flush) */
-static inline void mk_stream_bytes_consumed(struct mk_stream *stream, long bytes)
+static inline void mk_stream_input_consume(struct mk_stream_input *in, long bytes)
 {
 #ifdef TRACE
     char *fmt = NULL;
 
-    if (stream->type == MK_STREAM_RAW) {
-        fmt = "[STREAM_RAW %p] bytes consumed %lu/%lu";
+    if (in->type == MK_STREAM_RAW) {
+        fmt = "[INPUT_RAW %p] bytes consumed %lu/%lu";
     }
-    else if (stream->type == MK_STREAM_IOV) {
-        fmt = "[STREAM_IOV %p] bytes consumed %lu/%lu";
+    else if (in->type == MK_STREAM_IOV) {
+        fmt = "[INPUT_IOV %p] bytes consumed %lu/%lu";
     }
-    else if (stream->type == MK_STREAM_FILE) {
-        fmt = "[STREAM_FILE %p] bytes consumed %lu/%lu";
+    else if (in->type == MK_STREAM_FILE) {
+        fmt = "[INPUT_FILE %p] bytes consumed %lu/%lu";
     }
-    else if (stream->type == MK_STREAM_SOCKET) {
-        fmt = "[STREAM_SOCK %p] bytes consumed %lu/%lu";
+    else if (in->type == MK_STREAM_SOCKET) {
+        fmt = "[INPUT_SOCK %p] bytes consumed %lu/%lu";
     }
-    else if (stream->type == MK_STREAM_COPYBUF) {
-        fmt = "[STREAM_CBUF %p] bytes consumed %lu/%lu";
+    else if (in->type == MK_STREAM_COPYBUF) {
+        fmt = "[INPUT_CBUF %p] bytes consumed %lu/%lu";
     }
     else {
-        fmt = "[STREAM_UNKW %p] bytes consumed %lu/%lu";
+        fmt = "[INPUT_UNKW %p] bytes consumed %lu/%lu";
     }
-    MK_TRACE(fmt, stream, bytes, stream->bytes_total);
+    MK_TRACE(fmt, in, bytes, in->bytes_total);
 #endif
 
-    stream->bytes_total -= bytes;
+    in->bytes_total -= bytes;
 }
 
+#ifdef TRACE
 static inline void mk_channel_debug(struct mk_channel *channel)
 {
     int i = 0;
+    int i_input;
     struct mk_list *head;
+    struct mk_list *h_inputs;
     struct mk_stream *stream;
+    struct mk_stream_input *in;
 
     printf("\n*** Channel ***\n");
     mk_list_foreach(head, &channel->streams) {
         stream = mk_list_entry(head, struct mk_stream, _head);
-        switch (stream->type) {
-        case MK_STREAM_RAW:
-            printf("%i) [%p] STREAM RAW    : ", i, stream);
-            break;
-        case MK_STREAM_IOV:
-            printf("%i) [%p] STREAM IOV    : ", i, stream);
-            break;
-        case MK_STREAM_FILE:
-            printf("%i) [%p] STREAM FILE   : ", i, stream);
-            break;
-        case MK_STREAM_SOCKET:
-            printf("%i) [%p] STREAM SOCKET : ", i, stream);
-            break;
-        case MK_STREAM_COPYBUF:
-            printf("%i) [%p] STREAM COPYBUF: ", i, stream);
-            break;
-        }
-#if defined(__APPLE__)
-        printf("bytes=%lld/%lu\n", stream->bytes_offset, stream->bytes_total);
-#else
-        printf("bytes=%ld/%zu\n", stream->bytes_offset, stream->bytes_total);
-#endif
+        printf("[stream.%i] %p\n", i, stream);
         i++;
+        i_input = 0;
+
+        mk_list_foreach(h_inputs, &stream->inputs) {
+            in = mk_list_entry(h_inputs, struct mk_stream_input, _head);
+            switch (in->type) {
+            case MK_STREAM_RAW:
+                printf("     in.%i] %p RAW    : ", i_input, in);
+                break;
+            case MK_STREAM_IOV:
+                printf("     in.%i] %p IOV    : ", i_input, in);
+                break;
+            case MK_STREAM_FILE:
+                printf("     in.%i] %p FILE   : ", i_input, in);
+                break;
+            case MK_STREAM_SOCKET:
+                printf("     in.%i] %p SOCKET : ", i_input, in);
+                break;
+            case MK_STREAM_COPYBUF:
+                printf("     in.%i] %p COPYBUF: ", i_input, in);
+                break;
+            }
+#if defined(__APPLE__)
+            printf("bytes=%lld/%lu\n", in->bytes_offset, in->bytes_total);
+#else
+            printf("bytes=%ld/%zu\n", in->bytes_offset, in->bytes_total);
+#endif
+            i_input++;
+        }
     }
 }
+#endif
 
 struct mk_stream *mk_stream_new(int type, struct mk_channel *channel,
                                 void *buffer, size_t size, void *data,

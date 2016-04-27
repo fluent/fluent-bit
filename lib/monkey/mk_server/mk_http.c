@@ -67,11 +67,8 @@ void mk_http_request_init(struct mk_http_session *session,
     request->method = MK_METHOD_UNKNOWN;
     request->protocol = MK_HTTP_PROTOCOL_UNKNOWN;
     request->connection.len = -1;
+    request->file_fd        = -1;
     request->file_info.size = -1;
-    request->file_stream.fd = 0;
-    request->file_stream.bytes_total = -1;
-    request->file_stream.bytes_offset = 0;
-    request->file_stream.preserve = MK_FALSE;
     request->vhost_fdt_id = 0;
     request->vhost_fdt_hash = 0;
     request->vhost_fdt_enabled = MK_FALSE;
@@ -85,6 +82,12 @@ void mk_http_request_init(struct mk_http_session *session,
 
     /* Response Headers */
     mk_header_response_reset(&request->headers);
+
+    /* Reset callbacks for headers stream */
+    mk_stream_set(&request->stream,
+                  session->channel,
+                  NULL,
+                  NULL, NULL, NULL);
 }
 
 static inline int mk_http_point_header(mk_ptr_t *h,
@@ -109,6 +112,7 @@ static inline int mk_http_point_header(mk_ptr_t *h,
 static int mk_http_request_prepare(struct mk_http_session *cs,
                                    struct mk_http_request *sr)
 {
+    int ret;
     int status = 0;
     char *temp;
     struct mk_list *hosts = &mk_config->hosts;
@@ -133,7 +137,6 @@ static int mk_http_request_prepare(struct mk_http_session *cs,
 
     /* Always assign the default vhost' */
     sr->host_conf = mk_list_entry_first(hosts, struct host, _head);
-
     sr->user_home = MK_FALSE;
 
     /* Valid request URI? */
@@ -201,7 +204,7 @@ static int mk_http_request_prepare(struct mk_http_session *cs,
     }
 
     /* Is requesting an user home directory ? */
-    if (mk_config->user_dir &&
+    if (mk_config->conf_user_pub &&
         sr->uri_processed.len > 2 &&
         sr->uri_processed.data[1] == MK_USER_HOME) {
 
@@ -212,7 +215,6 @@ static int mk_http_request_prepare(struct mk_http_session *cs,
     }
 
     /* Plugins Stage 20 */
-    int ret;
     ret = mk_plugin_stage_run_20(cs, sr);
     if (ret == MK_PLUGIN_RET_CLOSE_CONX) {
         MK_TRACE("STAGE 20 requested close conexion");
@@ -380,35 +382,37 @@ static int mk_http_error_page(char *title, mk_ptr_t *message, char *signature,
 static int mk_http_range_set(struct mk_http_request *sr, size_t file_size)
 {
     struct response_headers *sh = &sr->headers;
+    struct mk_stream_input *in;
 
-    sr->file_stream.bytes_total  = file_size;
-    sr->file_stream.bytes_offset = 0;
+    in = &sr->in_file;
+    in->bytes_total  = file_size;
+    in->bytes_offset = 0;
 
     if (mk_config->resume == MK_TRUE && sr->range.data) {
         /* yyy- */
         if (sh->ranges[0] >= 0 && sh->ranges[1] == -1) {
-            sr->file_stream.bytes_offset = sh->ranges[0];
-            sr->file_stream.bytes_total = file_size - sr->file_stream.bytes_offset;
+            in->bytes_offset = sh->ranges[0];
+            in->bytes_total = file_size - in->bytes_offset;
         }
 
         /* yyy-xxx */
         if (sh->ranges[0] >= 0 && sh->ranges[1] >= 0) {
-            sr->file_stream.bytes_offset = sh->ranges[0];
-            sr->file_stream.bytes_total = labs(sh->ranges[1] - sh->ranges[0]) + 1;
+            in->bytes_offset = sh->ranges[0];
+            in->bytes_total  = labs(sh->ranges[1] - sh->ranges[0]) + 1;
         }
 
         /* -xxx */
         if (sh->ranges[0] == -1 && sh->ranges[1] > 0) {
-            sr->file_stream.bytes_total = sh->ranges[1];
-            sr->file_stream.bytes_offset = file_size - sh->ranges[1];
+            in->bytes_total = sh->ranges[1];
+            in->bytes_offset = file_size - sh->ranges[1];
         }
 
-        if ((size_t) sr->file_stream.bytes_offset >= file_size ||
-            sr->file_stream.bytes_total > file_size) {
+        if ((size_t) in->bytes_offset >= file_size ||
+            in->bytes_total > file_size) {
             return -1;
         }
 
-        lseek(sr->file_stream.fd, sr->file_stream.bytes_offset, SEEK_SET);
+        lseek(in->fd, in->bytes_offset, SEEK_SET);
     }
     return 0;
 }
@@ -584,8 +588,10 @@ static inline char *mk_http_index_lookup(mk_ptr_t *path_base,
     return NULL;
 }
 
+/* Turn CORK_OFF once headers are sent */
 #if defined (__linux__)
-static inline void mk_http_cb_file_on_consume(struct mk_stream *stream, long bytes)
+static inline void mk_http_cb_file_on_consume(struct mk_stream_input *in,
+                                              long bytes)
 {
     int ret;
     (void) bytes;
@@ -595,11 +601,13 @@ static inline void mk_http_cb_file_on_consume(struct mk_stream *stream, long byt
      * the TCP Cork. We do this just overriding the callback for
      * the file stream.
      */
-    ret = mk_server_cork_flag(stream->channel->fd, TCP_CORK_OFF);
+    ret = mk_server_cork_flag(in->stream->channel->fd, TCP_CORK_OFF);
     if (ret == -1) {
         mk_warn("Could not set TCP_CORK/TCP_NOPUSH off");
     }
-    stream->cb_bytes_consumed = NULL;
+    MK_TRACE("[FD %i] Disable TCP_CORK/TCP_NOPUSH",
+             in->stream->channel->fd);
+    in->cb_consumed = NULL;
 }
 #endif
 
@@ -697,10 +705,17 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
 
     ret_file = mk_file_get_info(sr->real_path.data, &sr->file_info, MK_FILE_READ);
 
+    /* Manually set the input streams for the handler */
+    sr->in_headers.type        = MK_STREAM_IOV;
+    sr->in_headers.dynamic     = MK_FALSE;
+    sr->in_headers.cb_consumed = NULL;
+    sr->in_headers.cb_finished = NULL;
+    sr->in_headers.stream      = &sr->stream;
+    mk_list_add(&sr->in_headers._head, &sr->stream.inputs);
+
     /* Plugin Stage 30: look for handlers for this request */
     if (sr->stage30_blocked == MK_FALSE) {
         sr->uri_processed.data[sr->uri_processed.len] = '\0';
-
         handlers = &sr->host_conf->handlers;
         mk_list_foreach(head, handlers) {
             h_handler = mk_list_entry(head, struct mk_host_handler, _head);
@@ -709,11 +724,19 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
                 continue;
             }
 
-            plugin = h_handler->handler;
-            sr->stage30_handler = h_handler->handler;
-            ret = plugin->stage->stage30(plugin, cs, sr,
-                                         h_handler->n_params,
-                                         &h_handler->params);
+            if (h_handler->cb) {
+                sr->headers.content_length = 0;
+                h_handler->cb(cs, sr);
+                mk_header_prepare(cs, sr);
+                return 0;
+            }
+            else {
+                plugin = h_handler->handler;
+                sr->stage30_handler = h_handler->handler;
+                ret = plugin->stage->stage30(plugin, cs, sr,
+                                             h_handler->n_params,
+                                             &h_handler->params);
+            }
 
             MK_TRACE("[FD %i] STAGE_30 returned %i", cs->socket, ret);
             switch (ret) {
@@ -919,22 +942,25 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
     /* Object size for log and response headers */
     sr->headers.content_length = sr->file_info.size;
     sr->headers.real_length = sr->file_info.size;
-    sr->file_stream.channel = cs->channel;
 
     /* Open file */
     if (mk_likely(sr->file_info.size > 0)) {
-        sr->file_stream.fd = mk_vhost_open(sr);
-        if (sr->file_stream.fd == -1) {
+        sr->file_fd = mk_vhost_open(sr);
+        if (sr->file_fd == -1) {
             MK_TRACE("open() failed");
             return mk_http_error(MK_CLIENT_FORBIDDEN, cs, sr);
         }
-        sr->file_stream.bytes_offset = 0;
-        sr->file_stream.bytes_total  = sr->file_info.size;
+        sr->in_file.fd           = sr->file_fd;
+        sr->in_file.bytes_offset = 0;
+        sr->in_file.bytes_total  = sr->file_info.size;
+        sr->in_file.stream       = &sr->stream;
     }
 
     /* Process methods */
     if (sr->method == MK_METHOD_GET || sr->method == MK_METHOD_HEAD) {
-        sr->headers.content_type = mime->header_type;
+        if (mime) {
+            sr->headers.content_type = mime->header_type;
+        }
 
         /* HTTP Ranges */
         if (sr->range.data != NULL && mk_config->resume == MK_TRUE) {
@@ -966,12 +992,11 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
     if (mk_unlikely(sr->headers.content_length == 0)) {
         return 0;
     }
-
     /* Send file content */
     if (sr->method == MK_METHOD_GET || sr->method == MK_METHOD_POST) {
         /* Note: bytes and offsets are set after the Range check */
-        sr->file_stream.type = MK_STREAM_FILE;
-        mk_channel_append_stream(cs->channel, &sr->file_stream);
+        sr->in_file.type = MK_STREAM_FILE;
+        mk_stream_append(&sr->in_file, &sr->stream);
     }
 
     /*
@@ -980,7 +1005,7 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
      * file bytes.
      */
 #if defined(__linux__)
-    sr->file_stream.cb_bytes_consumed = mk_http_cb_file_on_consume;
+    sr->in_file.cb_consumed = mk_http_cb_file_on_consume;
 #endif
 
     /*
@@ -992,7 +1017,7 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
      * For OSX, it sets TCP_NOPUSH off after send all HTTP headers. Refer
      * to mk_header.c for more details.
      */
-    mk_server_cork_flag(cs->socket, TCP_CORK_ON);
+    //mk_server_cork_flag(cs->socket, TCP_CORK_ON);
 
     /* Start sending data to the channel */
     return MK_EXIT_OK;
@@ -1052,6 +1077,7 @@ int mk_http_request_end(struct mk_http_session *cs)
 {
     int ret;
     int status;
+    int len;
     struct mk_http_request *sr;
 
     if (mk_config->max_keep_alive_request <= cs->counter_connections) {
@@ -1065,11 +1091,11 @@ int mk_http_request_end(struct mk_http_session *cs)
 
         /* Our pipeline request limit is the same that our keepalive limit */
         cs->counter_connections++;
-
+        len = (cs->body_length - cs->parser.i) -1;
         memmove(cs->body,
                 cs->body + cs->parser.i + 1,
-                abs(cs->body_length - cs->parser.i) -1);
-        cs->body_length = abs(cs->body_length - cs->parser.i) -1;
+                len);
+        cs->body_length = len;
 
         /* Prepare for next one */
         sr = mk_list_entry_first(&cs->request_list, struct mk_http_request, _head);
@@ -1115,9 +1141,9 @@ int mk_http_request_end(struct mk_http_session *cs)
     return -1;
 }
 
-void cb_stream_page_finished(struct mk_stream *stream)
+void cb_stream_page_finished(struct mk_stream_input *in)
 {
-    mk_ptr_t *page = stream->buffer;
+    mk_ptr_t *page = in->buffer;
 
     mk_ptr_free(page);
     mk_mem_free(page);
@@ -1171,21 +1197,8 @@ int mk_http_error(int http_status, struct mk_http_session *cs,
             mk_header_prepare(cs, sr);
 
             /* Stream setup */
-            sr->file_stream.type         = MK_STREAM_FILE;
-            sr->file_stream.fd           = fd;
-            sr->file_stream.bytes_total  = finfo.size;
-            sr->file_stream.bytes_offset = 0;
-
-            mk_stream_set(&sr->file_stream,
-                          MK_STREAM_FILE,
-                          cs->channel,
-                          NULL,
-                          finfo.size,
-                          NULL,
-                          NULL,
-                          NULL,
-                          NULL);
-
+            mk_stream_in_file(&sr->stream, &sr->in_file, sr->file_fd,
+                              finfo.size, 0, NULL, NULL);
             return MK_EXIT_OK;
         }
     }
@@ -1261,11 +1274,11 @@ int mk_http_error(int http_status, struct mk_http_session *cs,
         if (sr->method != MK_METHOD_HEAD) {
             if (sr->headers._extra_rows) {
                 iov = sr->headers._extra_rows;
-                sr->headers_extra_stream.bytes_total += page.len;
+                sr->in_headers_extra.bytes_total += page.len;
             }
             else {
                 iov = &sr->headers.headers_iov;
-                sr->headers_stream.bytes_total += page.len;
+                sr->in_headers.bytes_total += page.len;
             }
 
             mk_iov_add(iov, page.data, page.len, MK_TRUE);

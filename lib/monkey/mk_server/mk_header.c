@@ -126,9 +126,10 @@ static const struct header_status_response status_response[] = {
 static const int status_response_len =
     (sizeof(status_response)/(sizeof(status_response[0])));
 
-static void mk_header_cb_finished(struct mk_stream *stream)
+static void mk_header_cb_finished(struct mk_stream_input *in)
 {
-    struct mk_iov *iov = stream->buffer;
+    struct mk_iov *iov = in->buffer;
+
     mk_iov_free_marked(iov);
 
 #if defined(__APPLE__)
@@ -153,9 +154,11 @@ static void mk_header_cb_finished(struct mk_stream *stream)
 #endif
 }
 
-static void cb_stream_iov_extended_free(struct mk_stream *stream)
+static void cb_stream_iov_extended_free(struct mk_stream_input *in)
 {
-    struct mk_iov *iov = stream->buffer;
+    struct mk_iov *iov;
+
+    iov = in->buffer;
     mk_iov_free_marked(iov);
 }
 
@@ -179,7 +182,7 @@ int mk_header_prepare(struct mk_http_session *cs,
         response.len = sh->custom_status.len;
     }
     else {
-        for (i=0; i < status_response_len; i++) {
+        for (i = 0; i < status_response_len; i++) {
             if (status_response[i].status == sh->status) {
                 response.data = status_response[i].response;
                 response.len  = status_response[i].length;
@@ -382,20 +385,16 @@ int mk_header_prepare(struct mk_http_session *cs,
      * Configure the Stream to dispatch the headers
      */
 
-    /* Reset callbacks for headers stream */
-    mk_stream_set(&sr->headers_stream,
-                  MK_STREAM_IOV, cs->channel,
-                  iov,
-                  -1,
-                  NULL,
-                  mk_header_cb_finished, NULL, NULL);
+    /* Set the IOV input stream */
+    sr->in_headers.buffer      = iov;
+    sr->in_headers.bytes_total = iov->total_len;
+    sr->in_headers.cb_finished = mk_header_cb_finished;
 
     if (sr->headers._extra_rows) {
-        mk_stream_set(&sr->headers_extra_stream,
-                      MK_STREAM_IOV, cs->channel,
-                      sr->headers._extra_rows, -1,
-                      NULL,
-                      cb_stream_iov_extended_free, NULL, NULL);
+        mk_stream_in_iov(&sr->stream,
+                         &sr->in_headers_extra,
+                         sr->headers._extra_rows,
+                         NULL, cb_stream_iov_extended_free);
     }
 
     sh->sent = MK_TRUE;
