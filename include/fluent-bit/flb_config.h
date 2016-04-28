@@ -29,6 +29,7 @@
 #endif
 
 #define FLB_CONFIG_FLUSH_SECS   5
+#define FLB_CONFIG_HTTP_PORT    "2020"
 #define FLB_CONFIG_DEFAULT_TAG  "fluent_bit"
 
 /* Main struct to hold the configuration of the runtime service */
@@ -82,6 +83,11 @@ struct flb_config {
 
     /* Logging */
     struct flb_log *log;
+
+    /* HTTP Server */
+    int http_server;
+    char *http_port;
+    void *http_ctx;
 };
 
 struct flb_config *flb_config_init();

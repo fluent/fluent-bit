@@ -41,6 +41,13 @@ if(WITH_TLS)
     )
 endif()
 
+if(WITH_HTTP)
+  set(src
+    ${src}
+    "flb_http.c"
+    )
+endif()
+
 if(WITH_STATS)
   set(src
     ${src}
@@ -88,6 +95,9 @@ set_target_properties(fluent-bit-static PROPERTIES
   OUTPUT_NAME fluent-bit)
 target_link_libraries(fluent-bit-static ${FLB_DEPS})
 
+if(WITH_HTTP)
+  target_link_libraries(fluent-bit-static monkey-core-static ejson)
+endif()
 
 # Executable
 if(NOT WITHOUT_BIN)

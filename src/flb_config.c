@@ -37,10 +37,12 @@ struct flb_config *flb_config_init()
         return NULL;
     }
 
-    config->flush     = FLB_CONFIG_FLUSH_SECS;
-    config->init_time = time(NULL);
-    config->kernel    = flb_kernel_info();
-    config->verbose   = FLB_FALSE;
+    config->flush       = FLB_CONFIG_FLUSH_SECS;
+    config->init_time   = time(NULL);
+    config->kernel      = flb_kernel_info();
+    config->verbose     = FLB_FALSE;
+    config->http_server = FLB_FALSE;
+    config->http_port   = FLB_CONFIG_HTTP_PORT;
 
     mk_list_init(&config->collectors);
     mk_list_init(&config->in_plugins);

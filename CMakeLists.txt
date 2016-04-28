@@ -20,6 +20,7 @@ set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PAT
 option(WITH_ALL           "Enable all features"         No)
 option(WITH_DEBUG         "Build with debug symbols"    No)
 option(WITH_TLS           "Build with SSL/TLS support"  No)
+option(WITH_HTTP          "Enable build-in HTTP Server" No)
 option(WITHOUT_BIN        "Do not build executable"     No)
 option(WITHOUT_EXAMPLES   "Do not build examples"       No)
 option(WITHOUT_SHARED_LIB "Do not build shared library" No)
@@ -51,6 +52,7 @@ endif()
 
 # Enable all features
 if(WITH_ALL)
+  set(WITH_HTTP        1)
   set(WITH_DEBUG       1)
   set(WITH_TLS         1)
   set(WITH_IN_XBEE     1)
@@ -83,8 +85,9 @@ endmacro()
 include_directories(
   include/
   lib/
+  lib/ejson
   lib/msgpack-1.2.0/include
-  lib/monkey/
+  lib/monkey/include
   lib/monkey/mk_core/include
   )
 
@@ -101,7 +104,8 @@ add_subdirectory(lib/msgpack-1.2.0)
 
 # Lib: build the core libraries used by Fluent-Bit
 add_subdirectory(lib/jsmn)
-if(WITH_IN_HTTP)
+add_subdirectory(lib/ejson)
+if(WITH_HTTP)
   option(WITHOUT_BIN     ON)
   option(WITHOUT_CONF    ON)
   set(WITHOUT_PLUGINS "auth,cgi,cheetah,dirlisting,fastcgi,logger,mandril,tls")

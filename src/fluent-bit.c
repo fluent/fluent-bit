@@ -59,6 +59,9 @@ static void flb_help(int rc, struct flb_config *config)
     printf("  -p, --prop=\"A=B\"\tset plugin configuration property\n");
     printf("  -t, --tag=TAG\t\tset plugin tag, same as '-p tag=abc'\n");
     printf("  -v, --verbose\t\tenable verbose mode\n");
+    printf("  -H, --http\t\tenable monitoring HTTP server\n");
+    printf("  -P, --port\t\tset HTTP server TCP port (default: %s)\n",
+           FLB_CONFIG_HTTP_PORT);
     printf("  -q, --quiet\t\tquiet mode\n");
     printf("  -V, --version\t\tshow version number\n");
     printf("  -h, --help\t\tprint this help\n\n");
@@ -196,6 +199,8 @@ int main(int argc, char **argv)
         { "config",  required_argument, NULL, 'c' },
         { "daemon",  no_argument      , NULL, 'd' },
         { "flush",   required_argument, NULL, 'f' },
+        { "http",    no_argument      , NULL, 'H' },
+        { "port",    required_argument, NULL, 'P' },
         { "input",   required_argument, NULL, 'i' },
         { "match",   required_argument, NULL, 'm' },
         { "output",  required_argument, NULL, 'o' },
@@ -218,7 +223,7 @@ int main(int argc, char **argv)
     }
 
     /* Parse the command line options */
-    while ((opt = getopt_long(argc, argv, "c:df:i:m:o:p:t:vqVh",
+    while ((opt = getopt_long(argc, argv, "c:df:i:m:o:p:t:vqVhHP:",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
@@ -265,6 +270,12 @@ int main(int argc, char **argv)
             break;
         case 'h':
             flb_help(EXIT_SUCCESS, config);
+            break;
+        case 'H':
+            config->http_server = FLB_TRUE;
+            break;
+        case 'P':
+            config->http_port = strdup(optarg);
             break;
         case 'V':
             flb_version();

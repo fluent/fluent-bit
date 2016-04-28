@@ -24,6 +24,7 @@
 #include <sys/uio.h>
 
 #include <mk_core.h>
+#include <fluent-bit/flb_http.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
@@ -258,6 +259,10 @@ int flb_engine_start(struct flb_config *config)
     struct flb_io_upstream *u;
     struct flb_thread *th;
     struct flb_engine_task *task;
+
+    if (config->http_server == FLB_TRUE) {
+        flb_http_start(config);
+    }
 
     flb_info("starting engine");
     pthread_key_create(&flb_thread_key, NULL);
