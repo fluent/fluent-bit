@@ -150,7 +150,7 @@ static void mk_header_cb_finished(struct mk_stream_input *in)
          *  ---
          */
 
-    mk_server_cork_flag(stream->channel->fd, TCP_CORK_OFF);
+    mk_server_cork_flag(in->stream->channel->fd, TCP_CORK_OFF);
 #endif
 }
 
