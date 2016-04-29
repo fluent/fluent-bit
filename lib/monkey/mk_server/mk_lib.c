@@ -300,9 +300,10 @@ int mk_http_send(mk_request_t *req, char *buf, size_t len,
                  void (*cb_finish)(mk_request_t *))
 {
     int ret;
+    (void) cb_finish;
 
     ret = mk_stream_in_raw(&req->stream, NULL,
-                           buf, len, NULL, cb_finish);
+                           buf, len, NULL, NULL);
     if (ret == 0) {
         /* Update content length */
         req->headers.content_length += len;

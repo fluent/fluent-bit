@@ -36,7 +36,7 @@ void cgi_finish(struct cgi_request *r)
     close(r->fd);
     if (r->chunked && r->active == MK_TRUE) {
         PLUGIN_TRACE("CGI sending Chunked EOF");
-        channel_write(r->sr->session, "0\r\n\r\n", 5);
+        channel_write(r, "0\r\n\r\n", 5);
     }
 
     /* Try to kill any child process */
@@ -69,17 +69,25 @@ int swrite(const int fd, const void *buf, const size_t count)
     return count;
 }
 
-int channel_write(struct mk_http_session *session, void *buf, size_t count)
+int channel_write(struct cgi_request *r, void *buf, size_t count)
 {
-    PLUGIN_TRACE("Channel write: %d bytes", count);
+    int ret;
 
-    mk_stream_set(NULL,
-                  MK_STREAM_COPYBUF,
-                  session->channel,
-                  buf,
-                  count,
-                  NULL, NULL, NULL, NULL);
-    mk_api->channel_flush(session->channel);
+    if (r->active == MK_FALSE) {
+        return -1;
+    }
+
+    MK_TRACE("channel write: %d bytes", count);
+    mk_stream_in_cbuf(&r->sr->stream,
+                      NULL,
+                      buf, count,
+                      NULL, NULL);
+
+    ret = mk_api->channel_flush(r->sr->session->channel);
+    if (ret & MK_CHANNEL_ERROR) {
+        r->active = MK_FALSE;
+        cgi_finish(r);
+    }
     return 0;
 }
 

@@ -225,7 +225,6 @@ static int mk_http_request_prepare(struct mk_http_session *cs,
     status = mk_http_init(cs, sr);
 
     MK_TRACE("[FD %i] HTTP Init returning %i", cs->socket, status);
-
     return status;
 }
 
@@ -705,7 +704,7 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
 
     ret_file = mk_file_get_info(sr->real_path.data, &sr->file_info, MK_FILE_READ);
 
-    /* Manually set the input streams for the handler */
+    /* Manually set the headers input streams */
     sr->in_headers.type        = MK_STREAM_IOV;
     sr->in_headers.dynamic     = MK_FALSE;
     sr->in_headers.cb_consumed = NULL;
@@ -736,6 +735,7 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
                 ret = plugin->stage->stage30(plugin, cs, sr,
                                              h_handler->n_params,
                                              &h_handler->params);
+                mk_header_prepare(cs, sr);
             }
 
             MK_TRACE("[FD %i] STAGE_30 returned %i", cs->socket, ret);
@@ -1280,9 +1280,7 @@ int mk_http_error(int http_status, struct mk_http_session *cs,
                 iov = &sr->headers.headers_iov;
                 sr->in_headers.bytes_total += page.len;
             }
-
             mk_iov_add(iov, page.data, page.len, MK_TRUE);
-
         }
         else {
             mk_mem_free(page.data);
@@ -1290,6 +1288,8 @@ int mk_http_error(int http_status, struct mk_http_session *cs,
     }
 
     mk_channel_write(cs->channel, &count);
+    mk_http_request_end(cs);
+
     return MK_EXIT_OK;
 }
 
@@ -1415,22 +1415,26 @@ void mk_http_request_free(struct mk_http_request *sr)
     if (sr->real_path.data != sr->real_path_static) {
         mk_ptr_free(&sr->real_path);
     }
+
+    if (sr->stream.channel) {
+        mk_stream_release(&sr->stream);
+    }
 }
 
 void mk_http_request_free_list(struct mk_http_session *cs)
 {
-    struct mk_http_request *sr_node;
-    struct mk_list *sr_head, *temp;
+    struct mk_list *head, *tmp;
+    struct mk_http_request *request;
 
     /* sr = last node */
     MK_TRACE("[FD %i] Free struct client_session", cs->socket);
-    mk_list_foreach_safe(sr_head, temp, &cs->request_list) {
-        sr_node = mk_list_entry(sr_head, struct mk_http_request, _head);
-        mk_list_del(sr_head);
+    mk_list_foreach_safe(head, tmp, &cs->request_list) {
+        request = mk_list_entry(head, struct mk_http_request, _head);
+        mk_list_del(&request->_head);
 
-        mk_http_request_free(sr_node);
-        if (sr_node != &cs->sr_fixed) {
-            mk_mem_free(sr_node);
+        mk_http_request_free(request);
+        if (request != &cs->sr_fixed) {
+            mk_mem_free(request);
         }
     }
 }

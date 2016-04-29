@@ -587,7 +587,7 @@ int mk_sched_event_read(struct mk_sched_conn *conn,
     ret = conn->protocol->cb_read(conn, sched);
     if (ret == -1) {
         if (errno == EAGAIN) {
-            MK_TRACE("EAGAIN: need to read more data");
+            MK_TRACE("[FD %i] EAGAIN: need to read more data", conn->event.fd);
             return 1;
         }
         return -1;

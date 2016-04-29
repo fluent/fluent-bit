@@ -92,7 +92,7 @@ extern struct cgi_request **requests_by_socket;
 void cgi_finish(struct cgi_request *r);
 
 int swrite(const int fd, const void *buf, const size_t count);
-int channel_write(struct mk_http_session *session, void *buf, size_t count);
+int channel_write(struct cgi_request *r, void *buf, size_t count);
 
 struct cgi_request *cgi_req_create(int fd, int socket,
                                    struct mk_http_request *sr,

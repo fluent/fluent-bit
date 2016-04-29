@@ -112,7 +112,7 @@ int process_cgi_data(struct cgi_request *r)
         }
         end += advance;
         len = end - outptr;
-        channel_write(r->cs, outptr, len);
+        channel_write(r, outptr, len);
         outptr += len;
         r->in_len -= len;
 
@@ -125,19 +125,19 @@ int process_cgi_data(struct cgi_request *r)
     if (r->chunked) {
         char tmp[16];
         len = snprintf(tmp, 16, "%x\r\n", r->in_len);
-        ret = channel_write(r->cs, tmp, len);
+        ret = channel_write(r, tmp, len);
         if (ret < 0)
             return MK_PLUGIN_RET_EVENT_CLOSE;
     }
 
-    ret = channel_write(r->cs, outptr, r->in_len);
+    ret = channel_write(r, outptr, r->in_len);
     if (ret < 0) {
         return MK_PLUGIN_RET_EVENT_CLOSE;
     }
 
     r->in_len = 0;
     if (r->chunked) {
-        channel_write(r->sr->session, MK_CRLF, 2);
+        channel_write(r, MK_CRLF, 2);
     }
     return MK_PLUGIN_RET_EVENT_OWNED;
 }
