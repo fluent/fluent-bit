@@ -16,7 +16,7 @@ set(src
   flb_engine.c
   flb_io.c
   flb_router.c
-
+  flb_http_client.c
   )
 
 include_directories(
@@ -44,7 +44,7 @@ endif()
 if(WITH_HTTP)
   set(src
     ${src}
-    "flb_http.c"
+    "flb_http_server.c"
     )
 endif()
 

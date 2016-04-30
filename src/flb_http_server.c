@@ -17,9 +17,9 @@
  *  limitations under the License.
  */
 
-#include <pthread.h>
-#include <fluent-bit/flb_lib.h>
 #include <monkey/mk_lib.h>
+#include <fluent-bit/flb_lib.h>
+#include <pthread.h>
 
 static void cb_root(mk_session_t *session, mk_request_t *request)
 {
@@ -52,7 +52,7 @@ static void monkey_http_service(void *data)
 }
 
 
-int flb_http_start(struct flb_config *config)
+int flb_http_server_start(struct flb_config *config)
 {
     pthread_t tid;
 
@@ -60,7 +60,7 @@ int flb_http_start(struct flb_config *config)
     return 0;
 }
 
-int flb_http_stop()
+int flb_http_server_stop()
 {
-
+    return 0;
 }

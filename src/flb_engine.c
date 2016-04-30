@@ -24,7 +24,6 @@
 #include <sys/uio.h>
 
 #include <mk_core.h>
-#include <fluent-bit/flb_http.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
@@ -33,6 +32,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_router.h>
+#include <fluent-bit/flb_http_server.h>
 
 #ifdef HAVE_STATS
 #include <fluent-bit/flb_stats.h>
@@ -261,7 +261,7 @@ int flb_engine_start(struct flb_config *config)
     struct flb_engine_task *task;
 
     if (config->http_server == FLB_TRUE) {
-        flb_http_start(config);
+        flb_http_server_start(config);
     }
 
     flb_info("starting engine");
