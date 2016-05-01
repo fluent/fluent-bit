@@ -45,6 +45,7 @@ struct flb_http_client {
     /* Request data */
     int method;
     int header_len;
+    int header_size;
     char *header_buf;
 
     int body_len;
@@ -57,6 +58,9 @@ struct flb_http_client {
 struct flb_http_client *flb_http_client(struct flb_io_upstream *u,
                                         int method, char *uri,
                                         char *body, size_t body_len);
+int flb_http_add_header(struct flb_http_client *c,
+                        char *key, size_t key_len,
+                        char *val, size_t val_len);
 int flb_http_do(struct flb_http_client *c, size_t *bytes);
 void flb_http_client_destroy(struct flb_http_client *c);
 

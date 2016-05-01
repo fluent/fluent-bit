@@ -31,6 +31,19 @@
 
 #include <fluent-bit/flb_http_client.h>
 
+/* check if there is enough space in the client header buffer */
+static int header_available(struct flb_http_client *c, int bytes)
+{
+    int available;
+
+    available = c->header_size - c->header_len;
+    if (available < bytes) {
+        return -1;
+    }
+
+    return 0;
+}
+
 static int process_response(struct flb_http_client *c)
 {
     char *tmp;
@@ -53,8 +66,8 @@ struct flb_http_client *flb_http_client(struct flb_io_upstream *u,
         "%s %s HTTP/1.1\r\n"
         "Host: %s:%i\r\n"
         "Connection: KeepAlive\r\n"
-        "Content-Length: %i\r\n"
-        "\r\n";
+        "Content-Length: %i\r\n";
+
     struct flb_http_client *c;
 
     switch (method) {
@@ -94,10 +107,11 @@ struct flb_http_client *flb_http_client(struct flb_io_upstream *u,
         return NULL;
     }
 
-    c->u          = u;
-    c->method     = method;
-    c->header_buf = buf;
-    c->header_len = ret;
+    c->u           = u;
+    c->method      = method;
+    c->header_buf  = buf;
+    c->header_size = FLB_HTTP_BUF_SIZE;
+    c->header_len  = ret;
 
     if (body && body_len > 0) {
         c->body_buf = body;
@@ -107,14 +121,88 @@ struct flb_http_client *flb_http_client(struct flb_io_upstream *u,
     return c;
 }
 
+/* Append a custom HTTP header to the request */
+int flb_http_add_header(struct flb_http_client *c,
+                        char *key, size_t key_len,
+                        char *val, size_t val_len)
+{
+    int required;
+    int new_size;
+    char *tmp;
+
+    /*
+     * The new header will need enough space in the buffer:
+     *
+     * key      : length of the key
+     * separator: ': ' (2 bytes)
+     * val      : length of the key value
+     * CRLF     : '\r\n' (2 bytes)
+     */
+    required = key_len + 2 + val_len + 2;
+
+    if (header_available(c, required) != 0) {
+        if (required < 512) {
+            new_size = c->header_size + 512;
+        }
+        else {
+            new_size = c->header_size + required;
+        }
+        tmp = realloc(c->header_buf, new_size);
+        if (!tmp) {
+            return -1;
+        }
+        c->header_buf  = tmp;
+        c->header_size = new_size;
+    }
+
+    /* append the header key */
+    memcpy(c->header_buf + c->header_len,
+           key, key_len);
+    c->header_len += key_len;
+
+    /* append the separator */
+    c->header_buf[c->header_len++] = ':';
+    c->header_buf[c->header_len++] = ' ';
+
+    /* append the header value */
+    memcpy(c->header_buf + c->header_len,
+           val, val_len);
+    c->header_len += val_len;
+
+    /* Append the ending header CRLF */
+    c->header_buf[c->header_len++] = '\r';
+    c->header_buf[c->header_len++] = '\n';
+
+    return 0;
+}
+
 int flb_http_do(struct flb_http_client *c, size_t *bytes)
 {
     int ret;
     int r_bytes;
     int available;
+    int crlf = 2;
+    int new_size;
     size_t bytes_header = 0;
     size_t bytes_body = 0;
+    char *tmp;
 
+    /* check enough space for the ending CRLF */
+    if (header_available(c, crlf) != 0) {
+        new_size = c->header_size + 2;
+        tmp = realloc(c->header_buf, new_size);
+        if (!tmp) {
+            return -1;
+        }
+        c->header_buf = tmp;
+        c->header_len = new_size;
+    }
+
+    /* Append the ending header CRLF */
+    c->header_buf[c->header_len++] = '\r';
+    c->header_buf[c->header_len++] = '\n';
+
+    /* Write the header */
     ret = flb_io_net_write(c->u,
                            c->header_buf, c->header_len,
                            &bytes_header);
