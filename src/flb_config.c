@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <signal.h>
 
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_config.h>
@@ -52,6 +53,9 @@ struct flb_config *flb_config_init()
 
     /* Register plugins */
     flb_register_plugins(config);
+
+    /* Ignore SIGPIPE */
+    signal(SIGPIPE, SIG_IGN);
 
     return config;
 }
