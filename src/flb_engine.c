@@ -256,13 +256,15 @@ int flb_engine_start(struct flb_config *config)
     struct mk_event *event;
     struct mk_event_loop *evl;
     struct flb_input_collector *collector;
-    struct flb_io_upstream *u;
+    struct flb_upstream_conn *u_conn;
     struct flb_thread *th;
     struct flb_engine_task *task;
 
+#ifdef HAVE_HTTP
     if (config->http_server == FLB_TRUE) {
         flb_http_server_start(config);
     }
+#endif
 
     flb_info("starting engine");
     pthread_key_create(&flb_thread_key, NULL);
@@ -390,11 +392,11 @@ int flb_engine_start(struct flb_config *config)
                  * Check if we have some co-routine associated to this event,
                  * if so, resume the co-routine
                  */
-                u = (struct flb_io_upstream *) event;
-                th = u->thread;
+                u_conn = (struct flb_upstream_conn *) event;
+                th = u_conn->thread;
                 task = th->task;
 
-                flb_trace("[engine] resuming thread: %i", u->event.fd);
+                flb_trace("[engine] resuming thread: %i", u_conn->event.fd);
                 flb_thread_resume(th);
 
                 if (task->deleted == FLB_TRUE) {

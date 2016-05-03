@@ -137,7 +137,7 @@ struct flb_output_instance {
     void *out_context;
 
     /* IO upstream context, if flags & (FLB_OUTPUT_TCP | FLB_OUTPUT TLS)) */
-    struct flb_io_upstream *upstream;
+    struct flb_upstream *upstream;
 
     /*
      * Co-routines specific data

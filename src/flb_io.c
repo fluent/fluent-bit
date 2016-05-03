@@ -49,6 +49,7 @@
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_io_tls.h>
 #include <fluent-bit/flb_tls.h>
+#include <fluent-bit/flb_upstream.h>
 
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_macros.h>
@@ -56,56 +57,17 @@
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_thread.h>
 
-/* Creates a new upstream context */
-struct flb_io_upstream *flb_io_upstream_new(struct flb_config *config,
-                                            char *host, int port, int flags,
-                                            void *tls)
-{
-    struct flb_io_upstream *u;
-
-    u = calloc(1, sizeof(struct flb_io_upstream));
-    if (!u) {
-        perror("malloc");
-        return NULL;
-    }
-
-    u->fd       = -1;
-    u->tcp_host = strdup(host);
-    u->tcp_port = port;
-    u->flags    = flags;
-    u->evl      = config->evl;
-
-    MK_EVENT_NEW(&u->event);
-
-#ifdef HAVE_TLS
-    u->tls      = (struct flb_tls *) tls;
-    u->tls_session = NULL;
-#endif
-
-    return u;
-}
-
-int flb_io_upstream_destroy(struct flb_io_upstream *u)
-{
-    if (u->fd) {
-        close(u->fd);
-    }
-    free(u->tcp_host);
-    free(u);
-
-    return 0;
-}
-
-FLB_INLINE int flb_io_net_connect(struct flb_io_upstream *u,
+FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
                                   struct flb_thread *th)
 {
     int fd;
     int ret;
     int error = 0;
     socklen_t len = sizeof(error);
+    struct flb_upstream *u = u_conn->u;
 
-    if (u->fd > 0) {
-        close(u->fd);
+    if (u_conn->fd > 0) {
+        close(u_conn->fd);
     }
 
     /* Create the socket */
@@ -114,10 +76,10 @@ FLB_INLINE int flb_io_net_connect(struct flb_io_upstream *u,
         flb_error("[io] could not create socket");
         return -1;
     }
-    u->fd = fd;
+    u_conn->fd = fd;
 
     /* Make the socket non-blocking */
-    flb_net_socket_nonblocking(u->fd);
+    flb_net_socket_nonblocking(u_conn->fd);
 
     /* Start the connection */
     ret = flb_net_tcp_fd_connect(fd, u->tcp_host, u->tcp_port);
@@ -126,13 +88,13 @@ FLB_INLINE int flb_io_net_connect(struct flb_io_upstream *u,
             flb_trace("[upstream] connection in process");
         }
 
-        MK_EVENT_NEW(&u->event);
-        u->thread = th;
+        MK_EVENT_NEW(&u_conn->event);
+        u_conn->thread = th;
 
         ret = mk_event_add(u->evl,
                            fd,
                            FLB_ENGINE_EV_THREAD,
-                           MK_EVENT_WRITE, &u->event);
+                           MK_EVENT_WRITE, &u_conn->event);
         if (ret == -1) {
             /*
              * If we failed here there no much that we can do, just
@@ -149,11 +111,11 @@ FLB_INLINE int flb_io_net_connect(struct flb_io_upstream *u,
         flb_thread_yield(th, FLB_FALSE);
 
         /* We got a notification, remove the event registered */
-        ret = mk_event_del(u->evl, &u->event);
+        ret = mk_event_del(u->evl, &u_conn->event);
         assert(ret == 0);
 
         /* Check the connection status */
-        if (u->event.mask & MK_EVENT_WRITE) {
+        if (u_conn->event.mask & MK_EVENT_WRITE) {
             ret = getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len);
             if (ret == -1) {
                 flb_error("[io] could not validate socket status");
@@ -167,7 +129,7 @@ FLB_INLINE int flb_io_net_connect(struct flb_io_upstream *u,
                 return -1;
             }
 
-            MK_EVENT_NEW(&u->event);
+            MK_EVENT_NEW(&u_conn->event);
         }
         else {
             return -1;
@@ -179,15 +141,17 @@ FLB_INLINE int flb_io_net_connect(struct flb_io_upstream *u,
 }
 
 /* This routine is called from a co-routine thread */
-FLB_INLINE int net_io_write(struct flb_thread *th, struct flb_io_upstream *u,
+FLB_INLINE int net_io_write(struct flb_thread *th,
+                            struct flb_upstream_conn *u_conn,
                             void *data, size_t len, size_t *out_len)
 {
     int ret = 0;
     ssize_t bytes;
     size_t total = 0;
+    struct flb_upstream *u = u_conn->u;
 
  retry:
-    bytes = write(u->fd, data + total, len - total);
+    bytes = write(u_conn->fd, data + total, len - total);
     flb_trace("[io] write(2)=%d", bytes);
 
     if (bytes == -1) {
@@ -197,7 +161,7 @@ FLB_INLINE int net_io_write(struct flb_thread *th, struct flb_io_upstream *u,
         else {
             /* The connection routine may yield */
             flb_trace("[io] trying to reconnect");
-            ret = flb_io_net_connect(u, th);
+            ret = flb_io_net_connect(u_conn, th);
             if (ret == -1) {
                 return -1;
             }
@@ -221,19 +185,19 @@ FLB_INLINE int net_io_write(struct flb_thread *th, struct flb_io_upstream *u,
     /* Update counters */
     total += bytes;
     if (total < len) {
-        if (u->event.status == MK_EVENT_NONE) {
-            u->event.mask = MK_EVENT_EMPTY;
-            u->thread = th;
+        if (u_conn->event.status == MK_EVENT_NONE) {
+            u_conn->event.mask = MK_EVENT_EMPTY;
+            u_conn->thread = th;
             ret = mk_event_add(u->evl,
-                               u->fd,
+                               u_conn->fd,
                                FLB_ENGINE_EV_THREAD,
-                               MK_EVENT_WRITE, &u->event);
+                               MK_EVENT_WRITE, &u_conn->event);
             if (ret == -1) {
                 /*
                  * If we failed here there no much that we can do, just
                  * let the caller we failed
                  */
-                close(u->fd);
+                close(u_conn->fd);
                 return -1;
             }
         }
@@ -241,9 +205,9 @@ FLB_INLINE int net_io_write(struct flb_thread *th, struct flb_io_upstream *u,
         goto retry;
     }
 
-    if (u->event.status & MK_EVENT_REGISTERED) {
+    if (u_conn->event.status & MK_EVENT_REGISTERED) {
         /* We got a notification, remove the event registered */
-        ret = mk_event_del(u->evl, &u->event);
+        ret = mk_event_del(u->evl, &u_conn->event);
         assert(ret == 0);
     }
 
@@ -252,53 +216,55 @@ FLB_INLINE int net_io_write(struct flb_thread *th, struct flb_io_upstream *u,
 }
 
 FLB_INLINE ssize_t net_io_read(struct flb_thread *th,
-                               struct flb_io_upstream *u,
+                               struct flb_upstream_conn *u_conn,
                                void *buf, size_t len)
 {
-    return read(u->fd, buf, len);
+    return read(u_conn->fd, buf, len);
 }
 
 /* Write data to an upstream connection/server */
-int flb_io_net_write(struct flb_io_upstream *u, void *data,
+int flb_io_net_write(struct flb_upstream_conn *u_conn, void *data,
                      size_t len, size_t *out_len)
 {
     int ret = -1;
     struct flb_thread *th;
+    struct flb_upstream *u = u_conn->u;
 
     flb_trace("[io] trying to write %zd bytes", len);
 
     th = pthread_getspecific(flb_thread_key);
     if (u->flags & FLB_IO_TCP) {
-        ret = net_io_write(th, u, data, len, out_len);
+        ret = net_io_write(th, u_conn, data, len, out_len);
     }
 #ifdef HAVE_TLS
     else if (u->flags & FLB_IO_TLS) {
-        ret = net_io_tls_write(th, u, data, len, out_len);
+        ret = net_io_tls_write(th, u_conn, data, len, out_len);
     }
 #endif
-    if (ret == -1 && u->fd > 0) {
-        close(u->fd);
-        u->fd = -1;
+    if (ret == -1 && u_conn->fd > 0) {
+        close(u_conn->fd);
+        u_conn->fd = -1;
     }
 
     flb_trace("[io] thread has finished");
     return ret;
 }
 
-ssize_t flb_io_net_read(struct flb_io_upstream *u, void *buf, size_t len)
+ssize_t flb_io_net_read(struct flb_upstream_conn *u_conn, void *buf, size_t len)
 {
     int ret = -1;
     struct flb_thread *th;
+    struct flb_upstream *u = u_conn->u;
 
     flb_trace("[io] trying to read up to %zd bytes", len);
 
     th = pthread_getspecific(flb_thread_key);
     if (u->flags & FLB_IO_TCP) {
-        ret = net_io_read(th, u, buf, len);
+        ret = net_io_read(th, u_conn, buf, len);
     }
 #ifdef HAVE_TLS
     else if (u->flags & FLB_IO_TLS) {
-        ret = net_io_tls_read(th, u, buf, len);
+        ret = net_io_tls_read(th, u_conn, buf, len);
     }
 #endif
 

@@ -45,17 +45,19 @@ void _io_tls_error(int ret, char *file, int line)
     flb_error("[io_tls] flb_io_tls.c:%i %s", line, err_buf);
 }
 
-static inline int io_tls_event_switch(struct flb_io_upstream *u, int mask)
+static inline int io_tls_event_switch(struct flb_upstream_conn *u_conn,
+                                      int mask)
 {
     int ret;
     struct mk_event *event;
+    struct flb_upstream *u = u_conn->u;
 
-    event = &u->event;
+    event = &u_conn->event;
     if (event->mask & ~mask) {
         ret = mk_event_add(u->evl,
                            event->fd,
                            FLB_ENGINE_EV_THREAD,
-                           mask, &u->event);
+                           mask, &u_conn->event);
         if (ret == -1) {
             flb_error("[io_tls] error changing mask to %i", mask);
             return -1;
@@ -214,7 +216,7 @@ int tls_session_destroy(struct flb_tls_session *session)
  * This routine perform a TCP connection and the required TLS/SSL
  * handshake,
  */
-FLB_INLINE int flb_io_net_tls_connect(struct flb_io_upstream *u,
+FLB_INLINE int flb_io_net_tls_connect(struct flb_upstream_conn *u_conn,
                                       struct flb_thread *th)
 {
     int fd;
@@ -223,9 +225,10 @@ FLB_INLINE int flb_io_net_tls_connect(struct flb_io_upstream *u,
     int flag;
     socklen_t len = sizeof(error);
     struct flb_tls_session *session;
+    struct flb_upstream *u = u_conn->u;
 
-    if (u->fd > 0) {
-        close(u->fd);
+    if (u_conn->fd > 0) {
+        close(u_conn->fd);
     }
 
     /* Create the socket */
@@ -234,10 +237,10 @@ FLB_INLINE int flb_io_net_tls_connect(struct flb_io_upstream *u,
         flb_error("[io] could not create socket");
         return -1;
     }
-    u->fd = fd;
+    u_conn->fd = fd;
 
     /* Make the socket non-blocking */
-    flb_net_socket_nonblocking(u->fd);
+    flb_net_socket_nonblocking(u_conn->fd);
 
     /* Start the connection */
     ret = flb_net_tcp_fd_connect(fd, u->tcp_host, u->tcp_port);
@@ -246,21 +249,21 @@ FLB_INLINE int flb_io_net_tls_connect(struct flb_io_upstream *u,
             flb_trace("[upstream] connection in process");
         }
         else {
-            close(u->fd);
-            if (u->tls_session) {
-                tls_session_destroy(u->tls_session);
-                u->tls_session = NULL;
+            close(u_conn->fd);
+            if (u_conn->tls_session) {
+                tls_session_destroy(u_conn->tls_session);
+                u_conn->tls_session = NULL;
             }
             return -1;
         }
 
-        MK_EVENT_NEW(&u->event);
-        u->thread = th;
+        MK_EVENT_NEW(&u_conn->event);
+        u_conn->thread = th;
 
         ret = mk_event_add(u->evl,
                            fd,
                            FLB_ENGINE_EV_THREAD,
-                           MK_EVENT_WRITE, &u->event);
+                           MK_EVENT_WRITE, &u_conn->event);
         if (ret == -1) {
             /*
              * If we failed here there no much that we can do, just
@@ -278,7 +281,7 @@ FLB_INLINE int flb_io_net_tls_connect(struct flb_io_upstream *u,
         flb_thread_yield(th, FLB_FALSE);
 
         /* Check the connection status */
-        if (u->event.mask & MK_EVENT_WRITE) {
+        if (u_conn->event.mask & MK_EVENT_WRITE) {
             ret = getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len);
             if (ret == -1) {
                 flb_error("[io_tls] could not validate socket status");
@@ -297,9 +300,9 @@ FLB_INLINE int flb_io_net_tls_connect(struct flb_io_upstream *u,
     }
 
     /* Configure TLS and prepare handshake */
-    session = u->tls_session;
+    session = u_conn->tls_session;
     mbedtls_ssl_set_bio(&session->ssl,
-                        u,
+                        u_conn,
                         mbedtls_net_send, mbedtls_net_recv, NULL);
 
  retry_handshake:
@@ -327,9 +330,9 @@ FLB_INLINE int flb_io_net_tls_connect(struct flb_io_upstream *u,
          * system call multiple times.
          */
         ret = mk_event_add(u->evl,
-                           u->event.fd,
+                           u_conn->event.fd,
                            FLB_ENGINE_EV_THREAD,
-                           flag, &u->event);
+                           flag, &u_conn->event);
         if (ret == -1) {
             goto error;
         }
@@ -341,49 +344,51 @@ FLB_INLINE int flb_io_net_tls_connect(struct flb_io_upstream *u,
         flb_trace("[io_tls] Handshake OK");
     }
 
-    if (u->event.status == MK_EVENT_REGISTERED) {
-        mk_event_del(u->evl, &u->event);
+    if (u_conn->event.status == MK_EVENT_REGISTERED) {
+        mk_event_del(u->evl, &u_conn->event);
     }
     flb_trace("[io_tls] connection OK");
     return 0;
 
  error:
-    if (u->event.status == MK_EVENT_REGISTERED) {
-        mk_event_del(u->evl, &u->event);
+    if (u_conn->event.status == MK_EVENT_REGISTERED) {
+        mk_event_del(u->evl, &u_conn->event);
     }
 
     return -1;
 }
 
 FLB_INLINE int net_io_tls_read(struct flb_thread *th,
-                               struct flb_io_upstream *u,
+                               struct flb_upstream_conn *u_conn,
                                void *buf, size_t len)
 {
     int ret;
 
-    ret = mbedtls_ssl_read(&u->tls_session->ssl, buf, len);
+    ret = mbedtls_ssl_read(&u_conn->tls_session->ssl, buf, len);
     if (ret <= 0) {
-        tls_session_destroy(u->tls_session);
-        u->tls_session = NULL;
+        tls_session_destroy(u_conn->tls_session);
+        u_conn->tls_session = NULL;
     }
 
     return -1;
 }
 
-FLB_INLINE int net_io_tls_write(struct flb_thread *th, struct flb_io_upstream *u,
-                     void *data, size_t len, size_t *out_len)
+FLB_INLINE int net_io_tls_write(struct flb_thread *th,
+                                struct flb_upstream_conn *u_conn,
+                                void *data, size_t len, size_t *out_len)
 {
     int ret;
     size_t total = 0;
+    struct flb_upstream *u = u_conn->u;
 
-    if (!u->tls_session) {
-        u->tls_session = flb_tls_session_new(u->tls->context);
-        if (!u->tls_session) {
+    if (!u_conn->tls_session) {
+        u_conn->tls_session = flb_tls_session_new(u->tls->context);
+        if (!u_conn->tls_session) {
             flb_error("[io_tls] could not create tls session");
             return -1;
         }
 
-        ret = flb_io_net_tls_connect(u, th);
+        ret = flb_io_net_tls_connect(u_conn, th);
         if (ret == -1) {
             flb_error("[io_tls] could not connect/initiate TLS session");
             return -1;
@@ -391,16 +396,16 @@ FLB_INLINE int net_io_tls_write(struct flb_thread *th, struct flb_io_upstream *u
     }
 
  retry_write:
-    ret = mbedtls_ssl_write(&u->tls_session->ssl,
+    ret = mbedtls_ssl_write(&u_conn->tls_session->ssl,
                             data + total,
                             len - total);
     if (ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
-        io_tls_event_switch(u, MK_EVENT_WRITE);
+        io_tls_event_switch(u_conn, MK_EVENT_WRITE);
         flb_thread_yield(th, FLB_FALSE);
         goto retry_write;
     }
     else if (ret == MBEDTLS_ERR_SSL_WANT_READ) {
-        io_tls_event_switch(u, MK_EVENT_READ);
+        io_tls_event_switch(u_conn, MK_EVENT_READ);
         flb_thread_yield(th, FLB_FALSE);
         goto retry_write;
     }
@@ -410,9 +415,9 @@ FLB_INLINE int net_io_tls_write(struct flb_thread *th, struct flb_io_upstream *u
         flb_error("[tls] SSL error: %s", err_buf);
 
         /* There was an error transmitting data */
-        mk_event_del(u->evl, &u->event);
-        tls_session_destroy(u->tls_session);
-        u->tls_session = NULL;
+        mk_event_del(u->evl, &u_conn->event);
+        tls_session_destroy(u_conn->tls_session);
+        u_conn->tls_session = NULL;
         return -1;
     }
 
@@ -422,11 +427,11 @@ FLB_INLINE int net_io_tls_write(struct flb_thread *th, struct flb_io_upstream *u
     /* Update counter and check if we need to continue writing */
     total += ret;
     if (total < len) {
-        io_tls_event_switch(u, MK_EVENT_WRITE);
+        io_tls_event_switch(u_conn, MK_EVENT_WRITE);
         flb_thread_yield(th, FLB_FALSE);
         goto retry_write;
     }
 
-    mk_event_del(u->evl, &u->event);
+    mk_event_del(u->evl, &u_conn->event);
     return 0;
 }

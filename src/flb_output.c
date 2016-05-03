@@ -81,7 +81,7 @@ void flb_output_exit(struct flb_config *config)
         }
 
         if (ins->upstream) {
-            flb_io_upstream_destroy(ins->upstream);
+            flb_upstream_destroy(ins->upstream);
         }
 
         free(ins->host.name);

@@ -55,7 +55,7 @@ static int process_response(struct flb_http_client *c)
     return 0;
 }
 
-struct flb_http_client *flb_http_client(struct flb_io_upstream *u,
+struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
                                         int method, char *uri,
                                         char *body, size_t body_len)
 {
@@ -69,6 +69,7 @@ struct flb_http_client *flb_http_client(struct flb_io_upstream *u,
         "Content-Length: %i\r\n";
 
     struct flb_http_client *c;
+    struct flb_upstream *u = u_conn->u;
 
     switch (method) {
     case FLB_HTTP_GET:
@@ -107,7 +108,7 @@ struct flb_http_client *flb_http_client(struct flb_io_upstream *u,
         return NULL;
     }
 
-    c->u           = u;
+    c->u_conn      = u_conn;
     c->method      = method;
     c->header_buf  = buf;
     c->header_size = FLB_HTTP_BUF_SIZE;
@@ -203,7 +204,7 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
     c->header_buf[c->header_len++] = '\n';
 
     /* Write the header */
-    ret = flb_io_net_write(c->u,
+    ret = flb_io_net_write(c->u_conn,
                            c->header_buf, c->header_len,
                            &bytes_header);
     if (ret == -1) {
@@ -212,7 +213,7 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
     }
 
     if (c->body_len > 0) {
-        ret = flb_io_net_write(c->u,
+        ret = flb_io_net_write(c->u_conn,
                                c->body_buf, c->body_len,
                                &bytes_body);
         if (ret == -1) {
@@ -232,7 +233,7 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
             return -1;
         }
 
-        r_bytes = flb_io_net_read(c->u,
+        r_bytes = flb_io_net_read(c->u_conn,
                                   c->resp.data + c->resp.data_len,
                                   available);
         if (r_bytes <= 0) {

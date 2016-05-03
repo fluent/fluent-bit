@@ -15,6 +15,7 @@ set(src
   flb_utils.c
   flb_engine.c
   flb_io.c
+  flb_upstream.c
   flb_router.c
   flb_http_client.c
   )

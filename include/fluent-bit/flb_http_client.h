@@ -21,6 +21,7 @@
 #define FLB_HTTP_CLIENT_H
 
 #include <fluent-bit/flb_io.h>
+#include <fluent-bit/flb_upstream.h>
 
 /* Buffer size */
 #define FLB_HTTP_BUF_SIZE 2048
@@ -39,8 +40,8 @@ struct flb_http_response {
 
 /* Set a request type */
 struct flb_http_client {
-    /* Upstream context */
-    struct flb_io_upstream *u;
+    /* Upstream connection */
+    struct flb_upstream_conn *u_conn;
 
     /* Request data */
     int method;
@@ -55,7 +56,7 @@ struct flb_http_client {
     struct flb_http_response resp;
 };
 
-struct flb_http_client *flb_http_client(struct flb_io_upstream *u,
+struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
                                         int method, char *uri,
                                         char *body, size_t body_len);
 int flb_http_add_header(struct flb_http_client *c,

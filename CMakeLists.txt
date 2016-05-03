@@ -143,6 +143,10 @@ if(WITH_STATS)
   FLB_DEFINITION(HAVE_STATS)
 endif()
 
+if(WITH_HTTP)
+  FLB_DEFINITION(HAVE_HTTP)
+endif()
+
 # Valgrind support
 check_c_source_compiles("
   #include <valgrind/valgrind.h>

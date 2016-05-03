@@ -23,6 +23,7 @@
 #include <mk_core.h>
 #include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_upstream.h>
 
 /* Coroutine status 'flb_thread.status' */
 #define FLB_IO_CONNECT     0  /* thread issue a connection request */
@@ -33,30 +34,11 @@
 #define FLB_IO_TLS         2  /* use TLS/SSL layer        */
 #define FLB_IO_OPT_TLS     3  /* use TCP and optional TLS */
 
-struct flb_io_upstream {
-    struct mk_event event;
-    struct mk_event_loop *evl;
-    struct flb_thread *thread;
+int flb_io_net_connect(struct flb_upstream_conn *u_conn,
+                       struct flb_thread *th);
 
-    int fd;
-    int flags;
-    int tcp_port;
-    char *tcp_host;
-
-#ifdef HAVE_TLS
-    struct flb_tls *tls;
-    struct flb_tls_session *tls_session;
-#endif
-};
-
-struct flb_io_upstream *flb_io_upstream_new(struct flb_config *config,
-                                            char *host, int port, int flags,
-                                            void *tls);
-int flb_io_upstream_destroy(struct flb_io_upstream *u);
-int flb_io_net_connect(struct flb_io_upstream *u, struct flb_thread *th);
-
-int flb_io_net_write(struct flb_io_upstream *u, void *data,
+int flb_io_net_write(struct flb_upstream_conn *u, void *data,
                      size_t len, size_t *out_len);
-ssize_t flb_io_net_read(struct flb_io_upstream *u, void *buf, size_t len);
+ssize_t flb_io_net_read(struct flb_upstream_conn *u, void *buf, size_t len);
 
 #endif

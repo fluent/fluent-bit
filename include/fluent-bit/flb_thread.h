@@ -20,8 +20,8 @@
 #ifndef FLB_THREAD_H
 #define FLB_THREAD_H
 
-#ifndef _XOPEN_SOURCE
-#define _XOPEN_SOURCE
+#ifndef _BSD_SOURCE
+#define _BSD_SOURCE
 #endif
 
 #ifdef USE_VALGRIND
