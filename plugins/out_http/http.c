@@ -31,7 +31,7 @@ struct flb_output_plugin out_http_plugin;
 int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
                void *data)
 {
-    struct flb_io_upstream *upstream;
+    struct flb_upstream *upstream;
     (void) data;
 
     if (!ins->host.name) {
@@ -41,7 +41,7 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
         ins->host.port = 80;
     }
 
-    upstream = flb_io_upstream_new(config,
+    upstream = flb_upstream_create(config,
                                    ins->host.name,
                                    ins->host.port,
                                    FLB_IO_TCP, (void *) &ins->tls);
@@ -60,17 +60,35 @@ int cb_http_flush(void *data, size_t bytes,
 {
     int ret;
     size_t b_sent;
-    struct flb_io_upstream *u = out_context;
+    struct flb_upstream *u = out_context;
+    struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
     (void) i_ins;
 
-    c = flb_http_client(u, FLB_HTTP_POST, "/",
+    /* Get an upstream connection */
+    u_conn = flb_upstream_conn_get(u);
+    if (!u_conn) {
+        flb_error("[out_http] no upstream connections available");
+        return -1;
+    }
+
+    c = flb_http_client(u_conn, FLB_HTTP_POST, "/",
                         data, bytes);
     ret = flb_http_do(c, &b_sent);
     flb_trace("[out_http] do=%i", ret);
     flb_http_client_destroy(c);
 
+    /* Release the connection */
+    flb_upstream_conn_release(u_conn);
+
     return ret;
+}
+
+void cb_http_exit(void *data, struct flb_config *config)
+{
+    struct flb_upstream *u = data;
+
+    flb_upstream_destroy(u);
 }
 
 /* Plugin reference */
@@ -80,5 +98,6 @@ struct flb_output_plugin out_http_plugin = {
     .cb_init        = cb_http_init,
     .cb_pre_run     = NULL,
     .cb_flush       = cb_http_flush,
+    .cb_exit        = cb_http_exit,
     .flags          = FLB_OUTPUT_NET,
 };
