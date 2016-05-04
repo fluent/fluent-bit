@@ -27,19 +27,19 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_network.h>
 
-#include "fluentd.h"
+#include "forward.h"
 
-struct flb_output_plugin out_fluentd_plugin;
+struct flb_output_plugin out_forward_plugin;
 
-int cb_fluentd_init(struct flb_output_instance *ins, struct flb_config *config,
+int cb_forward_init(struct flb_output_instance *ins, struct flb_config *config,
                     void *data)
 {
-    struct flb_out_fluentd_config *ctx;
+    struct flb_out_forward_config *ctx;
     struct flb_upstream *upstream;
     struct flb_uri_field *f_tag = NULL;
     (void) data;
 
-    ctx = calloc(1, sizeof(struct flb_out_fluentd_config));
+    ctx = calloc(1, sizeof(struct flb_out_forward_config));
     if (!ctx) {
         perror("calloc");
         return -1;
@@ -78,10 +78,10 @@ int cb_fluentd_init(struct flb_output_instance *ins, struct flb_config *config,
     return 0;
 }
 
-int cb_fluentd_exit(void *data, struct flb_config *config)
+int cb_forward_exit(void *data, struct flb_config *config)
 {
     (void) config;
-    struct flb_out_fluentd_config *ctx = data;
+    struct flb_out_forward_config *ctx = data;
 
     flb_upstream_destroy(ctx->u);
     free(ctx);
@@ -89,7 +89,7 @@ int cb_fluentd_exit(void *data, struct flb_config *config)
     return 0;
 }
 
-int cb_fluentd_flush(void *data, size_t bytes,
+int cb_forward_flush(void *data, size_t bytes,
                      struct flb_input_instance *i_ins, void *out_context,
                      struct flb_config *config)
 {
@@ -102,7 +102,7 @@ int cb_fluentd_flush(void *data, size_t bytes,
     msgpack_packer   mp_pck;
     msgpack_sbuffer  mp_sbuf;
     msgpack_unpacked result;
-    struct flb_out_fluentd_config *ctx = out_context;
+    struct flb_out_forward_config *ctx = out_context;
     struct flb_upstream_conn *u_conn;
     (void) i_ins;
     (void) config;
@@ -138,7 +138,7 @@ int cb_fluentd_flush(void *data, size_t bytes,
 
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
-        flb_error("[out_fluentd] no upstream connections available");
+        flb_error("[out_forward] no upstream connections available");
         free(buf);
         return -1;
     }
@@ -148,17 +148,17 @@ int cb_fluentd_flush(void *data, size_t bytes,
 
     flb_upstream_conn_release(u_conn);
 
-    flb_trace("[fluentd] ended write()=%d bytes", bytes_sent);
+    flb_trace("[out_forward] ended write()=%d bytes", bytes_sent);
     return ret;
 }
 
 /* Plugin reference */
-struct flb_output_plugin out_fluentd_plugin = {
-    .name         = "fluentd",
-    .description  = "Fluentd data collector",
-    .cb_init      = cb_fluentd_init,
+struct flb_output_plugin out_forward_plugin = {
+    .name         = "forward",
+    .description  = "Forward (Fluentd protocol)",
+    .cb_init      = cb_forward_init,
     .cb_pre_run   = NULL,
-    .cb_flush     = cb_fluentd_flush,
-    .cb_exit      = cb_fluentd_exit,
+    .cb_flush     = cb_forward_flush,
+    .cb_exit      = cb_forward_exit,
     .flags        = FLB_OUTPUT_NET,
 };

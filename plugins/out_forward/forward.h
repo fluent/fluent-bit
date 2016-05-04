@@ -17,10 +17,10 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_OUT_FLUENTD
-#define FLB_OUT_FLUENTD
+#ifndef FLB_OUT_FORWARD
+#define FLB_OUT_FORWARD
 
-struct flb_out_fluentd_config {
+struct flb_out_forward_config {
     size_t tag_len;
     char *tag;
     struct flb_upstream *u;
