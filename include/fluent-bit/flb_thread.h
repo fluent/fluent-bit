@@ -20,6 +20,11 @@
 #ifndef FLB_THREAD_H
 #define FLB_THREAD_H
 
+/* Required by OSX */
+#ifndef _XOPEN_SOURCE
+#define _XOPEN_SOURCE
+#endif
+
 #ifndef _BSD_SOURCE
 #define _BSD_SOURCE
 #endif
