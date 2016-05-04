@@ -35,7 +35,7 @@ int cb_fluentd_init(struct flb_output_instance *ins, struct flb_config *config,
                     void *data)
 {
     struct flb_out_fluentd_config *ctx;
-    struct flb_io_upstream *upstream;
+    struct flb_upstream *upstream;
     struct flb_uri_field *f_tag = NULL;
     (void) data;
 
@@ -54,7 +54,7 @@ int cb_fluentd_init(struct flb_output_instance *ins, struct flb_config *config,
     }
 
     /* Prepare an upstream handler */
-    upstream = flb_io_upstream_new(config,
+    upstream = flb_upstream_create(config,
                                    ins->host.name,
                                    ins->host.port,
                                    FLB_IO_TCP, NULL);
@@ -81,7 +81,9 @@ int cb_fluentd_init(struct flb_output_instance *ins, struct flb_config *config,
 int cb_fluentd_exit(void *data, struct flb_config *config)
 {
     (void) config;
-    struct flb_out_flientd_config *ctx = data;
+    struct flb_out_fluentd_config *ctx = data;
+
+    flb_upstream_destroy(ctx->u);
     free(ctx);
 
     return 0;
@@ -101,6 +103,7 @@ int cb_fluentd_flush(void *data, size_t bytes,
     msgpack_sbuffer  mp_sbuf;
     msgpack_unpacked result;
     struct flb_out_fluentd_config *ctx = out_context;
+    struct flb_upstream_conn *u_conn;
     (void) i_ins;
     (void) config;
 
@@ -133,8 +136,17 @@ int cb_fluentd_flush(void *data, size_t bytes,
     total = mp_sbuf.size + bytes;
     msgpack_sbuffer_destroy(&mp_sbuf);
 
-    ret = flb_io_net_write(ctx->u, buf, total, &bytes_sent);
+    u_conn = flb_upstream_conn_get(ctx->u);
+    if (!u_conn) {
+        flb_error("[out_fluentd] no upstream connections available");
+        free(buf);
+        return -1;
+    }
+
+    ret = flb_io_net_write(u_conn, buf, total, &bytes_sent);
     free(buf);
+
+    flb_upstream_conn_release(u_conn);
 
     flb_trace("[fluentd] ended write()=%d bytes", bytes_sent);
     return ret;
