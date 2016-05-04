@@ -218,6 +218,16 @@ int cb_td_flush(void *data, size_t bytes,
     return bytes_sent;
 }
 
+int cb_td_exit(void *data, struct flb_config *config)
+{
+    struct flb_out_td_config *ctx = data;
+
+    flb_upstream_destroy(ctx->u);
+    free(ctx);
+
+    return 0;
+}
+
 /* Plugin reference */
 struct flb_output_plugin out_td_plugin = {
     .name           = "td",
@@ -225,5 +235,6 @@ struct flb_output_plugin out_td_plugin = {
     .cb_init        = cb_td_init,
     .cb_pre_run     = NULL,
     .cb_flush       = cb_td_flush,
+    .cb_exit        = cb_td_exit,
     .flags          = FLB_IO_TLS,
 };
