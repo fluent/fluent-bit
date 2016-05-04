@@ -30,6 +30,7 @@
 
 #include <monkey/mk_core.h>
 #include <monkey/mk_config.h>
+#include <monkey/mk_info.h>
 
 #ifndef SOCK_NONBLOCK
 #define SOCK_NONBLOCK 04000
