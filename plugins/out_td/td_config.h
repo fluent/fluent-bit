@@ -30,7 +30,7 @@ struct flb_out_td_config {
     char *db_name;
     char *db_table;
 
-    struct flb_io_upstream *u;
+    struct flb_upstream *u;
 };
 
 struct flb_out_td_config *td_config_init(struct mk_rconf *conf);

@@ -140,7 +140,7 @@ int cb_td_init(struct flb_output_instance *ins, struct flb_config *config,
                void *data)
 {
     struct flb_out_td_config *ctx;
-    struct flb_io_upstream *upstream;
+    struct flb_upstream *upstream;
     (void) data;
 
     if (!config->file) {
@@ -157,7 +157,7 @@ int cb_td_init(struct flb_output_instance *ins, struct flb_config *config,
     ins->host.name = strdup("api.treasuredata.com");
     ins->host.port = 443;
 
-    upstream = flb_io_upstream_new(config,
+    upstream = flb_upstream_create(config,
                                    ins->host.name,
                                    ins->host.port,
                                    FLB_IO_TLS, (void *) &ins->tls);
@@ -185,6 +185,7 @@ int cb_td_flush(void *data, size_t bytes,
     size_t len;
     char *request;
     struct flb_out_td_config *ctx = out_context;
+    struct flb_upstream_conn *u_conn;
     (void) i_ins;
 
     /* Convert format */
@@ -193,20 +194,27 @@ int cb_td_flush(void *data, size_t bytes,
         return -1;
     }
 
+    u_conn = flb_upstream_conn_get(ctx->u);
+    if (!u_conn) {
+        flb_error("[out_td] no upstream connections available");
+        return -1;
+    }
+
     request = td_http_request(pack, bytes_out, &len, ctx, config);
-    ret = flb_io_net_write(ctx->u, request, len, &bytes_sent);
+    ret = flb_io_net_write(u_conn, request, len, &bytes_sent);
     if (ret == -1) {
         perror("write");
     }
     free(request);
     free(pack);
 
-    n = flb_io_net_read(ctx->u, buf, sizeof(buf) - 1);
+    n = flb_io_net_read(u_conn, buf, sizeof(buf) - 1);
     if (n > 0) {
         buf[n] = '\0';
         flb_trace("[TD] API server response:\n%s", buf);
     }
 
+    flb_upstream_conn_release(u_conn);
     return bytes_sent;
 }
 
