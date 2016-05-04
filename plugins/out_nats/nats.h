@@ -26,7 +26,7 @@
 
 struct flb_out_nats_config {
     struct flb_output_instance *ins;
-    struct flb_io_upstream *u;
+    struct flb_upstream *u;
 };
 
 #endif

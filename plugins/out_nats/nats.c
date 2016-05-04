@@ -29,7 +29,7 @@
 int cb_nats_init(struct flb_output_instance *ins, struct flb_config *config,
                    void *data)
 {
-    struct flb_io_upstream *upstream;
+    struct flb_upstream *upstream;
     struct flb_out_nats_config *ctx;
 
     /* Set default network configuration */
@@ -48,7 +48,7 @@ int cb_nats_init(struct flb_output_instance *ins, struct flb_config *config,
     }
 
     /* Prepare an upstream handler */
-    upstream = flb_io_upstream_new(config,
+    upstream = flb_upstream_create(config,
                                    ins->host.name,
                                    ins->host.port,
                                    FLB_IO_TCP,
@@ -204,14 +204,22 @@ int cb_nats_flush(void *data, size_t bytes,
     char *request;
     int req_len;
     struct flb_out_nats_config *ctx = out_context;
+    struct flb_upstream_conn *u_conn;
+
+    u_conn = flb_upstream_conn_get(ctx->u);
+    if (!u_conn) {
+        flb_error("[out_nats] no upstream connections available");
+        return -1;
+    }
 
     /* Before to flush the content check if we need to start the handshake */
-    if (ctx->u->fd <= 0) {
-        ret = flb_io_net_write(ctx->u,
+    if (u_conn->fd <= 0) {
+        ret = flb_io_net_write(u_conn,
                                NATS_CONNECT,
                                sizeof(NATS_CONNECT) - 1,
                                &bytes_sent);
         if (ret == -1) {
+            flb_upstream_conn_release(u_conn);
             return -1;
         }
     }
@@ -234,12 +242,13 @@ int cb_nats_flush(void *data, size_t bytes,
     request[req_len++] = '\n';
     free(json_msg);
 
-    ret = flb_io_net_write(ctx->u, request, req_len, &bytes_sent);
+    ret = flb_io_net_write(u_conn, request, req_len, &bytes_sent);
     if (ret == -1) {
         perror("write");
     }
     free(request);
 
+    flb_upstream_conn_release(u_conn);
     return bytes_sent;
 }
 
@@ -248,7 +257,7 @@ int cb_nats_exit(void *data, struct flb_config *config)
     (void) config;
     struct flb_out_nats_config *ctx = data;
 
-    flb_io_upstream_destroy(ctx->u);
+    flb_upstream_destroy(ctx->u);
     free(ctx);
 
     return 0;
