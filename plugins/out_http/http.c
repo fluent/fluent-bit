@@ -75,7 +75,7 @@ int cb_http_flush(void *data, size_t bytes,
     c = flb_http_client(u_conn, FLB_HTTP_POST, "/",
                         data, bytes);
     ret = flb_http_do(c, &b_sent);
-    flb_trace("[out_http] do=%i", ret);
+    flb_debug("[out_http] do=%i", ret);
     flb_http_client_destroy(c);
 
     /* Release the connection */
@@ -84,11 +84,12 @@ int cb_http_flush(void *data, size_t bytes,
     return ret;
 }
 
-void cb_http_exit(void *data, struct flb_config *config)
+int cb_http_exit(void *data, struct flb_config *config)
 {
     struct flb_upstream *u = data;
 
     flb_upstream_destroy(u);
+    return 0;
 }
 
 /* Plugin reference */
