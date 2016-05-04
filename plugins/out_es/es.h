@@ -29,7 +29,7 @@ struct flb_out_es_config {
     char *type;
 
     /* Upstream connection to the backend server */
-    struct flb_io_upstream *u;
+    struct flb_upstream *u;
 };
 
 #endif
