@@ -374,6 +374,16 @@ int cb_es_flush(void *data, size_t bytes,
     return b_sent;
 }
 
+int cb_es_exit(void *data, struct flb_config *config)
+{
+    struct flb_out_es_config *ctx = data;
+
+    flb_upstream_destroy(ctx->u);
+    free(ctx);
+
+    return 0;
+}
+
 /* Plugin reference */
 struct flb_output_plugin out_es_plugin = {
     .name           = "es",
@@ -381,6 +391,7 @@ struct flb_output_plugin out_es_plugin = {
     .cb_init        = cb_es_init,
     .cb_pre_run     = NULL,
     .cb_flush       = cb_es_flush,
+    .cb_exit        = cb_es_exit,
 
     /* Plugin flags */
     .flags          = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
