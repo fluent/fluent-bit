@@ -21,10 +21,10 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_network.h>
+#include <fluent-bit/flb_http_client.h>
 #include <cjson/cjson.h>
 
 #include "es.h"
-#include "es_http.h"
 #include "es_bulk.h"
 
 struct flb_output_plugin out_es_plugin;
@@ -335,16 +335,13 @@ int cb_es_flush(void *data, size_t bytes,
                 struct flb_input_instance *i_ins, void *out_context,
                 struct flb_config *config)
 {
-    int n;
     int ret;
     int bytes_out;
     char *pack;
-    size_t bytes_sent;
-    char buf[1024];
-    size_t len;
-    char *request;
+    size_t b_sent;
     struct flb_out_es_config *ctx = out_context;
     struct flb_upstream_conn *u_conn;
+    struct flb_http_client *c;
     (void) i_ins;
 
     /* Convert format */
@@ -353,28 +350,28 @@ int cb_es_flush(void *data, size_t bytes,
         return -1;
     }
 
+    /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
         free(pack);
         return -1;
     }
 
-    request = es_http_request(pack, bytes_out, &len, ctx, config);
-    ret = flb_io_net_write(u_conn, request, len, &bytes_sent);
-    if (ret == -1) {
-        perror("write");
-    }
-    free(request);
+    /* Compose HTTP Client request */
+    c = flb_http_client(u_conn, FLB_HTTP_POST, "/_bulk",
+                        pack, bytes_out);
+    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+    flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
+
+    ret = flb_http_do(c, &b_sent);
+    flb_debug("[out_es] http_do=%i", ret);
+    flb_http_client_destroy(c);
+
     free(pack);
 
-    n = flb_io_net_read(u_conn, buf, sizeof(buf) - 1);
-    if (n > 0) {
-        buf[n] = '\0';
-        flb_trace("[ES] API server response:\n%s", buf);
-    }
-
+    /* Release the connection */
     flb_upstream_conn_release(u_conn);
-    return bytes_sent;
+    return b_sent;
 }
 
 /* Plugin reference */
