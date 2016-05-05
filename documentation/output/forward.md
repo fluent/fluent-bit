@@ -1,8 +1,8 @@
-# Fluentd
+# Forward
 
-The __fluentd__ output plugin allows to integrate [Fluent Bit](http://fluentbit.io) with [Fluentd](http://fluentd.org) easily. There are not configuration steps required besides to specify where [Fluentd](http://fluentd.org) is located, it can be on the local host or a in a remote machine.
+_Forward_ is the protocol used by [Fluentd](http://www.fluentd.org) to route messages between peers. The __forward__ output plugin allows to integrate [Fluent Bit](http://fluentbit.io) with [Fluentd](http://fluentd.org) easily. There are not configuration steps required besides to specify where [Fluentd](http://fluentd.org) is located, it can be on the local host or a in a remote machine.
 
-## Fluentd Setup
+## Forward Setup
 
 Before to proceed, make sure that [Fluentd](http://fluentd.org) is installed in your system, if it's not the case please refer to the following [Fluentd Installation](http://docs.fluentd.org/v0.12/categories/installation) document and go ahead with that.
 
@@ -51,10 +51,10 @@ $ fluentd -c in_fluent-bit.conf
 
 ## Fluent Bit Setup
 
-Now that [Fluentd](http://fluentd.org) is ready to receive messages, we need to specify where the __fluentd__ output plugin will flush the information using the following format:
+Now that [Fluentd](http://fluentd.org) is ready to receive messages, we need to specify where the __forward__ output plugin will flush the information using the following format:
 
 ```
-bin/fluent-bit -i INPUT -o fluentd://HOST:PORT/TAG
+bin/fluent-bit -i INPUT -o forward://HOST:PORT/TAG
 ```
 
 If the __TAG__ parameter is not set, the plugin will set the tag as _fluent\_bit_. Keep in mind that __TAG__ is important for routing rules inside [Fluentd](http://fluentd.org).
@@ -62,7 +62,7 @@ If the __TAG__ parameter is not set, the plugin will set the tag as _fluent\_bit
 Using the [CPU](../input/cpu.md) input plugin as an example we will flush CPU metrics to [Fluentd](http://fluentd.org):
 
 ```bash
-$ bin/fluent-bit -i cpu -o fluentd://127.0.0.1:12225
+$ bin/fluent-bit -i cpu -o forward://127.0.0.1:12225
 ```
 
 In [Fluent Bit](http://fluentbit.io) we should see the following output:
