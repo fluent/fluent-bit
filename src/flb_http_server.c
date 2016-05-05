@@ -19,6 +19,7 @@
 
 #include <monkey/mk_lib.h>
 #include <fluent-bit/flb_lib.h>
+#include <fluent-bit/flb_http_server.h>
 #include <pthread.h>
 
 static void cb_root(mk_session_t *session, mk_request_t *request)
@@ -28,7 +29,7 @@ static void cb_root(mk_session_t *session, mk_request_t *request)
     int len = 15;
 
     mk_http_status(request, 200);
-    mk_http_send(request, buf, len, NULL);
+    mk_http_send(request, FLB_HTTP_BANNER, sizeof(FLB_HTTP_BANNER) - 1, NULL);
 }
 
 static void monkey_http_service(void *data)
