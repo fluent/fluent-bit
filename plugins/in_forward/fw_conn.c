@@ -121,6 +121,7 @@ struct fw_conn *fw_conn_add(int fd, struct flb_in_fw_config *ctx)
         return NULL;
     }
     conn->buf_size = FLB_IN_FW_CHUNK;
+    conn->in       = ctx->in;
 
     /* Register instance into the event loop */
     ret = mk_event_add(ctx->evl, fd, FLB_ENGINE_EV_CUSTOM, MK_EVENT_READ, conn);
@@ -143,7 +144,6 @@ int fw_conn_del(struct fw_conn *conn)
     /* Release resources */
     close(conn->fd);
     free(conn->buf);
-    free(conn->tag);
     free(conn);
 
     return 0;

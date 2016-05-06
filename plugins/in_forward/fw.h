@@ -29,10 +29,8 @@ struct flb_in_fw_config {
     char *listen;                /* Listen interface            */
     char *tcp_port;              /* TCP Port                    */
 
-    int buffer_id;
-    struct msgpack_sbuffer mp_sbuf; /* msgpack sbuffer        */
-    struct msgpack_packer mp_pck;   /* msgpack packer         */
-    struct mk_event_loop *evl;      /* Event loop file descriptor  */
+    struct mk_event_loop *evl;      /* Event loop file descriptor */
+    struct flb_input_instance *in;  /* Input plugin instace       */
 };
 
 #endif

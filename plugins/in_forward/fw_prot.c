@@ -29,14 +29,16 @@
 #include "fw_prot.h"
 #include "fw_conn.h"
 
-int fw_process_array(struct fw_conn *conn, msgpack_object *arr)
+static int fw_process_array(struct flb_input_instance *in,
+                            char *tag, int tag_len,
+                            msgpack_object *arr)
 {
     int i;
     msgpack_object p;
 
     for (i = 0; i < arr->via.array.size; i++) {
         p = arr->via.array.ptr[i];
-        msgpack_pack_object(&conn->ctx->mp_pck, p);
+        flb_input_dyntag_append(in, tag, tag_len, p);
     }
 
     return i;
@@ -46,6 +48,8 @@ int fw_prot_process(struct fw_conn *conn)
 {
     int ret;
     int len;
+    int stag_len;
+    char *stag;
     msgpack_object tag;
     msgpack_object entry;
     msgpack_object root;
@@ -95,17 +99,18 @@ int fw_prot_process(struct fw_conn *conn)
             msgpack_unpacked_destroy(&result);
             return -1;
         }
-        len = tag.via.str.size;
-        conn->tag = malloc(len + 1);
-        memcpy(conn->tag, tag.via.str.ptr, len);
-        conn->tag[len] = '\0';
+
+        stag     = (char *) tag.via.str.ptr;
+        stag_len = tag.via.str.size;
 
         entry = root.via.array.ptr[1];
         if (entry.type == MSGPACK_OBJECT_ARRAY) {
-            fw_process_array(conn, &entry);
+            fw_process_array(conn->in, stag, stag_len, &entry);
         }
         else if (entry.type == MSGPACK_OBJECT_MAP) {
-            msgpack_pack_object(&conn->ctx->mp_pck, entry);
+            flb_input_dyntag_append(conn->in,
+                                    stag, stag_len,
+                                    entry);
         }
     }
 

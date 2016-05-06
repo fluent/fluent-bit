@@ -44,10 +44,7 @@ struct fw_conn {
     int  buf_size;                   /* Buffer size                       */
     size_t buf_off;                  /* Unpacking offset                  */
 
-    /* Tag */
-    char *tag;                       /* Current tag                       */
-    char *tag_len;                   /* Tag string length                 */
-
+    struct flb_input_instance *in;   /* Parent plugin instance            */
     struct flb_in_fw_config *ctx;    /* Plugin configuration context      */
 };
 

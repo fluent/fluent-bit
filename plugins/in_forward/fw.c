@@ -65,6 +65,7 @@ static int in_fw_init(struct flb_input_instance *in,
     if (!ctx) {
         return -1;
     }
+    ctx->in = in;
 
     /* Set the context */
     flb_input_set_context(in, ctx);
@@ -81,11 +82,6 @@ static int in_fw_init(struct flb_input_instance *in,
     }
     ctx->evl = config->evl;
 
-    /* initialize MessagePack buffers */
-    ctx->buffer_id = 0;
-    msgpack_sbuffer_init(&ctx->mp_sbuf);
-    msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
-
     /* Collect upon data available on the standard input */
     ret = flb_input_set_collector_event(in,
                                         in_fw_collect,
@@ -98,41 +94,11 @@ static int in_fw_init(struct flb_input_instance *in,
     return 0;
 }
 
-static void *in_fw_flush(void *in_context, int *size)
-{
-    char *buf;
-    msgpack_sbuffer *sbuf;
-    struct flb_in_fw_config *ctx = in_context;
-
-    sbuf = &ctx->mp_sbuf;
-    *size = sbuf->size;
-
-    if (*size == 0) {
-        return NULL;
-    }
-
-    buf = malloc(sbuf->size);
-    if (!buf) {
-        return NULL;
-    }
-
-    /* set a new buffer and re-initialize our MessagePack context */
-    memcpy(buf, sbuf->data, sbuf->size);
-    msgpack_sbuffer_destroy(&ctx->mp_sbuf);
-    msgpack_sbuffer_init(&ctx->mp_sbuf);
-    msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
-
-    ctx->buffer_id = 0;
-
-    return buf;
-}
-
 int in_fw_exit(void *data, struct flb_config *config)
 {
     (void) *config;
     struct flb_in_fw_config *ctx = data;
 
-    msgpack_sbuffer_destroy(&ctx->mp_sbuf);
     fw_config_destroy(ctx);
     return 0;
 }
@@ -144,6 +110,7 @@ struct flb_input_plugin in_forward_plugin = {
     .cb_init      = in_fw_init,
     .cb_pre_run   = NULL,
     .cb_collect   = in_fw_collect,
-    .cb_flush_buf = in_fw_flush,
-    .cb_exit      = in_fw_exit
+    .cb_flush_buf = NULL,
+    .cb_exit      = in_fw_exit,
+    .flags        = FLB_INPUT_DYN_TAG
 };
