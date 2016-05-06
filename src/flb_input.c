@@ -96,6 +96,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
 
         mk_list_init(&instance->routes);
         mk_list_init(&instance->tasks);
+        mk_list_init(&instance->dyntags);
 
         if (plugin->flags & FLB_INPUT_NET) {
             ret = flb_net_host_set(plugin->name, &instance->host, input);
@@ -328,5 +329,84 @@ int flb_input_set_collector_socket(struct flb_input_instance *in,
     collector->instance    = in;
 
     mk_list_add(&collector->_head, &config->collectors);
+    return 0;
+}
+
+/* Creates a new dyntag node for the input_instance in question */
+struct flb_input_dyntag *flb_input_dyntag_create(struct flb_input_instance *in,
+                                                 char *tag, int tag_len)
+{
+    struct mk_list *head;
+    struct flb_input_dyntag *dt;
+
+    if (tag_len < 1) {
+        return NULL;
+    }
+
+    /* Allocate node and reset fields */
+    dt = malloc(sizeof(struct flb_input_dyntag));
+    if (!dt) {
+        return NULL;
+    }
+    dt->tag = malloc(tag_len + 1);
+    memcpy(dt->tag, tag, tag_len);
+    dt->tag[tag_len] = '\0';
+    dt->tag_len = tag_len;
+
+    /* Initialize MessagePack fields */
+    msgpack_sbuffer_init(&dt->mp_sbuf);
+    msgpack_packer_init(&dt->mp_pck, &dt->mp_sbuf, msgpack_sbuffer_write);
+
+    /* Link to the list head */
+    mk_list_add(&dt->_head, &in->dyntags);
+    return dt;
+}
+
+/* Destroy an dyntag node */
+int flb_input_dyntag_destroy(struct flb_input_dyntag *dt)
+{
+    msgpack_sbuffer_destroy(&dt->mp_sbuf);
+    mk_list_del(&dt->_head);
+    free(dt->tag);
+    free(dt);
+
+    return 0;
+}
+
+/* Append a MessagPack Map to an active buffer in the input instance */
+int flb_input_dyntag_append(struct flb_input_instance *in,
+                            char *tag, size_t tag_len,
+                            msgpack_object data)
+{
+    struct mk_list *head;
+    struct flb_input_dyntag *dt = NULL;
+
+    /* Try to find a current dyntag node to append the data */
+    mk_list_foreach(head, &in->dyntags) {
+        dt = mk_list_entry(head, struct flb_input_dyntag, _head);
+        if (dt->tag_len != tag_len) {
+            dt = NULL;
+            continue;
+        }
+
+        if (strncmp(dt->tag, tag, tag_len) != 0) {
+            dt = NULL;
+            continue;
+        }
+        break;
+    }
+
+    /* Found a dyntag node that can append the new info */
+    if (dt) {
+        msgpack_pack_object(&dt->mp_pck, data);
+        return 0;
+    }
+
+    /* No dyntag was found, we need to create a new one */
+    dt = flb_input_dyntag_create(in, tag, tag_len);
+    if (!dt) {
+        return -1;
+    }
+    msgpack_pack_object(&dt->mp_pck, data);
     return 0;
 }

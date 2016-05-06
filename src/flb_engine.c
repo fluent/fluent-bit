@@ -134,6 +134,21 @@ int flb_engine_flush(struct flb_config *config,
 
             continue;
         }
+        else if (p->flags & FLB_INPUT_DYN_TAG) {
+            /*
+             * FIXME> Testing iteration from dynamic tag buffers
+             * =====
+             */
+            struct mk_list *d_head, *tmp;
+            struct flb_input_dyntag *dt;
+
+            mk_list_foreach_safe(d_head, tmp, &in->dyntags) {
+                dt = mk_list_entry(d_head, struct flb_input_dyntag, _head);
+                flb_trace("[testing dyntag] tag=%s", dt->tag);
+                flb_input_dyntag_destroy(dt);
+            }
+
+        }
 
     flush_done:
         if (p->cb_flush_end) {

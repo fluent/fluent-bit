@@ -62,6 +62,7 @@ int flb_router_io_set(struct flb_config *config)
         out_count++;
     }
 
+    /* Just 1 input and 1 output */
     if (in_count == 1 && out_count == 1) {
         i_ins = mk_list_entry_first(&config->inputs,
                                     struct flb_input_instance, _head);
@@ -78,6 +79,15 @@ int flb_router_io_set(struct flb_config *config)
     /* N:M case, iterate all input instances */
     mk_list_foreach(i_head, &config->inputs) {
         i_ins = mk_list_entry(i_head, struct flb_input_instance, _head);
+
+        /*
+         * Pre-routing rules cannot exists for a plugin which have dynamic
+         * tags.
+         */
+        if (i_ins->p->flags & FLB_INPUT_DYN_TAG) {
+            continue;
+        }
+
         if (!i_ins->tag) {
             flb_warn("[router] NO tag for %s input instance",
                      i_ins->name);

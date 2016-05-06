@@ -21,6 +21,7 @@
 #define FLB_INPUT_H
 
 #include <inttypes.h>
+#include <msgpack.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_network.h>
 
@@ -30,6 +31,7 @@
 
 /* Input plugin masks */
 #define FLB_INPUT_NET         4  /* input address may set host and port */
+#define FLB_INPUT_DYN_TAG     64 /* the plugin generate it own tags     */
 
 struct flb_input_instance;
 
@@ -81,6 +83,26 @@ struct flb_input_plugin {
 };
 
 /*
+ * For input plugins which adds FLB_INPUT_DYN_TAG to the registration flag,
+ * they usually report a set of new records under a dynamic Tags. Internally
+ * the input plugin use the API function 'flb_input_dyntag_content()' to
+ * register that info. The function will look for a matchin flb_input_dyntag
+ * structure node or create a new one if required.
+ */
+struct flb_input_dyntag {
+    /* Tag */
+    int tag_len;
+    char *tag;
+
+    /* MessagePack */
+    struct msgpack_sbuffer mp_sbuf; /* msgpack sbuffer */
+    struct msgpack_packer mp_pck;   /* msgpack packer  */
+
+    /* Link to parent list on flb_input_instance */
+    struct mk_list _head;
+};
+
+/*
  * Each initialized plugin must have an instance, same plugin may be
  * loaded more than one time.
  *
@@ -126,6 +148,7 @@ struct flb_input_instance {
 
     struct mk_list _head;                /* link to config->inputs     */
     struct mk_list routes;               /* flb_router_path's list     */
+    struct mk_list dyntags;              /* dyntag nodes               */
 
     /*
      * Every co-routine created by the engine when flushing data, it's
@@ -180,5 +203,10 @@ int flb_input_set_collector_socket(struct flb_input_instance *in,
 void flb_input_initialize_all(struct flb_config *config);
 void flb_input_pre_run_all(struct flb_config *config);
 void flb_input_exit_all(struct flb_config *config);
+
+int flb_input_dyntag_destroy(struct flb_input_dyntag *dt);
+int flb_input_dyntag_append(struct flb_input_instance *in,
+                            char *tag, size_t tag_len,
+                            msgpack_object data);
 
 #endif
