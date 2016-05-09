@@ -42,7 +42,7 @@ struct flb_in_lib_config {
 };
 
 int in_lib_collect(struct flb_config *config, void *in_context);
-void *in_lib_flush(void *in_context, int *size);
+void *in_lib_flush(void *in_context, size_t *size);
 
 extern struct flb_input_plugin in_lib_plugin;
 

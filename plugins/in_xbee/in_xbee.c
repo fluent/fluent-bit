@@ -176,7 +176,7 @@ void in_xbee_cb(struct xbee *xbee, struct xbee_con *con,
     }
 }
 
-void *in_xbee_flush(void *in_context, int *size)
+void *in_xbee_flush(void *in_context, size_t *size)
 {
     char *buf;
     msgpack_sbuffer *sbuf;
@@ -184,14 +184,16 @@ void *in_xbee_flush(void *in_context, int *size)
 
     pthread_mutex_lock(&ctx->mtx_mp);
 
-    if (ctx->buffer_id == 0)
+    if (ctx->buffer_id == 0) {
         goto fail;
+    }
 
     sbuf = &ctx->mp_sbuf;
     *size = sbuf->size;
     buf = malloc(sbuf->size);
-    if (!buf)
+    if (!buf) {
         goto fail;
+    }
 
     /* set a new buffer and re-initialize our MessagePack context */
     memcpy(buf, sbuf->data, sbuf->size);

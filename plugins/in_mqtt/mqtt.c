@@ -67,7 +67,7 @@ int in_mqtt_init(struct flb_input_instance *in,
     return 0;
 }
 
-void *in_mqtt_flush(void *in_context, int *size)
+void *in_mqtt_flush(void *in_context, size_t *size)
 {
     char *buf;
     struct flb_in_mqtt_config *ctx = in_context;

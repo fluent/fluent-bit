@@ -195,7 +195,7 @@ int in_mem_collect(struct flb_config *config, void *in_context)
     return 0;
 }
 
-void *in_mem_flush(void *in_context, int *size)
+void *in_mem_flush(void *in_context, size_t *size)
 {
     char *buf;
     struct flb_in_mem_config *ctx = in_context;

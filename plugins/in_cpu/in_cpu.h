@@ -130,7 +130,7 @@ static inline double CPU_METRIC_USAGE(unsigned long pre, unsigned long now,
 
 int in_cpu_pre_run(void *in_context, struct flb_config *config);
 int in_cpu_collect(struct flb_config *config, void *in_context);
-void *in_cpu_flush(void *in_context, int *size);
+void *in_cpu_flush(void *in_context, size_t *size);
 
 extern struct flb_input_plugin in_cpu_plugin;
 

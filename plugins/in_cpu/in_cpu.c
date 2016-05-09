@@ -341,7 +341,7 @@ int in_cpu_collect(struct flb_config *config, void *in_context)
     return 0;
 }
 
-void *in_cpu_flush(void *in_context, int *size)
+void *in_cpu_flush(void *in_context, size_t *size)
 {
     char *buf;
     msgpack_sbuffer *sbuf;

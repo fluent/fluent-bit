@@ -126,7 +126,7 @@ static int in_head_config_read(struct flb_in_head_config *head_config,
         head_config->interval_sec = DEFAULT_INTERVAL_SEC;
         head_config->interval_nsec = DEFAULT_INTERVAL_NSEC;
     }
-        
+
 
     flb_trace("Head config: buf_size=%d path=%s",
               head_config->buf_size, head_config->filepath);
@@ -210,7 +210,7 @@ static int in_head_init(struct flb_input_instance *in,
 }
 
 /* cb_flush callback */
-static void *in_head_flush(void *in_context, int *size)
+static void *in_head_flush(void *in_context, size_t *size)
 {
     char *buf = NULL;
     struct flb_in_head_config *head_config = in_context;

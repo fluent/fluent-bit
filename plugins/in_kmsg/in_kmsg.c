@@ -103,7 +103,7 @@ static int boot_time(struct timeval *boot_time)
     return 0;
 }
 
-void *in_kmsg_flush(void *in_context, int *size)
+void *in_kmsg_flush(void *in_context, size_t *size)
 {
     char *buf;
     msgpack_sbuffer *sbuf;

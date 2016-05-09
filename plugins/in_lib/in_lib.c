@@ -185,7 +185,7 @@ int in_lib_collect(struct flb_config *config, void *in_context)
     return 0;
 }
 
-void *in_lib_flush(void *in_context, int *size)
+void *in_lib_flush(void *in_context, size_t *size)
 {
     char *buf;
     struct flb_in_lib_config *ctx = in_context;

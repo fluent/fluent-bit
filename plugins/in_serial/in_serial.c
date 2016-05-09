@@ -39,7 +39,7 @@
 #include "in_serial.h"
 #include "in_serial_config.h"
 
-void *in_serial_flush(void *in_context, int *size)
+void *in_serial_flush(void *in_context, size_t *size)
 {
     char *buf;
     msgpack_sbuffer *sbuf;
