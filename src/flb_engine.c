@@ -73,7 +73,7 @@ int flb_engine_destroy_tasks(struct mk_list *tasks)
 int flb_engine_flush(struct flb_config *config,
                      struct flb_input_plugin *in_force)
 {
-    int size;
+    size_t size;
     char *buf;
     struct flb_input_instance *in;
     struct flb_input_plugin *p;
@@ -107,7 +107,7 @@ int flb_engine_flush(struct flb_config *config,
              * and the co-routines associated to the output instance plugins
              * that needs to handle the data.
              */
-            task = flb_engine_task_create(buf, size, in);
+            task = flb_engine_task_create(buf, size, in, NULL);
             if (!task) {
                 free(buf);
                 continue;
@@ -127,6 +127,7 @@ int flb_engine_flush(struct flb_config *config,
                 flb_thread_resume(th);
             }
 
+            /* Sometimes a task finish right away, lets check */
             if (task->deleted == FLB_TRUE) {
                 flb_engine_destroy_threads(&task->threads);
                 flb_engine_task_destroy(task);
@@ -141,13 +142,54 @@ int flb_engine_flush(struct flb_config *config,
              */
             struct mk_list *d_head, *tmp;
             struct flb_input_dyntag *dt;
-
+            struct flb_output_instance *o_ins;
             mk_list_foreach_safe(d_head, tmp, &in->dyntags) {
+                int matches = 0;
+                struct mk_list *o_head;
                 dt = mk_list_entry(d_head, struct flb_input_dyntag, _head);
-                flb_trace("[testing dyntag] tag=%s", dt->tag);
-                flb_input_dyntag_destroy(dt);
-            }
+                flb_trace("[dyntag %s] %p tag=%s", dt->in->name, dt, dt->tag);
 
+                /* There is a match, get the buffer */
+                buf = flb_input_dyntag_flush(dt, &size);
+                if (size == 0 || !buf) {
+                    continue;
+                }
+
+                task = flb_engine_task_create(buf, size, dt->in, dt);
+                if (!task) {
+                    free(buf);
+                    continue;
+                }
+
+                /* FIXME: Testing static tags match first */
+                mk_list_foreach(o_head, &config->outputs) {
+                    o_ins = mk_list_entry(o_head,
+                                          struct flb_output_instance, _head);
+
+                    if (strcmp(dt->tag, o_ins->match) == 0) {
+                        flb_trace("[dyntag %s] [%p] match rule %s:%s",
+                                  dt->in->name, dt, dt->tag, o_ins->match);
+
+                        flb_trace("[dyntag buf] size=%lu buf=%p",
+                                  size, buf);
+
+                        th = flb_output_thread(task,
+                                               dt->in,
+                                               o_ins,
+                                               config,
+                                               buf, size);
+                        flb_engine_task_add(&th->_head, task);
+                        flb_thread_resume(th);
+
+                        matches++;
+                    }
+
+                }
+                if (task->deleted == FLB_TRUE) {
+                    flb_engine_destroy_threads(&task->threads);
+                    flb_engine_task_destroy(task);
+                }
+            }
         }
 
     flush_done:

@@ -65,7 +65,7 @@ struct flb_input_plugin {
      */
 
     /* Flush a buffer type (raw data) */
-    void *(*cb_flush_buf) (void *, int *);
+    void *(*cb_flush_buf) (void *, size_t *);
 
     /* Notify that a flush have completed on the collector (buf + iov) */
     void (*cb_flush_end) (void *);
@@ -100,6 +100,8 @@ struct flb_input_dyntag {
 
     /* Link to parent list on flb_input_instance */
     struct mk_list _head;
+
+    struct flb_input_instance *in;
 };
 
 /*
@@ -204,9 +206,13 @@ void flb_input_initialize_all(struct flb_config *config);
 void flb_input_pre_run_all(struct flb_config *config);
 void flb_input_exit_all(struct flb_config *config);
 
+/* Dyntag handlers */
+struct flb_input_dyntag *flb_input_dyntag_create(struct flb_input_instance *in,
+                                                 char *tag, int tag_len);
 int flb_input_dyntag_destroy(struct flb_input_dyntag *dt);
 int flb_input_dyntag_append(struct flb_input_instance *in,
                             char *tag, size_t tag_len,
                             msgpack_object data);
+void *flb_input_dyntag_flush(struct flb_input_dyntag *dt, size_t *size);
 
 #endif

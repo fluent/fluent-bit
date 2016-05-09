@@ -336,7 +336,6 @@ int flb_input_set_collector_socket(struct flb_input_instance *in,
 struct flb_input_dyntag *flb_input_dyntag_create(struct flb_input_instance *in,
                                                  char *tag, int tag_len)
 {
-    struct mk_list *head;
     struct flb_input_dyntag *dt;
 
     if (tag_len < 1) {
@@ -348,6 +347,7 @@ struct flb_input_dyntag *flb_input_dyntag_create(struct flb_input_instance *in,
     if (!dt) {
         return NULL;
     }
+    dt->in  = in;
     dt->tag = malloc(tag_len + 1);
     memcpy(dt->tag, tag, tag_len);
     dt->tag[tag_len] = '\0';
@@ -365,6 +365,8 @@ struct flb_input_dyntag *flb_input_dyntag_create(struct flb_input_instance *in,
 /* Destroy an dyntag node */
 int flb_input_dyntag_destroy(struct flb_input_dyntag *dt)
 {
+    flb_trace("[dyntag %s] %p destroy",
+              dt->in->name, dt);
     msgpack_sbuffer_destroy(&dt->mp_sbuf);
     mk_list_del(&dt->_head);
     free(dt->tag);
@@ -409,4 +411,21 @@ int flb_input_dyntag_append(struct flb_input_instance *in,
     }
     msgpack_pack_object(&dt->mp_pck, data);
     return 0;
+}
+
+/* Retrieve a raw buffer from a dyntag node */
+void *flb_input_dyntag_flush(struct flb_input_dyntag *dt, size_t *size)
+{
+    void *buf;
+
+    buf = malloc(dt->mp_sbuf.size);
+    if (!buf) {
+        perror("malloc");
+        return NULL;
+    }
+
+    *size = dt->mp_sbuf.size;
+    memcpy(buf, dt->mp_sbuf.data, dt->mp_sbuf.size);
+
+    return buf;
 }

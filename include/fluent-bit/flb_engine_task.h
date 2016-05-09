@@ -31,6 +31,7 @@ struct flb_engine_task {
     int users;                             /* number of users (threads) */
     char *buf;                             /* buffer                    */
     size_t size;                           /* buffer data size          */
+    struct flb_input_dyntag *dt;           /* dyntag node (if applies)  */
     struct flb_input_instance *i_ins;      /* input instance            */
     struct mk_list threads;                /* ref flb_input_instance->tasks */
     struct mk_list _head;
@@ -40,7 +41,8 @@ struct flb_engine_task {
 static inline
 struct flb_engine_task *flb_engine_task_create(char *buf,
                                                size_t size,
-                                               struct flb_input_instance *i_ins)
+                                               struct flb_input_instance *i_ins,
+                                               struct flb_input_dyntag *dt)
 {
     struct flb_engine_task *task;
 
@@ -56,6 +58,7 @@ struct flb_engine_task *flb_engine_task_create(char *buf,
     task->buf     = buf;
     task->size    = size;
     task->i_ins   = i_ins;
+    task->dt      = dt;
     mk_list_init(&task->threads);
     mk_list_add(&task->_head, &i_ins->tasks);
 
@@ -76,6 +79,10 @@ static inline int flb_engine_task_remove(struct flb_engine_task *task)
 
 static inline void flb_engine_task_destroy(struct flb_engine_task *task)
 {
+    if (task->dt) {
+        flb_input_dyntag_destroy(task->dt);
+    }
+
     mk_list_del(&task->_head);
     free(task->buf);
     free(task);

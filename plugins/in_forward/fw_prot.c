@@ -47,7 +47,6 @@ static int fw_process_array(struct flb_input_instance *in,
 int fw_prot_process(struct fw_conn *conn)
 {
     int ret;
-    int len;
     int stag_len;
     char *stag;
     msgpack_object tag;
