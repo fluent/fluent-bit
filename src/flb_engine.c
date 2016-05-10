@@ -122,7 +122,9 @@ int flb_engine_flush(struct flb_config *config,
                                        in,
                                        o_ins,
                                        config,
-                                       buf, size);
+                                       buf, size,
+                                       in->tag,
+                                       in->tag_len);
                 flb_engine_task_add(&th->_head, task);
                 flb_thread_resume(th);
             }
@@ -177,7 +179,8 @@ int flb_engine_flush(struct flb_config *config,
                                                dt->in,
                                                o_ins,
                                                config,
-                                               buf, size);
+                                               buf, size,
+                                               dt->tag, dt->tag_len);
                         flb_engine_task_add(&th->_head, task);
                         flb_thread_resume(th);
 

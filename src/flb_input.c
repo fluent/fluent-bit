@@ -134,7 +134,8 @@ int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
 
     /* Check if the key is a known/shared property */
     if (prop_key_check("tag", k, len) == 0) {
-        in->tag = strdup(v);
+        in->tag     = strdup(v);
+        in->tag_len = strlen(v);
     }
 
     /* FIXME: map plugin internal properties */

@@ -74,6 +74,7 @@ struct flb_output_plugin {
 
     /* Flush callback */
     int (*cb_flush) (void *, size_t,
+                     char *, int,
                      struct flb_input_instance *,
                      void *,
                      struct flb_config *);
@@ -183,7 +184,8 @@ struct flb_thread *flb_output_thread(struct flb_engine_task *task,
                                      struct flb_input_instance *i_ins,
                                      struct flb_output_instance *o_ins,
                                      struct flb_config *config,
-                                     void *buf, size_t size)
+                                     void *buf, size_t size,
+                                     char *tag, int tag_len)
 {
     struct flb_thread *th;
 
@@ -198,10 +200,16 @@ struct flb_thread *flb_output_thread(struct flb_engine_task *task,
     th->config = config;
 
     makecontext(&th->callee, (void (*)()) o_ins->p->cb_flush,
-                5, buf, size, i_ins, o_ins->context, config);
+                7,                     /* number of arguments */
+                buf,                   /* the buffer     */
+                size,                  /* buffer size    */
+                tag,                   /* matched tag    */
+                tag_len,               /* tag len        */
+                i_ins,                 /* input instance */
+                o_ins->context,        /* output plugin context */
+                config);
     return th;
 }
-
 
 struct flb_output_instance *flb_output_new(struct flb_config *config,
                                            char *output, void *data);

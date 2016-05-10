@@ -119,6 +119,7 @@ struct flb_input_instance {
 
     /* Plugin properties */
     char *tag;                           /* Input tag for routing        */
+    int tag_len;
 
     /*
      * Input network info:
