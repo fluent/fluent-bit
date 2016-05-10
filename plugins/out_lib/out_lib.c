@@ -27,8 +27,6 @@
 #include "out_lib.h"
 
 
-
-
 /**
  * User callback is passed from flb_output(ctx, output, callback)
  *
@@ -67,9 +65,10 @@ static int out_lib_init(struct flb_output_instance *ins,
 }
 
 static int out_lib_flush(void *data, size_t bytes,
-                    struct flb_input_instance *i_ins,
-                    void *out_context,
-                    struct flb_config *config)
+                         char *tag, int tag_len,
+                         struct flb_input_instance *i_ins,
+                         void *out_context,
+                         struct flb_config *config)
 {
     msgpack_unpacked result;
     size_t off = 0;
@@ -77,6 +76,8 @@ static int out_lib_flush(void *data, size_t bytes,
     unsigned char* data_for_user   = NULL;
     (void) i_ins;
     (void) config;
+    (void) tag;
+    (void) tag_len;
 
     if (ctx->user_callback == NULL) {
         flb_error("[out_lib] Callback is NULL");
