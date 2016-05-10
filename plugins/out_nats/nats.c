@@ -193,6 +193,7 @@ static int msgpack_to_json(void *data, size_t bytes, char *tag,
 
 
 int cb_nats_flush(void *data, size_t bytes,
+                  char *tag, int tag_len,
                   struct flb_input_instance *i_ins,
                   void *out_context,
                   struct flb_config *config)
@@ -225,7 +226,7 @@ int cb_nats_flush(void *data, size_t bytes,
     }
 
     /* Convert original Fluent Bit MsgPack format to JSON */
-    ret = msgpack_to_json(data, bytes, i_ins->tag, &json_msg, &json_len);
+    ret = msgpack_to_json(data, bytes, tag, &json_msg, &json_len);
     if (ret == -1) {
         return -1;
     }
@@ -233,7 +234,7 @@ int cb_nats_flush(void *data, size_t bytes,
     /* Compose the NATS Publish request */
     request = malloc(json_len + 32);
     req_len = snprintf(request, json_len + 32, "PUB %s %zu\r\n",
-                       i_ins->tag, json_len);
+                       tag, json_len);
 
     /* Append JSON message and ending CRLF */
     memcpy(request + req_len, json_msg, json_len);
