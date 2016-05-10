@@ -22,6 +22,48 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_router.h>
 
+#include <string.h>
+
+/* wildcard support */
+/* tag and match should be null terminated. */
+static int is_matched(const char* tag, const char* match)
+{
+    int    ret = 0;
+    char*  pos = NULL;
+    while(1){
+        flb_debug("tag[%x]:%c match[%x]:%c\n",tag,*tag,match,*match);
+        if (*match == '*') {
+            while(*++match == '*'){
+                /* skip successive '*' */
+            }
+            if(*match == '\0'){
+                /*  '*' is last of string */
+                ret = 1;
+                break;
+            }
+            while ( pos = strchr(tag, (int)*match) ) {
+                if ( is_matched(pos, match) ){
+                    ret = 1;
+                    break;
+                }
+                tag = pos+1;
+            }
+            break;
+        }else if ( *tag != *match ) {
+            /* mismatch! */
+            break;
+        }else if( *tag == '\0'){
+            /* end of tag. so matched! */
+            ret = 1;
+            break;
+        }
+        tag++;
+        match++;
+    }
+
+    return ret;
+}
+
 /* Associate and input and output instances due to a previous match */
 static int flb_router_connect(struct flb_input_instance *in,
                               struct flb_output_instance *out)
@@ -105,8 +147,7 @@ int flb_router_io_set(struct flb_config *config)
                 continue;
             }
 
-            /* FIXME: no wildcards support 'yet' */
-            if (strcmp(i_ins->tag, o_ins->match) == 0) {
+            if (is_matched(i_ins->tag, o_ins->match)) {
                 flb_trace("[router] match rule %s:%s",
                           i_ins->name, o_ins->name);
                 flb_router_connect(i_ins, o_ins);
