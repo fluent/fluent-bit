@@ -166,7 +166,7 @@ int flb_engine_flush(struct flb_config *config,
                     o_ins = mk_list_entry(o_head,
                                           struct flb_output_instance, _head);
 
-                    if (strcmp(dt->tag, o_ins->match) == 0) {
+                    if (flb_router_match(dt->tag, o_ins->match)) {
                         flb_trace("[dyntag %s] [%p] match rule %s:%s",
                                   dt->in->name, dt, dt->tag, o_ins->match);
 
@@ -183,8 +183,11 @@ int flb_engine_flush(struct flb_config *config,
 
                         matches++;
                     }
-
                 }
+                if (matches == 0) {
+                    flb_input_dyntag_destroy(dt);
+                }
+
                 if (task->deleted == FLB_TRUE) {
                     flb_engine_destroy_threads(&task->threads);
                     flb_engine_task_destroy(task);
