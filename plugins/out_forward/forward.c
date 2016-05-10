@@ -90,6 +90,7 @@ int cb_forward_exit(void *data, struct flb_config *config)
 }
 
 int cb_forward_flush(void *data, size_t bytes,
+                     char *tag, int tag_len,
                      struct flb_input_instance *i_ins, void *out_context,
                      struct flb_config *config)
 {
@@ -120,8 +121,8 @@ int cb_forward_flush(void *data, size_t bytes,
 
     /* Output: root array */
     msgpack_pack_array(&mp_pck, 2);
-    msgpack_pack_bin(&mp_pck, ctx->tag_len);
-    msgpack_pack_bin_body(&mp_pck, ctx->tag, ctx->tag_len);
+    msgpack_pack_bin(&mp_pck, tag_len);
+    msgpack_pack_bin_body(&mp_pck, tag, tag_len);
     msgpack_pack_array(&mp_pck, entries);
 
     /* Allocate a new buffer to merge data */
