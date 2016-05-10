@@ -172,6 +172,7 @@ int cb_td_init(struct flb_output_instance *ins, struct flb_config *config,
 }
 
 int cb_td_flush(void *data, size_t bytes,
+                char *tag, int tag_len,
                 struct flb_input_instance *i_ins,
                 void *out_context,
                 struct flb_config *config)
@@ -187,6 +188,8 @@ int cb_td_flush(void *data, size_t bytes,
     struct flb_out_td_config *ctx = out_context;
     struct flb_upstream_conn *u_conn;
     (void) i_ins;
+    (void) tag;
+    (void) tag_len;
 
     /* Convert format */
     pack = td_format(data, bytes, &bytes_out);
