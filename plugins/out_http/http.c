@@ -54,9 +54,10 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
 }
 
 int cb_http_flush(void *data, size_t bytes,
-                struct flb_input_instance *i_ins,
-                void *out_context,
-                struct flb_config *config)
+                  char *tag, int tag_len,
+                  struct flb_input_instance *i_ins,
+                  void *out_context,
+                  struct flb_config *config)
 {
     int ret;
     size_t b_sent;
