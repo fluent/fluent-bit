@@ -26,14 +26,16 @@
 
 /* wildcard support */
 /* tag and match should be null terminated. */
-static int is_matched(const char* tag, const char* match)
+int flb_router_match(const char *tag, const char *match)
 {
-    int    ret = 0;
-    char*  pos = NULL;
-    while(1){
-        flb_debug("tag[%x]:%c match[%x]:%c\n",tag,*tag,match,*match);
+    int ret = 0;
+    char *pos = NULL;
+
+    while (1) {
+        flb_trace("[router] tag=%x: %c match[%x]:%c",
+                  tag, *tag, match, *match);
         if (*match == '*') {
-            while(*++match == '*'){
+            while (*++match == '*'){
                 /* skip successive '*' */
             }
             if(*match == '\0'){
@@ -41,18 +43,22 @@ static int is_matched(const char* tag, const char* match)
                 ret = 1;
                 break;
             }
-            while ( pos = strchr(tag, (int)*match) ) {
-                if ( is_matched(pos, match) ){
+
+            /* FIXME: we need to avoid recursive calls here */
+            while (pos = strchr(tag, (int) *match)) {
+                if (flb_router_match(pos, match) ){
                     ret = 1;
                     break;
                 }
                 tag = pos+1;
             }
             break;
-        }else if ( *tag != *match ) {
+        }
+        else if (*tag != *match ) {
             /* mismatch! */
             break;
-        }else if( *tag == '\0'){
+        }
+        else if (*tag == '\0'){
             /* end of tag. so matched! */
             ret = 1;
             break;
@@ -147,7 +153,7 @@ int flb_router_io_set(struct flb_config *config)
                 continue;
             }
 
-            if (is_matched(i_ins->tag, o_ins->match)) {
+            if (flb_router_match(i_ins->tag, o_ins->match)) {
                 flb_trace("[router] match rule %s:%s",
                           i_ins->name, o_ins->name);
                 flb_router_connect(i_ins, o_ins);

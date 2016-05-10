@@ -27,6 +27,7 @@ struct flb_router_path {
     struct mk_list _head;
 };
 
+int flb_router_match(const char *tag, const char *match);
 int flb_router_io_set(struct flb_config *config);
 void flb_router_exit(struct flb_config *config);
 
