@@ -37,6 +37,7 @@ int cb_null_init(struct flb_output_instance *ins,
 }
 
 int cb_null_flush(void *data, size_t bytes,
+                  char *tag, int tag_len,
                   struct flb_input_instance *i_ins,
                   void *out_context,
                   struct flb_config *config)
@@ -45,6 +46,8 @@ int cb_null_flush(void *data, size_t bytes,
     int ret;
     size_t total = 0;
     (void) i_ins;
+    (void) tag;
+    (void) tag_len;
 
     fd = open("/dev/null", O_WRONLY);
     if (fd == -1) {
