@@ -332,6 +332,7 @@ int cb_es_init(struct flb_output_instance *ins,
 }
 
 int cb_es_flush(void *data, size_t bytes,
+                char *tag, int tag_len,
                 struct flb_input_instance *i_ins, void *out_context,
                 struct flb_config *config)
 {
@@ -343,6 +344,8 @@ int cb_es_flush(void *data, size_t bytes,
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
     (void) i_ins;
+    (void) tag;
+    (void) tag_len;
 
     /* Convert format */
     pack = es_format(data, bytes, &bytes_out, ctx);
