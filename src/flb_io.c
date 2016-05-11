@@ -141,9 +141,9 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
 }
 
 /* This routine is called from a co-routine thread */
-FLB_INLINE int net_io_write(struct flb_thread *th,
-                            struct flb_upstream_conn *u_conn,
-                            void *data, size_t len, size_t *out_len)
+static FLB_INLINE int net_io_write(struct flb_thread *th,
+                                   struct flb_upstream_conn *u_conn,
+                                   void *data, size_t len, size_t *out_len)
 {
     int ret = 0;
     ssize_t bytes;
