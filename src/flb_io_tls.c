@@ -216,8 +216,8 @@ int tls_session_destroy(struct flb_tls_session *session)
  * This routine perform a TCP connection and the required TLS/SSL
  * handshake,
  */
-FLB_INLINE int flb_io_net_tls_connect(struct flb_upstream_conn *u_conn,
-                                      struct flb_thread *th)
+static FLB_INLINE int flb_io_net_tls_connect(struct flb_upstream_conn *u_conn,
+                                             struct flb_thread *th)
 {
     int fd;
     int ret;
