@@ -262,12 +262,13 @@ static inline void mk_stream_release(struct mk_stream *stream)
     }
 }
 
-static inline void mk_stream_set(struct mk_stream *stream,
-                                 struct mk_channel *channel,
-                                 void *data,
-                                 void (*cb_finished) (struct mk_stream *),
-                                 void (*cb_bytes_consumed) (struct mk_stream *, long),
-                                 void (*cb_exception) (struct mk_stream *, int))
+static inline
+struct mk_stream *mk_stream_set(struct mk_stream *stream,
+                                struct mk_channel *channel,
+                                void *data,
+                                void (*cb_finished) (struct mk_stream *),
+                                void (*cb_bytes_consumed) (struct mk_stream *, long),
+                                void (*cb_exception) (struct mk_stream *, int))
 {
     /*
      * The copybuf stream type it's a lazy stream mechanism on which the
@@ -278,6 +279,9 @@ static inline void mk_stream_set(struct mk_stream *stream,
      */
     if (!stream) {
         stream = mk_mem_malloc(sizeof(struct mk_stream));
+        if (!stream) {
+            return NULL;
+        }
         stream->dynamic = MK_TRUE;
     }
     else {
@@ -296,6 +300,8 @@ static inline void mk_stream_set(struct mk_stream *stream,
 
     mk_list_init(&stream->inputs);
     mk_list_add(&stream->_head, &channel->streams);
+
+    return stream;
 }
 
 static inline void mk_stream_input_unlink(struct mk_stream_input *in)

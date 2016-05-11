@@ -78,6 +78,8 @@
 /* The plugin request to the caller skip event hooks */
 #define MK_PLUGIN_RET_EVENT_CONTINUE -600
 
+struct mk_plugin;
+
 /* API functions exported to plugins */
 struct plugin_api
 {

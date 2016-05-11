@@ -38,6 +38,8 @@ const mk_ptr_t mk_dir_iov_dash  = mk_ptr_init("-");
 const mk_ptr_t mk_dir_iov_none  = mk_ptr_init("");
 const mk_ptr_t mk_dir_iov_slash = mk_ptr_init("/");
 
+void mk_dirhtml_cb_body_rows(struct mk_stream_input *in);
+
 /* Function wrote by Max (Felipe Astroza), thanks! */
 static char *mk_dirhtml_human_readable_size(char *buf, size_t size, int len)
 {
@@ -612,10 +614,13 @@ void mk_dirhtml_cleanup(struct mk_dirhtml_request *req)
     req = NULL;
 }
 
-void mk_dirhtml_cb_complete(struct mk_stream *stream)
+void mk_dirhtml_cb_complete(struct mk_stream_input *in)
 {
-    struct mk_dirhtml_request *req = stream->data;
+    struct mk_stream *stream;
+    struct mk_dirhtml_request *req;
 
+    stream = in->stream;
+    req = stream->context;
     if (req) {
         mk_dirhtml_cleanup(req);
     }
@@ -626,7 +631,7 @@ void mk_dirhtml_cb_error(struct mk_stream *stream, int status)
 #ifndef TRACE
     (void) status;
 #endif
-    struct mk_dirhtml_request *req = stream->data;
+    struct mk_dirhtml_request *req = stream->context;
 
     PLUGIN_TRACE("exception: %i", status);
 
@@ -635,13 +640,20 @@ void mk_dirhtml_cb_error(struct mk_stream *stream, int status)
     }
 }
 
-void mk_dirhtml_cb_body_rows(struct mk_stream *stream)
+void mk_dirhtml_cb_chunk_body_rows(struct mk_stream_input *in, long bytes)
+{
+    (void) bytes;
+
+    mk_dirhtml_cb_body_rows(in);
+}
+
+void mk_dirhtml_cb_body_rows(struct mk_stream_input *in)
 {
     int len;
     char tmp[16];
-    struct mk_dirhtml_request *req = stream->data;
-    struct mk_channel *channel = stream->channel;
-    void (*cb_ok)(struct mk_stream* ) = NULL;
+    struct mk_stream *stream = in->stream;
+    struct mk_dirhtml_request *req = stream->context;
+    void (*cb_ok)(struct mk_stream_input *) = NULL;
 
     if (req->iov_entry) {
         mk_api->iov_free(req->iov_entry);
@@ -652,33 +664,25 @@ void mk_dirhtml_cb_body_rows(struct mk_stream *stream)
         if (req->chunked) {
             len = snprintf(tmp, sizeof(tmp), "%x\r\n",
                            (int) req->iov_footer->total_len);
-            mk_api->stream_set(NULL,
-                               MK_STREAM_COPYBUF,
-                               channel,
-                               tmp, len, req, NULL, NULL, mk_dirhtml_cb_error);
+            mk_stream_in_cbuf(req->stream,
+                              NULL,
+                              tmp, len,
+                              NULL, NULL);
             cb_ok  = NULL;
         }
         else {
             cb_ok  = mk_dirhtml_cb_complete;
         }
 
-        /* No more rows to add, just link the page footer */
-        mk_api->stream_set(NULL,                   /* stream            */
-                           MK_STREAM_IOV,          /* type              */
-                           channel,                /* channel           */
-                           req->iov_footer,        /* buffer            */
-                           -1,                     /* buffer size       */
-                           req,                    /* custom data       */
-                           cb_ok,                  /* on_finish         */
-                           NULL,                   /* on_bytes_consumed */
-                           mk_dirhtml_cb_error);   /* on_error          */
-
+        mk_stream_in_iov(req->stream,
+                         NULL,
+                         req->iov_footer,
+                         NULL, NULL);
         if (req->chunked) {
-            mk_api->stream_set(NULL,
-                               MK_STREAM_COPYBUF,
-                               channel,
-                               "\r\n0\r\n\r\n", 7, req,
-                               mk_dirhtml_cb_complete, NULL, mk_dirhtml_cb_error);
+            mk_stream_in_cbuf(req->stream,
+                              NULL,
+                              "\r\n0\r\n\r\n", 7,
+                              NULL, mk_dirhtml_cb_complete);
         }
 
         return;
@@ -688,32 +692,26 @@ void mk_dirhtml_cb_body_rows(struct mk_stream *stream)
     if (req->chunked) {
         len = snprintf(tmp, sizeof(tmp), "%x\r\n",
                        (int) req->iov_entry->total_len);
-        mk_api->stream_set(NULL,
-                           MK_STREAM_COPYBUF,
-                           channel,
-                           tmp, len, req, NULL, NULL, mk_dirhtml_cb_error);
+        mk_stream_in_cbuf(req->stream,
+                          NULL,
+                          tmp, len,
+                          NULL, NULL);
         cb_ok = NULL;
     }
     else {
         cb_ok = mk_dirhtml_cb_body_rows;
     }
 
-    mk_api->stream_set(NULL,
-                       MK_STREAM_IOV,
-                       channel,
-                       req->iov_entry,
-                       -1,
-                       req,
-                       cb_ok,
-                       NULL,
-                       mk_dirhtml_cb_error);
+    mk_stream_in_iov(req->stream,
+                     NULL,
+                     req->iov_entry,
+                     NULL, cb_ok);
 
     if (req->chunked) {
-        mk_api->stream_set(NULL,
-                           MK_STREAM_COPYBUF,
-                           channel,
-                           "\r\n", 2, (void *) req,
-                           mk_dirhtml_cb_body_rows, NULL, mk_dirhtml_cb_error);
+        mk_stream_in_cbuf(req->stream,
+                          NULL,
+                          "\r\n", 2,
+                          mk_dirhtml_cb_chunk_body_rows, NULL);
     }
     req->toc_idx++;
 }
@@ -722,16 +720,17 @@ void mk_dirhtml_cb_body_rows(struct mk_stream *stream)
  * The HTTP Headers were sent, now start registering the
  * rows for each directory entry.
  */
-void cb_header_finish(struct mk_stream *stream)
+void cb_header_finish(struct mk_stream_input *in)
 {
+    struct mk_stream *stream = in->stream;
     struct mk_dirhtml_request *req;
 
-    req = stream->data;
+    req = stream->context;
     if (req->iov_header) {
         mk_api->iov_free(req->iov_header);
         req->iov_header = NULL;
     }
-    mk_dirhtml_cb_body_rows(stream);
+    mk_dirhtml_cb_body_rows(in);
 }
 
 int mk_dirhtml_init(struct mk_http_session *cs, struct mk_http_request *sr)
@@ -744,6 +743,7 @@ int mk_dirhtml_init(struct mk_http_session *cs, struct mk_http_request *sr)
     struct mk_list list;
     struct mk_f_list *entry;
     struct mk_dirhtml_request *request;
+    struct mk_stream *stream;
 
     if (!(dir = opendir(sr->real_path.data))) {
         return -1;
@@ -751,6 +751,20 @@ int mk_dirhtml_init(struct mk_http_session *cs, struct mk_http_request *sr)
 
     /* Create the main context */
     request = mk_api->mem_alloc(sizeof(struct mk_dirhtml_request));
+    if (!request) {
+        closedir(dir);
+        return -1;
+    }
+
+    stream = mk_stream_set(NULL, cs->channel, request,
+                           NULL, NULL, mk_dirhtml_cb_error);
+    if (!stream) {
+        closedir(dir);
+        free(request);
+        return -1;
+    }
+
+    request->stream  = stream;
     request->state   = MK_DIRHTML_STATE_HTTP_HEADER;
     request->dir     = dir;
     request->toc_idx = 0;
@@ -761,6 +775,7 @@ int mk_dirhtml_init(struct mk_http_session *cs, struct mk_http_request *sr)
     request->iov_header = NULL;
     request->iov_entry = NULL;
     request->iov_footer = NULL;
+
     sr->handler_data = request;
 
     request->file_list = mk_dirhtml_create_list(dir, sr->real_path.data,
@@ -823,27 +838,22 @@ int mk_dirhtml_init(struct mk_http_session *cs, struct mk_http_request *sr)
     if (request->chunked) {
         len = snprintf(tmp, sizeof(tmp), "%x\r\n",
                        (int) request->iov_header->total_len);
-        mk_api->stream_set(NULL,
-                           MK_STREAM_COPYBUF,
-                           cs->channel,
-                           tmp, len, request, NULL, NULL, mk_dirhtml_cb_error);
+        mk_stream_in_cbuf(request->stream,
+                          NULL,
+                          tmp, len,
+                          NULL, mk_dirhtml_cb_complete);
     }
 
-    mk_api->stream_set(NULL,                 /* stream            */
-                       MK_STREAM_IOV,        /* type              */
-                       cs->channel,          /* channel           */
-                       request->iov_header,  /* buffer            */
-                       -1,                   /* buffer size       */
-                       request,              /* custom data       */
-                       cb_header_finish,     /* on_finish         */
-                       NULL,                 /* on_bytes_consumed */
-                       mk_dirhtml_cb_error); /* on_error          */
+    mk_stream_in_iov(request->stream,
+                     NULL,
+                     request->iov_header,
+                     NULL, cb_header_finish);
 
     if (request->chunked) {
-        mk_api->stream_set(NULL,
-                           MK_STREAM_COPYBUF,
-                           cs->channel,
-                           "\r\n", 2, request, NULL, NULL, mk_dirhtml_cb_error);
+        mk_stream_in_cbuf(request->stream,
+                          NULL,
+                          "\r\n", 2,
+                          NULL, NULL);
     }
     return 0;
 }

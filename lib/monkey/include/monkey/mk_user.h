@@ -17,10 +17,11 @@
  *  limitations under the License.
  */
 
-#include "mk_http.h"
-
 #ifndef MK_USER_H
 #define MK_USER_H
+
+#include "mk_http.h"
+#include "mk_http_internal.h"
 
 /* User home string */
 #define MK_USER_HOME '~'

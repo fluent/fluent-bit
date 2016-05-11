@@ -100,6 +100,9 @@ struct mk_dirhtml_request
     struct mk_f_list **toc;
     struct mk_list *file_list;
 
+    /* Stream handler */
+    struct mk_stream *stream;
+
     /* Reference IOV stuff */
     struct mk_iov *iov_header;
     struct mk_iov *iov_entry;
