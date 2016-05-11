@@ -38,6 +38,7 @@ struct flb_config {
 
     int flush;          /* Flush timeout                  */
     int flush_fd;       /* Timer FD associated to flush   */
+    int daemon;         /* Run as a daemon ?              */
     int shutdown_fd;    /* Shutdown FD, 5 seconds         */
 
 #ifdef HAVE_STATS

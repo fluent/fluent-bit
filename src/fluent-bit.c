@@ -41,6 +41,10 @@ struct flb_config *config;
 #define PLUGIN_INPUT    0
 #define PLUGIN_OUTPUT   1
 
+#define get_key(a, b, c)   mk_rconf_section_get_key(a, b, c)
+#define n_get_key(a, b, c) (uint64_t) get_key(a, b, c)
+#define s_get_key(a, b, c) (char *) get_key(a, b, c)
+
 static void flb_help(int rc, struct flb_config *config)
 {
     struct mk_list *head;
@@ -179,6 +183,155 @@ static int output_set_property(struct flb_output_instance *out, char *kv)
     return ret;
 }
 
+static void flb_service_conf_err(struct mk_rconf_section *section, char *key)
+{
+    fprintf(stderr, "Invalid configuration value at %s.%s\n",
+            section->name, key);
+}
+
+static int flb_service_conf(struct flb_config *config, char *file)
+{
+    char *name;
+    char *v_str;
+    uint64_t v_num;
+    struct mk_list *head;
+    struct mk_list *h_prop;
+    struct mk_rconf *fconf;
+    struct mk_rconf_entry *entry;
+    struct mk_rconf_section *section;
+    struct flb_input_instance *in;
+    struct flb_output_instance *out;
+
+    fconf = mk_rconf_open(file);
+    if (!fconf) {
+        return -1;
+    }
+
+    /* Read main [SERVICE] section */
+    section = mk_rconf_section_get(fconf, "SERVICE");
+    if (section) {
+        /* Flush Time */
+        v_num = n_get_key(section, "Flush", MK_RCONF_NUM);
+        if (v_num > 0) {
+            config->flush = v_num;
+        }
+
+        /* Run as daemon ? */
+        v_num = n_get_key(section, "Daemon", MK_RCONF_BOOL);
+        if (v_num == FLB_TRUE || v_num == FLB_FALSE) {
+            config->daemon = v_num;
+        }
+
+        /* Verbose / Log level */
+        v_str = s_get_key(section, "Log_Level", MK_RCONF_STR);
+        if (v_str) {
+            if (strcasecmp(v_str, "error") == 0) {
+                config->log->level = 1;
+            }
+            else if (strcasecmp(v_str, "warning") == 0) {
+                config->log->level = 2;
+                config->verbose = 2;
+            }
+            else if (strcasecmp(v_str, "info") == 0) {
+                config->verbose = 3;
+                config->log->level = 3;
+            }
+            else if (strcasecmp(v_str, "debug") == 0) {
+                config->verbose = 4;
+            }
+            else if (strcasecmp(v_str, "trace") == 0) {
+                config->verbose = 5;
+            }
+            else {
+                flb_service_conf_err(section, "Log_Level");
+                return -1;
+            }
+        }
+
+        /* HTTP Monitoring Server */
+        v_num = n_get_key(section, "HTTP_Monitor", MK_RCONF_BOOL);
+        if (v_num == FLB_TRUE || v_num == FLB_FALSE) {
+            config->http_server = v_num;
+        }
+
+        /* HTTP Port (TCP Port) */
+        v_str = s_get_key(section, "HTTP_Port", MK_RCONF_STR);
+        if (v_str) {
+            config->http_port = v_str;
+        }
+    }
+
+    /* Read all [INPUT] sections */
+    mk_list_foreach(head, &fconf->sections) {
+        section = mk_list_entry(head, struct mk_rconf_section, _head);
+        if (strcasecmp(section->name, "INPUT") != 0) {
+            continue;
+        }
+
+        /* Get the input plugin name */
+        name = s_get_key(section, "Name", MK_RCONF_STR);
+        if (!name) {
+            flb_service_conf_err(section, "Name");
+            return -1;
+        }
+
+        flb_debug("[service] loading input: %s", name);
+
+        /* Create an instace of the plugin */
+        in = flb_input_new(config, name, NULL);
+        if (!in) {
+            flb_service_conf_err(section, "Name");
+            return -1;
+        }
+
+        /* Iterate other properties */
+        mk_list_foreach(h_prop, &section->entries) {
+            entry = mk_list_entry(h_prop, struct mk_rconf_entry, _head);
+            if (strcasecmp(entry->key, "Name") == 0) {
+                continue;
+            }
+
+            /* Set the property */
+            flb_input_set_property(in, entry->key, entry->val);
+        }
+    }
+
+    /* Read all [OUTPUT] sections */
+    mk_list_foreach(head, &fconf->sections) {
+        section = mk_list_entry(head, struct mk_rconf_section, _head);
+        if (strcasecmp(section->name, "OUTPUT") != 0) {
+            continue;
+        }
+
+        /* Get the output plugin name */
+        name = s_get_key(section, "Name", MK_RCONF_STR);
+        if (!name) {
+            flb_service_conf_err(section, "Name");
+            return -1;
+        }
+
+        /* Create an instace of the plugin */
+        out = flb_output_new(config, name, NULL);
+        if (!out) {
+            flb_service_conf_err(section, "Name");
+            return -1;
+        }
+
+        /* Iterate other properties */
+        mk_list_foreach(h_prop, &section->entries) {
+            entry = mk_list_entry(h_prop, struct mk_rconf_entry, _head);
+            if (strcasecmp(entry->key, "Name") == 0) {
+                continue;
+            }
+
+            /* Set the property */
+            flb_output_set_property(out, entry->key, entry->val);
+        }
+    }
+
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     int opt;
@@ -188,8 +341,6 @@ int main(int argc, char **argv)
     int last_plugin = -1;
 
     /* local variables to handle config options */
-    int cfg_verbose = FLB_LOG_INFO;
-    int cfg_daemon = FLB_FALSE;
     char *cfg_file = NULL;
     struct flb_input_instance *in = NULL;
     struct flb_output_instance *out = NULL;
@@ -228,10 +379,10 @@ int main(int argc, char **argv)
 
         switch (opt) {
         case 'c':
-            cfg_file = optarg;
+            cfg_file = strdup(optarg);
             break;
         case 'd':
-            cfg_daemon = FLB_TRUE;
+            config->daemon = FLB_TRUE;
             break;
         case 'f':
             config->flush = atoi(optarg);
@@ -281,17 +432,17 @@ int main(int argc, char **argv)
             flb_version();
             exit(EXIT_SUCCESS);
         case 'v':
-            cfg_verbose++;
+            config->verbose++;
             break;
         case 'q':
-            cfg_verbose = FLB_LOG_OFF;
+            config->verbose = FLB_LOG_OFF;
             break;
         default:
             flb_help(EXIT_FAILURE, config);
         }
     }
 
-    config->log = flb_log_init(FLB_LOG_STDERR, cfg_verbose, NULL);
+    config->log = flb_log_init(FLB_LOG_STDERR, config->verbose, NULL);
 
     /* Validate config file */
     if (cfg_file) {
@@ -299,8 +450,9 @@ int main(int argc, char **argv)
             flb_utils_error(FLB_ERR_CFG_FILE);
         }
 
-        config->file = mk_rconf_open(cfg_file);
-        if (!config->file) {
+        /* Load the service configuration file */
+        ret = flb_service_conf(config, cfg_file);
+        if (ret != 0) {
             flb_utils_error(FLB_ERR_CFG_FILE_FORMAT);
         }
     }
@@ -322,7 +474,7 @@ int main(int argc, char **argv)
     }
 
     /* Run in background/daemon mode */
-    if (cfg_daemon == FLB_TRUE) {
+    if (config->daemon == FLB_TRUE) {
         flb_utils_set_daemon(config);
     }
 

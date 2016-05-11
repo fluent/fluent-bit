@@ -38,6 +38,7 @@ struct flb_config *flb_config_init()
         return NULL;
     }
 
+    config->daemon      = FLB_FALSE;
     config->flush       = FLB_CONFIG_FLUSH_SECS;
     config->init_time   = time(NULL);
     config->kernel      = flb_kernel_info();
