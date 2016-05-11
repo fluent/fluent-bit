@@ -204,14 +204,15 @@ int flb_start(flb_ctx_t *ctx)
 {
     int fd;
     int bytes;
+    int ret;
     uint64_t val;
     pthread_t tid;
     struct mk_event *event;
     struct flb_config *config;
 
     config = ctx->config;
-    tid = mk_utils_worker_spawn(flb_lib_worker, config);
-    if (tid == -1) {
+    ret = mk_utils_worker_spawn(flb_lib_worker, config, &tid);
+    if (ret == -1) {
         return -1;
     }
     config->worker = tid;

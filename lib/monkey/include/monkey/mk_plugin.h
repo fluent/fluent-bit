@@ -206,7 +206,7 @@ struct plugin_api
     struct mk_sched_worker *(*sched_worker_info)();
 
     /* worker's functions */
-    pthread_t (*worker_spawn) (void (*func) (void *), void *);
+    int (*worker_spawn) (void (*func) (void *), void *, pthread_t *);
     int (*worker_rename) (const char *);
 
     /* event's functions */

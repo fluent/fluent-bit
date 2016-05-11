@@ -97,6 +97,9 @@ struct mk_server_config *mk_server_init()
 
 int mk_server_setup()
 {
+    int ret;
+    pthread_t tid;
+
     /* Core and Scheduler setup */
     mk_config_start_configure();
     mk_sched_init();
@@ -109,7 +112,10 @@ int mk_server_setup()
     mk_plugin_load_all();
 
     /* Workers: logger and clock */
-    mk_utils_worker_spawn((void *) mk_clock_worker_init, NULL);
+    ret = mk_utils_worker_spawn((void *) mk_clock_worker_init, NULL, &tid);
+    if (ret != 0) {
+        return -1;
+    }
 
     /* Init thread keys */
     mk_thread_keys_init();

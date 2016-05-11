@@ -223,19 +223,18 @@ int mk_utils_worker_rename(const char *title)
 #endif
 }
 
-pthread_t mk_utils_worker_spawn(void (*func) (void *), void *arg)
+int mk_utils_worker_spawn(void (*func) (void *), void *arg, pthread_t *tid)
 {
-    pthread_t tid;
     pthread_attr_t thread_attr;
 
     pthread_attr_init(&thread_attr);
     pthread_attr_setdetachstate(&thread_attr, PTHREAD_CREATE_JOINABLE);
-    if (pthread_create(&tid, &thread_attr, (void *) func, arg) < 0) {
+    if (pthread_create(tid, &thread_attr, (void *) func, arg) < 0) {
         mk_libc_error("pthread_create");
-        exit(EXIT_FAILURE);
+        return -1;
     }
 
-    return tid;
+    return 0;
 }
 
 /* Run current process in background mode (daemon, evil Monkey >:) */

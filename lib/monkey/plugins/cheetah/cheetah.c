@@ -133,7 +133,14 @@ int mk_cheetah_plugin_exit()
 
 int mk_cheetah_master_init(struct mk_server_config *config)
 {
-    mk_api->worker_spawn(mk_cheetah_init, config);
+    int ret;
+    pthread_t tid;
+
+    ret = mk_api->worker_spawn(mk_cheetah_init, config, &tid);
+    if (ret != 0) {
+        return -1;
+    }
+
     return 0;
 }
 

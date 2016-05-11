@@ -83,7 +83,7 @@ static inline void mk_utils_libc_warn(char *caller, char *file, int line)
     mk_warn("%s: %s, errno=%i at %s:%i", caller, buf, _err, file, line);
 }
 
-pthread_t mk_utils_worker_spawn(void (*func) (void *), void *arg);
+int mk_utils_worker_spawn(void (*func) (void *), void *arg, pthread_t *tid);
 int mk_utils_worker_rename(const char *title);
 int mk_utils_set_daemon();
 int mk_utils_register_pid(char *path);

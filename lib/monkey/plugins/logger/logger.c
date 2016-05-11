@@ -363,7 +363,7 @@ int mk_logger_plugin_exit()
 
 int mk_logger_master_init(struct mk_server_config *config)
 {
-    (void) config;
+    int ret;
     struct log_target *new;
     struct host *entry_host;
     struct mk_list *hosts = &mk_api->config->hosts;
@@ -371,6 +371,8 @@ int mk_logger_master_init(struct mk_server_config *config)
     struct mk_rconf_section *section;
     char *access_file_name = NULL;
     char *error_file_name = NULL;
+    pthread_t tid;
+    (void) config;
 
     /* Restore STDOUT if we are in background mode */
     if (mk_logger_master_path != NULL && mk_api->config->is_daemon == MK_TRUE) {
@@ -446,7 +448,11 @@ int mk_logger_master_init(struct mk_server_config *config)
         }
     }
 
-    mk_api->worker_spawn((void *) mk_logger_start_worker, NULL);
+    ret = mk_api->worker_spawn((void *) mk_logger_start_worker, NULL, &tid);
+    if (ret == -1) {
+        return -1;
+    }
+
     return 0;
 }
 

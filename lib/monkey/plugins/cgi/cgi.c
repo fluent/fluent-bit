@@ -296,11 +296,16 @@ static int do_cgi(const char *const __restrict__ file,
     /* If we have POST data to write, spawn a thread to do that */
     if (sr->data.len) {
         struct post_t p;
+        pthread_t tid;
+
         p.fd = writepipe[1];
         p.buf = sr->data.data;
         p.len = sr->data.len;
 
-        mk_api->worker_spawn(cgi_write_post, &p);
+        ret = mk_api->worker_spawn(cgi_write_post, &p, &tid);
+        if (ret != 0) {
+            return 403;
+        }
     }
     else {
         close(writepipe[1]);
