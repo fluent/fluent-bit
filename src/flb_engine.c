@@ -38,7 +38,7 @@
 #include <fluent-bit/flb_stats.h>
 #endif
 
-int flb_engine_destroy_threads(struct mk_list *threads)
+static int flb_engine_destroy_threads(struct mk_list *threads)
 {
     int c = 0;
     struct mk_list *tmp;

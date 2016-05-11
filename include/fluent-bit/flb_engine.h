@@ -39,5 +39,6 @@ int flb_engine_start(struct flb_config *config);
 int flb_engine_flush(struct flb_config *config,
                      struct flb_input_plugin *in_force);
 int flb_engine_shutdown(struct flb_config *config);
+int flb_engine_destroy_tasks(struct mk_list *tasks);
 
 #endif

@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_engine.h>
 
 #define protcmp(a, b)  strncasecmp(a, b, strlen(a))
 
