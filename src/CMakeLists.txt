@@ -82,7 +82,6 @@ set(FLB_DEPS
 if(NOT WITHOUT_SHARED_LIB)
   add_library(fluent-bit-shared SHARED ${src})
   target_link_libraries(fluent-bit-shared ${FLB_DEPS})
-
   set_target_properties(fluent-bit-shared
     PROPERTIES OUTPUT_NAME fluent-bit)
 
@@ -92,9 +91,8 @@ endif()
 
 # Static Library
 add_library(fluent-bit-static STATIC ${src})
-set_target_properties(fluent-bit-static PROPERTIES
-  OUTPUT_NAME fluent-bit)
 target_link_libraries(fluent-bit-static ${FLB_DEPS})
+set_target_properties(fluent-bit-static PROPERTIES OUTPUT_NAME fluent-bit)
 
 if(WITH_HTTP)
   target_link_libraries(fluent-bit-static monkey-core-static ejson)
@@ -104,8 +102,11 @@ endif()
 if(NOT WITHOUT_BIN)
   find_package (Threads)
   add_executable(fluent-bit-bin fluent-bit.c)
+
   target_link_libraries(fluent-bit-bin fluent-bit-static ${CMAKE_THREAD_LIBS_INIT} ${CMAKE_DL_LIBS})
   set_target_properties(fluent-bit-bin
-    PROPERTIES OUTPUT_NAME fluent-bit)
+    PROPERTIES
+      OUTPUT_NAME fluent-bit
+      ENABLE_EXPORTS ON)
   install(TARGETS fluent-bit-bin RUNTIME DESTINATION ${CMAKE_INSTALL_FULL_BINDIR})
 endif()
