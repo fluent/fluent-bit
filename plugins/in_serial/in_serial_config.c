@@ -26,7 +26,7 @@
 struct flb_in_serial_config *serial_config_read(struct flb_in_serial_config *config,
                                                 struct mk_rconf *conf)
 {
-    int min_bytes;
+    uint64_t min_bytes;
     char *file;
     char *bitrate;
     struct mk_rconf_section *section;
@@ -39,8 +39,9 @@ struct flb_in_serial_config *serial_config_read(struct flb_in_serial_config *con
     /* Validate serial section keys */
     file = mk_rconf_section_get_key(section, "file", MK_RCONF_STR);
     bitrate = mk_rconf_section_get_key(section, "bitrate", MK_RCONF_STR);
-    min_bytes = (int) mk_rconf_section_get_key(section,
-                                               "min_bytes", MK_RCONF_NUM);
+    min_bytes = (uint64_t) mk_rconf_section_get_key(section,
+                                                    "min_bytes",
+                                                    MK_RCONF_NUM);
     if (!file) {
         flb_utils_error_c("[serial] error reading filename from "
                 "configuration");
