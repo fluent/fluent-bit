@@ -230,17 +230,15 @@ static int flb_service_conf(struct flb_config *config, char *file)
             }
             else if (strcasecmp(v_str, "warning") == 0) {
                 config->log->level = 2;
-                config->verbose = 2;
             }
             else if (strcasecmp(v_str, "info") == 0) {
-                config->verbose = 3;
                 config->log->level = 3;
             }
             else if (strcasecmp(v_str, "debug") == 0) {
-                config->verbose = 4;
+                config->log->level = 4;
             }
             else if (strcasecmp(v_str, "trace") == 0) {
-                config->verbose = 5;
+                config->log->level = 5;
             }
             else {
                 flb_service_conf_err(section, "Log_Level");
