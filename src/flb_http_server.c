@@ -42,7 +42,9 @@ static void monkey_http_service(void *data)
     if (!ctx) {
         return;
     }
-    mk_config_set(ctx, "Listen", config->http_port);
+    mk_config_set(ctx,
+                  "Listen", config->http_port,
+                  NULL);
 
     vh = mk_vhost_create(ctx, NULL);
     mk_vhost_set(vh,
