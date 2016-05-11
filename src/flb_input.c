@@ -119,7 +119,8 @@ static inline int prop_key_check(char *key, char *kv, int k_len)
     int len;
 
     len = strlen(key);
-    if (strncmp(key, kv, k_len) == 0 && len == k_len) {
+
+    if (strncasecmp(key, kv, k_len) == 0 && len == k_len) {
         return 0;
     }
 
