@@ -25,8 +25,6 @@
 static void cb_root(mk_session_t *session, mk_request_t *request)
 {
     (void) session;
-    char *buf = "this is a test\n";
-    int len = 15;
 
     mk_http_status(request, 200);
     mk_http_send(request, FLB_HTTP_BANNER, sizeof(FLB_HTTP_BANNER) - 1, NULL);
@@ -57,9 +55,14 @@ static void monkey_http_service(void *data)
 
 int flb_http_server_start(struct flb_config *config)
 {
+    int ret;
     pthread_t tid;
 
-    tid = mk_utils_worker_spawn(monkey_http_service, config);
+    ret = mk_utils_worker_spawn(monkey_http_service, config, &tid);
+    if (ret == -1) {
+        return -1;
+    }
+
     return 0;
 }
 
