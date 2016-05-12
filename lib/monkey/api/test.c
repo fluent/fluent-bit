@@ -13,6 +13,7 @@ void cb_main(mk_session_t *session, mk_request_t *request)
     int len = 15;
 
     mk_http_status(request, 200);
+    mk_http_header(request, "X-Monkey", 8, "OK", 2);
     mk_http_send(request, buf, len, NULL);
 }
 

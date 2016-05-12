@@ -391,10 +391,23 @@ int mk_header_prepare(struct mk_http_session *cs,
     sr->in_headers.cb_finished = mk_header_cb_finished;
 
     if (sr->headers._extra_rows) {
-        mk_stream_in_iov(&sr->stream,
-                         &sr->in_headers_extra,
-                         sr->headers._extra_rows,
-                         NULL, cb_stream_iov_extended_free);
+        /* Our main sr->stream contains the main headers (header_iov)
+         * and 'may' have already some linked data. If we have some
+         * extra headers rows we need to link this IOV right after
+         * the main header_iov.
+         */
+        struct mk_stream_input *in = &sr->in_headers_extra;
+        in->type        = MK_STREAM_IOV;
+        in->dynamic     = MK_FALSE;
+        in->cb_consumed = NULL;
+        in->cb_finished = cb_stream_iov_extended_free;
+        in->stream      = &sr->stream;
+        in->buffer      = sr->headers._extra_rows;
+        in->bytes_total = sr->headers._extra_rows->total_len;
+
+        mk_list_add_after(&sr->in_headers_extra._head,
+                          &sr->in_headers._head,
+                          &sr->stream.inputs);
     }
 
     sh->sent = MK_TRUE;

@@ -295,6 +295,47 @@ int mk_http_status(mk_request_t *req, int status)
     return 0;
 }
 
+/* Append a response header */
+int mk_http_header(mk_request_t *req,
+                   char *key, int key_len,
+                   char *val, int val_len)
+{
+    int pos;
+    int len;
+    char *buf;
+    struct response_headers *h;
+
+    h = &req->headers;
+    if (!h->_extra_rows) {
+        h->_extra_rows = mk_iov_create(MK_PLUGIN_HEADER_EXTRA_ROWS * 2, 0);
+        if (!h->_extra_rows) {
+            return -1;
+        }
+    }
+
+    len = key_len + val_len + 4;
+    buf = mk_mem_malloc(len);
+    if (!buf) {
+        /* we don't free extra_rows as it's released later */
+        return -1;
+    }
+
+    /* Compose the buffer */
+    memcpy(buf, key, key_len);
+    pos = key_len;
+    buf[pos++] = ':';
+    buf[pos++] = ' ';
+    memcpy(buf + pos, val, val_len);
+    pos += val_len;
+    buf[pos++] = '\r';
+    buf[pos++] = '\n';
+
+    /* Add the new buffer */
+    mk_iov_add(h->_extra_rows, buf, pos, MK_TRUE);
+
+    return 0;
+}
+
 /* Enqueue some data for the body response */
 int mk_http_send(mk_request_t *req, char *buf, size_t len,
                  void (*cb_finish)(mk_request_t *))
