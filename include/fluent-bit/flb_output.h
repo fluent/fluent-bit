@@ -174,6 +174,8 @@ struct flb_output_instance {
 
 #ifdef HAVE_TLS
     struct flb_tls tls;
+#else
+    void *tls;
 #endif
 
     struct mk_list _head;                /* link to config->inputs       */
