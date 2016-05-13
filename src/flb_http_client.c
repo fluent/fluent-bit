@@ -78,6 +78,9 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
     case FLB_HTTP_POST:
         str_method = "POST";
         break;
+    case FLB_HTTP_PUT:
+        str_method = "PUT";
+        break;
     case FLB_HTTP_HEAD:
         str_method = "HEAD";
         break;

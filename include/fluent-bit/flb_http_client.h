@@ -29,7 +29,8 @@
 /* HTTP Methods */
 #define FLB_HTTP_GET         0
 #define FLB_HTTP_POST        1
-#define FLB_HTTP_HEAD        2
+#define FLB_HTTP_PUT         2
+#define FLB_HTTP_HEAD        3
 
 struct flb_http_response {
     int status;
