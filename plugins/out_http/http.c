@@ -44,7 +44,12 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
     upstream = flb_upstream_create(config,
                                    ins->host.name,
                                    ins->host.port,
-                                   FLB_IO_TCP, (void *) &ins->tls);
+                                   FLB_IO_TCP,
+#ifdef HAVE_TLS
+                                   (void *) &ins->tls);
+#else
+                                   NULL);    
+#endif
     if (!upstream) {
         return -1;
     }
