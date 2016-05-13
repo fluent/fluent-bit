@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_http_client.h>
 
 #include "td.h"
 #include "td_http.h"
@@ -184,9 +185,12 @@ int cb_td_flush(void *data, size_t bytes,
     size_t bytes_sent;
     char buf[1024];
     size_t len;
+    size_t b_sent;
     char *request;
+    char *body = NULL;
     struct flb_out_td_config *ctx = out_context;
     struct flb_upstream_conn *u_conn;
+    struct flb_http_client *c;
     (void) i_ins;
     (void) tag;
     (void) tag_len;
@@ -197,27 +201,37 @@ int cb_td_flush(void *data, size_t bytes,
         return -1;
     }
 
+    /* Lookup an available connection context */
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
         flb_error("[out_td] no upstream connections available");
+        free(pack);
         return -1;
     }
 
-    request = td_http_request(pack, bytes_out, &len, ctx, config);
-    ret = flb_io_net_write(u_conn, request, len, &bytes_sent);
-    if (ret == -1) {
-        perror("write");
-    }
-    free(request);
-    free(pack);
-
-    n = flb_io_net_read(u_conn, buf, sizeof(buf) - 1);
-    if (n > 0) {
-        buf[n] = '\0';
-        flb_trace("[TD] API server response:\n%s", buf);
+    /* Compose request */
+    c = td_http_client(u_conn, pack, bytes_out, &body, ctx, config);
+    if (!c) {
+        free(pack);
+        flb_upstream_conn_release(u_conn);
+        return -1;
     }
 
+    /* Issue HTTP request */
+    ret = flb_http_do(c, &b_sent);
+    if (ret == 0) {
+        flb_debug("[out_td] http_do=%i http_status=%i",
+                  ret, c->resp.status);
+    }
+    else {
+        flb_debug("[out_td] http_do=%i", ret);
+    }
+    free(body);
+
+    /* release */
     flb_upstream_conn_release(u_conn);
+    flb_http_client_destroy(c);
+
     return bytes_sent;
 }
 

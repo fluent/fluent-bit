@@ -23,6 +23,7 @@
 #include <zlib.h>
 
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_http_client.h>
 #include "td_config.h"
 
 #define TD_HTTP_HEADER_SIZE  512
@@ -83,48 +84,64 @@ static void *gzip_compress(void *data, size_t len, size_t *out_len)
     return buf;
 }
 
-char *td_http_request(void *data, size_t len,
-                      size_t *out_len,
-                      struct flb_out_td_config *ctx, struct flb_config *config)
+struct flb_http_client *td_http_client(struct flb_upstream_conn *u_conn,
+                                       void *data, size_t len,
+                                       char **body,
+                                       struct flb_out_td_config *ctx,
+                                       struct flb_config *config)
 {
     int ret;
+    int pos = 0;
+    int api_len;
     size_t gz_size;
     char *gz;
     char *req;
-    char *fmt =
-        "PUT /v3/table/import/%s/%s/msgpack.gz HTTP/1.1\r\n"
-        "Host: api.treasuredata.com:80\r\n"
-        "User-Agent: Fluent-Bit\r\n"
-        "Authorization: TD1 %s\r\n"
-        "Connection: Keep-Alive\r\n"
-        "Content-Type: application/gzip\r\n"
-        "Content-Length: %lu\r\n\r\n";
+    char *tmp;
+    struct flb_http_client *c;
 
+    /* Compress data */
     gz = gzip_compress(data, len, &gz_size);
     if (!gz) {
         return NULL;
     }
 
-    req = malloc(TD_HTTP_HEADER_SIZE + gz_size);
-    if (!req) {
+    /* Compose URI */
+    tmp = malloc(512);
+    if (!tmp) {
+        free(gz);
+        return NULL;
+    }
+    snprintf(tmp, 256,
+             "/v3/table/import/%s/%s/msgpack.gz",
+             ctx->db_name, ctx->db_table);
+
+    /* Create client */
+    c = flb_http_client(u_conn, FLB_HTTP_PUT, tmp,
+                        gz, gz_size);
+    if (!c) {
+        free(tmp);
         free(gz);
         return NULL;
     }
 
-    ret = snprintf(req, TD_HTTP_HEADER_SIZE + gz_size,
-                   fmt,
-                   ctx->db_name, ctx->db_table,
-                   ctx->api,
-                   gz_size);
-    if (ret == -1) {
-        free(gz);
-        free(req);
-        return NULL;
-    }
+    /* Add custom headers */
+    tmp[pos++] = 'T';
+    tmp[pos++] = 'D';
+    tmp[pos++] = '1';
+    tmp[pos++] = ' ';
 
-    memcpy(req + ret, gz, gz_size);
-    *out_len = ret + gz_size;
-    free(gz);
+    api_len = strlen(ctx->api);
+    memcpy(tmp + pos, ctx->api, api_len);
+    pos += api_len;
 
-    return req;
+    flb_http_add_header(c,
+                        "Authorization", 13,
+                        tmp, pos);
+    flb_http_add_header(c,
+                        "Content-Type", 12,
+                        "application/gzip", 15);
+    free(tmp);
+    *body = gz;
+
+    return c;
 }
