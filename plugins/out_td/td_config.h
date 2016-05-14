@@ -33,6 +33,6 @@ struct flb_out_td_config {
     struct flb_upstream *u;
 };
 
-struct flb_out_td_config *td_config_init(struct mk_rconf *conf);
+struct flb_out_td_config *td_config_init(struct flb_output_instance *o_ins);
 
 #endif

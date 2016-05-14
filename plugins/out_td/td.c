@@ -144,14 +144,9 @@ int cb_td_init(struct flb_output_instance *ins, struct flb_config *config,
     struct flb_upstream *upstream;
     (void) data;
 
-    if (!config->file) {
-        flb_utils_warn_c("[TD] output requires a configuration file");
-        return -1;
-    }
-
-    ctx = td_config_init(config->file);
+    ctx = td_config_init(ins);
     if (!ctx) {
-        flb_utils_warn_c("[TD] Error reading configuration file");
+        flb_utils_warn_c("[out_td] Error reading configuration");
         return -1;
     }
 
@@ -178,15 +173,10 @@ int cb_td_flush(void *data, size_t bytes,
                 void *out_context,
                 struct flb_config *config)
 {
-    int n;
     int ret;
     int bytes_out;
     char *pack;
-    size_t bytes_sent;
-    char buf[1024];
-    size_t len;
     size_t b_sent;
-    char *request;
     char *body = NULL;
     struct flb_out_td_config *ctx = out_context;
     struct flb_upstream_conn *u_conn;
@@ -232,7 +222,7 @@ int cb_td_flush(void *data, size_t bytes,
     flb_upstream_conn_release(u_conn);
     flb_http_client_destroy(c);
 
-    return bytes_sent;
+    return b_sent;
 }
 
 int cb_td_exit(void *data, struct flb_config *config)

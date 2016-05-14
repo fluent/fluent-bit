@@ -90,12 +90,10 @@ struct flb_http_client *td_http_client(struct flb_upstream_conn *u_conn,
                                        struct flb_out_td_config *ctx,
                                        struct flb_config *config)
 {
-    int ret;
     int pos = 0;
     int api_len;
     size_t gz_size;
     char *gz;
-    char *req;
     char *tmp;
     struct flb_http_client *c;
 
@@ -139,7 +137,7 @@ struct flb_http_client *td_http_client(struct flb_upstream_conn *u_conn,
                         tmp, pos);
     flb_http_add_header(c,
                         "Content-Type", 12,
-                        "application/gzip", 15);
+                        "application/gzip", 16);
     free(tmp);
     *body = gz;
 

@@ -23,7 +23,7 @@
 
 #include "td_config.h"
 
-struct flb_out_td_config *td_config_init(struct mk_rconf *conf)
+struct flb_out_td_config *td_config_init(struct flb_output_instance *o_ins)
 {
     char *api;
     char *db_name;
@@ -31,26 +31,21 @@ struct flb_out_td_config *td_config_init(struct mk_rconf *conf)
     struct mk_rconf_section *section;
     struct flb_out_td_config *config;
 
-    section = mk_rconf_section_get(conf, "TD");
-    if (!section) {
-        return NULL;
-    }
-
     /* Validate TD section keys */
-    api = mk_rconf_section_get_key(section, "API", MK_RCONF_STR);
-    db_name = mk_rconf_section_get_key(section, "Database", MK_RCONF_STR);
-    db_table = mk_rconf_section_get_key(section, "Table", MK_RCONF_STR);
+    api = flb_output_get_property("API", o_ins);
+    db_name = flb_output_get_property("Database", o_ins);
+    db_table = flb_output_get_property("Table", o_ins);
 
     if (!api) {
-        flb_utils_error_c("[TD] error reading API key value");
+        flb_utils_error_c("[out_td] error reading API key value");
     }
 
     if (!db_name) {
-        flb_utils_error_c("[TD] error reading Database name");
+        flb_utils_error_c("[out_td] error reading Database name");
     }
 
     if (!db_table) {
-        flb_utils_error_c("[TD] error reading Table name");
+        flb_utils_error_c("[out_td] error reading Table name");
     }
 
     config = malloc(sizeof(struct flb_out_td_config));
@@ -59,8 +54,8 @@ struct flb_out_td_config *td_config_init(struct mk_rconf *conf)
     config->db_name  = db_name;
     config->db_table = db_table;
 
-    flb_info("TreasureData / database='%s' table='%s'",
-             config->db_name, config->db_table);
+    flb_debug("TreasureData / database='%s' table='%s'",
+              config->db_name, config->db_table);
 
     return config;
 }
