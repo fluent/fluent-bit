@@ -168,6 +168,8 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
                 return NULL;
             }
         }
+
+        mk_list_init(&instance->properties);
         mk_list_add(&instance->_head, &config->outputs);
         break;
     }
@@ -191,6 +193,8 @@ static inline int prop_key_check(char *key, char *kv, int k_len)
 int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
 {
     int len;
+    struct mk_list *head;
+    struct flb_config_prop *prop;
 
     len = strlen(k);
 
@@ -228,9 +232,23 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
         out->tls_key_passwd = strdup(v);
     }
 #endif
+    else {
+        /* Append any remaining configuration key to prop list */
+        prop = malloc(sizeof(struct flb_config_prop));
+        if (!prop) {
+            return -1;
+        }
 
-    /* FIXME: map plugin internal properties */
+        prop->key = strdup(k);
+        prop->val = strdup(v);
+        mk_list_add(&prop->_head, &out->properties);
+    }
     return 0;
+}
+
+char *flb_output_get_property(char *key, struct flb_output_instance *i)
+{
+    return flb_config_prop_get(key, &i->properties);
 }
 
 /* Trigger the output plugins setup callbacks to prepare them. */

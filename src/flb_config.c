@@ -124,3 +124,18 @@ void flb_config_exit(struct flb_config *config)
 
     free(config);
 }
+
+char *flb_config_prop_get(char *key, struct mk_list *list)
+{
+    struct mk_list *head;
+    struct flb_config_prop *p;
+
+    mk_list_foreach(head, list) {
+        p = mk_list_entry(head, struct flb_config_prop, _head);
+        if (strcasecmp(key, p->key) == 0) {
+            return p->val;
+        }
+    }
+
+    return NULL;
+}

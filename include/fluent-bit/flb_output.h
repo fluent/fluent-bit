@@ -178,6 +178,7 @@ struct flb_output_instance {
     void *tls;
 #endif
 
+    struct mk_list properties;           /* properties / configuration   */
     struct mk_list _head;                /* link to config->inputs       */
 };
 
@@ -217,6 +218,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
                                            char *output, void *data);
 
 int flb_output_set_property(struct flb_output_instance *out, char *k, char *v);
+char *flb_output_get_property(char *key, struct flb_output_instance *i);
 
 void flb_output_pre_run(struct flb_config *config);
 void flb_output_exit(struct flb_config *config);
