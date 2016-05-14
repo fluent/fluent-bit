@@ -32,8 +32,6 @@ int flb_router_match(const char *tag, const char *match)
     char *pos = NULL;
 
     while (1) {
-        flb_trace("[router] tag=%x: %c match[%x]:%c",
-                  tag, *tag, match, *match);
         if (*match == '*') {
             while (*++match == '*'){
                 /* skip successive '*' */
