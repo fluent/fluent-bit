@@ -60,7 +60,7 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
                                         char *body, size_t body_len)
 {
     int ret;
-    char *buf;
+    char *buf = NULL;
     char *str_method = NULL;
     char *fmt =                                 \
         "%s %s HTTP/1.1\r\n"
@@ -86,7 +86,7 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
         break;
     };
 
-    buf = malloc(FLB_HTTP_BUF_SIZE);
+    buf = calloc(1, FLB_HTTP_BUF_SIZE);
     if (!buf) {
         perror("malloc");
         return NULL;
@@ -153,6 +153,7 @@ int flb_http_add_header(struct flb_http_client *c,
         }
         tmp = realloc(c->header_buf, new_size);
         if (!tmp) {
+            perror("realloc");
             return -1;
         }
         c->header_buf  = tmp;
