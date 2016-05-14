@@ -28,7 +28,6 @@ struct flb_out_td_config *td_config_init(struct flb_output_instance *o_ins)
     char *api;
     char *db_name;
     char *db_table;
-    struct mk_rconf_section *section;
     struct flb_out_td_config *config;
 
     /* Validate TD section keys */
