@@ -193,7 +193,6 @@ static inline int prop_key_check(char *key, char *kv, int k_len)
 int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
 {
     int len;
-    struct mk_list *head;
     struct flb_config_prop *prop;
 
     len = strlen(k);
