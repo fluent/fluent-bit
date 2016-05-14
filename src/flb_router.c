@@ -43,7 +43,7 @@ int flb_router_match(const char *tag, const char *match)
             }
 
             /* FIXME: we need to avoid recursive calls here */
-            while (pos = strchr(tag, (int) *match)) {
+            while ((pos = strchr(tag, (int) *match))) {
                 if (flb_router_match(pos, match) ){
                     ret = 1;
                     break;
