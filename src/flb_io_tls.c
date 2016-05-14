@@ -53,7 +53,7 @@ static inline int io_tls_event_switch(struct flb_upstream_conn *u_conn,
     struct flb_upstream *u = u_conn->u;
 
     event = &u_conn->event;
-    if (event->mask & ~mask) {
+    if ((event->mask & mask) == 0) {
         ret = mk_event_add(u->evl,
                            event->fd,
                            FLB_ENGINE_EV_THREAD,
@@ -95,16 +95,17 @@ struct flb_tls_context *flb_tls_context_new(int verify,
         goto error;
     }
 
-    /* Load certificates if any */
-    if (ca_file) {
-        mbedtls_x509_crt_init(&ctx->ca_cert);
-        ret = mbedtls_x509_crt_parse_file(&ctx->ca_cert, ca_file);
-        if (ret != 0) {
-            flb_error("[TLS] Invalid CA file: %s", ca_file);
-            goto error;
-        }
-        ctx->certs_set |= FLB_TLS_CA_ROOT;
+    /* Load root certificates */
+    if (!ca_file) {
+        ca_file = "/etc/ssl/certs/ca-certificates.crt";
     }
+    mbedtls_x509_crt_init(&ctx->ca_cert);
+    ret = mbedtls_x509_crt_parse_file(&ctx->ca_cert, ca_file);
+    if (ret != 0) {
+        flb_error("[TLS] Invalid CA file: %s", ca_file);
+        goto error;
+    }
+    ctx->certs_set |= FLB_TLS_CA_ROOT;
 
     if (crt_file) {
         mbedtls_x509_crt_init(&ctx->cert);
@@ -344,14 +345,15 @@ static FLB_INLINE int flb_io_net_tls_connect(struct flb_upstream_conn *u_conn,
         flb_trace("[io_tls] Handshake OK");
     }
 
-    if (u_conn->event.status == MK_EVENT_REGISTERED) {
+    if (u_conn->event.status & MK_EVENT_REGISTERED) {
         mk_event_del(u->evl, &u_conn->event);
+        MK_EVENT_NEW(&u_conn->event);
     }
     flb_trace("[io_tls] connection OK");
     return 0;
 
  error:
-    if (u_conn->event.status == MK_EVENT_REGISTERED) {
+    if (u_conn->event.status & MK_EVENT_REGISTERED) {
         mk_event_del(u->evl, &u_conn->event);
     }
 
@@ -363,14 +365,29 @@ FLB_INLINE int net_io_tls_read(struct flb_thread *th,
                                void *buf, size_t len)
 {
     int ret;
+    struct flb_upstream *u = u_conn->u;
 
+ retry_read:
     ret = mbedtls_ssl_read(&u_conn->tls_session->ssl, buf, len);
-    if (ret <= 0) {
+    if (ret == MBEDTLS_ERR_SSL_WANT_READ) {
+        u_conn->thread = th;
+        io_tls_event_switch(u_conn, MK_EVENT_READ);
+        flb_thread_yield(th, FLB_FALSE);
+        goto retry_read;
+    }
+    else if (ret < 0) {
+        char err_buf[72];
+        mbedtls_strerror(ret, err_buf, sizeof(err_buf));
+        flb_error("[tls] SSL error: %s", err_buf);
+
+        /* There was an error transmitting data */
+        mk_event_del(u->evl, &u_conn->event);
         tls_session_destroy(u_conn->tls_session);
         u_conn->tls_session = NULL;
+        return -1;
     }
 
-    return -1;
+    return ret;
 }
 
 FLB_INLINE int net_io_tls_write(struct flb_thread *th,
@@ -394,6 +411,8 @@ FLB_INLINE int net_io_tls_write(struct flb_thread *th,
             return -1;
         }
     }
+
+    u_conn->thread = th;
 
  retry_write:
     ret = mbedtls_ssl_write(&u_conn->tls_session->ssl,
@@ -432,6 +451,7 @@ FLB_INLINE int net_io_tls_write(struct flb_thread *th,
         goto retry_write;
     }
 
+    *out_len = total;
     mk_event_del(u->evl, &u_conn->event);
     return 0;
 }
