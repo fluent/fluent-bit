@@ -138,13 +138,11 @@ int flb_engine_flush(struct flb_config *config,
             continue;
         }
         else if (p->flags & FLB_INPUT_DYN_TAG) {
-            /*
-             * FIXME> Testing iteration from dynamic tag buffers
-             * =====
-             */
+            /* Iterate dynamic tag buffers */
             struct mk_list *d_head, *tmp;
             struct flb_input_dyntag *dt;
             struct flb_output_instance *o_ins;
+
             mk_list_foreach_safe(d_head, tmp, &in->dyntags) {
                 int matches = 0;
                 struct mk_list *o_head;
@@ -163,7 +161,6 @@ int flb_engine_flush(struct flb_config *config,
                     continue;
                 }
 
-                /* FIXME: Testing static tags match first */
                 mk_list_foreach(o_head, &config->outputs) {
                     o_ins = mk_list_entry(o_head,
                                           struct flb_output_instance, _head);
@@ -459,7 +456,7 @@ int flb_engine_start(struct flb_config *config)
                 th = u_conn->thread;
                 task = th->task;
 
-                flb_trace("[engine] resuming thread: %i", u_conn->event.fd);
+                flb_trace("[engine] resuming thread=%p", th);
                 flb_thread_resume(th);
 
                 if (task->deleted == FLB_TRUE) {
