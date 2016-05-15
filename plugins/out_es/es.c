@@ -287,19 +287,27 @@ int cb_es_init(struct flb_output_instance *ins,
         return -1;
     }
 
+#ifdef HAVE_TLS
     if (ins->use_tls == FLB_TRUE) {
         io_type = FLB_IO_TLS;
     }
     else {
         io_type = FLB_IO_TCP;
     }
+#else
+    io_type = FLB_IO_TCP;
+#endif
 
     /* Prepare an upstream handler */
     upstream = flb_upstream_create(config,
                                    ins->host.name,
                                    ins->host.port,
                                    io_type,
+#ifdef HAVE_TLS
                                    &ins->tls);
+#else
+                                   NULL);
+#endif
     if (!upstream) {
         free(ctx);
         return -1;
