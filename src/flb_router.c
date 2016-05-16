@@ -131,6 +131,8 @@ int flb_router_io_set(struct flb_config *config)
          * tags.
          */
         if (i_ins->p->flags & FLB_INPUT_DYN_TAG) {
+            flb_debug("[router] input=%s 'DYNAMIC TAG'",
+                      i_ins->name);
             continue;
         }
 
