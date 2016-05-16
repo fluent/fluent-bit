@@ -152,6 +152,17 @@ fail:
     return NULL;
 }
 
+/* Cleanup serial input */
+int in_stdin_exit(void *in_context, struct flb_config *config)
+{
+    struct flb_in_stdin_config *ctx = in_context;
+
+    close(ctx->fd);
+    free(ctx);
+
+    return 0;
+}
+
 /* Plugin reference */
 struct flb_input_plugin in_stdin_plugin = {
     .name         = "stdin",
@@ -159,5 +170,6 @@ struct flb_input_plugin in_stdin_plugin = {
     .cb_init      = in_stdin_init,
     .cb_pre_run   = NULL,
     .cb_collect   = in_stdin_collect,
-    .cb_flush_buf = in_stdin_flush
+    .cb_flush_buf = in_stdin_flush,
+    .cb_exit      = in_stdin_exit
 };
