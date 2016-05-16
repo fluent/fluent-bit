@@ -218,7 +218,37 @@ FLB_INLINE ssize_t net_io_read(struct flb_thread *th,
                                struct flb_upstream_conn *u_conn,
                                void *buf, size_t len)
 {
-    return read(u_conn->fd, buf, len);
+    int ret;
+    struct flb_upstream *u = u_conn->u;
+
+ retry_read:
+
+    ret = read(u_conn->fd, buf, len);
+    if (ret == -1) {
+        if (errno == EAGAIN) {
+            u_conn->thread = th;
+            ret = mk_event_add(u->evl,
+                               u_conn->fd,
+                               FLB_ENGINE_EV_THREAD,
+                               MK_EVENT_READ, &u_conn->event);
+            if (ret == -1) {
+                /*
+                 * If we failed here there no much that we can do, just
+                 * let the caller we failed
+                 */
+                close(u_conn->fd);
+                return -1;
+            }
+            flb_thread_yield(th, MK_FALSE);
+            goto retry_read;
+        }
+        return -1;
+    }
+    else if (ret <= 0) {
+        return -1;
+    }
+
+    return ret;
 }
 
 /* Write data to an upstream connection/server */
