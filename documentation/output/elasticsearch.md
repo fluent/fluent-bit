@@ -1,4 +1,4 @@
-# Elastic Search
+# Elasticsearch
 
 The __es__ output plugin, allows to flush your records into a [Elastic Search](http://www.elastic.co) instance. The following instructions assumes that you have a fully operational Elastic service running.
 
@@ -13,10 +13,22 @@ In order to flush records, the __es__ plugin requires to know a few parameters, 
 
 > The parameters _index_ and _type_ can be confusing if you are new to Elastic, if you have used a common relational database before, they can be compared to the _database_ and _table_ concepts.
 
-In order to override the default configuration values, the plugin uses the Fluent Bit network address format, e.g:
+If you are launching Fluent Bit from the command line, the plugin accepts the network address format, e.g:
 
 ```
 es://host:port/index/type
+```
+
+Otherwise if you are using the configuration file, the output plugin section can set the above keys, e.g:
+
+```Python
+[OUTPUT]
+    Match **
+    Name  es
+    Host  127.0.0.1
+    Port  9200
+    Index my_index
+    Type  my_type
 ```
 
 ## Running
