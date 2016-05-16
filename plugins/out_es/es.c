@@ -275,28 +275,11 @@ int cb_es_init(struct flb_output_instance *ins,
 
     /* Get network configuration */
     if (!ins->host.name) {
-        /*
-         * There is no hostname set from the command line, try to discover
-         * the value from the configuration file, otherwise set the default.
-         */
-        tmp = flb_output_get_property("host", ins);
-        if (!tmp) {
-            tmp = strdup("127.0.0.1");
-        }
-        ins->host.name = tmp;
+        tmp = strdup("127.0.0.1");
     }
+
     if (ins->host.port == 0) {
-        /*
-         * There is no TCP Port set from the command line, try to discover
-         * the value from the configuration file, otherwise set the default.
-         */
-        tmp = flb_output_get_property("port", ins);
-        if (!tmp) {
-            ins->host.port = 9200;
-        }
-        else {
-            ins->host.port = atoi(tmp);
-        }
+        ins->host.port = 9200;
     }
 
     /* Allocate plugin context */
