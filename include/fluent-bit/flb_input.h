@@ -152,6 +152,7 @@ struct flb_input_instance {
     struct mk_list _head;                /* link to config->inputs     */
     struct mk_list routes;               /* flb_router_path's list     */
     struct mk_list dyntags;              /* dyntag nodes               */
+    struct mk_list properties;           /* properties / configuration   */
 
     /*
      * Every co-routine created by the engine when flushing data, it's
@@ -185,6 +186,7 @@ int flb_input_register_all(struct flb_config *config);
 struct flb_input_instance *flb_input_new(struct flb_config *config,
                                          char *input, void *data);
 int flb_input_set_property(struct flb_input_instance *in, char *k, char *v);
+char *flb_input_get_property(char *key, struct flb_input_instance *i);
 
 int flb_input_check(struct flb_config *config);
 void flb_input_set_context(struct flb_input_instance *in, void *context);

@@ -98,6 +98,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         mk_list_init(&instance->routes);
         mk_list_init(&instance->tasks);
         mk_list_init(&instance->dyntags);
+        mk_list_init(&instance->properties);
 
         if (plugin->flags & FLB_INPUT_NET) {
             ret = flb_net_host_set(plugin->name, &instance->host, input);
@@ -131,6 +132,7 @@ static inline int prop_key_check(char *key, char *kv, int k_len)
 int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
 {
     int len;
+    struct flb_config_prop *prop;
 
     len = strlen(k);
 
@@ -139,9 +141,24 @@ int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
         in->tag     = strdup(v);
         in->tag_len = strlen(v);
     }
+    else {
+        /* Append any remaining configuration key to prop list */
+        prop = malloc(sizeof(struct flb_config_prop));
+        if (!prop) {
+            return -1;
+        }
 
-    /* FIXME: map plugin internal properties */
+        prop->key = strdup(k);
+        prop->val = strdup(v);
+        mk_list_add(&prop->_head, &in->properties);
+    }
+
     return 0;
+}
+
+char *flb_input_get_property(char *key, struct flb_input_instance *i)
+{
+    return flb_config_prop_get(key, &i->properties);
 }
 
 /* Initialize all inputs */
