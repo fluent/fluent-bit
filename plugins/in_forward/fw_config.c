@@ -24,41 +24,53 @@
 #include "fw_conn.h"
 #include "fw_config.h"
 
-struct flb_in_fw_config *fw_config_init(struct mk_rconf *conf)
+struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
 {
-    struct mk_rconf_section *section;
+    char tmp[16];
+    char *listen;
+    char *chunk_size;
+
     struct flb_in_fw_config *config;
 
     config = malloc(sizeof(struct flb_in_fw_config));
     memset(config, '\0', sizeof(struct flb_in_fw_config));
 
-    if (conf) {
-      section = mk_rconf_section_get(conf, "IN_FORWARD");
-      if (section) {
-        /* Validate TD section keys */
-          config->listen = mk_rconf_section_get_key(section,
-                                                    "Listen", MK_RCONF_STR);
-          config->tcp_port = mk_rconf_section_get_key(section,
-                                                      "Port", MK_RCONF_STR);
-          config->buffer_size = (size_t) mk_rconf_section_get_key(section,
-                                                                  "Buffer",
-                                                                  MK_RCONF_NUM);
-          config->buffer_size *= 1024;
-      }
+    /* Listen interface (if not set, defaults to 0.0.0.0) */
+    if (!i_ins->host.listen) {
+        listen = flb_input_get_property("listen", i_ins);
+        if (listen) {
+            config->listen = listen;
+        }
+        else {
+            config->listen = strdup("0.0.0.0");
+        }
+    }
+    else {
+        config->listen = i_ins->host.listen;
     }
 
-    if (!config->listen) {
-        config->listen = strdup("0.0.0.0");
-    }
-    if (!config->tcp_port) {
+    /* Listener TCP Port */
+    if (i_ins->host.port == 0) {
         config->tcp_port = strdup("24224");
     }
-    if (config->buffer_size < FLB_IN_FW_CHUNK) {
-        config->buffer_size = FLB_IN_FW_CHUNK;
+    else {
+        snprintf(tmp, sizeof(tmp) - 1, "%d", i_ins->host.port);
+        config->tcp_port = strdup(tmp);
     }
 
-    flb_info("[in_fw] Listen='%s' TCP_Port=%s",
-             config->listen, config->tcp_port);
+
+    /* Chunk size */
+    chunk_size = flb_input_get_property("chunk_size", i_ins);
+    if (!chunk_size) {
+        config->buffer_size = FLB_IN_FW_CHUNK;
+    }
+    else {
+        config->buffer_size  = (atoi(chunk_size) * 1024);
+    }
+
+
+    flb_debug("[in_fw] Listen='%s' TCP_Port=%s",
+              config->listen, config->tcp_port);
 
     return config;
 }

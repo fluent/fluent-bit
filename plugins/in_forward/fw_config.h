@@ -22,7 +22,7 @@
 
 #include "fw.h"
 
-struct flb_in_fw_config *fw_config_init(struct mk_rconf *conf);
+struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins);
 int fw_config_destroy(struct flb_in_fw_config *config);
 
 #endif

@@ -61,7 +61,7 @@ static int in_fw_init(struct flb_input_instance *in,
     (void) data;
 
     /* Allocate space for the configuration */
-    ctx = fw_config_init(config->file);
+    ctx = fw_config_init(in);
     if (!ctx) {
         return -1;
     }
@@ -112,5 +112,5 @@ struct flb_input_plugin in_forward_plugin = {
     .cb_collect   = in_fw_collect,
     .cb_flush_buf = NULL,
     .cb_exit      = in_fw_exit,
-    .flags        = FLB_INPUT_DYN_TAG
+    .flags        = FLB_INPUT_NET | FLB_INPUT_DYN_TAG
 };
