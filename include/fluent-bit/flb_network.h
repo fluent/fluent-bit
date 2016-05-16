@@ -30,6 +30,7 @@ struct flb_net_host {
     char *address;         /* Original address     */
     int   port;            /* TCP port             */
     char *name;            /* Hostname             */
+    char *listen;          /* Listen interface     */
     struct flb_uri *uri;   /* Extra URI parameters */
 };
 

@@ -101,6 +101,10 @@ int flb_net_host_set(char *plugin_name, struct flb_net_host *host, char *address
     }
     host->address = strdup(address);
 
+    if (host->name) {
+        host->listen = host->name;
+    }
+
     return 0;
 }
 
