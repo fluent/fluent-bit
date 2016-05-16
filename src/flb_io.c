@@ -214,9 +214,9 @@ static FLB_INLINE int net_io_write(struct flb_thread *th,
     return bytes;
 }
 
-FLB_INLINE ssize_t net_io_read(struct flb_thread *th,
-                               struct flb_upstream_conn *u_conn,
-                               void *buf, size_t len)
+static FLB_INLINE ssize_t net_io_read(struct flb_thread *th,
+                                      struct flb_upstream_conn *u_conn,
+                                      void *buf, size_t len)
 {
     int ret;
     struct flb_upstream *u = u_conn->u;
