@@ -257,7 +257,8 @@ int cb_es_init(struct flb_output_instance *ins,
                struct flb_config *config,
                void *data)
 {
-    int io_type = FLB_IO_TLS;
+    int io_type;
+    char *tmp;
     struct flb_uri *uri = ins->host.uri;
     struct flb_uri_field *f_index = NULL;
     struct flb_uri_field *f_type = NULL;
@@ -272,12 +273,30 @@ int cb_es_init(struct flb_output_instance *ins,
         }
     }
 
-    /* Set default network configuration */
+    /* Get network configuration */
     if (!ins->host.name) {
-        ins->host.name = strdup("127.0.0.1");
+        /*
+         * There is no hostname set from the command line, try to discover
+         * the value from the configuration file, otherwise set the default.
+         */
+        tmp = flb_output_get_property("host", ins);
+        if (!tmp) {
+            tmp = strdup("127.0.0.1");
+        }
+        ins->host.name = tmp;
     }
     if (ins->host.port == 0) {
-        ins->host.port = 9200;
+        /*
+         * There is no TCP Port set from the command line, try to discover
+         * the value from the configuration file, otherwise set the default.
+         */
+        tmp = flb_output_get_property("port", ins);
+        if (!tmp) {
+            ins->host.port = 9200;
+        }
+        else {
+            ins->host.port = atoi(tmp);
+        }
     }
 
     /* Allocate plugin context */
@@ -312,20 +331,31 @@ int cb_es_init(struct flb_output_instance *ins,
         ctx->index = f_index->value;
     }
     else {
-        ctx->index = "fluentbit";
+        tmp = flb_output_get_property("index", ins);
+        if (!tmp) {
+            ctx->index = "fluentbit";
+        }
+        else {
+            ctx->index = tmp;
+        }
     }
 
     if (f_type) {
         ctx->type = f_type->value;
     }
     else {
-        ctx->type = "test";
+        tmp = flb_output_get_property("type", ins);
+        if (!tmp) {
+            ctx->type = "test";
+        }
+        else {
+            ctx->type = tmp;
+        }
     }
 
-    flb_info("[es] host=%s port=%i index=%s type=%s",
-             ins->host.name, ins->host.port,
-             ctx->index, ctx->type);
-
+    flb_debug("[es] host=%s port=%i index=%s type=%s",
+              ins->host.name, ins->host.port,
+              ctx->index, ctx->type);
 
     flb_output_set_context(ins, ctx);
     return 0;
