@@ -275,7 +275,7 @@ int cb_es_init(struct flb_output_instance *ins,
 
     /* Get network configuration */
     if (!ins->host.name) {
-        tmp = strdup("127.0.0.1");
+        ins->host.name = strdup("127.0.0.1");
     }
 
     if (ins->host.port == 0) {
