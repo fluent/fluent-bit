@@ -21,7 +21,8 @@
 #define FLB_MQTT_CONFIG_H
 
 #include "mqtt.h"
+#include <fluent-bit/flb_input.h>
 
-struct flb_in_mqtt_config *mqtt_config_init(struct mk_rconf *conf);
+struct flb_in_mqtt_config *mqtt_config_init(struct flb_input_instance *in);
 
 #endif
