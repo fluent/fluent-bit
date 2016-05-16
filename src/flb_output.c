@@ -201,6 +201,12 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
     if (prop_key_check("match", k, len) == 0) {
         out->match = strdup(v);
     }
+    else if (prop_key_check("host", k, len) == 0) {
+        out->host.name = strdup(v);
+    }
+    else if (prop_key_check("port", k, len) == 0) {
+        out->host.port = atoi(v);
+    }
 #ifdef HAVE_TLS
     else if (prop_key_check("tls", k, len) == 0) {
         if (strcasecmp(v, "true") == 0 || strcasecmp(v, "on") == 0) {
