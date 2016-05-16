@@ -152,6 +152,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         instance->match     = NULL;
         instance->host.name = NULL;
 
+        instance->use_tls        = FLB_FALSE;
 #ifdef HAVE_TLS
         instance->tls.context    = NULL;
         instance->tls_verify     = FLB_TRUE;
@@ -283,6 +284,7 @@ int flb_output_init(struct flb_config *config)
                                                    ins->tls_key_passwd);
         }
 #endif
+
         ret = p->cb_init(ins, config, ins->data);
         mk_list_init(&ins->th_queue);
 

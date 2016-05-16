@@ -115,7 +115,7 @@ int flb_router_io_set(struct flb_config *config)
         o_ins = mk_list_entry_first(&config->outputs,
                                     struct flb_output_instance, _head);
         if (!i_ins->tag && !o_ins->match) {
-            flb_trace("[router] default match rule %s:%s",
+            flb_debug("[router] default match rule %s:%s",
                       i_ins->name, o_ins->name);
             flb_router_connect(i_ins, o_ins);
             return 0;
@@ -152,7 +152,7 @@ int flb_router_io_set(struct flb_config *config)
             }
 
             if (flb_router_match(i_ins->tag, o_ins->match)) {
-                flb_trace("[router] match rule %s:%s",
+                flb_debug("[router] match rule %s:%s",
                           i_ins->name, o_ins->name);
                 flb_router_connect(i_ins, o_ins);
             }
