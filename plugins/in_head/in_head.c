@@ -78,26 +78,20 @@ static int in_head_collect(struct flb_config *config, void *in_context)
 
 /* read config file and*/
 static int in_head_config_read(struct flb_in_head_config *head_config,
-                               struct mk_rconf *config)
+                               struct flb_input_instance *in)
 {
-    struct mk_rconf_section *section = NULL;
     char *filepath = NULL;
     char *pval = NULL;
 
-    section = mk_rconf_section_get(config, "head");
-    if (section == NULL) {
-        return -1;
-    }
-
     /* filepath setting */
-    filepath = mk_rconf_section_get_key(section, "file", MK_RCONF_STR);
-    if (filepath == NULL) {
+    filepath = flb_input_get_property("file", in);
+    if (!filepath) {
         return -1;
     }
     head_config->filepath = filepath;
 
     /* buffer size setting */
-    pval = mk_rconf_section_get_key(section, "buf_size", MK_RCONF_STR);
+    pval = flb_input_get_property("buf_size", in);
     if (pval != NULL && atoi(pval) > 0) {
         head_config->buf_size = atoi(pval);
     }
@@ -106,14 +100,15 @@ static int in_head_config_read(struct flb_in_head_config *head_config,
     }
 
     /* interval settings */
-    pval = mk_rconf_section_get_key(section, "interval_sec", MK_RCONF_STR);
+    pval = flb_input_get_property("interval_sec", in);
     if (pval != NULL && atoi(pval) >= 0) {
         head_config->interval_sec = atoi(pval);
     }
     else {
         head_config->interval_sec = DEFAULT_INTERVAL_SEC;
     }
-    pval = mk_rconf_section_get_key(section, "interval_nsec", MK_RCONF_STR);
+
+    pval = flb_input_get_property("interval_nsec", in);
     if (pval != NULL && atoi(pval) >= 0) {
         head_config->interval_nsec = atoi(pval);
     }
@@ -121,16 +116,16 @@ static int in_head_config_read(struct flb_in_head_config *head_config,
         head_config->interval_nsec = DEFAULT_INTERVAL_NSEC;
     }
 
-    if ( head_config->interval_sec <= 0 && head_config->interval_nsec <= 0){
+    if (head_config->interval_sec <= 0 && head_config->interval_nsec <= 0) {
         /* Illegal settings. Override them. */
         head_config->interval_sec = DEFAULT_INTERVAL_SEC;
         head_config->interval_nsec = DEFAULT_INTERVAL_NSEC;
     }
 
 
-    flb_trace("Head config: buf_size=%d path=%s",
+    flb_debug("[in_head] buf_size=%d path=%s",
               head_config->buf_size, head_config->filepath);
-    flb_trace("Head config: interval_sec=%d interval_nsec=%d",
+    flb_debug("[in_head] interval_sec=%d interval_nsec=%d",
               head_config->interval_sec, head_config->interval_nsec);
 
     return 0;
@@ -154,12 +149,6 @@ static int in_head_init(struct flb_input_instance *in,
     struct flb_in_head_config *head_config = NULL;
     int ret = -1;
 
-    /* Initialize head config */
-    if (config->file == NULL) {
-        flb_utils_error_c("config file not found");
-        return -1;
-    }
-
     /* Allocate space for the configuration */
     head_config = malloc(sizeof(struct flb_in_head_config));
     if (head_config == NULL) {
@@ -170,7 +159,7 @@ static int in_head_init(struct flb_input_instance *in,
     head_config->idx = 0;
 
     /* Initialize head config */
-    ret = in_head_config_read(head_config, config->file);
+    ret = in_head_config_read(head_config, in);
     if (ret < 0) {
         goto init_error;
     }
