@@ -20,36 +20,40 @@
 
 #include <stdlib.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_input.h>
 
 #include "in_serial_config.h"
 
 struct flb_in_serial_config *serial_config_read(struct flb_in_serial_config *config,
-                                                struct mk_rconf *conf)
+                                                struct flb_input_instance *i_ins)
 {
     uint64_t min_bytes;
     char *file;
     char *bitrate;
-    struct mk_rconf_section *section;
+    char *tmp;
 
-    section = mk_rconf_section_get(conf, "serial");
-    if (!section) {
+    /* Validate serial section keys */
+    file = flb_input_get_property("file", i_ins);
+    bitrate = flb_input_get_property("bitrate", i_ins);
+
+    tmp = flb_input_get_property("min_bytes", i_ins);
+    if (!tmp) {
+        min_bytes = 0;
+    }
+    else {
+        min_bytes = atoi(tmp);
+    }
+
+    if (!file) {
+        flb_error("[serial] error reading filename from "
+                  "configuration");
         return NULL;
     }
 
-    /* Validate serial section keys */
-    file = mk_rconf_section_get_key(section, "file", MK_RCONF_STR);
-    bitrate = mk_rconf_section_get_key(section, "bitrate", MK_RCONF_STR);
-    min_bytes = (uint64_t) mk_rconf_section_get_key(section,
-                                                    "min_bytes",
-                                                    MK_RCONF_NUM);
-    if (!file) {
-        flb_utils_error_c("[serial] error reading filename from "
-                "configuration");
-    }
-
     if (!bitrate) {
-        flb_utils_error_c("[serial] error reading bitrate from "
-                "configuration");
+        flb_error("[serial] error reading bitrate from "
+                  "configuration");
+        return NULL;
     }
 
     if (min_bytes <= 0) {
@@ -61,8 +65,8 @@ struct flb_in_serial_config *serial_config_read(struct flb_in_serial_config *con
     config->bitrate   = bitrate;
     config->min_bytes = min_bytes;
 
-    flb_info("Serial / file='%s' bitrate='%s' min_bytes=%i",
-             config->file, config->bitrate, config->min_bytes);
+    flb_debug("[in_serial] file='%s' bitrate='%s' min_bytes=%i",
+              config->file, config->bitrate, config->min_bytes);
 
     return config;
 }

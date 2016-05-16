@@ -47,5 +47,6 @@ struct flb_in_serial_config {
 };
 
 struct flb_in_serial_config *serial_config_read(struct flb_in_serial_config *config,
-                                                struct mk_rconf *conf);
+                                                struct flb_input_instance *i_ins);
+
 #endif

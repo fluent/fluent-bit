@@ -175,13 +175,9 @@ int in_serial_init(struct flb_input_instance *in,
         return -1;
     }
 
-    if (!config->file) {
-        flb_error("[in_serial] missing configuration file");
-        free(ctx);
+    if (!serial_config_read(ctx, in)) {
         return -1;
     }
-
-    serial_config_read(ctx, config->file);
 
     /* set context */
     flb_input_set_context(in, ctx);
