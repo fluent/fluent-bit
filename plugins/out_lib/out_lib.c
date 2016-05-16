@@ -98,10 +98,19 @@ static int out_lib_flush(void *data, size_t bytes,
     return bytes;
 }
 
+static int out_lib_exit(void *data, struct flb_config *config)
+{
+    struct flb_out_lib_config *ctx = data;
+
+    free(ctx);
+    return 0;
+}
+
 struct flb_output_plugin out_lib_plugin = {
     .name         = "lib",
     .description  = "Library mode Output",
     .cb_init      = out_lib_init,
     .cb_flush     = out_lib_flush,
+    .cb_exit      = out_lib_exit,
     .flags        = 0,
 };
