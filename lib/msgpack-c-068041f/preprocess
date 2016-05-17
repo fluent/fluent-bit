@@ -1,0 +1,23 @@
+#!/bin/sh
+
+preprocess() {
+    echo $1
+    ruby -r erb -e 'puts ERB.new(ARGF.read).result' $1.erb > $1.tmp
+    if [ "$?" != 0 ]; then
+        echo ""
+        echo "** preprocess failed **"
+        echo ""
+        exit 1
+    else
+        mv $1.tmp $2
+    fi
+}
+
+preprocess erb/v1/cpp03_msgpack_tuple_decl.hpp include/msgpack/v1/adaptor/detail/cpp03_msgpack_tuple_decl.hpp
+preprocess erb/v1/cpp03_msgpack_tuple.hpp include/msgpack/v1/adaptor/detail/cpp03_msgpack_tuple.hpp
+preprocess erb/v1/cpp03_define_array_decl.hpp include/msgpack/v1/adaptor/detail/cpp03_define_array_decl.hpp
+preprocess erb/v1/cpp03_define_array.hpp include/msgpack/v1/adaptor/detail/cpp03_define_array.hpp
+preprocess erb/v1/cpp03_define_map_decl.hpp include/msgpack/v1/adaptor/detail/cpp03_define_map_decl.hpp
+preprocess erb/v1/cpp03_define_map.hpp include/msgpack/v1/adaptor/detail/cpp03_define_map.hpp
+preprocess erb/v1/cpp03_zone_decl.hpp include/msgpack/v1/detail/cpp03_zone_decl.hpp
+preprocess erb/v1/cpp03_zone.hpp include/msgpack/v1/detail/cpp03_zone.hpp

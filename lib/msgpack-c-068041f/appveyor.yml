@@ -1,0 +1,42 @@
+version: 1.1.0.{build}
+before_build:
+- appveyor DownloadFile http://googletest.googlecode.com/files/gtest-1.7.0.zip -FileName gtest-1.7.0.zip
+- 7z x gtest-1.7.0.zip > NUL
+- cd gtest-1.7.0
+- md build
+- cd build
+- cmake -DBUILD_SHARED_LIBS=ON ..
+- cmake --build . --config Release
+- cd ..
+- cd ..
+- appveyor DownloadFile http://zlib.net/zlib-1.2.8.tar.gz -FileName zlib-1.2.8.tar.gz
+- 7z x zlib-1.2.8.tar.gz > NUL
+- 7z x zlib-1.2.8.tar > NUL
+- cd zlib-1.2.8
+- md build
+- cd build
+- cmake ..
+- cmake --build . --config Release
+- copy zconf.h ..
+- cd ..
+- cd ..
+
+environment:
+  matrix:
+    - cpp11: -DMSGPACK_CXX11=ON
+      boost: -DMSGPACK_BOOST=ON
+    - cpp11: -DMSGPACK_CXX11=OFF
+      boost: -DMSGPACK_BOOST=ON
+    - cpp11: -DMSGPACK_CXX11=ON
+      boost: -DMSGPACK_BOOST=OFF
+    - cpp11: -DMSGPACK_CXX11=OFF
+      boost: -DMSGPACK_BOOST=OFF
+build_script:
+- md build
+- cd build
+- cmake %cpp11% %boost% -DMSGPACK_BOOST_DIR=C:\Libraries\\boost_1_58_0 -DGTEST_LIBRARY=%APPVEYOR_BUILD_FOLDER%\gtest-1.7.0\build\Release\gtest.lib -DGTEST_MAIN_LIBRARY=%APPVEYOR_BUILD_FOLDER%\gtest-1.7.0\build\Release\gtest_main.lib -DGTEST_INCLUDE_DIR=%APPVEYOR_BUILD_FOLDER%\gtest-1.7.0\include -DZLIB_LIBRARY=%APPVEYOR_BUILD_FOLDER%\zlib-1.2.8\build\Release\zlib.lib -DZLIB_INCLUDE_DIR=%APPVEYOR_BUILD_FOLDER%\zlib-1.2.8 ..
+- cmake --build . --config Release
+
+test_script:
+- set PATH=%PATH%;%APPVEYOR_BUILD_FOLDER%\gtest-1.7.0\build\Release;%APPVEYOR_BUILD_FOLDER%\zlib-1.2.8\build\Release;%APPVEYOR_BUILD_FOLDER%\build\release
+- ctest -V

@@ -88,7 +88,7 @@ include_directories(
   include/
   lib/
   lib/ejson
-  lib/msgpack-1.2.0/include
+  lib/msgpack-c-068041f/include
   lib/monkey/include
   lib/monkey/mk_core/include
   )
@@ -102,7 +102,7 @@ option(MSGPACK_ENABLE_CXX             OFF)
 option(MSGPACK_ENABLE_SHARED          OFF)
 option(MSGPACK_BUILD_TESTS            OFF)
 option(MSGPACK_BUILD_EXAMPLES         OFF)
-add_subdirectory(lib/msgpack-1.2.0)
+add_subdirectory(lib/msgpack-c-068041f)
 
 # Lib: build the core libraries used by Fluent-Bit
 add_subdirectory(lib/jsmn)

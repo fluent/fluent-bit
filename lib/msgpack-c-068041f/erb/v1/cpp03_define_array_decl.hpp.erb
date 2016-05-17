@@ -1,0 +1,42 @@
+//
+// MessagePack for C++ static resolution routine
+//
+// Copyright (C) 2008-2016 FURUHASHI Sadayuki and KONDO Takatoshi
+//
+//    Distributed under the Boost Software License, Version 1.0.
+//    (See accompanying file LICENSE_1_0.txt or copy at
+//    http://www.boost.org/LICENSE_1_0.txt)
+//
+#ifndef MSGPACK_V1_CPP03_DEFINE_ARRAY_DECL_HPP
+#define MSGPACK_V1_CPP03_DEFINE_ARRAY_DECL_HPP
+
+#include "msgpack/versioning.hpp"
+
+namespace msgpack {
+/// @cond
+MSGPACK_API_VERSION_NAMESPACE(v1) {
+/// @endcond
+namespace type {
+
+/// @cond
+<% GENERATION_LIMIT = 31 %>
+template <typename A0 = void<%1.upto(GENERATION_LIMIT+1) {|i|%>, typename A<%=i%> = void<%}%>>
+struct define_array;
+/// @endcond
+
+define_array<> make_define_array();
+
+/// @cond
+<%0.upto(GENERATION_LIMIT) {|i|%>
+template <typename A0<%1.upto(i) {|j|%>, typename A<%=j%><%}%>>
+inline define_array<A0<%1.upto(i) {|j|%>, A<%=j%><%}%>> make_define_array(A0& a0<%1.upto(i) {|j|%>, A<%=j%>& a<%=j%><%}%>);
+<%}%>
+/// @endcond
+
+}  // namespace type
+/// @cond
+}  // MSGPACK_API_VERSION_NAMESPACE(v1)
+/// @endcond
+}  // namespace msgpack
+
+#endif // MSGPACK_V1_CPP03_DEFINE_ARRAY_DECL_HPP

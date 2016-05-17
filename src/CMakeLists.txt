@@ -23,7 +23,7 @@ set(src
 include_directories(
   ../lib/
   ../lib/jsmn
-  ../lib/msgpack-1.2.0/include
+  ../lib/msgpack-c-068041f/include
   ${extra_headers}
   )
 
@@ -75,7 +75,7 @@ set(FLB_DEPS
   jsmn
   ${extra_libs}
   ${FLB_PLUGINS}
-  msgpack-static
+  msgpackc-static
   )
 
 # Shared Library
