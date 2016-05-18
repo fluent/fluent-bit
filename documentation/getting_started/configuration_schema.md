@@ -1,4 +1,4 @@
-# Configuration File
+# Configuration Schema
 
 Fluent Bit may use optionally a configuration file to define how the service will behave, and before to proceed we need to understand how the configuration schema works. The schema is defined by three concepts:
 

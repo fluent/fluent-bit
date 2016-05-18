@@ -21,11 +21,13 @@ In addition to the keys reported in the above table, a similar content is create
 
 ## Getting Started
 
-In order to get the statistics of the CPU usage of your system with [Fluent Bit](http://fluentbit.io), specify the following command line arguments:
+In order to get the statistics of the CPU usage of your system, you can run the plugin from the command line or through the configuration file:
+
+### Command Line
 
 ```bash
-$ build/bin/fluent-bit -i cpu -o stdout
-Fluent-Bit v0.6.0
+$ build/bin/fluent-bit -i cpu -t my_cpu -o stdout -m '*'
+Fluent-Bit v0.8.0
 Copyright (C) Treasure Data
 
 [2016/01/07 10:46:29] [ info] starting engine
@@ -36,3 +38,17 @@ Copyright (C) Treasure Data
 ```
 
 As described above, the CPU input plugin gathers the overall usage every one second and flushed the information to the output on the fifth second. On this example we used the __stdout__ plugin to demonstrate the output records. In a real use-case you may want to flush this information to some central aggregator such as [Fluentd](http://fluentd.org) or [Elasticsearch](http://elastic.co).
+
+### Configuration File
+
+In your main configuration file append the following _Input_ & _Output_ sections:
+
+```Python
+[INPUT]
+    Name cpu
+    Tag  my_cpu
+
+[OUTPUT]
+    Name  stdout
+    Match *
+```

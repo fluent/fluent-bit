@@ -2,14 +2,24 @@
 
 The __MQTT__ input plugin, allows to retrieve messages/data from MQTT control packets over a TCP connection.
 
-## Configuration File
+## Configuration Parameters
 
-[Fluent Bit](http://fluentbit.io) sources distribute an example configuration file for the MQTT plugin and it's located under _conf/in_mqtt.conf_. The plugin recognizes the following setup under a __MQTT__ section:
+The plugin supports the following configuration parameters:
 
 | Key      | Description       |
 | ---------|-------------------|
 | Listen   | Listener network interface, default: 0.0.0.0 |
 | Port     | TCP port where listening for connections, default: 1883 |
+
+## Getting Started
+
+In order to read the head of a file, you can run the plugin from the command line or through the configuration file:
+
+### Command Line
+
+### Configuration File
+
+[Fluent Bit](http://fluentbit.io) sources distribute an example configuration file for the MQTT plugin and it's located under _conf/in_mqtt.conf_. The plugin recognizes the following setup under a __MQTT__ section:
 
 
 Here is an example:

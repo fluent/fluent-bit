@@ -2,20 +2,33 @@
 
 The __mem__ input plugin, gathers the information about the memory usage of the running system every certain interval of time and reports the total amount of memory and the amount of free available.
 
-In order to measure read the memory usage with [Fluent Bit](http://fluentbit.io), use the  following command line arguments:
+## Getting Started
+
+In order to get memory usage from your system, you can run the plugin from the command line or through the configuration file:
+
+### Command Line
 
 ```bash
-$ build/bin/fluent-bit -i mem -o stdout
-Fluent-Bit v0.6.0
+$ bin/fluent-bit -i mem -t memory -o stdout -m '*'
+Fluent-Bit v0.8.0
 Copyright (C) Treasure Data
 
-[2016/01/07 11:26:43] [ info] Configuration
-flush time     : 5 seconds
-input plugins  : mem
-collectors     :
-[2016/01/07 11:26:43] [ info] starting engine
-[0] [1452187603, {"total"=>8081700, "free"=>697248}]
-[1] [1452187604, {"total"=>8081700, "free"=>693372}]
-[2] [1452187605, {"total"=>8081700, "free"=>701496}]
-[3] [1452187606, {"total"=>8081700, "free"=>700720}]
+[0] memory: [1463544745, {"total"=>8081140, "free"=>2548704}]
+[1] memory: [1463544746, {"total"=>8081140, "free"=>2560020}]
+[2] memory: [1463544747, {"total"=>8081140, "free"=>2559616}]
+[3] memory: [1463544748, {"total"=>8081140, "free"=>2559568}]
+```
+
+### Configuration File
+
+In your main configuration file append the following _Input_ & _Output_ sections:
+
+```python
+[INPUT]
+    Name   mem
+    Tag    kernel
+
+[OUTPUT]
+    Name   stdout
+    Match  *
 ```

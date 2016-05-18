@@ -2,76 +2,55 @@
 
 The __head__ input plugin, allows to read events from the head of file. It's behavior is similar to the _head_ command.
 
-## Configuration File
+## Configuration Parameters
 
-[Fluent Bit](http://fluentbit.io) sources distribute an example configuration file for the plugin and it's located under _conf/in_head.conf_. The plugin recognize the following setup under a __HEAD__ section:
+The plugin supports the following configuration parameters:
 
 | Key           | Description |
 | --------------|-------------|
-| File          | Absolute path to the file, e.g: /proc/uptime |
+| File          | Absolute path to the target file, e.g: /proc/uptime |
 | Buf_Size      | Buffer size to read the file. |
-| Interval_Sec  | Polling interval. (second) |
-| Interval_NSec | Polling interval. (nanosecond) |
-
-Note: Total interval (sec) = Interval_Sec + (Interval_Nsec / 1000000000)
-
-e.g. 1.5s = 1s + 500000000ns
-
-Here is an example of configuration file:
-
-```python
-[HEAD]
-    # File
-    # ====
-    # File path. e.g. /proc/uptime
-    #
-    File    /proc/uptime
-
-    # Buf_Size
-    # ====
-    # Buffer size to read file. Default 256
-    Buf_Size 256
-
-    # Total Interval
-    #     = Interval Sec + ( Interval Nsec / 1000 / 1000 / 1000 )
-    #
-    # Interval Sec
-    # ====
-    # Read interval (sec) Default 1
-    Interval_Sec 1
-
-    # Interval NSec
-    # ====
-    # Read interval (nsec) Default 0
-    Interval_NSec 0
-```
-
+| Interval_Sec  | Polling interval (seconds). |
+| Interval_NSec | Polling interval (nanosecond). |
 
 ## Getting Started
 
-In order to read a file with [Fluent Bit](http://fluentbit.io), specify the following command line arguments:
+In order to read the head of a file, you can run the plugin from the command line or through the configuration file:
+
+### Command Line
+
+The following example will read events from the /proc/uptime file, tag the records with the _uptime_ name and flush them back to the _stdout_ plugin:
 
 ```bash
-$ bin/fluent-bit -i head -o stdout -c ../conf/in_head.conf  -V
-Fluent-Bit v0.7.0
+$ fluent-bit -i head -t uptime -p File=/proc/uptime -o stdout -m '*'
+Fluent-Bit v0.8.0
 Copyright (C) Treasure Data
 
-[2016/03/15 22:21:16] [ info] Configuration
- flush time     : 5 seconds
- input plugins  : head
- collectors     :
-[2016/03/15 22:21:16] [ info] starting engine
-[2016/03/15 22:21:16] [debug] Head config: buf_size=10 path=/proc/uptime
-[2016/03/15 22:21:16] [debug] Head config: interval_sec=1 interval_nsec=0
-[2016/03/15 22:21:16] [debug] in_head_init read_len=0 buf_size=8
-[2016/03/15 22:21:17] [debug] in_head_collect read_len=10 buf_size=10
-[2016/03/15 22:21:18] [debug] in_head_collect read_len=10 buf_size=10
-[2016/03/15 22:21:19] [debug] in_head_collect read_len=10 buf_size=10
-[2016/03/15 22:21:20] [debug] in_head_collect read_len=10 buf_size=10
-[2016/03/15 22:21:21] [debug] [thread 0xbea920] created
-[0] [1458048077, {"head"=>"90604.14 8"}]
-[1] [1458048078, {"head"=>"90605.14 8"}]
-[2] [1458048079, {"head"=>"90606.14 8"}]
-[3] [1458048080, {"head"=>"90607.14 8"}]
-[2016/03/15 22:21:21] [debug] [thread 0xbea920] ended
+[2016/05/17 21:53:54] [ info] starting engine
+[0] uptime: [1463543634, {"head"=>"133517.70 194870.97"}]
+[1] uptime: [1463543635, {"head"=>"133518.70 194872.85"}]
+[2] uptime: [1463543636, {"head"=>"133519.70 194876.63"}]
+[3] uptime: [1463543637, {"head"=>"133520.70 194879.72"}]
 ```
+
+### Configuration File
+
+In your main configuration file append the following _Input_ & _Output_ sections:
+
+```python
+[INPUT]
+    Name          head
+    Tag           uptime
+    File          /proc/uptime
+    Buf_Size      256
+    Interval_Sec  1
+    Interval_NSec 0
+
+[OUTPUT]
+    Name   stdout
+    Match  *
+```
+
+Note: Total interval (sec) = Interval_Sec + (Interval_Nsec / 1000000000).
+
+e.g. 1.5s = 1s + 500000000ns
