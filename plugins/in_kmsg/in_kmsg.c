@@ -287,7 +287,8 @@ int in_kmsg_init(struct flb_input_instance *in,
     fd = open(FLB_KMSG_DEV, O_RDONLY);
     if (fd == -1) {
         perror("open");
-        flb_utils_error_c("Could not open kernel log buffer on kmsg plugin");
+        free(ctx);
+        return -1;
     }
     ctx->fd = fd;
 
