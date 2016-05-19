@@ -66,18 +66,11 @@ void *in_serial_flush(void *in_context, size_t *size)
     return buf;
 }
 
-static inline int process_line(char *line, struct flb_in_serial_config *ctx)
+static inline int process_line(char *line, int len,
+                               struct flb_in_serial_config *ctx)
 {
-    int line_len;
-    char *p = line;
-    char msg[1024];
-
     /* Increase buffer position */
     ctx->buffer_id++;
-
-    line_len = strlen(p);
-    strncpy(msg, p, line_len);
-    msg[line_len] = '\0';
 
     /*
      * Store the new data into the MessagePack buffer,
@@ -89,13 +82,18 @@ static inline int process_line(char *line, struct flb_in_serial_config *ctx)
     msgpack_pack_map(&ctx->mp_pck, 1);
     msgpack_pack_bin(&ctx->mp_pck, 3);
     msgpack_pack_bin_body(&ctx->mp_pck, "msg", 3);
-    msgpack_pack_bin(&ctx->mp_pck, line_len);
-    msgpack_pack_bin_body(&ctx->mp_pck, p, line_len);
+    msgpack_pack_bin(&ctx->mp_pck, len);
+    msgpack_pack_bin_body(&ctx->mp_pck, line, len);
 
     flb_debug("[in_serial] message '%s'",
-              (const char *) msg);
+              (const char *) line);
 
     return 0;
+}
+
+static inline void consume_bytes(char *buf, int bytes, int length)
+{
+    memmove(buf, buf + bytes, length - bytes);
 }
 
 /* Callback triggered when some serial msgs are available */
@@ -103,37 +101,32 @@ int in_serial_collect(struct flb_config *config, void *in_context)
 {
     int ret;
     int bytes;
-    char line[1024];
+    int available;
+    int len;
+    int hits;
+    char *sep;
+    char *buf;
+
     struct flb_in_serial_config *ctx = in_context;
 
     while (1) {
-        bytes = read(ctx->fd, line, sizeof(line) - 1);
-        if (bytes == -1) {
-            if (errno == -EPIPE) {
-                return -1;
+        available = (sizeof(ctx->buf_data) -1) - ctx->buf_len;
+        if (available > 1) {
+            bytes = read(ctx->fd, ctx->buf_data + ctx->buf_len, available);
+            if (bytes == -1) {
+                if (errno == EPIPE || errno == EINTR) {
+                    return -1;
+                }
+                return 0;
             }
-            return 0;
-        }
-        else if (bytes == 0) {
-            return 0;
-        }
-
-        /* Handle FTDI handshake */
-        if (line[0] == '\0') {
-            return 0;
-        }
-
-        /* Strip CR or LF if found at first byte */
-        if (bytes == 1) {
-            if (line[0] == '\r' || line[0] == '\n') {
-                /* Skip message with one byte with CR or LF */
-                flb_trace("[in_serial] skip one byte message with ASCII code=%i", line[0]);
+            else if (bytes == 0) {
                 return 0;
             }
         }
+        ctx->buf_len += bytes;
 
         /* Always set a delimiter to avoid buffer trash */
-        line[bytes] = '\0';
+        ctx->buf_data[ctx->buf_len] = '\0';
 
         /* Check if our buffer is full */
         if (ctx->buffer_id + 1 == SERIAL_BUFFER_SIZE) {
@@ -143,9 +136,58 @@ int in_serial_collect(struct flb_config *config, void *in_context)
             }
         }
 
-        /* Process and enqueue the received line */
-        process_line(line, ctx);
-   }
+        sep = NULL;
+        buf = ctx->buf_data;
+        len = ctx->buf_len;
+        hits = 0;
+
+        /* Handle FTDI handshake */
+        if (ctx->buf_data[0] == '\0') {
+            consume_bytes(ctx->buf_data, 1, ctx->buf_len);
+            ctx->buf_len--;
+        }
+
+        /* Strip CR or LF if found at first byte */
+        if (ctx->buf_data[0] == '\r' || ctx->buf_data[0] == '\n') {
+            /* Skip message with one byte with CR or LF */
+            flb_trace("[in_serial] skip one byte message with ASCII code=%i",
+                      line[0]);
+            consume_bytes(ctx->buf_data, 1, ctx->buf_len);
+            ctx->buf_len--;
+        }
+
+
+        if (ctx->separator) {
+            while ((sep = strstr(ctx->buf_data, ctx->separator))) {
+                len = (sep - ctx->buf_data);
+                if (len > 0) {
+                    /* process the line based in the separator position */
+                    process_line(buf, len, ctx);
+                    consume_bytes(ctx->buf_data, len + ctx->sep_len, ctx->buf_len);
+                    ctx->buf_len -= (len + ctx->sep_len);
+                    hits++;
+                }
+                else {
+                    consume_bytes(ctx->buf_data, ctx->sep_len, ctx->buf_len);
+                    ctx->buf_len -= ctx->sep_len;
+                }
+                ctx->buf_data[ctx->buf_len] = '\0';
+            }
+
+            if (hits == 0 && available <= 1) {
+                flb_debug("[in_serial] no separator found, no more space");
+                ctx->buf_len = 0;
+                return 0;
+            }
+        }
+        else {
+            /* Process and enqueue the received line */
+            flb_trace("[in_serial] process line '%s'", line);
+            process_line(ctx->buf_data, ctx->buf_len, ctx);
+            ctx->buf_len = 0;
+        }
+
+    }
 }
 
 /* Cleanup serial input */

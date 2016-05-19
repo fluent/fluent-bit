@@ -30,11 +30,13 @@ struct flb_in_serial_config *serial_config_read(struct flb_in_serial_config *con
     uint64_t min_bytes;
     char *file;
     char *bitrate;
+    char *separator;
     char *tmp;
 
     /* Validate serial section keys */
     file = flb_input_get_property("file", i_ins);
     bitrate = flb_input_get_property("bitrate", i_ins);
+    separator = flb_input_get_property("separator", i_ins);
 
     tmp = flb_input_get_property("min_bytes", i_ins);
     if (!tmp) {
@@ -61,9 +63,18 @@ struct flb_in_serial_config *serial_config_read(struct flb_in_serial_config *con
     }
 
     config->fd        = -1;
+    config->buf_len   = 0;
     config->file      = file;
     config->bitrate   = bitrate;
     config->min_bytes = min_bytes;
+    config->separator = separator;
+
+    if (separator) {
+        config->sep_len = strlen(separator);
+    }
+    else {
+        config->sep_len = 0;
+    }
 
     flb_debug("[in_serial] file='%s' bitrate='%s' min_bytes=%i",
               config->file, config->bitrate, config->min_bytes);

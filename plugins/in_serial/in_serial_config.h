@@ -27,9 +27,18 @@
 struct flb_in_serial_config {
     int fd;           /* Socket to destination/backend */
 
+    /* Buffer */
+    int buf_len;
+    char buf_data[8192];
+
+    /* config */
     int min_bytes;
     char *file;
     char *bitrate;
+
+    /* separator */
+    int sep_len;
+    char *separator;
 
     struct termios tio;
     struct termios tio_orig;
