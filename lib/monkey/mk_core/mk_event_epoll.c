@@ -20,8 +20,15 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/epoll.h>
+
+#ifdef HAVE_EVENTFD
 #include <sys/eventfd.h>
+#endif
+
+#ifdef HAVE_TIMERFD_CREATE
 #include <sys/timerfd.h>
+#endif
+
 #include <time.h>
 
 #include <mk_core/mk_event.h>
