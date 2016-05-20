@@ -25,7 +25,7 @@
     * [Standard Input](input/stdin.md)
     * [XBee Radio](input/xbee.md)
 * [Output Plugins](output/README.md)
-    * [Elastic Search](output/elasticsearch.md)
+    * [Elasticsearch](output/elasticsearch.md)
     * [Forward](output/forward.md)
     * [NATS](output/nats.md)
     * [Standard Output](output/stdout.md)
