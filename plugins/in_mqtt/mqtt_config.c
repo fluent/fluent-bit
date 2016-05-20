@@ -60,3 +60,13 @@ struct flb_in_mqtt_config *mqtt_config_init(struct flb_input_instance *i_ins)
 
     return config;
 }
+
+void mqtt_config_free(struct flb_in_mqtt_config *config)
+{
+    if (config->server_fd > 0) {
+        close(config->server_fd);
+    }
+    free(config->listen);
+    free(config->tcp_port);
+    free(config);
+}

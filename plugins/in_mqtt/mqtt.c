@@ -49,9 +49,10 @@ int in_mqtt_init(struct flb_input_instance *in,
         flb_debug("[in_mqtt] binding %s:%s", ctx->listen, ctx->tcp_port);
     }
     else {
-        flb_error("[in_mqtt] could not bind address %s:%s. Aborting",
+        flb_error("[in_mqtt] could not bind address %s:%s",
                   ctx->listen, ctx->tcp_port);
-        exit(EXIT_FAILURE);
+        mqtt_config_free(ctx);
+        return -1;
     }
     ctx->evl = config->evl;
 
@@ -61,7 +62,9 @@ int in_mqtt_init(struct flb_input_instance *in,
                                         ctx->server_fd,
                                         config);
     if (ret == -1) {
-        flb_utils_error_c("Could not set collector for MQTT input plugin");
+        flb_error("[in_mqtt] Could not set collector for MQTT input plugin");
+        mqtt_config_free(ctx);
+        return -1;
     }
 
     return 0;
@@ -98,7 +101,7 @@ int in_mqtt_collect(struct flb_config *config, void *in_context)
         return -1;
     }
 
-    flb_trace("[in_mqtt] new TCP connection arrived FD=%i", fd);
+    flb_trace("[in_mqtt] [fd=%i] new TCP connection", fd);
     conn = mqtt_conn_add(fd, ctx);
     if (!conn) {
         return -1;

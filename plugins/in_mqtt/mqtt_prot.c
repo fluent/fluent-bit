@@ -106,8 +106,8 @@ static inline int mqtt_packet_header(int type, int length, char *buf)
 }
 
 /* Collect a buffer of JSON data and convert it to Fluent Bit format */
-static int mqtt_data_append(char *buf, int len,
-                            char *topic, size_t topic_len,
+static int mqtt_data_append(char *topic, size_t topic_len,
+                            char *msg, int msg_len,
                             void *in_context)
 {
     int i;
@@ -115,6 +115,7 @@ static int mqtt_data_append(char *buf, int len,
     int ret;
     int n_size;
     size_t off = 0;
+    char *buf;
     char *pack;
     msgpack_sbuffer *sbuf;
     msgpack_object root;
@@ -124,7 +125,7 @@ static int mqtt_data_append(char *buf, int len,
     struct flb_in_mqtt_config *ctx = in_context;
 
     /* Convert our incoming JSON to MsgPack */
-    ret = flb_pack_json(buf, len, &pack, &out);
+    ret = flb_pack_json(msg, msg_len, &pack, &out);
     if (ret != 0) {
         flb_warn("MQTT Packet incomplete or is not JSON");
         return -1;
@@ -176,12 +177,11 @@ static int mqtt_data_append(char *buf, int len,
     memcpy(buf, sbuf->data, sbuf->size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
-    if ( ctx->msgp_len + out <= MQTT_MSGP_BUF_SIZE ) {
+    if (ctx->msgp_len + out <= MQTT_MSGP_BUF_SIZE ) {
         memcpy(ctx->msgp + ctx->msgp_len, buf, out);
         ctx->msgp_len += out;
-    }else{
-        /* Drop incoming JSON */
-        /* FIXME */
+    }
+    else{
     }
     free(buf);
 
@@ -198,6 +198,7 @@ static int mqtt_data_append(char *buf, int len,
 static int mqtt_handle_connect(struct mqtt_conn *conn)
 {
     int i;
+    int ret;
     char buf[4] = {0, 0, 0, 0};
 
     i = mqtt_packet_header(MQTT_CONNACK, 2 , (char *) &buf);
@@ -206,7 +207,10 @@ static int mqtt_handle_connect(struct mqtt_conn *conn)
     buf[i] = MQTT_CONN_ACCEPTED;
 
     /* write CONNACK message */
-    return write(conn->event.fd, buf, 4);
+    ret = write(conn->event.fd, buf, 4);
+    flb_trace("[in_mqtt] [fd=%i] CMD CONNECT (connack=%i bytes)",
+              conn->event.fd, ret);
+    return ret;
 }
 
 /*
@@ -260,22 +264,30 @@ static int mqtt_handle_publish(struct mqtt_conn *conn)
     }
 
     /* Message */
-    mqtt_data_append((char *) (conn->buf + conn->buf_pos),
+    mqtt_data_append((char *) (conn->buf + topic), topic_len,
+                     (char *) (conn->buf + conn->buf_pos),
                      conn->buf_frame_end - conn->buf_pos + 1,
-                     (char *) (conn->buf + topic), topic_len,
                      conn->ctx);
+
+    flb_trace("[in_mqtt] [fd=%i] CMD PUBLISH",
+              conn->event.fd);
     return 0;
 }
 
 /* Handle a PINGREQ control packet */
 static int mqtt_handle_ping(struct mqtt_conn *conn)
 {
+    int ret;
     char buf[2] = {0, 0};
 
     mqtt_packet_header(MQTT_PINGRESP, 2 , (char *) &buf);
 
     /* write PINGRESP message */
-    return write(conn->event.fd, buf, 2);
+    ret = write(conn->event.fd, buf, 2);
+
+    flb_trace("[in_mqtt] [fd=%i] CMD PING (pong=%i bytes)",
+              conn->event.fd, ret);
+    return ret;
 }
 
 int mqtt_prot_parser(struct mqtt_conn *conn)
@@ -293,12 +305,16 @@ int mqtt_prot_parser(struct mqtt_conn *conn)
              */
             if (BUF_AVAIL() < 2) {
                 conn->buf_pos = pos;
+                flb_trace("[in_mqtt] [fd=%i] Need more data at %s:%i",
+                          conn->event.fd, __FILENAME__, __LINE__);
                 return MQTT_MORE;
             }
 
             /* As the connection is new we expect a MQTT_CONNECT request */
             conn->packet_type = BUFC() >> 4;
             if (conn->status == MQTT_NEW && conn->packet_type != MQTT_CONNECT) {
+                flb_trace("[in_mqtt] [fd=%i] error, expecting MQTT_CONNECT",
+                          conn->event.fd);
                 return MQTT_ERROR;
             }
             conn->packet_length = conn->buf_pos;
@@ -309,8 +325,10 @@ int mqtt_prot_parser(struct mqtt_conn *conn)
             length = 0;
             bytes  = 0;
             do {
-                if (conn->buf_pos + 1 >= conn->buf_len) {
+                if (conn->buf_pos + 1 > conn->buf_len) {
                     conn->buf_pos = pos;
+                    flb_trace("[in_mqtt] [fd=%i] Need more data at %s:%i",
+                              conn->event.fd, __FILENAME__, __LINE__);
                     return MQTT_MORE;
                 }
 
@@ -323,12 +341,16 @@ int mqtt_prot_parser(struct mqtt_conn *conn)
 
                 if (length + 2 > (conn->buf_len - pos)) {
                     conn->buf_pos = pos;
+                    flb_trace("[in_mqtt] [fd=%i] Need more data at %s:%i",
+                              conn->event.fd, __FILENAME__, __LINE__);
                     return MQTT_MORE;
                 }
 
                 if ((BUFC() & 128) == 0) {
                     if (conn->buf_len - 2 < length) {
                         conn->buf_pos = pos;
+                        flb_trace("[in_mqtt] [fd=%i] Need more data at %s:%i",
+                                  conn->event.fd, __FILENAME__, __LINE__);
                         return MQTT_MORE;
                     }
                     else {
@@ -342,6 +364,8 @@ int mqtt_prot_parser(struct mqtt_conn *conn)
                 }
                 else {
                     conn->buf_pos = pos;
+                    flb_trace("[in_mqtt] [fd=%i] Need more data at %s:%i",
+                              conn->event.fd, __FILENAME__, __LINE__);
                     return MQTT_MORE;
                 }
             } while (1);
@@ -360,6 +384,8 @@ int mqtt_prot_parser(struct mqtt_conn *conn)
                 mqtt_handle_ping(conn);
             }
             else if (conn->packet_type == MQTT_DISCONNECT) {
+                flb_trace("[in_mqtt] [fd=%i] CMD DISCONNECT",
+                          conn->event.fd);
                 return MQTT_HANGUP;
             }
             else {
