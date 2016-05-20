@@ -52,9 +52,15 @@ $ echo 'aaXbbXccXddXee' > /dev/tnt1
 
 ```
 $ fluent-bit -i serial -t data -p File=/dev/tnt0 -p BitRate=9600 -p Separator=X -o stdout -m '*'
-```
+Fluent-Bit v0.8.0
+Copyright (C) Treasure Data
 
-FIXME
+[2016/05/20 16:04:51] [ info] starting engine
+[0] data: [1463781902, {"msg"=>"aa"}]
+[1] data: [1463781902, {"msg"=>"bb"}]
+[2] data: [1463781902, {"msg"=>"cc"}]
+[3] data: [1463781902, {"msg"=>"dd"}]
+```
 
 ### Configuration File
 
