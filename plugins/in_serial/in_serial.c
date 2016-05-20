@@ -151,7 +151,7 @@ int in_serial_collect(struct flb_config *config, void *in_context)
         if (ctx->buf_data[0] == '\r' || ctx->buf_data[0] == '\n') {
             /* Skip message with one byte with CR or LF */
             flb_trace("[in_serial] skip one byte message with ASCII code=%i",
-                      line[0]);
+                      ctx->buf_data[0]);
             consume_bytes(ctx->buf_data, 1, ctx->buf_len);
             ctx->buf_len--;
         }
@@ -182,7 +182,6 @@ int in_serial_collect(struct flb_config *config, void *in_context)
         }
         else {
             /* Process and enqueue the received line */
-            flb_trace("[in_serial] process line '%s'", line);
             process_line(ctx->buf_data, ctx->buf_len, ctx);
             ctx->buf_len = 0;
         }
