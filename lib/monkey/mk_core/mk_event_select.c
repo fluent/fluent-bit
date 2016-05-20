@@ -154,7 +154,7 @@ void _timeout_worker(void *arg)
 
     while (1) {
         /* sleep for a while */
-        nanosleep(&t_spec, NULL);        
+        nanosleep(&t_spec, NULL);
 
         /* send notification */
         ret = write(timer->fd, &val, sizeof(uint64_t));
@@ -179,9 +179,9 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
 {
     int ret;
     int fd[2];
-    pid_t tid;
     struct mk_event *event;
     struct fd_timer *timer;
+    pthread_t tid;
 
     timer = mk_mem_malloc(sizeof(struct fd_timer));
     if (!timer) {
@@ -209,7 +209,14 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
     timer->nsec = nsec;
 
     /* Now the dirty workaround, create a thread */
-    mk_utils_worker_spawn(_timeout_worker, timer);
+    ret = mk_utils_worker_spawn(_timeout_worker, timer, &tid);
+    if (ret < 0) {
+        close(fd[0]);
+        close(fd[1]);
+        mk_mem_free(timer);
+        return -1;
+    }
+
     return fd[0];
 }
 
