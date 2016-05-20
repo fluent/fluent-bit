@@ -1,6 +1,6 @@
 # MQTT
 
-The __MQTT__ input plugin, allows to retrieve messages/data from MQTT control packets over a TCP connection.
+The __MQTT__ input plugin, allows to retrieve messages/data from MQTT control packets over a TCP connection. The incoming data to receive _must_ be a JSON map.
 
 ## Configuration Parameters
 
@@ -17,54 +17,35 @@ In order to read the head of a file, you can run the plugin from the command lin
 
 ### Command Line
 
-### Configuration File
-
-[Fluent Bit](http://fluentbit.io) sources distribute an example configuration file for the MQTT plugin and it's located under _conf/in_mqtt.conf_. The plugin recognizes the following setup under a __MQTT__ section:
-
-
-Here is an example:
-
-```python
-[MQTT]
-    # The Listen interface, by default we listen on all of them
-    Listen 0.0.0.0
-
-    # Default MQTT TCP port
-    Port   1883
-```
-
-## Running
-
-Once the configuration file is in place, collecting data is very straighforward. Just let [Fluent Bit](http://fluentbit.io) know the input/output plugins plus the configuration file location, e.g:
+Since the __MQTT__ input plugin let Fluent Bit behave as a server, we need to dispatch some messages using some MQTT client, in the following example _mosquitto_ tool is being used for the purpose:
 
 ```bash
-$ bin/fluent-bit -i mqtt -o stdout -V
-Fluent-Bit v0.3.0
+$ fluent-bit -i mqtt -t data -o stdout -m '*'
+Fluent-Bit v0.8.0
 Copyright (C) Treasure Data
 
-[2015/10/19 15:16:42] [ info] Configuration
-flush time     : 5 seconds
-input plugins  : mqtt
-collectors     :
-[2015/10/19 15:16:42] [ info] starting engine
-[2015/10/19 15:16:42] [debug] MQTT Listen='0.0.0.0' TCP_Port=1883
-[2015/10/19 15:16:42] [debug] [mqtt] binding 0.0.0.0:1883
-[2015/10/19 15:16:42] [debug] [stats] register in plugin: mqtt
-[2015/10/19 15:16:42] [debug] [stats] register out plugin: stdout
-[2015/10/19 15:16:46] [debug] [mqtt] ... bytes in
-[2015/10/19 15:16:46] [debug] [mqtt] fd=14 closed connection
-[2015/10/19 15:16:46] [debug] [thread 0x1db2110] created
-[0] [1445289404, {"topic"=>"some/topic", "key"=>1}]
-[1] [1445289405, {"topic"=>"some/topic", "key"=>1}]
-[2] [1445289406, {"topic"=>"some/topic", "key"=>2}]
+[2016/05/20 14:22:52] [ info] starting engine
+[0] data: [1463775773, {"topic"=>"some/topic", "key1"=>123, "key2"=>456}]
 ```
 
-> the -V argument is optional just to print out verbose messages.
-
-In order to simulate the data above you need to install the _mosquitto_ tool and try to publish a message with the following command line:
+The following command line will send a message to the __MQTT__ input plugin:
 
 ```bash
-$ mosquitto_pub  -m '{"key": 1}' -t some/topic
+$ mosquitto_pub  -m '{"key1": 123, "key2": 456}' -t some/topic
 ```
 
-As you can see in the example above, the final record will contain your JSON map keys plus the topic set when the publish message was sent.
+### Configuration File
+
+In your main configuration file append the following _Input_ & _Output_ sections:
+
+```python
+[INPUT]
+    Name   mqtt
+    Tag    data
+    Listen 0.0.0.0
+    Port   1883
+
+[OUTPUT]
+    Name   stdout
+    Match  *
+```
