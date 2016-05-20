@@ -248,6 +248,7 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
     int fd[2];
     struct mk_event *event;
     struct fd_timer *timer;
+    pthread_t tid;
 
     timer = mk_mem_malloc(sizeof(struct fd_timer));
     if (!timer) {
@@ -275,7 +276,14 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
     timer->nsec = nsec;
 
     /* Now the dirty workaround, create a thread */
-    mk_utils_worker_spawn(_timeout_worker, timer);
+    ret = mk_utils_worker_spawn(_timeout_worker, timer, &tid);
+    if (ret < 0) {
+        close(fd[0]);
+        close(fd[1]);
+        mk_mem_free(timer);
+        return -1;
+    }
+
     return fd[0];
 }
 #endif /* HAVE_TIMERFD_CREATE */
