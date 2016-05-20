@@ -1,75 +1,76 @@
 # Serial Interface
 
-The __serial__ input plugin, allows to retrieve messages/data from a _Serial_ interface. In order to use this plugin is required to write a simple configuration file before to run [Fluent Bit](http://fluentbit.io).
+The __serial__ input plugin, allows to retrieve messages/data from a _Serial_ interface.
 
-## Configuration File
-
-[Fluent Bit](http://fluentbit.io) sources distribute an example configuration file for the serial interface and it's located under _conf/serial_input.conf_. The plugin recognize the following setup under a __SERIAL__ section:
+## Configuration Parameters
 
 | Key             | Description       |
 | ----------------|-------------------|
 | File            | Absolute path to the device entry, e.g: /dev/ttyS0 |
 | Bitrate         | The bitrate for the communication, e.g: 9600, 38400, 115200, etc |
-| Min_Bytes       | The serial interface will expect at least _Min\_Bytes_ to be available before to process the message (default: 1) |
+| Min_Bytes       | The serial interface will expect at least _Min\_Bytes_ to be available before to process the message (default: 1)
+| Separator       | Allows to specify a _separator_ string that's used to determinate when a message ends. |
 
-Here is an example:
+## Getting Started
+
+In order to retrieve messages over the _Serial_ interface, you can run the plugin from the command line or through the configuration file:
+
+### Command Line
+
+The following example loads the input _serial_ plugin where it set a Bitrate of 9600, listen from the _/dev/tnt0_ interface and use the custom tag _data_ to route the
+message.
+
+```
+$ fluent-bit -i serial -t data -p File=/dev/tnt0 -p BitRate=9600 -o stdout -m '*'
+```
+
+The above interface (/dev/tnt0) is an emulation of the serial interface (more details at bottom), for demonstrative purposes we will write some message to the other end of the interface, in this case _/dev/tnt1_, e.g:
+
+```
+$ echo 'this is some message' > /dev/tnt1
+
+```
+
+In Fluent Bit you should see an output like this:
+
+```bash
+$ fluent-bit -i serial -t data -p File=/dev/tnt0 -p BitRate=9600 -o stdout -m '*'
+Fluent-Bit v0.8.0
+Copyright (C) Treasure Data
+
+[2016/05/20 15:44:39] [ info] starting engine
+[0] data: [1463780680, {"msg"=>"this is some message"}]
+
+```
+
+Now using the _Separator_ configuration, we could send multiple messages at once (run this command after starting Fluent Bit):
+
+
+```
+$ echo 'aaXbbXccXddXee' > /dev/tnt1
+```
+
+```
+$ fluent-bit -i serial -t data -p File=/dev/tnt0 -p BitRate=9600 -p Separator=X -o stdout -m '*'
+```
+
+FIXME
+
+### Configuration File
+
+In your main configuration file append the following _Input_ & _Output_ sections:
 
 ```python
-[SERIAL]
-    # File
-    # ====
-    # Filename of serial port. e.g. /dev/ttyS0, /dev/ttyAMA0
+[INPUT]
+    Name      serial
+    Tag       data
+    File      /dev/tnt0
+    BitRate   9600
+    Separator X
 
-    File    /dev/ttyS0
-
-    # Bitrate
-    # ========
-    # Specify the bitrate to communicate using the port.
-
-    Bitrate 9600
-
-    # Min_Bytes
-    # =========
-    # Specify the minimal number of bytes for each read call.
-    Min_Bytes 1
-```
-
-## Running
-
-Once the configuration file is in place, collecting data from the _Serial_ interface is very straighforward. Just let [Fluent Bit](http://fluentbit.io) know the input/output plugins plus the configuration file location, e.g:
-
-```bash
-$ bin/fluent-bit -c serial.conf -i serial -o stdout -V
-Fluent Bit v0.3.0
-Copyright (C) Treasure Data
-
-[2015/07/29 12:39:37] [ info] Configuration
-flush time     : 5 seconds
-input plugins  : serial
-collectors     :
-[2015/07/29 12:39:37] [ info] starting engine
-[2015/07/29 12:39:37] [debug] Serial / file='/dev/ttyS0' bitrate='9600'
-```
-
-> the -V argument is optional just to print out verbose messages.
-
-Now every message that arrives to the _/dev/ttyS0_ interface will be printed to the standard output:
-
-```bash
-$ bin/fluent-bit -c serial.conf -i serial -o stdout -V
-Fluent Bit v0.3.0
-Copyright (C) Treasure Data
-
-[2015/07/29 12:39:37] [ info] Configuration
-flush time     : 5 seconds
-input plugins  : serial
-collectors     :
-[2015/07/29 12:39:37] [ info] starting engine
-[2015/07/29 12:39:37] [debug] Serial / file='/dev/ttyS0' bitrate='9600'
-[0] [1438193365, {"msg"=>"test1"}]
-[1] [1438193366, {"msg"=>"test2"}]
-[2] [1438193367, {"msg"=>"test3"}]
-[3] [1438193368, {"msg"=>"test4"}]
+[OUTPUT]
+    Name   stdout
+    Match  *
 ```
 
 ## Emulating Serial Interface on Linux
@@ -117,28 +118,4 @@ When the module is loaded, it will interconnect the following virtual interfaces
 /dev/tnt2 <=> /dev/tnt3
 /dev/tnt4 <=> /dev/tnt5
 /dev/tnt6 <=> /dev/tnt7
-```
-
-Now you can configure [Fluent Bit](http://fluentbit.io) to listen on _/dev/tnt0_ and write messages over _/dev/tnt1_, e.g:
-
-```bash
-$ sudo bin/fluent-bit -c serial.conf -i serial -o stdout -V
-Fluent Bit v0.3.0
-Copyright (C) Treasure Data
-
-[2015/07/29 12:50:03] [ info] Configuration
-flush time     : 5 seconds
-input plugins  : serial
-collectors     :
-[2015/07/29 12:50:03] [ info] starting engine
-[2015/07/29 12:50:03] [debug] Serial / file='/dev/tnt0' bitrate='9600'
-[2015/07/29 12:50:14] [debug] [in_serial] 'testing'
-[0] [1438195814, {"msg"=>"testing"}]
-[2015/07/29 12:50:17] [ info] Flush buf 21 bytes
-```
-
-Write some messages
-
-```bash
-$ echo "testing" > /dev/tnt1
 ```
