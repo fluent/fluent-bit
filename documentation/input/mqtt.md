@@ -13,7 +13,7 @@ The plugin supports the following configuration parameters:
 
 ## Getting Started
 
-In order to read the head of a file, you can run the plugin from the command line or through the configuration file:
+In order to start listening for MQTT messages, you can run the plugin from the command line or through the configuration file:
 
 ### Command Line
 
