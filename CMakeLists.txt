@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 2.8)
 project(fluent-bit)
 
+# Update CFLAGS
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -fPIC -Wno-deprecated-declarations ")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__='\"$(subst ${CMAKE_SOURCE_DIR}/,,$(abspath $<))\"'")
 
@@ -19,63 +20,69 @@ set(FLB_VERSION_PATCH  0)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 # Build Options
-option(WITH_ALL           "Enable all features"          No)
-option(WITH_DEBUG         "Build with debug symbols"     No)
-option(WITH_TLS           "Build with SSL/TLS support"   No)
-option(WITH_HTTP          "Enable build-in HTTP Server" Yes)
-option(WITHOUT_BIN        "Do not build executable"      No)
-option(WITHOUT_EXAMPLES   "Do not build examples"        No)
-option(WITHOUT_SHARED_LIB "Do not build shared library"  No)
-option(WITH_STATS         "Enable stats support"         No)
-option(WITH_VALGRIND      "Enable Valgrind support"      No)
-option(WITH_TRACE         "Enable trace mode"            No)
+option(FLB_ALL                "Enable all features"          No)
+option(FLB_DEBUG              "Build with debug symbols"     No)
+option(FLB_TLS                "Build with SSL/TLS support"   No)
+option(FLB_HTTP               "Enable build-in HTTP Server" Yes)
+option(FLB_WITHOUT_BIN        "Do not build executable"      No)
+option(FLB_WITHOUT_EXAMPLES   "Do not build examples"        No)
+option(FLB_WITHOUT_SHARED_LIB "Do not build shared library"  No)
+option(FLB_STATS              "Enable stats support"         No)
+option(FLB_VALGRIND           "Enable Valgrind support"      No)
+option(FLB_TRACE              "Enable trace mode"            No)
+option(FLB_TESTS              "Enable tests"                 No)
 
 # Build Plugins
-option(WITH_IN_XBEE     "Enable XBee input plugin"            No)
-option(WITH_IN_CPU      "Enable CPU input plugin"            Yes)
-option(WITH_IN_FORWARD  "Enable Forward input plugin"        Yes)
-option(WITH_IN_HTTP     "Enable HTTP input plugin"            No)
-option(WITH_IN_MEM      "Enable Memory input plugin"         Yes)
-option(WITH_IN_KMSG     "Enable Kernel log input plugin"     Yes)
-option(WITH_IN_LIB      "Enable library mode input plugin"   Yes)
-option(WITH_IN_SERIAL   "Enable Serial input plugin"         Yes)
-option(WITH_IN_STDIN    "Enable Standard input plugin"       Yes)
-option(WITH_IN_MQTT     "Enable MQTT Broker input plugin"    Yes)
-option(WITH_IN_HEAD     "Enable Head input plugin"           Yes)
-option(WITH_OUT_ES      "Enable Elasticsearch output plugin" Yes)
-option(WITH_OUT_FORWARD "Enable Forward output plugin"       Yes)
-option(WITH_OUT_HTTP    "Enable HTTP output plugin"          Yes)
-option(WITH_OUT_NATS    "Enable NATS output plugin"           No)
-option(WITH_OUT_TD      "Enable Treasure Data output plugin" Yes)
-option(WITH_OUT_STDOUT  "Enable STDOUT output plugin"        Yes)
-option(WITH_OUT_LIB     "Enable library mode output plugin"  Yes)
-if(ENABLE_TESTS)
-  option(WITH_OUT_NULL  "Enable dev null output plugin"        Yes)
-endif()
+option(FLB_IN_XBEE     "Enable XBee input plugin"            No)
+option(FLB_IN_CPU      "Enable CPU input plugin"            Yes)
+option(FLB_IN_FORWARD  "Enable Forward input plugin"        Yes)
+option(FLB_IN_HTTP     "Enable HTTP input plugin"            No)
+option(FLB_IN_MEM      "Enable Memory input plugin"         Yes)
+option(FLB_IN_KMSG     "Enable Kernel log input plugin"     Yes)
+option(FLB_IN_LIB      "Enable library mode input plugin"   Yes)
+option(FLB_IN_SERIAL   "Enable Serial input plugin"         Yes)
+option(FLB_IN_STDIN    "Enable Standard input plugin"       Yes)
+option(FLB_IN_MQTT     "Enable MQTT Broker input plugin"    Yes)
+option(FLB_IN_HEAD     "Enable Head input plugin"           Yes)
+option(FLB_OUT_ES      "Enable Elasticsearch output plugin" Yes)
+option(FLB_OUT_FORWARD "Enable Forward output plugin"       Yes)
+option(FLB_OUT_HTTP    "Enable HTTP output plugin"          Yes)
+option(FLB_OUT_NATS    "Enable NATS output plugin"           No)
+option(FLB_OUT_TD      "Enable Treasure Data output plugin" Yes)
+option(FLB_OUT_STDOUT  "Enable STDOUT output plugin"        Yes)
+option(FLB_OUT_LIB     "Enable library mode output plugin"  Yes)
+option(FLB_OUT_NULL    "Enable dev null output plugin"      Yes)
 
 # Enable all features
-if(WITH_ALL)
-  set(WITH_HTTP        1)
-  set(WITH_DEBUG       1)
-  set(WITH_TLS         1)
-  set(WITH_IN_XBEE     1)
-  set(WITH_IN_CPU      1)
-  set(WITH_IN_MEM      1)
-  set(WITH_IN_KMSG     1)
-  set(WITH_IN_MQTT     1)
-  set(WITH_IN_SERIAL   1)
-  set(WITH_IN_STDIN    1)
-  set(WITH_IN_HEAD     1)
-  set(WITH_OUT_FORWARD 1)
-  set(WITH_OUT_HTTP    1)
-  set(WITH_OUT_NATS    1)
-  set(WITH_OUT_TD      1)
-  set(WITH_OUT_STDOUT  1)
-  set(WITH_OUT_LIB     1)
+if(FLB_ALL)
+  # Global
+  set(FLB_HTTP         1)
+  set(FLB_DEBUG        1)
+  set(FLB_TLS          1)
+
+  # Input plugins
+  set(FLB_IN_XBEE      1)
+  set(FLB_IN_CPU       1)
+  set(FLB_IN_MEM       1)
+  set(FLB_IN_KMSG      1)
+  set(FLB_IN_MQTT      1)
+  set(FLB_IN_SERIAL    1)
+  set(FLB_IN_STDIN     1)
+  set(FLB_IN_HEAD      1)
+
+  # Output plugins
+  set(FLB_OUT_ES       1)
+  set(FLB_OUT_FORWARD  1)
+  set(FLB_OUT_HTTP     1)
+  set(FLB_OUT_NATS     1)
+  set(FLB_OUT_NULL     1)
+  set(FLB_OUT_TD       1)
+  set(FLB_OUT_STDOUT   1)
+  set(FLB_OUT_LIB      1)
 endif()
 
 # Enable Debug symbols if specified
-if(WITH_DEBUG)
+if(FLB_DEBUG)
   set(CMAKE_BUILD_TYPE "Debug")
 endif()
 
@@ -109,7 +116,7 @@ add_subdirectory(lib/msgpack-c-068041f)
 # Lib: build the core libraries used by Fluent-Bit
 add_subdirectory(lib/jsmn)
 add_subdirectory(lib/ejson)
-if(WITH_HTTP)
+if(FLB_HTTP)
   option(WITHOUT_BIN     ON)
   option(WITHOUT_CONF    ON)
   set(WITHOUT_PLUGINS "auth,cgi,cheetah,dirlisting,fastcgi,logger,mandril,tls")
@@ -119,12 +126,12 @@ else()
 endif()
 
 # SSL/TLS: add encryption support
-if(WITH_OUT_TD)
-  set(WITH_TLS ON)
+if(FLB_OUT_TD)
+  set(FLB_TLS ON)
 endif()
 
-if(WITH_TLS)
-  FLB_DEFINITION(HAVE_TLS)
+if(FLB_TLS)
+  FLB_DEFINITION(FLB_HAVE_TLS)
   option(ENABLE_TESTING  OFF)
   option(ENABLE_PROGRAMS OFF)
   option(INSTALL_MBEDTLS_HEADERS OFF)
@@ -132,21 +139,20 @@ if(WITH_TLS)
   include_directories(lib/mbedtls-yotta-2.3.0/include)
 endif()
 
-if(WITH_STATS OR WITH_OUT_ES)
-  add_subdirectory(lib/cjson)
-  include_directories(lib/cjson)
+# Enable cJSON
+add_subdirectory(lib/cjson)
+include_directories(lib/cjson)
+
+if(FLB_TRACE)
+  FLB_DEFINITION(FLB_HAVE_TRACE)
 endif()
 
-if(WITH_TRACE)
-  FLB_DEFINITION(FLB_TRACE)
+if(FLB_STATS)
+  FLB_DEFINITION(FLB_HAVE_STATS)
 endif()
 
-if(WITH_STATS)
-  FLB_DEFINITION(HAVE_STATS)
-endif()
-
-if(WITH_HTTP)
-  FLB_DEFINITION(HAVE_HTTP)
+if(FLB_HTTP)
+  FLB_DEFINITION(FLB_HAVE_HTTP)
 endif()
 
 # Valgrind support
@@ -154,10 +160,10 @@ check_c_source_compiles("
   #include <valgrind/valgrind.h>
   int main() {
      return 0;
-  }" HAVE_VALGRIND)
+  }" FLB_HAVE_VALGRIND)
 
-if(WITH_VALGRIND OR HAVE_VALGRIND)
-  FLB_DEFINITION(USE_VALGRIND)
+if(FLB_VALGRIND OR FLB_HAVE_VALGRIND)
+  FLB_DEFINITION(FLB_HAVE_VALGRIND)
 endif()
 
 configure_file(
@@ -174,10 +180,10 @@ check_c_source_compiles("
    __thread int a;
    int main() {
        return 0;
-   }" HAVE_C_TLS)
+   }" FLB_HAVE_C_TLS)
 
-if (HAVE_C_TLS)
-  FLB_DEFINITION(HAVE_C_TLS)
+if (FLB_HAVE_C_TLS)
+  FLB_DEFINITION(FLB_HAVE_C_TLS)
 endif()
 
 # Instruct CMake to build the Fluent Bit Core
@@ -185,11 +191,11 @@ add_subdirectory(include)
 add_subdirectory(plugins)
 add_subdirectory(src)
 
-if(NOT WITHOUT_EXAMPLES)
+if(NOT FLB_WITHOUT_EXAMPLES)
   add_subdirectory(examples)
 endif()
 
-if(ENABLE_TESTS)
+if(FLB_TESTS)
   enable_testing()
   add_subdirectory(tests)
 endif()

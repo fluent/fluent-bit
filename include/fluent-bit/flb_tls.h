@@ -20,7 +20,7 @@
 #ifndef FLB_TLS_H
 #define FLB_TLS_H
 
-#ifdef HAVE_TLS
+#ifdef FLB_HAVE_TLS
 
 #include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_output.h>

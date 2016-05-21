@@ -53,7 +53,7 @@ struct flb_upstream {
      */
     struct mk_list busy_queue;
 
-#ifdef HAVE_TLS
+#ifdef FLB_HAVE_TLS
     /* context with mbedTLS data to handle certificates and keys */
     struct flb_tls *tls;
 #endif
@@ -76,7 +76,7 @@ struct flb_upstream_conn {
      */
     struct mk_list _head;
 
-#ifdef HAVE_TLS
+#ifdef FLB_HAVE_TLS
     /* Each TCP connections using TLS needs a session */
     struct flb_tls_session *tls_session;
 #endif

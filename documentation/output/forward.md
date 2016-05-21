@@ -2,6 +2,15 @@
 
 _Forward_ is the protocol used by [Fluentd](http://www.fluentd.org) to route messages between peers. The __forward__ output plugin allows to integrate [Fluent Bit](http://fluentbit.io) with [Fluentd](http://fluentd.org) easily. There are not configuration steps required besides to specify where [Fluentd](http://fluentd.org) is located, it can be on the local host or a in a remote machine.
 
+## Configuration Parameters
+
+The plugin supports the following configuration parameters:
+
+| Key      | Description       |
+| ---------|-------------------|
+| Host     | Target host where Fluent-Bit or Fluentd are listening for Forward messages. |
+| Port     | TCP Port of the target service. |
+
 ## Forward Setup
 
 Before to proceed, make sure that [Fluentd](http://fluentd.org) is installed in your system, if it's not the case please refer to the following [Fluentd Installation](http://docs.fluentd.org/v0.12/categories/installation) document and go ahead with that.

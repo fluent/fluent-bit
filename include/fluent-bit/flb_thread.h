@@ -29,7 +29,7 @@
 #define _BSD_SOURCE
 #endif
 
-#ifdef USE_VALGRIND
+#ifdef FLB_HAVE_VALGRIND
 #include <valgrind/valgrind.h>
 #endif
 
@@ -46,7 +46,7 @@ FLB_EXPORT pthread_key_t flb_thread_key;
 
 struct flb_thread {
     int ended;
-#ifdef USE_VALGRIND
+#ifdef FLB_HAVE_VALGRIND
     unsigned int valgrind_stack_id;
 #endif
     ucontext_t caller;
@@ -86,7 +86,7 @@ static FLB_INLINE void flb_thread_yield(struct flb_thread *th, int ended)
 
 static FLB_INLINE void flb_thread_destroy(struct flb_thread *th)
 {
-#ifdef USE_VALGRIND
+#ifdef FLB_HAVE_VALGRIND
     VALGRIND_STACK_DEREGISTER(th->valgrind_stack_id);
 #endif
 
@@ -138,7 +138,7 @@ static struct flb_thread *flb_thread_new()
     th->callee.uc_link           = &th->caller;
     th->ended                    = MK_TRUE;
 
-#ifdef USE_VALGRIND
+#ifdef FLB_HAVE_VALGRIND
     th->valgrind_stack_id = VALGRIND_STACK_REGISTER(FLB_THREAD_STACK(p),
                                                     FLB_THREAD_STACK(p) + FLB_THREAD_STACK_SIZE);
 #endif

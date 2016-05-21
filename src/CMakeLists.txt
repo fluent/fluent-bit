@@ -28,7 +28,7 @@ include_directories(
   )
 
 # Fluent Bit have TLS support
-if(WITH_TLS)
+if(FLB_TLS)
   # Register the TLS interface and functions
   set(src
     ${src}
@@ -42,14 +42,14 @@ if(WITH_TLS)
     )
 endif()
 
-if(WITH_HTTP)
+if(FLB_HTTP)
   set(src
     ${src}
     "flb_http_server.c"
     )
 endif()
 
-if(WITH_STATS)
+if(FLB_STATS)
   set(src
     ${src}
     "flb_stats.c"
@@ -94,12 +94,12 @@ add_library(fluent-bit-static STATIC ${src})
 target_link_libraries(fluent-bit-static ${FLB_DEPS})
 set_target_properties(fluent-bit-static PROPERTIES OUTPUT_NAME fluent-bit)
 
-if(WITH_HTTP)
+if(FLB_HTTP)
   target_link_libraries(fluent-bit-static monkey-core-static ejson)
 endif()
 
 # Executable
-if(NOT WITHOUT_BIN)
+if(NOT FLB_WITHOUT_BIN)
   find_package (Threads)
   add_executable(fluent-bit-bin fluent-bit.c)
 

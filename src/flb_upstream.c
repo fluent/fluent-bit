@@ -46,7 +46,7 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
     mk_list_init(&u->av_queue);
     mk_list_init(&u->busy_queue);
 
-#ifdef HAVE_TLS
+#ifdef FLB_HAVE_TLS
     u->tls      = (struct flb_tls *) tls;
 #endif
 
@@ -85,7 +85,7 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
     }
     conn->u           = u;
     conn->fd          = -1;
-#ifdef HAVE_TLS
+#ifdef FLB_HAVE_TLS
     conn->tls_session = NULL;
 #endif
 

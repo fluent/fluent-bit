@@ -22,7 +22,7 @@
 
 #include <fluent-bit/flb_macros.h>
 
-#ifdef HAVE_C_TLS
+#ifdef FLB_HAVE_C_TLS
 #define FLB_TLS_SET(key, val)        key=val
 #define FLB_TLS_GET(key)             key
 #define FLB_TLS_INIT()               do {} while (0)
@@ -66,7 +66,7 @@ int flb_log_check(int level) {
 }
 */
 
-#ifdef HAVE_C_TLS
+#ifdef FLB_HAVE_C_TLS
 #define flb_log_check(l)                                            \
     (FLB_TLS_GET(flb_log_ctx)->level < l) ? FLB_FALSE: FLB_TRUE
 #else

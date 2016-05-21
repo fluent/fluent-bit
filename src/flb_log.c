@@ -26,7 +26,7 @@
 #include <mk_core.h>
 #include <fluent-bit/flb_log.h>
 
-#ifdef HAVE_C_TLS
+#ifdef FLB_HAVE_C_TLS
 __thread struct flb_log *flb_log_ctx;
 #endif
 
@@ -121,7 +121,7 @@ int flb_log_stop(struct flb_log *log)
     return 0;
 }
 
-#ifndef HAVE_C_TLS
+#ifndef FLB_HAVE_C_TLS
 int flb_log_check(int level) {
     struct flb_log *lc = FLB_TLS_GET(flb_log_ctx);
 
