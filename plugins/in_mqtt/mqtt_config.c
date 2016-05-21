@@ -18,6 +18,8 @@
  */
 
 #include <stdlib.h>
+#include <unistd.h>
+
 #include <fluent-bit/flb_utils.h>
 
 #include "mqtt.h"
