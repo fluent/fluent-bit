@@ -53,12 +53,11 @@ int ejs_init(struct ejs_ctx *ctx, unsigned int buf_size)
 int ejs_buf_size(struct ejs_ctx *ctx, unsigned int buf_size)
 {
     ctx->buf_size = buf_size;
+    return 0;
 }
 
 int ejs_add_array(struct ejs_ctx *ctx, unsigned char *buf)
 {
-    int length;
-
     if (check_entries_space(ctx) != 0) {
         return EJS_ERROR_ENTRIES;
     }
@@ -173,4 +172,5 @@ int ejs_add_num(struct ejs_ctx *ctx, unsigned char *buf, double val)
     }
 
     ctx->buf_pos += ret;
+    return 0;
 }
