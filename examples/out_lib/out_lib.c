@@ -26,7 +26,10 @@ int my_stdout(void* data, size_t size)
     printf("[%s]",__FUNCTION__);
     msgpack_object_print(stdout, *(msgpack_object*)data);
     printf("\n");
-    
+
+    /* User has to release the buffer. */
+    free(data);
+
     return 0;
 }
 
