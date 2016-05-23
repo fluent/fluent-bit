@@ -81,12 +81,12 @@ static inline int mk_socket_accept(int server_fd)
     struct sockaddr sock_addr;
     socklen_t socket_size = sizeof(struct sockaddr);
 
-#ifdef ACCEPT_GENERIC
-    remote_fd = accept(server_fd, &sock_addr, &socket_size);
-    mk_socket_set_nonblocking(remote_fd);
-#else
+#ifdef MK_HAVE_ACCEPT4
     remote_fd = accept4(server_fd, &sock_addr, &socket_size,
                         SOCK_NONBLOCK | SOCK_CLOEXEC);
+#else
+    remote_fd = accept(server_fd, &sock_addr, &socket_size);
+    mk_socket_set_nonblocking(remote_fd);
 #endif
 
     return remote_fd;

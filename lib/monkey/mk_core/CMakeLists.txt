@@ -35,7 +35,7 @@ check_c_source_compiles("
 
 if (NOT HAVE_EPOLL AND NOT HAVE_KQUEUE)
   message(STATUS "Event loop backend > select(2)")
-  MK_DEFINITION(EVENT_SELECT)
+  MK_DEFINITION(MK_HAVE_EVENT_SELECT)
 endif()
 
 # Validate timerfd_create()
@@ -46,7 +46,7 @@ check_c_source_compiles("
   }" HAVE_TIMERFD_CREATE)
 
 if (HAVE_TIMERFD_CREATE)
-  MK_DEFINITION(HAVE_TIMERFD_CREATE)
+  MK_DEFINITION(MK_HAVE_TIMERFD_CREATE)
 endif()
 
 # Validate eventfd()
@@ -57,14 +57,14 @@ check_c_source_compiles("
   }" HAVE_EVENTFD)
 
 if (HAVE_EVENTFD)
-  MK_DEFINITION(HAVE_EVENTFD)
+  MK_DEFINITION(MK_HAVE_EVENTFD)
 endif()
 
 include_directories(include)
 add_library(mk_core STATIC ${src})
 target_link_libraries(mk_core ${CMAKE_THREAD_LIBS_INIT})
 
-if(NOT WITH_SYSTEM_MALLOC)
+if(NOT MK_SYSTEM_MALLOC)
   target_link_libraries(mk_core libjemalloc)
 endif()
 

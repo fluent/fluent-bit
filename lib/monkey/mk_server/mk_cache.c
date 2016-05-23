@@ -21,14 +21,11 @@
 
 #include <monkey/mk_core.h>
 #include <monkey/mk_cache.h>
+#include <monkey/mk_cache_tls.h>
 #include <monkey/mk_config.h>
 #include <monkey/mk_utils.h>
 #include <monkey/mk_vhost.h>
 #include <monkey/mk_tls.h>
-
-#ifndef PTHREAD_TLS
-#include <monkey/mk_cache_tls.h>
-#endif
 
 pthread_key_t mk_utils_error_key;
 

@@ -22,6 +22,7 @@
 
 #define _GNU_SOURCE
 
+#include <monkey/mk_info.h>
 #include <monkey/mk_config.h>
 #include <monkey/mk_vhost.h>
 #include <monkey/mk_http_internal.h>

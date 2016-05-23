@@ -17,6 +17,8 @@
  *  limitations under the License.
  */
 
+#ifdef MK_HAVE_C_TLS
+
 #ifndef MK_CACHE_TLS_H
 #define MK_CACHE_TLS_H
 
@@ -26,3 +28,4 @@ __thread struct tm *mk_tls_cache_gmtime;
 __thread struct mk_gmt_cache *mk_tls_cache_gmtext;
 
 #endif
+#endif /* MK_HACE_C_TLS */

@@ -17,7 +17,7 @@
  *  limitations under the License.
  */
 
-#ifndef PTHREAD_TLS
+#ifdef MK_HAVE_C_TLS
 
 #ifndef MK_SCHEDULER_TLS_H
 #define MK_SCHEDULER_TLS_H

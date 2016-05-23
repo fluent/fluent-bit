@@ -3,7 +3,7 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
 
 # CHECK_STATIC_PLUGIN: Check if a plugin will be linked statically
 macro(CHECK_STATIC_PLUGIN name)
-  string(REPLACE "," ";" plugins ${STATIC_PLUGINS})
+  string(REPLACE "," ";" plugins ${MK_STATIC_PLUGINS})
   list(FIND plugins ${name} found)
   if(NOT found EQUAL -1)
     set(IS_STATIC TRUE)
@@ -28,7 +28,7 @@ macro(MONKEY_PLUGIN name src)
     set_target_properties(monkey-${name}-shared PROPERTIES OUTPUT_NAME monkey-${name})
     set_target_properties(monkey-${name}-shared PROPERTIES PREFIX "")
 
-    if(NOT BUILD_LOCAL)
+    if(NOT MK_LOCAL)
       if(CMAKE_INSTALL_LIBDIR)
         install(TARGETS monkey-${name}-shared LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
       else()
@@ -39,13 +39,13 @@ macro(MONKEY_PLUGIN name src)
 endmacro()
 
 # MK_BUILD_PLUGIN: This macro determinate if the plugin is enabled through the
-# option WITH_PLUGIN_NAME defined on the root CMakeLists.txt
+# option MK_PLUGIN_NAME defined on the root CMakeLists.txt
 macro(MK_BUILD_PLUGIN name)
   set(mode "")
   string(TOUPPER ${name} NAME)
 
   # Check if the plugin is enabled
-  set(option WITH_PLUGIN_${NAME})
+  set(option MK_PLUGIN_${NAME})
   if(${option})
     add_subdirectory(${name})
 
@@ -62,7 +62,7 @@ macro(MK_BUILD_PLUGIN name)
       # append message to stdout
       set(mode "[== static ==]")
     else()
-      if(BUILD_LOCAL)
+      if(MK_LOCAL)
         set(MK_LOAD_PLUGINS "${MK_LOAD_PLUGINS}    # Load ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/monkey-${name}.so\n")
       else()
         set(MK_LOAD_PLUGINS "${MK_LOAD_PLUGINS}    # Load ${CMAKE_INSTALL_FULL_LIBDIR}/monkey-${name}.so\n")
@@ -101,7 +101,7 @@ configure_file(
   )
 
 # Generate conf/plugins.load
-if(NOT WITHOUT_CONF)
+if(NOT MK_WITHOUT_CONF)
   configure_file(
     "${PROJECT_SOURCE_DIR}/conf/plugins.load.in"
     "${PROJECT_BINARY_DIR}/conf/plugins.load"

@@ -21,11 +21,11 @@
 #define MK_CORE_INFO_H
 
 /* General flags set by CMakeLists.txt */
-#ifndef HAVE_TIMERFD_CREATE
-#define HAVE_TIMERFD_CREATE
+#ifndef MK_HAVE_TIMERFD_CREATE
+#define MK_HAVE_TIMERFD_CREATE
 #endif
-#ifndef HAVE_EVENTFD
-#define HAVE_EVENTFD
+#ifndef MK_HAVE_EVENTFD
+#define MK_HAVE_EVENTFD
 #endif
 
 

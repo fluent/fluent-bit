@@ -20,7 +20,9 @@
 #ifndef MK_TLS_H
 #define MK_TLS_H
 
-#ifndef PTHREAD_TLS  /* Use Compiler Thread Local Storage (TLS) */
+#include <monkey/mk_info.h>
+
+#ifdef MK_HAVE_C_TLS  /* Use Compiler Thread Local Storage (TLS) */
 
 /* mk_cache.c */
 extern __thread struct mk_iov *mk_tls_cache_iov_header;
@@ -48,8 +50,6 @@ extern __thread struct mk_server_timeout *mk_tls_server_timeout;
 #define MK_TLS_INIT()               do {} while (0)
 
 #else /* Use Posix Thread Keys */
-
-#define __thread "^ ^"
 
 /* mk_cache.c */
 pthread_key_t mk_tls_cache_iov_header;
