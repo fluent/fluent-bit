@@ -179,9 +179,9 @@ configure_file(
 check_c_source_compiles("
    __thread int a;
    int main() {
+       __tls_get_addr(0);
        return 0;
    }" FLB_HAVE_C_TLS)
-
 if (FLB_HAVE_C_TLS)
   FLB_DEFINITION(FLB_HAVE_C_TLS)
 endif()
