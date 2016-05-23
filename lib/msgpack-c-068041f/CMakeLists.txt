@@ -145,6 +145,20 @@ LIST (APPEND msgpackc_SOURCES
     src/zone.c
 )
 
+# Fluent Bit fix for ARM without __sync calls support
+include (CheckCSourceCompiles)
+check_c_source_compiles("
+  int main() {
+    __sync_sub_and_fetch(\"\", 1);
+     return 0;
+  }" FLB_HAVE_SYNC_SUB)
+if(NOT FLB_HAVE_SYNC_SUB)
+  LIST (APPEND msgpackc_SOURCES
+    src/linux-atomic.c
+    )
+endif()
+
+
 LIST (APPEND msgpackc_HEADERS
     include/msgpack/pack_define.h
     include/msgpack/pack_template.h
