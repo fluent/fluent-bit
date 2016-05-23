@@ -20,6 +20,7 @@
 #define _GNU_SOURCE
 
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -42,7 +43,7 @@ struct flb_config *config;
 #define PLUGIN_OUTPUT   1
 
 #define get_key(a, b, c)   mk_rconf_section_get_key(a, b, c)
-#define n_get_key(a, b, c) (uint64_t) get_key(a, b, c)
+#define n_get_key(a, b, c) (intptr_t) get_key(a, b, c)
 #define s_get_key(a, b, c) (char *) get_key(a, b, c)
 
 static void flb_help(int rc, struct flb_config *config)
