@@ -117,9 +117,21 @@ add_subdirectory(lib/msgpack-c-068041f)
 add_subdirectory(lib/jsmn)
 add_subdirectory(lib/ejson)
 if(FLB_HTTP)
-  option(WITHOUT_BIN     ON)
-  option(WITHOUT_CONF    ON)
-  set(WITHOUT_PLUGINS "auth,cgi,cheetah,dirlisting,fastcgi,logger,mandril,tls")
+  macro(MK_SET_OPTION option value)
+    set(${option} ${value} CACHE "" INTERNAL FORCE)
+  endmacro()
+
+  MK_SET_OPTION(MK_SYSTEM_MALLOC      ON)
+  MK_SET_OPTION(MK_WITHOUT_BIN        ON)
+  MK_SET_OPTION(MK_WITHOUT_CONF       ON)
+  MK_SET_OPTION(MK_PLUGIN_AUTH       OFF)
+  MK_SET_OPTION(MK_PLUGIN_CGI        OFF)
+  MK_SET_OPTION(MK_PLUGIN_CHEETAH    OFF)
+  MK_SET_OPTION(MK_PLUGIN_DIRLISTING OFF)
+  MK_SET_OPTION(MK_PLUGIN_FASTCGI    OFF)
+  MK_SET_OPTION(MK_PLUGIN_LOGGER     OFF)
+  MK_SET_OPTION(MK_PLUGIN_MANDRIL    OFF)
+  MK_SET_OPTION(MK_PLUGIN_TLS        OFF)
   add_subdirectory(lib/monkey)
 else()
   add_subdirectory(lib/monkey/mk_core)
@@ -166,6 +178,25 @@ if(FLB_VALGRIND OR FLB_HAVE_VALGRIND)
   FLB_DEFINITION(FLB_HAVE_VALGRIND)
 endif()
 
+check_c_source_compiles("
+   __thread int a;
+   int main() {
+       __tls_get_addr(0);
+       return 0;
+   }" FLB_HAVE_C_TLS)
+if(FLB_HAVE_C_TLS)
+  FLB_DEFINITION(FLB_HAVE_C_TLS)
+endif()
+
+check_c_source_compiles("
+    #include <setjmp.h>
+    int main() {
+        return 0;
+    }" FLB_HAVE_SETJMP)
+if(FLB_HAVE_SETJMP)
+  FLB_DEFINITION(FLB_HAVE_SETJMP)
+endif()
+
 configure_file(
   "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_info.h.in"
   "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_info.h"
@@ -175,16 +206,6 @@ configure_file(
   "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_version.h.in"
   "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_version.h"
   )
-
-check_c_source_compiles("
-   __thread int a;
-   int main() {
-       __tls_get_addr(0);
-       return 0;
-   }" FLB_HAVE_C_TLS)
-if (FLB_HAVE_C_TLS)
-  FLB_DEFINITION(FLB_HAVE_C_TLS)
-endif()
 
 # Instruct CMake to build the Fluent Bit Core
 add_subdirectory(include)
