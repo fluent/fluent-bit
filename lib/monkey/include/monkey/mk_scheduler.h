@@ -19,10 +19,12 @@
 
 #define _GNU_SOURCE
 
+#include <monkey/mk_info.h>
+#include <monkey/mk_tls.h>
+
 #include <monkey/mk_core.h>
 #include <monkey/mk_server.h>
 #include <monkey/mk_stream.h>
-#include <monkey/mk_tls.h>
 
 #ifndef MK_SCHEDULER_H
 #define MK_SCHEDULER_H

@@ -17,6 +17,7 @@
  *  limitations under the License.
  */
 
+#include <monkey/mk_info.h>
 #include <monkey/monkey.h>
 #include <monkey/mk_core.h>
 #include <monkey/mk_vhost.h>

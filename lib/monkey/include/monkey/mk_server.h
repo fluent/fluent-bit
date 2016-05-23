@@ -21,7 +21,6 @@
 #define MK_SERVER_H
 
 #define _GNU_SOURCE
-#include <monkey/mk_info.h>
 #include <monkey/mk_socket.h>
 #include <monkey/mk_config.h>
 #include <monkey/mk_core.h>

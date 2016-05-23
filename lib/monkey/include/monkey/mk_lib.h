@@ -23,8 +23,9 @@
 #define _GNU_SOURCE
 
 #include <monkey/mk_info.h>
-#include <monkey/mk_config.h>
+#include <monkey/mk_tls.h>
 #include <monkey/mk_vhost.h>
+#include <monkey/mk_config.h>
 #include <monkey/mk_http_internal.h>
 
 struct mk_lib_ctx {
@@ -46,11 +47,11 @@ MK_EXPORT int mk_vhost_set(mk_vhost_t *vh, ...);
 MK_EXPORT int mk_vhost_handler(mk_vhost_t *vh, char *regex,
                                void (*cb)(mk_session_t *, mk_request_t *));
 
-int mk_http_status(mk_request_t *req, int status);
-int mk_http_header(mk_request_t *req,
-                   char *key, int key_len,
-                   char *val, int val_len);
-int mk_http_send(mk_request_t *req, char *buf, size_t len,
-                 void (*cb_finish)(mk_request_t *));
+MK_EXPORT int mk_http_status(mk_request_t *req, int status);
+MK_EXPORT int mk_http_header(mk_request_t *req,
+                             char *key, int key_len,
+                             char *val, int val_len);
+MK_EXPORT int mk_http_send(mk_request_t *req, char *buf, size_t len,
+                           void (*cb_finish)(mk_request_t *));
 
 #endif

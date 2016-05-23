@@ -20,7 +20,6 @@
 #ifndef MK_INFO_H
 #define MK_INFO_H
 
-#include <monkey/mk_plugin.h>
 #include <monkey/mk_core.h>
 
 /* Monkey Version */

@@ -20,6 +20,7 @@
 #define _GNU_SOURCE
 #include <stdarg.h>
 #include <string.h>
+#include <errno.h>
 
 #include <monkey/mk_lib.h>
 #include <monkey/monkey.h>

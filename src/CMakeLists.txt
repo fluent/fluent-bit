@@ -24,6 +24,7 @@ include_directories(
   ../lib/
   ../lib/jsmn
   ../lib/msgpack-c-068041f/include
+  ../lib/monkey/include/
   ${extra_headers}
   )
 
