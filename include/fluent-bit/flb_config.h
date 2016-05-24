@@ -24,7 +24,7 @@
 #include <mk_core.h>
 #include <fluent-bit/flb_log.h>
 
-#ifdef HAVE_TLS
+#ifdef FLB_HAVE_TLS
 #include <fluent-bit/flb_io_tls.h>
 #endif
 
@@ -48,7 +48,7 @@ struct flb_config {
     int daemon;         /* Run as a daemon ?              */
     int shutdown_fd;    /* Shutdown FD, 5 seconds         */
 
-#ifdef HAVE_STATS
+#ifdef FLB_HAVE_STATS
     int stats_fd;       /* Stats FD, 1 second             */
     struct flb_stats *stats_ctx;
 #endif

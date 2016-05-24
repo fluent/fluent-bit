@@ -102,7 +102,7 @@ struct flb_output_instance {
     int use_tls;                         /* bool, try to use TLS for I/O */
     char *match;                         /* match rule for tag/routing   */
 
-#ifdef HAVE_TLS
+#ifdef FLB_HAVE_TLS
     int tls_verify;                      /* Verify certs (default: true) */
     char *tls_ca_file;                   /* CA root cert                 */
     char *tls_crt_file;                  /* Certificate                  */
@@ -168,11 +168,11 @@ struct flb_output_instance {
      */
     struct mk_list th_queue;
 
-#ifdef HAVE_STATS
+#ifdef FLB_HAVE_STATS
     int stats_fd;
 #endif
 
-#ifdef HAVE_TLS
+#ifdef FLB_HAVE_TLS
     struct flb_tls tls;
 #else
     void *tls;

@@ -17,7 +17,7 @@
  *  limitations under the License.
  */
 
-#ifdef HAVE_STATS
+#ifdef FLB_HAVE_STATS
 
 #ifndef FLB_STATS_H
 #define FLB_STATS_H
@@ -144,4 +144,4 @@ int flb_stats_register(struct mk_event_loop *evl, struct flb_config *config);
 #define flb_stats_reset(a) do {} while(0)
 #define flb_stats_register(a, b) do{} while(0)
 
-#endif /* HAVE_STATS  */
+#endif /* FLB_HAVE_STATS  */

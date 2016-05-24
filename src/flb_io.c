@@ -267,7 +267,7 @@ int flb_io_net_write(struct flb_upstream_conn *u_conn, void *data,
     if (u->flags & FLB_IO_TCP) {
         ret = net_io_write(th, u_conn, data, len, out_len);
     }
-#ifdef HAVE_TLS
+#ifdef FLB_HAVE_TLS
     else if (u->flags & FLB_IO_TLS) {
         ret = net_io_tls_write(th, u_conn, data, len, out_len);
     }
@@ -297,7 +297,7 @@ ssize_t flb_io_net_read(struct flb_upstream_conn *u_conn, void *buf, size_t len)
     if (u->flags & FLB_IO_TCP) {
         ret = net_io_read(th, u_conn, buf, len);
     }
-#ifdef HAVE_TLS
+#ifdef FLB_HAVE_TLS
     else if (u->flags & FLB_IO_TLS) {
         ret = net_io_tls_read(th, u_conn, buf, len);
     }
