@@ -87,7 +87,7 @@ void flb_output_exit(struct flb_config *config)
         free(ins->host.name);
         free(ins->match);
 
-#ifdef HAVE_TLS
+#ifdef FLB_HAVE_TLS
         flb_tls_context_destroy(ins->tls.context);
 #endif
 
@@ -153,7 +153,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         instance->host.name = NULL;
 
         instance->use_tls        = FLB_FALSE;
-#ifdef HAVE_TLS
+#ifdef FLB_HAVE_TLS
         instance->tls.context    = NULL;
         instance->tls_verify     = FLB_TRUE;
         instance->tls_ca_file    = NULL;
@@ -208,7 +208,7 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
     else if (prop_key_check("port", k, len) == 0) {
         out->host.port = atoi(v);
     }
-#ifdef HAVE_TLS
+#ifdef FLB_HAVE_TLS
     else if (prop_key_check("tls", k, len) == 0) {
         if (strcasecmp(v, "true") == 0 || strcasecmp(v, "on") == 0) {
             out->use_tls = FLB_TRUE;
@@ -275,7 +275,7 @@ int flb_output_init(struct flb_config *config)
         ins = mk_list_entry(head, struct flb_output_instance, _head);
         p = ins->p;
 
-#ifdef HAVE_TLS
+#ifdef FLB_HAVE_TLS
         if (p->flags & FLB_IO_TLS) {
             ins->tls.context = flb_tls_context_new(ins->tls_verify,
                                                    ins->tls_ca_file,

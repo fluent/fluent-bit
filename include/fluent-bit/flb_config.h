@@ -24,7 +24,7 @@
 #include <mk_core.h>
 #include <fluent-bit/flb_log.h>
 
-#ifdef HAVE_TLS
+#ifdef FLB_HAVE_TLS
 #include <fluent-bit/flb_io_tls.h>
 #endif
 

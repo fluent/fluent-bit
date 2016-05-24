@@ -34,5 +34,5 @@ int net_io_tls_read(struct flb_thread *th, struct flb_upstream_conn *u_conn,
 int flb_io_tls_connect(struct flb_upstream_conn *u_conn,
                        struct flb_thread *th);
 
-#endif /* HAVE_TLS */
+#endif /* FLB_HAVE_TLS */
 #endif
