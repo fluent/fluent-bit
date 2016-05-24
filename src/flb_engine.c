@@ -320,7 +320,7 @@ int flb_engine_start(struct flb_config *config)
     struct flb_thread *th;
     struct flb_engine_task *task;
 
-#ifdef HAVE_HTTP
+#ifdef FLB_HAVE_HTTP
     if (config->http_server == FLB_TRUE) {
         flb_http_server_start(config);
     }
