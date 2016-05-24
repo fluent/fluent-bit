@@ -168,7 +168,7 @@ struct flb_output_instance {
      */
     struct mk_list th_queue;
 
-#ifdef HAVE_STATS
+#ifdef FLB_HAVE_STATS
     int stats_fd;
 #endif
 

@@ -145,7 +145,7 @@ struct flb_input_instance {
      */
     void *data;
 
-#ifdef HAVE_STATS
+#ifdef FLB_HAVE_STATS
     int stats_fd;
 #endif
 

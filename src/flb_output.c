@@ -293,7 +293,7 @@ int flb_output_init(struct flb_config *config)
         }
 
 
-#ifdef HAVE_STATS
+#ifdef FLB_HAVE_STATS
         //struct flb_stats *stats;
         //stats = &out->stats;
         //stats->n = -1;

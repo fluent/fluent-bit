@@ -34,7 +34,7 @@
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_http_server.h>
 
-#ifdef HAVE_STATS
+#ifdef FLB_HAVE_STATS
 #include <fluent-bit/flb_stats.h>
 #endif
 
@@ -236,7 +236,7 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
         flb_engine_flush(config, NULL);
         return FLB_ENGINE_STOP;
     }
-#ifdef HAVE_STATS
+#ifdef FLB_HAVE_STATS
     else if (val == FLB_ENGINE_STATS) {
         flb_trace("[engine] collect stats");
         //flb_stats_collect(config);
@@ -264,7 +264,7 @@ static FLB_INLINE int flb_engine_handle_event(int fd, int mask,
         else if (config->shutdown_fd == fd) {
             return FLB_ENGINE_SHUTDOWN;
         }
-#ifdef HAVE_STATS
+#ifdef FLB_HAVE_STATS
         else if (config->stats_fd == fd) {
             consume_byte(fd);
             return FLB_ENGINE_STATS;
@@ -376,7 +376,7 @@ int flb_engine_start(struct flb_config *config)
         flb_utils_error(FLB_ERR_CFG_FLUSH_CREATE);
     }
 
-    /* Initialize the stats interface (just if HAVE_STATS is defined) */
+    /* Initialize the stats interface (just if FLB_HAVE_STATS is defined) */
     flb_stats_init(config);
 
     /* For each Collector, register the event into the main loop */
@@ -438,7 +438,7 @@ int flb_engine_start(struct flb_config *config)
                     flb_info("[engine] service stopped");
                     return flb_engine_shutdown(config);
                 }
-#ifdef HAVE_STATS
+#ifdef FLB_HAVE_STATS
                 else if (ret == FLB_ENGINE_STATS) {
                     //flb_stats_collect(config);
                 }

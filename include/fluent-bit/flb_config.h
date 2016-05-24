@@ -48,7 +48,7 @@ struct flb_config {
     int daemon;         /* Run as a daemon ?              */
     int shutdown_fd;    /* Shutdown FD, 5 seconds         */
 
-#ifdef HAVE_STATS
+#ifdef FLB_HAVE_STATS
     int stats_fd;       /* Stats FD, 1 second             */
     struct flb_stats *stats_ctx;
 #endif
