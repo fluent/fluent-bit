@@ -31,6 +31,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_engine.h>
+#include <fluent-bit/flb_engine_dispatch.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_http_server.h>
 
@@ -73,16 +74,9 @@ int flb_engine_destroy_tasks(struct mk_list *tasks)
 int flb_engine_flush(struct flb_config *config,
                      struct flb_input_plugin *in_force)
 {
-    size_t size;
-    char *buf;
     struct flb_input_instance *in;
     struct flb_input_plugin *p;
     struct mk_list *head;
-    struct mk_list *r_head;
-    struct flb_thread *th;
-    struct flb_output_instance *o_ins;
-    struct flb_router_path *path;
-    struct flb_engine_task *task;
 
     mk_list_foreach(head, &config->inputs) {
         in = mk_list_entry(head, struct flb_input_instance, _head);
@@ -92,113 +86,7 @@ int flb_engine_flush(struct flb_config *config,
             continue;
         }
 
-        if (p->cb_flush_buf) {
-            buf = p->cb_flush_buf(in->context, &size);
-            if (!buf) {
-                goto flush_done;
-            }
-            if (size == 0) {
-                flb_warn("[engine] no input data");
-                continue;
-            }
-
-            /*
-             * Create an engine task, the task will hold the buffer reference
-             * and the co-routines associated to the output instance plugins
-             * that needs to handle the data.
-             */
-            task = flb_engine_task_create(buf, size, in, NULL);
-            if (!task) {
-                free(buf);
-                continue;
-            }
-
-            /* Create a thread context for an output plugin call */
-            mk_list_foreach(r_head, &in->routes) {
-                path = mk_list_entry(r_head, struct flb_router_path, _head);
-                o_ins = path->ins;
-
-                th = flb_output_thread(task,
-                                       in,
-                                       o_ins,
-                                       config,
-                                       buf, size,
-                                       in->tag,
-                                       in->tag_len);
-                flb_engine_task_add(&th->_head, task);
-                flb_thread_resume(th);
-            }
-
-            /* Sometimes a task finish right away, lets check */
-            if (task->deleted == FLB_TRUE) {
-                flb_engine_destroy_threads(&task->threads);
-                flb_engine_task_destroy(task);
-            }
-
-            continue;
-        }
-        else if (p->flags & FLB_INPUT_DYN_TAG) {
-            /* Iterate dynamic tag buffers */
-            struct mk_list *d_head, *tmp;
-            struct flb_input_dyntag *dt;
-            struct flb_output_instance *o_ins;
-
-            mk_list_foreach_safe(d_head, tmp, &in->dyntags) {
-                int matches = 0;
-                struct mk_list *o_head;
-                dt = mk_list_entry(d_head, struct flb_input_dyntag, _head);
-                flb_trace("[dyntag %s] %p tag=%s", dt->in->name, dt, dt->tag);
-
-                /* There is a match, get the buffer */
-                buf = flb_input_dyntag_flush(dt, &size);
-                if (size == 0 || !buf) {
-                    continue;
-                }
-
-                task = flb_engine_task_create(buf, size, dt->in, dt);
-                if (!task) {
-                    free(buf);
-                    continue;
-                }
-
-                mk_list_foreach(o_head, &config->outputs) {
-                    o_ins = mk_list_entry(o_head,
-                                          struct flb_output_instance, _head);
-
-                    if (flb_router_match(dt->tag, o_ins->match)) {
-                        flb_trace("[dyntag %s] [%p] match rule %s:%s",
-                                  dt->in->name, dt, dt->tag, o_ins->match);
-
-                        flb_trace("[dyntag buf] size=%lu buf=%p",
-                                  size, buf);
-
-                        th = flb_output_thread(task,
-                                               dt->in,
-                                               o_ins,
-                                               config,
-                                               buf, size,
-                                               dt->tag, dt->tag_len);
-                        flb_engine_task_add(&th->_head, task);
-                        flb_thread_resume(th);
-
-                        matches++;
-                    }
-                }
-                if (matches == 0) {
-                    flb_input_dyntag_destroy(dt);
-                }
-
-                if (task->deleted == FLB_TRUE) {
-                    flb_engine_destroy_threads(&task->threads);
-                    flb_engine_task_destroy(task);
-                }
-            }
-        }
-
-    flush_done:
-        if (p->cb_flush_end) {
-            p->cb_flush_end(in->context);
-        }
+        flb_engine_dispatch(in, config);
     }
 
     return 0;

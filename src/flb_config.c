@@ -22,6 +22,7 @@
 #include <unistd.h>
 #include <signal.h>
 
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_plugins.h>
@@ -38,13 +39,19 @@ struct flb_config *flb_config_init()
         return NULL;
     }
 
-    config->daemon      = FLB_FALSE;
-    config->flush       = FLB_CONFIG_FLUSH_SECS;
-    config->init_time   = time(NULL);
-    config->kernel      = flb_kernel_info();
-    config->verbose     = 3;
-    config->http_server = FLB_FALSE;
-    config->http_port   = FLB_CONFIG_HTTP_PORT;
+    /* Flush */
+    config->flush        = FLB_CONFIG_FLUSH_SECS;
+#ifdef FLB_HAVE_FLUSH_UCONTEXT
+    config->flush_method = FLB_FLUSH_UCONTEXT;
+#elif defined FLB_HAVE_FLUSH_PTHREADS
+    config->flush_method = FLB_FLUSH_PTHREADS;
+#endif
+    config->daemon       = FLB_FALSE;
+    config->init_time    = time(NULL);
+    config->kernel       = flb_kernel_info();
+    config->verbose      = 3;
+    config->http_server  = FLB_FALSE;
+    config->http_port    = FLB_CONFIG_HTTP_PORT;
 
     mk_list_init(&config->collectors);
     mk_list_init(&config->in_plugins);

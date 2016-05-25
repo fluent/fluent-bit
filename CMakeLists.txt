@@ -32,6 +32,19 @@ option(FLB_VALGRIND           "Enable Valgrind support"      No)
 option(FLB_TRACE              "Enable trace mode"            No)
 option(FLB_TESTS              "Enable tests"                 No)
 
+# Advanced options for Flushing methods
+# =====================================
+# Flush methods defineswhat kind of context/environment the output plugins
+# flush callback is invoked: 'cb_flush()'.
+
+# FLB_FLUSH_UCONTEXT: set by default if available, it uses an async
+# coroutines implementation for flushing data.
+#
+# FLB_FLUSH_PTHREAD: spawn a new POSIX thread that the output interface
+# will use to flush the data.
+option(FLB_FLUSH_UCONTEXT     "Use co-routines for flush I/O" Yes)
+option(FLB_FLUSH_PTHREADS     "Use pthreads for flush I/O"     No)
+
 # Build Plugins
 option(FLB_IN_XBEE     "Enable XBee input plugin"            No)
 option(FLB_IN_CPU      "Enable CPU input plugin"            Yes)
@@ -165,6 +178,22 @@ endif()
 
 if(FLB_HTTP)
   FLB_DEFINITION(FLB_HAVE_HTTP)
+endif()
+
+# Flush method
+check_c_source_compiles("
+  #include <ucontext.h>
+  int main() {
+     ucontext_t a, b;
+     return swapcontext(&a, &b);
+  }" FLB_HAVE_UCONTEXT)
+
+if(FLB_FLUSH_PTHREADS)
+  FLB_DEFINITION(FLB_HAVE_FLUSH_PTHREADS)
+elseif(FLB_HAVE_UCONTEXT)
+  FLB_DEFINITION(FLB_HAVE_FLUSH_UCONTEXT)
+else()
+  message(FATAL_ERROR "No ucontext support, try enabling FLB_FLUSH_PTHREADS")
 endif()
 
 # Valgrind support
