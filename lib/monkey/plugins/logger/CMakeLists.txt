@@ -14,7 +14,7 @@ check_c_source_compiles("
   }" HAVE_SPLICE)
 
 if (HAVE_SPLICE)
-  add_definitions(-DHAVE_SPLICE)
+  MK_DEFINITION(MK_HAVE_SPLICE)
 endif()
 
 MONKEY_PLUGIN(logger "${src}")

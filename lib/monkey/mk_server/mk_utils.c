@@ -39,7 +39,7 @@
 /* stacktrace */
 #include <dlfcn.h>
 
-#ifdef HAVE_BACKTRACE
+#ifdef MK_HAVE_BACKTRACE
 #include <execinfo.h>
 #endif
 
@@ -296,7 +296,7 @@ char *mk_utils_url_decode(mk_ptr_t uri)
     return buf;
 }
 
-#ifndef HAVE_BACKTRACE
+#ifndef MK_HAVE_BACKTRACE
 void mk_utils_stacktrace(void) {}
 #else
 void mk_utils_stacktrace(void)

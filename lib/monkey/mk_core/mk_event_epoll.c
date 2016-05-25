@@ -21,11 +21,11 @@
 #include <fcntl.h>
 #include <sys/epoll.h>
 
-#ifdef HAVE_EVENTFD
+#ifdef MK_HAVE_EVENTFD
 #include <sys/eventfd.h>
 #endif
 
-#ifdef HAVE_TIMERFD_CREATE
+#ifdef MK_HAVE_TIMERFD_CREATE
 #include <sys/timerfd.h>
 #endif
 
@@ -150,7 +150,7 @@ static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event
     return ret;
 }
 
-#ifdef HAVE_TIMERFD_CREATE
+#ifdef MK_HAVE_TIMERFD_CREATE
 /* Register a timeout file descriptor */
 static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
                                            time_t sec, long nsec, void *data)
@@ -197,7 +197,7 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
 
     return timer_fd;
 }
-#else /* HAVE_TIMERFD_CREATE */
+#else /* MK_HAVE_TIMERFD_CREATE */
 
 struct fd_timer {
     int fd;
@@ -286,9 +286,9 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
 
     return fd[0];
 }
-#endif /* HAVE_TIMERFD_CREATE */
+#endif /* MK_HAVE_TIMERFD_CREATE */
 
-#ifdef HAVE_EVENTFD
+#ifdef MK_HAVE_EVENTFD
 static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
                                            int *r_fd, int *w_fd,
                                            void *data)
@@ -318,7 +318,7 @@ static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
     *w_fd = *r_fd = fd;
     return 0;
 }
-#else /* !HAVE_EVENT_FD */
+#else /* !MK_HAVE_EVENT_FD */
 static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
                                            int *r_fd, int *w_fd, void *data)
 {
