@@ -11,6 +11,6 @@ notifications:
 
 before_script:
   - cd build
-  - cmake -DWITH_ALL=1 ../
+  - cmake -DFLB_ALL=On ../
 
 script: make
