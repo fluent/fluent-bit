@@ -21,6 +21,8 @@
 #define FLB_IO_H
 
 #include <mk_core.h>
+
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_upstream.h>

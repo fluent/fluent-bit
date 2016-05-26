@@ -63,6 +63,13 @@ if(FLB_STATS)
     )
 endif()
 
+if(FLB_FLUSH_PTHREADS)
+  set(src
+    ${src}
+    "flb_thread_pthreads.c"
+    )
+endif()
+
 include(CheckSymbolExists)
 check_symbol_exists(accept4 "sys/socket.h" HAVE_ACCEPT4)
 

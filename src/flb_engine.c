@@ -39,6 +39,7 @@
 #include <fluent-bit/flb_stats.h>
 #endif
 
+#ifdef FLB_HAVE_FLUSH_UCONTEXT
 static int flb_engine_destroy_threads(struct mk_list *threads)
 {
     int c = 0;
@@ -54,6 +55,7 @@ static int flb_engine_destroy_threads(struct mk_list *threads)
 
     return c;
 }
+#endif
 
 int flb_engine_destroy_tasks(struct mk_list *tasks)
 {
@@ -335,6 +337,7 @@ int flb_engine_start(struct flb_config *config)
             else if (event->type == FLB_ENGINE_EV_CUSTOM) {
                 event->handler(event);
             }
+#ifdef FLB_HAVE_FLUSH_UCONTEXT
             else if (event->type == FLB_ENGINE_EV_THREAD) {
                 /*
                  * Check if we have some co-routine associated to this event,
@@ -352,6 +355,7 @@ int flb_engine_start(struct flb_config *config)
                     flb_engine_task_destroy(task);
                 }
             }
+#endif
         }
     }
 }

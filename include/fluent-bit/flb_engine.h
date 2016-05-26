@@ -20,6 +20,7 @@
 #ifndef FLB_ENGINE_H
 #define FLB_ENGINE_H
 
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>

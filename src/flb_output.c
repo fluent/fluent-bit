@@ -21,9 +21,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_thread.h>
+#include <fluent-bit/flb_output.h>
+
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_uri.h>
-#include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_utils.h>

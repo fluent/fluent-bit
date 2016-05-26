@@ -20,6 +20,9 @@
 #ifndef FLB_LOG_H
 #define FLB_LOG_H
 
+#include <inttypes.h>
+
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_macros.h>
 
 #ifdef FLB_HAVE_C_TLS
@@ -75,7 +78,7 @@ int flb_log_check(int level);
 
 struct flb_log *flb_log_init(int type, int level, char *out);
 int flb_log_stop(struct flb_log *log);
-void flb_log_print(int type, char *file, int line, const char *fmt, ...);
+void flb_log_print(int type, const char *file, int line, const char *fmt, ...);
 
 /* Logging macros */
 #define flb_error(fmt, ...)                                          \
@@ -94,7 +97,7 @@ void flb_log_print(int type, char *file, int line, const char *fmt, ...);
     if (flb_log_check(FLB_LOG_DEBUG))                               \
         flb_log_print(FLB_LOG_DEBUG, NULL, 0, fmt, ##__VA_ARGS__)
 
-#ifdef FLB_TRACE
+#ifdef FLB_HAVE_TRACE
 #define flb_trace(fmt, ...)                                             \
     if (flb_log_check(FLB_LOG_TRACE))                                   \
         flb_log_print(FLB_LOG_TRACE, __FILE__, __LINE__,                \

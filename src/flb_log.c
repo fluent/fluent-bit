@@ -51,7 +51,7 @@ struct flb_log *flb_log_init(int type, int level, char *out)
     return log;
 }
 
-void flb_log_print(int type, char *file, int line, const char *fmt, ...)
+void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
 {
     time_t now;
     const char *header_color = NULL;

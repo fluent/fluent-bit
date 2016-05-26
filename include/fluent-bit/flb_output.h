@@ -23,14 +23,14 @@
 #ifndef _XOPEN_SOURCE
 #define _XOPEN_SOURCE
 #endif
-#include <ucontext.h>
 
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_stats.h>
 #include <fluent-bit/flb_config.h>
-#include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_engine.h>
+#include <fluent-bit/flb_engine_task.h>
 
 /* Output plugin masks */
 #define FLB_OUTPUT_NET         32  /* output address may set host and port */
@@ -158,9 +158,9 @@ struct flb_output_instance {
      *
      * This variable is only used when creating the co-routine.
      */
-    ucontext_t th_context;
+    //ucontext_t th_context;
 
-    int th_yield;
+    //int th_yield;
 
     /*
      * The threads_queue is the head for the linked list that holds co-routines
@@ -182,6 +182,7 @@ struct flb_output_instance {
     struct mk_list _head;                /* link to config->inputs       */
 };
 
+#ifdef FLB_HAVE_FLUSH_UCONTEXT
 static FLB_INLINE
 struct flb_thread *flb_output_thread(struct flb_engine_task *task,
                                      struct flb_input_instance *i_ins,
@@ -213,6 +214,39 @@ struct flb_thread *flb_output_thread(struct flb_engine_task *task,
                 config);
     return th;
 }
+
+#elif defined FLB_HAVE_FLUSH_PTHREADS
+static FLB_INLINE
+struct flb_thread *flb_output_thread(struct flb_engine_task *task,
+                                     struct flb_input_instance *i_ins,
+                                     struct flb_output_instance *o_ins,
+                                     struct flb_config *config,
+                                     void *buf, size_t size,
+                                     char *tag, int tag_len)
+{
+    struct flb_thread *th;
+
+    th = flb_thread_new();
+    if (!th) {
+        return NULL;
+    }
+
+    th->data = o_ins;
+    th->output_buffer = buf;
+    th->task = task;
+    th->config = config;
+
+    /* pthread reference data */
+    th->pth_cb.buf     = buf;
+    th->pth_cb.size    = size;
+    th->pth_cb.tag     = tag;
+    th->pth_cb.tag_len = tag_len;
+    th->pth_cb.i_ins   = i_ins;
+    th->pth_cb.o_ins   = o_ins;
+
+    return th;
+}
+#endif
 
 struct flb_output_instance *flb_output_new(struct flb_config *config,
                                            char *output, void *data);
