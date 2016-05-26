@@ -186,14 +186,15 @@ check_c_source_compiles("
   int main() {
      ucontext_t a, b;
      return swapcontext(&a, &b);
-  }" FLB_HAVE_UCONTEXT)
+  }" FLB_HAVE_UCONTEXT
+  FAIL_REGEX "warning.*not implemented.*")
 
 if(FLB_FLUSH_PTHREADS)
   FLB_DEFINITION(FLB_HAVE_FLUSH_PTHREADS)
 elseif(FLB_HAVE_UCONTEXT)
   FLB_DEFINITION(FLB_HAVE_FLUSH_UCONTEXT)
 else()
-  message(FATAL_ERROR "No ucontext support, try enabling FLB_FLUSH_PTHREADS")
+  FLB_DEFINITION(FLB_HAVE_FLUSH_PTHREADS)
 endif()
 
 # Valgrind support
