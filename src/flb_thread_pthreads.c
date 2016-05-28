@@ -29,11 +29,14 @@ static void worker_init(void *data)
     struct flb_thread *th = data;
     struct flb_output_plugin *p;
     struct flb_output_instance *o_ins;
+    struct flb_log *log;
 
     o_ins = th->pth_cb.o_ins;
     p = o_ins->p;
 
-    //flb_trace("[pthread flush]");
+    log = flb_log_init(0, th->config->verbose, NULL);
+
+    flb_trace("[pthread flush]");
     p->cb_flush(th->pth_cb.buf,
                 th->pth_cb.size,
                 th->pth_cb.tag,
@@ -42,6 +45,7 @@ static void worker_init(void *data)
                 th->pth_cb.o_ins->context,
                 th->config);
 
+    flb_log_stop(log);
     flb_thread_destroy(th);
     pthread_exit(0);
 }
