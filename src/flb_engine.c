@@ -206,9 +206,6 @@ int flb_engine_start(struct flb_config *config)
     struct mk_event *event;
     struct mk_event_loop *evl;
     struct flb_input_collector *collector;
-    struct flb_upstream_conn *u_conn;
-    struct flb_thread *th;
-    struct flb_engine_task *task;
 
 #ifdef FLB_HAVE_HTTP
     if (config->http_server == FLB_TRUE) {
@@ -217,7 +214,7 @@ int flb_engine_start(struct flb_config *config)
 #endif
 
     flb_info("starting engine");
-    pthread_key_create(&flb_thread_key, NULL);
+    flb_thread_prepare();
 
     /* Create the event loop and set it in the global configuration */
     evl = mk_event_loop_create(256);
@@ -339,6 +336,8 @@ int flb_engine_start(struct flb_config *config)
             }
 #ifdef FLB_HAVE_FLUSH_UCONTEXT
             else if (event->type == FLB_ENGINE_EV_THREAD) {
+                struct flb_upstream_conn *u_conn;
+
                 /*
                  * Check if we have some co-routine associated to this event,
                  * if so, resume the co-routine

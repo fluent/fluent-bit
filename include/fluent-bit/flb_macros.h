@@ -31,4 +31,15 @@
  #define FLB_EXPORT
 #endif
 
+
+#define flb_unlikely(x) __builtin_expect((x),0)
+#define flb_likely(x)   __builtin_expect((x),1)
+
+#define flb_bug(condition) do {                                         \
+        if (flb_unlikely((condition)!=0)) {                             \
+            fprintf(stderr, "Bug found in %s() at %s:%d",               \
+                    __FUNCTION__, __FILE__, __LINE__);                  \
+            abort();                                                    \
+        }                                                               \
+    } while(0)
 #endif

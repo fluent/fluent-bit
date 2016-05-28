@@ -65,6 +65,11 @@ struct flb_thread {
 
 FLB_EXPORT pthread_key_t flb_thread_key;
 
+static FLB_INLINE void flb_thread_prepare()
+{
+    pthread_key_create(&flb_thread_key, NULL);
+}
+
 static FLB_INLINE void flb_thread_yield(struct flb_thread *th, int ended)
 {
     th->ended = ended;

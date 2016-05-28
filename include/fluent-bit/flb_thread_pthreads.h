@@ -71,6 +71,10 @@ struct flb_thread {
     struct mk_list _head;
 };
 
+static FLB_INLINE void flb_thread_prepare()
+{
+}
+
 static struct flb_thread *flb_thread_new()
 {
     struct flb_thread *th;
@@ -92,7 +96,6 @@ static FLB_INLINE void flb_thread_yield(struct flb_thread *th, int ended)
 
 static FLB_INLINE void flb_thread_destroy(struct flb_thread *th)
 {
-    printf("destroy thread!\n");
 }
 
 #endif

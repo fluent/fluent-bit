@@ -32,9 +32,10 @@
 #define FLB_IO_WRITE       1  /* thread wants to write() data      */
 
 /* Network operation modes */
-#define FLB_IO_TCP         1  /* use plain TCP            */
-#define FLB_IO_TLS         2  /* use TLS/SSL layer        */
-#define FLB_IO_OPT_TLS     3  /* use TCP and optional TLS */
+#define FLB_IO_TCP         1  /* use plain TCP                          */
+#define FLB_IO_TLS         2  /* use TLS/SSL layer                      */
+#define FLB_IO_OPT_TLS     3  /* use TCP and optional TLS               */
+#define FLB_IO_ASYNC       4  /* use async mode (depends on event loop) */
 
 int flb_io_net_connect(struct flb_upstream_conn *u_conn,
                        struct flb_thread *th);

@@ -20,7 +20,19 @@
 #ifndef FLB_UPSTREAM_H
 #define FLB_UPSTREAM_H
 
+#include <pthread.h>
 #include <fluent-bit/flb_config.h>
+
+/*
+ * Upstream creation FLAGS set by Fluent Bit sub-components
+ * ========================================================
+ *
+ * --- flb_io.h ---
+ *   #define  FLB_IO_TCP    1
+ *   #define  FLB_IO_TLS    2
+ *   #define  FLB_IO_ASYNC  4
+ * ---
+ */
 
 /* Upstream handler */
 struct flb_upstream {
@@ -56,6 +68,10 @@ struct flb_upstream {
 #ifdef FLB_HAVE_TLS
     /* context with mbedTLS data to handle certificates and keys */
     struct flb_tls *tls;
+#endif
+
+#ifdef FLB_HAVE_FLUSH_PTHREADS
+    pthread_mutex_t mutex_queue;
 #endif
 };
 

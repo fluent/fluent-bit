@@ -125,6 +125,10 @@ int flb_log_stop(struct flb_log *log)
 int flb_log_check(int level) {
     struct flb_log *lc = FLB_TLS_GET(flb_log_ctx);
 
+    if (!lc) {
+        return FLB_FALSE;
+    }
+
     if (lc->level < level)
         return FLB_FALSE;
     else

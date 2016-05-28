@@ -46,8 +46,26 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
     mk_list_init(&u->av_queue);
     mk_list_init(&u->busy_queue);
 
+    /*
+     * If Fluent Bit was built with FLUSH_PTHREADS, means each operation inside
+     * the thread will not have access to the main event loop and it's quite
+     * independent, for hence all network operations must work in
+     * 'blocking mode'.
+     */
+    if (config->flush_method == FLB_FLUSH_PTHREADS) {
+        /* remove ASYNC flag in case it was set */
+        u->flags &= ~(FLB_IO_ASYNC);
+    }
+    else {
+        u->flags |= FLB_IO_ASYNC;
+    }
+
 #ifdef FLB_HAVE_TLS
     u->tls      = (struct flb_tls *) tls;
+#endif
+
+#ifdef FLB_HAVE_FLUSH_PTHREADS
+    pthread_mutex_init(&u->mutex_queue, NULL);
 #endif
 
     return u;
@@ -90,7 +108,18 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
 #endif
 
     MK_EVENT_NEW(&conn->event);
+
+#ifdef FLB_HAVE_FLUSH_PTHREADS
+    pthread_mutex_lock(&u->mutex_queue);
+#endif
+
+    /* Link new connection to the busy queue */
     mk_list_add(&conn->_head, &u->busy_queue);
+
+#ifdef FLB_HAVE_FLUSH_PTHREADS
+    pthread_mutex_unlock(&u->mutex_queue);
+#endif
+
     u->n_connections++;
 
     return conn;
@@ -100,6 +129,9 @@ static struct flb_upstream_conn *get_conn(struct flb_upstream *u)
 {
     struct flb_upstream_conn *conn;
 
+#ifdef FLB_HAVE_FLUSH_PTHREADS
+    pthread_mutex_lock(&u->mutex_queue);
+#endif
     /* Get the first available connection and increase the counter */
     conn = mk_list_entry_first(&u->av_queue,
                                struct flb_upstream_conn, _head);
@@ -108,6 +140,10 @@ static struct flb_upstream_conn *get_conn(struct flb_upstream *u)
     /* Move it to the busy queue */
     mk_list_del(&conn->_head);
     mk_list_add(&conn->_head, &u->busy_queue);
+
+#ifdef FLB_HAVE_FLUSH_PTHREADS
+    pthread_mutex_unlock(&u->mutex_queue);
+#endif
 
     return conn;
 }
@@ -148,8 +184,21 @@ int flb_upstream_conn_release(struct flb_upstream_conn *u_conn)
     if (u_conn->fd > 0) {
         close(u_conn->fd);
     }
-    mk_event_del(u->evl, &u_conn->event);
+
+    if (u->flags & FLB_IO_ASYNC) {
+        mk_event_del(u->evl, &u_conn->event);
+    }
+
+#ifdef FLB_HAVE_FLUSH_PTHREADS
+    pthread_mutex_lock(&u->mutex_queue);
+#endif
+
+    /* remove connection from the queue */
     mk_list_del(&u_conn->_head);
+
+#ifdef FLB_HAVE_FLUSH_PTHREADS
+    pthread_mutex_unlock(&u->mutex_queue);
+#endif
 
     u->n_connections--;
     free(u_conn);
