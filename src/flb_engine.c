@@ -337,6 +337,8 @@ int flb_engine_start(struct flb_config *config)
 #ifdef FLB_HAVE_FLUSH_UCONTEXT
             else if (event->type == FLB_ENGINE_EV_THREAD) {
                 struct flb_upstream_conn *u_conn;
+                struct flb_thread *th;
+                struct flb_engine_task *task;
 
                 /*
                  * Check if we have some co-routine associated to this event,
