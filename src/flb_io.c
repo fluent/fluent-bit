@@ -192,6 +192,7 @@ static int net_io_write(struct flb_upstream_conn *u_conn,
         total += ret;
     }
 
+    *out_len = total;
     return total;
 }
 
@@ -354,8 +355,13 @@ int flb_io_net_write(struct flb_upstream_conn *u_conn, void *data,
         u_conn->fd = -1;
     }
 
+#ifdef FLB_HAVE_FLUSH_UCONTEXT
     flb_trace("[io thread=%p] [net_write] ret=%i total=%i",
               th, ret, *out_len);
+#else
+    flb_trace("[io] [net_write] ret=%i total=%i",
+              ret, *out_len);
+#endif
     return ret;
 }
 
