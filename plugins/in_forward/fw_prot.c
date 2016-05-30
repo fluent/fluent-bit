@@ -59,8 +59,9 @@ int fw_prot_process(struct fw_conn *conn)
      * [tag, [[time,record], [time,record], ...]]
      */
 
+    msgpack_unpacked_init(&result);
+
     if (conn->buf_off == 0) {
-        msgpack_unpacked_init(&result);
         ret = msgpack_unpack_next(&result,
                                   conn->buf,
                                   conn->buf_len,
