@@ -182,6 +182,7 @@ endif()
 
 # Flush method
 check_c_source_compiles("
+  #define _XOPEN_SOURCE
   #include <ucontext.h>
   int main() {
      ucontext_t a, b;
