@@ -69,10 +69,9 @@ static int in_head_collect(struct flb_config *config, void *in_context)
     ret = 0;
     head_config->idx++;
     flb_stats_update(in_head_plugin.stats_fd, 0, 1);
-  collect_fin:
-    if (fd > 0) {
-        close(fd);
-    }
+
+ collect_fin:
+    close(fd);
     return ret;
 }
 
