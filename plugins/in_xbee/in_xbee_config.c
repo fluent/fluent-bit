@@ -22,45 +22,40 @@
 
 #include "in_xbee_config.h"
 
-int in_xbee_config_read_int(int *dest, struct mk_rconf_section *section, char *key, int default_val)
+static int config_read_int(int *dest,
+                           struct flb_input_instance *i_ins,
+                           char *key, int default_val)
 {
     char *val;
 
-    val = mk_rconf_section_get_key(section, key, MK_RCONF_STR);
+    val = flb_input_get_property(key, i_ins);
     *dest = val ? atoi(val) : default_val;
 
     return (val != NULL);
 }
 
-struct flb_in_xbee_config *xbee_config_read(struct flb_in_xbee_config *config, struct mk_rconf *conf)
+int xbee_config_read(struct flb_input_instance *i_ins,
+                     struct flb_in_xbee_config *config)
 {
     char *file = NULL;
     char *xbee_mode = NULL;
 
-    struct mk_rconf_section *section;
-
-    section = mk_rconf_section_get(conf, "xbee");
-    if (!section) {
-        return NULL;
-    }
-
-    /* Validate xbee section keys */
-    file = mk_rconf_section_get_key(section, "file", MK_RCONF_STR);
-
+    file = flb_input_get_property("file", i_ins);
     if (!file) {
-        flb_utils_error_c("[xbee] error reading filename from "
-                "configuration");
+        flb_error("[in_xbee] error reading filename from configuration");
+        return -1;
     }
 
-    config->file      = file;
-    in_xbee_config_read_int(&config->baudrate, section, "baudrate", 9600);
-    in_xbee_config_read_int(&config->xbeeLogLevel, section, "xbeeloglevel", -1);
-    in_xbee_config_read_int(&config->xbeeDisableAck, section, "xbeedisableack", 1);
-    in_xbee_config_read_int(&config->xbeeCatchAll, section, "xbeecatchall", 1);
+    config_read_int(&config->baudrate, i_ins, "baudrate", 9600);
+    config_read_int(&config->xbeeLogLevel, i_ins, "xbeeloglevel", -1);
+    config_read_int(&config->xbeeDisableAck, i_ins, "xbeedisableack", 1);
+    config_read_int(&config->xbeeCatchAll, i_ins, "xbeecatchall", 1);
+
+    xbee_mode = flb_input_get_property("mode", i_ins);
     config->xbeeMode  = xbee_mode ? xbee_mode : "xbeeZB";
 
-    flb_info("[xbee] / device='%s' baudrate=%d",
-             config->file, config->baudrate);
+    flb_debug("[in_xbee] device='%s' baudrate=%d",
+              config->file, config->baudrate);
 
-    return config;
+    return 0;
 }

@@ -24,6 +24,8 @@
 #include <termios.h>
 #include <msgpack.h>
 
+#include <fluent-bit/flb_input.h>
+
 #define FLB_XBEE_BUFFER_SIZE       128
 
 struct flb_in_xbee_config {
@@ -56,6 +58,7 @@ struct flb_in_xbee_config {
     pthread_mutex_t mtx_mp;
 };
 
-struct flb_in_xbee_config *xbee_config_read(struct flb_in_xbee_config *config, struct mk_rconf *conf);
+int xbee_config_read(struct flb_input_instance *i_ins,
+                     struct flb_in_xbee_config *config);
 
 #endif

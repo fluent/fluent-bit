@@ -230,12 +230,11 @@ int in_xbee_init(struct flb_input_instance *in,
         return -1;
     }
 
-    if (!config->file) {
-        flb_utils_error_c("XBee input plugin needs configuration file");
+    ret = xbee_config_read(in, ctx);
+    if (ret == -1) {
+        free(ctx);
         return -1;
     }
-
-    xbee_config_read(ctx, config->file);
 
     /* initialize MessagePack buffers */
     msgpack_sbuffer_init(&ctx->mp_sbuf);
