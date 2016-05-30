@@ -149,7 +149,7 @@ static int msgpack_to_json(void *data, size_t bytes, char *tag,
             }
             else if (m_val.type == MSGPACK_OBJECT_STR) {
                 if (m_val.via.str.size > sizeof(tmp_val)) {
-                    tmp_ext = malloc(m_val.via.str.size);
+                    tmp_ext = malloc(m_val.via.str.size + 1);
                 }
                 else {
                     tmp_ext = tmp_val;
@@ -164,7 +164,7 @@ static int msgpack_to_json(void *data, size_t bytes, char *tag,
             }
             else if (m_val.type == MSGPACK_OBJECT_BIN) {
                 if (m_val.via.bin.size > sizeof(tmp_val)) {
-                    tmp_ext = malloc(m_val.via.bin.size);
+                    tmp_ext = malloc(m_val.via.bin.size + 1);
                 }
                 else {
                     tmp_ext = tmp_val;
