@@ -98,4 +98,6 @@ static FLB_INLINE void flb_thread_destroy(struct flb_thread *th)
 {
 }
 
+void flb_thread_resume(struct flb_thread *th);
+
 #endif

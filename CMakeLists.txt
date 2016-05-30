@@ -183,6 +183,7 @@ endif()
 # Flush method
 check_c_source_compiles("
   #define _XOPEN_SOURCE
+  #define _BSD_SOURCE
   #include <ucontext.h>
   int main() {
      ucontext_t a, b;
@@ -195,6 +196,7 @@ if(FLB_FLUSH_PTHREADS)
 elseif(FLB_HAVE_UCONTEXT)
   FLB_DEFINITION(FLB_HAVE_FLUSH_UCONTEXT)
 else()
+  set(FLB_FLUSH_PTHREADS  ON)
   FLB_DEFINITION(FLB_HAVE_FLUSH_PTHREADS)
 endif()
 
