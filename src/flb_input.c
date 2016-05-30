@@ -179,7 +179,7 @@ void flb_input_initialize_all(struct flb_config *config)
         if (p->cb_init) {
             ret = p->cb_init(in, config, in->data);
             if (ret != 0) {
-                flb_error("Failed ininitalize input %s",
+                flb_error("Failed initialize input %s",
                           in->name);
                 mk_list_del(&in->_head);
                 free(in);
