@@ -111,7 +111,13 @@ int flb_engine_dispatch(struct flb_input_instance *in,
 
             /* There is a match, get the buffer */
             buf = flb_input_dyntag_flush(dt, &size);
-            if (size == 0 || !buf) {
+            if (size == 0) {
+                if (buf) {
+                    free(buf);
+                }
+                continue;
+            }
+            if (!buf) {
                 continue;
             }
 
