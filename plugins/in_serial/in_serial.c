@@ -100,7 +100,7 @@ static inline void consume_bytes(char *buf, int bytes, int length)
 int in_serial_collect(struct flb_config *config, void *in_context)
 {
     int ret;
-    int bytes;
+    int bytes = 0;
     int available;
     int len;
     int hits;
