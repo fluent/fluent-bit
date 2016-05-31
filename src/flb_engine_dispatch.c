@@ -87,7 +87,7 @@ int flb_engine_dispatch(struct flb_input_instance *in,
                                    buf, size,
                                    in->tag,
                                    in->tag_len);
-            flb_engine_task_add(&th->_head, task);
+            flb_engine_task_add_thread(&th->_head, task);
             flb_thread_resume(th);
         }
 
@@ -144,7 +144,7 @@ int flb_engine_dispatch(struct flb_input_instance *in,
                                            config,
                                            buf, size,
                                            dt->tag, dt->tag_len);
-                    flb_engine_task_add(&th->_head, task);
+                    flb_engine_task_add_threads(&th->_head, task);
                     flb_thread_resume(th);
 
                     matches++;
@@ -212,14 +212,8 @@ int flb_engine_dispatch(struct flb_input_instance *in,
                                    buf, size,
                                    in->tag,
                                    in->tag_len);
-            flb_engine_task_add(&th->_head, task);
+            flb_engine_task_add_thread(&th->_head, task);
             flb_thread_resume(th);
-        }
-
-        /* Sometimes a task finish right away, lets check */
-        if (task->deleted == FLB_TRUE) {
-            //flb_engine_destroy_threads(&task->threads);
-            flb_engine_task_destroy(task);
         }
     }
     else if (p->flags & FLB_INPUT_DYN_TAG) {
@@ -263,7 +257,9 @@ int flb_engine_dispatch(struct flb_input_instance *in,
                                            config,
                                            buf, size,
                                            dt->tag, dt->tag_len);
-                    flb_engine_task_add(&th->_head, task);
+
+                    /* Associate the thread with the parent task and resume */
+                    flb_engine_task_add_thread(&th->_head, task);
                     flb_thread_resume(th);
 
                     matches++;
@@ -271,11 +267,6 @@ int flb_engine_dispatch(struct flb_input_instance *in,
             }
             if (matches == 0) {
                 flb_input_dyntag_destroy(dt);
-            }
-
-            if (task->deleted == FLB_TRUE) {
-                //flb_engine_destroy_threads(&task->threads);
-                flb_engine_task_destroy(task);
             }
         }
     }

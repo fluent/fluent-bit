@@ -22,6 +22,8 @@
 
 struct flb_thread;
 
+#include <pthread.h>
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_input.h>
 
@@ -35,6 +37,10 @@ struct flb_engine_task {
     struct flb_input_instance *i_ins;      /* input instance            */
     struct mk_list threads;                /* ref flb_input_instance->tasks */
     struct mk_list _head;
+
+#ifdef FLB_HAVE_FLUSH_PTHREADS
+    pthread_mutex_t mutex_threads;
+#endif
 };
 
 /* Create an engine task to handle the output plugin flushing work */
@@ -62,6 +68,10 @@ struct flb_engine_task *flb_engine_task_create(char *buf,
     mk_list_init(&task->threads);
     mk_list_add(&task->_head, &i_ins->tasks);
 
+#ifdef FLB_HAVE_FLUSH_PTHREADS
+    pthread_mutex_init(&task->mutex_threads, NULL);
+#endif
+
     return task;
 }
 
@@ -84,25 +94,34 @@ static inline void flb_engine_task_destroy(struct flb_engine_task *task)
     }
 
     mk_list_del(&task->_head);
+
     free(task->buf);
     free(task);
 }
 
 /* Register a thread into the tasks list */
-static inline void flb_engine_task_add(struct mk_list *head,
-                                       struct flb_engine_task *task)
+static inline void flb_engine_task_add_thread(struct mk_list *head,
+                                              struct flb_engine_task *task)
 {
     /*
      * It's likely a previous thread have marked this task ready to be deleted,
      * we must check this usual condition that could happen when one input
      * instance must flush the data to many destinations.
      */
+#ifdef FLB_HAVE_FLUSH_PTHREADS
+    pthread_mutex_lock(&task->mutex_threads);
+#endif
+
     if (task->deleted == FLB_TRUE) {
         task->deleted = FLB_FALSE;
     }
 
     mk_list_add(head, &task->threads);
     task->users++;
+
+#ifdef FLB_HAVE_FLUSH_PTHREADS
+    pthread_mutex_unlock(&task->mutex_threads);
+#endif
 }
 
 #endif

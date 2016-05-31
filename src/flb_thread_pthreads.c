@@ -55,4 +55,5 @@ void flb_thread_resume(struct flb_thread *th)
 {
     /* start the posix thread */
     mk_utils_worker_spawn(worker_init, th, &th->tid);
+    pthread_detach(th->tid);
 }

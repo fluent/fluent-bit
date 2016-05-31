@@ -96,6 +96,17 @@ static FLB_INLINE void flb_thread_yield(struct flb_thread *th, int ended)
 
 static FLB_INLINE void flb_thread_destroy(struct flb_thread *th)
 {
+#ifdef FLB_HAVE_FLUSH_PTHREADS
+    pthread_mutex_lock(&th->task->mutex_threads);
+#endif
+
+    mk_list_del(&th->_head);
+
+#ifdef FLB_HAVE_FLUSH_PTHREADS
+    pthread_mutex_unlock(&th->task->mutex_threads);
+#endif
+
+    free(th);
 }
 
 void flb_thread_resume(struct flb_thread *th);
