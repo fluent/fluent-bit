@@ -144,7 +144,7 @@ int flb_engine_dispatch(struct flb_input_instance *in,
                                            config,
                                            buf, size,
                                            dt->tag, dt->tag_len);
-                    flb_engine_task_add_threads(&th->_head, task);
+                    flb_engine_task_add_thread(&th->_head, task);
                     flb_thread_resume(th);
 
                     matches++;
