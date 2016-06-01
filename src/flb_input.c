@@ -72,6 +72,10 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
     struct flb_input_plugin *plugin;
     struct flb_input_instance *instance = NULL;
 
+    if (!input) {
+        return NULL;
+    }
+
     mk_list_foreach(head, &config->in_plugins) {
         plugin = mk_list_entry(head, struct flb_input_plugin, _head);
         if (!check_protocol(plugin->name, input)) {
