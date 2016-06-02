@@ -231,7 +231,9 @@ int in_serial_init(struct flb_input_instance *in,
     fd = open(ctx->file, O_RDWR | O_NOCTTY | O_NONBLOCK);
     if (fd == -1) {
         perror("open");
-        flb_utils_error_c("Could not open serial port device");
+        flb_error("[in_serial] Could not open serial port device");
+        free(ctx);
+        return -1;
     }
     ctx->fd = fd;
 
@@ -272,7 +274,6 @@ int in_serial_init(struct flb_input_instance *in,
                                        IN_SERIAL_COLLECT_NSEC,
                                        config);
 #endif
-
     return ret;
 }
 
