@@ -27,6 +27,7 @@ static void cb_root(mk_session_t *session, mk_request_t *request)
     (void) session;
 
     mk_http_status(request, 200);
+    mk_http_header(request, "Content-Type", 12, "application/json", 16);
     mk_http_send(request, FLB_HTTP_BANNER, sizeof(FLB_HTTP_BANNER) - 1, NULL);
 }
 
