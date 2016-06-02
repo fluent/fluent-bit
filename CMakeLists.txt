@@ -23,7 +23,7 @@ set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PAT
 option(FLB_ALL                "Enable all features"          No)
 option(FLB_DEBUG              "Build with debug symbols"     No)
 option(FLB_TLS                "Build with SSL/TLS support"   No)
-option(FLB_HTTP               "Enable build-in HTTP Server" Yes)
+option(FLB_HTTP               "Enable build-in HTTP Server"  No)
 option(FLB_WITHOUT_BIN        "Do not build executable"      No)
 option(FLB_WITHOUT_EXAMPLES   "Do not build examples"        No)
 option(FLB_WITHOUT_SHARED_LIB "Do not build shared library"  No)
@@ -69,7 +69,6 @@ option(FLB_OUT_NULL    "Enable dev null output plugin"      Yes)
 # Enable all features
 if(FLB_ALL)
   # Global
-  set(FLB_HTTP         1)
   set(FLB_DEBUG        1)
   set(FLB_TLS          1)
 

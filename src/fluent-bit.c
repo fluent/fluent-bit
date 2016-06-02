@@ -64,9 +64,11 @@ static void flb_help(int rc, struct flb_config *config)
     printf("  -p, --prop=\"A=B\"\tset plugin configuration property\n");
     printf("  -t, --tag=TAG\t\tset plugin tag, same as '-p tag=abc'\n");
     printf("  -v, --verbose\t\tenable verbose mode\n");
+#ifdef FLB_HAVE_HTTP
     printf("  -H, --http\t\tenable monitoring HTTP server\n");
     printf("  -P, --port\t\tset HTTP server TCP port (default: %s)\n",
            FLB_CONFIG_HTTP_PORT);
+#endif
     printf("  -q, --quiet\t\tquiet mode\n");
     printf("  -V, --version\t\tshow version number\n");
     printf("  -h, --help\t\tprint this help\n\n");
