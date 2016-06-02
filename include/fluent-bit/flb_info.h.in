@@ -22,4 +22,6 @@
 
 /* General flags set by CMakeLists.txt */
 @FLB_BUILD_FLAGS@
+
+#define FLB_INFO_FLAGS "@FLB_INFO_FLAGS@"
 #endif

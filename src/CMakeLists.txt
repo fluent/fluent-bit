@@ -73,11 +73,6 @@ endif()
 include(CheckSymbolExists)
 check_symbol_exists(accept4 "sys/socket.h" HAVE_ACCEPT4)
 
-# Let the core aware about TLS/SSL if enabled
-if(WITH_SSL_TLS)
-  FLB_DEFINITION(HAVE_SSL_TLS)
-endif()
-
 # Core dependencies
 set(FLB_DEPS
   mk_core
