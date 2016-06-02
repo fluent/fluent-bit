@@ -129,12 +129,14 @@ add_subdirectory(lib/msgpack-c-068041f)
 # Lib: build the core libraries used by Fluent-Bit
 add_subdirectory(lib/jsmn)
 add_subdirectory(lib/ejson)
-if(FLB_HTTP)
-  macro(MK_SET_OPTION option value)
-    set(${option} ${value} CACHE "" INTERNAL FORCE)
-  endmacro()
 
-  MK_SET_OPTION(MK_SYSTEM_MALLOC      ON)
+# MK Core
+macro(MK_SET_OPTION option value)
+  set(${option} ${value} CACHE "" INTERNAL FORCE)
+endmacro()
+MK_SET_OPTION(MK_SYSTEM_MALLOC      ON)
+
+if(FLB_HTTP)
   MK_SET_OPTION(MK_WITHOUT_BIN        ON)
   MK_SET_OPTION(MK_WITHOUT_CONF       ON)
   MK_SET_OPTION(MK_PLUGIN_AUTH       OFF)
