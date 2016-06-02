@@ -7,7 +7,7 @@
 
 #define FLB_HTTP_BANNER \
   "{\n  \"service\"  : \"Fluent Bit\",\n" \
-  "  \"version\": \"v" FLB_VERSION_STR "\"\n" \
+  "  \"version\": \"v" FLB_VERSION_STR "\",\n" \
   "  \"build_flags\": \"" FLB_INFO_FLAGS "\"\n}"
 
 int flb_http_server_start(struct flb_config *config);
