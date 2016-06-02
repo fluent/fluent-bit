@@ -8,4 +8,4 @@ For every [Fluent Bit](http://fluentbit.io) release there is full documentation,
 
 If you are interested into provide some documentation contribution, please refer to the following GIT repository for more details:
 
-[http://github.com/fluent/fluent-bit/docs](http://github.com/fluent/fluent-bit-docs)
+[http://github.com/fluent/fluent-bit-docs](http://github.com/fluent/fluent-bit-docs)
