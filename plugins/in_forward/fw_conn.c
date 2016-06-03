@@ -36,18 +36,19 @@ int fw_conn_event(void *data)
     char *tmp;
     struct mk_event *event;
     struct fw_conn *conn = data;
+    struct flb_in_fw_config *ctx = conn->ctx;
 
     event = &conn->event;
     if (event->mask & MK_EVENT_READ) {
         available = (conn->buf_size - conn->buf_len);
         if (available < 1) {
-            if (conn->buf_size + FLB_IN_FW_CHUNK > conn->ctx->buffer_size) {
+            if (conn->buf_size + ctx->chunk_size > ctx->buffer_size) {
                 flb_trace("[in_fw] fd=%i incoming data exceed limit (%i KB)",
-                          event->fd, conn->buf_size);
+                          event->fd, (ctx->buffer_size / 1024));
                 fw_conn_del(conn);
                 return -1;
             }
-            size = conn->buf_size + FLB_IN_FW_CHUNK;
+            size = conn->buf_size + ctx->chunk_size;
             tmp = realloc(conn->buf, size);
             if (!tmp) {
                 perror("realloc");
@@ -112,7 +113,7 @@ struct fw_conn *fw_conn_add(int fd, struct flb_in_fw_config *ctx)
     conn->buf_off = 0;
     conn->status  = FW_NEW;
 
-    conn->buf = malloc(FLB_IN_FW_CHUNK);
+    conn->buf = malloc(ctx->chunk_size);
     if (!conn->buf) {
         perror("malloc");
         close(fd);
@@ -120,7 +121,7 @@ struct fw_conn *fw_conn_add(int fd, struct flb_in_fw_config *ctx)
         free(conn);
         return NULL;
     }
-    conn->buf_size = FLB_IN_FW_CHUNK;
+    conn->buf_size = ctx->chunk_size;
     conn->in       = ctx->in;
 
     /* Register instance into the event loop */

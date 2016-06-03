@@ -28,8 +28,8 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
 {
     char tmp[16];
     char *listen;
+    char *buffer_size;
     char *chunk_size;
-
     struct flb_in_fw_config *config;
 
     config = malloc(sizeof(struct flb_in_fw_config));
@@ -58,16 +58,25 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
         config->tcp_port = strdup(tmp);
     }
 
-
     /* Chunk size */
     chunk_size = flb_input_get_property("chunk_size", i_ins);
     if (!chunk_size) {
-        config->buffer_size = FLB_IN_FW_CHUNK;
+        config->chunk_size = FLB_IN_FW_CHUNK; /* 32KB */
     }
     else {
-        config->buffer_size  = (atoi(chunk_size) * 1024);
+        /* Convert KB unit to Bytes */
+        config->chunk_size  = (atoi(chunk_size) * 1024);
     }
 
+    /* Buffer size */
+    buffer_size = flb_input_get_property("buffer_size", i_ins);
+    if (!buffer_size) {
+        config->buffer_size = config->chunk_size;
+    }
+    else {
+        /* Convert KB unit to Bytes */
+        config->buffer_size  = (atoi(buffer_size) * 1024);
+    }
 
     flb_debug("[in_fw] Listen='%s' TCP_Port=%s",
               config->listen, config->tcp_port);
