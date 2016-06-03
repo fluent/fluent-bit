@@ -103,7 +103,6 @@ endmacro()
 # Enable Debug symbols if specified
 if(FLB_DEBUG)
   set(CMAKE_BUILD_TYPE "Debug")
-  FLB_DEFINITION(FLB_HAVE_MTRACE)
 endif()
 
 # General Headers
@@ -212,6 +211,17 @@ check_c_source_compiles("
 
 if(FLB_VALGRIND OR FLB_HAVE_VALGRIND)
   FLB_DEFINITION(FLB_HAVE_VALGRIND)
+endif()
+
+# mtrace support
+check_c_source_compiles("
+  #include <mcheck.h>
+  int main() {
+     return 0;
+  }" FLB_HAVE_MTRACE)
+
+if(FLB_HAVE_MTRACE AND FLB_DEBUG)
+  FLB_DEFINITION(FLB_HAVE_MTRACE)
 endif()
 
 check_c_source_compiles("
