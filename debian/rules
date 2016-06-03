@@ -5,4 +5,4 @@
 
 override_dh_auto_configure:
 
-	dh_auto_configure -- -DWITH_ALL=ON
+	dh_auto_configure -- -DFLB_ALL=ON
