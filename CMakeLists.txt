@@ -31,6 +31,7 @@ option(FLB_STATS              "Enable stats support"         No)
 option(FLB_VALGRIND           "Enable Valgrind support"      No)
 option(FLB_TRACE              "Enable trace mode"            No)
 option(FLB_TESTS              "Enable tests"                 No)
+option(FLB_MTRACE             "Enable mtrace support"        No)
 
 # Advanced options for Flushing methods
 # =====================================
@@ -214,14 +215,16 @@ if(FLB_VALGRIND OR FLB_HAVE_VALGRIND)
 endif()
 
 # mtrace support
-check_c_source_compiles("
-  #include <mcheck.h>
-  int main() {
-     return 0;
-  }" FLB_HAVE_MTRACE)
-
-if(FLB_HAVE_MTRACE AND FLB_DEBUG)
-  FLB_DEFINITION(FLB_HAVE_MTRACE)
+if(FLB_MTRACE)
+  check_c_source_compiles("
+    #include <mcheck.h>
+    int main() {
+       return 0;
+    }" FLB_HAVE_MTRACE)
+  
+  if(FLB_HAVE_MTRACE AND FLB_DEBUG)
+    FLB_DEFINITION(FLB_HAVE_MTRACE)
+  endif()
 endif()
 
 check_c_source_compiles("
