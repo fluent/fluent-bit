@@ -93,17 +93,18 @@ if(FLB_ALL)
   set(FLB_OUT_LIB      1)
 endif()
 
-# Enable Debug symbols if specified
-if(FLB_DEBUG)
-  set(CMAKE_BUILD_TYPE "Debug")
-endif()
-
 # Macro to set definitions
 macro(FLB_DEFINITION var)
   add_definitions(-D${var})
   set(FLB_BUILD_FLAGS "${FLB_BUILD_FLAGS}#ifndef ${var}\n#define ${var}\n#endif\n")
   set(FLB_INFO_FLAGS "${FLB_INFO_FLAGS} ${var}")
 endmacro()
+
+# Enable Debug symbols if specified
+if(FLB_DEBUG)
+  set(CMAKE_BUILD_TYPE "Debug")
+  FLB_DEFINITION(FLB_HAVE_MTRACE)
+endif()
 
 # General Headers
 include_directories(
