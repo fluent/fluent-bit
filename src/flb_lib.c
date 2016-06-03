@@ -27,6 +27,10 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_utils.h>
 
+#ifdef FLB_HAVE_MTRACE
+#include <mcheck.h>
+#endif
+
 extern struct flb_input_plugin in_lib_plugin;
 
 flb_ctx_t *flb_create()
@@ -34,6 +38,11 @@ flb_ctx_t *flb_create()
     int ret;
     flb_ctx_t *ctx;
     struct flb_config *config;
+
+#ifdef FLB_HAVE_MTRACE
+    /* Start tracing malloc and free */
+    mtrace();
+#endif
 
     ctx = calloc(1, sizeof(flb_ctx_t));
     if (!ctx) {
@@ -93,6 +102,11 @@ void flb_destroy(flb_ctx_t *ctx)
     /* Remove resources from the event loop */
     mk_event_loop_destroy(ctx->event_loop);
     free(ctx);
+
+#ifdef FLB_HAVE_MTRACE
+    /* Stop tracing malloc and free */
+    muntrace();
+#endif
 }
 
 /* Defines a new input instance */

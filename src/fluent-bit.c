@@ -37,6 +37,10 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_engine.h>
 
+#ifdef FLB_HAVE_MTRACE
+#include <mcheck.h>
+#endif
+
 struct flb_config *config;
 
 #define PLUGIN_INPUT    0
@@ -120,6 +124,10 @@ static void flb_signal_handler(int signal)
     case SIGHUP:
     case SIGTERM:
         flb_engine_shutdown(config);
+#ifdef FLB_HAVE_MTRACE
+        /* Stop tracing malloc and free */
+        muntrace();
+#endif
         _exit(EXIT_SUCCESS);
     default:
         break;
@@ -364,6 +372,11 @@ int main(int argc, char **argv)
         { "help",    no_argument      , NULL, 'h' },
         { NULL, 0, NULL, 0 }
     };
+
+#ifdef FLB_HAVE_MTRACE
+    /* Start tracing malloc and free */
+    mtrace();
+#endif
 
     /* Signal handler */
     flb_signal_init();
