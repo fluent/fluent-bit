@@ -214,6 +214,9 @@ void flb_input_exit_all(struct flb_config *config)
 {
     struct mk_list *tmp;
     struct mk_list *head;
+    struct mk_list *tmp_prop;
+    struct mk_list *head_prop;
+    struct flb_config_prop *prop;
     struct flb_input_instance *in;
     struct flb_input_plugin *p;
 
@@ -231,6 +234,15 @@ void flb_input_exit_all(struct flb_config *config)
 
         /* Let the engine remove any pending task */
         flb_engine_destroy_tasks(&in->tasks);
+
+        /* release properties */
+        mk_list_foreach_safe(head_prop, tmp_prop, &in->properties) {
+            prop = mk_list_entry(head_prop, struct flb_config_prop, _head);
+
+            free(prop->key);
+            free(prop->val);
+            free(prop);
+        }
 
         /* Unlink and release */
         mk_list_del(&in->_head);
