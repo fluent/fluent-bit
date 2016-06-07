@@ -204,10 +204,11 @@ static int flb_service_conf(struct flb_config *config, char *file)
 {
     char *name;
     char *v_str;
+    int  ret = -1;
     uint64_t v_num;
     struct mk_list *head;
     struct mk_list *h_prop;
-    struct mk_rconf *fconf;
+    struct mk_rconf *fconf = NULL;
     struct mk_rconf_entry *entry;
     struct mk_rconf_section *section;
     struct flb_input_instance *in;
@@ -253,9 +254,11 @@ static int flb_service_conf(struct flb_config *config, char *file)
             }
             else {
                 flb_service_conf_err(section, "Log_Level");
-                return -1;
+                free(v_str);
+                goto flb_service_conf_end;
             }
         }
+        free(v_str);
 
         /* HTTP Monitoring Server */
         v_num = n_get_key(section, "HTTP_Monitor", MK_RCONF_BOOL);
@@ -281,16 +284,17 @@ static int flb_service_conf(struct flb_config *config, char *file)
         name = s_get_key(section, "Name", MK_RCONF_STR);
         if (!name) {
             flb_service_conf_err(section, "Name");
-            return -1;
+            goto flb_service_conf_end;
         }
 
         flb_debug("[service] loading input: %s", name);
 
         /* Create an instace of the plugin */
         in = flb_input_new(config, name, NULL);
+        free(name);
         if (!in) {
             flb_service_conf_err(section, "Name");
-            return -1;
+            goto flb_service_conf_end;
         }
 
         /* Iterate other properties */
@@ -316,14 +320,15 @@ static int flb_service_conf(struct flb_config *config, char *file)
         name = s_get_key(section, "Name", MK_RCONF_STR);
         if (!name) {
             flb_service_conf_err(section, "Name");
-            return -1;
+            goto flb_service_conf_end;
         }
 
         /* Create an instace of the plugin */
         out = flb_output_new(config, name, NULL);
+        free(name);
         if (!out) {
             flb_service_conf_err(section, "Name");
-            return -1;
+            goto flb_service_conf_end;
         }
 
         /* Iterate other properties */
@@ -337,8 +342,12 @@ static int flb_service_conf(struct flb_config *config, char *file)
             flb_output_set_property(out, entry->key, entry->val);
         }
     }
-
-    return 0;
+    ret = 0;
+flb_service_conf_end:
+    if (fconf != NULL) {
+        mk_rconf_free(fconf);
+    }
+    return ret;
 }
 
 int main(int argc, char **argv)
