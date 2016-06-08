@@ -241,6 +241,8 @@ void flb_input_exit_all(struct flb_config *config)
 
             free(prop->key);
             free(prop->val);
+
+            mk_list_del(&prop->_head);
             free(prop);
         }
 
