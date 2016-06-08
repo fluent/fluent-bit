@@ -102,6 +102,8 @@ void flb_output_exit(struct flb_config *config)
 
             free(prop->key);
             free(prop->val);
+
+            mk_list_del(&prop->_head);
             free(prop);
         }
 
