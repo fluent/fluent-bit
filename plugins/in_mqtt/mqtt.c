@@ -75,6 +75,10 @@ void *in_mqtt_flush(void *in_context, size_t *size)
     char *buf;
     struct flb_in_mqtt_config *ctx = in_context;
 
+    if (ctx->msgp_len <= 0) {
+        return NULL;
+    }
+
     buf = malloc(ctx->msgp_len);
     memcpy(buf, ctx->msgp, ctx->msgp_len);
     *size = ctx->msgp_len;
