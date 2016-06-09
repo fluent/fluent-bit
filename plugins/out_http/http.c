@@ -26,13 +26,26 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_http_client.h>
 
+#include "http.h"
+
 struct flb_output_plugin out_http_plugin;
 
 int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
                void *data)
 {
+    int ulen;
+    char *uri = NULL;
+    char *tmp;
     struct flb_upstream *upstream;
+    struct flb_out_http_config *ctx = NULL;
     (void) data;
+
+    /* Allocate plugin context */
+    ctx = malloc(sizeof(struct flb_out_http_config));
+    if (!ctx) {
+        perror("malloc");
+        return -1;
+    }
 
     if (!ins->host.name) {
         ins->host.name = strdup("127.0.0.1");
@@ -46,10 +59,37 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
                                    ins->host.port,
                                    FLB_IO_TCP, (void *) &ins->tls);
     if (!upstream) {
+        free(ctx);
         return -1;
     }
 
-    flb_output_set_context(ins, upstream);
+    if (ins->host.uri) {
+        uri = strdup(ins->host.uri->full);
+    }
+    else {
+        tmp = flb_output_get_property("uri", ins);
+        if (tmp) {
+            uri = strdup(tmp);
+        }
+    }
+
+    if (!uri) {
+        uri = strdup("/");
+    }
+    else if (uri[0] != '/') {
+        ulen = strlen(uri);
+        tmp = malloc(ulen + 2);
+        tmp[0] = '/';
+        memcpy(tmp + 1, uri, ulen);
+        tmp[ulen + 1] = '\0';
+        free(uri);
+        uri = tmp;
+    }
+
+    ctx->u = upstream;
+    ctx->uri = uri;
+
+    flb_output_set_context(ins, ctx);
     return 0;
 }
 
@@ -61,19 +101,21 @@ int cb_http_flush(void *data, size_t bytes,
 {
     int ret;
     size_t b_sent;
-    struct flb_upstream *u = out_context;
+    struct flb_out_http_config *ctx = out_context;
+    struct flb_upstream *u;
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
     (void) i_ins;
 
-    /* Get an upstream connection */
+    /* Get upstream context and connection */
+    u = ctx->u;
     u_conn = flb_upstream_conn_get(u);
     if (!u_conn) {
         flb_error("[out_http] no upstream connections available");
         return -1;
     }
 
-    c = flb_http_client(u_conn, FLB_HTTP_POST, "/",
+    c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->uri,
                         data, bytes);
     ret = flb_http_do(c, &b_sent);
     flb_debug("[out_http] do=%i", ret);
@@ -87,9 +129,12 @@ int cb_http_flush(void *data, size_t bytes,
 
 int cb_http_exit(void *data, struct flb_config *config)
 {
-    struct flb_upstream *u = data;
+    struct flb_out_http_config *ctx = data;
 
-    flb_upstream_destroy(u);
+    flb_upstream_destroy(ctx->u);
+    free(ctx->uri);
+    free(ctx);
+
     return 0;
 }
 
