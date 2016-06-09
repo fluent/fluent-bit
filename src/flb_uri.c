@@ -53,7 +53,7 @@ struct flb_uri *flb_uri_create(char *full_uri)
     uri_size  = sizeof(struct flb_uri);
     uri_size += (sizeof(struct flb_uri_field) * FLB_URI_MAX);
 
-    p  = malloc(uri_size);
+    p  = calloc(1, uri_size);
     if (!p) {
         perror("malloc");
         return NULL;
@@ -99,7 +99,7 @@ struct flb_uri *flb_uri_create(char *full_uri)
         uri->count++;
     }
 
-
+    uri->full = strdup(full_uri);
     return uri;
 }
 
@@ -116,6 +116,7 @@ void flb_uri_destroy(struct flb_uri *uri)
         free(field->value);
     }
 
+    free(uri->full);
     free(uri);
 }
 
