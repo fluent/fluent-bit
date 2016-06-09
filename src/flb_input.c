@@ -229,6 +229,13 @@ void flb_input_exit_all(struct flb_config *config)
             p->cb_exit(in->context, config);
         }
 
+        /* Remove URI context */
+        if (in->host.uri) {
+            flb_uri_destroy(in->host.uri);
+        }
+
+        free(in->host.name);
+
         /* release the tag if any */
         free(in->tag);
 
