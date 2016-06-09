@@ -90,6 +90,11 @@ void flb_output_exit(struct flb_config *config)
             flb_upstream_destroy(ins->upstream);
         }
 
+        /* Remove URI context */
+        if (ins->host.uri) {
+            flb_uri_destroy(ins->host.uri);
+        }
+
         free(ins->host.name);
         free(ins->match);
 
