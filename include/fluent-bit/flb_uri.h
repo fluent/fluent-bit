@@ -32,7 +32,8 @@ struct flb_uri_field {
 };
 
 struct flb_uri {
-    uint8_t count;                 /* Number of entries of the list */
+    char *full;                    /* Original full URI */
+    uint8_t count;                 /* Number of entries in the list */
     struct mk_list list;           /* List head for uri patterns    */
     struct flb_uri_field *map;     /* Map / O(1) lookup by position */
 };

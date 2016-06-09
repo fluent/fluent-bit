@@ -98,6 +98,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->context = NULL;
         instance->data = data;
         instance->host.name = NULL;
+        instance->host.uri  = NULL;
 
         mk_list_init(&instance->routes);
         mk_list_init(&instance->tasks);
