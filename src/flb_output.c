@@ -71,6 +71,9 @@ void flb_output_exit(struct flb_config *config)
 {
     struct mk_list *tmp;
     struct mk_list *head;
+    struct mk_list *tmp_prop;
+    struct mk_list *head_prop;
+    struct flb_config_prop *prop;
     struct flb_output_instance *ins;
     struct flb_output_plugin *p;
 
@@ -93,6 +96,16 @@ void flb_output_exit(struct flb_config *config)
 #ifdef FLB_HAVE_TLS
         flb_tls_context_destroy(ins->tls.context);
 #endif
+        /* release properties */
+        mk_list_foreach_safe(head_prop, tmp_prop, &ins->properties) {
+            prop = mk_list_entry(head_prop, struct flb_config_prop, _head);
+
+            free(prop->key);
+            free(prop->val);
+
+            mk_list_del(&prop->_head);
+            free(prop);
+        }
 
         mk_list_del(&ins->_head);
         free(ins);
