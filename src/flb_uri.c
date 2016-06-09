@@ -114,7 +114,6 @@ void flb_uri_destroy(struct flb_uri *uri)
         field = mk_list_entry(head, struct flb_uri_field, _head);
         mk_list_del(&field->_head);
         free(field->value);
-        free(field);
     }
 
     free(uri);
