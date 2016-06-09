@@ -166,18 +166,22 @@ int flb_pack_json(char *js, size_t len, char **buffer, int *size)
     }
     ret = json_tokenise(js, len, &state);
     if (ret != 0) {
-        return ret;
+        goto flb_pack_json_end;
     }
 
     buf = tokens_to_msgpack(js, state.tokens, state.tokens_count, &out);
     if (!buf) {
-        return -1;
+        ret = -1;
+        goto flb_pack_json_end;
     }
 
     *size = out;
     *buffer = buf;
 
-    return 0;
+    ret = 0;
+ flb_pack_json_end:
+    flb_pack_state_reset(&state);
+    return ret;
 }
 
 /* Initialize a JSON packer state */
