@@ -74,6 +74,10 @@ void flb_config_exit(struct flb_config *config)
     struct mk_list *head;
     struct flb_input_collector *collector;
 
+    if (config->log) {
+        free(config->log);
+    }
+
     if (config->kernel) {
         free(config->kernel->s_version.data);
         free(config->kernel);
