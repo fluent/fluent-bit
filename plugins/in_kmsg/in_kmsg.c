@@ -317,6 +317,20 @@ int in_kmsg_init(struct flb_input_instance *in,
     return 0;
 }
 
+static int in_kmsg_exit(void *data, struct flb_config *config)
+{
+    (void)*config;
+    struct flb_in_kmsg_config *ctx = data;
+
+    if (ctx->fd >= 0) {
+        close(ctx->fd);
+    }
+
+    free(ctx);
+    return 0;
+}
+
+
 /* Plugin reference */
 struct flb_input_plugin in_kmsg_plugin = {
     .name         = "kmsg",
@@ -324,5 +338,6 @@ struct flb_input_plugin in_kmsg_plugin = {
     .cb_init      = in_kmsg_init,
     .cb_pre_run   = NULL,
     .cb_collect   = in_kmsg_collect,
-    .cb_flush_buf = in_kmsg_flush
+    .cb_flush_buf = in_kmsg_flush,
+    .cb_exit      = in_kmsg_exit
 };
