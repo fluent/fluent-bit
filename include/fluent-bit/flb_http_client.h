@@ -32,11 +32,23 @@
 #define FLB_HTTP_PUT         2
 #define FLB_HTTP_HEAD        3
 
+/* Proxy */
+#define FLB_HTTP_PROXY_NONE       0
+#define FLB_HTTP_PROXY_HTTP       1
+#define FLB_HTTP_PROXY_HTTPS      2
+
 struct flb_http_response {
     int status;
     int content_length;
     char  data[1024 * 4];   /* 4 KB */
     size_t data_len;
+};
+
+/* It hold information about a possible HTTP proxy set by the caller */
+struct flb_http_proxy {
+    int type;               /* One of FLB_HTTP_PROXY_ macros */
+    int port;               /* TCP Port */
+    char *host;             /* Proxy Host */
 };
 
 /* Set a request type */
@@ -53,13 +65,19 @@ struct flb_http_client {
     int body_len;
     char *body_buf;
 
+    /* Proxy */
+    struct flb_http_proxy proxy;
+
     /* Response */
     struct flb_http_response resp;
 };
 
 struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
                                         int method, char *uri,
-                                        char *body, size_t body_len);
+                                        char *body, size_t body_len,
+                                        char *host, int port,
+                                        char *proxy);
+
 int flb_http_add_header(struct flb_http_client *c,
                         char *key, size_t key_len,
                         char *val, size_t val_len);

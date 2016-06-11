@@ -55,17 +55,87 @@ static int process_response(struct flb_http_client *c)
     return 0;
 }
 
+static int proxy_parse(char *proxy, struct flb_http_client *c)
+{
+    int len;
+    int port;
+    int off = 0;
+    char *s;
+    char *e;
+    char *host;
+
+    len = strlen(proxy);
+    if (len < 7) {
+        return -1;
+    }
+
+    /* Protocol lookup */
+    if (strncmp(proxy, "http://", 7) == 0) {
+        port = 80;
+        off = 7;
+        c->proxy.type = FLB_HTTP_PROXY_HTTP;
+    }
+    else if (strncmp(proxy, "https://", 8) == 0) {
+        port = 443;
+        off = 8;
+        c->proxy.type = FLB_HTTP_PROXY_HTTPS;
+    }
+    else {
+        return -1;
+    }
+
+    /* Separate host/ip from port if any */
+    s = proxy + off;
+    if (*s == '[') {
+        /* IPv6 address (RFC 3986) */
+        e = strchr(++s, ']');
+        if (!e) {
+            return -1;
+        }
+        host = strndup(s, e - s);
+        s = e + 1;
+    } else {
+        e = s;
+        while (!(*e == '\0' || *e == ':' || *e == '/')) {
+            ++e;
+        }
+        if (e == s) {
+            return -1;
+        }
+        host = strndup(s, e - s);
+        s = e;
+    }
+    if (*s == ':') {
+        port = atoi(++s);
+    }
+
+    flb_trace("[http_client] proxy type=%i host=%s port=%i",
+              c->proxy.type, host, port);
+
+    c->proxy.host = host;
+    c->proxy.port = port;
+
+    return 0;
+}
+
 struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
                                         int method, char *uri,
-                                        char *body, size_t body_len)
+                                        char *body, size_t body_len,
+                                        char *host, int port,
+                                        char *proxy)
 {
     int ret;
     char *buf = NULL;
     char *str_method = NULL;
-    char *fmt =                                 \
+    char *fmt_plain =                           \
         "%s %s HTTP/1.1\r\n"
         "Host: %s:%i\r\n"
         "Connection: KeepAlive\r\n"
+        "Content-Length: %i\r\n";
+    char *fmt_proxy =                           \
+        "%s http://%s:%i/%s HTTP/1.1\r\n"
+        "Host: %s:%i\r\n"
+        "Proxy-Connection: KeepAlive\r\n"
         "Content-Length: %i\r\n";
 
     struct flb_http_client *c;
@@ -92,13 +162,28 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
         return NULL;
     }
 
-    ret = snprintf(buf, FLB_HTTP_BUF_SIZE,
-                   fmt,
-                   str_method,
-                   uri,
-                   u->tcp_host,
-                   u->tcp_port,
-                   body_len);
+    /* FIXME: handler for HTTPS proxy */
+    if (!proxy) {
+        ret = snprintf(buf, FLB_HTTP_BUF_SIZE,
+                       fmt_plain,
+                       str_method,
+                       uri,
+                       u->tcp_host,
+                       u->tcp_port,
+                       body_len);
+    }
+    else {
+        ret = snprintf(buf, FLB_HTTP_BUF_SIZE,
+                       fmt_proxy,
+                       str_method,
+                       host,
+                       port,
+                       "",
+                       host,
+                       port,
+                       body_len);
+    }
+
     if (ret == -1) {
         perror("snprintf");
         free(buf);
@@ -120,6 +205,16 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
     if (body && body_len > 0) {
         c->body_buf = body;
         c->body_len = body_len;
+    }
+
+    /* Check proxy data */
+    if (proxy) {
+        ret = proxy_parse(proxy, c);
+        if (ret != 0) {
+            free(buf);
+            free(c);
+            return NULL;
+        }
     }
 
     return c;
