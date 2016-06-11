@@ -21,8 +21,15 @@
 #define FLB_OUT_HTTP_H
 
 struct flb_out_http_config {
+    /* Proxy */
+    char *proxy;
+    char *proxy_host;
+    int proxy_port;
+
     /* HTTP URI */
     char *uri;
+    char *host;
+    int  port;
 
     /* Upstream connection to the backend server */
     struct flb_upstream *u;

@@ -41,23 +41,86 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
     (void) data;
 
     /* Allocate plugin context */
-    ctx = malloc(sizeof(struct flb_out_http_config));
+    ctx = calloc(1, sizeof(struct flb_out_http_config));
     if (!ctx) {
         perror("malloc");
         return -1;
     }
+    /*
+     * Check if a Proxy have been set, if so the Upstream manager will use
+     * the Proxy end-point and then we let the HTTP client know about it,
+     * so it can adjust the HTTP requests.
+     */
+    tmp = flb_output_get_property("proxy", ins);
+    if (tmp) {
+        /*
+         * Here we just want to lookup two things: host and port, we are
+         * going to skip validations as most of them are handled by the
+         * HTTP Client in a later stage.
+         */
+        char *p;
+        char *addr;
 
-    if (!ins->host.name) {
-        ins->host.name = strdup("127.0.0.1");
+        addr = strstr(tmp, "//");
+        if (!addr) {
+            free(ctx);
+            return -1;
+        }
+        addr += 2; /* get right to the host section */
+        if (*addr == '[') { /* IPv6 */
+            p = strchr(addr, ']');
+            if (!p) {
+                free(ctx);
+                return -1;
+            }
+            ctx->proxy_host = strndup(addr + 1, (p - addr - 1));
+            p++;
+            if (*p == ':') {
+                p++;
+                ctx->proxy_port = atoi(p);
+            }
+            else {
+            }
+        }
+        else {
+            /* Port lookup */
+            p = strchr(addr, ':');
+            if (p) {
+                p++;
+                ctx->proxy_port = atoi(p);
+                ctx->proxy_host = strndup(addr, (p - addr) - 1);
+            }
+            else {
+                ctx->proxy_host = strdup(addr);
+                ctx->proxy_port = 80;
+            }
+        }
+        ctx->proxy = tmp;
     }
-    if (ins->host.port == 0) {
-        ins->host.port = 80;
+    else {
+        if (!ins->host.name) {
+            ins->host.name = strdup("127.0.0.1");
+        }
+        if (ins->host.port == 0) {
+            ins->host.port = 80;
+        }
     }
 
-    upstream = flb_upstream_create(config,
-                                   ins->host.name,
-                                   ins->host.port,
-                                   FLB_IO_TCP, (void *) &ins->tls);
+    if (ctx->proxy) {
+        flb_trace("[out_http] Upstream Proxy=%s:%i",
+                  ctx->proxy_host, ctx->proxy_port);
+        upstream = flb_upstream_create(config,
+                                       ctx->proxy_host,
+                                       ctx->proxy_port,
+                                       FLB_IO_TCP, (void *) &ins->tls);
+    }
+    else {
+        upstream = flb_upstream_create(config,
+                                       ins->host.name,
+                                       ins->host.port,
+                                       FLB_IO_TCP, (void *) &ins->tls);
+    }
+
     if (!upstream) {
         free(ctx);
         return -1;
@@ -87,7 +150,9 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
     }
 
     ctx->u = upstream;
-    ctx->uri = uri;
+    ctx->uri  = uri;
+    ctx->host = ins->host.name;
+    ctx->port = ins->host.port;
 
     flb_output_set_context(ins, ctx);
     return 0;
@@ -116,7 +181,10 @@ int cb_http_flush(void *data, size_t bytes,
     }
 
     c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->uri,
-                        data, bytes);
+                        data, bytes,
+                        ctx->host, ctx->port,
+                        ctx->proxy);
+
     ret = flb_http_do(c, &b_sent);
     flb_debug("[out_http] do=%i", ret);
     flb_http_client_destroy(c);
@@ -132,6 +200,8 @@ int cb_http_exit(void *data, struct flb_config *config)
     struct flb_out_http_config *ctx = data;
 
     flb_upstream_destroy(ctx->u);
+
+    free(ctx->proxy_host);
     free(ctx->uri);
     free(ctx);
 
