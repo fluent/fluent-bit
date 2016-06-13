@@ -228,6 +228,8 @@ int in_head_exit(void *data, struct flb_config *config)
     (void) *config;
     struct flb_in_head_config *head_config = data;
 
+    msgpack_sbuffer_destroy(&head_config->mp_sbuf);
+
     delete_head_config(head_config);
 
     return 0;
