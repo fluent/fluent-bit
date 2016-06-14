@@ -279,11 +279,6 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
                                        FLB_IO_TCP, (void *) &ins->tls);
     }
 
-    /* Networking stuff */
-    upstream = flb_upstream_create(config,
-                                   ins->host.name,
-                                   ins->host.port,
-                                   FLB_IO_TCP, (void *) &ins->tls);
     if (!upstream) {
         free(ctx);
         return -1;
