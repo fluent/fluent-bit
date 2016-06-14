@@ -113,6 +113,16 @@ int in_mqtt_collect(struct flb_config *config, void *in_context)
     return 0;
 }
 
+static int in_mqtt_exit(void *data, struct flb_config *config)
+{
+    (void) *config;
+    struct flb_in_mqtt_config *ctx = data;
+
+    mqtt_config_free(ctx);
+
+    return 0;
+}
+
 /* Plugin reference */
 struct flb_input_plugin in_mqtt_plugin = {
     .name         = "mqtt",
@@ -121,5 +131,6 @@ struct flb_input_plugin in_mqtt_plugin = {
     .cb_pre_run   = NULL,
     .cb_collect   = in_mqtt_collect,
     .cb_flush_buf = in_mqtt_flush,
+    .cb_exit      = in_mqtt_exit,
     .flags        = FLB_INPUT_NET,
 };
