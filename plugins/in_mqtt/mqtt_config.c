@@ -38,7 +38,7 @@ struct flb_in_mqtt_config *mqtt_config_init(struct flb_input_instance *i_ins)
     if (!i_ins->host.listen) {
         listen = flb_input_get_property("listen", i_ins);
         if (listen) {
-            config->listen = listen;
+            config->listen = strdup(listen);
         }
         else {
             config->listen = strdup("0.0.0.0");
