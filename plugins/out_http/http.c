@@ -388,7 +388,18 @@ int cb_http_flush(void *data, size_t bytes,
     }
 
     ret = flb_http_do(c, &b_sent);
-    flb_debug("[out_http] do=%i", ret);
+    if (ret == 0) {
+        if (c->resp.status != 200) {
+            flb_error("[out_http] http_status=%i", c->resp.status);
+        }
+        else {
+            flb_debug("[out_http] http_status=%i", c->resp.status);
+        }
+    }
+    else {
+        flb_error("[out_http] could not flush records (http_do=%i)", ret);
+    }
+
     flb_http_client_destroy(c);
 
     /* Release the connection */
