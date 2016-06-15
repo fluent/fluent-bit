@@ -34,11 +34,11 @@ static int fw_process_array(struct flb_input_instance *in,
                             msgpack_object *arr)
 {
     int i;
-    msgpack_object p;
+    msgpack_object entry;
 
     for (i = 0; i < arr->via.array.size; i++) {
-        p = arr->via.array.ptr[i];
-        flb_input_dyntag_append(in, tag, tag_len, p);
+        entry = arr->via.array.ptr[i];
+        flb_input_dyntag_append(in, tag, tag_len, entry);
     }
 
     return i;
@@ -51,6 +51,7 @@ int fw_prot_process(struct fw_conn *conn)
     char *stag;
     msgpack_object tag;
     msgpack_object entry;
+    msgpack_object map;
     msgpack_object root;
     msgpack_unpacked result;
 
@@ -58,7 +59,6 @@ int fw_prot_process(struct fw_conn *conn)
      * [tag, time, record]
      * [tag, [[time,record], [time,record], ...]]
      */
-
     msgpack_unpacked_init(&result);
 
     if (conn->buf_off == 0) {
@@ -66,6 +66,7 @@ int fw_prot_process(struct fw_conn *conn)
                                   conn->buf,
                                   conn->buf_len,
                                   &conn->buf_off);
+
         if (ret != MSGPACK_UNPACK_SUCCESS) {
             msgpack_unpacked_destroy(&result);
             switch (ret) {
@@ -105,16 +106,58 @@ int fw_prot_process(struct fw_conn *conn)
 
         entry = root.via.array.ptr[1];
         if (entry.type == MSGPACK_OBJECT_ARRAY) {
+            /* Forward format 1: [tag, [[time, map], ...]] */
             fw_process_array(conn->in, stag, stag_len, &entry);
         }
-        else if (entry.type == MSGPACK_OBJECT_MAP) {
+        else if (entry.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
+            /* Forward format 2: [tag, time, map] */
+            map = root.via.array.ptr[2];
+            if (map.type != MSGPACK_OBJECT_MAP) {
+                flb_warn("[in_fw] invalid data format, map expected");
+                msgpack_unpacked_destroy(&result);
+                return -1;
+            }
+
+            /* Compose the new array */
+            struct msgpack_sbuffer mp_sbuf;
+            struct msgpack_packer mp_pck;
+            msgpack_unpacked r_out;
+            size_t off = 0;
+
+            msgpack_sbuffer_init(&mp_sbuf);
+            msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+            msgpack_pack_array(&mp_pck, 2);
+            msgpack_pack_object(&mp_pck, entry);
+            msgpack_pack_object(&mp_pck, map);
+
+            msgpack_unpacked_init(&r_out);
+            msgpack_unpack_next(&r_out,
+                                mp_sbuf.data,
+                                mp_sbuf.size,
+                                &off);
+
+            entry = r_out.data;
             flb_input_dyntag_append(conn->in,
                                     stag, stag_len,
                                     entry);
+
+            msgpack_unpacked_destroy(&r_out);
+            msgpack_sbuffer_destroy(&mp_sbuf);
+        }
+        else {
+            flb_warn("[in_fw] invalid data format");
+            msgpack_unpacked_destroy(&result);
+            return -1;
         }
     }
-
     msgpack_unpacked_destroy(&result);
+
+    if (conn->buf_off > 0) {
+        memmove(conn->buf, conn->buf + conn->buf_off, conn->buf_off);
+        conn->buf_len -= conn->buf_off;
+        conn->buf_off = 0;
+    }
 
     return 0;
 }
