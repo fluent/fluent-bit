@@ -46,6 +46,8 @@ struct fw_conn {
 
     struct flb_input_instance *in;   /* Parent plugin instance            */
     struct flb_in_fw_config *ctx;    /* Plugin configuration context      */
+
+    struct mk_list _head;
 };
 
 struct fw_conn *fw_conn_add(int fd, struct flb_in_fw_config *ctx);
