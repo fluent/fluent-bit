@@ -66,6 +66,7 @@ static int in_fw_init(struct flb_input_instance *in,
         return -1;
     }
     ctx->in = in;
+    mk_list_init(&ctx->connections);
 
     /* Set the context */
     flb_input_set_context(in, ctx);
@@ -96,8 +97,16 @@ static int in_fw_init(struct flb_input_instance *in,
 
 int in_fw_exit(void *data, struct flb_config *config)
 {
+    struct mk_list *tmp;
+    struct mk_list *head;
     (void) *config;
     struct flb_in_fw_config *ctx = data;
+    struct fw_conn *conn;
+
+    mk_list_foreach_safe(head, tmp, &ctx->connections) {
+        conn = mk_list_entry(head, struct fw_conn, _head);
+        fw_conn_del(conn);
+    }
 
     fw_config_destroy(ctx);
     return 0;

@@ -134,6 +134,8 @@ struct fw_conn *fw_conn_add(int fd, struct flb_in_fw_config *ctx)
         return NULL;
     }
 
+    mk_list_add(&conn->_head, &ctx->connections);
+
     return conn;
 }
 
@@ -143,6 +145,7 @@ int fw_conn_del(struct fw_conn *conn)
     mk_event_del(conn->ctx->evl, &conn->event);
 
     /* Release resources */
+    mk_list_del(&conn->_head);
     close(conn->fd);
     free(conn->buf);
     free(conn);
