@@ -254,6 +254,8 @@ void flb_input_exit_all(struct flb_config *config)
             free(prop);
         }
 
+        flb_input_dyntag_exit(in);
+
         /* Unlink and release */
         mk_list_del(&in->_head);
         free(in);
@@ -421,6 +423,19 @@ int flb_input_dyntag_destroy(struct flb_input_dyntag *dt)
     return 0;
 }
 
+void flb_input_dyntag_exit(struct flb_input_instance *in)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_input_dyntag *dt;
+
+    mk_list_foreach_safe(head, tmp, &in->dyntags) {
+        dt = mk_list_entry(head, struct flb_input_dyntag, _head);
+        flb_input_dyntag_destroy(dt);
+    }
+}
+
+
 /* Append a MessagPack Map to an active buffer in the input instance */
 int flb_input_dyntag_append(struct flb_input_instance *in,
                             char *tag, size_t tag_len,
@@ -472,6 +487,10 @@ void *flb_input_dyntag_flush(struct flb_input_dyntag *dt, size_t *size)
 
     *size = dt->mp_sbuf.size;
     memcpy(buf, dt->mp_sbuf.data, dt->mp_sbuf.size);
+
+    msgpack_sbuffer_destroy(&dt->mp_sbuf);
+    msgpack_sbuffer_init(&dt->mp_sbuf);
+    msgpack_packer_init(&dt->mp_pck, &dt->mp_sbuf, msgpack_sbuffer_write);
 
     return buf;
 }
