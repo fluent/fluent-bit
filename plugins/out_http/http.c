@@ -83,30 +83,17 @@ static char *msgpack_to_json(char *data, uint64_t bytes, uint64_t *out_size)
             }
 
             /* Store key */
-            psize = k->via.bin.size;
+            psize = k->via.str.size;
             if (psize <= (sizeof(buf_key) - 1)) {
-                memcpy(buf_key, k->via.bin.ptr, psize);
+                memcpy(buf_key, k->via.str.ptr, psize);
                 buf_key[psize] = '\0';
                 ptr_key = buf_key;
             }
             else {
                 /* Long JSON map keys have a performance penalty */
                 ptr_key = malloc(psize + 1);
-                memcpy(ptr_key, k->via.bin.ptr, psize);
+                memcpy(ptr_key, k->via.str.ptr, psize);
                 ptr_key[psize] = '\0';
-            }
-
-            /*
-             * Sanitize key name, Elastic Search 2.x don't allow dots
-             * in field names:
-             *
-             *   https://goo.gl/R5NMTr
-             */
-            char *p   = ptr_key;
-            char *end = ptr_key + psize;
-            while (p != end) {
-                if (*p == '.') *p = '_';
-                p++;
             }
 
             /* Store value */
@@ -139,7 +126,7 @@ static char *msgpack_to_json(char *data, uint64_t bytes, uint64_t *out_size)
                 }
                 else {
                     ptr_val = malloc(psize + 1);
-                    memcpy(ptr_val, k->via.str.ptr, psize);
+                    memcpy(ptr_val, v->via.str.ptr, psize);
                     ptr_val[psize] = '\0';
                 }
                 json_add_to_object(j_map, ptr_key,
@@ -155,7 +142,7 @@ static char *msgpack_to_json(char *data, uint64_t bytes, uint64_t *out_size)
                 }
                 else {
                     ptr_val = malloc(psize + 1);
-                    memcpy(ptr_val, k->via.bin.ptr, psize);
+                    memcpy(ptr_val, v->via.bin.ptr, psize);
                     ptr_val[psize] = '\0';
                 }
                 json_add_to_object(j_map, ptr_key,
