@@ -23,6 +23,7 @@
 #include <jsmn/jsmn.h>
 
 struct flb_pack_state {
+    int multiple;         /* support multiple jsons? */
     int tokens_count;     /* number of parsed tokens */
     int tokens_size;      /* array size of tokens    */
     jsmntok_t *tokens;    /* tokens array            */

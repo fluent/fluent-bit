@@ -20,11 +20,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <msgpack.h>
-#include <jsmn/jsmn.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_info.h>
+
+#include <msgpack.h>
+#include <jsmn/jsmn.h>
 
 static int json_tokenise(char *js, size_t len,
                          struct flb_pack_state *state)
@@ -35,6 +37,7 @@ static int json_tokenise(char *js, size_t len,
 
     ret = jsmn_parse(&state->parser, js, len,
                      state->tokens, state->tokens_size);
+
     while (ret == JSMN_ERROR_NOMEM) {
         n = state->tokens_size += 256;
         tmp = realloc(state->tokens, sizeof(jsmntok_t) * n);
@@ -94,6 +97,7 @@ static char *tokens_to_msgpack(char *js,
 
     for (i = 0; i < arr_size ; i++) {
         t = &tokens[i];
+
         if (t->start == -1 || t->end == -1 || (t->start == 0 && t->end == 0)) {
             break;
         }
@@ -221,10 +225,45 @@ int flb_pack_json_state(char *js, size_t len,
 {
     int ret;
     int out;
+    int delim = 0;
     char *buf;
+    jsmntok_t *t;
 
     ret = json_tokenise(js, len, state);
-    if (ret != 0) {
+    state->multiple = FLB_TRUE;
+    if (ret == FLB_ERR_JSON_PART && state->multiple == FLB_TRUE) {
+        /*
+         * If the caller enabled 'multiple' flag, it means that the incoming
+         * JSON message may have multiple messages concatenated and likely
+         * the last one is only incomplete.
+         *
+         * The following routine aims to determinate how many JSON messages
+         * are OK in the array of tokens, if any, process them and adjust
+         * the JSMN context/buffers.
+         */
+        int i;
+        int found = 0;
+
+        for (i = 1; i < state->tokens_size; i++) {
+            t = &state->tokens[i];
+            if (t->start < (state->tokens[i - 1]).start) {
+                break;
+            }
+
+            if (t->parent == -1 && (t->end != 0)) {
+                found++;
+                delim = i;
+            }
+        }
+
+        if (found > 0) {
+            state->tokens_count += delim;
+        }
+        else {
+            return ret;
+        }
+    }
+    else if (ret != 0) {
         return ret;
     }
 
@@ -235,6 +274,7 @@ int flb_pack_json_state(char *js, size_t len,
 
     *size = out;
     *buffer = buf;
+
     return 0;
 }
 
