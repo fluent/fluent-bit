@@ -128,6 +128,8 @@ option(MSGPACK_BUILD_EXAMPLES         OFF)
 add_subdirectory(lib/msgpack-c-068041f)
 
 # Lib: build the core libraries used by Fluent-Bit
+FLB_DEFINITION(JSMN_PARENT_LINKS)
+FLB_DEFINITION(JSMN_STRICT)
 add_subdirectory(lib/jsmn)
 add_subdirectory(lib/ejson)
 
