@@ -1,5 +1,3 @@
-#include <stdlib.h>
-
 #include "jsmn.h"
 
 /**
@@ -81,7 +79,7 @@ found:
 }
 
 /**
- * Filsl next token with JSON string.
+ * Fills next token with JSON string.
  */
 static int jsmn_parse_string(jsmn_parser *parser, const char *js,
 		size_t len, jsmntok_t *tokens, size_t num_tokens) {
