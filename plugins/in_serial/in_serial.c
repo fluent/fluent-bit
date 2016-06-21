@@ -35,6 +35,8 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_engine.h>
+#include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_error.h>
 
 #include "in_serial.h"
 #include "in_serial_config.h"
@@ -91,6 +93,34 @@ static inline int process_line(char *line, int len,
     return 0;
 }
 
+static inline int process_pack(struct flb_in_serial_config *ctx,
+                               char *pack, size_t size)
+{
+    size_t off = 0;
+    msgpack_unpacked result;
+    msgpack_object entry;
+
+    ctx->buffer_id++;
+
+    /* First pack the results, iterate concatenated messages */
+    msgpack_unpacked_init(&result);
+    while (msgpack_unpack_next(&result, pack, size, &off)) {
+        entry = result.data;
+
+        msgpack_pack_array(&ctx->mp_pck, 2);
+        msgpack_pack_uint64(&ctx->mp_pck, time(NULL));
+
+        msgpack_pack_map(&ctx->mp_pck, 1);
+        msgpack_pack_bin(&ctx->mp_pck, 3);
+        msgpack_pack_bin_body(&ctx->mp_pck, "msg", 3);
+        msgpack_pack_object(&ctx->mp_pck, entry);
+    }
+
+    msgpack_unpacked_destroy(&result);
+
+    return 0;
+}
+
 static inline void consume_bytes(char *buf, int bytes, int length)
 {
     memmove(buf, buf + bytes, length - bytes);
@@ -106,6 +136,7 @@ int in_serial_collect(struct flb_config *config, void *in_context)
     int hits;
     char *sep;
     char *buf;
+    jsmntok_t *t;
 
     struct flb_in_serial_config *ctx = in_context;
 
@@ -156,7 +187,7 @@ int in_serial_collect(struct flb_config *config, void *in_context)
             ctx->buf_len--;
         }
 
-
+        /* Handle the case when a Separator is set */
         if (ctx->separator) {
             while ((sep = strstr(ctx->buf_data, ctx->separator))) {
                 len = (sep - ctx->buf_data);
@@ -180,13 +211,49 @@ int in_serial_collect(struct flb_config *config, void *in_context)
                 return 0;
             }
         }
+        else if (ctx->format == FLB_SERIAL_FORMAT_JSON) {
+            /* JSON Format handler */
+            char *pack;
+            int out_size;
+
+            ret = flb_pack_json_state(ctx->buf_data, ctx->buf_len,
+                                      &pack, &out_size, &ctx->pack_state);
+            if (ret == FLB_ERR_JSON_PART) {
+                flb_debug("[in_serial] JSON incomplete, waiting for more data...");
+                return 0;
+            }
+            else if (ret == FLB_ERR_JSON_INVAL) {
+                flb_debug("[in_serial] invalid JSON message, skipping");
+                flb_pack_state_reset(&ctx->pack_state);
+                flb_pack_state_init(&ctx->pack_state);
+                ctx->pack_state.multiple = FLB_TRUE;
+
+                return -1;
+            }
+
+            /*
+             * Given the Tokens used for the packaged message, append
+             * the records and then adjust buffer.
+             */
+            process_pack(ctx, pack, out_size);
+
+            t = &ctx->pack_state.tokens[0];
+            consume_bytes(ctx->buf_data, t->end, ctx->buf_len);
+            ctx->buf_len -= t->end;
+            ctx->buf_data[ctx->buf_len] = '\0';
+
+            flb_pack_state_reset(&ctx->pack_state);
+            flb_pack_state_init(&ctx->pack_state);
+            ctx->pack_state.multiple = FLB_TRUE;
+        }
         else {
             /* Process and enqueue the received line */
             process_line(ctx->buf_data, ctx->buf_len, ctx);
             ctx->buf_len = 0;
         }
-
     }
+
+    return 0;
 }
 
 /* Cleanup serial input */
@@ -215,9 +282,15 @@ int in_serial_init(struct flb_input_instance *in,
         perror("calloc");
         return -1;
     }
+    ctx->format = FLB_SERIAL_FORMAT_NONE;
 
     if (!serial_config_read(ctx, in)) {
         return -1;
+    }
+
+    /* Initialize JSON pack state */
+    if (ctx->format == FLB_SERIAL_FORMAT_JSON) {
+        flb_pack_state_init(&ctx->pack_state);
     }
 
     /* set context */

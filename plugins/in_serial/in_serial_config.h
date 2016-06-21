@@ -21,8 +21,13 @@
 #ifndef FLB_IN_SERIAL_CONFIG_H
 #define FLB_IN_SERIAL_CONFIG_H
 
+#define FLB_SERIAL_FORMAT_NONE 0
+#define FLB_SERIAL_FORMAT_JSON 1
+
 #include <termios.h>
 #include <msgpack.h>
+
+#include <fluent-bit/flb_pack.h>
 
 struct flb_in_serial_config {
     int fd;           /* Socket to destination/backend */
@@ -40,6 +45,9 @@ struct flb_in_serial_config {
     int sep_len;
     char *separator;
 
+    /* Incoming format: JSON only for now */
+    int format;
+
     struct termios tio;
     struct termios tio_orig;
 
@@ -53,6 +61,12 @@ struct flb_in_serial_config {
     /* MessagePack buffers */
     msgpack_packer  mp_pck;
     msgpack_sbuffer mp_sbuf;
+
+    /*
+     * If (format == FLB_SERIAL_FORMAT_JSON), we use this pack_state
+     * to perform validation of the incomming JSON message.
+     */
+    struct flb_pack_state pack_state;
 };
 
 struct flb_in_serial_config *serial_config_read(struct flb_in_serial_config *config,

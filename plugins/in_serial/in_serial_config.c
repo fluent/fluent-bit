@@ -32,11 +32,13 @@ struct flb_in_serial_config *serial_config_read(struct flb_in_serial_config *con
     char *bitrate;
     char *separator;
     char *tmp;
+    char *format;
 
-    /* Validate serial section keys */
-    file = flb_input_get_property("file", i_ins);
-    bitrate = flb_input_get_property("bitrate", i_ins);
+    /* Get input properties */
+    file      = flb_input_get_property("file", i_ins);
+    bitrate   = flb_input_get_property("bitrate", i_ins);
     separator = flb_input_get_property("separator", i_ins);
+    format    = flb_input_get_property("format", i_ins);
 
     tmp = flb_input_get_property("min_bytes", i_ins);
     if (!tmp) {
@@ -69,6 +71,11 @@ struct flb_in_serial_config *serial_config_read(struct flb_in_serial_config *con
     config->min_bytes = min_bytes;
     config->separator = separator;
 
+    if (format && separator) {
+        flb_error("[in_serial] specify 'format' or 'separator', not both");
+        return NULL;
+    }
+
     if (separator) {
         config->sep_len = strlen(separator);
     }
@@ -76,8 +83,14 @@ struct flb_in_serial_config *serial_config_read(struct flb_in_serial_config *con
         config->sep_len = 0;
     }
 
-    flb_debug("[in_serial] file='%s' bitrate='%s' min_bytes=%i",
-              config->file, config->bitrate, config->min_bytes);
+    if (format) {
+        if (strcasecmp(format, "json") == 0) {
+            config->format = FLB_SERIAL_FORMAT_JSON;
+        }
+    }
+
+    flb_debug("[in_serial] file='%s' bitrate='%s' min_bytes=%i format=%i",
+              config->file, config->bitrate, config->min_bytes, config->format);
 
     return config;
 }
