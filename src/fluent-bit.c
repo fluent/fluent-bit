@@ -28,6 +28,7 @@
 #include <getopt.h>
 
 #include <mk_core.h>
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
@@ -58,6 +59,10 @@ static void flb_help(int rc, struct flb_config *config)
 
     printf("Usage: fluent-bit [OPTION]\n\n");
     printf("%sAvailable Options%s\n", ANSI_BOLD, ANSI_RESET);
+#ifdef FLB_HAVE_BUFFERING
+    printf("  -b  --buf_path=PATH\tspecify a buffering path\n");
+    printf("  -B  --buf_workers=N\tnumber of workers for buffering\n");
+#endif
     printf("  -c  --config=FILE\tspecify an optional configuration file\n");
     printf("  -d, --daemon\t\trun Fluent Bit in background mode\n");
     printf("  -f, --flush=SECONDS\tflush timeout in seconds (default: %i)\n",
@@ -260,6 +265,7 @@ static int flb_service_conf(struct flb_config *config, char *file)
         }
         free(v_str);
 
+#ifdef FLB_HAVE_HTTP
         /* HTTP Monitoring Server */
         v_num = n_get_key(section, "HTTP_Monitor", MK_RCONF_BOOL);
         if (v_num == FLB_TRUE || v_num == FLB_FALSE) {
@@ -271,6 +277,23 @@ static int flb_service_conf(struct flb_config *config, char *file)
         if (v_str) {
             config->http_port = v_str;
         }
+#endif
+
+#ifdef FLB_HAVE_BUFFERING
+        /* Buffering Support */
+        v_str = s_get_key(section, "Buffer_Path", MK_RCONF_STR);
+        if (v_str) {
+            config->buffer_path = strdup(v_str);
+
+            v_num = n_get_key(section, "Buffer_Workers", MK_RCONF_NUM);
+            if (v_num <= 0) {
+                config->buffer_workers = 1;
+            }
+            else {
+                config->buffer_workers = v_num;
+            }
+        }
+#endif
     }
 
     /* Read all [INPUT] sections */
@@ -365,20 +388,22 @@ int main(int argc, char **argv)
 
     /* Setup long-options */
     static const struct option long_opts[] = {
-        { "config",  required_argument, NULL, 'c' },
-        { "daemon",  no_argument      , NULL, 'd' },
-        { "flush",   required_argument, NULL, 'f' },
-        { "http",    no_argument      , NULL, 'H' },
-        { "port",    required_argument, NULL, 'P' },
-        { "input",   required_argument, NULL, 'i' },
-        { "match",   required_argument, NULL, 'm' },
-        { "output",  required_argument, NULL, 'o' },
-        { "prop",    required_argument, NULL, 'p' },
-        { "tag",     required_argument, NULL, 't' },
-        { "version", no_argument      , NULL, 'V' },
-        { "verbose", no_argument      , NULL, 'v' },
-        { "quiet",   no_argument      , NULL, 'q' },
-        { "help",    no_argument      , NULL, 'h' },
+        { "buf_path",    required_argument, NULL, 'b' },
+        { "buf_workers", required_argument, NULL, 'B' },
+        { "config",      required_argument, NULL, 'c' },
+        { "daemon",      no_argument      , NULL, 'd' },
+        { "flush",       required_argument, NULL, 'f' },
+        { "http",        no_argument      , NULL, 'H' },
+        { "port",        required_argument, NULL, 'P' },
+        { "input",       required_argument, NULL, 'i' },
+        { "match",       required_argument, NULL, 'm' },
+        { "output",      required_argument, NULL, 'o' },
+        { "prop",        required_argument, NULL, 'p' },
+        { "tag",         required_argument, NULL, 't' },
+        { "version",     no_argument      , NULL, 'V' },
+        { "verbose",     no_argument      , NULL, 'v' },
+        { "quiet",       no_argument      , NULL, 'q' },
+        { "help",        no_argument      , NULL, 'h' },
         { NULL, 0, NULL, 0 }
     };
 
@@ -397,10 +422,18 @@ int main(int argc, char **argv)
     }
 
     /* Parse the command line options */
-    while ((opt = getopt_long(argc, argv, "c:df:i:m:o:p:t:vqVhHP:",
+    while ((opt = getopt_long(argc, argv, "b:B:c:df:i:m:o:p:t:vqVhHP:",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
+#ifdef FLB_HAVE_BUFFERING
+        case 'b':
+            config->buffer_path = strdup(optarg);
+            break;
+        case 'B':
+            config->buffer_workers = atoi(optarg);
+            break;
+#endif
         case 'c':
             cfg_file = strdup(optarg);
             break;
@@ -445,12 +478,14 @@ int main(int argc, char **argv)
         case 'h':
             flb_help(EXIT_SUCCESS, config);
             break;
+#ifdef FLB_HAVE_HTTP
         case 'H':
             config->http_server = FLB_TRUE;
             break;
         case 'P':
             config->http_port = strdup(optarg);
             break;
+#endif
         case 'V':
             flb_version();
             exit(EXIT_SUCCESS);

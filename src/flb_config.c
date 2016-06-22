@@ -50,8 +50,17 @@ struct flb_config *flb_config_init()
     config->init_time    = time(NULL);
     config->kernel       = flb_kernel_info();
     config->verbose      = 3;
+
+#ifdef FLB_HAVE_HTTP
     config->http_server  = FLB_FALSE;
     config->http_port    = FLB_CONFIG_HTTP_PORT;
+#endif
+
+#ifdef FLB_HAVE_BUFFERING
+    config->buffer_ctx     = NULL;
+    config->buffer_path    = NULL;
+    config->buffer_workers = 0;
+#endif
 
     mk_list_init(&config->collectors);
     mk_list_init(&config->in_plugins);
@@ -131,8 +140,11 @@ void flb_config_exit(struct flb_config *config)
     flb_stats_exit(config);
 #endif
 
-    mk_event_loop_destroy(config->evl);
+#ifdef FLB_HAVE_BUFFERING
+    free(config->buffer_path);
+#endif
 
+    mk_event_loop_destroy(config->evl);
     free(config);
 }
 

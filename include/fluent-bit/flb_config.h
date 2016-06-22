@@ -22,6 +22,8 @@
 
 #include <time.h>
 #include <mk_core.h>
+
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_log.h>
 
 #ifdef FLB_HAVE_TLS
@@ -98,9 +100,17 @@ struct flb_config {
     struct flb_log *log;
 
     /* HTTP Server */
+#ifdef FLB_HAVE_HTTP
     int http_server;
     char *http_port;
     void *http_ctx;
+#endif
+
+#ifdef FLB_HAVE_BUFFERING
+    struct flb_buffer *buffer_ctx;
+    int buffer_workers;
+    char *buffer_path;
+#endif
 };
 
 struct flb_config *flb_config_init();

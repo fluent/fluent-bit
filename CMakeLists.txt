@@ -32,6 +32,7 @@ option(FLB_VALGRIND           "Enable Valgrind support"      No)
 option(FLB_TRACE              "Enable trace mode"            No)
 option(FLB_TESTS              "Enable tests"                 No)
 option(FLB_MTRACE             "Enable mtrace support"        No)
+option(FLB_BUFFERING          "Enable buffering support"     No)
 
 # Advanced options for Flushing methods
 # =====================================
@@ -72,6 +73,7 @@ if(FLB_ALL)
   # Global
   set(FLB_DEBUG        1)
   set(FLB_TLS          1)
+  set(FLB_BUFFERING    1)
 
   # Input plugins
   set(FLB_IN_XBEE      1)
@@ -167,6 +169,10 @@ if(FLB_TLS)
   option(INSTALL_MBEDTLS_HEADERS OFF)
   add_subdirectory(lib/mbedtls-yotta-2.3.0)
   include_directories(lib/mbedtls-yotta-2.3.0/include)
+endif()
+
+if(FLB_BUFFERING)
+  FLB_DEFINITION(FLB_HAVE_BUFFERING)
 endif()
 
 # Enable cJSON

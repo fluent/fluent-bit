@@ -34,6 +34,7 @@
 #include <fluent-bit/flb_engine_dispatch.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_http_server.h>
+#include <fluent-bit/flb_buffer.h>
 
 #ifdef FLB_HAVE_STATS
 #include <fluent-bit/flb_stats.h>
@@ -207,13 +208,34 @@ int flb_engine_start(struct flb_config *config)
     struct mk_event_loop *evl;
     struct flb_input_collector *collector;
 
+    /* HTTP Server */
 #ifdef FLB_HAVE_HTTP
     if (config->http_server == FLB_TRUE) {
         flb_http_server_start(config);
     }
 #endif
 
-    flb_info("starting engine");
+    /* Buffering Support */
+#ifdef FLB_HAVE_BUFFERING
+    struct flb_buffer *buf_ctx;
+
+    /* If a path exists, initialize the Buffer service and workers */
+    if (config->buffer_path) {
+        buf_ctx = flb_buffer_create(config->buffer_path,
+                                    config->buffer_workers);
+        if (!buf_ctx) {
+            flb_error("[engine] could not initialize buffer workers");
+        }
+        else {
+            /* Start buffer engine workers */
+            config->buffer_ctx = buf_ctx;
+            flb_buffer_start(config->buffer_ctx);
+        }
+    }
+#endif
+
+
+    flb_info("[engine] started");
     flb_thread_prepare();
 
     /* Create the event loop and set it in the global configuration */
