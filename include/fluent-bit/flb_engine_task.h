@@ -24,6 +24,7 @@ struct flb_thread;
 
 #include <pthread.h>
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_buffer.h>
 #include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_input.h>
 
@@ -48,7 +49,9 @@ static inline
 struct flb_engine_task *flb_engine_task_create(char *buf,
                                                size_t size,
                                                struct flb_input_instance *i_ins,
-                                               struct flb_input_dyntag *dt)
+                                               struct flb_input_dyntag *dt,
+                                               char *tag,
+                                               struct flb_config *config)
 {
     struct flb_engine_task *task;
 
@@ -67,6 +70,16 @@ struct flb_engine_task *flb_engine_task_create(char *buf,
     task->dt      = dt;
     mk_list_init(&task->threads);
     mk_list_add(&task->_head, &i_ins->tasks);
+
+    /*
+     * FIXME: Testing the task interface to enqueue buffer chunks
+     */
+#ifdef FLB_HAVE_BUFFERING
+    uint64_t cid;
+
+    cid = flb_buffer_chunk_push(config->buffer_ctx, buf, size, tag);
+    flb_debug("[task->buffer] new chunk=%lu", cid);
+#endif
 
 #ifdef FLB_HAVE_FLUSH_PTHREADS
     pthread_mutex_init(&task->mutex_threads, NULL);

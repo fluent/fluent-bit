@@ -17,6 +17,8 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_info.h>
+
 #ifdef FLB_HAVE_BUFFERING
 
 #ifndef FLB_BUFFER_H
@@ -24,10 +26,15 @@
 
 #include <mk_core.h>
 
+/* Worker event loop event type */
+#define FLB_BUFFER_EV_MNG  1024
+#define FLB_BUFFER_EV_ADD  2048
+#define FLB_BUFFER_EV_DEL  4096
+
 struct flb_buffer_chunk {
     void *data;
     size_t size;
-    int tag_len;
+    uint8_t tag_len;
     char tag[128];
 };
 
@@ -36,6 +43,14 @@ struct flb_buffer_worker {
     int id;                /* local id */
     pthread_t tid;         /* pthread ID  */
     pid_t task_id;         /* OS PID for this thread */
+
+    /*
+     * event mapping: the event loop handle 'struct mk_event' types, we
+     * set a new one per channel.
+     */
+    struct mk_event e_mng;
+    struct mk_event e_add;
+    struct mk_event e_del;
 
     /* channels */
     int ch_mng[2];         /* management channel    */
@@ -51,15 +66,22 @@ struct flb_buffer_worker {
 };
 
 struct flb_buffer {
-
-    /* List of flb_buffer_worker nodes */
-    int workers_n;
-    struct mk_list workers;
+    char *path;
+    int workers_n;           /* total number of workers */
+    int worker_lru;          /* Last-Recent-Used worker */
+    struct mk_list workers;  /* List of flb_buffer_worker nodes */
 };
 
 
 struct flb_buffer *flb_buffer_create(char *path, int workers);
+void flb_buffer_destroy(struct flb_buffer *ctx);
+
 int flb_buffer_start(struct flb_buffer *ctx);
+
+uint64_t flb_buffer_chunk_push(struct flb_buffer *ctx, void *data,
+                               size_t size, char *tag);
+
+int flb_buffer_chunk_pop(struct flb_buffer *ctx, uint64_t chunk_id);
 
 #endif /* !FLB_BUFFER_H*/
 #endif /* !FLB_HAVE_BUFFERING */

@@ -429,6 +429,9 @@ int main(int argc, char **argv)
 #ifdef FLB_HAVE_BUFFERING
         case 'b':
             config->buffer_path = strdup(optarg);
+            if (config->buffer_workers <= 0) {
+                config->buffer_workers = 1;
+            }
             break;
         case 'B':
             config->buffer_workers = atoi(optarg);

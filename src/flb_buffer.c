@@ -33,6 +33,7 @@
 
 #include <mk_core.h>
 #include <fluent-bit/flb_buffer.h>
+#include <fluent-bit/flb_buffer_chunk.h>
 #include <fluent-bit/flb_utils.h>
 
 /*
@@ -48,12 +49,60 @@
  */
 static void flb_buffer_worker_init(void *arg)
 {
+    int ret;
     struct flb_buffer_worker *ctx;
+    struct mk_event *event;
 
     /* Get context */
     ctx = (struct flb_buffer_worker *) arg;
+#ifdef __linux__
     ctx->task_id = syscall(__NR_gettid);
+#endif
 
+    MK_EVENT_NEW(&ctx->e_mng);
+    MK_EVENT_NEW(&ctx->e_add);
+    MK_EVENT_NEW(&ctx->e_del);
+
+    /* Register channel manager into the event loop */
+    ret = mk_event_add(ctx->evl, ctx->ch_mng[0],
+                       FLB_BUFFER_EV_MNG, MK_EVENT_READ, &ctx->e_mng);
+    if (ret == -1) {
+        flb_error("[buffer:worker %i] aborting", ctx->id);
+        return;
+    }
+
+    /* Register channel 'add' into the event loop */
+    ret = mk_event_add(ctx->evl, ctx->ch_add[0],
+                       FLB_BUFFER_EV_ADD, MK_EVENT_READ, &ctx->e_add);
+    if (ret == -1) {
+        flb_error("[buffer:worker %i] aborting", ctx->id);
+        return;
+    }
+
+    /* Register channel 'del' into the event loop */
+    ret = mk_event_add(ctx->evl, ctx->ch_del[0],
+                       FLB_BUFFER_EV_ADD, MK_EVENT_READ, &ctx->e_del);
+    if (ret == -1) {
+        flb_error("[buffer:worker %i] aborting", ctx->id);
+        return;
+    }
+
+    /* Join into the event loop (start listening for events) */
+    while (1) {
+        mk_event_wait(ctx->evl);
+        mk_event_foreach(event, ctx->evl) {
+            if (event->type == FLB_BUFFER_EV_MNG) {
+                printf("[buffer] [ev_mng]\n");
+            }
+            else if (event->type == FLB_BUFFER_EV_ADD) {
+                printf("[buffer] [ev_add]\n");
+                ret = flb_buffer_chunk_add(ctx, event);
+            }
+            else if (event->type == FLB_BUFFER_EV_DEL) {
+                printf("[buffer] [ev_del]\n");
+            }
+        }
+    }
 }
 
 void flb_buffer_destroy(struct flb_buffer *ctx)
@@ -68,18 +117,21 @@ void flb_buffer_destroy(struct flb_buffer *ctx)
 
         /* Management channel */
         if (worker->ch_mng[0] > 0) {
+            mk_event_del(worker->evl, &worker->e_mng);
             close(worker->ch_mng[0]);
             close(worker->ch_mng[1]);
         }
 
         /* Add buffer channel */
         if (worker->ch_add[0] > 0) {
+            mk_event_del(worker->evl, &worker->e_add);
             close(worker->ch_add[0]);
             close(worker->ch_add[1]);
         }
 
         /* Delete buffer channel */
         if (worker->ch_del[0] > 0) {
+            mk_event_del(worker->evl, &worker->e_del);
             close(worker->ch_del[0]);
             close(worker->ch_del[1]);
         }
@@ -131,13 +183,15 @@ struct flb_buffer *flb_buffer_create(char *path, int workers)
     if (!ctx) {
         return NULL;
     }
+    ctx->path       = strdup(path);
+    ctx->worker_lru = -1;
     mk_list_init(&ctx->workers);
 
+    ctx->workers_n = workers;
     if (workers <= 0) {
         ctx->workers_n = 1;
     }
 
-    printf("workers to init=%i\n", ctx->workers_n);
     for (i = 0; i < ctx->workers_n; i++) {
         /* Allocate worker context */
         worker = calloc(1, sizeof(struct flb_buffer_worker));
@@ -208,6 +262,84 @@ int flb_buffer_start(struct flb_buffer *ctx)
     }
 
     return n;
+}
+
+/* Stop buffer workers */
+int flb_buffer_stop(struct flb_buffer *ctx)
+{
+    (void) ctx;
+    return 0;
+}
+
+/*
+ * Create a new 'chunk' into the buffer engine, it returns the chunk
+ * id created.
+ */
+uint64_t flb_buffer_chunk_push(struct flb_buffer *ctx, void *data,
+                               size_t size, char *tag)
+{
+    int id;
+    int ret;
+    uint64_t cid = 1;
+    struct mk_list *head;
+    struct flb_buffer_chunk chunk;
+    struct flb_buffer_worker *worker = NULL;
+
+    /* The buffer engine may be disabled, check that. */
+    if (!ctx) {
+        return 0;
+    }
+
+    /* Define the worker that will handle the buffer (LRU) */
+    if (ctx->worker_lru == -1 || (ctx->worker_lru + 1 == ctx->workers_n)) {
+        ctx->worker_lru = 0;
+    }
+    else {
+        ctx->worker_lru++;
+    }
+
+    /* Compose buffer chunk instruction */
+    memset(&chunk, '\0', sizeof(struct flb_buffer_chunk));
+    chunk.data = data;
+    chunk.size = size;
+    chunk.tag_len = strlen(tag);
+    memcpy(&chunk.tag, tag, chunk.tag_len);
+
+    /* Lookup target worker */
+    if (ctx->worker_lru == 0) {
+        worker = mk_list_entry_first(&ctx->workers, struct flb_buffer_worker,
+                                     _head);
+    }
+    else {
+        id = 0;
+        mk_list_foreach(head, &ctx->workers) {
+            if (id == ctx->worker_lru) {
+                worker = mk_list_entry(head, struct flb_buffer_worker, _head);
+                break;
+            }
+            id++;
+        }
+    }
+
+    /* Write request through worker channel */
+    ret = write(worker->ch_add[1], &chunk, sizeof(struct flb_buffer_chunk));
+    if (ret == -1) {
+        perror("write");
+        return -1;
+    }
+
+    flb_debug("[buffer] created chunk_id=%lu records=%p size=%lu worker=%i",
+              cid, data, size, ctx->worker_lru);
+    return cid;
+}
+
+/* Destroy a chunk given it id */
+int flb_buffer_chunk_pop(struct flb_buffer *ctx, uint64_t chunk_id)
+{
+    (void) ctx;
+    (void) chunk_id;
+
+    return 0;
 }
 
 #endif /* !FLB_HAVE_BUFFERING */

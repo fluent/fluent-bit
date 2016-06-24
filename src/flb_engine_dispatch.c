@@ -69,7 +69,7 @@ int flb_engine_dispatch(struct flb_input_instance *in,
          * and the co-routines associated to the output instance plugins
          * that needs to handle the data.
          */
-        task = flb_engine_task_create(buf, size, in, NULL);
+        task = flb_engine_task_create(buf, size, in, NULL, in->tag, config);
         if (!task) {
             free(buf);
             return -1;
@@ -121,7 +121,7 @@ int flb_engine_dispatch(struct flb_input_instance *in,
                 continue;
             }
 
-            task = flb_engine_task_create(buf, size, dt->in, dt);
+            task = flb_engine_task_create(buf, size, dt->in, dt, dt->tag, config);
             if (!task) {
                 free(buf);
                 continue;
@@ -194,7 +194,7 @@ int flb_engine_dispatch(struct flb_input_instance *in,
          * and the co-routines associated to the output instance plugins
          * that needs to handle the data.
          */
-        task = flb_engine_task_create(buf, size, in, NULL);
+        task = flb_engine_task_create(buf, size, in, in->tag, config);
         if (!task) {
             free(buf);
             return -1;
@@ -234,7 +234,8 @@ int flb_engine_dispatch(struct flb_input_instance *in,
                 continue;
             }
 
-            task = flb_engine_task_create(buf, size, dt->in, dt);
+            task = flb_engine_task_create(buf, size, dt->in, dt,
+                                          dt->tag, config);
             if (!task) {
                 free(buf);
                 continue;
