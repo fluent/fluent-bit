@@ -25,6 +25,7 @@
 #define FLB_BUFFER_H
 
 #include <mk_core.h>
+#include <fluent-bit/flb_config.h>
 
 /* Worker event loop event type */
 #define FLB_BUFFER_EV_MNG  1024
@@ -73,7 +74,9 @@ struct flb_buffer {
 };
 
 
-struct flb_buffer *flb_buffer_create(char *path, int workers);
+struct flb_buffer *flb_buffer_create(char *path, int workers,
+                                     struct flb_config *config);
+
 void flb_buffer_destroy(struct flb_buffer *ctx);
 
 int flb_buffer_start(struct flb_buffer *ctx);

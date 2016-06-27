@@ -222,7 +222,8 @@ int flb_engine_start(struct flb_config *config)
     /* If a path exists, initialize the Buffer service and workers */
     if (config->buffer_path) {
         buf_ctx = flb_buffer_create(config->buffer_path,
-                                    config->buffer_workers);
+                                    config->buffer_workers,
+                                    config);
         if (!buf_ctx) {
             flb_error("[engine] could not initialize buffer workers");
         }

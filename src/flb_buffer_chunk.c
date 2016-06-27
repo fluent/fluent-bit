@@ -83,8 +83,8 @@ int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
         fclose(f);
         return -1;
     }
-
     fclose(f);
+
     printf("wrote: %lu bytes (from %lu)\n", w, chunk.size);
     return 0;
 }

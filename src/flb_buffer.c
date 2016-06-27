@@ -35,6 +35,7 @@
 #include <fluent-bit/flb_buffer.h>
 #include <fluent-bit/flb_buffer_chunk.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_output.h>
 
 /*
  * This routine runs in a POSIX thread and it aims to listen for requests
@@ -147,12 +148,106 @@ void flb_buffer_destroy(struct flb_buffer *ctx)
     }
 }
 
+/* Check that a directory exists and have write access, if not, create it */
+static int buffer_dir(char *path)
+{
+    int ret;
+    struct stat st;
+
+    ret = stat(path, &st);
+    if (ret == -1) {
+        /* The directory don't exists, try to create it */
+        ret = mkdir(path, 0700);
+        if (ret == -1) {
+            perror("mkdir");
+            flb_error("[buffer] path '%s' cannot be created", path);
+            return -1;
+        }
+        /* re-stat the new path */
+        ret = stat(path, &st);
+        if (ret == -1) {
+            perror("stat");
+            flb_error("[buffer] unexpected error on path '%s'", path);
+            return -1;
+        }
+    }
+
+    /* Validate entry is a directory */
+    if (!S_ISDIR(st.st_mode)) {
+        flb_error("[buffer] path '%s' is not a directory", path);
+        return -1;
+    }
+
+    return 0;
+}
+
+/* Check and prepare the buffer queue tree */
+static int buffer_queue_path(char *path, struct flb_config *config)
+{
+    int ret;
+    char tmp[PATH_MAX];
+    struct mk_list *head;
+    struct flb_output_instance *ins;
+
+    /* /incoming/ */
+    snprintf(tmp, sizeof(tmp) - 1, "%s/incoming", path);
+    ret = buffer_dir(tmp);
+    if (ret == -1) {
+        return -1;
+    }
+
+    /* /outgoing/ */
+    snprintf(tmp, sizeof(tmp) - 1, "%s/outgoing", path);
+    ret = buffer_dir(tmp);
+    if (ret == -1) {
+        return -1;
+    }
+
+    /* /tasks/ */
+    snprintf(tmp, sizeof(tmp) - 1, "%s/tasks", path);
+    ret = buffer_dir(tmp);
+    if (ret == -1) {
+        return -1;
+    }
+
+    /* /deferred/ */
+    snprintf(tmp, sizeof(tmp) - 1, "%s/deferred", path);
+    ret = buffer_dir(tmp);
+    if (ret == -1) {
+        return -1;
+    }
+
+    /* For each output plugin instance, create an entry on tasks and deferred */
+    mk_list_foreach(head, &config->outputs) {
+        ins = mk_list_entry(head, struct flb_output_instance, _head);
+
+        /* tasks/PLUGIN_NAME */
+        snprintf(tmp, sizeof(tmp) - 1, "%s/tasks/%s",
+                 path, ins->p->name);
+        ret = buffer_dir(tmp);
+        if (ret == -1) {
+            return -1;
+        }
+
+        /* deferred/PLUGIN_NAME */
+        snprintf(tmp, sizeof(tmp) - 1, "%s/deferred/%s",
+                 path, ins->p->name);
+        ret = buffer_dir(tmp);
+        if (ret == -1) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
 /*
  * This function creates a buffer handler instance and it creates
  * a fixed number of POSIX threads which will take care of I/O
  * operations to the file system.
  */
-struct flb_buffer *flb_buffer_create(char *path, int workers)
+struct flb_buffer *flb_buffer_create(char *path, int workers,
+                                     struct flb_config *config)
 {
     int i;
     int ret;
@@ -160,7 +255,7 @@ struct flb_buffer *flb_buffer_create(char *path, int workers)
     struct flb_buffer_worker *worker;
     struct stat st;
 
-    /* Validate the incoming path/directory */
+    /* Validate the incoming ROOT path/directory */
     ret = stat(path, &st);
     if (ret == -1) {
         perror("stat");
@@ -175,6 +270,12 @@ struct flb_buffer *flb_buffer_create(char *path, int workers)
     ret = access(path, W_OK);
     if (ret != 0) {
         flb_error("[buffer] not enough permissions on path '%s'", path);
+        return NULL;
+    }
+
+    /* Prepare the directories to manage the buffer queues */
+    ret = buffer_queue_path(path, config);
+    if (ret != 0) {
         return NULL;
     }
 
