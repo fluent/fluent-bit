@@ -182,6 +182,11 @@ void flb_input_initialize_all(struct flb_config *config)
 
         /* Initialize the input */
         if (p->cb_init) {
+            /* Sanity check: all non-dynamic tag input plugins must have a tag */
+            if (!in->tag && ((p->flags & FLB_INPUT_DYN_TAG) == 0)) {
+                flb_input_set_property(in, "tag", in->name);
+            }
+
             ret = p->cb_init(in, config, in->data);
             if (ret != 0) {
                 flb_error("Failed initialize input %s",

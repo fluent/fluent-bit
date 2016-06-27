@@ -114,7 +114,7 @@ int flb_router_io_set(struct flb_config *config)
                                     struct flb_input_instance, _head);
         o_ins = mk_list_entry_first(&config->outputs,
                                     struct flb_output_instance, _head);
-        if (!i_ins->tag && !o_ins->match) {
+        if (!o_ins->match) {
             flb_debug("[router] default match rule %s:%s",
                       i_ins->name, o_ins->name);
             o_ins->match = strdup("*");
