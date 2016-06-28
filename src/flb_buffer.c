@@ -51,8 +51,10 @@
 static void flb_buffer_worker_init(void *arg)
 {
     int ret;
+    char *filename;
     struct flb_buffer_worker *ctx;
     struct mk_event *event;
+    struct flb_buffer_request *req;
 
     /* Get context */
     ctx = (struct flb_buffer_worker *) arg;
@@ -88,6 +90,14 @@ static void flb_buffer_worker_init(void *arg)
         return;
     }
 
+    /* Register channel 'mov' into the event loop */
+    ret = mk_event_add(ctx->evl, ctx->ch_mov[0],
+                       FLB_BUFFER_EV_MOV, MK_EVENT_READ, &ctx->e_mov);
+    if (ret == -1) {
+        flb_error("[buffer:worker %i] aborting", ctx->id);
+        return;
+    }
+
     /* Join into the event loop (start listening for events) */
     while (1) {
         mk_event_wait(ctx->evl);
@@ -97,11 +107,33 @@ static void flb_buffer_worker_init(void *arg)
             }
             else if (event->type == FLB_BUFFER_EV_ADD) {
                 printf("[buffer] [ev_add]\n");
-                ret = flb_buffer_chunk_add(ctx, event);
+                filename = NULL;
+                ret = flb_buffer_chunk_add(ctx, event, &filename);
+                if (ret == 0) {
+                    /*
+                     * If a buffer chunk have been stored properly, now it
+                     * must be promoted to the next 'outgoing' stage. We do this
+                     * sending a request through the event loop.
+                     *
+                     * Create and enqueue a new request type.
+                     */
+                    req = flb_buffer_chunk_mov(FLB_BUFFER_CHUNK_OUTGOING,
+                                               filename, ctx);
+                    if (!req) {
+                        printf("[buffer] could not create request %s\n", filename);
+                        free(filename);
+                        continue;
+                    }
+                }
             }
             else if (event->type == FLB_BUFFER_EV_DEL) {
                 printf("[buffer] [ev_del]\n");
             }
+            else if (event->type == FLB_BUFFER_EV_MOV) {
+                printf("[buffer] [ev_mov]\n");
+                flb_buffer_chunk_real_move(ctx, event);
+            }
+
         }
     }
 }
@@ -135,6 +167,13 @@ void flb_buffer_destroy(struct flb_buffer *ctx)
             mk_event_del(worker->evl, &worker->e_del);
             close(worker->ch_del[0]);
             close(worker->ch_del[1]);
+        }
+
+        /* Move buffer channel */
+        if (worker->ch_mov[0] > 0) {
+            mk_event_del(worker->evl, &worker->e_mov);
+            close(worker->ch_mov[0]);
+            close(worker->ch_mov[1]);
         }
 
         /* Event loop */
@@ -303,6 +342,7 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
         worker->id = i;
         worker->parent = ctx;
         mk_list_add(&worker->_head, &ctx->workers);
+        mk_list_init(&worker->requests);
 
         /* Management channel */
         ret = pipe(worker->ch_mng);
@@ -328,7 +368,15 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
             return NULL;
         }
 
-        worker->evl = mk_event_loop_create(4);
+        /* Move buffer channel */
+        ret = pipe(worker->ch_mov);
+        if (ret == -1) {
+            perror("pipe");
+            flb_buffer_destroy(ctx);
+            return NULL;
+        }
+
+        worker->evl = mk_event_loop_create(16);
         if (!worker->evl) {
             flb_buffer_destroy(ctx);
             return NULL;

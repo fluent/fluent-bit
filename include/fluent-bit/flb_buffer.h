@@ -29,8 +29,9 @@
 
 /* Worker event loop event type */
 #define FLB_BUFFER_EV_MNG  1024
-#define FLB_BUFFER_EV_ADD  2048
-#define FLB_BUFFER_EV_DEL  4096
+#define FLB_BUFFER_EV_ADD  1025
+#define FLB_BUFFER_EV_DEL  1026
+#define FLB_BUFFER_EV_MOV  1027
 
 struct flb_buffer_chunk {
     void *data;
@@ -52,17 +53,19 @@ struct flb_buffer_worker {
     struct mk_event e_mng;
     struct mk_event e_add;
     struct mk_event e_del;
+    struct mk_event e_mov;
 
     /* channels */
     int ch_mng[2];         /* management channel    */
     int ch_add[2];         /* add buffer channel    */
     int ch_del[2];         /* remove buffer channel */
+    int ch_mov[2];         /* move/promote a buffer */
 
     /* event loop */
     struct mk_event_loop *evl;
 
     struct mk_list _head;
-
+    struct mk_list requests;
     struct flb_buffer *parent;
 };
 
@@ -73,6 +76,14 @@ struct flb_buffer {
     struct mk_list workers;  /* List of flb_buffer_worker nodes */
 };
 
+/* */
+struct flb_buffer_request {
+    int type;
+    char *name;
+    struct mk_list _head;   /* Link to buffer_worker->requests */
+};
+
+#define FLB_BUFFER_PATH(b)   b->parent->path
 
 struct flb_buffer *flb_buffer_create(char *path, int workers,
                                      struct flb_config *config);

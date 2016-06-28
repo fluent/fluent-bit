@@ -27,9 +27,18 @@
 #ifndef FLB_BUFFER_CHUNK_H
 #define FLB_BUFFER_CHUNK_H
 
-int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
-                         struct mk_event *event);
+#define FLB_BUFFER_CHUNK_INCOMING 0
+#define FLB_BUFFER_CHUNK_OUTGOING 1
+#define FLB_BUFFER_CHUNK_DEFERRED 3
 
+int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
+                         struct mk_event *event, char **filename);
+struct flb_buffer_request *flb_buffer_chunk_mov(int type,
+                                                char *name,
+                                                struct flb_buffer_worker *worker);
+
+int flb_buffer_chunk_real_move(struct flb_buffer_worker *worker,
+                               struct mk_event *event);
 
 #endif
 
