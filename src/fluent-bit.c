@@ -28,6 +28,7 @@
 #include <getopt.h>
 
 #include <mk_core.h>
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
@@ -56,7 +57,12 @@ static void flb_help(int rc, struct flb_config *config)
     struct flb_input_plugin *in;
     struct flb_output_plugin *out;
 
+#ifdef FLB_IS_TD_AGENT
+    printf("Usage: td-agent-bit [OPTION]\n\n");
+#else
     printf("Usage: fluent-bit [OPTION]\n\n");
+#endif
+
     printf("%sAvailable Options%s\n", ANSI_BOLD, ANSI_RESET);
     printf("  -c  --config=FILE\tspecify an optional configuration file\n");
     printf("  -d, --daemon\t\trun Fluent Bit in background mode\n");
@@ -103,13 +109,21 @@ static void flb_help(int rc, struct flb_config *config)
 
 static void flb_version()
 {
+#ifdef FLB_IS_TD_AGENT
+    printf("TD-Agent Bit v%s\n", FLB_VERSION_STR);
+#else
     printf("Fluent Bit v%s\n", FLB_VERSION_STR);
+#endif
     exit(EXIT_SUCCESS);
 }
 
 static void flb_banner()
 {
+#ifdef FLB_IS_TD_AGENT
+    printf("%sTD-Agent Bit v%s%s\n", ANSI_BOLD, FLB_VERSION_STR, ANSI_RESET);
+#else
     printf("%sFluent-Bit v%s%s\n", ANSI_BOLD, FLB_VERSION_STR, ANSI_RESET);
+#endif
     printf("%sCopyright (C) Treasure Data%s\n\n", ANSI_BOLD ANSI_YELLOW, ANSI_RESET);
 }
 

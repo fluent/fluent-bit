@@ -107,10 +107,16 @@ if(NOT FLB_WITHOUT_BIN)
   find_package (Threads)
   add_executable(fluent-bit-bin fluent-bit.c)
 
+  if(FLB_TD)
+    set(FLB_OUT_NAME "td-agent-bit")
+  else()
+    set(FLB_OUT_NAME "fluent-bit")
+  endif()
+
   target_link_libraries(fluent-bit-bin fluent-bit-static ${CMAKE_THREAD_LIBS_INIT} ${CMAKE_DL_LIBS})
   set_target_properties(fluent-bit-bin
     PROPERTIES
-      OUTPUT_NAME fluent-bit
+      OUTPUT_NAME ${FLB_OUT_NAME}
       ENABLE_EXPORTS ON)
   install(TARGETS fluent-bit-bin RUNTIME DESTINATION ${CMAKE_INSTALL_FULL_BINDIR})
 endif()

@@ -248,6 +248,10 @@ if(FLB_HAVE_SETJMP)
   FLB_DEFINITION(FLB_HAVE_SETJMP)
 endif()
 
+if(FLB_TD)
+  FLB_DEFINITION(FLB_IS_TD_AGENT)
+endif()
+
 configure_file(
   "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_info.h.in"
   "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_info.h"
@@ -271,7 +275,6 @@ if(FLB_TESTS)
   enable_testing()
   add_subdirectory(tests)
 endif()
-
 
 ### CPACK / RPM
 set(CPACK_PACKAGE_VERSION ${FLB_VERSION_STR})
