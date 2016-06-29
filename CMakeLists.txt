@@ -276,7 +276,7 @@ endif()
 ### CPACK / RPM
 set(CPACK_PACKAGE_VERSION ${FLB_VERSION_STR})
 set(CPACK_GENERATOR "RPM")
-set(CPACK_PACKAGE_NAME "fluentbit")
+set(CPACK_PACKAGE_NAME "td-agent-bit")
 set(CPACK_PACKAGE_RELEASE 1)
 set(CPACK_PACKAGE_CONTACT "Eduardo Silva <eduardo@treasure-data.com>")
 set(CPACK_PACKAGE_VENDOR "Treasure Data")
