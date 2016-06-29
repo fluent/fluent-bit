@@ -1,14 +1,14 @@
 Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: fluentbit
+Upstream-Name: td-agent-bit
 Source: http://fluentbit.io
 
 Files: *
-Copyright: 2015 Treasure Data <eduardo@treasure-data.com>
+Copyright: 2015-2016 Treasure Data <eduardo@treasure-data.com>
 
 License:
 
 Files: debian/*
-Copyright: 2015 Treasure Data <eduardo@treasure-data.com>
+Copyright: 2015-2016 Treasure Data <eduardo@treasure-data.com>
 
 License: Apache 2.0
  Licensed under the Apache License, Version 2.0 (the "License");
