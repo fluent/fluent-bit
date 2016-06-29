@@ -425,7 +425,7 @@ int flb_buffer_stop(struct flb_buffer *ctx)
  * id created.
  */
 uint64_t flb_buffer_chunk_push(struct flb_buffer *ctx, void *data,
-                               size_t size, char *tag)
+                               size_t size, char *tag, int fixed_tag)
 {
     int id;
     int ret;

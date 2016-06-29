@@ -181,13 +181,23 @@ int flb_buffer_chunk_real_move(struct flb_buffer_worker *worker,
         return -1;
     }
 
+    /* Move from incoming to outgoing */
     if (req.type == FLB_BUFFER_CHUNK_OUTGOING) {
         snprintf(from, PATH_MAX - 1,
                  "%s/incoming/%s", worker->parent->path, req.name);
         snprintf(to, PATH_MAX - 1,
                  "%s/outgoing/%s", worker->parent->path, req.name);
         ret = rename(from, to);
+        if (ret == -1) {
+            perror("rename");
+            return -1;
+        }
 
+        /*
+         * Once the chunk is in place, generate the output plugins references
+         * (task) to this chunk. A reference is just an empty file in the
+         * path 'tasks/PLUGIN_NAME/CHUNK_FILENAME'.
+         */
         return 0;
     }
 

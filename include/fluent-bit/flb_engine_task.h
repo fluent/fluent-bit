@@ -28,65 +28,32 @@ struct flb_thread;
 #include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_input.h>
 
+#define FLB_ENGINE_TASK_NEW      0
+#define FLB_ENGINE_TASK_RUNNING  1
+
+struct flb_engine_task_route {
+    struct flb_output_instance *out;
+    struct mk_list _head;
+};
+
 /* A task takes a buffer and sync input and output instances to handle it */
 struct flb_engine_task {
+    int status;                            /* new task or running ?     */
     int deleted;                           /* should be deleted ?       */
     int users;                             /* number of users (threads) */
+    char *tag;                             /* original tag              */
     char *buf;                             /* buffer                    */
     size_t size;                           /* buffer data size          */
     struct flb_input_dyntag *dt;           /* dyntag node (if applies)  */
     struct flb_input_instance *i_ins;      /* input instance            */
     struct mk_list threads;                /* ref flb_input_instance->tasks */
-    struct mk_list _head;
+    struct mk_list routes;                 /* routes to dispatch data   */
+    struct mk_list _head;                  /* link to input_instance    */
 
 #ifdef FLB_HAVE_FLUSH_PTHREADS
     pthread_mutex_t mutex_threads;
 #endif
 };
-
-/* Create an engine task to handle the output plugin flushing work */
-static inline
-struct flb_engine_task *flb_engine_task_create(char *buf,
-                                               size_t size,
-                                               struct flb_input_instance *i_ins,
-                                               struct flb_input_dyntag *dt,
-                                               char *tag,
-                                               struct flb_config *config)
-{
-    struct flb_engine_task *task;
-
-    task = (struct flb_engine_task *) calloc(1, sizeof(struct flb_engine_task));
-    if (!task) {
-        perror("malloc");
-        return NULL;
-    }
-
-    /* Keep track of origins */
-    task->deleted = FLB_FALSE;
-    task->users   = 0;
-    task->buf     = buf;
-    task->size    = size;
-    task->i_ins   = i_ins;
-    task->dt      = dt;
-    mk_list_init(&task->threads);
-    mk_list_add(&task->_head, &i_ins->tasks);
-
-    /*
-     * FIXME: Testing the task interface to enqueue buffer chunks
-     */
-#ifdef FLB_HAVE_BUFFERING
-    uint64_t cid;
-
-    cid = flb_buffer_chunk_push(config->buffer_ctx, buf, size, tag);
-    flb_debug("[task->buffer] new chunk=%lu", cid);
-#endif
-
-#ifdef FLB_HAVE_FLUSH_PTHREADS
-    pthread_mutex_init(&task->mutex_threads, NULL);
-#endif
-
-    return task;
-}
 
 /* If there is no active users, destroy the task context */
 static inline int flb_engine_task_remove(struct flb_engine_task *task)
