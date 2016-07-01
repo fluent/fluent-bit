@@ -51,7 +51,7 @@ struct flb_config *flb_config_init()
     config->kernel       = flb_kernel_info();
     config->verbose      = 3;
     config->http_server  = FLB_FALSE;
-    config->http_port    = FLB_CONFIG_HTTP_PORT;
+    config->http_port    = strdup(FLB_CONFIG_HTTP_PORT);
 
     mk_list_init(&config->collectors);
     mk_list_init(&config->in_plugins);
@@ -126,6 +126,10 @@ void flb_config_exit(struct flb_config *config)
     /* Event flush */
     mk_event_del(config->evl, &config->event_flush);
     close(config->flush_fd);
+
+    if (config->http_server) {
+        free(config->http_server);
+    }
 
 #ifdef FLB_HAVE_STATS
     flb_stats_exit(config);
