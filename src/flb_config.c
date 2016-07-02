@@ -127,8 +127,8 @@ void flb_config_exit(struct flb_config *config)
     mk_event_del(config->evl, &config->event_flush);
     close(config->flush_fd);
 
-    if (config->http_server) {
-        free(config->http_server);
+    if (config->http_port) {
+        free(config->http_port);
     }
 
 #ifdef FLB_HAVE_STATS
