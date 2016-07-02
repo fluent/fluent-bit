@@ -107,16 +107,28 @@ if(NOT FLB_WITHOUT_BIN)
   find_package (Threads)
   add_executable(fluent-bit-bin fluent-bit.c)
 
-  if(FLB_TD)
-    set(FLB_OUT_NAME "td-agent-bit")
-  else()
-    set(FLB_OUT_NAME "fluent-bit")
-  endif()
-
   target_link_libraries(fluent-bit-bin fluent-bit-static ${CMAKE_THREAD_LIBS_INIT} ${CMAKE_DL_LIBS})
   set_target_properties(fluent-bit-bin
     PROPERTIES
       OUTPUT_NAME ${FLB_OUT_NAME}
       ENABLE_EXPORTS ON)
   install(TARGETS fluent-bit-bin RUNTIME DESTINATION ${CMAKE_INSTALL_FULL_BINDIR})
+
+  # Detect init system, install systemd or init.d script
+  if(IS_DIRECTORY /usr/lib/systemd/system)
+    set(FLB_SYSTEMD_SCRIPT "${PROJECT_SOURCE_DIR}/init/${FLB_OUT_NAME}.service")
+    configure_file(
+      "${PROJECT_SOURCE_DIR}/init/systemd.in"
+      ${FLB_SYSTEMD_SCRIPT}
+      )
+    install(FILES ${FLB_SYSTEMD_SCRIPT} DESTINATION /usr/lib/systemd/system)
+    install(DIRECTORY DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/")
+  else()
+    install(FILES myprog DESTINATION /etc/init.d)
+  endif()
+
+  install(FILES
+    "${PROJECT_SOURCE_DIR}/conf/fluent-bit.conf"
+    DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/"
+    RENAME "${FLB_OUT_NAME}.conf")
 endif()

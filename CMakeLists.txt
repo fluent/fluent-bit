@@ -120,11 +120,16 @@ include_directories(
 # fluent-bit do not use it.
 set(WITH_SYSTEM_MALLOC  1 CACHE BOOL "Use system memory allocator")
 
+macro(FLB_SET_OPTION option value)
+  set(${option} ${value} CACHE "" INTERNAL FORCE)
+endmacro()
+FLB_SET_OPTION(MK_SYSTEM_MALLOC      ON)
+
 # MsgPack options
-option(MSGPACK_ENABLE_CXX             OFF)
-option(MSGPACK_ENABLE_SHARED          OFF)
-option(MSGPACK_BUILD_TESTS            OFF)
-option(MSGPACK_BUILD_EXAMPLES         OFF)
+FLB_SET_OPTION(MSGPACK_ENABLE_CXX             OFF)
+FLB_SET_OPTION(MSGPACK_ENABLE_SHARED          OFF)
+FLB_SET_OPTION(MSGPACK_BUILD_TESTS            OFF)
+FLB_SET_OPTION(MSGPACK_BUILD_EXAMPLES         OFF)
 add_subdirectory(lib/msgpack-c-068041f)
 
 # Lib: build the core libraries used by Fluent-Bit
@@ -133,23 +138,18 @@ FLB_DEFINITION(JSMN_STRICT)
 add_subdirectory(lib/jsmn)
 add_subdirectory(lib/ejson)
 
-# MK Core
-macro(MK_SET_OPTION option value)
-  set(${option} ${value} CACHE "" INTERNAL FORCE)
-endmacro()
-MK_SET_OPTION(MK_SYSTEM_MALLOC      ON)
-
 if(FLB_HTTP)
-  MK_SET_OPTION(MK_WITHOUT_BIN        ON)
-  MK_SET_OPTION(MK_WITHOUT_CONF       ON)
-  MK_SET_OPTION(MK_PLUGIN_AUTH       OFF)
-  MK_SET_OPTION(MK_PLUGIN_CGI        OFF)
-  MK_SET_OPTION(MK_PLUGIN_CHEETAH    OFF)
-  MK_SET_OPTION(MK_PLUGIN_DIRLISTING OFF)
-  MK_SET_OPTION(MK_PLUGIN_FASTCGI    OFF)
-  MK_SET_OPTION(MK_PLUGIN_LOGGER     OFF)
-  MK_SET_OPTION(MK_PLUGIN_MANDRIL    OFF)
-  MK_SET_OPTION(MK_PLUGIN_TLS        OFF)
+  # MK Core
+  FLB_SET_OPTION(MK_WITHOUT_BIN        ON)
+  FLB_SET_OPTION(MK_WITHOUT_CONF       ON)
+  FLB_SET_OPTION(MK_PLUGIN_AUTH       OFF)
+  FLB_SET_OPTION(MK_PLUGIN_CGI        OFF)
+  FLB_SET_OPTION(MK_PLUGIN_CHEETAH    OFF)
+  FLB_SET_OPTION(MK_PLUGIN_DIRLISTING OFF)
+  FLB_SET_OPTION(MK_PLUGIN_FASTCGI    OFF)
+  FLB_SET_OPTION(MK_PLUGIN_LOGGER     OFF)
+  FLB_SET_OPTION(MK_PLUGIN_MANDRIL    OFF)
+  FLB_SET_OPTION(MK_PLUGIN_TLS        OFF)
   add_subdirectory(lib/monkey)
 else()
   add_subdirectory(lib/monkey/mk_core)
@@ -250,6 +250,12 @@ endif()
 
 if(FLB_TD)
   FLB_DEFINITION(FLB_IS_TD_AGENT)
+  set(FLB_PROG_NAME "TD Agent Bit")
+  set(FLB_OUT_NAME "td-agent-bit")
+  set(WITHOUT_HEADERS On)
+else()
+  set(FLB_PROG_NAME "Fluentd Bit")
+  set(FLB_OUT_NAME "fluent-bit")
 endif()
 
 configure_file(
