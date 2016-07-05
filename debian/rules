@@ -5,4 +5,4 @@
 
 override_dh_auto_configure:
 
-	dh_auto_configure -- -DFLB_ALL=ON -DFLB_TD=1
+	dh_auto_configure -- -DCMAKE_INSTALL_PREFIX=/opt/td-agent-bit/ -DFLB_ALL=ON -DFLB_TD=1
