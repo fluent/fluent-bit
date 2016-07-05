@@ -124,7 +124,7 @@ if(NOT FLB_WITHOUT_BIN)
     install(FILES ${FLB_SYSTEMD_SCRIPT} DESTINATION /usr/lib/systemd/system)
     install(DIRECTORY DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/")
   else()
-    install(FILES myprog DESTINATION /etc/init.d)
+    # FIXME: should we support Sysv init script ?
   endif()
 
   install(FILES
