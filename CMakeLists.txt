@@ -302,6 +302,7 @@ set(CPACK_RPM_USER_FILELIST
 	"%ignore /lib/systemd/system"
 	"%ignore /lib64"
 	"%ignore /lib64/pkgconfig"
-	"%ignore /opt")
+	"%ignore /opt"
+	"%ignore /etc")
 set(CPACK_PACKAGING_INSTALL_PREFIX "/")
 include(CPack)
