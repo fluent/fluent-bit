@@ -296,5 +296,12 @@ set(CPACK_RPM_PACKAGE_LICENSE "Apache v2.0")
 set(CPACK_PACKAGE_DESCRIPTION_FILE "${PROJECT_SOURCE_DIR}/cpack/description")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Fast data collector for Linux")
 set(CPACK_RPM_SPEC_MORE_DEFINE "%define ignore \#")
-set(CPACK_RPM_USER_FILELIST "%ignore /lib" "%ignore /lib/systemd" "%ignore /lib/systemd/system")
+set(CPACK_RPM_USER_FILELIST 
+	"%ignore /lib" 
+	"%ignore /lib/systemd" 
+	"%ignore /lib/systemd/system"
+	"%ignore /lib64"
+	"%ignore /lib64/pkgconfig"
+	"%ignore /opt")
+set(CPACK_PACKAGING_INSTALL_PREFIX "/")
 include(CPack)
