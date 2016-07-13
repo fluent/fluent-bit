@@ -146,7 +146,7 @@ struct flb_buffer_request *flb_buffer_chunk_mov(int type,
     int ret;
     struct flb_buffer_request *req;
 
-    req = malloc(sizeof(struct flb_buffer_request));
+    req = calloc(1, sizeof(struct flb_buffer_request));
     if (!req) {
         perror("malloc");
         return NULL;
@@ -157,6 +157,7 @@ struct flb_buffer_request *flb_buffer_chunk_mov(int type,
     mk_list_add(&req->_head, &worker->requests);
 
     /* Do the request */
+    printf("worker pipe ID=%i\n", worker->ch_mov[1]);
     ret = write(worker->ch_mov[1], req, sizeof(struct flb_buffer_request));
     if (ret == -1) {
         perror("write");

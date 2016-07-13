@@ -36,6 +36,7 @@
 struct flb_buffer_chunk {
     void *data;
     size_t size;
+    uint64_t routes;
     uint8_t tag_len;
     char tag[128];
 };
@@ -93,7 +94,7 @@ void flb_buffer_destroy(struct flb_buffer *ctx);
 int flb_buffer_start(struct flb_buffer *ctx);
 
 uint64_t flb_buffer_chunk_push(struct flb_buffer *ctx, void *data,
-                               size_t size, char *tag, int fixed_tag);
+                               size_t size, char *tag, uint64_t routes);
 
 int flb_buffer_chunk_pop(struct flb_buffer *ctx, uint64_t chunk_id);
 

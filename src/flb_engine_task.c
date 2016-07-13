@@ -35,9 +35,11 @@ struct flb_engine_task *flb_engine_task_create(char *buf,
                                                struct flb_config *config)
 {
     int count = 0;
+    uint64_t routes_mask = 0;
     struct flb_engine_task *task;
     struct flb_engine_task_route *route;
     struct flb_output_instance *o_ins;
+    struct flb_router_path *router_path;
     struct mk_list *head;
     struct mk_list *o_head;
 
@@ -65,7 +67,9 @@ struct flb_engine_task *flb_engine_task_create(char *buf,
     if (!dt) {
         /* A non-dynamic tag input plugin have static routes */
         mk_list_foreach(head, &i_ins->routes) {
-            o_ins = mk_list_entry(head, struct flb_output_instance, _head);
+            router_path = mk_list_entry(head, struct flb_router_path, _head);
+            o_ins = router_path->ins;
+
             route = malloc(sizeof(struct flb_engine_task_route));
             if (!route) {
                 perror("malloc");
@@ -75,6 +79,7 @@ struct flb_engine_task *flb_engine_task_create(char *buf,
             route->out = o_ins;
             mk_list_add(&route->_head, &task->routes);
             count++;
+
         }
     }
     else {
@@ -93,6 +98,9 @@ struct flb_engine_task *flb_engine_task_create(char *buf,
                 route->out = o_ins;
                 mk_list_add(&route->_head, &task->routes);
                 count++;
+
+                /* set the routes as a mask */
+                routes_mask |= o_ins->mask_id;
             }
         }
     }
@@ -101,20 +109,14 @@ struct flb_engine_task *flb_engine_task_create(char *buf,
      * FIXME: Testing the task interface to enqueue buffer chunks
      */
 #ifdef FLB_HAVE_BUFFERING
-    int fixed_tag;
     uint64_t cid;
 
     /*
-     * Incoming records may come from a fixed or dynamic tag, this information
-     * is fundamental to determinate where the new buffer chunk will be stored
-     * and referenced.
+     * Generate a buffer chunk push request, note that suggested routes
+     * are passed through the 'routes_mask' bit mask variable.
      */
-    fixed_tag = FLB_FALSE;
-    if (!dt) {
-        fixed_tag = FLB_TRUE;
-    }
-
-    cid = flb_buffer_chunk_push(config->buffer_ctx, buf, size, tag, fixed_tag);
+    cid = flb_buffer_chunk_push(config->buffer_ctx,
+                                buf, size, tag, routes_mask);
     flb_debug("[task->buffer] new chunk=%lu", cid);
 #endif
 

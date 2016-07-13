@@ -425,7 +425,7 @@ int flb_buffer_stop(struct flb_buffer *ctx)
  * id created.
  */
 uint64_t flb_buffer_chunk_push(struct flb_buffer *ctx, void *data,
-                               size_t size, char *tag, int fixed_tag)
+                               size_t size, char *tag, uint64_t routes)
 {
     int id;
     int ret;
@@ -449,9 +449,10 @@ uint64_t flb_buffer_chunk_push(struct flb_buffer *ctx, void *data,
 
     /* Compose buffer chunk instruction */
     memset(&chunk, '\0', sizeof(struct flb_buffer_chunk));
-    chunk.data = data;
-    chunk.size = size;
+    chunk.data    = data;
+    chunk.size    = size;
     chunk.tag_len = strlen(tag);
+    chunk.routes  = routes;
     memcpy(&chunk.tag, tag, chunk.tag_len);
 
     /* Lookup target worker */
