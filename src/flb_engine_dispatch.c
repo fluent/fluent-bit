@@ -58,6 +58,7 @@ int flb_engine_dispatch(struct flb_input_instance *in,
 {
     char *buf;
     size_t size;
+    struct mk_list *tmp;
     struct mk_list *head;
     struct mk_list *r_head;
     struct flb_input_plugin *p;
@@ -118,7 +119,7 @@ int flb_engine_dispatch(struct flb_input_instance *in,
     }
 
     /* At this point the input instance should have some tasks linked */
-    mk_list_foreach(head, &in->tasks) {
+    mk_list_foreach_safe(head, tmp, &in->tasks) {
         task = mk_list_entry(head, struct flb_engine_task, _head);
 
         /* Only process recently created tasks */
