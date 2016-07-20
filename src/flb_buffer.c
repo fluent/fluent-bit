@@ -51,6 +51,7 @@
 static void flb_buffer_worker_init(void *arg)
 {
     int ret;
+    uint64_t routes;
     char *filename;
     struct flb_buffer_worker *ctx;
     struct mk_event *event;
@@ -109,7 +110,7 @@ static void flb_buffer_worker_init(void *arg)
                 printf("[buffer] [ev_add]\n");
                 filename = NULL;
                 ret = flb_buffer_chunk_add(ctx, event, &filename);
-                if (ret == 0) {
+                if (ret >= 0) {
                     /*
                      * If a buffer chunk have been stored properly, now it
                      * must be promoted to the next 'outgoing' stage. We do this
@@ -117,8 +118,9 @@ static void flb_buffer_worker_init(void *arg)
                      *
                      * Create and enqueue a new request type.
                      */
+                    routes = ret;
                     req = flb_buffer_chunk_mov(FLB_BUFFER_CHUNK_OUTGOING,
-                                               filename, ctx);
+                                               filename, routes, ctx);
                     if (!req) {
                         printf("[buffer] could not create request %s\n", filename);
                         free(filename);
@@ -133,7 +135,6 @@ static void flb_buffer_worker_init(void *arg)
                 printf("[buffer] [ev_mov]\n");
                 flb_buffer_chunk_real_move(ctx, event);
             }
-
         }
     }
 }
@@ -262,7 +263,7 @@ static int buffer_queue_path(char *path, struct flb_config *config)
 
         /* tasks/PLUGIN_NAME */
         snprintf(tmp, sizeof(tmp) - 1, "%s/tasks/%s",
-                 path, ins->p->name);
+                 path, ins->name);
         ret = buffer_dir(tmp);
         if (ret == -1) {
             return -1;
@@ -325,6 +326,7 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
     }
     ctx->path       = strdup(path);
     ctx->worker_lru = -1;
+    ctx->config     = config;
     mk_list_init(&ctx->workers);
 
     ctx->workers_n = workers;
@@ -417,78 +419,6 @@ int flb_buffer_start(struct flb_buffer *ctx)
 int flb_buffer_stop(struct flb_buffer *ctx)
 {
     (void) ctx;
-    return 0;
-}
-
-/*
- * Create a new 'chunk' into the buffer engine, it returns the chunk
- * id created.
- */
-uint64_t flb_buffer_chunk_push(struct flb_buffer *ctx, void *data,
-                               size_t size, char *tag, uint64_t routes)
-{
-    int id;
-    int ret;
-    uint64_t cid = 1;
-    struct mk_list *head;
-    struct flb_buffer_chunk chunk;
-    struct flb_buffer_worker *worker = NULL;
-
-    /* The buffer engine may be disabled, check that. */
-    if (!ctx) {
-        return 0;
-    }
-
-    /* Define the worker that will handle the buffer (LRU) */
-    if (ctx->worker_lru == -1 || (ctx->worker_lru + 1 == ctx->workers_n)) {
-        ctx->worker_lru = 0;
-    }
-    else {
-        ctx->worker_lru++;
-    }
-
-    /* Compose buffer chunk instruction */
-    memset(&chunk, '\0', sizeof(struct flb_buffer_chunk));
-    chunk.data    = data;
-    chunk.size    = size;
-    chunk.tag_len = strlen(tag);
-    chunk.routes  = routes;
-    memcpy(&chunk.tag, tag, chunk.tag_len);
-
-    /* Lookup target worker */
-    if (ctx->worker_lru == 0) {
-        worker = mk_list_entry_first(&ctx->workers, struct flb_buffer_worker,
-                                     _head);
-    }
-    else {
-        id = 0;
-        mk_list_foreach(head, &ctx->workers) {
-            if (id == ctx->worker_lru) {
-                worker = mk_list_entry(head, struct flb_buffer_worker, _head);
-                break;
-            }
-            id++;
-        }
-    }
-
-    /* Write request through worker channel */
-    ret = write(worker->ch_add[1], &chunk, sizeof(struct flb_buffer_chunk));
-    if (ret == -1) {
-        perror("write");
-        return -1;
-    }
-
-    flb_debug("[buffer] created chunk_id=%lu records=%p size=%lu worker=%i",
-              cid, data, size, ctx->worker_lru);
-    return cid;
-}
-
-/* Destroy a chunk given it id */
-int flb_buffer_chunk_pop(struct flb_buffer *ctx, uint64_t chunk_id)
-{
-    (void) ctx;
-    (void) chunk_id;
-
     return 0;
 }
 

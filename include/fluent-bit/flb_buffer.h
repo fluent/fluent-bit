@@ -36,7 +36,7 @@
 struct flb_buffer_chunk {
     void *data;
     size_t size;
-    uint64_t routes;
+    uint64_t routes;        /* bitmask routes */
     uint8_t tag_len;
     char tag[128];
 };
@@ -72,9 +72,10 @@ struct flb_buffer_worker {
 
 struct flb_buffer {
     char *path;
-    int workers_n;           /* total number of workers */
-    int worker_lru;          /* Last-Recent-Used worker */
-    struct mk_list workers;  /* List of flb_buffer_worker nodes */
+    int workers_n;             /* total number of workers */
+    int worker_lru;            /* Last-Recent-Used worker */
+    struct flb_config *config;
+    struct mk_list workers;    /* List of flb_buffer_worker nodes */
 };
 
 /* */
@@ -92,11 +93,6 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
 void flb_buffer_destroy(struct flb_buffer *ctx);
 
 int flb_buffer_start(struct flb_buffer *ctx);
-
-uint64_t flb_buffer_chunk_push(struct flb_buffer *ctx, void *data,
-                               size_t size, char *tag, uint64_t routes);
-
-int flb_buffer_chunk_pop(struct flb_buffer *ctx, uint64_t chunk_id);
 
 #endif /* !FLB_BUFFER_H*/
 #endif /* !FLB_HAVE_BUFFERING */

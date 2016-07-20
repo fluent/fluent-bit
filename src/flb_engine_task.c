@@ -80,6 +80,7 @@ struct flb_engine_task *flb_engine_task_create(char *buf,
             mk_list_add(&route->_head, &task->routes);
             count++;
 
+            routes_mask |= o_ins->mask_id;
         }
     }
     else {

@@ -36,12 +36,21 @@
 #endif
 
 #include <mk_core.h>
+#include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_buffer.h>
 #include <fluent-bit/flb_buffer_chunk.h>
 
 /*
  * When the Worker (thread) receives a FLB_BUFFER_EV_ADD event, this routine
  * read the request data and store the chunk into the file system.
+ *
+ * The buffer chunk filename format is:
+ *
+ *    flb.SECONDS.USECONDS.ROUTER_MASK_ID.WORKER_ID.TAG
+ *
+ * On error it returns -1, otherwise it returns the router mask id. This is
+ * used by the caller to 'suggest' outgoing paths when moving the buffer
+ * chunk to the 'outgoing' queue.
  */
 int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
                          struct mk_event *event, char **filename)
@@ -76,8 +85,9 @@ int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
         perror("malloc");
         return -1;
     }
-    ret = snprintf(fchunk, PATH_MAX - 1, "flb.%lu.%lu.w%i.%s",
+    ret = snprintf(fchunk, PATH_MAX - 1, "flb.%lu.%lu.%lu.w%i.%s",
                    tv.tv_sec, tv.tv_usec,
+                   chunk.routes,
                    worker->id, chunk.tag);
     if (ret == -1) {
         perror("snprintf");
@@ -135,12 +145,86 @@ int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
 
     printf("wrote: %lu bytes (from %lu)\n", w, chunk.size);
     *filename = fchunk;
+
+    return chunk.routes;
+}
+
+/*
+ * Create a new 'chunk' into the buffer engine, it returns the chunk
+ * id created.
+ */
+uint64_t flb_buffer_chunk_push(struct flb_buffer *ctx, void *data,
+                               size_t size, char *tag, uint64_t routes)
+{
+    int id;
+    int ret;
+    uint64_t cid = 1;
+    struct mk_list *head;
+    struct flb_buffer_chunk chunk;
+    struct flb_buffer_worker *worker = NULL;
+
+    /* The buffer engine may be disabled, check that. */
+    if (!ctx) {
+        return 0;
+    }
+
+    /* Define the worker that will handle the buffer (LRU) */
+    if (ctx->worker_lru == -1 || (ctx->worker_lru + 1 == ctx->workers_n)) {
+        ctx->worker_lru = 0;
+    }
+    else {
+        ctx->worker_lru++;
+    }
+
+    /* Compose buffer chunk instruction */
+    memset(&chunk, '\0', sizeof(struct flb_buffer_chunk));
+    chunk.data    = data;
+    chunk.size    = size;
+    chunk.tag_len = strlen(tag);
+    chunk.routes  = routes;
+    memcpy(&chunk.tag, tag, chunk.tag_len);
+
+    /* Lookup target worker */
+    if (ctx->worker_lru == 0) {
+        worker = mk_list_entry_first(&ctx->workers, struct flb_buffer_worker,
+                                     _head);
+    }
+    else {
+        id = 0;
+        mk_list_foreach(head, &ctx->workers) {
+            if (id == ctx->worker_lru) {
+                worker = mk_list_entry(head, struct flb_buffer_worker, _head);
+                break;
+            }
+            id++;
+        }
+    }
+
+    /* Write request through worker channel */
+    ret = write(worker->ch_add[1], &chunk, sizeof(struct flb_buffer_chunk));
+    if (ret == -1) {
+        perror("write");
+        return -1;
+    }
+
+    flb_debug("[buffer] created chunk_id=%lu records=%p size=%lu worker=%i",
+              cid, data, size, ctx->worker_lru);
+    return cid;
+}
+
+/* Destroy a chunk given it id */
+int flb_buffer_chunk_pop(struct flb_buffer *ctx, uint64_t chunk_id)
+{
+    (void) ctx;
+    (void) chunk_id;
+
     return 0;
 }
 
 /* Enqueue a request to move a chunk */
 struct flb_buffer_request *flb_buffer_chunk_mov(int type,
                                                 char *name,
+                                                uint64_t routes,
                                                 struct flb_buffer_worker *worker)
 {
     int ret;
@@ -170,9 +254,16 @@ struct flb_buffer_request *flb_buffer_chunk_mov(int type,
 int flb_buffer_chunk_real_move(struct flb_buffer_worker *worker,
                                struct mk_event *event)
 {
+    int fd;
     int ret;
+    uint64_t info_sec;
+    suseconds_t info_usec;
+    uint64_t info_routes;
     char from[PATH_MAX];
     char to[PATH_MAX];
+    struct mk_list *head;
+    struct flb_config *config = worker->parent->config;
+    struct flb_output_instance *o_ins;
     struct flb_buffer_request req;
 
     /* Read the expected chunk reference */
@@ -199,6 +290,32 @@ int flb_buffer_chunk_real_move(struct flb_buffer_worker *worker,
          * (task) to this chunk. A reference is just an empty file in the
          * path 'tasks/PLUGIN_NAME/CHUNK_FILENAME'.
          */
+        ret = sscanf(req.name,
+                     "flb.%lu.%lu.%lu ", &info_sec, &info_usec, &info_routes);
+        if (ret == -1) {
+            perror("sscanf");
+            return -1;
+        }
+
+        /* Find output routes and generate file references */
+        mk_list_foreach(head, &config->outputs) {
+            o_ins = mk_list_entry(head, struct flb_output_instance, _head);
+            if (o_ins->mask_id & info_routes) {
+                snprintf(to, PATH_MAX - 1,
+                         "%s/tasks/%s/%s",
+                         worker->parent->path,
+                         o_ins->name,
+                         req.name);
+                printf("TO=%s\n", to);
+
+                fd = open(to, O_CREAT | O_TRUNC, 0666);
+                if (fd == -1) {
+                    perror("open");
+                    continue;
+                }
+                close(fd);
+            }
+        }
         return 0;
     }
 
