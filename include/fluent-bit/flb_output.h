@@ -25,12 +25,15 @@
 #endif
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_bits.h>
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_stats.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_engine_task.h>
+
+#include <unistd.h>
 
 /* Output plugin masks */
 #define FLB_OUTPUT_NET         32  /* output address may set host and port */
@@ -248,6 +251,49 @@ struct flb_thread *flb_output_thread(struct flb_engine_task *task,
     return th;
 }
 #endif
+
+/*
+ * This function is used by the output plugins to return. It's mandatory
+ * as it will take care to signal the event loop letting know the flush
+ * callback has done.
+ *
+ * The signal emmited indicate the 'Task' number that have finished plus
+ * a return value. The return value is either FLB_OK or FLB_ERROR.
+ */
+static inline int flb_output_return(int ret) {
+    int n;
+    uint32_t set;
+    uint64_t val;
+    struct flb_thread *th;
+    struct flb_engine_task *task;
+
+    th = (struct flb_thread *) pthread_getspecific(flb_thread_key);
+    task = th->task;
+    printf("finishing task=%p\n", task);
+    /*
+     * To compose the signal event the relevant info is:
+     *
+     * - Unique Task events id: 2 in this case
+     * - Return value: FLB_OK (0) or FLB_ERROR (1)
+     * - Task ID
+     *
+     * We put together the return value with the task_id on the 32 bits at right
+     */
+    set = ((uint8_t) ret) << 31 | task->id;
+    val = FLB_BITS_U64_SET(2, set);
+    printf("check type=%lu ret=%lu task_id=%lu\n",
+           FLB_BITS_U64_HIGH(val), 1, 1);
+    n = write(task->config->ch_manager[1], &val, sizeof(uint64_t));
+    if (n == -1) {
+        perror("write");
+        return -1;
+    }
+
+    return 0;
+}
+
+#define FLB_OUTPUT_RETURN(x)                                            \
+    return flb_output_return(x);
 
 struct flb_output_instance *flb_output_new(struct flb_config *config,
                                            char *output, void *data);

@@ -25,6 +25,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_engine_task_map.h>
 
 #ifdef FLB_HAVE_TLS
 #include <fluent-bit/flb_io_tls.h>
@@ -111,6 +112,8 @@ struct flb_config {
     int buffer_workers;
     char *buffer_path;
 #endif
+
+    struct flb_engine_task_map tasks_map[2048];
 };
 
 struct flb_config *flb_config_init();

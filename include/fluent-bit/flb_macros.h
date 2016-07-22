@@ -23,6 +23,9 @@
 #define FLB_FALSE  0
 #define FLB_TRUE   !FLB_FALSE
 
+#define FLB_OK      1
+#define FLB_ERROR   0
+
 #define FLB_INLINE inline __attribute__((always_inline))
 
 #if __GNUC__ >= 4

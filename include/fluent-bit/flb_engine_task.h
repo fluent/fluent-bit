@@ -28,8 +28,12 @@ struct flb_thread;
 #include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_input.h>
 
+/* Task status */
 #define FLB_ENGINE_TASK_NEW      0
 #define FLB_ENGINE_TASK_RUNNING  1
+
+/* Task signals */
+//#define FLB_ENGINE_TASK_DONE     FLB_ENGINE_MASK(FLB_ENGINE_TASK, 1)
 
 struct flb_engine_task_route {
     struct flb_output_instance *out;
@@ -38,6 +42,7 @@ struct flb_engine_task_route {
 
 /* A task takes a buffer and sync input and output instances to handle it */
 struct flb_engine_task {
+    int id;                                /* task id                   */
     int status;                            /* new task or running ?     */
     int deleted;                           /* should be deleted ?       */
     int users;                             /* number of users (threads) */
@@ -49,13 +54,14 @@ struct flb_engine_task {
     struct mk_list threads;                /* ref flb_input_instance->tasks */
     struct mk_list routes;                 /* routes to dispatch data   */
     struct mk_list _head;                  /* link to input_instance    */
+    struct flb_config *config;             /* parent flb config         */
 
 #ifdef FLB_HAVE_FLUSH_PTHREADS
     pthread_mutex_t mutex_threads;
 #endif
 };
 
-/* If there is no active users, destroy the task context */
+/* If there is no active users, mark the task as ready for destroy */
 static inline int flb_engine_task_remove(struct flb_engine_task *task)
 {
     /* Handle task users */
@@ -69,13 +75,29 @@ static inline int flb_engine_task_remove(struct flb_engine_task *task)
 
 static inline void flb_engine_task_destroy(struct flb_engine_task *task)
 {
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_engine_task_route *route;
+
     if (task->dt) {
         flb_input_dyntag_destroy(task->dt);
     }
 
-    mk_list_del(&task->_head);
+    /* Release task_id */
+    task->config->tasks_map[task->id].id   = 0;
+    task->config->tasks_map[task->id].task = NULL;
 
+    /* Remove routes */
+    mk_list_foreach_safe(head, tmp, &task->routes) {
+        route = mk_list_entry(head, struct flb_engine_task_route, _head);
+        mk_list_del(&route->_head);
+        free(route);
+    }
+
+    /* Unlink and release */
+    mk_list_del(&task->_head);
     free(task->buf);
+    free(task->tag);
     free(task);
 }
 
@@ -103,5 +125,12 @@ static inline void flb_engine_task_add_thread(struct mk_list *head,
     pthread_mutex_unlock(&task->mutex_threads);
 #endif
 }
+
+struct flb_engine_task *flb_engine_task_create(char *buf,
+                                               size_t size,
+                                               struct flb_input_instance *i_ins,
+                                               struct flb_input_dyntag *dt,
+                                               char *tag,
+                                               struct flb_config *config);
 
 #endif

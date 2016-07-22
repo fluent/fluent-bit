@@ -21,6 +21,7 @@
 #define FLB_ENGINE_H
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_bits.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
@@ -30,11 +31,20 @@
 #define FLB_ENGINE_EV_CUSTOM    MK_EVENT_CUSTOM
 #define FLB_ENGINE_EV_THREAD    1024
 
-/* Engine signals */
-#define FLB_ENGINE_STARTED     0x00110aa0  /* Notify Fluent Bit started    */
-#define FLB_ENGINE_STOP        0xdeadbeef  /* Requested to stop Fluent Bit */
-#define FLB_ENGINE_SHUTDOWN    0xdead0000  /* Started shutdown phase       */
-#define FLB_ENGINE_STATS       0xaabbccdd  /* Collect stats                */
+/* Engine events: all engine events set the left 32 bits to '1' */
+#define FLB_ENGINE_EV_STARTED   FLB_BITS_U64_SET(1, 1) /* Engine started    */
+#define FLB_ENGINE_EV_STOP      FLB_BITS_U64_SET(1, 2) /* Requested to stop */
+#define FLB_ENGINE_EV_SHUTDOWN  FLB_BITS_U64_SET(1, 3) /* Engine shutdown   */
+#define FLB_ENGINE_EV_STATS     FLB_BITS_U64_SET(1, 4) /* Collect stats     */
+
+/* Similar to engine events, but used as return values */
+#define FLB_ENGINE_STARTED      FLB_BITS_U64_LOW(FLB_ENGINE_EV_STARTED)
+#define FLB_ENGINE_STOP         FLB_BITS_U64_LOW(FLB_ENGINE_EV_STOP)
+#define FLB_ENGINE_SHUTDOWN     FLB_BITS_U64_LOW(FLB_ENGINE_EV_SHUTDOWN)
+#define FLB_ENGINE_STATS        FLB_BITS_U64_LOW(FLB_ENGINE_EV_STATS)
+
+/* Engine signals: Task, it only refer to the type */
+#define FLB_ENGINE_TASK         2
 
 int flb_engine_start(struct flb_config *config);
 int flb_engine_flush(struct flb_config *config,

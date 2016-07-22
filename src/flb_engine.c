@@ -24,6 +24,9 @@
 #include <sys/uio.h>
 
 #include <mk_core.h>
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_bits.h>
+
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
@@ -112,8 +115,13 @@ static inline int consume_byte(int fd)
 
 static inline int flb_engine_manager(int fd, struct flb_config *config)
 {
+    int ret;
     int bytes;
+    int task_id;
+    uint32_t type;
+    uint32_t key;
     uint64_t val;
+    struct flb_engine_task *task;
 
     bytes = read(fd, &val, sizeof(uint64_t));
     if (bytes == -1) {
@@ -121,19 +129,31 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
         return -1;
     }
 
+    /* Get type and key */
+    type = FLB_BITS_U64_HIGH(val);
+    key  = FLB_BITS_U64_LOW(val);
+
+    printf("EVENT TYPE=%lu KEY=%lu\n", type, key);
     /* Flush all remaining data */
-    if (val == FLB_ENGINE_STOP) {
-        flb_trace("[engine] flush enqueued data");
-        flb_engine_flush(config, NULL);
-        return FLB_ENGINE_STOP;
+    if (type == 1) {                  /* Engine type */
+        if (key == FLB_ENGINE_STOP) {
+            flb_trace("[engine] flush enqueued data");
+            flb_engine_flush(config, NULL);
+            return FLB_ENGINE_STOP;
+        }
     }
-#ifdef FLB_HAVE_STATS
-    else if (val == FLB_ENGINE_STATS) {
-        flb_trace("[engine] collect stats");
-        //flb_stats_collect(config);
-        return FLB_ENGINE_STATS;
+    else if (type == FLB_ENGINE_TASK) {
+        /* get return value and task_id */
+        ret     = (key >> 31);
+        task_id = FLB_BITS_CLEAR(key, 31);
+
+        flb_trace("[engine] [task event] task_id=%i return=%s",
+                  task_id, ret == FLB_OK ? "OK": "ERROR");
+
+        task = config->tasks_map[task_id].task;
+        flb_engine_destroy_threads(&task->threads);
+        flb_engine_task_destroy(task);
     }
-#endif
 
     return 0;
 }
@@ -195,7 +215,7 @@ static int flb_engine_started(struct flb_config *config)
         return -1;
     }
 
-    val = FLB_ENGINE_STARTED;
+    val = FLB_ENGINE_EV_STARTED;
     return write(config->ch_notif[1], &val, sizeof(uint64_t));
 }
 
@@ -361,7 +381,6 @@ int flb_engine_start(struct flb_config *config)
             else if (event->type == FLB_ENGINE_EV_THREAD) {
                 struct flb_upstream_conn *u_conn;
                 struct flb_thread *th;
-                struct flb_engine_task *task;
 
                 /*
                  * Check if we have some co-routine associated to this event,
@@ -369,15 +388,8 @@ int flb_engine_start(struct flb_config *config)
                  */
                 u_conn = (struct flb_upstream_conn *) event;
                 th = u_conn->thread;
-                task = th->task;
-
                 flb_trace("[engine] resuming thread=%p", th);
                 flb_thread_resume(th);
-
-                if (task->deleted == FLB_TRUE) {
-                    flb_engine_destroy_threads(&task->threads);
-                    flb_engine_task_destroy(task);
-                }
             }
 #endif
         }

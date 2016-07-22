@@ -26,6 +26,35 @@
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_engine_task.h>
 
+/*
+ * Every task created must have an unique ID, this function lookup the
+ * lowest number available in the tasks_map.
+ *
+ * This 'id' is used by the task interface to communicate with the engine event
+ * loop about some action.
+ */
+
+static int map_get_task_id(struct flb_config *config)
+{
+    int i;
+
+    for (i = 0; i < sizeof(config->tasks_map); i++) {
+        if (config->tasks_map[i].id == 0) {
+            config->tasks_map[i].id = 1;
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+static void map_set_task_id(int id, struct flb_engine_task *task,
+                            struct flb_config *config)
+{
+    config->tasks_map[id].task = task;
+
+}
+
 /* Create an engine task to handle the output plugin flushing work */
 struct flb_engine_task *flb_engine_task_create(char *buf,
                                                size_t size,
@@ -35,6 +64,7 @@ struct flb_engine_task *flb_engine_task_create(char *buf,
                                                struct flb_config *config)
 {
     int count = 0;
+    int task_id;
     uint64_t routes_mask = 0;
     struct flb_engine_task *task;
     struct flb_engine_task_route *route;
@@ -50,7 +80,16 @@ struct flb_engine_task *flb_engine_task_create(char *buf,
         return NULL;
     }
 
+    /* Get ID and set back 'task' reference */
+    task_id = map_get_task_id(config);
+    if (task_id == -1) {
+        free(task);
+        return NULL;
+    }
+    map_set_task_id(task_id, task, config);
+
     /* Keep track of origins */
+    task->id      = task_id;
     task->status  = FLB_ENGINE_TASK_NEW;
     task->deleted = FLB_FALSE;
     task->users   = 0;
@@ -59,6 +98,7 @@ struct flb_engine_task *flb_engine_task_create(char *buf,
     task->size    = size;
     task->i_ins   = i_ins;
     task->dt      = dt;
+    task->config  = config;
     mk_list_init(&task->threads);
     mk_list_init(&task->routes);
     mk_list_add(&task->_head, &i_ins->tasks);

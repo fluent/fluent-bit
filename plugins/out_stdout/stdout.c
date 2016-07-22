@@ -48,32 +48,6 @@ int cb_stdout_flush(void *data, size_t bytes,
     (void) out_context;
     (void) config;
 
-    /* See: in_forward.rb of fluentd.
-     *
-     * message Entry {
-     *   1: long time
-     *   2: object record
-     * }
-     *
-     * message Forward {
-     *   1: string tag
-     *   2: list<Entry> entries
-     *   3: object option (optional)
-     * }
-     *
-     * message PackedForward {
-     *   1: string tag
-     *   2: raw entries  # msgpack stream of Entry
-     *   3: object option (optional)
-     * }
-     *
-     * message Message {
-     *   1: string tag
-     *   2: long? time
-     *   3: object record
-     *   4: object option (optional)
-     * }
-     */
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
         printf("[%zd] %s: ", cnt++, tag);
@@ -81,7 +55,8 @@ int cb_stdout_flush(void *data, size_t bytes,
         printf("\n");
     }
     msgpack_unpacked_destroy(&result);
-    return bytes;
+
+    FLB_OUTPUT_RETURN(FLB_OK);
 }
 
 struct flb_output_plugin out_stdout_plugin = {

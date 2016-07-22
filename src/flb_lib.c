@@ -260,7 +260,7 @@ int flb_stop(flb_ctx_t *ctx)
     }
 
     flb_debug("[lib] sending STOP signal to the engine");
-    val = FLB_ENGINE_STOP;
+    val = FLB_ENGINE_EV_STOP;
     write(ctx->config->ch_manager[1], &val, sizeof(uint64_t));
     ret = pthread_join(ctx->config->worker, NULL);
 
