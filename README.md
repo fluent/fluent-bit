@@ -20,6 +20,7 @@ $ bin/fluent-bit -i cpu -o stdout
 | name               | option  | description  |
 |--------------------|---------|---------------------------------------------------------------------------------|
 | CPU                | cpu     | gather CPU usage between snapshots of one second. It support multiple cores     |
+| Forward            | forward | Fluentd forward protocol |
 | Memory             | mem     | usage of system memory |
 | MQTT               | mqtt    | start a MQTT server and receive publish messages |
 | Kernel Ring Buffer | kmsg    | read Linux Kernel messages, same behavior as the __dmesg__ command line program |
@@ -33,8 +34,9 @@ $ bin/fluent-bit -i cpu -o stdout
 | name               | option                  | description  |
 |--------------------|-------------------------|---------------------------------------------------------------------------------|
 | Elasticsearch      | es | flush records to a Elasticsearch server |
-| Fluentd            | fluentd  | flush records to a [Fluentd](http://fluentd.org) service. On the [Fluentd](http://fluentd.org) side, it requires an __in_forward__.|
+| Forward            | forward  | flush records to a [Fluentd](http://fluentd.org) service. On the [Fluentd](http://fluentd.org) side, it requires an __in_forward__.|
 | NATS               | nats | flush records to a NATS server |
+| HTTP               | http | flush records to a HTTP end point |
 | Standard Output    | stdout                  | prints the records to the standard output stream |
 | Treasure Data      | td                      | flush records to [Treasure Data](http://treasuredata.com) service (cloud analytics)|
 
