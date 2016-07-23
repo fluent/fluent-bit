@@ -288,37 +288,6 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
 }
 #endif /* MK_HAVE_TIMERFD_CREATE */
 
-#ifdef MK_HAVE_EVENTFD
-static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
-                                           int *r_fd, int *w_fd,
-                                           void *data)
-{
-    int fd;
-    int ret;
-    struct mk_event *event;
-
-    fd = eventfd(0, EFD_CLOEXEC);
-    if (fd == -1) {
-        mk_libc_error("eventfd");
-        return -1;
-    }
-
-    event = data;
-    event->fd   = fd;
-    event->type = MK_EVENT_NOTIFICATION;
-    event->mask = MK_EVENT_EMPTY;
-
-    ret = _mk_event_add(ctx, fd,
-                        MK_EVENT_NOTIFICATION, MK_EVENT_READ, data);
-    if (ret != 0) {
-        close(fd);
-        return ret;
-    }
-
-    *w_fd = *r_fd = fd;
-    return 0;
-}
-#else /* !MK_HAVE_EVENT_FD */
 static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
                                            int *r_fd, int *w_fd, void *data)
 {
@@ -350,7 +319,6 @@ static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
 
     return 0;
 }
-#endif
 
 static inline int _mk_event_wait(struct mk_event_loop *loop)
 {
