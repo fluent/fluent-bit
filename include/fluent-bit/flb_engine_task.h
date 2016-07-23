@@ -50,7 +50,7 @@
 #define FLB_ENGINE_TASK_ID(val)   (uint16_t) (val & 0xfffc000) >> 14
 #define FLB_ENGINE_TASK_TH(val)   (val & 0x3fff)
 #define FLB_ENGINE_TASK_SET(ret, task_id, th_id)    \
-    (uint32_t) ((ret << 28) | (task_id << 14) | th->id)
+    (uint32_t) ((ret << 28) | (task_id << 14) | th_id)
 
 struct flb_engine_task_route {
     struct flb_output_instance *out;
