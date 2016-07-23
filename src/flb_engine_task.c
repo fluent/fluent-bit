@@ -89,16 +89,16 @@ struct flb_engine_task *flb_engine_task_create(char *buf,
     map_set_task_id(task_id, task, config);
 
     /* Keep track of origins */
-    task->id      = task_id;
-    task->status  = FLB_ENGINE_TASK_NEW;
-    task->deleted = FLB_FALSE;
-    task->users   = 0;
-    task->tag     = strdup(tag);
-    task->buf     = buf;
-    task->size    = size;
-    task->i_ins   = i_ins;
-    task->dt      = dt;
-    task->config  = config;
+    task->id        = task_id;
+    task->status    = FLB_ENGINE_TASK_NEW;
+    task->n_threads = 0;
+    task->users     = 0;
+    task->tag       = strdup(tag);
+    task->buf       = buf;
+    task->size      = size;
+    task->i_ins     = i_ins;
+    task->dt        = dt;
+    task->config    = config;
     mk_list_init(&task->threads);
     mk_list_init(&task->routes);
     mk_list_add(&task->_head, &i_ins->tasks);
@@ -166,4 +166,27 @@ struct flb_engine_task *flb_engine_task_create(char *buf,
 #endif
 
     return task;
+}
+
+/* Register a thread into the tasks list */
+void flb_engine_task_add_thread(struct flb_thread *thread,
+                                struct flb_engine_task *task)
+{
+    /*
+     * It's likely a previous thread have marked this task ready to be deleted,
+     * we must check this usual condition that could happen when one input
+     * instance must flush the data to many destinations.
+     */
+#ifdef FLB_HAVE_FLUSH_PTHREADS
+    pthread_mutex_lock(&task->mutex_threads);
+#endif
+
+    mk_list_add(&thread->_head, &task->threads);
+    thread->id = task->n_threads;
+    task->n_threads++;
+    task->users++;
+
+#ifdef FLB_HAVE_FLUSH_PTHREADS
+    pthread_mutex_unlock(&task->mutex_threads);
+#endif
 }

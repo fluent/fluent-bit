@@ -31,6 +31,7 @@ struct flb_input_instance;
 struct flb_output_instance;
 
 struct flb_thread {
+    int id;
     int ended;
 #ifdef FLB_HAVE_VALGRIND
     unsigned int valgrind_stack_id;

@@ -25,10 +25,11 @@
 #endif
 
 #include <ucontext.h>
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_engine_task.h>
 
 struct flb_thread {
-    int ended;
+    int id;
 
 #ifdef FLB_HAVE_VALGRIND
     unsigned int valgrind_stack_id;
@@ -72,7 +73,6 @@ static FLB_INLINE void flb_thread_prepare()
 
 static FLB_INLINE void flb_thread_yield(struct flb_thread *th, int ended)
 {
-    th->ended = ended;
     swapcontext(&th->callee, &th->caller);
 }
 
@@ -82,8 +82,27 @@ static FLB_INLINE void flb_thread_destroy(struct flb_thread *th)
     VALGRIND_STACK_DEREGISTER(th->valgrind_stack_id);
 #endif
 
+    flb_trace("[thread] destroy thread_id=%i", th->id);
+    th->task->users--;
     mk_list_del(&th->_head);
     free(th);
+}
+
+static FLB_INLINE int flb_thread_destroy_id(int id, struct
+                                            flb_engine_task *task)
+{
+    struct mk_list *head;
+    struct flb_thread *thread;
+
+    mk_list_foreach(head, &task->threads) {
+        thread = mk_list_entry(head, struct flb_thread, _head);
+        if (thread->id == id) {
+            flb_thread_destroy(thread);
+            return 0;
+        }
+    }
+
+    return -1;
 }
 
 static FLB_INLINE void flb_thread_resume(struct flb_thread *th)
@@ -91,16 +110,15 @@ static FLB_INLINE void flb_thread_resume(struct flb_thread *th)
     pthread_setspecific(flb_thread_key, (void *) th);
 
     /*
-     * Always assume the coroutine will end, the callee can change
-     * this behavior when yielding.
+     * In the past we used to have a flag to mark when a coroutine
+     * has finished (th->ended == MK_TRUE), now we let the coroutine
+     * to submit an event to the event loop indicating what's going on
+     * through the call FLB_OUTPUT_RETURN(...).
+     *
+     * So we just swap context and let the event loop to handle all
+     * cleanup required.
      */
-    th->ended = MK_TRUE;
     swapcontext(&th->caller, &th->callee);
-
-    /* It ended, destroy the thread (coroutine) */
-    if (th->ended == MK_TRUE) {
-        flb_engine_task_remove(th->task);
-    }
 }
 
 static struct flb_thread *flb_thread_new()
@@ -124,11 +142,11 @@ static struct flb_thread *flb_thread_new()
         return NULL;
     }
 
+    th->id                       = 0;
     th->callee.uc_stack.ss_sp    = FLB_THREAD_STACK(p);
     th->callee.uc_stack.ss_size  = FLB_THREAD_STACK_SIZE;
     th->callee.uc_stack.ss_flags = 0;
     th->callee.uc_link           = &th->caller;
-    th->ended                    = MK_TRUE;
 
 #ifdef FLB_HAVE_VALGRIND
     th->valgrind_stack_id = VALGRIND_STACK_REGISTER(FLB_THREAD_STACK(p),

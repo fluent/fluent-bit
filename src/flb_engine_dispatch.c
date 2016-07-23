@@ -28,6 +28,9 @@
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_engine_task.h>
 
+void flb_engine_task_add_thread(struct flb_thread *thread,
+                                struct flb_engine_task *task);
+
 #ifdef FLB_HAVE_FLUSH_UCONTEXT
 
 /*
@@ -123,7 +126,7 @@ int flb_engine_dispatch(struct flb_input_instance *in,
                                    task->buf, task->size,
                                    task->tag,
                                    strlen(task->tag));
-            flb_engine_task_add_thread(&th->_head, task);
+            flb_engine_task_add_thread(th, task);
             flb_thread_resume(th);
         }
     }

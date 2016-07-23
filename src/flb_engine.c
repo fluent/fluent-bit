@@ -91,7 +91,6 @@ int flb_engine_flush(struct flb_config *config,
         if (in_force != NULL && p != in_force) {
             continue;
         }
-
         flb_engine_dispatch(in, config);
     }
 
@@ -118,12 +117,13 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
     int ret;
     int bytes;
     int task_id;
+    int thread_id;
     uint32_t type;
     uint32_t key;
     uint64_t val;
     struct flb_engine_task *task;
 
-    bytes = read(fd, &val, sizeof(uint64_t));
+    bytes = read(fd, &val, sizeof(val));
     if (bytes == -1) {
         perror("read");
         return -1;
@@ -133,7 +133,6 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
     type = FLB_BITS_U64_HIGH(val);
     key  = FLB_BITS_U64_LOW(val);
 
-    printf("EVENT TYPE=%lu KEY=%lu\n", type, key);
     /* Flush all remaining data */
     if (type == 1) {                  /* Engine type */
         if (key == FLB_ENGINE_STOP) {
@@ -143,16 +142,22 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
         }
     }
     else if (type == FLB_ENGINE_TASK) {
-        /* get return value and task_id */
-        ret     = (key >> 31);
-        task_id = FLB_BITS_CLEAR(key, 31);
+        /* Get values, check flb_engine_task.h for more details */
+        ret       = FLB_ENGINE_TASK_RET(key);
+        task_id   = FLB_ENGINE_TASK_ID(key);
+        thread_id = FLB_ENGINE_TASK_TH(key);
 
-        flb_trace("[engine] [task event] task_id=%i return=%s",
-                  task_id, ret == FLB_OK ? "OK": "ERROR");
+        flb_trace("%s[engine] [task event]%s task_id=%i thread_id=%i return=%s",
+                  ANSI_YELLOW, ANSI_RESET,
+                  task_id, thread_id, ret == FLB_OK ? "OK": "ERROR");
 
         task = config->tasks_map[task_id].task;
-        flb_engine_destroy_threads(&task->threads);
-        flb_engine_task_destroy(task);
+
+        /* A thread has finished, delete it */
+        flb_thread_destroy_id(thread_id, task);
+        if (task->users == 0) {
+            flb_engine_task_destroy(task);
+        }
     }
 
     return 0;

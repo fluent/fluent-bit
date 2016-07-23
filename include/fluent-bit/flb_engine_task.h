@@ -20,8 +20,6 @@
 #ifndef FLB_ENGINE_TASK_H
 #define FLB_ENGINE_TASK_H
 
-struct flb_thread;
-
 #include <pthread.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_buffer.h>
@@ -32,8 +30,27 @@ struct flb_thread;
 #define FLB_ENGINE_TASK_NEW      0
 #define FLB_ENGINE_TASK_RUNNING  1
 
-/* Task signals */
-//#define FLB_ENGINE_TASK_DONE     FLB_ENGINE_MASK(FLB_ENGINE_TASK, 1)
+/*
+ * Macro helpers to determinate return value, task_id and thread_id. When an
+ * output plugin returns, it must call FLB_OUTPUT_RETURN(val) where val is
+ * the return value, as of now defined as FLB_OK or FLB_ERROR.
+ *
+ * The FLB_OUTPUT_RETURN macro lookup the current active 'engine thread' and
+ * it 'engine task' associated, so it emits an event to the main event loop
+ * indicating an output thread has done. In order to specify return values
+ * and the proper IDs an unsigned 32 bits number is used:
+ *
+ *     AAAA     BBBBBBBBBBBBBB CCCCCCCCCCCCCC   > 32 bit number
+ *       ^            ^              ^
+ *    4 bits       14 bits        14 bits
+ *  return val     task_id       thread_id
+ */
+
+#define FLB_ENGINE_TASK_RET(val)  (val >> 28)
+#define FLB_ENGINE_TASK_ID(val)   (uint16_t) (val & 0xfffc000) >> 14
+#define FLB_ENGINE_TASK_TH(val)   (val & 0x3fff)
+#define FLB_ENGINE_TASK_SET(ret, task_id, th_id)    \
+    (uint32_t) ((ret << 28) | (task_id << 14) | th->id)
 
 struct flb_engine_task_route {
     struct flb_output_instance *out;
@@ -45,6 +62,7 @@ struct flb_engine_task {
     int id;                                /* task id                   */
     int status;                            /* new task or running ?     */
     int deleted;                           /* should be deleted ?       */
+    int n_threads;                         /* number number of threads  */
     int users;                             /* number of users (threads) */
     char *tag;                             /* original tag              */
     char *buf;                             /* buffer                    */
@@ -61,23 +79,13 @@ struct flb_engine_task {
 #endif
 };
 
-/* If there is no active users, mark the task as ready for destroy */
-static inline int flb_engine_task_remove(struct flb_engine_task *task)
-{
-    /* Handle task users */
-    task->users--;
-    if (task->users == 0) {
-        task->deleted = FLB_TRUE;
-    }
-
-    return 1;
-}
-
 static inline void flb_engine_task_destroy(struct flb_engine_task *task)
 {
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_engine_task_route *route;
+
+    flb_trace("[engine] destroy task_id=%i", task->id);
 
     if (task->dt) {
         flb_input_dyntag_destroy(task->dt);
@@ -99,31 +107,6 @@ static inline void flb_engine_task_destroy(struct flb_engine_task *task)
     free(task->buf);
     free(task->tag);
     free(task);
-}
-
-/* Register a thread into the tasks list */
-static inline void flb_engine_task_add_thread(struct mk_list *head,
-                                              struct flb_engine_task *task)
-{
-    /*
-     * It's likely a previous thread have marked this task ready to be deleted,
-     * we must check this usual condition that could happen when one input
-     * instance must flush the data to many destinations.
-     */
-#ifdef FLB_HAVE_FLUSH_PTHREADS
-    pthread_mutex_lock(&task->mutex_threads);
-#endif
-
-    if (task->deleted == FLB_TRUE) {
-        task->deleted = FLB_FALSE;
-    }
-
-    mk_list_add(head, &task->threads);
-    task->users++;
-
-#ifdef FLB_HAVE_FLUSH_PTHREADS
-    pthread_mutex_unlock(&task->mutex_threads);
-#endif
 }
 
 struct flb_engine_task *flb_engine_task_create(char *buf,

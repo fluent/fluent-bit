@@ -269,7 +269,7 @@ static inline int flb_output_return(int ret) {
 
     th = (struct flb_thread *) pthread_getspecific(flb_thread_key);
     task = th->task;
-    printf("finishing task=%p\n", task);
+
     /*
      * To compose the signal event the relevant info is:
      *
@@ -279,11 +279,11 @@ static inline int flb_output_return(int ret) {
      *
      * We put together the return value with the task_id on the 32 bits at right
      */
-    set = ((uint8_t) ret) << 31 | task->id;
+
+    set = FLB_ENGINE_TASK_SET(ret, task->id, th->id);
     val = FLB_BITS_U64_SET(2, set);
-    printf("check type=%lu ret=%lu task_id=%lu\n",
-           FLB_BITS_U64_HIGH(val), 1, 1);
-    n = write(task->config->ch_manager[1], &val, sizeof(uint64_t));
+
+    n = write(task->config->ch_manager[1], &val, sizeof(val));
     if (n == -1) {
         perror("write");
         return -1;
