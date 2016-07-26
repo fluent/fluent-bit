@@ -172,6 +172,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         instance->upstream  = NULL;
         instance->match     = NULL;
         instance->host.name = NULL;
+        instance->host.uri  = NULL;
 
         instance->use_tls        = FLB_FALSE;
 #ifdef FLB_HAVE_TLS
