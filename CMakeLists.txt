@@ -16,7 +16,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/library")
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  0)
 set(FLB_VERSION_MINOR  8)
-set(FLB_VERSION_PATCH  3)
+set(FLB_VERSION_PATCH  4)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 # Build Options
@@ -296,9 +296,9 @@ set(CPACK_RPM_PACKAGE_LICENSE "Apache v2.0")
 set(CPACK_PACKAGE_DESCRIPTION_FILE "${PROJECT_SOURCE_DIR}/cpack/description")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Fast data collector for Linux")
 set(CPACK_RPM_SPEC_MORE_DEFINE "%define ignore \#")
-set(CPACK_RPM_USER_FILELIST 
-	"%ignore /lib" 
-	"%ignore /lib/systemd" 
+set(CPACK_RPM_USER_FILELIST
+	"%ignore /lib"
+	"%ignore /lib/systemd"
 	"%ignore /lib/systemd/system"
 	"%ignore /lib64"
 	"%ignore /lib64/pkgconfig"
