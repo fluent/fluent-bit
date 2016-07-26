@@ -28,7 +28,10 @@
 struct flb_in_stdin_config {
     int fd;                           /* stdin file descriptor */
     int buf_len;                      /* read buffer length    */
-    char buf[8192 * 2];               /* read buffer: 16Kb max */
+    int buf_size;                     /* current buffer size   */
+    char *buf_data;                   /* read buffer: 16Kb max */
+
+    struct flb_pack_state pack_state; /* JSON pack state       */
 
     int buffer_id;
     struct msgpack_sbuffer mp_sbuf;  /* msgpack sbuffer        */
