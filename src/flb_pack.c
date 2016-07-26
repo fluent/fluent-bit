@@ -33,18 +33,24 @@ static int json_tokenise(char *js, size_t len,
 {
     int ret;
     int n;
+    int prev;
     void *tmp;
 
     ret = jsmn_parse(&state->parser, js, len,
                      state->tokens, state->tokens_size);
 
     while (ret == JSMN_ERROR_NOMEM) {
+        prev = (sizeof(jsmntok_t) * state->tokens_size);
         n = state->tokens_size += 256;
         tmp = realloc(state->tokens, sizeof(jsmntok_t) * n);
         if (!tmp) {
             perror("realloc");
             return -1;
         }
+
+        /* Fill zeros into the new extra space */
+        memset(tmp + prev, '\0', sizeof(jsmntok_t) * 256);
+
         state->tokens = tmp;
         state->tokens_size = n;
         ret = jsmn_parse(&state->parser, js, len,
