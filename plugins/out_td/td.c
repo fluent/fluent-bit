@@ -188,7 +188,7 @@ int cb_td_flush(void *data, size_t bytes,
     /* Convert format */
     pack = td_format(data, bytes, &bytes_out);
     if (!pack) {
-        return -1;
+        FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 
     /* Lookup an available connection context */
@@ -196,7 +196,7 @@ int cb_td_flush(void *data, size_t bytes,
     if (!u_conn) {
         flb_error("[out_td] no upstream connections available");
         free(pack);
-        return -1;
+        FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
     /* Compose request */
@@ -204,7 +204,7 @@ int cb_td_flush(void *data, size_t bytes,
     if (!c) {
         free(pack);
         flb_upstream_conn_release(u_conn);
-        return -1;
+        FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
     /* Issue HTTP request */
@@ -222,7 +222,7 @@ int cb_td_flush(void *data, size_t bytes,
     flb_upstream_conn_release(u_conn);
     flb_http_client_destroy(c);
 
-    return b_sent;
+    FLB_OUTPUT_RETURN(FLB_OK);
 }
 
 int cb_td_exit(void *data, struct flb_config *config)
