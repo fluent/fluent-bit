@@ -209,6 +209,10 @@ void flb_input_initialize_all(struct flb_config *config);
 void flb_input_pre_run_all(struct flb_config *config);
 void flb_input_exit_all(struct flb_config *config);
 
+int flb_input_register_collectors(struct flb_config *config);
+int flb_input_unregister_collector(struct flb_input_collector *collector,
+                                   struct flb_config *config);
+
 /* Dyntag handlers */
 struct flb_input_dyntag *flb_input_dyntag_create(struct flb_input_instance *in,
                                                  char *tag, int tag_len);

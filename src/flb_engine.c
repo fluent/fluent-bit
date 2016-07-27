@@ -141,6 +141,7 @@ static FLB_INLINE int flb_engine_handle_event(int fd, int mask,
                                               struct flb_config *config)
 {
     int ret;
+    struct mk_list *tmp;
     struct mk_list *head;
     struct flb_input_collector *collector;
 
@@ -168,16 +169,22 @@ static FLB_INLINE int flb_engine_handle_event(int fd, int mask,
         }
 
         /* Determinate what is this file descriptor */
-        mk_list_foreach(head, &config->collectors) {
+        mk_list_foreach_safe(head, tmp, &config->collectors) {
             collector = mk_list_entry(head, struct flb_input_collector, _head);
             if (collector->fd_event == fd) {
-                return collector->cb_collect(config,
-                                             collector->instance->context);
+                ret = collector->cb_collect(config,
+                                            collector->instance->context);
+                if (ret == -1) {
+                    flb_input_unregister_collector(collector, config);
+                }
             }
             else if (collector->fd_timer == fd) {
                 consume_byte(fd);
-                return collector->cb_collect(config,
-                                             collector->instance->context);
+                ret = collector->cb_collect(config,
+                                            collector->instance->context);
+                if (ret == -1) {
+                    flb_input_unregister_collector(collector, config);
+                }
             }
         }
     }
@@ -200,12 +207,9 @@ static int flb_engine_started(struct flb_config *config)
 
 int flb_engine_start(struct flb_config *config)
 {
-    int fd;
     int ret;
-    struct mk_list *head;
     struct mk_event *event;
     struct mk_event_loop *evl;
-    struct flb_input_collector *collector;
 
 #ifdef FLB_HAVE_HTTP
     if (config->http_server == FLB_TRUE) {
@@ -266,36 +270,8 @@ int flb_engine_start(struct flb_config *config)
     /* Initialize the stats interface (just if FLB_HAVE_STATS is defined) */
     flb_stats_init(config);
 
-    /* For each Collector, register the event into the main loop */
-    mk_list_foreach(head, &config->collectors) {
-        collector = mk_list_entry(head, struct flb_input_collector, _head);
-        event = &collector->event;
-
-        if (collector->type == FLB_COLLECT_TIME) {
-            event->mask = MK_EVENT_EMPTY;
-            event->status = MK_EVENT_NONE;
-            fd = mk_event_timeout_create(evl, collector->seconds,
-                                         collector->nanoseconds, event);
-            if (fd == -1) {
-                continue;
-            }
-            collector->fd_timer = fd;
-        }
-        else if (collector->type & (FLB_COLLECT_FD_EVENT | FLB_COLLECT_FD_SERVER)) {
-            event->fd     = collector->fd_event;
-            event->mask   = MK_EVENT_EMPTY;
-            event->status = MK_EVENT_NONE;
-
-            ret = mk_event_add(evl,
-                               collector->fd_event,
-                               FLB_ENGINE_EV_CORE,
-                               MK_EVENT_READ, event);
-            if (ret == -1) {
-                close(collector->fd_event);
-                continue;
-            }
-        }
-    }
+    /* Register input collectors */
+    flb_input_register_collectors(config);
 
     /* Prepare routing paths */
     ret = flb_router_io_set(config);

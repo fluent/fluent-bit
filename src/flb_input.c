@@ -360,6 +360,73 @@ int flb_input_set_collector_event(struct flb_input_instance *in,
     return 0;
 }
 
+int flb_input_register_collectors(struct flb_config *config)
+{
+    int fd;
+    int ret;
+    int count = 0;
+    struct mk_list *head;
+    struct mk_event *event;
+    struct flb_input_collector *collector;
+
+    /* For each Collector, register the event into the main loop */
+    mk_list_foreach(head, &config->collectors) {
+        collector = mk_list_entry(head, struct flb_input_collector, _head);
+        event = &collector->event;
+
+        if (collector->type == FLB_COLLECT_TIME) {
+            event->mask = MK_EVENT_EMPTY;
+            event->status = MK_EVENT_NONE;
+            fd = mk_event_timeout_create(config->evl, collector->seconds,
+                                         collector->nanoseconds, event);
+            if (fd == -1) {
+                continue;
+            }
+            collector->fd_timer = fd;
+            count++;
+        }
+        else if (collector->type & (FLB_COLLECT_FD_EVENT | FLB_COLLECT_FD_SERVER)) {
+            event->fd     = collector->fd_event;
+            event->mask   = MK_EVENT_EMPTY;
+            event->status = MK_EVENT_NONE;
+
+            ret = mk_event_add(config->evl,
+                               collector->fd_event,
+                               FLB_ENGINE_EV_CORE,
+                               MK_EVENT_READ, event);
+            if (ret == -1) {
+                close(collector->fd_event);
+                continue;
+            }
+            count++;
+        }
+    }
+
+    return count;
+}
+
+/*
+ * An input plugin (collector) may decide that it cannot continue to work,
+ * common example is in_stdin plugin, specifically when the caller finished
+ * to ingest data over STDIN and it become closed. If the collector callback
+ * returns -1, the engine will ask to unregister.
+ */
+int flb_input_unregister_collector(struct flb_input_collector *collector,
+                                   struct flb_config *config)
+{
+    mk_event_del(config->evl, &collector->event);
+    if (collector->type == FLB_COLLECT_TIME) {
+        close(collector->fd_timer);
+    }
+    else {
+        close(collector->fd_event);
+    }
+    mk_list_del(&collector->_head);
+    free(collector);
+
+    return 0;
+}
+
 int flb_input_set_collector_socket(struct flb_input_instance *in,
                                    int (*cb_new_connection) (struct flb_config *, void*),
                                    int fd,

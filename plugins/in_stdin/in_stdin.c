@@ -160,7 +160,7 @@ int in_stdin_collect(struct flb_config *config, void *in_context)
                 return 0;
             }
             else if (bytes == 0) {
-                return 0;
+                return -1;
             }
         }
         ctx->buf_len += bytes;
