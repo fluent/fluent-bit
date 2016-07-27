@@ -221,14 +221,14 @@ int cb_nats_flush(void *data, size_t bytes,
                                &bytes_sent);
         if (ret == -1) {
             flb_upstream_conn_release(u_conn);
-            return -1;
+            FLB_OUTPUT_RETURN(FLB_RETRY);
         }
     }
 
     /* Convert original Fluent Bit MsgPack format to JSON */
     ret = msgpack_to_json(data, bytes, tag, &json_msg, &json_len);
     if (ret == -1) {
-        return -1;
+        FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 
     /* Compose the NATS Publish request */
@@ -246,11 +246,14 @@ int cb_nats_flush(void *data, size_t bytes,
     ret = flb_io_net_write(u_conn, request, req_len, &bytes_sent);
     if (ret == -1) {
         perror("write");
+        free(request);
+        flb_upstream_conn_release(u_conn);
+        FLB_OUTPUT_RETURN(FLB_RETRY);
     }
-    free(request);
 
+    free(request);
     flb_upstream_conn_release(u_conn);
-    return bytes_sent;
+    FLB_OUTPUT_RETURN(FLB_OK);
 }
 
 int cb_nats_exit(void *data, struct flb_config *config)
