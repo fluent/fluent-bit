@@ -363,14 +363,14 @@ int cb_es_flush(void *data, size_t bytes,
     /* Convert format */
     pack = es_format(data, bytes, &bytes_out, ctx);
     if (!pack) {
-        return -1;
+        FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
         free(pack);
-        return -1;
+        FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
     /* Compose HTTP Client request */
@@ -387,7 +387,7 @@ int cb_es_flush(void *data, size_t bytes,
 
     /* Release the connection */
     flb_upstream_conn_release(u_conn);
-    return b_sent;
+    FLB_OUTPUT_RETURN(FLB_OK);
 }
 
 int cb_es_exit(void *data, struct flb_config *config)
