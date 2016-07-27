@@ -23,8 +23,10 @@
 #define FLB_FALSE  0
 #define FLB_TRUE   !FLB_FALSE
 
-#define FLB_OK      1
+/* Return values */
 #define FLB_ERROR   0
+#define FLB_OK      1
+#define FLB_RETRY   2
 
 #define FLB_INLINE inline __attribute__((always_inline))
 
