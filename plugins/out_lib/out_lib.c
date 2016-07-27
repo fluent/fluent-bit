@@ -81,7 +81,7 @@ static int out_lib_flush(void *data, size_t bytes,
 
     if (ctx->user_callback == NULL) {
         flb_error("[out_lib] Callback is NULL");
-        return -1;
+        FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 
     msgpack_unpacked_init(&result);
@@ -94,8 +94,7 @@ static int out_lib_flush(void *data, size_t bytes,
         ctx->user_callback((void*)data_for_user, bytes);
     }
     msgpack_unpacked_destroy(&result);
-
-    return bytes;
+    FLB_OUTPUT_RETURN(FLB_OK);
 }
 
 static int out_lib_exit(void *data, struct flb_config *config)
