@@ -129,7 +129,7 @@ int cb_forward_flush(void *data, size_t bytes,
     buf = malloc(mp_sbuf.size + bytes);
     if (!buf) {
         perror("malloc");
-        return -1;
+        FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
     memcpy(buf, mp_sbuf.data, mp_sbuf.size);
@@ -141,16 +141,20 @@ int cb_forward_flush(void *data, size_t bytes,
     if (!u_conn) {
         flb_error("[out_forward] no upstream connections available");
         free(buf);
-        return -1;
+        FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
     ret = flb_io_net_write(u_conn, buf, total, &bytes_sent);
+    if (ret == -1) {
+        free(buf);
+        flb_upstream_conn_release(u_conn);
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
     free(buf);
-
     flb_upstream_conn_release(u_conn);
-
     flb_trace("[out_forward] ended write()=%d bytes", bytes_sent);
-    return ret;
+    FLB_OUTPUT_RETURN(FLB_OK);
 }
 
 /* Plugin reference */
