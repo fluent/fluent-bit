@@ -52,7 +52,7 @@ int cb_null_flush(void *data, size_t bytes,
     fd = open("/dev/null", O_WRONLY);
     if (fd == -1) {
         perror("open");
-        return -1;
+        FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
     while (total < bytes) {
@@ -60,13 +60,13 @@ int cb_null_flush(void *data, size_t bytes,
         if (ret == -1) {
             perror("write");
             close(fd);
-            return -1;
+            FLB_OUTPUT_RETURN(FLB_RETRY);
         }
 
         total += ret;
     }
     close(fd);
-    return total;
+    FLB_OUTPUT_RETURN(FLB_OK);
 }
 
 struct flb_output_plugin out_null_plugin = {
