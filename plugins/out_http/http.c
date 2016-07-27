@@ -189,7 +189,7 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
     ctx = calloc(1, sizeof(struct flb_out_http_config));
     if (!ctx) {
         perror("malloc");
-        return -1;
+        FLB_OUTPUT_RETURN(FLB_RETRY);
     }
     /*
      * Check if a Proxy have been set, if so the Upstream manager will use
@@ -209,14 +209,14 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
         addr = strstr(tmp, "//");
         if (!addr) {
             free(ctx);
-            return -1;
+            FLB_OUTPUT_RETURN(FLB_ERROR);
         }
         addr += 2; /* get right to the host section */
         if (*addr == '[') { /* IPv6 */
             p = strchr(addr, ']');
             if (!p) {
                 free(ctx);
-                return -1;
+                FLB_OUTPUT_RETURN(FLB_ERROR);
             }
             ctx->proxy_host = strndup(addr + 1, (p - addr - 1));
             p++;
@@ -268,7 +268,7 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
 
     if (!upstream) {
         free(ctx);
-        return -1;
+        FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
     if (ins->host.uri) {
@@ -317,7 +317,7 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
 
     /* Set the plugin context */
     flb_output_set_context(ins, ctx);
-    return 0;
+    FLB_OUTPUT_RETURN(FLB_OK);
 }
 
 int cb_http_flush(void *data, size_t bytes,
