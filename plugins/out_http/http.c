@@ -317,7 +317,7 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
 
     /* Set the plugin context */
     flb_output_set_context(ins, ctx);
-    FLB_OUTPUT_RETURN(FLB_OK);
+    return 0;
 }
 
 int cb_http_flush(void *data, size_t bytes,
@@ -327,6 +327,7 @@ int cb_http_flush(void *data, size_t bytes,
                   struct flb_config *config)
 {
     int ret;
+    int out_ret = FLB_OK;
     size_t b_sent;
     struct flb_out_http_config *ctx = out_context;
     struct flb_upstream *u;
@@ -378,6 +379,7 @@ int cb_http_flush(void *data, size_t bytes,
     if (ret == 0) {
         if (c->resp.status != 200) {
             flb_error("[out_http] http_status=%i", c->resp.status);
+            out_ret = FLB_RETRY;
         }
         else {
             flb_debug("[out_http] http_status=%i", c->resp.status);
@@ -385,6 +387,7 @@ int cb_http_flush(void *data, size_t bytes,
     }
     else {
         flb_error("[out_http] could not flush records (http_do=%i)", ret);
+        out_ret = FLB_RETRY;
     }
 
     flb_http_client_destroy(c);
@@ -396,7 +399,7 @@ int cb_http_flush(void *data, size_t bytes,
         free(body);
     }
 
-    FLB_OUTPUT_RETURN(FLB_OK);
+    FLB_OUTPUT_RETURN(out_ret);
 }
 
 int cb_http_exit(void *data, struct flb_config *config)
