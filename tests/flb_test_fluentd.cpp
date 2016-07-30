@@ -15,11 +15,11 @@ TEST(Outputs, json_long_fluentd) {
 
     input = flb_input(ctx, (char *) "lib", NULL);
     EXPECT_TRUE(input != NULL);
-    flb_input_set(input, "tag", "test");
+    flb_input_set(input, "tag", "test", NULL);
 
-    output = flb_output(ctx, (char *) "fluentd://127.0.0.1:24224", NULL);
+    output = flb_output(ctx, (char *) "forward://127.0.0.1:24224", NULL);
     EXPECT_TRUE(output != NULL);
-    flb_output_set(output, "tag", "test");
+    flb_output_set(output, "match", "test", NULL);
 
     ret = flb_start(ctx);
     EXPECT_EQ(ret, 0);
