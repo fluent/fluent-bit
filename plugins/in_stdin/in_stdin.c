@@ -190,7 +190,8 @@ int in_stdin_collect(struct flb_config *config, void *in_context)
             flb_pack_state_reset(&ctx->pack_state);
             flb_pack_state_init(&ctx->pack_state);
             ctx->pack_state.multiple = FLB_TRUE;
-            return -1;
+            ctx->buf_len = 0;
+            continue;
         }
 
         process_pack(ctx, pack, out_size);
