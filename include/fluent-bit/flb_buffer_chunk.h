@@ -37,7 +37,7 @@ int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
 uint64_t flb_buffer_chunk_push(struct flb_buffer *ctx, void *data,
                                size_t size, char *tag, uint64_t routes);
 
-int flb_buffer_chunk_pop(struct flb_buffer *ctx, uint64_t chunk_id);
+//int flb_buffer_chunk_pop(struct flb_buffer *ctx, uint64_t chunk_id);
 
 struct flb_buffer_request *flb_buffer_chunk_mov(int type,
                                                 char *name,

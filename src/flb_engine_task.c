@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_engine_task.h>
+#include <fluent-bit/flb_buffer_chunk.h>
 
 /*
  * Every task created must have an unique ID, this function lookup the
@@ -146,9 +147,6 @@ struct flb_engine_task *flb_engine_task_create(char *buf,
         }
     }
 
-    /*
-     * FIXME: Testing the task interface to enqueue buffer chunks
-     */
 #ifdef FLB_HAVE_BUFFERING
     uint64_t cid;
 
@@ -166,6 +164,36 @@ struct flb_engine_task *flb_engine_task_create(char *buf,
 #endif
 
     return task;
+}
+
+void flb_engine_task_destroy(struct flb_engine_task *task)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_engine_task_route *route;
+
+    flb_trace("[engine] destroy task_id=%i", task->id);
+
+    if (task->dt) {
+        flb_input_dyntag_destroy(task->dt);
+    }
+
+    /* Release task_id */
+    task->config->tasks_map[task->id].id   = 0;
+    task->config->tasks_map[task->id].task = NULL;
+
+    /* Remove routes */
+    mk_list_foreach_safe(head, tmp, &task->routes) {
+        route = mk_list_entry(head, struct flb_engine_task_route, _head);
+        mk_list_del(&route->_head);
+        free(route);
+    }
+
+    /* Unlink and release */
+    mk_list_del(&task->_head);
+    free(task->buf);
+    free(task->tag);
+    free(task);
 }
 
 /* Register a thread into the tasks list */

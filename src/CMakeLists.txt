@@ -7,6 +7,7 @@ set(src
   flb_log.c
   flb_uri.c
   flb_pack.c
+  flb_sha1.c
   flb_kernel.c
   flb_input.c
   flb_output.c
@@ -103,6 +104,10 @@ set_target_properties(fluent-bit-static PROPERTIES OUTPUT_NAME fluent-bit)
 
 if(FLB_HTTP)
   target_link_libraries(fluent-bit-static monkey-core-static ejson)
+endif()
+
+if(FLB_BUFFERING)
+  target_link_libraries(fluent-bit-static sha1)
 endif()
 
 # Executable

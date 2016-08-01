@@ -113,6 +113,7 @@ include_directories(
   include/
   lib/
   lib/ejson
+  lib/sha1
   lib/msgpack-c-068041f/include
   lib/monkey/include
   lib/monkey/mk_core/include
@@ -134,6 +135,10 @@ FLB_DEFINITION(JSMN_PARENT_LINKS)
 FLB_DEFINITION(JSMN_STRICT)
 add_subdirectory(lib/jsmn)
 add_subdirectory(lib/ejson)
+
+if(FLB_BUFFERING)
+  add_subdirectory(lib/sha1)
+endif()
 
 # MK Core
 macro(MK_SET_OPTION option value)

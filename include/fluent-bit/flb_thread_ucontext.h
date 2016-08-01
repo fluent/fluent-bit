@@ -30,6 +30,7 @@
 
 struct flb_thread {
     int id;
+    time_t created;
 
 #ifdef FLB_HAVE_VALGRIND
     unsigned int valgrind_stack_id;

@@ -79,41 +79,12 @@ struct flb_engine_task {
 #endif
 };
 
-static inline void flb_engine_task_destroy(struct flb_engine_task *task)
-{
-    struct mk_list *tmp;
-    struct mk_list *head;
-    struct flb_engine_task_route *route;
-
-    flb_trace("[engine] destroy task_id=%i", task->id);
-
-    if (task->dt) {
-        flb_input_dyntag_destroy(task->dt);
-    }
-
-    /* Release task_id */
-    task->config->tasks_map[task->id].id   = 0;
-    task->config->tasks_map[task->id].task = NULL;
-
-    /* Remove routes */
-    mk_list_foreach_safe(head, tmp, &task->routes) {
-        route = mk_list_entry(head, struct flb_engine_task_route, _head);
-        mk_list_del(&route->_head);
-        free(route);
-    }
-
-    /* Unlink and release */
-    mk_list_del(&task->_head);
-    free(task->buf);
-    free(task->tag);
-    free(task);
-}
-
 struct flb_engine_task *flb_engine_task_create(char *buf,
                                                size_t size,
                                                struct flb_input_instance *i_ins,
                                                struct flb_input_dyntag *dt,
                                                char *tag,
                                                struct flb_config *config);
+void flb_engine_task_destroy(struct flb_engine_task *task);
 
 #endif

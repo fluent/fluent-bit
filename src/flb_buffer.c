@@ -46,7 +46,7 @@
  *
  * Each buffer is stored in a file with the following name/format:
  *
- *    flb.unixtimestamp.TAG
+ *    SHA1(chunk_content).routes_id.wID.TAG
  */
 static void flb_buffer_worker_init(void *arg)
 {
@@ -85,7 +85,7 @@ static void flb_buffer_worker_init(void *arg)
 
     /* Register channel 'del' into the event loop */
     ret = mk_event_add(ctx->evl, ctx->ch_del[0],
-                       FLB_BUFFER_EV_ADD, MK_EVENT_READ, &ctx->e_del);
+                       FLB_BUFFER_EV_DEL, MK_EVENT_READ, &ctx->e_del);
     if (ret == -1) {
         flb_error("[buffer:worker %i] aborting", ctx->id);
         return;

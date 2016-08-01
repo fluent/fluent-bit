@@ -39,6 +39,7 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_buffer.h>
 #include <fluent-bit/flb_buffer_chunk.h>
+#include <fluent-bit/flb_sha1.h>
 
 /*
  * When the Worker (thread) receives a FLB_BUFFER_EV_ADD event, this routine
@@ -55,14 +56,15 @@
 int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
                          struct mk_event *event, char **filename)
 {
+    int i;
     int fd;
     int ret;
+    unsigned char *hash;
+    char hash_hex[64];
     char *fchunk;
     char target[PATH_MAX];
     size_t w;
     FILE *f;
-    struct timeval tv;
-    struct timezone tz;
     struct flb_buffer_chunk chunk;
     struct stat st;
 
@@ -76,17 +78,25 @@ int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
     /*
      * Chunk file format:
      *
-     *     flb.TIMESTAMP.NANOSECONDS.wID.tag
+     *     SHA1(chunk.data).routes_id.wID.tag
      */
-    gettimeofday(&tv, &tz);
-
     fchunk = malloc(PATH_MAX);
     if (!fchunk) {
         perror("malloc");
         return -1;
     }
-    ret = snprintf(fchunk, PATH_MAX - 1, "flb.%lu.%lu.%lu.w%i.%s",
-                   tv.tv_sec, tv.tv_usec,
+
+    hash = malloc(20);
+    flb_sha1_encode(chunk.data, chunk.size, hash);
+    for (i = 0; i < 20; ++i) {
+        sprintf(&hash_hex[i*2], "%02x", hash[i]);
+    }
+    hash_hex[40] = '\0';
+    free(hash);
+
+    ret = snprintf(fchunk, PATH_MAX - 1,
+                   "%s.%lu.w%i.%s",
+                   hash_hex,
                    chunk.routes,
                    worker->id, chunk.tag);
     if (ret == -1) {
@@ -213,10 +223,22 @@ uint64_t flb_buffer_chunk_push(struct flb_buffer *ctx, void *data,
 }
 
 /* Destroy a chunk given it id */
-int flb_buffer_chunk_pop(struct flb_buffer *ctx, uint64_t chunk_id)
+int flb_buffer_chunk_pop(struct flb_buffer *ctx, int thread_id,
+                         struct flb_engine_task *task)
 {
-    (void) ctx;
-    (void) chunk_id;
+    struct flb_config *config;
+    struct flb_buffer *buffer;
+
+
+    /*
+     * Upon receive the request to remove a buffer chunk, it really means
+     * that the 'outgoing' reference of a real buffer chunk have finished
+     * and is not longer necessary. So we require to lookup the real buffer
+     * chunk empty file in the file system
+     */
+    config = task->config;
+    buffer = config->buffer_ctx;
+
 
     return 0;
 }
@@ -306,7 +328,6 @@ int flb_buffer_chunk_real_move(struct flb_buffer_worker *worker,
                          worker->parent->path,
                          o_ins->name,
                          req.name);
-                printf("TO=%s\n", to);
 
                 fd = open(to, O_CREAT | O_TRUNC, 0666);
                 if (fd == -1) {

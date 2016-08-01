@@ -34,6 +34,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_engine.h>
+#include <fluent-bit/flb_engine_task.h>
 #include <fluent-bit/flb_engine_dispatch.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_http_server.h>
@@ -147,16 +148,32 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
         task_id   = FLB_ENGINE_TASK_ID(key);
         thread_id = FLB_ENGINE_TASK_TH(key);
 
+#ifdef FLB_HAVE_TRACE
+        char *trace_st = NULL;
+
+        if (ret == FLB_OK) {
+            trace_st = "OK";
+        }
+        else if (ret == FLB_ERROR) {
+            trace_st = "ERROR";
+        }
+        else if (ret == FLB_RETRY) {
+            trace_st = "RETRY";
+        }
+
         flb_trace("%s[engine] [task event]%s task_id=%i thread_id=%i return=%s",
                   ANSI_YELLOW, ANSI_RESET,
-                  task_id, thread_id, ret == FLB_OK ? "OK": "ERROR");
+                  task_id, thread_id, trace_st);
+#endif
 
         task = config->tasks_map[task_id].task;
 
         /* A thread has finished, delete it */
-        flb_thread_destroy_id(thread_id, task);
-        if (task->users == 0) {
-            flb_engine_task_destroy(task);
+        if (ret == FLB_OK) {
+            flb_thread_destroy_id(thread_id, task);
+            if (task->users == 0) {
+                flb_engine_task_destroy(task);
+            }
         }
     }
 
