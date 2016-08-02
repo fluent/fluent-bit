@@ -59,24 +59,25 @@ struct flb_engine_task_route {
 
 /* A task takes a buffer and sync input and output instances to handle it */
 struct flb_engine_task {
-    int id;                                /* task id                   */
-    int status;                            /* new task or running ?     */
-    int deleted;                           /* should be deleted ?       */
-    int n_threads;                         /* number number of threads  */
-    int users;                             /* number of users (threads) */
-    char *tag;                             /* original tag              */
-    char *buf;                             /* buffer                    */
-    size_t size;                           /* buffer data size          */
+    int id;                             /* task id                   */
+    int status;                         /* new task or running ?     */
+    int deleted;                        /* should be deleted ?       */
+    int n_threads;                      /* number number of threads  */
+    int users;                          /* number of users (threads) */
+    char *tag;                          /* original tag              */
+    char *buf;                          /* buffer                    */
+    size_t size;                        /* buffer data size          */
 #ifdef FLB_HAVE_BUFFERING
-    unsigned char hash_sha1[20];           /* SHA1(buf)                 */
-    char hash_hex[41];                     /* Hex string for hash_sha1  */
+    int worker_id;                      /* Buffer worker that owns this task */
+    unsigned char hash_sha1[20];        /* SHA1(buf)                         */
+    char hash_hex[41];                  /* Hex string for hash_sha1          */
 #endif
-    struct flb_input_dyntag *dt;           /* dyntag node (if applies)  */
-    struct flb_input_instance *i_ins;      /* input instance            */
-    struct mk_list threads;                /* ref flb_input_instance->tasks */
-    struct mk_list routes;                 /* routes to dispatch data   */
-    struct mk_list _head;                  /* link to input_instance    */
-    struct flb_config *config;             /* parent flb config         */
+    struct flb_input_dyntag *dt;        /* dyntag node (if applies)      */
+    struct flb_input_instance *i_ins;   /* input instance                */
+    struct mk_list threads;             /* ref flb_input_instance->tasks */
+    struct mk_list routes;              /* routes to dispatch data       */
+    struct mk_list _head;               /* link to input_instance        */
+    struct flb_config *config;          /* parent flb config             */
 
 #ifdef FLB_HAVE_FLUSH_PTHREADS
     pthread_mutex_t mutex_threads;

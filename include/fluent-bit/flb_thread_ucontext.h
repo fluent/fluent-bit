@@ -30,7 +30,6 @@
 
 struct flb_thread {
     int id;
-    time_t created;
 
 #ifdef FLB_HAVE_VALGRIND
     unsigned int valgrind_stack_id;
@@ -67,6 +66,22 @@ struct flb_thread {
 
 FLB_EXPORT pthread_key_t flb_thread_key;
 
+static FLB_INLINE struct flb_thread *flb_thread_get(int id,
+                                                    struct flb_engine_task *task)
+{
+    struct mk_list *head;
+    struct flb_thread *thread = NULL;
+
+    mk_list_foreach(head, &task->threads) {
+        thread = mk_list_entry(head, struct flb_thread, _head);
+        if (thread->id == id) {
+            return thread;
+        }
+    }
+
+    return thread;
+}
+
 static FLB_INLINE void flb_thread_prepare()
 {
     pthread_key_create(&flb_thread_key, NULL);
@@ -92,18 +107,12 @@ static FLB_INLINE void flb_thread_destroy(struct flb_thread *th)
 static FLB_INLINE int flb_thread_destroy_id(int id, struct
                                             flb_engine_task *task)
 {
-    struct mk_list *head;
     struct flb_thread *thread;
 
-    mk_list_foreach(head, &task->threads) {
-        thread = mk_list_entry(head, struct flb_thread, _head);
-        if (thread->id == id) {
-            flb_thread_destroy(thread);
-            return 0;
-        }
-    }
+    thread = flb_thread_get(id, task);
+    flb_thread_destroy(thread);
 
-    return -1;
+    return 0;
 }
 
 static FLB_INLINE void flb_thread_resume(struct flb_thread *th)

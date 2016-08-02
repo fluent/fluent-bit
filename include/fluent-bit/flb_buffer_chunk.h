@@ -31,14 +31,25 @@
 #define FLB_BUFFER_CHUNK_OUTGOING 1
 #define FLB_BUFFER_CHUNK_DEFERRED 3
 
+struct flb_buffer_chunk {
+    void *data;
+    size_t size;
+    uint64_t routes;        /* bitmask routes */
+    uint8_t tmp_len;
+    int buf_worker;
+    char tmp[128];          /* temporal ref: Tag/output_instance */
+    char hash_hex[41];
+};
+
 int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
                          struct mk_event *event, char **filename);
 
-uint64_t flb_buffer_chunk_push(struct flb_buffer *ctx, void *data,
-                               size_t size, char *tag, uint64_t routes,
-                               char *hash_hex);
+int flb_buffer_chunk_push(struct flb_buffer *ctx, void *data,
+                          size_t size, char *tag, uint64_t routes,
+                          char *hash_hex);
 
-//int flb_buffer_chunk_pop(struct flb_buffer *ctx, uint64_t chunk_id);
+int flb_buffer_chunk_pop(struct flb_buffer *ctx, int thread_id,
+                         struct flb_engine_task *task);
 
 struct flb_buffer_request *flb_buffer_chunk_mov(int type,
                                                 char *name,

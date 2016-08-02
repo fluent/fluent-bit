@@ -33,15 +33,6 @@
 #define FLB_BUFFER_EV_DEL  1026
 #define FLB_BUFFER_EV_MOV  1027
 
-struct flb_buffer_chunk {
-    void *data;
-    size_t size;
-    uint64_t routes;        /* bitmask routes */
-    uint8_t tag_len;
-    char tag[128];
-    char hash_hex[41];
-};
-
 struct flb_buffer_worker {
     /* worker info */
     int id;                /* local id */

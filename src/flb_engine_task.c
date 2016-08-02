@@ -149,7 +149,7 @@ struct flb_engine_task *flb_engine_task_create(char *buf,
 
 #ifdef FLB_HAVE_BUFFERING
     int i;
-    uint64_t cid;
+    int worker_id;
 
     /* Generate content SHA1 and it Hexa representation */
     flb_sha1_encode(buf, size, &task->hash_sha1);
@@ -162,10 +162,11 @@ struct flb_engine_task *flb_engine_task_create(char *buf,
      * Generate a buffer chunk push request, note that suggested routes
      * are passed through the 'routes_mask' bit mask variable.
      */
-    cid = flb_buffer_chunk_push(config->buffer_ctx, buf, size, tag,
-                                routes_mask, &task->hash_hex);
+    worker_id = flb_buffer_chunk_push(config->buffer_ctx, buf, size, tag,
+                                      routes_mask, &task->hash_hex);
 
-    flb_debug("[task->buffer] new chunk=%lu", cid);
+    task->worker_id = worker_id;
+    flb_debug("[task->buffer] worker_id=%i", worker_id);
 #endif
 
 #ifdef FLB_HAVE_FLUSH_PTHREADS
