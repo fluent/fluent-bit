@@ -529,6 +529,12 @@ int main(int argc, char **argv)
         flb_utils_error(FLB_ERR_INPUT_UNDEF);
     }
 
+    /* Outputs */
+    ret = flb_output_check(config);
+    if (ret == -1) {
+        flb_utils_error(FLB_ERR_OUTPUT_UNDEF);
+    }
+
     flb_banner();
     if (config->verbose == FLB_TRUE) {
         flb_utils_print_setup(config);
