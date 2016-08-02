@@ -39,6 +39,7 @@ struct flb_buffer_chunk {
     uint64_t routes;        /* bitmask routes */
     uint8_t tag_len;
     char tag[128];
+    char hash_hex[41];
 };
 
 struct flb_buffer_worker {

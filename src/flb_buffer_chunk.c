@@ -56,11 +56,8 @@
 int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
                          struct mk_event *event, char **filename)
 {
-    int i;
     int fd;
     int ret;
-    unsigned char *hash;
-    char hash_hex[64];
     char *fchunk;
     char target[PATH_MAX];
     size_t w;
@@ -86,17 +83,9 @@ int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
         return -1;
     }
 
-    hash = malloc(20);
-    flb_sha1_encode(chunk.data, chunk.size, hash);
-    for (i = 0; i < 20; ++i) {
-        sprintf(&hash_hex[i*2], "%02x", hash[i]);
-    }
-    hash_hex[40] = '\0';
-    free(hash);
-
     ret = snprintf(fchunk, PATH_MAX - 1,
                    "%s.%lu.w%i.%s",
-                   hash_hex,
+                   chunk.hash_hex,
                    chunk.routes,
                    worker->id, chunk.tag);
     if (ret == -1) {
@@ -164,7 +153,8 @@ int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
  * id created.
  */
 uint64_t flb_buffer_chunk_push(struct flb_buffer *ctx, void *data,
-                               size_t size, char *tag, uint64_t routes)
+                               size_t size, char *tag, uint64_t routes,
+                               char *hash_hex)
 {
     int id;
     int ret;
@@ -193,6 +183,7 @@ uint64_t flb_buffer_chunk_push(struct flb_buffer *ctx, void *data,
     chunk.tag_len = strlen(tag);
     chunk.routes  = routes;
     memcpy(&chunk.tag, tag, chunk.tag_len);
+    memcpy(&chunk.hash_hex, hash_hex, 41);
 
     /* Lookup target worker */
     if (ctx->worker_lru == 0) {
@@ -219,6 +210,8 @@ uint64_t flb_buffer_chunk_push(struct flb_buffer *ctx, void *data,
 
     flb_debug("[buffer] created chunk_id=%lu records=%p size=%lu worker=%i",
               cid, data, size, ctx->worker_lru);
+
+    /* FIXME: returning a useless value here */
     return cid;
 }
 

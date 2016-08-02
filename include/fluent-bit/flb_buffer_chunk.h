@@ -35,7 +35,8 @@ int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
                          struct mk_event *event, char **filename);
 
 uint64_t flb_buffer_chunk_push(struct flb_buffer *ctx, void *data,
-                               size_t size, char *tag, uint64_t routes);
+                               size_t size, char *tag, uint64_t routes,
+                               char *hash_hex);
 
 //int flb_buffer_chunk_pop(struct flb_buffer *ctx, uint64_t chunk_id);
 

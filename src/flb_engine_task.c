@@ -148,14 +148,23 @@ struct flb_engine_task *flb_engine_task_create(char *buf,
     }
 
 #ifdef FLB_HAVE_BUFFERING
+    int i;
     uint64_t cid;
+
+    /* Generate content SHA1 and it Hexa representation */
+    flb_sha1_encode(buf, size, &task->hash_sha1);
+    for (i = 0; i < 20; ++i) {
+        sprintf(&task->hash_hex[i*2], "%02x", task->hash_sha1[i]);
+    }
+    task->hash_hex[40] = '\0';
 
     /*
      * Generate a buffer chunk push request, note that suggested routes
      * are passed through the 'routes_mask' bit mask variable.
      */
-    cid = flb_buffer_chunk_push(config->buffer_ctx,
-                                buf, size, tag, routes_mask);
+    cid = flb_buffer_chunk_push(config->buffer_ctx, buf, size, tag,
+                                routes_mask, &task->hash_hex);
+
     flb_debug("[task->buffer] new chunk=%lu", cid);
 #endif
 
