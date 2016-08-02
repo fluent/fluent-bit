@@ -329,3 +329,12 @@ void flb_output_set_context(struct flb_output_instance *ins, void *context)
 {
     ins->context = context;
 }
+
+/* Check that at least one Output is enabled */
+int flb_output_check(struct flb_config *config)
+{
+    if (mk_list_is_empty(&config->outputs) == 0) {
+        return -1;
+    }
+    return 0;
+}
