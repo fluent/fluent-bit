@@ -130,6 +130,7 @@ static void flb_buffer_worker_init(void *arg)
             }
             else if (event->type == FLB_BUFFER_EV_DEL) {
                 printf("[buffer] [ev_del]\n");
+                flb_buffer_chunk_delete(ctx, event);
             }
             else if (event->type == FLB_BUFFER_EV_MOV) {
                 printf("[buffer] [ev_mov]\n");

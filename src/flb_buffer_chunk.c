@@ -28,6 +28,7 @@
 #include <sys/stat.h>
 #include <sys/file.h>
 #include <unistd.h>
+#include <dirent.h>
 
 #ifdef __linux__
 #include <linux/limits.h>
@@ -174,6 +175,96 @@ int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
     return chunk.routes;
 }
 
+
+/*
+ * Delete a physical reference of a Chunk, if no one exists delete the real
+ * buffer chunk.
+ */
+int flb_buffer_chunk_delete(struct flb_buffer_worker *worker,
+                            struct mk_event *event)
+{
+    int ret;
+    int target_len;
+    int file_len = 0;
+    char target[PATH_MAX];
+    char *file = NULL;
+    struct flb_buffer_chunk chunk;
+    DIR *dir;
+    struct dirent *entry;
+
+    /* Read the expected chunk reference */
+    ret = read(worker->ch_del[0], &chunk, sizeof(struct flb_buffer_chunk));
+    if (ret <= 0) {
+        perror("read");
+        return -1;
+    }
+
+    /* Compose the absolute directory for the target reference */
+    ret = snprintf(target, sizeof(target) - 1,
+                   "%s/tasks/%s/",
+                   FLB_BUFFER_PATH(worker),
+                   chunk.tmp);
+    if (ret == -1) {
+        perror("snprintf");
+        return -1;
+    }
+    target_len = ret;
+
+    /* Lookup reference using the Hash number */
+    dir = opendir(target);
+    if (!dir) {
+        perror("opendir");
+        return -1;
+    }
+
+    while ((entry = readdir(dir))) {
+        if (entry->d_name[0] == '.') {
+            continue;
+        }
+
+        ret = strncmp(entry->d_name, chunk.hash_hex, 40);
+        if (ret == 0) {
+            file = malloc(256);
+            if (!file) {
+                perror("malloc");
+                closedir(dir);
+                return -1;
+            }
+            file_len = strlen(entry->d_name);
+            memcpy(file, entry->d_name, file_len);
+            file[file_len] = '\0';
+            break;
+        }
+    }
+    closedir(dir);
+
+    if (!file) {
+        flb_error("[buffer] could not match task %s/%s",
+                  chunk.tmp, chunk.hash_hex);
+        return -1;
+    }
+
+    /* Compose final target name */
+    if ((target_len + file_len + 1) > sizeof(target)) {
+        flb_error("[buffer] cannot compose path, length exceeds limit");
+        return -1;
+    }
+
+    memcpy(target + target_len, file, file_len);
+    target[target_len + file_len] = '\0';
+    free(file);
+
+    ret = unlink(target);
+    if (ret != 0) {
+        perror("unlink");
+        flb_error("[buffer] cannot delete %s", target);
+        return -1;
+    }
+
+    printf("FIXME (flb_debug) [buffer] removing task %s OK\n", target);
+    return 0;
+}
+
 /*
  * Send a 'chunk create' request to the buffer engine. It return the
  * buffer worker ID that will manage the request.
@@ -234,7 +325,6 @@ int flb_buffer_chunk_pop(struct flb_buffer *ctx, int thread_id,
 {
     int ret;
     struct flb_buffer_chunk chunk;
-    struct flb_config *config;
     struct flb_buffer_worker *worker;
     struct flb_thread *thread;
     struct flb_output_instance *o_ins;
@@ -349,7 +439,7 @@ int flb_buffer_chunk_real_move(struct flb_buffer_worker *worker,
             if (o_ins->mask_id & info_routes) {
                 snprintf(to, PATH_MAX - 1,
                          "%s/tasks/%s/%s",
-                         worker->parent->path,
+                         FLB_BUFFER_PATH(worker),
                          o_ins->name,
                          req.name);
 
