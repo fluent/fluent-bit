@@ -23,6 +23,7 @@
 
 #include <stdio.h>
 #include <unistd.h>
+#include <ctype.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -41,6 +42,13 @@
 #include <fluent-bit/flb_buffer.h>
 #include <fluent-bit/flb_buffer_chunk.h>
 #include <fluent-bit/flb_sha1.h>
+
+/* Local structure used to validate and obtain Chunk information */
+static struct chunk_info {
+    uint64_t routes;
+    int worker_id;
+    char *tag;
+};
 
 /* Get a Buffer Worker given it ID */
 static struct flb_buffer_worker *get_worker(struct flb_buffer *ctx, int id)
@@ -61,6 +69,7 @@ static struct flb_buffer_worker *get_worker(struct flb_buffer *ctx, int id)
                 worker = mk_list_entry(head, struct flb_buffer_worker, _head);
                 break;
             }
+            worker = NULL;
             i++;
         }
     }
@@ -68,13 +77,156 @@ static struct flb_buffer_worker *get_worker(struct flb_buffer *ctx, int id)
     return worker;
 }
 
+/* Given a Chunk filename, validate format and populate chunk_info structure */
+static int chunk_info(char *filename, struct chunk_info *info)
+{
+    int i;
+    int len;
+    char *p;
+    char *tmp;
+    char num[8];
+
+    len = strlen(filename);
+    if (len < 47) {
+        return -1;
+    }
+
+    /* Validate Hash number */
+    for (i = 0; i < 40; i++) {
+        if (!isxdigit(filename[i])) {
+            return -1;
+        }
+    }
+
+    /* Lookup routes number */
+    if (filename[40] != '.') {
+        return -1;
+    }
+
+    tmp = filename + 41;
+    p = strchr(tmp, '.');
+    if (!p) {
+        return -1;
+    }
+
+    len = (p - tmp);
+    if (len < 1 || len > sizeof(num)) {
+        return -1;
+    }
+    strncpy(num, tmp, len);
+    num[len] = '\0';
+
+    for (i = 0; i < len; i++) {
+        if (!isdigit(num[i])) {
+            return -1;
+        }
+    }
+    info->routes = atol(num);
+
+    /* Worker ID */
+    p++;
+    if (*p != 'w') {
+        return -1;
+    }
+    tmp = ++p;
+    p = strchr(tmp, '.');
+    if (!p) {
+        return -1;
+    }
+    len = (p - tmp);
+
+    if (len < 1 || len > sizeof(num)) {
+        return -1;
+    }
+    strncpy(num, tmp, len);
+    num[len] = '\0';
+
+    for (i = 0; i < len; i++) {
+        if (!isdigit(num[i])) {
+            return -1;
+        }
+    }
+    info->worker_id = atol(num);
+
+    /* Tag */
+    p++;
+    if (!isalpha(*p)) {
+        return -1;
+    }
+    info->tag = p;
+
+    return 0;
+}
+
+/* Given a chunk Hash and a root directory, lookup the absolute path if found */
+static int chunk_find(char *root_path, char *hash,
+                      char **abs_path, char **real_name)
+{
+    int ret;
+    int root_len;
+    int file_len;
+    int target_len;
+    char *target;
+    char *file;
+    struct dirent *entry;
+    DIR *dir;
+
+    dir = opendir(root_path);
+    if (!dir) {
+        perror("opendir");
+        return -1;
+    }
+
+    while ((entry = readdir(dir))) {
+        if (entry->d_name[0] == '.') {
+            continue;
+        }
+
+        ret = strncmp(entry->d_name, hash, 40);
+        if (ret == 0) {
+            file = strdup(entry->d_name);
+            if (!file) {
+                closedir(dir);
+                return -1;
+            }
+            break;
+        }
+        file = NULL;
+    }
+    closedir(dir);
+
+    if (!file) {
+        return -1;
+    }
+
+    root_len = strlen(root_path);
+    file_len = strlen(file);
+    if ((file_len + root_len + 1) > PATH_MAX) {
+        free(file);
+        return -1;
+    }
+
+    target = malloc(PATH_MAX);
+    memcpy(target, root_path, root_len);
+    target_len = root_len;
+    memcpy(target + target_len, file, file_len);
+    target_len += file_len;
+    target[target_len] = '\0';
+
+    *abs_path = target;
+    *real_name = file;
+
+    return 0;
+}
+
+
 /*
  * When the Worker (thread) receives a FLB_BUFFER_EV_ADD event, this routine
  * read the request data and store the chunk into the file system.
  *
  * The buffer chunk filename format is:
  *
- *    flb.SECONDS.USECONDS.ROUTER_MASK_ID.WORKER_ID.TAG
+ *    SHA1(chunk.data).ROUTER_MASK_ID.WORKER_ID.TAG
  *
  * On error it returns -1, otherwise it returns the router mask id. This is
  * used by the caller to 'suggest' outgoing paths when moving the buffer
@@ -176,21 +328,21 @@ int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
 }
 
 
-/*
- * Delete a physical reference of a Chunk, if no one exists delete the real
- * buffer chunk.
- */
+/* Delete a physical reference of a task chunk */
 int flb_buffer_chunk_delete(struct flb_buffer_worker *worker,
                             struct mk_event *event)
 {
     int ret;
-    int target_len;
-    int file_len = 0;
-    char target[PATH_MAX];
-    char *file = NULL;
+    uint64_t routes;
+    char *target;
+    char *real_name;
+    char path[PATH_MAX];
+    struct mk_list *head;
+    struct flb_output_instance *o_ins;
     struct flb_buffer_chunk chunk;
-    DIR *dir;
-    struct dirent *entry;
+    struct flb_config *config;
+    struct chunk_info info;
+    struct stat st;
 
     /* Read the expected chunk reference */
     ret = read(worker->ch_del[0], &chunk, sizeof(struct flb_buffer_chunk));
@@ -199,69 +351,132 @@ int flb_buffer_chunk_delete(struct flb_buffer_worker *worker,
         return -1;
     }
 
+    /* Lookup file */
+    snprintf(path, sizeof(path) - 1, "%s/outgoing/",
+             FLB_BUFFER_PATH(worker));
+    ret = chunk_find(path, chunk.hash_hex, &target, &real_name);
+    if (ret != 0) {
+        flb_error("[buffer] could not match task %s/%s",
+                  chunk.tmp, chunk.hash_hex);
+        return -1;
+    }
+
+    /* Get chunk info */
+    ret = chunk_info(real_name, &info);
+    if (ret == -1) {
+        free(target);
+        free(real_name);
+        return -1;
+    }
+
+    /*
+     * Based on the 'routes' mask, iterate each task associated to this
+     * chunk and check for matches.
+     */
+    config = worker->parent->config;
+    mk_list_foreach(head, &config->outputs) {
+        o_ins = mk_list_entry(head, struct flb_output_instance, _head);
+        if ((info.routes & o_ins->mask_id) == 0) {
+            continue;
+        }
+
+        /*
+         * We have a match, compose the absolute path and check if the
+         * buffer chunk reference is present or not. If it's not there (which
+         * can be considered a match), alter the routes field from the
+         * chunk file.
+         */
+        snprintf(path, sizeof(path) - 1, "%stasks/%s/%s",
+                 FLB_BUFFER_PATH(worker),
+                 o_ins->name,
+                 real_name);
+        ret = stat(path, &st);
+        if (ret == -1) {
+            if (errno == ENOENT) {
+                /*
+                 * Assume that a reference file have been deleted and this
+                 * route should be turned OFF.
+                 */
+                routes = (info.routes & ~o_ins->mask_id);
+                if (routes == 0) {
+                    /* No more routes, remove the task reference */
+                    snprintf(path, sizeof(path) - 1, "%s/outgoing/%s",
+                             FLB_BUFFER_PATH(worker),
+                             real_name);
+                    unlink(path);
+                }
+                else {
+                    /* FIXME: alter route reference */
+                }
+            }
+        }
+    }
+
+    return 0;
+}
+
+
+/* Delete a physical reference of a task chunk */
+int flb_buffer_chunk_delete_ref(struct flb_buffer_worker *worker,
+                                struct mk_event *event)
+{
+    int ret;
+    char *target;
+    char *real_name;
+    char root_path[PATH_MAX];
+    struct flb_buffer_chunk chunk;
+
+    /* Read the expected chunk reference */
+    ret = read(worker->ch_del_ref[0], &chunk, sizeof(struct flb_buffer_chunk));
+    if (ret <= 0) {
+        perror("read");
+        return -1;
+    }
+
     /* Compose the absolute directory for the target reference */
-    ret = snprintf(target, sizeof(target) - 1,
-                   "%s/tasks/%s/",
+    ret = snprintf(root_path, sizeof(root_path) - 1,
+                   "%stasks/%s/",
                    FLB_BUFFER_PATH(worker),
                    chunk.tmp);
     if (ret == -1) {
         perror("snprintf");
         return -1;
     }
-    target_len = ret;
 
-    /* Lookup reference using the Hash number */
-    dir = opendir(target);
-    if (!dir) {
-        perror("opendir");
-        return -1;
-    }
-
-    while ((entry = readdir(dir))) {
-        if (entry->d_name[0] == '.') {
-            continue;
-        }
-
-        ret = strncmp(entry->d_name, chunk.hash_hex, 40);
-        if (ret == 0) {
-            file = malloc(256);
-            if (!file) {
-                perror("malloc");
-                closedir(dir);
-                return -1;
-            }
-            file_len = strlen(entry->d_name);
-            memcpy(file, entry->d_name, file_len);
-            file[file_len] = '\0';
-            break;
-        }
-    }
-    closedir(dir);
-
-    if (!file) {
+    /* Find absolute path for given Hash under task root path */
+    ret = chunk_find(root_path, chunk.hash_hex, &target, &real_name);
+    if (ret != 0) {
         flb_error("[buffer] could not match task %s/%s",
                   chunk.tmp, chunk.hash_hex);
         return -1;
     }
 
-    /* Compose final target name */
-    if ((target_len + file_len + 1) > sizeof(target)) {
-        flb_error("[buffer] cannot compose path, length exceeds limit");
-        return -1;
-    }
-
-    memcpy(target + target_len, file, file_len);
-    target[target_len + file_len] = '\0';
-    free(file);
-
     ret = unlink(target);
     if (ret != 0) {
+        free(target);
+        free(real_name);
         perror("unlink");
         flb_error("[buffer] cannot delete %s", target);
         return -1;
     }
 
     printf("FIXME (flb_debug) [buffer] removing task %s OK\n", target);
+
+    free(real_name);
+    free(target);
+
+    /*
+     * Every time a buffer chunk reference is deleted, we dispatch a
+     * request over the ch_del[] channel on this same worker, which
+     * aims to delete the real buffer chunk if no one else have
+     * a reference to it.
+     */
+    ret = write(worker->ch_del[1], &chunk, sizeof(struct flb_buffer_chunk));
+    if (ret == -1) {
+        perror("write");
+        return -1;
+    }
+
     return 0;
 }
 
@@ -347,7 +562,7 @@ int flb_buffer_chunk_pop(struct flb_buffer *ctx, int thread_id,
     memcpy(&chunk.tmp, o_ins->name, chunk.tmp_len);
 
     /* Write request through worker channel */
-    ret = write(worker->ch_del[1], &chunk, sizeof(struct flb_buffer_chunk));
+    ret = write(worker->ch_del_ref[1], &chunk, sizeof(struct flb_buffer_chunk));
     if (ret == -1) {
         perror("write");
         return -1;

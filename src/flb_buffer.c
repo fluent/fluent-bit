@@ -39,7 +39,7 @@
 
 /*
  * This routine runs in a POSIX thread and it aims to listen for requests
- * to store and remove 'record buffers'.
+ * to store and remove 'buffer chunks'.
  *
  * An input instance plugin generate a set of records in MessagePack format,
  * and here we write to a storage point in the file system.
@@ -66,6 +66,7 @@ static void flb_buffer_worker_init(void *arg)
     MK_EVENT_NEW(&ctx->e_mng);
     MK_EVENT_NEW(&ctx->e_add);
     MK_EVENT_NEW(&ctx->e_del);
+    MK_EVENT_NEW(&ctx->e_del_ref);
 
     /* Register channel manager into the event loop */
     ret = mk_event_add(ctx->evl, ctx->ch_mng[0],
@@ -91,6 +92,14 @@ static void flb_buffer_worker_init(void *arg)
         return;
     }
 
+    /* Register channel 'del_reference' into the event loop */
+    ret = mk_event_add(ctx->evl, ctx->ch_del_ref[0],
+                       FLB_BUFFER_EV_DEL_REF, MK_EVENT_READ, &ctx->e_del_ref);
+    if (ret == -1) {
+        flb_error("[buffer:worker %i] aborting", ctx->id);
+        return;
+    }
+
     /* Register channel 'mov' into the event loop */
     ret = mk_event_add(ctx->evl, ctx->ch_mov[0],
                        FLB_BUFFER_EV_MOV, MK_EVENT_READ, &ctx->e_mov);
@@ -107,7 +116,7 @@ static void flb_buffer_worker_init(void *arg)
                 printf("[buffer] [ev_mng]\n");
             }
             else if (event->type == FLB_BUFFER_EV_ADD) {
-                printf("[buffer] [ev_add]\n");
+                /* Read event triggered from flb_buffer_chunk_push(...) */
                 filename = NULL;
                 ret = flb_buffer_chunk_add(ctx, event, &filename);
                 if (ret >= 0) {
@@ -117,6 +126,14 @@ static void flb_buffer_worker_init(void *arg)
                      * sending a request through the event loop.
                      *
                      * Create and enqueue a new request type.
+                     *
+                     * =================== FIXME ??? ===========================
+                     * FIXME / Note: it could be possible that while chunk_add()
+                     * store the buffer chunk, the original task/thread finished
+                     * to process the buffer and enqueue a 'delete_ref' request
+                     * before we enqueue the 'chunk_mov' instruction, which
+                     * could lead to a future 'retry'. Maybe we should avoid the
+                     * 'chunk_mov' request and do it right away ?...
                      */
                     routes = ret;
                     req = flb_buffer_chunk_mov(FLB_BUFFER_CHUNK_OUTGOING,
@@ -129,11 +146,12 @@ static void flb_buffer_worker_init(void *arg)
                 }
             }
             else if (event->type == FLB_BUFFER_EV_DEL) {
-                printf("[buffer] [ev_del]\n");
                 flb_buffer_chunk_delete(ctx, event);
             }
+            else if (event->type == FLB_BUFFER_EV_DEL_REF) {
+                flb_buffer_chunk_delete_ref(ctx, event);
+            }
             else if (event->type == FLB_BUFFER_EV_MOV) {
-                printf("[buffer] [ev_mov]\n");
                 flb_buffer_chunk_real_move(ctx, event);
             }
         }
@@ -169,6 +187,13 @@ void flb_buffer_destroy(struct flb_buffer *ctx)
             mk_event_del(worker->evl, &worker->e_del);
             close(worker->ch_del[0]);
             close(worker->ch_del[1]);
+        }
+
+        /* Delete reference buffer channel */
+        if (worker->ch_del_ref[0] > 0) {
+            mk_event_del(worker->evl, &worker->e_del_ref);
+            close(worker->ch_del_ref[0]);
+            close(worker->ch_del_ref[1]);
         }
 
         /* Move buffer channel */
@@ -292,6 +317,7 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
 {
     int i;
     int ret;
+    int path_len;
     struct flb_buffer *ctx;
     struct flb_buffer_worker *worker;
     struct stat st;
@@ -325,7 +351,18 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
     if (!ctx) {
         return NULL;
     }
-    ctx->path       = strdup(path);
+
+    path_len = strlen(path);
+    if (path[path_len - 1] != '/') {
+        ctx->path = malloc(path_len + 2);
+        memcpy(ctx->path, path, path_len);
+        ctx->path[path_len++] = '/';
+        ctx->path[path_len++] = '\0';
+    }
+    else {
+        ctx->path = strdup(path);
+    }
+
     ctx->worker_lru = -1;
     ctx->config     = config;
     mk_list_init(&ctx->workers);
@@ -365,6 +402,14 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
 
         /* Delete buffer channel */
         ret = pipe(worker->ch_del);
+        if (ret == -1) {
+            perror("pipe");
+            flb_buffer_destroy(ctx);
+            return NULL;
+        }
+
+        /* Delete reference buffer channel */
+        ret = pipe(worker->ch_del_ref);
         if (ret == -1) {
             perror("pipe");
             flb_buffer_destroy(ctx);

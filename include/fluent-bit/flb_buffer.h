@@ -28,10 +28,11 @@
 #include <fluent-bit/flb_config.h>
 
 /* Worker event loop event type */
-#define FLB_BUFFER_EV_MNG  1024
-#define FLB_BUFFER_EV_ADD  1025
-#define FLB_BUFFER_EV_DEL  1026
-#define FLB_BUFFER_EV_MOV  1027
+#define FLB_BUFFER_EV_MNG     1024
+#define FLB_BUFFER_EV_ADD     1025
+#define FLB_BUFFER_EV_DEL     1026
+#define FLB_BUFFER_EV_DEL_REF 1027
+#define FLB_BUFFER_EV_MOV     1028
 
 struct flb_buffer_worker {
     /* worker info */
@@ -46,13 +47,15 @@ struct flb_buffer_worker {
     struct mk_event e_mng;
     struct mk_event e_add;
     struct mk_event e_del;
+    struct mk_event e_del_ref;
     struct mk_event e_mov;
 
     /* channels */
-    int ch_mng[2];         /* management channel    */
-    int ch_add[2];         /* add buffer channel    */
-    int ch_del[2];         /* remove buffer channel */
-    int ch_mov[2];         /* move/promote a buffer */
+    int ch_mng[2];         /* management channel                    */
+    int ch_add[2];         /* add buffer channe                     */
+    int ch_del[2];         /* remove buffer chunk channel           */
+    int ch_del_ref[2];     /* remove buffer chunk reference channel */
+    int ch_mov[2];         /* move/promote a buffer chunk           */
 
     /* event loop */
     struct mk_event_loop *evl;

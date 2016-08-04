@@ -45,6 +45,8 @@ int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
                          struct mk_event *event, char **filename);
 int flb_buffer_chunk_delete(struct flb_buffer_worker *worker,
                             struct mk_event *event);
+int flb_buffer_chunk_delete_ref(struct flb_buffer_worker *worker,
+                                struct mk_event *event);
 
 int flb_buffer_chunk_push(struct flb_buffer *ctx, void *data,
                           size_t size, char *tag, uint64_t routes,
