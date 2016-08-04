@@ -43,6 +43,8 @@
 #include <fluent-bit/flb_buffer_chunk.h>
 #include <fluent-bit/flb_sha1.h>
 
+#define FLB_DEBUG_FIXME(fmt, ...) printf("FIXME " fmt "\n", __VA_ARGS__)
+
 /* Local structure used to validate and obtain Chunk information */
 static struct chunk_info {
     uint64_t routes;
@@ -321,7 +323,7 @@ int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
         return -1;
     }
 
-    printf("wrote: %lu bytes (from %lu)\n", w, chunk.size);
+    FLB_DEBUG_FIXME("[buffer] wrote: %lu bytes (from %lu)\n", w, chunk.size);
     *filename = fchunk;
 
     return chunk.routes;
@@ -333,10 +335,12 @@ int flb_buffer_chunk_delete(struct flb_buffer_worker *worker,
                             struct mk_event *event)
 {
     int ret;
+    int len;
     uint64_t routes;
     char *target;
     char *real_name;
     char path[PATH_MAX];
+    char *path_to;
     struct mk_list *head;
     struct flb_output_instance *o_ins;
     struct flb_buffer_chunk chunk;
@@ -393,6 +397,9 @@ int flb_buffer_chunk_delete(struct flb_buffer_worker *worker,
         ret = stat(path, &st);
         if (ret == -1) {
             if (errno == ENOENT) {
+                snprintf(path, sizeof(path) - 1, "%s/outgoing/%s",
+                         FLB_BUFFER_PATH(worker),
+                         real_name);
                 /*
                  * Assume that a reference file have been deleted and this
                  * route should be turned OFF.
@@ -400,15 +407,24 @@ int flb_buffer_chunk_delete(struct flb_buffer_worker *worker,
                 routes = (info.routes & ~o_ins->mask_id);
                 if (routes == 0) {
                     /* No more routes, remove the task reference */
-                    snprintf(path, sizeof(path) - 1, "%s/outgoing/%s",
-                             FLB_BUFFER_PATH(worker),
-                             real_name);
+                    FLB_DEBUG_FIXME("[buffer] delete chunk %s", path);
                     unlink(path);
                 }
                 else {
-                    /* FIXME: alter route reference */
+                    /* Alter routes in the chunk filename */
+                    path_to = malloc(PATH_MAX);
+                    len = snprintf(path_to, PATH_MAX - 1,
+                                   "%s/outgoing/%s.%lu.w%i.%s",
+                                   FLB_BUFFER_PATH(worker),
+                                   chunk.hash_hex, routes, info.worker_id,
+                                   info.tag);
+                    FLB_DEBUG_FIXME("[buffer] rename chunk %s to %s",
+                                    path, path_to);
+                    rename(path, path_to);
+                    free(path_to);
                 }
             }
+            break;
         }
     }
 
