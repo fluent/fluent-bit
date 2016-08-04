@@ -28,7 +28,7 @@ int my_stdout(void* data, size_t size)
     printf("\n");
 
     /* User has to release the buffer. */
-    free(data);
+    flb_lib_free(data);
 
     return 0;
 }

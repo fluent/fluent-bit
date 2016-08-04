@@ -205,6 +205,16 @@ int flb_lib_push(flb_input_t *input, void *data, size_t len)
     return ret;
 }
 
+/* This is a wrapper to release a buffer which comes from out_lib_flush() */
+int flb_lib_free(void* data)
+{
+    if (data == NULL) {
+        return -1;
+    }
+    free(data);
+    return 0;
+}
+
 static void flb_lib_worker(void *data)
 {
     struct flb_config *config = data;
