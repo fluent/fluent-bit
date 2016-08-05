@@ -171,7 +171,9 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
         /* A thread has finished, delete it */
         if (ret == FLB_OK) {
 #ifdef FLB_HAVE_BUFFERING
-            flb_buffer_chunk_pop(config->buffer_ctx, thread_id, task);
+            if (config->buffer_path) {
+                flb_buffer_chunk_pop(config->buffer_ctx, thread_id, task);
+            }
 #endif
             flb_thread_destroy_id(thread_id, task);
             if (task->users == 0) {
