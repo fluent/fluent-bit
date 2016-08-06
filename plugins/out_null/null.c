@@ -42,36 +42,20 @@ int cb_null_flush(void *data, size_t bytes,
                   void *out_context,
                   struct flb_config *config)
 {
-    int fd;
-    int ret;
-    size_t total = 0;
-    (void) i_ins;
+    (void) data;
+    (void) bytes;
     (void) tag;
     (void) tag_len;
+    (void) i_ins;
+    (void) out_context;
+    (void) config;
 
-    fd = open("/dev/null", O_WRONLY);
-    if (fd == -1) {
-        perror("open");
-        FLB_OUTPUT_RETURN(FLB_RETRY);
-    }
-
-    while (total < bytes) {
-        ret = write(fd, data + total, bytes - total);
-        if (ret == -1) {
-            perror("write");
-            close(fd);
-            FLB_OUTPUT_RETURN(FLB_RETRY);
-        }
-
-        total += ret;
-    }
-    close(fd);
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 
 struct flb_output_plugin out_null_plugin = {
     .name         = "null",
-    .description  = "Flush data to /dev/null",
+    .description  = "Throws away events",
     .cb_init      = cb_null_init,
     .cb_flush     = cb_null_flush,
     .flags        = 0,
