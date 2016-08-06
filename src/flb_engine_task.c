@@ -25,7 +25,11 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_engine_task.h>
+
+#ifdef FLB_HAVE_BUFFERING
+#include <fluent-bit/flb_sha1.h>
 #include <fluent-bit/flb_buffer_chunk.h>
+#endif
 
 /*
  * Every task created must have an unique ID, this function lookup the
