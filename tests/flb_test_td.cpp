@@ -15,11 +15,11 @@ TEST(TD, json_long) {
 
     input = flb_input(ctx, (char *) "lib", NULL);
     EXPECT_TRUE(input != NULL);
-    flb_input_set(input, "tag", "test");
+    flb_input_set(input, "tag", "test", NULL);
 
     output = flb_output(ctx, (char *) "td", NULL);
     EXPECT_TRUE(output != NULL);
-    flb_output_set(output, "tag", "test");
+    flb_output_set(output, "match", "test", NULL);
 
     ret = flb_lib_config_file(ctx, (char *) "/tmp/td.conf");
 
