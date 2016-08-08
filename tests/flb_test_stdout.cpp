@@ -20,11 +20,11 @@ TEST(Outputs, json_invalid) {
 
     input = flb_input(ctx, (char *) "lib", NULL);
     EXPECT_TRUE(input != NULL);
-    flb_input_set(input, "tag", "test");
+    flb_input_set(input, "tag", "test", NULL);
 
     output = flb_output(ctx, (char *) "stdout", NULL);
     EXPECT_TRUE(output != NULL);
-    flb_output_set(output, "tag", "test");
+    flb_output_set(output, "match", "test", NULL);
 
     ret = flb_start(ctx);
     EXPECT_EQ(ret, 0);
@@ -55,11 +55,11 @@ TEST(Outputs, json_long) {
 
     input = flb_input(ctx, (char *) "lib", NULL);
     EXPECT_TRUE(input != NULL);
-    flb_input_set(input, "tag", "test");
+    flb_input_set(input, "tag", "test", NULL);
 
     output = flb_output(ctx, (char *) "stdout", NULL);
     EXPECT_TRUE(output != NULL);
-    flb_output_set(output, "tag", "test");
+    flb_output_set(output, "match", "test", NULL);
 
     ret = flb_start(ctx);
     EXPECT_EQ(ret, 0);
@@ -89,11 +89,11 @@ TEST(Outputs, json_small) {
 
     input = flb_input(ctx, (char *) "lib", NULL);
     EXPECT_TRUE(input != NULL);
-    flb_input_set(input, "tag", "test");
+    flb_input_set(input, "tag", "test", NULL);
 
     output = flb_output(ctx, (char *) "stdout", NULL);
     EXPECT_TRUE(output != NULL);
-    flb_output_set(output, "tag", "test");
+    flb_output_set(output, "match", "test", NULL);
 
     ret = flb_start(ctx);
     EXPECT_EQ(ret, 0);
