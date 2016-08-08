@@ -6,12 +6,6 @@ include_directories (
   )
 
 if(FLB_IN_LIB)
-  if(FLB_OUT_LIB)
-     list(APPEND check_PROGRAMS
-       flb_test_engine.cpp
-       )
-  endif()
-
   if(FLB_OUT_TD)
      list(APPEND check_PROGRAMS
        flb_test_td.cpp
@@ -58,7 +52,6 @@ list(APPEND check_PROGRAMS
   flb_test_elasticsearch.cpp
   flb_test_in_cpu.cpp
   )
-
 
 foreach(source_file ${check_PROGRAMS})
   get_filename_component(source_file_we ${source_file} NAME_WE)
