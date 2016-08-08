@@ -5,13 +5,40 @@ include_directories (
   ${GTEST_INCLUDE_DIRS}
   )
 
-list(APPEND check_PROGRAMS
-  flb_test_td.cpp
-  flb_test_stdout.cpp
-  flb_test_fluentd.cpp
-  flb_test_elasticsearch.cpp
-  flb_test_in_cpu.cpp
-  )
+
+if(FLB_IN_LIB)
+  if(FLB_OUT_TD)
+     list(APPEND check_PROGRAMS
+       flb_test_td.cpp
+       )
+  endif()
+
+  if(FLB_OUT_STDOUT)
+     list(APPEND check_PROGRAMS
+       flb_test_stdout.cpp
+       )
+  endif()
+
+  if(FLB_OUT_FORWARD)
+     list(APPEND check_PROGRAMS
+       flb_test_fluentd.cpp
+       )
+  endif()
+
+  if(FLB_OUT_ES)
+     list(APPEND check_PROGRAMS
+       flb_test_elasticsearch.cpp
+       )
+  endif()
+endif()
+
+if(FLB_OUT_LIB)
+  if(FLB_IN_CPU)
+    list(APPEND check_PROGRAMS
+      flb_test_in_cpu.cpp
+      )
+  endif()
+endif()
 
 foreach(source_file ${check_PROGRAMS})
   get_filename_component(source_file_we ${source_file} NAME_WE)
