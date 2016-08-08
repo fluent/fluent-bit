@@ -31,6 +31,11 @@
 #define FLB_BUFFER_CHUNK_OUTGOING 1
 #define FLB_BUFFER_CHUNK_DEFERRED 3
 
+/* Return values */
+#define FLB_BUFFER_OK            0
+#define FLB_BUFFER_ERROR        -1
+#define FLB_BUFFER_NOTFOUND   -404
+
 struct flb_buffer_chunk {
     void *data;
     size_t size;

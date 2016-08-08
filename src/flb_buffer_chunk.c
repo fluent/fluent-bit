@@ -43,7 +43,14 @@
 #include <fluent-bit/flb_buffer_chunk.h>
 #include <fluent-bit/flb_sha1.h>
 
-#define FLB_DEBUG_FIXME(fmt, ...) printf("FIXME " fmt "\n", __VA_ARGS__)
+/* FIXME */
+#define FLB_DEBUG_FIXME(fmt, ...) printf(ANSI_YELLOW "D" ANSI_RESET " FIXME " fmt "\n", __VA_ARGS__)
+#define FLB_ERROR_FIXME(fmt, ...) printf(ANSI_RED "E" ANSI_RESET " FIXME " fmt "\n", __VA_ARGS__)
+
+#undef flb_error
+#undef flb_debug
+#define flb_debug(fmt, ...) FLB_DEBUG_FIXME(fmt, __VA_ARGS__)
+#define flb_error(fmt, ...) FLB_ERROR_FIXME(fmt, __VA_ARGS__)
 
 /* Local structure used to validate and obtain Chunk information */
 static struct chunk_info {
@@ -169,7 +176,7 @@ static int chunk_find(char *root_path, char *hash,
     int file_len;
     int target_len;
     char *target;
-    char *file;
+    char *file = NULL;
     struct dirent *entry;
     DIR *dir;
 
@@ -221,6 +228,103 @@ static int chunk_find(char *root_path, char *hash,
     return 0;
 }
 
+/*
+ * Remove a route from a Chunk file. This is done altering the filename,
+ * specifically altering the the mask number.
+ */
+static int chunk_remove_route(char *root_path, char *abs_path,
+                              char *hash, struct chunk_info *info,
+                              uint64_t mask_id)
+{
+    int len_path;
+    char *to = NULL;
+    uint64_t routes;
+
+    /* We may need to delete this chunk right-away */
+    routes = (info->routes & ~mask_id);
+    if (routes == 0) {
+        flb_debug("[buffer] delete chunk %s", abs_path);
+        unlink(abs_path);
+        return 0;
+    }
+
+    /* Alter route renaming the chunk file */
+    len_path = strlen(root_path);
+    if ((len_path + 1) > PATH_MAX) {
+        return -1;
+    }
+
+    to = malloc(PATH_MAX);
+    if (!to) {
+        perror("malloc");
+        return -1;
+    }
+
+    snprintf(to, PATH_MAX - 1, "%s/%s.%lu.w%i.%s",
+             root_path,
+             hash, routes, info->worker_id, info->tag);
+
+    flb_debug("[buffer] rename chunk %s to %s",
+              abs_path, to);
+    rename(abs_path, to);
+    free(to);
+
+    return 0;
+}
+
+/* Handle the exception of a missing Chunk file in a Task directory */
+static int chunk_miss(struct flb_buffer_worker *worker, uint64_t mask_id,
+                      char *hash_hex)
+{
+    int ret;
+    char *target = NULL;
+    char *real_name = NULL;
+    char root_path[PATH_MAX];
+    struct chunk_info info;
+
+    /* Try to find the file in the outgoing queue */
+    snprintf(root_path, sizeof(root_path) - 1,
+             "%soutgoing/",
+             FLB_BUFFER_PATH(worker));
+
+    ret = chunk_find(root_path, hash_hex, &target, &real_name);
+    if (ret == 0) {
+        /*
+         * The chunk was found in the 'outgoing' queue, we need to get
+         * more chunk details and remove the reference between the
+         * the Thread and Route associated.
+         */
+        ret = chunk_info(real_name, &info);
+        if (ret != 0) {
+            flb_error("[buffer] invalid chunk name %s", real_name);
+            free(real_name);
+            free(target);
+            return -1;
+        }
+
+        chunk_remove_route(root_path, target, hash_hex, &info, mask_id);
+        return 0;
+    }
+
+    /* Incoming queue */
+    snprintf(root_path, sizeof(root_path) - 1,
+             "%sincoming/",
+             FLB_BUFFER_PATH(worker));
+
+    ret = chunk_find(root_path, hash_hex, &target, &real_name);
+    if (ret == 0) {
+        ret = chunk_info(real_name, &info);
+        if (ret != 0) {
+            flb_error("[buffer] invalid chunk name %s", real_name);
+            free(real_name);
+            free(target);
+            return -1;
+        }
+        chunk_remove_route(root_path, target, hash_hex, &info, mask_id);
+    }
+
+    return 0;
+}
 
 /*
  * When the Worker (thread) receives a FLB_BUFFER_EV_ADD event, this routine
@@ -323,9 +427,7 @@ int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
         return -1;
     }
 
-    FLB_DEBUG_FIXME("[buffer] wrote: %lu bytes (from %lu)\n", w, chunk.size);
     *filename = fchunk;
-
     return chunk.routes;
 }
 
@@ -335,7 +437,6 @@ int flb_buffer_chunk_delete(struct flb_buffer_worker *worker,
                             struct mk_event *event)
 {
     int ret;
-    int len;
     uint64_t routes;
     char *target;
     char *real_name;
@@ -407,19 +508,19 @@ int flb_buffer_chunk_delete(struct flb_buffer_worker *worker,
                 routes = (info.routes & ~o_ins->mask_id);
                 if (routes == 0) {
                     /* No more routes, remove the task reference */
-                    FLB_DEBUG_FIXME("[buffer] delete chunk %s", path);
+                    flb_debug("[buffer] delete chunk %s", path);
                     unlink(path);
                 }
                 else {
                     /* Alter routes in the chunk filename */
                     path_to = malloc(PATH_MAX);
-                    len = snprintf(path_to, PATH_MAX - 1,
-                                   "%s/outgoing/%s.%lu.w%i.%s",
-                                   FLB_BUFFER_PATH(worker),
-                                   chunk.hash_hex, routes, info.worker_id,
-                                   info.tag);
-                    FLB_DEBUG_FIXME("[buffer] rename chunk %s to %s",
-                                    path, path_to);
+                    snprintf(path_to, PATH_MAX - 1,
+                             "%s/outgoing/%s.%lu.w%i.%s",
+                             FLB_BUFFER_PATH(worker),
+                             chunk.hash_hex, routes, info.worker_id,
+                             info.tag);
+                    flb_debug("[buffer] rename chunk %s to %s",
+                              path, path_to);
                     rename(path, path_to);
                     free(path_to);
                 }
@@ -441,12 +542,13 @@ int flb_buffer_chunk_delete_ref(struct flb_buffer_worker *worker,
     char *real_name;
     char root_path[PATH_MAX];
     struct flb_buffer_chunk chunk;
+    struct flb_output_instance *o_ins;
 
     /* Read the expected chunk reference */
     ret = read(worker->ch_del_ref[0], &chunk, sizeof(struct flb_buffer_chunk));
     if (ret <= 0) {
         perror("read");
-        return -1;
+        return FLB_BUFFER_ERROR;
     }
 
     /* Compose the absolute directory for the target reference */
@@ -456,15 +558,17 @@ int flb_buffer_chunk_delete_ref(struct flb_buffer_worker *worker,
                    chunk.tmp);
     if (ret == -1) {
         perror("snprintf");
-        return -1;
+        return FLB_BUFFER_ERROR;
     }
 
     /* Find absolute path for given Hash under task root path */
+    o_ins = chunk.data;
     ret = chunk_find(root_path, chunk.hash_hex, &target, &real_name);
     if (ret != 0) {
-        flb_error("[buffer] could not match task %s/%s",
+        flb_debug("[buffer] could not match task %s/%s (chunk_miss handler)",
                   chunk.tmp, chunk.hash_hex);
-        return -1;
+        chunk_miss(worker, o_ins->mask_id, chunk.hash_hex);
+        return FLB_BUFFER_NOTFOUND;
     }
 
     ret = unlink(target);
@@ -473,10 +577,10 @@ int flb_buffer_chunk_delete_ref(struct flb_buffer_worker *worker,
         free(real_name);
         perror("unlink");
         flb_error("[buffer] cannot delete %s", target);
-        return -1;
+        return FLB_BUFFER_ERROR;
     }
 
-    printf("FIXME (flb_debug) [buffer] removing task %s OK\n", target);
+    flb_debug("[buffer] removing task %s OK\n", target);
 
     free(real_name);
     free(target);
@@ -490,10 +594,10 @@ int flb_buffer_chunk_delete_ref(struct flb_buffer_worker *worker,
     ret = write(worker->ch_del[1], &chunk, sizeof(struct flb_buffer_chunk));
     if (ret == -1) {
         perror("write");
-        return -1;
+        return FLB_BUFFER_ERROR;
     }
 
-    return 0;
+    return FLB_BUFFER_OK;
 }
 
 /*
@@ -576,6 +680,7 @@ int flb_buffer_chunk_pop(struct flb_buffer *ctx, int thread_id,
     memcpy(&chunk.hash_hex, task->hash_hex, 41);
     chunk.tmp_len = strlen(o_ins->name);
     memcpy(&chunk.tmp, o_ins->name, chunk.tmp_len);
+    chunk.data = o_ins;
 
     /* Write request through worker channel */
     ret = write(worker->ch_del_ref[1], &chunk, sizeof(struct flb_buffer_chunk));
@@ -607,7 +712,6 @@ struct flb_buffer_request *flb_buffer_chunk_mov(int type,
     mk_list_add(&req->_head, &worker->requests);
 
     /* Do the request */
-    printf("worker pipe ID=%i\n", worker->ch_mov[1]);
     ret = write(worker->ch_mov[1], req, sizeof(struct flb_buffer_request));
     if (ret == -1) {
         perror("write");

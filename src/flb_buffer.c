@@ -126,14 +126,6 @@ static void flb_buffer_worker_init(void *arg)
                      * sending a request through the event loop.
                      *
                      * Create and enqueue a new request type.
-                     *
-                     * =================== FIXME ??? ===========================
-                     * FIXME / Note: it could be possible that while chunk_add()
-                     * store the buffer chunk, the original task/thread finished
-                     * to process the buffer and enqueue a 'delete_ref' request
-                     * before we enqueue the 'chunk_mov' instruction, which
-                     * could lead to a future 'retry'. Maybe we should avoid the
-                     * 'chunk_mov' request and do it right away ?...
                      */
                     routes = ret;
                     req = flb_buffer_chunk_mov(FLB_BUFFER_CHUNK_OUTGOING,
@@ -149,7 +141,24 @@ static void flb_buffer_worker_init(void *arg)
                 flb_buffer_chunk_delete(ctx, event);
             }
             else if (event->type == FLB_BUFFER_EV_DEL_REF) {
-                flb_buffer_chunk_delete_ref(ctx, event);
+                ret = flb_buffer_chunk_delete_ref(ctx, event);
+                if (ret == FLB_BUFFER_NOTFOUND) {
+                    /*
+                     * The Buffer Chunk Reference was not found, likely it
+                     * tried to find:
+                     *
+                     *    task/abc/000000000000000000000000000000.A.B.C
+                     *
+                     * if it was not found could be because the Task have not
+                     * been stored yet into the file system. The buffer worker
+                     * it's a separate POSIX thread, so in some cases output
+                     * plugins may finish before the buffer chunk is promoted
+                     * to the 'outgoing queue'.
+                     *
+                     * Anyways this is not problem, the chunk_delete_ref() already
+                     * issued a chunk_miss() call to cleanup this situation.
+                     */
+                }
             }
             else if (event->type == FLB_BUFFER_EV_MOV) {
                 flb_buffer_chunk_real_move(ctx, event);
