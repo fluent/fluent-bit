@@ -39,6 +39,7 @@
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_http_server.h>
 #include <fluent-bit/flb_buffer.h>
+#include <fluent-bit/flb_scheduler.h>
 
 #ifdef FLB_HAVE_STATS
 #include <fluent-bit/flb_stats.h>
@@ -179,6 +180,9 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
             if (task->users == 0) {
                 flb_engine_task_destroy(task);
             }
+        }
+        else if (ret == FLB_RETRY) {
+            flb_sched_request_create(config, NULL, 1);
         }
     }
 
@@ -400,6 +404,10 @@ int flb_engine_start(struct flb_config *config)
                     //flb_stats_collect(config);
                 }
 #endif
+            }
+            else if (event->type == FLB_ENGINE_EV_SCHED) {
+                /* Event type registered by the Scheduler */
+                flb_sched_event_handler(config, event);
             }
             else if (event->type == FLB_ENGINE_EV_CUSTOM) {
                 event->handler(event);

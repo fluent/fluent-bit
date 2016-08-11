@@ -113,6 +113,7 @@ struct flb_config {
     char *buffer_path;
 #endif
 
+    struct mk_list sched_requests;
     struct flb_engine_task_map tasks_map[2048];
 };
 

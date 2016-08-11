@@ -67,6 +67,7 @@ struct flb_config *flb_config_init()
     mk_list_init(&config->out_plugins);
     mk_list_init(&config->inputs);
     mk_list_init(&config->outputs);
+    mk_list_init(&config->sched_requests);
 
     memset(&config->tasks_map, '\0', sizeof(config->tasks_map));
 
