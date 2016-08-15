@@ -35,8 +35,13 @@
 #define DEFAULT_INTERVAL_NSEC 0
 
 struct flb_in_random_config {
+    /* Config properties */
     int              interval_sec;
     int              interval_nsec;
+    int              samples;
+
+    /* Internal */
+    int              samples_count;
     msgpack_packer   mp_pck;
     msgpack_sbuffer  mp_sbuf;
 };
@@ -47,6 +52,10 @@ static int in_random_collect(struct flb_config *config, void *in_context)
     int fd;
     uint64_t val;
     struct flb_in_random_config *ctx = in_context;
+
+    if (ctx->samples > 0 && (ctx->samples_count >= ctx->samples)) {
+        return -1;
+    }
 
     fd = open("/dev/urandom", O_RDONLY);
     if (fd == -1) {
@@ -63,6 +72,8 @@ static int in_random_collect(struct flb_config *config, void *in_context)
     msgpack_pack_bin_body(&ctx->mp_pck, "rand_value", 10);
     msgpack_pack_uint64(&ctx->mp_pck, val);
 
+    ctx->samples_count++;
+
     return 0;
 }
 
@@ -71,6 +82,12 @@ static int in_random_config_read(struct flb_in_random_config *head_config,
                                  struct flb_input_instance *in)
 {
     char *val = NULL;
+
+    /* samples */
+    val = flb_input_get_property("samples", in);
+    if (val != NULL && atoi(val) >= 0) {
+        head_config->samples = atoi(val);
+    }
 
     /* interval settings */
     val = flb_input_get_property("interval_sec", in);
@@ -114,6 +131,7 @@ static int in_random_init(struct flb_input_instance *in,
     if (!ctx) {
         return -1;
     }
+    ctx->samples_count = 0;
 
     /* Initialize head config */
     ret = in_random_config_read(ctx, in);
