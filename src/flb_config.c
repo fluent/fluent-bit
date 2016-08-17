@@ -139,16 +139,22 @@ void flb_config_exit(struct flb_config *config)
     mk_event_del(config->evl, &config->event_flush);
     close(config->flush_fd);
 
+<<<<<<< HEAD
 #ifdef FLB_HAVE_HTTP
+=======
+>>>>>>> d466f53e7e94c103b419a6b91be3c1b869cc557d
     if (config->http_port) {
         free(config->http_port);
     }
 
+<<<<<<< HEAD
     if (config->http_server) {
         free(config->http_server);
     }
 #endif
 
+=======
+>>>>>>> d466f53e7e94c103b419a6b91be3c1b869cc557d
 #ifdef FLB_HAVE_STATS
     flb_stats_exit(config);
 #endif
