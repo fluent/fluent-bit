@@ -25,7 +25,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_log.h>
-#include <fluent-bit/flb_engine_task_map.h>
+#include <fluent-bit/flb_task_map.h>
 
 #ifdef FLB_HAVE_TLS
 #include <fluent-bit/flb_io_tls.h>
