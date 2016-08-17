@@ -26,19 +26,19 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_engine.h>
-#include <fluent-bit/flb_engine_task.h>
+#include <fluent-bit/flb_task.h>
 
-void flb_engine_task_add_thread(struct flb_thread *thread,
-                                struct flb_engine_task *task);
+void flb_task_add_thread(struct flb_thread *thread,
+                                struct flb_task *task);
 
 #ifdef FLB_HAVE_FLUSH_UCONTEXT
 
 /* It creates a new output thread using a 'Retry' context */
-int flb_engine_dispatch_retry(struct flb_engine_task_retry *retry,
+int flb_engine_dispatch_retry(struct flb_task_retry *retry,
                               struct flb_config *config)
 {
     struct flb_thread *th;
-    struct flb_engine_task *task;
+    struct flb_task *task;
     struct flb_intput_instance *i_ins;
 
     task = retry->parent;
@@ -55,7 +55,7 @@ int flb_engine_dispatch_retry(struct flb_engine_task_retry *retry,
         return -1;
     }
 
-    flb_engine_task_add_thread(th, task);
+    flb_task_add_thread(th, task);
     flb_thread_resume(th);
 
     return 0;
@@ -77,9 +77,9 @@ int flb_engine_dispatch(struct flb_input_instance *in,
     struct mk_list *head;
     struct mk_list *r_head;
     struct flb_input_plugin *p;
-    struct flb_engine_task *task = NULL;
+    struct flb_task *task = NULL;
     struct flb_thread *th;
-    struct flb_engine_task_route *route;
+    struct flb_task_route *route;
 
     p = in->p;
     if (p->cb_flush_buf) {
@@ -93,7 +93,7 @@ int flb_engine_dispatch(struct flb_input_instance *in,
          * and the co-routines associated to the output instance plugins
          * that needs to handle the data.
          */
-        task = flb_engine_task_create(buf, size, in, NULL, in->tag, config);
+        task = flb_task_create(buf, size, in, NULL, in->tag, config);
         if (!task) {
             free(buf);
             return -1;
@@ -121,7 +121,7 @@ int flb_engine_dispatch(struct flb_input_instance *in,
                 continue;
             }
 
-            task = flb_engine_task_create(buf, size, dt->in, dt, dt->tag, config);
+            task = flb_task_create(buf, size, dt->in, dt, dt->tag, config);
             if (!task) {
                 free(buf);
                 continue;
@@ -131,17 +131,17 @@ int flb_engine_dispatch(struct flb_input_instance *in,
 
     /* At this point the input instance should have some tasks linked */
     mk_list_foreach_safe(head, tmp, &in->tasks) {
-        task = mk_list_entry(head, struct flb_engine_task, _head);
+        task = mk_list_entry(head, struct flb_task, _head);
 
         /* Only process recently created tasks */
-        if (task->status != FLB_ENGINE_TASK_NEW) {
+        if (task->status != FLB_TASK_NEW) {
             continue;
         }
-        task->status = FLB_ENGINE_TASK_RUNNING;
+        task->status = FLB_TASK_RUNNING;
 
         /* A task contain one or more routes */
         mk_list_foreach(r_head, &task->routes) {
-            route = mk_list_entry(r_head, struct flb_engine_task_route, _head);
+            route = mk_list_entry(r_head, struct flb_task_route, _head);
 
             /*
              * We have the Task and the Route, created a thread context for the
@@ -154,7 +154,7 @@ int flb_engine_dispatch(struct flb_input_instance *in,
                                    task->buf, task->size,
                                    task->tag,
                                    strlen(task->tag));
-            flb_engine_task_add_thread(th, task);
+            flb_task_add_thread(th, task);
             flb_thread_resume(th);
         }
     }
@@ -171,7 +171,7 @@ int flb_engine_dispatch(struct flb_input_instance *in,
     size_t size;
     struct mk_list *r_head;
     struct flb_input_plugin *p;
-    struct flb_engine_task *task;
+    struct flb_task *task;
     struct flb_router_path *path;
     struct flb_output_instance *o_ins;
     struct flb_thread *th;
@@ -188,7 +188,7 @@ int flb_engine_dispatch(struct flb_input_instance *in,
          * and the co-routines associated to the output instance plugins
          * that needs to handle the data.
          */
-        task = flb_engine_task_create(buf, size, in, in->tag, config);
+        task = flb_task_create(buf, size, in, in->tag, config);
         if (!task) {
             free(buf);
             return -1;
@@ -206,7 +206,7 @@ int flb_engine_dispatch(struct flb_input_instance *in,
                                    buf, size,
                                    in->tag,
                                    in->tag_len);
-            flb_engine_task_add_thread(&th->_head, task);
+            flb_task_add_thread(&th->_head, task);
             flb_thread_resume(th);
         }
     }
@@ -228,7 +228,7 @@ int flb_engine_dispatch(struct flb_input_instance *in,
                 continue;
             }
 
-            task = flb_engine_task_create(buf, size, dt->in, dt,
+            task = flb_task_create(buf, size, dt->in, dt,
                                           dt->tag, config);
             if (!task) {
                 free(buf);
@@ -254,7 +254,7 @@ int flb_engine_dispatch(struct flb_input_instance *in,
                                            dt->tag, dt->tag_len);
 
                     /* Associate the thread with the parent task and resume */
-                    flb_engine_task_add_thread(&th->_head, task);
+                    flb_task_add_thread(&th->_head, task);
                     flb_thread_resume(th);
 
                     matches++;

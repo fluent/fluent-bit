@@ -27,8 +27,8 @@
 #include <fluent-bit/flb_input.h>
 
 /* Task status */
-#define FLB_ENGINE_TASK_NEW      0
-#define FLB_ENGINE_TASK_RUNNING  1
+#define FLB_TASK_NEW      0
+#define FLB_TASK_RUNNING  1
 
 /*
  * Macro helpers to determinate return value, task_id and thread_id. When an
@@ -46,13 +46,13 @@
  *  return val     task_id       thread_id
  */
 
-#define FLB_ENGINE_TASK_RET(val)  (val >> 28)
-#define FLB_ENGINE_TASK_ID(val)   (uint16_t) (val & 0xfffc000) >> 14
-#define FLB_ENGINE_TASK_TH(val)   (val & 0x3fff)
-#define FLB_ENGINE_TASK_SET(ret, task_id, th_id)    \
+#define FLB_TASK_RET(val)  (val >> 28)
+#define FLB_TASK_ID(val)   (uint16_t) (val & 0xfffc000) >> 14
+#define FLB_TASK_TH(val)   (val & 0x3fff)
+#define FLB_TASK_SET(ret, task_id, th_id)               \
     (uint32_t) ((ret << 28) | (task_id << 14) | th_id)
 
-struct flb_engine_task_route {
+struct flb_task_route {
     struct flb_output_instance *out;
     struct mk_list _head;
 };
@@ -65,7 +65,7 @@ struct flb_engine_task_route {
  * This reference is used later by the scheduler to re-dispatch the
  * task data to the desired output path.
  */
-struct flb_engine_task_retry {
+struct flb_task_retry {
     int attemps;                        /* number of attemps, default 1 */
     struct flb_output_instance *o_ins;  /* route that we are retrying   */
     struct flb_engine_task *parent;     /* parent task reference        */
@@ -73,7 +73,7 @@ struct flb_engine_task_retry {
 };
 
 /* A task takes a buffer and sync input and output instances to handle it */
-struct flb_engine_task {
+struct flb_task {
     int id;                             /* task id                   */
     int status;                         /* new task or running ?     */
     int deleted;                        /* should be deleted ?       */
@@ -100,16 +100,16 @@ struct flb_engine_task {
 #endif
 };
 
-struct flb_engine_task *flb_engine_task_create(char *buf,
-                                               size_t size,
-                                               struct flb_input_instance *i_ins,
-                                               struct flb_input_dyntag *dt,
-                                               char *tag,
-                                               struct flb_config *config);
-void flb_engine_task_destroy(struct flb_engine_task *task);
+struct flb_task *flb_task_create(char *buf,
+                                 size_t size,
+                                 struct flb_input_instance *i_ins,
+                                 struct flb_input_dyntag *dt,
+                                 char *tag,
+                                 struct flb_config *config);
+void flb_task_destroy(struct flb_task *task);
 
-struct flb_engine_task_retry *
-flb_engine_task_retry_create(struct flb_engine_task *task,
-                             struct flb_output_instance *o_ins);
+struct flb_task_retry *
+flb_task_retry_create(struct flb_task *task,
+                      struct flb_output_instance *o_ins);
 
 #endif

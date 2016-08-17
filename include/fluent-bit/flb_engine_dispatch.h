@@ -23,7 +23,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_config.h>
-#include <fluent-bit/flb_engine_task.h>
+#include <fluent-bit/flb_task.h>
 
 int flb_engine_dispatch(struct flb_input_instance *in,
                         struct flb_config *config);

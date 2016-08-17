@@ -26,7 +26,7 @@
 
 #include <ucontext.h>
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_engine_task.h>
+#include <fluent-bit/flb_task.h>
 
 struct flb_thread {
     int id;
@@ -54,11 +54,11 @@ struct flb_thread {
     void *output_buffer;
 
     /* Parent flb_engine_task */
-    struct flb_engine_task *task;
+    struct flb_task *task;
 
     struct flb_config *config;
 
-    /* Link to struct flb_engine_task->threads */
+    /* Link to struct flb_task->threads */
     struct mk_list _head;
 };
 
@@ -68,7 +68,7 @@ struct flb_thread {
 FLB_EXPORT pthread_key_t flb_thread_key;
 
 static FLB_INLINE struct flb_thread *flb_thread_get(int id,
-                                                    struct flb_engine_task *task)
+                                                    struct flb_task *task)
 {
     struct mk_list *head;
     struct flb_thread *thread = NULL;
@@ -106,7 +106,7 @@ static FLB_INLINE void flb_thread_destroy(struct flb_thread *th)
 }
 
 static FLB_INLINE int flb_thread_destroy_id(int id, struct
-                                            flb_engine_task *task)
+                                            flb_task *task)
 {
     struct flb_thread *thread;
 

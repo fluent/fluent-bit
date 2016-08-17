@@ -24,7 +24,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_router.h>
-#include <fluent-bit/flb_engine_task.h>
+#include <fluent-bit/flb_task.h>
 
 #ifdef FLB_HAVE_BUFFERING
 #include <fluent-bit/flb_sha1.h>
@@ -53,21 +53,19 @@ static int map_get_task_id(struct flb_config *config)
     return -1;
 }
 
-static void map_set_task_id(int id, struct flb_engine_task *task,
+static void map_set_task_id(int id, struct flb_task *task,
                             struct flb_config *config)
 {
     config->tasks_map[id].task = task;
 
 }
 
-/* Seriously considering to create a flb_task namespace for simplicity */
-struct flb_engine_task_retry *
-flb_engine_task_retry_create(struct flb_engine_task *task,
-                             struct flb_output_instance *o_ins)
+struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
+                                             struct flb_output_instance *o_ins)
 {
-    struct flb_engine_task_retry *retry;
+    struct flb_task_retry *retry;
 
-    retry = malloc(sizeof(struct flb_engine_task_retry));
+    retry = malloc(sizeof(struct flb_task_retry));
     if (!retry) {
         perror("malloc");
         return NULL;
@@ -82,25 +80,25 @@ flb_engine_task_retry_create(struct flb_engine_task *task,
 }
 
 /* Create an engine task to handle the output plugin flushing work */
-struct flb_engine_task *flb_engine_task_create(char *buf,
-                                               size_t size,
-                                               struct flb_input_instance *i_ins,
-                                               struct flb_input_dyntag *dt,
-                                               char *tag,
-                                               struct flb_config *config)
+struct flb_task *flb_task_create(char *buf,
+                                 size_t size,
+                                 struct flb_input_instance *i_ins,
+                                 struct flb_input_dyntag *dt,
+                                 char *tag,
+                                 struct flb_config *config)
 {
     int count = 0;
     int task_id;
     uint64_t routes_mask = 0;
-    struct flb_engine_task *task;
-    struct flb_engine_task_route *route;
+    struct flb_task *task;
+    struct flb_task_route *route;
     struct flb_output_instance *o_ins;
     struct flb_router_path *router_path;
     struct mk_list *head;
     struct mk_list *o_head;
 
     /* Allocate the new task */
-    task = (struct flb_engine_task *) calloc(1, sizeof(struct flb_engine_task));
+    task = (struct flb_task *) calloc(1, sizeof(struct flb_task));
     if (!task) {
         perror("malloc");
         return NULL;
@@ -116,7 +114,7 @@ struct flb_engine_task *flb_engine_task_create(char *buf,
 
     /* Keep track of origins */
     task->id        = task_id;
-    task->status    = FLB_ENGINE_TASK_NEW;
+    task->status    = FLB_TASK_NEW;
     task->n_threads = 0;
     task->users     = 0;
     task->tag       = strdup(tag);
@@ -137,7 +135,7 @@ struct flb_engine_task *flb_engine_task_create(char *buf,
             router_path = mk_list_entry(head, struct flb_router_path, _head);
             o_ins = router_path->ins;
 
-            route = malloc(sizeof(struct flb_engine_task_route));
+            route = malloc(sizeof(struct flb_task_route));
             if (!route) {
                 perror("malloc");
                 continue;
@@ -157,7 +155,7 @@ struct flb_engine_task *flb_engine_task_create(char *buf,
                                   struct flb_output_instance, _head);
 
             if (flb_router_match(tag, o_ins->match)) {
-                route = malloc(sizeof(struct flb_engine_task_route));
+                route = malloc(sizeof(struct flb_task_route));
                 if (!route) {
                     perror("malloc");
                     continue;
@@ -202,11 +200,11 @@ struct flb_engine_task *flb_engine_task_create(char *buf,
     return task;
 }
 
-void flb_engine_task_destroy(struct flb_engine_task *task)
+void flb_task_destroy(struct flb_task *task)
 {
     struct mk_list *tmp;
     struct mk_list *head;
-    struct flb_engine_task_route *route;
+    struct flb_task_route *route;
 
     flb_trace("[engine] destroy task_id=%i", task->id);
 
@@ -220,7 +218,7 @@ void flb_engine_task_destroy(struct flb_engine_task *task)
 
     /* Remove routes */
     mk_list_foreach_safe(head, tmp, &task->routes) {
-        route = mk_list_entry(head, struct flb_engine_task_route, _head);
+        route = mk_list_entry(head, struct flb_task_route, _head);
         mk_list_del(&route->_head);
         free(route);
     }
@@ -233,8 +231,8 @@ void flb_engine_task_destroy(struct flb_engine_task *task)
 }
 
 /* Register a thread into the tasks list */
-void flb_engine_task_add_thread(struct flb_thread *thread,
-                                struct flb_engine_task *task)
+void flb_task_add_thread(struct flb_thread *thread,
+                         struct flb_task *task)
 {
     /*
      * It's likely a previous thread have marked this task ready to be deleted,

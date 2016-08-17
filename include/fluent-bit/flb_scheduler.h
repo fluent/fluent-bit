@@ -21,7 +21,7 @@
 #define FLB_SCHEDULER_H
 
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_engine_task.h>
+#include <fluent-bit/flb_task.h>
 #include <fluent-bit/flb_output.h>
 
 #define FLB_SCHED_CAP      2000

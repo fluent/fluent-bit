@@ -31,7 +31,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_engine.h>
-#include <fluent-bit/flb_engine_task.h>
+#include <fluent-bit/flb_task.h>
 
 #include <unistd.h>
 
@@ -169,7 +169,7 @@ struct flb_output_instance {
 
 #ifdef FLB_HAVE_FLUSH_UCONTEXT
 static FLB_INLINE
-struct flb_thread *flb_output_thread(struct flb_engine_task *task,
+struct flb_thread *flb_output_thread(struct flb_task *task,
                                      struct flb_input_instance *i_ins,
                                      struct flb_output_instance *o_ins,
                                      struct flb_config *config,
@@ -202,7 +202,7 @@ struct flb_thread *flb_output_thread(struct flb_engine_task *task,
 
 #elif defined FLB_HAVE_FLUSH_PTHREADS
 static FLB_INLINE
-struct flb_thread *flb_output_thread(struct flb_engine_task *task,
+struct flb_thread *flb_output_thread(struct flb_task *task,
                                      struct flb_input_instance *i_ins,
                                      struct flb_output_instance *o_ins,
                                      struct flb_config *config,
@@ -253,7 +253,7 @@ static inline int flb_output_return(int ret) {
     uint32_t set;
     uint64_t val;
     struct flb_thread *th;
-    struct flb_engine_task *task;
+    struct flb_task *task;
     struct flb_output_instance *o_ins;
 
     th = (struct flb_thread *) pthread_getspecific(flb_thread_key);
@@ -278,7 +278,7 @@ static inline int flb_output_return(int ret) {
      *
      * We put together the return value with the task_id on the 32 bits at right
      */
-    set = FLB_ENGINE_TASK_SET(ret_value, task->id, th->id);
+    set = FLB_TASK_SET(ret_value, task->id, th->id);
     val = FLB_BITS_U64_SET(2, set);
 
     n = write(task->config->ch_manager[1], &val, sizeof(val));

@@ -34,8 +34,8 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_engine.h>
-#include <fluent-bit/flb_engine_task.h>
 #include <fluent-bit/flb_engine_dispatch.h>
+#include <fluent-bit/flb_task.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_http_server.h>
 #include <fluent-bit/flb_buffer.h>
@@ -68,11 +68,11 @@ int flb_engine_destroy_tasks(struct mk_list *tasks)
     int c = 0;
     struct mk_list *tmp;
     struct mk_list *head;
-    struct flb_engine_task *task;
+    struct flb_task *task;
 
     mk_list_foreach_safe(head, tmp, tasks) {
-        task = mk_list_entry(head, struct flb_engine_task, _head);
-        flb_engine_task_destroy(task);
+        task = mk_list_entry(head, struct flb_task, _head);
+        flb_task_destroy(task);
         c++;
     }
 
@@ -123,7 +123,7 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
     uint32_t type;
     uint32_t key;
     uint64_t val;
-    struct flb_engine_task *task;
+    struct flb_task *task;
     struct flb_thread *thread;
 
     bytes = read(fd, &val, sizeof(val));
@@ -145,10 +145,10 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
         }
     }
     else if (type == FLB_ENGINE_TASK) {
-        /* Get values, check flb_engine_task.h for more details */
-        ret       = FLB_ENGINE_TASK_RET(key);
-        task_id   = FLB_ENGINE_TASK_ID(key);
-        thread_id = FLB_ENGINE_TASK_TH(key);
+        /* Get values, check flb_task.h for more details */
+        ret       = FLB_TASK_RET(key);
+        task_id   = FLB_TASK_ID(key);
+        thread_id = FLB_TASK_TH(key);
 
 #ifdef FLB_HAVE_TRACE
         char *trace_st = NULL;
@@ -179,15 +179,15 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
 #endif
             flb_thread_destroy_id(thread_id, task);
             if (task->users == 0) {
-                flb_engine_task_destroy(task);
+                flb_task_destroy(task);
             }
         }
         else if (ret == FLB_RETRY) {
             /* Create a Task-Retry */
             thread = flb_thread_get(task_id, task);
-            struct flb_engine_task_retry *retry;
+            struct flb_task_retry *retry;
 
-            retry = flb_engine_task_retry_create(task, thread->data);
+            retry = flb_task_retry_create(task, thread->data);
             if (!retry) {
                 /*
                  * It can fail in two situations:
@@ -197,7 +197,7 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
                  */
                 flb_thread_destroy_id(thread_id, task);
                 if (task->users == 0) {
-                    flb_engine_task_destroy(task);
+                    flb_task_destroy(task);
                 }
             }
 

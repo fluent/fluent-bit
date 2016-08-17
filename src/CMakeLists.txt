@@ -17,8 +17,8 @@ set(src
   flb_network.c
   flb_utils.c
   flb_engine.c
-  flb_engine_task.c
   flb_engine_dispatch.c
+  flb_task.c
   flb_scheduler.c
   flb_io.c
   flb_upstream.c
