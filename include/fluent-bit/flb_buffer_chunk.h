@@ -58,7 +58,7 @@ int flb_buffer_chunk_push(struct flb_buffer *ctx, void *data,
                           char *hash_hex);
 
 int flb_buffer_chunk_pop(struct flb_buffer *ctx, int thread_id,
-                         struct flb_engine_task *task);
+                         struct flb_task *task);
 
 struct flb_buffer_request *flb_buffer_chunk_mov(int type,
                                                 char *name,

@@ -656,7 +656,7 @@ int flb_buffer_chunk_push(struct flb_buffer *ctx, void *data,
  * will only be deleted if there is not threads using it.
  */
 int flb_buffer_chunk_pop(struct flb_buffer *ctx, int thread_id,
-                         struct flb_engine_task *task)
+                         struct flb_task *task)
 {
     int ret;
     struct flb_buffer_chunk chunk;
