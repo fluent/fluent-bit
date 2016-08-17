@@ -243,10 +243,11 @@ void flb_task_add_thread(struct flb_thread *thread,
     pthread_mutex_lock(&task->mutex_threads);
 #endif
 
-    mk_list_add(&thread->_head, &task->threads);
+    /* Always set an incremental thread_id */
     thread->id = task->n_threads;
     task->n_threads++;
     task->users++;
+    mk_list_add(&thread->_head, &task->threads);
 
 #ifdef FLB_HAVE_FLUSH_PTHREADS
     pthread_mutex_unlock(&task->mutex_threads);
