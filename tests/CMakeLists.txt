@@ -5,7 +5,6 @@ include_directories (
   ${GTEST_INCLUDE_DIRS}
   )
 
-
 if(FLB_IN_LIB)
   if(FLB_OUT_LIB)
      list(APPEND check_PROGRAMS
@@ -51,6 +50,15 @@ if(FLB_OUT_LIB)
       )
   endif()
 endif()
+
+list(APPEND check_PROGRAMS
+  flb_test_td.cpp
+  flb_test_stdout.cpp
+  flb_test_fluentd.cpp
+  flb_test_elasticsearch.cpp
+  flb_test_in_cpu.cpp
+  )
+
 
 foreach(source_file ${check_PROGRAMS})
   get_filename_component(source_file_we ${source_file} NAME_WE)
