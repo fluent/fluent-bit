@@ -33,6 +33,34 @@ void flb_engine_task_add_thread(struct flb_thread *thread,
 
 #ifdef FLB_HAVE_FLUSH_UCONTEXT
 
+/* It creates a new output thread using a 'Retry' context */
+int flb_engine_dispatch_retry(struct flb_engine_task_retry *retry,
+                              struct flb_config *config)
+{
+    struct flb_thread *th;
+    struct flb_engine_task *task;
+    struct flb_intput_instance *i_ins;
+
+    task = retry->parent;
+    i_ins = task->i_ins;
+
+    th = flb_output_thread(task,
+                           i_ins,
+                           retry->o_ins,
+                           config,
+                           task->buf, task->size,
+                           task->tag,
+                           strlen(task->tag));
+    if (!th) {
+        return -1;
+    }
+
+    flb_engine_task_add_thread(th, task);
+    flb_thread_resume(th);
+
+    return 0;
+}
+
 /*
  * The engine dispatch is responsible for:
  *

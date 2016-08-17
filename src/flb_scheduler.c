@@ -97,7 +97,7 @@ static int backoff_full_jitter(int base, int cap, int n)
     return random_uniform(0, exp);
 }
 
-/* Schedule the request to re-try a thread buffer flush */
+/* Schedule the 'retry' for a thread buffer flush */
 int flb_sched_request_create(struct flb_config *config,
                              void *data, int tries)
 {
@@ -132,10 +132,11 @@ int flb_sched_request_create(struct flb_config *config,
      * default, we need to overwrite this value so we can do a clean check
      * into the Engine when the event is triggered.
      */
-    event->type   = FLB_ENGINE_EV_SCHED;
+    event->type      = FLB_ENGINE_EV_SCHED;
     request->fd      = fd;
     request->created = time(NULL);
     request->timeout = seconds;
+    request->data    = data;
 
     mk_list_add(&request->_head, &config->sched_requests);
     return seconds;
@@ -160,6 +161,8 @@ int flb_sched_event_handler(struct flb_config *config, struct mk_event *event)
     req = (struct flb_sched_request *) event;
     consume_byte(req->fd);
 
+    /* Dispatch 'retry' */
+    flb_engine_dispatch_retry(req->data, config);
 
     /* Destroy this scheduled request, it's not longer required */
     flb_sched_request_destroy(config, req);

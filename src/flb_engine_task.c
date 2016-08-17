@@ -60,6 +60,27 @@ static void map_set_task_id(int id, struct flb_engine_task *task,
 
 }
 
+/* Seriously considering to create a flb_task namespace for simplicity */
+struct flb_engine_task_retry *
+flb_engine_task_retry_create(struct flb_engine_task *task,
+                             struct flb_output_instance *o_ins)
+{
+    struct flb_engine_task_retry *retry;
+
+    retry = malloc(sizeof(struct flb_engine_task_retry));
+    if (!retry) {
+        perror("malloc");
+        return NULL;
+    }
+
+    retry->attemps = 1;     /* It already failed once, that's why we are here */
+    retry->o_ins   = o_ins;
+    retry->parent  = task;
+    mk_list_add(&retry->_head, &task->retries);
+
+    return retry;
+}
+
 /* Create an engine task to handle the output plugin flushing work */
 struct flb_engine_task *flb_engine_task_create(char *buf,
                                                size_t size,
@@ -106,6 +127,7 @@ struct flb_engine_task *flb_engine_task_create(char *buf,
     task->config    = config;
     mk_list_init(&task->threads);
     mk_list_init(&task->routes);
+    mk_list_init(&task->retries);
     mk_list_add(&task->_head, &i_ins->tasks);
 
     /* Routes */

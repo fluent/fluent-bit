@@ -192,11 +192,12 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         snprintf(instance->name, sizeof(instance->name) - 1,
                  "%s.%i", plugin->name, instance_id(plugin, config));
         instance->p = plugin;
-        instance->context   = NULL;
-        instance->data      = data;
-        instance->upstream  = NULL;
-        instance->match     = NULL;
-        instance->host.name = NULL;
+        instance->context     = NULL;
+        instance->data        = data;
+        instance->upstream    = NULL;
+        instance->match       = NULL;
+        instance->retry_limit = 1;
+        instance->host.name   = NULL;
 
         instance->use_tls        = FLB_FALSE;
 #ifdef FLB_HAVE_TLS
@@ -253,6 +254,9 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
     }
     else if (prop_key_check("port", k, len) == 0) {
         out->host.port = atoi(v);
+    }
+    else if (prop_key_check("retry_limit", k, len) == 0) {
+        out->retry_limit = atoi(v);
     }
 #ifdef FLB_HAVE_TLS
     else if (prop_key_check("tls", k, len) == 0) {

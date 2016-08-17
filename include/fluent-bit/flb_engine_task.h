@@ -57,6 +57,21 @@ struct flb_engine_task_route {
     struct mk_list _head;
 };
 
+/*
+ * When a Task failed in an output instance plugin and this last one
+ * requested a FLB_RETRY, a flb_engine_task_retry entry is created and
+ * linked into the parent flb_engine_task->retries lists.
+ *
+ * This reference is used later by the scheduler to re-dispatch the
+ * task data to the desired output path.
+ */
+struct flb_engine_task_retry {
+    int attemps;                        /* number of attemps, default 1 */
+    struct flb_output_instance *o_ins;  /* route that we are retrying   */
+    struct flb_engine_task *parent;     /* parent task reference        */
+    struct mk_list _head;               /* link to parent task list     */
+};
+
 /* A task takes a buffer and sync input and output instances to handle it */
 struct flb_engine_task {
     int id;                             /* task id                   */
@@ -76,6 +91,7 @@ struct flb_engine_task {
     struct flb_input_instance *i_ins;   /* input instance                */
     struct mk_list threads;             /* ref flb_input_instance->tasks */
     struct mk_list routes;              /* routes to dispatch data       */
+    struct mk_list retries;             /* queued in-memory retries      */
     struct mk_list _head;               /* link to input_instance        */
     struct flb_config *config;          /* parent flb config             */
 
@@ -91,5 +107,9 @@ struct flb_engine_task *flb_engine_task_create(char *buf,
                                                char *tag,
                                                struct flb_config *config);
 void flb_engine_task_destroy(struct flb_engine_task *task);
+
+struct flb_engine_task_retry *
+flb_engine_task_retry_create(struct flb_engine_task *task,
+                             struct flb_output_instance *o_ins);
 
 #endif

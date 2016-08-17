@@ -124,6 +124,7 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
     uint32_t key;
     uint64_t val;
     struct flb_engine_task *task;
+    struct flb_thread *thread;
 
     bytes = read(fd, &val, sizeof(val));
     if (bytes == -1) {
@@ -182,7 +183,31 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
             }
         }
         else if (ret == FLB_RETRY) {
-            flb_sched_request_create(config, NULL, 1);
+            /* Create a Task-Retry */
+            thread = flb_thread_get(task_id, task);
+            struct flb_engine_task_retry *retry;
+
+            retry = flb_engine_task_retry_create(task, thread->data);
+            if (!retry) {
+                /*
+                 * It can fail in two situations:
+                 *
+                 * - No enough memory (unlikely)
+                 * - It reached the maximum number of re-tries
+                 */
+                flb_thread_destroy_id(thread_id, task);
+                if (task->users == 0) {
+                    flb_engine_task_destroy(task);
+                }
+            }
+
+            /* Always destroy the old thread */
+            flb_thread_destroy_id(thread_id, task);
+
+            /* Let the scheduler to retry the failed task/thread */
+            int s = flb_sched_request_create(config, retry, retry->attemps);
+            flb_debug("[sched] retry %i.%i in %i seconds",
+                      task->id, thread->id, s);
         }
     }
 

@@ -32,8 +32,7 @@ struct flb_sched_request {
     int fd;
     time_t created;
     time_t timeout;
-    struct flb_engine_task *task;
-    struct flb_output_instance *o_ins;
+    void *data;
     struct mk_list _head;
 };
 

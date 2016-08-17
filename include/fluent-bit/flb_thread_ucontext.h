@@ -30,6 +30,7 @@
 
 struct flb_thread {
     int id;
+    int retries;
 
 #ifdef FLB_HAVE_VALGRIND
     unsigned int valgrind_stack_id;
@@ -153,6 +154,7 @@ static struct flb_thread *flb_thread_new()
     }
 
     th->id                       = 0;
+    th->retries                  = 0;
     th->callee.uc_stack.ss_sp    = FLB_THREAD_STACK(p);
     th->callee.uc_stack.ss_size  = FLB_THREAD_STACK_SIZE;
     th->callee.uc_stack.ss_flags = 0;

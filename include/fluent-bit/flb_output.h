@@ -103,6 +103,7 @@ struct flb_output_instance {
     void *context;                       /* plugin configuration context */
 
     /* Plugin properties */
+    int retry_limit;                     /* max of retries allowed       */
     int use_tls;                         /* bool, try to use TLS for I/O */
     char *match;                         /* match rule for tag/routing   */
 
@@ -144,27 +145,7 @@ struct flb_output_instance {
     /* IO upstream context, if flags & (FLB_OUTPUT_TCP | FLB_OUTPUT TLS)) */
     struct flb_upstream *upstream;
 
-    /*
-     * Co-routines specific data
-     * =========================
-     *
-     */
 
-    /*
-     * th_context: when the event loop (flb_engine.c) have to flush some
-     * data through an output plugin, the output plugin 'may' use the
-     * flb_io.c interface which handle all I/O operations with co-routines.
-     *
-     * The core is not aware of that until flb_io_write() is called, so this
-     * variable helps to set the stack context of the caller in the engine. If
-     * for some reason the flb_io_write() needs to yield, it will know how to
-     * return to the event loop.
-     *
-     * This variable is only used when creating the co-routine.
-     */
-    //ucontext_t th_context;
-
-    //int th_yield;
 
     /*
      * The threads_queue is the head for the linked list that holds co-routines
@@ -250,6 +231,8 @@ struct flb_thread *flb_output_thread(struct flb_engine_task *task,
 
     return th;
 }
+
+ls
 #endif
 
 /*
@@ -258,18 +241,34 @@ struct flb_thread *flb_output_thread(struct flb_engine_task *task,
  * callback has done.
  *
  * The signal emmited indicate the 'Task' number that have finished plus
- * a return value. The return value is either FLB_OK or FLB_ERROR.
+ * a return value. The return value is either FLB_OK, FLB_RETRY or FLB_ERROR.
+ *
+ * If the caller have requested a FLB_RETRY, it will be issued depending of the
+ * number of retries, if it have exceed the 'retry_limit' option, a FLB_ERROR
+ * will be returned instead.
  */
 static inline int flb_output_return(int ret) {
     int n;
+    int ret_value;
     uint32_t set;
     uint64_t val;
     struct flb_thread *th;
     struct flb_engine_task *task;
+    struct flb_output_instance *o_ins;
 
     th = (struct flb_thread *) pthread_getspecific(flb_thread_key);
     task = th->task;
 
+    ret_value = ret;
+    if (ret == FLB_RETRY) {
+        o_ins = (struct flb_output_instance *) th->data;
+        if (th->retries >= o_ins->retry_limit) {
+            ret_value = FLB_ERROR;
+        }
+        else {
+            th->retries++;
+        }
+    }
     /*
      * To compose the signal event the relevant info is:
      *
@@ -279,8 +278,7 @@ static inline int flb_output_return(int ret) {
      *
      * We put together the return value with the task_id on the 32 bits at right
      */
-
-    set = FLB_ENGINE_TASK_SET(ret, task->id, th->id);
+    set = FLB_ENGINE_TASK_SET(ret_value, task->id, th->id);
     val = FLB_BITS_U64_SET(2, set);
 
     n = write(task->config->ch_manager[1], &val, sizeof(val));

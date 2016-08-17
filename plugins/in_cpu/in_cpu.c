@@ -29,6 +29,8 @@
 
 #include "in_cpu.h"
 
+int flush_done;
+
 struct flb_input_plugin in_cpu_plugin;
 
 static inline void snapshot_key_format(int cpus, struct cpu_snapshot *snap_arr)
@@ -155,6 +157,8 @@ int in_cpu_init(struct flb_input_instance *in, struct flb_config *config, void *
     int ret;
     struct flb_in_cpu_config *ctx;
     (void) data;
+
+    flush_done = 0;
 
     /* Allocate space for the configuration */
     ctx = calloc(1, sizeof(struct flb_in_cpu_config));
@@ -291,6 +295,10 @@ int in_cpu_collect(struct flb_config *config, void *in_context)
     struct cpu_snapshot *s;
     (void) config;
 
+    if (flush_done == 1) {
+        return 0;
+    }
+
     /* Get the current CPU usage */
     ret = proc_cpu_load(ctx->n_processors, cstats);
     if (ret != 0) {
@@ -345,6 +353,10 @@ void *in_cpu_flush(void *in_context, size_t *size)
     msgpack_sbuffer *sbuf;
     struct flb_in_cpu_config *ctx = in_context;
 
+    if (flush_done == 1) {
+        return NULL;
+    }
+
     sbuf = &ctx->mp_sbuf;
     *size = sbuf->size;
     buf = malloc(sbuf->size);
@@ -358,6 +370,7 @@ void *in_cpu_flush(void *in_context, size_t *size)
     msgpack_sbuffer_init(&ctx->mp_sbuf);
     msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
 
+    flush_done = 1;
     return buf;
 }
 
