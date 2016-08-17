@@ -81,8 +81,10 @@ int cb_retry_flush(void *data, size_t bytes,
     else {
         flb_debug("[retry] flush", ctx->count, ctx->n_retry);
         ctx->count = 0;
-        FLB_OUTPUT_RETURN(FLB_OK);
     }
+
+    flb_pack_print(data, bytes);
+    FLB_OUTPUT_RETURN(FLB_OK);
 }
 
 
