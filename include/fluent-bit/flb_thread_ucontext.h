@@ -53,7 +53,7 @@ struct flb_thread {
      */
     void *output_buffer;
 
-    /* Parent flb_engine_task */
+    /* Parent flb_task */
     struct flb_task *task;
 
     struct flb_config *config;

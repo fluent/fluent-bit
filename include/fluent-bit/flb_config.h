@@ -114,7 +114,7 @@ struct flb_config {
 #endif
 
     struct mk_list sched_requests;
-    struct flb_engine_task_map tasks_map[2048];
+    struct flb_task_map tasks_map[2048];
 };
 
 struct flb_config *flb_config_init();

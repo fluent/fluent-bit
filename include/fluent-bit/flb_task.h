@@ -17,8 +17,8 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_ENGINE_TASK_H
-#define FLB_ENGINE_TASK_H
+#ifndef FLB_TASK_H
+#define FLB_TASK_H
 
 #include <pthread.h>
 #include <fluent-bit/flb_info.h>
@@ -68,7 +68,7 @@ struct flb_task_route {
 struct flb_task_retry {
     int attemps;                        /* number of attemps, default 1 */
     struct flb_output_instance *o_ins;  /* route that we are retrying   */
-    struct flb_engine_task *parent;     /* parent task reference        */
+    struct flb_task *parent;            /* parent task reference        */
     struct mk_list _head;               /* link to parent task list     */
 };
 
