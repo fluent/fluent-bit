@@ -232,7 +232,6 @@ struct flb_thread *flb_output_thread(struct flb_task *task,
     return th;
 }
 
-ls
 #endif
 
 /*

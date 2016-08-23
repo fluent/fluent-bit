@@ -25,14 +25,18 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_input.h>
-#include <fluent-bit/flb_engine_task.h>
+#include <fluent-bit/flb_task.h>
 
 struct flb_input_instance;
 struct flb_output_instance;
+FLB_EXPORT pthread_key_t flb_thread_key;
 
-struct flb_thread {
+struct flb_thread
+{
     int id;
     int ended;
+    int retries;
+
 #ifdef FLB_HAVE_VALGRIND
     unsigned int valgrind_stack_id;
 #endif
@@ -64,7 +68,7 @@ struct flb_thread {
     void *output_buffer;
 
     /* Parent flb_engine_task */
-    struct flb_engine_task *task;
+    struct flb_task *task;
 
     struct flb_config *config;
 
@@ -93,6 +97,23 @@ void flb_thread_resume(struct flb_thread *th);
 
 static FLB_INLINE void flb_thread_yield(struct flb_thread *th, int ended)
 {
+}
+
+static FLB_INLINE struct flb_thread *flb_thread_get(int id,
+                                                    struct flb_task *task)
+{
+    (void) id;
+    (void) task;
+
+    return NULL;
+}
+
+static FLB_INLINE int flb_thread_destroy_id(int id, struct
+                                            flb_task *task)
+{
+    (void) id;
+    (void) task;
+    return 0;
 }
 
 static FLB_INLINE void flb_thread_destroy(struct flb_thread *th)

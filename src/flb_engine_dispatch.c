@@ -164,6 +164,16 @@ int flb_engine_dispatch(struct flb_input_instance *in,
 
 #elif defined FLB_HAVE_FLUSH_PTHREADS
 
+/* It creates a new output thread using a 'Retry' context */
+int flb_engine_dispatch_retry(struct flb_task_retry *retry,
+                              struct flb_config *config)
+{
+    (void) retry;
+    (void) config;
+
+    return 0;
+}
+
 int flb_engine_dispatch(struct flb_input_instance *in,
                         struct flb_config *config)
 {
@@ -188,7 +198,7 @@ int flb_engine_dispatch(struct flb_input_instance *in,
          * and the co-routines associated to the output instance plugins
          * that needs to handle the data.
          */
-        task = flb_task_create(buf, size, in, in->tag, config);
+        task = flb_task_create(buf, size, in, in->tag, config, NULL);
         if (!task) {
             free(buf);
             return -1;

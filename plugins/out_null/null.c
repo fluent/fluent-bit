@@ -58,7 +58,7 @@ int cb_null_flush(void *data, size_t bytes,
         cnt++;
     }
     msgpack_unpacked_destroy(&result);
-    time t = time(NULL);
+    time_t t = time(NULL);
     printf("%lu,%i\n", t, cnt);
 
     FLB_OUTPUT_RETURN(FLB_OK);
