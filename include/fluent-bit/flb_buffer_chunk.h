@@ -23,6 +23,7 @@
 
 #include <mk_core.h>
 #include <fluent-bit/flb_buffer.h>
+#include <fluent-bit/flb_task.h>
 
 #ifndef FLB_BUFFER_CHUNK_H
 #define FLB_BUFFER_CHUNK_H

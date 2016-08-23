@@ -53,7 +53,7 @@ struct flb_thread {
      */
     void *output_buffer;
 
-    /* Parent flb_engine_task */
+    /* Parent flb_task */
     struct flb_task *task;
 
     struct flb_config *config;
@@ -153,8 +153,17 @@ static struct flb_thread *flb_thread_new()
         return NULL;
     }
 
+    /*
+     * Each 'Thread' receives an 'id'. This is assigned when this thread
+     * is linked into the parent Task by flb_task_add_thread(...). The
+     * 'id' is always incremental.
+     */
     th->id                       = 0;
+
+    /* Number of retries */
     th->retries                  = 0;
+
+    /* Thread context */
     th->callee.uc_stack.ss_sp    = FLB_THREAD_STACK(p);
     th->callee.uc_stack.ss_size  = FLB_THREAD_STACK_SIZE;
     th->callee.uc_stack.ss_flags = 0;

@@ -17,12 +17,12 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_ENGINE_TASK_MAP_H
-#define FLB_ENGINE_TASK_MAP_H
+#ifndef FLB_TASK_MAP_H
+#define FLB_TASK_MAP_H
 
 #include <inttypes.h>
 
-struct flb_engine_task_map {
+struct flb_task_map {
     uint8_t id;
     void    *task;
 };
