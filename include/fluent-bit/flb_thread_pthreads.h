@@ -21,6 +21,7 @@
 #define FLB_THREAD_PTHREADS_H
 
 #include <stdlib.h>
+#include <pthread.h>
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_macros.h>
@@ -119,13 +120,21 @@ static FLB_INLINE int flb_thread_destroy_id(int id, struct
 static FLB_INLINE void flb_thread_destroy(struct flb_thread *th)
 {
 #ifdef FLB_HAVE_FLUSH_PTHREADS
-    pthread_mutex_lock(&th->task->mutex_threads);
+    /*
+     * FIXME: undefined ref here with very old compilers
+     *
+     * pthread_mutex_lock(&task->mutex_threads);
+     */
 #endif
 
     mk_list_del(&th->_head);
 
 #ifdef FLB_HAVE_FLUSH_PTHREADS
-    pthread_mutex_unlock(&th->task->mutex_threads);
+    /*
+     * FIXME: undefined ref here with very old compilers
+     *
+     * pthread_mutex_unlock(&task->mutex_threads);
+     */
 #endif
 
     free(th);
