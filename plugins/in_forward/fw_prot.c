@@ -60,35 +60,20 @@ int fw_prot_process(struct fw_conn *conn)
      * [tag, [[time,record], [time,record], ...]]
      */
     msgpack_unpacked_init(&result);
-
-    if (conn->buf_off == 0) {
-        ret = msgpack_unpack_next(&result,
-                                  conn->buf,
-                                  conn->buf_len,
-                                  &conn->buf_off);
-
-        if (ret != MSGPACK_UNPACK_SUCCESS) {
-            msgpack_unpacked_destroy(&result);
-            switch (ret) {
-            case MSGPACK_UNPACK_EXTRA_BYTES:
-                flb_error("[in_fw] MSGPACK_UNPACK_EXTRA_BYTES");
-                return -1;
-            case MSGPACK_UNPACK_CONTINUE:
-                flb_trace("[in_fw] MSGPACK_UNPACK_CONTINUE");
-                return 1;
-            case MSGPACK_UNPACK_PARSE_ERROR:
-                flb_debug("[in_fw] err=MSGPACK_UNPACK_PARSE_ERROR");
-                return -1;
-            case MSGPACK_UNPACK_NOMEM_ERROR:
-                flb_error("[in_fw] err=MSGPACK_UNPACK_NOMEM_ERROR");
-                return -1;
-            };
-        }
-
+    while ((ret = msgpack_unpack_next(&result,
+                                     conn->buf,
+                                     conn->buf_len,
+                                      &conn->buf_off))) {
         /* Map the array */
         root = result.data;
+        if (root.type != MSGPACK_OBJECT_ARRAY) {
+            flb_debug("[in_fw] parser: expecting an array, skip.");
+            msgpack_unpacked_destroy(&result);
+            return -1;
+        }
+
         if (root.via.array.size < 2) {
-            flb_trace("[in_fw] parser: array of invalid size, skip.");
+            flb_debug("[in_fw] parser: array of invalid size, skip.");
             msgpack_unpacked_destroy(&result);
             return -1;
         }
@@ -96,7 +81,7 @@ int fw_prot_process(struct fw_conn *conn)
         /* Get the tag */
         tag = root.via.array.ptr[0];
         if (tag.type != MSGPACK_OBJECT_STR) {
-            flb_trace("[in_fw] parser: invalid tag format, skip.");
+            flb_debug("[in_fw] parser: invalid tag format, skip.");
             msgpack_unpacked_destroy(&result);
             return -1;
         }
@@ -153,10 +138,30 @@ int fw_prot_process(struct fw_conn *conn)
     }
     msgpack_unpacked_destroy(&result);
 
+    if (ret != MSGPACK_UNPACK_SUCCESS) {
+        msgpack_unpacked_destroy(&result);
+        switch (ret) {
+        case MSGPACK_UNPACK_EXTRA_BYTES:
+            flb_error("[in_fw] MSGPACK_UNPACK_EXTRA_BYTES");
+            return -1;
+        case MSGPACK_UNPACK_CONTINUE:
+            flb_trace("[in_fw] MSGPACK_UNPACK_CONTINUE");
+            return 1;
+        case MSGPACK_UNPACK_PARSE_ERROR:
+            flb_debug("[in_fw] err=MSGPACK_UNPACK_PARSE_ERROR");
+            return -1;
+        case MSGPACK_UNPACK_NOMEM_ERROR:
+            flb_error("[in_fw] err=MSGPACK_UNPACK_NOMEM_ERROR");
+            return -1;
+        };
+    }
+
     if (conn->buf_off > 0) {
         memmove(conn->buf, conn->buf + conn->buf_off, conn->buf_off);
         conn->buf_len -= conn->buf_off;
-        conn->buf_off = 0;
+        if (conn->buf_len == 0) {
+            conn->buf_off = 0;
+        }
     }
 
     return 0;
