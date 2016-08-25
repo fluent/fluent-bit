@@ -44,8 +44,7 @@ static int map_get_task_id(struct flb_config *config)
     int i;
 
     for (i = 0; i < sizeof(config->tasks_map); i++) {
-        if (config->tasks_map[i].id == 0) {
-            config->tasks_map[i].id = 1;
+        if (config->tasks_map[i].task == NULL) {
             return i;
         }
     }
@@ -213,7 +212,6 @@ void flb_task_destroy(struct flb_task *task)
     }
 
     /* Release task_id */
-    task->config->tasks_map[task->id].id   = 0;
     task->config->tasks_map[task->id].task = NULL;
 
     /* Remove routes */
