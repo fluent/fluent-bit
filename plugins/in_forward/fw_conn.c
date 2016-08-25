@@ -65,8 +65,9 @@ int fw_conn_event(void *data)
         bytes = read(conn->fd,
                      conn->buf + conn->buf_len, available);
         if (bytes > 0) {
+            flb_trace("[in_fw] read()=%i pre_len=%i now_len=%i",
+                      bytes, conn->buf_len, conn->buf_len + bytes);
             conn->buf_len += bytes;
-            flb_trace("[in_fw] read()=%i", bytes);
 
             ret = fw_prot_process(conn);
             if (ret == -1) {
