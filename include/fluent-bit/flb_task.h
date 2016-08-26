@@ -23,7 +23,6 @@
 #include <pthread.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_buffer.h>
-#include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_input.h>
 
 /* Task status */
