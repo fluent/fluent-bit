@@ -331,6 +331,7 @@ bool msgpack_unpacker_init(msgpack_unpacker* mpac, size_t initial_buffer_size)
     mpac->free = initial_buffer_size - mpac->used;
     mpac->off = COUNTER_SIZE;
     mpac->parsed = 0;
+    mpac->last_parsed = 0;
     mpac->initial_buffer_size = initial_buffer_size;
     mpac->z = z;
     mpac->ctx = ctx;
@@ -506,6 +507,10 @@ bool msgpack_unpacker_flush_zone(msgpack_unpacker* mpac)
 void msgpack_unpacker_reset(msgpack_unpacker* mpac)
 {
     template_init(CTX_CAST(mpac->ctx));
+
+    /* Fluent Bit: refer to unpack.h for more details about this field */
+    mpac->last_parsed = mpac->parsed;
+
     // don't reset referenced flag
     mpac->parsed = 0;
 }
