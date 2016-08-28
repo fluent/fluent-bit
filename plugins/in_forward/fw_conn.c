@@ -111,7 +111,7 @@ struct fw_conn *fw_conn_add(int fd, struct flb_in_fw_config *ctx)
     conn->fd      = fd;
     conn->ctx     = ctx;
     conn->buf_len = 0;
-    conn->buf_off = 0;
+    conn->rest    = 0;
     conn->status  = FW_NEW;
 
     conn->buf = malloc(ctx->chunk_size);
