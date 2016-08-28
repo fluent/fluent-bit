@@ -59,6 +59,20 @@ typedef struct msgpack_unpacker {
     size_t free;
     size_t off;
     size_t parsed;
+
+    /*
+     * Fluent Bit: for buffering optimization, we always need to know the
+     * total number of bytes parsed upon a MSGPACK_UNPACK_SUCCESS after
+     * a call to msgpack_unpacker_next().
+     *
+     * The new field 'last_parsed' always get the value of 'parsed' before
+     * this one is reset. For more details about this hack please refer
+     * to the following Github issue:
+     *
+     * https://github.com/msgpack/msgpack-c/issues/514
+     */
+    size_t last_parsed;
+
     msgpack_zone* z;
     size_t initial_buffer_size;
     void* ctx;
@@ -267,4 +281,3 @@ static inline msgpack_zone* msgpack_unpacked_release_zone(msgpack_unpacked* resu
 #endif
 
 #endif /* msgpack/unpack.h */
-
