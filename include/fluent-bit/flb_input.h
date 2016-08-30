@@ -90,6 +90,8 @@ struct flb_input_plugin {
  * structure node or create a new one if required.
  */
 struct flb_input_dyntag {
+    int busy;
+
     /* Tag */
     int tag_len;
     char *tag;
