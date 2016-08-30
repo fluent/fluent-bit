@@ -42,7 +42,7 @@ struct fw_conn {
     char *buf;                       /* Buffer data                       */
     int  buf_len;                    /* Data length                       */
     int  buf_size;                   /* Buffer size                       */
-    size_t buf_off;                  /* Unpacking offset                  */
+    size_t rest;                     /* Unpacking offset                  */
 
     struct flb_input_instance *in;   /* Parent plugin instance            */
     struct flb_in_fw_config *ctx;    /* Plugin configuration context      */

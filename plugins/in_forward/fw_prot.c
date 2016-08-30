@@ -29,6 +29,9 @@
 #include "fw_prot.h"
 #include "fw_conn.h"
 
+/* Try parsing rounds up-to 32 bytes */
+#define EACH_RECV_SIZE 32
+
 static int fw_process_array(struct flb_input_instance *in,
                             char *tag, int tag_len,
                             msgpack_object *arr)
@@ -44,120 +47,198 @@ static int fw_process_array(struct flb_input_instance *in,
     return i;
 }
 
+static size_t receiver_recv(struct fw_conn *conn, char *buf, size_t try_size) {
+    size_t off;
+    size_t actual_size;
+
+    off = conn->buf_len - conn->rest;
+    actual_size = try_size;
+
+    if (actual_size > conn->rest) {
+        actual_size = conn->rest;
+    }
+
+    memcpy(buf, conn->buf + off, actual_size);
+    memmove(conn->buf, conn->buf + off, actual_size);
+
+    conn->rest -= actual_size;
+    return actual_size;
+}
+
+static size_t receiver_to_unpacker(struct fw_conn *conn, size_t request_size,
+                                   msgpack_unpacker *unpacker)
+{
+    size_t recv_len;
+
+    /* make sure there's enough room, or expand the unpacker accordingly */
+    if (msgpack_unpacker_buffer_capacity(unpacker) < request_size) {
+        msgpack_unpacker_reserve_buffer(unpacker, request_size);
+        assert(msgpack_unpacker_buffer_capacity(unpacker) >= request_size);
+    }
+    recv_len = receiver_recv(conn, msgpack_unpacker_buffer(unpacker),
+                             request_size);
+    msgpack_unpacker_buffer_consumed(unpacker, recv_len);
+
+    return recv_len;
+}
+
 int fw_prot_process(struct fw_conn *conn)
 {
     int ret;
     int stag_len;
+    int c = 0;
     char *stag;
+    size_t buf_off = 0;
+    size_t recv_len;
     msgpack_object tag;
     msgpack_object entry;
     msgpack_object map;
     msgpack_object root;
     msgpack_unpacked result;
+    msgpack_unpacker *unp;
+    size_t all_used = 0;
 
     /*
      * [tag, time, record]
      * [tag, [[time,record], [time,record], ...]]
      */
+
+    unp = msgpack_unpacker_new(1024);
     msgpack_unpacked_init(&result);
+    conn->rest = conn->buf_len;
 
-    if (conn->buf_off == 0) {
-        ret = msgpack_unpack_next(&result,
-                                  conn->buf,
-                                  conn->buf_len,
-                                  &conn->buf_off);
+    while (1) {
+        recv_len = receiver_to_unpacker(conn, EACH_RECV_SIZE, unp);
+        if (recv_len == 0) {
 
-        if (ret != MSGPACK_UNPACK_SUCCESS) {
+            /* No more data */
+            msgpack_unpacker_free(unp);
             msgpack_unpacked_destroy(&result);
-            switch (ret) {
-            case MSGPACK_UNPACK_EXTRA_BYTES:
-                flb_error("[in_fw] MSGPACK_UNPACK_EXTRA_BYTES");
-                return -1;
-            case MSGPACK_UNPACK_CONTINUE:
-                flb_trace("[in_fw] MSGPACK_UNPACK_CONTINUE");
-                return 1;
-            case MSGPACK_UNPACK_PARSE_ERROR:
-                flb_debug("[in_fw] err=MSGPACK_UNPACK_PARSE_ERROR");
-                return -1;
-            case MSGPACK_UNPACK_NOMEM_ERROR:
-                flb_error("[in_fw] err=MSGPACK_UNPACK_NOMEM_ERROR");
-                return -1;
-            };
+
+            memmove(conn->buf, conn->buf + all_used,
+                    conn->buf_len - all_used);
+            conn->buf_len -= all_used;
+            return 0;
         }
 
-        /* Map the array */
-        root = result.data;
-        if (root.via.array.size < 2) {
-            flb_trace("[in_fw] parser: array of invalid size, skip.");
-            msgpack_unpacked_destroy(&result);
-            return -1;
-        }
+        /* Always summarize the total number of bytes requested to parse */
+        buf_off += recv_len;
 
-        /* Get the tag */
-        tag = root.via.array.ptr[0];
-        if (tag.type != MSGPACK_OBJECT_STR) {
-            flb_trace("[in_fw] parser: invalid tag format, skip.");
-            msgpack_unpacked_destroy(&result);
-            return -1;
-        }
+        ret = msgpack_unpacker_next(unp, &result);
+        while (ret == MSGPACK_UNPACK_SUCCESS) {
+            /*
+             * For buffering optimization we always want to know the total
+             * number of bytes involved on the new object returned. Despites
+             * buf_off always know the given bytes, it's likely we used a bit
+             * less. This 'all_used' field keep a reference per object so
+             * when returning to the caller we can adjust the source buffer
+             * and deprecated consumed data.
+             *
+             * The 'last_parsed' field is Fluent Bit specific and is documented
+             * in:
+             *
+             *  lib/msgpack-c/include/msgpack/unpack.h
+             *
+             * Other references:
+             *
+             *  https://github.com/msgpack/msgpack-c/issues/514
+             */
+            all_used += unp->last_parsed;
 
-        stag     = (char *) tag.via.str.ptr;
-        stag_len = tag.via.str.size;
-
-        entry = root.via.array.ptr[1];
-        if (entry.type == MSGPACK_OBJECT_ARRAY) {
-            /* Forward format 1: [tag, [[time, map], ...]] */
-            fw_process_array(conn->in, stag, stag_len, &entry);
-        }
-        else if (entry.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-            /* Forward format 2: [tag, time, map] */
-            map = root.via.array.ptr[2];
-            if (map.type != MSGPACK_OBJECT_MAP) {
-                flb_warn("[in_fw] invalid data format, map expected");
+            /* Map the array */
+            root = result.data;
+            if (root.type != MSGPACK_OBJECT_ARRAY) {
+                flb_debug("[in_fw] parser: expecting an array, skip.");
                 msgpack_unpacked_destroy(&result);
                 return -1;
             }
 
-            /* Compose the new array */
-            struct msgpack_sbuffer mp_sbuf;
-            struct msgpack_packer mp_pck;
-            msgpack_unpacked r_out;
-            size_t off = 0;
+            if (root.via.array.size < 2) {
+                flb_debug("[in_fw] parser: array of invalid size, skip.");
+                msgpack_unpacked_destroy(&result);
+                return -1;
+            }
 
-            msgpack_sbuffer_init(&mp_sbuf);
-            msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+            /* Get the tag */
+            tag = root.via.array.ptr[0];
+            if (tag.type != MSGPACK_OBJECT_STR) {
+                flb_debug("[in_fw] parser: invalid tag format, skip.");
+                msgpack_unpacked_destroy(&result);
+                return -1;
+            }
 
-            msgpack_pack_array(&mp_pck, 2);
-            msgpack_pack_object(&mp_pck, entry);
-            msgpack_pack_object(&mp_pck, map);
+            stag     = (char *) tag.via.str.ptr;
+            stag_len = tag.via.str.size;
 
-            msgpack_unpacked_init(&r_out);
-            msgpack_unpack_next(&r_out,
-                                mp_sbuf.data,
-                                mp_sbuf.size,
-                                &off);
+            entry = root.via.array.ptr[1];
+            if (entry.type == MSGPACK_OBJECT_ARRAY) {
+                /* Forward format 1: [tag, [[time, map], ...]] */
+                fw_process_array(conn->in, stag, stag_len, &entry);
+            }
+            else if (entry.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
+                /* Forward format 2: [tag, time, map] */
+                map = root.via.array.ptr[2];
+                if (map.type != MSGPACK_OBJECT_MAP) {
+                    flb_warn("[in_fw] invalid data format, map expected");
+                    msgpack_unpacked_destroy(&result);
+                    return -1;
+                }
 
-            entry = r_out.data;
-            flb_input_dyntag_append(conn->in,
-                                    stag, stag_len,
-                                    entry);
+                /* Compose the new array */
+                struct msgpack_sbuffer mp_sbuf;
+                struct msgpack_packer mp_pck;
+                msgpack_unpacked r_out;
+                size_t off = 0;
 
-            msgpack_unpacked_destroy(&r_out);
-            msgpack_sbuffer_destroy(&mp_sbuf);
-        }
-        else {
-            flb_warn("[in_fw] invalid data format");
-            msgpack_unpacked_destroy(&result);
-            return -1;
+                msgpack_sbuffer_init(&mp_sbuf);
+                msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+                msgpack_pack_array(&mp_pck, 2);
+                msgpack_pack_object(&mp_pck, entry);
+                msgpack_pack_object(&mp_pck, map);
+
+                /* sbuffer to msgpack object */
+                msgpack_unpacked_init(&r_out);
+                msgpack_unpack_next(&r_out,
+                                    mp_sbuf.data,
+                                    mp_sbuf.size,
+                                    &off);
+
+                /* Register data object */
+                entry = r_out.data;
+                flb_input_dyntag_append(conn->in,
+                                        stag, stag_len,
+                                        entry);
+
+                msgpack_unpacked_destroy(&r_out);
+                msgpack_sbuffer_destroy(&mp_sbuf);
+                c++;
+            }
+            else {
+                flb_warn("[in_fw] invalid data format");
+                msgpack_unpacked_destroy(&result);
+                return -1;
+            }
+
+            ret = msgpack_unpacker_next(unp, &result);
         }
     }
     msgpack_unpacked_destroy(&result);
 
-    if (conn->buf_off > 0) {
-        memmove(conn->buf, conn->buf + conn->buf_off, conn->buf_off);
-        conn->buf_len -= conn->buf_off;
-        conn->buf_off = 0;
-    }
+    switch (ret) {
+    case MSGPACK_UNPACK_EXTRA_BYTES:
+        flb_error("[in_fw] MSGPACK_UNPACK_EXTRA_BYTES");
+        return -1;
+    case MSGPACK_UNPACK_CONTINUE:
+        flb_trace("[in_fw] MSGPACK_UNPACK_CONTINUE");
+        return 1;
+    case MSGPACK_UNPACK_PARSE_ERROR:
+        flb_debug("[in_fw] err=MSGPACK_UNPACK_PARSE_ERROR");
+        return -1;
+    case MSGPACK_UNPACK_NOMEM_ERROR:
+        flb_error("[in_fw] err=MSGPACK_UNPACK_NOMEM_ERROR");
+        return -1;
+    };
 
     return 0;
 }
