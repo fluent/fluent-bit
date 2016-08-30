@@ -400,6 +400,7 @@ struct flb_input_dyntag *flb_input_dyntag_create(struct flb_input_instance *in,
     if (!dt) {
         return NULL;
     }
+    dt->busy= FLB_FALSE;
     dt->in  = in;
     dt->tag = malloc(tag_len + 1);
     memcpy(dt->tag, tag, tag_len);
@@ -418,12 +419,14 @@ struct flb_input_dyntag *flb_input_dyntag_create(struct flb_input_instance *in,
 /* Destroy an dyntag node */
 int flb_input_dyntag_destroy(struct flb_input_dyntag *dt)
 {
-    flb_trace("[dyntag %s] %p destroy",
-              dt->in->name, dt);
+    flb_debug("[dyntag %s] %p destroy (tag=%s)",
+              dt->in->name, dt, dt->tag);
+
     msgpack_sbuffer_destroy(&dt->mp_sbuf);
     mk_list_del(&dt->_head);
     free(dt->tag);
     free(dt);
+    dt = NULL;
 
     return 0;
 }
@@ -452,6 +455,11 @@ int flb_input_dyntag_append(struct flb_input_instance *in,
     /* Try to find a current dyntag node to append the data */
     mk_list_foreach(head, &in->dyntags) {
         dt = mk_list_entry(head, struct flb_input_dyntag, _head);
+        if (dt->busy == FLB_TRUE) {
+            dt = NULL;
+            continue;
+        }
+
         if (dt->tag_len != tag_len) {
             dt = NULL;
             continue;
