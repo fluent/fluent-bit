@@ -168,7 +168,7 @@ int flb_net_socket_create(int family, int nonblock)
     }
 
     if (nonblock) {
-        flb_net_socket_tcp_nodelay(fd);
+        flb_net_socket_nonblocking(fd);
     }
 
     return fd;
