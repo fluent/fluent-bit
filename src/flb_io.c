@@ -51,6 +51,7 @@
 #include <limits.h>
 #include <assert.h>
 
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_io_tls.h>
@@ -77,7 +78,7 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
     }
 
     /* Create the socket */
-    fd = flb_net_socket_create(AF_INET, FLB_TRUE);
+    fd = flb_net_socket_create(AF_INET, FLB_FALSE);
     if (fd == -1) {
         flb_error("[io] could not create socket");
         return -1;
@@ -103,6 +104,10 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
 
         if (errno == EINPROGRESS) {
             flb_trace("[upstream] connection in process");
+        }
+        else {
+            close(fd);
+            return -1;
         }
 
         MK_EVENT_NEW(&u_conn->event);
@@ -135,6 +140,7 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
             ret = getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len);
             if (ret == -1) {
                 flb_error("[io] could not validate socket status");
+                close(fd);
                 return -1;
             }
 
@@ -142,17 +148,21 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
                 /* Connection is broken, not much to do here */
                 flb_error("[io] TCP connection failed: %s:%i",
                           u->tcp_host, u->tcp_port);
+                close(fd);
                 return -1;
             }
 
             MK_EVENT_NEW(&u_conn->event);
         }
         else {
+            close(fd);
             return -1;
         }
     }
 
+    u_conn->connect_count++;
     flb_trace("[io] connection OK");
+
     return 0;
 }
 
@@ -196,42 +206,93 @@ static int net_io_write(struct flb_upstream_conn *u_conn,
     return total;
 }
 
-/* This routine is called from a co-routine thread */
+/*
+ * Perform Async socket write(2) operations. This function depends on a
+ * maine event-loop and the co-routines interface to yield/resume once
+ * sockets are ready to continue.
+ *
+ * Intentionally we register/de-register the socket file descriptor from
+ * the event loop each time when we require to do some work.
+ */
 static FLB_INLINE int net_io_write_async(struct flb_thread *th,
                                          struct flb_upstream_conn *u_conn,
                                          void *data, size_t len, size_t *out_len)
 {
     int ret = 0;
+    int error;
     ssize_t bytes;
     size_t total = 0;
+    socklen_t slen = sizeof(error);
     struct flb_upstream *u = u_conn->u;
 
  retry:
+    error = 0;
     bytes = write(u_conn->fd, data + total, len - total);
-    flb_trace("[io] write(2)=%d", bytes);
+
+#ifdef FLB_HAVE_TRACE
+    if (bytes > 0) {
+        flb_trace("[io thread=%p] [fd %i] write_async(2)=%d (%lu/%lu)",
+                  th, u_conn->fd, bytes, total + bytes, len);
+    }
+    else {
+        flb_trace("[io thread=%p] [fd %i] write_async(2)=%d (%lu/%lu)",
+                  th, u_conn->fd, bytes, total, len);
+    }
+#endif
 
     if (bytes == -1) {
         if (errno == EAGAIN) {
-            return 0;
-        }
-        else {
-            /* The connection routine may yield */
-            flb_trace("[io] trying to reconnect");
-            ret = flb_io_net_connect(u_conn, th);
+            MK_EVENT_NEW(&u_conn->event);
+            u_conn->thread = th;
+            ret = mk_event_add(u->evl,
+                               u_conn->fd,
+                               FLB_ENGINE_EV_THREAD,
+                               MK_EVENT_WRITE, &u_conn->event);
             if (ret == -1) {
+                /*
+                 * If we failed here there no much that we can do, just
+                 * let the caller we failed
+                 */
                 return -1;
             }
 
             /*
-             * Reach here means the connection was successful, let's retry
-             * to write(2).
-             *
-             * note: the flb_io_connect() uses asyncronous sockets, register
-             * the file descriptor with the main event loop and yields until
-             * the main event loop returns the control back (resume), doing a
-             * 'retry' it's pretty safe.
+             * Return the control to the parent caller, we need to wait for
+             * the event loop to get back to us.
              */
-            goto retry;
+            flb_thread_yield(th, FLB_FALSE);
+
+            /* We got a notification, remove the event registered */
+            ret = mk_event_del(u->evl, &u_conn->event);
+            if (ret == -1) {
+                return -1;
+            }
+
+            /* Check the connection status */
+            if (u_conn->event.mask & MK_EVENT_WRITE) {
+                ret = getsockopt(u_conn->fd, SOL_SOCKET, SO_ERROR, &error, &slen);
+                if (ret == -1) {
+                    flb_error("[io] could not validate socket status");
+                    return -1;
+                }
+
+                if (error != 0) {
+                    /* Connection is broken, not much to do here */
+                    flb_error("[io] TCP connection failed: %s:%i",
+                              u->tcp_host, u->tcp_port);
+                    return -1;
+                }
+
+                MK_EVENT_NEW(&u_conn->event);
+                goto retry;
+            }
+            else {
+                return -1;
+            }
+
+        }
+        else {
+            return -1;
         }
     }
 
@@ -336,7 +397,6 @@ int flb_io_net_write(struct flb_upstream_conn *u_conn, void *data,
     void *th = NULL;
     flb_trace("[io] [net_write] trying %zd bytes", len);
 #endif
-
     if (u->flags & FLB_IO_TCP) {
         if (u->flags & FLB_IO_ASYNC) {
             ret = net_io_write_async(th, u_conn, data, len, out_len);
@@ -356,8 +416,8 @@ int flb_io_net_write(struct flb_upstream_conn *u_conn, void *data,
     }
 
 #ifdef FLB_HAVE_FLUSH_UCONTEXT
-    flb_trace("[io thread=%p] [net_write] ret=%i total=%i",
-              th, ret, *out_len);
+    flb_trace("[io thread=%p] [net_write] ret=%i total=%lu/%lu",
+              th, ret, *out_len, len);
 #else
     flb_trace("[io] [net_write] ret=%i total=%i",
               ret, *out_len);
