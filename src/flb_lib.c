@@ -176,6 +176,34 @@ int flb_output_set(flb_output_t *output, ...)
     return 0;
 }
 
+/* Set a service property */
+int flb_service_set(flb_ctx_t *ctx, ...)
+{
+    int ret;
+    char *key;
+    char *value;
+    va_list va;
+
+    va_start(va, ctx);
+
+    while ((key = va_arg(va, char *))) {
+        value = va_arg(va, char *);
+        if (!value) {
+            /* Wrong parameter */
+            return -1;
+        }
+
+        ret = flb_config_set_property(ctx->config, key, value);
+        if (ret != 0) {
+            va_end(va);
+            return -1;
+        }
+    }
+
+    va_end(va);
+    return 0;
+}
+
 /* Load a configuration file that may be used by the input or output plugin */
 int flb_lib_config_file(struct flb_lib_ctx *ctx, char *path)
 {

@@ -21,6 +21,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <signal.h>
+#include <stddef.h>
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_macros.h>
@@ -28,6 +29,43 @@
 #include <fluent-bit/flb_plugins.h>
 #include <fluent-bit/flb_io_tls.h>
 #include <fluent-bit/flb_kernel.h>
+
+struct flb_service_config service_configs[] = {
+    {FLB_CONF_STR_FLUSH,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, flush)},
+
+    {FLB_CONF_STR_DAEMON,
+     FLB_CONF_TYPE_BOOL,
+     offsetof(struct flb_config, daemon)},
+
+    {FLB_CONF_STR_LOGLEVEL,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, log)},
+
+#ifdef FLB_HAVE_HTTP
+    {FLB_CONF_STR_HTTP_MONITOR,
+     FLB_CONF_TYPE_BOOL,
+     offsetof(struct flb_config, http_server)},
+
+    {FLB_CONF_STR_HTTP_PORT,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, http_port)},
+#endif
+
+#ifdef FLB_HAVE_BUFFERING
+    {FLB_CONF_STR_BUF_PATH,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, buffer_path)},
+
+    {FLB_CONF_STR_BUF_WORKERS,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, buffer_workers)},
+#endif
+
+    {NULL, FLB_CONF_TYPE_OTHER, 0} /* end of array */
+};
+
 
 struct flb_config *flb_config_init()
 {
@@ -174,4 +212,97 @@ char *flb_config_prop_get(char *key, struct mk_list *list)
     }
 
     return NULL;
+}
+
+static inline int prop_key_check(char *key, char *kv, int k_len)
+{
+    size_t len;
+
+    len = strnlen(key,256);
+    if (strncasecmp(key, kv, k_len) == 0 && len == k_len) {
+        return 0;
+    }
+    return -1;
+}
+
+static int set_log_level(struct flb_config *config, char *v_str)
+{
+    if (v_str != NULL && config->log != NULL) {
+        if (strcasecmp(v_str, "error") == 0) {
+            config->log->level = 1;
+        }
+        else if (strcasecmp(v_str, "warning") == 0) {
+            config->log->level = 2;
+        }
+        else if (strcasecmp(v_str, "info") == 0) {
+            config->log->level = 3;
+        }
+        else if (strcasecmp(v_str, "debug") == 0) {
+            config->log->level = 4;
+        }
+        else if (strcasecmp(v_str, "trace") == 0) {
+            config->log->level = 5;
+        }
+        else {
+            return -1;
+        }
+    }else{
+        flb_error("Not set log level");
+    }
+    return 0;
+}
+
+static inline int atobool(char*v)
+{
+    return  (strncasecmp("true", v, 256) == 0)
+        ? FLB_TRUE
+        : FLB_FALSE;
+}   
+
+int flb_config_set_property(struct flb_config *config,
+                            char *k, char *v)
+{
+    int i=0;
+    int ret = -1;
+    int*  i_val;
+    char* s_val;
+    size_t len = strnlen(k, 256);
+    char* key = service_configs[0].key;
+
+    while( key != NULL ){
+        if ( prop_key_check(key, k,len) == 0) {
+            if ( !strncasecmp(key, FLB_CONF_STR_LOGLEVEL ,256) ) {
+                ret = set_log_level(config, v);
+            }else{
+                ret = 0;
+                switch(service_configs[i].type){
+                case FLB_CONF_TYPE_INT:
+                    i_val  = (int*)((char*)config + service_configs[i].offset);
+                    *i_val = atoi(v);
+                    break;
+
+                case FLB_CONF_TYPE_BOOL:
+                    i_val = (int*)((char*)config+service_configs[i].offset);
+                    *i_val = atobool(v);
+                    break;
+
+                case FLB_CONF_TYPE_STR:
+                    s_val = (char*)config+service_configs[i].offset;
+                    s_val = strdup(v);
+                    break;
+
+                default:
+                    ret = -1;
+                }
+            }
+
+            if (ret < 0) {
+                flb_error("config parameter error");
+                return -1;
+            }
+            return 0;
+        }
+        key = service_configs[++i].key;
+    }
+    return 0;
 }

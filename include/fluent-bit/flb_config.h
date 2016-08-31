@@ -120,5 +120,32 @@ struct flb_config {
 struct flb_config *flb_config_init();
 void flb_config_exit(struct flb_config *config);
 char *flb_config_prop_get(char *key, struct mk_list *list);
+int flb_config_set_property(struct flb_config *config,
+                            char *k, char *v);
+struct flb_service_config {
+    char    *key;
+    int     type;
+    size_t  offset;
+};
+
+enum conf_type {
+    FLB_CONF_TYPE_INT,
+    FLB_CONF_TYPE_BOOL,
+    FLB_CONF_TYPE_STR,
+    FLB_CONF_TYPE_OTHER,
+};
+
+#define FLB_CONF_STR_FLUSH    "Flush"
+#define FLB_CONF_STR_DAEMON   "Daemon"
+#define FLB_CONF_STR_LOGLEVEL "Log_Level"
+#ifdef FLB_HAVE_HTTP
+#define FLB_CONF_STR_HTTP_MONITOR "HTTP_Monitor"
+#define FLB_CONF_STR_HTTP_PORT    "HTTP_Port"
+#endif /* FLB_HAVE_HTTP */
+#ifdef FLB_HAVE_BUFFERING
+#define FLB_CONF_STR_BUF_PATH     "Buffer_Path"
+#define FLB_CONF_STR_BUF_WORKERS  "Buffer_Workers"
+#endif /*FLB_HAVE_BUFFERING*/
+
 
 #endif

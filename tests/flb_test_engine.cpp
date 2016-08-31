@@ -61,12 +61,14 @@ int check_routing(const char* tag, const char* match, bool expect)
     EXPECT_TRUE(output != NULL);
     flb_output_set(output, "match", match, NULL);
 
+    flb_service_set(ctx, "Flush", "1", "Daemon", "false", NULL);
+
     ret = flb_start(ctx);
     EXPECT_EQ(ret, 0);
 
     /* start test */
     flb_lib_push(input, str, strlen(str));
-    sleep(5);/*waiting flush*/
+    sleep(1);/*waiting flush*/
 
     pthread_mutex_lock(&result_mutex);
     ret = result;
