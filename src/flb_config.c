@@ -54,11 +54,11 @@ struct flb_service_config service_configs[] = {
 #endif
 
 #ifdef FLB_HAVE_BUFFERING
-    {FLB_CONF_STR_BUFFER_PATH,
+    {FLB_CONF_STR_BUF_PATH,
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, buffer_path)},
 
-    {FLB_CONF_STR_BUFFER_WORKERS,
+    {FLB_CONF_STR_BUF_WORKERS,
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, buffer_workers)},
 #endif
@@ -264,8 +264,8 @@ int flb_config_set_property(struct flb_config *config,
 {
     int i=0;
     int ret = -1;
-    int*  i_val = NULL;
-    char* s_val = NULL;
+    int*  i_val;
+    char* s_val;
     size_t len = strnlen(k, 256);
     char* key = service_configs[0].key;
 
@@ -277,12 +277,12 @@ int flb_config_set_property(struct flb_config *config,
                 ret = 0;
                 switch(service_configs[i].type){
                 case FLB_CONF_TYPE_INT:
-                    i_val         = (char*)config + service_configs[i].offset;
+                    i_val  = (int*)((char*)config + service_configs[i].offset);
                     *i_val = atoi(v);
                     break;
 
                 case FLB_CONF_TYPE_BOOL:
-                    i_val = (char*)config+service_configs[i].offset;
+                    i_val = (int*)((char*)config+service_configs[i].offset);
                     *i_val = atobool(v);
                     break;
 
