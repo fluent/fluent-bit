@@ -492,16 +492,15 @@ void *flb_input_dyntag_flush(struct flb_input_dyntag *dt, size_t *size)
 {
     void *buf;
 
-    buf = malloc(dt->mp_sbuf.size);
-    if (!buf) {
-        perror("malloc");
-        return NULL;
-    }
+    /*
+     * MessagePack-C internal use a raw buffer for it operations, since we
+     * already appended data we just can take out the references to avoid
+     * a new memory allocation and skip a copy operation.
+     */
 
+    buf   = dt->mp_sbuf.data;
     *size = dt->mp_sbuf.size;
-    memcpy(buf, dt->mp_sbuf.data, dt->mp_sbuf.size);
 
-    msgpack_sbuffer_destroy(&dt->mp_sbuf);
     msgpack_sbuffer_init(&dt->mp_sbuf);
     msgpack_packer_init(&dt->mp_pck, &dt->mp_sbuf, msgpack_sbuffer_write);
 
