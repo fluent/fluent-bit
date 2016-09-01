@@ -42,36 +42,40 @@ int cb_null_flush(void *data, size_t bytes,
                   void *out_context,
                   struct flb_config *config)
 {
-    int fd;
-    int ret;
-    size_t total = 0;
-    (void) i_ins;
+    (void) data;
+    (void) bytes;
     (void) tag;
     (void) tag_len;
+    (void) i_ins;
+    (void) out_context;
+    (void) config;
 
-    fd = open("/dev/null", O_WRONLY);
-    if (fd == -1) {
-        perror("open");
-        return -1;
+    msgpack_unpacked result;
+    size_t off = 0, cnt = 0;
+
+    clock_t t;
+    t = clock();
+
+    msgpack_unpacked_init(&result);
+    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+        cnt++;
     }
+    msgpack_unpacked_destroy(&result);
 
-    while (total < bytes) {
-        ret = write(fd, data + total, bytes - total);
-        if (ret == -1) {
-            perror("write");
-            close(fd);
-            return -1;
-        }
+    //t = clock() - t;
+    //double time_taken = ((double)t)/CLOCKS_PER_SEC; // in seconds
+    //printf("out_null took %f seconds to count records\n", time_taken);
 
-        total += ret;
-    }
-    close(fd);
-    return total;
+
+    time_t ti = time(NULL);
+    printf("%lu,%i\n", ti, cnt);
+
+    return 0;
 }
 
 struct flb_output_plugin out_null_plugin = {
     .name         = "null",
-    .description  = "Flush data to /dev/null",
+    .description  = "Throws away events",
     .cb_init      = cb_null_init,
     .cb_flush     = cb_null_flush,
     .flags        = 0,
