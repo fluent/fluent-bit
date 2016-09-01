@@ -90,7 +90,8 @@ struct flb_input_plugin {
  * structure node or create a new one if required.
  */
 struct flb_input_dyntag {
-    int busy;
+    int busy;   /* buffer is being flushed        */
+    int lock;   /* cannot longer append more data */
 
     /* Tag */
     int tag_len;
