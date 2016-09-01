@@ -106,8 +106,14 @@ int flb_engine_dispatch(struct flb_input_instance *in,
         struct flb_input_dyntag *dt;
 
         mk_list_foreach_safe(d_head, tmp, &in->dyntags) {
+            int matches = 0;
+            struct mk_list *o_head;
+
             dt = mk_list_entry(d_head, struct flb_input_dyntag, _head);
             flb_trace("[dyntag %s] %p tag=%s", dt->in->name, dt, dt->tag);
+            if (dt->busy == FLB_TRUE) {
+                continue;
+            }
 
             /* There is a match, get the buffer */
             buf = flb_input_dyntag_flush(dt, &size);
@@ -229,8 +235,12 @@ int flb_engine_dispatch(struct flb_input_instance *in,
         mk_list_foreach_safe(d_head, tmp, &in->dyntags) {
             int matches = 0;
             struct mk_list *o_head;
+
             dt = mk_list_entry(d_head, struct flb_input_dyntag, _head);
-            flb_trace("[dyntag %s] %p tag=%s", dt->in->name, dt, dt->tag);
+            if (dt->busy == FLB_TRUE) {
+                continue;
+            }
+            flb_trace("[dyntag %s] [%p] tag=%s", dt->in->name, dt, dt->tag);
 
             /* There is a match, get the buffer */
             buf = flb_input_dyntag_flush(dt, &size);
@@ -245,6 +255,7 @@ int flb_engine_dispatch(struct flb_input_instance *in,
                 continue;
             }
 
+            dt->busy = FLB_TRUE;
             mk_list_foreach(o_head, &config->outputs) {
                 o_ins = mk_list_entry(o_head,
                                       struct flb_output_instance, _head);
