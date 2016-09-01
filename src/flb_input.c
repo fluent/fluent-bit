@@ -462,9 +462,10 @@ struct flb_input_dyntag *flb_input_dyntag_create(struct flb_input_instance *in,
     if (!dt) {
         return NULL;
     }
-    dt->busy= FLB_FALSE;
-    dt->in  = in;
-    dt->tag = malloc(tag_len + 1);
+    dt->busy = FLB_FALSE;
+    dt->lock = FLB_FALSE;
+    dt->in   = in;
+    dt->tag  = malloc(tag_len + 1);
     memcpy(dt->tag, tag, tag_len);
     dt->tag[tag_len] = '\0';
     dt->tag_len = tag_len;
@@ -517,7 +518,7 @@ int flb_input_dyntag_append(struct flb_input_instance *in,
     /* Try to find a current dyntag node to append the data */
     mk_list_foreach(head, &in->dyntags) {
         dt = mk_list_entry(head, struct flb_input_dyntag, _head);
-        if (dt->busy == FLB_TRUE) {
+        if (dt->busy == FLB_TRUE || dt->lock == FLB_TRUE) {
             dt = NULL;
             continue;
         }
@@ -537,7 +538,7 @@ int flb_input_dyntag_append(struct flb_input_instance *in,
     /* Found a dyntag node that can append the new info */
     if (dt) {
         msgpack_pack_object(&dt->mp_pck, data);
-        return 0;
+        goto out;
     }
 
     /* No dyntag was found, we need to create a new one */
@@ -546,6 +547,13 @@ int flb_input_dyntag_append(struct flb_input_instance *in,
         return -1;
     }
     msgpack_pack_object(&dt->mp_pck, data);
+
+ out:
+    /* Lock buffers where size > 2MB */
+    if (dt->mp_sbuf.size > 2048000) {
+        dt->lock = FLB_TRUE;
+    }
+
     return 0;
 }
 
