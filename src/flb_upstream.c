@@ -105,6 +105,7 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
 
     conn = malloc(sizeof(struct flb_upstream_conn));
     if (!conn) {
+        perror("malloc");
         return NULL;
     }
     conn->u             = u;
@@ -122,7 +123,6 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
         free(conn);
         return NULL;
     }
-    flb_net_socket_nonblocking(conn->fd);
 
 #ifdef FLB_HAVE_FLUSH_PTHREADS
     pthread_mutex_lock(&u->mutex_queue);
