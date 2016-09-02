@@ -229,6 +229,7 @@ if(FLB_MTRACE)
   endif()
 endif()
 
+# Pthread Local Storage
 check_c_source_compiles("
    __thread int a;
    int main() {
@@ -239,6 +240,7 @@ if(FLB_HAVE_C_TLS)
   FLB_DEFINITION(FLB_HAVE_C_TLS)
 endif()
 
+# setjmp
 check_c_source_compiles("
     #include <setjmp.h>
     int main() {
@@ -246,6 +248,17 @@ check_c_source_compiles("
     }" FLB_HAVE_SETJMP)
 if(FLB_HAVE_SETJMP)
   FLB_DEFINITION(FLB_HAVE_SETJMP)
+endif()
+
+# accept(4)
+check_c_source_compiles("
+    #define _GNU_SOURCE
+    #include <sys/socket.h>
+    int main() {
+        accept4(0, NULL, NULL, 0);
+    }" FLB_HAVE_ACCEPT4)
+if(FLB_HAVE_ACCEPT4)
+  FLB_DEFINITION(FLB_HAVE_ACCEPT4)
 endif()
 
 if(FLB_TD)
