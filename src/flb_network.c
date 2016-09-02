@@ -33,6 +33,7 @@
 #include <sys/types.h>          /* See NOTES */
 #include <arpa/inet.h>
 
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_macros.h>
@@ -314,7 +315,7 @@ int flb_net_accept(int server_fd)
     struct sockaddr sock_addr;
     socklen_t socket_size = sizeof(struct sockaddr);
 
-#ifdef HAVE_ACCEPT4
+#ifdef FLB_HAVE_ACCEPT4
     remote_fd = accept4(server_fd, &sock_addr, &socket_size,
                         SOCK_NONBLOCK | SOCK_CLOEXEC);
 #else
