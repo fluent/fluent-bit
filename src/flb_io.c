@@ -336,7 +336,6 @@ static FLB_INLINE int net_io_write_async(struct flb_thread *th,
                  * If we failed here there no much that we can do, just
                  * let the caller we failed
                  */
-                close(u_conn->fd);
                 return -1;
             }
         }
