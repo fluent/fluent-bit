@@ -207,10 +207,15 @@ int fw_prot_process(struct fw_conn *conn)
 
                 /* sbuffer to msgpack object */
                 msgpack_unpacked_init(&r_out);
-                msgpack_unpack_next(&r_out,
-                                    mp_sbuf.data,
-                                    mp_sbuf.size,
-                                    &off);
+                ret = msgpack_unpack_next(&r_out,
+                                          mp_sbuf.data,
+                                          mp_sbuf.size,
+                                          &off);
+                if (ret != MSGPACK_UNPACK_SUCCESS) {
+                    msgpack_unpacked_destroy(&result);
+                    msgpack_unpacker_free(unp);
+                    return -1;
+                }
 
                 /* Register data object */
                 entry = r_out.data;
