@@ -119,6 +119,8 @@ int fw_prot_process(struct fw_conn *conn)
                         conn->buf_len - all_used);
                 conn->buf_len -= all_used;
             }
+
+            msgpack_unpacker_free(unp);
             return 0;
         }
 
@@ -152,12 +154,14 @@ int fw_prot_process(struct fw_conn *conn)
                 flb_debug("[in_fw] parser: expecting an array (type=%i), skip.",
                           root.type);
                 msgpack_unpacked_destroy(&result);
+                msgpack_unpacker_free(unp);
                 return -1;
             }
 
             if (root.via.array.size < 2) {
                 flb_debug("[in_fw] parser: array of invalid size, skip.");
                 msgpack_unpacked_destroy(&result);
+                msgpack_unpacker_free(unp);
                 return -1;
             }
 
@@ -166,6 +170,7 @@ int fw_prot_process(struct fw_conn *conn)
             if (tag.type != MSGPACK_OBJECT_STR) {
                 flb_debug("[in_fw] parser: invalid tag format, skip.");
                 msgpack_unpacked_destroy(&result);
+                msgpack_unpacker_free(unp);
                 return -1;
             }
 
@@ -183,6 +188,7 @@ int fw_prot_process(struct fw_conn *conn)
                 if (map.type != MSGPACK_OBJECT_MAP) {
                     flb_warn("[in_fw] invalid data format, map expected");
                     msgpack_unpacked_destroy(&result);
+                    msgpack_unpacker_free(unp);
                     return -1;
                 }
 
@@ -219,6 +225,7 @@ int fw_prot_process(struct fw_conn *conn)
             else {
                 flb_warn("[in_fw] invalid data format");
                 msgpack_unpacked_destroy(&result);
+                msgpack_unpacker_free(unp);
                 return -1;
             }
 
@@ -226,6 +233,7 @@ int fw_prot_process(struct fw_conn *conn)
         }
     }
     msgpack_unpacked_destroy(&result);
+    msgpack_unpacker_free(unp);
 
     switch (ret) {
     case MSGPACK_UNPACK_EXTRA_BYTES:
