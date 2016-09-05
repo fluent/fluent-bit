@@ -93,6 +93,8 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
         flb_net_socket_nonblocking(u_conn->fd);
     }
 
+    flb_net_socket_tcp_nodelay(fd);
+
     /* Start the connection */
     ret = flb_net_tcp_fd_connect(fd, u->tcp_host, u->tcp_port);
     if (ret == -1) {
@@ -160,6 +162,17 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
         }
     }
 
+#ifdef FLB_HAVE_TLS
+    /* Check if TLS was enabled, if so perform the handshakee */
+    if (u_conn->u->flags & FLB_IO_TLS) {
+        ret = net_io_tls_handshake(u_conn, th);
+        if (ret != 0) {
+            close(fd);
+            return -1;
+        }
+    }
+#endif
+
     u_conn->connect_count++;
     flb_trace("[io] connection OK");
 
@@ -222,12 +235,20 @@ static FLB_INLINE int net_io_write_async(struct flb_thread *th,
     int error;
     ssize_t bytes;
     size_t total = 0;
+    size_t send;
     socklen_t slen = sizeof(error);
     struct flb_upstream *u = u_conn->u;
 
  retry:
     error = 0;
-    bytes = write(u_conn->fd, data + total, len - total);
+
+    if (len - total > 524288) {
+        send = 524288;
+    }
+    else {
+        send = (len - total);
+    }
+    bytes = write(u_conn->fd, data + total, send);
 
 #ifdef FLB_HAVE_TRACE
     if (bytes > 0) {
@@ -244,6 +265,7 @@ static FLB_INLINE int net_io_write_async(struct flb_thread *th,
         if (errno == EAGAIN) {
             MK_EVENT_NEW(&u_conn->event);
             u_conn->thread = th;
+
             ret = mk_event_add(u->evl,
                                u_conn->fd,
                                FLB_ENGINE_EV_THREAD,
