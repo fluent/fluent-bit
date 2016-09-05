@@ -141,7 +141,7 @@ static inline int process_pack(struct flb_in_stdin_config *ctx,
 
 int in_stdin_collect(struct flb_config *config, void *in_context)
 {
-    int bytes;
+    int bytes = 0;
     int ret;
     int available;
     jsmntok_t *t;
