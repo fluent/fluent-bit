@@ -120,7 +120,6 @@ int fw_prot_process(struct fw_conn *conn)
                 conn->buf_len -= all_used;
             }
 
-            msgpack_unpacker_free(unp);
             return 0;
         }
 
