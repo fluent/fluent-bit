@@ -25,6 +25,7 @@
 
 #include <msgpack.h>
 #include <cjson/cjson.h>
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_http_client.h>
 
@@ -179,6 +180,7 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
                void *data)
 {
     int ulen;
+    int type;
     char *uri = NULL;
     char *tmp;
     struct flb_upstream *upstream;
@@ -251,19 +253,31 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
         }
     }
 
+    /* Check if SSL/TLS is enabled */
+#ifdef FLB_HAVE_TLS
+    if (ins->use_tls == FLB_TRUE) {
+        type = FLB_IO_TLS;
+    }
+    else {
+        type = FLB_IO_TCP;
+    }
+#else
+    type = FLB_IO_TCP;
+#endif
+
     if (ctx->proxy) {
         flb_trace("[out_http] Upstream Proxy=%s:%i",
                   ctx->proxy_host, ctx->proxy_port);
         upstream = flb_upstream_create(config,
                                        ctx->proxy_host,
                                        ctx->proxy_port,
-                                       FLB_IO_TCP, (void *) &ins->tls);
+                                       type, (void *) &ins->tls);
     }
     else {
         upstream = flb_upstream_create(config,
                                        ins->host.name,
                                        ins->host.port,
-                                       FLB_IO_TCP, (void *) &ins->tls);
+                                       type, (void *) &ins->tls);
     }
 
     if (!upstream) {
@@ -423,5 +437,5 @@ struct flb_output_plugin out_http_plugin = {
     .cb_pre_run     = NULL,
     .cb_flush       = cb_http_flush,
     .cb_exit        = cb_http_exit,
-    .flags          = FLB_OUTPUT_NET,
+    .flags          = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
 };
