@@ -48,6 +48,7 @@ int fw_conn_event(void *data)
                 fw_conn_del(conn);
                 return -1;
             }
+
             size = conn->buf_size + ctx->chunk_size;
             tmp = realloc(conn->buf, size);
             if (!tmp) {
@@ -68,7 +69,6 @@ int fw_conn_event(void *data)
             flb_trace("[in_fw] read()=%i pre_len=%i now_len=%i",
                       bytes, conn->buf_len, conn->buf_len + bytes);
             conn->buf_len += bytes;
-
             ret = fw_prot_process(conn);
             if (ret == -1) {
                 return -1;
@@ -81,8 +81,11 @@ int fw_conn_event(void *data)
             return -1;
         }
     }
-    else if (event->mask & MK_EVENT_CLOSE) {
+
+    if (event->mask & MK_EVENT_CLOSE) {
         flb_trace("[in_fw] fd=%i hangup", event->fd);
+        fw_conn_del(conn);
+        return -1;
     }
     return 0;
 }
@@ -101,11 +104,10 @@ struct fw_conn *fw_conn_add(int fd, struct flb_in_fw_config *ctx)
 
     /* Set data for the event-loop */
     event = &conn->event;
+    MK_EVENT_NEW(event);
     event->fd           = fd;
     event->type         = FLB_ENGINE_EV_CUSTOM;
-    event->mask         = MK_EVENT_EMPTY;
     event->handler      = fw_conn_event;
-    event->status       = MK_EVENT_NONE;
 
     /* Connection info */
     conn->fd      = fd;
