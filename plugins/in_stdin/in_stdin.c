@@ -76,7 +76,7 @@ int in_stdin_init(struct flb_input_instance *in,
 
 int in_stdin_collect(struct flb_config *config, void *in_context)
 {
-    int bytes;
+    int bytes = 0;
     int out_size;
     int ret;
     char *pack;
