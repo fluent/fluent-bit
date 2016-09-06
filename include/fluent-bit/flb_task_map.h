@@ -23,7 +23,6 @@
 #include <inttypes.h>
 
 struct flb_task_map {
-    uint8_t id;
     void    *task;
 };
 
