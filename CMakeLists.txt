@@ -266,9 +266,11 @@ endif()
 # accept(4)
 check_c_source_compiles("
     #define _GNU_SOURCE
+    #include <stdio.h>
     #include <sys/socket.h>
     int main() {
         accept4(0, NULL, NULL, 0);
+        return 0;
     }" FLB_HAVE_ACCEPT4)
 if(FLB_HAVE_ACCEPT4)
   FLB_DEFINITION(FLB_HAVE_ACCEPT4)
