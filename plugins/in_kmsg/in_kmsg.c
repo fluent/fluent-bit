@@ -326,6 +326,8 @@ static int in_kmsg_exit(void *data, struct flb_config *config)
         close(ctx->fd);
     }
 
+    msgpack_sbuffer_destroy(&ctx->mp_sbuf);
+
     free(ctx);
     return 0;
 }
