@@ -285,28 +285,13 @@ static int buffer_queue_path(char *path, struct flb_config *config)
         return -1;
     }
 
-    /* /deferred/ */
-    snprintf(tmp, sizeof(tmp) - 1, "%s/deferred", path);
-    ret = buffer_dir(tmp);
-    if (ret == -1) {
-        return -1;
-    }
-
-    /* For each output plugin instance, create an entry on tasks and deferred */
+    /* For each output plugin instance, create an entry on tasks */
     mk_list_foreach(head, &config->outputs) {
         ins = mk_list_entry(head, struct flb_output_instance, _head);
 
         /* tasks/PLUGIN_NAME */
         snprintf(tmp, sizeof(tmp) - 1, "%s/tasks/%s",
                  path, ins->name);
-        ret = buffer_dir(tmp);
-        if (ret == -1) {
-            return -1;
-        }
-
-        /* deferred/PLUGIN_NAME */
-        snprintf(tmp, sizeof(tmp) - 1, "%s/deferred/%s",
-                 path, ins->p->name);
         ret = buffer_dir(tmp);
         if (ret == -1) {
             return -1;
