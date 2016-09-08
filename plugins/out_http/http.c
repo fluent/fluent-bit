@@ -364,7 +364,7 @@ int cb_http_flush(void *data, size_t bytes,
     u_conn = flb_upstream_conn_get(u);
     if (!u_conn) {
         flb_error("[out_http] no upstream connections available");
-        FLB_OUTPUT_RETURN(FLB_ERROR);
+        FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
     /* Create HTTP client context */
