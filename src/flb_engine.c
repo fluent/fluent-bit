@@ -302,12 +302,12 @@ int flb_engine_start(struct flb_config *config)
                                     config);
         if (!buf_ctx) {
             flb_error("[engine] could not initialize buffer workers");
+            return -1;
         }
-        else {
-            /* Start buffer engine workers */
-            config->buffer_ctx = buf_ctx;
-            flb_buffer_start(config->buffer_ctx);
-        }
+
+        /* Start buffer engine workers */
+        config->buffer_ctx = buf_ctx;
+        flb_buffer_start(config->buffer_ctx);
     }
 #endif
 

@@ -69,8 +69,9 @@ struct flb_buffer {
     char *path;
     int workers_n;             /* total number of workers */
     int worker_lru;            /* Last-Recent-Used worker */
-    struct flb_config *config;
-    struct mk_list workers;    /* List of flb_buffer_worker nodes */
+    void *qworker;             /* queue chunk nodes  */
+    struct flb_config *config; /* Fluent Bit context */
+    struct mk_list workers;    /* List of flb_buffer_worker nodes  */
 };
 
 /* */

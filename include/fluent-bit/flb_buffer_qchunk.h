@@ -1,0 +1,54 @@
+
+/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+
+/*  Fluent Bit
+ *  ==========
+ *  Copyright (C) 2015-2016 Treasure Data Inc.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+#ifdef FLB_HAVE_BUFFERING
+
+#ifndef FLB_BUFFER_QCHUNK_H
+#define FLB_BUFFER_QCHUNK_H
+
+#include <mk_core.h>
+#include <fluent-bit/flb_output.h>
+
+/*
+ * A queue chunk (qchunk) represents a buffer chunk that resides in the
+ * filesystem and at some point needs to be enqueued into the engine.
+ * Entries of this type are linked into 'struct flb_buffer->queue' at
+ * startup when discovering not processed buffer chunks.
+ */
+struct flb_buffer_qchunk {
+    char *file_path;           /* Absolute path to source buffer chunk */
+    uint64_t routes;           /* All pending destinations             */
+    struct mk_list _head;      /* Link to buffer head at ctx->queue    */
+};
+
+struct flb_buffer_qworker {
+    pthread_t tid;             /* pthread ID  */
+    pid_t task_id;             /* OS PID for this thread */
+    struct mk_event_loop *evl; /* event loop */
+    struct mk_list *queue;     /* chunks queue */
+};
+
+struct flb_buffer_qchunk *flb_buffer_qchunk_add(struct flb_buffer *ctx,
+                                                char *path,
+                                                uint64_t routes);
+int flb_buffer_qchunk_delete(struct flb_buffer_qchunk *qchunk);
+
+#endif
+#endif

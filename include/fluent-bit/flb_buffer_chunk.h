@@ -68,6 +68,7 @@ struct flb_buffer_request *flb_buffer_chunk_mov(int type,
 
 int flb_buffer_chunk_real_move(struct flb_buffer_worker *worker,
                                struct mk_event *event);
+int flb_buffer_chunk_scan(struct flb_buffer *ctx);
 
 #endif
 

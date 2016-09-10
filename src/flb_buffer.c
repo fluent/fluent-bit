@@ -25,6 +25,7 @@
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+#include <dirent.h>
 #include <inttypes.h>
 
 #include <fluent-bit/flb_info.h>
@@ -345,6 +346,7 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
     if (!ctx) {
         return NULL;
     }
+    mk_list_init(&ctx->queue);
 
     path_len = strlen(path);
     if (path[path_len - 1] != '/') {
@@ -424,8 +426,13 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
             return NULL;
         }
     }
-
     ctx->workers_n = i;
+
+    /*
+     * Once the path is ready, check if we have some previous buffer chunk
+     * files.
+     */
+    ret = flb_buffer_chunk_scan(ctx);
 
     flb_debug("[buffer] new instance created; workers=%i", ctx->workers_n);
     return ctx;

@@ -13,6 +13,7 @@ set(src
   flb_output.c
   flb_buffer.c
   flb_buffer_chunk.c
+  flb_buffer_qchunk.c
   flb_config.c
   flb_network.c
   flb_utils.c

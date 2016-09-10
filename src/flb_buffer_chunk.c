@@ -41,6 +41,7 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_buffer.h>
 #include <fluent-bit/flb_buffer_chunk.h>
+#include <fluent-bit/flb_buffer_qchunk.h>
 #include <fluent-bit/flb_sha1.h>
 
 /* FIXME */
@@ -53,7 +54,8 @@
 #define flb_error(fmt, ...) FLB_ERROR_FIXME(fmt, __VA_ARGS__)
 
 /* Local structure used to validate and obtain Chunk information */
-static struct chunk_info {
+struct chunk_info {
+    char hash_str[41];
     uint64_t routes;
     int worker_id;
     char *tag;
@@ -87,7 +89,7 @@ static struct flb_buffer_worker *get_worker(struct flb_buffer *ctx, int id)
 }
 
 /* Given a Chunk filename, validate format and populate chunk_info structure */
-static int chunk_info(char *filename, struct chunk_info *info)
+int chunk_info(char *filename, struct chunk_info *info)
 {
     int i;
     int len;
@@ -117,6 +119,8 @@ static int chunk_info(char *filename, struct chunk_info *info)
     if (!p) {
         return -1;
     }
+    memcpy(info->hash_str, filename, 40);
+    info->hash_str[40] = '\0';
 
     len = (p - tmp);
     if (len < 1 || len > sizeof(num)) {
@@ -719,6 +723,101 @@ struct flb_buffer_request *flb_buffer_chunk_mov(int type,
     }
 
     return req;
+}
+
+/*
+ * Perform a scan over a buffer path to find buffer chunks not processed. This
+ * function is only invoked at start time.
+ */
+int flb_buffer_chunk_scan(struct flb_buffer *ctx)
+{
+    int ret;
+    int routes;
+    char src[PATH_MAX];
+    char task[PATH_MAX];
+    DIR *dir;
+    struct chunk_info info;
+    struct dirent *ent;
+    struct mk_list *head;
+    struct flb_output_instance *o_ins;
+    struct flb_buffer_qchunk *qchunk;
+    struct stat st;
+
+    ret = snprintf(src, sizeof(src) - 1, "%s/outgoing", ctx->path);
+    if (ret == -1) {
+        return -1;
+    }
+    dir = opendir(src);
+    if (!dir) {
+        perror("opendir");
+        return -1;
+    }
+
+    /* Iterate the outgoing/ path */
+    while ((ent = readdir(dir)) != NULL) {
+        if ((ent->d_name[0] == '.') && (strcmp(ent->d_name, "..") != 0)) {
+            continue;
+        }
+
+        /* Look just for files */
+        if (ent->d_type != DT_REG) {
+            continue;
+        }
+
+        /* Validate chunk file */
+        ret = chunk_info(ent->d_name, &info);
+        if (ret == -1) {
+            flb_warn("[buffer scan] invalid chunk file %s", ent->d_name);
+            continue;
+        }
+
+        flb_debug("[buffer scan] found %s", info.hash_str);
+
+        ret = snprintf(src, sizeof(src) - 1, "%soutgoing/%s",
+                       ctx->path, ent->d_name);
+        if (ret == -1) {
+            return -1;
+        }
+
+        /*
+         * We have a valid buffer chunk file, now we need to iterate which
+         * pending task is associated. This verification is mandatory as if
+         * the chunk was set to go to 3 output destinations and it was just
+         * sent to one, we need to process ONLY the remaining ones.
+         */
+        routes = 0;
+        mk_list_foreach(head, &ctx->config->outputs) {
+            o_ins = mk_list_entry(head, struct flb_output_instance, _head);
+            snprintf(task, sizeof(task) - 1, "%stasks/%s/%s",
+                     ctx->path, o_ins->name, ent->d_name);
+
+            /* Check that path exists */
+            ret = stat(task, &st);
+            if (ret == -1) {
+                continue;
+            }
+
+            /* Only regular file */
+            if (st.st_size != 0 || (!S_ISREG(st.st_mode))) {
+                continue;
+            }
+
+            routes |= o_ins->mask_id;
+        }
+
+        if (routes > 0) {
+            qchunk = flb_buffer_qchunk_add(ctx, src, routes);
+            if (!qchunk) {
+                flb_error("[buffer scan] qchunk error for %s", src);
+            }
+            else {
+                flb_debug("[buffer scan] qchunk added for %s",
+                          info.hash_str);
+            }
+        }
+    }
+
+    return 0;
 }
 
 int flb_buffer_chunk_real_move(struct flb_buffer_worker *worker,
