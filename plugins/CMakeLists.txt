@@ -70,6 +70,7 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 endif()
 
 REGISTER_IN_PLUGIN("in_xbee")
+REGISTER_IN_PLUGIN("in_health")
 REGISTER_IN_PLUGIN("in_http")
 REGISTER_IN_PLUGIN("in_serial")
 REGISTER_IN_PLUGIN("in_stdin")
