@@ -180,6 +180,11 @@ void flb_input_initialize_all(struct flb_config *config)
         in = mk_list_entry(head, struct flb_input_instance, _head);
         p = in->p;
 
+        /* Skip pseudo input plugins */
+        if (!p) {
+            continue;
+        }
+
         /* Initialize the input */
         if (p->cb_init) {
             /* Sanity check: all non-dynamic tag input plugins must have a tag */
@@ -208,6 +213,9 @@ void flb_input_pre_run_all(struct flb_config *config)
     mk_list_foreach(head, &config->inputs) {
         in = mk_list_entry(head, struct flb_input_instance, _head);
         p = in->p;
+        if (!p) {
+            continue;
+        }
 
         if (p->cb_pre_run) {
             p->cb_pre_run(in->context, config);

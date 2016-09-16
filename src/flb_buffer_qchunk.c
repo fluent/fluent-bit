@@ -40,7 +40,7 @@
  *                  the engine when a buffer chunk (data) have been loaded in
  *                  the heap and is ready to be associated to an outgoing task.
  */
-struct flb_buffer_qchunk *flb_buffer_qchunk_add(struct flb_buffer *ctx,
+struct flb_buffer_qchunk *flb_buffer_qchunk_add(struct flb_buffer_qworker *qw,
                                                 char *path,
                                                 uint64_t routes)
 {
@@ -51,10 +51,10 @@ struct flb_buffer_qchunk *flb_buffer_qchunk_add(struct flb_buffer *ctx,
         perror("malloc");
         return NULL;
     }
-
+    qchunk->id        = 0;
     qchunk->file_path = strdup(path);
     qchunk->routes    = routes;
-    mk_list_add(&qchunk->_head, &ctx->queue);
+    mk_list_add(&qchunk->_head, &qw->queue);
 
     return qchunk;
 }
@@ -101,25 +101,114 @@ static char *qchunk_get_data(struct flb_buffer_qchunk *qchunk, size_t *size)
     return buf;
 }
 
-/*
- * The worker iterate the qchunk list and upon demand load the physical files
- * into memory.man
- */
-static void *flb_buffer_qchunk_worker(struct flb_buffer_qworker *qw)
+static int qchunk_get_id(struct flb_buffer_qworker *qw)
 {
-    struct mk_event *event;
+    uint8_t available;
+    uint16_t id;
+    uint16_t max = (1 << 14) - 1;
+    struct mk_list *head;
+    struct flb_buffer_qchunk *qchunk;
 
-    while (1) {
+    for (id = 1; id < max; id++) {
+        available = FLB_TRUE;
+
+        mk_list_foreach(head, &qw->queue) {
+            qchunk = mk_list_entry(head, struct flb_buffer_qchunk, _head);
+            if (qchunk->id == id) {
+                available = FLB_FALSE;
+                break;
+            }
+        }
+
+        if (available == FLB_TRUE) {
+            printf("offering qchunk ID=%i\n", id);
+            return id;
+        }
+    }
+
+    printf("no ID\n");
+    return -1;
+}
+
+/*
+ * This worker function (under a POSIX thread) iterate the qchunk list and
+ * upon demand load the physical files into memory and signal the Engine.
+ */
+static void flb_buffer_qchunk_worker(void *data)
+{
+    int id;
+    int ret;
+    char *buf;
+    uint32_t set = 0;
+    uint64_t val = 0;
+    size_t buf_size;
+    struct mk_event *event;
+    struct flb_buffer *ctx;
+    struct flb_buffer_qworker *qw;
+    struct flb_buffer_qchunk *qchunk;
+    struct mk_list *tmp;
+    struct mk_list *head;
+
+    ctx = data;
+    qw = ctx->qworker;
+
+    /*
+     * Here we do a lazy request into the engine, chunk by chunk:
+     *
+     * - Iterate qchunk list
+     * - For each file entry, load it into memory
+     * - Issue the request into the engine
+     */
+    mk_list_foreach_safe(head, tmp, &qw->queue) {
+        qchunk = mk_list_entry(head, struct flb_buffer_qchunk, _head);
+
+        /* Load into memory */
+        buf = qchunk_get_data(qchunk, &buf_size);
+        if (!buf) {
+            flb_error("[buffer qchunk] could not load %s", qchunk->file_path);
+        }
+
+        /* Obtain an ID for this qchunk */
+        id = qchunk_get_id(qw);
+        if (id == -1) {
+            free(buf);
+            flb_error("[buffer qchunk] unvailable IDs / max=(1<<14)-1");
+            continue;
+        }
+        qchunk->id = id;
+
+        /*
+         * Compose the event message: since we are running in a separate
+         * thread and we need to let the Engine that a buffer chunk needs
+         * to be loaded with the Scheduler, we issue a 64bits message with
+         * the required info.
+         *
+         * Then the Engine manager will decode the message and invoke back
+         * the function flb_buffer_engine_event() where this message will
+         * be decoded and processed. The goal is to make this process happen
+         * from the parent thread. With this mechanism we avoid the usage
+         * locks and we avoid to copy a bunch of data between threads.
+         */
+        set = FLB_BUFFER_EV_SET(FLB_BUFFER_EV_QCHUNK_PUSH, qchunk->id, 0);
+        val = FLB_BITS_U64_SET(FLB_ENGINE_BUFFER, set);
+        ret = write(ctx->config->ch_manager[1], &val, sizeof(val));
+        if (ret == -1) {
+            perror("write");
+            flb_error("[buffer qchunk] could not notify engine");
+            free(buf);
+            continue;
+        }
+
         mk_event_wait(qw->evl);
         mk_event_foreach(event, qw->evl) {
             /* FIXME: do signal handling */
+            (void) event;
         }
     }
 }
 
-int flb_buffer_qchunk_init(struct flb_buffer *ctx)
+int flb_buffer_qchunk_create(struct flb_buffer *ctx)
 {
-    int ret;
     struct flb_buffer_qworker *qw;
 
     /* Allocate context */
@@ -136,10 +225,43 @@ int flb_buffer_qchunk_init(struct flb_buffer *ctx)
         free(qw);
         return -1;
     }
+    ctx->qworker = qw;
+
+    return 0;
+}
+
+void flb_buffer_qchunk_destroy(struct flb_buffer *ctx)
+{
+    struct flb_buffer_qworker *qw;
+    struct flb_buffer_qchunk *qchunk;
+    struct mk_list *tmp;
+    struct mk_list *head;
+
+    qw = ctx->qworker;
+
+    /* Delete the list of qchunk entries */
+    mk_list_foreach_safe(head, tmp, &qw->queue) {
+        qchunk = mk_list_entry(head, struct flb_buffer_qchunk, _head);
+        flb_buffer_qchunk_delete(qchunk);
+    }
+
+    mk_event_loop_destroy(qw->evl);
+    ctx->qworker = NULL;
+
+    /* FIXME: stop thread */
+    return;
+}
+
+int flb_buffer_qchunk_start(struct flb_buffer *ctx)
+{
+    int ret;
+    struct flb_buffer_qworker *qw;
+
+    qw = ctx->qworker;
 
     /*  Spawn the worker */
     ret = mk_utils_worker_spawn(flb_buffer_qchunk_worker,
-                                qw, &qw->tid);
+                                ctx, &qw->tid);
     if (ret == -1) {
         flb_warn("[buffer qchunk] could not spawn worker");
         mk_event_loop_destroy(qw->evl);
@@ -147,7 +269,39 @@ int flb_buffer_qchunk_init(struct flb_buffer *ctx)
         return -1;
     }
 
-    ctx->qworker = qw;
+    return 0;
+}
 
+int flb_buffer_qchunk_stop(struct flb_buffer *ctx)
+{
+    (void) ctx;
+    return 0;
+}
+
+/*
+ * It push a qchunk data into the Engine. This function is called from
+ * the main Engine thread through a previous signal handled on the
+ * flb_buffer_engine_event(...) function.
+ */
+int flb_buffer_qchunk_push(struct flb_buffer *ctx, int id)
+{
+    struct mk_list *head;
+    struct flb_buffer_qworker *qw;
+    struct flb_buffer_qchunk *qchunk = NULL;
+
+    qw = ctx->qworker;
+    mk_list_foreach(head, &qw->queue) {
+        qchunk = mk_list_entry(head, struct flb_buffer_qchunk, _head);
+        if (qchunk->id == id) {
+            break;
+        }
+        qchunk = NULL;
+    }
+
+    if (!qchunk) {
+        return -1;
+    }
+
+    printf("found qchunk=%p id=%i\n", qchunk, qchunk->id);
     return 0;
 }

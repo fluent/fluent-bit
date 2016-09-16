@@ -126,6 +126,9 @@ int flb_router_io_set(struct flb_config *config)
     /* N:M case, iterate all input instances */
     mk_list_foreach(i_head, &config->inputs) {
         i_ins = mk_list_entry(i_head, struct flb_input_instance, _head);
+        if (!i_ins->p) {
+            continue;
+        }
 
         /*
          * Pre-routing rules cannot exists for a plugin which have dynamic

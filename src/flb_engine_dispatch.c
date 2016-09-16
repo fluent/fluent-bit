@@ -82,6 +82,10 @@ int flb_engine_dispatch(struct flb_input_instance *in,
     struct flb_task_route *route;
 
     p = in->p;
+    if (!p) {
+        return 0;
+    }
+
     if (p->cb_flush_buf) {
         buf = p->cb_flush_buf(in->context, &size);
         if (!buf || size == 0) {

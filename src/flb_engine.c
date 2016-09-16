@@ -210,6 +210,16 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
                       task->id, thread->id, s);
         }
     }
+#ifdef FLB_HAVE_BUFFERING
+    else if (type == FLB_ENGINE_BUFFER) {
+        flb_buffer_engine_event(config->buffer_ctx, val);
+        /* CONTINUE:
+         *
+         * - create messages types for buffering interface
+         * - let qchunk ingest data here
+         */
+    }
+#endif
 
     return 0;
 }

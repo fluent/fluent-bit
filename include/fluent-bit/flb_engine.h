@@ -47,6 +47,10 @@
 /* Engine signals: Task, it only refer to the type */
 #define FLB_ENGINE_TASK         2
 
+#ifdef FLB_HAVE_BUFFERING
+#define FLB_ENGINE_BUFFER       3
+#endif
+
 int flb_engine_start(struct flb_config *config);
 int flb_engine_flush(struct flb_config *config,
                      struct flb_input_plugin *in_force);

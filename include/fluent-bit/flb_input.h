@@ -86,7 +86,7 @@ struct flb_input_plugin {
  * For input plugins which adds FLB_INPUT_DYN_TAG to the registration flag,
  * they usually report a set of new records under a dynamic Tags. Internally
  * the input plugin use the API function 'flb_input_dyntag_content()' to
- * register that info. The function will look for a matchin flb_input_dyntag
+ * register that info. The function will look for a matching flb_input_dyntag
  * structure node or create a new one if required.
  */
 struct flb_input_dyntag {

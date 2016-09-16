@@ -1,4 +1,3 @@
-
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 /*  Fluent Bit
@@ -33,6 +32,7 @@
  * startup when discovering not processed buffer chunks.
  */
 struct flb_buffer_qchunk {
+    uint16_t id;               /* qchunk id (max = (1<<14) - 1         */
     char *file_path;           /* Absolute path to source buffer chunk */
     uint64_t routes;           /* All pending destinations             */
     struct mk_list _head;      /* Link to buffer head at ctx->queue    */
@@ -42,13 +42,21 @@ struct flb_buffer_qworker {
     pthread_t tid;             /* pthread ID  */
     pid_t task_id;             /* OS PID for this thread */
     struct mk_event_loop *evl; /* event loop */
-    struct mk_list *queue;     /* chunks queue */
+    struct mk_list queue;      /* chunks queue */
 };
 
-struct flb_buffer_qchunk *flb_buffer_qchunk_add(struct flb_buffer *ctx,
+struct flb_buffer_qchunk *flb_buffer_qchunk_add(struct flb_buffer_qworker *qw,
                                                 char *path,
                                                 uint64_t routes);
 int flb_buffer_qchunk_delete(struct flb_buffer_qchunk *qchunk);
+
+int flb_buffer_qchunk_create(struct flb_buffer *ctx);
+void flb_buffer_qchunk_destroy(struct flb_buffer *ctx);
+
+int flb_buffer_qchunk_start(struct flb_buffer *ctx);
+int flb_buffer_qchunk_stop(struct flb_buffer *ctx);
+
+int flb_buffer_qchunk_push(struct flb_buffer *ctx, int id);
 
 #endif
 #endif

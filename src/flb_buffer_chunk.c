@@ -806,7 +806,7 @@ int flb_buffer_chunk_scan(struct flb_buffer *ctx)
         }
 
         if (routes > 0) {
-            qchunk = flb_buffer_qchunk_add(ctx, src, routes);
+            qchunk = flb_buffer_qchunk_add(ctx->qworker, src, routes);
             if (!qchunk) {
                 flb_error("[buffer scan] qchunk error for %s", src);
             }

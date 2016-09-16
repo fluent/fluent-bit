@@ -35,6 +35,7 @@
 #include <mk_core.h>
 #include <fluent-bit/flb_buffer.h>
 #include <fluent-bit/flb_buffer_chunk.h>
+#include <fluent-bit/flb_buffer_qchunk.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_output.h>
 
@@ -346,7 +347,7 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
     if (!ctx) {
         return NULL;
     }
-    mk_list_init(&ctx->queue);
+    ctx->qworker = NULL;
 
     path_len = strlen(path);
     if (path[path_len - 1] != '/') {
@@ -428,12 +429,20 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
     }
     ctx->workers_n = i;
 
-    /*
-     * Once the path is ready, check if we have some previous buffer chunk
-     * files.
-     */
-    ret = flb_buffer_chunk_scan(ctx);
+    /* Generate pseudo input-instance */
+    ctx->i_ins = calloc(1, sizeof(struct flb_input_instance));
+    if (!ctx) {
+        perror("calloc");
+        flb_buffer_destroy(ctx);
+        return NULL;
+    }
+    snprintf(ctx->i_ins->name, sizeof(ctx->i_ins->name) - 1,
+             "buffering.0");
+    mk_list_init(&ctx->i_ins->routes);
+    mk_list_init(&ctx->i_ins->tasks);
+    mk_list_add(&ctx->i_ins->_head, &config->inputs);
 
+    /* We are done */
     flb_debug("[buffer] new instance created; workers=%i", ctx->workers_n);
     return ctx;
 }
@@ -446,6 +455,7 @@ int flb_buffer_start(struct flb_buffer *ctx)
     struct mk_list *head;
     struct flb_buffer_worker *worker;
 
+    /* Start workers in charge to store/delete buffer chunks */
     mk_list_foreach(head, &ctx->workers) {
         worker = mk_list_entry(head, struct flb_buffer_worker, _head);
 
@@ -459,6 +469,33 @@ int flb_buffer_start(struct flb_buffer *ctx)
         }
     }
 
+    /*
+     * Start workers in charge to read existent buffer chunks, they aim
+     * to put them back into the engine for processing.
+     */
+    ret = flb_buffer_qchunk_create(ctx);
+    if (ret == -1) {
+        flb_buffer_destroy(ctx);
+        return -1;
+    }
+
+    /*
+     * Once the path is ready, check if we have some previous buffer chunk
+     * files.
+     */
+    ret = flb_buffer_chunk_scan(ctx);
+    if (ret == -1) {
+        flb_buffer_destroy(ctx);
+        return -1;
+    }
+
+    /* Start the qchunk worker thread */
+    ret = flb_buffer_qchunk_start(ctx);
+    if (ret == -1) {
+        flb_buffer_destroy(ctx);
+        return -1;
+    }
+
     return n;
 }
 
@@ -467,6 +504,27 @@ int flb_buffer_stop(struct flb_buffer *ctx)
 {
     (void) ctx;
     return 0;
+}
+
+int flb_buffer_engine_event(struct flb_buffer *ctx, uint32_t event)
+{
+    int type;
+    int key;
+    int val;
+    int ret;
+
+    /* Decode the event set */
+    type = FLB_BUFFER_EV_TYPE(event);
+    key  = FLB_BUFFER_EV_KEY(event);
+    val  = FLB_BUFFER_EV_VAL(event);
+
+    if (type == FLB_BUFFER_EV_QCHUNK_PUSH) {
+        ret = flb_buffer_qchunk_push(ctx, key);
+        if (ret == -1) {
+            flb_error("[buffer] could not schedule qchunk");
+            return -1;
+        }
+    }
 }
 
 #endif /* !FLB_HAVE_BUFFERING */
