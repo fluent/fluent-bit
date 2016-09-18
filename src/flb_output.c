@@ -96,6 +96,7 @@ void flb_output_exit(struct flb_config *config)
         }
 
         free(ins->host.name);
+        free(ins->host.address);
         free(ins->match);
 
 #ifdef FLB_HAVE_TLS
