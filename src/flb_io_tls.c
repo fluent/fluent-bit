@@ -137,6 +137,18 @@ struct flb_tls_context *flb_tls_context_new(int verify,
 
 void flb_tls_context_destroy(struct flb_tls_context *ctx)
 {
+    if (ctx->certs_set & FLB_TLS_CA_ROOT) {
+        mbedtls_x509_crt_free(&ctx->ca_cert);
+    }
+
+    if (ctx->certs_set & FLB_TLS_CERT) {
+        mbedtls_x509_crt_free(&ctx->cert);
+    }
+
+    if (ctx->certs_set & FLB_TLS_PRIV_KEY) {
+        mbedtls_pk_free(&ctx->priv_key);
+    }
+
     free(ctx);
 }
 
