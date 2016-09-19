@@ -238,6 +238,9 @@ void flb_input_exit_all(struct flb_config *config)
     mk_list_foreach_safe(head, tmp, &config->inputs) {
         in = mk_list_entry(head, struct flb_input_instance, _head);
         p = in->p;
+        if (!p) {
+            continue;
+        }
 
         if (p->cb_exit) {
             p->cb_exit(in->context, config);

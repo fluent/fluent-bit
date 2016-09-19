@@ -317,6 +317,7 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
     struct flb_buffer *ctx;
     struct flb_buffer_worker *worker;
     struct stat st;
+    struct flb_input_plugin *p;
 
     /* Validate the incoming ROOT path/directory */
     ret = stat(path, &st);
@@ -429,7 +430,7 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
     }
     ctx->workers_n = i;
 
-    /* Generate pseudo input-instance */
+    /* Generate pseudo input plugin and instance */
     ctx->i_ins = calloc(1, sizeof(struct flb_input_instance));
     if (!ctx) {
         perror("calloc");

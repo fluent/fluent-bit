@@ -39,7 +39,7 @@ int flb_engine_dispatch_retry(struct flb_task_retry *retry,
 {
     struct flb_thread *th;
     struct flb_task *task;
-    struct flb_intput_instance *i_ins;
+    struct flb_input_instance *i_ins;
 
     task = retry->parent;
     i_ins = task->i_ins;
@@ -61,83 +61,15 @@ int flb_engine_dispatch_retry(struct flb_task_retry *retry,
     return 0;
 }
 
-/*
- * The engine dispatch is responsible for:
- *
- * - Get records from input plugins (fixed tags and dynamic tags)
- * - For each set of records under the same tag, create a Task. A Task set
- *   a reference to the records and routes through output instances.
- */
-int flb_engine_dispatch(struct flb_input_instance *in,
-                        struct flb_config *config)
+static int tasks_start(struct flb_input_instance *in,
+                       struct flb_config *config)
 {
-    char *buf;
-    size_t size;
     struct mk_list *tmp;
     struct mk_list *head;
     struct mk_list *r_head;
-    struct flb_input_plugin *p;
-    struct flb_task *task = NULL;
+    struct flb_task *task;
     struct flb_thread *th;
     struct flb_task_route *route;
-
-    p = in->p;
-    if (!p) {
-        return 0;
-    }
-
-    if (p->cb_flush_buf) {
-        buf = p->cb_flush_buf(in->context, &size);
-        if (!buf || size == 0) {
-            return 0;
-        }
-
-        /*
-         * Create an engine task, the task will hold the buffer reference
-         * and the co-routines associated to the output instance plugins
-         * that needs to handle the data.
-         */
-        task = flb_task_create(buf, size, in, NULL, in->tag, config);
-        if (!task) {
-            free(buf);
-            return -1;
-        }
-        flb_trace("[engine dispatch] task created %p", task);
-    }
-    else if (p->flags & FLB_INPUT_DYN_TAG) {
-        /* Iterate dynamic tag buffers */
-        struct mk_list *d_head, *tmp;
-        struct flb_input_dyntag *dt;
-
-        mk_list_foreach_safe(d_head, tmp, &in->dyntags) {
-            int matches = 0;
-            struct mk_list *o_head;
-
-            dt = mk_list_entry(d_head, struct flb_input_dyntag, _head);
-            flb_trace("[dyntag %s] %p tag=%s", dt->in->name, dt, dt->tag);
-            if (dt->busy == FLB_TRUE) {
-                continue;
-            }
-
-            /* There is a match, get the buffer */
-            buf = flb_input_dyntag_flush(dt, &size);
-            if (size == 0) {
-                if (buf) {
-                    free(buf);
-                }
-                continue;
-            }
-            if (!buf) {
-                continue;
-            }
-
-            task = flb_task_create(buf, size, dt->in, dt, dt->tag, config);
-            if (!task) {
-                free(buf);
-                continue;
-            }
-        }
-    }
 
     /* At this point the input instance should have some tasks linked */
     mk_list_foreach_safe(head, tmp, &in->tasks) {
@@ -169,6 +101,105 @@ int flb_engine_dispatch(struct flb_input_instance *in,
         }
     }
 
+    return 0;
+}
+
+/*
+ * The engine dispatch is responsible for:
+ *
+ * - Get records from input plugins (fixed tags and dynamic tags)
+ * - For each set of records under the same tag, create a Task. A Task set
+ *   a reference to the records and routes through output instances.
+ */
+int flb_engine_dispatch(struct flb_input_instance *in,
+                        struct flb_config *config)
+{
+    char *buf;
+    size_t size;
+    struct flb_input_plugin *p;
+    struct flb_task *task = NULL;
+
+    p = in->p;
+    if (!p) {
+        return 0;
+    }
+
+    if (p->cb_flush_buf) {
+        buf = p->cb_flush_buf(in->context, &size);
+        if (!buf || size == 0) {
+            return 0;
+        }
+
+        /*
+         * Create an engine task, the task will hold the buffer reference
+         * and the co-routines associated to the output instance plugins
+         * that needs to handle the data.
+         */
+        task = flb_task_create(buf, size, in, NULL, in->tag, config);
+        if (!task) {
+            free(buf);
+            return -1;
+        }
+        flb_trace("[engine dispatch] task created %p", task);
+    }
+    else if (p->flags & FLB_INPUT_DYN_TAG) {
+        /* Iterate dynamic tag buffers */
+        struct mk_list *d_head, *tmp;
+        struct flb_input_dyntag *dt;
+
+        mk_list_foreach_safe(d_head, tmp, &in->dyntags) {
+            dt = mk_list_entry(d_head, struct flb_input_dyntag, _head);
+            flb_trace("[dyntag %s] %p tag=%s", dt->in->name, dt, dt->tag);
+            if (dt->busy == FLB_TRUE) {
+                continue;
+            }
+
+            /* There is a match, get the buffer */
+            buf = flb_input_dyntag_flush(dt, &size);
+            if (size == 0) {
+                if (buf) {
+                    free(buf);
+                }
+                continue;
+            }
+            if (!buf) {
+                continue;
+            }
+
+            task = flb_task_create(buf, size, dt->in, dt, dt->tag, config);
+            if (!task) {
+                free(buf);
+                continue;
+            }
+        }
+    }
+
+    /* Start the new enqueued Tasks */
+    tasks_start(in, config);
+    return 0;
+}
+
+/*
+ * Given an input instance, buffer and a bitmask of routes, create the task
+ * and routes associated for processing. This mechanism does direct routing
+ * without the use of a Tag.
+ */
+int flb_engine_dispatch_direct(struct flb_input_instance *in,
+                               char *buf, size_t size,
+                               char *tag, uint64_t routes,
+                               char *hash_str,
+                               struct flb_config *config)
+{
+    struct flb_engine_task *task;
+
+    task = flb_task_create_direct(buf, size, in, tag, hash_str, routes, config);
+    if (!task) {
+        return -1;
+    }
+    flb_trace("[engine dispatch direct] task created %p", task);
+
+    /* Start the new enqueued Tasks */
+    tasks_start(in, config);
     return 0;
 }
 

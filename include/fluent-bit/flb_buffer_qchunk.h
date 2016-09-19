@@ -34,7 +34,11 @@
 struct flb_buffer_qchunk {
     uint16_t id;               /* qchunk id (max = (1<<14) - 1         */
     char *file_path;           /* Absolute path to source buffer chunk */
+    char *tag;                 /* Tag (offset of file_path position)   */
     uint64_t routes;           /* All pending destinations             */
+    char *data;                /* chunk data, after mmap(2)            */
+    size_t size;               /* data size                            */
+    char hash_str[41];         /* buffer hash (taken from filename     */
     struct mk_list _head;      /* Link to buffer head at ctx->queue    */
 };
 
@@ -46,8 +50,8 @@ struct flb_buffer_qworker {
 };
 
 struct flb_buffer_qchunk *flb_buffer_qchunk_add(struct flb_buffer_qworker *qw,
-                                                char *path,
-                                                uint64_t routes);
+                                                char *path, uint64_t routes,
+                                                char *tag, char *hash_str);
 int flb_buffer_qchunk_delete(struct flb_buffer_qchunk *qchunk);
 
 int flb_buffer_qchunk_create(struct flb_buffer *ctx);

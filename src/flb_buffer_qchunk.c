@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_buffer.h>
 #include <fluent-bit/flb_buffer_qchunk.h>
+#include <fluent-bit/flb_engine_dispatch.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -41,9 +42,10 @@
  *                  the heap and is ready to be associated to an outgoing task.
  */
 struct flb_buffer_qchunk *flb_buffer_qchunk_add(struct flb_buffer_qworker *qw,
-                                                char *path,
-                                                uint64_t routes)
+                                                char *path, uint64_t routes,
+                                                char *tag, char *hash_str)
 {
+    int len;
     struct flb_buffer_qchunk *qchunk;
 
     qchunk = malloc(sizeof(struct flb_buffer_qchunk));
@@ -54,6 +56,14 @@ struct flb_buffer_qchunk *flb_buffer_qchunk_add(struct flb_buffer_qworker *qw,
     qchunk->id        = 0;
     qchunk->file_path = strdup(path);
     qchunk->routes    = routes;
+    memcpy(&qchunk->hash_str, hash_str, 41);
+
+    /* Create the Tag using an offset of the path */
+    len = strlen(path);
+    qchunk->tag       = (char *) qchunk->file_path + (len - strlen(tag));
+
+
+    /* Link to the queue */
     mk_list_add(&qchunk->_head, &qw->queue);
 
     return qchunk;
@@ -175,7 +185,9 @@ static void flb_buffer_qchunk_worker(void *data)
             flb_error("[buffer qchunk] unvailable IDs / max=(1<<14)-1");
             continue;
         }
-        qchunk->id = id;
+        qchunk->id   = id;
+        qchunk->data = buf;
+        qchunk->size = buf_size;
 
         /*
          * Compose the event message: since we are running in a separate
@@ -285,6 +297,7 @@ int flb_buffer_qchunk_stop(struct flb_buffer *ctx)
  */
 int flb_buffer_qchunk_push(struct flb_buffer *ctx, int id)
 {
+    int ret;
     struct mk_list *head;
     struct flb_buffer_qworker *qw;
     struct flb_buffer_qchunk *qchunk = NULL;
@@ -302,6 +315,12 @@ int flb_buffer_qchunk_push(struct flb_buffer *ctx, int id)
         return -1;
     }
 
-    printf("found qchunk=%p id=%i\n", qchunk, qchunk->id);
+    ret = flb_engine_dispatch_direct(ctx->i_ins,
+                                     qchunk->data,
+                                     qchunk->size,
+                                     qchunk->tag,
+                                     qchunk->routes,
+                                     qchunk->hash_str,
+                                     ctx->config);
     return 0;
 }

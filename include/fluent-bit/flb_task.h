@@ -75,9 +75,11 @@ struct flb_task_retry {
 struct flb_task {
     int id;                             /* task id                   */
     int status;                         /* new task or running ?     */
+    int mapped;                         /* is a mmap(2)ed file ?     */
     int deleted;                        /* should be deleted ?       */
     int n_threads;                      /* number number of threads  */
     int users;                          /* number of users (threads) */
+    int destinations;                   /* number of output dests    */
     char *tag;                          /* original tag              */
     char *buf;                          /* buffer                    */
     size_t size;                        /* buffer data size          */
@@ -105,10 +107,18 @@ struct flb_task *flb_task_create(char *buf,
                                  struct flb_input_dyntag *dt,
                                  char *tag,
                                  struct flb_config *config);
+struct flb_task *flb_task_create_direct(char *buf,
+                                        size_t size,
+                                        struct flb_input_instance *i_ins,
+                                        char *tag,
+                                        char *hash,
+                                        uint64_t routes,
+                                        struct flb_config *config);
+
 void flb_task_destroy(struct flb_task *task);
 
-struct flb_task_retry *
-flb_task_retry_create(struct flb_task *task,
-                      struct flb_output_instance *o_ins);
+struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
+                                             void *data);
+int flb_task_retry_clean(struct flb_task *task, void *data);
 
 #endif

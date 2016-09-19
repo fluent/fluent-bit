@@ -257,25 +257,26 @@ static inline int atobool(char*v)
     return  (strncasecmp("true", v, 256) == 0)
         ? FLB_TRUE
         : FLB_FALSE;
-}   
+}
 
 int flb_config_set_property(struct flb_config *config,
                             char *k, char *v)
 {
     int i=0;
     int ret = -1;
-    int*  i_val;
-    char* s_val;
+    int *i_val;
+    char *s_val;
     size_t len = strnlen(k, 256);
-    char* key = service_configs[0].key;
+    char *key = service_configs[0].key;
 
-    while( key != NULL ){
-        if ( prop_key_check(key, k,len) == 0) {
-            if ( !strncasecmp(key, FLB_CONF_STR_LOGLEVEL ,256) ) {
+    while (key != NULL) {
+        if (prop_key_check(key, k,len) == 0) {
+            if (!strncasecmp(key, FLB_CONF_STR_LOGLEVEL, 256)) {
                 ret = set_log_level(config, v);
-            }else{
+            }
+            else{
                 ret = 0;
-                switch(service_configs[i].type){
+                switch(service_configs[i].type) {
                 case FLB_CONF_TYPE_INT:
                     i_val  = (int*)((char*)config + service_configs[i].offset);
                     *i_val = atoi(v);

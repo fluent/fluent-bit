@@ -29,6 +29,9 @@ int flb_engine_dispatch(struct flb_input_instance *in,
                         struct flb_config *config);
 int flb_engine_dispatch_retry(struct flb_task_retry *retry,
                               struct flb_config *config);
-
-
+int flb_engine_dispatch_direct(struct flb_input_instance *in,
+                               char *buf, size_t size,
+                               char *tag, uint64_t routes,
+                               char *hash_str,
+                               struct flb_config *config);
 #endif

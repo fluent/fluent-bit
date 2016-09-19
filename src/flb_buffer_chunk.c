@@ -58,6 +58,7 @@ struct chunk_info {
     char hash_str[41];
     uint64_t routes;
     int worker_id;
+    uint8_t full_scan;
     char *tag;
 };
 
@@ -441,11 +442,10 @@ int flb_buffer_chunk_delete(struct flb_buffer_worker *worker,
                             struct mk_event *event)
 {
     int ret;
-    uint64_t routes;
+    int remaining;
     char *target;
     char *real_name;
     char path[PATH_MAX];
-    char *path_to;
     struct mk_list *head;
     struct flb_output_instance *o_ins;
     struct flb_buffer_chunk chunk;
@@ -479,58 +479,34 @@ int flb_buffer_chunk_delete(struct flb_buffer_worker *worker,
     }
 
     /*
-     * Based on the 'routes' mask, iterate each task associated to this
-     * chunk and check for matches.
+     * At this step we need to determinate if any Task is associated to the
+     * buffer chunk in question, if so do nothing, otherwise if no remaining
+     * Tasks associated exists we can delete the original Buffer from the
+     * outgoing queue path.
      */
+
+    remaining = 0;
     config = worker->parent->config;
+
+    /* Iterate output instances (Tasks paths) */
     mk_list_foreach(head, &config->outputs) {
         o_ins = mk_list_entry(head, struct flb_output_instance, _head);
-        if ((info.routes & o_ins->mask_id) == 0) {
-            continue;
-        }
-
-        /*
-         * We have a match, compose the absolute path and check if the
-         * buffer chunk reference is present or not. If it's not there (which
-         * can be considered a match), alter the routes field from the
-         * chunk file.
-         */
         snprintf(path, sizeof(path) - 1, "%stasks/%s/%s",
                  FLB_BUFFER_PATH(worker),
                  o_ins->name,
                  real_name);
         ret = stat(path, &st);
-        if (ret == -1) {
-            if (errno == ENOENT) {
-                snprintf(path, sizeof(path) - 1, "%s/outgoing/%s",
-                         FLB_BUFFER_PATH(worker),
-                         real_name);
-                /*
-                 * Assume that a reference file have been deleted and this
-                 * route should be turned OFF.
-                 */
-                routes = (info.routes & ~o_ins->mask_id);
-                if (routes == 0) {
-                    /* No more routes, remove the task reference */
-                    flb_debug("[buffer] delete chunk %s", path);
-                    unlink(path);
-                }
-                else {
-                    /* Alter routes in the chunk filename */
-                    path_to = malloc(PATH_MAX);
-                    snprintf(path_to, PATH_MAX - 1,
-                             "%s/outgoing/%s.%lu.w%i.%s",
-                             FLB_BUFFER_PATH(worker),
-                             chunk.hash_hex, routes, info.worker_id,
-                             info.tag);
-                    flb_debug("[buffer] rename chunk %s to %s",
-                              path, path_to);
-                    rename(path, path_to);
-                    free(path_to);
-                }
-            }
+        if (ret == 0 && S_ISREG(st.st_mode)) {
+            remaining++;
             break;
         }
+    }
+
+    if (remaining == 0) {
+        snprintf(path, sizeof(path) - 1, "%soutgoing/%s",
+                 FLB_BUFFER_PATH(worker),
+                 real_name);
+        unlink(path);
     }
 
     return 0;
@@ -776,6 +752,7 @@ int flb_buffer_chunk_scan(struct flb_buffer *ctx)
         ret = snprintf(src, sizeof(src) - 1, "%soutgoing/%s",
                        ctx->path, ent->d_name);
         if (ret == -1) {
+            closedir(dir);
             return -1;
         }
 
@@ -806,7 +783,8 @@ int flb_buffer_chunk_scan(struct flb_buffer *ctx)
         }
 
         if (routes > 0) {
-            qchunk = flb_buffer_qchunk_add(ctx->qworker, src, routes);
+            qchunk = flb_buffer_qchunk_add(ctx->qworker, src, routes,
+                                           info.tag, info.hash_str);
             if (!qchunk) {
                 flb_error("[buffer scan] qchunk error for %s", src);
             }
@@ -817,6 +795,7 @@ int flb_buffer_chunk_scan(struct flb_buffer *ctx)
         }
     }
 
+    closedir(dir);
     return 0;
 }
 

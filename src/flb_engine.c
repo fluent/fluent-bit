@@ -168,7 +168,8 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
                   task_id, thread_id, trace_st);
 #endif
 
-        task = config->tasks_map[task_id].task;
+        task   = config->tasks_map[task_id].task;
+        thread = flb_thread_get(task_id, task);
 
         /* A thread has finished, delete it */
         if (ret == FLB_OK) {
@@ -177,6 +178,7 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
                 flb_buffer_chunk_pop(config->buffer_ctx, thread_id, task);
             }
 #endif
+            flb_task_retry_clean(task, thread);
             flb_thread_destroy_id(thread_id, task);
             if (task->users == 0) {
                 flb_task_destroy(task);
@@ -187,7 +189,7 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
             thread = flb_thread_get(task_id, task);
             struct flb_task_retry *retry;
 
-            retry = flb_task_retry_create(task, thread->data);
+            retry = flb_task_retry_create(task, thread);
             if (!retry) {
                 /*
                  * It can fail in two situations:
@@ -199,6 +201,7 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
                 if (task->users == 0) {
                     flb_task_destroy(task);
                 }
+                return 0;
             }
 
             /* Always destroy the old thread */
@@ -206,8 +209,8 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
 
             /* Let the scheduler to retry the failed task/thread */
             int s = flb_sched_request_create(config, retry, retry->attemps);
-            flb_debug("[sched] retry %i.%i in %i seconds",
-                      task->id, thread->id, s);
+            flb_debug("[sched] retry=%p %i.%i in %i seconds",
+                      retry, task->id, thread->id, s);
         }
     }
 #ifdef FLB_HAVE_BUFFERING
@@ -301,27 +304,6 @@ int flb_engine_start(struct flb_config *config)
     }
 #endif
 
-    /* Buffering Support */
-#ifdef FLB_HAVE_BUFFERING
-    struct flb_buffer *buf_ctx;
-
-    /* If a path exists, initialize the Buffer service and workers */
-    if (config->buffer_path) {
-        buf_ctx = flb_buffer_create(config->buffer_path,
-                                    config->buffer_workers,
-                                    config);
-        if (!buf_ctx) {
-            flb_error("[engine] could not initialize buffer workers");
-            return -1;
-        }
-
-        /* Start buffer engine workers */
-        config->buffer_ctx = buf_ctx;
-        flb_buffer_start(config->buffer_ctx);
-    }
-#endif
-
-
     flb_info("[engine] started");
     flb_thread_prepare();
 
@@ -345,6 +327,26 @@ int flb_engine_start(struct flb_config *config)
         flb_error("[engine] could not create manager channels");
         exit(EXIT_FAILURE);
     }
+
+    /* Buffering Support */
+#ifdef FLB_HAVE_BUFFERING
+    struct flb_buffer *buf_ctx;
+
+    /* If a path exists, initialize the Buffer service and workers */
+    if (config->buffer_path) {
+        buf_ctx = flb_buffer_create(config->buffer_path,
+                                    config->buffer_workers,
+                                    config);
+        if (!buf_ctx) {
+            flb_error("[engine] could not initialize buffer workers");
+            return -1;
+        }
+
+        /* Start buffer engine workers */
+        config->buffer_ctx = buf_ctx;
+        flb_buffer_start(config->buffer_ctx);
+    }
+#endif
 
     /* Initialize input plugins */
     flb_input_initialize_all(config);
