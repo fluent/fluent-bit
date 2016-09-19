@@ -190,7 +190,7 @@ int flb_engine_dispatch_direct(struct flb_input_instance *in,
                                char *hash_str,
                                struct flb_config *config)
 {
-    struct flb_engine_task *task;
+    struct flb_task *task;
 
     task = flb_task_create_direct(buf, size, in, tag, hash_str, routes, config);
     if (!task) {

@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_engine.h>
+#include <fluent-bit/flb_engine_dispatch.h>
 
 #include <math.h>
 #include <sys/types.h>
@@ -166,4 +167,6 @@ int flb_sched_event_handler(struct flb_config *config, struct mk_event *event)
 
     /* Destroy this scheduled request, it's not longer required */
     flb_sched_request_destroy(config, req);
+
+    return 0;
 }

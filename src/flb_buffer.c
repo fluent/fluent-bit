@@ -317,7 +317,6 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
     struct flb_buffer *ctx;
     struct flb_buffer_worker *worker;
     struct stat st;
-    struct flb_input_plugin *p;
 
     /* Validate the incoming ROOT path/directory */
     ret = stat(path, &st);
@@ -511,13 +510,11 @@ int flb_buffer_engine_event(struct flb_buffer *ctx, uint32_t event)
 {
     int type;
     int key;
-    int val;
     int ret;
 
     /* Decode the event set */
     type = FLB_BUFFER_EV_TYPE(event);
     key  = FLB_BUFFER_EV_KEY(event);
-    val  = FLB_BUFFER_EV_VAL(event);
 
     if (type == FLB_BUFFER_EV_QCHUNK_PUSH) {
         ret = flb_buffer_qchunk_push(ctx, key);
@@ -526,6 +523,8 @@ int flb_buffer_engine_event(struct flb_buffer *ctx, uint32_t event)
             return -1;
         }
     }
+
+    return 0;
 }
 
 #endif /* !FLB_HAVE_BUFFERING */

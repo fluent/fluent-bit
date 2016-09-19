@@ -322,5 +322,5 @@ int flb_buffer_qchunk_push(struct flb_buffer *ctx, int id)
                                      qchunk->routes,
                                      qchunk->hash_str,
                                      ctx->config);
-    return 0;
+    return ret;
 }
