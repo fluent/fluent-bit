@@ -140,37 +140,27 @@ static int qchunk_get_id(struct flb_buffer_qworker *qw)
     return -1;
 }
 
-/*
- * This worker function (under a POSIX thread) iterate the qchunk list and
- * upon demand load the physical files into memory and signal the Engine.
- */
-static void flb_buffer_qchunk_worker(void *data)
+static inline int qchunk_event_push_request(struct flb_buffer *ctx)
 {
     int id;
-    int ret;
-    char *buf;
+    int ret = 0;
+    uint64_t val;
     uint32_t set = 0;
-    uint64_t val = 0;
     size_t buf_size;
-    struct mk_event *event;
-    struct flb_buffer *ctx;
-    struct flb_buffer_qworker *qw;
-    struct flb_buffer_qchunk *qchunk;
+    char *buf;
     struct mk_list *tmp;
     struct mk_list *head;
+    struct flb_buffer_qchunk *qchunk;
+    struct flb_buffer_qworker *qw;
 
-    ctx = data;
     qw = ctx->qworker;
 
-    /*
-     * Here we do a lazy request into the engine, chunk by chunk:
-     *
-     * - Iterate qchunk list
-     * - For each file entry, load it into memory
-     * - Issue the request into the engine
-     */
+    /* Always send the first qchunk entry from the lsit */
     mk_list_foreach_safe(head, tmp, &qw->queue) {
         qchunk = mk_list_entry(head, struct flb_buffer_qchunk, _head);
+        if (qchunk->id > 0) {
+            continue;
+        }
 
         /* Load into memory */
         buf = qchunk_get_data(qchunk, &buf_size);
@@ -210,17 +200,86 @@ static void flb_buffer_qchunk_worker(void *data)
             free(buf);
             continue;
         }
+        return ret;
+    }
 
+    return -1;
+}
+
+
+/* Handle events from the event loop */
+static int qchunk_handle_event(int fd, int mask, struct flb_buffer *ctx)
+{
+    int ret;
+    uint64_t type;
+    uint32_t key;
+    uint64_t val;
+
+    /* Read the signal value */
+    ret = read(fd, &val, sizeof(val));
+    if (ret <= 0) {
+        perror("read");
+        return -1;
+    }
+
+    /* Get type and key */
+    type = (val >> 56);
+    key  = (val & FLB_BIT_MASK(uint64_t, 56));
+
+    if (type == FLB_BUFFER_QC_STOP) {
+        return FLB_BUFFER_QC_STOP;
+    }
+    else if (type == FLB_BUFFER_QC_PUSH_REQUEST) {
+        qchunk_event_push_request(ctx);
+    }
+    else if (type == FLB_BUFFER_QC_POP_REQUEST) {
+
+    }
+
+    return ret;
+}
+
+/*
+ * This worker function (under a POSIX thread) iterate the qchunk list and
+ * upon demand load the physical files into memory and signal the Engine.
+ */
+static void flb_buffer_qchunk_worker(void *data)
+{
+    int ret;
+    struct mk_event *event;
+    struct flb_buffer *ctx;
+    struct flb_buffer_qworker *qw;
+
+    ctx = data;
+    qw = ctx->qworker;
+
+    /* event loop, listen for events */
+    while (1) {
         mk_event_wait(qw->evl);
         mk_event_foreach(event, qw->evl) {
-            /* FIXME: do signal handling */
-            (void) event;
+            if (event->type == FLB_BUFFER_EVENT) {
+                ret = qchunk_handle_event(event->fd, event->mask, ctx);
+                if (ret == FLB_BUFFER_QC_STOP) {
+                    break;
+                }
+            }
         }
     }
 }
 
+/* It send a signal to the buffer qchunk worker */
+int flb_buffer_qchunk_signal(uint64_t type, uint64_t val,
+                             struct flb_buffer_qworker *qw)
+{
+    uint64_t set;
+
+    set = (type << 56) | (val & FLB_BIT_MASK(uint64_t, 56));
+    return write(qw->ch_manager[1], &set, sizeof(set));
+}
+
 int flb_buffer_qchunk_create(struct flb_buffer *ctx)
 {
+    int ret;
     struct flb_buffer_qworker *qw;
 
     /* Allocate context */
@@ -237,8 +296,20 @@ int flb_buffer_qchunk_create(struct flb_buffer *ctx)
         free(qw);
         return -1;
     }
-    ctx->qworker = qw;
 
+    /* Create a channel for admin purposes */
+    ret = mk_event_channel_create(qw->evl,
+                                  &qw->ch_manager[0],
+                                  &qw->ch_manager[1],
+                                  qw);
+    if (ret != 0) {
+        flb_error("[buffer qchunk] could not create manager channels");
+        mk_event_loop_destroy(qw->evl);
+        free(qw);
+        return -1;
+    }
+
+    ctx->qworker = qw;
     return 0;
 }
 

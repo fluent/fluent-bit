@@ -25,6 +25,14 @@
 #include <mk_core.h>
 #include <fluent-bit/flb_output.h>
 
+#define FLB_BUFFER_EVENT MK_EVENT_NOTIFICATION
+
+/* qchunk buffer signaling */
+#define FLB_BUFFER_QC_STOP           1  /* stop worker event loop            */
+#define FLB_BUFFER_QC_PUSH_REQUEST   2  /* external request to push a qchunk */
+#define FLB_BUFFER_QC_POP_REQUEST    3  /* external request to pop a qchunk  */
+#define FLB_BUFFER_QC_PUSH           4  /* qchunk ready, push done           */
+
 /*
  * A queue chunk (qchunk) represents a buffer chunk that resides in the
  * filesystem and at some point needs to be enqueued into the engine.
@@ -43,11 +51,16 @@ struct flb_buffer_qchunk {
 };
 
 struct flb_buffer_qworker {
-    pthread_t tid;             /* pthread ID  */
-    pid_t task_id;             /* OS PID for this thread */
-    struct mk_event_loop *evl; /* event loop */
-    struct mk_list queue;      /* chunks queue */
+    struct mk_event ch_event;  /* root event               */
+    pthread_t tid;             /* pthread ID               */
+    pid_t task_id;             /* OS PID for this thread   */
+    int ch_manager[2];         /* channel to signal worker */
+    struct mk_event_loop *evl; /* event loop               */
+    struct mk_list queue;      /* chunks queue             */
 };
+
+int flb_buffer_qchunk_signal(uint64_t type, uint64_t val,
+                             struct flb_buffer_qworker *qw);
 
 struct flb_buffer_qchunk *flb_buffer_qchunk_add(struct flb_buffer_qworker *qw,
                                                 char *path, uint64_t routes,
