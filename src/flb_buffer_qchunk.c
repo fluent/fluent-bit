@@ -22,11 +22,24 @@
 #include <fluent-bit/flb_buffer_qchunk.h>
 #include <fluent-bit/flb_engine_dispatch.h>
 
+#include <stdio.h>
+#include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <pthread.h>
+
+/* FIXME */
+#undef flb_error
+#undef flb_debug
+#define flb_debug(fmt, ...) printf(fmt "\n", ##__VA_ARGS__)
+#define flb_error(fmt, ...) printf(fmt "\n", ##__VA_ARGS__)
+
+/* qworker thread initializator */
+pthread_cond_t  pth_cond;
+pthread_mutex_t pth_mutex;
 
 /*
  * The 'qchunk' interface provides read-only operations to load Fluent Bit
@@ -140,6 +153,11 @@ static int qchunk_get_id(struct flb_buffer_qworker *qw)
     return -1;
 }
 
+/*
+ * Upon a PUSH_REQUEST, iterate the qworker queue and look for the first
+ * available buffer chunk, load it in memory and notify the engine about
+ * this new 'entry' available.
+ */
 static inline int qchunk_event_push_request(struct flb_buffer *ctx)
 {
     int id;
@@ -154,6 +172,8 @@ static inline int qchunk_event_push_request(struct flb_buffer *ctx)
     struct flb_buffer_qworker *qw;
 
     qw = ctx->qworker;
+
+    flb_debug("[buffer qchunk] event: PUSH_REQUEST received");
 
     /* Always send the first qchunk entry from the lsit */
     mk_list_foreach_safe(head, tmp, &qw->queue) {
@@ -206,13 +226,25 @@ static inline int qchunk_event_push_request(struct flb_buffer *ctx)
     return -1;
 }
 
+/*
+ * Upon a POP_REQUEST, lookup the loaded qchunk buffer, delete it resources
+ * and remove it from the list (this routine will NOT touch the original buffer
+ * chunk file, that's done by the engine.
+ */
+static inline int qchunk_event_pop_request(struct flb_buffer *ctx,
+                                           uint64_t key)
+{
+
+
+    return 0;
+}
 
 /* Handle events from the event loop */
 static int qchunk_handle_event(int fd, int mask, struct flb_buffer *ctx)
 {
     int ret;
     uint64_t type;
-    uint32_t key;
+    uint64_t key;
     uint64_t val;
 
     /* Read the signal value */
@@ -230,10 +262,10 @@ static int qchunk_handle_event(int fd, int mask, struct flb_buffer *ctx)
         return FLB_BUFFER_QC_STOP;
     }
     else if (type == FLB_BUFFER_QC_PUSH_REQUEST) {
-        qchunk_event_push_request(ctx);
+        ret = qchunk_event_push_request(ctx);
     }
     else if (type == FLB_BUFFER_QC_POP_REQUEST) {
-
+        ret = qchunk_event_pop_request(ctx, key);
     }
 
     return ret;
@@ -253,11 +285,15 @@ static void flb_buffer_qchunk_worker(void *data)
     ctx = data;
     qw = ctx->qworker;
 
+    /* Unlock the conditional */
+    pthread_cond_signal(&pth_cond);
+
     /* event loop, listen for events */
     while (1) {
         mk_event_wait(qw->evl);
         mk_event_foreach(event, qw->evl) {
             if (event->type == FLB_BUFFER_EVENT) {
+                /* stop the event loop, thread will be destroyed */
                 ret = qchunk_handle_event(event->fd, event->mask, ctx);
                 if (ret == FLB_BUFFER_QC_STOP) {
                     break;
@@ -265,6 +301,8 @@ static void flb_buffer_qchunk_worker(void *data)
             }
         }
     }
+
+    flb_info("[buffer qchunk] stopping worker");
 }
 
 /* It send a signal to the buffer qchunk worker */
@@ -342,6 +380,12 @@ int flb_buffer_qchunk_start(struct flb_buffer *ctx)
 
     qw = ctx->qworker;
 
+    /*
+     * This lock is used for the 'pth_cond' conditional. Once the worker
+     * thread is ready will signal the condition.
+     */
+    pthread_mutex_lock(&pth_mutex);
+
     /*  Spawn the worker */
     ret = mk_utils_worker_spawn(flb_buffer_qchunk_worker,
                                 ctx, &qw->tid);
@@ -351,6 +395,10 @@ int flb_buffer_qchunk_start(struct flb_buffer *ctx)
         free(qw);
         return -1;
     }
+
+    /* Block until the child thread is ready */
+    pthread_cond_wait(&pth_cond, &pth_mutex);
+    pthread_mutex_unlock(&pth_mutex);
 
     return 0;
 }

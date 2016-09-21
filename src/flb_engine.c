@@ -39,6 +39,7 @@
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_http_server.h>
 #include <fluent-bit/flb_buffer.h>
+#include <fluent-bit/flb_buffer_qchunk.h>
 #include <fluent-bit/flb_scheduler.h>
 
 #ifdef FLB_HAVE_BUFFERING
@@ -243,6 +244,16 @@ static FLB_INLINE int flb_engine_handle_event(int fd, int mask,
         if (config->flush_fd == fd) {
             consume_byte(fd);
             flb_engine_flush(config, NULL);
+#ifdef FLB_HAVE_BUFFERING
+            /*
+             * Upon flush request, let the buffering interface to enqueue
+             * a new buffer chunk.
+             */
+            if (config->buffer_ctx) {
+                flb_buffer_qchunk_signal(FLB_BUFFER_QC_PUSH_REQUEST, 0,
+                                         config->buffer_ctx->qworker);
+            }
+#endif
             return 0;
         }
         else if (config->shutdown_fd == fd) {
@@ -332,26 +343,6 @@ int flb_engine_start(struct flb_config *config)
         exit(EXIT_FAILURE);
     }
 
-    /* Buffering Support */
-#ifdef FLB_HAVE_BUFFERING
-    struct flb_buffer *buf_ctx;
-
-    /* If a path exists, initialize the Buffer service and workers */
-    if (config->buffer_path) {
-        buf_ctx = flb_buffer_create(config->buffer_path,
-                                    config->buffer_workers,
-                                    config);
-        if (!buf_ctx) {
-            flb_error("[engine] could not initialize buffer workers");
-            return -1;
-        }
-
-        /* Start buffer engine workers */
-        config->buffer_ctx = buf_ctx;
-        flb_buffer_start(config->buffer_ctx);
-    }
-#endif
-
     /* Initialize input plugins */
     flb_input_initialize_all(config);
 
@@ -366,7 +357,6 @@ int flb_engine_start(struct flb_config *config)
     }
 
     flb_output_pre_run(config);
-
 
     /* Create and register the timer fd for flush procedure */
     event = &config->event_flush;
@@ -417,6 +407,30 @@ int flb_engine_start(struct flb_config *config)
     if (ret == -1) {
         return -1;
     }
+
+    /* Enable Buffering Support */
+#ifdef FLB_HAVE_BUFFERING
+    struct flb_buffer *buf_ctx;
+
+    /* If a path exists, initialize the Buffer service and workers */
+    if (config->buffer_path) {
+        buf_ctx = flb_buffer_create(config->buffer_path,
+                                    config->buffer_workers,
+                                    config);
+        if (!buf_ctx) {
+            flb_error("[engine] could not initialize buffer workers");
+            return -1;
+        }
+
+        /* Start buffer engine workers */
+        config->buffer_ctx = buf_ctx;
+        ret = flb_buffer_start(config->buffer_ctx);
+        if (ret == -1) {
+            flb_error("[buffer] buffering could not start");
+            return -1;
+        }
+    }
+#endif
 
     /* Signal that we have started */
     flb_engine_started(config);
