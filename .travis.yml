@@ -17,7 +17,8 @@ before_script:
   - if [ $TRAVIS_OS_NAME == linux ]; then export PATH=$PATH:$PWD/ksz9692/bin/; fi
   # Unpack the sources
   - cd build
-  - cmake -DFLB_ALL=On -DCMAKE_TOOLCHAIN_FILE=${TOOLCHAIN} ../
+  # - cmake -DFLB_ALL=On -DCMAKE_TOOLCHAIN_FILE=${TOOLCHAIN} ../
+  - cmake -DFLB_ALL=On ../
 
 matrix:
   include:
