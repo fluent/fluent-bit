@@ -170,3 +170,20 @@ int flb_sched_event_handler(struct flb_config *config, struct mk_event *event)
 
     return 0;
 }
+
+/* Release all resources used by the Scheduler */
+int flb_sched_exit(struct flb_config *config)
+{
+    int c = 0;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_sched_request *request;
+
+    mk_list_foreach_safe(head, tmp, &config->sched_requests) {
+        request = mk_list_entry(head, struct flb_sched_request, _head);
+        flb_sched_request_destroy(config, request);
+        c++;
+    }
+
+    return c;
+}

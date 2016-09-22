@@ -41,5 +41,6 @@ int flb_sched_request_create(struct flb_config *config,
 int flb_sched_request_destroy(struct flb_config *config,
                               struct flb_sched_request *req);
 int flb_sched_event_handler(struct flb_config *config, struct mk_event *event);
+int flb_sched_exit(struct flb_config *config);
 
 #endif

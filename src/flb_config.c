@@ -29,6 +29,7 @@
 #include <fluent-bit/flb_plugins.h>
 #include <fluent-bit/flb_io_tls.h>
 #include <fluent-bit/flb_kernel.h>
+#include <fluent-bit/flb_scheduler.h>
 
 struct flb_service_config service_configs[] = {
     {FLB_CONF_STR_FLUSH,
@@ -176,6 +177,9 @@ void flb_config_exit(struct flb_config *config)
     /* Event flush */
     mk_event_del(config->evl, &config->event_flush);
     close(config->flush_fd);
+
+    /* Release scheduler */
+    flb_sched_exit(config);
 
 #ifdef FLB_HAVE_HTTP
     if (config->http_port) {
