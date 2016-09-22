@@ -147,12 +147,10 @@ static int qchunk_get_id(struct flb_buffer_qworker *qw)
         }
 
         if (available == FLB_TRUE) {
-            printf("offering qchunk ID=%i\n", id);
             return id;
         }
     }
 
-    printf("no ID\n");
     return -1;
 }
 
@@ -297,6 +295,7 @@ static int qchunk_handle_event(int fd, int mask, struct flb_buffer *ctx)
 static void flb_buffer_qchunk_worker(void *data)
 {
     int ret;
+    int run = FLB_TRUE;
     struct mk_event *event;
     struct flb_buffer *ctx;
     struct flb_buffer_qworker *qw;
@@ -308,20 +307,20 @@ static void flb_buffer_qchunk_worker(void *data)
     pthread_cond_signal(&pth_cond);
 
     /* event loop, listen for events */
-    while (1) {
+    while (run) {
         mk_event_wait(qw->evl);
         mk_event_foreach(event, qw->evl) {
             if (event->type == FLB_BUFFER_EVENT) {
                 /* stop the event loop, thread will be destroyed */
                 ret = qchunk_handle_event(event->fd, event->mask, ctx);
                 if (ret == FLB_BUFFER_QC_STOP) {
-                    break;
+                    run = FLB_FALSE;
                 }
             }
         }
     }
 
-    flb_info("[buffer qchunk] stopping worker");
+    pthread_exit(NULL);
 }
 
 /* It send a signal to the buffer qchunk worker */
@@ -386,9 +385,9 @@ void flb_buffer_qchunk_destroy(struct flb_buffer *ctx)
     }
 
     mk_event_loop_destroy(qw->evl);
+    free(qw);
     ctx->qworker = NULL;
 
-    /* FIXME: stop thread */
     return;
 }
 
@@ -424,7 +423,16 @@ int flb_buffer_qchunk_start(struct flb_buffer *ctx)
 
 int flb_buffer_qchunk_stop(struct flb_buffer *ctx)
 {
-    (void) ctx;
+    struct flb_buffer_qworker *qw;
+
+    qw = ctx->qworker;
+
+    /* Signal (stop) the thread worker */
+    flb_buffer_qchunk_signal(FLB_BUFFER_QC_STOP, 0, qw);
+
+    pthread_join(qw->tid, NULL);
+    flb_buffer_qchunk_destroy(ctx);
+
     return 0;
 }
 

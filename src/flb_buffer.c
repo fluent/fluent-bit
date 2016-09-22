@@ -223,9 +223,12 @@ void flb_buffer_destroy(struct flb_buffer *ctx)
         }
         mk_list_del(&worker->_head);
         free(worker);
-
-        /* FIXME: channel to notify a shutdown */
     }
+
+    mk_list_del(&ctx->i_ins->_head);
+    free(ctx->i_ins);
+    free(ctx->path);
+    free(ctx);
 }
 
 /* Check that a directory exists and have write access, if not, create it */
@@ -522,8 +525,11 @@ int flb_buffer_stop(struct flb_buffer *ctx)
         }
     }
 
+    /* Stop and destroy the qchunk worker */
+    flb_buffer_qchunk_stop(ctx);
+
     /*
-     *Destroy the context: iterate each worker, do a pthread_join, release
+     * Destroy the context: iterate each worker, do a pthread_join, release
      * context, event loops and pipes.
      */
     flb_buffer_destroy(ctx);
