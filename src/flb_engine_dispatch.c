@@ -111,7 +111,7 @@ static int tasks_start(struct flb_input_instance *in,
  * - For each set of records under the same tag, create a Task. A Task set
  *   a reference to the records and routes through output instances.
  */
-int flb_engine_dispatch(struct flb_input_instance *in,
+int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
                         struct flb_config *config)
 {
     char *buf;
@@ -135,7 +135,7 @@ int flb_engine_dispatch(struct flb_input_instance *in,
          * and the co-routines associated to the output instance plugins
          * that needs to handle the data.
          */
-        task = flb_task_create(buf, size, in, NULL, in->tag, config);
+        task = flb_task_create(id, buf, size, in, NULL, in->tag, config);
         if (!task) {
             free(buf);
             return -1;
@@ -166,7 +166,7 @@ int flb_engine_dispatch(struct flb_input_instance *in,
                 continue;
             }
 
-            task = flb_task_create(buf, size, dt->in, dt, dt->tag, config);
+            task = flb_task_create(id, buf, size, dt->in, dt, dt->tag, config);
             if (!task) {
                 free(buf);
                 continue;
@@ -184,7 +184,8 @@ int flb_engine_dispatch(struct flb_input_instance *in,
  * and routes associated for processing. This mechanism does direct routing
  * without the use of a Tag.
  */
-int flb_engine_dispatch_direct(struct flb_input_instance *in,
+int flb_engine_dispatch_direct(uint64_t id,
+                               struct flb_input_instance *in,
                                char *buf, size_t size,
                                char *tag, uint64_t routes,
                                char *hash_str,
@@ -192,7 +193,8 @@ int flb_engine_dispatch_direct(struct flb_input_instance *in,
 {
     struct flb_task *task;
 
-    task = flb_task_create_direct(buf, size, in, tag, hash_str, routes, config);
+    task = flb_task_create_direct(id, buf, size, in, tag, hash_str,
+                                  routes, config);
     if (!task) {
         return -1;
     }

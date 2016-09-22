@@ -98,7 +98,7 @@ int flb_engine_flush(struct flb_config *config,
         if (in_force != NULL && p != in_force) {
             continue;
         }
-        flb_engine_dispatch(in, config);
+        flb_engine_dispatch(0, in, config);
     }
 
     return 0;
@@ -146,6 +146,11 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
         if (key == FLB_ENGINE_STOP) {
             flb_trace("[engine] flush enqueued data");
             flb_engine_flush(config, NULL);
+#ifdef FLB_HAVE_BUFFERING
+            if (config->buffer_ctx) {
+                flb_buffer_stop(config->buffer_ctx);
+            }
+#endif
             return FLB_ENGINE_STOP;
         }
     }

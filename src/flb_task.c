@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
@@ -29,6 +30,7 @@
 #ifdef FLB_HAVE_BUFFERING
 #include <fluent-bit/flb_sha1.h>
 #include <fluent-bit/flb_buffer_chunk.h>
+#include <fluent-bit/flb_buffer_qchunk.h>
 #endif
 
 /*
@@ -165,7 +167,8 @@ static struct flb_task *task_alloc(struct flb_config *config)
 }
 
 /* Create an engine task to handle the output plugin flushing work */
-struct flb_task *flb_task_create(char *buf,
+struct flb_task *flb_task_create(uint64_t ref_id,
+                                 char *buf,
                                  size_t size,
                                  struct flb_input_instance *i_ins,
                                  struct flb_input_dyntag *dt,
@@ -187,11 +190,12 @@ struct flb_task *flb_task_create(char *buf,
     }
 
     /* Keep track of origins */
-    task->tag   = strdup(tag);
-    task->buf   = buf;
-    task->size  = size;
-    task->i_ins = i_ins;
-    task->dt    = dt;
+    task->ref_id = ref_id;
+    task->tag    = strdup(tag);
+    task->buf    = buf;
+    task->size   = size;
+    task->i_ins  = i_ins;
+    task->dt     = dt;
     task->destinations = 0;
     mk_list_add(&task->_head, &i_ins->tasks);
 
@@ -282,7 +286,8 @@ struct flb_task *flb_task_create(char *buf,
  * Create an engine task to handle the output plugin flushing work. Not that
  * doing a direct Task will not do buffering.
  */
-struct flb_task *flb_task_create_direct(char *buf,
+struct flb_task *flb_task_create_direct(uint64_t ref_id,
+                                        char *buf,
                                         size_t size,
                                         struct flb_input_instance *i_ins,
                                         char *tag,
@@ -303,6 +308,7 @@ struct flb_task *flb_task_create_direct(char *buf,
     }
 
     /* Keep track of origins */
+    task->ref_id    = ref_id;
     task->tag       = strdup(tag);
     task->buf       = buf;
     task->size      = size;
@@ -360,6 +366,16 @@ void flb_task_destroy(struct flb_task *task)
     if (task->mapped == FLB_FALSE) {
         free(task->buf);
     }
+#ifdef FLB_HAVE_BUFFERING
+    else {
+        /* Likely there is a qchunk associated to this tasks */
+        if (task->ref_id > 0 && task->config->buffer_ctx) {
+            flb_buffer_qchunk_signal(FLB_BUFFER_QC_POP_REQUEST, task->ref_id,
+                                     task->config->buffer_ctx->qworker);
+        }
+    }
+#endif
+
     free(task->tag);
     free(task);
 }

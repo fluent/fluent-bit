@@ -74,6 +74,7 @@ struct flb_task_retry {
 /* A task takes a buffer and sync input and output instances to handle it */
 struct flb_task {
     int id;                             /* task id                   */
+    uint64_t ref_id;                    /* external reference id     */
     int status;                         /* new task or running ?     */
     int mapped;                         /* is a mmap(2)ed file ?     */
     int deleted;                        /* should be deleted ?       */
@@ -85,6 +86,7 @@ struct flb_task {
     size_t size;                        /* buffer data size          */
 #ifdef FLB_HAVE_BUFFERING
     int worker_id;                      /* Buffer worker that owns this task */
+    int qchunk_id;                      /* qchunk id if it comes from buffer */
     unsigned char hash_sha1[20];        /* SHA1(buf)                         */
     char hash_hex[41];                  /* Hex string for hash_sha1          */
 #endif
@@ -101,13 +103,15 @@ struct flb_task {
 #endif
 };
 
-struct flb_task *flb_task_create(char *buf,
+struct flb_task *flb_task_create(uint64_t ref_id,
+                                 char *buf,
                                  size_t size,
                                  struct flb_input_instance *i_ins,
                                  struct flb_input_dyntag *dt,
                                  char *tag,
                                  struct flb_config *config);
-struct flb_task *flb_task_create_direct(char *buf,
+struct flb_task *flb_task_create_direct(uint64_t ref_id,
+                                        char *buf,
                                         size_t size,
                                         struct flb_input_instance *i_ins,
                                         char *tag,

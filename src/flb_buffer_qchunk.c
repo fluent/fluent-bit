@@ -85,6 +85,9 @@ struct flb_buffer_qchunk *flb_buffer_qchunk_add(struct flb_buffer_qworker *qw,
 
 int flb_buffer_qchunk_delete(struct flb_buffer_qchunk *qchunk)
 {
+    if (qchunk->id > 0) {
+        munmap(qchunk->data, qchunk->size);
+    }
     free(qchunk->file_path);
     mk_list_del(&qchunk->_head);
     free(qchunk);
@@ -234,9 +237,25 @@ static inline int qchunk_event_push_request(struct flb_buffer *ctx)
 static inline int qchunk_event_pop_request(struct flb_buffer *ctx,
                                            uint64_t key)
 {
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_buffer_qchunk *qchunk;
+    struct flb_buffer_qworker *qw;
 
+    qw = ctx->qworker;
 
-    return 0;
+    flb_debug("[buffer qchunk] event: POP_REQUEST received");
+
+    /* Lookup target qchunk for removal */
+    mk_list_foreach_safe(head, tmp, &qw->queue) {
+        qchunk = mk_list_entry(head, struct flb_buffer_qchunk, _head);
+        if (qchunk->id == key) {
+            flb_buffer_qchunk_delete(qchunk);
+            return 0;
+        }
+    }
+
+    return -1;
 }
 
 /* Handle events from the event loop */
@@ -434,7 +453,8 @@ int flb_buffer_qchunk_push(struct flb_buffer *ctx, int id)
         return -1;
     }
 
-    ret = flb_engine_dispatch_direct(ctx->i_ins,
+    ret = flb_engine_dispatch_direct(qchunk->id,
+                                     ctx->i_ins,
                                      qchunk->data,
                                      qchunk->size,
                                      qchunk->tag,

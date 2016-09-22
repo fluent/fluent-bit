@@ -309,6 +309,8 @@ static int chunk_miss(struct flb_buffer_worker *worker, uint64_t mask_id,
         }
 
         chunk_remove_route(root_path, target, hash_hex, &info, mask_id);
+        free(real_name);
+        free(target);
         return 0;
     }
 
@@ -327,6 +329,8 @@ static int chunk_miss(struct flb_buffer_worker *worker, uint64_t mask_id,
             return -1;
         }
         chunk_remove_route(root_path, target, hash_hex, &info, mask_id);
+        free(real_name);
+        free(target);
     }
 
     return 0;
@@ -444,8 +448,8 @@ int flb_buffer_chunk_delete(struct flb_buffer_worker *worker,
 {
     int ret;
     int remaining;
-    char *target;
-    char *real_name;
+    char *target = NULL;
+    char *real_name = NULL;
     char path[PATH_MAX];
     struct mk_list *head;
     struct flb_output_instance *o_ins;
@@ -509,6 +513,9 @@ int flb_buffer_chunk_delete(struct flb_buffer_worker *worker,
                  real_name);
         unlink(path);
     }
+
+    free(target);
+    free(real_name);
 
     return 0;
 }
