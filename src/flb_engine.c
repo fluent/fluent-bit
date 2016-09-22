@@ -494,6 +494,13 @@ int flb_engine_start(struct flb_config *config)
 /* Release all resources associated to the engine */
 int flb_engine_shutdown(struct flb_config *config)
 {
+
+#ifdef FLB_HAVE_BUFFERING
+    if (config->buffer_ctx) {
+        flb_buffer_stop(config->buffer_ctx);
+    }
+#endif
+
     /* router */
     flb_router_exit(config);
 

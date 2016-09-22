@@ -53,6 +53,7 @@
 static void flb_buffer_worker_init(void *arg)
 {
     int ret;
+    int run = FLB_TRUE;
     uint64_t routes;
     char *filename;
     struct flb_buffer_worker *ctx;
@@ -111,11 +112,11 @@ static void flb_buffer_worker_init(void *arg)
     }
 
     /* Join into the event loop (start listening for events) */
-    while (1) {
+    while (run) {
         mk_event_wait(ctx->evl);
         mk_event_foreach(event, ctx->evl) {
             if (event->type == FLB_BUFFER_EV_MNG) {
-                printf("[buffer] [ev_mng]\n");
+                run = FLB_FALSE;
             }
             else if (event->type == FLB_BUFFER_EV_ADD) {
                 /* Read event triggered from flb_buffer_chunk_push(...) */
@@ -167,6 +168,7 @@ static void flb_buffer_worker_init(void *arg)
             }
         }
     }
+    pthread_exit(NULL);
 }
 
 void flb_buffer_destroy(struct flb_buffer *ctx)
@@ -178,6 +180,7 @@ void flb_buffer_destroy(struct flb_buffer *ctx)
     /* Destroy workers if any */
     mk_list_foreach_safe(head, tmp, &ctx->workers) {
         worker = mk_list_entry(head, struct flb_buffer_worker, _head);
+        pthread_join(worker->tid, NULL);
 
         /* Management channel */
         if (worker->ch_mng[0] > 0) {
@@ -502,7 +505,29 @@ int flb_buffer_start(struct flb_buffer *ctx)
 /* Stop buffer workers */
 int flb_buffer_stop(struct flb_buffer *ctx)
 {
-    (void) ctx;
+    int n;
+    uint64_t val = 0;
+    struct mk_list *head;
+    struct flb_buffer_worker *worker;
+
+    /*
+     * Signal the manager of each buffer worker (chunk writers), the signal
+     * will let them stop working and exit.
+     */
+    mk_list_foreach(head, &ctx->workers) {
+        worker = mk_list_entry(head, struct flb_buffer_worker, _head);
+        n = write(worker->ch_mng[1], &val, sizeof(val));
+        if (n == -1) {
+            perror("write");
+        }
+    }
+
+    /*
+     *Destroy the context: iterate each worker, do a pthread_join, release
+     * context, event loops and pipes.
+     */
+    flb_buffer_destroy(ctx);
+
     return 0;
 }
 
