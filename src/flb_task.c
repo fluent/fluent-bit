@@ -110,7 +110,7 @@ struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
     return retry;
 }
 
-/* Check if a 'retry' context exists for a specific thread, if so, cleanup */
+/* Check if a 'retry' context exists for a specific task, if so, cleanup */
 int flb_task_retry_clean(struct flb_task *task, void *data)
 {
     struct mk_list *tmp;
@@ -343,6 +343,7 @@ void flb_task_destroy(struct flb_task *task)
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_task_route *route;
+    struct flb_task_retry *retry;
 
     flb_debug("[task] destroy task=%p (task_id=%i)", task, task->id);
 
@@ -375,6 +376,12 @@ void flb_task_destroy(struct flb_task *task)
         }
     }
 #endif
+
+    /* Remove 'retries' */
+    mk_list_foreach_safe(head, tmp, &task->retries) {
+        retry = mk_list_entry(head, struct flb_task_retry, _head);
+        flb_task_retry_destroy(retry);
+    }
 
     free(task->tag);
     free(task);
