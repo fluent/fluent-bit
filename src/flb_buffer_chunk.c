@@ -173,6 +173,12 @@ int chunk_info(char *filename, struct chunk_info *info)
     return 0;
 }
 
+void request_destroy(struct flb_buffer_request *req)
+{
+    mk_list_del(&req->_head);
+    free(req);
+}
+
 /* Given a chunk Hash and a root directory, lookup the absolute path if found */
 static int chunk_find(char *root_path, char *hash,
                       char **abs_path, char **real_name)
@@ -681,32 +687,32 @@ int flb_buffer_chunk_pop(struct flb_buffer *ctx, int thread_id,
 }
 
 /* Enqueue a request to move a chunk */
-struct flb_buffer_request *flb_buffer_chunk_mov(int type,
-                                                char *name,
-                                                uint64_t routes,
-                                                struct flb_buffer_worker *worker)
+int flb_buffer_chunk_mov(int type, char *name, uint64_t routes,
+                         struct flb_buffer_worker *worker)
 {
     int ret;
-    struct flb_buffer_request *req;
+    int len;
+    struct flb_buffer_request req;
 
-    req = calloc(1, sizeof(struct flb_buffer_request));
-    if (!req) {
-        perror("malloc");
-        return NULL;
+    req.type = type;
+
+    len = strlen(name);
+    if (len + 1 >= sizeof(req.name)) {
+        return -1;
     }
-
-    req->type = type;
-    req->name = name;
-    mk_list_add(&req->_head, &worker->requests);
+    else {
+        memcpy(&req.name, name, len);
+        req.name[len] = '\0';
+    }
 
     /* Do the request */
-    ret = write(worker->ch_mov[1], req, sizeof(struct flb_buffer_request));
+    ret = write(worker->ch_mov[1], &req, sizeof(struct flb_buffer_request));
     if (ret == -1) {
         perror("write");
-        return NULL;
+        return -1;
     }
 
-    return req;
+    return 0;
 }
 
 /*
@@ -876,12 +882,6 @@ int flb_buffer_chunk_real_move(struct flb_buffer_worker *worker,
     }
 
     return -1;
-}
-
-void request_destroy(struct flb_buffer_request *req)
-{
-    mk_list_del(&req->_head);
-    free(req);
 }
 
 #endif /* !FLB_HAVE_BUFFERING */

@@ -61,10 +61,8 @@ int flb_buffer_chunk_push(struct flb_buffer *ctx, void *data,
 int flb_buffer_chunk_pop(struct flb_buffer *ctx, int thread_id,
                          struct flb_task *task);
 
-struct flb_buffer_request *flb_buffer_chunk_mov(int type,
-                                                char *name,
-                                                uint64_t routes,
-                                                struct flb_buffer_worker *worker);
+int flb_buffer_chunk_mov(int type, char *name, uint64_t routes,
+                         struct flb_buffer_worker *worker);
 
 int flb_buffer_chunk_real_move(struct flb_buffer_worker *worker,
                                struct mk_event *event);

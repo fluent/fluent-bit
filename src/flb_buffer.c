@@ -58,7 +58,6 @@ static void flb_buffer_worker_init(void *arg)
     char *filename;
     struct flb_buffer_worker *ctx;
     struct mk_event *event;
-    struct flb_buffer_request *req;
 
     /* Get context */
     ctx = (struct flb_buffer_worker *) arg;
@@ -131,14 +130,15 @@ static void flb_buffer_worker_init(void *arg)
                      * Create and enqueue a new request type.
                      */
                     routes = ret;
-                    req = flb_buffer_chunk_mov(FLB_BUFFER_CHUNK_OUTGOING,
+                    ret = flb_buffer_chunk_mov(FLB_BUFFER_CHUNK_OUTGOING,
                                                filename, routes, ctx);
-                    if (!req) {
+                    if (ret == -1) {
                         printf("[buffer] could not create request %s\n", filename);
                         free(filename);
                         continue;
                     }
                 }
+                free(filename);
             }
             else if (event->type == FLB_BUFFER_EV_DEL) {
                 flb_buffer_chunk_delete(ctx, event);

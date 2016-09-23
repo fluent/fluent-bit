@@ -110,7 +110,7 @@ struct flb_buffer {
 /* */
 struct flb_buffer_request {
     int type;
-    char *name;
+    char name[1024];
     struct mk_list _head;   /* Link to buffer_worker->requests */
 };
 
