@@ -575,10 +575,10 @@ int flb_buffer_chunk_delete_ref(struct flb_buffer_worker *worker,
 
     ret = unlink(target);
     if (ret != 0) {
-        free(target);
-        free(real_name);
         perror("unlink");
         flb_error("[buffer] cannot delete %s", target);
+        free(target);
+        free(real_name);
         return FLB_BUFFER_ERROR;
     }
 
