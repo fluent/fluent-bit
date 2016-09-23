@@ -44,7 +44,7 @@ struct flb_buffer_chunk {
     uint8_t tmp_len;
     int buf_worker;
     char tmp[128];          /* temporal ref: Tag/output_instance */
-    char hash_hex[41];
+    char hash_hex[42];
 };
 
 int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
