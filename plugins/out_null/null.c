@@ -50,17 +50,6 @@ int cb_null_flush(void *data, size_t bytes,
     (void) out_context;
     (void) config;
 
-    msgpack_unpacked result;
-    size_t off = 0, cnt = 0;
-
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
-        cnt++;
-    }
-    msgpack_unpacked_destroy(&result);
-    time_t t = time(NULL);
-    printf("%lu,%i\n", t, cnt);
-
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 
