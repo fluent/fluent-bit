@@ -50,6 +50,7 @@ struct flb_in_random_config {
 static int in_random_collect(struct flb_config *config, void *in_context)
 {
     int fd;
+    int ret;
     uint64_t val;
     struct flb_in_random_config *ctx = in_context;
 
@@ -66,7 +67,12 @@ static int in_random_collect(struct flb_config *config, void *in_context)
         val = time(NULL);
     }
     else {
-        read(fd, &val, sizeof(val));
+        ret = read(fd, &val, sizeof(val));
+        if (ret == -1) {
+            perror("read");
+            close(fd);
+            return -1;
+        }
         close(fd);
     }
 
