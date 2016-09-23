@@ -100,7 +100,9 @@ void flb_output_exit(struct flb_config *config)
         free(ins->match);
 
 #ifdef FLB_HAVE_TLS
-        flb_tls_context_destroy(ins->tls.context);
+        if ( ins->p->flags & FLB_IO_TLS ) {
+            flb_tls_context_destroy(ins->tls.context);
+        }
 #endif
         /* release properties */
         mk_list_foreach_safe(head_prop, tmp_prop, &ins->properties) {
