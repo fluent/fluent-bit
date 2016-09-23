@@ -65,8 +65,10 @@ static int in_random_collect(struct flb_config *config, void *in_context)
     if (fd == -1) {
         val = time(NULL);
     }
-    read(fd, &val, sizeof(val));
-    close(fd);
+    else {
+        read(fd, &val, sizeof(val));
+        close(fd);
+    }
 
     msgpack_pack_array(&ctx->mp_pck, 2);
     msgpack_pack_uint64(&ctx->mp_pck, time(NULL));
