@@ -634,6 +634,7 @@ int flb_buffer_chunk_push(struct flb_buffer *ctx, void *data,
     chunk.tmp_len    = strlen(tag);
     chunk.routes     = routes;
     memcpy(&chunk.tmp, tag, chunk.tmp_len);
+    chunk.tmp[chunk.tmp_len] = '\0';
     memcpy(&chunk.hash_hex, hash_hex, 41);
 
     /* Lookup target worker */
