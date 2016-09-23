@@ -185,10 +185,6 @@ void flb_config_exit(struct flb_config *config)
     if (config->http_port) {
         free(config->http_port);
     }
-
-    if (config->http_server) {
-        free(config->http_server);
-    }
 #endif
 
 #ifdef FLB_HAVE_STATS
