@@ -228,6 +228,11 @@ static int chunk_find(char *root_path, char *hash,
     }
 
     target = malloc(PATH_MAX);
+    if (!target) {
+        free(file);
+        return -1;
+    }
+
     memcpy(target, root_path, root_len);
     target_len = root_len;
     memcpy(target + target_len, file, file_len);
