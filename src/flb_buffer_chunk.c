@@ -253,6 +253,7 @@ static int chunk_remove_route(char *root_path, char *abs_path,
                               char *hash, struct chunk_info *info,
                               uint64_t mask_id)
 {
+    int ret;
     int len_path;
     char *to = NULL;
     uint64_t routes;
@@ -283,7 +284,13 @@ static int chunk_remove_route(char *root_path, char *abs_path,
 
     flb_debug("[buffer] rename chunk %s to %s",
               abs_path, to);
-    rename(abs_path, to);
+
+    ret = rename(abs_path, to);
+    if (ret == -1) {
+        perror("rename");
+        free(to);
+        return -1;
+    }
     free(to);
 
     return 0;
