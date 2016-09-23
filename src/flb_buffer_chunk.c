@@ -682,6 +682,7 @@ int flb_buffer_chunk_pop(struct flb_buffer *ctx, int thread_id,
     memcpy(&chunk.hash_hex, task->hash_hex, 41);
     chunk.tmp_len = strlen(o_ins->name);
     memcpy(&chunk.tmp, o_ins->name, chunk.tmp_len);
+    chunk.tmp[chunk.tmp_len] = '\0';
     chunk.data = o_ins;
 
     /* Write request through worker channel */
