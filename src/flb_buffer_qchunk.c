@@ -414,6 +414,7 @@ int flb_buffer_qchunk_start(struct flb_buffer *ctx)
                                 ctx, &qw->tid);
     if (ret == -1) {
         flb_warn("[buffer qchunk] could not spawn worker");
+        pthread_mutex_unlock(&pth_mutex);
         mk_event_loop_destroy(qw->evl);
         free(qw);
         return -1;
