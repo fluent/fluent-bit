@@ -172,7 +172,7 @@ static void *in_random_flush(void *in_context, size_t *size)
     char *buf = NULL;
     struct flb_in_random_config *ctx = in_context;
 
-    if (ctx->samples_count < ctx->samples) {
+    if (ctx->samples_count < ctx->samples || ctx->mp_sbuf.size == 0) {
         return NULL;
     }
 
