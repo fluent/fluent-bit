@@ -636,6 +636,7 @@ int flb_buffer_chunk_push(struct flb_buffer *ctx, void *data,
     memcpy(&chunk.tmp, tag, chunk.tmp_len);
     chunk.tmp[chunk.tmp_len] = '\0';
     memcpy(&chunk.hash_hex, hash_hex, 41);
+    chunk.hash_hex[41] = '\0';
 
     /* Lookup target worker */
     worker = get_worker(ctx, ctx->worker_lru);
@@ -681,6 +682,7 @@ int flb_buffer_chunk_pop(struct flb_buffer *ctx, int thread_id,
     /* Compose buffer chunk instruction */
     memset(&chunk, '\0', sizeof(struct flb_buffer_chunk));
     memcpy(&chunk.hash_hex, task->hash_hex, 41);
+    chunk.hash_hex[41] = '\0';
     chunk.tmp_len = strlen(o_ins->name);
     memcpy(&chunk.tmp, o_ins->name, chunk.tmp_len);
     chunk.tmp[chunk.tmp_len] = '\0';
