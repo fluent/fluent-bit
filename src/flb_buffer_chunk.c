@@ -97,7 +97,7 @@ int chunk_info(char *filename, struct chunk_info *info)
     int len;
     char *p;
     char *tmp;
-    char num[8];
+    char num[9];
 
     len = strlen(filename);
     if (len < 47) {
@@ -125,7 +125,7 @@ int chunk_info(char *filename, struct chunk_info *info)
     info->hash_str[40] = '\0';
 
     len = (p - tmp);
-    if (len < 1 || len > sizeof(num)) {
+    if (len < 1 || len >= sizeof(num)) {
         return -1;
     }
     strncpy(num, tmp, len);
