@@ -354,6 +354,7 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
         return NULL;
     }
     ctx->qworker = NULL;
+    ctx->i_ins = NULL;
 
     path_len = strlen(path);
     if (path[path_len - 1] != '/') {
