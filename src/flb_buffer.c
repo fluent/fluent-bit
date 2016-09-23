@@ -438,7 +438,7 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
 
     /* Generate pseudo input plugin and instance */
     ctx->i_ins = calloc(1, sizeof(struct flb_input_instance));
-    if (!ctx) {
+    if (!ctx->i_ins) {
         perror("calloc");
         flb_buffer_destroy(ctx);
         return NULL;
