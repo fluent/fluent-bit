@@ -60,15 +60,21 @@ static int random_uniform(int min, int max)
     int copies;
     int limit;
     int ra;
+    int ret;
 
     fd = open("/dev/urandom", O_RDONLY);
     if (fd == -1) {
         srand(time(NULL));
     }
     else {
-        read(fd, &val, sizeof(val));
+        ret = read(fd, &val, sizeof(val));
+        if (ret > 0) {
+            srand(val);
+        }
+        else {
+            srand(time(NULL));
+        }
         close(fd);
-        srand(val);
     }
 
     range  = max - min + 1;
