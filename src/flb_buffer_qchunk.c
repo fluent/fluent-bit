@@ -103,15 +103,20 @@ static char *qchunk_get_data(struct flb_buffer_qchunk *qchunk, size_t *size)
     char *buf;
     struct stat st;
 
-    ret = stat(qchunk->file_path, &st);
-    if (ret == -1) {
-        perror("stat");
-        return NULL;
-    }
-
     fd = open(qchunk->file_path, O_RDONLY);
     if (fd == -1) {
         perror("open");
+        return NULL;
+    }
+
+    ret = fstat(fd, &st);
+    if (ret == -1) {
+        perror("fstat");
+        close(fd);
+        return NULL;
+    }
+    if (!S_ISREG(st.st_mode)) {
+        close(fd);
         return NULL;
     }
 
