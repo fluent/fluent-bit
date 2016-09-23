@@ -185,10 +185,6 @@ void flb_config_exit(struct flb_config *config)
     if (config->http_port) {
         free(config->http_port);
     }
-
-    if (config->http_server) {
-        free(config->http_server);
-    }
 #endif
 
 #ifdef FLB_HAVE_STATS
@@ -269,7 +265,7 @@ int flb_config_set_property(struct flb_config *config,
     int i=0;
     int ret = -1;
     int *i_val;
-    char *s_val;
+    char **s_val;
     size_t len = strnlen(k, 256);
     char *key = service_configs[0].key;
 
@@ -292,8 +288,11 @@ int flb_config_set_property(struct flb_config *config,
                     break;
 
                 case FLB_CONF_TYPE_STR:
-                    s_val = (char*)config+service_configs[i].offset;
-                    s_val = strdup(v);
+                    s_val = (char**)((char*)config+service_configs[i].offset);
+                    if ( *s_val != NULL ) {
+                        free(*s_val); /* release before overwriting */
+                    }
+                    *s_val = strdup(v);
                     break;
 
                 default:
