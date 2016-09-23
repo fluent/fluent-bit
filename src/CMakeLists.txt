@@ -11,9 +11,6 @@ set(src
   flb_kernel.c
   flb_input.c
   flb_output.c
-  flb_buffer.c
-  flb_buffer_chunk.c
-  flb_buffer_qchunk.c
   flb_config.c
   flb_network.c
   flb_utils.c
@@ -66,6 +63,15 @@ if(FLB_STATS)
     ${extra_libs}
     "cJSON"
     "m"
+    )
+endif()
+
+if(FLB_BUFFERING)
+  set(src
+    ${src}
+    "flb_buffer.c"
+    "flb_buffer_chunk.c"
+    "flb_buffer_qchunk.c"
     )
 endif()
 

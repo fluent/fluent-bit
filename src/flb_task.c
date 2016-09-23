@@ -315,7 +315,9 @@ struct flb_task *flb_task_create_direct(uint64_t ref_id,
     task->i_ins     = i_ins;
     task->dt        = NULL;
     task->mapped    = FLB_TRUE;
+#ifdef FLB_HAVE_BUFFERING
     memcpy(&task->hash_hex, hash, 41);
+#endif
     mk_list_add(&task->_head, &i_ins->tasks);
 
     /* Iterate output instances and try to match the routes */
