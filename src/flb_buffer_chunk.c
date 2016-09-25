@@ -529,9 +529,12 @@ int flb_buffer_chunk_delete(struct flb_buffer_worker *worker,
         snprintf(path, sizeof(path) - 1, "%soutgoing/%s",
                  FLB_BUFFER_PATH(worker),
                  real_name);
-        ret = stat(path, &st);
-        if (ret == 0 && S_ISREG(st.st_mode)) {
-            unlink(path);
+        ret = unlink(path);
+        if (ret == -1) {
+            perror("unlink");
+            free(target);
+            free(real_name);
+            return -1;
         }
     }
 
