@@ -262,7 +262,11 @@ static int chunk_remove_route(char *root_path, char *abs_path,
     routes = (info->routes & ~mask_id);
     if (routes == 0) {
         flb_debug("[buffer] delete chunk %s", abs_path);
-        unlink(abs_path);
+        ret = unlink(abs_path);
+        if (ret == -1) {
+            perror("unlink");
+            return -1;
+        }
         return 0;
     }
 
