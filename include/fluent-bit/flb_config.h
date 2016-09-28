@@ -98,6 +98,7 @@ struct flb_config {
     struct flb_kernel *kernel;
 
     /* Logging */
+    char *logfile;
     struct flb_log *log;
 
     /* Workers: threads spawn using flb_worker_create() */
@@ -140,6 +141,7 @@ enum conf_type {
 
 #define FLB_CONF_STR_FLUSH    "Flush"
 #define FLB_CONF_STR_DAEMON   "Daemon"
+#define FLB_CONF_STR_LOGFILE  "Logfile"
 #define FLB_CONF_STR_LOGLEVEL "Log_Level"
 #ifdef FLB_HAVE_HTTP
 #define FLB_CONF_STR_HTTP_MONITOR "HTTP_Monitor"

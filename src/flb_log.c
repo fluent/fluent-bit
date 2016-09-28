@@ -24,6 +24,9 @@
 #include <inttypes.h>
 #include <pthread.h>
 #include <sys/ioctl.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include <mk_core.h>
 #include <fluent-bit/flb_log.h>
@@ -44,7 +47,23 @@ struct log_message {
 
 static inline int log_push(struct log_message *msg)
 {
-    return write(STDERR_FILENO, msg->msg, msg->size);
+    int fd;
+    int ret;
+    struct flb_log *log = FLB_TLS_GET(flb_log_ctx);
+
+    if (log->type == FLB_LOG_STDERR) {
+        return write(STDERR_FILENO, msg->msg, msg->size);
+    }
+    else if (log->type == FLB_LOG_FILE) {
+        fd = open(log->out, O_CREAT | O_WRONLY | O_APPEND, 0666);
+        if (fd == -1) {
+            fprintf(stderr, "[log] error opening log file %s\n", log->out);
+        }
+        ret = write(fd, msg->msg, msg->size);
+        close(fd);
+    }
+
+    return ret;
 }
 
 static inline int log_read(int fd, struct flb_log *log)
@@ -73,6 +92,7 @@ static void log_worker_collector(void *data)
     struct mk_event *event;
     struct flb_log *log = data;
 
+    FLB_TLS_SET(flb_log_ctx, log);
     pthread_cond_signal(&pth_cond);
 
     while (1) {
@@ -133,10 +153,14 @@ struct flb_log *flb_log_init(int type, int level, char *out)
     }
 
     /* Only supporting STDERR for now */
-    log->type  = FLB_LOG_STDERR;
+    log->type  = type;
     log->level = level;
-    log->out   = NULL;
+    log->out   = out;
     log->evl   = evl;
+
+    /* Initialize and set log context in workers space */
+    FLB_TLS_INIT(flb_log_ctx);
+    FLB_TLS_SET(flb_log_ctx, log);
 
     /*
      * This lock is used for the 'pth_cond' conditional. Once the worker
@@ -156,10 +180,6 @@ struct flb_log *flb_log_init(int type, int level, char *out)
     /* Block until the child thread is ready */
     pthread_cond_wait(&pth_cond, &pth_mutex);
     pthread_mutex_unlock(&pth_mutex);
-
-    /* Initialize and set log context in workers space */
-    FLB_TLS_INIT(flb_log_ctx);
-    FLB_TLS_SET(flb_log_ctx, log);
 
     return log;
 }

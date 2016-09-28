@@ -40,6 +40,10 @@ struct flb_service_config service_configs[] = {
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, daemon)},
 
+    {FLB_CONF_STR_LOGFILE,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, logfile)},
+
     {FLB_CONF_STR_LOGLEVEL,
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, log)},
@@ -128,6 +132,10 @@ void flb_config_exit(struct flb_config *config)
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_input_collector *collector;
+
+    if (config->logfile) {
+        free(config->logfile);
+    }
 
     if (config->log) {
         free(config->log);

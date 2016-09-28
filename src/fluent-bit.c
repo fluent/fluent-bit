@@ -71,6 +71,7 @@ static void flb_help(int rc, struct flb_config *config)
     printf("  -m, --match=MATCH\tset plugin match, same as '-p match=abc'\n");
     printf("  -o, --output=OUTPUT\tset an output\n");
     printf("  -p, --prop=\"A=B\"\tset plugin configuration property\n");
+    printf("  -l, --logfile=FILE\twrite log info to a file\n");
     printf("  -t, --tag=TAG\t\tset plugin tag, same as '-p tag=abc'\n");
     printf("  -v, --verbose\t\tenable verbose mode\n");
 #ifdef FLB_HAVE_HTTP
@@ -239,6 +240,12 @@ static int flb_service_conf(struct flb_config *config, char *file)
             config->daemon = v_num;
         }
 
+        /* Logfile */
+        v_str = n_get_key(section, "Logfile", MK_RCONF_STR);
+        if (v_str) {
+            config->logfile = strdup(v_str);
+        }
+
         /* Verbose / Log level */
         v_str = s_get_key(section, "Log_Level", MK_RCONF_STR);
         if (v_str) {
@@ -394,6 +401,7 @@ int main(int argc, char **argv)
         { "daemon",      no_argument      , NULL, 'd' },
         { "flush",       required_argument, NULL, 'f' },
         { "http",        no_argument      , NULL, 'H' },
+        { "logfile",     required_argument, NULL, 'l' },
         { "port",        required_argument, NULL, 'P' },
         { "input",       required_argument, NULL, 'i' },
         { "match",       required_argument, NULL, 'm' },
@@ -422,7 +430,7 @@ int main(int argc, char **argv)
     }
 
     /* Parse the command line options */
-    while ((opt = getopt_long(argc, argv, "b:B:c:df:i:m:o:p:t:vqVhHP:",
+    while ((opt = getopt_long(argc, argv, "b:B:c:df:i:m:o:p:t:l:vqVhHP:",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
@@ -465,6 +473,9 @@ int main(int argc, char **argv)
             }
             last_plugin = PLUGIN_OUTPUT;
             break;
+        case 'l':
+            config->logfile = strdup(optarg);
+            break;
         case 'p':
             if (last_plugin == PLUGIN_INPUT) {
                 input_set_property(in, optarg);
@@ -503,7 +514,13 @@ int main(int argc, char **argv)
         }
     }
 
-    config->log = flb_log_init(FLB_LOG_STDERR, config->verbose, NULL);
+    if (!config->logfile) {
+        config->log = flb_log_init(FLB_LOG_STDERR, config->verbose, NULL);
+    }
+    else {
+        config->log = flb_log_init(FLB_LOG_FILE, config->verbose,
+                                   config->logfile);
+    }
 
     /* Validate config file */
     if (cfg_file) {
