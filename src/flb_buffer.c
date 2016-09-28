@@ -110,6 +110,8 @@ static void flb_buffer_worker_init(void *arg)
         return;
     }
 
+    flb_debug("[buffer: worker %i] ready", ctx->id);
+
     /* Join into the event loop (start listening for events) */
     while (run) {
         mk_event_wait(ctx->evl);
@@ -168,7 +170,6 @@ static void flb_buffer_worker_init(void *arg)
             }
         }
     }
-    pthread_exit(NULL);
 }
 
 void flb_buffer_destroy(struct flb_buffer *ctx)
@@ -466,10 +467,10 @@ int flb_buffer_start(struct flb_buffer *ctx)
     mk_list_foreach(head, &ctx->workers) {
         worker = mk_list_entry(head, struct flb_buffer_worker, _head);
 
-        /* spawn a POSIX thread */
-        ret = mk_utils_worker_spawn(flb_buffer_worker_init,
-                                    worker, &worker->tid);
-        flb_debug("[buffer] start worker #%i status=%i task_id=%d",
+        /* Spawn workers */
+        ret = flb_worker_create(flb_buffer_worker_init,
+                                worker, &worker->tid, ctx->config);
+        flb_debug("[buffer] started worker #%i status=%i task_id=%d",
                   worker->id, ret, worker->task_id);
         if (ret == 0) {
             n++;

@@ -107,6 +107,7 @@ struct flb_config *flb_config_init()
     mk_list_init(&config->inputs);
     mk_list_init(&config->outputs);
     mk_list_init(&config->sched_requests);
+    mk_list_init(&config->workers);
 
     memset(&config->tasks_map, '\0', sizeof(config->tasks_map));
 
@@ -116,6 +117,8 @@ struct flb_config *flb_config_init()
     /* Ignore SIGPIPE */
     signal(SIGPIPE, SIG_IGN);
 
+    /* Prepare worker interface */
+    flb_worker_init(config);
     return config;
 }
 

@@ -45,15 +45,6 @@
 #include <fluent-bit/flb_buffer_qchunk.h>
 #include <fluent-bit/flb_sha1.h>
 
-/* FIXME */
-#define FLB_DEBUG_FIXME(fmt, ...) printf(ANSI_YELLOW "D" ANSI_RESET " FIXME " fmt "\n", __VA_ARGS__)
-#define FLB_ERROR_FIXME(fmt, ...) printf(ANSI_RED "E" ANSI_RESET " FIXME " fmt "\n", __VA_ARGS__)
-
-#undef flb_error
-#undef flb_debug
-#define flb_debug(fmt, ...) FLB_DEBUG_FIXME(fmt, __VA_ARGS__)
-#define flb_error(fmt, ...) FLB_ERROR_FIXME(fmt, __VA_ARGS__)
-
 /* Local structure used to validate and obtain Chunk information */
 struct chunk_info {
     char hash_str[41];
@@ -596,7 +587,7 @@ int flb_buffer_chunk_delete_ref(struct flb_buffer_worker *worker,
         return FLB_BUFFER_ERROR;
     }
 
-    flb_debug("[buffer] removing task %s OK\n", target);
+    flb_debug("[buffer] removing task %s OK", target);
 
     free(real_name);
     free(target);

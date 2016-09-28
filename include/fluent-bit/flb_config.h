@@ -100,6 +100,9 @@ struct flb_config {
     /* Logging */
     struct flb_log *log;
 
+    /* Workers: threads spawn using flb_worker_create() */
+    struct mk_list workers;
+
     /* HTTP Server */
 #ifdef FLB_HAVE_HTTP
     int http_server;

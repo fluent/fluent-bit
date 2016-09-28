@@ -24,19 +24,10 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_macros.h>
+#include <fluent-bit/flb_thread_storage.h>
 
-#ifdef FLB_HAVE_C_TLS
-#define FLB_TLS_SET(key, val)        key=val
-#define FLB_TLS_GET(key)             key
-#define FLB_TLS_INIT()               do {} while (0)
-extern __thread struct flb_log *flb_log_ctx;
-#else
-pthread_key_t flb_log_ctx;
-#define FLB_TLS_SET(key, val)  pthread_setspecific(key, (void *) val)
-#define FLB_TLS_GET(key)       pthread_getspecific(key)
-#define FLB_TLS_INIT()                                  \
-    pthread_key_create(&flb_log_ctx, NULL);
-#endif
+/* FIXME: this extern should be auto-populated from flb_thread_storage.h */
+extern FLB_TLS_DEFINE(struct flb_log, flb_log_ctx)
 
 /* Message types */
 #define FLB_LOG_OFF     0
@@ -51,12 +42,15 @@ pthread_key_t flb_log_ctx;
 #define FLB_LOG_FILE     1  /* write logs to a file        */
 #define FLB_LOG_SOCKET   2  /* write logs to a unix socket */
 
+#define FLB_LOG_EVENT    MK_EVENT_NOTIFICATION
 
 /* Logging main context */
 struct flb_log {
-    uint16_t type;          /* log type */
-    uint16_t level;         /* level    */
-    char *out;              /* FLB_LOG_FILE or FLB_LOG_SOCKET */
+    uint16_t type;             /* log type */
+    uint16_t level;            /* level    */
+    char *out;                 /* FLB_LOG_FILE or FLB_LOG_SOCKET */
+    pthread_t tid;             /* thread ID   */
+    struct mk_event_loop *evl;
 };
 
 /*
@@ -82,29 +76,27 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...);
 
 /* Logging macros */
 #define flb_error(fmt, ...)                                          \
-    if (flb_log_check(FLB_LOG_ERROR))                                \
         flb_log_print(FLB_LOG_ERROR, NULL, 0, fmt, ##__VA_ARGS__)
 
 #define flb_warn(fmt, ...)                                           \
-    if (flb_log_check(FLB_LOG_WARN))                                 \
         flb_log_print(FLB_LOG_WARN, NULL, 0, fmt, ##__VA_ARGS__)
 
 #define flb_info(fmt, ...)                                           \
-    if (flb_log_check(FLB_LOG_INFO))                                 \
         flb_log_print(FLB_LOG_INFO, NULL, 0, fmt, ##__VA_ARGS__)
 
 #define flb_debug(fmt, ...)                                         \
-    if (flb_log_check(FLB_LOG_DEBUG))                               \
         flb_log_print(FLB_LOG_DEBUG, NULL, 0, fmt, ##__VA_ARGS__)
 
 #ifdef FLB_HAVE_TRACE
 #define flb_trace(fmt, ...)                                             \
-    if (flb_log_check(FLB_LOG_TRACE))                                   \
         flb_log_print(FLB_LOG_TRACE, __FILE__, __LINE__,                \
                       fmt, ##__VA_ARGS__)
 #else
 #define flb_trace(fmt, ...)  do {} while(0)
 #endif
 
+int flb_log_worker_init(void *data);
+int flb_errno_print(int errnum, char *file, int line);
 
+#define flb_errno(e) flb_errno_print(e, __FILENAME__, __LINE__)
 #endif

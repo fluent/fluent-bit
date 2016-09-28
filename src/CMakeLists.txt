@@ -22,6 +22,7 @@ set(src
   flb_upstream.c
   flb_router.c
   flb_http_client.c
+  flb_worker.c
   )
 
 include_directories(

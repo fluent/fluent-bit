@@ -22,17 +22,101 @@
 #include <unistd.h>
 #include <stdarg.h>
 #include <inttypes.h>
+#include <pthread.h>
+#include <sys/ioctl.h>
 
 #include <mk_core.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_worker.h>
 
-#ifdef FLB_HAVE_C_TLS
-__thread struct flb_log *flb_log_ctx;
-#endif
+FLB_TLS_DEFINE(struct flb_log, flb_log_ctx)
+
+/* thread initializator */
+pthread_cond_t  pth_cond;
+pthread_mutex_t pth_mutex;
+
+/* Simple structure to dispatch messages to the log collector */
+struct log_message {
+    size_t size;
+    char   msg[1024 - sizeof(size_t)];
+};
+
+static inline int log_push(struct log_message *msg)
+{
+    return write(STDERR_FILENO, msg->msg, msg->size);
+}
+
+static inline int log_read(int fd, struct flb_log *log)
+{
+    int bytes;
+    struct log_message msg;
+
+    /*
+     * Since write operations to the pipe are always atomic 'if' they are
+     * under the PIPE_BUF limit (4KB on Linux) and our messages are always 1KB,
+     * we can trust we will always get a full message on each read(2).
+     */
+    bytes = read(fd, &msg, sizeof(struct log_message));
+    if (bytes <= 0) {
+        perror("bytes");
+        return -1;
+    }
+    log_push(&msg);
+
+    return bytes;
+}
+
+/* Central collector of messages */
+static void log_worker_collector(void *data)
+{
+    struct mk_event *event;
+    struct flb_log *log = data;
+
+    pthread_cond_signal(&pth_cond);
+
+    while (1) {
+        mk_event_wait(log->evl);
+        mk_event_foreach(event, log->evl) {
+            if (event->type == FLB_LOG_EVENT) {
+                log_read(event->fd, log);
+            }
+        }
+    }
+}
+
+int flb_log_worker_init(void *data)
+{
+    int ret;
+    struct flb_worker *worker = data;
+    struct flb_config *config = worker->config;
+    struct flb_log *log = config->log;
+
+    /* Pipe to communicate Thread with worker log-collector */
+    ret = pipe(worker->log);
+    if (ret == -1) {
+        perror("pipe");
+        return -1;
+    }
+
+    /* Register the read-end of the pipe (log[0]) into the event loop */
+    MK_EVENT_NEW(&worker->event);
+    ret = mk_event_add(log->evl, worker->log[0],
+                       FLB_LOG_EVENT, MK_EVENT_READ, &worker->event);
+    if (ret == -1) {
+        close(worker->log[0]);
+        close(worker->log[1]);
+        return -1;
+    }
+
+    return 0;
+}
 
 struct flb_log *flb_log_init(int type, int level, char *out)
 {
+    int ret;
     struct flb_log *log;
+    struct mk_event_loop *evl;
 
     log = malloc(sizeof(struct flb_log));
     if (!log) {
@@ -40,12 +124,41 @@ struct flb_log *flb_log_init(int type, int level, char *out)
         return NULL;
     }
 
+    /* Create event loop to be used by the collector worker */
+    evl = mk_event_loop_create(16);
+    if (!evl) {
+        fprintf(stderr, "[log] could not create event loop\n");
+        free(log);
+        return NULL;
+    }
+
     /* Only supporting STDERR for now */
     log->type  = FLB_LOG_STDERR;
     log->level = level;
     log->out   = NULL;
+    log->evl   = evl;
 
-    FLB_TLS_INIT();
+    /*
+     * This lock is used for the 'pth_cond' conditional. Once the worker
+     * thread is ready will signal the condition.
+     */
+    pthread_mutex_lock(&pth_mutex);
+
+    ret = mk_utils_worker_spawn(log_worker_collector,
+                                log, &log->tid);
+    if (ret == -1) {
+        pthread_mutex_unlock(&pth_mutex);
+        mk_event_loop_destroy(log->evl);
+        free(log);
+        return NULL;
+    }
+
+    /* Block until the child thread is ready */
+    pthread_cond_wait(&pth_cond, &pth_mutex);
+    pthread_mutex_unlock(&pth_mutex);
+
+    /* Initialize and set log context in workers space */
+    FLB_TLS_INIT(flb_log_ctx);
     FLB_TLS_SET(flb_log_ctx, log);
 
     return log;
@@ -53,6 +166,8 @@ struct flb_log *flb_log_init(int type, int level, char *out)
 
 void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
 {
+    int len;
+    int total;
     time_t now;
     const char *header_color = NULL;
     const char *header_title = NULL;
@@ -60,6 +175,7 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
     const char *reset_color = ANSI_RESET;
     struct tm result;
     struct tm *current;
+    struct log_message msg;
     va_list args;
 
     va_start(args, fmt);
@@ -97,28 +213,75 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
     now = time(NULL);
     current = localtime_r(&now, &result);
 
-    fprintf(stderr, "%s[%s%i/%02i/%02i %02i:%02i:%02i%s]%s ",
-            bold_color, reset_color,
-            current->tm_year + 1900,
-            current->tm_mon + 1,
-            current->tm_mday,
-            current->tm_hour,
-            current->tm_min,
-            current->tm_sec,
-            bold_color, reset_color);
+    len = snprintf(msg.msg, sizeof(msg.msg) - 1,
+                   "%s[%s%i/%02i/%02i %02i:%02i:%02i%s]%s [%s%5s%s] ",
+                   /*      time     */                    /* type */
 
-    fprintf(stderr, "%s[%s%5s%s]%s ",
-            "", header_color, header_title, reset_color, "");
+                   /* time variables */
+                   bold_color, reset_color,
+                   current->tm_year + 1900,
+                   current->tm_mon + 1,
+                   current->tm_mday,
+                   current->tm_hour,
+                   current->tm_min,
+                   current->tm_sec,
+                   bold_color, reset_color,
 
-    vfprintf(stderr, fmt, args);
+                   /* type format */
+                   header_color, header_title, reset_color);
+
+
+    total = vsnprintf(msg.msg + len,
+                      (sizeof(msg.msg) - 1) - len,
+                      fmt, args);
+    total += len;
+    msg.msg[total++] = '\n';
+    msg.msg[total]   = '\0';
+    msg.size = total;
     va_end(args);
-    fprintf(stderr, "%s\n", reset_color);
+
+    struct flb_worker *w;
+
+    w = flb_worker_get();
+    if (w) {
+        int n = write(w->log[1], &msg, sizeof(msg));
+        if (n == -1) {
+            perror("write");
+        }
+    }
+    else {
+        log_push(&msg);
+    }
+}
+
+int flb_errno_print(int errnum, char *file, int line)
+{
+    char buf[256];
+
+    strerror_r(errnum, buf, sizeof(buf) - 1);
+    flb_error("[%s:%i errno=%i] %s", file, line, errnum, buf);
 }
 
 int flb_log_stop(struct flb_log *log)
 {
     free(log);
     return 0;
+}
+
+int flb_log_test(char *msg)
+{
+    int len;
+    struct flb_worker *worker;
+
+    worker = FLB_TLS_GET(flb_worker_ctx);
+    if (!worker) {
+        printf("no worker!: %s\n", msg);
+    }
+
+    len = strlen(msg);
+    int n = write(worker->log[1], msg, len);
+    printf("write=%i bytes\n", n);
+    return n;
 }
 
 #ifndef FLB_HAVE_C_TLS
