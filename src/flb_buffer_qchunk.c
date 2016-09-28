@@ -31,12 +31,6 @@
 #include <sys/mman.h>
 #include <pthread.h>
 
-/* FIXME */
-#undef flb_error
-#undef flb_debug
-#define flb_debug(fmt, ...) printf(fmt "\n", ##__VA_ARGS__)
-#define flb_error(fmt, ...) printf(fmt "\n", ##__VA_ARGS__)
-
 /* qworker thread initializator */
 pthread_cond_t  pth_cond;
 pthread_mutex_t pth_mutex;
@@ -410,8 +404,8 @@ int flb_buffer_qchunk_start(struct flb_buffer *ctx)
     pthread_mutex_lock(&pth_mutex);
 
     /*  Spawn the worker */
-    ret = mk_utils_worker_spawn(flb_buffer_qchunk_worker,
-                                ctx, &qw->tid);
+    ret = flb_worker_create(flb_buffer_qchunk_worker,
+                            ctx, &qw->tid, ctx->config);
     if (ret == -1) {
         flb_warn("[buffer qchunk] could not spawn worker");
         pthread_mutex_unlock(&pth_mutex);
