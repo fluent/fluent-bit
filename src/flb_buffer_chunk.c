@@ -185,7 +185,7 @@ static int chunk_find(char *root_path, char *hash,
 
     dir = opendir(root_path);
     if (!dir) {
-        perror("opendir");
+        flb_errno();
         return -1;
     }
 
@@ -255,7 +255,7 @@ static int chunk_remove_route(char *root_path, char *abs_path,
         flb_debug("[buffer] delete chunk %s", abs_path);
         ret = unlink(abs_path);
         if (ret == -1) {
-            perror("unlink");
+            flb_errno();
             return -1;
         }
         return 0;
@@ -269,7 +269,7 @@ static int chunk_remove_route(char *root_path, char *abs_path,
 
     to = malloc(PATH_MAX);
     if (!to) {
-        perror("malloc");
+        flb_errno();
         return -1;
     }
 
@@ -282,7 +282,7 @@ static int chunk_remove_route(char *root_path, char *abs_path,
 
     ret = rename(abs_path, to);
     if (ret == -1) {
-        perror("rename");
+        flb_errno();
         free(to);
         return -1;
     }
@@ -376,7 +376,7 @@ int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
     /* Read the expected chunk reference */
     ret = read(worker->ch_add[0], &chunk, sizeof(struct flb_buffer_chunk));
     if (ret <= 0) {
-        perror("read");
+        flb_errno();
         return -1;
     }
 
@@ -387,7 +387,7 @@ int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
      */
     fchunk = malloc(PATH_MAX);
     if (!fchunk) {
-        perror("malloc");
+        flb_errno();
         return -1;
     }
 
@@ -397,7 +397,7 @@ int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
                    chunk.routes,
                    worker->id, chunk.tmp);
     if (ret == -1) {
-        perror("snprintf");
+        flb_errno();
         free(fchunk);
         return -1;
     }
@@ -406,14 +406,14 @@ int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
                    "%s/incoming/%s",
                    FLB_BUFFER_PATH(worker), fchunk);
     if (ret == -1) {
-        perror("snprintf");
+        flb_errno();
         free(fchunk);
         return -1;
     }
 
     f = fopen(target, "w");
     if (!f) {
-        perror("fopen");
+        flb_errno();
         free(fchunk);
         return -1;
     }
@@ -422,7 +422,7 @@ int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
     fd = fileno(f);
     ret = flock(fd, LOCK_EX);
     if (ret == -1) {
-        perror("flock");
+        flb_errno();
         fclose(f);
         free(fchunk);
         return -1;
@@ -431,7 +431,7 @@ int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
     /* Write data chunk */
     w = fwrite(chunk.data, chunk.size, 1, f);
     if (!w) {
-        perror("fwrite");
+        flb_errno();
         fclose(f);
         free(fchunk);
         return -1;
@@ -474,7 +474,7 @@ int flb_buffer_chunk_delete(struct flb_buffer_worker *worker,
     /* Read the expected chunk reference */
     ret = read(worker->ch_del[0], &chunk, sizeof(struct flb_buffer_chunk));
     if (ret <= 0) {
-        perror("read");
+        flb_errno();
         return -1;
     }
 
@@ -526,7 +526,7 @@ int flb_buffer_chunk_delete(struct flb_buffer_worker *worker,
                  real_name);
         ret = unlink(path);
         if (ret == -1) {
-            perror("unlink");
+            flb_errno();
             free(target);
             free(real_name);
             return -1;
@@ -554,7 +554,7 @@ int flb_buffer_chunk_delete_ref(struct flb_buffer_worker *worker,
     /* Read the expected chunk reference */
     ret = read(worker->ch_del_ref[0], &chunk, sizeof(struct flb_buffer_chunk));
     if (ret <= 0) {
-        perror("read");
+        flb_errno();
         return FLB_BUFFER_ERROR;
     }
 
@@ -564,7 +564,7 @@ int flb_buffer_chunk_delete_ref(struct flb_buffer_worker *worker,
                    FLB_BUFFER_PATH(worker),
                    chunk.tmp);
     if (ret == -1) {
-        perror("snprintf");
+        flb_errno();
         return FLB_BUFFER_ERROR;
     }
 
@@ -580,7 +580,7 @@ int flb_buffer_chunk_delete_ref(struct flb_buffer_worker *worker,
 
     ret = unlink(target);
     if (ret != 0) {
-        perror("unlink");
+        flb_errno();
         flb_error("[buffer] cannot delete %s", target);
         free(target);
         free(real_name);
@@ -600,7 +600,7 @@ int flb_buffer_chunk_delete_ref(struct flb_buffer_worker *worker,
      */
     ret = write(worker->ch_del[1], &chunk, sizeof(struct flb_buffer_chunk));
     if (ret == -1) {
-        perror("write");
+        flb_errno();
         return FLB_BUFFER_ERROR;
     }
 
@@ -649,7 +649,7 @@ int flb_buffer_chunk_push(struct flb_buffer *ctx, void *data,
     /* Write request through worker channel */
     ret = write(worker->ch_add[1], &chunk, sizeof(struct flb_buffer_chunk));
     if (ret == -1) {
-        perror("write");
+        flb_errno();
         return -1;
     }
 
@@ -696,7 +696,7 @@ int flb_buffer_chunk_pop(struct flb_buffer *ctx, int thread_id,
     /* Write request through worker channel */
     ret = write(worker->ch_del_ref[1], &chunk, sizeof(struct flb_buffer_chunk));
     if (ret == -1) {
-        perror("write");
+        flb_errno();
         return -1;
     }
 
@@ -725,7 +725,7 @@ int flb_buffer_chunk_mov(int type, char *name, uint64_t routes,
     /* Do the request */
     ret = write(worker->ch_mov[1], &req, sizeof(struct flb_buffer_request));
     if (ret == -1) {
-        perror("write");
+        flb_errno();
         return -1;
     }
 
@@ -756,7 +756,7 @@ int flb_buffer_chunk_scan(struct flb_buffer *ctx)
     }
     dir = opendir(src);
     if (!dir) {
-        perror("opendir");
+        flb_errno();
         return -1;
     }
 
@@ -847,7 +847,7 @@ int flb_buffer_chunk_real_move(struct flb_buffer_worker *worker,
     /* Read the expected chunk reference */
     ret = read(worker->ch_mov[0], &req, sizeof(struct flb_buffer_request));
     if (ret <= 0) {
-        perror("read");
+        flb_errno();
         return -1;
     }
 
@@ -859,7 +859,7 @@ int flb_buffer_chunk_real_move(struct flb_buffer_worker *worker,
                  "%s/outgoing/%s", worker->parent->path, req.name);
         ret = rename(from, to);
         if (ret == -1) {
-            perror("rename");
+            flb_errno();
             return -1;
         }
 
@@ -872,7 +872,7 @@ int flb_buffer_chunk_real_move(struct flb_buffer_worker *worker,
                      "%40s.%lu ",
                      hash, &info_routes);
         if (ret == -1) {
-            perror("sscanf");
+            flb_errno();
             return -1;
         }
         hash[40] = '\0';
@@ -889,7 +889,7 @@ int flb_buffer_chunk_real_move(struct flb_buffer_worker *worker,
 
                 fd = open(to, O_CREAT | O_TRUNC, 0666);
                 if (fd == -1) {
-                    perror("open");
+                    flb_errno();
                     continue;
                 }
                 close(fd);

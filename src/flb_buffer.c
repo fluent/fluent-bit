@@ -243,14 +243,14 @@ static int buffer_dir(char *path)
         /* The directory don't exists, try to create it */
         ret = mkdir(path, 0700);
         if (ret == -1) {
-            perror("mkdir");
+            flb_errno();
             flb_error("[buffer] path '%s' cannot be created", path);
             return -1;
         }
         /* re-stat the new path */
         ret = stat(path, &st);
         if (ret == -1) {
-            perror("stat");
+            flb_errno();
             flb_error("[buffer] unexpected error on path '%s'", path);
             return -1;
         }
@@ -328,7 +328,7 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
     /* Validate the incoming ROOT path/directory */
     ret = stat(path, &st);
     if (ret == -1) {
-        perror("stat");
+        flb_errno();
         return NULL;
     }
 
@@ -392,7 +392,7 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
         /* Management channel */
         ret = pipe(worker->ch_mng);
         if (ret == -1) {
-            perror("pipe");
+            flb_errno();
             flb_buffer_destroy(ctx);
             return NULL;
         }
@@ -400,7 +400,7 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
         /* Add buffer channel */
         ret = pipe(worker->ch_add);
         if (ret == -1) {
-            perror("pipe");
+            flb_errno();
             flb_buffer_destroy(ctx);
             return NULL;
         }
@@ -408,7 +408,7 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
         /* Delete buffer channel */
         ret = pipe(worker->ch_del);
         if (ret == -1) {
-            perror("pipe");
+            flb_errno();
             flb_buffer_destroy(ctx);
             return NULL;
         }
@@ -416,7 +416,7 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
         /* Delete reference buffer channel */
         ret = pipe(worker->ch_del_ref);
         if (ret == -1) {
-            perror("pipe");
+            flb_errno();
             flb_buffer_destroy(ctx);
             return NULL;
         }
@@ -424,7 +424,7 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
         /* Move buffer channel */
         ret = pipe(worker->ch_mov);
         if (ret == -1) {
-            perror("pipe");
+            flb_errno();
             flb_buffer_destroy(ctx);
             return NULL;
         }
@@ -440,7 +440,7 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
     /* Generate pseudo input plugin and instance */
     ctx->i_ins = calloc(1, sizeof(struct flb_input_instance));
     if (!ctx->i_ins) {
-        perror("calloc");
+        flb_errno();
         flb_buffer_destroy(ctx);
         return NULL;
     }
@@ -523,7 +523,7 @@ int flb_buffer_stop(struct flb_buffer *ctx)
         worker = mk_list_entry(head, struct flb_buffer_worker, _head);
         n = write(worker->ch_mng[1], &val, sizeof(val));
         if (n == -1) {
-            perror("write");
+            flb_errno();
         }
     }
 

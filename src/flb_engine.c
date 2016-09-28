@@ -112,7 +112,7 @@ static inline int consume_byte(int fd)
     /* We need to consume the byte */
     ret = read(fd, &val, sizeof(val));
     if (ret <= 0) {
-        perror("read");
+        flb_errno();
         return -1;
     }
 
@@ -133,7 +133,7 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
 
     bytes = read(fd, &val, sizeof(val));
     if (bytes == -1) {
-        perror("read");
+        flb_errno();
         return -1;
     }
 

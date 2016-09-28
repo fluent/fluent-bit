@@ -119,6 +119,7 @@ struct flb_config *flb_config_init()
 
     /* Prepare worker interface */
     flb_worker_init(config);
+
     return config;
 }
 
