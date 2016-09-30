@@ -98,5 +98,9 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...);
 int flb_log_worker_init(void *data);
 int flb_errno_print(int errnum, char *file, int line);
 
+#ifdef __FILENAME__
 #define flb_errno() flb_errno_print(errno, __FILENAME__, __LINE__)
+#else
+#define flb_errno() flb_errno_print(errno, __FILE__, __LINE__)
+#endif
 #endif

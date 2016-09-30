@@ -280,6 +280,7 @@ int flb_errno_print(int errnum, char *file, int line)
 
     strerror_r(errnum, buf, sizeof(buf) - 1);
     flb_error("[%s:%i errno=%i] %s", file, line, errnum, buf);
+    return 0;
 }
 
 int flb_log_stop(struct flb_log *log)

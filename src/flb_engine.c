@@ -50,24 +50,6 @@
 #include <fluent-bit/flb_stats.h>
 #endif
 
-#ifdef FLB_HAVE_FLUSH_UCONTEXT
-static int flb_engine_destroy_threads(struct mk_list *threads)
-{
-    int c = 0;
-    struct mk_list *tmp;
-    struct mk_list *head;
-    struct flb_thread *th;
-
-    mk_list_foreach_safe(head, tmp, threads) {
-        th = mk_list_entry(head, struct flb_thread, _head);
-        flb_thread_destroy(th);
-        c++;
-    }
-
-    return c;
-}
-#endif
-
 int flb_engine_destroy_tasks(struct mk_list *tasks)
 {
     int c = 0;
@@ -129,7 +111,7 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
     uint32_t key;
     uint64_t val;
     struct flb_task *task;
-    struct flb_thread *thread;
+    struct flb_output_thread *out_th;
 
     bytes = read(fd, &val, sizeof(val));
     if (bytes == -1) {
@@ -155,7 +137,10 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
         }
     }
     else if (type == FLB_ENGINE_TASK) {
-        /* Get values, check flb_task.h for more details */
+        /*
+         * The notion of ENGINE_TASK is associated to outputs. All thread
+         * references below belongs to flb_output_thread's.
+         */
         ret       = FLB_TASK_RET(key);
         task_id   = FLB_TASK_ID(key);
         thread_id = FLB_TASK_TH(key);
@@ -179,7 +164,7 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
 #endif
 
         task   = config->tasks_map[task_id].task;
-        thread = flb_thread_get(task_id, task);
+        out_th = flb_output_thread_get(thread_id, task);
 
         /* A thread has finished, delete it */
         if (ret == FLB_OK) {
@@ -188,18 +173,17 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
                 flb_buffer_chunk_pop(config->buffer_ctx, thread_id, task);
             }
 #endif
-            flb_task_retry_clean(task, thread);
-            flb_thread_destroy_id(thread_id, task);
+            flb_task_retry_clean(task, out_th->parent);
+            flb_output_thread_destroy_id(thread_id, task);
             if (task->users == 0) {
                 flb_task_destroy(task);
             }
         }
         else if (ret == FLB_RETRY) {
             /* Create a Task-Retry */
-            thread = flb_thread_get(task_id, task);
             struct flb_task_retry *retry;
 
-            retry = flb_task_retry_create(task, thread);
+            retry = flb_task_retry_create(task, out_th);
             if (!retry) {
                 /*
                  * It can fail in two situations:
@@ -207,7 +191,7 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
                  * - No enough memory (unlikely)
                  * - It reached the maximum number of re-tries
                  */
-                flb_thread_destroy_id(thread_id, task);
+                flb_output_thread_destroy_id(thread_id, task);
                 if (task->users == 0) {
                     flb_task_destroy(task);
                 }
@@ -215,12 +199,12 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
             }
 
             /* Always destroy the old thread */
-            flb_thread_destroy_id(thread_id, task);
+            flb_output_thread_destroy_id(thread_id, task);
 
             /* Let the scheduler to retry the failed task/thread */
             int s = flb_sched_request_create(config, retry, retry->attemps);
             flb_debug("[sched] retry=%p %i.%i in %i seconds",
-                      retry, task->id, thread->id, s);
+                      retry, task->id, out_th->id, s);
         }
     }
 #ifdef FLB_HAVE_BUFFERING

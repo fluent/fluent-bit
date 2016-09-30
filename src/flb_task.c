@@ -72,10 +72,11 @@ struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
 {
     struct mk_list *head;
     struct flb_task_retry *retry = NULL;
-    struct flb_thread *thread = data;
     struct flb_output_instance *o_ins;
+    struct flb_output_thread *out_th;
 
-    o_ins = thread->data;
+    out_th = (struct flb_output_thread *) FLB_THREAD_DATA(data);
+    o_ins = out_th->o_ins;
 
     /* First discover if is there any previous retry context in the task */
     mk_list_foreach(head, &task->retries) {
@@ -99,7 +100,7 @@ struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
         }
 
         retry->attemps = 1;
-        retry->o_ins   = thread->data;
+        retry->o_ins   = o_ins;
         retry->parent  = task;
         mk_list_add(&retry->_head, &task->retries);
     }
@@ -116,10 +117,11 @@ int flb_task_retry_clean(struct flb_task *task, void *data)
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_task_retry *retry;
-    struct flb_thread *thread = data;
     struct flb_output_instance *o_ins;
+    struct flb_output_thread *out_th;
 
-    o_ins = thread->data;
+    out_th = (struct flb_output_thread *) FLB_THREAD_DATA(data);
+    o_ins = out_th->o_ins;
     mk_list_foreach_safe(head, tmp, &task->retries) {
         retry = mk_list_entry(head, struct flb_task_retry, _head);
         if (retry->o_ins == o_ins) {
@@ -393,6 +395,8 @@ void flb_task_destroy(struct flb_task *task)
 void flb_task_add_thread(struct flb_thread *thread,
                          struct flb_task *task)
 {
+    struct flb_output_thread *out_th;
+
     /*
      * It's likely a previous thread have marked this task ready to be deleted,
      * we must check this usual condition that could happen when one input
@@ -402,11 +406,13 @@ void flb_task_add_thread(struct flb_thread *thread,
     pthread_mutex_lock(&task->mutex_threads);
 #endif
 
+    out_th = (struct flb_output_thread *) FLB_THREAD_DATA(thread);
+
     /* Always set an incremental thread_id */
-    thread->id = task->n_threads;
+    out_th->id = task->n_threads;
     task->n_threads++;
     task->users++;
-    mk_list_add(&thread->_head, &task->threads);
+    mk_list_add(&out_th->_head, &task->threads);
 
 #ifdef FLB_HAVE_FLUSH_PTHREADS
     pthread_mutex_unlock(&task->mutex_threads);

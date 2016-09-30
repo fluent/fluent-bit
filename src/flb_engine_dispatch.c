@@ -140,7 +140,7 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
             free(buf);
             return -1;
         }
-        flb_trace("[engine dispatch] task created %p", task);
+        flb_trace("[engine dispatch] task #%i created %p", task->id, task);
     }
     else if (p->flags & FLB_INPUT_DYN_TAG) {
         /* Iterate dynamic tag buffers */

@@ -167,7 +167,64 @@ struct flb_output_instance {
     struct mk_list _head;                /* link to config->inputs       */
 };
 
+struct flb_output_thread {
+    int id;                            /* out-thread ID      */
+    int retries;                       /* number of retries  */
+    void *buffer;                      /* output buffer      */
+    struct flb_task *task;             /* Parent flb_task    */
+    struct flb_config *config;         /* FLB context        */
+    struct flb_output_instance *o_ins; /* output instance    */
+    struct flb_thread *parent;         /* parent thread addr */
+    struct mk_list _head;              /* Link to struct flb_task->threads */
+};
+
 #ifdef FLB_HAVE_FLUSH_UCONTEXT
+
+static FLB_INLINE
+struct flb_output_thread *flb_output_thread_get(int id, struct flb_task *task)
+{
+    struct mk_list *head;
+    struct flb_output_thread *out_th = NULL;
+
+    mk_list_foreach(head, &task->threads) {
+        out_th = mk_list_entry(head, struct flb_output_thread, _head);
+        if (out_th->id == id) {
+            return out_th;
+        }
+    }
+
+    return NULL;
+}
+
+static FLB_INLINE int flb_output_thread_destroy_id(int id, struct flb_task *task)
+{
+    struct flb_output_thread *out_th;
+    struct flb_thread *thread;
+
+    out_th = flb_output_thread_get(id, task);
+    if (!out_th) {
+        return -1;
+    }
+
+    thread = out_th->parent;
+    flb_thread_destroy(thread);
+
+    return 0;
+}
+
+/* When an output_thread is going to be destroyed, this callback is triggered */
+static void cb_output_thread_destroy(void *data)
+{
+    struct flb_output_thread *out_th;
+
+    out_th = (struct flb_output_thread *) data;
+
+    flb_debug("[out thread] cb_destroy thread_id=%i", out_th->id);
+
+    out_th->task->users--;
+    mk_list_del(&out_th->_head);
+}
+
 static FLB_INLINE
 struct flb_thread *flb_output_thread(struct flb_task *task,
                                      struct flb_input_instance *i_ins,
@@ -176,17 +233,35 @@ struct flb_thread *flb_output_thread(struct flb_task *task,
                                      void *buf, size_t size,
                                      char *tag, int tag_len)
 {
+    struct flb_output_thread *out_th;
     struct flb_thread *th;
 
-    th = flb_thread_new();
+    /* Create a new thread */
+    th = flb_thread_new(sizeof(struct flb_output_thread),
+                        cb_output_thread_destroy);
     if (!th) {
         return NULL;
     }
 
-    th->data = o_ins;
-    th->output_buffer = buf;
-    th->task = task;
-    th->config = config;
+    /* Custom output-thread info */
+    out_th = (struct flb_output_thread *) FLB_THREAD_DATA(th);
+    if (!out_th) {
+        flb_errno();
+        return NULL;
+    }
+
+    /*
+     * Each 'Thread' receives an 'id'. This is assigned when this thread
+     * is linked into the parent Task by flb_task_add_thread(...). The
+     * 'id' is always incremental.
+     */
+    out_th->id      = 0;
+    out_th->retries = 0;
+    out_th->o_ins   = o_ins;
+    out_th->task    = task;
+    out_th->buffer  = buf;
+    out_th->config  = config;
+    out_th->parent  = th;
 
     makecontext(&th->callee, (void (*)()) o_ins->p->cb_flush,
                 7,                     /* number of arguments */
@@ -201,6 +276,7 @@ struct flb_thread *flb_output_thread(struct flb_task *task,
 }
 
 #elif defined FLB_HAVE_FLUSH_PTHREADS
+
 static FLB_INLINE
 struct flb_thread *flb_output_thread(struct flb_task *task,
                                      struct flb_input_instance *i_ins,
@@ -254,18 +330,20 @@ static inline int flb_output_return(int ret) {
     struct flb_thread *th;
     struct flb_task *task;
     struct flb_output_instance *o_ins;
+    struct flb_output_thread *out_th;
 
     th = (struct flb_thread *) pthread_getspecific(flb_thread_key);
-    task = th->task;
+    out_th = (struct flb_output_thread *) FLB_THREAD_DATA(th);
+    task = out_th->task;
 
     ret_value = ret;
     if (ret == FLB_RETRY) {
-        o_ins = (struct flb_output_instance *) th->data;
-        if (th->retries >= o_ins->retry_limit) {
+        o_ins = out_th->o_ins;
+        if (out_th->retries >= o_ins->retry_limit) {
             ret_value = FLB_ERROR;
         }
         else {
-            th->retries++;
+            out_th->retries++;
         }
     }
     /*
@@ -277,7 +355,7 @@ static inline int flb_output_return(int ret) {
      *
      * We put together the return value with the task_id on the 32 bits at right
      */
-    set = FLB_TASK_SET(ret_value, task->id, th->id);
+    set = FLB_TASK_SET(ret_value, task->id, out_th->id);
     val = FLB_BITS_U64_SET(2, set);
 
     n = write(task->config->ch_manager[1], &val, sizeof(val));

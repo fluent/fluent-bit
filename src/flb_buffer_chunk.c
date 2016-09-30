@@ -670,8 +670,8 @@ int flb_buffer_chunk_pop(struct flb_buffer *ctx, int thread_id,
     int ret;
     struct flb_buffer_chunk chunk;
     struct flb_buffer_worker *worker;
-    struct flb_thread *thread;
     struct flb_output_instance *o_ins;
+    struct flb_output_thread *out_th;
 
     /*
      * The request must be send to the same buffer worker that originally
@@ -680,9 +680,12 @@ int flb_buffer_chunk_pop(struct flb_buffer *ctx, int thread_id,
      * working (remember: buffer chunks are a backup system).
      */
     worker = get_worker(ctx, task->worker_id);
+    out_th = flb_output_thread_get(thread_id, task);
+    if (!out_th) {
+        return -1;
+    }
 
-    thread = flb_thread_get(thread_id, task);
-    o_ins = thread->data;
+    o_ins = out_th->o_ins;
 
     /* Compose buffer chunk instruction */
     memset(&chunk, '\0', sizeof(struct flb_buffer_chunk));
