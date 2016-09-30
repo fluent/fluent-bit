@@ -241,7 +241,7 @@ static int flb_service_conf(struct flb_config *config, char *file)
         }
 
         /* Logfile */
-        v_str = n_get_key(section, "Logfile", MK_RCONF_STR);
+        v_str = s_get_key(section, "Logfile", MK_RCONF_STR);
         if (v_str) {
             config->logfile = strdup(v_str);
         }
