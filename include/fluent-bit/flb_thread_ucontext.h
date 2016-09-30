@@ -115,6 +115,8 @@ static struct flb_thread *flb_thread_new(size_t data_size,
     }
 
     th = (struct flb_thread *) p;
+    th->cb_destroy = NULL;
+
     ret = getcontext(&th->callee);
     if (ret == -1) {
         flb_errno();
