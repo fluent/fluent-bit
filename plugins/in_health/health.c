@@ -47,10 +47,46 @@ struct flb_in_health_config {
     msgpack_sbuffer mp_sbuf;
 };
 
-int in_health_collect(struct flb_config *config, void *in_context);
+/* Collection aims to try to connect to the specified TCP server */
+static int in_health_collect(struct flb_config *config, void *in_context)
+{
+    uint8_t alive;
+    struct flb_in_health_config *ctx = in_context;
+    struct flb_upstream_conn *u_conn;
 
-int in_health_init(struct flb_input_instance *in, struct flb_config *config,
-                   void *data)
+    u_conn = flb_upstream_conn_get(ctx->u);
+    if (!u_conn) {
+        alive = FLB_FALSE;
+    }
+    else {
+        alive = FLB_TRUE;
+        flb_upstream_conn_release(u_conn);
+    }
+
+    /*
+     * Store the new data into the MessagePack buffer,
+     */
+    msgpack_pack_array(&ctx->mp_pck, 2);
+    msgpack_pack_uint64(&ctx->mp_pck, time(NULL));
+
+    msgpack_pack_map(&ctx->mp_pck, 1);
+
+    /* Status */
+    msgpack_pack_bin(&ctx->mp_pck, 5);
+    msgpack_pack_bin_body(&ctx->mp_pck, "alive", 5);
+
+    if (alive) {
+        msgpack_pack_true(&ctx->mp_pck);
+    }
+    else {
+        msgpack_pack_false(&ctx->mp_pck);
+    }
+
+    FLB_INPUT_RETURN();
+}
+
+static int in_health_init(struct flb_input_instance *in,
+                          struct flb_config *config, void *data)
 {
     int ret;
     char *pval;
@@ -115,44 +151,6 @@ int in_health_init(struct flb_input_instance *in, struct flb_config *config,
     return 0;
 }
 
-/* Collection aims to try to connect to the specified TCP server */
-int in_health_collect(struct flb_config *config, void *in_context)
-{
-    uint8_t alive;
-    struct flb_in_health_config *ctx = in_context;
-    struct flb_upstream_conn *u_conn;
-
-    u_conn = flb_upstream_conn_get(ctx->u);
-    if (!u_conn) {
-        alive = FLB_FALSE;
-    }
-    else {
-        alive = FLB_TRUE;
-        flb_upstream_conn_release(u_conn);
-    }
-
-    /*
-     * Store the new data into the MessagePack buffer,
-     */
-    msgpack_pack_array(&ctx->mp_pck, 2);
-    msgpack_pack_uint64(&ctx->mp_pck, time(NULL));
-
-    msgpack_pack_map(&ctx->mp_pck, 1);
-
-    /* Status */
-    msgpack_pack_bin(&ctx->mp_pck, 5);
-    msgpack_pack_bin_body(&ctx->mp_pck, "alive", 5);
-
-    if (alive) {
-        msgpack_pack_true(&ctx->mp_pck);
-    }
-    else {
-        msgpack_pack_false(&ctx->mp_pck);
-    }
-
-    return 0;
-}
-
 void *in_health_flush(void *in_context, size_t *size)
 {
     char *buf;
@@ -182,6 +180,7 @@ int in_health_exit(void *data, struct flb_config *config)
 
     /* Remove msgpack buffer and destroy context */
     msgpack_sbuffer_destroy(&ctx->mp_sbuf);
+    flb_upstream_destroy(ctx->u);
     free(ctx);
 
     return 0;
@@ -196,5 +195,5 @@ struct flb_input_plugin in_health_plugin = {
     .cb_collect   = in_health_collect,
     .cb_flush_buf = in_health_flush,
     .cb_exit      = in_health_exit,
-    .flags        = FLB_INPUT_NET,
+    .flags        = FLB_INPUT_NET | FLB_INPUT_THREAD,
 };
