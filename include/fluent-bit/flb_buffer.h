@@ -122,6 +122,7 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
 void flb_buffer_destroy(struct flb_buffer *ctx);
 
 int flb_buffer_start(struct flb_buffer *ctx);
+int flb_buffer_stop(struct flb_buffer *ctx);
 int flb_buffer_engine_event(struct flb_buffer *ctx, uint32_t event);
 
 #endif /* !FLB_BUFFER_H*/

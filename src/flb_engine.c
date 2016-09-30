@@ -225,8 +225,6 @@ static FLB_INLINE int flb_engine_handle_event(int fd, int mask,
                                               struct flb_config *config)
 {
     int ret;
-    struct mk_list *head;
-    struct flb_input_collector *collector;
 
     if (mask & MK_EVENT_READ) {
         /* Check if we need to flush */
@@ -261,18 +259,10 @@ static FLB_INLINE int flb_engine_handle_event(int fd, int mask,
             }
         }
 
-        /* Determinate what is this file descriptor */
-        mk_list_foreach(head, &config->collectors) {
-            collector = mk_list_entry(head, struct flb_input_collector, _head);
-            if (collector->fd_event == fd) {
-                return collector->cb_collect(config,
-                                             collector->instance->context);
-            }
-            else if (collector->fd_timer == fd) {
-                consume_byte(fd);
-                return collector->cb_collect(config,
-                                             collector->instance->context);
-            }
+        /* Try to match the file descriptor with a collector event */
+        ret = flb_input_collector_fd(fd, config);
+        if (ret != -1) {
+            return ret;
         }
     }
 

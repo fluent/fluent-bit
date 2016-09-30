@@ -62,6 +62,20 @@ static inline int instance_id(struct flb_input_plugin *p,
     return c;
 }
 
+static inline int consume_byte(int fd)
+{
+    int ret;
+    uint64_t val;
+
+    /* We need to consume the byte */
+    ret = read(fd, &val, sizeof(val));
+    if (ret <= 0) {
+        flb_errno();
+        return -1;
+    }
+
+    return 0;
+}
 
 /* Create an input plugin instance */
 struct flb_input_instance *flb_input_new(struct flb_config *config,
@@ -524,4 +538,25 @@ void *flb_input_dyntag_flush(struct flb_input_dyntag *dt, size_t *size)
     msgpack_packer_init(&dt->mp_pck, &dt->mp_sbuf, msgpack_sbuffer_write);
 
     return buf;
+}
+
+int flb_input_collector_fd(int fd, struct flb_config *config)
+{
+    struct mk_list *head;
+    struct flb_input_collector *collector;
+
+    mk_list_foreach(head, &config->collectors) {
+        collector = mk_list_entry(head, struct flb_input_collector, _head);
+        if (collector->fd_event == fd) {
+            return collector->cb_collect(config,
+                                         collector->instance->context);
+        }
+        else if (collector->fd_timer == fd) {
+            consume_byte(fd);
+            return collector->cb_collect(config,
+                                         collector->instance->context);
+        }
+    }
+
+    return -1;
 }

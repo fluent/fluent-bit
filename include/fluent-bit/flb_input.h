@@ -222,4 +222,6 @@ int flb_input_dyntag_append(struct flb_input_instance *in,
 void *flb_input_dyntag_flush(struct flb_input_dyntag *dt, size_t *size);
 void flb_input_dyntag_exit(struct flb_input_instance *in);
 
+int flb_input_collector_fd(int fd, struct flb_config *config);
+
 #endif
