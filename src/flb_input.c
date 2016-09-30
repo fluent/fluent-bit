@@ -275,8 +275,8 @@ void flb_input_exit_all(struct flb_config *config)
         if (in->host.uri) {
             flb_uri_destroy(in->host.uri);
         }
-
         free(in->host.name);
+        free(in->host.address);
 
         /* release the tag if any */
         free(in->tag);
