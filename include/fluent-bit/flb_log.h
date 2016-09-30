@@ -20,11 +20,13 @@
 #ifndef FLB_LOG_H
 #define FLB_LOG_H
 
-#include <inttypes.h>
-
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_thread_storage.h>
+
+#include <inttypes.h>
+#include <pthread.h>
+#include <errno.h>
 
 /* FIXME: this extern should be auto-populated from flb_thread_storage.h */
 extern FLB_TLS_DEFINE(struct flb_log, flb_log_ctx)

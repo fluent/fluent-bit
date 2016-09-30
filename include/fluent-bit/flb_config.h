@@ -117,6 +117,12 @@ struct flb_config {
     char *buffer_path;
 #endif
 
+    /*
+     * Input table-id: table to keep a reference of thread-IDs used by the
+     * input plugins.
+     */
+    uint16_t in_table_id[512];
+
     struct mk_list sched_requests;
     struct flb_task_map tasks_map[2048];
 };

@@ -20,18 +20,24 @@
 #ifndef FLB_INPUT_H
 #define FLB_INPUT_H
 
-#include <inttypes.h>
-#include <msgpack.h>
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_network.h>
+#include <fluent-bit/flb_bits.h>
+#include <msgpack.h>
+
+#include <inttypes.h>
+#include <unistd.h>
 
 #define FLB_COLLECT_TIME        1
 #define FLB_COLLECT_FD_EVENT    2
 #define FLB_COLLECT_FD_SERVER   4
 
 /* Input plugin masks */
-#define FLB_INPUT_NET         4  /* input address may set host and port */
-#define FLB_INPUT_DYN_TAG     64 /* the plugin generate it own tags     */
+#define FLB_INPUT_NET         4   /* input address may set host and port   */
+#define FLB_INPUT_DYN_TAG     64  /* the plugin generate it own tags       */
+#define FLB_INPUT_THREAD     128  /* plugin requires a thread on callbacks */
 
 struct flb_input_instance;
 
@@ -116,6 +122,7 @@ struct flb_input_dyntag {
  */
 struct flb_input_instance {
     int channel[2];                      /* pipe(2) channel              */
+    int threaded;                        /* bool / Threaded instance ?   */
     char name[16];                       /* numbered name (cpu -> cpu.0) */
     void *context;                       /* plugin configuration context */
     struct flb_input_plugin *p;          /* original plugin              */
@@ -161,7 +168,9 @@ struct flb_input_instance {
      * Every co-routine created by the engine when flushing data, it's
      * linked into this list header.
      */
-    struct mk_list tasks;                /* engine taskslist           */
+    struct mk_list tasks;
+
+    struct mk_list threads;              /* engine taskslist           */
 };
 
 struct flb_input_collector {
@@ -184,6 +193,163 @@ struct flb_input_collector {
     struct flb_input_instance *instance; /* plugin instance            */
     struct mk_list _head;                /* link to list of collectors */
 };
+
+struct flb_input_thread {
+    int id;                      /* ID obtained from config->in_table_id */
+    time_t start_time;           /* start time  */
+    time_t end_time;             /* end time    */
+    struct flb_config *config;   /* FLB context */
+    struct flb_thread *parent;   /* Back reference to parent thread */
+    struct mk_list _head;        /* link to list on input_instance->threads */
+};
+
+/*
+ * Every thread created for an input instance plugin, requires to have an
+ * unique Thread-ID. This function lookup the static table in the context
+ * and return the lowest available ID.
+ */
+static FLB_INLINE
+int flb_input_thread_get_id(struct flb_config *config)
+{
+    int i;
+
+    for (i = 0; i < sizeof(config->in_table_id); i++) {
+        if (config->in_table_id[i] == 0) {
+            config->in_table_id[i] = FLB_TRUE;
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+/*
+ * When an input thread ends, it needs to release it ID. This function
+ * just mark the ID as unused.
+ */
+static FLB_INLINE
+void flb_input_thread_del_id(int id, struct flb_config *config)
+{
+    config->in_table_id[id] = FLB_FALSE;
+}
+
+static FLB_INLINE
+int flb_input_thread_destroy_id(int id, struct flb_config *config)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct mk_list *head_th;
+    struct flb_input_thread *in_th;
+    struct flb_input_instance *i_ins;
+
+    /* Iterate input-instances to find the thread */
+    mk_list_foreach(head, &config->inputs) {
+        i_ins = mk_list_entry(head, struct flb_input_instance, _head);
+        mk_list_foreach_safe(head_th, tmp, &i_ins->threads) {
+            in_th = mk_list_entry(head_th, struct flb_input_thread, _head);
+            mk_list_del(&in_th->_head);
+            flb_input_thread_del_id(id, config);
+            flb_thread_destroy(in_th->parent);
+            flb_debug("[input] destroy input_thread id=%i", id);
+            return 0;
+        }
+    }
+
+    return -1;
+}
+
+static FLB_INLINE
+struct flb_thread *flb_input_thread(struct flb_input_instance *i_ins,
+                                    struct flb_config *config)
+{
+    int id;
+    struct flb_thread *th;
+    struct flb_input_thread *in_th;
+
+    th = flb_thread_new(sizeof(struct flb_input_thread), NULL);
+    if (!th) {
+        return NULL;
+    }
+
+    /* Try to obtain an id */
+    id = flb_input_thread_get_id(config);
+    if (id == -1) {
+        flb_thread_destroy(th);
+        return NULL;
+    }
+
+    /* Setup thread specific data */
+    in_th = (struct flb_input_thread *) FLB_THREAD_DATA(th);
+    in_th->id         = id;
+    in_th->start_time = time(NULL);
+    in_th->parent     = th;
+    in_th->config     = config;
+    mk_list_add(&in_th->_head, &i_ins->threads);
+
+    return th;
+}
+
+static FLB_INLINE
+struct flb_thread *flb_input_thread_collect(struct flb_input_collector *coll,
+                                            struct flb_config *config)
+{
+    struct flb_thread *th;
+
+    th = flb_input_thread(coll->instance, config);
+    if (!th) {
+        return NULL;
+    }
+
+    makecontext(&th->callee, (void (*)()) coll->cb_collect,
+                2,                     /* number of arguments */
+                config,
+                coll->instance->context);
+    return th;
+
+}
+
+/*
+ * This function is used by the output plugins to return. It's mandatory
+ * as it will take care to signal the event loop letting know the flush
+ * callback has done.
+ *
+ * The signal emmited indicate the 'Task' number that have finished plus
+ * a return value. The return value is either FLB_OK, FLB_RETRY or FLB_ERROR.
+ *
+ * If the caller have requested a FLB_RETRY, it will be issued depending of the
+ * number of retries, if it have exceed the 'retry_limit' option, a FLB_ERROR
+ * will be returned instead.
+ */
+static inline int flb_input_return() {
+    int n;
+    uint64_t val;
+    struct flb_thread *th;
+    struct flb_input_thread *in_th;
+
+    th = (struct flb_thread *) pthread_getspecific(flb_thread_key);
+    in_th = (struct flb_input_thread *) FLB_THREAD_DATA(th);
+
+    /*
+     * To compose the signal event the relevant info is:
+     *
+     * - Unique Task events id: 2 in this case
+     * - Return value: FLB_OK (0) or FLB_ERROR (1)
+     * - Task ID
+     *
+     * We put together the return value with the task_id on the 32 bits at right
+     */
+    val = FLB_BITS_U64_SET(3 /* FLB_ENGINE_IN_THREAD */, in_th->id);
+    n = write(in_th->config->ch_manager[1], &val, sizeof(val));
+    if (n == -1) {
+        perror("write");
+        return -1;
+    }
+
+    return 0;
+}
+
+#define FLB_INPUT_RETURN()                      \
+    return flb_input_return();
 
 int flb_input_register_all(struct flb_config *config);
 struct flb_input_instance *flb_input_new(struct flb_config *config,
@@ -223,5 +389,9 @@ void *flb_input_dyntag_flush(struct flb_input_dyntag *dt, size_t *size);
 void flb_input_dyntag_exit(struct flb_input_instance *in);
 
 int flb_input_collector_fd(int fd, struct flb_config *config);
+
+/* input thread */
+//int flb_input_thread_get_id(struct flb_config *config);
+//int flb_input_thread_del_id(int id, struct flb_config *config);
 
 #endif

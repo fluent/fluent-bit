@@ -12,7 +12,7 @@
  *
  *  Unless required by applicable law or agreed to in writing, software
  *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  WITHOUT WARRANTIES ORc CONDITIONS OF ANY KIND, either express or implied.
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
@@ -135,6 +135,10 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
 #endif
             return FLB_ENGINE_STOP;
         }
+    }
+    else if (type == FLB_ENGINE_IN_THREAD) {
+        /* Event coming from an input thread */
+        flb_input_thread_destroy_id(key, config);
     }
     else if (type == FLB_ENGINE_TASK) {
         /*

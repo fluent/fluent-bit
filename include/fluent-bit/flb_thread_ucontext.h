@@ -21,9 +21,13 @@
 #define FLB_THREAD_UCONTEXT_H
 
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_task.h>
+#include <fluent-bit/flb_macros.h>
+#include <fluent-bit/flb_log.h>
 
+#include <stdlib.h>
+#include <limits.h>
 #include <ucontext.h>
+#include <pthread.h>
 
 #ifdef FLB_HAVE_VALGRIND
 #include <valgrind/valgrind.h>
@@ -106,14 +110,14 @@ static struct flb_thread *flb_thread_new(size_t data_size,
     /* Create a thread context and initialize */
     p = malloc(sizeof(struct flb_thread) + FLB_THREAD_STACK_SIZE + data_size);
     if (!p) {
-        perror("malloc");
+        flb_errno();
         return NULL;
     }
 
     th = (struct flb_thread *) p;
     ret = getcontext(&th->callee);
     if (ret == -1) {
-        perror("getcontext");
+        flb_errno();
         free(th);
         return NULL;
     }

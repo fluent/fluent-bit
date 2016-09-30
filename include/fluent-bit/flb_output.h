@@ -139,7 +139,7 @@ struct flb_output_instance {
      */
     void *data;
 
-        /* Output handler configuration */
+    /* Output handler configuration */
     void *out_context;
 
     /* IO upstream context, if flags & (FLB_OUTPUT_TCP | FLB_OUTPUT TLS)) */
@@ -356,7 +356,7 @@ static inline int flb_output_return(int ret) {
      * We put together the return value with the task_id on the 32 bits at right
      */
     set = FLB_TASK_SET(ret_value, task->id, out_th->id);
-    val = FLB_BITS_U64_SET(2, set);
+    val = FLB_BITS_U64_SET(2 /* FLB_ENGINE_TASK */, set);
 
     n = write(task->config->ch_manager[1], &val, sizeof(val));
     if (n == -1) {

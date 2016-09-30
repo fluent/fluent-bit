@@ -113,18 +113,26 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->data = data;
         instance->host.name = NULL;
         instance->host.uri  = NULL;
+        instance->threaded  = FLB_FALSE;
 
         mk_list_init(&instance->routes);
         mk_list_init(&instance->tasks);
         mk_list_init(&instance->dyntags);
         mk_list_init(&instance->properties);
+        mk_list_init(&instance->threads);
 
+        /* Plugin use networking */
         if (plugin->flags & FLB_INPUT_NET) {
             ret = flb_net_host_set(plugin->name, &instance->host, input);
             if (ret != 0) {
                 free(instance);
                 return NULL;
             }
+        }
+
+        /* Plugin requires a Thread context */
+        if (plugin->flags & FLB_INPUT_THREAD) {
+            instance->threaded = FLB_TRUE;
         }
 
         mk_list_add(&instance->_head, &config->inputs);
@@ -188,6 +196,9 @@ void flb_input_initialize_all(struct flb_config *config)
     struct mk_list *head;
     struct flb_input_instance *in;
     struct flb_input_plugin *p;
+
+    /* Initialize thread-id table */
+    memset(&config->in_table_id, '\0', sizeof(config->in_table_id));
 
     /* Iterate all active input instance plugins */
     mk_list_foreach_safe(head, tmp, &config->inputs) {
@@ -385,8 +396,8 @@ int flb_input_set_collector_event(struct flb_input_instance *in,
     collector->seconds     = -1;
     collector->nanoseconds = -1;
     collector->instance    = in;
-
     mk_list_add(&collector->_head, &config->collectors);
+
     return 0;
 }
 
@@ -405,8 +416,8 @@ int flb_input_set_collector_socket(struct flb_input_instance *in,
     collector->seconds     = -1;
     collector->nanoseconds = -1;
     collector->instance    = in;
-
     mk_list_add(&collector->_head, &config->collectors);
+
     return 0;
 }
 
@@ -544,19 +555,36 @@ int flb_input_collector_fd(int fd, struct flb_config *config)
 {
     struct mk_list *head;
     struct flb_input_collector *collector;
+    struct flb_thread *th;
 
     mk_list_foreach(head, &config->collectors) {
         collector = mk_list_entry(head, struct flb_input_collector, _head);
         if (collector->fd_event == fd) {
-            return collector->cb_collect(config,
-                                         collector->instance->context);
+            break;
         }
         else if (collector->fd_timer == fd) {
             consume_byte(fd);
-            return collector->cb_collect(config,
-                                         collector->instance->context);
+            break;
         }
+        collector = NULL;
     }
 
-    return -1;
+    /* No matches */
+    if (!collector) {
+        return -1;
+    }
+
+    /* Trigger the collector callback */
+    if (collector->instance->threaded == FLB_TRUE) {
+        th = flb_input_thread_collect(collector, config);
+        if (!th) {
+            return -1;
+        }
+        flb_thread_resume(th);
+    }
+    else {
+        collector->cb_collect(config, collector->instance->context);
+    }
+
+    return 0;
 }
