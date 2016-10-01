@@ -50,6 +50,8 @@ FLB_EXPORT int flb_stop(flb_ctx_t *ctx);
 /* data ingestion for "lib" input instance */
 FLB_EXPORT int flb_lib_push(flb_input_t *input, void *data, size_t len);
 
+FLB_EXPORT int  flb_lib_free(void*data);
+
 int flb_lib_config_file(struct flb_lib_ctx *ctx, char *path);
 
 #endif
