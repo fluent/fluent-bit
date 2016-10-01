@@ -35,6 +35,9 @@
 
 /* Input configuration & context */
 struct flb_in_health_config {
+    /* Alert mode */
+    int alert;
+
     /* Time interval check */
     int interval_sec;
     int interval_nsec;
@@ -61,6 +64,10 @@ static int in_health_collect(struct flb_config *config, void *in_context)
     else {
         alive = FLB_TRUE;
         flb_upstream_conn_release(u_conn);
+    }
+
+    if (alive == FLB_TRUE && ctx->alert == FLB_TRUE) {
+        FLB_INPUT_RETURN();
     }
 
     /*
@@ -99,6 +106,7 @@ static int in_health_init(struct flb_input_instance *in,
         perror("calloc");
         return -1;
     }
+    ctx->alert = FLB_FALSE;
 
     ctx->u = flb_upstream_create(config, in->host.name, in->host.port,
                                  FLB_IO_TCP, NULL);
@@ -130,6 +138,14 @@ static int in_health_init(struct flb_input_instance *in,
         ctx->interval_sec = DEFAULT_INTERVAL_SEC;
         ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
     }
+
+    pval = flb_input_get_property("alert", in);
+    if (pval) {
+        if (strcasecmp(pval, "true") == 0 || strcasecmp(pval, "on") == 0) {
+            ctx->alert = FLB_TRUE;
+        }
+    }
+
 
     /* initialize MessagePack buffers */
     msgpack_sbuffer_init(&ctx->mp_sbuf);
