@@ -207,8 +207,8 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
 
             /* Let the scheduler to retry the failed task/thread */
             int s = flb_sched_request_create(config, retry, retry->attemps);
-            flb_debug("[sched] retry=%p %i.%i in %i seconds",
-                      retry, task->id, out_th->id, s);
+            flb_debug("[sched] retry=%p %i in %i seconds",
+                      retry, task->id, s);
         }
     }
 #ifdef FLB_HAVE_BUFFERING

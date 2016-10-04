@@ -75,7 +75,7 @@ struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
     struct flb_output_instance *o_ins;
     struct flb_output_thread *out_th;
 
-    out_th = (struct flb_output_thread *) FLB_THREAD_DATA(data);
+    out_th = (struct flb_output_thread *) data;
     o_ins = out_th->o_ins;
 
     /* First discover if is there any previous retry context in the task */
