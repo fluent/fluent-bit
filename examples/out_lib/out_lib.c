@@ -22,7 +22,7 @@
 #include <msgpack.h>
 
 int my_stdout(void* data, size_t size)
-{   
+{
     printf("[%s]",__FUNCTION__);
     msgpack_object_print(stdout, *(msgpack_object*)data);
     printf("\n");
@@ -40,8 +40,8 @@ int main()
     int n;
     char tmp[256];
     flb_ctx_t *ctx;
-    flb_input_t *input;
-    flb_output_t *output;
+    int in_ffd;
+    int out_ffd;
 
     /* Initialize library */
     ctx = flb_create();
@@ -49,12 +49,12 @@ int main()
         exit(EXIT_FAILURE);
     }
 
-    input = flb_input(ctx, "lib", NULL);
-    flb_input_set(input, "tag", "test", NULL);
+    in_ffd = flb_input(ctx, "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
 
     /* Register my callback function */
-    output = flb_output(ctx, "lib", my_stdout);
-    flb_output_set(output, "match", "test", NULL);
+    out_ffd = flb_output(ctx, "lib", my_stdout);
+    flb_output_set(ctx, out_ffd, "match", "test", NULL);
 
     /* Start the background worker */
     flb_start(ctx);
@@ -64,7 +64,7 @@ int main()
         n = snprintf(tmp, sizeof(tmp) - 1,
                      "[%lu, {\"key\": \"val %i\"}]",
                      time(NULL), i);
-        flb_lib_push(input, tmp, n);
+        flb_lib_push(ctx, in_ffd, tmp, n);
     }
 
     flb_stop(ctx);
