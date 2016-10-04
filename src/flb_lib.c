@@ -33,6 +33,44 @@
 
 extern struct flb_input_plugin in_lib_plugin;
 
+static inline struct flb_input_instance *in_instance_get(flb_ctx_t *ctx,
+                                                         int ffd)
+{
+    struct mk_list *head;
+    struct flb_input_instance *i_ins;
+
+    mk_list_foreach(head, &ctx->config->inputs) {
+        i_ins = mk_list_entry(head, struct flb_input_instance, _head);
+        if (i_ins->id == ffd) {
+            return i_ins;
+        }
+    }
+
+    return NULL;
+}
+
+static inline struct flb_output_instance *out_instance_get(flb_ctx_t *ctx,
+                                                           int ffd)
+{
+    struct mk_list *head;
+    struct flb_output_instance *o_ins;
+
+    mk_list_foreach(head, &ctx->config->inputs) {
+        o_ins = mk_list_entry(head, struct flb_output_instance, _head);
+
+        /*
+         * A small different between input/output instances. The output
+         * instances already have an unique mask_id used for routing, so we
+         * use it as an identificator for the API.
+         */
+        if (o_ins->mask_id == ffd) {
+            return o_ins;
+        }
+    }
+
+    return NULL;
+}
+
 flb_ctx_t *flb_create()
 {
     int ret;
@@ -110,34 +148,53 @@ void flb_destroy(flb_ctx_t *ctx)
 }
 
 /* Defines a new input instance */
-flb_input_t *flb_input(flb_ctx_t *ctx, char *input, void *data)
+int flb_input(flb_ctx_t *ctx, char *input, void *data)
 {
-    return (flb_input_t *) flb_input_new(ctx->config, input, data);
+    struct flb_input_instance *i_ins;
+
+    i_ins = flb_input_new(ctx->config, input, data);
+    if (!i_ins) {
+        return -1;
+    }
+
+    return i_ins->id;
 }
 
 /* Defines a new output instance */
-flb_output_t *flb_output(flb_ctx_t *ctx, char *output, void *data)
+int flb_output(flb_ctx_t *ctx, char *output, void *data)
 {
-    return (flb_output_t *) flb_output_new(ctx->config, output, data);
+    struct flb_output_instance *o_ins;
+
+    o_ins = flb_output_new(ctx->config, output, data);
+    if (!o_ins) {
+        return -1;
+    }
+
+    return o_ins->mask_id;
 }
 
 /* Set an input interface property */
-int flb_input_set(flb_input_t *input, ...)
+int flb_input_set(flb_ctx_t *ctx, int ffd, ...)
 {
     int ret;
     char *key;
     char *value;
     va_list va;
+    struct flb_input_instance *i_ins;
 
-    va_start(va, input);
+    i_ins = in_instance_get(ctx, ffd);
+    if (!i_ins) {
+        return -1;
+    }
 
+    va_start(va, ffd);
     while ((key = va_arg(va, char *))) {
         value = va_arg(va, char *);
         if (!value) {
             /* Wrong parameter */
             return -1;
         }
-        ret = flb_input_set_property(input, key, value);
+        ret = flb_input_set_property(i_ins, key, value);
         if (ret != 0) {
             va_end(va);
             return -1;
@@ -149,15 +206,20 @@ int flb_input_set(flb_input_t *input, ...)
 }
 
 /* Set an input interface property */
-int flb_output_set(flb_output_t *output, ...)
+int flb_output_set(flb_ctx_t *ctx, int ffd, ...)
 {
     int ret;
     char *key;
     char *value;
     va_list va;
+    struct flb_output_instance *o_ins;
 
-    va_start(va, output);
+    o_ins = out_instance_get(ctx, ffd);
+    if (!o_ins) {
+        return -1;
+    }
 
+    va_start(va, ffd);
     while ((key = va_arg(va, char *))) {
         value = va_arg(va, char *);
         if (!value) {
@@ -165,7 +227,7 @@ int flb_output_set(flb_output_t *output, ...)
             return -1;
         }
 
-        ret = flb_output_set_property(output, key, value);
+        ret = flb_output_set_property(o_ins, key, value);
         if (ret != 0) {
             va_end(va);
             return -1;
@@ -222,13 +284,20 @@ int flb_lib_config_file(struct flb_lib_ctx *ctx, char *path)
 }
 
 /* Push some data into the Engine */
-int flb_lib_push(flb_input_t *input, void *data, size_t len)
+int flb_lib_push(flb_ctx_t *ctx, int ffd, void *data, size_t len)
 {
     int ret;
+    struct flb_input_instance *i_ins;
 
-    ret = write(input->channel[1], data, len);
+    i_ins = in_instance_get(ctx, ffd);
+    if (!i_ins) {
+        return -1;
+    }
+
+    ret = write(i_ins->channel[1], data, len);
     if (ret == -1) {
-        perror("write");
+        flb_errno();
+        return -1;
     }
     return ret;
 }

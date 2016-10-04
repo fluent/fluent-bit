@@ -81,6 +81,7 @@ static inline int consume_byte(int fd)
 struct flb_input_instance *flb_input_new(struct flb_config *config,
                                          char *input, void *data)
 {
+    int id;
     int ret;
     struct mk_list *head;
     struct flb_input_plugin *plugin;
@@ -104,17 +105,24 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
             return NULL;
         }
 
+        /* Get an ID */
+        id =  instance_id(plugin, config);
+
         /* format name (with instance id) */
         snprintf(instance->name, sizeof(instance->name) - 1,
-                 "%s.%i", plugin->name, instance_id(plugin, config));
-        instance->p = plugin;
-        instance->tag = NULL;
-        instance->context = NULL;
-        instance->data = data;
+                 "%s.%i", plugin->name, id);
+
+        instance->id       = id;
+        instance->p        = plugin;
+        instance->tag      = NULL;
+        instance->context  = NULL;
+        instance->data     = data;
+        instance->threaded = FLB_FALSE;
+
+        /* net */
         instance->host.name    = NULL;
         instance->host.address = NULL;
         instance->host.uri     = NULL;
-        instance->threaded     = FLB_FALSE;
 
         mk_list_init(&instance->routes);
         mk_list_init(&instance->tasks);
