@@ -121,6 +121,7 @@ struct flb_input_dyntag {
  * and the variable one that is generated when the plugin is invoked.
  */
 struct flb_input_instance {
+    int id;                              /* instance id                  */
     int channel[2];                      /* pipe(2) channel              */
     int threaded;                        /* bool / Threaded instance ?   */
     char name[16];                       /* numbered name (cpu -> cpu.0) */
