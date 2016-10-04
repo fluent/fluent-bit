@@ -111,9 +111,10 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->tag = NULL;
         instance->context = NULL;
         instance->data = data;
-        instance->host.name = NULL;
-        instance->host.uri  = NULL;
-        instance->threaded  = FLB_FALSE;
+        instance->host.name    = NULL;
+        instance->host.address = NULL;
+        instance->host.uri     = NULL;
+        instance->threaded     = FLB_FALSE;
 
         mk_list_init(&instance->routes);
         mk_list_init(&instance->tasks);
