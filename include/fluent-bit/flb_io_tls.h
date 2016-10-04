@@ -56,6 +56,7 @@ struct flb_tls {
 
 struct flb_tls_context *flb_tls_context_new();
 void flb_tls_context_destroy(struct flb_tls_context *ctx);
+int flb_tls_session_destroy(struct flb_tls_session *session);
 int net_io_tls_handshake(void *u_conn, void *th);
 
 #endif /* FLB_HAVE_TLS */
