@@ -215,7 +215,7 @@ struct flb_tls_session *flb_tls_session_new(struct flb_tls_context *ctx)
     return NULL;
 }
 
-int tls_session_destroy(struct flb_tls_session *session)
+int flb_tls_session_destroy(struct flb_tls_session *session)
 {
     if (session) {
         mbedtls_ssl_free(&session->ssl);
@@ -298,7 +298,7 @@ int net_io_tls_handshake(void *_u_conn, void *_th)
     if (u_conn->event.status & MK_EVENT_REGISTERED) {
         mk_event_del(u->evl, &u_conn->event);
     }
-    tls_session_destroy(u_conn->tls_session);
+    flb_tls_session_destroy(u_conn->tls_session);
     u_conn->tls_session = NULL;
 
     return -1;
@@ -326,7 +326,7 @@ FLB_INLINE int net_io_tls_read(struct flb_thread *th,
 
         /* There was an error transmitting data */
         mk_event_del(u->evl, &u_conn->event);
-        tls_session_destroy(u_conn->tls_session);
+        flb_tls_session_destroy(u_conn->tls_session);
         u_conn->tls_session = NULL;
         return -1;
     }
@@ -365,7 +365,7 @@ FLB_INLINE int net_io_tls_write(struct flb_thread *th,
 
         /* There was an error transmitting data */
         mk_event_del(u->evl, &u_conn->event);
-        tls_session_destroy(u_conn->tls_session);
+        flb_tls_session_destroy(u_conn->tls_session);
         u_conn->tls_session = NULL;
         return -1;
     }

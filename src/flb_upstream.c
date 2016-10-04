@@ -210,6 +210,13 @@ int flb_upstream_conn_release(struct flb_upstream_conn *u_conn)
         close(u_conn->fd);
     }
 
+#ifdef FLB_HAVE_TLS
+    if (u_conn->tls_session) {
+        flb_tls_session_destroy(u_conn->tls_session);
+        u_conn->tls_session = NULL;
+    }
+#endif
+
 #ifdef FLB_HAVE_FLUSH_PTHREADS
     pthread_mutex_lock(&u->mutex_queue);
 #endif
