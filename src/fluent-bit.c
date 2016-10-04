@@ -103,7 +103,9 @@ static void flb_help(int rc, struct flb_config *config)
         }
         printf("  %-22s%s\n", out->name, out->description);
     }
-    printf("\n");
+
+    printf("\n%sInternal Flags%s\n", ANSI_BOLD, ANSI_RESET);
+    printf(" %s\n", FLB_INFO_FLAGS);
     exit(rc);
 }
 
