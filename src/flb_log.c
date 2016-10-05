@@ -274,7 +274,7 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
     }
 }
 
-int flb_errno_print(int errnum, char *file, int line)
+int flb_errno_print(int errnum, const char *file, int line)
 {
     char buf[256];
 
