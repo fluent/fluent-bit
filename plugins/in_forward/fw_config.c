@@ -46,7 +46,7 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
         }
     }
     else {
-        config->listen = i_ins->host.listen;
+        config->listen = strdup(i_ins->host.listen);
     }
 
     /* Listener TCP Port */
