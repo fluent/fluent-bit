@@ -55,7 +55,7 @@ static inline struct flb_output_instance *out_instance_get(flb_ctx_t *ctx,
     struct mk_list *head;
     struct flb_output_instance *o_ins;
 
-    mk_list_foreach(head, &ctx->config->inputs) {
+    mk_list_foreach(head, &ctx->config->outputs) {
         o_ins = mk_list_entry(head, struct flb_output_instance, _head);
 
         /*
