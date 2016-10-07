@@ -344,6 +344,7 @@ int flb_buffer_qchunk_create(struct flb_buffer *ctx)
         perror("malloc");
         return -1;
     }
+    qw->tid = 0;
     mk_list_init(&qw->queue);
 
     /* Create an event loop */
@@ -427,6 +428,10 @@ int flb_buffer_qchunk_stop(struct flb_buffer *ctx)
     struct flb_buffer_qworker *qw;
 
     qw = ctx->qworker;
+    if (qw->tid == 0) {
+        flb_buffer_qchunk_destroy(ctx);
+        return 0;
+    }
 
     /* Signal (stop) the thread worker */
     flb_buffer_qchunk_signal(FLB_BUFFER_QC_STOP, 0, qw);
