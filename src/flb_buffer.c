@@ -38,6 +38,7 @@
 #include <fluent-bit/flb_buffer_qchunk.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_worker.h>
 
 /*
  * This routine runs in a POSIX thread and it aims to listen for requests

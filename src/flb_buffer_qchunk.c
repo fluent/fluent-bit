@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_buffer.h>
 #include <fluent-bit/flb_buffer_qchunk.h>
 #include <fluent-bit/flb_engine_dispatch.h>
+#include <fluent-bit/flb_worker.h>
 
 #include <stdio.h>
 #include <stdlib.h>

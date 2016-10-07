@@ -29,6 +29,7 @@
 #include <fluent-bit/flb_plugins.h>
 #include <fluent-bit/flb_io_tls.h>
 #include <fluent-bit/flb_kernel.h>
+#include <fluent-bit/flb_worker.h>
 #include <fluent-bit/flb_scheduler.h>
 
 struct flb_service_config service_configs[] = {
