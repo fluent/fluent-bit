@@ -212,7 +212,7 @@ struct flb_input_thread {
 static FLB_INLINE
 int flb_input_thread_get_id(struct flb_config *config)
 {
-    int i;
+    unsigned int i;
 
     for (i = 0; i < sizeof(config->in_table_id); i++) {
         if (config->in_table_id[i] == 0) {
