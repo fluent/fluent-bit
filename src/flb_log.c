@@ -45,11 +45,10 @@ struct log_message {
     char   msg[1024 - sizeof(size_t)];
 };
 
-static inline int log_push(struct log_message *msg)
+static inline int log_push(struct log_message *msg, struct flb_log *log)
 {
     int fd;
     int ret = -1;
-    struct flb_log *log = FLB_TLS_GET(flb_log_ctx);
 
     if (log->type == FLB_LOG_STDERR) {
         return write(STDERR_FILENO, msg->msg, msg->size);
@@ -81,7 +80,7 @@ static inline int log_read(int fd, struct flb_log *log)
         perror("bytes");
         return -1;
     }
-    log_push(&msg);
+    log_push(&msg, log);
 
     return bytes;
 }
@@ -132,17 +131,20 @@ int flb_log_worker_init(void *data)
     return 0;
 }
 
-struct flb_log *flb_log_init(int type, int level, char *out)
+struct flb_log *flb_log_init(struct flb_config *config, int type,
+                             int level, char *out)
 {
     int ret;
     struct flb_log *log;
     struct mk_event_loop *evl;
+    struct flb_worker *worker;
 
     log = malloc(sizeof(struct flb_log));
     if (!log) {
         perror("malloc");
         return NULL;
     }
+    config->log = log;
 
     /* Create event loop to be used by the collector worker */
     evl = mk_event_loop_create(16);
@@ -152,15 +154,39 @@ struct flb_log *flb_log_init(int type, int level, char *out)
         return NULL;
     }
 
-    /* Only supporting STDERR for now */
+    /* Prepare logging context */
     log->type  = type;
     log->level = level;
     log->out   = out;
     log->evl   = evl;
 
-    /* Initialize and set log context in workers space */
-    FLB_TLS_INIT(flb_log_ctx);
-    FLB_TLS_SET(flb_log_ctx, log);
+    /*
+     * Since the main process/thread might want to write log messages,
+     * it will need a 'worker-like' context, here we create a fake worker
+     * context just for messaging purposes.
+     */
+    worker = malloc(sizeof(struct flb_worker));
+    if (!worker) {
+        flb_errno();
+        free(log);
+        mk_event_loop_destroy(evl);
+        return NULL;
+    }
+    worker->func   = NULL;
+    worker->data   = NULL;
+    worker->config = config;
+
+    /* Set the worker context global */
+    FLB_TLS_SET(flb_worker_ctx, worker);
+
+    ret = flb_log_worker_init(worker);
+    if (ret == -1) {
+        flb_errno();
+        free(log);
+        mk_event_loop_destroy(evl);
+        free(worker);
+        return NULL;
+    }
 
     /*
      * This lock is used for the 'pth_cond' conditional. Once the worker
@@ -168,8 +194,7 @@ struct flb_log *flb_log_init(int type, int level, char *out)
      */
     pthread_mutex_lock(&pth_mutex);
 
-    ret = mk_utils_worker_spawn(log_worker_collector,
-                                log, &log->tid);
+    ret = mk_utils_worker_spawn(log_worker_collector, log, &log->tid);
     if (ret == -1) {
         pthread_mutex_unlock(&pth_mutex);
         mk_event_loop_destroy(log->evl);
@@ -270,7 +295,7 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
         }
     }
     else {
-        log_push(&msg);
+        fprintf(stderr, "Invalid worker context\n");
     }
 }
 
@@ -288,34 +313,3 @@ int flb_log_stop(struct flb_log *log)
     free(log);
     return 0;
 }
-
-int flb_log_test(char *msg)
-{
-    int len;
-    struct flb_worker *worker;
-
-    worker = FLB_TLS_GET(flb_worker_ctx);
-    if (!worker) {
-        printf("no worker!: %s\n", msg);
-    }
-
-    len = strlen(msg);
-    int n = write(worker->log[1], msg, len);
-    printf("write=%i bytes\n", n);
-    return n;
-}
-
-#ifndef FLB_HAVE_C_TLS
-int flb_log_check(int level) {
-    struct flb_log *lc = FLB_TLS_GET(flb_log_ctx);
-
-    if (!lc) {
-        return FLB_FALSE;
-    }
-
-    if (lc->level < level)
-        return FLB_FALSE;
-    else
-        return FLB_TRUE;
-}
-#endif

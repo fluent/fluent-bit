@@ -517,10 +517,10 @@ int main(int argc, char **argv)
     }
 
     if (!config->logfile) {
-        config->log = flb_log_init(FLB_LOG_STDERR, config->verbose, NULL);
+        config->log = flb_log_init(config, FLB_LOG_STDERR, config->verbose, NULL);
     }
     else {
-        config->log = flb_log_init(FLB_LOG_FILE, config->verbose,
+        config->log = flb_log_init(config, FLB_LOG_FILE, config->verbose,
                                    config->logfile);
     }
 

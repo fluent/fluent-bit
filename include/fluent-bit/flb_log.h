@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_thread_storage.h>
+#include <fluent-bit/flb_worker.h>
 
 #include <inttypes.h>
 #include <pthread.h>
@@ -55,42 +56,35 @@ struct flb_log {
     struct mk_event_loop *evl;
 };
 
-/*
-int flb_log_check(int level) {
-    struct flb_log *lc = FLB_TLS_GET(flb_log_ctx);
-    if (lc->level < level)
-        return FLB_FALSE;
-    else
-        return FLB_TRUE;
-}
-*/
+#define flb_log_check(l)                                                \
+    (FLB_TLS_GET(flb_worker_ctx)->config->log->level < l) ? FLB_FALSE: FLB_TRUE
 
-#ifdef FLB_HAVE_C_TLS
-#define flb_log_check(l)                                            \
-    (FLB_TLS_GET(flb_log_ctx)->level < l) ? FLB_FALSE: FLB_TRUE
-#else
-int flb_log_check(int level);
-#endif
+struct flb_log *flb_log_init(struct flb_config *config, int type,
+                             int level, char *out);
 
-struct flb_log *flb_log_init(int type, int level, char *out);
 int flb_log_stop(struct flb_log *log);
 void flb_log_print(int type, const char *file, int line, const char *fmt, ...);
 
 /* Logging macros */
 #define flb_error(fmt, ...)                                          \
+    if (flb_log_check(FLB_LOG_ERROR))                                \
         flb_log_print(FLB_LOG_ERROR, NULL, 0, fmt, ##__VA_ARGS__)
 
 #define flb_warn(fmt, ...)                                           \
+    if (flb_log_check(FLB_LOG_WARN))                                 \
         flb_log_print(FLB_LOG_WARN, NULL, 0, fmt, ##__VA_ARGS__)
 
 #define flb_info(fmt, ...)                                           \
+    if (flb_log_check(FLB_LOG_INFO))                                 \
         flb_log_print(FLB_LOG_INFO, NULL, 0, fmt, ##__VA_ARGS__)
 
 #define flb_debug(fmt, ...)                                         \
+    if (flb_log_check(FLB_LOG_DEBUG))                               \
         flb_log_print(FLB_LOG_DEBUG, NULL, 0, fmt, ##__VA_ARGS__)
 
 #ifdef FLB_HAVE_TRACE
 #define flb_trace(fmt, ...)                                             \
+    if (flb_log_check(FLB_LOG_TRACE))                                   \
         flb_log_print(FLB_LOG_TRACE, __FILE__, __LINE__,                \
                       fmt, ##__VA_ARGS__)
 #else

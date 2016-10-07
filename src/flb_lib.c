@@ -96,7 +96,7 @@ flb_ctx_t *flb_create()
     ctx->config = config;
 
     /* Initialize logger */
-    flb_log_init(FLB_LOG_STDERR, FLB_LOG_INFO, NULL);
+    flb_log_init(config, FLB_LOG_STDERR, FLB_LOG_INFO, NULL);
 
     /* Initialize our pipe to send data to our worker */
     ret = pipe(config->ch_data);
@@ -306,7 +306,7 @@ static void flb_lib_worker(void *data)
 {
     struct flb_config *config = data;
 
-    flb_log_init(FLB_LOG_STDERR, FLB_LOG_INFO, NULL);
+    flb_log_init(config, FLB_LOG_STDERR, FLB_LOG_INFO, NULL);
     flb_engine_start(config);
 }
 
