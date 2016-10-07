@@ -220,7 +220,7 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
     const char *reset_color = ANSI_RESET;
     struct tm result;
     struct tm *current;
-    struct log_message msg;
+    struct log_message msg = {0};
     va_list args;
 
     va_start(args, fmt);
