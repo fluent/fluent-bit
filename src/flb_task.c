@@ -258,7 +258,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     int worker_id;
 
     /* Generate content SHA1 and it Hexa representation */
-    flb_sha1_encode(buf, size, &task->hash_sha1);
+    flb_sha1_encode(buf, size, task->hash_sha1);
     for (i = 0; i < 20; ++i) {
         sprintf(&task->hash_hex[i*2], "%02x", task->hash_sha1[i]);
     }
@@ -269,7 +269,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
      * are passed through the 'routes_mask' bit mask variable.
      */
     worker_id = flb_buffer_chunk_push(config->buffer_ctx, buf, size, tag,
-                                      routes_mask, &task->hash_hex);
+                                      routes_mask, task->hash_hex);
 
     task->worker_id = worker_id;
     flb_debug("[task->buffer] worker_id=%i", worker_id);
