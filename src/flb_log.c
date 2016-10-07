@@ -48,7 +48,7 @@ struct log_message {
 static inline int log_push(struct log_message *msg)
 {
     int fd;
-    int ret;
+    int ret = -1;
     struct flb_log *log = FLB_TLS_GET(flb_log_ctx);
 
     if (log->type == FLB_LOG_STDERR) {
