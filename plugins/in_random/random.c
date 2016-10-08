@@ -143,7 +143,7 @@ static int in_random_init(struct flb_input_instance *in,
     if (!ctx) {
         return -1;
     }
-    ctx->samples       = 1;
+    ctx->samples       = -1;
     ctx->samples_count = 0;
 
     /* Initialize head config */
