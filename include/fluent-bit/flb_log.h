@@ -46,13 +46,17 @@ extern FLB_TLS_DEFINE(struct flb_log, flb_log_ctx)
 #define FLB_LOG_SOCKET   2  /* write logs to a unix socket */
 
 #define FLB_LOG_EVENT    MK_EVENT_NOTIFICATION
+#define FLB_LOG_MNG      1024
 
 /* Logging main context */
 struct flb_log {
-    uint16_t type;             /* log type */
-    uint16_t level;            /* level    */
+    struct mk_event event;     /* worker event for manager */
+    int ch_mng[2];             /* worker channel manager   */
+    uint16_t type;             /* log type                 */
+    uint16_t level;            /* level                    */
     char *out;                 /* FLB_LOG_FILE or FLB_LOG_SOCKET */
     pthread_t tid;             /* thread ID   */
+    struct flb_worker *worker; /* non-real worker reference */
     struct mk_event_loop *evl;
 };
 
@@ -62,7 +66,7 @@ struct flb_log {
 struct flb_log *flb_log_init(struct flb_config *config, int type,
                              int level, char *out);
 
-int flb_log_stop(struct flb_log *log);
+int flb_log_stop(struct flb_log *log, struct flb_config *config);
 void flb_log_print(int type, const char *file, int line, const char *fmt, ...);
 
 /* Logging macros */

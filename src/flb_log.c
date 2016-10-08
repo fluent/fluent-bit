@@ -19,6 +19,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <signal.h>
 #include <unistd.h>
 #include <stdarg.h>
 #include <inttypes.h>
@@ -44,6 +45,21 @@ struct log_message {
     size_t size;
     char   msg[1024 - sizeof(size_t)];
 };
+
+static inline int consume_byte(int fd)
+{
+    int ret;
+    uint64_t val;
+
+    /* We need to consume the byte */
+    ret = read(fd, &val, sizeof(val));
+    if (ret <= 0) {
+        flb_errno();
+        return -1;
+    }
+
+    return 0;
+}
 
 static inline int log_push(struct log_message *msg, struct flb_log *log)
 {
@@ -88,20 +104,27 @@ static inline int log_read(int fd, struct flb_log *log)
 /* Central collector of messages */
 static void log_worker_collector(void *data)
 {
+    int run = FLB_TRUE;
     struct mk_event *event;
     struct flb_log *log = data;
 
     FLB_TLS_SET(flb_log_ctx, log);
     pthread_cond_signal(&pth_cond);
 
-    while (1) {
+    while (run) {
         mk_event_wait(log->evl);
         mk_event_foreach(event, log->evl) {
             if (event->type == FLB_LOG_EVENT) {
                 log_read(event->fd, log);
             }
+            else if (event->type == FLB_LOG_MNG) {
+                consume_byte(event->fd);
+                run = FLB_FALSE;
+            }
         }
     }
+
+    pthread_exit(NULL);
 }
 
 int flb_log_worker_init(void *data)
@@ -136,8 +159,8 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
 {
     int ret;
     struct flb_log *log;
-    struct mk_event_loop *evl;
     struct flb_worker *worker;
+    struct mk_event_loop *evl;
 
     log = malloc(sizeof(struct flb_log));
     if (!log) {
@@ -159,6 +182,26 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
     log->level = level;
     log->out   = out;
     log->evl   = evl;
+    log->tid   = 0;
+
+    ret = pipe(log->ch_mng);
+    if (ret == -1) {
+        fprintf(stderr, "[log] could not create pipe(2)");
+        free(log);
+        mk_event_loop_destroy(evl);
+        return NULL;
+    }
+    MK_EVENT_NEW(&log->event);
+
+    /* Register channel manager into the event loop */
+    ret = mk_event_add(log->evl, log->ch_mng[0],
+                       FLB_LOG_MNG, MK_EVENT_READ, &log->event);
+    if (ret == -1) {
+        fprintf(stderr, "[log] could not register event\n");
+        free(log);
+        mk_event_loop_destroy(evl);
+        return NULL;
+    }
 
     /*
      * Since the main process/thread might want to write log messages,
@@ -187,6 +230,7 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
         free(worker);
         return NULL;
     }
+    log->worker = worker;
 
     /*
      * This lock is used for the 'pth_cond' conditional. Once the worker
@@ -194,7 +238,7 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
      */
     pthread_mutex_lock(&pth_mutex);
 
-    ret = mk_utils_worker_spawn(log_worker_collector, log, &log->tid);
+    ret = flb_worker_create(log_worker_collector, log, &log->tid, config);
     if (ret == -1) {
         pthread_mutex_unlock(&pth_mutex);
         mk_event_loop_destroy(log->evl);
@@ -205,6 +249,7 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
     /* Block until the child thread is ready */
     pthread_cond_wait(&pth_cond, &pth_mutex);
     pthread_mutex_unlock(&pth_mutex);
+
 
     return log;
 }
@@ -308,8 +353,21 @@ int flb_errno_print(int errnum, const char *file, int line)
     return 0;
 }
 
-int flb_log_stop(struct flb_log *log)
+int flb_log_stop(struct flb_log *log, struct flb_config *config)
 {
+    uint64_t val = FLB_TRUE;
+    struct flb_worker *worker;
+
+    /* Signal the child worker, stop working */
+    write(log->ch_mng[1], &val, sizeof(val));
+    pthread_join(log->tid, NULL);
+
+    /* Release resources */
+    mk_event_loop_destroy(log->evl);
+    close(log->ch_mng[0]);
+    close(log->ch_mng[1]);
+    free(log->worker);
     free(log);
+
     return 0;
 }
