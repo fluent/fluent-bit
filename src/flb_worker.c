@@ -90,8 +90,9 @@ int flb_worker_create(void (*func) (void *), void *arg, pthread_t *tid,
         free(worker);
         return -1;
     }
-
+    memcpy(tid, &worker->tid, sizeof(pthread_t));
     mk_list_add(&worker->_head, &config->workers);
+
     return 0;
 }
 
@@ -102,6 +103,7 @@ int flb_worker_create(void (*func) (void *), void *arg, pthread_t *tid,
 int flb_worker_init(struct flb_config *config)
 {
     FLB_TLS_INIT(flb_worker_ctx);
+
     return 0;
 }
 
@@ -124,4 +126,21 @@ struct flb_worker *flb_worker_lookup(pthread_t tid, struct flb_config *config)
 struct flb_worker *flb_worker_get()
 {
     return FLB_TLS_GET(flb_worker_ctx);
+}
+
+int flb_worker_exit(struct flb_config *config)
+{
+    int c = 0;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_worker *worker;
+
+    mk_list_foreach_safe(head, tmp, &config->workers) {
+        worker = mk_list_entry(head, struct flb_worker, _head);
+        mk_list_del(&worker->_head);
+        free(worker);
+        c++;
+    }
+
+    return c;
 }

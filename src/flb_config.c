@@ -139,7 +139,7 @@ void flb_config_exit(struct flb_config *config)
     }
 
     if (config->log) {
-        free(config->log);
+        flb_log_stop(config->log, config);
     }
 
     if (config->kernel) {
@@ -147,7 +147,7 @@ void flb_config_exit(struct flb_config *config)
         free(config->kernel);
     }
 
-        /* release resources */
+    /* release resources */
     if (config->ch_event.fd) {
         close(config->ch_event.fd);
     }
@@ -186,6 +186,9 @@ void flb_config_exit(struct flb_config *config)
         mk_list_del(&collector->_head);
         free(collector);
     }
+
+    /* Workers */
+    flb_worker_exit(config);
 
     /* Event flush */
     mk_event_del(config->evl, &config->event_flush);
