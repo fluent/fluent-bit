@@ -141,7 +141,7 @@ int chunk_info(char *filename, struct chunk_info *info)
     }
     len = (p - tmp);
 
-    if (len < 1 || len > sizeof(num)) {
+    if (len < 1 || len + 1 > sizeof(num)) {
         return -1;
     }
     strncpy(num, tmp, len);
