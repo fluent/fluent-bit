@@ -214,7 +214,7 @@ int flb_input_thread_get_id(struct flb_config *config)
 {
     unsigned int i;
 
-    for (i = 0; i < sizeof(config->in_table_id); i++) {
+    for (i = 0; i < (sizeof(config->in_table_id)/sizeof(uint16_t)); i++) {
         if (config->in_table_id[i] == 0) {
             config->in_table_id[i] = FLB_TRUE;
             return i;
