@@ -72,7 +72,9 @@ static inline int log_push(struct log_message *msg, struct flb_log *log)
     else if (log->type == FLB_LOG_FILE) {
         fd = open(log->out, O_CREAT | O_WRONLY | O_APPEND, 0666);
         if (fd == -1) {
-            fprintf(stderr, "[log] error opening log file %s\n", log->out);
+            fprintf(stderr, "[log] error opening log file %s. Using stderr.\n",
+                    log->out);
+            return write(STDERR_FILENO, msg->msg, msg->size);
         }
         ret = write(fd, msg->msg, msg->size);
         close(fd);
