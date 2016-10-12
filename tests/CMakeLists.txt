@@ -44,6 +44,12 @@ if(FLB_OUT_LIB)
       )
   endif()
 
+  if(FLB_IN_HEAD)
+    list(APPEND check_PROGRAMS
+      flb_test_in_head.cpp
+      )
+  endif()
+
   if(FLB_IN_MEM)
     list(APPEND check_PROGRAMS
       flb_test_in_mem.cpp
