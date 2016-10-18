@@ -25,15 +25,26 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_stats.h>
 #include <fluent-bit/flb_kernel.h>
 
-#include "mem.h"
+#include "proc.h"
+
+#define IN_MEM_COLLECT_SEC  1
+#define IN_MEM_COLLECT_NSEC 0
+
+struct flb_in_mem_config {
+    int    idx;
+    int    page_size;
+    pid_t  pid;
+    msgpack_packer  pckr;
+    msgpack_sbuffer sbuf;
+};
 
 struct flb_input_plugin in_mem_plugin;
 
-int in_mem_collect(struct flb_config *config, void *in_context);
-
+static int in_mem_collect(struct flb_config *config, void *in_context);
 
 /* Locate a specific key into the buffer */
 static char *field(char *data, char *field)
@@ -123,10 +134,11 @@ static int mem_calc(uint64_t *total, uint64_t *available)
     return 0;
 }
 
-int in_mem_init(struct flb_input_instance *in,
-                struct flb_config *config, void *data)
+static int in_mem_init(struct flb_input_instance *in,
+                       struct flb_config *config, void *data)
 {
     int ret;
+    char *tmp;
     struct flb_in_mem_config *ctx;
     (void) data;
 
@@ -136,6 +148,14 @@ int in_mem_init(struct flb_input_instance *in,
         return -1;
     }
     ctx->idx = 0;
+    ctx->pid = 0;
+    ctx->page_size = sysconf(_SC_PAGESIZE);
+
+    /* Check if the caller want's to trace a specific Process ID */
+    tmp = flb_input_get_property("pid", in);
+    if (tmp) {
+        ctx->pid = atoi(tmp);
+    }
 
     /* Init msgpack buffers */
     msgpack_sbuffer_init(&ctx->sbuf);
@@ -151,18 +171,29 @@ int in_mem_init(struct flb_input_instance *in,
                                        IN_MEM_COLLECT_NSEC,
                                        config);
     if (ret == -1) {
-        flb_utils_error_c("Could not set collector for memory input plugin");
+        flb_error("Could not set collector for memory input plugin");
     }
 
     return 0;
 }
 
-int in_mem_collect(struct flb_config *config, void *in_context)
+static int in_mem_collect(struct flb_config *config, void *in_context)
 {
     int ret;
+    int len;
+    int entries = 2;
     uint64_t total;
     uint64_t free;
+    struct proc_task *task = NULL;
     struct flb_in_mem_config *ctx = in_context;
+
+    if (ctx->pid) {
+        task = proc_stat(ctx->pid, ctx->page_size);
+        if (!task) {
+            flb_warn("[in_mem] could not measure PID %i", ctx->pid);
+            ctx->pid = 0;
+        }
+    }
 
     if (config->kernel->n_version < FLB_KERNEL_VERSION(3, 14, 0)) {
         ret = mem_calc_old(&total, &free);
@@ -172,12 +203,19 @@ int in_mem_collect(struct flb_config *config, void *in_context)
     }
 
     if (ret == -1) {
+        if (task) {
+            proc_free(task);
+        }
         return -1;
+    }
+
+    if (task) {
+        entries += 2;
     }
 
     msgpack_pack_array(&ctx->pckr, 2);
     msgpack_pack_uint64(&ctx->pckr, time(NULL));
-    msgpack_pack_map(&ctx->pckr, 2);
+    msgpack_pack_map(&ctx->pckr, entries);
 
     msgpack_pack_bin(&ctx->pckr, 5);
     msgpack_pack_bin_body(&ctx->pckr, "total", 5);
@@ -187,6 +225,22 @@ int in_mem_collect(struct flb_config *config, void *in_context)
     msgpack_pack_bin_body(&ctx->pckr, "free", 4);
     msgpack_pack_uint32(&ctx->pckr, free);
 
+    if (task) {
+        /* RSS bytes */
+        msgpack_pack_bin(&ctx->pckr, 10);
+        msgpack_pack_bin_body(&ctx->pckr, "proc_bytes", 10);
+        msgpack_pack_uint64(&ctx->pckr, task->proc_rss);
+
+        /* RSS Human readable format */
+        len = strlen(task->proc_rss_hr);
+        msgpack_pack_bin(&ctx->pckr, 7);
+        msgpack_pack_bin_body(&ctx->pckr, "proc_hr", 7);
+        msgpack_pack_str(&ctx->pckr, len);
+        msgpack_pack_str_body(&ctx->pckr, task->proc_rss_hr, len);
+
+        proc_free(task);
+    }
+
     flb_trace("[in_mem] memory total=%lu kb, available=%d kb",
               total, free);
     ++ctx->idx;
@@ -195,7 +249,7 @@ int in_mem_collect(struct flb_config *config, void *in_context)
     return 0;
 }
 
-void *in_mem_flush(void *in_context, size_t *size)
+static void *in_mem_flush(void *in_context, size_t *size)
 {
     char *buf;
     struct flb_in_mem_config *ctx = in_context;
@@ -219,7 +273,7 @@ void *in_mem_flush(void *in_context, size_t *size)
     return buf;
 }
 
-int in_mem_exit(void *data, struct flb_config *config)
+static int in_mem_exit(void *data, struct flb_config *config)
 {
     (void) *config;
     struct flb_in_mem_config *ctx = data;
