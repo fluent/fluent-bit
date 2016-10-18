@@ -541,6 +541,9 @@ int flb_buffer_stop(struct flb_buffer *ctx)
     struct mk_list *head;
     struct flb_buffer_worker *worker;
 
+    /* Remove any pending task loaded from qchunk */
+    flb_engine_destroy_tasks(&ctx->i_ins->tasks);
+
     /*
      * Signal the manager of each buffer worker (chunk writers), the signal
      * will let them stop working and exit.
