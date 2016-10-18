@@ -712,7 +712,7 @@ int flb_buffer_chunk_mov(int type, char *name, uint64_t routes,
 {
     int ret;
     int len;
-    struct flb_buffer_request req;
+    struct flb_buffer_request req = {0};
 
     req.type = type;
 
