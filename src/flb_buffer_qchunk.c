@@ -174,7 +174,7 @@ static inline int qchunk_event_push_request(struct flb_buffer *ctx)
 
     qw = ctx->qworker;
 
-    flb_debug("[buffer qchunk] event: PUSH_REQUEST received");
+    flb_trace("[buffer qchunk] event: PUSH_REQUEST received");
 
     /* Always send the first qchunk entry from the lsit */
     mk_list_foreach_safe(head, tmp, &qw->queue) {
