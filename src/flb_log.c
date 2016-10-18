@@ -37,8 +37,9 @@
 FLB_TLS_DEFINE(struct flb_log, flb_log_ctx)
 
 /* thread initializator */
-pthread_cond_t  pth_cond;
-pthread_mutex_t pth_mutex;
+static int pth_init;
+static pthread_cond_t  pth_cond;
+static pthread_mutex_t pth_mutex;
 
 /* Simple structure to dispatch messages to the log collector */
 struct log_message {
@@ -111,7 +112,12 @@ static void log_worker_collector(void *data)
     struct flb_log *log = data;
 
     FLB_TLS_SET(flb_log_ctx, log);
+
+    /* Signal the caller */
+    pthread_mutex_lock(&pth_mutex);
+    pth_init = FLB_TRUE;
     pthread_cond_signal(&pth_cond);
+    pthread_mutex_unlock(&pth_mutex);
 
     while (run) {
         mk_event_wait(log->evl);
@@ -238,6 +244,10 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
      * This lock is used for the 'pth_cond' conditional. Once the worker
      * thread is ready will signal the condition.
      */
+    pthread_mutex_init(&pth_mutex, NULL);
+    pthread_cond_init(&pth_cond, NULL);
+    pth_init = FLB_FALSE;
+
     pthread_mutex_lock(&pth_mutex);
 
     ret = flb_worker_create(log_worker_collector, log, &log->tid, config);
@@ -249,9 +259,10 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
     }
 
     /* Block until the child thread is ready */
-    pthread_cond_wait(&pth_cond, &pth_mutex);
+    while (!pth_init) {
+        pthread_cond_wait(&pth_cond, &pth_mutex);
+    }
     pthread_mutex_unlock(&pth_mutex);
-
 
     return log;
 }
@@ -358,7 +369,6 @@ int flb_errno_print(int errnum, const char *file, int line)
 int flb_log_stop(struct flb_log *log, struct flb_config *config)
 {
     uint64_t val = FLB_TRUE;
-    struct flb_worker *worker;
 
     /* Signal the child worker, stop working */
     write(log->ch_mng[1], &val, sizeof(val));

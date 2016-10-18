@@ -33,8 +33,9 @@
 #include <pthread.h>
 
 /* qworker thread initializator */
-pthread_cond_t  pth_cond;
-pthread_mutex_t pth_mutex;
+static int pth_init;
+static pthread_cond_t  pth_cond;
+static pthread_mutex_t pth_mutex;
 
 /*
  * The 'qchunk' interface provides read-only operations to load Fluent Bit
@@ -304,7 +305,10 @@ static void flb_buffer_qchunk_worker(void *data)
     qw = ctx->qworker;
 
     /* Unlock the conditional */
+    pthread_mutex_lock(&pth_mutex);
+    pth_init = FLB_TRUE;
     pthread_cond_signal(&pth_cond);
+    pthread_mutex_unlock(&pth_mutex);
 
     /* event loop, listen for events */
     while (run) {
@@ -399,6 +403,10 @@ int flb_buffer_qchunk_start(struct flb_buffer *ctx)
 
     qw = ctx->qworker;
 
+    pthread_mutex_init(&pth_mutex, NULL);
+    pthread_cond_init(&pth_cond, NULL);
+    pth_init = FLB_FALSE;
+
     /*
      * This lock is used for the 'pth_cond' conditional. Once the worker
      * thread is ready will signal the condition.
@@ -417,7 +425,9 @@ int flb_buffer_qchunk_start(struct flb_buffer *ctx)
     }
 
     /* Block until the child thread is ready */
-    pthread_cond_wait(&pth_cond, &pth_mutex);
+    while (!pth_init) {
+        pthread_cond_wait(&pth_cond, &pth_mutex);
+    }
     pthread_mutex_unlock(&pth_mutex);
 
     return 0;

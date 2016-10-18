@@ -40,6 +40,11 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_worker.h>
 
+/* qworker thread initializator */
+static int pth_buffer_init;
+static pthread_cond_t  pth_buffer_cond;
+static pthread_mutex_t pth_buffer_mutex;
+
 /*
  * This routine runs in a POSIX thread and it aims to listen for requests
  * to store and remove 'buffer chunks'.
@@ -110,6 +115,12 @@ static void flb_buffer_worker_init(void *arg)
         flb_error("[buffer:worker %i] aborting", ctx->id);
         return;
     }
+
+    /* Unlock the conditional */
+    pthread_mutex_lock(&pth_buffer_mutex);
+    pth_buffer_init = FLB_TRUE;
+    pthread_cond_signal(&pth_buffer_cond);
+    pthread_mutex_unlock(&pth_buffer_mutex);
 
     flb_debug("[buffer: worker %i] ready", ctx->id);
 
@@ -464,15 +475,29 @@ int flb_buffer_start(struct flb_buffer *ctx)
     struct mk_list *head;
     struct flb_buffer_worker *worker;
 
+    pthread_mutex_init(&pth_buffer_mutex, NULL);
+    pthread_cond_init(&pth_buffer_cond, NULL);
+
     /* Start workers in charge to store/delete buffer chunks */
     mk_list_foreach(head, &ctx->workers) {
         worker = mk_list_entry(head, struct flb_buffer_worker, _head);
 
+        pth_buffer_init = FLB_FALSE;
+        pthread_mutex_lock(&pth_buffer_mutex);
+
         /* Spawn workers */
         ret = flb_worker_create(flb_buffer_worker_init,
                                 worker, &worker->tid, ctx->config);
-        flb_debug("[buffer] started worker #%i status=%i task_id=%d",
+
+        /* Block until the child worker is ready */
+        while (!pth_buffer_init) {
+            pthread_cond_wait(&pth_buffer_cond, &pth_buffer_mutex);
+        }
+        pthread_mutex_unlock(&pth_buffer_mutex);
+
+        flb_debug("[buffer] started worker #%i status=%i task_id=%d (PID)",
                   worker->id, ret, worker->task_id);
+
         if (ret == 0) {
             n++;
         }
