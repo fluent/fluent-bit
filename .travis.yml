@@ -9,4 +9,7 @@ os:
 notifications:
   irc: "irc.freenode.net#fluent-bit"
 
+before_script:
+  - cmake -DFLB_ALL=On ../
+
 script: make
