@@ -169,7 +169,6 @@ struct flb_output_instance {
 
 struct flb_output_thread {
     int id;                            /* out-thread ID      */
-    int retries;                       /* number of retries  */
     void *buffer;                      /* output buffer      */
     struct flb_task *task;             /* Parent flb_task    */
     struct flb_config *config;         /* FLB context        */
@@ -258,7 +257,6 @@ struct flb_thread *flb_output_thread(struct flb_task *task,
      * 'id' is always incremental.
      */
     out_th->id      = 0;
-    out_th->retries = 0;
     out_th->o_ins   = o_ins;
     out_th->task    = task;
     out_th->buffer  = buf;
@@ -319,35 +317,19 @@ struct flb_thread *flb_output_thread(struct flb_task *task,
  *
  * The signal emmited indicate the 'Task' number that have finished plus
  * a return value. The return value is either FLB_OK, FLB_RETRY or FLB_ERROR.
- *
- * If the caller have requested a FLB_RETRY, it will be issued depending of the
- * number of retries, if it have exceed the 'retry_limit' option, a FLB_ERROR
- * will be returned instead.
  */
 static inline int flb_output_return(int ret) {
     int n;
-    int ret_value;
     uint32_t set;
     uint64_t val;
     struct flb_thread *th;
     struct flb_task *task;
-    struct flb_output_instance *o_ins;
     struct flb_output_thread *out_th;
 
     th = (struct flb_thread *) pthread_getspecific(flb_thread_key);
     out_th = (struct flb_output_thread *) FLB_THREAD_DATA(th);
     task = out_th->task;
 
-    ret_value = ret;
-    if (ret == FLB_RETRY) {
-        o_ins = out_th->o_ins;
-        if (out_th->retries >= o_ins->retry_limit) {
-            ret_value = FLB_ERROR;
-        }
-        else {
-            out_th->retries++;
-        }
-    }
     /*
      * To compose the signal event the relevant info is:
      *
@@ -357,7 +339,7 @@ static inline int flb_output_return(int ret) {
      *
      * We put together the return value with the task_id on the 32 bits at right
      */
-    set = FLB_TASK_SET(ret_value, task->id, out_th->id);
+    set = FLB_TASK_SET(ret, task->id, out_th->id);
     val = FLB_BITS_U64_SET(2 /* FLB_ENGINE_TASK */, set);
 
     n = write(task->config->ch_manager[1], &val, sizeof(val));
