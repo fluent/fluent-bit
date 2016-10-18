@@ -26,39 +26,79 @@
 #include <fluent-bit/flb_utils.h>
 #include <msgpack.h>
 
-int cb_plot_init(struct flb_output_instance *ins, struct flb_config *config,
-                   void *data)
+struct flb_plot_conf {
+    char *out_file;
+    char *key_name;
+    int key_len;
+};
+
+static int cb_plot_init(struct flb_output_instance *ins,
+                        struct flb_config *config,
+                        void *data)
 {
-    (void) ins;
+    char *tmp;
     (void) config;
     (void) data;
+    struct flb_plot_conf *conf;
+
+    conf = calloc(1, sizeof(struct flb_plot_conf));
+    if (!config) {
+        flb_errno();
+        return -1;
+    }
+
+    /* Optional 'key' field to obtain the datapoint value */
+    tmp = flb_output_get_property("key", ins);
+    if (tmp) {
+        conf->key_name = tmp;
+        conf->key_len  = strlen(tmp);
+    }
+
+    /* Optional output file name/path */
+    tmp = flb_output_get_property("file", ins);
+    if (tmp) {
+        conf->out_file = tmp;
+    }
+
+    /* Set the context */
+    flb_output_set_context(ins, conf);
 
     return 0;
 }
 
-int cb_plot_flush(void *data, size_t bytes,
-                  char *tag, int tag_len,
-                  struct flb_input_instance *i_ins,
-                  void *out_context,
-                  struct flb_config *config)
+static int cb_plot_flush(void *data, size_t bytes,
+                         char *tag, int tag_len,
+                         struct flb_input_instance *i_ins,
+                         void *out_context,
+                         struct flb_config *config)
 {
+    int i;
     int fd;
     time_t atime;
     msgpack_unpacked result;
-    size_t off = 0, cnt = 0;
+    size_t off = 0;
+    char *out_file;
     msgpack_object root;
     msgpack_object map;
-    msgpack_object *key;
-    msgpack_object *val;
+    msgpack_object *key = NULL;
+    msgpack_object *val = NULL;
+    struct flb_plot_conf *ctx = out_context;
     (void) i_ins;
-    (void) out_context;
     (void) config;
 
+    /* Set the right output */
+    if (!ctx->out_file) {
+        out_file = tag;
+    }
+    else {
+        out_file = ctx->out_file;
+    }
+
     /* Open output file with default name as the Tag */
-    fd = open(tag, O_WRONLY | O_CREAT | O_APPEND, 0666);
+    fd = open(out_file, O_WRONLY | O_CREAT | O_APPEND, 0666);
     if (fd == -1) {
         flb_errno();
-        flb_warn("[out_plot] switching to STDOUT");
+        flb_warn("[out_plot] could not open %s, switching to STDOUT", out_file);
         fd = STDOUT_FILENO;
     }
 
@@ -72,8 +112,52 @@ int cb_plot_flush(void *data, size_t bytes,
         atime = root.via.array.ptr[0].via.u64;
         map   = root.via.array.ptr[1];
 
-        key = &map.via.map.ptr[0].key;
-        val = &map.via.map.ptr[0].val;
+        /*
+         * Lookup key, we need to iterate the whole map as sometimes the
+         * data that gets in can set the keys in different order (e.g: forward,
+         * tcp, etc).
+         */
+        if (ctx->key_name) {
+            for (i = 0; i < map.via.map.size; i++) {
+                /* Get each key and compare */
+                key = &map.via.map.ptr[i].key;
+                if (key->type == MSGPACK_OBJECT_BIN) {
+                    if (ctx->key_len == key->via.bin.size &&
+                        memcmp(key->via.bin.ptr, ctx->key_name, ctx->key_len) == 0) {
+                        val = &map.via.map.ptr[i].val;
+                        break;
+                    }
+                    key = NULL;
+                    val = NULL;
+                }
+                else if (key->type != MSGPACK_OBJECT_STR) {
+                    if (ctx->key_len == key->via.str.size &&
+                        memcmp(key->via.str.ptr, ctx->key_name, ctx->key_len) == 0) {
+                        val = &map.via.map.ptr[i].val;
+                        break;
+                    }
+                    key = NULL;
+                    val = NULL;
+                }
+                else {
+                    if (fd != STDOUT_FILENO) {
+                        close(fd);
+                    }
+                    FLB_OUTPUT_RETURN(FLB_ERROR);
+                }
+            }
+        }
+        else {
+            val = &map.via.map.ptr[0].val;
+        }
+
+        if (!val) {
+            flb_error("[out_plot] unmatched key '%s'", ctx->key_name);
+            if (fd != STDOUT_FILENO) {
+                close(fd);
+            }
+            FLB_OUTPUT_RETURN(FLB_ERROR);
+        }
 
         if (val->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
             dprintf(fd, "%lu %" PRIu64 "\n", atime, val->via.u64);
@@ -83,6 +167,10 @@ int cb_plot_flush(void *data, size_t bytes,
         }
         else if (val->type == MSGPACK_OBJECT_FLOAT) {
             dprintf(fd, "%lu %lf\n", atime, val->via.f64);
+        }
+        else {
+            flb_error("[out_plot] value must be integer, negative integer "
+                      "or float");
         }
     }
     msgpack_unpacked_destroy(&result);
@@ -94,10 +182,20 @@ int cb_plot_flush(void *data, size_t bytes,
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 
+static int cb_plot_exit(void *data, struct flb_config *config)
+{
+    struct flb_plot_conf *ctx = data;
+
+    free(ctx);
+
+    return 0;
+}
+
 struct flb_output_plugin out_plot_plugin = {
     .name         = "plot",
     .description  = "Generate data file for GNU Plot",
     .cb_init      = cb_plot_init,
     .cb_flush     = cb_plot_flush,
+    .cb_exit      = cb_plot_exit,
     .flags        = 0,
 };
