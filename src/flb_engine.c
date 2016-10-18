@@ -195,10 +195,16 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
                  * - No enough memory (unlikely)
                  * - It reached the maximum number of re-tries
                  */
+#ifdef FLB_HAVE_BUFFERING
+                if (config->buffer_path) {
+                    flb_buffer_chunk_pop(config->buffer_ctx, thread_id, task);
+                }
+#endif
                 flb_output_thread_destroy_id(thread_id, task);
                 if (task->users == 0) {
                     flb_task_destroy(task);
                 }
+
                 return 0;
             }
 
@@ -209,6 +215,12 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
             int s = flb_sched_request_create(config, retry, retry->attemps);
             flb_debug("[sched] retry=%p %i in %i seconds",
                       retry, task->id, s);
+        }
+        else if (ret == FLB_ERROR) {
+            flb_output_thread_destroy_id(thread_id, task);
+            if (task->users == 0) {
+                flb_task_destroy(task);
+            }
         }
     }
 #ifdef FLB_HAVE_BUFFERING
