@@ -41,7 +41,7 @@ int cb_nats_init(struct flb_output_instance *ins, struct flb_config *config,
     }
 
     /* Allocate plugin context */
-    ctx = malloc(sizeof(struct flb_out_nats_config));
+    ctx = flb_malloc(sizeof(struct flb_out_nats_config));
     if (!ctx) {
         perror("malloc");
         return -1;
@@ -54,7 +54,7 @@ int cb_nats_init(struct flb_output_instance *ins, struct flb_config *config,
                                    FLB_IO_TCP,
                                    NULL);
     if (!upstream) {
-        free(ctx);
+        flb_free(ctx);
         return -1;
     }
     ctx->u   = upstream;
@@ -149,7 +149,7 @@ static int msgpack_to_json(void *data, size_t bytes, char *tag,
             }
             else if (m_val.type == MSGPACK_OBJECT_STR) {
                 if (m_val.via.str.size > sizeof(tmp_val) - 1) {
-                    tmp_ext = malloc(m_val.via.str.size + 1);
+                    tmp_ext = flb_malloc(m_val.via.str.size + 1);
                 }
                 else {
                     tmp_ext = tmp_val;
@@ -159,12 +159,12 @@ static int msgpack_to_json(void *data, size_t bytes, char *tag,
 
                 json_add_to_object(j_obj, tmp_key, json_create_string(tmp_ext));
                 if (tmp_ext != tmp_val) {
-                    free(tmp_ext);
+                    flb_free(tmp_ext);
                 }
             }
             else if (m_val.type == MSGPACK_OBJECT_BIN) {
                 if (m_val.via.bin.size > sizeof(tmp_val)) {
-                    tmp_ext = malloc(m_val.via.bin.size + 1);
+                    tmp_ext = flb_malloc(m_val.via.bin.size + 1);
                 }
                 else {
                     tmp_ext = tmp_val;
@@ -174,7 +174,7 @@ static int msgpack_to_json(void *data, size_t bytes, char *tag,
 
                 json_add_to_object(j_obj, tmp_key, json_create_string(tmp_ext));
                 if (tmp_ext != tmp_val) {
-                    free(tmp_ext);
+                    flb_free(tmp_ext);
                 }
             }
         }
@@ -232,7 +232,7 @@ int cb_nats_flush(void *data, size_t bytes,
     }
 
     /* Compose the NATS Publish request */
-    request = malloc(json_len + 32);
+    request = flb_malloc(json_len + 32);
     req_len = snprintf(request, json_len + 32, "PUB %s %zu\r\n",
                        tag, json_len);
 
@@ -241,17 +241,17 @@ int cb_nats_flush(void *data, size_t bytes,
     req_len += json_len;
     request[req_len++] = '\r';
     request[req_len++] = '\n';
-    free(json_msg);
+    flb_free(json_msg);
 
     ret = flb_io_net_write(u_conn, request, req_len, &bytes_sent);
     if (ret == -1) {
         perror("write");
-        free(request);
+        flb_free(request);
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    free(request);
+    flb_free(request);
     flb_upstream_conn_release(u_conn);
     FLB_OUTPUT_RETURN(FLB_OK);
 }
@@ -262,7 +262,7 @@ int cb_nats_exit(void *data, struct flb_config *config)
     struct flb_out_nats_config *ctx = data;
 
     flb_upstream_destroy(ctx->u);
-    free(ctx);
+    flb_free(ctx);
 
     return 0;
 }
