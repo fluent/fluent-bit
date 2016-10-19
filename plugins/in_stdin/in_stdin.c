@@ -41,7 +41,7 @@ int in_stdin_init(struct flb_input_instance *in,
     (void) data;
 
     /* Allocate space for the configuration */
-    ctx = malloc(sizeof(struct flb_in_stdin_config));
+    ctx = flb_malloc(sizeof(struct flb_in_stdin_config));
     if (!ctx) {
         return -1;
     }
@@ -119,7 +119,7 @@ int in_stdin_collect(struct flb_config *config, void *in_context)
     }
     msgpack_unpacked_destroy(&result);
 
-    free(pack);
+    flb_free(pack);
     return 0;
 }
 
@@ -134,7 +134,7 @@ void *in_stdin_flush(void *in_context, size_t *size)
 
     sbuf = &ctx->mp_sbuf;
     *size = sbuf->size;
-    buf = malloc(sbuf->size);
+    buf = flb_malloc(sbuf->size);
     if (!buf)
         goto fail;
 
@@ -158,7 +158,7 @@ int in_stdin_exit(void *in_context, struct flb_config *config)
     struct flb_in_stdin_config *ctx = in_context;
 
     close(ctx->fd);
-    free(ctx);
+    flb_free(ctx);
 
     return 0;
 }
