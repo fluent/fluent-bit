@@ -48,5 +48,6 @@ int flb_worker_create(void (*func) (void *), void *arg, pthread_t *tid,
                       struct flb_config *config);
 struct flb_worker *flb_worker_lookup(pthread_t tid, struct flb_config *config);
 int flb_worker_exit(struct flb_config *config);
+int flb_worker_log_level(struct flb_worker *worker);
 
 #endif

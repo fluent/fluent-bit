@@ -50,7 +50,7 @@ extern FLB_TLS_DEFINE(struct flb_log, flb_log_ctx)
 
 /* Logging main context */
 struct flb_log {
-    struct mk_event event;     /* worker event for manager */
+    struct mk_event event;     /* worker* event for manager */
     int ch_mng[2];             /* worker channel manager   */
     uint16_t type;             /* log type                 */
     uint16_t level;            /* level                    */
@@ -60,8 +60,25 @@ struct flb_log {
     struct mk_event_loop *evl;
 };
 
+#ifdef FLB_HAVE_C_TLS
+/* Fast path where __thread exists*/
 #define flb_log_check(l)                                                \
     (FLB_TLS_GET(flb_worker_ctx)->config->log->level < l) ? FLB_FALSE: FLB_TRUE
+#else
+/*
+ * Not ideal case but it happens that __thread is not supported and we need
+ * to fallback to pthread solution. For logger we separate this to simplify
+ * the check when the logging API is invoked.
+ */
+static inline int flb_log_check(int l) {
+    struct flb_worker *w;
+    w = (struct flb_worker *) FLB_TLS_GET(flb_worker_ctx);
+    if (flb_worker_log_level(w) < l) {
+        return FLB_FALSE;
+    }
+    return FLB_TRUE;
+}
+#endif
 
 struct flb_log *flb_log_init(struct flb_config *config, int type,
                              int level, char *out);

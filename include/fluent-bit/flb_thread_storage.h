@@ -32,10 +32,10 @@
 #else
 
 /* Fallback mode using pthread_*() for Thread-Local-Storage usage */
-#define FLB_TLS_SET(key, val)    pthread_setspecific(key, (void *) val)
-#define FLB_TLS_GET(key)         pthread_getspecific(key)
-#define FLB_TLS_INIT(key)        pthread_key_create(key, NULL);
-#define FLB_TLS_DEFINE(type, name) pthread_t *name;
+#define FLB_TLS_SET(key, val)      pthread_setspecific(key, (void *) val)
+#define FLB_TLS_GET(key)           pthread_getspecific(key)
+#define FLB_TLS_INIT(key)          pthread_key_create(&key, NULL)
+#define FLB_TLS_DEFINE(type, name) pthread_key_t name;
 #endif
 
 #endif /* !FLB_THREAD_STORAGE_H */

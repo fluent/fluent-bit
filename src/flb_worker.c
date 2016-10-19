@@ -145,3 +145,8 @@ int flb_worker_exit(struct flb_config *config)
 
     return c;
 }
+
+int flb_worker_log_level(struct flb_worker *worker)
+{
+    return worker->config->log->level;
+};

@@ -33,6 +33,7 @@ option(FLB_TRACE              "Enable trace mode"            No)
 option(FLB_TESTS              "Enable tests"                 No)
 option(FLB_MTRACE             "Enable mtrace support"        No)
 option(FLB_BUFFERING          "Enable buffering support"     No)
+option(FLB_POSIX_TLS          "Force POSIX thread storage"   No)
 
 # Advanced options for Flushing methods
 # =====================================
@@ -245,15 +246,23 @@ if(FLB_MTRACE)
   endif()
 endif()
 
+
 # Pthread Local Storage
-check_c_source_compiles("
+# =====================
+# By default we expect the compiler already support thread local storage
+# through __thread type, otherwise Fluent Bit fallback to the old POSIX
+# pthread mode (pthread_key_t), or it can be forced setting FLB_POSIX_TLS
+# for testing/compatibility purposes.
+if(NOT FLB_POSIX_TLS)
+  check_c_source_compiles("
    __thread int a;
    int main() {
        __tls_get_addr(0);
        return 0;
    }" FLB_HAVE_C_TLS)
-if(FLB_HAVE_C_TLS)
-  FLB_DEFINITION(FLB_HAVE_C_TLS)
+  if(FLB_HAVE_C_TLS)
+    FLB_DEFINITION(FLB_HAVE_C_TLS)
+  endif()
 endif()
 
 # setjmp
