@@ -155,6 +155,7 @@ struct proc_task *proc_stat(pid_t pid, int page_size)
     t->proc_rss    = (t->rss * page_size);
     t->proc_rss_hr = human_readable_size(t->proc_rss);
 
+    free(buf);
     return t;
 }
 

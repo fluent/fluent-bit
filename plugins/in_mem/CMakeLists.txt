@@ -1,4 +1,5 @@
 set(src
-  mem.c)
+  mem.c
+  proc.c)
 
 FLB_PLUGIN(in_mem "${src}" "")
