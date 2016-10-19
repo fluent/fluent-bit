@@ -92,7 +92,7 @@ static char *msgpack_to_json(char *data, uint64_t bytes, uint64_t *out_size)
             }
             else {
                 /* Long JSON map keys have a performance penalty */
-                ptr_key = malloc(psize + 1);
+                ptr_key = flb_malloc(psize + 1);
                 memcpy(ptr_key, k->via.str.ptr, psize);
                 ptr_key[psize] = '\0';
             }
@@ -126,7 +126,7 @@ static char *msgpack_to_json(char *data, uint64_t bytes, uint64_t *out_size)
                     ptr_val = buf_val;
                 }
                 else {
-                    ptr_val = malloc(psize + 1);
+                    ptr_val = flb_malloc(psize + 1);
                     memcpy(ptr_val, v->via.str.ptr, psize);
                     ptr_val[psize] = '\0';
                 }
@@ -142,7 +142,7 @@ static char *msgpack_to_json(char *data, uint64_t bytes, uint64_t *out_size)
                     ptr_val = buf_val;
                 }
                 else {
-                    ptr_val = malloc(psize + 1);
+                    ptr_val = flb_malloc(psize + 1);
                     memcpy(ptr_val, v->via.bin.ptr, psize);
                     ptr_val[psize] = '\0';
                 }
@@ -151,12 +151,12 @@ static char *msgpack_to_json(char *data, uint64_t bytes, uint64_t *out_size)
             }
 
             if (ptr_key && ptr_key != buf_key) {
-                free(ptr_key);
+                flb_free(ptr_key);
             }
             ptr_key = NULL;
 
             if (ptr_val && ptr_val != buf_val) {
-                free(ptr_val);
+                flb_free(ptr_val);
             }
             ptr_val = NULL;
         }
@@ -188,7 +188,7 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
     (void) data;
 
     /* Allocate plugin context */
-    ctx = calloc(1, sizeof(struct flb_out_http_config));
+    ctx = flb_calloc(1, sizeof(struct flb_out_http_config));
     if (!ctx) {
         perror("malloc");
         FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -210,14 +210,14 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
 
         addr = strstr(tmp, "//");
         if (!addr) {
-            free(ctx);
+            flb_free(ctx);
             FLB_OUTPUT_RETURN(FLB_ERROR);
         }
         addr += 2; /* get right to the host section */
         if (*addr == '[') { /* IPv6 */
             p = strchr(addr, ']');
             if (!p) {
-                free(ctx);
+                flb_free(ctx);
                 FLB_OUTPUT_RETURN(FLB_ERROR);
             }
             ctx->proxy_host = strndup(addr + 1, (p - addr - 1));
@@ -281,7 +281,7 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
     }
 
     if (!upstream) {
-        free(ctx);
+        flb_free(ctx);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
@@ -300,11 +300,11 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
     }
     else if (uri[0] != '/') {
         ulen = strlen(uri);
-        tmp = malloc(ulen + 2);
+        tmp = flb_malloc(ulen + 2);
         tmp[0] = '/';
         memcpy(tmp + 1, uri, ulen);
         tmp[ulen + 1] = '\0';
-        free(uri);
+        flb_free(uri);
         uri = tmp;
     }
 
@@ -420,7 +420,7 @@ int cb_http_flush(void *data, size_t bytes,
     flb_upstream_conn_release(u_conn);
 
     if (ctx->out_format == FLB_HTTP_OUT_JSON) {
-        free(body);
+        flb_free(body);
     }
 
     FLB_OUTPUT_RETURN(out_ret);
@@ -432,9 +432,9 @@ int cb_http_exit(void *data, struct flb_config *config)
 
     flb_upstream_destroy(ctx->u);
 
-    free(ctx->proxy_host);
-    free(ctx->uri);
-    free(ctx);
+    flb_free(ctx->proxy_host);
+    flb_free(ctx->uri);
+    flb_free(ctx);
 
     return 0;
 }
