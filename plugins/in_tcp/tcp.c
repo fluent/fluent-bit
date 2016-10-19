@@ -38,7 +38,7 @@ static void *in_tcp_flush(void *in_context, size_t *size)
 
     sbuf = &ctx->mp_sbuf;
     *size = sbuf->size;
-    buf = malloc(sbuf->size);
+    buf = flb_malloc(sbuf->size);
     if (!buf) {
         return NULL;
     }

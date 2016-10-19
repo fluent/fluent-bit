@@ -32,7 +32,7 @@ struct flb_in_tcp_config *tcp_config_init(struct flb_input_instance *i_ins)
     char *chunk_size;
     struct flb_in_tcp_config *config;
 
-    config = malloc(sizeof(struct flb_in_tcp_config));
+    config = flb_malloc(sizeof(struct flb_in_tcp_config));
     memset(config, '\0', sizeof(struct flb_in_tcp_config));
 
     /* Listen interface (if not set, defaults to 0.0.0.0) */
@@ -86,8 +86,8 @@ struct flb_in_tcp_config *tcp_config_init(struct flb_input_instance *i_ins)
 
 int tcp_config_destroy(struct flb_in_tcp_config *config)
 {
-    free(config->tcp_port);
-    free(config);
+    flb_free(config->tcp_port);
+    flb_free(config);
 
     return 0;
 }

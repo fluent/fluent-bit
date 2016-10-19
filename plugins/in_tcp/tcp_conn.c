@@ -88,7 +88,7 @@ int tcp_conn_event(void *data)
             }
 
             size = conn->buf_size + ctx->chunk_size;
-            tmp = realloc(conn->buf_data, size);
+            tmp = flb_realloc(conn->buf_data, size);
             if (!tmp) {
                 perror("realloc");
                 return -1;
@@ -159,7 +159,7 @@ int tcp_conn_event(void *data)
         flb_pack_state_init(&conn->pack_state);
         conn->pack_state.multiple = FLB_TRUE;
 
-        free(pack);
+        flb_free(pack);
         return bytes;
     }
 
@@ -178,7 +178,7 @@ struct tcp_conn *tcp_conn_add(int fd, struct flb_in_tcp_config *ctx)
     struct tcp_conn *conn;
     struct mk_event *event;
 
-    conn = malloc(sizeof(struct tcp_conn));
+    conn = flb_malloc(sizeof(struct tcp_conn));
     if (!conn) {
         return NULL;
     }
@@ -197,12 +197,12 @@ struct tcp_conn *tcp_conn_add(int fd, struct flb_in_tcp_config *ctx)
     conn->rest    = 0;
     conn->status  = TCP_NEW;
 
-    conn->buf_data = malloc(ctx->chunk_size);
+    conn->buf_data = flb_malloc(ctx->chunk_size);
     if (!conn->buf_data) {
         perror("malloc");
         close(fd);
         flb_error("[in_tcp] could not allocate new connection");
-        free(conn);
+        flb_free(conn);
         return NULL;
     }
     conn->buf_size = ctx->chunk_size;
@@ -216,8 +216,8 @@ struct tcp_conn *tcp_conn_add(int fd, struct flb_in_tcp_config *ctx)
     if (ret == -1) {
         flb_error("[in_tcp] could not register new connection");
         close(fd);
-        free(conn->buf_data);
-        free(conn);
+        flb_free(conn->buf_data);
+        flb_free(conn);
         return NULL;
     }
 
@@ -240,8 +240,8 @@ int tcp_conn_del(struct tcp_conn *conn)
     /* Release resources */
     mk_list_del(&conn->_head);
     close(conn->fd);
-    free(conn->buf_data);
-    free(conn);
+    flb_free(conn->buf_data);
+    flb_free(conn);
 
     return 0;
 }
