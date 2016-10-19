@@ -110,6 +110,7 @@ struct proc_task *proc_stat(pid_t pid, int page_size)
 
     buf = file_to_buffer(pid_path);
     if (!buf) {
+        free(t);
         return NULL;
     }
 
