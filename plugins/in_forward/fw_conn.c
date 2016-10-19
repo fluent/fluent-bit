@@ -50,7 +50,7 @@ int fw_conn_event(void *data)
             }
 
             size = conn->buf_size + ctx->chunk_size;
-            tmp = realloc(conn->buf, size);
+            tmp = flb_realloc(conn->buf, size);
             if (!tmp) {
                 perror("realloc");
                 return -1;
@@ -97,7 +97,7 @@ struct fw_conn *fw_conn_add(int fd, struct flb_in_fw_config *ctx)
     struct fw_conn *conn;
     struct mk_event *event;
 
-    conn = malloc(sizeof(struct fw_conn));
+    conn = flb_malloc(sizeof(struct fw_conn));
     if (!conn) {
         return NULL;
     }
@@ -116,12 +116,12 @@ struct fw_conn *fw_conn_add(int fd, struct flb_in_fw_config *ctx)
     conn->rest    = 0;
     conn->status  = FW_NEW;
 
-    conn->buf = malloc(ctx->chunk_size);
+    conn->buf = flb_malloc(ctx->chunk_size);
     if (!conn->buf) {
         perror("malloc");
         close(fd);
         flb_error("[in_fw] could not allocate new connection");
-        free(conn);
+        flb_free(conn);
         return NULL;
     }
     conn->buf_size = ctx->chunk_size;
@@ -132,8 +132,8 @@ struct fw_conn *fw_conn_add(int fd, struct flb_in_fw_config *ctx)
     if (ret == -1) {
         flb_error("[in_fw] could not register new connection");
         close(fd);
-        free(conn->buf);
-        free(conn);
+        flb_free(conn->buf);
+        flb_free(conn);
         return NULL;
     }
 
@@ -150,8 +150,8 @@ int fw_conn_del(struct fw_conn *conn)
     /* Release resources */
     mk_list_del(&conn->_head);
     close(conn->fd);
-    free(conn->buf);
-    free(conn);
+    flb_free(conn->buf);
+    flb_free(conn);
 
     return 0;
 }
