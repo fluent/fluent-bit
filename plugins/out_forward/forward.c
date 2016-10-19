@@ -39,7 +39,7 @@ int cb_forward_init(struct flb_output_instance *ins, struct flb_config *config,
     struct flb_uri_field *f_tag = NULL;
     (void) data;
 
-    ctx = calloc(1, sizeof(struct flb_out_forward_config));
+    ctx = flb_calloc(1, sizeof(struct flb_out_forward_config));
     if (!ctx) {
         perror("calloc");
         return -1;
@@ -59,7 +59,7 @@ int cb_forward_init(struct flb_output_instance *ins, struct flb_config *config,
                                    ins->host.port,
                                    FLB_IO_TCP, NULL);
     if (!upstream) {
-        free(ctx);
+        flb_free(ctx);
         return -1;
     }
     ctx->u = upstream;
@@ -84,7 +84,7 @@ int cb_forward_exit(void *data, struct flb_config *config)
     struct flb_out_forward_config *ctx = data;
 
     flb_upstream_destroy(ctx->u);
-    free(ctx);
+    flb_free(ctx);
 
     return 0;
 }
