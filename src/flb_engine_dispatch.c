@@ -137,7 +137,7 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
          */
         task = flb_task_create(id, buf, size, in, NULL, in->tag, config);
         if (!task) {
-            free(buf);
+            flb_free(buf);
             return -1;
         }
         flb_trace("[engine dispatch] task #%i created %p", task->id, task);
@@ -158,7 +158,7 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
             buf = flb_input_dyntag_flush(dt, &size);
             if (size == 0) {
                 if (buf) {
-                    free(buf);
+                    flb_free(buf);
                 }
                 continue;
             }
@@ -168,7 +168,7 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
 
             task = flb_task_create(id, buf, size, dt->in, dt, dt->tag, config);
             if (!task) {
-                free(buf);
+                flb_free(buf);
                 continue;
             }
         }
@@ -243,7 +243,7 @@ int flb_engine_dispatch(struct flb_input_instance *in,
          */
         task = flb_task_create(buf, size, in, in->tag, config, NULL);
         if (!task) {
-            free(buf);
+            flb_free(buf);
             return -1;
         }
 
@@ -288,7 +288,7 @@ int flb_engine_dispatch(struct flb_input_instance *in,
             task = flb_task_create(buf, size, dt->in, dt,
                                           dt->tag, config);
             if (!task) {
-                free(buf);
+                flb_free(buf);
                 continue;
             }
 

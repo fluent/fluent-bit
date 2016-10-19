@@ -172,7 +172,7 @@ static int input_set_property(struct flb_input_instance *in, char *kv)
     }
 
     ret = flb_input_set_property(in, key, value);
-    free(key);
+    flb_free(key);
     return ret;
 }
 
@@ -198,7 +198,7 @@ static int output_set_property(struct flb_output_instance *out, char *kv)
     }
 
     ret = flb_output_set_property(out, key, value);
-    free(key);
+    flb_free(key);
     return ret;
 }
 
@@ -268,11 +268,11 @@ static int flb_service_conf(struct flb_config *config, char *file)
             }
             else {
                 flb_service_conf_err(section, "Log_Level");
-                free(v_str);
+                flb_free(v_str);
                 goto flb_service_conf_end;
             }
         }
-        free(v_str);
+        flb_free(v_str);
 
 #ifdef FLB_HAVE_HTTP
         /* HTTP Monitoring Server */
@@ -323,7 +323,7 @@ static int flb_service_conf(struct flb_config *config, char *file)
 
         /* Create an instace of the plugin */
         in = flb_input_new(config, name, NULL);
-        free(name);
+        flb_free(name);
         if (!in) {
             flb_service_conf_err(section, "Name");
             goto flb_service_conf_end;
@@ -357,7 +357,7 @@ static int flb_service_conf(struct flb_config *config, char *file)
 
         /* Create an instace of the plugin */
         out = flb_output_new(config, name, NULL);
-        free(name);
+        flb_free(name);
         if (!out) {
             flb_service_conf_err(section, "Name");
             goto flb_service_conf_end;

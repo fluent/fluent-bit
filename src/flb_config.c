@@ -136,7 +136,7 @@ void flb_config_exit(struct flb_config *config)
     struct flb_input_collector *collector;
 
     if (config->logfile) {
-        free(config->logfile);
+        flb_free(config->logfile);
     }
 
     if (config->log) {
@@ -144,8 +144,8 @@ void flb_config_exit(struct flb_config *config)
     }
 
     if (config->kernel) {
-        free(config->kernel->s_version.data);
-        free(config->kernel);
+        flb_free(config->kernel->s_version.data);
+        flb_free(config->kernel);
     }
 
     /* release resources */
@@ -185,7 +185,7 @@ void flb_config_exit(struct flb_config *config)
         }
 
         mk_list_del(&collector->_head);
-        free(collector);
+        flb_free(collector);
     }
 
     /* Workers */
@@ -200,7 +200,7 @@ void flb_config_exit(struct flb_config *config)
 
 #ifdef FLB_HAVE_HTTP
     if (config->http_port) {
-        free(config->http_port);
+        flb_free(config->http_port);
     }
 #endif
 
@@ -209,11 +209,11 @@ void flb_config_exit(struct flb_config *config)
 #endif
 
 #ifdef FLB_HAVE_BUFFERING
-    free(config->buffer_path);
+    flb_free(config->buffer_path);
 #endif
 
     mk_event_loop_destroy(config->evl);
-    free(config);
+    flb_free(config);
 }
 
 char *flb_config_prop_get(char *key, struct mk_list *list)
@@ -307,7 +307,7 @@ int flb_config_set_property(struct flb_config *config,
                 case FLB_CONF_TYPE_STR:
                     s_val = (char**)((char*)config+service_configs[i].offset);
                     if ( *s_val != NULL ) {
-                        free(*s_val); /* release before overwriting */
+                        flb_free(*s_val); /* release before overwriting */
                     }
                     *s_val = strdup(v);
                     break;

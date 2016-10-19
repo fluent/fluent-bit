@@ -96,9 +96,9 @@ void flb_output_exit(struct flb_config *config)
             flb_uri_destroy(ins->host.uri);
         }
 
-        free(ins->host.name);
-        free(ins->host.address);
-        free(ins->match);
+        flb_free(ins->host.name);
+        flb_free(ins->host.address);
+        flb_free(ins->match);
 
 #ifdef FLB_HAVE_TLS
         if (ins->p->flags & FLB_IO_TLS) {
@@ -111,15 +111,15 @@ void flb_output_exit(struct flb_config *config)
         mk_list_foreach_safe(head_prop, tmp_prop, &ins->properties) {
             prop = mk_list_entry(head_prop, struct flb_config_prop, _head);
 
-            free(prop->key);
-            free(prop->val);
+            flb_free(prop->key);
+            flb_free(prop->val);
 
             mk_list_del(&prop->_head);
-            free(prop);
+            flb_free(prop);
         }
 
         mk_list_del(&ins->_head);
-        free(ins);
+        flb_free(ins);
     }
 }
 
@@ -218,7 +218,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         if (plugin->flags & FLB_OUTPUT_NET) {
             ret = flb_net_host_set(plugin->name, &instance->host, output);
             if (ret != 0) {
-                free(instance);
+                flb_free(instance);
                 return NULL;
             }
         }

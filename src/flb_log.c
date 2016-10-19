@@ -182,7 +182,7 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
     evl = mk_event_loop_create(16);
     if (!evl) {
         fprintf(stderr, "[log] could not create event loop\n");
-        free(log);
+        flb_free(log);
         return NULL;
     }
 
@@ -196,7 +196,7 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
     ret = pipe(log->ch_mng);
     if (ret == -1) {
         fprintf(stderr, "[log] could not create pipe(2)");
-        free(log);
+        flb_free(log);
         mk_event_loop_destroy(evl);
         return NULL;
     }
@@ -207,7 +207,7 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
                        FLB_LOG_MNG, MK_EVENT_READ, &log->event);
     if (ret == -1) {
         fprintf(stderr, "[log] could not register event\n");
-        free(log);
+        flb_free(log);
         mk_event_loop_destroy(evl);
         return NULL;
     }
@@ -220,7 +220,7 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
     worker = flb_malloc(sizeof(struct flb_worker));
     if (!worker) {
         flb_errno();
-        free(log);
+        flb_free(log);
         mk_event_loop_destroy(evl);
         return NULL;
     }
@@ -234,9 +234,9 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
     ret = flb_log_worker_init(worker);
     if (ret == -1) {
         flb_errno();
-        free(log);
+        flb_free(log);
         mk_event_loop_destroy(evl);
-        free(worker);
+        flb_free(worker);
         return NULL;
     }
     log->worker = worker;
@@ -255,7 +255,7 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
     if (ret == -1) {
         pthread_mutex_unlock(&pth_mutex);
         mk_event_loop_destroy(log->evl);
-        free(log);
+        flb_free(log);
         return NULL;
     }
 
@@ -379,8 +379,8 @@ int flb_log_stop(struct flb_log *log, struct flb_config *config)
     mk_event_loop_destroy(log->evl);
     close(log->ch_mng[0]);
     close(log->ch_mng[1]);
-    free(log->worker);
-    free(log);
+    flb_free(log->worker);
+    flb_free(log);
 
     return 0;
 }

@@ -89,8 +89,8 @@ int flb_upstream_destroy(struct flb_upstream *u)
         flb_upstream_conn_release(u_conn);
     }
 
-    free(u->tcp_host);
-    free(u);
+    flb_free(u->tcp_host);
+    flb_free(u);
 
     return 0;
 }
@@ -122,7 +122,7 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
     /* Start connection */
     ret = flb_io_net_connect(conn, th);
     if (ret == -1) {
-        free(conn);
+        flb_free(conn);
         return NULL;
     }
 
@@ -231,7 +231,7 @@ int flb_upstream_conn_release(struct flb_upstream_conn *u_conn)
 #endif
 
     u->n_connections--;
-    free(u_conn);
+    flb_free(u_conn);
 
     return 0;
 }

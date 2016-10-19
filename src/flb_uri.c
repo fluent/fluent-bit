@@ -116,11 +116,11 @@ void flb_uri_destroy(struct flb_uri *uri)
     mk_list_foreach_safe(head, tmp, &uri->list) {
         field = mk_list_entry(head, struct flb_uri_field, _head);
         mk_list_del(&field->_head);
-        free(field->value);
+        flb_free(field->value);
     }
 
-    free(uri->full);
-    free(uri);
+    flb_free(uri->full);
+    flb_free(uri);
 }
 
 void flb_uri_dump(struct flb_uri *uri)

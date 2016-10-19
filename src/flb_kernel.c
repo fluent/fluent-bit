@@ -64,7 +64,7 @@ struct flb_kernel *flb_kernel_info()
         return NULL;
     }
     b = atoi(tmp);
-    free(tmp);
+    flb_free(tmp);
 
     /* Last number (it needs filtering) */
     t = p = p + pos + 1;
@@ -77,7 +77,7 @@ struct flb_kernel *flb_kernel_info()
         return NULL;
     }
     c = atoi(tmp);
-    free(tmp);
+    flb_free(tmp);
 
     kernel = flb_malloc(sizeof(struct flb_kernel));
     if (!kernel) {

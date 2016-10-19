@@ -91,7 +91,7 @@ flb_ctx_t *flb_create()
 
     config = flb_config_init();
     if (!config) {
-        free(ctx);
+        flb_free(ctx);
         return NULL;
     }
     ctx->config = config;
@@ -103,14 +103,14 @@ flb_ctx_t *flb_create()
     ret = pipe(config->ch_data);
     if (ret == -1) {
         perror("pipe");
-        free(ctx);
+        flb_free(ctx);
         return NULL;
     }
 
     /* Create the event loop to receive notifications */
     ctx->event_loop = mk_event_loop_create(256);
     if (!ctx->event_loop) {
-        free(ctx);
+        flb_free(ctx);
         return NULL;
     }
     config->ch_evl = ctx->event_loop;
@@ -135,12 +135,12 @@ void flb_destroy(flb_ctx_t *ctx)
 {
     if (ctx->event_channel) {
         mk_event_del(ctx->event_loop, ctx->event_channel);
-        free(ctx->event_channel);
+        flb_free(ctx->event_channel);
     }
 
     /* Remove resources from the event loop */
     mk_event_loop_destroy(ctx->event_loop);
-    free(ctx);
+    flb_free(ctx);
 
 #ifdef FLB_HAVE_MTRACE
     /* Stop tracing malloc and free */

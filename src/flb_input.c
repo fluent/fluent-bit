@@ -136,7 +136,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         if (plugin->flags & FLB_INPUT_NET) {
             ret = flb_net_host_set(plugin->name, &instance->host, input);
             if (ret != 0) {
-                free(instance);
+                flb_free(instance);
                 return NULL;
             }
         }
@@ -233,7 +233,7 @@ void flb_input_initialize_all(struct flb_config *config)
                 flb_error("Failed initialize input %s",
                           in->name);
                 mk_list_del(&in->_head);
-                free(in);
+                flb_free(in);
             }
         }
     }
@@ -286,11 +286,11 @@ void flb_input_exit_all(struct flb_config *config)
         if (in->host.uri) {
             flb_uri_destroy(in->host.uri);
         }
-        free(in->host.name);
-        free(in->host.address);
+        flb_free(in->host.name);
+        flb_free(in->host.address);
 
         /* release the tag if any */
-        free(in->tag);
+        flb_free(in->tag);
 
         /* Let the engine remove any pending task */
         flb_engine_destroy_tasks(&in->tasks);
@@ -299,18 +299,18 @@ void flb_input_exit_all(struct flb_config *config)
         mk_list_foreach_safe(head_prop, tmp_prop, &in->properties) {
             prop = mk_list_entry(head_prop, struct flb_config_prop, _head);
 
-            free(prop->key);
-            free(prop->val);
+            flb_free(prop->key);
+            flb_free(prop->val);
 
             mk_list_del(&prop->_head);
-            free(prop);
+            flb_free(prop);
         }
 
         flb_input_dyntag_exit(in);
 
         /* Unlink and release */
         mk_list_del(&in->_head);
-        free(in);
+        flb_free(in);
     }
 }
 
@@ -472,8 +472,8 @@ int flb_input_dyntag_destroy(struct flb_input_dyntag *dt)
 
     msgpack_sbuffer_destroy(&dt->mp_sbuf);
     mk_list_del(&dt->_head);
-    free(dt->tag);
-    free(dt);
+    flb_free(dt->tag);
+    flb_free(dt);
     dt = NULL;
 
     return 0;

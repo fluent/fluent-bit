@@ -149,11 +149,11 @@ static void flb_buffer_worker_init(void *arg)
                                                filename, routes, ctx);
                     if (ret == -1) {
                         printf("[buffer] could not create request %s\n", filename);
-                        free(filename);
+                        flb_free(filename);
                         continue;
                     }
                 }
-                free(filename);
+                flb_free(filename);
             }
             else if (event->type == FLB_BUFFER_EV_DEL) {
                 flb_buffer_chunk_delete(ctx, event);
@@ -236,13 +236,13 @@ void flb_buffer_destroy(struct flb_buffer *ctx)
             mk_event_loop_destroy(worker->evl);
         }
         mk_list_del(&worker->_head);
-        free(worker);
+        flb_free(worker);
     }
 
     mk_list_del(&ctx->i_ins->_head);
-    free(ctx->i_ins);
-    free(ctx->path);
-    free(ctx);
+    flb_free(ctx->i_ins);
+    flb_free(ctx->path);
+    flb_free(ctx);
 }
 
 /* Check that a directory exists and have write access, if not, create it */

@@ -156,7 +156,7 @@ int flb_sched_request_destroy(struct flb_config *config,
     mk_event_del(config->evl, &req->event);
     close(req->fd);
     mk_list_del(&req->_head);
-    free(req);
+    flb_free(req);
 
     return 0;
 }

@@ -133,7 +133,7 @@ struct flb_tls_context *flb_tls_context_new(int verify,
     return ctx;
 
  error:
-    free(ctx);
+    flb_free(ctx);
     return NULL;
 }
 
@@ -151,7 +151,7 @@ void flb_tls_context_destroy(struct flb_tls_context *ctx)
         mbedtls_pk_free(&ctx->priv_key);
     }
 
-    free(ctx);
+    flb_free(ctx);
 }
 
 struct flb_tls_session *flb_tls_session_new(struct flb_tls_context *ctx)
@@ -213,7 +213,7 @@ struct flb_tls_session *flb_tls_session_new(struct flb_tls_context *ctx)
     return session;
 
  error:
-    free(session);
+    flb_free(session);
     return NULL;
 }
 
@@ -222,7 +222,7 @@ int flb_tls_session_destroy(struct flb_tls_session *session)
     if (session) {
         mbedtls_ssl_free(&session->ssl);
         mbedtls_ssl_config_free(&session->conf);
-        free(session);
+        flb_free(session);
     }
 
     return 0;

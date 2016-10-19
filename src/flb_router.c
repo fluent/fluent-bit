@@ -187,7 +187,7 @@ void flb_router_exit(struct flb_config *config)
         mk_list_foreach_safe(r_head, r_tmp, &in->routes) {
             r = mk_list_entry(r_head, struct flb_router_path, _head);
             mk_list_del(&r->_head);
-            free(r);
+            flb_free(r);
         }
     }
 }

@@ -85,9 +85,9 @@ int flb_buffer_qchunk_delete(struct flb_buffer_qchunk *qchunk)
     if (qchunk->id > 0) {
         munmap(qchunk->data, qchunk->size);
     }
-    free(qchunk->file_path);
+    flb_free(qchunk->file_path);
     mk_list_del(&qchunk->_head);
-    free(qchunk);
+    flb_free(qchunk);
 
     return 0;
 }
@@ -194,7 +194,7 @@ static inline int qchunk_event_push_request(struct flb_buffer *ctx)
         /* Obtain an ID for this qchunk */
         id = qchunk_get_id(qw);
         if (id == -1) {
-            free(buf);
+            flb_free(buf);
             flb_error("[buffer qchunk] unvailable IDs / max=(1<<14)-1");
             continue;
         }
@@ -220,7 +220,7 @@ static inline int qchunk_event_push_request(struct flb_buffer *ctx)
         if (ret == -1) {
             perror("write");
             flb_error("[buffer qchunk] could not notify engine");
-            free(buf);
+            flb_free(buf);
             continue;
         }
         return ret;
@@ -355,7 +355,7 @@ int flb_buffer_qchunk_create(struct flb_buffer *ctx)
     /* Create an event loop */
     qw->evl = mk_event_loop_create(16);
     if (!qw->evl) {
-        free(qw);
+        flb_free(qw);
         return -1;
     }
 
@@ -367,7 +367,7 @@ int flb_buffer_qchunk_create(struct flb_buffer *ctx)
     if (ret != 0) {
         flb_error("[buffer qchunk] could not create manager channels");
         mk_event_loop_destroy(qw->evl);
-        free(qw);
+        flb_free(qw);
         return -1;
     }
 
@@ -391,7 +391,7 @@ void flb_buffer_qchunk_destroy(struct flb_buffer *ctx)
     }
 
     mk_event_loop_destroy(qw->evl);
-    free(qw);
+    flb_free(qw);
     ctx->qworker = NULL;
 
     return;
@@ -421,7 +421,7 @@ int flb_buffer_qchunk_start(struct flb_buffer *ctx)
         flb_warn("[buffer qchunk] could not spawn worker");
         pthread_mutex_unlock(&pth_mutex);
         mk_event_loop_destroy(qw->evl);
-        free(qw);
+        flb_free(qw);
         return -1;
     }
 

@@ -52,7 +52,7 @@ static int process_response(struct flb_http_client *c)
 
     tmp = mk_string_copy_substr(c->resp.data, 9, 12);
     c->resp.status = atoi(tmp);
-    free(tmp);
+    flb_free(tmp);
 
     return 0;
 }
@@ -188,13 +188,13 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
 
     if (ret == -1) {
         perror("snprintf");
-        free(buf);
+        flb_free(buf);
         return NULL;
     }
 
     c = flb_calloc(1, sizeof(struct flb_http_client));
     if (!c) {
-        free(buf);
+        flb_free(buf);
         return NULL;
     }
 
@@ -213,8 +213,8 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
     if (proxy) {
         ret = proxy_parse(proxy, c);
         if (ret != 0) {
-            free(buf);
-            free(c);
+            flb_free(buf);
+            flb_free(c);
             return NULL;
         }
     }
@@ -351,6 +351,6 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
 
 void flb_http_client_destroy(struct flb_http_client *c)
 {
-    free(c->header_buf);
-    free(c);
+    flb_free(c->header_buf);
+    flb_free(c);
 }

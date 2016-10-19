@@ -65,7 +65,7 @@ static void map_set_task_id(int id, struct flb_task *task,
 static void flb_task_retry_destroy(struct flb_task_retry *retry)
 {
     mk_list_del(&retry->_head);
-    free(retry);
+    flb_free(retry);
 }
 
 struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
@@ -150,7 +150,7 @@ static struct flb_task *task_alloc(struct flb_config *config)
     /* Get ID and set back 'task' reference */
     task_id = map_get_task_id(config);
     if (task_id == -1) {
-        free(task);
+        flb_free(task);
         return NULL;
     }
     map_set_task_id(task_id, task, config);
@@ -363,14 +363,14 @@ void flb_task_destroy(struct flb_task *task)
     mk_list_foreach_safe(head, tmp, &task->routes) {
         route = mk_list_entry(head, struct flb_task_route, _head);
         mk_list_del(&route->_head);
-        free(route);
+        flb_free(route);
     }
 
     /* Unlink and release */
     mk_list_del(&task->_head);
 
     if (task->mapped == FLB_FALSE) {
-        free(task->buf);
+        flb_free(task->buf);
     }
 #ifdef FLB_HAVE_BUFFERING
     else {
@@ -388,8 +388,8 @@ void flb_task_destroy(struct flb_task *task)
         flb_task_retry_destroy(retry);
     }
 
-    free(task->tag);
-    free(task);
+    flb_free(task->tag);
+    flb_free(task);
 }
 
 /* Register a thread into the tasks list */

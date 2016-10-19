@@ -168,7 +168,7 @@ int chunk_info(char *filename, struct chunk_info *info)
 void request_destroy(struct flb_buffer_request *req)
 {
     mk_list_del(&req->_head);
-    free(req);
+    flb_free(req);
 }
 
 /* Given a chunk Hash and a root directory, lookup the absolute path if found */
@@ -215,13 +215,13 @@ static int chunk_find(char *root_path, char *hash,
     root_len = strlen(root_path);
     file_len = strlen(file);
     if ((file_len + root_len + 1) > PATH_MAX) {
-        free(file);
+        flb_free(file);
         return -1;
     }
 
     target = flb_malloc(PATH_MAX);
     if (!target) {
-        free(file);
+        flb_free(file);
         return -1;
     }
 
@@ -284,10 +284,10 @@ static int chunk_remove_route(char *root_path, char *abs_path,
     ret = rename(abs_path, to);
     if (ret == -1) {
         flb_errno();
-        free(to);
+        flb_free(to);
         return -1;
     }
-    free(to);
+    flb_free(to);
 
     return 0;
 }
@@ -317,14 +317,14 @@ static int chunk_miss(struct flb_buffer_worker *worker, uint64_t mask_id,
         ret = chunk_info(real_name, &info);
         if (ret != 0) {
             flb_error("[buffer] invalid chunk name %s", real_name);
-            free(real_name);
-            free(target);
+            flb_free(real_name);
+            flb_free(target);
             return -1;
         }
 
         chunk_remove_route(root_path, target, hash_hex, &info, mask_id);
-        free(real_name);
-        free(target);
+        flb_free(real_name);
+        flb_free(target);
         return 0;
     }
 
@@ -338,13 +338,13 @@ static int chunk_miss(struct flb_buffer_worker *worker, uint64_t mask_id,
         ret = chunk_info(real_name, &info);
         if (ret != 0) {
             flb_error("[buffer] invalid chunk name %s", real_name);
-            free(real_name);
-            free(target);
+            flb_free(real_name);
+            flb_free(target);
             return -1;
         }
         chunk_remove_route(root_path, target, hash_hex, &info, mask_id);
-        free(real_name);
-        free(target);
+        flb_free(real_name);
+        flb_free(target);
     }
 
     return 0;
@@ -399,7 +399,7 @@ int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
                    worker->id, chunk.tmp);
     if (ret == -1) {
         flb_errno();
-        free(fchunk);
+        flb_free(fchunk);
         return -1;
     }
 
@@ -408,14 +408,14 @@ int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
                    FLB_BUFFER_PATH(worker), fchunk);
     if (ret == -1) {
         flb_errno();
-        free(fchunk);
+        flb_free(fchunk);
         return -1;
     }
 
     f = fopen(target, "w");
     if (!f) {
         flb_errno();
-        free(fchunk);
+        flb_free(fchunk);
         return -1;
     }
 
@@ -425,7 +425,7 @@ int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
     if (ret == -1) {
         flb_errno();
         fclose(f);
-        free(fchunk);
+        flb_free(fchunk);
         return -1;
     }
 
@@ -434,7 +434,7 @@ int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
     if (!w) {
         flb_errno();
         fclose(f);
-        free(fchunk);
+        flb_free(fchunk);
         return -1;
     }
 
@@ -447,7 +447,7 @@ int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
     if (ret == -1) {
         fprintf(stderr, "[buffer] chunk check failed %lu/%lu bytes",
                 st.st_size, chunk.size);
-        free(fchunk);
+        flb_free(fchunk);
         return -1;
     }
 
@@ -492,8 +492,8 @@ int flb_buffer_chunk_delete(struct flb_buffer_worker *worker,
     /* Get chunk info */
     ret = chunk_info(real_name, &info);
     if (ret == -1) {
-        free(target);
-        free(real_name);
+        flb_free(target);
+        flb_free(real_name);
         return -1;
     }
 
@@ -528,14 +528,14 @@ int flb_buffer_chunk_delete(struct flb_buffer_worker *worker,
         ret = unlink(path);
         if (ret == -1) {
             flb_errno();
-            free(target);
-            free(real_name);
+            flb_free(target);
+            flb_free(real_name);
             return -1;
         }
     }
 
-    free(target);
-    free(real_name);
+    flb_free(target);
+    flb_free(real_name);
 
     return 0;
 }
@@ -583,15 +583,15 @@ int flb_buffer_chunk_delete_ref(struct flb_buffer_worker *worker,
     if (ret != 0) {
         flb_errno();
         flb_error("[buffer] cannot delete %s", target);
-        free(target);
-        free(real_name);
+        flb_free(target);
+        flb_free(real_name);
         return FLB_BUFFER_ERROR;
     }
 
     flb_debug("[buffer] removing task %s OK", target);
 
-    free(real_name);
-    free(target);
+    flb_free(real_name);
+    flb_free(target);
 
     /*
      * Every time a buffer chunk reference is deleted, we dispatch a

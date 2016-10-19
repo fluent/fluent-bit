@@ -81,14 +81,14 @@ int flb_worker_create(void (*func) (void *), void *arg, pthread_t *tid,
     /* Initialize log-specific */
     ret = flb_log_worker_init(worker);
     if (ret == -1) {
-        free(worker);
+        flb_free(worker);
         return -1;
     }
 
     /* Spawn the step_callback and the func() */
     ret = mk_utils_worker_spawn(step_callback, worker, &worker->tid);
     if (ret != 0) {
-        free(worker);
+        flb_free(worker);
         return -1;
     }
     memcpy(tid, &worker->tid, sizeof(pthread_t));
@@ -139,7 +139,7 @@ int flb_worker_exit(struct flb_config *config)
     mk_list_foreach_safe(head, tmp, &config->workers) {
         worker = mk_list_entry(head, struct flb_worker, _head);
         mk_list_del(&worker->_head);
-        free(worker);
+        flb_free(worker);
         c++;
     }
 

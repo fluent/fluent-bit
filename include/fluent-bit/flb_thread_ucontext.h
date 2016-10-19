@@ -21,6 +21,7 @@
 #define FLB_THREAD_UCONTEXT_H
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_log.h>
 
@@ -80,7 +81,7 @@ static FLB_INLINE void flb_thread_destroy(struct flb_thread *th)
     VALGRIND_STACK_DEREGISTER(th->valgrind_stack_id);
 #endif
 
-    free(th);
+    flb_free(th);
 }
 
 static FLB_INLINE void flb_thread_resume(struct flb_thread *th)
@@ -108,7 +109,7 @@ static struct flb_thread *flb_thread_new(size_t data_size,
     struct flb_thread *th;
 
     /* Create a thread context and initialize */
-    p = malloc(sizeof(struct flb_thread) + FLB_THREAD_STACK_SIZE + data_size);
+    p = flb_malloc(sizeof(struct flb_thread) + FLB_THREAD_STACK_SIZE + data_size);
     if (!p) {
         flb_errno();
         return NULL;
@@ -120,7 +121,7 @@ static struct flb_thread *flb_thread_new(size_t data_size,
     ret = getcontext(&th->callee);
     if (ret == -1) {
         flb_errno();
-        free(th);
+        flb_free(th);
         return NULL;
     }
 
