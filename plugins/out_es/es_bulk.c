@@ -21,6 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <fluent-bit.h>
 #include "es_bulk.h"
 
 struct es_bulk *es_bulk_create()
