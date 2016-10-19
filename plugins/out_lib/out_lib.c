@@ -46,7 +46,7 @@ static int out_lib_init(struct flb_output_instance *ins,
     (void) config;
     (void) data;
 
-    ctx = calloc(1, sizeof(struct flb_out_lib_config));
+    ctx = flb_calloc(1, sizeof(struct flb_out_lib_config));
     if (ctx == NULL) {
         perror("calloc");
         return -1;
@@ -56,7 +56,7 @@ static int out_lib_init(struct flb_output_instance *ins,
         ctx->user_callback = ins->data;
     }else{
         flb_error("[out_lib] Callback is NULL");
-        free(ctx);
+        flb_free(ctx);
         return -1;
     }
 
@@ -86,7 +86,7 @@ static int out_lib_flush(void *data, size_t bytes,
 
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
-        data_for_user = calloc(1, bytes);
+        data_for_user = flb_calloc(1, bytes);
         /* FIXME: Now we return raw msgpack
                   we should return JSON format.
          */
@@ -101,7 +101,7 @@ static int out_lib_exit(void *data, struct flb_config *config)
 {
     struct flb_out_lib_config *ctx = data;
 
-    free(ctx);
+    flb_free(ctx);
     return 0;
 }
 
