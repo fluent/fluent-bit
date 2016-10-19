@@ -79,7 +79,7 @@ void *in_mqtt_flush(void *in_context, size_t *size)
         return NULL;
     }
 
-    buf = malloc(ctx->msgp_len);
+    buf = flb_malloc(ctx->msgp_len);
     memcpy(buf, ctx->msgp, ctx->msgp_len);
     *size = ctx->msgp_len;
     ctx->msgp_len = 0;

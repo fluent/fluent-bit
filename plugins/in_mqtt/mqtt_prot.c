@@ -167,9 +167,9 @@ static int mqtt_data_append(char *topic, size_t topic_len,
     }
     msgpack_unpacked_destroy(&result);
 
-    free(pack);
+    flb_free(pack);
     sbuf = &mp_sbuf;
-    buf = malloc(sbuf->size);
+    buf = flb_malloc(sbuf->size);
     if (!buf) {
         return -1;
     }
@@ -185,7 +185,7 @@ static int mqtt_data_append(char *topic, size_t topic_len,
     }
     else{
     }
-    free(buf);
+    flb_free(buf);
 
     return 0;
 }

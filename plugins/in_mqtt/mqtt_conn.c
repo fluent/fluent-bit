@@ -70,7 +70,7 @@ struct mqtt_conn *mqtt_conn_add(int fd, struct flb_in_mqtt_config *ctx)
     struct mqtt_conn *conn;
     struct mk_event *event;
 
-    conn = malloc(sizeof(struct mqtt_conn));
+    conn = flb_malloc(sizeof(struct mqtt_conn));
     if (!conn) {
         return NULL;
     }
@@ -96,7 +96,7 @@ struct mqtt_conn *mqtt_conn_add(int fd, struct flb_in_mqtt_config *ctx)
     if (ret == -1) {
         flb_error("[mqtt] could not register new connection");
         close(fd);
-        free(conn);
+        flb_free(conn);
         return NULL;
     }
 
@@ -110,7 +110,7 @@ int mqtt_conn_del(struct mqtt_conn *conn)
 
     /* Release resources */
     close(conn->fd);
-    free(conn);
+    flb_free(conn);
 
     return 0;
 }
