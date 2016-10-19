@@ -20,6 +20,8 @@
 #include <unistd.h>
 
 #include <mk_core.h>
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_io_tls.h>
@@ -32,7 +34,7 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
 {
     struct flb_upstream *u;
 
-    u = calloc(1, sizeof(struct flb_upstream));
+    u = flb_calloc(1, sizeof(struct flb_upstream));
     if (!u) {
         perror("malloc");
         return NULL;
@@ -103,7 +105,7 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
     void *th = NULL;
 #endif
 
-    conn = malloc(sizeof(struct flb_upstream_conn));
+    conn = flb_malloc(sizeof(struct flb_upstream_conn));
     if (!conn) {
         perror("malloc");
         return NULL;

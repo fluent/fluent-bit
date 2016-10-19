@@ -34,6 +34,7 @@
 #include <arpa/inet.h>
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_macros.h>
@@ -47,7 +48,7 @@ static char *copy_substr(char *str, int s)
 {
     char *buf;
 
-    buf = malloc(s + 1);
+    buf = flb_malloc(s + 1);
     strncpy(buf, str, s);
     buf[s] = '\0';
 

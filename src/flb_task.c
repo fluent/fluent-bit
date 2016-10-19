@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_task.h>
+#include <fluent-bit/flb_mem.h>
 
 #ifdef FLB_HAVE_BUFFERING
 #include <fluent-bit/flb_sha1.h>
@@ -93,7 +94,7 @@ struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
 
     if (!retry) {
         /* Create a new re-try instance */
-        retry = malloc(sizeof(struct flb_task_retry));
+        retry = flb_malloc(sizeof(struct flb_task_retry));
         if (!retry) {
             perror("malloc");
             return NULL;
@@ -140,7 +141,7 @@ static struct flb_task *task_alloc(struct flb_config *config)
     struct flb_task *task;
 
     /* Allocate the new task */
-    task = (struct flb_task *) calloc(1, sizeof(struct flb_task));
+    task = (struct flb_task *) flb_calloc(1, sizeof(struct flb_task));
     if (!task) {
         perror("malloc");
         return NULL;
@@ -208,7 +209,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
             router_path = mk_list_entry(head, struct flb_router_path, _head);
             o_ins = router_path->ins;
 
-            route = malloc(sizeof(struct flb_task_route));
+            route = flb_malloc(sizeof(struct flb_task_route));
             if (!route) {
                 perror("malloc");
                 continue;
@@ -228,7 +229,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
                                   struct flb_output_instance, _head);
 
             if (flb_router_match(tag, o_ins->match)) {
-                route = malloc(sizeof(struct flb_task_route));
+                route = flb_malloc(sizeof(struct flb_task_route));
                 if (!route) {
                     perror("malloc");
                     continue;
@@ -326,7 +327,7 @@ struct flb_task *flb_task_create_direct(uint64_t ref_id,
     mk_list_foreach(head, &config->outputs) {
         o_ins = mk_list_entry(head, struct flb_output_instance, _head);
         if (o_ins->mask_id & routes) {
-            route = malloc(sizeof(struct flb_task_route));
+            route = flb_malloc(sizeof(struct flb_task_route));
             if (!route) {
                 perror("malloc");
                 continue;

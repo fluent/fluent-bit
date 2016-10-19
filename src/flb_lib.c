@@ -22,6 +22,7 @@
 #include <stdarg.h>
 
 #include <fluent-bit/flb_lib.h>
+#include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
@@ -82,7 +83,7 @@ flb_ctx_t *flb_create()
     mtrace();
 #endif
 
-    ctx = calloc(1, sizeof(flb_ctx_t));
+    ctx = flb_calloc(1, sizeof(flb_ctx_t));
     if (!ctx) {
         perror("malloc");
         return NULL;
@@ -115,7 +116,7 @@ flb_ctx_t *flb_create()
     config->ch_evl = ctx->event_loop;
 
     /* Prepare the notification channels */
-    ctx->event_channel = calloc(1, sizeof(struct mk_event));
+    ctx->event_channel = flb_calloc(1, sizeof(struct mk_event));
     ret = mk_event_channel_create(config->ch_evl,
                                   &config->ch_notif[0],
                                   &config->ch_notif[1],

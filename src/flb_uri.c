@@ -19,6 +19,9 @@
 
 #include <stdlib.h>
 #include <mk_core.h>
+
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_uri.h>
 #include <fluent-bit/flb_utils.h>
 
@@ -53,7 +56,7 @@ struct flb_uri *flb_uri_create(char *full_uri)
     uri_size  = sizeof(struct flb_uri);
     uri_size += (sizeof(struct flb_uri_field) * FLB_URI_MAX);
 
-    p  = calloc(1, uri_size);
+    p  = flb_calloc(1, uri_size);
     if (!p) {
         perror("malloc");
         return NULL;

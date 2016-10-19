@@ -24,6 +24,7 @@
 #include <stddef.h>
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_plugins.h>
@@ -77,7 +78,7 @@ struct flb_config *flb_config_init()
 {
     struct flb_config *config;
 
-    config = calloc(1, sizeof(struct flb_config));
+    config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
         perror("malloc");
         return NULL;

@@ -18,6 +18,7 @@
  */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_mem.h>
 
 #ifdef FLB_HAVE_BUFFERING
 
@@ -218,7 +219,7 @@ static int chunk_find(char *root_path, char *hash,
         return -1;
     }
 
-    target = malloc(PATH_MAX);
+    target = flb_malloc(PATH_MAX);
     if (!target) {
         free(file);
         return -1;
@@ -267,7 +268,7 @@ static int chunk_remove_route(char *root_path, char *abs_path,
         return -1;
     }
 
-    to = malloc(PATH_MAX);
+    to = flb_malloc(PATH_MAX);
     if (!to) {
         flb_errno();
         return -1;
@@ -385,7 +386,7 @@ int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
      *
      *     SHA1(chunk.data).routes_id.wID.tag
      */
-    fchunk = malloc(PATH_MAX);
+    fchunk = flb_malloc(PATH_MAX);
     if (!fchunk) {
         flb_errno();
         return -1;

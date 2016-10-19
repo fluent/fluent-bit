@@ -22,7 +22,16 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_macros.h>
-#include <fluent-bit/flb_log.h>
+
+#include <stdlib.h>
+
+/*
+ * The following memory handling wrappers, aims to simplify the way to use
+ * the default memory allocator from the libc or an alternative one as Jemalloc.
+ *
+ * Here there is no error logging in case of failures, we defer that task to the
+ * caller.
+ */
 
 #if ((__GNUC__ * 100 + __GNUC__MINOR__) > 430)  /* gcc version > 4.3 */
 # define ALLOCSZ_ATTR(x,...) __attribute__ ((alloc_size(x, ##__VA_ARGS__)))
@@ -36,7 +45,6 @@ void *flb_malloc(const size_t size) {
 
     aux = malloc(size);
     if (flb_unlikely(!aux && size)) {
-        flb_errno();
         return NULL;
     }
 
@@ -48,8 +56,7 @@ void *flb_calloc(size_t n, const size_t size) {
     void *buf;
 
     buf = calloc(n, size);
-    if (mk_unlikely(!buf)) {
-        flb_errno();
+    if (flb_unlikely(!buf)) {
         return NULL;
     }
 
@@ -62,8 +69,7 @@ void *flb_realloc(void *ptr, const size_t size)
     void *aux;
 
     aux = realloc(ptr, size);
-    if (mk_unlikely(!aux && size)) {
-        flb_errno();
+    if (flb_unlikely(!aux && size)) {
         return NULL;
     }
 

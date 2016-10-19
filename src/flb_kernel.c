@@ -20,6 +20,8 @@
 #include <ctype.h>
 #include <sys/utsname.h>
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_kernel.h>
 #include <fluent-bit/flb_utils.h>
 
@@ -77,14 +79,14 @@ struct flb_kernel *flb_kernel_info()
     c = atoi(tmp);
     free(tmp);
 
-    kernel = malloc(sizeof(struct flb_kernel));
+    kernel = flb_malloc(sizeof(struct flb_kernel));
     if (!kernel) {
         return NULL;
     }
     kernel->minor = a;
     kernel->major = b;
     kernel->patch = c;
-    kernel->s_version.data = malloc(16);
+    kernel->s_version.data = flb_malloc(16);
 
     len = snprintf(kernel->s_version.data, 16, "%i.%i.%i", a, b, c);
     if (len == -1) {

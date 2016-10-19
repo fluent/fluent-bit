@@ -22,6 +22,7 @@
 #include <string.h>
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_output.h>
 
@@ -174,7 +175,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         }
 
         /* Output instance */
-        instance = calloc(1, sizeof(struct flb_output_instance));
+        instance = flb_calloc(1, sizeof(struct flb_output_instance));
         if (!instance) {
             perror("malloc");
             return NULL;
@@ -295,7 +296,7 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
 #endif
     else {
         /* Append any remaining configuration key to prop list */
-        prop = malloc(sizeof(struct flb_config_prop));
+        prop = flb_malloc(sizeof(struct flb_config_prop));
         if (!prop) {
             return -1;
         }

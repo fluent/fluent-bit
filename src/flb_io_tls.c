@@ -25,6 +25,8 @@
 #include <mbedtls/debug.h>
 #include <mbedtls/error.h>
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_tls.h>
 #include <fluent-bit/flb_io_tls.h>
@@ -75,7 +77,7 @@ struct flb_tls_context *flb_tls_context_new(int verify,
     int ret;
     struct flb_tls_context *ctx;
 
-    ctx = malloc(sizeof(struct flb_tls_context));
+    ctx = flb_malloc(sizeof(struct flb_tls_context));
     if (!ctx) {
         perror("malloc");
         return NULL;
@@ -157,7 +159,7 @@ struct flb_tls_session *flb_tls_session_new(struct flb_tls_context *ctx)
     int ret;
     struct flb_tls_session *session;
 
-    session = malloc(sizeof(struct flb_tls_session));
+    session = flb_malloc(sizeof(struct flb_tls_session));
     if (!session) {
         return NULL;
     }

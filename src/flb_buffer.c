@@ -29,6 +29,7 @@
 #include <inttypes.h>
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_mem.h>
 
 #ifdef FLB_HAVE_BUFFERING
 
@@ -362,7 +363,7 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
     }
 
     /* Main buffer context */
-    ctx = malloc(sizeof(struct flb_buffer));
+    ctx = flb_malloc(sizeof(struct flb_buffer));
     if (!ctx) {
         return NULL;
     }
@@ -371,7 +372,7 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
 
     path_len = strlen(path);
     if (path[path_len - 1] != '/') {
-        ctx->path = malloc(path_len + 2);
+        ctx->path = flb_malloc(path_len + 2);
         memcpy(ctx->path, path, path_len);
         ctx->path[path_len++] = '/';
         ctx->path[path_len++] = '\0';
@@ -391,7 +392,7 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
 
     for (i = 0; i < ctx->workers_n; i++) {
         /* Allocate worker context */
-        worker = calloc(1, sizeof(struct flb_buffer_worker));
+        worker = flb_calloc(1, sizeof(struct flb_buffer_worker));
         if (!worker) {
             flb_buffer_destroy(ctx);
             return NULL;
@@ -450,7 +451,7 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
     ctx->workers_n = i;
 
     /* Generate pseudo input plugin and instance */
-    ctx->i_ins = calloc(1, sizeof(struct flb_input_instance));
+    ctx->i_ins = flb_calloc(1, sizeof(struct flb_input_instance));
     if (!ctx->i_ins) {
         flb_errno();
         flb_buffer_destroy(ctx);

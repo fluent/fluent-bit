@@ -66,7 +66,7 @@ static int stats_userver_timer(struct flb_stats *stats)
     struct flb_stats_userver *userver;
 
     userver = stats->userver;
-    timer = malloc(sizeof(struct flb_stats_userver_t));
+    timer = flb_malloc(sizeof(struct flb_stats_userver_t));
     if (!timer) {
         return -1;
     }
@@ -204,7 +204,7 @@ static int stats_userver_add(int fd, struct flb_stats *stats)
     struct flb_stats_userver *userver = stats->userver;
 
     /* Allocate connection node */
-    client = calloc(1, sizeof(struct flb_stats_userver_c));
+    client = flb_calloc(1, sizeof(struct flb_stats_userver_c));
     if (!client) {
         return -1;
     }
@@ -342,7 +342,7 @@ static int flb_stats_userver(struct flb_stats *stats)
     struct flb_stats_userver *userver;
 
     /* Create a TCP server based on unix sockets */
-    userver = malloc(sizeof(struct flb_stats_userver));
+    userver = flb_malloc(sizeof(struct flb_stats_userver));
     if (!userver) {
         flb_error("[stats_usrv] no mem!");
         return -1;
@@ -458,7 +458,7 @@ static int register_input_plugin(struct flb_input_plugin *plugin,
     struct flb_stats_in_plugin *sp;
 
     /* Allocate stats object for this stats entry */
-    sp = malloc(sizeof(struct flb_stats_in_plugin));
+    sp = flb_malloc(sizeof(struct flb_stats_in_plugin));
     if (!sp) {
         return -1;
     }
@@ -504,7 +504,7 @@ static int register_output_plugin(struct flb_output_plugin *plugin,
     struct flb_stats_out_plugin *sp;
 
     /* Allocate stats object for this stats entry */
-    sp = malloc(sizeof(struct flb_stats_out_plugin));
+    sp = flb_malloc(sizeof(struct flb_stats_out_plugin));
     if (!sp) {
         return -1;
     }
@@ -582,7 +582,7 @@ int flb_stats_init(struct flb_config *config)
     int ret;
     struct flb_stats *stats;
 
-    stats = malloc(sizeof(struct flb_stats));
+    stats = flb_malloc(sizeof(struct flb_stats));
     if (!stats) {
         flb_error("[stats] could not initialize");
         return -1;

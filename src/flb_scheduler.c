@@ -18,6 +18,7 @@
  */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_scheduler.h>
@@ -114,7 +115,7 @@ int flb_sched_request_create(struct flb_config *config,
     struct flb_sched_request *request;
 
     /* Allocate request node */
-    request = malloc(sizeof(struct flb_sched_request));
+    request = flb_malloc(sizeof(struct flb_sched_request));
     if (!request) {
         perror("malloc");
         return -1;

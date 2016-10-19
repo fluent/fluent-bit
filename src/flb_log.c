@@ -33,6 +33,7 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_worker.h>
+#include <fluent-bit/flb_mem.h>
 
 FLB_TLS_DEFINE(struct flb_log, flb_log_ctx)
 
@@ -170,7 +171,7 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
     struct flb_worker *worker;
     struct mk_event_loop *evl;
 
-    log = malloc(sizeof(struct flb_log));
+    log = flb_malloc(sizeof(struct flb_log));
     if (!log) {
         perror("malloc");
         return NULL;
@@ -216,7 +217,7 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
      * it will need a 'worker-like' context, here we create a fake worker
      * context just for messaging purposes.
      */
-    worker = malloc(sizeof(struct flb_worker));
+    worker = flb_malloc(sizeof(struct flb_worker));
     if (!worker) {
         flb_errno();
         free(log);

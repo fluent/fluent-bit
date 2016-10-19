@@ -18,6 +18,7 @@
  */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_buffer.h>
 #include <fluent-bit/flb_buffer_qchunk.h>
 #include <fluent-bit/flb_engine_dispatch.h>
@@ -57,7 +58,7 @@ struct flb_buffer_qchunk *flb_buffer_qchunk_add(struct flb_buffer_qworker *qw,
     int len;
     struct flb_buffer_qchunk *qchunk;
 
-    qchunk = malloc(sizeof(struct flb_buffer_qchunk));
+    qchunk = flb_malloc(sizeof(struct flb_buffer_qchunk));
     if (!qchunk) {
         perror("malloc");
         return NULL;
@@ -343,7 +344,7 @@ int flb_buffer_qchunk_create(struct flb_buffer *ctx)
     struct flb_buffer_qworker *qw;
 
     /* Allocate context */
-    qw = malloc(sizeof(struct flb_buffer_qworker));
+    qw = flb_malloc(sizeof(struct flb_buffer_qworker));
     if (!qw) {
         perror("malloc");
         return -1;

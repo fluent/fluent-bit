@@ -17,6 +17,8 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_config.h>
@@ -74,7 +76,7 @@ static int flb_router_connect(struct flb_input_instance *in,
 {
     struct flb_router_path *p;
 
-    p = malloc(sizeof(struct flb_router_path));
+    p = flb_malloc(sizeof(struct flb_router_path));
     if (!p) {
         perror("malloc");
         return -1;

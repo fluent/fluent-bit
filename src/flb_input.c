@@ -21,6 +21,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_error.h>
@@ -99,7 +101,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         }
 
         /* Create plugin instance */
-        instance = malloc(sizeof(struct flb_input_instance));
+        instance = flb_malloc(sizeof(struct flb_input_instance));
         if (!instance) {
             perror("malloc");
             return NULL;
@@ -179,7 +181,7 @@ int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
     }
     else {
         /* Append any remaining configuration key to prop list */
-        prop = malloc(sizeof(struct flb_config_prop));
+        prop = flb_malloc(sizeof(struct flb_config_prop));
         if (!prop) {
             return -1;
         }
@@ -377,7 +379,7 @@ int flb_input_set_collector_time(struct flb_input_instance *in,
 {
     struct flb_input_collector *collector;
 
-    collector = malloc(sizeof(struct flb_input_collector));
+    collector = flb_malloc(sizeof(struct flb_input_collector));
     collector->type        = FLB_COLLECT_TIME;
     collector->cb_collect  = cb_collect;
     collector->fd_event    = -1;
@@ -397,7 +399,7 @@ int flb_input_set_collector_event(struct flb_input_instance *in,
 {
     struct flb_input_collector *collector;
 
-    collector = malloc(sizeof(struct flb_input_collector));
+    collector = flb_malloc(sizeof(struct flb_input_collector));
     collector->type        = FLB_COLLECT_FD_EVENT;
     collector->cb_collect  = cb_collect;
     collector->fd_event    = fd;
@@ -417,7 +419,7 @@ int flb_input_set_collector_socket(struct flb_input_instance *in,
 {
     struct flb_input_collector *collector;
 
-    collector = malloc(sizeof(struct flb_input_collector));
+    collector = flb_malloc(sizeof(struct flb_input_collector));
     collector->type        = FLB_COLLECT_FD_SERVER;
     collector->cb_collect  = cb_new_connection;
     collector->fd_event    = fd;
@@ -441,14 +443,14 @@ struct flb_input_dyntag *flb_input_dyntag_create(struct flb_input_instance *in,
     }
 
     /* Allocate node and reset fields */
-    dt = malloc(sizeof(struct flb_input_dyntag));
+    dt = flb_malloc(sizeof(struct flb_input_dyntag));
     if (!dt) {
         return NULL;
     }
     dt->busy = FLB_FALSE;
     dt->lock = FLB_FALSE;
     dt->in   = in;
-    dt->tag  = malloc(tag_len + 1);
+    dt->tag  = flb_malloc(tag_len + 1);
     memcpy(dt->tag, tag, tag_len);
     dt->tag[tag_len] = '\0';
     dt->tag_len = tag_len;

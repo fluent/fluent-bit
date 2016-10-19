@@ -18,6 +18,7 @@
  */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_worker.h>
@@ -68,7 +69,7 @@ int flb_worker_create(void (*func) (void *), void *arg, pthread_t *tid,
     int ret;
     struct flb_worker *worker;
 
-    worker = malloc(sizeof(struct flb_worker));
+    worker = flb_malloc(sizeof(struct flb_worker));
     if (!worker) {
         perror("malloc");
         return -1;
