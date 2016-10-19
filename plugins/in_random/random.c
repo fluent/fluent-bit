@@ -139,7 +139,7 @@ static int in_random_init(struct flb_input_instance *in,
     struct flb_in_random_config *ctx = NULL;
 
     /* Allocate space for the configuration */
-    ctx = malloc(sizeof(struct flb_in_random_config));
+    ctx = flb_malloc(sizeof(struct flb_in_random_config));
     if (!ctx) {
         return -1;
     }
@@ -149,7 +149,7 @@ static int in_random_init(struct flb_input_instance *in,
     /* Initialize head config */
     ret = in_random_config_read(ctx, in);
     if (ret < 0) {
-        free(ctx);
+        flb_free(ctx);
         return -1;
     }
 
@@ -167,7 +167,7 @@ static int in_random_init(struct flb_input_instance *in,
     if (ret < 0) {
         flb_utils_error_c("could not set collector for head input plugin");
         msgpack_sbuffer_destroy(&ctx->mp_sbuf);
-        free(ctx);
+        flb_free(ctx);
         return -1;
     }
 
@@ -184,7 +184,7 @@ static void *in_random_flush(void *in_context, size_t *size)
         return NULL;
     }
 
-    buf = malloc(ctx->mp_sbuf.size);
+    buf = flb_malloc(ctx->mp_sbuf.size);
     if (!buf) {
         return NULL;
     }
@@ -205,7 +205,7 @@ static int in_random_exit(void *data, struct flb_config *config)
     struct flb_in_random_config *ctx = data;
 
     msgpack_sbuffer_destroy(&ctx->mp_sbuf);
-    free(ctx);
+    flb_free(ctx);
 
     return 0;
 }
