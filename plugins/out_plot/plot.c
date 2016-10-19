@@ -41,7 +41,7 @@ static int cb_plot_init(struct flb_output_instance *ins,
     (void) data;
     struct flb_plot_conf *conf;
 
-    conf = calloc(1, sizeof(struct flb_plot_conf));
+    conf = flb_calloc(1, sizeof(struct flb_plot_conf));
     if (!conf) {
         flb_errno();
         return -1;
@@ -186,7 +186,7 @@ static int cb_plot_exit(void *data, struct flb_config *config)
 {
     struct flb_plot_conf *ctx = data;
 
-    free(ctx);
+    flb_free(ctx);
 
     return 0;
 }
