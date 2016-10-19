@@ -42,7 +42,7 @@ static int cb_plot_init(struct flb_output_instance *ins,
     struct flb_plot_conf *conf;
 
     conf = calloc(1, sizeof(struct flb_plot_conf));
-    if (!config) {
+    if (!conf) {
         flb_errno();
         return -1;
     }
