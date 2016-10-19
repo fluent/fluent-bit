@@ -68,7 +68,7 @@ static char *field(char *data, char *field)
 
     q = strchr(p, ' ');
     len = q - p;
-    value = malloc(len + 1);
+    value = flb_malloc(len + 1);
     strncpy(value, p, len);
     value[len] = '\0';
 
@@ -121,7 +121,7 @@ static int mem_calc(uint64_t *total, uint64_t *available)
         return -1;
     }
     *total = atoll(tmp);
-    free(tmp);
+    flb_free(tmp);
 
     /* Available Memory */
     tmp = field(buf, "MemAvailable");
@@ -129,7 +129,7 @@ static int mem_calc(uint64_t *total, uint64_t *available)
         return -1;
     }
     *available = atoll(tmp);
-    free(tmp);
+    flb_free(tmp);
 
     return 0;
 }
@@ -143,7 +143,7 @@ static int in_mem_init(struct flb_input_instance *in,
     (void) data;
 
     /* Initialize context */
-    ctx = malloc(sizeof(struct flb_in_mem_config));
+    ctx = flb_malloc(sizeof(struct flb_in_mem_config));
     if (!ctx) {
         return -1;
     }
@@ -258,7 +258,7 @@ static void *in_mem_flush(void *in_context, size_t *size)
         return NULL;
     }
 
-    buf = malloc(ctx->sbuf.size);
+    buf = flb_malloc(ctx->sbuf.size);
     if (!buf) {
         return NULL;
     }
@@ -282,7 +282,7 @@ static int in_mem_exit(void *data, struct flb_config *config)
     msgpack_sbuffer_destroy(&ctx->sbuf);
 
     /* done */
-    free(ctx);
+    flb_free(ctx);
 
     return 0;
 }

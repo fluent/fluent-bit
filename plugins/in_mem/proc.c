@@ -28,7 +28,7 @@
 static char *human_readable_size(long size)
 {
     long u = 1024, i, len = 128;
-    char *buf = malloc(len);
+    char *buf = flb_malloc(len);
     static const char *__units[] = { "b", "K", "M", "G",
         "T", "P", "E", "Z", "Y", NULL
     };
@@ -67,7 +67,7 @@ static char *file_to_buffer(const char *path)
         return NULL;
     }
 
-    buffer = malloc(PROC_STAT_BUF_SIZE);
+    buffer = flb_malloc(PROC_STAT_BUF_SIZE);
     if (!buffer) {
         fclose(fp);
         flb_errno();
@@ -76,7 +76,7 @@ static char *file_to_buffer(const char *path)
 
     bytes = fread(buffer, PROC_STAT_BUF_SIZE, 1, fp);
     if (bytes < 0) {
-        free(buffer);
+        flb_free(buffer);
         fclose(fp);
         flb_errno();
         return NULL;
@@ -95,7 +95,7 @@ struct proc_task *proc_stat(pid_t pid, int page_size)
     char pid_path[PROC_PID_SIZE];
     struct proc_task *t;
 
-    t = calloc(1, sizeof(struct proc_task));
+    t = flb_calloc(1, sizeof(struct proc_task));
     if (!t) {
         flb_errno();
         return NULL;
@@ -110,7 +110,7 @@ struct proc_task *proc_stat(pid_t pid, int page_size)
 
     buf = file_to_buffer(pid_path);
     if (!buf) {
-        free(t);
+        flb_free(t);
         return NULL;
     }
 
@@ -156,12 +156,12 @@ struct proc_task *proc_stat(pid_t pid, int page_size)
     t->proc_rss    = (t->rss * page_size);
     t->proc_rss_hr = human_readable_size(t->proc_rss);
 
-    free(buf);
+    flb_free(buf);
     return t;
 }
 
 void proc_free(struct proc_task *t)
 {
-    free(t->proc_rss_hr);
-    free(t);
+    flb_free(t->proc_rss_hr);
+    flb_free(t);
 }
