@@ -38,7 +38,7 @@ int cb_retry_init(struct flb_output_instance *ins,
     char *tmp;
     struct retry_ctx *ctx;
 
-    ctx = malloc(sizeof(struct retry_ctx));
+    ctx = flb_malloc(sizeof(struct retry_ctx));
     if (!ctx) {
         return -1;
     }
