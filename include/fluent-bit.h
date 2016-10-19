@@ -26,6 +26,7 @@ extern "C" {
 
 #include <mk_core.h>
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
