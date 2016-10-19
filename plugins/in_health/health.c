@@ -101,7 +101,7 @@ static int in_health_init(struct flb_input_instance *in,
     (void) data;
 
     /* Allocate space for the configuration */
-    ctx = calloc(1, sizeof(struct flb_in_health_config));
+    ctx = flb_calloc(1, sizeof(struct flb_in_health_config));
     if (!ctx) {
         perror("calloc");
         return -1;
@@ -111,7 +111,7 @@ static int in_health_init(struct flb_input_instance *in,
     ctx->u = flb_upstream_create(config, in->host.name, in->host.port,
                                  FLB_IO_TCP, NULL);
     if (!ctx->u) {
-        free(ctx);
+        flb_free(ctx);
         flb_error("[in_health] could not initialize upstream");
         return -1;
     }
@@ -175,7 +175,7 @@ void *in_health_flush(void *in_context, size_t *size)
 
     sbuf = &ctx->mp_sbuf;
     *size = sbuf->size;
-    buf = malloc(sbuf->size);
+    buf = flb_malloc(sbuf->size);
     if (!buf) {
         return NULL;
     }
@@ -197,7 +197,7 @@ int in_health_exit(void *data, struct flb_config *config)
     /* Remove msgpack buffer and destroy context */
     msgpack_sbuffer_destroy(&ctx->mp_sbuf);
     flb_upstream_destroy(ctx->u);
-    free(ctx);
+    flb_free(ctx);
 
     return 0;
 }
