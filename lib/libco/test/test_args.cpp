@@ -32,15 +32,15 @@ namespace co_arg {
 };
 
 //one could also call this co_init or somesuch if they preferred ...
-void co_switch(cothread_t thread, int param_x, int param_y) {
+void co_param_set(cothread_t thread, int param_x, int param_y) {
   co_arg::param_x = param_x;
   co_arg::param_y = param_y;
   co_switch(thread);
 }
 
 void co_entrypoint() {
-int param_x = co_arg::param_x;
-int param_y = co_arg::param_y;
+  int param_x = co_arg::param_x;
+  int param_y = co_arg::param_y;
   printf("co_entrypoint(%d, %d)\n", param_x, param_y);
   co_switch(thread[0]);
 
@@ -60,8 +60,8 @@ int main() {
   thread[2] = co_create(65536, co_entrypoint);
 
 //use specialized co_switch(cothread_t, int, int) for initial co_switch call
-  co_switch(thread[1], 1, 2);
-  co_switch(thread[2], 4, 8);
+  co_param_set(thread[1], 1, 2);
+  co_param_set(thread[2], 4, 8);
 
 //after first call, entry point arguments have been initialized, standard
 //co_switch(cothread_t) can be used from now on

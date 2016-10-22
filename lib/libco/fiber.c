@@ -29,11 +29,13 @@ cothread_t co_active() {
   return co_active_;
 }
 
-cothread_t co_create(unsigned int heapsize, void (*coentry)(void)) {
+cothread_t co_create(unsigned int heapsize, void (*coentry)(void),
+                     size_t *out_size) {
   if(!co_active_) {
     ConvertThreadToFiber(0);
     co_active_ = GetCurrentFiber();
   }
+  *out_size = heapsize;
   return (cothread_t)CreateFiber(heapsize, co_thunk, (void*)coentry);
 }
 

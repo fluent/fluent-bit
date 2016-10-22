@@ -126,17 +126,20 @@ cothread_t co_active() {
   return co_active_handle;
 }
 
-cothread_t co_create(unsigned int size, void (*entrypoint)(void)) {
+cothread_t co_create(unsigned int size, void (*entrypoint)(void),
+                     size_t *out_size){
   cothread_t handle;
   if(!co_swap) {
     co_init();
     co_swap = (void (*)(cothread_t, cothread_t))co_swap_function;
   }
+
   if(!co_active_handle) co_active_handle = &co_active_buffer;
   size += 512;  /* allocate additional space for storage */
   size &= ~15;  /* align stack to 16-byte boundary */
+  *out_size = size;
 
-  if(handle = (cothread_t)malloc(size)) {
+  if((handle = (cothread_t)malloc(size))) {
     long long *p = (long long*)((char*)handle + size);  /* seek to top of stack */
     *--p = (long long)crash;                            /* crash if entrypoint returns */
     *--p = (long long)entrypoint;                       /* start of function */
