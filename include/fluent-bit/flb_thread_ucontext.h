@@ -138,7 +138,6 @@ static struct flb_thread *flb_thread_new(size_t data_size,
 
     flb_trace("[thread %p] created (custom data at %p, size=%lu",
               th, FLB_THREAD_DATA(th), data_size);
-
     return th;
 }
 

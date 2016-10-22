@@ -90,6 +90,7 @@ check_symbol_exists(accept4 "sys/socket.h" HAVE_ACCEPT4)
 set(FLB_DEPS
   mk_core
   jsmn
+  co
   ${extra_libs}
   ${FLB_PLUGINS}
   msgpackc-static

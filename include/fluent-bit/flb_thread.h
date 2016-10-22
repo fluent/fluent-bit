@@ -39,6 +39,8 @@ extern "C" {
 #include <fluent-bit/flb_thread_ucontext.h>
 #elif defined FLB_HAVE_FLUSH_PTHREADS
 #include <fluent-bit/flb_thread_pthreads.h>
+#elif defined FLB_HAVE_FLUSH_LIBCO
+#include <fluent-bit/flb_thread_libco.h>
 #endif
 
 #ifdef __cplusplus

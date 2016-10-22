@@ -90,6 +90,8 @@ struct flb_config *flb_config_init()
     config->flush_method = FLB_FLUSH_UCONTEXT;
 #elif defined FLB_HAVE_FLUSH_PTHREADS
     config->flush_method = FLB_FLUSH_PTHREADS;
+#elif defined FLB_HAVE_FLUSH_LIBCO
+    config->flush_method = FLB_FLUSH_LIBCO;
 #endif
     config->daemon       = FLB_FALSE;
     config->init_time    = time(NULL);

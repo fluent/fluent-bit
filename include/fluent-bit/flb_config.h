@@ -33,6 +33,7 @@
 
 #define FLB_FLUSH_UCONTEXT      0
 #define FLB_FLUSH_PTHREADS      1
+#define FLB_FLUSH_LIBCO         2
 
 #define FLB_CONFIG_FLUSH_SECS   5
 #define FLB_CONFIG_HTTP_PORT    "2020"

@@ -279,14 +279,14 @@ struct flb_thread *flb_input_thread(struct flb_input_instance *i_ins,
         return NULL;
     }
 
-    /* Setup thread specific data */
+    /* Setup thread specific data
     in_th = (struct flb_input_thread *) FLB_THREAD_DATA(th);
     in_th->id         = id;
     in_th->start_time = time(NULL);
     in_th->parent     = th;
     in_th->config     = config;
     mk_list_add(&in_th->_head, &i_ins->threads);
-
+    */
     return th;
 }
 
@@ -301,10 +301,12 @@ struct flb_thread *flb_input_thread_collect(struct flb_input_collector *coll,
         return NULL;
     }
 
+    /*
     makecontext(&th->callee, (void (*)()) coll->cb_collect,
-                2,                     /* number of arguments */
+
                 config,
                 coll->instance->context);
+    */
     return th;
 
 }
@@ -328,7 +330,7 @@ static inline int flb_input_return() {
     struct flb_input_thread *in_th;
 
     th = (struct flb_thread *) pthread_getspecific(flb_thread_key);
-    in_th = (struct flb_input_thread *) FLB_THREAD_DATA(th);
+    //in_th = (struct flb_input_thread *) FLB_THREAD_DATA(th);
 
     /*
      * To compose the signal event the relevant info is:
