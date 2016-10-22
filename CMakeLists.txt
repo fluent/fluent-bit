@@ -45,8 +45,9 @@ option(FLB_POSIX_TLS          "Force POSIX thread storage"   No)
 #
 # FLB_FLUSH_PTHREAD: spawn a new POSIX thread that the output interface
 # will use to flush the data.
-option(FLB_FLUSH_UCONTEXT     "Use co-routines for flush I/O" Yes)
+option(FLB_FLUSH_UCONTEXT     "Use co-routines for flush I/O"  No)
 option(FLB_FLUSH_PTHREADS     "Use pthreads for flush I/O"     No)
+option(FLB_FLUSH_LIBCO        "Use libco for flush I/O"       Yes)
 
 # Build Plugins
 option(FLB_IN_XBEE     "Enable XBee input plugin"            No)
@@ -121,6 +122,7 @@ include_directories(
   include/
   lib/
   lib/ejson
+  lib/libco
   lib/sha1
   lib/msgpack-c-068041f/include
   lib/monkey/include
@@ -143,6 +145,7 @@ FLB_DEFINITION(JSMN_PARENT_LINKS)
 FLB_DEFINITION(JSMN_STRICT)
 add_subdirectory(lib/jsmn)
 add_subdirectory(lib/ejson)
+add_subdirectory(lib/libco)
 
 if(FLB_BUFFERING)
   add_subdirectory(lib/sha1)
@@ -217,6 +220,8 @@ check_c_source_compiles("
 
 if(FLB_FLUSH_PTHREADS)
   FLB_DEFINITION(FLB_HAVE_FLUSH_PTHREADS)
+elseif(FLB_FLUSH_LIBCO)
+  FLB_DEFINITION(FLB_HAVE_FLUSH_LIBCO)
 elseif(FLB_HAVE_UCONTEXT)
   FLB_DEFINITION(FLB_HAVE_FLUSH_UCONTEXT)
 else()
