@@ -10,7 +10,24 @@ notifications:
   irc: "irc.freenode.net#fluent-bit"
 
 before_script:
+  # Install Toolchain for ksz9692 (ARM)
+  - if [ $TRAVIS_OS_NAME == linux ]; then if [ `uname -m` = x86_64 ]; then sudo apt-get install -qq --force-yes gcc-multilib > /dev/null; fi; fi
+  - if [ $TRAVIS_OS_NAME == linux ]; then wget http://fluentbit.io/ci-toolchains/ksz9692.tar.gz -O /tmp/ksz9692.tar.gz; fi
+  - if [ $TRAVIS_OS_NAME == linux ]; then tar -xf /tmp/ksz9692.tar.gz; fi
+  - if [ $TRAVIS_OS_NAME == linux ]; then export PATH=$PATH:$PWD/ksz9692/bin/; fi
+  # Unpack the sources
   - cd build
-  - cmake -DFLB_ALL=On ../
+  - cmake -DFLB_ALL=On -DCMAKE_TOOLCHAIN_FILE=${TOOLCHAIN} ../
+
+matrix:
+  include:
+    - os: linux
+      env: TOOLCHAIN=../cmake/armadillo-iot.cmake
+  exclude:
+    - os: osx
+      env: TOOLCHAIN=../cmake/armadillo-iot.cmake
+    - os: linux
+      compiler: clang
+      env: TOOLCHAIN=../cmake/armadillo-iot.cmake
 
 script: make
