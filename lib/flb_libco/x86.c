@@ -30,7 +30,7 @@ static void (fastcall *co_swap)(cothread_t, cothread_t) = 0;
 #ifdef LIBCO_MPROTECT
   alignas(4096)
 #else
-  section(text)
+  text_section
 #endif
 /* ABI: fastcall */
 static const unsigned char co_swap_function[4096] = {

@@ -26,10 +26,12 @@
   #define alignas(bytes)
 #endif
 
-#ifndef _MSC_VER
-  #define section(name) __attribute__((section("." #name "#")))
+#if defined(_MSC_VER)
+  #define text_section __declspec(allocate(".text"))
+#elif defined(__APPLE__) && defined(__MACH__)
+  #define text_section __attribute__((section("__TEXT,__text")))
 #else
-  #define section(name) __declspec(allocate("." #name))
+  #define text_section __attribute__((section(".text#")))
 #endif
 
 /* ifdef LIBCO_C */

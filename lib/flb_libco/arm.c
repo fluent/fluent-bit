@@ -24,7 +24,7 @@ static void (*co_swap)(cothread_t, cothread_t) = 0;
 #ifdef LIBCO_MPROTECT
   alignas(4096)
 #else
-  section(text)
+  text_section
 #endif
 static const unsigned long co_swap_function[1024] = {
   0xe8a16ff0,  /* stmia r1!, {r4-r11,sp,lr} */

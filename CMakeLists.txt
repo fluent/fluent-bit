@@ -122,7 +122,7 @@ include_directories(
   include/
   lib/
   lib/ejson
-  lib/libco
+  lib/flb_libco
   lib/sha1
   lib/msgpack-c-068041f/include
   lib/monkey/include
@@ -145,7 +145,7 @@ FLB_DEFINITION(JSMN_PARENT_LINKS)
 FLB_DEFINITION(JSMN_STRICT)
 add_subdirectory(lib/jsmn)
 add_subdirectory(lib/ejson)
-add_subdirectory(lib/libco)
+add_subdirectory(lib/flb_libco)
 
 if(FLB_BUFFERING)
   add_subdirectory(lib/sha1)

@@ -50,7 +50,7 @@ static thread_local cothread_t co_active_handle = 0;
 #ifdef LIBCO_MPROTECT
   alignas(4096)
 #else
-  section(text)
+  text_section
 #endif
 static const uint32_t libco_ppc_code[1024] = {
   #if LIBCO_PPC64
@@ -322,7 +322,7 @@ cothread_t co_create(unsigned int size, void (*entry_)(void)) {
     t[ 8] = (uint32_t)(entry >> shift >> shift);
     t[ 9] = (uint32_t)entry;
 
-    t[10] = (uint32_t)(sp >> shift >> shift); 
+    t[10] = (uint32_t)(sp >> shift >> shift);
     t[11] = (uint32_t)sp;
   }
 
