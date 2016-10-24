@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_task.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_str.h>
 
 #ifdef FLB_HAVE_BUFFERING
 #include <fluent-bit/flb_sha1.h>
@@ -194,7 +195,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
 
     /* Keep track of origins */
     task->ref_id = ref_id;
-    task->tag    = strdup(tag);
+    task->tag    = flb_strdup(tag);
     task->buf    = buf;
     task->size   = size;
     task->i_ins  = i_ins;
@@ -312,7 +313,7 @@ struct flb_task *flb_task_create_direct(uint64_t ref_id,
 
     /* Keep track of origins */
     task->ref_id    = ref_id;
-    task->tag       = strdup(tag);
+    task->tag       = flb_strdup(tag);
     task->buf       = buf;
     task->size      = size;
     task->i_ins     = i_ins;

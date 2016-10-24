@@ -19,6 +19,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_config.h>
@@ -119,7 +120,7 @@ int flb_router_io_set(struct flb_config *config)
         if (!o_ins->match) {
             flb_debug("[router] default match rule %s:%s",
                       i_ins->name, o_ins->name);
-            o_ins->match = strdup("*");
+            o_ins->match = flb_strdup("*");
             flb_router_connect(i_ins, o_ins);
             return 0;
         }

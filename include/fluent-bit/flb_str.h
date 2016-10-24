@@ -1,7 +1,7 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
-/*  Fluent Bit demo
- *  ===============
+/*  Fluent Bit
+ *  ==========
  *  Copyright (C) 2015-2016 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,28 +17,30 @@
  *  limitations under the License.
  */
 
-#ifndef FLUENT_BIT_H
-#define FLUENT_BIT_H
+#ifndef FLB_STR_H
+#define FLB_STR_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-#include <mk_core.h>
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_mem.h>
-#include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_macros.h>
-#include <fluent-bit/flb_utils.h>
-#include <fluent-bit/flb_config.h>
-#include <fluent-bit/flb_version.h>
-#include <fluent-bit/flb_error.h>
-#include <fluent-bit/flb_output.h>
-#include <fluent-bit/flb_engine.h>
-#include <fluent-bit/flb_lib.h>
+#include <fluent-bit/flb_mem.h>
 
-#ifdef __cplusplus
+#include <stdlib.h>
+#include <string.h>
+
+static inline char *flb_strdup(const char *s)
+{
+    int len;
+    char *str;
+
+    len = strlen(s);
+    str = (char *) flb_malloc(len + 1);
+    if (!str) {
+        return NULL;
+    }
+    strncpy(str, s, len);
+    str[len] = '\0';
+
+    return str;
 }
-#endif
 
 #endif

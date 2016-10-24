@@ -25,6 +25,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_plugins.h>
@@ -100,7 +101,7 @@ struct flb_config *flb_config_init()
 
 #ifdef FLB_HAVE_HTTP
     config->http_server  = FLB_FALSE;
-    config->http_port    = strdup(FLB_CONFIG_HTTP_PORT);
+    config->http_port    = flb_strdup(FLB_CONFIG_HTTP_PORT);
 #endif
 
 #ifdef FLB_HAVE_BUFFERING
@@ -311,7 +312,7 @@ int flb_config_set_property(struct flb_config *config,
                     if ( *s_val != NULL ) {
                         flb_free(*s_val); /* release before overwriting */
                     }
-                    *s_val = strdup(v);
+                    *s_val = flb_strdup(v);
                     break;
 
                 default:

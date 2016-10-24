@@ -18,11 +18,11 @@
  */
 
 #include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_error.h>
@@ -176,7 +176,7 @@ int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
 
     /* Check if the key is a known/shared property */
     if (prop_key_check("tag", k, len) == 0) {
-        in->tag     = strdup(v);
+        in->tag     = flb_strdup(v);
         in->tag_len = strlen(v);
     }
     else {
@@ -186,8 +186,8 @@ int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
             return -1;
         }
 
-        prop->key = strdup(k);
-        prop->val = strdup(v);
+        prop->key = flb_strdup(k);
+        prop->val = flb_strdup(v);
         mk_list_add(&prop->_head, &in->properties);
     }
 

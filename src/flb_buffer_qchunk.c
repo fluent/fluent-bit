@@ -19,6 +19,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_buffer.h>
 #include <fluent-bit/flb_buffer_qchunk.h>
 #include <fluent-bit/flb_engine_dispatch.h>
@@ -64,7 +65,7 @@ struct flb_buffer_qchunk *flb_buffer_qchunk_add(struct flb_buffer_qworker *qw,
         return NULL;
     }
     qchunk->id        = 0;
-    qchunk->file_path = strdup(path);
+    qchunk->file_path = flb_strdup(path);
     qchunk->routes    = routes;
     memcpy(&qchunk->hash_str, hash_str, 41);
 

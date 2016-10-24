@@ -22,6 +22,7 @@
 #include <mk_core.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_io_tls.h>
@@ -40,7 +41,7 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
         return NULL;
     }
 
-    u->tcp_host      = strdup(host);
+    u->tcp_host      = flb_strdup(host);
     u->tcp_port      = port;
     u->flags         = flags;
     u->evl           = config->evl;

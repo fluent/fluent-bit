@@ -19,6 +19,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_str.h>
 
 #ifdef FLB_HAVE_BUFFERING
 
@@ -197,7 +198,7 @@ static int chunk_find(char *root_path, char *hash,
 
         ret = strncmp(entry->d_name, hash, 40);
         if (ret == 0) {
-            file = strdup(entry->d_name);
+            file = flb_strdup(entry->d_name);
             if (!file) {
                 closedir(dir);
                 return -1;

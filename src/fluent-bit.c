@@ -37,6 +37,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_engine.h>
+#include <fluent-bit/flb_str.h>
 
 #ifdef FLB_HAVE_MTRACE
 #include <mcheck.h>
@@ -245,7 +246,7 @@ static int flb_service_conf(struct flb_config *config, char *file)
         /* Logfile */
         v_str = s_get_key(section, "Logfile", MK_RCONF_STR);
         if (v_str) {
-            config->logfile = strdup(v_str);
+            config->logfile = flb_strdup(v_str);
         }
 
         /* Verbose / Log level */
@@ -292,7 +293,7 @@ static int flb_service_conf(struct flb_config *config, char *file)
         /* Buffering Support */
         v_str = s_get_key(section, "Buffer_Path", MK_RCONF_STR);
         if (v_str) {
-            config->buffer_path = strdup(v_str);
+            config->buffer_path = flb_strdup(v_str);
 
             v_num = n_get_key(section, "Buffer_Workers", MK_RCONF_NUM);
             if (v_num <= 0) {
@@ -438,7 +439,7 @@ int main(int argc, char **argv)
         switch (opt) {
 #ifdef FLB_HAVE_BUFFERING
         case 'b':
-            config->buffer_path = strdup(optarg);
+            config->buffer_path = flb_strdup(optarg);
             if (config->buffer_workers <= 0) {
                 config->buffer_workers = 1;
             }
@@ -448,7 +449,7 @@ int main(int argc, char **argv)
             break;
 #endif
         case 'c':
-            cfg_file = strdup(optarg);
+            cfg_file = flb_strdup(optarg);
             break;
         case 'd':
             config->daemon = FLB_TRUE;
@@ -476,7 +477,7 @@ int main(int argc, char **argv)
             last_plugin = PLUGIN_OUTPUT;
             break;
         case 'l':
-            config->logfile = strdup(optarg);
+            config->logfile = flb_strdup(optarg);
             break;
         case 'p':
             if (last_plugin == PLUGIN_INPUT) {
@@ -499,7 +500,7 @@ int main(int argc, char **argv)
             config->http_server = FLB_TRUE;
             break;
         case 'P':
-            config->http_port = strdup(optarg);
+            config->http_port = flb_strdup(optarg);
             break;
 #endif
         case 'V':

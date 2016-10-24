@@ -22,6 +22,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_uri.h>
 #include <fluent-bit/flb_utils.h>
 
@@ -102,7 +103,7 @@ struct flb_uri *flb_uri_create(char *full_uri)
         uri->count++;
     }
 
-    uri->full = strdup(full_uri);
+    uri->full = flb_strdup(full_uri);
     return uri;
 }
 

@@ -30,6 +30,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_str.h>
 
 #ifdef FLB_HAVE_BUFFERING
 
@@ -378,7 +379,7 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
         ctx->path[path_len++] = '\0';
     }
     else {
-        ctx->path = strdup(path);
+        ctx->path = flb_strdup(path);
     }
 
     ctx->worker_lru = -1;

@@ -35,6 +35,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_macros.h>
@@ -101,7 +102,7 @@ int flb_net_host_set(char *plugin_name, struct flb_net_host *host, char *address
     if (u) {
         host->uri = flb_uri_create(u);
     }
-    host->address = strdup(address);
+    host->address = flb_strdup(address);
 
     if (host->name) {
         host->listen = host->name;

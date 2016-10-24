@@ -23,6 +23,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_output.h>
 
@@ -253,10 +254,10 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
 
     /* Check if the key is a known/shared property */
     if (prop_key_check("match", k, len) == 0) {
-        out->match = strdup(v);
+        out->match = flb_strdup(v);
     }
     else if (prop_key_check("host", k, len) == 0) {
-        out->host.name = strdup(v);
+        out->host.name = flb_strdup(v);
     }
     else if (prop_key_check("port", k, len) == 0) {
         out->host.port = atoi(v);
@@ -282,16 +283,16 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
         }
     }
     else if (prop_key_check("tls.ca_file", k, len) == 0) {
-        out->tls_ca_file = strdup(v);
+        out->tls_ca_file = flb_strdup(v);
     }
     else if (prop_key_check("tls.crt_file", k, len) == 0) {
-        out->tls_crt_file = strdup(v);
+        out->tls_crt_file = flb_strdup(v);
     }
     else if (prop_key_check("tls.key_file", k, len) == 0) {
-        out->tls_key_file = strdup(v);
+        out->tls_key_file = flb_strdup(v);
     }
     else if (prop_key_check("tls.key_passwd", k, len) == 0) {
-        out->tls_key_passwd = strdup(v);
+        out->tls_key_passwd = flb_strdup(v);
     }
 #endif
     else {
@@ -301,8 +302,8 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
             return -1;
         }
 
-        prop->key = strdup(k);
-        prop->val = strdup(v);
+        prop->key = flb_strdup(k);
+        prop->val = flb_strdup(v);
         mk_list_add(&prop->_head, &out->properties);
     }
     return 0;
