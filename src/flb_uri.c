@@ -96,11 +96,13 @@ struct flb_uri *flb_uri_create(char *full_uri)
 
         /* Alloc node */
         field = &uri->map[uri->count];
-        field->value         = val;
+        field->value         = flb_strdup(val);
         field->length        = val_len;
         mk_list_add(&field->_head, &uri->list);
         i = end + 1;
         uri->count++;
+
+        mk_mem_free(val);
     }
 
     uri->full = flb_strdup(full_uri);
