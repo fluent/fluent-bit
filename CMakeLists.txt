@@ -37,16 +37,18 @@ option(FLB_POSIX_TLS          "Force POSIX thread storage"   No)
 
 # Advanced options for Flushing methods
 # =====================================
-# Flush methods defineswhat kind of context/environment the output plugins
-# flush callback is invoked: 'cb_flush()'.
-
-# FLB_FLUSH_UCONTEXT: set by default if available, it uses an async
-# coroutines implementation for flushing data.
+# Flush methods defines under what kind of context/environment the plugins
+# flush callback is invoked. Since this is done through co-routines
+# there are two options available:
 #
-# FLB_FLUSH_PTHREAD: spawn a new POSIX thread that the output interface
-# will use to flush the data.
+# FLB_FLUSH_LIBCO: set by default, use lib/flb_libco implementation which
+# supports amd64, arm, x86 and ppc.
+#
+# FLB_FLUSH_UCONTEXT: It uses POSIX ucontext for co-routines implementation.
+# Despites this is POSIX deprecated, it's supported on Linux and BSD
+# systems, but specific old-toolchains do not implement it.
+
 option(FLB_FLUSH_UCONTEXT     "Use co-routines for flush I/O"  No)
-option(FLB_FLUSH_PTHREADS     "Use pthreads for flush I/O"     No)
 option(FLB_FLUSH_LIBCO        "Use libco for flush I/O"       Yes)
 
 # Build Plugins
@@ -112,6 +114,10 @@ macro(FLB_DEFINITION var)
   set(FLB_INFO_FLAGS "${FLB_INFO_FLAGS} ${var}")
 endmacro()
 
+macro(FLB_OPTION option value)
+  set(${option} ${value} CACHE "" INTERNAL FORCE)
+endmacro()
+
 # Enable Debug symbols if specified
 if(FLB_DEBUG)
   set(CMAKE_BUILD_TYPE "Debug")
@@ -145,7 +151,6 @@ FLB_DEFINITION(JSMN_PARENT_LINKS)
 FLB_DEFINITION(JSMN_STRICT)
 add_subdirectory(lib/jsmn)
 add_subdirectory(lib/ejson)
-add_subdirectory(lib/flb_libco)
 
 if(FLB_BUFFERING)
   add_subdirectory(lib/sha1)
@@ -218,15 +223,13 @@ check_c_source_compiles("
   }" FLB_HAVE_UCONTEXT
   FAIL_REGEX "warning.*not implemented.*")
 
-if(FLB_FLUSH_PTHREADS)
-  FLB_DEFINITION(FLB_HAVE_FLUSH_PTHREADS)
-elseif(FLB_FLUSH_LIBCO)
-  FLB_DEFINITION(FLB_HAVE_FLUSH_LIBCO)
-elseif(FLB_HAVE_UCONTEXT)
+if(FLB_FLUSH_UCONTEXT AND FLB_HAVE_UCONTEXT)
   FLB_DEFINITION(FLB_HAVE_FLUSH_UCONTEXT)
+  FLB_OPTION(FLB_FLUSH_LIBCO OFF)
 else()
-  set(FLB_FLUSH_PTHREADS  ON)
-  FLB_DEFINITION(FLB_HAVE_FLUSH_PTHREADS)
+  FLB_DEFINITION(FLB_HAVE_FLUSH_LIBCO)
+  FLB_OPTION(FLB_FLUSH_LIBCO ON)
+  add_subdirectory(lib/flb_libco)
 endif()
 
 # Valgrind support

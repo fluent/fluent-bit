@@ -76,11 +76,10 @@ if(FLB_BUFFERING)
     )
 endif()
 
-if(FLB_FLUSH_PTHREADS)
-  set(src
-    ${src}
-    "flb_thread_pthreads.c"
-    )
+if(FLB_FLUSH_LIBCO)
+  set(extra_libs
+    ${extra_libs}
+    "co")
 endif()
 
 include(CheckSymbolExists)
@@ -90,7 +89,6 @@ check_symbol_exists(accept4 "sys/socket.h" HAVE_ACCEPT4)
 set(FLB_DEPS
   mk_core
   jsmn
-  co
   ${extra_libs}
   ${FLB_PLUGINS}
   msgpackc-static
