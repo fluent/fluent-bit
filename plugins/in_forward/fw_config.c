@@ -39,23 +39,23 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
     if (!i_ins->host.listen) {
         listen = flb_input_get_property("listen", i_ins);
         if (listen) {
-            config->listen = strdup(listen);
+            config->listen = flb_strdup(listen);
         }
         else {
-            config->listen = strdup("0.0.0.0");
+            config->listen = flb_strdup("0.0.0.0");
         }
     }
     else {
-        config->listen = strdup(i_ins->host.listen);
+        config->listen = flb_strdup(i_ins->host.listen);
     }
 
     /* Listener TCP Port */
     if (i_ins->host.port == 0) {
-        config->tcp_port = strdup("24224");
+        config->tcp_port = flb_strdup("24224");
     }
     else {
         snprintf(tmp, sizeof(tmp) - 1, "%d", i_ins->host.port);
-        config->tcp_port = strdup(tmp);
+        config->tcp_port = flb_strdup(tmp);
     }
 
     /* Chunk size */
