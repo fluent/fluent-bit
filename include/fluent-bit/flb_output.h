@@ -283,7 +283,7 @@ struct flb_thread *flb_output_thread(struct flb_task *task,
  * it provide a workaround using a global structure as a middle entry-point
  * that achieve the same stuff.
  */
-struct flb_libco_params {
+struct flb_libco_out_params {
     void  *data;
     size_t bytes;
     char *tag;
@@ -295,7 +295,7 @@ struct flb_libco_params {
     struct flb_thread *th;
 };
 
-struct flb_libco_params libco_param;
+struct flb_libco_out_params libco_param;
 
 static void output_params_set(struct flb_thread *th,
                               void *data, size_t bytes,

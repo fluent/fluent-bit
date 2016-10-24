@@ -279,16 +279,18 @@ struct flb_thread *flb_input_thread(struct flb_input_instance *i_ins,
         return NULL;
     }
 
-    /* Setup thread specific data
+    /* Setup thread specific data */
     in_th = (struct flb_input_thread *) FLB_THREAD_DATA(th);
     in_th->id         = id;
     in_th->start_time = time(NULL);
     in_th->parent     = th;
     in_th->config     = config;
     mk_list_add(&in_th->_head, &i_ins->threads);
-    */
+
     return th;
 }
+
+#if defined FLB_HAVE_FLUSH_UCONTEXT
 
 static FLB_INLINE
 struct flb_thread *flb_input_thread_collect(struct flb_input_collector *coll,
@@ -301,15 +303,75 @@ struct flb_thread *flb_input_thread_collect(struct flb_input_collector *coll,
         return NULL;
     }
 
-    /*
-    makecontext(&th->callee, (void (*)()) coll->cb_collect,
 
+    makecontext(&th->callee, (void (*)()) coll->cb_collect,
+                2,                          /* number of arguments */
                 config,
                 coll->instance->context);
-    */
+
     return th;
 
 }
+
+#elif defined FLB_HAVE_FLUSH_LIBCO
+
+struct flb_libco_in_params {
+    struct flb_config *config;
+    struct flb_input_collector *coll;
+    struct flb_thread *th;
+};
+
+struct flb_libco_in_params libco_in_param;
+
+static void input_params_set(struct flb_thread *th,
+                             struct flb_input_collector *coll,
+                             struct flb_config *config,
+                             void *context)
+{
+    /* Set callback parameters */
+    libco_in_param.coll    = coll;
+    libco_in_param.config  = config;
+    libco_in_param.th      = th;
+    co_switch(th->callee);
+}
+
+static void input_pre_cb_collect()
+{
+    struct flb_input_collector *coll = libco_in_param.coll;
+    struct flb_config *config = libco_in_param.config;
+    struct flb_thread *th     = libco_in_param.th;
+
+    co_switch(th->caller);
+    coll->cb_collect(config, coll->instance->context);
+}
+
+static FLB_INLINE
+struct flb_thread *flb_input_thread_collect(struct flb_input_collector *coll,
+                                            struct flb_config *config)
+{
+    size_t stack_size;
+    struct flb_thread *th;
+
+    th = flb_input_thread(coll->instance, config);
+    if (!th) {
+        return NULL;
+    }
+
+    th->caller = co_active();
+    th->callee = co_create(FLB_THREAD_STACK_SIZE,
+                           input_pre_cb_collect, &stack_size);
+
+#ifdef FLB_HAVE_VALGRIND
+    th->valgrind_stack_id = VALGRIND_STACK_REGISTER(th->callee,
+                                                    ((char *)th->callee) + stack_size);
+#endif
+
+    /* Set parameters */
+    input_params_set(th, coll, config, coll->instance->context);
+    return th;
+}
+
+#endif
 
 /*
  * This function is used by the output plugins to return. It's mandatory
@@ -323,14 +385,12 @@ struct flb_thread *flb_input_thread_collect(struct flb_input_collector *coll,
  * number of retries, if it have exceed the 'retry_limit' option, a FLB_ERROR
  * will be returned instead.
  */
-static inline int flb_input_return() {
+static inline void flb_input_return(struct flb_thread *th) {
     int n;
     uint64_t val;
-    struct flb_thread *th;
     struct flb_input_thread *in_th;
 
-    th = (struct flb_thread *) pthread_getspecific(flb_thread_key);
-    //in_th = (struct flb_input_thread *) FLB_THREAD_DATA(th);
+    in_th = (struct flb_input_thread *) FLB_THREAD_DATA(th);
 
     /*
      * To compose the signal event the relevant info is:
@@ -344,15 +404,15 @@ static inline int flb_input_return() {
     val = FLB_BITS_U64_SET(3 /* FLB_ENGINE_IN_THREAD */, in_th->id);
     n = write(in_th->config->ch_manager[1], &val, sizeof(val));
     if (n == -1) {
-        perror("write");
-        return -1;
+        flb_errno();
     }
-
-    return 0;
 }
 
-#define FLB_INPUT_RETURN()                      \
-    return flb_input_return();
+#define FLB_INPUT_RETURN()                                          \
+    struct flb_thread *th;                                          \
+    th = (struct flb_thread *) pthread_getspecific(flb_thread_key); \
+    flb_input_return(th);                                           \
+    flb_thread_return(th)
 
 int flb_input_register_all(struct flb_config *config);
 struct flb_input_instance *flb_input_new(struct flb_config *config,
