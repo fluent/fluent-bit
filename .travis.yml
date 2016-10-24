@@ -32,6 +32,8 @@ matrix:
   exclude:
     - os: osx
       env: TOOLCHAIN=../cmake/armadillo-iot.cmake
+    - os: osx
+      env: FLB_MEM="-DFLB_JEMALLOC=On"
     - os: linux
       compiler: clang
       env: TOOLCHAIN=../cmake/armadillo-iot.cmake
