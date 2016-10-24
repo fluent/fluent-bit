@@ -52,7 +52,7 @@ static int process_response(struct flb_http_client *c)
 
     tmp = mk_string_copy_substr(c->resp.data, 9, 12);
     c->resp.status = atoi(tmp);
-    flb_free(tmp);
+    mk_mem_free(tmp);
 
     return 0;
 }
