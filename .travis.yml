@@ -10,6 +10,7 @@ env:
   - FLB_FLUSH="-DFLB_FLUSH_UCONTEXT=On"
   - FLB_FLUSH="-DFLB_FLUSH_LIBCO=On"
   - FLB_MEM="-DFLB_JEMALLOC=On"
+  - FLB_MEM="-DFLB_JEMALLOC=Off"
 
 notifications:
   irc: "irc.freenode.net#fluent-bit"
