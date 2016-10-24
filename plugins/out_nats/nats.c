@@ -34,7 +34,7 @@ int cb_nats_init(struct flb_output_instance *ins, struct flb_config *config,
 
     /* Set default network configuration */
     if (!ins->host.name) {
-        ins->host.name = strdup("127.0.0.1");
+        ins->host.name = flb_strdup("127.0.0.1");
     }
     if (ins->host.port == 0) {
         ins->host.port = 4222;
