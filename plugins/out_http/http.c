@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_str.h>
 
 #include "http.h"
 
@@ -238,7 +239,7 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
                 ctx->proxy_host = strndup(addr, (p - addr) - 1);
             }
             else {
-                ctx->proxy_host = strdup(addr);
+                ctx->proxy_host = flb_strdup(addr);
                 ctx->proxy_port = 80;
             }
         }
@@ -246,7 +247,7 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
     }
     else {
         if (!ins->host.name) {
-            ins->host.name = strdup("127.0.0.1");
+            ins->host.name = flb_strdup("127.0.0.1");
         }
         if (ins->host.port == 0) {
             ins->host.port = 80;
@@ -286,17 +287,17 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
     }
 
     if (ins->host.uri) {
-        uri = strdup(ins->host.uri->full);
+        uri = flb_strdup(ins->host.uri->full);
     }
     else {
         tmp = flb_output_get_property("uri", ins);
         if (tmp) {
-            uri = strdup(tmp);
+            uri = flb_strdup(tmp);
         }
     }
 
     if (!uri) {
-        uri = strdup("/");
+        uri = flb_strdup("/");
     }
     else if (uri[0] != '/') {
         ulen = strlen(uri);
