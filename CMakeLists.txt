@@ -260,7 +260,7 @@ endif()
 
 # Memory Allocator
 # ================
-if(FLB_JEMALLOC)
+if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   FLB_DEFINITION(FLB_HAVE_JEMALLOC)
 
   # Link to Jemalloc as an external dependency
@@ -275,6 +275,8 @@ if(FLB_JEMALLOC)
   set_target_properties(libjemalloc PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/lib/libjemalloc_pic.a")
   add_dependencies(libjemalloc jemalloc)
   include_directories("${CMAKE_CURRENT_BINARY_DIR}/include/")
+else()
+  FLB_OPTION(FLB_JEMALLOC OFF)
 endif()
 
 # Pthread Local Storage
