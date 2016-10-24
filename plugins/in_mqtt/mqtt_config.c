@@ -38,10 +38,10 @@ struct flb_in_mqtt_config *mqtt_config_init(struct flb_input_instance *i_ins)
     if (!i_ins->host.listen) {
         listen = flb_input_get_property("listen", i_ins);
         if (listen) {
-            config->listen = strdup(listen);
+            config->listen = flb_strdup(listen);
         }
         else {
-            config->listen = strdup("0.0.0.0");
+            config->listen = flb_strdup("0.0.0.0");
         }
     }
     else {
@@ -50,11 +50,11 @@ struct flb_in_mqtt_config *mqtt_config_init(struct flb_input_instance *i_ins)
 
     /* Listener TCP Port */
     if (i_ins->host.port == 0) {
-        config->tcp_port = strdup("1883");
+        config->tcp_port = flb_strdup("1883");
     }
     else {
         snprintf(tmp, sizeof(tmp) - 1, "%d", i_ins->host.port);
-        config->tcp_port = strdup(tmp);
+        config->tcp_port = flb_strdup(tmp);
     }
 
     flb_debug("[in_mqtt] Listen='%s' TCP_Port=%s",
