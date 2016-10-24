@@ -7,8 +7,8 @@ os:
   - osx
 
 env:
-  - FLB_FLUSH="-DFLB_FLUSH_UCONTEXT=On -DFLB_FLUSH_LIBCO=Off"
-  - FLB_FLUSH="-DFLB_FLUSH_UCONTEXT=Off -DFLB_FLUSH_LIBCO=On"
+  - FLB_FLUSH="-DFLB_FLUSH_UCONTEXT=On"
+  - FLB_FLUSH="-DFLB_FLUSH_LIBCO=On"
 
 notifications:
   irc: "irc.freenode.net#fluent-bit"
