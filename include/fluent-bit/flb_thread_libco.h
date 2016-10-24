@@ -85,10 +85,9 @@ static FLB_INLINE void flb_thread_destroy(struct flb_thread *th)
     flb_free(th);
 }
 
-static FLB_INLINE void flb_thread_return(struct flb_thread *th)
-{
-    co_switch(th->caller);
-}
+#define flb_thread_return(th)                   \
+    co_switch(th->caller);                      \
+    return 0; /* useless now */
 
 static FLB_INLINE void flb_thread_resume(struct flb_thread *th)
 {

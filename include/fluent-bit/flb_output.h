@@ -385,7 +385,7 @@ struct flb_thread *flb_output_thread(struct flb_task *task,
 
 #ifdef FLB_HAVE_VALGRIND
     th->valgrind_stack_id = VALGRIND_STACK_REGISTER(th->callee,
-                                                    th->callee + stack_size);
+                                                    ((char *)th->callee) + stack_size);
 #endif
 
     /* Workaround for makecontext() */
@@ -444,15 +444,13 @@ struct flb_thread *flb_output_thread(struct flb_task *task,
  * The signal emmited indicate the 'Task' number that have finished plus
  * a return value. The return value is either FLB_OK, FLB_RETRY or FLB_ERROR.
  */
-static inline int flb_output_return(int ret) {
+static inline void flb_output_return(int ret, struct flb_thread *th) {
     int n;
     uint32_t set;
     uint64_t val;
-    struct flb_thread *th;
     struct flb_task *task;
     struct flb_output_thread *out_th;
 
-    th = (struct flb_thread *) pthread_getspecific(flb_thread_key);
     out_th = (struct flb_output_thread *) FLB_THREAD_DATA(th);
     task = out_th->task;
 
@@ -470,19 +468,20 @@ static inline int flb_output_return(int ret) {
 
     n = write(task->config->ch_manager[1], &val, sizeof(val));
     if (n == -1) {
-        perror("write");
-        return -1;
+        flb_errno();
     }
-
-    /*
-     * Each co-routine handler have different ways to handle a return,
-     * just use the wrapper.
-     */
-    flb_thread_return(th);
 }
 
 #define FLB_OUTPUT_RETURN(x)                                            \
-    flb_output_return(x);
+    struct flb_thread *th;                                              \
+    th = (struct flb_thread *) pthread_getspecific(flb_thread_key);     \
+    flb_output_return(x, th);                                           \
+    /*                                                                  \
+     * Each co-routine handler have different ways to handle a return,  \
+     * just use the wrapper.                                            \
+     */                                                                 \
+    flb_thread_return(th)
+
 
 struct flb_output_instance *flb_output_new(struct flb_config *config,
                                            char *output, void *data);

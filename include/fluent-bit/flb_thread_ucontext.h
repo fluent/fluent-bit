@@ -84,6 +84,8 @@ static FLB_INLINE void flb_thread_destroy(struct flb_thread *th)
     flb_free(th);
 }
 
+#define flb_thread_return(th) return 0
+
 static FLB_INLINE void flb_thread_resume(struct flb_thread *th)
 {
     pthread_setspecific(flb_thread_key, (void *) th);
