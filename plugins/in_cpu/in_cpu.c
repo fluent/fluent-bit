@@ -104,6 +104,12 @@ static inline double proc_cpu_load(int cpus, struct cpu_stats *cstats)
         snap_arr = cstats->snap_b;
     }
 
+    /*
+     * Note about getline(): on this call we let glibc to perform the
+     * memory allocation for the buffer, for hence upon release we
+     * use a direct free(2) instead of flb_free().
+     */
+
     /* Always read (n_cpus + 1) lines */
     for (i = 0; i <= cpus; i++) {
         read = getline(&line, &len, f);
@@ -142,7 +148,7 @@ static inline double proc_cpu_load(int cpus, struct cpu_stats *cstats)
     }
 
     if (line) {
-        flb_free(line);
+        free(line);
     }
 
     fclose(f);
