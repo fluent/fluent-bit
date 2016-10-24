@@ -82,6 +82,12 @@ if(FLB_FLUSH_LIBCO)
     "co")
 endif()
 
+if(FLB_JEMALLOC)
+  set(extra_libs
+    ${extra_libs}
+    "libjemalloc")
+endif()
+
 include(CheckSymbolExists)
 check_symbol_exists(accept4 "sys/socket.h" HAVE_ACCEPT4)
 
@@ -89,9 +95,9 @@ check_symbol_exists(accept4 "sys/socket.h" HAVE_ACCEPT4)
 set(FLB_DEPS
   mk_core
   jsmn
-  ${extra_libs}
-  ${FLB_PLUGINS}
   msgpackc-static
+  ${FLB_PLUGINS}
+  ${extra_libs}
   )
 
 # Shared Library
@@ -110,6 +116,10 @@ add_library(fluent-bit-static STATIC ${src})
 target_link_libraries(fluent-bit-static ${FLB_DEPS})
 set_target_properties(fluent-bit-static PROPERTIES OUTPUT_NAME fluent-bit)
 
+if(FLB_JEMALLOC)
+  target_link_libraries(fluent-bit-static libjemalloc)
+endif()
+
 if(FLB_HTTP)
   target_link_libraries(fluent-bit-static monkey-core-static ejson)
 endif()
@@ -123,7 +133,12 @@ if(NOT FLB_WITHOUT_BIN)
   find_package (Threads)
   add_executable(fluent-bit-bin fluent-bit.c)
 
+  if(FLB_JEMALLOC)
+    target_link_libraries(fluent-bit-bin libjemalloc)
+  endif()
+
   target_link_libraries(fluent-bit-bin fluent-bit-static ${CMAKE_THREAD_LIBS_INIT} ${CMAKE_DL_LIBS})
+
   set_target_properties(fluent-bit-bin
     PROPERTIES
       OUTPUT_NAME fluent-bit

@@ -23,6 +23,10 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_macros.h>
 
+#ifdef FLB_HAVE_JEMALLOC
+#include <jemalloc/jemalloc.h>
+#endif
+
 #include <stdlib.h>
 
 /*
@@ -43,7 +47,12 @@ static inline ALLOCSZ_ATTR(1)
 void *flb_malloc(const size_t size) {
     void *aux;
 
+#ifdef FLB_HAVE_JEMALLOC
+    aux = je_malloc(size);
+#else
     aux = malloc(size);
+#endif
+
     if (flb_unlikely(!aux && size)) {
         return NULL;
     }
@@ -55,7 +64,12 @@ static inline ALLOCSZ_ATTR(1)
 void *flb_calloc(size_t n, const size_t size) {
     void *buf;
 
+#ifdef FLB_HAVE_JEMALLOC
+    buf = je_calloc(n, size);
+#else
     buf = calloc(n, size);
+#endif
+
     if (flb_unlikely(!buf)) {
         return NULL;
     }
@@ -68,7 +82,12 @@ void *flb_realloc(void *ptr, const size_t size)
 {
     void *aux;
 
+#ifdef FLB_HAVE_JEMALLOC
+    aux = je_realloc(ptr, size);
+#else
     aux = realloc(ptr, size);
+#endif
+
     if (flb_unlikely(!aux && size)) {
         return NULL;
     }
@@ -77,7 +96,11 @@ void *flb_realloc(void *ptr, const size_t size)
 }
 
 static inline void flb_free(void *ptr) {
+#ifdef FLB_HAVE_JEMALLOC
+    je_free(ptr);
+#else
     free(ptr);
+#endif
 }
 
 #endif

@@ -6,6 +6,7 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -fPIC -Wno-deprecated-declarations ")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__='\"$(subst ${CMAKE_SOURCE_DIR}/,,$(abspath $<))\"'")
 
 include(GNUInstallDirs)
+include(ExternalProject)
 
 # Output paths
 set(FLB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -22,6 +23,7 @@ set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PAT
 # Build Options
 option(FLB_ALL                "Enable all features"          No)
 option(FLB_DEBUG              "Build with debug symbols"     No)
+option(FLB_JEMALLOC           "Build with Jemalloc support"  No)
 option(FLB_TLS                "Build with SSL/TLS support"   No)
 option(FLB_HTTP               "Enable build-in HTTP Server"  No)
 option(FLB_WITHOUT_BIN        "Do not build executable"      No)
@@ -256,6 +258,24 @@ if(FLB_MTRACE)
   endif()
 endif()
 
+# Memory Allocator
+# ================
+if(FLB_JEMALLOC)
+  FLB_DEFINITION(FLB_HAVE_JEMALLOC)
+
+  # Link to Jemalloc as an external dependency
+  ExternalProject_Add(jemalloc
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc
+    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc/configure --with-jemalloc-prefix=je_ --enable-cc-silence --prefix=<INSTALL_DIR>
+    CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
+    BUILD_COMMAND ${MAKE}
+    INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
+    INSTALL_COMMAND $(MAKE) install_lib_static install_include)
+  add_library(libjemalloc STATIC IMPORTED GLOBAL)
+  set_target_properties(libjemalloc PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/lib/libjemalloc_pic.a")
+  add_dependencies(libjemalloc jemalloc)
+  include_directories("${CMAKE_CURRENT_BINARY_DIR}/include/")
+endif()
 
 # Pthread Local Storage
 # =====================
