@@ -33,8 +33,13 @@
 #include <fluent-bit/flb_kernel.h>
 #include <fluent-bit/flb_worker.h>
 #include <fluent-bit/flb_scheduler.h>
+#include <fluent-bit/flb_utils.h>
 
 struct flb_service_config service_configs[] = {
+    {FLB_CONF_STR_FLUSH,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, flush)},
+
     {FLB_CONF_STR_FLUSH,
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, flush)},
@@ -50,6 +55,10 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STR_LOGLEVEL,
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, log)},
+
+    {FLB_CONF_STR_USER_HEADER,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, user_headers)},
 
 #ifdef FLB_HAVE_HTTP
     {FLB_CONF_STR_HTTP_MONITOR,
@@ -110,11 +119,14 @@ struct flb_config *flb_config_init()
     config->buffer_workers = 0;
 #endif
 
+    config->header_num = 0;
+
     mk_list_init(&config->collectors);
     mk_list_init(&config->in_plugins);
     mk_list_init(&config->out_plugins);
     mk_list_init(&config->inputs);
     mk_list_init(&config->outputs);
+    mk_list_init(&config->user_headers);
     mk_list_init(&config->sched_requests);
     mk_list_init(&config->workers);
 
@@ -137,6 +149,7 @@ void flb_config_exit(struct flb_config *config)
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_input_collector *collector;
+    struct flb_config_user_header*  header = NULL;
 
     if (config->logfile) {
         flb_free(config->logfile);
@@ -190,6 +203,16 @@ void flb_config_exit(struct flb_config *config)
         mk_list_del(&collector->_head);
         flb_free(collector);
     }
+    /* Header */
+    mk_list_foreach_safe(head, tmp, &config->user_headers) {
+        header = mk_list_entry(head, struct flb_config_user_header , _head);
+        flb_free(header->key);
+        flb_free(header->val);
+        mk_list_del(&header->_head);
+        flb_free(header);
+        config->header_num--;
+    }
+
 
     /* Workers */
     flb_worker_exit(config);
@@ -279,6 +302,49 @@ static inline int atobool(char*v)
         : FLB_FALSE;
 }
 
+static int set_user_header(struct flb_config *config, char *conf_str)
+{
+    int ret = -1;
+    char* key   = NULL;
+    char* value = NULL;
+    struct flb_config_user_header *header;
+
+    if ( !flb_utils_parse_key_value(conf_str, &key, &value) ) {
+        header = flb_malloc(sizeof(struct flb_config_user_header));
+        header->key = key;
+        header->val = value;
+        mk_list_add(&header->_head, &config->user_headers);
+        config->header_num++;
+        ret = 0;
+    }
+    return ret;
+}
+    
+int flb_config_get_user_header_num(struct flb_config *config) {
+    return config->header_num;
+}
+
+int flb_config_append_user_header(struct flb_config *config,
+                                  msgpack_packer *mp_pck)
+{
+    int len;
+    struct mk_list *head = NULL;
+    struct flb_config_user_header *header = NULL;
+
+
+    mk_list_foreach(head, &config->user_headers) {
+        header = mk_list_entry(head, struct flb_config_user_header, _head);
+        len = strlen(header->key);
+        msgpack_pack_bin(mp_pck, len);
+        msgpack_pack_bin_body(mp_pck, header->key, len);
+
+        len = strlen(header->val);
+        msgpack_pack_bin(mp_pck, len);
+        msgpack_pack_bin_body(mp_pck, header->val, len);
+    }
+    return 0;
+}
+
 int flb_config_set_property(struct flb_config *config,
                             char *k, char *v)
 {
@@ -289,12 +355,19 @@ int flb_config_set_property(struct flb_config *config,
     size_t len = strnlen(k, 256);
     char *key = service_configs[0].key;
 
+
     while (key != NULL) {
         if (prop_key_check(key, k,len) == 0) {
             if (!strncasecmp(key, FLB_CONF_STR_LOGLEVEL, 256)) {
+                /* Log Level */
                 ret = set_log_level(config, v);
+            } else if (!strncasecmp(key, FLB_CONF_STR_USER_HEADER, 256)) {
+                /* User header */
+                flb_info("aaaa");
+                ret = set_user_header(config, v);
             }
             else{
+                /* Other configs */
                 ret = 0;
                 switch(service_configs[i].type) {
                 case FLB_CONF_TYPE_INT:

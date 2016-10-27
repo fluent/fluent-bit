@@ -183,3 +183,23 @@ void flb_utils_print_setup(struct flb_config *config)
 
     }
 }
+
+/* parse kv connected with '=' (e.g. "KEY=VALUE") */
+int flb_utils_parse_key_value(const char* kv, char** key, char** value)
+{
+    int len;
+    int sep;
+
+    len = strlen(kv);
+    sep = mk_string_char_search(kv, '=', len);
+    if (sep == -1) {
+        return -1;
+    }
+
+    *key   = mk_string_copy_substr(kv, 0, sep);
+    if (!*key) {
+        return -1;
+    }
+    *value = flb_strdup(kv + sep + 1);
+    return 0;
+}

@@ -154,52 +154,28 @@ static void flb_signal_init()
 static int input_set_property(struct flb_input_instance *in, char *kv)
 {
     int ret;
-    int len;
-    int sep;
     char *key;
     char *value;
-
-    len = strlen(kv);
-    sep = mk_string_char_search(kv, '=', len);
-    if (sep == -1) {
-        return -1;
+    if( !flb_utils_parse_key_value(kv, &key, &value) ) {
+        ret = flb_input_set_property(in, key, value);
+        flb_free(key);
+        flb_free(value);
     }
-
-    key = mk_string_copy_substr(kv, 0, sep);
-    value = kv + sep + 1;
-
-    if (!key) {
-        return -1;
-    }
-
-    ret = flb_input_set_property(in, key, value);
-    flb_free(key);
     return ret;
 }
 
 static int output_set_property(struct flb_output_instance *out, char *kv)
 {
-    int ret;
-    int len;
-    int sep;
     char *key;
     char *value;
+    int  ret = -1;
 
-    len = strlen(kv);
-    sep = mk_string_char_search(kv, '=', len);
-    if (sep == -1) {
-        return -1;
+    if( !flb_utils_parse_key_value(kv, &key, &value) ) {
+        ret = flb_output_set_property(out, key, value);
+        flb_free(key);
+        flb_free(value);
     }
 
-    key = mk_string_copy_substr(kv, 0, sep);
-    value = kv + sep + 1;
-
-    if (!key) {
-        return -1;
-    }
-
-    ret = flb_output_set_property(out, key, value);
-    flb_free(key);
     return ret;
 }
 
