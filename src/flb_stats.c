@@ -66,7 +66,7 @@ static int stats_userver_timer(struct flb_stats *stats)
     struct flb_stats_userver *userver;
 
     userver = stats->userver;
-    timer = malloc(sizeof(struct flb_stats_userver_t));
+    timer = flb_malloc(sizeof(struct flb_stats_userver_t));
     if (!timer) {
         return -1;
     }
@@ -78,7 +78,7 @@ static int stats_userver_timer(struct flb_stats *stats)
     fd = mk_event_timeout_create(stats->evl, 5, event);
     if (fd == -1) {
         flb_error("[stats_usrv] could not create timeout handler");
-        free(timer);
+        flb_free(timer);
         return -1;
     }
 
@@ -204,7 +204,7 @@ static int stats_userver_add(int fd, struct flb_stats *stats)
     struct flb_stats_userver *userver = stats->userver;
 
     /* Allocate connection node */
-    client = calloc(1, sizeof(struct flb_stats_userver_c));
+    client = flb_calloc(1, sizeof(struct flb_stats_userver_c));
     if (!client) {
         return -1;
     }
@@ -222,7 +222,7 @@ static int stats_userver_add(int fd, struct flb_stats *stats)
                        client);
     if (ret == -1) {
         mk_list_del(&client->_head);
-        free(client);
+        flb_free(client);
         return -1;
     }
 
@@ -236,7 +236,7 @@ static void stats_userver_remove(struct flb_stats_userver_c *uc,
     mk_event_del(stats->evl, &uc->event);
     close(uc->fd);
     mk_list_del(&uc->_head);
-    free(uc);
+    flb_free(uc);
 }
 
 static int flb_stats_userver_deliver(struct flb_stats *stats)
@@ -328,7 +328,7 @@ static int flb_stats_userver_deliver(struct flb_stats *stats)
     }
 
     json_delete(j_root);
-    free(raw);
+    flb_free(raw);
 
     return 0;
 }
@@ -342,7 +342,7 @@ static int flb_stats_userver(struct flb_stats *stats)
     struct flb_stats_userver *userver;
 
     /* Create a TCP server based on unix sockets */
-    userver = malloc(sizeof(struct flb_stats_userver));
+    userver = flb_malloc(sizeof(struct flb_stats_userver));
     if (!userver) {
         flb_error("[stats_usrv] no mem!");
         return -1;
@@ -351,7 +351,7 @@ static int flb_stats_userver(struct flb_stats *stats)
     fd = stats_unix_server(FLB_STATS_USERVER_PATH);
     if (fd == -1) {
         flb_error("[stats_usrv] could not create unix server");
-        free(userver);
+        flb_free(userver);
         return -1;
     }
 
@@ -389,9 +389,9 @@ static void stats_worker_exit(struct flb_stats *stats)
     /* Release the timer */
     mk_event_del(stats->evl, &u->timer->event);
     close(u->timer->fd);
-    free(u->timer);
+    flb_free(u->timer);
 
-    free(u);
+    flb_free(u);
 }
 
 static void stats_worker_init(void *data)
@@ -458,7 +458,7 @@ static int register_input_plugin(struct flb_input_plugin *plugin,
     struct flb_stats_in_plugin *sp;
 
     /* Allocate stats object for this stats entry */
-    sp = malloc(sizeof(struct flb_stats_in_plugin));
+    sp = flb_malloc(sizeof(struct flb_stats_in_plugin));
     if (!sp) {
         return -1;
     }
@@ -467,7 +467,7 @@ static int register_input_plugin(struct flb_input_plugin *plugin,
     ret = pipe(sp->pipe);
     if (ret == -1) {
         flb_error("[stats reg] could not create pipe");
-        free(sp);
+        flb_free(sp);
         return -1;
     }
 
@@ -482,7 +482,7 @@ static int register_input_plugin(struct flb_input_plugin *plugin,
     if (ret == -1) {
         close(sp->pipe[0]);
         close(sp->pipe[1]);
-        free(sp);
+        flb_free(sp);
         return -1;
     }
     plugin->stats_fd = sp->pipe[1];
@@ -504,7 +504,7 @@ static int register_output_plugin(struct flb_output_plugin *plugin,
     struct flb_stats_out_plugin *sp;
 
     /* Allocate stats object for this stats entry */
-    sp = malloc(sizeof(struct flb_stats_out_plugin));
+    sp = flb_malloc(sizeof(struct flb_stats_out_plugin));
     if (!sp) {
         return -1;
     }
@@ -513,7 +513,7 @@ static int register_output_plugin(struct flb_output_plugin *plugin,
     ret = pipe(sp->pipe);
     if (ret == -1) {
         flb_error("[stats reg] could not create pipe");
-        free(sp);
+        flb_free(sp);
         return -1;
     }
 
@@ -528,7 +528,7 @@ static int register_output_plugin(struct flb_output_plugin *plugin,
     if (ret == -1) {
         close(sp->pipe[0]);
         close(sp->pipe[1]);
-        free(sp);
+        flb_free(sp);
         return -1;
     }
 
@@ -582,7 +582,7 @@ int flb_stats_init(struct flb_config *config)
     int ret;
     struct flb_stats *stats;
 
-    stats = malloc(sizeof(struct flb_stats));
+    stats = flb_malloc(sizeof(struct flb_stats));
     if (!stats) {
         flb_error("[stats] could not initialize");
         return -1;
@@ -594,7 +594,7 @@ int flb_stats_init(struct flb_config *config)
     stats->evl = mk_event_loop_create(64);
     if (!stats->evl) {
         flb_error("[stats] could not initialize event loop");
-        free(stats);
+        flb_free(stats);
         return -1;
     }
 
@@ -608,7 +608,7 @@ int flb_stats_init(struct flb_config *config)
                                   stats);
     if (ret != 0) {
         flb_error("[stats] could not create manager channels");
-        free(stats);
+        flb_free(stats);
         return -1;
     }
 
@@ -639,7 +639,7 @@ int flb_stats_exit(struct flb_config *config)
         close(s_in->pipe[0]);
         close(s_in->pipe[1]);
         mk_list_del(&s_in->_head);
-        free(s_in);
+        flb_free(s_in);
     }
 
     /* Release components / Output plugins */
@@ -649,14 +649,14 @@ int flb_stats_exit(struct flb_config *config)
         close(s_out->pipe[0]);
         close(s_out->pipe[1]);
         mk_list_del(&s_out->_head);
-        free(s_out);
+        flb_free(s_out);
     }
 
     pthread_join(ctx->worker_tid, NULL);
 
     mk_event_loop_destroy(ctx->evl);
     config->stats_ctx = NULL;
-    free(ctx);
+    flb_free(ctx);
 
     return 0;
 }

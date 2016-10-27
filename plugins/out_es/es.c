@@ -133,7 +133,7 @@ static char *es_format(void *data, size_t bytes, int *out_size,
             }
             else {
                 /* Long JSON map keys have a performance penalty */
-                ptr_key = malloc(psize + 1);
+                ptr_key = flb_malloc(psize + 1);
                 memcpy(ptr_key, k->via.bin.ptr, psize);
                 ptr_key[psize] = '\0';
             }
@@ -180,7 +180,7 @@ static char *es_format(void *data, size_t bytes, int *out_size,
                     ptr_val = buf_val;
                 }
                 else {
-                    ptr_val = malloc(psize + 1);
+                    ptr_val = flb_malloc(psize + 1);
                     memcpy(ptr_val, k->via.str.ptr, psize);
                     ptr_val[psize] = '\0';
                 }
@@ -196,7 +196,7 @@ static char *es_format(void *data, size_t bytes, int *out_size,
                     ptr_val = buf_val;
                 }
                 else {
-                    ptr_val = malloc(psize + 1);
+                    ptr_val = flb_malloc(psize + 1);
                     memcpy(ptr_val, k->via.bin.ptr, psize);
                     ptr_val[psize] = '\0';
                 }
@@ -205,12 +205,12 @@ static char *es_format(void *data, size_t bytes, int *out_size,
             }
 
             if (ptr_key && ptr_key != buf_key) {
-                free(ptr_key);
+                flb_free(ptr_key);
             }
             ptr_key = NULL;
 
             if (ptr_val && ptr_val != buf_val) {
-                free(ptr_val);
+                flb_free(ptr_val);
             }
             ptr_val = NULL;
         }
@@ -228,7 +228,7 @@ static char *es_format(void *data, size_t bytes, int *out_size,
         ret = es_bulk_append(bulk,
                              j_index, index_len,
                              j_entry, strlen(j_entry));
-        free(j_entry);
+        flb_free(j_entry);
         if (ret == -1) {
             /* We likely ran out of memory, abort here */
             msgpack_unpacked_destroy(&result);
@@ -248,7 +248,7 @@ static char *es_format(void *data, size_t bytes, int *out_size,
      * buffer with the data. Instead we just release the bulk context and
      * return the bulk->ptr buffer
      */
-    free(bulk);
+    flb_free(bulk);
 
     return buf;
 }
@@ -275,7 +275,7 @@ int cb_es_init(struct flb_output_instance *ins,
 
     /* Get network configuration */
     if (!ins->host.name) {
-        ins->host.name = strdup("127.0.0.1");
+        ins->host.name = flb_strdup("127.0.0.1");
     }
 
     if (ins->host.port == 0) {
@@ -283,7 +283,7 @@ int cb_es_init(struct flb_output_instance *ins,
     }
 
     /* Allocate plugin context */
-    ctx = malloc(sizeof(struct flb_out_es_config));
+    ctx = flb_malloc(sizeof(struct flb_out_es_config));
     if (!ctx) {
         perror("malloc");
         return -1;
@@ -303,7 +303,7 @@ int cb_es_init(struct flb_output_instance *ins,
                                    io_type,
                                    &ins->tls);
     if (!upstream) {
-        free(ctx);
+        flb_free(ctx);
         return -1;
     }
 
@@ -369,7 +369,7 @@ int cb_es_flush(void *data, size_t bytes,
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
-        free(pack);
+        flb_free(pack);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
@@ -383,7 +383,7 @@ int cb_es_flush(void *data, size_t bytes,
     flb_debug("[out_es] http_do=%i", ret);
     flb_http_client_destroy(c);
 
-    free(pack);
+    flb_free(pack);
 
     /* Release the connection */
     flb_upstream_conn_release(u_conn);
@@ -395,7 +395,7 @@ int cb_es_exit(void *data, struct flb_config *config)
     struct flb_out_es_config *ctx = data;
 
     flb_upstream_destroy(ctx->u);
-    free(ctx);
+    flb_free(ctx);
 
     return 0;
 }

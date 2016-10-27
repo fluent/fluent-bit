@@ -81,6 +81,7 @@ struct flb_upstream_conn {
     struct flb_thread *thread;
 
     int fd;
+    int connect_count;
 
     /* Upstream parent */
     struct flb_upstream *u;

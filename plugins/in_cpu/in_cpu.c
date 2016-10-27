@@ -50,13 +50,13 @@ static inline void snapshot_key_format(int cpus, struct cpu_snapshot *snap_arr)
 
 static int snapshots_init(int cpus, struct cpu_stats *cstats)
 {
-    cstats->snap_a = calloc(1, sizeof(struct cpu_snapshot) * (cpus + 1));
+    cstats->snap_a = flb_calloc(1, sizeof(struct cpu_snapshot) * (cpus + 1));
     if (!cstats->snap_a) {
         perror("malloc");
         return -1;
     }
 
-    cstats->snap_b = malloc(sizeof(struct cpu_snapshot) * (cpus + 1));
+    cstats->snap_b = flb_malloc(sizeof(struct cpu_snapshot) * (cpus + 1));
     if (!cstats->snap_b) {
         perror("malloc");
         return -1;
@@ -104,6 +104,12 @@ static inline double proc_cpu_load(int cpus, struct cpu_stats *cstats)
         snap_arr = cstats->snap_b;
     }
 
+    /*
+     * Note about getline(): on this call we let glibc to perform the
+     * memory allocation for the buffer, for hence upon release we
+     * use a direct free(2) instead of flb_free().
+     */
+
     /* Always read (n_cpus + 1) lines */
     for (i = 0; i <= cpus; i++) {
         read = getline(&line, &len, f);
@@ -135,7 +141,7 @@ static inline double proc_cpu_load(int cpus, struct cpu_stats *cstats)
         }
 
         if (ret < 5) {
-            free(line);
+            flb_free(line);
             fclose(f);
             return -1;
         }
@@ -157,7 +163,7 @@ int in_cpu_init(struct flb_input_instance *in, struct flb_config *config, void *
     (void) data;
 
     /* Allocate space for the configuration */
-    ctx = calloc(1, sizeof(struct flb_in_cpu_config));
+    ctx = flb_calloc(1, sizeof(struct flb_in_cpu_config));
     if (!ctx) {
         perror("calloc");
         return -1;
@@ -170,7 +176,7 @@ int in_cpu_init(struct flb_input_instance *in, struct flb_config *config, void *
     /* Initialize buffers for CPU stats */
     ret = snapshots_init(ctx->n_processors, &ctx->cstats);
     if (ret != 0) {
-        free(ctx);
+        flb_free(ctx);
         return -1;
     }
 
@@ -347,7 +353,7 @@ void *in_cpu_flush(void *in_context, size_t *size)
 
     sbuf = &ctx->mp_sbuf;
     *size = sbuf->size;
-    buf = malloc(sbuf->size);
+    buf = flb_malloc(sbuf->size);
     if (!buf) {
         return NULL;
     }
@@ -369,14 +375,14 @@ int in_cpu_exit(void *data, struct flb_config *config)
 
     /* Release snapshots */
     cs = &ctx->cstats;
-    free(cs->snap_a);
-    free(cs->snap_b);
+    flb_free(cs->snap_a);
+    flb_free(cs->snap_b);
 
     /* Remove msgpack buffer */
     msgpack_sbuffer_destroy(&ctx->mp_sbuf);
 
     /* done */
-    free(ctx);
+    flb_free(ctx);
 
     return 0;
 }

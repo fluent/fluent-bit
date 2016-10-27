@@ -32,30 +32,30 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
     char *chunk_size;
     struct flb_in_fw_config *config;
 
-    config = malloc(sizeof(struct flb_in_fw_config));
+    config = flb_malloc(sizeof(struct flb_in_fw_config));
     memset(config, '\0', sizeof(struct flb_in_fw_config));
 
     /* Listen interface (if not set, defaults to 0.0.0.0) */
     if (!i_ins->host.listen) {
         listen = flb_input_get_property("listen", i_ins);
         if (listen) {
-            config->listen = strdup(listen);
+            config->listen = flb_strdup(listen);
         }
         else {
-            config->listen = strdup("0.0.0.0");
+            config->listen = flb_strdup("0.0.0.0");
         }
     }
     else {
-        config->listen = i_ins->host.listen;
+        config->listen = flb_strdup(i_ins->host.listen);
     }
 
     /* Listener TCP Port */
     if (i_ins->host.port == 0) {
-        config->tcp_port = strdup("24224");
+        config->tcp_port = flb_strdup("24224");
     }
     else {
         snprintf(tmp, sizeof(tmp) - 1, "%d", i_ins->host.port);
-        config->tcp_port = strdup(tmp);
+        config->tcp_port = flb_strdup(tmp);
     }
 
     /* Chunk size */
@@ -86,9 +86,9 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
 
 int fw_config_destroy(struct flb_in_fw_config *config)
 {
-    free(config->listen);
-    free(config->tcp_port);
-    free(config);
+    flb_free(config->listen);
+    flb_free(config->tcp_port);
+    flb_free(config);
 
     return 0;
 }

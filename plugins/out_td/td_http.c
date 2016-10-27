@@ -49,7 +49,7 @@ static void *gzip_compress(void *data, size_t len, size_t *out_len)
     strm_init(&strm);
 
     buf_len = len + 32;
-    buf = malloc(buf_len);
+    buf = flb_malloc(buf_len);
     if (!buf) {
         perror("malloc");
         return NULL;
@@ -74,7 +74,7 @@ static void *gzip_compress(void *data, size_t len, size_t *out_len)
         }
         else if (status != Z_OK) {
             deflateEnd(&strm);
-            free(buf);
+            flb_free(buf);
             return NULL;
         }
     }
@@ -104,9 +104,9 @@ struct flb_http_client *td_http_client(struct flb_upstream_conn *u_conn,
     }
 
     /* Compose URI */
-    tmp = malloc(512);
+    tmp = flb_malloc(512);
     if (!tmp) {
-        free(gz);
+        flb_free(gz);
         return NULL;
     }
     snprintf(tmp, 256,
@@ -117,8 +117,8 @@ struct flb_http_client *td_http_client(struct flb_upstream_conn *u_conn,
     c = flb_http_client(u_conn, FLB_HTTP_PUT, tmp,
                         gz, gz_size, NULL, 0, NULL);
     if (!c) {
-        free(tmp);
-        free(gz);
+        flb_free(tmp);
+        flb_free(gz);
         return NULL;
     }
 
@@ -138,7 +138,7 @@ struct flb_http_client *td_http_client(struct flb_upstream_conn *u_conn,
     flb_http_add_header(c,
                         "Content-Type", 12,
                         "application/gzip", 16);
-    free(tmp);
+    flb_free(tmp);
     *body = gz;
 
     return c;

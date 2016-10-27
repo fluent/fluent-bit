@@ -77,7 +77,7 @@ static char *td_format(void *data, size_t bytes, int *out_size)
          * If we got a different format, we assume the caller knows what he is
          * doing, we just duplicate the content in a new buffer and cleanup.
          */
-        buf = malloc(bytes);
+        buf = flb_malloc(bytes);
         if (!buf) {
             return NULL;
         }
@@ -125,7 +125,7 @@ static char *td_format(void *data, size_t bytes, int *out_size)
     /* Create new buffer */
     sbuf = &mp_sbuf;
     *out_size = sbuf->size;
-    buf = malloc(sbuf->size);
+    buf = flb_malloc(sbuf->size);
     if (!buf) {
         return NULL;
     }
@@ -150,7 +150,7 @@ int cb_td_init(struct flb_output_instance *ins, struct flb_config *config,
         return -1;
     }
 
-    ins->host.name = strdup("api.treasuredata.com");
+    ins->host.name = flb_strdup("api.treasuredata.com");
     ins->host.port = 443;
 
     upstream = flb_upstream_create(config,
@@ -158,7 +158,7 @@ int cb_td_init(struct flb_output_instance *ins, struct flb_config *config,
                                    ins->host.port,
                                    FLB_IO_TLS, (void *) &ins->tls);
     if (!upstream) {
-        free(ctx);
+        flb_free(ctx);
         return -1;
     }
     ctx->u = upstream;
@@ -195,14 +195,14 @@ int cb_td_flush(void *data, size_t bytes,
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
         flb_error("[out_td] no upstream connections available");
-        free(pack);
+        flb_free(pack);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
     /* Compose request */
     c = td_http_client(u_conn, pack, bytes_out, &body, ctx, config);
     if (!c) {
-        free(pack);
+        flb_free(pack);
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
@@ -216,7 +216,7 @@ int cb_td_flush(void *data, size_t bytes,
     else {
         flb_debug("[out_td] http_do=%i", ret);
     }
-    free(body);
+    flb_free(body);
 
     /* release */
     flb_upstream_conn_release(u_conn);
@@ -230,7 +230,7 @@ int cb_td_exit(void *data, struct flb_config *config)
     struct flb_out_td_config *ctx = data;
 
     flb_upstream_destroy(ctx->u);
-    free(ctx);
+    flb_free(ctx);
 
     return 0;
 }

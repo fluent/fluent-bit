@@ -190,7 +190,7 @@ void *in_xbee_flush(void *in_context, size_t *size)
 
     sbuf = &ctx->mp_sbuf;
     *size = sbuf->size;
-    buf = malloc(sbuf->size);
+    buf = flb_malloc(sbuf->size);
     if (!buf) {
         goto fail;
     }
@@ -224,7 +224,7 @@ int in_xbee_init(struct flb_input_instance *in,
     (void) data;
 
     /* Prepare the configuration context */
-    ctx = calloc(1, sizeof(struct flb_in_xbee_config));
+    ctx = flb_calloc(1, sizeof(struct flb_in_xbee_config));
     if (!ctx) {
         perror("calloc");
         return -1;
@@ -232,7 +232,7 @@ int in_xbee_init(struct flb_input_instance *in,
 
     ret = xbee_config_read(in, ctx);
     if (ret == -1) {
-        free(ctx);
+        flb_free(ctx);
         return -1;
     }
 
@@ -245,20 +245,20 @@ int in_xbee_init(struct flb_input_instance *in,
     ret = stat(ctx->file, &dev_st);
     if (ret < 0) {
         printf("Error: could not open %s device\n", ctx->file);
-        free(ctx->file);
+        flb_free(ctx->file);
         exit(EXIT_FAILURE);
     }
 
     if (!S_ISCHR(dev_st.st_mode)) {
         printf("Error: invalid device %s \n", ctx->file);
-        free(ctx->file);
+        flb_free(ctx->file);
         exit(EXIT_FAILURE);
     }
 
     if (access(ctx->file, R_OK | W_OK) == -1) {
         printf("Error: cannot open the device %s (permission denied ?)\n",
                ctx->file);
-        free(ctx->file);
+        flb_free(ctx->file);
         exit(EXIT_FAILURE);
     }
 

@@ -27,17 +27,17 @@ int main()
     int ret;
     char tmp[256];
     flb_ctx_t *ctx;
-    flb_input_t *input;
-    flb_output_t *output;
+    int in_ffd;
+    int out_ffd;
 
     /* Initialize library */
     ctx = flb_create();
 
-    input = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(input, (char *) "test", NULL);
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, (char *) "test", NULL);
 
-    output = flb_output(ctx, (char *) "stdout", NULL);
-    flb_output_set(output, (char *) "test", NULL);
+    out_ffd = flb_output(ctx, (char *) "stdout", NULL);
+    flb_output_set(ctx, out_ffd, (char *) "test", NULL);
 
     /* Start the background worker */
     flb_start(ctx);
@@ -48,7 +48,7 @@ int main()
                      "[%lu, {\"key\": \"val %i\"}]",
                      time(NULL), i);
         printf("%s\n", tmp);
-        flb_lib_push(input, tmp, n);
+        flb_lib_push(ctx, in_ffd, tmp, n);
     }
 
     flb_stop(ctx);

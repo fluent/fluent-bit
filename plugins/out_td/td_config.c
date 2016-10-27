@@ -47,7 +47,7 @@ struct flb_out_td_config *td_config_init(struct flb_output_instance *o_ins)
         flb_utils_error_c("[out_td] error reading Table name");
     }
 
-    config = malloc(sizeof(struct flb_out_td_config));
+    config = flb_malloc(sizeof(struct flb_out_td_config));
     config->fd       = -1;
     config->api      = api;
     config->db_name  = db_name;

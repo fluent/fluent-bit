@@ -33,6 +33,7 @@
 
 #define FLB_FLUSH_UCONTEXT      0
 #define FLB_FLUSH_PTHREADS      1
+#define FLB_FLUSH_LIBCO         2
 
 #define FLB_CONFIG_FLUSH_SECS   5
 #define FLB_CONFIG_HTTP_PORT    "2020"
@@ -98,7 +99,11 @@ struct flb_config {
     struct flb_kernel *kernel;
 
     /* Logging */
+    char *logfile;
     struct flb_log *log;
+
+    /* Workers: threads spawn using flb_worker_create() */
+    struct mk_list workers;
 
     /* HTTP Server */
 #ifdef FLB_HAVE_HTTP
@@ -112,6 +117,12 @@ struct flb_config {
     int buffer_workers;
     char *buffer_path;
 #endif
+
+    /*
+     * Input table-id: table to keep a reference of thread-IDs used by the
+     * input plugins.
+     */
+    uint16_t in_table_id[512];
 
     struct mk_list sched_requests;
     struct flb_task_map tasks_map[2048];
@@ -137,6 +148,7 @@ enum conf_type {
 
 #define FLB_CONF_STR_FLUSH    "Flush"
 #define FLB_CONF_STR_DAEMON   "Daemon"
+#define FLB_CONF_STR_LOGFILE  "Logfile"
 #define FLB_CONF_STR_LOGLEVEL "Log_Level"
 #ifdef FLB_HAVE_HTTP
 #define FLB_CONF_STR_HTTP_MONITOR "HTTP_Monitor"

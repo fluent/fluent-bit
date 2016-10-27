@@ -22,6 +22,7 @@
 #include <stdarg.h>
 
 #include <fluent-bit/flb_lib.h>
+#include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
@@ -32,6 +33,44 @@
 #endif
 
 extern struct flb_input_plugin in_lib_plugin;
+
+static inline struct flb_input_instance *in_instance_get(flb_ctx_t *ctx,
+                                                         int ffd)
+{
+    struct mk_list *head;
+    struct flb_input_instance *i_ins;
+
+    mk_list_foreach(head, &ctx->config->inputs) {
+        i_ins = mk_list_entry(head, struct flb_input_instance, _head);
+        if (i_ins->id == ffd) {
+            return i_ins;
+        }
+    }
+
+    return NULL;
+}
+
+static inline struct flb_output_instance *out_instance_get(flb_ctx_t *ctx,
+                                                           int ffd)
+{
+    struct mk_list *head;
+    struct flb_output_instance *o_ins;
+
+    mk_list_foreach(head, &ctx->config->outputs) {
+        o_ins = mk_list_entry(head, struct flb_output_instance, _head);
+
+        /*
+         * A small different between input/output instances. The output
+         * instances already have an unique mask_id used for routing, so we
+         * use it as an identificator for the API.
+         */
+        if (o_ins->mask_id == ffd) {
+            return o_ins;
+        }
+    }
+
+    return NULL;
+}
 
 flb_ctx_t *flb_create()
 {
@@ -44,7 +83,7 @@ flb_ctx_t *flb_create()
     mtrace();
 #endif
 
-    ctx = calloc(1, sizeof(flb_ctx_t));
+    ctx = flb_calloc(1, sizeof(flb_ctx_t));
     if (!ctx) {
         perror("malloc");
         return NULL;
@@ -52,32 +91,32 @@ flb_ctx_t *flb_create()
 
     config = flb_config_init();
     if (!config) {
-        free(ctx);
+        flb_free(ctx);
         return NULL;
     }
     ctx->config = config;
 
     /* Initialize logger */
-    flb_log_init(FLB_LOG_STDERR, FLB_LOG_INFO, NULL);
+    flb_log_init(config, FLB_LOG_STDERR, FLB_LOG_INFO, NULL);
 
     /* Initialize our pipe to send data to our worker */
     ret = pipe(config->ch_data);
     if (ret == -1) {
         perror("pipe");
-        free(ctx);
+        flb_free(ctx);
         return NULL;
     }
 
     /* Create the event loop to receive notifications */
     ctx->event_loop = mk_event_loop_create(256);
     if (!ctx->event_loop) {
-        free(ctx);
+        flb_free(ctx);
         return NULL;
     }
     config->ch_evl = ctx->event_loop;
 
     /* Prepare the notification channels */
-    ctx->event_channel = calloc(1, sizeof(struct mk_event));
+    ctx->event_channel = flb_calloc(1, sizeof(struct mk_event));
     ret = mk_event_channel_create(config->ch_evl,
                                   &config->ch_notif[0],
                                   &config->ch_notif[1],
@@ -96,12 +135,12 @@ void flb_destroy(flb_ctx_t *ctx)
 {
     if (ctx->event_channel) {
         mk_event_del(ctx->event_loop, ctx->event_channel);
-        free(ctx->event_channel);
+        flb_free(ctx->event_channel);
     }
 
     /* Remove resources from the event loop */
     mk_event_loop_destroy(ctx->event_loop);
-    free(ctx);
+    flb_free(ctx);
 
 #ifdef FLB_HAVE_MTRACE
     /* Stop tracing malloc and free */
@@ -110,34 +149,53 @@ void flb_destroy(flb_ctx_t *ctx)
 }
 
 /* Defines a new input instance */
-flb_input_t *flb_input(flb_ctx_t *ctx, char *input, void *data)
+int flb_input(flb_ctx_t *ctx, char *input, void *data)
 {
-    return (flb_input_t *) flb_input_new(ctx->config, input, data);
+    struct flb_input_instance *i_ins;
+
+    i_ins = flb_input_new(ctx->config, input, data);
+    if (!i_ins) {
+        return -1;
+    }
+
+    return i_ins->id;
 }
 
 /* Defines a new output instance */
-flb_output_t *flb_output(flb_ctx_t *ctx, char *output, void *data)
+int flb_output(flb_ctx_t *ctx, char *output, void *data)
 {
-    return (flb_output_t *) flb_output_new(ctx->config, output, data);
+    struct flb_output_instance *o_ins;
+
+    o_ins = flb_output_new(ctx->config, output, data);
+    if (!o_ins) {
+        return -1;
+    }
+
+    return o_ins->mask_id;
 }
 
 /* Set an input interface property */
-int flb_input_set(flb_input_t *input, ...)
+int flb_input_set(flb_ctx_t *ctx, int ffd, ...)
 {
     int ret;
     char *key;
     char *value;
     va_list va;
+    struct flb_input_instance *i_ins;
 
-    va_start(va, input);
+    i_ins = in_instance_get(ctx, ffd);
+    if (!i_ins) {
+        return -1;
+    }
 
+    va_start(va, ffd);
     while ((key = va_arg(va, char *))) {
         value = va_arg(va, char *);
         if (!value) {
             /* Wrong parameter */
             return -1;
         }
-        ret = flb_input_set_property(input, key, value);
+        ret = flb_input_set_property(i_ins, key, value);
         if (ret != 0) {
             va_end(va);
             return -1;
@@ -149,15 +207,20 @@ int flb_input_set(flb_input_t *input, ...)
 }
 
 /* Set an input interface property */
-int flb_output_set(flb_output_t *output, ...)
+int flb_output_set(flb_ctx_t *ctx, int ffd, ...)
 {
     int ret;
     char *key;
     char *value;
     va_list va;
+    struct flb_output_instance *o_ins;
 
-    va_start(va, output);
+    o_ins = out_instance_get(ctx, ffd);
+    if (!o_ins) {
+        return -1;
+    }
 
+    va_start(va, ffd);
     while ((key = va_arg(va, char *))) {
         value = va_arg(va, char *);
         if (!value) {
@@ -165,7 +228,7 @@ int flb_output_set(flb_output_t *output, ...)
             return -1;
         }
 
-        ret = flb_output_set_property(output, key, value);
+        ret = flb_output_set_property(o_ins, key, value);
         if (ret != 0) {
             va_end(va);
             return -1;
@@ -222,13 +285,20 @@ int flb_lib_config_file(struct flb_lib_ctx *ctx, char *path)
 }
 
 /* Push some data into the Engine */
-int flb_lib_push(flb_input_t *input, void *data, size_t len)
+int flb_lib_push(flb_ctx_t *ctx, int ffd, void *data, size_t len)
 {
     int ret;
+    struct flb_input_instance *i_ins;
 
-    ret = write(input->channel[1], data, len);
+    i_ins = in_instance_get(ctx, ffd);
+    if (!i_ins) {
+        return -1;
+    }
+
+    ret = write(i_ins->channel[1], data, len);
     if (ret == -1) {
-        perror("write");
+        flb_errno();
+        return -1;
     }
     return ret;
 }
@@ -237,7 +307,7 @@ static void flb_lib_worker(void *data)
 {
     struct flb_config *config = data;
 
-    flb_log_init(FLB_LOG_STDERR, FLB_LOG_INFO, NULL);
+    flb_log_init(config, FLB_LOG_STDERR, FLB_LOG_INFO, NULL);
     flb_engine_start(config);
 }
 

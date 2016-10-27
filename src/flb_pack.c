@@ -20,6 +20,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
@@ -40,7 +42,7 @@ static int json_tokenise(char *js, size_t len,
 
     while (ret == JSMN_ERROR_NOMEM) {
         n = state->tokens_size += 256;
-        tmp = realloc(state->tokens, sizeof(jsmntok_t) * n);
+        tmp = flb_realloc(state->tokens, sizeof(jsmntok_t) * n);
         if (!tmp) {
             perror("realloc");
             return -1;
@@ -142,7 +144,7 @@ static char *tokens_to_msgpack(char *js,
 
     /* dump data back to a new buffer */
     *out_size = sbuf.size;
-    buf = malloc(sbuf.size);
+    buf = flb_malloc(sbuf.size);
     memcpy(buf, sbuf.data, sbuf.size);
     msgpack_sbuffer_destroy(&sbuf);
 
@@ -194,7 +196,7 @@ int flb_pack_state_init(struct flb_pack_state *s)
     int size = 256;
 
     jsmn_init(&s->parser);
-    s->tokens = calloc(1, sizeof(jsmntok_t) * size);
+    s->tokens = flb_calloc(1, sizeof(jsmntok_t) * size);
     if (!s->tokens) {
         perror("calloc");
         return -1;
@@ -207,7 +209,7 @@ int flb_pack_state_init(struct flb_pack_state *s)
 
 void flb_pack_state_reset(struct flb_pack_state *s)
 {
-    free(s->tokens);
+    flb_free(s->tokens);
     s->tokens_size  = 0;
     s->tokens_count = 0;
 }

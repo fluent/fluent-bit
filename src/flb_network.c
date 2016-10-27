@@ -33,6 +33,9 @@
 #include <sys/types.h>          /* See NOTES */
 #include <arpa/inet.h>
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_macros.h>
@@ -46,7 +49,7 @@ static char *copy_substr(char *str, int s)
 {
     char *buf;
 
-    buf = malloc(s + 1);
+    buf = flb_malloc(s + 1);
     strncpy(buf, str, s);
     buf[s] = '\0';
 
@@ -99,7 +102,7 @@ int flb_net_host_set(char *plugin_name, struct flb_net_host *host, char *address
     if (u) {
         host->uri = flb_uri_create(u);
     }
-    host->address = strdup(address);
+    host->address = flb_strdup(address);
 
     if (host->name) {
         host->listen = host->name;
@@ -168,7 +171,7 @@ int flb_net_socket_create(int family, int nonblock)
     }
 
     if (nonblock) {
-        flb_net_socket_tcp_nodelay(fd);
+        flb_net_socket_nonblocking(fd);
     }
 
     return fd;
@@ -314,7 +317,7 @@ int flb_net_accept(int server_fd)
     struct sockaddr sock_addr;
     socklen_t socket_size = sizeof(struct sockaddr);
 
-#ifdef HAVE_ACCEPT4
+#ifdef FLB_HAVE_ACCEPT4
     remote_fd = accept4(server_fd, &sock_addr, &socket_size,
                         SOCK_NONBLOCK | SOCK_CLOEXEC);
 #else

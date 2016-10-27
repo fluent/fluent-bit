@@ -44,7 +44,7 @@ struct flb_buffer_chunk {
     uint8_t tmp_len;
     int buf_worker;
     char tmp[128];          /* temporal ref: Tag/output_instance */
-    char hash_hex[41];
+    char hash_hex[42];
 };
 
 int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
@@ -61,13 +61,12 @@ int flb_buffer_chunk_push(struct flb_buffer *ctx, void *data,
 int flb_buffer_chunk_pop(struct flb_buffer *ctx, int thread_id,
                          struct flb_task *task);
 
-struct flb_buffer_request *flb_buffer_chunk_mov(int type,
-                                                char *name,
-                                                uint64_t routes,
-                                                struct flb_buffer_worker *worker);
+int flb_buffer_chunk_mov(int type, char *name, uint64_t routes,
+                         struct flb_buffer_worker *worker);
 
 int flb_buffer_chunk_real_move(struct flb_buffer_worker *worker,
                                struct mk_event *event);
+int flb_buffer_chunk_scan(struct flb_buffer *ctx);
 
 #endif
 

@@ -20,23 +20,17 @@
 #ifndef FLB_LOG_H
 #define FLB_LOG_H
 
-#include <inttypes.h>
-
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_macros.h>
+#include <fluent-bit/flb_thread_storage.h>
+#include <fluent-bit/flb_worker.h>
 
-#ifdef FLB_HAVE_C_TLS
-#define FLB_TLS_SET(key, val)        key=val
-#define FLB_TLS_GET(key)             key
-#define FLB_TLS_INIT()               do {} while (0)
-extern __thread struct flb_log *flb_log_ctx;
-#else
-pthread_key_t flb_log_ctx;
-#define FLB_TLS_SET(key, val)  pthread_setspecific(key, (void *) val)
-#define FLB_TLS_GET(key)       pthread_getspecific(key)
-#define FLB_TLS_INIT()                                  \
-    pthread_key_create(&flb_log_ctx, NULL);
-#endif
+#include <inttypes.h>
+#include <pthread.h>
+#include <errno.h>
+
+/* FIXME: this extern should be auto-populated from flb_thread_storage.h */
+extern FLB_TLS_DEFINE(struct flb_log, flb_log_ctx)
 
 /* Message types */
 #define FLB_LOG_OFF     0
@@ -51,33 +45,45 @@ pthread_key_t flb_log_ctx;
 #define FLB_LOG_FILE     1  /* write logs to a file        */
 #define FLB_LOG_SOCKET   2  /* write logs to a unix socket */
 
+#define FLB_LOG_EVENT    MK_EVENT_NOTIFICATION
+#define FLB_LOG_MNG      1024
 
 /* Logging main context */
 struct flb_log {
-    uint16_t type;          /* log type */
-    uint16_t level;         /* level    */
-    char *out;              /* FLB_LOG_FILE or FLB_LOG_SOCKET */
+    struct mk_event event;     /* worker* event for manager */
+    int ch_mng[2];             /* worker channel manager   */
+    uint16_t type;             /* log type                 */
+    uint16_t level;            /* level                    */
+    char *out;                 /* FLB_LOG_FILE or FLB_LOG_SOCKET */
+    pthread_t tid;             /* thread ID   */
+    struct flb_worker *worker; /* non-real worker reference */
+    struct mk_event_loop *evl;
 };
 
-/*
-int flb_log_check(int level) {
-    struct flb_log *lc = FLB_TLS_GET(flb_log_ctx);
-    if (lc->level < level)
-        return FLB_FALSE;
-    else
-        return FLB_TRUE;
-}
-*/
-
 #ifdef FLB_HAVE_C_TLS
-#define flb_log_check(l)                                            \
-    (FLB_TLS_GET(flb_log_ctx)->level < l) ? FLB_FALSE: FLB_TRUE
+/* Fast path where __thread exists*/
+#define flb_log_check(l)                                                \
+    (FLB_TLS_GET(flb_worker_ctx)->config->log->level < l) ? FLB_FALSE: FLB_TRUE
 #else
-int flb_log_check(int level);
+/*
+ * Not ideal case but it happens that __thread is not supported and we need
+ * to fallback to pthread solution. For logger we separate this to simplify
+ * the check when the logging API is invoked.
+ */
+static inline int flb_log_check(int l) {
+    struct flb_worker *w;
+    w = (struct flb_worker *) FLB_TLS_GET(flb_worker_ctx);
+    if (flb_worker_log_level(w) < l) {
+        return FLB_FALSE;
+    }
+    return FLB_TRUE;
+}
 #endif
 
-struct flb_log *flb_log_init(int type, int level, char *out);
-int flb_log_stop(struct flb_log *log);
+struct flb_log *flb_log_init(struct flb_config *config, int type,
+                             int level, char *out);
+
+int flb_log_stop(struct flb_log *log, struct flb_config *config);
 void flb_log_print(int type, const char *file, int line, const char *fmt, ...);
 
 /* Logging macros */
@@ -106,5 +112,13 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...);
 #define flb_trace(fmt, ...)  do {} while(0)
 #endif
 
+int flb_log_worker_init(void *data);
+int flb_errno_print(int errnum, const char *file, int line);
+
+#ifdef __FILENAME__
+#define flb_errno() flb_errno_print(errno, __FILENAME__, __LINE__)
+#else
+#define flb_errno() flb_errno_print(errno, __FILE__, __LINE__)
+#endif
 
 #endif

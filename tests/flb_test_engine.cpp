@@ -40,10 +40,10 @@ int callback_test(void* data, size_t size)
 
 int check_routing(const char* tag, const char* match, bool expect)
 {
+    int in_ffd;
+    int out_ffd;
     bool          ret    = false;
     flb_ctx_t    *ctx    = NULL;
-    flb_input_t  *input  = NULL;
-    flb_output_t *output = NULL;
     char         *str    = (char*)"[1, {\"key\":\"value\"}]";
 
     /* initialize */
@@ -53,13 +53,13 @@ int check_routing(const char* tag, const char* match, bool expect)
 
     ctx = flb_create();
 
-    input = flb_input(ctx, (char *) "lib", NULL);
-    EXPECT_TRUE(input != NULL);
-    flb_input_set(input, "tag", tag, NULL);
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    EXPECT_TRUE(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", tag, NULL);
 
-    output = flb_output(ctx, (char *) "lib", (void*)callback_test);
-    EXPECT_TRUE(output != NULL);
-    flb_output_set(output, "match", match, NULL);
+    out_ffd = flb_output(ctx, (char *) "lib", (void*)callback_test);
+    EXPECT_TRUE(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", match, NULL);
 
     flb_service_set(ctx, "Flush", "1", "Daemon", "false", NULL);
 
@@ -67,7 +67,7 @@ int check_routing(const char* tag, const char* match, bool expect)
     EXPECT_EQ(ret, 0);
 
     /* start test */
-    flb_lib_push(input, str, strlen(str));
+    flb_lib_push(ctx, in_ffd, str, strlen(str));
     sleep(1);/*waiting flush*/
 
     pthread_mutex_lock(&result_mutex);
@@ -85,7 +85,7 @@ int check_routing(const char* tag, const char* match, bool expect)
     return 0;
 }
 
-TEST(Engine, wildcard) 
+TEST(Engine, wildcard)
 {
     struct test_wildcard_fmt {
         const char* tag;

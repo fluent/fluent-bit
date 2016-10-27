@@ -59,9 +59,8 @@ static size_t receiver_recv(struct fw_conn *conn, char *buf, size_t try_size) {
     }
 
     memcpy(buf, conn->buf + off, actual_size);
-    memmove(conn->buf, conn->buf + off, actual_size);
-
     conn->rest -= actual_size;
+
     return actual_size;
 }
 
@@ -110,14 +109,17 @@ int fw_prot_process(struct fw_conn *conn)
     while (1) {
         recv_len = receiver_to_unpacker(conn, EACH_RECV_SIZE, unp);
         if (recv_len == 0) {
-
             /* No more data */
             msgpack_unpacker_free(unp);
             msgpack_unpacked_destroy(&result);
 
-            memmove(conn->buf, conn->buf + all_used,
-                    conn->buf_len - all_used);
-            conn->buf_len -= all_used;
+            /* Adjust buffer data */
+            if (all_used > 0) {
+                memmove(conn->buf, conn->buf + all_used,
+                        conn->buf_len - all_used);
+                conn->buf_len -= all_used;
+            }
+
             return 0;
         }
 
@@ -148,14 +150,17 @@ int fw_prot_process(struct fw_conn *conn)
             /* Map the array */
             root = result.data;
             if (root.type != MSGPACK_OBJECT_ARRAY) {
-                flb_debug("[in_fw] parser: expecting an array, skip.");
+                flb_debug("[in_fw] parser: expecting an array (type=%i), skip.",
+                          root.type);
                 msgpack_unpacked_destroy(&result);
+                msgpack_unpacker_free(unp);
                 return -1;
             }
 
             if (root.via.array.size < 2) {
                 flb_debug("[in_fw] parser: array of invalid size, skip.");
                 msgpack_unpacked_destroy(&result);
+                msgpack_unpacker_free(unp);
                 return -1;
             }
 
@@ -164,6 +169,7 @@ int fw_prot_process(struct fw_conn *conn)
             if (tag.type != MSGPACK_OBJECT_STR) {
                 flb_debug("[in_fw] parser: invalid tag format, skip.");
                 msgpack_unpacked_destroy(&result);
+                msgpack_unpacker_free(unp);
                 return -1;
             }
 
@@ -181,6 +187,7 @@ int fw_prot_process(struct fw_conn *conn)
                 if (map.type != MSGPACK_OBJECT_MAP) {
                     flb_warn("[in_fw] invalid data format, map expected");
                     msgpack_unpacked_destroy(&result);
+                    msgpack_unpacker_free(unp);
                     return -1;
                 }
 
@@ -199,10 +206,15 @@ int fw_prot_process(struct fw_conn *conn)
 
                 /* sbuffer to msgpack object */
                 msgpack_unpacked_init(&r_out);
-                msgpack_unpack_next(&r_out,
-                                    mp_sbuf.data,
-                                    mp_sbuf.size,
-                                    &off);
+                ret = msgpack_unpack_next(&r_out,
+                                          mp_sbuf.data,
+                                          mp_sbuf.size,
+                                          &off);
+                if (ret != MSGPACK_UNPACK_SUCCESS) {
+                    msgpack_unpacked_destroy(&result);
+                    msgpack_unpacker_free(unp);
+                    return -1;
+                }
 
                 /* Register data object */
                 entry = r_out.data;
@@ -217,6 +229,7 @@ int fw_prot_process(struct fw_conn *conn)
             else {
                 flb_warn("[in_fw] invalid data format");
                 msgpack_unpacked_destroy(&result);
+                msgpack_unpacker_free(unp);
                 return -1;
             }
 
@@ -224,6 +237,7 @@ int fw_prot_process(struct fw_conn *conn)
         }
     }
     msgpack_unpacked_destroy(&result);
+    msgpack_unpacker_free(unp);
 
     switch (ret) {
     case MSGPACK_UNPACK_EXTRA_BYTES:

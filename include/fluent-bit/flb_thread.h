@@ -31,10 +31,20 @@
 
 #include <fluent-bit/flb_info.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #ifdef FLB_HAVE_FLUSH_UCONTEXT
 #include <fluent-bit/flb_thread_ucontext.h>
 #elif defined FLB_HAVE_FLUSH_PTHREADS
 #include <fluent-bit/flb_thread_pthreads.h>
+#elif defined FLB_HAVE_FLUSH_LIBCO
+#include <fluent-bit/flb_thread_libco.h>
+#endif
+
+#ifdef __cplusplus
+}
 #endif
 
 #endif /* !FLB_THREAD_H */

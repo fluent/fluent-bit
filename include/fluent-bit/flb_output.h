@@ -32,7 +32,9 @@
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_task.h>
-
+#include <fluent-bit/flb_thread.h>
+#include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_str.h>
 #include <unistd.h>
 
 /* Output plugin masks */
@@ -139,7 +141,7 @@ struct flb_output_instance {
      */
     void *data;
 
-        /* Output handler configuration */
+    /* Output handler configuration */
     void *out_context;
 
     /* IO upstream context, if flags & (FLB_OUTPUT_TCP | FLB_OUTPUT TLS)) */
@@ -167,7 +169,65 @@ struct flb_output_instance {
     struct mk_list _head;                /* link to config->inputs       */
 };
 
+struct flb_output_thread {
+    int id;                            /* out-thread ID      */
+    void *buffer;                      /* output buffer      */
+    struct flb_task *task;             /* Parent flb_task    */
+    struct flb_config *config;         /* FLB context        */
+    struct flb_output_instance *o_ins; /* output instance    */
+    struct flb_thread *parent;         /* parent thread addr */
+    struct mk_list _head;              /* Link to struct flb_task->threads */
+};
+
+static FLB_INLINE
+struct flb_output_thread *flb_output_thread_get(int id, struct flb_task *task)
+{
+    struct mk_list *head;
+    struct flb_output_thread *out_th = NULL;
+
+    mk_list_foreach(head, &task->threads) {
+        out_th = mk_list_entry(head, struct flb_output_thread, _head);
+        if (out_th->id == id) {
+            return out_th;
+        }
+    }
+
+    return NULL;
+}
+
+static FLB_INLINE int flb_output_thread_destroy_id(int id, struct flb_task *task)
+{
+    struct flb_output_thread *out_th;
+    struct flb_thread *thread;
+
+    out_th = flb_output_thread_get(id, task);
+    if (!out_th) {
+        return -1;
+    }
+
+    mk_list_del(&out_th->_head);
+    thread = out_th->parent;
+    flb_thread_destroy(thread);
+    task->users--;
+
+    return 0;
+}
+
+/* When an output_thread is going to be destroyed, this callback is triggered */
+static void cb_output_thread_destroy(void *data)
+{
+    struct flb_output_thread *out_th;
+
+    out_th = (struct flb_output_thread *) data;
+
+    flb_debug("[out thread] cb_destroy thread_id=%i", out_th->id);
+
+    out_th->task->users--;
+    mk_list_del(&out_th->_head);
+}
+
 #ifdef FLB_HAVE_FLUSH_UCONTEXT
+
 static FLB_INLINE
 struct flb_thread *flb_output_thread(struct flb_task *task,
                                      struct flb_input_instance *i_ins,
@@ -176,17 +236,34 @@ struct flb_thread *flb_output_thread(struct flb_task *task,
                                      void *buf, size_t size,
                                      char *tag, int tag_len)
 {
+    struct flb_output_thread *out_th;
     struct flb_thread *th;
 
-    th = flb_thread_new();
+    /* Create a new thread */
+    th = flb_thread_new(sizeof(struct flb_output_thread),
+                        cb_output_thread_destroy);
     if (!th) {
         return NULL;
     }
 
-    th->data = o_ins;
-    th->output_buffer = buf;
-    th->task = task;
-    th->config = config;
+    /* Custom output-thread info */
+    out_th = (struct flb_output_thread *) FLB_THREAD_DATA(th);
+    if (!out_th) {
+        flb_errno();
+        return NULL;
+    }
+
+    /*
+     * Each 'Thread' receives an 'id'. This is assigned when this thread
+     * is linked into the parent Task by flb_task_add_thread(...). The
+     * 'id' is always incremental.
+     */
+    out_th->id      = 0;
+    out_th->o_ins   = o_ins;
+    out_th->task    = task;
+    out_th->buffer  = buf;
+    out_th->config  = config;
+    out_th->parent  = th;
 
     makecontext(&th->callee, (void (*)()) o_ins->p->cb_flush,
                 7,                     /* number of arguments */
@@ -200,7 +277,134 @@ struct flb_thread *flb_output_thread(struct flb_task *task,
     return th;
 }
 
+#elif defined FLB_HAVE_FLUSH_LIBCO
+
+/*
+ * libco do not support parameters in the entrypoint function due to the
+ * complexity of implementation in terms of architecture and compiler, but
+ * it provide a workaround using a global structure as a middle entry-point
+ * that achieve the same stuff.
+ */
+struct flb_libco_out_params {
+    void  *data;
+    size_t bytes;
+    char *tag;
+    int tag_len;
+    struct flb_input_instance *i_ins;
+    void *out_context;
+    struct flb_config *config;
+    struct flb_output_plugin *out_plugin;
+    struct flb_thread *th;
+};
+
+struct flb_libco_out_params libco_param;
+
+static void output_params_set(struct flb_thread *th,
+                              void *data, size_t bytes,
+                              char *tag, int tag_len,
+                              struct flb_input_instance *i_ins,
+                              struct flb_output_plugin *out_plugin,
+                              void *out_context, struct flb_config *config)
+{
+    /* Callback parameters in order */
+    libco_param.data        = data;
+    libco_param.bytes       = bytes;
+    libco_param.tag         = tag;
+    libco_param.tag_len     = tag_len;
+    libco_param.i_ins       = i_ins;
+    libco_param.out_context = out_context;
+    libco_param.config      = config;
+    libco_param.out_plugin  = out_plugin;
+
+    libco_param.th = th;
+    co_switch(th->callee);
+}
+
+static void output_pre_cb_flush()
+{
+    void *data   = libco_param.data;
+    size_t bytes = libco_param.bytes;
+    char *tag    = libco_param.tag;
+    int tag_len  = libco_param.tag_len;
+    struct flb_input_instance *i_ins = libco_param.i_ins;
+    struct flb_output_plugin *out_p  = libco_param.out_plugin;
+    void *out_context                = libco_param.out_context;
+    struct flb_config *config        = libco_param.config;
+    struct flb_thread *th            = libco_param.th;
+
+    /*
+     * Until this point the th->callee already set the variables, so we
+     * wait until the core wanted to resume so we really trigger the
+     * output callback.
+     */
+    co_switch(th->caller);
+
+    /* Continue, we will resume later */
+    out_p->cb_flush(data, bytes, tag, tag_len, i_ins, out_context, config);
+}
+
+static FLB_INLINE
+struct flb_thread *flb_output_thread(struct flb_task *task,
+                                     struct flb_input_instance *i_ins,
+                                     struct flb_output_instance *o_ins,
+                                     struct flb_config *config,
+                                     void *buf, size_t size,
+                                     char *tag, int tag_len)
+{
+    size_t stack_size;
+    struct flb_output_thread *out_th;
+    struct flb_thread *th;
+
+    /* Create a new thread */
+    th = flb_thread_new(sizeof(struct flb_output_thread),
+                        cb_output_thread_destroy);
+    if (!th) {
+        return NULL;
+    }
+
+    /* Custom output-thread info */
+    out_th = (struct flb_output_thread *) FLB_THREAD_DATA(th);
+    if (!out_th) {
+        flb_errno();
+        return NULL;
+    }
+
+    /*
+     * Each 'Thread' receives an 'id'. This is assigned when this thread
+     * is linked into the parent Task by flb_task_add_thread(...). The
+     * 'id' is always incremental.
+     */
+    out_th->id      = 0;
+    out_th->o_ins   = o_ins;
+    out_th->task    = task;
+    out_th->buffer  = buf;
+    out_th->config  = config;
+    out_th->parent  = th;
+
+    th->caller = co_active();
+    th->callee = co_create(FLB_THREAD_STACK_SIZE,
+                           output_pre_cb_flush, &stack_size);
+
+#ifdef FLB_HAVE_VALGRIND
+    th->valgrind_stack_id = VALGRIND_STACK_REGISTER(th->callee,
+                                                    ((char *)th->callee) + stack_size);
+#endif
+
+    /* Workaround for makecontext() */
+    output_params_set(th,
+                      buf,
+                      size,
+                      tag,
+                      tag_len,
+                      i_ins,
+                      o_ins->p,
+                      o_ins->context,
+                      config);
+    return th;
+}
+
 #elif defined FLB_HAVE_FLUSH_PTHREADS
+
 static FLB_INLINE
 struct flb_thread *flb_output_thread(struct flb_task *task,
                                      struct flb_input_instance *i_ins,
@@ -241,33 +445,17 @@ struct flb_thread *flb_output_thread(struct flb_task *task,
  *
  * The signal emmited indicate the 'Task' number that have finished plus
  * a return value. The return value is either FLB_OK, FLB_RETRY or FLB_ERROR.
- *
- * If the caller have requested a FLB_RETRY, it will be issued depending of the
- * number of retries, if it have exceed the 'retry_limit' option, a FLB_ERROR
- * will be returned instead.
  */
-static inline int flb_output_return(int ret) {
+static inline void flb_output_return(int ret, struct flb_thread *th) {
     int n;
-    int ret_value;
     uint32_t set;
     uint64_t val;
-    struct flb_thread *th;
     struct flb_task *task;
-    struct flb_output_instance *o_ins;
+    struct flb_output_thread *out_th;
 
-    th = (struct flb_thread *) pthread_getspecific(flb_thread_key);
-    task = th->task;
+    out_th = (struct flb_output_thread *) FLB_THREAD_DATA(th);
+    task = out_th->task;
 
-    ret_value = ret;
-    if (ret == FLB_RETRY) {
-        o_ins = (struct flb_output_instance *) th->data;
-        if (th->retries >= o_ins->retry_limit) {
-            ret_value = FLB_ERROR;
-        }
-        else {
-            th->retries++;
-        }
-    }
     /*
      * To compose the signal event the relevant info is:
      *
@@ -277,20 +465,25 @@ static inline int flb_output_return(int ret) {
      *
      * We put together the return value with the task_id on the 32 bits at right
      */
-    set = FLB_TASK_SET(ret_value, task->id, th->id);
-    val = FLB_BITS_U64_SET(2, set);
+    set = FLB_TASK_SET(ret, task->id, out_th->id);
+    val = FLB_BITS_U64_SET(2 /* FLB_ENGINE_TASK */, set);
 
     n = write(task->config->ch_manager[1], &val, sizeof(val));
     if (n == -1) {
-        perror("write");
-        return -1;
+        flb_errno();
     }
-
-    return 0;
 }
 
 #define FLB_OUTPUT_RETURN(x)                                            \
-    return flb_output_return(x);
+    struct flb_thread *th;                                              \
+    th = (struct flb_thread *) pthread_getspecific(flb_thread_key);     \
+    flb_output_return(x, th);                                           \
+    /*                                                                  \
+     * Each co-routine handler have different ways to handle a return,  \
+     * just use the wrapper.                                            \
+     */                                                                 \
+    flb_thread_return(th)
+
 
 struct flb_output_instance *flb_output_new(struct flb_config *config,
                                            char *output, void *data);

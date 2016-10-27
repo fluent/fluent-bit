@@ -50,8 +50,13 @@ struct flb_in_random_config {
 static int in_random_collect(struct flb_config *config, void *in_context)
 {
     int fd;
+    int ret;
     uint64_t val;
     struct flb_in_random_config *ctx = in_context;
+
+    if (ctx->samples == 0) {
+        return -1;
+    }
 
     if (ctx->samples > 0 && (ctx->samples_count >= ctx->samples)) {
         return -1;
@@ -61,8 +66,15 @@ static int in_random_collect(struct flb_config *config, void *in_context)
     if (fd == -1) {
         val = time(NULL);
     }
-    read(fd, &val, sizeof(val));
-    close(fd);
+    else {
+        ret = read(fd, &val, sizeof(val));
+        if (ret == -1) {
+            perror("read");
+            close(fd);
+            return -1;
+        }
+        close(fd);
+    }
 
     msgpack_pack_array(&ctx->mp_pck, 2);
     msgpack_pack_uint64(&ctx->mp_pck, time(NULL));
@@ -78,7 +90,7 @@ static int in_random_collect(struct flb_config *config, void *in_context)
 }
 
 /* Set plugin configuration */
-static int in_random_config_read(struct flb_in_random_config *head_config,
+static int in_random_config_read(struct flb_in_random_config *random_config,
                                  struct flb_input_instance *in)
 {
     char *val = NULL;
@@ -86,35 +98,35 @@ static int in_random_config_read(struct flb_in_random_config *head_config,
     /* samples */
     val = flb_input_get_property("samples", in);
     if (val != NULL && atoi(val) >= 0) {
-        head_config->samples = atoi(val);
+        random_config->samples = atoi(val);
     }
 
     /* interval settings */
     val = flb_input_get_property("interval_sec", in);
     if (val != NULL && atoi(val) >= 0) {
-        head_config->interval_sec = atoi(val);
+        random_config->interval_sec = atoi(val);
     }
     else {
-        head_config->interval_sec = DEFAULT_INTERVAL_SEC;
+        random_config->interval_sec = DEFAULT_INTERVAL_SEC;
     }
 
     val = flb_input_get_property("interval_nsec", in);
     if (val != NULL && atoi(val) >= 0) {
-        head_config->interval_nsec = atoi(val);
+        random_config->interval_nsec = atoi(val);
     }
     else {
-        head_config->interval_nsec = DEFAULT_INTERVAL_NSEC;
+        random_config->interval_nsec = DEFAULT_INTERVAL_NSEC;
     }
 
-    if (head_config->interval_sec <= 0 && head_config->interval_nsec <= 0) {
+    if (random_config->interval_sec <= 0 && random_config->interval_nsec <= 0) {
         /* Illegal settings. Override them. */
-        head_config->interval_sec = DEFAULT_INTERVAL_SEC;
-        head_config->interval_nsec = DEFAULT_INTERVAL_NSEC;
+        random_config->interval_sec = DEFAULT_INTERVAL_SEC;
+        random_config->interval_nsec = DEFAULT_INTERVAL_NSEC;
     }
 
 
     flb_debug("[in_random] interval_sec=%d interval_nsec=%d",
-              head_config->interval_sec, head_config->interval_nsec);
+              random_config->interval_sec, random_config->interval_nsec);
 
     return 0;
 }
@@ -127,16 +139,17 @@ static int in_random_init(struct flb_input_instance *in,
     struct flb_in_random_config *ctx = NULL;
 
     /* Allocate space for the configuration */
-    ctx = malloc(sizeof(struct flb_in_random_config));
+    ctx = flb_malloc(sizeof(struct flb_in_random_config));
     if (!ctx) {
         return -1;
     }
+    ctx->samples       = -1;
     ctx->samples_count = 0;
 
     /* Initialize head config */
     ret = in_random_config_read(ctx, in);
     if (ret < 0) {
-        free(ctx);
+        flb_free(ctx);
         return -1;
     }
 
@@ -154,7 +167,7 @@ static int in_random_init(struct flb_input_instance *in,
     if (ret < 0) {
         flb_utils_error_c("could not set collector for head input plugin");
         msgpack_sbuffer_destroy(&ctx->mp_sbuf);
-        free(ctx);
+        flb_free(ctx);
         return -1;
     }
 
@@ -167,7 +180,11 @@ static void *in_random_flush(void *in_context, size_t *size)
     char *buf = NULL;
     struct flb_in_random_config *ctx = in_context;
 
-    buf = malloc(ctx->mp_sbuf.size);
+    if (ctx->samples_count < ctx->samples || ctx->mp_sbuf.size == 0) {
+        return NULL;
+    }
+
+    buf = flb_malloc(ctx->mp_sbuf.size);
     if (!buf) {
         return NULL;
     }
@@ -182,13 +199,13 @@ static void *in_random_flush(void *in_context, size_t *size)
     return buf;
 }
 
-int in_random_exit(void *data, struct flb_config *config)
+static int in_random_exit(void *data, struct flb_config *config)
 {
     (void) *config;
     struct flb_in_random_config *ctx = data;
 
     msgpack_sbuffer_destroy(&ctx->mp_sbuf);
-    free(ctx);
+    flb_free(ctx);
 
     return 0;
 }

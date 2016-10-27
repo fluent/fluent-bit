@@ -52,7 +52,7 @@ void *in_serial_flush(void *in_context, size_t *size)
 
     sbuf = &ctx->mp_sbuf;
     *size = sbuf->size;
-    buf = malloc(sbuf->size);
+    buf = flb_malloc(sbuf->size);
     if (!buf) {
         return NULL;
     }
@@ -277,7 +277,7 @@ int in_serial_init(struct flb_input_instance *in,
     struct flb_in_serial_config *ctx;
     (void) data;
 
-    ctx = calloc(1, sizeof(struct flb_in_serial_config));
+    ctx = flb_calloc(1, sizeof(struct flb_in_serial_config));
     if (!ctx) {
         perror("calloc");
         return -1;
@@ -305,7 +305,7 @@ int in_serial_init(struct flb_input_instance *in,
     if (fd == -1) {
         perror("open");
         flb_error("[in_serial] Could not open serial port device");
-        free(ctx);
+        flb_free(ctx);
         return -1;
     }
     ctx->fd = fd;

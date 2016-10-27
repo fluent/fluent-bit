@@ -34,6 +34,31 @@
 #define FLB_BUFFER_EV_DEL_REF 1027
 #define FLB_BUFFER_EV_MOV     1028
 
+/* Macros to handle events into Buffering event loops */
+#define FLB_BUFFER_EV_QCHUNK_PUSH  1
+#define FLB_BUFFER_EV_QCHUNK_POP   2
+
+/*
+ * Each event is an unsigned 32 bit number where it have 3 sections:
+ *
+ * - type : identify event type (4 bits)
+ * - key  : key identification for the event (14 bits)
+ * - value: some value associated to the key (14 bits)
+ *
+ * the format is as follows:
+ *
+ *     AAAA     BBBBBBBBBBBBBB CCCCCCCCCCCCCC   > 32 bit number
+ *       ^            ^              ^
+ *    4 bits       14 bits        14 bits
+ *  event type       key           value
+ */
+
+#define FLB_BUFFER_EV_TYPE(val)  (val >> 28)
+#define FLB_BUFFER_EV_KEY(val)   (uint16_t) (val & 0xfffc000) >> 14
+#define FLB_BUFFER_EV_VAL(val)   (val & 0x3fff)
+#define FLB_BUFFER_EV_SET(type, key, val)           \
+    (uint32_t) ((type << 28) | (key << 14) | val)
+
 struct flb_buffer_worker {
     /* worker info */
     int id;                /* local id */
@@ -69,14 +94,23 @@ struct flb_buffer {
     char *path;
     int workers_n;             /* total number of workers */
     int worker_lru;            /* Last-Recent-Used worker */
-    struct flb_config *config;
-    struct mk_list workers;    /* List of flb_buffer_worker nodes */
+    void *qworker;             /* queue chunk nodes  */
+    struct flb_config *config; /* Fluent Bit context */
+    struct mk_list workers;    /* List of flb_buffer_worker nodes  */
+
+    /*
+     * When the buffering interface through the queue-worker system load
+     * some 'buffers' for processing, it needs to instruct the Engine about
+     * it. So the buffer context behaves as an input instance so further
+     * tasks and threads can be created.
+     */
+    struct flb_input_instance *i_ins;
 };
 
 /* */
 struct flb_buffer_request {
     int type;
-    char *name;
+    char name[1024];
     struct mk_list _head;   /* Link to buffer_worker->requests */
 };
 
@@ -88,6 +122,8 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
 void flb_buffer_destroy(struct flb_buffer *ctx);
 
 int flb_buffer_start(struct flb_buffer *ctx);
+int flb_buffer_stop(struct flb_buffer *ctx);
+int flb_buffer_engine_event(struct flb_buffer *ctx, uint32_t event);
 
 #endif /* !FLB_BUFFER_H*/
 #endif /* !FLB_HAVE_BUFFERING */

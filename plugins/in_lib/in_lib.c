@@ -40,13 +40,13 @@ int in_lib_init(struct flb_input_instance *in,
     (void) data;
 
     /* Allocate space for the configuration */
-    ctx = malloc(sizeof(struct flb_in_lib_config));
+    ctx = flb_malloc(sizeof(struct flb_in_lib_config));
     if (!ctx) {
         return -1;
     }
 
     ctx->buf_size = LIB_BUF_CHUNK;
-    ctx->buf_data = calloc(1, LIB_BUF_CHUNK);
+    ctx->buf_data = flb_calloc(1, LIB_BUF_CHUNK);
     ctx->buf_len = 0;
 
     if (!ctx->buf_data) {
@@ -54,7 +54,7 @@ int in_lib_init(struct flb_input_instance *in,
     }
 
     ctx->msgp_size = LIB_BUF_CHUNK;
-    ctx->msgp_data = malloc(LIB_BUF_CHUNK);
+    ctx->msgp_data = flb_malloc(LIB_BUF_CHUNK);
     ctx->msgp_len = 0;
 
     /* Init communication channel */
@@ -88,19 +88,19 @@ int in_lib_exit(void *data, struct flb_config *config)
     struct flb_pack_state *s;
 
     if (ctx->buf_data) {
-        free(ctx->buf_data);
+        flb_free(ctx->buf_data);
     }
 
     if (ctx->msgp_data) {
-        free(ctx->msgp_data);
+        flb_free(ctx->msgp_data);
     }
 
     s = &ctx->state;
     if (s->tokens) {
-        free(s->tokens);
+        flb_free(s->tokens);
     }
 
-    free(ctx);
+    flb_free(ctx);
     return 0;
 }
 
@@ -121,7 +121,7 @@ int in_lib_collect(struct flb_config *config, void *in_context)
     /* Allocate memory as required (FIXME: this will be limited in later) */
     if (capacity == 0) {
         size = ctx->buf_size + LIB_BUF_CHUNK;
-        ptr = realloc(ctx->buf_data, size);
+        ptr = flb_realloc(ctx->buf_data, size);
         if (!ptr) {
             perror("realloc");
             return -1;
@@ -163,10 +163,10 @@ int in_lib_collect(struct flb_config *config, void *in_context)
     if (capacity < out_size) {
         n = ((out_size - capacity) / LIB_BUF_CHUNK) + 1;
         size = ctx->msgp_size + (LIB_BUF_CHUNK * n);
-        ptr = realloc(ctx->msgp_data, size);
+        ptr = flb_realloc(ctx->msgp_data, size);
         if (!ptr) {
             perror("realloc");
-            free(pack);
+            flb_free(pack);
             flb_pack_state_reset(&ctx->state);
             flb_pack_state_init(&ctx->state);
             return -1;
@@ -177,7 +177,7 @@ int in_lib_collect(struct flb_config *config, void *in_context)
 
     memcpy(ctx->msgp_data + ctx->msgp_len, pack, out_size);
     ctx->msgp_len += out_size;
-    free(pack);
+    flb_free(pack);
 
     flb_pack_state_reset(&ctx->state);
     flb_pack_state_init(&ctx->state);
@@ -195,7 +195,7 @@ void *in_lib_flush(void *in_context, size_t *size)
         return NULL;
     }
 
-    buf = malloc(ctx->msgp_len);
+    buf = flb_malloc(ctx->msgp_len);
     memcpy(buf, ctx->msgp_data, ctx->msgp_len);
     *size = ctx->msgp_len;
     ctx->msgp_len = 0;

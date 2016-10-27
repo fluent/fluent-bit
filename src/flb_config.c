@@ -24,11 +24,15 @@
 #include <stddef.h>
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_plugins.h>
 #include <fluent-bit/flb_io_tls.h>
 #include <fluent-bit/flb_kernel.h>
+#include <fluent-bit/flb_worker.h>
+#include <fluent-bit/flb_scheduler.h>
 
 struct flb_service_config service_configs[] = {
     {FLB_CONF_STR_FLUSH,
@@ -38,6 +42,10 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STR_DAEMON,
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, daemon)},
+
+    {FLB_CONF_STR_LOGFILE,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, logfile)},
 
     {FLB_CONF_STR_LOGLEVEL,
      FLB_CONF_TYPE_STR,
@@ -71,7 +79,7 @@ struct flb_config *flb_config_init()
 {
     struct flb_config *config;
 
-    config = calloc(1, sizeof(struct flb_config));
+    config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
         perror("malloc");
         return NULL;
@@ -83,6 +91,8 @@ struct flb_config *flb_config_init()
     config->flush_method = FLB_FLUSH_UCONTEXT;
 #elif defined FLB_HAVE_FLUSH_PTHREADS
     config->flush_method = FLB_FLUSH_PTHREADS;
+#elif defined FLB_HAVE_FLUSH_LIBCO
+    config->flush_method = FLB_FLUSH_LIBCO;
 #endif
     config->daemon       = FLB_FALSE;
     config->init_time    = time(NULL);
@@ -91,7 +101,7 @@ struct flb_config *flb_config_init()
 
 #ifdef FLB_HAVE_HTTP
     config->http_server  = FLB_FALSE;
-    config->http_port    = strdup(FLB_CONFIG_HTTP_PORT);
+    config->http_port    = flb_strdup(FLB_CONFIG_HTTP_PORT);
 #endif
 
 #ifdef FLB_HAVE_BUFFERING
@@ -106,6 +116,7 @@ struct flb_config *flb_config_init()
     mk_list_init(&config->inputs);
     mk_list_init(&config->outputs);
     mk_list_init(&config->sched_requests);
+    mk_list_init(&config->workers);
 
     memset(&config->tasks_map, '\0', sizeof(config->tasks_map));
 
@@ -114,6 +125,9 @@ struct flb_config *flb_config_init()
 
     /* Ignore SIGPIPE */
     signal(SIGPIPE, SIG_IGN);
+
+    /* Prepare worker interface */
+    flb_worker_init(config);
 
     return config;
 }
@@ -124,16 +138,20 @@ void flb_config_exit(struct flb_config *config)
     struct mk_list *head;
     struct flb_input_collector *collector;
 
+    if (config->logfile) {
+        flb_free(config->logfile);
+    }
+
     if (config->log) {
-        free(config->log);
+        flb_log_stop(config->log, config);
     }
 
     if (config->kernel) {
-        free(config->kernel->s_version.data);
-        free(config->kernel);
+        flb_free(config->kernel->s_version.data);
+        flb_free(config->kernel);
     }
 
-        /* release resources */
+    /* release resources */
     if (config->ch_event.fd) {
         close(config->ch_event.fd);
     }
@@ -170,20 +188,22 @@ void flb_config_exit(struct flb_config *config)
         }
 
         mk_list_del(&collector->_head);
-        free(collector);
+        flb_free(collector);
     }
+
+    /* Workers */
+    flb_worker_exit(config);
 
     /* Event flush */
     mk_event_del(config->evl, &config->event_flush);
     close(config->flush_fd);
 
+    /* Release scheduler */
+    flb_sched_exit(config);
+
 #ifdef FLB_HAVE_HTTP
     if (config->http_port) {
-        free(config->http_port);
-    }
-
-    if (config->http_server) {
-        free(config->http_server);
+        flb_free(config->http_port);
     }
 #endif
 
@@ -192,11 +212,11 @@ void flb_config_exit(struct flb_config *config)
 #endif
 
 #ifdef FLB_HAVE_BUFFERING
-    free(config->buffer_path);
+    flb_free(config->buffer_path);
 #endif
 
     mk_event_loop_destroy(config->evl);
-    free(config);
+    flb_free(config);
 }
 
 char *flb_config_prop_get(char *key, struct mk_list *list)
@@ -257,25 +277,26 @@ static inline int atobool(char*v)
     return  (strncasecmp("true", v, 256) == 0)
         ? FLB_TRUE
         : FLB_FALSE;
-}   
+}
 
 int flb_config_set_property(struct flb_config *config,
                             char *k, char *v)
 {
     int i=0;
     int ret = -1;
-    int*  i_val;
-    char* s_val;
+    int *i_val;
+    char **s_val;
     size_t len = strnlen(k, 256);
-    char* key = service_configs[0].key;
+    char *key = service_configs[0].key;
 
-    while( key != NULL ){
-        if ( prop_key_check(key, k,len) == 0) {
-            if ( !strncasecmp(key, FLB_CONF_STR_LOGLEVEL ,256) ) {
+    while (key != NULL) {
+        if (prop_key_check(key, k,len) == 0) {
+            if (!strncasecmp(key, FLB_CONF_STR_LOGLEVEL, 256)) {
                 ret = set_log_level(config, v);
-            }else{
+            }
+            else{
                 ret = 0;
-                switch(service_configs[i].type){
+                switch(service_configs[i].type) {
                 case FLB_CONF_TYPE_INT:
                     i_val  = (int*)((char*)config + service_configs[i].offset);
                     *i_val = atoi(v);
@@ -287,8 +308,11 @@ int flb_config_set_property(struct flb_config *config,
                     break;
 
                 case FLB_CONF_TYPE_STR:
-                    s_val = (char*)config+service_configs[i].offset;
-                    s_val = strdup(v);
+                    s_val = (char**)((char*)config+service_configs[i].offset);
+                    if ( *s_val != NULL ) {
+                        flb_free(*s_val); /* release before overwriting */
+                    }
+                    *s_val = flb_strdup(v);
                     break;
 
                 default:

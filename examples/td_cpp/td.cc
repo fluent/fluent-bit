@@ -28,8 +28,8 @@ int main(int argc, char **argv)
     int time_field;
     char tmp[256];
     flb_ctx_t *ctx;
-    flb_input_t *input;
-    flb_output_t *output;
+    int in_ffd;
+    int out_ffd;
 
     if (argc < 2) {
         fprintf(stderr, "Usage: td /path/to/configuration.file\n");
@@ -42,11 +42,11 @@ int main(int argc, char **argv)
         exit(EXIT_FAILURE);
     }
 
-    input = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(input, "tag", "test");
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test");
 
-    output = flb_output(ctx, (char *) "td", NULL);
-    flb_output_set(output, "tag", "test");
+    out_ffd = flb_output(ctx, (char *) "td", NULL);
+    flb_output_set(ctx, out_ffd, "tag", "test");
 
     /* Load a configuration file (required by TD output plugin) */
     ret = flb_lib_config_file(ctx, argv[1]);
@@ -63,7 +63,7 @@ int main(int argc, char **argv)
         n = snprintf(tmp, sizeof(tmp) - 1,
                      "[%i, {\"key\": \"val %i\"}]",
                      time_field, i);
-        flb_lib_push(input, tmp, n);
+        flb_lib_push(ctx, in_ffd, tmp, n);
         time_field++;
     }
 

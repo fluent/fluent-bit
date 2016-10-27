@@ -12,7 +12,7 @@
  *
  *  Unless required by applicable law or agreed to in writing, software
  *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  WITHOUT WARRANTIES ORc CONDITIONS OF ANY KIND, either express or implied.
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
@@ -39,28 +39,15 @@
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_http_server.h>
 #include <fluent-bit/flb_buffer.h>
+#include <fluent-bit/flb_buffer_qchunk.h>
 #include <fluent-bit/flb_scheduler.h>
+
+#ifdef FLB_HAVE_BUFFERING
+#include <fluent-bit/flb_buffer_chunk.h>
+#endif
 
 #ifdef FLB_HAVE_STATS
 #include <fluent-bit/flb_stats.h>
-#endif
-
-#ifdef FLB_HAVE_FLUSH_UCONTEXT
-static int flb_engine_destroy_threads(struct mk_list *threads)
-{
-    int c = 0;
-    struct mk_list *tmp;
-    struct mk_list *head;
-    struct flb_thread *th;
-
-    mk_list_foreach_safe(head, tmp, threads) {
-        th = mk_list_entry(head, struct flb_thread, _head);
-        flb_thread_destroy(th);
-        c++;
-    }
-
-    return c;
-}
 #endif
 
 int flb_engine_destroy_tasks(struct mk_list *tasks)
@@ -93,7 +80,7 @@ int flb_engine_flush(struct flb_config *config,
         if (in_force != NULL && p != in_force) {
             continue;
         }
-        flb_engine_dispatch(in, config);
+        flb_engine_dispatch(0, in, config);
     }
 
     return 0;
@@ -107,7 +94,7 @@ static inline int consume_byte(int fd)
     /* We need to consume the byte */
     ret = read(fd, &val, sizeof(val));
     if (ret <= 0) {
-        perror("read");
+        flb_errno();
         return -1;
     }
 
@@ -124,11 +111,11 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
     uint32_t key;
     uint64_t val;
     struct flb_task *task;
-    struct flb_thread *thread;
+    struct flb_output_thread *out_th;
 
     bytes = read(fd, &val, sizeof(val));
     if (bytes == -1) {
-        perror("read");
+        flb_errno();
         return -1;
     }
 
@@ -141,11 +128,23 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
         if (key == FLB_ENGINE_STOP) {
             flb_trace("[engine] flush enqueued data");
             flb_engine_flush(config, NULL);
+#ifdef FLB_HAVE_BUFFERING
+            if (config->buffer_ctx) {
+                flb_buffer_stop(config->buffer_ctx);
+            }
+#endif
             return FLB_ENGINE_STOP;
         }
     }
+    else if (type == FLB_ENGINE_IN_THREAD) {
+        /* Event coming from an input thread */
+        flb_input_thread_destroy_id(key, config);
+    }
     else if (type == FLB_ENGINE_TASK) {
-        /* Get values, check flb_task.h for more details */
+        /*
+         * The notion of ENGINE_TASK is associated to outputs. All thread
+         * references below belongs to flb_output_thread's.
+         */
         ret       = FLB_TASK_RET(key);
         task_id   = FLB_TASK_ID(key);
         thread_id = FLB_TASK_TH(key);
@@ -168,7 +167,8 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
                   task_id, thread_id, trace_st);
 #endif
 
-        task = config->tasks_map[task_id].task;
+        task   = config->tasks_map[task_id].task;
+        out_th = flb_output_thread_get(thread_id, task);
 
         /* A thread has finished, delete it */
         if (ret == FLB_OK) {
@@ -177,17 +177,17 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
                 flb_buffer_chunk_pop(config->buffer_ctx, thread_id, task);
             }
 #endif
-            flb_thread_destroy_id(thread_id, task);
+            flb_task_retry_clean(task, out_th->parent);
+            flb_output_thread_destroy_id(thread_id, task);
             if (task->users == 0) {
                 flb_task_destroy(task);
             }
         }
         else if (ret == FLB_RETRY) {
             /* Create a Task-Retry */
-            thread = flb_thread_get(task_id, task);
             struct flb_task_retry *retry;
 
-            retry = flb_task_retry_create(task, thread->data);
+            retry = flb_task_retry_create(task, out_th);
             if (!retry) {
                 /*
                  * It can fail in two situations:
@@ -195,21 +195,44 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
                  * - No enough memory (unlikely)
                  * - It reached the maximum number of re-tries
                  */
-                flb_thread_destroy_id(thread_id, task);
+#ifdef FLB_HAVE_BUFFERING
+                if (config->buffer_path) {
+                    flb_buffer_chunk_pop(config->buffer_ctx, thread_id, task);
+                }
+#endif
+                flb_output_thread_destroy_id(thread_id, task);
                 if (task->users == 0) {
                     flb_task_destroy(task);
                 }
+
+                return 0;
             }
 
             /* Always destroy the old thread */
-            flb_thread_destroy_id(thread_id, task);
+            flb_output_thread_destroy_id(thread_id, task);
 
             /* Let the scheduler to retry the failed task/thread */
             int s = flb_sched_request_create(config, retry, retry->attemps);
-            flb_debug("[sched] retry %i.%i in %i seconds",
-                      task->id, thread->id, s);
+            flb_debug("[sched] retry=%p %i in %i seconds",
+                      retry, task->id, s);
+        }
+        else if (ret == FLB_ERROR) {
+            flb_output_thread_destroy_id(thread_id, task);
+            if (task->users == 0) {
+                flb_task_destroy(task);
+            }
         }
     }
+#ifdef FLB_HAVE_BUFFERING
+    else if (type == FLB_ENGINE_BUFFER) {
+        flb_buffer_engine_event(config->buffer_ctx, val);
+        /* CONTINUE:
+         *
+         * - create messages types for buffering interface
+         * - let qchunk ingest data here
+         */
+    }
+#endif
 
     return 0;
 }
@@ -218,14 +241,22 @@ static FLB_INLINE int flb_engine_handle_event(int fd, int mask,
                                               struct flb_config *config)
 {
     int ret;
-    struct mk_list *head;
-    struct flb_input_collector *collector;
 
     if (mask & MK_EVENT_READ) {
         /* Check if we need to flush */
         if (config->flush_fd == fd) {
             consume_byte(fd);
             flb_engine_flush(config, NULL);
+#ifdef FLB_HAVE_BUFFERING
+            /*
+             * Upon flush request, let the buffering interface to enqueue
+             * a new buffer chunk.
+             */
+            if (config->buffer_ctx) {
+                flb_buffer_qchunk_signal(FLB_BUFFER_QC_PUSH_REQUEST, 0,
+                                         config->buffer_ctx->qworker);
+            }
+#endif
             return 0;
         }
         else if (config->shutdown_fd == fd) {
@@ -244,18 +275,10 @@ static FLB_INLINE int flb_engine_handle_event(int fd, int mask,
             }
         }
 
-        /* Determinate what is this file descriptor */
-        mk_list_foreach(head, &config->collectors) {
-            collector = mk_list_entry(head, struct flb_input_collector, _head);
-            if (collector->fd_event == fd) {
-                return collector->cb_collect(config,
-                                             collector->instance->context);
-            }
-            else if (collector->fd_timer == fd) {
-                consume_byte(fd);
-                return collector->cb_collect(config,
-                                             collector->instance->context);
-            }
+        /* Try to match the file descriptor with a collector event */
+        ret = flb_input_collector_fd(fd, config);
+        if (ret != -1) {
+            return ret;
         }
     }
 
@@ -290,27 +313,6 @@ int flb_engine_start(struct flb_config *config)
         flb_http_server_start(config);
     }
 #endif
-
-    /* Buffering Support */
-#ifdef FLB_HAVE_BUFFERING
-    struct flb_buffer *buf_ctx;
-
-    /* If a path exists, initialize the Buffer service and workers */
-    if (config->buffer_path) {
-        buf_ctx = flb_buffer_create(config->buffer_path,
-                                    config->buffer_workers,
-                                    config);
-        if (!buf_ctx) {
-            flb_error("[engine] could not initialize buffer workers");
-        }
-        else {
-            /* Start buffer engine workers */
-            config->buffer_ctx = buf_ctx;
-            flb_buffer_start(config->buffer_ctx);
-        }
-    }
-#endif
-
 
     flb_info("[engine] started");
     flb_thread_prepare();
@@ -350,7 +352,6 @@ int flb_engine_start(struct flb_config *config)
     }
 
     flb_output_pre_run(config);
-
 
     /* Create and register the timer fd for flush procedure */
     event = &config->event_flush;
@@ -402,6 +403,30 @@ int flb_engine_start(struct flb_config *config)
         return -1;
     }
 
+    /* Enable Buffering Support */
+#ifdef FLB_HAVE_BUFFERING
+    struct flb_buffer *buf_ctx;
+
+    /* If a path exists, initialize the Buffer service and workers */
+    if (config->buffer_path) {
+        buf_ctx = flb_buffer_create(config->buffer_path,
+                                    config->buffer_workers,
+                                    config);
+        if (!buf_ctx) {
+            flb_error("[engine] could not initialize buffer workers");
+            return -1;
+        }
+
+        /* Start buffer engine workers */
+        config->buffer_ctx = buf_ctx;
+        ret = flb_buffer_start(config->buffer_ctx);
+        if (ret == -1) {
+            flb_error("[buffer] buffering could not start");
+            return -1;
+        }
+    }
+#endif
+
     /* Signal that we have started */
     flb_engine_started(config);
     while (1) {
@@ -437,7 +462,7 @@ int flb_engine_start(struct flb_config *config)
             else if (event->type == FLB_ENGINE_EV_CUSTOM) {
                 event->handler(event);
             }
-#ifdef FLB_HAVE_FLUSH_UCONTEXT
+#if defined (FLB_HAVE_FLUSH_UCONTEXT) || defined (FLB_HAVE_FLUSH_LIBCO)
             else if (event->type == FLB_ENGINE_EV_THREAD) {
                 struct flb_upstream_conn *u_conn;
                 struct flb_thread *th;
@@ -459,6 +484,13 @@ int flb_engine_start(struct flb_config *config)
 /* Release all resources associated to the engine */
 int flb_engine_shutdown(struct flb_config *config)
 {
+
+#ifdef FLB_HAVE_BUFFERING
+    if (config->buffer_ctx) {
+        flb_buffer_stop(config->buffer_ctx);
+    }
+#endif
+
     /* router */
     flb_router_exit(config);
 

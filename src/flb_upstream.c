@@ -20,6 +20,9 @@
 #include <unistd.h>
 
 #include <mk_core.h>
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_io_tls.h>
@@ -32,13 +35,13 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
 {
     struct flb_upstream *u;
 
-    u = calloc(1, sizeof(struct flb_upstream));
+    u = flb_calloc(1, sizeof(struct flb_upstream));
     if (!u) {
         perror("malloc");
         return NULL;
     }
 
-    u->tcp_host      = strdup(host);
+    u->tcp_host      = flb_strdup(host);
     u->tcp_port      = port;
     u->flags         = flags;
     u->evl           = config->evl;
@@ -87,27 +90,42 @@ int flb_upstream_destroy(struct flb_upstream *u)
         flb_upstream_conn_release(u_conn);
     }
 
-    free(u->tcp_host);
-    free(u);
+    flb_free(u->tcp_host);
+    flb_free(u);
 
     return 0;
 }
 
 static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
 {
+    int ret;
     struct flb_upstream_conn *conn;
+#if defined (FLB_HAVE_FLUSH_UCONTEXT) || defined (FLB_HAVE_FLUSH_LIBCO)
+    struct flb_thread *th = pthread_getspecific(flb_thread_key);
+#else
+    void *th = NULL;
+#endif
 
-    conn = malloc(sizeof(struct flb_upstream_conn));
+    conn = flb_malloc(sizeof(struct flb_upstream_conn));
     if (!conn) {
+        perror("malloc");
         return NULL;
     }
-    conn->u           = u;
-    conn->fd          = -1;
+    conn->u             = u;
+    conn->fd            = -1;
+    conn->connect_count = 0;
 #ifdef FLB_HAVE_TLS
-    conn->tls_session = NULL;
+    conn->tls_session   = NULL;
 #endif
 
     MK_EVENT_NEW(&conn->event);
+
+    /* Start connection */
+    ret = flb_io_net_connect(conn, th);
+    if (ret == -1) {
+        flb_free(conn);
+        return NULL;
+    }
 
 #ifdef FLB_HAVE_FLUSH_PTHREADS
     pthread_mutex_lock(&u->mutex_queue);
@@ -152,7 +170,12 @@ struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u)
 {
     struct flb_upstream_conn *u_conn = NULL;
 
+    /*
+     * FIXME: for 0.9 series the keep alive mode will be enabled, useless
+     * check now as the available queue is always empty.
+     */
     if (mk_list_is_empty(&u->av_queue) == 0) {
+
         if (u->max_connections <= 0) {
             u_conn = create_conn(u);
         }
@@ -179,15 +202,23 @@ int flb_upstream_conn_release(struct flb_upstream_conn *u_conn)
 {
     struct flb_upstream *u = u_conn->u;
 
-    flb_trace("[upstream] releasing connection %p", u_conn);
+    flb_trace("[upstream] [fd=%i] releasing connection %p",
+              u_conn->fd, u_conn);
+
+    if (u->flags & FLB_IO_ASYNC) {
+        mk_event_del(u->evl, &u_conn->event);
+    }
 
     if (u_conn->fd > 0) {
         close(u_conn->fd);
     }
 
-    if (u->flags & FLB_IO_ASYNC) {
-        mk_event_del(u->evl, &u_conn->event);
+#ifdef FLB_HAVE_TLS
+    if (u_conn->tls_session) {
+        flb_tls_session_destroy(u_conn->tls_session);
+        u_conn->tls_session = NULL;
     }
+#endif
 
 #ifdef FLB_HAVE_FLUSH_PTHREADS
     pthread_mutex_lock(&u->mutex_queue);
@@ -201,7 +232,7 @@ int flb_upstream_conn_release(struct flb_upstream_conn *u_conn)
 #endif
 
     u->n_connections--;
-    free(u_conn);
+    flb_free(u_conn);
 
     return 0;
 }

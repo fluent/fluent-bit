@@ -18,9 +18,11 @@
  */
 
 #include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_error.h>
@@ -62,11 +64,26 @@ static inline int instance_id(struct flb_input_plugin *p,
     return c;
 }
 
+static inline int consume_byte(int fd)
+{
+    int ret;
+    uint64_t val;
+
+    /* We need to consume the byte */
+    ret = read(fd, &val, sizeof(val));
+    if (ret <= 0) {
+        flb_errno();
+        return -1;
+    }
+
+    return 0;
+}
 
 /* Create an input plugin instance */
 struct flb_input_instance *flb_input_new(struct flb_config *config,
                                          char *input, void *data)
 {
+    int id;
     int ret;
     struct mk_list *head;
     struct flb_input_plugin *plugin;
@@ -84,33 +101,49 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         }
 
         /* Create plugin instance */
-        instance = malloc(sizeof(struct flb_input_instance));
+        instance = flb_malloc(sizeof(struct flb_input_instance));
         if (!instance) {
             perror("malloc");
             return NULL;
         }
 
+        /* Get an ID */
+        id =  instance_id(plugin, config);
+
         /* format name (with instance id) */
         snprintf(instance->name, sizeof(instance->name) - 1,
-                 "%s.%i", plugin->name, instance_id(plugin, config));
-        instance->p = plugin;
-        instance->tag = NULL;
-        instance->context = NULL;
-        instance->data = data;
-        instance->host.name = NULL;
-        instance->host.uri  = NULL;
+                 "%s.%i", plugin->name, id);
+
+        instance->id       = id;
+        instance->p        = plugin;
+        instance->tag      = NULL;
+        instance->context  = NULL;
+        instance->data     = data;
+        instance->threaded = FLB_FALSE;
+
+        /* net */
+        instance->host.name    = NULL;
+        instance->host.address = NULL;
+        instance->host.uri     = NULL;
 
         mk_list_init(&instance->routes);
         mk_list_init(&instance->tasks);
         mk_list_init(&instance->dyntags);
         mk_list_init(&instance->properties);
+        mk_list_init(&instance->threads);
 
+        /* Plugin use networking */
         if (plugin->flags & FLB_INPUT_NET) {
             ret = flb_net_host_set(plugin->name, &instance->host, input);
             if (ret != 0) {
-                free(instance);
+                flb_free(instance);
                 return NULL;
             }
+        }
+
+        /* Plugin requires a Thread context */
+        if (plugin->flags & FLB_INPUT_THREAD) {
+            instance->threaded = FLB_TRUE;
         }
 
         mk_list_add(&instance->_head, &config->inputs);
@@ -143,18 +176,18 @@ int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
 
     /* Check if the key is a known/shared property */
     if (prop_key_check("tag", k, len) == 0) {
-        in->tag     = strdup(v);
+        in->tag     = flb_strdup(v);
         in->tag_len = strlen(v);
     }
     else {
         /* Append any remaining configuration key to prop list */
-        prop = malloc(sizeof(struct flb_config_prop));
+        prop = flb_malloc(sizeof(struct flb_config_prop));
         if (!prop) {
             return -1;
         }
 
-        prop->key = strdup(k);
-        prop->val = strdup(v);
+        prop->key = flb_strdup(k);
+        prop->val = flb_strdup(v);
         mk_list_add(&prop->_head, &in->properties);
     }
 
@@ -175,10 +208,18 @@ void flb_input_initialize_all(struct flb_config *config)
     struct flb_input_instance *in;
     struct flb_input_plugin *p;
 
+    /* Initialize thread-id table */
+    memset(&config->in_table_id, '\0', sizeof(config->in_table_id));
+
     /* Iterate all active input instance plugins */
     mk_list_foreach_safe(head, tmp, &config->inputs) {
         in = mk_list_entry(head, struct flb_input_instance, _head);
         p = in->p;
+
+        /* Skip pseudo input plugins */
+        if (!p) {
+            continue;
+        }
 
         /* Initialize the input */
         if (p->cb_init) {
@@ -192,7 +233,7 @@ void flb_input_initialize_all(struct flb_config *config)
                 flb_error("Failed initialize input %s",
                           in->name);
                 mk_list_del(&in->_head);
-                free(in);
+                flb_free(in);
             }
         }
     }
@@ -208,6 +249,9 @@ void flb_input_pre_run_all(struct flb_config *config)
     mk_list_foreach(head, &config->inputs) {
         in = mk_list_entry(head, struct flb_input_instance, _head);
         p = in->p;
+        if (!p) {
+            continue;
+        }
 
         if (p->cb_pre_run) {
             p->cb_pre_run(in->context, config);
@@ -230,6 +274,9 @@ void flb_input_exit_all(struct flb_config *config)
     mk_list_foreach_safe(head, tmp, &config->inputs) {
         in = mk_list_entry(head, struct flb_input_instance, _head);
         p = in->p;
+        if (!p) {
+            continue;
+        }
 
         if (p->cb_exit) {
             p->cb_exit(in->context, config);
@@ -239,11 +286,11 @@ void flb_input_exit_all(struct flb_config *config)
         if (in->host.uri) {
             flb_uri_destroy(in->host.uri);
         }
-
-        free(in->host.name);
+        flb_free(in->host.name);
+        flb_free(in->host.address);
 
         /* release the tag if any */
-        free(in->tag);
+        flb_free(in->tag);
 
         /* Let the engine remove any pending task */
         flb_engine_destroy_tasks(&in->tasks);
@@ -252,18 +299,18 @@ void flb_input_exit_all(struct flb_config *config)
         mk_list_foreach_safe(head_prop, tmp_prop, &in->properties) {
             prop = mk_list_entry(head_prop, struct flb_config_prop, _head);
 
-            free(prop->key);
-            free(prop->val);
+            flb_free(prop->key);
+            flb_free(prop->val);
 
             mk_list_del(&prop->_head);
-            free(prop);
+            flb_free(prop);
         }
 
         flb_input_dyntag_exit(in);
 
         /* Unlink and release */
         mk_list_del(&in->_head);
-        free(in);
+        flb_free(in);
     }
 }
 
@@ -332,7 +379,7 @@ int flb_input_set_collector_time(struct flb_input_instance *in,
 {
     struct flb_input_collector *collector;
 
-    collector = malloc(sizeof(struct flb_input_collector));
+    collector = flb_malloc(sizeof(struct flb_input_collector));
     collector->type        = FLB_COLLECT_TIME;
     collector->cb_collect  = cb_collect;
     collector->fd_event    = -1;
@@ -352,7 +399,7 @@ int flb_input_set_collector_event(struct flb_input_instance *in,
 {
     struct flb_input_collector *collector;
 
-    collector = malloc(sizeof(struct flb_input_collector));
+    collector = flb_malloc(sizeof(struct flb_input_collector));
     collector->type        = FLB_COLLECT_FD_EVENT;
     collector->cb_collect  = cb_collect;
     collector->fd_event    = fd;
@@ -360,8 +407,8 @@ int flb_input_set_collector_event(struct flb_input_instance *in,
     collector->seconds     = -1;
     collector->nanoseconds = -1;
     collector->instance    = in;
-
     mk_list_add(&collector->_head, &config->collectors);
+
     return 0;
 }
 
@@ -372,7 +419,7 @@ int flb_input_set_collector_socket(struct flb_input_instance *in,
 {
     struct flb_input_collector *collector;
 
-    collector = malloc(sizeof(struct flb_input_collector));
+    collector = flb_malloc(sizeof(struct flb_input_collector));
     collector->type        = FLB_COLLECT_FD_SERVER;
     collector->cb_collect  = cb_new_connection;
     collector->fd_event    = fd;
@@ -380,8 +427,8 @@ int flb_input_set_collector_socket(struct flb_input_instance *in,
     collector->seconds     = -1;
     collector->nanoseconds = -1;
     collector->instance    = in;
-
     mk_list_add(&collector->_head, &config->collectors);
+
     return 0;
 }
 
@@ -396,12 +443,14 @@ struct flb_input_dyntag *flb_input_dyntag_create(struct flb_input_instance *in,
     }
 
     /* Allocate node and reset fields */
-    dt = malloc(sizeof(struct flb_input_dyntag));
+    dt = flb_malloc(sizeof(struct flb_input_dyntag));
     if (!dt) {
         return NULL;
     }
-    dt->in  = in;
-    dt->tag = malloc(tag_len + 1);
+    dt->busy = FLB_FALSE;
+    dt->lock = FLB_FALSE;
+    dt->in   = in;
+    dt->tag  = flb_malloc(tag_len + 1);
     memcpy(dt->tag, tag, tag_len);
     dt->tag[tag_len] = '\0';
     dt->tag_len = tag_len;
@@ -418,12 +467,14 @@ struct flb_input_dyntag *flb_input_dyntag_create(struct flb_input_instance *in,
 /* Destroy an dyntag node */
 int flb_input_dyntag_destroy(struct flb_input_dyntag *dt)
 {
-    flb_trace("[dyntag %s] %p destroy",
-              dt->in->name, dt);
+    flb_debug("[dyntag %s] %p destroy (tag=%s)",
+              dt->in->name, dt, dt->tag);
+
     msgpack_sbuffer_destroy(&dt->mp_sbuf);
     mk_list_del(&dt->_head);
-    free(dt->tag);
-    free(dt);
+    flb_free(dt->tag);
+    flb_free(dt);
+    dt = NULL;
 
     return 0;
 }
@@ -452,6 +503,11 @@ int flb_input_dyntag_append(struct flb_input_instance *in,
     /* Try to find a current dyntag node to append the data */
     mk_list_foreach(head, &in->dyntags) {
         dt = mk_list_entry(head, struct flb_input_dyntag, _head);
+        if (dt->busy == FLB_TRUE || dt->lock == FLB_TRUE) {
+            dt = NULL;
+            continue;
+        }
+
         if (dt->tag_len != tag_len) {
             dt = NULL;
             continue;
@@ -467,7 +523,7 @@ int flb_input_dyntag_append(struct flb_input_instance *in,
     /* Found a dyntag node that can append the new info */
     if (dt) {
         msgpack_pack_object(&dt->mp_pck, data);
-        return 0;
+        goto out;
     }
 
     /* No dyntag was found, we need to create a new one */
@@ -476,6 +532,13 @@ int flb_input_dyntag_append(struct flb_input_instance *in,
         return -1;
     }
     msgpack_pack_object(&dt->mp_pck, data);
+
+ out:
+    /* Lock buffers where size > 2MB */
+    if (dt->mp_sbuf.size > 2048000) {
+        dt->lock = FLB_TRUE;
+    }
+
     return 0;
 }
 
@@ -484,18 +547,55 @@ void *flb_input_dyntag_flush(struct flb_input_dyntag *dt, size_t *size)
 {
     void *buf;
 
-    buf = malloc(dt->mp_sbuf.size);
-    if (!buf) {
-        perror("malloc");
-        return NULL;
-    }
+    /*
+     * MessagePack-C internal use a raw buffer for it operations, since we
+     * already appended data we just can take out the references to avoid
+     * a new memory allocation and skip a copy operation.
+     */
 
+    buf   = dt->mp_sbuf.data;
     *size = dt->mp_sbuf.size;
-    memcpy(buf, dt->mp_sbuf.data, dt->mp_sbuf.size);
 
-    msgpack_sbuffer_destroy(&dt->mp_sbuf);
     msgpack_sbuffer_init(&dt->mp_sbuf);
     msgpack_packer_init(&dt->mp_pck, &dt->mp_sbuf, msgpack_sbuffer_write);
 
     return buf;
+}
+
+int flb_input_collector_fd(int fd, struct flb_config *config)
+{
+    struct mk_list *head;
+    struct flb_input_collector *collector;
+    struct flb_thread *th;
+
+    mk_list_foreach(head, &config->collectors) {
+        collector = mk_list_entry(head, struct flb_input_collector, _head);
+        if (collector->fd_event == fd) {
+            break;
+        }
+        else if (collector->fd_timer == fd) {
+            consume_byte(fd);
+            break;
+        }
+        collector = NULL;
+    }
+
+    /* No matches */
+    if (!collector) {
+        return -1;
+    }
+
+    /* Trigger the collector callback */
+    if (collector->instance->threaded == FLB_TRUE) {
+        th = flb_input_thread_collect(collector, config);
+        if (!th) {
+            return -1;
+        }
+        flb_thread_resume(th);
+    }
+    else {
+        collector->cb_collect(config, collector->instance->context);
+    }
+
+    return 0;
 }

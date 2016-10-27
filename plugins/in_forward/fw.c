@@ -81,10 +81,12 @@ static int in_fw_init(struct flb_input_instance *in,
                   ctx->listen, ctx->tcp_port);
         return -1;
     }
+    flb_net_socket_nonblocking(ctx->server_fd);
+
     ctx->evl = config->evl;
 
     /* Collect upon data available on the standard input */
-    ret = flb_input_set_collector_event(in,
+    ret = flb_input_set_collector_socket(in,
                                         in_fw_collect,
                                         ctx->server_fd,
                                         config);

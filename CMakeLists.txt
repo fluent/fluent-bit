@@ -6,6 +6,7 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -fPIC -Wno-deprecated-declarations ")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__='\"$(subst ${CMAKE_SOURCE_DIR}/,,$(abspath $<))\"'")
 
 include(GNUInstallDirs)
+include(ExternalProject)
 
 # Output paths
 set(FLB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -22,6 +23,7 @@ set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PAT
 # Build Options
 option(FLB_ALL                "Enable all features"          No)
 option(FLB_DEBUG              "Build with debug symbols"     No)
+option(FLB_JEMALLOC           "Build with Jemalloc support"  No)
 option(FLB_TLS                "Build with SSL/TLS support"   No)
 option(FLB_HTTP               "Enable build-in HTTP Server"  No)
 option(FLB_WITHOUT_BIN        "Do not build executable"      No)
@@ -33,24 +35,29 @@ option(FLB_TRACE              "Enable trace mode"            No)
 option(FLB_TESTS              "Enable tests"                 No)
 option(FLB_MTRACE             "Enable mtrace support"        No)
 option(FLB_BUFFERING          "Enable buffering support"     No)
+option(FLB_POSIX_TLS          "Force POSIX thread storage"   No)
 
 # Advanced options for Flushing methods
 # =====================================
-# Flush methods defineswhat kind of context/environment the output plugins
-# flush callback is invoked: 'cb_flush()'.
-
-# FLB_FLUSH_UCONTEXT: set by default if available, it uses an async
-# coroutines implementation for flushing data.
+# Flush methods defines under what kind of context/environment the plugins
+# flush callback is invoked. Since this is done through co-routines
+# there are two options available:
 #
-# FLB_FLUSH_PTHREAD: spawn a new POSIX thread that the output interface
-# will use to flush the data.
-option(FLB_FLUSH_UCONTEXT     "Use co-routines for flush I/O" Yes)
-option(FLB_FLUSH_PTHREADS     "Use pthreads for flush I/O"     No)
+# FLB_FLUSH_LIBCO: set by default, use lib/flb_libco implementation which
+# supports amd64, arm, x86 and ppc.
+#
+# FLB_FLUSH_UCONTEXT: It uses POSIX ucontext for co-routines implementation.
+# Despites this is POSIX deprecated, it's supported on Linux and BSD
+# systems, but specific old-toolchains do not implement it.
+
+option(FLB_FLUSH_UCONTEXT     "Use co-routines for flush I/O"  No)
+option(FLB_FLUSH_LIBCO        "Use libco for flush I/O"       Yes)
 
 # Build Plugins
 option(FLB_IN_XBEE     "Enable XBee input plugin"            No)
 option(FLB_IN_CPU      "Enable CPU input plugin"            Yes)
 option(FLB_IN_FORWARD  "Enable Forward input plugin"        Yes)
+option(FLB_IN_HEALTH   "Enable Health input plugin"         Yes)
 option(FLB_IN_HTTP     "Enable HTTP input plugin"            No)
 option(FLB_IN_MEM      "Enable Memory input plugin"         Yes)
 option(FLB_IN_KMSG     "Enable Kernel log input plugin"     Yes)
@@ -58,12 +65,14 @@ option(FLB_IN_LIB      "Enable library mode input plugin"   Yes)
 option(FLB_IN_RANDOM   "Enable random input plugin"         Yes)
 option(FLB_IN_SERIAL   "Enable Serial input plugin"         Yes)
 option(FLB_IN_STDIN    "Enable Standard input plugin"       Yes)
+option(FLB_IN_TCP      "Enable TCP input plugin"            Yes)
 option(FLB_IN_MQTT     "Enable MQTT Broker input plugin"    Yes)
 option(FLB_IN_HEAD     "Enable Head input plugin"           Yes)
 option(FLB_OUT_ES      "Enable Elasticsearch output plugin" Yes)
 option(FLB_OUT_FORWARD "Enable Forward output plugin"       Yes)
 option(FLB_OUT_HTTP    "Enable HTTP output plugin"          Yes)
 option(FLB_OUT_NATS    "Enable NATS output plugin"           No)
+option(FLB_OUT_PLOT    "Enable Plot output plugin"          Yes)
 option(FLB_OUT_TD      "Enable Treasure Data output plugin" Yes)
 option(FLB_OUT_RETRY   "Enable Retry test output plugin"     No)
 option(FLB_OUT_STDOUT  "Enable STDOUT output plugin"        Yes)
@@ -93,6 +102,8 @@ if(FLB_ALL)
   set(FLB_OUT_HTTP     1)
   set(FLB_OUT_NATS     1)
   set(FLB_OUT_NULL     1)
+  set(FLB_OUT_PLOT     1)
+  set(FLB_OUT_RETRY    1)
   set(FLB_OUT_TD       1)
   set(FLB_OUT_STDOUT   1)
   set(FLB_OUT_LIB      1)
@@ -105,6 +116,10 @@ macro(FLB_DEFINITION var)
   set(FLB_INFO_FLAGS "${FLB_INFO_FLAGS} ${var}")
 endmacro()
 
+macro(FLB_OPTION option value)
+  set(${option} ${value} CACHE "" INTERNAL FORCE)
+endmacro()
+
 # Enable Debug symbols if specified
 if(FLB_DEBUG)
   set(CMAKE_BUILD_TYPE "Debug")
@@ -115,6 +130,7 @@ include_directories(
   include/
   lib/
   lib/ejson
+  lib/flb_libco
   lib/sha1
   lib/msgpack-c-068041f/include
   lib/monkey/include
@@ -209,13 +225,13 @@ check_c_source_compiles("
   }" FLB_HAVE_UCONTEXT
   FAIL_REGEX "warning.*not implemented.*")
 
-if(FLB_FLUSH_PTHREADS)
-  FLB_DEFINITION(FLB_HAVE_FLUSH_PTHREADS)
-elseif(FLB_HAVE_UCONTEXT)
+if(FLB_FLUSH_UCONTEXT AND FLB_HAVE_UCONTEXT)
   FLB_DEFINITION(FLB_HAVE_FLUSH_UCONTEXT)
+  FLB_OPTION(FLB_FLUSH_LIBCO OFF)
 else()
-  set(FLB_FLUSH_PTHREADS  ON)
-  FLB_DEFINITION(FLB_HAVE_FLUSH_PTHREADS)
+  FLB_DEFINITION(FLB_HAVE_FLUSH_LIBCO)
+  FLB_OPTION(FLB_FLUSH_LIBCO ON)
+  add_subdirectory(lib/flb_libco)
 endif()
 
 # Valgrind support
@@ -242,16 +258,46 @@ if(FLB_MTRACE)
   endif()
 endif()
 
-check_c_source_compiles("
+# Memory Allocator
+# ================
+if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+  FLB_DEFINITION(FLB_HAVE_JEMALLOC)
+
+  # Link to Jemalloc as an external dependency
+  ExternalProject_Add(jemalloc
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc
+    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc/configure --with-jemalloc-prefix=je_ --enable-cc-silence --prefix=<INSTALL_DIR>
+    CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
+    BUILD_COMMAND ${MAKE}
+    INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
+    INSTALL_COMMAND $(MAKE) install_lib_static install_include)
+  add_library(libjemalloc STATIC IMPORTED GLOBAL)
+  set_target_properties(libjemalloc PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/lib/libjemalloc_pic.a")
+  add_dependencies(libjemalloc jemalloc)
+  include_directories("${CMAKE_CURRENT_BINARY_DIR}/include/")
+else()
+  FLB_OPTION(FLB_JEMALLOC OFF)
+endif()
+
+# Pthread Local Storage
+# =====================
+# By default we expect the compiler already support thread local storage
+# through __thread type, otherwise Fluent Bit fallback to the old POSIX
+# pthread mode (pthread_key_t), or it can be forced setting FLB_POSIX_TLS
+# for testing/compatibility purposes.
+if(NOT FLB_POSIX_TLS)
+  check_c_source_compiles("
    __thread int a;
    int main() {
        __tls_get_addr(0);
        return 0;
    }" FLB_HAVE_C_TLS)
-if(FLB_HAVE_C_TLS)
-  FLB_DEFINITION(FLB_HAVE_C_TLS)
+  if(FLB_HAVE_C_TLS)
+    FLB_DEFINITION(FLB_HAVE_C_TLS)
+  endif()
 endif()
 
+# setjmp
 check_c_source_compiles("
     #include <setjmp.h>
     int main() {
@@ -259,6 +305,29 @@ check_c_source_compiles("
     }" FLB_HAVE_SETJMP)
 if(FLB_HAVE_SETJMP)
   FLB_DEFINITION(FLB_HAVE_SETJMP)
+endif()
+
+# accept(4)
+check_c_source_compiles("
+    #define _GNU_SOURCE
+    #include <stdio.h>
+    #include <sys/socket.h>
+    int main() {
+        accept4(0, NULL, NULL, 0);
+        return 0;
+    }" FLB_HAVE_ACCEPT4)
+if(FLB_HAVE_ACCEPT4)
+  FLB_DEFINITION(FLB_HAVE_ACCEPT4)
+endif()
+
+if(FLB_TD)
+  FLB_DEFINITION(FLB_IS_TD_AGENT)
+  set(FLB_PROG_NAME "TD Agent Bit")
+  set(FLB_OUT_NAME "td-agent-bit")
+  set(WITHOUT_HEADERS On)
+else()
+  set(FLB_PROG_NAME "Fluentd Bit")
+  set(FLB_OUT_NAME "fluent-bit")
 endif()
 
 configure_file(

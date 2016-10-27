@@ -19,6 +19,10 @@
 
 #include <stdlib.h>
 #include <mk_core.h>
+
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_uri.h>
 #include <fluent-bit/flb_utils.h>
 
@@ -53,7 +57,7 @@ struct flb_uri *flb_uri_create(char *full_uri)
     uri_size  = sizeof(struct flb_uri);
     uri_size += (sizeof(struct flb_uri_field) * FLB_URI_MAX);
 
-    p  = calloc(1, uri_size);
+    p  = flb_calloc(1, uri_size);
     if (!p) {
         perror("malloc");
         return NULL;
@@ -92,14 +96,16 @@ struct flb_uri *flb_uri_create(char *full_uri)
 
         /* Alloc node */
         field = &uri->map[uri->count];
-        field->value         = val;
+        field->value         = flb_strdup(val);
         field->length        = val_len;
         mk_list_add(&field->_head, &uri->list);
         i = end + 1;
         uri->count++;
+
+        mk_mem_free(val);
     }
 
-    uri->full = strdup(full_uri);
+    uri->full = flb_strdup(full_uri);
     return uri;
 }
 
@@ -113,11 +119,11 @@ void flb_uri_destroy(struct flb_uri *uri)
     mk_list_foreach_safe(head, tmp, &uri->list) {
         field = mk_list_entry(head, struct flb_uri_field, _head);
         mk_list_del(&field->_head);
-        free(field->value);
+        flb_free(field->value);
     }
 
-    free(uri->full);
-    free(uri);
+    flb_free(uri->full);
+    flb_free(uri);
 }
 
 void flb_uri_dump(struct flb_uri *uri)

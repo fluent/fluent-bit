@@ -6,6 +6,12 @@ os:
   - linux
   - osx
 
+env:
+  - FLB_FLUSH="-DFLB_FLUSH_UCONTEXT=On"
+  - FLB_FLUSH="-DFLB_FLUSH_LIBCO=On"
+  - FLB_MEM="-DFLB_JEMALLOC=On"
+  - FLB_MEM="-DFLB_JEMALLOC=Off"
+
 notifications:
   irc: "irc.freenode.net#fluent-bit"
 
@@ -17,7 +23,7 @@ before_script:
   - if [ $TRAVIS_OS_NAME == linux ]; then export PATH=$PATH:$PWD/ksz9692/bin/; fi
   # Unpack the sources
   - cd build
-  - cmake -DFLB_ALL=On -DCMAKE_TOOLCHAIN_FILE=${TOOLCHAIN} ../
+  - cmake -DFLB_ALL=On $FLB_FLUSH $FLB_MEM -DCMAKE_TOOLCHAIN_FILE=${TOOLCHAIN} ../
 
 matrix:
   include:
@@ -26,6 +32,10 @@ matrix:
   exclude:
     - os: osx
       env: TOOLCHAIN=../cmake/armadillo-iot.cmake
+    - os: osx
+      env: FLB_MEM="-DFLB_JEMALLOC=On"
+    - os: osx
+      env: FLB_MEM="-DFLB_JEMALLOC=Off"
     - os: linux
       compiler: clang
       env: TOOLCHAIN=../cmake/armadillo-iot.cmake

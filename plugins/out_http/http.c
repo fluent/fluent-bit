@@ -25,8 +25,10 @@
 
 #include <msgpack.h>
 #include <cjson/cjson.h>
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_str.h>
 
 #include "http.h"
 
@@ -91,7 +93,7 @@ static char *msgpack_to_json(char *data, uint64_t bytes, uint64_t *out_size)
             }
             else {
                 /* Long JSON map keys have a performance penalty */
-                ptr_key = malloc(psize + 1);
+                ptr_key = flb_malloc(psize + 1);
                 memcpy(ptr_key, k->via.str.ptr, psize);
                 ptr_key[psize] = '\0';
             }
@@ -125,7 +127,7 @@ static char *msgpack_to_json(char *data, uint64_t bytes, uint64_t *out_size)
                     ptr_val = buf_val;
                 }
                 else {
-                    ptr_val = malloc(psize + 1);
+                    ptr_val = flb_malloc(psize + 1);
                     memcpy(ptr_val, v->via.str.ptr, psize);
                     ptr_val[psize] = '\0';
                 }
@@ -141,7 +143,7 @@ static char *msgpack_to_json(char *data, uint64_t bytes, uint64_t *out_size)
                     ptr_val = buf_val;
                 }
                 else {
-                    ptr_val = malloc(psize + 1);
+                    ptr_val = flb_malloc(psize + 1);
                     memcpy(ptr_val, v->via.bin.ptr, psize);
                     ptr_val[psize] = '\0';
                 }
@@ -150,12 +152,12 @@ static char *msgpack_to_json(char *data, uint64_t bytes, uint64_t *out_size)
             }
 
             if (ptr_key && ptr_key != buf_key) {
-                free(ptr_key);
+                flb_free(ptr_key);
             }
             ptr_key = NULL;
 
             if (ptr_val && ptr_val != buf_val) {
-                free(ptr_val);
+                flb_free(ptr_val);
             }
             ptr_val = NULL;
         }
@@ -179,6 +181,7 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
                void *data)
 {
     int ulen;
+    int type;
     char *uri = NULL;
     char *tmp;
     struct flb_upstream *upstream;
@@ -186,7 +189,7 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
     (void) data;
 
     /* Allocate plugin context */
-    ctx = calloc(1, sizeof(struct flb_out_http_config));
+    ctx = flb_calloc(1, sizeof(struct flb_out_http_config));
     if (!ctx) {
         perror("malloc");
         FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -208,14 +211,14 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
 
         addr = strstr(tmp, "//");
         if (!addr) {
-            free(ctx);
+            flb_free(ctx);
             FLB_OUTPUT_RETURN(FLB_ERROR);
         }
         addr += 2; /* get right to the host section */
         if (*addr == '[') { /* IPv6 */
             p = strchr(addr, ']');
             if (!p) {
-                free(ctx);
+                flb_free(ctx);
                 FLB_OUTPUT_RETURN(FLB_ERROR);
             }
             ctx->proxy_host = strndup(addr + 1, (p - addr - 1));
@@ -236,7 +239,7 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
                 ctx->proxy_host = strndup(addr, (p - addr) - 1);
             }
             else {
-                ctx->proxy_host = strdup(addr);
+                ctx->proxy_host = flb_strdup(addr);
                 ctx->proxy_port = 80;
             }
         }
@@ -244,12 +247,24 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
     }
     else {
         if (!ins->host.name) {
-            ins->host.name = strdup("127.0.0.1");
+            ins->host.name = flb_strdup("127.0.0.1");
         }
         if (ins->host.port == 0) {
             ins->host.port = 80;
         }
     }
+
+    /* Check if SSL/TLS is enabled */
+#ifdef FLB_HAVE_TLS
+    if (ins->use_tls == FLB_TRUE) {
+        type = FLB_IO_TLS;
+    }
+    else {
+        type = FLB_IO_TCP;
+    }
+#else
+    type = FLB_IO_TCP;
+#endif
 
     if (ctx->proxy) {
         flb_trace("[out_http] Upstream Proxy=%s:%i",
@@ -257,40 +272,40 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
         upstream = flb_upstream_create(config,
                                        ctx->proxy_host,
                                        ctx->proxy_port,
-                                       FLB_IO_TCP, (void *) &ins->tls);
+                                       type, (void *) &ins->tls);
     }
     else {
         upstream = flb_upstream_create(config,
                                        ins->host.name,
                                        ins->host.port,
-                                       FLB_IO_TCP, (void *) &ins->tls);
+                                       type, (void *) &ins->tls);
     }
 
     if (!upstream) {
-        free(ctx);
+        flb_free(ctx);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
     if (ins->host.uri) {
-        uri = strdup(ins->host.uri->full);
+        uri = flb_strdup(ins->host.uri->full);
     }
     else {
         tmp = flb_output_get_property("uri", ins);
         if (tmp) {
-            uri = strdup(tmp);
+            uri = flb_strdup(tmp);
         }
     }
 
     if (!uri) {
-        uri = strdup("/");
+        uri = flb_strdup("/");
     }
     else if (uri[0] != '/') {
         ulen = strlen(uri);
-        tmp = malloc(ulen + 2);
+        tmp = flb_malloc(ulen + 2);
         tmp[0] = '/';
         memcpy(tmp + 1, uri, ulen);
         tmp[ulen + 1] = '\0';
-        free(uri);
+        flb_free(uri);
         uri = tmp;
     }
 
@@ -350,7 +365,7 @@ int cb_http_flush(void *data, size_t bytes,
     u_conn = flb_upstream_conn_get(u);
     if (!u_conn) {
         flb_error("[out_http] no upstream connections available");
-        FLB_OUTPUT_RETURN(FLB_ERROR);
+        FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
     /* Create HTTP client context */
@@ -377,7 +392,17 @@ int cb_http_flush(void *data, size_t bytes,
 
     ret = flb_http_do(c, &b_sent);
     if (ret == 0) {
-        if (c->resp.status != 200) {
+        /*
+         * Only allow the following HTTP status:
+         *
+         *  - 200: OK
+         *  - 201: Created
+         *  - 202: Accepted
+         *  - 203: no authorative resp
+         *  - 204: No Content
+         *  - 205: Reset content
+         */
+        if (c->resp.status < 200 || c->resp.status > 205) {
             flb_error("[out_http] http_status=%i", c->resp.status);
             out_ret = FLB_RETRY;
         }
@@ -396,7 +421,7 @@ int cb_http_flush(void *data, size_t bytes,
     flb_upstream_conn_release(u_conn);
 
     if (ctx->out_format == FLB_HTTP_OUT_JSON) {
-        free(body);
+        flb_free(body);
     }
 
     FLB_OUTPUT_RETURN(out_ret);
@@ -408,9 +433,9 @@ int cb_http_exit(void *data, struct flb_config *config)
 
     flb_upstream_destroy(ctx->u);
 
-    free(ctx->proxy_host);
-    free(ctx->uri);
-    free(ctx);
+    flb_free(ctx->proxy_host);
+    flb_free(ctx->uri);
+    flb_free(ctx);
 
     return 0;
 }
@@ -423,5 +448,5 @@ struct flb_output_plugin out_http_plugin = {
     .cb_pre_run     = NULL,
     .cb_flush       = cb_http_flush,
     .cb_exit        = cb_http_exit,
-    .flags          = FLB_OUTPUT_NET,
+    .flags          = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
 };

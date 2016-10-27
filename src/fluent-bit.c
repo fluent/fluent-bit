@@ -37,6 +37,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_engine.h>
+#include <fluent-bit/flb_str.h>
 
 #ifdef FLB_HAVE_MTRACE
 #include <mcheck.h>
@@ -71,6 +72,7 @@ static void flb_help(int rc, struct flb_config *config)
     printf("  -m, --match=MATCH\tset plugin match, same as '-p match=abc'\n");
     printf("  -o, --output=OUTPUT\tset an output\n");
     printf("  -p, --prop=\"A=B\"\tset plugin configuration property\n");
+    printf("  -l, --logfile=FILE\twrite log info to a file\n");
     printf("  -t, --tag=TAG\t\tset plugin tag, same as '-p tag=abc'\n");
     printf("  -v, --verbose\t\tenable verbose mode\n");
 #ifdef FLB_HAVE_HTTP
@@ -102,7 +104,9 @@ static void flb_help(int rc, struct flb_config *config)
         }
         printf("  %-22s%s\n", out->name, out->description);
     }
-    printf("\n");
+
+    printf("\n%sInternal Flags%s\n", ANSI_BOLD, ANSI_RESET);
+    printf(" %s\n", FLB_INFO_FLAGS);
     exit(rc);
 }
 
@@ -169,7 +173,7 @@ static int input_set_property(struct flb_input_instance *in, char *kv)
     }
 
     ret = flb_input_set_property(in, key, value);
-    free(key);
+    flb_free(key);
     return ret;
 }
 
@@ -195,7 +199,7 @@ static int output_set_property(struct flb_output_instance *out, char *kv)
     }
 
     ret = flb_output_set_property(out, key, value);
-    free(key);
+    flb_free(key);
     return ret;
 }
 
@@ -251,7 +255,7 @@ static int flb_service_conf(struct flb_config *config, char *file)
 
         /* Create an instace of the plugin */
         in = flb_input_new(config, name, NULL);
-        free(name);
+        flb_free(name);
         if (!in) {
             flb_service_conf_err(section, "Name");
             goto flb_service_conf_end;
@@ -285,7 +289,7 @@ static int flb_service_conf(struct flb_config *config, char *file)
 
         /* Create an instace of the plugin */
         out = flb_output_new(config, name, NULL);
-        free(name);
+        flb_free(name);
         if (!out) {
             flb_service_conf_err(section, "Name");
             goto flb_service_conf_end;
@@ -331,6 +335,7 @@ int main(int argc, char **argv)
         { "daemon",      no_argument      , NULL, 'd' },
         { "flush",       required_argument, NULL, 'f' },
         { "http",        no_argument      , NULL, 'H' },
+        { "logfile",     required_argument, NULL, 'l' },
         { "port",        required_argument, NULL, 'P' },
         { "input",       required_argument, NULL, 'i' },
         { "match",       required_argument, NULL, 'm' },
@@ -359,13 +364,13 @@ int main(int argc, char **argv)
     }
 
     /* Parse the command line options */
-    while ((opt = getopt_long(argc, argv, "b:B:c:df:i:m:o:p:t:vqVhHP:",
+    while ((opt = getopt_long(argc, argv, "b:B:c:df:i:m:o:p:t:l:vqVhHP:",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
 #ifdef FLB_HAVE_BUFFERING
         case 'b':
-            config->buffer_path = strdup(optarg);
+            config->buffer_path = flb_strdup(optarg);
             if (config->buffer_workers <= 0) {
                 config->buffer_workers = 1;
             }
@@ -375,7 +380,7 @@ int main(int argc, char **argv)
             break;
 #endif
         case 'c':
-            cfg_file = strdup(optarg);
+            cfg_file = flb_strdup(optarg);
             break;
         case 'd':
             config->daemon = FLB_TRUE;
@@ -402,6 +407,9 @@ int main(int argc, char **argv)
             }
             last_plugin = PLUGIN_OUTPUT;
             break;
+        case 'l':
+            config->logfile = flb_strdup(optarg);
+            break;
         case 'p':
             if (last_plugin == PLUGIN_INPUT) {
                 input_set_property(in, optarg);
@@ -423,7 +431,7 @@ int main(int argc, char **argv)
             config->http_server = FLB_TRUE;
             break;
         case 'P':
-            config->http_port = strdup(optarg);
+            config->http_port = flb_strdup(optarg);
             break;
 #endif
         case 'V':
@@ -440,7 +448,13 @@ int main(int argc, char **argv)
         }
     }
 
-    config->log = flb_log_init(FLB_LOG_STDERR, config->verbose, NULL);
+    if (!config->logfile) {
+        config->log = flb_log_init(config, FLB_LOG_STDERR, config->verbose, NULL);
+    }
+    else {
+        config->log = flb_log_init(config, FLB_LOG_FILE, config->verbose,
+                                   config->logfile);
+    }
 
     /* Validate config file */
     if (cfg_file) {

@@ -37,12 +37,13 @@ int callback_test(void* data, size_t size)
     return 0;
 }
 
+
 TEST(Inputs, flush_2s_2times) 
 {
     int           ret    = 0;
     flb_ctx_t    *ctx    = NULL;
-    flb_input_t  *input  = NULL;
-    flb_output_t *output = NULL;
+    int in_ffd;
+    int out_ffd;
 
     /* initialize */
     ret = pthread_mutex_init(&result_mutex, NULL);
@@ -51,13 +52,13 @@ TEST(Inputs, flush_2s_2times)
 
     ctx = flb_create();
 
-    input = flb_input(ctx, (char *) "mem", NULL);
-    EXPECT_TRUE(input != NULL);
-    flb_input_set(input, "tag", "test", NULL);
+    in_ffd = flb_input(ctx, (char *) "mem", NULL);
+    EXPECT_TRUE(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
 
-    output = flb_output(ctx, (char *) "lib", (void*)callback_test);
-    EXPECT_TRUE(output != NULL);
-    flb_output_set(output, "match", "test", NULL);
+    out_ffd = flb_output(ctx, (char *) "lib", (void*)callback_test);
+    EXPECT_TRUE(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "test", NULL);
 
     flb_service_set(ctx, "Flush", "2", NULL);
 

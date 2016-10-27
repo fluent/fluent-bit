@@ -135,9 +135,9 @@ static void delete_head_config(struct flb_in_head_config *head_config)
     if (head_config) {
         /* release buffer */
         if (head_config->buf != NULL) {
-            free(head_config->buf);
+            flb_free(head_config->buf);
         }
-        free(head_config);
+        flb_free(head_config);
     }
 }
 
@@ -149,7 +149,7 @@ static int in_head_init(struct flb_input_instance *in,
     int ret = -1;
 
     /* Allocate space for the configuration */
-    head_config = malloc(sizeof(struct flb_in_head_config));
+    head_config = flb_malloc(sizeof(struct flb_in_head_config));
     if (head_config == NULL) {
         return -1;
     }
@@ -163,7 +163,7 @@ static int in_head_init(struct flb_input_instance *in,
         goto init_error;
     }
 
-    head_config->buf = malloc(head_config->buf_size);
+    head_config->buf = flb_malloc(head_config->buf_size);
     if (head_config->buf == NULL) {
         flb_utils_error_c("could not allocate head buffer");
         goto init_error;
@@ -207,7 +207,7 @@ static void *in_head_flush(void *in_context, size_t *size)
         head_config = 0;
         return NULL;
     }
-    buf = malloc(head_config->mp_sbuf.size);
+    buf = flb_malloc(head_config->mp_sbuf.size);
     if (!buf) {
         return NULL;
     }

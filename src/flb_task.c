@@ -20,15 +20,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_task.h>
+#include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_str.h>
 
 #ifdef FLB_HAVE_BUFFERING
 #include <fluent-bit/flb_sha1.h>
 #include <fluent-bit/flb_buffer_chunk.h>
+#include <fluent-bit/flb_buffer_qchunk.h>
 #endif
 
 /*
@@ -44,8 +48,7 @@ static int map_get_task_id(struct flb_config *config)
     int i;
 
     for (i = 0; i < sizeof(config->tasks_map); i++) {
-        if (config->tasks_map[i].id == 0) {
-            config->tasks_map[i].id = 1;
+        if (config->tasks_map[i].task == NULL) {
             return i;
         }
     }
@@ -60,45 +63,86 @@ static void map_set_task_id(int id, struct flb_task *task,
 
 }
 
-struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
-                                             struct flb_output_instance *o_ins)
+static void flb_task_retry_destroy(struct flb_task_retry *retry)
 {
-    struct flb_task_retry *retry;
+    mk_list_del(&retry->_head);
+    flb_free(retry);
+}
 
-    retry = malloc(sizeof(struct flb_task_retry));
-    if (!retry) {
-        perror("malloc");
-        return NULL;
+struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
+                                             void *data)
+{
+    struct mk_list *head;
+    struct flb_task_retry *retry = NULL;
+    struct flb_output_instance *o_ins;
+    struct flb_output_thread *out_th;
+
+    out_th = (struct flb_output_thread *) data;
+    o_ins = out_th->o_ins;
+
+    /* First discover if is there any previous retry context in the task */
+    mk_list_foreach(head, &task->retries) {
+        retry = mk_list_entry(head, struct flb_task_retry, _head);
+        if (retry->o_ins == o_ins) {
+            if (retry->attemps > o_ins->retry_limit) {
+                flb_task_retry_destroy(retry);
+                return NULL;
+            }
+            break;
+        }
+        retry = NULL;
     }
 
-    retry->attemps = 1;     /* It already failed once, that's why we are here */
-    retry->o_ins   = o_ins;
-    retry->parent  = task;
-    mk_list_add(&retry->_head, &task->retries);
+    if (!retry) {
+        /* Create a new re-try instance */
+        retry = flb_malloc(sizeof(struct flb_task_retry));
+        if (!retry) {
+            perror("malloc");
+            return NULL;
+        }
+
+        retry->attemps = 1;
+        retry->o_ins   = o_ins;
+        retry->parent  = task;
+        mk_list_add(&retry->_head, &task->retries);
+    }
+    else {
+        retry->attemps++;
+    }
 
     return retry;
 }
 
-/* Create an engine task to handle the output plugin flushing work */
-struct flb_task *flb_task_create(char *buf,
-                                 size_t size,
-                                 struct flb_input_instance *i_ins,
-                                 struct flb_input_dyntag *dt,
-                                 char *tag,
-                                 struct flb_config *config)
+/* Check if a 'retry' context exists for a specific task, if so, cleanup */
+int flb_task_retry_clean(struct flb_task *task, void *data)
 {
-    int count = 0;
-    int task_id;
-    uint64_t routes_mask = 0;
-    struct flb_task *task;
-    struct flb_task_route *route;
-    struct flb_output_instance *o_ins;
-    struct flb_router_path *router_path;
+    struct mk_list *tmp;
     struct mk_list *head;
-    struct mk_list *o_head;
+    struct flb_task_retry *retry;
+    struct flb_output_instance *o_ins;
+    struct flb_output_thread *out_th;
+
+    out_th = (struct flb_output_thread *) FLB_THREAD_DATA(data);
+    o_ins = out_th->o_ins;
+    mk_list_foreach_safe(head, tmp, &task->retries) {
+        retry = mk_list_entry(head, struct flb_task_retry, _head);
+        if (retry->o_ins == o_ins) {
+            flb_task_retry_destroy(retry);
+            return 0;
+        }
+    }
+
+    return -1;
+}
+
+/* Allocate an initialize a basic Task structure */
+static struct flb_task *task_alloc(struct flb_config *config)
+{
+    int task_id;
+    struct flb_task *task;
 
     /* Allocate the new task */
-    task = (struct flb_task *) calloc(1, sizeof(struct flb_task));
+    task = (struct flb_task *) flb_calloc(1, sizeof(struct flb_task));
     if (!task) {
         perror("malloc");
         return NULL;
@@ -107,25 +151,56 @@ struct flb_task *flb_task_create(char *buf,
     /* Get ID and set back 'task' reference */
     task_id = map_get_task_id(config);
     if (task_id == -1) {
-        free(task);
+        flb_free(task);
         return NULL;
     }
     map_set_task_id(task_id, task, config);
 
-    /* Keep track of origins */
+    /* Initialize minimum variables */
     task->id        = task_id;
+    task->mapped    = FLB_FALSE;
+    task->config    = config;
     task->status    = FLB_TASK_NEW;
     task->n_threads = 0;
     task->users     = 0;
-    task->tag       = strdup(tag);
-    task->buf       = buf;
-    task->size      = size;
-    task->i_ins     = i_ins;
-    task->dt        = dt;
-    task->config    = config;
     mk_list_init(&task->threads);
     mk_list_init(&task->routes);
     mk_list_init(&task->retries);
+
+    return task;
+}
+
+/* Create an engine task to handle the output plugin flushing work */
+struct flb_task *flb_task_create(uint64_t ref_id,
+                                 char *buf,
+                                 size_t size,
+                                 struct flb_input_instance *i_ins,
+                                 struct flb_input_dyntag *dt,
+                                 char *tag,
+                                 struct flb_config *config)
+{
+    int count = 0;
+    uint64_t routes_mask = 0;
+    struct flb_task *task;
+    struct flb_task_route *route;
+    struct flb_output_instance *o_ins;
+    struct flb_router_path *router_path;
+    struct mk_list *head;
+    struct mk_list *o_head;
+
+    task = task_alloc(config);
+    if (!task) {
+        return NULL;
+    }
+
+    /* Keep track of origins */
+    task->ref_id = ref_id;
+    task->tag    = flb_strdup(tag);
+    task->buf    = buf;
+    task->size   = size;
+    task->i_ins  = i_ins;
+    task->dt     = dt;
+    task->destinations = 0;
     mk_list_add(&task->_head, &i_ins->tasks);
 
     /* Routes */
@@ -135,7 +210,7 @@ struct flb_task *flb_task_create(char *buf,
             router_path = mk_list_entry(head, struct flb_router_path, _head);
             o_ins = router_path->ins;
 
-            route = malloc(sizeof(struct flb_task_route));
+            route = flb_malloc(sizeof(struct flb_task_route));
             if (!route) {
                 perror("malloc");
                 continue;
@@ -155,7 +230,7 @@ struct flb_task *flb_task_create(char *buf,
                                   struct flb_output_instance, _head);
 
             if (flb_router_match(tag, o_ins->match)) {
-                route = malloc(sizeof(struct flb_task_route));
+                route = flb_malloc(sizeof(struct flb_task_route));
                 if (!route) {
                     perror("malloc");
                     continue;
@@ -171,12 +246,21 @@ struct flb_task *flb_task_create(char *buf,
         }
     }
 
+    /* no destinations ?, useless task. */
+    if (count == 0) {
+        flb_debug("[task] created task=%p without routes, dropping.",
+                  task);
+        task->buf = NULL;
+        flb_task_destroy(task);
+        return NULL;
+    }
+
 #ifdef FLB_HAVE_BUFFERING
     int i;
     int worker_id;
 
     /* Generate content SHA1 and it Hexa representation */
-    flb_sha1_encode(buf, size, &task->hash_sha1);
+    flb_sha1_encode(buf, size, task->hash_sha1);
     for (i = 0; i < 20; ++i) {
         sprintf(&task->hash_hex[i*2], "%02x", task->hash_sha1[i]);
     }
@@ -187,7 +271,7 @@ struct flb_task *flb_task_create(char *buf,
      * are passed through the 'routes_mask' bit mask variable.
      */
     worker_id = flb_buffer_chunk_push(config->buffer_ctx, buf, size, tag,
-                                      routes_mask, &task->hash_hex);
+                                      routes_mask, task->hash_hex);
 
     task->worker_id = worker_id;
     flb_debug("[task->buffer] worker_id=%i", worker_id);
@@ -197,6 +281,66 @@ struct flb_task *flb_task_create(char *buf,
     pthread_mutex_init(&task->mutex_threads, NULL);
 #endif
 
+    flb_debug("[task] created task=%p OK", task);
+
+    return task;
+}
+
+/*
+ * Create an engine task to handle the output plugin flushing work. Not that
+ * doing a direct Task will not do buffering.
+ */
+struct flb_task *flb_task_create_direct(uint64_t ref_id,
+                                        char *buf,
+                                        size_t size,
+                                        struct flb_input_instance *i_ins,
+                                        char *tag,
+                                        char *hash,
+                                        uint64_t routes,
+                                        struct flb_config *config)
+{
+    int count = 0;
+    struct mk_list *head;
+    struct flb_task *task;
+    struct flb_task_route *route;
+    struct flb_output_instance *o_ins;
+
+    /* Allocate a task structure */
+    task = task_alloc(config);
+    if (!task) {
+        return NULL;
+    }
+
+    /* Keep track of origins */
+    task->ref_id    = ref_id;
+    task->tag       = flb_strdup(tag);
+    task->buf       = buf;
+    task->size      = size;
+    task->i_ins     = i_ins;
+    task->dt        = NULL;
+    task->mapped    = FLB_TRUE;
+#ifdef FLB_HAVE_BUFFERING
+    memcpy(&task->hash_hex, hash, 41);
+#endif
+    mk_list_add(&task->_head, &i_ins->tasks);
+
+    /* Iterate output instances and try to match the routes */
+    mk_list_foreach(head, &config->outputs) {
+        o_ins = mk_list_entry(head, struct flb_output_instance, _head);
+        if (o_ins->mask_id & routes) {
+            route = flb_malloc(sizeof(struct flb_task_route));
+            if (!route) {
+                perror("malloc");
+                continue;
+            }
+
+            route->out = o_ins;
+            mk_list_add(&route->_head, &task->routes);
+            count++;
+        }
+    }
+
+    flb_debug("[task] create_direct: %i routes", count);
     return task;
 }
 
@@ -205,35 +349,56 @@ void flb_task_destroy(struct flb_task *task)
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_task_route *route;
+    struct flb_task_retry *retry;
 
-    flb_trace("[engine] destroy task_id=%i", task->id);
+    flb_debug("[task] destroy task=%p (task_id=%i)", task, task->id);
 
     if (task->dt) {
         flb_input_dyntag_destroy(task->dt);
     }
 
     /* Release task_id */
-    task->config->tasks_map[task->id].id   = 0;
     task->config->tasks_map[task->id].task = NULL;
 
     /* Remove routes */
     mk_list_foreach_safe(head, tmp, &task->routes) {
         route = mk_list_entry(head, struct flb_task_route, _head);
         mk_list_del(&route->_head);
-        free(route);
+        flb_free(route);
     }
 
     /* Unlink and release */
     mk_list_del(&task->_head);
-    free(task->buf);
-    free(task->tag);
-    free(task);
+
+    if (task->mapped == FLB_FALSE) {
+        flb_free(task->buf);
+    }
+#ifdef FLB_HAVE_BUFFERING
+    else {
+        /* Likely there is a qchunk associated to this tasks */
+        if (task->ref_id > 0 && task->config->buffer_ctx) {
+            flb_buffer_qchunk_signal(FLB_BUFFER_QC_POP_REQUEST, task->ref_id,
+                                     task->config->buffer_ctx->qworker);
+        }
+    }
+#endif
+
+    /* Remove 'retries' */
+    mk_list_foreach_safe(head, tmp, &task->retries) {
+        retry = mk_list_entry(head, struct flb_task_retry, _head);
+        flb_task_retry_destroy(retry);
+    }
+
+    flb_free(task->tag);
+    flb_free(task);
 }
 
 /* Register a thread into the tasks list */
 void flb_task_add_thread(struct flb_thread *thread,
                          struct flb_task *task)
 {
+    struct flb_output_thread *out_th;
+
     /*
      * It's likely a previous thread have marked this task ready to be deleted,
      * we must check this usual condition that could happen when one input
@@ -243,11 +408,13 @@ void flb_task_add_thread(struct flb_thread *thread,
     pthread_mutex_lock(&task->mutex_threads);
 #endif
 
+    out_th = (struct flb_output_thread *) FLB_THREAD_DATA(thread);
+
     /* Always set an incremental thread_id */
-    thread->id = task->n_threads;
+    out_th->id = task->n_threads;
     task->n_threads++;
     task->users++;
-    mk_list_add(&thread->_head, &task->threads);
+    mk_list_add(&out_th->_head, &task->threads);
 
 #ifdef FLB_HAVE_FLUSH_PTHREADS
     pthread_mutex_unlock(&task->mutex_threads);

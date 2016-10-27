@@ -21,22 +21,23 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <fluent-bit.h>
 #include "es_bulk.h"
 
 struct es_bulk *es_bulk_create()
 {
     struct es_bulk *b;
 
-    b = malloc(sizeof(struct es_bulk));
+    b = flb_malloc(sizeof(struct es_bulk));
     if (!b) {
         perror("calloc");
         return NULL;
     }
 
-    b->ptr = malloc(ES_BULK_CHUNK);
+    b->ptr = flb_malloc(ES_BULK_CHUNK);
     if (!b->ptr) {
         perror("malloc");
-        free(b);
+        flb_free(b);
         return NULL;
     }
 
@@ -49,9 +50,9 @@ struct es_bulk *es_bulk_create()
 void es_bulk_destroy(struct es_bulk *bulk)
 {
     if (bulk->size > 0) {
-        free(bulk->ptr);
+        flb_free(bulk->ptr);
     }
-    free(bulk);
+    flb_free(bulk);
 }
 
 int es_bulk_append(struct es_bulk *bulk, char *index, int i_len, char *json, int j_len)
@@ -66,7 +67,7 @@ int es_bulk_append(struct es_bulk *bulk, char *index, int i_len, char *json, int
 
     if (available < required) {
         new_size = bulk->size + (((available + required) / ES_BULK_CHUNK) + ES_BULK_CHUNK);
-        ptr = realloc(bulk->ptr, new_size);
+        ptr = flb_realloc(bulk->ptr, new_size);
         if (!ptr) {
             perror("realloc");
             return -1;

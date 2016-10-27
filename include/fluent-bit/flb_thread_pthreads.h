@@ -24,6 +24,7 @@
 #include <pthread.h>
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_task.h>
@@ -85,7 +86,7 @@ static struct flb_thread *flb_thread_new()
 {
     struct flb_thread *th;
 
-    th = (struct flb_thread *) malloc(sizeof(struct flb_thread));
+    th = (struct flb_thread *) flb_malloc(sizeof(struct flb_thread));
     if (!th) {
         perror("malloc");
         return NULL;
@@ -137,7 +138,7 @@ static FLB_INLINE void flb_thread_destroy(struct flb_thread *th)
      */
 #endif
 
-    free(th);
+    flb_free(th);
 }
 
 void flb_thread_resume(struct flb_thread *th);

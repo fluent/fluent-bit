@@ -33,6 +33,7 @@
 #define BIT_SET(a, b)   ((a) |= (1 << (b)))
 #define BIT_CHECK(a, b) ((a) & (1 << (b)))
 
+/*
 static inline void print_hex(struct mqtt_conn *conn)
 {
     int x;
@@ -56,6 +57,7 @@ static inline void print_str(struct mqtt_conn *conn)
     }
     printf("\n--------------------\n\n");
 }
+*/
 
 /*
  * It drop the current packet from the buffer, it move the remaining bytes
@@ -165,9 +167,9 @@ static int mqtt_data_append(char *topic, size_t topic_len,
     }
     msgpack_unpacked_destroy(&result);
 
-    free(pack);
+    flb_free(pack);
     sbuf = &mp_sbuf;
-    buf = malloc(sbuf->size);
+    buf = flb_malloc(sbuf->size);
     if (!buf) {
         return -1;
     }
@@ -183,7 +185,7 @@ static int mqtt_data_append(char *topic, size_t topic_len,
     }
     else{
     }
-    free(buf);
+    flb_free(buf);
 
     return 0;
 }

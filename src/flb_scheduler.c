@@ -18,10 +18,12 @@
  */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_engine.h>
+#include <fluent-bit/flb_engine_dispatch.h>
 
 #include <math.h>
 #include <sys/types.h>
@@ -59,15 +61,21 @@ static int random_uniform(int min, int max)
     int copies;
     int limit;
     int ra;
+    int ret;
 
     fd = open("/dev/urandom", O_RDONLY);
     if (fd == -1) {
         srand(time(NULL));
     }
     else {
-        read(fd, &val, sizeof(val));
+        ret = read(fd, &val, sizeof(val));
+        if (ret > 0) {
+            srand(val);
+        }
+        else {
+            srand(time(NULL));
+        }
         close(fd);
-        srand(val);
     }
 
     range  = max - min + 1;
@@ -107,7 +115,7 @@ int flb_sched_request_create(struct flb_config *config,
     struct flb_sched_request *request;
 
     /* Allocate request node */
-    request = malloc(sizeof(struct flb_sched_request));
+    request = flb_malloc(sizeof(struct flb_sched_request));
     if (!request) {
         perror("malloc");
         return -1;
@@ -148,7 +156,7 @@ int flb_sched_request_destroy(struct flb_config *config,
     mk_event_del(config->evl, &req->event);
     close(req->fd);
     mk_list_del(&req->_head);
-    free(req);
+    flb_free(req);
 
     return 0;
 }
@@ -166,4 +174,23 @@ int flb_sched_event_handler(struct flb_config *config, struct mk_event *event)
 
     /* Destroy this scheduled request, it's not longer required */
     flb_sched_request_destroy(config, req);
+
+    return 0;
+}
+
+/* Release all resources used by the Scheduler */
+int flb_sched_exit(struct flb_config *config)
+{
+    int c = 0;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_sched_request *request;
+
+    mk_list_foreach_safe(head, tmp, &config->sched_requests) {
+        request = mk_list_entry(head, struct flb_sched_request, _head);
+        flb_sched_request_destroy(config, request);
+        c++;
+    }
+
+    return c;
 }

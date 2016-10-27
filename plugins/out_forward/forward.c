@@ -39,7 +39,7 @@ int cb_forward_init(struct flb_output_instance *ins, struct flb_config *config,
     struct flb_uri_field *f_tag = NULL;
     (void) data;
 
-    ctx = calloc(1, sizeof(struct flb_out_forward_config));
+    ctx = flb_calloc(1, sizeof(struct flb_out_forward_config));
     if (!ctx) {
         perror("calloc");
         return -1;
@@ -47,7 +47,7 @@ int cb_forward_init(struct flb_output_instance *ins, struct flb_config *config,
 
     /* Set default network configuration */
     if (!ins->host.name) {
-        ins->host.name = strdup("127.0.0.1");
+        ins->host.name = flb_strdup("127.0.0.1");
     }
     if (ins->host.port == 0) {
         ins->host.port = 24224;
@@ -59,7 +59,7 @@ int cb_forward_init(struct flb_output_instance *ins, struct flb_config *config,
                                    ins->host.port,
                                    FLB_IO_TCP, NULL);
     if (!upstream) {
-        free(ctx);
+        flb_free(ctx);
         return -1;
     }
     ctx->u = upstream;
@@ -84,7 +84,7 @@ int cb_forward_exit(void *data, struct flb_config *config)
     struct flb_out_forward_config *ctx = data;
 
     flb_upstream_destroy(ctx->u);
-    free(ctx);
+    flb_free(ctx);
 
     return 0;
 }
@@ -99,7 +99,6 @@ int cb_forward_flush(void *data, size_t bytes,
     size_t off = 0;
     size_t total;
     size_t bytes_sent;
-    char *buf = NULL;
     msgpack_packer   mp_pck;
     msgpack_sbuffer  mp_sbuf;
     msgpack_unpacked result;
@@ -107,6 +106,8 @@ int cb_forward_flush(void *data, size_t bytes,
     struct flb_upstream_conn *u_conn;
     (void) i_ins;
     (void) config;
+
+    flb_debug("[out_forward] request %lu bytes to flush", bytes);
 
     /* Initialize packager */
     msgpack_sbuffer_init(&mp_sbuf);
@@ -117,6 +118,8 @@ int cb_forward_flush(void *data, size_t bytes,
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
         entries++;
     }
+    flb_debug("[out_fw] %i entries tag='%s' tag_len=%i",
+              entries, tag, tag_len);
     msgpack_unpacked_destroy(&result);
 
     /* Output: root array */
@@ -125,35 +128,36 @@ int cb_forward_flush(void *data, size_t bytes,
     msgpack_pack_bin_body(&mp_pck, tag, tag_len);
     msgpack_pack_array(&mp_pck, entries);
 
-    /* Allocate a new buffer to merge data */
-    buf = malloc(mp_sbuf.size + bytes);
-    if (!buf) {
-        perror("malloc");
-        FLB_OUTPUT_RETURN(FLB_RETRY);
-    }
-
-    memcpy(buf, mp_sbuf.data, mp_sbuf.size);
-    memcpy(buf + mp_sbuf.size, data, bytes);
-    total = mp_sbuf.size + bytes;
-    msgpack_sbuffer_destroy(&mp_sbuf);
-
+    /* Get a TCP connection instance */
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
         flb_error("[out_forward] no upstream connections available");
-        free(buf);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    ret = flb_io_net_write(u_conn, buf, total, &bytes_sent);
+    /* Write message header */
+    ret = flb_io_net_write(u_conn, mp_sbuf.data, mp_sbuf.size, &bytes_sent);
     if (ret == -1) {
-        free(buf);
+        flb_error("[out_forward] could not write chunk header");
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    free(buf);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+    total = ret;
+
+    /* Write body */
+    ret = flb_io_net_write(u_conn, data, bytes, &bytes_sent);
+    if (ret == -1) {
+        flb_error("[out_forward] error writing content body");
+        flb_upstream_conn_release(u_conn);
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
+    total += bytes_sent;
     flb_upstream_conn_release(u_conn);
-    flb_trace("[out_forward] ended write()=%d bytes", bytes_sent);
+    flb_trace("[out_forward] ended write()=%d bytes", total);
+
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 

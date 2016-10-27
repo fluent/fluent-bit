@@ -20,17 +20,22 @@
 #ifndef FLB_THREAD_UCONTEXT_H
 #define FLB_THREAD_UCONTEXT_H
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_macros.h>
+#include <fluent-bit/flb_log.h>
+
+#include <stdlib.h>
+#include <limits.h>
+#include <ucontext.h>
+#include <pthread.h>
+
 #ifdef FLB_HAVE_VALGRIND
 #include <valgrind/valgrind.h>
 #endif
 
-#include <ucontext.h>
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_task.h>
-
 struct flb_thread {
     int id;
-    int retries;
 
 #ifdef FLB_HAVE_VALGRIND
     unsigned int valgrind_stack_id;
@@ -41,47 +46,19 @@ struct flb_thread {
     ucontext_t callee;
 
     /*
-     * Reference to some internal data, for output plugins it usually
-     * reference the associated plugin in question where this thread
-     * should help.
+     * Callback invoked before the thread is destroyed. Used to release
+     * any pending info in FLB_THREAD_DATA(...).
      */
-    void *data;
-
-    /*
-     * Link to the buffer data originally passed for flushing, when the thread
-     * exits this reference must be freed.
-     */
-    void *output_buffer;
-
-    /* Parent flb_task */
-    struct flb_task *task;
-
-    struct flb_config *config;
-
-    /* Link to struct flb_task->threads */
-    struct mk_list _head;
+    void (*cb_destroy) (void *);
 };
 
-#define FLB_THREAD_STACK(p)    (((char *) p) + sizeof(struct flb_thread))
-#define FLB_THREAD_STACK_SIZE  ((3 * PTHREAD_STACK_MIN) / 2)
+#define FLB_THREAD_STACK(th)     (((char *) th) + sizeof(struct flb_thread))
+#define FLB_THREAD_STACK_SIZE    ((3 * PTHREAD_STACK_MIN) / 2)
+#define FLB_THREAD_STACK_END(th) ((char *) FLB_THREAD_STACK(th) + FLB_THREAD_STACK_SIZE)
+#define FLB_THREAD_DATA(th)      ((char *) FLB_THREAD_STACK_END(th))
+#define FLB_THREAD_SIZE()        (sizeof(struct flb_thread) + FLB_THREAD_STACK_SIZE)
 
 FLB_EXPORT pthread_key_t flb_thread_key;
-
-static FLB_INLINE struct flb_thread *flb_thread_get(int id,
-                                                    struct flb_task *task)
-{
-    struct mk_list *head;
-    struct flb_thread *thread = NULL;
-
-    mk_list_foreach(head, &task->threads) {
-        thread = mk_list_entry(head, struct flb_thread, _head);
-        if (thread->id == id) {
-            return thread;
-        }
-    }
-
-    return thread;
-}
 
 static FLB_INLINE void flb_thread_prepare()
 {
@@ -95,26 +72,19 @@ static FLB_INLINE void flb_thread_yield(struct flb_thread *th, int ended)
 
 static FLB_INLINE void flb_thread_destroy(struct flb_thread *th)
 {
+    if (th->cb_destroy) {
+        th->cb_destroy(FLB_THREAD_DATA(th));
+    }
+    flb_trace("[thread] destroy thread=%p", th);
+
 #ifdef FLB_HAVE_VALGRIND
     VALGRIND_STACK_DEREGISTER(th->valgrind_stack_id);
 #endif
 
-    flb_trace("[thread] destroy thread_id=%i", th->id);
-    th->task->users--;
-    mk_list_del(&th->_head);
-    free(th);
+    flb_free(th);
 }
 
-static FLB_INLINE int flb_thread_destroy_id(int id, struct
-                                            flb_task *task)
-{
-    struct flb_thread *thread;
-
-    thread = flb_thread_get(id, task);
-    flb_thread_destroy(thread);
-
-    return 0;
-}
+#define flb_thread_return(th) return 0
 
 static FLB_INLINE void flb_thread_resume(struct flb_thread *th)
 {
@@ -127,41 +97,35 @@ static FLB_INLINE void flb_thread_resume(struct flb_thread *th)
      * through the call FLB_OUTPUT_RETURN(...).
      *
      * So we just swap context and let the event loop to handle all
-     * cleanup required.
+     * the cleanup required.
      */
     swapcontext(&th->caller, &th->callee);
 }
 
-static struct flb_thread *flb_thread_new()
+static struct flb_thread *flb_thread_new(size_t data_size,
+                                         void (*cb_destroy) (void *))
+
 {
     int ret;
     void *p;
     struct flb_thread *th;
 
     /* Create a thread context and initialize */
-    p = malloc(sizeof(struct flb_thread) + FLB_THREAD_STACK_SIZE);
+    p = flb_malloc(sizeof(struct flb_thread) + FLB_THREAD_STACK_SIZE + data_size);
     if (!p) {
-        perror("malloc");
+        flb_errno();
         return NULL;
     }
 
     th = (struct flb_thread *) p;
+    th->cb_destroy = NULL;
+
     ret = getcontext(&th->callee);
     if (ret == -1) {
-        perror("getcontext");
-        free(th);
+        flb_errno();
+        flb_free(th);
         return NULL;
     }
-
-    /*
-     * Each 'Thread' receives an 'id'. This is assigned when this thread
-     * is linked into the parent Task by flb_task_add_thread(...). The
-     * 'id' is always incremental.
-     */
-    th->id                       = 0;
-
-    /* Number of retries */
-    th->retries                  = 0;
 
     /* Thread context */
     th->callee.uc_stack.ss_sp    = FLB_THREAD_STACK(p);
@@ -174,8 +138,8 @@ static struct flb_thread *flb_thread_new()
                                                     FLB_THREAD_STACK(p) + FLB_THREAD_STACK_SIZE);
 #endif
 
-    flb_trace("[thread %p] created", th);
-
+    flb_trace("[thread %p] created (custom data at %p, size=%lu",
+              th, FLB_THREAD_DATA(th), data_size);
     return th;
 }
 

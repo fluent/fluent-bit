@@ -22,6 +22,8 @@
 #include <string.h>
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_output.h>
 
@@ -95,25 +97,30 @@ void flb_output_exit(struct flb_config *config)
             flb_uri_destroy(ins->host.uri);
         }
 
-        free(ins->host.name);
-        free(ins->match);
+        flb_free(ins->host.name);
+        flb_free(ins->host.address);
+        flb_free(ins->match);
 
 #ifdef FLB_HAVE_TLS
-        flb_tls_context_destroy(ins->tls.context);
+        if (ins->p->flags & FLB_IO_TLS) {
+            if (ins->tls.context) {
+                flb_tls_context_destroy(ins->tls.context);
+            }
+        }
 #endif
         /* release properties */
         mk_list_foreach_safe(head_prop, tmp_prop, &ins->properties) {
             prop = mk_list_entry(head_prop, struct flb_config_prop, _head);
 
-            free(prop->key);
-            free(prop->val);
+            flb_free(prop->key);
+            flb_free(prop->val);
 
             mk_list_del(&prop->_head);
-            free(prop);
+            flb_free(prop);
         }
 
         mk_list_del(&ins->_head);
-        free(ins);
+        flb_free(ins);
     }
 }
 
@@ -169,7 +176,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         }
 
         /* Output instance */
-        instance = calloc(1, sizeof(struct flb_output_instance));
+        instance = flb_calloc(1, sizeof(struct flb_output_instance));
         if (!instance) {
             perror("malloc");
             return NULL;
@@ -212,7 +219,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         if (plugin->flags & FLB_OUTPUT_NET) {
             ret = flb_net_host_set(plugin->name, &instance->host, output);
             if (ret != 0) {
-                free(instance);
+                flb_free(instance);
                 return NULL;
             }
         }
@@ -247,10 +254,10 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
 
     /* Check if the key is a known/shared property */
     if (prop_key_check("match", k, len) == 0) {
-        out->match = strdup(v);
+        out->match = flb_strdup(v);
     }
     else if (prop_key_check("host", k, len) == 0) {
-        out->host.name = strdup(v);
+        out->host.name = flb_strdup(v);
     }
     else if (prop_key_check("port", k, len) == 0) {
         out->host.port = atoi(v);
@@ -276,27 +283,27 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
         }
     }
     else if (prop_key_check("tls.ca_file", k, len) == 0) {
-        out->tls_ca_file = strdup(v);
+        out->tls_ca_file = flb_strdup(v);
     }
     else if (prop_key_check("tls.crt_file", k, len) == 0) {
-        out->tls_crt_file = strdup(v);
+        out->tls_crt_file = flb_strdup(v);
     }
     else if (prop_key_check("tls.key_file", k, len) == 0) {
-        out->tls_key_file = strdup(v);
+        out->tls_key_file = flb_strdup(v);
     }
     else if (prop_key_check("tls.key_passwd", k, len) == 0) {
-        out->tls_key_passwd = strdup(v);
+        out->tls_key_passwd = flb_strdup(v);
     }
 #endif
     else {
         /* Append any remaining configuration key to prop list */
-        prop = malloc(sizeof(struct flb_config_prop));
+        prop = flb_malloc(sizeof(struct flb_config_prop));
         if (!prop) {
             return -1;
         }
 
-        prop->key = strdup(k);
-        prop->val = strdup(v);
+        prop->key = flb_strdup(k);
+        prop->val = flb_strdup(v);
         mk_list_add(&prop->_head, &out->properties);
     }
     return 0;

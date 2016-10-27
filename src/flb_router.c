@@ -17,6 +17,9 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_config.h>
@@ -74,7 +77,7 @@ static int flb_router_connect(struct flb_input_instance *in,
 {
     struct flb_router_path *p;
 
-    p = malloc(sizeof(struct flb_router_path));
+    p = flb_malloc(sizeof(struct flb_router_path));
     if (!p) {
         perror("malloc");
         return -1;
@@ -117,7 +120,7 @@ int flb_router_io_set(struct flb_config *config)
         if (!o_ins->match) {
             flb_debug("[router] default match rule %s:%s",
                       i_ins->name, o_ins->name);
-            o_ins->match = strdup("*");
+            o_ins->match = flb_strdup("*");
             flb_router_connect(i_ins, o_ins);
             return 0;
         }
@@ -126,6 +129,9 @@ int flb_router_io_set(struct flb_config *config)
     /* N:M case, iterate all input instances */
     mk_list_foreach(i_head, &config->inputs) {
         i_ins = mk_list_entry(i_head, struct flb_input_instance, _head);
+        if (!i_ins->p) {
+            continue;
+        }
 
         /*
          * Pre-routing rules cannot exists for a plugin which have dynamic
@@ -182,7 +188,7 @@ void flb_router_exit(struct flb_config *config)
         mk_list_foreach_safe(r_head, r_tmp, &in->routes) {
             r = mk_list_entry(r_head, struct flb_router_path, _head);
             mk_list_del(&r->_head);
-            free(r);
+            flb_free(r);
         }
     }
 }

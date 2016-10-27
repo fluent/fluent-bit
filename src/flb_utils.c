@@ -165,24 +165,6 @@ void flb_utils_print_setup(struct flb_config *config)
         flb_info("%s ", in->p->name);
     }
 
-    /* Outputs
-    printf(" output tag     : %s\n", config->tag);
-    printf(" output protocol: ");
-
-    switch (config->out_protocol) {
-    case FLB_OUTPUT_FLUENT:  p="fluentd";  break;
-    case FLB_OUTPUT_HTTP:    p="http";     break;
-    case FLB_OUTPUT_HTTPS:   p="https";    break;
-    case FLB_OUTPUT_TD_HTTP: p="td+http";  break;
-    case FLB_OUTPUT_TD_HTTPS:p="td+https"; break;
-    }
-    printf("%s\n", p);
-
-    printf(" output host    : %s\n", config->out_host);
-    printf(" output port    : %i\n", config->out_port);
-    printf(" output address : %s\n", config->out_address);
-    */
-
     /* Collectors */
     flb_info(" collectors     : ");
     mk_list_foreach(head, &config->collectors) {

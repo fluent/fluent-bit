@@ -114,7 +114,7 @@ void *in_kmsg_flush(void *in_context, size_t *size)
 
     sbuf = &ctx->mp_sbuf;
     *size = sbuf->size;
-    buf = malloc(sbuf->size);
+    buf = flb_malloc(sbuf->size);
     if (!buf) {
         return NULL;
     }
@@ -277,7 +277,7 @@ int in_kmsg_init(struct flb_input_instance *in,
     struct flb_in_kmsg_config *ctx;
     (void) data;
 
-    ctx = calloc(1, sizeof(struct flb_in_kmsg_config));
+    ctx = flb_calloc(1, sizeof(struct flb_in_kmsg_config));
     if (!ctx) {
         perror("calloc");
         return -1;
@@ -287,7 +287,7 @@ int in_kmsg_init(struct flb_input_instance *in,
     fd = open(FLB_KMSG_DEV, O_RDONLY);
     if (fd == -1) {
         perror("open");
-        free(ctx);
+        flb_free(ctx);
         return -1;
     }
     ctx->fd = fd;
@@ -326,7 +326,9 @@ static int in_kmsg_exit(void *data, struct flb_config *config)
         close(ctx->fd);
     }
 
-    free(ctx);
+    msgpack_sbuffer_destroy(&ctx->mp_sbuf);
+
+    flb_free(ctx);
     return 0;
 }
 
