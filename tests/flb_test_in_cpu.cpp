@@ -37,7 +37,7 @@ int callback_test(void* data, size_t size)
     return 0;
 }
 
-TEST(Inputs, flush_5s)
+TEST(Inputs, flush_2s_2times) 
 {
     int           ret    = 0;
     flb_ctx_t    *ctx    = NULL;
@@ -59,22 +59,37 @@ TEST(Inputs, flush_5s)
     EXPECT_TRUE(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
 
+    flb_service_set(ctx, "Flush", "2", NULL);
+
     ret = flb_start(ctx);
     EXPECT_EQ(ret, 0);
 
     /* start test */
-    sleep(2);
     pthread_mutex_lock(&result_mutex);
-    ret = result; /* 2sec passed, no data should be flushed */
+    ret = result; /* No data should be flushed */
     pthread_mutex_unlock(&result_mutex);
     EXPECT_EQ(ret, 0);
 
-    sleep(3);
+    sleep(2);
     pthread_mutex_lock(&result_mutex);
-    ret = result; /* 5sec passed, data should be flushed */
+    ret = result; /* 2sec passed, data should be flushed */
+    result = 0;   /* clear flag */
     pthread_mutex_unlock(&result_mutex);
     EXPECT_EQ(ret, 1);
 
+    sleep(1);
+    pthread_mutex_lock(&result_mutex);
+    ret = result; /* 1sec passed, no data should be flushed */
+    result = 0;   /* clear flag */
+    pthread_mutex_unlock(&result_mutex);
+    EXPECT_EQ(ret, 0);
+
+    sleep(1);
+    pthread_mutex_lock(&result_mutex);
+    ret = result; /* 1+1sec passed, data should be flushed */
+    result = 0;   /* clear flag */
+    pthread_mutex_unlock(&result_mutex);
+    EXPECT_EQ(ret, 1);
 
     /* finalize */
     flb_stop(ctx);
