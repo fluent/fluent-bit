@@ -26,7 +26,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_task_map.h>
-
+#include <msgpack.h>
 #ifdef FLB_HAVE_TLS
 #include <fluent-bit/flb_io_tls.h>
 #endif
@@ -45,6 +45,9 @@ struct flb_config_prop {
     char *val;
     struct mk_list _head;
 };
+
+/* reuse flb_config_prop as flb_config_user_header */
+#define flb_config_user_header flb_config_prop
 
 /* Main struct to hold the configuration of the runtime service */
 struct flb_config {
@@ -95,6 +98,10 @@ struct flb_config {
     struct flb_output_plugin *output;   /* output plugin in use     */
     struct mk_event_loop *evl;          /* the event loop (mk_core) */
 
+    /* Header to append */
+    struct mk_list user_headers;
+    int    header_num;
+
     /* Kernel info */
     struct flb_kernel *kernel;
 
@@ -133,6 +140,9 @@ void flb_config_exit(struct flb_config *config);
 char *flb_config_prop_get(char *key, struct mk_list *list);
 int flb_config_set_property(struct flb_config *config,
                             char *k, char *v);
+int flb_config_get_user_header_num(struct flb_config *config);
+int flb_config_append_user_header(struct flb_config *config,
+                                  msgpack_packer *mp_pck);
 struct flb_service_config {
     char    *key;
     int     type;
@@ -150,6 +160,7 @@ enum conf_type {
 #define FLB_CONF_STR_DAEMON   "Daemon"
 #define FLB_CONF_STR_LOGFILE  "Logfile"
 #define FLB_CONF_STR_LOGLEVEL "Log_Level"
+#define FLB_CONF_STR_USER_HEADER "User_Header"
 #ifdef FLB_HAVE_HTTP
 #define FLB_CONF_STR_HTTP_MONITOR "HTTP_Monitor"
 #define FLB_CONF_STR_HTTP_PORT    "HTTP_Port"

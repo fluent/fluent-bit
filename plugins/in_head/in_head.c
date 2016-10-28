@@ -39,6 +39,7 @@ static int in_head_collect(struct flb_config *config, void *in_context)
     struct flb_in_head_config *head_config = in_context;
     int fd = -1;
     int ret = -1;
+    int header_num = flb_config_get_user_header_num(config);
 
     /* open at every collect callback */
     fd = open(head_config->filepath, O_RDONLY);
@@ -58,7 +59,12 @@ static int in_head_collect(struct flb_config *config, void *in_context)
 
     msgpack_pack_array(&head_config->mp_pck, 2);
     msgpack_pack_uint64(&head_config->mp_pck, time(NULL));
-    msgpack_pack_map(&head_config->mp_pck, 1);
+    if ( header_num > 0 ) {
+        msgpack_pack_map(&head_config->mp_pck, 1+header_num);
+        flb_config_append_user_header(config, &head_config->mp_pck);
+    } else {
+        msgpack_pack_map(&head_config->mp_pck, 1);
+    }
 
     msgpack_pack_bin(&head_config->mp_pck, 4);
     msgpack_pack_bin_body(&head_config->mp_pck, "head", 4);

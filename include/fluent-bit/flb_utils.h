@@ -28,5 +28,5 @@ void flb_utils_warn_c(const char *msg);
 void flb_message(int type, char *file, int line, const char *fmt, ...);
 int flb_utils_set_daemon();
 void flb_utils_print_setup(struct flb_config *config);
-
+int flb_utils_parse_key_value(const char* kv, char** key, char** value);
 #endif
