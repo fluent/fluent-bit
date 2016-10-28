@@ -363,7 +363,6 @@ int flb_config_set_property(struct flb_config *config,
                 ret = set_log_level(config, v);
             } else if (!strncasecmp(key, FLB_CONF_STR_USER_HEADER, 256)) {
                 /* User header */
-                flb_info("aaaa");
                 ret = set_user_header(config, v);
             }
             else{

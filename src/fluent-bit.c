@@ -80,6 +80,7 @@ static void flb_help(int rc, struct flb_config *config)
     printf("  -P, --port\t\tset HTTP server TCP port (default: %s)\n",
            FLB_CONFIG_HTTP_PORT);
 #endif
+    printf("  -u, --user_header=\"KEY=VALUE\"\tset user header\n");
     printf("  -q, --quiet\t\tquiet mode\n");
     printf("  -V, --version\t\tshow version number\n");
     printf("  -h, --help\t\tprint this help\n\n");
@@ -318,6 +319,7 @@ int main(int argc, char **argv)
         { "output",      required_argument, NULL, 'o' },
         { "prop",        required_argument, NULL, 'p' },
         { "tag",         required_argument, NULL, 't' },
+        { "user_header", required_argument, NULL, 'u' },
         { "version",     no_argument      , NULL, 'V' },
         { "verbose",     no_argument      , NULL, 'v' },
         { "quiet",       no_argument      , NULL, 'q' },
@@ -340,7 +342,7 @@ int main(int argc, char **argv)
     }
 
     /* Parse the command line options */
-    while ((opt = getopt_long(argc, argv, "b:B:c:df:i:m:o:p:t:l:vqVhHP:",
+    while ((opt = getopt_long(argc, argv, "b:B:c:df:i:m:o:p:t:l:u:vqVhHP:",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
@@ -393,6 +395,9 @@ int main(int argc, char **argv)
             else if (last_plugin == PLUGIN_OUTPUT) {
                 output_set_property(out, optarg);
             }
+            break;
+        case 'u':
+            flb_config_set_property(config, FLB_CONF_STR_USER_HEADER ,optarg);
             break;
         case 't':
             if (in) {
