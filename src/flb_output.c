@@ -32,6 +32,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_plugin_proxy.h>
 
 #define protcmp(a, b)  strncasecmp(a, b, strlen(a))
 
@@ -199,7 +200,13 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         snprintf(instance->name, sizeof(instance->name) - 1,
                  "%s.%i", plugin->name, instance_id(plugin, config));
         instance->p = plugin;
-        instance->context     = NULL;
+
+        if (plugin->type == FLB_OUTPUT_PLUGIN_CORE) {
+            instance->context = NULL;
+        }
+        else {
+            instance->context = plugin->proxy;
+        }
         instance->data        = data;
         instance->upstream    = NULL;
         instance->match       = NULL;
@@ -341,6 +348,10 @@ int flb_output_init(struct flb_config *config)
                                                    ins->tls_key_passwd);
         }
 #endif
+
+        if (p->type != FLB_OUTPUT_PLUGIN_CORE) {
+            continue;
+        }
 
         ret = p->cb_init(ins, config, ins->data);
         mk_list_init(&ins->th_queue);

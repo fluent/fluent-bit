@@ -38,6 +38,7 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_plugin_proxy.h>
 
 #ifdef FLB_HAVE_MTRACE
 #include <mcheck.h>
@@ -72,6 +73,7 @@ static void flb_help(int rc, struct flb_config *config)
     printf("  -m, --match=MATCH\tset plugin match, same as '-p match=abc'\n");
     printf("  -o, --output=OUTPUT\tset an output\n");
     printf("  -p, --prop=\"A=B\"\tset plugin configuration property\n");
+    printf("  -e, --plugin=FILE\tload an external plugin (shared lib)\n");
     printf("  -l, --logfile=FILE\twrite log info to a file\n");
     printf("  -t, --tag=TAG\t\tset plugin tag, same as '-p tag=abc'\n");
     printf("  -v, --verbose\t\tenable verbose mode\n");
@@ -341,6 +343,7 @@ int main(int argc, char **argv)
         { "match",       required_argument, NULL, 'm' },
         { "output",      required_argument, NULL, 'o' },
         { "prop",        required_argument, NULL, 'p' },
+        { "plugin",      required_argument, NULL, 'e' },
         { "tag",         required_argument, NULL, 't' },
         { "version",     no_argument      , NULL, 'V' },
         { "verbose",     no_argument      , NULL, 'v' },
@@ -364,7 +367,7 @@ int main(int argc, char **argv)
     }
 
     /* Parse the command line options */
-    while ((opt = getopt_long(argc, argv, "b:B:c:df:i:m:o:p:t:l:vqVhHP:",
+    while ((opt = getopt_long(argc, argv, "b:B:c:df:i:m:o:p:e:t:l:vqVhHP:",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
@@ -384,6 +387,11 @@ int main(int argc, char **argv)
             break;
         case 'd':
             config->daemon = FLB_TRUE;
+            break;
+        case 'e':
+            if (!flb_plugin_proxy_create(optarg, 0, config)) {
+                exit(EXIT_FAILURE);
+            }
             break;
         case 'f':
             config->flush = atoi(optarg);

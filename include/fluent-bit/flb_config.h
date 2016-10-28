@@ -95,6 +95,9 @@ struct flb_config {
     struct flb_output_plugin *output;   /* output plugin in use     */
     struct mk_event_loop *evl;          /* the event loop (mk_core) */
 
+    /* Proxies */
+    struct mk_list proxies;
+
     /* Kernel info */
     struct flb_kernel *kernel;
 

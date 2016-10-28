@@ -23,9 +23,11 @@ set(src
   flb_router.c
   flb_http_client.c
   flb_worker.c
+  flb_plugin_proxy.c
   )
 
 include_directories(
+  .
   ../lib/
   ../lib/jsmn
   ../lib/msgpack-c-068041f/include
@@ -96,6 +98,7 @@ set(FLB_DEPS
   mk_core
   jsmn
   msgpackc-static
+  dl
   ${FLB_PLUGINS}
   ${extra_libs}
   )
@@ -114,6 +117,8 @@ endif()
 # Static Library
 add_library(fluent-bit-static STATIC ${src})
 target_link_libraries(fluent-bit-static ${FLB_DEPS})
+target_link_libraries(fluent-bit-static flb-plugin-proxy-go)
+
 set_target_properties(fluent-bit-static PROPERTIES OUTPUT_NAME fluent-bit)
 
 if(FLB_JEMALLOC)
@@ -128,6 +133,9 @@ if(FLB_BUFFERING)
   target_link_libraries(fluent-bit-static sha1)
 endif()
 
+# Process Proxies
+add_subdirectory(proxy)
+
 # Executable
 if(NOT FLB_WITHOUT_BIN)
   find_package (Threads)
@@ -139,6 +147,7 @@ if(NOT FLB_WITHOUT_BIN)
 
   target_link_libraries(fluent-bit-bin fluent-bit-static ${CMAKE_THREAD_LIBS_INIT} ${CMAKE_DL_LIBS})
 
+  target_link_libraries(fluent-bit-bin flb-plugin-proxy-go)
   set_target_properties(fluent-bit-bin
     PROPERTIES
     OUTPUT_NAME ${FLB_OUT_NAME}

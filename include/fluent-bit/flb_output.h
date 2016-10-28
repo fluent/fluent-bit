@@ -38,11 +38,20 @@
 #include <unistd.h>
 
 /* Output plugin masks */
-#define FLB_OUTPUT_NET         32  /* output address may set host and port */
+#define FLB_OUTPUT_NET          32  /* output address may set host and port */
+#define FLB_OUTPUT_PLUGIN_CORE   0
+#define FLB_OUTPUT_PLUGIN_PROXY  1
 
 struct flb_output_instance;
 
 struct flb_output_plugin {
+    /*
+     * The type defines if this is a core-based plugin or it's handled by
+     * some specific proxy.
+     */
+    int type;
+    void *proxy;
+
     int flags;
 
     /* The plugin name */
@@ -67,9 +76,6 @@ struct flb_output_plugin {
      *   uri      = extra information that may be used by the plugin
      */
     struct flb_net_host host;
-
-    /* Socket connection */
-    //int conn;
 
     /* Initalization */
     int (*cb_init)    (struct flb_output_instance *, struct flb_config *, void *);
@@ -146,8 +152,6 @@ struct flb_output_instance {
 
     /* IO upstream context, if flags & (FLB_OUTPUT_TCP | FLB_OUTPUT TLS)) */
     struct flb_upstream *upstream;
-
-
 
     /*
      * The threads_queue is the head for the linked list that holds co-routines
