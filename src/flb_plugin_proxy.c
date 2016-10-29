@@ -161,6 +161,7 @@ struct flb_plugin_proxy *flb_plugin_proxy_create(const char *dso_path, int type,
     proxy = flb_malloc(sizeof(struct flb_plugin_proxy));
     if (!proxy) {
         flb_errno();
+        dlclose(handle);
         return NULL;
     }
 
