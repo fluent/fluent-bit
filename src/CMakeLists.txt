@@ -103,6 +103,11 @@ set(FLB_DEPS
   ${extra_libs}
   )
 
+set(FLB_PROXY_PLUGINS "")
+if(FLB_PROXY_GO)
+  set(FLB_PROXY_PLUGINS ${FLB_PROXY_PLUGINS} flb-plugin-proxy-go)
+endif()
+
 # Shared Library
 if(NOT WITHOUT_SHARED_LIB)
   add_library(fluent-bit-shared SHARED ${src})
@@ -116,8 +121,7 @@ endif()
 
 # Static Library
 add_library(fluent-bit-static STATIC ${src})
-target_link_libraries(fluent-bit-static ${FLB_DEPS})
-target_link_libraries(fluent-bit-static flb-plugin-proxy-go)
+target_link_libraries(fluent-bit-static ${FLB_DEPS} ${FLB_PROXY_PLUGINS})
 
 set_target_properties(fluent-bit-static PROPERTIES OUTPUT_NAME fluent-bit)
 
@@ -147,7 +151,7 @@ if(NOT FLB_WITHOUT_BIN)
 
   target_link_libraries(fluent-bit-bin fluent-bit-static ${CMAKE_THREAD_LIBS_INIT} ${CMAKE_DL_LIBS})
 
-  target_link_libraries(fluent-bit-bin flb-plugin-proxy-go)
+  target_link_libraries(fluent-bit-bin ${FLB_PROXY_PLUGINS})
   set_target_properties(fluent-bit-bin
     PROPERTIES
     OUTPUT_NAME ${FLB_OUT_NAME}

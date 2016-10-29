@@ -37,6 +37,9 @@ option(FLB_MTRACE             "Enable mtrace support"        No)
 option(FLB_BUFFERING          "Enable buffering support"     No)
 option(FLB_POSIX_TLS          "Force POSIX thread storage"   No)
 
+# Proxy Plugins
+option(FLB_PROXY_GO           "Enable Go plugins support"    No)
+
 # Advanced options for Flushing methods
 # =====================================
 # Flush methods defines under what kind of context/environment the plugins
@@ -267,6 +270,10 @@ if(FLB_TD)
 else()
   set(FLB_PROG_NAME "Fluentd Bit")
   set(FLB_OUT_NAME "fluent-bit")
+endif()
+
+if(FLB_PROXY_GO)
+  FLB_DEFINITION(FLB_HAVE_PROXY_GO)
 endif()
 
 # Memory Allocator

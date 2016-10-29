@@ -43,10 +43,15 @@ static int proxy_cb_flush(void *data, size_t bytes,
     (void) i_ins;
     (void) config;
 
+#ifdef FLB_HAVE_PROXY_GO
     if (p->proxy == FLB_PROXY_GOLANG) {
         flb_trace("[GO] entering go_flush()");
         proxy_go_flush(p, data, bytes, tag);
     }
+#else
+    (void) p;
+#endif
+
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 
@@ -120,7 +125,9 @@ int flb_plugin_proxy_load(struct flb_plugin_proxy *proxy,
     /* Based on 'proxy', use the proper handler */
     ret = -1;
     if (tmp->proxy == FLB_PROXY_GOLANG) {
+#ifdef FLB_HAVE_PROXY_GO
         ret = proxy_go_start(proxy, tmp);
+#endif
     }
 
     if (ret == 0) {
