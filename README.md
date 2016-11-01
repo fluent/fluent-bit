@@ -1,6 +1,6 @@
 ![](fluentbit_logo.png)
 
-[Fluent Bit](http://fluentbit.io) is a data collector for Linux, Embedded Linux, OSX and BSD family operating systems. It's part of the [Fluentd](http://fluentd.org) project ecosystem, it allows to collects information from different sources, buffer and dispatch them to different outputs such as Elastic, Nats or [Fluentd](http://fluentd.org) within others. Despites it have a strong focus on Embedded & IoT environments, its fully supported on common x86 and x86_64 architectures.
+[Fluent Bit](http://fluentbit.io) is a data collector for Linux, Embedded Linux, OSX and BSD family operating systems. It's part of the [Fluentd](http://fluentd.org) project ecosystem.  Fluent Bit allows collection of information from different sources, buffering and dispatching them to different outputs such as Elastic, Nats or [Fluentd](http://fluentd.org). Despite having a strong focus on Embedded & IoT environments, it's fully supported on common x86 and x86_64 architectures.
 
 ## Quick Start
 
