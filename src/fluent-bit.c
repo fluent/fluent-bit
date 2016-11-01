@@ -212,9 +212,7 @@ static void flb_service_conf_err(struct mk_rconf_section *section, char *key)
 static int flb_service_conf(struct flb_config *config, char *file)
 {
     char *name;
-    char *v_str;
     int  ret = -1;
-    uint64_t v_num;
     struct mk_list *head;
     struct mk_list *h_prop;
     struct mk_rconf *fconf = NULL;
@@ -231,79 +229,12 @@ static int flb_service_conf(struct flb_config *config, char *file)
     /* Read main [SERVICE] section */
     section = mk_rconf_section_get(fconf, "SERVICE");
     if (section) {
-        /* Flush Time */
-        v_num = n_get_key(section, "Flush", MK_RCONF_NUM);
-        if (v_num > 0) {
-            config->flush = v_num;
+        /* Iterate properties */
+        mk_list_foreach(h_prop, &section->entries) {
+            entry = mk_list_entry(h_prop, struct mk_rconf_entry, _head);
+            /* Set the property */
+            flb_config_set_property(config, entry->key, entry->val);
         }
-
-        /* Run as daemon ? */
-        v_num = n_get_key(section, "Daemon", MK_RCONF_BOOL);
-        if (v_num == FLB_TRUE || v_num == FLB_FALSE) {
-            config->daemon = v_num;
-        }
-
-        /* Logfile */
-        v_str = s_get_key(section, "Logfile", MK_RCONF_STR);
-        if (v_str) {
-            config->logfile = flb_strdup(v_str);
-        }
-
-        /* Verbose / Log level */
-        v_str = s_get_key(section, "Log_Level", MK_RCONF_STR);
-        if (v_str) {
-            if (strcasecmp(v_str, "error") == 0) {
-                config->log->level = 1;
-            }
-            else if (strcasecmp(v_str, "warning") == 0) {
-                config->log->level = 2;
-            }
-            else if (strcasecmp(v_str, "info") == 0) {
-                config->log->level = 3;
-            }
-            else if (strcasecmp(v_str, "debug") == 0) {
-                config->log->level = 4;
-            }
-            else if (strcasecmp(v_str, "trace") == 0) {
-                config->log->level = 5;
-            }
-            else {
-                flb_service_conf_err(section, "Log_Level");
-                flb_free(v_str);
-                goto flb_service_conf_end;
-            }
-        }
-        flb_free(v_str);
-
-#ifdef FLB_HAVE_HTTP
-        /* HTTP Monitoring Server */
-        v_num = n_get_key(section, "HTTP_Monitor", MK_RCONF_BOOL);
-        if (v_num == FLB_TRUE || v_num == FLB_FALSE) {
-            config->http_server = v_num;
-        }
-
-        /* HTTP Port (TCP Port) */
-        v_str = s_get_key(section, "HTTP_Port", MK_RCONF_STR);
-        if (v_str) {
-            config->http_port = v_str;
-        }
-#endif
-
-#ifdef FLB_HAVE_BUFFERING
-        /* Buffering Support */
-        v_str = s_get_key(section, "Buffer_Path", MK_RCONF_STR);
-        if (v_str) {
-            config->buffer_path = flb_strdup(v_str);
-
-            v_num = n_get_key(section, "Buffer_Workers", MK_RCONF_NUM);
-            if (v_num <= 0) {
-                config->buffer_workers = 1;
-            }
-            else {
-                config->buffer_workers = v_num;
-            }
-        }
-#endif
     }
 
     /* Read all [INPUT] sections */
