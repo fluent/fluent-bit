@@ -7,10 +7,10 @@ easily integrated into resource-limited or embedded projects.
 
 You can find more information about JSON format at [json.org][1]
 
-Library sources are available at [bitbucket.org/zserge/jsmn][2]
+Library sources are available at https://github.com/zserge/jsmn
 
 The web page with some information about jsmn can be found at
-[http://zserge.com/jsmn.html][3]
+[http://zserge.com/jsmn.html][2]
 
 Philosophy
 ----------
@@ -24,7 +24,7 @@ JSON format itself is extremely simple, so why should we complicate it?
 
 jsmn is designed to be	**robust** (it should work fine even with erroneous
 data), **fast** (it should parse data on the fly), **portable** (no superfluous
-dependencies or non-standard C extensions). An of course, **simplicity** is a
+dependencies or non-standard C extensions). And of course, **simplicity** is a
 key feature - simple code style, simple algorithm, simple integration into
 other projects.
 
@@ -78,9 +78,9 @@ it possible to use zero-copy techniques.
 Install
 -------
 
-To clone the repository you should have mercurial installed. Just run:
+To clone the repository you should have Git installed. Just run:
 
-	$ hg clone http://bitbucket.org/zserge/jsmn jsmn
+	$ git clone https://github.com/zserge/jsmn
 
 Repository layout is simple: jsmn.c and jsmn.h are library files, tests are in
 the jsmn\_test.c, you will also find README, LICENSE and Makefile files inside.
@@ -97,10 +97,11 @@ API
 Token types are described by `jsmntype_t`:
 
 	typedef enum {
-		JSMN_PRIMITIVE = 0,
+		JSMN_UNDEFINED = 0,
 		JSMN_OBJECT = 1,
 		JSMN_ARRAY = 2,
-		JSMN_STRING = 3
+		JSMN_STRING = 3,
+		JSMN_PRIMITIVE = 4
 	} jsmntype_t;
 
 **Note:** Unlike JSON data types, primitive tokens are not divided into
@@ -134,12 +135,12 @@ All job is done by `jsmn_parser` object. You can initialize a new parser using:
 	// js - pointer to JSON string
 	// tokens - an array of tokens available
 	// 10 - number of tokens available
-	jsmn_parse(&parser, js, tokens, 10);
+	jsmn_parse(&parser, js, strlen(js), tokens, 10);
 
 This will create a parser, and then it tries to parse up to 10 JSON tokens from
 the `js` string.
 
-A non-negative reutrn value of `jsmn_parse` is the number of tokens actually
+A non-negative return value of `jsmn_parse` is the number of tokens actually
 used by the parser.
 Passing NULL instead of the tokens array would not store parsing results, but
 instead the function will return the value of tokens needed to parse the given
@@ -163,5 +164,4 @@ This software is distributed under [MIT license](http://www.opensource.org/licen
  so feel free to integrate it in your commercial products.
 
 [1]: http://www.json.org/
-[2]: https://bitbucket.org/zserge/jsmn/wiki/Home
-[3]: http://zserge.com/jsmn.html
+[2]: http://zserge.com/jsmn.html
