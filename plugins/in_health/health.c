@@ -90,6 +90,7 @@ static int in_health_collect(struct flb_config *config, void *in_context)
     }
 
     FLB_INPUT_RETURN();
+    return 0;
 }
 
 static int in_health_init(struct flb_input_instance *in,
