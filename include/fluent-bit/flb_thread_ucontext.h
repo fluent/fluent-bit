@@ -35,7 +35,6 @@
 #endif
 
 struct flb_thread {
-    int id;
 
 #ifdef FLB_HAVE_VALGRIND
     unsigned int valgrind_stack_id;
@@ -75,6 +74,7 @@ static FLB_INLINE void flb_thread_destroy(struct flb_thread *th)
     if (th->cb_destroy) {
         th->cb_destroy(FLB_THREAD_DATA(th));
     }
+
     flb_trace("[thread] destroy thread=%p", th);
 
 #ifdef FLB_HAVE_VALGRIND
@@ -84,7 +84,7 @@ static FLB_INLINE void flb_thread_destroy(struct flb_thread *th)
     flb_free(th);
 }
 
-#define flb_thread_return(th) return 0
+#define flb_thread_return(th) flb_thread_yield(th, FLB_TRUE)
 
 static FLB_INLINE void flb_thread_resume(struct flb_thread *th)
 {

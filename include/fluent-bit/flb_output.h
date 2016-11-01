@@ -78,11 +78,11 @@ struct flb_output_plugin {
     int (*cb_pre_run) (void *, struct flb_config *);
 
     /* Flush callback */
-    int (*cb_flush) (void *, size_t,
-                     char *, int,
-                     struct flb_input_instance *,
-                     void *,
-                     struct flb_config *);
+    void (*cb_flush) (void *, size_t,
+                      char *, int,
+                      struct flb_input_instance *,
+                      void *,
+                      struct flb_config *);
 
     /* Exit */
     int (*cb_exit) (void *, struct flb_config *);
@@ -474,16 +474,17 @@ static inline void flb_output_return(int ret, struct flb_thread *th) {
     }
 }
 
-#define FLB_OUTPUT_RETURN(x)                                            \
-    struct flb_thread *th;                                              \
-    th = (struct flb_thread *) pthread_getspecific(flb_thread_key);     \
-    flb_output_return(x, th);                                           \
-    /*                                                                  \
-     * Each co-routine handler have different ways to handle a return,  \
-     * just use the wrapper.                                            \
-     */                                                                 \
-    flb_thread_return(th)
-
+static inline void FLB_OUTPUT_RETURN(int x)
+{
+    struct flb_thread *th;
+    th = (struct flb_thread *) pthread_getspecific(flb_thread_key);
+    flb_output_return(x, th);
+    /*
+     * Each co-routine handler have different ways to handle a return,
+     * just use the wrapper.
+     */
+    flb_thread_yield(th, FLB_TRUE);
+}
 
 struct flb_output_instance *flb_output_new(struct flb_config *config,
                                            char *output, void *data);

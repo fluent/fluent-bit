@@ -410,11 +410,13 @@ static inline void flb_input_return(struct flb_thread *th) {
     }
 }
 
-#define FLB_INPUT_RETURN()                                          \
-    struct flb_thread *th;                                          \
-    th = (struct flb_thread *) pthread_getspecific(flb_thread_key); \
-    flb_input_return(th);                                           \
-    flb_thread_return(th)
+static inline void FLB_INPUT_RETURN()
+{
+    struct flb_thread *th;
+    th = (struct flb_thread *) pthread_getspecific(flb_thread_key);
+    flb_input_return(th);
+    flb_thread_return(th);
+}
 
 int flb_input_register_all(struct flb_config *config);
 struct flb_input_instance *flb_input_new(struct flb_config *config,
