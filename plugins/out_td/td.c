@@ -167,11 +167,11 @@ int cb_td_init(struct flb_output_instance *ins, struct flb_config *config,
     return 0;
 }
 
-int cb_td_flush(void *data, size_t bytes,
-                char *tag, int tag_len,
-                struct flb_input_instance *i_ins,
-                void *out_context,
-                struct flb_config *config)
+static void cb_td_flush(void *data, size_t bytes,
+                        char *tag, int tag_len,
+                        struct flb_input_instance *i_ins,
+                        void *out_context,
+                        struct flb_config *config)
 {
     int ret;
     int bytes_out;
