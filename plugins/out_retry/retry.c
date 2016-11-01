@@ -21,6 +21,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+#include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_output.h>
 
 /* Retry context, only works with one instance */
@@ -56,11 +57,11 @@ int cb_retry_init(struct flb_output_instance *ins,
     return 0;
 }
 
-int cb_retry_flush(void *data, size_t bytes,
-                   char *tag, int tag_len,
-                   struct flb_input_instance *i_ins,
-                   void *out_context,
-                   struct flb_config *config)
+static void cb_retry_flush(void *data, size_t bytes,
+                           char *tag, int tag_len,
+                           struct flb_input_instance *i_ins,
+                           void *out_context,
+                           struct flb_config *config)
 {
     (void) data;
     (void) bytes;
