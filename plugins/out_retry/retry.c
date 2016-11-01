@@ -88,12 +88,20 @@ static void cb_retry_flush(void *data, size_t bytes,
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 
+static int cb_retry_exit(void *data, struct flb_config *config)
+{
+    struct retry_ctx *ctx = data;
+    (void) config;
 
+    flb_free(ctx);
+    return 0;
+}
 
 struct flb_output_plugin out_retry_plugin = {
     .name         = "retry",
     .description  = "Issue a retry upon flush request",
     .cb_init      = cb_retry_init,
     .cb_flush     = cb_retry_flush,
+    .cb_exit      = cb_retry_exit,
     .flags        = 0,
 };
