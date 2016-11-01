@@ -192,11 +192,11 @@ static int msgpack_to_json(void *data, size_t bytes, char *tag,
 }
 
 
-int cb_nats_flush(void *data, size_t bytes,
-                  char *tag, int tag_len,
-                  struct flb_input_instance *i_ins,
-                  void *out_context,
-                  struct flb_config *config)
+void cb_nats_flush(void *data, size_t bytes,
+                   char *tag, int tag_len,
+                   struct flb_input_instance *i_ins,
+                   void *out_context,
+                   struct flb_config *config)
 {
     int ret;
     size_t bytes_sent;
@@ -210,7 +210,7 @@ int cb_nats_flush(void *data, size_t bytes,
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
         flb_error("[out_nats] no upstream connections available");
-        return -1;
+        FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 
     /* Before to flush the content check if we need to start the handshake */
