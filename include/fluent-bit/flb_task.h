@@ -46,7 +46,7 @@
  */
 
 #define FLB_TASK_RET(val)  (val >> 28)
-#define FLB_TASK_ID(val)   (uint16_t) (val & 0xfffc000) >> 14
+#define FLB_TASK_ID(val)   (uint32_t) (val & 0xfffc000) >> 14
 #define FLB_TASK_TH(val)   (val & 0x3fff)
 #define FLB_TASK_SET(ret, task_id, th_id)               \
     (uint32_t) ((ret << 28) | (task_id << 14) | th_id)
