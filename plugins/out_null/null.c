@@ -36,11 +36,11 @@ int cb_null_init(struct flb_output_instance *ins,
     return 0;
 }
 
-int cb_null_flush(void *data, size_t bytes,
-                  char *tag, int tag_len,
-                  struct flb_input_instance *i_ins,
-                  void *out_context,
-                  struct flb_config *config)
+void cb_null_flush(void *data, size_t bytes,
+                   char *tag, int tag_len,
+                   struct flb_input_instance *i_ins,
+                   void *out_context,
+                   struct flb_config *config)
 {
     (void) data;
     (void) bytes;
