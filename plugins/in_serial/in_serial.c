@@ -236,6 +236,7 @@ int in_serial_collect(struct flb_config *config, void *in_context)
              * the records and then adjust buffer.
              */
             process_pack(ctx, pack, out_size);
+            flb_free(pack);
 
             t = &ctx->pack_state.tokens[0];
             consume_bytes(ctx->buf_data, t->end, ctx->buf_len);
@@ -263,6 +264,9 @@ int in_serial_exit(void *in_context, struct flb_config *config)
 
     flb_trace("[in_serial] Restoring original termios...");
     tcsetattr(ctx->fd, TCSANOW, &ctx->tio_orig);
+
+    flb_pack_state_reset(&ctx->pack_state);
+    flb_free(ctx);
 
     return 0;
 }
