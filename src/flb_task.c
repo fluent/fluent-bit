@@ -43,11 +43,12 @@
  * loop about some action.
  */
 
-static int map_get_task_id(struct flb_config *config)
+static inline int map_get_task_id(struct flb_config *config)
 {
     int i;
+    int map_size = (sizeof(config->tasks_map) / sizeof(struct flb_task_map));
 
-    for (i = 0; i < sizeof(config->tasks_map); i++) {
+    for (i = 0; i < map_size; i++) {
         if (config->tasks_map[i].task == NULL) {
             return i;
         }
@@ -56,11 +57,16 @@ static int map_get_task_id(struct flb_config *config)
     return -1;
 }
 
-static void map_set_task_id(int id, struct flb_task *task,
-                            struct flb_config *config)
+static inline void map_set_task_id(int id, struct flb_task *task,
+                                   struct flb_config *config)
 {
     config->tasks_map[id].task = task;
 
+}
+
+static inline void map_free_task_id(int id, struct flb_config *config)
+{
+    config->tasks_map[id].task = NULL;
 }
 
 static void flb_task_retry_destroy(struct flb_task_retry *retry)
@@ -105,9 +111,14 @@ struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
         retry->o_ins   = o_ins;
         retry->parent  = task;
         mk_list_add(&retry->_head, &task->retries);
+
+        flb_debug("[retry] new retry created for task_id=%i attemps=%i\n",
+                  out_th->task->id, retry->attemps);
     }
     else {
         retry->attemps++;
+        flb_debug("[retry] re-using retry for task_id=%i attemps=%i\n",
+                  out_th->task->id, retry->attemps);
     }
 
     return retry;
@@ -155,6 +166,9 @@ static struct flb_task *task_alloc(struct flb_config *config)
         return NULL;
     }
     map_set_task_id(task_id, task, config);
+
+    flb_trace("[task %p] created (id=%i)", task, task_id);
+
 
     /* Initialize minimum variables */
     task->id        = task_id;
@@ -248,8 +262,8 @@ struct flb_task *flb_task_create(uint64_t ref_id,
 
     /* no destinations ?, useless task. */
     if (count == 0) {
-        flb_debug("[task] created task=%p without routes, dropping.",
-                  task);
+        flb_debug("[task] created task=%p id=%i without routes, dropping.",
+                  task, task->id);
         task->buf = NULL;
         flb_task_destroy(task);
         return NULL;
@@ -281,7 +295,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     pthread_mutex_init(&task->mutex_threads, NULL);
 #endif
 
-    flb_debug("[task] created task=%p OK", task);
+    flb_debug("[task] created task=%p id=%i OK", task, task->id);
 
     return task;
 }
@@ -358,7 +372,7 @@ void flb_task_destroy(struct flb_task *task)
     }
 
     /* Release task_id */
-    task->config->tasks_map[task->id].task = NULL;
+    map_free_task_id(task->id, task->config);
 
     /* Remove routes */
     mk_list_foreach_safe(head, tmp, &task->routes) {
