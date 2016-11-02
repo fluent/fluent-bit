@@ -141,7 +141,25 @@ if(NOT FLB_WITHOUT_BIN)
 
   set_target_properties(fluent-bit-bin
     PROPERTIES
-      OUTPUT_NAME fluent-bit
-      ENABLE_EXPORTS ON)
+    OUTPUT_NAME ${FLB_OUT_NAME}
+    ENABLE_EXPORTS ON)
   install(TARGETS fluent-bit-bin RUNTIME DESTINATION ${CMAKE_INSTALL_FULL_BINDIR})
+
+  # Detect init system, install systemd or init.d script
+  if(IS_DIRECTORY /lib/systemd/system)
+    set(FLB_SYSTEMD_SCRIPT "${PROJECT_SOURCE_DIR}/init/${FLB_OUT_NAME}.service")
+    configure_file(
+      "${PROJECT_SOURCE_DIR}/init/systemd.in"
+      ${FLB_SYSTEMD_SCRIPT}
+      )
+    install(FILES ${FLB_SYSTEMD_SCRIPT} DESTINATION /lib/systemd/system)
+    install(DIRECTORY DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/")
+  else()
+    # FIXME: should we support Sysv init script ?
+  endif()
+
+  install(FILES
+    "${PROJECT_SOURCE_DIR}/conf/fluent-bit.conf"
+    DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/"
+    RENAME "${FLB_OUT_NAME}.conf")
 endif()
