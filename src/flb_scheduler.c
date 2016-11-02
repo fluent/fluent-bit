@@ -132,6 +132,7 @@ int flb_sched_request_create(struct flb_config *config,
     /* Create a timeout into the main event loop */
     fd = mk_event_timeout_create(config->evl, seconds, 0, event);
     if (fd == -1) {
+        flb_free(request);
         return -1;
     }
 
