@@ -255,7 +255,7 @@ static int flb_service_conf(struct flb_config *config, char *file)
 
         /* Create an instace of the plugin */
         in = flb_input_new(config, name, NULL);
-        flb_free(name);
+        mk_mem_free(name);
         if (!in) {
             flb_service_conf_err(section, "Name");
             goto flb_service_conf_end;
@@ -289,7 +289,7 @@ static int flb_service_conf(struct flb_config *config, char *file)
 
         /* Create an instace of the plugin */
         out = flb_output_new(config, name, NULL);
-        flb_free(name);
+        mk_mem_free(name);
         if (!out) {
             flb_service_conf_err(section, "Name");
             goto flb_service_conf_end;
