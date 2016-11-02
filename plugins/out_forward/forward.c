@@ -124,8 +124,8 @@ void cb_forward_flush(void *data, size_t bytes,
 
     /* Output: root array */
     msgpack_pack_array(&mp_pck, 2);
-    msgpack_pack_bin(&mp_pck, tag_len);
-    msgpack_pack_bin_body(&mp_pck, tag, tag_len);
+    msgpack_pack_str(&mp_pck, tag_len);
+    msgpack_pack_str_body(&mp_pck, tag, tag_len);
     msgpack_pack_array(&mp_pck, entries);
 
     /* Get a TCP connection instance */
