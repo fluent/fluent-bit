@@ -132,6 +132,7 @@ void cb_forward_flush(void *data, size_t bytes,
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
         flb_error("[out_forward] no upstream connections available");
+        msgpack_sbuffer_destroy(&mp_sbuf);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
@@ -139,6 +140,7 @@ void cb_forward_flush(void *data, size_t bytes,
     ret = flb_io_net_write(u_conn, mp_sbuf.data, mp_sbuf.size, &bytes_sent);
     if (ret == -1) {
         flb_error("[out_forward] could not write chunk header");
+        msgpack_sbuffer_destroy(&mp_sbuf);
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
