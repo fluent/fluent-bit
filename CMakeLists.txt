@@ -258,6 +258,17 @@ if(FLB_MTRACE)
   endif()
 endif()
 
+if(FLB_TD)
+  FLB_DEFINITION(FLB_IS_TD_AGENT)
+  FLB_OPTION(FLB_JEMALLOC ON)
+  set(FLB_PROG_NAME "TD Agent Bit")
+  set(FLB_OUT_NAME "td-agent-bit")
+  set(WITHOUT_HEADERS On)
+else()
+  set(FLB_PROG_NAME "Fluentd Bit")
+  set(FLB_OUT_NAME "fluent-bit")
+endif()
+
 # Memory Allocator
 # ================
 if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
@@ -318,16 +329,6 @@ check_c_source_compiles("
     }" FLB_HAVE_ACCEPT4)
 if(FLB_HAVE_ACCEPT4)
   FLB_DEFINITION(FLB_HAVE_ACCEPT4)
-endif()
-
-if(FLB_TD)
-  FLB_DEFINITION(FLB_IS_TD_AGENT)
-  set(FLB_PROG_NAME "TD Agent Bit")
-  set(FLB_OUT_NAME "td-agent-bit")
-  set(WITHOUT_HEADERS On)
-else()
-  set(FLB_PROG_NAME "Fluentd Bit")
-  set(FLB_OUT_NAME "fluent-bit")
 endif()
 
 configure_file(
