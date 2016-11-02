@@ -1,0 +1,12 @@
+[Unit]
+Description=@FLB_PROG_NAME@
+Requires=network.target
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=@CMAKE_INSTALL_FULL_BINDIR@/@FLB_OUT_NAME@ -c @CMAKE_INSTALL_SYSCONFDIR@/@FLB_OUT_NAME@/@FLB_OUT_NAME@.conf
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
