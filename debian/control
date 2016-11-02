@@ -1,4 +1,4 @@
-Source: fluentbit
+Source: td-agent-bit
 Section: net
 Priority: optional
 Maintainer: Eduardo Silva <eduardo@treasure-data.com>
@@ -8,7 +8,7 @@ Homepage: http://fluentbit.io
 Vcs-Git: https://github.com/fluent/fluent-bit
 Vcs-Browser: https://github.com/fluent/fluent-bit
 
-Package: fluentbit
+Package: td-agent-bit
 Architecture: any
 Depends: ${misc:Depends}
 Description: Fast data collector for Linux.
