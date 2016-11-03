@@ -117,7 +117,7 @@ int flb_sched_request_create(struct flb_config *config,
     /* Allocate request node */
     request = flb_malloc(sizeof(struct flb_sched_request));
     if (!request) {
-        perror("malloc");
+        flb_errno();
         return -1;
     }
 
