@@ -107,6 +107,7 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
     int bytes;
     int task_id;
     int thread_id;
+    int retry_seconds;
     uint32_t type;
     uint32_t key;
     uint64_t val;
@@ -212,9 +213,26 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
             flb_output_thread_destroy_id(thread_id, task);
 
             /* Let the scheduler to retry the failed task/thread */
-            int s = flb_sched_request_create(config, retry, retry->attemps);
-            flb_debug("[sched] retry=%p %i in %i seconds",
-                      retry, task->id, s);
+            retry_seconds = flb_sched_request_create(config,
+                                                     retry, retry->attemps);
+
+            /*
+             * If for some reason the Scheduler could not include this retry,
+             * we need to get rid of it, likely this is because of not enough
+             * memory available or we ran out of file descriptors.
+             */
+            if (retry_seconds == -1) {
+                flb_warn("[sched] retry for task %i could not be scheduled",
+                         task->id);
+                flb_task_retry_destroy(retry);
+                if (task->users == 0) {
+                    flb_task_destroy(task);
+                }
+            }
+            else {
+                flb_debug("[sched] retry=%p %i in %i seconds",
+                          retry, task->id, retry_seconds);
+            }
         }
         else if (ret == FLB_ERROR) {
             flb_output_thread_destroy_id(thread_id, task);
