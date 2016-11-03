@@ -474,7 +474,6 @@ int flb_input_dyntag_destroy(struct flb_input_dyntag *dt)
     mk_list_del(&dt->_head);
     flb_free(dt->tag);
     flb_free(dt);
-    dt = NULL;
 
     return 0;
 }
@@ -555,6 +554,12 @@ void *flb_input_dyntag_flush(struct flb_input_dyntag *dt, size_t *size)
 
     buf   = dt->mp_sbuf.data;
     *size = dt->mp_sbuf.size;
+
+    /* Unset the lock, it means more data can be added */
+    dt->lock = FLB_FALSE;
+
+    /* Set it busy as it likely it's a reference for an outgoing task */
+    dt->busy = FLB_TRUE;
 
     msgpack_sbuffer_init(&dt->mp_sbuf);
     msgpack_packer_init(&dt->mp_pck, &dt->mp_sbuf, msgpack_sbuffer_write);
