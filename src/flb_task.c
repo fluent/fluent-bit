@@ -69,7 +69,7 @@ static inline void map_free_task_id(int id, struct flb_config *config)
     config->tasks_map[id].task = NULL;
 }
 
-static void flb_task_retry_destroy(struct flb_task_retry *retry)
+void flb_task_retry_destroy(struct flb_task_retry *retry)
 {
     mk_list_del(&retry->_head);
     flb_free(retry);
@@ -79,6 +79,7 @@ struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
                                              void *data)
 {
     struct mk_list *head;
+    struct mk_list *tmp;
     struct flb_task_retry *retry = NULL;
     struct flb_output_instance *o_ins;
     struct flb_output_thread *out_th;
@@ -87,10 +88,12 @@ struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
     o_ins = out_th->o_ins;
 
     /* First discover if is there any previous retry context in the task */
-    mk_list_foreach(head, &task->retries) {
+    mk_list_foreach_safe(head, tmp, &task->retries) {
         retry = mk_list_entry(head, struct flb_task_retry, _head);
         if (retry->o_ins == o_ins) {
             if (retry->attemps > o_ins->retry_limit) {
+                flb_debug("[task] task_id=%i reached retry-attemps limit %i/%i",
+                          task->id, retry->attemps, o_ins->retry_limit);
                 flb_task_retry_destroy(retry);
                 return NULL;
             }
@@ -415,7 +418,7 @@ void flb_task_add_thread(struct flb_thread *thread,
 
     /*
      * It's likely a previous thread have marked this task ready to be deleted,
-     * we must check this usual condition that could happen when one input
+     * we must check this usual condition that could happen when one input_create
      * instance must flush the data to many destinations.
      */
 #ifdef FLB_HAVE_FLUSH_PTHREADS
