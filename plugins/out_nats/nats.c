@@ -163,7 +163,7 @@ static int msgpack_to_json(void *data, size_t bytes, char *tag,
                 }
             }
             else if (m_val.type == MSGPACK_OBJECT_BIN) {
-                if (m_val.via.bin.size > sizeof(tmp_val)) {
+                if (m_val.via.bin.size > sizeof(tmp_val) - 1) {
                     tmp_ext = flb_malloc(m_val.via.bin.size + 1);
                 }
                 else {
