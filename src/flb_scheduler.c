@@ -25,7 +25,6 @@
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_engine_dispatch.h>
 
-#include <math.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/param.h>
@@ -101,7 +100,7 @@ static int backoff_full_jitter(int base, int cap, int n)
 {
     int exp;
 
-    exp = MIN(cap, pow(2, n) * base);
+    exp = MIN(cap, (1 << n /*pow(2, n)*/) * base);
     return random_uniform(0, exp);
 }
 
