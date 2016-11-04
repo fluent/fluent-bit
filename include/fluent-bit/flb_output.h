@@ -474,7 +474,7 @@ static inline void flb_output_return(int ret, struct flb_thread *th) {
     }
 }
 
-static inline void FLB_OUTPUT_RETURN(int x)
+static inline void flb_output_return_do(int x)
 {
     struct flb_thread *th;
     th = (struct flb_thread *) pthread_getspecific(flb_thread_key);
@@ -485,6 +485,10 @@ static inline void FLB_OUTPUT_RETURN(int x)
      */
     flb_thread_yield(th, FLB_TRUE);
 }
+
+#define FLB_OUTPUT_RETURN(x)                                            \
+    flb_output_return_do(x);                                            \
+    return
 
 struct flb_output_instance *flb_output_new(struct flb_config *config,
                                            char *output, void *data);
