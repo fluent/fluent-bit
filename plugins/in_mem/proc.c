@@ -57,11 +57,6 @@ static char *file_to_buffer(const char *path)
     char *buffer;
     long bytes;
 
-    if (access(path, R_OK) != 0) {
-        flb_errno();
-        return NULL;
-    }
-
     if (!(fp = fopen(path, "r"))) {
         flb_errno();
         return NULL;
