@@ -32,11 +32,11 @@
 #include "proxy/go/go.h"
 
 
-static int proxy_cb_flush(void *data, size_t bytes,
-                          char *tag, int tag_len,
-                          struct flb_input_instance *i_ins,
-                          void *out_context,
-                          struct flb_config *config)
+static void proxy_cb_flush(void *data, size_t bytes,
+                           char *tag, int tag_len,
+                           struct flb_input_instance *i_ins,
+                           void *out_context,
+                           struct flb_config *config)
 {
     struct flb_plugin_proxy *p = out_context;
     (void) tag_len;
