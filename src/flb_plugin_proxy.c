@@ -103,30 +103,30 @@ int flb_plugin_proxy_load(struct flb_plugin_proxy *proxy,
                           struct flb_config *config)
 {
     int ret;
-    struct flb_plugin_proxy_def *tmp;
-    struct flb_plugin_proxy_def *(*cb_register)();
+    int (*cb_init)(struct flb_plugin_proxy_def *);
+    struct flb_plugin_proxy_def *def;
 
-    /* Lookup and invoke registration callback */
-    cb_register = flb_plugin_proxy_symbol(proxy, "flb_cb_register");
-    if (!cb_register) {
+    /* Lookup initializator callback */
+    cb_init = flb_plugin_proxy_symbol(proxy, "FLBPluginInit");
+
+    /* Create a temporal definition used for registration */
+    def = flb_malloc(sizeof(struct flb_plugin_proxy_def));
+    if (!def) {
         return -1;
     }
 
-    /* Obtain registration information */
-    tmp = cb_register();
-    if (!tmp) {
+    /* Call the initializator */
+    ret = cb_init(def);
+    if (ret == -1) {
+        flb_free(def);
         return -1;
     }
-
-    fprintf(stderr,
-            "[proxy plugin] type=%i proxy=%i name=%s desc='%s'\n",
-            tmp->type, tmp->proxy, tmp->name, tmp->description);
 
     /* Based on 'proxy', use the proper handler */
     ret = -1;
-    if (tmp->proxy == FLB_PROXY_GOLANG) {
+    if (def->proxy == FLB_PROXY_GOLANG) {
 #ifdef FLB_HAVE_PROXY_GO
-        ret = proxy_go_start(proxy, tmp);
+        ret = proxy_go_start(proxy, def);
 #endif
     }
 
@@ -135,9 +135,9 @@ int flb_plugin_proxy_load(struct flb_plugin_proxy *proxy,
          * We got a plugin that can do it job, now we need to create the
          * real link to the 'output' interface
          */
-        if (tmp->type == FLB_PROXY_OUTPUT_PLUGIN) {
-            proxy->proxy = tmp->proxy;
-            proxy_register_output(proxy, tmp, config);
+        if (def->type == FLB_PROXY_OUTPUT_PLUGIN) {
+            proxy->proxy = def->proxy;
+            proxy_register_output(proxy, def, config);
         }
     }
 
@@ -153,7 +153,7 @@ struct flb_plugin_proxy *flb_plugin_proxy_create(const char *dso_path, int type,
     /* Load shared library */
     handle = dlopen(dso_path, RTLD_LAZY);
     if (!handle) {
-        flb_errno();
+        fprintf(stderr, "[proxy] error opening %s\n", dso_path);
         return NULL;
     }
 
@@ -182,4 +182,15 @@ void flb_plugin_proxy_destroy(struct flb_plugin_proxy *proxy)
     dlclose(proxy->dso_handler);
     mk_list_del(&proxy->_head);
     flb_free(proxy);
+}
+
+int flb_plugin_proxy_set(struct flb_plugin_proxy_def *def, int type,
+                         int proxy, char *name, char *description)
+{
+    def->type  = type;
+    def->proxy = proxy;
+    def->name  = flb_strdup(name);
+    def->description = flb_strdup(description);
+
+    return 0;
 }
