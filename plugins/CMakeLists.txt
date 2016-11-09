@@ -90,6 +90,7 @@ REGISTER_OUT_PLUGIN("out_stdout")
 REGISTER_OUT_PLUGIN("out_retry")
 REGISTER_OUT_PLUGIN("out_td")
 REGISTER_OUT_PLUGIN("out_lib")
+REGISTER_OUT_PLUGIN("out_fcount")
 
 if(ENABLE_TESTS)
   REGISTER_OUT_PLUGIN("out_null")
