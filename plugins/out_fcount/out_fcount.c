@@ -41,20 +41,22 @@ static int configure(struct flb_out_fcount_config *ctx,
     ctx->tick         = 60;
 
     unit = flb_output_get_property("unit", ins);
-    if ( unit == NULL ) {
+    if (unit == NULL) {
         /* using default */
         return 0;
     }
 
     flb_debug("[%s]unit is \"%s\"",PLUGIN_NAME, unit);
 
-    if ( !strcasecmp(unit, FLB_UNIT_SEC) ) {
+    if (!strcasecmp(unit, FLB_UNIT_SEC)) {
         ctx->unit = FLB_UNIT_SEC;
         ctx->tick = 1;
-    } else if ( !strcasecmp(unit, FLB_UNIT_HOUR) ) {
+    }
+    else if (!strcasecmp(unit, FLB_UNIT_HOUR)) {
         ctx->unit = FLB_UNIT_HOUR;
         ctx->tick = 3600;
-    } else if( !strcasecmp(unit, FLB_UNIT_DAY) ) {
+    }
+    else if(!strcasecmp(unit, FLB_UNIT_DAY)) {
         ctx->unit = FLB_UNIT_DAY;
         ctx->tick = 86400;
     }
@@ -73,7 +75,7 @@ static void output_fcount(FILE* f, struct flb_out_fcount_config *ctx, char* tag)
 {
     fprintf(f,"[%s] %s:{",PLUGIN_NAME,tag);
     fprintf(f,
-           "\"count\":%lu, \"bytes\":%lu, \"count/%s\":%lu, \"bytes/%s\":%lu}\n",
+           "\"counts\":%lu, \"bytes\":%lu, \"counts/%s\":%lu, \"bytes/%s\":%lu}\n",
            ctx->counts,
            ctx->bytes,
            ctx->unit, ctx->counts/ctx->tick,
@@ -91,9 +93,10 @@ static void count_up(msgpack_object *obj,
 
 static time_t get_timestamp_from_msgpack(msgpack_object *p)
 {
-    if ( p != NULL && p->via.array.size != 0 ) {
+    if (p != NULL && p->via.array.size != 0) {
         return p->via.array.ptr[0].via.u64; /* FIXME */
-    }else{
+    }
+    else{
         return 0;
     }
 }
@@ -107,7 +110,7 @@ static int out_fcount_init(struct flb_output_instance *ins, struct flb_config *c
     struct flb_out_fcount_config *ctx = NULL;
     ctx = (struct flb_out_fcount_config*)
         flb_malloc(sizeof(struct flb_out_fcount_config));
-    if ( ctx == NULL ) {
+    if (ctx == NULL) {
         flb_error("[%s] malloc failed",PLUGIN_NAME);
         return -1;
     }
@@ -144,21 +147,21 @@ static void out_fcount_flush(void *data, size_t bytes,
         byte_data     = (uint64_t)(off - last_off);
         last_off      = off;
 
-        if ( (diff = (int32_t)difftime(t,ctx->last_checked)) < 0) {
+        if ((diff = (int32_t)difftime(t,ctx->last_checked))< 0) {
             flb_error("[%s]time paradox?",PLUGIN_NAME);
             continue;
         }
         flb_debug("[%s] %lu(%d) byte_data:%lu",
                   PLUGIN_NAME,ctx->last_checked,diff, byte_data);
 
-        while( diff > ctx->tick ) {
+        while(diff > ctx->tick) {
             output_fcount(stdout, ctx, tag);
             count_initialized(ctx);
 
             ctx->last_checked += ctx->tick;
             diff -= ctx->tick;
         }
-        if ( diff >= 0 ) {
+        if (diff >= 0) {
             count_up(&result.data, ctx, byte_data);
         }
     }
