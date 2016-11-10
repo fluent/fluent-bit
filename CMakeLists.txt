@@ -78,7 +78,7 @@ option(FLB_OUT_RETRY   "Enable Retry test output plugin"     No)
 option(FLB_OUT_STDOUT  "Enable STDOUT output plugin"        Yes)
 option(FLB_OUT_LIB     "Enable library mode output plugin"  Yes)
 option(FLB_OUT_NULL    "Enable dev null output plugin"      Yes)
-option(FLB_OUT_FCOUNT  "Enable flowcount output plugin"     Yes)
+option(FLB_OUT_FLOWCOUNT "Enable flowcount output plugin"   Yes)
 
 # Enable all features
 if(FLB_ALL)
@@ -108,7 +108,7 @@ if(FLB_ALL)
   set(FLB_OUT_TD       1)
   set(FLB_OUT_STDOUT   1)
   set(FLB_OUT_LIB      1)
-  set(FLB_OUT_FCOUNT   1)
+  set(FLB_OUT_FLOWCOUNT 1)
 endif()
 
 # Macro to set definitions

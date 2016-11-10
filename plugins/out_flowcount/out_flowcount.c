@@ -27,9 +27,9 @@
 #include <msgpack.h>
 
 
-#include "out_fcount.h"
+#include "out_flowcount.h"
 
-#define PLUGIN_NAME "out_fcount"
+#define PLUGIN_NAME "out_flowcount"
 
 static int configure(struct flb_out_fcount_config *ctx,
                       struct flb_output_instance   *ins)
@@ -178,8 +178,8 @@ static int out_fcount_exit(void *data, struct flb_config* config)
     return 0;
 }
 
-struct flb_output_plugin out_fcount_plugin = {
-    .name         = "fcount",
+struct flb_output_plugin out_flowcount_plugin = {
+    .name         = "flowcount",
     .description  = "FlowCount",
     .cb_init      = out_fcount_init,
     .cb_flush     = out_fcount_flush,
