@@ -1,6 +1,6 @@
 ![](fluentbit_logo.png)
 
-[Fluent Bit](http://fluentbit.io) is a Data Forwarder for Linux, Embedded Linux, OSX and BSD family operating systems. It's part of the [Fluentd](http://fluentd.org) Ecosystem.  Fluent Bit allows collection of information from different sources, buffering and dispatching them to different outputs such as [Fluentd](http://fluentd.org), Elasticsearch, Nats or any HTTP end-point withint others. It's fully supported on x86_64, x86 and ARM architectures.
+[Fluent Bit](http://fluentbit.io) is a Data Forwarder for Linux, Embedded Linux, OSX and BSD family operating systems. It's part of the [Fluentd](http://fluentd.org) Ecosystem.  Fluent Bit allows collection of information from different sources, buffering and dispatching them to different outputs such as [Fluentd](http://fluentd.org), Elasticsearch, Nats or any HTTP end-point within others. It's fully supported on x86_64, x86 and ARM architectures.
 
 For more details about it capabilities and general features please visit the official documentation:
 
@@ -24,7 +24,7 @@ $ bin/fluent-bit -i cpu -o stdout
 | name               | option  | description  |
 |--------------------|---------|---------------------------------------------------------------------------------|
 | CPU                | cpu     | gather CPU usage between snapshots of one second. It support multiple cores     |
-| Forward            | forward | Fluentd forward protocol |
+| Forward            | forward | [Fluentd](http://fluentd.org) forward protocol |
 | Memory             | mem     | usage of system memory |
 | MQTT               | mqtt    | start a MQTT server and receive publish messages |
 | Kernel Ring Buffer | kmsg    | read Linux Kernel messages, same behavior as the __dmesg__ command line program |
@@ -32,16 +32,20 @@ $ bin/fluent-bit -i cpu -o stdout
 | Standard Input     | stdin   | read from the standard input |
 | XBee               | xbee    | listen for incoming messages over a Xbee device |
 | Head               | head    | read first part of files |
+| Health             | health  | check health of TCP services|
 | Random             | random  | generate random numbers |
+| TCP                | tcp     | listen for raw JSON map messages over TCP |
 
 ### Output Plugins
 
 | name               | option                  | description  |
 |--------------------|-------------------------|---------------------------------------------------------------------------------|
 | Elasticsearch      | es | flush records to a Elasticsearch server |
+| FlowCount          | flowcount| count records |
 | Forward            | forward  | flush records to a [Fluentd](http://fluentd.org) service. On the [Fluentd](http://fluentd.org) side, it requires an __in_forward__.|
 | NATS               | nats | flush records to a NATS server |
 | HTTP               | http | flush records to a HTTP end point |
+| Plot               | plot | generate a file for gnuplot |
 | Standard Output    | stdout                  | prints the records to the standard output stream |
 | Treasure Data      | td                      | flush records to [Treasure Data](http://treasuredata.com) service (cloud analytics)|
 
