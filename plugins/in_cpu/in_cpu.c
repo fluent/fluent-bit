@@ -353,6 +353,12 @@ void *in_cpu_flush(void *in_context, size_t *size)
 
     sbuf = &ctx->mp_sbuf;
     *size = sbuf->size;
+
+    if (sbuf->size==0) {
+        return NULL;
+    }
+
+
     buf = flb_malloc(sbuf->size);
     if (!buf) {
         return NULL;
