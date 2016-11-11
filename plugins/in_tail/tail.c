@@ -31,10 +31,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_stats.h>
 
-struct flb_in_tail_config {
-    /* Config properties */
-    char *path;
-};
+#include "tail_config.h"
 
 /* cb_collect callback */
 static int in_tail_collect(struct flb_config *config, void *in_context)
@@ -47,43 +44,21 @@ static int in_tail_collect(struct flb_config *config, void *in_context)
     return 0;
 }
 
-/* Set plugin configuration */
-static int in_tail_config_read(struct flb_in_tail_config *random_config,
-                                 struct flb_input_instance *in)
-{
-    char *val = NULL;
-
-    /* samples */
-    val = flb_input_get_property("path", in);
-    if (!val) {
-        flb_error("[in_tail] no path to tail");
-        return -1;
-    }
-
-    return 0;
-}
-
 /* Initialize plugin */
 static int in_tail_init(struct flb_input_instance *in,
                         struct flb_config *config, void *data)
 {
     int ret = -1;
-    struct flb_in_tail_config *ctx = NULL;
+    struct flb_tail_config *ctx = NULL;
 
     /* Allocate space for the configuration */
-    ctx = flb_malloc(sizeof(struct flb_in_tail_config));
+    ctx = flb_tail_config_create(in);
     if (!ctx) {
         return -1;
     }
-
-    /* Initialize head config */
-    ret = in_tail_config_read(ctx, in);
-    if (ret < 0) {
-        flb_free(ctx);
-        return -1;
-    }
-
+    flb_trace("[in_tail] path: %s", ctx->path);
     flb_input_set_context(in, ctx);
+
     return 0;
 }
 
