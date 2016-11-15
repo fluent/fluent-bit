@@ -36,6 +36,14 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins)
         return NULL;
     }
 
+    /* Create the communication pipe(2) */
+    ret = pipe(config->ch_manager);
+    if (ret == -1) {
+        flb_errno();
+        flb_free(config);
+        return -1;
+    }
+
     /* Read properties */
     config->path = flb_input_get_property("path", i_ins);
     if (!config->path) {
@@ -52,6 +60,10 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins)
 
 int flb_tail_config_destroy(struct flb_tail_config *config)
 {
+    /* Close pipe ends */
+    close(config->ch_manager[0]);
+    close(config->ch_manager[0]);
+
     flb_free(config);
     return 0;
 }

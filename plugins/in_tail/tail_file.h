@@ -20,15 +20,31 @@
 #ifndef FLB_TAIL_FILE_H
 #define FLB_TAIL_FILE_H
 
-#include <fluent-bit/flb_input.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
+#include <fluent-bit/flb_input.h>
 #include "tail_config.h"
 
+#define FLB_TAIL_CHUNK 32*1024 /* read chunks of 32KB max */
+
 struct flb_tail_file {
+    /* file lookup info */
+    int fd;
+    off_t size;
+    off_t offset;
     char *name;
+
+    /* buffering */
+    off_t buf_len;
+    char buf_data[FLB_TAIL_CHUNK];
+
     struct mk_list _head;
 };
 
-int flb_tail_file_append(char *path, struct flb_tail_config *config);
+int flb_tail_file_append(char *path, struct stat *st,
+                         struct flb_tail_config *config);
+void flb_tail_file_remove(struct flb_tail_file *file);
 
 #endif

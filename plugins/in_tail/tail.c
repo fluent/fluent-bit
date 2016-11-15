@@ -31,7 +31,36 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_stats.h>
 
+#include "tail_file.h"
 #include "tail_config.h"
+
+static inline int consume_byte(int fd)
+{
+    int ret;
+    uint64_t val;
+
+    /* We need to consume the byte */
+    ret = read(fd, &val, sizeof(val));
+    if (ret <= 0) {
+        flb_errno();
+        return -1;
+    }
+
+    return 0;
+}
+
+static inline int tail_signal_manager(struct flb_tail_config *ctx)
+{
+    int n;
+    uint64_t val = 0xc001;
+
+    /* Insert a dummy event into the channel manager */
+    n = write(ctx->ch_manager[1], &val, sizeof(val));
+    if (n == -1) {
+        flb_errno();
+        return -1;
+    }
+}
 
 /* cb_collect callback */
 static int in_tail_collect(struct flb_config *config, void *in_context)
@@ -39,7 +68,19 @@ static int in_tail_collect(struct flb_config *config, void *in_context)
     int fd;
     int ret;
     uint64_t val;
-    struct flb_in_tail_config *ctx = in_context;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_tail_config *ctx = in_context;
+    struct flb_tail_file *file;
+
+    /* Do a data chunk collection for each file, not inotify support yet */
+    mk_list_foreach_safe(head, tmp, &ctx->files) {
+        file = mk_list_entry(head, struct flb_tail_file, _head);
+        ret = flb_tail_file_chunk(file);
+        if (ret == -1) {
+            flb_tail_file_remove(file);
+        }
+    }
 
     return 0;
 }
@@ -56,10 +97,26 @@ static int in_tail_init(struct flb_input_instance *in,
     if (!ctx) {
         return -1;
     }
+
     flb_trace("[in_tail] path: %s", ctx->path);
     flb_input_set_context(in, ctx);
 
+    ret = flb_input_set_collector_event(in, in_tail_collect,
+                                        ctx->ch_manager[0], config);
+    if (ret != 0) {
+        flb_tail_config_destroy(ctx);
+        return -1;
+    }
+
     return 0;
+}
+
+/* Pre-run callback / before the event loop */
+static int in_tail_pre_run(void *in_context, struct flb_config *config)
+{
+    struct flb_tail_config *ctx = in_context;
+
+    return tail_signal_manager(ctx);
 }
 
 /* cb_flush callback */
@@ -87,7 +144,7 @@ struct flb_input_plugin in_tail_plugin = {
     .name         = "tail",
     .description  = "Tail files",
     .cb_init      = in_tail_init,
-    .cb_pre_run   = NULL,
+    .cb_pre_run   = in_tail_pre_run,
     .cb_collect   = in_tail_collect,
     .cb_flush_buf = in_tail_flush,
     .cb_exit      = in_tail_exit

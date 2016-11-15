@@ -54,7 +54,7 @@ int flb_tail_scan(const char *path, struct flb_tail_config *config)
     for (i = 0; i < globbuf.gl_pathc; i++) {
         ret = stat(globbuf.gl_pathv[i], &st);
         if (ret == 0 && S_ISREG(st.st_mode)) {
-            flb_tail_file_append(globbuf.gl_pathv[i], config);
+            flb_tail_file_append(globbuf.gl_pathv[i], &st, config);
         }
         else {
             flb_debug("[in_tail] skip (invalid) entry=%s", globbuf.gl_pathv[i]);
