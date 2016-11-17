@@ -41,7 +41,7 @@ $ bin/fluent-bit -i cpu -o stdout
 | name               | option                  | description  |
 |--------------------|-------------------------|---------------------------------------------------------------------------------|
 | Elasticsearch      | es | flush records to a Elasticsearch server |
-| FlowCount          | flowcount| count records |
+| FlowCounter        | flowcounter| count records |
 | Forward            | forward  | flush records to a [Fluentd](http://fluentd.org) service. On the [Fluentd](http://fluentd.org) side, it requires an __in_forward__.|
 | NATS               | nats | flush records to a NATS server |
 | HTTP               | http | flush records to a HTTP end point |
