@@ -17,18 +17,10 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_OUT_FLOWCOUNT
-#define FLB_OUT_FLOWCOUNT
+#ifndef FLB_OUT_FLOWCOUNTER
+#define FLB_OUT_FLOWCOUNTER
 
 #include <stdint.h>
-/*
-enum {
-    FLB_UNIT_SEC = 0,
-    FLB_UNIT_MIN,
-    FLB_UNIT_HOUR,
-    FLB_UNIT_DAY,
-};
-*/
 
 #define FLB_UNIT_SEC  "second"
 #define FLB_UNIT_MIN  "minute"
