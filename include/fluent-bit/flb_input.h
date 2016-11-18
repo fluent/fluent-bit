@@ -250,6 +250,10 @@ int flb_input_thread_destroy_id(int id, struct flb_config *config)
         i_ins = mk_list_entry(head, struct flb_input_instance, _head);
         mk_list_foreach_safe(head_th, tmp, &i_ins->threads) {
             in_th = mk_list_entry(head_th, struct flb_input_thread, _head);
+            if (in_th->id != id) {
+                continue;
+            }
+
             mk_list_del(&in_th->_head);
             flb_input_thread_del_id(id, config);
             flb_thread_destroy(in_th->parent);
