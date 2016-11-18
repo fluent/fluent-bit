@@ -38,6 +38,11 @@ struct flb_in_health_config {
     /* Alert mode */
     int alert;
 
+    /* Append Hostname */
+    int add_host;
+    int len_host;
+    char* hostname;
+
     /* Time interval check */
     int interval_sec;
     int interval_nsec;
@@ -75,8 +80,15 @@ static int in_health_collect(struct flb_config *config, void *in_context)
      */
     msgpack_pack_array(&ctx->mp_pck, 2);
     msgpack_pack_uint64(&ctx->mp_pck, time(NULL));
-
-    msgpack_pack_map(&ctx->mp_pck, 1);
+    
+    if (ctx->add_host) {
+        /* [ alive , hostname ]*/
+        msgpack_pack_map(&ctx->mp_pck, 2);
+    }
+    else {
+        /* [ alive ] */
+        msgpack_pack_map(&ctx->mp_pck, 1);
+    }
 
     /* Status */
     msgpack_pack_bin(&ctx->mp_pck, 5);
@@ -87,6 +99,14 @@ static int in_health_collect(struct flb_config *config, void *in_context)
     }
     else {
         msgpack_pack_false(&ctx->mp_pck);
+    }
+
+    if (ctx->add_host) {
+        /* append hostname */
+        msgpack_pack_bin(&ctx->mp_pck, strlen("hostname"));
+        msgpack_pack_bin_body(&ctx->mp_pck, "hostname", strlen("hostname"));
+        msgpack_pack_bin(&ctx->mp_pck, ctx->len_host);
+        msgpack_pack_bin_body(&ctx->mp_pck, ctx->hostname, ctx->len_host);
     }
 
     FLB_INPUT_RETURN();
@@ -108,6 +128,9 @@ static int in_health_init(struct flb_input_instance *in,
         return -1;
     }
     ctx->alert = FLB_FALSE;
+    ctx->add_host = FLB_FALSE;
+    ctx->len_host = 0;
+    ctx->hostname = NULL;
 
     ctx->u = flb_upstream_create(config, in->host.name, in->host.port,
                                  FLB_IO_TCP, NULL);
@@ -144,6 +167,15 @@ static int in_health_init(struct flb_input_instance *in,
     if (pval) {
         if (strcasecmp(pval, "true") == 0 || strcasecmp(pval, "on") == 0) {
             ctx->alert = FLB_TRUE;
+        }
+    }
+
+    pval = flb_input_get_property("add_host", in);
+    if (pval) {
+        if (strcasecmp(pval, "true") == 0 || strcasecmp(pval, "on") == 0) {
+            ctx->add_host = FLB_TRUE;
+            ctx->len_host = strlen(in->host.name);
+            ctx->hostname = flb_strdup(in->host.name);
         }
     }
 
@@ -198,6 +230,7 @@ int in_health_exit(void *data, struct flb_config *config)
     /* Remove msgpack buffer and destroy context */
     msgpack_sbuffer_destroy(&ctx->mp_sbuf);
     flb_upstream_destroy(ctx->u);
+    flb_free(ctx->hostname);
     flb_free(ctx);
 
     return 0;
