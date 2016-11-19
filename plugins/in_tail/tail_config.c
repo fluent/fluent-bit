@@ -28,34 +28,37 @@
 struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins)
 {
     int ret;
-    struct flb_tail_config *config;
+    struct flb_tail_config *ctx;
 
-    config = flb_malloc(sizeof(struct flb_tail_config));
-    if (!config) {
+    ctx = flb_malloc(sizeof(struct flb_tail_config));
+    if (!ctx) {
         flb_errno();
         return NULL;
     }
 
     /* Create the communication pipe(2) */
-    ret = pipe(config->ch_manager);
+    ret = pipe(ctx->ch_manager);
     if (ret == -1) {
         flb_errno();
-        flb_free(config);
-        return -1;
+        flb_free(ctx);
+        return NULL;
     }
 
     /* Read properties */
-    config->path = flb_input_get_property("path", i_ins);
-    if (!config->path) {
+    ctx->path = flb_input_get_property("path", i_ins);
+    if (!ctx->path) {
         flb_error("[in_tail] no input 'path' was given");
-        flb_free(config);
+        flb_free(ctx);
         return NULL;
     }
-    mk_list_init(&config->files);
+    mk_list_init(&ctx->files);
 
+    /* initialize MessagePack buffers */
+    msgpack_sbuffer_init(&ctx->mp_sbuf);
+    msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
 
-    ret = flb_tail_scan(config->path, config);
-    return config;
+    ret = flb_tail_scan(ctx->path, ctx);
+    return ctx;
 }
 
 int flb_tail_config_destroy(struct flb_tail_config *config)

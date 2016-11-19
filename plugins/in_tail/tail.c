@@ -60,14 +60,14 @@ static inline int tail_signal_manager(struct flb_tail_config *ctx)
         flb_errno();
         return -1;
     }
+
+    return n;
 }
 
 /* cb_collect callback */
 static int in_tail_collect(struct flb_config *config, void *in_context)
 {
-    int fd;
     int ret;
-    uint64_t val;
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_tail_config *ctx = in_context;
@@ -123,9 +123,26 @@ static int in_tail_pre_run(void *in_context, struct flb_config *config)
 static void *in_tail_flush(void *in_context, size_t *size)
 {
     char *buf = NULL;
-    struct flb_in_tail_config *ctx = in_context;
+    struct flb_tail_config *ctx = in_context;
 
-    *size = 0;
+    if (ctx->mp_sbuf.size == 0) {
+        *size = 0;
+        return NULL;
+    }
+
+    buf = flb_malloc(ctx->mp_sbuf.size);
+    if (!buf) {
+        return NULL;
+    }
+
+    memcpy(buf, ctx->mp_sbuf.data, ctx->mp_sbuf.size);
+    *size = ctx->mp_sbuf.size;
+
+    msgpack_sbuffer_destroy(&ctx->mp_sbuf);
+    msgpack_sbuffer_init(&ctx->mp_sbuf);
+    msgpack_packer_init(&ctx->mp_pck,
+                        &ctx->mp_sbuf, msgpack_sbuffer_write);
+
     return buf;
 }
 

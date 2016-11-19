@@ -23,8 +23,13 @@
 #include <fluent-bit/flb_input.h>
 
 struct flb_tail_config {
-    int ch_manager[2];    /* internal pipe for events               */
-    char *path;           /* original directory to lookup on (glob) */
+    int ch_manager[2];         /* internal pipe for events               */
+    char *path;                /* original directory to lookup on (glob) */
+
+    /* MessagePack buffers */
+    msgpack_packer   mp_pck;
+    msgpack_sbuffer  mp_sbuf;
+
     struct mk_list files;
 };
 

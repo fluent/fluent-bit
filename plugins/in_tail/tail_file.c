@@ -21,33 +21,65 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <time.h>
 
+#include <msgpack.h>
 #include <fluent-bit/flb_input.h>
 #include "tail_config.h"
 #include "tail_file.h"
+
+static inline void consume_bytes(char *buf, int bytes, int length)
+{
+    memmove(buf, buf + bytes, length - bytes);
+}
+
+static inline int pack_line(time_t time, char *tag, int tag_len, char *line,
+                            int line_len, struct flb_tail_file *file)
+{
+    struct flb_tail_config *ctx = file->config;
+
+    msgpack_pack_array(&ctx->mp_pck, 2);
+    msgpack_pack_uint64(&ctx->mp_pck, time);
+
+    msgpack_pack_map(&ctx->mp_pck, 1);
+    msgpack_pack_bin(&ctx->mp_pck, 3);
+    msgpack_pack_bin_body(&ctx->mp_pck, "log", 3);
+    msgpack_pack_bin(&ctx->mp_pck, line_len);
+    msgpack_pack_bin_body(&ctx->mp_pck, line, line_len);
+
+    return 0;
+}
 
 static int process_content(struct flb_tail_file *file, off_t *offset)
 {
     int len;
     int lines = 0;
     char *p;
-    off_t off = 0;
+    time_t t = time(NULL);
 
-    while ((p = strchr(file->buf_data + off, '\n'))) {
-        char *b = flb_malloc(32128);
-        memset(b, '\0', 32128);
+    while ((p = strchr(file->buf_data + file->parsed, '\n'))) {
+        len = (p - file->buf_data);
+        if (len == 0) {
+            consume_bytes(file->buf_data, 1, file->buf_len);
+            file->buf_len--;
+            file->parsed = 0;
+            file->buf_data[file->buf_len] = '\0';
+            continue;
+        }
 
-        len = (p - (file->buf_data + off));
-        strncpy(b, file->buf_data + off, len);
-        b[len] = '\0';
-        off += len + 1;
-        printf("=>%s\n", b);
-        flb_free(b);
+        pack_line(t, "tag", 3, file->buf_data, len, file);
 
+        /*
+         * FIXME: here we are moving bytes to the left on each iteration, it
+         * would be fast if we do this after this while(){}
+         */
+        consume_bytes(file->buf_data, len + 1, file->buf_len);
+        file->buf_len -= len + 1;
+        file->buf_data[file->buf_len] = '\0';
+        file->parsed = 0;
         lines++;
     }
-
-    *offset = off;
+    file->parsed = file->buf_len;
     return lines;
 }
 
@@ -79,6 +111,8 @@ int flb_tail_file_append(char *path, struct stat *st,
     file->offset  = 0;
     file->size    = st->st_size;
     file->buf_len = 0;
+    file->parsed  = 0;
+    file->config  = config;
     mk_list_add(&file->_head, &config->files);
 
     flb_debug("[in_tail] add to scan queue %s", path);
@@ -102,14 +136,16 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
 
     /* Seek if required */
     if (file->offset > 0) {
+        printf("trying offset %lu\n", file->offset);
         offset = lseek(file->fd, file->offset, SEEK_SET);
-        if (offset < 0) {
+        if (offset == -1) {
+            perror("lseek");
             flb_errno();
             return -1;
         }
     }
 
-    capacity = sizeof(file->buf_data) - file->buf_len;
+    capacity = sizeof(file->buf_data) - file->buf_len - 1;
     if (capacity < 1) {
         /* we expect at least a log line have a length less than 32KB */
         return -1;
@@ -118,7 +154,8 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
     bytes = read(file->fd, file->buf_data + file->buf_len, capacity);
     if (bytes > 0) {
         /* we read some data, let the content processor take care of it */
-        file->buf_data[file->buf_len + bytes] = '\0';
+        file->buf_len += bytes;
+        file->buf_data[file->buf_len] = '\0';
 
         /* Now that we have some data in the buffer, call the data processor
          * which aims to cut lines and register the entries into the engine.
@@ -127,12 +164,13 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
          * now. It may need to get back a few bytes at the beginning of a new
          * line.
          */
+
         ret = process_content(file, &offset);
         if (ret == -1) {
             return -1;
         }
 
-        file->offset = offset;
+        //file->offset = offset;
         if (file->offset >= file->size) {
             /* FIXME */
         }
