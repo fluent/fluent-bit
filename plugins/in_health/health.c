@@ -43,6 +43,10 @@ struct flb_in_health_config {
     int len_host;
     char* hostname;
 
+    /* Append Port Number */
+    int add_port;
+    int port;
+
     /* Time interval check */
     int interval_sec;
     int interval_nsec;
@@ -61,6 +65,7 @@ static int in_health_collect(struct flb_config *config, void *in_context)
     uint8_t alive;
     struct flb_in_health_config *ctx = in_context;
     struct flb_upstream_conn *u_conn;
+    int map_num = 1;
 
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
@@ -80,15 +85,15 @@ static int in_health_collect(struct flb_config *config, void *in_context)
      */
     msgpack_pack_array(&ctx->mp_pck, 2);
     msgpack_pack_uint64(&ctx->mp_pck, time(NULL));
-    
+
+    /* extract map field */
     if (ctx->add_host) {
-        /* [ alive , hostname ]*/
-        msgpack_pack_map(&ctx->mp_pck, 2);
+        map_num++;
     }
-    else {
-        /* [ alive ] */
-        msgpack_pack_map(&ctx->mp_pck, 1);
+    if (ctx->add_port) {
+        map_num++;
     }
+    msgpack_pack_map(&ctx->mp_pck, map_num);
 
     /* Status */
     msgpack_pack_bin(&ctx->mp_pck, 5);
@@ -107,6 +112,13 @@ static int in_health_collect(struct flb_config *config, void *in_context)
         msgpack_pack_bin_body(&ctx->mp_pck, "hostname", strlen("hostname"));
         msgpack_pack_bin(&ctx->mp_pck, ctx->len_host);
         msgpack_pack_bin_body(&ctx->mp_pck, ctx->hostname, ctx->len_host);
+    }
+
+    if (ctx->add_port) {
+        /* append port number */
+        msgpack_pack_bin(&ctx->mp_pck, strlen("port"));
+        msgpack_pack_bin_body(&ctx->mp_pck, "port", strlen("port"));
+        msgpack_pack_int32(&ctx->mp_pck, ctx->port);
     }
 
     FLB_INPUT_RETURN();
@@ -131,6 +143,9 @@ static int in_health_init(struct flb_input_instance *in,
     ctx->add_host = FLB_FALSE;
     ctx->len_host = 0;
     ctx->hostname = NULL;
+
+    ctx->add_port = FLB_FALSE;
+    ctx->port     = -1;
 
     ctx->u = flb_upstream_create(config, in->host.name, in->host.port,
                                  FLB_IO_TCP, NULL);
@@ -176,6 +191,14 @@ static int in_health_init(struct flb_input_instance *in,
             ctx->add_host = FLB_TRUE;
             ctx->len_host = strlen(in->host.name);
             ctx->hostname = flb_strdup(in->host.name);
+        }
+    }
+
+    pval = flb_input_get_property("add_port", in);
+    if (pval) {
+        if (strcasecmp(pval, "true") == 0 || strcasecmp(pval, "on") == 0) {
+            ctx->add_port = FLB_TRUE;
+            ctx->port = in->host.port;
         }
     }
 
