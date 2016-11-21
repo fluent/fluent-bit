@@ -17,26 +17,20 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_TAIL_CONFIG_H
-#define FLB_TAIL_CONFIG_H
+#ifndef FLB_TAIL_H
+#define FLB_TAIL_H
 
-#include <fluent-bit/flb_input.h>
+/* Internal return values */
+#define FLB_TAIL_ERROR  -1
+#define FLB_TAIL_OK      0
+#define FLB_TAIL_WAIT    1
 
-struct flb_tail_config {
-    int fd_notify;             /* inotify fd               */
-    int ch_manager[2];         /* internal pipe for events */
-    char *path;                /* lookup path (glob)       */
+/* Consuming mode */
+#define FLB_TAIL_STATIC  0  /* Data is being consumed through read(2) */
+#define FLB_TAIL_EVENT   1  /* Data is being consumed through inotify */
 
-    /* MessagePack buffers */
-    msgpack_packer   mp_pck;
-    msgpack_sbuffer  mp_sbuf;
-
-    /* Lists head for files consumed statically (read) and by events (inotify) */
-    struct mk_list files_static;
-    struct mk_list files_event;
-};
-
-struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins);
-int flb_tail_config_destroy(struct flb_tail_config *config);
+/* Config */
+//#define FLB_TAIL_CHUNK 32*1024 /* read chunks of 32KB max */
+#define FLB_TAIL_CHUNK 32 /* read chunks of 32KB max */
 
 #endif

@@ -22,18 +22,20 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <time.h>
+#include <sys/inotify.h>
 
-#include <msgpack.h>
 #include <fluent-bit/flb_input.h>
-#include "tail_config.h"
+
+#include "tail.h"
 #include "tail_file.h"
+#include "tail_config.h"
 
 static inline void consume_bytes(char *buf, int bytes, int length)
 {
     memmove(buf, buf + bytes, length - bytes);
 }
 
-static inline int pack_line(time_t time, char *tag, int tag_len, char *line,
+static inline int pack_line(time_t time, char *line,
                             int line_len, struct flb_tail_file *file)
 {
     struct flb_tail_config *ctx = file->config;
@@ -67,7 +69,7 @@ static int process_content(struct flb_tail_file *file, off_t *offset)
             continue;
         }
 
-        pack_line(t, "tag", 3, file->buf_data, len, file);
+        pack_line(t, file->buf_data, len, file);
 
         /*
          * FIXME: here we are moving bytes to the left on each iteration, it
@@ -84,6 +86,7 @@ static int process_content(struct flb_tail_file *file, off_t *offset)
 }
 
 int flb_tail_file_append(char *path, struct stat *st,
+                         int mode,
                          struct flb_tail_config *config)
 {
     int fd;
@@ -106,14 +109,22 @@ int flb_tail_file_append(char *path, struct stat *st,
         return -1;
     }
 
-    file->fd      = fd;
-    file->name    = flb_strdup(path);
-    file->offset  = 0;
-    file->size    = st->st_size;
-    file->buf_len = 0;
-    file->parsed  = 0;
-    file->config  = config;
-    mk_list_add(&file->_head, &config->files);
+    file->watch_fd  = 0;
+    file->fd        = fd;
+    file->name      = flb_strdup(path);
+    file->offset    = 0;
+    file->size      = st->st_size;
+    file->buf_len   = 0;
+    file->parsed    = 0;
+    file->config    = config;
+    file->tail_mode = mode;
+
+    if (mode == FLB_TAIL_STATIC) {
+        mk_list_add(&file->_head, &config->files_static);
+    }
+    else if (mode == FLB_TAIL_EVENT) {
+        mk_list_add(&file->_head, &config->files_event);
+    }
 
     flb_debug("[in_tail] add to scan queue %s", path);
     return 0;
@@ -122,9 +133,35 @@ int flb_tail_file_append(char *path, struct stat *st,
 void flb_tail_file_remove(struct flb_tail_file *file)
 {
     mk_list_del(&file->_head);
+    if (file->watch_fd > 0) {
+        inotify_rm_watch(file->config->fd_notify, file->watch_fd);
+        close(file->watch_fd);
+    }
     close(file->fd);
     flb_free(file->name);
     flb_free(file);
+}
+
+int flb_tail_file_remove_all(struct flb_tail_config *ctx)
+{
+    int count = 0;
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct flb_tail_file *file;
+
+    mk_list_foreach_safe(head, tmp, &ctx->files_static) {
+        file = mk_list_entry(head, struct flb_tail_file, _head);
+        flb_tail_file_remove(file);
+        count++;
+    }
+
+    mk_list_foreach_safe(head, tmp, &ctx->files_event) {
+        file = mk_list_entry(head, struct flb_tail_file, _head);
+        flb_tail_file_remove(file);
+        count++;
+    }
+
+    return count;
 }
 
 int flb_tail_file_chunk(struct flb_tail_file *file)
@@ -164,29 +201,52 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
          * now. It may need to get back a few bytes at the beginning of a new
          * line.
          */
-
         ret = process_content(file, &offset);
-        if (ret == -1) {
-            return -1;
+        if (ret >= 0) {
+            flb_debug("[in_tail] file=%s read=%lu lines=%i",
+                      file->name, bytes, ret);
+        }
+        else {
+            flb_debug("[in_tail] file=%s ERROR", file->name);
+            return FLB_TAIL_ERROR;
         }
 
-        //file->offset = offset;
-        if (file->offset >= file->size) {
-            /* FIXME */
-        }
-
-        return 0;
+        /* Data was consumed but likely some bytes still remain */
+        return FLB_TAIL_OK;
     }
     else if (bytes == 0) {
-        /* FIXME: we reached the end of file, let's wait for inotify */
-        return -1;
+        /* We reached the end of file, let's wait for some incoming data */
+        return FLB_TAIL_WAIT;
     }
     else {
         /* error */
         flb_errno();
         flb_error("[in_tail] error reading %s", file->name);
+        return FLB_TAIL_ERROR;
+    }
+
+    return FLB_TAIL_ERROR;
+}
+
+int flb_tail_file_to_event(struct flb_tail_file *file)
+{
+    int watch_fd;
+    struct flb_tail_config *ctx = file->config;
+
+    /* Register the file into Inotify */
+    watch_fd = inotify_add_watch(ctx->fd_notify, file->name,
+                                 IN_MODIFY | IN_MOVED_TO);
+    if (watch_fd == -1) {
+        flb_errno();
         return -1;
     }
+    file->watch_fd = watch_fd;
+
+    /* List change */
+    mk_list_del(&file->_head);
+    mk_list_add(&file->_head, &file->config->files_event);
+
+    file->tail_mode = FLB_TAIL_EVENT;
 
     return 0;
 }

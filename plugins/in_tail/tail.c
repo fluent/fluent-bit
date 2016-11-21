@@ -23,14 +23,15 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <sys/inotify.h>
 
-#include <msgpack.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_stats.h>
 
+#include "tail.h"
 #include "tail_file.h"
 #include "tail_config.h"
 
@@ -65,25 +66,84 @@ static inline int tail_signal_manager(struct flb_tail_config *ctx)
 }
 
 /* cb_collect callback */
-static int in_tail_collect(struct flb_config *config, void *in_context)
+static int in_tail_collect_static(struct flb_config *config, void *in_context)
 {
     int ret;
+    int active = 0;
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_tail_config *ctx = in_context;
     struct flb_tail_file *file;
 
     /* Do a data chunk collection for each file, not inotify support yet */
-    mk_list_foreach_safe(head, tmp, &ctx->files) {
+    mk_list_foreach_safe(head, tmp, &ctx->files_static) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
         ret = flb_tail_file_chunk(file);
-        if (ret == -1) {
+        switch (ret) {
+        case FLB_TAIL_ERROR:
+            /* Could not longer read the file */
             flb_tail_file_remove(file);
+            break;
+        case FLB_TAIL_OK:
+            active++;
+            continue;
+        case FLB_TAIL_WAIT:
+            /* Promote file to 'events' type handler */
+            flb_debug("[in_tail] file=%s promote to TAIL_EVENT", file->name);
+            flb_tail_file_to_event(file);
+            break;
+        }
+    }
+
+    /*
+     * If there are no more active static handlers, we consume the 'byte' that
+     * triggered this event so this is not longer called again.
+     */
+    if (active == 0) {
+        consume_byte(ctx->ch_manager[0]);
+    }
+
+    return 0;
+}
+
+static int in_tail_collect_event(struct flb_config *config, void *in_context)
+{
+    int ret;
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct flb_tail_config *ctx = in_context;
+    struct flb_tail_file *file;
+    struct inotify_event ev;
+
+    /* Read the event */
+    ret  = read(ctx->fd_notify, &ev, sizeof(struct inotify_event));
+    if (ret < 1) {
+        return -1;
+    }
+
+    /* Lookup watched file */
+    mk_list_foreach_safe(head, tmp, &ctx->files_event) {
+        file = mk_list_entry(head, struct flb_tail_file, _head);
+        if (file->watch_fd != ev.wd) {
+            continue;
+        }
+
+        flb_debug("[in_tail] file=%s event", file->name);
+        ret = flb_tail_file_chunk(file);
+        switch (ret) {
+        case FLB_TAIL_ERROR:
+            /* Could not longer read the file */
+            flb_tail_file_remove(file);
+            break;
+        case FLB_TAIL_OK:
+        case FLB_TAIL_WAIT:
+            break;
         }
     }
 
     return 0;
 }
+
 
 /* Initialize plugin */
 static int in_tail_init(struct flb_input_instance *in,
@@ -101,8 +161,15 @@ static int in_tail_init(struct flb_input_instance *in,
     flb_trace("[in_tail] path: %s", ctx->path);
     flb_input_set_context(in, ctx);
 
-    ret = flb_input_set_collector_event(in, in_tail_collect,
+    ret = flb_input_set_collector_event(in, in_tail_collect_static,
                                         ctx->ch_manager[0], config);
+    if (ret != 0) {
+        flb_tail_config_destroy(ctx);
+        return -1;
+    }
+
+    ret = flb_input_set_collector_event(in, in_tail_collect_event,
+                                        ctx->fd_notify, config);
     if (ret != 0) {
         flb_tail_config_destroy(ctx);
         return -1;
@@ -149,8 +216,9 @@ static void *in_tail_flush(void *in_context, size_t *size)
 static int in_tail_exit(void *data, struct flb_config *config)
 {
     (void) *config;
-    struct flb_in_tail_config *ctx = data;
+    struct flb_tail_config *ctx = data;
 
+    flb_tail_file_remove_all(ctx);
     flb_free(ctx);
 
     return 0;
@@ -162,7 +230,7 @@ struct flb_input_plugin in_tail_plugin = {
     .description  = "Tail files",
     .cb_init      = in_tail_init,
     .cb_pre_run   = in_tail_pre_run,
-    .cb_collect   = in_tail_collect,
+    .cb_collect   = NULL,
     .cb_flush_buf = in_tail_flush,
     .cb_exit      = in_tail_exit
 };

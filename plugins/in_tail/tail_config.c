@@ -17,10 +17,12 @@
  *  limitations under the License.
  */
 
-#include <stdlib.h>
-
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_input.h>
+
+#include <stdlib.h>
+#include <sys/inotify.h>
 
 #include "tail_config.h"
 #include "tail_scan.h"
@@ -28,6 +30,7 @@
 struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins)
 {
     int ret;
+    int fd;
     struct flb_tail_config *ctx;
 
     ctx = flb_malloc(sizeof(struct flb_tail_config));
@@ -44,6 +47,16 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins)
         return NULL;
     }
 
+    /* Inotify FD */
+    fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+    if (fd == -1) {
+        flb_errno();
+        flb_free(ctx);
+        return NULL;
+    }
+    flb_debug("[in_tail] inotify watch fd=%i", fd);
+    ctx->fd_notify = fd;
+
     /* Read properties */
     ctx->path = flb_input_get_property("path", i_ins);
     if (!ctx->path) {
@@ -51,7 +64,8 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins)
         flb_free(ctx);
         return NULL;
     }
-    mk_list_init(&ctx->files);
+    mk_list_init(&ctx->files_static);
+    mk_list_init(&ctx->files_event);
 
     /* initialize MessagePack buffers */
     msgpack_sbuffer_init(&ctx->mp_sbuf);

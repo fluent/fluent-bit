@@ -25,11 +25,15 @@
 #include <unistd.h>
 
 #include <fluent-bit/flb_input.h>
+
+#include "tail.h"
 #include "tail_config.h"
 
-#define FLB_TAIL_CHUNK 32*1024 /* read chunks of 32KB max */
-
 struct flb_tail_file {
+    /* Inotify */
+    struct mk_event event;
+    int watch_fd;
+
     /* file lookup info */
     int fd;
     off_t size;
@@ -43,13 +47,16 @@ struct flb_tail_file {
     char buf_data[FLB_TAIL_CHUNK];
 
     /* reference */
+    int tail_mode;
     struct flb_tail_config *config;
     struct mk_list _head;
 };
 
+int flb_tail_file_to_event(struct flb_tail_file *file);
 int flb_tail_file_chunk(struct flb_tail_file *file);
 int flb_tail_file_append(char *path, struct stat *st,
-                         struct flb_tail_config *config);
+                         int mode, struct flb_tail_config *config);
 void flb_tail_file_remove(struct flb_tail_file *file);
+int flb_tail_file_remove_all(struct flb_tail_config *ctx);
 
 #endif
