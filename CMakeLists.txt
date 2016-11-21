@@ -342,6 +342,16 @@ if(FLB_HAVE_ACCEPT4)
   FLB_DEFINITION(FLB_HAVE_ACCEPT4)
 endif()
 
+# inotify_init(2)
+check_c_source_compiles("
+    #include <sys/inotify.h>
+    int main() {
+        return inotify_init1(0);
+    }" FLB_HAVE_INOTIFY)
+if(FLB_HAVE_INOTIFY)
+  FLB_DEFINITION(FLB_HAVE_INOTIFY)
+endif()
+
 configure_file(
   "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_info.h.in"
   "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_info.h"
