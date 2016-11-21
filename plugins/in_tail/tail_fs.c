@@ -1,8 +1,8 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
-/*  Fluent Bit
- *  ==========
- *  Copyright (C) 2015-2016 Treasure Data Inc.
+/*  Monkey HTTP Server
+ *  ==================
+ *  Copyright 2001-2015 Monkey Software LLC <eduardo@monkey.io>
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -17,25 +17,10 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_TAIL_H
-#define FLB_TAIL_H
-
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_input.h>
 
-/* Internal return values */
-#define FLB_TAIL_ERROR  -1
-#define FLB_TAIL_OK      0
-#define FLB_TAIL_WAIT    1
-
-/* Consuming mode */
-#define FLB_TAIL_STATIC  0  /* Data is being consumed through read(2) */
-#define FLB_TAIL_EVENT   1  /* Data is being consumed through inotify */
-
-/* Config */
-//#define FLB_TAIL_CHUNK 32*1024 /* read chunks of 32KB max */
-#define FLB_TAIL_CHUNK 32 /* read chunks of 32KB max */
-
-int in_tail_collect_event(void *file, struct flb_config *config);
+#ifdef FLB_HAVE_INOTIFY
+    #include "tail_fs_inotify.c"
+#else
 
 #endif

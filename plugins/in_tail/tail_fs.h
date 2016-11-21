@@ -17,25 +17,16 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_TAIL_H
-#define FLB_TAIL_H
+#ifndef FLB_TAIL_FS_H
+#define FLB_TAIL_FS_H
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
 
-/* Internal return values */
-#define FLB_TAIL_ERROR  -1
-#define FLB_TAIL_OK      0
-#define FLB_TAIL_WAIT    1
+#include "tail_config.h"
 
-/* Consuming mode */
-#define FLB_TAIL_STATIC  0  /* Data is being consumed through read(2) */
-#define FLB_TAIL_EVENT   1  /* Data is being consumed through inotify */
+int flb_tail_fs_init(struct flb_input_instance *in,
+                     struct flb_tail_config *ctx, struct flb_config *config);
 
-/* Config */
-//#define FLB_TAIL_CHUNK 32*1024 /* read chunks of 32KB max */
-#define FLB_TAIL_CHUNK 32 /* read chunks of 32KB max */
-
-int in_tail_collect_event(void *file, struct flb_config *config);
 
 #endif

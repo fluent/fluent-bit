@@ -23,7 +23,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <sys/inotify.h>
 
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_config.h>
@@ -32,6 +31,7 @@
 #include <fluent-bit/flb_stats.h>
 
 #include "tail.h"
+#include "tail_fs.h"
 #include "tail_file.h"
 #include "tail_config.h"
 
@@ -75,7 +75,7 @@ static int in_tail_collect_static(struct flb_config *config, void *in_context)
     struct flb_tail_config *ctx = in_context;
     struct flb_tail_file *file;
 
-    /* Do a data chunk collection for each file, not inotify support yet */
+    /* Do a data chunk collection for each file */
     mk_list_foreach_safe(head, tmp, &ctx->files_static) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
         ret = flb_tail_file_chunk(file);
@@ -106,39 +106,23 @@ static int in_tail_collect_static(struct flb_config *config, void *in_context)
     return 0;
 }
 
-static int in_tail_collect_event(struct flb_config *config, void *in_context)
+
+int in_tail_collect_event(void *file, struct flb_config *config)
 {
     int ret;
-    struct mk_list *head;
-    struct mk_list *tmp;
-    struct flb_tail_config *ctx = in_context;
-    struct flb_tail_file *file;
-    struct inotify_event ev;
+    struct flb_tail_file *f = file;
 
-    /* Read the event */
-    ret  = read(ctx->fd_notify, &ev, sizeof(struct inotify_event));
-    if (ret < 1) {
-        return -1;
-    }
+    flb_debug("[in_tail] file=%s event", f->name);
 
-    /* Lookup watched file */
-    mk_list_foreach_safe(head, tmp, &ctx->files_event) {
-        file = mk_list_entry(head, struct flb_tail_file, _head);
-        if (file->watch_fd != ev.wd) {
-            continue;
-        }
-
-        flb_debug("[in_tail] file=%s event", file->name);
-        ret = flb_tail_file_chunk(file);
-        switch (ret) {
-        case FLB_TAIL_ERROR:
-            /* Could not longer read the file */
-            flb_tail_file_remove(file);
-            break;
-        case FLB_TAIL_OK:
-        case FLB_TAIL_WAIT:
-            break;
-        }
+    ret = flb_tail_file_chunk(f);
+    switch (ret) {
+    case FLB_TAIL_ERROR:
+        /* Could not longer read the file */
+        flb_tail_file_remove(f);
+        break;
+    case FLB_TAIL_OK:
+    case FLB_TAIL_WAIT:
+        break;
     }
 
     return 0;
@@ -168,10 +152,9 @@ static int in_tail_init(struct flb_input_instance *in,
         return -1;
     }
 
-    ret = flb_input_set_collector_event(in, in_tail_collect_event,
-                                        ctx->fd_notify, config);
-    if (ret != 0) {
-        flb_tail_config_destroy(ctx);
+    /* Initialize file-system watcher */
+    ret = flb_tail_fs_init(in, ctx, config);
+    if (ret == -1) {
         return -1;
     }
 

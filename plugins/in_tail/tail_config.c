@@ -22,8 +22,8 @@
 #include <fluent-bit/flb_input.h>
 
 #include <stdlib.h>
-#include <sys/inotify.h>
 
+#include "tail_fs.h"
 #include "tail_config.h"
 #include "tail_scan.h"
 
@@ -46,16 +46,6 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins)
         flb_free(ctx);
         return NULL;
     }
-
-    /* Inotify FD */
-    fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
-    if (fd == -1) {
-        flb_errno();
-        flb_free(ctx);
-        return NULL;
-    }
-    flb_debug("[in_tail] inotify watch fd=%i", fd);
-    ctx->fd_notify = fd;
 
     /* Read properties */
     ctx->path = flb_input_get_property("path", i_ins);
