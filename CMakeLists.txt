@@ -201,6 +201,16 @@ if(FLB_TLS)
   include_directories(lib/mbedtls-yotta-2.3.0/include)
 endif()
 
+if(FLB_IN_TAIL)
+  set(FLB_SQLITE3 ON)
+endif()
+
+if(FLB_SQLITE3)
+  FLB_DEFINITION(FLB_HAVE_SQLITE3)
+  add_subdirectory(lib/sqlite-amalgamation-3150100)
+  include_directories(lib/sqlite-amalgamation-3150100)
+endif()
+
 if(FLB_BUFFERING)
   FLB_DEFINITION(FLB_HAVE_BUFFERING)
 endif()

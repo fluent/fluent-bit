@@ -90,6 +90,12 @@ if(FLB_JEMALLOC)
     "libjemalloc")
 endif()
 
+if(FLB_SQLITE3)
+  set(extra_libs
+    ${extra_libs}
+    "sqlite3")
+endif()
+
 include(CheckSymbolExists)
 check_symbol_exists(accept4 "sys/socket.h" HAVE_ACCEPT4)
 
