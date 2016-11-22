@@ -33,6 +33,7 @@ $ bin/fluent-bit -i cpu -o stdout
 | XBee               | xbee    | listen for incoming messages over a Xbee device |
 | Head               | head    | read first part of files |
 | Health             | health  | check health of TCP services|
+| Process            | process | check health of Process |
 | Random             | random  | generate random numbers |
 | TCP                | tcp     | listen for raw JSON map messages over TCP |
 
