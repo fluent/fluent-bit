@@ -36,6 +36,7 @@ option(FLB_TESTS              "Enable tests"                 No)
 option(FLB_MTRACE             "Enable mtrace support"        No)
 option(FLB_BUFFERING          "Enable buffering support"     No)
 option(FLB_POSIX_TLS          "Force POSIX thread storage"   No)
+option(FLB_WITHOUT_INOTIFY    "Disable inotify support"      No)
 
 # Proxy Plugins
 option(FLB_PROXY_GO           "Enable Go plugins support"    No)
@@ -343,13 +344,15 @@ if(FLB_HAVE_ACCEPT4)
 endif()
 
 # inotify_init(2)
-check_c_source_compiles("
+if(NOT FLB_WITHOUT_INOTIFY)
+  check_c_source_compiles("
     #include <sys/inotify.h>
     int main() {
         return inotify_init1(0);
     }" FLB_HAVE_INOTIFY)
-if(FLB_HAVE_INOTIFY)
-  FLB_DEFINITION(FLB_HAVE_INOTIFY)
+  if(FLB_HAVE_INOTIFY)
+    FLB_DEFINITION(FLB_HAVE_INOTIFY)
+  endif()
 endif()
 
 configure_file(
