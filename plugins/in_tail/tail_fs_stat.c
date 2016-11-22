@@ -75,7 +75,7 @@ static int tail_fs_event(struct flb_config *config, void *in_context)
     return 0;
 }
 
-/* File System events based on Inotify(2). Linux >= 2.6.32 is suggested */
+/* File System events based on stat(2) */
 int flb_tail_fs_init(struct flb_input_instance *in,
                      struct flb_tail_config *ctx, struct flb_config *config)
 {
