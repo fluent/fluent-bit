@@ -27,7 +27,6 @@
 
 struct flb_tail_file {
     /* Inotify */
-    struct mk_event event;
     int watch_fd;
 
     /* file lookup info */
@@ -41,6 +40,9 @@ struct flb_tail_file {
     off_t parsed;
     off_t buf_len;
     char buf_data[FLB_TAIL_CHUNK];
+
+    /* Opaque data type for specific fs-event backend data */
+    void *fs_backend;
 
     /* reference */
     int tail_mode;

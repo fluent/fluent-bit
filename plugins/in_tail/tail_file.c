@@ -229,6 +229,7 @@ int flb_tail_file_to_event(struct flb_tail_file *file)
 {
     int ret;
 
+    /* Notify the fs-event handler that we will start monitoring this 'file' */
     ret = flb_tail_fs_add(file);
     if (ret == -1) {
         return -1;
