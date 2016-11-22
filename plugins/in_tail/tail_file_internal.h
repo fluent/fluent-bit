@@ -17,19 +17,35 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_TAIL_FS_H
-#define FLB_TAIL_FS_H
+#ifndef FLB_TAIL_INTERNAL_H
+#define FLB_TAIL_INTERNAL_H
 
-#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
 
+#include "tail.h"
 #include "tail_config.h"
-#include "tail_file_internal.h"
 
-int flb_tail_fs_init(struct flb_input_instance *in,
-                     struct flb_tail_config *ctx, struct flb_config *config);
-int flb_tail_fs_add(struct flb_tail_file *file);
-int flb_tail_fs_remove(struct flb_tail_file *file);
-int flb_tail_fs_exit(struct flb_tail_config *ctx);
+struct flb_tail_file {
+    /* Inotify */
+    struct mk_event event;
+    int watch_fd;
+
+    /* file lookup info */
+    int fd;
+    off_t size;
+    off_t offset;
+    off_t last_line;
+    char *name;
+
+    /* buffering */
+    off_t parsed;
+    off_t buf_len;
+    char buf_data[FLB_TAIL_CHUNK];
+
+    /* reference */
+    int tail_mode;
+    struct flb_tail_config *config;
+    struct mk_list _head;
+};
 
 #endif

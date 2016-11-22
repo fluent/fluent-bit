@@ -22,7 +22,6 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <time.h>
-#include <sys/inotify.h>
 
 #include <fluent-bit/flb_input.h>
 
@@ -133,9 +132,8 @@ int flb_tail_file_append(char *path, struct stat *st,
 void flb_tail_file_remove(struct flb_tail_file *file)
 {
     mk_list_del(&file->_head);
-    if (file->watch_fd > 0) {
-        inotify_rm_watch(file->config->fd_notify, file->watch_fd);
-        close(file->watch_fd);
+    if (file->tail_mode == FLB_TAIL_EVENT) {
+        flb_tail_fs_remove(file);
     }
     close(file->fd);
     flb_free(file->name);
@@ -173,7 +171,6 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
 
     /* Seek if required */
     if (file->offset > 0) {
-        printf("trying offset %lu\n", file->offset);
         offset = lseek(file->fd, file->offset, SEEK_SET);
         if (offset == -1) {
             perror("lseek");
@@ -230,17 +227,12 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
 
 int flb_tail_file_to_event(struct flb_tail_file *file)
 {
-    int watch_fd;
-    struct flb_tail_config *ctx = file->config;
+    int ret;
 
-    /* Register the file into Inotify */
-    watch_fd = inotify_add_watch(ctx->fd_notify, file->name,
-                                 IN_MODIFY | IN_MOVED_TO);
-    if (watch_fd == -1) {
-        flb_errno();
+    ret = flb_tail_fs_add(file);
+    if (ret == -1) {
         return -1;
     }
-    file->watch_fd = watch_fd;
 
     /* List change */
     mk_list_del(&file->_head);

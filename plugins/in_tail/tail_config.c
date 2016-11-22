@@ -30,7 +30,6 @@
 struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins)
 {
     int ret;
-    int fd;
     struct flb_tail_config *ctx;
 
     ctx = flb_malloc(sizeof(struct flb_tail_config));
@@ -61,7 +60,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins)
     msgpack_sbuffer_init(&ctx->mp_sbuf);
     msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
 
-    ret = flb_tail_scan(ctx->path, ctx);
+    flb_tail_scan(ctx->path, ctx);
     return ctx;
 }
 

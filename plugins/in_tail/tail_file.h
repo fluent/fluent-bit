@@ -27,30 +27,9 @@
 #include <fluent-bit/flb_input.h>
 
 #include "tail.h"
+#include "tail_fs.h"
 #include "tail_config.h"
-
-struct flb_tail_file {
-    /* Inotify */
-    struct mk_event event;
-    int watch_fd;
-
-    /* file lookup info */
-    int fd;
-    off_t size;
-    off_t offset;
-    off_t last_line;
-    char *name;
-
-    /* buffering */
-    off_t parsed;
-    off_t buf_len;
-    char buf_data[FLB_TAIL_CHUNK];
-
-    /* reference */
-    int tail_mode;
-    struct flb_tail_config *config;
-    struct mk_list _head;
-};
+#include "tail_file_internal.h"
 
 int flb_tail_file_to_event(struct flb_tail_file *file);
 int flb_tail_file_chunk(struct flb_tail_file *file);

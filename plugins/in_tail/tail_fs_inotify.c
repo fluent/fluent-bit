@@ -89,18 +89,33 @@ int flb_tail_fs_init(struct flb_input_instance *in,
     return 0;
 }
 
-int flb_tail_fs_add()
+int flb_tail_fs_add(struct flb_tail_file *file)
 {
+    int watch_fd;
+    struct flb_tail_config *ctx = file->config;
 
+    /* Register the file into Inotify */
+    watch_fd = inotify_add_watch(ctx->fd_notify, file->name,
+                                 IN_MODIFY | IN_MOVED_TO);
+    if (watch_fd == -1) {
+        flb_errno();
+        return -1;
+    }
+    file->watch_fd = watch_fd;
 
+    return 0;
 }
 
-int flb_tail_fs_remove()
+int flb_tail_fs_remove(struct flb_tail_file *file)
 {
+    inotify_rm_watch(file->config->fd_notify, file->watch_fd);
+    close(file->watch_fd);
 
+    return 0;
 }
 
 int flb_tail_fs_exit(struct flb_tail_config *ctx)
 {
-
+    (void) ctx;
+    return 0;
 }
