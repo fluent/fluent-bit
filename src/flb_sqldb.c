@@ -31,7 +31,7 @@ struct flb_sqldb *flb_sqldb_open(char *path, const char *desc,
 {
     int ret;
     struct mk_list *head;
-    struct flb_sqldb *db_temp;
+    struct flb_sqldb *db_temp = NULL;
     struct flb_sqldb *db;
     sqlite3 *sdb = NULL;
 
