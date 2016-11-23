@@ -39,6 +39,7 @@ static int in_head_collect(struct flb_config *config, void *in_context)
     struct flb_in_head_config *head_config = in_context;
     int fd = -1;
     int ret = -1;
+    int num_map = 1;
 
     /* open at every collect callback */
     fd = open(head_config->filepath, O_RDONLY);
@@ -56,15 +57,29 @@ static int in_head_collect(struct flb_config *config, void *in_context)
         goto collect_fin;
     }
 
+    if (head_config->add_path == FLB_TRUE) {
+        num_map++;
+    }
+
     msgpack_pack_array(&head_config->mp_pck, 2);
     msgpack_pack_uint64(&head_config->mp_pck, time(NULL));
-    msgpack_pack_map(&head_config->mp_pck, 1);
+
+
+    msgpack_pack_map(&head_config->mp_pck, num_map);
 
     msgpack_pack_bin(&head_config->mp_pck, 4);
     msgpack_pack_bin_body(&head_config->mp_pck, "head", 4);
     msgpack_pack_bin(&head_config->mp_pck, head_config->buf_len);
     msgpack_pack_bin_body(&head_config->mp_pck,
                           head_config->buf, head_config->buf_len);
+
+    if (head_config->add_path == FLB_TRUE) {
+        msgpack_pack_bin(&head_config->mp_pck, 4);
+        msgpack_pack_bin_body(&head_config->mp_pck, "path", 4);
+        msgpack_pack_bin(&head_config->mp_pck, head_config->path_len);
+        msgpack_pack_bin_body(&head_config->mp_pck,
+                              head_config->filepath, head_config->path_len);
+    }
 
     ret = 0;
     head_config->idx++;
@@ -121,6 +136,13 @@ static int in_head_config_read(struct flb_in_head_config *head_config,
         head_config->interval_nsec = DEFAULT_INTERVAL_NSEC;
     }
 
+    pval = flb_input_get_property("add_path", in);
+    if (pval) {
+        if (strcasecmp(pval, "true") == 0 || strcasecmp(pval, "on") == 0) {
+            head_config->add_path = FLB_TRUE;
+            head_config->path_len = strlen(head_config->filepath);
+        }
+    }
 
     flb_debug("[in_head] buf_size=%d path=%s",
               head_config->buf_size, head_config->filepath);
@@ -156,6 +178,7 @@ static int in_head_init(struct flb_input_instance *in,
     head_config->buf = NULL;
     head_config->buf_len = 0;
     head_config->idx = 0;
+    head_config->add_path = FLB_FALSE;
 
     /* Initialize head config */
     ret = in_head_config_read(head_config, in);
