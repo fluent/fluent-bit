@@ -37,6 +37,7 @@ option(FLB_MTRACE             "Enable mtrace support"        No)
 option(FLB_BUFFERING          "Enable buffering support"     No)
 option(FLB_POSIX_TLS          "Force POSIX thread storage"   No)
 option(FLB_WITHOUT_INOTIFY    "Disable inotify support"      No)
+option(FLB_SQLDB              "Enable SQL embedded DB"       No)
 
 # Proxy Plugins
 option(FLB_PROXY_GO           "Enable Go plugins support"    No)
@@ -202,11 +203,11 @@ if(FLB_TLS)
 endif()
 
 if(FLB_IN_TAIL)
-  set(FLB_SQLITE3 ON)
+  set(FLB_SQLDB ON)
 endif()
 
-if(FLB_SQLITE3)
-  FLB_DEFINITION(FLB_HAVE_SQLITE3)
+if(FLB_SQLDB)
+  FLB_DEFINITION(FLB_HAVE_SQLDB)
   add_subdirectory(lib/sqlite-amalgamation-3150100)
   include_directories(lib/sqlite-amalgamation-3150100)
 endif()
