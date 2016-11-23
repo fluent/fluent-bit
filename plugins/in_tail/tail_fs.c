@@ -22,5 +22,5 @@
 #ifdef FLB_HAVE_INOTIFY
     #include "tail_fs_inotify.c"
 #else
-
+    #include "tail_fs_stat.c"
 #endif
