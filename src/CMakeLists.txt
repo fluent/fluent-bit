@@ -90,7 +90,11 @@ if(FLB_JEMALLOC)
     "libjemalloc")
 endif()
 
-if(FLB_SQLITE3)
+if(FLB_SQLDB)
+  set(src
+    ${src}
+    "flb_sqldb.c"
+    )
   set(extra_libs
     ${extra_libs}
     "sqlite3")
