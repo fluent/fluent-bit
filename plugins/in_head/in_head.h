@@ -37,6 +37,9 @@ struct flb_in_head_config {
 
     char     *filepath; /* to read */
 
+    char     add_path; /* add path mode */
+    size_t   path_len;
+
     int      interval_sec;
     int      interval_nsec;
 
