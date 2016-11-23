@@ -92,7 +92,6 @@ struct flb_config {
 
     /* Outputs instances */
     struct mk_list outputs;             /* list of output plugins   */
-    struct flb_output_plugin *output;   /* output plugin in use     */
     struct mk_event_loop *evl;          /* the event loop (mk_core) */
 
     /* Proxies */
@@ -119,6 +118,11 @@ struct flb_config {
     struct flb_buffer *buffer_ctx;
     int buffer_workers;
     char *buffer_path;
+#endif
+
+    /* Embedded SQL Database support (SQLite3) */
+#ifdef FLB_HAVE_SQLDB
+    struct mk_list sqldb_list;
 #endif
 
     /*

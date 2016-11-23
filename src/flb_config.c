@@ -110,6 +110,10 @@ struct flb_config *flb_config_init()
     config->buffer_workers = 0;
 #endif
 
+#ifdef FLB_HAVE_SQLDB
+    mk_list_init(&config->sqldb_list);
+#endif
+
     mk_list_init(&config->collectors);
     mk_list_init(&config->in_plugins);
     mk_list_init(&config->out_plugins);
