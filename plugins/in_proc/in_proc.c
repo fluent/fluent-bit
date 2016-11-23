@@ -33,7 +33,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_utils.h>
 
-#include "in_process.h"
+#include "in_proc.h"
 
 static pid_t get_pid_from_procname_linux(const char* proc)
 {
@@ -91,7 +91,7 @@ static pid_t get_pid_from_procname_linux(const char* proc)
     return ret;
 }
 
-static int configure(struct flb_in_process_config *ctx,
+static int configure(struct flb_in_proc_config *ctx,
                      struct flb_input_instance *in)
 {
     char *pval = NULL;
@@ -146,10 +146,10 @@ static int get_pid_status(pid_t pid)
     return ((ret != ESRCH)  && (ret != EPERM) && (ret != ESRCH));
 }
 
-static int collect_process(struct flb_config *config, void *in_context)
+static int collect_proc(struct flb_config *config, void *in_context)
 {
     uint8_t alive = FLB_FALSE;
-    struct flb_in_process_config *ctx = in_context;
+    struct flb_in_proc_config *ctx = in_context;
 
     ctx->pid = get_pid_from_procname_linux(ctx->proc_name);
 
@@ -195,27 +195,27 @@ static int collect_process(struct flb_config *config, void *in_context)
     return 0;
 }
 
-static int in_process_collect(struct flb_config *config, void *in_context)
+static int in_proc_collect(struct flb_config *config, void *in_context)
 {
-    struct flb_in_process_config *ctx = in_context;
+    struct flb_in_proc_config *ctx = in_context;
 
     if (ctx->proc_name != NULL){
-        collect_process(config, in_context);
+        collect_proc(config, in_context);
     }
     
     return 0;
 }
 
-static int in_process_init(struct flb_input_instance *in,
+static int in_proc_init(struct flb_input_instance *in,
                           struct flb_config *config, void *data)
 {
     int ret;
 
-    struct flb_in_process_config *ctx = NULL;
+    struct flb_in_proc_config *ctx = NULL;
     (void) data;
 
     /* Allocate space for the configuration */
-    ctx = flb_calloc(1, sizeof(struct flb_in_process_config));
+    ctx = flb_calloc(1, sizeof(struct flb_in_proc_config));
     if (!ctx) {
         perror("calloc");
         return -1;
@@ -227,7 +227,7 @@ static int in_process_init(struct flb_input_instance *in,
     configure(ctx, in);
 
     if (ctx->proc_name == NULL) {
-        flb_error("process name is NULL");
+        flb_error("proc name is NULL");
         flb_free(ctx);
         return -1;
     }
@@ -241,22 +241,22 @@ static int in_process_init(struct flb_input_instance *in,
 
     /* Set our collector based on time */
     ret = flb_input_set_collector_time(in,
-                                       in_process_collect,
+                                       in_proc_collect,
                                        ctx->interval_sec,
                                        ctx->interval_nsec,
                                        config);
     if (ret == -1) {
-        flb_utils_error_c("Could not set collector for Process input plugin");
+        flb_utils_error_c("Could not set collector for Proc input plugin");
     }
 
     return 0;
 }
 
-static void *in_process_flush(void *in_context, size_t *size)
+static void *in_proc_flush(void *in_context, size_t *size)
 {
     char *buf = NULL;
     msgpack_sbuffer *sbuf = NULL;
-    struct flb_in_process_config *ctx = in_context;
+    struct flb_in_proc_config *ctx = in_context;
 
     sbuf = &ctx->mp_sbuf;
     *size = sbuf->size;
@@ -278,10 +278,10 @@ static void *in_process_flush(void *in_context, size_t *size)
     return buf;
 }
 
-static int in_process_exit(void *data, struct flb_config *config)
+static int in_proc_exit(void *data, struct flb_config *config)
 {
     (void) *config;
-    struct flb_in_process_config *ctx = data;
+    struct flb_in_proc_config *ctx = data;
 
     /* Remove msgpack buffer and destroy context */
     msgpack_sbuffer_destroy(&ctx->mp_sbuf);
@@ -292,13 +292,13 @@ static int in_process_exit(void *data, struct flb_config *config)
 }
 
 /* Plugin reference */
-struct flb_input_plugin in_process_plugin = {
-    .name         = "process",
+struct flb_input_plugin in_proc_plugin = {
+    .name         = "proc",
     .description  = "Check Process health",
-    .cb_init      = in_process_init,
+    .cb_init      = in_proc_init,
     .cb_pre_run   = NULL,
-    .cb_collect   = in_process_collect,
-    .cb_flush_buf = in_process_flush,
-    .cb_exit      = in_process_exit,
+    .cb_collect   = in_proc_collect,
+    .cb_flush_buf = in_proc_flush,
+    .cb_exit      = in_proc_exit,
     .flags        = 0,
 };
