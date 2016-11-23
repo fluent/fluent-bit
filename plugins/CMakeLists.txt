@@ -68,7 +68,7 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   REGISTER_IN_PLUGIN("in_mem")
   REGISTER_IN_PLUGIN("in_kmsg")
   REGISTER_IN_PLUGIN("in_tail")
-  REGISTER_IN_PLUGIN("in_process")
+  REGISTER_IN_PLUGIN("in_proc")
 endif()
 
 REGISTER_IN_PLUGIN("in_xbee")

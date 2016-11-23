@@ -17,8 +17,8 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_IN_PROCESS_H
-#define FLB_IN_PROCESS_H
+#ifndef FLB_IN_PROC_H
+#define FLB_IN_PROC_H
 
 #include <stdint.h>
 #include <unistd.h>
@@ -30,7 +30,7 @@
 
 #define FLB_CMD_LEN 256
 
-struct flb_in_process_config {
+struct flb_in_proc_config {
     uint8_t  alert;
 
     /* Checking process */
@@ -47,6 +47,6 @@ struct flb_in_process_config {
     msgpack_sbuffer mp_sbuf;
 };
 
-extern struct flb_input_plugin in_process_plugin;
+extern struct flb_input_plugin in_proc_plugin;
 
-#endif /*FLB_IN_PROCESS_H*/
+#endif /*FLB_IN_PROC_H*/
