@@ -29,7 +29,7 @@
 #define DEFAULT_INTERVAL_NSEC 0
 
 #define FLB_CMD_LEN 256
-
+#define FLB_IN_PROC_NAME "in_proc"
 struct flb_in_proc_config {
     uint8_t  alert;
 
