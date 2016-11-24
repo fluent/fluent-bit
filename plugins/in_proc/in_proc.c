@@ -52,16 +52,16 @@ static pid_t get_pid_from_procname_linux(const char* proc)
     if ((ret_glb = glob("/proc/*/cmdline", 0 ,NULL,&glb) != 0)) {
         switch(ret_glb){
         case GLOB_NOSPACE:
-            flb_warn("glob: no space");
+            flb_warn("[%s] glob: no space", FLB_IN_PROC_NAME);
             break;
         case GLOB_NOMATCH:
-            flb_warn("glob: no match");
+            flb_warn("[%s] glob: no match", FLB_IN_PROC_NAME);
             break;
         case GLOB_ABORTED:
-            flb_warn("glob: aborted");
+            flb_warn("[%s] glob: aborted", FLB_IN_PROC_NAME);
             break;
         default:
-            flb_warn("glob: other error");
+            flb_warn("[%s] glob: other error", FLB_IN_PROC_NAME);
         }
         return ret;
     }
@@ -227,7 +227,7 @@ static int in_proc_init(struct flb_input_instance *in,
     configure(ctx, in);
 
     if (ctx->proc_name == NULL) {
-        flb_error("proc name is NULL");
+        flb_error("[%s] \"proc_name\" is NULL",FLB_IN_PROC_NAME);
         flb_free(ctx);
         return -1;
     }
