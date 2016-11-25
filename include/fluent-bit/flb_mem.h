@@ -20,6 +20,10 @@
 #ifndef FLB_MEM_H
 #define FLB_MEM_H
 
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE
+#endif
+
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_macros.h>
 
