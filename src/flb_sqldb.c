@@ -98,7 +98,7 @@ int flb_sqldb_close(struct flb_sqldb *db)
 }
 
 int flb_sqldb_query(struct flb_sqldb *db, char *sql,
-                    int (*callback) (void *, int, char **, char **cols),
+                    int (*callback) (void *, int, char **, char **),
                     void *data)
 {
     int ret;
