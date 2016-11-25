@@ -28,6 +28,7 @@
 #include "tail.h"
 #include "tail_file.h"
 #include "tail_config.h"
+#include "tail_db.h"
 
 static inline void consume_bytes(char *buf, int bytes, int length)
 {
@@ -51,10 +52,11 @@ static inline int pack_line(time_t time, char *line,
     return 0;
 }
 
-static int process_content(struct flb_tail_file *file, off_t *offset)
+static int process_content(struct flb_tail_file *file, off_t *bytes)
 {
     int len;
     int lines = 0;
+    int consumed_bytes = 0;
     char *p;
     time_t t = time(NULL);
 
@@ -75,20 +77,23 @@ static int process_content(struct flb_tail_file *file, off_t *offset)
          * would be fast if we do this after this while(){}
          */
         consume_bytes(file->buf_data, len + 1, file->buf_len);
+        consumed_bytes += len + 1;
         file->buf_len -= len + 1;
         file->buf_data[file->buf_len] = '\0';
         file->parsed = 0;
         lines++;
     }
     file->parsed = file->buf_len;
+    *bytes = consumed_bytes;
+
     return lines;
 }
 
-int flb_tail_file_append(char *path, struct stat *st,
-                         int mode,
-                         struct flb_tail_config *config)
+int flb_tail_file_append(char *path, struct stat *st, int mode,
+                         struct flb_tail_config *ctx)
 {
     int fd;
+    off_t offset;
     struct flb_tail_file *file;
 
     if (!S_ISREG(st->st_mode)) {
@@ -112,20 +117,39 @@ int flb_tail_file_append(char *path, struct stat *st,
     file->fd        = fd;
     file->name      = flb_strdup(path);
     file->offset    = 0;
+    file->inode     = st->st_ino;
     file->size      = st->st_size;
     file->buf_len   = 0;
     file->parsed    = 0;
-    file->config    = config;
+    file->config    = ctx;
     file->tail_mode = mode;
 
     if (mode == FLB_TAIL_STATIC) {
-        mk_list_add(&file->_head, &config->files_static);
+        mk_list_add(&file->_head, &ctx->files_static);
     }
     else if (mode == FLB_TAIL_EVENT) {
-        mk_list_add(&file->_head, &config->files_event);
+        mk_list_add(&file->_head, &ctx->files_event);
     }
 
-    flb_debug("[in_tail] add to scan queue %s", path);
+    /*
+     * Register or update the file entry, likely if the entry already exists
+     * into the database, the offset may be updated.
+     */
+    if (ctx->db_track) {
+        flb_tail_db_file_set(file, ctx);
+    }
+
+    /* Seek if required */
+    if (file->offset > 0) {
+        offset = lseek(file->fd, file->offset, SEEK_SET);
+        if (offset == -1) {
+            perror("lseek");
+            flb_errno();
+            return -1;
+        }
+    }
+
+    flb_debug("[in_tail] add to scan queue %s, offset=%lu", path, file->offset);
     return 0;
 }
 
@@ -166,18 +190,8 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
 {
     int ret;
     off_t capacity;
-    off_t offset;
+    off_t consumed_bytes;
     ssize_t bytes;
-
-    /* Seek if required */
-    if (file->offset > 0) {
-        offset = lseek(file->fd, file->offset, SEEK_SET);
-        if (offset == -1) {
-            perror("lseek");
-            flb_errno();
-            return -1;
-        }
-    }
 
     capacity = sizeof(file->buf_data) - file->buf_len - 1;
     if (capacity < 1) {
@@ -198,7 +212,7 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
          * now. It may need to get back a few bytes at the beginning of a new
          * line.
          */
-        ret = process_content(file, &offset);
+        ret = process_content(file, &consumed_bytes);
         if (ret >= 0) {
             flb_debug("[in_tail] file=%s read=%lu lines=%i",
                       file->name, bytes, ret);
@@ -207,6 +221,10 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
             flb_debug("[in_tail] file=%s ERROR", file->name);
             return FLB_TAIL_ERROR;
         }
+
+        /* Update the file offset */
+        file->offset += consumed_bytes;
+        flb_tail_db_file_offset(file, file->config);
 
         /* Data was consumed but likely some bytes still remain */
         return FLB_TAIL_OK;

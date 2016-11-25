@@ -20,6 +20,7 @@
 #ifndef FLB_TAIL_CONFIG_H
 #define FLB_TAIL_CONFIG_H
 
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
 
 struct flb_tail_config {
@@ -31,12 +32,16 @@ struct flb_tail_config {
     msgpack_packer   mp_pck;
     msgpack_sbuffer  mp_sbuf;
 
+    /* Database */
+    struct flb_sqldb *db_track;
+
     /* Lists head for files consumed statically (read) and by events (inotify) */
     struct mk_list files_static;
     struct mk_list files_event;
 };
 
-struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins);
+struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
+                                               struct flb_config *config);
 int flb_tail_config_destroy(struct flb_tail_config *config);
 
 #endif

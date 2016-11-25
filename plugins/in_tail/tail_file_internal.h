@@ -34,6 +34,7 @@ struct flb_tail_file {
     off_t size;
     off_t offset;
     off_t last_line;
+    ino_t inode;
     char *name;
 
     /* buffering */

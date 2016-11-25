@@ -24,12 +24,15 @@
 #include <stdlib.h>
 
 #include "tail_fs.h"
+#include "tail_db.h"
 #include "tail_config.h"
 #include "tail_scan.h"
 
-struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins)
+struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
+                                               struct flb_config *config)
 {
     int ret;
+    char *tmp;
     struct flb_tail_config *ctx;
 
     ctx = flb_malloc(sizeof(struct flb_tail_config));
@@ -59,6 +62,15 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins)
     /* initialize MessagePack buffers */
     msgpack_sbuffer_init(&ctx->mp_sbuf);
     msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
+
+    /* Initialize database */
+    tmp = flb_input_get_property("db", i_ins);
+    if (tmp) {
+        ctx->db_track = flb_tail_db_open(tmp, i_ins, config);
+        if (!ctx->db_track) {
+            flb_error("[in_tail] could not open/create database");
+        }
+    }
 
     flb_tail_scan(ctx->path, ctx);
     return ctx;

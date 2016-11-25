@@ -32,6 +32,7 @@
 
 #include "tail.h"
 #include "tail_fs.h"
+#include "tail_db.h"
 #include "tail_file.h"
 #include "tail_config.h"
 
@@ -137,7 +138,7 @@ static int in_tail_init(struct flb_input_instance *in,
     struct flb_tail_config *ctx = NULL;
 
     /* Allocate space for the configuration */
-    ctx = flb_tail_config_create(in);
+    ctx = flb_tail_config_create(in, config);
     if (!ctx) {
         return -1;
     }

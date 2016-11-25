@@ -17,25 +17,22 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_TAIL_FILE_H
-#define FLB_TAIL_FILE_H
-
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <unistd.h>
+#ifndef FLB_TAIL_DB_H
+#define FLB_TAIL_DB_H
 
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_sqldb.h>
 
-#include "tail.h"
-#include "tail_fs.h"
-#include "tail_config.h"
-#include "tail_file_internal.h"
+#include "tail_file.h"
 
-int flb_tail_file_to_event(struct flb_tail_file *file);
-int flb_tail_file_chunk(struct flb_tail_file *file);
-int flb_tail_file_append(char *path, struct stat *st,
-                         int mode, struct flb_tail_config *ctx);
-void flb_tail_file_remove(struct flb_tail_file *file);
-int flb_tail_file_remove_all(struct flb_tail_config *ctx);
+struct flb_sqldb *flb_tail_db_open(char *path,
+                                   struct flb_input_instance *in,
+                                   struct flb_config *config);
+
+int flb_tail_db_close(struct flb_sqldb *db);
+int flb_tail_db_file_set(struct flb_tail_file *file,
+                         struct flb_tail_config *ctx);
+int flb_tail_db_file_offset(struct flb_tail_file *file,
+                            struct flb_tail_config *ctx);
 
 #endif
