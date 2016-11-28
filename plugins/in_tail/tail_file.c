@@ -224,7 +224,10 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
 
         /* Update the file offset */
         file->offset += consumed_bytes;
-        flb_tail_db_file_offset(file, file->config);
+
+        if (file->config->db_track) {
+            flb_tail_db_file_offset(file, file->config);
+        }
 
         /* Data was consumed but likely some bytes still remain */
         return FLB_TAIL_OK;

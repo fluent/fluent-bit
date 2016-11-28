@@ -62,6 +62,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
     /* initialize MessagePack buffers */
     msgpack_sbuffer_init(&ctx->mp_sbuf);
     msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
+    ctx->db_track = NULL;
 
     /* Initialize database */
     tmp = flb_input_get_property("db", i_ins);
