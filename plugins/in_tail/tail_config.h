@@ -26,7 +26,10 @@
 struct flb_tail_config {
     int fd_notify;             /* inotify fd               */
     int ch_manager[2];         /* internal pipe for events */
+
+    /* Configuration */
     char *path;                /* lookup path (glob)       */
+    char *exclude_path;        /* exclude path             */
 
     /* MessagePack buffers */
     msgpack_packer   mp_pck;
@@ -38,6 +41,9 @@ struct flb_tail_config {
     /* Lists head for files consumed statically (read) and by events (inotify) */
     struct mk_list files_static;
     struct mk_list files_event;
+
+    /* List of shell patterns used to exclude certain file names */
+    struct mk_list *exclude_list;
 };
 
 struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,

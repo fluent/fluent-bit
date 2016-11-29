@@ -202,6 +202,10 @@ static int in_tail_exit(void *data, struct flb_config *config)
     (void) *config;
     struct flb_tail_config *ctx = data;
 
+    if (ctx->exclude_list) {
+        flb_utils_split_free(ctx->exclude_list);
+    }
+
     flb_tail_file_remove_all(ctx);
     flb_free(ctx);
 

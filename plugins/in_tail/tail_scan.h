@@ -22,7 +22,6 @@
 
 #include "tail_config.h"
 
-int flb_tail_scan(const char *path, struct flb_tail_config *config);
-
+int flb_tail_scan(const char *path, struct flb_tail_config *ctx);
 
 #endif

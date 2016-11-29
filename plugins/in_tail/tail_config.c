@@ -35,7 +35,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
     char *tmp;
     struct flb_tail_config *ctx;
 
-    ctx = flb_malloc(sizeof(struct flb_tail_config));
+    ctx = flb_calloc(1, sizeof(struct flb_tail_config));
     if (!ctx) {
         flb_errno();
         return NULL;
@@ -56,6 +56,9 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
         flb_free(ctx);
         return NULL;
     }
+    ctx->exclude_path = flb_input_get_property("exclude_path", i_ins);
+    ctx->exclude_list = NULL;
+
     mk_list_init(&ctx->files_static);
     mk_list_init(&ctx->files_event);
 

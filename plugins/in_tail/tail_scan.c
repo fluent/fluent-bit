@@ -21,21 +21,65 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <glob.h>
+#include <fnmatch.h>
 
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_utils.h>
 
 #include "tail.h"
 #include "tail_file.h"
 #include "tail_config.h"
 
+static int tail_exclude_generate(struct flb_tail_config *ctx)
+{
+    struct mk_list *list;
+
+    /*
+     * The exclusion path might content multiple exclusion patterns, first
+     * let's split the content into a list.
+     */
+    list = flb_utils_split(ctx->exclude_path, ',');
+    if (!list) {
+        return -1;
+    }
+
+    if (mk_list_is_empty(list) == 0) {
+        return 0;
+    }
+
+    /* We use the same list head returned by flb_utils_split() */
+    ctx->exclude_list = list;
+    return 0;
+}
+
+static int tail_is_excluded(char *name, struct flb_tail_config *ctx)
+{
+    struct mk_list *head;
+    struct flb_split_entry *pattern;
+
+    mk_list_foreach(head, ctx->exclude_list) {
+        pattern = mk_list_entry(head, struct flb_split_entry, _head);
+        if (fnmatch(pattern->value, name, 0) == 0) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
 /* Scan a path, register the entries and return how many */
-int flb_tail_scan(const char *path, struct flb_tail_config *config)
+int flb_tail_scan(const char *path, struct flb_tail_config *ctx)
 {
     int i;
     int ret;
     glob_t globbuf;
     struct stat st;
     flb_debug("[in_tail] scanning path %s", path);
+
+    /* Generate exclusion list */
+    if (ctx->exclude_path) {
+        tail_exclude_generate(ctx);
+    }
 
     /* Scan the given path */
     ret = glob(path, GLOB_TILDE, NULL, &globbuf);
@@ -56,8 +100,15 @@ int flb_tail_scan(const char *path, struct flb_tail_config *config)
     for (i = 0; i < globbuf.gl_pathc; i++) {
         ret = stat(globbuf.gl_pathv[i], &st);
         if (ret == 0 && S_ISREG(st.st_mode)) {
+            /* Check if this file is blacklisted */
+            if (tail_is_excluded(globbuf.gl_pathv[i], ctx) == FLB_TRUE) {
+                flb_debug("[in_tail] excluded=%s", globbuf.gl_pathv[i]);
+                continue;
+            }
+
+            /* Append file to list */
             flb_tail_file_append(globbuf.gl_pathv[i], &st,
-                                 FLB_TAIL_STATIC, config);
+                                 FLB_TAIL_STATIC, ctx);
         }
         else {
             flb_debug("[in_tail] skip (invalid) entry=%s", globbuf.gl_pathv[i]);
