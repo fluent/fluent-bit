@@ -246,4 +246,6 @@ void flb_utils_split_free(struct mk_list *list)
         flb_free(entry->value);
         flb_free(entry);
     }
+
+    flb_free(list);
 }
