@@ -89,6 +89,30 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
     return lines;
 }
 
+int flb_tail_file_exists(char *f, struct flb_tail_config *ctx)
+{
+    struct mk_list *head;
+    struct flb_tail_file *file;
+
+    /* Iterate static list */
+    mk_list_foreach(head, &ctx->files_static) {
+        file = mk_list_entry(head, struct flb_tail_file, _head);
+        if (strcmp(file->name, f) == 0) {
+            return FLB_TRUE;
+        }
+    }
+
+    /* Iterate dynamic list */
+    mk_list_foreach(head, &ctx->files_event) {
+        file = mk_list_entry(head, struct flb_tail_file, _head);
+        if (strcmp(file->name, f) == 0) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
 int flb_tail_file_append(char *path, struct stat *st, int mode,
                          struct flb_tail_config *ctx)
 {

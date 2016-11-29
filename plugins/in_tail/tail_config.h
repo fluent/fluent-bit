@@ -28,6 +28,7 @@ struct flb_tail_config {
     int ch_manager[2];         /* internal pipe for events */
 
     /* Configuration */
+    int refresh_interval;      /* seconds to re-scan       */
     char *path;                /* lookup path (glob)       */
     char *exclude_path;        /* exclude path             */
 

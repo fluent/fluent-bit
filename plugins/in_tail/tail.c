@@ -34,6 +34,7 @@
 #include "tail_fs.h"
 #include "tail_db.h"
 #include "tail_file.h"
+#include "tail_scan.h"
 #include "tail_config.h"
 
 static inline int consume_byte(int fd)
@@ -149,6 +150,15 @@ static int in_tail_init(struct flb_input_instance *in,
     ret = flb_input_set_collector_event(in, in_tail_collect_static,
                                         ctx->ch_manager[0], config);
     if (ret != 0) {
+        flb_tail_config_destroy(ctx);
+        return -1;
+    }
+
+    /* Register re-scan */
+    ret = flb_input_set_collector_time(in, flb_tail_scan_callback,
+                                       ctx->refresh_interval, 0,
+                                       config);
+    if (ret == -1) {
         flb_tail_config_destroy(ctx);
         return -1;
     }

@@ -33,7 +33,8 @@
 #define FLB_TAIL_EVENT   1  /* Data is being consumed through inotify */
 
 /* Config */
-#define FLB_TAIL_CHUNK 32*1024 /* read chunks of 32KB max */
+#define FLB_TAIL_CHUNK   32*1024 /* read chunks of 32KB max */
+#define FLB_TAIL_REFRESH 60 /* refresh every 60 seconds */
 
 int in_tail_collect_event(void *file, struct flb_config *config);
 
