@@ -22,11 +22,20 @@
 
 #include <fluent-bit/flb_config.h>
 
+struct flb_split_entry {
+    char *value;
+    int len;
+    struct mk_list _head;
+};
+
 void flb_utils_error(int err);
 void flb_utils_error_c(const char *msg);
 void flb_utils_warn_c(const char *msg);
 void flb_message(int type, char *file, int line, const char *fmt, ...);
 int flb_utils_set_daemon();
 void flb_utils_print_setup(struct flb_config *config);
+
+struct mk_list *flb_utils_split(char *line, int separator);
+void flb_utils_split_free(struct mk_list *list);
 
 #endif

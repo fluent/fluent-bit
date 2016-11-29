@@ -183,3 +183,67 @@ void flb_utils_print_setup(struct flb_config *config)
 
     }
 }
+
+struct mk_list *flb_utils_split(char *line, int separator)
+{
+    int i = 0;
+    int val_len;
+    int len;
+    int end;
+    char *val;
+    struct mk_list *list;
+    struct flb_split_entry *new;
+
+    list = flb_malloc(sizeof(struct mk_list));
+    if (!list) {
+        flb_errno();
+        return NULL;
+    }
+    mk_list_init(list);
+
+    len = strlen(line);
+    while (i < len) {
+        end = mk_string_char_search(line + i, separator, len - i);
+        if (end >= 0 && end + i < len) {
+            end += i;
+
+            if (i == (unsigned int) end) {
+                i++;
+                continue;
+            }
+
+            val = mk_string_copy_substr(line, i, end);
+            val_len = end - i;
+        }
+        else {
+            val = mk_string_copy_substr(line, i, len);
+            val_len = len - i;
+            end = len;
+
+        }
+
+        /* Create new entry */
+        new = flb_malloc(sizeof(struct flb_split_entry));
+        new->value = val;
+        new->len = val_len;
+
+        mk_list_add(&new->_head, list);
+        i = end + 1;
+    }
+
+    return list;
+}
+
+void flb_utils_split_free(struct mk_list *list)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_split_entry *entry;
+
+    mk_list_foreach_safe(head, tmp, list) {
+        entry = mk_list_entry(head, struct flb_split_entry, _head);
+        mk_list_del(&entry->_head);
+        flb_free(entry->value);
+        flb_free(entry);
+    }
+}
