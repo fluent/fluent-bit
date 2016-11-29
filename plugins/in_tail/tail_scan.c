@@ -28,22 +28,8 @@
 
 #include "tail.h"
 #include "tail_file.h"
+#include "tail_signal.h"
 #include "tail_config.h"
-
-static inline int tail_signal_manager(struct flb_tail_config *ctx)
-{
-    int n;
-    uint64_t val = 0xc001;
-
-    /* Insert a dummy event into the channel manager */
-    n = write(ctx->ch_manager[1], &val, sizeof(val));
-    if (n == -1) {
-        flb_errno();
-        return -1;
-    }
-
-    return n;
-}
 
 static int tail_exclude_generate(struct flb_tail_config *ctx)
 {

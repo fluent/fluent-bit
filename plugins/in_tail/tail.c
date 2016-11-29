@@ -35,6 +35,7 @@
 #include "tail_db.h"
 #include "tail_file.h"
 #include "tail_scan.h"
+#include "tail_signal.h"
 #include "tail_config.h"
 
 static inline int consume_byte(int fd)
@@ -50,21 +51,6 @@ static inline int consume_byte(int fd)
     }
 
     return 0;
-}
-
-static inline int tail_signal_manager(struct flb_tail_config *ctx)
-{
-    int n;
-    uint64_t val = 0xc001;
-
-    /* Insert a dummy event into the channel manager */
-    n = write(ctx->ch_manager[1], &val, sizeof(val));
-    if (n == -1) {
-        flb_errno();
-        return -1;
-    }
-
-    return n;
 }
 
 /* cb_collect callback */
