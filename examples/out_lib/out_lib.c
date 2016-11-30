@@ -21,7 +21,19 @@
 #include <fluent-bit.h>
 #include <msgpack.h>
 
-int my_stdout(void* data, size_t size)
+int my_stdout_json(void* data, size_t size)
+{
+    printf("[%s]",__FUNCTION__);
+    printf("%s",(char*)data);
+    printf("\n");
+
+    /* User has to release the buffer. */
+    free(data);
+
+    return 0;
+}
+
+int my_stdout_msgpack(void* data, size_t size)
 {
     printf("[%s]",__FUNCTION__);
     msgpack_object_print(stdout, *(msgpack_object*)data);
@@ -32,7 +44,6 @@ int my_stdout(void* data, size_t size)
 
     return 0;
 }
-
 
 int main()
 {
@@ -53,8 +64,16 @@ int main()
     flb_input_set(ctx, in_ffd, "tag", "test", NULL);
 
     /* Register my callback function */
-    out_ffd = flb_output(ctx, "lib", my_stdout);
+
+    /* JSON format */
+    out_ffd = flb_output(ctx, "lib", my_stdout_json);
+    flb_output_set(ctx, out_ffd, "match", "test", "format", "json", NULL);
+
+    /* Msgpack format */
+    /*
+    out_ffd = flb_output(ctx, "lib", my_stdout_msgpack);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
+    */
 
     /* Start the background worker */
     flb_start(ctx);
