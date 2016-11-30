@@ -29,6 +29,7 @@
 #include "tail_file.h"
 #include "tail_config.h"
 #include "tail_db.h"
+#include "tail_signal.h"
 
 static inline void consume_bytes(char *buf, int bytes, int length)
 {
@@ -117,6 +118,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
                          struct flb_tail_config *ctx)
 {
     int fd;
+    int ret;
     off_t offset;
     struct flb_tail_file *file;
 
@@ -137,7 +139,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         return -1;
     }
 
-    file->watch_fd  = 0;
+    file->watch_fd  = -1;
     file->fd        = fd;
     file->name      = flb_strdup(path);
     file->offset    = 0;
@@ -147,6 +149,15 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file->parsed    = 0;
     file->config    = ctx;
     file->tail_mode = mode;
+
+    /* Register this file into the fs_event monitoring */
+    ret = flb_tail_fs_add(file);
+    if (ret == -1) {
+        flb_error("[in_tail] could not register file into fs_events");
+        flb_free(file->name);
+        flb_free(file);
+        return -1;
+    }
 
     if (mode == FLB_TAIL_STATIC) {
         mk_list_add(&file->_head, &ctx->files_static);
@@ -159,7 +170,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
      * Register or update the file entry, likely if the entry already exists
      * into the database, the offset may be updated.
      */
-    if (ctx->db_track) {
+    if (ctx->db) {
         flb_tail_db_file_set(file, ctx);
     }
 
@@ -249,7 +260,7 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
         /* Update the file offset */
         file->offset += consumed_bytes;
 
-        if (file->config->db_track) {
+        if (file->config->db) {
             flb_tail_db_file_offset(file, file->config);
         }
 
@@ -285,6 +296,89 @@ int flb_tail_file_to_event(struct flb_tail_file *file)
     mk_list_add(&file->_head, &file->config->files_event);
 
     file->tail_mode = FLB_TAIL_EVENT;
+
+    return 0;
+}
+
+/*
+ * Given an open file descriptor, return the filename. This function is a
+ * bit slow and it aims to be used only when a file is rotated.
+ */
+char *flb_tail_file_name(struct flb_tail_file *file)
+{
+    int ret;
+    ssize_t s;
+    char tmp[128];
+    char *buf;
+
+    ret = snprintf(tmp, sizeof(tmp) - 1, "/proc/%i/fd/%i", getpid(), file->fd);
+    if (ret == -1) {
+        flb_errno();
+        return NULL;
+    }
+
+    buf = flb_malloc(PATH_MAX);
+    if (!buf) {
+        flb_errno();
+        return NULL;
+    }
+
+    s = readlink(tmp, buf, PATH_MAX);
+    if (s == -1) {
+        flb_errno();
+        return NULL;
+    }
+    buf[s] = '\0';
+
+    return buf;
+}
+
+/* Invoked every time a file was rotated */
+int flb_tail_file_rotated(struct flb_tail_file *file)
+{
+    int ret;
+    int create = FLB_FALSE;
+    char *name;
+    char *tmp;
+    struct stat st;
+
+    /* Get stats from the original file name (if a new one exists) */
+    ret = stat(file->name, &st);
+    if (ret == 0) {
+        /* Check if we need to re-create an entry with the original name */
+        if (st.st_ino != file->inode) {
+            create = FLB_TRUE;
+        }
+    }
+
+    /* Get the new file name */
+    name = flb_tail_file_name(file);
+    if (!name) {
+        return -1;
+    }
+
+    flb_debug("[in_tail] rotated: %s -> %s",
+              file->name, name);
+
+    /* Rotate the file in the database */
+    if (file->config->db) {
+        ret = flb_tail_db_file_rotate(name, file, file->config);
+        if (ret == -1) {
+            flb_error("[in_tail] could not rotate file %s->%s in database",
+                      file->name, name);
+        }
+    }
+
+    /* Update local file entry */
+    tmp = file->name;
+    file->name = name;
+
+    /* Request to append 'new' file created */
+    if (create == FLB_TRUE) {
+        flb_tail_file_append(tmp, &st, FLB_TAIL_STATIC, file->config);
+        tail_signal_manager(file->config);
+    }
+    flb_free(tmp);
 
     return 0;
 }

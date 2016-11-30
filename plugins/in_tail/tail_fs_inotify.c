@@ -30,6 +30,9 @@
 #include "tail_config.h"
 #include "tail_file.h"
 
+#include <limits.h>
+#include <fcntl.h>
+
 static int tail_fs_event(struct flb_config *config, void *in_context)
 {
     int ret;
@@ -59,7 +62,16 @@ static int tail_fs_event(struct flb_config *config, void *in_context)
         return -1;
     }
 
-    return in_tail_collect_event(file, config);
+    /* Check if the file was rotated */
+    if (ev.mask & IN_MOVE_SELF) {
+        flb_tail_file_rotated(file);
+    }
+
+    if (ev.mask & IN_MODIFY) {
+        return in_tail_collect_event(file, config);
+    }
+
+    return 0;
 }
 
 /* File System events based on Inotify(2). Linux >= 2.6.32 is suggested */
@@ -92,11 +104,24 @@ int flb_tail_fs_init(struct flb_input_instance *in,
 int flb_tail_fs_add(struct flb_tail_file *file)
 {
     int watch_fd;
+    int flags;
     struct flb_tail_config *ctx = file->config;
 
-    /* Register the file into Inotify */
-    watch_fd = inotify_add_watch(ctx->fd_notify, file->name,
-                                 IN_MODIFY | IN_MOVED_TO);
+    /*
+     * If there is no watcher associated, we only want to monitor events if
+     * this file is rotated to somewhere. Note at this point we are polling
+     * lines from the file and once we reach EOF (and a watch_fd exists),
+     * we update the flags to receive notifications.
+     */
+    if (file->watch_fd == -1) {
+        flags = IN_MOVE_SELF;
+    }
+    else {
+        flags = IN_MODIFY | IN_MOVE_SELF;
+    }
+
+    /* Register or update the flags */
+    watch_fd = inotify_add_watch(ctx->fd_notify, file->name, flags);
     if (watch_fd == -1) {
         flb_errno();
         return -1;

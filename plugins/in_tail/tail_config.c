@@ -78,18 +78,17 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
     /* initialize MessagePack buffers */
     msgpack_sbuffer_init(&ctx->mp_sbuf);
     msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
-    ctx->db_track = NULL;
+    ctx->db = NULL;
 
     /* Initialize database */
     tmp = flb_input_get_property("db", i_ins);
     if (tmp) {
-        ctx->db_track = flb_tail_db_open(tmp, i_ins, config);
-        if (!ctx->db_track) {
+        ctx->db = flb_tail_db_open(tmp, i_ins, config);
+        if (!ctx->db) {
             flb_error("[in_tail] could not open/create database");
         }
     }
 
-    flb_tail_scan(ctx->path, ctx);
     return ctx;
 }
 

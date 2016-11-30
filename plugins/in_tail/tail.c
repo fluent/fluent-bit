@@ -130,6 +130,14 @@ static int in_tail_init(struct flb_input_instance *in,
         return -1;
     }
 
+    /* Initialize file-system watcher */
+    ret = flb_tail_fs_init(in, ctx, config);
+    if (ret == -1) {
+        return -1;
+    }
+
+    flb_tail_scan(ctx->path, ctx);
+
     flb_trace("[in_tail] path: %s", ctx->path);
     flb_input_set_context(in, ctx);
 
@@ -146,12 +154,6 @@ static int in_tail_init(struct flb_input_instance *in,
                                        config);
     if (ret == -1) {
         flb_tail_config_destroy(ctx);
-        return -1;
-    }
-
-    /* Initialize file-system watcher */
-    ret = flb_tail_fs_init(in, ctx, config);
-    if (ret == -1) {
         return -1;
     }
 

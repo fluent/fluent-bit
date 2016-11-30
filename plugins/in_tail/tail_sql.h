@@ -29,12 +29,13 @@
  */
 #define SQL_CREATE_FILES                                                \
     "CREATE TABLE IF NOT EXISTS in_tail_files ("                        \
-  "  id      INTEGER PRIMARY KEY,"                                      \
-  "  name    TEXT NOT NULL,"                                            \
-  "  offset  INTEGER,"                                                  \
-  "  inode   INTEGER,"                                                  \
-  "  created INTEGER"                                                   \
-  ");"
+    "  id      INTEGER PRIMARY KEY,"                                    \
+    "  name    TEXT NOT NULL,"                                          \
+    "  offset  INTEGER,"                                                \
+    "  inode   INTEGER,"                                                \
+    "  created INTEGER,"                                                \
+    "  rotated INTEGER DEFAULT 0"                                       \
+    ");"
 
 #define SQL_GET_FILE "SELECT * from in_tail_files WHERE name='%s';"
 
@@ -44,5 +45,8 @@
 
 #define SQL_UPDATE_OFFSET                               \
     "UPDATE in_tail_files set offset=%lu WHERE id=%i;"
+
+#define SQL_ROTATE_FILE                         \
+    "UPDATE in_tail_files set name='%s',rotated=1 WHERE name='%s';"
 
 #endif

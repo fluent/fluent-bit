@@ -37,7 +37,7 @@ struct flb_tail_config {
     msgpack_sbuffer  mp_sbuf;
 
     /* Database */
-    struct flb_sqldb *db_track;
+    struct flb_sqldb *db;
 
     /* Lists head for files consumed statically (read) and by events (inotify) */
     struct mk_list files_static;

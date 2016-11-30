@@ -34,5 +34,8 @@ int flb_tail_db_file_set(struct flb_tail_file *file,
                          struct flb_tail_config *ctx);
 int flb_tail_db_file_offset(struct flb_tail_file *file,
                             struct flb_tail_config *ctx);
+int flb_tail_db_file_rotate(char *new_name,
+                            struct flb_tail_file *file,
+                            struct flb_tail_config *ctx);
 
 #endif
