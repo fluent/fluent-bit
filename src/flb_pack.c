@@ -16,7 +16,7 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
-
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -292,4 +292,46 @@ void flb_pack_print(char *data, size_t bytes)
         printf("\n");
     }
     msgpack_unpacked_destroy(&result);
+}
+
+/**
+ *  convert msgpack to JSON string.
+ *  This API is similar to snprintf.
+ *
+ *  @param  json_str The buffer to fill JSON string.
+ *  @param  json_len The size of json_str.
+ *  @param  data     The msgpack_unpacked data.
+ *  @return success  ? a number characters filled : negative value
+ */
+int flb_msgpack_to_json(char* json_str, size_t str_len,
+                        msgpack_unpacked* data)
+{
+    int ret = -1;
+    size_t stream_len = 0;
+    char*  stream_buf = NULL;
+    FILE *fp = NULL;
+
+    if (json_str == NULL || data == NULL) {
+        return -1;
+    }
+
+    fp = open_memstream(&stream_buf, &stream_len);
+    if (fp == NULL) {
+        perror("open_memstream");
+        return -1;
+    }
+    
+    msgpack_object_print(fp, data->data);
+    fclose(fp);
+
+    ret = stream_len;
+    if (stream_len <= str_len) {
+        strncpy(json_str, stream_buf, stream_len);
+    } else {
+        /* json_str is small to fill */
+        strncpy(json_str, stream_buf, str_len);
+    }
+    free(stream_buf);
+
+    return ret;
 }
