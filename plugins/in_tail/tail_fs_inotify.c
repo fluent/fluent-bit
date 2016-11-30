@@ -67,6 +67,13 @@ static int tail_fs_event(struct flb_config *config, void *in_context)
         flb_tail_file_rotated(file);
     }
 
+    /* File was removed */
+    if (ev.mask & (IN_ATTRIB | IN_IGNORED)) {
+        flb_debug("[in_tail] removed %s", file->name);
+        flb_tail_file_remove(file);
+        return 0;
+    }
+
     if (ev.mask & IN_MODIFY) {
         return in_tail_collect_event(file, config);
     }
@@ -114,10 +121,10 @@ int flb_tail_fs_add(struct flb_tail_file *file)
      * we update the flags to receive notifications.
      */
     if (file->watch_fd == -1) {
-        flags = IN_MOVE_SELF;
+        flags = IN_ATTRIB | IN_IGNORED | IN_MOVE_SELF;
     }
     else {
-        flags = IN_MODIFY | IN_MOVE_SELF;
+        flags = IN_ATTRIB | IN_IGNORED | IN_MODIFY | IN_MOVE_SELF;
     }
 
     /* Register or update the flags */

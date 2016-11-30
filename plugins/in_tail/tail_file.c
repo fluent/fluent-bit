@@ -178,7 +178,6 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     if (file->offset > 0) {
         offset = lseek(file->fd, file->offset, SEEK_SET);
         if (offset == -1) {
-            perror("lseek");
             flb_errno();
             return -1;
         }
@@ -191,9 +190,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
 void flb_tail_file_remove(struct flb_tail_file *file)
 {
     mk_list_del(&file->_head);
-    if (file->tail_mode == FLB_TAIL_EVENT) {
-        flb_tail_fs_remove(file);
-    }
+    flb_tail_fs_remove(file);
     close(file->fd);
     flb_free(file->name);
     flb_free(file);
