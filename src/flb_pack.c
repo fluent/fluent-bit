@@ -295,7 +295,7 @@ void flb_pack_print(char *data, size_t bytes)
 }
 
 
-inline int try_to_write(char* buf, int* off, size_t left,
+static inline int try_to_write(char* buf, int* off, size_t left,
                         char* str, size_t str_len)
 {
     if (str_len <= 0){
