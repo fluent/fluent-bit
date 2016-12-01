@@ -38,7 +38,7 @@ static void proxy_cb_flush(void *data, size_t bytes,
                            void *out_context,
                            struct flb_config *config)
 {
-    int ret;
+    int ret = FLB_ERROR;
     struct flb_plugin_proxy *p = out_context;
     (void) tag_len;
     (void) i_ins;
