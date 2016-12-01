@@ -75,15 +75,72 @@ static int tail_fs_event(struct flb_config *config, void *in_context)
     return 0;
 }
 
+static int tail_fs_check(struct flb_config *config, void *in_context)
+{
+    int ret;
+    char *name;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_tail_config *ctx = in_context;
+    struct flb_tail_file *file = NULL;
+    struct stat st;
+
+    /* Lookup watched file */
+    mk_list_foreach_safe(head, tmp, &ctx->files_event) {
+        file = mk_list_entry(head, struct flb_tail_file, _head);
+
+        ret = fstat(file->fd, &st);
+        if (ret == -1) {
+            flb_debug("[in_tail] error stat(2) %s, removing", file->name);
+            flb_tail_file_remove(file);
+            continue;
+        }
+
+        /* Check if the file have been deleted */
+        if (st.st_nlink == 0) {
+            flb_debug("[in_tail] deleted %s", file->name);
+            flb_tail_file_remove(file);
+            continue;
+        }
+
+        /* Discover the current file name for the open file descriptor */
+        name = flb_tail_file_name(file);
+        if (!name) {
+            flb_debug("[in_tail] could not resolve %s, removing", file->name);
+            flb_tail_file_remove(file);
+            continue;
+        }
+
+        /*
+         * Check if file still exists. This method requires explicity that the
+         * user is using an absolute path, otherwise we will be rotating the
+         * wrong file.
+         */
+        if (strcmp(name, file->name) != 0) {
+            flb_tail_file_rotated(file);
+        }
+        flb_free(name);
+    }
+
+    return 0;
+}
+
 /* File System events based on stat(2) */
 int flb_tail_fs_init(struct flb_input_instance *in,
                      struct flb_tail_config *ctx, struct flb_config *config)
 {
     int ret;
 
-    /* Set a manual timer that will be triggered every 0.250 seconds */
+    /* Set a manual timer to collect events every 0.250 seconds */
     ret = flb_input_set_collector_time(in, tail_fs_event,
                                        0, 250000000, config);
+    if (ret != 0) {
+        return -1;
+    }
+
+    /* Set a manual timer to check deleted/rotated files every 2.5 seconds */
+    ret = flb_input_set_collector_time(in, tail_fs_check,
+                                       2, 500000000, config);
     if (ret != 0) {
         return -1;
     }
