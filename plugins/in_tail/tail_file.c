@@ -179,6 +179,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         offset = lseek(file->fd, file->offset, SEEK_SET);
         if (offset == -1) {
             flb_errno();
+            flb_tail_file_remove(file);
             return -1;
         }
     }
