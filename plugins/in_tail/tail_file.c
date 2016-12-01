@@ -136,6 +136,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file = flb_malloc(sizeof(struct flb_tail_file));
     if (!file) {
         flb_errno();
+        close(fd);
         return -1;
     }
 
