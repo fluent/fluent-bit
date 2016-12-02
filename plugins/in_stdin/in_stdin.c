@@ -45,6 +45,7 @@ int in_stdin_init(struct flb_input_instance *in,
     if (!ctx) {
         return -1;
     }
+    ctx->buf_len = 0;
 
     /* initialize MessagePack buffers */
     msgpack_sbuffer_init(&ctx->mp_sbuf);
