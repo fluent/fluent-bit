@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_task.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_scheduler.h>
 
 #ifdef FLB_HAVE_BUFFERING
 #include <fluent-bit/flb_sha1.h>
@@ -71,6 +72,15 @@ static inline void map_free_task_id(int id, struct flb_config *config)
 
 void flb_task_retry_destroy(struct flb_task_retry *retry)
 {
+    int ret;
+
+    /* Make sure to invalidate any request from the scheduler */
+    ret = flb_sched_request_invalidate(retry->parent->config, retry);
+    if (ret == 0) {
+        flb_debug("[retry] task retry=%p, invalidated from the scheduler",
+                  retry);
+    }
+
     mk_list_del(&retry->_head);
     flb_free(retry);
 }
@@ -115,12 +125,12 @@ struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
         retry->parent  = task;
         mk_list_add(&retry->_head, &task->retries);
 
-        flb_debug("[retry] new retry created for task_id=%i attemps=%i\n",
+        flb_debug("[retry] new retry created for task_id=%i attemps=%i",
                   out_th->task->id, retry->attemps);
     }
     else {
         retry->attemps++;
-        flb_debug("[retry] re-using retry for task_id=%i attemps=%i\n",
+        flb_debug("[retry] re-using retry for task_id=%i attemps=%i",
                   out_th->task->id, retry->attemps);
     }
 
