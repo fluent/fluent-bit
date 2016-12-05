@@ -40,7 +40,7 @@
 #include <sys/syslimits.h>
 #endif
 
-#include <mk_core.h>
+#include <monkey/mk_core.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_buffer.h>
 #include <fluent-bit/flb_buffer_chunk.h>

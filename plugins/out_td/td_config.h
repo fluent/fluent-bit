@@ -20,7 +20,7 @@
 #ifndef FLB_TD_CONFIG_H
 #define FLB_TD_CONFIG_H
 
-#include <mk_core.h>
+#include <fluent-bit.h>
 #include <fluent-bit/flb_io.h>
 
 struct flb_out_td_config {

@@ -34,7 +34,7 @@
 
 #ifdef FLB_HAVE_BUFFERING
 
-#include <mk_core.h>
+#include <monkey/mk_core.h>
 #include <fluent-bit/flb_buffer.h>
 #include <fluent-bit/flb_buffer_chunk.h>
 #include <fluent-bit/flb_buffer_qchunk.h>

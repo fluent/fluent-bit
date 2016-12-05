@@ -24,7 +24,7 @@
 extern "C" {
 #endif
 
-#include <mk_core.h>
+#include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>

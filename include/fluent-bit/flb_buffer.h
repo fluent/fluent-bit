@@ -24,7 +24,7 @@
 #ifndef FLB_BUFFER_H
 #define FLB_BUFFER_H
 
-#include <mk_core.h>
+#include <monkey/mk_core.h>
 #include <fluent-bit/flb_config.h>
 
 /* Worker event loop event type */

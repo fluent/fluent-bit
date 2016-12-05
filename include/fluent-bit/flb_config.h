@@ -21,8 +21,8 @@
 #define FLB_CONFIG_H
 
 #include <time.h>
-#include <mk_core.h>
 
+#include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_task_map.h>

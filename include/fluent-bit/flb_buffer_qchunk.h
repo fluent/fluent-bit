@@ -22,7 +22,7 @@
 #ifndef FLB_BUFFER_QCHUNK_H
 #define FLB_BUFFER_QCHUNK_H
 
-#include <mk_core.h>
+#include <monkey/mk_core.h>
 #include <fluent-bit/flb_output.h>
 
 #define FLB_BUFFER_EVENT MK_EVENT_NOTIFICATION

@@ -207,6 +207,7 @@ static FLB_INLINE int flb_output_thread_destroy_id(int id, struct flb_task *task
 
     mk_list_del(&out_th->_head);
     thread = out_th->parent;
+
     flb_thread_destroy(thread);
     task->users--;
 

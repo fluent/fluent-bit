@@ -32,7 +32,7 @@
 #include <sys/un.h>
 #include <netinet/in.h>
 
-#include <mk_core.h>
+#include <monkey/mk_core.h>
 #include <cjson.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
