@@ -24,25 +24,25 @@
 #include <monkey/mk_plugin.h>
 #include <monkey/mk_clock.h>
 
-void mk_server_info()
+void mk_server_info(struct mk_server *server)
 {
     struct mk_list *head;
     struct mk_plugin *p;
     struct mk_config_listener *l;
 
     printf(MK_BANNER_ENTRY "Process ID is %i\n", getpid());
-    mk_list_foreach(head, &mk_config->listeners) {
+    mk_list_foreach(head, &server->listeners) {
         l = mk_list_entry(head, struct mk_config_listener, _head);
         printf(MK_BANNER_ENTRY "Server listening on %s:%s\n",
                l->address, l->port);
     }
     printf(MK_BANNER_ENTRY
            "%i threads, may handle up to %i client connections\n",
-           mk_config->workers, mk_config->server_capacity);
+           server->workers, server->server_capacity);
 
     /* List loaded plugins */
     printf(MK_BANNER_ENTRY "Loaded Plugins: ");
-    mk_list_foreach(head, &mk_config->plugins) {
+    mk_list_foreach(head, &server->plugins) {
         p = mk_list_entry(head, struct mk_plugin, _head);
         printf("%s ", p->shortname);
     }
@@ -51,7 +51,7 @@ void mk_server_info()
 #ifdef __linux__
     char tmp[64];
 
-    if (mk_kernel_features_print(tmp, sizeof(tmp)) > 0) {
+    if (mk_kernel_features_print(tmp, sizeof(tmp), server) > 0) {
         printf(MK_BANNER_ENTRY "Linux Features: %s\n", tmp);
     }
 #endif
@@ -60,13 +60,25 @@ void mk_server_info()
 }
 
 /* Initialize Monkey Server */
-struct mk_server_config *mk_server_init()
+struct mk_server *mk_server_create()
 {
     int kern_version;
     int kern_features;
+    struct mk_server *server;
 
-    /* setup basic configurations */
-    mk_config = mk_config_init();
+    server = mk_mem_alloc_z(sizeof(struct mk_server));
+    if (!server) {
+        return NULL;
+    }
+
+    mk_list_init(&server->plugins);
+    mk_list_init(&server->sched_worker_callbacks);
+    mk_list_init(&server->stage10_handler);
+    mk_list_init(&server->stage20_handler);
+    mk_list_init(&server->stage30_handler);
+    mk_list_init(&server->stage40_handler);
+    mk_list_init(&server->stage50_handler);
+    server->scheduler_mode = -1;
 
 #ifdef TRACE
     mk_core_init();
@@ -76,8 +88,8 @@ struct mk_server_config *mk_server_init()
     kern_version = mk_kernel_version();
     kern_features = mk_kernel_features(kern_version);
 
-    mk_config->kernel_version = kern_version;
-    mk_config->kernel_features = kern_features;
+    server->kernel_version = kern_version;
+    server->kernel_features = kern_features;
 
 #ifdef TRACE
     MK_TRACE("Monkey TRACE is enabled");
@@ -90,18 +102,20 @@ struct mk_server_config *mk_server_init()
     mk_info("Linux Trace enabled");
 #endif
 
-    mk_config_set_init_values(mk_config);
+    mk_config_set_init_values(server);
 
-    return mk_config;
+    return server;
 }
 
-int mk_server_setup()
+int mk_server_setup(struct mk_server *server)
 {
     int ret;
     pthread_t tid;
 
     /* Core and Scheduler setup */
-    mk_config_start_configure();
+    mk_config_start_configure(server);
+    mk_config_signature(server);
+
     mk_sched_init();
 
     /* Clock init that must happen before starting threads */
@@ -109,10 +123,10 @@ int mk_server_setup()
 
     /* Load plugins */
     mk_plugin_api_init();
-    mk_plugin_load_all();
+    mk_plugin_load_all(server);
 
     /* Workers: logger and clock */
-    ret = mk_utils_worker_spawn((void *) mk_clock_worker_init, NULL, &tid);
+    ret = mk_utils_worker_spawn((void *) mk_clock_worker_init, server, &tid);
     if (ret != 0) {
         return -1;
     }
@@ -121,14 +135,14 @@ int mk_server_setup()
     mk_thread_keys_init();
 
     /* Configuration sanity check */
-    mk_config_sanity_check();
+    mk_config_sanity_check(server);
 
     /* Invoke Plugin PRCTX hooks */
-    mk_plugin_core_process();
+    mk_plugin_core_process(server);
 
     /* Launch monkey http workers */
     MK_TLS_INIT();
-    mk_server_launch_workers();
+    mk_server_launch_workers(server);
 
     return 0;
 }
@@ -141,7 +155,7 @@ void mk_thread_keys_init(void)
 }
 
 
-void mk_exit_all()
+void mk_exit_all(struct mk_server *server)
 {
     int i;
     int n;
@@ -149,7 +163,7 @@ void mk_exit_all()
 
     /* Distribute worker signals to stop working */
     val = MK_SCHED_SIGNAL_FREE_ALL;
-    for (i = 0; i < mk_config->workers; i++) {
+    for (i = 0; i < server->workers; i++) {
         n = write(sched_list[i].signal_channel_w, &val, sizeof(val));
         if (n < 0) {
             perror("write");
@@ -157,12 +171,12 @@ void mk_exit_all()
     }
 
     /* Wait for workers to finish */
-    for (i = 0; i < mk_config->workers; i++) {
+    for (i = 0; i < server->workers; i++) {
         pthread_join(sched_list[i].tid, NULL);
     }
 
-    mk_plugin_exit_all();
-    mk_config_free_all();
-    mk_mem_free(sched_list);
+    mk_plugin_exit_all(server);
     mk_clock_exit();
+    mk_config_free_all(server);
+    mk_mem_free(sched_list);
 }

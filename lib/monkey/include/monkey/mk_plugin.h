@@ -98,7 +98,7 @@ struct plugin_api
     int (*socket_send_file) (int, int, off_t *, size_t);
     int (*socket_ip_str) (int, char **, int, unsigned long *);
 
-    struct mk_server_config *config;
+    struct mk_server *config;
     struct mk_list *plugins;
     struct mk_sched_worker *sched_list;
 
@@ -106,8 +106,10 @@ struct plugin_api
     void (*_error) (int, const char *, ...) PRINTF_WARNINGS(2,3);
 
     /* HTTP request function */
-    int   (*http_request_end) (struct mk_http_session *cs, int close);
-    int   (*http_request_error) (int, struct mk_http_session *, struct mk_http_request *);
+    int   (*http_request_end) (struct mk_http_session *cs, int close,
+                               struct mk_server *);
+    int   (*http_request_error) (int, struct mk_http_session *,
+                                 struct mk_http_request *, struct mk_server *);
 
     /* memory functions */
     void *(*mem_alloc) (const size_t size);
@@ -136,7 +138,8 @@ struct plugin_api
 
     /* header */
     int  (*header_prepare) (struct mk_http_session *,
-                            struct mk_http_request *);
+                            struct mk_http_request *,
+                            struct mk_server *);
     struct mk_http_header *(*header_get) (int, struct mk_http_request *,
                                           const char *, unsigned int);
     int  (*header_add) (struct mk_http_request *, char *row, int len);
@@ -199,7 +202,7 @@ struct plugin_api
 
     /* Scheduler */
     struct mk_event_loop *(*sched_loop)();
-    int (*sched_remove_client) (int);
+    int (*sched_remove_client) (int, struct mk_server *);
     struct mk_sched_conn *(*sched_get_connection)(struct mk_sched_worker *,
                                                   int);
     void (*sched_event_free) (struct mk_event *);
@@ -229,7 +232,7 @@ struct plugin_api
 
     /* kernel interfaces */
     int (*kernel_version) ();
-    int (*kernel_features_print) (char *, size_t);
+    int (*kernel_features_print) (char *, size_t, struct mk_server *);
 
     /* Handler */
     struct mk_handler_param *(*handler_param_get)(int, struct mk_list *);
@@ -265,7 +268,7 @@ struct mk_plugin {
     int (*exit_plugin) ();
 
     /* Init Levels */
-    int  (*master_init) (struct mk_server_config *);
+    int  (*master_init) (struct mk_server *);
     void (*worker_init) ();
 
     /* Callback references for plugin type */
@@ -277,6 +280,7 @@ struct mk_plugin {
     char *path;                    /* Path for dynamic plugin      */
     pthread_key_t *thread_key;     /* Worker thread key            */
     struct mk_list _head;          /* Link to config->plugins list */
+    struct mk_list stage_list;     /* Stages head list             */
 
     /* Load type: MK_PLUGIN_STATIC / MK_PLUGIN_DYNAMIC */
     int load_type;
@@ -297,12 +301,14 @@ struct mk_plugin_stage {
 
     /* Only used when doing direct mapping from config->stageN_handler; */
     struct mk_list _head;
+
+    struct mk_list _parent_head;
 };
 
 
 void mk_plugin_api_init();
 void mk_plugin_load_all();
-void mk_plugin_exit_all();
+void mk_plugin_exit_all(struct mk_server *server);
 void mk_plugin_exit_worker();
 
 void mk_plugin_event_init_list();
@@ -312,10 +318,10 @@ int mk_plugin_stage_run(unsigned int stage,
                         struct mk_sched_conn *conx,
                         struct mk_http_session *cs, struct mk_http_request *sr);
 
-void mk_plugin_core_process();
+void mk_plugin_core_process(struct mk_server *server);
 void mk_plugin_core_thread();
 
-void mk_plugin_preworker_calls();
+void mk_plugin_preworker_calls(struct mk_server *server);
 
 /* Plugins events interface */
 int mk_plugin_event_add(int socket, int mode,
@@ -327,9 +333,11 @@ struct plugin_event *mk_plugin_event_get(int socket);
 int mk_plugin_event_socket_change_mode(int socket, int mode, unsigned int behavior);
 
 struct mk_plugin *mk_plugin_load(int type, const char *shortname,
-                                 void *data);
+                                 void *data, struct mk_server *server);
+
 void *mk_plugin_load_symbol(void *handler, const char *symbol);
-int mk_plugin_http_request_end(struct mk_http_session *cs, int close);
+int mk_plugin_http_request_end(struct mk_http_session *cs, int close,
+                               struct mk_server *server);
 
 /* Register functions */
 struct plugin *mk_plugin_register(struct plugin *p);
@@ -341,7 +349,8 @@ void mk_plugin_free(struct mk_plugin *p);
 int mk_plugin_time_now_unix();
 mk_ptr_t *mk_plugin_time_now_human();
 
-int mk_plugin_sched_remove_client(int socket);
+int mk_plugin_sched_remove_client(int socket, struct mk_server *server);
+
 
 int mk_plugin_header_add(struct mk_http_request *sr, char *row, int len);
 int mk_plugin_header_get(struct mk_http_request *sr,
@@ -349,10 +358,10 @@ int mk_plugin_header_get(struct mk_http_request *sr,
                          mk_ptr_t *result);
 
 struct mk_sched_worker *mk_plugin_sched_get_thread_conf();
-struct mk_plugin *mk_plugin_cap(char cap, struct mk_server_config *config);
-struct mk_plugin *mk_plugin_lookup(char *shortname);
+struct mk_plugin *mk_plugin_cap(char cap, struct mk_server *server);
+struct mk_plugin *mk_plugin_lookup(char *shortname, struct mk_server *server);
 
-void mk_plugin_load_static();
+void mk_plugin_load_static(struct mk_server *server);
 struct mk_handler_param *mk_handler_param_get(int id, struct mk_list *params);
 
 #endif

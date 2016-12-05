@@ -31,7 +31,7 @@ static inline void *_mk_event_loop_create(int size)
     struct mk_event_ctx *ctx;
 
     /* Main event context */
-    ctx = mk_mem_malloc_z(sizeof(struct mk_event_ctx));
+    ctx = mk_mem_alloc_z(sizeof(struct mk_event_ctx));
     if (!ctx) {
         return NULL;
     }
@@ -45,7 +45,7 @@ static inline void *_mk_event_loop_create(int size)
     }
 
     /* Allocate space for events queue */
-    ctx->events = mk_mem_malloc_z(sizeof(struct kevent) * size);
+    ctx->events = mk_mem_alloc_z(sizeof(struct kevent) * size);
     if (!ctx->events) {
         close(ctx->kfd);
         mk_mem_free(ctx);

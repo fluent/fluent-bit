@@ -20,10 +20,18 @@
 #include <monkey/monkey.h>
 #include <monkey/mk_core.h>
 
+#include "monkey.h"
 #include <string.h>
 #include <signal.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+
+static struct mk_server *server_context;
+
+void mk_signal_context(struct mk_server *ctx)
+{
+    server_context = ctx;
+}
 
 /* when we catch a signal and want to exit we call this function
    to do it gracefully */
@@ -34,9 +42,9 @@ static void mk_signal_exit()
     signal(SIGINT,  SIG_IGN);
     signal(SIGHUP,  SIG_IGN);
 
-    mk_user_undo_uidgid();
-    mk_utils_remove_pid(mk_config->path_conf_pidfile);
-    mk_exit_all();
+    mk_user_undo_uidgid(server_context);
+    mk_utils_remove_pid(server_context->path_conf_pidfile);
+    mk_exit_all(server_context);
 
     mk_info("Exiting... >:(");
     _exit(EXIT_SUCCESS);
@@ -76,7 +84,7 @@ static void mk_signal_handler(int signo, siginfo_t *si, void *context UNUSED_PAR
 
 }
 
-void mk_signal_init()
+void mk_signal_init(void *context)
 {
     struct sigaction act;
     memset(&act, 0x0, sizeof(act));
@@ -90,4 +98,6 @@ void mk_signal_init()
     sigaction(SIGHUP,  &act, NULL);
     sigaction(SIGINT,  &act, NULL);
     sigaction(SIGTERM, &act, NULL);
+
+    mk_signal_context(context);
 }

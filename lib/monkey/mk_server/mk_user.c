@@ -30,7 +30,8 @@
 #include <sys/types.h>
 #include <grp.h>
 
-int mk_user_init(struct mk_http_session *cs, struct mk_http_request *sr)
+int mk_user_init(struct mk_http_session *cs, struct mk_http_request *sr,
+                 struct mk_server *server)
 {
     int limit;
     const int offset = 2; /* The user is defined after the '/~' string, so offset = 2 */
@@ -60,12 +61,12 @@ int mk_user_init(struct mk_http_session *cs, struct mk_http_request *sr)
 
     /* Check system user */
     if ((s_user = getpwnam(user)) == NULL) {
-        mk_http_error(MK_CLIENT_NOT_FOUND, cs, sr);
+        mk_http_error(MK_CLIENT_NOT_FOUND, cs, sr, server);
         return -1;
     }
 
     if (sr->uri_processed.len > (unsigned int) (offset+limit)) {
-        user_uri = mk_mem_malloc(sr->uri_processed.len);
+        user_uri = mk_mem_alloc(sr->uri_processed.len);
         if (!user_uri) {
             return -1;
         }
@@ -77,12 +78,12 @@ int mk_user_init(struct mk_http_session *cs, struct mk_http_request *sr)
 
         mk_string_build(&sr->real_path.data, &sr->real_path.len,
                         "%s/%s%s",
-                        s_user->pw_dir, mk_config->conf_user_pub, user_uri);
+                        s_user->pw_dir, server->conf_user_pub, user_uri);
         mk_mem_free(user_uri);
     }
     else {
         mk_string_build(&sr->real_path.data, &sr->real_path.len,
-                        "%s/%s", s_user->pw_dir, mk_config->conf_user_pub);
+                        "%s/%s", s_user->pw_dir, server->conf_user_pub);
     }
 
     sr->user_home = MK_TRUE;
@@ -90,12 +91,12 @@ int mk_user_init(struct mk_http_session *cs, struct mk_http_request *sr)
 }
 
 /* Change process user */
-int mk_user_set_uidgid()
+int mk_user_set_uidgid(struct mk_server *server)
 {
     struct passwd *usr;
 
     /* Launched by root ? */
-    if (geteuid() == 0 && mk_config->user) {
+    if (geteuid() == 0 && server->user) {
         struct rlimit rl;
 
         if (getrlimit(RLIMIT_NOFILE, &rl)) {
@@ -103,12 +104,12 @@ int mk_user_set_uidgid()
         }
 
         /* Check if user exists  */
-        if ((usr = getpwnam(mk_config->user)) == NULL) {
-            mk_err("Invalid user '%s'", mk_config->user);
+        if ((usr = getpwnam(server->user)) == NULL) {
+            mk_err("Invalid user '%s'", server->user);
             goto out;
         }
 
-        if (initgroups(mk_config->user, usr->pw_gid) != 0) {
+        if (initgroups(server->user, usr->pw_gid) != 0) {
             mk_err("Initgroups() failed");
         }
 
@@ -121,11 +122,10 @@ int mk_user_set_uidgid()
             mk_err("I cannot change the UID to %u", usr->pw_uid);
         }
 
-        mk_config->is_seteuid = MK_TRUE;
+        server->is_seteuid = MK_TRUE;
     }
 
-    out:
-
+ out:
     /* Variables set for run checks on file permission */
     EUID = geteuid();
     EGID = getegid();
@@ -134,9 +134,9 @@ int mk_user_set_uidgid()
 }
 
 /* Return process to the original user */
-int mk_user_undo_uidgid()
+int mk_user_undo_uidgid(struct mk_server *server)
 {
-    if (mk_config->is_seteuid == MK_TRUE) {
+    if (server->is_seteuid == MK_TRUE) {
         if (setegid(0) < 0) {
             mk_err("Can't restore effective GID");
         }

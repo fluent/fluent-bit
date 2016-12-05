@@ -122,7 +122,7 @@ char *mk_file_to_buffer(const char *path)
         return NULL;
     }
 
-    buffer = mk_mem_malloc_z(finfo.size + 1);
+    buffer = mk_mem_alloc_z(finfo.size + 1);
     if (!buffer) {
         fclose(fp);
         return NULL;

@@ -173,7 +173,8 @@ static inline int mk_http_status_completed(struct mk_http_session *cs,
 }
 
 int mk_http_error(int http_status, struct mk_http_session *cs,
-                      struct mk_http_request *sr);
+                  struct mk_http_request *sr,
+                  struct mk_server *server);
 
 int mk_http_method_check(mk_ptr_t method);
 mk_ptr_t mk_http_method_check_str(int method);
@@ -182,9 +183,12 @@ int mk_http_method_get(char *body);
 int mk_http_protocol_check(char *protocol, int len);
 mk_ptr_t mk_http_protocol_check_str(int protocol);
 
-int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr);
+int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr,
+                 struct mk_server *server);
+
 int mk_http_keepalive_check(struct mk_http_session *cs,
-                            struct mk_http_request *sr);
+                            struct mk_http_request *sr,
+                            struct mk_server *server);
 
 int mk_http_pending_request(struct mk_http_session *cs);
 int mk_http_send_file(struct mk_http_session *cs, struct mk_http_request *sr);
@@ -192,20 +196,26 @@ int mk_http_send_file(struct mk_http_session *cs, struct mk_http_request *sr);
 /* http session */
 int mk_http_session_init(struct mk_http_session *cs,
                          struct mk_sched_conn *conn);
-void mk_http_session_remove(struct mk_http_session *cs);
+void mk_http_session_remove(struct mk_http_session *cs,
+                            struct mk_server *server);
 
 /* event handlers */
-int mk_http_handler_read(struct mk_sched_conn *conn, struct mk_http_session *cs);
+int mk_http_handler_read(struct mk_sched_conn *conn, struct mk_http_session *cs,
+                         struct mk_server *server);
+
 int mk_http_handler_write(int socket, struct mk_http_session *cs);
 
-void mk_http_request_free(struct mk_http_request *sr);
-void mk_http_request_free_list(struct mk_http_session *cs);
+void mk_http_request_free(struct mk_http_request *sr, struct mk_server *server);
+void mk_http_request_free_list(struct mk_http_session *cs,
+                               struct mk_server *server);
 
 void mk_http_request_init(struct mk_http_session *session,
-                          struct mk_http_request *request);
+                          struct mk_http_request *request,
+                          struct mk_server *server);
 struct mk_http_header *mk_http_header_get(int name, struct mk_http_request *req,
                                           const char *key, unsigned int len);
-int mk_http_request_end(struct mk_http_session *cs);
+
+int mk_http_request_end(struct mk_http_session *cs, struct mk_server *server);
 
 #define mk_http_session_get(conn)               \
     (struct mk_http_session *)                  \

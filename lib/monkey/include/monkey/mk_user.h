@@ -27,8 +27,9 @@
 #define MK_USER_HOME '~'
 
 /* user.c */
-int mk_user_init(struct mk_http_session *cs, struct mk_http_request *sr);
-int mk_user_set_uidgid(void);
-int mk_user_undo_uidgid(void);
+int mk_user_init(struct mk_http_session *cs, struct mk_http_request *sr,
+                 struct mk_server *server);
+int mk_user_set_uidgid(struct mk_server *server);
+int mk_user_undo_uidgid(struct mk_server *server);
 
 #endif

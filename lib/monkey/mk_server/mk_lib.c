@@ -43,26 +43,43 @@ mk_ctx_t *mk_create()
 {
     mk_ctx_t *ctx;
 
-    ctx = mk_mem_malloc(sizeof(mk_ctx_t));
+    ctx = mk_mem_alloc(sizeof(mk_ctx_t));
     if (!ctx) {
         return NULL;
     }
 
-    ctx->config = mk_server_init();
+    ctx->server = mk_server_create();
     return ctx;
 }
 
-int mk_start(mk_ctx_t *ctx)
+int mk_destroy(mk_ctx_t *ctx)
 {
-    (void) ctx;
-
-    mk_server_setup();
-    mk_server_loop();
+    mk_exit_all(ctx->server);
+    mk_mem_free(ctx);
 
     return 0;
 }
 
-int mk_config_set_property(struct mk_server_config *config, char *k, char *v)
+int mk_start(mk_ctx_t *ctx)
+{
+    mk_server_setup(ctx->server);
+    mk_server_loop(ctx->server);
+
+    return 0;
+}
+
+/*
+ * Instruct Monkey core to invoke a callback function inside each worker
+ * started by the scheduler.
+ */
+int mk_worker_callback(mk_ctx_t *ctx,
+                       void (*cb_func) (void *),
+                       void *data)
+{
+    return mk_sched_worker_cb_add(ctx->server, cb_func, data);
+}
+
+int mk_config_set_property(struct mk_server *server, char *k, char *v)
 {
     int b;
     int ret;
@@ -70,7 +87,7 @@ int mk_config_set_property(struct mk_server_config *config, char *k, char *v)
     unsigned long len;
 
     if (config_eq(k, "Listen") == 0) {
-        ret = mk_config_listen_parse(v);
+        ret = mk_config_listen_parse(v, server);
         if (ret != 0) {
             return -1;
         }
@@ -78,10 +95,10 @@ int mk_config_set_property(struct mk_server_config *config, char *k, char *v)
     else if (config_eq(k, "Workers") == 0) {
         num = atoi(v);
         if (num <= 0) {
-            config->workers = sysconf(_SC_NPROCESSORS_ONLN);
+            server->workers = sysconf(_SC_NPROCESSORS_ONLN);
         }
         else {
-            config->workers = num;
+            server->workers = num;
         }
     }
     else if (config_eq(k, "Timeout") == 0) {
@@ -89,35 +106,35 @@ int mk_config_set_property(struct mk_server_config *config, char *k, char *v)
         if (num <= 0) {
             return -1;
         }
-        config->timeout = num;
+        server->timeout = num;
     }
     else if (config_eq(k, "KeepAlive") == 0) {
         b = bool_val(v);
         if (b == -1) {
             return -1;
         }
-        config->keep_alive = b;
+        server->keep_alive = b;
     }
     else if (config_eq(k, "MaxKeepAliveRequest") == 0) {
         num = atoi(v);
         if (num <= 0) {
             return -1;
         }
-        config->max_keep_alive_request = num;
+        server->max_keep_alive_request = num;
     }
     else if (config_eq(k, "KeepAliveTimeout") == 0) {
         num = atoi(v);
         if (num <= 0) {
             return -1;
         }
-        config->keep_alive_timeout = num;
+        server->keep_alive_timeout = num;
     }
     else if (config_eq(k, "UserDir") == 0) {
-        config->conf_user_pub = mk_string_dup(v);
+        server->conf_user_pub = mk_string_dup(v);
     }
     else if (config_eq(k, "IndexFile") == 0) {
-        config->index_files = mk_string_split_line(v);
-        if (!config->index_files) {
+        server->index_files = mk_string_split_line(v);
+        if (!server->index_files) {
             return -1;
         }
     }
@@ -126,38 +143,38 @@ int mk_config_set_property(struct mk_server_config *config, char *k, char *v)
         if (b == -1) {
             return -1;
         }
-        config->hideversion = b;
+        server->hideversion = b;
     }
     else if (config_eq(k, "Resume") == 0) {
         b = bool_val(v);
         if (b == -1) {
             return -1;
         }
-        config->resume = b;
+        server->resume = b;
     }
     else if (config_eq(k, "MaxRequestSize") == 0) {
         num = atoi(v);
         if (num <= 0) {
             return -1;
         }
-        config->max_request_size = num;
+        server->max_request_size = num;
     }
     else if (config_eq(k, "SymLink") == 0) {
         b = bool_val(v);
         if (b == -1) {
             return -1;
         }
-        config->symlink = b;
+        server->symlink = b;
     }
     else if (config_eq(k, "DefaultMimeType") == 0) {
-        mk_string_build(&mk_config->default_mimetype, &len, "%s\r\n", v);
+        mk_string_build(&server->default_mimetype, &len, "%s\r\n", v);
     }
     else if (config_eq(k, "FDT") == 0) {
         b = bool_val(v);
         if (b == -1) {
             return -1;
         }
-        config->fdt = b;
+        server->fdt = b;
     }
 
     return 0;
@@ -179,7 +196,7 @@ int mk_config_set(mk_ctx_t *ctx, ...)
             return -1;
         }
 
-        ret = mk_config_set_property(ctx->config, key, value);
+        ret = mk_config_set_property(ctx->server, key, value);
         if (ret != 0) {
             va_end(va);
             return -1;
@@ -197,7 +214,7 @@ mk_vhost_t *mk_vhost_create(mk_ctx_t *ctx, char *name)
     struct host_alias *halias;
 
     /* Virtual host */
-    h = mk_mem_malloc_z(sizeof(struct host));
+    h = mk_mem_alloc_z(sizeof(struct host));
     if (!h) {
         return NULL;
     }
@@ -206,7 +223,7 @@ mk_vhost_t *mk_vhost_create(mk_ctx_t *ctx, char *name)
     mk_list_init(&h->handlers);
 
     /* Host alias */
-    halias = mk_mem_malloc_z(sizeof(struct host_alias));
+    halias = mk_mem_alloc_z(sizeof(struct host_alias));
     if (!halias) {
         mk_mem_free(h);
         return NULL;
@@ -220,7 +237,7 @@ mk_vhost_t *mk_vhost_create(mk_ctx_t *ctx, char *name)
         halias->name = mk_string_dup(name);
     }
     mk_list_add(&halias->_head, &h->server_names);
-    mk_list_add(&h->_head, &ctx->config->hosts);
+    mk_list_add(&h->_head, &ctx->server->hosts);
 
     return h;
 }
@@ -230,7 +247,7 @@ static int mk_vhost_set_property(mk_vhost_t *vh, char *k, char *v)
     struct host_alias *ha;
 
     if (config_eq(k, "Name") == 0) {
-        ha = mk_mem_malloc(sizeof(struct host_alias));
+        ha = mk_mem_alloc(sizeof(struct host_alias));
         if (!ha) {
             return -1;
         }
@@ -274,14 +291,15 @@ int mk_vhost_set(mk_vhost_t *vh, ...)
 }
 
 int mk_vhost_handler(mk_vhost_t *vh, char *regex,
-                     void (*cb)(mk_session_t *, mk_request_t *))
+                     void (*cb)(mk_request_t *, void *), void *data)
 {
-    struct mk_host_handler *handler;
     (void) vh;
-    void (*_cb) (struct mk_http_session *, struct mk_http_request *) = \
-        (void (*) (struct mk_http_session *, struct mk_http_request *)) cb;
+    struct mk_host_handler *handler;
+    void (*_cb) (struct mk_http_request *, void *);
 
-    handler = mk_vhost_handler_match(regex, _cb);
+
+    _cb = cb;
+    handler = mk_vhost_handler_match(regex, _cb, data);
     if (!handler) {
         return -1;
     }
@@ -315,7 +333,7 @@ int mk_http_header(mk_request_t *req,
     }
 
     len = key_len + val_len + 4;
-    buf = mk_mem_malloc(len);
+    buf = mk_mem_alloc(len);
     if (!buf) {
         /* we don't free extra_rows as it's released later */
         return -1;

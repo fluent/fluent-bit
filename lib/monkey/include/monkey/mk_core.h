@@ -17,9 +17,32 @@
  *  limitations under the License.
  */
 
-#ifndef MK_CORE_HELPER_H
-#define MK_CORE_HELPER_H
+#ifndef MK_CORE_H
+#define MK_CORE_H
 
-#include <mk_core.h>
+#ifdef __cplusplus /* If this is a C++ compiler, use C linkage */
+extern "C" {
+#endif
+
+#include <sys/types.h>
+
+/* Process UID/GID */
+extern gid_t EGID;
+extern gid_t EUID;
+
+#include "mk_core/mk_core_info.h"
+#include "mk_core/mk_memory.h"
+#include "mk_core/mk_iov.h"
+#include "mk_core/mk_file.h"
+#include "mk_core/mk_event.h"
+#include "mk_core/mk_rbtree.h"
+#include "mk_core/mk_rconf.h"
+#include "mk_core/mk_string.h"
+#include "mk_core/mk_macros.h"
+#include "mk_core/mk_utils.h"
+
+#ifdef __cplusplus /* If this is a C++ compiler, use C linkage */
+}
+#endif
 
 #endif

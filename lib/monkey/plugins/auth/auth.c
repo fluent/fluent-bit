@@ -213,6 +213,8 @@ int mk_auth_stage30(struct mk_plugin *plugin,
     mk_api->header_add(sr,
                        loc_entry->auth_http_header.data,
                        loc_entry->auth_http_header.len);
+
+    /* FIXME! */
     mk_api->header_prepare(cs, sr);
 
     return MK_PLUGIN_RET_END;

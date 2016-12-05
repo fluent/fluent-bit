@@ -58,7 +58,7 @@ static int str_to_regex(char *str, regex_t *reg)
  * This function is triggered upon thread creation (inside the thread
  * context), here we configure per-thread data.
  */
-int mk_vhost_fdt_worker_init()
+int mk_vhost_fdt_worker_init(struct mk_server *server)
 {
     int i;
     int j;
@@ -69,7 +69,7 @@ int mk_vhost_fdt_worker_init()
     struct vhost_fdt_hash_table *ht;
     struct vhost_fdt_hash_chain *hc;
 
-    if (mk_config->fdt == MK_FALSE) {
+    if (server->fdt == MK_FALSE) {
         return -1;
     }
 
@@ -91,13 +91,13 @@ int mk_vhost_fdt_worker_init()
      * Initialize the thread FDT/Hosts list and create an entry per
      * existent virtual host
      */
-    list = mk_mem_malloc_z(sizeof(struct mk_list));
+    list = mk_mem_alloc_z(sizeof(struct mk_list));
     mk_list_init(list);
 
-    mk_list_foreach(head, &mk_config->hosts) {
+    mk_list_foreach(head, &server->hosts) {
         h = mk_list_entry(head, struct host, _head);
 
-        fdt = mk_mem_malloc(sizeof(struct vhost_fdt_host));
+        fdt = mk_mem_alloc(sizeof(struct vhost_fdt_host));
         fdt->host = h;
 
         /* Initialize hash table */
@@ -122,14 +122,14 @@ int mk_vhost_fdt_worker_init()
     return 0;
 }
 
-int mk_vhost_fdt_worker_exit()
+int mk_vhost_fdt_worker_exit(struct mk_server *server)
 {
     struct mk_list *list;
     struct mk_list *head;
     struct mk_list *tmp;
     struct vhost_fdt_host *fdt;
 
-    if (mk_config->fdt == MK_FALSE) {
+    if (server->fdt == MK_FALSE) {
         return -1;
     }
 
@@ -184,14 +184,15 @@ struct vhost_fdt_hash_chain
 
 
 static inline int mk_vhost_fdt_open(int id, unsigned int hash,
-                                    struct mk_http_request *sr)
+                                    struct mk_http_request *sr,
+                                    struct mk_server *server)
 {
     int i;
     int fd = -1;
     struct vhost_fdt_hash_table *ht = NULL;
     struct vhost_fdt_hash_chain *hc;
 
-    if (mk_config->fdt == MK_FALSE) {
+    if (server->fdt == MK_FALSE) {
         return open(sr->real_path.data, sr->file_info.flags_read_only);
     }
 
@@ -246,14 +247,15 @@ static inline int mk_vhost_fdt_open(int id, unsigned int hash,
     return fd;
 }
 
-static inline int mk_vhost_fdt_close(struct mk_http_request *sr)
+static inline int mk_vhost_fdt_close(struct mk_http_request *sr,
+                                     struct mk_server *server)
 {
     int id;
     unsigned int hash;
     struct vhost_fdt_hash_table *ht = NULL;
     struct vhost_fdt_hash_chain *hc;
 
-    if (mk_config->fdt == MK_FALSE || sr->vhost_fdt_enabled == MK_FALSE) {
+    if (server->fdt == MK_FALSE || sr->vhost_fdt_enabled == MK_FALSE) {
         if (sr->in_file.fd > 0) {
             return close(sr->in_file.fd);
         }
@@ -289,7 +291,7 @@ static inline int mk_vhost_fdt_close(struct mk_http_request *sr)
 }
 
 
-int mk_vhost_open(struct mk_http_request *sr)
+int mk_vhost_open(struct mk_http_request *sr, struct mk_server *server)
 {
     int id;
     int off;
@@ -300,27 +302,29 @@ int mk_vhost_open(struct mk_http_request *sr)
                              sr->real_path.len - off);
     id   = (hash % VHOST_FDT_HASHTABLE_SIZE);
 
-    return mk_vhost_fdt_open(id, hash, sr);
+    return mk_vhost_fdt_open(id, hash, sr, server);
 }
 
-int mk_vhost_close(struct mk_http_request *sr)
+int mk_vhost_close(struct mk_http_request *sr, struct mk_server *server)
 {
-    return mk_vhost_fdt_close(sr);
+    return mk_vhost_fdt_close(sr, server);
 }
 
 struct mk_host_handler *mk_vhost_handler_match(char *match,
-                                               void (*cb) (struct mk_http_session *,
-                                                           struct mk_http_request *))
+                                               void (*cb)(struct mk_http_request *,
+                                                          void *),
+                                               void *data)
 {
     int ret;
     struct mk_host_handler *h;
 
-    h = mk_mem_malloc(sizeof(struct mk_host_handler));
+    h = mk_mem_alloc(sizeof(struct mk_host_handler));
     if (!h) {
         return NULL;
     }
     h->name = NULL;
     h->cb   = cb;
+    h->data = data;
     mk_list_init(&h->params);
 
     ret = str_to_regex(match, &h->match);
@@ -370,7 +374,7 @@ struct host *mk_vhost_read(char *path)
     }
 
     /* Alloc configuration node */
-    host = mk_mem_malloc_z(sizeof(struct host));
+    host = mk_mem_alloc_z(sizeof(struct host));
     host->config = cnf;
     host->file = mk_string_dup(path);
 
@@ -400,8 +404,8 @@ struct host *mk_vhost_read(char *path)
         host_low = mk_string_tolower(entry->val);
 
         /* Alloc node */
-        new_alias = mk_mem_malloc_z(sizeof(struct host_alias));
-        new_alias->name = mk_mem_malloc_z(entry->len + 1);
+        new_alias = mk_mem_alloc_z(sizeof(struct host_alias));
+        new_alias->name = mk_mem_alloc_z(entry->len + 1);
         strncpy(new_alias->name, host_low, entry->len);
         mk_mem_free(host_low);
 
@@ -474,7 +478,7 @@ struct host *mk_vhost_read(char *path)
             }
 
             /* Alloc error page node */
-            err_page = mk_mem_malloc_z(sizeof(struct error_page));
+            err_page = mk_mem_alloc_z(sizeof(struct error_page));
             err_page->status = ep_status;
             err_page->file   = mk_string_dup(ep_file);
             err_page->real_path = NULL;
@@ -504,7 +508,7 @@ struct host *mk_vhost_read(char *path)
             if (!line) {
                 continue;
             }
-            h_handler = mk_mem_malloc(sizeof(struct mk_host_handler));
+            h_handler = mk_mem_alloc(sizeof(struct mk_host_handler));
             if (!h_handler) {
                 exit(EXIT_FAILURE);
             }
@@ -527,7 +531,7 @@ struct host *mk_vhost_read(char *path)
                     break;
                 default:
                     /* link parameters */
-                    h_param = mk_mem_malloc(sizeof(struct mk_handler_param));
+                    h_param = mk_mem_alloc(sizeof(struct mk_handler_param));
                     h_param->p.data = mk_string_dup(entry->val);
                     h_param->p.len  = entry->len;
                     mk_list_add(&h_param->_head, &h_handler->params);
@@ -536,6 +540,7 @@ struct host *mk_vhost_read(char *path)
                 i++;
             }
             h_handler->n_params = params;
+            mk_string_split_free(line);
 
             if (i < 2) {
                 mk_err("[Host Handlers] invalid Match value\n");
@@ -549,7 +554,7 @@ struct host *mk_vhost_read(char *path)
     return host;
 }
 
-int mk_vhost_map_handlers()
+int mk_vhost_map_handlers(struct mk_server *server)
 {
     int n = 0;
     struct mk_list *head;
@@ -558,21 +563,21 @@ int mk_vhost_map_handlers()
     struct mk_host_handler *h_handler;
     struct mk_plugin *p;
 
-    mk_list_foreach(head, &mk_config->hosts) {
+    mk_list_foreach(head, &server->hosts) {
         host = mk_list_entry(head, struct host, _head);
         mk_list_foreach(head_handler, &host->handlers) {
             h_handler = mk_list_entry(head_handler, struct mk_host_handler, _head);
 
             /* Lookup plugin by name */
-            p = mk_plugin_lookup(h_handler->name);
+            p = mk_plugin_lookup(h_handler->name, server);
             if (!p) {
                 mk_err("Plugin '%s' was not loaded", h_handler->name);
-                exit(EXIT_FAILURE);
+                continue;
             }
 
             if (p->hooks != MK_PLUGIN_STAGE) {
                 mk_err("Plugin '%s' is not a handler", h_handler->name);
-                exit(EXIT_FAILURE);
+                continue;
             }
 
             h_handler->handler = p;
@@ -583,19 +588,19 @@ int mk_vhost_map_handlers()
     return n;
 }
 
-void mk_vhost_set_single(char *path)
+void mk_vhost_set_single(char *path, struct mk_server *server)
 {
     struct host *host;
     struct host_alias *halias;
     struct stat checkdir;
 
     /* Set the default host */
-    host = mk_mem_malloc_z(sizeof(struct host));
+    host = mk_mem_alloc_z(sizeof(struct host));
     mk_list_init(&host->error_pages);
     mk_list_init(&host->server_names);
 
     /* Prepare the unique alias */
-    halias = mk_mem_malloc_z(sizeof(struct host_alias));
+    halias = mk_mem_alloc_z(sizeof(struct host_alias));
     halias->name = mk_string_dup("127.0.0.1");
     mk_list_add(&halias->_head, &host->server_names);
 
@@ -612,12 +617,12 @@ void mk_vhost_set_single(char *path)
         mk_err("DocumentRoot variable in %s has an invalid directory path", path);
         exit(EXIT_FAILURE);
     }
-    mk_list_add(&host->_head, &mk_config->hosts);
+    mk_list_add(&host->_head, &server->hosts);
     mk_list_init(&host->handlers);
 }
 
 /* Given a configuration directory, start reading the virtual host entries */
-void mk_vhost_init(char *path)
+void mk_vhost_init(char *path, struct mk_server *server)
 {
     DIR *dir;
     unsigned long len;
@@ -629,18 +634,18 @@ void mk_vhost_init(char *path)
     struct file_info f_info;
     int ret;
 
-    if (!mk_config->conf_sites) {
+    if (!server->conf_sites) {
         mk_warn("[vhost] skipping default site");
         return;
     }
 
     /* Read default virtual host file */
     mk_string_build(&sites, &len, "%s/%s/",
-                    path, mk_config->conf_sites);
+                    path, server->conf_sites);
     ret = mk_file_get_info(sites, &f_info, MK_FILE_EXISTS);
     if (ret == -1 || f_info.is_directory == MK_FALSE) {
         mk_mem_free(sites);
-        sites = mk_config->conf_sites;
+        sites = server->conf_sites;
     }
 
     mk_string_build(&buf, &len, "%s/default", sites);
@@ -649,8 +654,8 @@ void mk_vhost_init(char *path)
     if (!p_host) {
         mk_err("Error parsing main configuration file 'default'");
     }
-    mk_list_add(&p_host->_head, &mk_config->hosts);
-    mk_config->nhosts++;
+    mk_list_add(&p_host->_head, &server->hosts);
+    server->nhosts++;
     mk_mem_free(buf);
     buf = NULL;
 
@@ -685,8 +690,8 @@ void mk_vhost_init(char *path)
             continue;
         }
         else {
-            mk_list_add(&p_host->_head, &mk_config->hosts);
-            mk_config->nhosts++;
+            mk_list_add(&p_host->_head, &server->hosts);
+            server->nhosts++;
         }
     }
     closedir(dir);
@@ -695,13 +700,14 @@ void mk_vhost_init(char *path)
 
 
 /* Lookup a registered virtual host based on the given 'host' input */
-int mk_vhost_get(mk_ptr_t host, struct host **vhost, struct host_alias **alias)
+int mk_vhost_get(mk_ptr_t host, struct host **vhost, struct host_alias **alias,
+                 struct mk_server *server)
 {
     struct host *entry_host;
     struct host_alias *entry_alias;
     struct mk_list *head_vhost, *head_alias;
 
-    mk_list_foreach(head_vhost, &mk_config->hosts) {
+    mk_list_foreach(head_vhost, &server->hosts) {
         entry_host = mk_list_entry(head_vhost, struct host, _head);
         mk_list_foreach(head_alias, &entry_host->server_names) {
             entry_alias = mk_list_entry(head_alias, struct host_alias, _head);
@@ -717,33 +723,56 @@ int mk_vhost_get(mk_ptr_t host, struct host **vhost, struct host_alias **alias)
     return -1;
 }
 
-void mk_vhost_free_all()
+static void mk_vhost_handler_free(struct mk_host_handler *h)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct mk_handler_param *param;
+
+    /* Release Params */
+    mk_list_foreach_safe(head, tmp, &h->params) {
+        param = mk_list_entry(head, struct mk_handler_param, _head);
+        mk_list_del(&param->_head);
+        mk_mem_free(param->p.data);
+        mk_mem_free(param);
+    }
+
+    regfree(&h->match);
+    mk_mem_free(h->name);
+    mk_mem_free(h);
+}
+
+void mk_vhost_free_all(struct mk_server *server)
 {
     struct host *host;
     struct host_alias *host_alias;
+    struct mk_host_handler *host_handler;
     struct error_page *ep;
-    struct mk_list *head_host;
-    struct mk_list *head_alias;
-    struct mk_list *head_error;
-    struct mk_list *tmp1, *tmp2;
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct mk_list *head2;
+    struct mk_list *tmp2;
 
-    mk_list_foreach_safe(head_host, tmp1, &mk_config->hosts) {
-        host = mk_list_entry(head_host, struct host, _head);
-        mk_list_del(&host->_head);
-
-        mk_mem_free(host->file);
+    mk_list_foreach_safe(head, tmp, &server->hosts) {
+        host = mk_list_entry(head, struct host, _head);
 
         /* Free aliases or servernames */
-        mk_list_foreach_safe(head_alias, tmp2, &host->server_names) {
-            host_alias = mk_list_entry(head_alias, struct host_alias, _head);
+        mk_list_foreach_safe(head2, tmp2, &host->server_names) {
+            host_alias = mk_list_entry(head2, struct host_alias, _head);
             mk_list_del(&host_alias->_head);
             mk_mem_free(host_alias->name);
             mk_mem_free(host_alias);
         }
 
+        /* Handlers */
+        mk_list_foreach_safe(head2, tmp2, &host->handlers) {
+            host_handler = mk_list_entry(head2, struct mk_host_handler, _head);
+            mk_vhost_handler_free(host_handler);
+        }
+
         /* Free error pages */
-        mk_list_foreach_safe(head_error, tmp2, &host->error_pages) {
-            ep = mk_list_entry(head_error, struct error_page, _head);
+        mk_list_foreach_safe(head2, tmp2, &host->error_pages) {
+            ep = mk_list_entry(head2, struct error_page, _head);
             mk_list_del(&ep->_head);
             mk_mem_free(ep->file);
             mk_mem_free(ep->real_path);
@@ -753,7 +782,11 @@ void mk_vhost_free_all()
         mk_ptr_free(&host->documentroot);
 
         /* Free source configuration */
-        if (host->config) mk_rconf_free(host->config);
+        if (host->config) {
+            mk_rconf_free(host->config);
+        }
+        mk_list_del(&host->_head);
+        mk_mem_free(host->file);
         mk_mem_free(host);
     }
 }

@@ -163,8 +163,8 @@ static void cb_stream_iov_extended_free(struct mk_stream_input *in)
 }
 
 /* Send response headers */
-int mk_header_prepare(struct mk_http_session *cs,
-                      struct mk_http_request *sr)
+int mk_header_prepare(struct mk_http_session *cs, struct mk_http_request *sr,
+                      struct mk_server *server)
 {
     int i = 0;
     unsigned long len = 0;
@@ -327,7 +327,7 @@ int mk_header_prepare(struct mk_http_session *cs,
     }
 
     if ((sh->content_length != 0 && (sh->ranges[0] >= 0 || sh->ranges[1] >= 0)) &&
-        mk_config->resume == MK_TRUE) {
+        server->resume == MK_TRUE) {
         buffer = 0;
 
         /* yyy- */

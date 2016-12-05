@@ -62,11 +62,11 @@
 /* Monkey Protocol */
 extern const mk_ptr_t mk_monkey_protocol;
 
-struct mk_server_config *mk_server_init();
+struct mk_server *mk_server_init();
 
 void mk_server_info();
-int mk_server_setup();
+int mk_server_setup(struct mk_server *server);
 void mk_thread_keys_init();
-void mk_exit_all();
+void mk_exit_all(struct mk_server *config);
 
 #endif

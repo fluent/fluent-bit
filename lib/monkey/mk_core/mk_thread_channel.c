@@ -34,7 +34,7 @@ struct mk_thread_channel_elem *mk_thread_channel_elem_create(void *data)
 {
     struct mk_thread_channel_elem *elem;
 
-    elem = mk_mem_malloc(sizeof(*elem));
+    elem = mk_mem_alloc(sizeof(*elem));
     if (!elem) {
         return NULL;
     }
@@ -60,7 +60,7 @@ struct mk_thread_channel *mk_thread_channel_create(int size)
 {
     struct mk_thread_channel *chan;
 
-    chan = mk_mem_malloc(sizeof(*chan));
+    chan = mk_mem_alloc(sizeof(*chan));
     if (!chan) {
         return NULL;
     }

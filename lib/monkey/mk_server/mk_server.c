@@ -34,7 +34,7 @@
 #include <sys/resource.h>
 
 /* Return the number of clients that can be attended  */
-unsigned int mk_server_capacity()
+unsigned int mk_server_capacity(struct mk_server *server)
 {
     int ret;
     int cur;
@@ -44,20 +44,20 @@ unsigned int mk_server_capacity()
     getrlimit(RLIMIT_NOFILE, &lim);
     cur = lim.rlim_cur;
 
-    if (mk_config->fd_limit > cur) {
-        lim.rlim_cur = mk_config->fd_limit;
-        lim.rlim_max = mk_config->fd_limit;
+    if (server->fd_limit > cur) {
+        lim.rlim_cur = server->fd_limit;
+        lim.rlim_max = server->fd_limit;
 
         ret = setrlimit(RLIMIT_NOFILE, &lim);
         if (ret == -1) {
-            mk_warn("Could not increase FDLimit to %i.", mk_config->fd_limit);
+            mk_warn("Could not increase FDLimit to %i.", server->fd_limit);
         }
         else {
-            cur = mk_config->fd_limit;
+            cur = server->fd_limit;
         }
     }
-    else if (mk_config->fd_limit > 0) {
-        cur = mk_config->fd_limit;
+    else if (server->fd_limit > 0) {
+        cur = server->fd_limit;
     }
 
     return cur;
@@ -65,7 +65,8 @@ unsigned int mk_server_capacity()
 
 static inline
 struct mk_sched_conn *mk_server_listen_handler(struct mk_sched_worker *sched,
-                                               void *data)
+                                               void *data,
+                                               struct mk_server *server)
 {
     int ret;
     int client_fd = -1;
@@ -78,7 +79,7 @@ struct mk_sched_conn *mk_server_listen_handler(struct mk_sched_worker *sched,
         goto error;
     }
 
-    conn = mk_sched_add_connection(client_fd, listener, sched);
+    conn = mk_sched_add_connection(client_fd, listener, sched, server);
     if (mk_unlikely(!conn)) {
         goto error;
     }
@@ -138,7 +139,7 @@ void mk_server_listen_exit(struct mk_list *list)
     mk_mem_free(list);
 }
 
-struct mk_list *mk_server_listen_init(struct mk_server_config *config)
+struct mk_list *mk_server_listen_init(struct mk_server *server)
 {
     int i = 0;
     int server_fd;
@@ -151,24 +152,24 @@ struct mk_list *mk_server_listen_init(struct mk_server_config *config)
     struct mk_plugin *plugin;
     struct mk_config_listener *listen;
 
-    if (config == NULL) {
+    if (!server) {
         goto error;
     }
 
-    listeners = malloc(sizeof(struct mk_list));
+    listeners = mk_mem_alloc(sizeof(struct mk_list));
     mk_list_init(listeners);
 
-    if (config->scheduler_mode == MK_SCHEDULER_REUSEPORT) {
+    if (server->scheduler_mode == MK_SCHEDULER_REUSEPORT) {
         reuse_port = MK_TRUE;
     }
 
-    mk_list_foreach(head, &config->listeners) {
+    mk_list_foreach(head, &server->listeners) {
         listen = mk_list_entry(head, struct mk_config_listener, _head);
 
         server_fd = mk_socket_server(listen->port,
                                      listen->address,
                                      reuse_port,
-                                     config);
+                                     server);
         if (server_fd >= 0) {
             if (mk_socket_set_tcp_defer_accept(server_fd) != 0) {
 #if defined (__linux__)
@@ -176,7 +177,7 @@ struct mk_list *mk_server_listen_init(struct mk_server_config *config)
 #endif
             }
 
-            listener = mk_mem_malloc(sizeof(struct mk_server_listen));
+            listener = mk_mem_alloc(sizeof(struct mk_server_listen));
 
             /* configure the internal event_state */
             event = &listener->event;
@@ -207,10 +208,10 @@ struct mk_list *mk_server_listen_init(struct mk_server_config *config)
                 listener->protocol = protocol;
             }
 
-            listener->network = mk_plugin_cap(MK_CAP_SOCK_PLAIN, config);
+            listener->network = mk_plugin_cap(MK_CAP_SOCK_PLAIN, server);
 
             if (listen->flags & MK_CAP_SOCK_TLS) {
-                plugin = mk_plugin_cap(MK_CAP_SOCK_TLS, config);
+                plugin = mk_plugin_cap(MK_CAP_SOCK_TLS, server);
                 if (!plugin) {
                     mk_err("SSL/TLS not supported");
                     exit(EXIT_FAILURE);
@@ -240,14 +241,14 @@ error:
 }
 
 /* Here we launch the worker threads to attend clients */
-void mk_server_launch_workers()
+void mk_server_launch_workers(struct mk_server *server)
 {
     int i;
     pthread_t skip;
 
     /* Launch workers */
-    for (i = 0; i < mk_config->workers; i++) {
-        mk_sched_launch_thread(mk_config->server_capacity, &skip);
+    for (i = 0; i < server->workers; i++) {
+        mk_sched_launch_thread(server, &skip);
     }
 
     /* Wait until all workers report as ready */
@@ -255,13 +256,13 @@ void mk_server_launch_workers()
         int ready = 0;
 
         pthread_mutex_lock(&mutex_worker_init);
-        for (i = 0; i < mk_config->workers; i++) {
+        for (i = 0; i < server->workers; i++) {
             if (sched_list[i].initialized)
                 ready++;
         }
         pthread_mutex_unlock(&mutex_worker_init);
 
-        if (ready == mk_config->workers) break;
+        if (ready == server->workers) break;
         usleep(10000);
     }
 }
@@ -274,7 +275,7 @@ void mk_server_launch_workers()
  * handle it registering the accept(2)ed file descriptor on the worker
  * event monitored queue.
  */
-void mk_server_loop_balancer()
+void mk_server_loop_balancer(struct mk_server *server)
 {
     struct mk_list *head;
     struct mk_list *listeners;
@@ -284,7 +285,7 @@ void mk_server_loop_balancer()
     struct mk_sched_worker *sched;
 
     /* Init the listeners */
-    listeners = mk_server_listen_init(mk_config);
+    listeners = mk_server_listen_init(server);
     if (!listeners) {
         mk_err("Failed to initialize listen sockets.");
         return;
@@ -315,7 +316,7 @@ void mk_server_loop_balancer()
                  */
                 sched = mk_sched_next_target();
                 if (sched != NULL) {
-                    mk_server_listen_handler(sched, event);
+                    mk_server_listen_handler(sched, event, server);
 #ifdef TRACE
                     int i;
                     struct mk_sched_worker *node;
@@ -349,7 +350,7 @@ void mk_server_loop_balancer()
  * When using shared TCP ports the Kernel decides to which worker the
  * connection will be assigned.
  */
-void mk_server_worker_loop()
+void mk_server_worker_loop(struct mk_server *server)
 {
     int ret = -1;
     int timeout_fd;
@@ -390,7 +391,7 @@ void mk_server_worker_loop()
         }
     }
 
-    if (mk_config->scheduler_mode == MK_SCHEDULER_REUSEPORT) {
+    if (server->scheduler_mode == MK_SCHEDULER_REUSEPORT) {
         /* Register listeners */
         list = MK_TLS_GET(mk_tls_server_listen);
         mk_list_foreach(head, list) {
@@ -402,9 +403,9 @@ void mk_server_worker_loop()
     }
 
     /* create a new timeout file descriptor */
-    server_timeout = mk_mem_malloc(sizeof(struct mk_server_timeout));
+    server_timeout = mk_mem_alloc(sizeof(struct mk_server_timeout));
     MK_TLS_SET(mk_tls_server_timeout, server_timeout);
-    timeout_fd = mk_event_timeout_create(evl, mk_config->timeout, 0, server_timeout);
+    timeout_fd = mk_event_timeout_create(evl, server->timeout, 0, server_timeout);
 
     while (1) {
         mk_event_wait(evl);
@@ -419,13 +420,13 @@ void mk_server_worker_loop()
 
                 if (event->mask & MK_EVENT_WRITE) {
                     MK_TRACE("[FD %i] Event WRITE", event->fd);
-                    ret = mk_sched_event_write(conn, sched);
+                    ret = mk_sched_event_write(conn, sched, server);
                     //printf("event write ret=%i\n", ret);
                 }
 
                 if (event->mask & MK_EVENT_READ) {
                     MK_TRACE("[FD %i] Event READ", event->fd);
-                    ret = mk_sched_event_read(conn, sched);
+                    ret = mk_sched_event_read(conn, sched, server);
                 }
 
 
@@ -437,7 +438,8 @@ void mk_server_worker_loop()
                 if (ret < 0 && conn->status != MK_SCHED_CONN_CLOSED) {
                     MK_TRACE("[FD %i] Event FORCE CLOSE | ret = %i",
                              event->fd, ret);
-                    mk_sched_event_close(conn, sched, MK_EP_SOCKET_CLOSED);
+                    mk_sched_event_close(conn, sched, MK_EP_SOCKET_CLOSED,
+                                         server);
                 }
             }
             else if (event->type == MK_EVENT_LISTENER) {
@@ -446,7 +448,7 @@ void mk_server_worker_loop()
                  * the result, we let the loop continue processing the other
                  * events triggered.
                  */
-                conn = mk_server_listen_handler(sched, event);
+                conn = mk_server_listen_handler(sched, event, server);
                 if (conn) {
                     //conn->event.mask = MK_EVENT_READ
                     //goto speed;
@@ -481,12 +483,12 @@ void mk_server_worker_loop()
                         mk_mem_free(MK_TLS_GET(mk_tls_server_timeout));
                         mk_server_listen_exit(sched->listeners);
                         mk_event_loop_destroy(evl);
-                        mk_sched_worker_free();
+                        mk_sched_worker_free(server);
                         return;
                     }
                 }
                 else if (event->fd == timeout_fd) {
-                    mk_sched_check_timeouts(sched);
+                    mk_sched_check_timeouts(sched, server);
                 }
                 continue;
             }
@@ -495,7 +497,7 @@ void mk_server_worker_loop()
     }
 }
 
-void mk_server_loop(void)
+void mk_server_loop(struct mk_server *server)
 {
     int n;
     int i;
@@ -508,7 +510,7 @@ void mk_server_loop(void)
 
     /* Wake up workers */
     val = MK_SERVER_SIGNAL_START;
-    for (i = 0; i < mk_config->workers; i++) {
+    for (i = 0; i < server->workers; i++) {
         n = write(sched_list[i].signal_channel_w, &val, sizeof(val));
         if (n < 0) {
             perror("write");
@@ -519,7 +521,7 @@ void mk_server_loop(void)
      * When using REUSEPORT mode on the Scheduler, we need to signal
      * them so they can start processing connections.
      */
-    if (mk_config->scheduler_mode == MK_SCHEDULER_REUSEPORT) {
+    if (server->scheduler_mode == MK_SCHEDULER_REUSEPORT) {
         /* Hang here, basically do nothing as threads are doing the job  */
         sigset_t mask;
         sigprocmask(0, NULL, &mask);
@@ -527,6 +529,6 @@ void mk_server_loop(void)
         return;
     }
     else {
-        mk_server_loop_balancer();
+        mk_server_loop_balancer(server);
     }
 }

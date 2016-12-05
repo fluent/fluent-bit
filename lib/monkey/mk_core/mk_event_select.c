@@ -35,7 +35,7 @@ static inline void *_mk_event_loop_create(int size)
     size = FD_SETSIZE;
 
     /* Main event context */
-    ctx = mk_mem_malloc_z(sizeof(struct mk_event_ctx));
+    ctx = mk_mem_alloc_z(sizeof(struct mk_event_ctx));
     if (!ctx) {
         return NULL;
     }
@@ -44,14 +44,14 @@ static inline void *_mk_event_loop_create(int size)
     FD_ZERO(&ctx->wfds);
 
     /* Allocate space for events queue, re-use the struct mk_event */
-    ctx->events = mk_mem_malloc_z(sizeof(struct mk_event *) * size);
+    ctx->events = mk_mem_alloc_z(sizeof(struct mk_event *) * size);
     if (!ctx->events) {
         mk_mem_free(ctx);
         return NULL;
     }
 
     /* Fired events (upon select(2) return) */
-    ctx->fired = mk_mem_malloc_z(sizeof(struct mk_event) * size);
+    ctx->fired = mk_mem_alloc_z(sizeof(struct mk_event) * size);
     if (!ctx->fired) {
         mk_mem_free(ctx->events);
         mk_mem_free(ctx);
@@ -183,7 +183,7 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
     struct fd_timer *timer;
     pthread_t tid;
 
-    timer = mk_mem_malloc(sizeof(struct fd_timer));
+    timer = mk_mem_alloc(sizeof(struct fd_timer));
     if (!timer) {
         return -1;
     }

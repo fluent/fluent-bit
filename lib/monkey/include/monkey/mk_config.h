@@ -53,7 +53,7 @@ struct mk_config_listener
 };
 
 /* Base struct of server */
-struct mk_server_config
+struct mk_server
 {
     int server_fd;                /* server socket file descriptor */
     int kernel_version;           /* Running Linux Kernel version */
@@ -134,6 +134,13 @@ struct mk_server_config
     char server_signature_header[32];
     int  server_signature_header_len;
 
+    /*
+     * This list head, allow to link a set of callbacks that Monkey core
+     * must invoke inside each thread worker once created. This list is
+     * populated from mk_lib.c:mk_config_worker_callback(..).
+     */
+    struct mk_list sched_worker_callbacks;
+
     /* source configuration */
     struct mk_rconf *config;
 
@@ -148,29 +155,25 @@ struct mk_server_config
     struct mk_list stage50_handler;
 };
 
-/* Global context of the server */
-struct mk_server_config *mk_config;
-
-
 /* Functions */
 struct mk_server_config *mk_config_init();
-void mk_config_start_configure(void);
+void mk_config_start_configure(struct mk_server *server);
+void mk_config_signature(struct mk_server *server);
 void mk_config_add_index(char *indexname);
-void mk_config_set_init_values(struct mk_server_config *config);
-int mk_config_listen_parse(char *value);
+void mk_config_set_init_values(struct mk_server *config);
+int mk_config_listen_parse(char *value, struct mk_server *server);
 
 /* config helpers */
 void mk_config_error(const char *path, int line, const char *msg);
-
-struct mk_config_listener *mk_config_listener_add(char *address, char *port,
-                                                  int flags);
-
+struct mk_config_listener *mk_config_listener_add(char *address,
+                                                  char *port, int flags,
+                                                  struct mk_server *server);
 int mk_config_listen_check_busy();
 void mk_config_listeners_free();
 
 int mk_config_get_bool(char *value);
 void mk_config_read_hosts(char *path);
-void mk_config_sanity_check(void);
-void mk_config_free_all();
+void mk_config_sanity_check(struct mk_server *server);
+void mk_config_free_all(struct mk_server *server);
 
 #endif

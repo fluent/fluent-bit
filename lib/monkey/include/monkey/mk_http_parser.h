@@ -342,8 +342,7 @@ static inline int mk_http_parser_more(struct mk_http_parser *p, int len)
     return MK_FALSE;
 }
 
-
 int mk_http_parser(struct mk_http_request *req, struct mk_http_parser *p,
-                   char *buffer, int len);
+                   char *buffer, int buf_len, struct mk_server *server);
 
 #endif /* MK_HTTP_H */

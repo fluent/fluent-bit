@@ -201,7 +201,7 @@ int mk_buffer_cat(mk_ptr_t *p, char *buf1, int len1, char *buf2, int len2)
     }
 
     /* alloc space */
-    p->data = (char *) mk_mem_malloc(len1 + len2 + 1);
+    p->data = (char *) mk_mem_alloc(len1 + len2 + 1);
 
     /* copy data */
     memcpy(p->data, buf1, len1);
@@ -263,7 +263,7 @@ char *mk_utils_url_decode(mk_ptr_t uri)
 
     i = tmp;
 
-    buf = mk_mem_malloc_z(uri.len + 1);
+    buf = mk_mem_alloc_z(uri.len + 1);
     if (i > 0) {
         memcpy(buf, uri.data, i);
         buf_idx = i;

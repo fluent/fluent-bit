@@ -41,7 +41,7 @@ typedef struct
 #endif
 
 static inline ALLOCSZ_ATTR(1)
-void *mk_mem_malloc(const size_t size)
+void *mk_mem_alloc(const size_t size)
 {
 #ifdef MALLOC_JEMALLOC
     void *aux = je_malloc(size);
@@ -58,7 +58,7 @@ void *mk_mem_malloc(const size_t size)
 }
 
 static inline ALLOCSZ_ATTR(1)
-void *mk_mem_malloc_z(const size_t size)
+void *mk_mem_alloc_z(const size_t size)
 {
 #ifdef MALLOC_JEMALLOC
     void *buf = je_calloc(1, size);

@@ -44,8 +44,9 @@ struct mk_host_handler {
     char *name;                            /* plugin handler name            */
     int n_params;                          /* number of parameters           */
 
-    /* optional callback for lib mode */
-    void (*cb) (struct mk_http_session *, struct mk_http_request *);
+    /* optional callback and opaque data for lib mode */
+    void (*cb) (struct mk_http_request *, void *);
+    void *data;
 
     struct mk_list params;                 /* parameters given by config     */
     struct mk_plugin *handler;             /* handler plugin                 */
@@ -106,17 +107,20 @@ struct vhost_fdt_host {
 pthread_mutex_t mk_vhost_fdt_mutex;
 
 struct host *mk_vhost_read(char *path);
-int mk_vhost_get(mk_ptr_t host, struct host **vhost, struct host_alias **alias);
-void mk_vhost_set_single(char *path);
-void mk_vhost_init(char *path);
-int mk_vhost_fdt_worker_init();
-int mk_vhost_fdt_worker_exit();
-int mk_vhost_open(struct mk_http_request *sr);
-int mk_vhost_close(struct mk_http_request *sr);
-void mk_vhost_free_all();
-int mk_vhost_map_handlers();
+int mk_vhost_get(mk_ptr_t host, struct host **vhost, struct host_alias **alias,
+                 struct mk_server *server);
+void mk_vhost_set_single(char *path, struct mk_server *server);
+void mk_vhost_init(char *path, struct mk_server *server);
+
+int mk_vhost_fdt_worker_init(struct mk_server *server);
+int mk_vhost_fdt_worker_exit(struct mk_server *server);
+int mk_vhost_open(struct mk_http_request *sr, struct mk_server *server);
+int mk_vhost_close(struct mk_http_request *sr, struct mk_server *server);
+void mk_vhost_free_all(struct mk_server *server);
+int mk_vhost_map_handlers(struct mk_server *server);
 struct mk_host_handler *mk_vhost_handler_match(char *match,
-                                               void (*cb) (struct mk_http_session *,
-                                                           struct mk_http_request *));
+                                               void (*cb)(struct mk_http_request *,
+                                                          void *),
+                                               void *data);
 
 #endif

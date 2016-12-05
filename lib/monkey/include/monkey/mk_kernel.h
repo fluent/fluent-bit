@@ -29,6 +29,7 @@
 
 int mk_kernel_version();
 int mk_kernel_features(int version);
-int mk_kernel_features_print(char *buffer, size_t size);
+int mk_kernel_features_print(char *buffer, size_t size,
+                             struct mk_server *server);
 
 #endif

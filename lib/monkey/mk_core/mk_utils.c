@@ -330,5 +330,6 @@ int mk_utils_remove_pid(char *path)
 int mk_core_init()
 {
     mk_core_init_time = time(NULL);
+    pthread_key_create(&mk_utils_error_key, NULL);
     return 0;
 }

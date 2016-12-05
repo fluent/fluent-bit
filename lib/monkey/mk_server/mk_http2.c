@@ -48,7 +48,7 @@ static struct mk_http2_session *mk_http2_session_create()
 {
     struct mk_http2_session *h2s;
 
-    h2s = mk_mem_malloc(sizeof(struct mk_http2_session));
+    h2s = mk_mem_alloc(sizeof(struct mk_http2_session));
     if (!h2s) {
         return NULL;
     }
@@ -86,7 +86,7 @@ static int mk_http2_frame_header(char *buf, uint32_t length, uint8_t type,
 */
 
 /* Handle an upgraded session */
-static int mk_http2_upgrade(void *cs, void *sr)
+static int mk_http2_upgrade(void *cs, void *sr, struct mk_server *server)
 {
     struct mk_http_session *s = cs;
     struct mk_http_request *r = sr;
@@ -95,7 +95,7 @@ static int mk_http2_upgrade(void *cs, void *sr)
     mk_header_set_http_status(r, MK_INFO_SWITCH_PROTOCOL);
     r->headers.connection = MK_HEADER_CONN_UPGRADED;
     r->headers.upgrade = MK_HEADER_UPGRADED_H2C;
-    mk_header_prepare(s, r);
+    mk_header_prepare(s, r, server);
 
     h2s = mk_http2_session_create();
     if (!h2s) {
@@ -290,7 +290,7 @@ static int mk_http2_sched_read(struct mk_sched_conn *conn,
     if (available == 0) {
         new_size = h2s->buffer_size + MK_HTTP2_CHUNK;
         if (h2s->buffer == h2s->buffer_fixed) {
-            h2s->buffer = mk_mem_malloc(new_size);
+            h2s->buffer = mk_mem_alloc(new_size);
             if (!h2s->buffer) {
                 /* FIXME: send internal server error ? */
                 return -1;

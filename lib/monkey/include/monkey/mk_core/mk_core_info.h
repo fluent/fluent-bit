@@ -17,31 +17,16 @@
  *  limitations under the License.
  */
 
-#ifndef MK_CORE_H
-#define MK_CORE_H
+#ifndef MK_CORE_INFO_H
+#define MK_CORE_INFO_H
 
-#ifdef __cplusplus /* If this is a C++ compiler, use C linkage */
-extern "C" {
+/* General flags set by CMakeLists.txt */
+#ifndef MK_HAVE_TIMERFD_CREATE
+#define MK_HAVE_TIMERFD_CREATE
+#endif
+#ifndef MK_HAVE_EVENTFD
+#define MK_HAVE_EVENTFD
 #endif
 
-#include <sys/types.h>
-
-/* Process UID/GID */
-extern gid_t EGID;
-extern gid_t EUID;
-
-#include <mk_core/mk_core_info.h>
-#include <mk_core/mk_iov.h>
-#include <mk_core/mk_file.h>
-#include <mk_core/mk_event.h>
-#include <mk_core/mk_rbtree.h>
-#include <mk_core/mk_rconf.h>
-#include <mk_core/mk_string.h>
-#include <mk_core/mk_macros.h>
-#include <mk_core/mk_utils.h>
-
-#ifdef __cplusplus /* If this is a C++ compiler, use C linkage */
-}
-#endif
 
 #endif
