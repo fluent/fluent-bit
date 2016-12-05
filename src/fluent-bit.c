@@ -27,7 +27,7 @@
 #include <signal.h>
 #include <getopt.h>
 
-#include <mk_core.h>
+#include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_utils.h>
@@ -359,6 +359,9 @@ int main(int argc, char **argv)
 
     /* Signal handler */
     flb_signal_init();
+
+    /* Initialize Monkey Core library */
+    mk_core_init();
 
     /* Create configuration context */
     config = flb_config_init();
