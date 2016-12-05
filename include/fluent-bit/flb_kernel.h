@@ -21,7 +21,7 @@
 #define FLB_KERNEL_H
 
 #include <inttypes.h>
-#include <mk_core.h>
+#include <monkey/mk_core.h>
 
 /* Numeric kernel version */
 #define FLB_KERNEL_VERSION(a, b, c) (((a) << 16) + ((b) << 8) + (c))

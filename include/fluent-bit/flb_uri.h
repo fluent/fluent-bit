@@ -20,7 +20,7 @@
 #ifndef FLB_URI_H
 #define FLB_URI_H
 
-#include <mk_core.h>
+#include <monkey/mk_core.h>
 
 /* By default we allow a maximum of 8 URI patterns in our map */
 #define FLB_URI_MAX       8

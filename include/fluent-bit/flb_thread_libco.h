@@ -74,7 +74,7 @@ static FLB_INLINE void flb_thread_destroy(struct flb_thread *th)
     if (th->cb_destroy) {
         th->cb_destroy(FLB_THREAD_DATA(th));
     }
-    flb_trace("[thread] destroy thread=%p", th);
+    flb_trace("[thread] destroy thread=%p data=%p", th, FLB_THREAD_DATA(th));
 
 #ifdef FLB_HAVE_VALGRIND
     VALGRIND_STACK_DEREGISTER(th->valgrind_stack_id);

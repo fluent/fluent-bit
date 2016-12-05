@@ -20,7 +20,7 @@
 #ifndef FLB_PLUGIN_PROXY_H
 #define FLB_PLUGIN_PROXY_H
 
-#include <mk_core.h>
+#include <monkey/mk_core.h>
 
 /* Plugin Types */
 #define FLB_PROXY_INPUT_PLUGIN     1

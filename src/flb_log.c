@@ -29,7 +29,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-#include <mk_core.h>
+#include <monkey/mk_core.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_worker.h>
