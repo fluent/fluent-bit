@@ -161,6 +161,23 @@ int flb_sched_request_destroy(struct flb_config *config,
     return 0;
 }
 
+int flb_sched_request_invalidate(struct flb_config *config, void *data)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_sched_request *request;
+
+    mk_list_foreach_safe(head, tmp, &config->sched_requests) {
+        request = mk_list_entry(head, struct flb_sched_request, _head);
+        if (request->data == data) {
+            flb_sched_request_destroy(config, request);
+            return 0;
+        }
+    }
+
+    return -1;
+}
+
 /* Handle a timeout event set by a previous flb_sched_request_create(...) */
 int flb_sched_event_handler(struct flb_config *config, struct mk_event *event)
 {
