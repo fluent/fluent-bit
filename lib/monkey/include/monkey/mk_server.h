@@ -56,15 +56,17 @@ static inline int mk_server_cork_flag(int fd, int state)
     return mk_socket_set_cork_flag(fd, state);
 }
 
-
+struct mk_server *mk_server_create();
 int mk_server_listen_check(struct mk_server_listen *listen, int server_fd);
 
 void mk_server_listen_free();
-struct mk_list *mk_server_listen_init(struct mk_server_config *config);
-unsigned int mk_server_capacity();
-void mk_server_launch_workers(void);
-void mk_server_loop();
+struct mk_list *mk_server_listen_init(struct mk_server *server);
+
+unsigned int mk_server_capacity(struct mk_server *server);
+void mk_server_launch_workers(struct mk_server *server);
+void mk_server_worker_loop(struct mk_server *server);
 void mk_server_loop_balancer();
 void mk_server_worker_loop();
+void mk_server_loop(struct mk_server *server);
 
 #endif

@@ -37,15 +37,17 @@ mk_ptr_t headers_preset = { NULL, HEADER_PRESET_SIZE - 1 };
 static char *log_time_buffers[2];
 static char *header_time_buffers[2];
 
-/* The mk_ptr_ts have two buffers for avoid in half-way access from
+/*
+ * The mk_ptr_ts have two buffers for avoid in half-way access from
  * another thread while a buffer is being modified. The function below returns
  * one of two buffers to work with.
  */
 static inline char *_next_buffer(mk_ptr_t *pointer, char **buffers)
 {
-    if(pointer->data == buffers[0]) {
+    if (pointer->data == buffers[0]) {
         return buffers[1];
-    } else {
+    }
+    else {
         return buffers[0];
     }
 }
@@ -64,7 +66,7 @@ static void mk_clock_log_set_time(time_t utime)
     log_current_time.data = time_string;
 }
 
-static void mk_clock_headers_preset(time_t utime)
+static void mk_clock_headers_preset(time_t utime, struct mk_server *server)
 {
     int len1;
     int len2;
@@ -79,7 +81,7 @@ static void mk_clock_headers_preset(time_t utime)
     len1 = snprintf(buffer,
                     HEADER_TIME_BUFFER_SIZE,
                     "%s",
-                    mk_config->server_signature_header);
+                    server->server_signature_header);
 
     len2 = strftime(buffer + len1,
                     HEADER_PRESET_SIZE - len1,
@@ -90,9 +92,10 @@ static void mk_clock_headers_preset(time_t utime)
     headers_preset.len  = len1 + len2;
 }
 
-void *mk_clock_worker_init(void *args UNUSED_PARAM)
+void *mk_clock_worker_init(void *data)
 {
     time_t cur_time;
+    struct mk_server *server = data;
 
     mk_utils_worker_rename("monkey: clock");
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
@@ -104,7 +107,7 @@ void *mk_clock_worker_init(void *args UNUSED_PARAM)
 
         if(cur_time != ((time_t)-1)) {
             mk_clock_log_set_time(cur_time);
-            mk_clock_headers_preset(cur_time);
+            mk_clock_headers_preset(cur_time, server);
         }
         sleep(1);
     }
@@ -124,16 +127,16 @@ void mk_clock_exit()
 }
 
 /* This function must be called before any threads are created */
-void mk_clock_sequential_init()
+void mk_clock_sequential_init(struct mk_server *server)
 {
     /* Time when monkey was started */
     monkey_init_time = time(NULL);
 
-    header_time_buffers[0] = mk_mem_malloc_z(HEADER_PRESET_SIZE);
-    header_time_buffers[1] = mk_mem_malloc_z(HEADER_PRESET_SIZE);
+    header_time_buffers[0] = mk_mem_alloc_z(HEADER_PRESET_SIZE);
+    header_time_buffers[1] = mk_mem_alloc_z(HEADER_PRESET_SIZE);
 
-    log_time_buffers[0] = mk_mem_malloc_z(LOG_TIME_BUFFER_SIZE);
-    log_time_buffers[1] = mk_mem_malloc_z(LOG_TIME_BUFFER_SIZE);
+    log_time_buffers[0] = mk_mem_alloc_z(LOG_TIME_BUFFER_SIZE);
+    log_time_buffers[1] = mk_mem_alloc_z(LOG_TIME_BUFFER_SIZE);
 
 
     /* Set the time once */
@@ -141,6 +144,6 @@ void mk_clock_sequential_init()
 
     if (cur_time != ((time_t)-1)) {
         mk_clock_log_set_time(cur_time);
-        mk_clock_headers_preset(cur_time);
+        mk_clock_headers_preset(cur_time, server);
     }
 }

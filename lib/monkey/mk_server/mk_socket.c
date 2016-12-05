@@ -231,7 +231,7 @@ int mk_socket_reset(int socket)
 }
 
 int mk_socket_bind(int socket_fd, const struct sockaddr *addr,
-                   socklen_t addrlen, int backlog)
+                   socklen_t addrlen, int backlog, struct mk_server *server)
 {
     int ret;
 
@@ -253,7 +253,7 @@ int mk_socket_bind(int socket_fd, const struct sockaddr *addr,
      *
      *     # echo 1 > /proc/sys/net/ipv4/tcp_fastopen
      */
-    if (mk_config->kernel_features & MK_KERNEL_TCP_FASTOPEN) {
+    if (server->kernel_features & MK_KERNEL_TCP_FASTOPEN) {
         ret = mk_socket_set_tcp_fastopen(socket_fd);
         if (ret == -1) {
             mk_warn("Could not set TCP_FASTOPEN");
@@ -270,7 +270,7 @@ int mk_socket_bind(int socket_fd, const struct sockaddr *addr,
 
 /* Just IPv4 for now... */
 int mk_socket_server(char *port, char *listen_addr,
-                     int reuse_port, struct mk_server_config *config)
+                     int reuse_port, struct mk_server *server)
 {
     int ret;
     int socket_fd = -1;
@@ -305,15 +305,16 @@ int mk_socket_server(char *port, char *listen_addr,
 
         /* Check if reuse port can be enabled on this socket */
         if (reuse_port == MK_TRUE &&
-            (config->kernel_features & MK_KERNEL_SO_REUSEPORT)) {
+            (server->kernel_features & MK_KERNEL_SO_REUSEPORT)) {
             ret = mk_socket_set_tcp_reuseport(socket_fd);
             if (ret == -1) {
                 mk_warn("Could not use SO_REUSEPORT, using fair balancing mode");
-                config->scheduler_mode = MK_SCHEDULER_FAIR_BALANCING;
+                server->scheduler_mode = MK_SCHEDULER_FAIR_BALANCING;
             }
         }
 
-        ret = mk_socket_bind(socket_fd, rp->ai_addr, rp->ai_addrlen, MK_SOMAXCONN);
+        ret = mk_socket_bind(socket_fd, rp->ai_addr, rp->ai_addrlen,
+                             MK_SOMAXCONN, server);
         if(ret == -1) {
             mk_err("Cannot listen on %s:%s", listen_addr, port);
             freeaddrinfo(res);

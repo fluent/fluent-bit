@@ -57,9 +57,10 @@ const mk_ptr_t mk_http_protocol_null_p = { NULL, 0 };
 
 /* Create a memory allocation in order to handle the request data */
 void mk_http_request_init(struct mk_http_session *session,
-                          struct mk_http_request *request)
+                          struct mk_http_request *request,
+                          struct mk_server *server)
 {
-    struct mk_list *host_list = &mk_config->hosts;
+    struct mk_list *host_list = &server->hosts;
 
     request->port = 0;
     request->status = MK_TRUE;
@@ -110,12 +111,13 @@ static inline int mk_http_point_header(mk_ptr_t *h,
 }
 
 static int mk_http_request_prepare(struct mk_http_session *cs,
-                                   struct mk_http_request *sr)
+                                   struct mk_http_request *sr,
+                                   struct mk_server *server)
 {
     int ret;
     int status = 0;
     char *temp;
-    struct mk_list *hosts = &mk_config->hosts;
+    struct mk_list *hosts = &server->hosts;
     struct mk_list *alias;
     struct mk_http_header *header;
 
@@ -141,7 +143,7 @@ static int mk_http_request_prepare(struct mk_http_session *cs,
 
     /* Valid request URI? */
     if (sr->uri_processed.data[0] != '/') {
-        mk_http_error(MK_CLIENT_BAD_REQUEST, cs, sr);
+        mk_http_error(MK_CLIENT_BAD_REQUEST, cs, sr, server);
         return MK_EXIT_OK;
     }
 
@@ -161,12 +163,12 @@ static int mk_http_request_prepare(struct mk_http_session *cs,
 
     /* HTTP/1.1 needs Host header */
     if (!sr->host.data && sr->protocol == MK_HTTP_PROTOCOL_11) {
-        mk_http_error(MK_CLIENT_BAD_REQUEST, cs, sr);
+        mk_http_error(MK_CLIENT_BAD_REQUEST, cs, sr, server);
         return MK_EXIT_OK;
     }
 
     /* Should we close the session after this request ? */
-    mk_http_keepalive_check(cs, sr);
+    mk_http_keepalive_check(cs, sr, server);
 
     /* Content Length */
     header = &cs->parser.headers[MK_HEADER_CONTENT_LENGTH];
@@ -190,7 +192,7 @@ static int mk_http_request_prepare(struct mk_http_session *cs,
         }
 
         /* Match the virtual host */
-        mk_vhost_get(sr->host, &sr->host_conf, &sr->host_alias);
+        mk_vhost_get(sr->host, &sr->host_conf, &sr->host_alias, server);
 
         /* Check if this virtual host have some redirection */
         if (sr->host_conf->header_redirect.data) {
@@ -198,31 +200,31 @@ static int mk_http_request_prepare(struct mk_http_session *cs,
             sr->headers.location = mk_string_dup(sr->host_conf->header_redirect.data);
             sr->headers.content_length = 0;
             sr->headers.location = NULL;
-            mk_header_prepare(cs, sr);
+            mk_header_prepare(cs, sr, server);
             return 0;
         }
     }
 
     /* Is requesting an user home directory ? */
-    if (mk_config->conf_user_pub &&
+    if (server->conf_user_pub &&
         sr->uri_processed.len > 2 &&
         sr->uri_processed.data[1] == MK_USER_HOME) {
 
-        if (mk_user_init(cs, sr) != 0) {
-            mk_http_error(MK_CLIENT_NOT_FOUND, cs, sr);
+        if (mk_user_init(cs, sr, server) != 0) {
+            mk_http_error(MK_CLIENT_NOT_FOUND, cs, sr, server);
             return MK_EXIT_ABORT;
         }
     }
 
     /* Plugins Stage 20 */
-    ret = mk_plugin_stage_run_20(cs, sr);
+    ret = mk_plugin_stage_run_20(cs, sr, server);
     if (ret == MK_PLUGIN_RET_CLOSE_CONX) {
         MK_TRACE("STAGE 20 requested close conexion");
         return MK_EXIT_ABORT;
     }
 
     /* Normal HTTP process */
-    status = mk_http_init(cs, sr);
+    status = mk_http_init(cs, sr, server);
 
     MK_TRACE("[FD %i] HTTP Init returning %i", cs->socket, status);
     return status;
@@ -233,11 +235,12 @@ static int mk_http_request_prepare(struct mk_http_session *cs,
  * when some connection was not proceesed due to a premature close or similar
  * exception, it also take care of invoke the STAGE_40 and STAGE_50 plugins events
  */
-static void mk_request_premature_close(int http_status, struct mk_http_session *cs)
+static void mk_request_premature_close(int http_status, struct mk_http_session *cs,
+                                       struct mk_server *server)
 {
     struct mk_http_request *sr;
     struct mk_list *sr_list = &cs->request_list;
-    struct mk_list *host_list = &mk_config->hosts;
+    struct mk_list *host_list = &server->hosts;
 
     /*
      * If the connection is too premature, we need to allocate a temporal session_request
@@ -246,7 +249,7 @@ static void mk_request_premature_close(int http_status, struct mk_http_session *
     if (mk_list_is_empty(sr_list) == 0) {
         sr = &cs->sr_fixed;
         memset(sr, 0, sizeof(struct mk_http_request));
-        mk_http_request_init(cs, sr);
+        mk_http_request_init(cs, sr, server);
         mk_list_add(&sr->_head, &cs->request_list);
     }
     else {
@@ -258,18 +261,19 @@ static void mk_request_premature_close(int http_status, struct mk_http_session *
         if (!sr->host_conf) {
             sr->host_conf = mk_list_entry_first(host_list, struct host, _head);
         }
-        mk_http_error(http_status, cs, sr);
+        mk_http_error(http_status, cs, sr, server);
 
         /* STAGE_40, request has ended */
-        mk_plugin_stage_run_40(cs, sr);
+        mk_plugin_stage_run_40(cs, sr, server);
     }
 
     /* STAGE_50, connection closed and remove the http_session */
-    mk_plugin_stage_run_50(cs->socket);
-    mk_http_session_remove(cs);
+    mk_plugin_stage_run_50(cs->socket, server);
+    mk_http_session_remove(cs, server);
 }
 
-int mk_http_handler_read(struct mk_sched_conn *conn, struct mk_http_session *cs)
+int mk_http_handler_read(struct mk_sched_conn *conn, struct mk_http_session *cs,
+                         struct mk_server *server)
 {
     int bytes;
     int max_read;
@@ -282,7 +286,7 @@ int mk_http_handler_read(struct mk_sched_conn *conn, struct mk_http_session *cs)
     int socket = conn->event.fd;
 #endif
 
-    MK_TRACE("MAX REQUEST SIZE: %i", mk_config->max_request_size);
+    MK_TRACE("MAX REQUEST SIZE: %i", server->max_request_size);
 
  try_pending:
 
@@ -290,9 +294,10 @@ int mk_http_handler_read(struct mk_sched_conn *conn, struct mk_http_session *cs)
     if (available <= 0) {
         /* Reallocate buffer size if pending data does not have space */
         new_size = cs->body_size + conn->net->buffer_size;
-        if (new_size > mk_config->max_request_size) {
+        if (new_size > server->max_request_size) {
             MK_TRACE("Requested size is > mk_config->max_request_size");
-            mk_request_premature_close(MK_CLIENT_REQUEST_ENTITY_TOO_LARGE, cs);
+            mk_request_premature_close(MK_CLIENT_REQUEST_ENTITY_TOO_LARGE, cs,
+                                       server);
             return -1;
         }
 
@@ -302,7 +307,7 @@ int mk_http_handler_read(struct mk_sched_conn *conn, struct mk_http_session *cs)
          * body.
          */
         if (cs->body == cs->body_fixed) {
-            cs->body = mk_mem_malloc(new_size + 1);
+            cs->body = mk_mem_alloc(new_size + 1);
             cs->body_size = new_size;
             memcpy(cs->body, cs->body_fixed, cs->body_length);
             MK_TRACE("[FD %i] New size: %i, length: %i",
@@ -317,7 +322,8 @@ int mk_http_handler_read(struct mk_sched_conn *conn, struct mk_http_session *cs)
                 cs->body_size = new_size;
             }
             else {
-                mk_request_premature_close(MK_SERVER_INTERNAL_ERROR, cs);
+                mk_request_premature_close(MK_SERVER_INTERNAL_ERROR, cs,
+                                           server);
                 return -1;
             }
         }
@@ -378,7 +384,8 @@ static int mk_http_error_page(char *title, mk_ptr_t *message, char *signature,
     return 0;
 }
 
-static int mk_http_range_set(struct mk_http_request *sr, size_t file_size)
+static int mk_http_range_set(struct mk_http_request *sr, size_t file_size,
+                             struct mk_server *server)
 {
     struct response_headers *sh = &sr->headers;
     struct mk_stream_input *in;
@@ -387,7 +394,7 @@ static int mk_http_range_set(struct mk_http_request *sr, size_t file_size)
     in->bytes_total  = file_size;
     in->bytes_offset = 0;
 
-    if (mk_config->resume == MK_TRUE && sr->range.data) {
+    if (server->resume == MK_TRUE && sr->range.data) {
         /* yyy- */
         if (sh->ranges[0] >= 0 && sh->ranges[1] == -1) {
             in->bytes_offset = sh->ranges[0];
@@ -481,7 +488,8 @@ static int mk_http_range_parse(struct mk_http_request *sr)
 }
 
 static int mk_http_directory_redirect_check(struct mk_http_session *cs,
-                                            struct mk_http_request *sr)
+                                            struct mk_http_request *sr,
+                                            struct mk_server *server)
 {
     int port_redirect = 0;
     char *host;
@@ -503,14 +511,14 @@ static int mk_http_directory_redirect_check(struct mk_http_session *cs,
     /*
      * Add ending slash to the location string
      */
-    location = mk_mem_malloc(sr->uri_processed.len + 2);
+    location = mk_mem_alloc(sr->uri_processed.len + 2);
     memcpy(location, sr->uri_processed.data, sr->uri_processed.len);
     location[sr->uri_processed.len]     = '/';
     location[sr->uri_processed.len + 1] = '\0';
 
     /* FIXME: should we done something similar for SSL = 443 */
     if (sr->host.data && sr->port > 0) {
-        if (sr->port != mk_config->standard_port) {
+        if (sr->port != server->standard_port) {
             port_redirect = sr->port;
         }
     }
@@ -538,9 +546,9 @@ static int mk_http_directory_redirect_check(struct mk_http_session *cs,
     sr->headers.location = real_location;
     sr->headers.cgi = SH_NOCGI;
     sr->headers.pconnections_left =
-        (mk_config->max_keep_alive_request - cs->counter_connections);
+        (server->max_keep_alive_request - cs->counter_connections);
 
-    mk_header_prepare(cs, sr);
+    mk_header_prepare(cs, sr, server);
 
     /* we do not free() real_location as it's freed by iov */
     mk_mem_free(location);
@@ -551,21 +559,22 @@ static int mk_http_directory_redirect_check(struct mk_http_session *cs,
 /* Look for some  index.xxx in pathfile */
 static inline char *mk_http_index_lookup(mk_ptr_t *path_base,
                                          char *buf, size_t buf_size,
-                                         size_t *out, size_t *bytes)
+                                         size_t *out, size_t *bytes,
+                                         struct mk_server *server)
 {
     off_t off = 0;
     size_t len;
     struct mk_string_line *entry;
     struct mk_list *head;
 
-    if (!mk_config->index_files) {
+    if (!server->index_files) {
         return NULL;
     }
 
     off = path_base->len;
     memcpy(buf, path_base->data, off);
 
-    mk_list_foreach(head, mk_config->index_files) {
+    mk_list_foreach(head, server->index_files) {
         entry = mk_list_entry(head, struct mk_string_line, _head);
 
         len = off + entry->len + 1;
@@ -610,7 +619,8 @@ static inline void mk_http_cb_file_on_consume(struct mk_stream_input *in,
 }
 #endif
 
-int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
+int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr,
+                 struct mk_server *server)
 {
     int ret;
     int ret_file;
@@ -680,7 +690,7 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
                  * the new protocol internals.
                  */
                 mk_sched_switch_protocol(cs->conn, MK_CAP_HTTP2);
-                return cs->conn->protocol->cb_upgrade(cs, sr);
+                return cs->conn->protocol->cb_upgrade(cs, sr, server);
             }
             else {
                 MK_TRACE("Invalid client upgrade request, skip it");
@@ -692,13 +702,13 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
     if (memmem(sr->uri_processed.data, sr->uri_processed.len,
                MK_HTTP_DIRECTORY_BACKWARD,
                sizeof(MK_HTTP_DIRECTORY_BACKWARD) - 1)) {
-        return mk_http_error(MK_CLIENT_FORBIDDEN, cs, sr);
+        return mk_http_error(MK_CLIENT_FORBIDDEN, cs, sr, server);
     }
 
     if (sr->_content_length.data &&
         (sr->method != MK_METHOD_POST &&
          sr->method != MK_METHOD_PUT)) {
-        return mk_http_error(MK_CLIENT_BAD_REQUEST, cs, sr);
+        return mk_http_error(MK_CLIENT_BAD_REQUEST, cs, sr, server);
     }
 
 
@@ -725,17 +735,21 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
 
             if (h_handler->cb) {
                 sr->headers.content_length = 0;
-                h_handler->cb(cs, sr);
-                mk_header_prepare(cs, sr);
+                h_handler->cb(sr, h_handler->data);
+                mk_header_prepare(cs, sr, server);
                 return 0;
             }
             else {
+                if (!h_handler->handler) {
+                    return mk_http_error(MK_SERVER_INTERNAL_ERROR, cs, sr,
+                                         server);
+                }
                 plugin = h_handler->handler;
                 sr->stage30_handler = h_handler->handler;
                 ret = plugin->stage->stage30(plugin, cs, sr,
                                              h_handler->n_params,
                                              &h_handler->params);
-                mk_header_prepare(cs, sr);
+                mk_header_prepare(cs, sr, server);
             }
 
             MK_TRACE("[FD %i] STAGE_30 returned %i", cs->socket, ret);
@@ -744,10 +758,10 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
                 return MK_PLUGIN_RET_CONTINUE;
             case MK_PLUGIN_RET_CLOSE_CONX:
                 if (sr->headers.status > 0) {
-                    return mk_http_error(sr->headers.status, cs, sr);
+                    return mk_http_error(sr->headers.status, cs, sr, server);
                 }
                 else {
-                    return mk_http_error(MK_CLIENT_FORBIDDEN, cs, sr);
+                    return mk_http_error(MK_CLIENT_FORBIDDEN, cs, sr, server);
                 }
             case MK_PLUGIN_RET_END:
                 return MK_EXIT_OK;
@@ -757,13 +771,13 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
 
     /* If there is no handler and the resource don't exists, raise a 404 */
     if (ret_file == -1) {
-        return mk_http_error(MK_CLIENT_NOT_FOUND, cs, sr);
+        return mk_http_error(MK_CLIENT_NOT_FOUND, cs, sr, server);
     }
 
     /* is it a valid directory ? */
     if (sr->file_info.is_directory == MK_TRUE) {
         /* Send redirect header if end slash is not found */
-        if (mk_http_directory_redirect_check(cs, sr) == -1) {
+        if (mk_http_directory_redirect_check(cs, sr, server) == -1) {
             MK_TRACE("Directory Redirect");
 
             /* Redirect has been sent */
@@ -774,7 +788,8 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
         char tmppath[MK_MAX_PATH];
         index_path = mk_http_index_lookup(&sr->real_path,
                                           tmppath, MK_MAX_PATH,
-                                          &index_length, &index_bytes);
+                                          &index_length, &index_bytes,
+                                          server);
         if (index_path) {
             if (sr->real_path.data != sr->real_path_static) {
                 mk_ptr_free(&sr->real_path);
@@ -794,7 +809,7 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
             ret = mk_file_get_info(sr->real_path.data,
                                    &sr->file_info, MK_FILE_READ);
             if (ret != 0) {
-                return mk_http_error(MK_CLIENT_FORBIDDEN, cs, sr);
+                return mk_http_error(MK_CLIENT_FORBIDDEN, cs, sr, server);
             }
 
         }
@@ -802,15 +817,15 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
 
     /* Check symbolic link file */
     if (sr->file_info.is_link == MK_TRUE) {
-        if (mk_config->symlink == MK_FALSE) {
-            return mk_http_error(MK_CLIENT_FORBIDDEN, cs, sr);
+        if (server->symlink == MK_FALSE) {
+            return mk_http_error(MK_CLIENT_FORBIDDEN, cs, sr, server);
         }
         else {
             int n;
             char linked_file[MK_MAX_PATH];
             n = readlink(sr->real_path.data, linked_file, MK_MAX_PATH);
             if (n < 0) {
-                return mk_http_error(MK_CLIENT_FORBIDDEN, cs, sr);
+                return mk_http_error(MK_CLIENT_FORBIDDEN, cs, sr, server);
             }
         }
     }
@@ -847,10 +862,10 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
                 return MK_PLUGIN_RET_CONTINUE;
             case MK_PLUGIN_RET_CLOSE_CONX:
                 if (sr->headers.status > 0) {
-                    return mk_http_error(sr->headers.status, cs, sr);
+                    return mk_http_error(sr->headers.status, cs, sr, server);
                 }
                 else {
-                    return mk_http_error(MK_CLIENT_FORBIDDEN, cs, sr);
+                    return mk_http_error(MK_CLIENT_FORBIDDEN, cs, sr, server);
                 }
             case MK_PLUGIN_RET_END:
                 return MK_EXIT_OK;
@@ -864,15 +879,15 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
      * on it, Monkey will return error 501 (501 Not Implemented).
      */
     if (sr->method == MK_METHOD_PUT || sr->method == MK_METHOD_DELETE) {
-        return mk_http_error(MK_CLIENT_METHOD_NOT_ALLOWED, cs, sr);
+        return mk_http_error(MK_CLIENT_METHOD_NOT_ALLOWED, cs, sr, server);
     }
     else if (sr->method == MK_METHOD_UNKNOWN) {
-        return mk_http_error(MK_SERVER_NOT_IMPLEMENTED, cs, sr);
+        return mk_http_error(MK_SERVER_NOT_IMPLEMENTED, cs, sr, server);
     }
 
     /* counter connections */
     sr->headers.pconnections_left = (int)
-        (mk_config->max_keep_alive_request - cs->counter_connections);
+        (server->max_keep_alive_request - cs->counter_connections);
 
     /* Set default value */
     mk_header_set_http_status(sr, MK_HTTP_OK);
@@ -889,7 +904,7 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
         //sr->headers.allow_methods.len = strlen(MK_METHOD_AVAILABLE);
 
         mk_ptr_reset(&sr->headers.content_type);
-        mk_header_prepare(cs, sr);
+        mk_header_prepare(cs, sr, server);
         return MK_EXIT_OK;
     }
     else {
@@ -898,7 +913,7 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
 
     /* read permissions and check file */
     if (sr->file_info.read_access == MK_FALSE) {
-        return mk_http_error(MK_CLIENT_FORBIDDEN, cs, sr);
+        return mk_http_error(MK_CLIENT_FORBIDDEN, cs, sr, server);
     }
 
     /* Matching MimeType  */
@@ -908,12 +923,12 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
     }
 
     if (sr->file_info.is_directory == MK_TRUE) {
-        return mk_http_error(MK_CLIENT_FORBIDDEN, cs, sr);
+        return mk_http_error(MK_CLIENT_FORBIDDEN, cs, sr, server);
     }
 
     /* get file size */
     if (sr->file_info.size == 0) {
-        return mk_http_error(MK_CLIENT_NOT_FOUND, cs, sr);
+        return mk_http_error(MK_CLIENT_NOT_FOUND, cs, sr, server);
     }
 
     /* Configure some headers */
@@ -934,7 +949,7 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
         if (date_file_server <= date_client &&
             date_client > 0) {
             mk_header_set_http_status(sr, MK_NOT_MODIFIED);
-            mk_header_prepare(cs, sr);
+            mk_header_prepare(cs, sr, server);
             return MK_EXIT_OK;
         }
     }
@@ -945,10 +960,10 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
 
     /* Open file */
     if (mk_likely(sr->file_info.size > 0)) {
-        sr->file_fd = mk_vhost_open(sr);
+        sr->file_fd = mk_vhost_open(sr, server);
         if (sr->file_fd == -1) {
             MK_TRACE("open() failed");
-            return mk_http_error(MK_CLIENT_FORBIDDEN, cs, sr);
+            return mk_http_error(MK_CLIENT_FORBIDDEN, cs, sr, server);
         }
         sr->in_file.fd           = sr->file_fd;
         sr->in_file.bytes_offset = 0;
@@ -963,22 +978,23 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
         }
 
         /* HTTP Ranges */
-        if (sr->range.data != NULL && mk_config->resume == MK_TRUE) {
+        if (sr->range.data != NULL && server->resume == MK_TRUE) {
             if (mk_http_range_parse(sr) < 0) {
                 sr->headers.ranges[0] = -1;
                 sr->headers.ranges[1] = -1;
-                return mk_http_error(MK_CLIENT_BAD_REQUEST, cs, sr);
+                return mk_http_error(MK_CLIENT_BAD_REQUEST, cs, sr, server);
             }
             if (sr->headers.ranges[0] >= 0 || sr->headers.ranges[1] >= 0) {
                 mk_header_set_http_status(sr, MK_HTTP_PARTIAL);
             }
 
             /* Calc bytes to send & offset */
-            if (mk_http_range_set(sr, sr->file_info.size) != 0) {
+            if (mk_http_range_set(sr, sr->file_info.size, server) != 0) {
                 sr->headers.content_length = -1;
                 sr->headers.ranges[0] = -1;
                 sr->headers.ranges[1] = -1;
-                return mk_http_error(MK_CLIENT_REQUESTED_RANGE_NOT_SATISF, cs, sr);
+                return mk_http_error(MK_CLIENT_REQUESTED_RANGE_NOT_SATISF,
+                                     cs, sr, server);
             }
         }
     }
@@ -988,7 +1004,7 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
     }
 
     /* Send headers */
-    mk_header_prepare(cs, sr);
+    mk_header_prepare(cs, sr, server);
     if (mk_unlikely(sr->headers.content_length == 0)) {
         return 0;
     }
@@ -1028,9 +1044,10 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr)
  * the keepalive headers vars and Monkey configuration as criteria
  */
 int mk_http_keepalive_check(struct mk_http_session *cs,
-                            struct mk_http_request *sr)
+                            struct mk_http_request *sr,
+                            struct mk_server *server)
 {
-    if (mk_config->keep_alive == MK_FALSE) {
+    if (server->keep_alive == MK_FALSE) {
         return -1;
     }
 
@@ -1052,7 +1069,7 @@ int mk_http_keepalive_check(struct mk_http_session *cs,
     }
 
     /* Client has reached keep-alive connections limit */
-    if (cs->counter_connections >= mk_config->max_keep_alive_request) {
+    if (cs->counter_connections >= server->max_keep_alive_request) {
         cs->close_now = MK_TRUE;
         return -1;
     }
@@ -1073,14 +1090,14 @@ static inline void mk_http_request_ka_next(struct mk_http_session *cs)
     mk_http_parser_init(&cs->parser);
 }
 
-int mk_http_request_end(struct mk_http_session *cs)
+int mk_http_request_end(struct mk_http_session *cs, struct mk_server *server)
 {
     int ret;
     int status;
     int len;
     struct mk_http_request *sr;
 
-    if (mk_config->max_keep_alive_request <= cs->counter_connections) {
+    if (server->max_keep_alive_request <= cs->counter_connections) {
         cs->close_now = MK_TRUE;
         goto shutdown;
     }
@@ -1099,12 +1116,13 @@ int mk_http_request_end(struct mk_http_session *cs)
 
         /* Prepare for next one */
         sr = mk_list_entry_first(&cs->request_list, struct mk_http_request, _head);
-        mk_http_request_free(sr);
-        mk_http_request_init(cs, sr);
+        mk_http_request_free(sr, server);
+        mk_http_request_init(cs, sr, server);
         mk_http_parser_init(&cs->parser);
-        status = mk_http_parser(sr, &cs->parser, cs->body, cs->body_length);
+        status = mk_http_parser(sr, &cs->parser, cs->body, cs->body_length,
+                                server);
         if (status == MK_HTTP_PARSER_OK) {
-            mk_http_request_prepare(cs, sr);
+            mk_http_request_prepare(cs, sr, server);
             /*
              * Return 1 means, we still have more data to send in a different
              * scheduler round.
@@ -1127,11 +1145,11 @@ int mk_http_request_end(struct mk_http_session *cs)
      */
     if (cs->close_now == MK_TRUE) {
         MK_TRACE("[FD %i] No KeepAlive mode, remove", cs->conn->event.fd);
-        mk_http_session_remove(cs);
+        mk_http_session_remove(cs, server);
         return -1;
     }
     else {
-        mk_http_request_free_list(cs);
+        mk_http_request_free_list(cs, server);
         mk_http_request_ka_next(cs);
         mk_sched_conn_timeout_add(cs->conn, mk_sched_get_thread_conf());
         return 0;
@@ -1151,7 +1169,9 @@ void cb_stream_page_finished(struct mk_stream_input *in)
 
 /* Enqueue an error response. This function always returns MK_EXIT_OK */
 int mk_http_error(int http_status, struct mk_http_session *cs,
-                  struct mk_http_request *sr) {
+                  struct mk_http_request *sr,
+                  struct mk_server *server)
+{
     int ret, fd;
     size_t count;
     mk_ptr_t message;
@@ -1186,7 +1206,7 @@ int mk_http_error(int http_status, struct mk_http_session *cs,
             }
 
             /* open file */
-            fd = open(entry->real_path, mk_config->open_flags);
+            fd = open(entry->real_path, server->open_flags);
             if (fd == -1) {
                 break;
             }
@@ -1194,7 +1214,7 @@ int mk_http_error(int http_status, struct mk_http_session *cs,
             /* Outgoing headers */
             sr->headers.content_length = finfo.size;
             sr->headers.real_length    = finfo.size;
-            mk_header_prepare(cs, sr);
+            mk_header_prepare(cs, sr, server);
 
             /* Stream setup */
             mk_stream_in_file(&sr->stream, &sr->in_file, sr->file_fd,
@@ -1209,7 +1229,7 @@ int mk_http_error(int http_status, struct mk_http_session *cs,
     case MK_CLIENT_FORBIDDEN:
         mk_http_error_page("Forbidden",
                            &sr->uri,
-                           mk_config->server_signature,
+                           server->server_signature,
                            &page.data, &page.len);
         break;
     case MK_CLIENT_NOT_FOUND:
@@ -1217,7 +1237,7 @@ int mk_http_error(int http_status, struct mk_http_session *cs,
                         "The requested URL was not found on this server.");
         mk_http_error_page("Not Found",
                            &message,
-                           mk_config->server_signature,
+                           server->server_signature,
                            &page.data, &page.len);
         mk_ptr_free(&message);
         break;
@@ -1226,26 +1246,26 @@ int mk_http_error(int http_status, struct mk_http_session *cs,
                         "The request entity is too large.");
         mk_http_error_page("Entity too large",
                            &message,
-                           mk_config->server_signature,
+                           server->server_signature,
                            &page.data, &page.len);
         mk_ptr_free(&message);
         break;
     case MK_CLIENT_METHOD_NOT_ALLOWED:
         mk_http_error_page("Method Not Allowed",
                            &sr->uri,
-                           mk_config->server_signature,
+                           server->server_signature,
                            &page.data, &page.len);
         break;
     case MK_SERVER_NOT_IMPLEMENTED:
         mk_http_error_page("Method Not Implemented",
                            &sr->uri,
-                           mk_config->server_signature,
+                           server->server_signature,
                            &page.data, &page.len);
         break;
     case MK_SERVER_INTERNAL_ERROR:
         mk_http_error_page("Internal Server Error",
                            &sr->uri,
-                           mk_config->server_signature,
+                           server->server_signature,
                            &page.data, &page.len);
         break;
     }
@@ -1269,7 +1289,7 @@ int mk_http_error(int http_status, struct mk_http_session *cs,
         mk_ptr_set(&sr->headers.content_type, "Content-Type: text/html\r\n");
     }
 
-    mk_header_prepare(cs, sr);
+    mk_header_prepare(cs, sr, server);
     if (page.data) {
         if (sr->method != MK_METHOD_HEAD) {
             if (sr->headers._extra_rows) {
@@ -1288,7 +1308,7 @@ int mk_http_error(int http_status, struct mk_http_session *cs,
     }
 
     mk_channel_write(cs->channel, &count);
-    mk_http_request_end(cs);
+    mk_http_request_end(cs, server);
 
     return MK_EXIT_OK;
 }
@@ -1297,7 +1317,8 @@ int mk_http_error(int http_status, struct mk_http_session *cs,
  * From thread mk_sched_worker "list", remove the http_session
  * struct information
  */
-void mk_http_session_remove(struct mk_http_session *cs)
+void mk_http_session_remove(struct mk_http_session *cs,
+                            struct mk_server *server)
 {
     struct mk_list *tmp;
     struct mk_list *head;
@@ -1326,7 +1347,7 @@ void mk_http_session_remove(struct mk_http_session *cs)
     if (cs->body != cs->body_fixed) {
         mk_mem_free(cs->body);
     }
-    mk_http_request_free_list(cs);
+    mk_http_request_free_list(cs, server);
     mk_list_del(&cs->request_list);
 
     cs->_sched_init = MK_FALSE;
@@ -1377,7 +1398,7 @@ int mk_http_session_init(struct mk_http_session *cs, struct mk_sched_conn *conn)
 
     /* alloc space for body content */
     if (conn->net->buffer_size > MK_REQUEST_CHUNK) {
-        cs->body = mk_mem_malloc(conn->net->buffer_size);
+        cs->body = mk_mem_alloc(conn->net->buffer_size);
         cs->body_size = conn->net->buffer_size;
     }
     else {
@@ -1399,10 +1420,10 @@ int mk_http_session_init(struct mk_http_session *cs, struct mk_sched_conn *conn)
 }
 
 
-void mk_http_request_free(struct mk_http_request *sr)
+void mk_http_request_free(struct mk_http_request *sr, struct mk_server *server)
 {
     /* Let the vhost interface to handle the session close */
-    mk_vhost_close(sr);
+    mk_vhost_close(sr, server);
 
     if (sr->headers.location) {
         mk_mem_free(sr->headers.location);
@@ -1421,7 +1442,8 @@ void mk_http_request_free(struct mk_http_request *sr)
     }
 }
 
-void mk_http_request_free_list(struct mk_http_session *cs)
+void mk_http_request_free_list(struct mk_http_session *cs,
+                               struct mk_server *server)
 {
     struct mk_list *head, *tmp;
     struct mk_http_request *request;
@@ -1432,7 +1454,7 @@ void mk_http_request_free_list(struct mk_http_session *cs)
         request = mk_list_entry(head, struct mk_http_request, _head);
         mk_list_del(&request->_head);
 
-        mk_http_request_free(request);
+        mk_http_request_free(request, server);
         if (request != &cs->sr_fixed) {
             mk_mem_free(request);
         }
@@ -1478,7 +1500,8 @@ struct mk_http_header *mk_http_header_get(int name, struct mk_http_request *req,
  * Main callbacks for the Scheduler
  */
 int mk_http_sched_read(struct mk_sched_conn *conn,
-                       struct mk_sched_worker *worker)
+                       struct mk_sched_worker *worker,
+                       struct mk_server *server)
 {
     int ret;
     int status;
@@ -1502,34 +1525,34 @@ int mk_http_sched_read(struct mk_sched_conn *conn,
     }
 
     /* Invoke the read handler, on this case we only support HTTP (for now :) */
-    ret = mk_http_handler_read(conn, cs);
+    ret = mk_http_handler_read(conn, cs, server);
     if (ret > 0) {
         if (mk_list_is_empty(&cs->request_list) == 0) {
             /* Add the first entry */
             sr = &cs->sr_fixed;
             mk_list_add(&sr->_head, &cs->request_list);
-            mk_http_request_init(cs, sr);
+            mk_http_request_init(cs, sr, server);
         }
         else {
             sr = mk_list_entry_first(&cs->request_list, struct mk_http_request, _head);
         }
-        status = mk_http_parser(sr, &cs->parser,
-                                cs->body, cs->body_length);
+        status = mk_http_parser(sr, &cs->parser, cs->body,
+                                cs->body_length, server);
         if (status == MK_HTTP_PARSER_OK) {
             MK_TRACE("[FD %i] HTTP_PARSER_OK", socket);
             if (mk_http_status_completed(cs, conn) == -1) {
-                mk_http_session_remove(cs);
+                mk_http_session_remove(cs, server);
                 return -1;
             }
             mk_sched_conn_timeout_del(conn);
-            mk_http_request_prepare(cs, sr);
+            mk_http_request_prepare(cs, sr, server);
         }
         else if (status == MK_HTTP_PARSER_ERROR) {
             /* The HTTP parser may enqueued some response error */
             if (mk_channel_is_empty(cs->channel) != 0) {
                 mk_channel_write(cs->channel, &count);
             }
-            mk_http_session_remove(cs);
+            mk_http_session_remove(cs, server);
             MK_TRACE("[FD %i] HTTP_PARSER_ERROR", socket);
             return -1;
         }
@@ -1544,7 +1567,7 @@ int mk_http_sched_read(struct mk_sched_conn *conn,
 /* The scheduler got a connection close event from the remote client */
 int mk_http_sched_close(struct mk_sched_conn *conn,
                         struct mk_sched_worker *sched,
-                        int type)
+                        int type, struct mk_server *server)
 {
     struct mk_http_session *cs;
     (void) sched;
@@ -1557,12 +1580,13 @@ int mk_http_sched_close(struct mk_sched_conn *conn,
 
     /* Release resources of the requests and session */
     cs = mk_http_session_get(conn);
-    mk_http_session_remove(cs);
+    mk_http_session_remove(cs, server);
     return 0;
 }
 
 int mk_http_sched_done(struct mk_sched_conn *conn,
-                       struct mk_sched_worker *worker)
+                       struct mk_sched_worker *worker,
+                       struct mk_server *server)
 {
     (void) worker;
     struct mk_http_session *cs;
@@ -1571,9 +1595,9 @@ int mk_http_sched_done(struct mk_sched_conn *conn,
     cs = mk_http_session_get(conn);
     sr = mk_list_entry_first(&cs->request_list, struct mk_http_request, _head);
 
-    mk_plugin_stage_run_40(cs, sr);
+    mk_plugin_stage_run_40(cs, sr, server);
 
-    return mk_http_request_end(cs);
+    return mk_http_request_end(cs, server);
 }
 
 struct mk_sched_handler mk_http_handler = {

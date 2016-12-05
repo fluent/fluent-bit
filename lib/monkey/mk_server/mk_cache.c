@@ -37,30 +37,27 @@ void mk_cache_worker_init()
     mk_ptr_t *p_tmp;
 
     /* Cache header request -> last modified */
-    p_tmp = mk_mem_malloc_z(sizeof(mk_ptr_t));
-    p_tmp->data = mk_mem_malloc_z(32);
+    p_tmp = mk_mem_alloc_z(sizeof(mk_ptr_t));
+    p_tmp->data = mk_mem_alloc_z(32);
     p_tmp->len = -1;
     MK_TLS_SET(mk_tls_cache_header_lm, p_tmp);
 
     /* Cache header request -> content length */
-    p_tmp = mk_mem_malloc_z(sizeof(mk_ptr_t));
-    p_tmp->data = mk_mem_malloc_z(MK_UTILS_INT2MKP_BUFFER_LEN);
+    p_tmp = mk_mem_alloc_z(sizeof(mk_ptr_t));
+    p_tmp->data = mk_mem_alloc_z(MK_UTILS_INT2MKP_BUFFER_LEN);
     p_tmp->len = -1;
     MK_TLS_SET(mk_tls_cache_header_cl, p_tmp);
 
     /* Cache gmtime buffer */
-    MK_TLS_SET(mk_tls_cache_gmtime, mk_mem_malloc(sizeof(struct tm)));
+    MK_TLS_SET(mk_tls_cache_gmtime, mk_mem_alloc(sizeof(struct tm)));
 
     /* Cache the most used text representations of utime2gmt */
     MK_TLS_SET(mk_tls_cache_gmtext,
-                  mk_mem_malloc_z(sizeof(struct mk_gmt_cache) * MK_GMT_CACHES));
+                  mk_mem_alloc_z(sizeof(struct mk_gmt_cache) * MK_GMT_CACHES));
 
     /* Cache buffer for strerror_r(2) */
-    cache_error = mk_mem_malloc(MK_UTILS_ERROR_SIZE);
+    cache_error = mk_mem_alloc(MK_UTILS_ERROR_SIZE);
     pthread_setspecific(mk_utils_error_key, (void *) cache_error);
-
-    /* Virtual hosts: initialize per thread-vhost data */
-    mk_vhost_fdt_worker_init();
 }
 
 void mk_cache_worker_exit()

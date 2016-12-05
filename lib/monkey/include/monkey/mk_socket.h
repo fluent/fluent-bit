@@ -68,9 +68,11 @@ int mk_socket_connect(char *host, int port, int async);
 int mk_socket_open(char *path, int async);
 int mk_socket_reset(int socket);
 int mk_socket_bind(int socket_fd, const struct sockaddr *addr,
-                   socklen_t addrlen, int backlog);
+                   socklen_t addrlen, int backlog, struct mk_server *server);
+
 int mk_socket_server(char *port, char *listen_addr,
-                     int reuse_port, struct mk_server_config *config);
+                     int reuse_port, struct mk_server *server);
+
 int mk_socket_ip_str(int socket_fd, char **buf, int size, unsigned long *len);
 
 

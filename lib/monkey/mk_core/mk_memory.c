@@ -53,7 +53,7 @@ char *mk_ptr_to_buf(mk_ptr_t p)
 {
     char *buf;
 
-    buf = mk_mem_malloc(p.len + 1);
+    buf = mk_mem_alloc(p.len + 1);
     if (!buf) return NULL;
 
     memcpy(buf, p.data, p.len);

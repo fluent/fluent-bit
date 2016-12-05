@@ -170,7 +170,7 @@ char *mk_string_dup(const char *s)
         return NULL;
 
     len = strlen(s);
-    p = mk_mem_malloc(len + 1);
+    p = mk_mem_alloc(len + 1);
     memcpy(p, s, len);
     p[len] = '\0';
 
@@ -189,7 +189,7 @@ struct mk_list *mk_string_split_line(const char *line)
         return NULL;
     }
 
-    list = mk_mem_malloc(sizeof(struct mk_list));
+    list = mk_mem_alloc(sizeof(struct mk_list));
     mk_list_init(list);
 
     len = strlen(line);
@@ -216,7 +216,7 @@ struct mk_list *mk_string_split_line(const char *line)
         }
 
         /* Alloc node */
-        new = mk_mem_malloc(sizeof(struct mk_string_line));
+        new = mk_mem_alloc(sizeof(struct mk_string_line));
         new->val = val;
         new->len = val_len;
 
@@ -253,7 +253,7 @@ char *mk_string_build(char **buffer, unsigned long *len,
 
     /* *buffer *must* be an empty/NULL buffer */
     mk_bug(*buffer);
-    *buffer = (char *) mk_mem_malloc(_mem_alloc);
+    *buffer = (char *) mk_mem_alloc(_mem_alloc);
 
     if (!*buffer) {
         return NULL;
@@ -417,7 +417,7 @@ char *mk_string_copy_substr(const char *string, int pos_init, int pos_end)
     if (size <= 2)
         size = 4;
 
-    buffer = mk_mem_malloc(size);
+    buffer = mk_mem_alloc(size);
 
     if (!buffer) {
         return NULL;

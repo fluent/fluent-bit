@@ -49,7 +49,7 @@ struct mk_iov *mk_iov_create(int n, int offset)
     s_iovec    = (n * sizeof(struct iovec));  /* iovec array size      */
     s_free_buf = (n * sizeof(void *));        /* free buf array        */
 
-    p = mk_mem_malloc_z(s_all + s_iovec + s_free_buf);
+    p = mk_mem_alloc_z(s_all + s_iovec + s_free_buf);
     if (!p) {
         return NULL;
     }

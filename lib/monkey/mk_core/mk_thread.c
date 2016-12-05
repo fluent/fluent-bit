@@ -103,7 +103,7 @@ struct mk_thread_scheduler *mk_thread_open()
 {
     struct mk_thread_scheduler *sch;
 
-    sch = mk_mem_malloc(sizeof(*sch));
+    sch = mk_mem_alloc(sizeof(*sch));
     if (!sch) {
         return NULL;
     }
@@ -111,7 +111,7 @@ struct mk_thread_scheduler *mk_thread_open()
     sch->n_dthread = 0;
     sch->cap = DEFAULT_MK_THREAD_NUM;
     sch->running_id = -1;
-    sch->dt = mk_mem_malloc_z(sizeof(struct mk_thread *) * sch->cap);
+    sch->dt = mk_mem_alloc_z(sizeof(struct mk_thread *) * sch->cap);
     if (!sch->dt) {
         mk_mem_free(sch);
         return NULL;
@@ -186,7 +186,7 @@ int mk_thread_create(mk_thread_func func, void *data)
         sch->dt[id] = NULL;
     }
 
-    dt = mk_mem_malloc(sizeof(*dt));
+    dt = mk_mem_alloc(sizeof(*dt));
     if (!dt) {
         return -1;
     }

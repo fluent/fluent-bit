@@ -294,8 +294,8 @@ configure_file(
 # General Headers
 include_directories(./)
 include_directories(include)
-include_directories(mk_core/include)
-include_directories(monkey)
+include_directories(include/monkey/)
+
 
 # Instruct CMake to build the the code base
 # =========================================
@@ -308,6 +308,7 @@ add_subdirectory(man)
 add_subdirectory(mk_core)
 add_subdirectory(plugins)
 add_subdirectory(mk_server)
+
 if(NOT MK_WITHOUT_BIN)
   add_subdirectory(mk_bin)
 endif()

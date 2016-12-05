@@ -20,13 +20,13 @@
 #ifndef MK_PLUGIN_STAGE_H
 #define MK_PLUGIN_STAGE_H
 
-static inline int mk_plugin_stage_run_10(int socket)
+static inline int mk_plugin_stage_run_10(int socket, struct mk_server *server)
 {
     int ret;
     struct mk_list *head;
     struct mk_plugin_stage *stage;
 
-    mk_list_foreach(head, &mk_config->stage10_handler) {
+    mk_list_foreach(head, &server->stage10_handler) {
         stage = mk_list_entry(head, struct mk_plugin_stage, _head);
         ret = stage->stage10(socket);
         switch (ret) {
@@ -40,13 +40,14 @@ static inline int mk_plugin_stage_run_10(int socket)
 }
 
 static inline int mk_plugin_stage_run_20(struct mk_http_session *cs,
-                                         struct mk_http_request *sr)
+                                         struct mk_http_request *sr,
+                                         struct mk_server *server)
 {
     int ret;
     struct mk_list *head;
     struct mk_plugin_stage *stage;
 
-    mk_list_foreach(head, &mk_config->stage20_handler) {
+    mk_list_foreach(head, &server->stage20_handler) {
         stage = mk_list_entry(head, struct mk_plugin_stage, _head);
         ret = stage->stage20(cs, sr);
         switch (ret) {
@@ -60,12 +61,13 @@ static inline int mk_plugin_stage_run_20(struct mk_http_session *cs,
 }
 
 static inline int mk_plugin_stage_run_40(struct mk_http_session *cs,
-                                         struct mk_http_request *sr)
+                                         struct mk_http_request *sr,
+                                         struct mk_server *server)
 {
     struct mk_list *head;
     struct mk_plugin_stage *stage;
 
-    mk_list_foreach(head, &mk_config->stage40_handler) {
+    mk_list_foreach(head, &server->stage40_handler) {
         stage = mk_list_entry(head, struct mk_plugin_stage, _head);
         stage->stage40(cs, sr);
     }
@@ -73,14 +75,14 @@ static inline int mk_plugin_stage_run_40(struct mk_http_session *cs,
     return -1;
 }
 
-static inline int mk_plugin_stage_run_50(int socket)
+static inline int mk_plugin_stage_run_50(int socket, struct mk_server *server)
 {
     int ret;
 
     struct mk_list *head;
     struct mk_plugin_stage *stage;
 
-    mk_list_foreach(head, &mk_config->stage50_handler) {
+    mk_list_foreach(head, &server->stage50_handler) {
         stage = mk_list_entry(head, struct mk_plugin_stage, _head);
         ret = stage->stage50(socket);
         switch (ret) {

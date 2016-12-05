@@ -27,6 +27,8 @@ add_library(monkey-core-static STATIC ${src})
 set_target_properties(monkey-core-static PROPERTIES OUTPUT_NAME monkey)
 target_link_libraries(monkey-core-static mk_core ${CMAKE_THREAD_LIBS_INIT} ${STATIC_PLUGINS_LIBS} ${CMAKE_DL_LIBS})
 
+message(STATUS "LINKING ${STATIC_PLUGINS_LIBS}")
+
 # Linux Kqueue emulation
 if(MK_HAVE_LINUX_KQUEUE)
   target_link_libraries(monkey-core-static kqueue)

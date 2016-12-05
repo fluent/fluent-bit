@@ -69,11 +69,11 @@ int mk_mimetype_add(char *name, const char *type)
     p = name;
     for ( ; *p; ++p) *p = tolower(*p);
 
-    new_mime = mk_mem_malloc_z(sizeof(struct mimetype));
+    new_mime = mk_mem_alloc_z(sizeof(struct mimetype));
     new_mime->name = mk_string_dup(name);
-    new_mime->type.data = mk_mem_malloc(len);
+    new_mime->type.data = mk_mem_alloc(len);
     new_mime->type.len = len - 1;
-    new_mime->header_type.data = mk_mem_malloc(len + 32);
+    new_mime->header_type.data = mk_mem_alloc(len + 32);
     new_mime->header_type.len = snprintf(new_mime->header_type.data,
                                          len + 32,
                                          "Content-Type: %s\r\n",
@@ -114,7 +114,7 @@ int mk_mimetype_add(char *name, const char *type)
 }
 
 /* Load the two mime arrays into memory */
-int mk_mimetype_read_config()
+int mk_mimetype_read_config(struct mk_server *server)
 {
     char path[MK_MAX_PATH];
     struct mk_rconf *cnf;
@@ -124,7 +124,7 @@ int mk_mimetype_read_config()
     struct file_info f_info;
     int ret;
 
-    if (!mk_config->conf_mimetype) {
+    if (!server->conf_mimetype) {
         return -1;
     }
 
@@ -134,12 +134,12 @@ int mk_mimetype_read_config()
 
     /* Read mime types configuration file */
     snprintf(path, MK_MAX_PATH, "%s/%s",
-             mk_config->path_conf_root,
-             mk_config->conf_mimetype);
+             server->path_conf_root,
+             server->conf_mimetype);
 
     ret = mk_file_get_info(path, &f_info, MK_FILE_EXISTS);
     if (ret == -1 || f_info.is_file == MK_FALSE) {
-        snprintf(path, MK_MAX_PATH, "%s", mk_config->conf_mimetype);
+        snprintf(path, MK_MAX_PATH, "%s", server->conf_mimetype);
     }
     cnf = mk_rconf_open(path);
     if (!cnf) {
@@ -167,9 +167,9 @@ int mk_mimetype_read_config()
     }
 
     /* Set default mime type */
-    mimetype_default = mk_mem_malloc_z(sizeof(struct mimetype));
+    mimetype_default = mk_mem_alloc_z(sizeof(struct mimetype));
     mimetype_default->name = MIMETYPE_DEFAULT_TYPE;
-    mk_ptr_set(&mimetype_default->type, mk_config->default_mimetype);
+    mk_ptr_set(&mimetype_default->type, server->default_mimetype);
 
     mk_rconf_free(cnf);
 

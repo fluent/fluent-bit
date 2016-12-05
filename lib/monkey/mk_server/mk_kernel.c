@@ -115,18 +115,19 @@ int mk_kernel_features(int version)
     return flags;
 }
 
-int mk_kernel_features_print(char *buffer, size_t size)
+int mk_kernel_features_print(char *buffer, size_t size,
+                             struct mk_server *server)
 {
     int offset = 0;
     int features = 0;
 
-    if (mk_config->kernel_features & MK_KERNEL_TCP_FASTOPEN) {
+    if (server->kernel_features & MK_KERNEL_TCP_FASTOPEN) {
         offset += snprintf(buffer, size - offset, "%s", "TCP_FASTOPEN ");
         features++;
     }
 
-    if (mk_config->kernel_features & MK_KERNEL_SO_REUSEPORT) {
-        if (mk_config->scheduler_mode == MK_SCHEDULER_FAIR_BALANCING) {
+    if (server->kernel_features & MK_KERNEL_SO_REUSEPORT) {
+        if (server->scheduler_mode == MK_SCHEDULER_FAIR_BALANCING) {
             offset += snprintf(buffer + offset, size - offset,
                                "%s!%s", ANSI_BOLD ANSI_RED, ANSI_RESET);
         }
@@ -134,7 +135,7 @@ int mk_kernel_features_print(char *buffer, size_t size)
         features++;
     }
 
-    if (mk_config->kernel_features & MK_KERNEL_TCP_AUTOCORKING) {
+    if (server->kernel_features & MK_KERNEL_TCP_AUTOCORKING) {
         snprintf(buffer + offset, size - offset, "%s", "TCP_AUTOCORKING ");
         features++;
     }

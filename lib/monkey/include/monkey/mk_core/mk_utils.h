@@ -41,6 +41,11 @@ pthread_mutex_t mutex_trace;
                                      __FUNCTION__, __FILENAME__, __LINE__, __VA_ARGS__)
 
 #else
+
+#ifdef MK_TRACE
+#undef MK_TRACE
+#endif
+
 #define MK_TRACE(...) do {} while (0)
 #endif
 

@@ -26,7 +26,7 @@ struct mk_channel *mk_channel_new(int type, int fd)
 {
     struct mk_channel *channel;
 
-    channel = mk_mem_malloc(sizeof(struct mk_channel));
+    channel = mk_mem_alloc(sizeof(struct mk_channel));
     channel->type = type;
     channel->fd   = fd;
 
@@ -215,6 +215,7 @@ int mk_channel_write(struct mk_channel *channel, size_t *count)
             if (input->cb_finished) {
                 input->cb_finished(input);
             }
+            mk_stream_release(stream);
             return MK_CHANNEL_DONE;
         }
 

@@ -103,7 +103,9 @@ extern const mk_ptr_t mk_header_accept_ranges;
 extern const mk_ptr_t mk_header_te_chunked;
 extern const mk_ptr_t mk_header_last_modified;
 
-int mk_header_prepare(struct mk_http_session *cs, struct mk_http_request *sr);
+int mk_header_prepare(struct mk_http_session *cs, struct mk_http_request *sr,
+                      struct mk_server *server);
+
 void mk_header_response_reset(struct response_headers *header);
 void mk_header_set_http_status(struct mk_http_request *sr, int status);
 void mk_header_set_content_length(struct mk_http_request *sr, long len);

@@ -21,6 +21,7 @@
 #define MK_SIGNAL_H
 
 void mk_signal_init();
+void mk_signal_context(struct mk_server *ctx);
 void mk_signal_thread_sigpipe_safe(void);
 
 #endif

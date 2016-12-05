@@ -18,6 +18,8 @@
  */
 
 #include <monkey/monkey.h>
+
+#include "monkey.h"
 #include "mk_signals.h"
 
 #include <getopt.h>
@@ -42,6 +44,7 @@ static void mk_build_info(void)
 {
     struct mk_list *head;
     struct mk_plugin *p;
+    struct mk_server *server;
 
     mk_version();
 
@@ -56,16 +59,16 @@ static void mk_build_info(void)
     printf("configuration dir: %s\n", MK_PATH_CONF);
 
     /* Initialize list */
-    mk_config = mk_mem_malloc(sizeof(struct mk_server_config));
-    mk_list_init(&mk_config->plugins);
-    mk_plugin_load_static();
+    server  = mk_mem_alloc(sizeof(struct mk_server));
+    mk_list_init(&server->plugins);
+    mk_plugin_load_static(server);
 
     printf("\n\n%s[built-in plugins]%s\n", ANSI_BOLD, ANSI_RESET);
-    mk_list_foreach(head, &mk_config->plugins) {
+    mk_list_foreach(head, &server->plugins) {
         p = mk_list_entry(head, struct mk_plugin, _head);
         printf("%-20s%s\n", p->shortname, p->name);
     }
-    mk_mem_free(mk_config);
+    mk_mem_free(server);
     printf("\n");
 }
 
@@ -198,102 +201,98 @@ int main(int argc, char **argv)
     }
 
     /*
-     * Initialize global configuration context. The variable mk_config
-     * is provided by mk_server and it's unique. You don't need multiple
-     * Monkey instances when Monkey already support multi ports and flexible
-     * configuration.
-     *
-     * Once is created, we need to start populating some relevant configuration
-     * fields that will affect the server behavior.
+     * Initialize Monkey Server context. Once is created, we need to start
+     * populating some relevant configuration fields that will affect the
+     * server behavior.
      */
-    mk_config = mk_server_init();
+    server = mk_server_create();
 
     /* set configuration path */
     if (!path_config) {
-        mk_config->path_conf_root = MK_PATH_CONF;
+        server->path_conf_root = MK_PATH_CONF;
     }
     else {
-        mk_config->path_conf_root = path_config;
+        server->path_conf_root = path_config;
     }
 
     /* set target configuration file for the server */
     if (!server_conf_file) {
-        mk_config->conf_main = MK_DEFAULT_CONFIG_FILE;
+        server->conf_main = MK_DEFAULT_CONFIG_FILE;
     }
     else {
-        mk_config->conf_main = server_conf_file;
+        server->conf_main = server_conf_file;
     }
 
     if (!pid_file) {
-        mk_config->path_conf_pidfile = NULL;
+        server->path_conf_pidfile = NULL;
     }
     else {
-        mk_config->path_conf_pidfile = pid_file;
+        server->path_conf_pidfile = pid_file;
     }
 
     if (run_daemon) {
-        mk_config->is_daemon = MK_TRUE;
+        server->is_daemon = MK_TRUE;
     }
     else {
-        mk_config->is_daemon = MK_FALSE;
+        server->is_daemon = MK_FALSE;
     }
 
     if (!mimes_conf_file) {
-        mk_config->conf_mimetype = MK_DEFAULT_MIMES_CONF_FILE;
+        server->conf_mimetype = MK_DEFAULT_MIMES_CONF_FILE;
     }
     else {
-        mk_config->conf_mimetype = mimes_conf_file;
+        server->conf_mimetype = mimes_conf_file;
     }
 
     if (!plugin_load_conf_file) {
-        mk_config->conf_plugin_load = MK_DEFAULT_PLUGIN_LOAD_CONF_FILE;
+        server->conf_plugin_load = MK_DEFAULT_PLUGIN_LOAD_CONF_FILE;
     }
     else {
-        mk_config->conf_plugin_load = plugin_load_conf_file;
+        server->conf_plugin_load = plugin_load_conf_file;
     }
 
     if (!sites_conf_dir) {
-        mk_config->conf_sites = MK_DEFAULT_SITES_CONF_DIR;
+        server->conf_sites = MK_DEFAULT_SITES_CONF_DIR;
     }
     else {
-        mk_config->conf_sites = sites_conf_dir;
+        server->conf_sites = sites_conf_dir;
     }
 
     if (!plugins_conf_dir) {
-        mk_config->conf_plugins = MK_DEFAULT_PLUGINS_CONF_DIR;
+        server->conf_plugins = MK_DEFAULT_PLUGINS_CONF_DIR;
     }
     else {
-        mk_config->conf_plugins = plugins_conf_dir;
+        server->conf_plugins = plugins_conf_dir;
     }
 
     /* Override some configuration */
-    mk_config->one_shot = one_shot;
-    mk_config->port_override = port_override;
-    mk_config->transport_layer = transport_layer;
+    server->one_shot = one_shot;
+    server->port_override = port_override;
+    server->transport_layer = transport_layer;
 
     mk_version();
-    mk_signal_init();
+    mk_signal_init(server);
 
     /* Override number of thread workers */
     if (workers_override >= 0) {
-        mk_config->workers = workers_override;
+        server->workers = workers_override;
     }
     else {
-        mk_config->workers = -1;
+        server->workers = -1;
     }
 
     if (balancing_mode == MK_TRUE) {
-        mk_config->scheduler_mode = MK_SCHEDULER_FAIR_BALANCING;
+        server->scheduler_mode = MK_SCHEDULER_FAIR_BALANCING;
     }
 
 
     /* Running Monkey as daemon */
-    if (mk_config->is_daemon == MK_TRUE) {
+    if (server->is_daemon == MK_TRUE) {
         mk_utils_set_daemon();
     }
 
-    if (mk_config->scheduler_mode == MK_SCHEDULER_REUSEPORT &&
-        mk_config_listen_check_busy(mk_config) == MK_TRUE &&
+    if (server->scheduler_mode == MK_SCHEDULER_REUSEPORT &&
+        mk_config_listen_check_busy(server) == MK_TRUE &&
         allow_shared_sockets == MK_FALSE) {
         mk_warn("Some Listen interface is busy, re-try using -T. Aborting.");
         exit(EXIT_FAILURE);
@@ -303,21 +302,21 @@ int main(int argc, char **argv)
      * Once the all configuration is set, let mk_server configure the
      * internals. Not accepting connections yet.
      */
-    mk_server_setup();
+    mk_server_setup(server);
 
     /* Register PID of Monkey */
-    mk_utils_register_pid(mk_config->path_conf_pidfile);
+    mk_utils_register_pid(server->path_conf_pidfile);
 
     /* Print server details */
-    mk_server_info();
+    mk_server_info(server);
 
     /* Change process owner */
-    mk_user_set_uidgid();
+    mk_user_set_uidgid(server);
 
     /* Server loop, let's listen for incomming clients */
-    mk_server_loop();
+    mk_server_loop(server);
 
-    mk_mem_free(mk_config);
+    mk_exit_all(server);
 
     return 0;
 }
