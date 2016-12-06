@@ -36,11 +36,11 @@ int cb_counter_init(struct flb_output_instance *ins,
     return 0;
 }
 
-int cb_counter_flush(void *data, size_t bytes,
-                  char *tag, int tag_len,
-                  struct flb_input_instance *i_ins,
-                  void *out_context,
-                  struct flb_config *config)
+void cb_counter_flush(void *data, size_t bytes,
+                      char *tag, int tag_len,
+                      struct flb_input_instance *i_ins,
+                      void *out_context,
+                      struct flb_config *config)
 {
     (void) data;
     (void) bytes;
@@ -60,7 +60,7 @@ int cb_counter_flush(void *data, size_t bytes,
     msgpack_unpacked_destroy(&result);
 
     time_t t = time(NULL);
-    printf("%lu,%i\n", t, cnt);
+    printf("%lu,%lu\n", t, cnt);
 
     FLB_OUTPUT_RETURN(FLB_OK);
 }
