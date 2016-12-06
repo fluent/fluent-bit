@@ -97,7 +97,7 @@ static char *influxdb_format(char *tag, int tag_len,
         n_size = map.via.map.size + 1;
 
         seq = ctx->seq;
-        if (ctx->seq + 1 >= (UINT64_MAX - 1)) {
+        if (ctx->seq + 1 >= 100000) {
             seq = 1;
         }
         else {
@@ -274,7 +274,7 @@ int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *config,
     }
     ctx->seq_len = strlen(ctx->seq_name);
 
-    snprintf(ctx->uri, sizeof(ctx->uri) - 1, "/write?db=%s", ctx->db_name);
+    snprintf(ctx->uri, sizeof(ctx->uri) - 1, "/write?db=%s&precision=s", ctx->db_name);
 
     /* Prepare an upstream handler */
     upstream = flb_upstream_create(config,
@@ -335,6 +335,7 @@ void cb_influxdb_flush(void *data, size_t bytes,
 
     /* Release the connection */
     flb_upstream_conn_release(u_conn);
+
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 
