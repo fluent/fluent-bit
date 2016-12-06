@@ -77,13 +77,12 @@ void influxdb_bulk_destroy(struct influxdb_bulk *bulk)
 }
 
 int influxdb_bulk_append_header(struct influxdb_bulk *bulk,
-                                char *db, int db_len,
                                 char *tag, int tag_len)
 {
     int ret;
     int required;
 
-    required = 4 + db_len + 1 + tag_len + 2;
+    required = 1 + tag_len + 2;
 
     /* Make sure we have enough space */
     ret = influxdb_bulk_buffer(bulk, required);
@@ -91,17 +90,7 @@ int influxdb_bulk_append_header(struct influxdb_bulk *bulk,
         return -1;
     }
 
-    /* Prefix message with database name */
-    memcpy(bulk->ptr + bulk->len, db, db_len);
-    bulk->len += db_len;
-
-    /* Separator */
-    bulk->ptr[bulk->len] = ',';
-    bulk->len++;
-
     /* Tag and final space */
-    memcpy(bulk->ptr + bulk->len, "tag=", 4);
-    bulk->len += 4;
     memcpy(bulk->ptr + bulk->len, tag, tag_len);
     bulk->len += tag_len;
 

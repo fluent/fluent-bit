@@ -27,7 +27,8 @@
 
 struct flb_influxdb_config {
     char uri[256];
-    char *database;
+    char *db_name;
+    int  db_len;
 
     /* Upstream connection to the backend server */
     struct flb_upstream *u;

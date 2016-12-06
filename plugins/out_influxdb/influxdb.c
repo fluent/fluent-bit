@@ -95,7 +95,7 @@ static char *influxdb_format(char *tag, int tag_len,
         map    = root.via.array.ptr[1];
         n_size = map.via.map.size + 1;
 
-        ret = influxdb_bulk_append_header(bulk, "fluentbit", 9, tag, tag_len);
+        ret = influxdb_bulk_append_header(bulk, tag, tag_len);
         if (ret == -1) {
             influxdb_bulk_destroy(bulk);
             msgpack_unpacked_destroy(&result);
@@ -244,12 +244,14 @@ int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *config,
 
     tmp = flb_output_get_property("database", ins);
     if (!tmp) {
-        ctx->database = flb_strdup("fluentbit");
+        ctx->db_name = flb_strdup("fluentbit");
     }
     else {
-        ctx->database = flb_strdup(tmp);
+        ctx->db_name = flb_strdup(tmp);
     }
-    snprintf(ctx->uri, sizeof(ctx->uri) - 1, "/write?db=%s", ctx->database);
+    ctx->db_len = strlen(ctx->db_name);
+
+    snprintf(ctx->uri, sizeof(ctx->uri) - 1, "/write?db=%s", ctx->db_name);
 
     /* Prepare an upstream handler */
     upstream = flb_upstream_create(config,
@@ -317,7 +319,7 @@ int cb_influxdb_exit(void *data, struct flb_config *config)
     struct flb_influxdb_config *ctx = data;
 
     flb_upstream_destroy(ctx->u);
-    flb_free(ctx->database);
+    flb_free(ctx->db_name);
     flb_free(ctx);
 
     return 0;
