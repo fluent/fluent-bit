@@ -100,7 +100,6 @@ static void out_lib_flush(void *data, size_t bytes,
     size_t off = 0;
     size_t last_off = 0;
     size_t alloc_size = 0;
-    int    ret = 0;
     struct flb_out_lib_config *ctx = out_context;
     unsigned char* data_for_user   = NULL;
     (void) i_ins;
@@ -118,34 +117,23 @@ static void out_lib_flush(void *data, size_t bytes,
         switch(ctx->format){
         case FLB_OUT_LIB_FMT_MSGPACK:
             data_for_user = flb_calloc(1, bytes);
-            memcpy(data_for_user, &result.data, bytes);
+            if (data_for_user != NULL) {
+                memcpy(data_for_user, &result.data, bytes);
+            }
             break;
         case FLB_OUT_LIB_FMT_JSON:
             alloc_size = (off - last_off)+128;/* JSON is larger than msgpack */
             last_off   = off;
-            data_for_user = flb_calloc(1, alloc_size);
-            if (data_for_user == NULL) {
-                flb_error("[%s] allocate failed",PLUGIN_NAME);
-                continue;/* FIXME */
-            }
-            ret =  flb_msgpack_to_json(data_for_user, alloc_size, &result);
-            if (ret<0) {
-                /* buffer size is small, so retry with bigger buffer */
-                flb_free(data_for_user);
-                alloc_size *= 2;
-                data_for_user = flb_calloc(1, alloc_size);
-                if (data_for_user == NULL) {
-                    flb_error("[%s] allocate failed",PLUGIN_NAME);
-                    continue;/* FIXME */
-                }
-                ret =  flb_msgpack_to_json(data_for_user, alloc_size, &result);
-            }
+            data_for_user = flb_msgpack_to_json_str(alloc_size, &result);
             break;
         default:
             flb_error("[%s] unknown format",PLUGIN_NAME);
             FLB_OUTPUT_RETURN(FLB_ERROR);
         }
-        ctx->user_callback((void*)data_for_user, bytes);
+
+        if (data_for_user != NULL) {
+            ctx->user_callback((void*)data_for_user, bytes);
+        }
     }
     msgpack_unpacked_destroy(&result);
     FLB_OUTPUT_RETURN(FLB_OK);

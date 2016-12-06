@@ -423,7 +423,6 @@ static int msgpack2json(char* buf, int *off, size_t left, msgpack_object *o)
     return ret;
 }
 
-
 /**
  *  convert msgpack to JSON string.
  *  This API is similar to snprintf.
@@ -446,4 +445,40 @@ int flb_msgpack_to_json(char* json_str, size_t str_len,
     ret = msgpack2json(json_str,&off, str_len, &data->data);
     json_str[str_len-1] = '\0';
     return ret ? off: ret;
+}
+
+
+/**
+ *  convert msgpack to JSON string.
+ *  This API is similar to snprintf.
+ *  @param  size     Estimated length of json str.
+ *  @param  data     The msgpack_unpacked data.
+ *  @return success  ? allocated json str ptr : NULL
+ */
+char* flb_msgpack_to_json_str(size_t size, msgpack_unpacked* data)
+{
+    char* ret = NULL;
+
+    if (data == NULL) {
+        return NULL;
+    }
+    if (size <= 0) {
+        size = 128;
+    }
+    while(1) {
+        ret = (char*)flb_malloc(size);
+        if (ret == NULL) {
+            flb_warn("[%s] can't allocate buffer");
+            return NULL;
+        }
+
+        if ( flb_msgpack_to_json(ret, size, data) < 0 ){
+            /* buffer is small. retry.*/
+            size += 128;
+            flb_free(ret);
+        } else {
+            break;
+        }
+    }
+    return ret;
 }
