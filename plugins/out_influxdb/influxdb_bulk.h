@@ -33,7 +33,9 @@ struct influxdb_bulk {
 struct influxdb_bulk *influxdb_bulk_create();
 
 int influxdb_bulk_append_header(struct influxdb_bulk *bulk,
-                                char *tag, int tag_len);
+                                char *tag, int tag_len,
+                                uint64_t seq_n, char *seq, int seq_len);
+
 int influxdb_bulk_append_kv(struct influxdb_bulk *bulk,
                             char *key, int k_len,
                             char *val, int v_len,

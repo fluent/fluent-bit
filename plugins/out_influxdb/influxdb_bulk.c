@@ -77,12 +77,13 @@ void influxdb_bulk_destroy(struct influxdb_bulk *bulk)
 }
 
 int influxdb_bulk_append_header(struct influxdb_bulk *bulk,
-                                char *tag, int tag_len)
+                                char *tag, int tag_len,
+                                uint64_t seq_n, char *seq, int seq_len)
 {
     int ret;
     int required;
 
-    required = 1 + tag_len + 2;
+    required = tag_len + 1 + seq_len + 1 + 32;
 
     /* Make sure we have enough space */
     ret = influxdb_bulk_buffer(bulk, required);
@@ -90,9 +91,22 @@ int influxdb_bulk_append_header(struct influxdb_bulk *bulk,
         return -1;
     }
 
-    /* Tag and final space */
+    /* Tag, sequence and final space */
     memcpy(bulk->ptr + bulk->len, tag, tag_len);
     bulk->len += tag_len;
+
+    bulk->ptr[bulk->len] = ',';
+    bulk->len++;
+
+    /* Sequence number */
+    memcpy(bulk->ptr + bulk->len, seq, seq_len);
+    bulk->len += seq_len;
+
+    bulk->ptr[bulk->len] = '=';
+    bulk->len++;
+
+    ret = snprintf(bulk->ptr + bulk->len, 32, "%" PRIu64, seq_n);
+    bulk->len += ret;
 
     bulk->ptr[bulk->len] = ' ';
     bulk->len++;

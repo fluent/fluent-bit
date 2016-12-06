@@ -26,9 +26,17 @@
 #define FLB_INFLUXDB_PORT 8086
 
 struct flb_influxdb_config {
+    uint64_t seq;
+
     char uri[256];
+
+    /* database */
     char *db_name;
     int  db_len;
+
+    /* sequence tag */
+    char *seq_name;
+    int seq_len;
 
     /* Upstream connection to the backend server */
     struct flb_upstream *u;

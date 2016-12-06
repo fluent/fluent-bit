@@ -38,6 +38,7 @@ static char *influxdb_format(char *tag, int tag_len,
     int i;
     int ret;
     int n_size;
+    uint64_t seq = 0;
     size_t off = 0;
     time_t atime;
     char *buf;
@@ -95,7 +96,18 @@ static char *influxdb_format(char *tag, int tag_len,
         map    = root.via.array.ptr[1];
         n_size = map.via.map.size + 1;
 
-        ret = influxdb_bulk_append_header(bulk, tag, tag_len);
+        seq = ctx->seq;
+        if (ctx->seq + 1 >= (UINT64_MAX - 1)) {
+            seq = 1;
+        }
+        else {
+            ctx->seq++;
+        }
+
+        ret = influxdb_bulk_append_header(bulk,
+                                          tag, tag_len,
+                                          seq,
+                                          ctx->seq_name, ctx->seq_len);
         if (ret == -1) {
             influxdb_bulk_destroy(bulk);
             msgpack_unpacked_destroy(&result);
@@ -242,6 +254,7 @@ int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *config,
         io_type = FLB_IO_TCP;
     }
 
+    /* database */
     tmp = flb_output_get_property("database", ins);
     if (!tmp) {
         ctx->db_name = flb_strdup("fluentbit");
@@ -250,6 +263,16 @@ int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *config,
         ctx->db_name = flb_strdup(tmp);
     }
     ctx->db_len = strlen(ctx->db_name);
+
+    /* sequence tag */
+    tmp = flb_output_get_property("sequence_tag", ins);
+    if (!tmp) {
+        ctx->seq_name = flb_strdup("_seq");
+    }
+    else {
+        ctx->seq_name = flb_strdup(tmp);
+    }
+    ctx->seq_len = strlen(ctx->seq_name);
 
     snprintf(ctx->uri, sizeof(ctx->uri) - 1, "/write?db=%s", ctx->db_name);
 
@@ -263,7 +286,8 @@ int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *config,
         flb_free(ctx);
         return -1;
     }
-    ctx->u = upstream;
+    ctx->u   = upstream;
+    ctx->seq = 0;
 
     flb_debug("[out_influxdb] host=%s port=%i", ins->host.name, ins->host.port);
     flb_output_set_context(ins, ctx);
@@ -320,6 +344,7 @@ int cb_influxdb_exit(void *data, struct flb_config *config)
 
     flb_upstream_destroy(ctx->u);
     flb_free(ctx->db_name);
+    flb_free(ctx->seq_name);
     flb_free(ctx);
 
     return 0;
