@@ -41,5 +41,6 @@ int flb_pack_json_state(char *js, size_t len,
 void flb_pack_print(char *data, size_t bytes);
 int flb_msgpack_to_json(char* json_str, size_t str_len,
                         msgpack_unpacked* data);
+char* flb_msgpack_to_json_str(size_t size, msgpack_unpacked* data);
 
 #endif

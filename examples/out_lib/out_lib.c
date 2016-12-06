@@ -28,7 +28,7 @@ int my_stdout_json(void* data, size_t size)
     printf("\n");
 
     /* User has to release the buffer. */
-    free(data);
+    flb_free(data);
 
     return 0;
 }
@@ -40,7 +40,7 @@ int my_stdout_msgpack(void* data, size_t size)
     printf("\n");
 
     /* User has to release the buffer. */
-    free(data);
+    flb_free(data);
 
     return 0;
 }
