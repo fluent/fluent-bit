@@ -141,8 +141,6 @@ int flb_tail_fs_add(struct flb_tail_file *file)
 int flb_tail_fs_remove(struct flb_tail_file *file)
 {
     inotify_rm_watch(file->config->fd_notify, file->watch_fd);
-    close(file->watch_fd);
-
     return 0;
 }
 
