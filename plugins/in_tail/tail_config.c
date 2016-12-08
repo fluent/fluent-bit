@@ -49,16 +49,19 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
         return NULL;
     }
 
-    /* Read properties */
+    /* Config: path/pattern to read files */
     ctx->path = flb_input_get_property("path", i_ins);
     if (!ctx->path) {
         flb_error("[in_tail] no input 'path' was given");
         flb_free(ctx);
         return NULL;
     }
+
+    /* Config: exclude path/pattern to skip files */
     ctx->exclude_path = flb_input_get_property("exclude_path", i_ins);
     ctx->exclude_list = NULL;
 
+    /* Config: seconds interval before to re-scan the path */
     tmp = flb_input_get_property("refresh_interval", i_ins);
     if (!tmp) {
         ctx->refresh_interval = FLB_TAIL_REFRESH;
@@ -66,7 +69,21 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
     else {
         ctx->refresh_interval = atoi(tmp);
         if (ctx->refresh_interval <= 0) {
-            flb_error("[in_tail] invalid refresh_interval");
+            flb_error("[in_tail] invalid 'refresh_interval' config value");
+            flb_free(ctx);
+            return NULL;
+        }
+    }
+
+    /* Config: seconds interval to monitor file after rotation */
+    tmp = flb_input_get_property("rotate_wait", i_ins);
+    if (!tmp) {
+        ctx->rotate_wait = FLB_TAIL_ROTATE_WAIT;
+    }
+    else {
+        ctx->rotate_wait = atoi(tmp);
+        if (ctx->refresh_interval <= 0) {
+            flb_error("[in_tail] invalid 'rotate_wait' config value");
             flb_free(ctx);
             return NULL;
         }
@@ -74,6 +91,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
 
     mk_list_init(&ctx->files_static);
     mk_list_init(&ctx->files_event);
+    mk_list_init(&ctx->files_rotated);
 
     /* initialize MessagePack buffers */
     msgpack_sbuffer_init(&ctx->mp_sbuf);

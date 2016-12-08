@@ -136,11 +136,14 @@ static int in_tail_init(struct flb_input_instance *in,
         return -1;
     }
 
+    /* Scan path */
     flb_tail_scan(ctx->path, ctx);
-
     flb_trace("[in_tail] path: %s", ctx->path);
+
+    /* Set plugin context */
     flb_input_set_context(in, ctx);
 
+    /* Register an event collector */
     ret = flb_input_set_collector_event(in, in_tail_collect_static,
                                         ctx->ch_manager[0], config);
     if (ret != 0) {
@@ -151,6 +154,15 @@ static int in_tail_init(struct flb_input_instance *in,
     /* Register re-scan */
     ret = flb_input_set_collector_time(in, flb_tail_scan_callback,
                                        ctx->refresh_interval, 0,
+                                       config);
+    if (ret == -1) {
+        flb_tail_config_destroy(ctx);
+        return -1;
+    }
+
+    /* Register callback to purge rotated files */
+    ret = flb_input_set_collector_time(in, flb_tail_file_rotated_purge,
+                                       ctx->rotate_wait, 0,
                                        config);
     if (ret == -1) {
         flb_tail_config_destroy(ctx);

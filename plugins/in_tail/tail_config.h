@@ -28,9 +28,10 @@ struct flb_tail_config {
     int ch_manager[2];         /* internal pipe for events */
 
     /* Configuration */
-    int refresh_interval;      /* seconds to re-scan       */
-    char *path;                /* lookup path (glob)       */
-    char *exclude_path;        /* exclude path             */
+    int refresh_interval;      /* seconds to re-scan           */
+    int rotate_wait;           /* sec to wait on rotated files */
+    char *path;                /* lookup path (glob)           */
+    char *exclude_path;        /* exclude path                 */
 
     /* MessagePack buffers */
     msgpack_packer   mp_pck;
@@ -42,6 +43,9 @@ struct flb_tail_config {
     /* Lists head for files consumed statically (read) and by events (inotify) */
     struct mk_list files_static;
     struct mk_list files_event;
+
+    /* List of rotated files that needs to be removed after 'rotate_wait' */
+    struct mk_list files_rotated;
 
     /* List of shell patterns used to exclude certain file names */
     struct mk_list *exclude_list;

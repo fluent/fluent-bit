@@ -370,8 +370,10 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
     }
 
     /* Update local file entry */
-    tmp = file->name;
-    file->name = name;
+    tmp           = file->name;
+    file->name    = name;
+    file->rotated = time(NULL);
+    mk_list_add(&file->_rotate_head, &file->config->files_rotated);
 
     /* Request to append 'new' file created */
     if (create == FLB_TRUE) {
@@ -381,4 +383,27 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
     flb_free(tmp);
 
     return 0;
+}
+
+int flb_tail_file_rotated_purge(struct flb_config *config, void *context)
+{
+    int count = 0;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_tail_file *file;
+    struct flb_tail_config *ctx = context;
+    time_t now;
+
+    now = time(NULL);
+    mk_list_foreach_safe(head, tmp, &ctx->files_rotated) {
+        file = mk_list_entry(head, struct flb_tail_file, _rotate_head);
+        if ((file->rotated + ctx->rotate_wait) <= now) {
+            flb_debug("[in_tail] purge rotated file %s", file->name);
+            mk_list_del(&file->_rotate_head);
+            flb_tail_file_remove(file);
+            count++;
+        }
+    }
+
+    return count;
 }

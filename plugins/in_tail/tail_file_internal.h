@@ -36,6 +36,7 @@ struct flb_tail_file {
     off_t last_line;
     ino_t inode;
     char *name;
+    time_t rotated;
 
     /* buffering */
     off_t parsed;
@@ -49,6 +50,7 @@ struct flb_tail_file {
     int tail_mode;
     struct flb_tail_config *config;
     struct mk_list _head;
+    struct mk_list _rotate_head;
 };
 
 #endif
