@@ -32,11 +32,14 @@ static void *in_tcp_flush(void *in_context, size_t *size)
     msgpack_sbuffer *sbuf;
     struct flb_in_tcp_config *ctx = in_context;
 
-    if (ctx->buffer_id == 0|| sbuf->size <= 0) {
+
+    sbuf = &ctx->mp_sbuf;
+
+    /* Check for valid buffer */
+    if (ctx->buffer_id == 0 || sbuf->size <= 0) {
         return NULL;
     }
 
-    sbuf = &ctx->mp_sbuf;
     *size = sbuf->size;
     buf = flb_malloc(sbuf->size);
     if (!buf) {
