@@ -255,6 +255,9 @@ struct flb_task *flb_task_create(uint64_t ref_id,
         mk_list_foreach(o_head, &config->outputs) {
             o_ins = mk_list_entry(o_head,
                                   struct flb_output_instance, _head);
+            if (!o_ins->match) {
+                continue;
+            }
 
             if (flb_router_match(tag, o_ins->match)) {
                 route = flb_malloc(sizeof(struct flb_task_route));
