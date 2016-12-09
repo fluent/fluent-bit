@@ -32,7 +32,7 @@ static void *in_tcp_flush(void *in_context, size_t *size)
     msgpack_sbuffer *sbuf;
     struct flb_in_tcp_config *ctx = in_context;
 
-    if (ctx->buffer_id == 0) {
+    if (ctx->buffer_id == 0|| sbuf->size <= 0) {
         return NULL;
     }
 
