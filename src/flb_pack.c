@@ -330,7 +330,7 @@ static int msgpack2json(char *buf, int *off, size_t left, msgpack_object *o)
         {
             char temp[32] = {0};
             ret = try_to_write(buf, off, left, temp,
-                snprintf(temp, 31, "%lu", (unsigned long)o->via.u64));
+                 snprintf(temp, sizeof(temp)-1, "%lu", (unsigned long)o->via.u64));
         }
         break;
 
@@ -338,7 +338,7 @@ static int msgpack2json(char *buf, int *off, size_t left, msgpack_object *o)
         {
             char temp[32] = {0};
             ret = try_to_write(buf, off, left, temp,
-                 snprintf(temp, 31, "%ld", (signed long)o->via.i64));
+                 snprintf(temp, sizeof(temp)-1, "%ld", (signed long)o->via.i64));
         }
         break;
 
@@ -346,7 +346,7 @@ static int msgpack2json(char *buf, int *off, size_t left, msgpack_object *o)
         {
             char temp[32] = {0};
             ret = try_to_write(buf, off, left, temp,
-                 snprintf(temp, 31, "%f", o->via.f64));
+                 snprintf(temp, sizeof(temp)-1, "%f", o->via.f64));
         }
         break;
 
