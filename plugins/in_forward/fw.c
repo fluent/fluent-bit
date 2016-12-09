@@ -79,6 +79,7 @@ static int in_fw_init(struct flb_input_instance *in,
     else {
         flb_error("[in_fw] could not bind address %s:%s. Aborting",
                   ctx->listen, ctx->tcp_port);
+        fw_config_destroy(ctx);
         return -1;
     }
     flb_net_socket_nonblocking(ctx->server_fd);
