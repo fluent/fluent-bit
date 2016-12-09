@@ -107,6 +107,7 @@ static int in_tcp_init(struct flb_input_instance *in,
     else {
         flb_error("[in_tcp] could not bind address %s:%s. Aborting",
                   ctx->listen, ctx->tcp_port);
+        tcp_config_destroy(ctx);
         return -1;
     }
     flb_net_socket_nonblocking(ctx->server_fd);
