@@ -295,8 +295,8 @@ void flb_pack_print(char *data, size_t bytes)
 }
 
 
-static inline int try_to_write(char* buf, int* off, size_t left,
-                        char* str, size_t str_len)
+static inline int try_to_write(char *buf, int *off, size_t left,
+                        char *str, size_t str_len)
 {
     if (str_len <= 0){
         str_len = strlen(str);
@@ -304,12 +304,12 @@ static inline int try_to_write(char* buf, int* off, size_t left,
     if (left <= *off+str_len) {
         return FLB_FALSE;
     }
-    strncpy(buf+*off, str, str_len);
+    memcpy(buf+*off, str, str_len);
     *off += str_len;
     return FLB_TRUE;
 }
 
-static int msgpack2json(char* buf, int *off, size_t left, msgpack_object *o)
+static int msgpack2json(char *buf, int *off, size_t left, msgpack_object *o)
 {
     int ret = FLB_FALSE;
     int i;
@@ -329,39 +329,39 @@ static int msgpack2json(char* buf, int *off, size_t left, msgpack_object *o)
     case MSGPACK_OBJECT_POSITIVE_INTEGER:
         {
             char temp[32] = {0};
-            snprintf(temp, 31, "%lu", (unsigned long)o->via.u64);
-            ret = try_to_write(buf, off, left,temp,0);
+            ret = try_to_write(buf, off, left, temp,
+                snprintf(temp, 31, "%lu", (unsigned long)o->via.u64));
         }
         break;
 
     case MSGPACK_OBJECT_NEGATIVE_INTEGER:
         {
             char temp[32] = {0};
-            snprintf(temp, 31, "%ld", (signed long)o->via.i64);
-            ret = try_to_write(buf,off,left,temp,0);
+            ret = try_to_write(buf, off, left, temp,
+                 snprintf(temp, 31, "%ld", (signed long)o->via.i64));
         }
         break;
 
     case MSGPACK_OBJECT_FLOAT:
         {
             char temp[32] = {0};
-            snprintf(temp, 31, "%f", o->via.f64);
-            ret = try_to_write(buf,off,left,temp,0);
+            ret = try_to_write(buf, off, left, temp,
+                 snprintf(temp, 31, "%f", o->via.f64));
         }
         break;
 
     case MSGPACK_OBJECT_STR:
-        if (try_to_write(buf,off,left, "\"",1) && 
-            try_to_write(buf,off,left, (char*)o->via.str.ptr, o->via.str.size) &&
-            try_to_write(buf,off,left, "\"",1)) {
+        if (try_to_write(buf, off, left, "\"", 1) && 
+            try_to_write(buf, off, left, (char*)o->via.str.ptr, o->via.str.size) &&
+            try_to_write(buf, off, left, "\"", 1)) {
             ret = FLB_TRUE;
         }
         break;
 
     case MSGPACK_OBJECT_BIN:
-        if (try_to_write(buf,off,left, "\"",1) &&
-            try_to_write(buf,off,left, (char*)o->via.bin.ptr, o->via.bin.size) &&
-            try_to_write(buf,off,left, "\"",1)) {
+        if (try_to_write(buf, off, left, "\"", 1) &&
+            try_to_write(buf, off, left, (char*)o->via.bin.ptr, o->via.bin.size) &&
+            try_to_write(buf, off, left, "\"", 1)) {
             ret = FLB_TRUE;
         }
         break;
@@ -369,50 +369,50 @@ static int msgpack2json(char* buf, int *off, size_t left, msgpack_object *o)
     case MSGPACK_OBJECT_ARRAY:
         loop = o->via.array.size;
 
-        if (!try_to_write(buf,off,left, "[",1)) {
+        if (!try_to_write(buf, off, left, "[", 1)) {
             goto msg2json_end;
         }
         if (loop != 0) {
             msgpack_object* p = o->via.array.ptr;
-            if (!msgpack2json(buf,off,left,p)) {
+            if (!msgpack2json(buf, off, left, p)) {
                 goto msg2json_end;
             }
             for (i=1; i<loop; i++) {
-                if (!try_to_write(buf,off,left,", ",2) ||
-                    !msgpack2json(buf,off,left,p+i)) {
+                if (!try_to_write(buf, off, left, ", ", 2) ||
+                    !msgpack2json(buf, off, left, p+i)) {
                     goto msg2json_end;
                 }
             }
         }
 
-        ret = try_to_write(buf,off,left, "]",1);
+        ret = try_to_write(buf, off, left, "]", 1);
         break;
 
     case MSGPACK_OBJECT_MAP:
         loop = o->via.map.size;
-        if (!try_to_write(buf,off,left, "{",1)) {
+        if (!try_to_write(buf, off, left, "{", 1)) {
             goto msg2json_end;
         }
         if (loop != 0) {
             msgpack_object_kv *p = o->via.map.ptr;
-            if (!msgpack2json(buf,off,left,&p->key) ||
-                !try_to_write(buf,off,left, ":",1)  ||
-                !msgpack2json(buf,off,left,&p->val)) {
+            if (!msgpack2json(buf, off, left, &p->key) ||
+                !try_to_write(buf, off, left, ":", 1)  ||
+                !msgpack2json(buf, off, left, &p->val)) {
                     goto msg2json_end;
             }
             for (i=1; i<loop; i++) {
                 if (
-                  !try_to_write(buf,off,left, ", ",2) ||
-                  !msgpack2json(buf,off,left,&(p+i)->key) ||
-                  !try_to_write(buf,off,left, ":",1)  ||
-                  !msgpack2json(buf,off,left,&(p+i)->val) ) {
+                  !try_to_write(buf, off, left, ", ", 2) ||
+                  !msgpack2json(buf, off, left, &(p+i)->key) ||
+                  !try_to_write(buf, off, left, ":", 1)  ||
+                  !msgpack2json(buf, off, left, &(p+i)->val) ) {
                     goto msg2json_end;
 
                 }
             }
         }
 
-        ret = try_to_write(buf,off,left, "}",1);
+        ret = try_to_write(buf, off, left, "}", 1);
         break;
 
     default:
@@ -432,8 +432,8 @@ static int msgpack2json(char* buf, int *off, size_t left, msgpack_object *o)
  *  @param  data     The msgpack_unpacked data.
  *  @return success  ? a number characters filled : negative value
  */
-int flb_msgpack_to_json(char* json_str, size_t str_len,
-                        msgpack_unpacked* data)
+int flb_msgpack_to_json(char *json_str, size_t str_len,
+                        msgpack_unpacked *data)
 {
     int ret = -1;
     int off = 0;
@@ -442,7 +442,7 @@ int flb_msgpack_to_json(char* json_str, size_t str_len,
         return -1;
     }
 
-    ret = msgpack2json(json_str,&off, str_len, &data->data);
+    ret = msgpack2json(json_str, &off, str_len, &data->data);
     json_str[str_len-1] = '\0';
     return ret ? off: ret;
 }
@@ -455,9 +455,9 @@ int flb_msgpack_to_json(char* json_str, size_t str_len,
  *  @param  data     The msgpack_unpacked data.
  *  @return success  ? allocated json str ptr : NULL
  */
-char* flb_msgpack_to_json_str(size_t size, msgpack_unpacked* data)
+char *flb_msgpack_to_json_str(size_t size, msgpack_unpacked *data)
 {
-    char* ret = NULL;
+    char *buf = NULL;
 
     if (data == NULL) {
         return NULL;
@@ -466,19 +466,19 @@ char* flb_msgpack_to_json_str(size_t size, msgpack_unpacked* data)
         size = 128;
     }
     while(1) {
-        ret = (char*)flb_malloc(size);
-        if (ret == NULL) {
+        buf = (char *)flb_malloc(size);
+        if (buf == NULL) {
             flb_warn("[%s] can't allocate buffer");
             return NULL;
         }
 
-        if ( flb_msgpack_to_json(ret, size, data) < 0 ){
+        if (flb_msgpack_to_json(buf, size, data) < 0){
             /* buffer is small. retry.*/
             size += 128;
-            flb_free(ret);
+            flb_free(buf);
         } else {
             break;
         }
     }
-    return ret;
+    return buf;
 }
