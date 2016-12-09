@@ -233,6 +233,12 @@ void flb_input_initialize_all(struct flb_config *config)
                 flb_error("Failed initialize input %s",
                           in->name);
                 mk_list_del(&in->_head);
+                if (p->flags & FLB_INPUT_NET) {
+                    flb_free(in->tag);
+                    flb_free(in->host.uri);
+                    flb_free(in->host.name);
+                    flb_free(in->host.address);
+                }
                 flb_free(in);
             }
         }
