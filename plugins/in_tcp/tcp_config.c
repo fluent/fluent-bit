@@ -86,6 +86,7 @@ struct flb_in_tcp_config *tcp_config_init(struct flb_input_instance *i_ins)
 
 int tcp_config_destroy(struct flb_in_tcp_config *config)
 {
+    flb_free(config->listen);
     flb_free(config->tcp_port);
     flb_free(config);
 
