@@ -86,21 +86,6 @@ int flb_engine_flush(struct flb_config *config,
     return 0;
 }
 
-static inline int consume_byte(int fd)
-{
-    int ret;
-    uint64_t val;
-
-    /* We need to consume the byte */
-    ret = read(fd, &val, sizeof(val));
-    if (ret <= 0) {
-        flb_errno();
-        return -1;
-    }
-
-    return 0;
-}
-
 static inline int flb_engine_manager(int fd, struct flb_config *config)
 {
     int ret;
@@ -263,7 +248,7 @@ static FLB_INLINE int flb_engine_handle_event(int fd, int mask,
     if (mask & MK_EVENT_READ) {
         /* Check if we need to flush */
         if (config->flush_fd == fd) {
-            consume_byte(fd);
+            flb_utils_timer_consume(fd);
             flb_engine_flush(config, NULL);
 #ifdef FLB_HAVE_BUFFERING
             /*
@@ -282,7 +267,7 @@ static FLB_INLINE int flb_engine_handle_event(int fd, int mask,
         }
 #ifdef FLB_HAVE_STATS
         else if (config->stats_fd == fd) {
-            consume_byte(fd);
+            flb_utils_timer_consume(fd);
             return FLB_ENGINE_STATS;
         }
 #endif
