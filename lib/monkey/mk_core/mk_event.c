@@ -112,7 +112,9 @@ int mk_event_del(struct mk_event_loop *loop, struct mk_event *event)
         return -1;
     }
 
-    event->status = MK_EVENT_NONE;
+    /* Reset the status and mask */
+    MK_EVENT_NEW(event);
+
     return 0;
 }
 
