@@ -291,7 +291,6 @@ int net_io_tls_handshake(void *_u_conn, void *_th)
 
     if (u_conn->event.status & MK_EVENT_REGISTERED) {
         mk_event_del(u->evl, &u_conn->event);
-        MK_EVENT_NEW(&u_conn->event);
     }
     flb_trace("[io_tls] connection OK");
     return 0;

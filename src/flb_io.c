@@ -70,6 +70,7 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
     int fd;
     int ret;
     int error = 0;
+    uint32_t mask;
     socklen_t len = sizeof(error);
     struct flb_upstream *u = u_conn->u;
 
@@ -133,12 +134,19 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
          */
         flb_thread_yield(th, FLB_FALSE);
 
+        /* Save the mask before the event handler do a reset */
+        mask = u_conn->event.mask;
+
         /* We got a notification, remove the event registered */
         ret = mk_event_del(u->evl, &u_conn->event);
-        assert(ret == 0);
+        if (ret == -1) {
+            flb_error("[io] connect event handler error");
+            close(fd);
+            return -1;
+        }
 
         /* Check the connection status */
-        if (u_conn->event.mask & MK_EVENT_WRITE) {
+        if (mask & MK_EVENT_WRITE) {
             ret = getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len);
             if (ret == -1) {
                 flb_error("[io] could not validate socket status");
@@ -153,10 +161,10 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
                 close(fd);
                 return -1;
             }
-
-            MK_EVENT_NEW(&u_conn->event);
         }
         else {
+            flb_error("[io] TCP connection, unexpected error: %s:%i",
+                      u->tcp_host, u->tcp_port);
             close(fd);
             return -1;
         }
