@@ -62,8 +62,8 @@ struct flb_log {
 
 #ifdef FLB_HAVE_C_TLS
 /* Fast path where __thread exists*/
-#define flb_log_check(l)                                                \
-    (FLB_TLS_GET(flb_worker_ctx)->config->log->level < l) ? FLB_FALSE: FLB_TRUE
+#define flb_log_check(l)  ((FLB_TLS_GET(flb_worker_ctx) == NULL) || \
+    (FLB_TLS_GET(flb_worker_ctx)->config->log->level < l)) ? FLB_FALSE: FLB_TRUE
 #else
 /*
  * Not ideal case but it happens that __thread is not supported and we need
@@ -73,7 +73,7 @@ struct flb_log {
 static inline int flb_log_check(int l) {
     struct flb_worker *w;
     w = (struct flb_worker *) FLB_TLS_GET(flb_worker_ctx);
-    if (flb_worker_log_level(w) < l) {
+    if (w == NULL || flb_worker_log_level(w) < l) {
         return FLB_FALSE;
     }
     return FLB_TRUE;
