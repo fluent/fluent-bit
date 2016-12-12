@@ -18,11 +18,9 @@
  */
 
 #include <stdlib.h>
-#include <unistd.h>
 #include <stdio.h>
 
 #include <sys/time.h>
-#include <sys/resource.h>
 
 #include <mk_core/mk_memory.h>
 #include <mk_core/mk_utils.h>

@@ -2,7 +2,6 @@ SET (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
 include (CheckCSourceCompiles)
 
 set(src
-  mk_iov.c
   mk_file.c
   mk_rconf.c
   mk_string.c
@@ -13,6 +12,19 @@ set(src
   mk_thread.c
   mk_thread_channel.c
   )
+
+# Lookup event-loop mechanism: do we need to fallback to select(2) ?
+check_c_source_compiles("
+  #include <sys/uio.h>
+  int main() {
+     return 0;
+  }" HAVE_SYS_UIO_H)
+
+if (HAVE_SYS_UIO_H)
+  set(src "${src}"
+    mk_iov.c
+    )
+endif()
 
 # Headers
 include_directories(../include/monkey/)
