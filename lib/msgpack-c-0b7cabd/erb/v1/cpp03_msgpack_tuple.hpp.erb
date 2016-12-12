@@ -1,0 +1,227 @@
+//
+// MessagePack for C++ static resolution routine
+//
+// Copyright (C) 2008-2016 FURUHASHI Sadayuki and KONDO Takatoshi
+//
+//    Distributed under the Boost Software License, Version 1.0.
+//    (See accompanying file LICENSE_1_0.txt or copy at
+//    http://www.boost.org/LICENSE_1_0.txt)
+//
+#ifndef MSGPACK_V1_CPP03_MSGPACK_TUPLE_HPP
+#define MSGPACK_V1_CPP03_MSGPACK_TUPLE_HPP
+
+#include "msgpack/v1/adaptor/msgpack_tuple_decl.hpp"
+
+namespace msgpack {
+
+/// @cond
+MSGPACK_API_VERSION_NAMESPACE(v1) {
+/// @endcond
+
+namespace type {
+
+// FIXME operator==
+// FIXME operator!=
+<% GENERATION_LIMIT = 31 %>
+
+template <typename T>
+struct tuple_type {
+    typedef T type;
+    typedef T value_type;
+    typedef T& reference;
+    typedef const T& const_reference;
+    typedef const T& transparent_reference;
+};
+
+template <typename T>
+struct tuple_type<T&> {
+    typedef T type;
+    typedef T& value_type;
+    typedef T& reference;
+    typedef const T& const_reference;
+    typedef T& transparent_reference;
+};
+
+template <typename T>
+struct tuple_type<const T&> {
+    typedef T type;
+    typedef T& value_type;
+    typedef T& reference;
+    typedef const T& const_reference;
+    typedef const T& transparent_reference;
+};
+
+/// @cond
+<%0.upto(GENERATION_LIMIT) {|i|%>
+<%0.upto(i) {|j|%>
+template <typename A0<%1.upto(i) {|k|%>, typename A<%=k%><%}%>>
+struct tuple_element<tuple<A0<%1.upto(i) {|k|%>, A<%=k%><%}%>>, <%=j%>> : tuple_type<A<%=j%>> {
+    tuple_element(tuple<A0<%1.upto(i) {|k|%>, A<%=k%> <%}%>>& x) : m_x(x.a<%=j%>) {}
+    typename tuple_type<A<%=j%>>::reference get() { return m_x; }
+    typename tuple_type<A<%=j%>>::const_reference get() const { return m_x; }
+private:
+    typename tuple_type<A<%=j%>>::reference m_x;
+};
+<%}%>
+<%}%>
+
+<%0.upto(GENERATION_LIMIT) {|i|%>
+<%0.upto(i) {|j|%>
+template <typename A0<%1.upto(i) {|k|%>, typename A<%=k%><%}%>>
+struct const_tuple_element<tuple<A0<%1.upto(i) {|k|%>, A<%=k%><%}%>>, <%=j%>> : tuple_type<A<%=j%>> {
+    const_tuple_element(const tuple<A0<%1.upto(i) {|k|%>, A<%=k%><%}%>>& x) : m_x(x.a<%=j%>) {}
+    typename tuple_type<A<%=j%>>::const_reference get() const { return m_x; }
+private:
+    typename tuple_type<A<%=j%>>::const_reference m_x;
+};
+<%}%>
+<%}%>
+/// @endcond
+
+template <>
+struct tuple<> {
+    tuple() {}
+    tuple(msgpack::object const& o) { o.convert(*this); }
+    typedef tuple<> value_type;
+    std::size_t size() const { return 0; }
+};
+
+/// @cond
+<%0.upto(GENERATION_LIMIT) {|i|%>
+template <typename A0<%1.upto(i) {|j|%>, typename A<%=j%><%}%>>
+struct tuple<A0<%1.upto(i) {|j|%>, A<%=j%><%}%>> {
+    typedef tuple<A0<%1.upto(i) {|j|%>, A<%=j%><%}%>> value_type;
+    std::size_t size() const { return <%=i+1%>; }
+    tuple() {}
+    tuple(typename tuple_type<A0>::transparent_reference _a0<%1.upto(i) {|j|%>, typename tuple_type<A<%=j%>>::transparent_reference _a<%=j%><%}%>) :
+        a0(_a0)<%1.upto(i) {|j|%>, a<%=j%>(_a<%=j%>)<%}%> {}
+    tuple(msgpack::object const& o) { o.convert(*this); }
+    template <int N> typename tuple_element<value_type, N>::reference get()
+        { return tuple_element<value_type, N>(*this).get(); }
+    template <int N> typename const_tuple_element<value_type, N>::const_reference get() const
+        { return const_tuple_element<value_type, N>(*this).get(); }
+    <%0.upto(i) {|j|%>
+    A<%=j%> a<%=j%>;<%}%>
+};
+
+template <int N, typename A0<%1.upto(i) {|j|%>, typename A<%=j%><%}%>>
+inline typename type::tuple_element<type::tuple<A0<%1.upto(i) {|j|%>, A<%=j%><%}%>>, N>::reference get(type::tuple<A0<%1.upto(i) {|j|%>, A<%=j%><%}%>>& t)
+{ return t.template get<N>(); }
+template <int N, typename A0<%1.upto(i) {|j|%>, typename A<%=j%><%}%>>
+inline typename type::const_tuple_element<type::tuple<A0<%1.upto(i) {|j|%>, A<%=j%><%}%>>, N>::const_reference get(type::tuple<A0<%1.upto(i) {|j|%>, A<%=j%><%}%>> const& t)
+{ return t.template get<N>(); }
+<%}%>
+/// @endcond
+
+inline tuple<> make_tuple()
+{
+    return tuple<>();
+}
+
+/// @cond
+<%0.upto(GENERATION_LIMIT) {|i|%>
+template <typename A0<%1.upto(i) {|j|%>, typename A<%=j%><%}%>>
+inline tuple<A0<%1.upto(i) {|j|%>, A<%=j%><%}%>> make_tuple(typename tuple_type<A0>::transparent_reference a0<%1.upto(i) {|j|%>, typename tuple_type<A<%=j%>>::transparent_reference a<%=j%><%}%>)
+{
+    return tuple<A0<%1.upto(i) {|j|%>, A<%=j%><%}%>>(a0<%1.upto(i) {|j|%>, a<%=j%><%}%>);
+}
+<%}%>
+/// @endcond
+
+}  // namespace type
+
+namespace adaptor {
+
+template <>
+struct convert<type::tuple<> > {
+    msgpack::object const& operator()(
+        msgpack::object const& o,
+        type::tuple<>&) const {
+        if(o.type != msgpack::type::ARRAY) { throw msgpack::type_error(); }
+        return o;
+    }
+};
+
+/// @cond
+<%0.upto(GENERATION_LIMIT) {|i|%>
+template <typename A0<%1.upto(i) {|j|%>, typename A<%=j%><%}%>>
+struct convert<type::tuple<A0<%1.upto(i) {|j|%>, A<%=j%><%}%>> > {
+    msgpack::object const& operator()(
+        msgpack::object const& o,
+        type::tuple<A0<%1.upto(i) {|j|%>, A<%=j%><%}%>>& v) const {
+        if(o.type != msgpack::type::ARRAY) { throw msgpack::type_error(); }
+        <%0.upto(i) {|j|%>
+        // In order to avoid clang++'s invalid warning, msgpack::object:: has been added.
+        if(o.via.array.size > <%=j%>)
+            o.via.array.ptr[<%=j%>].msgpack::object::convert<typename type::tuple_type<A<%=j%>>::type>(v.template get<<%=j%>>());<%}%>
+        return o;
+    }
+};
+<%}%>
+/// @endcond
+
+template <>
+struct pack<type::tuple<> > {
+    template <typename Stream>
+    msgpack::packer<Stream>& operator()(
+        msgpack::packer<Stream>& o,
+        const type::tuple<>&) const {
+        o.pack_array(0);
+        return o;
+    }
+};
+
+/// @cond
+<%0.upto(GENERATION_LIMIT) {|i|%>
+template <typename A0<%1.upto(i) {|j|%>, typename A<%=j%><%}%>>
+struct pack<type::tuple<A0<%1.upto(i) {|j|%>, A<%=j%><%}%>> > {
+    template <typename Stream>
+    msgpack::packer<Stream>& operator()(
+        msgpack::packer<Stream>& o,
+        const type::tuple<A0<%1.upto(i) {|j|%>, A<%=j%><%}%>>& v) const {
+        o.pack_array(<%=i+1%>);
+        <%0.upto(i) {|j|%>
+        o.pack(v.template get<<%=j%>>());<%}%>
+        return o;
+    }
+};
+<%}%>
+/// @endcond
+
+template <>
+struct object_with_zone<type::tuple<> > {
+    void operator()(
+        msgpack::object::with_zone& o,
+        const type::tuple<>&) const {
+        o.type = msgpack::type::ARRAY;
+        o.via.array.ptr = MSGPACK_NULLPTR;
+        o.via.array.size = 0;
+    }
+};
+
+/// @cond
+<%0.upto(GENERATION_LIMIT) {|i|%>
+template <typename A0<%1.upto(i) {|j|%>, typename A<%=j%><%}%>>
+struct object_with_zone<type::tuple<A0<%1.upto(i) {|j|%>, A<%=j%><%}%>> > {
+    void operator()(
+        msgpack::object::with_zone& o,
+        const type::tuple<A0<%1.upto(i) {|j|%>, A<%=j%><%}%>>& v) const {
+        o.type = msgpack::type::ARRAY;
+        o.via.array.ptr = static_cast<msgpack::object*>(o.zone.allocate_align(sizeof(msgpack::object)*<%=i+1%>));
+        o.via.array.size = <%=i+1%>;
+        <%0.upto(i) {|j|%>
+        o.via.array.ptr[<%=j%>] = msgpack::object(v.template get<<%=j%>>(), o.zone);<%}%>
+    }
+};
+<%}%>
+/// @endcond
+
+} // namespace adaptor
+
+/// @cond
+}  // MSGPACK_API_VERSION_NAMESPACE(v1)
+/// @endcond
+
+}  // namespace msgpack
+
+#endif // MSGPACK_V1_CPP03_MSGPACK_TUPLE_HPP

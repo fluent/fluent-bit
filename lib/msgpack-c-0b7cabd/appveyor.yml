@@ -1,0 +1,54 @@
+version: 2.0.0.{build}
+
+environment:
+  matrix:
+    - cpp11: -DMSGPACK_CXX11=OFF
+      boost: -DMSGPACK_BOOST=ON
+      msvc: '"Visual Studio 10 2010"'
+    - cpp11: -DMSGPACK_CXX11=OFF
+      boost: -DMSGPACK_BOOST=ON
+      msvc: '"Visual Studio 11 2012"'
+    - cpp11: -DMSGPACK_CXX11=OFF
+      boost: -DMSGPACK_BOOST=ON
+      msvc: '"Visual Studio 12 2013"'
+    - cpp11: -DMSGPACK_CXX11=ON
+      boost: -DMSGPACK_BOOST=ON
+      msvc: '"Visual Studio 14 2015"'
+    - cpp11: -DMSGPACK_CXX11=OFF
+      boost: -DMSGPACK_BOOST=ON
+      msvc: '"Visual Studio 14 2015"'
+    - cpp11: -DMSGPACK_CXX11=ON
+      boost: -DMSGPACK_BOOST=OFF
+      msvc: '"Visual Studio 14 2015"'
+    - cpp11: -DMSGPACK_CXX11=OFF
+      boost: -DMSGPACK_BOOST=OFF
+      msvc: '"Visual Studio 14 2015"'
+build_script:
+- appveyor DownloadFile https://github.com/google/googletest/archive/release-1.7.0.zip -FileName googletest-release-1.7.0.zip
+- 7z x googletest-release-1.7.0.zip > NUL
+- cd googletest-release-1.7.0
+- md build
+- cd build
+- cmake -G %msvc% -DBUILD_SHARED_LIBS=ON -DCMAKE_CXX_FLAGS=/D_VARIADIC_MAX=10 ..
+- cmake --build . --config Release
+- cd ..
+- cd ..
+- appveyor DownloadFile http://zlib.net/zlib-1.2.8.tar.gz -FileName zlib-1.2.8.tar.gz
+- 7z x zlib-1.2.8.tar.gz > NUL
+- 7z x zlib-1.2.8.tar > NUL
+- cd zlib-1.2.8
+- md build
+- cd build
+- cmake -G %msvc% ..
+- cmake --build . --config Release
+- copy zconf.h ..
+- cd ..
+- cd ..
+- md build
+- cd build
+- cmake -G %msvc% %cpp11% %boost% -DMSGPACK_BOOST_DIR=C:\Libraries\\boost_1_60_0 -DGTEST_LIBRARY=%APPVEYOR_BUILD_FOLDER%\googletest-release-1.7.0\build\Release\gtest.lib -DGTEST_MAIN_LIBRARY=%APPVEYOR_BUILD_FOLDER%\googletest-release-1.7.0\build\Release\gtest_main.lib -DGTEST_INCLUDE_DIR=%APPVEYOR_BUILD_FOLDER%\googletest-release-1.7.0\include -DZLIB_LIBRARY=%APPVEYOR_BUILD_FOLDER%\zlib-1.2.8\build\Release\zlib.lib -DZLIB_INCLUDE_DIR=%APPVEYOR_BUILD_FOLDER%\zlib-1.2.8 -DCMAKE_CXX_FLAGS='"/D_VARIADIC_MAX=10 /EHsc"' ..
+- cmake --build . --config Release
+
+test_script:
+- set PATH=%PATH%;%APPVEYOR_BUILD_FOLDER%\googletest-release-1.7.0\build\Release;%APPVEYOR_BUILD_FOLDER%\zlib-1.2.8\build\Release;%APPVEYOR_BUILD_FOLDER%\build\release
+- ctest -V
