@@ -148,7 +148,7 @@ include_directories(
   lib/ejson
   lib/flb_libco
   lib/sha1
-  lib/msgpack-c-068041f/include
+  lib/msgpack-c-0b7cabd/include
   lib/monkey/include
   lib/monkey/mk_core/include
   )
@@ -162,7 +162,7 @@ option(MSGPACK_ENABLE_CXX             OFF)
 option(MSGPACK_ENABLE_SHARED          OFF)
 option(MSGPACK_BUILD_TESTS            OFF)
 option(MSGPACK_BUILD_EXAMPLES         OFF)
-add_subdirectory(lib/msgpack-c-068041f)
+add_subdirectory(lib/msgpack-c-0b7cabd)
 
 # Lib: build the core libraries used by Fluent-Bit
 FLB_DEFINITION(JSMN_PARENT_LINKS)

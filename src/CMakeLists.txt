@@ -30,7 +30,7 @@ include_directories(
   .
   ../lib/
   ../lib/jsmn
-  ../lib/msgpack-c-068041f/include
+  ../lib/msgpack-c-0b7cabd/include
   ../lib/monkey/include/
   ${extra_headers}
   )
