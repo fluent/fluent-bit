@@ -71,11 +71,17 @@ static void count_initialized(struct flb_out_fcount_config* config)
     config->counts = 0;
 }
 
-static void output_fcount(FILE* f, struct flb_out_fcount_config *ctx, char* tag)
+static void output_fcount(FILE* f, struct flb_out_fcount_config *ctx,
+                          char* tag,time_t t)
 {
-    fprintf(f,"[%s] %s:{",PLUGIN_NAME,tag);
     fprintf(f,
-           "\"counts\":%lu, \"bytes\":%lu, \"counts/%s\":%lu, \"bytes/%s\":%lu}\n",
+           "[%s] %s:[%lu, {"
+           "\"counts\":%lu, "
+           "\"bytes\":%lu, "
+           "\"counts/%s\":%lu, "
+           "\"bytes/%s\":%lu }"
+           "]\n",
+           PLUGIN_NAME,tag,t,
            ctx->counts,
            ctx->bytes,
            ctx->unit, ctx->counts/ctx->tick,
@@ -155,10 +161,10 @@ static void out_fcount_flush(void *data, size_t bytes,
                   PLUGIN_NAME,ctx->last_checked,diff, byte_data);
 
         while(diff > ctx->tick) {
-            output_fcount(stdout, ctx, tag);
+            ctx->last_checked += ctx->tick;
+            output_fcount(stdout, ctx, tag, ctx->last_checked);
             count_initialized(ctx);
 
-            ctx->last_checked += ctx->tick;
             diff -= ctx->tick;
         }
         if (diff >= 0) {
