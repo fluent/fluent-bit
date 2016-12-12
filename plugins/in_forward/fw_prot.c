@@ -87,6 +87,7 @@ int fw_prot_process(struct fw_conn *conn)
     int stag_len;
     int c = 0;
     char *stag;
+    size_t bytes;
     size_t buf_off = 0;
     size_t recv_len;
     msgpack_object tag;
@@ -126,7 +127,7 @@ int fw_prot_process(struct fw_conn *conn)
         /* Always summarize the total number of bytes requested to parse */
         buf_off += recv_len;
 
-        ret = msgpack_unpacker_next(unp, &result);
+        ret = msgpack_unpacker_next_with_size(unp, &result, &bytes);
         while (ret == MSGPACK_UNPACK_SUCCESS) {
             /*
              * For buffering optimization we always want to know the total
@@ -145,7 +146,7 @@ int fw_prot_process(struct fw_conn *conn)
              *
              *  https://github.com/msgpack/msgpack-c/issues/514
              */
-            all_used += unp->last_parsed;
+            all_used += bytes;
 
             /* Map the array */
             root = result.data;
