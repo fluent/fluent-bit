@@ -485,14 +485,6 @@ int main(int argc, char **argv)
         }
     }
 
-    if (!config->logfile) {
-        config->log = flb_log_init(config, FLB_LOG_STDERR, config->verbose, NULL);
-    }
-    else {
-        config->log = flb_log_init(config, FLB_LOG_FILE, config->verbose,
-                                   config->logfile);
-    }
-
     /* Validate config file */
     if (cfg_file) {
         if (access(cfg_file, R_OK) != 0) {
@@ -504,6 +496,14 @@ int main(int argc, char **argv)
         if (ret != 0) {
             flb_utils_error(FLB_ERR_CFG_FILE_FORMAT);
         }
+    }
+
+    if (!config->logfile) {
+        config->log = flb_log_init(config, FLB_LOG_STDERR, config->verbose, NULL);
+    }
+    else {
+        config->log = flb_log_init(config, FLB_LOG_FILE, config->verbose,
+                                   config->logfile);
     }
 
     /* Validate flush time (seconds) */
