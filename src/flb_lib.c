@@ -18,7 +18,6 @@
  */
 
 #include <signal.h>
-#include <unistd.h>
 #include <stdarg.h>
 
 #include <fluent-bit/flb_lib.h>

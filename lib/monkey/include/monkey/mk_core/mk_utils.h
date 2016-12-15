@@ -25,7 +25,7 @@
 #include <string.h>
 #include <errno.h>
 
-#include <mk_core/mk_pthread.h>
+#include "mk_pthread.h"
 
 time_t mk_core_init_time;
 char *env_trace_filter;

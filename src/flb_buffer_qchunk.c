@@ -17,6 +17,7 @@
  *  limitations under the License.
  */
 
+#include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
@@ -32,7 +33,6 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/mman.h>
-#include <pthread.h>
 
 /* qworker thread initializator */
 static int pth_init;

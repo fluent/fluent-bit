@@ -21,8 +21,8 @@
 #define FLB_THREAD_PTHREADS_H
 
 #include <stdlib.h>
-#include <pthread.h>
 
+#include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_macros.h>

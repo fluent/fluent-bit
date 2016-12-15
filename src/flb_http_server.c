@@ -17,10 +17,10 @@
  *  limitations under the License.
  */
 
+#include <monkey/mk_core.h>
 #include <monkey/mk_lib.h>
 #include <fluent-bit/flb_lib.h>
 #include <fluent-bit/flb_http_server.h>
-#include <pthread.h>
 
 static void cb_root(mk_session_t *session, mk_request_t *request)
 {

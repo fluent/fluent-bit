@@ -20,6 +20,7 @@
 #ifndef FLB_THREAD_LIBCO_H
 #define FLB_THREAD_LIBCO_H
 
+#include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_macros.h>
@@ -28,7 +29,6 @@
 #include <stdlib.h>
 #include <limits.h>
 #include <ucontext.h>
-#include <pthread.h>
 #include <libco.h>
 
 #ifdef FLB_HAVE_VALGRIND

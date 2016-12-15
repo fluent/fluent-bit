@@ -17,8 +17,7 @@
  *  limitations under the License.
  */
 
-#include <pthread.h>
-
+#include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_output.h>

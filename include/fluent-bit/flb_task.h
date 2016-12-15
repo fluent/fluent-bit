@@ -20,7 +20,7 @@
 #ifndef FLB_TASK_H
 #define FLB_TASK_H
 
-#include <pthread.h>
+#include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_buffer.h>
 #include <fluent-bit/flb_input.h>

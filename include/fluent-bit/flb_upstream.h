@@ -20,7 +20,8 @@
 #ifndef FLB_UPSTREAM_H
 #define FLB_UPSTREAM_H
 
-#include <pthread.h>
+
+#include <monkey/mk_core.h>
 #include <fluent-bit/flb_config.h>
 
 /*
