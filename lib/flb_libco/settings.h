@@ -27,6 +27,7 @@
 #endif
 
 #if defined(_MSC_VER)
+  #pragma data_seg(".text")
   #define text_section __declspec(allocate(".text"))
 #elif defined(__APPLE__) && defined(__MACH__)
   #define text_section __attribute__((section("__TEXT,__text")))
