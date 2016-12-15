@@ -30,7 +30,11 @@
 #define FLB_OK      1
 #define FLB_RETRY   2
 
+#ifdef _WIN32
+#define FLB_INLINE inline
+#else
 #define FLB_INLINE inline __attribute__((always_inline))
+#endif
 
 #define FLB_EXPORT MK_EXPORT
 
