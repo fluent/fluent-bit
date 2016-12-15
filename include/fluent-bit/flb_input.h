@@ -20,6 +20,7 @@
 #ifndef FLB_INPUT_H
 #define FLB_INPUT_H
 
+#include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_config.h>
@@ -30,7 +31,6 @@
 #include <msgpack.h>
 
 #include <inttypes.h>
-#include <unistd.h>
 
 #define FLB_COLLECT_TIME        1
 #define FLB_COLLECT_FD_EVENT    2

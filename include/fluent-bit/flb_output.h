@@ -24,6 +24,7 @@
 #define _XOPEN_SOURCE
 #endif
 
+#include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_bits.h>
 #include <fluent-bit/flb_io.h>
@@ -35,7 +36,6 @@
 #include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
-#include <unistd.h>
 
 /* Output plugin masks */
 #define FLB_OUTPUT_NET          32  /* output address may set host and port */
