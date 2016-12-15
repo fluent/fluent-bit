@@ -51,6 +51,10 @@ extern "C" {
 #define ENOTSUP   134
 #endif
 
+#ifndef PTHREAD_STACK_MIN
+#define PTHREAD_STACK_MIN 65535
+#endif
+
 #define PTHREAD_CANCEL_DISABLE 0
 #define PTHREAD_CANCEL_ENABLE 0x01
 
