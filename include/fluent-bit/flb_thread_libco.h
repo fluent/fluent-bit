@@ -28,7 +28,6 @@
 
 #include <stdlib.h>
 #include <limits.h>
-#include <ucontext.h>
 #include <libco.h>
 
 #ifdef FLB_HAVE_VALGRIND
@@ -41,7 +40,7 @@ struct flb_thread {
     unsigned int valgrind_stack_id;
 #endif
 
-    /* ucontext 'contexts' */
+    /* libco 'contexts' */
     cothread_t caller;
     cothread_t callee;
 
