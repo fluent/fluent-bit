@@ -26,10 +26,6 @@ extern "C" {
 
 #include <sys/types.h>
 
-/* Process UID/GID */
-extern gid_t EGID;
-extern gid_t EUID;
-
 #include "mk_core/mk_core_info.h"
 
 #ifdef MK_HAVE_SYS_UIO_H

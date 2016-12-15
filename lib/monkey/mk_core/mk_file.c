@@ -28,6 +28,12 @@
 
 #include "mk_core.h"
 
+#ifdef _WIN32
+#include <mk_core/mk_dep_unistd.h>
+#else
+#include <unistd.h>
+#endif
+
 int mk_file_get_info(const char *path, struct file_info *f_info, int mode)
 {
     struct stat f, target;
@@ -68,6 +74,10 @@ int mk_file_get_info(const char *path, struct file_info *f_info, int mode)
         f_info->is_file = MK_FALSE;
     }
 
+#ifndef _WIN32
+    gid_t EGID = getegid();
+    gid_t EUID = geteuid();
+
     /* Check read access */
     if (mode & MK_FILE_READ) {
         if (((target.st_mode & S_IRUSR) && target.st_uid == EUID) ||
@@ -85,6 +95,7 @@ int mk_file_get_info(const char *path, struct file_info *f_info, int mode)
             f_info->exec_access = MK_TRUE;
         }
     }
+#endif
 
     /* Suggest open(2) flags */
     f_info->flags_read_only = O_RDONLY | O_NONBLOCK;

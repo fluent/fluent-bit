@@ -22,9 +22,9 @@
 
 #include "mk_core_info.h"
 
-#ifdef MK_THREADS_POSIX /* Heaven */
+#if defined (MK_THREADS_POSIX)    /* Heaven */
 #include <pthread.h>
-#elif MK_THREADS_WIN32  /* Not Heaven */
+#elif defined (MK_THREADS_WIN32)  /* Not Heaven */
 #include "external/winpthreads.h"
 #endif
 
