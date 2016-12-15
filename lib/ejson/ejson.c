@@ -20,7 +20,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
-#include <unistd.h>
 #include <float.h>
 #include "ejson.h"
 
