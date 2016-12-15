@@ -20,6 +20,8 @@
 #ifndef FLB_MACROS_H
 #define FLB_MACROS_H
 
+#include <monkey/mk_core.h>
+
 #define FLB_FALSE  0
 #define FLB_TRUE   !FLB_FALSE
 
@@ -30,12 +32,7 @@
 
 #define FLB_INLINE inline __attribute__((always_inline))
 
-#if __GNUC__ >= 4
- #define FLB_EXPORT __attribute__ ((visibility ("default")))
-#else
- #define FLB_EXPORT
-#endif
-
+#define FLB_EXPORT MK_EXPORT
 
 #define flb_unlikely(x) __builtin_expect((x),0)
 #define flb_likely(x)   __builtin_expect((x),1)
