@@ -41,6 +41,7 @@ extern "C" {
 #include "mk_core/mk_string.h"
 #include "mk_core/mk_macros.h"
 #include "mk_core/mk_utils.h"
+#include "mk_core/mk_unistd.h"
 
 #ifdef __cplusplus /* If this is a C++ compiler, use C linkage */
 }
