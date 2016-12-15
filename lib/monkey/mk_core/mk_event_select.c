@@ -17,7 +17,12 @@
  *  limitations under the License.
  */
 
+#ifdef _WIN32
+#include <Winsock2.h>
+#else
 #include <sys/select.h>
+#endif
+
 #include <mk_core/mk_event.h>
 #include <time.h>
 

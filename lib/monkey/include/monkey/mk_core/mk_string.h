@@ -25,6 +25,13 @@
 #include "mk_list.h"
 #include "mk_macros.h"
 
+#if defined(_WIN32) || defined(_WIN64)
+  #define snprintf _snprintf
+  #define vsnprintf _vsnprintf
+  #define strcasecmp _stricmp
+  #define strncasecmp _strnicmp
+#endif
+
 /* Case sensitive OFF */
 #define MK_STR_SENSITIVE 0
 
@@ -59,13 +66,21 @@ void mk_string_split_free(struct mk_list *list);
 int mk_string_trim(char **str);
 char *mk_string_build(char **buffer, unsigned long *len,
                       const char *format, ...) PRINTF_WARNINGS(3,4);
+
+#ifdef __GNUC__
 int mk_string_itop(uint64_t value, mk_ptr_t *p);
+#endif
+
 char *mk_string_copy_substr(const char *string, int pos_init, int pos_end);
 
 char *mk_string_tolower(const char *in);
 
-#if defined (__APPLE__)
+#if defined (__APPLE__) || defined (_WIN32)
 void *memrchr(const void *s, int c, size_t n);
+#endif
+
+#ifdef _WIN32
+char *strcasestr(const char *phaystack, const char *pneedle);
 #endif
 
 #endif

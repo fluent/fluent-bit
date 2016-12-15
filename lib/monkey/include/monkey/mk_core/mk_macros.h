@@ -101,9 +101,15 @@
  *
  */
 
-#define mk_unlikely(x) __builtin_expect((x),0)
-#define mk_likely(x) __builtin_expect((x),1)
-#define mk_prefetch(x, ...) __builtin_prefetch(x, __VA_ARGS__)
+#ifdef __GNUC__
+  #define mk_unlikely(x) __builtin_expect((x),0)
+  #define mk_likely(x) __builtin_expect((x),1)
+  #define mk_prefetch(x, ...) __builtin_prefetch(x, __VA_ARGS__)
+#else
+  #define mk_unlikely(x)      (x)
+  #define mk_likely(x)        (x)
+  #define mk_prefetch(x, ...) (x, __VA_ARGS__)
+#endif
 
 #define mk_is_bool(x) ((x == MK_TRUE || x == MK_FALSE) ? 1 : 0)
 
@@ -139,10 +145,14 @@
 #define MK_NET_HOSTMIN(addr,net) net == 31 ? MK_NET_NETWORK(addr,net) : (MK_NET_NETWORK(addr,net) + 0x01000000)
 #define MK_NET_HOSTMAX(addr,net) net == 31 ? MK_NET_BROADCAST(addr,net) : (MK_NET_BROADCAST(addr,net) - 0x01000000)
 
-#if __GNUC__ >= 4
- #define MK_EXPORT __attribute__ ((visibility ("default")))
-#else
- #define MK_EXPORT
+#ifdef __GNUC__
+  #if __GNUC__ >= 4
+    #define MK_EXPORT __attribute__ ((visibility ("default")))
+  #else
+    #define MK_EXPORT
+  #endif
+#elif defined(_WIN32)
+  #define MK_EXPORT __declspec(dllexport)
 #endif
 
 /* Some old libc do not declare O_CLOEXEC */

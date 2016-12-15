@@ -19,18 +19,30 @@
 
 #define _GNU_SOURCE
 
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include <unistd.h>
 #include <errno.h>
 #include <stdarg.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#include <mk_core/mk_unistd.h>
+
 #if defined (__linux__)
 #include <sys/prctl.h>
+#elif defined (_WIN32)
+  #ifndef localtime_r
+    struct tm *localtime_r(time_t *_clock, struct tm *_result)
+    {
+        struct tm *p = localtime(_clock);
+        if (p)
+            *(_result) = *p;
+        return p;
+    }
+  #endif
 #endif
 
 /*
@@ -237,6 +249,7 @@ int mk_utils_worker_spawn(void (*func) (void *), void *arg, pthread_t *tid)
     return 0;
 }
 
+#ifndef _WIN32
 /* Run current process in background mode (daemon, evil Monkey >:) */
 int mk_utils_set_daemon()
 {
@@ -326,6 +339,7 @@ int mk_utils_remove_pid(char *path)
     }
     return 0;
 }
+#endif
 
 int mk_core_init()
 {

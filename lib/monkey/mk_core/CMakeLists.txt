@@ -1,19 +1,51 @@
-SET (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
 include (CheckCSourceCompiles)
 
 set(src
-  mk_file.c
   mk_rconf.c
   mk_string.c
   mk_memory.c
   mk_event.c
   mk_utils.c
-  mk_rbtree.c
-  mk_thread.c
-  mk_thread_channel.c
   )
 
-# Lookup event-loop mechanism: do we need to fallback to select(2) ?
+# Headers
+include_directories(../include/monkey/)
+
+# It set's a definition and register into the mk_core_info.h file */
+macro(MK_DEFINITION var)
+  add_definitions(-D${var})
+  set(MK_CORE_BUILD_FLAGS "${MK_CORE_BUILD_FLAGS}#ifndef ${var}\n#define ${var}\n#endif\n")
+endmacro()
+
+# Set threading system
+if (CMAKE_SYSTEM_NAME MATCHES "Windows")
+  MK_DEFINITION(MK_THREADS_WIN32)
+  set(src
+    ${src}
+    "external/winpthreads.c"
+    )
+else()
+  MK_DEFINITION(MK_THREADS_POSIX)
+endif()
+
+# Check for full stat(2) support
+check_c_source_compiles("
+  #include <sys/types.h>
+  #include <sys/stat.h>
+  #include <unistd.h>
+  int main() {
+    int x = S_IXUSR;
+    S_ISLNK(0);
+    return 0;
+  }" HAVE_STAT_H)
+if (HAVE_STAT_H)
+  set(src "${src}"
+    mk_file.c
+    )
+  MK_DEFINITION(MK_HAVE_STAT_H)
+endif()
+
+# Check if sys/uio.h exists
 check_c_source_compiles("
   #include <sys/uio.h>
   int main() {
@@ -24,16 +56,18 @@ if (HAVE_SYS_UIO_H)
   set(src "${src}"
     mk_iov.c
     )
+  MK_DEFINITION(MK_HAVE_SYS_UIO_H)
 endif()
 
-# Headers
-include_directories(../include/monkey/)
-
-# It set's a definition and register into the mk_core_info.h file */
-macro(MK_DEFINITION var)
-  add_definitions(-D${var})
-  set(MK_CORE_BUILD_FLAGS "${MK_CORE_BUILD_FLAGS}#ifndef ${var}\n#define ${var}\n#endif\n")
-endmacro()
+# Check for unistd.h
+check_c_source_compiles("
+  #include <unistd.h>
+  int main() {
+     return 0;
+  }" HAVE_UNISTD_H)
+if (HAVE_UNISTD_H)
+  MK_DEFINITION(MK_HAVE_UNISTD_H)
+endif()
 
 # Lookup event-loop mechanism: do we need to fallback to select(2) ?
 check_c_source_compiles("
@@ -48,7 +82,7 @@ check_c_source_compiles("
      return kqueue();
   }" HAVE_KQUEUE)
 
-if (NOT HAVE_EPOLL AND NOT HAVE_KQUEUE)
+if ((NOT HAVE_EPOLL AND NOT HAVE_KQUEUE) OR MK_USE_EVENT_SELECT)
   message(STATUS "Event loop backend > select(2)")
   MK_DEFINITION(MK_HAVE_EVENT_SELECT)
 endif()

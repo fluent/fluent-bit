@@ -23,6 +23,13 @@
 
 #include <stddef.h>
 
+#ifdef _WIN32
+/* Windows */
+#define container_of(address, type, field) ((type *)(                   \
+                                                     (PCHAR)(address) - \
+                                                     (ULONG_PTR)(&((type *)0)->field)))
+#else
+/* Rest of the world */
 #ifndef offsetof
 #define offsetof(TYPE, MEMBER) ((size_t) &((TYPE *)0)->MEMBER)
 #endif
@@ -30,7 +37,7 @@
 #define container_of(ptr, type, member) ({                      \
       const typeof( ((type *)0)->member ) *__mptr = (ptr);      \
       (type *)( (char *)__mptr - offsetof(type,member) );})
-
+#endif
 
 struct mk_list
 {

@@ -17,37 +17,14 @@
  *  limitations under the License.
  */
 
-#ifndef MK_CORE_H
-#define MK_CORE_H
+#ifndef MK_UNISTD_H
+#define MK_UNISTD_H
 
-#ifdef __cplusplus /* If this is a C++ compiler, use C linkage */
-extern "C" {
-#endif
-
-#include <sys/types.h>
-
-/* Process UID/GID */
-extern gid_t EGID;
-extern gid_t EUID;
-
-#include "mk_core/mk_core_info.h"
-
-#ifdef MK_HAVE_SYS_UIO_H
-#include "mk_core/mk_iov.h"
-#endif
-
-#include "mk_core/mk_list.h"
-#include "mk_core/mk_pthread.h"
-#include "mk_core/mk_memory.h"
-#include "mk_core/mk_file.h"
-#include "mk_core/mk_event.h"
-#include "mk_core/mk_rconf.h"
-#include "mk_core/mk_string.h"
-#include "mk_core/mk_macros.h"
-#include "mk_core/mk_utils.h"
-
-#ifdef __cplusplus /* If this is a C++ compiler, use C linkage */
-}
+#include <mk_core/mk_core_info.h>
+#ifdef MK_HAVE_UNISTD_H
+#include <unistd.h>
+#else
+#include <mk_core/mk_dep_unistd.h>
 #endif
 
 #endif

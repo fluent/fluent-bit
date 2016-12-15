@@ -20,7 +20,11 @@
 #ifndef MK_EVENT_SELECT_H
 #define MK_EVENT_SELECT_H
 
+#ifdef _WIN32
+#include <Winsock2.h>
+#else
 #include <sys/select.h>
+#endif
 
 struct mk_event_ctx {
     int max_fd;

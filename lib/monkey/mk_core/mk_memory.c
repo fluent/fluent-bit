@@ -21,10 +21,9 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <pthread.h>
 
+#include <mk_core/mk_pthread.h>
 #include <mk_core/mk_memory.h>
-#include <mk_core/mk_iov.h>
 #include <mk_core/mk_macros.h>
 
 mk_ptr_t mk_ptr_create(char *buf, long init, long end)

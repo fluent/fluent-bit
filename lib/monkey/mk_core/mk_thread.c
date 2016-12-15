@@ -28,8 +28,8 @@
 #endif
 
 #include <limits.h>
-#include <pthread.h>
 
+#include <mk_core/mk_pthread.h>
 #include <mk_core/mk_memory.h>
 #include <mk_core/mk_thread.h>
 

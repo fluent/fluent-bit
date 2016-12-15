@@ -20,6 +20,10 @@
 #define _GNU_SOURCE
 #include <string.h>
 
+#ifdef _WIN32
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+
 #include <ctype.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -31,8 +35,8 @@
 
 #include <stdio.h>
 
-/* OSX lacks of memrchr() */
-#if defined (__APPLE__)
+/* OSX and Windows lacks of memrchr() */
+#if defined (__APPLE__) || defined (_WIN32)
 void *memrchr(const void *s, int c, size_t n)
 {
     const unsigned char *cp;
@@ -45,6 +49,101 @@ void *memrchr(const void *s, int c, size_t n)
         } while (--n != 0);
     }
     return(NULL);
+}
+#endif
+
+/* Windows lack of strcasestr() */
+#ifdef _WIN32
+char *strcasestr(const char *phaystack, const char *pneedle)
+{
+	register const unsigned char *haystack, *needle;
+	register unsigned bl, bu, cl, cu;
+
+	haystack = (const unsigned char *) phaystack;
+	needle = (const unsigned char *) pneedle;
+
+	bl = tolower(*needle);
+	if (bl != '\0')
+	{
+		// Scan haystack until the first character of needle is found:
+		bu = toupper(bl);
+		haystack--;				/* possible ANSI violation */
+		do
+		{
+			cl = *++haystack;
+			if (cl == '\0')
+				goto ret0;
+		}
+		while ((cl != bl) && (cl != bu));
+
+		cl = tolower(*++needle);
+		if (cl == '\0') {
+			goto foundneedle;
+        }
+
+		cu = toupper(cl);
+		++needle;
+		goto jin;
+
+		for (;;)
+		{
+			register unsigned a;
+			register const unsigned char *rhaystack, *rneedle;
+			do
+			{
+				a = *++haystack;
+				if (a == '\0')
+					goto ret0;
+				if ((a == bl) || (a == bu))
+					break;
+				a = *++haystack;
+				if (a == '\0')
+					goto ret0;
+shloop:
+				;
+			}
+			while ((a != bl) && (a != bu));
+
+jin:
+			a = *++haystack;
+			if (a == '\0') {
+				goto ret0;
+            }
+
+			if ((a != cl) && (a != cu)) {
+				goto shloop;
+            }
+
+			rhaystack = haystack-- + 1;
+			rneedle = needle;
+			a = tolower(*rneedle);
+
+			if (tolower(*rhaystack) == (int) a)
+			do
+			{
+				if (a == '\0')
+					goto foundneedle;
+				++rhaystack;
+				a = tolower(*++needle);
+				if (tolower(*rhaystack) != (int) a)
+					break;
+				if (a == '\0')
+					goto foundneedle;
+				++rhaystack;
+				a = tolower(*++needle);
+			}
+			while (tolower(*rhaystack) == (int) a);
+
+			needle = rneedle;		/* took the register-poor approach */
+
+			if (a == '\0')
+				break;
+		} // for(;;)
+	} // if (bl != '\0')
+foundneedle:
+	return (char*) haystack;
+ret0:
+	return 0;
 }
 #endif
 
@@ -363,6 +462,7 @@ uint32_t digits10(uint64_t v) {
     return 12 + digits10(v / 1000000000000UL);
 }
 
+#ifdef __GNUC__
 int mk_string_itop(uint64_t value, mk_ptr_t *p)
 {
     static const char digits[201] =
@@ -402,6 +502,7 @@ int mk_string_itop(uint64_t value, mk_ptr_t *p)
     p->len = (dst - p->data - 1);
     return p->len;
 }
+#endif
 
 /* Return a buffer with a new string from string */
 char *mk_string_copy_substr(const char *string, int pos_init, int pos_end)
