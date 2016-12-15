@@ -17,14 +17,13 @@
  *  limitations under the License.
  */
 
+#include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_worker.h>
 #include <fluent-bit/flb_log.h>
-
-#include <unistd.h>
 
 FLB_TLS_DEFINE(struct flb_worker, flb_worker_ctx);
 

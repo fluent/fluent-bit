@@ -17,7 +17,6 @@
  *  limitations under the License.
  */
 
-#include <unistd.h>
 #include <mbedtls/net.h>
 #include <mbedtls/ssl.h>
 #include <mbedtls/entropy.h>
@@ -25,6 +24,7 @@
 #include <mbedtls/debug.h>
 #include <mbedtls/error.h>
 
+#include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_io.h>

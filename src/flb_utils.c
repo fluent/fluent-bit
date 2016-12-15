@@ -20,13 +20,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 #include <time.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <msgpack.h>
 
+#include <monkey/mk_core.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_error.h>
@@ -250,7 +250,7 @@ void flb_utils_split_free(struct mk_list *list)
     flb_free(list);
 }
 
-/* When a timer expires, it needs some handling */ 
+/* When a timer expires, it needs some handling */
 int flb_utils_timer_consume(int fd)
 {
     int ret;

@@ -17,8 +17,6 @@
  *  limitations under the License.
  */
 
-#include <unistd.h>
-
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
