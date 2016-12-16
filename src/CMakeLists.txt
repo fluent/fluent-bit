@@ -114,10 +114,16 @@ set(FLB_DEPS
   mk_core
   jsmn
   msgpackc-static
-  dl
   ${FLB_PLUGINS}
   ${extra_libs}
   )
+
+if(NOT CMAKE_SYSTEM_NAME MATCHES "Windows")
+  set(FLB_DEPS
+    ${FLB_DEPS}
+    dl
+    )
+endif()
 
 set(FLB_PROXY_PLUGINS "")
 if(FLB_PROXY_GO)
