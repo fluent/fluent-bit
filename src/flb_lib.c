@@ -20,6 +20,7 @@
 #include <signal.h>
 #include <stdarg.h>
 
+#include <monkey/mk_core.h>
 #include <fluent-bit/flb_lib.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_engine.h>
