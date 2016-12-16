@@ -30,6 +30,7 @@
 /* WIN32 conversion */
 #define sleep(x)         _sleep(x * 1000)
 
+#define _WINSOCKAPI_
 #include <windows.h>	/* WinAPI */
 
 /* Windows sleep in 100ns units */
