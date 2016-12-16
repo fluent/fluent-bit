@@ -144,7 +144,12 @@ int flb_net_socket_tcp_nodelay(int sockfd)
 
 int flb_net_socket_nonblocking(int sockfd)
 {
+#ifdef _WIN32
+    unsigned long on = 1;
+    if (ioctlsocket(sockfd, FIONBIO, &on) != 0) {
+#else
     if (fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFL, 0) | O_NONBLOCK) == -1) {
+#endif
         perror("fcntl");
         return -1;
     }
