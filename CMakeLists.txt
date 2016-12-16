@@ -307,7 +307,7 @@ else()
   set(FLB_OUT_NAME "fluent-bit")
 endif()
 
-if(FLB_PROXY_GO)
+if(FLB_PROXY_GO AND (NOT CMAKE_SYSTEM_NAME MATCHES "Windows"))
   FLB_DEFINITION(FLB_HAVE_PROXY_GO)
 endif()
 
