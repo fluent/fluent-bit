@@ -131,8 +131,10 @@ static void flb_signal_handler(int signal)
 
     switch (signal) {
     case SIGINT:
+#ifndef _WIN32
     case SIGQUIT:
     case SIGHUP:
+#endif
     case SIGTERM:
         flb_engine_shutdown(config);
 #ifdef FLB_HAVE_MTRACE
@@ -148,8 +150,10 @@ static void flb_signal_handler(int signal)
 static void flb_signal_init()
 {
     signal(SIGINT,  &flb_signal_handler);
+#ifndef _WIN32
     signal(SIGQUIT, &flb_signal_handler);
     signal(SIGHUP,  &flb_signal_handler);
+#endif
     signal(SIGTERM, &flb_signal_handler);
 }
 
