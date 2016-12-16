@@ -24,7 +24,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
-#include <getopt.h>
 
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
