@@ -347,7 +347,7 @@ FLB_INLINE int net_io_tls_write(struct flb_thread *th,
 
  retry_write:
     ret = mbedtls_ssl_write(&u_conn->tls_session->ssl,
-                            data + total,
+                            (char *) data + total,
                             len - total);
     if (ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
         io_tls_event_switch(u_conn, MK_EVENT_WRITE);
