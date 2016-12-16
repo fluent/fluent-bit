@@ -396,11 +396,14 @@ int main(int argc, char **argv)
             config->daemon = FLB_TRUE;
             break;
 #endif
+
+#ifdef FLB_HAVE_PROXY_GO
         case 'e':
             if (!flb_plugin_proxy_create(optarg, 0, config)) {
                 exit(EXIT_FAILURE);
             }
             break;
+#endif
         case 'f':
             config->flush = atoi(optarg);
             break;

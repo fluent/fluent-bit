@@ -23,7 +23,6 @@ set(src
   flb_router.c
   flb_http_client.c
   flb_worker.c
-  flb_plugin_proxy.c
   )
 
 include_directories(
@@ -47,6 +46,13 @@ if(FLB_TLS)
   set(extra_libs
     ${extra_libs}
     "mbedtls"
+    )
+endif()
+
+if(FLB_HAVE_PROXY_GO)
+  set(src
+    ${src}
+    "flb_plugin_proxy.c"
     )
 endif()
 
