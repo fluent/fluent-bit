@@ -52,8 +52,26 @@ void *memrchr(const void *s, int c, size_t n)
 }
 #endif
 
-/* Windows lack of strcasestr() */
+/* Windows lack of strndup() & strcasestr() */
 #ifdef _WIN32
+char *strndup (const char *s, size_t n)
+{
+    char *result;
+    size_t len = strlen (s);
+
+    if (n < len) {
+        len = n;
+    }
+
+    result = (char *) mk_mem_alloc(len + 1);
+    if (!result) {
+        return 0;
+    }
+
+    result[len] = '\0';
+    return (char *) memcpy (result, s, len);
+}
+
 char *strcasestr(const char *phaystack, const char *pneedle)
 {
 	register const unsigned char *haystack, *needle;

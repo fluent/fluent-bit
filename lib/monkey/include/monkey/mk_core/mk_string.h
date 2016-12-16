@@ -80,6 +80,7 @@ void *memrchr(const void *s, int c, size_t n);
 #endif
 
 #ifdef _WIN32
+char *strndup (const char *s, size_t n);
 char *strcasestr(const char *phaystack, const char *pneedle);
 #endif
 
