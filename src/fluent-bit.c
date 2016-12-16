@@ -329,6 +329,7 @@ int main(int argc, char **argv)
     struct flb_input_instance *in = NULL;
     struct flb_output_instance *out = NULL;
 
+#ifndef _WIN32
     /* Setup long-options */
     static const struct option long_opts[] = {
         { "buf_path",    required_argument, NULL, 'b' },
@@ -353,6 +354,7 @@ int main(int argc, char **argv)
         { "help",        no_argument      , NULL, 'h' },
         { NULL, 0, NULL, 0 }
     };
+#endif
 
 #ifdef FLB_HAVE_MTRACE
     /* Start tracing malloc and free */
