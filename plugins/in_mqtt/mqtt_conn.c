@@ -17,7 +17,6 @@
  *  limitations under the License.
  */
 
-#include <unistd.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_network.h>
