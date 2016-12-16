@@ -65,7 +65,7 @@ struct flb_uri *flb_uri_create(char *full_uri)
 
     /* Link the 'map' */
     uri = p;
-    p += sizeof(struct flb_uri);
+    p = ((char *) p) + sizeof(struct flb_uri);
     uri->map = p;
 
     /* Initilize fields list */
