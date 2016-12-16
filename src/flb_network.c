@@ -23,14 +23,19 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
-#include <sys/socket.h>
 #include <fcntl.h>
+#include <errno.h>
+
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
-#include <errno.h>
-#include <sys/types.h>          /* See NOTES */
+#include <sys/socket.h>
 #include <arpa/inet.h>
+#endif
 
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
