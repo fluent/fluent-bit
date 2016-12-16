@@ -204,7 +204,7 @@ static int net_io_write(struct flb_upstream_conn *u_conn,
     }
 
     while (total < len) {
-        ret = write(u_conn->fd, data + total, len - total);
+        ret = write(u_conn->fd, (char *) data + total, len - total);
         if (ret == -1) {
             if (errno == EAGAIN) {
                 /*
@@ -258,7 +258,7 @@ static FLB_INLINE int net_io_write_async(struct flb_thread *th,
     else {
         send = (len - total);
     }
-    bytes = write(u_conn->fd, data + total, send);
+    bytes = write(u_conn->fd, (char *) data + total, send);
 
 #ifdef FLB_HAVE_TRACE
     if (bytes > 0) {
