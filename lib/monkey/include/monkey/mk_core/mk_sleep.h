@@ -23,6 +23,7 @@
 #include "mk_core_info.h"
 
 #ifdef __GNUC__      /* Heaven */
+#include <time.h>
 #include <unistd.h>
 #else                /* Not Heaven */
 
@@ -30,8 +31,8 @@
 #define NANOS_TO_MILLS  1.0/1000000.0
 
 /* WIN32 conversion */
-#define sleep(x)       _sleep(x * 1000)
-#define nanosleep(x)   _sleep(x * NANOS_TO_MILLS)
+#define sleep(x)         _sleep(x * 1000)
+#define nanosleep(x,z)   _sleep(x * NANOS_TO_MILLS)
 
 #endif
 
