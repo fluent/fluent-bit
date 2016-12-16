@@ -7,4 +7,7 @@ project(${PROJ_CJSON} C)
 set(SOURCES src/cJSON.c)
 
 add_library(${PROJ_CJSON} STATIC ${HEADERS} ${SOURCES})
-target_link_libraries(${PROJ_CJSON} m)
+
+if(NOT CMAKE_SYSTEM_NAME MATCHES "Windows")
+  target_link_libraries(${PROJ_CJSON} m)
+endif()
