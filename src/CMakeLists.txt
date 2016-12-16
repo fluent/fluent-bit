@@ -68,11 +68,6 @@ if(FLB_STATS)
     ${src}
     "flb_stats.c"
     )
-  set(extra_libs
-    ${extra_libs}
-    "cJSON"
-    "m"
-    )
 endif()
 
 if(FLB_BUFFERING)
@@ -114,6 +109,7 @@ set(FLB_DEPS
   mk_core
   jsmn
   msgpackc-static
+  cJSON
   ${FLB_PLUGINS}
   ${extra_libs}
   )
@@ -122,6 +118,7 @@ if(NOT CMAKE_SYSTEM_NAME MATCHES "Windows")
   set(FLB_DEPS
     ${FLB_DEPS}
     dl
+    m
     )
 endif()
 
