@@ -35,6 +35,7 @@ extern "C" {
 #include "mk_core/mk_list.h"
 #include "mk_core/mk_pthread.h"
 #include "mk_core/mk_getopt.h"
+#include "mk_core/mk_pipe.h"
 #include "mk_core/mk_memory.h"
 #include "mk_core/mk_file.h"
 #include "mk_core/mk_event.h"
