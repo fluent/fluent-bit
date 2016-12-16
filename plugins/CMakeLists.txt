@@ -96,10 +96,6 @@ REGISTER_OUT_PLUGIN("out_td")
 REGISTER_OUT_PLUGIN("out_lib")
 REGISTER_OUT_PLUGIN("out_flowcounter")
 
-if(ENABLE_TESTS)
-  REGISTER_OUT_PLUGIN("out_null")
-endif()
-
 # Register external input and output plugins
 if(EXT_IN_PLUGINS)
   string(REPLACE "," ";" plugins ${EXT_IN_PLUGINS})
