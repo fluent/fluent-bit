@@ -25,15 +25,34 @@
 #ifdef __GNUC__      /* Heaven */
 #include <time.h>
 #include <unistd.h>
-#else                /* Not Heaven */
-
-/* Nanoseconds to Milliseconds */
-#define NANOS_TO_MILLS  1.0/1000000.0
+#elif _WIN32        /* Not Heaven */
 
 /* WIN32 conversion */
 #define sleep(x)         _sleep(x * 1000)
-#define nanosleep(x,z)   _sleep(x * NANOS_TO_MILLS)
 
+#include <windows.h>	/* WinAPI */
+
+/* Windows sleep in 100ns units */
+BOOLEAN nanosleep(LONGLONG ns){
+	/* Declarations */
+	HANDLE timer;	/* Timer handle */
+	LARGE_INTEGER li;	/* Time defintion */
+	/* Create timer */
+	if(!(timer = CreateWaitableTimer(NULL, TRUE, NULL)))
+		return FALSE;
+	/* Set timer properties */
+	li.QuadPart = -ns;
+	if(!SetWaitableTimer(timer, &li, 0, NULL, NULL, FALSE)){
+		CloseHandle(timer);
+		return FALSE;
+	}
+	/* Start & wait for timer */
+	WaitForSingleObject(timer, INFINITE);
+	/* Clean resources */
+	CloseHandle(timer);
+	/* Slept without problems */
+	return TRUE;
+}
 #endif
 
 #endif
