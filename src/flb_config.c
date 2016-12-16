@@ -128,8 +128,12 @@ struct flb_config *flb_config_init()
     /* Register plugins */
     flb_register_plugins(config);
 
+
+    /* Ignoring SIGPIPE on Windows (scary) */
+#ifndef _WIN32
     /* Ignore SIGPIPE */
     signal(SIGPIPE, SIG_IGN);
+#endif
 
     /* Prepare worker interface */
     flb_worker_init(config);
