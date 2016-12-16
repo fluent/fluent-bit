@@ -38,8 +38,8 @@
 
 #define FLB_EXPORT MK_EXPORT
 
-#define flb_unlikely(x) __builtin_expect((x),0)
-#define flb_likely(x)   __builtin_expect((x),1)
+#define flb_unlikely(x) mk_unlikely(x)
+#define flb_likely(x)   mk_likely(x)
 
 #define flb_bug(condition) do {                                         \
         if (flb_unlikely((condition)!=0)) {                             \
