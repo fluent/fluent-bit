@@ -75,7 +75,11 @@ REGISTER_IN_PLUGIN("in_xbee")
 REGISTER_IN_PLUGIN("in_head")
 REGISTER_IN_PLUGIN("in_health")
 REGISTER_IN_PLUGIN("in_http")
-REGISTER_IN_PLUGIN("in_serial")
+
+if (NOT CMAKE_SYSTEM_NAME MATCHES "Windows")
+  REGISTER_IN_PLUGIN("in_serial")
+endif()
+
 REGISTER_IN_PLUGIN("in_stdin")
 REGISTER_IN_PLUGIN("in_tcp")
 REGISTER_IN_PLUGIN("in_mqtt")
