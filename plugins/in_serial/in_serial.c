@@ -26,7 +26,6 @@
 #include <errno.h>
 #include <ctype.h>
 #include <sys/stat.h>
-#include <sys/time.h>
 #include <inttypes.h>
 #include <termios.h>
 
