@@ -105,7 +105,20 @@ include(CheckSymbolExists)
 check_symbol_exists(accept4 "sys/socket.h" HAVE_ACCEPT4)
 
 # Core dependencies
+if(CMAKE_SYSTEM_NAME MATCHES "Windows")
+  set(FLB_DEPS
+    "ws2_32.lib"
+    )
+else()
+  set(FLB_DEPS
+    ${FLB_DEPS}
+    dl
+    m
+    )
+endif()
+
 set(FLB_DEPS
+  ${FLB_DEPS}
   mk_core
   jsmn
   msgpackc-static
@@ -113,14 +126,6 @@ set(FLB_DEPS
   ${FLB_PLUGINS}
   ${extra_libs}
   )
-
-if(NOT CMAKE_SYSTEM_NAME MATCHES "Windows")
-  set(FLB_DEPS
-    ${FLB_DEPS}
-    dl
-    m
-    )
-endif()
 
 set(FLB_PROXY_PLUGINS "")
 if(FLB_PROXY_GO)
