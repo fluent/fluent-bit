@@ -65,7 +65,9 @@ static void flb_help(int rc, struct flb_config *config)
     printf("  -B  --buf_workers=N\tnumber of workers for buffering\n");
 #endif
     printf("  -c  --config=FILE\tspecify an optional configuration file\n");
+#ifdef FLB_HAVE_FORK
     printf("  -d, --daemon\t\trun Fluent Bit in background mode\n");
+#endif
     printf("  -f, --flush=SECONDS\tflush timeout in seconds (default: %i)\n",
            FLB_CONFIG_FLUSH_SECS);
     printf("  -i, --input=INPUT\tset an input\n");
@@ -333,7 +335,9 @@ int main(int argc, char **argv)
         { "buf_path",    required_argument, NULL, 'b' },
         { "buf_workers", required_argument, NULL, 'B' },
         { "config",      required_argument, NULL, 'c' },
+#ifdef FLB_HAVE_FORK
         { "daemon",      no_argument      , NULL, 'd' },
+#endif
         { "flush",       required_argument, NULL, 'f' },
         { "http",        no_argument      , NULL, 'H' },
         { "logfile",     required_argument, NULL, 'l' },
@@ -387,9 +391,11 @@ int main(int argc, char **argv)
         case 'c':
             cfg_file = flb_strdup(optarg);
             break;
+#ifdef FLB_HAVE_FORK
         case 'd':
             config->daemon = FLB_TRUE;
             break;
+#endif
         case 'e':
             if (!flb_plugin_proxy_create(optarg, 0, config)) {
                 exit(EXIT_FAILURE);
@@ -501,10 +507,12 @@ int main(int argc, char **argv)
         flb_utils_print_setup(config);
     }
 
+#ifdef FLB_HAVE_FORK
     /* Run in background/daemon mode */
     if (config->daemon == FLB_TRUE) {
         flb_utils_set_daemon(config);
     }
+#endif
 
     flb_engine_start(config);
     return 0;

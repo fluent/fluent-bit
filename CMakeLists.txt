@@ -271,6 +271,18 @@ if(FLB_VALGRIND OR FLB_HAVE_VALGRIND)
   FLB_DEFINITION(FLB_HAVE_VALGRIND)
 endif()
 
+# fork(2) support
+check_c_source_compiles("
+  #include <unistd.h>
+  int main() {
+     fork();
+     return 0;
+  }" FLB_HAVE_FORK)
+
+if(FLB_HAVE_FORK)
+  FLB_DEFINITION(FLB_HAVE_FORK)
+endif()
+
 # mtrace support
 if(FLB_MTRACE)
   check_c_source_compiles("

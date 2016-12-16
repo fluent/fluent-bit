@@ -21,7 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <sys/time.h>
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <msgpack.h>
@@ -112,6 +112,7 @@ void flb_utils_warn_c(const char *msg)
             ANSI_BOLD ANSI_YELLOW, ANSI_RESET, msg);
 }
 
+#ifdef FLB_HAVE_FORK
 /* Run current process in background mode */
 int flb_utils_set_daemon(struct flb_config *config)
 {
@@ -145,6 +146,7 @@ int flb_utils_set_daemon(struct flb_config *config)
 
     return 0;
 }
+#endif
 
 void flb_utils_print_setup(struct flb_config *config)
 {
