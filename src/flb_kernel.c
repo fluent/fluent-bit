@@ -17,13 +17,42 @@
  *  limitations under the License.
  */
 
-#include <ctype.h>
-#include <sys/utsname.h>
-
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_kernel.h>
 #include <fluent-bit/flb_utils.h>
+
+#ifdef _WIN32
+
+/* Dummy function for Windows environment */
+struct flb_kernel *flb_kernel_info()
+{
+    int len;
+    struct flb_kernel *kernel;
+
+    kernel = flb_malloc(sizeof(struct flb_kernel));
+    if (!kernel) {
+        return NULL;
+    }
+    kernel->minor = 0;
+    kernel->major = 0;
+    kernel->patch = 0;
+    kernel->s_version.data = flb_malloc(16);
+
+    len = snprintf(kernel->s_version.data, 16, "0.0.0");
+    if (len == -1) {
+        perror("snprintf");
+        return NULL;
+    }
+    kernel->s_version.len = len;
+    kernel->n_version = 0;
+
+    return kernel;
+}
+#else
+
+#include <ctype.h>
+#include <sys/utsname.h>
 
 /*
  * Routine taken from Monkey Project, Eduardo says it's ok ;)
@@ -98,3 +127,5 @@ struct flb_kernel *flb_kernel_info()
 
     return kernel;
 }
+
+#endif
