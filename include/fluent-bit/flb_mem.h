@@ -40,11 +40,14 @@
  * Here there is no error logging in case of failures, we defer that task to the
  * caller.
  */
-
-#if ((__GNUC__ * 100 + __GNUC__MINOR__) > 430)  /* gcc version > 4.3 */
-# define ALLOCSZ_ATTR(x,...) __attribute__ ((alloc_size(x, ##__VA_ARGS__)))
+#ifdef __GNUC__
+  #if ((__GNUC__ * 100 + __GNUC__MINOR__) > 430)  /* gcc version > 4.3 */
+    #define ALLOCSZ_ATTR(x,...) __attribute__ ((alloc_size(x, ##__VA_ARGS__)))
+  #else
+    #define ALLOCSZ_ATTR(x,...)
+  #endif
 #else
-# define ALLOCSZ_ATTR(x,...)
+    #define ALLOCSZ_ATTR(x,...)
 #endif
 
 static inline ALLOCSZ_ATTR(1)
