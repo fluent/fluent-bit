@@ -19,8 +19,6 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/time.h>
-#include <sys/uio.h>
 
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
