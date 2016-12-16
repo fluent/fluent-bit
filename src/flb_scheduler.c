@@ -27,8 +27,12 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <sys/param.h>
 #include <fcntl.h>
+
+static inline double xmin(double a, double b)
+{
+    return a < b ? a : b;
+}
 
 /* Consume an unsigned 64 bit number from fd */
 static inline int consume_byte(int fd)
@@ -100,7 +104,7 @@ static int backoff_full_jitter(int base, int cap, int n)
 {
     int exp;
 
-    exp = MIN(cap, (1 << n /*pow(2, n)*/) * base);
+    exp = xmin(cap, (1 << n /*pow(2, n)*/) * base);
     return random_uniform(0, exp);
 }
 
