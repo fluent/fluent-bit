@@ -17,7 +17,6 @@
  *  limitations under the License.
  */
 
-#include <unistd.h>
 #include <msgpack.h>
 
 #include <fluent-bit/flb_input.h>
