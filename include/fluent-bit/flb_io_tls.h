@@ -20,6 +20,8 @@
 #ifndef FLB_IO_TLS_H
 #define FLB_IO_TLS_H
 
+#include <fluent-bit/flb_info.h>
+
 #ifdef FLB_HAVE_TLS
 
 #include <mbedtls/net.h>

@@ -35,6 +35,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_engine.h>
+#include <fluent-bit/flb_thread.h>
 
 #define FLB_TLS_CLIENT   "Fluent Bit"
 
@@ -305,9 +306,8 @@ int net_io_tls_handshake(void *_u_conn, void *_th)
     return -1;
 }
 
-FLB_INLINE int net_io_tls_read(struct flb_thread *th,
-                               struct flb_upstream_conn *u_conn,
-                               void *buf, size_t len)
+int flb_io_tls_net_read(struct flb_thread *th, struct flb_upstream_conn *u_conn,
+                        void *buf, size_t len)
 {
     int ret;
     struct flb_upstream *u = u_conn->u;
@@ -335,9 +335,8 @@ FLB_INLINE int net_io_tls_read(struct flb_thread *th,
     return ret;
 }
 
-FLB_INLINE int net_io_tls_write(struct flb_thread *th,
-                                struct flb_upstream_conn *u_conn,
-                                void *data, size_t len, size_t *out_len)
+int flb_io_tls_net_write(struct flb_thread *th, struct flb_upstream_conn *u_conn,
+                         void *data, size_t len, size_t *out_len)
 {
     int ret;
     size_t total = 0;
@@ -347,7 +346,7 @@ FLB_INLINE int net_io_tls_write(struct flb_thread *th,
 
  retry_write:
     ret = mbedtls_ssl_write(&u_conn->tls_session->ssl,
-                            (char *) data + total,
+                            (unsigned char *) data + total,
                             len - total);
     if (ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
         io_tls_event_switch(u_conn, MK_EVENT_WRITE);

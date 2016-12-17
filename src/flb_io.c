@@ -55,6 +55,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_io_tls.h>
+#include <fluent-bit/flb_io_tls_rw.h>
 #include <fluent-bit/flb_tls.h>
 #include <fluent-bit/flb_upstream.h>
 
@@ -438,7 +439,7 @@ int flb_io_net_write(struct flb_upstream_conn *u_conn, void *data,
     }
 #ifdef FLB_HAVE_TLS
     else if (u->flags & FLB_IO_TLS) {
-        ret = net_io_tls_write(th, u_conn, data, len, out_len);
+        ret = flb_io_tls_net_write(th, u_conn, data, len, out_len);
     }
 #endif
     if (ret == -1 && u_conn->fd > 0) {
@@ -480,7 +481,7 @@ ssize_t flb_io_net_read(struct flb_upstream_conn *u_conn, void *buf, size_t len)
     }
 #ifdef FLB_HAVE_TLS
     else if (u->flags & FLB_IO_TLS) {
-        ret = net_io_tls_read(th, u_conn, buf, len);
+        ret = flb_io_tls_net_read(th, u_conn, buf, len);
     }
 #endif
 
