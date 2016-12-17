@@ -132,6 +132,17 @@ if(FLB_PROXY_GO)
   set(FLB_PROXY_PLUGINS ${FLB_PROXY_PLUGINS} flb-plugin-proxy-go)
 endif()
 
+# Shared Library
+if(NOT WITHOUT_SHARED_LIB)
+  add_library(fluent-bit-shared SHARED ${src})
+  target_link_libraries(fluent-bit-shared ${FLB_DEPS})
+  set_target_properties(fluent-bit-shared
+    PROPERTIES OUTPUT_NAME fluent-bit)
+
+  # Library install routines
+  install(TARGETS fluent-bit-shared LIBRARY DESTINATION lib)
+endif()
+
 # Static Library
 add_library(fluent-bit-static STATIC ${src})
 target_link_libraries(fluent-bit-static ${FLB_DEPS} ${FLB_PROXY_PLUGINS})
