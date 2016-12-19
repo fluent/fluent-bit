@@ -103,7 +103,7 @@ void flb_output_exit(struct flb_config *config)
         flb_free(ins->match);
 
 #ifdef FLB_HAVE_TLS
-        if (ins->p->flags & FLB_IO_TLS) {
+        if (ins->p->flags & FLB_IO_TLS && ins->use_tls) {
             if (ins->tls.context) {
                 flb_tls_context_destroy(ins->tls.context);
             }
@@ -340,7 +340,7 @@ int flb_output_init(struct flb_config *config)
         p = ins->p;
 
 #ifdef FLB_HAVE_TLS
-        if (p->flags & FLB_IO_TLS) {
+        if (p->flags & FLB_IO_TLS && ins->use_tls) {
             ins->tls.context = flb_tls_context_new(ins->tls_verify,
                                                    ins->tls_ca_file,
                                                    ins->tls_crt_file,
