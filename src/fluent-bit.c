@@ -74,7 +74,7 @@ static void flb_help(int rc, struct flb_config *config)
     printf("  -o, --output=OUTPUT\tset an output\n");
     printf("  -p, --prop=\"A=B\"\tset plugin configuration property\n");
     printf("  -e, --plugin=FILE\tload an external plugin (shared lib)\n");
-    printf("  -l, --logfile=FILE\twrite log info to a file\n");
+    printf("  -l, --log_file=FILE\twrite log info to a file\n");
     printf("  -t, --tag=TAG\t\tset plugin tag, same as '-p tag=abc'\n");
     printf("  -v, --verbose\t\tenable verbose mode\n");
 #ifdef FLB_HAVE_HTTP
@@ -345,7 +345,7 @@ int main(int argc, char **argv)
 #endif
         { "flush",       required_argument, NULL, 'f' },
         { "http",        no_argument      , NULL, 'H' },
-        { "logfile",     required_argument, NULL, 'l' },
+        { "log_file",    required_argument, NULL, 'l' },
         { "port",        required_argument, NULL, 'P' },
         { "input",       required_argument, NULL, 'i' },
         { "match",       required_argument, NULL, 'm' },
@@ -445,7 +445,7 @@ int main(int argc, char **argv)
             last_plugin = PLUGIN_OUTPUT;
             break;
         case 'l':
-            config->logfile = flb_strdup(optarg);
+            config->log_file = flb_strdup(optarg);
             break;
         case 'p':
             if (last_plugin == PLUGIN_INPUT) {
@@ -498,12 +498,12 @@ int main(int argc, char **argv)
         }
     }
 
-    if (!config->logfile) {
+    if (!config->log_file) {
         config->log = flb_log_init(config, FLB_LOG_STDERR, config->verbose, NULL);
     }
     else {
         config->log = flb_log_init(config, FLB_LOG_FILE, config->verbose,
-                                   config->logfile);
+                                   config->log_file);
     }
 
     /* Validate flush time (seconds) */
