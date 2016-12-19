@@ -31,6 +31,132 @@
 #include "tail_signal.h"
 #include "tail_config.h"
 
+/* Define missing GLOB_TILDE if not exists */
+#ifndef GLOB_TILDE
+#define GLOB_TILDE    1<<2 /* use GNU Libc value */
+#define UNSUP_TILDE   1
+
+/* we need these extra headers for path resolution */
+#include <limits.h>
+#include <sys/types.h>
+#include <pwd.h>
+
+static char *expand_tilde(char *path)
+{
+    int len;
+    char user[256];
+    char *p = NULL;
+    char *dir = NULL;
+    char *tmp = NULL;
+    struct passwd *uinfo = NULL;
+
+    if (path[0] == '~') {
+        p = strchr(path, '/');
+
+        if (p) {
+            /* check case '~/' */
+            if ((p - path) == 1) {
+                dir = getenv("HOME");
+                if (!dir) {
+                    return path;
+                }
+            }
+            else {
+                /*
+                 * it refers to a different user: ~user/abc, first step grab
+                 * the user name.
+                 */
+                len = (p - path) - 1;
+                memcpy(user, path + 1, len);
+                user[len] = '\0';
+
+                /* use getpwnam() to resolve user information */
+                uinfo = getpwnam(user);
+                if (!uinfo) {
+                    return path;
+                }
+
+                dir = uinfo->pw_dir;
+            }
+        }
+        else {
+            dir = getenv("HOME");
+            if (!dir) {
+                return path;
+            }
+        }
+
+        if (p) {
+            tmp = flb_malloc(PATH_MAX);
+            snprintf(tmp, PATH_MAX -1, "%s%s", dir, p);
+        }
+        else {
+            dir = getenv("HOME");
+            if (!dir) {
+                return path;
+            }
+
+            tmp = flb_strdup(dir);
+            if (!tmp) {
+                return path;
+            }
+        }
+
+        return tmp;
+    }
+
+    return path;
+}
+#endif
+
+static inline int do_glob(const char *pattern, int flags,
+                          void *not_used, glob_t *pglob)
+{
+    int ret;
+    int new_flags;
+    char *tmp = NULL;
+    (void) not_used;
+
+    /* Save current values */
+    tmp = (char *) pattern;
+    new_flags = flags;
+
+    if (flags & GLOB_TILDE) {
+#ifdef UNSUP_TILDE
+        /*
+         * Some libc libraries like Musl do not support GLOB_TILDE for tilde
+         * expansion. A workaround is to use wordexp(3) but looking at it
+         * implementation in Musl it looks quite expensive:
+         *
+         *  http://git.musl-libc.org/cgit/musl/tree/src/misc/wordexp.c
+         *
+         * the workaround is to do our own tilde expansion in a temporary buffer.
+         */
+        char *p;
+
+        /* Look for a tilde */
+        p = expand_tilde((char *) pattern);
+        if (p != pattern) {
+            /* the path was expanded */
+            tmp = p;
+        }
+
+        /* remove unused flag */
+        new_flags &= ~GLOB_TILDE;
+#endif
+    }
+
+    /* invoke glob with new parameters */
+    ret = glob(tmp, new_flags, NULL, pglob);
+
+    /* remove temporary buffer */
+    if (tmp != pattern) {
+        flb_free(tmp);
+    }
+
+    return ret;
+}
+
 static int tail_exclude_generate(struct flb_tail_config *ctx)
 {
     struct mk_list *list;
@@ -89,7 +215,7 @@ int flb_tail_scan(const char *path, struct flb_tail_config *ctx)
     }
 
     /* Scan the given path */
-    ret = glob(path, GLOB_TILDE, NULL, &globbuf);
+    ret = do_glob(path, GLOB_TILDE, NULL, &globbuf);
     if (ret != 0) {
         switch (ret) {
         case GLOB_NOSPACE:
@@ -145,7 +271,7 @@ int flb_tail_scan_callback(struct flb_config *config, void *context)
     (void) config;
 
     /* Scan the path */
-    ret = glob(ctx->path, GLOB_TILDE, NULL, &globbuf);
+    ret = do_glob(ctx->path, GLOB_TILDE, NULL, &globbuf);
     if (ret != 0) {
         switch (ret) {
         case GLOB_NOSPACE:
