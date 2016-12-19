@@ -476,7 +476,8 @@ char *flb_msgpack_to_json_str(size_t size, msgpack_unpacked *data)
             /* buffer is small. retry.*/
             size += 128;
             flb_free(buf);
-        } else {
+        }
+        else {
             break;
         }
     }
