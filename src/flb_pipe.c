@@ -60,13 +60,13 @@ int flb_pipe_create(flb_pipefd_t pipefd[2])
 
 void flb_pipe_destroy(flb_pipefd_t pipefd[2])
 {
-    socketclose(pipefd[0]);
-    socketclose(pipefd[1]);
+    evutil_closesocket(pipefd[0]);
+    evutil_closesocket(pipefd[1]);
 }
 
 int flb_pipe_close(flb_pipefd_t fd)
 {
-    return socketclose(fd);
+    return evutil_closesocket(fd);
 }
 
 #else
