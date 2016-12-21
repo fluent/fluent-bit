@@ -24,6 +24,7 @@
 
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_task_map.h>
 
@@ -66,10 +67,10 @@ struct flb_config {
     time_t init_time;   /* Time when Fluent Bit started   */
 
     /* Used in library mode */
-    pthread_t worker;   /* worker tid */
-    int ch_data[2];     /* pipe to communicate caller with worker */
-    int ch_manager[2];  /* channel to administrate fluent bit     */
-    int ch_notif[2];    /* channel to receive notifications       */
+    pthread_t worker;            /* worker tid */
+    flb_pipefd_t ch_data[2];     /* pipe to communicate caller with worker */
+    flb_pipefd_t ch_manager[2];  /* channel to administrate fluent bit     */
+    flb_pipefd_t ch_notif[2];    /* channel to receive notifications       */
 
     /* Channel event loop (just for ch_notif) */
     struct mk_event_loop *ch_evl;

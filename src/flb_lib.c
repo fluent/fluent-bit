@@ -23,6 +23,7 @@
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_lib.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
@@ -100,7 +101,7 @@ flb_ctx_t *flb_create()
     flb_log_init(config, FLB_LOG_STDERR, FLB_LOG_INFO, NULL);
 
     /* Initialize our pipe to send data to our worker */
-    ret = pipe(config->ch_data);
+    ret = flb_pipe_create(config->ch_data);
     if (ret == -1) {
         perror("pipe");
         flb_free(ctx);
