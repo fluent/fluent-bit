@@ -26,6 +26,11 @@
 #include <mk_core/mk_memory.h>
 #include <mk_core/mk_utils.h>
 
+static inline int _mk_event_init()
+{
+    return 0;
+}
+
 static inline void *_mk_event_loop_create(int size)
 {
     struct mk_event_ctx *ctx;

@@ -25,6 +25,9 @@ if (CMAKE_SYSTEM_NAME MATCHES "Windows")
     "external/wingetopt.c"
     "external/winpthreads.c"
     )
+  include_directories(deps/libevent/include)
+  include_directories("${PROJECT_BINARY_DIR}/lib/monkey/mk_core/deps/libevent/include/")
+  add_subdirectory(deps/)
 else()
   MK_DEFINITION(MK_THREADS_POSIX)
 endif()
@@ -83,6 +86,7 @@ check_c_source_compiles("
      return kqueue();
   }" HAVE_KQUEUE)
 
+
 if ((NOT HAVE_EPOLL AND NOT HAVE_KQUEUE) OR MK_USE_EVENT_SELECT)
   message(STATUS "Event loop backend > select(2)")
   MK_DEFINITION(MK_HAVE_EVENT_SELECT)
@@ -117,6 +121,10 @@ configure_file(
 
 add_library(mk_core STATIC ${src})
 target_link_libraries(mk_core ${CMAKE_THREAD_LIBS_INIT})
+
+if (CMAKE_SYSTEM_NAME MATCHES "Windows")
+  target_link_libraries(mk_core event)
+endif()
 
 if(NOT MK_SYSTEM_MALLOC)
   target_link_libraries(mk_core libjemalloc)

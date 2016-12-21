@@ -32,6 +32,11 @@ struct fd_timer {
     long   nsec;
 };
 
+static inline int _mk_event_init()
+{
+    return 0;
+}
+
 static inline void *_mk_event_loop_create(int size)
 {
     struct mk_event_ctx *ctx;

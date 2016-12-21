@@ -28,13 +28,21 @@
 #include <mk_core/mk_utils.h>
 #include <mk_core/mk_event.h>
 
-#if defined(MK_HAVE_EVENT_SELECT)
+#if defined(_WIN32)
+    #include "mk_event_libevent.c"
+#elif defined(MK_HAVE_EVENT_SELECT)
     #include "mk_event_select.c"
 #elif defined(__linux__) && !defined(LINUX_KQUEUE)
     #include "mk_event_epoll.c"
 #else
     #include "mk_event_kqueue.c"
 #endif
+
+/* Initialize backend */
+int mk_event_init()
+{
+    return _mk_event_init();
+}
 
 /* Create a new loop */
 struct mk_event_loop *mk_event_loop_create(int size)

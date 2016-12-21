@@ -40,6 +40,11 @@
 #define EPOLLRDHUP  0x2000
 #endif
 
+static inline int _mk_event_init()
+{
+    return 0;
+}
+
 static inline void *_mk_event_loop_create(int size)
 {
     int efd;
