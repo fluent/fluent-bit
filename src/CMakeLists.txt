@@ -8,6 +8,7 @@ set(src
   flb_uri.c
   flb_pack.c
   flb_sha1.c
+  flb_pipe.c
   flb_kernel.c
   flb_input.c
   flb_output.c
