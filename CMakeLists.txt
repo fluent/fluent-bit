@@ -153,6 +153,14 @@ include_directories(
   lib/monkey/mk_core/include
   )
 
+# On Windows, the core uses libevent
+if(CMAKE_SYSTEM_NAME MATCHES "Windows")
+  include_directories(
+    lib/monkey/mk_core/deps/libevent/include
+    ${PROJECT_BINARY_DIR}/lib/monkey/mk_core/deps/libevent/include
+    )
+endif()
+
 # mk_core is aware about jemalloc usage, we need to disable this as
 # fluent-bit do not use it.
 set(WITH_SYSTEM_MALLOC  1 CACHE BOOL "Use system memory allocator")
