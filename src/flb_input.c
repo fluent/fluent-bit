@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_error.h>
@@ -359,7 +360,7 @@ void flb_input_set_context(struct flb_input_instance *in, void *context)
 
 int flb_input_channel_init(struct flb_input_instance *in)
 {
-    return pipe(in->channel);
+    return flb_pipe_create(in->channel);
 }
 
 int flb_input_set_collector_time(struct flb_input_instance *in,

@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_bits.h>
+#include <fluent-bit/flb_pipe.h>
 #include <msgpack.h>
 
 #include <inttypes.h>
@@ -124,7 +125,7 @@ struct flb_input_dyntag {
  */
 struct flb_input_instance {
     int id;                              /* instance id                  */
-    int channel[2];                      /* pipe(2) channel              */
+    flb_pipefd_t channel[2];             /* pipe(2) channel              */
     int threaded;                        /* bool / Threaded instance ?   */
     char name[16];                       /* numbered name (cpu -> cpu.0) */
     void *context;                       /* plugin configuration context */
