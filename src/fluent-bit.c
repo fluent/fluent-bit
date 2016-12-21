@@ -107,8 +107,9 @@ static void flb_help(int rc, struct flb_config *config)
         printf("  %-22s%s\n", out->name, out->description);
     }
 
-    printf("\n%sInternal Flags%s\n", ANSI_BOLD, ANSI_RESET);
-    printf(" %s\n", FLB_INFO_FLAGS);
+    printf("\n%sInternal%s\n", ANSI_BOLD, ANSI_RESET);
+    printf(" Event Loop  = %s\n", mk_event_backend());
+    printf(" Build Flags = %s\n", FLB_INFO_FLAGS);
     exit(rc);
 }
 
