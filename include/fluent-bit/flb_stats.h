@@ -23,6 +23,8 @@
 #define FLB_STATS_H
 
 #include <monkey/mk_core.h>
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_output.h>
@@ -82,7 +84,7 @@ struct flb_stats_datapoint {
 /* Statistics for input plugins */
 struct flb_stats_in_plugin {
     struct mk_event event;
-    int pipe[2];
+    flb_pipefd_t pipe[2];
     int n_data;
 
     struct flb_stats_datapoint data[FLB_STATS_SIZE];
@@ -93,7 +95,7 @@ struct flb_stats_in_plugin {
 /* Statistics for output plugins */
 struct flb_stats_out_plugin {
     struct mk_event event;
-    int pipe[2];
+    flb_pipefd_t pipe[2];
     int n_data;
     struct flb_stats_datapoint data[FLB_STATS_SIZE];
     struct flb_output_plugin *plugin;

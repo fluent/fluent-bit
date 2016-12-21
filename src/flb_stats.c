@@ -33,6 +33,8 @@
 
 #include <monkey/mk_core.h>
 #include <cjson.h>
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
@@ -463,7 +465,7 @@ static int register_input_plugin(struct flb_input_plugin *plugin,
     }
 
     /* Create the communication channel (plugin ---> stats worker) */
-    ret = pipe(sp->pipe);
+    ret = flb_pipe_create(sp->pipe);
     if (ret == -1) {
         flb_error("[stats reg] could not create pipe");
         flb_free(sp);
@@ -479,8 +481,7 @@ static int register_input_plugin(struct flb_input_plugin *plugin,
                        MK_EVENT_READ,
                        sp);
     if (ret == -1) {
-        close(sp->pipe[0]);
-        close(sp->pipe[1]);
+        flb_pipe_destroy(sp->pipe);
         flb_free(sp);
         return -1;
     }
@@ -509,7 +510,7 @@ static int register_output_plugin(struct flb_output_plugin *plugin,
     }
 
     /* Create the communication channel (plugin ---> stats worker) */
-    ret = pipe(sp->pipe);
+    ret = flb_pipe_create(sp->pipe);
     if (ret == -1) {
         flb_error("[stats reg] could not create pipe");
         flb_free(sp);
@@ -525,8 +526,7 @@ static int register_output_plugin(struct flb_output_plugin *plugin,
                        MK_EVENT_READ,
                        sp);
     if (ret == -1) {
-        close(sp->pipe[0]);
-        close(sp->pipe[1]);
+        flb_pipe_destroy(sp->pipe);
         flb_free(sp);
         return -1;
     }
@@ -635,8 +635,7 @@ int flb_stats_exit(struct flb_config *config)
     mk_list_foreach_safe(head, tmp, &ctx->in_plugins) {
         s_in = mk_list_entry(head, struct flb_stats_in_plugin, _head);
         mk_event_del(ctx->evl, &s_in->event);
-        close(s_in->pipe[0]);
-        close(s_in->pipe[1]);
+        flb_pipe_destroy(s_in);
         mk_list_del(&s_in->_head);
         flb_free(s_in);
     }
@@ -645,8 +644,7 @@ int flb_stats_exit(struct flb_config *config)
     mk_list_foreach_safe(head, tmp, &ctx->out_plugins) {
         s_out = mk_list_entry(head, struct flb_stats_out_plugin, _head);
         mk_event_del(ctx->evl, &s_out->event);
-        close(s_out->pipe[0]);
-        close(s_out->pipe[1]);
+        flb_pipe_destroy(s_out->pipe);
         mk_list_del(&s_out->_head);
         flb_free(s_out);
     }
