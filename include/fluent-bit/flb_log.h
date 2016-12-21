@@ -22,6 +22,7 @@
 
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_thread_storage.h>
 #include <fluent-bit/flb_worker.h>
@@ -50,8 +51,8 @@ extern FLB_TLS_DEFINE(struct flb_log, flb_log_ctx)
 
 /* Logging main context */
 struct flb_log {
-    struct mk_event event;     /* worker* event for manager */
-    int ch_mng[2];             /* worker channel manager   */
+    struct mk_event event;     /* worker event for manager */
+    flb_pipefd_t ch_mng[2];    /* worker channel manager   */
     uint16_t type;             /* log type                 */
     uint16_t level;            /* level                    */
     char *out;                 /* FLB_LOG_FILE or FLB_LOG_SOCKET */

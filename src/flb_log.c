@@ -28,6 +28,7 @@
 
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_worker.h>
 #include <fluent-bit/flb_mem.h>
@@ -141,7 +142,7 @@ int flb_log_worker_init(void *data)
     struct flb_log *log = config->log;
 
     /* Pipe to communicate Thread with worker log-collector */
-    ret = pipe(worker->log);
+    ret = flb_pipe_create(worker->log);
     if (ret == -1) {
         perror("pipe");
         return -1;
@@ -190,7 +191,7 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
     log->evl   = evl;
     log->tid   = 0;
 
-    ret = pipe(log->ch_mng);
+    ret = flb_pipe_create(log->ch_mng);
     if (ret == -1) {
         fprintf(stderr, "[log] could not create pipe(2)");
         flb_free(log);
@@ -374,8 +375,7 @@ int flb_log_stop(struct flb_log *log, struct flb_config *config)
 
     /* Release resources */
     mk_event_loop_destroy(log->evl);
-    close(log->ch_mng[0]);
-    close(log->ch_mng[1]);
+    flb_pipe_destroy(log->ch_mng);
     flb_free(log->worker);
     flb_free(log);
 
