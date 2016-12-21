@@ -26,6 +26,7 @@
 
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_pipe.h>
 
 /* Worker event loop event type */
 #define FLB_BUFFER_EV_MNG     1024
@@ -76,11 +77,11 @@ struct flb_buffer_worker {
     struct mk_event e_mov;
 
     /* channels */
-    int ch_mng[2];         /* management channel                    */
-    int ch_add[2];         /* add buffer channe                     */
-    int ch_del[2];         /* remove buffer chunk channel           */
-    int ch_del_ref[2];     /* remove buffer chunk reference channel */
-    int ch_mov[2];         /* move/promote a buffer chunk           */
+    flb_pipefd_t ch_mng[2];     /* management channel                    */
+    flb_pipefd_t ch_add[2];     /* add buffer channe                     */
+    flb_pipefd_t ch_del[2];     /* remove buffer chunk channel           */
+    flb_pipefd_t ch_del_ref[2]; /* remove buffer chunk reference channel */
+    flb_pipefd_t ch_mov[2];     /* move/promote a buffer chunk           */
 
     /* event loop */
     struct mk_event_loop *evl;

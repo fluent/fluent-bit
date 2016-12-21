@@ -404,7 +404,7 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
         mk_list_init(&worker->requests);
 
         /* Management channel */
-        ret = pipe(worker->ch_mng);
+        ret = flb_pipe_create(worker->ch_mng);
         if (ret == -1) {
             flb_errno();
             flb_buffer_destroy(ctx);
@@ -412,7 +412,7 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
         }
 
         /* Add buffer channel */
-        ret = pipe(worker->ch_add);
+        ret = flb_pipe_create(worker->ch_add);
         if (ret == -1) {
             flb_errno();
             flb_buffer_destroy(ctx);
@@ -420,7 +420,7 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
         }
 
         /* Delete buffer channel */
-        ret = pipe(worker->ch_del);
+        ret = flb_pipe_create(worker->ch_del);
         if (ret == -1) {
             flb_errno();
             flb_buffer_destroy(ctx);
@@ -428,7 +428,7 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
         }
 
         /* Delete reference buffer channel */
-        ret = pipe(worker->ch_del_ref);
+        ret = flb_pipe_create(worker->ch_del_ref);
         if (ret == -1) {
             flb_errno();
             flb_buffer_destroy(ctx);
@@ -436,7 +436,7 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
         }
 
         /* Move buffer channel */
-        ret = pipe(worker->ch_mov);
+        ret = flb_pipe_create(worker->ch_mov);
         if (ret == -1) {
             flb_errno();
             flb_buffer_destroy(ctx);
