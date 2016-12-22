@@ -22,6 +22,9 @@
 
 
 #include <monkey/mk_core.h>
+
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_socket.h>
 #include <fluent-bit/flb_config.h>
 
 /*
@@ -81,7 +84,7 @@ struct flb_upstream_conn {
     struct mk_event event;
     struct flb_thread *thread;
 
-    int fd;
+    flb_sockfd_t fd;
     int connect_count;
 
     /* Upstream parent */

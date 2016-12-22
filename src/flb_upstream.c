@@ -208,7 +208,7 @@ int flb_upstream_conn_release(struct flb_upstream_conn *u_conn)
     }
 
     if (u_conn->fd > 0) {
-        close(u_conn->fd);
+        flb_socket_close(u_conn->fd);
     }
 
 #ifdef FLB_HAVE_TLS

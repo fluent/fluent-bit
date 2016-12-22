@@ -47,19 +47,19 @@ struct flb_net_host {
 int flb_net_host_set(char *plugin_name, struct flb_net_host *host, char *address);
 
 /* TCP options */
-int flb_net_socket_reset(int sockfd);
-int flb_net_socket_tcp_nodelay(int sockfd);
-int flb_net_socket_nonblocking(int sockfd);
-int flb_net_socket_tcp_fastopen(int sockfd);
+int flb_net_socket_reset(flb_sockfd_t fd);
+int flb_net_socket_tcp_nodelay(flb_sockfd_t fd);
+int flb_net_socket_nonblocking(flb_sockfd_t fd);
+int flb_net_socket_tcp_fastopen(flb_sockfd_t sockfd);
 
 /* Socket handling */
-int flb_net_socket_create(int family, int nonblock);
-int flb_net_tcp_connect(char *host, unsigned long port);
-int flb_net_tcp_fd_connect(int fd, char *host, unsigned long port);
-int flb_net_server(char *port, char *listen_addr);
-int flb_net_bind(int socket_fd, const struct sockaddr *addr,
+flb_sockfd_t flb_net_socket_create(int family, int nonblock);
+flb_sockfd_t flb_net_tcp_connect(char *host, unsigned long port);
+int flb_net_tcp_fd_connect(flb_sockfd_t fd, char *host, unsigned long port);
+flb_sockfd_t flb_net_server(char *port, char *listen_addr);
+int flb_net_bind(flb_sockfd_t fd, const struct sockaddr *addr,
                  socklen_t addrlen, int backlog);
-int flb_net_accept(int server_fd);
-int flb_net_socket_ip_str(int socket_fd, char **buf, int size, unsigned long *len);
+flb_sockfd_t flb_net_accept(flb_sockfd_t server_fd);
+int flb_net_socket_ip_str(flb_sockfd_t fd, char **buf, int size, unsigned long *len);
 
 #endif

@@ -57,6 +57,7 @@
 #include <fluent-bit/flb_io_tls.h>
 #include <fluent-bit/flb_io_tls_rw.h>
 #include <fluent-bit/flb_tls.h>
+#include <fluent-bit/flb_socket.h>
 #include <fluent-bit/flb_upstream.h>
 
 #include <fluent-bit/flb_utils.h>
@@ -68,15 +69,15 @@
 FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
                                   struct flb_thread *th)
 {
-    int fd;
     int ret;
     int error = 0;
     uint32_t mask;
+    flb_sockfd_t fd;
     socklen_t len = sizeof(error);
     struct flb_upstream *u = u_conn->u;
 
     if (u_conn->fd > 0) {
-        close(u_conn->fd);
+        flb_socket_close(u_conn->fd);
     }
 
     /* Create the socket */
@@ -205,7 +206,7 @@ static int net_io_write(struct flb_upstream_conn *u_conn,
     }
 
     while (total < len) {
-        ret = write(u_conn->fd, (char *) data + total, len - total);
+        ret = send(u_conn->fd, (char *) data + total, len - total, 0);
         if (ret == -1) {
             if (errno == EAGAIN) {
                 /*
@@ -246,7 +247,7 @@ static FLB_INLINE int net_io_write_async(struct flb_thread *th,
     int error;
     ssize_t bytes;
     size_t total = 0;
-    size_t send;
+    size_t to_send;
     socklen_t slen = sizeof(error);
     struct flb_upstream *u = u_conn->u;
 
@@ -254,12 +255,12 @@ static FLB_INLINE int net_io_write_async(struct flb_thread *th,
     error = 0;
 
     if (len - total > 524288) {
-        send = 524288;
+        to_send = 524288;
     }
     else {
-        send = (len - total);
+        to_send = (len - total);
     }
-    bytes = write(u_conn->fd, (char *) data + total, send);
+    bytes = send(u_conn->fd, (char *) data + total, to_send, 0);
 
 #ifdef FLB_HAVE_TRACE
     if (bytes > 0) {

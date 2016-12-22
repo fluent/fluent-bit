@@ -39,6 +39,7 @@
 
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_socket.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_network.h>
@@ -116,11 +117,11 @@ int flb_net_host_set(char *plugin_name, struct flb_net_host *host, char *address
     return 0;
 }
 
-int flb_net_socket_reset(int sockfd)
+int flb_net_socket_reset(flb_sockfd_t fd)
 {
     int status = 1;
 
-    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &status, sizeof(int)) == -1) {
+    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &status, sizeof(int)) == -1) {
         perror("socket");
         exit(EXIT_FAILURE);
     }
@@ -128,12 +129,12 @@ int flb_net_socket_reset(int sockfd)
     return 0;
 }
 
-int flb_net_socket_tcp_nodelay(int sockfd)
+int flb_net_socket_tcp_nodelay(flb_sockfd_t fd)
 {
     int on = 1;
     int ret;
 
-    ret = setsockopt(sockfd, SOL_TCP, TCP_NODELAY, &on, sizeof(on));
+    ret = setsockopt(fd, SOL_TCP, TCP_NODELAY, &on, sizeof(on));
     if (ret == -1) {
         perror("setsockopt");
         return -1;
@@ -142,13 +143,13 @@ int flb_net_socket_tcp_nodelay(int sockfd)
     return 0;
 }
 
-int flb_net_socket_nonblocking(int sockfd)
+int flb_net_socket_nonblocking(flb_sockfd_t fd)
 {
 #ifdef _WIN32
     unsigned long on = 1;
-    if (ioctlsocket(sockfd, FIONBIO, &on) != 0) {
+    if (ioctlsocket(fd, FIONBIO, &on) != 0) {
 #else
-    if (fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFL, 0) | O_NONBLOCK) == -1) {
+    if (fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK) == -1) {
 #endif
         perror("fcntl");
         return -1;
@@ -163,15 +164,15 @@ int flb_net_socket_nonblocking(int sockfd)
  *
  *  TCP Fast Open: expediting web services: http://lwn.net/Articles/508865/
  */
-int flb_net_socket_tcp_fastopen(int sockfd)
+int flb_net_socket_tcp_fastopen(flb_sockfd_t fd)
 {
     int qlen = 5;
-    return setsockopt(sockfd, SOL_TCP, TCP_FASTOPEN, &qlen, sizeof(qlen));
+    return setsockopt(fd, SOL_TCP, TCP_FASTOPEN, &qlen, sizeof(qlen));
 }
 
-int flb_net_socket_create(int family, int nonblock)
+flb_sockfd_t flb_net_socket_create(int family, int nonblock)
 {
-    int fd;
+    flb_sockfd_t fd;
 
     /* create the socket and set the nonblocking flag status */
     fd = socket(family, SOCK_STREAM, 0);
@@ -188,9 +189,9 @@ int flb_net_socket_create(int family, int nonblock)
 }
 
 /* Connect to a TCP socket server and returns the file descriptor */
-int flb_net_tcp_connect(char *host, unsigned long port)
+flb_sockfd_t flb_net_tcp_connect(char *host, unsigned long port)
 {
-    int socket_fd = -1;
+    flb_sockfd_t fd = -1;
     int ret;
     struct addrinfo hints;
     struct addrinfo *res, *rp;
@@ -208,15 +209,15 @@ int flb_net_tcp_connect(char *host, unsigned long port)
     }
 
     for (rp = res; rp != NULL; rp = rp->ai_next) {
-        socket_fd = flb_net_socket_create(rp->ai_family, 0);
-        if (socket_fd == -1) {
+        fd = flb_net_socket_create(rp->ai_family, 0);
+        if (fd == -1) {
             flb_error("Error creating client socket, retrying");
             continue;
         }
 
-        if (connect(socket_fd, rp->ai_addr, rp->ai_addrlen) == -1) {
+        if (connect(fd, rp->ai_addr, rp->ai_addrlen) == -1) {
             flb_error("Cannot connect to %s port %s", host, _port);
-            close(socket_fd);
+            flb_socket_close(fd);
             continue;
         }
         break;
@@ -228,11 +229,11 @@ int flb_net_tcp_connect(char *host, unsigned long port)
         return -1;
     }
 
-    return socket_fd;
+    return fd;
 }
 
 /* Connect to a TCP socket server and returns the file descriptor */
-int flb_net_tcp_fd_connect(int fd, char *host, unsigned long port)
+int flb_net_tcp_fd_connect(flb_sockfd_t fd, char *host, unsigned long port)
 {
     int ret;
     struct addrinfo hints;
@@ -256,9 +257,9 @@ int flb_net_tcp_fd_connect(int fd, char *host, unsigned long port)
     return ret;
 }
 
-int flb_net_server(char *port, char *listen_addr)
+flb_sockfd_t flb_net_server(char *port, char *listen_addr)
 {
-    int socket_fd = -1;
+    flb_sockfd_t fd = -1;
     int ret;
     struct addrinfo hints;
     struct addrinfo *res, *rp;
@@ -275,19 +276,19 @@ int flb_net_server(char *port, char *listen_addr)
     }
 
     for (rp = res; rp != NULL; rp = rp->ai_next) {
-        socket_fd = flb_net_socket_create(rp->ai_family, 1);
-        if (socket_fd == -1) {
+        fd = flb_net_socket_create(rp->ai_family, 1);
+        if (fd == -1) {
             flb_error("Error creating server socket, retrying");
             continue;
         }
 
-        flb_net_socket_tcp_nodelay(socket_fd);
-        flb_net_socket_reset(socket_fd);
+        flb_net_socket_tcp_nodelay(fd);
+        flb_net_socket_reset(fd);
 
-        ret = flb_net_bind(socket_fd, rp->ai_addr, rp->ai_addrlen, 128);
+        ret = flb_net_bind(fd, rp->ai_addr, rp->ai_addrlen, 128);
         if(ret == -1) {
             flb_warn("Cannot listen on %s port %s", listen_addr, port);
-            close(socket_fd);
+            flb_socket_close(fd);
             continue;
         }
         break;
@@ -298,21 +299,21 @@ int flb_net_server(char *port, char *listen_addr)
         return -1;
     }
 
-    return socket_fd;
+    return fd;
 }
 
-int flb_net_bind(int socket_fd, const struct sockaddr *addr,
+int flb_net_bind(flb_sockfd_t fd, const struct sockaddr *addr,
                  socklen_t addrlen, int backlog)
 {
     int ret;
 
-    ret = bind(socket_fd, addr, addrlen);
+    ret = bind(fd, addr, addrlen);
     if( ret == -1 ) {
         flb_error("Error binding socket");
         return ret;
     }
 
-    ret = listen(socket_fd, backlog);
+    ret = listen(fd, backlog);
     if(ret == -1 ) {
         flb_error("Error setting up the listener");
         return -1;
@@ -321,9 +322,9 @@ int flb_net_bind(int socket_fd, const struct sockaddr *addr,
     return ret;
 }
 
-int flb_net_accept(int server_fd)
+flb_sockfd_t flb_net_accept(flb_sockfd_t server_fd)
 {
-    int remote_fd;
+    flb_sockfd_t remote_fd;
     struct sockaddr sock_addr;
     socklen_t socket_size = sizeof(struct sockaddr);
 
@@ -342,13 +343,13 @@ int flb_net_accept(int server_fd)
     return remote_fd;
 }
 
-int flb_net_socket_ip_str(int socket_fd, char **buf, int size, unsigned long *len)
+int flb_net_socket_ip_str(flb_sockfd_t fd, char **buf, int size, unsigned long *len)
 {
     int ret;
     struct sockaddr_storage addr;
     socklen_t s_len = sizeof(addr);
 
-    ret = getpeername(socket_fd, (struct sockaddr *) &addr, &s_len);
+    ret = getpeername(fd, (struct sockaddr *) &addr, &s_len);
     if (ret == -1) {
         return -1;
     }
