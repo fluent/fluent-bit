@@ -103,7 +103,7 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
     if (ret == -1) {
         /* In blocking mode connect() fails right away */
         if ((u->flags & FLB_IO_ASYNC) == 0) {
-            close(fd);
+            flb_socket_close(fd);
             return -1;
         }
 
@@ -111,7 +111,7 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
             flb_trace("[upstream] connection in process");
         }
         else {
-            close(fd);
+            flb_socket_close(fd);
             return -1;
         }
 
@@ -126,7 +126,7 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
              * If we failed here there no much that we can do, just
              * let the caller we failed
              */
-            close(fd);
+            flb_socket_close(fd);
             return -1;
         }
 
@@ -143,7 +143,7 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
         ret = mk_event_del(u->evl, &u_conn->event);
         if (ret == -1) {
             flb_error("[io] connect event handler error");
-            close(fd);
+            flb_socket_close(fd);
             return -1;
         }
 
@@ -152,7 +152,7 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
             ret = getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len);
             if (ret == -1) {
                 flb_error("[io] could not validate socket status");
-                close(fd);
+                flb_socket_close(fd);
                 return -1;
             }
 
@@ -160,14 +160,14 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
                 /* Connection is broken, not much to do here */
                 flb_error("[io] TCP connection failed: %s:%i",
                           u->tcp_host, u->tcp_port);
-                close(fd);
+                flb_socket_close(fd);
                 return -1;
             }
         }
         else {
             flb_error("[io] TCP connection, unexpected error: %s:%i",
                       u->tcp_host, u->tcp_port);
-            close(fd);
+            flb_socket_close(fd);
             return -1;
         }
     }
@@ -177,7 +177,7 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
     if (u_conn->u->flags & FLB_IO_TLS) {
         ret = net_io_tls_handshake(u_conn, th);
         if (ret != 0) {
-            close(fd);
+            flb_socket_close(fd);
             return -1;
         }
     }
@@ -400,7 +400,7 @@ static FLB_INLINE ssize_t net_io_read_async(struct flb_thread *th,
                  * If we failed here there no much that we can do, just
                  * let the caller we failed
                  */
-                close(u_conn->fd);
+                flb_socket_close(u_conn->fd);
                 return -1;
             }
             flb_thread_yield(th, MK_FALSE);
@@ -444,7 +444,7 @@ int flb_io_net_write(struct flb_upstream_conn *u_conn, void *data,
     }
 #endif
     if (ret == -1 && u_conn->fd > 0) {
-        close(u_conn->fd);
+        flb_socket_close(u_conn->fd);
         u_conn->fd = -1;
     }
 
