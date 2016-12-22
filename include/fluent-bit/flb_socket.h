@@ -24,13 +24,16 @@
 #include <event.h>
 #define flb_sockfd_t         evutil_socket_t
 #define flb_socket_close(fd) evutil_closesocket(fd)
-
+#define flb_socket_error(fd) evutil_socket_geterror(fd)
+#define FLB_EINPROGRESS      EVUTIL_ERR_CONNECT_RETRIABLE
 #else
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #define flb_sockfd_t         int
 #define flb_socket_close(fd) close(fd)
+#define flb_socket_error(fd) errno
+#define FLB_EINPROGRESS      EINPROGRESS
 #endif
 
 #endif

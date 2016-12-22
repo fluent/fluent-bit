@@ -70,6 +70,7 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
                                   struct flb_thread *th)
 {
     int ret;
+    int err;
     int error = 0;
     uint32_t mask;
     flb_sockfd_t fd;
@@ -107,7 +108,8 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
             return -1;
         }
 
-        if (errno == EINPROGRESS) {
+        err = flb_socket_error(fd);
+        if (err == FLB_EINPROGRESS) {
             flb_trace("[upstream] connection in process");
         }
         else {
