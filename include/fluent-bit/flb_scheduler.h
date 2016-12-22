@@ -30,7 +30,7 @@
 
 struct flb_sched_request {
     struct mk_event event;
-    flb_piptfd_t fd;
+    flb_pipefd_t fd;
     time_t created;
     time_t timeout;
     void *data;
