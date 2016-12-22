@@ -133,6 +133,11 @@ static int in_health_init(struct flb_input_instance *in,
     struct flb_in_health_config *ctx;
     (void) data;
 
+    if (in->host.name == NULL) {
+        flb_error("[in_health] no input 'Host' is given");
+        return -1;
+    }
+
     /* Allocate space for the configuration */
     ctx = flb_calloc(1, sizeof(struct flb_in_health_config));
     if (!ctx) {
