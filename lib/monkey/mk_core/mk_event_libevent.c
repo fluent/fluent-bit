@@ -25,7 +25,7 @@
 
 struct ev_map {
     /* for pipes */
-    int pipe[2];
+    evutil_socket_t pipe[2];
 
     struct event *event;
     struct mk_event_ctx *ctx;
@@ -99,7 +99,7 @@ static void cb_event(evutil_socket_t fd, short flags, void *data)
 }
 
 /* Add the file descriptor to the arrays */
-static inline int _mk_event_add(struct mk_event_ctx *ctx, int fd,
+static inline int _mk_event_add(struct mk_event_ctx *ctx, evutil_socket_t fd,
                                 int type, uint32_t events, void *data)
 {
     int flags = 0;
@@ -171,7 +171,7 @@ static void cb_timeout(evutil_socket_t fd, short flags, void *data)
     uint64_t val = 1;
     struct ev_map *ev_map = data;
 
-    ret = write(ev_map->pipe[1], &val, sizeof(uint64_t));
+    ret = send(ev_map->pipe[1], &val, sizeof(uint64_t), 0);
     if (ret == -1) {
         perror("write");
     }
@@ -187,16 +187,15 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
                                            time_t sec, long nsec, void *data)
 {
     int ret;
-    int fd[2];
+    evutil_socket_t fd[2];
     struct event *libev;
     struct mk_event *event;
     struct timeval timev = {sec, nsec};
     struct ev_map *ev_map;
 
-    ret = pipe(fd);
-    if (ret < 0) {
-        mk_libc_error("pipe");
-        return ret;
+    if (evutil_socketpair(AF_UNIX, SOCK_STREAM, 0, fd) == -1) {
+        perror("socketpair");
+        return -1;
     }
 
     event = (struct mk_event *) data;
@@ -232,13 +231,12 @@ static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
                                            int *r_fd, int *w_fd, void *data)
 {
     int ret;
-    int fd[2];
+    evutil_socket_t fd[2];
     struct mk_event *event;
 
-    ret = pipe(fd);
-    if (ret < 0) {
-        mk_libc_error("pipe");
-        return ret;
+    if (evutil_socketpair(AF_UNIX, SOCK_STREAM, 0, fd) == -1) {
+        perror("socketpair");
+        return -1;
     }
 
     event = data;
@@ -249,8 +247,8 @@ static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
     ret = _mk_event_add(ctx, fd[0],
                         MK_EVENT_NOTIFICATION, MK_EVENT_READ, event);
     if (ret != 0) {
-        close(fd[0]);
-        close(fd[1]);
+        evutil_closesocket(fd[0]);
+        evutil_closesocket(fd[1]);
         return ret;
     }
     event->mask = MK_EVENT_READ;
