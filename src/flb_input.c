@@ -386,7 +386,7 @@ int flb_input_set_collector_time(struct flb_input_instance *in,
 
 int flb_input_set_collector_event(struct flb_input_instance *in,
                                   int (*cb_collect) (struct flb_config *, void *),
-                                  int fd,
+                                  flb_pipefd_t fd,
                                   struct flb_config *config)
 {
     struct flb_input_collector *collector;
@@ -406,7 +406,7 @@ int flb_input_set_collector_event(struct flb_input_instance *in,
 
 int flb_input_set_collector_socket(struct flb_input_instance *in,
                                    int (*cb_new_connection) (struct flb_config *, void*),
-                                   int fd,
+                                   flb_pipefd_t fd,
                                    struct flb_config *config)
 {
     struct flb_input_collector *collector;
@@ -559,7 +559,7 @@ void *flb_input_dyntag_flush(struct flb_input_dyntag *dt, size_t *size)
     return buf;
 }
 
-int flb_input_collector_fd(int fd, struct flb_config *config)
+int flb_input_collector_fd(flb_pipefd_t fd, struct flb_config *config)
 {
     struct mk_list *head;
     struct flb_input_collector *collector;

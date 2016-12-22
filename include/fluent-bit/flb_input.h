@@ -181,10 +181,10 @@ struct flb_input_collector {
     int type;                            /* collector type             */
 
     /* FLB_COLLECT_FD_EVENT */
-    int fd_event;                        /* fd being watched           */
+    flb_pipefd_t fd_event;               /* fd being watched           */
 
     /* FLB_COLLECT_TIME */
-    int fd_timer;                        /* timer fd                   */
+    flb_pipefd_t fd_timer;               /* timer fd                   */
     time_t seconds;                      /* expire time in seconds     */
     long nanoseconds;                    /* expire nanoseconds         */
 
@@ -440,11 +440,11 @@ int flb_input_set_collector_time(struct flb_input_instance *in,
                                  struct flb_config *config);
 int flb_input_set_collector_event(struct flb_input_instance *in,
                                   int (*cb_collect) (struct flb_config *, void *),
-                                  int fd,
+                                  flb_pipefd_t fd,
                                   struct flb_config *config);
 int flb_input_set_collector_socket(struct flb_input_instance *in,
                                    int (*cb_new_connection) (struct flb_config *, void*),
-                                   int fd,
+                                   flb_pipefd_t fd,
                                    struct flb_config *config);
 void flb_input_initialize_all(struct flb_config *config);
 void flb_input_pre_run_all(struct flb_config *config);
@@ -460,7 +460,7 @@ int flb_input_dyntag_append(struct flb_input_instance *in,
 void *flb_input_dyntag_flush(struct flb_input_dyntag *dt, size_t *size);
 void flb_input_dyntag_exit(struct flb_input_instance *in);
 
-int flb_input_collector_fd(int fd, struct flb_config *config);
+int flb_input_collector_fd(flb_pipefd_t fd, struct flb_config *config);
 
 /* input thread */
 //int flb_input_thread_get_id(struct flb_config *config);
