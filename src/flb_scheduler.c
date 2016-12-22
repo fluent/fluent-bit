@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_scheduler.h>
+#include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_engine_dispatch.h>
 
@@ -35,13 +36,13 @@ static inline double xmin(double a, double b)
 }
 
 /* Consume an unsigned 64 bit number from fd */
-static inline int consume_byte(int fd)
+static inline int consume_byte(flb_pipefd_t fd)
 {
     int ret;
     uint64_t val;
 
     /* We need to consume the byte */
-    ret = read(fd, &val, sizeof(val));
+    ret = flb_pipe_r(fd, &val, sizeof(val));
     if (ret <= 0) {
         perror("read");
         return -1;
@@ -112,7 +113,7 @@ static int backoff_full_jitter(int base, int cap, int n)
 int flb_sched_request_create(struct flb_config *config,
                              void *data, int tries)
 {
-    int fd;
+    flb_pipefd_t fd;
     int seconds;
     struct mk_event *event;
     struct flb_sched_request *request;
@@ -158,7 +159,7 @@ int flb_sched_request_destroy(struct flb_config *config,
                               struct flb_sched_request *req)
 {
     mk_event_del(config->evl, &req->event);
-    close(req->fd);
+    flb_pipe_close(req->fd);
     mk_list_del(&req->_head);
     flb_free(req);
 

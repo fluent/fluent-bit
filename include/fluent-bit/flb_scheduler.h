@@ -21,6 +21,7 @@
 #define FLB_SCHEDULER_H
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_task.h>
 #include <fluent-bit/flb_output.h>
 
@@ -29,7 +30,7 @@
 
 struct flb_sched_request {
     struct mk_event event;
-    int fd;
+    flb_piptfd_t fd;
     time_t created;
     time_t timeout;
     void *data;
