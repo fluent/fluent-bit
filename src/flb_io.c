@@ -109,7 +109,7 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
         }
 
         err = flb_socket_error(fd);
-        if (err == FLB_EINPROGRESS) {
+        if (FLB_EINPROGRESS(err)) {
             flb_trace("[upstream] connection in process");
         }
         else {
