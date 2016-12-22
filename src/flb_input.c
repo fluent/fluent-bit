@@ -164,6 +164,14 @@ int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
         in->tag     = flb_strdup(v);
         in->tag_len = strlen(v);
     }
+    else if (in->p->flags & FLB_INPUT_NET) {
+        if (prop_key_check("host", k, len) == 0) {
+            in->host.name   = flb_strdup(v);
+        }
+        else if (prop_key_check("port", k, len) == 0) {
+            in->host.port = atoi(v);
+        }
+    }
     else {
         /* Append any remaining configuration key to prop list */
         prop = flb_malloc(sizeof(struct flb_config_prop));
