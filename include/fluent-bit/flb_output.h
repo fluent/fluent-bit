@@ -473,7 +473,7 @@ static inline void flb_output_return(int ret, struct flb_thread *th) {
     set = FLB_TASK_SET(ret, task->id, out_th->id);
     val = FLB_BITS_U64_SET(2 /* FLB_ENGINE_TASK */, set);
 
-    n = write(task->config->ch_manager[1], &val, sizeof(val));
+    n = flb_pipe_w(task->config->ch_manager[1], &val, sizeof(val));
     if (n == -1) {
         flb_errno();
     }
