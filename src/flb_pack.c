@@ -329,24 +329,24 @@ static int msgpack2json(char *buf, int *off, size_t left, msgpack_object *o)
     case MSGPACK_OBJECT_POSITIVE_INTEGER:
         {
             char temp[32] = {0};
-            ret = try_to_write(buf, off, left, temp,
-                 snprintf(temp, sizeof(temp)-1, "%lu", (unsigned long)o->via.u64));
+            i = snprintf(temp, sizeof(temp)-1, "%lu", (unsigned long)o->via.u64);
+            ret = try_to_write(buf, off, left, temp, i);
         }
         break;
 
     case MSGPACK_OBJECT_NEGATIVE_INTEGER:
         {
             char temp[32] = {0};
-            ret = try_to_write(buf, off, left, temp,
-                 snprintf(temp, sizeof(temp)-1, "%ld", (signed long)o->via.i64));
+            i = snprintf(temp, sizeof(temp)-1, "%ld", (signed long)o->via.i64);
+            ret = try_to_write(buf, off, left, temp, i);
         }
         break;
 
     case MSGPACK_OBJECT_FLOAT:
         {
             char temp[32] = {0};
-            ret = try_to_write(buf, off, left, temp,
-                 snprintf(temp, sizeof(temp)-1, "%f", o->via.f64));
+            i = snprintf(temp, sizeof(temp)-1, "%f", o->via.f64);
+            ret = try_to_write(buf, off, left, temp, i);
         }
         break;
 
