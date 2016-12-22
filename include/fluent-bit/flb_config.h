@@ -51,20 +51,20 @@ struct flb_config_prop {
 struct flb_config {
     struct mk_event ch_event;
 
-    int flush;          /* Flush timeout                  */
-    int flush_fd;       /* Timer FD associated to flush   */
-    int flush_method;   /* Flush method set at build time */
+    int flush;                /* Flush timeout                  */
+    flb_pipefd_t flush_fd;    /* Timer FD associated to flush   */
+    int flush_method;         /* Flush method set at build time */
 
-    int daemon;         /* Run as a daemon ?              */
-    int shutdown_fd;    /* Shutdown FD, 5 seconds         */
+    int daemon;               /* Run as a daemon ?              */
+    flb_pipefd_t shutdown_fd; /* Shutdown FD, 5 seconds         */
 
 #ifdef FLB_HAVE_STATS
-    int stats_fd;       /* Stats FD, 1 second             */
+    int stats_fd;             /* Stats FD, 1 second             */
     struct flb_stats *stats_ctx;
 #endif
 
-    int verbose;        /* Verbose mode (default OFF)     */
-    time_t init_time;   /* Time when Fluent Bit started   */
+    int verbose;           /* Verbose mode (default OFF)     */
+    time_t init_time;      /* Time when Fluent Bit started   */
 
     /* Used in library mode */
     pthread_t worker;            /* worker tid */

@@ -552,7 +552,7 @@ int flb_buffer_stop(struct flb_buffer *ctx)
      */
     mk_list_foreach(head, &ctx->workers) {
         worker = mk_list_entry(head, struct flb_buffer_worker, _head);
-        n = write(worker->ch_mng[1], &val, sizeof(val));
+        n = flb_pipe_w(worker->ch_mng[1], &val, sizeof(val));
         if (n == -1) {
             flb_errno();
         }

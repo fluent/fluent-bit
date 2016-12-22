@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_bits.h>
 
 #include <fluent-bit/flb_macros.h>
+#include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_error.h>
@@ -83,7 +84,7 @@ int flb_engine_flush(struct flb_config *config,
     return 0;
 }
 
-static inline int flb_engine_manager(int fd, struct flb_config *config)
+static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
 {
     int ret;
     int bytes;
@@ -96,7 +97,7 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
     struct flb_task *task;
     struct flb_output_thread *out_th;
 
-    bytes = read(fd, &val, sizeof(val));
+    bytes = flb_pipe_r(fd, &val, sizeof(val));
     if (bytes == -1) {
         flb_errno();
         return -1;
@@ -237,7 +238,7 @@ static inline int flb_engine_manager(int fd, struct flb_config *config)
     return 0;
 }
 
-static FLB_INLINE int flb_engine_handle_event(int fd, int mask,
+static FLB_INLINE int flb_engine_handle_event(flb_pipefd_t fd, int mask,
                                               struct flb_config *config)
 {
     int ret;
@@ -295,7 +296,7 @@ static int flb_engine_started(struct flb_config *config)
     }
 
     val = FLB_ENGINE_EV_STARTED;
-    return write(config->ch_notif[1], &val, sizeof(uint64_t));
+    return flb_pipe_w(config->ch_notif[1], &val, sizeof(uint64_t));
 }
 
 int flb_engine_start(struct flb_config *config)

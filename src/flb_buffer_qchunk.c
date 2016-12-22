@@ -216,7 +216,7 @@ static inline int qchunk_event_push_request(struct flb_buffer *ctx)
          */
         set = FLB_BUFFER_EV_SET(FLB_BUFFER_EV_QCHUNK_PUSH, qchunk->id, 0);
         val = FLB_BITS_U64_SET(FLB_ENGINE_BUFFER, set);
-        ret = write(ctx->config->ch_manager[1], &val, sizeof(val));
+        ret = flb_pipe_w(ctx->config->ch_manager[1], &val, sizeof(val));
         if (ret == -1) {
             perror("write");
             flb_error("[buffer qchunk] could not notify engine");
@@ -267,7 +267,7 @@ static int qchunk_handle_event(int fd, int mask, struct flb_buffer *ctx)
     uint64_t val;
 
     /* Read the signal value */
-    ret = read(fd, &val, sizeof(val));
+    ret = flb_pipe_r(fd, &val, sizeof(val));
     if (ret <= 0) {
         perror("read");
         return -1;
@@ -335,7 +335,7 @@ int flb_buffer_qchunk_signal(uint64_t type, uint64_t val,
     uint64_t set;
 
     set = (type << 56) | (val & FLB_BIT_MASK(uint64_t, 56));
-    return write(qw->ch_manager[1], &set, sizeof(set));
+    return flb_pipe_w(qw->ch_manager[1], &set, sizeof(set));
 }
 
 int flb_buffer_qchunk_create(struct flb_buffer *ctx)

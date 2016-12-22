@@ -253,12 +253,12 @@ void flb_utils_split_free(struct mk_list *list)
 }
 
 /* When a timer expires, it needs some handling */
-int flb_utils_timer_consume(int fd)
+int flb_utils_timer_consume(flb_pipefd_t fd)
 {
     int ret;
     uint64_t val;
 
-    ret = read(fd, &val, sizeof(val));
+    ret = flb_pipe_r(fd, &val, sizeof(val));
     if (ret == -1) {
         flb_errno();
         return -1;

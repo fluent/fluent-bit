@@ -474,7 +474,7 @@ int flb_buffer_chunk_delete(struct flb_buffer_worker *worker,
     struct stat st;
 
     /* Read the expected chunk reference */
-    ret = read(worker->ch_del[0], &chunk, sizeof(struct flb_buffer_chunk));
+    ret = flb_pipe_r(worker->ch_del[0], &chunk, sizeof(struct flb_buffer_chunk));
     if (ret <= 0) {
         flb_errno();
         return -1;
@@ -554,7 +554,7 @@ int flb_buffer_chunk_delete_ref(struct flb_buffer_worker *worker,
     struct flb_output_instance *o_ins;
 
     /* Read the expected chunk reference */
-    ret = read(worker->ch_del_ref[0], &chunk, sizeof(struct flb_buffer_chunk));
+    ret = flb_pipe_r(worker->ch_del_ref[0], &chunk, sizeof(struct flb_buffer_chunk));
     if (ret <= 0) {
         flb_errno();
         return FLB_BUFFER_ERROR;
@@ -600,7 +600,7 @@ int flb_buffer_chunk_delete_ref(struct flb_buffer_worker *worker,
      * aims to delete the real buffer chunk if no one else have
      * a reference to it.
      */
-    ret = write(worker->ch_del[1], &chunk, sizeof(struct flb_buffer_chunk));
+    ret = flb_pipe_w(worker->ch_del[1], &chunk, sizeof(struct flb_buffer_chunk));
     if (ret == -1) {
         flb_errno();
         return FLB_BUFFER_ERROR;
@@ -649,7 +649,7 @@ int flb_buffer_chunk_push(struct flb_buffer *ctx, void *data,
     worker = get_worker(ctx, ctx->worker_lru);
 
     /* Write request through worker channel */
-    ret = write(worker->ch_add[1], &chunk, sizeof(struct flb_buffer_chunk));
+    ret = flb_pipe_w(worker->ch_add[1], &chunk, sizeof(struct flb_buffer_chunk));
     if (ret == -1) {
         flb_errno();
         return -1;
@@ -699,7 +699,7 @@ int flb_buffer_chunk_pop(struct flb_buffer *ctx, int thread_id,
     chunk.data = o_ins;
 
     /* Write request through worker channel */
-    ret = write(worker->ch_del_ref[1], &chunk, sizeof(struct flb_buffer_chunk));
+    ret = flb_pipe_w(worker->ch_del_ref[1], &chunk, sizeof(struct flb_buffer_chunk));
     if (ret == -1) {
         flb_errno();
         return -1;
@@ -728,7 +728,7 @@ int flb_buffer_chunk_mov(int type, char *name, uint64_t routes,
     }
 
     /* Do the request */
-    ret = write(worker->ch_mov[1], &req, sizeof(struct flb_buffer_request));
+    ret = flb_pipe_w(worker->ch_mov[1], &req, sizeof(struct flb_buffer_request));
     if (ret == -1) {
         flb_errno();
         return -1;
@@ -850,7 +850,7 @@ int flb_buffer_chunk_real_move(struct flb_buffer_worker *worker,
     struct flb_buffer_request req;
 
     /* Read the expected chunk reference */
-    ret = read(worker->ch_mov[0], &req, sizeof(struct flb_buffer_request));
+    ret = flb_pipe_r(worker->ch_mov[0], &req, sizeof(struct flb_buffer_request));
     if (ret <= 0) {
         flb_errno();
         return -1;

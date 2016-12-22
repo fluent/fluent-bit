@@ -21,6 +21,7 @@
 #define FLB_UTILS_H
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_config.h>
 
 struct flb_split_entry {
@@ -42,6 +43,6 @@ void flb_utils_print_setup(struct flb_config *config);
 
 struct mk_list *flb_utils_split(char *line, int separator);
 void flb_utils_split_free(struct mk_list *list);
-int flb_utils_timer_consume(int fd);
+int flb_utils_timer_consume(flb_pipefd_t fd);
 
 #endif
