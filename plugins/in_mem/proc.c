@@ -116,7 +116,11 @@ struct proc_task *proc_stat(pid_t pid, int page_size)
      * sscanf(3).
      */
     p = buf;
-    while (*p != '(') p++; p++;
+    while (*p != '(') {
+        p++;
+    }
+    p++;
+
     q = p;
     while (*q != ')') q++;
     strncpy(t->comm, p, q - p);
