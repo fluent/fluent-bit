@@ -46,13 +46,13 @@ struct log_message {
     char   msg[1024 - sizeof(size_t)];
 };
 
-static inline int consume_byte(int fd)
+static inline int consume_byte(flb_pipefd_t fd)
 {
     int ret;
     uint64_t val;
 
     /* We need to consume the byte */
-    ret = read(fd, &val, sizeof(val));
+    ret = flb_pipe_r(fd, &val, sizeof(val));
     if (ret <= 0) {
         flb_errno();
         return -1;
@@ -83,7 +83,7 @@ static inline int log_push(struct log_message *msg, struct flb_log *log)
     return ret;
 }
 
-static inline int log_read(int fd, struct flb_log *log)
+static inline int log_read(flb_pipefd_t fd, struct flb_log *log)
 {
     int bytes;
     struct log_message msg;
@@ -93,7 +93,7 @@ static inline int log_read(int fd, struct flb_log *log)
      * under the PIPE_BUF limit (4KB on Linux) and our messages are always 1KB,
      * we can trust we will always get a full message on each read(2).
      */
-    bytes = read(fd, &msg, sizeof(struct log_message));
+    bytes = flb_pipe_r(fd, &msg, sizeof(struct log_message));
     if (bytes <= 0) {
         perror("bytes");
         return -1;
@@ -346,7 +346,7 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
 
     w = flb_worker_get();
     if (w) {
-        int n = write(w->log[1], &msg, sizeof(msg));
+        int n = flb_pipe_w(w->log[1], &msg, sizeof(msg));
         if (n == -1) {
             perror("write");
         }
@@ -370,7 +370,7 @@ int flb_log_stop(struct flb_log *log, struct flb_config *config)
     uint64_t val = FLB_TRUE;
 
     /* Signal the child worker, stop working */
-    write(log->ch_mng[1], &val, sizeof(val));
+    flb_pipe_w(log->ch_mng[1], &val, sizeof(val));
     pthread_join(log->tid, NULL);
 
     /* Release resources */

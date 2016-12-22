@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_pipe.h>
 
 #ifdef FLB_HAVE_BUFFERING
 
@@ -375,7 +376,7 @@ int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
     struct stat st;
 
     /* Read the expected chunk reference */
-    ret = read(worker->ch_add[0], &chunk, sizeof(struct flb_buffer_chunk));
+    ret = flb_pipe_r(worker->ch_add[0], &chunk, sizeof(struct flb_buffer_chunk));
     if (ret <= 0) {
         flb_errno();
         return -1;
