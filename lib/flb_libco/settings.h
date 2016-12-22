@@ -3,7 +3,14 @@
 /*[amd64, arm, ppc, x86]:
    by default, co_swap_function is marked as a text (code) section
    if not supported, uncomment the below line to use mprotect instead */
-/* #define LIBCO_MPROTECT */
+
+/*
+ * Testing Fluent Bit on Windows when doing co_swap it crash if the
+ * option LIBCO_MPROTECT is not defined.
+ */
+#ifdef _WIN32
+#define LIBCO_MPROTECT
+#endif
 
 /*[amd64]:
    Win64 only: provides a substantial speed-up, but will thrash XMM regs
