@@ -366,6 +366,18 @@ int main(int argc, char **argv)
     mtrace();
 #endif
 
+
+#ifdef _WIN32
+    /* Initialize sockets */
+    WSADATA wsaData;
+    int err;
+    err = WSAStartup(MAKEWORD(2, 2), &wsaData);
+    if (err != 0) {
+        fprintf(stderr, "WSAStartup failed with error: %d\n", err);
+        exit(EXIT_FAILURE);
+    }
+#endif
+
     /* Signal handler */
     flb_signal_init();
 
