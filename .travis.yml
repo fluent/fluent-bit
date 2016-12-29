@@ -39,5 +39,7 @@ matrix:
     - os: linux
       compiler: clang
       env: TOOLCHAIN=../cmake/armadillo-iot.cmake
+    - os: osx
+      env: FLB_FLUSH="-DFLB_FLUSH_UCONTEXT=On"
 
 script: make
