@@ -20,6 +20,8 @@
 #ifndef FLUENT_BIT_H
 #define FLUENT_BIT_H
 
+#include <msgpack.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
