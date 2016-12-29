@@ -421,6 +421,10 @@ int main(int argc, char **argv)
                 exit(EXIT_FAILURE);
             }
             break;
+#else
+        case 'e':
+            fprintf(stderr, "Error: proxy Golang plugin not available\n");
+            exit(EXIT_FAILURE);
 #endif
         case 'f':
             config->flush = atoi(optarg);
