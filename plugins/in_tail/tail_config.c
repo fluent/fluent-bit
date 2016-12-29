@@ -82,7 +82,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
     }
     else {
         ctx->rotate_wait = atoi(tmp);
-        if (ctx->refresh_interval <= 0) {
+        if (ctx->rotate_wait <= 0) {
             flb_error("[in_tail] invalid 'rotate_wait' config value");
             flb_free(ctx);
             return NULL;
