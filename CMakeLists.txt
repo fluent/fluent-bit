@@ -44,7 +44,7 @@ option(FLB_WITHOUT_INOTIFY    "Disable inotify support"      No)
 option(FLB_SQLDB              "Enable SQL embedded DB"       No)
 
 # Proxy Plugins
-option(FLB_PROXY_GO           "Enable Go plugins support"    No)
+option(FLB_PROXY_GO           "Enable Go plugins support"   Yes)
 
 # Advanced options for Flushing methods
 # =====================================

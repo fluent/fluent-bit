@@ -50,7 +50,7 @@ if(FLB_TLS)
     )
 endif()
 
-if(FLB_HAVE_PROXY_GO)
+if(FLB_PROXY_GO)
   set(src
     ${src}
     "flb_plugin_proxy.c"
@@ -113,11 +113,20 @@ if(CMAKE_SYSTEM_NAME MATCHES "Windows")
 else()
   set(FLB_DEPS
     ${FLB_DEPS}
-    dl
+    ${CMAKE_DL_LIBS}
     m
     )
 endif()
 
+# Proxy interfaces
+add_subdirectory(proxy)
+
+set(FLB_PROXY_PLUGINS "")
+if(FLB_PROXY_GO)
+  set(FLB_PROXY_PLUGINS ${FLB_PROXY_PLUGINS} flb-plugin-proxy-go)
+endif()
+
+# Set static dependencies
 set(FLB_DEPS
   ${FLB_DEPS}
   mk_core
@@ -125,13 +134,9 @@ set(FLB_DEPS
   msgpackc-static
   cJSON
   ${FLB_PLUGINS}
+  ${FLB_PROXY_PLUGINS}
   ${extra_libs}
   )
-
-set(FLB_PROXY_PLUGINS "")
-if(FLB_PROXY_GO)
-  set(FLB_PROXY_PLUGINS ${FLB_PROXY_PLUGINS} flb-plugin-proxy-go)
-endif()
 
 # Shared Library
 if(NOT WITHOUT_SHARED_LIB)
@@ -146,8 +151,7 @@ endif()
 
 # Static Library
 add_library(fluent-bit-static STATIC ${src})
-target_link_libraries(fluent-bit-static ${FLB_DEPS} ${FLB_PROXY_PLUGINS})
-
+target_link_libraries(fluent-bit-static ${FLB_DEPS})
 set_target_properties(fluent-bit-static PROPERTIES OUTPUT_NAME fluent-bit)
 
 if(FLB_JEMALLOC)
@@ -162,10 +166,7 @@ if(FLB_BUFFERING)
   target_link_libraries(fluent-bit-static sha1)
 endif()
 
-# Process Proxies
-add_subdirectory(proxy)
-
-# Executable
+# Binary / Executable
 if(NOT FLB_WITHOUT_BIN)
   find_package (Threads)
   add_executable(fluent-bit-bin fluent-bit.c)
@@ -174,9 +175,8 @@ if(NOT FLB_WITHOUT_BIN)
     target_link_libraries(fluent-bit-bin libjemalloc)
   endif()
 
-  target_link_libraries(fluent-bit-bin fluent-bit-static ${CMAKE_THREAD_LIBS_INIT} ${CMAKE_DL_LIBS})
+  target_link_libraries(fluent-bit-bin fluent-bit-static ${CMAKE_THREAD_LIBS_INIT})
 
-  target_link_libraries(fluent-bit-bin ${FLB_PROXY_PLUGINS})
   set_target_properties(fluent-bit-bin
     PROPERTIES
     OUTPUT_NAME ${FLB_OUT_NAME}

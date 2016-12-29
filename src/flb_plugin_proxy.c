@@ -31,7 +31,6 @@
 /* Proxies */
 #include "proxy/go/go.h"
 
-
 static void proxy_cb_flush(void *data, size_t bytes,
                            char *tag, int tag_len,
                            struct flb_input_instance *i_ins,

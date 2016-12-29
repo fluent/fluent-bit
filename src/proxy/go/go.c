@@ -22,8 +22,6 @@
 #include <fluent-bit/flb_plugin_proxy.h>
 #include <fluent-bit/flb_output.h>
 
-#include <dlfcn.h>
-
 /*
  * These functions needs to be moved to a better place, still in
  * experimental mode.

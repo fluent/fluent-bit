@@ -21,6 +21,7 @@
 #define FLB_PLUGIN_PROXY_H
 
 #include <monkey/mk_core.h>
+#include <fluent-bit/flb_info.h>
 
 /* Plugin Types */
 #define FLB_PROXY_INPUT_PLUGIN     1
