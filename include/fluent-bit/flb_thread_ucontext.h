@@ -28,6 +28,7 @@
 
 #include <stdlib.h>
 #include <limits.h>
+
 #include <ucontext.h>
 
 #ifdef FLB_HAVE_VALGRIND
