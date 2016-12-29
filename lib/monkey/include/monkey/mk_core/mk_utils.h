@@ -70,6 +70,16 @@ pthread_key_t mk_utils_error_key;
     #undef strerror_r
   #endif
   #define strerror_r(errno, buf, len) strerror_s(buf, len, errno)
+#else
+  #ifdef __cplusplus
+    extern "C"
+      {
+  #endif
+    extern int __xpg_strerror_r(int errcode,char* buffer,size_t length);
+    #define strerror_r __xpg_strerror_r
+  #ifdef __cplusplus
+      }
+  #endif
 #endif
 
 /*

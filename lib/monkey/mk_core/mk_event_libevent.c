@@ -26,6 +26,7 @@
 struct ev_map {
     /* for pipes */
     evutil_socket_t pipe[2];
+
     struct event *event;
     struct mk_event_ctx *ctx;
 };
@@ -98,11 +99,7 @@ static void cb_event(evutil_socket_t fd, short flags, void *data)
 }
 
 /* Add the file descriptor to the arrays */
-<<<<<<< 32af823b0cde07e4c1d28250e2b9b31947aed867
 static inline int _mk_event_add(struct mk_event_ctx *ctx, evutil_socket_t fd,
-=======
-static inline int _mk_event_add(struct mk_event_ctx *ctx, int fd,
->>>>>>> lib: monkey: merge changes with libevent support for WIN32
                                 int type, uint32_t events, void *data)
 {
     int flags = 0;
@@ -174,11 +171,7 @@ static void cb_timeout(evutil_socket_t fd, short flags, void *data)
     uint64_t val = 1;
     struct ev_map *ev_map = data;
 
-<<<<<<< 32af823b0cde07e4c1d28250e2b9b31947aed867
     ret = send(ev_map->pipe[1], &val, sizeof(uint64_t), 0);
-=======
-    ret = write(ev_map->pipe[1], &val, sizeof(uint64_t));
->>>>>>> lib: monkey: merge changes with libevent support for WIN32
     if (ret == -1) {
         perror("write");
     }
@@ -194,26 +187,15 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
                                            time_t sec, long nsec, void *data)
 {
     int ret;
-<<<<<<< 32af823b0cde07e4c1d28250e2b9b31947aed867
     evutil_socket_t fd[2];
-=======
-    int fd[2];
->>>>>>> lib: monkey: merge changes with libevent support for WIN32
     struct event *libev;
     struct mk_event *event;
     struct timeval timev = {sec, nsec};
     struct ev_map *ev_map;
 
-<<<<<<< 32af823b0cde07e4c1d28250e2b9b31947aed867
     if (evutil_socketpair(AF_UNIX, SOCK_STREAM, 0, fd) == -1) {
         perror("socketpair");
         return -1;
-=======
-    ret = pipe(fd);
-    if (ret < 0) {
-        mk_libc_error("pipe");
-        return ret;
->>>>>>> lib: monkey: merge changes with libevent support for WIN32
     }
 
     event = (struct mk_event *) data;
@@ -249,22 +231,12 @@ static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
                                            int *r_fd, int *w_fd, void *data)
 {
     int ret;
-<<<<<<< 32af823b0cde07e4c1d28250e2b9b31947aed867
     evutil_socket_t fd[2];
     struct mk_event *event;
 
     if (evutil_socketpair(AF_UNIX, SOCK_STREAM, 0, fd) == -1) {
         perror("socketpair");
         return -1;
-=======
-    int fd[2];
-    struct mk_event *event;
-
-    ret = pipe(fd);
-    if (ret < 0) {
-        mk_libc_error("pipe");
-        return ret;
->>>>>>> lib: monkey: merge changes with libevent support for WIN32
     }
 
     event = data;
@@ -275,13 +247,8 @@ static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
     ret = _mk_event_add(ctx, fd[0],
                         MK_EVENT_NOTIFICATION, MK_EVENT_READ, event);
     if (ret != 0) {
-<<<<<<< 32af823b0cde07e4c1d28250e2b9b31947aed867
         evutil_closesocket(fd[0]);
         evutil_closesocket(fd[1]);
-=======
-        close(fd[0]);
-        close(fd[1]);
->>>>>>> lib: monkey: merge changes with libevent support for WIN32
         return ret;
     }
     event->mask = MK_EVENT_READ;
