@@ -105,8 +105,10 @@ struct flb_tls_context *flb_tls_context_new(int verify,
     }
     mbedtls_x509_crt_init(&ctx->ca_cert);
     ret = mbedtls_x509_crt_parse_file(&ctx->ca_cert, ca_file);
-    if (ret != 0) {
-        flb_error("[TLS] Invalid CA file: %s", ca_file);
+    if (ret < 0) {
+        char tmp[1024];
+        mbedtls_strerror(ret, tmp, 1024);
+        flb_error("[TLS] Invalid CA file: %s | %s", ca_file, tmp);
         goto error;
     }
     ctx->certs_set |= FLB_TLS_CA_ROOT;
