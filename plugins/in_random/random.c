@@ -41,12 +41,11 @@ struct flb_in_random_config {
 
     /* Internal */
     int              samples_count;
-    msgpack_packer   mp_pck;
-    msgpack_sbuffer  mp_sbuf;
 };
 
 /* cb_collect callback */
-static int in_random_collect(struct flb_config *config, void *in_context)
+static int in_random_collect(struct flb_input_instance *i_ins,
+                             struct flb_config *config, void *in_context)
 {
     int fd;
     int ret;
@@ -75,13 +74,13 @@ static int in_random_collect(struct flb_config *config, void *in_context)
         close(fd);
     }
 
-    msgpack_pack_array(&ctx->mp_pck, 2);
-    msgpack_pack_uint64(&ctx->mp_pck, time(NULL));
-    msgpack_pack_map(&ctx->mp_pck, 1);
+    msgpack_pack_array(&i_ins->mp_pck, 2);
+    msgpack_pack_uint64(&i_ins->mp_pck, time(NULL));
+    msgpack_pack_map(&i_ins->mp_pck, 1);
 
-    msgpack_pack_bin(&ctx->mp_pck, 10);
-    msgpack_pack_bin_body(&ctx->mp_pck, "rand_value", 10);
-    msgpack_pack_uint64(&ctx->mp_pck, val);
+    msgpack_pack_bin(&i_ins->mp_pck, 10);
+    msgpack_pack_bin_body(&i_ins->mp_pck, "rand_value", 10);
+    msgpack_pack_uint64(&i_ins->mp_pck, val);
 
     ctx->samples_count++;
 
@@ -157,15 +156,8 @@ static int in_random_init(struct flb_input_instance *in,
                                        in_random_collect,
                                        ctx->interval_sec,
                                        ctx->interval_nsec, config);
-
-    /* Initialize msgpack buffer */
-    msgpack_sbuffer_init(&ctx->mp_sbuf);
-    msgpack_packer_init(&ctx->mp_pck,
-                        &ctx->mp_sbuf, msgpack_sbuffer_write);
-
     if (ret < 0) {
         flb_utils_error_c("could not set collector for head input plugin");
-        msgpack_sbuffer_destroy(&ctx->mp_sbuf);
         flb_free(ctx);
         return -1;
     }
@@ -173,37 +165,11 @@ static int in_random_init(struct flb_input_instance *in,
     return 0;
 }
 
-/* cb_flush callback */
-static void *in_random_flush(void *in_context, size_t *size)
-{
-    char *buf = NULL;
-    struct flb_in_random_config *ctx = in_context;
-
-    if (ctx->samples_count < ctx->samples || ctx->mp_sbuf.size == 0) {
-        return NULL;
-    }
-
-    buf = flb_malloc(ctx->mp_sbuf.size);
-    if (!buf) {
-        return NULL;
-    }
-
-    memcpy(buf, ctx->mp_sbuf.data, ctx->mp_sbuf.size);
-    *size = ctx->mp_sbuf.size;
-    msgpack_sbuffer_destroy(&ctx->mp_sbuf);
-    msgpack_sbuffer_init(&ctx->mp_sbuf);
-    msgpack_packer_init(&ctx->mp_pck,
-                        &ctx->mp_sbuf, msgpack_sbuffer_write);
-
-    return buf;
-}
-
 static int in_random_exit(void *data, struct flb_config *config)
 {
     (void) *config;
     struct flb_in_random_config *ctx = data;
 
-    msgpack_sbuffer_destroy(&ctx->mp_sbuf);
     flb_free(ctx);
 
     return 0;
@@ -216,6 +182,6 @@ struct flb_input_plugin in_random_plugin = {
     .cb_init      = in_random_init,
     .cb_pre_run   = NULL,
     .cb_collect   = in_random_collect,
-    .cb_flush_buf = in_random_flush,
+    .cb_flush_buf = NULL,
     .cb_exit      = in_random_exit
 };
