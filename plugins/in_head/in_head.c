@@ -33,7 +33,8 @@
 #include "in_head.h"
 
 /* cb_collect callback */
-static int in_head_collect(struct flb_config *config, void *in_context)
+static int in_head_collect(struct flb_input_instance *i_ins,
+                           struct flb_config *config, void *in_context)
 {
     struct flb_in_head_config *head_config = in_context;
     int fd = -1;
@@ -60,23 +61,22 @@ static int in_head_collect(struct flb_config *config, void *in_context)
         num_map++;
     }
 
-    msgpack_pack_array(&head_config->mp_pck, 2);
-    msgpack_pack_uint64(&head_config->mp_pck, time(NULL));
+    msgpack_pack_array(&i_ins->mp_pck, 2);
+    msgpack_pack_uint64(&i_ins->mp_pck, time(NULL));
 
+    msgpack_pack_map(&i_ins->mp_pck, num_map);
 
-    msgpack_pack_map(&head_config->mp_pck, num_map);
-
-    msgpack_pack_bin(&head_config->mp_pck, 4);
-    msgpack_pack_bin_body(&head_config->mp_pck, "head", 4);
-    msgpack_pack_bin(&head_config->mp_pck, head_config->buf_len);
-    msgpack_pack_bin_body(&head_config->mp_pck,
+    msgpack_pack_bin(&i_ins->mp_pck, 4);
+    msgpack_pack_bin_body(&i_ins->mp_pck, "head", 4);
+    msgpack_pack_bin(&i_ins->mp_pck, head_config->buf_len);
+    msgpack_pack_bin_body(&i_ins->mp_pck,
                           head_config->buf, head_config->buf_len);
 
     if (head_config->add_path == FLB_TRUE) {
-        msgpack_pack_bin(&head_config->mp_pck, 4);
-        msgpack_pack_bin_body(&head_config->mp_pck, "path", 4);
-        msgpack_pack_bin(&head_config->mp_pck, head_config->path_len);
-        msgpack_pack_bin_body(&head_config->mp_pck,
+        msgpack_pack_bin(&i_ins->mp_pck, 4);
+        msgpack_pack_bin_body(&i_ins->mp_pck, "path", 4);
+        msgpack_pack_bin(&i_ins->mp_pck, head_config->path_len);
+        msgpack_pack_bin_body(&i_ins->mp_pck,
                               head_config->filepath, head_config->path_len);
     }
 
@@ -200,12 +200,6 @@ static int in_head_init(struct flb_input_instance *in,
                                        in_head_collect,
                                        head_config->interval_sec,
                                        head_config->interval_nsec, config);
-
-    /* Initialize msgpack buffer */
-    msgpack_sbuffer_init(&head_config->mp_sbuf);
-    msgpack_packer_init(&head_config->mp_pck,
-                        &head_config->mp_sbuf, msgpack_sbuffer_write);
-
     if (ret < 0) {
         flb_utils_error_c("could not set collector for head input plugin");
         goto init_error;
@@ -219,41 +213,12 @@ static int in_head_init(struct flb_input_instance *in,
     return -1;
 }
 
-/* cb_flush callback */
-static void *in_head_flush(void *in_context, size_t *size)
-{
-    char *buf = NULL;
-    struct flb_in_head_config *head_config = in_context;
-
-    if (head_config->idx == 0) {
-        head_config = 0;
-        return NULL;
-    }
-    buf = flb_malloc(head_config->mp_sbuf.size);
-    if (!buf) {
-        return NULL;
-    }
-
-    memcpy(buf, head_config->mp_sbuf.data, head_config->mp_sbuf.size);
-    *size = head_config->mp_sbuf.size;
-    msgpack_sbuffer_destroy(&head_config->mp_sbuf);
-    msgpack_sbuffer_init(&head_config->mp_sbuf);
-    msgpack_packer_init(&head_config->mp_pck,
-                        &head_config->mp_sbuf, msgpack_sbuffer_write);
-    head_config->idx = 0;
-
-    return buf;
-}
-
 int in_head_exit(void *data, struct flb_config *config)
 {
     (void) *config;
     struct flb_in_head_config *head_config = data;
 
-    msgpack_sbuffer_destroy(&head_config->mp_sbuf);
-
     delete_head_config(head_config);
-
     return 0;
 }
 
@@ -264,6 +229,6 @@ struct flb_input_plugin in_head_plugin = {
     .cb_init      = in_head_init,
     .cb_pre_run   = NULL,
     .cb_collect   = in_head_collect,
-    .cb_flush_buf = in_head_flush,
+    .cb_flush_buf = NULL,
     .cb_exit      = in_head_exit
 };

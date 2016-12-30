@@ -42,9 +42,6 @@ struct flb_in_head_config {
 
     int      interval_sec;
     int      interval_nsec;
-
-    msgpack_packer   mp_pck;
-    msgpack_sbuffer  mp_sbuf;
 };
 
 extern struct flb_input_plugin in_head_plugin;
