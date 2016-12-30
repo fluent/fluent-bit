@@ -57,13 +57,10 @@ struct flb_input_plugin {
     int (*cb_init)    (struct flb_input_instance *, struct flb_config *, void *);
 
     /* Pre run */
-    int (*cb_pre_run) (void *, struct flb_config *);
+    int (*cb_pre_run) (struct flb_input_instance *, struct flb_config *, void *);
 
-    /*
-     * Collect: every certain amount of time, Fluent Bit
-     * trigger this callback.
-     */
-    int (*cb_collect) (struct flb_config *, void *);
+    /* Collect: every certain amount of time, Fluent Bit trigger this callback */
+    int (*cb_collect) (struct flb_input_instance *, struct flb_config *, void *);
 
     /*
      * Flush: each plugin during a collection, it does some buffering,
@@ -152,6 +149,11 @@ struct flb_input_instance {
      */
     struct flb_net_host host;
 
+    /* MessagePack buffers: the plugin use these contexts to append records */
+    int mp_records;
+    msgpack_packer  mp_pck;
+    msgpack_sbuffer mp_sbuf;
+
     /*
      * Optional data passed to the plugin, this info is useful when
      * running Fluent Bit in library mode and the target plugin needs
@@ -189,7 +191,8 @@ struct flb_input_collector {
     long nanoseconds;                    /* expire nanoseconds         */
 
     /* Callback */
-    int (*cb_collect) (struct flb_config *, void *);
+    int (*cb_collect) (struct flb_input_instance *,
+                       struct flb_config *, void *);
 
     struct mk_event event;
 
@@ -349,7 +352,7 @@ static void input_pre_cb_collect()
     struct flb_thread *th     = libco_in_param.th;
 
     co_switch(th->caller);
-    coll->cb_collect(config, coll->instance->context);
+    coll->cb_collect(coll->instance, config, coll->instance->context);
 }
 
 static FLB_INLINE
@@ -434,16 +437,20 @@ void flb_input_set_context(struct flb_input_instance *in, void *context);
 int flb_input_channel_init(struct flb_input_instance *in);
 
 int flb_input_set_collector_time(struct flb_input_instance *in,
-                                 int (*cb_collect) (struct flb_config *, void *),
+                                 int (*cb_collect) (struct flb_input_instance *,
+                                                    struct flb_config *, void *),
                                  time_t seconds,
                                  long   nanoseconds,
                                  struct flb_config *config);
 int flb_input_set_collector_event(struct flb_input_instance *in,
-                                  int (*cb_collect) (struct flb_config *, void *),
+                                  int (*cb_collect) (struct flb_input_instance *,
+                                                     struct flb_config *, void *),
                                   flb_pipefd_t fd,
                                   struct flb_config *config);
 int flb_input_set_collector_socket(struct flb_input_instance *in,
-                                   int (*cb_new_connection) (struct flb_config *, void*),
+                                   int (*cb_new_connection) (struct flb_input_instance *,
+                                                             struct flb_config *,
+                                                             void*),
                                    flb_pipefd_t fd,
                                    struct flb_config *config);
 void flb_input_initialize_all(struct flb_config *config);
@@ -457,13 +464,11 @@ int flb_input_dyntag_destroy(struct flb_input_dyntag *dt);
 int flb_input_dyntag_append(struct flb_input_instance *in,
                             char *tag, size_t tag_len,
                             msgpack_object data);
+
+void *flb_input_flush(struct flb_input_instance *i_ins, size_t *size);
 void *flb_input_dyntag_flush(struct flb_input_dyntag *dt, size_t *size);
 void flb_input_dyntag_exit(struct flb_input_instance *in);
 
 int flb_input_collector_fd(flb_pipefd_t fd, struct flb_config *config);
-
-/* input thread */
-//int flb_input_thread_get_id(struct flb_config *config);
-//int flb_input_thread_del_id(int id, struct flb_config *config);
 
 #endif

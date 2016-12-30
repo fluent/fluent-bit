@@ -124,25 +124,7 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
         return 0;
     }
 
-    if (p->cb_flush_buf) {
-        buf = p->cb_flush_buf(in->context, &size);
-        if (!buf || size == 0) {
-            return 0;
-        }
-
-        /*
-         * Create an engine task, the task will hold the buffer reference
-         * and the co-routines associated to the output instance plugins
-         * that needs to handle the data.
-         */
-        task = flb_task_create(id, buf, size, in, NULL, in->tag, config);
-        if (!task) {
-            flb_free(buf);
-            return -1;
-        }
-        flb_trace("[engine dispatch] task #%i created %p", task->id, task);
-    }
-    else if (p->flags & FLB_INPUT_DYN_TAG) {
+    if (p->flags & FLB_INPUT_DYN_TAG) {
         /* Iterate dynamic tag buffers */
         struct mk_list *d_head, *tmp;
         struct flb_input_dyntag *dt;
@@ -172,6 +154,24 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
                 continue;
             }
         }
+    }
+    else {
+        buf = flb_input_flush(in, &size);
+        if (!buf || size == 0) {
+            return 0;
+        }
+
+        /*
+         * Create an engine task, the task will hold the buffer reference
+         * and the co-routines associated to the output instance plugins
+         * that needs to handle the data.
+         */
+        task = flb_task_create(id, buf, size, in, NULL, in->tag, config);
+        if (!task) {
+            flb_free(buf);
+            return -1;
+        }
+        flb_trace("[engine dispatch] task #%i created %p", task->id, task);
     }
 
     /* Start the new enqueued Tasks */
@@ -204,132 +204,5 @@ int flb_engine_dispatch_direct(uint64_t id,
     tasks_start(in, config);
     return 0;
 }
-
-#elif defined FLB_HAVE_FLUSH_PTHREADS
-
-/* It creates a new output thread using a 'Retry' context */
-int flb_engine_dispatch_retry(struct flb_task_retry *retry,
-                              struct flb_config *config)
-{
-    (void) retry;
-    (void) config;
-
-    return 0;
-}
-
-int flb_engine_dispatch(struct flb_input_instance *in,
-                        struct flb_config *config)
-{
-    char *buf;
-    size_t size;
-    struct mk_list *r_head;
-    struct flb_input_plugin *p;
-    struct flb_task *task;
-    struct flb_router_path *path;
-    struct flb_output_instance *o_ins;
-    struct flb_thread *th;
-
-    p = in->p;
-    if (p->cb_flush_buf) {
-        buf = p->cb_flush_buf(in->context, &size);
-        if (!buf || size == 0) {
-            return 0;
-        }
-
-        /*
-         * Create an engine task, the task will hold the buffer reference
-         * and the co-routines associated to the output instance plugins
-         * that needs to handle the data.
-         */
-        task = flb_task_create(buf, size, in, in->tag, config, NULL);
-        if (!task) {
-            flb_free(buf);
-            return -1;
-        }
-
-        /* Create a thread context for an output plugin call */
-        mk_list_foreach(r_head, &in->routes) {
-            path = mk_list_entry(r_head, struct flb_router_path, _head);
-            o_ins = path->ins;
-
-            th = flb_output_thread(task,
-                                   in,
-                                   o_ins,
-                                   config,
-                                   buf, size,
-                                   in->tag,
-                                   in->tag_len);
-            flb_task_add_thread(&th->_head, task);
-            flb_thread_resume(th);
-        }
-    }
-    else if (p->flags & FLB_INPUT_DYN_TAG) {
-        /* Iterate dynamic tag buffers */
-        struct mk_list *d_head, *tmp;
-        struct flb_input_dyntag *dt;
-        struct flb_output_instance *o_ins;
-
-        mk_list_foreach_safe(d_head, tmp, &in->dyntags) {
-            int matches = 0;
-            struct mk_list *o_head;
-
-            dt = mk_list_entry(d_head, struct flb_input_dyntag, _head);
-            if (dt->busy == FLB_TRUE) {
-                continue;
-            }
-            flb_trace("[dyntag %s] [%p] tag=%s", dt->in->name, dt, dt->tag);
-
-            /* There is a match, get the buffer */
-            buf = flb_input_dyntag_flush(dt, &size);
-            if (size == 0 || !buf) {
-                continue;
-            }
-
-            task = flb_task_create(buf, size, dt->in, dt,
-                                          dt->tag, config);
-            if (!task) {
-                flb_free(buf);
-                continue;
-            }
-
-            dt->busy = FLB_TRUE;
-            mk_list_foreach(o_head, &config->outputs) {
-                o_ins = mk_list_entry(o_head,
-                                      struct flb_output_instance, _head);
-
-                if (flb_router_match(dt->tag, o_ins->match)) {
-                    flb_trace("[dyntag %s] [%p] match rule %s:%s",
-                              dt->in->name, dt, dt->tag, o_ins->match);
-
-                    flb_trace("[dyntag buf] size=%lu buf=%p",
-                              size, buf);
-
-                    th = flb_output_thread(task,
-                                           dt->in,
-                                           o_ins,
-                                           config,
-                                           buf, size,
-                                           dt->tag, dt->tag_len);
-
-                    /* Associate the thread with the parent task and resume */
-                    flb_task_add_thread(&th->_head, task);
-                    flb_thread_resume(th);
-
-                    matches++;
-                }
-            }
-            if (matches == 0) {
-                flb_input_dyntag_destroy(dt);
-            }
-        }
-    }
-
-    if (p->cb_flush_end) {
-        p->cb_flush_end(in->context);
-    }
-
-    return 0;
-}
-
 
 #endif /* !FLB_HAVE_FLUSH_UCONTEXT || FLB_HAVE_FLUSH_LIBCO */

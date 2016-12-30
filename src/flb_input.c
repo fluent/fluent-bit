@@ -112,6 +112,13 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->host.address = NULL;
         instance->host.uri     = NULL;
 
+        /* Initialize msgpack counter and buffers */
+        instance->mp_records = 0;
+        msgpack_sbuffer_init(&instance->mp_sbuf);
+        msgpack_packer_init(&instance->mp_pck, &instance->mp_sbuf,
+                            msgpack_sbuffer_write);
+
+        /* Initialize list heads */
         mk_list_init(&instance->routes);
         mk_list_init(&instance->tasks);
         mk_list_init(&instance->dyntags);
@@ -254,7 +261,7 @@ void flb_input_pre_run_all(struct flb_config *config)
         }
 
         if (p->cb_pre_run) {
-            p->cb_pre_run(in->context, config);
+            p->cb_pre_run(in, config, in->context);
         }
     }
 }
@@ -372,7 +379,8 @@ int flb_input_channel_init(struct flb_input_instance *in)
 }
 
 int flb_input_set_collector_time(struct flb_input_instance *in,
-                                 int (*cb_collect) (struct flb_config *, void *),
+                                 int (*cb_collect) (struct flb_input_instance *,
+                                                    struct flb_config *, void *),
                                  time_t seconds,
                                  long   nanoseconds,
                                  struct flb_config *config)
@@ -393,7 +401,8 @@ int flb_input_set_collector_time(struct flb_input_instance *in,
 }
 
 int flb_input_set_collector_event(struct flb_input_instance *in,
-                                  int (*cb_collect) (struct flb_config *, void *),
+                                  int (*cb_collect) (struct flb_input_instance *,
+                                                     struct flb_config *, void *),
                                   flb_pipefd_t fd,
                                   struct flb_config *config)
 {
@@ -413,7 +422,9 @@ int flb_input_set_collector_event(struct flb_input_instance *in,
 }
 
 int flb_input_set_collector_socket(struct flb_input_instance *in,
-                                   int (*cb_new_connection) (struct flb_config *, void*),
+                                   int (*cb_new_connection) (struct flb_input_instance *,
+                                                             struct flb_config *,
+                                                             void *),
                                    flb_pipefd_t fd,
                                    struct flb_config *config)
 {
@@ -541,6 +552,34 @@ int flb_input_dyntag_append(struct flb_input_instance *in,
     return 0;
 }
 
+/* Flush a buffer from an input instance (new since v0.11) */
+void *flb_input_flush(struct flb_input_instance *i_ins, size_t *size)
+{
+    char *buf;
+
+    if (i_ins->mp_sbuf.size == 0) {
+        return 0;
+    }
+
+    /* Allocate buffer */
+    buf = flb_malloc(i_ins->mp_sbuf.size);
+    if (!buf) {
+        flb_errno();
+        return NULL;
+    }
+
+    /* Copy original data to new buffer and update it size */
+    memcpy(buf, i_ins->mp_sbuf.data, i_ins->mp_sbuf.size);
+    *size = i_ins->mp_sbuf.size;
+
+    /* re-initialize msgpack buffers */
+    i_ins->mp_records = 0;
+    msgpack_sbuffer_destroy(&i_ins->mp_sbuf);
+    msgpack_sbuffer_init(&i_ins->mp_sbuf);
+
+    return buf;
+}
+
 /* Retrieve a raw buffer from a dyntag node */
 void *flb_input_dyntag_flush(struct flb_input_dyntag *dt, size_t *size)
 {
@@ -599,7 +638,8 @@ int flb_input_collector_fd(flb_pipefd_t fd, struct flb_config *config)
         flb_thread_resume(th);
     }
     else {
-        collector->cb_collect(config, collector->instance->context);
+        collector->cb_collect(collector->instance, config,
+                              collector->instance->context);
     }
 
     return 0;
