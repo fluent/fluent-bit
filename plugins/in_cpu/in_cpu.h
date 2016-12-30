@@ -72,10 +72,6 @@ struct flb_in_cpu_config {
     int cpu_ticks;      /* CPU ticks (Kernel setting) */
 
     struct cpu_stats cstats;
-
-    /* MessagePack buffers */
-    msgpack_packer  mp_pck;
-    msgpack_sbuffer mp_sbuf;
 };
 
 
@@ -85,9 +81,9 @@ struct flb_in_cpu_config {
                                  "cpu%i.p_%s", i - 1, #key)
 
 #define CPU_PACK_SNAP(s, key)                                           \
-    msgpack_pack_bin(&ctx->mp_pck, s->k_##key.length);                  \
-    msgpack_pack_bin_body(&ctx->mp_pck, s->k_##key.name, s->k_##key.length); \
-    msgpack_pack_double(&ctx->mp_pck, s->p_##key)
+    msgpack_pack_bin(&i_ins->mp_pck, s->k_##key.length);                  \
+    msgpack_pack_bin_body(&i_ins->mp_pck, s->k_##key.name, s->k_##key.length); \
+    msgpack_pack_double(&i_ins->mp_pck, s->p_##key)
 
 #define ULL_ABS(a, b)  (a > b) ? a - b : b - a
 
@@ -129,7 +125,8 @@ static inline double CPU_METRIC_USAGE(unsigned long pre, unsigned long now,
 }
 
 int in_cpu_pre_run(void *in_context, struct flb_config *config);
-int in_cpu_collect(struct flb_config *config, void *in_context);
+int in_cpu_collect(struct flb_input_instance *i_ins,
+                   struct flb_config *config, void *in_context);
 void *in_cpu_flush(void *in_context, size_t *size);
 
 extern struct flb_input_plugin in_cpu_plugin;

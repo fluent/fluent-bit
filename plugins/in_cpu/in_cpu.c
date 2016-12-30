@@ -156,7 +156,8 @@ static inline double proc_cpu_load(int cpus, struct cpu_stats *cstats)
 }
 
 /* Init CPU input */
-int in_cpu_init(struct flb_input_instance *in, struct flb_config *config, void *data)
+static int in_cpu_init(struct flb_input_instance *in,
+                       struct flb_config *config, void *data)
 {
     int ret;
     struct flb_in_cpu_config *ctx;
@@ -179,10 +180,6 @@ int in_cpu_init(struct flb_input_instance *in, struct flb_config *config, void *
         flb_free(ctx);
         return -1;
     }
-
-    /* initialize MessagePack buffers */
-    msgpack_sbuffer_init(&ctx->mp_sbuf);
-    msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
 
     /* Get CPU load, ready to be updated once fired the calc callback */
     ret = proc_cpu_load(ctx->n_processors, &ctx->cstats);
@@ -288,7 +285,8 @@ struct cpu_snapshot *snapshot_percent(struct cpu_stats *cstats,
 
 
 /* Callback to gather CPU usage between now and previous snapshot */
-int in_cpu_collect(struct flb_config *config, void *in_context)
+int in_cpu_collect(struct flb_input_instance *i_ins,
+                   struct flb_config *config, void *in_context)
 {
     int i;
     int ret;
@@ -308,25 +306,25 @@ int in_cpu_collect(struct flb_config *config, void *in_context)
     /*
      * Store the new data into the MessagePack buffer,
      */
-    msgpack_pack_array(&ctx->mp_pck, 2);
-    msgpack_pack_uint64(&ctx->mp_pck, time(NULL));
+    msgpack_pack_array(&i_ins->mp_pck, 2);
+    msgpack_pack_uint64(&i_ins->mp_pck, time(NULL));
 
-    msgpack_pack_map(&ctx->mp_pck, (ctx->n_processors * 3 ) + 3);
+    msgpack_pack_map(&i_ins->mp_pck, (ctx->n_processors * 3 ) + 3);
 
     /* All CPU */
-    msgpack_pack_bin(&ctx->mp_pck, 5);
-    msgpack_pack_bin_body(&ctx->mp_pck, "cpu_p", 5);
-    msgpack_pack_double(&ctx->mp_pck, s[0].p_cpu);
+    msgpack_pack_bin(&i_ins->mp_pck, 5);
+    msgpack_pack_bin_body(&i_ins->mp_pck, "cpu_p", 5);
+    msgpack_pack_double(&i_ins->mp_pck, s[0].p_cpu);
 
     /* User space CPU % */
-    msgpack_pack_bin(&ctx->mp_pck, 6);
-    msgpack_pack_bin_body(&ctx->mp_pck, "user_p", 6);
-    msgpack_pack_double(&ctx->mp_pck, s[0].p_user);
+    msgpack_pack_bin(&i_ins->mp_pck, 6);
+    msgpack_pack_bin_body(&i_ins->mp_pck, "user_p", 6);
+    msgpack_pack_double(&i_ins->mp_pck, s[0].p_user);
 
     /* System CPU % */
-    msgpack_pack_bin(&ctx->mp_pck, 8);
-    msgpack_pack_bin_body(&ctx->mp_pck, "system_p", 8);
-    msgpack_pack_double(&ctx->mp_pck, s[0].p_system);
+    msgpack_pack_bin(&i_ins->mp_pck, 8);
+    msgpack_pack_bin_body(&i_ins->mp_pck, "system_p", 8);
+    msgpack_pack_double(&i_ins->mp_pck, s[0].p_system);
 
 
     for (i = 1; i < ctx->n_processors + 1; i++) {
@@ -345,35 +343,7 @@ int in_cpu_collect(struct flb_config *config, void *in_context)
     return 0;
 }
 
-void *in_cpu_flush(void *in_context, size_t *size)
-{
-    char *buf;
-    msgpack_sbuffer *sbuf;
-    struct flb_in_cpu_config *ctx = in_context;
-
-    sbuf = &ctx->mp_sbuf;
-    *size = sbuf->size;
-
-    if (sbuf->size==0) {
-        return NULL;
-    }
-
-
-    buf = flb_malloc(sbuf->size);
-    if (!buf) {
-        return NULL;
-    }
-
-    /* set a new buffer and re-initialize our MessagePack context */
-    memcpy(buf, sbuf->data, sbuf->size);
-    msgpack_sbuffer_destroy(&ctx->mp_sbuf);
-    msgpack_sbuffer_init(&ctx->mp_sbuf);
-    msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
-
-    return buf;
-}
-
-int in_cpu_exit(void *data, struct flb_config *config)
+static int in_cpu_exit(void *data, struct flb_config *config)
 {
     (void) *config;
     struct flb_in_cpu_config *ctx = data;
@@ -383,9 +353,6 @@ int in_cpu_exit(void *data, struct flb_config *config)
     cs = &ctx->cstats;
     flb_free(cs->snap_a);
     flb_free(cs->snap_b);
-
-    /* Remove msgpack buffer */
-    msgpack_sbuffer_destroy(&ctx->mp_sbuf);
 
     /* done */
     flb_free(ctx);
@@ -400,6 +367,6 @@ struct flb_input_plugin in_cpu_plugin = {
     .cb_init      = in_cpu_init,
     .cb_pre_run   = NULL,
     .cb_collect   = in_cpu_collect,
-    .cb_flush_buf = in_cpu_flush,
+    .cb_flush_buf = NULL,
     .cb_exit      = in_cpu_exit
 };
