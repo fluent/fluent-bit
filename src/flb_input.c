@@ -296,6 +296,9 @@ void flb_input_exit_all(struct flb_config *config)
         flb_free(in->host.name);
         flb_free(in->host.address);
 
+        /* Destroy buffer */
+        msgpack_sbuffer_destroy(&in->mp_sbuf);
+
         /* release the tag if any */
         flb_free(in->tag);
 
