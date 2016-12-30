@@ -46,10 +46,6 @@ struct flb_in_kmsg_config {
 
     /* Line processing */
     int buffer_id;
-
-    /* MessagePack buffers */
-    msgpack_packer  mp_pck;
-    msgpack_sbuffer mp_sbuf;
 };
 
 int in_kmsg_start();

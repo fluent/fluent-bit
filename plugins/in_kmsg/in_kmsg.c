@@ -103,34 +103,9 @@ static int boot_time(struct timeval *boot_time)
     return 0;
 }
 
-void *in_kmsg_flush(void *in_context, size_t *size)
-{
-    char *buf;
-    msgpack_sbuffer *sbuf;
-    struct flb_in_kmsg_config *ctx = in_context;
-
-    if (ctx->buffer_id == 0)
-        return NULL;
-
-    sbuf = &ctx->mp_sbuf;
-    *size = sbuf->size;
-    buf = flb_malloc(sbuf->size);
-    if (!buf) {
-        return NULL;
-    }
-
-    /* set a new buffer and re-initialize our MessagePack context */
-    memcpy(buf, sbuf->data, sbuf->size);
-    msgpack_sbuffer_destroy(&ctx->mp_sbuf);
-    msgpack_sbuffer_init(&ctx->mp_sbuf);
-    msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
-
-    ctx->buffer_id = 0;
-
-    return buf;
-}
-
-static inline int process_line(char *line, struct flb_in_kmsg_config *ctx)
+static inline int process_line(char *line,
+                               struct flb_input_instance *i_ins,
+                               struct flb_in_kmsg_config *ctx)
 {
     char priority;           /* log priority                */
     uint64_t sequence;       /* sequence number             */
@@ -195,30 +170,30 @@ static inline int process_line(char *line, struct flb_in_kmsg_config *ctx)
      * Store the new data into the MessagePack buffer,
      * we handle this as a list of maps.
      */
-    msgpack_pack_array(&ctx->mp_pck, 2);
-    msgpack_pack_uint64(&ctx->mp_pck, ts);
+    msgpack_pack_array(&i_ins->mp_pck, 2);
+    msgpack_pack_uint64(&i_ins->mp_pck, ts);
 
-    msgpack_pack_map(&ctx->mp_pck, 5);
-    msgpack_pack_bin(&ctx->mp_pck, 8);
-    msgpack_pack_bin_body(&ctx->mp_pck, "priority", 8);
-    msgpack_pack_char(&ctx->mp_pck, priority);
+    msgpack_pack_map(&i_ins->mp_pck, 5);
+    msgpack_pack_bin(&i_ins->mp_pck, 8);
+    msgpack_pack_bin_body(&i_ins->mp_pck, "priority", 8);
+    msgpack_pack_char(&i_ins->mp_pck, priority);
 
-    msgpack_pack_bin(&ctx->mp_pck, 8);
-    msgpack_pack_bin_body(&ctx->mp_pck, "sequence", 8);
-    msgpack_pack_uint64(&ctx->mp_pck, sequence);
+    msgpack_pack_bin(&i_ins->mp_pck, 8);
+    msgpack_pack_bin_body(&i_ins->mp_pck, "sequence", 8);
+    msgpack_pack_uint64(&i_ins->mp_pck, sequence);
 
-    msgpack_pack_bin(&ctx->mp_pck, 3);
-    msgpack_pack_bin_body(&ctx->mp_pck, "sec", 3);
-    msgpack_pack_uint64(&ctx->mp_pck, tv.tv_sec);
+    msgpack_pack_bin(&i_ins->mp_pck, 3);
+    msgpack_pack_bin_body(&i_ins->mp_pck, "sec", 3);
+    msgpack_pack_uint64(&i_ins->mp_pck, tv.tv_sec);
 
-    msgpack_pack_bin(&ctx->mp_pck, 4);
-    msgpack_pack_bin_body(&ctx->mp_pck, "usec", 4);
-    msgpack_pack_uint64(&ctx->mp_pck, tv.tv_usec);
+    msgpack_pack_bin(&i_ins->mp_pck, 4);
+    msgpack_pack_bin_body(&i_ins->mp_pck, "usec", 4);
+    msgpack_pack_uint64(&i_ins->mp_pck, tv.tv_usec);
 
-    msgpack_pack_bin(&ctx->mp_pck, 3);
-    msgpack_pack_bin_body(&ctx->mp_pck, "msg", 3);
-    msgpack_pack_bin(&ctx->mp_pck, line_len);
-    msgpack_pack_bin_body(&ctx->mp_pck, p, line_len);
+    msgpack_pack_bin(&i_ins->mp_pck, 3);
+    msgpack_pack_bin_body(&i_ins->mp_pck, "msg", 3);
+    msgpack_pack_bin(&i_ins->mp_pck, line_len);
+    msgpack_pack_bin_body(&i_ins->mp_pck, p, line_len);
 
     flb_trace("[in_kmsg] pri=%i seq=%" PRIu64 " ts=%ld sec=%ld usec=%ld '%s'",
               priority,
@@ -236,7 +211,8 @@ static inline int process_line(char *line, struct flb_in_kmsg_config *ctx)
 }
 
 /* Callback triggered when some Kernel Log buffer msgs are available */
-int in_kmsg_collect(struct flb_config *config, void *in_context)
+static int in_kmsg_collect(struct flb_input_instance *i_ins,
+                           struct flb_config *config, void *in_context)
 {
     int ret;
     int bytes;
@@ -262,7 +238,7 @@ int in_kmsg_collect(struct flb_config *config, void *in_context)
     }
 
     /* Process and enqueue the received line */
-    process_line(line, ctx);
+    process_line(line, i_ins, ctx);
 
     flb_stats_update(in_kmsg_plugin.stats_fd, bytes, 1);
     return 0;
@@ -310,10 +286,6 @@ int in_kmsg_init(struct flb_input_instance *in,
         flb_utils_error_c("Could not set collector for kmsg input plugin");
     }
 
-    /* initialize MessagePack buffers */
-    msgpack_sbuffer_init(&ctx->mp_sbuf);
-    msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
-
     return 0;
 }
 
@@ -325,8 +297,6 @@ static int in_kmsg_exit(void *data, struct flb_config *config)
     if (ctx->fd >= 0) {
         close(ctx->fd);
     }
-
-    msgpack_sbuffer_destroy(&ctx->mp_sbuf);
 
     flb_free(ctx);
     return 0;
@@ -340,6 +310,6 @@ struct flb_input_plugin in_kmsg_plugin = {
     .cb_init      = in_kmsg_init,
     .cb_pre_run   = NULL,
     .cb_collect   = in_kmsg_collect,
-    .cb_flush_buf = in_kmsg_flush,
+    .cb_flush_buf = NULL,
     .cb_exit      = in_kmsg_exit
 };
