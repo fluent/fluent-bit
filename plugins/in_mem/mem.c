@@ -38,13 +38,12 @@ struct flb_in_mem_config {
     int    idx;
     int    page_size;
     pid_t  pid;
-    msgpack_packer  pckr;
-    msgpack_sbuffer sbuf;
 };
 
 struct flb_input_plugin in_mem_plugin;
 
-static int in_mem_collect(struct flb_config *config, void *in_context);
+static int in_mem_collect(struct flb_input_instance *i_ins,
+                          struct flb_config *config, void *in_context);
 
 /* Locate a specific key into the buffer */
 static char *field(char *data, char *field)
@@ -157,10 +156,6 @@ static int in_mem_init(struct flb_input_instance *in,
         ctx->pid = atoi(tmp);
     }
 
-    /* Init msgpack buffers */
-    msgpack_sbuffer_init(&ctx->sbuf);
-    msgpack_packer_init(&ctx->pckr, &ctx->sbuf, msgpack_sbuffer_write);
-
     /* Set the context */
     flb_input_set_context(in, ctx);
 
@@ -177,7 +172,8 @@ static int in_mem_init(struct flb_input_instance *in,
     return 0;
 }
 
-static int in_mem_collect(struct flb_config *config, void *in_context)
+static int in_mem_collect(struct flb_input_instance *i_ins,
+                          struct flb_config *config, void *in_context)
 {
     int ret;
     int len;
@@ -213,30 +209,30 @@ static int in_mem_collect(struct flb_config *config, void *in_context)
         entries += 2;
     }
 
-    msgpack_pack_array(&ctx->pckr, 2);
-    msgpack_pack_uint64(&ctx->pckr, time(NULL));
-    msgpack_pack_map(&ctx->pckr, entries);
+    msgpack_pack_array(&i_ins->mp_pck, 2);
+    msgpack_pack_uint64(&i_ins->mp_pck, time(NULL));
+    msgpack_pack_map(&i_ins->mp_pck, entries);
 
-    msgpack_pack_bin(&ctx->pckr, 5);
-    msgpack_pack_bin_body(&ctx->pckr, "total", 5);
-    msgpack_pack_uint32(&ctx->pckr, total);
+    msgpack_pack_bin(&i_ins->mp_pck, 5);
+    msgpack_pack_bin_body(&i_ins->mp_pck, "total", 5);
+    msgpack_pack_uint32(&i_ins->mp_pck, total);
 
-    msgpack_pack_bin(&ctx->pckr, 4);
-    msgpack_pack_bin_body(&ctx->pckr, "free", 4);
-    msgpack_pack_uint32(&ctx->pckr, free);
+    msgpack_pack_bin(&i_ins->mp_pck, 4);
+    msgpack_pack_bin_body(&i_ins->mp_pck, "free", 4);
+    msgpack_pack_uint32(&i_ins->mp_pck, free);
 
     if (task) {
         /* RSS bytes */
-        msgpack_pack_bin(&ctx->pckr, 10);
-        msgpack_pack_bin_body(&ctx->pckr, "proc_bytes", 10);
-        msgpack_pack_uint64(&ctx->pckr, task->proc_rss);
+        msgpack_pack_bin(&i_ins->mp_pck, 10);
+        msgpack_pack_bin_body(&i_ins->mp_pck, "proc_bytes", 10);
+        msgpack_pack_uint64(&i_ins->mp_pck, task->proc_rss);
 
         /* RSS Human readable format */
         len = strlen(task->proc_rss_hr);
-        msgpack_pack_bin(&ctx->pckr, 7);
-        msgpack_pack_bin_body(&ctx->pckr, "proc_hr", 7);
-        msgpack_pack_str(&ctx->pckr, len);
-        msgpack_pack_str_body(&ctx->pckr, task->proc_rss_hr, len);
+        msgpack_pack_bin(&i_ins->mp_pck, 7);
+        msgpack_pack_bin_body(&i_ins->mp_pck, "proc_hr", 7);
+        msgpack_pack_str(&i_ins->mp_pck, len);
+        msgpack_pack_str_body(&i_ins->mp_pck, task->proc_rss_hr, len);
 
         proc_free(task);
     }
@@ -249,37 +245,10 @@ static int in_mem_collect(struct flb_config *config, void *in_context)
     return 0;
 }
 
-static void *in_mem_flush(void *in_context, size_t *size)
-{
-    char *buf;
-    struct flb_in_mem_config *ctx = in_context;
-
-    if (ctx->idx == 0) {
-        return NULL;
-    }
-
-    buf = flb_malloc(ctx->sbuf.size);
-    if (!buf) {
-        return NULL;
-    }
-
-    memcpy(buf, ctx->sbuf.data, ctx->sbuf.size);
-    *size = ctx->sbuf.size;
-    msgpack_sbuffer_destroy(&ctx->sbuf);
-    msgpack_sbuffer_init(&ctx->sbuf);
-    msgpack_packer_init(&ctx->pckr, &ctx->sbuf, msgpack_sbuffer_write);
-    ctx->idx = 0;
-
-    return buf;
-}
-
 static int in_mem_exit(void *data, struct flb_config *config)
 {
     (void) *config;
     struct flb_in_mem_config *ctx = data;
-
-    /* Remove msgpack buffer */
-    msgpack_sbuffer_destroy(&ctx->sbuf);
 
     /* done */
     flb_free(ctx);
@@ -293,6 +262,6 @@ struct flb_input_plugin in_mem_plugin = {
     .cb_init      = in_mem_init,
     .cb_pre_run   = NULL,
     .cb_collect   = in_mem_collect,
-    .cb_flush_buf = in_mem_flush,
+    .cb_flush_buf = NULL,
     .cb_exit      = in_mem_exit
 };
