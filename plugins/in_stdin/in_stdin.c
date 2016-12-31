@@ -74,7 +74,8 @@ int in_stdin_init(struct flb_input_instance *in,
     return 0;
 }
 
-int in_stdin_collect(struct flb_config *config, void *in_context)
+int in_stdin_collect(struct flb_input_instance *i_ins,
+                     struct flb_config *config, void *in_context)
 {
     int bytes = 0;
     int out_size;
@@ -107,11 +108,11 @@ int in_stdin_collect(struct flb_config *config, void *in_context)
     while (msgpack_unpack_next(&result, pack, out_size, &off)) {
         if (result.data.type == MSGPACK_OBJECT_MAP) {
             /* { map => val, map => val, map => val } */
-            msgpack_pack_array(&ctx->mp_pck, 2);
-            msgpack_pack_uint64(&ctx->mp_pck, time(NULL));
-            msgpack_pack_bin_body(&ctx->mp_pck, pack + start, off - start);
+            msgpack_pack_array(&i_ins->mp_pck, 2);
+            msgpack_pack_uint64(&i_ins->mp_pck, time(NULL));
+            msgpack_pack_bin_body(&i_ins->mp_pck, pack + start, off - start);
         } else {
-            msgpack_pack_bin_body(&ctx->mp_pck, pack + start, off - start);
+            msgpack_pack_bin_body(&i_ins->mp_pck, pack + start, off - start);
         }
         ctx->buffer_id++;
 
@@ -121,35 +122,6 @@ int in_stdin_collect(struct flb_config *config, void *in_context)
 
     flb_free(pack);
     return 0;
-}
-
-void *in_stdin_flush(void *in_context, size_t *size)
-{
-    char *buf;
-    msgpack_sbuffer *sbuf;
-    struct flb_in_stdin_config *ctx = in_context;
-
-    if (ctx->buffer_id == 0)
-        goto fail;
-
-    sbuf = &ctx->mp_sbuf;
-    *size = sbuf->size;
-    buf = flb_malloc(sbuf->size);
-    if (!buf)
-        goto fail;
-
-    /* set a new buffer and re-initialize our MessagePack context */
-    memcpy(buf, sbuf->data, sbuf->size);
-    msgpack_sbuffer_destroy(&ctx->mp_sbuf);
-    msgpack_sbuffer_init(&ctx->mp_sbuf);
-    msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
-
-    ctx->buffer_id = 0;
-
-    return buf;
-
-fail:
-    return NULL;
 }
 
 /* Cleanup serial input */
@@ -170,6 +142,6 @@ struct flb_input_plugin in_stdin_plugin = {
     .cb_init      = in_stdin_init,
     .cb_pre_run   = NULL,
     .cb_collect   = in_stdin_collect,
-    .cb_flush_buf = in_stdin_flush,
+    .cb_flush_buf = NULL,
     .cb_exit      = in_stdin_exit
 };
