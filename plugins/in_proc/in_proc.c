@@ -146,7 +146,8 @@ static int get_pid_status(pid_t pid)
     return ((ret != ESRCH)  && (ret != EPERM) && (ret != ESRCH));
 }
 
-static int collect_proc(struct flb_config *config, void *in_context)
+static int collect_proc(struct flb_input_instance *i_ins,
+                        struct flb_config *config, void *in_context)
 {
     uint8_t alive = FLB_FALSE;
     struct flb_in_proc_config *ctx = in_context;
@@ -164,45 +165,46 @@ static int collect_proc(struct flb_config *config, void *in_context)
     /*
      * Store the new data into the MessagePack buffer,
      */
-    msgpack_pack_array(&ctx->mp_pck, 2);
-    msgpack_pack_uint64(&ctx->mp_pck, time(NULL));
+    msgpack_pack_array(&i_ins->mp_pck, 2);
+    msgpack_pack_uint64(&i_ins->mp_pck, time(NULL));
 
     /* 3 = alive, proc_name, pid */
-    msgpack_pack_map(&ctx->mp_pck, 3);
+    msgpack_pack_map(&i_ins->mp_pck, 3);
 
     /* Status */
-    msgpack_pack_bin(&ctx->mp_pck, 5);
-    msgpack_pack_bin_body(&ctx->mp_pck, "alive", 5);
+    msgpack_pack_bin(&i_ins->mp_pck, 5);
+    msgpack_pack_bin_body(&i_ins->mp_pck, "alive", 5);
 
     if (alive) {
-        msgpack_pack_true(&ctx->mp_pck);
+        msgpack_pack_true(&i_ins->mp_pck);
     }
     else {
-        msgpack_pack_false(&ctx->mp_pck);
+        msgpack_pack_false(&i_ins->mp_pck);
     }
 
     /* proc name */
-    msgpack_pack_bin(&ctx->mp_pck, strlen("proc_name"));
-    msgpack_pack_bin_body(&ctx->mp_pck, "proc_name", strlen("proc_name"));
-    msgpack_pack_bin(&ctx->mp_pck, ctx->len_proc_name);
-    msgpack_pack_bin_body(&ctx->mp_pck, ctx->proc_name, ctx->len_proc_name);
+    msgpack_pack_bin(&i_ins->mp_pck, strlen("proc_name"));
+    msgpack_pack_bin_body(&i_ins->mp_pck, "proc_name", strlen("proc_name"));
+    msgpack_pack_bin(&i_ins->mp_pck, ctx->len_proc_name);
+    msgpack_pack_bin_body(&i_ins->mp_pck, ctx->proc_name, ctx->len_proc_name);
 
     /* pid */
-    msgpack_pack_bin(&ctx->mp_pck, strlen("pid"));
-    msgpack_pack_bin_body(&ctx->mp_pck, "pid", strlen("pid"));
-    msgpack_pack_int64(&ctx->mp_pck, ctx->pid);
+    msgpack_pack_bin(&i_ins->mp_pck, strlen("pid"));
+    msgpack_pack_bin_body(&i_ins->mp_pck, "pid", strlen("pid"));
+    msgpack_pack_int64(&i_ins->mp_pck, ctx->pid);
 
     return 0;
 }
 
-static int in_proc_collect(struct flb_config *config, void *in_context)
+static int in_proc_collect(struct flb_input_instance *i_ins,
+                           struct flb_config *config, void *in_context)
 {
     struct flb_in_proc_config *ctx = in_context;
 
     if (ctx->proc_name != NULL){
-        collect_proc(config, in_context);
+        collect_proc(i_ins, config, in_context);
     }
-    
+
     return 0;
 }
 
@@ -232,10 +234,6 @@ static int in_proc_init(struct flb_input_instance *in,
         return -1;
     }
 
-    /* initialize MessagePack buffers */
-    msgpack_sbuffer_init(&ctx->mp_sbuf);
-    msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
-
     /* Set the context */
     flb_input_set_context(in, ctx);
 
@@ -252,39 +250,12 @@ static int in_proc_init(struct flb_input_instance *in,
     return 0;
 }
 
-static void *in_proc_flush(void *in_context, size_t *size)
-{
-    char *buf = NULL;
-    msgpack_sbuffer *sbuf = NULL;
-    struct flb_in_proc_config *ctx = in_context;
-
-    sbuf = &ctx->mp_sbuf;
-    *size = sbuf->size;
-    if (sbuf->size <= 0) {
-        return NULL;
-    }
-
-    buf = flb_malloc(sbuf->size);
-    if (!buf) {
-        return NULL;
-    }
-
-    /* set a new buffer and re-initialize our MessagePack context */
-    memcpy(buf, sbuf->data, sbuf->size);
-    msgpack_sbuffer_destroy(&ctx->mp_sbuf);
-    msgpack_sbuffer_init(&ctx->mp_sbuf);
-    msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
-
-    return buf;
-}
-
 static int in_proc_exit(void *data, struct flb_config *config)
 {
     (void) *config;
     struct flb_in_proc_config *ctx = data;
 
-    /* Remove msgpack buffer and destroy context */
-    msgpack_sbuffer_destroy(&ctx->mp_sbuf);
+    /* Destroy context */
     flb_free(ctx->proc_name);
     flb_free(ctx);
 
@@ -298,7 +269,7 @@ struct flb_input_plugin in_proc_plugin = {
     .cb_init      = in_proc_init,
     .cb_pre_run   = NULL,
     .cb_collect   = in_proc_collect,
-    .cb_flush_buf = in_proc_flush,
+    .cb_flush_buf = NULL,
     .cb_exit      = in_proc_exit,
     .flags        = 0,
 };

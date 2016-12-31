@@ -41,10 +41,6 @@ struct flb_in_proc_config {
     /* Time interval check */
     int interval_sec;
     int interval_nsec;
-
-    /* MessagePack buffers */
-    msgpack_packer  mp_pck;
-    msgpack_sbuffer mp_sbuf;
 };
 
 extern struct flb_input_plugin in_proc_plugin;
