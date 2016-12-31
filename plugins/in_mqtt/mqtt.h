@@ -23,16 +23,18 @@
 #define MQTT_MSGP_BUF_SIZE 8192
 
 struct flb_in_mqtt_config {
-    int server_fd;                 /* TCP server file descriptor  */
+    int server_fd;                     /* TCP server file descriptor  */
 
-    char *listen;                  /* Listen interface            */
-    char *tcp_port;                /* TCP Port                    */
+    char *listen;                      /* Listen interface            */
+    char *tcp_port;                    /* TCP Port                    */
 
-    int msgp_len;                  /* msgpack data length         */
-    char msgp[MQTT_MSGP_BUF_SIZE]; /* msgpack static buffer       */
-    struct mk_event_loop *evl;     /* Event loop file descriptor  */
+    int msgp_len;                      /* msgpack data length         */
+    char msgp[MQTT_MSGP_BUF_SIZE];     /* msgpack static buffer       */
+    struct flb_input_instance *i_ins;  /* plugin input instance       */
+    struct mk_event_loop *evl;         /* Event loop file descriptor  */
 };
 
-int in_mqtt_collect(struct flb_config *config, void *in_context);
+int in_mqtt_collect(struct flb_input_instance *i_ins,
+                    struct flb_config *config, void *in_context);
 
 #endif

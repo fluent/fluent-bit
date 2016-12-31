@@ -116,13 +116,9 @@ static int mqtt_data_append(char *topic, size_t topic_len,
     int ret;
     int n_size;
     size_t off = 0;
-    char *buf;
     char *pack;
-    msgpack_sbuffer *sbuf;
     msgpack_object root;
     msgpack_unpacked result;
-    struct msgpack_sbuffer mp_sbuf;
-    struct msgpack_packer mp_pck;
     struct flb_in_mqtt_config *ctx = in_context;
 
     /* Convert our incoming JSON to MsgPack */
@@ -131,10 +127,6 @@ static int mqtt_data_append(char *topic, size_t topic_len,
         flb_warn("MQTT Packet incomplete or is not JSON");
         return -1;
     }
-
-    /* Convert MsgPack to internal representation */
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
     off = 0;
     msgpack_unpacked_init(&result);
@@ -149,43 +141,23 @@ static int mqtt_data_append(char *topic, size_t topic_len,
     }
     root = result.data;
 
-    msgpack_pack_array(&mp_pck, 2);
-    msgpack_pack_int32(&mp_pck, time(NULL));
+    msgpack_pack_array(&ctx->i_ins->mp_pck, 2);
+    msgpack_pack_int32(&ctx->i_ins->mp_pck, time(NULL));
 
     n_size = root.via.map.size;
-    msgpack_pack_map(&mp_pck, n_size + 1);
-    msgpack_pack_bin(&mp_pck, 5);
-    msgpack_pack_bin_body(&mp_pck, "topic", 5);
-    msgpack_pack_bin(&mp_pck, topic_len);
-    msgpack_pack_bin_body(&mp_pck, topic, topic_len);
+    msgpack_pack_map(&ctx->i_ins->mp_pck, n_size + 1);
+    msgpack_pack_bin(&ctx->i_ins->mp_pck, 5);
+    msgpack_pack_bin_body(&ctx->i_ins->mp_pck, "topic", 5);
+    msgpack_pack_bin(&ctx->i_ins->mp_pck, topic_len);
+    msgpack_pack_bin_body(&ctx->i_ins->mp_pck, topic, topic_len);
 
     /* Re-pack original KVs */
     for (i = 0; i < n_size; i++) {
-        msgpack_pack_object(&mp_pck, root.via.map.ptr[i].key);
-        msgpack_pack_object(&mp_pck, root.via.map.ptr[i].val);
+        msgpack_pack_object(&ctx->i_ins->mp_pck, root.via.map.ptr[i].key);
+        msgpack_pack_object(&ctx->i_ins->mp_pck, root.via.map.ptr[i].val);
     }
     msgpack_unpacked_destroy(&result);
-
     flb_free(pack);
-    sbuf = &mp_sbuf;
-    buf = flb_malloc(sbuf->size);
-    if (!buf) {
-        return -1;
-    }
-
-    /* set a new buffer and re-initialize our MessagePack context */
-    out = sbuf->size;
-    memcpy(buf, sbuf->data, sbuf->size);
-    msgpack_sbuffer_destroy(&mp_sbuf);
-
-    if (ctx->msgp_len + out <= MQTT_MSGP_BUF_SIZE ) {
-        memcpy(ctx->msgp + ctx->msgp_len, buf, out);
-        ctx->msgp_len += out;
-    }
-    else{
-    }
-    flb_free(buf);
-
     return 0;
 }
 

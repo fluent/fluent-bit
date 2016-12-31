@@ -26,8 +26,8 @@
 #include "mqtt_config.h"
 
 /* Initialize plugin */
-int in_mqtt_init(struct flb_input_instance *in,
-                 struct flb_config *config, void *data)
+static int in_mqtt_init(struct flb_input_instance *in,
+                        struct flb_config *config, void *data)
 {
     int ret;
     struct flb_in_mqtt_config *ctx;
@@ -55,6 +55,7 @@ int in_mqtt_init(struct flb_input_instance *in,
         return -1;
     }
     ctx->evl = config->evl;
+    ctx->i_ins = in;
 
     /* Collect upon data available on the standard input */
     ret = flb_input_set_collector_event(in,
@@ -70,29 +71,13 @@ int in_mqtt_init(struct flb_input_instance *in,
     return 0;
 }
 
-void *in_mqtt_flush(void *in_context, size_t *size)
-{
-    char *buf;
-    struct flb_in_mqtt_config *ctx = in_context;
-
-    if (ctx->msgp_len <= 0) {
-        return NULL;
-    }
-
-    buf = flb_malloc(ctx->msgp_len);
-    memcpy(buf, ctx->msgp, ctx->msgp_len);
-    *size = ctx->msgp_len;
-    ctx->msgp_len = 0;
-
-    return buf;
-}
-
 /*
  * For a server event, the collection event means a new client have arrived, we
  * accept the connection and create a new MQTT instance which will wait for
  * events/data (MQTT control packages)
  */
-int in_mqtt_collect(struct flb_config *config, void *in_context)
+int in_mqtt_collect(struct flb_input_instance *i_ins,
+                    struct flb_config *config, void *in_context)
 {
     int fd;
     struct flb_in_mqtt_config *ctx = in_context;
@@ -130,7 +115,7 @@ struct flb_input_plugin in_mqtt_plugin = {
     .cb_init      = in_mqtt_init,
     .cb_pre_run   = NULL,
     .cb_collect   = in_mqtt_collect,
-    .cb_flush_buf = in_mqtt_flush,
+    .cb_flush_buf = NULL,
     .cb_exit      = in_mqtt_exit,
     .flags        = FLB_INPUT_NET,
 };
