@@ -166,7 +166,10 @@ int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
         in->tag_len = strlen(v);
     }
     else if (in->p->flags & FLB_INPUT_NET) {
-        if (prop_key_check("host", k, len) == 0) {
+        if (prop_key_check("listen", k, len) == 0) {
+            in->host.listen = flb_strdup(v);
+        }
+        else if (prop_key_check("host", k, len) == 0) {
             in->host.name   = flb_strdup(v);
         }
         else if (prop_key_check("port", k, len) == 0) {
