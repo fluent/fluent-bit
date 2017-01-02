@@ -26,43 +26,13 @@
 #include "tcp_conn.h"
 #include "tcp_config.h"
 
-static void *in_tcp_flush(void *in_context, size_t *size)
-{
-    char *buf;
-    msgpack_sbuffer *sbuf;
-    struct flb_in_tcp_config *ctx = in_context;
-
-
-    sbuf = &ctx->mp_sbuf;
-
-    /* Check for valid buffer */
-    if (ctx->buffer_id == 0 || sbuf->size <= 0) {
-        return NULL;
-    }
-
-    *size = sbuf->size;
-    buf = flb_malloc(sbuf->size);
-    if (!buf) {
-        return NULL;
-    }
-
-    /* set a new buffer and re-initialize our MessagePack context */
-    memcpy(buf, sbuf->data, sbuf->size);
-    msgpack_sbuffer_destroy(&ctx->mp_sbuf);
-    msgpack_sbuffer_init(&ctx->mp_sbuf);
-    msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
-
-    ctx->buffer_id = 0;
-
-    return buf;
-}
-
 /*
  * For a server event, the collection event means a new client have arrived, we
  * accept the connection and create a new TCP instance which will wait for
  * JSON map messages.
  */
-static int in_tcp_collect(struct flb_config *config, void *in_context)
+static int in_tcp_collect(struct flb_input_instance *in,
+                          struct flb_config *config, void *in_context)
 {
     int fd;
     struct flb_in_tcp_config *ctx = in_context;
@@ -116,11 +86,6 @@ static int in_tcp_init(struct flb_input_instance *in,
     flb_net_socket_nonblocking(ctx->server_fd);
 
     ctx->evl = config->evl;
-    ctx->buffer_id = 0;
-
-    /* Initialize MessagePack buffers */
-    msgpack_sbuffer_init(&ctx->mp_sbuf);
-    msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
 
     /* Collect upon data available on the standard input */
     ret = flb_input_set_collector_socket(in,
@@ -147,7 +112,6 @@ static int in_tcp_exit(void *data, struct flb_config *config)
         tcp_conn_del(conn);
     }
 
-    msgpack_sbuffer_destroy(&ctx->mp_sbuf);
     tcp_config_destroy(ctx);
     return 0;
 }
@@ -159,7 +123,7 @@ struct flb_input_plugin in_tcp_plugin = {
     .cb_init      = in_tcp_init,
     .cb_pre_run   = NULL,
     .cb_collect   = in_tcp_collect,
-    .cb_flush_buf = in_tcp_flush,
+    .cb_flush_buf = NULL,
     .cb_exit      = in_tcp_exit,
     .flags        = FLB_INPUT_NET,
 };

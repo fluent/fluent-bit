@@ -37,24 +37,19 @@ static inline int process_pack(struct tcp_conn *conn,
     size_t off = 0;
     msgpack_unpacked result;
     msgpack_object entry;
-    struct flb_in_tcp_config *ctx;
-
-    ctx = conn->ctx;
 
     /* First pack the results, iterate concatenated messages */
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, pack, size, &off)) {
         entry = result.data;
 
-        msgpack_pack_array(&ctx->mp_pck, 2);
-        msgpack_pack_uint64(&ctx->mp_pck, time(NULL));
+        msgpack_pack_array(&conn->in->mp_pck, 2);
+        msgpack_pack_uint64(&conn->in->mp_pck, time(NULL));
 
-        msgpack_pack_map(&ctx->mp_pck, 1);
-        msgpack_pack_bin(&ctx->mp_pck, 3);
-        msgpack_pack_bin_body(&ctx->mp_pck, "msg", 3);
-        msgpack_pack_object(&ctx->mp_pck, entry);
-
-        ctx->buffer_id++;
+        msgpack_pack_map(&conn->in->mp_pck, 1);
+        msgpack_pack_bin(&conn->in->mp_pck, 3);
+        msgpack_pack_bin_body(&conn->in->mp_pck, "msg", 3);
+        msgpack_pack_object(&conn->in->mp_pck, entry);
     }
 
     msgpack_unpacked_destroy(&result);

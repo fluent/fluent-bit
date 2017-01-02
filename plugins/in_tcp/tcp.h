@@ -24,20 +24,14 @@
 #include <fluent-bit/flb_input.h>
 
 struct flb_in_tcp_config {
-    int server_fd;               /* TCP server file descriptor  */
-    int buffer_id;
-    size_t buffer_size;          /* Buffer size for each reader */
-    size_t chunk_size;           /* Chunk allocation size       */
-    char *listen;                /* Listen interface            */
-    char *tcp_port;              /* TCP Port                    */
-
-    /* MessagePack buffers */
-    msgpack_packer  mp_pck;
-    msgpack_sbuffer mp_sbuf;
-
-    struct mk_list connections;  /* List of active connections */
-    struct mk_event_loop *evl;      /* Event loop file descriptor */
-    struct flb_input_instance *in;  /* Input plugin instace       */
+    int server_fd;                 /* TCP server file descriptor  */
+    size_t buffer_size;            /* Buffer size for each reader */
+    size_t chunk_size;             /* Chunk allocation size       */
+    char *listen;                  /* Listen interface            */
+    char *tcp_port;                /* TCP Port                    */
+    struct mk_list connections;    /* List of active connections  */
+    struct mk_event_loop *evl;     /* Event loop file descriptor  */
+    struct flb_input_instance *in; /* Input plugin instace        */
 };
 
 #endif
