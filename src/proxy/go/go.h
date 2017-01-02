@@ -23,8 +23,10 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_plugin_proxy.h>
 
-int proxy_go_start(struct flb_plugin_proxy *proxy,
-                   struct flb_plugin_proxy_def *def);
+int proxy_go_register(struct flb_plugin_proxy *proxy,
+                      struct flb_plugin_proxy_def *def);
+
+int proxy_go_init(struct flb_plugin_proxy *proxy);
 
 int proxy_go_flush(struct flb_plugin_proxy *proxy, void *data, size_t size,
                    char *tag);

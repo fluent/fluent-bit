@@ -29,21 +29,26 @@
  * ------------------------start------------------------------------------------
  */
 
-/* Go Plugin initialization:
-
-   1. FLBPluginInit(some context)
-   2. Iniside FLBPluginInit, it needs to register it self using Fluent Bit API
-      where it basically set:
-
-      - name: shortname of the plugin.
-      - description: plugin description.
-      - type: input, output, filter, whatever.
-      - flags: optional flags, not used by Go plugins at the moment.
-
-      this is done through Go Wrapper:
-
-        FLBPluginRegister(ctx, name, description, type, flags);
+/*
+ * Go Plugin phases
+ * ================
+ *
+ *  1. FLBPluginRegister(context)
+ *  2. Inside FLBPluginRegister, it needs to register it self using Fluent Bit API
+ *     where it basically set:
+ *
+ *      - name: shortname of the plugin.
+ *      - description: plugin description.
+ *      - type: input, output, filter, whatever.
+ *      - flags: optional flags, not used by Go plugins at the moment.
+ *
+ *     this is done through Go Wrapper:
+ *
+ *      output.FLBPluginRegister(ctx, name, description, type, flags);
+ *
+ * 3. Plugin Initialization
  */
+
 struct flbgo_plugin {
     char *name;
     int (*cb_init)(struct flbgo_plugin *);
@@ -54,11 +59,12 @@ struct flbgo_output_plugin {
     int (*cb_init)();
     int (*cb_flush)(void *, size_t, char *);
     int (*cb_exit)(void *);
+    void *o_ins;
 };
 /*------------------------EOF------------------------------------------------*/
 
-int proxy_go_start(struct flb_plugin_proxy *proxy,
-                   struct flb_plugin_proxy_def *def)
+int proxy_go_register(struct flb_plugin_proxy *proxy,
+                      struct flb_plugin_proxy_def *def)
 {
     int ret;
     struct flbgo_output_plugin *plugin;
@@ -68,7 +74,17 @@ int proxy_go_start(struct flb_plugin_proxy *proxy,
         return -1;
     }
 
-    /* Lookup the entry point function */
+    /*
+     * Lookup the entry point function:
+     *
+     * - FLBPluginInit
+     * - FLBPluginFlush
+     * - FLBPluginExit
+     *
+     * note: registration callback FLBPluginRegister() is resoved by the
+     * parent proxy interface.
+     */
+
     plugin->cb_init  = flb_plugin_proxy_symbol(proxy, "FLBPluginInit");
     if (!plugin->cb_init) {
         fprintf(stderr, "[go proxy]: could not load FLBPluginInit symbol\n");
@@ -76,7 +92,19 @@ int proxy_go_start(struct flb_plugin_proxy *proxy,
         return -1;
     }
 
-    /* Initialize the plugin, we expect the Go code perform the registration */
+    plugin->name     = flb_strdup(def->name);
+    plugin->cb_flush = flb_plugin_proxy_symbol(proxy, "FLBPluginFlush");
+    plugin->cb_exit  = flb_plugin_proxy_symbol(proxy, "FLBPluginExit");
+    proxy->data      = plugin;
+
+    return 0;
+}
+
+int proxy_go_init(struct flb_plugin_proxy *proxy)
+{
+    int ret;
+    struct flbgo_output_plugin *plugin = proxy->data;
+
     ret = plugin->cb_init(plugin);
     if (ret == -1) {
         fprintf(stderr, "[go proxy]: plugin failed to initialize\n");
@@ -84,11 +112,6 @@ int proxy_go_start(struct flb_plugin_proxy *proxy,
         return -1;
     }
 
-    plugin->name     = flb_strdup(def->name);
-    plugin->cb_flush = flb_plugin_proxy_symbol(proxy, "FLBPluginFlush");
-    plugin->cb_exit  = flb_plugin_proxy_symbol(proxy, "FLBPluginExit");
-
-    proxy->data = plugin;
     return 0;
 }
 

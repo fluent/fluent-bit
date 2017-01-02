@@ -56,6 +56,12 @@ struct flb_plugin_proxy {
 void *flb_plugin_proxy_symbol(struct flb_plugin_proxy *proxy,
                               const char *symbol);
 
+int flb_plugin_proxy_init(struct flb_plugin_proxy *proxy,
+                          struct flb_config *config);
+
+int flb_plugin_proxy_register(struct flb_plugin_proxy *proxy,
+                              struct flb_config *config);
+
 struct flb_plugin_proxy *flb_plugin_proxy_create(const char *dso_path, int type,
                                                  struct flb_config *config);
 int flb_plugin_proxy_load_all(struct flb_config *config);

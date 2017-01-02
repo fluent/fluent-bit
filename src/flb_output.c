@@ -172,69 +172,72 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
 
     mk_list_foreach(head, &config->out_plugins) {
         plugin = mk_list_entry(head, struct flb_output_plugin, _head);
-        if (!check_protocol(plugin->name, output)) {
-            continue;
+        if (check_protocol(plugin->name, output)) {
+            break;
         }
+        plugin = NULL;
+    }
 
-        /* Output instance */
-        instance = flb_calloc(1, sizeof(struct flb_output_instance));
-        if (!instance) {
-            perror("malloc");
-            return NULL;
-        }
+    if (!plugin) {
+        return NULL;
+    }
 
-        /*
-         * Set mask_id: the mask_id is an unique number assigned to this
-         * output instance that is used later to set in an 'unsigned 64
-         * bit number' where a specific task (buffer/records) should be
-         * routed.
-         */
-        if (mask_id == 0) {
-            instance->mask_id = 1;
-        }
-        else {
-            instance->mask_id = (mask_id * 2);
-        }
+    /* Create and load instance */
+    instance = flb_calloc(1, sizeof(struct flb_output_instance));
+    if (!instance) {
+        perror("malloc");
+        return NULL;
+    }
 
-        /* format name (with instance id) */
-        snprintf(instance->name, sizeof(instance->name) - 1,
-                 "%s.%i", plugin->name, instance_id(plugin, config));
-        instance->p = plugin;
+    /*
+     * Set mask_id: the mask_id is an unique number assigned to this
+     * output instance that is used later to set in an 'unsigned 64
+     * bit number' where a specific task (buffer/records) should be
+     * routed.
+     */
+    if (mask_id == 0) {
+        instance->mask_id = 1;
+    }
+    else {
+        instance->mask_id = (mask_id * 2);
+    }
 
-        if (plugin->type == FLB_OUTPUT_PLUGIN_CORE) {
-            instance->context = NULL;
-        }
-        else {
-            instance->context = plugin->proxy;
-        }
-        instance->data        = data;
-        instance->upstream    = NULL;
-        instance->match       = NULL;
-        instance->retry_limit = 1;
-        instance->host.name   = NULL;
+    /* format name (with instance id) */
+    snprintf(instance->name, sizeof(instance->name) - 1,
+             "%s.%i", plugin->name, instance_id(plugin, config));
+    instance->p = plugin;
 
-        instance->use_tls        = FLB_FALSE;
+    if (plugin->type == FLB_OUTPUT_PLUGIN_CORE) {
+        instance->context = NULL;
+    }
+    else {
+        instance->context = plugin->proxy;
+    }
+    instance->data        = data;
+    instance->upstream    = NULL;
+    instance->match       = NULL;
+    instance->retry_limit = 1;
+    instance->host.name   = NULL;
+
+    instance->use_tls        = FLB_FALSE;
 #ifdef FLB_HAVE_TLS
-        instance->tls.context    = NULL;
-        instance->tls_verify     = FLB_TRUE;
-        instance->tls_ca_file    = NULL;
-        instance->tls_crt_file   = NULL;
-        instance->tls_key_file   = NULL;
-        instance->tls_key_passwd = NULL;
+    instance->tls.context    = NULL;
+    instance->tls_verify     = FLB_TRUE;
+    instance->tls_ca_file    = NULL;
+    instance->tls_crt_file   = NULL;
+    instance->tls_key_file   = NULL;
+    instance->tls_key_passwd = NULL;
 #endif
 
-        if (plugin->flags & FLB_OUTPUT_NET) {
-            ret = flb_net_host_set(plugin->name, &instance->host, output);
-            if (ret != 0) {
-                flb_free(instance);
-                return NULL;
-            }
+    if (plugin->flags & FLB_OUTPUT_NET) {
+        ret = flb_net_host_set(plugin->name, &instance->host, output);
+        if (ret != 0) {
+            flb_free(instance);
+            return NULL;
         }
-
-        mk_list_init(&instance->properties);
-        mk_list_add(&instance->_head, &config->outputs);
-        break;
     }
+    mk_list_init(&instance->properties);
+    mk_list_add(&instance->_head, &config->outputs);
 
     return instance;
 }
@@ -328,6 +331,7 @@ int flb_output_init(struct flb_config *config)
     struct mk_list *head;
     struct flb_output_instance *ins;
     struct flb_output_plugin *p;
+    struct flb_plugin_proxy *proxy;
 
     /* We need at least one output */
     if (mk_list_is_empty(&config->outputs) == 0) {
@@ -339,6 +343,12 @@ int flb_output_init(struct flb_config *config)
         ins = mk_list_entry(head, struct flb_output_instance, _head);
         p = ins->p;
 
+        if (p->type == FLB_OUTPUT_PLUGIN_PROXY) {
+            flb_plugin_proxy_init(p->proxy, config);
+            continue;
+        }
+
+
 #ifdef FLB_HAVE_TLS
         if (p->flags & FLB_IO_TLS && ins->use_tls) {
             ins->tls.context = flb_tls_context_new(ins->tls_verify,
@@ -348,10 +358,6 @@ int flb_output_init(struct flb_config *config)
                                                    ins->tls_key_passwd);
         }
 #endif
-
-        if (p->type != FLB_OUTPUT_PLUGIN_CORE) {
-            continue;
-        }
 
         ret = p->cb_init(ins, config, ins->data);
         mk_list_init(&ins->th_queue);
@@ -367,6 +373,14 @@ int flb_output_init(struct flb_config *config)
         //stats->n = -1;
 #endif
     }
+
+    /* Iterate list of proxies plugins */
+    mk_list_foreach(head, &config->proxies) {
+        //proxy = mk_list_entry(head, struct flb_plugin_proxy, _head);
+        //flb_plugin_proxy_init(proxy, config);
+        //printf("load proxy name = %s\n", proxy->name);
+    }
+
 
     return 0;
 }

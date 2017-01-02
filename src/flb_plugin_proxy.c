@@ -31,11 +31,11 @@
 /* Proxies */
 #include "proxy/go/go.h"
 
-static void proxy_cb_flush(void *data, size_t bytes,
-                           char *tag, int tag_len,
-                           struct flb_input_instance *i_ins,
-                           void *out_context,
-                           struct flb_config *config)
+static void flb_proxy_cb_flush(void *data, size_t bytes,
+                               char *tag, int tag_len,
+                               struct flb_input_instance *i_ins,
+                               void *out_context,
+                               struct flb_config *config)
 {
     int ret = FLB_ERROR;
     struct flb_plugin_proxy *p = out_context;
@@ -60,9 +60,9 @@ static void proxy_cb_flush(void *data, size_t bytes,
 }
 
 
-static int proxy_register_output(struct flb_plugin_proxy *proxy,
-                                 struct flb_plugin_proxy_def *def,
-                                 struct flb_config *config)
+static int flb_proxy_register_output(struct flb_plugin_proxy *proxy,
+                                     struct flb_plugin_proxy_def *def,
+                                     struct flb_config *config)
 {
     struct flb_output_plugin *out;
 
@@ -83,10 +83,9 @@ static int proxy_register_output(struct flb_plugin_proxy *proxy,
     /*
      * Set proxy callbacks: external plugins which are not following
      * the core plugins specs, have a different callback approach, so
-     * we put our proxy-middle callbacks to do the translatation properly.
-     *
+     * we put our proxy-middle callbacks to do the translation properly.
      */
-    out->cb_flush    = proxy_cb_flush;
+    out->cb_flush = flb_proxy_cb_flush;
     return 0;
 }
 
@@ -103,15 +102,15 @@ void *flb_plugin_proxy_symbol(struct flb_plugin_proxy *proxy,
     return s;
 }
 
-int flb_plugin_proxy_load(struct flb_plugin_proxy *proxy,
-                          struct flb_config *config)
+int flb_plugin_proxy_register(struct flb_plugin_proxy *proxy,
+                              struct flb_config *config)
 {
     int ret;
-    int (*cb_init)(struct flb_plugin_proxy_def *);
+    int (*cb_register)(struct flb_plugin_proxy_def *);
     struct flb_plugin_proxy_def *def;
 
-    /* Lookup initializator callback */
-    cb_init = flb_plugin_proxy_symbol(proxy, "FLBPluginInit");
+    /* Lookup the registration callback */
+    cb_register = flb_plugin_proxy_symbol(proxy, "FLBPluginRegister");
 
     /* Create a temporal definition used for registration */
     def = flb_malloc(sizeof(struct flb_plugin_proxy_def));
@@ -120,7 +119,7 @@ int flb_plugin_proxy_load(struct flb_plugin_proxy *proxy,
     }
 
     /* Call the initializator */
-    ret = cb_init(def);
+    ret = cb_register(def);
     if (ret == -1) {
         flb_free(def);
         return -1;
@@ -130,7 +129,7 @@ int flb_plugin_proxy_load(struct flb_plugin_proxy *proxy,
     ret = -1;
     if (def->proxy == FLB_PROXY_GOLANG) {
 #ifdef FLB_HAVE_PROXY_GO
-        ret = proxy_go_start(proxy, def);
+        ret = proxy_go_register(proxy, def);
 #endif
     }
 
@@ -141,11 +140,30 @@ int flb_plugin_proxy_load(struct flb_plugin_proxy *proxy,
          */
         if (def->type == FLB_PROXY_OUTPUT_PLUGIN) {
             proxy->proxy = def->proxy;
-            proxy_register_output(proxy, def, config);
+            flb_proxy_register_output(proxy, def, config);
         }
     }
 
     return 0;
+}
+
+int flb_plugin_proxy_init(struct flb_plugin_proxy *proxy,
+                          struct flb_config *config)
+{
+    int ret = -1;
+
+    /* Based on 'proxy', use the proper handler */
+    if (proxy->proxy == FLB_PROXY_GOLANG) {
+#ifdef FLB_HAVE_PROXY_GO
+        ret = proxy_go_init(proxy);
+#endif
+    }
+    else {
+        fprintf(stderr, "[proxy] unrecognized proxy handler %i\n",
+                proxy->proxy);
+    }
+
+    return ret;
 }
 
 struct flb_plugin_proxy *flb_plugin_proxy_create(const char *dso_path, int type,
@@ -169,13 +187,14 @@ struct flb_plugin_proxy *flb_plugin_proxy_create(const char *dso_path, int type,
         return NULL;
     }
 
-    /* Set fields */
+    /* Set fields and add it to the list */
     proxy->type        = type;
     proxy->dso_handler = handle;
     proxy->data        = NULL;
     mk_list_add(&proxy->_head, &config->proxies);
 
-    flb_plugin_proxy_load(proxy, config);
+    /* Register plugin */
+    flb_plugin_proxy_register(proxy, config);
 
     return proxy;
 }
