@@ -156,7 +156,18 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
         }
     }
     else {
-        buf = flb_input_flush(in, &size);
+        /*
+         * Check the source of the buffer, input plugins still can have their
+         * own msgpack buffers.
+         */
+        if (p->cb_flush_buf) {
+            buf = p->cb_flush_buf(in, &size);
+        }
+        else {
+            /* Use instance buffers */
+            buf = flb_input_flush(in, &size);
+        }
+
         if (!buf || size == 0) {
             return 0;
         }
