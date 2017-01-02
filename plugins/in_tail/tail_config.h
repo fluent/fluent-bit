@@ -33,10 +33,6 @@ struct flb_tail_config {
     char *path;                /* lookup path (glob)           */
     char *exclude_path;        /* exclude path                 */
 
-    /* MessagePack buffers */
-    msgpack_packer   mp_pck;
-    msgpack_sbuffer  mp_sbuf;
-
     /* Database */
     struct flb_sqldb *db;
 
@@ -49,6 +45,9 @@ struct flb_tail_config {
 
     /* List of shell patterns used to exclude certain file names */
     struct mk_list *exclude_list;
+
+    /* Plugin input instance */
+    struct flb_input_instance *i_ins;
 };
 
 struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,

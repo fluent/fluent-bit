@@ -40,6 +40,7 @@ void flb_tail_file_remove(struct flb_tail_file *file);
 int flb_tail_file_remove_all(struct flb_tail_config *ctx);
 char *flb_tail_file_name(struct flb_tail_file *file);
 int flb_tail_file_rotated(struct flb_tail_file *file);
-int flb_tail_file_rotated_purge(struct flb_config *config, void *context);
+int flb_tail_file_rotated_purge(struct flb_input_instance *i_ins,
+                                struct flb_config *config, void *context);
 
 #endif

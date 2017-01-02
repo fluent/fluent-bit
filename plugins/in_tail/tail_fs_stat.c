@@ -37,7 +37,8 @@ struct fs_stat {
     struct stat st;
 };
 
-static int tail_fs_event(struct flb_config *config, void *in_context)
+static int tail_fs_event(struct flb_input_instance *i_ins,
+                         struct flb_config *config, void *in_context)
 {
     int ret;
     struct mk_list *head;
@@ -75,7 +76,8 @@ static int tail_fs_event(struct flb_config *config, void *in_context)
     return 0;
 }
 
-static int tail_fs_check(struct flb_config *config, void *in_context)
+static int tail_fs_check(struct flb_input_instance *i_ins,
+                         struct flb_config *config, void *in_context)
 {
     int ret;
     char *name;

@@ -41,14 +41,14 @@ static inline int pack_line(time_t time, char *line,
 {
     struct flb_tail_config *ctx = file->config;
 
-    msgpack_pack_array(&ctx->mp_pck, 2);
-    msgpack_pack_uint64(&ctx->mp_pck, time);
+    msgpack_pack_array(&ctx->i_ins->mp_pck, 2);
+    msgpack_pack_uint64(&ctx->i_ins->mp_pck, time);
 
-    msgpack_pack_map(&ctx->mp_pck, 1);
-    msgpack_pack_bin(&ctx->mp_pck, 3);
-    msgpack_pack_bin_body(&ctx->mp_pck, "log", 3);
-    msgpack_pack_bin(&ctx->mp_pck, line_len);
-    msgpack_pack_bin_body(&ctx->mp_pck, line, line_len);
+    msgpack_pack_map(&ctx->i_ins->mp_pck, 1);
+    msgpack_pack_bin(&ctx->i_ins->mp_pck, 3);
+    msgpack_pack_bin_body(&ctx->i_ins->mp_pck, "log", 3);
+    msgpack_pack_bin(&ctx->i_ins->mp_pck, line_len);
+    msgpack_pack_bin_body(&ctx->i_ins->mp_pck, line, line_len);
 
     return 0;
 }
@@ -385,7 +385,8 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
     return 0;
 }
 
-int flb_tail_file_rotated_purge(struct flb_config *config, void *context)
+int flb_tail_file_rotated_purge(struct flb_input_instance *i_ins,
+                                struct flb_config *config, void *context)
 {
     int count = 0;
     struct mk_list *tmp;

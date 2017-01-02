@@ -54,7 +54,8 @@ static inline int consume_byte(int fd)
 }
 
 /* cb_collect callback */
-static int in_tail_collect_static(struct flb_config *config, void *in_context)
+static int in_tail_collect_static(struct flb_input_instance *i_ins,
+                                  struct flb_config *config, void *in_context)
 {
     int ret;
     int active = 0;
@@ -180,33 +181,6 @@ static int in_tail_pre_run(void *in_context, struct flb_config *config)
     return tail_signal_manager(ctx);
 }
 
-/* cb_flush callback */
-static void *in_tail_flush(void *in_context, size_t *size)
-{
-    char *buf = NULL;
-    struct flb_tail_config *ctx = in_context;
-
-    if (ctx->mp_sbuf.size == 0) {
-        *size = 0;
-        return NULL;
-    }
-
-    buf = flb_malloc(ctx->mp_sbuf.size);
-    if (!buf) {
-        return NULL;
-    }
-
-    memcpy(buf, ctx->mp_sbuf.data, ctx->mp_sbuf.size);
-    *size = ctx->mp_sbuf.size;
-
-    msgpack_sbuffer_destroy(&ctx->mp_sbuf);
-    msgpack_sbuffer_init(&ctx->mp_sbuf);
-    msgpack_packer_init(&ctx->mp_pck,
-                        &ctx->mp_sbuf, msgpack_sbuffer_write);
-
-    return buf;
-}
-
 static int in_tail_exit(void *data, struct flb_config *config)
 {
     (void) *config;
@@ -229,6 +203,6 @@ struct flb_input_plugin in_tail_plugin = {
     .cb_init      = in_tail_init,
     .cb_pre_run   = in_tail_pre_run,
     .cb_collect   = NULL,
-    .cb_flush_buf = in_tail_flush,
+    .cb_flush_buf = NULL,
     .cb_exit      = in_tail_exit
 };

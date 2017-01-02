@@ -33,7 +33,8 @@
 #include <limits.h>
 #include <fcntl.h>
 
-static int tail_fs_event(struct flb_config *config, void *in_context)
+static int tail_fs_event(struct flb_input_instance *i_ins,
+                         struct flb_config *config, void *in_context)
 {
     int ret;
     struct mk_list *head;

@@ -92,10 +92,6 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
     mk_list_init(&ctx->files_static);
     mk_list_init(&ctx->files_event);
     mk_list_init(&ctx->files_rotated);
-
-    /* initialize MessagePack buffers */
-    msgpack_sbuffer_init(&ctx->mp_sbuf);
-    msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
     ctx->db = NULL;
 
     /* Initialize database */

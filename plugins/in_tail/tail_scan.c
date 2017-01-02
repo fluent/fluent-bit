@@ -260,7 +260,8 @@ int flb_tail_scan(const char *path, struct flb_tail_config *ctx)
  * Triggered by refresh_interval, it re-scan the path looking for new files
  * that match the original path pattern.
  */
-int flb_tail_scan_callback(struct flb_config *config, void *context)
+int flb_tail_scan_callback(struct flb_input_instance *i_ins,
+                           struct flb_config *config, void *context)
 {
     int i;
     int ret;
