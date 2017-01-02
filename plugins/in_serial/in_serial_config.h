@@ -58,9 +58,8 @@ struct flb_in_serial_config {
     /* Line processing */
     int buffer_id;
 
-    /* MessagePack buffers */
-    msgpack_packer  mp_pck;
-    msgpack_sbuffer mp_sbuf;
+    /* Input instance reference */
+    struct flb_input_instance *i_ins;
 
     /*
      * If (format == FLB_SERIAL_FORMAT_JSON), we use this pack_state

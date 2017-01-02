@@ -39,51 +39,21 @@
 #include "in_serial.h"
 #include "in_serial_config.h"
 
-void *in_serial_flush(void *in_context, size_t *size)
-{
-    char *buf;
-    msgpack_sbuffer *sbuf;
-    struct flb_in_serial_config *ctx = in_context;
-
-    if (ctx->buffer_id == 0)
-        return NULL;
-
-    sbuf = &ctx->mp_sbuf;
-    *size = sbuf->size;
-    buf = flb_malloc(sbuf->size);
-    if (!buf) {
-        return NULL;
-    }
-
-    /* set a new buffer and re-initialize our MessagePack context */
-    memcpy(buf, sbuf->data, sbuf->size);
-    msgpack_sbuffer_destroy(&ctx->mp_sbuf);
-    msgpack_sbuffer_init(&ctx->mp_sbuf);
-    msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
-
-    ctx->buffer_id = 0;
-
-    return buf;
-}
-
 static inline int process_line(char *line, int len,
                                struct flb_in_serial_config *ctx)
 {
-    /* Increase buffer position */
-    ctx->buffer_id++;
-
     /*
      * Store the new data into the MessagePack buffer,
      * we handle this as a list of maps.
      */
-    msgpack_pack_array(&ctx->mp_pck, 2);
-    msgpack_pack_uint64(&ctx->mp_pck, time(NULL));
+    msgpack_pack_array(&ctx->i_ins->mp_pck, 2);
+    msgpack_pack_uint64(&ctx->i_ins->mp_pck, time(NULL));
 
-    msgpack_pack_map(&ctx->mp_pck, 1);
-    msgpack_pack_bin(&ctx->mp_pck, 3);
-    msgpack_pack_bin_body(&ctx->mp_pck, "msg", 3);
-    msgpack_pack_bin(&ctx->mp_pck, len);
-    msgpack_pack_bin_body(&ctx->mp_pck, line, len);
+    msgpack_pack_map(&ctx->i_ins->mp_pck, 1);
+    msgpack_pack_bin(&ctx->i_ins->mp_pck, 3);
+    msgpack_pack_bin_body(&ctx->i_ins->mp_pck, "msg", 3);
+    msgpack_pack_bin(&ctx->i_ins->mp_pck, len);
+    msgpack_pack_bin_body(&ctx->i_ins->mp_pck, line, len);
 
     flb_debug("[in_serial] message '%s'",
               (const char *) line);
@@ -98,20 +68,18 @@ static inline int process_pack(struct flb_in_serial_config *ctx,
     msgpack_unpacked result;
     msgpack_object entry;
 
-    ctx->buffer_id++;
-
     /* First pack the results, iterate concatenated messages */
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, pack, size, &off)) {
         entry = result.data;
 
-        msgpack_pack_array(&ctx->mp_pck, 2);
-        msgpack_pack_uint64(&ctx->mp_pck, time(NULL));
+        msgpack_pack_array(&ctx->i_ins->mp_pck, 2);
+        msgpack_pack_uint64(&ctx->i_ins->mp_pck, time(NULL));
 
-        msgpack_pack_map(&ctx->mp_pck, 1);
-        msgpack_pack_bin(&ctx->mp_pck, 3);
-        msgpack_pack_bin_body(&ctx->mp_pck, "msg", 3);
-        msgpack_pack_object(&ctx->mp_pck, entry);
+        msgpack_pack_map(&ctx->i_ins->mp_pck, 1);
+        msgpack_pack_bin(&ctx->i_ins->mp_pck, 3);
+        msgpack_pack_bin_body(&ctx->i_ins->mp_pck, "msg", 3);
+        msgpack_pack_object(&ctx->i_ins->mp_pck, entry);
     }
 
     msgpack_unpacked_destroy(&result);
@@ -125,7 +93,8 @@ static inline void consume_bytes(char *buf, int bytes, int length)
 }
 
 /* Callback triggered when some serial msgs are available */
-int in_serial_collect(struct flb_config *config, void *in_context)
+static int in_serial_collect(struct flb_input_instance *in,
+                             struct flb_config *config, void *in_context)
 {
     int ret;
     int bytes = 0;
@@ -295,12 +264,11 @@ int in_serial_init(struct flb_input_instance *in,
         flb_pack_state_init(&ctx->pack_state);
     }
 
+    /* Input instance */
+    ctx->i_ins = in;
+
     /* set context */
     flb_input_set_context(in, ctx);
-
-    /* initialize MessagePack buffers */
-    msgpack_sbuffer_init(&ctx->mp_sbuf);
-    msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
 
     /* open device */
     fd = open(ctx->file, O_RDWR | O_NOCTTY | O_NONBLOCK);
@@ -359,6 +327,6 @@ struct flb_input_plugin in_serial_plugin = {
     .cb_init      = in_serial_init,
     .cb_pre_run   = NULL,
     .cb_collect   = in_serial_collect,
-    .cb_flush_buf = in_serial_flush,
+    .cb_flush_buf = NULL,
     .cb_exit      = in_serial_exit
 };
