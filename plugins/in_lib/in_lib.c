@@ -30,82 +30,9 @@
 #include <fluent-bit/flb_error.h>
 #include "in_lib.h"
 
-/* Initialize plugin */
-int in_lib_init(struct flb_input_instance *in,
-                struct flb_config *config, void *data)
+static int in_lib_collect(struct flb_input_instance *i_ins,
+                          struct flb_config *config, void *in_context)
 {
-    int ret;
-    struct flb_in_lib_config *ctx;
-    (void) data;
-
-    /* Allocate space for the configuration */
-    ctx = flb_malloc(sizeof(struct flb_in_lib_config));
-    if (!ctx) {
-        return -1;
-    }
-
-    ctx->buf_size = LIB_BUF_CHUNK;
-    ctx->buf_data = flb_calloc(1, LIB_BUF_CHUNK);
-    ctx->buf_len = 0;
-
-    if (!ctx->buf_data) {
-        flb_utils_error_c("Could not allocate initial buf memory buffer");
-    }
-
-    ctx->msgp_size = LIB_BUF_CHUNK;
-    ctx->msgp_data = flb_malloc(LIB_BUF_CHUNK);
-    ctx->msgp_len = 0;
-
-    /* Init communication channel */
-    flb_input_channel_init(in);
-    ctx->fd = in->channel[0];
-
-    if (!ctx->msgp_data) {
-        flb_utils_error_c("Could not allocate initial msgp memory buffer");
-    }
-
-    /* Set the context */
-    flb_input_set_context(in, ctx);
-
-    /* Collect upon data available on the standard input */
-    ret = flb_input_set_collector_event(in,
-                                        in_lib_collect,
-                                        ctx->fd,
-                                        config);
-    if (ret == -1) {
-        flb_utils_error_c("Could not set collector for LIB input plugin");
-    }
-
-    flb_pack_state_init(&ctx->state);
-    return 0;
-}
-
-int in_lib_exit(void *data, struct flb_config *config)
-{
-    (void) config;
-    struct flb_in_lib_config *ctx = data;
-    struct flb_pack_state *s;
-
-    if (ctx->buf_data) {
-        flb_free(ctx->buf_data);
-    }
-
-    if (ctx->msgp_data) {
-        flb_free(ctx->msgp_data);
-    }
-
-    s = &ctx->state;
-    if (s->tokens) {
-        flb_free(s->tokens);
-    }
-
-    flb_free(ctx);
-    return 0;
-}
-
-int in_lib_collect(struct flb_config *config, void *in_context)
-{
-    int n;
     int ret;
     int bytes;
     int out_size;
@@ -158,48 +85,76 @@ int in_lib_collect(struct flb_config *config, void *in_context)
     }
     ctx->buf_len = 0;
 
-    capacity = (ctx->msgp_size - ctx->msgp_len);
-    if (capacity < out_size) {
-        n = ((out_size - capacity) / LIB_BUF_CHUNK) + 1;
-        size = ctx->msgp_size + (LIB_BUF_CHUNK * n);
-        ptr = flb_realloc(ctx->msgp_data, size);
-        if (!ptr) {
-            perror("realloc");
-            flb_free(pack);
-            flb_pack_state_reset(&ctx->state);
-            flb_pack_state_init(&ctx->state);
-            return -1;
-        }
-        ctx->msgp_data = ptr;
-        ctx->msgp_size = size;
-    }
-
-    memcpy(ctx->msgp_data + ctx->msgp_len, pack, out_size);
-    ctx->msgp_len += out_size;
+    ret = msgpack_sbuffer_write(&ctx->i_ins->mp_sbuf, pack, out_size);
     flb_free(pack);
 
     flb_pack_state_reset(&ctx->state);
     flb_pack_state_init(&ctx->state);
 
+    return ret;
+}
+
+/* Initialize plugin */
+int in_lib_init(struct flb_input_instance *in,
+                struct flb_config *config, void *data)
+{
+    int ret;
+    struct flb_in_lib_config *ctx;
+    (void) data;
+
+    /* Allocate space for the configuration */
+    ctx = flb_malloc(sizeof(struct flb_in_lib_config));
+    if (!ctx) {
+        return -1;
+    }
+    ctx->i_ins = in;
+
+    /* Buffer for incoming data */
+    ctx->buf_size = LIB_BUF_CHUNK;
+    ctx->buf_data = flb_calloc(1, LIB_BUF_CHUNK);
+    ctx->buf_len = 0;
+
+    if (!ctx->buf_data) {
+        flb_utils_error_c("Could not allocate initial buf memory buffer");
+    }
+
+    /* Init communication channel */
+    flb_input_channel_init(in);
+    ctx->fd = in->channel[0];
+
+    /* Set the context */
+    flb_input_set_context(in, ctx);
+
+    /* Collect upon data available on the standard input */
+    ret = flb_input_set_collector_event(in,
+                                        in_lib_collect,
+                                        ctx->fd,
+                                        config);
+    if (ret == -1) {
+        flb_utils_error_c("Could not set collector for LIB input plugin");
+    }
+
+    flb_pack_state_init(&ctx->state);
     return 0;
 }
 
-void *in_lib_flush(void *in_context, size_t *size)
+static int in_lib_exit(void *data, struct flb_config *config)
 {
-    char *buf;
-    struct flb_in_lib_config *ctx = in_context;
+    (void) config;
+    struct flb_in_lib_config *ctx = data;
+    struct flb_pack_state *s;
 
-    if (ctx->msgp_len == 0) {
-        *size = 0;
-        return NULL;
+    if (ctx->buf_data) {
+        flb_free(ctx->buf_data);
     }
 
-    buf = flb_malloc(ctx->msgp_len);
-    memcpy(buf, ctx->msgp_data, ctx->msgp_len);
-    *size = ctx->msgp_len;
-    ctx->msgp_len = 0;
+    s = &ctx->state;
+    if (s->tokens) {
+        flb_free(s->tokens);
+    }
 
-    return buf;
+    flb_free(ctx);
+    return 0;
 }
 
 /* Plugin reference */
@@ -210,6 +165,6 @@ struct flb_input_plugin in_lib_plugin = {
     .cb_pre_run   = NULL,
     .cb_collect   = NULL,
     .cb_ingest    = NULL,
-    .cb_flush_buf = in_lib_flush,
+    .cb_flush_buf = NULL,
     .cb_exit      = in_lib_exit
 };

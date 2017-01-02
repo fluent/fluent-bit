@@ -34,16 +34,8 @@ struct flb_in_lib_config {
     int buf_len;                /* read buffer length      */
     char *buf_data;             /* the real buffer         */
 
-    int  msgp_size;             /* msgpack buffer size   */
-    int  msgp_len;              /* msgpack data length   */
-    char *msgp_data;            /* msgpack static buffer */
-
     struct flb_pack_state state;
+    struct flb_input_instance *i_ins;
 };
-
-int in_lib_collect(struct flb_config *config, void *in_context);
-void *in_lib_flush(void *in_context, size_t *size);
-
-extern struct flb_input_plugin in_lib_plugin;
 
 #endif
