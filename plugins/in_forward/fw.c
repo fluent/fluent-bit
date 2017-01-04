@@ -31,11 +31,13 @@
  * accept the connection and create a new FW instance which will wait for
  * MessagePack records.
  */
-static int in_fw_collect(struct flb_config *config, void *in_context)
+static int in_fw_collect(struct flb_input_instance *i_ins,
+                         struct flb_config *config, void *in_context)
 {
     int fd;
     struct flb_in_fw_config *ctx = in_context;
     struct fw_conn *conn;
+    (void) i_ins;
 
     /* Accept the new connection */
     fd = flb_net_accept(ctx->server_fd);
@@ -88,9 +90,9 @@ static int in_fw_init(struct flb_input_instance *in,
 
     /* Collect upon data available on the standard input */
     ret = flb_input_set_collector_socket(in,
-                                        in_fw_collect,
-                                        ctx->server_fd,
-                                        config);
+                                         in_fw_collect,
+                                         ctx->server_fd,
+                                         config);
     if (ret == -1) {
         flb_utils_error_c("Could not set collector for IN_FW input plugin");
     }
