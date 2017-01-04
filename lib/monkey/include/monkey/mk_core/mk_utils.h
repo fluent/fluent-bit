@@ -70,7 +70,7 @@ pthread_key_t mk_utils_error_key;
     #undef strerror_r
   #endif
   #define strerror_r(errno, buf, len) strerror_s(buf, len, errno)
-#elif !defined(__APPLE__)
+#elif !defined(__unix__)
   #ifdef __cplusplus
     extern "C"
       {
