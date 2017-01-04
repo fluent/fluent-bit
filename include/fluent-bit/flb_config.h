@@ -87,12 +87,17 @@ struct flb_config {
     /* Input and Output plugins */
     struct mk_list in_plugins;
     struct mk_list out_plugins;
+    struct mk_list filter_plugins;
 
     /* Inputs instances */
     struct mk_list inputs;
 
     /* Outputs instances */
     struct mk_list outputs;             /* list of output plugins   */
+
+    /* Filter instances */
+    struct mk_list filters;
+
     struct mk_event_loop *evl;          /* the event loop (mk_core) */
 
     /* Proxies */

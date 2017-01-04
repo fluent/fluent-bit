@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015 Treasure Data Inc.
+ *  Copyright (C) 2015-2017 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -17,27 +17,23 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_PLUGINS_H
-#define FLB_PLUGINS_H
-
-#include <monkey/mk_core.h>
-#include <fluent-bit/flb_input.h>
-#include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_filter.h>
+#include <fluent-bit/flb_str.h>
 
-@FLB_IN_PLUGINS_DECL@
-@FLB_OUT_PLUGINS_DECL@
-@FLB_FILTER_PLUGINS_DECL@
-
-void flb_register_plugins(struct flb_config *config)
+int flb_filter_set_property(struct flb_filter_instance *filter, char *k, char *v)
 {
-    struct flb_input_plugin *in;
-    struct flb_output_plugin *out;
-    struct flb_filter_plugin *filter;
+    struct flb_config_prop *prop;
 
-@FLB_IN_PLUGINS_ADD@
-@FLB_OUT_PLUGINS_ADD@
-@FLB_FILTER_PLUGINS_ADD@
+    /* Append any remaining configuration key to prop list */
+    prop = flb_malloc(sizeof(struct flb_config_prop));
+    if (!prop) {
+        return -1;
+    }
+
+    prop->key = flb_strdup(k);
+    prop->val = flb_strdup(v);
+    mk_list_add(&prop->_head, &filter->properties);
+
+    return 0;
 }
-
-#endif

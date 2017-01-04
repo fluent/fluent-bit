@@ -34,6 +34,7 @@
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_plugin_proxy.h>
@@ -46,6 +47,7 @@ struct flb_config *config;
 
 #define PLUGIN_INPUT    0
 #define PLUGIN_OUTPUT   1
+#define PLUGIN_FILTER   2
 
 #define get_key(a, b, c)   mk_rconf_section_get_key(a, b, c)
 #define n_get_key(a, b, c) (intptr_t) get_key(a, b, c)
@@ -210,6 +212,32 @@ static int output_set_property(struct flb_output_instance *out, char *kv)
     return ret;
 }
 
+static int filter_set_property(struct flb_filter_instance *filter, char *kv)
+{
+    int ret;
+    int len;
+    int sep;
+    char *key;
+    char *value;
+
+    len = strlen(kv);
+    sep = mk_string_char_search(kv, '=', len);
+    if (sep == -1) {
+        return -1;
+    }
+
+    key = mk_string_copy_substr(kv, 0, sep);
+    value = kv + sep + 1;
+
+    if (!key) {
+        return -1;
+    }
+
+    ret = flb_filter_set_property(filter, key, value);
+    flb_free(key);
+    return ret;
+}
+
 static void flb_service_conf_err(struct mk_rconf_section *section, char *key)
 {
     fprintf(stderr, "Invalid configuration value at %s.%s\n",
@@ -333,6 +361,7 @@ int main(int argc, char **argv)
     char *cfg_file = NULL;
     struct flb_input_instance *in = NULL;
     struct flb_output_instance *out = NULL;
+    struct flb_filter_instance *filter = NULL;
 
 #ifndef _WIN32
     /* Setup long-options */
@@ -350,6 +379,7 @@ int main(int argc, char **argv)
         { "input",       required_argument, NULL, 'i' },
         { "match",       required_argument, NULL, 'm' },
         { "output",      required_argument, NULL, 'o' },
+        { "filter",      required_argument, NULL, 'F' },
         { "prop",        required_argument, NULL, 'p' },
         { "plugin",      required_argument, NULL, 'e' },
         { "tag",         required_argument, NULL, 't' },
@@ -391,7 +421,7 @@ int main(int argc, char **argv)
     }
 
     /* Parse the command line options */
-    while ((opt = getopt_long(argc, argv, "b:B:c:df:i:m:o:p:e:t:l:vqVhHP:",
+    while ((opt = getopt_long(argc, argv, "b:B:c:df:i:m:o:F:p:e:t:l:vqVhHP:",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
@@ -448,6 +478,13 @@ int main(int argc, char **argv)
             }
             last_plugin = PLUGIN_OUTPUT;
             break;
+        case 'F':
+            // FIXME filter = flb_filter_new(config, optarg, NULL);
+            if (!filter) {
+                flb_utils_error(FLB_ERR_OUTPUT_INVALID);
+            }
+            last_plugin = PLUGIN_FILTER;
+            break;
         case 'l':
             config->log_file = flb_strdup(optarg);
             break;
@@ -457,6 +494,9 @@ int main(int argc, char **argv)
             }
             else if (last_plugin == PLUGIN_OUTPUT) {
                 output_set_property(out, optarg);
+            }
+            else if (last_plugin == PLUGIN_FILTER) {
+                filter_set_property(filter, optarg);
             }
             break;
         case 't':

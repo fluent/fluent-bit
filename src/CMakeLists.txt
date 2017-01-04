@@ -14,6 +14,7 @@ set(src
   flb_kernel.c
   flb_input.c
   flb_output.c
+  flb_filter.c
   flb_config.c
   flb_network.c
   flb_utils.c
