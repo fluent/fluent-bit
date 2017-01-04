@@ -130,6 +130,7 @@ static int in_tail_init(struct flb_input_instance *in,
     if (!ctx) {
         return -1;
     }
+    ctx->i_ins = in;
 
     /* Initialize file-system watcher */
     ret = flb_tail_fs_init(in, ctx, config);
@@ -174,9 +175,11 @@ static int in_tail_init(struct flb_input_instance *in,
 }
 
 /* Pre-run callback / before the event loop */
-static int in_tail_pre_run(void *in_context, struct flb_config *config)
+static int in_tail_pre_run(struct flb_input_instance *i_ins,
+                           struct flb_config *config, void *in_context)
 {
     struct flb_tail_config *ctx = in_context;
+    (void) i_ins;
 
     return tail_signal_manager(ctx);
 }
