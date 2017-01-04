@@ -319,9 +319,9 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
     return 0;
 }
 
-char *flb_output_get_property(char *key, struct flb_output_instance *i)
+char *flb_output_get_property(char *key, struct flb_output_instance *o_ins)
 {
-    return flb_config_prop_get(key, &i->properties);
+    return flb_config_prop_get(key, &o_ins->properties);
 }
 
 /* Trigger the output plugins setup callbacks to prepare them. */
@@ -331,7 +331,6 @@ int flb_output_init(struct flb_config *config)
     struct mk_list *head;
     struct flb_output_instance *ins;
     struct flb_output_plugin *p;
-    struct flb_plugin_proxy *proxy;
 
     /* We need at least one output */
     if (mk_list_is_empty(&config->outputs) == 0) {
@@ -343,8 +342,9 @@ int flb_output_init(struct flb_config *config)
         ins = mk_list_entry(head, struct flb_output_instance, _head);
         p = ins->p;
 
+        /* Proxy plugins have heir own initialization */
         if (p->type == FLB_OUTPUT_PLUGIN_PROXY) {
-            flb_plugin_proxy_init(p->proxy, config);
+            flb_plugin_proxy_init(p->proxy, ins, config);
             continue;
         }
 

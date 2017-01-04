@@ -22,6 +22,7 @@
 
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_output.h>
 
 /* Plugin Types */
 #define FLB_PROXY_INPUT_PLUGIN     1
@@ -48,6 +49,8 @@ struct flb_plugin_proxy {
     char *description;        /* plugin description                          */
 
     /* Internal */
+    struct flb_api *api;      /* API context to export functions             */
+    void *instance;           /* input/output instance                       */
     void *dso_handler;        /* dso handler - dlopen(2)                     */
     void *data;               /* opaque data type for specific proxy handler */
     struct mk_list _head;     /* link to parent config->proxies              */
@@ -57,6 +60,7 @@ void *flb_plugin_proxy_symbol(struct flb_plugin_proxy *proxy,
                               const char *symbol);
 
 int flb_plugin_proxy_init(struct flb_plugin_proxy *proxy,
+                          struct flb_output_instance *o_ins,
                           struct flb_config *config);
 
 int flb_plugin_proxy_register(struct flb_plugin_proxy *proxy,

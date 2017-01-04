@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_api.h>
 #include <fluent-bit/flb_plugin_proxy.h>
 
 /* Proxies */
@@ -112,27 +113,36 @@ int flb_plugin_proxy_register(struct flb_plugin_proxy *proxy,
     /* Lookup the registration callback */
     cb_register = flb_plugin_proxy_symbol(proxy, "FLBPluginRegister");
 
-    /* Create a temporal definition used for registration */
+    /*
+     * Create a temporal definition used for registration. This definition
+     * aims to be be populated by plugin in the registration phase with:
+     *
+     * - plugin type (or proxy type, e.g: Golang)
+     * - plugin name
+     * - plugin description
+     */
     def = flb_malloc(sizeof(struct flb_plugin_proxy_def));
     if (!def) {
         return -1;
     }
 
-    /* Call the initializator */
+    /* Do the registration */
     ret = cb_register(def);
     if (ret == -1) {
         flb_free(def);
         return -1;
     }
 
-    /* Based on 'proxy', use the proper handler */
+    /*
+     * Each plugin proxy/type, have their own handler, based on the data
+     * provided in the registration invoke the proper handler.
+     */
     ret = -1;
     if (def->proxy == FLB_PROXY_GOLANG) {
 #ifdef FLB_HAVE_PROXY_GO
         ret = proxy_go_register(proxy, def);
 #endif
     }
-
     if (ret == 0) {
         /*
          * We got a plugin that can do it job, now we need to create the
@@ -148,9 +158,13 @@ int flb_plugin_proxy_register(struct flb_plugin_proxy *proxy,
 }
 
 int flb_plugin_proxy_init(struct flb_plugin_proxy *proxy,
+                          struct flb_output_instance *o_ins,
                           struct flb_config *config)
 {
     int ret = -1;
+
+    /* Before to initialize, set the instance reference */
+    proxy->instance = o_ins;
 
     /* Based on 'proxy', use the proper handler */
     if (proxy->proxy == FLB_PROXY_GOLANG) {
@@ -179,11 +193,19 @@ struct flb_plugin_proxy *flb_plugin_proxy_create(const char *dso_path, int type,
         return NULL;
     }
 
-    /* Context */
+    /* Proxy Context */
     proxy = flb_malloc(sizeof(struct flb_plugin_proxy));
     if (!proxy) {
         flb_errno();
         dlclose(handle);
+        return NULL;
+    }
+
+    /* API Context */
+    proxy->api = flb_api_create();
+    if (!proxy->api) {
+        dlclose(handle);
+        flb_free(proxy);
         return NULL;
     }
 

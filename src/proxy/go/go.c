@@ -49,17 +49,13 @@
  * 3. Plugin Initialization
  */
 
-struct flbgo_plugin {
-    char *name;
-    int (*cb_init)(struct flbgo_plugin *);
-};
-
 struct flbgo_output_plugin {
     char *name;
+    void *api;
+    void *o_ins;
     int (*cb_init)();
     int (*cb_flush)(void *, size_t, char *);
     int (*cb_exit)(void *);
-    void *o_ins;
 };
 /*------------------------EOF------------------------------------------------*/
 
@@ -69,7 +65,7 @@ int proxy_go_register(struct flb_plugin_proxy *proxy,
     int ret;
     struct flbgo_output_plugin *plugin;
 
-    plugin = flb_malloc(sizeof(struct flbgo_plugin));
+    plugin = flb_malloc(sizeof(struct flbgo_output_plugin));
     if (!plugin) {
         return -1;
     }
@@ -81,7 +77,7 @@ int proxy_go_register(struct flb_plugin_proxy *proxy,
      * - FLBPluginFlush
      * - FLBPluginExit
      *
-     * note: registration callback FLBPluginRegister() is resoved by the
+     * note: registration callback FLBPluginRegister() is resolved by the
      * parent proxy interface.
      */
 
@@ -92,10 +88,12 @@ int proxy_go_register(struct flb_plugin_proxy *proxy,
         return -1;
     }
 
-    plugin->name     = flb_strdup(def->name);
     plugin->cb_flush = flb_plugin_proxy_symbol(proxy, "FLBPluginFlush");
     plugin->cb_exit  = flb_plugin_proxy_symbol(proxy, "FLBPluginExit");
-    proxy->data      = plugin;
+    plugin->name     = flb_strdup(def->name);
+
+    /* This Go plugin context is an opaque data for the parent proxy */
+    proxy->data = plugin;
 
     return 0;
 }
@@ -104,6 +102,10 @@ int proxy_go_init(struct flb_plugin_proxy *proxy)
 {
     int ret;
     struct flbgo_output_plugin *plugin = proxy->data;
+
+    /* set the API */
+    plugin->api   = proxy->api;
+    plugin->o_ins = proxy->instance;
 
     ret = plugin->cb_init(plugin);
     if (ret == -1) {

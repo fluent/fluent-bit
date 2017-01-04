@@ -1,8 +1,10 @@
 set(CMAKE_C_VISIBILITY_PRESET hidden)
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
+add_definitions(-DFLB_CORE=1)
 
 set(src
   ${src}
+  flb_api.c
   flb_lib.c
   flb_log.c
   flb_uri.c

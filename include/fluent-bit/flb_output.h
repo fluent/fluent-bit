@@ -503,11 +503,12 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
                                            char *output, void *data);
 
 int flb_output_set_property(struct flb_output_instance *out, char *k, char *v);
-char *flb_output_get_property(char *key, struct flb_output_instance *i);
+char *flb_output_get_property(char *key, struct flb_output_instance *o_ins);
 
 void flb_output_pre_run(struct flb_config *config);
 void flb_output_exit(struct flb_config *config);
 void flb_output_set_context(struct flb_output_instance *ins, void *context);
 int flb_output_init(struct flb_config *config);
 int flb_output_check(struct flb_config *config);
+
 #endif
