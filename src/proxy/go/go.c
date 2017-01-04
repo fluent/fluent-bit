@@ -62,7 +62,6 @@ struct flbgo_output_plugin {
 int proxy_go_register(struct flb_plugin_proxy *proxy,
                       struct flb_plugin_proxy_def *def)
 {
-    int ret;
     struct flbgo_output_plugin *plugin;
 
     plugin = flb_malloc(sizeof(struct flbgo_output_plugin));
