@@ -62,8 +62,9 @@ In order to contribute to the project please refer to the [CONTRIBUTING](CONTRIB
 
 ## Contact
 
-Feel free to join us on our Mailing List or IRC:
+Feel free to join us on our Slack channel, Mailing List or IRC:
 
+ - Slack: http://slack.fluentd.org (#fluent-bit channel)
  - Mailing List: https://groups.google.com/forum/#!forum/fluent-bit
  - IRC: irc.freenode.net #fluent-bit
  - Twitter: http://twitter.com/fluentbit
