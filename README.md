@@ -35,17 +35,20 @@ $ bin/fluent-bit -i cpu -o stdout
 | Health             | health  | check health of TCP services|
 | Process            | proc    | check health of Process |
 | Random             | random  | generate random numbers |
+| Tail               | tail    | tail log files |
 | TCP                | tcp     | listen for raw JSON map messages over TCP |
 
 ### Output Plugins
 
 | name               | option                  | description  |
 |--------------------|-------------------------|---------------------------------------------------------------------------------|
+| Counter            | counter | count records |
 | Elasticsearch      | es | flush records to a Elasticsearch server |
-| FlowCounter        | flowcounter| count records |
+| FlowCounter        | flowcounter| count records and its size |
 | Forward            | forward  | flush records to a [Fluentd](http://fluentd.org) service. On the [Fluentd](http://fluentd.org) side, it requires an __in_forward__.|
 | NATS               | nats | flush records to a NATS server |
 | HTTP               | http | flush records to a HTTP end point |
+| InfluxDB           | influxdb | flush records to InfluxDB time series database |
 | Plot               | plot | generate a file for gnuplot |
 | Standard Output    | stdout                  | prints the records to the standard output stream |
 | Treasure Data      | td                      | flush records to [Treasure Data](http://treasuredata.com) service (cloud analytics)|
