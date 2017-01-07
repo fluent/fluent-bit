@@ -49,7 +49,6 @@ int in_stdin_init(struct flb_input_instance *in,
     /* initialize MessagePack buffers */
     msgpack_sbuffer_init(&ctx->mp_sbuf);
     msgpack_packer_init(&ctx->mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
-    ctx->buffer_id = 0;
 
     /* Clone the standard input file descriptor */
     fd = dup(STDIN_FILENO);
@@ -114,8 +113,6 @@ int in_stdin_collect(struct flb_input_instance *i_ins,
         } else {
             msgpack_pack_bin_body(&i_ins->mp_pck, pack + start, off - start);
         }
-        ctx->buffer_id++;
-
         start = off;
     }
     msgpack_unpacked_destroy(&result);

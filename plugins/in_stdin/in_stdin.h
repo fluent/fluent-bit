@@ -30,7 +30,6 @@ struct flb_in_stdin_config {
     int buf_len;                      /* read buffer length    */
     char buf[8192 * 2];               /* read buffer: 16Kb max */
 
-    int buffer_id;
     struct msgpack_sbuffer mp_sbuf;  /* msgpack sbuffer        */
     struct msgpack_packer mp_pck;    /* msgpack packer         */
 };
