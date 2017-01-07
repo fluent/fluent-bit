@@ -31,66 +31,80 @@
 
 #define PLUGIN_NAME "out_flowcounter"
 
+static void count_initialized(struct flb_out_fcount_buffer* buf)
+{
+    buf->bytes  = 0;
+    buf->counts = 0;
+}
+
 static int configure(struct flb_out_fcount_config *ctx,
-                      struct flb_output_instance   *ins)
+                     struct flb_output_instance   *ins,
+                     struct flb_config *config)
 {
     char* unit = NULL;
+    int i;
+    time_t base = time(NULL);
     
     /* default */
     ctx->unit = FLB_UNIT_MIN;
     ctx->tick         = 60;
 
     unit = flb_output_get_property("unit", ins);
-    if (unit == NULL) {
-        /* using default */
-        return 0;
+
+    if (unit != NULL) {
+        /* check unit of duration */
+        if (!strcasecmp(unit, FLB_UNIT_SEC)) {
+            ctx->unit = FLB_UNIT_SEC;
+            ctx->tick = 1;
+        }
+        else if (!strcasecmp(unit, FLB_UNIT_HOUR)) {
+            ctx->unit = FLB_UNIT_HOUR;
+            ctx->tick = 3600;
+        }
+        else if(!strcasecmp(unit, FLB_UNIT_DAY)) {
+            ctx->unit = FLB_UNIT_DAY;
+            ctx->tick = 86400;
+        }
     }
 
-    flb_debug("[%s]unit is \"%s\"",PLUGIN_NAME, unit);
+    flb_debug("[%s]unit is \"%s\"",PLUGIN_NAME, ctx->unit);
 
-    if (!strcasecmp(unit, FLB_UNIT_SEC)) {
-        ctx->unit = FLB_UNIT_SEC;
-        ctx->tick = 1;
-    }
-    else if (!strcasecmp(unit, FLB_UNIT_HOUR)) {
-        ctx->unit = FLB_UNIT_HOUR;
-        ctx->tick = 3600;
-    }
-    else if(!strcasecmp(unit, FLB_UNIT_DAY)) {
-        ctx->unit = FLB_UNIT_DAY;
-        ctx->tick = 86400;
+    /* initialize buffer */
+    ctx->size  = (config->flush / ctx->tick) + 1;
+    flb_debug("[%s]buffer size=%d",PLUGIN_NAME, ctx->size);
+
+    ctx->index = 0;
+    ctx->buf = (struct flb_out_fcount_buffer*)
+        flb_malloc(sizeof(struct flb_out_fcount_buffer)*ctx->size);
+
+    for (i=0; i<ctx->size; i++) {
+        ctx->buf[i].until = base + ctx->tick*i;
+        count_initialized(&ctx->buf[i]);
     }
 
     return 0;
 }
 
-
-static void count_initialized(struct flb_out_fcount_config* config)
-{
-    config->bytes  = 0;
-    config->counts = 0;
-}
-
 static void output_fcount(FILE* f, struct flb_out_fcount_config *ctx,
-                          char* tag,time_t t)
+                          struct flb_out_fcount_buffer *buf)
 {
     fprintf(f,
-           "[%s] %s:[%lu, {"
+           "[%s] [%lu, {"
            "\"counts\":%lu, "
            "\"bytes\":%lu, "
            "\"counts/%s\":%lu, "
            "\"bytes/%s\":%lu }"
            "]\n",
-           PLUGIN_NAME,tag,t,
-           ctx->counts,
-           ctx->bytes,
-           ctx->unit, ctx->counts/ctx->tick,
-           ctx->unit, ctx->bytes/ctx->tick);
+           PLUGIN_NAME, buf->until,
+           buf->counts,
+           buf->bytes,
+           ctx->unit, buf->counts/ctx->tick,
+           ctx->unit, buf->bytes/ctx->tick);
     /* TODO filtering with tag? */
 }
 
 static void count_up(msgpack_object *obj,
-                      struct flb_out_fcount_config *ctx, uint64_t size)
+                      struct flb_out_fcount_buffer *ctx, uint64_t size)
 {
     ctx->counts++;
     ctx->bytes += size;
@@ -110,7 +124,6 @@ static time_t get_timestamp_from_msgpack(msgpack_object *p)
 static int out_fcount_init(struct flb_output_instance *ins, struct flb_config *config,
                    void *data)
 {
-    (void) config;
     (void) data;
 
     struct flb_out_fcount_config *ctx = NULL;
@@ -120,15 +133,37 @@ static int out_fcount_init(struct flb_output_instance *ins, struct flb_config *c
         flb_error("[%s] malloc failed",PLUGIN_NAME);
         return -1;
     }
-    configure(ctx, ins);
-
-    count_initialized(ctx);
-    ctx->last_checked = time(NULL);
-
+    configure(ctx, ins, config);
     flb_output_set_context(ins, ctx);
 
     return 0;
 }
+
+static struct flb_out_fcount_buffer* seek_buffer(time_t t,
+                        struct flb_out_fcount_config* ctx)
+{
+    int i = ctx->index;
+    int32_t diff;
+
+    while(1) {
+        diff = (int32_t)difftime(ctx->buf[i].until, t);
+        if (diff >= 0 && diff <= ctx->tick) {
+            return &ctx->buf[i];
+        }
+        i++;
+
+        if (i >= ctx->size) {
+            i = 0;
+        }
+
+        if(i == ctx->index) {
+            break;
+        }
+    }
+    return NULL;
+}
+
+
 
 static void out_fcount_flush(void *data, size_t bytes,
                      char *tag, int tag_len,
@@ -138,9 +173,9 @@ static void out_fcount_flush(void *data, size_t bytes,
 {
     msgpack_unpacked result;
     struct flb_out_fcount_config *ctx = out_context;
+    struct flb_out_fcount_buffer *buf = NULL;
     size_t off = 0;
     time_t t;
-    int32_t diff;
     uint64_t last_off   = 0;
     uint64_t byte_data  = 0;
 
@@ -153,23 +188,24 @@ static void out_fcount_flush(void *data, size_t bytes,
         byte_data     = (uint64_t)(off - last_off);
         last_off      = off;
 
-        if ((diff = (int32_t)difftime(t,ctx->last_checked))< 0) {
-            flb_error("[%s]time paradox?",PLUGIN_NAME);
-            continue;
-        }
-        flb_debug("[%s] %lu(%d) byte_data:%lu",
-                  PLUGIN_NAME,ctx->last_checked,diff, byte_data);
+        buf = seek_buffer(t, ctx);
 
-        while(diff > ctx->tick) {
-            ctx->last_checked += ctx->tick;
-            output_fcount(stdout, ctx, tag, ctx->last_checked);
-            count_initialized(ctx);
+        while(buf == NULL) {
+            /* flush buffer */
+            output_fcount(stdout, ctx, &ctx->buf[ctx->index]);
+            count_initialized(&ctx->buf[ctx->index]);
+            ctx->buf[ctx->index].until += ctx->tick * ctx->size;
 
-            diff -= ctx->tick;
+            ctx->index++;
+            if (ctx->index >= ctx->size) {
+                ctx->index = 0;
+            }
+            buf = seek_buffer(t, ctx);
         }
-        if (diff >= 0) {
-            count_up(&result.data, ctx, byte_data);
-        }
+
+        if (buf != NULL) {
+            count_up(&result.data, buf, byte_data);
+        } 
     }
     msgpack_unpacked_destroy(&result);
 
@@ -180,6 +216,7 @@ static int out_fcount_exit(void *data, struct flb_config* config)
 {
     struct flb_out_fcount_config *ctx = data;
 
+    flb_free(ctx->buf);
     flb_free(ctx);
     return 0;
 }
