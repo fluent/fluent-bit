@@ -27,6 +27,7 @@
 #include <libgen.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <limits.h>
 
 #include <msgpack.h>
 #include <fluent-bit/flb_info.h>
@@ -34,6 +35,67 @@
 #include <fluent-bit/flb_utils.h>
 
 #include "in_proc.h"
+
+struct flb_in_proc_mem_offset mem_linux[] = {
+    {
+        "Peak",
+        "mem.VmPeak",
+        offsetof(struct flb_in_proc_mem_linux, vmpeak)
+    },
+    {
+        "Size",
+        "mem.VmSize",
+        offsetof(struct flb_in_proc_mem_linux, vmsize)
+    },
+    {
+        "Lck",
+        "mem.VmLck",
+        offsetof(struct flb_in_proc_mem_linux, vmlck)
+    },
+    {
+        "HWM",
+        "mem.VmHWM",
+        offsetof(struct flb_in_proc_mem_linux, vmhwm)
+    },
+    {
+        "RSS",
+        "mem.VmRSS",
+        offsetof(struct flb_in_proc_mem_linux, vmrss)
+    },
+    {
+        "Data",
+        "mem.VmData",
+        offsetof(struct flb_in_proc_mem_linux, vmdata)
+    },
+    {
+        "Stk",
+        "mem.VmStk",
+        offsetof(struct flb_in_proc_mem_linux, vmstk)
+    },
+    {
+        "Exe",
+        "mem.VmExe",
+        offsetof(struct flb_in_proc_mem_linux, vmexe)
+    },
+    {
+        "Lib",
+        "mem.VmLib",
+        offsetof(struct flb_in_proc_mem_linux, vmlib)
+    },
+    {
+        "PTE",
+        "mem.VmPTE",
+        offsetof(struct flb_in_proc_mem_linux, vmpte)
+    },
+    {
+        "Swap",
+        "mem.VmSwap",
+        offsetof(struct flb_in_proc_mem_linux, vmswap)
+    },
+    {NULL, NULL, 0}/* end of array */
+};
+ 
+
 
 static pid_t get_pid_from_procname_linux(const char* proc)
 {
@@ -126,6 +188,13 @@ static int configure(struct flb_in_proc_config *ctx,
         }
     }
 
+    pval = flb_input_get_property("mem", in);
+    if (pval) {
+        if (strcasecmp(pval, "false") == 0 || strcasecmp(pval, "off") == 0) {
+            ctx->mem = FLB_FALSE;
+        }
+    }
+
     pval = flb_input_get_property("proc_name", in);
     if (pval) {
         ctx->proc_name = (char*)flb_malloc(FLB_CMD_LEN);
@@ -146,20 +215,20 @@ static int get_pid_status(pid_t pid)
     return ((ret != ESRCH)  && (ret != EPERM) && (ret != ESRCH));
 }
 
-static int collect_proc(struct flb_input_instance *i_ins,
-                        struct flb_config *config, void *in_context)
+static int generate_record_linux(struct flb_input_instance *i_ins,
+                           struct flb_config *config, void *in_context,
+                           struct flb_in_proc_mem_linux *mem_stat)
 {
-    uint8_t alive = FLB_FALSE;
     struct flb_in_proc_config *ctx = in_context;
+    int i;
+    int map_num = 3;    /* 3 = alive, proc_name, pid */
 
-    ctx->pid = get_pid_from_procname_linux(ctx->proc_name);
-
-    if (ctx->pid >= 0 && get_pid_status(ctx->pid)) {
-        alive = FLB_TRUE;
+    if (ctx->alive == FLB_TRUE && ctx->alert == FLB_TRUE) {
+        return 0;
     }
 
-    if (alive == FLB_TRUE && ctx->alert == FLB_TRUE) {
-        return 0;
+    if (ctx->mem == FLB_TRUE) {
+        map_num += sizeof(mem_linux)/sizeof(struct flb_in_proc_mem_offset)-1;
     }
 
     /*
@@ -169,13 +238,13 @@ static int collect_proc(struct flb_input_instance *i_ins,
     msgpack_pack_uint64(&i_ins->mp_pck, time(NULL));
 
     /* 3 = alive, proc_name, pid */
-    msgpack_pack_map(&i_ins->mp_pck, 3);
+    msgpack_pack_map(&i_ins->mp_pck, map_num);
 
     /* Status */
     msgpack_pack_bin(&i_ins->mp_pck, 5);
     msgpack_pack_bin_body(&i_ins->mp_pck, "alive", 5);
 
-    if (alive) {
+    if (ctx->alive) {
         msgpack_pack_true(&i_ins->mp_pck);
     }
     else {
@@ -193,19 +262,131 @@ static int collect_proc(struct flb_input_instance *i_ins,
     msgpack_pack_bin_body(&i_ins->mp_pck, "pid", strlen("pid"));
     msgpack_pack_int64(&i_ins->mp_pck, ctx->pid);
 
+    /* memory */
+    if (ctx->mem == FLB_TRUE) {
+        char *str = NULL;
+        uint64_t *val = NULL;
+        for(i=0; mem_linux[i].key != NULL; i++) {
+            str = mem_linux[i].msgpack_key;
+            val = (uint64_t*)((char*)mem_stat + mem_linux[i].offset);
+            msgpack_pack_bin(&i_ins->mp_pck, strlen(str));
+            msgpack_pack_bin_body(&i_ins->mp_pck, str, strlen(str));
+            msgpack_pack_uint64(&i_ins->mp_pck, *val);
+        }
+    }
+
+    return 0;
+}
+
+static void update_alive(struct flb_in_proc_config *ctx)
+{
+    if (ctx->pid >= 0 && get_pid_status(ctx->pid)) {
+        ctx->alive = FLB_TRUE;
+    }
+    else {
+        ctx->alive = FLB_FALSE;
+    }
+}
+
+static void mem_linux_clear(struct flb_in_proc_mem_linux *mem_stat)
+{
+    int i;
+    uint64_t *temp = NULL;
+    for (i=0;mem_linux[i].key != NULL;i++) {
+        temp   = (uint64_t*)((char*)mem_stat + mem_linux[i].offset);
+        *temp  = 0;
+    }
+}
+
+static int update_mem_linux(struct flb_in_proc_config *ctx,
+                            struct flb_in_proc_mem_linux *mem_stat)
+{
+    int ret  = -1;
+    int i;
+    char path[PATH_MAX] = {0};
+    char str_name[32] = {0};
+    char *line = NULL;
+    char *fmt = NULL;
+    char *buf = NULL;
+    ssize_t count;
+    size_t len = 256;
+    uint64_t mem_size;
+    uint64_t *temp = NULL;
+    FILE *fp  = NULL;
+
+    snprintf(path, sizeof(path), "/proc/%d/status",ctx->pid);
+    fp = fopen(path, "r");
+
+    if (fp == NULL) {
+        flb_error("[%s] %s open error",FLB_IN_PROC_NAME, path);
+        mem_linux_clear(mem_stat);
+        return -1;
+    }
+
+    line = (char*)flb_malloc(len);
+    while(1) {
+        count = getline(&line, &len, fp);
+        if (count < 0) {
+            break;
+        }
+
+        /* VmPeak:	   14860 kB */
+        fmt = "Vm%s"; /* e.g. "Peak:" */
+        memset(str_name, '\0', sizeof(str_name));
+        ret = sscanf(line, fmt, str_name);
+        if (ret < 1) {
+            continue;
+        }
+        /* replace : -> NULL char*/
+        if ((buf = strchr(str_name, ':')) != NULL) {
+            *buf = '\0';
+        }
+
+        /* calcurate size */
+        mem_size = 0;
+        for (i=0;line[i] != '\0';i++) {
+            if (line[i] >= 0x30 && line[i] <= 0x39 /* is number*/) {
+                mem_size *= 10;
+                mem_size += line[i] - 0x30;
+            }
+        }
+
+        for (i=0;mem_linux[i].key != NULL;i++) {
+            if (!strcmp(str_name, mem_linux[i].key)) {
+                temp   = (uint64_t*)((char*)mem_stat + mem_linux[i].offset);
+                *temp  = mem_size * 1000; /* kB size */
+                break;
+            }
+        }
+    }
+    flb_free(line);
+    fclose(fp);
+    return ret;
+}
+
+static int in_proc_collect_linux(struct flb_input_instance *i_ins,
+                           struct flb_config *config, void *in_context)
+{
+    struct flb_in_proc_config *ctx = in_context;
+    struct flb_in_proc_mem_linux mem;
+    if (ctx->proc_name != NULL){
+        ctx->pid = get_pid_from_procname_linux(ctx->proc_name);
+        update_alive(ctx);
+
+        if (ctx->mem == FLB_TRUE && ctx->alive == FLB_TRUE) {
+            mem_linux_clear(&mem);
+            update_mem_linux(ctx, &mem);
+        }
+        generate_record_linux(i_ins, config, in_context, &mem);
+    }
+
     return 0;
 }
 
 static int in_proc_collect(struct flb_input_instance *i_ins,
                            struct flb_config *config, void *in_context)
 {
-    struct flb_in_proc_config *ctx = in_context;
-
-    if (ctx->proc_name != NULL){
-        collect_proc(i_ins, config, in_context);
-    }
-
-    return 0;
+    return in_proc_collect_linux(i_ins, config, in_context);
 }
 
 static int in_proc_init(struct flb_input_instance *in,
@@ -223,6 +404,7 @@ static int in_proc_init(struct flb_input_instance *in,
         return -1;
     }
     ctx->alert = FLB_FALSE;
+    ctx->mem   = FLB_TRUE;
     ctx->proc_name = NULL;
     ctx->pid = -1;
 
