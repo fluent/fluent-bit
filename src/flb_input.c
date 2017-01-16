@@ -92,6 +92,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
             perror("malloc");
             return NULL;
         }
+        instance->config = config;
 
         /* Get an ID */
         id =  instance_id(plugin, config);

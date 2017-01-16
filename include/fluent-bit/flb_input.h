@@ -29,6 +29,7 @@
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_bits.h>
 #include <fluent-bit/flb_pipe.h>
+#include <fluent-bit/flb_filter.h>
 #include <msgpack.h>
 
 #include <inttypes.h>
@@ -151,6 +152,7 @@ struct flb_input_instance {
 
     /* MessagePack buffers: the plugin use these contexts to append records */
     int mp_records;
+    size_t mp_buf_write_size;
     msgpack_packer  mp_pck;
     msgpack_sbuffer mp_sbuf;
 
@@ -177,6 +179,9 @@ struct flb_input_instance {
     struct mk_list tasks;
 
     struct mk_list threads;              /* engine taskslist           */
+
+    /* Keep a reference to the original context this instance belongs to */
+    struct flb_config *config;
 };
 
 struct flb_input_collector {
@@ -416,6 +421,40 @@ static inline void flb_input_return(struct flb_thread *th) {
     if (n == -1) {
         flb_errno();
     }
+}
+
+/*
+ * Most of input plugins (except the ones handle dynamic tags) writes directly
+ * to the msgpack buffers located in the input instance. Since we don't have
+ * 100% control of 'when' this happens, we need a way to keep track of
+ * these events. We introduce two basic functions for the purpose:
+ *
+ *  - flb_input_buf_write_start()
+ *  - flb_input_buf_write_end()
+ *
+ * These functions aims to keep track when each buffer is being modified and
+ * the number of bytes that have changed.
+ */
+static inline void flb_input_buf_write_start(struct flb_input_instance *i)
+{
+    /* Save the current size of the buffer before an incoming modification */
+    i->mp_buf_write_size = i->mp_sbuf.size;
+}
+
+static inline void flb_input_buf_write_end(struct flb_input_instance *i)
+{
+    size_t bytes;
+    void *buf;
+
+    /* Get the number of new bytes */
+    bytes = (i->mp_sbuf.size - i->mp_buf_write_size);
+    if (bytes == 0) {
+        return;
+    }
+
+    /* Call the filter handler */
+    buf = i->mp_sbuf.data + i->mp_buf_write_size;
+    flb_filter_do(buf, bytes, i->tag, i->tag_len, i->config);
 }
 
 static inline void FLB_INPUT_RETURN()

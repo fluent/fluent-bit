@@ -20,27 +20,37 @@
 #ifndef FLB_FILTER_H
 #define FLB_FILTER_H
 
+#include <fluent-bit/flb_config.h>
+
 struct flb_filter_instance;
 
 struct flb_filter_plugin {
+    int flags;
     char *name;
     char *description;
 
-    int (*cb_init) (struct flb_filter_instance *, struct flb_config, void *);
-    int (*cb_filter) (void *, size_t, char *, int, struct flb_filter_instance,
+    int (*cb_init) (struct flb_filter_instance *, struct flb_config *, void *);
+    int (*cb_filter) (void *, size_t, char *, int, struct flb_filter_instance *,
                       void *, struct flb_config *);
     int (*cb_exit) (void *, struct flb_config *);
+    struct mk_list _head;
 };
 
 struct flb_filter_instance {
     int id;                        /* instance id              */
     char name[16];                 /* numbered name            */
     char *match;                   /* match rule based on Tags */
+    void *data;
     struct flb_filter_plugin *p;   /* original plugin          */
-    struct mk_list properties;
+    struct mk_list properties;     /* config properties        */
     struct mk_list _head;          /* link to config->filters  */
 };
 
 int flb_filter_set_property(struct flb_filter_instance *filter, char *k, char *v);
+struct flb_filter_instance *flb_filter_new(struct flb_config *config,
+                                           char *filter, void *data);
+void flb_filter_do(void *data, size_t bytes,
+                   char *tag, int tag_len,
+                   struct flb_config *config);
 
 #endif

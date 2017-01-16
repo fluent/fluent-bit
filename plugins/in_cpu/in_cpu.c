@@ -303,6 +303,9 @@ int in_cpu_collect(struct flb_input_instance *i_ins,
 
     s = snapshot_percent(cstats, ctx);
 
+    /* Mark the start of a 'buffer write' operation */
+    flb_input_buf_write_start(i_ins);
+
     /*
      * Store the new data into the MessagePack buffer,
      */
@@ -337,6 +340,8 @@ int in_cpu_collect(struct flb_input_instance *i_ins,
 
     snapshots_switch(cstats);
     flb_trace("[in_cpu] CPU %0.2f%%", s->p_cpu);
+
+    flb_input_buf_write_end(i_ins);
 
     flb_stats_update(in_cpu_plugin.stats_fd, 0, 1);
 

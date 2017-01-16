@@ -58,6 +58,7 @@ static void flb_help(int rc, struct flb_config *config)
     struct mk_list *head;
     struct flb_input_plugin *in;
     struct flb_output_plugin *out;
+    struct flb_filter_plugin *filter;
 
     printf("Usage: fluent-bit [OPTION]\n\n");
     printf("%sAvailable Options%s\n", ANSI_BOLD, ANSI_RESET);
@@ -107,6 +108,12 @@ static void flb_help(int rc, struct flb_config *config)
             continue;
         }
         printf("  %-22s%s\n", out->name, out->description);
+    }
+
+    printf("\n%sFilters%s\n", ANSI_BOLD, ANSI_RESET);
+    mk_list_foreach(head, &config->filter_plugins) {
+        filter = mk_list_entry(head, struct flb_filter_plugin, _head);
+        printf("  %-22s%s\n", filter->name, filter->description);
     }
 
     printf("\n%sInternal%s\n", ANSI_BOLD, ANSI_RESET);
