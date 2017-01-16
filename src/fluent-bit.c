@@ -72,6 +72,7 @@ static void flb_help(int rc, struct flb_config *config)
 #endif
     printf("  -f, --flush=SECONDS\tflush timeout in seconds (default: %i)\n",
            FLB_CONFIG_FLUSH_SECS);
+    printf("  -F  --filter=FILTER\t set a filter\n");
     printf("  -i, --input=INPUT\tset an input\n");
     printf("  -m, --match=MATCH\tset plugin match, same as '-p match=abc'\n");
     printf("  -o, --output=OUTPUT\tset an output\n");
@@ -486,7 +487,7 @@ int main(int argc, char **argv)
             last_plugin = PLUGIN_OUTPUT;
             break;
         case 'F':
-            // FIXME filter = flb_filter_new(config, optarg, NULL);
+            filter = flb_filter_new(config, optarg, NULL);
             if (!filter) {
                 flb_utils_error(FLB_ERR_OUTPUT_INVALID);
             }

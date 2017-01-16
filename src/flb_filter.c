@@ -39,6 +39,18 @@ static inline int instance_id(struct flb_filter_plugin *p,
     return c;
 }
 
+static inline int prop_key_check(char *key, char *kv, int k_len)
+{
+    int len;
+
+    len = strlen(key);
+    if (strncasecmp(key, kv, k_len) == 0 && len == k_len) {
+        return 0;
+    }
+
+    return -1;
+}
+
 void flb_filter_do(void *data, size_t bytes,
                    char *tag, int tag_len,
                    struct flb_config *config)
@@ -46,7 +58,7 @@ void flb_filter_do(void *data, size_t bytes,
     struct mk_list *head;
     struct flb_filter_instance *f_ins;
 
-    mk_list_foreach(head, &config->filter_plugins) {
+    mk_list_foreach(head, &config->filters) {
         f_ins = mk_list_entry(head, struct flb_filter_instance, _head);
         if (flb_router_match(tag, f_ins->match)) {
             /* Invoke the filter callback */
@@ -61,17 +73,26 @@ void flb_filter_do(void *data, size_t bytes,
 
 int flb_filter_set_property(struct flb_filter_instance *filter, char *k, char *v)
 {
+    int len;
     struct flb_config_prop *prop;
 
-    /* Append any remaining configuration key to prop list */
-    prop = flb_malloc(sizeof(struct flb_config_prop));
-    if (!prop) {
-        return -1;
-    }
+    len = strlen(k);
 
-    prop->key = flb_strdup(k);
-    prop->val = flb_strdup(v);
-    mk_list_add(&prop->_head, &filter->properties);
+    /* Check if the key is a known/shared property */
+    if (prop_key_check("match", k, len) == 0) {
+        filter->match = flb_strdup(v);
+    }
+    else {
+        /* Append any remaining configuration key to prop list */
+        prop = flb_malloc(sizeof(struct flb_config_prop));
+        if (!prop) {
+            return -1;
+        }
+
+        prop->key = flb_strdup(k);
+        prop->val = flb_strdup(v);
+        mk_list_add(&prop->_head, &filter->properties);
+    }
 
     return 0;
 }
