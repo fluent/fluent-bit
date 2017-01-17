@@ -165,7 +165,7 @@ static int tail_exclude_generate(struct flb_tail_config *ctx)
      * The exclusion path might content multiple exclusion patterns, first
      * let's split the content into a list.
      */
-    list = flb_utils_split(ctx->exclude_path, ',');
+    list = flb_utils_split(ctx->exclude_path, ',', -1);
     if (!list) {
         return -1;
     }
