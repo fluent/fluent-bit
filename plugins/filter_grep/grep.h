@@ -17,24 +17,29 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_ERROR_H
-#define FLB_ERROR_H
+#ifndef FLB_FILTER_GREP_H
+#define FLB_FILTER_GREP_H
 
-#define FLB_ERR_CFG_FILE              10
-#define FLB_ERR_CFG_FILE_FORMAT       11
-#define FLB_ERR_CFG_FLUSH             20
-#define FLB_ERR_CFG_FLUSH_CREATE      21
-#define FLB_ERR_CFG_FLUSH_REGISTER    22
-#define FLB_ERR_INPUT_INVALID         50
-#define FLB_ERR_INPUT_UNDEF           51
-#define FLB_ERR_INPUT_UNSUP           52
-#define FLB_ERR_OUTPUT_UNDEF         100
-#define FLB_ERR_OUTPUT_INVALID       101
-#define FLB_ERR_OUTPUT_UNIQ          102
-#define FLB_ERR_FILTER_INVALID       201
+#include <regex.h>
 
-/* JSON errors */
-#define FLB_ERR_JSON_INVAL           -501
-#define FLB_ERR_JSON_PART            -502
+/* rule types */
+#define GREP_REGEX    1
+#define GREP_EXCLUDE  2
+
+/* actions */
+#define GREP_RET_KEEP     0
+#define GREP_RET_EXCLUDE  1
+
+struct grep_ctx {
+    struct mk_list rules;
+};
+
+struct grep_rule {
+    int type;
+    char *field;
+    char *regex;
+    regex_t match;
+    struct mk_list _head;
+};
 
 #endif

@@ -127,6 +127,7 @@ REGISTER_OUT_PLUGIN("out_td")
 REGISTER_OUT_PLUGIN("out_lib")
 REGISTER_OUT_PLUGIN("out_flowcounter")
 
+REGISTER_FILTER_PLUGIN("filter_grep")
 REGISTER_FILTER_PLUGIN("filter_stdout")
 
 # Register external input and output plugins

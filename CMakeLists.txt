@@ -93,7 +93,8 @@ option(FLB_OUT_LIB         "Enable library mode output plugin"  Yes)
 option(FLB_OUT_NULL        "Enable dev null output plugin"      Yes)
 option(FLB_OUT_FLOWCOUNTER "Enable flowcount output plugin"     Yes)
 
-option(FLB_FILTER_STDOUT  "Enable stdout filter"                Yes)
+option(FLB_FILTER_GREP     "Enable grep filter"                 Yes)
+option(FLB_FILTER_STDOUT   "Enable stdout filter"               Yes)
 
 # Enable all features
 if(FLB_ALL)
