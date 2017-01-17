@@ -37,12 +37,15 @@ static int cb_stdout_init(struct flb_filter_instance *f_ins,
 
 static int cb_stdout_filter(void *data, size_t bytes,
                             char *tag, int tag_len,
+                            void **out_buf, size_t *out_bytes,
                             struct flb_filter_instance *f_ins,
                             void *filter_context,
                             struct flb_config *config)
 {
     msgpack_unpacked result;
     size_t off = 0, cnt = 0;
+    (void) out_buf;
+    (void) out_bytes;
     (void) f_ins;
     (void) filter_context;
     (void) config;
