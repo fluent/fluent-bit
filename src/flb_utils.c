@@ -189,9 +189,10 @@ void flb_utils_print_setup(struct flb_config *config)
     }
 }
 
-struct mk_list *flb_utils_split(char *line, int separator)
+struct mk_list *flb_utils_split(char *line, int separator, int max_split)
 {
     int i = 0;
+    int count = 0;
     int val_len;
     int len;
     int end;
@@ -234,6 +235,15 @@ struct mk_list *flb_utils_split(char *line, int separator)
 
         mk_list_add(&new->_head, list);
         i = end + 1;
+
+        count++;
+        if (count >= max_split && max_split > 0) {
+            new = flb_malloc(sizeof(struct flb_split_entry));
+            new->value = mk_string_copy_substr(line, i, end);
+            new->len = end - i;
+            mk_list_add(&new->_head, list);
+            break;
+        }
     }
 
     return list;

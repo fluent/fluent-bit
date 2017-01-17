@@ -41,7 +41,8 @@ int flb_utils_set_daemon();
 
 void flb_utils_print_setup(struct flb_config *config);
 
-struct mk_list *flb_utils_split(char *line, int separator);
+struct mk_list *flb_utils_split(char *line, int separator, int max_split);
+
 void flb_utils_split_free(struct mk_list *list);
 int flb_utils_timer_consume(flb_pipefd_t fd);
 
