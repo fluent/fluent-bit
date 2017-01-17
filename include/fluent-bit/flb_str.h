@@ -43,4 +43,18 @@ static inline char *flb_strdup(const char *s)
     return str;
 }
 
+static inline char *flb_strndup(const char *s, size_t n)
+{
+    char *str;
+
+    str = (char *) flb_malloc(n + 1);
+    if (!str) {
+        return NULL;
+    }
+    strncpy(str, s, n);
+    str[n] = '\0';
+
+    return str;
+}
+
 #endif
