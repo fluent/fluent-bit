@@ -31,7 +31,9 @@ struct flb_filter_plugin {
 
     /* Callbacks */
     int (*cb_init) (struct flb_filter_instance *, struct flb_config *, void *);
-    int (*cb_filter) (void *, size_t, char *, int, struct flb_filter_instance *,
+    int (*cb_filter) (void *, size_t, char *, int,
+                      void **, size_t *,
+                      struct flb_filter_instance *,
                       void *, struct flb_config *);
     int (*cb_exit) (void *, struct flb_config *);
 

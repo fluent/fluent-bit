@@ -64,6 +64,8 @@ void flb_filter_do(void *data, size_t bytes,
             /* Invoke the filter callback */
             f_ins->p->cb_filter(data, bytes,    /* msgpack raw data */
                                 tag, tag_len,   /* input tag        */
+                                NULL,           /* FIXME: out_buf   */
+                                NULL,           /* FIXME: out_size  */
                                 f_ins,          /* filter instance  */
                                 f_ins->context, /* filter priv data */
                                 config);
