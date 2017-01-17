@@ -141,21 +141,28 @@ static int mqtt_data_append(char *topic, size_t topic_len,
     }
     root = result.data;
 
+    /* Mark the start of a 'buffer write' operation */
+    flb_input_buf_write_start(ctx->i_ins);
+
     msgpack_pack_array(&ctx->i_ins->mp_pck, 2);
     msgpack_pack_int32(&ctx->i_ins->mp_pck, time(NULL));
 
     n_size = root.via.map.size;
     msgpack_pack_map(&ctx->i_ins->mp_pck, n_size + 1);
-    msgpack_pack_bin(&ctx->i_ins->mp_pck, 5);
-    msgpack_pack_bin_body(&ctx->i_ins->mp_pck, "topic", 5);
-    msgpack_pack_bin(&ctx->i_ins->mp_pck, topic_len);
-    msgpack_pack_bin_body(&ctx->i_ins->mp_pck, topic, topic_len);
+    msgpack_pack_str(&ctx->i_ins->mp_pck, 5);
+    msgpack_pack_str_body(&ctx->i_ins->mp_pck, "topic", 5);
+    msgpack_pack_str(&ctx->i_ins->mp_pck, topic_len);
+    msgpack_pack_str_body(&ctx->i_ins->mp_pck, topic, topic_len);
 
     /* Re-pack original KVs */
     for (i = 0; i < n_size; i++) {
         msgpack_pack_object(&ctx->i_ins->mp_pck, root.via.map.ptr[i].key);
         msgpack_pack_object(&ctx->i_ins->mp_pck, root.via.map.ptr[i].val);
     }
+
+    /* End of buffer write */
+    flb_input_buf_write_end(ctx->i_ins);
+
     msgpack_unpacked_destroy(&result);
     flb_free(pack);
     return 0;
