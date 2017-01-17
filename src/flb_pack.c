@@ -113,8 +113,8 @@ static char *tokens_to_msgpack(char *js,
             msgpack_pack_array(&pck, t->size);
             break;
         case JSMN_STRING:
-            msgpack_pack_bin(&pck, flen);
-            msgpack_pack_bin_body(&pck, js + t->start, flen);
+            msgpack_pack_str(&pck, flen);
+            msgpack_pack_str_body(&pck, js + t->start, flen);
             break;
         case JSMN_PRIMITIVE:
             p = js + t->start;
