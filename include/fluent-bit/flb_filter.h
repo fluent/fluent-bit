@@ -25,21 +25,24 @@
 struct flb_filter_instance;
 
 struct flb_filter_plugin {
-    int flags;
-    char *name;
-    char *description;
+    int flags;             /* Flags (not available at the moment */
+    char *name;            /* Filter short name            */
+    char *description;     /* Description                  */
 
+    /* Callbacks */
     int (*cb_init) (struct flb_filter_instance *, struct flb_config *, void *);
     int (*cb_filter) (void *, size_t, char *, int, struct flb_filter_instance *,
                       void *, struct flb_config *);
     int (*cb_exit) (void *, struct flb_config *);
-    struct mk_list _head;
+
+    struct mk_list _head;  /* Link to parent list (config->filters) */
 };
 
 struct flb_filter_instance {
     int id;                        /* instance id              */
     char name[16];                 /* numbered name            */
     char *match;                   /* match rule based on Tags */
+    void *context;                 /* Instance local context   */
     void *data;
     struct flb_filter_plugin *p;   /* original plugin          */
     struct mk_list properties;     /* config properties        */
@@ -52,5 +55,7 @@ struct flb_filter_instance *flb_filter_new(struct flb_config *config,
 void flb_filter_do(void *data, size_t bytes,
                    char *tag, int tag_len,
                    struct flb_config *config);
+void flb_filter_initialize_all(struct flb_config *config);
+void flb_filter_set_context(struct flb_filter_instance *ins, void *context);
 
 #endif

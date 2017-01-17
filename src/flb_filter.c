@@ -62,10 +62,10 @@ void flb_filter_do(void *data, size_t bytes,
         f_ins = mk_list_entry(head, struct flb_filter_instance, _head);
         if (flb_router_match(tag, f_ins->match)) {
             /* Invoke the filter callback */
-            f_ins->p->cb_filter(data, bytes,   /* msgpack raw data */
-                                tag, tag_len,  /* input tag        */
-                                f_ins,         /* filter instance  */
-                                f_ins->data,   /* filter priv data */
+            f_ins->p->cb_filter(data, bytes,    /* msgpack raw data */
+                                tag, tag_len,   /* input tag        */
+                                f_ins,          /* filter instance  */
+                                f_ins->context, /* filter priv data */
                                 config);
         }
     }
@@ -167,4 +167,9 @@ void flb_filter_initialize_all(struct flb_config *config)
             }
         }
     }
+}
+
+void flb_filter_set_context(struct flb_filter_instance *ins, void *context)
+{
+    ins->context = context;
 }
