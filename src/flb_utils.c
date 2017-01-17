@@ -72,6 +72,9 @@ void flb_utils_error(int err)
     case FLB_ERR_OUTPUT_UNIQ:
         msg = "Just one output type is supported";
         break;
+    case FLB_ERR_FILTER_INVALID:
+        msg = "Invalid filter plugin";
+        break;
     case FLB_ERR_JSON_INVAL:
         msg = "Invalid JSON string";
         break;
@@ -91,7 +94,7 @@ void flb_utils_error(int err)
                 ANSI_BOLD ANSI_RED, ANSI_RESET, msg);
     }
 
-    if (err <= FLB_ERR_OUTPUT_INVALID) {
+    if (err <= FLB_ERR_FILTER_INVALID) {
         exit(EXIT_FAILURE);
     }
 }

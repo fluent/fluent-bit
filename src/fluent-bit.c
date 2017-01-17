@@ -489,7 +489,7 @@ int main(int argc, char **argv)
         case 'F':
             filter = flb_filter_new(config, optarg, NULL);
             if (!filter) {
-                flb_utils_error(FLB_ERR_OUTPUT_INVALID);
+                flb_utils_error(FLB_ERR_FILTER_INVALID);
             }
             last_plugin = PLUGIN_FILTER;
             break;
