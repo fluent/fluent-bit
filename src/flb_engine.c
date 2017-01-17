@@ -345,14 +345,18 @@ int flb_engine_start(struct flb_config *config)
     /* Inputs pre-run */
     flb_input_pre_run_all(config);
 
-    /* Outputs pre-run */
+    /* Initialize output plugins */
     ret = flb_output_init(config);
     if (ret == -1) {
         flb_engine_shutdown(config);
         return -1;
     }
 
+    /* Outputs pre-run */
     flb_output_pre_run(config);
+
+    /* Initialize filter plugins */
+    flb_filter_initialize_all(config);
 
     /* Create and register the timer fd for flush procedure */
     event = &config->event_flush;

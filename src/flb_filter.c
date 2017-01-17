@@ -111,10 +111,10 @@ struct flb_filter_instance *flb_filter_new(struct flb_config *config,
 
     mk_list_foreach(head, &config->filter_plugins) {
         plugin = mk_list_entry(head, struct flb_filter_plugin, _head);
-        if (strcmp(plugin->name, filter) != 0) {
-            plugin = NULL;
-            continue;
+        if (strcmp(plugin->name, filter) == 0) {
+            break;
         }
+        plugin = NULL;
     }
 
     if (!plugin) {
@@ -141,4 +141,30 @@ struct flb_filter_instance *flb_filter_new(struct flb_config *config,
     mk_list_add(&instance->_head, &config->filters);
 
     return instance;
+}
+
+/* Initialize all filter plugins */
+void flb_filter_initialize_all(struct flb_config *config)
+{
+    int ret;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_filter_plugin *p;
+    struct flb_filter_instance *in;
+
+    /* Iterate all active filter instance plugins */
+    mk_list_foreach_safe(head, tmp, &config->filters) {
+        in = mk_list_entry(head, struct flb_filter_instance, _head);
+        p = in->p;
+
+        /* Initialize the input */
+        if (p->cb_init) {
+            ret = p->cb_init(in, config, in->data);
+            if (ret != 0) {
+                flb_error("Failed initialize filter %s", in->name);
+                mk_list_del(&in->_head);
+                flb_free(in);
+            }
+        }
+    }
 }
