@@ -1,0 +1,6 @@
+version: 0.11.{build}
+
+build_script:
+  - cd build
+  - cmake -G %msvc% ../
+  - cmake --build . --config Release
