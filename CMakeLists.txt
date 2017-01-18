@@ -320,6 +320,10 @@ endif()
 
 if(FLB_PROXY_GO AND (NOT CMAKE_SYSTEM_NAME MATCHES "Windows"))
   FLB_DEFINITION(FLB_HAVE_PROXY_GO)
+else()
+  if(FLB_PROXY_GO)
+    unset(FLB_PROXY_GO CACHE)
+  endif()
 endif()
 
 # Memory Allocator
