@@ -342,12 +342,13 @@ int flb_output_init(struct flb_config *config)
         ins = mk_list_entry(head, struct flb_output_instance, _head);
         p = ins->p;
 
+#ifdef FLB_HAVE_PROXY_GO
         /* Proxy plugins have heir own initialization */
         if (p->type == FLB_OUTPUT_PLUGIN_PROXY) {
             flb_plugin_proxy_init(p->proxy, ins, config);
             continue;
         }
-
+#endif
 
 #ifdef FLB_HAVE_TLS
         if (p->flags & FLB_IO_TLS && ins->use_tls) {
