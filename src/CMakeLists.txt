@@ -155,7 +155,11 @@ endif()
 # Static Library
 add_library(fluent-bit-static STATIC ${src})
 target_link_libraries(fluent-bit-static ${FLB_DEPS})
+
 set_target_properties(fluent-bit-static PROPERTIES OUTPUT_NAME fluent-bit)
+if(MSVC)
+  set_target_properties(fluent-bit-static PROPERTIES IMPORT_SUFFIX .lib)
+endif(MSVC)
 
 if(FLB_JEMALLOC)
   target_link_libraries(fluent-bit-static libjemalloc)
