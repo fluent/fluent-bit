@@ -14,5 +14,5 @@ before_build:
 
 build_script:
   - cd build
-  - cmake -G "%msvc%" -DCMAKE_BUILD_TYPE=%configuration% ..
+  - cmake -G "%msvc%" -DCMAKE_BUILD_TYPE=%configuration% -DFLB_WITHOUT_SHARED_LIB=On ..
   - cmake --build .
