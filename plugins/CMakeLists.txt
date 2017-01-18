@@ -127,7 +127,11 @@ REGISTER_OUT_PLUGIN("out_td")
 REGISTER_OUT_PLUGIN("out_lib")
 REGISTER_OUT_PLUGIN("out_flowcounter")
 
-REGISTER_FILTER_PLUGIN("filter_grep")
+# FILTERS
+# =======
+if (NOT CMAKE_SYSTEM_NAME MATCHES "Windows")
+  REGISTER_FILTER_PLUGIN("filter_grep")
+endif()
 REGISTER_FILTER_PLUGIN("filter_stdout")
 
 # Register external input and output plugins
