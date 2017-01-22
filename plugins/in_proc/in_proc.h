@@ -66,6 +66,9 @@ struct flb_in_proc_config {
 
     /* Memory */
     uint8_t mem;
+
+    /* File descriptor */
+    uint8_t fds;
 };
 
 extern struct flb_input_plugin in_proc_plugin;

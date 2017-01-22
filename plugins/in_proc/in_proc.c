@@ -28,6 +28,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <limits.h>
+#include <dirent.h>
 
 #include <msgpack.h>
 #include <fluent-bit/flb_info.h>
@@ -190,8 +191,21 @@ static int configure(struct flb_in_proc_config *ctx,
 
     pval = flb_input_get_property("mem", in);
     if (pval) {
-        if (strcasecmp(pval, "false") == 0 || strcasecmp(pval, "off") == 0) {
+        if (strcasecmp(pval, "true") == 0 || strcasecmp(pval, "on") == 0) {
+            ctx->mem = FLB_TRUE;
+        }
+        else if (strcasecmp(pval, "false") == 0 || strcasecmp(pval, "off") == 0) {
             ctx->mem = FLB_FALSE;
+        }
+    }
+
+    pval = flb_input_get_property("fd", in);
+    if (pval) {
+        if (strcasecmp(pval, "true") == 0 || strcasecmp(pval, "on") == 0) {
+            ctx->fds = FLB_TRUE;
+        }
+        else if (strcasecmp(pval, "false") == 0 || strcasecmp(pval, "off") == 0) {
+            ctx->fds = FLB_FALSE;
         }
     }
 
@@ -217,7 +231,8 @@ static int get_pid_status(pid_t pid)
 
 static int generate_record_linux(struct flb_input_instance *i_ins,
                            struct flb_config *config, void *in_context,
-                           struct flb_in_proc_mem_linux *mem_stat)
+                           struct flb_in_proc_mem_linux *mem_stat,
+                           uint64_t fds)
 {
     struct flb_in_proc_config *ctx = in_context;
     int i;
@@ -229,6 +244,9 @@ static int generate_record_linux(struct flb_input_instance *i_ins,
 
     if (ctx->mem == FLB_TRUE) {
         map_num += sizeof(mem_linux)/sizeof(struct flb_in_proc_mem_offset)-1;
+    }
+    if (ctx->fds == FLB_TRUE) {
+        map_num++;
     }
 
     /*
@@ -273,6 +291,13 @@ static int generate_record_linux(struct flb_input_instance *i_ins,
             msgpack_pack_bin_body(&i_ins->mp_pck, str, strlen(str));
             msgpack_pack_uint64(&i_ins->mp_pck, *val);
         }
+    }
+
+    /* file descriptor */
+    if (ctx->fds == FLB_TRUE) {
+        msgpack_pack_bin(&i_ins->mp_pck, strlen("fd"));
+        msgpack_pack_bin_body(&i_ins->mp_pck, "fd", strlen("fd"));
+        msgpack_pack_uint64(&i_ins->mp_pck, fds);
     }
 
     return 0;
@@ -364,11 +389,40 @@ static int update_mem_linux(struct flb_in_proc_config *ctx,
     return ret;
 }
 
+static int update_fds_linux(struct flb_in_proc_config *ctx,
+                            uint64_t *fds)
+{
+    DIR *dirp = NULL;
+    struct dirent *entry = NULL;
+    char path[PATH_MAX] = {0};
+
+    *fds = 0;
+
+    snprintf(path, sizeof(path), "/proc/%d/fd", ctx->pid);
+    dirp = opendir(path);
+    if (dirp == NULL) {
+        perror("opendir");
+        flb_error("[%s] opendir error %s",FLB_IN_PROC_NAME, path);
+        return -1;
+    }
+
+    entry = readdir(dirp);
+    while(entry != NULL) {
+        *fds += 1;/* should we check entry->d_name ? */
+        entry = readdir(dirp);
+    }
+    *fds -= 2; /* '.' and '..' */
+    closedir(dirp);
+    
+    return 0;
+}
+
 static int in_proc_collect_linux(struct flb_input_instance *i_ins,
                            struct flb_config *config, void *in_context)
 {
     struct flb_in_proc_config *ctx = in_context;
     struct flb_in_proc_mem_linux mem;
+    uint64_t  fds = 0;
     if (ctx->proc_name != NULL){
         ctx->pid = get_pid_from_procname_linux(ctx->proc_name);
         update_alive(ctx);
@@ -377,7 +431,10 @@ static int in_proc_collect_linux(struct flb_input_instance *i_ins,
             mem_linux_clear(&mem);
             update_mem_linux(ctx, &mem);
         }
-        generate_record_linux(i_ins, config, in_context, &mem);
+        if (ctx->fds == FLB_TRUE && ctx->alive == FLB_TRUE) {
+            update_fds_linux(ctx, &fds);
+        }
+        generate_record_linux(i_ins, config, in_context, &mem, fds);
     }
 
     return 0;
@@ -405,6 +462,7 @@ static int in_proc_init(struct flb_input_instance *in,
     }
     ctx->alert = FLB_FALSE;
     ctx->mem   = FLB_TRUE;
+    ctx->fds   = FLB_TRUE;
     ctx->proc_name = NULL;
     ctx->pid = -1;
 
