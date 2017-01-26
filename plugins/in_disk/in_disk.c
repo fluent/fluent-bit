@@ -91,12 +91,12 @@ static int update_disk_stats(struct flb_in_disk_config *ctx)
                     skip_line = FLB_TRUE;
                 }
                 break;
-            case 4: /* read size */
+            case 6: /* sectors read */
                 temp_total = strtoull(buf, NULL, 10);
                 ctx->prev_read_total[i_entry] = ctx->read_total[i_entry];
                 ctx->read_total[i_entry] = temp_total;
                 break;
-            case 8: /* write size */
+            case 10: /* sectors written */
                 temp_total = strtoull(buf, NULL, 10);
                 ctx->prev_write_total[i_entry] = ctx->write_total[i_entry];
                 ctx->write_total[i_entry] = temp_total;
@@ -123,8 +123,8 @@ static int in_disk_collect(struct flb_input_instance *i_ins,
     (void) *i_ins;
     (void) *config;
     
-    uint64_t read_total = 0;
-    uint64_t write_total = 0;
+    unsigned long  read_total = 0; /* The type of sector size is unsigned long in kernel source */
+    unsigned long  write_total = 0;/* The type of sector size is unsigned long in kernel source */
     int entry = ctx->entry;
     int i;
     int num_map = 2;/* write, read */
@@ -138,7 +138,7 @@ static int in_disk_collect(struct flb_input_instance *i_ins,
         else {
             /* Overflow */
             read_total += ctx->read_total[i] +
-                (UINT64_MAX - ctx->prev_read_total[i]);
+                (ULONG_MAX - ctx->prev_read_total[i]);
         }
 
         if (ctx->write_total[i] >= ctx->prev_write_total[i]) {
@@ -147,9 +147,12 @@ static int in_disk_collect(struct flb_input_instance *i_ins,
         else {
             /* Overflow */
             write_total += ctx->write_total[i] +
-                (UINT64_MAX - ctx->prev_write_total[i]);
+                (ULONG_MAX - ctx->prev_write_total[i]);
         }
     }
+
+    read_total  *= 512;
+    write_total *= 512;
 
     msgpack_pack_array(&i_ins->mp_pck, 2);
     msgpack_pack_uint64(&i_ins->mp_pck, time(NULL));
