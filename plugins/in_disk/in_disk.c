@@ -122,9 +122,11 @@ static int in_disk_collect(struct flb_input_instance *i_ins,
     struct flb_in_disk_config *ctx = in_context;
     (void) *i_ins;
     (void) *config;
-    
-    unsigned long  read_total = 0; /* The type of sector size is unsigned long in kernel source */
-    unsigned long  write_total = 0;/* The type of sector size is unsigned long in kernel source */
+
+    /* The type of sector size is unsigned long long in kernel source */
+    unsigned long long   read_total = 0; 
+    unsigned long long  write_total = 0;
+
     int entry = ctx->entry;
     int i;
     int num_map = 2;/* write, read */
@@ -138,7 +140,7 @@ static int in_disk_collect(struct flb_input_instance *i_ins,
         else {
             /* Overflow */
             read_total += ctx->read_total[i] +
-                (ULONG_MAX - ctx->prev_read_total[i]);
+                (ULLONG_MAX - ctx->prev_read_total[i]);
         }
 
         if (ctx->write_total[i] >= ctx->prev_write_total[i]) {
@@ -147,7 +149,7 @@ static int in_disk_collect(struct flb_input_instance *i_ins,
         else {
             /* Overflow */
             write_total += ctx->write_total[i] +
-                (ULONG_MAX - ctx->prev_write_total[i]);
+                (ULLONG_MAX - ctx->prev_write_total[i]);
         }
     }
 
