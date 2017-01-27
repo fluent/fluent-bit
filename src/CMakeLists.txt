@@ -95,6 +95,12 @@ if(FLB_JEMALLOC)
     "libjemalloc")
 endif()
 
+if(FLB_REGEX)
+  set(extra_libs
+    ${extra_libs}
+    "libonigmo")
+endif()
+
 if(FLB_SQLDB)
   set(src
     ${src}

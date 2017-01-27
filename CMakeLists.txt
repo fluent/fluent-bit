@@ -28,6 +28,7 @@ set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PAT
 option(FLB_ALL                "Enable all features"          No)
 option(FLB_DEBUG              "Build with debug symbols"     No)
 option(FLB_JEMALLOC           "Build with Jemalloc support"  No)
+option(FLB_REGEX              "Build wiht Regex support"    Yes)
 option(FLB_TLS                "Build with SSL/TLS support"   No)
 option(FLB_HTTP               "Enable build-in HTTP Server"  No)
 option(FLB_WITHOUT_BIN        "Do not build executable"      No)
@@ -346,6 +347,23 @@ if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   include_directories("${CMAKE_CURRENT_BINARY_DIR}/include/")
 else()
   FLB_OPTION(FLB_JEMALLOC OFF)
+endif()
+
+# Onigmo (Regex Engine)
+# =====================
+if(FLB_REGEX)
+  ExternalProject_Add(onigmo
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/onigmo
+    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/onigmo/configure --with-pic --disable-shared --enable-static --prefix=<INSTALL_DIR>
+    CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
+    BUILD_COMMAND ${MAKE}
+    INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
+    INSTALL_COMMAND $(MAKE) install)
+  add_library(libonigmo STATIC IMPORTED GLOBAL)
+  set_target_properties(libonigmo PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/lib/libonigmo.a")
+  add_dependencies(libonigmo onigmo)
+  include_directories("${CMAKE_CURRENT_BINARY_DIR}/include/")
+  FLB_DEFINITION(FLB_HAVE_REGEX)
 endif()
 
 # Pthread Local Storage
