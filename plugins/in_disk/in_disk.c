@@ -19,6 +19,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <limits.h>
 
 #include <msgpack.h>
 #include <fluent-bit/flb_input.h>
@@ -123,9 +124,9 @@ static int in_disk_collect(struct flb_input_instance *i_ins,
     (void) *i_ins;
     (void) *config;
 
-    /* The type of sector size is unsigned long long in kernel source */
-    unsigned long long   read_total = 0; 
-    unsigned long long  write_total = 0;
+    /* The type of sector size is unsigned long in kernel source */
+    unsigned long   read_total = 0; 
+    unsigned long  write_total = 0;
 
     int entry = ctx->entry;
     int i;
@@ -140,7 +141,7 @@ static int in_disk_collect(struct flb_input_instance *i_ins,
         else {
             /* Overflow */
             read_total += ctx->read_total[i] +
-                (ULLONG_MAX - ctx->prev_read_total[i]);
+                (ULONG_MAX - ctx->prev_read_total[i]);
         }
 
         if (ctx->write_total[i] >= ctx->prev_write_total[i]) {
@@ -149,7 +150,7 @@ static int in_disk_collect(struct flb_input_instance *i_ins,
         else {
             /* Overflow */
             write_total += ctx->write_total[i] +
-                (ULLONG_MAX - ctx->prev_write_total[i]);
+                (ULONG_MAX - ctx->prev_write_total[i]);
         }
     }
 
