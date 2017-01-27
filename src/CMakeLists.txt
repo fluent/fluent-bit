@@ -99,6 +99,10 @@ if(FLB_REGEX)
   set(extra_libs
     ${extra_libs}
     "libonigmo")
+  set(src
+    ${src}
+    "flb_regex.c"
+    )
 endif()
 
 if(FLB_SQLDB)
