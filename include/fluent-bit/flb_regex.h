@@ -21,6 +21,8 @@
 #define FLB_REGEX_H
 
 #include <stdlib.h>
+#include <stddef.h>
+
 #include <onigmo.h>
 
 struct flb_regex {
