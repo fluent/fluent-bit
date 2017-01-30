@@ -22,9 +22,13 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
 #include <msgpack.h>
+
+#include "file.h"
 
 struct flb_file_conf {
     char *out_file;
@@ -46,7 +50,7 @@ static int cb_file_init(struct flb_output_instance *ins,
     }
 
     /* Optional output file name/path */
-    tmp = flb_output_get_property("file", ins);
+    tmp = flb_output_get_property("Path", ins);
     if (tmp) {
         conf->out_file = tmp;
     }
@@ -65,8 +69,11 @@ static void cb_file_flush(void *data, size_t bytes,
 {
     FILE * fp;
     msgpack_unpacked result;
-    size_t off = 0, cnt = 0;
+    size_t off = 0;
+    size_t last_off = 0;
+    size_t alloc_size = 0;
     char *out_file;
+    char *buf;
     struct flb_file_conf *ctx = out_context;
     (void) i_ins;
     (void) config;
@@ -81,7 +88,7 @@ static void cb_file_flush(void *data, size_t bytes,
 
     /* Open output file with default name as the Tag */
     fp = fopen(out_file, "a+");
-    if (!fp) {
+    if (fp == NULL) {
         flb_errno();
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
@@ -92,15 +99,25 @@ static void cb_file_flush(void *data, size_t bytes,
      */
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
-        fprintf(fp, "[%zd] %s: ", cnt++, tag);
-        msgpack_object_print(fp, result.data);
-        fprintf(fp, "\n");
+        alloc_size = (off - last_off) + 128;/* JSON is larger than msgpack */
+        last_off = off;
+        buf = (char *)flb_calloc(1, alloc_size);
+        if (buf == NULL) {
+            flb_error("[out_file] could not allocate memory");
+            msgpack_unpacked_destroy(&result);
+            fclose(fp);
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+
+        if (flb_msgpack_to_json(buf, alloc_size, &result) >= 0) {
+            fprintf(fp, "%s: %s\n", tag, buf);
+        }
+
+        flb_free(buf);
     }
     msgpack_unpacked_destroy(&result);
 
-    if (fp) {
-        fclose(fp);
-    }
+    fclose(fp);
 
     FLB_OUTPUT_RETURN(FLB_OK);
 }
