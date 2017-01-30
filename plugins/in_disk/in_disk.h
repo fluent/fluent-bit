@@ -16,33 +16,30 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
-#ifndef FLB_IN_HEAD_H
-#define FLB_IN_HEAD_H
+#ifndef FLB_IN_DISK_H
+#define FLB_IN_DISK_H
 
+#include <stdint.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
-#include <fluent-bit/flb_utils.h>
 
-#include <msgpack.h>
-
-#define DEFAULT_BUF_SIZE      256
 #define DEFAULT_INTERVAL_SEC  1
 #define DEFAULT_INTERVAL_NSEC 0
 
-struct flb_in_head_config {
-    size_t    buf_size; /* size of buf */
-    ssize_t   buf_len;  /* read size */
-    char     *buf;      /* read buf */
+#define STR_KEY_WRITE "write_size"
+#define STR_KEY_READ  "read_size"
 
-    char     *filepath; /* to read */
-
-    char     add_path; /* add path mode */
-    size_t   path_len;
-
+struct flb_in_disk_config {
+    uint64_t *read_total;
+    uint64_t *write_total;
+    uint64_t *prev_read_total;
+    uint64_t *prev_write_total;
+    char     *dev_name;
+    int      entry;
     int      interval_sec;
     int      interval_nsec;
 };
 
-extern struct flb_input_plugin in_head_plugin;
+extern struct flb_input_plugin in_disk_plugin;
 
-#endif /* FLB_IN_HEAD_H */
+#endif /* FLB_IN_DISK_H */

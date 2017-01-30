@@ -81,7 +81,6 @@ static int in_head_collect(struct flb_input_instance *i_ins,
     }
 
     ret = 0;
-    head_config->idx++;
     flb_stats_update(in_head_plugin.stats_fd, 0, 1);
 
  collect_fin:
@@ -176,7 +175,6 @@ static int in_head_init(struct flb_input_instance *in,
     }
     head_config->buf = NULL;
     head_config->buf_len = 0;
-    head_config->idx = 0;
     head_config->add_path = FLB_FALSE;
 
     /* Initialize head config */

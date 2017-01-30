@@ -27,12 +27,19 @@
 #define FLB_UNIT_HOUR "hour"
 #define FLB_UNIT_DAY  "day"
 
+struct flb_out_fcount_buffer {
+    time_t until;
+    uint64_t counts;
+    uint64_t bytes;
+};
+
 struct flb_out_fcount_config {
     char*     unit;
     int32_t   tick;
-    uint64_t bytes;
-    uint64_t counts;
-    time_t   last_checked;
+
+    struct flb_out_fcount_buffer *buf;
+    int index;
+    int size;
 };
 
 #endif

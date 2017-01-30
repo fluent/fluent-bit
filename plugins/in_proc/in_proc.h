@@ -30,8 +30,30 @@
 
 #define FLB_CMD_LEN 256
 #define FLB_IN_PROC_NAME "in_proc"
+
+struct flb_in_proc_mem_linux {
+    uint64_t vmpeak;
+    uint64_t vmsize;
+    uint64_t vmlck;
+    uint64_t vmhwm;
+    uint64_t vmrss;
+    uint64_t vmdata;
+    uint64_t vmstk;
+    uint64_t vmexe;
+    uint64_t vmlib;
+    uint64_t vmpte;
+    uint64_t vmswap;
+};
+
+struct flb_in_proc_mem_offset {
+    char   *key;
+    char   *msgpack_key;
+    size_t offset;
+};
+
 struct flb_in_proc_config {
     uint8_t  alert;
+    uint8_t  alive;
 
     /* Checking process */
     char*  proc_name;
@@ -41,6 +63,12 @@ struct flb_in_proc_config {
     /* Time interval check */
     int interval_sec;
     int interval_nsec;
+
+    /* Memory */
+    uint8_t mem;
+
+    /* File descriptor */
+    uint8_t fds;
 };
 
 extern struct flb_input_plugin in_proc_plugin;

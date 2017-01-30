@@ -20,7 +20,17 @@
 #ifndef FLB_OUT_LIB
 #define FLB_OUT_LIB
 
+enum {
+    FLB_OUT_LIB_FMT_MSGPACK = 0,
+    FLB_OUT_LIB_FMT_JSON,
+    FLB_OUT_LIB_FMT_ERROR,
+};
+
+#define FLB_FMT_STR_MSGPACK "msgpack"
+#define FLB_FMT_STR_JSON    "json"
+
 struct flb_out_lib_config{
+    int format;
     int (*user_callback)(void* data, size_t size);
 };
 

@@ -293,3 +293,193 @@ void flb_pack_print(char *data, size_t bytes)
     }
     msgpack_unpacked_destroy(&result);
 }
+
+
+static inline int try_to_write(char *buf, int *off, size_t left,
+                        char *str, size_t str_len)
+{
+    if (str_len <= 0){
+        str_len = strlen(str);
+    }
+    if (left <= *off+str_len) {
+        return FLB_FALSE;
+    }
+    memcpy(buf+*off, str, str_len);
+    *off += str_len;
+    return FLB_TRUE;
+}
+
+static int msgpack2json(char *buf, int *off, size_t left, msgpack_object *o)
+{
+    int ret = FLB_FALSE;
+    int i;
+    int loop;
+
+    switch(o->type) {
+    case MSGPACK_OBJECT_NIL:
+        ret = try_to_write(buf, off, left, "null", 4);
+        break;
+
+    case MSGPACK_OBJECT_BOOLEAN:
+        ret = try_to_write(buf, off, left,
+                           (o->via.boolean ? "true":"false"),0);
+        
+        break;
+
+    case MSGPACK_OBJECT_POSITIVE_INTEGER:
+        {
+            char temp[32] = {0};
+            i = snprintf(temp, sizeof(temp)-1, "%lu", (unsigned long)o->via.u64);
+            ret = try_to_write(buf, off, left, temp, i);
+        }
+        break;
+
+    case MSGPACK_OBJECT_NEGATIVE_INTEGER:
+        {
+            char temp[32] = {0};
+            i = snprintf(temp, sizeof(temp)-1, "%ld", (signed long)o->via.i64);
+            ret = try_to_write(buf, off, left, temp, i);
+        }
+        break;
+
+    case MSGPACK_OBJECT_FLOAT:
+        {
+            char temp[32] = {0};
+            i = snprintf(temp, sizeof(temp)-1, "%f", o->via.f64);
+            ret = try_to_write(buf, off, left, temp, i);
+        }
+        break;
+
+    case MSGPACK_OBJECT_STR:
+        if (try_to_write(buf, off, left, "\"", 1) && 
+            try_to_write(buf, off, left, (char*)o->via.str.ptr, o->via.str.size) &&
+            try_to_write(buf, off, left, "\"", 1)) {
+            ret = FLB_TRUE;
+        }
+        break;
+
+    case MSGPACK_OBJECT_BIN:
+        if (try_to_write(buf, off, left, "\"", 1) &&
+            try_to_write(buf, off, left, (char*)o->via.bin.ptr, o->via.bin.size) &&
+            try_to_write(buf, off, left, "\"", 1)) {
+            ret = FLB_TRUE;
+        }
+        break;
+
+    case MSGPACK_OBJECT_ARRAY:
+        loop = o->via.array.size;
+
+        if (!try_to_write(buf, off, left, "[", 1)) {
+            goto msg2json_end;
+        }
+        if (loop != 0) {
+            msgpack_object* p = o->via.array.ptr;
+            if (!msgpack2json(buf, off, left, p)) {
+                goto msg2json_end;
+            }
+            for (i=1; i<loop; i++) {
+                if (!try_to_write(buf, off, left, ", ", 2) ||
+                    !msgpack2json(buf, off, left, p+i)) {
+                    goto msg2json_end;
+                }
+            }
+        }
+
+        ret = try_to_write(buf, off, left, "]", 1);
+        break;
+
+    case MSGPACK_OBJECT_MAP:
+        loop = o->via.map.size;
+        if (!try_to_write(buf, off, left, "{", 1)) {
+            goto msg2json_end;
+        }
+        if (loop != 0) {
+            msgpack_object_kv *p = o->via.map.ptr;
+            if (!msgpack2json(buf, off, left, &p->key) ||
+                !try_to_write(buf, off, left, ":", 1)  ||
+                !msgpack2json(buf, off, left, &p->val)) {
+                    goto msg2json_end;
+            }
+            for (i=1; i<loop; i++) {
+                if (
+                  !try_to_write(buf, off, left, ", ", 2) ||
+                  !msgpack2json(buf, off, left, &(p+i)->key) ||
+                  !try_to_write(buf, off, left, ":", 1)  ||
+                  !msgpack2json(buf, off, left, &(p+i)->val) ) {
+                    goto msg2json_end;
+
+                }
+            }
+        }
+
+        ret = try_to_write(buf, off, left, "}", 1);
+        break;
+
+    default:
+        flb_warn("[%s] unknown type",__FUNCTION__);
+    }
+
+ msg2json_end:
+    return ret;
+}
+
+/**
+ *  convert msgpack to JSON string.
+ *  This API is similar to snprintf.
+ *
+ *  @param  json_str The buffer to fill JSON string.
+ *  @param  json_len The size of json_str.
+ *  @param  data     The msgpack_unpacked data.
+ *  @return success  ? a number characters filled : negative value
+ */
+int flb_msgpack_to_json(char *json_str, size_t str_len,
+                        msgpack_unpacked *data)
+{
+    int ret = -1;
+    int off = 0;
+
+    if (json_str == NULL || data == NULL) {
+        return -1;
+    }
+
+    ret = msgpack2json(json_str, &off, str_len, &data->data);
+    json_str[str_len-1] = '\0';
+    return ret ? off: ret;
+}
+
+
+/**
+ *  convert msgpack to JSON string.
+ *  This API is similar to snprintf.
+ *  @param  size     Estimated length of json str.
+ *  @param  data     The msgpack_unpacked data.
+ *  @return success  ? allocated json str ptr : NULL
+ */
+char *flb_msgpack_to_json_str(size_t size, msgpack_unpacked *data)
+{
+    char *buf = NULL;
+
+    if (data == NULL) {
+        return NULL;
+    }
+    if (size <= 0) {
+        size = 128;
+    }
+    while(1) {
+        buf = (char *)flb_malloc(size);
+        if (buf == NULL) {
+            flb_warn("[%s] can't allocate buffer");
+            return NULL;
+        }
+
+        if (flb_msgpack_to_json(buf, size, data) < 0){
+            /* buffer is small. retry.*/
+            size += 128;
+            flb_free(buf);
+        }
+        else {
+            break;
+        }
+    }
+    return buf;
+}

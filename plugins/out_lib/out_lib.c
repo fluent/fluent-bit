@@ -21,10 +21,34 @@
 
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_utils.h>
-
+#include <fluent-bit/flb_pack.h>
 #include <msgpack.h>
 
 #include "out_lib.h"
+
+#define PLUGIN_NAME "out_lib"
+static int configure(struct flb_out_lib_config *ctx,
+                      struct flb_output_instance   *ins)
+{
+    char* format = NULL;
+    
+    /* default */
+    ctx->format = FLB_OUT_LIB_FMT_MSGPACK;
+
+    format = flb_output_get_property("format", ins);
+    if (format == NULL) {
+        /* using default */
+        return 0;
+    }
+
+    flb_debug("[%s]fomrat is \"%s\"",PLUGIN_NAME, format);
+
+    if (!strcasecmp(format, FLB_FMT_STR_JSON)) {
+        ctx->format = FLB_OUT_LIB_FMT_JSON;
+    }
+
+    return 0;
+}
 
 
 /**
@@ -55,10 +79,12 @@ static int out_lib_init(struct flb_output_instance *ins,
         /* set user callback */
         ctx->user_callback = ins->data;
     }else{
-        flb_error("[out_lib] Callback is NULL");
+        flb_error("[%s] Callback is NULL",PLUGIN_NAME);
         flb_free(ctx);
         return -1;
     }
+
+    configure(ctx, ins);
 
     flb_output_set_context(ins, ctx);
     return 0;
@@ -72,6 +98,8 @@ static void out_lib_flush(void *data, size_t bytes,
 {
     msgpack_unpacked result;
     size_t off = 0;
+    size_t last_off = 0;
+    size_t alloc_size = 0;
     struct flb_out_lib_config *ctx = out_context;
     unsigned char* data_for_user   = NULL;
     (void) i_ins;
@@ -80,18 +108,32 @@ static void out_lib_flush(void *data, size_t bytes,
     (void) tag_len;
 
     if (ctx->user_callback == NULL) {
-        flb_error("[out_lib] Callback is NULL");
+        flb_error("[%s] Callback is NULL",PLUGIN_NAME);
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
-        data_for_user = flb_calloc(1, bytes);
-        /* FIXME: Now we return raw msgpack
-                  we should return JSON format.
-         */
-        memcpy(data_for_user, &result.data, bytes);
-        ctx->user_callback((void*)data_for_user, bytes);
+        switch(ctx->format){
+        case FLB_OUT_LIB_FMT_MSGPACK:
+            data_for_user = flb_calloc(1, bytes);
+            if (data_for_user != NULL) {
+                memcpy(data_for_user, &result.data, bytes);
+            }
+            break;
+        case FLB_OUT_LIB_FMT_JSON:
+            alloc_size = (off - last_off)+128;/* JSON is larger than msgpack */
+            last_off   = off;
+            data_for_user = flb_msgpack_to_json_str(alloc_size, &result);
+            break;
+        default:
+            flb_error("[%s] unknown format",PLUGIN_NAME);
+            FLB_OUTPUT_RETURN(FLB_ERROR);
+        }
+
+        if (data_for_user != NULL) {
+            ctx->user_callback((void*)data_for_user, bytes);
+        }
     }
     msgpack_unpacked_destroy(&result);
     FLB_OUTPUT_RETURN(FLB_OK);

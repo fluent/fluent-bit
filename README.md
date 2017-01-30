@@ -24,6 +24,7 @@ $ bin/fluent-bit -i cpu -o stdout
 | name               | option  | description  |
 |--------------------|---------|---------------------------------------------------------------------------------|
 | CPU                | cpu     | gather CPU usage between snapshots of one second. It support multiple cores     |
+| Disk               | disk    | usage of block device |
 | Forward            | forward | [Fluentd](http://fluentd.org) forward protocol |
 | Memory             | mem     | usage of system memory |
 | MQTT               | mqtt    | start a MQTT server and receive publish messages |
