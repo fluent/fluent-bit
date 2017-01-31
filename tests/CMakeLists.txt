@@ -35,6 +35,12 @@ if(FLB_IN_LIB)
        flb_test_elasticsearch.cpp
        )
   endif()
+
+  if(FLB_OUT_FILE)
+     list(APPEND check_PROGRAMS
+       flb_test_file.cpp
+       )
+  endif()
 endif()
 
 if(FLB_OUT_LIB)
