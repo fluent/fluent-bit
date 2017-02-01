@@ -103,7 +103,7 @@ static void cb_file_flush(void *data, size_t bytes,
         last_off = off;
         buf = (char *)flb_calloc(1, alloc_size);
         if (buf == NULL) {
-            flb_error("[out_file] could not allocate memory");
+            flb_errno();
             msgpack_unpacked_destroy(&result);
             fclose(fp);
             FLB_OUTPUT_RETURN(FLB_RETRY);
