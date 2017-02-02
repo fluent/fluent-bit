@@ -454,7 +454,9 @@ static inline void flb_input_buf_write_end(struct flb_input_instance *i)
 
     /* Call the filter handler */
     buf = i->mp_sbuf.data + i->mp_buf_write_size;
-    flb_filter_do(buf, bytes, i->tag, i->tag_len, i->config);
+    flb_filter_do(i,
+                  buf, bytes,
+                  i->tag, i->tag_len, i->config);
 }
 
 static inline void FLB_INPUT_RETURN()
