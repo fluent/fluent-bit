@@ -45,10 +45,10 @@ static inline int pack_line(time_t time, char *line,
     msgpack_pack_uint64(&ctx->i_ins->mp_pck, time);
 
     msgpack_pack_map(&ctx->i_ins->mp_pck, 1);
-    msgpack_pack_bin(&ctx->i_ins->mp_pck, 3);
-    msgpack_pack_bin_body(&ctx->i_ins->mp_pck, "log", 3);
-    msgpack_pack_bin(&ctx->i_ins->mp_pck, line_len);
-    msgpack_pack_bin_body(&ctx->i_ins->mp_pck, line, line_len);
+    msgpack_pack_str(&ctx->i_ins->mp_pck, 3);
+    msgpack_pack_str_body(&ctx->i_ins->mp_pck, "log", 3);
+    msgpack_pack_str(&ctx->i_ins->mp_pck, line_len);
+    msgpack_pack_str_body(&ctx->i_ins->mp_pck, line, line_len);
 
     return 0;
 }
@@ -60,6 +60,10 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
     int consumed_bytes = 0;
     char *p;
     time_t t = time(NULL);
+    struct flb_tail_config *ctx = file->config;
+
+    /* Mark the start of a 'buffer write' operation */
+    flb_input_buf_write_start(ctx->i_ins);
 
     while ((p = strchr(file->buf_data + file->parsed, '\n'))) {
         len = (p - file->buf_data);
@@ -86,6 +90,9 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
     }
     file->parsed = file->buf_len;
     *bytes = consumed_bytes;
+
+    /* Buffer write-end */
+    flb_input_buf_write_end(ctx->i_ins);
 
     return lines;
 }
