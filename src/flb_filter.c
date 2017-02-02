@@ -51,9 +51,6 @@ static inline int prop_key_check(char *key, char *kv, int k_len)
     return -1;
 }
 
-#define msgpack_pack_append_buffer(user, buf, len) \
-    (*(user)->callback)((user)->data, (const char*)buf, len)
-
 /*
  * If a filter plugin returned a new buffer, we need to replace the
  * old buffer comming from the input instance.
