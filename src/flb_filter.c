@@ -51,24 +51,56 @@ static inline int prop_key_check(char *key, char *kv, int k_len)
     return -1;
 }
 
-void flb_filter_do(void *data, size_t bytes,
+#define msgpack_pack_append_buffer(user, buf, len) \
+    (*(user)->callback)((user)->data, (const char*)buf, len)
+
+/*
+ * If a filter plugin returned a new buffer, we need to replace the
+ * old buffer comming from the input instance.
+ */
+static void flb_filter_replace(struct flb_input_instance *i_ins,
+                               size_t old_size,
+                               void *new_buf, size_t new_size)
+{
+    i_ins->mp_sbuf.size -= old_size;
+    msgpack_sbuffer_write(&i_ins->mp_sbuf, new_buf, new_size);
+}
+
+void flb_filter_do(struct flb_input_instance *i_ins,
+                   void *data, size_t bytes,
                    char *tag, int tag_len,
                    struct flb_config *config)
 {
+    int ret;
+    void *out_buf;
+    size_t out_size;
     struct mk_list *head;
     struct flb_filter_instance *f_ins;
 
     mk_list_foreach(head, &config->filters) {
         f_ins = mk_list_entry(head, struct flb_filter_instance, _head);
         if (flb_router_match(tag, f_ins->match)) {
+            /* Reset filtered buffer */
+            out_buf = NULL;
+            out_size = 0;
+
             /* Invoke the filter callback */
-            f_ins->p->cb_filter(data, bytes,    /* msgpack raw data */
-                                tag, tag_len,   /* input tag        */
-                                NULL,           /* FIXME: out_buf   */
-                                NULL,           /* FIXME: out_size  */
-                                f_ins,          /* filter instance  */
-                                f_ins->context, /* filter priv data */
-                                config);
+            ret = f_ins->p->cb_filter(data, bytes,    /* msgpack raw data */
+                                      tag, tag_len,   /* input tag        */
+                                      &out_buf,       /* new data         */
+                                      &out_size,      /* new data size    */
+                                      f_ins,          /* filter instance  */
+                                      f_ins->context, /* filter priv data */
+                                      config);
+
+            /* Override buffer just if it was modified */
+            if (ret == FLB_FILTER_MODIFIED) {
+                flb_filter_replace(i_ins,              /* input instance */
+                                   bytes,              /* passed data    */
+                                   out_buf, out_size); /* new data       */
+                data = out_buf;
+                bytes = out_size;
+            }
         }
     }
 }
