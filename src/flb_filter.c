@@ -98,8 +98,12 @@ void flb_filter_do(struct flb_input_instance *i_ins,
                 flb_filter_replace(i_ins,              /* input instance */
                                    bytes,              /* passed data    */
                                    out_buf, out_size); /* new data       */
-                data = out_buf;
+                /* Release new temporal buffer */
+                flb_free(out_buf);
+
+                /* Point back the 'data' pointer to the new address */
                 bytes = out_size;
+                data  = i_ins->mp_sbuf.data + (i_ins->mp_sbuf.size - out_size);
             }
         }
     }
