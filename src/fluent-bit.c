@@ -475,7 +475,10 @@ int main(int argc, char **argv)
             last_plugin = PLUGIN_INPUT;
             break;
         case 'm':
-            if (out) {
+            if (last_plugin == PLUGIN_FILTER) {
+                flb_filter_set_property(filter, "match", optarg);
+            }
+            else if (last_plugin == PLUGIN_OUTPUT) {
                 flb_output_set_property(out, "match", optarg);
             }
             break;
