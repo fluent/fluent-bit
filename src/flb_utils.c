@@ -237,7 +237,7 @@ struct mk_list *flb_utils_split(char *line, int separator, int max_split)
         i = end + 1;
 
         count++;
-        if (count >= max_split && max_split > 0) {
+        if (count >= max_split && max_split > 0 && i < len) {
             new = flb_malloc(sizeof(struct flb_split_entry));
             new->value = mk_string_copy_substr(line, i, len);
             new->len   = len - i;
