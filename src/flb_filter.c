@@ -190,6 +190,16 @@ void flb_filter_initialize_all(struct flb_config *config)
     /* Iterate all active filter instance plugins */
     mk_list_foreach_safe(head, tmp, &config->filters) {
         in = mk_list_entry(head, struct flb_filter_instance, _head);
+
+        if (!in->match) {
+            flb_warn("[filter] NO match rule for %s filter instance, unloading.",
+                     in->name);
+            mk_list_del(&in->_head);
+            flb_free(in);
+            continue;
+        }
+
+
         p = in->p;
 
         /* Initialize the input */
