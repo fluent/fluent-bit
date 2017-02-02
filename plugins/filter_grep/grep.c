@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_pack.h>
 #include <msgpack.h>
 
 #include "grep.h"
@@ -40,6 +41,7 @@ static void delete_rules(struct grep_ctx *ctx)
         rule = mk_list_entry(head, struct grep_rule, _head);
         flb_free(rule->field);
         flb_free(rule->regex);
+        regfree(&rule->match);
         mk_list_del(&rule->_head);
         flb_free(rule);
     }
@@ -184,8 +186,18 @@ static inline int grep_filter_data(msgpack_object map, struct grep_ctx *ctx)
             return GREP_RET_EXCLUDE;
         }
 
-        /* try the regex match */
-        ret = regexec(&rule->match, v->via.str.ptr, 0, NULL, 0);
+        /* FIXME: regexec() don't allow to set the length of the string
+         * to match, we are forced to create a new temporal buffer.
+         *
+         * The fix is to move to the new flb_regex() interface.
+         */
+        char *tmp = flb_malloc(v->via.str.size + 1);
+        memcpy(tmp, v->via.str.ptr, v->via.str.size );
+        tmp[v->via.str.size ] = '\0';
+
+        ret = regexec(&rule->match, tmp, 0, NULL, 0);
+        flb_free(tmp);
+
         if (ret != 0) { /* no match */
             if (rule->type == GREP_REGEX) {
                 return GREP_RET_EXCLUDE;
@@ -230,19 +242,26 @@ static int cb_grep_init(struct flb_filter_instance *f_ins,
 
 static int cb_grep_filter(void *data, size_t bytes,
                           char *tag, int tag_len,
-                          void **out_buf, size_t *out_bytes,
+                          void **out_buf, size_t *out_size,
                           struct flb_filter_instance *f_ins,
                           void *context,
                           struct flb_config *config)
 {
     int ret;
+    int old_size = 0;
+    int new_size = 0;
     msgpack_unpacked result;
-    msgpack_object time;
     msgpack_object map;
     msgpack_object root;
     size_t off = 0;
     (void) f_ins;
     (void) config;
+    msgpack_sbuffer tmp_sbuf;
+    msgpack_packer tmp_pck;
+
+    /* Create temporal msgpack buffer */
+    msgpack_sbuffer_init(&tmp_sbuf);
+    msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 
     /* Iterate each item array and apply rules */
     msgpack_unpacked_init(&result);
@@ -252,19 +271,42 @@ static int cb_grep_filter(void *data, size_t bytes,
             continue;
         }
 
+        old_size++;
+
         /* get time and map */
-        time = root.via.array.ptr[0];
         map  = root.via.array.ptr[1];
 
         ret = grep_filter_data(map, context);
         if (ret == GREP_RET_KEEP) {
-            /* fixme */
+            msgpack_pack_object(&tmp_pck, root);
+            new_size++;
         }
         else if (ret == GREP_RET_EXCLUDE) {
-            /* fixme */
+            /* Do nothing */
         }
     }
     msgpack_unpacked_destroy(&result);
+
+    /* we keep everything ? */
+    if (old_size == new_size) {
+        /* Destroy the buffer to avoid more overhead */
+        msgpack_sbuffer_destroy(&tmp_sbuf);
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    /* link new buffers */
+    *out_buf   = tmp_sbuf.data;
+    *out_size = tmp_sbuf.size;
+
+    return FLB_FILTER_MODIFIED;
+}
+
+static int cb_grep_exit(void *data, struct flb_config *config)
+{
+    struct grep_ctx *ctx = data;
+
+    delete_rules(ctx);
+    flb_free(ctx);
     return 0;
 }
 
@@ -273,6 +315,6 @@ struct flb_filter_plugin filter_grep_plugin = {
     .description  = "grep events by specified field values",
     .cb_init      = cb_grep_init,
     .cb_filter    = cb_grep_filter,
-    .cb_exit      = NULL,
+    .cb_exit      = cb_grep_exit,
     .flags        = 0
 };
