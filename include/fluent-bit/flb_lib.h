@@ -37,8 +37,10 @@ FLB_EXPORT flb_ctx_t *flb_create();
 FLB_EXPORT void flb_destroy(flb_ctx_t *ctx);
 FLB_EXPORT int flb_input(flb_ctx_t *ctx, char *input, void *data);
 FLB_EXPORT int flb_output(flb_ctx_t *ctx, char *output, void *data);
+FLB_EXPORT int flb_filter(flb_ctx_t *ctx, char *filter, void *data);
 FLB_EXPORT int flb_input_set(flb_ctx_t *ctx, int ffd, ...);
 FLB_EXPORT int flb_output_set(flb_ctx_t *ctx, int ffd, ...);
+FLB_EXPORT int flb_filter_set(flb_ctx_t *ctx, int ffd, ...);
 FLB_EXPORT int flb_service_set(flb_ctx_t *ctx, ...);
 
 /* start stop the engine */
