@@ -57,7 +57,8 @@ static int cb_stdout_filter(void *data, size_t bytes,
         printf("\n");
     }
     msgpack_unpacked_destroy(&result);
-    return 0;
+
+    return FLB_FILTER_NOTOUCH;
 }
 
 struct flb_filter_plugin filter_stdout_plugin = {
