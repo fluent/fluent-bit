@@ -263,6 +263,7 @@ static int flb_service_conf(struct flb_config *config, char *file)
     struct mk_rconf_section *section;
     struct flb_input_instance *in;
     struct flb_output_instance *out;
+    struct flb_filter_instance *filter;
 
     fconf = mk_rconf_open(file);
     if (!fconf) {
@@ -349,6 +350,39 @@ static int flb_service_conf(struct flb_config *config, char *file)
             flb_output_set_property(out, entry->key, entry->val);
         }
     }
+
+    /* Read all [FILTER] sections */
+    mk_list_foreach(head, &fconf->sections) {
+        section = mk_list_entry(head, struct mk_rconf_section, _head);
+        if (strcasecmp(section->name, "FILTER") != 0) {
+            continue;
+        }
+        /* Get the filter plugin name */
+        name = s_get_key(section, "Name", MK_RCONF_STR);
+        if (!name) {
+            flb_service_conf_err(section, "Name");
+            goto flb_service_conf_end;
+        }
+        /* Create an instace of the plugin */
+        filter = flb_filter_new(config, name, NULL);
+        mk_mem_free(name);
+        if (!filter) {
+            flb_service_conf_err(section, "Name");
+            goto flb_service_conf_end;
+        }
+
+        /* Iterate other properties */
+        mk_list_foreach(h_prop, &section->entries) {
+            entry = mk_list_entry(h_prop, struct mk_rconf_entry, _head);
+            if (strcasecmp(entry->key, "Name") == 0) {
+                continue;
+            }
+
+            /* Set the property */
+            flb_filter_set_property(filter, entry->key, entry->val);
+        }
+    }
+
     ret = 0;
 flb_service_conf_end:
     if (fconf != NULL) {
