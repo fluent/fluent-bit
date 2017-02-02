@@ -103,6 +103,9 @@ static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
         /* As a value we expect a pair of field name and a regular expression */
         split = flb_utils_split(prop->val, ' ', 1);
         if (mk_list_size(split) != 2) {
+            flb_error("[filter_grep] invalid regex, expected field and regular expression");
+            delete_rules(ctx);
+            flb_free(rule);
             return -1;
         }
 
