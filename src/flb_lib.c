@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_utils.h>
 
 #ifdef FLB_HAVE_MTRACE
@@ -67,6 +68,22 @@ static inline struct flb_output_instance *out_instance_get(flb_ctx_t *ctx,
          */
         if (o_ins->mask_id == ffd) {
             return o_ins;
+        }
+    }
+
+    return NULL;
+}
+
+static inline struct flb_filter_instance *filter_instance_get(flb_ctx_t *ctx,
+                                                         int ffd)
+{
+    struct mk_list *head;
+    struct flb_filter_instance *f_ins;
+
+    mk_list_foreach(head, &ctx->config->filters) {
+        f_ins = mk_list_entry(head, struct flb_filter_instance, _head);
+        if (f_ins->id == ffd) {
+            return f_ins;
         }
     }
 
@@ -175,6 +192,19 @@ int flb_output(flb_ctx_t *ctx, char *output, void *data)
     return o_ins->mask_id;
 }
 
+/* Defines a new filter instance */
+int flb_filter(flb_ctx_t *ctx, char *filter, void *data)
+{
+    struct flb_filter_instance *f_ins;
+
+    f_ins = flb_filter_new(ctx->config, filter, data);
+    if (!f_ins) {
+        return -1;
+    }
+
+    return f_ins->id;
+}
+
 /* Set an input interface property */
 int flb_input_set(flb_ctx_t *ctx, int ffd, ...)
 {
@@ -207,7 +237,7 @@ int flb_input_set(flb_ctx_t *ctx, int ffd, ...)
     return 0;
 }
 
-/* Set an input interface property */
+/* Set an output interface property */
 int flb_output_set(flb_ctx_t *ctx, int ffd, ...)
 {
     int ret;
@@ -230,6 +260,39 @@ int flb_output_set(flb_ctx_t *ctx, int ffd, ...)
         }
 
         ret = flb_output_set_property(o_ins, key, value);
+        if (ret != 0) {
+            va_end(va);
+            return -1;
+        }
+    }
+
+    va_end(va);
+    return 0;
+}
+
+/* Set an filter interface property */
+int flb_filter_set(flb_ctx_t *ctx, int ffd, ...)
+{
+    int ret;
+    char *key;
+    char *value;
+    va_list va;
+    struct flb_filter_instance *f_ins;
+
+    f_ins = filter_instance_get(ctx, ffd);
+    if (!f_ins) {
+        return -1;
+    }
+
+    va_start(va, ffd);
+    while ((key = va_arg(va, char *))) {
+        value = va_arg(va, char *);
+        if (!value) {
+            /* Wrong parameter */
+            return -1;
+        }
+
+        ret = flb_filter_set_property(f_ins, key, value);
         if (ret != 0) {
             va_end(va);
             return -1;
