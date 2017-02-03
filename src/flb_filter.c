@@ -132,6 +132,46 @@ int flb_filter_set_property(struct flb_filter_instance *filter, char *k, char *v
     return 0;
 }
 
+/* Invoke exit call for the filter plugin */
+void flb_filter_exit(struct flb_config *config)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct mk_list *tmp_prop;
+    struct mk_list *head_prop;
+    struct flb_config_prop *prop;
+    struct flb_filter_instance *ins;
+    struct flb_filter_plugin *p;
+
+    mk_list_foreach_safe(head, tmp, &config->filters) {
+        ins = mk_list_entry(head, struct flb_filter_instance, _head);
+        p = ins->p;
+
+        /* Check a exit callback */
+        if (p->cb_exit) {
+            p->cb_exit(ins->context, config);
+        }
+
+        /* release properties */
+        mk_list_foreach_safe(head_prop, tmp_prop, &ins->properties) {
+            prop = mk_list_entry(head_prop, struct flb_config_prop, _head);
+
+            flb_free(prop->key);
+            flb_free(prop->val);
+
+            mk_list_del(&prop->_head);
+            flb_free(prop);
+        }
+
+        if (ins->match != NULL) {
+            flb_free(ins->match);
+        }
+
+        mk_list_del(&ins->_head);
+        flb_free(ins);
+    }
+}
+
 struct flb_filter_instance *flb_filter_new(struct flb_config *config,
                                            char *filter, void *data)
 {

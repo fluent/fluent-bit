@@ -58,7 +58,7 @@ struct flb_filter_instance {
 int flb_filter_set_property(struct flb_filter_instance *filter, char *k, char *v);
 struct flb_filter_instance *flb_filter_new(struct flb_config *config,
                                            char *filter, void *data);
-
+void flb_filter_exit(struct flb_config *config);
 void flb_filter_do(struct flb_input_instance *i_ins,
                    void *data, size_t bytes,
                    char *tag, int tag_len,
