@@ -24,6 +24,7 @@
 #include <time.h>
 
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_parser.h>
 
 #include "tail.h"
 #include "tail_file.h"
@@ -57,9 +58,12 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
 {
     int len;
     int lines = 0;
+    int ret;
     int consumed_bytes = 0;
     char *p;
     time_t t = time(NULL);
+    void *out_buf;
+    size_t out_size;
     struct flb_tail_config *ctx = file->config;
 
     /* Mark the start of a 'buffer write' operation */
@@ -75,7 +79,22 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
             continue;
         }
 
-        pack_line(t, file->buf_data, len, file);
+        if (ctx->parser) {
+            ret = flb_parser_do(ctx->parser, file->buf_data, len,
+                                &out_buf, &out_size);
+            if (ret == 0) {
+                msgpack_pack_array(&ctx->i_ins->mp_pck, 2);
+                msgpack_pack_uint64(&ctx->i_ins->mp_pck, t);
+                msgpack_sbuffer_write(&ctx->i_ins->mp_sbuf, out_buf, out_size);
+                flb_free(out_buf);
+            }
+            else {
+                pack_line(t, file->buf_data, len, file);
+            }
+        }
+        else {
+            pack_line(t, file->buf_data, len, file);
+        }
 
         /*
          * FIXME: here we are moving bytes to the left on each iteration, it

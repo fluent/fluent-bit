@@ -22,6 +22,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_parser.h>
 
 struct flb_tail_config {
     int fd_notify;             /* inotify fd               */
@@ -35,6 +36,9 @@ struct flb_tail_config {
 
     /* Database */
     struct flb_sqldb *db;
+
+    /* Parser / Format */
+    struct flb_parser *parser;
 
     /* Lists head for files consumed statically (read) and by events (inotify) */
     struct mk_list files_static;
