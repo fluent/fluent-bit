@@ -257,7 +257,8 @@ static int flb_parsers_conf(struct flb_config *config, char *file)
 {
     char *name;
     char *regex;
-    char *time;
+    char *time_fmt;
+    char *time_key;
     struct mk_rconf *fconf;
     struct mk_rconf_section *section;
     struct mk_list *head;
@@ -294,16 +295,22 @@ static int flb_parsers_conf(struct flb_config *config, char *file)
         }
 
         /* optional time_format */
-        time = s_get_key(section, "Time_Format", MK_RCONF_STR);
-        if (!flb_parser_create(name, regex, time, config)) {
+        time_fmt = s_get_key(section, "Time_Format", MK_RCONF_STR);
+        time_key = s_get_key(section, "Time_Key", MK_RCONF_STR);
+
+        if (!flb_parser_create(name, regex, time_fmt, time_key, config)) {
             goto fconf_error;
         }
 
         flb_free(name);
         flb_free(regex);
-        if (time) {
-            flb_free(time);
+        if (time_fmt) {
+            flb_free(time_fmt);
         }
+        if (time_key) {
+            flb_free(time_key);
+        }
+
         flb_debug("[parser] [%s] loaded", name);
     }
 
