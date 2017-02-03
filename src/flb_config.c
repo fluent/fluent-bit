@@ -116,11 +116,13 @@ struct flb_config *flb_config_init()
 
     mk_list_init(&config->collectors);
     mk_list_init(&config->in_plugins);
-    mk_list_init(&config->out_plugins);
+    mk_list_init(&config->parser_plugins);
     mk_list_init(&config->filter_plugins);
+    mk_list_init(&config->out_plugins);
     mk_list_init(&config->inputs);
-    mk_list_init(&config->outputs);
+    mk_list_init(&config->parsers);
     mk_list_init(&config->filters);
+    mk_list_init(&config->outputs);
     mk_list_init(&config->proxies);
     mk_list_init(&config->sched_requests);
     mk_list_init(&config->workers);
@@ -138,6 +140,8 @@ struct flb_config *flb_config_init()
 
     /* Prepare worker interface */
     flb_worker_init(config);
+
+    flb_regex_init();
 
     return config;
 }

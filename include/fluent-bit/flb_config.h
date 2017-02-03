@@ -84,13 +84,17 @@ struct flb_config {
     /* Collectors */
     struct mk_list collectors;
 
-    /* Input and Output plugins */
+    /* Plugins references */
     struct mk_list in_plugins;
-    struct mk_list out_plugins;
+    struct mk_list parser_plugins;      /* not yet implemented */
     struct mk_list filter_plugins;
+    struct mk_list out_plugins;
 
     /* Inputs instances */
     struct mk_list inputs;
+
+    /* Parsers instances */
+    struct mk_list parsers;
 
     /* Outputs instances */
     struct mk_list outputs;             /* list of output plugins   */
