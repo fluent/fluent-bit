@@ -172,6 +172,7 @@ struct flb_filter_instance *flb_filter_new(struct flb_config *config,
     instance->id    = id;
     instance->p     = plugin;
     instance->data  = data;
+    instance->match = NULL;
     mk_list_init(&instance->properties);
     mk_list_add(&instance->_head, &config->filters);
 
