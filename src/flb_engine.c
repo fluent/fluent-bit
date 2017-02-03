@@ -504,6 +504,7 @@ int flb_engine_shutdown(struct flb_config *config)
     flb_parser_exit(config);
 
     /* cleanup plugins */
+    flb_filter_exit(config);
     flb_input_exit_all(config);
     flb_output_exit(config);
 
