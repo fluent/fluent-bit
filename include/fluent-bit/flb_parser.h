@@ -40,5 +40,6 @@ void flb_parser_destroy(struct flb_parser *parser);
 struct flb_parser *flb_parser_get(char *name, struct flb_config *config);
 int flb_parser_do(struct flb_parser *parser, char *buf, size_t length,
                   void **out_buf, size_t *out_size);
+void flb_parser_exit(struct flb_config *config);
 
 #endif

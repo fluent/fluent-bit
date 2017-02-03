@@ -39,6 +39,7 @@
 #include <fluent-bit/flb_buffer.h>
 #include <fluent-bit/flb_buffer_qchunk.h>
 #include <fluent-bit/flb_scheduler.h>
+#include <fluent-bit/flb_parser.h>
 
 #ifdef FLB_HAVE_BUFFERING
 #include <fluent-bit/flb_buffer_chunk.h>
@@ -498,6 +499,9 @@ int flb_engine_shutdown(struct flb_config *config)
 
     /* router */
     flb_router_exit(config);
+
+    /* parsers */
+    flb_parser_exit(config);
 
     /* cleanup plugins */
     flb_input_exit_all(config);
