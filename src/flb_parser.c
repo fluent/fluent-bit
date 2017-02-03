@@ -28,6 +28,11 @@ int flb_parser_regex_do(struct flb_parser *parser,
                         void **out_buf, size_t *out_size,
                         time_t *out_time);
 
+int flb_parser_json_do(struct flb_parser *parser,
+                       char *buf, size_t length,
+                       void **out_buf, size_t *out_size,
+                       time_t *out_time);
+
 struct flb_parser *flb_parser_create(char *name, char *format,
                                      char *p_regex,
                                      char *time_fmt, char *time_key,
@@ -140,6 +145,10 @@ int flb_parser_do(struct flb_parser *parser, char *buf, size_t length,
     if (parser->type == FLB_PARSER_REGEX) {
         return flb_parser_regex_do(parser, buf, length,
                                    out_buf, out_size, out_time);
+    }
+    else if (parser->type == FLB_PARSER_JSON) {
+        return flb_parser_json_do(parser, buf, length,
+                                  out_buf, out_size, out_time);
     }
 
     return -1;

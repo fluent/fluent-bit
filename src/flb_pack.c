@@ -323,7 +323,7 @@ static int msgpack2json(char *buf, int *off, size_t left, msgpack_object *o)
     case MSGPACK_OBJECT_BOOLEAN:
         ret = try_to_write(buf, off, left,
                            (o->via.boolean ? "true":"false"),0);
-        
+
         break;
 
     case MSGPACK_OBJECT_POSITIVE_INTEGER:
@@ -351,7 +351,7 @@ static int msgpack2json(char *buf, int *off, size_t left, msgpack_object *o)
         break;
 
     case MSGPACK_OBJECT_STR:
-        if (try_to_write(buf, off, left, "\"", 1) && 
+        if (try_to_write(buf, off, left, "\"", 1) &&
             try_to_write(buf, off, left, (char*)o->via.str.ptr, o->via.str.size) &&
             try_to_write(buf, off, left, "\"", 1)) {
             ret = FLB_TRUE;
