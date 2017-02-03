@@ -90,7 +90,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
     }
 
     /* Parser / Format */
-    tmp = flb_input_get_property("format", i_ins);
+    tmp = flb_input_get_property("parser", i_ins);
     if (tmp) {
         ctx->parser = flb_parser_get(tmp, config);
     }

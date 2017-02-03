@@ -256,6 +256,7 @@ static void flb_service_conf_err(struct mk_rconf_section *section, char *key)
 static int flb_parsers_conf(struct flb_config *config, char *file)
 {
     char *name;
+    char *format;
     char *regex;
     char *time_fmt;
     char *time_key;
@@ -270,6 +271,12 @@ static int flb_parsers_conf(struct flb_config *config, char *file)
 
     /* Read all [PARSER] sections */
     mk_list_foreach(head, &fconf->sections) {
+        name = NULL;
+        format = NULL;
+        regex = NULL;
+        time_fmt = NULL;
+        time_key = NULL;
+
         section = mk_list_entry(head, struct mk_rconf_section, _head);
         if (strcasecmp(section->name, "PARSER") != 0) {
             continue;
@@ -279,8 +286,10 @@ static int flb_parsers_conf(struct flb_config *config, char *file)
          * Get the relevant configuration parameters:
          *
          * - name
+         * - format
          * - regex
          * - time_format
+         * - time_key
          */
         name = s_get_key(section, "Name", MK_RCONF_STR);
         if (!name) {
@@ -288,8 +297,14 @@ static int flb_parsers_conf(struct flb_config *config, char *file)
             goto fconf_error;
         }
 
+        format = s_get_key(section, "Format", MK_RCONF_STR);
+        if (!format) {
+            flb_error("[parser] no parser 'format' found");
+            goto fconf_error;
+        }
+
         regex = s_get_key(section, "Regex", MK_RCONF_STR);
-        if (!regex) {
+        if (!regex && strcmp(format, "regex") == 0) {
             flb_error("[parser] no parser 'regex' found");
             goto fconf_error;
         }
@@ -298,12 +313,16 @@ static int flb_parsers_conf(struct flb_config *config, char *file)
         time_fmt = s_get_key(section, "Time_Format", MK_RCONF_STR);
         time_key = s_get_key(section, "Time_Key", MK_RCONF_STR);
 
-        if (!flb_parser_create(name, regex, time_fmt, time_key, config)) {
+        if (!flb_parser_create(name, format, regex,
+                               time_fmt, time_key, config)) {
             goto fconf_error;
         }
 
         flb_free(name);
-        flb_free(regex);
+        flb_free(format);
+        if (regex) {
+            flb_free(regex);
+        }
         if (time_fmt) {
             flb_free(time_fmt);
         }

@@ -14,6 +14,7 @@ set(src
   flb_kernel.c
   flb_input.c
   flb_parser.c
+  flb_parser_regex.c
   flb_filter.c
   flb_output.c
   flb_config.c

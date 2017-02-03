@@ -23,9 +23,13 @@
 #include <fluent-bit/flb_regex.h>
 #include <fluent-bit/flb_config.h>
 
+#define FLB_PARSER_REGEX 1
+#define FLB_PARSER_JSON  2
+
 struct flb_parser {
     /* configuration */
-    char *name;
+    int type;           /* parser type */
+    char *name;         /* format name */
     char *p_regex;      /* pattern for main regular expression */
     char *time_fmt;     /* time format */
     char *time_key;     /* field name that contains the time */
@@ -35,7 +39,8 @@ struct flb_parser {
     struct mk_list _head;
 };
 
-struct flb_parser *flb_parser_create(char *name, char *p_regex,
+struct flb_parser *flb_parser_create(char *name, char *format,
+                                     char *p_regex,
                                      char *time_fmt, char *time_key,
                                      struct flb_config *config);
 void flb_parser_destroy(struct flb_parser *parser);
