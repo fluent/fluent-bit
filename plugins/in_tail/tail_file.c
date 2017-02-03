@@ -64,6 +64,7 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
     time_t t = time(NULL);
     void *out_buf;
     size_t out_size;
+    time_t out_time = 0;
     struct flb_tail_config *ctx = file->config;
 
     /* Mark the start of a 'buffer write' operation */
@@ -81,10 +82,13 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
 
         if (ctx->parser) {
             ret = flb_parser_do(ctx->parser, file->buf_data, len,
-                                &out_buf, &out_size);
+                                &out_buf, &out_size, &out_time);
             if (ret == 0) {
+                if (out_time == 0) {
+                    out_time = t;
+                }
                 msgpack_pack_array(&ctx->i_ins->mp_pck, 2);
-                msgpack_pack_uint64(&ctx->i_ins->mp_pck, t);
+                msgpack_pack_uint64(&ctx->i_ins->mp_pck, out_time);
                 msgpack_sbuffer_write(&ctx->i_ins->mp_sbuf, out_buf, out_size);
                 flb_free(out_buf);
             }
