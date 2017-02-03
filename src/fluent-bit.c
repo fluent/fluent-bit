@@ -38,6 +38,7 @@
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_plugin_proxy.h>
+#include <fluent-bit/flb_parser.h>
 
 #ifdef FLB_HAVE_MTRACE
 #include <mcheck.h>
@@ -77,6 +78,7 @@ static void flb_help(int rc, struct flb_config *config)
     printf("  -m, --match=MATCH\tset plugin match, same as '-p match=abc'\n");
     printf("  -o, --output=OUTPUT\tset an output\n");
     printf("  -p, --prop=\"A=B\"\tset plugin configuration property\n");
+    printf("  -R, --parser=FILE\tspecify a parser configuration file\n");
     printf("  -e, --plugin=FILE\tload an external plugin (shared lib)\n");
     printf("  -l, --log_file=FILE\twrite log info to a file\n");
     printf("  -t, --tag=TAG\t\tset plugin tag, same as '-p tag=abc'\n");
@@ -201,7 +203,6 @@ static int output_set_property(struct flb_output_instance *out, char *kv)
     int sep;
     char *key;
     char *value;
-
     len = strlen(kv);
     sep = mk_string_char_search(kv, '=', len);
     if (sep == -1) {
@@ -250,6 +251,68 @@ static void flb_service_conf_err(struct mk_rconf_section *section, char *key)
 {
     fprintf(stderr, "Invalid configuration value at %s.%s\n",
             section->name, key);
+}
+
+static int flb_parsers_conf(struct flb_config *config, char *file)
+{
+    char *name;
+    char *regex;
+    char *time;
+    struct mk_rconf *fconf;
+    struct mk_rconf_section *section;
+    struct mk_list *head;
+
+    fconf = mk_rconf_open(file);
+    if (!fconf) {
+        return -1;
+    }
+
+    /* Read all [PARSER] sections */
+    mk_list_foreach(head, &fconf->sections) {
+        section = mk_list_entry(head, struct mk_rconf_section, _head);
+        if (strcasecmp(section->name, "PARSER") != 0) {
+            continue;
+        }
+
+        /*
+         * Get the relevant configuration parameters:
+         *
+         * - name
+         * - regex
+         * - time_format
+         */
+        name = s_get_key(section, "Name", MK_RCONF_STR);
+        if (!name) {
+            flb_error("[parser] no parser 'name' found");
+            goto fconf_error;
+        }
+
+        regex = s_get_key(section, "Regex", MK_RCONF_STR);
+        if (!regex) {
+            flb_error("[parser] no parser 'regex' found");
+            goto fconf_error;
+        }
+
+        /* optional time_format */
+        time = s_get_key(section, "Time_Format", MK_RCONF_STR);
+        if (!flb_parser_create(name, regex, time, config)) {
+            goto fconf_error;
+        }
+
+        flb_free(name);
+        flb_free(regex);
+        if (time) {
+            flb_free(time);
+        }
+        flb_debug("[parser] [%s] loaded", name);
+    }
+
+    mk_rconf_free(fconf);
+    return 0;
+
+ fconf_error:
+    mk_rconf_free(fconf);
+    return -1;
 }
 
 static int flb_service_conf(struct flb_config *config, char *file)
@@ -422,6 +485,7 @@ int main(int argc, char **argv)
         { "match",       required_argument, NULL, 'm' },
         { "output",      required_argument, NULL, 'o' },
         { "filter",      required_argument, NULL, 'F' },
+        { "parser",      required_argument, NULL, 'R' },
         { "prop",        required_argument, NULL, 'p' },
         { "plugin",      required_argument, NULL, 'e' },
         { "tag",         required_argument, NULL, 't' },
@@ -463,7 +527,7 @@ int main(int argc, char **argv)
     }
 
     /* Parse the command line options */
-    while ((opt = getopt_long(argc, argv, "b:B:c:df:i:m:o:F:p:e:t:l:vqVhHP:",
+    while ((opt = getopt_long(argc, argv, "b:B:c:df:i:m:o:R:F:p:e:t:l:vqVhHP:",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
@@ -522,6 +586,12 @@ int main(int argc, char **argv)
                 flb_utils_error(FLB_ERR_OUTPUT_INVALID);
             }
             last_plugin = PLUGIN_OUTPUT;
+            break;
+        case 'R':
+            ret = flb_parsers_conf(config, optarg);
+            if (ret != 0) {
+                exit(EXIT_FAILURE);
+            }
             break;
         case 'F':
             filter = flb_filter_new(config, optarg, NULL);
