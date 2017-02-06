@@ -85,7 +85,10 @@ static int in_lib_collect(struct flb_input_instance *i_ins,
     }
     ctx->buf_len = 0;
 
+    /* Mark the start of a 'buffer write' operation */
+    flb_input_buf_write_start(i_ins);
     ret = msgpack_sbuffer_write(&ctx->i_ins->mp_sbuf, pack, out_size);
+    flb_input_buf_write_end(i_ins);
     flb_free(pack);
 
     flb_pack_state_reset(&ctx->state);
