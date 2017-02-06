@@ -252,6 +252,10 @@ static int generate_record_linux(struct flb_input_instance *i_ins,
     /*
      * Store the new data into the MessagePack buffer,
      */
+
+    /* Mark the start of a 'buffer write' operation */
+    flb_input_buf_write_start(i_ins);
+
     msgpack_pack_array(&i_ins->mp_pck, 2);
     msgpack_pack_uint64(&i_ins->mp_pck, time(NULL));
 
@@ -299,6 +303,8 @@ static int generate_record_linux(struct flb_input_instance *i_ins,
         msgpack_pack_bin_body(&i_ins->mp_pck, "fd", strlen("fd"));
         msgpack_pack_uint64(&i_ins->mp_pck, fds);
     }
+
+    flb_input_buf_write_end(i_ins);
 
     return 0;
 }
