@@ -80,6 +80,7 @@ int in_stdin_collect(struct flb_input_instance *i_ins,
     int out_size;
     int ret;
     char *pack;
+    time_t t;
     msgpack_unpacked result;
     size_t start = 0, off = 0;
     struct flb_in_stdin_config *ctx = in_context;
@@ -104,17 +105,21 @@ int in_stdin_collect(struct flb_input_instance *i_ins,
     /* Queue the data with time field */
     msgpack_unpacked_init(&result);
 
+    flb_input_buf_write_start(i_ins);
+
+    t = time(NULL);
     while (msgpack_unpack_next(&result, pack, out_size, &off)) {
         if (result.data.type == MSGPACK_OBJECT_MAP) {
             /* { map => val, map => val, map => val } */
             msgpack_pack_array(&i_ins->mp_pck, 2);
-            msgpack_pack_uint64(&i_ins->mp_pck, time(NULL));
-            msgpack_pack_bin_body(&i_ins->mp_pck, pack + start, off - start);
+            msgpack_pack_uint64(&i_ins->mp_pck, t);
+            msgpack_pack_str_body(&i_ins->mp_pck, pack + start, off - start);
         } else {
-            msgpack_pack_bin_body(&i_ins->mp_pck, pack + start, off - start);
+            msgpack_pack_str_body(&i_ins->mp_pck, pack + start, off - start);
         }
         start = off;
     }
+    flb_input_buf_write_end(i_ins);
     msgpack_unpacked_destroy(&result);
 
     flb_free(pack);
