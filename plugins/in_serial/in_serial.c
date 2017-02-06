@@ -42,6 +42,9 @@
 static inline int process_line(char *line, int len,
                                struct flb_in_serial_config *ctx)
 {
+
+    flb_input_buf_write_start(ctx->i_ins);
+
     /*
      * Store the new data into the MessagePack buffer,
      * we handle this as a list of maps.
@@ -50,10 +53,12 @@ static inline int process_line(char *line, int len,
     msgpack_pack_uint64(&ctx->i_ins->mp_pck, time(NULL));
 
     msgpack_pack_map(&ctx->i_ins->mp_pck, 1);
-    msgpack_pack_bin(&ctx->i_ins->mp_pck, 3);
-    msgpack_pack_bin_body(&ctx->i_ins->mp_pck, "msg", 3);
-    msgpack_pack_bin(&ctx->i_ins->mp_pck, len);
-    msgpack_pack_bin_body(&ctx->i_ins->mp_pck, line, len);
+    msgpack_pack_str(&ctx->i_ins->mp_pck, 3);
+    msgpack_pack_str_body(&ctx->i_ins->mp_pck, "msg", 3);
+    msgpack_pack_str(&ctx->i_ins->mp_pck, len);
+    msgpack_pack_str_body(&ctx->i_ins->mp_pck, line, len);
+
+    flb_input_buf_write_end(ctx->i_ins);
 
     flb_debug("[in_serial] message '%s'",
               (const char *) line);
