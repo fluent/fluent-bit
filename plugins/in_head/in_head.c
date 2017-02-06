@@ -61,6 +61,9 @@ static int in_head_collect(struct flb_input_instance *i_ins,
         num_map++;
     }
 
+    /* Mark the start of a 'buffer write' operation */
+    flb_input_buf_write_start(i_ins);
+
     msgpack_pack_array(&i_ins->mp_pck, 2);
     msgpack_pack_uint64(&i_ins->mp_pck, time(NULL));
 
@@ -81,6 +84,8 @@ static int in_head_collect(struct flb_input_instance *i_ins,
     }
 
     ret = 0;
+
+    flb_input_buf_write_end(i_ins);
     flb_stats_update(in_head_plugin.stats_fd, 0, 1);
 
  collect_fin:
