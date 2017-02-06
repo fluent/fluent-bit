@@ -209,6 +209,9 @@ static int in_mem_collect(struct flb_input_instance *i_ins,
         entries += 2;
     }
 
+    /* Mark the start of a 'buffer write' operation */
+    flb_input_buf_write_start(i_ins);
+
     msgpack_pack_array(&i_ins->mp_pck, 2);
     msgpack_pack_uint64(&i_ins->mp_pck, time(NULL));
     msgpack_pack_map(&i_ins->mp_pck, entries);
@@ -241,6 +244,7 @@ static int in_mem_collect(struct flb_input_instance *i_ins,
               total, free);
     ++ctx->idx;
 
+    flb_input_buf_write_end(i_ins);
     flb_stats_update(in_mem_plugin.stats_fd, 0, 1);
     return 0;
 }
