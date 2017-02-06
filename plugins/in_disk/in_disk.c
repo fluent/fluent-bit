@@ -157,6 +157,9 @@ static int in_disk_collect(struct flb_input_instance *i_ins,
     read_total  *= 512;
     write_total *= 512;
 
+    /* Mark the start of a 'buffer write' operation */
+    flb_input_buf_write_start(i_ins);
+
     msgpack_pack_array(&i_ins->mp_pck, 2);
     msgpack_pack_uint64(&i_ins->mp_pck, time(NULL));
     msgpack_pack_map(&i_ins->mp_pck, num_map);
@@ -169,6 +172,8 @@ static int in_disk_collect(struct flb_input_instance *i_ins,
     msgpack_pack_bin(&i_ins->mp_pck, strlen(STR_KEY_WRITE));
     msgpack_pack_bin_body(&i_ins->mp_pck, STR_KEY_WRITE, strlen(STR_KEY_WRITE));
     msgpack_pack_uint64(&i_ins->mp_pck, write_total);
+
+    flb_input_buf_write_end(i_ins);
 
     return 0;
 }
