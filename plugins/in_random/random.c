@@ -74,6 +74,9 @@ static int in_random_collect(struct flb_input_instance *i_ins,
         close(fd);
     }
 
+    /* Mark the start of a 'buffer write' operation */
+    flb_input_buf_write_start(i_ins);
+
     msgpack_pack_array(&i_ins->mp_pck, 2);
     msgpack_pack_uint64(&i_ins->mp_pck, time(NULL));
     msgpack_pack_map(&i_ins->mp_pck, 1);
@@ -81,6 +84,8 @@ static int in_random_collect(struct flb_input_instance *i_ins,
     msgpack_pack_bin(&i_ins->mp_pck, 10);
     msgpack_pack_bin_body(&i_ins->mp_pck, "rand_value", 10);
     msgpack_pack_uint64(&i_ins->mp_pck, val);
+
+    flb_input_buf_write_end(i_ins);
 
     ctx->samples_count++;
 
