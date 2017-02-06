@@ -38,6 +38,8 @@ static inline int process_pack(struct tcp_conn *conn,
     msgpack_unpacked result;
     msgpack_object entry;
 
+    flb_input_buf_write_start(conn->in);
+
     /* First pack the results, iterate concatenated messages */
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, pack, size, &off)) {
@@ -46,11 +48,17 @@ static inline int process_pack(struct tcp_conn *conn,
         msgpack_pack_array(&conn->in->mp_pck, 2);
         msgpack_pack_uint64(&conn->in->mp_pck, time(NULL));
 
-        msgpack_pack_map(&conn->in->mp_pck, 1);
-        msgpack_pack_bin(&conn->in->mp_pck, 3);
-        msgpack_pack_bin_body(&conn->in->mp_pck, "msg", 3);
-        msgpack_pack_object(&conn->in->mp_pck, entry);
+        if (entry.type == MSGPACK_OBJECT_MAP) {
+            msgpack_pack_object(&conn->in->mp_pck, entry);
+        }
+        else {
+            msgpack_pack_map(&conn->in->mp_pck, 1);
+            msgpack_pack_str(&conn->in->mp_pck, 3);
+            msgpack_pack_str_body(&conn->in->mp_pck, "msg", 3);
+            msgpack_pack_object(&conn->in->mp_pck, entry);
+        }
     }
+    flb_input_buf_write_end(conn->in);
 
     msgpack_unpacked_destroy(&result);
 
