@@ -23,6 +23,10 @@
 #include <stdlib.h>
 #include <stddef.h>
 
+#ifndef _WIN32
+#include <unistd.h>
+#endif
+
 #include <onigmo.h>
 
 struct flb_regex {
