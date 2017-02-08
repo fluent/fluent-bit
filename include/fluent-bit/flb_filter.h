@@ -21,6 +21,7 @@
 #define FLB_FILTER_H
 
 #include <fluent-bit/flb_config.h>
+#include <msgpack.h>
 
 #define FLB_FILTER_MODIFIED 1
 #define FLB_FILTER_NOTOUCH  2
@@ -59,7 +60,7 @@ int flb_filter_set_property(struct flb_filter_instance *filter, char *k, char *v
 struct flb_filter_instance *flb_filter_new(struct flb_config *config,
                                            char *filter, void *data);
 void flb_filter_exit(struct flb_config *config);
-void flb_filter_do(struct flb_input_instance *i_ins,
+void flb_filter_do(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                    void *data, size_t bytes,
                    char *tag, int tag_len,
                    struct flb_config *config);

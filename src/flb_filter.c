@@ -55,15 +55,15 @@ static inline int prop_key_check(char *key, char *kv, int k_len)
  * If a filter plugin returned a new buffer, we need to replace the
  * old buffer comming from the input instance.
  */
-static void flb_filter_replace(struct flb_input_instance *i_ins,
+static void flb_filter_replace(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                                size_t old_size,
                                void *new_buf, size_t new_size)
 {
-    i_ins->mp_sbuf.size -= old_size;
-    msgpack_sbuffer_write(&i_ins->mp_sbuf, new_buf, new_size);
+    mp_sbuf->size -= old_size;
+    msgpack_sbuffer_write(mp_sbuf, new_buf, new_size);
 }
 
-void flb_filter_do(struct flb_input_instance *i_ins,
+void flb_filter_do(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                    void *data, size_t bytes,
                    char *tag, int tag_len,
                    struct flb_config *config)
@@ -92,7 +92,7 @@ void flb_filter_do(struct flb_input_instance *i_ins,
 
             /* Override buffer just if it was modified */
             if (ret == FLB_FILTER_MODIFIED) {
-                flb_filter_replace(i_ins,              /* input instance */
+                flb_filter_replace(mp_sbuf, mp_pck,    /* msgpack        */
                                    bytes,              /* passed data    */
                                    out_buf, out_size); /* new data       */
                 /* Release new temporal buffer */
@@ -100,7 +100,7 @@ void flb_filter_do(struct flb_input_instance *i_ins,
 
                 /* Point back the 'data' pointer to the new address */
                 bytes = out_size;
-                data  = i_ins->mp_sbuf.data + (i_ins->mp_sbuf.size - out_size);
+                data  = mp_sbuf->data + (mp_sbuf->size - out_size);
             }
         }
     }
