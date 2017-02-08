@@ -105,8 +105,9 @@ struct flb_input_dyntag {
     char *tag;
 
     /* MessagePack */
-    struct msgpack_sbuffer mp_sbuf; /* msgpack sbuffer */
-    struct msgpack_packer mp_pck;   /* msgpack packer  */
+    size_t mp_buf_write_size;
+    msgpack_sbuffer mp_sbuf;   /* msgpack sbuffer */
+    msgpack_packer mp_pck;     /* msgpack packer  */
 
     /* Link to parent list on flb_input_instance */
     struct mk_list _head;
@@ -454,10 +455,35 @@ static inline void flb_input_buf_write_end(struct flb_input_instance *i)
 
     /* Call the filter handler */
     buf = i->mp_sbuf.data + i->mp_buf_write_size;
-    flb_filter_do(i,
+    flb_filter_do(&i->mp_sbuf, &i->mp_pck,
                   buf, bytes,
                   i->tag, i->tag_len, i->config);
 }
+
+static inline void flb_input_dbuf_write_start(struct flb_input_dyntag *dt)
+{
+    /* Save the current size of the buffer before an incoming modification */
+    dt->mp_buf_write_size = dt->mp_sbuf.size;
+}
+
+static inline void flb_input_dbuf_write_end(struct flb_input_dyntag *dt)
+{
+    size_t bytes;
+    void *buf;
+
+    /* Get the number of new bytes */
+    bytes = (dt->mp_sbuf.size - dt->mp_buf_write_size);
+    if (bytes == 0) {
+        return;
+    }
+
+    /* Call the filter handler */
+    buf = dt->mp_sbuf.data + dt->mp_buf_write_size;
+    flb_filter_do(&dt->mp_sbuf, &dt->mp_pck,
+                  buf, bytes,
+                  dt->tag, dt->tag_len, dt->in->config);
+}
+
 
 static inline void FLB_INPUT_RETURN()
 {

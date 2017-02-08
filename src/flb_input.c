@@ -537,18 +537,17 @@ int flb_input_dyntag_append(struct flb_input_instance *in,
         break;
     }
 
-    /* Found a dyntag node that can append the new info */
-    if (dt) {
-        msgpack_pack_object(&dt->mp_pck, data);
-        goto out;
+    /* No dyntag was found, we need to create a new one */
+    if (!dt) {
+        dt = flb_input_dyntag_create(in, tag, tag_len);
+        if (!dt) {
+            return -1;
+        }
     }
 
-    /* No dyntag was found, we need to create a new one */
-    dt = flb_input_dyntag_create(in, tag, tag_len);
-    if (!dt) {
-        return -1;
-    }
+    flb_input_dbuf_write_start(dt);
     msgpack_pack_object(&dt->mp_pck, data);
+    flb_input_dbuf_write_end(dt);
 
  out:
     /* Lock buffers where size > 2MB */
