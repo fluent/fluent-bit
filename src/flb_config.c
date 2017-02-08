@@ -34,6 +34,8 @@
 #include <fluent-bit/flb_worker.h>
 #include <fluent-bit/flb_scheduler.h>
 
+int flb_regex_init();
+
 struct flb_service_config service_configs[] = {
     {FLB_CONF_STR_FLUSH,
      FLB_CONF_TYPE_INT,
