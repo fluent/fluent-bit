@@ -37,6 +37,14 @@ static void count_initialized(struct flb_out_fcount_buffer* buf)
     buf->counts = 0;
 }
 
+static int time_is_valid(time_t t, struct flb_out_fcount_config* ctx)
+{
+    if (t < ctx->buf[ctx->index].until) {
+        return FLB_FALSE;
+    }
+    return FLB_TRUE;
+}
+
 static int configure(struct flb_out_fcount_config *ctx,
                      struct flb_output_instance   *ins,
                      struct flb_config *config)
@@ -185,6 +193,12 @@ static void out_fcount_flush(void *data, size_t bytes,
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
         t = get_timestamp_from_msgpack(&result.data);
+        if (time_is_valid(t, ctx) == FLB_FALSE) {
+            flb_warn("[%s] Out of range. Skip the record.", PLUGIN_NAME);
+            continue;
+        }
+
+
         byte_data     = (uint64_t)(off - last_off);
         last_off      = off;
 
