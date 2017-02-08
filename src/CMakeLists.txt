@@ -7,7 +7,9 @@ set(src
   flb_api.c
   flb_lib.c
   flb_log.c
+  flb_env.c
   flb_uri.c
+  flb_hash.c
   flb_pack.c
   flb_sha1.c
   flb_pipe.c
