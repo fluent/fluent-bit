@@ -359,7 +359,7 @@ int flb_lib_push(flb_ctx_t *ctx, int ffd, void *data, size_t len)
         return -1;
     }
 
-    ret = write(i_ins->channel[1], data, len);
+    ret = flb_pipe_w(i_ins->channel[1], data, len);
     if (ret == -1) {
         flb_errno();
         return -1;
@@ -423,7 +423,7 @@ int flb_stop(flb_ctx_t *ctx)
 
     flb_debug("[lib] sending STOP signal to the engine");
     val = FLB_ENGINE_EV_STOP;
-    write(ctx->config->ch_manager[1], &val, sizeof(uint64_t));
+    flb_pipe_w(ctx->config->ch_manager[1], &val, sizeof(uint64_t));
     ret = pthread_join(ctx->config->worker, NULL);
 
     flb_debug("[lib] Fluent Bit engine stopped");
