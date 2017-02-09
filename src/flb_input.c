@@ -553,7 +553,6 @@ int flb_input_dyntag_append(struct flb_input_instance *in,
     msgpack_pack_object(&dt->mp_pck, data);
     flb_input_dbuf_write_end(dt);
 
- out:
     /* Lock buffers where size > 2MB */
     if (dt->mp_sbuf.size > 2048000) {
         dt->lock = FLB_TRUE;
