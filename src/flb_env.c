@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_env.h>
 
 #include <stdlib.h>
@@ -163,7 +164,7 @@ char *flb_env_var_translate(struct flb_env *env, char *value)
     }
 
     if (buf.len == 0) {
-        return value;
+        return flb_strdup(value);
     }
 
     return buf.str;
