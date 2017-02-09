@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_input.h>
@@ -164,24 +165,27 @@ static inline int prop_key_check(char *key, char *kv, int k_len)
 int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
 {
     int len;
+    char *tmp;
     struct flb_config_prop *prop;
 
     len = strlen(k);
+    tmp = flb_env_var_translate(in->config->env, v);
 
     /* Check if the key is a known/shared property */
     if (prop_key_check("tag", k, len) == 0) {
-        in->tag     = flb_strdup(v);
-        in->tag_len = strlen(v);
+        in->tag     = tmp;
+        in->tag_len = strlen(tmp);
     }
     else if (in->p->flags & FLB_INPUT_NET) {
         if (prop_key_check("listen", k, len) == 0) {
-            in->host.listen = flb_strdup(v);
+            in->host.listen = tmp;
         }
         else if (prop_key_check("host", k, len) == 0) {
-            in->host.name   = flb_strdup(v);
+            in->host.name   = tmp;
         }
         else if (prop_key_check("port", k, len) == 0) {
-            in->host.port = atoi(v);
+            in->host.port = atoi(tmp);
+            flb_free(tmp);
         }
     }
     else {
@@ -192,7 +196,7 @@ int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
         }
 
         prop->key = flb_strdup(k);
-        prop->val = flb_strdup(v);
+        prop->val = tmp;
         mk_list_add(&prop->_head, &in->properties);
     }
 
