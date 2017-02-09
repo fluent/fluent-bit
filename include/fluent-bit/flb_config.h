@@ -114,6 +114,9 @@ struct flb_config {
     char *log_file;
     struct flb_log *log;
 
+    /* Environment */
+    void *env;
+
     /* Workers: threads spawn using flb_worker_create() */
     struct mk_list workers;
 

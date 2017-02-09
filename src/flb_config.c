@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_plugins.h>
@@ -130,6 +131,9 @@ struct flb_config *flb_config_init()
     mk_list_init(&config->workers);
 
     memset(&config->tasks_map, '\0', sizeof(config->tasks_map));
+
+    /* Environment */
+    config->env = flb_env_create();
 
     /* Register plugins */
     flb_register_plugins(config);
@@ -304,6 +308,7 @@ int flb_config_set_property(struct flb_config *config,
     char **s_val;
     size_t len = strnlen(k, 256);
     char *key = service_configs[0].key;
+    char *tmp;
 
     while (key != NULL) {
         if (prop_key_check(key, k,len) == 0) {
@@ -312,15 +317,16 @@ int flb_config_set_property(struct flb_config *config,
             }
             else{
                 ret = 0;
+                tmp = flb_env_var_translate(config->env, v);
                 switch(service_configs[i].type) {
                 case FLB_CONF_TYPE_INT:
                     i_val  = (int*)((char*)config + service_configs[i].offset);
-                    *i_val = atoi(v);
+                    *i_val = atoi(tmp);
                     break;
 
                 case FLB_CONF_TYPE_BOOL:
                     i_val = (int*)((char*)config+service_configs[i].offset);
-                    *i_val = atobool(v);
+                    *i_val = atobool(tmp);
                     break;
 
                 case FLB_CONF_TYPE_STR:
@@ -328,11 +334,14 @@ int flb_config_set_property(struct flb_config *config,
                     if ( *s_val != NULL ) {
                         flb_free(*s_val); /* release before overwriting */
                     }
-                    *s_val = flb_strdup(v);
+                    *s_val = flb_strdup(tmp);
                     break;
-
                 default:
                     ret = -1;
+                }
+
+                if (tmp != v) {
+                    flb_free(tmp);
                 }
             }
 
