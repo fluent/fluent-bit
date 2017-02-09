@@ -91,11 +91,11 @@ static unsigned int gen_hash(const void *key, int len)
     return (unsigned int) h;
 }
 
-static inline void flb_hash_entry_free(struct flb_hash *h, int id)
+static inline void flb_hash_entry_free(struct flb_hash *ht, int id)
 {
     struct flb_hash_entry *entry;
 
-    entry = &h->table[id];
+    entry = &ht->table[id];
     if (!entry->key) {
         return;
     }
@@ -108,38 +108,38 @@ static inline void flb_hash_entry_free(struct flb_hash *h, int id)
 
 struct flb_hash *flb_hash_create(size_t size)
 {
-    struct flb_hash *h;
+    struct flb_hash *ht;
 
-    h = flb_malloc(sizeof(struct flb_hash));
-    if (!h) {
+    ht = flb_malloc(sizeof(struct flb_hash));
+    if (!ht) {
         flb_errno();
         return NULL;
     }
 
-    h->size = size;
-    h->table = flb_calloc(1, sizeof(struct flb_hash_entry) * size);
-    if (!h->table) {
+    ht->size = size;
+    ht->table = flb_calloc(1, sizeof(struct flb_hash_entry) * size);
+    if (!ht->table) {
         flb_errno();
-        flb_free(h);
+        flb_free(ht);
         return NULL;
     }
 
-    return h;
+    return ht;
 }
 
-void flb_hash_destroy(struct flb_hash *h)
+void flb_hash_destroy(struct flb_hash *ht)
 {
     int i;
 
-    for (i = 0; i < h->size; i++) {
-        flb_hash_entry_free(h, i);
+    for (i = 0; i < ht->size; i++) {
+        flb_hash_entry_free(ht, i);
     }
 
-    flb_free(h->table);
-    flb_free(h);
+    flb_free(ht->table);
+    flb_free(ht);
 }
 
-int flb_hash_add(struct flb_hash *h, char *key, char *val)
+int flb_hash_add(struct flb_hash *ht, char *key, char *val)
 {
     int id;
     int k_len;
@@ -158,9 +158,9 @@ int flb_hash_add(struct flb_hash *h, char *key, char *val)
     }
 
     hash = gen_hash(key, k_len);
-    id = (hash % h->size);
+    id = (hash % ht->size);
 
-    entry = &h->table[id];
+    entry = &ht->table[id];
     entry->key = flb_strdup(key);
     entry->key_len = k_len;
     entry->val = flb_strdup(val);
@@ -169,7 +169,30 @@ int flb_hash_add(struct flb_hash *h, char *key, char *val)
     return 0;
 }
 
-int flb_hash_del(struct flb_hash *h, char *key)
+char *flb_hash_get(struct flb_hash *ht, char *key)
+{
+    int id;
+    int len;
+    unsigned int hash;
+    struct flb_hash_entry *entry;
+
+    if (!key) {
+        return NULL;
+    }
+
+    len = strlen(key);
+    if (len == 0) {
+        return NULL;
+    }
+
+    hash = gen_hash(key, len);
+    id = (hash % ht->size);
+
+    entry = &ht->table[id];
+    return entry->val;
+}
+
+int flb_hash_del(struct flb_hash *ht, char *key)
 {
     int id;
     int len;
@@ -185,8 +208,8 @@ int flb_hash_del(struct flb_hash *h, char *key)
     }
 
     hash = gen_hash(key, len);
-    id = (hash % h->size);
+    id = (hash % ht->size);
 
-    flb_hash_entry_free(h, id);
+    flb_hash_entry_free(ht, id);
     return 0;
 }

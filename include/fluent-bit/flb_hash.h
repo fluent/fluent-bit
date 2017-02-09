@@ -20,6 +20,9 @@
 #ifndef FLB_HASH_H
 #define FLB_HASH_H
 
+#include <stdio.h>
+#include <stdlib.h>
+
 struct flb_hash_entry {
     char *key;
     size_t key_len;
@@ -33,8 +36,9 @@ struct flb_hash {
 };
 
 struct flb_hash *flb_hash_create(size_t size);
-void flb_hash_destroy(struct flb_hash *h);
-int flb_hash_add(struct flb_hash *h, char *key, char *val);
-int flb_hash_del(struct flb_hash *h, char *key);
+void flb_hash_destroy(struct flb_hash *ht);
+int flb_hash_add(struct flb_hash *ht, char *key, char *val);
+char *flb_hash_get(struct flb_hash *ht, char *key);
+int flb_hash_del(struct flb_hash *ht, char *key);
 
 #endif
