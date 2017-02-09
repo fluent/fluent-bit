@@ -175,6 +175,9 @@ struct flb_output_instance {
 
     struct mk_list properties;           /* properties / configuration   */
     struct mk_list _head;                /* link to config->inputs       */
+
+    /* Keep a reference to the original context this instance belongs to */
+    struct flb_config *config;
 };
 
 struct flb_output_thread {

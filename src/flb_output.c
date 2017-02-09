@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_output.h>
 
@@ -188,6 +189,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         perror("malloc");
         return NULL;
     }
+    instance->config = config;
 
     /*
      * Set mask_id: the mask_id is an unique number assigned to this
@@ -258,51 +260,57 @@ static inline int prop_key_check(char *key, char *kv, int k_len)
 int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
 {
     int len;
+    char *tmp;
     struct flb_config_prop *prop;
 
     len = strlen(k);
+    tmp = flb_env_var_translate(out->config->env, v);
 
     /* Check if the key is a known/shared property */
     if (prop_key_check("match", k, len) == 0) {
-        out->match = flb_strdup(v);
+        out->match = tmp;
     }
     else if (prop_key_check("host", k, len) == 0) {
-        out->host.name = flb_strdup(v);
+        out->host.name = tmp;
     }
     else if (prop_key_check("port", k, len) == 0) {
-        out->host.port = atoi(v);
+        out->host.port = atoi(tmp);
+        flb_free(tmp);
     }
     else if (prop_key_check("retry_limit", k, len) == 0) {
-        out->retry_limit = atoi(v);
+        out->retry_limit = atoi(tmp);
+        flb_free(tmp);
     }
 #ifdef FLB_HAVE_TLS
     else if (prop_key_check("tls", k, len) == 0) {
-        if (strcasecmp(v, "true") == 0 || strcasecmp(v, "on") == 0) {
+        if (strcasecmp(tmp, "true") == 0 || strcasecmp(tmp, "on") == 0) {
             out->use_tls = FLB_TRUE;
         }
         else {
             out->use_tls = FLB_FALSE;
         }
+        flb_free(tmp);
     }
     else if (prop_key_check("tls.verify", k, len) == 0) {
-        if (strcasecmp(v, "true") == 0 || strcasecmp(v, "on") == 0) {
+        if (strcasecmp(tmp, "true") == 0 || strcasecmp(tmp, "on") == 0) {
             out->tls_verify = FLB_TRUE;
         }
         else {
             out->tls_verify = FLB_FALSE;
         }
+        flb_free(tmp);
     }
     else if (prop_key_check("tls.ca_file", k, len) == 0) {
-        out->tls_ca_file = flb_strdup(v);
+        out->tls_ca_file = tmp;
     }
     else if (prop_key_check("tls.crt_file", k, len) == 0) {
-        out->tls_crt_file = flb_strdup(v);
+        out->tls_crt_file = tmp;
     }
     else if (prop_key_check("tls.key_file", k, len) == 0) {
-        out->tls_key_file = flb_strdup(v);
+        out->tls_key_file = tmp;
     }
     else if (prop_key_check("tls.key_passwd", k, len) == 0) {
-        out->tls_key_passwd = flb_strdup(v);
+        out->tls_key_passwd = tmp;
     }
 #endif
     else {
