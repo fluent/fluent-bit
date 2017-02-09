@@ -321,7 +321,7 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
         }
 
         prop->key = flb_strdup(k);
-        prop->val = flb_strdup(v);
+        prop->val = tmp;
         mk_list_add(&prop->_head, &out->properties);
     }
     return 0;
