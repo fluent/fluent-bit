@@ -109,13 +109,15 @@ void flb_filter_do(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
 int flb_filter_set_property(struct flb_filter_instance *filter, char *k, char *v)
 {
     int len;
+    char *tmp;
     struct flb_config_prop *prop;
 
     len = strlen(k);
+    tmp = flb_env_var_translate(in->config->env, v);
 
     /* Check if the key is a known/shared property */
     if (prop_key_check("match", k, len) == 0) {
-        filter->match = flb_strdup(v);
+        filter->match = tmp;
     }
     else {
         /* Append any remaining configuration key to prop list */
@@ -125,7 +127,7 @@ int flb_filter_set_property(struct flb_filter_instance *filter, char *k, char *v
         }
 
         prop->key = flb_strdup(k);
-        prop->val = flb_strdup(v);
+        prop->val = tmp;
         mk_list_add(&prop->_head, &filter->properties);
     }
 
