@@ -27,6 +27,7 @@
 
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
@@ -343,8 +344,9 @@ static int flb_parsers_conf(struct flb_config *config, char *file)
 
 static int flb_service_conf(struct flb_config *config, char *file)
 {
-    char *name;
     int  ret = -1;
+    char *tmp;
+    char *name;
     struct mk_list *head;
     struct mk_list *h_prop;
     struct mk_rconf *fconf = NULL;
@@ -387,7 +389,9 @@ static int flb_service_conf(struct flb_config *config, char *file)
         flb_debug("[service] loading input: %s", name);
 
         /* Create an instace of the plugin */
-        in = flb_input_new(config, name, NULL);
+        tmp = flb_env_var_translate(config->env, name);
+        in = flb_input_new(config, tmp, NULL);
+        mk_mem_free(tmp);
         mk_mem_free(name);
         if (!in) {
             flb_service_conf_err(section, "Name");
@@ -421,7 +425,9 @@ static int flb_service_conf(struct flb_config *config, char *file)
         }
 
         /* Create an instace of the plugin */
-        out = flb_output_new(config, name, NULL);
+        tmp = flb_env_var_translate(config->env, name);
+        out = flb_output_new(config, tmp, NULL);
+        mk_mem_free(tmp);
         mk_mem_free(name);
         if (!out) {
             flb_service_conf_err(section, "Name");
@@ -453,7 +459,9 @@ static int flb_service_conf(struct flb_config *config, char *file)
             goto flb_service_conf_end;
         }
         /* Create an instace of the plugin */
-        filter = flb_filter_new(config, name, NULL);
+        tmp = flb_env_var_translate(config->env, name);
+        filter = flb_filter_new(config, tmp, NULL);
+        mk_mem_free(tmp);
         mk_mem_free(name);
         if (!filter) {
             flb_service_conf_err(section, "Name");
