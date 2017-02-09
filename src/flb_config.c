@@ -322,26 +322,22 @@ int flb_config_set_property(struct flb_config *config,
                 case FLB_CONF_TYPE_INT:
                     i_val  = (int*)((char*)config + service_configs[i].offset);
                     *i_val = atoi(tmp);
+                    flb_free(tmp);
                     break;
-
                 case FLB_CONF_TYPE_BOOL:
                     i_val = (int*)((char*)config+service_configs[i].offset);
                     *i_val = atobool(tmp);
+                    flb_free(tmp);
                     break;
-
                 case FLB_CONF_TYPE_STR:
                     s_val = (char**)((char*)config+service_configs[i].offset);
                     if ( *s_val != NULL ) {
                         flb_free(*s_val); /* release before overwriting */
                     }
-                    *s_val = flb_strdup(tmp);
+                    *s_val = tmp;
                     break;
                 default:
                     ret = -1;
-                }
-
-                if (tmp != v) {
-                    flb_free(tmp);
                 }
             }
 
