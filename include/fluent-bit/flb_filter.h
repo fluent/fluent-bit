@@ -54,6 +54,9 @@ struct flb_filter_instance {
     struct flb_filter_plugin *p;   /* original plugin          */
     struct mk_list properties;     /* config properties        */
     struct mk_list _head;          /* link to config->filters  */
+
+    /* Keep a reference to the original context this instance belongs to */
+    struct flb_config *config;
 };
 
 int flb_filter_set_property(struct flb_filter_instance *filter, char *k, char *v);

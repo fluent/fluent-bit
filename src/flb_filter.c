@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_router.h>
 
 static inline int instance_id(struct flb_filter_plugin *p,
@@ -113,7 +114,7 @@ int flb_filter_set_property(struct flb_filter_instance *filter, char *k, char *v
     struct flb_config_prop *prop;
 
     len = strlen(k);
-    tmp = flb_env_var_translate(in->config->env, v);
+    tmp = flb_env_var_translate(filter->config->env, v);
 
     /* Check if the key is a known/shared property */
     if (prop_key_check("match", k, len) == 0) {
@@ -203,6 +204,7 @@ struct flb_filter_instance *flb_filter_new(struct flb_config *config,
         flb_errno();
         return NULL;
     }
+    instance->config = config;
 
     /* Get an ID */
     id =  instance_id(plugin, config);
