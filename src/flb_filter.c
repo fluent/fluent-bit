@@ -135,6 +135,11 @@ int flb_filter_set_property(struct flb_filter_instance *filter, char *k, char *v
     return 0;
 }
 
+char *flb_filter_get_property(char *key, struct flb_filter_instance *i)
+{
+    return flb_config_prop_get(key, &i->properties);
+}
+
 /* Invoke exit call for the filter plugin */
 void flb_filter_exit(struct flb_config *config)
 {
