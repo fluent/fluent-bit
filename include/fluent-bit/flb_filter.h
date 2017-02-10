@@ -60,6 +60,8 @@ struct flb_filter_instance {
 };
 
 int flb_filter_set_property(struct flb_filter_instance *filter, char *k, char *v);
+char *flb_filter_get_property(char *key, struct flb_filter_instance *i);
+
 struct flb_filter_instance *flb_filter_new(struct flb_config *config,
                                            char *filter, void *data);
 void flb_filter_exit(struct flb_config *config);
