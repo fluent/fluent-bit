@@ -215,16 +215,29 @@ int flb_tail_scan(const char *path, struct flb_tail_config *ctx)
     }
 
     /* Scan the given path */
-    ret = do_glob(path, GLOB_TILDE, NULL, &globbuf);
+    ret = do_glob(path, GLOB_TILDE | GLOB_ERR, NULL, &globbuf);
     if (ret != 0) {
         switch (ret) {
         case GLOB_NOSPACE:
             flb_error("[in_tail] no memory space available");
             return -1;
         case GLOB_ABORTED:
-            flb_error("[in_tail] read error (GLOB_ABORTED");
+            flb_error("[in_tail] read error, check permissions: %s", path);
             return -1;
         case GLOB_NOMATCH:
+            ret = stat(path, &st);
+            if (ret == -1) {
+                flb_error("[in_tail] Cannot read info from: %s", path);
+            }
+            else {
+                ret = access(path, R_OK);
+                if (ret == -1 && errno == EACCES) {
+                    flb_error("[in_tail] NO read access for path: %s", path);
+                }
+                else {
+                    flb_warn("[in_tail] NO matches for path: %s", path);
+                }
+            }
             return 0;
         }
     }
