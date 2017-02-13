@@ -124,7 +124,7 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
         return 0;
     }
 
-    if (p->flags & FLB_INPUT_DYN_TAG) {
+    if (in->flags & FLB_INPUT_DYN_TAG) {
         /* Iterate dynamic tag buffers */
         struct mk_list *d_head, *tmp;
         struct flb_input_dyntag *dt;
