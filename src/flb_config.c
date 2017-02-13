@@ -211,6 +211,8 @@ void flb_config_exit(struct flb_config *config)
         flb_free(collector);
     }
 
+    flb_env_destroy(config->env);
+
     /* Workers */
     flb_worker_exit(config);
 
