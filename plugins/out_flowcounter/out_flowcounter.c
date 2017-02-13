@@ -39,7 +39,7 @@ static void count_initialized(struct flb_out_fcount_buffer* buf)
 
 static int time_is_valid(time_t t, struct flb_out_fcount_config* ctx)
 {
-    if (t < ctx->buf[ctx->index].until) {
+    if (t < ctx->buf[ctx->index].until - ctx->tick) {
         return FLB_FALSE;
     }
     return FLB_TRUE;
