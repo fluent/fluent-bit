@@ -29,6 +29,7 @@ struct flb_tail_config {
     int ch_manager[2];         /* internal pipe for events */
 
     /* Configuration */
+    int dynamic_tag;           /* dynamic tag ? e.g: abc.*     */
     int refresh_interval;      /* seconds to re-scan           */
     int rotate_wait;           /* sec to wait on rotated files */
     char *path;                /* lookup path (glob)           */

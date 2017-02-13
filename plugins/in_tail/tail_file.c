@@ -120,6 +120,85 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
     return lines;
 }
 
+static inline void drop_bytes(char *buf, size_t len, int pos, int bytes)
+{
+    memmove(buf + pos,
+            buf + pos + bytes,
+            len - pos - bytes);
+}
+
+static int tag_compose(char *tag, char *fname, char **out_buf, size_t *out_size)
+{
+    int i;
+    int len;
+    char *p;
+    char *buf = *out_buf;
+    size_t buf_s = 0;
+
+    p = strchr(tag, '*');
+    if (!p) {
+        return -1;
+    }
+
+    /* Copy tag prefix if any */
+    len = (p - tag);
+    if (len > 0) {
+        memcpy(buf, tag, len);
+        buf_s += len;
+    }
+
+    /* Append file name */
+    len = strlen(fname);
+    memcpy(buf + buf_s, fname, len);
+    buf_s += len;
+
+    /* Tag suffix (if any) */
+    p++;
+    if (p) {
+        len = strlen(tag);
+        memcpy(buf + buf_s, p, (len - (p - tag)));
+        buf_s += (len - (p - tag));
+    }
+
+    /* Sanitize buffer */
+    for (i = 0; i < buf_s; i++) {
+        if (buf[i] == '/') {
+            if (i > 0) {
+                buf[i] = '.';
+            }
+            else {
+                drop_bytes(buf, buf_s, i, 1);
+                buf_s--;
+                i--;
+            }
+        }
+
+        if (buf[i] == '.' && i > 0) {
+            if (buf[i - 1] == '.') {
+                drop_bytes(buf, buf_s, i, 1);
+                buf_s--;
+                i--;
+            }
+        }
+        else if (buf[i] == '*') {
+                drop_bytes(buf, buf_s, i, 1);
+                buf_s--;
+                i--;
+        }
+    }
+
+    /* Check for an ending '.' */
+    if (buf[buf_s - 1] == '.') {
+        drop_bytes(buf, buf_s, buf_s - 1, 1);
+        buf_s--;
+    }
+
+    buf[buf_s] = '\0';
+    *out_size = buf_s;
+
+    return 0;
+}
+
 int flb_tail_file_exists(char *f, struct flb_tail_config *ctx)
 {
     struct mk_list *head;
@@ -150,6 +229,9 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     int fd;
     int ret;
     off_t offset;
+    char *p;
+    char out_tmp[PATH_MAX];
+    size_t out_size;
     struct flb_tail_file *file;
 
     if (!S_ISREG(st->st_mode)) {
@@ -170,6 +252,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         return -1;
     }
 
+    /* Initialize */
     file->watch_fd  = -1;
     file->fd        = fd;
     file->name      = flb_strdup(path);
@@ -180,6 +263,18 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file->parsed    = 0;
     file->config    = ctx;
     file->tail_mode = mode;
+    file->tag_len   = 0;
+    file->tag_buf   = NULL;
+
+    /* Initialize (optional) dynamic tag */
+    if (ctx->dynamic_tag == FLB_TRUE) {
+        p = out_tmp;
+        ret = tag_compose(ctx->i_ins->tag, path, &p, &out_size);
+        if (ret == 0) {
+            file->tag_len = out_size;
+            file->tag_buf = flb_strdup(p);
+        }
+    }
 
     /* Register this file into the fs_event monitoring */
     ret = flb_tail_fs_add(file);

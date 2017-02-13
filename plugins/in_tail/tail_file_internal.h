@@ -38,6 +38,10 @@ struct flb_tail_file {
     char *name;
     time_t rotated;
 
+    /* dynamic tag for this file */
+    int tag_len;
+    char *tag_buf;
+
     /* buffering */
     off_t parsed;
     off_t buf_len;

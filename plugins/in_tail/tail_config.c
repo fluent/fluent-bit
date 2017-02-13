@@ -40,6 +40,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
         flb_errno();
         return NULL;
     }
+    ctx->dynamic_tag = FLB_FALSE;
 
     /* Create the communication pipe(2) */
     ret = pipe(ctx->ch_manager);
@@ -99,6 +100,12 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
     mk_list_init(&ctx->files_event);
     mk_list_init(&ctx->files_rotated);
     ctx->db = NULL;
+
+    /* Check if it should use dynamic tags */
+    tmp = strchr(i_ins->tag, '*');
+    if (tmp) {
+        ctx->dynamic_tag = FLB_TRUE;
+    }
 
     /* Initialize database */
     tmp = flb_input_get_property("db", i_ins);
