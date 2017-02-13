@@ -123,6 +123,17 @@ struct flb_input_dyntag {
  * and the variable one that is generated when the plugin is invoked.
  */
 struct flb_input_instance {
+    /*
+     * The instance flags are derivated from the fixed plugin flags. This
+     * is done to offer some flexibility where a plugin instance per
+     * configuration would like to change some specific behavior.
+     *
+     * e.g By default in_tail plugin supports fixed tag, but if a wildcard
+     * is added to the 'tag', it will instruct to perform dyntag operations
+     * as the tags will be composed used the file name being watched.
+     */
+    int flags;
+
     int id;                              /* instance id                  */
     flb_pipefd_t channel[2];             /* pipe(2) channel              */
     int threaded;                        /* bool / Threaded instance ?   */

@@ -103,6 +103,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
                  "%s.%i", plugin->name, id);
 
         instance->id       = id;
+        instance->flags    = plugin->flags;
         instance->p        = plugin;
         instance->tag      = NULL;
         instance->context  = NULL;
