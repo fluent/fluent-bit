@@ -223,6 +223,12 @@ int in_xbee_init(struct flb_input_instance *in,
     struct xbee_conSettings settings;
     (void) data;
 
+    flb_warn("[in_xbee] THIS PLUGIN WILL BE DEPRECATED\n\n"
+             "If you are an active user of this plugin and want "
+             "to avoid it deletion,\n"
+             "please put your comnents on this link: \n\n"
+             "https://github.com/fluent/fluent-bit/issues/181\n");
+
     /* Prepare the configuration context */
     ctx = flb_calloc(1, sizeof(struct flb_in_xbee_config));
     if (!ctx) {
