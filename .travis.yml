@@ -29,6 +29,7 @@ matrix:
   include:
     - os: linux
       env: TOOLCHAIN=../cmake/armadillo-iot.cmake
+      compiler: gcc
   exclude:
     - os: osx
       env: TOOLCHAIN=../cmake/armadillo-iot.cmake
