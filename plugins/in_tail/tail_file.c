@@ -40,16 +40,38 @@ static inline void consume_bytes(char *buf, int bytes, int length)
 static inline int pack_line(time_t time, char *line,
                             int line_len, struct flb_tail_file *file)
 {
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
     struct flb_tail_config *ctx = file->config;
 
-    msgpack_pack_array(&ctx->i_ins->mp_pck, 2);
-    msgpack_pack_uint64(&ctx->i_ins->mp_pck, time);
+    if (ctx->dynamic_tag == FLB_TRUE) {
+        msgpack_sbuffer_init(&mp_sbuf);
+        msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    msgpack_pack_map(&ctx->i_ins->mp_pck, 1);
-    msgpack_pack_str(&ctx->i_ins->mp_pck, 3);
-    msgpack_pack_str_body(&ctx->i_ins->mp_pck, "log", 3);
-    msgpack_pack_str(&ctx->i_ins->mp_pck, line_len);
-    msgpack_pack_str_body(&ctx->i_ins->mp_pck, line, line_len);
+        msgpack_pack_map(&mp_pck, 1);
+        msgpack_pack_str(&mp_pck, 3);
+        msgpack_pack_str_body(&mp_pck, "log", 3);
+        msgpack_pack_str(&mp_pck, line_len);
+        msgpack_pack_str_body(&mp_pck, line, line_len);
+
+        flb_input_dyntag_append_raw(ctx->i_ins,
+                                    file->tag_buf,
+                                    file->tag_len,
+                                    time,
+                                    mp_sbuf.data, mp_sbuf.size);
+        msgpack_sbuffer_destroy(&mp_sbuf);
+
+    }
+    else {
+        msgpack_pack_array(&ctx->i_ins->mp_pck, 2);
+        msgpack_pack_uint64(&ctx->i_ins->mp_pck, time);
+
+        msgpack_pack_map(&ctx->i_ins->mp_pck, 1);
+        msgpack_pack_str(&ctx->i_ins->mp_pck, 3);
+        msgpack_pack_str_body(&ctx->i_ins->mp_pck, "log", 3);
+        msgpack_pack_str(&ctx->i_ins->mp_pck, line_len);
+        msgpack_pack_str_body(&ctx->i_ins->mp_pck, line, line_len);
+    }
 
     return 0;
 }
@@ -65,10 +87,19 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
     void *out_buf;
     size_t out_size;
     time_t out_time = 0;
+    msgpack_sbuffer *out_sbuf;
+    msgpack_packer *out_pck;
+
     struct flb_tail_config *ctx = file->config;
 
-    /* Mark the start of a 'buffer write' operation */
-    flb_input_buf_write_start(ctx->i_ins);
+    /* When using dynamic tags, we create a temporal msgpack buffer */
+    out_sbuf = &ctx->i_ins->mp_sbuf;
+    out_pck  = &ctx->i_ins->mp_pck;
+
+    if (ctx->dynamic_tag == FLB_FALSE) {
+        /* Mark the start of a 'buffer write' operation */
+        flb_input_buf_write_start(ctx->i_ins);
+    }
 
     while ((p = strchr(file->buf_data + file->parsed, '\n'))) {
         len = (p - file->buf_data);
@@ -87,9 +118,20 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
                 if (out_time == 0) {
                     out_time = t;
                 }
-                msgpack_pack_array(&ctx->i_ins->mp_pck, 2);
-                msgpack_pack_uint64(&ctx->i_ins->mp_pck, out_time);
-                msgpack_sbuffer_write(&ctx->i_ins->mp_sbuf, out_buf, out_size);
+
+                if (ctx->dynamic_tag == FLB_TRUE) {
+                    flb_input_dyntag_append_raw(ctx->i_ins,
+                                                file->tag_buf,
+                                                file->tag_len,
+                                                out_time,
+                                                out_buf,
+                                                out_size);
+                }
+                else {
+                    msgpack_pack_array(out_pck, 2);
+                    msgpack_pack_uint64(out_pck, out_time);
+                    msgpack_sbuffer_write(out_sbuf, out_buf, out_size);
+                }
                 flb_free(out_buf);
             }
             else {
@@ -115,7 +157,9 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
     *bytes = consumed_bytes;
 
     /* Buffer write-end */
-    flb_input_buf_write_end(ctx->i_ins);
+    if (ctx->dynamic_tag == FLB_FALSE) {
+        flb_input_buf_write_end(ctx->i_ins);
+    }
 
     return lines;
 }
@@ -319,6 +363,9 @@ void flb_tail_file_remove(struct flb_tail_file *file)
     mk_list_del(&file->_head);
     flb_tail_fs_remove(file);
     close(file->fd);
+    if (file->tag_buf) {
+        flb_free(file->tag_buf);
+    }
     flb_free(file->name);
     flb_free(file);
 }

@@ -207,5 +207,6 @@ struct flb_input_plugin in_tail_plugin = {
     .cb_pre_run   = in_tail_pre_run,
     .cb_collect   = NULL,
     .cb_flush_buf = NULL,
-    .cb_exit      = in_tail_exit
+    .cb_exit      = in_tail_exit,
+    .flags        = 0
 };
