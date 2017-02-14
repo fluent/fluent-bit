@@ -36,7 +36,7 @@ int flb_parser_json_do(struct flb_parser *parser,
 struct flb_parser *flb_parser_create(char *name, char *format,
                                      char *p_regex,
                                      char *time_fmt, char *time_key,
-                                     struct flb_config *config)
+                                     int time_keep, struct flb_config *config)
 {
     struct flb_parser *p;
     struct flb_regex *regex;
@@ -85,6 +85,7 @@ struct flb_parser *flb_parser_create(char *name, char *format,
     if (time_key) {
         p->time_key = flb_strdup(time_key);
     }
+    p->time_keep = time_keep;
 
     mk_list_add(&p->_head, &config->parsers);
 

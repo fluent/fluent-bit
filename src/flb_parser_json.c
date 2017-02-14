@@ -34,6 +34,7 @@ int flb_parser_json_do(struct flb_parser *parser,
     int ret;
     int mp_size;
     int slen;
+    char *p;
     char *mp_buf;
     char *time_key;
     size_t off = 0;
@@ -94,8 +95,13 @@ int flb_parser_json_do(struct flb_parser *parser,
 
         if (strncmp(k->via.str.ptr, time_key, k->via.str.size) == 0) {
             /* We found the key, break the loop and keep the index */
-            skip = i;
-            break;
+            if (parser->time_keep == FLB_FALSE) {
+                skip = i;
+                break;
+            }
+            else {
+                skip = -1;
+            }
         }
 
         k = NULL;
@@ -109,7 +115,8 @@ int flb_parser_json_do(struct flb_parser *parser,
     }
 
     /* Convert from time_fmt to unix timestamp */
-    if (strptime((char *) v->via.str.ptr, parser->time_fmt, &tm) != NULL) {
+    p = strptime((char *) v->via.str.ptr, parser->time_fmt, &tm);
+    if (p != NULL) {
         time_lookup = mktime(&tm);
     }
     else {

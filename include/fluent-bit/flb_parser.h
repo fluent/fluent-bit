@@ -33,6 +33,7 @@ struct flb_parser {
     char *p_regex;      /* pattern for main regular expression */
     char *time_fmt;     /* time format */
     char *time_key;     /* field name that contains the time */
+    int time_keep;      /* keep time field */
 
     /* internal */
     struct flb_regex *regex;
@@ -42,7 +43,7 @@ struct flb_parser {
 struct flb_parser *flb_parser_create(char *name, char *format,
                                      char *p_regex,
                                      char *time_fmt, char *time_key,
-                                     struct flb_config *config);
+                                     int time_keep, struct flb_config *config);
 void flb_parser_destroy(struct flb_parser *parser);
 struct flb_parser *flb_parser_get(char *name, struct flb_config *config);
 int flb_parser_do(struct flb_parser *parser, char *buf, size_t length,
