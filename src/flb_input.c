@@ -513,11 +513,9 @@ void flb_input_dyntag_exit(struct flb_input_instance *in)
     }
 }
 
+struct flb_input_dyntag *flb_input_dyntag_get(char *tag, size_t tag_len,
+                                              struct flb_input_instance *in)
 
-/* Append a MessagPack Map to an active buffer in the input instance */
-int flb_input_dyntag_append(struct flb_input_instance *in,
-                            char *tag, size_t tag_len,
-                            msgpack_object data)
 {
     struct mk_list *head;
     struct flb_input_dyntag *dt = NULL;
@@ -546,12 +544,56 @@ int flb_input_dyntag_append(struct flb_input_instance *in,
     if (!dt) {
         dt = flb_input_dyntag_create(in, tag, tag_len);
         if (!dt) {
-            return -1;
+            return NULL;
         }
+    }
+
+    return dt;
+}
+
+/* Append a MessagPack Object to the input instance */
+int flb_input_dyntag_append_obj(struct flb_input_instance *in,
+                                char *tag, size_t tag_len,
+                                msgpack_object data)
+{
+    struct flb_input_dyntag *dt;
+
+    dt = flb_input_dyntag_get(tag, tag_len, in);
+    if (!dt) {
+        return -1;
     }
 
     flb_input_dbuf_write_start(dt);
     msgpack_pack_object(&dt->mp_pck, data);
+    flb_input_dbuf_write_end(dt);
+
+    /* Lock buffers where size > 2MB */
+    if (dt->mp_sbuf.size > 2048000) {
+        dt->lock = FLB_TRUE;
+    }
+
+    return 0;
+}
+
+/* Append a RAW MessagPack buffer to the input instance */
+int flb_input_dyntag_append_raw(struct flb_input_instance *in,
+                                char *tag, size_t tag_len,
+                                time_t time,
+                                void *buf, size_t size)
+{
+    struct flb_input_dyntag *dt;
+
+    dt = flb_input_dyntag_get(tag, tag_len, in);
+    if (!dt) {
+        return -1;
+    }
+
+    flb_input_dbuf_write_start(dt);
+
+    msgpack_pack_array(&dt->mp_pck, 2);
+    msgpack_pack_uint64(&dt->mp_pck, time);
+    msgpack_sbuffer_write(&dt->mp_sbuf, buf, size);
+
     flb_input_dbuf_write_end(dt);
 
     /* Lock buffers where size > 2MB */

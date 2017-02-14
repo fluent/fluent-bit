@@ -40,7 +40,7 @@ static int fw_process_array(struct flb_input_instance *in,
 
     for (i = 0; i < arr->via.array.size; i++) {
         entry = arr->via.array.ptr[i];
-        flb_input_dyntag_append(in, tag, tag_len, entry);
+        flb_input_dyntag_append_obj(in, tag, tag_len, entry);
     }
 
     return i;
@@ -218,9 +218,9 @@ int fw_prot_process(struct fw_conn *conn)
 
                 /* Register data object */
                 entry = r_out.data;
-                flb_input_dyntag_append(conn->in,
-                                        stag, stag_len,
-                                        entry);
+                flb_input_dyntag_append_obj(conn->in,
+                                            stag, stag_len,
+                                            entry);
 
                 msgpack_unpacked_destroy(&r_out);
                 msgpack_sbuffer_destroy(&mp_sbuf);

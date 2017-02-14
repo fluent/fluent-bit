@@ -539,10 +539,13 @@ void flb_input_exit_all(struct flb_config *config);
 struct flb_input_dyntag *flb_input_dyntag_create(struct flb_input_instance *in,
                                                  char *tag, int tag_len);
 int flb_input_dyntag_destroy(struct flb_input_dyntag *dt);
-int flb_input_dyntag_append(struct flb_input_instance *in,
-                            char *tag, size_t tag_len,
-                            msgpack_object data);
-
+int flb_input_dyntag_append_obj(struct flb_input_instance *in,
+                                char *tag, size_t tag_len,
+                                msgpack_object data);
+int flb_input_dyntag_append_raw(struct flb_input_instance *in,
+                                char *tag, size_t tag_len,
+                                time_t time,
+                                void *buf, size_t size);
 void *flb_input_flush(struct flb_input_instance *i_ins, size_t *size);
 void *flb_input_dyntag_flush(struct flb_input_dyntag *dt, size_t *size);
 void flb_input_dyntag_exit(struct flb_input_instance *in);
