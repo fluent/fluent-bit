@@ -261,6 +261,7 @@ static int flb_parsers_conf(struct flb_config *config, char *file)
     char *regex;
     char *time_fmt;
     char *time_key;
+    int time_keep;
     struct mk_rconf *fconf;
     struct mk_rconf_section *section;
     struct mk_list *head;
@@ -313,9 +314,14 @@ static int flb_parsers_conf(struct flb_config *config, char *file)
         /* optional time_format */
         time_fmt = s_get_key(section, "Time_Format", MK_RCONF_STR);
         time_key = s_get_key(section, "Time_Key", MK_RCONF_STR);
+        time_keep = n_get_key(section, "Time_Keep", MK_RCONF_BOOL);
+        if (time_keep < 0) {
+            flb_error("[parser] Invalid time_keep value (try On/Off)");
+            goto fconf_error;
+        }
 
         if (!flb_parser_create(name, format, regex,
-                               time_fmt, time_key, config)) {
+                               time_fmt, time_key, time_keep, config)) {
             goto fconf_error;
         }
 
