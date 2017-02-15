@@ -95,6 +95,7 @@ flb_ctx_t *flb_create()
     int ret;
     flb_ctx_t *ctx;
     struct flb_config *config;
+    struct flb_log *log;
 
 #ifdef FLB_HAVE_MTRACE
     /* Start tracing malloc and free */
@@ -115,7 +116,11 @@ flb_ctx_t *flb_create()
     ctx->config = config;
 
     /* Initialize logger */
-    flb_log_init(config, FLB_LOG_STDERR, FLB_LOG_INFO, NULL);
+    log = flb_log_init(config, FLB_LOG_STDERR, FLB_LOG_INFO, NULL);
+    if (!log) {
+        flb_free(ctx);
+        return NULL;
+    }
 
     /* Initialize our pipe to send data to our worker */
     ret = flb_pipe_create(config->ch_data);

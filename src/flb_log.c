@@ -253,6 +253,7 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
     if (ret == -1) {
         pthread_mutex_unlock(&pth_mutex);
         mk_event_loop_destroy(log->evl);
+        flb_free(log->worker);
         flb_free(log);
         return NULL;
     }
