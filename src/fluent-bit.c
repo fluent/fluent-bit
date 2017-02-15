@@ -254,9 +254,33 @@ static void flb_service_conf_err(struct mk_rconf_section *section, char *key)
             section->name, key);
 }
 
+static int flb_service_conf_path_set(struct flb_config *config, char *file)
+{
+    char *p;
+    char *end;
+    char path[PATH_MAX + 1];
+
+    p = realpath(file, path);
+    if (!p) {
+        return -1;
+    }
+
+    /* lookup path ending and truncate */
+    end = strrchr(path, '/');
+    if (!end) {
+        return -1;
+    }
+
+    end++;
+    *end = '\0';
+    config->conf_path = flb_strdup(path);
+
+    return 0;
+}
+
 static int flb_service_conf(struct flb_config *config, char *file)
 {
-    int  ret = -1;
+    int ret = -1;
     char *tmp;
     char *name;
     struct mk_list *head;
@@ -393,7 +417,9 @@ static int flb_service_conf(struct flb_config *config, char *file)
     }
 
     ret = 0;
-flb_service_conf_end:
+    flb_service_conf_path_set(config, file);
+
+ flb_service_conf_end:
     if (fconf != NULL) {
         mk_rconf_free(fconf);
     }
@@ -590,6 +616,8 @@ int main(int argc, char **argv)
         }
     }
 
+    flb_banner();
+
     /* Validate config file */
     if (cfg_file) {
         if (access(cfg_file, R_OK) != 0) {
@@ -603,19 +631,18 @@ int main(int argc, char **argv)
         }
     }
 
-    if (config->parsers_file) {
-        ret = flb_parser_conf_file(config->parsers_file, config);
-        if (ret != 0) {
-            exit(1);
-        }
-    }
-
+    /* Logging layer */
     if (!config->log_file) {
         config->log = flb_log_init(config, FLB_LOG_STDERR, config->verbose, NULL);
     }
     else {
         config->log = flb_log_init(config, FLB_LOG_FILE, config->verbose,
                                    config->log_file);
+    }
+
+    /* Parsers file */
+    if (config->parsers_file) {
+        flb_parser_conf_file(config->parsers_file, config);
     }
 
     /* Validate flush time (seconds) */
@@ -635,7 +662,6 @@ int main(int argc, char **argv)
         flb_utils_error(FLB_ERR_OUTPUT_UNDEF);
     }
 
-    flb_banner();
     if (config->verbose == FLB_TRUE) {
         flb_utils_print_setup(config);
     }

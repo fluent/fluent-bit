@@ -23,6 +23,9 @@
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_parser.h>
 
+#include <sys/types.h>
+#include <sys/stat.h>
+
 int flb_parser_regex_do(struct flb_parser *parser,
                         char *buf, size_t length,
                         void **out_buf, size_t *out_size,
@@ -137,6 +140,9 @@ void flb_parser_exit(struct flb_config *config)
 /* Load parsers from a configuration file */
 int flb_parser_conf_file(char *file, struct flb_config *config)
 {
+    int ret;
+    char tmp[PATH_MAX + 1];
+    char *cfg;
     char *name;
     char *format;
     char *regex;
@@ -146,8 +152,26 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
     struct mk_rconf *fconf;
     struct mk_rconf_section *section;
     struct mk_list *head;
+    struct stat st;
 
-    fconf = mk_rconf_open(file);
+    ret = stat(file, &st);
+    if (ret == -1 && errno == ENOENT) {
+        /* Try to resolve the real path (if exists) */
+        if (file[0] == '/') {
+            return -1;
+        }
+
+        if (config->conf_path) {
+            snprintf(tmp, PATH_MAX, "%s%s", config->conf_path, file);
+            cfg = tmp;
+        }
+    }
+    else {
+        cfg = file;
+    }
+
+    flb_debug("[parser] opening file %s", cfg);
+    fconf = mk_rconf_open(cfg);
     if (!fconf) {
         return -1;
     }
@@ -208,6 +232,8 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
             goto fconf_error;
         }
 
+        flb_debug("[parser] new parser registered: %s", name);
+
         flb_free(name);
         flb_free(format);
 
@@ -220,8 +246,6 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
         if (time_key) {
             flb_free(time_key);
         }
-
-        flb_debug("[parser] [%s] loaded", name);
     }
 
     mk_rconf_free(fconf);

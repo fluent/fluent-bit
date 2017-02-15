@@ -77,6 +77,12 @@ struct flb_config {
 
     struct mk_rconf *file;
 
+    /*
+     * If a configuration file was used, this variable will contain the
+     * absolute path for the directory that contains the file.
+     */
+    char *conf_path;
+
     /* Event */
     struct mk_event event_flush;
     struct mk_event event_shutdown;
