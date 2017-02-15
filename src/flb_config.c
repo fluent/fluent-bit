@@ -218,6 +218,11 @@ void flb_config_exit(struct flb_config *config)
 
     flb_env_destroy(config->env);
 
+    /* Conf path */
+    if (config->conf_path) {
+        flb_free(config->conf_path);
+    }
+
     /* Workers */
     flb_worker_exit(config);
 
