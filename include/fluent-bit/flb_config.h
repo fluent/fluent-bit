@@ -114,6 +114,9 @@ struct flb_config {
     char *log_file;
     struct flb_log *log;
 
+    /* Parser Conf */
+    char *parsers_file;
+
     /* Environment */
     void *env;
 
@@ -170,6 +173,7 @@ enum conf_type {
 #define FLB_CONF_STR_DAEMON   "Daemon"
 #define FLB_CONF_STR_LOGFILE  "Log_File"
 #define FLB_CONF_STR_LOGLEVEL "Log_Level"
+#define FLB_CONF_STR_PARSERS_FILE "Parsers_File"
 #ifdef FLB_HAVE_HTTP
 #define FLB_CONF_STR_HTTP_MONITOR "HTTP_Monitor"
 #define FLB_CONF_STR_HTTP_PORT    "HTTP_Port"

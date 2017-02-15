@@ -38,8 +38,19 @@ struct flb_parser *flb_parser_create(char *name, char *format,
                                      char *time_fmt, char *time_key,
                                      int time_keep, struct flb_config *config)
 {
+    struct mk_list *head;
     struct flb_parser *p;
     struct flb_regex *regex;
+
+    /* Iterate current parsers and make the new one don't exists */
+    mk_list_foreach(head, &config->parsers) {
+        p = mk_list_entry(head, struct flb_parser, _head);
+        if (strcmp(p->name, name) == 0) {
+            flb_error("[parser] parser named '%s' already exists, skip.",
+                      name);
+            return NULL;
+        }
+    }
 
     p = flb_calloc(1, sizeof(struct flb_parser));
     if (!p) {
@@ -121,6 +132,104 @@ void flb_parser_exit(struct flb_config *config)
         parser = mk_list_entry(head, struct flb_parser, _head);
         flb_parser_destroy(parser);
     }
+}
+
+/* Load parsers from a configuration file */
+int flb_parser_conf_file(char *file, struct flb_config *config)
+{
+    char *name;
+    char *format;
+    char *regex;
+    char *time_fmt;
+    char *time_key;
+    int time_keep;
+    struct mk_rconf *fconf;
+    struct mk_rconf_section *section;
+    struct mk_list *head;
+
+    fconf = mk_rconf_open(file);
+    if (!fconf) {
+        return -1;
+    }
+
+    /* Read all [PARSER] sections */
+    mk_list_foreach(head, &fconf->sections) {
+        name = NULL;
+        format = NULL;
+        regex = NULL;
+        time_fmt = NULL;
+        time_key = NULL;
+
+        section = mk_list_entry(head, struct mk_rconf_section, _head);
+        if (strcasecmp(section->name, "PARSER") != 0) {
+            continue;
+        }
+
+        /* Name */
+        name = mk_rconf_section_get_key(section, "Name", MK_RCONF_STR);
+        if (!name) {
+            flb_error("[parser] no parser 'name' found");
+            goto fconf_error;
+        }
+
+        /* Format */
+        format = mk_rconf_section_get_key(section, "Format", MK_RCONF_STR);
+        if (!format) {
+            flb_error("[parser] no parser 'format' found");
+            goto fconf_error;
+        }
+
+        /* Regex (if format is regex) */
+        regex = mk_rconf_section_get_key(section, "Regex", MK_RCONF_STR);
+        if (!regex && strcmp(format, "regex") == 0) {
+            flb_error("[parser] no parser 'regex' found");
+            goto fconf_error;
+        }
+
+        /* Time_Format */
+        time_fmt = mk_rconf_section_get_key(section, "Time_Format",
+                                            MK_RCONF_STR);
+
+        /* Time_Key */
+        time_key = mk_rconf_section_get_key(section, "Time_Key",
+                                            MK_RCONF_STR);
+
+        /* Time_Keep */
+        time_keep = (intptr_t) mk_rconf_section_get_key(section, "Time_Keep",
+                                                        MK_RCONF_BOOL);
+        if (time_keep < 0) {
+            flb_error("[parser] Invalid time_keep value (try On/Off)");
+            goto fconf_error;
+        }
+
+        /* Create the parser context */
+        if (!flb_parser_create(name, format, regex,
+                               time_fmt, time_key, time_keep, config)) {
+            goto fconf_error;
+        }
+
+        flb_free(name);
+        flb_free(format);
+
+        if (regex) {
+            flb_free(regex);
+        }
+        if (time_fmt) {
+            flb_free(time_fmt);
+        }
+        if (time_key) {
+            flb_free(time_key);
+        }
+
+        flb_debug("[parser] [%s] loaded", name);
+    }
+
+    mk_rconf_free(fconf);
+    return 0;
+
+ fconf_error:
+    mk_rconf_free(fconf);
+    return -1;
 }
 
 struct flb_parser *flb_parser_get(char *name, struct flb_config *config)

@@ -50,6 +50,10 @@ struct flb_service_config service_configs[] = {
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, log_file)},
 
+    {FLB_CONF_STR_PARSERS_FILE,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, parsers_file)},
+
     {FLB_CONF_STR_LOGLEVEL,
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, log)},
@@ -147,6 +151,7 @@ struct flb_config *flb_config_init()
     /* Prepare worker interface */
     flb_worker_init(config);
 
+    /* Regex support */
     flb_regex_init();
 
     return config;
@@ -317,7 +322,7 @@ int flb_config_set_property(struct flb_config *config,
             if (!strncasecmp(key, FLB_CONF_STR_LOGLEVEL, 256)) {
                 ret = set_log_level(config, v);
             }
-            else{
+            else {
                 ret = 0;
                 tmp = flb_env_var_translate(config->env, v);
                 switch(service_configs[i].type) {
