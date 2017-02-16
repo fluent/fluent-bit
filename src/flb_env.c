@@ -102,7 +102,7 @@ char *flb_env_get(struct flb_env *env, char *key)
 
     /* Try to get the value from the hash table */
     ret = flb_hash_get(env->ht, key, len, &out_buf, &out_size);
-    if (ret == 0) {
+    if (ret >= 0) {
         return out_buf;
     }
 
