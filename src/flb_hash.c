@@ -140,7 +140,7 @@ void flb_hash_destroy(struct flb_hash *ht)
 }
 
 int flb_hash_add(struct flb_hash *ht, char *key, int key_len,
-                 void *val, size_t val_size)
+                 char *val, size_t val_size)
 {
     int id;
     unsigned int hash;
@@ -158,33 +158,48 @@ int flb_hash_add(struct flb_hash *ht, char *key, int key_len,
     entry->key_len = key_len;
 
     /* Store the value as a new memory region */
-    entry->val = flb_malloc(val_size);
+    entry->val = flb_malloc(val_size + 1);
     if (!entry->val) {
         flb_errno();
         flb_free(entry->key);
         return -1;
     }
+
+    /*
+     * Copy the buffer and append a NULL byte in case the caller set and
+     * expects a string.
+     */
     memcpy(entry->val, val, val_size);
+    entry->val[val_size] = '\0';
     entry->val_size = val_size;
 
     return 0;
 }
 
-char *flb_hash_get(struct flb_hash *ht, char *key, int key_len)
+int flb_hash_get(struct flb_hash *ht, char *key, int key_len,
+                 char **out_buf, size_t *out_size)
 {
     int id;
     unsigned int hash;
     struct flb_hash_entry *entry;
 
     if (!key || key_len <= 0) {
-        return NULL;
+        return -1;
     }
 
     hash = gen_hash(key, key_len);
     id = (hash % ht->size);
 
     entry = &ht->table[id];
-    return entry->val;
+
+    if (!entry->val) {
+        return -1;
+    }
+
+    *out_buf = entry->val;
+    *out_size = entry->val_size;
+
+    return 0;
 }
 
 int flb_hash_del(struct flb_hash *ht, char *key)
