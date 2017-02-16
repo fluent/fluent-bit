@@ -339,7 +339,7 @@ struct flb_libco_in_params {
 
 struct flb_libco_in_params libco_in_param;
 
-static void input_params_set(struct flb_thread *th,
+static FLB_INLINE void input_params_set(struct flb_thread *th,
                              struct flb_input_collector *coll,
                              struct flb_config *config,
                              void *context)
@@ -351,7 +351,7 @@ static void input_params_set(struct flb_thread *th,
     co_switch(th->callee);
 }
 
-static void input_pre_cb_collect()
+static FLB_INLINE void input_pre_cb_collect()
 {
     struct flb_input_collector *coll = libco_in_param.coll;
     struct flb_config *config = libco_in_param.config;
