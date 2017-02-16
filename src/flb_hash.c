@@ -173,7 +173,7 @@ int flb_hash_add(struct flb_hash *ht, char *key, int key_len,
     entry->val[val_size] = '\0';
     entry->val_size = val_size;
 
-    return 0;
+    return id;
 }
 
 int flb_hash_get(struct flb_hash *ht, char *key, int key_len,
@@ -192,6 +192,22 @@ int flb_hash_get(struct flb_hash *ht, char *key, int key_len,
 
     entry = &ht->table[id];
 
+    if (!entry->val) {
+        return -1;
+    }
+
+    *out_buf = entry->val;
+    *out_size = entry->val_size;
+
+    return id;
+}
+
+int flb_hash_get_by_id(struct flb_hash *ht, int id, char **out_buf,
+                       size_t *out_size)
+{
+    struct flb_hash_entry *entry;
+
+    entry = &ht->table[id];
     if (!entry->val) {
         return -1;
     }
