@@ -629,6 +629,7 @@ int main(int argc, char **argv)
         if (ret != 0) {
             flb_utils_error(FLB_ERR_CFG_FILE_FORMAT);
         }
+        flb_free(cfg_file);
     }
 
     /* Logging layer */
