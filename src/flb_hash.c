@@ -139,32 +139,33 @@ void flb_hash_destroy(struct flb_hash *ht)
     flb_free(ht);
 }
 
-int flb_hash_add(struct flb_hash *ht, char *key, char *val)
+int flb_hash_add(struct flb_hash *ht, char *key, int key_len,
+                 void *val, size_t val_size)
 {
     int id;
-    int k_len;
-    int v_len;
     unsigned int hash;
     struct flb_hash_entry *entry;
 
-    if (!key || !val) {
+    if (!key || key_len <= 0 || !val || val_size <= 0) {
         return -1;
     }
 
-    k_len = strlen(key);
-    v_len = strlen(val);
-    if (k_len == 0 || v_len == 0) {
-        return -1;
-    }
-
-    hash = gen_hash(key, k_len);
+    hash = gen_hash(key, key_len);
     id = (hash % ht->size);
 
     entry = &ht->table[id];
     entry->key = flb_strdup(key);
-    entry->key_len = k_len;
-    entry->val = flb_strdup(val);
-    entry->val_len = v_len;
+    entry->key_len = key_len;
+
+    /* Store the value as a new memory region */
+    entry->val = flb_malloc(val_size);
+    if (!entry->val) {
+        flb_errno();
+        flb_free(entry->key);
+        return -1;
+    }
+    memcpy(entry->val, val, val_size);
+    entry->val_size = val_size;
 
     return 0;
 }
