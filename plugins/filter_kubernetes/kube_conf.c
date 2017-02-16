@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_io.h>
+#include <fluent-bit/flb_hash.h>
 
 #include "kube_conf.h"
 
@@ -86,6 +87,12 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
         io_type = FLB_IO_TLS;
     }
 
+    ctx->hash_table = flb_hash_create(FLB_HASH_TABLE_SIZE);
+    if (!ctx->hash_table) {
+        flb_kube_conf_destroy(ctx);
+        return NULL;
+    }
+
     /* Create an Upstream context */
     ctx->upstream = flb_upstream_create(config,
                                         ctx->api_host,
@@ -100,8 +107,16 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
 
 void flb_kube_conf_destroy(struct flb_kube *ctx)
 {
+    flb_hash_destroy(ctx->hash_table);
+    flb_regex_destroy(ctx->regex_tag);
+
+    if (ctx->upstream) {
+        flb_upstream_destroy(ctx->upstream);
+    }
+
     if (ctx->api_host) {
         flb_free(ctx->api_host);
     }
 
+    flb_free(ctx);
 }

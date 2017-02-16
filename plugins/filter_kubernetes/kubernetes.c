@@ -22,6 +22,7 @@
 
 #include "kube_conf.h"
 #include "kube_meta.h"
+#include "kube_regex.h"
 
 #include <stdio.h>
 #include <msgpack.h>
@@ -30,14 +31,19 @@ static int cb_kube_init(struct flb_filter_instance *f_ins,
                         struct flb_config *config,
                         void *data)
 {
-    (void) f_ins;
-    (void) config;
-    (void) data;
+    int ret;
     struct flb_kube *ctx;
+    (void) data;
 
     /* Create configuration context */
     ctx = flb_kube_conf_create(f_ins, config);
     if (!ctx) {
+        return -1;
+    }
+
+    ret = flb_kube_regex_init(ctx);
+    if (ret == -1) {
+        flb_kube_conf_destroy(ctx);
         return -1;
     }
 
@@ -61,23 +67,80 @@ static int cb_kube_filter(void *data, size_t bytes,
                           void *filter_context,
                           struct flb_config *config)
 {
+    int i;
+    int ret;
+    int m_size;
+    size_t off = 0;
+    char *cache_buf;
+    size_t cache_size;
     msgpack_unpacked result;
-    size_t off = 0, cnt = 0;
-    (void) out_buf;
-    (void) out_bytes;
+    msgpack_object time;
+    msgpack_object map;
+    msgpack_object root;
+    msgpack_sbuffer tmp_sbuf;
+    msgpack_packer tmp_pck;
+    struct flb_kube *ctx = filter_context;
     (void) f_ins;
-    (void) filter_context;
     (void) config;
 
+    /* Check if we have some cached metadata for the incoming events */
+    ret = flb_kube_meta_get(ctx, tag, tag_len, &cache_buf, &cache_size);
+    if (ret == -1) {
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    /* Create temporal msgpack buffer */
+    msgpack_sbuffer_init(&tmp_sbuf);
+    msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
+
+    /* Iterate each item array and append meta */
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
-        printf("[%zd] %s: ", cnt++, tag);
-        msgpack_object_print(stdout, result.data);
-        printf("\n");
+        root = result.data;
+        if (root.type != MSGPACK_OBJECT_ARRAY) {
+            continue;
+        }
+
+        /* get time and map */
+        time = root.via.array.ptr[0];
+        map  = root.via.array.ptr[1];
+
+        /* Compose the new array */
+        msgpack_pack_array(&tmp_pck, 2);
+        msgpack_pack_object(&tmp_pck, time);
+
+        m_size = map.via.map.size;
+        msgpack_pack_map(&tmp_pck, m_size + 1);
+        for (i = 0; i < m_size; i++) {
+            msgpack_object k = map.via.map.ptr[i].key;
+            msgpack_object v = map.via.map.ptr[i].val;
+
+            msgpack_pack_object(&tmp_pck, k);
+            msgpack_pack_object(&tmp_pck, v);
+        }
+
+        /* Append Kubernetes metadata */
+        msgpack_pack_str(&tmp_pck, 10);
+        msgpack_pack_str_body(&tmp_pck, "kubernetes", 10);
+        msgpack_sbuffer_write(&tmp_sbuf, cache_buf, cache_size);
     }
     msgpack_unpacked_destroy(&result);
 
-    return FLB_FILTER_NOTOUCH;
+    /* link new buffers */
+    *out_buf   = tmp_sbuf.data;
+    *out_bytes = tmp_sbuf.size;
+
+    return FLB_FILTER_MODIFIED;
+}
+
+static int cb_kube_exit(void *data, struct flb_config *config)
+{
+    struct flb_kube *ctx;
+
+    ctx = data;
+    flb_kube_conf_destroy(ctx);
+
+    return 0;
 }
 
 struct flb_filter_plugin filter_kubernetes_plugin = {
@@ -85,6 +148,6 @@ struct flb_filter_plugin filter_kubernetes_plugin = {
     .description  = "Filter to append Kubernetes metadata",
     .cb_init      = cb_kube_init,
     .cb_filter    = cb_kube_filter,
-    .cb_exit      = NULL,
+    .cb_exit      = cb_kube_exit,
     .flags        = 0
 };

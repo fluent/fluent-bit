@@ -17,13 +17,13 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_FILTER_KUBE_META_H
-#define FLB_FILTER_KUBE_META_H
+#ifndef FLB_FILTER_KUBE_REGEX_H
+#define FLB_FILTER_KUBE_REGEX_H
 
 #include "kube_conf.h"
 
-int flb_kube_meta_fetch(struct flb_kube *ctx);
-int flb_kube_meta_get(struct flb_kube *ctx,
-                      char *tag, int tag_len,
-                      char **out_buf, size_t *out_size);
+#define KUBE_TAG_TO_REGEX "var\\.log\\.containers\\.(?<pod_name>[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)_(?<namespace_name>[^_]+)_(?<container_name>.+)-(?<docker_id>[a-z0-9]{64})\\.log$"
+
+int flb_kube_regex_init(struct flb_kube *ctx);
+
 #endif

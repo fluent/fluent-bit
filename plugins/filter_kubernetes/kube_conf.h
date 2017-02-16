@@ -25,7 +25,19 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_macros.h>
+#include <fluent-bit/flb_regex.h>
 
+/*
+ * Since this filter might get a high number of request per second,
+ * we need to keep some cached data to perform filtering, e.g:
+ *
+ *  tag -> regex: pod name, container ID, container name, etc
+ *
+ * By default, we define a hash table for 256 entries.
+ */
+#define FLB_HASH_TABLE_SIZE 256
+
+/* Kubernetes API server info */
 #define FLB_API_HOST  "127.0.0.1"
 #define FLB_API_PORT  80
 #define FLB_API_TLS   FLB_FALSE
@@ -43,8 +55,11 @@ struct flb_kube {
     int api_port;
     int api_https;
 
+    struct flb_regex *regex_tag;
+
     /* Internal */
     struct flb_config *config;
+    struct flb_hash *hash_table;
     struct flb_upstream *upstream;
 };
 

@@ -17,13 +17,18 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_FILTER_KUBE_META_H
-#define FLB_FILTER_KUBE_META_H
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_regex.h>
 
 #include "kube_conf.h"
+#include "kube_regex.h"
 
-int flb_kube_meta_fetch(struct flb_kube *ctx);
-int flb_kube_meta_get(struct flb_kube *ctx,
-                      char *tag, int tag_len,
-                      char **out_buf, size_t *out_size);
-#endif
+int flb_kube_regex_init(struct flb_kube *ctx)
+{
+    ctx->regex_tag = flb_regex_create((unsigned char *) KUBE_TAG_TO_REGEX);
+    if (!ctx->regex_tag) {
+        return -1;
+    }
+
+    return 0;
+}
