@@ -38,7 +38,7 @@ struct flb_hash {
 struct flb_hash *flb_hash_create(size_t size);
 void flb_hash_destroy(struct flb_hash *ht);
 int flb_hash_add(struct flb_hash *ht, char *key, char *val);
-char *flb_hash_get(struct flb_hash *ht, char *key);
+char *flb_hash_get(struct flb_hash *ht, char *key, int key_len);
 int flb_hash_del(struct flb_hash *ht, char *key);
 
 #endif

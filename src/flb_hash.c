@@ -169,23 +169,17 @@ int flb_hash_add(struct flb_hash *ht, char *key, char *val)
     return 0;
 }
 
-char *flb_hash_get(struct flb_hash *ht, char *key)
+char *flb_hash_get(struct flb_hash *ht, char *key, int key_len)
 {
     int id;
-    int len;
     unsigned int hash;
     struct flb_hash_entry *entry;
 
-    if (!key) {
+    if (!key || key_len <= 0) {
         return NULL;
     }
 
-    len = strlen(key);
-    if (len == 0) {
-        return NULL;
-    }
-
-    hash = gen_hash(key, len);
+    hash = gen_hash(key, key_len);
     id = (hash % ht->size);
 
     entry = &ht->table[id];
