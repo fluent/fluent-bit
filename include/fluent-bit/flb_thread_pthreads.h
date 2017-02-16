@@ -82,7 +82,7 @@ static FLB_INLINE void flb_thread_prepare()
 {
 }
 
-static struct flb_thread *flb_thread_new()
+static FLB_INLINE struct flb_thread *flb_thread_new()
 {
     struct flb_thread *th;
 

@@ -181,6 +181,7 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
     if (!evl) {
         fprintf(stderr, "[log] could not create event loop\n");
         flb_free(log);
+        config->log = NULL;
         return NULL;
     }
 
@@ -194,8 +195,9 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
     ret = flb_pipe_create(log->ch_mng);
     if (ret == -1) {
         fprintf(stderr, "[log] could not create pipe(2)");
+        mk_event_loop_destroy(log->evl);
         flb_free(log);
-        mk_event_loop_destroy(evl);
+        config->log = NULL;
         return NULL;
     }
     MK_EVENT_NEW(&log->event);
@@ -205,8 +207,9 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
                        FLB_LOG_MNG, MK_EVENT_READ, &log->event);
     if (ret == -1) {
         fprintf(stderr, "[log] could not register event\n");
+        mk_event_loop_destroy(log->evl);
         flb_free(log);
-        mk_event_loop_destroy(evl);
+        config->log = NULL;
         return NULL;
     }
 
@@ -218,8 +221,9 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
     worker = flb_malloc(sizeof(struct flb_worker));
     if (!worker) {
         flb_errno();
+        mk_event_loop_destroy(log->evl);
         flb_free(log);
-        mk_event_loop_destroy(evl);
+        config->log = NULL;
         return NULL;
     }
     worker->func   = NULL;
@@ -232,8 +236,9 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
     ret = flb_log_worker_init(worker);
     if (ret == -1) {
         flb_errno();
+        mk_event_loop_destroy(log->evl);
         flb_free(log);
-        mk_event_loop_destroy(evl);
+        config->log = NULL;
         flb_free(worker);
         return NULL;
     }
@@ -253,7 +258,9 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
     if (ret == -1) {
         pthread_mutex_unlock(&pth_mutex);
         mk_event_loop_destroy(log->evl);
+        flb_free(log->worker);
         flb_free(log);
+        config->log = NULL;
         return NULL;
     }
 

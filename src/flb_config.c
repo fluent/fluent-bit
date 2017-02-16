@@ -231,7 +231,9 @@ void flb_config_exit(struct flb_config *config)
     flb_worker_exit(config);
 
     /* Event flush */
-    mk_event_del(config->evl, &config->event_flush);
+    if (config->evl) {
+        mk_event_del(config->evl, &config->event_flush);
+    }
     close(config->flush_fd);
 
     /* Release scheduler */
@@ -251,7 +253,9 @@ void flb_config_exit(struct flb_config *config)
     flb_free(config->buffer_path);
 #endif
 
-    mk_event_loop_destroy(config->evl);
+    if (config->evl) {
+        mk_event_loop_destroy(config->evl);
+    }
     flb_free(config);
 }
 

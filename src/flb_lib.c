@@ -95,6 +95,7 @@ flb_ctx_t *flb_create()
     int ret;
     flb_ctx_t *ctx;
     struct flb_config *config;
+    struct flb_log *log;
 
 #ifdef FLB_HAVE_MTRACE
     /* Start tracing malloc and free */
@@ -115,12 +116,18 @@ flb_ctx_t *flb_create()
     ctx->config = config;
 
     /* Initialize logger */
-    flb_log_init(config, FLB_LOG_STDERR, FLB_LOG_INFO, NULL);
+    log = flb_log_init(config, FLB_LOG_STDERR, FLB_LOG_INFO, NULL);
+    if (!log) {
+        flb_config_exit(ctx->config);
+        flb_free(ctx);
+        return NULL;
+    }
 
     /* Initialize our pipe to send data to our worker */
     ret = flb_pipe_create(config->ch_data);
     if (ret == -1) {
         perror("pipe");
+        flb_config_exit(ctx->config);
         flb_free(ctx);
         return NULL;
     }
@@ -128,6 +135,7 @@ flb_ctx_t *flb_create()
     /* Create the event loop to receive notifications */
     ctx->event_loop = mk_event_loop_create(256);
     if (!ctx->event_loop) {
+        flb_config_exit(ctx->config);
         flb_free(ctx);
         return NULL;
     }
@@ -141,6 +149,7 @@ flb_ctx_t *flb_create()
                                   ctx->event_channel);
     if (ret != 0) {
         flb_error("[lib] could not create notification channels");
+        flb_config_exit(ctx->config);
         flb_destroy(ctx);
         return NULL;
     }

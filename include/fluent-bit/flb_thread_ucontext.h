@@ -103,7 +103,7 @@ static FLB_INLINE void flb_thread_resume(struct flb_thread *th)
     swapcontext(&th->caller, &th->callee);
 }
 
-static struct flb_thread *flb_thread_new(size_t data_size,
+static FLB_INLINE struct flb_thread *flb_thread_new(size_t data_size,
                                          void (*cb_destroy) (void *))
 
 {
