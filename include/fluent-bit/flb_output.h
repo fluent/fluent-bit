@@ -226,7 +226,7 @@ static FLB_INLINE int flb_output_thread_destroy_id(int id, struct flb_task *task
 }
 
 /* When an output_thread is going to be destroyed, this callback is triggered */
-static void cb_output_thread_destroy(void *data)
+static FLB_INLINE void cb_output_thread_destroy(void *data)
 {
     struct flb_output_thread *out_th;
 
@@ -311,7 +311,7 @@ struct flb_libco_out_params {
 
 struct flb_libco_out_params libco_param;
 
-static void output_params_set(struct flb_thread *th,
+static FLB_INLINE void output_params_set(struct flb_thread *th,
                               void *data, size_t bytes,
                               char *tag, int tag_len,
                               struct flb_input_instance *i_ins,
@@ -332,7 +332,7 @@ static void output_params_set(struct flb_thread *th,
     co_switch(th->callee);
 }
 
-static void output_pre_cb_flush()
+static FLB_INLINE void output_pre_cb_flush()
 {
     void *data   = libco_param.data;
     size_t bytes = libco_param.bytes;

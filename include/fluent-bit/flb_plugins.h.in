@@ -30,7 +30,7 @@
 @FLB_OUT_PLUGINS_DECL@
 @FLB_FILTER_PLUGINS_DECL@
 
-void flb_register_plugins(struct flb_config *config)
+void FLB_INLINE flb_register_plugins(struct flb_config *config)
 {
     struct flb_input_plugin *in;
     struct flb_output_plugin *out;
