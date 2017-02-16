@@ -89,10 +89,17 @@ void flb_env_destroy(struct flb_env *env)
 
 char *flb_env_get(struct flb_env *env, char *key)
 {
+    int len;
     char *tmp;
 
+    if (!key) {
+        return NULL;
+    }
+
+    len = strlen(key);
+
     /* Try to get the value from the hash table */
-    tmp = flb_hash_get(env->ht, key);
+    tmp = flb_hash_get(env->ht, key, len);
     if (tmp) {
         return tmp;
     }
