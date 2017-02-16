@@ -171,6 +171,10 @@ void flb_config_exit(struct flb_config *config)
         flb_log_stop(config->log, config);
     }
 
+    if (config->parsers_file) {
+        flb_free(config->parsers_file);
+    }
+
     if (config->kernel) {
         flb_free(config->kernel->s_version.data);
         flb_free(config->kernel);
@@ -330,6 +334,7 @@ int flb_config_set_property(struct flb_config *config,
             else {
                 ret = 0;
                 tmp = flb_env_var_translate(config->env, v);
+                printf("translate=%s\n", tmp);
                 switch(service_configs[i].type) {
                 case FLB_CONF_TYPE_INT:
                     i_val  = (int*)((char*)config + service_configs[i].offset);
