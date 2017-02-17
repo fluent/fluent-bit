@@ -508,6 +508,7 @@ int flb_msgpack_raw_to_json_str(char *buf, size_t buf_size,
     json_buf = flb_calloc(1, json_size);
     if (!json_buf) {
         flb_errno();
+        msgpack_unpacked_destroy(&result);
         return -1;
     }
 
@@ -519,6 +520,7 @@ int flb_msgpack_raw_to_json_str(char *buf, size_t buf_size,
             if (!tmp) {
                 flb_errno();
                 flb_free(json_buf);
+                msgpack_unpacked_destroy(&result);
                 return -1;
             }
             json_buf = tmp;
@@ -530,5 +532,6 @@ int flb_msgpack_raw_to_json_str(char *buf, size_t buf_size,
     *out_buf = json_buf;
     *out_size = ret;
 
+    msgpack_unpacked_destroy(&result);
     return 0;
 }
