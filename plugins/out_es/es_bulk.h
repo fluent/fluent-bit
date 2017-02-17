@@ -33,7 +33,8 @@ struct es_bulk {
 };
 
 struct es_bulk *es_bulk_create();
-int es_bulk_append(struct es_bulk *bulk, char *index, int i_len, char *json, int j_len);
+int es_bulk_append(struct es_bulk *bulk, char *index, int i_len,
+                   char *json, size_t j_len);
 void es_bulk_destroy(struct es_bulk *bulk);
 
 #endif

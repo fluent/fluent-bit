@@ -55,7 +55,8 @@ void es_bulk_destroy(struct es_bulk *bulk)
     flb_free(bulk);
 }
 
-int es_bulk_append(struct es_bulk *bulk, char *index, int i_len, char *json, int j_len)
+int es_bulk_append(struct es_bulk *bulk, char *index, int i_len,
+                   char *json, size_t j_len)
 {
     int available;
     int new_size;

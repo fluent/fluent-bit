@@ -22,12 +22,87 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_http_client.h>
-#include <cjson/cjson.h>
+#include <fluent-bit/flb_pack.h>
 
 #include "es.h"
 #include "es_bulk.h"
 
 struct flb_output_plugin out_es_plugin;
+
+static inline void es_pack_map_content(msgpack_packer *tmp_pck, msgpack_object map)
+{
+    int i;
+    char *ptr_key = NULL;
+    char buf_key[256];
+    msgpack_object *k;
+    msgpack_object *v;
+
+    for (i = 0; i < map.via.map.size; i++) {
+        k = &map.via.map.ptr[i].key;
+        v = &map.via.map.ptr[i].val;
+        ptr_key = NULL;
+
+        /* Store key */
+        char *key_ptr;
+        size_t key_size;
+
+        if (k->type == MSGPACK_OBJECT_BIN) {
+            key_ptr  = (char *) k->via.bin.ptr;
+            key_size = k->via.bin.size;
+        }
+        else if (k->type == MSGPACK_OBJECT_STR) {
+            key_ptr  = (char *) k->via.str.ptr;
+            key_size = k->via.str.size;
+        }
+
+        if (key_size < (sizeof(buf_key) - 1)) {
+            memcpy(buf_key, key_ptr, key_size);
+            buf_key[key_size] = '\0';
+            ptr_key = buf_key;
+        }
+        else {
+            /* Long map keys have a performance penalty */
+            ptr_key = flb_malloc(key_size + 1);
+            memcpy(ptr_key, key_ptr, key_size);
+            ptr_key[key_size] = '\0';
+        }
+
+        /*
+         * Sanitize key name, Elastic Search 2.x don't allow dots
+         * in field names:
+         *
+         *   https://goo.gl/R5NMTr
+         */
+        char *p   = ptr_key;
+        char *end = ptr_key + key_size;
+        while (p != end) {
+            if (*p == '.') *p = '_';
+            p++;
+        }
+
+        /* Append the key */
+        msgpack_pack_str(tmp_pck, key_size);
+        msgpack_pack_str_body(tmp_pck, ptr_key, key_size);
+
+        /* Release temporal key if was allocated */
+        if (ptr_key && ptr_key != buf_key) {
+            flb_free(ptr_key);
+        }
+        ptr_key = NULL;
+
+        /*
+         * The value can be any data type, if it's a map we need to
+         * sanitize to avoid dots.
+         */
+        if (v->type == MSGPACK_OBJECT_MAP) {
+            msgpack_pack_map(tmp_pck, v->via.map.size);
+            es_pack_map_content(tmp_pck, *v);
+        }
+        else {
+            msgpack_pack_object(tmp_pck, *v);
+        }
+    }
+}
 
 /*
  * Convert the internal Fluent Bit data representation to the required
@@ -38,25 +113,21 @@ struct flb_output_plugin out_es_plugin;
 static char *es_format(void *data, size_t bytes, int *out_size,
                        struct flb_out_es_config *ctx)
 {
-    int i;
     int ret;
-    int n_size;
+    int map_size;
     int index_len;
-    uint32_t psize;
     size_t off = 0;
-    time_t atime;
     char *buf;
-    char *ptr_key = NULL;
-    char *ptr_val = NULL;
-    char buf_key[256];
-    char buf_val[512];
     msgpack_unpacked result;
     msgpack_object root;
     msgpack_object map;
-    char *j_entry;
+    msgpack_object time;
+    char *json_buf;
+    size_t json_size;
     char j_index[ES_BULK_HEADER];
-    json_t *j_map;
     struct es_bulk *bulk;
+    msgpack_sbuffer tmp_sbuf;
+    msgpack_packer tmp_pck;
 
     /* Iterate the original buffer and perform adjustments */
     msgpack_unpacked_init(&result);
@@ -92,8 +163,12 @@ static char *es_format(void *data, size_t bytes, int *out_size,
                          ES_BULK_HEADER,
                          ES_BULK_INDEX_FMT,
                          ctx->index, ctx->type);
-
     off = 0;
+
+    /* Create temporal msgpack buffer */
+    msgpack_sbuffer_init(&tmp_sbuf);
+    msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
+
     msgpack_unpacked_destroy(&result);
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
@@ -107,128 +182,40 @@ static char *es_format(void *data, size_t bytes, int *out_size,
             continue;
         }
 
-        /* Create a map entry */
-        j_map = json_create_object();
-
-        atime = root.via.array.ptr[0].via.u64;
+        time  = root.via.array.ptr[0];
         map   = root.via.array.ptr[1];
+        map_size = map.via.map.size;
 
-        n_size = map.via.map.size + 1;
+        msgpack_pack_map(&tmp_pck, map_size + 1);
 
-        json_add_to_object(j_map, "date", json_create_number(atime));
-        for (i = 0; i < n_size - 1; i++) {
-            msgpack_object *k = &map.via.map.ptr[i].key;
-            msgpack_object *v = &map.via.map.ptr[i].val;
-
-            if (k->type != MSGPACK_OBJECT_BIN && k->type != MSGPACK_OBJECT_STR) {
-                continue;
-            }
-
-            /* Store key */
-            psize = k->via.bin.size;
-            if (psize <= (sizeof(buf_key) - 1)) {
-                memcpy(buf_key, k->via.bin.ptr, psize);
-                buf_key[psize] = '\0';
-                ptr_key = buf_key;
-            }
-            else {
-                /* Long JSON map keys have a performance penalty */
-                ptr_key = flb_malloc(psize + 1);
-                memcpy(ptr_key, k->via.bin.ptr, psize);
-                ptr_key[psize] = '\0';
-            }
-
-            /*
-             * Sanitize key name, Elastic Search 2.x don't allow dots
-             * in field names:
-             *
-             *   https://goo.gl/R5NMTr
-             */
-            char *p   = ptr_key;
-            char *end = ptr_key + psize;
-            while (p != end) {
-                if (*p == '.') *p = '_';
-                p++;
-            }
-
-            /* Store value */
-            if (v->type == MSGPACK_OBJECT_NIL) {
-                json_add_to_object(j_map, ptr_key, json_create_null());
-            }
-            else if (v->type == MSGPACK_OBJECT_BOOLEAN) {
-                json_add_to_object(j_map, ptr_key,
-                                   json_create_bool(v->via.boolean));
-            }
-            else if (v->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-                json_add_to_object(j_map, ptr_key,
-                                   json_create_number(v->via.u64));
-            }
-            else if (v->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
-                json_add_to_object(j_map, ptr_key,
-                                   json_create_number(v->via.i64));
-            }
-            else if (v->type == MSGPACK_OBJECT_FLOAT) {
-                json_add_to_object(j_map, ptr_key,
-                                   json_create_number(v->via.f64));
-            }
-            else if (v->type == MSGPACK_OBJECT_STR) {
-                /* String value */
-                psize = v->via.str.size;
-                if (psize <= (sizeof(buf_val) - 1)) {
-                    memcpy(buf_val, v->via.str.ptr, psize);
-                    buf_val[psize] = '\0';
-                    ptr_val = buf_val;
-                }
-                else {
-                    ptr_val = flb_malloc(psize + 1);
-                    memcpy(ptr_val, k->via.str.ptr, psize);
-                    ptr_val[psize] = '\0';
-                }
-                json_add_to_object(j_map, ptr_key,
-                                   json_create_string(ptr_val));
-            }
-            else if (v->type == MSGPACK_OBJECT_BIN) {
-                /* Bin value */
-                psize = v->via.bin.size;
-                if (psize <= (sizeof(buf_val) - 1)) {
-                    memcpy(buf_val, v->via.bin.ptr, psize);
-                    buf_val[psize] = '\0';
-                    ptr_val = buf_val;
-                }
-                else {
-                    ptr_val = flb_malloc(psize + 1);
-                    memcpy(ptr_val, k->via.bin.ptr, psize);
-                    ptr_val[psize] = '\0';
-                }
-                json_add_to_object(j_map, ptr_key,
-                                   json_create_string(ptr_val));
-            }
-
-            if (ptr_key && ptr_key != buf_key) {
-                flb_free(ptr_key);
-            }
-            ptr_key = NULL;
-
-            if (ptr_val && ptr_val != buf_val) {
-                flb_free(ptr_val);
-            }
-            ptr_val = NULL;
-        }
+        /* Append date k/v */
+        msgpack_pack_str(&tmp_pck, 4);
+        msgpack_pack_str_body(&tmp_pck, "date", 4);
+        msgpack_pack_object(&tmp_pck, time);
 
         /*
-         * At this point we have our JSON message, but in order to
-         * ingest this data into Elasticsearch we need to compose the
-         * Bulk API request, sadly it requires to prepend a JSON entry
-         * with details about the target 'index' and 'type' for EVERY
-         * message.
+         * The map_content routine iterate over each Key/Value pair found in
+         * the map and do some sanitization for the key names.
+         *
+         * Elasticsearch have a restriction that key names cannot contain
+         * a dot; if some dot is found, it's replaced with an underscore.
          */
-        j_entry = json_print_unformatted(j_map);
-        json_delete(j_map);
+        es_pack_map_content(&tmp_pck, map);
 
+        /* Convert msgpack to JSON */
+        ret = flb_msgpack_raw_to_json_str(tmp_sbuf.data, tmp_sbuf.size,
+                                          &json_buf, &json_size);
+        msgpack_sbuffer_destroy(&tmp_sbuf);
+        if (ret != 0) {
+            msgpack_unpacked_destroy(&result);
+            es_bulk_destroy(bulk);
+            return NULL;
+        }
+
+        /* Append JSON on Index buf */
         ret = es_bulk_append(bulk,
                              j_index, index_len,
-                             j_entry, strlen(j_entry));
-        flb_free(j_entry);
+                             json_buf, json_size);
         if (ret == -1) {
             /* We likely ran out of memory, abort here */
             msgpack_unpacked_destroy(&result);
@@ -249,7 +236,6 @@ static char *es_format(void *data, size_t bytes, int *out_size,
      * return the bulk->ptr buffer
      */
     flb_free(bulk);
-
     return buf;
 }
 
