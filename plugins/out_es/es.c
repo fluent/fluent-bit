@@ -216,6 +216,7 @@ static char *es_format(void *data, size_t bytes, int *out_size,
         ret = es_bulk_append(bulk,
                              j_index, index_len,
                              json_buf, json_size);
+        flb_free(json_buf);
         if (ret == -1) {
             /* We likely ran out of memory, abort here */
             msgpack_unpacked_destroy(&result);
