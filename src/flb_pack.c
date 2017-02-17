@@ -398,14 +398,14 @@ static int msgpack2json(char *buf, int *off, size_t left, msgpack_object *o)
             if (!msgpack2json(buf, off, left, &p->key) ||
                 !try_to_write(buf, off, left, ":", 1)  ||
                 !msgpack2json(buf, off, left, &p->val)) {
-                    goto msg2json_end;
+                goto msg2json_end;
             }
-            for (i=1; i<loop; i++) {
+            for (i = 1; i < loop; i++) {
                 if (
-                  !try_to_write(buf, off, left, ", ", 2) ||
-                  !msgpack2json(buf, off, left, &(p+i)->key) ||
-                  !try_to_write(buf, off, left, ":", 1)  ||
-                  !msgpack2json(buf, off, left, &(p+i)->val) ) {
+                    !try_to_write(buf, off, left, ", ", 2) ||
+                    !msgpack2json(buf, off, left, &(p+i)->key) ||
+                    !try_to_write(buf, off, left, ":", 1)  ||
+                    !msgpack2json(buf, off, left, &(p+i)->val) ) {
                     goto msg2json_end;
 
                 }
@@ -482,4 +482,53 @@ char *flb_msgpack_to_json_str(size_t size, msgpack_unpacked *data)
         }
     }
     return buf;
+}
+
+int flb_msgpack_raw_to_json_str(char *buf, size_t buf_size,
+                                char **out_buf, size_t *out_size)
+{
+    int ret;
+    size_t off = 0;
+    size_t json_size;
+    char *json_buf;
+    char *tmp;
+    msgpack_unpacked result;
+
+    if (!buf || buf_size <= 0) {
+        return -1;
+    }
+
+    msgpack_unpacked_init(&result);
+    ret = msgpack_unpack_next(&result, buf, buf_size, &off);
+    if (ret == -1) {
+        return -1;
+    }
+
+    json_size = (buf_size * 1.2);
+    json_buf = flb_calloc(1, json_size);
+    if (!json_buf) {
+        flb_errno();
+        return -1;
+    }
+
+    while (1) {
+        ret = flb_msgpack_to_json(json_buf, json_size, &result);
+        if (ret <= 0) {
+            json_size += 128;
+            tmp = flb_realloc(json_buf, json_size);
+            if (!tmp) {
+                flb_errno();
+                flb_free(json_buf);
+                return -1;
+            }
+            json_buf = tmp;
+            continue;
+        }
+        break;
+    }
+
+    *out_buf = json_buf;
+    *out_size = ret;
+
+    return 0;
 }
