@@ -23,10 +23,10 @@
 #include <errno.h>
 
 #include <msgpack.h>
-#include <cjson/cjson.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_str.h>
 
 #include "http.h"
@@ -36,144 +36,74 @@ struct flb_output_plugin out_http_plugin;
 static char *msgpack_to_json(char *data, uint64_t bytes, uint64_t *out_size)
 {
     int i;
-    int n_size;
-    uint32_t psize;
+    int ret;
+    int array_size = 0;
+    int map_size;
     size_t off = 0;
-    time_t atime;
-    char *ptr_key = NULL;
-    char *ptr_val = NULL;
-    char buf_key[256];
-    char buf_val[512];
-    char *out_json;
+    char *json_buf;
+    size_t json_size;
     msgpack_unpacked result;
     msgpack_object root;
     msgpack_object map;
-    json_t *j_arr;
-    json_t *j_map;
+    msgpack_object time;
+    msgpack_sbuffer tmp_sbuf;
+    msgpack_packer tmp_pck;
 
     /* Iterate the original buffer and perform adjustments */
     msgpack_unpacked_init(&result);
-
-    j_arr = json_create_array();
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
-        if (result.data.type != MSGPACK_OBJECT_ARRAY) {
-            continue;
-        }
+        array_size++;
+    }
+    msgpack_unpacked_destroy(&result);
+    msgpack_unpacked_init(&result);
 
+    /* Create temporal msgpack buffer */
+    msgpack_sbuffer_init(&tmp_sbuf);
+    msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
+    msgpack_pack_array(&tmp_pck, array_size);
+
+    off = 0;
+    while (msgpack_unpack_next(&result, data, bytes, &off)) {
         /* Each array must have two entries: time and record */
         root = result.data;
         if (root.via.array.size != 2) {
             continue;
         }
 
-        /* Create a map entry */
-        j_map = json_create_object();
-
-        atime = root.via.array.ptr[0].via.u64;
+        time = root.via.array.ptr[0];
         map   = root.via.array.ptr[1];
 
-        n_size = map.via.map.size + 1;
+        map_size = map.via.map.size;
+        msgpack_pack_map(&tmp_pck, map_size + 1);
 
-        json_add_to_object(j_map, "date", json_create_number(atime));
-        for (i = 0; i < n_size - 1; i++) {
+        /* Append date k/v */
+        msgpack_pack_str(&tmp_pck, 4);
+        msgpack_pack_str_body(&tmp_pck, "date", 4);
+        msgpack_pack_object(&tmp_pck, time);
+
+        for (i = 0; i < map_size; i++) {
             msgpack_object *k = &map.via.map.ptr[i].key;
             msgpack_object *v = &map.via.map.ptr[i].val;
 
-            if (k->type != MSGPACK_OBJECT_BIN && k->type != MSGPACK_OBJECT_STR) {
-                continue;
-            }
-
-            /* Store key */
-            psize = k->via.str.size;
-            if (psize <= (sizeof(buf_key) - 1)) {
-                memcpy(buf_key, k->via.str.ptr, psize);
-                buf_key[psize] = '\0';
-                ptr_key = buf_key;
-            }
-            else {
-                /* Long JSON map keys have a performance penalty */
-                ptr_key = flb_malloc(psize + 1);
-                memcpy(ptr_key, k->via.str.ptr, psize);
-                ptr_key[psize] = '\0';
-            }
-
-            /* Store value */
-            if (v->type == MSGPACK_OBJECT_NIL) {
-                json_add_to_object(j_map, ptr_key, json_create_null());
-            }
-            else if (v->type == MSGPACK_OBJECT_BOOLEAN) {
-                json_add_to_object(j_map, ptr_key,
-                                   json_create_bool(v->via.boolean));
-            }
-            else if (v->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-                json_add_to_object(j_map, ptr_key,
-                                   json_create_number(v->via.u64));
-            }
-            else if (v->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
-                json_add_to_object(j_map, ptr_key,
-                                   json_create_number(v->via.i64));
-            }
-            else if (v->type == MSGPACK_OBJECT_FLOAT) {
-                json_add_to_object(j_map, ptr_key,
-                                   json_create_number(v->via.f64));
-            }
-            else if (v->type == MSGPACK_OBJECT_STR) {
-                /* String value */
-                psize = v->via.str.size;
-                if (psize <= (sizeof(buf_val) - 1)) {
-                    memcpy(buf_val, v->via.str.ptr, psize);
-                    buf_val[psize] = '\0';
-                    ptr_val = buf_val;
-                }
-                else {
-                    ptr_val = flb_malloc(psize + 1);
-                    memcpy(ptr_val, v->via.str.ptr, psize);
-                    ptr_val[psize] = '\0';
-                }
-                json_add_to_object(j_map, ptr_key,
-                                   json_create_string(ptr_val));
-            }
-            else if (v->type == MSGPACK_OBJECT_BIN) {
-                /* Bin value */
-                psize = v->via.bin.size;
-                if (psize <= (sizeof(buf_val) - 1)) {
-                    memcpy(buf_val, v->via.bin.ptr, psize);
-                    buf_val[psize] = '\0';
-                    ptr_val = buf_val;
-                }
-                else {
-                    ptr_val = flb_malloc(psize + 1);
-                    memcpy(ptr_val, v->via.bin.ptr, psize);
-                    ptr_val[psize] = '\0';
-                }
-                json_add_to_object(j_map, ptr_key,
-                                   json_create_string(ptr_val));
-            }
-
-            if (ptr_key && ptr_key != buf_key) {
-                flb_free(ptr_key);
-            }
-            ptr_key = NULL;
-
-            if (ptr_val && ptr_val != buf_val) {
-                flb_free(ptr_val);
-            }
-            ptr_val = NULL;
+            msgpack_pack_object(&tmp_pck, *k);
+            msgpack_pack_object(&tmp_pck, *v);
         }
-
-        /* Append the new map to the main array */
-        json_add_to_array(j_arr, j_map);
     }
 
     /* Release msgpack */
     msgpack_unpacked_destroy(&result);
 
     /* Format to JSON */
-    out_json = json_print_unformatted(j_arr);
-    json_delete(j_arr);
-    *out_size = strlen(out_json);
+    ret = flb_msgpack_raw_to_json_str(tmp_sbuf.data, tmp_sbuf.size,
+                                      &json_buf, &json_size);
+    msgpack_sbuffer_destroy(&tmp_sbuf);
 
-    return out_json;
+    if (ret != 0) {
+        return NULL;
+    }
+
+    *out_size = json_size;
+    return json_buf;
 }
 
 int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
@@ -190,7 +120,7 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
     /* Allocate plugin context */
     ctx = flb_calloc(1, sizeof(struct flb_out_http_config));
     if (!ctx) {
-        perror("malloc");
+        flb_errno();
         return -1;
     }
     /*
@@ -347,7 +277,7 @@ void cb_http_flush(void *data, size_t bytes,
     struct flb_upstream *u;
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
-    void *body;
+    void *body = NULL;
     uint64_t body_len;
     (void) i_ins;
 
@@ -363,6 +293,9 @@ void cb_http_flush(void *data, size_t bytes,
     u = ctx->u;
     u_conn = flb_upstream_conn_get(u);
     if (!u_conn) {
+        if (body != data) {
+            flb_free(body);
+        }
         flb_error("[out_http] no upstream connections available");
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
