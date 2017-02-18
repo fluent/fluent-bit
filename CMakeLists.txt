@@ -241,10 +241,6 @@ if(FLB_BUFFERING)
   FLB_DEFINITION(FLB_HAVE_BUFFERING)
 endif()
 
-# Enable cJSON
-add_subdirectory(lib/cjson)
-include_directories(lib/cjson)
-
 if(FLB_TRACE)
   FLB_DEFINITION(FLB_HAVE_TRACE)
 endif()

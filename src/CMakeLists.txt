@@ -150,7 +150,6 @@ set(FLB_DEPS
   mk_core
   jsmn
   msgpackc-static
-  cJSON
   ${FLB_PLUGINS}
   ${FLB_PROXY_PLUGINS}
   ${extra_libs}
