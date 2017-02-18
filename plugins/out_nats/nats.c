@@ -17,11 +17,11 @@
  *  limitations under the License.
  */
 
-#include <stdio.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_utils.h>
-#include <cjson.h>
+#include <fluent-bit/flb_pack.h>
 
+#include <stdio.h>
 #include <msgpack.h>
 
 #include "nats.h"
@@ -64,133 +64,82 @@ int cb_nats_init(struct flb_output_instance *ins, struct flb_config *config,
     return 0;
 }
 
-static int msgpack_to_json(void *data, size_t bytes, char *tag,
-                           char **out_json, size_t *out_len)
+static int msgpack_to_json(void *data, size_t bytes,
+                           char *tag, int tag_len,
+                           char **out_json, size_t *out_size)
 {
     int i;
-    int n_size;
+    int ret;
+    int map_size;
     size_t off = 0;
-    time_t atime;
-    char tmp_key[32];
-    char tmp_val[256];
-    char *tmp_ext;
-    json_t *j_root;
-    json_t *j_arr;
+    size_t array_size = 0;
     msgpack_object map;
     msgpack_object root;
+    msgpack_object time;
     msgpack_object m_key;
     msgpack_object m_val;
     msgpack_packer   mp_pck;
     msgpack_sbuffer  mp_sbuf;
     msgpack_unpacked result;
+    char *json_buf;
+    size_t json_size;
+
+    /* Iterate the original buffer and perform adjustments */
+    msgpack_unpacked_init(&result);
+    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+        array_size++;
+    }
+    msgpack_unpacked_destroy(&result);
+    msgpack_unpacked_init(&result);
+    off = 0;
 
     /* Convert MsgPack to JSON */
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-    msgpack_unpacked_init(&result);
-
-    j_root = json_create_array();
+    msgpack_pack_array(&mp_pck, array_size);
 
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
         if (result.data.type != MSGPACK_OBJECT_ARRAY) {
             continue;
         }
-
-        j_arr = json_create_array();
-
         root = result.data;
-        if (root.via.array.size != 2) {
-            continue;
-        }
 
-        atime  = root.via.array.ptr[0].via.u64;
+        time  = root.via.array.ptr[0];
         map    = root.via.array.ptr[1];
-        n_size = map.via.map.size + 1;
+        map_size = map.via.map.size;
 
-        json_add_to_array(j_arr, json_create_number(atime));
+        msgpack_pack_array(&mp_pck, 2);
+        msgpack_pack_object(&mp_pck, time);
 
-        json_t *j_obj = json_create_object();
+        msgpack_pack_map(&mp_pck, map_size + 1);
+        msgpack_pack_str(&mp_pck, 3);
+        msgpack_pack_str_body(&mp_pck, "tag", 3);
+        msgpack_pack_str(&mp_pck, tag_len);
+        msgpack_pack_str_body(&mp_pck, tag, tag_len);
 
-        if (!tag) {
-            json_add_to_object(j_obj, "tag",
-                               json_create_string("fluentbit"));
-        }
-        else {
-            json_add_to_object(j_obj, "tag",
-                               json_create_string(tag));
-        }
-
-        for (i = 0; i < n_size - 1; i++) {
+        for (i = 0; i < map_size; i++) {
             m_key = map.via.map.ptr[i].key;
             m_val = map.via.map.ptr[i].val;
 
-            memcpy(tmp_key, m_key.via.bin.ptr, m_key.via.bin.size);
-            tmp_key[m_key.via.bin.size] = '\0';
-
-            if (m_val.type == MSGPACK_OBJECT_NIL) {
-                json_add_to_object(j_obj, tmp_key,
-                                   json_create_null());
-            }
-            else if (m_val.type == MSGPACK_OBJECT_BOOLEAN) {
-                json_add_to_object(j_obj, tmp_key,
-                                   json_create_bool(m_val.via.boolean));
-            }
-            else if (m_val.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-                json_add_to_object(j_obj, tmp_key,
-                                   json_create_number(m_val.via.u64));
-            }
-            else if (m_val.type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
-                json_add_to_object(j_obj, tmp_key,
-                                   json_create_number(m_val.via.i64));
-            }
-            else if (m_val.type == MSGPACK_OBJECT_FLOAT) {
-                json_add_to_object(j_obj, tmp_key,
-                                   json_create_number(m_val.via.f64));
-            }
-            else if (m_val.type == MSGPACK_OBJECT_STR) {
-                if (m_val.via.str.size > sizeof(tmp_val) - 1) {
-                    tmp_ext = flb_malloc(m_val.via.str.size + 1);
-                }
-                else {
-                    tmp_ext = tmp_val;
-                }
-                memcpy(tmp_ext, m_val.via.str.ptr, m_val.via.str.size);
-                tmp_ext[m_val.via.str.size] = '\0';
-
-                json_add_to_object(j_obj, tmp_key, json_create_string(tmp_ext));
-                if (tmp_ext != tmp_val) {
-                    flb_free(tmp_ext);
-                }
-            }
-            else if (m_val.type == MSGPACK_OBJECT_BIN) {
-                if (m_val.via.bin.size > sizeof(tmp_val) - 1) {
-                    tmp_ext = flb_malloc(m_val.via.bin.size + 1);
-                }
-                else {
-                    tmp_ext = tmp_val;
-                }
-                memcpy(tmp_ext, m_val.via.bin.ptr, m_val.via.bin.size);
-                tmp_ext[m_val.via.bin.size] = '\0';
-
-                json_add_to_object(j_obj, tmp_key, json_create_string(tmp_ext));
-                if (tmp_ext != tmp_val) {
-                    flb_free(tmp_ext);
-                }
-            }
+            msgpack_pack_object(&mp_pck, m_key);
+            msgpack_pack_object(&mp_pck, m_val);
         }
-
-        json_add_to_array(j_arr, j_obj);
-        json_add_to_array(j_root, j_arr);
     }
     msgpack_unpacked_destroy(&result);
 
-    *out_json = json_print_unformatted(j_root);
-    json_delete(j_root);
+    ret = flb_msgpack_raw_to_json_str(mp_sbuf.data, mp_sbuf.size,
+                                      &json_buf, &json_size);
+    msgpack_sbuffer_destroy(&mp_sbuf);
 
-    *out_len = strlen(*out_json);
+    if (ret != 0) {
+        return -1;
+    }
+
+    *out_json = json_buf;
+    *out_size = json_size;
+
     return 0;
 }
-
 
 void cb_nats_flush(void *data, size_t bytes,
                    char *tag, int tag_len,
@@ -226,8 +175,9 @@ void cb_nats_flush(void *data, size_t bytes,
     }
 
     /* Convert original Fluent Bit MsgPack format to JSON */
-    ret = msgpack_to_json(data, bytes, tag, &json_msg, &json_len);
+    ret = msgpack_to_json(data, bytes, tag, tag_len, &json_msg, &json_len);
     if (ret == -1) {
+        flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 
