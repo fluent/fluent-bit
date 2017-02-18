@@ -7,8 +7,6 @@ os:
   - osx
 
 env:
-  - FLB_FLUSH="-DFLB_FLUSH_UCONTEXT=On"
-  - FLB_FLUSH="-DFLB_FLUSH_LIBCO=On"
   - FLB_MEM="-DFLB_JEMALLOC=On"
   - FLB_MEM="-DFLB_JEMALLOC=Off"
 
@@ -40,7 +38,5 @@ matrix:
     - os: linux
       compiler: clang
       env: TOOLCHAIN=../cmake/armadillo-iot.cmake
-    - os: osx
-      env: FLB_FLUSH="-DFLB_FLUSH_UCONTEXT=On"
 
 script: make
