@@ -424,7 +424,7 @@ int flb_io_net_write(struct flb_upstream_conn *u_conn, void *data,
     int ret = -1;
     struct flb_upstream *u = u_conn->u;
 
-#if defined (FLB_HAVE_FLUSH_UCONTEXT) || defined (FLB_HAVE_FLUSH_LIBCO)
+#if defined (FLB_HAVE_FLUSH_LIBCO)
     struct flb_thread *th = pthread_getspecific(flb_thread_key);
     flb_trace("[io thread=%p] [net_write] trying %zd bytes",
               th, len);
@@ -450,7 +450,7 @@ int flb_io_net_write(struct flb_upstream_conn *u_conn, void *data,
         u_conn->fd = -1;
     }
 
-#if defined (FLB_HAVE_FLUSH_UCONTEXT) || defined (FLB_HAVE_FLUSH_LIBCO)
+#if defined (FLB_HAVE_FLUSH_LIBCO)
     flb_trace("[io thread=%p] [net_write] ret=%i total=%lu/%lu",
               th, ret, *out_len, len);
 #else
@@ -465,7 +465,7 @@ ssize_t flb_io_net_read(struct flb_upstream_conn *u_conn, void *buf, size_t len)
     int ret = -1;
     struct flb_upstream *u = u_conn->u;
 
-#if defined (FLB_HAVE_FLUSH_UCONTEXT) || defined (FLB_HAVE_FLUSH_LIBCO)
+#if defined (FLB_HAVE_FLUSH_LIBCO)
     struct flb_thread *th = pthread_getspecific(flb_thread_key);
     flb_trace("[io thread=%p] [net_read] try up to %zd bytes",
               th, len);

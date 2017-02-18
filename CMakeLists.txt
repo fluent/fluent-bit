@@ -56,12 +56,10 @@ option(FLB_PROXY_GO           "Enable Go plugins support"   Yes)
 # FLB_FLUSH_LIBCO: set by default, use lib/flb_libco implementation which
 # supports amd64, arm, x86 and ppc.
 #
-# FLB_FLUSH_UCONTEXT: It uses POSIX ucontext for co-routines implementation.
+# FLB_FLUSH_UCONTEXT (DEPRECATED): It uses POSIX ucontext for co-routines
+# implementation.
 # Despites this is POSIX deprecated, it's supported on Linux and BSD
 # systems, but specific old-toolchains do not implement it.
-
-option(FLB_FLUSH_UCONTEXT     "Use co-routines for flush I/O"  No)
-option(FLB_FLUSH_LIBCO        "Use libco for flush I/O"       Yes)
 
 # Build-in Plugins
 option(FLB_IN_XBEE         "Enable XBee input plugin"            No)
@@ -253,25 +251,8 @@ if(FLB_HTTP)
   FLB_DEFINITION(FLB_HAVE_HTTP)
 endif()
 
-# Flush method
-check_c_source_compiles("
-  #define _XOPEN_SOURCE
-  #define _BSD_SOURCE
-  #include <ucontext.h>
-  int main() {
-     ucontext_t a, b;
-     return swapcontext(&a, &b);
-  }" FLB_HAVE_UCONTEXT
-  FAIL_REGEX "warning.*not implemented.*")
-
-if(FLB_FLUSH_UCONTEXT AND FLB_HAVE_UCONTEXT)
-  FLB_DEFINITION(FLB_HAVE_FLUSH_UCONTEXT)
-  FLB_OPTION(FLB_FLUSH_LIBCO OFF)
-else()
-  FLB_DEFINITION(FLB_HAVE_FLUSH_LIBCO)
-  FLB_OPTION(FLB_FLUSH_LIBCO ON)
-  add_subdirectory(lib/flb_libco)
-endif()
+FLB_DEFINITION(FLB_HAVE_FLUSH_LIBCO)
+add_subdirectory(lib/flb_libco)
 
 # Valgrind support
 check_c_source_compiles("

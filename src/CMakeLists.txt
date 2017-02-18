@@ -88,11 +88,11 @@ if(FLB_BUFFERING)
     )
 endif()
 
-if(FLB_FLUSH_LIBCO)
-  set(extra_libs
-    ${extra_libs}
-    "co")
-endif()
+# Link to libco
+set(extra_libs
+  ${extra_libs}
+  "co")
+
 
 if(FLB_JEMALLOC)
   set(extra_libs

@@ -94,9 +94,7 @@ struct flb_config *flb_config_init()
 
     /* Flush */
     config->flush        = FLB_CONFIG_FLUSH_SECS;
-#ifdef FLB_HAVE_FLUSH_UCONTEXT
-    config->flush_method = FLB_FLUSH_UCONTEXT;
-#elif defined FLB_HAVE_FLUSH_PTHREADS
+#if defined FLB_HAVE_FLUSH_PTHREADS
     config->flush_method = FLB_FLUSH_PTHREADS;
 #elif defined FLB_HAVE_FLUSH_LIBCO
     config->flush_method = FLB_FLUSH_LIBCO;

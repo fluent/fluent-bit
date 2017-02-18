@@ -31,7 +31,7 @@
 void flb_task_add_thread(struct flb_thread *thread,
                                 struct flb_task *task);
 
-#if defined (FLB_HAVE_FLUSH_UCONTEXT) || defined (FLB_HAVE_FLUSH_LIBCO)
+#if defined (FLB_HAVE_FLUSH_LIBCO)
 
 /* It creates a new output thread using a 'Retry' context */
 int flb_engine_dispatch_retry(struct flb_task_retry *retry,
@@ -216,4 +216,4 @@ int flb_engine_dispatch_direct(uint64_t id,
     return 0;
 }
 
-#endif /* !FLB_HAVE_FLUSH_UCONTEXT || FLB_HAVE_FLUSH_LIBCO */
+#endif /* !FLB_HAVE_FLUSH_LIBCO */

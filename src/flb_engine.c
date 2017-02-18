@@ -468,7 +468,7 @@ int flb_engine_start(struct flb_config *config)
             else if (event->type == FLB_ENGINE_EV_CUSTOM) {
                 event->handler(event);
             }
-#if defined (FLB_HAVE_FLUSH_UCONTEXT) || defined (FLB_HAVE_FLUSH_LIBCO)
+#if defined (FLB_HAVE_FLUSH_LIBCO)
             else if (event->type == FLB_ENGINE_EV_THREAD) {
                 struct flb_upstream_conn *u_conn;
                 struct flb_thread *th;

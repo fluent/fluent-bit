@@ -20,7 +20,6 @@
 #ifndef FLB_INPUT_H
 #define FLB_INPUT_H
 
-#include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_config.h>
@@ -30,6 +29,10 @@
 #include <fluent-bit/flb_bits.h>
 #include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_filter.h>
+#include <fluent-bit/flb_thread.h>
+
+
+#include <monkey/mk_core.h>
 #include <msgpack.h>
 
 #include <inttypes.h>
