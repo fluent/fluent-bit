@@ -148,7 +148,7 @@ static inline double proc_cpu_load(int cpus, struct cpu_stats *cstats)
     }
 
     if (line) {
-        free(line);
+        flb_free(line);
     }
 
     fclose(f);
