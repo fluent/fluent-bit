@@ -22,6 +22,7 @@
 
 #include <jsmn/jsmn.h>
 #include <msgpack.h>
+#include <monkey/mk_core.h>
 struct flb_pack_state {
     int multiple;         /* support multiple jsons? */
     int tokens_count;     /* number of parsed tokens */
