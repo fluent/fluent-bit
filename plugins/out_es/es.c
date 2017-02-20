@@ -165,10 +165,6 @@ static char *es_format(void *data, size_t bytes, int *out_size,
                          ctx->index, ctx->type);
     off = 0;
 
-    /* Create temporal msgpack buffer */
-    msgpack_sbuffer_init(&tmp_sbuf);
-    msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
-
     msgpack_unpacked_destroy(&result);
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
@@ -185,6 +181,10 @@ static char *es_format(void *data, size_t bytes, int *out_size,
         time  = root.via.array.ptr[0];
         map   = root.via.array.ptr[1];
         map_size = map.via.map.size;
+
+        /* Create temporal msgpack buffer */
+        msgpack_sbuffer_init(&tmp_sbuf);
+        msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 
         msgpack_pack_map(&tmp_pck, map_size + 1);
 
@@ -225,7 +225,6 @@ static char *es_format(void *data, size_t bytes, int *out_size,
             return NULL;
         }
     }
-
     msgpack_unpacked_destroy(&result);
 
     *out_size = bulk->len;
