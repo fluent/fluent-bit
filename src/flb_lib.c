@@ -115,14 +115,6 @@ flb_ctx_t *flb_create()
     }
     ctx->config = config;
 
-    /* Initialize logger */
-    log = flb_log_init(config, FLB_LOG_STDERR, FLB_LOG_INFO, NULL);
-    if (!log) {
-        flb_config_exit(ctx->config);
-        flb_free(ctx);
-        return NULL;
-    }
-
     /* Initialize our pipe to send data to our worker */
     ret = flb_pipe_create(config->ch_data);
     if (ret == -1) {
