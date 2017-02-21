@@ -67,7 +67,7 @@ int es_bulk_append(struct es_bulk *bulk, char *index, int i_len,
     available = (bulk->size - bulk->len);
 
     if (available < required) {
-        new_size = bulk->size + (((available + required) / ES_BULK_CHUNK) + ES_BULK_CHUNK);
+        new_size = bulk->size + available + required + ES_BULK_CHUNK;
         ptr = flb_realloc(bulk->ptr, new_size);
         if (!ptr) {
             perror("realloc");
