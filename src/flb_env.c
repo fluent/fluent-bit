@@ -107,7 +107,12 @@ char *flb_env_get(struct flb_env *env, char *key)
     }
 
     /* If it was not found, try to get it from the real environment */
-    return getenv(key);
+    out_buf = getenv(key);
+    if (!out_buf) {
+        flb_warn("[env] variable ${%s} is used but not set", key);
+    }
+
+    return out_buf;
 }
 
 /*
