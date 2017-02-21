@@ -618,6 +618,15 @@ int main(int argc, char **argv)
 
     flb_banner();
 
+    /* Logging */
+    if (config->verbose != FLB_LOG_INFO) {
+        flb_log_set_level(config, config->verbose);
+    }
+
+    if (config->log_file) {
+        flb_log_set_file(config, config->log_file);
+    }
+
     /* Validate config file */
     if (cfg_file) {
         if (access(cfg_file, R_OK) != 0) {
@@ -630,15 +639,6 @@ int main(int argc, char **argv)
             flb_utils_error(FLB_ERR_CFG_FILE_FORMAT);
         }
         flb_free(cfg_file);
-    }
-
-    /* Logging layer */
-    if (!config->log_file) {
-        config->log = flb_log_init(config, FLB_LOG_STDERR, config->verbose, NULL);
-    }
-    else {
-        config->log = flb_log_init(config, FLB_LOG_FILE, config->verbose,
-                                   config->log_file);
     }
 
     /* Parsers file */
