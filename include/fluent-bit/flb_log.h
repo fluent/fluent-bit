@@ -26,7 +26,7 @@
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_thread_storage.h>
 #include <fluent-bit/flb_worker.h>
-
+#include <fluent-bit/flb_config.h>
 #include <inttypes.h>
 #include <errno.h>
 
@@ -61,16 +61,6 @@ struct flb_log {
     struct mk_event_loop *evl;
 };
 
-#ifdef FLB_HAVE_C_TLS
-/* Fast path where __thread exists*/
-#define flb_log_check(l)  ((FLB_TLS_GET(flb_worker_ctx) == NULL) || \
-    (FLB_TLS_GET(flb_worker_ctx)->config->log->level < l)) ? FLB_FALSE: FLB_TRUE
-#else
-/*
- * Not ideal case but it happens that __thread is not supported and we need
- * to fallback to pthread solution. For logger we separate this to simplify
- * the check when the logging API is invoked.
- */
 static inline int flb_log_check(int l) {
     struct flb_worker *w;
     w = (struct flb_worker *) FLB_TLS_GET(flb_worker_ctx);
@@ -79,10 +69,11 @@ static inline int flb_log_check(int l) {
     }
     return FLB_TRUE;
 }
-#endif
 
 struct flb_log *flb_log_init(struct flb_config *config, int type,
                              int level, char *out);
+int flb_log_set_level(struct flb_config *config, int level);
+int flb_log_set_file(struct flb_config *config, char *out);
 
 int flb_log_stop(struct flb_log *log, struct flb_config *config);
 void flb_log_print(int type, const char *file, int line, const char *fmt, ...);

@@ -161,6 +161,26 @@ int flb_log_worker_init(void *data)
     return 0;
 }
 
+int flb_log_set_level(struct flb_config *config, int level)
+{
+    config->log->level = level;
+    return 0;
+}
+
+int flb_log_set_file(struct flb_config *config, char *out)
+{
+    if (out) {
+        config->log->type = FLB_LOG_FILE;
+        config->log->out = out;
+    }
+    else {
+        config->log->type = FLB_LOG_STDERR;
+        config->log->out = NULL;
+    }
+
+    return 0;
+}
+
 struct flb_log *flb_log_init(struct flb_config *config, int type,
                              int level, char *out)
 {
@@ -201,7 +221,6 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
         return NULL;
     }
     MK_EVENT_NEW(&log->event);
-
     /* Register channel manager into the event loop */
     ret = mk_event_add(log->evl, log->ch_mng[0],
                        FLB_LOG_MNG, MK_EVENT_READ, &log->event);
@@ -226,9 +245,10 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
         config->log = NULL;
         return NULL;
     }
-    worker->func   = NULL;
-    worker->data   = NULL;
-    worker->config = config;
+    worker->func    = NULL;
+    worker->data    = NULL;
+    worker->log_ctx = log;
+    worker->config  = config;
 
     /* Set the worker context global */
     FLB_TLS_SET(flb_worker_ctx, worker);
@@ -359,7 +379,7 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
         }
     }
     else {
-        fprintf(stderr, "Invalid worker context\n");
+        fprintf(stderr, "%s", (char *) msg.msg);
     }
 }
 

@@ -76,6 +76,7 @@ int flb_worker_create(void (*func) (void *), void *arg, pthread_t *tid,
     worker->func   = func;
     worker->data   = arg;
     worker->config = config;
+    worker->log_ctx = config->log;
 
     /* Initialize log-specific */
     ret = flb_log_worker_init(worker);
@@ -147,5 +148,6 @@ int flb_worker_exit(struct flb_config *config)
 
 int flb_worker_log_level(struct flb_worker *worker)
 {
-    return worker->config->log->level;
+    struct flb_log *log = worker->log_ctx;
+    return log->level;
 };

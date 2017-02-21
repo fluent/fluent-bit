@@ -134,6 +134,12 @@ struct flb_config *flb_config_init()
 
     memset(&config->tasks_map, '\0', sizeof(config->tasks_map));
 
+    /* Create logger */
+    if (flb_log_init(config, FLB_LOG_STDERR, FLB_LOG_INFO, NULL) == NULL) {
+        flb_config_exit(config);
+        return NULL;
+    }
+
     /* Environment */
     config->env = flb_env_create();
 
@@ -304,8 +310,9 @@ static int set_log_level(struct flb_config *config, char *v_str)
         else {
             return -1;
         }
-    }else{
-        flb_error("Not set log level");
+    }
+    else {
+        config->log->level = 3;
     }
     return 0;
 }

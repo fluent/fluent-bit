@@ -38,4 +38,9 @@
 #define FLB_TLS_DEFINE(type, name) pthread_key_t name;
 #endif
 
+
+/* FIXME: this extern should be auto-populated from flb_thread_storage.h */
+extern FLB_TLS_DEFINE(struct flb_worker, flb_worker_ctx)
+
+
 #endif /* !FLB_THREAD_STORAGE_H */

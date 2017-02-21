@@ -22,8 +22,7 @@
 
 #include <fluent-bit/flb_config.h>
 
-/* FIXME: this extern should be auto-populated from flb_thread_storage.h */
-extern FLB_TLS_DEFINE(struct flb_worker, flb_worker_ctx)
+struct flb_config;
 
 struct flb_worker {
     struct mk_event event;
@@ -37,7 +36,8 @@ struct flb_worker {
     int log[2];
 
     /* Runtime context */
-    struct flb_config *config;
+    void *config;
+    void *log_ctx;
 
     struct mk_list _head;    /* link to head at config->workers */
 };

@@ -157,6 +157,8 @@ struct flb_config {
     struct flb_task_map tasks_map[2048];
 };
 
+#define FLB_CONFIG_LOG_LEVEL(c) (c->log->level)
+
 struct flb_config *flb_config_init();
 void flb_config_exit(struct flb_config *config);
 char *flb_config_prop_get(char *key, struct mk_list *list);
