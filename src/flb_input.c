@@ -171,6 +171,12 @@ int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
 
     len = strlen(k);
     tmp = flb_env_var_translate(in->config->env, v);
+    if (tmp) {
+        if (strlen(tmp) == 0) {
+            flb_free(tmp);
+            tmp = NULL;
+        }
+    }
 
     /* Check if the key is a known/shared property */
     if (prop_key_check("tag", k, len) == 0) {
@@ -185,8 +191,12 @@ int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
             in->host.name   = tmp;
         }
         else if (prop_key_check("port", k, len) == 0) {
-            in->host.port = atoi(tmp);
-            flb_free(tmp);
+            if (tmp) {
+                in->host.port = atoi(tmp);
+            }
+            else {
+                in->host.port = 0;
+            }
         }
     }
     else {
