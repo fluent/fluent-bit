@@ -21,22 +21,13 @@ before_script:
   - if [ $TRAVIS_OS_NAME == linux ]; then export PATH=$PATH:$PWD/ksz9692/bin/; fi
   # Unpack the sources
   - cd build
-  - cmake -DFLB_ALL=On -DFLB_WITHOUT_EXAMPLES=On $FLB_FLUSH $FLB_MEM -DCMAKE_TOOLCHAIN_FILE=${TOOLCHAIN} ../
+  - cmake -DFLB_ALL=On -DFLB_WITHOUT_EXAMPLES=On $FLB_FLUSH $FLB_MEM ../
 
 matrix:
-  include:
-    - os: linux
-      env: TOOLCHAIN=../cmake/armadillo-iot.cmake
-      compiler: gcc
   exclude:
-    - os: osx
-      env: TOOLCHAIN=../cmake/armadillo-iot.cmake
     - os: osx
       env: FLB_MEM="-DFLB_JEMALLOC=On"
     - os: osx
       env: FLB_MEM="-DFLB_JEMALLOC=Off"
-    - os: linux
-      compiler: clang
-      env: TOOLCHAIN=../cmake/armadillo-iot.cmake
 
 script: make
