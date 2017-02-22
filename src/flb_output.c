@@ -265,6 +265,12 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
 
     len = strlen(k);
     tmp = flb_env_var_translate(out->config->env, v);
+    if (tmp) {
+        if (strlen(tmp) == 0) {
+            flb_free(tmp);
+            tmp = NULL;
+        }
+    }
 
     /* Check if the key is a known/shared property */
     if (prop_key_check("match", k, len) == 0) {
@@ -274,12 +280,21 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
         out->host.name = tmp;
     }
     else if (prop_key_check("port", k, len) == 0) {
-        out->host.port = atoi(tmp);
-        flb_free(tmp);
+        if (tmp) {
+            out->host.port = atoi(tmp);
+        }
+        else {
+            out->host.port = 0;
+        }
     }
     else if (prop_key_check("retry_limit", k, len) == 0) {
-        out->retry_limit = atoi(tmp);
-        flb_free(tmp);
+        if (tmp) {
+            out->retry_limit = atoi(tmp);
+            flb_free(tmp);
+        }
+        else {
+            out->retry_limit = 0;
+        }
     }
 #ifdef FLB_HAVE_TLS
     else if (prop_key_check("tls", k, len) == 0) {
