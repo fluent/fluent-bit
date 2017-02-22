@@ -84,8 +84,7 @@ static inline double proc_cpu_load(int cpus, struct cpu_stats *cstats)
 {
     int i;
     int ret;
-    ssize_t read;
-    char *line = NULL;
+    char line[255];
     size_t len = 0;
     char *fmt;
     FILE *f;
@@ -104,51 +103,46 @@ static inline double proc_cpu_load(int cpus, struct cpu_stats *cstats)
         snap_arr = cstats->snap_b;
     }
 
-    /*
-     * Note about getline(): on this call we let glibc to perform the
-     * memory allocation for the buffer, for hence upon release we
-     * use a direct free(2) instead of flb_free().
-     */
-
     /* Always read (n_cpus + 1) lines */
     for (i = 0; i <= cpus; i++) {
-        read = getline(&line, &len, f);
-        if (read == -1) {
-            break;
-        }
+        if (fgets(line, sizeof(line) - 1, f)) {
+            len = strlen(line);
+            if (line[len - 1] == '\n') {
+                line[--len] = 0;
+                if (len && line[len - 1] == '\r') {
+                    line[--len] = 0;
+                }
+            }
 
-        s = &snap_arr[i];
-        if (i == 0) {
-            fmt = " cpu  %lu %lu %lu %lu %lu";
-            ret = sscanf(line,
-                         fmt,
-                         &s->v_user,
-                         &s->v_nice,
-                         &s->v_system,
-                         &s->v_idle,
-                         &s->v_iowait);
+            s = &snap_arr[i];
+            if (i == 0) {
+                fmt = " cpu  %lu %lu %lu %lu %lu";
+                ret = sscanf(line,
+                             fmt,
+                             &s->v_user,
+                             &s->v_nice,
+                             &s->v_system,
+                             &s->v_idle,
+                             &s->v_iowait);
+            }
+            else {
+                fmt = " %s %lu %lu %lu %lu %lu";
+                ret = sscanf(line,
+                             fmt,
+                             &s->v_cpuid,
+                             &s->v_user,
+                             &s->v_nice,
+                             &s->v_system,
+                             &s->v_idle,
+                             &s->v_iowait);
+                if (ret <= 5) {
+                    return -1;
+                }
+            }
         }
         else {
-            fmt = " %s %lu %lu %lu %lu %lu";
-            ret = sscanf(line,
-                         fmt,
-                         &s->v_cpuid,
-                         &s->v_user,
-                         &s->v_nice,
-                         &s->v_system,
-                         &s->v_idle,
-                         &s->v_iowait);
+            break;
         }
-
-        if (ret < 5) {
-            flb_free(line);
-            fclose(f);
-            return -1;
-        }
-    }
-
-    if (line) {
-        free(line);
     }
 
     fclose(f);
@@ -184,7 +178,9 @@ static int in_cpu_init(struct flb_input_instance *in,
     /* Get CPU load, ready to be updated once fired the calc callback */
     ret = proc_cpu_load(ctx->n_processors, &ctx->cstats);
     if (ret != 0) {
-        flb_utils_error_c("Could not obtain CPU data");
+        flb_error("[cpu] Could not obtain CPU data");
+        flb_free(ctx);
+        return -1;
     }
     ctx->cstats.snap_active = CPU_SNAP_ACTIVE_B;
 
