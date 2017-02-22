@@ -32,7 +32,7 @@ static int influxdb_bulk_buffer(struct influxdb_bulk *bulk, int required)
 
     available = (bulk->size - bulk->len);
     if (available < required) {
-        new_size = bulk->size + (((available + required) / INFLUXDB_BULK_CHUNK) + INFLUXDB_BULK_CHUNK);
+        new_size = bulk->size + available + required + INFLUXDB_BULK_CHUNK;
         ptr = flb_realloc(bulk->ptr, new_size);
         if (!ptr) {
             flb_errno();
