@@ -95,7 +95,6 @@ flb_ctx_t *flb_create()
     int ret;
     flb_ctx_t *ctx;
     struct flb_config *config;
-    struct flb_log *log;
 
 #ifdef FLB_HAVE_MTRACE
     /* Start tracing malloc and free */
