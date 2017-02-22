@@ -110,6 +110,7 @@ char *flb_env_get(struct flb_env *env, char *key)
     out_buf = getenv(key);
     if (!out_buf) {
         flb_warn("[env] variable ${%s} is used but not set", key);
+        return NULL;
     }
 
     return out_buf;
@@ -125,6 +126,7 @@ char *flb_env_var_translate(struct flb_env *env, char *value)
     int len;
     int v_len;
     int pre_var;
+    int have_var = FLB_FALSE;
     char *env_var;
     char *v_start;
     char *v_end;
@@ -161,6 +163,7 @@ char *flb_env_var_translate(struct flb_env *env, char *value)
         /* variable */
         strncpy(tmp, v_start, v_len);
         tmp[v_len] = '\0';
+        have_var = FLB_TRUE;
 
         /* Append pre-variable content */
         pre_var = (v_start - 2) - (value + i);
@@ -178,7 +181,22 @@ char *flb_env_var_translate(struct flb_env *env, char *value)
     }
 
     if (buf.len == 0) {
-        return flb_strdup(value);
+        /*
+         * If the output length buffer is zero, it could mean:
+         *
+         * - just one variable was given and it don't have any value
+         * - no variables given (keep original value)
+         *
+         * In order to avoid problems in the caller, if a variable is null
+         * and is the only one content available, return a new empty memory
+         * string.
+         */
+        if (have_var == FLB_TRUE) {
+            return flb_strdup("");
+        }
+        else {
+            return flb_strdup(value);
+        }
     }
 
     return buf.str;
