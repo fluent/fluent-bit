@@ -346,17 +346,17 @@ void cb_es_flush(void *data, size_t bytes,
     (void) tag;
     (void) tag_len;
 
-    /* Convert format */
-    pack = es_format(data, bytes, &bytes_out, ctx);
-    if (!pack) {
-        FLB_OUTPUT_RETURN(FLB_ERROR);
-    }
-
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
-        flb_free(pack);
         FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
+    /* Convert format */
+    pack = es_format(data, bytes, &bytes_out, ctx);
+    if (!pack) {
+        flb_upstream_conn_release(u_conn);
+        FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 
     /* Compose HTTP Client request */
