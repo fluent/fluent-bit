@@ -247,7 +247,7 @@ int flb_net_tcp_fd_connect(flb_sockfd_t fd, char *host, unsigned long port)
     snprintf(_port, sizeof(_port), "%lu", port);
     ret = getaddrinfo(host, _port, &hints, &res);
     if (ret != 0) {
-        flb_error("net_tcp_connect: Can't get addr info");
+        flb_error("net_tcp_connect: Can't get addr info %s", host);
         return -1;
     }
 
