@@ -55,7 +55,7 @@ TEST(Inputs, selfcheck)
     EXPECT_TRUE(in_ffd >= 0);
     flb_input_set(ctx, in_ffd, "tag", "test",
                   "interval_sec", "1", "proc_name", "flb_test_in_proc",
-                  "alert", "true",NULL);
+                  "alert", "true", "mem", "on", "fd", "on", NULL);
 
     out_ffd = flb_output(ctx, (char *) "lib", (void*)callback_test);
     EXPECT_TRUE(out_ffd >= 0);
@@ -105,8 +105,8 @@ TEST(Inputs, absent_process) {
     in_ffd = flb_input(ctx, (char *) "proc", NULL);
     EXPECT_TRUE(in_ffd >= 0);
     flb_input_set(ctx, in_ffd, "tag", "test",
-                  "interval_sec", "1", "proc_name", "",
-                  "alert", "true",NULL);
+                  "interval_sec", "1", "proc_name", " ",
+                  "alert", "true", "mem", "on", "fd", "on", NULL);
 
     out_ffd = flb_output(ctx, (char *) "lib", (void*)callback_test);
     EXPECT_TRUE(out_ffd >= 0);
@@ -136,4 +136,32 @@ TEST(Inputs, absent_process) {
 
     ret = pthread_mutex_destroy(&result_mutex);
     EXPECT_EQ(ret, 0);
+}
+
+TEST(Inputs, illegal_parameters) {
+
+    int           ret    = 0;
+    flb_ctx_t    *ctx    = NULL;
+    int in_ffd;
+    int out_ffd;
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "proc", NULL);
+    EXPECT_TRUE(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test",
+                  "interval_sec", "1", "proc_name", "",
+                  "alert", "true", "mem", "on", "fd", "on", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "lib", (void*)callback_test);
+    EXPECT_TRUE(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "test", NULL);
+
+    flb_service_set(ctx, "Flush", "2", NULL);
+
+    ret = flb_start(ctx);
+    EXPECT_EQ(ret, 0); // error occurs but return value is true
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
 }
