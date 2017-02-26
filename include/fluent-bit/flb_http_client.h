@@ -46,6 +46,8 @@ struct flb_http_response {
     int content_length;
     char  data[1024 * 8];   /* 8 KB */
     size_t data_len;
+    char *payload;
+    size_t payload_size;
 };
 
 /* It hold information about a possible HTTP proxy set by the caller */

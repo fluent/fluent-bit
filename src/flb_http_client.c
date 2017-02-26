@@ -54,6 +54,19 @@ static int process_response(struct flb_http_client *c)
     c->resp.status = atoi(tmp);
     mk_mem_free(tmp);
 
+    /* set payload */
+    tmp = strstr(c->resp.data, "\r\n\r\n");
+    if (tmp) {
+        if ((tmp - c->resp.data + 4) < c->resp.data_len) {
+            c->resp.payload = tmp += 4;
+            c->resp.payload_size = (c->resp.data_len - (tmp - c->resp.data));
+        }
+    }
+    else {
+        c->resp.payload = NULL;
+        c->resp.payload_size = 0;
+    }
+
     return 0;
 }
 
