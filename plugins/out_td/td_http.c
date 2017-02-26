@@ -159,7 +159,7 @@ struct flb_http_client *td_http_client(struct flb_upstream_conn *u_conn,
 
     /* Create client */
     c = flb_http_client(u_conn, FLB_HTTP_PUT, tmp,
-                        gz, gz_size, NULL, 0, NULL);
+                        gz, gz_size, NULL, 0, NULL, 0);
     if (!c) {
         flb_free(tmp);
         flb_free(gz);
