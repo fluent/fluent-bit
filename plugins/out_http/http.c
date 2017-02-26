@@ -304,7 +304,7 @@ void cb_http_flush(void *data, size_t bytes,
     c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->uri,
                         body, body_len,
                         ctx->host, ctx->port,
-                        ctx->proxy);
+                        ctx->proxy, 0);
 
     /* Append headers */
     if (ctx->out_format == FLB_HTTP_OUT_JSON) {
