@@ -32,6 +32,10 @@
 #define FLB_HTTP_PUT         2
 #define FLB_HTTP_HEAD        3
 
+/* HTTP Flags */
+#define FLB_HTTP_10          1
+#define FLB_HTTP_11          2
+
 /* Proxy */
 #define FLB_HTTP_PROXY_NONE       0
 #define FLB_HTTP_PROXY_HTTP       1
@@ -40,7 +44,7 @@
 struct flb_http_response {
     int status;
     int content_length;
-    char  data[1024 * 4];   /* 4 KB */
+    char  data[1024 * 8];   /* 8 KB */
     size_t data_len;
 };
 
@@ -76,7 +80,7 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
                                         int method, char *uri,
                                         char *body, size_t body_len,
                                         char *host, int port,
-                                        char *proxy);
+                                        char *proxy, int flags);
 
 int flb_http_add_header(struct flb_http_client *c,
                         char *key, size_t key_len,
