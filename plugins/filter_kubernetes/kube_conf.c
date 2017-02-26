@@ -22,22 +22,21 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_filter.h>
-#include <fluent-bit/flb_upstream.h>
-#include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_hash.h>
 
+#include "kube_meta.h"
 #include "kube_conf.h"
 
 struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
                                       struct flb_config *config)
 {
     int off;
-    int io_type;
+    char *url;
     char *tmp;
     char *p;
     struct flb_kube *ctx;
 
-    ctx = flb_malloc(sizeof(struct flb_kube));
+    ctx = flb_calloc(1, sizeof(struct flb_kube));
     if (!ctx) {
         flb_errno();
         return NULL;
@@ -45,13 +44,15 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
     ctx->config = config;
 
     /* Get Kubernetes API server */
-    tmp = flb_filter_get_property("kubernetes_url", i);
-    if (!tmp) {
+    url = flb_filter_get_property("kubernetes_url", i);
+    if (!url) {
         ctx->api_host = flb_strdup(FLB_API_HOST);
         ctx->api_port = FLB_API_PORT;
-        ctx->api_https = FLB_FALSE;
+        ctx->api_https = FLB_API_TLS;
     }
     else {
+        tmp = url;
+
         /* Check the protocol */
         if (strncmp(tmp, "http://", 7) == 0) {
             off = 7;
@@ -67,10 +68,10 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
         }
 
         /* Get hostname and TCP port */
-        p = tmp + off;
+        p = url + off;
         tmp = strchr(p, ':');
         if (tmp) {
-            ctx->api_host = flb_strndup(p, p - tmp);
+            ctx->api_host = flb_strndup(p, tmp - p);
             tmp++;
             ctx->api_port = atoi(tmp);
         }
@@ -80,12 +81,10 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
         }
     }
 
-    if (ctx->api_https == FLB_FALSE) {
-        io_type = FLB_IO_TCP;
-    }
-    else {
-        io_type = FLB_IO_TLS;
-    }
+    snprintf(ctx->kube_url, sizeof(ctx->kube_url) - 1,
+             "%s://%s:%i",
+             ctx->api_https ? "https" : "http",
+             ctx->api_host, ctx->api_port);
 
     ctx->hash_table = flb_hash_create(FLB_HASH_TABLE_SIZE);
     if (!ctx->hash_table) {
@@ -93,14 +92,7 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
         return NULL;
     }
 
-    /* Create an Upstream context */
-    ctx->upstream = flb_upstream_create(config,
-                                        ctx->api_host,
-                                        ctx->api_port,
-                                        io_type,
-                                        NULL);
-
-    flb_debug("[filter_kube] https=%i host=%s port=%i",
+    flb_info("[filter_kube] https=%i host=%s port=%i",
               ctx->api_https, ctx->api_host, ctx->api_port);
     return ctx;
 }

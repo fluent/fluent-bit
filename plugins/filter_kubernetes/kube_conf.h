@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_macros.h>
+#include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_regex.h>
 
 /*
@@ -38,15 +39,11 @@
 #define FLB_HASH_TABLE_SIZE 256
 
 /* Kubernetes API server info */
-#define FLB_API_HOST  "127.0.0.1"
-#define FLB_API_PORT  80
-#define FLB_API_TLS   FLB_FALSE
-#define FLB_API_VER   "v1"
+#define FLB_API_HOST  "kubernetes.default.svc"
+#define FLB_API_PORT  443
+#define FLB_API_TLS   FLB_TRUE
 
-/* Cached metadata */
-struct flb_kube_info {
-
-};
+struct kube_meta;
 
 /* Filter context */
 struct flb_kube {
@@ -55,9 +52,13 @@ struct flb_kube {
     int api_port;
     int api_https;
 
+    char kube_url[1024];
     struct flb_regex *regex_tag;
 
     /* Internal */
+    struct flb_kube_meta *meta;
+    struct flb_tls tls;
+    char *tls_ca_file;
     struct flb_config *config;
     struct flb_hash *hash_table;
     struct flb_upstream *upstream;

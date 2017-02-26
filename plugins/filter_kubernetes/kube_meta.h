@@ -20,8 +20,36 @@
 #ifndef FLB_FILTER_KUBE_META_H
 #define FLB_FILTER_KUBE_META_H
 
-#include "kube_conf.h"
+struct flb_kube;
 
+struct flb_kube_meta {
+    char *namespace;
+    size_t namespace_len;
+
+    char *token;
+    size_t token_len;
+
+    char *hostname;
+    size_t hostname_len;
+
+    char *auth;
+    size_t auth_len;
+
+    char api_endpoint[1024];
+
+    time_t updated;
+    msgpack_packer *mp_pck;
+};
+
+/* Constant Kubernetes paths */
+#define FLB_KUBE_NAMESPACE "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+#define FLB_KUBE_TOKEN "/var/run/secrets/kubernetes.io/serviceaccount/token"
+#define FLB_KUBE_CA "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+#define FLB_KUBE_API_HOST "kubernetes.default.svc"
+#define FLB_KUBE_API_PORT 443
+#define FLB_KUBE_API_FMT "https://kubernetes.default.svc/api/v1/namespaces/%s/pods/%s"
+
+int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config);
 int flb_kube_meta_fetch(struct flb_kube *ctx);
 int flb_kube_meta_get(struct flb_kube *ctx,
                       char *tag, int tag_len,
