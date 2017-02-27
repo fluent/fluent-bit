@@ -64,6 +64,7 @@ struct flb_http_client {
 
     /* Request data */
     int method;
+    int flags;
     int header_len;
     int header_size;
     char *header_buf;

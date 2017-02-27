@@ -217,6 +217,11 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
     c->header_buf  = buf;
     c->header_size = FLB_HTTP_BUF_SIZE;
     c->header_len  = ret;
+    c->flags       = flags;
+
+    if ((flags & FLB_HTTP_10) == 0) {
+        flags |= FLB_HTTP_11;
+    }
 
     if (body && body_len > 0) {
         c->body_buf = body;
@@ -342,7 +347,13 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
 
     /* Read the server response, we need at least 19 bytes */
     c->resp.data_len = 0;
-    while (c->resp.data_len < 19) {
+    while (1) {
+        if (c->flags & FLB_HTTP_11) {
+            if (c->resp.data_len < 19) {
+                break;
+            }
+        }
+
         available = ((sizeof(c->resp.data) - 1) - c->resp.data_len);
         if (available < 1) {
             return -1;
@@ -352,6 +363,9 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
                                   c->resp.data + c->resp.data_len,
                                   available);
         if (r_bytes <= 0) {
+            if (c->flags & FLB_HTTP_10) {
+                break;
+            }
             return -1;
         }
 
