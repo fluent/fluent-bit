@@ -24,20 +24,7 @@ struct flb_kube;
 
 struct flb_kube_meta {
     char *namespace;
-    size_t namespace_len;
-
-    char *token;
-    size_t token_len;
-
-    char *hostname;
-    size_t hostname_len;
-
-    char *auth;
-    size_t auth_len;
-
-    char api_endpoint[1024];
-
-    time_t updated;
+    char *podname;
     msgpack_packer *mp_pck;
 };
 
@@ -47,7 +34,7 @@ struct flb_kube_meta {
 #define FLB_KUBE_CA "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 #define FLB_KUBE_API_HOST "kubernetes.default.svc"
 #define FLB_KUBE_API_PORT 443
-#define FLB_KUBE_API_FMT "https://kubernetes.default.svc/api/v1/namespaces/%s/pods/%s"
+#define FLB_KUBE_API_FMT "/api/v1/namespaces/%s/pods/%s"
 
 int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config);
 int flb_kube_meta_fetch(struct flb_kube *ctx);

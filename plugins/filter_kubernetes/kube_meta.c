@@ -28,7 +28,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
-
+#include <msgpack.h>
 #include "kube_conf.h"
 #include "kube_meta.h"
 
@@ -74,13 +74,13 @@ static int file_to_buffer(char *path, char **out_buf, size_t *out_size)
 }
 
 /* Load local information from a POD context */
-static int get_local_pod_info(struct flb_kube_meta *meta)
+static int get_local_pod_info(struct flb_kube *ctx)
 {
     int ret;
     char *ns;
     size_t ns_size;
-    char *tk;
-    size_t tk_size;
+    char *tk = NULL;
+    size_t tk_size = 0;
     char *hostname;
 
     /* Get the namespace name */
@@ -90,50 +90,62 @@ static int get_local_pod_info(struct flb_kube_meta *meta)
          * If it fails, it's just informational, as likely the caller
          * wanted to connect using the Proxy instead from inside a POD.
          */
-        flb_warn("[filter_kube] cannot open %s", FLB_KUBE_NAMESPACE);
+        flb_error("[filter_kube] cannot open %s", FLB_KUBE_NAMESPACE);
         return FLB_FALSE;
     }
 
     /* If a namespace was recognized, a token is mandatory */
     ret = file_to_buffer(FLB_KUBE_TOKEN, &tk, &tk_size);
     if (ret == -1) {
-        flb_free(ns);
         flb_warn("[filter_kube] cannot open %s", FLB_KUBE_TOKEN);
-        return FLB_FALSE;
     }
 
+    /* Namespace */
+    ctx->namespace = ns;
+    ctx->namespace_len = ns_size;
+
+    /* POD Name */
     hostname = getenv("HOSTNAME");
+    if (hostname) {
+        ctx->podname = flb_strdup(hostname);
+        ctx->podname_len = strlen(ctx->podname);
+    }
+    else {
+        ctx->podname = flb_strdup("etcd-monotop");
+        ctx->podname_len = strlen(ctx->podname);
+    }
 
-    meta->namespace = ns;
-    meta->namespace_len = ns_size;
-    meta->token = tk;
-    meta->token_len = tk_size;
-    meta->updated = time(NULL);
-    meta->hostname = flb_strdup(hostname);
+    /* Token */
+    ctx->token = tk;
+    ctx->token_len = tk_size;
 
-    meta->auth = flb_malloc(tk_size + 32);
-    if (!meta->auth) {
+    /* HTTP Auth Header */
+    ctx->auth = flb_malloc(tk_size + 32);
+    if (!ctx->auth) {
         return FLB_FALSE;
     }
-    meta->auth_len = snprintf(meta->auth, tk_size + 32,
-                              "Authorization: Bearer %s",
-                              tk);
-
+    ctx->auth_len = snprintf(ctx->auth, tk_size + 32,
+                             "Authorization: Bearer %s",
+                             tk);
+    /*
     snprintf(meta->api_endpoint, sizeof(meta->api_endpoint) -1,
              FLB_KUBE_API_FMT,
              meta->namespace, meta->hostname);
+    */
 
     return FLB_TRUE;
 }
 
 /* Gather metadata from API Server */
-static int get_api_server_info(struct flb_kube *ctx)
+static int get_api_server_info(struct flb_kube *ctx,
+                               char *namespace, char *podname,
+                               char **out_buf, size_t *out_size)
 {
     int ret;
     size_t b_sent;
-    char *out_buf;
-    int  out_size;
-    struct flb_kube_meta *meta = ctx->meta;
+    char uri[1024];
+    char *buf;
+    int size;
     struct flb_http_client *c;
     struct flb_upstream_conn *u_conn;
 
@@ -143,21 +155,29 @@ static int get_api_server_info(struct flb_kube *ctx)
         return -1;
     }
 
+    ret = snprintf(uri, sizeof(uri) - 1,
+                   FLB_KUBE_API_FMT,
+                   namespace, podname);
+    if (ret == -1) {
+        flb_upstream_conn_release(u_conn);
+        return -1;
+    }
+
     /* Compose HTTP Client request */
     c = flb_http_client(u_conn, FLB_HTTP_GET,
-                        /* FIXME */
-                        "/api/v1/namespaces/kube-system/pods/fluent-bit-rz47v",
+                        uri,
                         NULL, 0, NULL, 0, NULL, FLB_HTTP_10);
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
     flb_http_add_header(c, "Connection", 10, "close", 5);
-    flb_http_add_header(c, "Authorization", 13, meta->auth, meta->auth_len);
+    flb_http_add_header(c, "Authorization", 13, ctx->auth, ctx->auth_len);
 
     /* Perform request */
     ret = flb_http_do(c, &b_sent);
-    flb_info("[filter_kube] http_do=%i", ret);
+    flb_debug("[filter_kube] API Server (ns=%s, pod=%s) http_do=%i, HTTP Status: %i",
+              namespace, podname, ret, c->resp.status);
 
     ret = flb_pack_json(c->resp.payload, c->resp.payload_size,
-                        &out_buf, &out_size);
+                        &buf, &size);
 
     /* release resources */
     flb_http_client_destroy(c);
@@ -165,11 +185,11 @@ static int get_api_server_info(struct flb_kube *ctx)
 
     /* validate pack */
     if (ret == -1) {
-        flb_error("[filter_kube] invalid JSON -> msgpack");
+        return -1;
     }
 
-    /* FIXME: we got k8s meta */
-    flb_pack_print(out_buf, out_size);
+    *out_buf = buf;
+    *out_size = size;
 
     return 0;
 }
@@ -180,6 +200,14 @@ static void cb_results(unsigned char *name, unsigned char *value,
     int len;
     struct flb_kube_meta *meta = data;
 
+    if (meta->podname == NULL && strcmp((char *) name, "pod_name") == 0) {
+        meta->podname = flb_strndup((char *) value, vlen);
+    }
+    else if (meta->namespace == NULL &&
+             strcmp((char *) name, "namespace_name") == 0) {
+        meta->namespace = flb_strndup((char *) value, vlen);
+    }
+
     len = strlen((char *)name);
     msgpack_pack_str(meta->mp_pck, len);
     msgpack_pack_str_body(meta->mp_pck, (char *) name, len);
@@ -187,12 +215,182 @@ static void cb_results(unsigned char *name, unsigned char *value,
     msgpack_pack_str_body(meta->mp_pck, (char *) value, vlen);
 }
 
+static int merge_meta(char *reg_buf, size_t reg_size,
+                      char *api_buf, size_t api_size,
+                      char **out_buf, size_t *out_size)
+{
+    int i;
+    int map_size;
+    int meta_found = FLB_FALSE;
+    int have_uid = -1;
+    int have_labels = -1;
+    int have_annotations = -1;
+    size_t off = 0;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+    msgpack_unpacked result;
+    msgpack_unpacked api_result;
+    msgpack_unpacked meta_result;
+    msgpack_object k;
+    msgpack_object v;
+    msgpack_object meta_val;
+    msgpack_object map;
+    msgpack_object api_map;
+
+    /*
+     * - reg_buf: is a msgpack Map containing meta captured using Regex
+     *
+     * - api_buf: metadata associated to namespace and POD Name coming from
+     *            the API server.
+     *
+     * When merging data we aim to add the following keys from the API server:
+     *
+     * - pod_id
+     * - labels
+     * - annotations
+     */
+
+    /* Initialize msgpack buffers */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    /* Get current size of reg_buf map */
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, reg_buf, reg_size, &off);
+    map = result.data;
+
+    /* Check map */
+    if (map.type != MSGPACK_OBJECT_MAP) {
+        msgpack_sbuffer_destroy(&mp_sbuf);
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+
+    /* Set map size: current + pod_id, labels and annotations */
+    map_size = map.via.map.size;
+
+    /* Iterate API server msgpack and lookup specific fields */
+    off = 0;
+    msgpack_unpacked_init(&api_result);
+    msgpack_unpack_next(&api_result, api_buf, api_size, &off);
+    api_map = api_result.data;
+
+    /* At this point map points to the ROOT map, eg:
+     *
+     * {
+     *  "kind": "Pod",
+     *  "apiVersion": "v1",
+     *  "metadata": {
+     *    "name": "fluent-bit-rz47v",
+     *    "generateName": "fluent-bit-",
+     *    "namespace": "kube-system",
+     *    "selfLink": "/api/v1/namespaces/kube-system/pods/fluent-bit-rz47v",
+     *  ....
+     * }
+     *
+     * We are interested into the 'metadata' map value.
+     */
+    for (i = 0; i < api_map.via.map.size; i++) {
+        k = api_map.via.map.ptr[i].key;
+        if (k.via.str.size == 8 && strncmp(k.via.str.ptr, "metadata", 8) == 0) {
+            meta_val = api_map.via.map.ptr[i].val;
+            meta_found = FLB_TRUE;
+            break;
+        }
+    }
+
+    if (meta_found == FLB_FALSE) {
+        msgpack_unpacked_destroy(&result);
+        msgpack_unpacked_destroy(&api_result);
+        msgpack_sbuffer_destroy(&mp_sbuf);
+        return -1;
+    }
+
+    /* Process metadata map value */
+    msgpack_unpacked_init(&meta_result);
+    for (i = 0; i < meta_val.via.map.size; i++) {
+        k = meta_val.via.map.ptr[i].key;
+        v = meta_val.via.map.ptr[i].val;
+
+        char *ptr = (char *) k.via.str.ptr;
+        size_t size = k.via.str.size;
+
+        if (size == 3 && strncmp(ptr, "uid", 3) == 0) {
+            have_uid = i;
+            map_size++;
+        }
+        else if (size == 6 && strncmp(ptr, "labels", 6) == 0) {
+            have_labels = i;
+            map_size++;
+        }
+
+        else if (size == 11 && strncmp(ptr, "annotations", 11) == 0) {
+            have_annotations = i;
+            map_size++;
+            msgpack_pack_object(&mp_pck, k);
+            msgpack_pack_object(&mp_pck, v);
+        }
+
+        if (have_uid >= 0 && have_labels >= 0 && have_annotations >= 0) {
+            break;
+        }
+    }
+
+    /* Append Regex fields */
+    msgpack_pack_map(&mp_pck, map_size);
+    for (i = 0; i < map.via.map.size; i++) {
+        k = map.via.map.ptr[i].key;
+        v = map.via.map.ptr[i].val;
+
+        msgpack_pack_object(&mp_pck, k);
+        msgpack_pack_object(&mp_pck, v);
+    }
+
+    /* Append API Server content */
+    if (have_uid >= 0) {
+        k = meta_val.via.map.ptr[have_uid].key;
+        v = meta_val.via.map.ptr[have_uid].val;
+
+        msgpack_pack_str(&mp_pck, 6);
+        msgpack_pack_str_body(&mp_pck, "pod_id", 6);
+        msgpack_pack_object(&mp_pck, v);
+    }
+
+    if (have_labels >= 0) {
+        k = meta_val.via.map.ptr[have_labels].key;
+        v = meta_val.via.map.ptr[have_labels].val;
+
+        msgpack_pack_object(&mp_pck, k);
+        msgpack_pack_object(&mp_pck, v);
+    }
+
+    if (have_annotations >= 0) {
+        k = meta_val.via.map.ptr[have_annotations].key;
+        v = meta_val.via.map.ptr[have_annotations].val;
+
+        msgpack_pack_object(&mp_pck, k);
+        msgpack_pack_object(&mp_pck, v);
+    }
+
+    msgpack_unpacked_destroy(&result);
+    msgpack_unpacked_destroy(&api_result);
+    msgpack_unpacked_destroy(&meta_result);
+
+    *out_buf = mp_sbuf.data;
+    *out_size = mp_sbuf.size;
+
+    return 0;
+}
+
 static inline int tag_to_meta(struct flb_kube *ctx, char *tag, int tag_len,
                               char **out_buf, size_t *out_size)
 {
+    int ret;
     ssize_t n;
+    char *api_buf;
+    size_t api_size;
     struct flb_regex_search result;
-    struct flb_kube_meta meta;
+    struct flb_kube_meta meta = {};
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
 
@@ -207,9 +405,35 @@ static inline int tag_to_meta(struct flb_kube *ctx, char *tag, int tag_len,
     msgpack_pack_map(&tmp_pck, n);
     meta.mp_pck = &tmp_pck;
 
+    /* Parse the regex results */
     flb_regex_parse(ctx->regex_tag, &result, cb_results, &meta);
-    *out_buf = tmp_sbuf.data;
-    *out_size = tmp_sbuf.size;
+
+    /* Gather API Server info */
+    ret = get_api_server_info(ctx,
+                              meta.namespace, meta.podname,
+                              &api_buf, &api_size);
+    if (ret == -1) {
+        /* Just report back the meta from Regex */
+        *out_buf = tmp_sbuf.data;
+        *out_size = tmp_sbuf.size;
+    }
+    else {
+        /* Merge meta from regex and API Server */
+        ret = merge_meta(tmp_sbuf.data, tmp_sbuf.size,
+                         api_buf, api_size,
+                         out_buf, out_size);
+        if (ret == -1) {
+            *out_buf = tmp_sbuf.data;
+            *out_size = tmp_sbuf.size;
+        }
+        else {
+            msgpack_sbuffer_destroy(&tmp_sbuf);
+        }
+        flb_free(api_buf);
+    }
+
+    flb_free(meta.podname);
+    flb_free(meta.namespace);
 
     return 0;
 }
@@ -243,18 +467,11 @@ static int flb_kube_network_init(struct flb_kube *ctx, struct flb_config *config
 int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config)
 {
     int ret;
-    struct flb_kube_meta *meta;
-
-    /* Allocate meta context */
-    meta = flb_calloc(1, sizeof(struct flb_kube_meta));
-    if (!meta) {
-        flb_errno();
-        return -1;
-    }
-    ctx->meta = meta;
+    char *meta_buf;
+    size_t meta_size;
 
     /* Gather local info */
-    ret = get_local_pod_info(ctx->meta);
+    ret = get_local_pod_info(ctx);
     if (ret == FLB_TRUE) {
         flb_info("[filter_kube] local POD info OK");
     }
@@ -264,8 +481,16 @@ int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config)
 
     /* Init network */
     flb_kube_network_init(ctx, config);
+
     /* Gather info from API server */
-    ret = get_api_server_info(ctx);
+    ret = get_api_server_info(ctx, ctx->namespace, ctx->podname,
+                              &meta_buf, &meta_size);
+    if (ret == -1) {
+        flb_error("[filter_kube] could not get meta for POD %s",
+                  ctx->podname);
+        return -1;
+    }
+    flb_free(meta_buf);
 
     return 0;
 }

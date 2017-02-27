@@ -55,10 +55,26 @@ struct flb_kube {
     char kube_url[1024];
     struct flb_regex *regex_tag;
 
-    /* Internal */
-    struct flb_kube_meta *meta;
-    struct flb_tls tls;
+    /* TLS CA certificate file */
     char *tls_ca_file;
+
+    /* Kubernetes Namespace */
+    char *namespace;
+    size_t namespace_len;
+
+    /* POD Name where Fluent Bit is running */
+    char *podname;
+    size_t podname_len;
+
+    /* Kubernetes Token from FLB_KUBE_TOKEN file */
+    char *token;
+    size_t token_len;
+
+    /* Pre-formatted HTTP Authorization header value */
+    char *auth;
+    size_t auth_len;
+
+    struct flb_tls tls;
     struct flb_config *config;
     struct flb_hash *hash_table;
     struct flb_upstream *upstream;

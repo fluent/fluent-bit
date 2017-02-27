@@ -102,13 +102,15 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
     flb_hash_destroy(ctx->hash_table);
     flb_regex_destroy(ctx->regex_tag);
 
+    flb_free(ctx->api_host);
+    flb_free(ctx->tls_ca_file);
+    flb_free(ctx->namespace);
+    flb_free(ctx->podname);
+    flb_free(ctx->token);
+    flb_free(ctx->auth);
+
     if (ctx->upstream) {
         flb_upstream_destroy(ctx->upstream);
     }
-
-    if (ctx->api_host) {
-        flb_free(ctx->api_host);
-    }
-
     flb_free(ctx);
 }
