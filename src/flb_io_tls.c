@@ -248,14 +248,16 @@ int net_io_tls_handshake(void *_u_conn, void *_th)
         return -1;
     }
 
+    /* Store session and mbedtls net context fd */
     u_conn->tls_session = session;
+    u_conn->tls_net_context.fd = u_conn->fd;
+
     mbedtls_ssl_set_bio(&session->ssl,
-                        u_conn,
+                        &u_conn->tls_net_context,
                         mbedtls_net_send, mbedtls_net_recv, NULL);
 
  retry_handshake:
     ret = mbedtls_ssl_handshake(&session->ssl);
-
     if (ret != 0) {
         if (ret != MBEDTLS_ERR_SSL_WANT_READ &&
             ret !=  MBEDTLS_ERR_SSL_WANT_WRITE) {
