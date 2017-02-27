@@ -112,5 +112,12 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
     if (ctx->upstream) {
         flb_upstream_destroy(ctx->upstream);
     }
+
+#ifdef FLB_HAVE_TLS
+    if (ctx->tls.context) {
+        flb_tls_context_destroy(ctx->tls.context);
+    }
+#endif
+
     flb_free(ctx);
 }

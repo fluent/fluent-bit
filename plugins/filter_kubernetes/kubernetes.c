@@ -58,7 +58,6 @@ static int cb_kube_init(struct flb_filter_instance *f_ins,
     /* Set context */
     flb_filter_set_context(f_ins, ctx);
 
-
     return 0;
 }
 
