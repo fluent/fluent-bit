@@ -44,7 +44,7 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
     ctx->config = config;
 
     /* Get Kubernetes API server */
-    url = flb_filter_get_property("kubernetes_url", i);
+    url = flb_filter_get_property("kube_url", i);
     if (!url) {
         ctx->api_host = flb_strdup(FLB_API_HOST);
         ctx->api_port = FLB_API_PORT;
@@ -81,6 +81,26 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
         }
     }
 
+    /* Kubernetes CA file */
+    if (ctx->api_https == FLB_TRUE) {
+        tmp = flb_filter_get_property("kube_ca_file", i);
+        if (!tmp) {
+            ctx->tls_ca_file = flb_strdup(FLB_KUBE_CA);
+        }
+        else {
+            ctx->tls_ca_file = flb_strdup(tmp);
+        }
+    }
+
+    /* Kubernetes Token file */
+    tmp = flb_filter_get_property("kube_token_file", i);
+    if (!tmp) {
+        ctx->token_file = flb_strdup(FLB_KUBE_TOKEN);
+    }
+    else {
+        ctx->token_file = flb_strdup(tmp);
+    }
+
     snprintf(ctx->kube_url, sizeof(ctx->kube_url) - 1,
              "%s://%s:%i",
              ctx->api_https ? "https" : "http",
@@ -104,9 +124,10 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
 
     flb_free(ctx->api_host);
     flb_free(ctx->tls_ca_file);
+    flb_free(ctx->token_file);
+    flb_free(ctx->token);
     flb_free(ctx->namespace);
     flb_free(ctx->podname);
-    flb_free(ctx->token);
     flb_free(ctx->auth);
 
     if (ctx->upstream) {

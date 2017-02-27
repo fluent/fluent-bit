@@ -67,6 +67,7 @@ struct flb_kube {
     size_t podname_len;
 
     /* Kubernetes Token from FLB_KUBE_TOKEN file */
+    char *token_file;
     char *token;
     size_t token_len;
 

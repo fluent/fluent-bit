@@ -95,7 +95,7 @@ static int get_local_pod_info(struct flb_kube *ctx)
     }
 
     /* If a namespace was recognized, a token is mandatory */
-    ret = file_to_buffer(FLB_KUBE_TOKEN, &tk, &tk_size);
+    ret = file_to_buffer(ctx->token_file, &tk, &tk_size);
     if (ret == -1) {
         flb_warn("[filter_kube] cannot open %s", FLB_KUBE_TOKEN);
     }
@@ -111,7 +111,9 @@ static int get_local_pod_info(struct flb_kube *ctx)
         ctx->podname_len = strlen(ctx->podname);
     }
     else {
-        ctx->podname = flb_strdup("etcd-monotop");
+        char tmp[256];
+        gethostname(tmp, 256);
+        ctx->podname = flb_strdup(tmp);
         ctx->podname_len = strlen(ctx->podname);
     }
 
@@ -125,14 +127,8 @@ static int get_local_pod_info(struct flb_kube *ctx)
         return FLB_FALSE;
     }
     ctx->auth_len = snprintf(ctx->auth, tk_size + 32,
-                             "Authorization: Bearer %s",
+                             "Bearer %s",
                              tk);
-    /*
-    snprintf(meta->api_endpoint, sizeof(meta->api_endpoint) -1,
-             FLB_KUBE_API_FMT,
-             meta->namespace, meta->hostname);
-    */
-
     return FLB_TRUE;
 }
 
