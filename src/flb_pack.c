@@ -161,7 +161,7 @@ static char *tokens_to_msgpack(char *js,
  */
 int flb_pack_json(char *js, size_t len, char **buffer, int *size)
 {
-    int ret;
+    int ret = -1;
     int out;
     char *buf;
     struct flb_pack_state state;
@@ -172,6 +172,7 @@ int flb_pack_json(char *js, size_t len, char **buffer, int *size)
     }
     ret = json_tokenise(js, len, &state);
     if (ret != 0) {
+        ret = -1;
         goto flb_pack_json_end;
     }
 
@@ -185,6 +186,7 @@ int flb_pack_json(char *js, size_t len, char **buffer, int *size)
     *buffer = buf;
 
     ret = 0;
+
  flb_pack_json_end:
     flb_pack_state_reset(&state);
     return ret;
