@@ -286,3 +286,29 @@ int flb_utils_timer_consume(flb_pipefd_t fd)
 
     return 0;
 }
+
+size_t flb_utils_size_to_bytes(char *size)
+{
+    int len;
+    size_t val;
+
+    len = strlen(size);
+    val = atoll(size);
+
+    /* Kilo bytes to bytes */
+    if (size[len - 1] == 'k') {
+        return (val * 1024);
+    }
+    else if (size[len - 1] == 'B') {
+        switch (size[len - 2]) {
+        case 'M':
+            return (val * 1024 * 1024);
+        case 'G':
+            return (val * 1024 * 1024 * 1024);
+        default:
+            return -1;
+        }
+    }
+
+    return val;
+}
