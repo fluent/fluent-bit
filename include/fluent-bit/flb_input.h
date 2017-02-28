@@ -320,30 +320,7 @@ struct flb_thread *flb_input_thread(struct flb_input_instance *i_ins,
     return th;
 }
 
-#if defined FLB_HAVE_FLUSH_UCONTEXT
-
-static FLB_INLINE
-struct flb_thread *flb_input_thread_collect(struct flb_input_collector *coll,
-                                            struct flb_config *config)
-{
-    struct flb_thread *th;
-
-    th = flb_input_thread(coll->instance, config);
-    if (!th) {
-        return NULL;
-    }
-
-
-    makecontext(&th->callee, (void (*)()) coll->cb_collect,
-                2,                          /* number of arguments */
-                config,
-                coll->instance->context);
-
-    return th;
-
-}
-
-#elif defined FLB_HAVE_FLUSH_LIBCO
+#if defined FLB_HAVE_FLUSH_LIBCO
 
 struct flb_libco_in_params {
     struct flb_config *config;

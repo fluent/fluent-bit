@@ -238,58 +238,7 @@ static FLB_INLINE void cb_output_thread_destroy(void *data)
     mk_list_del(&out_th->_head);
 }
 
-#ifdef FLB_HAVE_FLUSH_UCONTEXT
-
-static FLB_INLINE
-struct flb_thread *flb_output_thread(struct flb_task *task,
-                                     struct flb_input_instance *i_ins,
-                                     struct flb_output_instance *o_ins,
-                                     struct flb_config *config,
-                                     void *buf, size_t size,
-                                     char *tag, int tag_len)
-{
-    struct flb_output_thread *out_th;
-    struct flb_thread *th;
-
-    /* Create a new thread */
-    th = flb_thread_new(sizeof(struct flb_output_thread),
-                        cb_output_thread_destroy);
-    if (!th) {
-        return NULL;
-    }
-
-    /* Custom output-thread info */
-    out_th = (struct flb_output_thread *) FLB_THREAD_DATA(th);
-    if (!out_th) {
-        flb_errno();
-        return NULL;
-    }
-
-    /*
-     * Each 'Thread' receives an 'id'. This is assigned when this thread
-     * is linked into the parent Task by flb_task_add_thread(...). The
-     * 'id' is always incremental.
-     */
-    out_th->id      = 0;
-    out_th->o_ins   = o_ins;
-    out_th->task    = task;
-    out_th->buffer  = buf;
-    out_th->config  = config;
-    out_th->parent  = th;
-
-    makecontext(&th->callee, (void (*)()) o_ins->p->cb_flush,
-                7,                     /* number of arguments */
-                buf,                   /* the buffer     */
-                size,                  /* buffer size    */
-                tag,                   /* matched tag    */
-                tag_len,               /* tag len        */
-                i_ins,                 /* input instance */
-                o_ins->context,        /* output plugin context */
-                config);
-    return th;
-}
-
-#elif defined FLB_HAVE_FLUSH_LIBCO
+#if defined FLB_HAVE_FLUSH_LIBCO
 
 /*
  * libco do not support parameters in the entrypoint function due to the
