@@ -88,10 +88,10 @@ static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
         }
 
         /* Get the type */
-        if (strcmp(prop->key, "regex") == 0) {
+        if (strcasecmp(prop->key, "regex") == 0) {
             rule->type = GREP_REGEX;
         }
-        else if (strcmp(prop->key, "exclude") == 0) {
+        else if (strcasecmp(prop->key, "exclude") == 0) {
             rule->type = GREP_EXCLUDE;
         }
         else {
