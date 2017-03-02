@@ -136,7 +136,9 @@ static inline int grep_filter_data(msgpack_object map, struct grep_ctx *ctx)
     int i;
     int ret;
     int klen;
+    int vlen;
     char *key;
+    char *val;
     msgpack_object *k;
     msgpack_object *v;
     struct mk_list *head;
@@ -185,7 +187,15 @@ static inline int grep_filter_data(msgpack_object map, struct grep_ctx *ctx)
         v = &map.via.map.ptr[i].val;
 
         /* a value must be a string */
-        if (v->type != MSGPACK_OBJECT_STR) {
+        if (v->type == MSGPACK_OBJECT_STR) {
+            val  = (char *)v->via.str.ptr;
+            vlen = v->via.str.size;
+        }
+        else if(v->type == MSGPACK_OBJECT_BIN) {
+            val  = (char *)v->via.bin.ptr;
+            vlen = v->via.bin.size;
+        }
+        else {
             return GREP_RET_EXCLUDE;
         }
 
@@ -194,9 +204,9 @@ static inline int grep_filter_data(msgpack_object map, struct grep_ctx *ctx)
          *
          * The fix is to move to the new flb_regex() interface.
          */
-        char *tmp = flb_malloc(v->via.str.size + 1);
-        memcpy(tmp, v->via.str.ptr, v->via.str.size );
-        tmp[v->via.str.size ] = '\0';
+        char *tmp = flb_malloc(vlen + 1);
+        memcpy(tmp, val, vlen );
+        tmp[vlen] = '\0';
 
         ret = regexec(&rule->match, tmp, 0, NULL, 0);
         flb_free(tmp);
