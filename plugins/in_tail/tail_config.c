@@ -90,11 +90,13 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
         }
     }
 
+#ifdef FLB_HAVE_REGEX
     /* Parser / Format */
     tmp = flb_input_get_property("parser", i_ins);
     if (tmp) {
         ctx->parser = flb_parser_get(tmp, config);
     }
+#endif
 
     mk_list_init(&ctx->files_static);
     mk_list_init(&ctx->files_event);
