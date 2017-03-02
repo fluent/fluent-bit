@@ -15,9 +15,6 @@ set(src
   flb_pipe.c
   flb_kernel.c
   flb_input.c
-  flb_parser.c
-  flb_parser_regex.c
-  flb_parser_json.c
   flb_filter.c
   flb_output.c
   flb_config.c
@@ -42,6 +39,15 @@ include_directories(
   ../lib/monkey/include/
   ${extra_headers}
   )
+
+if (FLB_REGEX)
+  set(src
+    ${src}
+    flb_parser.c
+    flb_parser_regex.c
+    flb_parser_json.c
+    )
+endif()
 
 # Fluent Bit have TLS support
 if(FLB_TLS)

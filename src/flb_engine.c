@@ -505,8 +505,10 @@ int flb_engine_shutdown(struct flb_config *config)
     /* router */
     flb_router_exit(config);
 
+#ifdef FLB_HAVE_REGEX
     /* parsers */
     flb_parser_exit(config);
+#endif
 
     /* cleanup plugins */
     flb_filter_exit(config);

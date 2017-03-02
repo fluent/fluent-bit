@@ -155,8 +155,10 @@ struct flb_config *flb_config_init()
     /* Prepare worker interface */
     flb_worker_init(config);
 
+#ifdef FLB_HAVE_REGEX
     /* Regex support */
     flb_regex_init();
+#endif
 
     return config;
 }
