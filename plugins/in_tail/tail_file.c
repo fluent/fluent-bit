@@ -23,6 +23,7 @@
 #include <fcntl.h>
 #include <time.h>
 
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_parser.h>
 
@@ -111,6 +112,7 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
             continue;
         }
 
+#ifdef FLB_HAVE_REGEX
         if (ctx->parser) {
             ret = flb_parser_do(ctx->parser, file->buf_data, len,
                                 &out_buf, &out_size, &out_time);
@@ -141,6 +143,9 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
         else {
             pack_line(t, file->buf_data, len, file);
         }
+#else
+        pack_line(t, file->buf_data, len, file);
+#endif
 
         /*
          * FIXME: here we are moving bytes to the left on each iteration, it
