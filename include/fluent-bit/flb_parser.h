@@ -17,7 +17,9 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_PARSER_H
+#include <fluent-bit/flb_info.h>
+
+#if !defined(FLB_PARSER_H) && defined(FLB_HAVE_REGEX)
 #define FLB_PARSER_H
 
 #include <fluent-bit/flb_regex.h>

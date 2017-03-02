@@ -559,12 +559,14 @@ int main(int argc, char **argv)
             }
             last_plugin = PLUGIN_OUTPUT;
             break;
+#ifdef FLB_HAVE_REGEX
         case 'R':
             ret = flb_parser_conf_file(optarg, config);
             if (ret != 0) {
                 exit(EXIT_FAILURE);
             }
             break;
+#endif
         case 'F':
             filter = flb_filter_new(config, optarg, NULL);
             if (!filter) {
@@ -641,10 +643,12 @@ int main(int argc, char **argv)
         flb_free(cfg_file);
     }
 
+#ifdef FLB_HAVE_REGEX
     /* Parsers file */
     if (config->parsers_file) {
         flb_parser_conf_file(config->parsers_file, config);
     }
+#endif
 
     /* Validate flush time (seconds) */
     if (config->flush < 1) {
