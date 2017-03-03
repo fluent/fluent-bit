@@ -322,7 +322,12 @@ int in_serial_init(struct flb_input_instance *in,
                                        IN_SERIAL_COLLECT_NSEC,
                                        config);
 #endif
-    return ret;
+
+    if (ret == -1) {
+        return -1;
+    }
+
+    return 0;
 }
 
 /* Plugin reference */
