@@ -70,8 +70,9 @@ struct flb_in_cpu_config {
     /* setup */
     int n_processors;   /* number of core processors  */
     int cpu_ticks;      /* CPU ticks (Kernel setting) */
-
+    int coll_fd;        /* collector id/fd            */
     struct cpu_stats cstats;
+    struct flb_input_instance *i_ins;
 };
 
 

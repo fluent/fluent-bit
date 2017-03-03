@@ -163,6 +163,7 @@ static int in_cpu_init(struct flb_input_instance *in,
         perror("calloc");
         return -1;
     }
+    ctx->i_ins = in;
 
     /* Gather number of processors and CPU ticks */
     ctx->n_processors = sysconf(_SC_NPROCESSORS_ONLN);
@@ -194,8 +195,10 @@ static int in_cpu_init(struct flb_input_instance *in,
                                        IN_CPU_COLLECT_NSEC,
                                        config);
     if (ret == -1) {
-        flb_utils_error_c("Could not set collector for CPU input plugin");
+        flb_error("[in_cpu] Could not set collector for CPU input plugin");
+        return -1;
     }
+    ctx->coll_fd = ret;
 
     return 0;
 }
@@ -344,6 +347,18 @@ int in_cpu_collect(struct flb_input_instance *i_ins,
     return 0;
 }
 
+static void in_cpu_pause(void *data, struct flb_config *config)
+{
+    struct flb_in_cpu_config *ctx = data;
+    flb_input_collector_pause(ctx->coll_fd, ctx->i_ins);
+}
+
+static void in_cpu_resume(void *data, struct flb_config *config)
+{
+    struct flb_in_cpu_config *ctx = data;
+    flb_input_collector_resume(ctx->coll_fd, ctx->i_ins);
+}
+
 static int in_cpu_exit(void *data, struct flb_config *config)
 {
     (void) *config;
@@ -369,5 +384,7 @@ struct flb_input_plugin in_cpu_plugin = {
     .cb_pre_run   = NULL,
     .cb_collect   = in_cpu_collect,
     .cb_flush_buf = NULL,
+    .cb_pause     = in_cpu_pause,
+    .cb_resume    = in_cpu_resume,
     .cb_exit      = in_cpu_exit
 };
