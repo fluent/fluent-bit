@@ -55,7 +55,7 @@ TEST(Inputs, selfcheck)
     EXPECT_TRUE(in_ffd >= 0);
     flb_input_set(ctx, in_ffd, "tag", "test",
                   "interval_sec", "1", "proc_name", "flb_test_in_proc",
-                  "alert", "true",NULL);
+                  "alert", "true", "mem", "on", "fd", "on", NULL);
 
     out_ffd = flb_output(ctx, (char *) "lib", (void*)callback_test);
     EXPECT_TRUE(out_ffd >= 0);
@@ -96,7 +96,6 @@ TEST(Inputs, absent_process) {
     int out_ffd;
 
     /* initialize */
-    ret = pthread_mutex_init(&result_mutex, NULL);
     result = 0;
     EXPECT_EQ(ret, 0);
 
@@ -106,7 +105,7 @@ TEST(Inputs, absent_process) {
     EXPECT_TRUE(in_ffd >= 0);
     flb_input_set(ctx, in_ffd, "tag", "test",
                   "interval_sec", "1", "proc_name", "",
-                  "alert", "true",NULL);
+                  "alert", "true", "mem", "on", "fd", "on", NULL);
 
     out_ffd = flb_output(ctx, (char *) "lib", (void*)callback_test);
     EXPECT_TRUE(out_ffd >= 0);
@@ -115,25 +114,8 @@ TEST(Inputs, absent_process) {
     flb_service_set(ctx, "Flush", "2", NULL);
 
     ret = flb_start(ctx);
-    EXPECT_EQ(ret, 0);
+    EXPECT_EQ(ret, 0); // error occurs but return value is true
 
-    /* start test */
-    pthread_mutex_lock(&result_mutex);
-    ret = result; /* No data should be flushed */
-    pthread_mutex_unlock(&result_mutex);
-    EXPECT_EQ(ret, 0);
-
-    sleep(2);
-    pthread_mutex_lock(&result_mutex);
-    ret = result; /* 2sec passed, data should be flushed */
-    result = 0;   /* clear flag */
-    pthread_mutex_unlock(&result_mutex);
-    EXPECT_EQ(ret, 1);
-
-    /* finalize */
     flb_stop(ctx);
     flb_destroy(ctx);
-
-    ret = pthread_mutex_destroy(&result_mutex);
-    EXPECT_EQ(ret, 0);
 }
