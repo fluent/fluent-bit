@@ -148,10 +148,11 @@ static int in_tail_init(struct flb_input_instance *in,
     /* Register an event collector */
     ret = flb_input_set_collector_event(in, in_tail_collect_static,
                                         ctx->ch_manager[0], config);
-    if (ret != 0) {
+    if (ret == -1) {
         flb_tail_config_destroy(ctx);
         return -1;
     }
+    ctx->coll_fd_static = ret;
 
     /* Register re-scan */
     ret = flb_input_set_collector_time(in, flb_tail_scan_callback,
@@ -161,6 +162,7 @@ static int in_tail_init(struct flb_input_instance *in,
         flb_tail_config_destroy(ctx);
         return -1;
     }
+    ctx->coll_fd_scan = ret;
 
     /* Register callback to purge rotated files */
     ret = flb_input_set_collector_time(in, flb_tail_file_rotated_purge,
@@ -170,6 +172,7 @@ static int in_tail_init(struct flb_input_instance *in,
         flb_tail_config_destroy(ctx);
         return -1;
     }
+    ctx->coll_fd_rotated = ret;
 
     return 0;
 }
@@ -199,6 +202,36 @@ static int in_tail_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static void in_tail_pause(void *data, struct flb_config *config)
+{
+    struct flb_tail_config *ctx = data;
+
+    /*
+     * Pause general collectors:
+     *
+     * - static : static files lookup before promotion
+     * - scan   : scan path to find new files
+     * - rotated: rotate files lookup
+     */
+    flb_input_collector_pause(ctx->coll_fd_static, ctx->i_ins);
+    flb_input_collector_pause(ctx->coll_fd_scan, ctx->i_ins);
+    flb_input_collector_pause(ctx->coll_fd_rotated, ctx->i_ins);
+
+    /* Pause file system backend handlers */
+    flb_tail_fs_pause(ctx);
+}
+
+static void in_tail_resume(void *data, struct flb_config *config)
+{
+    struct flb_tail_config *ctx = data;
+
+    flb_input_collector_resume(ctx->coll_fd_static, ctx->i_ins);
+    flb_input_collector_resume(ctx->coll_fd_scan, ctx->i_ins);
+    flb_input_collector_resume(ctx->coll_fd_rotated, ctx->i_ins);
+
+    /* Pause file system backend handlers */
+    flb_tail_fs_resume(ctx);
+}
 
 struct flb_input_plugin in_tail_plugin = {
     .name         = "tail",
@@ -207,6 +240,8 @@ struct flb_input_plugin in_tail_plugin = {
     .cb_pre_run   = in_tail_pre_run,
     .cb_collect   = NULL,
     .cb_flush_buf = NULL,
+    .cb_pause     = in_tail_pause,
+    .cb_resume    = in_tail_resume,
     .cb_exit      = in_tail_exit,
     .flags        = 0
 };

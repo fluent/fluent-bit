@@ -101,12 +101,23 @@ int flb_tail_fs_init(struct flb_input_instance *in,
     /* This backend use Fluent Bit event-loop to trigger notifications */
     ret = flb_input_set_collector_event(in, tail_fs_event,
                                         ctx->fd_notify, config);
-    if (ret != 0) {
+    if (ret < 0) {
         close(fd);
         return -1;
     }
+    ctx->coll_fd_fs1 = ret;
 
     return 0;
+}
+
+void flb_tail_fs_pause(struct flb_tail_config *ctx)
+{
+    flb_input_collector_pause(ctx->coll_fd_fs1, ctx->i_ins);
+}
+
+void flb_tail_fs_resume(struct flb_tail_config *ctx)
+{
+    flb_input_collector_resume(ctx->coll_fd_fs1, ctx->i_ins);
 }
 
 int flb_tail_fs_add(struct flb_tail_file *file)

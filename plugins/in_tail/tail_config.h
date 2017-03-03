@@ -28,6 +28,15 @@ struct flb_tail_config {
     int fd_notify;             /* inotify fd               */
     int ch_manager[2];         /* internal pipe for events */
 
+    /* Collectors */
+    int coll_fd_static;
+    int coll_fd_scan;
+    int coll_fd_rotated;
+
+    /* Backend collectors */
+    int coll_fd_fs1;           /* used by fs_inotify & fs_stat */
+    int coll_fd_fs2;           /* only used by fs_stat         */
+
     /* Configuration */
     int dynamic_tag;           /* dynamic tag ? e.g: abc.*     */
     int refresh_interval;      /* seconds to re-scan           */

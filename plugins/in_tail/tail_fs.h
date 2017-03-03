@@ -31,5 +31,7 @@ int flb_tail_fs_init(struct flb_input_instance *in,
 int flb_tail_fs_add(struct flb_tail_file *file);
 int flb_tail_fs_remove(struct flb_tail_file *file);
 int flb_tail_fs_exit(struct flb_tail_config *ctx);
+void flb_tail_fs_pause(struct flb_tail_config *ctx);
+void flb_tail_fs_resume(struct flb_tail_config *ctx);
 
 #endif

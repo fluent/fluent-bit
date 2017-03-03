@@ -136,18 +136,32 @@ int flb_tail_fs_init(struct flb_input_instance *in,
     /* Set a manual timer to collect events every 0.250 seconds */
     ret = flb_input_set_collector_time(in, tail_fs_event,
                                        0, 250000000, config);
-    if (ret != 0) {
+    if (ret < 0) {
         return -1;
     }
+    ctx->coll_fd_fs1 = ret;
 
     /* Set a manual timer to check deleted/rotated files every 2.5 seconds */
     ret = flb_input_set_collector_time(in, tail_fs_check,
                                        2, 500000000, config);
-    if (ret != 0) {
+    if (ret < 0) {
         return -1;
     }
+    ctx->coll_fd_fs2 = ret;
 
     return 0;
+}
+
+void flb_tail_fs_pause(struct flb_tail_config *ctx)
+{
+    flb_input_collector_pause(ctx->coll_fd_fs1, ctx->i_ins);
+    flb_input_collector_pause(ctx->coll_fd_fs2, ctx->i_ins);
+}
+
+void flb_tail_fs_resume(struct flb_tail_config *ctx)
+{
+    flb_input_collector_resume(ctx->coll_fd_fs1, ctx->i_ins);
+    flb_input_collector_resume(ctx->coll_fd_fs2, ctx->i_ins);
 }
 
 int flb_tail_fs_add(struct flb_tail_file *file)
