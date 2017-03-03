@@ -312,7 +312,6 @@ struct flb_task *flb_task_create(uint64_t ref_id,
 #endif
 
     flb_debug("[task] created task=%p id=%i OK", task, task->id);
-
     return task;
 }
 
@@ -371,6 +370,7 @@ struct flb_task *flb_task_create_direct(uint64_t ref_id,
     }
 
     flb_debug("[task] create_direct: %i routes", count);
+
     return task;
 }
 
@@ -418,6 +418,8 @@ void flb_task_destroy(struct flb_task *task)
         retry = mk_list_entry(head, struct flb_task_retry, _head);
         flb_task_retry_destroy(retry);
     }
+
+    flb_input_buf_size_set(task->i_ins);
 
     flb_free(task->tag);
     flb_free(task);
