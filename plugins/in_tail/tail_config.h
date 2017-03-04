@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_parser.h>
+#include <fluent-bit/flb_macros.h>
 
 struct flb_tail_config {
     int fd_notify;             /* inotify fd               */
@@ -43,6 +44,7 @@ struct flb_tail_config {
     int rotate_wait;           /* sec to wait on rotated files */
     char *path;                /* lookup path (glob)           */
     char *exclude_path;        /* exclude path                 */
+    char add_path_field;       /* add path field to record     */
 
     /* Database */
     struct flb_sqldb *db;

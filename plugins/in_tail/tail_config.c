@@ -90,6 +90,13 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
         }
     }
 
+    ctx->add_path_field = FLB_FALSE;
+    /* Config: determine whether appending or not */
+    tmp = flb_input_get_property("add_path_field", i_ins);
+    if (tmp && (strcasecmp(tmp, "true") == 0 || strcasecmp(tmp, "on") == 0) ) {
+        ctx->add_path_field = FLB_TRUE;
+    }
+
 #ifdef FLB_HAVE_REGEX
     /* Parser / Format */
     tmp = flb_input_get_property("parser", i_ins);

@@ -38,6 +38,31 @@ static inline void consume_bytes(char *buf, int bytes, int length)
     memmove(buf, buf + bytes, length - bytes);
 }
 
+static inline void generate_record_body(struct flb_tail_config *ctx,
+                                        msgpack_packer *mp_pck,
+                                        char *line, int line_len)
+{
+    int map_num  = 1;
+    int path_len = 0;
+    if (ctx->add_path_field) {
+        map_num++;
+        path_len = strlen(ctx->path);
+    }
+
+    msgpack_pack_map(mp_pck, map_num);
+    if (ctx->add_path_field) {
+        msgpack_pack_str(mp_pck, 4);
+        msgpack_pack_str_body(mp_pck, "path", 4);
+        msgpack_pack_str(mp_pck, path_len);
+        msgpack_pack_str_body(mp_pck, ctx->path, path_len);
+    }
+
+    msgpack_pack_str(mp_pck, 3);
+    msgpack_pack_str_body(mp_pck, "log", 3);
+    msgpack_pack_str(mp_pck, line_len);
+    msgpack_pack_str_body(mp_pck, line, line_len);
+}
+
 static inline int pack_line(time_t time, char *line,
                             int line_len, struct flb_tail_file *file)
 {
@@ -49,11 +74,7 @@ static inline int pack_line(time_t time, char *line,
         msgpack_sbuffer_init(&mp_sbuf);
         msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-        msgpack_pack_map(&mp_pck, 1);
-        msgpack_pack_str(&mp_pck, 3);
-        msgpack_pack_str_body(&mp_pck, "log", 3);
-        msgpack_pack_str(&mp_pck, line_len);
-        msgpack_pack_str_body(&mp_pck, line, line_len);
+        generate_record_body(ctx, &mp_pck, line, line_len);
 
         flb_input_dyntag_append_raw(ctx->i_ins,
                                     file->tag_buf,
@@ -67,11 +88,7 @@ static inline int pack_line(time_t time, char *line,
         msgpack_pack_array(&ctx->i_ins->mp_pck, 2);
         msgpack_pack_uint64(&ctx->i_ins->mp_pck, time);
 
-        msgpack_pack_map(&ctx->i_ins->mp_pck, 1);
-        msgpack_pack_str(&ctx->i_ins->mp_pck, 3);
-        msgpack_pack_str_body(&ctx->i_ins->mp_pck, "log", 3);
-        msgpack_pack_str(&ctx->i_ins->mp_pck, line_len);
-        msgpack_pack_str_body(&ctx->i_ins->mp_pck, line, line_len);
+        generate_record_body(ctx, &ctx->i_ins->mp_pck, line, line_len);
     }
 
     return 0;
