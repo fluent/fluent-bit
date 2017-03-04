@@ -39,6 +39,7 @@ static inline void consume_bytes(char *buf, int bytes, int length)
 }
 
 static inline void generate_record_body(struct flb_tail_config *ctx,
+                                        struct flb_tail_file *file,
                                         msgpack_packer *mp_pck,
                                         char *line, int line_len)
 {
@@ -46,7 +47,7 @@ static inline void generate_record_body(struct flb_tail_config *ctx,
     int path_len = 0;
     if (ctx->add_path_field) {
         map_num++;
-        path_len = strlen(ctx->path);
+        path_len = strlen(file->name);
     }
 
     msgpack_pack_map(mp_pck, map_num);
@@ -54,7 +55,7 @@ static inline void generate_record_body(struct flb_tail_config *ctx,
         msgpack_pack_str(mp_pck, 4);
         msgpack_pack_str_body(mp_pck, "path", 4);
         msgpack_pack_str(mp_pck, path_len);
-        msgpack_pack_str_body(mp_pck, ctx->path, path_len);
+        msgpack_pack_str_body(mp_pck, file->name, path_len);
     }
 
     msgpack_pack_str(mp_pck, 3);
@@ -74,7 +75,7 @@ static inline int pack_line(time_t time, char *line,
         msgpack_sbuffer_init(&mp_sbuf);
         msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-        generate_record_body(ctx, &mp_pck, line, line_len);
+        generate_record_body(ctx, file, &mp_pck, line, line_len);
 
         flb_input_dyntag_append_raw(ctx->i_ins,
                                     file->tag_buf,
@@ -88,7 +89,7 @@ static inline int pack_line(time_t time, char *line,
         msgpack_pack_array(&ctx->i_ins->mp_pck, 2);
         msgpack_pack_uint64(&ctx->i_ins->mp_pck, time);
 
-        generate_record_body(ctx, &ctx->i_ins->mp_pck, line, line_len);
+        generate_record_body(ctx, file, &ctx->i_ins->mp_pck, line, line_len);
     }
 
     return 0;
