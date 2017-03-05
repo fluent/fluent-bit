@@ -142,7 +142,7 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
 {
     int ret;
     char tmp[PATH_MAX + 1];
-    char *cfg;
+    char *cfg = NULL;
     char *name;
     char *format;
     char *regex;
