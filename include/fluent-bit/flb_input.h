@@ -659,8 +659,7 @@ int flb_input_dyntag_append_obj(struct flb_input_instance *in,
                                 msgpack_object data);
 int flb_input_dyntag_append_raw(struct flb_input_instance *in,
                                 char *tag, size_t tag_len,
-                                time_t time,
-                                void *buf, size_t size);
+                                void *buf, size_t buf_size);
 void *flb_input_flush(struct flb_input_instance *i_ins, size_t *size);
 void *flb_input_dyntag_flush(struct flb_input_dyntag *dt, size_t *size);
 void flb_input_dyntag_exit(struct flb_input_instance *in);

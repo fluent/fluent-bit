@@ -763,8 +763,7 @@ int flb_input_dyntag_append_obj(struct flb_input_instance *in,
 /* Append a RAW MessagPack buffer to the input instance */
 int flb_input_dyntag_append_raw(struct flb_input_instance *in,
                                 char *tag, size_t tag_len,
-                                time_t time,
-                                void *buf, size_t size)
+                                void *buf, size_t buf_size)
 {
     struct flb_input_dyntag *dt;
 
@@ -773,12 +772,12 @@ int flb_input_dyntag_append_raw(struct flb_input_instance *in,
         return -1;
     }
 
+    /* Mark buf write */
     flb_input_dbuf_write_start(dt);
 
-    msgpack_pack_array(&dt->mp_pck, 2);
-    msgpack_pack_uint64(&dt->mp_pck, time);
-    msgpack_sbuffer_write(&dt->mp_sbuf, buf, size);
+    msgpack_sbuffer_write(&dt->mp_sbuf, buf, buf_size);
 
+    /* Unmark buf write */
     flb_input_dbuf_write_end(dt);
 
     /* Lock buffers where size > 2MB */
