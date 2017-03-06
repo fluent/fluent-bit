@@ -38,40 +38,23 @@ static inline void consume_bytes(char *buf, int bytes, int length)
     memmove(buf, buf + bytes, length - bytes);
 }
 
-static inline int pack_line(time_t time, char *line,
-                            int line_len, struct flb_tail_file *file)
+static inline int pack_line(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
+                            int is_map,
+                            time_t time, char *data, size_t data_size,
+                            struct flb_tail_file *file)
 {
-    msgpack_sbuffer mp_sbuf;
-    msgpack_packer mp_pck;
-    struct flb_tail_config *ctx = file->config;
+    msgpack_pack_array(mp_pck, 2);
+    msgpack_pack_uint64(mp_pck, time);
 
-    if (ctx->dynamic_tag == FLB_TRUE) {
-        msgpack_sbuffer_init(&mp_sbuf);
-        msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-
-        msgpack_pack_map(&mp_pck, 1);
-        msgpack_pack_str(&mp_pck, 3);
-        msgpack_pack_str_body(&mp_pck, "log", 3);
-        msgpack_pack_str(&mp_pck, line_len);
-        msgpack_pack_str_body(&mp_pck, line, line_len);
-
-        flb_input_dyntag_append_raw(ctx->i_ins,
-                                    file->tag_buf,
-                                    file->tag_len,
-                                    time,
-                                    mp_sbuf.data, mp_sbuf.size);
-        msgpack_sbuffer_destroy(&mp_sbuf);
-
+    if (is_map == FLB_TRUE) {
+        msgpack_sbuffer_write(mp_sbuf, data, data_size);
     }
     else {
-        msgpack_pack_array(&ctx->i_ins->mp_pck, 2);
-        msgpack_pack_uint64(&ctx->i_ins->mp_pck, time);
-
-        msgpack_pack_map(&ctx->i_ins->mp_pck, 1);
-        msgpack_pack_str(&ctx->i_ins->mp_pck, 3);
-        msgpack_pack_str_body(&ctx->i_ins->mp_pck, "log", 3);
-        msgpack_pack_str(&ctx->i_ins->mp_pck, line_len);
-        msgpack_pack_str_body(&ctx->i_ins->mp_pck, line, line_len);
+        msgpack_pack_map(mp_pck, 1);
+        msgpack_pack_str(mp_pck, 3);
+        msgpack_pack_str_body(mp_pck, "log", 3);
+        msgpack_pack_str(mp_pck, data_size);
+        msgpack_pack_str_body(mp_pck, data, data_size);
     }
 
     return 0;
@@ -88,20 +71,31 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
     void *out_buf;
     size_t out_size;
     time_t out_time = 0;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
     msgpack_sbuffer *out_sbuf;
     msgpack_packer *out_pck;
 
     struct flb_tail_config *ctx = file->config;
 
     /* When using dynamic tags, we create a temporal msgpack buffer */
-    out_sbuf = &ctx->i_ins->mp_sbuf;
-    out_pck  = &ctx->i_ins->mp_pck;
+    if (ctx->dynamic_tag == FLB_TRUE) {
+        msgpack_sbuffer_init(&mp_sbuf);
+        msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+        out_sbuf = &mp_sbuf;
+        out_pck  = &mp_pck;
+    }
+    else {
+        out_sbuf = &ctx->i_ins->mp_sbuf;
+        out_pck  = &ctx->i_ins->mp_pck;
+    }
 
+    /* Mark buffer write for non-dynamic tagging */
     if (ctx->dynamic_tag == FLB_FALSE) {
-        /* Mark the start of a 'buffer write' operation */
         flb_input_buf_write_start(ctx->i_ins);
     }
 
+    /* Parse the data content */
     while ((p = strchr(file->buf_data + file->parsed, '\n'))) {
         len = (p - file->buf_data);
         if (len == 0) {
@@ -121,30 +115,22 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
                     out_time = t;
                 }
 
-                if (ctx->dynamic_tag == FLB_TRUE) {
-                    flb_input_dyntag_append_raw(ctx->i_ins,
-                                                file->tag_buf,
-                                                file->tag_len,
-                                                out_time,
-                                                out_buf,
-                                                out_size);
-                }
-                else {
-                    msgpack_pack_array(out_pck, 2);
-                    msgpack_pack_uint64(out_pck, out_time);
-                    msgpack_sbuffer_write(out_sbuf, out_buf, out_size);
-                }
+                pack_line(out_sbuf, out_pck, FLB_TRUE, out_time,
+                          out_buf, out_size, file);
                 flb_free(out_buf);
             }
             else {
-                pack_line(t, file->buf_data, len, file);
+                pack_line(out_sbuf, out_pck, FLB_FALSE, t,
+                          file->buf_data, len, file);
             }
         }
         else {
-            pack_line(t, file->buf_data, len, file);
+            pack_line(out_sbuf, out_pck, FLB_FALSE, t,
+                      file->buf_data, len, file);
         }
 #else
-        pack_line(t, file->buf_data, len, file);
+        pack_line(out_sbuf, out_pck, FLB_FALSE, t,
+                  file->buf_data, len, file);
 #endif
 
         /*
@@ -164,6 +150,15 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
     /* Buffer write-end */
     if (ctx->dynamic_tag == FLB_FALSE) {
         flb_input_buf_write_end(ctx->i_ins);
+    }
+    else {
+        /* Append the temporal buffer to a dyntag, then release it */
+        flb_input_dyntag_append_raw(ctx->i_ins,
+                                    file->tag_buf,
+                                    file->tag_len,
+                                    out_sbuf->data,
+                                    out_sbuf->size);
+        msgpack_sbuffer_destroy(out_sbuf);
     }
 
     return lines;
