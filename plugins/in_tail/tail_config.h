@@ -44,7 +44,8 @@ struct flb_tail_config {
     int rotate_wait;           /* sec to wait on rotated files */
     char *path;                /* lookup path (glob)           */
     char *exclude_path;        /* exclude path                 */
-    char add_path_field;       /* add path field to record     */
+    char *path_key;            /* key name of file path        */
+    size_t path_key_len;       /* length of key name           */
 
     /* Database */
     struct flb_sqldb *db;
