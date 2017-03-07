@@ -73,7 +73,7 @@ static int cb_kube_filter(void *data, size_t bytes,
     int m_size;
     size_t off = 0;
     char *cache_buf;
-    size_t cache_size;
+    size_t cache_size = 0;
     msgpack_unpacked result;
     msgpack_object time;
     msgpack_object map;
@@ -120,10 +120,18 @@ static int cb_kube_filter(void *data, size_t bytes,
             msgpack_pack_object(&tmp_pck, v);
         }
 
+
         /* Append Kubernetes metadata */
         msgpack_pack_str(&tmp_pck, 10);
         msgpack_pack_str_body(&tmp_pck, "kubernetes", 10);
-        msgpack_sbuffer_write(&tmp_sbuf, cache_buf, cache_size);
+
+        if (cache_size > 0) {
+            msgpack_sbuffer_write(&tmp_sbuf, cache_buf, cache_size);
+        }
+        else {
+            msgpack_pack_str(&tmp_pck, 30);
+            msgpack_pack_str_body(&tmp_pck, "error connecting to api server", 30);
+        }
     }
     msgpack_unpacked_destroy(&result);
 

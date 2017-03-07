@@ -198,17 +198,19 @@ static void cb_results(unsigned char *name, unsigned char *value,
 
     if (meta->podname == NULL && strcmp((char *) name, "pod_name") == 0) {
         meta->podname = flb_strndup((char *) value, vlen);
+        meta->podname_len = vlen;
     }
     else if (meta->namespace == NULL &&
              strcmp((char *) name, "namespace_name") == 0) {
         meta->namespace = flb_strndup((char *) value, vlen);
+        meta->namespace_len = vlen;
     }
 
     len = strlen((char *)name);
-    msgpack_pack_str(meta->mp_pck, len);
-    msgpack_pack_str_body(meta->mp_pck, (char *) name, len);
-    msgpack_pack_str(meta->mp_pck, vlen);
-    msgpack_pack_str_body(meta->mp_pck, (char *) value, vlen);
+    msgpack_pack_str(&meta->mp_pck, len);
+    msgpack_pack_str_body(&meta->mp_pck, (char *) name, len);
+    msgpack_pack_str(&meta->mp_pck, vlen);
+    msgpack_pack_str_body(&meta->mp_pck, (char *) value, vlen);
 }
 
 static int merge_meta(char *reg_buf, size_t reg_size,
@@ -224,6 +226,7 @@ static int merge_meta(char *reg_buf, size_t reg_size,
     size_t off = 0;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
+
     msgpack_unpacked result;
     msgpack_unpacked api_result;
     msgpack_unpacked meta_result;
@@ -379,60 +382,99 @@ static int merge_meta(char *reg_buf, size_t reg_size,
 }
 
 static inline int tag_to_meta(struct flb_kube *ctx, char *tag, int tag_len,
+                              struct flb_kube_meta *meta,
                               char **out_buf, size_t *out_size)
 {
-    int ret;
+    size_t off = 0;
     ssize_t n;
-    char *api_buf;
-    size_t api_size;
     struct flb_regex_search result;
-    struct flb_kube_meta meta = {};
-    msgpack_sbuffer tmp_sbuf;
-    msgpack_packer tmp_pck;
+
+    msgpack_sbuffer_init(&meta->mp_sbuf);
+    msgpack_packer_init(&meta->mp_pck, &meta->mp_sbuf, msgpack_sbuffer_write);
+
+    meta->podname = NULL;
+    meta->namespace = NULL;
 
     n = flb_regex_do(ctx->regex_tag, (unsigned char *) tag, tag_len, &result);
     if (n <= 0) {
         return -1;
     }
 
-    /* Initialize msgpack buffers */
-    msgpack_sbuffer_init(&tmp_sbuf);
-    msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
-    msgpack_pack_map(&tmp_pck, n);
-    meta.mp_pck = &tmp_pck;
+    msgpack_pack_map(&meta->mp_pck, n);
 
     /* Parse the regex results */
-    flb_regex_parse(ctx->regex_tag, &result, cb_results, &meta);
+    flb_regex_parse(ctx->regex_tag, &result, cb_results, meta);
 
-    /* Gather API Server info */
-    ret = get_api_server_info(ctx,
-                              meta.namespace, meta.podname,
-                              &api_buf, &api_size);
-    if (ret == -1) {
-        /* Just report back the meta from Regex */
-        *out_buf = tmp_sbuf.data;
-        *out_size = tmp_sbuf.size;
+    /* Compose API server cache key */
+    if (meta->podname && meta->namespace) {
+        meta->cache_key_len = meta->podname_len + meta->namespace_len + 1;
+        meta->cache_key = flb_malloc(meta->cache_key_len + 1);
+        if (!meta->cache_key) {
+            flb_errno();
+            msgpack_sbuffer_destroy(&meta->mp_sbuf);
+            return -1;
+        }
+
+        /* Copy namespace */
+        memcpy(meta->cache_key, meta->namespace, meta->namespace_len);
+        off = meta->namespace_len;
+
+        /* Separator */
+        meta->cache_key[off++] = ':';
+
+        /* Copy podname */
+        memcpy(meta->cache_key + off, meta->podname, meta->podname_len);
+        off += meta->podname_len;
+        meta->cache_key[off] = '\0';
     }
     else {
-        /* Merge meta from regex and API Server */
-        ret = merge_meta(tmp_sbuf.data, tmp_sbuf.size,
-                         api_buf, api_size,
-                         out_buf, out_size);
-        if (ret == -1) {
-            *out_buf = tmp_sbuf.data;
-            *out_size = tmp_sbuf.size;
-        }
-        else {
-            msgpack_sbuffer_destroy(&tmp_sbuf);
-        }
-        flb_free(api_buf);
+        meta->cache_key = NULL;
+        meta->cache_key_len = 0;
     }
 
-    flb_free(meta.podname);
-    flb_free(meta.namespace);
+    /* Set outgoing buffer */
+    *out_buf = meta->mp_sbuf.data;
+    *out_size = meta->mp_sbuf.size;
 
     return 0;
 }
+
+/*
+ * Given a fixed meta data (namespace and podname), get API server information
+ * and merge buffers.
+ */
+static int get_and_merge_meta(struct flb_kube *ctx, struct flb_kube_meta *meta,
+                              char *local_buf, size_t local_size,
+                              char **out_buf, size_t *out_size)
+{
+    int ret;
+    char *api_buf;
+    size_t api_size;
+    char *merge_buf;
+    size_t merge_size;
+
+    ret = get_api_server_info(ctx,
+                              meta->namespace, meta->podname,
+                              &api_buf, &api_size);
+    if (ret == -1) {
+        return -1;
+    }
+
+    ret = merge_meta(local_buf, local_size,
+                     api_buf, api_size,
+                     &merge_buf, &merge_size);
+    flb_free(api_buf);
+
+    if (ret == -1) {
+        return -1;
+    }
+
+    *out_buf = merge_buf;
+    *out_size = merge_size;
+
+    return 0;
+}
+
 
 static int flb_kube_network_init(struct flb_kube *ctx, struct flb_config *config)
 {
@@ -500,30 +542,58 @@ int flb_kube_meta_get(struct flb_kube *ctx,
 {
     int id;
     int ret;
+    char *local_meta_buf;
+    size_t local_meta_size;
+    char *hash_meta_buf;
+    size_t hash_meta_size;
+    char *out_meta_buf;
+    size_t out_meta_size;
+    struct flb_kube_meta meta = {};
 
-    ret = flb_hash_get(ctx->hash_table, tag, tag_len,
-                       out_buf, out_size);
+    /* Get meta from the tag (cache key is the important one) */
+    ret = tag_to_meta(ctx, tag, tag_len, &meta,
+                      &local_meta_buf, &local_meta_size);
+    if (ret != 0) {
+        return -1;
+    }
+
+    /* Check if we have some data associated to the cache key */
+    ret = flb_hash_get(ctx->hash_table,
+                       meta.cache_key, meta.cache_key_len,
+                       &hash_meta_buf, &hash_meta_size);
     if (ret == -1) {
-        /* The entry was not found, create it */
-        ret = tag_to_meta(ctx, tag, tag_len, out_buf, out_size);
-        if (ret != 0) {
-            return -1;
+        /* Retrieve API server meta and merge with local meta */
+        ret = get_and_merge_meta(ctx, &meta,
+                                 local_meta_buf, local_meta_size,
+                                 &out_meta_buf, &out_meta_size);
+        if (ret == -1) {
+            goto out;
         }
 
         id = flb_hash_add(ctx->hash_table,
-                          tag, tag_len,
-                          *out_buf, *out_size);
+                          meta.cache_key, meta.cache_key_len,
+                          out_meta_buf, out_meta_size);
         if (id >= 0) {
             /*
              * Release the original buffer created on tag_to_meta() as a new
              * copy have been generated into the hash table, then re-set
              * the outgoing buffer and size.
              */
-            flb_free(*out_buf);
+            flb_free(out_meta_buf);
             flb_hash_get_by_id(ctx->hash_table, id, out_buf, out_size);
-            return 0;
+            goto out;
         }
     }
+    else {
+        *out_buf = hash_meta_buf;
+        *out_size = hash_meta_size;
+    }
+
+ out:
+    msgpack_sbuffer_destroy(&meta.mp_sbuf);
+    flb_free(meta.cache_key);
+    flb_free(meta.podname);
+    flb_free(meta.namespace);
 
     return 0;
 }

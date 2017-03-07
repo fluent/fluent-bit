@@ -23,9 +23,16 @@
 struct flb_kube;
 
 struct flb_kube_meta {
+    int namespace_len;
+    int podname_len;
+    int cache_key_len;
     char *namespace;
     char *podname;
-    msgpack_packer *mp_pck;
+    char *cache_key;
+
+    /* Local meta from tag */
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer  mp_pck;
 };
 
 /* Constant Kubernetes paths */
