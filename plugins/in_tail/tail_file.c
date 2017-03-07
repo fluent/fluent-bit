@@ -38,9 +38,155 @@ static inline void consume_bytes(char *buf, int bytes, int length)
     memmove(buf, buf + bytes, length - bytes);
 }
 
-static inline int pack_line(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
-                            int is_map,
-                            time_t time, char *data, size_t data_size,
+static int unpack_and_pack(msgpack_packer *pck, msgpack_object *root,
+                           int *first_map,
+                           char *key, size_t key_len,
+                           char *val, size_t val_len)
+{
+    int i;
+    int loop;
+
+    switch(root->type){
+    case MSGPACK_OBJECT_NIL:
+        msgpack_pack_nil(pck);
+        break;
+    case MSGPACK_OBJECT_BOOLEAN:
+        if (root->via.boolean) {
+            msgpack_pack_true(pck);
+        }
+        else {
+            msgpack_pack_false(pck);
+        }
+        break;
+    case MSGPACK_OBJECT_POSITIVE_INTEGER:
+        msgpack_pack_uint64(pck, root->via.u64);
+        break;
+    case MSGPACK_OBJECT_NEGATIVE_INTEGER:
+        msgpack_pack_int64(pck, root->via.i64);
+        break;
+    case MSGPACK_OBJECT_FLOAT64:
+        msgpack_pack_double(pck, root->via.f64);
+        break;
+    case MSGPACK_OBJECT_FLOAT32:
+        msgpack_pack_float(pck, (float)root->via.f64);
+        break;
+    case MSGPACK_OBJECT_EXT:
+        {
+            int ret = msgpack_pack_ext(pck,
+                                       root->via.ext.size,
+                                       root->via.ext.type);
+            if (ret < 0) {
+                return ret;
+            }
+            msgpack_pack_ext_body(pck,
+                                  root->via.ext.ptr,
+                                  root->via.ext.size);
+        }
+        break;
+
+    case MSGPACK_OBJECT_STR:
+        {
+            int ret = msgpack_pack_str(pck, root->via.str.size);
+            if (ret < 0) {
+                return ret;
+            }
+            msgpack_pack_str_body(pck,
+                                  root->via.str.ptr,
+                                  root->via.str.size);
+        }
+        break;
+    case MSGPACK_OBJECT_BIN:
+        {
+            int ret = msgpack_pack_bin(pck, root->via.bin.size);
+            if (ret < 0) {
+                return ret;
+            }
+            msgpack_pack_bin_body(pck,
+                                  root->via.bin.ptr,
+                                  root->via.bin.size);
+        }
+        break;
+    case MSGPACK_OBJECT_ARRAY:
+        loop = root->via.array.size;
+        msgpack_pack_array(pck, loop);        
+        if (loop != 0){
+            msgpack_object* p = root->via.array.ptr;
+            for (i=0; i<loop; i++) {
+                unpack_and_pack(pck, p+i, first_map,
+                            key, key_len, val, val_len);
+            }
+        }
+        break;
+
+    case MSGPACK_OBJECT_MAP:
+        loop = root->via.map.size;
+        if (*first_map == FLB_TRUE) {
+            /* append path_key */
+            *first_map = FLB_FALSE;
+            msgpack_pack_map(pck, loop+1);
+            msgpack_pack_str(pck, key_len);
+            msgpack_pack_str_body(pck, key, key_len);
+            msgpack_pack_str(pck, val_len);
+            msgpack_pack_str_body(pck, val, val_len);
+        }
+        else {
+            msgpack_pack_map(pck, loop);
+        }
+        if (loop != 0) {
+            msgpack_object_kv *p = root->via.map.ptr;
+            for(i=0; i<loop; i++){
+                unpack_and_pack(pck, &(p+i)->key, first_map,
+                                key, key_len, val, val_len);
+                unpack_and_pack(pck, &(p+i)->val, first_map,
+                                key, key_len, val, val_len);
+            }
+        }
+        break;
+    }
+    return 0;
+}
+
+static int append_record_to_map(char **data, size_t *data_size,
+                                char *key,  size_t key_len,
+                                char *val,  size_t val_len)
+{
+    msgpack_unpacked result;
+    msgpack_object   root;
+    msgpack_sbuffer *sbuf = msgpack_sbuffer_new();
+    msgpack_packer  pck;
+    size_t off = 0;
+    int first_map = FLB_TRUE;
+    int ret;
+
+    msgpack_packer_init(&pck, sbuf, msgpack_sbuffer_write);
+    msgpack_unpacked_init(&result);
+
+    while (msgpack_unpack_next(&result, *data, *data_size, &off)) {
+        root = result.data;
+        ret = unpack_and_pack(&pck, &root, &first_map,
+                              key, key_len, val, val_len);
+        if (ret < 0) {
+            /* fail! */
+            break;
+        }
+        first_map = FLB_TRUE;
+    }
+
+    if (ret >= 0) {
+        /* success !*/
+        flb_free(*data);
+
+        *data = (char*)flb_malloc(sbuf->size);
+        memcpy(*data, sbuf->data, sbuf->size);
+        *data_size = sbuf->size;
+    }
+    msgpack_sbuffer_free(sbuf);
+
+    return 0;
+}
+
+static inline int pack_line_map(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
+                            time_t time, char **data, size_t *data_size,
                             struct flb_tail_file *file)
 {
     int map_num = 1;
@@ -49,45 +195,43 @@ static inline int pack_line(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
         map_num++; /* to append path_key */
     }
 
-    if (is_map == FLB_TRUE) {
-        msgpack_sbuffer_write(mp_sbuf, data, data_size);
-        if (file->config->path_key != NULL) {
-            msgpack_unpacked result;
-            msgpack_object   root;
-            size_t off = 0;
-
-            /* FIXME: it's too raw! */
-            msgpack_unpacked_init(&result);
-            while (msgpack_unpack_next(&result, data, data_size, &off)) {
-                root = result.data;
-                root.via.array.ptr[1].via.map.size++;
-
-                msgpack_pack_str(mp_pck, file->config->path_key_len);
-                msgpack_pack_str_body(mp_pck, file->config->path_key,
-                                      file->config->path_key_len);
-                msgpack_pack_str(mp_pck, file->name_len);
-                msgpack_pack_str_body(mp_pck, file->name, file->name_len);
-            }
-        }
-
+    if (file->config->path_key != NULL) {
+        append_record_to_map(data, data_size,
+                             file->config->path_key,
+                             file->config->path_key_len,
+                             file->name, file->name_len);
     }
-    else {
-        msgpack_pack_array(mp_pck, 2);
-        msgpack_pack_uint64(mp_pck, time);
-        msgpack_pack_map(mp_pck, map_num);
-        msgpack_pack_str(mp_pck, 3);
-        msgpack_pack_str_body(mp_pck, "log", 3);
-        msgpack_pack_str(mp_pck, data_size);
-        msgpack_pack_str_body(mp_pck, data, data_size);
+    msgpack_sbuffer_write(mp_sbuf, *data, *data_size);
 
-        if (file->config->path_key != NULL) {
-            msgpack_pack_str(mp_pck, file->config->path_key_len);
-            msgpack_pack_str_body(mp_pck, file->config->path_key,
-                                  file->config->path_key_len);
-            msgpack_pack_str(mp_pck, file->name_len);
-            msgpack_pack_str_body(mp_pck, file->name, file->name_len);
-        }
+    return 0;
+}
+
+static inline int pack_line(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
+                            time_t time, char *data, size_t data_size,
+                            struct flb_tail_file *file)
+{
+    int map_num = 1;
+
+    if (file->config->path_key != NULL) {
+        map_num++; /* to append path_key */
     }
+    msgpack_pack_array(mp_pck, 2);
+    msgpack_pack_uint64(mp_pck, time);
+    msgpack_pack_map(mp_pck, map_num);
+
+    if (file->config->path_key != NULL) {
+        /* append path_key */
+        msgpack_pack_str(mp_pck, file->config->path_key_len);
+        msgpack_pack_str_body(mp_pck, file->config->path_key,
+                              file->config->path_key_len);
+        msgpack_pack_str(mp_pck, file->name_len);
+        msgpack_pack_str_body(mp_pck, file->name, file->name_len);
+    }
+
+    msgpack_pack_str(mp_pck, 3);
+    msgpack_pack_str_body(mp_pck, "log", 3);
+    msgpack_pack_str(mp_pck, data_size);
+    msgpack_pack_str_body(mp_pck, data, data_size);
 
     return 0;
 }
@@ -146,22 +290,21 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
                 if (out_time == 0) {
                     out_time = t;
                 }
-
-                pack_line(out_sbuf, out_pck, FLB_TRUE, out_time,
-                          out_buf, out_size, file);
+                pack_line_map(out_sbuf, out_pck, out_time,
+                          (char**)&out_buf, &out_size, file);
                 flb_free(out_buf);
             }
             else {
-                pack_line(out_sbuf, out_pck, FLB_FALSE, t,
+                pack_line(out_sbuf, out_pck, t,
                           file->buf_data, len, file);
             }
         }
         else {
-            pack_line(out_sbuf, out_pck, FLB_FALSE, t,
+            pack_line(out_sbuf, out_pck, t,
                       file->buf_data, len, file);
         }
 #else
-        pack_line(out_sbuf, out_pck, FLB_FALSE, t,
+        pack_line(out_sbuf, out_pck, t,
                   file->buf_data, len, file);
 #endif
 
