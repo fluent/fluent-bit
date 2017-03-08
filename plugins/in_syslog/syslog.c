@@ -30,30 +30,33 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_stats.h>
 
-#define DEFAULT_INTERVAL_SEC  1
-#define DEFAULT_INTERVAL_NSEC 0
-
-/* Configuration */
-struct flb_syslog {
-
-
-};
+#include "syslog.h"
+#include "syslog_conf.h"
+#include "syslog_unix.h"
+#include "syslog_conn.h"
 
 /* cb_collect callback */
 static int in_syslog_collect(struct flb_input_instance *i_ins,
                              struct flb_config *config, void *in_context)
 {
+    int fd;
+    struct flb_syslog *ctx = in_context;
+    struct syslog_conn *conn;
     (void) i_ins;
-    (void) config;
-    (void) in_context;
 
-    return 0;
-}
+    /* Accept the new connection */
+    fd = flb_net_accept(ctx->server_fd);
+    if (fd == -1) {
+        flb_error("[in_syslog] could not accept new connection");
+        return -1;
+    }
 
-/* Set plugin configuration */
-static int in_syslog_config_read(struct flb_syslog *ctx,
-                                 struct flb_input_instance *in)
-{
+    flb_trace("[in_syslog] new Unix connection arrived FD=%i", fd);
+    conn = syslog_conn_add(fd, ctx);
+    if (!conn) {
+        return -1;
+    }
+
     return 0;
 }
 
@@ -65,26 +68,48 @@ static int in_syslog_init(struct flb_input_instance *in,
     struct flb_syslog *ctx;
 
     /* Allocate space for the configuration */
-    ctx = flb_malloc(sizeof(struct flb_syslog));
+    ctx = syslog_conf_create(in, config);
     if (!ctx) {
+        flb_error("[in_syslog] could not initialize plugin");
         return -1;
     }
 
-    /* Initialize head config */
-    ret = in_syslog_config_read(ctx, in);
-    if (ret < 0) {
-        flb_free(ctx);
+    if (!ctx->unix_path) {
+        flb_error("[in_syslog] Unix path not defined");
+        syslog_conf_destroy(ctx);
         return -1;
     }
 
+    /* Create Unix Socket */
+    ret = syslog_unix_create(ctx);
+    if (ret == -1) {
+        syslog_conf_destroy(ctx);
+        return -1;
+    }
+
+    /* Set context */
     flb_input_set_context(in, ctx);
+
+
+    /* Collect events for every opened connection to our socket */
+    ret = flb_input_set_collector_socket(in,
+                                         in_syslog_collect,
+                                         ctx->server_fd,
+                                         config);
+    if (ret == -1) {
+        flb_error("[in_syslog] Could not set collector");
+        syslog_conf_destroy(ctx);
+    }
+
     return 0;
 }
 
 static int in_syslog_exit(void *data, struct flb_config *config)
 {
-    (void) data;
+    struct flb_syslog *ctx = data;
     (void) config;
+
+    syslog_conf_destroy(ctx);
 
     return 0;
 }
