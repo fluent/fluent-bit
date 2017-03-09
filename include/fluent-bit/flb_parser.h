@@ -38,6 +38,9 @@ struct flb_parser {
     int time_keep;      /* keep time field */
 
     /* internal */
+    int time_with_year; /* do time_fmt consider a year (%Y) ? */
+    char *time_fmt_year;
+
     struct flb_regex *regex;
     struct mk_list _head;
 };

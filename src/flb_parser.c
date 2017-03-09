@@ -41,6 +41,8 @@ struct flb_parser *flb_parser_create(char *name, char *format,
                                      char *time_fmt, char *time_key,
                                      int time_keep, struct flb_config *config)
 {
+    int size;
+    char *tmp;
     struct mk_list *head;
     struct flb_parser *p;
     struct flb_regex *regex;
@@ -95,6 +97,28 @@ struct flb_parser *flb_parser_create(char *name, char *format,
 
     if (time_fmt) {
         p->time_fmt = flb_strdup(time_fmt);
+
+        /* Check if the format is considering the year */
+        if (strstr(p->time_fmt, "%Y") || strstr(p->time_fmt, "%y")) {
+            p->time_with_year = FLB_TRUE;
+        }
+        else {
+            size = strlen(p->time_fmt);
+            p->time_with_year = FLB_FALSE;
+            p->time_fmt_year = flb_malloc(size + 4);
+            if (!p->time_fmt_year) {
+                flb_errno();
+                flb_parser_destroy(p);
+                return NULL;
+            }
+
+            memcpy(p->time_fmt_year, p->time_fmt, size);
+            tmp = p->time_fmt_year + size;
+            *tmp++ = ' ';
+            *tmp++ = '%';
+            *tmp++ = 'Y';
+            *tmp++ = '\0';
+        }
     }
     if (time_key) {
         p->time_key = flb_strdup(time_key);
@@ -116,6 +140,9 @@ void flb_parser_destroy(struct flb_parser *parser)
     flb_free(parser->name);
     if (parser->time_fmt) {
         flb_free(parser->time_fmt);
+    }
+    if (parser->time_fmt_year) {
+        flb_free(parser->time_fmt_year);
     }
     if (parser->time_key) {
         flb_free(parser->time_key);
