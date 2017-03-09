@@ -17,32 +17,13 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_IN_SYSLOG_H
-#define FLB_IN_SYSLOG_H
+#ifndef FLB_IN_SYSLOG_PROT_H
+#define FLB_IN_SYSLOG_PROT_H
 
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_input.h>
 
-/* 32KB chunk size */
-#define FLB_SYSLOG_CHUNK   32768
+#include "syslog.h"
 
-/* Context / Config*/
-struct flb_syslog {
-    /* Unix socket */
-    int server_fd;
-    char *unix_path;
-
-    /* Buffers setup */
-    size_t buffer_size;
-    size_t chunk_size;
-
-    /* Configuration */
-    struct flb_parser *parser;
-
-    /* List for connections and event loop */
-    struct mk_list connections;
-    struct mk_event_loop *evl;
-    struct flb_input_instance *i_ins;
-};
+int syslog_prot_process(struct syslog_conn *conn);
 
 #endif

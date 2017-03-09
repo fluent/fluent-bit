@@ -25,6 +25,7 @@
 #include "syslog.h"
 #include "syslog_conf.h"
 #include "syslog_conn.h"
+#include "syslog_prot.h"
 
 /* Callback invoked every time an event is triggered for a connection */
 int syslog_conn_event(void *data)
@@ -50,7 +51,7 @@ int syslog_conn_event(void *data)
             }
 
             size = conn->buf_size + ctx->chunk_size;
-            tmp = flb_realloc(conn->buf, size);
+            tmp = flb_realloc(conn->buf_data, size);
             if (!tmp) {
                 perror("realloc");
                 return -1;
@@ -58,20 +59,18 @@ int syslog_conn_event(void *data)
             flb_trace("[in_syslog] fd=%i buffer realloc %i -> %i",
                       event->fd, conn->buf_size, size);
 
-            conn->buf = tmp;
+            conn->buf_data = tmp;
             conn->buf_size = size;
             available = (conn->buf_size - conn->buf_len);
         }
 
         bytes = read(conn->fd,
-                     conn->buf + conn->buf_len, available);
+                     conn->buf_data + conn->buf_len, available);
         if (bytes > 0) {
             flb_trace("[in_syslog] read()=%i pre_len=%i now_len=%i",
                       bytes, conn->buf_len, conn->buf_len + bytes);
             conn->buf_len += bytes;
-            printf("'%s'\n", conn->buf);
-            exit(1);
-            //ret = fw_prot_process(conn);
+            ret = syslog_prot_process(conn);
             if (ret == -1) {
                 return -1;
             }
@@ -115,10 +114,12 @@ struct syslog_conn *syslog_conn_add(int fd, struct flb_syslog *ctx)
     conn->fd      = fd;
     conn->ctx     = ctx;
     conn->buf_len = 0;
+    conn->buf_parsed = 0;
+    conn->in      = ctx->i_ins;
     //conn->status  = FW_NEW;
 
-    conn->buf = flb_malloc(ctx->chunk_size);
-    if (!conn->buf) {
+    conn->buf_data = flb_malloc(ctx->chunk_size);
+    if (!conn->buf_data) {
         perror("malloc");
         close(fd);
         flb_error("[in_fw] could not allocate new connection");
@@ -133,7 +134,7 @@ struct syslog_conn *syslog_conn_add(int fd, struct flb_syslog *ctx)
     if (ret == -1) {
         flb_error("[in_fw] could not register new connection");
         close(fd);
-        flb_free(conn->buf);
+        flb_free(conn->buf_data);
         flb_free(conn);
         return NULL;
     }
@@ -151,7 +152,7 @@ int syslog_conn_del(struct syslog_conn *conn)
     /* Release resources */
     mk_list_del(&conn->_head);
     close(conn->fd);
-    flb_free(conn->buf);
+    flb_free(conn->buf_data);
     flb_free(conn);
 
     return 0;

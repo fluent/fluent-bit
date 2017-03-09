@@ -22,8 +22,11 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_parser.h>
 
 #include "syslog.h"
+#include "syslog_unix.h"
+#include "syslog_conf.h"
 
 struct flb_syslog *syslog_conf_create(struct flb_input_instance *i_ins,
                                       struct flb_config *config)
@@ -37,6 +40,7 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *i_ins,
         return NULL;
     }
     ctx->evl = config->evl;
+    ctx->i_ins = i_ins;
     mk_list_init(&ctx->connections);
 
     tmp = flb_input_get_property("path", i_ins);
@@ -62,6 +66,20 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *i_ins,
     else {
         /* Convert KB unit to Bytes */
         ctx->buffer_size  = (atoi(tmp) * 1024);
+    }
+
+    tmp = flb_input_get_property("parser", i_ins);
+    if (tmp) {
+        ctx->parser = flb_parser_get(tmp, config);
+    }
+    else {
+        ctx->parser = flb_parser_get("syslog", config);
+    }
+
+    if (!ctx->parser) {
+        flb_error("[in_syslog] parser not set");
+        syslog_conf_destroy(ctx);
+        return NULL;
     }
 
     return ctx;
