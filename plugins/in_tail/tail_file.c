@@ -161,26 +161,20 @@ static int append_record_to_map(char **data, size_t *data_size,
     msgpack_packer_init(&pck, sbuf, msgpack_sbuffer_write);
     msgpack_unpacked_init(&result);
 
-    while (msgpack_unpack_next(&result, *data, *data_size, &off)) {
-        root = result.data;
-        ret = unpack_and_pack(&pck, &root, &first_map,
-                              key, key_len, val, val_len);
-        if (ret < 0) {
-            /* fail! */
-            break;
-        }
-        first_map = FLB_TRUE;
+    msgpack_unpack_next(&result, *data, *data_size, &off);
+    root = result.data;
+    ret = unpack_and_pack(&pck, &root, &first_map,
+                          key, key_len, val, val_len);
+    if (ret < 0) {
+        /* fail! */
+        msgpack_sbuffer_free(sbuf);
     }
-
-    if (ret >= 0) {
+    else {
         /* success !*/
         flb_free(*data);
-
-        *data = (char*)flb_malloc(sbuf->size);
-        memcpy(*data, sbuf->data, sbuf->size);
+        *data      = sbuf->data;
         *data_size = sbuf->size;
     }
-    msgpack_sbuffer_free(sbuf);
 
     return 0;
 }
