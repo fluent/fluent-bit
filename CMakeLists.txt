@@ -428,6 +428,7 @@ endif()
 
 
 ### CPACK / RPM
+cmake_policy(SET CMP0007 OLD)
 set(CPACK_PACKAGE_VERSION ${FLB_VERSION_STR})
 set(CPACK_GENERATOR "RPM")
 set(CPACK_PACKAGE_NAME "td-agent-bit")
