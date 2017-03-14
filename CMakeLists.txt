@@ -298,7 +298,7 @@ if(FLB_TD)
   set(FLB_OUT_NAME "td-agent-bit")
   set(WITHOUT_HEADERS On)
 else()
-  set(FLB_PROG_NAME "Fluentd Bit")
+  set(FLB_PROG_NAME "Fluent Bit")
   set(FLB_OUT_NAME "fluent-bit")
 endif()
 
@@ -428,7 +428,6 @@ endif()
 
 
 ### CPACK / RPM
-cmake_policy(SET CMP0007 OLD)
 set(CPACK_PACKAGE_VERSION ${FLB_VERSION_STR})
 set(CPACK_GENERATOR "RPM")
 set(CPACK_PACKAGE_NAME "td-agent-bit")
