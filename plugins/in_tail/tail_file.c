@@ -39,7 +39,6 @@ static inline void consume_bytes(char *buf, int bytes, int length)
 }
 
 static int unpack_and_pack(msgpack_packer *pck, msgpack_object *root,
-                           int *first_map,
                            char *key, size_t key_len,
                            char *val, size_t val_len)
 {
@@ -69,32 +68,34 @@ static int append_record_to_map(char **data, size_t *data_size,
                                 char *key,  size_t key_len,
                                 char *val,  size_t val_len)
 {
+    int ret;
     msgpack_unpacked result;
     msgpack_object   root;
-    msgpack_sbuffer *sbuf = msgpack_sbuffer_new();
+    msgpack_sbuffer sbuf;
     msgpack_packer  pck;
     size_t off = 0;
-    int first_map = FLB_TRUE;
-    int ret;
 
-    msgpack_packer_init(&pck, sbuf, msgpack_sbuffer_write);
+    msgpack_sbuffer_init(&sbuf);
+    msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
     msgpack_unpacked_init(&result);
 
     msgpack_unpack_next(&result, *data, *data_size, &off);
     root = result.data;
-    ret = unpack_and_pack(&pck, &root, &first_map,
+    ret = unpack_and_pack(&pck, &root,
                           key, key_len, val, val_len);
     if (ret < 0) {
         /* fail! */
-        msgpack_sbuffer_free(sbuf);
+        msgpack_unpacked_destroy(&result);
+        msgpack_sbuffer_destroy(&sbuf);
     }
     else {
         /* success !*/
         flb_free(*data);
-        *data      = sbuf->data;
-        *data_size = sbuf->size;
+        *data      = sbuf.data;
+        *data_size = sbuf.size;
     }
 
+    msgpack_unpacked_destroy(&result);
     return 0;
 }
 
