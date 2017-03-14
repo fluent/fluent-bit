@@ -147,8 +147,10 @@ int fw_prot_process(struct fw_conn *conn)
              */
             all_used += bytes;
 
+
             /* Map the array */
             root = result.data;
+
             if (root.type != MSGPACK_OBJECT_ARRAY) {
                 flb_debug("[in_fw] parser: expecting an array (type=%i), skip.",
                           root.type);
@@ -226,8 +228,28 @@ int fw_prot_process(struct fw_conn *conn)
                 msgpack_sbuffer_destroy(&mp_sbuf);
                 c++;
             }
+            else if (entry.type == MSGPACK_OBJECT_STR ||
+                     entry.type == MSGPACK_OBJECT_BIN) {
+                /* PackedForward Mode */
+                char *data;
+                size_t len;
+
+                if (entry.type == MSGPACK_OBJECT_STR) {
+                    data = (char *) entry.via.str.ptr;
+                    len = entry.via.str.size;
+                }
+                else if (entry.type == MSGPACK_OBJECT_BIN) {
+                    data = (char *) entry.via.bin.ptr;
+                    len = entry.via.bin.size;
+                }
+
+                flb_input_dyntag_append_raw(conn->in,
+                                            stag, stag_len,
+                                            data, len);
+            }
             else {
-                flb_warn("[in_fw] invalid data format");
+                flb_warn("[in_fw] invalid data format, type=%i",
+                         entry.type);
                 msgpack_unpacked_destroy(&result);
                 msgpack_unpacker_free(unp);
                 return -1;
