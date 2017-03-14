@@ -38,24 +38,113 @@ static inline void consume_bytes(char *buf, int bytes, int length)
     memmove(buf, buf + bytes, length - bytes);
 }
 
+static int unpack_and_pack(msgpack_packer *pck, msgpack_object *root,
+                           int *first_map,
+                           char *key, size_t key_len,
+                           char *val, size_t val_len)
+{
+    int i;
+    int size = root->via.map.size;
+
+    msgpack_pack_map(pck, size + 1);
+
+    /* Append new k/v */
+    msgpack_pack_str(pck, key_len);
+    msgpack_pack_str_body(pck, key, key_len);
+    msgpack_pack_str(pck, val_len);
+    msgpack_pack_str_body(pck, val, val_len);
+
+    for (i = 0; i < size; i++) {
+        msgpack_object k = root->via.map.ptr[i].key;
+        msgpack_object v = root->via.map.ptr[i].val;;
+
+        msgpack_pack_object(pck, k);
+        msgpack_pack_object(pck, v);
+    }
+
+    return 0;
+}
+
+static int append_record_to_map(char **data, size_t *data_size,
+                                char *key,  size_t key_len,
+                                char *val,  size_t val_len)
+{
+    msgpack_unpacked result;
+    msgpack_object   root;
+    msgpack_sbuffer *sbuf = msgpack_sbuffer_new();
+    msgpack_packer  pck;
+    size_t off = 0;
+    int first_map = FLB_TRUE;
+    int ret;
+
+    msgpack_packer_init(&pck, sbuf, msgpack_sbuffer_write);
+    msgpack_unpacked_init(&result);
+
+    msgpack_unpack_next(&result, *data, *data_size, &off);
+    root = result.data;
+    ret = unpack_and_pack(&pck, &root, &first_map,
+                          key, key_len, val, val_len);
+    if (ret < 0) {
+        /* fail! */
+        msgpack_sbuffer_free(sbuf);
+    }
+    else {
+        /* success !*/
+        flb_free(*data);
+        *data      = sbuf->data;
+        *data_size = sbuf->size;
+    }
+
+    return 0;
+}
+
+static inline int pack_line_map(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
+                            time_t time, char **data, size_t *data_size,
+                            struct flb_tail_file *file)
+{
+    int map_num = 1;
+
+    if (file->config->path_key != NULL) {
+        map_num++; /* to append path_key */
+    }
+
+    if (file->config->path_key != NULL) {
+        append_record_to_map(data, data_size,
+                             file->config->path_key,
+                             file->config->path_key_len,
+                             file->name, file->name_len);
+    }
+    msgpack_sbuffer_write(mp_sbuf, *data, *data_size);
+
+    return 0;
+}
+
 static inline int pack_line(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
-                            int is_map,
                             time_t time, char *data, size_t data_size,
                             struct flb_tail_file *file)
 {
+    int map_num = 1;
+
+    if (file->config->path_key != NULL) {
+        map_num++; /* to append path_key */
+    }
     msgpack_pack_array(mp_pck, 2);
     msgpack_pack_uint64(mp_pck, time);
+    msgpack_pack_map(mp_pck, map_num);
 
-    if (is_map == FLB_TRUE) {
-        msgpack_sbuffer_write(mp_sbuf, data, data_size);
+    if (file->config->path_key != NULL) {
+        /* append path_key */
+        msgpack_pack_str(mp_pck, file->config->path_key_len);
+        msgpack_pack_str_body(mp_pck, file->config->path_key,
+                              file->config->path_key_len);
+        msgpack_pack_str(mp_pck, file->name_len);
+        msgpack_pack_str_body(mp_pck, file->name, file->name_len);
     }
-    else {
-        msgpack_pack_map(mp_pck, 1);
-        msgpack_pack_str(mp_pck, 3);
-        msgpack_pack_str_body(mp_pck, "log", 3);
-        msgpack_pack_str(mp_pck, data_size);
-        msgpack_pack_str_body(mp_pck, data, data_size);
-    }
+
+    msgpack_pack_str(mp_pck, 3);
+    msgpack_pack_str_body(mp_pck, "log", 3);
+    msgpack_pack_str(mp_pck, data_size);
+    msgpack_pack_str_body(mp_pck, data, data_size);
 
     return 0;
 }
@@ -114,22 +203,21 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
                 if (out_time == 0) {
                     out_time = t;
                 }
-
-                pack_line(out_sbuf, out_pck, FLB_TRUE, out_time,
-                          out_buf, out_size, file);
+                pack_line_map(out_sbuf, out_pck, out_time,
+                          (char**)&out_buf, &out_size, file);
                 flb_free(out_buf);
             }
             else {
-                pack_line(out_sbuf, out_pck, FLB_FALSE, t,
+                pack_line(out_sbuf, out_pck, t,
                           file->buf_data, len, file);
             }
         }
         else {
-            pack_line(out_sbuf, out_pck, FLB_FALSE, t,
+            pack_line(out_sbuf, out_pck, t,
                       file->buf_data, len, file);
         }
 #else
-        pack_line(out_sbuf, out_pck, FLB_FALSE, t,
+        pack_line(out_sbuf, out_pck, t,
                   file->buf_data, len, file);
 #endif
 
@@ -300,6 +388,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file->watch_fd  = -1;
     file->fd        = fd;
     file->name      = flb_strdup(path);
+    file->name_len  = strlen(file->name);
     file->offset    = 0;
     file->inode     = st->st_ino;
     file->size      = st->st_size;

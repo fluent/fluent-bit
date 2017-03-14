@@ -90,6 +90,15 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
         }
     }
 
+    /* Config: determine whether appending or not */
+    ctx->path_key = flb_input_get_property("path_key", i_ins);
+    if (ctx->path_key != NULL) {
+        ctx->path_key_len = strlen(ctx->path_key);
+    }
+    else {
+        ctx->path_key_len = 0;
+    }
+
 #ifdef FLB_HAVE_REGEX
     /* Parser / Format */
     tmp = flb_input_get_property("parser", i_ins);

@@ -36,6 +36,7 @@ struct flb_tail_file {
     off_t last_line;
     ino_t inode;
     char *name;
+    size_t name_len;
     time_t rotated;
 
     /* dynamic tag for this file */
