@@ -44,105 +44,24 @@ static int unpack_and_pack(msgpack_packer *pck, msgpack_object *root,
                            char *val, size_t val_len)
 {
     int i;
-    int loop;
+    int size = root->via.map.size;
 
-    switch(root->type){
-    case MSGPACK_OBJECT_NIL:
-        msgpack_pack_nil(pck);
-        break;
-    case MSGPACK_OBJECT_BOOLEAN:
-        if (root->via.boolean) {
-            msgpack_pack_true(pck);
-        }
-        else {
-            msgpack_pack_false(pck);
-        }
-        break;
-    case MSGPACK_OBJECT_POSITIVE_INTEGER:
-        msgpack_pack_uint64(pck, root->via.u64);
-        break;
-    case MSGPACK_OBJECT_NEGATIVE_INTEGER:
-        msgpack_pack_int64(pck, root->via.i64);
-        break;
-    case MSGPACK_OBJECT_FLOAT64:
-        msgpack_pack_double(pck, root->via.f64);
-        break;
-    case MSGPACK_OBJECT_FLOAT32:
-        msgpack_pack_float(pck, (float)root->via.f64);
-        break;
-    case MSGPACK_OBJECT_EXT:
-        {
-            int ret = msgpack_pack_ext(pck,
-                                       root->via.ext.size,
-                                       root->via.ext.type);
-            if (ret < 0) {
-                return ret;
-            }
-            msgpack_pack_ext_body(pck,
-                                  root->via.ext.ptr,
-                                  root->via.ext.size);
-        }
-        break;
+    msgpack_pack_map(pck, size + 1);
 
-    case MSGPACK_OBJECT_STR:
-        {
-            int ret = msgpack_pack_str(pck, root->via.str.size);
-            if (ret < 0) {
-                return ret;
-            }
-            msgpack_pack_str_body(pck,
-                                  root->via.str.ptr,
-                                  root->via.str.size);
-        }
-        break;
-    case MSGPACK_OBJECT_BIN:
-        {
-            int ret = msgpack_pack_bin(pck, root->via.bin.size);
-            if (ret < 0) {
-                return ret;
-            }
-            msgpack_pack_bin_body(pck,
-                                  root->via.bin.ptr,
-                                  root->via.bin.size);
-        }
-        break;
-    case MSGPACK_OBJECT_ARRAY:
-        loop = root->via.array.size;
-        msgpack_pack_array(pck, loop);        
-        if (loop != 0){
-            msgpack_object* p = root->via.array.ptr;
-            for (i=0; i<loop; i++) {
-                unpack_and_pack(pck, p+i, first_map,
-                            key, key_len, val, val_len);
-            }
-        }
-        break;
+    /* Append new k/v */
+    msgpack_pack_str(pck, key_len);
+    msgpack_pack_str_body(pck, key, key_len);
+    msgpack_pack_str(pck, val_len);
+    msgpack_pack_str_body(pck, val, val_len);
 
-    case MSGPACK_OBJECT_MAP:
-        loop = root->via.map.size;
-        if (*first_map == FLB_TRUE) {
-            /* append path_key */
-            *first_map = FLB_FALSE;
-            msgpack_pack_map(pck, loop+1);
-            msgpack_pack_str(pck, key_len);
-            msgpack_pack_str_body(pck, key, key_len);
-            msgpack_pack_str(pck, val_len);
-            msgpack_pack_str_body(pck, val, val_len);
-        }
-        else {
-            msgpack_pack_map(pck, loop);
-        }
-        if (loop != 0) {
-            msgpack_object_kv *p = root->via.map.ptr;
-            for(i=0; i<loop; i++){
-                unpack_and_pack(pck, &(p+i)->key, first_map,
-                                key, key_len, val, val_len);
-                unpack_and_pack(pck, &(p+i)->val, first_map,
-                                key, key_len, val, val_len);
-            }
-        }
-        break;
+    for (i = 0; i < size; i++) {
+        msgpack_object k = root->via.map.ptr[i].key;
+        msgpack_object v = root->via.map.ptr[i].val;;
+
+        msgpack_pack_object(pck, k);
+        msgpack_pack_object(pck, v);
     }
+
     return 0;
 }
 
