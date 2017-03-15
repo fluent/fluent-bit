@@ -1,5 +1,6 @@
 set(src
   es_bulk.c
+  es_conf.c
   es.c)
 
 FLB_PLUGIN(out_es "${src}" "mk_core")

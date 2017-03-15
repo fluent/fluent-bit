@@ -20,13 +20,42 @@
 #ifndef FLB_OUT_ES_H
 #define FLB_OUT_ES_H
 
-#define FLB_ES_DEFAULT_HOST   "127.0.0.1"
-#define FLB_ES_DEFAULT_PORT   92000
-
-struct flb_out_es_config {
+#define FLB_ES_DEFAULT_HOST       "127.0.0.1"
+#define FLB_ES_DEFAULT_PORT       92000
+#define FLB_ES_DEFAULT_INDEX      "fluent-bit"
+#define FLB_ES_DEFAULT_TYPE       "flb_type"
+#define FLB_ES_DEFAULT_PREFIX     "logstash"
+#define FLB_ES_DEFAULT_TIME_FMT   "%Y.%m.%d"
+#define FLB_ES_DEFAULT_TIME_KEY   "@timestamp"
+#define FLB_ES_DEFAULT_TIME_KEYF  "%Y-%m-%dT%H:%M:%S"
+struct flb_elasticsearch {
     /* Elasticsearch index (database) and type (table) */
     char *index;
     char *type;
+
+    /*
+     * Logstash compatibility options
+     * ==============================
+     */
+
+    /* enabled/disabled */
+    int logstash_format;
+
+    /* prefix */
+    int logstash_prefix_len;
+    char *logstash_prefix;
+
+    /* date format */
+    int logstash_dateformat_len;
+    char *logstash_dateformat;
+
+    /* time key */
+    int time_key_len;
+    char *time_key;
+
+    /* time key format */
+    int time_key_format_len;
+    char *time_key_format;
 
     /* Upstream connection to the backend server */
     struct flb_upstream *u;

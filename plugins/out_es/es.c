@@ -17,14 +17,18 @@
  *  limitations under the License.
  */
 
-#include <msgpack.h>
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_pack.h>
+#include <msgpack.h>
+
+#include <time.h>
 
 #include "es.h"
+#include "es_conf.h"
 #include "es_bulk.h"
 
 struct flb_output_plugin out_es_plugin;
@@ -110,22 +114,29 @@ static inline void es_pack_map_content(msgpack_packer *tmp_pck, msgpack_object m
  *
  * 'Sadly' this process involves to convert from Msgpack to JSON.
  */
-static char *es_format(void *data, size_t bytes, int *out_size,
-                       struct flb_out_es_config *ctx)
+static char *elasticsearch_format(void *data, size_t bytes, int *out_size,
+                                  struct flb_elasticsearch *ctx)
 {
     int ret;
+    int len;
     int map_size;
     int index_len;
+    size_t s;
     size_t off = 0;
+    time_t t;
+    char *p;
     char *buf;
+    char logstash_index[256];
+    char time_formatted[256];
     msgpack_unpacked result;
     msgpack_object root;
     msgpack_object map;
-    msgpack_object time;
+    msgpack_object otime;
     char *json_buf;
     size_t json_size;
     char j_index[ES_BULK_HEADER];
     struct es_bulk *bulk;
+    struct tm tm;
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
 
@@ -135,6 +146,7 @@ static char *es_format(void *data, size_t bytes, int *out_size,
     /* Perform some format validation */
     ret = msgpack_unpack_next(&result, data, bytes, &off);
     if (!ret) {
+        msgpack_unpacked_destroy(&result);
         return NULL;
     }
 
@@ -144,6 +156,7 @@ static char *es_format(void *data, size_t bytes, int *out_size,
          * If we got a different format, we assume the caller knows what he is
          * doing, we just duplicate the content in a new buffer and cleanup.
          */
+        msgpack_unpacked_destroy(&result);
         return NULL;
     }
 
@@ -159,10 +172,35 @@ static char *es_format(void *data, size_t bytes, int *out_size,
     }
 
     /* Format the JSON header required by the ES Bulk API */
-    index_len = snprintf(j_index,
-                         ES_BULK_HEADER,
-                         ES_BULK_INDEX_FMT,
-                         ctx->index, ctx->type);
+    if (ctx->logstash_format == FLB_TRUE) {
+        len = ctx->logstash_prefix_len;
+
+        memcpy(logstash_index, ctx->logstash_prefix, ctx->logstash_prefix_len);
+        p = logstash_index + len;
+        *p++ = '-';
+
+        t = time(NULL);
+        if (!localtime_r(&t, &tm)) {
+            flb_errno();
+        }
+
+        s = strftime(p, sizeof(logstash_index) - len - 1,
+                     ctx->logstash_dateformat, &tm);
+        p += s;
+        *p++ = '\0';
+
+        index_len = snprintf(j_index,
+                             ES_BULK_HEADER,
+                             ES_BULK_INDEX_FMT,
+                             logstash_index, ctx->type);
+    }
+    else {
+
+        index_len = snprintf(j_index,
+                             ES_BULK_HEADER,
+                             ES_BULK_INDEX_FMT,
+                             ctx->index, ctx->type);
+    }
     off = 0;
 
     msgpack_unpacked_destroy(&result);
@@ -178,7 +216,7 @@ static char *es_format(void *data, size_t bytes, int *out_size,
             continue;
         }
 
-        time  = root.via.array.ptr[0];
+        otime = root.via.array.ptr[0];
         map   = root.via.array.ptr[1];
         map_size = map.via.map.size;
 
@@ -186,12 +224,27 @@ static char *es_format(void *data, size_t bytes, int *out_size,
         msgpack_sbuffer_init(&tmp_sbuf);
         msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 
+        /* Set the new map size */
         msgpack_pack_map(&tmp_pck, map_size + 1);
+        if (ctx->logstash_format == FLB_TRUE) {
+            /* Append the time key */
+            msgpack_pack_str(&tmp_pck, ctx->time_key_len);
+            msgpack_pack_str_body(&tmp_pck, ctx->time_key, ctx->time_key_len);
 
-        /* Append date k/v */
-        msgpack_pack_str(&tmp_pck, 4);
-        msgpack_pack_str_body(&tmp_pck, "date", 4);
-        msgpack_pack_object(&tmp_pck, time);
+            /* Format the time */
+            t = otime.via.u64;
+            gmtime_r(&t, &tm);
+            s = strftime(time_formatted, sizeof(time_formatted) - 1,
+                         ctx->time_key_format, &tm);
+            msgpack_pack_str(&tmp_pck, s);
+            msgpack_pack_str_body(&tmp_pck, time_formatted, s);
+        }
+        else {
+            /* Append date k/v */
+            msgpack_pack_str(&tmp_pck, 4);
+            msgpack_pack_str_body(&tmp_pck, "date", 4);
+            msgpack_pack_object(&tmp_pck, otime);
+        }
 
         /*
          * The map_content routine iterate over each Key/Value pair found in
@@ -243,86 +296,15 @@ int cb_es_init(struct flb_output_instance *ins,
                struct flb_config *config,
                void *data)
 {
-    int io_type;
-    char *tmp;
-    struct flb_uri *uri = ins->host.uri;
-    struct flb_uri_field *f_index = NULL;
-    struct flb_uri_field *f_type = NULL;
-    struct flb_out_es_config *ctx = NULL;
-    struct flb_upstream *upstream;
-    (void) data;
+    struct flb_elasticsearch *ctx;
 
-    if (uri) {
-        if (uri->count >= 2) {
-            f_index = flb_uri_get(uri, 0);
-            f_type  = flb_uri_get(uri, 1);
-        }
-    }
-
-    /* Get network configuration */
-    if (!ins->host.name) {
-        ins->host.name = flb_strdup("127.0.0.1");
-    }
-
-    if (ins->host.port == 0) {
-        ins->host.port = 9200;
-    }
-
-    /* Allocate plugin context */
-    ctx = flb_malloc(sizeof(struct flb_out_es_config));
+    ctx = flb_es_conf_create(ins, config);
     if (!ctx) {
-        perror("malloc");
+        flb_error("[out_es] cannot initialize plugin");
         return -1;
     }
 
-    if (ins->use_tls == FLB_TRUE) {
-        io_type = FLB_IO_TLS;
-    }
-    else {
-        io_type = FLB_IO_TCP;
-    }
-
-    /* Prepare an upstream handler */
-    upstream = flb_upstream_create(config,
-                                   ins->host.name,
-                                   ins->host.port,
-                                   io_type,
-                                   &ins->tls);
-    if (!upstream) {
-        flb_free(ctx);
-        return -1;
-    }
-
-
-    /* Set the context */
-    ctx->u = upstream;
-    if (f_index) {
-        ctx->index = f_index->value;
-    }
-    else {
-        tmp = flb_output_get_property("index", ins);
-        if (!tmp) {
-            ctx->index = "fluentbit";
-        }
-        else {
-            ctx->index = tmp;
-        }
-    }
-
-    if (f_type) {
-        ctx->type = f_type->value;
-    }
-    else {
-        tmp = flb_output_get_property("type", ins);
-        if (!tmp) {
-            ctx->type = "test";
-        }
-        else {
-            ctx->type = tmp;
-        }
-    }
-
-    flb_debug("[es] host=%s port=%i index=%s type=%s",
+    flb_debug("[out_es] host=%s port=%i index=%s type=%s",
               ins->host.name, ins->host.port,
               ctx->index, ctx->type);
 
@@ -339,7 +321,7 @@ void cb_es_flush(void *data, size_t bytes,
     int bytes_out;
     char *pack;
     size_t b_sent;
-    struct flb_out_es_config *ctx = out_context;
+    struct flb_elasticsearch *ctx = out_context;
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
     (void) i_ins;
@@ -353,7 +335,7 @@ void cb_es_flush(void *data, size_t bytes,
     }
 
     /* Convert format */
-    pack = es_format(data, bytes, &bytes_out, ctx);
+    pack = elasticsearch_format(data, bytes, &bytes_out, ctx);
     if (!pack) {
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_ERROR);
@@ -378,11 +360,9 @@ void cb_es_flush(void *data, size_t bytes,
 
 int cb_es_exit(void *data, struct flb_config *config)
 {
-    struct flb_out_es_config *ctx = data;
+    struct flb_elasticsearch *ctx = data;
 
-    flb_upstream_destroy(ctx->u);
-    flb_free(ctx);
-
+    flb_es_conf_destroy(ctx);
     return 0;
 }
 
