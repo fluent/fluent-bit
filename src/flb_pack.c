@@ -418,7 +418,7 @@ static int msgpack2json(char *buf, int *off, size_t left, msgpack_object *o)
         break;
 
     default:
-        flb_warn("[%s] unknown type",__FUNCTION__);
+        flb_warn("[%s] unknown msgpack type %i", __FUNCTION__, o->type);
     }
 
  msg2json_end:
