@@ -29,6 +29,7 @@ set(src
   flb_router.c
   flb_http_client.c
   flb_worker.c
+  flb_time.c
   )
 
 include_directories(
