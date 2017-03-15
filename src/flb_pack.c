@@ -343,8 +343,8 @@ static int msgpack2json(char *buf, int *off, size_t left, msgpack_object *o)
             ret = try_to_write(buf, off, left, temp, i);
         }
         break;
-
-    case MSGPACK_OBJECT_FLOAT:
+    case MSGPACK_OBJECT_FLOAT32:
+    case MSGPACK_OBJECT_FLOAT64:
         {
             char temp[32] = {0};
             i = snprintf(temp, sizeof(temp)-1, "%f", o->via.f64);
@@ -366,6 +366,28 @@ static int msgpack2json(char *buf, int *off, size_t left, msgpack_object *o)
             try_to_write(buf, off, left, "\"", 1)) {
             ret = FLB_TRUE;
         }
+        break;
+
+    case MSGPACK_OBJECT_EXT:
+        if (!try_to_write(buf, off, left, "\"", 1)) {
+            goto msg2json_end;
+        }
+        /* ext body. fortmat is similar to printf(1) */
+        {
+            char temp[32] = {0};
+            int  len;
+            loop = o->via.ext.size;
+            for(i=0; i<loop; i++) {
+                len = snprintf(temp, sizeof(temp)-1, "\\x%02x", (char)o->via.ext.ptr[i]);
+                if (!try_to_write(buf, off, left, temp, len)) {
+                    goto msg2json_end;
+                }
+            }
+        }
+        if (!try_to_write(buf, off, left, "\"", 1)) {
+            goto msg2json_end;
+        }
+        ret = FLB_TRUE;
         break;
 
     case MSGPACK_OBJECT_ARRAY:
