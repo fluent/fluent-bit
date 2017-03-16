@@ -29,6 +29,9 @@
  * - Get return Status, Headers and Body content if found.
  */
 
+#define _GNU_SOURCE
+#include <string.h>
+
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_http_client.h>
@@ -43,6 +46,43 @@ static int header_available(struct flb_http_client *c, int bytes)
         return -1;
     }
 
+    return 0;
+}
+
+/* Under HTTP/1.1 mode and Content Length not found (yet) */
+static int check_content_length(struct flb_http_client *c)
+{
+    int bytes;
+    char *cl;
+    char *crlf;
+    char tmp[256];
+
+    cl = strcasestr(c->resp.data, "Content-Length: ");
+    if (!cl) {
+        /* Not found */
+        return 0;
+    }
+
+    /* Check we have a valid \r\n after the Content Length header */
+    crlf = strcasestr(cl, "\r\n");
+    if (!crlf) {
+        return 0;
+    }
+
+    /* Get the number of bytes in the header value */
+    bytes = (crlf - cl);
+    if (bytes <= 0) {
+        return 0;
+    }
+
+    if (bytes > 255) {
+        return -1;
+    }
+
+    memcpy(tmp, cl + 16, bytes);
+    tmp[bytes] = '\0';
+
+    c->resp.content_length = atoi(tmp);
     return 0;
 }
 
@@ -219,8 +259,11 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
     c->header_len  = ret;
     c->flags       = flags;
 
+    /* Response */
+    c->resp.content_length = -1;
+
     if ((flags & FLB_HTTP_10) == 0) {
-        flags |= FLB_HTTP_11;
+        c->flags |= FLB_HTTP_11;
     }
 
     if (body && body_len > 0) {
@@ -349,7 +392,7 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
     c->resp.data_len = 0;
     while (1) {
         if (c->flags & FLB_HTTP_11) {
-            if (c->resp.data_len < 19) {
+            if (c->resp.data_len > 19) {
                 break;
             }
         }
@@ -371,6 +414,18 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
 
         c->resp.data_len += r_bytes;
         c->resp.data[c->resp.data_len] = '\0';
+
+        if ((c->flags & FLB_HTTP_11) && c->resp.content_length == -1) {
+            if (check_content_length(c) == -1) {
+                break;
+            }
+        }
+
+        if (c->resp.content_length > 0) {
+            if (c->resp.payload_size >= c->resp.content_length) {
+                break;
+            }
+        }
     }
 
     process_response(c);
