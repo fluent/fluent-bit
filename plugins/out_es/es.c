@@ -345,10 +345,16 @@ void cb_es_flush(void *data, size_t bytes,
     c = flb_http_client(u_conn, FLB_HTTP_POST, "/_bulk",
                         pack, bytes_out, NULL, 0, NULL, 0);
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
-    flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
 
     ret = flb_http_do(c, &b_sent);
-    flb_debug("[out_es] http_do=%i", ret);
+
+    if (ret == 0) {
+        flb_debug("[out_es] HTTP Status=%i\n%s", c->resp.status,
+                  c->resp.payload);
+    }
+    else {
+        flb_warn("[out_es] http_do=%i\n%s", ret);
+    }
     flb_http_client_destroy(c);
 
     flb_free(pack);

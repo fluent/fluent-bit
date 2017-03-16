@@ -48,7 +48,7 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
     struct flb_elasticsearch *ctx;
 
     /* Allocate context */
-    ctx = flb_malloc(sizeof(struct flb_elasticsearch));
+    ctx = flb_calloc(1, sizeof(struct flb_elasticsearch));
     if (!ctx) {
         flb_errno();
         return NULL;
@@ -184,12 +184,10 @@ int flb_es_conf_destroy(struct flb_elasticsearch *ctx)
     flb_free(ctx->index);
     flb_free(ctx->type);
 
-    if (ctx->logstash_format == FLB_TRUE) {
-        flb_free(ctx->logstash_prefix);
-        flb_free(ctx->logstash_dateformat);
-        flb_free(ctx->time_key);
-        flb_free(ctx->time_key_format);
-    }
+    flb_free(ctx->logstash_prefix);
+    flb_free(ctx->logstash_dateformat);
+    flb_free(ctx->time_key);
+    flb_free(ctx->time_key_format);
 
     flb_upstream_destroy(ctx->u);
     flb_free(ctx);
