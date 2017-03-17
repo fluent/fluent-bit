@@ -119,8 +119,13 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
 
 void flb_kube_conf_destroy(struct flb_kube *ctx)
 {
-    flb_hash_destroy(ctx->hash_table);
-    flb_regex_destroy(ctx->regex_tag);
+    if (ctx->hash_table) {
+        flb_hash_destroy(ctx->hash_table);
+    }
+
+    if (ctx->regex_tag) {
+        flb_regex_destroy(ctx->regex_tag);
+    }
 
     flb_free(ctx->api_host);
     flb_free(ctx->tls_ca_file);
