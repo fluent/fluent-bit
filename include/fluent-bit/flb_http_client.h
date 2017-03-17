@@ -41,13 +41,27 @@
 #define FLB_HTTP_PROXY_HTTP       1
 #define FLB_HTTP_PROXY_HTTPS      2
 
+/* Internal codes */
+#define FLB_HTTP_ERROR           -1
+#define FLB_HTTP_MORE             0
+#define FLB_HTTP_OK               1
+
 struct flb_http_response {
-    int status;
-    int content_length;
-    char  data[1024 * 8];   /* 8 KB */
-    size_t data_len;
+    int status;                /* HTTP response status          */
+    int content_length;        /* Content length set by headers */
+    int chunked_encoding;      /* Chunked transfer encoding ?   */
+    long chunked_cur_size;
+    long chunked_exp_size;     /* expected chunked size         */
+    char *chunk_processed_end; /* Position to mark last chunk   */
+    char *headers_end;         /* Headers end (\r\n\r\n)        */
+
+    /* Payload: body response */
     char *payload;
     size_t payload_size;
+
+    /* Buffer to store server response */
+    char  data[1024 * 8];   /* 8 KB */
+    size_t data_len;
 };
 
 /* It hold information about a possible HTTP proxy set by the caller */

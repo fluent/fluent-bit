@@ -355,6 +355,7 @@ void cb_es_flush(void *data, size_t bytes,
     else {
         flb_warn("[out_es] http_do=%i\n%s", ret);
     }
+    printf("%s", c->resp.payload);
     flb_http_client_destroy(c);
 
     flb_free(pack);

@@ -49,65 +49,277 @@ static int header_available(struct flb_http_client *c, int bytes)
     return 0;
 }
 
-/* Under HTTP/1.1 mode and Content Length not found (yet) */
-static int check_content_length(struct flb_http_client *c)
+/* Try to find a header value in the buffer */
+static int header_lookup(struct flb_http_client *c,
+                         char *header, int header_len,
+                         char **out_val, int *out_len)
 {
-    int bytes;
-    char *cl;
+    char *p;
     char *crlf;
-    char tmp[256];
 
-    cl = strcasestr(c->resp.data, "Content-Length: ");
-    if (!cl) {
-        /* Not found */
-        return 0;
+    /* Lookup the beginning of the header */
+    p = strcasestr(c->resp.data, header);
+    if (!p) {
+        return FLB_HTTP_MORE;
     }
 
-    /* Check we have a valid \r\n after the Content Length header */
-    crlf = strcasestr(cl, "\r\n");
+    /* Lookup CRLF (end of line \r\n) */
+    crlf = strstr(p, "\r\n");
     if (!crlf) {
-        return 0;
+        return FLB_HTTP_MORE;
     }
 
-    /* Get the number of bytes in the header value */
-    bytes = (crlf - cl);
-    if (bytes <= 0) {
-        return 0;
-    }
+    p += header_len;
 
-    if (bytes > 255) {
-        return -1;
-    }
+    *out_val = p;
+    *out_len = (crlf - p);
 
-    memcpy(tmp, cl + 16, bytes);
-    tmp[bytes] = '\0';
-
-    c->resp.content_length = atoi(tmp);
-    return 0;
+    return FLB_HTTP_OK;
 }
 
-static int process_response(struct flb_http_client *c)
+/* HTTP/1.1: Check if we have a Chunked Transfer Encoding */
+static int check_chunked_encoding(struct flb_http_client *c)
 {
-    char *tmp;
+    int ret;
+    int len;
+    char *header;
 
-    tmp = mk_string_copy_substr(c->resp.data, 9, 12);
-    c->resp.status = atoi(tmp);
-    mk_mem_free(tmp);
+    ret = header_lookup(c, "Transfer-Encoding: ", 19,
+                        &header, &len);
+    if (ret == -1) {
+        return FLB_HTTP_MORE;
+    }
 
-    /* set payload */
-    tmp = strstr(c->resp.data, "\r\n\r\n");
-    if (tmp) {
-        if ((tmp - c->resp.data + 4) < c->resp.data_len) {
-            c->resp.payload = tmp += 4;
-            c->resp.payload_size = (c->resp.data_len - (tmp - c->resp.data));
+    if (strncasecmp(header, "chunked", len) == 0) {
+        c->resp.chunked_encoding = FLB_TRUE;
+    }
+
+    return FLB_HTTP_OK;
+}
+
+/* Check and set Content Length */
+static int check_content_length(struct flb_http_client *c)
+{
+    int ret;
+    int len;
+    char *header;
+    char tmp[256];
+
+    ret = header_lookup(c, "Content-Length: ", 16,
+                        &header, &len);
+    if (ret == FLB_HTTP_MORE) {
+        return FLB_HTTP_MORE;
+    }
+
+    if (len > sizeof(tmp) - 1) {
+        /* Value too long */
+        return FLB_HTTP_ERROR;
+    }
+
+    /* Copy to temporary buffer */
+    memcpy(tmp, header, len);
+    tmp[len] = '\0';
+
+    c->resp.content_length = atoi(tmp);
+    return FLB_HTTP_OK;
+}
+
+static inline void consume_bytes(char *buf, int bytes, int length)
+{
+    memmove(buf, buf + bytes, length - bytes);
+}
+
+static int process_chunked_data(struct flb_http_client *c)
+{
+    long len;
+    long drop;
+    long val;
+    char *p;
+    char tmp[32];
+    struct flb_http_response *r = &c->resp;
+
+ chunk_start:
+    p = strstr(r->chunk_processed_end, "\r\n");
+    if (!p) {
+        return FLB_HTTP_MORE;
+    }
+
+    /* Hexa string length */
+    len = (p - r->chunk_processed_end);
+    if ((len > sizeof(tmp) - 1) || len == 0) {
+        return FLB_HTTP_ERROR;
+    }
+    p += 2;
+
+    /* Copy hexa string to temporary buffer */
+    memcpy(tmp, r->chunk_processed_end, len);
+    tmp[len] = '\0';
+
+    /* Convert hexa string to decimal */
+    errno = 0;
+    val = strtol(tmp, NULL, 16);
+    if ((errno == ERANGE && (val == LONG_MAX || val == LONG_MIN))
+        || (errno != 0 && val == 0)) {
+        flb_errno();
+        return FLB_HTTP_ERROR;
+    }
+
+    /*
+     * 'val' contains the expected number of bytes, check current lengths
+     * and do buffer adjustments.
+     *
+     * we do val + 2 because the chunk always ends with \r\n
+     */
+    val += 2;
+
+    /* Number of bytes after the Chunk header */
+    len = r->data_len - (p - r->data);
+    if (len < val) {
+        return FLB_HTTP_MORE;
+    }
+
+    /* From the current chunk we expect it ends with \r\n */
+    if (p[val -2] != '\r' || p[val - 1] != '\n') {
+        return FLB_HTTP_ERROR;
+    }
+
+    /*
+     * At this point we are just fine, the chunk is valid, next steps:
+     *
+     * 1. check possible last chunk
+     * 2. drop chunk header from the buffer
+     * 3. remove chunk ending \r\n
+     */
+
+    /* 1. Validate ending chunk */
+    if (val - 2 == 0) {
+        /*
+         * For an ending chunk we expect:
+         *
+         * 0\r\n
+         * \r\n
+         *
+         * so at least we need 5 bytes in the buffer
+         */
+        len = r->data_len - (r->chunk_processed_end - r->data);
+        if (len < 5) {
+            return FLB_HTTP_MORE;
+        }
+
+        if (r->chunk_processed_end[3] != '\r' ||
+            r->chunk_processed_end[4] != '\n') {
+            return FLB_HTTP_ERROR;
         }
     }
-    else {
-        c->resp.payload = NULL;
-        c->resp.payload_size = 0;
+
+    /* 2. Drop chunk header */
+    drop = (p - r->chunk_processed_end);
+    len =  r->data_len - (r->chunk_processed_end - r->data);
+    consume_bytes(r->chunk_processed_end, drop, len);
+    r->data_len -= drop;
+    r->data[r->data_len] = '\0';
+
+    /* 3. Remove chunk ending \r\n */
+    drop = 2;
+    r->chunk_processed_end += abs(val - 2);
+    len = r->data_len - (r->chunk_processed_end - r->data);
+    consume_bytes(r->chunk_processed_end, drop, len);
+    r->data_len -= drop;
+
+    /* Always append a NULL byte */
+    r->data[r->data_len] = '\0';
+
+    /* Is this the last chunk ? */
+    if ((val - 2 == 0)) {
+        /* Update payload size */
+        r->payload_size = r->data_len - (r->headers_end - r->data);
+        return FLB_HTTP_OK;
     }
 
-    return 0;
+    /* If we have some remaining bytes, start over */
+    len = r->data_len - (r->chunk_processed_end - r->data);
+    if (len > 0) {
+        goto chunk_start;
+    }
+
+    return FLB_HTTP_MORE;
+}
+
+static int process_data(struct flb_http_client *c)
+{
+    int ret;
+    char code[4];
+    char *tmp;
+
+    if (c->resp.data_len < 15) {
+        /* we need more data */
+        return FLB_HTTP_MORE;
+    }
+
+    /* HTTP response status */
+    if (c->resp.status <= 0) {
+        memcpy(code, c->resp.data + 9, 3);
+        code[3] = '\0';
+        c->resp.status = atoi(code);
+    }
+
+    /* Try to lookup content length */
+    if (c->resp.content_length == -1 && c->resp.chunked_encoding == FLB_FALSE) {
+        ret = check_content_length(c);
+        if (ret == FLB_HTTP_ERROR) {
+            return FLB_HTTP_ERROR;
+        }
+    }
+
+    /* Chunked encoding for HTTP/1.1 (no content length of course) */
+    if ((c->flags & FLB_HTTP_11) && c->resp.content_length == -1) {
+        if (c->resp.chunked_encoding == FLB_FALSE) {
+            ret = check_chunked_encoding(c);
+            if (ret == FLB_HTTP_ERROR) {
+                return FLB_HTTP_ERROR;
+            }
+        }
+    }
+
+    if (!c->resp.headers_end) {
+        tmp = strstr(c->resp.data, "\r\n\r\n");
+        if (tmp) {
+            c->resp.headers_end = tmp + 4;
+            if (c->resp.chunked_encoding == FLB_TRUE) {
+                c->resp.chunk_processed_end = c->resp.headers_end;
+            }
+
+            /* Mark the payload */
+            if ((tmp - c->resp.data + 4) < c->resp.data_len) {
+                c->resp.payload = tmp += 4;
+                c->resp.payload_size = (c->resp.data_len - (tmp - c->resp.data));
+            }
+        }
+        else {
+            return FLB_HTTP_MORE;
+        }
+    }
+
+    /* Re-check if an ending exists, if so process payload if required */
+    if (c->resp.headers_end && c->resp.payload) {
+        if (c->resp.content_length >= 0) {
+            c->resp.payload_size = c->resp.data_len - (c->resp.headers_end -c->resp.data);
+            if (c->resp.payload_size >= c->resp.content_length) {
+                return FLB_HTTP_OK;
+            }
+        }
+        else if (c->resp.chunked_encoding == FLB_TRUE) {
+            ret = process_chunked_data(c);
+            if (ret == FLB_HTTP_ERROR) {
+                return FLB_HTTP_ERROR;
+            }
+            else if (ret == FLB_HTTP_OK) {
+                return FLB_HTTP_OK;
+            }
+        }
+    }
+
+    return FLB_HTTP_MORE;
 }
 
 static int proxy_parse(char *proxy, struct flb_http_client *c)
@@ -371,7 +583,7 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
                            c->header_buf, c->header_len,
                            &bytes_header);
     if (ret == -1) {
-        perror("write");
+        flb_errno();
         return -1;
     }
 
@@ -380,7 +592,7 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
                                c->body_buf, c->body_len,
                                &bytes_body);
         if (ret == -1) {
-            perror("write");
+            flb_errno();
             return -1;
         }
     }
@@ -391,12 +603,6 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
     /* Read the server response, we need at least 19 bytes */
     c->resp.data_len = 0;
     while (1) {
-        if (c->flags & FLB_HTTP_11) {
-            if (c->resp.data_len > 19) {
-                break;
-            }
-        }
-
         available = ((sizeof(c->resp.data) - 1) - c->resp.data_len);
         if (available < 1) {
             return -1;
@@ -409,26 +615,24 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
             if (c->flags & FLB_HTTP_10) {
                 break;
             }
-            return -1;
         }
 
+        /* Always append a NULL byte */
         c->resp.data_len += r_bytes;
         c->resp.data[c->resp.data_len] = '\0';
 
-        if ((c->flags & FLB_HTTP_11) && c->resp.content_length == -1) {
-            if (check_content_length(c) == -1) {
-                break;
-            }
+        ret = process_data(c);
+        if (ret == FLB_HTTP_ERROR) {
+            return -1;
         }
-
-        if (c->resp.content_length > 0) {
-            if (c->resp.payload_size >= c->resp.content_length) {
-                break;
-            }
+        else if (ret == FLB_HTTP_OK) {
+            break;
+        }
+        else if (ret == FLB_HTTP_MORE) {
+            continue;
         }
     }
 
-    process_response(c);
     return 0;
 }
 

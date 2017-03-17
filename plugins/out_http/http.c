@@ -335,11 +335,17 @@ void cb_http_flush(void *data, size_t bytes,
          *  - 205: Reset content
          */
         if (c->resp.status < 200 || c->resp.status > 205) {
-            flb_error("[out_http] http_status=%i", c->resp.status);
+            flb_error("[out_http] HTTP STATUS=%i", c->resp.status);
             out_ret = FLB_RETRY;
         }
         else {
-            flb_debug("[out_http] http_status=%i", c->resp.status);
+            if (c->resp.payload) {
+                flb_info("[out_http] HTTP STATUS=%i\n%s",
+                         c->resp.status, c->resp.payload);
+            }
+            else {
+                flb_info("[out_http] HTTP STATUS=%i", c->resp.status);
+            }
         }
     }
     else {
