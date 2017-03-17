@@ -31,6 +31,9 @@ static int bool_value(char *v)
     else if (strcasecmp(v, "on") == 0) {
         return FLB_TRUE;
     }
+    else if (strcasecmp(v, "yes") == 0) {
+        return FLB_TRUE;
+    }
 
     return FLB_FALSE;
 }
