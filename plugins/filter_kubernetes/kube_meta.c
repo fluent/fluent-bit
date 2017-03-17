@@ -145,6 +145,10 @@ static int get_api_server_info(struct flb_kube *ctx,
     struct flb_http_client *c;
     struct flb_upstream_conn *u_conn;
 
+    if (!ctx->upstream) {
+        return -1;
+    }
+
     u_conn = flb_upstream_conn_get(ctx->upstream);
     if (!u_conn) {
         flb_error("[filter_kube] upstream connection error");
@@ -479,6 +483,8 @@ static int get_and_merge_meta(struct flb_kube *ctx, struct flb_kube_meta *meta,
 static int flb_kube_network_init(struct flb_kube *ctx, struct flb_config *config)
 {
     int io_type = FLB_IO_TCP;
+
+    ctx->upstream = NULL;
 
     if (ctx->api_https == FLB_TRUE) {
         ctx->tls_ca_file  = flb_strdup(FLB_KUBE_CA);
