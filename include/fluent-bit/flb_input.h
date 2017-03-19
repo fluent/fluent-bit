@@ -596,6 +596,13 @@ static inline void flb_input_dbuf_write_end(struct flb_input_dyntag *dt)
         return;
     }
 
+    if (flb_input_buf_paused(in) == FLB_TRUE) {
+        dt->mp_sbuf.size = dt->mp_buf_write_size;
+        flb_debug("[input] %s is paused, cannot append records",
+                  in->name);
+        return;
+    }
+
     /* Call the filter handler */
     buf = dt->mp_sbuf.data + dt->mp_buf_write_size;
     flb_filter_do(&dt->mp_sbuf, &dt->mp_pck,
@@ -605,6 +612,9 @@ static inline void flb_input_dbuf_write_end(struct flb_input_dyntag *dt)
     /* Itearate each dyntag structure and count total bytes */
     flb_input_buf_size_set(in);
     flb_debug("[input %s] [mem buf] size = %lu", in->name, in->mp_total_buf_size);
+
+    /* Check if we are over the buf limit */
+    flb_input_buf_check(in);
 }
 
 static inline void FLB_INPUT_RETURN()
