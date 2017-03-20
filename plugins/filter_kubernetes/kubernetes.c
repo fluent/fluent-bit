@@ -120,7 +120,6 @@ static int cb_kube_filter(void *data, size_t bytes,
             msgpack_pack_object(&tmp_pck, v);
         }
 
-
         /* Append Kubernetes metadata */
         msgpack_pack_str(&tmp_pck, 10);
         msgpack_pack_str_body(&tmp_pck, "kubernetes", 10);

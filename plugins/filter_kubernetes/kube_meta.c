@@ -176,6 +176,12 @@ static int get_api_server_info(struct flb_kube *ctx,
     flb_debug("[filter_kube] API Server (ns=%s, pod=%s) http_do=%i, HTTP Status: %i",
               namespace, podname, ret, c->resp.status);
 
+    if (ret != 0 || c->resp.status != 200) {
+        flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
+        return -1;
+    }
+
     ret = flb_pack_json(c->resp.payload, c->resp.payload_size,
                         &buf, &size);
 
@@ -253,7 +259,7 @@ static int merge_meta(char *reg_buf, size_t reg_size,
      * - annotations
      */
 
-    /* Initialize msgpack buffers */
+    /* Initialize output msgpack buffer */
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
@@ -330,8 +336,6 @@ static int merge_meta(char *reg_buf, size_t reg_size,
         else if (size == 11 && strncmp(ptr, "annotations", 11) == 0) {
             have_annotations = i;
             map_size++;
-            msgpack_pack_object(&mp_pck, k);
-            msgpack_pack_object(&mp_pck, v);
         }
 
         if (have_uid >= 0 && have_labels >= 0 && have_annotations >= 0) {
