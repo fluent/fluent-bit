@@ -115,6 +115,9 @@ static inline int pack_line_map(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck
                              file->config->path_key_len,
                              file->name, file->name_len);
     }
+
+    msgpack_pack_array(mp_pck, 2);
+    msgpack_pack_uint64(mp_pck, time);
     msgpack_sbuffer_write(mp_sbuf, *data, *data_size);
 
     return 0;
@@ -205,7 +208,7 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
                     out_time = t;
                 }
                 pack_line_map(out_sbuf, out_pck, out_time,
-                          (char**)&out_buf, &out_size, file);
+                              (char**)&out_buf, &out_size, file);
                 flb_free(out_buf);
             }
             else {
