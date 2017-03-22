@@ -20,9 +20,31 @@
 #ifndef FLB_OUT_FORWARD
 #define FLB_OUT_FORWARD
 
+#include <fluent-bit/flb_info.h>
+
+#ifdef FLB_HAVE_TLS
+#include <mbedtls/entropy.h>
+#include <mbedtls/error.h>
+#include <mbedtls/ctr_drbg.h>
+#endif
+
 struct flb_out_forward_config {
-    size_t tag_len;
-    char *tag;
+    int secured;              /* Using Secure Forward mode ?  */
+
+    /* config */
+    int shared_key_len;       /* shared key length            */
+    char *shared_key;         /* shared key                   */
+    int self_hostname_len;    /* hostname length              */
+    char *self_hostname;      /* hostname used in certificate */
+
+    /* mbedTLS specifics */
+#ifdef FLB_HAVE_TLS
+    unsigned char shared_key_salt[16];
+    mbedtls_entropy_context tls_entropy;
+    mbedtls_ctr_drbg_context tls_ctr_drbg;
+#endif
+
+    /* Upstream handler */
     struct flb_upstream *u;
 };
 

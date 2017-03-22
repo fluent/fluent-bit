@@ -17,25 +17,296 @@
  *  limitations under the License.
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <assert.h>
-
-#include <msgpack.h>
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_network.h>
+#include <msgpack.h>
 
 #include "forward.h"
 
 struct flb_output_plugin out_forward_plugin;
 
+#define SECURED_BY "Fluent Bit"
+
+#ifdef FLB_HAVE_TLS
+
+#define secure_forward_tls_error(ret) \
+    _secure_forward_tls_error(ret, __FILE__, __LINE__)
+
+void _secure_forward_tls_error(int ret, char *file, int line)
+{
+    char err_buf[72];
+
+    mbedtls_strerror(ret, err_buf, sizeof(err_buf));
+    flb_error("[io_tls] flb_io_tls.c:%i %s", line, err_buf);
+}
+#endif
+
+static inline void print_msgpack_status(int ret, char *context)
+{
+    switch (ret) {
+    case MSGPACK_UNPACK_EXTRA_BYTES:
+        flb_error("[out_fw] %s MSGPACK_UNPACK_EXTRA_BYTES", context);
+        break;
+    case MSGPACK_UNPACK_CONTINUE:
+        flb_trace("[out_fw] %s MSGPACK_UNPACK_CONTINUE", context);
+        break;
+    case MSGPACK_UNPACK_PARSE_ERROR:
+        flb_error("[out_fw] %s MSGPACK_UNPACK_PARSE_ERROR", context);
+        break;
+    case MSGPACK_UNPACK_NOMEM_ERROR:
+        flb_error("[out_fw] %s MSGPACK_UNPACK_NOMEM_ERROR", context);
+        break;
+    }
+}
+
+/* Read a secure forward msgpack message */
+static int secure_forward_read(struct flb_upstream_conn *u_conn,
+                               char *buf, size_t size, size_t *out_len)
+{
+    int ret;
+    size_t off;
+    size_t avail;
+    size_t buf_off = 0;
+    msgpack_unpacked result;
+
+    msgpack_unpacked_init(&result);
+    while (1) {
+        avail = size - buf_off;
+        if (avail < 1) {
+            goto error;
+        }
+
+        /* Read the message */
+        ret = flb_io_net_read(u_conn, buf + buf_off, size - buf_off);
+        if (ret <= 0) {
+            goto error;
+        }
+        buf_off += ret;
+
+        /* Validate */
+        off = 0;
+        ret = msgpack_unpack_next(&result, buf, buf_off, &off);
+        switch (ret) {
+        case MSGPACK_UNPACK_SUCCESS:
+            *out_len = buf_off;
+            return 0;
+        default:
+            print_msgpack_status(ret, "handshake");
+            goto error;
+        };
+    }
+
+ error:
+    msgpack_unpacked_destroy(&result);
+    return -1;
+}
+
+#ifdef FLB_HAVE_TLS
+
+
+static void secure_forward_bin_to_hex(uint8_t *buf, size_t len, char *out)
+{
+    int i;
+    char map[] = "0123456789abcdef";
+
+	for (i = 0; i < len; i++) {
+		out[i * 2]     = map[buf[i] >> 4];
+        out[i * 2 + 1] = map[buf[i] & 0x0f];
+	}
+}
+
+static int secure_forward_ping(struct flb_upstream_conn *u_conn,
+                               msgpack_object map,
+                               struct flb_out_forward_config *ctx)
+{
+    int i;
+    int ret;
+    uint8_t *nonce_data;
+    int nonce_size;
+    size_t bytes_sent;
+    unsigned char shared_key[64];
+    char shared_key_hexdigest[128];
+    msgpack_object key;
+    msgpack_object val;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+    mbedtls_sha512_context sha512;
+
+    /* Lookup nonce field */
+    for (i = 0; i < map.via.map.size; i++) {
+        key = map.via.map.ptr[i].key;
+        if (strncmp(key.via.str.ptr, "nonce", 5) == 0 &&
+            key.via.str.size == 5){
+            val = map.via.map.ptr[i].val;
+            break;
+        }
+    }
+
+    if (i >= map.via.map.size) {
+        flb_error("[out_fw] nonce not found");
+        return -1;
+    }
+
+    nonce_data = val.via.bin.ptr;
+    nonce_size = val.via.bin.size;
+
+    /* Compose the shared key */
+    mbedtls_sha512_init(&sha512);
+    mbedtls_sha512_update(&sha512, ctx->shared_key_salt, 16);
+    mbedtls_sha512_update(&sha512,
+                          (unsigned char *) ctx->self_hostname,
+                          ctx->self_hostname_len);
+    mbedtls_sha512_update(&sha512,
+                          nonce_data, nonce_size);
+    mbedtls_sha512_update(&sha512, (unsigned char *) ctx->shared_key,
+                          ctx->shared_key_len);
+    mbedtls_sha512_finish(&sha512, shared_key);
+    mbedtls_sha512_free(&sha512);
+
+    /* Make hex digest representation of the new shared key */
+    secure_forward_bin_to_hex(shared_key, 64, shared_key_hexdigest);
+
+    /* Prepare outgoing msgpack PING */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    msgpack_pack_array(&mp_pck, 6);
+
+    /* [0] PING */
+    msgpack_pack_str(&mp_pck, 4);
+    msgpack_pack_str_body(&mp_pck, "PING", 4);
+
+    /* [1] Hostname */
+    msgpack_pack_str(&mp_pck, ctx->self_hostname_len);
+    msgpack_pack_str_body(&mp_pck, ctx->self_hostname, ctx->self_hostname_len);
+
+    /* [2] Shared key salt */
+    msgpack_pack_bin(&mp_pck, 16);
+    msgpack_pack_bin_body(&mp_pck, ctx->shared_key_salt, 16);
+
+    /* [3] Shared key in Hexdigest format */
+    msgpack_pack_str(&mp_pck, 128);
+    msgpack_pack_str_body(&mp_pck, shared_key_digest, 128);
+
+    /* [4] Username (disabled) */
+    msgpack_pack_str(&mp_pck, 0);
+    msgpack_pack_str_body(&mp_pck, "", 0);
+
+    /* [5] Password-hexdigest (disabled) */
+    msgpack_pack_str(&mp_pck, 0);
+    msgpack_pack_str_body(&mp_pck, "", 0);
+
+    ret = flb_io_net_write(u_conn, mp_sbuf.data, mp_sbuf.size, &bytes_sent);
+    flb_debug("[out_fw] PING sent: ret=%i bytes sent=%lu\n", ret, bytes_sent);
+
+    flb_pack_print(mp_sbuf.data, mp_sbuf.size);
+
+    return 0;
+}
+
+static int secure_forward_handshake(struct flb_upstream_conn *u_conn,
+                                    struct flb_out_forward_config *ctx)
+{
+    int ret;
+    char buf[1024];
+    size_t out_len;
+    size_t off;
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_object o;
+
+    /* Wait for server HELO */
+    ret = secure_forward_read(u_conn, buf, sizeof(buf) - 1, &out_len);
+    if (ret == -1) {
+        flb_error("[out_fw] handshake error expecting HELO");
+        return -1;
+    }
+
+    /* Unpack message and validate */
+    off = 0;
+    msgpack_unpacked_init(&result);
+    ret = msgpack_unpack_next(&result, buf, out_len, &off);
+    if (ret != MSGPACK_UNPACK_SUCCESS) {
+        print_msgpack_status(ret, "HELO");
+        return -1;
+    }
+
+    /* Parse HELO message */
+    root = result.data;
+    if (root.via.array.size < 2) {
+        flb_error("[out_fw] Invalid HELO message");
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+
+    o = root.via.array.ptr[0];
+    if (o.type != MSGPACK_OBJECT_STR) {
+        flb_error("[out_fw] Invalid HELO type message");
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+
+    if (strncmp(o.via.str.ptr, "HELO", 4) != 0 || o.via.str.size != 4) {
+        flb_error("[out_fw] Invalid HELO content message");
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+
+    flb_debug("[out_fw] protocol: received HELO");
+
+    /* Compose and send PING message */
+    o = root.via.array.ptr[1];
+    ret = secure_forward_ping(u_conn, o, ctx);
+    if (ret == -1) {
+        flb_error("[out_fw] Failed PING");
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+
+    /* Expect a PONG */
+    ret = secure_forward_read(u_conn, buf, sizeof(buf) - 1, &out_len);
+    if (ret == -1) {
+        flb_error("[out_fw] handshake error expecting HELO");
+        return -1;
+    }
+    flb_pack_print(buf, out_len);
+    exit(0);
+    return 0;
+}
+
+static int secure_forward_init(struct flb_out_forward_config *ctx)
+{
+    int ret;
+
+    /* Initialize mbedTLS entropy contexts */
+    mbedtls_entropy_init(&ctx->tls_entropy);
+    mbedtls_ctr_drbg_init(&ctx->tls_ctr_drbg);
+
+    ret = mbedtls_ctr_drbg_seed(&ctx->tls_ctr_drbg,
+                                mbedtls_entropy_func,
+                                &ctx->tls_entropy,
+                                (const unsigned char *) SECURED_BY,
+                                sizeof(SECURED_BY) -1);
+    if (ret == -1) {
+        secure_forward_tls_error(ret);
+        return -1;
+    }
+
+    /* Gernerate shared key salt */
+    mbedtls_ctr_drbg_random(&ctx->tls_ctr_drbg, ctx->shared_key_salt, 16);
+
+    return 0;
+}
+#endif
+
 int cb_forward_init(struct flb_output_instance *ins, struct flb_config *config,
                     void *data)
 {
+    int io_type;
+    char *tmp;
     struct flb_out_forward_config *ctx;
     struct flb_upstream *upstream;
-    struct flb_uri_field *f_tag = NULL;
     (void) data;
 
     ctx = flb_calloc(1, sizeof(struct flb_out_forward_config));
@@ -43,6 +314,7 @@ int cb_forward_init(struct flb_output_instance *ins, struct flb_config *config,
         perror("calloc");
         return -1;
     }
+    ctx->secured = FLB_FALSE;
 
     /* Set default network configuration */
     if (!ins->host.name) {
@@ -52,26 +324,57 @@ int cb_forward_init(struct flb_output_instance *ins, struct flb_config *config,
         ins->host.port = 24224;
     }
 
+
+    /* Check if TLS is enabled */
+#ifdef FLB_HAVE_TLS
+    if (ins->use_tls == FLB_TRUE) {
+        io_type = FLB_IO_TLS;
+        ctx->secured = FLB_TRUE;
+    }
+    else {
+        io_type = FLB_IO_TCP;
+    }
+#else
+    io_type = FLB_IO_TCP;
+#endif
+
     /* Prepare an upstream handler */
     upstream = flb_upstream_create(config,
                                    ins->host.name,
                                    ins->host.port,
-                                   FLB_IO_TCP, NULL);
+                                   io_type, (void *) &ins->tls);
     if (!upstream) {
         flb_free(ctx);
         return -1;
     }
     ctx->u = upstream;
-    ctx->tag = FLB_CONFIG_DEFAULT_TAG;
-    ctx->tag_len = sizeof(FLB_CONFIG_DEFAULT_TAG) - 1;
 
-    if (ins->host.uri) {
-        if (ins->host.uri->count > 0) {
-            f_tag = flb_uri_get(ins->host.uri, 0);
-            ctx->tag     = f_tag->value;
-            ctx->tag_len = f_tag->length;
+    if (ctx->secured == FLB_TRUE) {
+        /* Shared Key */
+        tmp = flb_output_get_property("shared_key", ins);
+        if (tmp) {
+            ctx->shared_key = flb_strdup(tmp);
+            ctx->shared_key_len = strlen(ctx->shared_key);
+        }
+
+        /* Self Hostname */
+        tmp = flb_output_get_property("self_hostname", ins);
+        if (tmp) {
+            ctx->self_hostname = flb_strdup(tmp);
+            ctx->self_hostname_len = strlen(ctx->self_hostname);
         }
     }
+
+#ifdef FLB_HAVE_TLS
+    /* Initialize Secure Forward mode */
+    if (ctx->secured == FLB_TRUE) {
+        if (!ctx->shared_key) {
+            flb_error("[out_fw] secure mode requires a shared_key");
+            return -1;
+        }
+        secure_forward_init(ctx);
+    }
+#endif
 
     flb_output_set_context(ins, ctx);
     return 0;
@@ -79,9 +382,11 @@ int cb_forward_init(struct flb_output_instance *ins, struct flb_config *config,
 
 int cb_forward_exit(void *data, struct flb_config *config)
 {
-    (void) config;
     struct flb_out_forward_config *ctx = data;
+    (void) config;
 
+    flb_free(ctx->shared_key);
+    flb_free(ctx->self_hostname);
     flb_upstream_destroy(ctx->u);
     flb_free(ctx);
 
@@ -130,15 +435,21 @@ void cb_forward_flush(void *data, size_t bytes,
     /* Get a TCP connection instance */
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
-        flb_error("[out_forward] no upstream connections available");
+        flb_error("[out_fw] no upstream connections available");
         msgpack_sbuffer_destroy(&mp_sbuf);
         FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
+    /* Secure Forward ? */
+    if (ctx->secured == FLB_TRUE) {
+        ret = secure_forward_handshake(u_conn, ctx);
+        flb_debug("[out_fw] handshake status = %i", ret);
     }
 
     /* Write message header */
     ret = flb_io_net_write(u_conn, mp_sbuf.data, mp_sbuf.size, &bytes_sent);
     if (ret == -1) {
-        flb_error("[out_forward] could not write chunk header");
+        flb_error("[out_fw] could not write chunk header");
         msgpack_sbuffer_destroy(&mp_sbuf);
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -150,14 +461,14 @@ void cb_forward_flush(void *data, size_t bytes,
     /* Write body */
     ret = flb_io_net_write(u_conn, data, bytes, &bytes_sent);
     if (ret == -1) {
-        flb_error("[out_forward] error writing content body");
+        flb_error("[out_fw] error writing content body");
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
     total += bytes_sent;
-    flb_upstream_conn_release(u_conn);
-    flb_trace("[out_forward] ended write()=%d bytes", total);
+    //flb_upstream_conn_release(u_conn);
+    flb_trace("[out_fw] ended write()=%d bytes", total);
 
     FLB_OUTPUT_RETURN(FLB_OK);
 }
@@ -170,5 +481,5 @@ struct flb_output_plugin out_forward_plugin = {
     .cb_pre_run   = NULL,
     .cb_flush     = cb_forward_flush,
     .cb_exit      = cb_forward_exit,
-    .flags        = FLB_OUTPUT_NET,
+    .flags        = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
 };
