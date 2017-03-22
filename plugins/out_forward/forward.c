@@ -187,7 +187,7 @@ static int secure_forward_ping(struct flb_upstream_conn *u_conn,
 
     /* [3] Shared key in Hexdigest format */
     msgpack_pack_str(&mp_pck, 128);
-    msgpack_pack_str_body(&mp_pck, shared_key_digest, 128);
+    msgpack_pack_str_body(&mp_pck, shared_key_hexdigest, 128);
 
     /* [4] Username (disabled) */
     msgpack_pack_str(&mp_pck, 0);
