@@ -70,6 +70,7 @@ int syslog_unix_create(struct flb_syslog *ctx)
 int syslog_unix_destroy(struct flb_syslog *ctx)
 {
     unlink(ctx->unix_path);
+    flb_free(ctx->unix_path);
     close(ctx->server_fd);
 
     return 0;

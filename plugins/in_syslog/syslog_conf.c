@@ -88,16 +88,7 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *i_ins,
 int syslog_conf_destroy(struct flb_syslog *ctx)
 {
     syslog_unix_destroy(ctx);
-
-    if (ctx->server_fd) {
-        close(ctx->server_fd);
-    }
-
-    if (ctx->unix_path) {
-        unlink(ctx->unix_path);
-        flb_free(ctx->unix_path);
-    }
-
     flb_free(ctx);
+
     return 0;
 }
