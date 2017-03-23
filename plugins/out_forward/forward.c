@@ -215,6 +215,7 @@ static int secure_forward_pong(char *buf, int buf_size,
                                struct flb_out_forward_config *ctx)
 {
     int ret;
+    char msg[32] = {};
     size_t off = 0;
     msgpack_unpacked result;
     msgpack_object root;
@@ -252,6 +253,11 @@ static int secure_forward_pong(char *buf, int buf_size,
     if (o.via.boolean) {
         msgpack_unpacked_destroy(&result);
         return 0;
+    }
+    else {
+        o = root.via.array.ptr[2];
+        memcpy(msg, o.via.str.ptr, o.via.str.size);
+        flb_error("[out_fw] failed authorization: %s", msg);
     }
 
  error:
@@ -375,6 +381,7 @@ int cb_forward_init(struct flb_output_instance *ins, struct flb_config *config,
         perror("calloc");
         return -1;
     }
+    flb_output_set_context(ins, ctx);
     ctx->secured = FLB_FALSE;
 
     /* Set default network configuration */
@@ -437,7 +444,6 @@ int cb_forward_init(struct flb_output_instance *ins, struct flb_config *config,
     }
 #endif
 
-    flb_output_set_context(ins, ctx);
     return 0;
 }
 
@@ -446,8 +452,14 @@ int cb_forward_exit(void *data, struct flb_config *config)
     struct flb_out_forward_config *ctx = data;
     (void) config;
 
-    flb_free(ctx->shared_key);
-    flb_free(ctx->self_hostname);
+    if (ctx->shared_key) {
+        flb_free(ctx->shared_key);
+    }
+
+    if (ctx->self_hostname) {
+        flb_free(ctx->self_hostname);
+    }
+
     flb_upstream_destroy(ctx->u);
     flb_free(ctx);
 
