@@ -153,7 +153,6 @@ endif()
 include_directories(
   include/
   lib/
-  lib/ejson
   lib/flb_libco
   lib/sha1
   lib/msgpack-c-0b7cabd/include
@@ -184,7 +183,6 @@ add_subdirectory(lib/msgpack-c-0b7cabd)
 FLB_DEFINITION(JSMN_PARENT_LINKS)
 FLB_DEFINITION(JSMN_STRICT)
 add_subdirectory(lib/jsmn)
-add_subdirectory(lib/ejson)
 
 if(FLB_BUFFERING)
   add_subdirectory(lib/sha1)

@@ -188,7 +188,7 @@ if(FLB_JEMALLOC)
 endif()
 
 if(FLB_HTTP)
-  target_link_libraries(fluent-bit-static monkey-core-static ejson)
+  target_link_libraries(fluent-bit-static monkey-core-static)
 endif()
 
 if(FLB_BUFFERING)
