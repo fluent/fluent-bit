@@ -106,6 +106,7 @@ static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
             flb_error("[filter_grep] invalid regex, expected field and regular expression");
             delete_rules(ctx);
             flb_free(rule);
+            flb_utils_split_free(split);
             return -1;
         }
 
