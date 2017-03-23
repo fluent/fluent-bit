@@ -124,6 +124,9 @@ static inline double proc_cpu_load(int cpus, struct cpu_stats *cstats)
                              &s->v_system,
                              &s->v_idle,
                              &s->v_iowait);
+                if (ret < 5) {
+                    return -1;
+                }
             }
             else {
                 fmt = " %s %lu %lu %lu %lu %lu";
