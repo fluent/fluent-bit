@@ -228,6 +228,7 @@ static int merge_meta(char *reg_buf, size_t reg_size,
                       char **out_buf, size_t *out_size)
 {
     int i;
+    int ret;
     int map_size;
     int meta_found = FLB_FALSE;
     int have_uid = -1;
@@ -265,7 +266,12 @@ static int merge_meta(char *reg_buf, size_t reg_size,
 
     /* Get current size of reg_buf map */
     msgpack_unpacked_init(&result);
-    msgpack_unpack_next(&result, reg_buf, reg_size, &off);
+    ret = msgpack_unpack_next(&result, reg_buf, reg_size, &off);
+    if (ret != MSGPACK_UNPACK_SUCCESS) {
+        msgpack_sbuffer_destroy(&mp_sbuf);
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
     map = result.data;
 
     /* Check map */
@@ -281,7 +287,14 @@ static int merge_meta(char *reg_buf, size_t reg_size,
     /* Iterate API server msgpack and lookup specific fields */
     off = 0;
     msgpack_unpacked_init(&api_result);
-    msgpack_unpack_next(&api_result, api_buf, api_size, &off);
+    ret = msgpack_unpack_next(&api_result, api_buf, api_size, &off);
+    if (ret != MSGPACK_UNPACK_SUCCESS) {
+        msgpack_sbuffer_destroy(&mp_sbuf);
+        msgpack_unpacked_destroy(&result);
+        msgpack_unpacked_destroy(&api_result);
+        return -1;
+    }
+
     api_map = api_result.data;
 
     /* At this point map points to the ROOT map, eg:
