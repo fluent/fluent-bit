@@ -22,6 +22,9 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_time.h>
 
+#include <arpa/inet.h>
+#include <string.h>
+
 #define ONESEC_IN_NSEC 1000000000
 
 static int is_valid_format(int fmt)
@@ -36,11 +39,7 @@ static int _flb_time_get(flb_time *tm)
     /* C11 supported! */
     return timespec_get(tm, TIME_UTC);
 #else /* __STDC_VERSION__ */
-#if defined CLOCK_MONOTONIC_RAW
-    return clock_gettime(CLOCK_MONOTONIC_RAW, tm);
-#else /* CLOCK_MONOTONIC_RAW */
-    return clock_gettime(CLOCK_MONOTONIC, tm);
-#endif
+    return clock_gettime(CLOCK_REALTIME, tm);
 #endif
 }
 
@@ -76,6 +75,8 @@ int flb_time_append_to_msgpack(flb_time *tm, msgpack_packer *pk, int fmt)
 {
     int ret = 0;
     flb_time l_time;
+    char ext_data[8];
+    int32_t tmp;
 
     if (!is_valid_format(fmt)) {
         fmt = FLB_TIME_ETFMT_INT;
@@ -97,15 +98,17 @@ int flb_time_append_to_msgpack(flb_time *tm, msgpack_packer *pk, int fmt)
         break;
 
     case FLB_TIME_ETFMT_V0:
-        /* TBD */
-        break;
-
     case FLB_TIME_ETFMT_V1_EXT:
-        /* TBD */
-        break;
-
+        /* We can't set with msgpack-c !! */
+        /* see pack_template.h and msgpack_pack_inline_func(_ext) */
     case FLB_TIME_ETFMT_V1_FIXEXT:
-        /* TBD */
+        tmp = htonl((int32_t)tm->tv_sec); /* second from epoch */
+        memcpy(&ext_data, &tmp, 4);
+        tmp = htonl((int32_t)tm->tv_nsec);/* nanosecond */
+        memcpy(&ext_data[4], &tmp, 4);
+
+        msgpack_pack_ext(pk, 8/*fixext8*/, 0);
+        msgpack_pack_ext_body(pk, ext_data, sizeof(ext_data));
         break;
 
     default:
@@ -132,7 +135,6 @@ int flb_time_pop_from_msgpack(flb_time *time, msgpack_unpacked *upk, int *fmt,
         }
         time->tv_sec  = obj.via.u64;
         time->tv_nsec = 0;
-        *map = &upk->data.via.array.ptr[1];
         break;
 
     case MSGPACK_OBJECT_EXT:
@@ -142,5 +144,7 @@ int flb_time_pop_from_msgpack(flb_time *time, msgpack_unpacked *upk, int *fmt,
         flb_warn("unknown time format");
         return -1;
     }
+
+    *map = &upk->data.via.array.ptr[1];
     return 0;
 }
