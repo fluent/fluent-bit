@@ -132,6 +132,9 @@ static inline int process_line(char *line,
 
     /* Sequence */
     p = strchr(p, ',');
+    if (!p) {
+        goto fail;
+    }
     p++;
 
     val = strtol(p, &end, 10);
