@@ -604,7 +604,7 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
     c->resp.data_len = 0;
     while (1) {
         available = ((sizeof(c->resp.data) - 1) - c->resp.data_len);
-        if (available < 1) {
+        if (available <= 1) {
             /*
              * If there is no more space available on our buffer,
              * just return zero and let the caller do it own validations.
