@@ -135,6 +135,7 @@ static int in_tail_init(struct flb_input_instance *in,
     /* Initialize file-system watcher */
     ret = flb_tail_fs_init(in, ctx, config);
     if (ret == -1) {
+        flb_tail_config_destroy(ctx);
         return -1;
     }
 
