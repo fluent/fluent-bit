@@ -24,6 +24,10 @@
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_hash.h>
 
+#ifndef FLB_HAVE_TLS
+#error "Fluent Bit was built without TLS support"
+#endif
+
 #include "kube_meta.h"
 #include "kube_conf.h"
 
