@@ -61,6 +61,8 @@ static inline void print_msgpack_status(int ret, char *context)
     }
 }
 
+#ifdef FLB_HAVE_TLS
+
 /* Read a secure forward msgpack message */
 static int secure_forward_read(struct flb_upstream_conn *u_conn,
                                char *buf, size_t size, size_t *out_len)
@@ -103,9 +105,6 @@ static int secure_forward_read(struct flb_upstream_conn *u_conn,
     msgpack_unpacked_destroy(&result);
     return -1;
 }
-
-#ifdef FLB_HAVE_TLS
-
 
 static void secure_forward_bin_to_hex(uint8_t *buf, size_t len, char *out)
 {
@@ -514,10 +513,12 @@ void cb_forward_flush(void *data, size_t bytes,
     }
 
     /* Secure Forward ? */
+#ifdef FLB_HAVE_TLS
     if (ctx->secured == FLB_TRUE) {
         ret = secure_forward_handshake(u_conn, ctx);
         flb_debug("[out_fw] handshake status = %i", ret);
     }
+#endif
 
     /* Write message header */
     ret = flb_io_net_write(u_conn, mp_sbuf.data, mp_sbuf.size, &bytes_sent);
