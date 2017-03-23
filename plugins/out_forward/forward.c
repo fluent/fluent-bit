@@ -90,6 +90,7 @@ static int secure_forward_read(struct flb_upstream_conn *u_conn,
         ret = msgpack_unpack_next(&result, buf, buf_off, &off);
         switch (ret) {
         case MSGPACK_UNPACK_SUCCESS:
+            msgpack_unpacked_destroy(&result);
             *out_len = buf_off;
             return 0;
         default:
@@ -149,11 +150,12 @@ static int secure_forward_ping(struct flb_upstream_conn *u_conn,
         return -1;
     }
 
-    nonce_data = val.via.bin.ptr;
+    nonce_data = (unsigned char *) val.via.bin.ptr;
     nonce_size = val.via.bin.size;
 
     /* Compose the shared key */
     mbedtls_sha512_init(&sha512);
+    mbedtls_sha512_starts(&sha512, 0);
     mbedtls_sha512_update(&sha512, ctx->shared_key_salt, 16);
     mbedtls_sha512_update(&sha512,
                           (unsigned char *) ctx->self_hostname,
@@ -198,11 +200,63 @@ static int secure_forward_ping(struct flb_upstream_conn *u_conn,
     msgpack_pack_str_body(&mp_pck, "", 0);
 
     ret = flb_io_net_write(u_conn, mp_sbuf.data, mp_sbuf.size, &bytes_sent);
-    flb_debug("[out_fw] PING sent: ret=%i bytes sent=%lu\n", ret, bytes_sent);
+    flb_debug("[out_fw] PING sent: ret=%i bytes sent=%lu", ret, bytes_sent);
 
-    flb_pack_print(mp_sbuf.data, mp_sbuf.size);
+    msgpack_sbuffer_destroy(&mp_sbuf);
 
-    return 0;
+    if (ret == 0 && bytes_sent > 0) {
+        return 0;
+    }
+
+    return -1;
+}
+
+static int secure_forward_pong(char *buf, int buf_size,
+                               struct flb_out_forward_config *ctx)
+{
+    int ret;
+    size_t off = 0;
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_object o;
+
+    msgpack_unpacked_init(&result);
+    ret = msgpack_unpack_next(&result, buf, buf_size, &off);
+    if (ret != MSGPACK_UNPACK_SUCCESS) {
+        return -1;
+    }
+
+    root = result.data;
+    if (root.type != MSGPACK_OBJECT_ARRAY) {
+        goto error;
+    }
+
+    if (root.via.array.size < 4) {
+        goto error;
+    }
+
+    o = root.via.array.ptr[0];
+    if (o.type != MSGPACK_OBJECT_STR) {
+        goto error;
+    }
+
+    if (strncmp(o.via.str.ptr, "PONG", 4) != 0 || o.via.str.size != 4) {
+        goto error;
+    }
+
+    o = root.via.array.ptr[1];
+    if (o.type != MSGPACK_OBJECT_BOOLEAN) {
+        goto error;
+    }
+
+    if (o.via.boolean) {
+        msgpack_unpacked_destroy(&result);
+        return 0;
+    }
+
+ error:
+    msgpack_unpacked_destroy(&result);
+    return -1;
 }
 
 static int secure_forward_handshake(struct flb_upstream_conn *u_conn,
@@ -268,10 +322,18 @@ static int secure_forward_handshake(struct flb_upstream_conn *u_conn,
     ret = secure_forward_read(u_conn, buf, sizeof(buf) - 1, &out_len);
     if (ret == -1) {
         flb_error("[out_fw] handshake error expecting HELO");
+        msgpack_unpacked_destroy(&result);
         return -1;
     }
-    flb_pack_print(buf, out_len);
-    exit(0);
+
+    /* Process PONG */
+    ret = secure_forward_pong(buf, out_len, ctx);
+    if (ret == -1) {
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+
+    msgpack_unpacked_destroy(&result);
     return 0;
 }
 
@@ -295,7 +357,6 @@ static int secure_forward_init(struct flb_out_forward_config *ctx)
 
     /* Gernerate shared key salt */
     mbedtls_ctr_drbg_random(&ctx->tls_ctr_drbg, ctx->shared_key_salt, 16);
-
     return 0;
 }
 #endif
