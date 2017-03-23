@@ -25,6 +25,7 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <limits.h>
 
 int flb_parser_regex_do(struct flb_parser *parser,
                         char *buf, size_t length,
