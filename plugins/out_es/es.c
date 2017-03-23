@@ -171,40 +171,22 @@ static char *elasticsearch_format(void *data, size_t bytes, int *out_size,
         return NULL;
     }
 
-    /* Format the JSON header required by the ES Bulk API */
+    off = 0;
+
+    msgpack_unpacked_destroy(&result);
+    msgpack_unpacked_init(&result);
+
     if (ctx->logstash_format == FLB_TRUE) {
         len = ctx->logstash_prefix_len;
-
         memcpy(logstash_index, ctx->logstash_prefix, ctx->logstash_prefix_len);
-        p = logstash_index + len;
-        *p++ = '-';
-
-        t = time(NULL);
-        if (!localtime_r(&t, &tm)) {
-            flb_errno();
-        }
-
-        s = strftime(p, sizeof(logstash_index) - len - 1,
-                     ctx->logstash_dateformat, &tm);
-        p += s;
-        *p++ = '\0';
-
-        index_len = snprintf(j_index,
-                             ES_BULK_HEADER,
-                             ES_BULK_INDEX_FMT,
-                             logstash_index, ctx->type);
     }
     else {
-
         index_len = snprintf(j_index,
                              ES_BULK_HEADER,
                              ES_BULK_INDEX_FMT,
                              ctx->index, ctx->type);
     }
-    off = 0;
 
-    msgpack_unpacked_destroy(&result);
-    msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
         if (result.data.type != MSGPACK_OBJECT_ARRAY) {
             continue;
@@ -238,6 +220,23 @@ static char *elasticsearch_format(void *data, size_t bytes, int *out_size,
                          ctx->time_key_format, &tm);
             msgpack_pack_str(&tmp_pck, s);
             msgpack_pack_str_body(&tmp_pck, time_formatted, s);
+
+            /* Compose Index header */
+            p = logstash_index + len;
+            *p++ = '-';
+            if (!localtime_r(&t, &tm)) {
+                flb_errno();
+                msgpack_sbuffer_destroy(&tmp_sbuf);
+            }
+            s = strftime(p, sizeof(logstash_index) - len - 1,
+                         ctx->logstash_dateformat, &tm);
+            p += s;
+            *p++ = '\0';
+
+            index_len = snprintf(j_index,
+                                 ES_BULK_HEADER,
+                                 ES_BULK_INDEX_FMT,
+                                 logstash_index, ctx->type);
         }
         else {
             /* Append date k/v */
@@ -266,9 +265,7 @@ static char *elasticsearch_format(void *data, size_t bytes, int *out_size,
         }
 
         /* Append JSON on Index buf */
-        ret = es_bulk_append(bulk,
-                             j_index, index_len,
-                             json_buf, json_size);
+        ret = es_bulk_append(bulk, j_index, index_len, json_buf, json_size);
         flb_free(json_buf);
         if (ret == -1) {
             /* We likely ran out of memory, abort here */
@@ -347,13 +344,11 @@ void cb_es_flush(void *data, size_t bytes,
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
 
     ret = flb_http_do(c, &b_sent);
-
     if (ret == 0) {
-        flb_debug("[out_es] HTTP Status=%i\n%s", c->resp.status,
-                  c->resp.payload);
+        flb_debug("[out_es] HTTP Status=%i", c->resp.status);
     }
     else {
-        flb_warn("[out_es] http_do=%i\n%s", ret);
+        flb_warn("[out_es] http_do=%i", ret);
     }
     flb_http_client_destroy(c);
 
