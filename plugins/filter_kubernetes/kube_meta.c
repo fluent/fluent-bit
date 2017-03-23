@@ -355,7 +355,6 @@ static int merge_meta(char *reg_buf, size_t reg_size,
 
     /* Append API Server content */
     if (have_uid >= 0) {
-        k = meta_val.via.map.ptr[have_uid].key;
         v = meta_val.via.map.ptr[have_uid].val;
 
         msgpack_pack_str(&mp_pck, 6);
