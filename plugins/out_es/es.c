@@ -47,8 +47,8 @@ static inline void es_pack_map_content(msgpack_packer *tmp_pck, msgpack_object m
         ptr_key = NULL;
 
         /* Store key */
-        char *key_ptr;
-        size_t key_size;
+        char *key_ptr = NULL;
+        size_t key_size = 0;
 
         if (k->type == MSGPACK_OBJECT_BIN) {
             key_ptr  = (char *) k->via.bin.ptr;
