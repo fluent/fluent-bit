@@ -109,6 +109,7 @@ int flb_time_append_to_msgpack(flb_time *tm, msgpack_packer *pk, int fmt)
 
         msgpack_pack_ext(pk, 8/*fixext8*/, 0);
         msgpack_pack_ext_body(pk, ext_data, sizeof(ext_data));
+
         break;
 
     default:
@@ -118,10 +119,11 @@ int flb_time_append_to_msgpack(flb_time *tm, msgpack_packer *pk, int fmt)
     return ret;
 }
 
-int flb_time_pop_from_msgpack(flb_time *time, msgpack_unpacked *upk, int *fmt,
+int flb_time_pop_from_msgpack(flb_time *time, msgpack_unpacked *upk,
                               msgpack_object **map)
 {
     msgpack_object obj;
+    uint32_t tmp;
 
     if(time == NULL || upk == NULL) {
         return -1;
@@ -130,18 +132,20 @@ int flb_time_pop_from_msgpack(flb_time *time, msgpack_unpacked *upk, int *fmt,
 
     switch(obj.type){
     case MSGPACK_OBJECT_POSITIVE_INTEGER:
-        if (fmt != NULL) {
-          *fmt = FLB_TIME_ETFMT_INT;
-        }
         time->tv_sec  = obj.via.u64;
         time->tv_nsec = 0;
         break;
 
     case MSGPACK_OBJECT_EXT:
-        /* TBD */
+        memcpy(&tmp, &obj.via.ext.ptr[0], 4);
+        time->tv_sec = (int32_t)ntohl(tmp);
+        memcpy(&tmp, &obj.via.ext.ptr[4], 4);
+        time->tv_nsec = (int32_t)ntohl(tmp);
+
         break;
+
     default:
-        flb_warn("unknown time format");
+        flb_warn("unknown time format %x", obj.type);
         return -1;
     }
 
