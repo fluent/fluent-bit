@@ -227,6 +227,9 @@ static char *elasticsearch_format(void *data, size_t bytes, int *out_size,
             if (!localtime_r(&t, &tm)) {
                 flb_errno();
                 msgpack_sbuffer_destroy(&tmp_sbuf);
+                msgpack_unpacked_destroy(&result);
+                es_bulk_destroy(bulk);
+                return NULL;
             }
             s = strftime(p, sizeof(logstash_index) - len - 1,
                          ctx->logstash_dateformat, &tm);
