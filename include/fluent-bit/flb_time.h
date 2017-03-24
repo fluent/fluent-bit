@@ -40,7 +40,7 @@ enum flb_time_eventtime_fmt {
 
 int flb_time_diff(flb_time *time1, flb_time *time0, flb_time *result);
 int flb_time_append_to_msgpack(flb_time *time, msgpack_packer *pk, int fmt);
-int flb_time_pop_from_msgpack(flb_time *time, msgpack_unpacked *upk, int *fmt,
+int flb_time_pop_from_msgpack(flb_time *time, msgpack_unpacked *upk,
                               msgpack_object **map);
 
 #endif /* FLB_TIME_H */
