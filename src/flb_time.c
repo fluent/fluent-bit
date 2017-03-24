@@ -76,7 +76,7 @@ int flb_time_append_to_msgpack(flb_time *tm, msgpack_packer *pk, int fmt)
     int ret = 0;
     flb_time l_time;
     char ext_data[8];
-    int32_t tmp;
+    uint32_t tmp;
 
     if (!is_valid_format(fmt)) {
         fmt = FLB_TIME_ETFMT_INT;
@@ -102,9 +102,9 @@ int flb_time_append_to_msgpack(flb_time *tm, msgpack_packer *pk, int fmt)
         /* We can't set with msgpack-c !! */
         /* see pack_template.h and msgpack_pack_inline_func(_ext) */
     case FLB_TIME_ETFMT_V1_FIXEXT:
-        tmp = htonl((int32_t)tm->tv_sec); /* second from epoch */
+        tmp = htonl((uint32_t)tm->tv_sec); /* second from epoch */
         memcpy(&ext_data, &tmp, 4);
-        tmp = htonl((int32_t)tm->tv_nsec);/* nanosecond */
+        tmp = htonl((uint32_t)tm->tv_nsec);/* nanosecond */
         memcpy(&ext_data[4], &tmp, 4);
 
         msgpack_pack_ext(pk, 8/*fixext8*/, 0);
@@ -138,9 +138,9 @@ int flb_time_pop_from_msgpack(flb_time *time, msgpack_unpacked *upk,
 
     case MSGPACK_OBJECT_EXT:
         memcpy(&tmp, &obj.via.ext.ptr[0], 4);
-        time->tv_sec = (int32_t)ntohl(tmp);
+        time->tv_sec = (uint32_t)ntohl(tmp);
         memcpy(&tmp, &obj.via.ext.ptr[4], 4);
-        time->tv_nsec = (int32_t)ntohl(tmp);
+        time->tv_nsec = (uint32_t)ntohl(tmp);
 
         break;
 
