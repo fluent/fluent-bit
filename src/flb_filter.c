@@ -115,6 +115,9 @@ int flb_filter_set_property(struct flb_filter_instance *filter, char *k, char *v
 
     len = strlen(k);
     tmp = flb_env_var_translate(filter->config->env, v);
+    if (!tmp) {
+        return -1;
+    }
 
     /* Check if the key is a known/shared property */
     if (prop_key_check("match", k, len) == 0) {
@@ -124,6 +127,7 @@ int flb_filter_set_property(struct flb_filter_instance *filter, char *k, char *v
         /* Append any remaining configuration key to prop list */
         prop = flb_malloc(sizeof(struct flb_config_prop));
         if (!prop) {
+            flb_free(tmp);
             return -1;
         }
 
