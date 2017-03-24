@@ -282,6 +282,7 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
     else if (prop_key_check("port", k, len) == 0) {
         if (tmp) {
             out->host.port = atoi(tmp);
+            flb_free(tmp);
         }
         else {
             out->host.port = 0;
