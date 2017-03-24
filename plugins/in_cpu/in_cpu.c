@@ -125,6 +125,7 @@ static inline double proc_cpu_load(int cpus, struct cpu_stats *cstats)
                              &s->v_idle,
                              &s->v_iowait);
                 if (ret < 5) {
+                    fclose(f);
                     return -1;
                 }
             }
@@ -139,6 +140,7 @@ static inline double proc_cpu_load(int cpus, struct cpu_stats *cstats)
                              &s->v_idle,
                              &s->v_iowait);
                 if (ret <= 5) {
+                    fclose(f);
                     return -1;
                 }
             }
