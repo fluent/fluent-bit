@@ -169,6 +169,9 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
         }
 
         if (!buf || size == 0) {
+            if (buf) {
+                flb_free(buf);
+            }
             return 0;
         }
 
