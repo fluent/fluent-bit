@@ -297,7 +297,7 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
         }
     }
 #ifdef FLB_HAVE_TLS
-    else if (prop_key_check("tls", k, len) == 0) {
+    else if (prop_key_check("tls", k, len) == 0 && tmp) {
         if (strcasecmp(tmp, "true") == 0 || strcasecmp(tmp, "on") == 0) {
             out->use_tls = FLB_TRUE;
         }
@@ -306,7 +306,7 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
         }
         flb_free(tmp);
     }
-    else if (prop_key_check("tls.verify", k, len) == 0) {
+    else if (prop_key_check("tls.verify", k, len) == 0 && tmp) {
         if (strcasecmp(tmp, "true") == 0 || strcasecmp(tmp, "on") == 0) {
             out->tls_verify = FLB_TRUE;
         }
@@ -342,6 +342,7 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
         prop->val = tmp;
         mk_list_add(&prop->_head, &out->properties);
     }
+
     return 0;
 }
 
