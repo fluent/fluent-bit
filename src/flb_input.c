@@ -200,11 +200,11 @@ int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
     }
 
     /* Check if the key is a known/shared property */
-    if (prop_key_check("tag", k, len) == 0) {
+    if (prop_key_check("tag", k, len) == 0 && tmp) {
         in->tag     = tmp;
         in->tag_len = strlen(tmp);
     }
-    else if (prop_key_check("mem_buf_limit", k, len) == 0) {
+    else if (prop_key_check("mem_buf_limit", k, len) == 0 && tmp) {
         in->mp_buf_limit = flb_utils_size_to_bytes(tmp);
     }
     else if (in->p->flags & FLB_INPUT_NET) {
@@ -214,7 +214,7 @@ int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
         else if (prop_key_check("host", k, len) == 0) {
             in->host.name   = tmp;
         }
-        else if (prop_key_check("port", k, len) == 0) {
+        else if (prop_key_check("port", k, len) == 0 && tmp) {
             if (tmp) {
                 in->host.port = atoi(tmp);
             }
