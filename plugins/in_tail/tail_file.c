@@ -79,7 +79,13 @@ static int append_record_to_map(char **data, size_t *data_size,
     msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
     msgpack_unpacked_init(&result);
 
-    msgpack_unpack_next(&result, *data, *data_size, &off);
+    ret = msgpack_unpack_next(&result, *data, *data_size, &off);
+    if (ret != MSGPACK_UNPACK_SUCCESS) {
+        msgpack_unpacked_destroy(&result);
+        msgpack_sbuffer_destroy(&sbuf);
+        return -1;
+    }
+
     root = result.data;
     ret = unpack_and_pack(&pck, &root,
                           key, key_len, val, val_len);
@@ -87,6 +93,7 @@ static int append_record_to_map(char **data, size_t *data_size,
         /* fail! */
         msgpack_unpacked_destroy(&result);
         msgpack_sbuffer_destroy(&sbuf);
+        return -1;
     }
     else {
         /* success !*/
