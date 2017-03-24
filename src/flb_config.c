@@ -335,7 +335,7 @@ int flb_config_set_property(struct flb_config *config,
     char **s_val;
     size_t len = strnlen(k, 256);
     char *key = service_configs[0].key;
-    char *tmp;
+    char *tmp = NULL;
 
     while (key != NULL) {
         if (prop_key_check(key, k,len) == 0) {
