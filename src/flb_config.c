@@ -313,7 +313,7 @@ static int set_log_level(struct flb_config *config, char *v_str)
             return -1;
         }
     }
-    else {
+    else if (config->log) {
         config->log->level = 3;
     }
     return 0;
