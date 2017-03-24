@@ -332,6 +332,9 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
         /* Append any remaining configuration key to prop list */
         prop = flb_malloc(sizeof(struct flb_config_prop));
         if (!prop) {
+            if (tmp) {
+                flb_free(tmp);
+            }
             return -1;
         }
 
