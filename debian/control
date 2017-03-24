@@ -11,8 +11,7 @@ Vcs-Browser: https://github.com/fluent/fluent-bit
 Package: td-agent-bit
 Architecture: any
 Depends: ${misc:Depends}
-Description: Fast data collector for Linux.
- Fluent Bit is a high performance data collector for Linux and Embedded Linux,
- it have a strong focus on IoT and related devices. It provides a flexible
- architecture and plugins to collect and dispatch events to different backends
- types.
+Description: High performance Log Forwarder for Linux.
+ Fluent Bit is a high performance data collector and log forwarder for Linux. 
+ It provides a flexible architecture and plugins to collect, parser, filter and
+ deliver logs to different backend types.
