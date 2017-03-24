@@ -369,6 +369,9 @@ int flb_config_set_property(struct flb_config *config,
             }
 
             if (ret < 0) {
+                if (tmp) {
+                    flb_free(tmp);
+                }
                 flb_error("config parameter error");
                 return -1;
             }
