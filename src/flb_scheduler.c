@@ -158,7 +158,9 @@ int flb_sched_request_create(struct flb_config *config,
 int flb_sched_request_destroy(struct flb_config *config,
                               struct flb_sched_request *req)
 {
-    mk_event_del(config->evl, &req->event);
+    if (config->evl) {
+        mk_event_del(config->evl, &req->event);
+    }
     flb_pipe_close(req->fd);
     mk_list_del(&req->_head);
     flb_free(req);
