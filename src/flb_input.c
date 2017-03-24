@@ -214,7 +214,7 @@ int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
         else if (prop_key_check("host", k, len) == 0) {
             in->host.name   = tmp;
         }
-        else if (prop_key_check("port", k, len) == 0 && tmp) {
+        else if (prop_key_check("port", k, len) == 0) {
             if (tmp) {
                 in->host.port = atoi(tmp);
             }
