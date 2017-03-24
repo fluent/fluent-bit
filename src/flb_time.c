@@ -79,7 +79,7 @@ int flb_time_append_to_msgpack(flb_time *tm, msgpack_packer *pk, int fmt)
     uint32_t tmp;
 
     if (!is_valid_format(fmt)) {
-        fmt = FLB_TIME_ETFMT_INT;
+        fmt = FLB_TIME_ETFMT_V1_FIXEXT;
     }
 
     if (tm == NULL) {
