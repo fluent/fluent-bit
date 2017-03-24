@@ -42,7 +42,7 @@ int syslog_conn_event(void *data)
     event = &conn->event;
     if (event->mask & MK_EVENT_READ) {
         available = (conn->buf_size - conn->buf_len);
-        if (available < 1) {
+        if (available <= 1) {
             if (conn->buf_size + ctx->chunk_size > ctx->buffer_size) {
                 flb_trace("[in_syslog] fd=%i incoming data exceed limit (%i KB)",
                           event->fd, (ctx->buffer_size / 1024));
@@ -70,6 +70,7 @@ int syslog_conn_event(void *data)
             flb_trace("[in_syslog] read()=%i pre_len=%i now_len=%i",
                       bytes, conn->buf_len, conn->buf_len + bytes);
             conn->buf_len += bytes;
+            conn->buf_data[conn->buf_len] = '\0';
             ret = syslog_prot_process(conn);
             if (ret == -1) {
                 return -1;
