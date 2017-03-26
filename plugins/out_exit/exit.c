@@ -24,6 +24,7 @@
 
 struct flb_exit {
     int is_running;
+    int count;
 
     /* config */
     int flush_count;
@@ -42,6 +43,7 @@ static int cb_exit_init(struct flb_output_instance *ins, struct flb_config *conf
         flb_errno();
         return -1;
     }
+    ctx->count = 0;
     ctx->is_running = FLB_TRUE;
 
     tmp = flb_output_get_property("flush_count", ins);
@@ -67,7 +69,8 @@ static void cb_exit_flush(void *data, size_t bytes,
     (void) out_context;
     struct flb_exit *ctx = out_context;
 
-    if (ctx->is_running == FLB_TRUE) {
+    ctx->count++;
+    if (ctx->is_running == FLB_TRUE && ctx->count >= ctx->flush_count) {
         flb_engine_exit(config);
         ctx->is_running = FLB_FALSE;
     }
