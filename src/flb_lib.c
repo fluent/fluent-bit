@@ -415,17 +415,15 @@ int flb_start(flb_ctx_t *ctx)
 int flb_stop(flb_ctx_t *ctx)
 {
     int ret;
-    uint64_t val;
 
     if (ctx->config->file) {
         mk_rconf_free(ctx->config->file);
     }
 
     flb_debug("[lib] sending STOP signal to the engine");
-    val = FLB_ENGINE_EV_STOP;
-    flb_pipe_w(ctx->config->ch_manager[1], &val, sizeof(uint64_t));
+    flb_engine_exit(ctx->config);
     ret = pthread_join(ctx->config->worker, NULL);
-
     flb_debug("[lib] Fluent Bit engine stopped");
+
     return ret;
 }
