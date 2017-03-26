@@ -494,7 +494,8 @@ static inline int flb_input_buf_size_set(struct flb_input_instance *in)
     total += in->mp_sbuf.size;
     in->mp_total_buf_size = total;
 
-    if (flb_input_buf_overlimit(in) == FLB_FALSE && flb_input_buf_paused(in)) {
+    if (flb_input_buf_overlimit(in) == FLB_FALSE &&
+        flb_input_buf_paused(in) && in->config->is_running == FLB_TRUE) {
         in->mp_buf_status = FLB_INPUT_RUNNING;
         if (in->p->cb_resume) {
             in->p->cb_resume(in->context, in->config);
@@ -515,8 +516,10 @@ static inline int flb_input_buf_check(struct flb_input_instance *i)
     if (flb_input_buf_overlimit(i) == FLB_TRUE) {
         flb_debug("[input] %s paused (mem buf overlimit)",
                  i->name);
-        if (i->p->cb_pause && !flb_input_buf_paused(i)) {
-            i->p->cb_pause(i->context, i->config);
+        if (!flb_input_buf_paused(i)) {
+            if (i->p->cb_pause) {
+                i->p->cb_pause(i->context, i->config);
+            }
         }
         i->mp_buf_status = FLB_INPUT_PAUSED;
         return FLB_TRUE;
@@ -673,5 +676,6 @@ int flb_input_dyntag_append_raw(struct flb_input_instance *in,
 void *flb_input_flush(struct flb_input_instance *i_ins, size_t *size);
 void *flb_input_dyntag_flush(struct flb_input_dyntag *dt, size_t *size);
 void flb_input_dyntag_exit(struct flb_input_instance *in);
+int flb_input_pause_all(struct flb_config *config);
 
 #endif

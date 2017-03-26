@@ -91,6 +91,7 @@ struct flb_config *flb_config_init()
         perror("malloc");
         return NULL;
     }
+    config->is_running = FLB_TRUE;
 
     /* Flush */
     config->flush        = FLB_CONFIG_FLUSH_SECS;
@@ -219,7 +220,9 @@ void flb_config_exit(struct flb_config *config)
         mk_event_del(config->evl, &collector->event);
 
         if (collector->type == FLB_COLLECT_TIME) {
-            close(collector->fd_timer);
+            if (collector->fd_timer > 0) {
+                close(collector->fd_timer);
+            }
         }
 
         mk_list_del(&collector->_head);

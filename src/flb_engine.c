@@ -496,6 +496,10 @@ int flb_engine_exit(struct flb_config *config)
     int ret;
     uint64_t val = FLB_ENGINE_EV_STOP;
 
+    config->is_running = FLB_FALSE;
+
+    flb_input_pause_all(config);
+
     val = FLB_ENGINE_EV_STOP;
     ret = flb_pipe_w(config->ch_manager[1], &val, sizeof(uint64_t));
 

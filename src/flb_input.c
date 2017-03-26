@@ -537,6 +537,27 @@ static struct flb_input_collector *get_collector(int id,
     return NULL;
 }
 
+int flb_input_pause_all(struct flb_config *config)
+{
+    int paused = 0;
+    struct mk_list *head;
+    struct flb_input_instance *in;
+
+    mk_list_foreach(head, &config->inputs) {
+        in = mk_list_entry(head, struct flb_input_instance, _head);
+        flb_info("[input] pausing %s", in->name);
+        if (flb_input_buf_paused(in) == FLB_FALSE) {
+            if (in->p->cb_pause) {
+                in->p->cb_pause(in->context, in->config);
+            }
+            paused++;
+        }
+        in->mp_buf_status = FLB_INPUT_PAUSED;
+    }
+
+    return paused;
+}
+
 int flb_input_collector_pause(int coll_id, struct flb_input_instance *in)
 {
     int ret;
