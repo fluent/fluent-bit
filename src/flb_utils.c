@@ -287,6 +287,20 @@ int flb_utils_timer_consume(flb_pipefd_t fd)
     return 0;
 }
 
+int flb_utils_pipe_byte_consume(flb_pipefd_t fd)
+{
+    int ret;
+    uint64_t val;
+
+    ret = flb_pipe_r(fd, &val, sizeof(val));
+    if (ret == -1) {
+        flb_errno();
+        return -1;
+    }
+
+    return 0;
+}
+
 size_t flb_utils_size_to_bytes(char *size)
 {
     int len;
