@@ -149,13 +149,15 @@ static void flb_signal_handler(int signal)
     case SIGQUIT:
     case SIGHUP:
 #endif
-    case SIGTERM:
         flb_engine_shutdown(config);
 #ifdef FLB_HAVE_MTRACE
         /* Stop tracing malloc and free */
         muntrace();
 #endif
         _exit(EXIT_SUCCESS);
+    case SIGTERM:
+        flb_engine_exit(config);
+        break;
     default:
         break;
     }
