@@ -267,6 +267,7 @@ static FLB_INLINE int flb_engine_handle_event(flb_pipefd_t fd, int mask,
             return 0;
         }
         else if (config->shutdown_fd == fd) {
+            flb_utils_pipe_byte_consume(fd);
             return FLB_ENGINE_SHUTDOWN;
         }
 #ifdef FLB_HAVE_STATS
@@ -423,6 +424,7 @@ int flb_engine_start(struct flb_config *config)
                     event->mask = MK_EVENT_EMPTY;
                     event->status = MK_EVENT_NONE;
                     config->shutdown_fd = mk_event_timeout_create(evl, 5, 0, event);
+
                     flb_warn("[engine] service will stop in 5 seconds");
                 }
                 else if (ret == FLB_ENGINE_SHUTDOWN) {
@@ -487,4 +489,15 @@ int flb_engine_shutdown(struct flb_config *config)
     flb_config_exit(config);
 
     return 0;
+}
+
+int flb_engine_exit(struct flb_config *config)
+{
+    int ret;
+    uint64_t val = FLB_ENGINE_EV_STOP;
+
+    val = FLB_ENGINE_EV_STOP;
+    ret = flb_pipe_w(config->ch_manager[1], &val, sizeof(uint64_t));
+
+    return ret;
 }
