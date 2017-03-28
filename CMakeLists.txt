@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.8)
 project(fluent-bit)
 
 # Update CFLAGS
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -fPIC -lrt")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -fPIC ")
 if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Windows")
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__='\"$(subst ${CMAKE_SOURCE_DIR}/,,$(abspath $<))\"'")
 else()

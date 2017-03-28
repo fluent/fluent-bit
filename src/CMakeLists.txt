@@ -140,6 +140,7 @@ else()
     ${FLB_DEPS}
     ${CMAKE_DL_LIBS}
     m
+    rt
     )
 endif()
 
