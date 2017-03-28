@@ -35,7 +35,7 @@ static int is_valid_format(int fmt)
 
 static int _flb_time_get(flb_time *tm)
 {
-#if __STDC_VERSION__ >= 201112L
+#if __STDC_VERSION__ >= 201112L && defined TIME_UTC
     /* C11 supported! */
     return timespec_get(tm, TIME_UTC);
 #else /* __STDC_VERSION__ */
