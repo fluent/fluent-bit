@@ -324,7 +324,8 @@ static int set_log_level(struct flb_config *config, char *v_str)
 
 static inline int atobool(char*v)
 {
-    return  (strncasecmp("true", v, 256) == 0)
+    return  (strncasecmp("true", v, 256) == 0 ||
+             strncasecmp("on", v, 256) == 0)
         ? FLB_TRUE
         : FLB_FALSE;
 }
