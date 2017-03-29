@@ -140,6 +140,13 @@ else()
     ${FLB_DEPS}
     ${CMAKE_DL_LIBS}
     m
+    )
+endif()
+
+# Link timer library
+if(NOT CMAKE_SYSTEM_NAME MATCHES "Darwin")
+  set(FLB_DEPS
+    ${FLB_DEPS}
     rt
     )
 endif()
