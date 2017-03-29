@@ -24,7 +24,7 @@
 typedef struct timespec flb_time;
 
 #undef FLB_TIME_FORCE_FMT_INT
-#ifdef TARGET_OS_MAX
+#ifdef TARGET_OS_MAC
 #define FLB_TIME_FORCE_FMT_INT /* FIXME */
 #endif
 
@@ -42,6 +42,7 @@ enum flb_time_eventtime_fmt {
     FLB_TIME_ETFMT_OTHER,
 };
 
+double flb_time_to_double(flb_time *tm);
 int flb_time_diff(flb_time *time1, flb_time *time0, flb_time *result);
 int flb_time_append_to_msgpack(flb_time *time, msgpack_packer *pk, int fmt);
 int flb_time_pop_from_msgpack(flb_time *time, msgpack_unpacked *upk,
