@@ -135,12 +135,6 @@ struct flb_config *flb_config_init()
 
     memset(&config->tasks_map, '\0', sizeof(config->tasks_map));
 
-    /* Create logger */
-    if (flb_log_init(config, FLB_LOG_STDERR, FLB_LOG_INFO, NULL) == NULL) {
-        flb_config_exit(config);
-        return NULL;
-    }
-
     /* Environment */
     config->env = flb_env_create();
 

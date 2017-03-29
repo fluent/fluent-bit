@@ -169,13 +169,15 @@ int flb_log_set_level(struct flb_config *config, int level)
 
 int flb_log_set_file(struct flb_config *config, char *out)
 {
+    struct flb_log *log = config->log;
+
     if (out) {
-        config->log->type = FLB_LOG_FILE;
-        config->log->out = out;
+        log->type = FLB_LOG_FILE;
+        log->out = out;
     }
     else {
-        config->log->type = FLB_LOG_STDERR;
-        config->log->out = NULL;
+        log->type = FLB_LOG_STDERR;
+        log->out = NULL;
     }
 
     return 0;
@@ -221,6 +223,7 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
         return NULL;
     }
     MK_EVENT_NEW(&log->event);
+
     /* Register channel manager into the event loop */
     ret = mk_event_add(log->evl, log->ch_mng[0],
                        FLB_LOG_MNG, MK_EVENT_READ, &log->event);
