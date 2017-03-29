@@ -23,12 +23,16 @@
 #include <time.h>
 typedef struct timespec flb_time;
 
+#undef FLB_TIME_FORCE_FMT_INT
+#ifdef TARGET_OS_MAX
+#define FLB_TIME_FORCE_FMT_INT /* FIXME */
+#endif
 
-/* to represent eventtime of fluentd
+/* 
+   to represent eventtime of fluentd
    see also
    https://github.com/fluent/fluentd/wiki/Forward-Protocol-Specification-v0#eventtime-ext-format
    https://github.com/fluent/fluentd/wiki/Forward-Protocol-Specification-v1#eventtime-ext-format
-
  */
 enum flb_time_eventtime_fmt {
     FLB_TIME_ETFMT_INT = 1,   /* second(integer) only */

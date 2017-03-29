@@ -35,7 +35,14 @@ static int is_valid_format(int fmt)
 
 static int _flb_time_get(flb_time *tm)
 {
-#if __STDC_VERSION__ >= 201112L && defined TIME_UTC
+    if (tm == NULL) {
+        return -1;
+    }
+#if defined FLB_TIME_FORCE_FMT_INT
+    tm->tv_sec  = time(NULL);
+    tm->tv_nsec = 0;
+    return 0;
+#elif __STDC_VERSION__ >= 201112L
     /* C11 supported! */
     return timespec_get(tm, TIME_UTC);
 #else /* __STDC_VERSION__ */
@@ -79,7 +86,11 @@ int flb_time_append_to_msgpack(flb_time *tm, msgpack_packer *pk, int fmt)
     uint32_t tmp;
 
     if (!is_valid_format(fmt)) {
+#ifdef FLB_TIME_FORCE_FMT_INT
+        fmt = FLB_TIME_ETFMT_INT;
+#else        
         fmt = FLB_TIME_ETFMT_V1_FIXEXT;
+#endif
     }
 
     if (tm == NULL) {
