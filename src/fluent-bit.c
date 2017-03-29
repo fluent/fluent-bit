@@ -481,6 +481,7 @@ int main(int argc, char **argv)
     /* Initialize sockets */
     WSADATA wsaData;
     int err;
+
     err = WSAStartup(MAKEWORD(2, 2), &wsaData);
     if (err != 0) {
         fprintf(stderr, "WSAStartup failed with error: %d\n", err);
@@ -621,15 +622,6 @@ int main(int argc, char **argv)
     }
 
     flb_banner();
-
-    /* Logging */
-    if (config->verbose != FLB_LOG_INFO) {
-        flb_log_set_level(config, config->verbose);
-    }
-
-    if (config->log_file) {
-        flb_log_set_file(config, config->log_file);
-    }
 
     /* Validate config file */
     if (cfg_file) {
