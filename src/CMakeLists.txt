@@ -71,13 +71,6 @@ if(FLB_PROXY_GO)
     )
 endif()
 
-if(FLB_HTTP)
-  set(src
-    ${src}
-    "flb_http_server.c"
-    )
-endif()
-
 if(FLB_STATS)
   set(src
     ${src}
@@ -185,10 +178,6 @@ endif(MSVC)
 
 if(FLB_JEMALLOC)
   target_link_libraries(fluent-bit-static libjemalloc)
-endif()
-
-if(FLB_HTTP)
-  target_link_libraries(fluent-bit-static monkey-core-static)
 endif()
 
 if(FLB_BUFFERING)
