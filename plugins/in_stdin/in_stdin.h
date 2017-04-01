@@ -27,15 +27,14 @@
 /* STDIN Input configuration & context */
 struct flb_in_stdin_config {
     int fd;                           /* stdin file descriptor */
+    int coll_fd;                      /* collector fd          */
     int buf_len;                      /* read buffer length    */
     char buf[8192 * 2];               /* read buffer: 16Kb max */
 
-    struct msgpack_sbuffer mp_sbuf;  /* msgpack sbuffer        */
-    struct msgpack_packer mp_pck;    /* msgpack packer         */
+    /* Parser / Format */
+    struct flb_parser *parser;
+    struct flb_input_instance *i_in;
 };
-
-int in_stdin_collect(struct flb_input_instance *i_ins,
-                     struct flb_config *config, void *in_context);
 
 extern struct flb_input_plugin in_stdin_plugin;
 
