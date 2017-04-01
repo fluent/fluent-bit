@@ -71,7 +71,7 @@ int flb_parser_json_do(struct flb_parser *parser,
     /* Do time resolution ? */
     if (!parser->time_fmt) {
         msgpack_unpacked_destroy(&result);
-        return 0;
+        return length;
     }
 
     if (parser->time_key) {
@@ -111,7 +111,7 @@ int flb_parser_json_do(struct flb_parser *parser,
     /* No time_key field found */
     if (i >= map_size || !k || !v) {
         msgpack_unpacked_destroy(&result);
-        return 0;
+        return length;
     }
 
     /* Lookup time */
@@ -119,7 +119,7 @@ int flb_parser_json_do(struct flb_parser *parser,
                                  0, parser, &tm, &tmfrac);
     if (ret == -1) {
         msgpack_unpacked_destroy(&result);
-        return 0;
+        return length;
     }
     time_lookup = flb_parser_tm2time(&tm);
 
@@ -151,5 +151,5 @@ int flb_parser_json_do(struct flb_parser *parser,
     *out_time = time_lookup;
 
     msgpack_unpacked_destroy(&result);
-    return 0;
+    return length;
 }
