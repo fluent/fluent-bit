@@ -621,7 +621,10 @@ int main(int argc, char **argv)
         }
     }
 
-    flb_banner();
+
+    if (config->verbose != FLB_LOG_OFF) {
+        flb_banner();
+    }
 
     /* Validate config file */
     if (cfg_file) {
