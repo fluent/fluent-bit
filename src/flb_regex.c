@@ -48,7 +48,10 @@ cb_onig_named(const UChar *name, const UChar *name_end,
                         region->end[gn] - region->beg[gn],
                         s->data);
         }
-        s->last_pos = region->end[gn];
+
+        if (region->end[gn] >= 0) {
+            s->last_pos = region->end[gn];
+        }
     }
 
     return 0;
@@ -158,7 +161,6 @@ int flb_regex_parse(struct flb_regex *r, struct flb_regex_search *result,
     if (ret == 0) {
         return result->last_pos;
     }
-
     return -1;
 }
 
