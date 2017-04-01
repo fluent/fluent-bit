@@ -71,7 +71,7 @@ int flb_parser_json_do(struct flb_parser *parser,
     /* Do time resolution ? */
     if (!parser->time_fmt) {
         msgpack_unpacked_destroy(&result);
-        return 0;
+        return length;
     }
 
     if (parser->time_key) {
@@ -111,7 +111,7 @@ int flb_parser_json_do(struct flb_parser *parser,
     /* No time_key field found */
     if (i >= map_size || !k || !v) {
         msgpack_unpacked_destroy(&result);
-        return 0;
+        return length;
     }
 
     /* Convert from time_fmt to unix timestamp */
@@ -121,7 +121,7 @@ int flb_parser_json_do(struct flb_parser *parser,
     }
     else {
         msgpack_unpacked_destroy(&result);
-        return 0;
+        return length;
     }
 
     /* Compose a new map without the time_key field */
@@ -146,5 +146,5 @@ int flb_parser_json_do(struct flb_parser *parser,
     *out_time = time_lookup;
 
     msgpack_unpacked_destroy(&result);
-    return 0;
+    return length;
 }

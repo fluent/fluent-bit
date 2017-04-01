@@ -19,6 +19,8 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_regex.h>
+#include <fluent-bit/flb_log.h>
+
 #include <string.h>
 #include <onigmo.h>
 
@@ -46,6 +48,7 @@ cb_onig_named(const UChar *name, const UChar *name_end,
                         region->end[gn] - region->beg[gn],
                         s->data);
         }
+        s->last_pos = region->end[gn];
     }
 
     return 0;
@@ -73,7 +76,6 @@ int flb_regex_init()
 {
     return onig_init();
 }
-
 
 struct flb_regex *flb_regex_create(unsigned char *pattern)
 {
@@ -141,11 +143,16 @@ int flb_regex_parse(struct flb_regex *r, struct flb_regex_search *result,
 
     result->data = data;
     result->cb_match = cb_match;
+    result->last_pos = -1;
 
     ret = onig_foreach_name(r->regex, cb_onig_named, result);
     onig_region_free(result->region, 1);
 
-    return ret;
+    if (ret == 0) {
+        return result->last_pos;
+    }
+
+    return -1;
 }
 
 int flb_regex_destroy(struct flb_regex *r)
