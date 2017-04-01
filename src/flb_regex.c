@@ -171,6 +171,10 @@ int flb_regex_parse(struct flb_regex *r, struct flb_regex_search *result,
     if (ret == 0) {
         return result->last_pos;
     }
+<<<<<<< HEAD
+=======
+
+>>>>>>> 80580910... parser: on parser_do (regex/json), always return last byte processed
     return -1;
 }
 
