@@ -29,6 +29,7 @@ set(src
   flb_router.c
   flb_http_client.c
   flb_worker.c
+  flb_time.c
   )
 
 include_directories(
@@ -132,6 +133,14 @@ else()
     ${FLB_DEPS}
     ${CMAKE_DL_LIBS}
     m
+    )
+endif()
+
+# Link timer library
+if(NOT CMAKE_SYSTEM_NAME MATCHES "Darwin")
+  set(FLB_DEPS
+    ${FLB_DEPS}
+    rt
     )
 endif()
 
