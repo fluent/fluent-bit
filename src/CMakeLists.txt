@@ -218,4 +218,9 @@ if(NOT FLB_WITHOUT_BIN)
     "${PROJECT_SOURCE_DIR}/conf/fluent-bit.conf"
     DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/"
     RENAME "${FLB_OUT_NAME}.conf")
+
+  install(FILES
+    "${PROJECT_SOURCE_DIR}/conf/parsers.conf"
+    DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/")
+
 endif()
