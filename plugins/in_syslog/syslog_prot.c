@@ -43,13 +43,12 @@ int syslog_prot_process(struct syslog_conn *conn)
 {
     int len;
     int ret;
-    int consumed_bytes = 0;
     int lines = 0;
-    char *p;
     void *out_buf;
     size_t out_size;
     struct flb_time out_time;
     struct flb_syslog *ctx = conn->ctx;
+    const char ends[] = "\r\n\0";
 
     msgpack_sbuffer *out_sbuf;
     msgpack_packer *out_pck;
@@ -59,13 +58,17 @@ int syslog_prot_process(struct syslog_conn *conn)
 
     flb_input_buf_write_start(conn->in);
 
-    while ((p = strchr(conn->buf_data + conn->buf_parsed, '\n'))) {
-        len = (p - conn->buf_data);
+    while ((len = strcspn(conn->buf_data, ends))) {
         if (len == 0) {
-            consume_bytes(conn->buf_data, 1, conn->buf_len);
-            conn->buf_len--;
+            if (conn->buf_len > 0) {
+                consume_bytes(conn->buf_data, 1, conn->buf_len);
+                conn->buf_len--;
+            }
             conn->buf_parsed = 0;
             conn->buf_data[conn->buf_len] = '\0';
+            if (conn->buf_len == 0) {
+                break;
+            }
             continue;
         }
 
@@ -81,7 +84,6 @@ int syslog_prot_process(struct syslog_conn *conn)
         }
 
         consume_bytes(conn->buf_data, len + 1, conn->buf_len);
-        consumed_bytes += len + 1;
         conn->buf_len -= len + 1;
         conn->buf_data[conn->buf_len] = '\0';
         conn->buf_parsed = 0;
@@ -90,5 +92,5 @@ int syslog_prot_process(struct syslog_conn *conn)
 
     flb_input_buf_write_end(conn->in);
 
-    return 0;
+    return lines;
 }
