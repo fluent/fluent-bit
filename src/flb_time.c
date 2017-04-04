@@ -33,41 +33,43 @@ static int is_valid_format(int fmt)
       FLB_TRUE : FLB_FALSE;
 }
 
-static int _flb_time_get(flb_time *tm)
+static int _flb_time_get(struct flb_time *tm)
 {
     if (tm == NULL) {
         return -1;
     }
 #if defined FLB_TIME_FORCE_FMT_INT
-    tm->tv_sec  = time(NULL);
-    tm->tv_nsec = 0;
+    tm->tm.tv_sec  = time(NULL);
+    tm->tm.tv_nsec = 0;
     return 0;
 #elif __STDC_VERSION__ >= 201112L
     /* C11 supported! */
-    return timespec_get(tm, TIME_UTC);
+    return timespec_get(&tm->tm, TIME_UTC);
 #else /* __STDC_VERSION__ */
-    return clock_gettime(CLOCK_REALTIME, tm);
+    return clock_gettime(CLOCK_REALTIME, &tm->tm);
 #endif
 }
 
-int flb_time_diff(flb_time *time1, flb_time *time0, flb_time *result)
+int flb_time_diff(struct flb_time *time1,
+                  struct flb_time *time0,struct flb_time *result)
 {
     if (time1 == NULL || time0 == NULL || result == NULL) {
         return -1;
     }
     
-    if (time1->tv_sec >= time0->tv_sec) {
-        result->tv_sec = time1->tv_sec - time0->tv_sec;
-        if (time1->tv_nsec >= time0->tv_nsec) {
-            result->tv_nsec = time1->tv_nsec - time0->tv_nsec;
+    if (time1->tm.tv_sec >= time0->tm.tv_sec) {
+        result->tm.tv_sec = time1->tm.tv_sec - time0->tm.tv_sec;
+        if (time1->tm.tv_nsec >= time0->tm.tv_nsec) {
+            result->tm.tv_nsec = time1->tm.tv_nsec - time0->tm.tv_nsec;
         }
-        else if(result->tv_sec == 0){
+        else if(result->tm.tv_sec == 0){
             /* underflow */
             return -1;
         }
         else{
-            result->tv_nsec = ONESEC_IN_NSEC - time1->tv_nsec - time0->tv_nsec;
-            result->tv_sec--;
+            result->tm.tv_nsec = ONESEC_IN_NSEC
+                               - time1->tm.tv_nsec - time0->tm.tv_nsec;
+            result->tm.tv_sec--;
         }
     }
     else {
@@ -78,10 +80,10 @@ int flb_time_diff(flb_time *time1, flb_time *time0, flb_time *result)
 }
 
 
-int flb_time_append_to_msgpack(flb_time *tm, msgpack_packer *pk, int fmt)
+int flb_time_append_to_msgpack(struct flb_time *tm, msgpack_packer *pk, int fmt)
 {
     int ret = 0;
-    flb_time l_time;
+    struct flb_time l_time;
     char ext_data[8];
     uint32_t tmp;
 
@@ -95,7 +97,7 @@ int flb_time_append_to_msgpack(flb_time *tm, msgpack_packer *pk, int fmt)
 
     if (tm == NULL) {
       if (fmt == FLB_TIME_ETFMT_INT) {
-         l_time.tv_sec = time(NULL);
+         l_time.tm.tv_sec = time(NULL);
       }
       else {
         _flb_time_get(&l_time);
@@ -105,7 +107,7 @@ int flb_time_append_to_msgpack(flb_time *tm, msgpack_packer *pk, int fmt)
 
     switch(fmt) {
     case FLB_TIME_ETFMT_INT:
-        msgpack_pack_uint64(pk, tm->tv_sec);
+        msgpack_pack_uint64(pk, tm->tm.tv_sec);
         break;
 
     case FLB_TIME_ETFMT_V0:
@@ -113,9 +115,9 @@ int flb_time_append_to_msgpack(flb_time *tm, msgpack_packer *pk, int fmt)
         /* We can't set with msgpack-c !! */
         /* see pack_template.h and msgpack_pack_inline_func(_ext) */
     case FLB_TIME_ETFMT_V1_FIXEXT:
-        tmp = htonl((uint32_t)tm->tv_sec); /* second from epoch */
+        tmp = htonl((uint32_t)tm->tm.tv_sec); /* second from epoch */
         memcpy(&ext_data, &tmp, 4);
-        tmp = htonl((uint32_t)tm->tv_nsec);/* nanosecond */
+        tmp = htonl((uint32_t)tm->tm.tv_nsec);/* nanosecond */
         memcpy(&ext_data[4], &tmp, 4);
 
         msgpack_pack_ext(pk, 8/*fixext8*/, 0);
@@ -130,7 +132,7 @@ int flb_time_append_to_msgpack(flb_time *tm, msgpack_packer *pk, int fmt)
     return ret;
 }
 
-int flb_time_pop_from_msgpack(flb_time *time, msgpack_unpacked *upk,
+int flb_time_pop_from_msgpack(struct flb_time *time, msgpack_unpacked *upk,
                               msgpack_object **map)
 {
     msgpack_object obj;
@@ -143,15 +145,15 @@ int flb_time_pop_from_msgpack(flb_time *time, msgpack_unpacked *upk,
 
     switch(obj.type){
     case MSGPACK_OBJECT_POSITIVE_INTEGER:
-        time->tv_sec  = obj.via.u64;
-        time->tv_nsec = 0;
+        time->tm.tv_sec  = obj.via.u64;
+        time->tm.tv_nsec = 0;
         break;
 
     case MSGPACK_OBJECT_EXT:
         memcpy(&tmp, &obj.via.ext.ptr[0], 4);
-        time->tv_sec = (uint32_t)ntohl(tmp);
+        time->tm.tv_sec = (uint32_t)ntohl(tmp);
         memcpy(&tmp, &obj.via.ext.ptr[4], 4);
-        time->tv_nsec = (uint32_t)ntohl(tmp);
+        time->tm.tv_nsec = (uint32_t)ntohl(tmp);
 
         break;
 

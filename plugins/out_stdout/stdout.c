@@ -47,14 +47,14 @@ void cb_stdout_flush(void *data, size_t bytes,
     (void) i_ins;
     (void) out_context;
     (void) config;
-    flb_time tmp;
+    struct flb_time tmp;
     msgpack_object *p;
 
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
         printf("[%zd] %s: [", cnt++, tag);
         flb_time_pop_from_msgpack(&tmp, &result, &p);
-        printf("%"PRIu32".%09lu, ", (uint32_t)tmp.tv_sec, tmp.tv_nsec);
+        printf("%"PRIu32".%09lu, ", (uint32_t)tmp.tm.tv_sec, tmp.tm.tv_nsec);
         msgpack_object_print(stdout, *p);
         printf("]\n");
     }

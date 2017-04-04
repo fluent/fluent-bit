@@ -21,7 +21,9 @@
 #define FLB_TIME_H
 
 #include <time.h>
-typedef struct timespec flb_time;
+struct flb_time {
+    struct timespec tm;
+};
 
 #undef FLB_TIME_FORCE_FMT_INT
 #ifdef TARGET_OS_MAC
@@ -42,10 +44,11 @@ enum flb_time_eventtime_fmt {
     FLB_TIME_ETFMT_OTHER,
 };
 
-double flb_time_to_double(flb_time *tm);
-int flb_time_diff(flb_time *time1, flb_time *time0, flb_time *result);
-int flb_time_append_to_msgpack(flb_time *time, msgpack_packer *pk, int fmt);
-int flb_time_pop_from_msgpack(flb_time *time, msgpack_unpacked *upk,
+double flb_time_to_double(struct flb_time *tm);
+int flb_time_diff(struct flb_time *time1,
+                  struct flb_time *time0,struct flb_time *result);
+int flb_time_append_to_msgpack(struct flb_time *time, msgpack_packer *pk, int fmt);
+int flb_time_pop_from_msgpack(struct flb_time *time, msgpack_unpacked *upk,
                               msgpack_object **map);
 
 #endif /* FLB_TIME_H */
