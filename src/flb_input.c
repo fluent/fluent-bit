@@ -206,6 +206,7 @@ int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
     }
     else if (prop_key_check("mem_buf_limit", k, len) == 0 && tmp) {
         in->mp_buf_limit = flb_utils_size_to_bytes(tmp);
+        flb_free(tmp);
     }
     else if (in->p->flags & FLB_INPUT_NET) {
         if (prop_key_check("listen", k, len) == 0) {
