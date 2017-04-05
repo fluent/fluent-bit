@@ -290,7 +290,8 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
     }
     else if (prop_key_check("retry_limit", k, len) == 0) {
         if (tmp) {
-            if (strcmp(tmp, "false") == 0 || strcmp(tmp, "off") == 0) {
+            if (strcasecmp(tmp, "false") == 0 ||
+                strcasecmp(tmp, "off") == 0) {
                 /* No limits for retries */
                 out->retry_limit = -1;
             }
