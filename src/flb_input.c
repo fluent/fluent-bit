@@ -498,6 +498,7 @@ int flb_input_collectors_start(struct flb_config *config)
                                          collector->nanoseconds, event);
             if (fd == -1) {
                 flb_error("[input collector] COLLECT_TIME registration failed");
+                collector->running = FLB_FALSE;
                 continue;
             }
             collector->fd_timer = fd;
@@ -513,9 +514,11 @@ int flb_input_collectors_start(struct flb_config *config)
                                MK_EVENT_READ, event);
             if (ret == -1) {
                 close(collector->fd_event);
+                collector->running = FLB_FALSE;
                 continue;
             }
         }
+        collector->running = FLB_TRUE;
     }
 
     return 0;
@@ -591,6 +594,7 @@ int flb_input_collector_pause(int coll_id, struct flb_input_instance *in)
             flb_warn("[input] cannot disable event for %s", in->name);
         }
     }
+    coll->running = FLB_FALSE;
 
     return 0;
 }
