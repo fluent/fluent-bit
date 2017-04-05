@@ -204,7 +204,8 @@ flb_sockfd_t flb_net_tcp_connect(char *host, unsigned long port)
     snprintf(_port, sizeof(_port), "%lu", port);
     ret = getaddrinfo(host, _port, &hints, &res);
     if (ret != 0) {
-        flb_warn("net_tcp_connect: Can't get addr info");
+        flb_warn("net_tcp_connect: getaddrinfo(host='%s'): %s",
+                 host, gai_strerror(ret));
         return -1;
     }
 
@@ -247,7 +248,8 @@ int flb_net_tcp_fd_connect(flb_sockfd_t fd, char *host, unsigned long port)
     snprintf(_port, sizeof(_port), "%lu", port);
     ret = getaddrinfo(host, _port, &hints, &res);
     if (ret != 0) {
-        flb_error("net_tcp_connect: Can't get addr info %s", host);
+        flb_warn("net_tcp_fd_connect: getaddrinfo(host='%s'): %s",
+                 host, gai_strerror(ret));
         return -1;
     }
 
@@ -271,7 +273,8 @@ flb_sockfd_t flb_net_server(char *port, char *listen_addr)
 
     ret = getaddrinfo(listen_addr, port, &hints, &res);
     if (ret != 0) {
-        flb_error("net_server: Can't get addr info");
+        flb_warn("net_server: getaddrinfo(listen='%s:%s'): %s",
+                 listen_addr, port, gai_strerror(ret));
         return -1;
     }
 
