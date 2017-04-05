@@ -622,18 +622,25 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
         }
 
         /* Always append a NULL byte */
-        c->resp.data_len += r_bytes;
-        c->resp.data[c->resp.data_len] = '\0';
+        if (r_bytes >= 0) {
+            c->resp.data_len += r_bytes;
+            c->resp.data[c->resp.data_len] = '\0';
 
-        ret = process_data(c);
-        if (ret == FLB_HTTP_ERROR) {
+            ret = process_data(c);
+            if (ret == FLB_HTTP_ERROR) {
+                return -1;
+            }
+            else if (ret == FLB_HTTP_OK) {
+                break;
+            }
+            else if (ret == FLB_HTTP_MORE) {
+                continue;
+            }
+        }
+        else {
+            flb_error("[http_client] broken connection to %s:%i ?",
+                      c->u_conn->u->tcp_host, c->u_conn->u->tcp_port);
             return -1;
-        }
-        else if (ret == FLB_HTTP_OK) {
-            break;
-        }
-        else if (ret == FLB_HTTP_MORE) {
-            continue;
         }
     }
 
