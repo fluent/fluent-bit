@@ -20,7 +20,7 @@
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-
+#include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_output.h>
 
 int cb_counter_init(struct flb_output_instance *ins,
@@ -50,6 +50,7 @@ void cb_counter_flush(void *data, size_t bytes,
 
     msgpack_unpacked result;
     size_t off = 0, cnt = 0;
+    struct flb_time tm;
 
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
@@ -57,8 +58,8 @@ void cb_counter_flush(void *data, size_t bytes,
     }
     msgpack_unpacked_destroy(&result);
 
-    time_t t = time(NULL);
-    printf("%lu,%lu\n", t, cnt);
+    flb_time_get(&tm);
+    printf("%f,%lu\n", flb_time_to_double(&tm), cnt);
 
     FLB_OUTPUT_RETURN(FLB_OK);
 }
