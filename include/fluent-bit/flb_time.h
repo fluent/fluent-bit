@@ -21,6 +21,7 @@
 #define FLB_TIME_H
 
 #include <time.h>
+#include <msgpack.h>
 struct flb_time {
     struct timespec tm;
 };
@@ -44,10 +45,11 @@ enum flb_time_eventtime_fmt {
     FLB_TIME_ETFMT_OTHER,
 };
 
+int flb_time_get(struct flb_time *tm);
 double flb_time_to_double(struct flb_time *tm);
 int flb_time_diff(struct flb_time *time1,
-                  struct flb_time *time0,struct flb_time *result);
-int flb_time_append_to_msgpack(struct flb_time *time, msgpack_packer *pk, int fmt);
+                  struct flb_time *time0, struct flb_time *result);
+int flb_time_append_to_msgpack(struct flb_time *tm, msgpack_packer *pk, int fmt);
 int flb_time_pop_from_msgpack(struct flb_time *time, msgpack_unpacked *upk,
                               msgpack_object **map);
 

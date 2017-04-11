@@ -50,6 +50,16 @@ static int _flb_time_get(struct flb_time *tm)
 #endif
 }
 
+int flb_time_get(struct flb_time *tm)
+{
+    return _flb_time_get(tm);
+}
+
+double flb_time_to_double(struct flb_time *tm)
+{
+    return (double)(tm->tm.tv_sec) + ((double)tm->tm.tv_nsec/(double)ONESEC_IN_NSEC);
+}
+
 int flb_time_diff(struct flb_time *time1,
                   struct flb_time *time0,struct flb_time *result)
 {
