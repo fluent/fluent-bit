@@ -541,7 +541,8 @@ void cb_forward_flush(void *data, size_t bytes,
     }
 
     total += bytes_sent;
-    //flb_upstream_conn_release(u_conn);
+    flb_upstream_conn_release(u_conn);
+
     flb_trace("[out_fw] ended write()=%d bytes", total);
 
     FLB_OUTPUT_RETURN(FLB_OK);
