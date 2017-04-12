@@ -517,6 +517,11 @@ void cb_forward_flush(void *data, size_t bytes,
     if (ctx->secured == FLB_TRUE) {
         ret = secure_forward_handshake(u_conn, ctx);
         flb_debug("[out_fw] handshake status = %i", ret);
+        if (ret == -1) {
+            flb_upstream_conn_release(u_conn);
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
     }
 #endif
 
