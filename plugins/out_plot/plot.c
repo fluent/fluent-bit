@@ -24,7 +24,7 @@
 
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_utils.h>
-#include <msgpack.h>
+#include <fluent-bit/flb_time.h>
 
 struct flb_plot_conf {
     char *out_file;
@@ -74,12 +74,12 @@ static void cb_plot_flush(void *data, size_t bytes,
 {
     int i;
     int fd;
-    time_t atime;
+    struct flb_time atime;
     msgpack_unpacked result;
     size_t off = 0;
     char *out_file;
     msgpack_object root;
-    msgpack_object map;
+    msgpack_object *map;
     msgpack_object *key = NULL;
     msgpack_object *val = NULL;
     struct flb_plot_conf *ctx = out_context;
@@ -109,8 +109,7 @@ static void cb_plot_flush(void *data, size_t bytes,
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
         root = result.data;
-        atime = root.via.array.ptr[0].via.u64;
-        map   = root.via.array.ptr[1];
+        flb_time_pop_from_msgpack(&atime, &result, &map);
 
         /*
          * Lookup key, we need to iterate the whole map as sometimes the
@@ -118,13 +117,13 @@ static void cb_plot_flush(void *data, size_t bytes,
          * tcp, etc).
          */
         if (ctx->key_name) {
-            for (i = 0; i < map.via.map.size; i++) {
+            for (i = 0; i < map->via.map.size; i++) {
                 /* Get each key and compare */
-                key = &map.via.map.ptr[i].key;
+                key = &(map->via.map.ptr[i].key);
                 if (key->type == MSGPACK_OBJECT_BIN) {
                     if (ctx->key_len == key->via.bin.size &&
                         memcmp(key->via.bin.ptr, ctx->key_name, ctx->key_len) == 0) {
-                        val = &map.via.map.ptr[i].val;
+                        val = &(map->via.map.ptr[i].val);
                         break;
                     }
                     key = NULL;
@@ -133,7 +132,7 @@ static void cb_plot_flush(void *data, size_t bytes,
                 else if (key->type != MSGPACK_OBJECT_STR) {
                     if (ctx->key_len == key->via.str.size &&
                         memcmp(key->via.str.ptr, ctx->key_name, ctx->key_len) == 0) {
-                        val = &map.via.map.ptr[i].val;
+                        val = &(map->via.map.ptr[i].val);
                         break;
                     }
                     key = NULL;
@@ -148,7 +147,7 @@ static void cb_plot_flush(void *data, size_t bytes,
             }
         }
         else {
-            val = &map.via.map.ptr[0].val;
+            val = &(map->via.map.ptr[0].val);
         }
 
         if (!val) {
@@ -160,13 +159,16 @@ static void cb_plot_flush(void *data, size_t bytes,
         }
 
         if (val->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-            dprintf(fd, "%lu %" PRIu64 "\n", atime, val->via.u64);
+            dprintf(fd, "%f %" PRIu64 "\n",
+                    flb_time_to_double(&atime), val->via.u64);
         }
         else if (val->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
-            dprintf(fd, "%lu %" PRId64 "\n", atime, val->via.i64);
+            dprintf(fd, "%f %" PRId64 "\n",
+                    flb_time_to_double(&atime), val->via.i64);
         }
         else if (val->type == MSGPACK_OBJECT_FLOAT) {
-            dprintf(fd, "%lu %lf\n", atime, val->via.f64);
+            dprintf(fd, "%f %lf\n", 
+                    flb_time_to_double(&atime), val->via.f64);
         }
         else {
             flb_error("[out_plot] value must be integer, negative integer "
