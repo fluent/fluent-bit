@@ -306,6 +306,34 @@ static int flb_engine_started(struct flb_config *config)
     return flb_pipe_w(config->ch_notif[1], &val, sizeof(uint64_t));
 }
 
+static int flb_engine_log_start(struct flb_config *config)
+{
+    int type;
+    int level;
+
+    /* Log Level */
+    if (config->verbose != FLB_LOG_INFO) {
+        level = config->verbose;
+    }
+    else {
+        level = FLB_LOG_INFO;
+    }
+
+    /* Destination based on type */
+    if (config->log_file) {
+        type = FLB_LOG_FILE;
+    }
+    else {
+        type = FLB_LOG_STDERR;
+    }
+
+    if (flb_log_init(config, type, level, config->log_file) == NULL) {
+        return -1;
+    }
+
+    return 0;
+}
+
 int flb_engine_start(struct flb_config *config)
 {
     int ret;
@@ -318,6 +346,12 @@ int flb_engine_start(struct flb_config *config)
         flb_http_server_start(config);
     }
 #endif
+
+    /* Start the Logging service */
+    ret = flb_engine_log_start(config);
+    if (ret == -1) {
+        return -1;
+    }
 
     flb_info("[engine] started");
     flb_thread_prepare();

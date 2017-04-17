@@ -154,6 +154,7 @@ int flb_parser_regex_do(struct flb_parser *parser,
                         void **out_buf, size_t *out_size,
                         time_t *out_time)
 {
+    int ret;
     ssize_t n;
     int arr_size;
     struct flb_regex_search result;
@@ -187,12 +188,17 @@ int flb_parser_regex_do(struct flb_parser *parser,
     pcb.time_now = time(NULL);
 
     /* Iterate results and compose new buffer */
-    flb_regex_parse(parser->regex, &result, cb_results, &pcb);
+    ret = flb_regex_parse(parser->regex, &result, cb_results, &pcb);
 
     /* Export results */
     *out_buf = tmp_sbuf.data;
     *out_size = tmp_sbuf.size;
     *out_time = pcb.time_lookup;
 
-    return 0;
+    /*
+     * The return the value >= 0, belongs to the LAST BYTE consumed by the
+     * regex engine. If the last byte is lower than string length, means
+     * there is more data to be processed (maybe it's a stream).
+     */
+    return ret;
 }

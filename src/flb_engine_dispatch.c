@@ -131,7 +131,6 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
 
         mk_list_foreach_safe(d_head, tmp, &in->dyntags) {
             dt = mk_list_entry(d_head, struct flb_input_dyntag, _head);
-            flb_trace("[dyntag %s] %p tag=%s", dt->in->name, dt, dt->tag);
             if (dt->busy == FLB_TRUE) {
                 continue;
             }
@@ -148,6 +147,7 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
                 continue;
             }
 
+            flb_trace("[dyntag %s] %p tag=%s", dt->in->name, dt, dt->tag);
             task = flb_task_create(id, buf, size, dt->in, dt, dt->tag, config);
             if (!task) {
                 flb_free(buf);

@@ -210,7 +210,7 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
         if (ctx->parser) {
             ret = flb_parser_do(ctx->parser, file->buf_data, len,
                                 &out_buf, &out_size, &out_time);
-            if (ret == 0) {
+            if (ret >= 0) {
                 if (out_time == 0) {
                     out_time = t;
                 }

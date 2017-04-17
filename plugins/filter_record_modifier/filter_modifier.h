@@ -17,25 +17,31 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_IN_STDIN_H
-#define FLB_IN_STDIN_H
+#ifndef FLB_FILTER_RECORD_MODIFIER_H
+#define FLB_FILTER_RECORD_MODIFIER_H
 
-#include <fluent-bit/flb_config.h>
-#include <fluent-bit/flb_input.h>
-#include <fluent-bit/flb_utils.h>
-
-/* STDIN Input configuration & context */
-struct flb_in_stdin_config {
-    int fd;                           /* stdin file descriptor */
-    int coll_fd;                      /* collector fd          */
-    int buf_len;                      /* read buffer length    */
-    char buf[8192 * 2];               /* read buffer: 16Kb max */
-
-    /* Parser / Format */
-    struct flb_parser *parser;
-    struct flb_input_instance *i_in;
+struct modifier_record {
+    char *key;
+    char *val;
+    int  key_len;
+    int  val_len;
+    struct mk_list _head;
 };
 
-extern struct flb_input_plugin in_stdin_plugin;
+struct modifier_key {
+    char *key;
+    int   key_len;
+    struct mk_list _head;
+};
 
-#endif
+struct record_modifier_ctx {
+    int records_num;
+    int remove_keys_num;
+    int whitelist_keys_num;
+    struct mk_list records;
+    struct mk_list remove_keys;
+    struct mk_list whitelist_keys;
+};
+
+
+#endif /* FLB_FILTER_RECORD_MODIFIER_H */

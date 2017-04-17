@@ -29,6 +29,7 @@ set(src
   flb_router.c
   flb_http_client.c
   flb_worker.c
+  flb_time.c
   )
 
 include_directories(
@@ -135,6 +136,14 @@ else()
     )
 endif()
 
+# Link timer library
+if(NOT CMAKE_SYSTEM_NAME MATCHES "Darwin")
+  set(FLB_DEPS
+    ${FLB_DEPS}
+    rt
+    )
+endif()
+
 # Proxy interfaces
 add_subdirectory(proxy)
 
@@ -218,4 +227,9 @@ if(NOT FLB_WITHOUT_BIN)
     "${PROJECT_SOURCE_DIR}/conf/fluent-bit.conf"
     DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/"
     RENAME "${FLB_OUT_NAME}.conf")
+
+  install(FILES
+    "${PROJECT_SOURCE_DIR}/conf/parsers.conf"
+    DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/")
+
 endif()

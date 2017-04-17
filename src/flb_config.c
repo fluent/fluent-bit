@@ -135,12 +135,6 @@ struct flb_config *flb_config_init()
 
     memset(&config->tasks_map, '\0', sizeof(config->tasks_map));
 
-    /* Create logger */
-    if (flb_log_init(config, FLB_LOG_STDERR, FLB_LOG_INFO, NULL) == NULL) {
-        flb_config_exit(config);
-        return NULL;
-    }
-
     /* Environment */
     config->env = flb_env_create();
 
@@ -296,28 +290,28 @@ static inline int prop_key_check(char *key, char *kv, int k_len)
 
 static int set_log_level(struct flb_config *config, char *v_str)
 {
-    if (v_str != NULL && config->log != NULL) {
+    if (v_str != NULL) {
         if (strcasecmp(v_str, "error") == 0) {
-            config->log->level = 1;
+            config->verbose = 1;
         }
         else if (strcasecmp(v_str, "warning") == 0) {
-            config->log->level = 2;
+            config->verbose = 2;
         }
         else if (strcasecmp(v_str, "info") == 0) {
-            config->log->level = 3;
+            config->verbose = 3;
         }
         else if (strcasecmp(v_str, "debug") == 0) {
-            config->log->level = 4;
+            config->verbose = 4;
         }
         else if (strcasecmp(v_str, "trace") == 0) {
-            config->log->level = 5;
+            config->verbose = 5;
         }
         else {
             return -1;
         }
     }
     else if (config->log) {
-        config->log->level = 3;
+        config->verbose = 3;
     }
     return 0;
 }

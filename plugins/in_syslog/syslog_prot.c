@@ -71,7 +71,7 @@ int syslog_prot_process(struct syslog_conn *conn)
 
         ret = flb_parser_do(ctx->parser, conn->buf_data, len,
                             &out_buf, &out_size, &out_time);
-        if (ret == 0) {
+        if (ret >= 0) {
             pack_line(out_sbuf, out_pck, out_time,
                       out_buf, out_size);
             flb_free(out_buf);

@@ -29,6 +29,7 @@
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_stats.h>
+#include <fluent-bit/flb_time.h>
 
 #define DEFAULT_INTERVAL_SEC  1
 #define DEFAULT_INTERVAL_NSEC 0
@@ -78,7 +79,7 @@ static int in_random_collect(struct flb_input_instance *i_ins,
     flb_input_buf_write_start(i_ins);
 
     msgpack_pack_array(&i_ins->mp_pck, 2);
-    msgpack_pack_uint64(&i_ins->mp_pck, time(NULL));
+    flb_time_append_to_msgpack(NULL, &i_ins->mp_pck, 0);
     msgpack_pack_map(&i_ins->mp_pck, 1);
 
     msgpack_pack_bin(&i_ins->mp_pck, 10);

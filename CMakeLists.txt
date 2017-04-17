@@ -20,7 +20,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/library")
 
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  0)
-set(FLB_VERSION_MINOR 11)
+set(FLB_VERSION_MINOR 12)
 set(FLB_VERSION_PATCH  0)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
@@ -98,6 +98,7 @@ option(FLB_OUT_FLOWCOUNTER "Enable flowcount output plugin"     Yes)
 option(FLB_FILTER_GREP     "Enable grep filter"                 Yes)
 option(FLB_FILTER_STDOUT   "Enable stdout filter"               Yes)
 option(FLB_FILTER_KUBERNETES "Enable kubernetes filter"         Yes)
+option(FLB_FILTER_RECORD_MODIFIER "Enable record_modifier filter" Yes)
 
 # Enable all features
 if(FLB_ALL)

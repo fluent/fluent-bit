@@ -101,7 +101,7 @@ struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
     mk_list_foreach_safe(head, tmp, &task->retries) {
         retry = mk_list_entry(head, struct flb_task_retry, _head);
         if (retry->o_ins == o_ins) {
-            if (retry->attemps > o_ins->retry_limit) {
+            if (retry->attemps > o_ins->retry_limit && o_ins->retry_limit >= 0) {
                 flb_debug("[task] task_id=%i reached retry-attemps limit %i/%i",
                           task->id, retry->attemps, o_ins->retry_limit);
                 flb_task_retry_destroy(retry);

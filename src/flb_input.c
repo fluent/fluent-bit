@@ -206,6 +206,7 @@ int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
     }
     else if (prop_key_check("mem_buf_limit", k, len) == 0 && tmp) {
         in->mp_buf_limit = flb_utils_size_to_bytes(tmp);
+        flb_free(tmp);
     }
     else if (in->p->flags & FLB_INPUT_NET) {
         if (prop_key_check("listen", k, len) == 0) {
@@ -498,6 +499,7 @@ int flb_input_collectors_start(struct flb_config *config)
                                          collector->nanoseconds, event);
             if (fd == -1) {
                 flb_error("[input collector] COLLECT_TIME registration failed");
+                collector->running = FLB_FALSE;
                 continue;
             }
             collector->fd_timer = fd;
@@ -513,9 +515,11 @@ int flb_input_collectors_start(struct flb_config *config)
                                MK_EVENT_READ, event);
             if (ret == -1) {
                 close(collector->fd_event);
+                collector->running = FLB_FALSE;
                 continue;
             }
         }
+        collector->running = FLB_TRUE;
     }
 
     return 0;
@@ -591,6 +595,7 @@ int flb_input_collector_pause(int coll_id, struct flb_input_instance *in)
             flb_warn("[input] cannot disable event for %s", in->name);
         }
     }
+    coll->running = FLB_FALSE;
 
     return 0;
 }

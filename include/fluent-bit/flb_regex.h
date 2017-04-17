@@ -35,6 +35,7 @@ struct flb_regex {
 };
 
 struct flb_regex_search {
+    int last_pos;
     OnigRegion *region;
     unsigned char *str;
     void (*cb_match) (unsigned char *,          /* name  */
