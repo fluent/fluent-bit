@@ -189,7 +189,7 @@ struct flb_plugin_proxy *flb_plugin_proxy_create(const char *dso_path, int type,
     /* Load shared library */
     handle = dlopen(dso_path, RTLD_LAZY);
     if (!handle) {
-        fprintf(stderr, "[proxy] error opening %s\n", dso_path);
+        fprintf(stderr, "[proxy] error opening %s: %s\n", dso_path, dlerror());
         return NULL;
     }
 
