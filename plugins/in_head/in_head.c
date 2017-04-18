@@ -17,18 +17,21 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_error.h>
+#include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_stats.h>
+#include <fluent-bit/flb_pack.h>
+#include <msgpack.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 
-#include <msgpack.h>
-#include <fluent-bit/flb_input.h>
-#include <fluent-bit/flb_config.h>
-#include <fluent-bit/flb_error.h>
-#include <fluent-bit/flb_utils.h>
-#include <fluent-bit/flb_stats.h>
 
 #include "in_head.h"
 
@@ -65,8 +68,7 @@ static int in_head_collect(struct flb_input_instance *i_ins,
     flb_input_buf_write_start(i_ins);
 
     msgpack_pack_array(&i_ins->mp_pck, 2);
-    msgpack_pack_uint64(&i_ins->mp_pck, time(NULL));
-
+    flb_pack_time_now(&i_ins->mp_pck);
     msgpack_pack_map(&i_ins->mp_pck, num_map);
 
     msgpack_pack_bin(&i_ins->mp_pck, 4);
