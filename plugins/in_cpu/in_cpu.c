@@ -21,7 +21,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_stats.h>
-#include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_pack.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -300,7 +300,6 @@ int in_cpu_collect(struct flb_input_instance *i_ins,
     struct flb_in_cpu_config *ctx = in_context;
     struct cpu_stats *cstats = &ctx->cstats;
     struct cpu_snapshot *s;
-    struct flb_time t;
     (void) config;
 
     /* Get the current CPU usage */
@@ -319,9 +318,7 @@ int in_cpu_collect(struct flb_input_instance *i_ins,
      * Store the new data into the MessagePack buffer,
      */
     msgpack_pack_array(&i_ins->mp_pck, 2);
-
-    flb_time_get(&t);
-    flb_time_append_to_msgpack(&t, &i_ins->mp_pck, 0);
+    flb_pack_time_now(&i_ins->mp_pck);
     msgpack_pack_map(&i_ins->mp_pck, (ctx->n_processors * 3 ) + 3);
 
     /* All CPU */
