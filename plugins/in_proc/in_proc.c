@@ -17,6 +17,12 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_pack.h>
+#include <msgpack.h>
+
 #include <stdio.h>
 #include <string.h>
 #include <sys/types.h>
@@ -29,11 +35,6 @@
 #include <stdlib.h>
 #include <limits.h>
 #include <dirent.h>
-
-#include <msgpack.h>
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_config.h>
-#include <fluent-bit/flb_utils.h>
 
 #include "in_proc.h"
 
@@ -95,7 +96,7 @@ struct flb_in_proc_mem_offset mem_linux[] = {
     },
     {NULL, NULL, 0}/* end of array */
 };
- 
+
 
 
 static pid_t get_pid_from_procname_linux(const char* proc)
@@ -257,7 +258,7 @@ static int generate_record_linux(struct flb_input_instance *i_ins,
     flb_input_buf_write_start(i_ins);
 
     msgpack_pack_array(&i_ins->mp_pck, 2);
-    msgpack_pack_uint64(&i_ins->mp_pck, time(NULL));
+    flb_pack_time_now(&i_ins->mp_pck);
 
     /* 3 = alive, proc_name, pid */
     msgpack_pack_map(&i_ins->mp_pck, map_num);
@@ -419,7 +420,7 @@ static int update_fds_linux(struct flb_in_proc_config *ctx,
     }
     *fds -= 2; /* '.' and '..' */
     closedir(dirp);
-    
+
     return 0;
 }
 
