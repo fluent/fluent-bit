@@ -31,7 +31,7 @@ struct flb_time {
 #define FLB_TIME_FORCE_FMT_INT /* FIXME */
 #endif
 
-/* 
+/*
    to represent eventtime of fluentd
    see also
    https://github.com/fluent/fluentd/wiki/Forward-Protocol-Specification-v0#eventtime-ext-format
@@ -44,6 +44,12 @@ enum flb_time_eventtime_fmt {
     FLB_TIME_ETFMT_V1_FIXEXT, /* EventTime (v1 fixext) */
     FLB_TIME_ETFMT_OTHER,
 };
+
+static inline void flb_time_zero(struct flb_time *tm)
+{
+    tm->tm.tv_sec = 0;
+    tm->tm.tv_nsec = 0;
+}
 
 int flb_time_get(struct flb_time *tm);
 double flb_time_to_double(struct flb_time *tm);
