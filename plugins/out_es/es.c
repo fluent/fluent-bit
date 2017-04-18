@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_time.h>
 #include <msgpack.h>
 
 #include <time.h>
@@ -131,12 +132,13 @@ static char *elasticsearch_format(void *data, size_t bytes, int *out_size,
     msgpack_unpacked result;
     msgpack_object root;
     msgpack_object map;
-    msgpack_object otime;
+    msgpack_object *obj;
     char *json_buf;
     size_t json_size;
     char j_index[ES_BULK_HEADER];
     struct es_bulk *bulk;
     struct tm tm;
+    struct flb_time tms;
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
 
@@ -198,7 +200,14 @@ static char *elasticsearch_format(void *data, size_t bytes, int *out_size,
             continue;
         }
 
-        otime = root.via.array.ptr[0];
+        /*
+         * Timestamp: Elasticsearch only support fractional seconds in
+         * milliseconds unit, not nanoseconds, so we take our nsec value and
+         * change it representation.
+         */
+        flb_time_pop_from_msgpack(&tms, &result, &obj);
+        tms.tm.tv_nsec = (tms.tm.tv_nsec / 1000000);
+
         map   = root.via.array.ptr[1];
         map_size = map.via.map.size;
 
@@ -214,10 +223,12 @@ static char *elasticsearch_format(void *data, size_t bytes, int *out_size,
             msgpack_pack_str_body(&tmp_pck, ctx->time_key, ctx->time_key_len);
 
             /* Format the time */
-            t = otime.via.u64;
-            gmtime_r(&t, &tm);
+            gmtime_r(&tms.tm.tv_sec, &tm);
             s = strftime(time_formatted, sizeof(time_formatted) - 1,
                          ctx->time_key_format, &tm);
+            len = snprintf(time_formatted + s, sizeof(time_formatted) - 1 - s,
+                           ".%" PRIu64, tms.tm.tv_nsec);
+            s += len;
             msgpack_pack_str(&tmp_pck, s);
             msgpack_pack_str_body(&tmp_pck, time_formatted, s);
 
@@ -245,7 +256,7 @@ static char *elasticsearch_format(void *data, size_t bytes, int *out_size,
             /* Append date k/v */
             msgpack_pack_str(&tmp_pck, 4);
             msgpack_pack_str_body(&tmp_pck, "date", 4);
-            msgpack_pack_object(&tmp_pck, otime);
+            msgpack_pack_double(&tmp_pck, flb_time_to_double(&tms));
         }
 
         /*
