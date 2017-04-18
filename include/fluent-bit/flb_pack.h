@@ -44,5 +44,6 @@ int flb_msgpack_to_json(char *json_str, size_t str_len,
 char* flb_msgpack_to_json_str(size_t size, msgpack_unpacked *data);
 int flb_msgpack_raw_to_json_str(char *buf, size_t buf_size,
                                 char **out_buf, size_t *out_size);
+int flb_pack_time_now(msgpack_packer *pck);
 
 #endif

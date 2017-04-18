@@ -25,7 +25,7 @@
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
-#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_time.h>
 
 #include <msgpack.h>
 #include <jsmn/jsmn.h>
@@ -558,4 +558,15 @@ int flb_msgpack_raw_to_json_str(char *buf, size_t buf_size,
 
     msgpack_unpacked_destroy(&result);
     return 0;
+}
+
+int flb_pack_time_now(msgpack_packer *pck)
+{
+    int ret;
+    struct flb_time t;
+
+    flb_time_get(&t);
+    ret = flb_time_append_to_msgpack(&t, pck, 0);
+
+    return ret;
 }
