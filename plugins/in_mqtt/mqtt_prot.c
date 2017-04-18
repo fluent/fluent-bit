@@ -17,12 +17,14 @@
  *  limitations under the License.
  */
 
-#include <msgpack.h>
-
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
+
+#include <msgpack.h>
+
 
 #include "mqtt.h"
 #include "mqtt_prot.h"
@@ -145,7 +147,7 @@ static int mqtt_data_append(char *topic, size_t topic_len,
     flb_input_buf_write_start(ctx->i_ins);
 
     msgpack_pack_array(&ctx->i_ins->mp_pck, 2);
-    msgpack_pack_int32(&ctx->i_ins->mp_pck, time(NULL));
+    flb_pack_time_now(&ctx->i_ins->mp_pck);
 
     n_size = root.via.map.size;
     msgpack_pack_map(&ctx->i_ins->mp_pck, n_size + 1);
