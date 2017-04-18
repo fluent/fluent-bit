@@ -17,6 +17,14 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_engine.h>
+#include <fluent-bit/flb_time.h>
+
+#include <msgpack.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,13 +37,8 @@
 #include <sys/time.h>
 #include <inttypes.h>
 
-#include <msgpack.h>
-#include <fluent-bit/flb_input.h>
-#include <fluent-bit/flb_utils.h>
-#include <fluent-bit/flb_engine.h>
-#include <fluent-bit/flb_stats.h>
-
 #include "in_kmsg.h"
+
 struct flb_input_plugin in_kmsg_plugin;
 
 /*
@@ -109,13 +112,13 @@ static inline int process_line(char *line,
 {
     char priority;           /* log priority                */
     uint64_t sequence;       /* sequence number             */
-    time_t ts;               /* unix timestamp              */
     struct timeval tv;       /* time value                  */
     int line_len;
     uint64_t val;
     char *p = line;
     char *end = NULL;
     char msg[1024];
+    struct flb_time ts;
 
     /* Increase buffer position */
     ctx->buffer_id++;
@@ -156,7 +159,7 @@ static inline int process_line(char *line,
     tv.tv_sec  = val/1000000;
     tv.tv_usec = val - (tv.tv_sec * 1000000);
 
-    ts = ctx->boot_time.tv_sec + tv.tv_sec;
+    flb_time_set(&ts, ctx->boot_time.tv_sec + tv.tv_sec, tv.tv_usec);
 
     /* Now process the human readable message */
     p = strchr(p, ';');
@@ -176,7 +179,7 @@ static inline int process_line(char *line,
      * we handle this as a list of maps.
      */
     msgpack_pack_array(&i_ins->mp_pck, 2);
-    msgpack_pack_uint64(&i_ins->mp_pck, ts);
+    flb_time_append_to_msgpack(&ts, &i_ins->mp_pck, 0);
 
     msgpack_pack_map(&i_ins->mp_pck, 5);
     msgpack_pack_str(&i_ins->mp_pck, 8);

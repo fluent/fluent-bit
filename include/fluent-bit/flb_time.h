@@ -51,6 +51,12 @@ static inline void flb_time_zero(struct flb_time *tm)
     tm->tm.tv_nsec = 0;
 }
 
+static inline void flb_time_set(struct flb_time *tm, time_t sec, long nsec)
+{
+    tm->tm.tv_sec = sec;
+    tm->tm.tv_nsec = nsec;
+}
+
 int flb_time_get(struct flb_time *tm);
 double flb_time_to_double(struct flb_time *tm);
 int flb_time_diff(struct flb_time *time1,
