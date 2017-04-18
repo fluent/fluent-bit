@@ -107,8 +107,8 @@ static int append_record_to_map(char **data, size_t *data_size,
 }
 
 static inline int pack_line_map(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
-                            time_t time, char **data, size_t *data_size,
-                            struct flb_tail_file *file)
+                                struct flb_time *time, char **data,
+                                size_t *data_size, struct flb_tail_file *file)
 {
     int map_num = 1;
 
@@ -124,14 +124,14 @@ static inline int pack_line_map(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck
     }
 
     msgpack_pack_array(mp_pck, 2);
-    msgpack_pack_uint64(mp_pck, time);
+    flb_time_append_to_msgpack(time, mp_pck, 0);
     msgpack_sbuffer_write(mp_sbuf, *data, *data_size);
 
     return 0;
 }
 
 static inline int pack_line(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
-                            time_t time, char *data, size_t data_size,
+                            struct flb_time *time, char *data, size_t data_size,
                             struct flb_tail_file *file)
 {
     int map_num = 1;
@@ -140,7 +140,7 @@ static inline int pack_line(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
         map_num++; /* to append path_key */
     }
     msgpack_pack_array(mp_pck, 2);
-    msgpack_pack_uint64(mp_pck, time);
+    flb_time_append_to_msgpack(time, mp_pck, 0);
     msgpack_pack_map(mp_pck, map_num);
 
     if (file->config->path_key != NULL) {
@@ -167,10 +167,9 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
     int ret;
     int consumed_bytes = 0;
     char *p;
-    time_t t = time(NULL);
     void *out_buf;
     size_t out_size;
-    time_t out_time = 0;
+    struct flb_time out_time = {};
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
     msgpack_sbuffer *out_sbuf;
@@ -206,29 +205,35 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
             continue;
         }
 
+        /* Reset time for each line */
+        flb_time_zero(&out_time);
+
 #ifdef FLB_HAVE_REGEX
         if (ctx->parser) {
             ret = flb_parser_do(ctx->parser, file->buf_data, len,
                                 &out_buf, &out_size, &out_time);
             if (ret >= 0) {
-                if (out_time == 0) {
-                    out_time = t;
+                if (flb_time_to_double(&out_time) == 0) {
+                    flb_time_get(&out_time);
                 }
-                pack_line_map(out_sbuf, out_pck, out_time,
+                pack_line_map(out_sbuf, out_pck, &out_time,
                               (char**)&out_buf, &out_size, file);
                 flb_free(out_buf);
             }
             else {
-                pack_line(out_sbuf, out_pck, t,
+                flb_time_get(&out_time);
+                pack_line(out_sbuf, out_pck, &out_time,
                           file->buf_data, len, file);
             }
         }
         else {
-            pack_line(out_sbuf, out_pck, t,
+            flb_time_get(&out_time);
+            pack_line(out_sbuf, out_pck, &out_time,
                       file->buf_data, len, file);
         }
 #else
-        pack_line(out_sbuf, out_pck, t,
+        flb_time_get(&out_time);
+        pack_line(out_sbuf, out_pck, &out_time,
                   file->buf_data, len, file);
 #endif
 
