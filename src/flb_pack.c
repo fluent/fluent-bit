@@ -472,6 +472,17 @@ int flb_msgpack_to_json(char *json_str, size_t str_len,
 }
 
 
+int flb_msgpack_obj_to_json(char *json_str, size_t str_len,
+                            msgpack_object *obj)
+{
+    int ret;
+    int off = 0;
+
+    ret = msgpack2json(json_str, &off, str_len, obj);
+    json_str[str_len-1] = '\0';
+    return ret ? off: ret;
+}
+
 /**
  *  convert msgpack to JSON string.
  *  This API is similar to snprintf.
