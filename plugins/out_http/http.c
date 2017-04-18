@@ -17,17 +17,19 @@
  *  limitations under the License.
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <assert.h>
-#include <errno.h>
-
-#include <msgpack.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_time.h>
+#include <msgpack.h>
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <assert.h>
+#include <errno.h>
+
 
 #include "http.h"
 
@@ -45,9 +47,10 @@ static char *msgpack_to_json(char *data, uint64_t bytes, uint64_t *out_size)
     msgpack_unpacked result;
     msgpack_object root;
     msgpack_object map;
-    msgpack_object time;
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
+    msgpack_object *obj;
+    struct flb_time tm;
 
     /* Iterate the original buffer and perform adjustments */
     msgpack_unpacked_init(&result);
@@ -70,7 +73,7 @@ static char *msgpack_to_json(char *data, uint64_t bytes, uint64_t *out_size)
             continue;
         }
 
-        time = root.via.array.ptr[0];
+        flb_time_pop_from_msgpack(&tm, &result, &obj);
         map   = root.via.array.ptr[1];
 
         map_size = map.via.map.size;
@@ -79,7 +82,7 @@ static char *msgpack_to_json(char *data, uint64_t bytes, uint64_t *out_size)
         /* Append date k/v */
         msgpack_pack_str(&tmp_pck, 4);
         msgpack_pack_str_body(&tmp_pck, "date", 4);
-        msgpack_pack_object(&tmp_pck, time);
+        msgpack_pack_double(&tmp_pck, flb_time_to_double(&tm));
 
         for (i = 0; i < map_size; i++) {
             msgpack_object *k = &map.via.map.ptr[i].key;
@@ -97,7 +100,6 @@ static char *msgpack_to_json(char *data, uint64_t bytes, uint64_t *out_size)
     ret = flb_msgpack_raw_to_json_str(tmp_sbuf.data, tmp_sbuf.size,
                                       &json_buf, &json_size);
     msgpack_sbuffer_destroy(&tmp_sbuf);
-
     if (ret != 0) {
         return NULL;
     }
