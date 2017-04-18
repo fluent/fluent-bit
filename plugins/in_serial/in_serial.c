@@ -18,6 +18,15 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_engine.h>
+#include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_error.h>
+#include <msgpack.h>
+
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -28,13 +37,6 @@
 #include <sys/stat.h>
 #include <inttypes.h>
 #include <termios.h>
-
-#include <msgpack.h>
-#include <fluent-bit/flb_input.h>
-#include <fluent-bit/flb_utils.h>
-#include <fluent-bit/flb_engine.h>
-#include <fluent-bit/flb_pack.h>
-#include <fluent-bit/flb_error.h>
 
 #include "in_serial.h"
 #include "in_serial_config.h"
@@ -50,8 +52,7 @@ static inline int process_line(char *line, int len,
      * we handle this as a list of maps.
      */
     msgpack_pack_array(&ctx->i_ins->mp_pck, 2);
-    msgpack_pack_uint64(&ctx->i_ins->mp_pck, time(NULL));
-
+    flb_pack_time_now(&ctx->i_ins->mp_pck);
     msgpack_pack_map(&ctx->i_ins->mp_pck, 1);
     msgpack_pack_str(&ctx->i_ins->mp_pck, 3);
     msgpack_pack_str_body(&ctx->i_ins->mp_pck, "msg", 3);
