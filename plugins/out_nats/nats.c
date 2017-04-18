@@ -17,9 +17,11 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_time.h>
 
 #include <stdio.h>
 #include <msgpack.h>
@@ -75,12 +77,13 @@ static int msgpack_to_json(void *data, size_t bytes,
     size_t array_size = 0;
     msgpack_object map;
     msgpack_object root;
-    msgpack_object time;
     msgpack_object m_key;
     msgpack_object m_val;
     msgpack_packer   mp_pck;
     msgpack_sbuffer  mp_sbuf;
     msgpack_unpacked result;
+    msgpack_object *obj;
+    struct flb_time tm;
     char *json_buf;
     size_t json_size;
 
@@ -104,12 +107,12 @@ static int msgpack_to_json(void *data, size_t bytes,
         }
         root = result.data;
 
-        time  = root.via.array.ptr[0];
+        flb_time_pop_from_msgpack(&tm, &result, &obj);
         map    = root.via.array.ptr[1];
         map_size = map.via.map.size;
 
         msgpack_pack_array(&mp_pck, 2);
-        msgpack_pack_object(&mp_pck, time);
+        msgpack_pack_double(&mp_pck, flb_time_to_double(&tm));
 
         msgpack_pack_map(&mp_pck, map_size + 1);
         msgpack_pack_str(&mp_pck, 3);
