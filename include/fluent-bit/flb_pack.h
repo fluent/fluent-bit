@@ -22,12 +22,17 @@
 
 #include <jsmn/jsmn.h>
 #include <msgpack.h>
+#include <monkey/mk_core.h>
 struct flb_pack_state {
     int multiple;         /* support multiple jsons? */
     int tokens_count;     /* number of parsed tokens */
     int tokens_size;      /* array size of tokens    */
     jsmntok_t *tokens;    /* tokens array            */
     jsmn_parser parser;   /* parser state            */
+};
+struct flb_pack_json_str {
+    char *buf;
+    struct mk_list _head;
 };
 
 int flb_pack_json(char *js, size_t len, char **buffer, int *size);
@@ -44,5 +49,6 @@ int flb_msgpack_to_json(char *json_str, size_t str_len,
 char* flb_msgpack_to_json_str(size_t size, msgpack_unpacked *data);
 int flb_msgpack_raw_to_json_str(char *buf, size_t buf_size,
                                 char **out_buf, size_t *out_size);
+struct mk_list* flb_msgpack_to_json_str_list(msgpack_unpacked *data);
 
 #endif

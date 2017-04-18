@@ -296,22 +296,44 @@ void flb_pack_print(char *data, size_t bytes)
     msgpack_unpacked_destroy(&result);
 }
 
+#define MSGPACK2JSON_LIST_UNIT 4096
 
-static inline int try_to_write(char *buf, int *off, size_t left,
-                        char *str, size_t str_len)
+static int try_to_write(char **buf, int *off, size_t left,
+                               char *str, size_t str_len,
+                               struct mk_list *list)
 {
     if (str_len <= 0){
         str_len = strlen(str);
     }
     if (left <= *off+str_len) {
-        return FLB_FALSE;
+        if (list == NULL) {
+            return FLB_FALSE;
+        }
+        else {
+            char *tmp = (char*)flb_malloc(MSGPACK2JSON_LIST_UNIT);
+            char *buf_ptr = *buf;
+            struct flb_pack_json_str *jstr =(struct flb_pack_json_str*)
+                flb_malloc(sizeof(struct flb_pack_json_str));
+            if (tmp == NULL || jstr == NULL) {
+                flb_free(tmp);
+                flb_free(jstr);
+                return FLB_FALSE;
+            }
+            jstr->buf = tmp;
+            mk_list_add(&jstr->_head, list);
+
+            buf_ptr[*off] = '\0';
+            *buf = tmp;
+            *off = 0;
+        }
     }
-    memcpy(buf+*off, str, str_len);
+    memcpy(*buf+*off, str, str_len);
     *off += str_len;
     return FLB_TRUE;
 }
 
-static int msgpack2json(char *buf, int *off, size_t left, msgpack_object *o)
+static int msgpack2json(char **buf, int *off, size_t left, msgpack_object *o,
+                        struct mk_list *str_list)
 {
     int ret = FLB_FALSE;
     int i;
@@ -319,12 +341,13 @@ static int msgpack2json(char *buf, int *off, size_t left, msgpack_object *o)
 
     switch(o->type) {
     case MSGPACK_OBJECT_NIL:
-        ret = try_to_write(buf, off, left, "null", 4);
+        ret = try_to_write(buf, off, left, "null", 4, str_list);
         break;
 
     case MSGPACK_OBJECT_BOOLEAN:
         ret = try_to_write(buf, off, left,
-                           (o->via.boolean ? "true":"false"),0);
+                           (o->via.boolean ? "true ":"false"),5,
+                           str_list);
 
         break;
 
@@ -332,7 +355,7 @@ static int msgpack2json(char *buf, int *off, size_t left, msgpack_object *o)
         {
             char temp[32] = {0};
             i = snprintf(temp, sizeof(temp)-1, "%lu", (unsigned long)o->via.u64);
-            ret = try_to_write(buf, off, left, temp, i);
+            ret = try_to_write(buf, off, left, temp, i, str_list);
         }
         break;
 
@@ -340,7 +363,7 @@ static int msgpack2json(char *buf, int *off, size_t left, msgpack_object *o)
         {
             char temp[32] = {0};
             i = snprintf(temp, sizeof(temp)-1, "%ld", (signed long)o->via.i64);
-            ret = try_to_write(buf, off, left, temp, i);
+            ret = try_to_write(buf, off, left, temp, i, str_list);
         }
         break;
     case MSGPACK_OBJECT_FLOAT32:
@@ -348,22 +371,24 @@ static int msgpack2json(char *buf, int *off, size_t left, msgpack_object *o)
         {
             char temp[32] = {0};
             i = snprintf(temp, sizeof(temp)-1, "%f", o->via.f64);
-            ret = try_to_write(buf, off, left, temp, i);
+            ret = try_to_write(buf, off, left, temp, i, str_list);
         }
         break;
 
     case MSGPACK_OBJECT_STR:
-        if (try_to_write(buf, off, left, "\"", 1) &&
-            try_to_write(buf, off, left, (char*)o->via.str.ptr, o->via.str.size) &&
-            try_to_write(buf, off, left, "\"", 1)) {
+        if (try_to_write(buf, off, left, "\"", 1, str_list) &&
+            try_to_write(buf, off, left, (char*)o->via.str.ptr, o->via.str.size,
+                         str_list) &&
+            try_to_write(buf, off, left, "\"", 1, str_list)) {
             ret = FLB_TRUE;
         }
         break;
 
     case MSGPACK_OBJECT_BIN:
-        if (try_to_write(buf, off, left, "\"", 1) &&
-            try_to_write(buf, off, left, (char*)o->via.bin.ptr, o->via.bin.size) &&
-            try_to_write(buf, off, left, "\"", 1)) {
+        if (try_to_write(buf, off, left, "\"", 1, str_list) &&
+            try_to_write(buf, off, left, (char*)o->via.bin.ptr, o->via.bin.size,
+                         str_list) &&
+            try_to_write(buf, off, left, "\"", 1, str_list)) {
             ret = FLB_TRUE;
         }
         break;
@@ -393,50 +418,50 @@ static int msgpack2json(char *buf, int *off, size_t left, msgpack_object *o)
     case MSGPACK_OBJECT_ARRAY:
         loop = o->via.array.size;
 
-        if (!try_to_write(buf, off, left, "[", 1)) {
+        if (!try_to_write(buf, off, left, "[", 1, str_list)) {
             goto msg2json_end;
         }
         if (loop != 0) {
             msgpack_object* p = o->via.array.ptr;
-            if (!msgpack2json(buf, off, left, p)) {
+            if (!msgpack2json(buf, off, left, p, str_list)) {
                 goto msg2json_end;
             }
             for (i=1; i<loop; i++) {
-                if (!try_to_write(buf, off, left, ", ", 2) ||
-                    !msgpack2json(buf, off, left, p+i)) {
+                if (!try_to_write(buf, off, left, ", ", 2, str_list) ||
+                    !msgpack2json(buf, off, left, p+i, str_list)) {
                     goto msg2json_end;
                 }
             }
         }
 
-        ret = try_to_write(buf, off, left, "]", 1);
+        ret = try_to_write(buf, off, left, "]", 1, str_list);
         break;
 
     case MSGPACK_OBJECT_MAP:
         loop = o->via.map.size;
-        if (!try_to_write(buf, off, left, "{", 1)) {
+        if (!try_to_write(buf, off, left, "{", 1, str_list)) {
             goto msg2json_end;
         }
         if (loop != 0) {
             msgpack_object_kv *p = o->via.map.ptr;
-            if (!msgpack2json(buf, off, left, &p->key) ||
-                !try_to_write(buf, off, left, ":", 1)  ||
-                !msgpack2json(buf, off, left, &p->val)) {
+            if (!msgpack2json(buf, off, left, &p->key, str_list) ||
+                !try_to_write(buf, off, left, ":", 1, str_list)  ||
+                !msgpack2json(buf, off, left, &p->val, str_list)) {
                 goto msg2json_end;
             }
             for (i = 1; i < loop; i++) {
                 if (
-                    !try_to_write(buf, off, left, ", ", 2) ||
-                    !msgpack2json(buf, off, left, &(p+i)->key) ||
-                    !try_to_write(buf, off, left, ":", 1)  ||
-                    !msgpack2json(buf, off, left, &(p+i)->val) ) {
+                    !try_to_write(buf, off, left, ", ", 2, str_list) ||
+                    !msgpack2json(buf, off, left, &(p+i)->key, str_list) ||
+                    !try_to_write(buf, off, left, ":", 1, str_list)  ||
+                    !msgpack2json(buf, off, left, &(p+i)->val, str_list) ) {
                     goto msg2json_end;
 
                 }
             }
         }
 
-        ret = try_to_write(buf, off, left, "}", 1);
+        ret = try_to_write(buf, off, left, "}", 1, str_list);
         break;
 
     default:
@@ -466,7 +491,7 @@ int flb_msgpack_to_json(char *json_str, size_t str_len,
         return -1;
     }
 
-    ret = msgpack2json(json_str, &off, str_len, &data->data);
+    ret = msgpack2json(&json_str, &off, str_len, &data->data, NULL);
     json_str[str_len-1] = '\0';
     return ret ? off: ret;
 }
@@ -558,4 +583,42 @@ int flb_msgpack_raw_to_json_str(char *buf, size_t buf_size,
 
     msgpack_unpacked_destroy(&result);
     return 0;
+}
+
+/* 
+   To generate large JSON string.
+   This function returns a pointer of string list.
+ */
+struct mk_list* flb_msgpack_to_json_str_list(msgpack_unpacked *data)
+{
+    struct mk_list *list = NULL;
+    struct flb_pack_json_str *jstr = NULL;
+    char *buf = NULL;
+    int off = 0;
+
+    if (data == NULL) {
+        return NULL;
+    }
+    
+    list = (struct mk_list*)flb_malloc(sizeof(struct mk_list));
+    jstr = (struct flb_pack_json_str*)
+        flb_malloc(sizeof(struct flb_pack_json_str));
+    buf = (char*)flb_malloc(MSGPACK2JSON_LIST_UNIT);
+
+    if (list == NULL || jstr == NULL || buf == NULL) {
+        flb_free(list);
+        flb_free(jstr);
+        flb_free(buf);
+        return NULL;
+    }
+
+    mk_list_init(list);
+    jstr->buf = buf;
+    mk_list_add(&jstr->_head, list);
+
+    msgpack2json(&buf, &off,MSGPACK2JSON_LIST_UNIT, &data->data, list);
+    
+    buf[off] = '\0';
+
+    return list;
 }

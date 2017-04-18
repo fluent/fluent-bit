@@ -70,13 +70,14 @@ static void cb_file_flush(void *data, size_t bytes,
     FILE * fp;
     msgpack_unpacked result;
     size_t off = 0;
-    size_t last_off = 0;
-    size_t alloc_size = 0;
     char *out_file;
-    char *buf;
     struct flb_file_conf *ctx = out_context;
     (void) i_ins;
     (void) config;
+    struct mk_list *list = NULL;
+    struct mk_list *head = NULL;
+    struct mk_list *tmp  = NULL;
+    struct flb_pack_json_str *str = NULL;
 
     /* Set the right output */
     if (!ctx->out_file) {
@@ -99,21 +100,21 @@ static void cb_file_flush(void *data, size_t bytes,
      */
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
-        alloc_size = (off - last_off) + 128;/* JSON is larger than msgpack */
-        last_off = off;
-        buf = (char *)flb_calloc(1, alloc_size);
-        if (buf == NULL) {
-            flb_errno();
-            msgpack_unpacked_destroy(&result);
-            fclose(fp);
-            FLB_OUTPUT_RETURN(FLB_RETRY);
+        list = flb_msgpack_to_json_str_list(&result);
+        if (list == NULL) {
+            continue;
         }
+        fprintf(fp, "%s:", tag);
+        mk_list_foreach_safe(head, tmp, list) {
+            str = mk_list_entry(head, struct flb_pack_json_str, _head);
+            fprintf(fp, "%s", str->buf);
 
-        if (flb_msgpack_to_json(buf, alloc_size, &result) >= 0) {
-            fprintf(fp, "%s: %s\n", tag, buf);
+            mk_list_del(&str->_head);
+            flb_free(str->buf);
+            flb_free(str);
         }
-
-        flb_free(buf);
+        fprintf(fp, "\n");
+        flb_free(list);
     }
     msgpack_unpacked_destroy(&result);
 
