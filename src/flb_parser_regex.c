@@ -89,73 +89,6 @@ static unsigned u64_to_str(uint64_t value, char* dst) {
     return length;
 }
 
-static int parse_frac_tzone(char *str, int len, double *frac, int *tmdiff)
-{
-    int neg;
-    long hour;
-    long min;
-    char x;
-    char *p;
-    char *tmp;
-    char *end;
-
-    x = str[len];
-    str[len] = '\0';
-
-    /* Fractional seconds */
-    *frac = strtod(str, &end);
-    p = end;
-
-    str[len] = x;
-
-    if (!p) {
-        *tmdiff = 0;
-        return 0;
-    }
-
-    tmp = p;
-    while (*tmp == ' ') ++tmp;
-
-    /* Check timezones */
-    if (*p == 'Z') {
-        /* This is UTC, no changes required */
-        *tmdiff = 0;
-        return 0;
-    }
-
-    /* Unexpected timezone string */
-    if (*p != '+' && *p != '-') {
-        *tmdiff = 0;
-        return 0;
-    }
-
-    /* Negative value ? */
-    neg = (*p++ == '-');
-
-    /* Locate end */
-    end = str + len;
-
-    /* Gather hours and minutes */
-    hour = ((p[0] - '0') * 10) + (p[1] - '0');
-    if (end - p == 5 && p[2] == ':') {
-        min = ((p[3] - '0') * 10) + (p[4] - '0');
-    }
-    else {
-        min = ((p[2] - '0') * 10) + (p[3] - '0');
-    }
-
-    if (hour < 0 || hour > 59 || min < 0 || min > 59) {
-        return -1;
-    }
-
-    *tmdiff = ((hour * 3600) + (min * 60));
-    if (neg) {
-        *tmdiff = -*tmdiff;
-    }
-
-    return 0;
-}
-
 static void cb_results(unsigned char *name, unsigned char *value,
                        size_t vlen, void *data)
 {
@@ -208,8 +141,8 @@ static void cb_results(unsigned char *name, unsigned char *value,
             if (p != NULL) {
                 /* Check if we have fractional seconds */
                 if (parser->time_frac_secs && *p == '.') {
-                    ret = parse_frac_tzone(p, (vlen - (p - (char *)value)),
-                                           &frac, &tmdiff);
+                    ret = flb_parser_frac_tzone(p, (vlen - (p - (char *)value)),
+                                                &frac, &tmdiff);
                     if (ret == -1) {
                         flb_warn("[parser] Error parsing time string");
                         return;

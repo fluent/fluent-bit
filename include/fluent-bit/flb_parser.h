@@ -58,5 +58,6 @@ int flb_parser_do(struct flb_parser *parser, char *buf, size_t length,
                   void **out_buf, size_t *out_size, struct flb_time *out_time);
 
 void flb_parser_exit(struct flb_config *config);
+int flb_parser_frac_tzone(char *str, int len, double *frac, int *tmdiff);
 
 #endif
