@@ -18,10 +18,12 @@
  */
 
 #include <fluent-bit/flb_info.h>
+
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_engine.h>
+#include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_parser.h>
 #include <msgpack.h>
 
@@ -41,7 +43,6 @@ static inline void consume_bytes(char *buf, int bytes, int length)
 static inline int pack_json(struct flb_in_stdin_config *ctx,
                             char *data, size_t data_size)
 {
-    time_t t;
     size_t off = 0;
     size_t start = 0;
     msgpack_unpacked result;
@@ -51,12 +52,11 @@ static inline int pack_json(struct flb_in_stdin_config *ctx,
 
     flb_input_buf_write_start(ctx->i_in);
 
-    t = time(NULL);
     while (msgpack_unpack_next(&result, data, data_size, &off)) {
         if (result.data.type == MSGPACK_OBJECT_MAP) {
             /* { map => val, map => val, map => val } */
             msgpack_pack_array(&ctx->i_in->mp_pck, 2);
-            msgpack_pack_uint64(&ctx->i_in->mp_pck, t);
+            flb_pack_time_now(&ctx->i_in->mp_pck);
             msgpack_pack_str_body(&ctx->i_in->mp_pck, data + start, off - start);
         } else {
             msgpack_pack_str_body(&ctx->i_in->mp_pck, data + start, off - start);
@@ -70,12 +70,12 @@ static inline int pack_json(struct flb_in_stdin_config *ctx,
 }
 
 static inline int pack_regex(struct flb_in_stdin_config *ctx,
-                             time_t time, char *data, size_t data_size)
+                             struct flb_time *t, char *data, size_t data_size)
 {
     flb_input_buf_write_start(ctx->i_in);
 
     msgpack_pack_array(&ctx->i_in->mp_pck, 2);
-    msgpack_pack_uint64(&ctx->i_in->mp_pck, time);
+    flb_time_append_to_msgpack(t, &ctx->i_in->mp_pck, 0);
     msgpack_sbuffer_write(&ctx->i_in->mp_sbuf, data, data_size);
 
     flb_input_buf_write_end(ctx->i_in);
@@ -92,7 +92,7 @@ static int in_stdin_collect(struct flb_input_instance *i_ins,
     char *pack;
     void *out_buf;
     size_t out_size;
-    time_t out_time = 0;
+    struct flb_time out_time;
     struct flb_in_stdin_config *ctx = in_context;
 
     bytes = read(ctx->fd,
@@ -120,7 +120,11 @@ static int in_stdin_collect(struct flb_input_instance *i_ins,
                 flb_warn("STDIN data incomplete, waiting for more data...");
                 return 0;
             }
-            pack_json(ctx, pack, out_size);
+
+            /* Set ret with the number of bytes consumed */
+            ret = ctx->buf_len;
+
+            pack_json(ctx, pack, pack_size);
             flb_free(pack);
         }
         else {
@@ -128,7 +132,7 @@ static int in_stdin_collect(struct flb_input_instance *i_ins,
             ret = flb_parser_do(ctx->parser, ctx->buf, ctx->buf_len,
                                 &out_buf, &out_size, &out_time);
             if (ret >= 0) {
-                pack_regex(ctx, out_time, out_buf, out_size);
+                pack_regex(ctx, &out_time, out_buf, out_size);
                 flb_free(out_buf);
             }
             else {
@@ -153,6 +157,7 @@ static int in_stdin_collect(struct flb_input_instance *i_ins,
             ctx->buf[ctx->buf_len] = '\0';
         }
     }
+
     return 0;
 }
 

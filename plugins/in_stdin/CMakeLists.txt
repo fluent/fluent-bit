@@ -5,6 +5,6 @@
 
 set(src
   in_stdin.c
-  ../../src/flb_pack.c)
+  )
 
-FLB_PLUGIN(in_stdin "${src}" "jsmn")
+FLB_PLUGIN(in_stdin "${src}" "")
