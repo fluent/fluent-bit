@@ -17,16 +17,19 @@
  *  limitations under the License.
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <limits.h>
-
-#include <msgpack.h>
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_pack.h>
+
+#include <msgpack.h>
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <limits.h>
 
 #include "in_disk.h"
 
@@ -38,14 +41,14 @@ static char* shift_line(const char *line, char separator, int *idx,
 
     while(1) {
         if (line[*idx] == '\0') {
-            /* end of line */            
+            /* end of line */
             return NULL;
         }
         else if (line[*idx] != separator) {
             pack_mode = FLB_TRUE;
             buf[idx_buf] = line[*idx];
             idx_buf++;
-            
+
             if (idx_buf >= buf_size) {
                 buf[idx_buf-1] = '\0';
                 return NULL;
@@ -72,7 +75,7 @@ static int update_disk_stats(struct flb_in_disk_config *ctx)
     int  i_line   = 0;
     int  i_entry = 0;
     int  i_field = 0;
-    
+
     fp = fopen("/proc/diskstats", "r");
     if (fp == NULL) {
         perror("fopen");
@@ -125,7 +128,7 @@ static int in_disk_collect(struct flb_input_instance *i_ins,
     (void) *config;
 
     /* The type of sector size is unsigned long in kernel source */
-    unsigned long   read_total = 0; 
+    unsigned long   read_total = 0;
     unsigned long  write_total = 0;
 
     int entry = ctx->entry;
@@ -161,7 +164,7 @@ static int in_disk_collect(struct flb_input_instance *i_ins,
     flb_input_buf_write_start(i_ins);
 
     msgpack_pack_array(&i_ins->mp_pck, 2);
-    msgpack_pack_uint64(&i_ins->mp_pck, time(NULL));
+    flb_pack_time_now(&i_ins->mp_pck);
     msgpack_pack_map(&i_ins->mp_pck, num_map);
 
 
@@ -192,7 +195,7 @@ static int get_diskstats_entries(void)
     while(fgets(line, LINE_SIZE-1, fp) != NULL) {
         ret++;
     }
-    
+
     fclose(fp);
     return ret;
 }
