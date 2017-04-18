@@ -22,12 +22,14 @@
 #include <assert.h>
 #include <errno.h>
 
-#include <msgpack.h>
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_time.h>
+#include <msgpack.h>
 
 #include "td.h"
 #include "td_http.h"
@@ -56,6 +58,8 @@ static char *td_format(void *data, size_t bytes, int *out_size)
     msgpack_object root;
     msgpack_object map;
     msgpack_sbuffer *sbuf;
+    msgpack_object *obj;
+    struct flb_time tm;
 
     /* Initialize contexts for new output */
     msgpack_sbuffer_init(&mp_sbuf);
@@ -105,7 +109,9 @@ static char *td_format(void *data, size_t bytes, int *out_size)
             continue;
         }
 
-        atime = root.via.array.ptr[0].via.u64;
+        flb_time_pop_from_msgpack(&tm, &result, &obj);
+
+        atime = tm.tm.tv_sec;
         map   = root.via.array.ptr[1];
 
         n_size = map.via.map.size + 1;
