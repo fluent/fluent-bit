@@ -20,6 +20,8 @@
 #ifndef FLB_INFLUXDB_BULK_H
 #define FLB_INFLUXDB_BULK_H
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_time.h>
 #include <inttypes.h>
 
 #define INFLUXDB_BULK_CHUNK  4096  /* 4KB of buffer chunks    */
@@ -41,6 +43,7 @@ int influxdb_bulk_append_kv(struct influxdb_bulk *bulk,
                             char *val, int v_len,
                             int more, int quote);
 void influxdb_bulk_destroy(struct influxdb_bulk *bulk);
-int influxdb_bulk_append_timestamp(struct influxdb_bulk *bulk, time_t t);
+int influxdb_bulk_append_timestamp(struct influxdb_bulk *bulk,
+                                   struct flb_time *t);
 
 #endif

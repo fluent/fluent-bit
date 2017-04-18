@@ -17,12 +17,14 @@
  *  limitations under the License.
  */
 
-#include <stdio.h>
-
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_time.h>
 #include <msgpack.h>
+
+#include <stdio.h>
 
 #include "influxdb.h"
 #include "influxdb_bulk.h"
@@ -40,12 +42,13 @@ static char *influxdb_format(char *tag, int tag_len,
     int n_size;
     uint64_t seq = 0;
     size_t off = 0;
-    time_t atime;
     char *buf;
     char tmp[128];
     msgpack_unpacked result;
     msgpack_object root;
     msgpack_object map;
+    msgpack_object *obj;
+    struct flb_time tm;
     struct influxdb_bulk *bulk;
 
     /* Iterate the original buffer and perform adjustments */
@@ -92,7 +95,7 @@ static char *influxdb_format(char *tag, int tag_len,
         }
 
 
-        atime  = root.via.array.ptr[0].via.u64;
+        flb_time_pop_from_msgpack(&tm, &result, &obj);
         map    = root.via.array.ptr[1];
         n_size = map.via.map.size + 1;
 
@@ -199,7 +202,7 @@ static char *influxdb_format(char *tag, int tag_len,
         }
 
         /* Append the timestamp */
-        ret = influxdb_bulk_append_timestamp(bulk, atime);
+        ret = influxdb_bulk_append_timestamp(bulk, &tm);
         if (ret == -1) {
             flb_error("[out_influxdb] cannot append timestamp");
             influxdb_bulk_destroy(bulk);
@@ -274,7 +277,7 @@ int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *config,
     }
     ctx->seq_len = strlen(ctx->seq_name);
 
-    snprintf(ctx->uri, sizeof(ctx->uri) - 1, "/write?db=%s&precision=s", ctx->db_name);
+    snprintf(ctx->uri, sizeof(ctx->uri) - 1, "/write?db=%s&precision=n", ctx->db_name);
 
     /* Prepare an upstream handler */
     upstream = flb_upstream_create(config,
@@ -328,7 +331,14 @@ void cb_influxdb_flush(void *data, size_t bytes,
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
 
     ret = flb_http_do(c, &b_sent);
-    flb_debug("[out_influxdb] http_do=%i", ret);
+    if (ret == 0) {
+        flb_debug("[out_influxdb] http_do=%i http_status=%i",
+                  ret, c->resp.status);
+    }
+    else {
+        flb_debug("[out_influxdb] http_do=%i", ret);
+    }
+
     flb_http_client_destroy(c);
 
     flb_free(pack);
