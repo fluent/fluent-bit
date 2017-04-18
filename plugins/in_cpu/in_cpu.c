@@ -17,15 +17,18 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_stats.h>
+#include <fluent-bit/flb_time.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <math.h>
 
 #include <msgpack.h>
-#include <fluent-bit/flb_input.h>
-#include <fluent-bit/flb_config.h>
-#include <fluent-bit/flb_stats.h>
 
 #include "in_cpu.h"
 
@@ -297,6 +300,7 @@ int in_cpu_collect(struct flb_input_instance *i_ins,
     struct flb_in_cpu_config *ctx = in_context;
     struct cpu_stats *cstats = &ctx->cstats;
     struct cpu_snapshot *s;
+    struct flb_time t;
     (void) config;
 
     /* Get the current CPU usage */
@@ -310,12 +314,14 @@ int in_cpu_collect(struct flb_input_instance *i_ins,
     /* Mark the start of a 'buffer write' operation */
     flb_input_buf_write_start(i_ins);
 
+
     /*
      * Store the new data into the MessagePack buffer,
      */
     msgpack_pack_array(&i_ins->mp_pck, 2);
-    msgpack_pack_uint64(&i_ins->mp_pck, time(NULL));
 
+    flb_time_get(&t);
+    flb_time_append_to_msgpack(&t, &i_ins->mp_pck, 0);
     msgpack_pack_map(&i_ins->mp_pck, (ctx->n_processors * 3 ) + 3);
 
     /* All CPU */
