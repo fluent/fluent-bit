@@ -17,16 +17,17 @@
  *  limitations under the License.
  */
 
-#include <stdio.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_time.h>
 #include <msgpack.h>
+
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include "file.h"
 
@@ -74,7 +75,9 @@ static void cb_file_flush(void *data, size_t bytes,
     size_t alloc_size = 0;
     char *out_file;
     char *buf;
+    msgpack_object *obj;
     struct flb_file_conf *ctx = out_context;
+    struct flb_time tm;
     (void) i_ins;
     (void) config;
 
@@ -109,10 +112,13 @@ static void cb_file_flush(void *data, size_t bytes,
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
 
-        if (flb_msgpack_to_json(buf, alloc_size, &result) >= 0) {
-            fprintf(fp, "%s: %s\n", tag, buf);
+        flb_time_pop_from_msgpack(&tm, &result, &obj);
+        if (flb_msgpack_obj_to_json(buf, alloc_size, obj) >= 0) {
+            fprintf(fp, "%s: [%f, %s]\n",
+                    tag,
+                    flb_time_to_double(&tm),
+                    buf);
         }
-
         flb_free(buf);
     }
     msgpack_unpacked_destroy(&result);
