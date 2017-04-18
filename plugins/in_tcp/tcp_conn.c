@@ -17,6 +17,7 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_network.h>
@@ -46,7 +47,7 @@ static inline int process_pack(struct tcp_conn *conn,
         entry = result.data;
 
         msgpack_pack_array(&conn->in->mp_pck, 2);
-        msgpack_pack_uint64(&conn->in->mp_pck, time(NULL));
+        flb_pack_time_now(&conn->in->mp_pck);
 
         if (entry.type == MSGPACK_OBJECT_MAP) {
             msgpack_pack_object(&conn->in->mp_pck, entry);
