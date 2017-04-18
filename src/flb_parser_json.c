@@ -27,13 +27,15 @@
 int flb_parser_json_do(struct flb_parser *parser,
                        char *buf, size_t length,
                        void **out_buf, size_t *out_size,
-                       time_t *out_time)
+                       struct flb_time *out_time)
 {
     int i;
     int skip;
     int ret;
     int mp_size;
     int slen;
+    int tmdiff = 0;
+    double tmfrac = 0;
     char *p;
     char *mp_buf;
     char *time_key;
@@ -47,6 +49,7 @@ int flb_parser_json_do(struct flb_parser *parser,
     msgpack_object *v = NULL;
     time_t time_lookup;
     struct tm tm = {0};
+    struct flb_time *t;
 
     ret = flb_pack_json(buf, length, &mp_buf, &mp_size);
     if (ret != 0) {
@@ -102,6 +105,7 @@ int flb_parser_json_do(struct flb_parser *parser,
             else {
                 skip = -1;
             }
+            break;
         }
 
         k = NULL;
@@ -117,6 +121,15 @@ int flb_parser_json_do(struct flb_parser *parser,
     /* Convert from time_fmt to unix timestamp */
     p = strptime((char *) v->via.str.ptr, parser->time_fmt, &tm);
     if (p != NULL) {
+        /* Check if we have fractional seconds */
+        if (parser->time_frac_secs && *p == '.') {
+            ret = flb_parser_frac_tzone(p, v->via.str.size - (p - v->via.str.ptr),
+                                        &tmfrac, &tmdiff);
+            if (ret == -1) {
+                flb_warn("[parser] Error parsing time string");
+                return -1;
+            }
+        }
         time_lookup = mktime(&tm);
     }
     else {
@@ -127,7 +140,13 @@ int flb_parser_json_do(struct flb_parser *parser,
     /* Compose a new map without the time_key field */
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-    msgpack_pack_map(&mp_pck, map_size - 1);
+
+    if (parser->time_keep == FLB_FALSE) {
+        msgpack_pack_map(&mp_pck, map_size - 1);
+    }
+    else {
+        msgpack_pack_map(&mp_pck, map_size);
+    }
 
     for (i = 0; i < map_size; i++) {
         if (i == skip) {
@@ -143,7 +162,18 @@ int flb_parser_json_do(struct flb_parser *parser,
     /* Export the proper buffer */
     *out_buf = mp_sbuf.data;
     *out_size = mp_sbuf.size;
-    *out_time = time_lookup;
+
+    t = out_time;
+    t->tm.tv_sec  = time_lookup;
+    t->tm.tv_nsec = (tmfrac * 1000000000);
+
+    /* Adjust time zone difference */
+    if (tmdiff < 0) {
+        t->tm.tv_sec -= tmdiff;
+    }
+    else if (tmdiff > 0) {
+        t->tm.tv_sec += tmdiff;
+    }
 
     msgpack_unpacked_destroy(&result);
     return length;
