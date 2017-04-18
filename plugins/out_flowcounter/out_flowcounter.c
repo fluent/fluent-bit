@@ -21,8 +21,10 @@
 #include <stdlib.h>
 #include <time.h>
 
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_time.h>
 
 #include <msgpack.h>
 
@@ -52,7 +54,7 @@ static int configure(struct flb_out_fcount_config *ctx,
     char* unit = NULL;
     int i;
     time_t base = time(NULL);
-    
+
     /* default */
     ctx->unit = FLB_UNIT_MIN;
     ctx->tick         = 60;
@@ -119,16 +121,6 @@ static void count_up(msgpack_object *obj,
     /*TODO parse obj and count up specific data */
 }
 
-static time_t get_timestamp_from_msgpack(msgpack_object *p)
-{
-    if (p != NULL && p->via.array.size != 0) {
-        return p->via.array.ptr[0].via.u64; /* FIXME */
-    }
-    else{
-        return 0;
-    }
-}
-
 static int out_fcount_init(struct flb_output_instance *ins, struct flb_config *config,
                    void *data)
 {
@@ -180,24 +172,26 @@ static void out_fcount_flush(void *data, size_t bytes,
                      struct flb_config *config)
 {
     msgpack_unpacked result;
+    msgpack_object *obj;
     struct flb_out_fcount_config *ctx = out_context;
     struct flb_out_fcount_buffer *buf = NULL;
     size_t off = 0;
     time_t t;
     uint64_t last_off   = 0;
     uint64_t byte_data  = 0;
-
+    struct flb_time tm;
     (void) i_ins;
     (void) config;
 
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
-        t = get_timestamp_from_msgpack(&result.data);
+        flb_time_pop_from_msgpack(&tm, &result, &obj);
+
+        t = tm.tm.tv_sec;
         if (time_is_valid(t, ctx) == FLB_FALSE) {
             flb_warn("[%s] Out of range. Skip the record.", PLUGIN_NAME);
             continue;
         }
-
 
         byte_data     = (uint64_t)(off - last_off);
         last_off      = off;
@@ -219,7 +213,7 @@ static void out_fcount_flush(void *data, size_t bytes,
 
         if (buf != NULL) {
             count_up(&result.data, buf, byte_data);
-        } 
+        }
     }
     msgpack_unpacked_destroy(&result);
 
