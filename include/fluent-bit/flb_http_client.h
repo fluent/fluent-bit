@@ -45,6 +45,7 @@
 #define FLB_HTTP_ERROR           -1
 #define FLB_HTTP_MORE             0
 #define FLB_HTTP_OK               1
+#define FLB_HTTP_NOT_FOUND        2 /* header not found */
 
 struct flb_http_response {
     int status;                /* HTTP response status          */

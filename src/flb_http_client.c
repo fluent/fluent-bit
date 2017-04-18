@@ -60,6 +60,12 @@ static int header_lookup(struct flb_http_client *c,
     /* Lookup the beginning of the header */
     p = strcasestr(c->resp.data, header);
     if (!p) {
+        if (strstr(c->resp.data, "\r\n\r\n")) {
+            /* The headers are complete but the header is not there */
+            return FLB_HTTP_NOT_FOUND;
+        }
+
+        /* We need more data */
         return FLB_HTTP_MORE;
     }
 
@@ -82,11 +88,16 @@ static int check_chunked_encoding(struct flb_http_client *c)
 {
     int ret;
     int len;
-    char *header;
+    char *header = NULL;
 
     ret = header_lookup(c, "Transfer-Encoding: ", 19,
                         &header, &len);
-    if (ret == -1) {
+    if (ret == FLB_HTTP_NOT_FOUND) {
+        /* If the header is missing, this is fine */
+        c->resp.chunked_encoding = FLB_FALSE;
+        return FLB_HTTP_OK;
+    }
+    else if (ret == FLB_HTTP_MORE) {
         return FLB_HTTP_MORE;
     }
 
@@ -105,10 +116,18 @@ static int check_content_length(struct flb_http_client *c)
     char *header;
     char tmp[256];
 
+    if (c->resp.status == 204) {
+        c->resp.content_length = -1;
+        return FLB_HTTP_OK;
+    }
+
     ret = header_lookup(c, "Content-Length: ", 16,
                         &header, &len);
     if (ret == FLB_HTTP_MORE) {
         return FLB_HTTP_MORE;
+    }
+    else if (ret == FLB_HTTP_NOT_FOUND) {
+        return FLB_HTTP_NOT_FOUND;
     }
 
     if (len > sizeof(tmp) - 1) {
@@ -317,6 +336,9 @@ static int process_data(struct flb_http_client *c)
                 return FLB_HTTP_OK;
             }
         }
+    }
+    else if (c->resp.headers_end && c->resp.content_length <= 0) {
+        return FLB_HTTP_OK;
     }
 
     return FLB_HTTP_MORE;
