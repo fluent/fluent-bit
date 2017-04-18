@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_parser.h>
+#include <fluent-bit/flb_time.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -30,12 +31,12 @@
 int flb_parser_regex_do(struct flb_parser *parser,
                         char *buf, size_t length,
                         void **out_buf, size_t *out_size,
-                        time_t *out_time);
+                        struct flb_time *out_time);
 
 int flb_parser_json_do(struct flb_parser *parser,
                        char *buf, size_t length,
                        void **out_buf, size_t *out_size,
-                       time_t *out_time);
+                       struct flb_time *out_time);
 
 struct flb_parser *flb_parser_create(char *name, char *format,
                                      char *p_regex,
@@ -120,7 +121,29 @@ struct flb_parser *flb_parser_create(char *name, char *format,
             *tmp++ = 'Y';
             *tmp++ = '\0';
         }
+
+        /*
+         * Check if the format expect fractional seconds
+         *
+         * Since strptime(3) does not support fractional seconds, this
+         * requires a workaround/hack in our parser. This is a known
+         * issue and addressed in different ways in other languages.
+         *
+         * The following links are a good reference:
+         *
+         * - http://stackoverflow.com/questions/7114690/how-to-parse-syslog-timestamp
+         * - http://code.activestate.com/lists/python-list/521885/
+         */
+        tmp = strstr(p->time_fmt, "%S.%L");
+        if (tmp) {
+            tmp[2] = '\0';
+            p->time_frac_secs = (tmp + 3);
+        }
+        else {
+            p->time_frac_secs = NULL;
+        }
     }
+
     if (time_key) {
         p->time_key = flb_strdup(time_key);
     }
@@ -301,7 +324,7 @@ struct flb_parser *flb_parser_get(char *name, struct flb_config *config)
 }
 
 int flb_parser_do(struct flb_parser *parser, char *buf, size_t length,
-                  void **out_buf, size_t *out_size, time_t *out_time)
+                  void **out_buf, size_t *out_size, struct flb_time *out_time)
 {
 
     if (parser->type == FLB_PARSER_REGEX) {

@@ -23,11 +23,14 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_regex.h>
+#include <fluent-bit/flb_str.h>
 #include <msgpack.h>
 
 struct regex_cb_ctx {
     time_t time_lookup;
     time_t time_now;
+    double time_frac;
+    int    time_diff;
     struct flb_parser *parser;
     msgpack_packer *pck;
 };
@@ -86,13 +89,83 @@ static unsigned u64_to_str(uint64_t value, char* dst) {
     return length;
 }
 
+static int parse_frac_tzone(char *str, int len, double *frac, int *tmdiff)
+{
+    int neg;
+    long hour;
+    long min;
+    char x;
+    char *p;
+    char *tmp;
+    char *end;
+
+    x = str[len];
+    str[len] = '\0';
+
+    /* Fractional seconds */
+    *frac = strtod(str, &end);
+    p = end;
+
+    str[len] = x;
+
+    if (!p) {
+        *tmdiff = 0;
+        return 0;
+    }
+
+    tmp = p;
+    while (*tmp == ' ') ++tmp;
+
+    /* Check timezones */
+    if (*p == 'Z') {
+        /* This is UTC, no changes required */
+        *tmdiff = 0;
+        return 0;
+    }
+
+    /* Unexpected timezone string */
+    if (*p != '+' && *p != '-') {
+        *tmdiff = 0;
+        return 0;
+    }
+
+    /* Negative value ? */
+    neg = (*p++ == '-');
+
+    /* Locate end */
+    end = str + len;
+
+    /* Gather hours and minutes */
+    hour = ((p[0] - '0') * 10) + (p[1] - '0');
+    if (end - p == 5 && p[2] == ':') {
+        min = ((p[3] - '0') * 10) + (p[4] - '0');
+    }
+    else {
+        min = ((p[2] - '0') * 10) + (p[3] - '0');
+    }
+
+    if (hour < 0 || hour > 59 || min < 0 || min > 59) {
+        return -1;
+    }
+
+    *tmdiff = ((hour * 3600) + (min * 60));
+    if (neg) {
+        *tmdiff = -*tmdiff;
+    }
+
+    return 0;
+}
+
 static void cb_results(unsigned char *name, unsigned char *value,
                        size_t vlen, void *data)
 {
     int len;
+    int ret;
+    int tmdiff = 0;
+    double frac = 0;
     char *fmt;
     char tmp[64];
-    char *p;
+    char *p = NULL;
     char *time_key;
     struct regex_cb_ctx *pcb = data;
     struct flb_parser *parser = pcb->parser;
@@ -133,11 +206,25 @@ static void cb_results(unsigned char *name, unsigned char *value,
             }
 
             if (p != NULL) {
+                /* Check if we have fractional seconds */
+                if (parser->time_frac_secs && *p == '.') {
+                    ret = parse_frac_tzone(p, (vlen - (p - (char *)value)),
+                                           &frac, &tmdiff);
+                    if (ret == -1) {
+                        flb_warn("[parser] Error parsing time string");
+                        return;
+                    }
+                    pcb->time_frac = frac;
+                    pcb->time_diff = tmdiff;
+                }
                 pcb->time_lookup = mktime(&tm);
-                return;
             }
             else {
                 flb_error("[parser] Invalid time format %s", parser->time_fmt);
+                return;
+            }
+
+            if (parser->time_keep == FLB_FALSE) {
                 return;
             }
         }
@@ -152,13 +239,14 @@ static void cb_results(unsigned char *name, unsigned char *value,
 int flb_parser_regex_do(struct flb_parser *parser,
                         char *buf, size_t length,
                         void **out_buf, size_t *out_size,
-                        time_t *out_time)
+                        struct flb_time *out_time)
 {
     int ret;
     ssize_t n;
     int arr_size;
     struct flb_regex_search result;
     struct regex_cb_ctx pcb;
+    struct flb_time *t;
 
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
@@ -172,7 +260,7 @@ int flb_parser_regex_do(struct flb_parser *parser,
     msgpack_sbuffer_init(&tmp_sbuf);
     msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 
-    if (parser->time_fmt) {
+    if (parser->time_fmt && parser->time_keep == FLB_FALSE) {
         arr_size = (n - 1);
     }
     else {
@@ -185,6 +273,8 @@ int flb_parser_regex_do(struct flb_parser *parser,
     pcb.pck = &tmp_pck;
     pcb.parser = parser;
     pcb.time_lookup = 0;
+    pcb.time_frac = 0;
+    pcb.time_diff = 0;
     pcb.time_now = time(NULL);
 
     /* Iterate results and compose new buffer */
@@ -193,7 +283,18 @@ int flb_parser_regex_do(struct flb_parser *parser,
     /* Export results */
     *out_buf = tmp_sbuf.data;
     *out_size = tmp_sbuf.size;
-    *out_time = pcb.time_lookup;
+
+    t = out_time;
+    t->tm.tv_sec  = pcb.time_lookup;
+    t->tm.tv_nsec = (pcb.time_frac * 1000000000);
+
+    /* Adjust time zone difference */
+    if (pcb.time_diff < 0) {
+        t->tm.tv_sec -= pcb.time_diff;
+    }
+    else if (pcb.time_diff > 0) {
+        t->tm.tv_sec += pcb.time_diff;
+    }
 
     /*
      * The return the value >= 0, belongs to the LAST BYTE consumed by the

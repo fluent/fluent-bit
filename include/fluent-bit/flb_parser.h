@@ -24,18 +24,20 @@
 
 #include <fluent-bit/flb_regex.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_time.h>
 
 #define FLB_PARSER_REGEX 1
 #define FLB_PARSER_JSON  2
 
 struct flb_parser {
     /* configuration */
-    int type;           /* parser type */
-    char *name;         /* format name */
-    char *p_regex;      /* pattern for main regular expression */
-    char *time_fmt;     /* time format */
-    char *time_key;     /* field name that contains the time */
-    int time_keep;      /* keep time field */
+    int type;             /* parser type */
+    char *name;           /* format name */
+    char *p_regex;        /* pattern for main regular expression */
+    char *time_fmt;       /* time format */
+    char *time_key;       /* field name that contains the time */
+    int time_keep;        /* keep time field */
+    char *time_frac_secs; /* time format have fractional seconds ? */
 
     /* internal */
     int time_with_year; /* do time_fmt consider a year (%Y) ? */
@@ -53,7 +55,7 @@ int flb_parser_conf_file(char *file, struct flb_config *config);
 void flb_parser_destroy(struct flb_parser *parser);
 struct flb_parser *flb_parser_get(char *name, struct flb_config *config);
 int flb_parser_do(struct flb_parser *parser, char *buf, size_t length,
-                  void **out_buf, size_t *out_size, time_t *out_time);
+                  void **out_buf, size_t *out_size, struct flb_time *out_time);
 
 void flb_parser_exit(struct flb_config *config);
 
