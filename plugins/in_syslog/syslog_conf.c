@@ -73,7 +73,7 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *i_ins,
         ctx->parser = flb_parser_get(tmp, config);
     }
     else {
-        ctx->parser = flb_parser_get("syslog", config);
+        ctx->parser = flb_parser_get("syslog-rfc3164", config);
     }
 
     if (!ctx->parser) {

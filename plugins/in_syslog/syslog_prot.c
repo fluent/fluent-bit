@@ -31,10 +31,10 @@ static inline void consume_bytes(char *buf, int bytes, int length)
 }
 
 static inline int pack_line(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
-                            time_t time, char *data, size_t data_size)
+                            struct flb_time *time, char *data, size_t data_size)
 {
     msgpack_pack_array(mp_pck, 2);
-    msgpack_pack_uint64(mp_pck, time);
+    flb_time_append_to_msgpack(time, mp_pck, 0);
     msgpack_sbuffer_write(mp_sbuf, data, data_size);
     return 0;
 }
@@ -48,7 +48,7 @@ int syslog_prot_process(struct syslog_conn *conn)
     char *p;
     void *out_buf;
     size_t out_size;
-    time_t out_time;
+    struct flb_time out_time;
     struct flb_syslog *ctx = conn->ctx;
 
     msgpack_sbuffer *out_sbuf;
@@ -72,7 +72,7 @@ int syslog_prot_process(struct syslog_conn *conn)
         ret = flb_parser_do(ctx->parser, conn->buf_data, len,
                             &out_buf, &out_size, &out_time);
         if (ret >= 0) {
-            pack_line(out_sbuf, out_pck, out_time,
+            pack_line(out_sbuf, out_pck, &out_time,
                       out_buf, out_size);
             flb_free(out_buf);
         }
