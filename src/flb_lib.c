@@ -17,10 +17,7 @@
  *  limitations under the License.
  */
 
-#include <signal.h>
-#include <stdarg.h>
 
-#include <monkey/mk_core.h>
 #include <fluent-bit/flb_lib.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_pipe.h>
@@ -29,6 +26,10 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_time.h>
+
+#include <signal.h>
+#include <stdarg.h>
 
 #ifdef FLB_HAVE_MTRACE
 #include <mcheck.h>
@@ -373,6 +374,15 @@ static void flb_lib_worker(void *data)
 
     flb_log_init(config, FLB_LOG_STDERR, FLB_LOG_INFO, NULL);
     flb_engine_start(config);
+}
+
+/* Return the current time to be used by lib callers */
+double flb_time_now()
+{
+    struct flb_time t;
+
+    flb_time_get(&t);
+    return flb_time_to_double(&t);
 }
 
 /* Start the engine */
