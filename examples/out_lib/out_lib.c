@@ -2,7 +2,7 @@
 
 /*  Fluent Bit Demo
  *  ===============
- *  Copyright (C) 2015 Treasure Data Inc.
+ *  Copyright (C) 2015-2017 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -81,8 +81,8 @@ int main()
     /* Push some data */
     for (i = 0; i < 100; i++) {
         n = snprintf(tmp, sizeof(tmp) - 1,
-                     "[%lu, {\"key\": \"val %i\"}]",
-                     time(NULL), i);
+                     "[%f, {\"key\": \"val %i\"}]",
+                     flb_time_now(), i);
         flb_lib_push(ctx, in_ffd, tmp, n);
     }
 
