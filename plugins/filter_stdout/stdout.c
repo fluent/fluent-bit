@@ -21,6 +21,7 @@
 
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_time.h>
 
 #include <msgpack.h>
 
@@ -49,12 +50,16 @@ static int cb_stdout_filter(void *data, size_t bytes,
     (void) f_ins;
     (void) filter_context;
     (void) config;
+    struct flb_time tmp;
+    msgpack_object *p;
 
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
-        printf("[%zd] %s: ", cnt++, tag);
-        msgpack_object_print(stdout, result.data);
-        printf("\n");
+        printf("[%zd] %s: [", cnt++, tag);
+        flb_time_pop_from_msgpack(&tmp, &result, &p);
+        printf("%"PRIu32".%09lu, ", (uint32_t)tmp.tm.tv_sec, tmp.tm.tv_nsec);
+        msgpack_object_print(stdout, *p);
+        printf("]\n");
     }
     msgpack_unpacked_destroy(&result);
 
