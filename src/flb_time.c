@@ -66,7 +66,7 @@ int flb_time_diff(struct flb_time *time1,
     if (time1 == NULL || time0 == NULL || result == NULL) {
         return -1;
     }
-    
+
     if (time1->tm.tv_sec >= time0->tm.tv_sec) {
         result->tm.tv_sec = time1->tm.tv_sec - time0->tm.tv_sec;
         if (time1->tm.tv_nsec >= time0->tm.tv_nsec) {
@@ -100,7 +100,7 @@ int flb_time_append_to_msgpack(struct flb_time *tm, msgpack_packer *pk, int fmt)
     if (!is_valid_format(fmt)) {
 #ifdef FLB_TIME_FORCE_FMT_INT
         fmt = FLB_TIME_ETFMT_INT;
-#else        
+#else
         fmt = FLB_TIME_ETFMT_V1_FIXEXT;
 #endif
     }
@@ -151,27 +151,29 @@ int flb_time_pop_from_msgpack(struct flb_time *time, msgpack_unpacked *upk,
     if(time == NULL || upk == NULL) {
         return -1;
     }
+
     obj = upk->data.via.array.ptr[0];
+    *map = &upk->data.via.array.ptr[1];
 
     switch(obj.type){
     case MSGPACK_OBJECT_POSITIVE_INTEGER:
         time->tm.tv_sec  = obj.via.u64;
         time->tm.tv_nsec = 0;
         break;
-
+    case MSGPACK_OBJECT_FLOAT:
+        time->tm.tv_sec  = obj.via.f64;
+        time->tm.tv_nsec = ((obj.via.f64 - time->tm.tv_sec) * ONESEC_IN_NSEC);
+        break;
     case MSGPACK_OBJECT_EXT:
         memcpy(&tmp, &obj.via.ext.ptr[0], 4);
         time->tm.tv_sec = (uint32_t)ntohl(tmp);
         memcpy(&tmp, &obj.via.ext.ptr[4], 4);
         time->tm.tv_nsec = (uint32_t)ntohl(tmp);
-
         break;
-
     default:
         flb_warn("unknown time format %x", obj.type);
         return -1;
     }
 
-    *map = &upk->data.via.array.ptr[1];
     return 0;
 }
