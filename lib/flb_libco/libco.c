@@ -14,6 +14,8 @@
     #include "amd64.c"
   #elif defined(__arm__)
     #include "arm.c"
+  #elif defined(__aarch64__)
+    #include "sjlj.c"
   #elif defined(_ARCH_PPC)
     #include "ppc.c"
   #elif defined(_WIN32)

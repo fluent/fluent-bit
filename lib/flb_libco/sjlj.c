@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <signal.h>
 #include <setjmp.h>
+#include "settings.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -41,7 +42,8 @@ cothread_t co_active() {
   return (cothread_t)co_running;
 }
 
-cothread_t co_create(unsigned int size, void (*coentry)(void)) {
+cothread_t co_create(unsigned int size, void (*coentry)(void),
+                     size_t *out_size) {
   if(!co_running) co_running = &co_primary;
 
   cothread_struct *thread = (cothread_struct*)malloc(sizeof(cothread_struct));
@@ -78,6 +80,7 @@ cothread_t co_create(unsigned int size, void (*coentry)(void)) {
     }
   }
 
+  *out_size = size;
   return (cothread_t)thread;
 }
 
