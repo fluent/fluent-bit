@@ -61,7 +61,6 @@ option(FLB_PROXY_GO           "Enable Go plugins support"   Yes)
 # systems, but specific old-toolchains do not implement it.
 
 # Build-in Plugins
-option(FLB_IN_XBEE         "Enable XBee input plugin"            No)
 option(FLB_IN_CPU          "Enable CPU input plugin"            Yes)
 option(FLB_IN_DISK         "Enable Disk input plugin"           Yes)
 option(FLB_IN_FORWARD      "Enable Forward input plugin"        Yes)
@@ -108,7 +107,6 @@ if(FLB_ALL)
   set(FLB_BUFFERING    1)
 
   # Input plugins
-  set(FLB_IN_XBEE      1)
   set(FLB_IN_CPU       1)
   set(FLB_IN_MEM       1)
   set(FLB_IN_KMSG      1)

@@ -1,1 +1,0 @@
-libxbee-v3-3.0.10.ebuild
