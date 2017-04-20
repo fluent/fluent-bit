@@ -22,8 +22,11 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
+#include <sys/stat.h>
 
 #include "syslog.h"
+
+#define FLB_SYSLOG_MODE S_IRWXU
 
 struct flb_syslog *syslog_conf_create(struct flb_input_instance *i_ins,
                                       struct flb_config *config);

@@ -31,6 +31,7 @@ struct flb_syslog {
     /* Unix socket */
     int server_fd;
     char *unix_path;
+    mode_t mode;
 
     /* Buffers setup */
     size_t buffer_size;
