@@ -29,6 +29,7 @@
 
 #include "tail_config.h"
 #include "tail_file.h"
+#include "tail_signal.h"
 
 #include <limits.h>
 #include <fcntl.h>
@@ -42,6 +43,7 @@ static int tail_fs_event(struct flb_input_instance *i_ins,
     struct flb_tail_config *ctx = in_context;
     struct flb_tail_file *file = NULL;
     struct inotify_event ev;
+    struct stat st;
 
     /* Read the event */
     ret  = read(ctx->fd_notify, &ev, sizeof(struct inotify_event));
@@ -76,7 +78,42 @@ static int tail_fs_event(struct flb_input_instance *i_ins,
     }
 
     if (ev.mask & IN_MODIFY) {
-        return in_tail_collect_event(file, config);
+        /*
+         * The file was modified, check how many new bytes do
+         * we have.
+         */
+        ret = fstat(file->fd, &st);
+        if (ret == -1) {
+            flb_errno();
+            return -1;
+        }
+
+        /* Collect the data */
+        ret = in_tail_collect_event(file, config);
+        if (ret != FLB_TAIL_ERROR) {
+            /*
+             * Due to read buffer size capacity, there are some cases where the
+             * read operation cannot consume all new data available on one
+             * round; upon successfull read(2) some data can still remain.
+             *
+             * If that is the case, we set in the structure how
+             * many bytes are available 'now', so then the further
+             * routine that check pending bytes and then the inotified-file
+             * can process them properly after an internal signal.
+             *
+             * The goal to defer this routine is to avoid a blocking
+             * read(2) operation, that might kill performance. Just let's
+             * wait a second and do a good job.
+             */
+            if (file->offset < st.st_size) {
+                file->pending_bytes = (st.st_size - file->offset);
+                tail_signal_pending(ctx);
+            }
+            else {
+                file->pending_bytes = 0;
+            }
+        }
+        return ret;
     }
 
     return 0;

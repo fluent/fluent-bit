@@ -54,6 +54,60 @@ static inline int consume_byte(int fd)
 }
 
 /* cb_collect callback */
+static int in_tail_collect_pending(struct flb_input_instance *i_ins,
+                                   struct flb_config *config, void *in_context)
+{
+    int ret;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_tail_config *ctx = in_context;
+    struct flb_tail_file *file;
+    struct stat st;
+
+    /* Consumme signal byte */
+    consume_byte(ctx->ch_pending[0]);
+
+    /* Iterate promoted event files with pending bytes */
+    mk_list_foreach_safe(head, tmp, &ctx->files_event) {
+        file = mk_list_entry(head, struct flb_tail_file, _head);
+        if (file->pending_bytes <= 0) {
+            continue;
+        }
+
+        /* Gather current file size */
+        ret = fstat(file->fd, &st);
+        if (ret == -1) {
+            flb_errno();
+            flb_tail_file_remove(file);
+            continue;
+        }
+
+        ret = flb_tail_file_chunk(file);
+        switch (ret) {
+        case FLB_TAIL_ERROR:
+            /* Could not longer read the file */
+            flb_tail_file_remove(file);
+            break;
+        case FLB_TAIL_OK:
+            /*
+             * Adjust counter to verify if we need a further read(2) later.
+             * For more details refer to tail_fs_inotify.c:96.
+             */
+            if (file->offset < st.st_size) {
+                file->pending_bytes = (st.st_size - file->offset);
+                tail_signal_pending(ctx);
+            }
+            else {
+                file->pending_bytes = 0;
+            }
+            break;
+        }
+    }
+
+    return 0;
+}
+
+/* cb_collect callback */
 static int in_tail_collect_static(struct flb_input_instance *i_ins,
                                   struct flb_config *config, void *in_context)
 {
@@ -95,7 +149,6 @@ static int in_tail_collect_static(struct flb_input_instance *i_ins,
     return 0;
 }
 
-
 int in_tail_collect_event(void *file, struct flb_config *config)
 {
     int ret;
@@ -116,7 +169,6 @@ int in_tail_collect_event(void *file, struct flb_config *config)
 
     return 0;
 }
-
 
 /* Initialize plugin */
 static int in_tail_init(struct flb_input_instance *in,
@@ -175,6 +227,15 @@ static int in_tail_init(struct flb_input_instance *in,
     }
     ctx->coll_fd_rotated = ret;
 
+    /* Register callback to process pending bytes in promoted files */
+    ret = flb_input_set_collector_event(in, in_tail_collect_pending,
+                                        ctx->ch_pending[0], config);//1, 0, config);
+    if (ret == -1) {
+        flb_tail_config_destroy(ctx);
+        return -1;
+    }
+    ctx->coll_fd_pending = ret;
+
     return 0;
 }
 
@@ -217,6 +278,7 @@ static void in_tail_pause(void *data, struct flb_config *config)
     flb_input_collector_pause(ctx->coll_fd_static, ctx->i_ins);
     flb_input_collector_pause(ctx->coll_fd_scan, ctx->i_ins);
     flb_input_collector_pause(ctx->coll_fd_rotated, ctx->i_ins);
+    flb_input_collector_pause(ctx->coll_fd_pending, ctx->i_ins);
 
     /* Pause file system backend handlers */
     flb_tail_fs_pause(ctx);
@@ -229,6 +291,7 @@ static void in_tail_resume(void *data, struct flb_config *config)
     flb_input_collector_resume(ctx->coll_fd_static, ctx->i_ins);
     flb_input_collector_resume(ctx->coll_fd_scan, ctx->i_ins);
     flb_input_collector_resume(ctx->coll_fd_rotated, ctx->i_ins);
+    flb_input_collector_resume(ctx->coll_fd_pending, ctx->i_ins);
 
     /* Pause file system backend handlers */
     flb_tail_fs_resume(ctx);

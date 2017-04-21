@@ -27,12 +27,14 @@
 
 struct flb_tail_config {
     int fd_notify;             /* inotify fd               */
-    int ch_manager[2];         /* internal pipe for events */
+    int ch_manager[2];         /* pipe: channel manager    */
+    int ch_pending[2];         /* pipe: pending events     */
 
     /* Collectors */
     int coll_fd_static;
     int coll_fd_scan;
     int coll_fd_rotated;
+    int coll_fd_pending;
 
     /* Backend collectors */
     int coll_fd_fs1;           /* used by fs_inotify & fs_stat */
@@ -42,6 +44,7 @@ struct flb_tail_config {
     int dynamic_tag;           /* dynamic tag ? e.g: abc.*     */
     int refresh_interval;      /* seconds to re-scan           */
     int rotate_wait;           /* sec to wait on rotated files */
+    time_t last_pending;       /* last time a 'pending signal' was emitted' */
     char *path;                /* lookup path (glob)           */
     char *exclude_path;        /* exclude path                 */
     char *path_key;            /* key name of file path        */

@@ -42,9 +42,19 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
     }
     ctx->dynamic_tag = FLB_FALSE;
 
-    /* Create the communication pipe(2) */
+    /* Create the channel manager */
     ret = pipe(ctx->ch_manager);
     if (ret == -1) {
+        flb_errno();
+        flb_free(ctx);
+        return NULL;
+    }
+
+    /* Create the pending channel */
+    ret = pipe(ctx->ch_pending);
+    if (ret == -1) {
+        close(ctx->ch_manager[0]);
+        close(ctx->ch_manager[1]);
         flb_errno();
         flb_free(ctx);
         return NULL;
@@ -136,6 +146,8 @@ int flb_tail_config_destroy(struct flb_tail_config *config)
     /* Close pipe ends */
     close(config->ch_manager[0]);
     close(config->ch_manager[0]);
+    close(config->ch_pending[0]);
+    close(config->ch_pending[1]);
 
     flb_free(config);
     return 0;
