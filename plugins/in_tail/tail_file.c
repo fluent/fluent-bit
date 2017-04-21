@@ -165,7 +165,8 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
     int len;
     int lines = 0;
     int ret;
-    int consumed_bytes = 0;
+    off_t processed_bytes = 0;
+    char *data;
     char *p;
     time_t t = time(NULL);
     void *out_buf;
@@ -196,55 +197,52 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
     }
 
     /* Parse the data content */
-    while ((p = strchr(file->buf_data + file->parsed, '\n'))) {
-        len = (p - file->buf_data);
+    data = file->buf_data;
+    while ((p = strchr(data, '\n'))) {
+        len = (p - data);
+        /* Empty line (just \n) */
         if (len == 0) {
-            consume_bytes(file->buf_data, 1, file->buf_len);
-            file->buf_len--;
-            file->parsed = 0;
-            file->buf_data[file->buf_len] = '\0';
+            data++;
             continue;
         }
 
 #ifdef FLB_HAVE_REGEX
         if (ctx->parser) {
-            ret = flb_parser_do(ctx->parser, file->buf_data, len,
+            ret = flb_parser_do(ctx->parser, data, len,
                                 &out_buf, &out_size, &out_time);
             if (ret == 0) {
                 if (out_time == 0) {
                     out_time = t;
                 }
                 pack_line_map(out_sbuf, out_pck, out_time,
-                              (char**)&out_buf, &out_size, file);
+                              (char**) &out_buf, &out_size, file);
                 flb_free(out_buf);
             }
             else {
                 pack_line(out_sbuf, out_pck, t,
-                          file->buf_data, len, file);
+                          data, len, file);
             }
         }
         else {
             pack_line(out_sbuf, out_pck, t,
-                      file->buf_data, len, file);
+                      data, len, file);
         }
 #else
         pack_line(out_sbuf, out_pck, t,
-                  file->buf_data, len, file);
+                  data, len, file);
 #endif
 
         /*
          * FIXME: here we are moving bytes to the left on each iteration, it
          * would be fast if we do this after this while(){}
          */
-        consume_bytes(file->buf_data, len + 1, file->buf_len);
-        consumed_bytes += len + 1;
-        file->buf_len -= len + 1;
-        file->buf_data[file->buf_len] = '\0';
+        data += len + 1;
+        processed_bytes += len + 1;
         file->parsed = 0;
         lines++;
     }
     file->parsed = file->buf_len;
-    *bytes = consumed_bytes;
+    *bytes = processed_bytes;
 
     /* Buffer write-end */
     if (ctx->dynamic_tag == FLB_FALSE) {
@@ -497,7 +495,7 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
 {
     int ret;
     off_t capacity;
-    off_t consumed_bytes;
+    off_t processed_bytes;
     ssize_t bytes;
 
     capacity = sizeof(file->buf_data) - file->buf_len - 1;
@@ -519,7 +517,7 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
          * now. It may need to get back a few bytes at the beginning of a new
          * line.
          */
-        ret = process_content(file, &consumed_bytes);
+        ret = process_content(file, &processed_bytes);
         if (ret >= 0) {
             flb_debug("[in_tail] file=%s read=%lu lines=%i",
                       file->name, bytes, ret);
@@ -529,8 +527,11 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
             return FLB_TAIL_ERROR;
         }
 
-        /* Update the file offset */
-        file->offset += consumed_bytes;
+        /* Adjust the file offset and buffer */
+        file->offset += processed_bytes;
+        consume_bytes(file->buf_data, processed_bytes, file->buf_len);
+        file->buf_len -= processed_bytes;
+        file->buf_data[file->buf_len] = '\0';
 
         if (file->config->db) {
             flb_tail_db_file_offset(file, file->config);
