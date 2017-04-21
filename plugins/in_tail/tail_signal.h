@@ -23,7 +23,6 @@
 #include "tail_config.h"
 #include <unistd.h>
 
-
 static inline int tail_signal_manager(struct flb_tail_config *ctx)
 {
     int n;
@@ -31,6 +30,21 @@ static inline int tail_signal_manager(struct flb_tail_config *ctx)
 
     /* Insert a dummy event into the channel manager */
     n = write(ctx->ch_manager[1], &val, sizeof(val));
+    if (n == -1) {
+        flb_errno();
+        return -1;
+    }
+
+    return n;
+}
+
+static inline int tail_signal_pending(struct flb_tail_config *ctx)
+{
+    int n;
+    uint64_t val = 0xc002;
+
+    /* Insert a dummy event into the 'pending' channel */
+    n = write(ctx->ch_pending[1], &val, sizeof(val));
     if (n == -1) {
         flb_errno();
         return -1;
