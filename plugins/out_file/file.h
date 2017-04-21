@@ -20,4 +20,10 @@
 #ifndef FLB_OUT_FILE
 #define FLB_OUT_FILE
 
+enum {
+    FLB_OUT_FILE_FMT_JSON,
+    FLB_OUT_FILE_FMT_CSV,
+    FLB_OUT_FILE_FMT_OTHER,
+};
+
 #endif
