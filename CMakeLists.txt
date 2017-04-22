@@ -290,6 +290,12 @@ else()
   endif()
 endif()
 
+if("${GNU_HOST}" STREQUAL "")
+    set(AUTOCONF_HOST_OPT "")
+else()
+    set(AUTOCONF_HOST_OPT "--host=${GNU_HOST}")
+endif()
+
 # Memory Allocator
 # ================
 if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
@@ -299,7 +305,7 @@ if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   # Link to Jemalloc as an external dependency
   ExternalProject_Add(jemalloc
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc/configure --with-lg-quantum=3 --enable-cc-silence --prefix=<INSTALL_DIR>
+    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc/configure ${AUTOCONF_HOST_OPT} --with-lg-quantum=3 --enable-cc-silence --prefix=<INSTALL_DIR>
     CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
     BUILD_COMMAND ${MAKE}
     INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
@@ -317,7 +323,7 @@ endif()
 if(FLB_REGEX)
   ExternalProject_Add(onigmo
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/onigmo
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/onigmo/configure --with-pic --disable-shared --enable-static --prefix=<INSTALL_DIR>
+    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/onigmo/configure ${AUTOCONF_HOST_OPT} --with-pic --disable-shared --enable-static --prefix=<INSTALL_DIR>
     CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
     BUILD_COMMAND ${MAKE}
     INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
