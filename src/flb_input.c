@@ -208,20 +208,16 @@ int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
         in->mp_buf_limit = flb_utils_size_to_bytes(tmp);
         flb_free(tmp);
     }
-    else if (in->p->flags & FLB_INPUT_NET) {
-        if (prop_key_check("listen", k, len) == 0) {
-            in->host.listen = tmp;
-        }
-        else if (prop_key_check("host", k, len) == 0) {
-            in->host.name   = tmp;
-        }
-        else if (prop_key_check("port", k, len) == 0) {
-            if (tmp) {
-                in->host.port = atoi(tmp);
-            }
-            else {
-                in->host.port = 0;
-            }
+    else if (prop_key_check("listen", k, len) == 0) {
+        in->host.listen = tmp;
+    }
+    else if (prop_key_check("host", k, len) == 0) {
+        in->host.name   = tmp;
+    }
+    else if (prop_key_check("port", k, len) == 0) {
+        if (tmp) {
+            in->host.port = atoi(tmp);
+            flb_free(tmp);
         }
     }
     else {
