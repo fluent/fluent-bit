@@ -78,7 +78,7 @@ int flb_time_diff(struct flb_time *time1,
         }
         else{
             result->tm.tv_nsec = ONESEC_IN_NSEC
-                               - time1->tm.tv_nsec - time0->tm.tv_nsec;
+                               + time1->tm.tv_nsec - time0->tm.tv_nsec;
             result->tm.tv_sec--;
         }
     }
