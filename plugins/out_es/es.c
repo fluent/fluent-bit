@@ -179,7 +179,6 @@ static char *elasticsearch_format(void *data, size_t bytes, int *out_size,
     msgpack_unpacked_init(&result);
 
     if (ctx->logstash_format == FLB_TRUE) {
-        len = ctx->logstash_prefix_len;
         memcpy(logstash_index, ctx->logstash_prefix, ctx->logstash_prefix_len);
     }
     else {
