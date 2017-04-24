@@ -42,8 +42,8 @@ int fw_conn_event(void *data)
         available = (conn->buf_size - conn->buf_len);
         if (available < 1) {
             if (conn->buf_size + ctx->chunk_size > ctx->buffer_size) {
-                flb_trace("[in_fw] fd=%i incoming data exceed limit (%i KB)",
-                          event->fd, (ctx->buffer_size / 1024));
+                flb_warn("[in_fw] fd=%i incoming data exceed limit (%i KB)",
+                         event->fd, (ctx->buffer_size / 1024));
                 fw_conn_del(conn);
                 return -1;
             }
