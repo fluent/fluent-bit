@@ -179,22 +179,11 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
 
     struct flb_tail_config *ctx = file->config;
 
-    /* When using dynamic tags, we create a temporal msgpack buffer */
-    if (ctx->dynamic_tag == FLB_TRUE) {
-        msgpack_sbuffer_init(&mp_sbuf);
-        msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-        out_sbuf = &mp_sbuf;
-        out_pck  = &mp_pck;
-    }
-    else {
-        out_sbuf = &ctx->i_ins->mp_sbuf;
-        out_pck  = &ctx->i_ins->mp_pck;
-    }
-
-    /* Mark buffer write for non-dynamic tagging */
-    if (ctx->dynamic_tag == FLB_FALSE) {
-        flb_input_buf_write_start(ctx->i_ins);
-    }
+    /* Create a temporal msgpack buffer */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    out_sbuf = &mp_sbuf;
+    out_pck  = &mp_pck;
 
     /* Parse the data content */
     data = file->buf_data;
@@ -241,20 +230,13 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
     file->parsed = file->buf_len;
     *bytes = processed_bytes;
 
-    /* Buffer write-end */
-    if (ctx->dynamic_tag == FLB_FALSE) {
-        flb_input_buf_write_end(ctx->i_ins);
-    }
-    else {
-        /* Append the temporal buffer to a dyntag, then release it */
-        flb_input_dyntag_append_raw(ctx->i_ins,
-                                    file->tag_buf,
-                                    file->tag_len,
-                                    out_sbuf->data,
-                                    out_sbuf->size);
-        msgpack_sbuffer_destroy(out_sbuf);
-    }
-
+    /* Append the temporal buffer to a dyntag, then release it */
+    flb_input_dyntag_append_raw(ctx->i_ins,
+                                file->tag_buf,
+                                file->tag_len,
+                                out_sbuf->data,
+                                out_sbuf->size);
+    msgpack_sbuffer_destroy(out_sbuf);
     return lines;
 }
 
@@ -414,6 +396,10 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
             file->tag_len = out_size;
             file->tag_buf = flb_strdup(p);
         }
+    }
+    else {
+        file->tag_len = strlen(ctx->i_ins->tag);
+        file->tag_buf = flb_strdup(ctx->i_ins->tag);
     }
 
     /* Register this file into the fs_event monitoring */

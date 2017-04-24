@@ -126,8 +126,8 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
     tmp = strchr(i_ins->tag, '*');
     if (tmp) {
         ctx->dynamic_tag = FLB_TRUE;
-        i_ins->flags |= FLB_INPUT_DYN_TAG;
     }
+    i_ins->flags |= FLB_INPUT_DYN_TAG;
 
     /* Initialize database */
     tmp = flb_input_get_property("db", i_ins);
