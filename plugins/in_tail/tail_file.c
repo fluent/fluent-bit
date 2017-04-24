@@ -232,10 +232,7 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
                   data, len, file);
 #endif
 
-        /*
-         * FIXME: here we are moving bytes to the left on each iteration, it
-         * would be fast if we do this after this while(){}
-         */
+        /* Adjust counters */
         data += len + 1;
         processed_bytes += len + 1;
         file->parsed = 0;
