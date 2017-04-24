@@ -66,7 +66,8 @@ static int configure(struct record_modifier_ctx *ctx,
             split = flb_utils_split(prop->val, ' ', 1);
             if (mk_list_size(split) != 2) {
                 flb_error("[%s] invalid record parameters",PLUGIN_NAME);
-                free(mod_record);
+                flb_free(mod_record);
+                flb_utils_split_free(split);
                 continue;
             }
             /* Get first value (field) */
@@ -101,19 +102,19 @@ static int delete_list(struct record_modifier_ctx *ctx)
     mk_list_foreach_safe(head, tmp, &ctx->remove_keys) {
         key = mk_list_entry(head, struct modifier_key,  _head);
         mk_list_del(&key->_head);
-        free(key);
+        flb_free(key);
     }
     mk_list_foreach_safe(head, tmp, &ctx->whitelist_keys) {
         key = mk_list_entry(head, struct modifier_key,  _head);
         mk_list_del(&key->_head);
-        free(key);
+        flb_free(key);
     }
     mk_list_foreach_safe(head, tmp, &ctx->records) {
         record = mk_list_entry(head, struct modifier_record,  _head);
-        free(record->key);
-        free(record->val);
+        flb_free(record->key);
+        flb_free(record->val);
         mk_list_del(&record->_head);
-        free(record);
+        flb_free(record);
     }
 
     return 0;
@@ -309,7 +310,7 @@ static int cb_modifier_exit(void *data, struct flb_config *config)
 
     delete_list(ctx);
 
-    free(ctx);
+    flb_free(ctx);
     return 0;
 }
 
