@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_network.h>
+#include <fluent-bit/flb_time.h>
 #include <msgpack.h>
 
 #include "forward.h"
@@ -432,6 +433,15 @@ int cb_forward_init(struct flb_output_instance *ins, struct flb_config *config,
         }
     }
 
+    /* Backward compatible timing mode */
+    ctx->time_as_integer = FLB_FALSE;
+    tmp = flb_output_get_property("time_as_integer", ins);
+    if (tmp) {
+        if (strcmp(tmp, "on") == 0 || strcmp(tmp, "true") == 0) {
+            ctx->time_as_integer = FLB_TRUE;
+        }
+    }
+
 #ifdef FLB_HAVE_TLS
     /* Initialize Secure Forward mode */
     if (ctx->secured == FLB_TRUE) {
@@ -444,6 +454,62 @@ int cb_forward_init(struct flb_output_instance *ins, struct flb_config *config,
 #endif
 
     return 0;
+}
+
+static int data_compose(void *data, size_t bytes,
+                        void **out_buf, size_t *out_size,
+                        struct flb_out_forward_config *ctx)
+{
+    int entries = 0;
+    size_t off = 0;
+    msgpack_object   *mp_obj;
+    msgpack_packer   mp_pck;
+    msgpack_sbuffer  mp_sbuf;
+    msgpack_unpacked result;
+    struct flb_time tm;
+
+
+    /*
+     * time_as_integer means we are using backward compatible mode for
+     * servers with old timestamp mode in uint64_t (e.g: Fluentd <= v0.12).
+     */
+    msgpack_unpacked_init(&result);
+    if (ctx->time_as_integer == FLB_TRUE) {
+        /*
+         * if the case, we need to compose a new outgoing buffer instead
+         * of use the original one.
+         */
+        msgpack_sbuffer_init(&mp_sbuf);
+        msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+        while (msgpack_unpack_next(&result, data, bytes, &off)) {
+            /* Gather time */
+            flb_time_pop_from_msgpack(&tm, &result, &mp_obj);
+
+            /* Append data */
+            msgpack_pack_array(&mp_pck, 2);
+            msgpack_pack_uint64(&mp_pck, tm.tm.tv_sec);
+            msgpack_pack_object(&mp_pck, *mp_obj);
+            entries++;
+        }
+    }
+    else {
+        while (msgpack_unpack_next(&result, data, bytes, &off)) {
+            entries++;
+        }
+    }
+
+    /* cleanup */
+    if (ctx->time_as_integer == FLB_TRUE) {
+        *out_buf  = mp_sbuf.data;
+        *out_size = mp_sbuf.size;
+    }
+    else {
+        *out_buf  = NULL;
+        *out_size = 0;
+    }
+
+    return entries;
 }
 
 int cb_forward_exit(void *data, struct flb_config *config)
@@ -472,12 +538,12 @@ void cb_forward_flush(void *data, size_t bytes,
 {
     int ret = -1;
     int entries = 0;
-    size_t off = 0;
     size_t total;
     size_t bytes_sent;
     msgpack_packer   mp_pck;
     msgpack_sbuffer  mp_sbuf;
-    msgpack_unpacked result;
+    void *out_buf = NULL;
+    size_t out_size = 0;
     struct flb_out_forward_config *ctx = out_context;
     struct flb_upstream_conn *u_conn;
     (void) i_ins;
@@ -490,13 +556,14 @@ void cb_forward_flush(void *data, size_t bytes,
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
     /* Count number of entries, is there a better way to do this ? */
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
-        entries++;
+    entries = data_compose(data, bytes, &out_buf, &out_size, ctx);
+    if (out_buf == NULL && ctx->time_as_integer == FLB_FALSE) {
+        out_buf = data;
+        out_size = bytes;
     }
+
     flb_debug("[out_fw] %i entries tag='%s' tag_len=%i",
               entries, tag, tag_len);
-    msgpack_unpacked_destroy(&result);
 
     /* Output: root array */
     msgpack_pack_array(&mp_pck, 2);
@@ -537,10 +604,13 @@ void cb_forward_flush(void *data, size_t bytes,
     msgpack_sbuffer_destroy(&mp_sbuf);
     total = ret;
 
-    /* Write body */
-    ret = flb_io_net_write(u_conn, data, bytes, &bytes_sent);
+    /* Write body (records) */
+    ret = flb_io_net_write(u_conn, out_buf, out_size, &bytes_sent);
     if (ret == -1) {
         flb_error("[out_fw] error writing content body");
+        if (ctx->time_as_integer == FLB_TRUE) {
+            flb_free(out_buf);
+        }
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
@@ -548,8 +618,11 @@ void cb_forward_flush(void *data, size_t bytes,
     total += bytes_sent;
     flb_upstream_conn_release(u_conn);
 
-    flb_trace("[out_fw] ended write()=%d bytes", total);
+    if (ctx->time_as_integer == FLB_TRUE) {
+        flb_free(out_buf);
+    }
 
+    flb_trace("[out_fw] ended write()=%d bytes", total);
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 

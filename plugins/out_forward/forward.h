@@ -30,6 +30,7 @@
 
 struct flb_out_forward_config {
     int secured;              /* Using Secure Forward mode ?  */
+    int time_as_integer;      /* Use backward compatible timestamp ? */
 
     /* config */
     int shared_key_len;       /* shared key length            */
