@@ -33,6 +33,8 @@
 
 struct flb_file_conf {
     char *out_file;
+    char *delimiter;
+    int  format;
 };
 
 static int cb_file_init(struct flb_output_instance *ins,
@@ -50,15 +52,55 @@ static int cb_file_init(struct flb_output_instance *ins,
         return -1;
     }
 
+    conf->format = FLB_OUT_FILE_FMT_JSON;/* default */
+    conf->delimiter = ",";/* default */
+
     /* Optional output file name/path */
     tmp = flb_output_get_property("Path", ins);
     if (tmp) {
         conf->out_file = tmp;
     }
 
+    /* Optional, file format */
+    tmp = flb_output_get_property("Format", ins);
+    if (tmp && !strcasecmp(tmp, "csv")){
+        conf->format = FLB_OUT_FILE_FMT_CSV;
+    }
+
+    tmp = flb_output_get_property("delimiter", ins);
+    if (tmp && !strcasecmp(tmp, "\\t")) {
+        conf->delimiter = "\t";
+    }
+    else if (tmp) {
+        conf->delimiter = tmp;
+    }
+
     /* Set the context */
     flb_output_set_context(ins, conf);
 
+    return 0;
+}
+
+static int csv_output(FILE *fp,
+                      struct flb_time *tm,
+                      msgpack_object *obj,
+                      struct flb_file_conf *ctx)
+{
+    msgpack_object_kv *kv = NULL;
+    int i;
+    int map_size;
+
+    if (obj->type == MSGPACK_OBJECT_MAP && obj->via.map.size > 0) {
+        kv = obj->via.map.ptr;
+        map_size = obj->via.map.size;
+        fprintf(fp, "%f%s", flb_time_to_double(tm), ctx->delimiter);
+        for (i=0; i<map_size-1; i++) {
+            msgpack_object_print(fp, (kv+i)->val);
+            fprintf(fp, "%s", ctx->delimiter);
+        }
+        msgpack_object_print(fp, (kv+(map_size-1))->val);
+        fprintf(fp, "\n");
+    }
     return 0;
 }
 
@@ -113,11 +155,18 @@ static void cb_file_flush(void *data, size_t bytes,
         }
 
         flb_time_pop_from_msgpack(&tm, &result, &obj);
-        if (flb_msgpack_obj_to_json(buf, alloc_size, obj) >= 0) {
-            fprintf(fp, "%s: [%f, %s]\n",
-                    tag,
-                    flb_time_to_double(&tm),
-                    buf);
+        switch (ctx->format){
+        case FLB_OUT_FILE_FMT_JSON: 
+            if (flb_msgpack_obj_to_json(buf, alloc_size, obj) >= 0) {
+                fprintf(fp, "%s: [%f, %s]\n",
+                        tag,
+                        flb_time_to_double(&tm),
+                        buf);
+            }
+            break;
+        case FLB_OUT_FILE_FMT_CSV:
+            csv_output(fp, &tm, obj, ctx);
+            break;
         }
         flb_free(buf);
     }
