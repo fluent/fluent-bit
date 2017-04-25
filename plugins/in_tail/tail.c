@@ -259,7 +259,7 @@ static int in_tail_exit(void *data, struct flb_config *config)
     }
 
     flb_tail_file_remove_all(ctx);
-    flb_free(ctx);
+    flb_tail_config_destroy(ctx);
 
     return 0;
 }

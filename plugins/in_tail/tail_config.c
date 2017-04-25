@@ -145,9 +145,13 @@ int flb_tail_config_destroy(struct flb_tail_config *config)
 {
     /* Close pipe ends */
     close(config->ch_manager[0]);
-    close(config->ch_manager[0]);
+    close(config->ch_manager[1]);
     close(config->ch_pending[0]);
     close(config->ch_pending[1]);
+
+    if (config->db != NULL) {
+        flb_tail_db_close(config->db);
+    }
 
     flb_free(config);
     return 0;
