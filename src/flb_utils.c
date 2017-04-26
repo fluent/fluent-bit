@@ -310,14 +310,16 @@ size_t flb_utils_size_to_bytes(char *size)
     val = atoll(size);
 
     /* Kilo bytes to bytes */
-    if (size[len - 1] == 'k') {
+    if (size[len - 1] == 'k' || size[len - 1] == 'K') {
         return (val * 1024);
     }
-    else if (size[len - 1] == 'B') {
+    else if (size[len - 1] == 'B' || size[len - 1] == 'b') {
         switch (size[len - 2]) {
         case 'M':
+        case 'm':
             return (val * 1024 * 1024);
         case 'G':
+        case 'g':
             return (val * 1024 * 1024 * 1024);
         default:
             return -1;
