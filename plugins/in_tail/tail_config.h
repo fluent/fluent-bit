@@ -44,6 +44,7 @@ struct flb_tail_config {
     int dynamic_tag;           /* dynamic tag ? e.g: abc.*     */
     int refresh_interval;      /* seconds to re-scan           */
     int rotate_wait;           /* sec to wait on rotated files */
+    int ignore_older;          /* ignore fields older than X seconds        */
     time_t last_pending;       /* last time a 'pending signal' was emitted' */
     char *path;                /* lookup path (glob)           */
     char *exclude_path;        /* exclude path                 */

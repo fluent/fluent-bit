@@ -170,6 +170,7 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
     char *p;
     void *out_buf;
     size_t out_size;
+    time_t now = time(NULL);
     struct flb_time out_time = {};
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
@@ -205,6 +206,14 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
                 if (flb_time_to_double(&out_time) == 0) {
                     flb_time_get(&out_time);
                 }
+
+                if (ctx->ignore_older > 0) {
+                    if ((now - ctx->ignore_older) > out_time.tm.tv_sec) {
+                        flb_free(out_buf);
+                        goto go_next;
+                    }
+                }
+
                 pack_line_map(out_sbuf, out_pck, &out_time,
                               (char**) &out_buf, &out_size, file);
                 flb_free(out_buf);
@@ -225,6 +234,8 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
         pack_line(out_sbuf, out_pck, &out_time,
                   file->buf_data, len, file);
 #endif
+
+    go_next:
 
         /* Adjust counters */
         data += len + 1;
