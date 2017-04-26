@@ -328,3 +328,25 @@ size_t flb_utils_size_to_bytes(char *size)
 
     return val;
 }
+
+int flb_utils_time_to_seconds(char *time)
+{
+    int len;
+    size_t val;
+
+    len = strlen(time);
+    val = atoi(time);
+
+    /* String time to seconds */
+    if (time[len - 1] == 'D' || time[len - 1] == 'd') {
+        val *= 86400;
+    }
+    if (time[len - 1] == 'H' || time[len - 1] == 'h') {
+        val *= 3600;
+    }
+    else if (time[len - 1] == 'M' || time[len - 1] == 'm') {
+        val *= 60;
+    }
+
+    return val;
+}
