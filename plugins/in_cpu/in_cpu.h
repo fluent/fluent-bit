@@ -24,9 +24,9 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
 
-/* Collection time: every 1 second (0 nanoseconds) */
-#define IN_CPU_COLLECT_SEC    1
-#define IN_CPU_COLLECT_NSEC   0
+/* Default collection time: every 1 second (0 nanoseconds) */
+#define DEFAULT_IN_CPU_COLLECT_SEC    1
+#define DEFAULT_IN_CPU_COLLECT_NSEC   0
 #define IN_CPU_KEY_LEN       16
 
 struct cpu_key {
@@ -71,6 +71,8 @@ struct flb_in_cpu_config {
     int n_processors;   /* number of core processors  */
     int cpu_ticks;      /* CPU ticks (Kernel setting) */
     int coll_fd;        /* collector id/fd            */
+    int collect_sec;    /* collection time (Second) */
+    int collect_nsec;   /* collection time (Nanosecond) */
     struct cpu_stats cstats;
     struct flb_input_instance *i_ins;
 };
