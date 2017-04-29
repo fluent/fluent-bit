@@ -406,6 +406,15 @@ int flb_engine_start(struct flb_config *config)
         flb_utils_error(FLB_ERR_CFG_FLUSH_CREATE);
     }
 
+
+    /* Initialize the scheduler */
+    ret = flb_sched_init(config);
+    if (ret == -1) {
+        flb_error("[engine] scheduler could not start");
+        flb_engine_shutdown(config);
+        return -1;
+    }
+
     /* Initialize the stats interface (just if FLB_HAVE_STATS is defined) */
     flb_stats_init(config);
 
@@ -471,7 +480,7 @@ int flb_engine_start(struct flb_config *config)
                 }
 #endif
             }
-            else if (event->type == FLB_ENGINE_EV_SCHED) {
+            else if (event->type & FLB_ENGINE_EV_SCHED) {
                 /* Event type registered by the Scheduler */
                 flb_sched_event_handler(config, event);
             }

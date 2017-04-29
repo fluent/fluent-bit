@@ -27,10 +27,11 @@
 #include <fluent-bit/flb_output.h>
 
 /* Types of events handled by the Server engine */
-#define FLB_ENGINE_EV_CORE      MK_EVENT_NOTIFICATION
-#define FLB_ENGINE_EV_CUSTOM    MK_EVENT_CUSTOM
-#define FLB_ENGINE_EV_THREAD    1024
-#define FLB_ENGINE_EV_SCHED     2048
+#define FLB_ENGINE_EV_CORE          MK_EVENT_NOTIFICATION
+#define FLB_ENGINE_EV_CUSTOM        MK_EVENT_CUSTOM
+#define FLB_ENGINE_EV_THREAD        1024
+#define FLB_ENGINE_EV_SCHED         2048
+#define FLB_ENGINE_EV_SCHED_FRAME   (FLB_ENGINE_EV_SCHED + 4096)
 
 /* Engine events: all engine events set the left 32 bits to '1' */
 #define FLB_ENGINE_EV_STARTED   FLB_BITS_U64_SET(1, 1) /* Engine started    */

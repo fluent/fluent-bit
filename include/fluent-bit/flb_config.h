@@ -154,7 +154,8 @@ struct flb_config {
      */
     uint16_t in_table_id[512];
 
-    struct mk_list sched_requests;
+    void *sched;
+
     struct flb_task_map tasks_map[2048];
 };
 

@@ -25,16 +25,71 @@
 #include <fluent-bit/flb_task.h>
 #include <fluent-bit/flb_output.h>
 
-#define FLB_SCHED_CAP      2000
-#define FLB_SCHED_BASE     5
+/* Sched contstants */
+#define FLB_SCHED_CAP            2000
+#define FLB_SCHED_BASE           5
+#define FLB_SCHED_REQUEST_FRAME  10
 
-struct flb_sched_request {
+/* Timer types */
+#define FLB_SCHED_TIMER_REQUEST  1  /* timerfd             */
+#define FLB_SCHED_TIMER_FRAME    2  /* timer frame checker */
+
+/*
+ * A sched timer struct belongs to an event triggered by the scheduler. This
+ * is a generic type and keeps two fields as a reference for further
+ * handling:
+ *
+ * - type: event type used to route to the proper handler
+ * - data: opaque data type used by the target handler
+ */
+struct flb_sched_timer {
     struct mk_event event;
+    int type;
+    void *data;
+    struct mk_list _head;    /* link to flb_sched->timers */
+};
+
+/* Struct representing a FLB_SCHED_TIMER_REQUEST */
+struct flb_sched_request {
     flb_pipefd_t fd;
     time_t created;
     time_t timeout;
     void *data;
-    struct mk_list _head;
+    struct flb_sched_timer *timer; /* parent timer linked from */
+    struct mk_list _head;          /* link to flb_sched->[requests|wait] */
+};
+
+/* Scheduler context */
+struct flb_sched {
+
+    /*
+     * Scheduler lists:
+     *
+     * The scheduler is used to issue 'retries' of flush requests when these
+     * cannot be processed and the output plugins ask for a retry.
+     *
+     * If a retry have not reached a limit and is allowed, it needs to be
+     * queued:
+     *
+     *  - For retries that will happen within the next 60 seconds, they are
+     *    placed in the 'requests' list and a timeout is registered with
+     *    the operating system (timerfd).
+     *
+     *  - For retries that will happen 'after' 60 seconds, they are queued
+     *    into the requests_wait' list. They stay there until their
+     *    flush time happens within the next 60 seconds, so they are moved
+     *    to the sched_requests list and a further timeout is created.
+     */
+    struct mk_list requests;
+    struct mk_list requests_wait;
+
+    /* Timers: list of timers for different purposes */
+    struct mk_list timers;
+
+    /* Frame timer context */
+    flb_pipefd_t frame_fd;
+
+    struct flb_config *config;
 };
 
 int flb_sched_request_create(struct flb_config *config,
@@ -42,7 +97,13 @@ int flb_sched_request_create(struct flb_config *config,
 int flb_sched_request_destroy(struct flb_config *config,
                               struct flb_sched_request *req);
 int flb_sched_event_handler(struct flb_config *config, struct mk_event *event);
+
+int flb_sched_init(struct flb_config *config);
 int flb_sched_exit(struct flb_config *config);
+
+struct flb_sched_timer *flb_sched_timer_create(struct flb_sched *sched);
+int flb_sched_timer_destroy(struct flb_sched_timer *timer);
+
 int flb_sched_request_invalidate(struct flb_config *config, void *data);
 
 #endif
