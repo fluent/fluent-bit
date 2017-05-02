@@ -134,26 +134,13 @@ static int in_mem_init(struct flb_input_instance *in,
 
     /* Collection time setting */
     pval = flb_input_get_property("interval_sec", in);
-    if (pval != NULL && atoi(pval) >= 0) {
+    if (pval != NULL && atoi(pval) > 0) {
         ctx->interval_sec = atoi(pval);
     }
     else {
         ctx->interval_sec = DEFAULT_INTERVAL_SEC;
     }
-
-    pval = flb_input_get_property("interval_nsec", in);
-    if (pval != NULL && atoi(pval) >= 0) {
-        ctx->interval_nsec = atoi(pval);
-    }
-    else {
-        ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
-    }
-
-    if (ctx->interval_sec <= 0 && ctx->interval_nsec <= 0) {
-        /* Illegal settings. Override them. */
-        ctx->interval_sec = DEFAULT_INTERVAL_SEC;
-        ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
-    }
+    ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
 
     /* Check if the caller want's to trace a specific Process ID */
     tmp = flb_input_get_property("pid", in);
