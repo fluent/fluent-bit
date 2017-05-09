@@ -24,9 +24,9 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
 
-/* Collection time: every 1 second (0 nanoseconds) */
-#define IN_CPU_COLLECT_SEC    1
-#define IN_CPU_COLLECT_NSEC   0
+/* Default collection time: every 1 second (0 nanoseconds) */
+#define DEFAULT_INTERVAL_SEC    1
+#define DEFAULT_INTERVAL_NSEC   0
 #define IN_CPU_KEY_LEN       16
 
 struct cpu_key {
@@ -71,6 +71,8 @@ struct flb_in_cpu_config {
     int n_processors;   /* number of core processors  */
     int cpu_ticks;      /* CPU ticks (Kernel setting) */
     int coll_fd;        /* collector id/fd            */
+    int interval_sec;    /* interval collection time (Second) */
+    int interval_nsec;   /* interval collection time (Nanosecond) */
     struct cpu_stats cstats;
     struct flb_input_instance *i_ins;
 };
@@ -104,7 +106,7 @@ static inline double CPU_METRIC_SYS_AVERAGE(unsigned long pre, unsigned long now
     }
 
     diff = ULL_ABS(now, pre);
-    total = ((diff / ctx->cpu_ticks) * 100) / ctx->n_processors;
+    total = (((diff / ctx->cpu_ticks) * 100) / ctx->n_processors) / ctx->interval_sec;
 
     return total;
 }
@@ -121,7 +123,7 @@ static inline double CPU_METRIC_USAGE(unsigned long pre, unsigned long now,
     }
 
     diff = ULL_ABS(now, pre);
-    total = (diff * 100) / ctx->cpu_ticks;
+    total = ((diff * 100) / ctx->cpu_ticks) / ctx->interval_sec;
     return total;
 }
 

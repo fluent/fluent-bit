@@ -164,6 +164,7 @@ static int in_cpu_init(struct flb_input_instance *in,
     int ret;
     struct flb_in_cpu_config *ctx;
     (void) data;
+    char *pval = NULL;
 
     /* Allocate space for the configuration */
     ctx = flb_calloc(1, sizeof(struct flb_in_cpu_config));
@@ -176,6 +177,16 @@ static int in_cpu_init(struct flb_input_instance *in,
     /* Gather number of processors and CPU ticks */
     ctx->n_processors = sysconf(_SC_NPROCESSORS_ONLN);
     ctx->cpu_ticks    = sysconf(_SC_CLK_TCK);
+
+    /* Collection time setting */
+    pval = flb_input_get_property("interval_sec", in);
+    if (pval != NULL && atoi(pval) > 0) {
+        ctx->interval_sec = atoi(pval);
+    }
+    else {
+        ctx->interval_sec = DEFAULT_INTERVAL_SEC;
+    }
+    ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
 
     /* Initialize buffers for CPU stats */
     ret = snapshots_init(ctx->n_processors, &ctx->cstats);
@@ -199,8 +210,8 @@ static int in_cpu_init(struct flb_input_instance *in,
     /* Set our collector based on time, CPU usage every 1 second */
     ret = flb_input_set_collector_time(in,
                                        in_cpu_collect,
-                                       IN_CPU_COLLECT_SEC,
-                                       IN_CPU_COLLECT_NSEC,
+                                       ctx->interval_sec,
+                                       ctx->interval_nsec,
                                        config);
     if (ret == -1) {
         flb_error("[in_cpu] Could not set collector for CPU input plugin");

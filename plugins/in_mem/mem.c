@@ -33,12 +33,14 @@
 
 #include "proc.h"
 
-#define IN_MEM_COLLECT_SEC  1
-#define IN_MEM_COLLECT_NSEC 0
+#define DEFAULT_INTERVAL_SEC  1
+#define DEFAULT_INTERVAL_NSEC 0
 
 struct flb_in_mem_config {
     int    idx;
     int    page_size;
+    int    interval_sec;
+    int    interval_nsec;
     pid_t  pid;
 };
 
@@ -119,6 +121,7 @@ static int in_mem_init(struct flb_input_instance *in,
     char *tmp;
     struct flb_in_mem_config *ctx;
     (void) data;
+    char *pval = NULL;
 
     /* Initialize context */
     ctx = flb_malloc(sizeof(struct flb_in_mem_config));
@@ -128,6 +131,16 @@ static int in_mem_init(struct flb_input_instance *in,
     ctx->idx = 0;
     ctx->pid = 0;
     ctx->page_size = sysconf(_SC_PAGESIZE);
+
+    /* Collection time setting */
+    pval = flb_input_get_property("interval_sec", in);
+    if (pval != NULL && atoi(pval) > 0) {
+        ctx->interval_sec = atoi(pval);
+    }
+    else {
+        ctx->interval_sec = DEFAULT_INTERVAL_SEC;
+    }
+    ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
 
     /* Check if the caller want's to trace a specific Process ID */
     tmp = flb_input_get_property("pid", in);
@@ -141,8 +154,8 @@ static int in_mem_init(struct flb_input_instance *in,
     /* Set the collector */
     ret = flb_input_set_collector_time(in,
                                        in_mem_collect,
-                                       IN_MEM_COLLECT_SEC,
-                                       IN_MEM_COLLECT_NSEC,
+                                       ctx->interval_sec,
+                                       ctx->interval_nsec,
                                        config);
     if (ret == -1) {
         flb_error("Could not set collector for memory input plugin");
