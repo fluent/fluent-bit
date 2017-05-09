@@ -34,14 +34,36 @@
 struct flb_file_conf {
     char *out_file;
     char *delimiter;
+    char *label_delimiter;
     int  format;
 };
+
+static char* check_delimiter(char *str)
+{
+    if (str == NULL) {
+        return NULL;
+    }
+
+    if (!strcasecmp(str, "\\t") || !strcasecmp(str, "tab")) {
+        return "\t";
+    }
+    else if (!strcasecmp(str, "space")) {
+        return " ";
+    }
+    else if (!strcasecmp(str, "comma")) {
+        return ",";
+    }
+    
+    return NULL;
+}
+
 
 static int cb_file_init(struct flb_output_instance *ins,
                         struct flb_config *config,
                         void *data)
 {
     char *tmp;
+    char *ret_str;
     (void) config;
     (void) data;
     struct flb_file_conf *conf;
@@ -53,7 +75,8 @@ static int cb_file_init(struct flb_output_instance *ins,
     }
 
     conf->format = FLB_OUT_FILE_FMT_JSON;/* default */
-    conf->delimiter = ",";/* default */
+    conf->delimiter = NULL;
+    conf->label_delimiter = NULL;
 
     /* Optional output file name/path */
     tmp = flb_output_get_property("Path", ins);
@@ -64,17 +87,27 @@ static int cb_file_init(struct flb_output_instance *ins,
     /* Optional, file format */
     tmp = flb_output_get_property("Format", ins);
     if (tmp && !strcasecmp(tmp, "csv")){
-        conf->format = FLB_OUT_FILE_FMT_CSV;
+        conf->format    = FLB_OUT_FILE_FMT_CSV;
+        conf->delimiter = ",";
+    }
+    else if(tmp && !strcasecmp(tmp, "ltsv")) {
+        conf->format    = FLB_OUT_FILE_FMT_LTSV;
+        conf->delimiter = "\t";
+        conf->label_delimiter = ":";
     }
 
     tmp = flb_output_get_property("delimiter", ins);
-    if (tmp && !strcasecmp(tmp, "\\t")) {
-        conf->delimiter = "\t";
-    }
-    else if (tmp) {
-        conf->delimiter = tmp;
+    ret_str = check_delimiter(tmp);
+    if (ret_str != NULL) {
+        conf->delimiter = ret_str;
     }
 
+    tmp = flb_output_get_property("label_delimiter", ins);
+    ret_str = check_delimiter(tmp);
+    if (ret_str != NULL) {
+        conf->label_delimiter = ret_str;
+    }
+    
     /* Set the context */
     flb_output_set_context(ins, conf);
 
@@ -98,6 +131,36 @@ static int csv_output(FILE *fp,
             msgpack_object_print(fp, (kv+i)->val);
             fprintf(fp, "%s", ctx->delimiter);
         }
+        msgpack_object_print(fp, (kv+(map_size-1))->val);
+        fprintf(fp, "\n");
+    }
+    return 0;
+}
+
+static int ltsv_output(FILE *fp,
+                      struct flb_time *tm,
+                      msgpack_object *obj,
+                      struct flb_file_conf *ctx)
+{
+    msgpack_object_kv *kv = NULL;
+    int i;
+    int map_size;
+
+    if (obj->type == MSGPACK_OBJECT_MAP && obj->via.map.size > 0) {
+        kv = obj->via.map.ptr;
+        map_size = obj->via.map.size;
+        fprintf(fp, "\"time\"%s%f%s",
+                ctx->label_delimiter,
+                flb_time_to_double(tm),
+                ctx->delimiter);
+        for (i=0; i<map_size-1; i++) {
+            msgpack_object_print(fp, (kv+i)->key);
+            fprintf(fp, "%s", ctx->label_delimiter);
+            msgpack_object_print(fp, (kv+i)->val);
+            fprintf(fp, "%s", ctx->delimiter);
+        }
+        msgpack_object_print(fp, (kv+(map_size-1))->key);
+        fprintf(fp, "%s", ctx->label_delimiter);
         msgpack_object_print(fp, (kv+(map_size-1))->val);
         fprintf(fp, "\n");
     }
@@ -166,6 +229,9 @@ static void cb_file_flush(void *data, size_t bytes,
             break;
         case FLB_OUT_FILE_FMT_CSV:
             csv_output(fp, &tm, obj, ctx);
+            break;
+        case FLB_OUT_FILE_FMT_LTSV:
+            ltsv_output(fp, &tm, obj, ctx);
             break;
         }
         flb_free(buf);
