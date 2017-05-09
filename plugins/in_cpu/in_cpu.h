@@ -106,7 +106,13 @@ static inline double CPU_METRIC_SYS_AVERAGE(unsigned long pre, unsigned long now
     }
 
     diff = ULL_ABS(now, pre);
-    total = ((diff / ctx->cpu_ticks) * 100) / ctx->n_processors / ctx->interval_sec;
+
+    if (ctx->interval_sec > 0) {
+        total = ((diff / ctx->cpu_ticks) * 100) / ctx->n_processors / ctx->interval_sec;
+    }
+    else {
+        total = ((diff / ctx->cpu_ticks) * 100) / ctx->n_processors;
+    }
 
     return total;
 }
@@ -123,7 +129,14 @@ static inline double CPU_METRIC_USAGE(unsigned long pre, unsigned long now,
     }
 
     diff = ULL_ABS(now, pre);
-    total = (diff * 100) / ctx->cpu_ticks / ctx->interval_sec;
+
+    if (ctx->interval_sec > 0) {
+        total = (diff * 100) / ctx->cpu_ticks / ctx->interval_sec;
+    }
+    else {
+        total = (diff * 100) / ctx->cpu_ticks;
+    }
+
     return total;
 }
 
