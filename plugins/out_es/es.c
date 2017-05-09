@@ -221,7 +221,7 @@ static char *elasticsearch_format(void *data, size_t bytes, int *out_size,
             msgpack_pack_str_body(&tmp_pck, time_formatted, s);
 
             /* Compose Index header */
-            p = logstash_index + len;
+            p = logstash_index + ctx->logstash_prefix_len;
             *p++ = '-';
             if (!localtime_r(&t, &tm)) {
                 flb_errno();
