@@ -46,6 +46,15 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
         return NULL;
     }
     ctx->config = config;
+    ctx->merge_json_log = FLB_FALSE;
+
+    /* Merge JSON log */
+    tmp = flb_filter_get_property("merge_json_log", i);
+    if (tmp) {
+        if (strcasecmp(tmp, "on") == 0 || strcasecmp(tmp, "true") == 0) {
+            ctx->merge_json_log = FLB_TRUE;
+        }
+    }
 
     /* Get Kubernetes API server */
     url = flb_filter_get_property("kube_url", i);
@@ -116,6 +125,12 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
         return NULL;
     }
 
+    /* Merge log buffer */
+    if (ctx->merge_json_log == FLB_TRUE) {
+        ctx->merge_json_buf = flb_malloc(FLB_MERGE_BUF_SIZE);
+        ctx->merge_json_buf_size = FLB_MERGE_BUF_SIZE;
+    }
+
     flb_info("[filter_kube] https=%i host=%s port=%i",
               ctx->api_https, ctx->api_host, ctx->api_port);
     return ctx;
@@ -129,6 +144,10 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
 
     if (ctx->regex_tag) {
         flb_regex_destroy(ctx->regex_tag);
+    }
+
+    if (ctx->merge_json_log == FLB_TRUE) {
+        flb_free(ctx->merge_json_buf);
     }
 
     flb_free(ctx->api_host);
