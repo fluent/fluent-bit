@@ -38,11 +38,20 @@
  */
 #define FLB_HASH_TABLE_SIZE 256
 
+/*
+ * When merging nested JSON strings from Docker logs, we need a temporal
+ * buffer to perform the convertion. To optimize the process, we pre-allocate
+ * a buffer for that purpose. The FLB_MERGE_BUF_SIZE defines the buffer size.
+ *
+ * Note: this is only the initial buffer size, it can grow depending on needs
+ * for every incoming json-string.
+ */
+#define FLB_MERGE_BUF_SIZE  2048  /* 2KB */
+
 /* Kubernetes API server info */
 #define FLB_API_HOST  "kubernetes.default.svc"
 #define FLB_API_PORT  443
 #define FLB_API_TLS   FLB_TRUE
-
 struct kube_meta;
 
 /* Filter context */
@@ -51,6 +60,11 @@ struct flb_kube {
     char *api_host;
     int api_port;
     int api_https;
+
+    /* Merge JSON feature */
+    int merge_json_log;
+    int merge_json_buf_size;
+    char *merge_json_buf;
 
     char kube_url[1024];
     struct flb_regex *regex_tag;
