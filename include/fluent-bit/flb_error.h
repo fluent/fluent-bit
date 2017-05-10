@@ -22,6 +22,7 @@
 
 #define FLB_ERR_CFG_FILE              10
 #define FLB_ERR_CFG_FILE_FORMAT       11
+#define FLB_ERR_CFG_FILE_STOP         12
 #define FLB_ERR_CFG_FLUSH             20
 #define FLB_ERR_CFG_FLUSH_CREATE      21
 #define FLB_ERR_CFG_FLUSH_REGISTER    22

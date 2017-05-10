@@ -329,12 +329,13 @@ static int flb_service_conf(struct flb_config *config, char *file)
         /* Create an instace of the plugin */
         tmp = flb_env_var_translate(config->env, name);
         in = flb_input_new(config, tmp, NULL);
-        mk_mem_free(tmp);
         mk_mem_free(name);
         if (!in) {
-            flb_service_conf_err(section, "Name");
+            fprintf(stderr, "Input plugin '%s' cannot be loaded\n", tmp);
+            mk_mem_free(tmp);
             goto flb_service_conf_end;
         }
+        mk_mem_free(tmp);
 
         /* Iterate other properties */
         mk_list_foreach(h_prop, &section->entries) {
@@ -365,12 +366,13 @@ static int flb_service_conf(struct flb_config *config, char *file)
         /* Create an instace of the plugin */
         tmp = flb_env_var_translate(config->env, name);
         out = flb_output_new(config, tmp, NULL);
-        mk_mem_free(tmp);
         mk_mem_free(name);
         if (!out) {
-            flb_service_conf_err(section, "Name");
+            fprintf(stderr, "Output plugin '%s' cannot be loaded\n", tmp);
+            mk_mem_free(tmp);
             goto flb_service_conf_end;
         }
+        mk_mem_free(tmp);
 
         /* Iterate other properties */
         mk_list_foreach(h_prop, &section->entries) {
@@ -632,7 +634,7 @@ int main(int argc, char **argv)
         /* Load the service configuration file */
         ret = flb_service_conf(config, cfg_file);
         if (ret != 0) {
-            flb_utils_error(FLB_ERR_CFG_FILE_FORMAT);
+            flb_utils_error(FLB_ERR_CFG_FILE_STOP);
         }
         flb_free(cfg_file);
     }
