@@ -354,7 +354,9 @@ static int msgpack2json(char *buf, int *off, size_t left, msgpack_object *o)
 
     case MSGPACK_OBJECT_STR:
         if (try_to_write(buf, off, left, "\"", 1) &&
-            try_to_write(buf, off, left, (char*)o->via.str.ptr, o->via.str.size) &&
+            (o->via.str.size > 0 ?
+             try_to_write(buf, off, left, (char*)o->via.str.ptr, o->via.str.size)
+              : 1/* nothing to do */) &&
             try_to_write(buf, off, left, "\"", 1)) {
             ret = FLB_TRUE;
         }
@@ -362,7 +364,9 @@ static int msgpack2json(char *buf, int *off, size_t left, msgpack_object *o)
 
     case MSGPACK_OBJECT_BIN:
         if (try_to_write(buf, off, left, "\"", 1) &&
-            try_to_write(buf, off, left, (char*)o->via.bin.ptr, o->via.bin.size) &&
+            (o->via.bin.size > 0 ?
+             try_to_write(buf, off, left, (char*)o->via.bin.ptr, o->via.bin.size)
+              : 1 /* nothing to do */) &&
             try_to_write(buf, off, left, "\"", 1)) {
             ret = FLB_TRUE;
         }
