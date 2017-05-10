@@ -48,15 +48,15 @@ static int cb_kube_init(struct flb_filter_instance *f_ins,
         return -1;
     }
 
+    /* Set context */
+    flb_filter_set_context(f_ins, ctx);
+
     /*
      * Get Kubernetes Metadata: we gather this at the beginning
      * as we need this information to process logs in Kubernetes
      * environment, otherwise the service should not start.
      */
     flb_kube_meta_init(ctx, config);
-
-    /* Set context */
-    flb_filter_set_context(f_ins, ctx);
 
     return 0;
 }
