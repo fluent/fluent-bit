@@ -547,6 +547,7 @@ int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config)
     flb_kube_network_init(ctx, config);
 
     /* Gather info from API server */
+    flb_info("[filter_kube] testing connectivity with API server...");
     ret = get_api_server_info(ctx, ctx->namespace, ctx->podname,
                               &meta_buf, &meta_size);
     if (ret == -1) {
@@ -554,6 +555,8 @@ int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config)
                   ctx->podname);
         return -1;
     }
+    flb_info("[filter_kube] API server connectivity OK");
+
     flb_free(meta_buf);
 
     return 0;
