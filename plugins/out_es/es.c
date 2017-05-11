@@ -180,6 +180,7 @@ static char *elasticsearch_format(void *data, size_t bytes, int *out_size,
 
     if (ctx->logstash_format == FLB_TRUE) {
         memcpy(logstash_index, ctx->logstash_prefix, ctx->logstash_prefix_len);
+        logstash_index[ctx->logstash_prefix_len] = '\0';
     }
     else {
         index_len = snprintf(j_index,
@@ -241,6 +242,8 @@ static char *elasticsearch_format(void *data, size_t bytes, int *out_size,
                 es_bulk_destroy(bulk);
                 return NULL;
             }
+
+            len = p - logstash_index;
             s = strftime(p, sizeof(logstash_index) - len - 1,
                          ctx->logstash_dateformat, &tm);
             p += s;
