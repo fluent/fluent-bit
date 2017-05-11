@@ -184,6 +184,18 @@ static int cb_kube_filter(void *data, size_t bytes,
             }
         }
 
+        /* Append Kubernetes metadata */
+        msgpack_pack_str(&tmp_pck, 10);
+        msgpack_pack_str_body(&tmp_pck, "kubernetes", 10);
+
+        if (cache_size > 0) {
+            msgpack_sbuffer_write(&tmp_sbuf, cache_buf, cache_size);
+        }
+        else {
+            msgpack_pack_str(&tmp_pck, 30);
+            msgpack_pack_str_body(&tmp_pck, "error connecting to api server", 30);
+        }
+
         /*
          * JSON maps inside a Docker JSON logs are escaped string, before
          * to pack it we need to convert it to a native structured format.
@@ -226,18 +238,6 @@ static int cb_kube_filter(void *data, size_t bytes,
         }
         else {
             merge_json_nil(tmp_pck);
-        }
-
-        /* Append Kubernetes metadata */
-        msgpack_pack_str(&tmp_pck, 10);
-        msgpack_pack_str_body(&tmp_pck, "kubernetes", 10);
-
-        if (cache_size > 0) {
-            msgpack_sbuffer_write(&tmp_sbuf, cache_buf, cache_size);
-        }
-        else {
-            msgpack_pack_str(&tmp_pck, 30);
-            msgpack_pack_str_body(&tmp_pck, "error connecting to api server", 30);
         }
     }
     msgpack_unpacked_destroy(&result);
