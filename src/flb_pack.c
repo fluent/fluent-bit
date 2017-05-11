@@ -311,25 +311,26 @@ static inline int try_to_write(char *buf, int *off, size_t left,
     return FLB_TRUE;
 }
 
-static inline int try_to_write_str(char *buf, int *off, size_t left,
+static inline int try_to_write_str(char *buf, int *off, size_t size,
                                    char *str, size_t str_len)
 {
     int i;
     int written = 0;
     int required;
+    size_t available;
     char c;
     char *p;
 
-    required = *off + str_len;
-    if (left <= required) {
+    available = (size - *off);
+    required = str_len;
+    if (available <= required) {
         return FLB_FALSE;
     }
 
     written = *off;
     p = buf + *off;
     for (i = 0; i < str_len; i++) {
-        required = written + 2;
-        if (left <= required) {
+        if ((available - written) < 2) {
             return FLB_FALSE;
         }
 
