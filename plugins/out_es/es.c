@@ -217,21 +217,34 @@ static char *elasticsearch_format(void *data, size_t bytes, int *out_size,
 
         /* Set the new map size */
         msgpack_pack_map(&tmp_pck, map_size + 1);
+
+        /* Append the time key */
+        msgpack_pack_str(&tmp_pck, ctx->time_key_len);
+        msgpack_pack_str_body(&tmp_pck, ctx->time_key, ctx->time_key_len);
+
+        /* Format the time */
+        t = otime.via.u64;
+        gmtime_r(&t, &tm);
+        s = strftime(time_formatted, sizeof(time_formatted) - 1,
+                     ctx->time_key_format, &tm);
+        msgpack_pack_str(&tmp_pck, s);
+        msgpack_pack_str_body(&tmp_pck, time_formatted, s);
+
+        /* Append the time key */
+        msgpack_pack_str(&tmp_pck, ctx->time_key_len);
+        msgpack_pack_str_body(&tmp_pck, ctx->time_key, ctx->time_key_len);
+
+        /* Format the time */
+        gmtime_r(&tms.tm.tv_sec, &tm);
+        s = strftime(time_formatted, sizeof(time_formatted) - 1,
+                     ctx->time_key_format, &tm);
+        len = snprintf(time_formatted + s, sizeof(time_formatted) - 1 - s,
+                       ".%" PRIu64, tms.tm.tv_nsec);
+        s += len;
+        msgpack_pack_str(&tmp_pck, s);
+        msgpack_pack_str_body(&tmp_pck, time_formatted, s);
+
         if (ctx->logstash_format == FLB_TRUE) {
-            /* Append the time key */
-            msgpack_pack_str(&tmp_pck, ctx->time_key_len);
-            msgpack_pack_str_body(&tmp_pck, ctx->time_key, ctx->time_key_len);
-
-            /* Format the time */
-            gmtime_r(&tms.tm.tv_sec, &tm);
-            s = strftime(time_formatted, sizeof(time_formatted) - 1,
-                         ctx->time_key_format, &tm);
-            len = snprintf(time_formatted + s, sizeof(time_formatted) - 1 - s,
-                           ".%" PRIu64, tms.tm.tv_nsec);
-            s += len;
-            msgpack_pack_str(&tmp_pck, s);
-            msgpack_pack_str_body(&tmp_pck, time_formatted, s);
-
             /* Compose Index header */
             p = logstash_index + len;
             *p++ = '-';
@@ -253,12 +266,6 @@ static char *elasticsearch_format(void *data, size_t bytes, int *out_size,
                                  ES_BULK_HEADER,
                                  ES_BULK_INDEX_FMT,
                                  logstash_index, ctx->type);
-        }
-        else {
-            /* Append date k/v */
-            msgpack_pack_str(&tmp_pck, 4);
-            msgpack_pack_str_body(&tmp_pck, "date", 4);
-            msgpack_pack_double(&tmp_pck, flb_time_to_double(&tms));
         }
 
         /*
