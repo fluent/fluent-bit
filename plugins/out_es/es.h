@@ -28,6 +28,7 @@
 #define FLB_ES_DEFAULT_TIME_FMT   "%Y.%m.%d"
 #define FLB_ES_DEFAULT_TIME_KEY   "@timestamp"
 #define FLB_ES_DEFAULT_TIME_KEYF  "%Y-%m-%dT%H:%M:%S%z"
+#define FLB_ES_DEFAULT_TAG_KEY    "_flb-key"
 
 struct flb_elasticsearch {
     /* Elasticsearch index (database) and type (table) */
@@ -57,6 +58,11 @@ struct flb_elasticsearch {
     /* time key format */
     int time_key_format_len;
     char *time_key_format;
+
+    /* include_tag_key */
+    int include_tag_key;
+    int tag_key_len;
+    char *tag_key;
 
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
