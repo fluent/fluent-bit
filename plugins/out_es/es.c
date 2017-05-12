@@ -115,7 +115,8 @@ static inline void es_pack_map_content(msgpack_packer *tmp_pck, msgpack_object m
  *
  * 'Sadly' this process involves to convert from Msgpack to JSON.
  */
-static char *elasticsearch_format(void *data, size_t bytes, int *out_size,
+static char *elasticsearch_format(void *data, size_t bytes,
+                                  char *tag, int tag_len, int *out_size,
                                   struct flb_elasticsearch *ctx)
 {
     int ret;
@@ -215,6 +216,10 @@ static char *elasticsearch_format(void *data, size_t bytes, int *out_size,
         msgpack_sbuffer_init(&tmp_sbuf);
         msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 
+        if (ctx->include_tag_key == FLB_TRUE) {
+            map_size++;
+        }
+
         /* Set the new map size */
         msgpack_pack_map(&tmp_pck, map_size + 1);
 
@@ -266,6 +271,14 @@ static char *elasticsearch_format(void *data, size_t bytes, int *out_size,
                                  ES_BULK_HEADER,
                                  ES_BULK_INDEX_FMT,
                                  logstash_index, ctx->type);
+        }
+
+        /* Tag Key */
+        if (ctx->include_tag_key == FLB_TRUE) {
+            msgpack_pack_str(&tmp_pck, ctx->tag_key_len);
+            msgpack_pack_str_body(&tmp_pck, ctx->tag_key, ctx->tag_key_len);
+            msgpack_pack_str(&tmp_pck, tag_len);
+            msgpack_pack_str_body(&tmp_pck, tag, tag_len);
         }
 
         /*
@@ -355,7 +368,7 @@ void cb_es_flush(void *data, size_t bytes,
     }
 
     /* Convert format */
-    pack = elasticsearch_format(data, bytes, &bytes_out, ctx);
+    pack = elasticsearch_format(data, bytes, tag, tag_len, &bytes_out, ctx);
     if (!pack) {
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_ERROR);
