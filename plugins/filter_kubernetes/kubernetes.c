@@ -80,11 +80,135 @@ static int unescape_string(char *buf, int buf_len, char **unesc_buf)
     return (j - 1);
 }
 
-static inline void merge_json_nil(msgpack_packer tmp_pck)
+static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
+                            msgpack_object source_map,
+                            char *kube_buf, size_t kube_size, struct flb_kube *ctx)
 {
-    msgpack_pack_str(&tmp_pck, 7);
-    msgpack_pack_str_body(&tmp_pck, "@fields", 7);
-    msgpack_pack_nil(&tmp_pck);
+    int i;
+    int ret;
+    int new_size;
+    int map_size;
+    int new_map_size = 0;
+    int log_index = -1;
+    int log_size = 0;
+    int json_size;
+    int log_buf_entries = 0;
+    size_t off = 0;
+    char *tmp;
+    char *log_buf = NULL;
+    msgpack_unpacked result;
+    msgpack_object k;
+    msgpack_object v;
+    msgpack_object root;
+
+    /* Original map size */
+    map_size = source_map.via.map.size;
+
+    /* If merge_json_log is enabled, we need to lookup the 'log' field */
+    if (ctx->merge_json_log == FLB_TRUE) {
+        for (i = 0; i < map_size; i++) {
+            k = source_map.via.map.ptr[i].key;
+
+            /* Validate 'log' field */
+            if (k.via.str.size == 3 &&
+                strncmp(k.via.str.ptr, "log", 3) == 0) {
+                /* do we have a JSON map ? */
+                v = source_map.via.map.ptr[i].val;
+                if (v.via.str.ptr[0] != '{') {
+                    /* not a json map, no merge can be done */
+                    break;
+                }
+
+                log_index = i;
+                break;
+            }
+        }
+    }
+
+    /*
+     * If a log_index exists, means that a JSON map is inside a Docker json
+     * like a escaped string. Before to pack it we need to convert it to a
+     * native JSON structured format.
+     */
+    if (log_index != -1) {
+        v = source_map.via.map.ptr[log_index].val;
+        if (v.via.str.size >= ctx->merge_json_buf_size) {
+            new_size = v.via.str.size + 1;
+            tmp = flb_realloc(ctx->merge_json_buf, new_size);
+            if (tmp) {
+                ctx->merge_json_buf = tmp;
+                ctx->merge_json_buf_size = new_size;
+            }
+            else {
+                flb_errno();
+                return -1;
+            }
+        }
+
+        json_size = unescape_string((char *) v.via.str.ptr,
+                                    v.via.str.size,
+                                    &ctx->merge_json_buf);
+        ret = flb_pack_json(ctx->merge_json_buf, json_size,
+                            &log_buf, &log_size);
+        if (ret != 0) {
+            flb_warn("[filter_kube] could not pack merged json");
+        }
+    }
+
+    /* Determinate the size of the new map */
+    new_map_size = map_size;
+
+    /* If a merged json exists, check the number of entries in that new map */
+    if (log_buf && log_index != -1) {
+        off = 0;
+        msgpack_unpacked_init(&result);
+        msgpack_unpack_next(&result, log_buf, log_size, &off);
+        root = result.data;
+        log_buf_entries = root.via.map.size;
+        msgpack_unpacked_destroy(&result);
+    }
+
+    /* Kubernetes metadata */
+    if (kube_buf && kube_size > 0) {
+        new_map_size++;
+    }
+
+    /* Start packaging the final map */
+    new_map_size += log_buf_entries;
+    msgpack_pack_map(pck, new_map_size);
+
+    /* Original map */
+    for (i = 0; i < map_size; i++) {
+        k = source_map.via.map.ptr[i].key;
+        v = source_map.via.map.ptr[i].val;
+        msgpack_pack_object(pck, k);
+        msgpack_pack_object(pck, v);
+    }
+
+    /* Merged JSON */
+    if (log_buf && log_index != -1) {
+        off = 0;
+        msgpack_unpacked_init(&result);
+        msgpack_unpack_next(&result, log_buf, log_size, &off);
+        root = result.data;
+        for (i = 0; i < log_buf_entries; i++) {
+            k = root.via.map.ptr[i].key;
+            v = root.via.map.ptr[i].val;
+            msgpack_pack_object(pck, k);
+            msgpack_pack_object(pck, v);
+        }
+        msgpack_unpacked_destroy(&result);
+        flb_free(log_buf);
+    }
+
+    /* Kubernetes */
+    if (kube_buf && kube_size > 0) {
+        msgpack_pack_str(pck, 10);
+        msgpack_pack_str_body(pck, "kubernetes", 10);
+        msgpack_sbuffer_write(sbuf, kube_buf, kube_size);
+    }
+
+    return 0;
 }
 
 static int cb_kube_filter(void *data, size_t bytes,
@@ -94,17 +218,8 @@ static int cb_kube_filter(void *data, size_t bytes,
                           void *filter_context,
                           struct flb_config *config)
 {
-    int i;
     int ret;
-    int m_size;
-    int extra = 0;
-    int new_size;
-    int json_size;
-    int log_size;
-    int log_index = -1;
-    char *log_buf;
     size_t off = 0;
-    char *tmp;
     char *cache_buf;
     size_t cache_size = 0;
     msgpack_unpacked result;
@@ -113,8 +228,6 @@ static int cb_kube_filter(void *data, size_t bytes,
     msgpack_object root;
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
-    msgpack_object k;
-    msgpack_object v;
     struct flb_kube *ctx = filter_context;
     (void) f_ins;
     (void) config;
@@ -128,14 +241,6 @@ static int cb_kube_filter(void *data, size_t bytes,
     /* Create temporal msgpack buffer */
     msgpack_sbuffer_init(&tmp_sbuf);
     msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
-
-    /* Kubernetes meta */
-    extra++;
-
-    /* Detect if we need to merge a JSON message in the 'log' */
-    if (ctx->merge_json_log == FLB_TRUE) {
-        extra++;
-    }
 
     /* Iterate each item array and append meta */
     msgpack_unpacked_init(&result);
@@ -153,91 +258,14 @@ static int cb_kube_filter(void *data, size_t bytes,
         msgpack_pack_array(&tmp_pck, 2);
         msgpack_pack_object(&tmp_pck, time);
 
-        /* Get original map size */
-        m_size = map.via.map.size;
-
-        msgpack_pack_map(&tmp_pck, m_size + extra);
-        for (i = 0; i < m_size; i++) {
-            k = map.via.map.ptr[i].key;
-            v = map.via.map.ptr[i].val;
-
-            msgpack_pack_object(&tmp_pck, k);
-            msgpack_pack_object(&tmp_pck, v);
-
-            /* JSON log ? */
-            if (ctx->merge_json_log == FLB_FALSE) {
-                continue;
-            }
-
-            if (log_index != -1) {
-                continue;
-            }
-
-            /* Validate 'log' field */
-            if (k.via.str.size == 3 && strncmp(k.via.str.ptr, "log", 3) == 0) {
-                /* do we have a JSON map ? */
-                if (v.via.str.ptr[0] != '{') {
-                    continue;
-                }
-
-                log_index = i;
-            }
-        }
-
-        /* Append Kubernetes metadata */
-        msgpack_pack_str(&tmp_pck, 10);
-        msgpack_pack_str_body(&tmp_pck, "kubernetes", 10);
-
-        if (cache_size > 0) {
-            msgpack_sbuffer_write(&tmp_sbuf, cache_buf, cache_size);
-        }
-        else {
-            msgpack_pack_str(&tmp_pck, 30);
-            msgpack_pack_str_body(&tmp_pck, "error connecting to api server", 30);
-        }
-
-        /*
-         * JSON maps inside a Docker JSON logs are escaped string, before
-         * to pack it we need to convert it to a native structured format.
-         */
-        if (log_index != -1) {
-            v = map.via.map.ptr[log_index].val;
-            if (v.via.str.size >= ctx->merge_json_buf_size) {
-                new_size = v.via.str.size + 1;
-                tmp = flb_realloc(ctx->merge_json_buf, new_size);
-                if (tmp) {
-                    ctx->merge_json_buf = tmp;
-                    ctx->merge_json_buf_size = new_size;
-                }
-                else {
-                    flb_errno();
-                    msgpack_unpacked_destroy(&result);
-                    msgpack_sbuffer_destroy(&tmp_sbuf);
-                    return FLB_FILTER_NOTOUCH;
-                }
-            }
-
-            json_size = unescape_string((char *) v.via.str.ptr,
-                                        v.via.str.size,
-                                        &ctx->merge_json_buf);
-            if (json_size > 0) {
-                ret = flb_pack_json(ctx->merge_json_buf, json_size,
-                                    &log_buf, &log_size);
-                if (ret != 0) {
-                    continue;
-                }
-
-                msgpack_pack_str(&tmp_pck, 7);
-                msgpack_pack_str_body(&tmp_pck, "@fields", 7);
-                msgpack_sbuffer_write(&tmp_sbuf, log_buf, log_size);
-                flb_free(log_buf);
-            }
-            else {
-                merge_json_nil(tmp_pck);
-            }
-        }
-        else {
-            merge_json_nil(tmp_pck);
+        ret = pack_map_content(&tmp_pck, &tmp_sbuf,
+                               map,
+                               cache_buf, cache_size,
+                               ctx);
+        if (ret != 0) {
+            msgpack_sbuffer_destroy(&tmp_sbuf);
+            msgpack_unpacked_destroy(&result);
+            return FLB_FILTER_NOTOUCH;
         }
     }
     msgpack_unpacked_destroy(&result);
