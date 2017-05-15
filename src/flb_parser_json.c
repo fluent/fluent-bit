@@ -39,6 +39,7 @@ int flb_parser_json_do(struct flb_parser *parser,
     char *p;
     char *mp_buf;
     char *time_key;
+    char tmp[32];
     size_t off = 0;
     size_t map_size;
     msgpack_sbuffer mp_sbuf;
@@ -123,8 +124,20 @@ int flb_parser_json_do(struct flb_parser *parser,
     if (p != NULL) {
         /* Check if we have fractional seconds */
         if (parser->time_frac_secs && *p == '.') {
-            ret = flb_parser_frac_tzone(p, v->via.str.size - (p - v->via.str.ptr),
-                                        &tmfrac, &tmdiff);
+
+            /*
+             * Further parser routines needs a null byte, for fractional seconds
+             * we make a safe copy of the content.
+             */
+            slen = v->via.str.size - (p - v->via.str.ptr);
+            if (slen > 31) {
+                slen = 31;
+            }
+            memcpy(tmp, p, slen);
+            tmp[slen] = '\0';
+
+            /* Parse fractional seconds */
+            ret = flb_parser_frac_tzone(tmp, slen, &tmfrac, &tmdiff);
             if (ret == -1) {
                 flb_warn("[parser] Error parsing time string");
                 return -1;
