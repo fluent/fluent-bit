@@ -90,6 +90,9 @@ static void cb_results(unsigned char *name, unsigned char *value,
                        size_t vlen, void *data)
 {
     int len;
+    int ret;
+    int tmdiff = 0;
+    double frac;
     char *fmt;
     char tmp[64];
     char *p;
@@ -149,6 +152,10 @@ static void cb_results(unsigned char *name, unsigned char *value,
                 flb_error("[parser] Invalid time format %s", parser->time_fmt);
                 return;
             }
+
+            if (parser->time_keep == FLB_FALSE) {
+                return;
+            }
         }
     }
 
@@ -163,6 +170,7 @@ int flb_parser_regex_do(struct flb_parser *parser,
                         void **out_buf, size_t *out_size,
                         time_t *out_time)
 {
+    int ret;
     ssize_t n;
     int arr_size;
     struct flb_regex_search result;
@@ -180,39 +188,27 @@ int flb_parser_regex_do(struct flb_parser *parser,
     msgpack_sbuffer_init(&tmp_sbuf);
     msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 
-    if (parser->time_fmt) {
+    if (parser->time_fmt && parser->time_keep == FLB_FALSE) {
         arr_size = (n - 1);
     }
     else {
         arr_size = n;
     }
-
     msgpack_pack_map(&tmp_pck, arr_size);
 
     /* Callback context */
     pcb.pck = &tmp_pck;
     pcb.parser = parser;
     pcb.time_lookup = 0;
-<<<<<<< HEAD
-=======
-    pcb.time_frac = 0;
->>>>>>> 1c3e690b... parser: fix timestamp convertion to UTC
     pcb.time_now = time(NULL);
 
     /* Iterate results and compose new buffer */
-    flb_regex_parse(parser->regex, &result, cb_results, &pcb);
+    ret = flb_regex_parse(parser->regex, &result, cb_results, &pcb);
 
     /* Export results */
     *out_buf = tmp_sbuf.data;
     *out_size = tmp_sbuf.size;
     *out_time = pcb.time_lookup;
-
-<<<<<<< HEAD
-    return 0;
-=======
-    t = out_time;
-    t->tm.tv_sec  = pcb.time_lookup;
-    t->tm.tv_nsec = (pcb.time_frac * 1000000000);
 
     /*
      * The return the value >= 0, belongs to the LAST BYTE consumed by the
@@ -220,5 +216,4 @@ int flb_parser_regex_do(struct flb_parser *parser,
      * there is more data to be processed (maybe it's a stream).
      */
     return ret;
->>>>>>> 1c3e690b... parser: fix timestamp convertion to UTC
 }

@@ -34,9 +34,12 @@ int flb_parser_json_do(struct flb_parser *parser,
     int ret;
     int mp_size;
     int slen;
+    int tmdiff = 0;
+    double tmfrac = 0;
     char *p;
     char *mp_buf;
     char *time_key;
+    char tmp[32];
     size_t off = 0;
     size_t map_size;
     msgpack_sbuffer mp_sbuf;
@@ -97,11 +100,11 @@ int flb_parser_json_do(struct flb_parser *parser,
             /* We found the key, break the loop and keep the index */
             if (parser->time_keep == FLB_FALSE) {
                 skip = i;
-                break;
             }
             else {
                 skip = -1;
             }
+            break;
         }
 
         k = NULL;
@@ -137,7 +140,6 @@ int flb_parser_json_do(struct flb_parser *parser,
                 flb_warn("[parser] Error parsing time string");
                 return -1;
             }
-
             tm.tm_gmtoff = tmdiff;
         }
         time_lookup = flb_parser_tm2time(&tm);
@@ -150,7 +152,13 @@ int flb_parser_json_do(struct flb_parser *parser,
     /* Compose a new map without the time_key field */
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-    msgpack_pack_map(&mp_pck, map_size - 1);
+
+    if (parser->time_keep == FLB_FALSE) {
+        msgpack_pack_map(&mp_pck, map_size - 1);
+    }
+    else {
+        msgpack_pack_map(&mp_pck, map_size);
+    }
 
     for (i = 0; i < map_size; i++) {
         if (i == skip) {

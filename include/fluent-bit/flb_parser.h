@@ -30,12 +30,13 @@
 
 struct flb_parser {
     /* configuration */
-    int type;           /* parser type */
-    char *name;         /* format name */
-    char *p_regex;      /* pattern for main regular expression */
-    char *time_fmt;     /* time format */
-    char *time_key;     /* field name that contains the time */
-    int time_keep;      /* keep time field */
+    int type;             /* parser type */
+    char *name;           /* format name */
+    char *p_regex;        /* pattern for main regular expression */
+    char *time_fmt;       /* time format */
+    char *time_key;       /* field name that contains the time */
+    int time_keep;        /* keep time field */
+    char *time_frac_secs; /* time format have fractional seconds ? */
 
     /* internal */
     int time_with_year; /* do time_fmt consider a year (%Y) ? */
@@ -58,6 +59,7 @@ struct flb_parser *flb_parser_create(char *name, char *format,
                                      char *p_regex,
                                      char *time_fmt, char *time_key,
                                      int time_keep, struct flb_config *config);
+int flb_parser_frac_tzone(char *str, int len, double *frac, int *tmdiff);
 int flb_parser_conf_file(char *file, struct flb_config *config);
 void flb_parser_destroy(struct flb_parser *parser);
 struct flb_parser *flb_parser_get(char *name, struct flb_config *config);

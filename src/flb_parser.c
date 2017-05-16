@@ -120,6 +120,31 @@ struct flb_parser *flb_parser_create(char *name, char *format,
             *tmp++ = 'Y';
             *tmp++ = '\0';
         }
+
+        /*
+         * Check if the format expect fractional seconds
+         *
+         * Since strptime(3) does not support fractional seconds, this
+         * requires a workaround/hack in our parser. This is a known
+         * issue and addressed in different ways in other languages.
+         *
+         * The following links are a good reference:
+         *
+         * - http://stackoverflow.com/questions/7114690/how-to-parse-syslog-timestamp
+         * - http://code.activestate.com/lists/python-list/521885/
+         *
+         * Note: Fluent Bit v0.11 do noty recognize fractional seconds, we only do
+         * this parsing to avoid skipping a later timezone in the string.
+         */
+        tmp = strstr(p->time_fmt, "%S.%L");
+        if (tmp) {
+            tmp[2] = '\0';
+            p->time_frac_secs = (tmp + 3);
+            printf("parser have fractional seconds: %s\n",p->time_frac_secs );
+        }
+        else {
+            p->time_frac_secs = NULL;
+        }
     }
     if (time_key) {
         p->time_key = flb_strdup(time_key);
