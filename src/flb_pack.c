@@ -145,6 +145,12 @@ static char *tokens_to_msgpack(char *js,
     /* dump data back to a new buffer */
     *out_size = sbuf.size;
     buf = flb_malloc(sbuf.size);
+    if (!buf) {
+        flb_errno();
+        msgpack_sbuffer_destroy(&sbuf);
+        return NULL;
+    }
+
     memcpy(buf, sbuf.data, sbuf.size);
     msgpack_sbuffer_destroy(&sbuf);
 
