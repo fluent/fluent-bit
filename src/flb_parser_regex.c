@@ -30,7 +30,6 @@ struct regex_cb_ctx {
     time_t time_lookup;
     time_t time_now;
     double time_frac;
-    int    time_diff;
     struct flb_parser *parser;
     msgpack_packer *pck;
 };
@@ -129,7 +128,7 @@ static void cb_results(unsigned char *name, unsigned char *value,
                  * This is not the most elegant way but for now it let
                  * get the work done.
                  */
-                localtime_r(&pcb->time_now, &tm);
+                gmtime_r(&pcb->time_now, &tm);
                 uint64_t t = tm.tm_year + 1900;
                 u64_to_str(t, fmt);
                 fmt += 4;
@@ -148,9 +147,9 @@ static void cb_results(unsigned char *name, unsigned char *value,
                         return;
                     }
                     pcb->time_frac = frac;
-                    pcb->time_diff = tmdiff;
+                    tm.tm_gmtoff = tmdiff;
                 }
-                pcb->time_lookup = mktime(&tm);
+                pcb->time_lookup = flb_parser_tm2time(&tm);
             }
             else {
                 flb_error("[parser] Invalid time format %s", parser->time_fmt);
@@ -207,7 +206,6 @@ int flb_parser_regex_do(struct flb_parser *parser,
     pcb.parser = parser;
     pcb.time_lookup = 0;
     pcb.time_frac = 0;
-    pcb.time_diff = 0;
     pcb.time_now = time(NULL);
 
     /* Iterate results and compose new buffer */
@@ -220,14 +218,6 @@ int flb_parser_regex_do(struct flb_parser *parser,
     t = out_time;
     t->tm.tv_sec  = pcb.time_lookup;
     t->tm.tv_nsec = (pcb.time_frac * 1000000000);
-
-    /* Adjust time zone difference */
-    if (pcb.time_diff < 0) {
-        t->tm.tv_sec -= pcb.time_diff;
-    }
-    else if (pcb.time_diff > 0) {
-        t->tm.tv_sec += pcb.time_diff;
-    }
 
     /*
      * The return the value >= 0, belongs to the LAST BYTE consumed by the

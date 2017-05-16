@@ -142,8 +142,10 @@ int flb_parser_json_do(struct flb_parser *parser,
                 flb_warn("[parser] Error parsing time string");
                 return -1;
             }
+
+            tm.tm_gmtoff = tmdiff;
         }
-        time_lookup = mktime(&tm);
+        time_lookup = flb_parser_tm2time(&tm);
     }
     else {
         msgpack_unpacked_destroy(&result);
@@ -179,14 +181,6 @@ int flb_parser_json_do(struct flb_parser *parser,
     t = out_time;
     t->tm.tv_sec  = time_lookup;
     t->tm.tv_nsec = (tmfrac * 1000000000);
-
-    /* Adjust time zone difference */
-    if (tmdiff < 0) {
-        t->tm.tv_sec -= tmdiff;
-    }
-    else if (tmdiff > 0) {
-        t->tm.tv_sec += tmdiff;
-    }
 
     msgpack_unpacked_destroy(&result);
     return length;

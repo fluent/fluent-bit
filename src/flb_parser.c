@@ -345,27 +345,19 @@ int flb_parser_frac_tzone(char *str, int len, double *frac, int *tmdiff)
     int neg;
     long hour;
     long min;
-    char x;
     char *p;
-    char *tmp;
     char *end;
-
-    x = str[len];
-    str[len] = '\0';
 
     /* Fractional seconds */
     *frac = strtod(str, &end);
     p = end;
-
-    str[len] = x;
 
     if (!p) {
         *tmdiff = 0;
         return 0;
     }
 
-    tmp = p;
-    while (*tmp == ' ') ++tmp;
+    while (*p == ' ') p++;
 
     /* Check timezones */
     if (*p == 'Z') {
