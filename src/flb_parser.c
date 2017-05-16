@@ -140,7 +140,6 @@ struct flb_parser *flb_parser_create(char *name, char *format,
         if (tmp) {
             tmp[2] = '\0';
             p->time_frac_secs = (tmp + 3);
-            printf("parser have fractional seconds: %s\n",p->time_frac_secs );
         }
         else {
             p->time_frac_secs = NULL;

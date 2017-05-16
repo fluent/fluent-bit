@@ -231,13 +231,6 @@ static char *elasticsearch_format(void *data, size_t bytes,
             /* Compose Index header */
             p = logstash_index + ctx->logstash_prefix_len;
             *p++ = '-';
-            if (!localtime_r(&t, &tm)) {
-                flb_errno();
-                msgpack_sbuffer_destroy(&tmp_sbuf);
-                msgpack_unpacked_destroy(&result);
-                es_bulk_destroy(bulk);
-                return NULL;
-            }
 
             len = p - logstash_index;
             s = strftime(p, sizeof(logstash_index) - len - 1,
