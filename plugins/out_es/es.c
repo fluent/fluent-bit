@@ -125,7 +125,6 @@ static char *elasticsearch_format(void *data, size_t bytes,
     int index_len;
     size_t s;
     size_t off = 0;
-    time_t t;
     char *p;
     char *buf;
     char logstash_index[256];
@@ -228,45 +227,26 @@ static char *elasticsearch_format(void *data, size_t bytes,
         msgpack_pack_str_body(&tmp_pck, ctx->time_key, ctx->time_key_len);
 
         /* Format the time */
-        t = otime.via.u64;
-        gmtime_r(&t, &tm);
-        s = strftime(time_formatted, sizeof(time_formatted) - 1,
-                     ctx->time_key_format, &tm);
-        msgpack_pack_str(&tmp_pck, s);
-        msgpack_pack_str_body(&tmp_pck, time_formatted, s);
-
-        /* Append the time key */
-        msgpack_pack_str(&tmp_pck, ctx->time_key_len);
-        msgpack_pack_str_body(&tmp_pck, ctx->time_key, ctx->time_key_len);
-
-        /* Format the time */
         gmtime_r(&tms.tm.tv_sec, &tm);
         s = strftime(time_formatted, sizeof(time_formatted) - 1,
                      ctx->time_key_format, &tm);
         len = snprintf(time_formatted + s, sizeof(time_formatted) - 1 - s,
-                       ".%" PRIu64, tms.tm.tv_nsec);
+                       ".%" PRIu64 "Z", tms.tm.tv_nsec);
+
         s += len;
         msgpack_pack_str(&tmp_pck, s);
         msgpack_pack_str_body(&tmp_pck, time_formatted, s);
 
         if (ctx->logstash_format == FLB_TRUE) {
             /* Compose Index header */
-            p = logstash_index + len;
+            p = logstash_index + ctx->logstash_prefix_len;
             *p++ = '-';
-            if (!localtime_r(&t, &tm)) {
-                flb_errno();
-                msgpack_sbuffer_destroy(&tmp_sbuf);
-                msgpack_unpacked_destroy(&result);
-                es_bulk_destroy(bulk);
-                return NULL;
-            }
 
             len = p - logstash_index;
             s = strftime(p, sizeof(logstash_index) - len - 1,
                          ctx->logstash_dateformat, &tm);
             p += s;
             *p++ = '\0';
-
             index_len = snprintf(j_index,
                                  ES_BULK_HEADER,
                                  ES_BULK_INDEX_FMT,
