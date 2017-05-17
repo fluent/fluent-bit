@@ -97,8 +97,8 @@ static int in_health_collect(struct flb_input_instance *i_ins,
     msgpack_pack_map(&i_ins->mp_pck, map_num);
 
     /* Status */
-    msgpack_pack_bin(&i_ins->mp_pck, 5);
-    msgpack_pack_bin_body(&i_ins->mp_pck, "alive", 5);
+    msgpack_pack_str(&i_ins->mp_pck, 5);
+    msgpack_pack_str_body(&i_ins->mp_pck, "alive", 5);
 
     if (alive) {
         msgpack_pack_true(&i_ins->mp_pck);
@@ -109,16 +109,16 @@ static int in_health_collect(struct flb_input_instance *i_ins,
 
     if (ctx->add_host) {
         /* append hostname */
-        msgpack_pack_bin(&i_ins->mp_pck, strlen("hostname"));
-        msgpack_pack_bin_body(&i_ins->mp_pck, "hostname", strlen("hostname"));
-        msgpack_pack_bin(&i_ins->mp_pck, ctx->len_host);
-        msgpack_pack_bin_body(&i_ins->mp_pck, ctx->hostname, ctx->len_host);
+        msgpack_pack_str(&i_ins->mp_pck, strlen("hostname"));
+        msgpack_pack_str_body(&i_ins->mp_pck, "hostname", strlen("hostname"));
+        msgpack_pack_str(&i_ins->mp_pck, ctx->len_host);
+        msgpack_pack_str_body(&i_ins->mp_pck, ctx->hostname, ctx->len_host);
     }
 
     if (ctx->add_port) {
         /* append port number */
-        msgpack_pack_bin(&i_ins->mp_pck, strlen("port"));
-        msgpack_pack_bin_body(&i_ins->mp_pck, "port", strlen("port"));
+        msgpack_pack_str(&i_ins->mp_pck, strlen("port"));
+        msgpack_pack_str_body(&i_ins->mp_pck, "port", strlen("port"));
         msgpack_pack_int32(&i_ins->mp_pck, ctx->port);
     }
 
