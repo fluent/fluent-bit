@@ -116,8 +116,8 @@ static char *td_format(void *data, size_t bytes, int *out_size)
 
         n_size = map.via.map.size + 1;
         msgpack_pack_map(&mp_pck, n_size);
-        msgpack_pack_bin(&mp_pck, 4);
-        msgpack_pack_bin_body(&mp_pck, "time", 4);
+        msgpack_pack_str(&mp_pck, 4);
+        msgpack_pack_str_body(&mp_pck, "time", 4);
         msgpack_pack_int32(&mp_pck, atime);
 
         for (i = 0; i < n_size - 1; i++) {
