@@ -184,8 +184,8 @@ static int secure_forward_ping(struct flb_upstream_conn *u_conn,
     msgpack_pack_str_body(&mp_pck, ctx->self_hostname, ctx->self_hostname_len);
 
     /* [2] Shared key salt */
-    msgpack_pack_bin(&mp_pck, 16);
-    msgpack_pack_bin_body(&mp_pck, ctx->shared_key_salt, 16);
+    msgpack_pack_str(&mp_pck, 16);
+    msgpack_pack_str_body(&mp_pck, ctx->shared_key_salt, 16);
 
     /* [3] Shared key in Hexdigest format */
     msgpack_pack_str(&mp_pck, 128);
