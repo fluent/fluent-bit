@@ -264,8 +264,8 @@ static int generate_record_linux(struct flb_input_instance *i_ins,
     msgpack_pack_map(&i_ins->mp_pck, map_num);
 
     /* Status */
-    msgpack_pack_bin(&i_ins->mp_pck, 5);
-    msgpack_pack_bin_body(&i_ins->mp_pck, "alive", 5);
+    msgpack_pack_str(&i_ins->mp_pck, 5);
+    msgpack_pack_str_body(&i_ins->mp_pck, "alive", 5);
 
     if (ctx->alive) {
         msgpack_pack_true(&i_ins->mp_pck);
@@ -275,14 +275,14 @@ static int generate_record_linux(struct flb_input_instance *i_ins,
     }
 
     /* proc name */
-    msgpack_pack_bin(&i_ins->mp_pck, strlen("proc_name"));
-    msgpack_pack_bin_body(&i_ins->mp_pck, "proc_name", strlen("proc_name"));
-    msgpack_pack_bin(&i_ins->mp_pck, ctx->len_proc_name);
-    msgpack_pack_bin_body(&i_ins->mp_pck, ctx->proc_name, ctx->len_proc_name);
+    msgpack_pack_str(&i_ins->mp_pck, strlen("proc_name"));
+    msgpack_pack_str_body(&i_ins->mp_pck, "proc_name", strlen("proc_name"));
+    msgpack_pack_str(&i_ins->mp_pck, ctx->len_proc_name);
+    msgpack_pack_str_body(&i_ins->mp_pck, ctx->proc_name, ctx->len_proc_name);
 
     /* pid */
-    msgpack_pack_bin(&i_ins->mp_pck, strlen("pid"));
-    msgpack_pack_bin_body(&i_ins->mp_pck, "pid", strlen("pid"));
+    msgpack_pack_str(&i_ins->mp_pck, strlen("pid"));
+    msgpack_pack_str_body(&i_ins->mp_pck, "pid", strlen("pid"));
     msgpack_pack_int64(&i_ins->mp_pck, ctx->pid);
 
     /* memory */
@@ -292,16 +292,16 @@ static int generate_record_linux(struct flb_input_instance *i_ins,
         for(i=0; mem_linux[i].key != NULL; i++) {
             str = mem_linux[i].msgpack_key;
             val = (uint64_t*)((char*)mem_stat + mem_linux[i].offset);
-            msgpack_pack_bin(&i_ins->mp_pck, strlen(str));
-            msgpack_pack_bin_body(&i_ins->mp_pck, str, strlen(str));
+            msgpack_pack_str(&i_ins->mp_pck, strlen(str));
+            msgpack_pack_str_body(&i_ins->mp_pck, str, strlen(str));
             msgpack_pack_uint64(&i_ins->mp_pck, *val);
         }
     }
 
     /* file descriptor */
     if (ctx->fds == FLB_TRUE) {
-        msgpack_pack_bin(&i_ins->mp_pck, strlen("fd"));
-        msgpack_pack_bin_body(&i_ins->mp_pck, "fd", strlen("fd"));
+        msgpack_pack_str(&i_ins->mp_pck, strlen("fd"));
+        msgpack_pack_str_body(&i_ins->mp_pck, "fd", strlen("fd"));
         msgpack_pack_uint64(&i_ins->mp_pck, fds);
     }
 
