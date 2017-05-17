@@ -202,41 +202,41 @@ static int in_mem_collect(struct flb_input_instance *i_ins,
     flb_pack_time_now(&i_ins->mp_pck);
     msgpack_pack_map(&i_ins->mp_pck, entries);
 
-    msgpack_pack_bin(&i_ins->mp_pck, 9);
-    msgpack_pack_bin_body(&i_ins->mp_pck, "Mem.total", 9);
+    msgpack_pack_str(&i_ins->mp_pck, 9);
+    msgpack_pack_str_body(&i_ins->mp_pck, "Mem.total", 9);
     msgpack_pack_uint64(&i_ins->mp_pck, info.mem_total);
 
-    msgpack_pack_bin(&i_ins->mp_pck, 8);
-    msgpack_pack_bin_body(&i_ins->mp_pck, "Mem.used", 8);
+    msgpack_pack_str(&i_ins->mp_pck, 8);
+    msgpack_pack_str_body(&i_ins->mp_pck, "Mem.used", 8);
     msgpack_pack_uint64(&i_ins->mp_pck, info.mem_used);
 
-    msgpack_pack_bin(&i_ins->mp_pck, 8);
-    msgpack_pack_bin_body(&i_ins->mp_pck, "Mem.free", 8);
+    msgpack_pack_str(&i_ins->mp_pck, 8);
+    msgpack_pack_str_body(&i_ins->mp_pck, "Mem.free", 8);
     msgpack_pack_uint64(&i_ins->mp_pck, info.mem_free);
 
-    msgpack_pack_bin(&i_ins->mp_pck, 10);
-    msgpack_pack_bin_body(&i_ins->mp_pck, "Swap.total", 10);
+    msgpack_pack_str(&i_ins->mp_pck, 10);
+    msgpack_pack_str_body(&i_ins->mp_pck, "Swap.total", 10);
     msgpack_pack_uint64(&i_ins->mp_pck, info.swap_total);
 
-    msgpack_pack_bin(&i_ins->mp_pck, 9);
-    msgpack_pack_bin_body(&i_ins->mp_pck, "Swap.used", 9);
+    msgpack_pack_str(&i_ins->mp_pck, 9);
+    msgpack_pack_str_body(&i_ins->mp_pck, "Swap.used", 9);
     msgpack_pack_uint64(&i_ins->mp_pck, info.swap_used);
 
-    msgpack_pack_bin(&i_ins->mp_pck, 9);
-    msgpack_pack_bin_body(&i_ins->mp_pck, "Swap.free", 9);
+    msgpack_pack_str(&i_ins->mp_pck, 9);
+    msgpack_pack_str_body(&i_ins->mp_pck, "Swap.free", 9);
     msgpack_pack_uint64(&i_ins->mp_pck, info.swap_free);
 
 
     if (task) {
         /* RSS bytes */
-        msgpack_pack_bin(&i_ins->mp_pck, 10);
-        msgpack_pack_bin_body(&i_ins->mp_pck, "proc_bytes", 10);
+        msgpack_pack_str(&i_ins->mp_pck, 10);
+        msgpack_pack_str_body(&i_ins->mp_pck, "proc_bytes", 10);
         msgpack_pack_uint64(&i_ins->mp_pck, task->proc_rss);
 
         /* RSS Human readable format */
         len = strlen(task->proc_rss_hr);
-        msgpack_pack_bin(&i_ins->mp_pck, 7);
-        msgpack_pack_bin_body(&i_ins->mp_pck, "proc_hr", 7);
+        msgpack_pack_str(&i_ins->mp_pck, 7);
+        msgpack_pack_str_body(&i_ins->mp_pck, "proc_hr", 7);
         msgpack_pack_str(&i_ins->mp_pck, len);
         msgpack_pack_str_body(&i_ins->mp_pck, task->proc_rss_hr, len);
 
