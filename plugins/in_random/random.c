@@ -83,8 +83,8 @@ static int in_random_collect(struct flb_input_instance *i_ins,
     flb_pack_time_now(&i_ins->mp_pck);
     msgpack_pack_map(&i_ins->mp_pck, 1);
 
-    msgpack_pack_bin(&i_ins->mp_pck, 10);
-    msgpack_pack_bin_body(&i_ins->mp_pck, "rand_value", 10);
+    msgpack_pack_str(&i_ins->mp_pck, 10);
+    msgpack_pack_str_body(&i_ins->mp_pck, "rand_value", 10);
     msgpack_pack_uint64(&i_ins->mp_pck, val);
 
     flb_input_buf_write_end(i_ins);
