@@ -109,6 +109,7 @@ static int in_syslog_exit(void *data, struct flb_config *config)
     struct flb_syslog *ctx = data;
     (void) config;
 
+    syslog_conn_exit(ctx);
     syslog_conf_destroy(ctx);
 
     return 0;

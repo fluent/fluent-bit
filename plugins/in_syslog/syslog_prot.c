@@ -43,9 +43,9 @@ int syslog_prot_process(struct syslog_conn *conn)
 {
     int len;
     int ret;
-    int consumed_bytes = 0;
-    int lines = 0;
     char *p;
+    char *eof;
+    char *end;
     void *out_buf;
     size_t out_size;
     time_t out_time;
@@ -59,17 +59,41 @@ int syslog_prot_process(struct syslog_conn *conn)
 
     flb_input_buf_write_start(conn->in);
 
-    while ((p = strchr(conn->buf_data + conn->buf_parsed, '\n'))) {
-        len = (p - conn->buf_data);
+    eof = p = conn->buf_data;
+    end = conn->buf_data + conn->buf_len;
+
+    /* Always parse while some remaining bytes exists */
+    while (eof < end) {
+
+        /* Lookup the ending byte */
+        eof = conn->buf_data + conn->buf_parsed;
+        while (*eof != '\n' && *eof != '\0' && eof < end) {
+            eof++;
+        }
+
+        /* Incomplete message */
+        if (eof == end || (*eof != '\n' && *eof != '\0')) {
+            return 0;
+        }
+
+        /* No data ? */
+        len = (eof - p);
         if (len == 0) {
             consume_bytes(conn->buf_data, 1, conn->buf_len);
             conn->buf_len--;
             conn->buf_parsed = 0;
             conn->buf_data[conn->buf_len] = '\0';
+            end = conn->buf_data + conn->buf_len;
+
+            if (conn->buf_len == 0) {
+                return 0;
+            }
+
             continue;
         }
 
-        ret = flb_parser_do(ctx->parser, conn->buf_data, len,
+        /* Process the string */
+        ret = flb_parser_do(ctx->parser, p, len,
                             &out_buf, &out_size, &out_time);
         if (ret == 0) {
             pack_line(out_sbuf, out_pck, out_time,
@@ -80,13 +104,15 @@ int syslog_prot_process(struct syslog_conn *conn)
             flb_warn("[in_syslog] error parsing log message");
         }
 
-        consume_bytes(conn->buf_data, len + 1, conn->buf_len);
-        consumed_bytes += len + 1;
-        conn->buf_len -= len + 1;
-        conn->buf_data[conn->buf_len] = '\0';
-        conn->buf_parsed = 0;
-        lines++;
+        conn->buf_parsed += len + 1;
+        end = conn->buf_data + conn->buf_len;
+        eof = p = conn->buf_data + conn->buf_parsed;
     }
+
+    consume_bytes(conn->buf_data, conn->buf_parsed, conn->buf_len);
+    conn->buf_len -= conn->buf_parsed;
+    conn->buf_parsed = 0;
+    conn->buf_data[conn->buf_len] = '\0';
 
     flb_input_buf_write_end(conn->in);
 

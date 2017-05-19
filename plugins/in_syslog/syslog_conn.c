@@ -158,3 +158,17 @@ int syslog_conn_del(struct syslog_conn *conn)
 
     return 0;
 }
+
+int syslog_conn_exit(struct flb_syslog *ctx)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct syslog_conn *conn;
+
+    mk_list_foreach_safe(head, tmp, &ctx->connections) {
+        conn = mk_list_entry(head, struct syslog_conn, _head);
+        syslog_conn_del(conn);
+    }
+
+    return 0;
+}
