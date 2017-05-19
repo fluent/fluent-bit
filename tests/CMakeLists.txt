@@ -53,6 +53,12 @@ if(FLB_IN_LIB)
 	   flb_test_flowcounter.cpp
 	   )
   endif()
+
+  if(FLB_OUT_EXIT)
+     list(APPEND check_PROGRAMS
+	   flb_test_exit.cpp
+	   )
+  endif()
 endif()
 
 if(FLB_OUT_LIB)
