@@ -539,30 +539,44 @@ int flb_msgpack_to_json(char *json_str, size_t str_len,
  */
 char *flb_msgpack_to_json_str(size_t size, msgpack_unpacked *data)
 {
+    int ret;
     char *buf = NULL;
+    char *tmp;
 
     if (data == NULL) {
         return NULL;
     }
+
     if (size <= 0) {
         size = 128;
     }
-    while(1) {
-        buf = (char *)flb_malloc(size);
-        if (buf == NULL) {
-            flb_errno();
-            return NULL;
-        }
 
-        if (flb_msgpack_to_json(buf, size, data) < 0){
+    buf = flb_malloc(size);
+    if (!buf) {
+        flb_errno();
+        return NULL;
+    }
+
+    while (1) {
+        ret = flb_msgpack_to_json(buf, size, data);
+        if (ret <= 0) {
             /* buffer is small. retry.*/
             size += 128;
-            flb_free(buf);
+            tmp = flb_realloc(buf, size);
+            if (tmp) {
+                buf = tmp;
+            }
+            else {
+                flb_free(buf);
+                flb_errno();
+                return NULL;
+            }
         }
         else {
             break;
         }
     }
+
     return buf;
 }
 
