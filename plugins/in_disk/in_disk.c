@@ -168,12 +168,12 @@ static int in_disk_collect(struct flb_input_instance *i_ins,
     msgpack_pack_map(&i_ins->mp_pck, num_map);
 
 
-    msgpack_pack_bin(&i_ins->mp_pck, strlen(STR_KEY_READ));
-    msgpack_pack_bin_body(&i_ins->mp_pck, STR_KEY_READ, strlen(STR_KEY_READ));
+    msgpack_pack_str(&i_ins->mp_pck, strlen(STR_KEY_READ));
+    msgpack_pack_str_body(&i_ins->mp_pck, STR_KEY_READ, strlen(STR_KEY_READ));
     msgpack_pack_uint64(&i_ins->mp_pck, read_total);
 
-    msgpack_pack_bin(&i_ins->mp_pck, strlen(STR_KEY_WRITE));
-    msgpack_pack_bin_body(&i_ins->mp_pck, STR_KEY_WRITE, strlen(STR_KEY_WRITE));
+    msgpack_pack_str(&i_ins->mp_pck, strlen(STR_KEY_WRITE));
+    msgpack_pack_str_body(&i_ins->mp_pck, STR_KEY_WRITE, strlen(STR_KEY_WRITE));
     msgpack_pack_uint64(&i_ins->mp_pck, write_total);
 
     flb_input_buf_write_end(i_ins);

@@ -71,17 +71,17 @@ static int in_head_collect(struct flb_input_instance *i_ins,
     flb_pack_time_now(&i_ins->mp_pck);
     msgpack_pack_map(&i_ins->mp_pck, num_map);
 
-    msgpack_pack_bin(&i_ins->mp_pck, 4);
-    msgpack_pack_bin_body(&i_ins->mp_pck, "head", 4);
-    msgpack_pack_bin(&i_ins->mp_pck, head_config->buf_len);
-    msgpack_pack_bin_body(&i_ins->mp_pck,
+    msgpack_pack_str(&i_ins->mp_pck, 4);
+    msgpack_pack_str_body(&i_ins->mp_pck, "head", 4);
+    msgpack_pack_str(&i_ins->mp_pck, head_config->buf_len);
+    msgpack_pack_str_body(&i_ins->mp_pck,
                           head_config->buf, head_config->buf_len);
 
     if (head_config->add_path == FLB_TRUE) {
-        msgpack_pack_bin(&i_ins->mp_pck, 4);
-        msgpack_pack_bin_body(&i_ins->mp_pck, "path", 4);
-        msgpack_pack_bin(&i_ins->mp_pck, head_config->path_len);
-        msgpack_pack_bin_body(&i_ins->mp_pck,
+        msgpack_pack_str(&i_ins->mp_pck, 4);
+        msgpack_pack_str_body(&i_ins->mp_pck, "path", 4);
+        msgpack_pack_str(&i_ins->mp_pck, head_config->path_len);
+        msgpack_pack_str_body(&i_ins->mp_pck,
                               head_config->filepath, head_config->path_len);
     }
 

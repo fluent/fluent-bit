@@ -333,18 +333,18 @@ int in_cpu_collect(struct flb_input_instance *i_ins,
     msgpack_pack_map(&i_ins->mp_pck, (ctx->n_processors * 3 ) + 3);
 
     /* All CPU */
-    msgpack_pack_bin(&i_ins->mp_pck, 5);
-    msgpack_pack_bin_body(&i_ins->mp_pck, "cpu_p", 5);
+    msgpack_pack_str(&i_ins->mp_pck, 5);
+    msgpack_pack_str_body(&i_ins->mp_pck, "cpu_p", 5);
     msgpack_pack_double(&i_ins->mp_pck, s[0].p_cpu);
 
     /* User space CPU % */
-    msgpack_pack_bin(&i_ins->mp_pck, 6);
-    msgpack_pack_bin_body(&i_ins->mp_pck, "user_p", 6);
+    msgpack_pack_str(&i_ins->mp_pck, 6);
+    msgpack_pack_str_body(&i_ins->mp_pck, "user_p", 6);
     msgpack_pack_double(&i_ins->mp_pck, s[0].p_user);
 
     /* System CPU % */
-    msgpack_pack_bin(&i_ins->mp_pck, 8);
-    msgpack_pack_bin_body(&i_ins->mp_pck, "system_p", 8);
+    msgpack_pack_str(&i_ins->mp_pck, 8);
+    msgpack_pack_str_body(&i_ins->mp_pck, "system_p", 8);
     msgpack_pack_double(&i_ins->mp_pck, s[0].p_system);
 
 

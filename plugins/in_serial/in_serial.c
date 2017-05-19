@@ -83,8 +83,8 @@ static inline int process_pack(struct flb_in_serial_config *ctx,
         msgpack_pack_uint64(&ctx->i_ins->mp_pck, time(NULL));
 
         msgpack_pack_map(&ctx->i_ins->mp_pck, 1);
-        msgpack_pack_bin(&ctx->i_ins->mp_pck, 3);
-        msgpack_pack_bin_body(&ctx->i_ins->mp_pck, "msg", 3);
+        msgpack_pack_str(&ctx->i_ins->mp_pck, 3);
+        msgpack_pack_str_body(&ctx->i_ins->mp_pck, "msg", 3);
         msgpack_pack_object(&ctx->i_ins->mp_pck, entry);
     }
 
