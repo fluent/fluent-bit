@@ -65,6 +65,12 @@ if(FLB_IN_LIB)
 	   flb_test_null.cpp
 	   )
   endif()
+
+  if(FLB_OUT_PLOT)
+     list(APPEND check_PROGRAMS
+	   flb_test_plot.cpp
+	   )
+  endif()
 endif()
 
 if(FLB_OUT_LIB)
