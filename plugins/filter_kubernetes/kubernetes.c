@@ -220,7 +220,7 @@ static int cb_kube_filter(void *data, size_t bytes,
 {
     int ret;
     size_t off = 0;
-    char *cache_buf;
+    char *cache_buf = NULL;
     size_t cache_size = 0;
     msgpack_unpacked result;
     msgpack_object time;
