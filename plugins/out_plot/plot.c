@@ -130,7 +130,7 @@ static void cb_plot_flush(void *data, size_t bytes,
                     key = NULL;
                     val = NULL;
                 }
-                else if (key->type != MSGPACK_OBJECT_STR) {
+                else if (key->type == MSGPACK_OBJECT_STR) {
                     if (ctx->key_len == key->via.str.size &&
                         memcmp(key->via.str.ptr, ctx->key_name, ctx->key_len) == 0) {
                         val = &(map->via.map.ptr[i].val);
