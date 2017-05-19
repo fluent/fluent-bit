@@ -41,6 +41,12 @@ if(FLB_IN_LIB)
        flb_test_file.cpp
        )
   endif()
+
+   if(FLB_OUT_COUNTER)
+     list(APPEND check_PROGRAMS
+       flb_test_counter.cpp
+       )
+  endif()
 endif()
 
 if(FLB_OUT_LIB)
