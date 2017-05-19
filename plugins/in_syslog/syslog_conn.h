@@ -45,5 +45,6 @@ struct syslog_conn {
 int syslog_conn_event(void *data);
 struct syslog_conn *syslog_conn_add(int fd, struct flb_syslog *ctx);
 int syslog_conn_del(struct syslog_conn *conn);
+int syslog_conn_exit(struct flb_syslog *ctx);
 
 #endif
