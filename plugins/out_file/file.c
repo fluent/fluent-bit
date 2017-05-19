@@ -99,24 +99,21 @@ static void cb_file_flush(void *data, size_t bytes,
      */
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
-        alloc_size = (off - last_off) + 128;/* JSON is larger than msgpack */
+        alloc_size = (off - last_off) + 128; /* JSON is larger than msgpack */
         last_off = off;
-        buf = (char *)flb_calloc(1, alloc_size);
-        if (buf == NULL) {
-            flb_errno();
+
+        buf = flb_msgpack_to_json_str(alloc_size, &result);
+        if (buf) {
+            fprintf(fp, "%s: %s\n", tag, buf);
+            flb_free(buf);
+        }
+        else {
             msgpack_unpacked_destroy(&result);
             fclose(fp);
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
-
-        if (flb_msgpack_to_json(buf, alloc_size, &result) >= 0) {
-            fprintf(fp, "%s: %s\n", tag, buf);
-        }
-
-        flb_free(buf);
     }
     msgpack_unpacked_destroy(&result);
-
     fclose(fp);
 
     FLB_OUTPUT_RETURN(FLB_OK);
