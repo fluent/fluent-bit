@@ -36,6 +36,8 @@ TEST(Outputs, json_invalid) {
         total++;
     }
 
+    sleep(1); /* waiting flush */
+
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -71,6 +73,8 @@ TEST(Outputs, json_long) {
         total++;
     }
 
+    sleep(1); /* waiting flush */
+
     flb_stop(ctx);
     flb_destroy(ctx);
 }
@@ -104,6 +108,8 @@ TEST(Outputs, json_small) {
         EXPECT_EQ(bytes, 1);
         total++;
     }
+
+    sleep(1); /* waiting flush */
 
     flb_stop(ctx);
     flb_destroy(ctx);
