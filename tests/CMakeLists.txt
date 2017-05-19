@@ -71,6 +71,12 @@ if(FLB_IN_LIB)
 	   flb_test_plot.cpp
 	   )
   endif()
+
+  if(FLB_OUT_RETRY)
+     list(APPEND check_PROGRAMS
+	   flb_test_retry.cpp
+	   )
+  endif()
 endif()
 
 if(FLB_OUT_LIB)
