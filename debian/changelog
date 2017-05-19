@@ -1,3 +1,9 @@
+td-agent-bit (0.11.6) stable; urgency=low
+
+  * Based on Fluent Bit v0.11.6
+
+ -- Eduardo Silva <eduardo@treasure-data.com>  Wed, 24 May 2017 10:00:00 -0600
+
 td-agent-bit (0.11.5) stable; urgency=low
 
   * Based on Fluent Bit v0.11.5
