@@ -53,7 +53,7 @@ static char* check_delimiter(char *str)
     else if (!strcasecmp(str, "comma")) {
         return ",";
     }
-    
+
     return NULL;
 }
 
@@ -107,7 +107,7 @@ static int cb_file_init(struct flb_output_instance *ins,
     if (ret_str != NULL) {
         conf->label_delimiter = ret_str;
     }
-    
+
     /* Set the context */
     flb_output_set_context(ins, conf);
 
@@ -207,24 +207,25 @@ static void cb_file_flush(void *data, size_t bytes,
      */
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
-        alloc_size = (off - last_off) + 128;/* JSON is larger than msgpack */
+        alloc_size = (off - last_off) + 128; /* JSON is larger than msgpack */
         last_off = off;
-        buf = (char *)flb_calloc(1, alloc_size);
-        if (buf == NULL) {
-            flb_errno();
-            msgpack_unpacked_destroy(&result);
-            fclose(fp);
-            FLB_OUTPUT_RETURN(FLB_RETRY);
-        }
 
         flb_time_pop_from_msgpack(&tm, &result, &obj);
+
         switch (ctx->format){
-        case FLB_OUT_FILE_FMT_JSON: 
-            if (flb_msgpack_obj_to_json(buf, alloc_size, obj) >= 0) {
+        case FLB_OUT_FILE_FMT_JSON:
+            buf = flb_msgpack_to_json_str(alloc_size, &result);
+            if (buf) {
                 fprintf(fp, "%s: [%f, %s]\n",
                         tag,
                         flb_time_to_double(&tm),
                         buf);
+                flb_free(buf);
+            }
+            else {
+                msgpack_unpacked_destroy(&result);
+                fclose(fp);
+                FLB_OUTPUT_RETURN(FLB_RETRY);
             }
             break;
         case FLB_OUT_FILE_FMT_CSV:
@@ -234,10 +235,8 @@ static void cb_file_flush(void *data, size_t bytes,
             ltsv_output(fp, &tm, obj, ctx);
             break;
         }
-        flb_free(buf);
     }
     msgpack_unpacked_destroy(&result);
-
     fclose(fp);
 
     FLB_OUTPUT_RETURN(FLB_OK);
