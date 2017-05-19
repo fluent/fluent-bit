@@ -42,10 +42,16 @@ if(FLB_IN_LIB)
        )
   endif()
 
-   if(FLB_OUT_COUNTER)
+  if(FLB_OUT_COUNTER)
      list(APPEND check_PROGRAMS
        flb_test_counter.cpp
        )
+  endif()
+
+  if(FLB_OUT_FLOWCOUNTER)
+	 list(APPEND check_PROGRAMS
+	   flb_test_flowcounter.cpp
+	   )
   endif()
 endif()
 
