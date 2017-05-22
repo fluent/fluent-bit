@@ -121,6 +121,20 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
         }
     }
 
+    /* HTTP Auth */
+    tmp = flb_output_get_property("http_user", ins);
+    if (tmp) {
+        ctx->http_user = flb_strdup(tmp);
+
+        tmp = flb_output_get_property("http_passwd", ins);
+        if (tmp) {
+            ctx->http_passwd = flb_strdup(tmp);
+        }
+        else {
+            ctx->http_passwd = flb_strdup("");
+        }
+    }
+
     /*
      * Logstash compatibility options
      * ==============================
@@ -211,6 +225,9 @@ int flb_es_conf_destroy(struct flb_elasticsearch *ctx)
 {
     flb_free(ctx->index);
     flb_free(ctx->type);
+
+    flb_free(ctx->http_user);
+    flb_free(ctx->http_passwd);
 
     flb_free(ctx->logstash_prefix);
     flb_free(ctx->logstash_dateformat);

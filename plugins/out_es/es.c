@@ -350,6 +350,10 @@ void cb_es_flush(void *data, size_t bytes,
                         pack, bytes_out, NULL, 0, NULL, 0);
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
 
+    if (ctx->http_user && ctx->http_passwd) {
+        flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
+    }
+
     ret = flb_http_do(c, &b_sent);
     if (ret == 0) {
         flb_debug("[out_es] HTTP Status=%i", c->resp.status);
