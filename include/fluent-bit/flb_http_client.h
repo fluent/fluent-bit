@@ -46,6 +46,9 @@
 #define FLB_HTTP_MORE             0
 #define FLB_HTTP_OK               1
 
+/* Useful headers */
+#define FLB_HTTP_HEADER_AUTH   "Authorization"
+
 struct flb_http_response {
     int status;                /* HTTP response status          */
     int content_length;        /* Content length set by headers */
@@ -102,6 +105,7 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
 int flb_http_add_header(struct flb_http_client *c,
                         char *key, size_t key_len,
                         char *val, size_t val_len);
+int flb_http_basic_auth(struct flb_http_client *c, char *user, char *passwd);
 int flb_http_do(struct flb_http_client *c, size_t *bytes);
 void flb_http_client_destroy(struct flb_http_client *c);
 

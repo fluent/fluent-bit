@@ -36,6 +36,8 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_http_client.h>
 
+#include <mbedtls/base64.h>
+
 /* check if there is enough space in the client header buffer */
 static int header_available(struct flb_http_client *c, int bytes)
 {
@@ -550,6 +552,58 @@ int flb_http_add_header(struct flb_http_client *c,
     c->header_buf[c->header_len++] = '\n';
 
     return 0;
+}
+
+int flb_http_basic_auth(struct flb_http_client *c, char *user, char *passwd)
+{
+    int ret;
+    int len_u;
+    int len_p;
+    int len_out;
+    char tmp[1024];
+    char *p;
+    size_t b64_len;
+
+    /*
+     * We allow a max of 255 bytes for user and password (255 each), meaning
+     * we need at least:
+     *
+     * 'Basic base64(user : passwd)' => ~688 bytes
+     *
+     */
+
+    len_u = strlen(user);
+    len_p = strlen(passwd);
+
+    p = flb_malloc(len_u + len_p + 2);
+    if (!p) {
+        flb_errno();
+        return -1;
+    }
+
+    memcpy(p, user, len_u);
+    p[len_u] = ':';
+    len_out = len_u + 1;
+    memcpy(p + len_out, passwd, len_p);
+    len_out += len_p;
+    p[len_out] = '\0';
+
+    memcpy(tmp, "Basic ", 6);
+    ret = mbedtls_base64_encode((unsigned char *) tmp + 6, sizeof(tmp) - 7, &b64_len,
+                                (unsigned char *) p, len_out);
+    if (ret != 0) {
+        flb_free(p);
+        return -1;
+    }
+
+    flb_free(p);
+    b64_len += 6;
+
+    ret = flb_http_add_header(c,
+                              FLB_HTTP_HEADER_AUTH,
+                              sizeof(FLB_HTTP_HEADER_AUTH) - 1,
+                              tmp, b64_len);
+    return ret;
 }
 
 int flb_http_do(struct flb_http_client *c, size_t *bytes)
