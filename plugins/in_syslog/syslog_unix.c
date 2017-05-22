@@ -27,6 +27,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/stat.h>
 
 #include "syslog.h"
 
@@ -37,10 +38,18 @@ int syslog_unix_create(struct flb_syslog *ctx)
     size_t address_length;
     struct sockaddr_un address;
 
+    umask(0);
+
     /* Create listening socket */
     fd = flb_net_socket_create(PF_UNIX, FLB_FALSE);
     if (fd == -1) {
       return -1;
+    }
+
+    if (fchmod(fd, ctx->mode) != 0) {
+        flb_errno();
+        close(fd);
+        return -1;
     }
 
     unlink(ctx->unix_path);

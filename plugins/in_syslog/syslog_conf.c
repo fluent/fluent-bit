@@ -82,6 +82,15 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *i_ins,
         return NULL;
     }
 
+    /* Socket mode */
+    tmp = flb_input_get_property("mode", i_ins);
+    if (tmp) {
+        ctx->mode = strtol(tmp, NULL, 8);
+    }
+    else {
+        ctx->mode = FLB_SYSLOG_MODE;
+    }
+
     return ctx;
 }
 
