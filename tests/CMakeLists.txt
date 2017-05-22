@@ -41,6 +41,42 @@ if(FLB_IN_LIB)
        flb_test_file.cpp
        )
   endif()
+
+  if(FLB_OUT_COUNTER)
+     list(APPEND check_PROGRAMS
+       flb_test_counter.cpp
+       )
+  endif()
+
+  if(FLB_OUT_FLOWCOUNTER)
+	 list(APPEND check_PROGRAMS
+	   flb_test_flowcounter.cpp
+	   )
+  endif()
+
+  if(FLB_OUT_EXIT)
+     list(APPEND check_PROGRAMS
+	   flb_test_exit.cpp
+	   )
+  endif()
+
+  if(FLB_OUT_NULL)
+     list(APPEND check_PROGRAMS
+	   flb_test_null.cpp
+	   )
+  endif()
+
+  if(FLB_OUT_PLOT)
+     list(APPEND check_PROGRAMS
+	   flb_test_plot.cpp
+	   )
+  endif()
+
+  if(FLB_OUT_RETRY)
+     list(APPEND check_PROGRAMS
+	   flb_test_retry.cpp
+	   )
+  endif()
 endif()
 
 if(FLB_OUT_LIB)
