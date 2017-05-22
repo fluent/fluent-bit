@@ -1,10 +1,5 @@
 #include "test/jemalloc_test.h"
 
-#ifdef JEMALLOC_PROF
-const char *malloc_conf =
-    "prof:true,prof_thread_active_init:false,lg_prof_sample:0";
-#endif
-
 static void
 mallctl_bool_get(const char *name, bool expected, const char *func, int line)
 {
@@ -12,7 +7,7 @@ mallctl_bool_get(const char *name, bool expected, const char *func, int line)
 	size_t sz;
 
 	sz = sizeof(old);
-	assert_d_eq(mallctl(name, &old, &sz, NULL, 0), 0,
+	assert_d_eq(mallctl(name, (void *)&old, &sz, NULL, 0), 0,
 	    "%s():%d: Unexpected mallctl failure reading %s", func, line, name);
 	assert_b_eq(old, expected, "%s():%d: Unexpected %s value", func, line,
 	    name);
@@ -26,7 +21,8 @@ mallctl_bool_set(const char *name, bool old_expected, bool val_new,
 	size_t sz;
 
 	sz = sizeof(old);
-	assert_d_eq(mallctl(name, &old, &sz, &val_new, sizeof(val_new)), 0,
+	assert_d_eq(mallctl(name, (void *)&old, &sz, (void *)&val_new,
+	    sizeof(val_new)), 0,
 	    "%s():%d: Unexpected mallctl failure reading/writing %s", func,
 	    line, name);
 	assert_b_eq(old, old_expected, "%s():%d: Unexpected %s value", func,

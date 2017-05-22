@@ -1,10 +1,5 @@
 #include "test/jemalloc_test.h"
 
-#ifdef JEMALLOC_PROF
-const char *malloc_conf =
-    "prof:true,prof_active:false,lg_prof_sample:0";
-#endif
-
 static int
 prof_dump_open_intercept(bool propagate_err, const char *filename)
 {
@@ -20,8 +15,8 @@ static void
 set_prof_active(bool active)
 {
 
-	assert_d_eq(mallctl("prof.active", NULL, NULL, &active, sizeof(active)),
-	    0, "Unexpected mallctl failure");
+	assert_d_eq(mallctl("prof.active", NULL, NULL, (void *)&active,
+	    sizeof(active)), 0, "Unexpected mallctl failure");
 }
 
 static size_t
@@ -30,7 +25,8 @@ get_lg_prof_sample(void)
 	size_t lg_prof_sample;
 	size_t sz = sizeof(size_t);
 
-	assert_d_eq(mallctl("prof.lg_sample", &lg_prof_sample, &sz, NULL, 0), 0,
+	assert_d_eq(mallctl("prof.lg_sample", (void *)&lg_prof_sample, &sz,
+	    NULL, 0), 0,
 	    "Unexpected mallctl failure while reading profiling sample rate");
 	return (lg_prof_sample);
 }
@@ -39,7 +35,7 @@ static void
 do_prof_reset(size_t lg_prof_sample)
 {
 	assert_d_eq(mallctl("prof.reset", NULL, NULL,
-	    &lg_prof_sample, sizeof(size_t)), 0,
+	    (void *)&lg_prof_sample, sizeof(size_t)), 0,
 	    "Unexpected mallctl failure while resetting profile data");
 	assert_zu_eq(lg_prof_sample, get_lg_prof_sample(),
 	    "Expected profile sample rate change");
@@ -54,8 +50,8 @@ TEST_BEGIN(test_prof_reset_basic)
 	test_skip_if(!config_prof);
 
 	sz = sizeof(size_t);
-	assert_d_eq(mallctl("opt.lg_prof_sample", &lg_prof_sample_orig, &sz,
-	    NULL, 0), 0,
+	assert_d_eq(mallctl("opt.lg_prof_sample", (void *)&lg_prof_sample_orig,
+	    &sz, NULL, 0), 0,
 	    "Unexpected mallctl failure while reading profiling sample rate");
 	assert_zu_eq(lg_prof_sample_orig, 0,
 	    "Unexpected profiling sample rate");
