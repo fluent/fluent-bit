@@ -269,7 +269,7 @@ static int cb_modifier_filter(void *data, size_t bytes,
 
         msgpack_pack_map(&tmp_pck, removed_map_num);
         kv = obj->via.map.ptr;
-        for(i=0; bool_map[i] >= 0; i++) {
+        for(i=0; bool_map[i] != (char)-1; i++) {
             if (bool_map[i]) {
                 ret = msgpack_pack_object(&tmp_pck, (kv+i)->key);
                 ret = msgpack_pack_object(&tmp_pck, (kv+i)->val);
