@@ -35,6 +35,10 @@ struct flb_elasticsearch {
     char *index;
     char *type;
 
+    /* HTTP Auth */
+    char *http_user;
+    char *http_passwd;
+
     /*
      * Logstash compatibility options
      * ==============================
