@@ -99,6 +99,13 @@ static const bool config_tcache =
     false
 #endif
     ;
+static const bool config_thp =
+#ifdef JEMALLOC_THP
+    true
+#else
+    false
+#endif
+    ;
 static const bool config_tls =
 #ifdef JEMALLOC_TLS
     true
@@ -158,7 +165,6 @@ static const bool config_cache_oblivious =
 #include <mach/mach_error.h>
 #include <mach/mach_init.h>
 #include <mach/vm_map.h>
-#include <malloc/malloc.h>
 #endif
 
 #include "jemalloc/internal/ph.h"
@@ -337,7 +343,7 @@ typedef unsigned szind_t;
 
 /* Return the nearest aligned address at or below a. */
 #define	ALIGNMENT_ADDR2BASE(a, alignment)				\
-	((void *)((uintptr_t)(a) & (-(alignment))))
+	((void *)((uintptr_t)(a) & ((~(alignment)) + 1)))
 
 /* Return the offset between a and the nearest aligned address at or below a. */
 #define	ALIGNMENT_ADDR2OFFSET(a, alignment)				\
@@ -345,7 +351,7 @@ typedef unsigned szind_t;
 
 /* Return the smallest alignment multiple that is >= s. */
 #define	ALIGNMENT_CEILING(s, alignment)					\
-	(((s) + (alignment - 1)) & (-(alignment)))
+	(((s) + (alignment - 1)) & ((~(alignment)) + 1))
 
 /* Declare a variable-length array. */
 #if __STDC_VERSION__ < 199901L
