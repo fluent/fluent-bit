@@ -118,7 +118,7 @@ int chunk_info(char *filename, struct chunk_info *info)
     info->hash_str[40] = '\0';
 
     len = (p - tmp);
-    if (len < 1 || len >= sizeof(num)) {
+    if (len < 1 || len > sizeof(num) - 1) {
         return -1;
     }
     strncpy(num, tmp, len);
@@ -143,7 +143,7 @@ int chunk_info(char *filename, struct chunk_info *info)
     }
     len = (p - tmp);
 
-    if (len < 1 || len + 1 > sizeof(num)) {
+    if (len < 1 || len > sizeof(num) - 1) {
         return -1;
     }
     strncpy(num, tmp, len);
