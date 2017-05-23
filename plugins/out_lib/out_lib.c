@@ -27,24 +27,23 @@
 #include "out_lib.h"
 
 #define PLUGIN_NAME "out_lib"
+
 static int configure(struct flb_out_lib_config *ctx,
-                      struct flb_output_instance   *ins)
+                     struct flb_output_instance *ins)
 {
-    char* format = NULL;
-    
-    /* default */
-    ctx->format = FLB_OUT_LIB_FMT_MSGPACK;
+    char *tmp;
 
-    format = flb_output_get_property("format", ins);
-    if (format == NULL) {
-        /* using default */
-        return 0;
+    tmp = flb_output_get_property("format", ins);
+    if (!tmp) {
+        ctx->format = FLB_OUT_LIB_FMT_MSGPACK;
     }
-
-    flb_debug("[%s]fomrat is \"%s\"",PLUGIN_NAME, format);
-
-    if (!strcasecmp(format, FLB_FMT_STR_JSON)) {
-        ctx->format = FLB_OUT_LIB_FMT_JSON;
+    else {
+        if (strcasecmp(tmp, FLB_FMT_STR_MSGPACK) == 0) {
+            ctx->format = FLB_OUT_LIB_FMT_MSGPACK;
+        }
+        else if (strcasecmp(tmp, FLB_FMT_STR_JSON) == 0) {
+            ctx->format = FLB_OUT_LIB_FMT_JSON;
+        }
     }
 
     return 0;
@@ -78,15 +77,16 @@ static int out_lib_init(struct flb_output_instance *ins,
     if (ins->data != NULL) {
         /* set user callback */
         ctx->user_callback = ins->data;
-    }else{
-        flb_error("[%s] Callback is NULL",PLUGIN_NAME);
+    }
+    else{
+        flb_error("[out_lib] Callback is not set");
         flb_free(ctx);
         return -1;
     }
 
     configure(ctx, ins);
-
     flb_output_set_context(ins, ctx);
+
     return 0;
 }
 
@@ -96,45 +96,51 @@ static void out_lib_flush(void *data, size_t bytes,
                           void *out_context,
                           struct flb_config *config)
 {
-    msgpack_unpacked result;
     size_t off = 0;
     size_t last_off = 0;
-    size_t alloc_size = 0;
+    size_t data_size = 0;
+    char *data_for_user = NULL;
+    msgpack_unpacked result;
     struct flb_out_lib_config *ctx = out_context;
-    unsigned char* data_for_user   = NULL;
     (void) i_ins;
     (void) config;
     (void) tag;
     (void) tag_len;
 
-    if (ctx->user_callback == NULL) {
-        flb_error("[%s] Callback is NULL",PLUGIN_NAME);
-        FLB_OUTPUT_RETURN(FLB_ERROR);
-    }
-
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
-        switch(ctx->format){
+        switch(ctx->format) {
         case FLB_OUT_LIB_FMT_MSGPACK:
-            data_for_user = flb_calloc(1, bytes);
-            if (data_for_user != NULL) {
-                memcpy(data_for_user, &result.data, bytes);
+            /* copy raw bytes */
+            data_for_user = flb_malloc(bytes);
+            if (!data_for_user) {
+                flb_errno();
+                msgpack_unpacked_destroy(&result);
+                FLB_OUTPUT_RETURN(FLB_ERROR);
             }
+            memcpy(data_for_user, &result.data, bytes);
+            data_size = bytes;
             break;
         case FLB_OUT_LIB_FMT_JSON:
-            alloc_size = (off - last_off)+128;/* JSON is larger than msgpack */
+            /* JSON is larger than msgpack, just a hint */
+            data_size = (off - last_off) + 128;
             last_off   = off;
-            data_for_user = flb_msgpack_to_json_str(alloc_size, &result);
+            data_for_user = flb_msgpack_to_json_str(data_size, &result);
+            if (!data_for_user) {
+                msgpack_unpacked_destroy(&result);
+                FLB_OUTPUT_RETURN(FLB_ERROR);
+            }
+            data_size = strlen(data_for_user);
             break;
-        default:
-            flb_error("[%s] unknown format",PLUGIN_NAME);
-            FLB_OUTPUT_RETURN(FLB_ERROR);
         }
 
-        if (data_for_user != NULL) {
-            ctx->user_callback((void*)data_for_user, bytes);
-        }
+        /* Invoke user callback */
+        ctx->user_callback(data_for_user, data_size);
+
+        /* Buffer: data_for_user is always allocated, so always release it */
+        flb_free(data_for_user);
     }
+
     msgpack_unpacked_destroy(&result);
     FLB_OUTPUT_RETURN(FLB_OK);
 }
