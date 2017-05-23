@@ -148,7 +148,7 @@ static int cb_modifier_init(struct flb_filter_instance *f_ins,
 }
 
 static int make_bool_map(struct record_modifier_ctx *ctx, msgpack_object *map,
-                         char *bool_map, int map_num)
+                         bool_map_t *bool_map, int map_num)
 {
     struct mk_list *tmp;
     struct mk_list *head;
@@ -163,9 +163,9 @@ static int make_bool_map(struct record_modifier_ctx *ctx, msgpack_object *map,
     int i;
 
     for (i=0; i<map_num; i++) {
-        bool_map[i] = 1;              
+        bool_map[i] = TO_BE_REMAINED;
     }
-    bool_map[map_num] = -1;/* tail of map */
+    bool_map[map_num] = TAIL_OF_ARRAY;/* tail of map */
 
     if (ctx->remove_keys_num > 0) {
         check = &(ctx->remove_keys);
@@ -200,7 +200,7 @@ static int make_bool_map(struct record_modifier_ctx *ctx, msgpack_object *map,
                 }
             }
             if (result == is_to_delete) {
-                bool_map[i] = 0;
+                bool_map[i] = TO_BE_REMOVED;
                 ret--;
             }
         }
@@ -223,7 +223,7 @@ static int cb_modifier_filter(void *data, size_t bytes,
     int ret;
     int removed_map_num  = 0;
     int map_num          = 0;
-    char bool_map[128];
+    bool_map_t bool_map[128];
     (void) f_ins;
     (void) config;
     struct flb_time tm;
@@ -269,8 +269,8 @@ static int cb_modifier_filter(void *data, size_t bytes,
 
         msgpack_pack_map(&tmp_pck, removed_map_num);
         kv = obj->via.map.ptr;
-        for(i=0; bool_map[i] != (char)-1; i++) {
-            if (bool_map[i]) {
+        for(i=0; bool_map[i] != TAIL_OF_ARRAY; i++) {
+            if (bool_map[i] == TO_BE_REMAINED) {
                 ret = msgpack_pack_object(&tmp_pck, (kv+i)->key);
                 ret = msgpack_pack_object(&tmp_pck, (kv+i)->val);
             }
