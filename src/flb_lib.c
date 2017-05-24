@@ -349,6 +349,17 @@ int flb_lib_config_file(struct flb_lib_ctx *ctx, char *path)
     return 0;
 }
 
+/* This is a wrapper to release a buffer which comes from out_lib_flush() */
+int flb_lib_free(void* data)
+{
+    if (data == NULL) {
+        return -1;
+    }
+    flb_free(data);
+    return 0;
+}
+
+
 /* Push some data into the Engine */
 int flb_lib_push(flb_ctx_t *ctx, int ffd, void *data, size_t len)
 {
