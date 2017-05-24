@@ -43,5 +43,11 @@ struct record_modifier_ctx {
     struct mk_list whitelist_keys;
 };
 
+typedef enum {
+    TO_BE_REMOVED = 0,
+    TO_BE_REMAINED = 1,
+    TAIL_OF_ARRAY = 2
+} bool_map_t;
+
 
 #endif /* FLB_FILTER_RECORD_MODIFIER_H */
