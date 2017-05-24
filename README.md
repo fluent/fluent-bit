@@ -43,6 +43,7 @@ $ bin/fluent-bit -i cpu -o stdout
 
 | name               | option     | description  |
 |--------------------|------------|---------------------------------------------------------------------------------|
+| Record Modifier    | record_modifier | Append/Remove key-value pair |
 | Grep               | grep       | Match or exclude specific records by patterns |
 | Kubernetes         | kubernetes | Enrich logs with Kubernetes Metadata |
 | Stdout             | stdout     | Print records to the standard output interface |
