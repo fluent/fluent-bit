@@ -169,7 +169,6 @@ struct flb_tls_session *flb_tls_session_new(struct flb_tls_context *ctx)
 
     mbedtls_ssl_init(&session->ssl);
     mbedtls_ssl_config_init(&session->conf);
-
     ret = mbedtls_ssl_config_defaults(&session->conf,
                                       MBEDTLS_SSL_IS_CLIENT,
                                       MBEDTLS_SSL_TRANSPORT_STREAM,
@@ -247,6 +246,7 @@ int net_io_tls_handshake(void *_u_conn, void *_th)
         flb_error("[io_tls] could not create tls session");
         return -1;
     }
+    mbedtls_ssl_set_hostname(&session->ssl,u->tcp_host);
 
     /* Store session and mbedtls net context fd */
     u_conn->tls_session = session;
