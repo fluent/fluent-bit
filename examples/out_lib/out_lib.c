@@ -26,6 +26,8 @@ int my_stdout_json(void* data, size_t size)
     printf("[%s]",__FUNCTION__);
     printf("%s",(char*)data);
     printf("\n");
+
+    flb_lib_free(data);
     return 0;
 }
 
@@ -34,6 +36,8 @@ int my_stdout_msgpack(void* data, size_t size)
     printf("[%s]",__FUNCTION__);
     msgpack_object_print(stdout, *(msgpack_object*)data);
     printf("\n");
+
+    flb_lib_free(data);
     return 0;
 }
 

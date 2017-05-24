@@ -136,9 +136,6 @@ static void out_lib_flush(void *data, size_t bytes,
 
         /* Invoke user callback */
         ctx->user_callback(data_for_user, data_size);
-
-        /* Buffer: data_for_user is always allocated, so always release it */
-        flb_free(data_for_user);
     }
 
     msgpack_unpacked_destroy(&result);
