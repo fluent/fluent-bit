@@ -42,6 +42,7 @@ FLB_EXPORT int flb_input_set(flb_ctx_t *ctx, int ffd, ...);
 FLB_EXPORT int flb_output_set(flb_ctx_t *ctx, int ffd, ...);
 FLB_EXPORT int flb_filter_set(flb_ctx_t *ctx, int ffd, ...);
 FLB_EXPORT int flb_service_set(flb_ctx_t *ctx, ...);
+FLB_EXPORT int  flb_lib_free(void *data);
 FLB_EXPORT double flb_time_now();
 
 /* start stop the engine */
