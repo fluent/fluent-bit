@@ -112,9 +112,15 @@ if(FLB_OUT_LIB)
 endif()
 
 if(FLB_IN_LIB AND FLB_OUT_LIB)
-	if(FLB_FILTER_STDOUT)
+  if(FLB_FILTER_STDOUT)
     list(APPEND check_PROGRAMS
       flb_test_filter_stdout.cpp
+      )
+  endif()
+
+  if(FLB_FILTER_GREP)
+    list(APPEND check_PROGRAMS
+      flb_test_filter_grep.cpp
       )
   endif()
 endif()
