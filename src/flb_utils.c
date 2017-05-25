@@ -353,3 +353,14 @@ int flb_utils_time_to_seconds(char *time)
 
     return val;
 }
+
+int flb_utils_bool(char *val)
+{
+    if (strcasecmp(val, "true") == 0 ||
+        strcasecmp(val, "on") == 0 ||
+        strcasecmp(val, "yes") == 0) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
