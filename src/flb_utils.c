@@ -393,3 +393,14 @@ int flb_utils_time_split(char *time, int *sec, long *nsec)
 
     return 0;
 }
+
+int flb_utils_bool(char *val)
+{
+    if (strcasecmp(val, "true") == 0 ||
+        strcasecmp(val, "on") == 0 ||
+        strcasecmp(val, "yes") == 0) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
