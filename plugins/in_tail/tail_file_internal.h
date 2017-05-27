@@ -44,6 +44,15 @@ struct flb_tail_file {
     int tag_len;
     char *tag_buf;
 
+    /* multiline status */
+    time_t mult_flush_timeout;  /* time when multiline started           */
+    int mult_firstline;         /* bool: mult firstline found ?          */
+    int mult_skipping;          /* skipping because ignode_older than ?  */
+    int mult_keys;              /* total number of buffered keys         */
+    msgpack_sbuffer mult_sbuf;  /* temporal msgpack buffer               */
+    msgpack_packer mult_pck;    /* temporal msgpack packer               */
+    struct flb_time mult_time;  /* multiline time parsed from first line */
+
     /* buffering */
     off_t parsed;
     off_t buf_len;

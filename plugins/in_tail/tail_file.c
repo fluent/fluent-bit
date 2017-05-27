@@ -32,6 +32,7 @@
 #include "tail_config.h"
 #include "tail_db.h"
 #include "tail_signal.h"
+#include "tail_multiline.h"
 
 static inline void consume_bytes(char *buf, int bytes, int length)
 {
@@ -200,6 +201,7 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
 
 #ifdef FLB_HAVE_REGEX
         if (ctx->parser) {
+            /* Common parser (non-multiline) */
             ret = flb_parser_do(ctx->parser, data, len,
                                 &out_buf, &out_size, &out_time);
             if (ret >= 0) {
@@ -214,14 +216,35 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
                     }
                 }
 
+                /* If multiline is enabled, flush any buffered data */
+                if (ctx->multiline == FLB_TRUE) {
+                    flb_tail_mult_flush(out_sbuf, out_pck, file, ctx);
+                }
+
                 pack_line_map(out_sbuf, out_pck, &out_time,
                               (char**) &out_buf, &out_size, file);
                 flb_free(out_buf);
             }
-            else {
+        }
+        else if (ctx->multiline == FLB_TRUE) {
+            ret = flb_tail_mult_process_content(now,
+                                                data, len, file, ctx);
+
+            /* No multiline */
+            if (ret == FLB_TAIL_MULT_NA) {
+
+                flb_tail_mult_flush(out_sbuf, out_pck, file, ctx);
+
                 flb_time_get(&out_time);
                 pack_line(out_sbuf, out_pck, &out_time,
                           data, len, file);
+            }
+            else if (ret == FLB_TAIL_MULT_MORE) {
+                /* we need more data, do nothing */
+                goto go_next;
+            }
+            else if (ret == FLB_TAIL_MULT_DONE) {
+                /* Finalized */
             }
         }
         else {
@@ -403,6 +426,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file->tag_len   = 0;
     file->tag_buf   = NULL;
     file->pending_bytes = 0;
+    file->mult_firstline = FLB_FALSE;
 
     /* Initialize (optional) dynamic tag */
     if (ctx->dynamic_tag == FLB_TRUE) {

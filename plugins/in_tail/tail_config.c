@@ -27,6 +27,7 @@
 #include "tail_db.h"
 #include "tail_config.h"
 #include "tail_scan.h"
+#include "tail_multiline.h"
 
 struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
                                                struct flb_config *config)
@@ -101,6 +102,20 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
         }
     }
 
+    /* Config: multi-line support */
+    tmp = flb_input_get_property("multiline", i_ins);
+    if (tmp) {
+        ret = flb_utils_bool(tmp);
+        if (ret == FLB_TRUE) {
+            ctx->multiline = FLB_TRUE;
+            ret = flb_tail_mult_create(ctx, i_ins, config);
+            if (ret == -1) {
+                flb_free(ctx);
+                return NULL;
+            }
+        }
+    }
+
     /* Config: determine whether appending or not */
     ctx->path_key = flb_input_get_property("path_key", i_ins);
     if (ctx->path_key != NULL) {
@@ -152,6 +167,8 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
 
 int flb_tail_config_destroy(struct flb_tail_config *config)
 {
+    flb_tail_mult_destroy(config);
+
     /* Close pipe ends */
     close(config->ch_manager[0]);
     close(config->ch_manager[1]);

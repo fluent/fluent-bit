@@ -37,6 +37,7 @@
 #include "tail_scan.h"
 #include "tail_signal.h"
 #include "tail_config.h"
+#include "tail_multiline.h"
 
 static inline int consume_byte(int fd)
 {
@@ -236,6 +237,18 @@ static int in_tail_init(struct flb_input_instance *in,
     }
     ctx->coll_fd_pending = ret;
 
+    /* Register callback to process multiline queued buffer */
+    if (ctx->multiline == FLB_TRUE) {
+        ret = flb_input_set_collector_time(in, flb_tail_mult_pending_flush,
+                                           ctx->multiline_flush, 0,
+                                           config);
+        if (ret == -1) {
+            flb_tail_config_destroy(ctx);
+            return -1;
+        }
+        ctx->coll_fd_mult_flush = ret;
+    }
+
     return 0;
 }
 
@@ -280,6 +293,10 @@ static void in_tail_pause(void *data, struct flb_config *config)
     flb_input_collector_pause(ctx->coll_fd_rotated, ctx->i_ins);
     flb_input_collector_pause(ctx->coll_fd_pending, ctx->i_ins);
 
+    if (ctx->multiline == FLB_TRUE) {
+        flb_input_collector_pause(ctx->coll_fd_mult_flush, ctx->i_ins);
+    }
+
     /* Pause file system backend handlers */
     flb_tail_fs_pause(ctx);
 }
@@ -292,6 +309,10 @@ static void in_tail_resume(void *data, struct flb_config *config)
     flb_input_collector_resume(ctx->coll_fd_scan, ctx->i_ins);
     flb_input_collector_resume(ctx->coll_fd_rotated, ctx->i_ins);
     flb_input_collector_resume(ctx->coll_fd_pending, ctx->i_ins);
+
+    if (ctx->multiline == FLB_TRUE) {
+        flb_input_collector_resume(ctx->coll_fd_mult_flush, ctx->i_ins);
+    }
 
     /* Pause file system backend handlers */
     flb_tail_fs_resume(ctx);

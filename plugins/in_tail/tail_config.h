@@ -35,6 +35,7 @@ struct flb_tail_config {
     int coll_fd_scan;
     int coll_fd_rotated;
     int coll_fd_pending;
+    int coll_fd_mult_flush;
 
     /* Backend collectors */
     int coll_fd_fs1;           /* used by fs_inotify & fs_stat */
@@ -56,6 +57,12 @@ struct flb_tail_config {
 
     /* Parser / Format */
     struct flb_parser *parser;
+
+    /* Multiline */
+    int multiline;             /* multiline enabled ?  */
+    int multiline_flush;       /* multiline flush/wait */
+    struct flb_parser *mult_parser_firstline;
+    struct mk_list mult_parsers;
 
     /* Lists head for files consumed statically (read) and by events (inotify) */
     struct mk_list files_static;
