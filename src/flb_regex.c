@@ -63,7 +63,7 @@ static int str_to_regex(unsigned char *pattern, OnigRegex *reg)
     int len;
     OnigErrorInfo einfo;
 
-    len = strlen((char *) pattern) - 1;
+    len = strlen((char *) pattern);
     ret = onig_new(reg, pattern, pattern + len,
                    ONIG_OPTION_DEFAULT,
                    ONIG_ENCODING_UTF8, ONIG_SYNTAX_RUBY, &einfo);
