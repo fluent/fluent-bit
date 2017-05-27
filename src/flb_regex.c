@@ -61,10 +61,20 @@ static int str_to_regex(unsigned char *pattern, OnigRegex *reg)
 {
     int ret;
     int len;
+    unsigned char *start;
+    unsigned char *end;
     OnigErrorInfo einfo;
 
     len = strlen((char *) pattern);
-    ret = onig_new(reg, pattern, pattern + len,
+    start = pattern;
+    end = pattern + len;
+
+    if (pattern[0] == '/' && pattern[len - 1] == '/') {
+        start++;
+        end--;
+    }
+
+    ret = onig_new(reg, start, end,
                    ONIG_OPTION_DEFAULT,
                    ONIG_ENCODING_UTF8, ONIG_SYNTAX_RUBY, &einfo);
 
