@@ -204,6 +204,10 @@ int flb_parser_regex_do(struct flb_parser *parser,
 
     /* Iterate results and compose new buffer */
     ret = flb_regex_parse(parser->regex, &result, cb_results, &pcb);
+    if (ret == -1) {
+        msgpack_sbuffer_destroy(&tmp_sbuf);
+        return -1;
+    }
 
     /* Export results */
     *out_buf = tmp_sbuf.data;
