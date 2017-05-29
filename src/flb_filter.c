@@ -238,6 +238,9 @@ void flb_filter_initialize_all(struct flb_config *config)
     int ret;
     struct mk_list *tmp;
     struct mk_list *head;
+    struct mk_list *tmp_prop;
+    struct mk_list *head_prop;
+    struct flb_config_prop *prop;
     struct flb_filter_plugin *p;
     struct flb_filter_instance *in;
 
@@ -261,6 +264,20 @@ void flb_filter_initialize_all(struct flb_config *config)
             ret = p->cb_init(in, config, in->data);
             if (ret != 0) {
                 flb_error("Failed initialize filter %s", in->name);
+
+                /* release properties */
+                mk_list_foreach_safe(head_prop, tmp_prop, &in->properties) {
+                    prop = mk_list_entry(head_prop, struct flb_config_prop, _head);
+                    flb_free(prop->key);
+                    flb_free(prop->val);
+                    mk_list_del(&prop->_head);
+                    flb_free(prop);
+                }
+
+                if (in->match != NULL) {
+                    flb_free(in->match);
+                }
+
                 mk_list_del(&in->_head);
                 flb_free(in);
             }
