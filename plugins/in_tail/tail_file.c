@@ -427,6 +427,8 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file->tag_buf   = NULL;
     file->pending_bytes = 0;
     file->mult_firstline = FLB_FALSE;
+    file->mult_keys = 0;
+    file->mult_flush_timeout = 0;
 
     /* Initialize (optional) dynamic tag */
     if (ctx->dynamic_tag == FLB_TRUE) {

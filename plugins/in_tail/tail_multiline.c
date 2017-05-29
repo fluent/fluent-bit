@@ -85,7 +85,7 @@ int flb_tail_mult_create(struct flb_tail_config *ctx,
         if (strncasecmp("parser_", p->key, 7) == 0) {
             parser = flb_parser_get(p->val, config);
             if (!parser) {
-                flb_error("[in_tail] invalid parser '%s'", parser);
+                flb_error("[in_tail] multiline: invalid parser '%s'", p->val);
                 flb_tail_mult_destroy(ctx);
                 return -1;
 
@@ -122,6 +122,94 @@ int flb_tail_mult_destroy(struct flb_tail_config *ctx)
 }
 
 
+/* Process the result of a firstline match */
+int flb_tail_mult_process_first(time_t now,
+                                char *buf, size_t size,
+                                struct flb_time *out_time,
+                                struct flb_tail_file *file,
+                                struct flb_tail_config *ctx)
+{
+    size_t off;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+    msgpack_object map;
+    msgpack_unpacked result;
+
+    /* If a previous multiline context already exists, flush first */
+    if (file->mult_firstline == FLB_TRUE && file->mult_skipping == FLB_FALSE) {
+        msgpack_sbuffer_init(&mp_sbuf);
+        msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+        flb_tail_mult_flush(&mp_sbuf, &mp_pck, file, ctx);
+        flb_input_dyntag_append_raw(ctx->i_ins,
+                                    file->tag_buf,
+                                    file->tag_len,
+                                    mp_sbuf.data,
+                                    mp_sbuf.size);
+        msgpack_sbuffer_destroy(&mp_sbuf);
+    }
+
+    /* Remark as first multiline message */
+    file->mult_firstline = FLB_TRUE;
+
+    /* Validate obtained time, if not set, set the current time */
+    if (flb_time_to_double(out_time) == 0) {
+        flb_time_get(out_time);
+    }
+
+    /* Should we skip this multiline record ? */
+    if (ctx->ignore_older > 0) {
+        if ((now - ctx->ignore_older) > out_time->tm.tv_sec) {
+            flb_free(buf);
+            file->mult_skipping = FLB_TRUE;
+            file->mult_firstline = FLB_TRUE;
+
+            /* we expect more data to skip */
+            return FLB_TAIL_MULT_MORE;
+        }
+    }
+
+    /* Re-initiate buffers */
+    msgpack_sbuffer_init(&file->mult_sbuf);
+    msgpack_packer_init(&file->mult_pck, &file->mult_sbuf, msgpack_sbuffer_write);
+
+    /*
+     * flb_parser_do() always return a msgpack buffer, so we tweak our
+     * local msgpack reference to avoid an extra allocation. The only
+     * concern is that we don't know what's the real size of the memory
+     * allocated, so we assume it's just 'out_size'.
+     */
+    file->mult_flush_timeout = now + (ctx->multiline_flush - 1);
+    file->mult_sbuf.data = buf;
+    file->mult_sbuf.size = size;
+    file->mult_sbuf.alloc = size;
+
+    /* Set multiline status */
+    file->mult_firstline = FLB_TRUE;
+    file->mult_skipping = FLB_FALSE;
+    flb_time_copy(&file->mult_time, out_time);
+
+    off = 0;
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, buf, size, &off);
+    map = result.data;
+    file->mult_keys = map.via.map.size;
+    msgpack_unpacked_destroy(&result);
+
+    /* We expect more data */
+    return FLB_TAIL_MULT_MORE;
+}
+
+/* Append a raw log entry to the last structured field in the mult buffer */
+static inline void flb_tail_mult_append_raw(char *buf, int size,
+                                            struct flb_tail_file *file,
+                                            struct flb_tail_config *config)
+{
+    /* Append the raw string */
+    msgpack_pack_str(&file->mult_pck, size);
+    msgpack_pack_str_body(&file->mult_pck, buf, size);
+}
+
 int flb_tail_mult_process_content(time_t now,
                                   char *buf, int len,
                                   struct flb_tail_file *file,
@@ -130,69 +218,24 @@ int flb_tail_mult_process_content(time_t now,
     int ret;
     size_t off;
     void *out_buf;
-    size_t out_size;
+    size_t out_size = 0;
     struct mk_list *head;
     struct flb_tail_mult *mult_parser = NULL;
     struct flb_time out_time = {};
     msgpack_object map;
     msgpack_unpacked result;
 
-    /* Try to catch the firstline */
-    if (file->mult_firstline == FLB_FALSE) {
-        ret = flb_parser_do(ctx->mult_parser_firstline,
-                            buf, len,
-                            &out_buf, &out_size, &out_time);
+    /* Always check if this line is the beginning of a new multiline message */
+    ret = flb_parser_do(ctx->mult_parser_firstline,
+                        buf, len,
+                        &out_buf, &out_size, &out_time);
+    if (ret >= 0) {
+        flb_tail_mult_process_first(now, out_buf, out_size, &out_time,
+                                    file, ctx);
+        return FLB_TAIL_MULT_MORE;
+    }
 
-        if (ret == -1) {
-            /* not applicable */
-            return FLB_TAIL_MULT_NA;
-        }
-
-        /* Validate obtained time, if not set, set the current time */
-        if (flb_time_to_double(&out_time) == 0) {
-            flb_time_get(&out_time);
-        }
-
-        /* Should we skip this multiline record ? */
-        if (ctx->ignore_older > 0) {
-            if ((now - ctx->ignore_older) > out_time.tm.tv_sec) {
-                flb_free(out_buf);
-                file->mult_skipping = FLB_TRUE;
-                file->mult_firstline = FLB_TRUE;
-
-                /* we expect more data to skip */
-                return FLB_TAIL_MULT_MORE;
-            }
-        }
-
-        /* Initialize temporal msgpack buffers */
-        msgpack_sbuffer_init(&file->mult_sbuf);
-        msgpack_packer_init(&file->mult_pck, &file->mult_sbuf, msgpack_sbuffer_write);
-
-        /*
-         * flb_parser_do() always return a msgpack buffer, so we tweak our
-         * local msgpack reference to avoid an extra allocation. The only
-         * concern is that we don't know what's the real size of the memory
-         * allocated, so we assume it's just 'out_size'.
-         */
-        file->mult_flush_timeout = now + (ctx->multiline_flush - 1);
-        file->mult_sbuf.data = out_buf;
-        file->mult_sbuf.size = out_size;
-        file->mult_sbuf.alloc = out_size;
-
-        /* Set multiline status */
-        file->mult_firstline = FLB_TRUE;
-        file->mult_skipping = FLB_FALSE;
-        flb_time_copy(&file->mult_time, &out_time);
-
-        off = 0;
-        msgpack_unpacked_init(&result);
-        msgpack_unpack_next(&result, out_buf, out_size, &off);
-        map = result.data;
-        file->mult_keys = map.via.map.size;
-        msgpack_unpacked_destroy(&result);
-
-        /* We expect more data */
+    if (file->mult_skipping == FLB_TRUE) {
         return FLB_TAIL_MULT_MORE;
     }
 
@@ -221,12 +264,12 @@ int flb_tail_mult_process_content(time_t now,
 
     if (!mult_parser) {
         /*
-         * If no parser worked for the data in question, instruct the caller
-         * that this text is not applicable.
+         * If no parser was found means the string log must be appended
+         * to the last structured field.
          */
-        return FLB_TAIL_MULT_NA;
+        flb_tail_mult_append_raw(buf, len, file, ctx);
+        return FLB_TAIL_MULT_MORE;
     }
-
 
     off = 0;
     msgpack_unpacked_init(&result);
@@ -247,16 +290,24 @@ int flb_tail_mult_flush(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                         struct flb_tail_file *file, struct flb_tail_config *ctx)
 {
     int i;
+    size_t total;
     size_t off = 0;
+    size_t next_off = 0;
     size_t bytes;
     void *data;
     msgpack_unpacked result;
-    msgpack_object map;
+    msgpack_unpacked cont;
+    msgpack_object root;
+    msgpack_object next;
     msgpack_object k;
     msgpack_object v;
 
     /* nothing to flush */
     if (file->mult_firstline == FLB_FALSE) {
+        return -1;
+    }
+
+    if (file->mult_keys == 0) {
         return -1;
     }
 
@@ -269,24 +320,67 @@ int flb_tail_mult_flush(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
     bytes = file->mult_sbuf.size;
 
     msgpack_unpacked_init(&result);
+    msgpack_unpacked_init(&cont);
+
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
-        /* Each entry is a map */
-        map = result.data;
-        for (i = 0; i < map.via.map.size; i++) {
-            k = map.via.map.ptr[i].key;
-            v = map.via.map.ptr[i].val;
+        root = result.data;
+        if (root.type != MSGPACK_OBJECT_MAP) {
+            continue;
+        }
+
+        total = 0;
+        next_off = off;
+
+        for (i = 0; i < root.via.map.size; i++) {
+            k = root.via.map.ptr[i].key;
+            v = root.via.map.ptr[i].val;
+
+            /* Always check if the 'next' entry is a continuation */
+            total = 0;
+            if (i + 1 == root.via.map.size) {
+                while (msgpack_unpack_next(&cont, data, bytes, &next_off)) {
+                    next = cont.data;
+                    if (next.type != MSGPACK_OBJECT_STR) {
+                        break;
+                    }
+
+                    /* Sum total bytes to append */
+                    total += next.via.str.size + 1;
+                }
+            }
 
             msgpack_pack_object(mp_pck, k);
-            msgpack_pack_object(mp_pck, v);
+            msgpack_pack_str(mp_pck, v.via.str.size + total);
+            msgpack_pack_str_body(mp_pck, v.via.str.ptr, v.via.str.size);
+
+            if (total > 0) {
+                /*
+                 * We have extra lines that needs to be merged inside this
+                 * value field.
+                 */
+                next_off = off;
+                while (msgpack_unpack_next(&cont, data, bytes, &next_off)) {
+                    next = cont.data;
+                    if (next.type != MSGPACK_OBJECT_STR) {
+                        break;
+                    }
+
+                    msgpack_pack_str_body(mp_pck, "\n", 1);
+                    msgpack_pack_str_body(mp_pck, next.via.str.ptr,
+                                          next.via.str.size);
+                }
+            }
         }
     }
 
     msgpack_unpacked_destroy(&result);
+    msgpack_unpacked_destroy(&cont);
 
     /* Reset status */
     file->mult_firstline = FLB_FALSE;
     file->mult_skipping = FLB_FALSE;
     file->mult_keys = 0;
+    file->mult_flush_timeout = 0;
     msgpack_sbuffer_destroy(&file->mult_sbuf);
     flb_time_zero(&file->mult_time);
 

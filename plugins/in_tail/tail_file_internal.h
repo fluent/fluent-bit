@@ -67,5 +67,4 @@ struct flb_tail_file {
     struct mk_list _head;
     struct mk_list _rotate_head;
 };
-
 #endif
