@@ -299,6 +299,9 @@ static int flb_service_conf(struct flb_config *config, char *file)
         return -1;
     }
 
+    /* Set configuration root path */
+    flb_service_conf_path_set(config, file);
+
     /* Read main [SERVICE] section */
     section = mk_rconf_section_get(fconf, "SERVICE");
     if (section) {
@@ -421,7 +424,6 @@ static int flb_service_conf(struct flb_config *config, char *file)
     }
 
     ret = 0;
-    flb_service_conf_path_set(config, file);
 
  flb_service_conf_end:
     if (fconf != NULL) {
@@ -641,13 +643,6 @@ int main(int argc, char **argv)
         }
         flb_free(cfg_file);
     }
-
-#ifdef FLB_HAVE_REGEX
-    /* Parsers file */
-    if (config->parsers_file) {
-        flb_parser_conf_file(config->parsers_file, config);
-    }
-#endif
 
     /* Validate flush time (seconds) */
     if (config->flush < 1) {

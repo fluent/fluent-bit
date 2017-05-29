@@ -29,6 +29,7 @@
 #include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_plugins.h>
 #include <fluent-bit/flb_io_tls.h>
 #include <fluent-bit/flb_kernel.h>
@@ -339,6 +340,12 @@ int flb_config_set_property(struct flb_config *config,
         if (prop_key_check(key, k,len) == 0) {
             if (!strncasecmp(key, FLB_CONF_STR_LOGLEVEL, 256)) {
                 ret = set_log_level(config, v);
+            }
+            else if (!strncasecmp(key, FLB_CONF_STR_PARSERS_FILE, 32)) {
+#ifdef FLB_HAVE_REGEX
+                tmp = flb_env_var_translate(config->env, v);
+                flb_parser_conf_file(tmp, config);
+#endif
             }
             else {
                 ret = 0;
