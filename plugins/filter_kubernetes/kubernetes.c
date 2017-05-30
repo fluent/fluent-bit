@@ -67,17 +67,28 @@ static int unescape_string(char *buf, int buf_len, char **unesc_buf)
     int i = 0;
     int j = 0;
     char *p;
+    char n;
 
     p = *unesc_buf;
     while (i < buf_len) {
         if (buf[i] == '\\') {
-            i++;
+            if (i + 1 < buf_len) {
+                n = buf[i + 1];
+                if (n != 'a' && n != 'b' &&
+                    n != 't' && n != 'n' &&
+                    n != 'v' && n != 'f' &&
+                    n != 'r') {
+                    i++;
+                }
+            }
+            else {
+                i++;
+            }
         }
         p[j++] = buf[i++];
     }
     p[j] = '\0';
-
-    return (j - 1);
+    return j;
 }
 
 static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
