@@ -28,6 +28,10 @@
 #define FLB_HTTP_MIME_JSON      "application/json"
 
 struct flb_out_http_config {
+    /* HTTP Auth */
+    char *http_user;
+    char *http_passwd;
+
     /* Proxy */
     char *proxy;
     char *proxy_host;

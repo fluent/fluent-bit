@@ -239,6 +239,20 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
     }
 
 
+    /* HTTP Auth */
+    tmp = flb_output_get_property("http_user", ins);
+    if (tmp) {
+        ctx->http_user = flb_strdup(tmp);
+
+        tmp = flb_output_get_property("http_passwd", ins);
+        if (tmp) {
+            ctx->http_passwd = flb_strdup(tmp);
+        }
+        else {
+            ctx->http_passwd = flb_strdup("");
+        }
+    }
+
     /* Output format */
     ctx->out_format = FLB_HTTP_OUT_MSGPACK;
     tmp = flb_output_get_property("format", ins);
@@ -322,6 +336,10 @@ void cb_http_flush(void *data, size_t bytes,
                             sizeof(FLB_HTTP_MIME_MSGPACK) -1);
     }
 
+    if (ctx->http_user && ctx->http_passwd) {
+        flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
+    }
+
     ret = flb_http_do(c, &b_sent);
     if (ret == 0) {
         /*
@@ -371,6 +389,8 @@ int cb_http_exit(void *data, struct flb_config *config)
 
     flb_upstream_destroy(ctx->u);
 
+    flb_free(ctx->http_user);
+    flb_free(ctx->http_passwd);
     flb_free(ctx->proxy_host);
     flb_free(ctx->uri);
     flb_free(ctx);
