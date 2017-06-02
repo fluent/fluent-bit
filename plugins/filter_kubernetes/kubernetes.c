@@ -99,6 +99,7 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
     int ret;
     int new_size;
     int map_size;
+    int size;
     int new_map_size = 0;
     int log_index = -1;
     int log_size = 0;
@@ -156,9 +157,15 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
             }
         }
 
+        /* Do not process ending \n if set at the end of the map */
+        size = v.via.str.size;
+        if (v.via.str.ptr[v.via.str.size - 2] == '\\' &&
+            v.via.str.ptr[v.via.str.size - 1] == 'n') {
+            size -= 2;
+        }
+
         json_size = unescape_string((char *) v.via.str.ptr,
-                                    v.via.str.size,
-                                    &ctx->merge_json_buf);
+                                    size, &ctx->merge_json_buf);
         ret = flb_pack_json(ctx->merge_json_buf, json_size,
                             &log_buf, &log_size);
         if (ret != 0) {
