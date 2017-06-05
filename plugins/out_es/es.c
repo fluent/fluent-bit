@@ -231,7 +231,7 @@ static char *elasticsearch_format(void *data, size_t bytes,
         s = strftime(time_formatted, sizeof(time_formatted) - 1,
                      ctx->time_key_format, &tm);
         len = snprintf(time_formatted + s, sizeof(time_formatted) - 1 - s,
-                       ".%" PRIu64 "Z", tms.tm.tv_nsec);
+                       ".%" PRIu64 "Z", (uint64_t) tms.tm.tv_nsec);
 
         s += len;
         msgpack_pack_str(&tmp_pck, s);
