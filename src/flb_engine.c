@@ -40,6 +40,7 @@
 #include <fluent-bit/flb_buffer_qchunk.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_parser.h>
+#include <fluent-bit/flb_sosreport.h>
 
 #ifdef FLB_HAVE_BUFFERING
 #include <fluent-bit/flb_buffer_chunk.h>
@@ -385,7 +386,7 @@ int flb_engine_start(struct flb_config *config)
 
     /* Initialize output plugins */
     ret = flb_output_init(config);
-    if (ret == -1) {
+    if (ret == -1 && config->support_mode == FLB_FALSE) {
         flb_engine_shutdown(config);
         return -1;
     }
@@ -442,8 +443,16 @@ int flb_engine_start(struct flb_config *config)
     }
 #endif
 
+    if (config->support_mode == FLB_TRUE) {
+        sleep(1);
+        flb_sosreport(config);
+        exit(1);
+    }
+
     /* Signal that we have started */
     flb_engine_started(config);
+
+
     while (1) {
         mk_event_wait(evl);
         mk_event_foreach(event, evl) {
