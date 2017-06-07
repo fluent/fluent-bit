@@ -123,9 +123,12 @@ int flb_sosreport(struct flb_config *config)
     printf("\n");
     printf("Fluent Bit Enterprise - SOS Report\n");
     printf("==================================\n");
+    printf("The following report aims to be used by Fluent Bit and Fluentd "
+           "Enterprise\nCustomers of Treasure Data. For more details visit:\n\n"
+           "    %shttps://fluentd.treasuredata.com%s\n\n", ANSI_BOLD, ANSI_RESET);
 
     /* Fluent Bit */
-    printf("[Fluent Bit]\n");
+    printf("\n[Fluent Bit]\n");
     printf("    Edition\t\t");
 #ifdef FLB_ENTERPRISE
     printf("Enterprise\n");
