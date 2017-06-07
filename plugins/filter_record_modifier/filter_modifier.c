@@ -253,6 +253,7 @@ static int cb_modifier_filter(void *data, size_t bytes,
 
         /* grep keys */
         if (obj->type == MSGPACK_OBJECT_MAP) {
+            map_num = obj->via.map.size;
             removed_map_num = make_bool_map(ctx, obj,
                                             bool_map, obj->via.map.size);
         } else {
@@ -264,6 +265,10 @@ static int cb_modifier_filter(void *data, size_t bytes,
         }
 
         removed_map_num += ctx->records_num;
+        if (removed_map_num <= 0) {
+            continue;
+        }
+
         msgpack_pack_array(&tmp_pck, 2);
         flb_time_append_to_msgpack(&tm, &tmp_pck, 0);
 
