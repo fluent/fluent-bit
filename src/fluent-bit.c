@@ -471,6 +471,7 @@ int main(int argc, char **argv)
         { "verbose",     no_argument      , NULL, 'v' },
         { "quiet",       no_argument      , NULL, 'q' },
         { "help",        no_argument      , NULL, 'h' },
+        { "sosreport",   no_argument      , NULL, 'S' },
         { NULL, 0, NULL, 0 }
     };
 #endif
@@ -506,7 +507,7 @@ int main(int argc, char **argv)
     }
 
     /* Parse the command line options */
-    while ((opt = getopt_long(argc, argv, "b:B:c:df:i:m:o:R:F:p:e:t:l:vqVhHP:",
+    while ((opt = getopt_long(argc, argv, "b:B:c:df:i:m:o:R:F:p:e:t:l:vqVhHP:S",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
@@ -620,6 +621,9 @@ int main(int argc, char **argv)
         case 'q':
             config->verbose = FLB_LOG_OFF;
             break;
+        case 'S':
+            config->support_mode = FLB_TRUE;
+            break;
         default:
             flb_help(EXIT_FAILURE, config);
         }
@@ -651,13 +655,13 @@ int main(int argc, char **argv)
 
     /* Inputs */
     ret = flb_input_check(config);
-    if (ret == -1) {
+    if (ret == -1 && config->support_mode == FLB_FALSE) {
         flb_utils_error(FLB_ERR_INPUT_UNDEF);
     }
 
     /* Outputs */
     ret = flb_output_check(config);
-    if (ret == -1) {
+    if (ret == -1 && config->support_mode == FLB_FALSE) {
         flb_utils_error(FLB_ERR_OUTPUT_UNDEF);
     }
 

@@ -31,7 +31,6 @@
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_thread.h>
 
-
 #include <monkey/mk_core.h>
 #include <msgpack.h>
 

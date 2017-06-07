@@ -51,6 +51,7 @@ struct flb_config_prop {
 struct flb_config {
     struct mk_event ch_event;
 
+    int support_mode;         /* enterprise support mode ?      */
     int is_running;           /* service running ?              */
     int flush;                /* Flush timeout                  */
     flb_pipefd_t flush_fd;    /* Timer FD associated to flush   */
