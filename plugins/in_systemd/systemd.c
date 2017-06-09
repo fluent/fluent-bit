@@ -245,5 +245,5 @@ struct flb_input_plugin in_systemd_plugin = {
     .cb_pause     = in_systemd_pause,
     .cb_resume    = in_systemd_resume,
     .cb_exit      = in_systemd_exit,
-    .flags        = FLB_INPUT_DYN_TAG
+    .flags        = 0
 };
