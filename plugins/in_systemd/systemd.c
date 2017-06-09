@@ -1,0 +1,249 @@
+/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+
+/*  Fluent Bit
+ *  ==========
+ *  Copyright (C) 2015-2017 Treasure Data Inc.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_time.h>
+
+#include "systemd_config.h"
+
+static int tag_compose(char *tag, char *unit_name,
+                       int unit_size, char **out_buf, size_t *out_size)
+{
+    int len;
+    char *p;
+    char *buf = *out_buf;
+    size_t buf_s = 0;
+
+    p = strchr(tag, '*');
+    if (!p) {
+        return -1;
+    }
+
+    /* Copy tag prefix if any */
+    len = (p - tag);
+    if (len > 0) {
+        memcpy(buf, tag, len);
+        buf_s += len;
+    }
+
+    /* Append file name */
+    memcpy(buf + buf_s, unit_name, unit_size);
+    buf_s += unit_size;
+
+    /* Tag suffix (if any) */
+    p++;
+    if (p) {
+        len = strlen(tag);
+        memcpy(buf + buf_s, p, (len - (p - tag)));
+        buf_s += (len - (p - tag));
+    }
+
+    buf[buf_s] = '\0';
+    *out_size = buf_s;
+
+    return 0;
+}
+
+static int in_systemd_collect(struct flb_input_instance *i_ins,
+                              struct flb_config *config, void *in_context)
+{
+    int ret;
+    int len;
+    int entries = 0;
+    int rows = 0;
+    time_t sec;
+    long nsec;
+    uint64_t usec;
+    size_t length;
+    char *sep;
+    char *key;
+    char *val;
+    char *tag;
+    char *last_tag = NULL;
+    size_t last_tag_len;
+    size_t tag_len;
+    char out_tag[PATH_MAX];
+    const void *data;
+    struct flb_systemd_config *ctx = in_context;
+    struct flb_time tm;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    sd_journal_process(ctx->j);
+    SD_JOURNAL_FOREACH(ctx->j) {
+        /* If the tag is composed dynamically, gather the Systemd Unit name */
+        if (ctx->dynamic_tag) {
+            ret = sd_journal_get_data(ctx->j, "_SYSTEMD_UNIT", &data, &length);
+            if (ret == 0) {
+                tag = out_tag;
+                tag_compose(ctx->i_ins->tag, (char *) data + 14, length - 14,
+                            &tag, &tag_len);
+            }
+            else {
+                tag = out_tag;
+                tag_compose(ctx->i_ins->tag,
+                            FLB_SYSTEMD_UNKNOWN, sizeof(FLB_SYSTEMD_UNKNOWN) - 1,
+                            &tag, &tag_len);
+            }
+        }
+        else {
+            tag = ctx->i_ins->tag;
+            tag_len = ctx->i_ins->tag_len;
+        }
+
+        if (last_tag == NULL) {
+            last_tag = tag;
+            last_tag_len = tag_len;
+        }
+
+        /* Set time */
+        sd_journal_get_realtime_usec(ctx->j, &usec);
+        sec = usec / 1000000;
+        nsec = (usec % 1000000) / 1000;
+        flb_time_set(&tm, sec, nsec);
+
+        /* Count the number of entries in the record */
+        entries = 0;
+        while (sd_journal_enumerate_data(ctx->j, &data, &length)) {
+            entries++;
+        }
+        sd_journal_restart_data(ctx->j);
+
+        /* Prepare buffer and write map content */
+        msgpack_pack_array(&mp_pck, 2);
+        flb_time_append_to_msgpack(&tm, &mp_pck, 0);
+
+        msgpack_pack_map(&mp_pck, entries);
+        while (sd_journal_enumerate_data(ctx->j, &data, &length)) {
+            key = (char *) data;
+            sep = strchr(key, '=');
+            len = (sep - key);
+            msgpack_pack_str(&mp_pck, len);
+            msgpack_pack_str_body(&mp_pck, key, len);
+
+            val = sep + 1;
+            len = length - (sep - key) - 1;
+            msgpack_pack_str(&mp_pck,  len);
+            msgpack_pack_str_body(&mp_pck, val, len);
+        }
+        rows++;
+
+        /*
+         * Some journals can have too much data, pause if we have processed
+         * more than 1MB. Journal will resume later.
+         */
+        if (mp_sbuf.size > 1024000 ||
+            ((last_tag_len != tag_len) || strncmp(last_tag, tag, tag_len) != 0)) {
+
+            flb_input_dyntag_append_raw(ctx->i_ins,
+                                        tag, tag_len,
+                                        mp_sbuf.data,
+                                        mp_sbuf.size);
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            msgpack_sbuffer_init(&mp_sbuf);
+            msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+            last_tag = tag;
+            last_tag_len = tag_len;
+        }
+
+        if (rows >= ctx->max_entries) {
+            break;
+        }
+    }
+
+    if (mp_sbuf.size > 0) {
+        flb_input_dyntag_append_raw(ctx->i_ins,
+                                    tag, tag_len,
+                                    mp_sbuf.data,
+                                    mp_sbuf.size);
+    }
+    msgpack_sbuffer_destroy(&mp_sbuf);
+
+    return 0;
+}
+
+static int in_systemd_init(struct flb_input_instance *in,
+                           struct flb_config *config, void *data)
+{
+    int coll_fd_journal;
+    struct flb_systemd_config *ctx;
+
+    ctx = flb_systemd_config_create(in, config);
+    if (!ctx) {
+        flb_error("[in_systemd] cannot initialize");
+        return -1;
+    }
+
+    /* Configure the events collector */
+    coll_fd_journal = flb_input_set_collector_event(in,
+                                                    in_systemd_collect,
+                                                    ctx->fd,
+                                                    config);
+    if (coll_fd_journal == -1) {
+        flb_error("[in_systemd] error setting up collector");
+        flb_systemd_config_destroy(ctx);
+        return -1;
+    }
+    ctx->coll_fd_journal = coll_fd_journal;
+
+    /* Set the context */
+    flb_input_set_context(in, ctx);
+    return 0;
+}
+
+static void in_systemd_pause(void *data, struct flb_config *config)
+{
+    struct flb_systemd_config *ctx = data;
+    flb_input_collector_pause(ctx->coll_fd_journal, ctx->i_ins);
+}
+
+static void in_systemd_resume(void *data, struct flb_config *config)
+{
+    struct flb_systemd_config *ctx = data;
+
+    flb_input_collector_resume(ctx->coll_fd_journal, ctx->i_ins);
+}
+
+static int in_systemd_exit(void *data, struct flb_config *config)
+{
+    (void) *config;
+    struct flb_systemd_config *ctx = data;
+
+    flb_systemd_config_destroy(ctx);
+    return 0;
+}
+
+/* Plugin reference */
+struct flb_input_plugin in_systemd_plugin = {
+    .name         = "systemd",
+    .description  = "Systemd (Journal) reader",
+    .cb_init      = in_systemd_init,
+    .cb_pre_run   = NULL,
+    .cb_flush_buf = NULL,
+    .cb_pause     = in_systemd_pause,
+    .cb_resume    = in_systemd_resume,
+    .cb_exit      = in_systemd_exit,
+    .flags        = FLB_INPUT_DYN_TAG
+};
