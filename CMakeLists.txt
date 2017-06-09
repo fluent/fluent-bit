@@ -11,6 +11,7 @@ endif()
 
 include(GNUInstallDirs)
 include(ExternalProject)
+include(cmake/FindJournald.cmake)
 
 # Output paths
 set(FLB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -78,6 +79,7 @@ option(FLB_IN_TCP          "Enable TCP input plugin"            Yes)
 option(FLB_IN_MQTT         "Enable MQTT Broker input plugin"    Yes)
 option(FLB_IN_HEAD         "Enable Head input plugin"           Yes)
 option(FLB_IN_PROC         "Enable Process input plugin"        Yes)
+option(FLB_IN_SYSTEMD      "Enable Systemd input plugin"        Yes)
 option(FLB_OUT_COUNTER     "Enable Counter output plugin"       Yes)
 option(FLB_OUT_ES          "Enable Elasticsearch output plugin" Yes)
 option(FLB_OUT_EXIT        "Enable Exit output plugin"          Yes)
@@ -233,6 +235,13 @@ endif()
 
 FLB_DEFINITION(FLB_HAVE_FLUSH_LIBCO)
 add_subdirectory(lib/flb_libco)
+
+# Systemd Journald support
+if(JOURNALD_FOUND)
+  FLB_DEFINITION(FLB_HAVE_SYSTEMD)
+else()
+  FLB_OPTION(FLB_IN_SYSTEMD OFF)
+endif()
 
 # Valgrind support
 check_c_source_compiles("
