@@ -567,7 +567,7 @@ static inline void flb_input_buf_write_end(struct flb_input_instance *i)
     buf = i->mp_sbuf.data + i->mp_buf_write_size;
     flb_filter_do(&i->mp_sbuf, &i->mp_pck,
                   buf, bytes,
-                  i->tag, i->tag_len, i->config);
+                  &i->tag, &i->tag_len, i->config);
 
     /*
      * Update buffer size counter: this kind of input instance have just
@@ -609,7 +609,7 @@ static inline void flb_input_dbuf_write_end(struct flb_input_dyntag *dt)
     buf = dt->mp_sbuf.data + dt->mp_buf_write_size;
     flb_filter_do(&dt->mp_sbuf, &dt->mp_pck,
                   buf, bytes,
-                  dt->tag, dt->tag_len, dt->in->config);
+                  &dt->tag, &dt->tag_len, dt->in->config);
 
     /* Itearate each dyntag structure and count total bytes */
     flb_input_buf_size_set(in);

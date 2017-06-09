@@ -66,7 +66,7 @@ static void flb_filter_replace(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
 
 void flb_filter_do(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                    void *data, size_t bytes,
-                   char *tag, int tag_len,
+                   char **tag, int *tag_len,
                    struct flb_config *config)
 {
     int ret;
@@ -77,7 +77,7 @@ void flb_filter_do(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
 
     mk_list_foreach(head, &config->filters) {
         f_ins = mk_list_entry(head, struct flb_filter_instance, _head);
-        if (flb_router_match(tag, f_ins->match)) {
+        if (flb_router_match(*tag, f_ins->match)) {
             /* Reset filtered buffer */
             out_buf = NULL;
             out_size = 0;
