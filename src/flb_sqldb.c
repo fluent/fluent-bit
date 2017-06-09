@@ -92,6 +92,8 @@ int flb_sqldb_close(struct flb_sqldb *db)
 {
     sqlite3_close(db->handler);
     mk_list_del(&db->_head);
+    flb_free(db->path);
+    flb_free(db->desc);
     flb_free(db);
 
     return -1;
