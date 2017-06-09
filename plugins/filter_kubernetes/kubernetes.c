@@ -230,7 +230,7 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
 }
 
 static int cb_kube_filter(void *data, size_t bytes,
-                          char *tag, int tag_len,
+                          char **tag, int *tag_len,
                           void **out_buf, size_t *out_bytes,
                           struct flb_filter_instance *f_ins,
                           void *filter_context,
@@ -251,7 +251,7 @@ static int cb_kube_filter(void *data, size_t bytes,
     (void) config;
 
     /* Check if we have some cached metadata for the incoming events */
-    ret = flb_kube_meta_get(ctx, tag, tag_len, &cache_buf, &cache_size);
+    ret = flb_kube_meta_get(ctx, *tag, *tag_len, &cache_buf, &cache_size);
     if (ret == -1) {
         return FLB_FILTER_NOTOUCH;
     }
