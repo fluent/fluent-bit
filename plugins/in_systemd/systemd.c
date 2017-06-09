@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_time.h>
 
 #include "systemd_config.h"
+#include "systemd_db.h"
 
 static int tag_compose(char *tag, char *unit_name,
                        int unit_size, char **out_buf, size_t *out_size)
@@ -78,6 +79,7 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
     char *val;
     char *tag;
     char *last_tag = NULL;
+    char *cursor = NULL;
     size_t last_tag_len;
     size_t tag_len;
     char out_tag[PATH_MAX];
@@ -174,6 +176,15 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
 
         if (rows >= ctx->max_entries) {
             break;
+        }
+    }
+
+    /* Save cursor */
+    if (ctx->db) {
+        sd_journal_get_cursor(ctx->j, &cursor);
+        if (cursor) {
+            flb_systemd_db_set_cursor(ctx, cursor);
+            flb_free(cursor);
         }
     }
 

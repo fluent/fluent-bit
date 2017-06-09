@@ -22,6 +22,8 @@
 #include <fluent-bit/flb_input.h>
 
 #include <unistd.h>
+
+#include "systemd_db.h"
 #include "systemd_config.h"
 
 struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *i_ins,
@@ -39,7 +41,6 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
         flb_errno();
         return NULL;
     }
-    mk_list_init(&ctx->filters);
 
     /* Open the Journal */
     ret = sd_journal_open(&ctx->j, SD_JOURNAL_LOCAL_ONLY);
@@ -61,6 +62,15 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
     }
     ctx->i_ins->flags |= FLB_INPUT_DYN_TAG;
 
+    /* Database file */
+    tmp = flb_input_get_property("db", i_ins);
+    if (tmp) {
+        ctx->db = flb_systemd_db_open(tmp, i_ins, config);
+        if (!ctx->db) {
+            flb_error("[in_systemd] could not open/create database");
+        }
+    }
+
     /* Max number of entries per notification */
     tmp = flb_input_get_property("max_entries", i_ins);
     if (tmp) {
@@ -81,7 +91,24 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
         sd_journal_add_match(ctx->j, prop->val, 0);
     }
 
+    /* Always seek to head */
     sd_journal_seek_head(ctx->j);
+
+    /* Check if we have a cursor in our database */
+    if (ctx->db) {
+        tmp = flb_systemd_db_get_cursor(ctx);
+        if (tmp) {
+            ret = sd_journal_seek_cursor(ctx->j, tmp);
+            if (ret == 0) {
+                flb_info("[in_systemd] seek_cursor=%.40s... OK", tmp);
+            }
+            else {
+                flb_warn("[in_systemd] seek_cursor failed");
+            }
+            flb_free(tmp);
+        }
+    }
+
     return ctx;
 }
 
@@ -90,6 +117,10 @@ int flb_systemd_config_destroy(struct flb_systemd_config *ctx)
     /* Close context */
     if (ctx->j) {
         sd_journal_close(ctx->j);
+    }
+
+    if (ctx->db) {
+        flb_systemd_db_close(ctx->db);
     }
 
     flb_free(ctx);
