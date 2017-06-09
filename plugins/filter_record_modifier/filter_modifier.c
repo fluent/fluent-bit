@@ -210,7 +210,7 @@ static int make_bool_map(struct record_modifier_ctx *ctx, msgpack_object *map,
 }
 
 static int cb_modifier_filter(void *data, size_t bytes,
-                          char *tag, int tag_len,
+                          char **tag, int *tag_len,
                           void **out_buf, size_t *out_size,
                           struct flb_filter_instance *f_ins,
                           void *context,
