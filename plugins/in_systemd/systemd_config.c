@@ -81,6 +81,7 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
         sd_journal_add_match(ctx->j, prop->val, 0);
     }
 
+    sd_journal_seek_head(ctx->j);
     return ctx;
 }
 

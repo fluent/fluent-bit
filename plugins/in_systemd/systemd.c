@@ -90,8 +90,12 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    sd_journal_process(ctx->j);
-    SD_JOURNAL_FOREACH(ctx->j) {
+    ret = sd_journal_process(ctx->j);
+    if (ret != SD_JOURNAL_APPEND) {
+        return 0;
+    }
+
+    while ((ret = sd_journal_next(ctx->j)) > 0) {
         /* If the tag is composed dynamically, gather the Systemd Unit name */
         if (ctx->dynamic_tag) {
             ret = sd_journal_get_data(ctx->j, "_SYSTEMD_UNIT", &data, &length);
@@ -180,7 +184,6 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
                                     mp_sbuf.size);
     }
     msgpack_sbuffer_destroy(&mp_sbuf);
-
     return 0;
 }
 

@@ -35,6 +35,7 @@ struct flb_systemd_config {
     /* Journal */
     int fd;          /* Journal file descriptor */
     sd_journal *j;   /* Journal context */
+    char *cursor;
 
     /* Internal */
     int coll_fd_journal;
