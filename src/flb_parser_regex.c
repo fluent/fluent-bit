@@ -104,10 +104,6 @@ static void cb_results(unsigned char *name, unsigned char *value,
     struct tm tm = {0};
     (void) data;
 
-    if (vlen == 0) {
-        return;
-    }
-
     len = strlen((char *) name);
 
     /* Check if there is a time lookup field */
