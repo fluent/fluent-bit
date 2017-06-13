@@ -27,6 +27,7 @@
 #define FLB_TAIL_ERROR  -1
 #define FLB_TAIL_OK      0
 #define FLB_TAIL_WAIT    1
+#define FLB_TAIL_BUSY    2
 
 /* Consuming mode */
 #define FLB_TAIL_STATIC  0  /* Data is being consumed through read(2) */

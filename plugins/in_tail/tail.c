@@ -89,6 +89,7 @@ static int in_tail_collect_pending(struct flb_input_instance *i_ins,
             flb_tail_file_remove(file);
             break;
         case FLB_TAIL_OK:
+        case FLB_TAIL_BUSY:
             /*
              * Adjust counter to verify if we need a further read(2) later.
              * For more details refer to tail_fs_inotify.c:96.
@@ -128,6 +129,7 @@ static int in_tail_collect_static(struct flb_input_instance *i_ins,
             flb_tail_file_remove(file);
             break;
         case FLB_TAIL_OK:
+        case FLB_TAIL_BUSY:
             active++;
             continue;
         case FLB_TAIL_WAIT:

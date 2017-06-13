@@ -480,6 +480,13 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
     off_t capacity;
     off_t processed_bytes;
     ssize_t bytes;
+    struct flb_tail_config *ctx;
+
+    /* Check if we the engine issued a pause */
+    ctx = file->config;
+    if (flb_input_buf_paused(ctx->i_ins) == FLB_TRUE) {
+        return FLB_TAIL_BUSY;
+    }
 
     capacity = sizeof(file->buf_data) - file->buf_len - 1;
     if (capacity < 1) {
