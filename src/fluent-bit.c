@@ -90,6 +90,7 @@ static void flb_help(int rc, struct flb_config *config)
            FLB_CONFIG_HTTP_PORT);
 #endif
     printf("  -q, --quiet\t\tquiet mode\n");
+    printf("  -S, --sosreport\tsupport report for Enterprise customers\n");
     printf("  -V, --version\t\tshow version number\n");
     printf("  -h, --help\t\tprint this help\n\n");
 
