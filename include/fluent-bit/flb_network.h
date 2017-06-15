@@ -54,6 +54,7 @@ int flb_net_socket_tcp_fastopen(flb_sockfd_t sockfd);
 
 /* Socket handling */
 flb_sockfd_t flb_net_socket_create(int family, int nonblock);
+flb_sockfd_t flb_net_socket_create_udp(int family, int nonblock);
 flb_sockfd_t flb_net_tcp_connect(char *host, unsigned long port);
 int flb_net_tcp_fd_connect(flb_sockfd_t fd, char *host, unsigned long port);
 flb_sockfd_t flb_net_server(char *port, char *listen_addr);

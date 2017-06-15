@@ -188,6 +188,24 @@ flb_sockfd_t flb_net_socket_create(int family, int nonblock)
     return fd;
 }
 
+flb_sockfd_t flb_net_socket_create_udp(int family, int nonblock)
+{
+    flb_sockfd_t fd;
+
+    /* create the socket and set the nonblocking flag status */
+    fd = socket(family, SOCK_DGRAM, 0);
+    if (fd == -1) {
+        perror("socket");
+        return -1;
+    }
+
+    if (nonblock) {
+        flb_net_socket_nonblocking(fd);
+    }
+
+    return fd;
+}
+
 /* Connect to a TCP socket server and returns the file descriptor */
 flb_sockfd_t flb_net_tcp_connect(char *host, unsigned long port)
 {
