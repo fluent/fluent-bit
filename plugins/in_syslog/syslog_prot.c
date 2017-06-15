@@ -124,7 +124,7 @@ int syslog_prot_process_udp(char *buf, size_t size, struct flb_syslog *ctx)
     int ret;
     void *out_buf;
     size_t out_size;
-    time_t out_time;
+    struct flb_time out_time = {0};
     msgpack_sbuffer *out_sbuf;
     msgpack_packer *out_pck;
 
@@ -133,8 +133,11 @@ int syslog_prot_process_udp(char *buf, size_t size, struct flb_syslog *ctx)
 
     ret = flb_parser_do(ctx->parser, buf, size,
                         &out_buf, &out_size, &out_time);
-    if (ret == 0) {
-        pack_line(out_sbuf, out_pck, out_time,
+    if (ret >= 0) {
+        if (flb_time_to_double(&out_time) == 0) {
+            flb_time_get(&out_time);
+        }
+        pack_line(out_sbuf, out_pck, &out_time,
                   out_buf, out_size);
         flb_free(out_buf);
     }

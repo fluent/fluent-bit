@@ -22,9 +22,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <arpa/inet.h>
-#include <sys/socket.h>
-#include <sys/un.h>
 
 #include <msgpack.h>
 #include <fluent-bit/flb_input.h>
@@ -37,6 +34,7 @@
 #include "syslog_conf.h"
 #include "syslog_unix.h"
 #include "syslog_conn.h"
+#include "syslog_prot.h"
 
 /* cb_collect callback */
 static int in_syslog_collect_tcp(struct flb_input_instance *i_ins,
@@ -70,8 +68,6 @@ static int in_syslog_collect_tcp(struct flb_input_instance *i_ins,
 static int in_syslog_collect_udp(struct flb_input_instance *i_ins,
                                  struct flb_config *config, void *in_context)
 {
-    int fd;
-    int ret;
     int bytes;
     char buf[1024];
     struct flb_syslog *ctx = in_context;
