@@ -118,3 +118,30 @@ int syslog_prot_process(struct syslog_conn *conn)
 
     return 0;
 }
+
+int syslog_prot_process_udp(char *buf, size_t size, struct flb_syslog *ctx)
+{
+    int ret;
+    void *out_buf;
+    size_t out_size;
+    time_t out_time;
+    msgpack_sbuffer *out_sbuf;
+    msgpack_packer *out_pck;
+
+    out_sbuf = &ctx->i_ins->mp_sbuf;
+    out_pck  = &ctx->i_ins->mp_pck;
+
+    ret = flb_parser_do(ctx->parser, buf, size,
+                        &out_buf, &out_size, &out_time);
+    if (ret == 0) {
+        pack_line(out_sbuf, out_pck, out_time,
+                  out_buf, out_size);
+        flb_free(out_buf);
+    }
+    else {
+        flb_warn("[in_syslog] error parsing log message");
+        return -1;
+    }
+
+    return 0;
+}

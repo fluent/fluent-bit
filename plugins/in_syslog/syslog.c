@@ -22,6 +22,9 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 
 #include <msgpack.h>
 #include <fluent-bit/flb_input.h>
@@ -36,8 +39,8 @@
 #include "syslog_conn.h"
 
 /* cb_collect callback */
-static int in_syslog_collect(struct flb_input_instance *i_ins,
-                             struct flb_config *config, void *in_context)
+static int in_syslog_collect_tcp(struct flb_input_instance *i_ins,
+                                 struct flb_config *config, void *in_context)
 {
     int fd;
     struct flb_syslog *ctx = in_context;
@@ -60,6 +63,31 @@ static int in_syslog_collect(struct flb_input_instance *i_ins,
     return 0;
 }
 
+/*
+ * Collect a datagram, per Syslog specification a datagram contains only
+ * one syslog message and it should not exceed 1KB.
+ */
+static int in_syslog_collect_udp(struct flb_input_instance *i_ins,
+                                 struct flb_config *config, void *in_context)
+{
+    int fd;
+    int ret;
+    int bytes;
+    char buf[1024];
+    struct flb_syslog *ctx = in_context;
+    (void) i_ins;
+
+    bytes = recvfrom(ctx->server_fd, buf, sizeof(buf), 0, NULL, NULL);
+    if (bytes > 0) {
+        syslog_prot_process_udp(buf, bytes, ctx);
+    }
+    else {
+        flb_errno();
+    }
+
+    return 0;
+}
+
 /* Initialize plugin */
 static int in_syslog_init(struct flb_input_instance *in,
                           struct flb_config *config, void *data)
@@ -74,7 +102,8 @@ static int in_syslog_init(struct flb_input_instance *in,
         return -1;
     }
 
-    if (!ctx->unix_path) {
+    if ((ctx->mode == FLB_SYSLOG_UNIX_TCP || ctx->mode == FLB_SYSLOG_UNIX_UDP)
+        && !ctx->unix_path) {
         flb_error("[in_syslog] Unix path not defined");
         syslog_conf_destroy(ctx);
         return -1;
@@ -90,12 +119,21 @@ static int in_syslog_init(struct flb_input_instance *in,
     /* Set context */
     flb_input_set_context(in, ctx);
 
-
     /* Collect events for every opened connection to our socket */
-    ret = flb_input_set_collector_socket(in,
-                                         in_syslog_collect,
-                                         ctx->server_fd,
-                                         config);
+    if (ctx->mode == FLB_SYSLOG_UNIX_TCP ||
+        ctx->mode == FLB_SYSLOG_TCP) {
+        ret = flb_input_set_collector_socket(in,
+                                             in_syslog_collect_tcp,
+                                             ctx->server_fd,
+                                             config);
+    }
+    else {
+        ret = flb_input_set_collector_socket(in,
+                                             in_syslog_collect_udp,
+                                             ctx->server_fd,
+                                             config);
+    }
+
     if (ret == -1) {
         flb_error("[in_syslog] Could not set collector");
         syslog_conf_destroy(ctx);
@@ -121,7 +159,7 @@ struct flb_input_plugin in_syslog_plugin = {
     .description  = "Syslog",
     .cb_init      = in_syslog_init,
     .cb_pre_run   = NULL,
-    .cb_collect   = in_syslog_collect,
+    .cb_collect   = NULL,
     .cb_flush_buf = NULL,
     .cb_exit      = in_syslog_exit
 };

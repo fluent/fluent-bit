@@ -38,7 +38,13 @@ int syslog_unix_create(struct flb_syslog *ctx)
     struct sockaddr_un address;
 
     /* Create listening socket */
-    fd = flb_net_socket_create(PF_UNIX, FLB_FALSE);
+    if (ctx->mode == FLB_SYSLOG_UNIX_TCP || ctx->mode == FLB_SYSLOG_TCP) {
+        fd = flb_net_socket_create(PF_UNIX, FLB_TRUE);
+    }
+    else if (ctx->mode == FLB_SYSLOG_UNIX_UDP) {
+        fd = flb_net_socket_create_udp(PF_UNIX, FLB_TRUE);
+    }
+
     if (fd == -1) {
       return -1;
     }
@@ -55,15 +61,15 @@ int syslog_unix_create(struct flb_syslog *ctx)
         return -1;
     }
 
-    if (listen(fd, 5) != 0) {
-        flb_errno();
-        close(fd);
-        return -1;
+    if (ctx->mode == FLB_SYSLOG_UNIX_TCP) {
+        if (listen(fd, 5) != 0) {
+            flb_errno();
+            close(fd);
+            return -1;
+        }
     }
 
-    flb_net_socket_nonblocking(fd);
     ctx->server_fd = fd;
-
     return fd;
 }
 

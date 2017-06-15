@@ -43,6 +43,29 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *i_ins,
     ctx->i_ins = i_ins;
     mk_list_init(&ctx->connections);
 
+    /* Syslog mode: unix_udp, unix_tcp, or tcp */
+    tmp = flb_input_get_property("mode", i_ins);
+    if (tmp) {
+        if (strcasecmp(tmp, "unix_tcp") == 0) {
+            ctx->mode = FLB_SYSLOG_UNIX_TCP;
+        }
+        else if (strcasecmp(tmp, "unix_udp") == 0) {
+            ctx->mode = FLB_SYSLOG_UNIX_UDP;
+        }
+        else if (strcasecmp(tmp, "tcp") == 0) {
+            ctx->mode = FLB_SYSLOG_TCP;
+        }
+        else {
+            flb_error("[in_syslog] Unknown syslog mode %s", tmp);
+            flb_free(ctx);
+            return NULL;
+        }
+    }
+    else {
+        ctx->mode = FLB_SYSLOG_UNIX_UDP;
+    }
+
+    /* Unix socket path */
     tmp = flb_input_get_property("path", i_ins);
     if (tmp) {
         ctx->unix_path = flb_strdup(tmp);

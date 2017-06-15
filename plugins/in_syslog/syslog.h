@@ -23,11 +23,19 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
 
+/* Syslog modes */
+#define FLB_SYSLOG_UNIX_TCP  1
+#define FLB_SYSLOG_UNIX_UDP  2
+#define FLB_SYSLOG_TCP       3
+
 /* 32KB chunk size */
 #define FLB_SYSLOG_CHUNK   32768
 
 /* Context / Config*/
 struct flb_syslog {
+    /* Listening mode: unix udp, unix tcp or normal tcp */
+    int mode;
+
     /* Unix socket */
     int server_fd;
     char *unix_path;
