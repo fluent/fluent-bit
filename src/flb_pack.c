@@ -325,7 +325,6 @@ static inline int try_to_write_str(char *buf, int *off, size_t size,
     int required;
     size_t available;
     char c;
-    char n;
     char *p;
 
     available = (size - *off);
@@ -342,22 +341,39 @@ static inline int try_to_write_str(char *buf, int *off, size_t size,
         }
 
         c = str[i];
-        if (c == '\\' && i + 1 < str_len) {
-            n = str[i + 1];
-            if ((n >= '\a' && n <= '\r') || n == '"') {
-                *p++ = c;
-                *p++ = n;
-                i++;
-                written = (p - (buf + *off));
-                continue;
+        if (c == '\\' || c == '"') {
+            *p++ = '\\';
+            *p++ = c;
+        }
+        else if (c >= '\a' && c <= '\r') {
+            *p++ = '\\';
+            switch (c) {
+            case '\n':
+                *p++ = 'n';
+                break;
+            case '\t':
+                *p++ = 't';
+                break;
+            case '\b':
+                *p++ = 'b';
+                break;
+            case '\f':
+                *p++ = 'f';
+                break;
+            case '\r':
+                *p++ = 'r';
+                break;
+            case '\a':
+                *p++ = 'a';
+                break;
+            case '\v':
+                *p++ = 'v';
+                break;
             }
         }
-
-        if ((c >= '\a' && c <= '\r') || c == '"') {
-            *p++ = '\\';
+        else {
+            *p++ = c;
         }
-
-        *p++ = c;
         written = (p - (buf + *off));
     }
 
