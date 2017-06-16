@@ -42,6 +42,7 @@ struct flb_in_head_config {
     size_t   path_len;
 
     int      lines; /* line num to read */
+    int      split_line;
 
     int      interval_sec;
     int      interval_nsec;
