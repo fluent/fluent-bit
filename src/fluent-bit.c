@@ -300,6 +300,35 @@ static int flb_service_conf(struct flb_config *config, char *file)
         return -1;
     }
 
+    /* Validate sections */
+    mk_list_foreach(head, &fconf->sections) {
+        section = mk_list_entry(head, struct mk_rconf_section, _head);
+
+        if (strcasecmp(section->name, "SERVICE") == 0 ||
+            strcasecmp(section->name, "INPUT") == 0 ||
+            strcasecmp(section->name, "FILTER") == 0 ||
+            strcasecmp(section->name, "OUTPUT") == 0) {
+
+            /* continue on valid sections */
+            continue;
+        }
+
+        /* Extra sanity checks */
+        if (strcasecmp(section->name, "PARSER") == 0) {
+            fprintf(stderr,
+                    "Section [PARSER] is not valid in the main "
+                    "configuration file. It belongs to \n"
+                    "the Parsers_File configuration files.\n");
+        }
+        else {
+            fprintf(stderr,
+                    "Error: unexpected section [%s] in the main "
+                    "configuration file.\n", section->name);
+        }
+        exit(EXIT_FAILURE);
+    }
+
+
     /* Read main [SERVICE] section */
     section = mk_rconf_section_get(fconf, "SERVICE");
     if (section) {
@@ -310,6 +339,7 @@ static int flb_service_conf(struct flb_config *config, char *file)
             flb_config_set_property(config, entry->key, entry->val);
         }
     }
+
 
     /* Read all [INPUT] sections */
     mk_list_foreach(head, &fconf->sections) {
