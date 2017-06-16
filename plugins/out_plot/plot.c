@@ -79,7 +79,6 @@ static void cb_plot_flush(void *data, size_t bytes,
     msgpack_unpacked result;
     size_t off = 0;
     char *out_file;
-    msgpack_object root;
     msgpack_object *map;
     msgpack_object *key = NULL;
     msgpack_object *val = NULL;
@@ -109,7 +108,6 @@ static void cb_plot_flush(void *data, size_t bytes,
      */
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
-        root = result.data;
         flb_time_pop_from_msgpack(&atime, &result, &map);
 
         /*
@@ -168,7 +166,7 @@ static void cb_plot_flush(void *data, size_t bytes,
                     flb_time_to_double(&atime), val->via.i64);
         }
         else if (val->type == MSGPACK_OBJECT_FLOAT) {
-            dprintf(fd, "%f %lf\n", 
+            dprintf(fd, "%f %lf\n",
                     flb_time_to_double(&atime), val->via.f64);
         }
         else {
