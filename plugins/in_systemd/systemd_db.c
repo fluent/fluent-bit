@@ -115,6 +115,9 @@ char *flb_systemd_db_get_cursor(struct flb_systemd_config *ctx)
     memset(&qs, '\0', sizeof(qs));
     ret = flb_sqldb_query(ctx->db,
                           SQL_GET_CURSOR, cb_cursor_check, &qs);
+    if (ret != FLB_OK) {
+        return NULL;
+    }
 
     if (qs.rows > 0) {
         /* cursor must be freed by the caller */
