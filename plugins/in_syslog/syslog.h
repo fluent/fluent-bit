@@ -36,7 +36,11 @@ struct flb_syslog {
     /* Listening mode: unix udp, unix tcp or normal tcp */
     int mode;
 
-    /* Unix socket */
+    /* TCP Network mode */
+    char *listen;
+    char *tcp_port;
+
+    /* Unix socket (UDP/TCP)*/
     int server_fd;
     char *unix_path;
 

@@ -30,25 +30,27 @@
 
 #include "syslog.h"
 
-int syslog_unix_create(struct flb_syslog *ctx)
+static int syslog_server_unix_create(struct flb_syslog *ctx)
 {
     flb_sockfd_t fd;
     unsigned long len;
     size_t address_length;
     struct sockaddr_un address;
 
-    /* Create listening socket */
-    if (ctx->mode == FLB_SYSLOG_UNIX_TCP || ctx->mode == FLB_SYSLOG_TCP) {
-        fd = flb_net_socket_create(PF_UNIX, FLB_TRUE);
+    if (ctx->mode == FLB_SYSLOG_UNIX_TCP) {
+        fd = flb_net_socket_create(AF_UNIX, FLB_TRUE);
     }
     else if (ctx->mode == FLB_SYSLOG_UNIX_UDP) {
-        fd = flb_net_socket_create_udp(PF_UNIX, FLB_TRUE);
+        fd = flb_net_socket_create_udp(AF_UNIX, FLB_TRUE);
     }
 
     if (fd == -1) {
-      return -1;
+        return -1;
     }
 
+    ctx->server_fd = fd;
+
+    /* Prepare the unix socket path */
     unlink(ctx->unix_path);
     len = strlen(ctx->unix_path);
 
@@ -69,14 +71,55 @@ int syslog_unix_create(struct flb_syslog *ctx)
         }
     }
 
-    ctx->server_fd = fd;
-    return fd;
+    return 0;
 }
 
-int syslog_unix_destroy(struct flb_syslog *ctx)
+static int syslog_server_net_create(struct flb_syslog *ctx)
 {
-    unlink(ctx->unix_path);
-    flb_free(ctx->unix_path);
+    ctx->server_fd = flb_net_server(ctx->tcp_port, ctx->listen);
+    if (ctx->server_fd > 0) {
+        flb_info("[in_syslog] TCP server binding %s:%s", ctx->listen, ctx->tcp_port);
+    }
+    else {
+        flb_error("[in_syslog] could not bind address %s:%s. Aborting",
+                  ctx->listen, ctx->tcp_port);
+        return -1;
+    }
+
+    flb_net_socket_nonblocking(ctx->server_fd);
+
+    return 0;
+}
+
+int syslog_server_create(struct flb_syslog *ctx)
+{
+    int ret;
+
+    if (ctx->mode == FLB_SYSLOG_TCP) {
+        ret = syslog_server_net_create(ctx);
+    }
+    else {
+        ret = syslog_server_unix_create(ctx);
+    }
+
+    if (ret != 0) {
+        return -1;
+    }
+
+    return 0;
+}
+
+int syslog_server_destroy(struct flb_syslog *ctx)
+{
+    if (ctx->mode == FLB_SYSLOG_UNIX_TCP || ctx->mode == FLB_SYSLOG_UNIX_UDP) {
+        unlink(ctx->unix_path);
+        flb_free(ctx->unix_path);
+    }
+    else {
+        flb_free(ctx->listen);
+        flb_free(ctx->tcp_port);
+    }
+
     close(ctx->server_fd);
 
     return 0;

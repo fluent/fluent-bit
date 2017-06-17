@@ -32,7 +32,7 @@
 
 #include "syslog.h"
 #include "syslog_conf.h"
-#include "syslog_unix.h"
+#include "syslog_server.h"
 #include "syslog_conn.h"
 #include "syslog_prot.h"
 
@@ -106,7 +106,7 @@ static int in_syslog_init(struct flb_input_instance *in,
     }
 
     /* Create Unix Socket */
-    ret = syslog_unix_create(ctx);
+    ret = syslog_server_create(ctx);
     if (ret == -1) {
         syslog_conf_destroy(ctx);
         return -1;
@@ -157,5 +157,6 @@ struct flb_input_plugin in_syslog_plugin = {
     .cb_pre_run   = NULL,
     .cb_collect   = NULL,
     .cb_flush_buf = NULL,
-    .cb_exit      = in_syslog_exit
+    .cb_exit      = in_syslog_exit,
+    .flags        = FLB_INPUT_NET
 };

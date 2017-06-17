@@ -17,15 +17,15 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_IN_SYSLOG_UNIX_H
-#define FLB_IN_SYSLOG_UNIX_H
+#ifndef FLB_IN_SYSLOG_SERVER_H
+#define FLB_IN_SYSLOG_SERVER_H
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_config.h>
 
 #include "syslog.h"
 
-int syslog_unix_create(struct flb_syslog *ctx);
-int syslog_unix_destroy(struct flb_syslog *ctx);
+int syslog_server_create(struct flb_syslog *ctx);
+int syslog_server_destroy(struct flb_syslog *ctx);
 
 #endif
