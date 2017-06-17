@@ -33,6 +33,8 @@ struct flb_in_head_config {
     size_t    buf_size; /* size of buf */
     ssize_t   buf_len;  /* read size */
     char     *buf;      /* read buf */
+    char     *key;
+    int      key_len;
 
     char     *filepath; /* to read */
 
