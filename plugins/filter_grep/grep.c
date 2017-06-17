@@ -255,7 +255,7 @@ static int cb_grep_init(struct flb_filter_instance *f_ins,
 }
 
 static int cb_grep_filter(void *data, size_t bytes,
-                          char *tag, int tag_len,
+                          char **tag, int *tag_len,
                           void **out_buf, size_t *out_size,
                           struct flb_filter_instance *f_ins,
                           void *context,

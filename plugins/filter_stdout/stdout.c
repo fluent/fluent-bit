@@ -37,7 +37,7 @@ static int cb_stdout_init(struct flb_filter_instance *f_ins,
 }
 
 static int cb_stdout_filter(void *data, size_t bytes,
-                            char *tag, int tag_len,
+                            char **tag, int *tag_len,
                             void **out_buf, size_t *out_bytes,
                             struct flb_filter_instance *f_ins,
                             void *filter_context,
@@ -55,7 +55,7 @@ static int cb_stdout_filter(void *data, size_t bytes,
 
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
-        printf("[%zd] %s: [", cnt++, tag);
+        printf("[%zd] %s: [", cnt++, *tag);
         flb_time_pop_from_msgpack(&tmp, &result, &p);
         printf("%"PRIu32".%09lu, ", (uint32_t)tmp.tm.tv_sec, tmp.tm.tv_nsec);
         msgpack_object_print(stdout, *p);

@@ -36,7 +36,7 @@ struct flb_filter_plugin {
 
     /* Callbacks */
     int (*cb_init) (struct flb_filter_instance *, struct flb_config *, void *);
-    int (*cb_filter) (void *, size_t, char *, int,
+    int (*cb_filter) (void *, size_t, char **, int *,
                       void **, size_t *,
                       struct flb_filter_instance *,
                       void *, struct flb_config *);
@@ -67,7 +67,7 @@ struct flb_filter_instance *flb_filter_new(struct flb_config *config,
 void flb_filter_exit(struct flb_config *config);
 void flb_filter_do(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                    void *data, size_t bytes,
-                   char *tag, int tag_len,
+                   char **tag, int *tag_len,
                    struct flb_config *config);
 void flb_filter_initialize_all(struct flb_config *config);
 void flb_filter_set_context(struct flb_filter_instance *ins, void *context);
