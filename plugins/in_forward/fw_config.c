@@ -59,23 +59,23 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
     }
 
     /* Chunk size */
-    chunk_size = flb_input_get_property("chunk_size", i_ins);
+    chunk_size = flb_input_get_property("buffer_chunk_size", i_ins);
     if (!chunk_size) {
-        config->chunk_size = FLB_IN_FW_CHUNK; /* 32KB */
+        config->buffer_chunk_size = FLB_IN_FW_CHUNK; /* 32KB */
     }
     else {
         /* Convert KB unit to Bytes */
-        config->chunk_size  = (atoi(chunk_size) * 1024);
+        config->buffer_chunk_size  = flb_utils_size_to_bytes(chunk_size);
     }
 
     /* Buffer size */
-    buffer_size = flb_input_get_property("buffer_size", i_ins);
+    buffer_size = flb_input_get_property("buffer_max_size", i_ins);
     if (!buffer_size) {
-        config->buffer_size = config->chunk_size;
+        config->buffer_max_size = config->buffer_chunk_size;
     }
     else {
         /* Convert KB unit to Bytes */
-        config->buffer_size  = (atoi(buffer_size) * 1024);
+        config->buffer_max_size  = flb_utils_size_to_bytes(buffer_size);
     }
 
     flb_debug("[in_fw] Listen='%s' TCP_Port=%s",

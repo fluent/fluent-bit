@@ -41,17 +41,17 @@ int fw_conn_event(void *data)
     if (event->mask & MK_EVENT_READ) {
         available = (conn->buf_size - conn->buf_len);
         if (available < 1) {
-            if (conn->buf_size + ctx->chunk_size > ctx->buffer_size) {
-                flb_warn("[in_fw] fd=%i incoming data exceed limit (%i KB)",
-                         event->fd, (ctx->buffer_size / 1024));
+            if (conn->buf_size + ctx->buffer_chunk_size > ctx->buffer_max_size) {
+                flb_warn("[in_fw] fd=%i incoming data exceed limit (%i bytes)",
+                         event->fd, (ctx->buffer_max_size));
                 fw_conn_del(conn);
                 return -1;
             }
 
-            size = conn->buf_size + ctx->chunk_size;
+            size = conn->buf_size + ctx->buffer_chunk_size;
             tmp = flb_realloc(conn->buf, size);
             if (!tmp) {
-                perror("realloc");
+                flb_errno();
                 return -1;
             }
             flb_trace("[in_fw] fd=%i buffer realloc %i -> %i",
@@ -117,15 +117,15 @@ struct fw_conn *fw_conn_add(int fd, struct flb_in_fw_config *ctx)
     conn->rest    = 0;
     conn->status  = FW_NEW;
 
-    conn->buf = flb_malloc(ctx->chunk_size);
+    /* Allocate read buffer */
+    conn->buf = flb_malloc(ctx->buffer_chunk_size);
     if (!conn->buf) {
-        perror("malloc");
+        flb_errno();
         close(fd);
-        flb_error("[in_fw] could not allocate new connection");
         flb_free(conn);
         return NULL;
     }
-    conn->buf_size = ctx->chunk_size;
+    conn->buf_size = ctx->buffer_chunk_size;
     conn->in       = ctx->in;
 
     /* Register instance into the event loop */
