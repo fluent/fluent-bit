@@ -41,11 +41,11 @@ int syslog_conn_event(void *data)
 
     event = &conn->event;
     if (event->mask & MK_EVENT_READ) {
-        available = (conn->buf_size - conn->buf_len);
-        if (available <= 1) {
+        available = (conn->buf_size - conn->buf_len) - 1;
+        if (available < 1) {
             if (conn->buf_size + ctx->chunk_size > ctx->buffer_size) {
-                flb_trace("[in_syslog] fd=%i incoming data exceed limit (%i KB)",
-                          event->fd, (ctx->buffer_size / 1024));
+                flb_debug("[in_syslog] fd=%i incoming data exceed limit (%i bytes)",
+                          event->fd, (ctx->buffer_size));
                 syslog_conn_del(conn);
                 return -1;
             }
@@ -53,7 +53,7 @@ int syslog_conn_event(void *data)
             size = conn->buf_size + ctx->chunk_size;
             tmp = flb_realloc(conn->buf_data, size);
             if (!tmp) {
-                perror("realloc");
+                flb_errno();
                 return -1;
             }
             flb_trace("[in_syslog] fd=%i buffer realloc %i -> %i",
@@ -61,7 +61,7 @@ int syslog_conn_event(void *data)
 
             conn->buf_data = tmp;
             conn->buf_size = size;
-            available = (conn->buf_size - conn->buf_len);
+            available = (conn->buf_size - conn->buf_len) - 1;
         }
 
         bytes = read(conn->fd,

@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_parser.h>
+#include <fluent-bit/flb_utils.h>
 
 #include "syslog.h"
 #include "syslog_unix.h"
@@ -55,7 +56,7 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *i_ins,
     }
     else {
         /* Convert KB unit to Bytes */
-        ctx->chunk_size  = (atoi(tmp) * 1024);
+        ctx->chunk_size  = flb_utils_size_to_bytes(tmp);
     }
 
     /* Buffer size */
@@ -65,7 +66,7 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *i_ins,
     }
     else {
         /* Convert KB unit to Bytes */
-        ctx->buffer_size  = (atoi(tmp) * 1024);
+        ctx->buffer_size  = flb_utils_size_to_bytes(tmp);
     }
 
     tmp = flb_input_get_property("parser", i_ins);
