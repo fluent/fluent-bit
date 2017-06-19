@@ -47,7 +47,8 @@ struct flb_tail_file {
     /* buffering */
     off_t parsed;
     off_t buf_len;
-    char buf_data[FLB_TAIL_CHUNK];
+    size_t buf_size;
+    char *buf_data;
 
     /* Opaque data type for specific fs-event backend data */
     void *fs_backend;

@@ -30,6 +30,10 @@ struct flb_tail_config {
     int ch_manager[2];         /* pipe: channel manager    */
     int ch_pending[2];         /* pipe: pending events     */
 
+    /* Buffer Config */
+    size_t buf_chunk_size;     /* allocation chunks        */
+    size_t buf_max_size;       /* max size of a buffer     */
+
     /* Collectors */
     int coll_fd_static;
     int coll_fd_scan;
