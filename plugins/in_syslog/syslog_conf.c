@@ -101,23 +101,23 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *i_ins,
     }
 
     /* Chunk size */
-    tmp = flb_input_get_property("chunk_size", i_ins);
+    tmp = flb_input_get_property("buffer_chunk_size", i_ins);
     if (!tmp) {
-        ctx->chunk_size = FLB_SYSLOG_CHUNK; /* 32KB */
+        ctx->buffer_chunk_size = FLB_SYSLOG_CHUNK; /* 32KB */
     }
     else {
         /* Convert KB unit to Bytes */
-        ctx->chunk_size  = (atoi(tmp) * 1024);
+        ctx->buffer_chunk_size = flb_utils_size_to_bytes(tmp);
     }
 
     /* Buffer size */
-    tmp = flb_input_get_property("buffer_size", i_ins);
+    tmp = flb_input_get_property("buffer_max_size", i_ins);
     if (!tmp) {
-        ctx->buffer_size = ctx->chunk_size;
+        ctx->buffer_max_size = ctx->buffer_chunk_size;
     }
     else {
         /* Convert KB unit to Bytes */
-        ctx->buffer_size  = (atoi(tmp) * 1024);
+        ctx->buffer_max_size  = flb_utils_size_to_bytes(tmp);
     }
 
     tmp = flb_input_get_property("parser", i_ins);

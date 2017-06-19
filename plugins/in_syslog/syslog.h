@@ -45,8 +45,8 @@ struct flb_syslog {
     char *unix_path;
 
     /* Buffers setup */
-    size_t buffer_size;
-    size_t chunk_size;
+    size_t buffer_max_size;
+    size_t buffer_chunk_size;
 
     /* Configuration */
     struct flb_parser *parser;

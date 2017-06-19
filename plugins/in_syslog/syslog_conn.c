@@ -43,14 +43,14 @@ int syslog_conn_event(void *data)
     if (event->mask & MK_EVENT_READ) {
         available = (conn->buf_size - conn->buf_len);
         if (available <= 1) {
-            if (conn->buf_size + ctx->chunk_size > ctx->buffer_size) {
+            if (conn->buf_size + ctx->buffer_chunk_size > ctx->buffer_max_size) {
                 flb_trace("[in_syslog] fd=%i incoming data exceed limit (%i KB)",
-                          event->fd, (ctx->buffer_size / 1024));
+                          event->fd, (ctx->buffer_max_size / 1024));
                 syslog_conn_del(conn);
                 return -1;
             }
 
-            size = conn->buf_size + ctx->chunk_size;
+            size = conn->buf_size + ctx->buffer_chunk_size;
             tmp = flb_realloc(conn->buf_data, size);
             if (!tmp) {
                 perror("realloc");
@@ -119,7 +119,7 @@ struct syslog_conn *syslog_conn_add(int fd, struct flb_syslog *ctx)
     conn->in      = ctx->i_ins;
     //conn->status  = FW_NEW;
 
-    conn->buf_data = flb_malloc(ctx->chunk_size);
+    conn->buf_data = flb_malloc(ctx->buffer_chunk_size);
     if (!conn->buf_data) {
         perror("malloc");
         close(fd);
@@ -127,7 +127,7 @@ struct syslog_conn *syslog_conn_add(int fd, struct flb_syslog *ctx)
         flb_free(conn);
         return NULL;
     }
-    conn->buf_size = ctx->chunk_size;
+    conn->buf_size = ctx->buffer_chunk_size;
     //conn->in       = ctx->in;
 
     /* Register instance into the event loop */
