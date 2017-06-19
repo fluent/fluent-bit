@@ -71,8 +71,9 @@ static int in_head_collect(struct flb_input_instance *i_ins,
     flb_pack_time_now(&i_ins->mp_pck);
     msgpack_pack_map(&i_ins->mp_pck, num_map);
 
-    msgpack_pack_str(&i_ins->mp_pck, 4);
-    msgpack_pack_str_body(&i_ins->mp_pck, "head", 4);
+    msgpack_pack_str(&i_ins->mp_pck, head_config->key_len);
+    msgpack_pack_str_body(&i_ins->mp_pck, head_config->key,
+                          head_config->key_len);
     msgpack_pack_str(&i_ins->mp_pck, head_config->buf_len);
     msgpack_pack_str_body(&i_ins->mp_pck,
                           head_config->buf, head_config->buf_len);
@@ -108,6 +109,16 @@ static int in_head_config_read(struct flb_in_head_config *head_config,
         return -1;
     }
     head_config->filepath = filepath;
+
+    pval = flb_input_get_property("key", in);
+    if (pval) {
+        head_config->key      = pval;
+        head_config->key_len  = strlen(pval);
+    }
+    else {
+        head_config->key      = "head";
+        head_config->key_len  = 4;
+    }
 
     /* buffer size setting */
     pval = flb_input_get_property("buf_size", in);
