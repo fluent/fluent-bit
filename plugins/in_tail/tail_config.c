@@ -33,6 +33,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
                                                struct flb_config *config)
 {
     int ret;
+    ssize_t bytes;
     char *tmp;
     struct flb_tail_config *ctx;
 
@@ -131,6 +132,43 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
     }
     else {
         ctx->ignore_older = 0;
+    }
+
+    /* Config: buffer chunk size */
+    tmp = flb_input_get_property("buffer_chunk_size", i_ins);
+    if (tmp) {
+        bytes = flb_utils_size_to_bytes(tmp);
+        if (bytes > 0) {
+            ctx->buf_chunk_size = (size_t) bytes;
+        }
+        else {
+            ctx->buf_chunk_size = FLB_TAIL_CHUNK;
+        }
+    }
+    else {
+        ctx->buf_chunk_size = FLB_TAIL_CHUNK;
+    }
+
+    /* Config: buffer maximum size */
+    tmp = flb_input_get_property("buffer_max_size", i_ins);
+    if (tmp) {
+        bytes = flb_utils_size_to_bytes(tmp);
+        if (bytes > 0) {
+            ctx->buf_max_size = (size_t) bytes;
+        }
+        else {
+            ctx->buf_max_size = FLB_TAIL_CHUNK;
+        }
+    }
+    else {
+        ctx->buf_max_size = FLB_TAIL_CHUNK;
+    }
+
+    /* Validate buffer limit */
+    if (ctx->buf_chunk_size > ctx->buf_max_size) {
+        flb_error("[in_tail] buffer_max_size must be >= buffer_chunk");
+        flb_free(ctx);
+        return NULL;
     }
 
 #ifdef FLB_HAVE_REGEX

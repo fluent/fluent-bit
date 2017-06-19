@@ -430,6 +430,17 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file->mult_keys = 0;
     file->mult_flush_timeout = 0;
 
+    /* Local buffer */
+    file->buf_size = ctx->buf_chunk_size;
+    file->buf_data = flb_malloc(file->buf_size);
+    if (!file->buf_data) {
+        flb_errno();
+        close(fd);
+        flb_free(file->name);
+        flb_free(file);
+        return -1;
+    }
+
     /* Initialize (optional) dynamic tag */
     if (ctx->dynamic_tag == FLB_TRUE) {
         p = out_tmp;
@@ -490,6 +501,8 @@ void flb_tail_file_remove(struct flb_tail_file *file)
     if (file->tag_buf) {
         flb_free(file->tag_buf);
     }
+
+    flb_free(file->buf_data);
     flb_free(file->name);
     flb_free(file);
 }
@@ -519,6 +532,8 @@ int flb_tail_file_remove_all(struct flb_tail_config *ctx)
 int flb_tail_file_chunk(struct flb_tail_file *file)
 {
     int ret;
+    char *tmp;
+    size_t size;
     off_t capacity;
     off_t processed_bytes;
     ssize_t bytes;
@@ -530,10 +545,40 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
         return FLB_TAIL_BUSY;
     }
 
-    capacity = sizeof(file->buf_data) - file->buf_len - 1;
+    capacity = (file->buf_size - file->buf_len) - 1;
     if (capacity < 1) {
-        /* we expect at least a log line have a length less than 32KB */
-        return -1;
+        /*
+         * If there is no more room for more data, try to increase the
+         * buffer under the limit of buffer_max_size.
+         */
+        if (file->buf_size >= ctx->buf_max_size) {
+            flb_error("[in_tail] file=%s requires a larger buffer size, "
+                      "lines are too long. Skipping file.", file->name);
+            return FLB_TAIL_ERROR;
+        }
+        else {
+            size = file->buf_size + ctx->buf_chunk_size;
+            if (size > ctx->buf_max_size) {
+                size = ctx->buf_max_size;
+            }
+        }
+
+        /* Increase the buffer size */
+        tmp = flb_realloc(file->buf_data, size);
+        if (tmp) {
+            flb_trace("[in_tail] file=%s increase buffer size %lu => %lu bytes",
+                      file->name, file->buf_size, size);
+            file->buf_data = tmp;
+            file->buf_size = size;
+        }
+        else {
+            flb_errno();
+            flb_error("[in_tail] cannot increase buffer size for %s, "
+                      "skipping file.", file->name);
+            return FLB_TAIL_ERROR;
+        }
+
+        capacity = (file->buf_size - file->buf_len) - 1;
     }
 
     bytes = read(file->fd, file->buf_data + file->buf_len, capacity);
