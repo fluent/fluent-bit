@@ -105,7 +105,7 @@ struct mk_rconf *mk_rconf_open(const char *path)
     int line = 0;
     int indent_len = -1;
     int n_keys = 0;
-    char buf[255];
+    char buf[1024];
     char *section = NULL;
     char *indent = NULL;
     char *key, *val;
@@ -131,7 +131,7 @@ struct mk_rconf *mk_rconf_open(const char *path)
     mk_list_init(&conf->sections);
 
     /* looking for configuration directives */
-    while (fgets(buf, 255, f)) {
+    while (fgets(buf, sizeof(buf) - 1, f)) {
         len = strlen(buf);
         if (buf[len - 1] == '\n') {
             buf[--len] = 0;
