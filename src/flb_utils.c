@@ -329,3 +329,28 @@ size_t flb_utils_size_to_bytes(char *size)
 
     return val;
 }
+
+void flb_utils_bytes_to_human_readable_size(size_t bytes,
+                                            char *out_buf, size_t size)
+{
+    unsigned long i;
+    unsigned long u = 1024;
+    static const char *__units[] = {
+        "b", "K", "M", "G",
+        "T", "P", "E", "Z", "Y", NULL
+    };
+
+    for (i = 0; __units[i] != NULL; i++) {
+        if ((bytes / u) == 0) {
+            break;
+        }
+        u *= 1024;
+    }
+    if (!i) {
+        snprintf(out_buf, size, "%lu%s", (long unsigned int) bytes, __units[0]);
+    }
+    else {
+        float fsize = (float) ((double) bytes / (u / 1024));
+        snprintf(out_buf, size, "%.1f%s", fsize, __units[i]);
+    }
+}

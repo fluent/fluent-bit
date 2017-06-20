@@ -47,5 +47,7 @@ void flb_utils_split_free(struct mk_list *list);
 int flb_utils_timer_consume(flb_pipefd_t fd);
 size_t flb_utils_size_to_bytes(char *size);
 int flb_utils_pipe_byte_consume(flb_pipefd_t fd);
+void flb_utils_bytes_to_human_readable_size(size_t bytes,
+                                            char *out_buf, size_t size);
 
 #endif
