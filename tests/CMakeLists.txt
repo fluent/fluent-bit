@@ -86,6 +86,12 @@ if(FLB_OUT_LIB)
       )
   endif()
 
+  if(FLB_IN_DUMMY)
+    list(APPEND check_PROGRAMS
+      flb_test_in_dummy.cpp
+      )
+  endif()
+
   if(FLB_IN_PROC)
     list(APPEND check_PROGRAMS
       flb_test_in_proc.cpp
