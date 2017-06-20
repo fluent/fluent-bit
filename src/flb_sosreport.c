@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_version.h>
+#include <fluent-bit/flb_utils.h>
 
 #include <unistd.h>
 #include <sys/utsname.h>
@@ -109,6 +110,7 @@ static void print_properties(struct mk_list *props)
 
 int flb_sosreport(struct flb_config *config)
 {
+    char tmp[32];
     struct mk_list *head;
     struct mk_list *head_r;
     struct flb_input_plugin *in;
@@ -200,6 +202,13 @@ int flb_sosreport(struct flb_config *config)
         if (ins_in->flags & FLB_INPUT_NET) {
             print_host(&ins_in->host);
         }
+
+        if (ins_in->mp_buf_limit > 0) {
+            flb_utils_bytes_to_human_readable_size(ins_in->mp_buf_limit,
+                                                   tmp, sizeof(tmp) - 1);
+            printf("    Mem_Buf_Limit\t%s\n", tmp);
+        }
+
         print_properties(&ins_in->properties);
 
         /* Fixed Routes */
