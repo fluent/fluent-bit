@@ -33,6 +33,8 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
                                                struct flb_config *config)
 {
     int ret;
+    int sec;
+    long nsec;
     ssize_t bytes;
     char *tmp;
     struct flb_tail_config *ctx;
@@ -78,12 +80,30 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
     /* Config: seconds interval before to re-scan the path */
     tmp = flb_input_get_property("refresh_interval", i_ins);
     if (!tmp) {
-        ctx->refresh_interval = FLB_TAIL_REFRESH;
+        ctx->refresh_interval_sec = FLB_TAIL_REFRESH;
+        ctx->refresh_interval_nsec = 0;
     }
     else {
-        ctx->refresh_interval = atoi(tmp);
-        if (ctx->refresh_interval <= 0) {
-            flb_error("[in_tail] invalid 'refresh_interval' config value");
+        ret = flb_utils_time_split(tmp, &sec, &nsec);
+        if (ret == 0) {
+            ctx->refresh_interval_sec = sec;
+            ctx->refresh_interval_nsec = nsec;
+
+            if (sec == 0 && nsec == 0) {
+                flb_error("[in_tail] invalid 'refresh_interval' config value (%s)",
+                          tmp);
+                flb_free(ctx);
+                return NULL;
+            }
+
+            if (sec == 0 && nsec <= 1000000) {
+                flb_warn("[in_tail] very low refresh_interval (%i.%lu nanoseconds) "
+                         "might cause high CPU usage", sec, nsec);
+            }
+        }
+        else {
+            flb_error("[in_tail] invalid 'refresh_interval' config value (%s)",
+                      tmp);
             flb_free(ctx);
             return NULL;
         }
