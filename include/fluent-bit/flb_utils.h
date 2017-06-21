@@ -49,5 +49,6 @@ size_t flb_utils_size_to_bytes(char *size);
 int flb_utils_pipe_byte_consume(flb_pipefd_t fd);
 void flb_utils_bytes_to_human_readable_size(size_t bytes,
                                             char *out_buf, size_t size);
+int flb_utils_time_split(char *time, int *sec, long *nsec);
 
 #endif

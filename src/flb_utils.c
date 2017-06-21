@@ -354,3 +354,42 @@ void flb_utils_bytes_to_human_readable_size(size_t bytes,
         snprintf(out_buf, size, "%.1f%s", fsize, __units[i]);
     }
 }
+
+/* Convert a 'string' time seconds.nanoseconds to int and long values */
+int flb_utils_time_split(char *time, int *sec, long *nsec)
+{
+    char *p;
+    char *end;
+    long val = 0;
+
+    errno = 0;
+    val = strtol(time, &end, 10);
+    if ((errno == ERANGE && (val == LONG_MAX || val == LONG_MIN))
+        || (errno != 0 && val == 0)) {
+        flb_errno();
+        return -1;
+    }
+    if (end == time) {
+        return -1;
+    }
+    *sec = (int) val;
+
+    /* Try to find subseconds */
+    *nsec = 0;
+    p = strchr(time, '.');
+    if (p) {
+        p += 1;
+        val = strtol(p, &end, 10);
+        if ((errno == ERANGE && (val == LONG_MAX || val == LONG_MIN))
+            || (errno != 0 && val == 0)) {
+            flb_errno();
+            return -1;
+        }
+        if (end == p) {
+            return -1;
+        }
+        *nsec = val;
+    }
+
+    return 0;
+}
