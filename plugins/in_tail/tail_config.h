@@ -46,7 +46,8 @@ struct flb_tail_config {
 
     /* Configuration */
     int dynamic_tag;           /* dynamic tag ? e.g: abc.*     */
-    int refresh_interval;      /* seconds to re-scan           */
+    int refresh_interval_sec;  /* seconds to re-scan           */
+    long refresh_interval_nsec;/* nanoseconds to re-scan       */
     int rotate_wait;           /* sec to wait on rotated files */
     time_t last_pending;       /* last time a 'pending signal' was emitted' */
     char *path;                /* lookup path (glob)           */
