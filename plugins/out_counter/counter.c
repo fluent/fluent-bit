@@ -23,6 +23,10 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_output.h>
 
+struct flb_counter_ctx {
+    uint64_t total;
+};
+
 int cb_counter_init(struct flb_output_instance *ins,
                  struct flb_config *config,
                  void *data)
@@ -30,7 +34,16 @@ int cb_counter_init(struct flb_output_instance *ins,
     (void) ins;
     (void) config;
     (void) data;
+    struct flb_counter_ctx *ctx;
 
+    ctx = flb_malloc(sizeof(struct flb_counter_ctx));
+    if (!ctx) {
+        flb_errno();
+        return -1;
+    }
+    ctx->total = 0;
+
+    flb_output_set_context(ins, ctx);
     return 0;
 }
 
@@ -47,7 +60,7 @@ void cb_counter_flush(void *data, size_t bytes,
     (void) i_ins;
     (void) out_context;
     (void) config;
-
+    struct flb_counter_ctx *ctx = out_context;
     msgpack_unpacked result;
     size_t off = 0, cnt = 0;
     struct flb_time tm;
@@ -57,11 +70,20 @@ void cb_counter_flush(void *data, size_t bytes,
         cnt++;
     }
     msgpack_unpacked_destroy(&result);
+    ctx->total += cnt;
 
     flb_time_get(&tm);
-    printf("%f,%lu\n", flb_time_to_double(&tm), cnt);
+    printf("%f,%lu (total = %"PRIu64")\n", flb_time_to_double(&tm), cnt,
+           ctx->total);
 
     FLB_OUTPUT_RETURN(FLB_OK);
+}
+
+int cb_counter_exit(void *data, struct flb_config *config)
+{
+    struct flb_counter_ctx *ctx = data;
+    flb_free(ctx);
+    return 0;
 }
 
 struct flb_output_plugin out_counter_plugin = {
@@ -69,5 +91,6 @@ struct flb_output_plugin out_counter_plugin = {
     .description  = "Records counter",
     .cb_init      = cb_counter_init,
     .cb_flush     = cb_counter_flush,
+    .cb_exit      = cb_counter_exit,
     .flags        = 0,
 };
