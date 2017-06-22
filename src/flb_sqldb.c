@@ -113,3 +113,8 @@ int flb_sqldb_query(struct flb_sqldb *db, char *sql,
 
     return FLB_OK;
 }
+
+int64_t flb_sqldb_last_id(struct flb_sqldb *db)
+{
+    return sqlite3_last_insert_rowid(db->handler);
+}
