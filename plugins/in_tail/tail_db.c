@@ -96,14 +96,17 @@ int flb_tail_db_file_set(struct flb_tail_file *file,
         snprintf(query, sizeof(query) - 1,
                  SQL_INSERT_FILE,
                  file->name, 0UL, file->inode, time(NULL));
-        ret = flb_sqldb_query(ctx->db,
-                              query, NULL, NULL);
+        ret = flb_sqldb_query(ctx->db, query, NULL, NULL);
         if (ret == FLB_ERROR) {
             return -1;
         }
+
+        /* Get the database ID for this file */
+        file->db_id = flb_sqldb_last_id(ctx->db);
         return 0;
     }
 
+    file->db_id  = qs.id;
     file->offset = qs.offset;
     return 0;
 }
@@ -114,24 +117,10 @@ int flb_tail_db_file_offset(struct flb_tail_file *file,
 {
     int ret;
     char query[PATH_MAX];
-    struct query_status qs = {0};
-
-    /* Check if the file exists */
-    snprintf(query, sizeof(query) - 1,
-             SQL_GET_FILE,
-             file->name);
-
-    memset(&qs, '\0', sizeof(qs));
-    ret = flb_sqldb_query(ctx->db,
-                          query, cb_file_check, &qs);
-
-    if (qs.rows == 0) {
-        return -1;
-    }
 
     snprintf(query, sizeof(query) - 1,
              SQL_UPDATE_OFFSET,
-             file->offset, qs.id);
+             file->offset, file->db_id);
 
     ret = flb_sqldb_query(ctx->db,
                           query, NULL, NULL);
@@ -154,7 +143,7 @@ int flb_tail_db_file_rotate(char *new_name,
     /* Check if the file exists */
     snprintf(query, sizeof(query) - 1,
              SQL_ROTATE_FILE,
-             new_name, file->name);
+             new_name, file->db_id);
 
     memset(&qs, '\0', sizeof(qs));
     ret = flb_sqldb_query(ctx->db,
