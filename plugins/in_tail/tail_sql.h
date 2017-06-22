@@ -44,9 +44,9 @@
     "  VALUES ('%s', %lu, %lu, %lu);"
 
 #define SQL_UPDATE_OFFSET                               \
-    "UPDATE in_tail_files set offset=%lu WHERE id=%i;"
+    "UPDATE in_tail_files set offset=%lu WHERE id=%"PRId64";"
 
 #define SQL_ROTATE_FILE                         \
-    "UPDATE in_tail_files set name='%s',rotated=1 WHERE name='%s';"
+    "UPDATE in_tail_files set name='%s',rotated=1 WHERE id=%"PRId64";"
 
 #endif
