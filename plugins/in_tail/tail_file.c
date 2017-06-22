@@ -32,6 +32,7 @@
 #include "tail_config.h"
 #include "tail_db.h"
 #include "tail_signal.h"
+#include "tail_scan.h"
 
 static inline void consume_bytes(char *buf, int bytes, int length)
 {
@@ -386,7 +387,9 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file->tail_mode = mode;
     file->tag_len   = 0;
     file->tag_buf   = NULL;
+    file->rotated   = 0;
     file->pending_bytes = 0;
+    file->db_id     = 0;
 
     /* Local buffer */
     file->buf_size = ctx->buf_chunk_size;
@@ -592,6 +595,17 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
 int flb_tail_file_to_event(struct flb_tail_file *file)
 {
     int ret;
+    struct stat st;
+
+    /* Check if the file promoted have pending bytes */
+    ret = fstat(file->fd, &st);
+    if (file->offset < st.st_size) {
+        file->pending_bytes = (st.st_size - file->offset);
+        tail_signal_pending(file->config);
+    }
+    else {
+        file->pending_bytes = 0;
+    }
 
     /* Notify the fs-event handler that we will start monitoring this 'file' */
     ret = flb_tail_fs_add(file);
@@ -602,8 +616,8 @@ int flb_tail_file_to_event(struct flb_tail_file *file)
     /* List change */
     mk_list_del(&file->_head);
     mk_list_add(&file->_head, &file->config->files_event);
-
     file->tail_mode = FLB_TAIL_EVENT;
+
 
     return 0;
 }
@@ -650,12 +664,13 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
     char *name;
     char *tmp;
     struct stat st;
+    struct flb_tail_config *ctx = file->config;
 
     /* Get stats from the original file name (if a new one exists) */
     ret = stat(file->name, &st);
     if (ret == 0) {
         /* Check if we need to re-create an entry with the original name */
-        if (st.st_ino != file->inode) {
+        if (st.st_ino != file->inode && file->rotated == 0) {
             create = FLB_TRUE;
         }
     }
@@ -679,14 +694,16 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
     }
 
     /* Update local file entry */
-    tmp           = file->name;
-    file->name    = name;
-    file->rotated = time(NULL);
-    mk_list_add(&file->_rotate_head, &file->config->files_rotated);
+    tmp        = file->name;
+    file->name = name;
+    if (file->rotated == 0) {
+        file->rotated = time(NULL);
+        mk_list_add(&file->_rotate_head, &file->config->files_rotated);
+    }
 
     /* Request to append 'new' file created */
     if (create == FLB_TRUE) {
-        flb_tail_file_append(tmp, &st, FLB_TAIL_STATIC, file->config);
+        flb_tail_scan(ctx->path, ctx);
         tail_signal_manager(file->config);
     }
     flb_free(tmp);
