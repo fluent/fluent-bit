@@ -39,4 +39,6 @@ int flb_sqldb_close(struct flb_sqldb *db);
 int flb_sqldb_query(struct flb_sqldb *db, char *sql,
                     int (*callback) (void *, int, char **, char **),
                     void *data);
+int64_t flb_sqldb_last_id(struct flb_sqldb *db);
+
 #endif
