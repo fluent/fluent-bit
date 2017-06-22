@@ -212,7 +212,8 @@ static int in_tail_init(struct flb_input_instance *in,
 
     /* Register re-scan */
     ret = flb_input_set_collector_time(in, flb_tail_scan_callback,
-                                       ctx->refresh_interval, 0,
+                                       ctx->refresh_interval_sec,
+                                       ctx->refresh_interval_nsec,
                                        config);
     if (ret == -1) {
         flb_tail_config_destroy(ctx);

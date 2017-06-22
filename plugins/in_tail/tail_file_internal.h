@@ -62,6 +62,9 @@ struct flb_tail_file {
     /* Opaque data type for specific fs-event backend data */
     void *fs_backend;
 
+    /* database reference */
+    uint64_t db_id;
+
     /* reference */
     int tail_mode;
     struct flb_tail_config *config;
