@@ -37,7 +37,8 @@
     "  rotated INTEGER DEFAULT 0"                                       \
     ");"
 
-#define SQL_GET_FILE "SELECT * from in_tail_files WHERE name='%s';"
+#define SQL_GET_FILE "SELECT * from in_tail_files WHERE name='%s'"  \
+    " AND inode=%"PRIu64";"
 
 #define SQL_INSERT_FILE                                             \
     "INSERT INTO in_tail_files (name, offset, inode, created)"      \
