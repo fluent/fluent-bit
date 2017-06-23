@@ -47,6 +47,7 @@ $ bin/fluent-bit -i cpu -o stdout
 | Grep               | grep       | Match or exclude specific records by patterns |
 | Kubernetes         | kubernetes | Enrich logs with Kubernetes Metadata |
 | Stdout             | stdout     | Print records to the standard output interface |
+| Parser             | parser     | Parse records |
 
 
 ### Output Plugins
