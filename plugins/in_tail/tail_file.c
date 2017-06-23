@@ -637,6 +637,7 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
 int flb_tail_file_to_event(struct flb_tail_file *file)
 {
     int ret;
+    char *name;
     struct stat st;
 
     /* Check if the file promoted have pending bytes */
@@ -648,6 +649,15 @@ int flb_tail_file_to_event(struct flb_tail_file *file)
     else {
         file->pending_bytes = 0;
     }
+
+    /* Check if this file have been rotated */
+    name = flb_tail_file_name(file);
+    if (strcmp(name, file->name) != 0) {
+        flb_trace("[in_tail] static file rotated: %s => to %s",
+                  file->name, name);
+        flb_tail_file_rotated(file);
+    }
+    flb_free(name);
 
     /* Notify the fs-event handler that we will start monitoring this 'file' */
     ret = flb_tail_fs_add(file);
