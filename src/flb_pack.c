@@ -178,6 +178,7 @@ int flb_pack_json(char *js, size_t len, char **buffer, int *size)
     }
     ret = json_tokenise(js, len, &state);
     if (ret != 0) {
+        flb_trace("[pack] json_tokenise() failed");
         ret = -1;
         goto flb_pack_json_end;
     }
@@ -302,7 +303,6 @@ void flb_pack_print(char *data, size_t bytes)
     msgpack_unpacked_destroy(&result);
 }
 
-
 static inline int try_to_write(char *buf, int *off, size_t left,
                                char *str, size_t str_len)
 {
@@ -325,6 +325,7 @@ static inline int try_to_write_str(char *buf, int *off, size_t size,
     int required;
     size_t available;
     char c;
+    char next;
     char *p;
 
     available = (size - *off);
@@ -342,6 +343,19 @@ static inline int try_to_write_str(char *buf, int *off, size_t size,
 
         c = str[i];
         if (c == '\\' || c == '"') {
+            /* Skip quoted characters */
+            if (c == '\\' && i + 1 < str_len) {
+                next = str[i + 1];
+                switch (next) {
+				case '\"': case '/' : case '\\' : case 'b' :
+				case 'f' : case 'r' : case 'n'  : case 't' :
+                    *p++ = c;
+                    *p++ = next;
+                    i++;
+                    written = (p - (buf + *off));
+                    continue;
+                }
+            }
             *p++ = '\\';
             *p++ = c;
         }
@@ -541,8 +555,12 @@ int flb_msgpack_to_json(char *json_str, size_t str_len,
     }
 
     ret = msgpack2json(json_str, &off, str_len, &data->data);
-    json_str[str_len-1] = '\0';
-    return ret ? off: ret;
+    if (ret) {
+        json_str[off] = '\0';
+        return off;
+    }
+
+    return ret;
 }
 
 
@@ -574,7 +592,7 @@ char *flb_msgpack_to_json_str(size_t size, msgpack_unpacked *data)
     }
 
     while (1) {
-        ret = flb_msgpack_to_json(buf, size, data);
+        ret = flb_msgpack_to_json(buf, size - 1, data);
         if (ret <= 0) {
             /* buffer is small. retry.*/
             size += 128;
