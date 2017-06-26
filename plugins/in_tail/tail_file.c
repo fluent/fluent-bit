@@ -645,6 +645,7 @@ int flb_tail_file_to_event(struct flb_tail_file *file)
     int ret;
     char *name;
     struct stat st;
+    struct stat st_rotated;
 
     /* Check if the file promoted have pending bytes */
     ret = fstat(file->fd, &st);
@@ -659,9 +660,15 @@ int flb_tail_file_to_event(struct flb_tail_file *file)
     /* Check if this file have been rotated */
     name = flb_tail_file_name(file);
     if (strcmp(name, file->name) != 0) {
-        flb_trace("[in_tail] static file rotated: %s => to %s",
-                  file->name, name);
-        flb_tail_file_rotated(file);
+        ret = stat(name, &st_rotated);
+        if (ret == -1) {
+            flb_errno();
+        }
+        else if (st_rotated.st_ino != st.st_ino) {
+            flb_trace("[in_tail] static file rotated: %s => to %s",
+                      file->name, name);
+            flb_tail_file_rotated(file);
+        }
     }
     flb_free(name);
 
