@@ -166,6 +166,7 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
 
         json_size = unescape_string((char *) v.via.str.ptr,
                                     size, &ctx->merge_json_buf);
+
         ret = flb_pack_json(ctx->merge_json_buf, json_size,
                             &log_buf, &log_size);
         if (ret != 0) {

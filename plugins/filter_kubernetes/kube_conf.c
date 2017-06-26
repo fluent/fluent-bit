@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_utils.h>
 
 #ifndef FLB_HAVE_TLS
 #error "Fluent Bit was built without TLS support"
@@ -47,13 +48,12 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
     }
     ctx->config = config;
     ctx->merge_json_log = FLB_FALSE;
+    ctx->dummy_meta = FLB_FALSE;
 
     /* Merge JSON log */
     tmp = flb_filter_get_property("merge_json_log", i);
     if (tmp) {
-        if (strcasecmp(tmp, "on") == 0 || strcasecmp(tmp, "true") == 0) {
-            ctx->merge_json_log = FLB_TRUE;
-        }
+        ctx->merge_json_log = flb_utils_bool(tmp);
     }
 
     /* Get Kubernetes API server */
@@ -129,6 +129,12 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
     if (ctx->merge_json_log == FLB_TRUE) {
         ctx->merge_json_buf = flb_malloc(FLB_MERGE_BUF_SIZE);
         ctx->merge_json_buf_size = FLB_MERGE_BUF_SIZE;
+    }
+
+    /* Generate dummy metadata (only for test/dev purposes) */
+    tmp = flb_filter_get_property("dummy_meta", i);
+    if (tmp) {
+        ctx->dummy_meta = flb_utils_bool(tmp);
     }
 
     flb_info("[filter_kube] https=%i host=%s port=%i",
