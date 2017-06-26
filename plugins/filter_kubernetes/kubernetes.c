@@ -166,7 +166,6 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
 
         json_size = unescape_string((char *) v.via.str.ptr,
                                     size, &ctx->merge_json_buf);
-
         ret = flb_pack_json(ctx->merge_json_buf, json_size,
                             &log_buf, &log_size);
         if (ret != 0) {
@@ -193,7 +192,13 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
     }
 
     /* Start packaging the final map */
-    new_map_size += log_buf_entries;
+    if (ctx->merge_json_key != NULL) {
+        /* Make room for one new key that will hold the original log entries */
+        new_map_size++;
+    }
+    else {
+        new_map_size += log_buf_entries;
+    }
     msgpack_pack_map(pck, new_map_size);
 
     /* Original map */
@@ -206,6 +211,13 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
 
     /* Merged JSON */
     if (log_buf && log_index != -1) {
+        if (ctx->merge_json_key && log_buf_entries > 0) {
+            msgpack_pack_str(pck, ctx->merge_json_key_len);
+            msgpack_pack_str_body(pck, ctx->merge_json_key,
+                                  ctx->merge_json_key_len);
+            msgpack_pack_map(pck, log_buf_entries);
+        }
+
         off = 0;
         msgpack_unpacked_init(&result);
         msgpack_unpack_next(&result, log_buf, log_size, &off);
@@ -273,6 +285,7 @@ static int cb_kube_filter(void *data, size_t bytes,
         time = root.via.array.ptr[0];
         map  = root.via.array.ptr[1];
 
+
         /* Compose the new array */
         msgpack_pack_array(&tmp_pck, 2);
         msgpack_pack_object(&tmp_pck, time);
@@ -284,6 +297,9 @@ static int cb_kube_filter(void *data, size_t bytes,
         if (ret != 0) {
             msgpack_sbuffer_destroy(&tmp_sbuf);
             msgpack_unpacked_destroy(&result);
+            if (ctx->dummy_meta == FLB_TRUE) {
+                flb_free(cache_buf);
+            }
             return FLB_FILTER_NOTOUCH;
         }
     }
@@ -293,6 +309,9 @@ static int cb_kube_filter(void *data, size_t bytes,
     *out_buf   = tmp_sbuf.data;
     *out_bytes = tmp_sbuf.size;
 
+    if (ctx->dummy_meta == FLB_TRUE) {
+        flb_free(cache_buf);
+    }
     return FLB_FILTER_MODIFIED;
 }
 
