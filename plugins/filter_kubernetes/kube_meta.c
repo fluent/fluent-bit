@@ -527,12 +527,46 @@ static int flb_kube_network_init(struct flb_kube *ctx, struct flb_config *config
     return 0;
 }
 
+static int flb_dummy_meta(char **out_buf, size_t *out_size)
+{
+    int len;
+    time_t t;
+    char stime[32];
+    struct tm result;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+
+    t = time(NULL);
+    localtime_r(&t, &result);
+    asctime_r(&result, stime);
+    len = strlen(stime) - 1;
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    msgpack_pack_map(&mp_pck, 1);
+    msgpack_pack_str(&mp_pck, 5 /* dummy */ );
+    msgpack_pack_str_body(&mp_pck, "dummy", 5);
+    msgpack_pack_str(&mp_pck, len);
+    msgpack_pack_str_body(&mp_pck, stime, len);
+
+    *out_buf = mp_sbuf.data;
+    *out_size = mp_sbuf.size;
+
+    return 0;
+}
+
 /* Initialize local context */
 int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config)
 {
     int ret;
     char *meta_buf;
     size_t meta_size;
+
+    if (ctx->dummy_meta == FLB_TRUE) {
+        flb_warn("[filter_kube] using Dummy Metadata");
+        return 0;
+    }
 
     /* Gather local info */
     ret = get_local_pod_info(ctx);
@@ -575,6 +609,11 @@ int flb_kube_meta_get(struct flb_kube *ctx,
     char *out_meta_buf;
     size_t out_meta_size;
     struct flb_kube_meta meta = {};
+
+    if (ctx->dummy_meta == FLB_TRUE) {
+        flb_dummy_meta(out_buf, out_size);
+        return 0;
+    }
 
     /* Get meta from the tag (cache key is the important one) */
     ret = tag_to_meta(ctx, tag, tag_len, &meta,

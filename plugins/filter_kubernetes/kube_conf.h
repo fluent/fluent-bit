@@ -60,6 +60,7 @@ struct flb_kube {
     char *api_host;
     int api_port;
     int api_https;
+    int dummy_meta;
 
     /* Merge JSON feature */
     int merge_json_log;
