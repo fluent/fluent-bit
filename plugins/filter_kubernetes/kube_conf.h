@@ -67,6 +67,9 @@ struct flb_kube {
     int merge_json_buf_size;
     char *merge_json_buf;
 
+    int merge_json_key_len;
+    char *merge_json_key;
+
     char kube_url[1024];
     struct flb_regex *regex_tag;
 
