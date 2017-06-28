@@ -99,6 +99,7 @@ option(FLB_OUT_FLOWCOUNTER "Enable flowcount output plugin"     Yes)
 
 option(FLB_FILTER_GREP     "Enable grep filter"                 Yes)
 option(FLB_FILTER_STDOUT   "Enable stdout filter"               Yes)
+option(FLB_FILTER_PARSER   "Enable parser filter"               Yes)
 option(FLB_FILTER_KUBERNETES "Enable kubernetes filter"         Yes)
 option(FLB_FILTER_RECORD_MODIFIER "Enable record_modifier filter" Yes)
 
