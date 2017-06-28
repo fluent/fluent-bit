@@ -138,7 +138,7 @@ static int cb_parser_filter(void *data, size_t bytes,
     int val_len;
     char *out_buf;
     size_t out_size;
-    struct flb_time not_use;
+    struct flb_time parsed_time;
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
 
@@ -170,7 +170,10 @@ static int cb_parser_filter(void *data, size_t bytes,
                     }
                     if ( flb_parser_do(ctx->parser,
                                         val_str, val_len,
-                                       (void **)&out_buf, &out_size, &not_use) >= 0) {
+                                       (void **)&out_buf, &out_size, &parsed_time) >= 0) {
+                        if (flb_time_to_double(&parsed_time) != 0) {
+                            flb_time_copy(&tm, &parsed_time);
+                        }
                         break;
                     }
                     else {
