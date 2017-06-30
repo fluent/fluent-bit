@@ -498,6 +498,10 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
 
 void flb_tail_file_remove(struct flb_tail_file *file)
 {
+    if (file->rotated > 0) {
+        mk_list_del(&file->_rotate_head);
+    }
+
     mk_list_del(&file->_head);
     flb_tail_fs_remove(file);
     close(file->fd);
