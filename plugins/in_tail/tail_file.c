@@ -747,7 +747,6 @@ int flb_tail_file_rotated_purge(struct flb_input_instance *i_ins,
         file = mk_list_entry(head, struct flb_tail_file, _rotate_head);
         if ((file->rotated + ctx->rotate_wait) <= now) {
             flb_debug("[in_tail] purge rotated file %s", file->name);
-            mk_list_del(&file->_rotate_head);
             flb_tail_file_remove(file);
             count++;
         }
