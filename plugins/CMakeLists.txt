@@ -141,6 +141,7 @@ REGISTER_FILTER_PLUGIN("filter_stdout")
 
 if(FLB_REGEX)
   REGISTER_FILTER_PLUGIN("filter_kubernetes")
+  REGISTER_FILTER_PLUGIN("filter_parser")
 endif()
 REGISTER_FILTER_PLUGIN("filter_record_modifier")
 
