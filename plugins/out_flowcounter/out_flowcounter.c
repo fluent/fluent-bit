@@ -49,30 +49,38 @@ static int configure(struct flb_out_fcount_config *ctx,
                      struct flb_output_instance   *ins,
                      struct flb_config *config)
 {
-    char* unit = NULL;
+    char* pval = NULL;
     int i;
     time_t base = time(NULL);
-    
+
     /* default */
     ctx->unit = FLB_UNIT_MIN;
     ctx->tick         = 60;
 
-    unit = flb_output_get_property("unit", ins);
+    pval = flb_output_get_property("unit", ins);
 
-    if (unit != NULL) {
+    if (pval != NULL) {
         /* check unit of duration */
-        if (!strcasecmp(unit, FLB_UNIT_SEC)) {
+        if (!strcasecmp(pval, FLB_UNIT_SEC)) {
             ctx->unit = FLB_UNIT_SEC;
             ctx->tick = 1;
         }
-        else if (!strcasecmp(unit, FLB_UNIT_HOUR)) {
+        else if (!strcasecmp(pval, FLB_UNIT_HOUR)) {
             ctx->unit = FLB_UNIT_HOUR;
             ctx->tick = 3600;
         }
-        else if(!strcasecmp(unit, FLB_UNIT_DAY)) {
+        else if(!strcasecmp(pval, FLB_UNIT_DAY)) {
             ctx->unit = FLB_UNIT_DAY;
             ctx->tick = 86400;
         }
+    }
+
+    pval = flb_output_get_property("event_based", ins);
+    if (pval != NULL && flb_utils_bool(pval)) {
+        ctx->event_based = FLB_TRUE;
+    }
+    else {
+        ctx->event_based = FLB_FALSE;
     }
 
     flb_debug("[%s]unit is \"%s\"",PLUGIN_NAME, ctx->unit);
@@ -193,6 +201,10 @@ static void out_fcount_flush(void *data, size_t bytes,
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
         t = get_timestamp_from_msgpack(&result.data);
+        if (ctx->event_based == FLB_FALSE) {
+            t = time(NULL);
+        }
+
         if (time_is_valid(t, ctx) == FLB_FALSE) {
             flb_warn("[%s] Out of range. Skip the record.", PLUGIN_NAME);
             continue;
@@ -219,7 +231,7 @@ static void out_fcount_flush(void *data, size_t bytes,
 
         if (buf != NULL) {
             count_up(&result.data, buf, byte_data);
-        } 
+        }
     }
     msgpack_unpacked_destroy(&result);
 
