@@ -36,6 +36,7 @@ struct flb_out_fcount_buffer {
 struct flb_out_fcount_config {
     char*     unit;
     int32_t   tick;
+    int       event_based;
 
     struct flb_out_fcount_buffer *buf;
     int index;
