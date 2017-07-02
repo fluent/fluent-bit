@@ -25,13 +25,13 @@ $ bin/fluent-bit -i cpu -o stdout
 |--------------------|---------|---------------------------------------------------------------------------------|
 | CPU                | cpu     | gather CPU usage between snapshots of one second. It support multiple cores     |
 | Disk               | disk    | usage of block device |
+| Dummy              | dummy   | generates dummy event |
 | Forward            | forward | [Fluentd](http://fluentd.org) forward protocol |
 | Memory             | mem     | usage of system memory |
 | MQTT               | mqtt    | start a MQTT server and receive publish messages |
 | Kernel Ring Buffer | kmsg    | read Linux Kernel messages, same behavior as the __dmesg__ command line program |
 | Serial Port        | serial  | read from serial port |
 | Standard Input     | stdin   | read from the standard input |
-| XBee               | xbee    | listen for incoming messages over a Xbee device |
 | Head               | head    | read first part of files |
 | Health             | health  | check health of TCP services|
 | Process            | proc    | check health of Process |
