@@ -78,7 +78,7 @@ static int configure(struct record_modifier_ctx *ctx,
             sentry = mk_list_entry_last(split, struct flb_split_entry, _head);
             mod_record->val = flb_strndup(sentry->value, sentry->len);
             mod_record->val_len = sentry->len;
-            
+
             flb_utils_split_free(split);
             mk_list_add(&mod_record->_head, &ctx->records);
             ctx->records_num++;
@@ -181,7 +181,7 @@ static int make_bool_map(struct record_modifier_ctx *ctx, msgpack_object *map,
         for(i=0; i<map_num; i++){
             key = &(kv+i)->key;
             result = FLB_FALSE;
-            
+
             mk_list_foreach_safe(head, tmp, check) {
                 mod_key = mk_list_entry(head, struct modifier_key,  _head);
                 if (key->via.bin.size != mod_key->key_len &&
@@ -190,7 +190,7 @@ static int make_bool_map(struct record_modifier_ctx *ctx, msgpack_object *map,
                 }
                 if ((key->type == MSGPACK_OBJECT_BIN &&
                      !strncasecmp(key->via.bin.ptr, mod_key->key,
-                                 mod_key->key_len)) || 
+                                 mod_key->key_len)) ||
                     (key->type == MSGPACK_OBJECT_STR &&
                      !strncasecmp(key->via.str.ptr, mod_key->key,
                                  mod_key->key_len))
@@ -220,7 +220,6 @@ static int cb_modifier_filter(void *data, size_t bytes,
     char is_modified = FLB_FALSE;
     size_t off = 0;
     int i;
-    int ret;
     int removed_map_num  = 0;
     int map_num          = 0;
     bool_map_t bool_map[128];
@@ -276,8 +275,8 @@ static int cb_modifier_filter(void *data, size_t bytes,
         kv = obj->via.map.ptr;
         for(i=0; bool_map[i] != TAIL_OF_ARRAY; i++) {
             if (bool_map[i] == TO_BE_REMAINED) {
-                ret = msgpack_pack_object(&tmp_pck, (kv+i)->key);
-                ret = msgpack_pack_object(&tmp_pck, (kv+i)->val);
+                msgpack_pack_object(&tmp_pck, (kv+i)->key);
+                msgpack_pack_object(&tmp_pck, (kv+i)->val);
             }
         }
 
