@@ -1009,7 +1009,6 @@ void mz_free(void *p)
 
 static void *def_alloc_func(void *opaque, size_t items, size_t size) { (void)opaque, (void)items, (void)size; return MZ_MALLOC(items * size); }
 static void def_free_func(void *opaque, void *address) { (void)opaque, (void)address; MZ_FREE(address); }
-static void *def_realloc_func(void *opaque, void *address, size_t items, size_t size) { (void)opaque, (void)address, (void)items, (void)size; return MZ_REALLOC(address, items * size); }
 
 const char *mz_version(void)
 {
@@ -2859,6 +2858,8 @@ void *tdefl_write_image_to_png_file_in_memory(const void *pImage, int w, int h, 
 // ------------------- .ZIP archive reading
 
 #ifndef MINIZ_NO_ARCHIVE_APIS
+
+    static void *def_realloc_func(void *opaque, void *address, size_t items, size_t size) { (void)opaque, (void)address, (void)items, (void)size; return MZ_REALLOC(address, items * size); }
 
 #ifdef MINIZ_NO_STDIO
   #define MZ_FILE void *
