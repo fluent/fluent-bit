@@ -137,6 +137,7 @@ static inline int pack_line(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                             struct flb_tail_file *file)
 {
     int map_num = 1;
+    struct flb_tail_config *ctx = file->config;
 
     if (file->config->path_key != NULL) {
         map_num++; /* to append path_key */
@@ -154,8 +155,8 @@ static inline int pack_line(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
         msgpack_pack_str_body(mp_pck, file->name, file->name_len);
     }
 
-    msgpack_pack_str(mp_pck, 3);
-    msgpack_pack_str_body(mp_pck, "log", 3);
+    msgpack_pack_str(mp_pck, ctx->key_len);
+    msgpack_pack_str_body(mp_pck, ctx->key, ctx->key_len);
     msgpack_pack_str(mp_pck, data_size);
     msgpack_pack_str_body(mp_pck, data, data_size);
 
@@ -178,7 +179,6 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
     msgpack_packer mp_pck;
     msgpack_sbuffer *out_sbuf;
     msgpack_packer *out_pck;
-
     struct flb_tail_config *ctx = file->config;
 
     /* Create a temporal msgpack buffer */

@@ -77,6 +77,17 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
     ctx->exclude_path = flb_input_get_property("exclude_path", i_ins);
     ctx->exclude_list = NULL;
 
+    /* Config: key for unstructured log */
+    tmp = flb_input_get_property("key", i_ins);
+    if (tmp) {
+        ctx->key = flb_strdup(tmp);
+        ctx->key_len = strlen(tmp);
+    }
+    else {
+        ctx->key = flb_strdup("log");
+        ctx->key_len = 3;
+    }
+
     /* Config: seconds interval before to re-scan the path */
     tmp = flb_input_get_property("refresh_interval", i_ins);
     if (!tmp) {
@@ -240,6 +251,7 @@ int flb_tail_config_destroy(struct flb_tail_config *config)
         flb_tail_db_close(config->db);
     }
 
+    flb_free(config->key);
     flb_free(config);
     return 0;
 }

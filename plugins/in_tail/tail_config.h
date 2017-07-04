@@ -55,7 +55,9 @@ struct flb_tail_config {
     char *path;                /* lookup path (glob)           */
     char *exclude_path;        /* exclude path                 */
     char *path_key;            /* key name of file path        */
-    size_t path_key_len;       /* length of key name           */
+    int   path_key_len;        /* length of key name           */
+    char *key;                 /* key for unstructured record  */
+    int   key_len;             /* length of key ^              */
 
     /* Database */
     struct flb_sqldb *db;
