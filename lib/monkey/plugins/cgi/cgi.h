@@ -53,7 +53,7 @@ struct cgi_match_t {
 };
 
 struct cgi_vhost_t {
-    struct host *host;
+    struct mk_vhost *host;
     struct mk_list matches;
 };
 
@@ -69,6 +69,7 @@ struct cgi_request {
 
     struct mk_list _head;
 
+    struct mk_plugin *plugin;
     struct mk_http_request *sr;
     struct mk_http_session *cs;
 
@@ -95,6 +96,7 @@ int swrite(const int fd, const void *buf, const size_t count);
 int channel_write(struct cgi_request *r, void *buf, size_t count);
 
 struct cgi_request *cgi_req_create(int fd, int socket,
+                                   struct mk_plugin *plugin,
                                    struct mk_http_request *sr,
                                    struct mk_http_session *cs);
 void cgi_req_add(struct cgi_request *r);

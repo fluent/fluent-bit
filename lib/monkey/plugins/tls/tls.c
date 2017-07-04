@@ -64,6 +64,7 @@ struct polar_config {
     char *cert_chain_file;
     char *key_file;
     char *dh_param_file;
+    int8_t check_client_cert;
 };
 
 #if defined(MBEDTLS_SSL_CACHE_C)
@@ -203,6 +204,7 @@ static int config_parse(const char *confdir, struct polar_config *conf)
     char *cert_chain_file = NULL;
     char *key_file = NULL;
     char *dh_param_file = NULL;
+    int8_t check_client_cert = MK_FALSE;
     struct mk_rconf_section *section;
     struct mk_rconf *conf_head;
 
@@ -231,6 +233,10 @@ static int config_parse(const char *confdir, struct polar_config *conf)
     dh_param_file = mk_api->config_section_get_key(section,
                                                    "DHParameterFile",
                                                    MK_RCONF_STR);
+
+    check_client_cert = mk_api->config_section_get_key(section,
+                                                   "CheckClientCert",
+                                                   MK_RCONF_BOOL);
 fallback:
     /* Set default name if not specified */
     if (!cert_file) {
@@ -295,6 +301,9 @@ fallback:
         }
     }
 
+    /* Set client cert check */
+    conf->check_client_cert = check_client_cert;
+
     if (conf_head) {
         mk_api->config_free(conf_head);
     }
@@ -333,7 +342,7 @@ static int polar_load_certs(const struct polar_config *conf)
 #endif // defined(MBEDTLS_CERTS_C)
     }
     else if (conf->cert_chain_file != NULL) {
-        ret = mbedtls_x509_crt_parse_file(server_context->ca_cert.next,
+        ret = mbedtls_x509_crt_parse_file(&server_context->ca_cert,
                                   conf->cert_chain_file);
 
         if (ret) {
@@ -542,6 +551,10 @@ static mbedtls_ssl_context *context_new(int fd)
         mbedtls_ssl_conf_own_cert(&thctx->conf, &server_context->cert, &thctx->pkey);
         mbedtls_ssl_conf_ca_chain(&thctx->conf, &server_context->ca_cert, NULL);
         mbedtls_ssl_conf_dh_param_ctx(&thctx->conf, &server_context->dhm);
+
+        if (server_context->config.check_client_cert == MK_TRUE) {
+          mbedtls_ssl_conf_authmode(&thctx->conf, MBEDTLS_SSL_VERIFY_REQUIRED);
+        }
     }
     else {
         ssl = &(*cur)->context;

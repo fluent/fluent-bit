@@ -28,7 +28,7 @@
 #include "cmd.h"
 #include "loop.h"
 
-void mk_cheetah_loop_stdin()
+void mk_cheetah_loop_stdin(struct mk_server *server)
 {
     int len;
     char cmd[200];
@@ -55,12 +55,12 @@ void mk_cheetah_loop_stdin()
         strncpy(cmd, line, len - 1);
         cmd[len - 1] = '\0';
 
-        mk_cheetah_cmd(cmd);
+        mk_cheetah_cmd(cmd, server);
         memset(line, '\0', sizeof(line));
     }
 }
 
-void mk_cheetah_loop_server()
+void mk_cheetah_loop_server(struct mk_server *server)
 {
     int n, ret;
     int buf_len;
@@ -130,7 +130,7 @@ void mk_cheetah_loop_server()
                   cmd[buf_len - 1] = '\0';
 
                   /* Run command */
-                  ret = mk_cheetah_cmd(cmd);
+                  ret = mk_cheetah_cmd(cmd, server);
 
                   if (ret == -1) {
                       break;

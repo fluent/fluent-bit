@@ -31,6 +31,7 @@
 #include <monkey/mk_core.h>
 #include <monkey/mk_http.h>
 #include <monkey/mk_http_status.h>
+#include <monkey/mk_http_thread.h>
 #include <monkey/mk_clock.h>
 #include <monkey/mk_utils.h>
 #include <monkey/mk_config.h>
@@ -76,7 +77,7 @@ void mk_http_request_init(struct mk_http_session *session,
     request->host.data = NULL;
     request->stage30_blocked = MK_FALSE;
     request->session = session;
-    request->host_conf = mk_list_entry_first(host_list, struct host, _head);
+    request->host_conf = mk_list_entry_first(host_list, struct mk_vhost, _head);
     request->uri_processed.data = NULL;
     request->real_path.data = NULL;
     request->handler_data = NULL;
@@ -138,7 +139,7 @@ static int mk_http_request_prepare(struct mk_http_session *cs,
     }
 
     /* Always assign the default vhost' */
-    sr->host_conf = mk_list_entry_first(hosts, struct host, _head);
+    sr->host_conf = mk_list_entry_first(hosts, struct mk_vhost, _head);
     sr->user_home = MK_FALSE;
 
     /* Valid request URI? */
@@ -183,7 +184,7 @@ static int mk_http_request_prepare(struct mk_http_session *cs,
     /* Assign the first node alias */
     alias = &sr->host_conf->server_names;
     sr->host_alias = mk_list_entry_first(alias,
-                                         struct host_alias, _head);
+                                         struct mk_vhost_alias, _head);
 
     if (sr->host.data) {
         /* Set the given port */
@@ -259,7 +260,8 @@ static void mk_request_premature_close(int http_status, struct mk_http_session *
     /* Raise error */
     if (http_status > 0) {
         if (!sr->host_conf) {
-            sr->host_conf = mk_list_entry_first(host_list, struct host, _head);
+            sr->host_conf = mk_list_entry_first(host_list,
+                                                struct mk_vhost, _head);
         }
         mk_http_error(http_status, cs, sr, server);
 
@@ -624,15 +626,15 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr,
 {
     int ret;
     int ret_file;
-    struct mimetype *mime;
+    struct mk_mimetype *mime;
     struct mk_list *head;
     struct mk_list *handlers;
     struct mk_plugin *plugin;
-    struct mk_host_handler *h_handler;
+    struct mk_vhost_handler *h_handler;
+    struct mk_http_thread *mth = NULL;
     size_t index_length;
     size_t index_bytes;
     char *index_path = NULL;
-
 
     MK_TRACE("[FD %i] HTTP Protocol Init, session %p", cs->socket, sr);
 
@@ -727,7 +729,7 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr,
         sr->uri_processed.data[sr->uri_processed.len] = '\0';
         handlers = &sr->host_conf->handlers;
         mk_list_foreach(head, handlers) {
-            h_handler = mk_list_entry(head, struct mk_host_handler, _head);
+            h_handler = mk_list_entry(head, struct mk_vhost_handler, _head);
             if (regexec(&h_handler->match,
                         sr->uri_processed.data, 0, NULL, 0) != 0) {
                 continue;
@@ -755,6 +757,16 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr,
             MK_TRACE("[FD %i] STAGE_30 returned %i", cs->socket, ret);
             switch (ret) {
             case MK_PLUGIN_RET_CONTINUE:
+                if ((plugin->flags & MK_PLUGIN_THREAD) &&
+                    plugin->stage->stage30_thread) {
+                    mth = mk_http_thread_new(plugin, cs, sr,
+                                             h_handler->n_params,
+                                             &h_handler->params);
+                    printf("[http thread] %p\n", mth);
+                    mk_http_thread_resume(mth->parent);
+
+                }
+
                 return MK_PLUGIN_RET_CONTINUE;
             case MK_PLUGIN_RET_CLOSE_CONX:
                 if (sr->headers.status > 0) {
@@ -844,7 +856,7 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr,
 
         handlers = &sr->host_conf->handlers;
         mk_list_foreach(head, handlers) {
-            h_handler = mk_list_entry(head, struct mk_host_handler, _head);
+            h_handler = mk_list_entry(head, struct mk_vhost_handler, _head);
             if (regexec(&h_handler->match,
                         uri, 0, NULL, 0) != 0) {
                 continue;
@@ -917,9 +929,9 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr,
     }
 
     /* Matching MimeType  */
-    mime = mk_mimetype_find(&sr->real_path);
+    mime = mk_mimetype_find(server, &sr->real_path);
     if (!mime) {
-        mime = mimetype_default;
+        mime = server->mimetype_default;
     }
 
     if (sr->file_info.is_directory == MK_TRUE) {
@@ -1176,7 +1188,7 @@ int mk_http_error(int http_status, struct mk_http_session *cs,
     size_t count;
     mk_ptr_t message;
     mk_ptr_t page;
-    struct error_page *entry;
+    struct mk_vhost_error_page *entry;
     struct mk_list *head;
     struct file_info finfo;
     struct mk_iov *iov;
@@ -1194,7 +1206,7 @@ int mk_http_error(int http_status, struct mk_http_session *cs,
 
         /* Lookup a customized error page */
         mk_list_foreach(head, &sr->host_conf->error_pages) {
-            entry = mk_list_entry(head, struct error_page, _head);
+            entry = mk_list_entry(head, struct mk_vhost_error_page, _head);
             if (entry->status != http_status) {
                 continue;
             }
@@ -1354,24 +1366,10 @@ void mk_http_session_remove(struct mk_http_session *cs,
 
 }
 
+/* FIXME: nobody is using this */
 struct mk_http_session *mk_http_session_lookup(int socket)
 {
-    struct mk_http_session *cs;
-    struct rb_root *cs_list;
-    struct rb_node *node;
-
-    cs_list = MK_TLS_GET(mk_tls_sched_cs);
-    node = cs_list->rb_node;
-  	while (node) {
-  		cs = container_of(node, struct mk_http_session, _rb_head);
-		if (socket < cs->socket)
-  			node = node->rb_left;
-		else if (socket > cs->socket)
-  			node = node->rb_right;
-		else {
-  			return cs;
-        }
-	}
+    (void) socket;
 	return NULL;
 }
 

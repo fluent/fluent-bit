@@ -125,9 +125,6 @@ struct mk_http_session
     unsigned int body_size;
     unsigned int body_length;
 
-    /* red-black tree head */
-    struct rb_node _rb_head;
-
     /* head for mk_http_request list nodes, each request is linked here */
     struct mk_list request_list;
 

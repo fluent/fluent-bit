@@ -234,6 +234,20 @@ static inline int mk_stream_in_raw(struct mk_stream *stream,
                            cb_consumed, cb_finished);
 }
 
+static inline int mk_stream_in_eof(struct mk_stream *stream,
+                                   struct mk_stream_input *in,
+                                   void (*cb_finished)(struct mk_stream_input *))
+{
+    return mk_stream_input(stream,
+                           in,
+                           MK_STREAM_EOF,
+                           -1,
+                           NULL, 0,
+                           0,
+                           NULL, cb_finished);
+}
+
+
 static inline int mk_stream_in_cbuf(struct mk_stream *stream,
                                     struct mk_stream_input *in,
                                     char *buf, size_t length,

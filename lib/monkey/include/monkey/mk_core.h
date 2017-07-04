@@ -24,6 +24,7 @@
 extern "C" {
 #endif
 
+#define _GNU_SOURCE
 #include <sys/types.h>
 
 #include "mk_core/mk_core_info.h"

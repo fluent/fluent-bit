@@ -53,7 +53,7 @@ static struct status_response response_codes[] = {
     {505, "505"},
 };
 
-static struct log_target *mk_logger_match_by_host(struct host *host, int is_ok)
+static struct log_target *mk_logger_match_by_host(struct mk_vhost *host, int is_ok)
 {
     struct mk_list *head;
     struct log_target *entry;
@@ -365,7 +365,7 @@ int mk_logger_master_init(struct mk_server_config *config)
 {
     int ret;
     struct log_target *new;
-    struct host *entry_host;
+    struct mk_vhost *entry_host;
     struct mk_list *hosts = &mk_api->config->hosts;
     struct mk_list *head_host;
     struct mk_rconf_section *section;
@@ -386,7 +386,7 @@ int mk_logger_master_init(struct mk_server_config *config)
     mk_list_init(&targets_list);
 
     mk_list_foreach(head_host, hosts) {
-        entry_host = mk_list_entry(head_host, struct host, _head);
+        entry_host = mk_list_entry(head_host, struct mk_vhost, _head);
 
         /* Read logger section from virtual host configuration */
         section = mk_api->config_section_get(entry_host->config, "LOGGER");

@@ -106,6 +106,9 @@ struct fcgi_handler {
 
     struct mk_iov *iov;
     struct mk_list _head;
+
+    /* TCP connection context */
+    struct mk_net_connection *conn;
 };
 
 static inline void fcgi_encode16(void *a, unsigned b)
@@ -116,7 +119,8 @@ static inline void fcgi_encode16(void *a, unsigned b)
     c[1] = (unsigned char) b;
 }
 
-struct fcgi_handler *fcgi_handler_new(struct mk_http_session *cs,
+struct fcgi_handler *fcgi_handler_new(struct mk_plugin *plugin,
+                                      struct mk_http_session *cs,
                                       struct mk_http_request *sr);
 
 int fcgi_exit(struct fcgi_handler *handler);

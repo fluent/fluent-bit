@@ -437,11 +437,8 @@ static int mk_config_read_files(char *path_conf, char *file_conf,
     /* Default Mimetype */
     mk_mem_free(tmp);
     tmp = mk_rconf_section_get_key(section, "DefaultMimeType", MK_RCONF_STR);
-    if (!tmp) {
-        server->default_mimetype = mk_string_dup(MIMETYPE_DEFAULT_TYPE);
-    }
-    else {
-        mk_string_build(&server->default_mimetype, &len, "%s\r\n", tmp);
+    if (tmp) {
+        mk_string_build(&server->mimetype_default_str, &len, "%s\r\n", tmp);
     }
 
     /* File Descriptor Table (FDT) */

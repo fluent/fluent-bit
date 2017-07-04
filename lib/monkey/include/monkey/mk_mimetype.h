@@ -18,6 +18,7 @@
  */
 
 #include <monkey/mk_core.h>
+#include <rbtree.h>
 
 #ifndef MK_MIMETYPE_H
 #define MK_MIMETYPE_H
@@ -25,25 +26,20 @@
 #define MIMETYPE_DEFAULT_TYPE "text/plain\r\n"
 #define MIMETYPE_DEFAULT_NAME "default"
 
-struct mimetype
+struct mk_mimetype
 {
     char *name;
     mk_ptr_t type;
     mk_ptr_t header_type;
     struct mk_list _head;
-    struct rb_node _rb_head;
+    struct rb_tree_node _rb_head;
 };
 
-/* Head for RBT */
-struct mk_list mimetype_list;
-struct rb_root mimetype_rb_head;
-
-extern struct mimetype *mimetype_default;
-
-int mk_mimetype_add(char *name, const char *type);
+int mk_mimetype_init(struct mk_server *server);
+int mk_mimetype_add(struct mk_server *server, char *name, const char *type);
 int mk_mimetype_read_config();
-struct mimetype *mk_mimetype_find(mk_ptr_t * filename);
-struct mimetype *mk_mimetype_lookup(char *name);
+struct mk_mimetype *mk_mimetype_find(struct mk_server *server, mk_ptr_t *filename);
+struct mk_mimetype *mk_mimetype_lookup(struct mk_server *server, char *name);
 void mk_mimetype_free_all();
 
 #endif

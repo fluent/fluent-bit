@@ -33,43 +33,44 @@
 #include <monkey/mk_core.h>
 #include <monkey/mk_http.h>
 
-struct mimetype *mimetype_default;
+struct mk_mimetype *mimetype_default;
 
-/* Match mime type for requested resource */
-inline struct mimetype *mk_mimetype_lookup(char *name)
+static int rbtree_compare(const void *lhs, const void *rhs)
 {
-    int cmp;
-  	struct rb_node *node = mimetype_rb_head.rb_node;
-
-  	while (node) {
-  		struct mimetype *entry = container_of(node, struct mimetype, _rb_head);
-
-        cmp = strcmp(name, entry->name);
-		if (cmp < 0)
-  			node = node->rb_left;
-		else if (cmp > 0)
-  			node = node->rb_right;
-		else {
-  			return entry;
-        }
-	}
-	return NULL;
+    return strcmp((const char *)lhs, (const char *)rhs);
 }
 
-int mk_mimetype_add(char *name, const char *type)
+/* Match mime type for requested resource */
+inline struct mk_mimetype *mk_mimetype_lookup(struct mk_server *server, char *name)
 {
     int cmp;
+    struct rb_tree_node *node = server->mimetype_rb_head.root;
+
+    while (node) {
+        struct mk_mimetype *entry = container_of(node, struct mk_mimetype, _rb_head);
+        cmp = strcmp(name, entry->name);
+        if (cmp < 0)
+            node = node->left;
+        else if (cmp > 0)
+            node = node->right;
+        else {
+            return entry;
+        }
+    }
+    return NULL;
+}
+
+int mk_mimetype_add(struct mk_server *server, char *name, const char *type)
+{
     int len = strlen(type) + 3;
     char *p;
-    struct mimetype *new_mime;
-    struct rb_node **new;
-    struct rb_node *parent = NULL;
+    struct mk_mimetype *new_mime;
 
     /* make sure we register the extension in lower case */
     p = name;
     for ( ; *p; ++p) *p = tolower(*p);
 
-    new_mime = mk_mem_alloc_z(sizeof(struct mimetype));
+    new_mime = mk_mem_alloc_z(sizeof(struct mk_mimetype));
     new_mime->name = mk_string_dup(name);
     new_mime->type.data = mk_mem_alloc(len);
     new_mime->type.len = len - 1;
@@ -82,34 +83,35 @@ int mk_mimetype_add(char *name, const char *type)
     strcat(new_mime->type.data, MK_CRLF);
     new_mime->type.data[len-1] = '\0';
 
-    /* Red-Black tree insert routine */
-    new = &(mimetype_rb_head.rb_node);
-
-    /* Figure out where to put new node */
-    while (*new) {
-        struct mimetype *this = container_of(*new, struct mimetype, _rb_head);
-
-        parent = *new;
-        cmp = strcmp(new_mime->name, this->name);
-        if (cmp < 0) {
-            new = &((*new)->rb_left);
-        }
-        else if (cmp > 0) {
-            new = &((*new)->rb_right);
-        }
-        else {
-            mk_mem_free(new_mime);
-            return -1;
-        }
-    }
-
-    /* Add new node and rebalance tree. */
-    rb_link_node(&new_mime->_rb_head, parent, new);
-    rb_insert_color(&new_mime->_rb_head, &mimetype_rb_head);
+    /* Insert the node into the RBT */
+    rb_tree_insert(&server->mimetype_rb_head,
+                   new_mime->name, &new_mime->_rb_head);
 
     /* Add to linked list head */
-    mk_list_add(&new_mime->_head, &mimetype_list);
+    mk_list_add(&new_mime->_head, &server->mimetype_list);
 
+    return 0;
+}
+
+int mk_mimetype_init(struct mk_server *server)
+{
+    char *name;
+
+    /* Initialize the heads */
+    mk_list_init(&server->mimetype_list);
+    rb_tree_new(&server->mimetype_rb_head, rbtree_compare);
+
+    name = mk_string_dup(MIMETYPE_DEFAULT_NAME);
+    if (server->mimetype_default_str) {
+        mk_mimetype_add(server, name, server->mimetype_default_str);
+    }
+    else {
+        mk_mimetype_add(server, name, MIMETYPE_DEFAULT_TYPE);
+    }
+    server->mimetype_default = mk_list_entry_first(&server->mimetype_list,
+                                                   struct mk_mimetype,
+                                                   _head);
+    mk_mem_free(name);
     return 0;
 }
 
@@ -127,10 +129,6 @@ int mk_mimetype_read_config(struct mk_server *server)
     if (!server->conf_mimetype) {
         return -1;
     }
-
-    /* Initialize the heads */
-    mk_list_init(&mimetype_list);
-    mimetype_rb_head = RB_ROOT;
 
     /* Read mime types configuration file */
     snprintf(path, MK_MAX_PATH, "%s/%s",
@@ -160,23 +158,18 @@ int mk_mimetype_read_config(struct mk_server *server)
             continue;
         }
 
-        if (mk_mimetype_add(entry->key, entry->val) != 0) {
+        if (mk_mimetype_add(server, entry->key, entry->val) != 0) {
             mk_err("[mime] Error loading Mime Types");
             return -1;
         }
     }
-
-    /* Set default mime type */
-    mimetype_default = mk_mem_alloc_z(sizeof(struct mimetype));
-    mimetype_default->name = MIMETYPE_DEFAULT_TYPE;
-    mk_ptr_set(&mimetype_default->type, server->default_mimetype);
 
     mk_rconf_free(cnf);
 
     return 0;
 }
 
-struct mimetype *mk_mimetype_find(mk_ptr_t *filename)
+struct mk_mimetype *mk_mimetype_find(struct mk_server *server, mk_ptr_t *filename)
 {
     int j, len;
 
@@ -191,23 +184,20 @@ struct mimetype *mk_mimetype_find(mk_ptr_t *filename)
         return NULL;
     }
 
-    return mk_mimetype_lookup(filename->data + j + 1);
+    return mk_mimetype_lookup(server, filename->data + j + 1);
 }
 
-void mk_mimetype_free_all()
+void mk_mimetype_free_all(struct mk_server *server)
 {
     struct mk_list *head;
     struct mk_list *tmp;
-    struct mimetype *mime;
+    struct mk_mimetype *mime;
 
-    mk_list_foreach_safe(head, tmp, &mimetype_list) {
-        mime = mk_list_entry(head, struct mimetype, _head);
+    mk_list_foreach_safe(head, tmp, &server->mimetype_list) {
+        mime = mk_list_entry(head, struct mk_mimetype, _head);
         mk_ptr_free(&mime->type);
         mk_mem_free(mime->name);
         mk_mem_free(mime->header_type.data);
         mk_mem_free(mime);
     }
-
-    mk_mem_free(mimetype_default->type.data);
-    mk_mem_free(mimetype_default);
 }

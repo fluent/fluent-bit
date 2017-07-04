@@ -20,22 +20,22 @@
 time_t init_time;
 
 /* commands */
-int mk_cheetah_cmd(char *cmd);
+int mk_cheetah_cmd(char *cmd, struct mk_server *server);
 
 void mk_cheetah_cmd_clear();
-void mk_cheetah_cmd_uptime();
+void mk_cheetah_cmd_uptime(struct mk_server *server);
 
 /* Plugins commands */
 void mk_cheetah_cmd_plugins_print_stage(struct mk_list *list, const char *stage,
                                         int stage_bw);
 void mk_cheetah_cmd_plugins_print_core(struct mk_list *list);
 void mk_cheetah_cmd_plugins_print_network(struct mk_list *list);
-void mk_cheetah_cmd_plugins();
+void mk_cheetah_cmd_plugins(struct mk_server *server);
 
-void mk_cheetah_cmd_vhosts();
-void mk_cheetah_cmd_workers();
+void mk_cheetah_cmd_vhosts(struct mk_server *server);
+void mk_cheetah_cmd_workers(struct mk_server *server);
 
 int  mk_cheetah_cmd_quit();
 void mk_cheetah_cmd_help();
-void mk_cheetah_cmd_config();
-void mk_cheetah_cmd_status();
+void mk_cheetah_cmd_config(struct mk_server *server);
+void mk_cheetah_cmd_status(struct mk_server *server);

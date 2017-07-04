@@ -22,6 +22,7 @@
 #include "monkey.h"
 #include "mk_signals.h"
 
+#include <signal.h>
 #include <getopt.h>
 
 #if defined(__DATE__) && defined(__TIME__)
@@ -120,6 +121,7 @@ int main(int argc, char **argv)
     char *sites_conf_dir = NULL;
     char *plugins_conf_dir = NULL;
     char *mimes_conf_file = NULL;
+    struct mk_server *server;
 
     static const struct option long_opts[] = {
         { "configdir",              required_argument,  NULL, 'c' },
@@ -316,7 +318,10 @@ int main(int argc, char **argv)
     /* Server loop, let's listen for incomming clients */
     mk_server_loop(server);
 
-    mk_exit_all(server);
+    /* Hang here, basically do nothing as threads are doing the job. */
+    sigset_t mask;
+    sigprocmask(0, NULL, &mask);
+    sigsuspend(&mask);
 
     return 0;
 }

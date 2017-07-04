@@ -27,19 +27,19 @@
 #include <regex.h>
 
 /* Custom error page */
-struct error_page {
+struct mk_vhost_error_page {
     short int status;
     char *file;
     char *real_path;
     struct mk_list _head;
 };
 
-struct mk_handler_param {
+struct mk_vhost_handler_param {
     mk_ptr_t p;
     struct mk_list _head;
 };
 
-struct mk_host_handler {
+struct mk_vhost_handler {
     regex_t match;                         /* regex match rule               */
     char *name;                            /* plugin handler name            */
     int n_params;                          /* number of parameters           */
@@ -53,8 +53,9 @@ struct mk_host_handler {
     struct mk_list _head;                  /* link to vhost->handlers        */
 };
 
-struct host
+struct mk_vhost
 {
+    int id;
     char *file;                   /* configuration file */
     struct mk_list server_names;  /* host names (a b c...) */
 
@@ -74,7 +75,7 @@ struct host
     struct mk_list _head;
 };
 
-struct host_alias
+struct mk_vhost_alias
 {
     char *name;
     unsigned int len;
@@ -98,7 +99,7 @@ struct vhost_fdt_hash_table {
 };
 
 struct vhost_fdt_host {
-    struct host *host;
+    struct mk_vhost *host;
     struct vhost_fdt_hash_table hash_table[VHOST_FDT_HASHTABLE_SIZE];
     struct mk_list _head;
 };
@@ -106,8 +107,9 @@ struct vhost_fdt_host {
 //pthread_key_t mk_vhost_fdt_key;
 pthread_mutex_t mk_vhost_fdt_mutex;
 
-struct host *mk_vhost_read(char *path);
-int mk_vhost_get(mk_ptr_t host, struct host **vhost, struct host_alias **alias,
+struct mk_vhost *mk_vhost_read(char *path);
+int mk_vhost_get(mk_ptr_t host, struct mk_vhost **vhost, struct
+                 mk_vhost_alias **alias,
                  struct mk_server *server);
 void mk_vhost_set_single(char *path, struct mk_server *server);
 void mk_vhost_init(char *path, struct mk_server *server);
@@ -118,9 +120,9 @@ int mk_vhost_open(struct mk_http_request *sr, struct mk_server *server);
 int mk_vhost_close(struct mk_http_request *sr, struct mk_server *server);
 void mk_vhost_free_all(struct mk_server *server);
 int mk_vhost_map_handlers(struct mk_server *server);
-struct mk_host_handler *mk_vhost_handler_match(char *match,
-                                               void (*cb)(struct mk_http_request *,
-                                                          void *),
-                                               void *data);
+struct mk_vhost_handler *mk_vhost_handler_match(char *match,
+                                                void (*cb)(struct mk_http_request *,
+                                                           void *),
+                                                void *data);
 
 #endif

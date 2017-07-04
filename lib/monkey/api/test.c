@@ -24,26 +24,29 @@ void cb_main(mk_request_t *request, void *data)
 
 int main()
 {
+    int vid;
     mk_ctx_t *ctx;
-    mk_vhost_t *vh;
 
     ctx = mk_create();
     mk_config_set(ctx,
-                  "Listen", "8080",
+                  "Listen", "2020",
                   NULL);
 
-    vh = mk_vhost_create(ctx, NULL);
-    mk_vhost_set(vh,
+    vid = mk_vhost_create(ctx, NULL);
+    mk_vhost_set(ctx, vid,
                  "Name", "monotop",
                  NULL);
-    mk_vhost_handler(vh, "/test", cb_main, NULL);
-
+    mk_vhost_handler(ctx, vid, "/test", cb_main, NULL);
 
     mk_worker_callback(ctx,
                        cb_worker,
                        ctx);
 
     mk_start(ctx);
+
+    sleep(60);
+
+    mk_stop(ctx);
 
     return 0;
 }

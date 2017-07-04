@@ -14,7 +14,9 @@ set(src
   mk_http.c
   mk_http2.c
   mk_http_parser.c
+  mk_http_thread.c
   mk_socket.c
+  mk_net.c
   mk_clock.c
   mk_cache.c
   mk_server.c
@@ -25,7 +27,7 @@ set(src
 # Always build a static library, thats our core :)
 add_library(monkey-core-static STATIC ${src})
 set_target_properties(monkey-core-static PROPERTIES OUTPUT_NAME monkey)
-target_link_libraries(monkey-core-static mk_core ${CMAKE_THREAD_LIBS_INIT} ${STATIC_PLUGINS_LIBS} ${CMAKE_DL_LIBS})
+target_link_libraries(monkey-core-static mk_core ${CMAKE_THREAD_LIBS_INIT} ${STATIC_PLUGINS_LIBS} ${CMAKE_DL_LIBS} rbtree co)
 
 message(STATUS "LINKING ${STATIC_PLUGINS_LIBS}")
 

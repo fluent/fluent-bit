@@ -733,7 +733,8 @@ void cb_header_finish(struct mk_stream_input *in)
     mk_dirhtml_cb_body_rows(in);
 }
 
-int mk_dirhtml_init(struct mk_http_session *cs, struct mk_http_request *sr)
+static int mk_dirhtml_init(struct mk_plugin *plugin,
+                           struct mk_http_session *cs, struct mk_http_request *sr)
 {
     DIR *dir;
     int len;
@@ -833,7 +834,7 @@ int mk_dirhtml_init(struct mk_http_session *cs, struct mk_http_request *sr)
           mk_dirhtml_entry_cmp);
 
     /* Prepare HTTP response headers */
-    mk_api->header_prepare(cs, sr);
+    mk_api->header_prepare(plugin, cs, sr);
 
     if (request->chunked) {
         len = snprintf(tmp, sizeof(tmp), "%x\r\n",
@@ -894,7 +895,7 @@ int mk_dirlisting_stage30(struct mk_plugin *plugin,
     }
 
     PLUGIN_TRACE("Dirlisting attending socket %i", cs->socket);
-    if (mk_dirhtml_init(cs, sr)) {
+    if (mk_dirhtml_init(plugin, cs, sr)) {
         /*
          * If we failed here, we cannot return RET_END - that causes a mk_bug.
          * dirhtml_init only fails if opendir fails. Usually we're at full

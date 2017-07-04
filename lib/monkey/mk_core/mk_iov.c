@@ -125,6 +125,7 @@ void mk_iov_free(struct mk_iov *mk_io)
 {
     mk_iov_free_marked(mk_io);
     mk_mem_free(mk_io);
+    mk_io = NULL;
 }
 
 void mk_iov_free_marked(struct mk_iov *mk_io)

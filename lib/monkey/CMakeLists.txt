@@ -42,6 +42,7 @@ option(MK_LINUX_TRACE    "Enable Lttng support"         No)
 option(MK_PTHREAD_TLS    "Use old Pthread TLS mode"     No)
 option(MK_SYSTEM_MALLOC  "Use system memory allocator"  No)
 option(MK_MBEDTLS_SHARED "Use mbedtls shared lib"       No)
+option(MK_VALGRIND       "Enable Valgrind support"      No)
 
 # Plugins: what should be build ?, these options
 # will be processed later on the plugins/CMakeLists.txt file
@@ -157,6 +158,17 @@ check_c_source_compiles("
 
 if(HAVE_C_TLS)
   MK_DEFINITION(MK_HAVE_C_TLS)
+endif()
+
+# Valgrind support
+check_c_source_compiles("
+  #include <valgrind/valgrind.h>
+  int main() {
+     return 0;
+  }" MK_HAVE_VALGRIND)
+
+if(MK_VALGRIND OR MK_HAVE_VALGRIND)
+  MK_DEFINITION(MK_HAVE_VALGRIND)
 endif()
 
 # Use system memory allocator instead of Jemalloc
@@ -293,6 +305,8 @@ configure_file(
 
 # General Headers
 include_directories(./)
+include_directories(deps/rbtree)
+include_directories(deps/flb_libco)
 include_directories(include)
 include_directories(include/monkey/)
 
@@ -305,6 +319,8 @@ include_directories(include/monkey/)
 # mk_bin   : server executable
 
 add_subdirectory(man)
+add_subdirectory(deps/rbtree)
+add_subdirectory(deps/flb_libco)
 add_subdirectory(mk_core)
 add_subdirectory(plugins)
 add_subdirectory(mk_server)

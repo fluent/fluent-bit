@@ -23,6 +23,7 @@
 #include <monkey/mk_scheduler.h>
 #include <monkey/mk_plugin.h>
 #include <monkey/mk_clock.h>
+#include <monkey/mk_mimetype.h>
 
 void mk_server_info(struct mk_server *server)
 {
@@ -62,6 +63,7 @@ void mk_server_info(struct mk_server *server)
 /* Initialize Monkey Server */
 struct mk_server *mk_server_create()
 {
+    int ret;
     int kern_version;
     int kern_features;
     struct mk_server *server;
@@ -71,6 +73,25 @@ struct mk_server *mk_server_create()
         return NULL;
     }
 
+    /* Library mode: event loop */
+    server->lib_evl = mk_event_loop_create(8);
+    if (!server->lib_evl) {
+        mk_mem_free(server);
+        return NULL;
+    }
+
+    /* Library mode: channel manager */
+    ret = mk_event_channel_create(server->lib_evl,
+                                  &server->lib_ch_manager[0],
+                                  &server->lib_ch_manager[1],
+                                  server);
+    if (ret != 0) {
+        mk_event_loop_destroy(server->lib_evl);
+        mk_mem_free(server);
+        return NULL;
+    }
+
+    /* Initialize linked list heads */
     mk_list_init(&server->plugins);
     mk_list_init(&server->sched_worker_callbacks);
     mk_list_init(&server->stage10_handler);
@@ -104,6 +125,8 @@ struct mk_server *mk_server_create()
 
     mk_config_set_init_values(server);
 
+    mk_mimetype_init(server);
+
     return server;
 }
 
@@ -116,10 +139,10 @@ int mk_server_setup(struct mk_server *server)
     mk_config_start_configure(server);
     mk_config_signature(server);
 
-    mk_sched_init();
+    mk_sched_init(server);
 
     /* Clock init that must happen before starting threads */
-    mk_clock_sequential_init();
+    mk_clock_sequential_init(server);
 
     /* Load plugins */
     mk_plugin_api_init();
@@ -157,26 +180,17 @@ void mk_thread_keys_init(void)
 
 void mk_exit_all(struct mk_server *server)
 {
-    int i;
-    int n;
     uint64_t val;
 
     /* Distribute worker signals to stop working */
     val = MK_SCHED_SIGNAL_FREE_ALL;
-    for (i = 0; i < server->workers; i++) {
-        n = write(sched_list[i].signal_channel_w, &val, sizeof(val));
-        if (n < 0) {
-            perror("write");
-        }
-    }
+    mk_sched_send_signal(server, val);
 
-    /* Wait for workers to finish */
-    for (i = 0; i < server->workers; i++) {
-        pthread_join(sched_list[i].tid, NULL);
-    }
+    /* Wait for all workers to finish */
+    mk_sched_workers_join(server);
 
+    /* Continue exiting */
     mk_plugin_exit_all(server);
     mk_clock_exit();
     mk_config_free_all(server);
-    mk_mem_free(sched_list);
 }

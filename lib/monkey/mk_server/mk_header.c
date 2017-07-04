@@ -159,7 +159,7 @@ static void cb_stream_iov_extended_free(struct mk_stream_input *in)
     struct mk_iov *iov;
 
     iov = in->buffer;
-    mk_iov_free_marked(iov);
+    mk_iov_free(iov);
 }
 
 /* Send response headers */

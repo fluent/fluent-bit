@@ -26,6 +26,7 @@
 #include <monkey/mk_core.h>
 
 #define MK_SERVER_SIGNAL_START     0xEEEEEEEE
+#define MK_SERVER_SIGNAL_STOP      0xDDDDDDDD
 
 struct mk_server_listen
 {

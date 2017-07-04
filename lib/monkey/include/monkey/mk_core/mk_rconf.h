@@ -20,6 +20,8 @@
 #ifndef MK_RCONF_H
 #define MK_RCONF_H
 
+#include <limits.h>
+
 #include "mk_list.h"
 #include "mk_memory.h"
 
@@ -47,10 +49,21 @@ struct mk_rconf_entry
     struct mk_list _head;
 };
 
+struct mk_rconf_file
+{
+    char *path;
+    struct mk_list _head;
+};
+
 struct mk_rconf
 {
+    int level;
     int created;
     char *file;
+    char *root_path;
+
+    /* included files */
+    struct mk_list includes;
 
     /* list of sections */
     struct mk_list sections;

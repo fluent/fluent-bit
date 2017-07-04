@@ -21,6 +21,7 @@
 #include "cgi.h"
 
 struct cgi_request *cgi_req_create(int fd, int socket,
+                                   struct mk_plugin *plugin,
                                    struct mk_http_request *sr,
                                    struct mk_http_session *cs)
 {
@@ -33,6 +34,7 @@ struct cgi_request *cgi_req_create(int fd, int socket,
 
     cgi->fd = fd;
     cgi->socket = socket;
+    cgi->plugin = plugin;
     cgi->sr = sr;
     cgi->cs = cs;
     cgi->hangup = MK_TRUE;

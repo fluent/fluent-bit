@@ -24,6 +24,7 @@
 #include <unistd.h>
 
 #include <monkey/mk_core.h>
+#include <rbtree.h>
 
 #ifndef O_NOATIME
 #define O_NOATIME       01000000
@@ -103,6 +104,7 @@ struct mk_server
 
     /* counter of threads working */
     int thread_counter;
+
     /* real user */
     uid_t egid;
     gid_t euid;
@@ -128,11 +130,21 @@ struct mk_server
     char *transport_layer;
 
     /* Define the default mime type when is not possible to find the proper one */
-    char *default_mimetype;
+    struct mk_list mimetype_list;
+    struct rb_tree mimetype_rb_head;
+    void *mimetype_default;
+    char *mimetype_default_str;
 
     char server_signature[16];
     char server_signature_header[32];
     int  server_signature_header_len;
+
+    /* Lib mode: event loop and channel manager */
+    struct mk_event_loop *lib_evl;
+    int lib_ch_manager[2];
+
+    /* Scheduler context (struct mk_sched_ctx) */
+    void *sched_ctx;
 
     /*
      * This list head, allow to link a set of callbacks that Monkey core
@@ -141,7 +153,7 @@ struct mk_server
      */
     struct mk_list sched_worker_callbacks;
 
-    /* source configuration */
+    /* source configuration from files */
     struct mk_rconf *config;
 
     /* FIXME: temporal map of Network Layer plugin */

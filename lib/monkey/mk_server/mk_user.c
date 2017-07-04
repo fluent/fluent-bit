@@ -127,8 +127,9 @@ int mk_user_set_uidgid(struct mk_server *server)
 
  out:
     /* Variables set for run checks on file permission */
-    EUID = geteuid();
-    EGID = getegid();
+    //FIXME
+    //EUID = geteuid();
+    //EGID = getegid();
 
     return 0;
 }

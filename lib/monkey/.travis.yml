@@ -11,9 +11,8 @@ compiler:
 notifications:
   irc: "irc.freenode.net#monkey"
 
-# Disable SSL as the test box have a old PolarSSL version (Ubuntu 12.04)
-# before_install:
-#  - sudo apt-get update -qq
-#  - sudo apt-get install -y libpolarssl-dev
+before_script:
+  - cd build
+  - cmake ../
 
-script: ./configure --trace && make
+script: make

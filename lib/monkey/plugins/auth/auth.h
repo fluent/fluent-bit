@@ -51,7 +51,7 @@ struct mk_list vhosts_list;
 
 /* main index for locations under a virtualhost */
 struct vhost {
-    struct host *host;
+    struct mk_vhost *host;
     struct mk_list locations;
     struct mk_list _head;
 };

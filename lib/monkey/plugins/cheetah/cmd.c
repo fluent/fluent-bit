@@ -42,16 +42,16 @@ static char *strip_whitespace(char *cmd)
     return cmd;
 }
 
-int mk_cheetah_cmd(char *raw_cmd)
+int mk_cheetah_cmd(char *raw_cmd, struct mk_server *server)
 {
     char *cmd = strip_whitespace(raw_cmd);
     if (strcmp(cmd, MK_CHEETAH_CONFIG) == 0 ||
         strcmp(cmd, MK_CHEETAH_CONFIG_SC) == 0) {
-        mk_cheetah_cmd_config();
+        mk_cheetah_cmd_config(server);
     }
     else if (strcmp(cmd, MK_CHEETAH_STATUS) == 0 ||
         strcmp(cmd, MK_CHEETAH_STATUS_SC) == 0) {
-        mk_cheetah_cmd_status();
+        mk_cheetah_cmd_status(server);
     }
     else if (strcmp(cmd, MK_CHEETAH_CLEAR) == 0 ||
              strcmp(cmd, MK_CHEETAH_CLEAR_SC) == 0) {
@@ -59,19 +59,19 @@ int mk_cheetah_cmd(char *raw_cmd)
     }
     else if (strcmp(cmd, MK_CHEETAH_UPTIME) == 0 ||
              strcmp(cmd, MK_CHEETAH_UPTIME_SC) == 0) {
-        mk_cheetah_cmd_uptime();
+        mk_cheetah_cmd_uptime(server);
     }
     else if (strcmp(cmd, MK_CHEETAH_PLUGINS) == 0 ||
              strcmp(cmd, MK_CHEETAH_PLUGINS_SC) == 0) {
-        mk_cheetah_cmd_plugins();
+        mk_cheetah_cmd_plugins(server);
     }
     else if (strcmp(cmd, MK_CHEETAH_WORKERS) == 0 ||
              strcmp(cmd, MK_CHEETAH_WORKERS_SC) == 0) {
-        mk_cheetah_cmd_workers();
+        mk_cheetah_cmd_workers(server);
     }
     else if (strcmp(cmd, MK_CHEETAH_VHOSTS) == 0 ||
              strcmp(cmd, MK_CHEETAH_VHOSTS_SC) == 0) {
-        mk_cheetah_cmd_vhosts();
+        mk_cheetah_cmd_vhosts(server);
     }
     else if (strcmp(cmd, MK_CHEETAH_HELP) == 0 ||
              strcmp(cmd, MK_CHEETAH_HELP_SC) == 0 ||
@@ -99,7 +99,7 @@ void mk_cheetah_cmd_clear()
     CHEETAH_WRITE("\033[2J\033[1;1H");
 }
 
-void mk_cheetah_cmd_uptime()
+void mk_cheetah_cmd_uptime(struct mk_server *server)
 {
     int days;
     int hours;
@@ -108,6 +108,7 @@ void mk_cheetah_cmd_uptime()
     long int upmind;
     long int upminh;
     long int uptime;
+    (void) server;
 
     /* uptime in seconds */
     uptime = time(NULL) - init_time;
@@ -178,13 +179,13 @@ void mk_cheetah_cmd_plugins_print_network(struct mk_list *list)
     CHEETAH_WRITE("\n");
 }
 
-void mk_cheetah_cmd_plugins()
+void mk_cheetah_cmd_plugins(struct mk_server *server)
 {
     struct mk_plugin *p;
     struct mk_plugin_stage *s;
     struct mk_list *head;
 
-    if (mk_list_is_empty(&mk_config->stage10_handler)) {
+    if (mk_list_is_empty(&server->stage10_handler)) {
         CHEETAH_WRITE("%s[%sSTAGE_10%s]%s",
                       ANSI_BOLD, ANSI_YELLOW, ANSI_WHITE, ANSI_RESET);
         mk_list_foreach(head, &mk_api->config->stage10_handler) {
@@ -242,13 +243,13 @@ void mk_cheetah_cmd_plugins()
     CHEETAH_WRITE("\n\n");
 }
 
-void mk_cheetah_cmd_vhosts()
+void mk_cheetah_cmd_vhosts(struct mk_server *server)
 {
-    struct host *entry_host;
-    struct host_alias *entry_alias;
+    struct mk_vhost *entry_host;
+    struct mk_vhost_alias *entry_alias;
     struct mk_rconf_section *section;
     struct mk_rconf_entry *entry;
-    struct mk_list *hosts = &mk_api->config->hosts;
+    struct mk_list *hosts = &server->hosts;
     struct mk_list *aliases;
     struct mk_list *head_host;
     struct mk_list *head_alias;
@@ -256,17 +257,17 @@ void mk_cheetah_cmd_vhosts()
     struct mk_list *head_entries;
 
     mk_list_foreach(head_host, hosts) {
-        entry_host = mk_list_entry(head_host, struct host, _head);
+        entry_host = mk_list_entry(head_host, struct mk_vhost, _head);
 
         aliases = &entry_host->server_names;
-        entry_alias = mk_list_entry_first(aliases, struct host_alias, _head);
+        entry_alias = mk_list_entry_first(aliases, struct mk_vhost_alias, _head);
         CHEETAH_WRITE("%s[%sVHost '%s'%s%s]%s\n",
                       ANSI_BOLD, ANSI_YELLOW,
                       entry_alias->name, ANSI_BOLD, ANSI_WHITE, ANSI_RESET);
 
         CHEETAH_WRITE("      - Names         : ");
         mk_list_foreach(head_alias, aliases) {
-            entry_alias = mk_list_entry(head_alias, struct host_alias, _head);
+            entry_alias = mk_list_entry(head_alias, struct mk_vhost_alias, _head);
             CHEETAH_WRITE("%s ", entry_alias->name);
         }
         CHEETAH_WRITE("\n");
@@ -293,14 +294,16 @@ void mk_cheetah_cmd_vhosts()
     CHEETAH_WRITE("\n");
 }
 
-void mk_cheetah_cmd_workers()
+void mk_cheetah_cmd_workers(struct mk_server *server)
 {
     int i;
     unsigned long long active_connections;
     struct mk_sched_worker *node;
+    struct mk_sched_ctx *ctx;
 
-    node = mk_api->sched_list;
-    for (i=0; i < mk_api->config->workers; i++) {
+    ctx = server->sched_ctx;
+    node = ctx->workers;
+    for (i=0; i < server->workers; i++) {
         active_connections = (node[i].accepted_connections - node[i].closed_connections);
 
         CHEETAH_WRITE("* Worker %i\n", node[i].idx);
@@ -340,12 +343,12 @@ void mk_cheetah_cmd_help()
     CHEETAH_WRITE("\nquit       (\\q)    Exit Cheetah shell :_(\n\n");
 }
 
-static void mk_cheetah_listen_config()
+static void mk_cheetah_listen_config(struct mk_server *server)
 {
     struct mk_list *head;
     struct mk_config_listener *listener;
 
-    mk_list_foreach(head, &mk_api->config->listeners) {
+    mk_list_foreach(head, &server->listeners) {
         listener = mk_list_entry(head, struct mk_config_listener, _head);
         CHEETAH_WRITE("\nListen on          : %s:%s",
                       listener->address,
@@ -353,19 +356,19 @@ static void mk_cheetah_listen_config()
     }
 }
 
-void mk_cheetah_cmd_config()
+void mk_cheetah_cmd_config(struct mk_server *server)
 {
     struct mk_string_line *entry;
     struct mk_list *head;
     struct mk_config_listener *listener;
 
-    listener = mk_list_entry_first(&mk_api->config->listeners,
+    listener = mk_list_entry_first(&server->listeners,
                                    struct mk_config_listener,
                                    _head);
 
     CHEETAH_WRITE("Basic configuration");
     CHEETAH_WRITE("\n-------------------");
-    mk_cheetah_listen_config();
+    mk_cheetah_listen_config(server);
     CHEETAH_WRITE("\nWorkers            : %i threads", mk_api->config->workers);
     CHEETAH_WRITE("\nTimeout            : %i seconds", mk_api->config->timeout);
     CHEETAH_WRITE("\nPidFile            : %s.%s",
@@ -428,13 +431,13 @@ void mk_cheetah_cmd_config()
     CHEETAH_WRITE("\n\n");
 }
 
-void mk_cheetah_cmd_status()
+void mk_cheetah_cmd_status(struct mk_server *server)
 {
-    int nthreads = mk_api->config->workers;
+    int nthreads = server->workers;
     char tmp[64];
 
     CHEETAH_WRITE("Monkey Version     : %s\n", MK_VERSION_STR);
-    CHEETAH_WRITE("Configuration path : %s\n", mk_api->config->path_conf_root);
+    CHEETAH_WRITE("Configuration path : %s\n", server->path_conf_root);
 
     CHEETAH_WRITE("Cheetah! mode      : ");
     if (listen_mode == LISTEN_STDIN) {
@@ -447,11 +450,11 @@ void mk_cheetah_cmd_status()
     CHEETAH_WRITE("Process ID         : %i\n", getpid());
     CHEETAH_WRITE("Process User       : ");
     mk_cheetah_print_running_user();
-    mk_cheetah_listen_config();
+    mk_cheetah_listen_config(server);
 
     CHEETAH_WRITE("\n");
     CHEETAH_WRITE("Worker Threads     : %i (per configuration: %i)\n",
-           nthreads, mk_api->config->workers);
+           nthreads, server->workers);
 
     CHEETAH_WRITE("Memory Allocator   : ");
 #ifdef MALLOC_LIBC
@@ -460,7 +463,7 @@ void mk_cheetah_cmd_status()
     CHEETAH_WRITE("Jemalloc\n");
 #endif
 
-    if (mk_api->kernel_features_print(tmp, sizeof(tmp)) > 0) {
+    if (mk_api->kernel_features_print(tmp, sizeof(tmp), server) > 0) {
         CHEETAH_WRITE("Kernel Features    : %s\n", tmp);
     }
 

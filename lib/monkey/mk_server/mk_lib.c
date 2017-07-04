@@ -21,6 +21,8 @@
 #include <stdarg.h>
 #include <string.h>
 #include <errno.h>
+#include <pthread.h>
+#include <signal.h>
 
 #include <monkey/mk_lib.h>
 #include <monkey/monkey.h>
@@ -48,6 +50,7 @@ mk_ctx_t *mk_create()
         return NULL;
     }
 
+    /* Create Monkey server instance */
     ctx->server = mk_server_create();
     return ctx;
 }
@@ -60,11 +63,99 @@ int mk_destroy(mk_ctx_t *ctx)
     return 0;
 }
 
+static void mk_lib_worker(void *data)
+{
+    int fd;
+    int bytes;
+    uint64_t val;
+    struct mk_server *server;
+    struct mk_event *event;
+
+    mk_ctx_t *ctx = data;
+    server = ctx->server;
+
+    /* Start the service */
+    mk_server_setup(server);
+    mk_server_loop(server);
+
+    /*
+     * Give a second to the parent context to avoid consume an event
+     * we should not read at the moment (SIGNAL_START).
+     */
+    sleep(1);
+
+    /* Wait for events */
+    mk_event_wait(server->lib_evl);
+    mk_event_foreach(event, server->lib_evl) {
+        fd = event->fd;
+        bytes = read(fd, &val, sizeof(uint64_t));
+        if (bytes <= 0) {
+            return;
+        }
+
+        if (val == MK_SERVER_SIGNAL_STOP) {
+            mk_exit_all(server);
+            fflush(stdout);
+            pthread_kill(pthread_self(), 0);
+        }
+    }
+
+    return;
+}
+
 int mk_start(mk_ctx_t *ctx)
 {
-    mk_server_setup(ctx->server);
-    mk_server_loop(ctx->server);
+    int fd;
+    int bytes;
+    int ret;
+    uint64_t val;
+    pthread_t tid;
+    struct mk_event *event;
+    struct mk_server *server;
 
+    ret = mk_utils_worker_spawn(mk_lib_worker, ctx, &tid);
+    if (ret == -1) {
+        return -1;
+    }
+    ctx->worker_tid = tid;
+
+    /* Wait for the started signal so we can return to the caller */
+    server = ctx->server;
+    mk_event_wait(server->lib_evl);
+    mk_event_foreach(event, server->lib_evl) {
+        fd = event->fd;
+        bytes = read(fd, &val, sizeof(uint64_t));
+        if (bytes <= 0) {
+            return -1;
+        }
+
+        if (val == MK_SERVER_SIGNAL_START) {
+            return 0;
+        }
+        else {
+            mk_stop(ctx);
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+int mk_stop(mk_ctx_t *ctx)
+{
+    int n;
+    uint64_t val;
+    struct mk_server *server = ctx->server;
+
+    val = MK_SERVER_SIGNAL_STOP;
+    n = write(server->lib_ch_manager[1], &val, sizeof(val));
+    if (n <= 0) {
+        perror("write");
+        return -1;
+    }
+
+    /* Wait for the child thread to exit */
+    pthread_join(ctx->worker_tid, NULL);
     return 0;
 }
 
@@ -167,7 +258,7 @@ int mk_config_set_property(struct mk_server *server, char *k, char *v)
         server->symlink = b;
     }
     else if (config_eq(k, "DefaultMimeType") == 0) {
-        mk_string_build(&server->default_mimetype, &len, "%s\r\n", v);
+        mk_string_build(&server->mimetype_default_str, &len, "%s\r\n", v);
     }
     else if (config_eq(k, "FDT") == 0) {
         b = bool_val(v);
@@ -207,26 +298,44 @@ int mk_config_set(mk_ctx_t *ctx, ...)
     return 0;
 }
 
-
-mk_vhost_t *mk_vhost_create(mk_ctx_t *ctx, char *name)
+/* Given a vhost id, return the vhost context */
+static struct mk_vhost *mk_vhost_lookup(mk_ctx_t *ctx, int id)
 {
-    struct host *h;
-    struct host_alias *halias;
+    struct mk_vhost *host;
+    struct mk_list *head;
+
+    mk_list_foreach(head, &ctx->server->hosts) {
+        host = mk_list_entry(head, struct mk_vhost, _head);
+        if (host->id == id) {
+            return host;
+        }
+    }
+
+    return NULL;
+}
+
+int mk_vhost_create(mk_ctx_t *ctx, char *name)
+{
+    struct mk_vhost *h;
+    struct mk_vhost_alias *halias;
 
     /* Virtual host */
-    h = mk_mem_alloc_z(sizeof(struct host));
+    h = mk_mem_alloc_z(sizeof(struct mk_vhost));
     if (!h) {
-        return NULL;
+        return -1;
     }
+
+    /* Assign a virtual host id, we just set based on list size */
+    h->id = mk_list_size(&ctx->server->hosts);
     mk_list_init(&h->error_pages);
     mk_list_init(&h->server_names);
     mk_list_init(&h->handlers);
 
     /* Host alias */
-    halias = mk_mem_alloc_z(sizeof(struct host_alias));
+    halias = mk_mem_alloc_z(sizeof(struct mk_vhost_alias));
     if (!halias) {
         mk_mem_free(h);
-        return NULL;
+        return -1;
     }
 
     /* Host name */
@@ -239,15 +348,16 @@ mk_vhost_t *mk_vhost_create(mk_ctx_t *ctx, char *name)
     mk_list_add(&halias->_head, &h->server_names);
     mk_list_add(&h->_head, &ctx->server->hosts);
 
-    return h;
+    /* Return the host id, that number is enough for further operations */
+    return h->id;
 }
 
-static int mk_vhost_set_property(mk_vhost_t *vh, char *k, char *v)
+static int mk_vhost_set_property(struct mk_vhost *vh, char *k, char *v)
 {
-    struct host_alias *ha;
+    struct mk_vhost_alias *ha;
 
     if (config_eq(k, "Name") == 0) {
-        ha = mk_mem_alloc(sizeof(struct host_alias));
+        ha = mk_mem_alloc(sizeof(struct mk_vhost_alias));
         if (!ha) {
             return -1;
         }
@@ -263,14 +373,21 @@ static int mk_vhost_set_property(mk_vhost_t *vh, char *k, char *v)
     return 0;
 }
 
-int mk_vhost_set(mk_vhost_t *vh, ...)
+int mk_vhost_set(mk_ctx_t *ctx, int vid, ...)
 {
     int ret;
     char *key;
     char *value;
     va_list va;
+    struct mk_vhost *vh;
 
-    va_start(va, vh);
+    /* Lookup the virtual host */
+    vh = mk_vhost_lookup(ctx, vid);
+    if (!vh) {
+        return -1;
+    }
+
+    va_start(va, vid);
 
     while ((key = va_arg(va, char *))) {
         value = va_arg(va, char *);
@@ -290,13 +407,18 @@ int mk_vhost_set(mk_vhost_t *vh, ...)
     return 0;
 }
 
-int mk_vhost_handler(mk_vhost_t *vh, char *regex,
+int mk_vhost_handler(mk_ctx_t *ctx, int vid, char *regex,
                      void (*cb)(mk_request_t *, void *), void *data)
 {
-    (void) vh;
-    struct mk_host_handler *handler;
+    struct mk_vhost *vh;
+    struct mk_vhost_handler *handler;
     void (*_cb) (struct mk_http_request *, void *);
 
+    /* Lookup the virtual host */
+    vh = mk_vhost_lookup(ctx, vid);
+    if (!vh) {
+        return -1;
+    }
 
     _cb = cb;
     handler = mk_vhost_handler_match(regex, _cb, data);

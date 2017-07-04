@@ -91,8 +91,10 @@ static int mk_cheetah_config(char *path)
     return 0;
 }
 
-static void mk_cheetah_init(void *args UNUSED_PARAM)
+static void mk_cheetah_init(void *args)
 {
+    struct mk_server *server = args;
+
     /* Rename worker */
     mk_api->worker_rename("monkey: cheetah");
 
@@ -100,10 +102,10 @@ static void mk_cheetah_init(void *args UNUSED_PARAM)
     if (listen_mode == LISTEN_STDIN) {
         cheetah_input = stdin;
         cheetah_output = stdout;
-        mk_cheetah_loop_stdin();
+        mk_cheetah_loop_stdin(server);
     }
     else if (listen_mode == LISTEN_SERVER) {
-        mk_cheetah_loop_server();
+        mk_cheetah_loop_server(server);
     }
 }
 
@@ -131,12 +133,12 @@ int mk_cheetah_plugin_exit()
     return 0;
 }
 
-int mk_cheetah_master_init(struct mk_server_config *config)
+int mk_cheetah_master_init(struct mk_server *server)
 {
     int ret;
     pthread_t tid;
 
-    ret = mk_api->worker_spawn(mk_cheetah_init, config, &tid);
+    ret = mk_api->worker_spawn(mk_cheetah_init, server, &tid);
     if (ret != 0) {
         return -1;
     }

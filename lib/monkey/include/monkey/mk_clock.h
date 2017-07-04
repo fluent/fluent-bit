@@ -40,7 +40,7 @@ pthread_t mk_clock_tid;
 
 void *mk_clock_worker_init(void *args);
 void mk_clock_set_time(void);
-void mk_clock_sequential_init();
+void mk_clock_sequential_init(struct mk_server *server);
 void mk_clock_exit();
 
 #endif

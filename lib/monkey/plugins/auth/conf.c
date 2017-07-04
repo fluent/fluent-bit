@@ -148,7 +148,7 @@ int mk_auth_conf_init_users_list()
     struct mk_list *head_hosts;
     struct mk_list *hosts = &mk_api->config->hosts;
     struct mk_list *head_sections;
-    struct host *entry_host;
+    struct mk_vhost *entry_host;
     struct mk_rconf_section *section;
 
     /* vhost [AUTH] locations */
@@ -160,7 +160,7 @@ int mk_auth_conf_init_users_list()
     PLUGIN_TRACE("Loading user's files");
 
     mk_list_foreach(head_hosts, hosts) {
-        entry_host = mk_list_entry(head_hosts, struct host, _head);
+        entry_host = mk_list_entry(head_hosts, struct mk_vhost, _head);
         if (!entry_host->config) {
             continue;
         }

@@ -62,7 +62,7 @@ int mk_vhost_fdt_worker_init(struct mk_server *server)
 {
     int i;
     int j;
-    struct host *h;
+    struct mk_vhost *h;
     struct mk_list *list;
     struct mk_list *head;
     struct vhost_fdt_host *fdt;
@@ -95,7 +95,7 @@ int mk_vhost_fdt_worker_init(struct mk_server *server)
     mk_list_init(list);
 
     mk_list_foreach(head, &server->hosts) {
-        h = mk_list_entry(head, struct host, _head);
+        h = mk_list_entry(head, struct mk_vhost, _head);
 
         fdt = mk_mem_alloc(sizeof(struct vhost_fdt_host));
         fdt->host = h;
@@ -146,7 +146,7 @@ int mk_vhost_fdt_worker_exit(struct mk_server *server)
 
 
 static inline
-struct vhost_fdt_hash_table *mk_vhost_fdt_table_lookup(int id, struct host *host)
+struct vhost_fdt_hash_table *mk_vhost_fdt_table_lookup(int id, struct mk_vhost *host)
 {
     struct mk_list *head;
     struct mk_list *list;
@@ -310,15 +310,15 @@ int mk_vhost_close(struct mk_http_request *sr, struct mk_server *server)
     return mk_vhost_fdt_close(sr, server);
 }
 
-struct mk_host_handler *mk_vhost_handler_match(char *match,
-                                               void (*cb)(struct mk_http_request *,
-                                                          void *),
-                                               void *data)
+struct mk_vhost_handler *mk_vhost_handler_match(char *match,
+                                                void (*cb)(struct mk_http_request *,
+                                                           void *),
+                                                void *data)
 {
     int ret;
-    struct mk_host_handler *h;
+    struct mk_vhost_handler *h;
 
-    h = mk_mem_alloc(sizeof(struct mk_host_handler));
+    h = mk_mem_alloc(sizeof(struct mk_vhost_handler));
     if (!h) {
         return NULL;
     }
@@ -340,15 +340,15 @@ struct mk_host_handler *mk_vhost_handler_match(char *match,
  * Open a virtual host configuration file and return a structure with
  * definitions.
  */
-struct host *mk_vhost_read(char *path)
+struct mk_vhost *mk_vhost_read(char *path)
 {
     int ret;
     char *tmp;
     char *host_low;
     struct stat checkdir;
-    struct host *host;
-    struct host_alias *new_alias;
-    struct error_page *err_page;
+    struct mk_vhost *host;
+    struct mk_vhost_alias *new_alias;
+    struct mk_vhost_error_page *err_page;
     struct mk_rconf *cnf;
     struct mk_rconf_section *section_host;
     struct mk_rconf_section *section_ep;
@@ -356,8 +356,8 @@ struct host *mk_vhost_read(char *path)
     struct mk_rconf_entry *entry_ep;
     struct mk_string_line *entry;
     struct mk_list *head, *list, *line;
-    struct mk_host_handler *h_handler;
-    struct mk_handler_param *h_param;
+    struct mk_vhost_handler *h_handler;
+    struct mk_vhost_handler_param *h_param;
 
     /* Read configuration file */
     cnf = mk_rconf_open(path);
@@ -374,7 +374,7 @@ struct host *mk_vhost_read(char *path)
     }
 
     /* Alloc configuration node */
-    host = mk_mem_alloc_z(sizeof(struct host));
+    host = mk_mem_alloc_z(sizeof(struct mk_vhost));
     host->config = cnf;
     host->file = mk_string_dup(path);
 
@@ -404,7 +404,7 @@ struct host *mk_vhost_read(char *path)
         host_low = mk_string_tolower(entry->val);
 
         /* Alloc node */
-        new_alias = mk_mem_alloc_z(sizeof(struct host_alias));
+        new_alias = mk_mem_alloc_z(sizeof(struct mk_vhost_alias));
         new_alias->name = mk_mem_alloc_z(entry->len + 1);
         strncpy(new_alias->name, host_low, entry->len);
         mk_mem_free(host_low);
@@ -478,7 +478,7 @@ struct host *mk_vhost_read(char *path)
             }
 
             /* Alloc error page node */
-            err_page = mk_mem_alloc_z(sizeof(struct error_page));
+            err_page = mk_mem_alloc_z(sizeof(struct mk_vhost_error_page));
             err_page->status = ep_status;
             err_page->file   = mk_string_dup(ep_file);
             err_page->real_path = NULL;
@@ -508,7 +508,7 @@ struct host *mk_vhost_read(char *path)
             if (!line) {
                 continue;
             }
-            h_handler = mk_mem_alloc(sizeof(struct mk_host_handler));
+            h_handler = mk_mem_alloc(sizeof(struct mk_vhost_handler));
             if (!h_handler) {
                 exit(EXIT_FAILURE);
             }
@@ -531,7 +531,7 @@ struct host *mk_vhost_read(char *path)
                     break;
                 default:
                     /* link parameters */
-                    h_param = mk_mem_alloc(sizeof(struct mk_handler_param));
+                    h_param = mk_mem_alloc(sizeof(struct mk_vhost_handler_param));
                     h_param->p.data = mk_string_dup(entry->val);
                     h_param->p.len  = entry->len;
                     mk_list_add(&h_param->_head, &h_handler->params);
@@ -559,14 +559,15 @@ int mk_vhost_map_handlers(struct mk_server *server)
     int n = 0;
     struct mk_list *head;
     struct mk_list *head_handler;
-    struct host *host;
-    struct mk_host_handler *h_handler;
+    struct mk_vhost *host;
+    struct mk_vhost_handler *h_handler;
     struct mk_plugin *p;
 
     mk_list_foreach(head, &server->hosts) {
-        host = mk_list_entry(head, struct host, _head);
+        host = mk_list_entry(head, struct mk_vhost, _head);
         mk_list_foreach(head_handler, &host->handlers) {
-            h_handler = mk_list_entry(head_handler, struct mk_host_handler, _head);
+            h_handler = mk_list_entry(head_handler,
+                                      struct mk_vhost_handler, _head);
 
             /* Lookup plugin by name */
             p = mk_plugin_lookup(h_handler->name, server);
@@ -590,17 +591,17 @@ int mk_vhost_map_handlers(struct mk_server *server)
 
 void mk_vhost_set_single(char *path, struct mk_server *server)
 {
-    struct host *host;
-    struct host_alias *halias;
+    struct mk_vhost *host;
+    struct mk_vhost_alias *halias;
     struct stat checkdir;
 
     /* Set the default host */
-    host = mk_mem_alloc_z(sizeof(struct host));
+    host = mk_mem_alloc_z(sizeof(struct mk_vhost));
     mk_list_init(&host->error_pages);
     mk_list_init(&host->server_names);
 
     /* Prepare the unique alias */
-    halias = mk_mem_alloc_z(sizeof(struct host_alias));
+    halias = mk_mem_alloc_z(sizeof(struct mk_vhost_alias));
     halias->name = mk_string_dup("127.0.0.1");
     mk_list_add(&halias->_head, &host->server_names);
 
@@ -629,7 +630,7 @@ void mk_vhost_init(char *path, struct mk_server *server)
     char *buf = 0;
     char *sites = 0;
     char *file;
-    struct host *p_host;     /* debug */
+    struct mk_vhost *p_host;     /* debug */
     struct dirent *ent;
     struct file_info f_info;
     int ret;
@@ -700,17 +701,18 @@ void mk_vhost_init(char *path, struct mk_server *server)
 
 
 /* Lookup a registered virtual host based on the given 'host' input */
-int mk_vhost_get(mk_ptr_t host, struct host **vhost, struct host_alias **alias,
+int mk_vhost_get(mk_ptr_t host, struct mk_vhost **vhost,
+                 struct mk_vhost_alias **alias,
                  struct mk_server *server)
 {
-    struct host *entry_host;
-    struct host_alias *entry_alias;
+    struct mk_vhost *entry_host;
+    struct mk_vhost_alias *entry_alias;
     struct mk_list *head_vhost, *head_alias;
 
     mk_list_foreach(head_vhost, &server->hosts) {
-        entry_host = mk_list_entry(head_vhost, struct host, _head);
+        entry_host = mk_list_entry(head_vhost, struct mk_vhost, _head);
         mk_list_foreach(head_alias, &entry_host->server_names) {
-            entry_alias = mk_list_entry(head_alias, struct host_alias, _head);
+            entry_alias = mk_list_entry(head_alias, struct mk_vhost_alias, _head);
             if (entry_alias->len == host.len &&
                 strncmp(entry_alias->name, host.data, host.len) == 0) {
                 *vhost = entry_host;
@@ -723,15 +725,15 @@ int mk_vhost_get(mk_ptr_t host, struct host **vhost, struct host_alias **alias,
     return -1;
 }
 
-static void mk_vhost_handler_free(struct mk_host_handler *h)
+static void mk_vhost_handler_free(struct mk_vhost_handler *h)
 {
     struct mk_list *tmp;
     struct mk_list *head;
-    struct mk_handler_param *param;
+    struct mk_vhost_handler_param *param;
 
     /* Release Params */
     mk_list_foreach_safe(head, tmp, &h->params) {
-        param = mk_list_entry(head, struct mk_handler_param, _head);
+        param = mk_list_entry(head, struct mk_vhost_handler_param, _head);
         mk_list_del(&param->_head);
         mk_mem_free(param->p.data);
         mk_mem_free(param);
@@ -744,21 +746,21 @@ static void mk_vhost_handler_free(struct mk_host_handler *h)
 
 void mk_vhost_free_all(struct mk_server *server)
 {
-    struct host *host;
-    struct host_alias *host_alias;
-    struct mk_host_handler *host_handler;
-    struct error_page *ep;
+    struct mk_vhost *host;
+    struct mk_vhost_alias *host_alias;
+    struct mk_vhost_handler *host_handler;
+    struct mk_vhost_error_page *ep;
     struct mk_list *head;
     struct mk_list *tmp;
     struct mk_list *head2;
     struct mk_list *tmp2;
 
     mk_list_foreach_safe(head, tmp, &server->hosts) {
-        host = mk_list_entry(head, struct host, _head);
+        host = mk_list_entry(head, struct mk_vhost, _head);
 
         /* Free aliases or servernames */
         mk_list_foreach_safe(head2, tmp2, &host->server_names) {
-            host_alias = mk_list_entry(head2, struct host_alias, _head);
+            host_alias = mk_list_entry(head2, struct mk_vhost_alias, _head);
             mk_list_del(&host_alias->_head);
             mk_mem_free(host_alias->name);
             mk_mem_free(host_alias);
@@ -766,13 +768,13 @@ void mk_vhost_free_all(struct mk_server *server)
 
         /* Handlers */
         mk_list_foreach_safe(head2, tmp2, &host->handlers) {
-            host_handler = mk_list_entry(head2, struct mk_host_handler, _head);
+            host_handler = mk_list_entry(head2, struct mk_vhost_handler, _head);
             mk_vhost_handler_free(host_handler);
         }
 
         /* Free error pages */
         mk_list_foreach_safe(head2, tmp2, &host->error_pages) {
-            ep = mk_list_entry(head2, struct error_page, _head);
+            ep = mk_list_entry(head2, struct mk_vhost_error_page, _head);
             mk_list_del(&ep->_head);
             mk_mem_free(ep->file);
             mk_mem_free(ep->real_path);

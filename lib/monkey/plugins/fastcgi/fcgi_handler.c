@@ -18,6 +18,7 @@
  */
 
 #include <monkey/mk_api.h>
+#include <monkey/mk_net.h>
 
 #include "fastcgi.h"
 #include "fcgi_handler.h"
@@ -170,7 +171,10 @@ static inline int fcgi_add_param_net(struct fcgi_handler *handler)
     int ret;
     const char *p;
     char buffer[256];
-	struct sockaddr_in addr;
+
+    /* This is to identify whether its IPV4 or IPV6 */
+    struct sockaddr_storage addr;
+    int port = 0;
 	socklen_t addr_len = sizeof(struct sockaddr_in);
 
     ret = getsockname(handler->cs->socket, (struct sockaddr *)&addr, &addr_len);
@@ -185,10 +189,22 @@ static inline int fcgi_add_param_net(struct fcgi_handler *handler)
         return -1;
     }
 
-    p = inet_ntop(AF_INET, &addr.sin_addr, buffer, sizeof(buffer));
-    if (!p) {
-        perror("inet_ntop");
-        return -1;
+    if (addr.ss_family == AF_INET) {
+        struct sockaddr_in *s = (struct sockaddr_in *)&addr;
+        port = ntohs(s->sin_port);
+        p = inet_ntop(AF_INET, &s->sin_addr, buffer, sizeof(buffer));
+        if (!p) {
+            perror("inet_ntop");
+            return -1;
+        }
+    } else { /* AF_INET6 */
+        struct sockaddr_in6 *s = (struct sockaddr_in6 *)&addr;
+        port = ntohs(s->sin6_port);
+        p = inet_ntop(AF_INET6, &s->sin6_addr, buffer, sizeof(buffer));
+        if (!p) {
+            perror("inet_ntop");
+            return -1;
+        }
     }
 
     /* Server Address */
@@ -197,7 +213,7 @@ static inline int fcgi_add_param_net(struct fcgi_handler *handler)
                    FCGI_PARAM_DUP(buffer));
 
     /* Server Port */
-    snprintf(buffer, 256, "%d", ntohs(addr.sin_port));
+    snprintf(buffer, 256, "%d", port);
     fcgi_add_param(handler,
                    FCGI_PARAM_CONST("SERVER_PORT"),
                    FCGI_PARAM_DUP(buffer));
@@ -209,10 +225,43 @@ static inline int fcgi_add_param_net(struct fcgi_handler *handler)
         return -1;
     }
 
-    p = inet_ntop(AF_INET, &addr.sin_addr, buffer, sizeof(buffer));
-    if (!p) {
-        perror("inet_ntop");
-        return -1;
+    if (addr.ss_family == AF_INET) {
+        struct sockaddr_in *s = (struct sockaddr_in *)&addr;
+        port = ntohs(s->sin_port);
+        p = inet_ntop(AF_INET, &s->sin_addr, buffer, sizeof(buffer));
+        if (!p) {
+            perror("inet_ntop");
+            return -1;
+        }
+    } else { /* AF_INET6 */
+        struct sockaddr_in6 *s = (struct sockaddr_in6 *)&addr;
+        port = ntohs(s->sin6_port);
+
+        if (IN6_IS_ADDR_V4MAPPED(&s->sin6_addr)) {
+            /* This is V4-Mapped-V6 - Lets convert it to plain IPV4 address.
+             * E.g. we would have received like this ::ffff:10.106.146.73.
+             * This would be converted to 10.106.146.73.
+             */
+            struct sockaddr_in addr4;
+            struct sockaddr_in *s4 = (struct sockaddr_in *)&addr4;
+            memset(&addr4, 0, sizeof(addr4));
+            addr4.sin_family = AF_INET;
+            addr4.sin_port = &s->sin6_port;
+            memcpy(&addr4.sin_addr.s_addr,
+                   s->sin6_addr.s6_addr + 12,
+                   sizeof(addr4.sin_addr.s_addr));
+            p = inet_ntop(AF_INET, &s4->sin_addr, buffer, sizeof(buffer));
+            if (!p) {
+                perror("inet_ntop");
+                return -1;
+            }
+        } else {
+            p = inet_ntop(AF_INET6, &s->sin6_addr, buffer, sizeof(buffer));
+            if (!p) {
+                perror("inet_ntop");
+                return -1;
+            }
+        }
     }
 
     /* Remote Addr */
@@ -221,7 +270,7 @@ static inline int fcgi_add_param_net(struct fcgi_handler *handler)
                    FCGI_PARAM_DUP(buffer));
 
     /* Remote Port */
-    snprintf(buffer, 256, "%d", ntohs(addr.sin_port));
+    snprintf(buffer, 256, "%d", port);
     fcgi_add_param(handler,
                    FCGI_PARAM_CONST("REMOTE_PORT"),
                    FCGI_PARAM_DUP(buffer));
@@ -476,30 +525,30 @@ static char *getearliestbreak(const char buf[], const unsigned bufsize,
 
 static int fcgi_write(struct fcgi_handler *handler, char *buf, size_t len)
 {
-    mk_stream_set(NULL,
-                  MK_STREAM_COPYBUF,
-                  handler->cs->channel,
-                  buf, len,
-                  NULL, NULL, NULL, NULL);
+    mk_stream_in_cbuf(handler->stream,
+                      NULL,
+                      buf, len,
+                      NULL, NULL);
 
     if (handler->headers_set == MK_TRUE) {
-        mk_stream_set(NULL,
-                      MK_STREAM_COPYBUF,
-                      handler->cs->channel,
-                      "\r\n", 2,
-                      NULL, NULL, NULL, NULL);
+        mk_stream_in_cbuf(handler->stream,
+                          NULL,
+                          "\r\n", 2,
+                          NULL, NULL);
     }
     return 0;
 }
 
-void fcgi_stream_eof(struct mk_stream *stream)
+void fcgi_stream_eof(struct mk_stream_input *in)
 {
-    struct fcgi_handler *handler;
+    (void) in;
+    // FIXME
+    //struct fcgi_handler *handler;
 
-    handler = stream->data;
-    if (handler->hangup == MK_FALSE) {
-        fcgi_exit(handler);
-    }
+    //handler = stream->data;
+    //if (handler->hangup == MK_FALSE) {
+    //    fcgi_exit(handler);
+    //}
 }
 
 int fcgi_exit(struct fcgi_handler *handler)
@@ -518,17 +567,15 @@ int fcgi_exit(struct fcgi_handler *handler)
      * defer the exit process.
      */
     if (mk_channel_is_empty(handler->cs->channel) != 0 &&
-        handler->eof == MK_FALSE) {
-
+        handler->eof == MK_FALSE &&
+        handler->active == MK_TRUE) {
         MK_TRACE("[fastcgi=%i] deferring exit, EOF stream",
                  handler->server_fd);
 
         /* Now set an EOF stream/callback to resume the exiting process */
-        mk_stream_set(NULL,
-                      MK_STREAM_EOF,
-                      handler->cs->channel,
-                      NULL, 0, handler,
-                      fcgi_stream_eof, NULL, NULL);
+        mk_stream_in_eof(handler->stream,
+                         NULL,
+                         fcgi_stream_eof);
         handler->eof = MK_TRUE;
         return 1;
     }
@@ -543,9 +590,8 @@ int fcgi_exit(struct fcgi_handler *handler)
 
     if (handler->active == MK_TRUE) {
         handler->active = MK_FALSE;
-        mk_api->http_request_end(handler->cs, handler->hangup);
+        mk_api->http_request_end(handler->plugin, handler->cs, handler->hangup);
     }
-    handler->hangup = MK_TRUE;
 
     return 1;
 }
@@ -553,7 +599,7 @@ int fcgi_exit(struct fcgi_handler *handler)
 int fcgi_error(struct fcgi_handler *handler)
 {
     fcgi_exit(handler);
-    mk_api->http_request_error(500, handler->cs, handler->sr);
+    mk_api->http_request_error(500, handler->cs, handler->sr, handler->plugin);
     return 0;
 }
 
@@ -576,12 +622,10 @@ static int fcgi_response(struct fcgi_handler *handler, char *buf, size_t len)
 
     if (len == 0 && handler->chunked && handler->headers_set == MK_TRUE) {
         MK_TRACE("[fastcgi=%i] sending EOF", handler->server_fd);
-        mk_stream_set(NULL,
-                      MK_STREAM_COPYBUF,
-                      handler->cs->channel,
-                      "0\r\n\r\n", 5,
-                      handler,
-                      NULL, NULL, NULL);
+        mk_stream_in_cbuf(handler->stream,
+                          NULL,
+                          "0\r\n\r\n", 5,
+                          NULL, NULL);
         mk_api->channel_flush(handler->cs->channel);
         return 0;
     }
@@ -615,7 +659,7 @@ static int fcgi_response(struct fcgi_handler *handler, char *buf, size_t len)
             handler->chunked = MK_TRUE;
         }
 
-        mk_api->header_prepare(handler->cs, handler->sr);
+        mk_api->header_prepare(handler->plugin, handler->cs, handler->sr);
 
         diff = (end - buf) + advance;
         fcgi_write(handler, buf, diff);
@@ -628,11 +672,10 @@ static int fcgi_response(struct fcgi_handler *handler, char *buf, size_t len)
 
     if (p_len > 0) {
         xlen = snprintf(tmp, 16, "%x\r\n", (unsigned int) p_len);
-        mk_stream_set(NULL,
-                      MK_STREAM_COPYBUF,
-                      handler->cs->channel,
-                      tmp, xlen,
-                      NULL, NULL, NULL, NULL);
+        mk_stream_in_cbuf(handler->stream,
+                          NULL,
+                          tmp, xlen,
+                          NULL, NULL);
         fcgi_write(handler, p, p_len);
     }
 
@@ -658,6 +701,7 @@ int cb_fastcgi_on_read(void *data)
     n = read(handler->server_fd, handler->buf_data + handler->buf_len, avail);
     MK_TRACE("[fastcgi=%i] read()=%i", handler->server_fd, n);
     if (n <= 0) {
+        MK_TRACE("[fastcgi=%i] FastCGI server ended", handler->server_fd);
         fcgi_exit(handler);
         return -1;
     }
@@ -787,7 +831,7 @@ int cb_fastcgi_request_flush(void *data)
 }
 
 /* Callback: on connect to the backend server */
-int cb_fastcgi_on_connect(void *data)
+static int fastcgi_on_connect(struct fcgi_handler *handler)
 {
     int ret;
     int s_err;
@@ -795,23 +839,7 @@ int cb_fastcgi_on_connect(void *data)
     socklen_t s_len = sizeof(s_err);
     struct mk_list *head;
     struct mk_plugin *pio;
-    struct fcgi_handler *handler = data;
     struct mk_channel *channel;
-
-    if (handler->active == MK_FALSE) {
-        return -1;
-    }
-
-    /* We connect in async mode, we need to check if the connection was OK */
-    ret = getsockopt(handler->server_fd, SOL_SOCKET, SO_ERROR, &s_err, &s_len);
-    if (ret == -1) {
-        goto error;
-    }
-
-    if (s_err) {
-        /* FastCGI server unavailable */
-        goto error;
-    }
 
     /* Convert the original request to FCGI format */
     ret = fcgi_encode_request(handler);
@@ -854,12 +882,14 @@ int cb_fastcgi_on_connect(void *data)
     return 0;
 }
 
-struct fcgi_handler *fcgi_handler_new(struct mk_http_session *cs,
+struct fcgi_handler *fcgi_handler_new(struct mk_plugin *plugin,
+                                      struct mk_http_session *cs,
                                       struct mk_http_request *sr)
 {
     int ret;
     int entries;
-    struct fcgi_handler *h;
+    struct fcgi_handler *h = NULL;
+    struct mk_net_connection *conn = NULL;
 
     /* Allocate handler instance and set fields */
     h = mk_api->mem_alloc_z(sizeof(struct fcgi_handler));
@@ -867,6 +897,15 @@ struct fcgi_handler *fcgi_handler_new(struct mk_http_session *cs,
         return NULL;
     }
 
+    stream = mk_stream_set(NULL, cs->channel, h,
+                           NULL, NULL, NULL);
+    if (!stream) {
+        mk_api->mem_free(h);
+        return NULL;
+    }
+
+    h->stream = stream;
+    h->plugin = plugin;
     h->cs = cs;
     h->sr = sr;
     h->write_rounds = 0;
@@ -876,6 +915,7 @@ struct fcgi_handler *fcgi_handler_new(struct mk_http_session *cs,
     h->stdin_length = 0;
     h->stdin_offset = 0;
     h->stdin_buffer = NULL;
+    h->conn         = NULL;
 
     /* Allocate enough space for our data */
     entries = 128 + (cs->parser.header_count * 3);
@@ -896,11 +936,16 @@ struct fcgi_handler *fcgi_handler_new(struct mk_http_session *cs,
 
     /* Request and async connection to the server */
     if (fcgi_conf.server_addr) {
-        h->server_fd = mk_api->socket_connect(fcgi_conf.server_addr,
-                                              atoi(fcgi_conf.server_port),
-                                              MK_TRUE);
+        conn = mk_api->net_conn_create(fcgi_conf.server_addr,
+                                       atoi(fcgi_conf.server_port));
+        if (!conn) {
+            goto error;
+        }
+        h->conn      = conn;
+        h->server_fd = conn->fd;
     }
     else if (fcgi_conf.server_path) {
+        /* FIXME: unix socket connection NOT FUNCTIONAL for now */
         h->server_fd = mk_api->socket_open(fcgi_conf.server_path, MK_TRUE);
     }
 
@@ -908,28 +953,14 @@ struct fcgi_handler *fcgi_handler_new(struct mk_http_session *cs,
         goto error;
     }
 
-    /* Prepare the built-in event structure */
-    MK_EVENT_INIT(&h->event, h->server_fd, h, cb_fastcgi_on_connect);
-
-    /*
-     * Let the event loop notify us when we can flush data to
-     * the FastCGI server.
-     */
-    ret = mk_api->ev_add(mk_api->sched_loop(),
-                         h->server_fd,
-                         MK_EVENT_CUSTOM, MK_EVENT_WRITE, h);
-    if (ret == -1) {
-        close(h->server_fd);
-        goto error;
-    }
-
+    fastcgi_on_connect(h);
     return h;
 
  error:
     mk_api->iov_free(h->iov);
     mk_api->mem_free(h);
     sr->handler_data = NULL;
-    mk_api->http_request_error(500, cs, sr);
+    mk_api->http_request_error(500, cs, sr, plugin);
 
     return NULL;
 }

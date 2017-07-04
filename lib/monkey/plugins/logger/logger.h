@@ -48,7 +48,7 @@ struct log_target
     int pipe[2];
     char *file;
 
-    struct host *host;
+    struct mk_vhost *host;
     struct mk_list _head;
 };
 

@@ -20,6 +20,11 @@
 #include <ctype.h>
 #include <string.h>
 #include <time.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 
 #include <mk_core/mk_rconf.h>
 #include <mk_core/mk_utils.h>
@@ -98,40 +103,73 @@ struct mk_rconf *mk_rconf_create(const char *name)
     return conf;
 }
 
-struct mk_rconf *mk_rconf_open(const char *path)
+static int is_file_included(struct mk_rconf *conf, const char *path)
+{
+    struct mk_list *head;
+    struct mk_rconf_file *file;
+
+    mk_list_foreach(head, &conf->includes) {
+        file = mk_list_entry(head, struct mk_rconf_file, _head);
+        if (strcmp(file->path, path) == 0) {
+            return MK_TRUE;
+        }
+    }
+
+    return MK_FALSE;
+}
+
+static int mk_rconf_read(struct mk_rconf *conf, const char *path)
 {
     int i;
     int len;
+    int ret;
     int line = 0;
     int indent_len = -1;
     int n_keys = 0;
     char buf[1024];
+    char tmp[PATH_MAX];
     char *section = NULL;
     char *indent = NULL;
     char *key, *val;
-    struct mk_rconf *conf = NULL;
+    char *cfg_file = (char *) path;
+    struct stat st;
+    struct mk_rconf_file *file;
     struct mk_rconf_section *current = NULL;
     FILE *f;
 
-    if (!path) {
-        mk_warn("[config] invalid path file");
-        return NULL;
+    /* Check if the path exists (relative cases for included files) */
+    if (conf->level >= 0) {
+        ret = stat(path, &st);
+        if (ret == -1 && errno == ENOENT) {
+            /* Try to resolve the real path (if exists) */
+            if (path[0] == '/') {
+                return -1;
+            }
+
+            if (conf->root_path) {
+                snprintf(tmp, PATH_MAX, "%s/%s", conf->root_path, path);
+                cfg_file = tmp;
+            }
+        }
     }
+
+    /* Check this file have not been included before */
+    ret = is_file_included(conf, cfg_file);
+    if (ret == MK_TRUE) {
+        mk_err("[config] file already included %s", cfg_file);
+        return -1;
+    }
+
+    conf->level++;
 
     /* Open configuration file */
-    if ((f = fopen(path, "r")) == NULL) {
-        mk_warn("[config] I cannot open %s file", path);
-        return NULL;
+    if ((f = fopen(cfg_file, "r")) == NULL) {
+        mk_warn("[config] I cannot open %s file", cfg_file);
+        return -1;
     }
 
-    /* Alloc configuration node */
-    conf = mk_mem_alloc_z(sizeof(struct mk_rconf));
-    conf->created = time(NULL);
-    conf->file = mk_string_dup(path);
-    mk_list_init(&conf->sections);
-
     /* looking for configuration directives */
-    while (fgets(buf, sizeof(buf) - 1, f)) {
+    while (fgets(buf, 1024, f)) {
         len = strlen(buf);
         if (buf[len - 1] == '\n') {
             buf[--len] = 0;
@@ -150,6 +188,17 @@ struct mk_rconf *mk_rconf_open(const char *path)
         /* Skip commented lines */
         if (buf[0] == '#') {
             continue;
+        }
+
+        if (indent_len == -1 && len > 1) {
+            if (len > 9 && strncasecmp(buf, "@INCLUDE ", 9) == 0) {
+                ret = mk_rconf_read(conf, buf + 9);
+                if (ret == -1) {
+                    conf->level--;
+                    return -1;
+                }
+                continue;
+            }
         }
 
         /* Section definition */
@@ -191,7 +240,6 @@ struct mk_rconf *mk_rconf_open(const char *path)
                 continue;
             }
         }
-
 
         /* Validate indentation level */
         if (strncmp(buf, indent, indent_len) != 0 ||
@@ -248,6 +296,73 @@ struct mk_rconf *mk_rconf_open(const char *path)
     */
     fclose(f);
     if (indent) mk_mem_free(indent);
+
+    /* Append this file to the list */
+    file = mk_mem_alloc(sizeof(struct mk_rconf_file));
+    if (!file) {
+        perror("malloc");
+        conf->level--;
+        return -1;
+    }
+
+    file->path = mk_string_dup(path);
+    mk_list_add(&file->_head, &conf->includes);
+    conf->level--;
+    return 0;
+}
+
+static int mk_rconf_path_set(struct mk_rconf *conf, char *file)
+{
+    char *p;
+    char *end;
+    char path[PATH_MAX + 1];
+
+    p = realpath(file, path);
+    if (!p) {
+        return -1;
+    }
+
+    /* lookup path ending and truncate */
+    end = strrchr(path, '/');
+    if (!end) {
+        return -1;
+    }
+
+    end++;
+    *end = '\0';
+    conf->root_path = mk_string_dup(path);
+
+    return 0;
+}
+
+struct mk_rconf *mk_rconf_open(const char *path)
+{
+    int ret;
+    struct mk_rconf *conf = NULL;
+
+    if (!path) {
+        mk_warn("[config] invalid path file %s", path);
+        return NULL;
+    }
+
+    /* Alloc configuration node */
+    conf = mk_mem_alloc_z(sizeof(struct mk_rconf));
+    conf->created = time(NULL);
+    conf->file = mk_string_dup(path);
+    conf->level = -1;
+    mk_list_init(&conf->sections);
+    mk_list_init(&conf->includes);
+
+    /* Set the absolute path for the entrypoint file */
+    mk_rconf_path_set(conf, (char *) path);
+
+    /* Read entrypoint */
+    ret = mk_rconf_read(conf, path);
+    if (ret == -1) {
+        mk_rconf_free(conf);
+        return NULL;
+    }
+
     return conf;
 }
 
@@ -255,6 +370,15 @@ void mk_rconf_free(struct mk_rconf *conf)
 {
     struct mk_list *head, *tmp;
     struct mk_rconf_section *section;
+    struct mk_rconf_file *file;
+
+    /* Remove included files */
+    mk_list_foreach_safe(head, tmp, &conf->includes) {
+        file = mk_list_entry(head, struct mk_rconf_file, _head);
+        mk_list_del(&file->_head);
+        mk_mem_free(file->path);
+        mk_mem_free(file);
+    }
 
     /* Free sections */
     mk_list_foreach_safe(head, tmp, &conf->sections) {
@@ -271,6 +395,8 @@ void mk_rconf_free(struct mk_rconf *conf)
     if (conf->file) {
         mk_mem_free(conf->file);
     }
+
+    mk_mem_free(conf->root_path);
     mk_mem_free(conf);
 }
 

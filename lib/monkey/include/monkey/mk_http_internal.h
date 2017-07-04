@@ -169,8 +169,8 @@ struct mk_http_request
     unsigned int vhost_fdt_hash;
     int vhost_fdt_enabled;
 
-    struct host       *host_conf;     /* root vhost config */
-    struct host_alias *host_alias;    /* specific vhost matched */
+    struct mk_vhost   *host_conf;      /* root vhost config */
+    struct mk_vhost_alias *host_alias; /* specific vhost matched */
 
     /*
      * Reference used outside of Monkey Core, e.g: Plugins. It can be used

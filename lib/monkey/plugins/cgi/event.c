@@ -97,7 +97,7 @@ int process_cgi_data(struct cgi_request *r)
                 r->in_len -= endl - buf;
             }
         }
-        mk_api->header_prepare(r->cs, r->sr);
+        mk_api->header_prepare(r->plugin, r->cs, r->sr);
         r->status_done = 1;
     }
 

@@ -48,7 +48,7 @@ void cgi_finish(struct cgi_request *r)
     /* Invalidte our socket handler */
     requests_by_socket[r->socket] = NULL;
     if (r->active == MK_TRUE) {
-        mk_api->http_request_end(r->cs, r->hangup);
+        mk_api->http_request_end(r->plugin, r->cs, r->hangup);
     }
     cgi_req_del(r);
 }
@@ -101,9 +101,9 @@ static void cgi_write_post(void *p)
 
 static int do_cgi(const char *const __restrict__ file,
                   const char *const __restrict__ url,
-                  struct mk_http_request *const sr,
-                  struct mk_http_session *const cs,
-                  struct mk_plugin *const plugin,
+                  struct mk_http_request *sr,
+                  struct mk_http_session *cs,
+                  struct mk_plugin *plugin,
                   char *interpreter,
                   char *mimetype)
 {
@@ -311,7 +311,7 @@ static int do_cgi(const char *const __restrict__ file,
         close(writepipe[1]);
     }
 
-    r = cgi_req_create(readpipe[0], socket, sr, cs);
+    r = cgi_req_create(readpipe[0], socket, plugin, sr, cs);
     if (!r) {
         return 403;
     }
@@ -401,7 +401,7 @@ int mk_cgi_stage30(struct mk_plugin *plugin,
 {
     char *interpreter = NULL;
     char *mimetype = NULL;
-    struct mk_handler_param *param;
+    struct mk_vhost_handler_param *param;
     (void) plugin;
 
     const char *const file = sr->real_path.data;

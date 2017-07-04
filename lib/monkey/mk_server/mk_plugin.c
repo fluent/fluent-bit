@@ -27,6 +27,7 @@
 #include <monkey/mk_static_plugins.h>
 #include <monkey/mk_plugin_stage.h>
 #include <monkey/mk_core.h>
+#include <monkey/mk_net.h>
 
 #include <dlfcn.h>
 #include <err.h>
@@ -105,6 +106,7 @@ static int mk_plugin_init(struct plugin_api *api, struct mk_plugin *plugin,
                     path, plugin->shortname);
 
     /* Init plugin */
+    plugin->server_ctx = server;
     ret = plugin->init_plugin(&api, conf_dir);
     mk_mem_free(conf_dir);
 
@@ -250,7 +252,6 @@ void mk_plugin_api_init(struct mk_server *server)
 
     /* Setup and connections list */
     api->config = server;
-    api->sched_list = sched_list;
 
     /* API plugins funcions */
 
@@ -259,7 +260,7 @@ void mk_plugin_api_init(struct mk_server *server)
 
     /* HTTP callbacks */
     api->http_request_end = mk_plugin_http_request_end;
-    api->http_request_error = mk_http_error;
+    api->http_request_error = mk_plugin_http_error;
 
     /* Memory callbacks */
     api->pointer_set = mk_ptr_set;
@@ -287,7 +288,7 @@ void mk_plugin_api_init(struct mk_server *server)
     api->file_get_info = mk_file_get_info;
 
     /* HTTP Callbacks */
-    api->header_prepare = mk_header_prepare;
+    api->header_prepare = mk_plugin_header_prepare;
     api->header_add = mk_plugin_header_add;
     api->header_get = mk_http_header_get;
     api->header_set_http_status = mk_header_set_http_status;
@@ -317,11 +318,6 @@ void mk_plugin_api_init(struct mk_server *server)
     api->ev_wait = mk_event_wait;
     api->ev_backend = mk_event_backend;
 
-    /* Red-Black tree */
-    api->rb_insert_color = rb_insert_color;
-    api->rb_erase = rb_erase;
-    api->rb_link_node = rb_link_node;
-
     /* Mimetype */
     api->mimetype_lookup = mk_mimetype_lookup;
 
@@ -336,6 +332,9 @@ void mk_plugin_api_init(struct mk_server *server)
     api->socket_set_nonblocking = mk_socket_set_nonblocking;
     api->socket_create = mk_socket_create;
     api->socket_ip_str = mk_socket_ip_str;
+
+    /* Async network */
+    api->net_conn_create = mk_net_conn_create;
 
     /* Config Callbacks */
     api->config_create = mk_rconf_create;
@@ -608,12 +607,21 @@ void mk_plugin_preworker_calls(struct mk_server *server)
     }
 }
 
-int mk_plugin_http_request_end(struct mk_http_session *cs, int close,
-                               struct mk_server *server)
+int mk_plugin_http_error(int http_status, struct mk_http_session *cs,
+                         struct mk_http_request *sr,
+                         struct mk_plugin *plugin)
+{
+    return mk_http_error(http_status, cs, sr, plugin->server_ctx);
+}
+
+
+int mk_plugin_http_request_end(struct mk_plugin *plugin,
+                               struct mk_http_session *cs, int close)
 {
     int ret;
     int con;
     struct mk_http_request *sr;
+    struct mk_server *server = plugin->server_ctx;
 
     MK_TRACE("[FD %i] PLUGIN HTTP REQUEST END", cs->socket);
 
@@ -688,6 +696,14 @@ int mk_plugin_sched_remove_client(int socket, struct mk_server *server)
     return mk_sched_remove_client(conn, sched, server);
 }
 
+int mk_plugin_header_prepare(struct mk_plugin *plugin,
+                             struct mk_http_session *cs,
+                             struct mk_http_request *sr)
+{
+    return mk_header_prepare(cs, sr, plugin->server_ctx);
+}
+
+
 int mk_plugin_header_add(struct mk_http_request *sr, char *row, int len)
 {
     mk_bug(!sr);
@@ -732,14 +748,15 @@ struct mk_plugin *mk_plugin_cap(char cap, struct mk_server *server)
     return NULL;
 }
 
-struct mk_handler_param *mk_handler_param_get(int id, struct mk_list *params)
+struct mk_vhost_handler_param *mk_handler_param_get(int id,
+                                                    struct mk_list *params)
 {
     int i = 0;
     struct mk_list *head;
 
     mk_list_foreach(head, params) {
         if (i == id) {
-            return mk_list_entry(head, struct mk_handler_param, _head);
+            return mk_list_entry(head, struct mk_vhost_handler_param, _head);
         }
         i++;
     }

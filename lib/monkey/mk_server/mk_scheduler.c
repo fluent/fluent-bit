@@ -23,6 +23,7 @@
 #include <monkey/mk_scheduler.h>
 #include <monkey/mk_scheduler_tls.h>
 #include <monkey/mk_server.h>
+#include <monkey/mk_thread.h>
 #include <monkey/mk_cache.h>
 #include <monkey/mk_config.h>
 #include <monkey/mk_clock.h>
@@ -35,13 +36,16 @@
 #include <signal.h>
 #include <sys/syscall.h>
 
-struct mk_sched_worker *sched_list;
 struct mk_sched_handler mk_http_handler;
 struct mk_sched_handler mk_http2_handler;
 
-static pthread_mutex_t mutex_sched_init = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t mutex_worker_init = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t mutex_worker_exit = PTHREAD_MUTEX_INITIALIZER;
+
+/* Thread initializator helpers (sched_launch_thread) */
+static int pth_init;
+static pthread_cond_t  pth_cond;
+static pthread_mutex_t pth_mutex;
 
 /*
  * Returns the worker id which should take a new incomming connection,
@@ -53,14 +57,18 @@ static inline int _next_target(struct mk_server *server)
     int i;
     int target = 0;
     unsigned long long tmp = 0, cur = 0;
+    struct mk_sched_ctx *ctx = server->sched_ctx;
+    struct mk_sched_worker *worker;
 
-    cur = sched_list[0].accepted_connections - sched_list[0].closed_connections;
+    cur = (ctx->workers[0].accepted_connections -
+           ctx->workers[0].closed_connections);
     if (cur == 0)
         return 0;
 
     /* Finds the lowest load worker */
     for (i = 1; i < server->workers; i++) {
-        tmp = sched_list[i].accepted_connections - sched_list[i].closed_connections;
+        worker = &ctx->workers[i];
+        tmp = worker->accepted_connections - worker->closed_connections;
         if (tmp < cur) {
             target = i;
             cur = tmp;
@@ -71,8 +79,8 @@ static inline int _next_target(struct mk_server *server)
     }
 
     /*
-     * If sched_list[target] worker is full then the whole server too, because
-     * it has the lowest load.
+     * If sched_ctx->workers[target] worker is full then the whole server too,
+     * because it has the lowest load.
      */
     if (mk_unlikely(cur >= server->server_capacity)) {
         MK_TRACE("Too many clients: %i", server->server_capacity);
@@ -86,12 +94,15 @@ static inline int _next_target(struct mk_server *server)
 
 struct mk_sched_worker *mk_sched_next_target(struct mk_server *server)
 {
-    int t = _next_target(server);
+    int t;
+    struct mk_sched_ctx *ctx = server->sched_ctx;
 
-    if (mk_likely(t != -1))
-        return &sched_list[t];
-    else
-        return NULL;
+    t = _next_target(server);
+    if (mk_likely(t != -1)) {
+        return &ctx->workers[t];
+    }
+
+    return NULL;
 }
 
 /*
@@ -104,7 +115,8 @@ void mk_sched_worker_free(struct mk_server *server)
 {
     int i;
     pthread_t tid;
-    struct mk_sched_worker *sl = NULL;
+    struct mk_sched_ctx *ctx = server->sched_ctx;
+    struct mk_sched_worker *worker = NULL;
 
     pthread_mutex_lock(&mutex_worker_exit);
 
@@ -121,12 +133,16 @@ void mk_sched_worker_free(struct mk_server *server)
     /* Scheduler stuff */
     tid = pthread_self();
     for (i = 0; i < server->workers; i++) {
-        if (sched_list[i].tid == tid) {
-            sl = &sched_list[i];
+        worker = &ctx->workers[i];
+        if (worker->tid == tid) {
+            break;
         }
+        worker = NULL;
     }
 
-    mk_bug(!sl);
+    mk_bug(!worker);
+
+    /* FIXME!: there is nothing done here with the worker context */
 
     /* Free master array (av queue & busy queue) */
     mk_mem_free(MK_TLS_GET(mk_tls_sched_cs));
@@ -206,11 +222,11 @@ struct mk_sched_conn *mk_sched_add_connection(int remote_fd,
     conn->channel.event = event;                /* parent event ref */
     mk_list_init(&conn->channel.streams);
 
-    /* Register the entry in the red-black tree queue for fast lookup */
+    /* FIXME: do we need to have a Scheduler node in a RBT ?
+
     struct rb_node **new = &(sched->rb_queue.rb_node);
     struct rb_node *parent = NULL;
 
-    /* Figure out where to put new node */
     while (*new) {
         struct mk_sched_conn *this = container_of(*new, struct mk_sched_conn, _rb_head);
 
@@ -224,10 +240,9 @@ struct mk_sched_conn *mk_sched_add_connection(int remote_fd,
             break;
         }
     }
-
-    /* Add new node and rebalance tree. */
     rb_link_node(&conn->_rb_head, parent, new);
     rb_insert_color(&conn->_rb_head, &sched->rb_queue);
+    */
 
     /*
      * Register the connections into the timeout_queue:
@@ -250,12 +265,12 @@ struct mk_sched_conn *mk_sched_add_connection(int remote_fd,
 
 static void mk_sched_thread_lists_init()
 {
-    struct rb_root *sched_cs;
+    //struct rb_root *sched_cs;
     struct mk_list *sched_cs_incomplete;
 
     /* mk_tls_sched_cs */
-    sched_cs = mk_mem_alloc_z(sizeof(struct rb_root));
-    MK_TLS_SET(mk_tls_sched_cs, sched_cs);
+    //sched_cs = mk_mem_alloc_z(sizeof(struct rb_root));
+    //MK_TLS_SET(mk_tls_sched_cs, sched_cs);
 
     /* mk_tls_sched_cs_incomplete */
     sched_cs_incomplete = mk_mem_alloc(sizeof(struct mk_list));
@@ -264,20 +279,19 @@ static void mk_sched_thread_lists_init()
 }
 
 /* Register thread information. The caller thread is the thread information's owner */
-static int mk_sched_register_thread()
+static int mk_sched_register_thread(struct mk_server *server)
 {
-    struct mk_sched_worker *sl;
+    struct mk_sched_ctx *ctx = server->sched_ctx;
+    struct mk_sched_worker *worker;
     static int wid = 0;
 
     /*
      * If this thread slept inside this section, some other thread may touch wid.
      * So protect it with a mutex, only one thread may handle wid.
      */
-    pthread_mutex_lock(&mutex_sched_init);
-
-    sl = &sched_list[wid];
-    sl->idx = wid++;
-    sl->tid = pthread_self();
+    worker = &ctx->workers[wid];
+    worker->idx = wid++;
+    worker->tid = pthread_self();
 
 
 #if defined(__linux__)
@@ -291,23 +305,21 @@ static int mk_sched_register_thread()
      * retrieved with gettid() but Glibc does not export to userspace
      * the syscall, we need to call it directly through syscall(2).
      */
-    sl->pid = syscall(__NR_gettid);
+    worker->pid = syscall(__NR_gettid);
 #elif defined(__APPLE__)
     uint64_t tid;
     pthread_threadid_np(NULL, &tid);
-    sl->pid = tid;
+    worker->pid = tid;
 #else
-    sl->pid = 0xdeadbeef;
+    worker->pid = 0xdeadbeef;
 #endif
 
-    pthread_mutex_unlock(&mutex_sched_init);
-
     /* Initialize lists */
-    sl->rb_queue = RB_ROOT;
-    mk_list_init(&sl->timeout_queue);
-    sl->request_handler = NULL;
+    //FIXME sl->rb_queue = RB_ROOT;
+    mk_list_init(&worker->timeout_queue);
+    worker->request_handler = NULL;
 
-    return sl->idx;
+    return worker->idx;
 }
 
 static void mk_signal_thread_sigpipe_safe()
@@ -332,9 +344,11 @@ void *mk_sched_launch_worker_loop(void *data)
     struct mk_sched_worker *sched = NULL;
     struct mk_sched_notif *notif = NULL;
     struct mk_sched_thread_conf *thinfo = data;
+    struct mk_sched_ctx *ctx;
     struct mk_server *server;
 
     server = thinfo->server;
+    ctx = server->sched_ctx;
 
     /* Avoid SIGPIPE signals on this thread */
     mk_signal_thread_sigpipe_safe();
@@ -347,9 +361,8 @@ void *mk_sched_launch_worker_loop(void *data)
     mk_vhost_fdt_worker_init(server);
 
     /* Register working thread */
-    wid = mk_sched_register_thread();
-
-    sched = &sched_list[wid];
+    wid = mk_sched_register_thread(server);
+    sched = &ctx->workers[wid];
     sched->loop = mk_event_loop_create(MK_EVENT_QUEUE_SIZE);
     if (!sched->loop) {
         mk_err("Error creating Scheduler loop");
@@ -374,6 +387,7 @@ void *mk_sched_launch_worker_loop(void *data)
     }
 
     mk_list_init(&sched->event_free_queue);
+    mk_list_init(&sched->threads);
 
     /*
      * ULONG_MAX BUG test only
@@ -401,9 +415,11 @@ void *mk_sched_launch_worker_loop(void *data)
         }
     }
 
-    pthread_mutex_lock(&mutex_worker_init);
-    sched->initialized = 1;
-    pthread_mutex_unlock(&mutex_worker_init);
+    /* Unlock the conditional initializator */
+    pthread_mutex_lock(&pth_mutex);
+    pth_init = MK_TRUE;
+    pthread_cond_signal(&pth_cond);
+    pthread_mutex_unlock(&pth_mutex);
 
     /* Invoke custom worker-callbacks defined by the scheduler (lib) */
     mk_list_foreach(head, &server->sched_worker_callbacks) {
@@ -413,6 +429,8 @@ void *mk_sched_launch_worker_loop(void *data)
 
     mk_mem_free(thinfo);
 
+
+    mk_thread_prepare();
 
     /* init server thread loop */
     mk_server_worker_loop(server);
@@ -426,6 +444,14 @@ int mk_sched_launch_thread(struct mk_server *server, pthread_t *tout)
     pthread_t tid;
     pthread_attr_t attr;
     struct mk_sched_thread_conf *thconf;
+
+    pth_init = MK_FALSE;
+
+    /*
+     * This lock is used for the 'pth_cond' conditional. Once the worker
+     * thread is ready it will signal the condition.
+     */
+    pthread_mutex_lock(&pth_mutex);
 
     /* Thread data */
     thconf = mk_mem_alloc_z(sizeof(struct mk_sched_thread_conf));
@@ -441,6 +467,12 @@ int mk_sched_launch_thread(struct mk_server *server, pthread_t *tout)
 
     *tout = tid;
 
+    /* Block until the child thread is ready */
+    while (!pth_init) {
+        pthread_cond_wait(&pth_cond, &pth_mutex);
+    }
+    pthread_mutex_unlock(&pth_mutex);
+
     return 0;
 }
 
@@ -449,12 +481,33 @@ int mk_sched_launch_thread(struct mk_server *server, pthread_t *tout)
  * each worker thread belongs to a scheduler node, on this function we
  * allocate a scheduler node per number of workers defined.
  */
-void mk_sched_init(struct mk_server *server)
+int mk_sched_init(struct mk_server *server)
 {
     int size;
+    struct mk_sched_ctx *ctx;
 
-    size = sizeof(struct mk_sched_worker) * server->workers;
-    sched_list = mk_mem_alloc_z(size);
+    ctx = mk_mem_alloc_z(sizeof(struct mk_sched_ctx));
+    if (!ctx) {
+        mk_libc_error("malloc");
+        return -1;
+    }
+
+    size = (sizeof(struct mk_sched_worker) * server->workers);
+    ctx->workers = mk_mem_alloc(size);
+    if (!ctx->workers) {
+        mk_libc_error("malloc");
+        mk_mem_free(ctx);
+        return -1;
+    }
+
+    /* Initialize helpers */
+    pthread_mutex_init(&pth_mutex, NULL);
+    pthread_cond_init(&pth_cond, NULL);
+    pth_init = MK_FALSE;
+
+    /* Map context into server context */
+    server->sched_ctx = ctx;
+    return 0;
 }
 
 void mk_sched_set_request_list(struct rb_root *list)
@@ -485,7 +538,7 @@ int mk_sched_remove_client(struct mk_sched_conn *conn,
     sched->closed_connections++;
 
     /* Unlink from the red-black tree */
-    rb_erase(&conn->_rb_head, &sched->rb_queue);
+    //rb_erase(&conn->_rb_head, &sched->rb_queue);
     mk_sched_conn_timeout_del(conn);
 
     /* Close at network layer level */
@@ -500,39 +553,12 @@ int mk_sched_remove_client(struct mk_sched_conn *conn,
     return 0;
 }
 
+/* FIXME: nobody is using this function, check back later */
 struct mk_sched_conn *mk_sched_get_connection(struct mk_sched_worker *sched,
                                                  int remote_fd)
 {
-    struct rb_node *node;
-    struct mk_sched_conn *this;
-
-    /*
-     * In some cases the sched node can be NULL when is a premature close,
-     * an example of this situation is when the function mk_sched_add_client()
-     * close an incoming connection when invoking the MK_PLUGIN_STAGE_10 stage plugin,
-     * so no thread context exists.
-     */
-    if (!sched) {
-        MK_TRACE("[FD %i] No scheduler information", remote_fd);
-        close(remote_fd);
-        return NULL;
-    }
-
-  	node = sched->rb_queue.rb_node;
-  	while (node) {
-        this = container_of(node, struct mk_sched_conn, _rb_head);
-		if (remote_fd < this->event.fd)
-  			node = node->rb_left;
-		else if (remote_fd > this->event.fd)
-  			node = node->rb_right;
-		else {
-            MK_LT_SCHED(remote_fd, "GET_CONNECTION");
-  			return this;
-        }
-	}
-
-    MK_TRACE("[FD %i] not found in scheduler list", remote_fd);
-    MK_LT_SCHED(remote_fd, "GET_FAILED");
+    (void) sched;
+    (void) remote_fd;
     return NULL;
 }
 
@@ -772,4 +798,48 @@ void mk_sched_worker_cb_free(struct mk_server *server)
         mk_list_del(&wcb->_head);
         mk_mem_free(wcb);
     }
+}
+
+int mk_sched_send_signal(struct mk_server *server, uint64_t val)
+{
+    int i;
+    int count = 0;
+    ssize_t n;
+    struct mk_sched_ctx *ctx;
+    struct mk_sched_worker *worker;
+
+    ctx = server->sched_ctx;
+    for (i = 0; i < server->workers; i++) {
+        worker = &ctx->workers[i];
+        n = write(worker->signal_channel_w, &val, sizeof(uint64_t));
+        if (n < 0) {
+            mk_libc_error("write");
+        }
+        else {
+            count++;
+        }
+    }
+
+    return count;
+}
+
+/*
+ * Wait for all workers to finish: this function assumes that previously a
+ * MK_SCHED_SIGNAL_FREE_ALL was sent to the worker channels.
+ */
+int mk_sched_workers_join(struct mk_server *server)
+{
+    int i;
+    int count = 0;
+    struct mk_sched_ctx *ctx;
+    struct mk_sched_worker *worker;
+
+    ctx = server->sched_ctx;
+    for (i = 0; i < server->workers; i++) {
+        worker = &ctx->workers[i];
+        pthread_join(worker->tid, NULL);
+        count++;
+    }
+
+    return count;
 }

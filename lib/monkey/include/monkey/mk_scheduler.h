@@ -63,12 +63,6 @@ struct mk_sched_worker
     unsigned long long over_capacity;
 
     /*
-     * Red-Black tree queue to perform fast lookup over
-     * the scheduler busy queue
-     */
-    struct rb_root rb_queue;
-
-    /*
      * The timeout queue represents client connections that
      * have not initiated it requests or the request status
      * is incomplete. This linear lists allows the scheduler
@@ -100,6 +94,15 @@ struct mk_sched_worker
 
     /* If using REUSEPORT, this points to the list of listeners */
     struct mk_list *listeners;
+
+    /*
+     * List head for finished requests that need to be cleared after each
+     * event loop round.
+     */
+    struct mk_list requests_done;
+
+    /* List of co-routine threads */
+    struct mk_list threads;
 };
 
 
@@ -116,7 +119,6 @@ struct mk_sched_conn
     struct mk_plugin_network *net;     /* I/O network layer            */
     struct mk_channel channel;         /* stream channel               */
     struct mk_list timeout_head;       /* link to the timeout queue    */
-    struct rb_node _rb_head;           /* red-black tree head          */
     void *data;                        /* optional ref for protocols   */
 };
 
@@ -186,9 +188,6 @@ struct mk_sched_notif {
     struct mk_event event;
 };
 
-/* global scheduler list */
-struct mk_sched_worker *sched_list;
-
 /* Struct under thread context */
 struct mk_sched_thread_conf {
     struct mk_server *server;
@@ -200,12 +199,21 @@ struct mk_sched_worker_cb {
     struct mk_list _head;
 };
 
+/*
+ * All data required by the Scheduler interface is mapped inside this
+ * struct which is later linked into config->scheduler_ctx.
+ */
+struct mk_sched_ctx {
+    /* Array of sched_worker */
+    struct mk_sched_worker *workers;
+};
+
 extern pthread_mutex_t mutex_worker_init;
 extern pthread_mutex_t mutex_worker_exit;
 pthread_mutex_t mutex_port_init;
 
 struct mk_sched_worker *mk_sched_next_target();
-void mk_sched_init();
+int mk_sched_init(struct mk_server *server);
 int mk_sched_launch_thread(struct mk_server *server, pthread_t *tout);
 
 void *mk_sched_launch_epoll_loop(void *thread_conf);
@@ -323,5 +331,7 @@ int mk_sched_worker_cb_add(struct mk_server *server,
                            void *data);
 
 void mk_sched_worker_cb_free(struct mk_server *server);
+int mk_sched_send_signal(struct mk_server *server, uint64_t val);
+int mk_sched_workers_join(struct mk_server *server);
 
 #endif

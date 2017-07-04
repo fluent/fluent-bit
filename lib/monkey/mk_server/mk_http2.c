@@ -276,7 +276,8 @@ static inline int mk_http2_frame_run(struct mk_sched_conn *conn,
 }
 
 static int mk_http2_sched_read(struct mk_sched_conn *conn,
-                               struct mk_sched_worker *worker)
+                               struct mk_sched_worker *worker,
+                               struct mk_server *server)
 {
     int bytes;
     int new_size;
@@ -284,6 +285,7 @@ static int mk_http2_sched_read(struct mk_sched_conn *conn,
     char *tmp;
     struct mk_http2_session *h2s;
     (void) worker;
+    (void) server;
 
     h2s = conn->data;
     available = h2s->buffer_size - h2s->buffer_length;
