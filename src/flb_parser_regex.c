@@ -162,10 +162,19 @@ static void cb_results(unsigned char *name, unsigned char *value,
         }
     }
 
-    msgpack_pack_str(pcb->pck, len);
-    msgpack_pack_str_body(pcb->pck, (char *) name, len);
-    msgpack_pack_str(pcb->pck, vlen);
-    msgpack_pack_str_body(pcb->pck, (char *) value, vlen);
+    if (parser->types_len != 0) {
+        flb_parser_typecast((char*)name, len,
+                            (char*)value, vlen,
+                            pcb->pck,
+                            parser->types,
+                            parser->types_len);
+    }
+    else {
+        msgpack_pack_str(pcb->pck, len);
+        msgpack_pack_str_body(pcb->pck, (char *) name, len);
+        msgpack_pack_str(pcb->pck, vlen);
+        msgpack_pack_str_body(pcb->pck, (char *) value, vlen);
+    }
 }
 
 int flb_parser_regex_do(struct flb_parser *parser,
