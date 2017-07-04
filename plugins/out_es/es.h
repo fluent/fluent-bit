@@ -68,6 +68,9 @@ struct flb_elasticsearch {
     int tag_key_len;
     char *tag_key;
 
+    /* Elasticsearch HTTP API */
+    char uri[256];
+
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
 };

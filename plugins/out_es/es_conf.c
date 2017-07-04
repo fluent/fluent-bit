@@ -218,6 +218,15 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
         }
     }
 
+    /* Elasticsearch: Pipeline */
+    tmp = flb_output_get_property("pipeline", ins);
+    if (tmp) {
+        snprintf(ctx->uri, sizeof(ctx->uri) - 1, "/_bulk/?pipeline=%s", tmp);
+    }
+    else {
+        snprintf(ctx->uri, sizeof(ctx->uri) - 1, "/_bulk");
+    }
+
     return ctx;
 }
 

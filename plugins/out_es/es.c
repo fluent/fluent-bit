@@ -355,7 +355,7 @@ void cb_es_flush(void *data, size_t bytes,
     }
 
     /* Compose HTTP Client request */
-    c = flb_http_client(u_conn, FLB_HTTP_POST, "/_bulk",
+    c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->uri,
                         pack, bytes_out, NULL, 0, NULL, 0);
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
     flb_http_add_header(c, "Content-Type", 12, "application/x-ndjson", 20);
