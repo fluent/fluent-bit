@@ -9,16 +9,23 @@ PROP_FILES = \
 	    $(UNICODE_VERSION)/PropList.txt \
 	    $(UNICODE_VERSION)/Scripts.txt \
 	    $(UNICODE_VERSION)/UnicodeData.txt \
-	    $(UNICODE_VERSION)/GraphemeBreakProperty.txt
+	    $(UNICODE_VERSION)/auxiliary/GraphemeBreakProperty.txt
 
 CASEFOLD_FILES = \
 	    $(UNICODE_VERSION)/CaseFolding.txt \
 	    $(UNICODE_VERSION)/UnicodeData.txt \
 	    $(UNICODE_VERSION)/SpecialCasing.txt
 
+update: update-unicode-header update-jis-header update-doc
 
-update: casefold.h name2ctype.h
+update-unicode-header: casefold.h name2ctype.h
 	cp casefold.h name2ctype.h ../enc/unicode
+
+update-jis-header: ../enc/jis/props.kwd
+	cd .. && ./tool/convert-jis-props.sh enc/jis/props.kwd enc/jis/props.h && cd -
+
+update-doc: $(PROP_FILES)
+	$(PYTHON) ./update-doc.py $(UNICODE_VERSION) > ../doc/UnicodeProps.txt
 
 download:
 	./download-ucd.sh $(UNICODE_VERSION)
@@ -34,4 +41,6 @@ name2ctype.h: $(PROP_FILES)
 clean:
 	-rm -f casefold.h name2ctype.kwd name2ctype.h
 	-rm -f $(PROP_FILES) $(CASEFOLD_FILES)
+	-rm -f GraphemeBreakProperty.txt
+	-rmdir $(UNICODE_VERSION)/auxiliary
 	-rmdir $(UNICODE_VERSION)

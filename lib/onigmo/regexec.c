@@ -1174,10 +1174,12 @@ static int string_cmp_ic(OnigEncoding enc, int case_fold_flag,
 # define DATA_ENSURE_CHECK1    (s < right_range)
 # define DATA_ENSURE_CHECK(n)  (s + (n) <= right_range)
 # define DATA_ENSURE(n)        if (s + (n) > right_range) goto fail
+# define ABSENT_END_POS        right_range
 #else
 # define DATA_ENSURE_CHECK1    (s < end)
 # define DATA_ENSURE_CHECK(n)  (s + (n) <= end)
 # define DATA_ENSURE(n)        if (s + (n) > end) goto fail
+# define ABSENT_END_POS        end
 #endif /* USE_MATCH_RANGE_MUST_BE_INSIDE_OF_SPECIFIED_RANGE */
 
 
@@ -3069,17 +3071,17 @@ match_at(regex_t* reg, const UChar* str, const UChar* end,
 
     CASE(OP_PUSH_ABSENT_POS)  MOP_IN(OP_PUSH_ABSENT_POS);
       /* Save the absent-start-pos and the original end-pos. */
-      STACK_PUSH_ABSENT_POS(s, end);
+      STACK_PUSH_ABSENT_POS(s, ABSENT_END_POS);
       MOP_OUT;
       JUMP;
 
     CASE(OP_ABSENT)  MOP_IN(OP_ABSENT);
       {
-	const UChar* aend = end;
+	const UChar* aend = ABSENT_END_POS;
 	UChar* absent;
 	UChar* selfp = p - 1;
 
-	STACK_POP_ABSENT_POS(absent, end);  /* Restore end-pos. */
+	STACK_POP_ABSENT_POS(absent, ABSENT_END_POS);  /* Restore end-pos. */
 	GET_RELADDR_INC(addr, p);
 #ifdef ONIG_DEBUG_MATCH
 	fprintf(stderr, "ABSENT: s:%p, end:%p, absent:%p, aend:%p\n", s, end, absent, aend);
@@ -3103,10 +3105,10 @@ match_at(regex_t* reg, const UChar* str, const UChar* end,
 	else {
 	  STACK_PUSH_ALT(p + addr, s, sprev, pkeep); /* Push possible point. */
 	  n = enclen(encode, s, end);
-	  STACK_PUSH_ABSENT_POS(absent, end); /* Save the original pos. */
+	  STACK_PUSH_ABSENT_POS(absent, ABSENT_END_POS); /* Save the original pos. */
 	  STACK_PUSH_ALT(selfp, s + n, s, pkeep); /* Next iteration. */
 	  STACK_PUSH_ABSENT;
-	  end = aend;
+	  ABSENT_END_POS = aend;
 	}
       }
       MOP_OUT;
@@ -3115,10 +3117,10 @@ match_at(regex_t* reg, const UChar* str, const UChar* end,
     CASE(OP_ABSENT_END)  MOP_IN(OP_ABSENT_END);
       /* The pattern inside (?~...) was matched.
        * Set the end-pos temporary and go to next iteration. */
-      if (sprev < end)
-	end = sprev;
+      if (sprev < ABSENT_END_POS)
+	ABSENT_END_POS = sprev;
 #ifdef ONIG_DEBUG_MATCH
-      fprintf(stderr, "ABSENT_END: end:%p\n", end);
+      fprintf(stderr, "ABSENT_END: end:%p\n", ABSENT_END_POS);
 #endif
       STACK_POP_TIL_ABSENT;
       goto fail;

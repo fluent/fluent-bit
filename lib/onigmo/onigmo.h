@@ -39,7 +39,7 @@ extern "C" {
 
 #define ONIGMO_VERSION_MAJOR   6
 #define ONIGMO_VERSION_MINOR   1
-#define ONIGMO_VERSION_TEENY   0
+#define ONIGMO_VERSION_TEENY   2
 
 #ifndef ONIG_EXTERN
 # ifdef RUBY_EXTERN
@@ -825,7 +825,7 @@ int onig_new(OnigRegex*, const OnigUChar* pattern, const OnigUChar* pattern_end,
 ONIG_EXTERN
 int onig_reg_init(OnigRegex reg, OnigOptionType option, OnigCaseFoldType case_fold_flag, OnigEncoding enc, const OnigSyntaxType* syntax);
 ONIG_EXTERN
-int onig_new_without_alloc(OnigRegex, const OnigUChar* pattern, const OnigUChar* pattern_end, OnigOptionType option, OnigEncoding enc, OnigSyntaxType* syntax, OnigErrorInfo* einfo);
+int onig_new_without_alloc(OnigRegex, const OnigUChar* pattern, const OnigUChar* pattern_end, OnigOptionType option, OnigEncoding enc, const OnigSyntaxType* syntax, OnigErrorInfo* einfo);
 ONIG_EXTERN
 int onig_new_deluxe(OnigRegex* reg, const OnigUChar* pattern, const OnigUChar* pattern_end, OnigCompileInfo* ci, OnigErrorInfo* einfo);
 ONIG_EXTERN

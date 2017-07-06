@@ -11,13 +11,15 @@ UNICODE_VERSION=$1
 # remove old files
 if [ -d $UNICODE_VERSION ]; then
 	cd $UNICODE_VERSION
-	rm ${files//auxiliary\//}
+	rm -f $files
+	rm -f GraphemeBreakProperty.txt
 	cd -
 fi
 
-mkdir -p $UNICODE_VERSION
+mkdir -p $UNICODE_VERSION/auxiliary
 cd $UNICODE_VERSION
 
 for i in $files; do
 	echo http://www.unicode.org/Public/${UNICODE_VERSION}/ucd/$i
 done | xargs wget
+mv GraphemeBreakProperty.txt auxiliary

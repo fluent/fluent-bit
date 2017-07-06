@@ -308,9 +308,12 @@ syntax: ONIG_SYNTAX_RUBY (default)
                         left-most group is checked, but it should be the
                         same as \k<name>.
 
-  (?~subexp)        absent operator (experimental)
+  (?~subexp)        absence operator (experimental)
                     Matches any string which doesn't contain any string which
                     matches subexp.
+                    More precisely, (?~subexp) matches the complement set of
+                    a set which .*subexp.* matches. This is regular in the
+                    meaning of formal language theory.
                     Similar to (?:(?!subexp).)*, but easy to write.
 
                     E.g.:
