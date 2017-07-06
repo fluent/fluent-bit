@@ -5,7 +5,13 @@ compiler:
 os:
   - linux
   - osx
-
+addons:
+  apt:
+    sources:
+      - george-edison55-precise-backports # cmake 3.2.3 / doxygen 1.8.3
+    packages:
+      - cmake
+      - cmake-data
 env:
   - FLB_MEM="-DFLB_JEMALLOC=On"
   - FLB_MEM="-DFLB_JEMALLOC=Off"
