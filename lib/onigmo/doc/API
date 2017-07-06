@@ -1,4 +1,4 @@
-Onigmo (Oniguruma-mod) API  Version 6.0.0  2016/12/03
+Onigmo (Oniguruma-mod) API  Version 6.1.2  2017/05/10
 
 #include <onigmo.h>
 
@@ -66,8 +66,8 @@ Onigmo (Oniguruma-mod) API  Version 6.0.0  2016/12/03
 
 
 # int onig_new(regex_t** reg, const UChar* pattern, const UChar* pattern_end,
-            OnigOptionType option, OnigEncoding enc, OnigSyntaxType* syntax,
-            OnigErrorInfo* err_info)
+            OnigOptionType option, OnigEncoding enc,
+            const OnigSyntaxType* syntax, OnigErrorInfo* err_info)
 
   Create a regex object.
 
@@ -187,8 +187,8 @@ Onigmo (Oniguruma-mod) API  Version 6.0.0  2016/12/03
 
 # int onig_new_without_alloc(regex_t* reg, const UChar* pattern,
             const UChar* pattern_end,
-            OnigOptionType option, OnigEncoding enc, OnigSyntaxType* syntax,
-            OnigErrorInfo* err_info)
+            OnigOptionType option, OnigEncoding enc,
+            const OnigSyntaxType* syntax, OnigErrorInfo* err_info)
 
   Create a regex object.
   reg object area is not allocated in this function.
@@ -436,7 +436,7 @@ Onigmo (Oniguruma-mod) API  Version 6.0.0  2016/12/03
 # OnigEncoding     onig_get_encoding(const regex_t* reg)
 # OnigOptionType   onig_get_options(const regex_t* reg)
 # OnigCaseFoldType onig_get_case_fold_flag(const regex_t* reg)
-# OnigSyntaxType*  onig_get_syntax(const regex_t* reg)
+# const OnigSyntaxType* onig_get_syntax(const regex_t* reg)
 
   Return a value of the regex object.
 

@@ -5955,7 +5955,7 @@ onig_reg_init(regex_t* reg, OnigOptionType option,
 extern int
 onig_new_without_alloc(regex_t* reg, const UChar* pattern,
           const UChar* pattern_end, OnigOptionType option, OnigEncoding enc,
-          OnigSyntaxType* syntax, OnigErrorInfo* einfo)
+          const OnigSyntaxType* syntax, OnigErrorInfo* einfo)
 {
   int r;
 
@@ -6554,7 +6554,7 @@ print_compiled_byte_code_list(FILE* f, regex_t* reg)
 # endif /* ONIG_DEBUG_COMPILE */
 
 # ifdef ONIG_DEBUG_PARSE_TREE
-void
+static void
 print_indent_tree(FILE* f, Node* node, int indent)
 {
   int i, type, container_p = 0;

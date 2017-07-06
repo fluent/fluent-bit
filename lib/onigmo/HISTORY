@@ -1,5 +1,27 @@
 History of Onigmo (Oniguruma-mod)
 
+2017/05/15: Version 6.1.2
+
+2017/05/15: [dist] Update LTVERSION to "6:3:0".
+2017/05/01: [bug]  Import Ruby r58468
+                   Fix macro expansion bug.
+2017/04/05: [doc]  Improve document about absence operator (Issue #87)
+2017/04/03: [impl] Import the latest enc-unicode.rb from Ruby r58070.
+                   (Includes Ruby r58065, r58066, r58069 and r58070.)
+2017/03/14: [bug]  Import Ruby r57816
+                   Fix UTF-32 valid_encoding?.
+2017/02/20: [bug]  Import Ruby r57660
+                   Initialize return values.
+                   https://bugs.ruby-lang.org/issues/13234
+                   https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2017-6181
+2017/01/31: [API]  Fix missing const on onig_new_without_alloc. (Issue #85)
+
+2017/01/29: Version 6.1.1
+
+2017/01/29: [dist] Update LTVERSION to "6:2:0".
+2017/01/29: [bug]  Fix that (?~\S+) might cause infinite loop.
+                   Reported at: http://sakura.qp.land.to/?BugReport%2F211
+
 2017/01/16: Version 6.1.0
 
 2017/01/16: [dist] Update LTVERSION to "6:1:0".
@@ -254,7 +276,7 @@ History of Onigmo (Oniguruma-mod)
                    Add the default multithread implementations for Win32 and
                    Unix. Add --enable-multithread option in configure.
 2014/04/12: [bug]  deadlock occurs when recursive lock is not allowed
-2014/04/12: [bug]  fix: segmation fault occurs when many groups are used
+2014/04/12: [bug]  fix: segmentation fault occurs when many groups are used
                    (Issue #24)
                    see: https://bugs.ruby-lang.org/issues/8716
 2014/01/22: [new]  (thanks Allan Odgaard)
