@@ -181,7 +181,7 @@ option(MSGPACK_ENABLE_CXX             OFF)
 option(MSGPACK_ENABLE_SHARED          OFF)
 option(MSGPACK_BUILD_TESTS            OFF)
 option(MSGPACK_BUILD_EXAMPLES         OFF)
-add_subdirectory(lib/msgpack-c-0b7cabd)
+add_subdirectory(lib/msgpack-c-0b7cabd EXCLUDE_FROM_ALL)
 
 # Lib: build the core libraries used by Fluent-Bit
 FLB_DEFINITION(JSMN_PARENT_LINKS)
@@ -198,7 +198,7 @@ macro(MK_SET_OPTION option value)
 endmacro()
 MK_SET_OPTION(MK_SYSTEM_MALLOC      ON)
 
-add_subdirectory(lib/monkey/mk_core)
+add_subdirectory(lib/monkey/mk_core EXCLUDE_FROM_ALL)
 
 # SSL/TLS: add encryption support
 if(FLB_OUT_TD)
@@ -210,7 +210,7 @@ if(FLB_TLS)
   option(ENABLE_TESTING  OFF)
   option(ENABLE_PROGRAMS OFF)
   option(INSTALL_MBEDTLS_HEADERS OFF)
-  add_subdirectory(lib/mbedtls-2.4.2)
+  add_subdirectory(lib/mbedtls-2.4.2 EXCLUDE_FROM_ALL)
   include_directories(lib/mbedtls-2.4.2/include)
 endif()
 
