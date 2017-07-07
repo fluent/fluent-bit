@@ -125,6 +125,7 @@ char *flb_env_var_translate(struct flb_env *env, char *value)
     int i;
     int len;
     int v_len;
+    int e_len;
     int pre_var;
     int have_var = FLB_FALSE;
     char *env_var;
@@ -174,10 +175,15 @@ char *flb_env_var_translate(struct flb_env *env, char *value)
         /* Lookup the variable in our env-hash */
         env_var = flb_env_get(env, tmp);
         if (env_var) {
-            len = strlen(env_var);
-            buf_append(&buf, env_var, len);
+            e_len = strlen(env_var);
+            buf_append(&buf, env_var, e_len);
         }
         i += (v_start - (value + i)) + v_len;
+    }
+
+    /* Copy the remaining value into our buffer */
+    if (have_var == FLB_TRUE && (value + len) - (v_end + 1) > 0) {
+        buf_append(&buf, v_end + 1, (value + len) - (v_end + 1));
     }
 
     if (buf.len == 0) {
