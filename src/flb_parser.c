@@ -304,6 +304,20 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
     return 0;
 
  fconf_error:
+    flb_free(name);
+    flb_free(format);
+    if (regex) {
+        flb_free(regex);
+    }
+    if (time_fmt) {
+        flb_free(time_fmt);
+    }
+    if (time_key) {
+        flb_free(time_key);
+    }
+    if (types_str) {
+        flb_free(types_str);
+    }
     mk_rconf_free(fconf);
     return -1;
 }
