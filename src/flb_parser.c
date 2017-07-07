@@ -214,7 +214,7 @@ static int proc_types_str(char *types_str, struct flb_parser_types **types)
     split = flb_utils_split(types_str, ' ', 256);
     types_num = mk_list_size(split);
     *types = flb_malloc(sizeof(struct flb_parser_types) * types_num);
-    
+
     for(i=0; i<types_num; i++){
         (*types)[i].key = NULL;
         (*types)[i].type = FLB_PARSER_TYPE_STRING;
@@ -249,7 +249,7 @@ static int proc_types_str(char *types_str, struct flb_parser_types **types)
         i++;
     }
     flb_utils_split_free(split);
-    
+
     return i;
 }
 
@@ -377,7 +377,7 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
         if (time_key) {
             flb_free(time_key);
         }
-        if (types_str != NULL) {
+        if (types_str) {
             flb_free(types_str);
         }
     }
@@ -386,6 +386,20 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
     return 0;
 
  fconf_error:
+    flb_free(name);
+    flb_free(format);
+    if (regex) {
+        flb_free(regex);
+    }
+    if (time_fmt) {
+        flb_free(time_fmt);
+    }
+    if (time_key) {
+        flb_free(time_key);
+    }
+    if (types_str) {
+        flb_free(types_str);
+    }
     mk_rconf_free(fconf);
     return -1;
 }
@@ -499,7 +513,7 @@ int flb_parser_typecast(char *key, int key_len,
             !strncmp(key, types[i].key, key_len)) {
 
             casted = FLB_TRUE;
-            
+
             msgpack_pack_str(pck, key_len);
             msgpack_pack_str_body(pck, key, key_len);
 
@@ -552,7 +566,7 @@ int flb_parser_typecast(char *key, int key_len,
             break;
         }
     }
-    
+
     if (casted == FLB_FALSE) {
         msgpack_pack_str(pck, key_len);
         msgpack_pack_str_body(pck, key, key_len);
