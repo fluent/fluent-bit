@@ -315,9 +315,6 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
     if (time_key) {
         flb_free(time_key);
     }
-    if (types_str) {
-        flb_free(types_str);
-    }
     mk_rconf_free(fconf);
     return -1;
 }
