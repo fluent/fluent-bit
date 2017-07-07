@@ -143,7 +143,14 @@ ssize_t flb_regex_do(struct flb_regex *r, unsigned char *str, size_t slen,
     result->region   = region;
     result->str      = str;
 
-    return (region->num_regs - 1);
+    ret = region->num_regs - 1;
+
+    if (ret == 0) {
+        result->region = NULL;
+        onig_region_free(region, 1);
+    }
+
+    return ret;
 }
 
 int flb_regex_parse(struct flb_regex *r, struct flb_regex_search *result,
