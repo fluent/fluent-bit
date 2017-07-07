@@ -72,6 +72,7 @@ int flb_tail_mult_create(struct flb_tail_config *ctx,
         flb_error("[in_tail] multiline: invalid parser '%s'", tmp);
         return -1;
     }
+
     ctx->mult_parser_firstline = parser;
     mk_list_init(&ctx->mult_parsers);
 
@@ -86,14 +87,11 @@ int flb_tail_mult_create(struct flb_tail_config *ctx,
             parser = flb_parser_get(p->val, config);
             if (!parser) {
                 flb_error("[in_tail] multiline: invalid parser '%s'", p->val);
-                flb_tail_mult_destroy(ctx);
                 return -1;
-
             }
 
             ret = tail_mult_append(parser, ctx);
             if (ret == -1) {
-                flb_tail_mult_destroy(ctx);
                 return -1;
             }
         }
@@ -121,6 +119,31 @@ int flb_tail_mult_destroy(struct flb_tail_config *ctx)
     return 0;
 }
 
+/*
+ * Pack a line that did not matched a firstline and is not part of a multiline
+ * message.
+ */
+static int pack_line(char *data, size_t data_size, struct flb_tail_file *file,
+                     struct flb_tail_config *ctx)
+{
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+    struct flb_time out_time;
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    flb_time_get(&out_time);
+
+    flb_tail_file_pack_line(&mp_sbuf, &mp_pck, &out_time, data, data_size, file);
+    flb_input_dyntag_append_raw(ctx->i_ins,
+                                file->tag_buf,
+                                file->tag_len,
+                                mp_sbuf.data,
+                                mp_sbuf.size);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+
+    return 0;
+}
 
 /* Process the result of a firstline match */
 int flb_tail_mult_process_first(time_t now,
@@ -267,7 +290,12 @@ int flb_tail_mult_process_content(time_t now,
          * If no parser was found means the string log must be appended
          * to the last structured field.
          */
-        flb_tail_mult_append_raw(buf, len, file, ctx);
+        if (file->mult_firstline == FLB_TRUE) {
+            flb_tail_mult_append_raw(buf, len, file, ctx);
+        }
+        else {
+            pack_line(buf, len, file, ctx);
+        }
         return FLB_TAIL_MULT_MORE;
     }
 
@@ -403,12 +431,14 @@ int flb_tail_mult_pending_flush(struct flb_input_instance *i_ins,
     mk_list_foreach(head, &ctx->files_event) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
 
-        if (file->mult_firstline == FLB_FALSE) {
+        if (file->mult_flush_timeout > now) {
             continue;
         }
 
-        if (file->mult_flush_timeout > now) {
-            continue;
+        if (file->mult_firstline == FLB_FALSE) {
+            if (file->mult_sbuf.data == NULL || file->mult_sbuf.size <= 0) {
+                continue;
+            }
         }
 
         msgpack_sbuffer_init(&mp_sbuf);

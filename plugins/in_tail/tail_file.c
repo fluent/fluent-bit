@@ -132,7 +132,7 @@ static inline int pack_line_map(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck
     return 0;
 }
 
-static inline int pack_line(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
+int flb_tail_file_pack_line(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                             struct flb_time *time, char *data, size_t data_size,
                             struct flb_tail_file *file)
 {
@@ -237,8 +237,8 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
                 flb_tail_mult_flush(out_sbuf, out_pck, file, ctx);
 
                 flb_time_get(&out_time);
-                pack_line(out_sbuf, out_pck, &out_time,
-                          data, len, file);
+                flb_tail_file_pack_line(out_sbuf, out_pck, &out_time,
+                                        data, len, file);
             }
             else if (ret == FLB_TAIL_MULT_MORE) {
                 /* we need more data, do nothing */
@@ -250,13 +250,13 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
         }
         else {
             flb_time_get(&out_time);
-            pack_line(out_sbuf, out_pck, &out_time,
-                      data, len, file);
+            flb_tail_file_pack_line(out_sbuf, out_pck, &out_time,
+                                    data, len, file);
         }
 #else
         flb_time_get(&out_time);
-        pack_line(out_sbuf, out_pck, &out_time,
-                  file->buf_data, len, file);
+        flb_tail_file_pack_line(out_sbuf, out_pck, &out_time,
+                                file->buf_data, len, file);
 #endif
 
     go_next:
@@ -431,6 +431,8 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file->mult_firstline = FLB_FALSE;
     file->mult_keys = 0;
     file->mult_flush_timeout = 0;
+    file->mult_skipping = FLB_FALSE;
+    file->mult_sbuf.data = NULL;
     file->db_id     = 0;
 
     /* Local buffer */

@@ -142,7 +142,6 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
             ctx->multiline = FLB_TRUE;
             ret = flb_tail_mult_create(ctx, i_ins, config);
             if (ret == -1) {
-                flb_free(ctx);
                 return NULL;
             }
         }

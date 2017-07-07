@@ -246,6 +246,7 @@ static int in_tail_init(struct flb_input_instance *in,
                                            ctx->multiline_flush, 0,
                                            config);
         if (ret == -1) {
+            ctx->multiline = FLB_FALSE;
             flb_tail_config_destroy(ctx);
             return -1;
         }
