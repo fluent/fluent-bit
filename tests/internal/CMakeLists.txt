@@ -15,6 +15,8 @@ foreach(source_file ${UNIT_TESTS})
 
   if(FLB_JEMALLOC)
     target_link_libraries(${source_file_we} libjemalloc ${CMAKE_THREAD_LIBS_INIT})
+  else()
+    target_link_libraries(${source_file_we} ${CMAKE_THREAD_LIBS_INIT})
   endif()
 
   target_link_libraries(${source_file_we} fluent-bit-static)
