@@ -27,7 +27,7 @@ before_script:
   - if [ $TRAVIS_OS_NAME == linux ]; then export PATH=$PATH:$PWD/ksz9692/bin/; fi
   # Unpack the sources
   - cd build
-  - cmake -DFLB_ALL=On -DFLB_WITHOUT_EXAMPLES=On $FLB_FLUSH $FLB_MEM ../
+  - cmake -DFLB_ALL=On -DFLB_WITHOUT_EXAMPLES=On $FLB_FLUSH $FLB_MEM -DFLB_TESTS_INTERNAL=On ../
 
 matrix:
   exclude:
@@ -35,3 +35,4 @@ matrix:
       env: FLB_MEM="-DFLB_JEMALLOC=On"
 
 script: make
+after_script: make test
