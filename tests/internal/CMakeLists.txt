@@ -12,10 +12,13 @@ foreach(source_file ${UNIT_TESTS})
     ${source_file_we}
     ${source_file}
     )
-  target_link_libraries(${source_file_we}
-    fluent-bit-static
-    ${CMAKE_THREAD_LIBS_INIT}
-    )
+
+  if(FLB_JEMALLOC)
+    target_link_libraries(${source_file_we} libjemalloc ${CMAKE_THREAD_LIBS_INIT})
+  endif()
+
+  target_link_libraries(${source_file_we} fluent-bit-static)
+
   add_test(${source_file_we} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${source_file_we})
   if("${CMAKE_C_COMPILER_ID}" STREQUAL "Clang" OR
       "${CMAKE_C_COMPILER_ID}" STREQUAL "GNU")
