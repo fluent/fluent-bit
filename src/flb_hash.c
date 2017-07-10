@@ -24,13 +24,6 @@
 #include <fluent-bit/flb_str.h>
 
 /*
- * This file implements a very basic hash table implementation, it originally
- * goal is to serve as a storage for environment variables.
- *
- * Likely we should switch to Murmur3.. pending.
- */
-
-/*
  * This hash generation function is taken originally from Redis source code:
  *
  *  https://github.com/antirez/redis/blob/unstable/src/dict.c#L109
@@ -91,24 +84,23 @@ static unsigned int gen_hash(const void *key, int len)
     return (unsigned int) h;
 }
 
-static inline void flb_hash_entry_free(struct flb_hash *ht, int id)
+static inline void flb_hash_entry_free(struct flb_hash_entry *entry)
 {
-    struct flb_hash_entry *entry;
-
-    entry = &ht->table[id];
-    if (!entry->key) {
-        return;
-    }
-
+    mk_list_del(&entry->_head);
     flb_free(entry->key);
     flb_free(entry->val);
-    entry->key = NULL;
-    entry->val = NULL;
+    flb_free(entry);
 }
 
 struct flb_hash *flb_hash_create(size_t size)
 {
+    int i;
+    struct flb_hash_table *tmp;
     struct flb_hash *ht;
+
+    if (size <= 0) {
+        return NULL;
+    }
 
     ht = flb_malloc(sizeof(struct flb_hash));
     if (!ht) {
@@ -117,11 +109,18 @@ struct flb_hash *flb_hash_create(size_t size)
     }
 
     ht->size = size;
-    ht->table = flb_calloc(1, sizeof(struct flb_hash_entry) * size);
+    ht->table = flb_calloc(1, sizeof(struct flb_hash_table) * size);
     if (!ht->table) {
         flb_errno();
         flb_free(ht);
         return NULL;
+    }
+
+    /* Initialize chains list head */
+    for (i = 0; i < size; i++) {
+        tmp = &ht->table[i];
+        tmp->count = 0;
+        mk_list_init(&tmp->chains);
     }
 
     return ht;
@@ -130,9 +129,18 @@ struct flb_hash *flb_hash_create(size_t size)
 void flb_hash_destroy(struct flb_hash *ht)
 {
     int i;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_hash_entry *entry;
+    struct flb_hash_table *table;
 
     for (i = 0; i < ht->size; i++) {
-        flb_hash_entry_free(ht, i);
+        table = &ht->table[i];
+        mk_list_foreach_safe(head, tmp, &table->chains) {
+            entry = mk_list_entry(head, struct flb_hash_entry, _head);
+            flb_hash_entry_free(entry);
+            table->count--;
+        }
     }
 
     flb_free(ht->table);
@@ -144,27 +152,36 @@ int flb_hash_add(struct flb_hash *ht, char *key, int key_len,
 {
     int id;
     unsigned int hash;
+    struct mk_list *tmp;
+    struct mk_list *head;
     struct flb_hash_entry *entry;
+    struct flb_hash_entry *old;
+    struct flb_hash_table *table;
 
     if (!key || key_len <= 0 || !val || val_size <= 0) {
         return -1;
     }
 
+    /* Generate hash number */
     hash = gen_hash(key, key_len);
     id = (hash % ht->size);
 
-    entry = &ht->table[id];
+    /* Allocate the entry */
+    entry = flb_malloc(sizeof(struct flb_hash_entry));
+    if (!entry) {
+        flb_errno();
+        return -1;
+    }
+
+    /* Store the key and value as a new memory region */
     entry->key = flb_strdup(key);
     entry->key_len = key_len;
-
-    /* Store the value as a new memory region */
     entry->val = flb_malloc(val_size + 1);
     if (!entry->val) {
         flb_errno();
         flb_free(entry->key);
         return -1;
     }
-
     /*
      * Copy the buffer and append a NULL byte in case the caller set and
      * expects a string.
@@ -172,6 +189,26 @@ int flb_hash_add(struct flb_hash *ht, char *key, int key_len,
     memcpy(entry->val, val, val_size);
     entry->val[val_size] = '\0';
     entry->val_size = val_size;
+
+    /* Link the new entry in our table at the end of the list */
+    table = &ht->table[id];
+
+    /* Check if the new key already exists */
+    if (table->count == 0) {
+        mk_list_add(&entry->_head, &table->chains);
+    }
+    else {
+        mk_list_foreach(head, &table->chains) {
+            old = mk_list_entry(head, struct flb_hash_entry, _head);
+            if (strcmp(old->key, entry->key) == 0) {
+                flb_hash_entry_free(old);
+                break;
+            }
+        }
+        mk_list_add(&entry->_head, &table->chains);
+    }
+
+    table->count++;
 
     return id;
 }
@@ -181,6 +218,8 @@ int flb_hash_get(struct flb_hash *ht, char *key, int key_len,
 {
     int id;
     unsigned int hash;
+    struct mk_list *head;
+    struct flb_hash_table *table;
     struct flb_hash_entry *entry;
 
     if (!key || key_len <= 0) {
@@ -190,7 +229,36 @@ int flb_hash_get(struct flb_hash *ht, char *key, int key_len,
     hash = gen_hash(key, key_len);
     id = (hash % ht->size);
 
-    entry = &ht->table[id];
+    table = &ht->table[id];
+    if (table->count == 0) {
+        return -1;
+    }
+
+    if (table->count == 1) {
+        entry = mk_list_entry_first(&table->chains,
+                                    struct flb_hash_entry,
+                                    _head);
+    }
+    else {
+        /* Iterate entries */
+        mk_list_foreach(head, &table->chains) {
+            entry = mk_list_entry(head, struct flb_hash_entry, _head);
+            if (entry->key_len != key_len) {
+                entry = NULL;
+                continue;
+            }
+
+            if (strcmp(entry->key, key) == 0) {
+                break;
+            }
+
+            entry = NULL;
+        }
+    }
+
+    if (!entry) {
+        return -1;
+    }
 
     if (!entry->val) {
         return -1;
@@ -202,13 +270,37 @@ int flb_hash_get(struct flb_hash *ht, char *key, int key_len,
     return id;
 }
 
-int flb_hash_get_by_id(struct flb_hash *ht, int id, char **out_buf,
+/*
+ * Get an entry based in the table id. Note that a table id might have multiple
+ * entries so the 'key' parameter is required to get an exact match.
+ */
+int flb_hash_get_by_id(struct flb_hash *ht, int id, char *key, char **out_buf,
                        size_t *out_size)
 {
-    struct flb_hash_entry *entry;
+    struct mk_list *head;
+    struct flb_hash_entry *entry = NULL;
+    struct flb_hash_table *table;
 
-    entry = &ht->table[id];
-    if (!entry->val) {
+    table = &ht->table[id];
+    if (table->count == 0) {
+        return -1;
+    }
+
+    if (table->count == 1) {
+        entry = mk_list_entry_first(&table->chains,
+                                    struct flb_hash_entry, _head);
+    }
+    else {
+        mk_list_foreach(head, &table->chains) {
+            entry = mk_list_entry(head, struct flb_hash_entry, _head);
+            if (strcmp(entry->key, key) == 0) {
+                break;
+            }
+            entry = NULL;
+        }
+    }
+
+    if (!entry) {
         return -1;
     }
 
@@ -223,6 +315,9 @@ int flb_hash_del(struct flb_hash *ht, char *key)
     int id;
     int len;
     unsigned int hash;
+    struct mk_list *head;
+    struct flb_hash_entry *entry = NULL;
+    struct flb_hash_table *table;
 
     if (!key) {
         return -1;
@@ -236,6 +331,28 @@ int flb_hash_del(struct flb_hash *ht, char *key)
     hash = gen_hash(key, len);
     id = (hash % ht->size);
 
-    flb_hash_entry_free(ht, id);
+    table = &ht->table[id];
+    if (table->count == 1) {
+        entry = mk_list_entry_first(&table->chains,
+                                    struct flb_hash_entry,
+                                    _head);
+    }
+    else {
+        mk_list_foreach(head, &table->chains) {
+            entry = mk_list_entry(head, struct flb_hash_entry, _head);
+            if (strcmp(entry->key, key) == 0) {
+                break;
+            }
+            entry = NULL;
+        }
+    }
+
+    if (!entry) {
+        return -1;
+    }
+
+    flb_hash_entry_free(entry);
+    table->count--;
+
     return 0;
 }
