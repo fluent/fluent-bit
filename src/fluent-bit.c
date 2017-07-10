@@ -30,6 +30,7 @@
 #include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_meta.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_version.h>
 #include <fluent-bit/flb_error.h>
@@ -298,6 +299,12 @@ static int flb_service_conf(struct flb_config *config, char *file)
     fconf = mk_rconf_open(file);
     if (!fconf) {
         return -1;
+    }
+
+    /* Process all meta commands */
+    mk_list_foreach(head, &fconf->metas) {
+        entry = mk_list_entry(head, struct mk_rconf_entry, _head);
+        flb_meta_run(config, entry->key, entry->val);
     }
 
     /* Set configuration root path */
