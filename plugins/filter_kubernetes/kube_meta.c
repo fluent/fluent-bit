@@ -645,7 +645,8 @@ int flb_kube_meta_get(struct flb_kube *ctx,
              * the outgoing buffer and size.
              */
             flb_free(out_meta_buf);
-            flb_hash_get_by_id(ctx->hash_table, id, out_buf, out_size);
+            flb_hash_get_by_id(ctx->hash_table, id, meta.cache_key,
+                               out_buf, out_size);
             goto out;
         }
     }
