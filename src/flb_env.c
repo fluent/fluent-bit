@@ -87,6 +87,30 @@ void flb_env_destroy(struct flb_env *env)
     flb_free(env);
 }
 
+int flb_env_set(struct flb_env *env, char *key, char *val)
+{
+    int id;
+    int klen;
+    int vlen;
+    char *out_buf;
+    size_t out_size;
+
+    /* Get lengths */
+    klen = strlen(key);
+    vlen = strlen(val);
+
+    /* Check if the key is already set */
+    id = flb_hash_get(env->ht, key, klen, &out_buf, &out_size);
+    if (id >= 0) {
+        /* Remove the old entry */
+        flb_hash_del(env->ht, key);
+    }
+
+    /* Register the new key */
+    id = flb_hash_add(env->ht, key, klen, val, vlen);
+    return id;
+}
+
 char *flb_env_get(struct flb_env *env, char *key)
 {
     int len;

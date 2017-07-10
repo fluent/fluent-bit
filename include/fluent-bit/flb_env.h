@@ -28,6 +28,7 @@ struct flb_env {
 
 struct flb_env *flb_env_create();
 void flb_env_destroy(struct flb_env *env);
+int flb_env_set(struct flb_env *env, char *key, char *val);
 char *flb_env_get(struct flb_env *env, char *key);
 char *flb_env_var_translate(struct flb_env *env, char *value);
 
