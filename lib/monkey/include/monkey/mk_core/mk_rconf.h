@@ -55,6 +55,7 @@ struct mk_rconf_file
     struct mk_list _head;
 };
 
+
 struct mk_rconf
 {
     int level;
@@ -64,6 +65,9 @@ struct mk_rconf
 
     /* included files */
     struct mk_list includes;
+
+    /* meta instructions */
+    struct mk_list metas;
 
     /* list of sections */
     struct mk_list sections;

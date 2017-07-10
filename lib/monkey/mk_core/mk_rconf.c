@@ -118,6 +118,36 @@ static int is_file_included(struct mk_rconf *conf, const char *path)
     return MK_FALSE;
 }
 
+static int mk_rconf_meta_add(struct mk_rconf *conf, char *buf, int len)
+{
+    int xlen;
+    char *p;
+    char *tmp;
+    struct mk_rconf_entry *meta;
+
+    if (buf[0] != '@') {
+        return -1;
+    }
+
+    meta = mk_mem_alloc(sizeof(struct mk_rconf_entry));
+    if (!meta) {
+        perror("malloc");
+        return -1;
+    }
+
+    p = buf;
+    tmp = strchr(p, ' ');
+    xlen = (tmp - p);
+    meta->key = mk_string_copy_substr(buf, 1, xlen);
+    mk_string_trim(&meta->key);
+
+    meta->val = mk_string_copy_substr(buf, xlen + 1, len);
+    mk_string_trim(&meta->val);
+
+    mk_list_add(&meta->_head, &conf->metas);
+    return 0;
+}
+
 static int mk_rconf_read(struct mk_rconf *conf, const char *path)
 {
     int i;
@@ -195,6 +225,13 @@ static int mk_rconf_read(struct mk_rconf *conf, const char *path)
                 ret = mk_rconf_read(conf, buf + 9);
                 if (ret == -1) {
                     conf->level--;
+                    return -1;
+                }
+                continue;
+            }
+            else if (buf[0] == '@' && len > 3) {
+                ret = mk_rconf_meta_add(conf, buf, len);
+                if (ret == -1) {
                     return -1;
                 }
                 continue;
@@ -352,6 +389,7 @@ struct mk_rconf *mk_rconf_open(const char *path)
     conf->level = -1;
     mk_list_init(&conf->sections);
     mk_list_init(&conf->includes);
+    mk_list_init(&conf->metas);
 
     /* Set the absolute path for the entrypoint file */
     mk_rconf_path_set(conf, (char *) path);
@@ -370,6 +408,7 @@ void mk_rconf_free(struct mk_rconf *conf)
 {
     struct mk_list *head, *tmp;
     struct mk_rconf_section *section;
+    struct mk_rconf_entry *entry;
     struct mk_rconf_file *file;
 
     /* Remove included files */
@@ -378,6 +417,15 @@ void mk_rconf_free(struct mk_rconf *conf)
         mk_list_del(&file->_head);
         mk_mem_free(file->path);
         mk_mem_free(file);
+    }
+
+    /* Remove metas */
+    mk_list_foreach_safe(head, tmp, &conf->metas) {
+        entry = mk_list_entry(head, struct mk_rconf_entry, _head);
+        mk_list_del(&entry->_head);
+        mk_mem_free(entry->key);
+        mk_mem_free(entry->val);
+        mk_mem_free(entry);
     }
 
     /* Free sections */
