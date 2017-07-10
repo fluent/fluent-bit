@@ -198,7 +198,7 @@ int flb_hash_add(struct flb_hash *ht, char *key, int key_len,
         mk_list_add(&entry->_head, &table->chains);
     }
     else {
-        mk_list_foreach(head, &table->chains) {
+        mk_list_foreach_safe(head, tmp, &table->chains) {
             old = mk_list_entry(head, struct flb_hash_entry, _head);
             if (strcmp(old->key, entry->key) == 0) {
                 flb_hash_entry_free(old);
