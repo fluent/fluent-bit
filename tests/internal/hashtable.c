@@ -45,6 +45,10 @@ struct map entries[] = {
     {"key_91", "val_91"}, {"key_92", "val_92"}, {"key_93", "val_93"},
     {"key_94", "val_94"}, {"key_95", "val_95"}, {"key_96", "val_96"},
     {"key_97", "val_97"}, {"key_98", "val_98"}, {"key_99", "val_99"},
+
+    /* override some values */
+    {"key_67", "val_AA"}, {"key_68", "val_BB"}, {"key_69", "val_CC"},
+
 };
 
 static int ht_add(struct flb_hash *ht, char *key, char *val)
@@ -144,7 +148,46 @@ void test_chaining()
         total += count;
     }
 
-    TEST_CHECK(total == inserts);
+    /* Tests diff between total, new minus 3 overrides */
+    TEST_CHECK(total == inserts - 3);
+    flb_hash_destroy(ht);
+}
+
+void test_delete_all()
+{
+    int i;
+    int ret;
+    int count;
+    int not_found = 0;
+    int total = 0;
+    struct map *m;
+    struct flb_hash_table *table;
+    struct flb_hash *ht;
+
+    ht = flb_hash_create(8);
+    TEST_CHECK(ht != NULL);
+
+    total = sizeof(entries) / sizeof(struct map);
+    for (i = 0; i < total; i++) {
+        m = &entries[i];
+        ht_add(ht, m->key, m->val);
+    }
+
+    for (i = total - 1; i >= 0; i--) {
+        m = &entries[i];
+        ret = flb_hash_del(ht, m->key);
+        if (ret == -1) {
+            not_found++;
+        }
+    }
+
+    count = 0;
+    for (i = 0; i < ht->size; i++) {
+        table = &ht->table[i];
+        count += table->count;
+    }
+
+    TEST_CHECK(count == 0);
     flb_hash_destroy(ht);
 }
 
@@ -153,5 +196,6 @@ TEST_LIST = {
     { "small_table", test_small_table },
     { "medium_table", test_medium_table },
     { "chaining_count", test_chaining },
+    { "delete_all", test_delete_all },
     { 0 }
 };
