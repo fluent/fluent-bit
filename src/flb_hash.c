@@ -202,6 +202,7 @@ int flb_hash_add(struct flb_hash *ht, char *key, int key_len,
             old = mk_list_entry(head, struct flb_hash_entry, _head);
             if (strcmp(old->key, entry->key) == 0) {
                 flb_hash_entry_free(old);
+                table->count--;
                 break;
             }
         }
