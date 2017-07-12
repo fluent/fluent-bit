@@ -2,10 +2,32 @@ find_package(Threads REQUIRED)
 
 include_directories(cutest/)
 
-set(UNIT_TESTS
+set(UNIT_TESTS_FILES
+  pack.c
   hashtable.c)
 
-foreach(source_file ${UNIT_TESTS})
+set(UNIT_TESTS_DATA
+  data/pack/json_single_map_001.json
+  data/pack/json_single_map_002.json
+  )
+
+set(FLB_TESTS_DATA_PATH ${CMAKE_CURRENT_SOURCE_DIR}/)
+configure_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/flb_tests_internal.h.in"
+  "${CMAKE_CURRENT_SOURCE_DIR}/flb_tests_internal.h"
+  )
+
+# Move data files to the path the test binaries can find them
+macro(FLB_TEST_COPY_DATA path)
+  configure_file(${path} ${CMAKE_CURRENT_BINARY_DIR}/${path} COPYONLY)
+endmacro()
+
+foreach(test_data ${UNIT_TESTS_DATA})
+  FLB_TEST_COPY_DATA(${test_data})
+endforeach()
+
+# Prepare list of unit tests
+foreach(source_file ${UNIT_TESTS_FILES})
   get_filename_component(source_file_we ${source_file} NAME_WE)
   set(source_file_we flb-it-${source_file_we})
   add_executable(
