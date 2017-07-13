@@ -29,6 +29,7 @@ $ bin/fluent-bit -i cpu -o stdout
 | Forward            | forward | [Fluentd](http://fluentd.org) forward protocol |
 | Memory             | mem     | usage of system memory |
 | MQTT               | mqtt    | start a MQTT server and receive publish messages |
+| Netif              | netif   | usage of network interface |
 | Kernel Ring Buffer | kmsg    | read Linux Kernel messages, same behavior as the __dmesg__ command line program |
 | Serial Port        | serial  | read from serial port |
 | Standard Input     | stdin   | read from the standard input |

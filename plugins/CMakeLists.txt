@@ -96,6 +96,7 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   REGISTER_IN_PLUGIN("in_proc")
   REGISTER_IN_PLUGIN("in_disk")
   REGISTER_IN_PLUGIN("in_systemd")
+  REGISTER_IN_PLUGIN("in_netif")
 endif()
 
 REGISTER_IN_PLUGIN("in_dummy")
