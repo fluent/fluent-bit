@@ -197,6 +197,11 @@ static int input_set_property(struct flb_input_instance *in, char *kv)
     }
 
     ret = flb_input_set_property(in, key, value);
+    if (ret == -1) {
+        fprintf(stderr, "[error] setting up '%s' plugin property '%s'\n",
+                in->p->name, key);
+    }
+
     flb_free(key);
     return ret;
 }
@@ -385,7 +390,12 @@ static int flb_service_conf(struct flb_config *config, char *file)
             }
 
             /* Set the property */
-            flb_input_set_property(in, entry->key, entry->val);
+            ret = flb_input_set_property(in, entry->key, entry->val);
+            if (ret == -1) {
+                fprintf(stderr, "Error setting up %s plugin property '%s'\n",
+                        in->name, entry->key);
+                goto flb_service_conf_end;
+            }
         }
     }
 
@@ -624,7 +634,10 @@ int main(int argc, char **argv)
             break;
         case 'p':
             if (last_plugin == PLUGIN_INPUT) {
-                input_set_property(in, optarg);
+                ret = input_set_property(in, optarg);
+                if (ret != 0) {
+                    exit(EXIT_FAILURE);
+                }
             }
             else if (last_plugin == PLUGIN_OUTPUT) {
                 output_set_property(out, optarg);
