@@ -21,6 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <ctype.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -304,27 +305,67 @@ int flb_utils_pipe_byte_consume(flb_pipefd_t fd)
     return 0;
 }
 
-size_t flb_utils_size_to_bytes(char *size)
+ssize_t flb_utils_size_to_bytes(char *size)
 {
+    int i;
     int len;
+    int plen = 0;
     size_t val;
+    char c;
+    char tmp[3] = {0};
+    int64_t KB = 1000;
+    int64_t MB = 1000 * KB;
+    int64_t GB = 1000 * MB;
+
+    if (!size) {
+        return -1;
+    }
 
     len = strlen(size);
     val = atoll(size);
 
-    /* Kilo bytes to bytes */
-    if (size[len - 1] == 'k') {
-        return (val * 1024);
+    if (len == 0) {
+        return -1;
     }
-    else if (size[len - 1] == 'B') {
-        switch (size[len - 2]) {
-        case 'M':
-            return (val * 1024 * 1024);
-        case 'G':
-            return (val * 1024 * 1024 * 1024);
-        default:
+
+    for (i = len - 1; i > 0; i--) {
+        if (isdigit(size[i])) {
+            break;
+        }
+        else {
+            plen++;
+        }
+    }
+
+    if (plen == 0) {
+        return val;
+    }
+    else if (plen > 2) {
+        return -1;
+    }
+
+    for (i = 0; i < plen; i++) {
+        c = size[(len - plen) + i];
+        tmp[i] = toupper(c);
+    }
+
+    if (plen == 2) {
+        if (tmp[1] != 'B') {
             return -1;
         }
+    }
+
+    if (tmp[0] == 'K') {
+        return (val * KB);
+    }
+    else if (tmp[0] == 'M') {
+        return (val * MB);
+    }
+    else if (tmp[0] == 'G') {
+        return (val * GB);
+    }
+    else {
+        return -1;
     }
 
     return val;
