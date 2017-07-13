@@ -159,11 +159,12 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
 
         /* Do not process ending \n if set at the end of the map */
         size = v.via.str.size;
-        if (v.via.str.ptr[v.via.str.size - 2] == '\\' &&
-            v.via.str.ptr[v.via.str.size - 1] == 'n') {
-            size -= 2;
+        for (i = size - 1; i > 0; i--) {
+            if (v.via.str.ptr[i] == '}') {
+                size = i + 1;
+                break;
+            }
         }
-
         json_size = unescape_string((char *) v.via.str.ptr,
                                     size, &ctx->merge_json_buf);
         ret = flb_pack_json(ctx->merge_json_buf, json_size,
