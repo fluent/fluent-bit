@@ -187,6 +187,7 @@ static inline int prop_key_check(char *key, char *kv, int k_len)
 int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
 {
     int len;
+    ssize_t limit;
     char *tmp;
     struct flb_config_prop *prop;
 
@@ -205,8 +206,12 @@ int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
         in->tag_len = strlen(tmp);
     }
     else if (prop_key_check("mem_buf_limit", k, len) == 0 && tmp) {
-        in->mp_buf_limit = flb_utils_size_to_bytes(tmp);
+        limit = flb_utils_size_to_bytes(tmp);
         flb_free(tmp);
+        if (limit == -1) {
+            return -1;
+        }
+        in->mp_buf_limit = (size_t) limit;
     }
     else if (prop_key_check("listen", k, len) == 0) {
         in->host.listen = tmp;
