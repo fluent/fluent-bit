@@ -206,8 +206,10 @@ char *flb_env_var_translate(struct flb_env *env, char *value)
     }
 
     /* Copy the remaining value into our buffer */
-    if (have_var == FLB_TRUE && (value + len) - (v_end + 1) > 0) {
-        buf_append(&buf, v_end + 1, (value + len) - (v_end + 1));
+    if (v_end) {
+        if (have_var == FLB_TRUE && (value + len) - (v_end + 1) > 0) {
+            buf_append(&buf, v_end + 1, (value + len) - (v_end + 1));
+        }
     }
 
     if (buf.len == 0) {
