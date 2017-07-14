@@ -180,6 +180,7 @@ int flb_hash_add(struct flb_hash *ht, char *key, int key_len,
     if (!entry->val) {
         flb_errno();
         flb_free(entry->key);
+        flb_free(entry);
         return -1;
     }
     /*
