@@ -128,9 +128,9 @@ char *flb_env_var_translate(struct flb_env *env, char *value)
     int e_len;
     int pre_var;
     int have_var = FLB_FALSE;
-    char *env_var;
-    char *v_start;
-    char *v_end;
+    char *env_var = NULL;
+    char *v_start = NULL;
+    char *v_end = NULL;
     char tmp[64];
     struct flb_buf buf;
 
