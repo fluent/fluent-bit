@@ -464,9 +464,13 @@ void cb_es_flush(void *data, size_t bytes,
             ret = elasticsearch_error_check(c);
             if (ret == FLB_TRUE) {
                 /* we got an error */
-                flb_warn("[out_es] Elasticsearch error\n %s",
+                flb_warn("[out_es] Elasticsearch error\n%s",
                          c->resp.payload);
                 goto retry;
+            }
+            else {
+                flb_debug("[out_es Elasticsearch response\n%s",
+                          c->resp.payload);
             }
         }
         else {
