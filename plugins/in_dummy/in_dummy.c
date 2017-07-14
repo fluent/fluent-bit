@@ -112,7 +112,6 @@ static int configure(struct flb_in_dummy_config *ctx,
                             &ctx->ref_msgpack, &ctx->ref_msgpack_size);
         if (ret != 0) {
             flb_error("[in_dummy] Unexpected error");
-            config_destroy(ctx);
             return -1;
         }
     }
