@@ -89,7 +89,7 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *i_ins,
         }
         else {
             snprintf(port, sizeof(port) - 1, "%d", i_ins->host.port);
-            ctx->tcp_port = flb_strdup(tmp);
+            ctx->tcp_port = flb_strdup(port);
         }
     }
 
