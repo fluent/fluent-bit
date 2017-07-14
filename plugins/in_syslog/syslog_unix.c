@@ -32,7 +32,7 @@
 
 int syslog_unix_create(struct flb_syslog *ctx)
 {
-    flb_sockfd_t fd;
+    flb_sockfd_t fd = -1;
     unsigned long len;
     size_t address_length;
     struct sockaddr_un address;
