@@ -316,6 +316,86 @@ int cb_es_init(struct flb_output_instance *ins,
     return 0;
 }
 
+static int elasticsearch_error_check(struct flb_http_client *c)
+{
+    int i;
+    int ret;
+    int check = FLB_TRUE;
+    char *out_buf;
+    size_t off = 0;
+    int out_size;
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_object key;
+    msgpack_object val;
+
+    /* Convert JSON payload to msgpack */
+    ret = flb_pack_json(c->resp.payload, c->resp.payload_size,
+                        &out_buf, &out_size);
+    if (ret == -1) {
+        flb_error("[out_es] could not pack JSON response\n%s",
+                  c->resp.payload);
+        return FLB_TRUE;
+    }
+
+    /* Lookup error field */
+    msgpack_unpacked_init(&result);
+    ret = msgpack_unpack_next(&result, out_buf, out_size, &off);
+    if (!ret) {
+        return FLB_TRUE;
+    }
+
+    root = result.data;
+    if (root.type != MSGPACK_OBJECT_MAP) {
+        flb_error("[out_es] unexpected payload type=%i",
+                  root.type);
+        check = FLB_TRUE;
+        goto done;
+    }
+
+    for (i = 0; i < root.via.map.size; i++) {
+        key = root.via.map.ptr[i].key;
+        if (key.type != MSGPACK_OBJECT_STR) {
+            flb_error("[out_es] unexpected key type=%i",
+                      key.type);
+            check = FLB_TRUE;
+            goto done;
+        }
+
+        msgpack_object_print(stdout, key);
+        if (key.via.str.size != 6) {
+            continue;
+        }
+
+        if (strncmp(key.via.str.ptr, "errors", 6) == 0) {
+            val = root.via.map.ptr[i].val;
+            if (val.type != MSGPACK_OBJECT_BOOLEAN) {
+                flb_error("[out_es] unexpected 'error' value type=%i",
+                          val.type);
+                check = FLB_TRUE;
+                goto done;
+            }
+
+            /* If error == false, we are OK (no errors = FLB_FALSE) */
+            if (val.via.boolean) {
+                /* there is an error */
+                check = FLB_TRUE;
+                goto done;
+            }
+            else {
+                /* no errors */
+                check = FLB_FALSE;
+                goto done;
+            }
+        }
+    }
+
+ done:
+    flb_free(out_buf);
+    msgpack_unpacked_destroy(&result);
+    return check;
+}
+
 void cb_es_flush(void *data, size_t bytes,
                  char *tag, int tag_len,
                  struct flb_input_instance *i_ins, void *out_context,
@@ -356,19 +436,47 @@ void cb_es_flush(void *data, size_t bytes,
     }
 
     ret = flb_http_do(c, &b_sent);
-    if (ret == 0) {
-        flb_debug("[out_es] HTTP Status=%i", c->resp.status);
+    if (ret != 0) {
+        flb_warn("[out_es] http_do=%i", ret);
+        goto retry;
     }
     else {
-        flb_warn("[out_es] http_do=%i", ret);
+        /* The request was issued successfully, validate the 'error' field */
+        flb_debug("[out_es] HTTP Status=%i", c->resp.status);
+        if (c->resp.status != 200) {
+            goto retry;
+        }
+
+        if (c->resp.payload_size > 0) {
+            /*
+             * Elasticsearch payload should be JSON, we convert it to msgpack
+             * and lookup the 'error' field.
+             */
+            ret = elasticsearch_error_check(c);
+            if (ret == FLB_TRUE) {
+                /* we got an error */
+                flb_warn("[out_es] Elasticsearch error\n %s",
+                         c->resp.payload);
+                goto retry;
+            }
+        }
+        else {
+            goto retry;
+        }
     }
+
+    /* Cleanup */
     flb_http_client_destroy(c);
-
     flb_free(pack);
-
-    /* Release the connection */
     flb_upstream_conn_release(u_conn);
     FLB_OUTPUT_RETURN(FLB_OK);
+
+    /* Issue a retry */
+ retry:
+    flb_http_client_destroy(c);
+    flb_free(pack);
+    flb_upstream_conn_release(u_conn);
+    FLB_OUTPUT_RETURN(FLB_RETRY);
 }
 
 int cb_es_exit(void *data, struct flb_config *config)
