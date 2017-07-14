@@ -84,5 +84,6 @@ struct mk_rconf_section *mk_rconf_section_get(struct mk_rconf *conf,
                                               const char *name);
 void *mk_rconf_section_get_key(struct mk_rconf_section *section,
                                char *key, int mode);
+char *mk_rconf_meta_get(struct mk_rconf *conf, char *key);
 
 #endif

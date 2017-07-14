@@ -118,6 +118,21 @@ static int is_file_included(struct mk_rconf *conf, const char *path)
     return MK_FALSE;
 }
 
+char *mk_rconf_meta_get(struct mk_rconf *conf, char *key)
+{
+    struct mk_list *head;
+    struct mk_rconf_entry *meta;
+
+    mk_list_foreach(head, &conf->metas) {
+        meta = mk_list_entry(head, struct mk_rconf_entry, _head);
+        if (strcmp(meta->key, key) == 0) {
+            return meta->val;
+        }
+    }
+
+    return NULL;
+}
+
 static int mk_rconf_meta_add(struct mk_rconf *conf, char *buf, int len)
 {
     int xlen;
@@ -225,6 +240,7 @@ static int mk_rconf_read(struct mk_rconf *conf, const char *path)
                 ret = mk_rconf_read(conf, buf + 9);
                 if (ret == -1) {
                     conf->level--;
+                    fclose(f);
                     return -1;
                 }
                 continue;
@@ -232,6 +248,7 @@ static int mk_rconf_read(struct mk_rconf *conf, const char *path)
             else if (buf[0] == '@' && len > 3) {
                 ret = mk_rconf_meta_add(conf, buf, len);
                 if (ret == -1) {
+                    fclose(f);
                     return -1;
                 }
                 continue;
