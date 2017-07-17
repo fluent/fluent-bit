@@ -4,13 +4,15 @@ include_directories(cutest/)
 
 set(UNIT_TESTS_FILES
   pack.c
-  parser_tz.c
+  parser.c
   unit_sizes.c
   hashtable.c)
 
 set(UNIT_TESTS_DATA
   data/pack/json_single_map_001.json
   data/pack/json_single_map_002.json
+  data/parser/json.conf
+  data/parser/regex.conf
   )
 
 set(FLB_TESTS_DATA_PATH ${CMAKE_CURRENT_SOURCE_DIR}/)
