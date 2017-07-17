@@ -34,12 +34,9 @@ int flb_parser_json_do(struct flb_parser *parser,
     int ret;
     int mp_size;
     int slen;
-    int tmdiff = 0;
     double tmfrac = 0;
-    char *p;
     char *mp_buf;
     char *time_key;
-    char tmp[32];
     size_t off = 0;
     size_t map_size;
     msgpack_sbuffer mp_sbuf;
@@ -119,52 +116,14 @@ int flb_parser_json_do(struct flb_parser *parser,
         return length;
     }
 
-    /* Convert from time_fmt to unix timestamp */
-    p = strptime((char *) v->via.str.ptr, parser->time_fmt, &tm);
-    if (p != NULL) {
-        /* Check if we have fractional seconds */
-        if (parser->time_frac_secs && *p == '.') {
-
-            /*
-             * Further parser routines needs a null byte, for fractional seconds
-             * we make a safe copy of the content.
-             */
-            slen = v->via.str.size - (p - v->via.str.ptr);
-            if (slen > 31) {
-                slen = 31;
-            }
-            memcpy(tmp, p, slen);
-            tmp[slen] = '\0';
-
-            /* Parse fractional seconds */
-            tmdiff = 0;
-            ret = flb_parser_frac_tzone(tmp, slen, &tmfrac, &tmdiff);
-            if (ret == -1) {
-                /* Check if the timezone failed */
-                if (tmdiff == -1) {
-                    /* Try to find a workaround for time offset resolution */
-                    tm.tm_gmtoff = parser->time_offset;
-                }
-                else {
-                    flb_warn("[parser] Error parsing time string");
-                    return -1;
-                }
-            }
-            else {
-                tm.tm_gmtoff = tmdiff;
-            }
-        }
-        else {
-            if (parser->time_with_tz == FLB_FALSE) {
-                tm.tm_gmtoff = parser->time_offset;
-            }
-        }
-        time_lookup = flb_parser_tm2time(&tm);
-    }
-    else {
+    /* Lookup time */
+    ret = flb_parser_time_lookup((char *) v->via.str.ptr, v->via.str.size,
+                                 0, parser, &tm, &tmfrac);
+    if (ret == -1) {
         msgpack_unpacked_destroy(&result);
         return length;
     }
+    time_lookup = flb_parser_tm2time(&tm);
 
     /* Compose a new map without the time_key field */
     msgpack_sbuffer_init(&mp_sbuf);
@@ -191,6 +150,7 @@ int flb_parser_json_do(struct flb_parser *parser,
     /* Export the proper buffer */
     *out_buf = mp_sbuf.data;
     *out_size = mp_sbuf.size;
+
 
     t = out_time;
     t->tm.tv_sec  = time_lookup;

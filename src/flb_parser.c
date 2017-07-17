@@ -27,8 +27,57 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <limits.h>
 #include <string.h>
+
+static inline uint32_t digits10(uint64_t v) {
+    if (v < 10) return 1;
+    if (v < 100) return 2;
+    if (v < 1000) return 3;
+    if (v < 1000000000000UL) {
+        if (v < 100000000UL) {
+            if (v < 1000000) {
+                if (v < 10000) return 4;
+                return 5 + (v >= 100000);
+            }
+            return 7 + (v >= 10000000UL);
+        }
+        if (v < 10000000000UL) {
+            return 9 + (v >= 1000000000UL);
+        }
+        return 11 + (v >= 100000000000UL);
+    }
+    return 12 + digits10(v / 1000000000000UL);
+}
+
+static unsigned u64_to_str(uint64_t value, char* dst) {
+    static const char digits[201] =
+        "0001020304050607080910111213141516171819"
+        "2021222324252627282930313233343536373839"
+        "4041424344454647484950515253545556575859"
+        "6061626364656667686970717273747576777879"
+        "8081828384858687888990919293949596979899";
+    uint32_t const length = digits10(value);
+    uint32_t next = length - 1;
+    while (value >= 100) {
+        int const i = (value % 100) * 2;
+        value /= 100;
+        dst[next] = digits[i + 1];
+        dst[next - 1] = digits[i];
+        next -= 2;
+    }
+
+    /* Handle last 1-2 digits */
+    if (value < 10) {
+        dst[next] = '0' + (uint32_t) value;
+    } else {
+        int i = (uint32_t) value * 2;
+        dst[next] = digits[i + 1];
+        dst[next - 1] = digits[i];
+    }
+    return length;
+}
 
 int flb_parser_regex_do(struct flb_parser *parser,
                         char *buf, size_t length,
@@ -123,11 +172,14 @@ struct flb_parser *flb_parser_create(char *name, char *format,
                 return NULL;
             }
 
-            memcpy(p->time_fmt_year, p->time_fmt, size);
-            tmp = p->time_fmt_year + size;
-            *tmp++ = ' ';
+            /* Append the year at the beginning */
+            tmp = p->time_fmt_year;
             *tmp++ = '%';
             *tmp++ = 'Y';
+            *tmp++ = ' ';
+
+            memcpy(tmp, p->time_fmt, size);
+            tmp += size;
             *tmp++ = '\0';
         }
 
@@ -143,7 +195,12 @@ struct flb_parser *flb_parser_create(char *name, char *format,
          * - http://stackoverflow.com/questions/7114690/how-to-parse-syslog-timestamp
          * - http://code.activestate.com/lists/python-list/521885/
          */
-        tmp = strstr(p->time_fmt, "%S.%L");
+        if (p->time_with_year == FLB_TRUE) {
+            tmp = strstr(p->time_fmt, "%S.%L");
+        }
+        else {
+            tmp = strstr(p->time_fmt_year, "%S.%L");
+        }
         if (tmp) {
             tmp[2] = '\0';
             p->time_frac_secs = (tmp + 3);
@@ -157,9 +214,13 @@ struct flb_parser *flb_parser_create(char *name, char *format,
         if (tmp) {
             p->time_with_tz = FLB_TRUE;
         }
+        else if (strstr(p->time_fmt, "%SZ") || strstr(p->time_fmt, "%S.%LZ")) {
+            p->time_with_tz = FLB_TRUE;
+        }
 
         /* Optional fixed timezone offset */
         if (time_offset) {
+            diff = 0;
             len = strlen(time_offset);
             ret = flb_parser_tzone_offset(time_offset, len, &diff);
             if (ret == -1) {
@@ -513,6 +574,112 @@ int flb_parser_tzone_offset(char *str, int len, int *tmdiff)
     }
 
     return 0;
+}
+
+int flb_parser_time_lookup(char *time_str, size_t tsize,
+                           time_t now,
+                           struct flb_parser *parser,
+                           struct tm *tm, double *ns)
+{
+    int ret;
+    int slen;
+    int tmdiff = 0;
+    time_t time_now;
+    double tmfrac = 0;
+    char *p = NULL;
+    char *fmt;
+    int time_len = tsize;
+    char *time_ptr = time_str;
+    char tmp[64];
+    char fs_tmp[32];
+    struct tm tmy;
+
+    *ns = 0;
+
+    if (tsize > sizeof(tmp) - 1) {
+        flb_error("[parser] time string length is too long");
+        return -1;
+    }
+
+    /*
+     * Some records coming from old Syslog messages do not contain the
+     * year, so it's required to ingest this information in the value
+     * to be parsed.
+     */
+    if (parser->time_with_year == FLB_FALSE) {
+        /*
+         * This is not the most elegant way but for now it let
+         * get the work done.
+         */
+        if (now <= 0) {
+            time_now = time(NULL);
+        }
+        else {
+            time_now = now;
+        }
+
+        gmtime_r(&time_now, &tmy);
+        uint64_t t = tmy.tm_year + 1900;
+
+        fmt = tmp;
+        u64_to_str(t, fmt);
+        fmt += 4;
+        *fmt++ = ' ';
+
+        memcpy(fmt, time_ptr, time_len);
+        fmt += time_len;
+        *fmt++ = '\0';
+
+        time_ptr = tmp;
+        time_len = strlen(tmp);
+        p = strptime(time_ptr, parser->time_fmt_year, tm);
+    }
+    else {
+        p = strptime(time_ptr, parser->time_fmt, tm);
+    }
+
+    if (p != NULL) {
+        /* Check if we have fractional seconds */
+        if (parser->time_frac_secs && *p == '.') {
+            /*
+             * Further parser routines needs a null byte, for fractional seconds
+             * we make a safe copy of the content.
+             */
+            slen = time_len - (p - time_ptr);
+            if (slen > 31) {
+                slen = 31;
+            }
+            memcpy(fs_tmp, p, slen);
+            fs_tmp[slen] = '\0';
+
+            /* Parse fractional seconds */
+            tmdiff = 0;
+            ret = flb_parser_frac_tzone(fs_tmp, slen, &tmfrac, &tmdiff);
+            if (ret == -1) {
+                /* Check if the timezone failed */
+                if (tmdiff == -1) {
+                    /* Try to find a workaround for time offset resolution */
+                    tm->tm_gmtoff = parser->time_offset;
+                }
+                else {
+                    flb_warn("[parser] Error parsing time string");
+                    return -1;
+                }
+            }
+            else {
+                tm->tm_gmtoff = tmdiff;
+            }
+            *ns = tmfrac;
+        }
+        else {
+            if (parser->time_with_tz == FLB_FALSE) {
+                tm->tm_gmtoff = parser->time_offset;
+            }
+        }
+        return 0;
+    }
+
+    return -1;
 }
 
 int flb_parser_frac_tzone(char *str, int len, double *frac, int *tmdiff)
