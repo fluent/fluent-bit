@@ -137,13 +137,27 @@ int flb_parser_json_do(struct flb_parser *parser,
             tmp[slen] = '\0';
 
             /* Parse fractional seconds */
+            tmdiff = 0;
             ret = flb_parser_frac_tzone(tmp, slen, &tmfrac, &tmdiff);
             if (ret == -1) {
-                flb_warn("[parser] Error parsing time string");
-                return -1;
+                /* Check if the timezone failed */
+                if (tmdiff == -1) {
+                    /* Try to find a workaround for time offset resolution */
+                    tm.tm_gmtoff = parser->time_offset;
+                }
+                else {
+                    flb_warn("[parser] Error parsing time string");
+                    return -1;
+                }
             }
-
-            tm.tm_gmtoff = tmdiff;
+            else {
+                tm.tm_gmtoff = tmdiff;
+            }
+        }
+        else {
+            if (parser->time_with_tz == FLB_FALSE) {
+                tm.tm_gmtoff = parser->time_offset;
+            }
         }
         time_lookup = flb_parser_tm2time(&tm);
     }

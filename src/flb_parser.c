@@ -43,18 +43,22 @@ int flb_parser_json_do(struct flb_parser *parser,
 struct flb_parser *flb_parser_create(char *name, char *format,
                                      char *p_regex,
                                      char *time_fmt, char *time_key,
+                                     char *time_offset,
                                      int time_keep,
                                      struct flb_parser_types *types,
                                      int types_len,
                                      struct flb_config *config)
 {
+    int ret;
+    int len;
+    int diff = 0;
     int size;
     char *tmp;
     struct mk_list *head;
     struct flb_parser *p;
     struct flb_regex *regex;
 
-    /* Iterate current parsers and make the new one don't exists */
+    /* Iterate current parsers and make sure the new one don't exists */
     mk_list_foreach(head, &config->parsers) {
         p = mk_list_entry(head, struct flb_parser, _head);
         if (strcmp(p->name, name) == 0) {
@@ -146,6 +150,23 @@ struct flb_parser *flb_parser_create(char *name, char *format,
         }
         else {
             p->time_frac_secs = NULL;
+        }
+
+        /* Check if the format contains a timezone (%z) */
+        tmp = strstr(p->time_fmt, "%z");
+        if (tmp) {
+            p->time_with_tz = FLB_TRUE;
+        }
+
+        /* Optional fixed timezone offset */
+        if (time_offset) {
+            len = strlen(time_offset);
+            ret = flb_parser_tzone_offset(time_offset, len, &diff);
+            if (ret == -1) {
+                flb_free(p);
+                return NULL;
+            }
+            p->time_offset = diff;
         }
     }
 
@@ -264,6 +285,7 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
     char *regex;
     char *time_fmt;
     char *time_key;
+    char *time_offset;
     char *types_str;
     int time_keep;
     int types_len;
@@ -302,6 +324,7 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
         regex = NULL;
         time_fmt = NULL;
         time_key = NULL;
+        time_offset = NULL;
         types_str = NULL;
 
         section = mk_list_entry(head, struct mk_rconf_section, _head);
@@ -346,6 +369,10 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
             goto fconf_error;
         }
 
+        /* Time_Offset (UTC offset) */
+        time_offset = mk_rconf_section_get_key(section, "Time_Offset",
+                                               MK_RCONF_STR);
+
         /* Types */
         types_str = mk_rconf_section_get_key(section, "Types",
                                             MK_RCONF_STR);
@@ -358,7 +385,7 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
 
         /* Create the parser context */
         if (!flb_parser_create(name, format, regex,
-                               time_fmt, time_key, time_keep,
+                               time_fmt, time_key, time_offset, time_keep,
                                types, types_len, config)) {
             goto fconf_error;
         }
@@ -376,6 +403,9 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
         }
         if (time_key) {
             flb_free(time_key);
+        }
+        if (time_offset) {
+            flb_free(time_offset);
         }
         if (types_str) {
             flb_free(types_str);
@@ -436,25 +466,14 @@ int flb_parser_do(struct flb_parser *parser, char *buf, size_t length,
     return -1;
 }
 
-
-int flb_parser_frac_tzone(char *str, int len, double *frac, int *tmdiff)
+/* Given a timezone string, return it numeric offset */
+int flb_parser_tzone_offset(char *str, int len, int *tmdiff)
 {
     int neg;
     long hour;
     long min;
-    char *p;
     char *end;
-
-    /* Fractional seconds */
-    *frac = strtod(str, &end);
-    p = end;
-
-    if (!p) {
-        *tmdiff = 0;
-        return 0;
-    }
-
-    while (*p == ' ') p++;
+    char *p = str;
 
     /* Check timezones */
     if (*p == 'Z') {
@@ -466,7 +485,7 @@ int flb_parser_frac_tzone(char *str, int len, double *frac, int *tmdiff)
     /* Unexpected timezone string */
     if (*p != '+' && *p != '-') {
         *tmdiff = 0;
-        return 0;
+        return -1;
     }
 
     /* Negative value ? */
@@ -491,6 +510,32 @@ int flb_parser_frac_tzone(char *str, int len, double *frac, int *tmdiff)
     *tmdiff = ((hour * 3600) + (min * 60));
     if (neg) {
         *tmdiff = -*tmdiff;
+    }
+
+    return 0;
+}
+
+int flb_parser_frac_tzone(char *str, int len, double *frac, int *tmdiff)
+{
+    int ret;
+    char *p;
+    char *end;
+    double d;
+
+    /* Fractional seconds */
+    d = strtod(str, &end);
+    if ((d == 0 && end == str) || !end) {
+        return -1;
+    }
+    *frac = d;
+    p = end;
+    while (*p == ' ') p++;
+
+    len = end - p;
+    ret = flb_parser_tzone_offset(p, len, tmdiff);
+    if (ret == -1) {
+        *tmdiff = -1;
+        return -1;
     }
 
     return 0;

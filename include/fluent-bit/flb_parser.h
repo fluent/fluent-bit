@@ -43,15 +43,16 @@ struct flb_parser {
     char *p_regex;        /* pattern for main regular expression */
     char *time_fmt;       /* time format */
     char *time_key;       /* field name that contains the time */
+    int time_offset;      /* fixed UTC offset */
     int time_keep;        /* keep time field */
     char *time_frac_secs; /* time format have fractional seconds ? */
     struct flb_parser_types *types; /* type casting */
     int types_len;
 
     /* internal */
-    int time_with_year; /* do time_fmt consider a year (%Y) ? */
+    int time_with_year;   /* do time_fmt consider a year (%Y) ? */
     char *time_fmt_year;
-
+    int time_with_tz;     /* do time_fmt consider a timezone ?  */
     struct flb_regex *regex;
     struct mk_list _head;
 };
@@ -75,7 +76,8 @@ static inline time_t flb_parser_tm2time(const struct tm *src)
 struct flb_parser *flb_parser_create(char *name, char *format,
                                      char *p_regex,
                                      char *time_fmt, char *time_key,
-                                     int time_keep, 
+                                     char *time_offset,
+                                     int time_keep,
                                      struct flb_parser_types *types,
                                      int types_len,
                                      struct flb_config *config);
@@ -86,6 +88,7 @@ int flb_parser_do(struct flb_parser *parser, char *buf, size_t length,
                   void **out_buf, size_t *out_size, struct flb_time *out_time);
 
 void flb_parser_exit(struct flb_config *config);
+int flb_parser_tzone_offset(char *str, int len, int *tmdiff);
 int flb_parser_frac_tzone(char *str, int len, double *frac, int *tmdiff);
 int flb_parser_typecast(char *key, int key_len,
                         char *val, int val_len,
