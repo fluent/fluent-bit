@@ -4,6 +4,7 @@ include_directories(cutest/)
 
 set(UNIT_TESTS_FILES
   pack.c
+  parser_tz.c
   unit_sizes.c
   hashtable.c)
 
