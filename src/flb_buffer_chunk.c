@@ -441,17 +441,18 @@ int flb_buffer_chunk_add(struct flb_buffer_worker *worker,
 
     /* Unlock and close */
     flock(fd, LOCK_UN);
-    fclose(f);
 
     /* Double check target file */
-    ret = stat(target, &st);
+    ret = fstat(fd, &st);
     if (ret == -1) {
         fprintf(stderr, "[buffer] chunk check failed %lu/%lu bytes",
                 st.st_size, chunk.size);
+        fclose(f);
         flb_free(fchunk);
         return -1;
     }
 
+    fclose(f);
     *filename = fchunk;
     return chunk.routes;
 }
