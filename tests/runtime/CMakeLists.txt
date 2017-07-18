@@ -41,12 +41,54 @@ if(FLB_IN_LIB)
        flb_test_file.cpp
        )
   endif()
+
+  if(FLB_OUT_COUNTER)
+     list(APPEND check_PROGRAMS
+       flb_test_counter.cpp
+       )
+  endif()
+
+  if(FLB_OUT_FLOWCOUNTER)
+	 list(APPEND check_PROGRAMS
+	   flb_test_flowcounter.cpp
+	   )
+  endif()
+
+  if(FLB_OUT_EXIT)
+     list(APPEND check_PROGRAMS
+	   flb_test_exit.cpp
+	   )
+  endif()
+
+  if(FLB_OUT_NULL)
+     list(APPEND check_PROGRAMS
+	   flb_test_null.cpp
+	   )
+  endif()
+
+  if(FLB_OUT_PLOT)
+     list(APPEND check_PROGRAMS
+	   flb_test_plot.cpp
+	   )
+  endif()
+
+  if(FLB_OUT_RETRY)
+     list(APPEND check_PROGRAMS
+	   flb_test_retry.cpp
+	   )
+  endif()
 endif()
 
 if(FLB_OUT_LIB)
   if(FLB_IN_CPU)
     list(APPEND check_PROGRAMS
       flb_test_in_cpu.cpp
+      )
+  endif()
+
+  if(FLB_IN_DUMMY)
+    list(APPEND check_PROGRAMS
+      flb_test_in_dummy.cpp
       )
   endif()
 
@@ -71,6 +113,20 @@ if(FLB_OUT_LIB)
   if(FLB_IN_RANDOM)
     list(APPEND check_PROGRAMS
       flb_test_in_random.cpp
+      )
+  endif()
+endif()
+
+if(FLB_IN_LIB AND FLB_OUT_LIB)
+  if(FLB_FILTER_STDOUT)
+    list(APPEND check_PROGRAMS
+      flb_test_filter_stdout.cpp
+      )
+  endif()
+
+  if(FLB_FILTER_GREP)
+    list(APPEND check_PROGRAMS
+      flb_test_filter_grep.cpp
       )
   endif()
 endif()
