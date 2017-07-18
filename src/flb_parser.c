@@ -17,6 +17,9 @@
  *  limitations under the License.
  */
 
+#define _GNU_SOURCE
+#include <time.h>
+
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
@@ -25,8 +28,8 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <time.h>
 #include <limits.h>
+
 
 static inline uint32_t digits10(uint64_t v) {
     if (v < 10) return 1;
