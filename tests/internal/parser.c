@@ -5,7 +5,6 @@
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_error.h>
 
-#include <time.h>
 #include "flb_tests_internal.h"
 
 /* Parsers configuration */
@@ -97,12 +96,12 @@ struct time_check time_entries[] = {
 int flb_parser_json_do(struct flb_parser *parser,
                        char *buf, size_t length,
                        void **out_buf, size_t *out_size,
-                       struct flb_time *out_time);
+                       time_t *out_time);
 
 int flb_parser_regex_do(struct flb_parser *parser,
                         char *buf, size_t length,
                         void **out_buf, size_t *out_size,
-                        struct flb_time *out_time);
+                        time_t *out_time);
 
 /* Parse timezone string and get the offset */
 void test_parser_tzone_offset()
@@ -211,11 +210,10 @@ void test_json_parser_time_lookup()
     int ret;
     int len;
     int toff;
-    long nsec;
     char buf[512];
     void *out_buf;
     size_t out_size;
-    struct flb_time out_time;
+    time_t out_time;
     struct flb_parser *p;
     struct flb_config *config;
     struct time_check *t;
@@ -252,9 +250,7 @@ void test_json_parser_time_lookup()
         TEST_CHECK(out_buf != NULL);
 
         /* Check time */
-        TEST_CHECK(out_time.tm.tv_sec == t->epoch);
-        nsec = t->frac_seconds * 1000000000;
-        TEST_CHECK(out_time.tm.tv_nsec == nsec);
+        TEST_CHECK(out_time == t->epoch);
 
         if (t->utc_offset != 0) {
             p->time_offset = toff;
@@ -274,11 +270,10 @@ void test_regex_parser_time_lookup()
     int ret;
     int len;
     int toff;
-    long nsec;
     char buf[512];
     void *out_buf;
     size_t out_size;
-    struct flb_time out_time;
+    time_t out_time;
     struct flb_parser *p;
     struct flb_config *config;
     struct time_check *t;
@@ -315,10 +310,7 @@ void test_regex_parser_time_lookup()
         TEST_CHECK(out_buf != NULL);
 
         /* Check time */
-        TEST_CHECK(out_time.tm.tv_sec == t->epoch);
-        nsec = t->frac_seconds * 1000000000;
-        TEST_CHECK(out_time.tm.tv_nsec == nsec);
-
+        TEST_CHECK(out_time == t->epoch);
         if (t->utc_offset != 0) {
             p->time_offset = toff;
         }
