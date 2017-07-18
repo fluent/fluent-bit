@@ -73,4 +73,6 @@ int flb_parser_tzone_offset(char *str, int len, int *tmdiff);
 int flb_parser_time_lookup(char *time, size_t tsize, time_t now,
                            struct flb_parser *parser,
                            struct tm *tm, double *ns);
+void flb_parser_exit(struct flb_config *config);
+
 #endif
