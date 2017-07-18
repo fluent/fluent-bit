@@ -42,6 +42,8 @@ option(FLB_BUFFERING          "Enable buffering support"     No)
 option(FLB_POSIX_TLS          "Force POSIX thread storage"   No)
 option(FLB_WITHOUT_INOTIFY    "Disable inotify support"      No)
 option(FLB_SQLDB              "Enable SQL embedded DB"       No)
+option(FLB_DEV                "Developer mode"               No)
+option(FLB_TESTS_INTERNAL     "Enable internal unit tests"   No)
 
 # Proxy Plugins
 option(FLB_PROXY_GO           "Enable Go plugins support"   Yes)
@@ -131,6 +133,12 @@ if(FLB_ALL)
   set(FLB_OUT_STDOUT   1)
   set(FLB_OUT_LIB      1)
   set(FLB_OUT_FLOWCOUNTER 1)
+endif()
+
+if(FLB_DEV)
+  set(FLB_DEBUG          On)
+  set(FLB_TRACE          On)
+  set(FLB_TESTS_INTERNAL On)
 endif()
 
 # Macro to set definitions
@@ -409,7 +417,12 @@ endif()
 
 if(FLB_TESTS)
   enable_testing()
-  add_subdirectory(tests)
+  add_subdirectory(tests/runtime/)
+endif()
+
+if(FLB_TESTS_INTERNAL)
+  enable_testing()
+  add_subdirectory(tests/internal)
 endif()
 
 
