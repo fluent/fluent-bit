@@ -462,6 +462,12 @@ struct flb_buffer *flb_buffer_create(char *path, int workers,
              "buffering.0");
     mk_list_init(&ctx->i_ins->routes);
     mk_list_init(&ctx->i_ins->tasks);
+    mk_list_init(&ctx->i_ins->dyntags);
+
+    ctx->i_ins->mp_total_buf_size = 0;
+    ctx->i_ins->mp_buf_limit = 0;
+    ctx->i_ins->mp_buf_status = FLB_INPUT_RUNNING;
+
     mk_list_add(&ctx->i_ins->_head, &config->inputs);
 
     /* We are done */
