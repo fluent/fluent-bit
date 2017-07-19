@@ -229,7 +229,7 @@ static char *influxdb_format(char *tag, int tag_len,
 int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *config,
                      void *data)
 {
-    int io_type;
+    int io_flags = 0;
     char *tmp;
     struct flb_upstream *upstream;
     struct flb_influxdb_config *ctx;
@@ -251,10 +251,10 @@ int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *config,
     }
 
     if (ins->use_tls == FLB_TRUE) {
-        io_type = FLB_IO_TLS;
+        io_flags = FLB_IO_TLS;
     }
     else {
-        io_type = FLB_IO_TCP;
+        io_flags = FLB_IO_TCP;
     }
 
     /* database */
@@ -279,11 +279,15 @@ int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *config,
 
     snprintf(ctx->uri, sizeof(ctx->uri) - 1, "/write?db=%s&precision=n", ctx->db_name);
 
+    if (ins->host.ipv6 == FLB_TRUE) {
+        io_flags |= FLB_IO_IPV6;
+    }
+
     /* Prepare an upstream handler */
     upstream = flb_upstream_create(config,
                                    ins->host.name,
                                    ins->host.port,
-                                   io_type,
+                                   io_flags,
                                    &ins->tls);
     if (!upstream) {
         flb_free(ctx);
