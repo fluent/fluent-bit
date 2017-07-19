@@ -112,7 +112,7 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
                void *data)
 {
     int ulen;
-    int type;
+    int io_flags = 0;
     char *uri = NULL;
     char *tmp;
     struct flb_upstream *upstream;
@@ -188,14 +188,18 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
     /* Check if SSL/TLS is enabled */
 #ifdef FLB_HAVE_TLS
     if (ins->use_tls == FLB_TRUE) {
-        type = FLB_IO_TLS;
+        io_flags = FLB_IO_TLS;
     }
     else {
-        type = FLB_IO_TCP;
+        io_flags = FLB_IO_TCP;
     }
 #else
-    type = FLB_IO_TCP;
+    io_flags = FLB_IO_TCP;
 #endif
+
+    if (ins->host.ipv6 == FLB_TRUE) {
+        io_flags |= FLB_IO_IPV6;
+    }
 
     if (ctx->proxy) {
         flb_trace("[out_http] Upstream Proxy=%s:%i",
@@ -203,13 +207,13 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
         upstream = flb_upstream_create(config,
                                        ctx->proxy_host,
                                        ctx->proxy_port,
-                                       type, (void *) &ins->tls);
+                                       io_flags, (void *) &ins->tls);
     }
     else {
         upstream = flb_upstream_create(config,
                                        ins->host.name,
                                        ins->host.port,
-                                       type, (void *) &ins->tls);
+                                       io_flags, (void *) &ins->tls);
     }
 
     if (!upstream) {
