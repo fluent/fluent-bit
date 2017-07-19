@@ -42,7 +42,7 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
                                              struct flb_config *config)
 {
 
-    int io_type;
+    int io_flags = 0;
     char *tmp;
     struct flb_uri *uri = ins->host.uri;
     struct flb_uri_field *f_index = NULL;
@@ -75,17 +75,21 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
 
     /* use TLS ? */
     if (ins->use_tls == FLB_TRUE) {
-        io_type = FLB_IO_TLS;
+        io_flags = FLB_IO_TLS;
     }
     else {
-        io_type = FLB_IO_TCP;
+        io_flags = FLB_IO_TCP;
+    }
+
+    if (ins->host.ipv6 == FLB_TRUE) {
+        io_flags |= FLB_IO_IPV6;
     }
 
     /* Prepare an upstream handler */
     upstream = flb_upstream_create(config,
                                    ins->host.name,
                                    ins->host.port,
-                                   io_type,
+                                   io_flags,
                                    &ins->tls);
     if (!upstream) {
         flb_error("[out_es] cannot create Upstream context");
