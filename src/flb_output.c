@@ -288,6 +288,10 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
             out->host.port = 0;
         }
     }
+    else if (prop_key_check("ipv6", k, len) == 0) {
+        out->host.ipv6 = flb_utils_bool(tmp);
+        flb_free(tmp);
+    }
     else if (prop_key_check("retry_limit", k, len) == 0) {
         if (tmp) {
             if (strcasecmp(tmp, "false") == 0 ||

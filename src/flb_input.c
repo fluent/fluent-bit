@@ -130,6 +130,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->host.name    = NULL;
         instance->host.address = NULL;
         instance->host.uri     = NULL;
+        instance->host.ipv6    = FLB_FALSE;
 
         /* Initialize msgpack counter and buffers */
         instance->mp_records = 0;
@@ -224,6 +225,10 @@ int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
             in->host.port = atoi(tmp);
             flb_free(tmp);
         }
+    }
+    else if (prop_key_check("ipv6", k, len) == 0) {
+        in->host.ipv6 = flb_utils_bool(tmp);
+        flb_free(tmp);
     }
     else {
         /* Append any remaining configuration key to prop list */

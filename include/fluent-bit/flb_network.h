@@ -32,6 +32,7 @@
 
 /* Defines a host service and it properties */
 struct flb_net_host {
+    int  ipv6;             /* IPv6 required ?      */
     char *address;         /* Original address     */
     int   port;            /* TCP port             */
     char *name;            /* Hostname             */
