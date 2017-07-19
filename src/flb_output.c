@@ -288,7 +288,7 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
             out->host.port = 0;
         }
     }
-    else if (prop_key_check("ipv6", k, len) == 0) {
+    else if (prop_key_check("ipv6", k, len) == 0 && tmp) {
         out->host.ipv6 = flb_utils_bool(tmp);
         flb_free(tmp);
     }
