@@ -31,6 +31,7 @@
 int cb_nats_init(struct flb_output_instance *ins, struct flb_config *config,
                    void *data)
 {
+    int io_flags;
     struct flb_upstream *upstream;
     struct flb_out_nats_config *ctx;
 
@@ -47,6 +48,11 @@ int cb_nats_init(struct flb_output_instance *ins, struct flb_config *config,
     if (!ctx) {
         perror("malloc");
         return -1;
+    }
+
+    io_flags = FLB_IO_TCP;
+    if (ins->host.ipv6 == FLB_TRUE) {
+        io_flags |= FLB_IO_IPV6;
     }
 
     /* Prepare an upstream handler */
