@@ -82,7 +82,12 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
     }
 
     /* Create the socket */
-    fd = flb_net_socket_create(AF_INET, FLB_FALSE);
+    if (u_conn->u->flags & FLB_IO_IPV6) {
+        fd = flb_net_socket_create(AF_INET6, FLB_FALSE);
+    }
+    else {
+        fd = flb_net_socket_create(AF_INET, FLB_FALSE);
+    }
     if (fd == -1) {
         flb_error("[io] could not create socket");
         return -1;
