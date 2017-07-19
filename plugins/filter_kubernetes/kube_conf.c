@@ -132,6 +132,15 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
         return NULL;
     }
 
+    /* Use Systemd Journal */
+    tmp = flb_filter_get_property("use_journal", i);
+    if (tmp) {
+        ctx->use_journal = flb_utils_bool(tmp);
+    }
+    else {
+        ctx->use_journal = FLB_FALSE;
+    }
+
     /* Merge log buffer */
     if (ctx->merge_json_log == FLB_TRUE) {
         ctx->merge_json_buf = flb_malloc(FLB_MERGE_BUF_SIZE);
@@ -155,8 +164,8 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
         flb_hash_destroy(ctx->hash_table);
     }
 
-    if (ctx->regex_tag) {
-        flb_regex_destroy(ctx->regex_tag);
+    if (ctx->regex) {
+        flb_regex_destroy(ctx->regex);
     }
 
     if (ctx->merge_json_log == FLB_TRUE) {

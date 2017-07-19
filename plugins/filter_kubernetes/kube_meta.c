@@ -400,13 +400,23 @@ static int merge_meta(char *reg_buf, size_t reg_size,
     return 0;
 }
 
-static inline int tag_to_meta(struct flb_kube *ctx, char *tag, int tag_len,
-                              struct flb_kube_meta *meta,
-                              char **out_buf, size_t *out_size)
+static inline int extract_meta(struct flb_kube *ctx, char *tag, int tag_len,
+                               char *data, size_t data_size,
+                               struct flb_kube_meta *meta,
+                               char **out_buf, size_t *out_size)
 {
+    int i;
     size_t off = 0;
     ssize_t n;
+    char *container = NULL;
+    int container_found = FLB_FALSE;
+    int container_length = 0;
     struct flb_regex_search result;
+    msgpack_unpacked mp_result;
+    msgpack_object root;
+    msgpack_object map;
+    msgpack_object key;
+    msgpack_object val;
 
     msgpack_sbuffer_init(&meta->mp_sbuf);
     msgpack_packer_init(&meta->mp_pck, &meta->mp_sbuf, msgpack_sbuffer_write);
@@ -414,7 +424,52 @@ static inline int tag_to_meta(struct flb_kube *ctx, char *tag, int tag_len,
     meta->podname = NULL;
     meta->namespace = NULL;
 
-    n = flb_regex_do(ctx->regex_tag, (unsigned char *) tag, tag_len, &result);
+    /* Journald */
+    if (ctx->use_journal == FLB_TRUE) {
+        off = 0;
+        msgpack_unpacked_init(&mp_result);
+        while (msgpack_unpack_next(&mp_result, data, data_size, &off)) {
+            root = mp_result.data;
+            if (root.type != MSGPACK_OBJECT_ARRAY) {
+                continue;
+            }
+
+            /* Lookup the CONTAINER_NAME key/value */
+            map = root.via.array.ptr[1];
+            for (i = 0; i < map.via.map.size; i++) {
+                key = map.via.map.ptr[i].key;
+                if (key.via.str.size != 14) {
+                    continue;
+                }
+
+                if (strncmp(key.via.str.ptr, "CONTAINER_NAME", 14) == 0) {
+                    val = map.via.map.ptr[i].val;
+                    container = (char *) val.via.str.ptr;
+                    container_length = val.via.str.size;
+                    container_found = FLB_TRUE;
+                    break;
+                }
+            }
+
+            if (container_found == FLB_TRUE) {
+                break;
+            }
+        }
+
+        if (container_found == FLB_FALSE) {
+            msgpack_unpacked_destroy(&mp_result);
+            return -1;
+        }
+        n = flb_regex_do(ctx->regex,
+                         (unsigned char *) container, container_length,
+                         &result);
+        msgpack_unpacked_destroy(&mp_result);
+    }
+    else {
+        /* Lookup using Tag string */
+        n = flb_regex_do(ctx->regex, (unsigned char *) tag, tag_len, &result);
+    }
+
     if (n <= 0) {
         return -1;
     }
@@ -422,7 +477,7 @@ static inline int tag_to_meta(struct flb_kube *ctx, char *tag, int tag_len,
     msgpack_pack_map(&meta->mp_pck, n);
 
     /* Parse the regex results */
-    flb_regex_parse(ctx->regex_tag, &result, cb_results, meta);
+    flb_regex_parse(ctx->regex, &result, cb_results, meta);
 
     /* Compose API server cache key */
     if (meta->podname && meta->namespace) {
@@ -598,6 +653,7 @@ int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config)
 
 int flb_kube_meta_get(struct flb_kube *ctx,
                       char *tag, int tag_len,
+                      char *data, size_t data_size,
                       char **out_buf, size_t *out_size)
 {
     int id;
@@ -615,9 +671,9 @@ int flb_kube_meta_get(struct flb_kube *ctx,
         return 0;
     }
 
-    /* Get meta from the tag (cache key is the important one) */
-    ret = tag_to_meta(ctx, tag, tag_len, &meta,
-                      &local_meta_buf, &local_meta_size);
+    /* Get metadata from tag or record (cache key is the important one) */
+    ret = extract_meta(ctx, tag, tag_len, data, data_size,
+                       &meta, &local_meta_buf, &local_meta_size);
     if (ret != 0) {
         return -1;
     }
@@ -640,7 +696,7 @@ int flb_kube_meta_get(struct flb_kube *ctx,
                           out_meta_buf, out_meta_size);
         if (id >= 0) {
             /*
-             * Release the original buffer created on tag_to_meta() as a new
+             * Release the original buffer created on extract_meta() as a new
              * copy have been generated into the hash table, then re-set
              * the outgoing buffer and size.
              */

@@ -265,7 +265,10 @@ static int cb_kube_filter(void *data, size_t bytes,
     (void) config;
 
     /* Check if we have some cached metadata for the incoming events */
-    ret = flb_kube_meta_get(ctx, tag, tag_len, &cache_buf, &cache_size);
+    ret = flb_kube_meta_get(ctx,
+                            tag, tag_len,
+                            data, bytes,
+                            &cache_buf, &cache_size);
     if (ret == -1) {
         return FLB_FILTER_NOTOUCH;
     }
@@ -285,7 +288,6 @@ static int cb_kube_filter(void *data, size_t bytes,
         /* get time and map */
         time = root.via.array.ptr[0];
         map  = root.via.array.ptr[1];
-
 
         /* Compose the new array */
         msgpack_pack_array(&tmp_pck, 2);

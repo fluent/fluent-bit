@@ -25,8 +25,14 @@
 
 int flb_kube_regex_init(struct flb_kube *ctx)
 {
-    ctx->regex_tag = flb_regex_create((unsigned char *) KUBE_TAG_TO_REGEX);
-    if (!ctx->regex_tag) {
+    if (ctx->use_journal == FLB_TRUE) {
+        ctx->regex = flb_regex_create((unsigned char *) KUBE_JOURNAL_TO_REGEX);
+    }
+    else {
+        ctx->regex = flb_regex_create((unsigned char *) KUBE_TAG_TO_REGEX);
+    }
+
+    if (!ctx->regex) {
         return -1;
     }
 

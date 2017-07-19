@@ -60,6 +60,7 @@ struct flb_kube {
     char *api_host;
     int api_port;
     int api_https;
+    int use_journal;
     int dummy_meta;
 
     /* Merge JSON feature */
@@ -71,7 +72,7 @@ struct flb_kube {
     char *merge_json_key;
 
     char kube_url[1024];
-    struct flb_regex *regex_tag;
+    struct flb_regex *regex;
 
     /* TLS CA certificate file */
     char *tls_ca_file;
