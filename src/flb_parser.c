@@ -526,6 +526,11 @@ int flb_parser_time_lookup(char *time_str, size_t tsize,
      * to be parsed.
      */
     if (parser->time_with_year == FLB_FALSE) {
+        /* Given time string is too long */
+        if (time_len + 6 >= sizeof(tmp)) {
+            return -1;
+        }
+
         /*
          * This is not the most elegant way but for now it let
          * get the work done.
