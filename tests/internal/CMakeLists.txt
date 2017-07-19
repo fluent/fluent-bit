@@ -5,8 +5,10 @@ include_directories(cutest/)
 set(UNIT_TESTS_FILES
   pack.c
   parser.c
+  network.c
   unit_sizes.c
-  hashtable.c)
+  hashtable.c
+  )
 
 set(UNIT_TESTS_DATA
   data/pack/json_single_map_001.json
