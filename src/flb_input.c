@@ -226,7 +226,7 @@ int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
             flb_free(tmp);
         }
     }
-    else if (prop_key_check("ipv6", k, len) == 0) {
+    else if (prop_key_check("ipv6", k, len) == 0 && tmp) {
         in->host.ipv6 = flb_utils_bool(tmp);
         flb_free(tmp);
     }
