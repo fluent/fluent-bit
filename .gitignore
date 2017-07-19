@@ -1,5 +1,5 @@
 *~
 _book/
-/lib/jemalloc
-/lib/onigmo
-
+lib/jemalloc
+lib/onigmo
+tests/internal/flb_tests_internal.h
