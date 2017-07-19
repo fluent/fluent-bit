@@ -370,7 +370,7 @@ static int secure_forward_init(struct flb_out_forward_config *ctx)
 int cb_forward_init(struct flb_output_instance *ins, struct flb_config *config,
                     void *data)
 {
-    int io_type;
+    int io_flags;
     char *tmp;
     struct flb_out_forward_config *ctx;
     struct flb_upstream *upstream;
@@ -392,25 +392,28 @@ int cb_forward_init(struct flb_output_instance *ins, struct flb_config *config,
         ins->host.port = 24224;
     }
 
-
     /* Check if TLS is enabled */
 #ifdef FLB_HAVE_TLS
     if (ins->use_tls == FLB_TRUE) {
-        io_type = FLB_IO_TLS;
+        io_flags = FLB_IO_TLS;
         ctx->secured = FLB_TRUE;
     }
     else {
-        io_type = FLB_IO_TCP;
+        io_flags = FLB_IO_TCP;
     }
 #else
-    io_type = FLB_IO_TCP;
+    io_flags = FLB_IO_TCP;
 #endif
+
+    if (ins->host.ipv6 == FLB_TRUE) {
+        io_flags |= FLB_IO_IPV6;
+    }
 
     /* Prepare an upstream handler */
     upstream = flb_upstream_create(config,
                                    ins->host.name,
                                    ins->host.port,
-                                   io_type, (void *) &ins->tls);
+                                   io_flags, (void *) &ins->tls);
     if (!upstream) {
         flb_free(ctx);
         return -1;
