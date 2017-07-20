@@ -24,7 +24,9 @@
 #include <fluent-bit/flb_upstream.h>
 
 /* Buffer size */
-#define FLB_HTTP_BUF_SIZE 2048
+#define FLB_HTTP_BUF_SIZE        2048
+#define FLB_HTTP_DATA_SIZE_MAX   4096
+#define FLB_HTTP_DATA_CHUNK     32768
 
 /* HTTP Methods */
 #define FLB_HTTP_GET         0
@@ -58,13 +60,15 @@ struct flb_http_response {
     char *chunk_processed_end; /* Position to mark last chunk   */
     char *headers_end;         /* Headers end (\r\n\r\n)        */
 
-    /* Payload: body response */
+    /* Payload: body response: reference to 'data' */
     char *payload;
     size_t payload_size;
 
     /* Buffer to store server response */
-    char  data[1024 * 8];   /* 8 KB */
+    char   *data;
     size_t data_len;
+    size_t data_size;
+    size_t data_size_max;
 };
 
 /* It hold information about a possible HTTP proxy set by the caller */
@@ -108,5 +112,8 @@ int flb_http_add_header(struct flb_http_client *c,
 int flb_http_basic_auth(struct flb_http_client *c, char *user, char *passwd);
 int flb_http_do(struct flb_http_client *c, size_t *bytes);
 void flb_http_client_destroy(struct flb_http_client *c);
+int flb_http_buffer_size(struct flb_http_client *c, size_t size);
+int flb_http_buffer_increase(struct flb_http_client *c, size_t size,
+                             size_t *out_size);
 
 #endif

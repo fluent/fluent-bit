@@ -305,7 +305,8 @@ static int process_data(struct flb_http_client *c)
     /* Re-check if an ending exists, if so process payload if required */
     if (c->resp.headers_end && c->resp.payload) {
         if (c->resp.content_length >= 0) {
-            c->resp.payload_size = c->resp.data_len - (c->resp.headers_end -c->resp.data);
+            c->resp.payload_size = c->resp.data_len;
+            c->resp.payload_size -= (c->resp.headers_end - c->resp.data);
             if (c->resp.payload_size >= c->resp.content_length) {
                 return FLB_HTTP_OK;
             }
@@ -495,7 +496,110 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
         }
     }
 
+    /* 'Read' buffer size */
+    c->resp.data = flb_malloc(FLB_HTTP_DATA_SIZE_MAX);
+    if (!c->resp.data) {
+        flb_errno();
+        flb_free(buf);
+        flb_free(c);
+        return NULL;
+    }
+    c->resp.data_len  = 0;
+    c->resp.data_size = FLB_HTTP_DATA_SIZE_MAX;
+    c->resp.data_size_max = FLB_HTTP_DATA_SIZE_MAX;
+
     return c;
+}
+
+/*
+ * By default the HTTP client have a fixed buffer to read a response for a
+ * simple request. But in certain situations the caller might expect a
+ * larger response that exceed the buffer limit.
+ *
+ * This function allows to set a maximum buffer size for the client
+ * response where:
+ *
+ *   1. size =  0  no limit, read as much as possible.
+ *   2. size =  N: specific limit, upon reach limit discard data (default: 4KB)
+ */
+int flb_http_buffer_size(struct flb_http_client *c, size_t size)
+{
+    if (size < c->resp.data_size_max && size != 0) {
+        return -1;
+    }
+
+    c->resp.data_size_max = size;
+    return 0;
+}
+
+/*
+ * Increase the read buffer size based on the limits set by default or manually
+ * through the flb_http_buffer_size() function.
+ *
+ * The parameter 'size' is the amount of extra memory requested.
+ */
+int flb_http_buffer_increase(struct flb_http_client *c, size_t size,
+                             size_t *out_size)
+{
+    int off_payload = 0;
+    int off_headers_end = 0;
+    int off_chunk_processed_end = 0;
+    char *tmp;
+    size_t new_size;
+    size_t allocated;
+
+    *out_size = 0;
+    new_size = c->resp.data_size + size;
+
+    /* Limit exceeded, adjust */
+    if (c->resp.data_size_max != 0) {
+        if (new_size > c->resp.data_size_max) {
+            new_size = c->resp.data_size_max - c->resp.data_size;
+            if (new_size <= 0) {
+                return -1;
+            }
+        }
+    }
+
+
+    if (c->resp.headers_end) {
+        off_headers_end = c->resp.headers_end - c->resp.data;
+    }
+    if (c->resp.chunk_processed_end) {
+        off_chunk_processed_end = c->resp.chunk_processed_end - c->resp.data;
+    }
+
+    /*
+     * The payload is a reference to a position of 'data' buffer,
+     * we need to adjust the pointer after a memory buffer size change.
+     */
+    if (c->resp.payload_size > 0) {
+        off_payload = c->resp.payload - c->resp.data;
+    }
+
+    tmp = flb_realloc(c->resp.data, new_size);
+    if (!tmp) {
+        flb_errno();
+        return -1;
+    }
+    else {
+        allocated = new_size - c->resp.data_size;
+        c->resp.data = tmp;
+        c->resp.data_size = new_size;
+
+        if (off_headers_end > 0) {
+            c->resp.headers_end = c->resp.data + off_headers_end;
+        }
+        if (off_chunk_processed_end > 0) {
+            c->resp.chunk_processed_end = c->resp.data + off_chunk_processed_end;
+        }
+        if (off_payload > 0) {
+            c->resp.payload = c->resp.data + off_payload;
+        }
+    }
+
+    *out_size = allocated;
+    return 0;
 }
 
 /* Append a custom HTTP header to the request */
@@ -613,6 +717,7 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
     int available;
     int crlf = 2;
     int new_size;
+    size_t out_size;
     size_t bytes_header = 0;
     size_t bytes_body = 0;
     char *tmp;
@@ -657,13 +762,21 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
     /* Read the server response, we need at least 19 bytes */
     c->resp.data_len = 0;
     while (1) {
-        available = ((sizeof(c->resp.data) - 1) - c->resp.data_len);
+        available = (c->resp.data_size - 1 - c->resp.data_len);
         if (available <= 1) {
             /*
-             * If there is no more space available on our buffer,
-             * just return zero and let the caller do it own validations.
+             * If there is no more space available on our buffer, try to
+             * increase it.
              */
-            return 0;
+            ret = flb_http_buffer_increase(c, FLB_HTTP_DATA_CHUNK, &out_size);
+            if (ret == -1) {
+                /*
+                 * We could not allocate more space, let the caller handle
+                 * this.
+                 */
+                return 0;
+            }
+            available = (c->resp.data_size - 1 - c->resp.data_len);
         }
 
         r_bytes = flb_io_net_read(c->u_conn,
@@ -703,6 +816,7 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
 
 void flb_http_client_destroy(struct flb_http_client *c)
 {
+    flb_free(c->resp.data);
     flb_free(c->header_buf);
     flb_free(c);
 }
