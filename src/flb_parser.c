@@ -772,6 +772,10 @@ int flb_parser_typecast(char *key, int key_len,
                     error = FLB_TRUE;
                 }
                 break;
+            case FLB_PARSER_TYPE_STRING:
+                msgpack_pack_str(pck, val_len);
+                msgpack_pack_str_body(pck, val, val_len);
+                break;
             default:
                 error = FLB_TRUE;
             }
