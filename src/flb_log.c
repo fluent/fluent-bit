@@ -362,11 +362,14 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
                    /* type format */
                    header_color, header_title, reset_color);
 
-
     total = vsnprintf(msg.msg + len,
-                      (sizeof(msg.msg) - 1) - len,
+                      (sizeof(msg.msg) - 2) - len,
                       fmt, args);
-    total += len;
+    if (total < 0) {
+        return;
+    }
+
+    total = strlen(msg.msg + len) + len;
     msg.msg[total++] = '\n';
     msg.msg[total]   = '\0';
     msg.size = total;
