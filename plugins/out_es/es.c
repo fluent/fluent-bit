@@ -329,11 +329,26 @@ static int elasticsearch_error_check(struct flb_http_client *c)
     msgpack_object key;
     msgpack_object val;
 
+    /*
+     * Check if our payload is complete: there is such situations where
+     * the Elasticsearch HTTP response body is bigger than the HTTP client
+     * buffer so payload can be incomplete.
+     */
     /* Convert JSON payload to msgpack */
     ret = flb_pack_json(c->resp.payload, c->resp.payload_size,
                         &out_buf, &out_size);
     if (ret == -1) {
-        flb_error("[out_es] could not pack JSON response\n%s",
+        /* Is this an incomplete HTTP Request ? */
+        if (c->resp.payload_size <= 0) {
+            return FLB_TRUE;
+        }
+
+        /* Lookup error field */
+        if (strstr(c->resp.payload, "\"errors\":false,\"items\":[")) {
+            return FLB_FALSE;
+        }
+
+        flb_error("[out_es] could not pack/validate JSON response\n%s",
                   c->resp.payload);
         return FLB_TRUE;
     }
@@ -428,6 +443,9 @@ void cb_es_flush(void *data, size_t bytes,
     /* Compose HTTP Client request */
     c = flb_http_client(u_conn, FLB_HTTP_POST, "/_bulk",
                         pack, bytes_out, NULL, 0, NULL, 0);
+
+    flb_http_buffer_size(c, ctx->buffer_size);
+
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
     flb_http_add_header(c, "Content-Type", 12, "application/x-ndjson", 20);
 
