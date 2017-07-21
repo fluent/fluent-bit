@@ -6,7 +6,9 @@ set(UNIT_TESTS_FILES
   pack.c
   parser.c
   unit_sizes.c
-  hashtable.c)
+  hashtable.c
+  http_client.c
+  )
 
 set(UNIT_TESTS_DATA
   data/pack/json_single_map_001.json
