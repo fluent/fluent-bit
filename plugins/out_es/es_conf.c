@@ -44,7 +44,7 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
                                              struct flb_config *config)
 {
 
-    int io_flags = 0;
+    int io_type = 0;
     ssize_t ret;
     char *tmp;
     struct flb_uri *uri = ins->host.uri;
