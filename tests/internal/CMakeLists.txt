@@ -8,6 +8,7 @@ set(UNIT_TESTS_FILES
   network.c
   unit_sizes.c
   hashtable.c
+  http_client.c
   )
 
 set(UNIT_TESTS_DATA
