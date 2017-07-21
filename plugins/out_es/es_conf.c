@@ -19,6 +19,8 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_http_client.h>
 
 #include "es.h"
 #include "es_conf.h"
@@ -43,6 +45,7 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
 {
 
     int io_flags = 0;
+    ssize_t ret;
     char *tmp;
     struct flb_uri *uri = ins->host.uri;
     struct flb_uri_field *f_index = NULL;
@@ -219,6 +222,26 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
         else {
             ctx->tag_key = flb_strdup(FLB_ES_DEFAULT_TAG_KEY);
             ctx->tag_key_len = sizeof(FLB_ES_DEFAULT_TAG_KEY) - 1;
+        }
+    }
+
+    ctx->buffer_size = FLB_HTTP_DATA_SIZE_MAX;
+    tmp = flb_output_get_property("buffer_size", ins);
+    if (tmp) {
+        if (*tmp == 'f' || *tmp == 'F' || *tmp == 'o' || *tmp == 'O') {
+            /* unlimited size ? */
+            if (flb_utils_bool(tmp) == FLB_FALSE) {
+                ctx->buffer_size = 0;
+            }
+        }
+        else {
+            ret = flb_utils_size_to_bytes(tmp);
+            if (ret == -1) {
+                flb_error("[out_es] invalid buffer_size=%s, using default", tmp);
+            }
+            else {
+                ctx->buffer_size = (size_t) ret;
+            }
         }
     }
 
