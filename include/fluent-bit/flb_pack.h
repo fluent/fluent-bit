@@ -47,5 +47,7 @@ char* flb_msgpack_to_json_str(size_t size, msgpack_unpacked *data);
 int flb_msgpack_raw_to_json_str(char *buf, size_t buf_size,
                                 char **out_buf, size_t *out_size);
 int flb_pack_time_now(msgpack_packer *pck);
-
+int flb_msgpack_expand_map(char *map_data, size_t map_size,
+                           msgpack_object_kv **obj_arr, int obj_arr_len,
+                           char** out_buf, int* out_size);
 #endif
