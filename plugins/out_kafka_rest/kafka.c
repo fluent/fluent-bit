@@ -120,6 +120,7 @@ static char *kafka_rest_format(void *data, size_t bytes,
 
         msgpack_pack_str(&mp_pck, 5);
         msgpack_pack_str_body(&mp_pck, "value", 5);
+
         msgpack_pack_map(&mp_pck, map_size);
 
         /* Time key and time formatted */
@@ -239,6 +240,10 @@ static void cb_kafka_flush(void *data, size_t bytes,
         /* The request was issued successfully, validate the 'error' field */
         flb_debug("[out_kafka_rest] HTTP Status=%i", c->resp.status);
         if (c->resp.status != 200) {
+            if (c->resp.payload_size > 0) {
+                flb_debug("[out_kafka_rest] Kafka REST response\n%s",
+                          c->resp.payload);
+            }
             goto retry;
         }
 
