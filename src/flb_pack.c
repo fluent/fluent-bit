@@ -669,3 +669,60 @@ int flb_pack_time_now(msgpack_packer *pck)
 
     return ret;
 }
+
+int flb_msgpack_expand_map(char *map_data, size_t map_size,
+                           msgpack_object_kv **kv_arr, int kv_arr_len,
+                           char** out_buf, int* out_size)
+{
+    msgpack_sbuffer sbuf;
+    msgpack_packer  pck;
+    msgpack_unpacked result;
+    size_t off = 0;
+    char *ret_buf;
+    int map_num;
+    int i;
+    int len;
+
+    if (map_data == NULL){
+        return -1;
+    }
+
+    msgpack_unpacked_init(&result);
+    if (!(i=msgpack_unpack_next(&result, map_data, map_size, &off))){
+        return -1;
+    }
+    if (result.data.type != MSGPACK_OBJECT_MAP) {
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+
+    len = result.data.via.map.size;
+    map_num = kv_arr_len + len;
+
+    msgpack_sbuffer_init(&sbuf);
+    msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
+    msgpack_pack_map(&pck, map_num);
+
+    for(i=0; i<len; i++) {
+        msgpack_pack_object(&pck, result.data.via.map.ptr[i].key);
+        msgpack_pack_object(&pck, result.data.via.map.ptr[i].val);
+    }
+    for(i=0; i<kv_arr_len; i++){
+        msgpack_pack_object(&pck, kv_arr[i]->key);
+        msgpack_pack_object(&pck, kv_arr[i]->val);
+    }
+    msgpack_unpacked_destroy(&result);
+    
+    *out_size = sbuf.size;
+    ret_buf  = flb_malloc(sbuf.size);
+    *out_buf = ret_buf;
+    if (*out_buf == NULL) {
+        flb_errno();
+        msgpack_sbuffer_destroy(&sbuf);
+        return -1;
+    }
+    memcpy(*out_buf, sbuf.data, sbuf.size);
+    msgpack_sbuffer_destroy(&sbuf);
+    
+    return 0;
+}
