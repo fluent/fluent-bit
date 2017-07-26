@@ -177,6 +177,10 @@ static int get_api_server_info(struct flb_kube *ctx,
               namespace, podname, ret, c->resp.status);
 
     if (ret != 0 || c->resp.status != 200) {
+        if (c->resp.payload_size > 0) {
+            flb_debug("[filter_kube] API Server response\n%s",
+                      c->resp.payload);
+        }
         flb_http_client_destroy(c);
         flb_upstream_conn_release(u_conn);
         return -1;
