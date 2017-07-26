@@ -77,7 +77,7 @@ static int configure(struct filter_parser_ctx *ctx,
         if (!strcasecmp(prop->key, "reserve_data")) {
             ctx->reserve_data = flb_utils_bool(prop->val);
         }
-        
+
     }
 
     if (ctx->key_name == NULL) {
@@ -159,23 +159,23 @@ static int cb_parser_filter(void *data, size_t bytes,
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
         out_buf = NULL;
-        
+
         if (result.data.type != MSGPACK_OBJECT_ARRAY) {
             continue;
         }
-        flb_time_pop_from_msgpack(&tm, &result, &obj);        
+        flb_time_pop_from_msgpack(&tm, &result, &obj);
         if (obj->type == MSGPACK_OBJECT_MAP) {
             map_num = obj->via.map.size;
             if (ctx->reserve_data) {
                 append_arr_len = obj->via.map.size;
                 append_arr = flb_malloc(sizeof(msgpack_object_kv*) * append_arr_len);
-                
-                for(i=0; i<append_arr_len; i++){
+
+                for (i = 0; i < append_arr_len; i++){
                     append_arr[i] = NULL;
                 }
             }
-            
-            for(i=0; i<map_num; i++) {
+
+            for (i = 0; i < map_num; i++) {
                 kv = &obj->via.map.ptr[i];
                 if (ctx->reserve_data) {
                     append_arr[append_arr_i] = kv;
@@ -191,9 +191,9 @@ static int cb_parser_filter(void *data, size_t bytes,
                         /* val is not string */
                         continue;
                     }
-                    if ( flb_parser_do(ctx->parser,
-                                        val_str, val_len,
-                                       (void **)&out_buf, &out_size, &parsed_time) >= 0) {
+                    if (flb_parser_do(ctx->parser,
+                                      val_str, val_len,
+                                      (void **)&out_buf, &out_size, &parsed_time) >= 0) {
                         if (flb_time_to_double(&parsed_time) != 0) {
                             flb_time_copy(&tm, &parsed_time);
                         }
@@ -220,8 +220,14 @@ static int cb_parser_filter(void *data, size_t bytes,
                     int  new_size;
                     int ret;
                     ret = flb_msgpack_expand_map(out_buf, out_size,
-                                           append_arr, append_arr_len,
-                                           &new_buf, &new_size);
+                                                 append_arr, append_arr_len,
+                                                 &new_buf, &new_size);
+                    if (ret == -1) {
+                        flb_error("[filter_parser] cannot expand map");
+                        msgpack_unpacked_destroy(&result);
+                        return FLB_FILTER_NOTOUCH;
+                    }
+
                     flb_free(out_buf);
                     out_buf = new_buf;
                     out_size = new_size;
