@@ -67,6 +67,7 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
                               struct flb_config *config, void *in_context)
 {
     int ret;
+    int ret_j;
     int len;
     int entries = 0;
     int rows = 0;
@@ -93,11 +94,11 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
     ret = sd_journal_process(ctx->j);
-    if (ret != SD_JOURNAL_APPEND) {
-        return 0;
+    if (ret != SD_JOURNAL_APPEND && ret != SD_JOURNAL_NOP) {
+        return FLB_SYSTEMD_NONE;
     }
 
-    while ((ret = sd_journal_next(ctx->j)) > 0) {
+    while ((ret_j = sd_journal_next(ctx->j)) > 0) {
         /* If the tag is composed dynamically, gather the Systemd Unit name */
         if (ctx->dynamic_tag) {
             ret = sd_journal_get_data(ctx->j, "_SYSTEMD_UNIT", &data, &length);
@@ -172,6 +173,7 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
 
             last_tag = tag;
             last_tag_len = tag_len;
+            break;
         }
 
         if (rows >= ctx->max_entries) {
@@ -195,13 +197,49 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
                                     mp_sbuf.size);
     }
     msgpack_sbuffer_destroy(&mp_sbuf);
+    if (ret_j == 0) {
+        return FLB_SYSTEMD_OK;
+    }
+
+    return FLB_SYSTEMD_MORE;
+}
+
+static int in_systemd_collect_archive(struct flb_input_instance *i_ins,
+                                      struct flb_config *config, void *in_context)
+{
+    int ret;
+    uint64_t val;
+    struct flb_systemd_config *ctx = in_context;
+
+    read(ctx->ch_manager[0], &val, sizeof(uint64_t));
+
+    ret = in_systemd_collect(i_ins, config, in_context);
+    if (ret == FLB_SYSTEMD_OK) {
+        /* Events collector: journald events */
+        ret = flb_input_set_collector_event(i_ins,
+                                            in_systemd_collect,
+                                            ctx->fd,
+                                            config);
+        if (ret == -1) {
+            flb_error("[in_systemd] error setting up collector");
+            flb_systemd_config_destroy(ctx);
+            return -1;
+        }
+        ctx->coll_fd_journal = ret;
+        flb_input_collector_start(ctx->coll_fd_journal, i_ins);
+        return 0;
+    }
+
+    /* If FLB_SYSTEMD_NONE or FLB_SYSTEMD_MORE, keep trying */
+    write(ctx->ch_manager[1], &val, sizeof(uint64_t));
+
     return 0;
 }
 
 static int in_systemd_init(struct flb_input_instance *in,
                            struct flb_config *config, void *data)
 {
-    int coll_fd_journal;
+    int ret;
     struct flb_systemd_config *ctx;
 
     ctx = flb_systemd_config_create(in, config);
@@ -210,26 +248,44 @@ static int in_systemd_init(struct flb_input_instance *in,
         return -1;
     }
 
-    /* Configure the events collector */
-    coll_fd_journal = flb_input_set_collector_event(in,
-                                                    in_systemd_collect,
-                                                    ctx->fd,
-                                                    config);
-    if (coll_fd_journal == -1) {
-        flb_error("[in_systemd] error setting up collector");
+    /* Events collector: archive */
+    ret = flb_input_set_collector_event(in, in_systemd_collect_archive,
+                                        ctx->ch_manager[0], config);
+    if (ret == -1) {
         flb_systemd_config_destroy(ctx);
         return -1;
     }
-    ctx->coll_fd_journal = coll_fd_journal;
+    ctx->coll_fd_archive = ret;
 
     /* Set the context */
     flb_input_set_context(in, ctx);
     return 0;
 }
 
+static int in_systemd_pre_run(struct flb_input_instance *i_ins,
+                              struct flb_config *config, void *in_context)
+{
+    int n;
+    uint64_t val = 0xc002;
+    struct flb_systemd_config *ctx = in_context;
+    (void) i_ins;
+    (void) config;
+
+    /* Insert a dummy event into the channel manager */
+    n = write(ctx->ch_manager[1], &val, sizeof(val));
+    if (n == -1) {
+        flb_errno();
+        return -1;
+    }
+
+    return n;
+}
+
 static void in_systemd_pause(void *data, struct flb_config *config)
 {
     struct flb_systemd_config *ctx = data;
+
+    flb_input_collector_pause(ctx->coll_fd_archive, ctx->i_ins);
     flb_input_collector_pause(ctx->coll_fd_journal, ctx->i_ins);
 }
 
@@ -237,6 +293,7 @@ static void in_systemd_resume(void *data, struct flb_config *config)
 {
     struct flb_systemd_config *ctx = data;
 
+    flb_input_collector_resume(ctx->coll_fd_archive, ctx->i_ins);
     flb_input_collector_resume(ctx->coll_fd_journal, ctx->i_ins);
 }
 
@@ -254,7 +311,7 @@ struct flb_input_plugin in_systemd_plugin = {
     .name         = "systemd",
     .description  = "Systemd (Journal) reader",
     .cb_init      = in_systemd_init,
-    .cb_pre_run   = NULL,
+    .cb_pre_run   = in_systemd_pre_run,
     .cb_flush_buf = NULL,
     .cb_pause     = in_systemd_pause,
     .cb_resume    = in_systemd_resume,

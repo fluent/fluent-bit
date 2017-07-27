@@ -45,6 +45,15 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
         return NULL;
     }
 
+    /* Create the channel manager */
+    ret = pipe(ctx->ch_manager);
+    if (ret == -1) {
+        flb_errno();
+        flb_free(ctx);
+        return NULL;
+    }
+
+    /* Config: path */
     tmp = flb_input_get_property("path", i_ins);
     if (tmp) {
         ret = stat(tmp, &st);
@@ -157,6 +166,9 @@ int flb_systemd_config_destroy(struct flb_systemd_config *ctx)
     if (ctx->db) {
         flb_systemd_db_close(ctx->db);
     }
+
+    close(ctx->ch_manager[0]);
+    close(ctx->ch_manager[1]);
 
     flb_free(ctx);
     return 0;
