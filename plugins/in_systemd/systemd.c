@@ -90,6 +90,11 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
 
+    /* Restricted by mem_buf_limit */
+    if (flb_input_buf_paused(i_ins) == FLB_TRUE) {
+        return FLB_SYSTEMD_BUSY;
+    }
+
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
@@ -283,18 +288,30 @@ static int in_systemd_pre_run(struct flb_input_instance *i_ins,
 
 static void in_systemd_pause(void *data, struct flb_config *config)
 {
+    int ret;
     struct flb_systemd_config *ctx = data;
 
     flb_input_collector_pause(ctx->coll_fd_archive, ctx->i_ins);
-    flb_input_collector_pause(ctx->coll_fd_journal, ctx->i_ins);
+
+    /* pause only if it's running */
+    ret = flb_input_collector_running(ctx->coll_fd_journal, ctx->i_ins);
+    if (ret == FLB_TRUE) {
+        flb_input_collector_pause(ctx->coll_fd_journal, ctx->i_ins);
+    }
 }
 
 static void in_systemd_resume(void *data, struct flb_config *config)
 {
+    int ret;
     struct flb_systemd_config *ctx = data;
 
     flb_input_collector_resume(ctx->coll_fd_archive, ctx->i_ins);
-    flb_input_collector_resume(ctx->coll_fd_journal, ctx->i_ins);
+
+    /* resume only if is not running */
+    ret = flb_input_collector_running(ctx->coll_fd_journal, ctx->i_ins);
+    if (ret == FLB_FALSE) {
+        flb_input_collector_resume(ctx->coll_fd_journal, ctx->i_ins);
+    }
 }
 
 static int in_systemd_exit(void *data, struct flb_config *config)

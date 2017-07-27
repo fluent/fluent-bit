@@ -30,6 +30,7 @@
 #define FLB_SYSTEMD_NONE     0
 #define FLB_SYSTEMD_OK       1
 #define FLB_SYSTEMD_MORE     2
+#define FLB_SYSTEMD_BUSY     3
 
 /* constants */
 #define FLB_SYSTEMD_UNIT     "_SYSTEMD_UNIT"
