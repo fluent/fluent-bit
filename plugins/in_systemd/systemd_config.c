@@ -21,6 +21,8 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "systemd_db.h"
@@ -31,6 +33,7 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
 {
     int ret;
     char *tmp;
+    struct stat st;
     struct mk_list *head;
     struct flb_config_prop *prop;
     struct flb_systemd_config *ctx;
@@ -42,8 +45,36 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
         return NULL;
     }
 
+    tmp = flb_input_get_property("path", i_ins);
+    if (tmp) {
+        ret = stat(tmp, &st);
+        if (ret == -1) {
+            flb_errno();
+            flb_free(ctx);
+            flb_error("[in_systemd] given path %s is invalid", tmp);
+            return NULL;
+        }
+
+        if (!S_ISDIR(st.st_mode)) {
+            flb_errno();
+            flb_free(ctx);
+            flb_error("[in_systemd] given path is not a directory: %s", tmp);
+            return NULL;
+        }
+
+        ctx->path = flb_strdup(tmp);
+    }
+    else {
+        ctx->path = NULL;
+    }
+
     /* Open the Journal */
-    ret = sd_journal_open(&ctx->j, SD_JOURNAL_LOCAL_ONLY);
+    if (ctx->path) {
+        ret = sd_journal_open_directory(&ctx->j, ctx->path, 0);
+    }
+    else {
+        ret = sd_journal_open(&ctx->j, SD_JOURNAL_LOCAL_ONLY);
+    }
     if (ret != 0) {
         flb_free(ctx);
         flb_error("[in_systemd] could not open the Journal");
@@ -117,6 +148,10 @@ int flb_systemd_config_destroy(struct flb_systemd_config *ctx)
     /* Close context */
     if (ctx->j) {
         sd_journal_close(ctx->j);
+    }
+
+    if (ctx->path) {
+        flb_free(ctx->path);
     }
 
     if (ctx->db) {
