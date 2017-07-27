@@ -637,6 +637,7 @@ int flb_input_check(struct flb_config *config);
 void flb_input_set_context(struct flb_input_instance *in, void *context);
 int flb_input_channel_init(struct flb_input_instance *in);
 
+int flb_input_collector_start(int coll_id, struct flb_input_instance *in);
 int flb_input_collectors_start(struct flb_config *config);
 int flb_input_collector_pause(int coll_id, struct flb_input_instance *in);
 int flb_input_collector_resume(int coll_id, struct flb_input_instance *in);
