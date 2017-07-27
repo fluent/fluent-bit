@@ -659,6 +659,7 @@ int flb_input_set_collector_socket(struct flb_input_instance *in,
                                                              void*),
                                    flb_pipefd_t fd,
                                    struct flb_config *config);
+int flb_input_collector_running(int coll_id, struct flb_input_instance *in);
 void flb_input_initialize_all(struct flb_config *config);
 void flb_input_pre_run_all(struct flb_config *config);
 void flb_input_exit_all(struct flb_config *config);

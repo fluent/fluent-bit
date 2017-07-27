@@ -452,7 +452,7 @@ int flb_input_set_collector_time(struct flb_input_instance *in,
     collector->seconds     = seconds;
     collector->nanoseconds = nanoseconds;
     collector->instance    = in;
-
+    collector->running     = FLB_FALSE;
     mk_list_add(&collector->_head, &config->collectors);
     mk_list_add(&collector->_head_ins, &in->collectors);
 
@@ -476,6 +476,7 @@ int flb_input_set_collector_event(struct flb_input_instance *in,
     collector->seconds     = -1;
     collector->nanoseconds = -1;
     collector->instance    = in;
+    collector->running     = FLB_FALSE;
     mk_list_add(&collector->_head, &config->collectors);
     mk_list_add(&collector->_head_ins, &in->collectors);
 
@@ -570,6 +571,18 @@ static struct flb_input_collector *get_collector(int id,
     return NULL;
 }
 
+int flb_input_collector_running(int coll_id, struct flb_input_instance *in)
+{
+    struct flb_input_collector *coll;
+
+    coll = get_collector(coll_id, in);
+    if (!coll) {
+        return FLB_FALSE;
+    }
+
+    return coll->running;
+}
+
 int flb_input_pause_all(struct flb_config *config)
 {
     int paused = 0;
@@ -643,7 +656,8 @@ int flb_input_collector_resume(int coll_id, struct flb_input_instance *in)
     }
 
     if (coll->running == FLB_TRUE) {
-        flb_error("[input] cannot resume %s, already running", in->name);
+        flb_error("[input] cannot resume collector %s:%i, already running",
+                  in->name, coll_id);
         return -1;
     }
 
@@ -692,6 +706,7 @@ int flb_input_set_collector_socket(struct flb_input_instance *in,
     collector->seconds     = -1;
     collector->nanoseconds = -1;
     collector->instance    = in;
+    collector->running     = FLB_FALSE;
     mk_list_add(&collector->_head, &config->collectors);
     mk_list_add(&collector->_head_ins, &in->collectors);
 
