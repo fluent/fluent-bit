@@ -317,12 +317,24 @@ static inline int try_to_write(char *buf, int *off, size_t left,
     return FLB_TRUE;
 }
 
+static inline void encoded_to_buf(char *out, char *in, int len)
+{
+    int i;
+    char *p = out;
+
+    for (i = 0; i < len; i++) {
+        *p++ = in[i];
+    }
+}
+
 static inline int try_to_write_str(char *buf, int *off, size_t size,
                                    char *str, size_t str_len)
 {
     int i;
     int written = 0;
     int required;
+    int len;
+    char tmp[8];
     size_t available;
     char c;
     char *p;
@@ -370,6 +382,31 @@ static inline int try_to_write_str(char *buf, int *off, size_t size,
                 *p++ = 'v';
                 break;
             }
+        }
+        else if (c < 32 || c == 0x7f) {
+            if ((available - written) < 6) {
+                return FLB_FALSE;
+            }
+            len = snprintf(tmp, sizeof(tmp) - 1, "\\u00%hhX", (unsigned char) c);
+            encoded_to_buf(p, tmp, len);
+            p += len;
+        }
+        else if (c >= 0x80 && c <= 0xFFFF) {
+            if ((available - written) < 6) {
+                return FLB_FALSE;
+            }
+
+            len = snprintf(tmp, sizeof(tmp) - 1, "\\u%.4hX", (unsigned short) c);
+            encoded_to_buf(p, tmp, len);
+            p += len;
+        }
+        else if (c > 0xFFFF) {
+            if ((available - written) < 10) {
+                return FLB_FALSE;
+            }
+            len = snprintf(tmp, sizeof(tmp) - 1, "\\U%.8X", (u_int32_t) c);
+            encoded_to_buf(p, tmp, len);
+            p += len;
         }
         else {
             *p++ = c;
@@ -712,7 +749,7 @@ int flb_msgpack_expand_map(char *map_data, size_t map_size,
         msgpack_pack_object(&pck, kv_arr[i]->val);
     }
     msgpack_unpacked_destroy(&result);
-    
+
     *out_size = sbuf.size;
     ret_buf  = flb_malloc(sbuf.size);
     *out_buf = ret_buf;
@@ -723,6 +760,6 @@ int flb_msgpack_expand_map(char *map_data, size_t map_size,
     }
     memcpy(*out_buf, sbuf.data, sbuf.size);
     msgpack_sbuffer_destroy(&sbuf);
-    
+
     return 0;
 }
