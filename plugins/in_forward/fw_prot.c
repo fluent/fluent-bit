@@ -183,7 +183,9 @@ int fw_prot_process(struct fw_conn *conn)
                 /* Forward format 1: [tag, [[time, map], ...]] */
                 fw_process_array(conn->in, stag, stag_len, &entry);
             }
-            else if (entry.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
+            else if (entry.type == MSGPACK_OBJECT_POSITIVE_INTEGER ||
+                     entry.type == MSGPACK_OBJECT_EXT) {
+
                 /* Forward format 2: [tag, time, map] */
                 map = root.via.array.ptr[2];
                 if (map.type != MSGPACK_OBJECT_MAP) {
