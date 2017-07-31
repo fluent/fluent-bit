@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_utf8.h>
 
 #include <msgpack.h>
 #include <jsmn/jsmn.h>
@@ -331,13 +332,19 @@ static inline int try_to_write_str(char *buf, int *off, size_t size,
                                    char *str, size_t str_len)
 {
     int i;
+    int b;
+    int ret;
     int written = 0;
     int required;
     int len;
-    char tmp[8];
+    int hex_bytes;
+    uint32_t codepoint;
+    uint32_t state = 0;
+    char tmp[16];
     size_t available;
-    char c;
+    uint32_t c;
     char *p;
+    uint8_t *s;
 
     available = (size - *off);
     required = str_len;
@@ -352,7 +359,7 @@ static inline int try_to_write_str(char *buf, int *off, size_t size,
             return FLB_FALSE;
         }
 
-        c = str[i];
+        c = (uint32_t) str[i];
         if (c == '\\' || c == '"') {
             *p++ = '\\';
             *p++ = c;
@@ -387,26 +394,64 @@ static inline int try_to_write_str(char *buf, int *off, size_t size,
             if ((available - written) < 6) {
                 return FLB_FALSE;
             }
-            len = snprintf(tmp, sizeof(tmp) - 1, "\\u00%hhX", (unsigned char) c);
+            len = snprintf(tmp, sizeof(tmp) - 1, "\\u%.4hhx", (unsigned char) c);
             encoded_to_buf(p, tmp, len);
             p += len;
         }
         else if (c >= 0x80 && c <= 0xFFFF) {
-            if ((available - written) < 6) {
+            hex_bytes = flb_utf8_len(str + i);
+            if ((available - written) < (2 + hex_bytes)) {
                 return FLB_FALSE;
             }
 
-            len = snprintf(tmp, sizeof(tmp) - 1, "\\u%.4hX", (unsigned short) c);
-            encoded_to_buf(p, tmp, len);
-            p += len;
+            state = FLB_UTF8_ACCEPT;
+            codepoint = 0;
+            for (b = 0; b < hex_bytes; b++) {
+                s = (unsigned char *) str + i + b;
+                ret = flb_utf8_decode(&state, &codepoint, *s);
+                if (ret == 0) {
+                    break;
+                }
+            }
+
+            if (state != FLB_UTF8_ACCEPT) {
+                /* Invalid UTF-8 hex, just skip utf-8 bytes */
+                break;
+            }
+            else {
+                len = snprintf(tmp, sizeof(tmp) - 1, "\\u%.4x", codepoint);
+                encoded_to_buf(p, tmp, len);
+                p += len;
+            }
+            i += (hex_bytes - 1);
         }
         else if (c > 0xFFFF) {
-            if ((available - written) < 10) {
+            hex_bytes = flb_utf8_len(str + i);
+            if ((available - written) < (4 + hex_bytes)) {
                 return FLB_FALSE;
             }
-            len = snprintf(tmp, sizeof(tmp) - 1, "\\U%.8X", (u_int32_t) c);
-            encoded_to_buf(p, tmp, len);
-            p += len;
+
+            state = FLB_UTF8_ACCEPT;
+            codepoint = 0;
+            for (b = 0; b < hex_bytes; b++) {
+                s = (unsigned char *) str + i + b;
+                ret = flb_utf8_decode(&state, &codepoint, *s);
+                if (ret == 0) {
+                    break;
+                }
+            }
+
+            if (state != FLB_UTF8_ACCEPT) {
+                /* Invalid UTF-8 hex, just skip utf-8 bytes */
+                flb_warn("[pack] invalid UTF-8 bytes, skipping");
+                break;
+            }
+            else {
+                len = snprintf(tmp, sizeof(tmp) - 1, "\\u%04x", codepoint);
+                encoded_to_buf(p, tmp, len);
+                p += len;
+            }
+            i += (hex_bytes - 1);
         }
         else {
             *p++ = c;
@@ -562,12 +607,12 @@ static int msgpack2json(char *buf, int *off, size_t left, msgpack_object *o)
  *  convert msgpack to JSON string.
  *  This API is similar to snprintf.
  *
- *  @param  json_str The buffer to fill JSON string.
- *  @param  json_len The size of json_str.
- *  @param  data     The msgpack_unpacked data.
- *  @return success  ? a number characters filled : negative value
+ *  @param  json_str  The buffer to fill JSON string.
+ *  @param  json_size The size of json_str.
+ *  @param  data      The msgpack_unpacked data.
+ *  @return success   ? a number characters filled : negative value
  */
-int flb_msgpack_to_json(char *json_str, size_t str_len,
+int flb_msgpack_to_json(char *json_str, size_t json_size,
                         msgpack_unpacked *data)
 {
     int ret = -1;
@@ -577,8 +622,8 @@ int flb_msgpack_to_json(char *json_str, size_t str_len,
         return -1;
     }
 
-    ret = msgpack2json(json_str, &off, str_len, &data->data);
-    json_str[str_len-1] = '\0';
+    ret = msgpack2json(json_str, &off, json_size, &data->data);
+    json_str[off] = '\0';
     return ret ? off: ret;
 }
 
@@ -590,7 +635,7 @@ int flb_msgpack_obj_to_json(char *json_str, size_t str_len,
     int off = 0;
 
     ret = msgpack2json(json_str, &off, str_len, obj);
-    json_str[str_len-1] = '\0';
+    json_str[off] = '\0';
     return ret ? off: ret;
 }
 
