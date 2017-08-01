@@ -64,6 +64,7 @@ static int in_dummy_collect(struct flb_input_instance *i_ins,
 static int config_destroy(struct flb_in_dummy_config *ctx)
 {
     flb_free(ctx->dummy_message);
+    flb_free(ctx->ref_msgpack);
     flb_free(ctx);
     return 0;
 }
@@ -76,6 +77,8 @@ static int configure(struct flb_in_dummy_config *ctx,
     char *str = NULL;
     int  ret = -1;
     long val  = 0;
+
+    ctx->ref_msgpack = NULL;
 
     /* samples */
     str = flb_input_get_property("dummy", in);
