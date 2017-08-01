@@ -232,8 +232,8 @@ struct cpu_snapshot *snapshot_percent(struct cpu_stats *cstats,
     int i;
     unsigned long sum_pre;
     unsigned long sum_now;
-    struct cpu_snapshot *arr_pre = NULL;
-    struct cpu_snapshot *arr_now = NULL;
+    struct cpu_snapshot *arr_pre = cstats->snap_b;
+    struct cpu_snapshot *arr_now = cstats->snap_a;
     struct cpu_snapshot *snap_pre = NULL;
     struct cpu_snapshot *snap_now = NULL;
 
