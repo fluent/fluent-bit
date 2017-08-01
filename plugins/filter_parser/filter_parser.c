@@ -224,6 +224,7 @@ static int cb_parser_filter(void *data, size_t bytes,
                                                  &new_buf, &new_size);
                     if (ret == -1) {
                         flb_error("[filter_parser] cannot expand map");
+                        flb_free(append_arr);
                         msgpack_unpacked_destroy(&result);
                         return FLB_FILTER_NOTOUCH;
                     }
