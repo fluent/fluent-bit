@@ -148,7 +148,7 @@ static int cb_parser_filter(void *data, size_t bytes,
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
 
-    msgpack_object_kv **append_arr;
+    msgpack_object_kv **append_arr = NULL;
     size_t            append_arr_len;
     int                append_arr_i = 0;
 
@@ -240,6 +240,8 @@ static int cb_parser_filter(void *data, size_t bytes,
                 /* re-use original data*/
                 msgpack_pack_object(&tmp_pck, result.data);
             }
+            flb_free(append_arr);
+            append_arr = NULL;
         }
         else {
             continue;
