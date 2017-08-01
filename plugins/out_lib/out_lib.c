@@ -125,7 +125,7 @@ static void out_lib_flush(void *data, size_t bytes,
             /* JSON is larger than msgpack, just a hint */
             data_size = (off - last_off) + 128;
             last_off   = off;
-            data_for_user = flb_msgpack_to_json_str(data_size, &result);
+            data_for_user = flb_msgpack_to_json_str(data_size, &result.data);
             if (!data_for_user) {
                 msgpack_unpacked_destroy(&result);
                 FLB_OUTPUT_RETURN(FLB_ERROR);
