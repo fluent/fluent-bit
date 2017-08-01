@@ -214,7 +214,7 @@ static void cb_file_flush(void *data, size_t bytes,
 
         switch (ctx->format){
         case FLB_OUT_FILE_FMT_JSON:
-            buf = flb_msgpack_to_json_str(alloc_size, &result);
+            buf = flb_msgpack_to_json_str(alloc_size, obj);
             if (buf) {
                 fprintf(fp, "%s: [%f, %s]\n",
                         tag,
