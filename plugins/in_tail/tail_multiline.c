@@ -152,6 +152,7 @@ int flb_tail_mult_process_first(time_t now,
                                 struct flb_tail_file *file,
                                 struct flb_tail_config *ctx)
 {
+    int ret;
     size_t off;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
@@ -214,7 +215,13 @@ int flb_tail_mult_process_first(time_t now,
 
     off = 0;
     msgpack_unpacked_init(&result);
-    msgpack_unpack_next(&result, buf, size, &off);
+    ret = msgpack_unpack_next(&result, buf, size, &off);
+    if (ret != MSGPACK_UNPACK_SUCCESS) {
+        msgpack_sbuffer_destroy(&file->mult_sbuf);
+        msgpack_unpacked_destroy(&result);
+        return FLB_TAIL_MULT_NA;
+    }
+
     map = result.data;
     file->mult_keys = map.via.map.size;
     msgpack_unpacked_destroy(&result);
