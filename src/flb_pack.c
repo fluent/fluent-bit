@@ -613,28 +613,16 @@ static int msgpack2json(char *buf, int *off, size_t left, msgpack_object *o)
  *  @return success   ? a number characters filled : negative value
  */
 int flb_msgpack_to_json(char *json_str, size_t json_size,
-                        msgpack_unpacked *data)
+                        msgpack_object *obj)
 {
     int ret = -1;
     int off = 0;
 
-    if (json_str == NULL || data == NULL) {
+    if (json_str == NULL || obj == NULL) {
         return -1;
     }
 
-    ret = msgpack2json(json_str, &off, json_size, &data->data);
-    json_str[off] = '\0';
-    return ret ? off: ret;
-}
-
-
-int flb_msgpack_obj_to_json(char *json_str, size_t str_len,
-                            msgpack_object *obj)
-{
-    int ret;
-    int off = 0;
-
-    ret = msgpack2json(json_str, &off, str_len, obj);
+    ret = msgpack2json(json_str, &off, json_size, obj);
     json_str[off] = '\0';
     return ret ? off: ret;
 }
@@ -646,13 +634,13 @@ int flb_msgpack_obj_to_json(char *json_str, size_t str_len,
  *  @param  data     The msgpack_unpacked data.
  *  @return success  ? allocated json str ptr : NULL
  */
-char *flb_msgpack_to_json_str(size_t size, msgpack_unpacked *data)
+char *flb_msgpack_to_json_str(size_t size, msgpack_object *obj)
 {
     int ret;
     char *buf = NULL;
     char *tmp;
 
-    if (data == NULL) {
+    if (obj == NULL) {
         return NULL;
     }
 
@@ -667,7 +655,7 @@ char *flb_msgpack_to_json_str(size_t size, msgpack_unpacked *data)
     }
 
     while (1) {
-        ret = flb_msgpack_to_json(buf, size, data);
+        ret = flb_msgpack_to_json(buf, size, obj);
         if (ret <= 0) {
             /* buffer is small. retry.*/
             size += 128;
@@ -718,7 +706,7 @@ int flb_msgpack_raw_to_json_str(char *buf, size_t buf_size,
     }
 
     while (1) {
-        ret = flb_msgpack_to_json(json_buf, json_size, &result);
+        ret = flb_msgpack_to_json(json_buf, json_size, &result.data);
         if (ret <= 0) {
             json_size += 128;
             tmp = flb_realloc(json_buf, json_size);
