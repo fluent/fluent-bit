@@ -10,13 +10,16 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <dirent.h>
+#include <fcntl.h>
 #include <unistd.h>
+
 
 #include "flb_tests_internal.h"
 
 /* JSON iteration tests */
 #define JSON_SINGLE_MAP1 FLB_TESTS_DATA_PATH "/data/pack/json_single_map_001.json"
 #define JSON_SINGLE_MAP2 FLB_TESTS_DATA_PATH "/data/pack/json_single_map_002.json"
+#define JSON_BUG342      FLB_TESTS_DATA_PATH "/data/pack/bug342.json"
 
 /* Pack Samples path */
 #define PACK_SAMPLES     FLB_TESTS_DATA_PATH "/data/pack/"
@@ -236,6 +239,94 @@ void test_json_pack_mult_iter()
     flb_free(buf);
 }
 
+void test_json_pack_bug342()
+{
+    int i = 0;
+    int records = 0;
+    int fd;
+    int ret;
+    size_t off = 0;
+    ssize_t r = 0;
+    char *out;
+    char buf[1024*4];
+    int out_size;
+    size_t total = 0;
+    int bytes[] = {1, 3, 3, 5, 5, 35, 17, 23,
+                   46, 37, 49, 51, 68, 70, 86, 268,
+                   120, 178, 315, 754, 753, 125};
+    struct stat st;
+    struct flb_pack_state state;
+    msgpack_unpacked result;
+    ret = stat(JSON_BUG342, &st);
+    if (ret == -1) {
+        perror("stat");
+        exit(EXIT_FAILURE);
+    }
+
+    for (i = 0; i < (sizeof(bytes)/sizeof(int)); i++) {
+        total += bytes[i];
+    }
+
+    TEST_CHECK(total == st.st_size);
+    if (total != st.st_size) {
+        exit(EXIT_FAILURE);
+    }
+
+    fd = open(JSON_BUG342, O_RDONLY);
+    if (fd == -1) {
+        perror("open");
+        exit(EXIT_FAILURE);
+    }
+
+    flb_pack_state_init(&state);
+    state.multiple = FLB_TRUE;
+
+    for (i = 0; i < (sizeof(bytes)/sizeof(int)); i++) {
+        r = read(fd, buf + off, bytes[i]);
+        TEST_CHECK(r == bytes[i]);
+        if (r <= 0) {
+            perror("read");
+            exit(EXIT_FAILURE);
+        }
+        off += r;
+
+        ret = flb_pack_json_state(buf, off, &out, &out_size, &state);
+        TEST_CHECK(ret != FLB_ERR_JSON_INVAL);
+        if (ret == FLB_ERR_JSON_INVAL) {
+            exit(EXIT_FAILURE);
+        }
+        else if (ret == FLB_ERR_JSON_PART) {
+            continue;
+        }
+        else if (ret == 0) {
+            /* remove used bytes */
+            consume_bytes(buf, state.last_byte, off);
+            off -= state.last_byte;
+
+            /* reset the packer state */
+            flb_pack_state_reset(&state);
+            flb_pack_state_init(&state);
+            state.multiple = FLB_TRUE;
+        }
+
+        size_t coff = 0;
+        msgpack_unpacked_init(&result);
+        while (msgpack_unpack_next(&result, out, out_size, &coff)) {
+            records++;
+        }
+        msgpack_unpacked_destroy(&result);
+
+        TEST_CHECK(off >= state.last_byte);
+        if (off < state.last_byte) {
+            exit(1);
+        }
+        flb_free(out);
+    }
+    close(fd);
+    TEST_CHECK(records == 240);
+}
+
+
 /* Iterate data/pack/ directory and compose an array with files to test */
 static int utf8_tests_create()
 {
@@ -380,6 +471,7 @@ TEST_LIST = {
     { "json_pack_iter", test_json_pack_iter},
     { "json_pack_mult", test_json_pack_mult},
     { "json_pack_mult_iter", test_json_pack_mult_iter},
+    { "json_pack_bug342", test_json_pack_bug342},
 
     /* Mixed bytes, check JSON encoding */
     { "utf8_to_json", test_utf8_to_json},
