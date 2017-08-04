@@ -109,8 +109,6 @@ static int in_serial_collect(struct flb_input_instance *in,
     int hits;
     char *sep;
     char *buf;
-    jsmntok_t *t;
-
     struct flb_in_serial_config *ctx = in_context;
 
     while (1) {
@@ -211,9 +209,8 @@ static int in_serial_collect(struct flb_input_instance *in,
             process_pack(ctx, pack, out_size);
             flb_free(pack);
 
-            t = &ctx->pack_state.tokens[0];
-            consume_bytes(ctx->buf_data, t->end, ctx->buf_len);
-            ctx->buf_len -= t->end;
+            consume_bytes(ctx->buf_data, ctx->pack_state.last_byte, ctx->buf_len);
+            ctx->buf_len -= ctx->pack_state.last_byte;
             ctx->buf_data[ctx->buf_len] = '\0';
 
             flb_pack_state_reset(&ctx->pack_state);
@@ -268,6 +265,7 @@ int in_serial_init(struct flb_input_instance *in,
     /* Initialize JSON pack state */
     if (ctx->format == FLB_SERIAL_FORMAT_JSON) {
         flb_pack_state_init(&ctx->pack_state);
+        ctx->pack_state.multiple = FLB_TRUE;
     }
 
     /* Input instance */
