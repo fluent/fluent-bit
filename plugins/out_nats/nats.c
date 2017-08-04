@@ -172,15 +172,13 @@ void cb_nats_flush(void *data, size_t bytes,
     }
 
     /* Before to flush the content check if we need to start the handshake */
-    if (u_conn->fd <= 0) {
-        ret = flb_io_net_write(u_conn,
-                               NATS_CONNECT,
-                               sizeof(NATS_CONNECT) - 1,
-                               &bytes_sent);
-        if (ret == -1) {
-            flb_upstream_conn_release(u_conn);
-            FLB_OUTPUT_RETURN(FLB_RETRY);
-        }
+    ret = flb_io_net_write(u_conn,
+                           NATS_CONNECT,
+                           sizeof(NATS_CONNECT) - 1,
+                           &bytes_sent);
+    if (ret == -1) {
+        flb_upstream_conn_release(u_conn);
+        FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
     /* Convert original Fluent Bit MsgPack format to JSON */
