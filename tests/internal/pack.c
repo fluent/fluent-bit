@@ -176,7 +176,6 @@ void test_json_pack_mult_iter()
     int out_size;
     msgpack_unpacked result;
     msgpack_object root;
-    jsmntok_t *t;
     struct flb_pack_state state;
 
     data1 = mk_file_to_buffer(JSON_SINGLE_MAP1);
@@ -211,10 +210,9 @@ void test_json_pack_mult_iter()
         ret = flb_pack_json_state(buf, i, &out_buf, &out_size, &state);
         if (ret == 0) {
             /* Consume processed bytes */
-            t = &state.tokens[0];
-            consume_bytes(buf, t->end, total);
+            consume_bytes(buf, state.last_byte, total);
             i = 1;
-            total -= t->end;
+            total -= state.last_byte;
             flb_pack_state_reset(&state);
             flb_pack_state_init(&state);
 
