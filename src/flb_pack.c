@@ -83,7 +83,8 @@ static inline int is_float(char *buf, int len)
 
 /* Receive a tokenized JSON message and convert it to MsgPack */
 static char *tokens_to_msgpack(char *js,
-                               jsmntok_t *tokens, int arr_size, int *out_size)
+                               jsmntok_t *tokens, int arr_size, int *out_size,
+                               int *last_byte)
 {
     int i;
     int flen;
@@ -103,6 +104,11 @@ static char *tokens_to_msgpack(char *js,
         if (t->start == -1 || t->end == -1 || (t->start == 0 && t->end == 0)) {
             break;
         }
+
+        if (t->parent == -1) {
+            *last_byte = t->end;
+        }
+
         flen = (t->end - t->start);
 
         switch (t->type) {
@@ -183,7 +189,8 @@ int flb_pack_json(char *js, size_t len, char **buffer, int *size)
         goto flb_pack_json_end;
     }
 
-    buf = tokens_to_msgpack(js, state.tokens, state.tokens_count, &out);
+    int last;
+    buf = tokens_to_msgpack(js, state.tokens, state.tokens_count, &out, &last);
     if (!buf) {
         ret = -1;
         goto flb_pack_json_end;
@@ -210,8 +217,9 @@ int flb_pack_state_init(struct flb_pack_state *s)
         perror("calloc");
         return -1;
     }
-    s->tokens_size  = size;
-    s->tokens_count = 0;
+    s->tokens_size   = size;
+    s->tokens_count  = 0;
+    s->last_byte     = 0;
 
     return 0;
 }
@@ -237,6 +245,7 @@ int flb_pack_json_state(char *js, size_t len,
     int ret;
     int out;
     int delim = 0;
+    int last =  0;
     char *buf;
     jsmntok_t *t;
 
@@ -257,6 +266,7 @@ int flb_pack_json_state(char *js, size_t len,
 
         for (i = 1; i < state->tokens_size; i++) {
             t = &state->tokens[i];
+
             if (t->start < (state->tokens[i - 1]).start) {
                 break;
             }
@@ -265,6 +275,7 @@ int flb_pack_json_state(char *js, size_t len,
                 found++;
                 delim = i;
             }
+
         }
 
         if (found > 0) {
@@ -278,13 +289,14 @@ int flb_pack_json_state(char *js, size_t len,
         return ret;
     }
 
-    buf = tokens_to_msgpack(js, state->tokens, state->tokens_count, &out);
+    buf = tokens_to_msgpack(js, state->tokens, state->tokens_count, &out, &last);
     if (!buf) {
         return -1;
     }
 
     *size = out;
     *buffer = buf;
+    state->last_byte = last;
 
     return 0;
 }
