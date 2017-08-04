@@ -229,6 +229,7 @@ void flb_pack_state_reset(struct flb_pack_state *s)
     flb_free(s->tokens);
     s->tokens_size  = 0;
     s->tokens_count = 0;
+    s->last_byte    = 0;
 }
 
 
