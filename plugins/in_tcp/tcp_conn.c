@@ -77,7 +77,6 @@ int tcp_conn_event(void *data)
     struct mk_event *event;
     struct tcp_conn *conn = data;
     struct flb_in_tcp_config *ctx = conn->ctx;
-    jsmntok_t *t;
 
     event = &conn->event;
     if (event->mask & MK_EVENT_READ) {
@@ -127,11 +126,9 @@ int tcp_conn_event(void *data)
             conn->buf_len--;
         }
 
-
         /* JSON Format handler */
         char *pack;
         int out_size;
-
         ret = flb_pack_json_state(conn->buf_data, conn->buf_len,
                                   &pack, &out_size, &conn->pack_state);
         if (ret == FLB_ERR_JSON_PART) {
@@ -153,9 +150,8 @@ int tcp_conn_event(void *data)
          */
         process_pack(conn, pack, out_size);
 
-        t = &conn->pack_state.tokens[0];
-        consume_bytes(conn->buf_data, t->end, conn->buf_len);
-        conn->buf_len -= t->end;
+        consume_bytes(conn->buf_data, conn->pack_state.last_byte, conn->buf_len);
+        conn->buf_len -= conn->pack_state.last_byte;
         conn->buf_data[conn->buf_len] = '\0';
 
         flb_pack_state_reset(&conn->pack_state);
@@ -213,6 +209,7 @@ struct tcp_conn *tcp_conn_add(int fd, struct flb_in_tcp_config *ctx)
 
     /* Initialize JSON parser */
     flb_pack_state_init(&conn->pack_state);
+    conn->pack_state.multiple = FLB_TRUE;
 
     /* Register instance into the event loop */
     ret = mk_event_add(ctx->evl, fd, FLB_ENGINE_EV_CUSTOM, MK_EVENT_READ, conn);
