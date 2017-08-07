@@ -77,9 +77,11 @@ struct time_check time_entries[] = {
     /* Same date for different timezones, same timestamp */
     {"generic_TZ"   , "07/17/2017 20:17:03 +0000"  , 1500322623, 0,   0},
     {"generic_TZ"   , "07/18/2017 01:47:03 +0530"  , 1500322623, 0,   0},
+    {"generic_TZ"   , "07/18/2017 01:47:03 +05:30"  , 1500322623, 0,   0},
     {"generic_TZ"   , "07/18/2017 05:17:03 +0900"  , 1500322623, 0,   0},
     {"generic_TZ"   , "07/17/2017 22:17:03 +0200"  , 1500322623, 0,   0},
     {"generic_N_TZ" , "07/17/2017 22:17:03.1 +0200", 1500322623, 0.1, 0},
+    {"generic_N_TZ" , "07/17/2017 22:17:03.1 +02:00", 1500322623, 0.1, 0},
 
     /* Same date for different timezones, same timestamp w/ fixed UTC offset */
     {"generic"   , "07/18/2017 01:47:03"   , 1500322623, 0,   19800},
