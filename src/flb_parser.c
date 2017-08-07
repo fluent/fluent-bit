@@ -690,6 +690,7 @@ int flb_parser_time_lookup(char *time_str, size_t tsize,
 int flb_parser_frac_tzone(char *str, int len, double *frac, int *tmdiff)
 {
     int ret;
+    int tz_len;
     char *p;
     char *end;
     double d;
@@ -700,11 +701,13 @@ int flb_parser_frac_tzone(char *str, int len, double *frac, int *tmdiff)
         return -1;
     }
     *frac = d;
+
+    tz_len = len - (end - str);
     p = end;
     while (*p == ' ') p++;
 
-    len = end - p;
-    ret = flb_parser_tzone_offset(p, len, tmdiff);
+    tz_len -= (p - end);
+    ret = flb_parser_tzone_offset(p, tz_len, tmdiff);
     if (ret == -1) {
         *tmdiff = -1;
         return -1;
