@@ -251,7 +251,7 @@ int flb_tail_mult_process_content(time_t now,
     size_t out_size = 0;
     struct mk_list *head;
     struct flb_tail_mult *mult_parser = NULL;
-    struct flb_time out_time = {};
+    struct flb_time out_time = {0};
     msgpack_object map;
     msgpack_unpacked result;
 
@@ -325,6 +325,7 @@ int flb_tail_mult_flush(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                         struct flb_tail_file *file, struct flb_tail_config *ctx)
 {
     int i;
+    int map_size;
     size_t total;
     size_t off = 0;
     size_t next_off = 0;
@@ -349,7 +350,22 @@ int flb_tail_mult_flush(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
     /* Compose the new record with the multiline content */
     msgpack_pack_array(mp_pck, 2);
     flb_time_append_to_msgpack(&file->mult_time, mp_pck, 0);
-    msgpack_pack_map(mp_pck, file->mult_keys);
+
+    /* New Map size */
+    map_size = file->mult_keys;
+    if (file->config->path_key != NULL) {
+        map_size++;
+    }
+    msgpack_pack_map(mp_pck, map_size);
+
+    /* Append Path_Key ? */
+    if (file->config->path_key != NULL) {
+        msgpack_pack_str(mp_pck, file->config->path_key_len);
+        msgpack_pack_str_body(mp_pck, file->config->path_key,
+                              file->config->path_key_len);
+        msgpack_pack_str(mp_pck, file->name_len);
+        msgpack_pack_str_body(mp_pck, file->name, file->name_len);
+    }
 
     data = file->mult_sbuf.data;
     bytes = file->mult_sbuf.size;
