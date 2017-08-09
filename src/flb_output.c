@@ -70,6 +70,38 @@ void flb_output_pre_run(struct flb_config *config)
     }
 }
 
+static void flb_output_free_properties(struct flb_output_instance *ins)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_config_prop *prop;
+
+    mk_list_foreach_safe(head, tmp, &ins->properties) {
+        prop = mk_list_entry(head, struct flb_config_prop, _head);
+
+        flb_free(prop->key);
+        flb_free(prop->val);
+
+        mk_list_del(&prop->_head);
+        flb_free(prop);
+    }
+
+#ifdef FLB_HAVE_TLS
+    if (ins->tls_ca_file) {
+        flb_free(ins->tls_ca_file);
+    }
+    if (ins->tls_crt_file) {
+        flb_free(ins->tls_crt_file);
+    }
+    if (ins->tls_key_file) {
+        flb_free(ins->tls_key_file);
+    }
+    if (ins->tls_key_passwd) {
+        flb_free(ins->tls_key_passwd);
+    }
+#endif
+}
+
 /* Invoke exit call for the output plugin */
 void flb_output_exit(struct flb_config *config)
 {
@@ -111,15 +143,7 @@ void flb_output_exit(struct flb_config *config)
         }
 #endif
         /* release properties */
-        mk_list_foreach_safe(head_prop, tmp_prop, &ins->properties) {
-            prop = mk_list_entry(head_prop, struct flb_config_prop, _head);
-
-            flb_free(prop->key);
-            flb_free(prop->val);
-
-            mk_list_del(&prop->_head);
-            flb_free(prop);
-        }
+        flb_output_free_properties(ins);
 
         mk_list_del(&ins->_head);
         flb_free(ins);
@@ -396,12 +420,17 @@ int flb_output_init(struct flb_config *config)
                                                    ins->tls_crt_file,
                                                    ins->tls_key_file,
                                                    ins->tls_key_passwd);
+            if (!ins->tls.context) {
+                flb_error("[output %s] error initializing TLS context",
+                          ins->name);
+                return -1;
+            }
+            ret = p->cb_init(ins, config, ins->data);
         }
-#endif
-
+#else
         ret = p->cb_init(ins, config, ins->data);
+#endif
         mk_list_init(&ins->th_queue);
-
         if (ret == -1) {
             return -1;
         }
