@@ -381,6 +381,10 @@ int flb_sched_exit(struct flb_config *config)
 
     /* Delete requests */
     sched = config->sched;
+    if (!sched) {
+        return 0;
+    }
+
     mk_list_foreach_safe(head, tmp, &sched->requests) {
         request = mk_list_entry(head, struct flb_sched_request, _head);
         flb_sched_request_destroy(config, request);
@@ -398,6 +402,7 @@ int flb_sched_exit(struct flb_config *config)
     mk_list_foreach_safe(head, tmp, &sched->timers) {
         timer = mk_list_entry(head, struct flb_sched_timer, _head);
         flb_sched_timer_destroy(timer);
+        c++;
     }
 
     flb_free(sched);
