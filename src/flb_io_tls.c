@@ -78,7 +78,7 @@ struct flb_tls_context *flb_tls_context_new(int verify,
     int ret;
     struct flb_tls_context *ctx;
 
-    ctx = flb_malloc(sizeof(struct flb_tls_context));
+    ctx = flb_calloc(1, sizeof(struct flb_tls_context));
     if (!ctx) {
         perror("malloc");
         return NULL;
@@ -103,6 +103,7 @@ struct flb_tls_context *flb_tls_context_new(int verify,
     if (!ca_file) {
         ca_file = "/etc/ssl/certs/ca-certificates.crt";
     }
+
     mbedtls_x509_crt_init(&ctx->ca_cert);
     ret = mbedtls_x509_crt_parse_file(&ctx->ca_cert, ca_file);
     if (ret < 0) {
@@ -136,7 +137,7 @@ struct flb_tls_context *flb_tls_context_new(int verify,
     return ctx;
 
  error:
-    flb_free(ctx);
+    flb_tls_context_destroy(ctx);
     return NULL;
 }
 
