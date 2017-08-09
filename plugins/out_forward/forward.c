@@ -520,6 +520,10 @@ int cb_forward_exit(void *data, struct flb_config *config)
     struct flb_out_forward_config *ctx = data;
     (void) config;
 
+    if (!ctx) {
+        return 0;
+    }
+
     if (ctx->shared_key) {
         flb_free(ctx->shared_key);
     }
