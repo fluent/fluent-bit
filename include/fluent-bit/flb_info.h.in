@@ -20,6 +20,8 @@
 #ifndef FLB_INFO_H
 #define FLB_INFO_H
 
+#define FLB_SOURCE_DIR "@CMAKE_SOURCE_DIR@"
+
 /* General flags set by CMakeLists.txt */
 @FLB_BUILD_FLAGS@
 
