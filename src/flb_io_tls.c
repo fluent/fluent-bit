@@ -72,6 +72,7 @@ static inline int io_tls_event_switch(struct flb_upstream_conn *u_conn,
 }
 
 struct flb_tls_context *flb_tls_context_new(int verify,
+                                            int debug,
                                             char *ca_file, char *crt_file,
                                             char *key_file, char *key_passwd)
 {
@@ -84,11 +85,11 @@ struct flb_tls_context *flb_tls_context_new(int verify,
         return NULL;
     }
     ctx->verify    = verify;
+    ctx->debug     = debug;
     ctx->certs_set = 0;
 
     mbedtls_entropy_init(&ctx->entropy);
     mbedtls_ctr_drbg_init(&ctx->ctr_drbg);
-
     ret = mbedtls_ctr_drbg_seed(&ctx->ctr_drbg,
                                 mbedtls_entropy_func,
                                 &ctx->entropy,
@@ -158,6 +159,22 @@ void flb_tls_context_destroy(struct flb_tls_context *ctx)
     flb_free(ctx);
 }
 
+static void flb_tls_debug(void *ctx, int level,
+                          const char *file, int line,
+                          const char *str)
+{
+    int len;
+    char *p;
+    ((void) level);
+
+    len = strlen(str);
+    p = (char *) str;
+    p[len - 1] = '\0';
+
+    flb_debug("[io_tls] %s %04d: %s", file + sizeof(FLB_SOURCE_DIR) - 1,
+              line, str);
+}
+
 struct flb_tls_session *flb_tls_session_new(struct flb_tls_context *ctx)
 {
     int ret;
@@ -181,6 +198,11 @@ struct flb_tls_session *flb_tls_session_new(struct flb_tls_context *ctx)
     mbedtls_ssl_conf_rng(&session->conf,
                          mbedtls_ctr_drbg_random,
                          &ctx->ctr_drbg);
+
+    if (ctx->debug >= 0) {
+        mbedtls_ssl_conf_dbg(&session->conf, flb_tls_debug, NULL);
+        mbedtls_debug_set_threshold(ctx->debug);
+    }
 
     if (ctx->verify == FLB_TRUE) {
         mbedtls_ssl_conf_authmode(&session->conf, MBEDTLS_SSL_VERIFY_REQUIRED);

@@ -107,9 +107,6 @@ void flb_output_exit(struct flb_config *config)
 {
     struct mk_list *tmp;
     struct mk_list *head;
-    struct mk_list *tmp_prop;
-    struct mk_list *head_prop;
-    struct flb_config_prop *prop;
     struct flb_output_instance *ins;
     struct flb_output_plugin *p;
 
@@ -248,6 +245,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     instance->use_tls        = FLB_FALSE;
 #ifdef FLB_HAVE_TLS
     instance->tls.context    = NULL;
+    instance->tls_debug      = -1;
     instance->tls_verify     = FLB_TRUE;
     instance->tls_ca_file    = NULL;
     instance->tls_crt_file   = NULL;
@@ -351,6 +349,10 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
         }
         flb_free(tmp);
     }
+    else if (prop_key_check("tls.debug", k, len) == 0 && tmp) {
+        out->tls_debug = atoi(tmp);
+        flb_free(tmp);
+    }
     else if (prop_key_check("tls.ca_file", k, len) == 0) {
         out->tls_ca_file = tmp;
     }
@@ -416,6 +418,7 @@ int flb_output_init(struct flb_config *config)
 #ifdef FLB_HAVE_TLS
         if (p->flags & FLB_IO_TLS && ins->use_tls) {
             ins->tls.context = flb_tls_context_new(ins->tls_verify,
+                                                   ins->tls_debug,
                                                    ins->tls_ca_file,
                                                    ins->tls_crt_file,
                                                    ins->tls_key_file,

@@ -36,6 +36,7 @@
 /* mbedTLS library context */
 struct flb_tls_context {
     int verify;                    /* FLB_TRUE | FLB_FALSE      */
+    int debug;                     /* mbedtls debug level       */
     uint16_t    certs_set;         /* CA_ROOT | CERT | PRIV_KEY */
     mbedtls_x509_crt ca_cert;      /* CA Root      */
     mbedtls_x509_crt cert;         /* Certificate  */
