@@ -440,9 +440,7 @@ int cb_forward_init(struct flb_output_instance *ins, struct flb_config *config,
     ctx->time_as_integer = FLB_FALSE;
     tmp = flb_output_get_property("time_as_integer", ins);
     if (tmp) {
-        if (strcmp(tmp, "on") == 0 || strcmp(tmp, "true") == 0) {
-            ctx->time_as_integer = FLB_TRUE;
-        }
+        ctx->time_as_integer = flb_utils_bool(tmp);
     }
 
 #ifdef FLB_HAVE_TLS
