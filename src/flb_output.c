@@ -428,11 +428,9 @@ int flb_output_init(struct flb_config *config)
                           ins->name);
                 return -1;
             }
-            ret = p->cb_init(ins, config, ins->data);
         }
-#else
-        ret = p->cb_init(ins, config, ins->data);
 #endif
+        ret = p->cb_init(ins, config, ins->data);
         mk_list_init(&ins->th_queue);
         if (ret == -1) {
             return -1;
