@@ -103,7 +103,7 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
     /* Set manual Index and Type */
     ctx->u = upstream;
     if (f_index) {
-        ctx->index = f_index->value;
+        ctx->index = flb_strdup(f_index->value);
     }
     else {
         tmp = flb_output_get_property("index", ins);
@@ -116,7 +116,7 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
     }
 
     if (f_type) {
-        ctx->type = f_type->value;
+        ctx->type = flb_strdup(f_type->value);
     }
     else {
         tmp = flb_output_get_property("type", ins);
