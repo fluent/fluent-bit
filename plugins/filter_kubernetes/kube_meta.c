@@ -231,9 +231,11 @@ static int merge_meta(char *reg_buf, size_t reg_size,
     int ret;
     int map_size;
     int meta_found = FLB_FALSE;
+    int spec_found = FLB_FALSE;
     int have_uid = -1;
     int have_labels = -1;
     int have_annotations = -1;
+    int have_nodename = -1;
     size_t off = 0;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
@@ -245,6 +247,7 @@ static int merge_meta(char *reg_buf, size_t reg_size,
     msgpack_object v;
     msgpack_object meta_val;
     msgpack_object map;
+    msgpack_object spec_val;
     msgpack_object api_map;
 
     /*
@@ -321,6 +324,16 @@ static int merge_meta(char *reg_buf, size_t reg_size,
         }
     }
 
+    /* We are also interested in the nodeName from 'spec' map value. */
+    for (i = 0; i < api_map.via.map.size; i++) {
+       k = api_map.via.map.ptr[i].key;
+      if (k.via.str.size == 4 && strncmp(k.via.str.ptr, "spec", 4) == 0) {
+        spec_val = api_map.via.map.ptr[i].val;
+        spec_found = FLB_TRUE;
+        break;
+      }
+    }
+
     if (meta_found == FLB_FALSE) {
         msgpack_unpacked_destroy(&result);
         msgpack_unpacked_destroy(&api_result);
@@ -355,6 +368,21 @@ static int merge_meta(char *reg_buf, size_t reg_size,
         }
     }
 
+    /* Process spec map value for nodeName */
+    if (spec_found == FLB_TRUE) {
+      for (i = 0; i < spec_val.via.map.size; i++) {
+        k = spec_val.via.map.ptr[i].key;
+
+        char *ptr = (char *) k.via.str.ptr;
+        size_t size = k.via.str.size;
+
+        if (size == 8 && strncmp(ptr, "nodeName", 8) == 0) {
+            have_nodename = i;
+            map_size++;
+        }
+      }
+    }
+
     /* Append Regex fields */
     msgpack_pack_map(&mp_pck, map_size);
     for (i = 0; i < map.via.map.size; i++) {
@@ -387,6 +415,14 @@ static int merge_meta(char *reg_buf, size_t reg_size,
         v = meta_val.via.map.ptr[have_annotations].val;
 
         msgpack_pack_object(&mp_pck, k);
+        msgpack_pack_object(&mp_pck, v);
+    }
+
+    if (have_nodename >= 0) {
+        v = spec_val.via.map.ptr[have_nodename].val;
+
+        msgpack_pack_str(&mp_pck, 4);
+        msgpack_pack_str_body(&mp_pck, "host", 4);
         msgpack_pack_object(&mp_pck, v);
     }
 
