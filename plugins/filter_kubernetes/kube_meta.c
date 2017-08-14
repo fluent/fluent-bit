@@ -327,11 +327,11 @@ static int merge_meta(char *reg_buf, size_t reg_size,
     /* We are also interested in the nodeName from 'spec' map value. */
     for (i = 0; i < api_map.via.map.size; i++) {
        k = api_map.via.map.ptr[i].key;
-      if (k.via.str.size == 4 && strncmp(k.via.str.ptr, "spec", 4) == 0) {
-        spec_val = api_map.via.map.ptr[i].val;
-        spec_found = FLB_TRUE;
-        break;
-      }
+       if (k.via.str.size == 4 && strncmp(k.via.str.ptr, "spec", 4) == 0) {
+           spec_val = api_map.via.map.ptr[i].val;
+           spec_found = FLB_TRUE;
+           break;
+       }
     }
 
     if (meta_found == FLB_FALSE) {
@@ -370,17 +370,15 @@ static int merge_meta(char *reg_buf, size_t reg_size,
 
     /* Process spec map value for nodeName */
     if (spec_found == FLB_TRUE) {
-      for (i = 0; i < spec_val.via.map.size; i++) {
-        k = spec_val.via.map.ptr[i].key;
-
-        char *ptr = (char *) k.via.str.ptr;
-        size_t size = k.via.str.size;
-
-        if (size == 8 && strncmp(ptr, "nodeName", 8) == 0) {
-            have_nodename = i;
-            map_size++;
+        for (i = 0; i < spec_val.via.map.size; i++) {
+            k = spec_val.via.map.ptr[i].key;
+            if (k.via.str.size == 8 &&
+                strncmp(k.via.str.ptr, "nodeName", 8) == 0) {
+                have_nodename = i;
+                map_size++;
+                break;
+            }
         }
-      }
     }
 
     /* Append Regex fields */
