@@ -240,6 +240,10 @@ int flb_hash_get(struct flb_hash *ht, char *key, int key_len,
         entry = mk_list_entry_first(&table->chains,
                                     struct flb_hash_entry,
                                     _head);
+
+        if (strcmp(entry->key, key) != 0) {
+            entry = NULL;
+        }
     }
     else {
         /* Iterate entries */
