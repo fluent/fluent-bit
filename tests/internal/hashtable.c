@@ -83,6 +83,29 @@ void test_create_zero()
     TEST_CHECK(ht == NULL);
 }
 
+/* bug 355 */
+void test_single()
+{
+    int ret;
+    char *out_buf;
+    size_t out_size;
+    struct flb_hash *ht;
+
+    ht = flb_hash_create(1);
+    TEST_CHECK(ht != NULL);
+
+    ret = ht_add(ht, "key", "value");
+    TEST_CHECK(ret != -1);
+
+    ret = flb_hash_get(ht, "key", 3, &out_buf, &out_size);
+    TEST_CHECK(ret >= 0);
+
+    ret = flb_hash_get(ht, "NOT", 3, &out_buf, &out_size);
+    TEST_CHECK(ret == -1);
+
+    flb_hash_destroy(ht);
+}
+
 void test_small_table()
 {
     int i;
@@ -193,6 +216,7 @@ void test_delete_all()
 
 TEST_LIST = {
     { "zero_size", test_create_zero },
+    { "single",    test_single },
     { "small_table", test_small_table },
     { "medium_table", test_medium_table },
     { "chaining_count", test_chaining },
