@@ -63,6 +63,9 @@ struct flb_kube {
     int use_journal;
     int dummy_meta;
 
+    /* HTTP Client Setup */
+    size_t buffer_size;
+
     /* Merge JSON feature */
     int merge_json_log;
     int merge_json_buf_size;

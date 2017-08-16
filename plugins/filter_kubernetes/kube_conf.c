@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_http_client.h>
 
 #ifndef FLB_HAVE_TLS
 #error "Fluent Bit was built without TLS support"
@@ -36,6 +37,7 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
                                       struct flb_config *config)
 {
     int off;
+    int ret;
     char *url;
     char *tmp;
     char *p;
@@ -49,6 +51,27 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
     ctx->config = config;
     ctx->merge_json_log = FLB_FALSE;
     ctx->dummy_meta = FLB_FALSE;
+
+    /* Buffer size for HTTP Client when reading responses from API Server */
+    ctx->buffer_size = (FLB_HTTP_DATA_SIZE_MAX * 8);
+    tmp = flb_filter_get_property("buffer_size", i);
+    if (tmp) {
+        if (*tmp == 'f' || *tmp == 'F' || *tmp == 'o' || *tmp == 'O') {
+            /* unlimited size ? */
+            if (flb_utils_bool(tmp) == FLB_FALSE) {
+                ctx->buffer_size = 0;
+            }
+        }
+        else {
+            ret = flb_utils_size_to_bytes(tmp);
+            if (ret == -1) {
+                flb_error("[filter_kube] invalid buffer_size=%s, using default", tmp);
+            }
+            else {
+                ctx->buffer_size = (size_t) ret;
+            }
+        }
+    }
 
     /* Merge JSON log */
     tmp = flb_filter_get_property("merge_json_log", i);
