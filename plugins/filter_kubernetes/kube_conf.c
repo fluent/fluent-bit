@@ -74,7 +74,7 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
         }
     }
 
-    tmp = flb_filter_get_property("tls_debug", i);
+    tmp = flb_filter_get_property("tls.debug", i);
     if (tmp) {
         ctx->tls_debug = atoi(tmp);
     }
