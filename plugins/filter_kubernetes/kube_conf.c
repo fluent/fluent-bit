@@ -52,6 +52,7 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
     ctx->merge_json_log = FLB_FALSE;
     ctx->dummy_meta = FLB_FALSE;
     ctx->tls_debug = -1;
+    ctx->tls_verify = FLB_TRUE;
 
     /* Buffer size for HTTP Client when reading responses from API Server */
     ctx->buffer_size = (FLB_HTTP_DATA_SIZE_MAX * 8);
@@ -77,6 +78,11 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
     tmp = flb_filter_get_property("tls.debug", i);
     if (tmp) {
         ctx->tls_debug = atoi(tmp);
+    }
+
+    tmp = flb_filter_get_property("tls.verify", i);
+    if (tmp) {
+        ctx->tls_verify = flb_utils_bool(tmp);
     }
 
     /* Merge JSON log */

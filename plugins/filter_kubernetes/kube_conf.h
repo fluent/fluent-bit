@@ -63,6 +63,7 @@ struct flb_kube {
     int use_journal;
     int dummy_meta;
     int tls_debug;
+    int tls_verify;
 
     /* HTTP Client Setup */
     size_t buffer_size;
