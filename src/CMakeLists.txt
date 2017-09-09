@@ -168,7 +168,7 @@ set(FLB_DEPS
 # Shared Library
 if(NOT FLB_WITHOUT_SHARED_LIB)
   add_library(fluent-bit-shared SHARED ${src})
-  target_link_libraries(fluent-bit-shared ${FLB_DEPS})
+  target_link_libraries(fluent-bit-shared ${FLB_DEPS} -lpthread)
   set_target_properties(fluent-bit-shared
     PROPERTIES OUTPUT_NAME fluent-bit)
 
