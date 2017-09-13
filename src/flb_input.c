@@ -518,6 +518,7 @@ static int collector_start(struct flb_input_collector *coll,
                            FLB_ENGINE_EV_CORE,
                            MK_EVENT_READ, event);
         if (ret == -1) {
+            flb_error("[input collector] COLLECT_EVENT registration failed");
             close(coll->fd_event);
             coll->running = FLB_FALSE;
             return -1;
@@ -530,14 +531,22 @@ static int collector_start(struct flb_input_collector *coll,
 
 int flb_input_collector_start(int coll_id, struct flb_input_instance *in)
 {
+    int ret;
+    int c = 0;
     struct mk_list *head;
     struct flb_input_collector *coll;
 
     mk_list_foreach(head, &in->config->collectors) {
         coll = mk_list_entry(head, struct flb_input_collector, _head);
         if (coll->id == coll_id) {
-            return collector_start(coll, in->config);
+            ret = collector_start(coll, in->config);
+            if (ret == -1) {
+                flb_error("[input] error starting collector #%i: %s",
+                          in->name);
+            }
+            return ret;
         }
+        c++;
     }
 
     return -1;
