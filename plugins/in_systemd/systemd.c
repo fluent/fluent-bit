@@ -217,7 +217,6 @@ static int in_systemd_collect_archive(struct flb_input_instance *i_ins,
     struct flb_systemd_config *ctx = in_context;
 
     read(ctx->ch_manager[0], &val, sizeof(uint64_t));
-
     ret = in_systemd_collect(i_ins, config, in_context);
     if (ret == FLB_SYSTEMD_OK) {
         /* Events collector: journald events */

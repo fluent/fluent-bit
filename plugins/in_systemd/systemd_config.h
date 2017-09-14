@@ -40,7 +40,7 @@
 /* Input configuration & context */
 struct flb_systemd_config {
     /* Journal */
-    int fd;          /* Journal file descriptor */
+    flb_pipefd_t fd; /* Journal file descriptor */
     sd_journal *j;   /* Journal context */
     char *cursor;
     char *path;
