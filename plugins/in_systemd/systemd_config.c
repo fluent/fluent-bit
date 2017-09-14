@@ -127,8 +127,11 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
             continue;
         }
 
+        flb_debug("[in_systemd] add filter: %s", prop->val);
+
         /* Apply filter/match */
         sd_journal_add_match(ctx->j, prop->val, 0);
+        sd_journal_add_disjunction(ctx->j);
     }
 
     /* Always seek to head */
