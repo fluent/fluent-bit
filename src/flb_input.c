@@ -493,6 +493,10 @@ static int collector_start(struct flb_input_collector *coll,
     struct mk_event *event;
     struct mk_event_loop *evl;
 
+    if (coll->running == FLB_TRUE) {
+        return 0;
+    }
+
     event = &coll->event;
     evl = config->evl;
 
