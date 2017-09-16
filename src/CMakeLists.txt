@@ -31,6 +31,7 @@ set(src
   flb_http_client.c
   flb_worker.c
   flb_time.c
+  flb_metrics.c
   flb_sosreport.c
   )
 

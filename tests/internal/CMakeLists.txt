@@ -5,6 +5,7 @@ include_directories(cutest/)
 set(UNIT_TESTS_FILES
   pack.c
   parser.c
+  metrics.c
   network.c
   unit_sizes.c
   hashtable.c
