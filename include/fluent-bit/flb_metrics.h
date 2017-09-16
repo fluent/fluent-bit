@@ -37,6 +37,7 @@ struct flb_metrics *flb_metrics_create(char *title);
 struct flb_metric *flb_metrics_get_id(int id, struct flb_metrics *metrics);
 int flb_metrics_add(int id, char *title, struct flb_metrics *metrics);
 int flb_metrics_sum(int id, size_t val, struct flb_metrics *metrics);
+int flb_metrics_print(struct flb_metrics *metrics);
 int flb_metrics_destroy(struct flb_metrics *metrics);
 
 #endif

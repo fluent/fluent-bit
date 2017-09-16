@@ -109,7 +109,7 @@ int flb_metrics_add(int id, char *title, struct flb_metrics *metrics)
     m->val = 0;
 
     /* Write title */
-    ret = snprintf(metrics->title, sizeof(metrics->title) - 1, "%s", title);
+    ret = snprintf(m->title, sizeof(m->title) - 1, "%s", title);
     if (ret == -1) {
         flb_errno();
         flb_free(m);
@@ -171,6 +171,16 @@ int flb_metrics_destroy(struct flb_metrics *metrics)
 
 int flb_metrics_print(struct flb_metrics *metrics)
 {
-    (void) metrics;
+    struct mk_list *head;
+    struct flb_metric *m;
+
+    printf("[metric dump] title => '%s'", metrics->title);
+
+    mk_list_foreach(head, &metrics->list) {
+        m = mk_list_entry(head, struct flb_metric, _head);
+        printf(", '%s' => %lu", m->title, m->val);
+    }
+    printf("\n");
+
     return 0;
 }
