@@ -21,18 +21,41 @@
 #include <fluent-bit/flb_pack.h>
 #include <msgpack.h>
 
-int flb_mp_count(void *data, size_t bytes)
+static inline int mp_count(void *data, size_t bytes, msgpack_zone *zone)
 {
     int c = 0;
     size_t off = 0;
-    msgpack_zone *zone;
-    msgpack_object obj = {0};
+    msgpack_zone *t = NULL;
+    msgpack_object obj;
 
-    zone = msgpack_zone_new(MSGPACK_ZONE_CHUNK_SIZE);
-    while (msgpack_unpack(data, bytes, &off, zone, &obj)) {
+    if (!zone) {
+        t = msgpack_zone_new(MSGPACK_ZONE_CHUNK_SIZE);
+        if (!t) {
+            return -1;
+        }
+    }
+    else {
+        t = zone;
+    }
+
+    while (msgpack_unpack(data, bytes, &off, t, &obj)) {
         c++;
     }
-    msgpack_zone_free(zone);
+
+    msgpack_zone_clear(t);
+    if (t != zone) {
+        msgpack_zone_free(t);
+    }
 
     return c;
+}
+
+int flb_mp_count(void *data, size_t bytes)
+{
+    return mp_count(data, bytes, NULL);
+}
+
+int flb_mp_count_zone(void *data, size_t bytes, msgpack_zone *zone)
+{
+    return mp_count(data, bytes, zone);
 }
