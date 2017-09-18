@@ -45,6 +45,11 @@ option(FLB_POSIX_TLS          "Force POSIX thread storage"   No)
 option(FLB_WITHOUT_INOTIFY    "Disable inotify support"      No)
 option(FLB_SQLDB              "Enable SQL embedded DB"       No)
 
+# Metrics: Experimental Feature, disabled by default on 0.12 series
+# but enabled in the upcoming 0.13 release. Note that development
+# mode enable this feature.
+option(FLB_METRICS            "Enable metrics support"       No)
+
 # Proxy Plugins
 option(FLB_PROXY_GO           "Enable Go plugins support"   Yes)
 
@@ -143,6 +148,7 @@ endif()
 if(FLB_DEV)
   set(FLB_DEBUG          On)
   set(FLB_TRACE          On)
+  set(FLB_METRICS        On)
   set(FLB_TESTS_INTERNAL On)
 endif()
 
@@ -221,6 +227,11 @@ if(FLB_TLS)
   option(INSTALL_MBEDTLS_HEADERS OFF)
   add_subdirectory(lib/mbedtls-2.5.1 EXCLUDE_FROM_ALL)
   include_directories(lib/mbedtls-2.5.1/include)
+endif()
+
+# Metrics
+if(FLB_METRICS)
+  FLB_DEFINITION(FLB_HAVE_METRICS)
 endif()
 
 if(FLB_IN_TAIL)

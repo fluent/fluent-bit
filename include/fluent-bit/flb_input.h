@@ -31,6 +31,7 @@
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_mp.h>
+#include <fluent-bit/flb_metrics.h>
 
 #include <monkey/mk_core.h>
 #include <msgpack.h>
@@ -550,6 +551,7 @@ static inline void flb_input_buf_write_start(struct flb_input_instance *i)
 
 static inline void flb_input_buf_write_end(struct flb_input_instance *i)
 {
+    int records;
     size_t bytes;
     void *buf;
 
@@ -558,6 +560,13 @@ static inline void flb_input_buf_write_end(struct flb_input_instance *i)
     if (bytes == 0) {
         return;
     }
+
+#ifdef FLB_HAVE_METRICS
+    records = flb_mp_count(i->mp_sbuf.data + i->mp_buf_write_size, bytes);
+    if (records > 0) {
+        flb_metrics_sum(FLB_METRIC_N_RECORDS, records, i->metrics);
+    }
+#endif
 
     if (flb_input_buf_paused(i) == FLB_TRUE) {
         i->mp_sbuf.size = i->mp_buf_write_size;
