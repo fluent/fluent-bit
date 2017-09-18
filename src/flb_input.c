@@ -30,6 +30,7 @@
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_engine.h>
+#include <fluent-bit/flb_metrics.h>
 
 #define protcmp(a, b)  strncasecmp(a, b, strlen(a))
 
@@ -163,6 +164,13 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->mp_total_buf_size = 0;
         instance->mp_buf_limit = 0;
         instance->mp_buf_status = FLB_INPUT_RUNNING;
+
+        /* Metrics */
+        instance->metrics = flb_metrics_create(instance->name);
+        if (instance->metrics) {
+            flb_metrics_add(FLB_METRIC_N_RECORDS, "records", instance->metrics);
+            flb_metrics_add(FLB_METRIC_N_BYTES, "bytes", instance->metrics);
+        }
 
         mk_list_add(&instance->_head, &config->inputs);
         break;
@@ -370,6 +378,11 @@ void flb_input_exit_all(struct flb_config *config)
         }
 
         flb_input_dyntag_exit(in);
+
+        /* Remove metrics */
+        if (in->metrics) {
+            flb_metrics_destroy(in->metrics);
+        }
 
         /* Unlink and release */
         mk_list_del(&in->_head);

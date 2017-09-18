@@ -232,6 +232,7 @@ struct flb_input_instance {
     struct mk_list tasks;
 
     struct mk_list threads;              /* engine taskslist           */
+    struct flb_metrics *metrics;         /* metrics                    */
 
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;

@@ -20,6 +20,10 @@
 #ifndef FLB_METRICS_H
 #define FLB_METRICS_H
 
+/* Metrics IDs for general purpose (used by core and Plugins */
+#define FLB_METRIC_N_RECORDS  0
+#define FLB_METRIC_N_BYTES    1
+
 struct flb_metric {
     int id;
     char title[32];
