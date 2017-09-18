@@ -30,6 +30,7 @@
 #include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_thread.h>
+#include <fluent-bit/flb_mp.h>
 
 #include <monkey/mk_core.h>
 #include <msgpack.h>
@@ -180,6 +181,7 @@ struct flb_input_instance {
     size_t mp_buf_write_size;
     msgpack_packer  mp_pck;
     msgpack_sbuffer mp_sbuf;
+    msgpack_zone  *mp_zone;
 
     /*
      * Buffers counter: it count the total of memory used by fixed and dynamic

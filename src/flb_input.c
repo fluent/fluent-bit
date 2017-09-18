@@ -138,6 +138,11 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         msgpack_sbuffer_init(&instance->mp_sbuf);
         msgpack_packer_init(&instance->mp_pck, &instance->mp_sbuf,
                             msgpack_sbuffer_write);
+        instance->mp_zone = msgpack_zone_new(MSGPACK_ZONE_CHUNK_SIZE);
+        if (!instance->mp_zone) {
+            flb_free(instance);
+            return NULL;
+        }
 
         /* Initialize list heads */
         mk_list_init(&instance->routes);
@@ -359,6 +364,7 @@ void flb_input_exit_all(struct flb_config *config)
 
         /* Destroy buffer */
         msgpack_sbuffer_destroy(&in->mp_sbuf);
+        msgpack_zone_free(in->mp_zone);
 
         /* release the tag if any */
         flb_free(in->tag);
