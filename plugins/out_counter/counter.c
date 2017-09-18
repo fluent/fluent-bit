@@ -17,15 +17,17 @@
  *  limitations under the License.
  */
 
-#include <stdio.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_mp.h>
 
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+
 struct flb_counter_ctx {
     uint64_t total;
+    msgpack_zone *zone;
 };
 
 int cb_counter_init(struct flb_output_instance *ins,
@@ -43,6 +45,11 @@ int cb_counter_init(struct flb_output_instance *ins,
         return -1;
     }
     ctx->total = 0;
+    ctx->zone = msgpack_zone_new(MSGPACK_ZONE_CHUNK_SIZE);
+    if (!ctx->zone) {
+        flb_free(ctx);
+        return -1;
+    }
 
     flb_output_set_context(ins, ctx);
     return 0;
@@ -66,7 +73,7 @@ void cb_counter_flush(void *data, size_t bytes,
     struct flb_time tm;
 
     /* Count number of parent items */
-    cnt = flb_mp_count(data, bytes);
+    cnt = flb_mp_count_zone(data, bytes, ctx->zone);
     ctx->total += cnt;
 
     flb_time_get(&tm);
@@ -79,6 +86,8 @@ void cb_counter_flush(void *data, size_t bytes,
 int cb_counter_exit(void *data, struct flb_config *config)
 {
     struct flb_counter_ctx *ctx = data;
+
+    msgpack_zone_free(ctx->zone);
     flb_free(ctx);
     return 0;
 }
