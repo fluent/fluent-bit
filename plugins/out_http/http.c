@@ -393,7 +393,9 @@ int cb_http_exit(void *data, struct flb_config *config)
 {
     struct flb_out_http_config *ctx = data;
 
-    flb_upstream_destroy(ctx->u);
+    if (ctx->u) {
+        flb_upstream_destroy(ctx->u);
+    }
 
     flb_free(ctx->http_user);
     flb_free(ctx->http_passwd);

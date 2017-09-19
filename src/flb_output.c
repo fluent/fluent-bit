@@ -102,6 +102,33 @@ static void flb_output_free_properties(struct flb_output_instance *ins)
 #endif
 }
 
+int flb_output_instance_destroy(struct flb_output_instance *ins)
+{
+    /* Remove URI context */
+    if (ins->host.uri) {
+        flb_uri_destroy(ins->host.uri);
+    }
+
+    flb_free(ins->host.name);
+    flb_free(ins->host.address);
+    flb_free(ins->match);
+
+#ifdef FLB_HAVE_TLS
+    if (ins->p->flags & FLB_IO_TLS && ins->use_tls) {
+        if (ins->tls.context) {
+            flb_tls_context_destroy(ins->tls.context);
+        }
+    }
+#endif
+    /* release properties */
+    flb_output_free_properties(ins);
+
+    mk_list_del(&ins->_head);
+    flb_free(ins);
+
+    return 0;
+}
+
 /* Invoke exit call for the output plugin */
 void flb_output_exit(struct flb_config *config)
 {
@@ -123,27 +150,7 @@ void flb_output_exit(struct flb_config *config)
             flb_upstream_destroy(ins->upstream);
         }
 
-        /* Remove URI context */
-        if (ins->host.uri) {
-            flb_uri_destroy(ins->host.uri);
-        }
-
-        flb_free(ins->host.name);
-        flb_free(ins->host.address);
-        flb_free(ins->match);
-
-#ifdef FLB_HAVE_TLS
-        if (ins->p->flags & FLB_IO_TLS && ins->use_tls) {
-            if (ins->tls.context) {
-                flb_tls_context_destroy(ins->tls.context);
-            }
-        }
-#endif
-        /* release properties */
-        flb_output_free_properties(ins);
-
-        mk_list_del(&ins->_head);
-        flb_free(ins);
+        flb_output_instance_destroy(ins);
     }
 }
 
@@ -393,6 +400,7 @@ char *flb_output_get_property(char *key, struct flb_output_instance *o_ins)
 int flb_output_init(struct flb_config *config)
 {
     int ret;
+    struct mk_list *tmp;
     struct mk_list *head;
     struct flb_output_instance *ins;
     struct flb_output_plugin *p;
@@ -403,7 +411,7 @@ int flb_output_init(struct flb_config *config)
     }
 
     /* Retrieve the plugin reference */
-    mk_list_foreach(head, &config->outputs) {
+    mk_list_foreach_safe(head, tmp, &config->outputs) {
         ins = mk_list_entry(head, struct flb_output_instance, _head);
         p = ins->p;
 
@@ -426,6 +434,7 @@ int flb_output_init(struct flb_config *config)
             if (!ins->tls.context) {
                 flb_error("[output %s] error initializing TLS context",
                           ins->name);
+                flb_output_instance_destroy(ins);
                 return -1;
             }
         }

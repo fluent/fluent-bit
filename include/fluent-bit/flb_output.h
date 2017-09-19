@@ -461,6 +461,7 @@ char *flb_output_get_property(char *key, struct flb_output_instance *o_ins);
 void flb_output_pre_run(struct flb_config *config);
 void flb_output_exit(struct flb_config *config);
 void flb_output_set_context(struct flb_output_instance *ins, void *context);
+int flb_output_instance_destroy(struct flb_output_instance *ins);
 int flb_output_init(struct flb_config *config);
 int flb_output_check(struct flb_config *config);
 
