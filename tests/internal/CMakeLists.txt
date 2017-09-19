@@ -4,6 +4,7 @@ include_directories(cutest/)
 
 set(UNIT_TESTS_FILES
   pack.c
+  pipe.c
   parser.c
   metrics.c
   network.c
