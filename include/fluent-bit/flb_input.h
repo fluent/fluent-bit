@@ -565,13 +565,14 @@ static inline void flb_input_buf_write_end(struct flb_input_instance *i)
     records = flb_mp_count(i->mp_sbuf.data + i->mp_buf_write_size, bytes);
     if (records > 0) {
         flb_metrics_sum(FLB_METRIC_N_RECORDS, records, i->metrics);
+        flb_metrics_sum(FLB_METRIC_N_BYTES, bytes, i->metrics);
     }
 #endif
 
     if (flb_input_buf_paused(i) == FLB_TRUE) {
         i->mp_sbuf.size = i->mp_buf_write_size;
         flb_debug("[input] %s is paused, cannot append records",
-                 i->name);
+                  i->name);
         return;
     }
 
