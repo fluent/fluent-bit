@@ -551,9 +551,11 @@ static inline void flb_input_buf_write_start(struct flb_input_instance *i)
 
 static inline void flb_input_buf_write_end(struct flb_input_instance *i)
 {
-    int records;
     size_t bytes;
     void *buf;
+#ifdef FLB_HAVE_METRICS
+    int records;
+#endif
 
     /* Get the number of new bytes */
     bytes = (i->mp_sbuf.size - i->mp_buf_write_size);
