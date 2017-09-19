@@ -32,11 +32,12 @@
  * - flb_pipe_destroy: destroy a pair of connected fds or sockets.
  * - flb_pipe_close  : close individual end of a pipe.
  *
- * we need to handle a 'closer' handler because for Windows a file descriptor
+ * we need to have a 'closer' handler because for Windows a file descriptor
  * is not a socket.
  */
 
 #include <fluent-bit/flb_pipe.h>
+#include <fluent-bit/flb_log.h>
 
 #ifdef _WIN32
 
@@ -92,3 +93,65 @@ int flb_pipe_close(flb_pipefd_t fd)
 }
 
 #endif
+
+/* Blocking read until receive 'count' bytes */
+ssize_t flb_pipe_read_all(int fd, void *buf, size_t count)
+{
+    ssize_t bytes;
+    size_t total = 0;
+
+    do {
+        bytes = flb_pipe_r(fd, buf + total, count - total);
+        if (bytes == -1) {
+            if (errno == EAGAIN) {
+                /*
+                 * This could happen, since this function goal is not to
+                 * return until all data have been read, just sleep a little
+                 * bit (0.05 seconds)
+                 */
+                usleep(50000);
+                continue;
+            }
+        }
+        else if (bytes == 0) {
+            /* Broken pipe ? */
+            flb_errno();
+            return -1;
+        }
+        total += bytes;
+
+    } while (total < count);
+
+    return total;
+}
+
+/* Blocking write until send 'count bytes */
+ssize_t flb_pipe_write_all(int fd, void *buf, size_t count)
+{
+    ssize_t bytes;
+    size_t total = 0;
+
+    do {
+        bytes = flb_pipe_w(fd, buf + total, count - total);
+        if (bytes == -1) {
+            if (errno == EAGAIN) {
+                /*
+                 * This could happen, since this function goal is not to
+                 * return until all data have been read, just sleep a little
+                 * bit (0.05 seconds)
+                 */
+                usleep(50000);
+                continue;
+            }
+        }
+        else if (bytes == 0) {
+            /* Broken pipe ? */
+            flb_errno();
+            return -1;
+        }
+        total += bytes;
+
+    } while (total < count);
+
+    return total;
+}
