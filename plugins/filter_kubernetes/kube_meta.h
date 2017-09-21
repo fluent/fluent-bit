@@ -23,16 +23,24 @@
 struct flb_kube;
 
 struct flb_kube_meta {
+    int fields;
+    int skip;
+
     int namespace_len;
     int podname_len;
     int cache_key_len;
+    int container_name_len;
+    int docker_id_len;
+    int container_hash_len;
+
     char *namespace;
     char *podname;
-    char *cache_key;
+    char *container_name;
+    char *docker_id;
 
-    /* Local meta from tag */
-    msgpack_sbuffer mp_sbuf;
-    msgpack_packer  mp_pck;
+    char *container_hash;   /* set only on Systemd mode */
+
+    char *cache_key;
 };
 
 /* Constant Kubernetes paths */
@@ -48,5 +56,8 @@ int flb_kube_meta_fetch(struct flb_kube *ctx);
 int flb_kube_meta_get(struct flb_kube *ctx,
                       char *tag, int tag_len,
                       char *data, size_t data_size,
-                      char **out_buf, size_t *out_size);
+                      char **out_buf, size_t *out_size,
+                      struct flb_kube_meta *meta);
+int flb_kube_meta_release(struct flb_kube_meta *meta);
+
 #endif
