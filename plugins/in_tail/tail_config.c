@@ -46,6 +46,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
     }
     ctx->dynamic_tag = FLB_FALSE;
     ctx->ignore_older = 0;
+    ctx->skip_long_lines = FLB_FALSE;
 
     /* Create the channel manager */
     ret = pipe(ctx->ch_manager);
@@ -192,6 +193,12 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
     }
     else {
         ctx->buf_max_size = FLB_TAIL_CHUNK;
+    }
+
+    /* Config: skip long lines */
+    tmp = flb_input_get_property("skip_long_lines", i_ins);
+    if (tmp) {
+        ctx->skip_long_lines = flb_utils_bool(tmp);
     }
 
     /* Validate buffer limit */

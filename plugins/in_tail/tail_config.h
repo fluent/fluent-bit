@@ -58,6 +58,7 @@ struct flb_tail_config {
     int   path_key_len;        /* length of key name           */
     char *key;                 /* key for unstructured record  */
     int   key_len;             /* length of key ^              */
+    int   skip_long_lines;     /* skip long lines              */
 
     /* Database */
     struct flb_sqldb *db;

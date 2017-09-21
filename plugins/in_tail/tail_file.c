@@ -191,9 +191,18 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
     data = file->buf_data;
     while ((p = strchr(data, '\n'))) {
         len = (p - data);
+
+        if (file->skip_next == FLB_TRUE) {
+            data += len + 1;
+            processed_bytes += len;
+            file->skip_next = FLB_FALSE;
+            continue;
+        }
+
         /* Empty line (just \n) */
         if (len == 0) {
             data++;
+            processed_bytes++;
             continue;
         }
 
@@ -260,7 +269,6 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
 #endif
 
     go_next:
-
         /* Adjust counters */
         data += len + 1;
         processed_bytes += len + 1;
@@ -434,6 +442,8 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file->mult_skipping = FLB_FALSE;
     file->mult_sbuf.data = NULL;
     file->db_id     = 0;
+    file->skip_next = FLB_FALSE;
+    file->skip_warn = FLB_FALSE;
 
     /* Local buffer */
     file->buf_size = ctx->buf_chunk_size;
@@ -561,32 +571,44 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
          * buffer under the limit of buffer_max_size.
          */
         if (file->buf_size >= ctx->buf_max_size) {
-            flb_error("[in_tail] file=%s requires a larger buffer size, "
-                      "lines are too long. Skipping file.", file->name);
-            return FLB_TAIL_ERROR;
+            if (ctx->skip_long_lines == FLB_FALSE) {
+                flb_error("[in_tail] file=%s requires a larger buffer size, "
+                          "lines are too long. Skipping file.", file->name);
+                return FLB_TAIL_ERROR;
+            }
+
+            /* Warn the user */
+            if (file->skip_warn == FLB_FALSE) {
+                flb_warn("[in_tail] file=%s have long lines. "
+                         "Skipping long lines.", file->name);
+                file->skip_warn = FLB_TRUE;
+            }
+
+            /* Do buffer adjustments */
+            file->buf_len = 0;
+            file->skip_next = FLB_TRUE;
         }
         else {
             size = file->buf_size + ctx->buf_chunk_size;
             if (size > ctx->buf_max_size) {
                 size = ctx->buf_max_size;
             }
-        }
 
-        /* Increase the buffer size */
-        tmp = flb_realloc(file->buf_data, size);
-        if (tmp) {
-            flb_trace("[in_tail] file=%s increase buffer size %lu => %lu bytes",
-                      file->name, file->buf_size, size);
-            file->buf_data = tmp;
-            file->buf_size = size;
+            /* Increase the buffer size */
+            tmp = flb_realloc(file->buf_data, size);
+            if (tmp) {
+                flb_trace("[in_tail] file=%s increase buffer size %lu => %lu bytes",
+                          file->name, file->buf_size, size);
+                file->buf_data = tmp;
+                file->buf_size = size;
+            }
+            else {
+                flb_errno();
+                flb_error("[in_tail] cannot increase buffer size for %s, "
+                          "skipping file.", file->name);
+                return FLB_TAIL_ERROR;
+            }
         }
-        else {
-            flb_errno();
-            flb_error("[in_tail] cannot increase buffer size for %s, "
-                      "skipping file.", file->name);
-            return FLB_TAIL_ERROR;
-        }
-
         capacity = (file->buf_size - file->buf_len) - 1;
     }
 
@@ -612,6 +634,7 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
             flb_debug("[in_tail] file=%s ERROR", file->name);
             return FLB_TAIL_ERROR;
         }
+
 
         /* Adjust the file offset and buffer */
         file->offset += processed_bytes;
