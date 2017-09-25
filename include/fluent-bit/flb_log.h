@@ -64,6 +64,10 @@ struct flb_log {
 static inline int flb_log_check(int l) {
     struct flb_worker *w;
     w = (struct flb_worker *) FLB_TLS_GET(flb_worker_ctx);
+    if (!w && l <= 3) {
+        return FLB_TRUE;
+    }
+
     if (w == NULL || flb_worker_log_level(w) < l) {
         return FLB_FALSE;
     }
