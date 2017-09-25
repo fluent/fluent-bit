@@ -56,6 +56,7 @@ MK_EXPORT int mk_http_header(mk_request_t *req,
                              char *val, int val_len);
 MK_EXPORT int mk_http_send(mk_request_t *req, char *buf, size_t len,
                            void (*cb_finish)(mk_request_t *));
+MK_EXPORT int mk_http_done(mk_request_t *req);
 
 MK_EXPORT int mk_worker_callback(mk_ctx_t *ctx,
                                  void (*cb_func) (void *),

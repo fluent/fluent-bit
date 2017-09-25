@@ -56,7 +56,6 @@ int mk_liana_write(int socket_fd, const void *buf, size_t count )
     ssize_t bytes_sent = -1;
 
     bytes_sent = write(socket_fd, buf, count);
-
     return bytes_sent;
 }
 

@@ -235,24 +235,22 @@ static int mk_rconf_read(struct mk_rconf *conf, const char *path)
             continue;
         }
 
-        if (indent_len == -1 && len > 1) {
-            if (len > 9 && strncasecmp(buf, "@INCLUDE ", 9) == 0) {
-                ret = mk_rconf_read(conf, buf + 9);
-                if (ret == -1) {
-                    conf->level--;
-                    fclose(f);
-                    return -1;
-                }
-                continue;
+        if (len > 9 && strncasecmp(buf, "@INCLUDE ", 9) == 0) {
+            ret = mk_rconf_read(conf, buf + 9);
+            if (ret == -1) {
+                conf->level--;
+                fclose(f);
+                return -1;
             }
-            else if (buf[0] == '@' && len > 3) {
-                ret = mk_rconf_meta_add(conf, buf, len);
-                if (ret == -1) {
-                    fclose(f);
-                    return -1;
-                }
-                continue;
+            continue;
+        }
+        else if (buf[0] == '@' && len > 3) {
+            ret = mk_rconf_meta_add(conf, buf, len);
+            if (ret == -1) {
+                fclose(f);
+                return -1;
             }
+            continue;
         }
 
         /* Section definition */

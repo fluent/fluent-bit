@@ -90,6 +90,9 @@ struct mk_http_request
     long port;
     /*------------*/
 
+    /* Body Stream size */
+    uint64_t stream_size;
+
     /* Streams handling: headers and static file */
     struct mk_stream stream;
     struct mk_stream_input in_headers;
@@ -180,6 +183,9 @@ struct mk_http_request
 
     /* Parent Session */
     struct mk_http_session *session;
+
+    /* coroutine thread (if any) */
+    void *thread;
 
     /* Head to list of requests */
     struct mk_list _head;

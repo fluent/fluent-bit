@@ -407,7 +407,6 @@ void mk_server_worker_loop(struct mk_server *server)
                 if (event->mask & MK_EVENT_WRITE) {
                     MK_TRACE("[FD %i] Event WRITE", event->fd);
                     ret = mk_sched_event_write(conn, sched, server);
-                    //printf("event write ret=%i\n", ret);
                 }
 
                 if (event->mask & MK_EVENT_READ) {
@@ -480,8 +479,10 @@ void mk_server_worker_loop(struct mk_server *server)
             }
             else if (event->type == MK_EVENT_THREAD) {
                 mk_http_thread_event(event);
+                continue;
             }
         }
+        mk_sched_threads_purge(sched);
         mk_sched_event_free_all(sched);
     }
 }

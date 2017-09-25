@@ -25,6 +25,7 @@
 #include <monkey/mk_core.h>
 #include <monkey/mk_server.h>
 #include <monkey/mk_stream.h>
+#include <monkey/mk_net.h>
 
 #ifndef MK_SCHEDULER_H
 #define MK_SCHEDULER_H
@@ -103,6 +104,8 @@ struct mk_sched_worker
 
     /* List of co-routine threads */
     struct mk_list threads;
+    struct mk_list threads_purge;
+
 };
 
 
@@ -214,6 +217,8 @@ pthread_mutex_t mutex_port_init;
 
 struct mk_sched_worker *mk_sched_next_target();
 int mk_sched_init(struct mk_server *server);
+int mk_sched_exit(struct mk_server *server);
+
 int mk_sched_launch_thread(struct mk_server *server, pthread_t *tout);
 
 void *mk_sched_launch_epoll_loop(void *thread_conf);
@@ -317,7 +322,7 @@ static inline void mk_sched_conn_timeout_del(struct mk_sched_conn *conn)
 #define mk_sched_conn_read(conn, buf, s)                \
     conn->net->read(conn->event.fd, buf, s)
 #define mk_sched_conn_write(ch, buf, s)         \
-    ch->io->write(ch->fd, buf, s)
+    mk_net_conn_write(ch, buf, s)
 #define mk_sched_conn_writev(ch, iov)           \
     ch->io->writev(ch->fd, iov)
 #define mk_sched_conn_sendfile(ch, f_fd, f_offs, f_count)   \
@@ -333,5 +338,6 @@ int mk_sched_worker_cb_add(struct mk_server *server,
 void mk_sched_worker_cb_free(struct mk_server *server);
 int mk_sched_send_signal(struct mk_server *server, uint64_t val);
 int mk_sched_workers_join(struct mk_server *server);
+int mk_sched_threads_purge(struct mk_sched_worker *sched);
 
 #endif

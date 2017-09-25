@@ -32,10 +32,9 @@
 #define MK_STREAM_IOV       1  /* mk_iov struct        */
 #define MK_STREAM_FILE      2  /* opened file          */
 #define MK_STREAM_SOCKET    3  /* socket, scared..     */
-#define MK_STREAM_COPYBUF   4  /* raw data, copy data into a dynamic buffer */
-#define MK_STREAM_EOF       5  /* end of stream, trigger callback */
 
 /* Channel return values for write event */
+#define MK_CHANNEL_OK       0  /* channel is ok (channel->status) */
 #define MK_CHANNEL_DONE     1  /* channel consumed all streams */
 #define MK_CHANNEL_ERROR    2  /* exception when flusing data  */
 #define MK_CHANNEL_FLUSH    4  /* channel flushed some data    */
@@ -67,6 +66,7 @@ struct mk_channel {
     struct mk_event *event;
     struct mk_plugin_network *io;
     struct mk_list streams;
+    void *thread;
 };
 
 /* Stream input source */
@@ -123,6 +123,9 @@ struct mk_stream {
     struct mk_list _head;
 };
 
+int mk_stream_in_release(struct mk_stream_input *in);
+
+
 static inline int mk_channel_is_empty(struct mk_channel *channel)
 {
     return mk_list_is_empty(&channel->streams);
@@ -174,11 +177,6 @@ static inline int mk_stream_input(struct mk_stream *stream,
     if (type == MK_STREAM_IOV) {
         iov = buffer;
         in->bytes_total = iov->total_len;
-    }
-    else if (type == MK_STREAM_COPYBUF) {
-        in->buffer = mk_mem_alloc(size);
-        in->bytes_total = size;
-        memcpy(in->buffer, buffer, size);
     }
     else {
         in->bytes_total = size;
@@ -234,37 +232,19 @@ static inline int mk_stream_in_raw(struct mk_stream *stream,
                            cb_consumed, cb_finished);
 }
 
-static inline int mk_stream_in_eof(struct mk_stream *stream,
-                                   struct mk_stream_input *in,
-                                   void (*cb_finished)(struct mk_stream_input *))
-{
-    return mk_stream_input(stream,
-                           in,
-                           MK_STREAM_EOF,
-                           -1,
-                           NULL, 0,
-                           0,
-                           NULL, cb_finished);
-}
-
-
-static inline int mk_stream_in_cbuf(struct mk_stream *stream,
-                                    struct mk_stream_input *in,
-                                    char *buf, size_t length,
-                                    void (*cb_consumed)(struct mk_stream_input *, long),
-                                    void (*cb_finished)(struct mk_stream_input *))
-{
-    return mk_stream_input(stream,
-                           in,
-                           MK_STREAM_COPYBUF,
-                           -1,
-                           buf, length,
-                           0,
-                           cb_consumed, cb_finished);
-}
 
 static inline void mk_stream_release(struct mk_stream *stream)
 {
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct mk_stream_input *in;
+
+    /* Release any pending input */
+    mk_list_foreach_safe(head, tmp, &stream->inputs) {
+        in = mk_list_entry(head, struct mk_stream_input, _head);
+        mk_stream_in_release(in);
+    }
+
     if (stream->cb_finished) {
         stream->cb_finished(stream);
     }
@@ -406,10 +386,12 @@ struct mk_stream *mk_stream_new(int type, struct mk_channel *channel,
                                 void (*cb_finished) (struct mk_stream *),
                                 void (*cb_bytes_consumed) (struct mk_stream *, long),
                                 void (*cb_exception) (struct mk_stream *, int));
+
+int mk_channel_stream_write(struct mk_stream *stream, size_t *count);
+
 struct mk_channel *mk_channel_new(int type, int fd);
 
 int mk_channel_flush(struct mk_channel *channel);
 int mk_channel_write(struct mk_channel *channel, size_t *count);
 int mk_channel_clean(struct mk_channel *channel);
-
 #endif

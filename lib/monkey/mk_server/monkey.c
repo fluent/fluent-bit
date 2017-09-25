@@ -192,5 +192,7 @@ void mk_exit_all(struct mk_server *server)
     /* Continue exiting */
     mk_plugin_exit_all(server);
     mk_clock_exit();
+
+    mk_sched_exit(server);
     mk_config_free_all(server);
 }

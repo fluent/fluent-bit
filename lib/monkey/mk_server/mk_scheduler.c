@@ -32,6 +32,7 @@
 #include <monkey/mk_linuxtrace.h>
 #include <monkey/mk_server.h>
 #include <monkey/mk_plugin_stage.h>
+#include <monkey/mk_http_thread.h>
 
 #include <signal.h>
 #include <sys/syscall.h>
@@ -222,28 +223,6 @@ struct mk_sched_conn *mk_sched_add_connection(int remote_fd,
     conn->channel.event = event;                /* parent event ref */
     mk_list_init(&conn->channel.streams);
 
-    /* FIXME: do we need to have a Scheduler node in a RBT ?
-
-    struct rb_node **new = &(sched->rb_queue.rb_node);
-    struct rb_node *parent = NULL;
-
-    while (*new) {
-        struct mk_sched_conn *this = container_of(*new, struct mk_sched_conn, _rb_head);
-
-        parent = *new;
-        if (conn->event.fd < this->event.fd)
-            new = &((*new)->rb_left);
-        else if (conn->event.fd > this->event.fd)
-            new = &((*new)->rb_right);
-        else {
-            mk_bug(1);
-            break;
-        }
-    }
-    rb_link_node(&conn->_rb_head, parent, new);
-    rb_insert_color(&conn->_rb_head, &sched->rb_queue);
-    */
-
     /*
      * Register the connections into the timeout_queue:
      *
@@ -265,12 +244,7 @@ struct mk_sched_conn *mk_sched_add_connection(int remote_fd,
 
 static void mk_sched_thread_lists_init()
 {
-    //struct rb_root *sched_cs;
     struct mk_list *sched_cs_incomplete;
-
-    /* mk_tls_sched_cs */
-    //sched_cs = mk_mem_alloc_z(sizeof(struct rb_root));
-    //MK_TLS_SET(mk_tls_sched_cs, sched_cs);
 
     /* mk_tls_sched_cs_incomplete */
     sched_cs_incomplete = mk_mem_alloc(sizeof(struct mk_list));
@@ -315,7 +289,6 @@ static int mk_sched_register_thread(struct mk_server *server)
 #endif
 
     /* Initialize lists */
-    //FIXME sl->rb_queue = RB_ROOT;
     mk_list_init(&worker->timeout_queue);
     worker->request_handler = NULL;
 
@@ -388,6 +361,7 @@ void *mk_sched_launch_worker_loop(void *data)
 
     mk_list_init(&sched->event_free_queue);
     mk_list_init(&sched->threads);
+    mk_list_init(&sched->threads_purge);
 
     /*
      * ULONG_MAX BUG test only
@@ -428,9 +402,6 @@ void *mk_sched_launch_worker_loop(void *data)
     }
 
     mk_mem_free(thinfo);
-
-
-    mk_thread_prepare();
 
     /* init server thread loop */
     mk_server_worker_loop(server);
@@ -507,6 +478,22 @@ int mk_sched_init(struct mk_server *server)
 
     /* Map context into server context */
     server->sched_ctx = ctx;
+
+    /* co-routing thread initialization */
+    mk_thread_prepare();
+
+    return 0;
+}
+
+int mk_sched_exit(struct mk_server *server)
+{
+    struct mk_sched_ctx *ctx;
+
+    ctx = server->sched_ctx;
+    mk_sched_worker_cb_free(server);
+    mk_mem_free(ctx->workers);
+    mk_mem_free(ctx);
+
     return 0;
 }
 
@@ -605,6 +592,22 @@ int mk_sched_check_timeouts(struct mk_sched_worker *sched,
     return 0;
 }
 
+int mk_sched_threads_purge(struct mk_sched_worker *sched)
+{
+    int c = 0;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct mk_http_thread *mth;
+
+    mk_list_foreach_safe(head, tmp, &sched->threads_purge) {
+        mth = mk_list_entry(head, struct mk_http_thread, _head);
+        mk_http_thread_destroy(mth);
+        c++;
+    }
+
+    return c;
+}
+
 /*
  * Scheduler events handler: lookup for event handler and invoke
  * proper callbacks.
@@ -614,10 +617,6 @@ int mk_sched_event_read(struct mk_sched_conn *conn,
                         struct mk_server *server)
 {
     int ret = 0;
-    size_t count = 0;
-    size_t total = 0;
-    struct mk_event *event;
-    uint32_t stop = (MK_CHANNEL_DONE | MK_CHANNEL_ERROR | MK_CHANNEL_EMPTY);
 
 #ifdef TRACE
     MK_TRACE("[FD %i] Connection Handler / read", conn->event.fd);
@@ -641,62 +640,6 @@ int mk_sched_event_read(struct mk_sched_conn *conn,
         return -1;
     }
 
-    /*
-     * There is a high probability that the protocol-handler have enqueued
-     * some data to write. We will check the Channel, if some Stream is attached,
-     * we will try to dispath the data over the socket, we will do this using the
-     * following logic:
-     *
-     *  1. Try to flush a minimum of bytes contained in multiple Streams. The
-     *     value is given by _SC_PAGESIZE stored on:
-     *
-     *      struct mk_sched_worker {
-     *          ...
-     *          int mem_pagesize;
-     *      };
-     *
-     *  2. If in #1 we receive some -EAGAIN, ask for MK_EVENT_WRITE events on
-     *     the socket. On that way we make sure we flush data when the Kernel
-     *     tell us this is possible.
-     *
-     *  3. If after #1 there is still some enqueued data, handle the remaining
-     *     ones through a MK_EVENT_WRITE and it proper callback handler.
-     */
-    do {
-        ret = mk_channel_write(&conn->channel, &count);
-        total += count;
-    } while (total <= sched->mem_pagesize && ((ret & stop) == 0));
-
-    if (ret == MK_CHANNEL_DONE) {
-        if (conn->protocol->cb_done) {
-            ret = conn->protocol->cb_done(conn, sched, server);
-            if (ret == 1) {
-                /* Protocol handler want to send more data */
-                event = &conn->event;
-                mk_event_add(sched->loop, event->fd,
-                             MK_EVENT_CONNECTION,
-                             MK_EVENT_WRITE,
-                             conn);
-                return 0;
-            }
-            return ret;
-        }
-    }
-    else if (ret & (MK_CHANNEL_FLUSH | MK_CHANNEL_BUSY)) {
-        event = &conn->event;
-        if ((event->mask & MK_EVENT_WRITE) == 0) {
-            mk_event_add(sched->loop, event->fd,
-                         MK_EVENT_CONNECTION,
-                         MK_EVENT_WRITE,
-                         conn);
-        }
-    }
-#ifdef TRACE
-    else if (ret & MK_CHANNEL_ERROR) {
-        MK_TRACE("[FD %i] CHANNEL_ERROR", conn->event.fd);
-    }
-#endif
-
     return ret;
 }
 
@@ -709,7 +652,6 @@ int mk_sched_event_write(struct mk_sched_conn *conn,
     struct mk_event *event;
 
     MK_TRACE("[FD %i] Connection Handler / write", conn->event.fd);
-
 
     ret = mk_channel_write(&conn->channel, &count);
     if (ret == MK_CHANNEL_FLUSH || ret == MK_CHANNEL_BUSY) {

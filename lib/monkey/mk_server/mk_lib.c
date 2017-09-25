@@ -26,6 +26,8 @@
 
 #include <monkey/mk_lib.h>
 #include <monkey/monkey.h>
+#include <monkey/mk_stream.h>
+#include <monkey/mk_thread.h>
 
 #define config_eq(a, b) strcasecmp(a, b)
 
@@ -57,8 +59,50 @@ mk_ctx_t *mk_create()
 
 int mk_destroy(mk_ctx_t *ctx)
 {
-    mk_exit_all(ctx->server);
     mk_mem_free(ctx);
+
+    return 0;
+}
+
+static inline int mk_lib_yield(mk_request_t *req)
+{
+    int ret;
+    struct mk_thread *th;
+    struct mk_channel *channel;
+    struct mk_sched_worker *sched;
+
+    sched = mk_sched_get_thread_conf();
+    if (!sched) {
+        return -1;
+    }
+
+    th = pthread_getspecific(mk_thread_key);
+    channel = req->session->channel;
+
+    channel->thread = th;
+
+    ret = mk_event_add(sched->loop,
+                       channel->fd,
+                       MK_EVENT_THREAD,
+                       MK_EVENT_WRITE, channel->event);
+    if (ret == -1) {
+        return -1;
+    }
+
+    /* Just wait */
+    mk_thread_yield(th);
+
+    if (channel->event->status & MK_EVENT_REGISTERED) {
+        /* We got a notification, remove the event registered
+        ret = mk_event_add(sched->loop,
+                           channel->fd,
+                           MK_EVENT_CONNECTION,
+                           MK_EVENT_READ, channel->event);
+                           mk_thread_yield(th);
+        */
+
+        ret = mk_event_del(sched->loop, channel->event);
+    }
 
     return 0;
 }
@@ -94,11 +138,13 @@ static void mk_lib_worker(void *data)
         }
 
         if (val == MK_SERVER_SIGNAL_STOP) {
-            mk_exit_all(server);
-            fflush(stdout);
-            pthread_kill(pthread_self(), 0);
+            break;
         }
     }
+
+    mk_event_loop_destroy(server->lib_evl);
+    mk_exit_all(server);
+    pthread_kill(pthread_self(), 0);
 
     return;
 }
@@ -430,6 +476,16 @@ int mk_vhost_handler(mk_ctx_t *ctx, int vid, char *regex,
     return 0;
 }
 
+/* Flush streams data associated to a request in question */
+int mk_http_flush(mk_request_t *req)
+{
+    int ret;
+    size_t out_bytes = 0;
+
+    ret = mk_channel_stream_write(&req->stream, &out_bytes);
+    return ret;
+}
+
 int mk_http_status(mk_request_t *req, int status)
 {
     req->headers.status = status;
@@ -477,19 +533,195 @@ int mk_http_header(mk_request_t *req,
     return 0;
 }
 
+static inline int chunk_header(long num, char *out)
+{
+    int i = 1;
+    int j, c;
+    int remainder;
+    int quotient;
+    char tmp[32];
+    char hex[] = "0123456789ABCDEF";
+
+    if (num == 0) {
+        out[0] = '0';
+        out[1] = '\r';
+        out[2] = '\n';
+        out[3] = '\r';
+        out[4] = '\n';
+        out[5] = '\0';
+        return 5;
+    }
+
+    quotient = num;
+    while (quotient != 0) {
+        remainder = quotient % 16;
+        tmp[i++] = hex[remainder];
+        quotient = quotient / 16;
+    }
+
+    c = 0;
+    for (j = i -1 ; j > 0; j--, c++) {
+        out[c] = tmp[j];
+    }
+
+    out[c++] = '\r';
+    out[c++] = '\n';
+    out[c] = '\0';
+
+    return c;
+}
+
+static void free_chunk_header(struct mk_stream_input *input)
+{
+    mk_mem_free(input->buffer);
+    input->buffer = NULL;
+}
+
 /* Enqueue some data for the body response */
 int mk_http_send(mk_request_t *req, char *buf, size_t len,
                  void (*cb_finish)(mk_request_t *))
 {
+    int chunk_len;
     int ret;
+    char *tmp;
+    char chunk_pre[32];
     (void) cb_finish;
 
-    ret = mk_stream_in_raw(&req->stream, NULL,
-                           buf, len, NULL, NULL);
-    if (ret == 0) {
-        /* Update content length */
-        req->headers.content_length += len;
+    if (req->session->channel->status != MK_CHANNEL_OK) {
+        return -1;
     }
 
+    if (req->headers.status == -1) {
+        /* Cannot append data if the status have not been set */
+        mk_err("HTTP: set the response status first");
+        return -1;
+    }
+
+    /* Chunk encoding prefix */
+    if (req->protocol == MK_HTTP_PROTOCOL_11) {
+        chunk_len = chunk_header(len, chunk_pre);
+        tmp = mk_string_dup(chunk_pre);
+        if (!tmp) {
+            return -1;
+        }
+        ret = mk_stream_in_raw(&req->stream, NULL,
+                               tmp, chunk_len, NULL, free_chunk_header);
+        if (ret != 0) {
+            return -1;
+        }
+    }
+
+    /* Append raw data */
+    if (len > 0) {
+        ret = mk_stream_in_raw(&req->stream, NULL,
+                               buf, len, NULL, NULL);
+        if (ret == 0) {
+            /* Update count of bytes */
+            req->stream_size += len;
+        }
+    }
+
+    if (req->protocol == MK_HTTP_PROTOCOL_11 && len > 0) {
+        ret = mk_stream_in_raw(&req->stream, NULL,
+                               "\r\n", 2, NULL, NULL);
+    }
+
+    /*
+     * Let's keep it simple for now: if the headers have not been sent, do it
+     * now and then send the body content just queued.
+     */
+    if (req->headers.sent == MK_FALSE) {
+        /* Force chunked-transfer encoding */
+        if (req->protocol == MK_HTTP_PROTOCOL_11) {
+            req->headers.transfer_encoding = MK_HEADER_TE_TYPE_CHUNKED;
+        }
+        else {
+            req->headers.content_length = -1;
+        }
+        mk_header_prepare(req->session, req, req->session->server);
+    }
+
+    /* Flush channel data */
+    ret = mk_http_flush(req);
+
+    /*
+     * Flush have been done, before to return our original caller, we want to yield
+     * and give some execution time to the event loop to avoid possible blocking
+     * since the caller might be using this mk_http_send() in a loop.
+     */
+    mk_lib_yield(req);
     return ret;
+}
+
+int mk_http_done(mk_request_t *req)
+{
+    if (req->session->channel->status != MK_CHANNEL_OK) {
+        return -1;
+    }
+    /*
+
+    struct mk_channel *channel;
+    struct mk_event *event;
+
+    channel = req->session->channel;
+    event = channel->event;
+
+    printf("event type => ");
+    switch (event->type) {
+    case MK_EVENT_NOTIFICATION:
+        printf("notification");
+        break;
+    case MK_EVENT_LISTENER:
+        printf("listener");
+        break;
+    case MK_EVENT_CONNECTION:
+        printf("connection");
+        break;
+    case MK_EVENT_CUSTOM:
+        printf("custom");
+        break;
+    case MK_EVENT_THREAD:
+        printf("thread");
+        break;
+    default:
+        printf("OTHER: %i", event->type);
+    };
+
+    printf(", status => ");
+    if (event->status == MK_EVENT_NONE) {
+        printf("MK_EVENT_NONE");
+    }
+    else if (event->status == MK_EVENT_REGISTERED) {
+        printf("MK_EVENT_REGISTERED");
+    }
+
+    printf(", mask =>");
+    if (event->mask & MK_EVENT_EMPTY) {
+        printf(" MK_EVENT_EMPTY");
+    }
+    if (event->mask & MK_EVENT_READ) {
+        printf(" MK_EVENT_READ");
+    }
+    if (event->mask & MK_EVENT_WRITE) {
+        printf(" MK_EVENT_WRITE");
+    }
+    if (event->mask & MK_EVENT_SLEEP) {
+        printf(" MK_EVENT_SLEEP");
+    }
+    if (event->mask & MK_EVENT_CLOSE) {
+        printf(" MK_EVENT_CLOSE");
+    }
+    if (event->mask & MK_EVENT_IDLE) {
+        printf(" MK_EVENT_IDLE");
+    }
+    printf("\n");
+    fflush(stdout);
+    */
+
+    if (req->headers.transfer_encoding == MK_HEADER_TE_TYPE_CHUNKED) {
+        /* Append end-of-chunk bytes */
+        mk_http_send(req, NULL, 0, NULL);
+    }
+
+    return 0;
 }
