@@ -131,21 +131,21 @@ struct flb_parser *flb_parser_create(char *name, char *format,
         p->type = FLB_PARSER_JSON;
     }
     else {
-        fprintf(stderr, "[parser] Invalid format %s\n", format);
+        flb_error("[parser] Invalid format %s", format);
         flb_free(p);
         return NULL;
     }
 
     if (p->type == FLB_PARSER_REGEX) {
         if (!p_regex) {
-            fprintf(stderr, "[parser] Invalid regex pattern\n");
+            flb_error("[parser] Invalid regex pattern");
             flb_free(p);
             return NULL;
         }
 
         regex = flb_regex_create((unsigned char *) p_regex);
         if (!regex) {
-            fprintf(stderr, "[parser] Invalid regex pattern %s\n", p_regex);
+            flb_error("[parser] Invalid regex pattern %s", p_regex);
             flb_free(p);
             return NULL;
         }
@@ -234,6 +234,7 @@ struct flb_parser *flb_parser_create(char *name, char *format,
     if (time_key) {
         p->time_key = flb_strdup(time_key);
     }
+
     p->time_keep = time_keep;
     p->types = types;
     p->types_len = types_len;
@@ -348,6 +349,7 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
     char *time_key;
     char *time_offset;
     char *types_str;
+    char *str;
     int time_keep;
     int types_len;
     struct mk_rconf *fconf;
@@ -423,11 +425,13 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
                                             MK_RCONF_STR);
 
         /* Time_Keep */
-        time_keep = (intptr_t) mk_rconf_section_get_key(section, "Time_Keep",
-                                                        MK_RCONF_BOOL);
-        if (time_keep < 0) {
-            flb_error("[parser] Invalid time_keep value (try On/Off)");
-            goto fconf_error;
+        str = mk_rconf_section_get_key(section, "Time_Keep",
+                                       MK_RCONF_STR);
+        if (str) {
+            time_keep = flb_utils_bool(str);
+        }
+        else {
+            time_keep = FLB_FALSE;
         }
 
         /* Time_Offset (UTC offset) */
