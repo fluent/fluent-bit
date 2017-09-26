@@ -87,6 +87,9 @@ static void flb_output_free_properties(struct flb_output_instance *ins)
     }
 
 #ifdef FLB_HAVE_TLS
+    if (ins->tls_ca_path) {
+        flb_free(ins->tls_ca_path);
+    }
     if (ins->tls_ca_file) {
         flb_free(ins->tls_ca_file);
     }
@@ -254,6 +257,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     instance->tls.context    = NULL;
     instance->tls_debug      = -1;
     instance->tls_verify     = FLB_TRUE;
+    instance->tls_ca_path    = NULL;
     instance->tls_ca_file    = NULL;
     instance->tls_crt_file   = NULL;
     instance->tls_key_file   = NULL;
@@ -360,6 +364,9 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
         out->tls_debug = atoi(tmp);
         flb_free(tmp);
     }
+    else if (prop_key_check("tls.ca_path", k, len) == 0) {
+        out->tls_ca_path = tmp;
+    }
     else if (prop_key_check("tls.ca_file", k, len) == 0) {
         out->tls_ca_file = tmp;
     }
@@ -427,6 +434,7 @@ int flb_output_init(struct flb_config *config)
         if (p->flags & FLB_IO_TLS && ins->use_tls) {
             ins->tls.context = flb_tls_context_new(ins->tls_verify,
                                                    ins->tls_debug,
+                                                   ins->tls_ca_path,
                                                    ins->tls_ca_file,
                                                    ins->tls_crt_file,
                                                    ins->tls_key_file,
