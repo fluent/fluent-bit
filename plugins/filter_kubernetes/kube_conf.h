@@ -80,6 +80,7 @@ struct flb_kube {
     struct flb_regex *regex;
 
     /* TLS CA certificate file */
+    char *tls_ca_path;
     char *tls_ca_file;
 
     /* Kubernetes Namespace */

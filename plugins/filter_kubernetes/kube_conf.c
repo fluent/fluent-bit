@@ -53,6 +53,7 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
     ctx->dummy_meta = FLB_FALSE;
     ctx->tls_debug = -1;
     ctx->tls_verify = FLB_TRUE;
+    ctx->tls_ca_path = NULL;
 
     /* Buffer size for HTTP Client when reading responses from API Server */
     ctx->buffer_size = (FLB_HTTP_DATA_SIZE_MAX * 8);
@@ -136,14 +137,21 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
         }
     }
 
-    /* Kubernetes CA file */
+    /* Kubernetes TLS */
     if (ctx->api_https == FLB_TRUE) {
+        /* CA file */
         tmp = flb_filter_get_property("kube_ca_file", i);
         if (!tmp) {
             ctx->tls_ca_file = flb_strdup(FLB_KUBE_CA);
         }
         else {
             ctx->tls_ca_file = flb_strdup(tmp);
+        }
+
+        /* CA certs path */
+        tmp = flb_filter_get_property("kube_ca_path", i);
+        if (tmp) {
+            ctx->tls_ca_path = flb_strdup(tmp);
         }
     }
 
@@ -212,6 +220,7 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
     }
 
     flb_free(ctx->api_host);
+    flb_free(ctx->tls_ca_path);
     flb_free(ctx->tls_ca_file);
     flb_free(ctx->token_file);
     flb_free(ctx->token);

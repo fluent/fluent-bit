@@ -583,11 +583,12 @@ static int flb_kube_network_init(struct flb_kube *ctx, struct flb_config *config
     ctx->upstream = NULL;
 
     if (ctx->api_https == FLB_TRUE) {
-        if (!ctx->tls_ca_file) {
+        if (!ctx->tls_ca_path && !ctx->tls_ca_file) {
             ctx->tls_ca_file  = flb_strdup(FLB_KUBE_CA);
         }
         ctx->tls.context = flb_tls_context_new(ctx->tls_verify,
                                                ctx->tls_debug,
+                                               ctx->tls_ca_path,
                                                ctx->tls_ca_file,
                                                NULL, NULL, NULL);
         if (!ctx->tls.context) {
