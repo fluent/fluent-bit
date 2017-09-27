@@ -329,7 +329,7 @@ endif()
 
 # Memory Allocator
 # ================
-if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux" OR ${CMAKE_SYSTEM_NAME} MATCHES "(Solaris|SunOS)")
   FLB_DEFINITION(FLB_HAVE_JEMALLOC)
   FLB_DEFINITION(JEMALLOC_MANGLE)
 
@@ -405,6 +405,18 @@ check_c_source_compiles("
     }" FLB_HAVE_ACCEPT4)
 if(FLB_HAVE_ACCEPT4)
   FLB_DEFINITION(FLB_HAVE_ACCEPT4)
+endif()
+
+# [compat] struct tm with tm_gmtoff field
+check_c_source_compiles("
+    #include <time.h>
+    int main() {
+        struct tm t;
+        t.tm_gmtoff = 0;
+        exit(0);
+    }" FLB_HAVE_TIMEGM)
+if(FLB_HAVE_TIMEGM)
+  FLB_DEFINITION(FLB_HAVE_TIMEGM)
 endif()
 
 # inotify_init(2)
