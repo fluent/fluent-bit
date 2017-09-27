@@ -25,6 +25,8 @@
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_parser.h>
+#include <fluent-bit/flb_error.h>
+
 #include <msgpack.h>
 
 #include <stdio.h>
@@ -115,17 +117,34 @@ static int in_stdin_collect(struct flb_input_instance *i_ins,
     while (ctx->buf_len > 0) {
         /* Try built-in JSON parser */
         if (!ctx->parser) {
-            ret = flb_pack_json(ctx->buf, ctx->buf_len, &pack, &pack_size);
-            if (ret != 0) {
-                flb_warn("STDIN data incomplete, waiting for more data...");
+            ret = flb_pack_json_state(ctx->buf, ctx->buf_len,
+                                      &pack, &pack_size, &ctx->pack_state);
+            if (ret == FLB_ERR_JSON_PART) {
+                flb_debug("[in_stdin] data incomplete, waiting for more data...");
                 return 0;
             }
-
-            /* Set ret with the number of bytes consumed */
-            ret = ctx->buf_len;
+            else if (ret == FLB_ERR_JSON_INVAL) {
+                flb_debug("[in_stdin] invalid JSON message, skipping");
+                flb_pack_state_reset(&ctx->pack_state);
+                flb_pack_state_init(&ctx->pack_state);
+                ctx->pack_state.multiple = FLB_TRUE;
+                ctx->buf_len = 0;
+                return -1;
+            }
 
             pack_json(ctx, pack, pack_size);
+
+            consume_bytes(ctx->buf, ctx->pack_state.last_byte, ctx->buf_len);
+            ctx->buf_len -= ctx->pack_state.last_byte;
+            ctx->buf[ctx->buf_len] = '\0';
+
+            flb_pack_state_reset(&ctx->pack_state);
+            flb_pack_state_init(&ctx->pack_state);
+            ctx->pack_state.multiple = FLB_TRUE;
+
             flb_free(pack);
+
+            return 0;
         }
         else {
             /* Use the defined parser */
@@ -198,6 +217,10 @@ static int in_stdin_init(struct flb_input_instance *in,
         ctx->parser = NULL;
     }
 
+    /* Always initialize built-in JSON pack state */
+    flb_pack_state_init(&ctx->pack_state);
+    ctx->pack_state.multiple = FLB_TRUE;
+
     /* Set the context */
     flb_input_set_context(in, ctx);
 
@@ -222,6 +245,7 @@ static int in_stdin_exit(void *in_context, struct flb_config *config)
     if (ctx->fd >= 0) {
         close(ctx->fd);
     }
+    flb_pack_state_reset(&ctx->pack_state);
     flb_free(ctx);
 
     return 0;
