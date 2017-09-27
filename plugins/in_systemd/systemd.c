@@ -79,7 +79,6 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
     char *key;
     char *val;
     char *tag;
-    char *tmp;
     char *last_tag = NULL;
     char *cursor = NULL;
     size_t last_tag_len;
@@ -105,16 +104,6 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
     }
 
     while ((ret_j = sd_journal_next(ctx->j)) > 0) {
-        /* If the cursor is the same as the one stored, we have already read that entry */
-        tmp = flb_systemd_db_get_cursor(ctx);
-        if (tmp) {
-          if (sd_journal_test_cursor(ctx->j, tmp) > 0) {
-            flb_info("[in_systemd] cursor already seen, skipping", tmp);
-            continue;
-          }
-          flb_free(tmp);
-        }
-
         /* If the tag is composed dynamically, gather the Systemd Unit name */
         if (ctx->dynamic_tag) {
             ret = sd_journal_get_data(ctx->j, "_SYSTEMD_UNIT", &data, &length);
