@@ -62,7 +62,7 @@ static void cb_results(unsigned char *name, unsigned char *value,
             ret = flb_parser_time_lookup((char *) value, vlen,
                                          pcb->time_now, parser, &tm, &frac);
             if (ret == -1) {
-                flb_error("[parser] Invalid time format %s", parser->time_fmt);
+                flb_error("[parser:%s] Invalid time format %s.", parser->name, parser->time_fmt);
                 return;
             }
             pcb->time_frac = frac;

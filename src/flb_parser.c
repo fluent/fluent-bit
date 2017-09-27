@@ -131,21 +131,21 @@ struct flb_parser *flb_parser_create(char *name, char *format,
         p->type = FLB_PARSER_JSON;
     }
     else {
-        flb_error("[parser] Invalid format %s", format);
+        flb_error("[parser:%s] Invalid format %s", name, format);
         flb_free(p);
         return NULL;
     }
 
     if (p->type == FLB_PARSER_REGEX) {
         if (!p_regex) {
-            flb_error("[parser] Invalid regex pattern");
+            flb_error("[parser:%s] Invalid regex pattern", name);
             flb_free(p);
             return NULL;
         }
 
         regex = flb_regex_create((unsigned char *) p_regex);
         if (!regex) {
-            flb_error("[parser] Invalid regex pattern %s", p_regex);
+            flb_error("[parser:%s] Invalid regex pattern %s", name, p_regex);
             flb_free(p);
             return NULL;
         }
