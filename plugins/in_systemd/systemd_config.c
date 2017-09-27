@@ -144,6 +144,9 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
             ret = sd_journal_seek_cursor(ctx->j, tmp);
             if (ret == 0) {
                 flb_info("[in_systemd] seek_cursor=%.40s... OK", tmp);
+
+                /* Skip the first entry, already processed */
+                sd_journal_next_skip(ctx->j, 1);
             }
             else {
                 flb_warn("[in_systemd] seek_cursor failed");
