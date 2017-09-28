@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_metrics.h>
+#include <msgpack.h>
 
 static int id_exists(int id, struct flb_metrics *metrics)
 {
@@ -90,6 +91,7 @@ struct flb_metrics *flb_metrics_create(char *title)
         flb_free(metrics);
         return NULL;
     }
+    metrics->title_len = strlen(metrics->title);
 
     mk_list_init(&metrics->list);
     return metrics;
@@ -115,6 +117,7 @@ int flb_metrics_add(int id, char *title, struct flb_metrics *metrics)
         flb_free(m);
         return -1;
     }
+    m->title_len = strlen(m->title);
 
     /* Assign an ID */
     if (id >= 0) {
@@ -181,6 +184,34 @@ int flb_metrics_print(struct flb_metrics *metrics)
         printf(", '%s' => %lu", m->title, m->val);
     }
     printf("\n");
+
+    return 0;
+}
+
+/* Write metrics in messagepack format */
+int flb_metrics_dump_values(char **out_buf, size_t *out_size,
+                            struct flb_metrics *me)
+{
+    struct mk_list *head;
+    struct flb_metric *m;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+
+    /* Prepare new outgoing buffer */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    msgpack_pack_map(&mp_pck, me->count);
+
+    mk_list_foreach(head, &me->list) {
+        m = mk_list_entry(head, struct flb_metric, _head);
+        msgpack_pack_str(&mp_pck, m->title_len);
+        msgpack_pack_str_body(&mp_pck, m->title, m->title_len);
+        msgpack_pack_uint64(&mp_pck, m->val);
+    }
+
+    *out_buf  = mp_sbuf.data;
+    *out_size = mp_sbuf.size;
 
     return 0;
 }

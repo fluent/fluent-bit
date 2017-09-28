@@ -26,12 +26,14 @@
 
 struct flb_metric {
     int id;
+    int title_len;
     char title[32];
     size_t val;
     struct mk_list _head;
 };
 
 struct flb_metrics {
+    int title_len;         /* Title string length */
     char title[32];        /* Title or id for this metrics context */
     int count;             /* Total count of metrics registered */
     struct mk_list list;   /* Head of metrics list */
@@ -42,6 +44,8 @@ struct flb_metric *flb_metrics_get_id(int id, struct flb_metrics *metrics);
 int flb_metrics_add(int id, char *title, struct flb_metrics *metrics);
 int flb_metrics_sum(int id, size_t val, struct flb_metrics *metrics);
 int flb_metrics_print(struct flb_metrics *metrics);
+int flb_metrics_dump_values(char **out_buf, size_t *out_size,
+                            struct flb_metrics *me);
 int flb_metrics_destroy(struct flb_metrics *metrics);
 
 #endif
