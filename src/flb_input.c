@@ -171,6 +171,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->mp_buf_status = FLB_INPUT_RUNNING;
 
         /* Metrics */
+#ifdef FLB_HAVE_METRICS
         instance->metrics = flb_metrics_create(instance->name);
         if (instance->metrics) {
             flb_metrics_add(FLB_METRIC_N_RECORDS, "records", instance->metrics);
@@ -179,6 +180,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
 
         mk_list_add(&instance->_head, &config->inputs);
         break;
+#endif
     }
 
     return instance;
@@ -386,9 +388,11 @@ void flb_input_exit_all(struct flb_config *config)
         flb_input_dyntag_exit(in);
 
         /* Remove metrics */
+#ifdef FLB_HAVE_METRICS
         if (in->metrics) {
             flb_metrics_destroy(in->metrics);
         }
+#endif
 
         /* Unlink and release */
         mk_list_del(&in->_head);

@@ -131,6 +131,11 @@ struct flb_config {
     /* Workers: threads spawn using flb_worker_create() */
     struct mk_list workers;
 
+    /* Metrics exporter */
+#ifdef FLB_HAVE_METRICS
+    void *metrics;
+#endif
+
     /* HTTP Server */
 #ifdef FLB_HAVE_HTTP
     int http_server;

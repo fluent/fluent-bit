@@ -41,6 +41,7 @@
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_sosreport.h>
+#include <fluent-bit/flb_metrics_exporter.h>
 
 #ifdef FLB_HAVE_BUFFERING
 #include <fluent-bit/flb_buffer_chunk.h>
@@ -289,6 +290,14 @@ static FLB_INLINE int flb_engine_handle_event(flb_pipefd_t fd, int mask,
         if (ret != -1) {
             return ret;
         }
+
+        /* Metrics exporter event ? */
+#ifdef FLB_HAVE_METRICS
+        ret = flb_me_fd_event(fd, config->metrics);
+        if (ret != -1) {
+            return ret;
+        }
+#endif
     }
 
     return 0;
@@ -407,7 +416,6 @@ int flb_engine_start(struct flb_config *config)
         flb_utils_error(FLB_ERR_CFG_FLUSH_CREATE);
     }
 
-
     /* Initialize the scheduler */
     ret = flb_sched_init(config);
     if (ret == -1) {
@@ -458,9 +466,13 @@ int flb_engine_start(struct flb_config *config)
         exit(1);
     }
 
+    /* Initialize Metrics exporter */
+#ifdef FLB_HAVE_METRICS
+    config->metrics = flb_me_create(config);
+#endif
+
     /* Signal that we have started */
     flb_engine_started(config);
-
 
     while (1) {
         mk_event_wait(evl);
@@ -538,6 +550,12 @@ int flb_engine_shutdown(struct flb_config *config)
     flb_input_exit_all(config);
     flb_output_exit(config);
 
+    /* metrics */
+#ifdef FLB_HAVE_METRICS
+    if (config->metrics) {
+        flb_me_destroy(config->metrics);
+    }
+#endif
     flb_config_exit(config);
 
     return 0;

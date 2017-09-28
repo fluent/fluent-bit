@@ -32,7 +32,6 @@ set(src
   flb_http_client.c
   flb_worker.c
   flb_time.c
-  flb_metrics.c
   flb_sosreport.c
   )
 
@@ -45,7 +44,7 @@ include_directories(
   ${extra_headers}
   )
 
-if (FLB_REGEX)
+if(FLB_REGEX)
   set(src
     ${src}
     flb_parser.c
@@ -80,6 +79,14 @@ if(FLB_STATS)
   set(src
     ${src}
     "flb_stats.c"
+    )
+endif()
+
+if(FLB_METRICS)
+  set(src
+    ${src}
+    "flb_metrics.c"
+    "flb_metrics_exporter.c"
     )
 endif()
 
