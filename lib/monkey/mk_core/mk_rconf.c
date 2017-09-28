@@ -240,6 +240,9 @@ static int mk_rconf_read(struct mk_rconf *conf, const char *path)
             if (ret == -1) {
                 conf->level--;
                 fclose(f);
+                if (indent) {
+                    mk_mem_free(indent);
+                }
                 return -1;
             }
             continue;
@@ -248,6 +251,9 @@ static int mk_rconf_read(struct mk_rconf *conf, const char *path)
             ret = mk_rconf_meta_add(conf, buf, len);
             if (ret == -1) {
                 fclose(f);
+                if (indent) {
+                    mk_mem_free(indent);
+                }
                 return -1;
             }
             continue;
@@ -347,7 +353,9 @@ static int mk_rconf_read(struct mk_rconf *conf, const char *path)
     fflush(stdout);
     */
     fclose(f);
-    if (indent) mk_mem_free(indent);
+    if (indent) {
+        mk_mem_free(indent);
+    }
 
     /* Append this file to the list */
     file = mk_mem_alloc(sizeof(struct mk_rconf_file));
