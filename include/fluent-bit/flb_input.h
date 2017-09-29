@@ -31,7 +31,10 @@
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_mp.h>
+
+#ifdef FLB_HAVE_METRICS
 #include <fluent-bit/flb_metrics.h>
+#endif
 
 #include <monkey/mk_core.h>
 #include <msgpack.h>
@@ -235,7 +238,10 @@ struct flb_input_instance {
     struct mk_list tasks;
 
     struct mk_list threads;              /* engine taskslist           */
+
+#ifdef FLB_HAVE_METRICS
     struct flb_metrics *metrics;         /* metrics                    */
+#endif
 
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;

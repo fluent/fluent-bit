@@ -17,6 +17,9 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_info.h>
+#ifdef FLB_HAVE_METRICS
+
 #ifndef FLB_METRICS_H
 #define FLB_METRICS_H
 
@@ -49,3 +52,4 @@ int flb_metrics_dump_values(char **out_buf, size_t *out_size,
 int flb_metrics_destroy(struct flb_metrics *metrics);
 
 #endif
+#endif /* FLB_HAVE_METRICS */
