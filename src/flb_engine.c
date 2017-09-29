@@ -41,7 +41,10 @@
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_sosreport.h>
+
+#ifdef FLB_HAVE_METRICS
 #include <fluent-bit/flb_metrics_exporter.h>
+#endif
 
 #ifdef FLB_HAVE_BUFFERING
 #include <fluent-bit/flb_buffer_chunk.h>
