@@ -134,8 +134,17 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
         sd_journal_add_disjunction(ctx->j);
     }
 
-    /* Always seek to head */
-    sd_journal_seek_head(ctx->j);
+    /* Seek to head by default or tail if specified in configuration */
+    tmp = flb_input_get_property("read_from_tail", i_ins);
+    if (tmp && strcasecmp(tmp, "true") == 0) {
+        sd_journal_seek_tail(ctx->j);
+
+        /* Skip last entry */
+        sd_journal_next_skip(ctx->j, 1);
+    }
+    else {
+        sd_journal_seek_head(ctx->j);
+    }
 
     /* Check if we have a cursor in our database */
     if (ctx->db) {
