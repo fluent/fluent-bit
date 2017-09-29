@@ -38,4 +38,4 @@ struct flb_me *flb_me_create(struct flb_config *ctx);
 int flb_me_destroy(struct flb_me *me);
 
 #endif
-#ednif /* FLB_HAVE_METRICS */
+#endif /* FLB_HAVE_METRICS */
