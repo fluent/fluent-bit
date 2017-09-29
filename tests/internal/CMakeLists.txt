@@ -6,12 +6,18 @@ set(UNIT_TESTS_FILES
   pack.c
   pipe.c
   parser.c
-  metrics.c
   network.c
   unit_sizes.c
   hashtable.c
   http_client.c
   )
+
+if(FLB_METRICS)
+  set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    metrics.c
+    )
+endif()
 
 set(UNIT_TESTS_DATA
   data/pack/json_single_map_001.json
