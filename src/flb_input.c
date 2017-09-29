@@ -177,7 +177,6 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
             flb_metrics_add(FLB_METRIC_N_RECORDS, "records", instance->metrics);
             flb_metrics_add(FLB_METRIC_N_BYTES, "bytes", instance->metrics);
         }
-        break;
 #endif
         mk_list_add(&instance->_head, &config->inputs);
     }
