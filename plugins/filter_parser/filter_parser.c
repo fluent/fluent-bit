@@ -150,7 +150,7 @@ static int cb_parser_filter(void *data, size_t bytes,
 
     msgpack_object_kv **append_arr = NULL;
     size_t            append_arr_len;
-    int                append_arr_i = 0;
+    int                append_arr_i;
 
     /* Create temporal msgpack buffer */
     msgpack_sbuffer_init(&tmp_sbuf);
@@ -159,6 +159,7 @@ static int cb_parser_filter(void *data, size_t bytes,
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
         out_buf = NULL;
+        append_arr_i = 0;
 
         if (result.data.type != MSGPACK_OBJECT_ARRAY) {
             continue;
