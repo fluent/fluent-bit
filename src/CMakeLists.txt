@@ -2,6 +2,7 @@ set(CMAKE_C_VISIBILITY_PRESET hidden)
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 add_definitions(-DFLB_CORE=1)
 
+# Core Source
 set(src
   ${src}
   flb_mp.c
@@ -155,6 +156,9 @@ if(NOT CMAKE_SYSTEM_NAME MATCHES "Darwin")
     )
 endif()
 
+# HTTP Server
+add_subdirectory(http_server)
+
 # Proxy interfaces
 add_subdirectory(proxy)
 
@@ -162,6 +166,14 @@ set(FLB_PROXY_PLUGINS "")
 if(FLB_PROXY_GO)
   set(FLB_PROXY_PLUGINS ${FLB_PROXY_PLUGINS} flb-plugin-proxy-go)
 endif()
+
+# HTTP Server
+if(FLB_HTTP_SERVER)
+  set(FLB_DEPS
+    ${FLB_DEPS}
+    flb-http-server)
+endif()
+
 
 # Set static dependencies
 set(FLB_DEPS
