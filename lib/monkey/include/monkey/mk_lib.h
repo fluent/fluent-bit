@@ -61,4 +61,6 @@ MK_EXPORT int mk_http_done(mk_request_t *req);
 MK_EXPORT int mk_worker_callback(mk_ctx_t *ctx,
                                  void (*cb_func) (void *),
                                  void *data);
+MK_EXPORT int mk_main();
+
 #endif

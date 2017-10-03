@@ -24,7 +24,7 @@
 #include <unistd.h>
 
 #include <monkey/mk_core.h>
-#include <rbtree.h>
+#include "../../deps/rbtree/rbtree.h"
 
 #ifndef O_NOATIME
 #define O_NOATIME       01000000

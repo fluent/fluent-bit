@@ -725,3 +725,12 @@ int mk_http_done(mk_request_t *req)
 
     return 0;
 }
+
+int mk_main()
+{
+    while (1) {
+        sleep(60);
+    }
+
+    return 0;
+}
