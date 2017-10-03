@@ -85,7 +85,7 @@ static void flb_help(int rc, struct flb_config *config)
     printf("  -l, --log_file=FILE\twrite log info to a file\n");
     printf("  -t, --tag=TAG\t\tset plugin tag, same as '-p tag=abc'\n");
     printf("  -v, --verbose\t\tenable verbose mode\n");
-#ifdef FLB_HAVE_HTTP
+#ifdef FLB_HAVE_HTTP_SERVER
     printf("  -H, --http\t\tenable monitoring HTTP server\n");
     printf("  -P, --port\t\tset HTTP server TCP port (default: %s)\n",
            FLB_CONFIG_HTTP_PORT);
@@ -519,6 +519,10 @@ int main(int argc, char **argv)
         { "quiet",       no_argument      , NULL, 'q' },
         { "help",        no_argument      , NULL, 'h' },
         { "sosreport",   no_argument      , NULL, 'S' },
+#ifdef FLB_HAVE_HTTP_SERVER
+        { "http_server", no_argument      , NULL, 'H' },
+        { "http_port",   required_argument, NULL, 'P' },
+#endif
         { NULL, 0, NULL, 0 }
     };
 #endif
@@ -654,7 +658,7 @@ int main(int argc, char **argv)
         case 'h':
             flb_help(EXIT_SUCCESS, config);
             break;
-#ifdef FLB_HAVE_HTTP
+#ifdef FLB_HAVE_HTTP_SERVER
         case 'H':
             config->http_server = FLB_TRUE;
             break;
