@@ -41,6 +41,7 @@
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_sosreport.h>
+#include <fluent-bit/http_server/flb_hs.h>
 
 #ifdef FLB_HAVE_METRICS
 #include <fluent-bit/flb_metrics_exporter.h>
@@ -472,6 +473,14 @@ int flb_engine_start(struct flb_config *config)
     /* Initialize Metrics exporter */
 #ifdef FLB_HAVE_METRICS
     config->metrics = flb_me_create(config);
+#endif
+
+    /* Initialize HTTP Server */
+#ifdef FLB_HAVE_HTTP_SERVER
+    if (config->http_server == FLB_TRUE) {
+        config->http_ctx = flb_hs_create(config->http_port);
+        flb_hs_start(config->http_ctx);
+    }
 #endif
 
     /* Signal that we have started */
