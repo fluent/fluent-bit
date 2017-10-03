@@ -12,6 +12,7 @@ endif()
 include(GNUInstallDirs)
 include(ExternalProject)
 include(cmake/FindJournald.cmake)
+include(cmake/FindMonkey.cmake)
 
 # Output paths
 set(FLB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -44,6 +45,7 @@ option(FLB_BUFFERING          "Enable buffering support"     No)
 option(FLB_POSIX_TLS          "Force POSIX thread storage"   No)
 option(FLB_WITHOUT_INOTIFY    "Disable inotify support"      No)
 option(FLB_SQLDB              "Enable SQL embedded DB"       No)
+option(FLB_HTTP_SERVER        "Enable HTTP Server"           No)
 
 # Metrics: Experimental Feature, disabled by default on 0.12 series
 # but enabled in the upcoming 0.13 release. Note that development
@@ -149,6 +151,7 @@ if(FLB_DEV)
   set(FLB_DEBUG          On)
   set(FLB_TRACE          On)
   set(FLB_METRICS        On)
+  set(FLB_HTTP_SERVER    On)
   set(FLB_TESTS_INTERNAL On)
 endif()
 
@@ -175,8 +178,7 @@ include_directories(
   lib/flb_libco
   lib/sha1
   lib/msgpack-2.1.3/include
-  lib/monkey/include
-  lib/monkey/mk_core/include
+  ${MONKEY_INCLUDE_DIR}
   )
 
 # On Windows, the core uses libevent
@@ -213,7 +215,11 @@ macro(MK_SET_OPTION option value)
 endmacro()
 MK_SET_OPTION(MK_SYSTEM_MALLOC      ON)
 
-add_subdirectory(lib/monkey/mk_core EXCLUDE_FROM_ALL)
+if(FLB_HTTP_SERVER)
+  add_subdirectory(lib/monkey/ EXCLUDE_FROM_ALL)
+else()
+  add_subdirectory(lib/monkey/mk_core EXCLUDE_FROM_ALL)
+endif()
 
 # SSL/TLS: add encryption support
 if(FLB_OUT_TD)
@@ -256,8 +262,14 @@ if(FLB_STATS)
   FLB_DEFINITION(FLB_HAVE_STATS)
 endif()
 
+if(FLB_HTTP_SERVER)
+  FLB_DEFINITION(FLB_HAVE_HTTP_SERVER)
+endif()
+
 FLB_DEFINITION(FLB_HAVE_FLUSH_LIBCO)
-add_subdirectory(lib/flb_libco)
+if(NOT TARGET co)
+  add_subdirectory(lib/flb_libco)
+endif()
 
 # Systemd Journald support
 if(JOURNALD_FOUND)
@@ -356,6 +368,7 @@ if(FLB_REGEX)
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/onigmo
     CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/onigmo/configure ${AUTOCONF_HOST_OPT} --with-pic --disable-shared --enable-static --prefix=<INSTALL_DIR>
     CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
+    CPPFLAGS=-DONIG_ESCAPE_REGEX_T_COLLISION=1
     BUILD_COMMAND ${MAKE}
     INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
     INSTALL_COMMAND $(MAKE) install)
