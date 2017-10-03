@@ -17,12 +17,22 @@
  *  limitations under the License.
  */
 
+#ifndef FLB_HS_MAIN_H
+#define FLB_HS_MAIN_H
+
 #include <fluent-bit/flb_info.h>
-#ifdef FLB_HAVE_HTTP_SERVER
+#include <fluent-bit/flb_config.h>
+#include <monkey/mk_lib.h>
 
-#ifndef FLB_HTTP_SERVER_H
-#define FLB_HTTP_SERVER_H
-#include "http_server/flb_hs.h"
+struct flb_hs {
+    mk_ctx_t *ctx;             /* Monkey HTTP Context */
+    pthread_t tid;             /* Server Thread */
+    struct flb_config *config; /* Fluent Bit context */
+};
+
+struct flb_hs *flb_hs_create(char *tcp_port);
+int flb_hs_destroy(struct flb_hs *ctx);
+
+int flb_hs_start(struct flb_hs *hs);
+
 #endif
-
-#endif /* !FLB_HAVE_HTTP_SERVER */
