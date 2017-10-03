@@ -35,6 +35,7 @@
 #include <fluent-bit/flb_kernel.h>
 #include <fluent-bit/flb_worker.h>
 #include <fluent-bit/flb_scheduler.h>
+#include <fluent-bit/flb_http_server.h>
 
 int flb_regex_init();
 
@@ -59,7 +60,7 @@ struct flb_service_config service_configs[] = {
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, log)},
 
-#ifdef FLB_HAVE_HTTP
+#ifdef FLB_HAVE_HTTP_SERVER
     {FLB_CONF_STR_HTTP_MONITOR,
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, http_server)},
@@ -106,7 +107,7 @@ struct flb_config *flb_config_init()
     config->kernel       = flb_kernel_info();
     config->verbose      = 3;
 
-#ifdef FLB_HAVE_HTTP
+#ifdef FLB_HAVE_HTTP_SERVER
     config->http_server  = FLB_FALSE;
     config->http_port    = flb_strdup(FLB_CONFIG_HTTP_PORT);
 #endif
@@ -242,7 +243,7 @@ void flb_config_exit(struct flb_config *config)
     /* Release scheduler */
     flb_sched_exit(config);
 
-#ifdef FLB_HAVE_HTTP
+#ifdef FLB_HAVE_HTTP_SERVER
     if (config->http_port) {
         flb_free(config->http_port);
     }

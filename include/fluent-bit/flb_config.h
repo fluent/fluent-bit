@@ -137,7 +137,7 @@ struct flb_config {
 #endif
 
     /* HTTP Server */
-#ifdef FLB_HAVE_HTTP
+#ifdef FLB_HAVE_HTTP_SERVER
     int http_server;
     char *http_port;
     void *http_ctx;
@@ -190,10 +190,10 @@ enum conf_type {
 #define FLB_CONF_STR_LOGFILE  "Log_File"
 #define FLB_CONF_STR_LOGLEVEL "Log_Level"
 #define FLB_CONF_STR_PARSERS_FILE "Parsers_File"
-#ifdef FLB_HAVE_HTTP
+#ifdef FLB_HAVE_HTTP_SERVER
 #define FLB_CONF_STR_HTTP_MONITOR "HTTP_Monitor"
 #define FLB_CONF_STR_HTTP_PORT    "HTTP_Port"
-#endif /* FLB_HAVE_HTTP */
+#endif /* FLB_HAVE_HTTP_SERVER */
 #ifdef FLB_HAVE_BUFFERING
 #define FLB_CONF_STR_BUF_PATH     "Buffer_Path"
 #define FLB_CONF_STR_BUF_WORKERS  "Buffer_Workers"
