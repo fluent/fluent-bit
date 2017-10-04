@@ -98,7 +98,11 @@ int flb_hs_start(struct flb_hs *hs)
 
 int flb_hs_destroy(struct flb_hs *hs)
 {
+    mk_stop(hs->ctx);
+    mk_destroy(hs->ctx);
+
     flb_hs_endpoints_free(hs);
     flb_free(hs);
+
     return 0;
 }

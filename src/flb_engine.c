@@ -478,7 +478,7 @@ int flb_engine_start(struct flb_config *config)
     /* Initialize HTTP Server */
 #ifdef FLB_HAVE_HTTP_SERVER
     if (config->http_server == FLB_TRUE) {
-        config->http_ctx = flb_hs_create(config->http_port);
+        config->http_ctx = flb_hs_create(config->http_port, config);
         flb_hs_start(config->http_ctx);
     }
 #endif
@@ -568,6 +568,13 @@ int flb_engine_shutdown(struct flb_config *config)
         flb_me_destroy(config->metrics);
     }
 #endif
+
+#ifdef FLB_HAVE_HTTP_SERVER
+    if (config->http_server == FLB_TRUE) {
+        flb_hs_destroy(config->http_ctx);
+    }
+#endif
+
     flb_config_exit(config);
 
     return 0;

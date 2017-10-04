@@ -92,6 +92,7 @@ static int endpoint_root(struct flb_hs *hs)
             msgpack_pack_str_body(&mp_pck, entry->value, entry->len);
         }
     }
+    flb_utils_split_free(list);
 
     /* export as JSON */
     ret = flb_msgpack_raw_to_json_str(mp_sbuf.data, mp_sbuf.size,
