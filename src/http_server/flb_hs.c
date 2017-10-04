@@ -20,9 +20,10 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_log.h>
-#include <fluent-bit/http_server/flb_hs.h>
+#include <fluent-bit/flb_http_server.h>
 
 #include <monkey/mk_lib.h>
+#include "api/v1/register.h"
 
 static void cb_root(mk_request_t *request, void *data)
 {
@@ -33,7 +34,8 @@ static void cb_root(mk_request_t *request, void *data)
     mk_http_done(request);
 }
 
-struct flb_hs *flb_hs_create(char *tcp_port)
+/* Create ROOT endpoints */
+struct flb_hs *flb_hs_create(char *tcp_port, struct flb_config *config)
 {
     int vid;
     struct flb_hs *hs;
@@ -54,12 +56,22 @@ struct flb_hs *flb_hs_create(char *tcp_port)
         flb_free(hs);
         return NULL;
     }
+    hs->config = config;
 
     mk_config_set(hs->ctx, "Listen", tcp_port, NULL);
     vid = mk_vhost_create(hs->ctx, NULL);
+    hs->vid = vid;
+
+    /* Setup virtual host */
     mk_vhost_set(hs->ctx, vid,
                  "Name", "fluent-bit",
                  NULL);
+
+
+    /* Register all api/v1 */
+    api_v1_registration(hs);
+
+    /* Root */
     mk_vhost_handler(hs->ctx, vid, "/", cb_root, hs);
 
     return hs;
@@ -84,8 +96,9 @@ int flb_hs_start(struct flb_hs *hs)
     return 0;
 }
 
-int flb_hs_destroy(struct flb_hs *ctx)
+int flb_hs_destroy(struct flb_hs *hs)
 {
-    flb_free(ctx);
+    flb_hs_endpoints_free(hs);
+    flb_free(hs);
     return 0;
 }

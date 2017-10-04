@@ -18,6 +18,8 @@
  */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_version.h>
 #include <fluent-bit/flb_http_server.h>
@@ -107,5 +109,15 @@ static int endpoint_root(struct flb_hs *hs)
 int flb_hs_endpoints(struct flb_hs *hs)
 {
     endpoint_root(hs);
+    return 0;
+}
+
+/* Release cached data from endpoints */
+int flb_hs_endpoints_free(struct flb_hs *hs)
+{
+    if (hs->ep_root_buf) {
+        flb_free(hs->ep_root_buf);
+    }
+
     return 0;
 }
