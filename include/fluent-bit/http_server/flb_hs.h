@@ -26,6 +26,9 @@
 
 struct flb_hs {
     mk_ctx_t *ctx;             /* Monkey HTTP Context */
+    int vid;                   /* Virtual Host ID */
+
+
     pthread_t tid;             /* Server Thread */
     struct flb_config *config; /* Fluent Bit context */
 
@@ -34,7 +37,7 @@ struct flb_hs {
     char *ep_root_buf;
 };
 
-struct flb_hs *flb_hs_create(char *tcp_port);
+struct flb_hs *flb_hs_create(char *tcp_port, struct flb_config *config);
 int flb_hs_destroy(struct flb_hs *ctx);
 
 int flb_hs_start(struct flb_hs *hs);
