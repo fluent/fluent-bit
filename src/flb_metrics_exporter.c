@@ -69,6 +69,7 @@ static int collect_inputs(struct flb_me *me, struct flb_config *ctx)
     }
 
     flb_pack_print(mp_sbuf.data, mp_sbuf.size);
+    msgpack_sbuffer_destroy(&mp_sbuf);
 
     return 0;
 }
