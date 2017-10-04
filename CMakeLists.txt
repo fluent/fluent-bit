@@ -368,7 +368,6 @@ if(FLB_REGEX)
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/onigmo
     CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/onigmo/configure ${AUTOCONF_HOST_OPT} --with-pic --disable-shared --enable-static --prefix=<INSTALL_DIR>
     CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
-    CPPFLAGS=-DONIG_ESCAPE_REGEX_T_COLLISION=1
     BUILD_COMMAND ${MAKE}
     INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
     INSTALL_COMMAND $(MAKE) install)
