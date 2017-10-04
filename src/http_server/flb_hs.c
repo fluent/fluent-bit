@@ -77,23 +77,9 @@ struct flb_hs *flb_hs_create(char *tcp_port, struct flb_config *config)
     return hs;
 }
 
-static void http_service(void *data)
-{
-    struct flb_hs *hs = data;
-
-    mk_start(hs->ctx);
-}
-
 int flb_hs_start(struct flb_hs *hs)
 {
-    int ret;
-
-    ret = mk_utils_worker_spawn(http_service, hs, &hs->tid);
-    if (ret == -1) {
-        return -1;
-    }
-
-    return 0;
+    return mk_start(hs->ctx);
 }
 
 int flb_hs_destroy(struct flb_hs *hs)
