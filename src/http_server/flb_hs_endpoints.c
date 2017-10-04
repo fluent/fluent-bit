@@ -1,0 +1,111 @@
+/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+
+/*  Fluent Bit
+ *  ==========
+ *  Copyright (C) 2015-2017 Treasure Data Inc.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_version.h>
+#include <fluent-bit/flb_http_server.h>
+#include <msgpack.h>
+
+/* Create a JSON buffer with informational data about the running service */
+static int endpoint_root(struct flb_hs *hs)
+{
+    int c;
+    int ret;
+    char *out_buf;
+    size_t out_size;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+    struct mk_list *head;
+    struct mk_list *list;
+    struct flb_split_entry *entry;
+
+    /* initialize buffers */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    msgpack_pack_map(&mp_pck, 1);
+    msgpack_pack_str(&mp_pck, 10);
+    msgpack_pack_str_body(&mp_pck, "fluent-bit", 10);
+
+    /* entries under fluent-bit parent:
+     *
+     * - version
+     * - edition
+     * - built flags
+     */
+    msgpack_pack_map(&mp_pck, 3);
+
+    /* fluent-bit['version'] */
+    msgpack_pack_str(&mp_pck, 7);
+    msgpack_pack_str_body(&mp_pck, "version", 7);
+    msgpack_pack_str(&mp_pck, sizeof(FLB_VERSION_STR) - 1);
+    msgpack_pack_str_body(&mp_pck, FLB_VERSION_STR, sizeof(FLB_VERSION_STR) - 1);
+
+    /* fluent-bit['edition'] */
+    msgpack_pack_str(&mp_pck, 7);
+    msgpack_pack_str_body(&mp_pck, "edition", 7);
+#ifdef FLB_ENTERPRISE
+    msgpack_pack_str(&mp_pck, 10);
+    msgpack_pack_str_body(&mp_pck, "Enterprise", 10);
+#else
+    msgpack_pack_str(&mp_pck, 9);
+    msgpack_pack_str_body(&mp_pck, "Community", 9);
+#endif
+
+    /* fluent-bit['flags'] */
+    msgpack_pack_str(&mp_pck, 5);
+    msgpack_pack_str_body(&mp_pck, "flags", 5);
+
+    c = 0;
+    list = flb_utils_split(FLB_INFO_FLAGS, ' ', -1);
+    mk_list_foreach(head, list) {
+        entry = mk_list_entry(head, struct flb_split_entry, _head);
+        if (strncmp(entry->value, "FLB_", 4) == 0) {
+            c++;
+        }
+    }
+
+    msgpack_pack_array(&mp_pck, c);
+    mk_list_foreach(head, list) {
+        entry = mk_list_entry(head, struct flb_split_entry, _head);
+        if (strncmp(entry->value, "FLB_", 4) == 0) {
+            msgpack_pack_str(&mp_pck, entry->len);
+            msgpack_pack_str_body(&mp_pck, entry->value, entry->len);
+        }
+    }
+
+    /* export as JSON */
+    ret = flb_msgpack_raw_to_json_str(mp_sbuf.data, mp_sbuf.size,
+                                      &out_buf, &out_size);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+
+    if (ret == 0) {
+        hs->ep_root_buf  = out_buf;
+        hs->ep_root_size = out_size;
+    }
+
+    return ret;
+}
+
+int flb_hs_endpoints(struct flb_hs *hs)
+{
+    endpoint_root(hs);
+    return 0;
+}

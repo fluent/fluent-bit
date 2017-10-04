@@ -24,12 +24,12 @@
 
 #include <monkey/mk_lib.h>
 
-#define FLB_BANNER "Fluent Bit HTTP Test!\n"
-
 static void cb_root(mk_request_t *request, void *data)
 {
+    struct flb_hs *hs = data;
+
     mk_http_status(request, 200);
-    mk_http_send(request, FLB_BANNER, sizeof(FLB_BANNER) - 1, NULL);
+    mk_http_send(request, hs->ep_root_buf, hs->ep_root_size, NULL);
     mk_http_done(request);
 }
 
@@ -38,11 +38,14 @@ struct flb_hs *flb_hs_create(char *tcp_port)
     int vid;
     struct flb_hs *hs;
 
-    hs = flb_malloc(sizeof(struct flb_hs));
+    hs = flb_calloc(1, sizeof(struct flb_hs));
     if (!hs) {
         flb_errno();
         return NULL;
     }
+
+    /* Setup endpoint specific data */
+    flb_hs_endpoints(hs);
 
     /* Create HTTP server context */
     hs->ctx = mk_create();
@@ -57,7 +60,7 @@ struct flb_hs *flb_hs_create(char *tcp_port)
     mk_vhost_set(hs->ctx, vid,
                  "Name", "fluent-bit",
                  NULL);
-    mk_vhost_handler(hs->ctx, vid, "/", cb_root, NULL);
+    mk_vhost_handler(hs->ctx, vid, "/", cb_root, hs);
 
     return hs;
 }

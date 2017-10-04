@@ -1,6 +1,7 @@
 # Core Source
 set(src
   flb_hs.c
+  flb_hs_endpoints.c
   )
 
 include_directories(${MONKEY_INCLUDE_DIR})
