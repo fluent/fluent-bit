@@ -43,6 +43,8 @@ static char *influxdb_format(char *tag, int tag_len,
     uint64_t seq = 0;
     size_t off = 0;
     char *buf;
+    char *str = NULL;
+    size_t str_size;
     char tmp[128];
     msgpack_unpacked result;
     msgpack_object root;
@@ -50,6 +52,7 @@ static char *influxdb_format(char *tag, int tag_len,
     msgpack_object *obj;
     struct flb_time tm;
     struct influxdb_bulk *bulk;
+
 
     /* Iterate the original buffer and perform adjustments */
     msgpack_unpacked_init(&result);
@@ -188,11 +191,32 @@ static char *influxdb_format(char *tag, int tag_len,
                 continue;
             }
 
+            /* is this a string ? */
+            if (quote == FLB_TRUE) {
+                ret = flb_utils_write_str_buf(val, val_len,
+                                              &str, &str_size);
+                if (ret == -1) {
+                    flb_errno();
+                    influxdb_bulk_destroy(bulk);
+                    msgpack_unpacked_destroy(&result);
+                    return NULL;
+                }
+
+                val = str;
+                val_len = str_size;
+            }
+
             /* Append key/value data into the bulk */
             ret = influxdb_bulk_append_kv(bulk,
                                           key, key_len,
                                           val, val_len,
                                           i, quote);
+
+            if (quote == FLB_TRUE) {
+                flb_free(str);
+                str_size = 0;
+            }
+
             if (ret == -1) {
                 flb_error("[out_influxdb] cannot append key/value");
                 influxdb_bulk_destroy(bulk);
@@ -336,8 +360,14 @@ void cb_influxdb_flush(void *data, size_t bytes,
 
     ret = flb_http_do(c, &b_sent);
     if (ret == 0) {
-        flb_debug("[out_influxdb] http_do=%i http_status=%i",
-                  ret, c->resp.status);
+        if (c->resp.payload_size > 0) {
+            flb_debug("[out_influxdb] http_do=%i http_status=%i\n%s",
+                      ret, c->resp.status, c->resp.payload);
+        }
+        else {
+            flb_debug("[out_influxdb] http_do=%i http_status=%i",
+                      ret, c->resp.status);
+        }
     }
     else {
         flb_debug("[out_influxdb] http_do=%i", ret);
