@@ -167,26 +167,6 @@ int influxdb_bulk_append_kv(struct influxdb_bulk *bulk,
     return 0;
 };
 
-int influxdb_bulk_append_eol(struct influxdb_bulk *bulk)
-{
-    int ret;
-
-    /* Make sure we have enough space */
-    ret = influxdb_bulk_buffer(bulk, 2);
-    if (ret != 0) {
-        return -1;
-    }
-
-    /* Break line */
-    bulk->ptr[bulk->len] = '\n';
-    bulk->len++;
-
-    /* Add a NULL byte for debugging purposes */
-    bulk->ptr[bulk->len] = '\0';
-
-    return 0;
-};
-
 int influxdb_bulk_append_timestamp(struct influxdb_bulk *bulk,
                                    struct flb_time *t)
 {
@@ -202,7 +182,7 @@ int influxdb_bulk_append_timestamp(struct influxdb_bulk *bulk,
 
     /* Timestamp is in Nanoseconds */
     timestamp = (t->tm.tv_sec * 1000000000) + t->tm.tv_nsec;
-    len = snprintf(bulk->ptr + bulk->len, 127, " %" PRIu64 "\n", timestamp);
+    len = snprintf(bulk->ptr + bulk->len, 127, " %" PRIu64 " \n", timestamp);
     if (len == -1) {
         return -1;
     }
