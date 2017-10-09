@@ -619,3 +619,43 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
     *off += written;
     return FLB_TRUE;
 }
+
+
+int flb_utils_write_str_buf(char *str, size_t str_len, char **out, size_t *out_size)
+{
+    int ret;
+    int off;
+    char *tmp;
+    char *buf;
+    size_t s;
+
+    s = str_len + 1;
+    buf = flb_malloc(s);
+    if (!buf) {
+        flb_errno();
+        return -1;
+    }
+
+    while (1) {
+        off = 0;
+        ret = flb_utils_write_str(buf, &off, s, str, str_len);
+        if (ret == FLB_FALSE) {
+            s += 256;
+            tmp = flb_realloc(buf, s);
+            if (!tmp) {
+                flb_errno();
+                flb_free(buf);
+                return -1;
+            }
+            buf = tmp;
+        }
+        else {
+            /* done */
+            break;
+        }
+    }
+
+    *out = buf;
+    *out_size = off;
+    return 0;
+}
