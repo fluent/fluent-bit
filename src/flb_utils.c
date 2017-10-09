@@ -34,6 +34,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_utf8.h>
 
 void flb_utils_error(int err)
 {
@@ -466,4 +467,155 @@ void flb_utils_bytes_to_human_readable_size(size_t bytes,
         float fsize = (float) ((double) bytes / (u / 1024));
         snprintf(out_buf, size, "%.1f%s", fsize, __units[i]);
     }
+}
+
+
+static inline void encoded_to_buf(char *out, char *in, int len)
+{
+    int i;
+    char *p = out;
+
+    for (i = 0; i < len; i++) {
+        *p++ = in[i];
+    }
+}
+
+/*
+ * Write string pointed by 'str' to the destination buffer 'buf'. It's make sure
+ * to escape sepecial characters and convert utf-8 byte characters to string
+ * representation.
+ */
+int flb_utils_write_str(char *buf, int *off, size_t size,
+                        char *str, size_t str_len)
+{
+    int i;
+    int b;
+    int ret;
+    int written = 0;
+    int required;
+    int len;
+    int hex_bytes;
+    uint32_t codepoint;
+    uint32_t state = 0;
+    char tmp[16];
+    size_t available;
+    uint32_t c;
+    char *p;
+    uint8_t *s;
+
+    available = (size - *off);
+    required = str_len;
+    if (available <= required) {
+        return FLB_FALSE;
+    }
+
+    written = *off;
+    p = buf + *off;
+    for (i = 0; i < str_len; i++) {
+        if ((available - written) < 2) {
+            return FLB_FALSE;
+        }
+
+        c = (uint32_t) str[i];
+        if (c == '\\' || c == '"') {
+            *p++ = '\\';
+            *p++ = c;
+        }
+        else if (c >= '\a' && c <= '\r') {
+            *p++ = '\\';
+            switch (c) {
+            case '\n':
+                *p++ = 'n';
+                break;
+            case '\t':
+                *p++ = 't';
+                break;
+            case '\b':
+                *p++ = 'b';
+                break;
+            case '\f':
+                *p++ = 'f';
+                break;
+            case '\r':
+                *p++ = 'r';
+                break;
+            case '\a':
+                *p++ = 'a';
+                break;
+            case '\v':
+                *p++ = 'v';
+                break;
+            }
+        }
+        else if (c < 32 || c == 0x7f) {
+            if ((available - written) < 6) {
+                return FLB_FALSE;
+            }
+            len = snprintf(tmp, sizeof(tmp) - 1, "\\u%.4hhx", (unsigned char) c);
+            encoded_to_buf(p, tmp, len);
+            p += len;
+        }
+        else if (c >= 0x80 && c <= 0xFFFF) {
+            hex_bytes = flb_utf8_len(str + i);
+            if ((available - written) < (2 + hex_bytes)) {
+                return FLB_FALSE;
+            }
+
+            state = FLB_UTF8_ACCEPT;
+            codepoint = 0;
+            for (b = 0; b < hex_bytes; b++) {
+                s = (unsigned char *) str + i + b;
+                ret = flb_utf8_decode(&state, &codepoint, *s);
+                if (ret == 0) {
+                    break;
+                }
+            }
+
+            if (state != FLB_UTF8_ACCEPT) {
+                /* Invalid UTF-8 hex, just skip utf-8 bytes */
+                break;
+            }
+            else {
+                len = snprintf(tmp, sizeof(tmp) - 1, "\\u%.4x", codepoint);
+                encoded_to_buf(p, tmp, len);
+                p += len;
+            }
+            i += (hex_bytes - 1);
+        }
+        else if (c > 0xFFFF) {
+            hex_bytes = flb_utf8_len(str + i);
+            if ((available - written) < (4 + hex_bytes)) {
+                return FLB_FALSE;
+            }
+
+            state = FLB_UTF8_ACCEPT;
+            codepoint = 0;
+            for (b = 0; b < hex_bytes; b++) {
+                s = (unsigned char *) str + i + b;
+                ret = flb_utf8_decode(&state, &codepoint, *s);
+                if (ret == 0) {
+                    break;
+                }
+            }
+
+            if (state != FLB_UTF8_ACCEPT) {
+                /* Invalid UTF-8 hex, just skip utf-8 bytes */
+                flb_warn("[pack] invalid UTF-8 bytes, skipping");
+                break;
+            }
+            else {
+                len = snprintf(tmp, sizeof(tmp) - 1, "\\u%04x", codepoint);
+                encoded_to_buf(p, tmp, len);
+                p += len;
+            }
+            i += (hex_bytes - 1);
+        }
+        else {
+            *p++ = c;
+        }
+        written = (p - (buf + *off));
+    }
+
+    *off += written;
+    return FLB_TRUE;
 }
