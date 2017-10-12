@@ -34,6 +34,12 @@ static void cb_root(mk_request_t *request, void *data)
     mk_http_done(request);
 }
 
+/* Ingest metrics into the web service context */
+int flb_hs_push_metrics(struct flb_hs *hs, void *data, size_t size)
+{
+    return mk_mq_send(hs->ctx, hs->qid, data, size);
+}
+
 /* Create ROOT endpoints */
 struct flb_hs *flb_hs_create(char *tcp_port, struct flb_config *config)
 {

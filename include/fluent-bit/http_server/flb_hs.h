@@ -24,10 +24,21 @@
 #include <fluent-bit/flb_config.h>
 #include <monkey/mk_lib.h>
 
+/*
+ * HTTP buffers that contains certain cached data to be used
+ * by end-points.
+ */
+struct flb_hs_buf {
+    int users;
+    char *data;
+    size_t size;
+    struct mk_list _head;
+};
+
 struct flb_hs {
     mk_ctx_t *ctx;             /* Monkey HTTP Context */
-    int vid;                   /* Virtual Host ID */
-
+    int vid;                   /* Virtual Host ID     */
+    int qid;                   /* Message Queue ID    */
 
     pthread_t tid;             /* Server Thread */
     struct flb_config *config; /* Fluent Bit context */
