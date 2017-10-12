@@ -611,6 +611,9 @@ static inline void flb_input_dbuf_write_end(struct flb_input_dyntag *dt)
 {
     size_t bytes;
     void *buf;
+#ifdef FLB_HAVE_METRICS
+    int records;
+#endif
     struct flb_input_instance *in = dt->in;
 
     /* Get the number of new bytes */
@@ -625,6 +628,14 @@ static inline void flb_input_dbuf_write_end(struct flb_input_dyntag *dt)
                   in->name);
         return;
     }
+
+#ifdef FLB_HAVE_METRICS
+    records = flb_mp_count(dt->mp_sbuf.data + dt->mp_buf_write_size, bytes);
+    if (records > 0) {
+        flb_metrics_sum(FLB_METRIC_N_RECORDS, records, in->metrics);
+        flb_metrics_sum(FLB_METRIC_N_BYTES, bytes, in->metrics);
+    }
+#endif
 
     /* Call the filter handler */
     buf = dt->mp_sbuf.data + dt->mp_buf_write_size;
