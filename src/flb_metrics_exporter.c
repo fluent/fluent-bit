@@ -29,6 +29,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_http_server.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_metrics_exporter.h>
 
@@ -68,7 +69,11 @@ static int collect_inputs(struct flb_me *me, struct flb_config *ctx)
         flb_free(buf);
     }
 
-    flb_pack_print(mp_sbuf.data, mp_sbuf.size);
+#ifdef FLB_HAVE_HTTP_SERVER
+    if (ctx->http_server == FLB_TRUE) {
+        flb_hs_push_metrics(ctx->http_ctx, mp_sbuf.data, mp_sbuf.size);
+    }
+#endif
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     return 0;
