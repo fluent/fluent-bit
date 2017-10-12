@@ -59,7 +59,8 @@ struct mk_fifo_queue {
      * message is ready to be processed. This callback is invoked
      * from a thread context (pipe read end).
      */
-    void (*cb_message)(struct mk_fifo_queue *, void *, size_t);
+    void (*cb_message)(struct mk_fifo_queue *, void *, size_t, void *);
+    void *data;
 };
 
 struct mk_fifo {
@@ -75,7 +76,8 @@ int mk_fifo_worker_read(void *event);
 
 struct mk_fifo *mk_fifo_create(pthread_key_t *key, void *data);
 int mk_fifo_queue_create(struct mk_fifo *ctx, char *name,
-                         void (*cb)(struct mk_fifo_queue *, void *, size_t));
+                         void (*cb)(struct mk_fifo_queue *, void *, size_t),
+                         void *data);
 struct mk_fifo_queue *mk_fifo_queue_get(struct mk_fifo *ctx, int id);
 int mk_fifo_queue_destroy(struct mk_fifo *ctx, struct mk_fifo_queue *q);
 int mk_fifo_queue_id_destroy(struct mk_fifo *ctx, int id);

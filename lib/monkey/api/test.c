@@ -72,10 +72,11 @@ static void signal_init()
     signal(SIGTERM, &signal_handler);
 }
 
-static void cb_queue_message(mk_mq_t *queue, void *data, size_t size)
+static void cb_queue_message(mk_mq_t *queue, void *data, size_t size, void *ctx)
 {
     size_t i;
     char *buf;
+    (void) ctx;
     (void) queue;
 
     printf("=== cb queue message === \n");
@@ -105,7 +106,7 @@ int main()
     }
 
     /* Create a message queue and a callback for each message */
-    qid = mk_mq_create(ctx, "/data", cb_queue_message);
+    qid = mk_mq_create(ctx, "/data", cb_queue_message, NULL);
 
     mk_config_set(ctx,
                   "Listen", API_PORT,

@@ -687,11 +687,11 @@ int mk_http_done(mk_request_t *req)
 }
 
 /* Create a messaging queue end-point */
-int mk_mq_create(mk_ctx_t *ctx, char *name, void (*cb))
+int mk_mq_create(mk_ctx_t *ctx, char *name, void (*cb), void *data)
 {
     int id;
 
-    id = mk_fifo_queue_create(ctx->fifo, name, cb);
+    id = mk_fifo_queue_create(ctx->fifo, name, cb, data);
     return id;
 }
 

@@ -68,7 +68,7 @@ MK_EXPORT int mk_worker_callback(mk_ctx_t *ctx,
                                  void (*cb_func) (void *),
                                  void *data);
 //MK_EXPORT int mk_mq_create(mk_ctx_t *ctx, char *name);
-MK_EXPORT int mk_mq_create(mk_ctx_t *ctx, char *name, void (*cb));
+MK_EXPORT int mk_mq_create(mk_ctx_t *ctx, char *name, void (*cb), void *data);
 
 MK_EXPORT int mk_mq_send(mk_ctx_t *ctx, int qid, void *data, size_t size);
 
