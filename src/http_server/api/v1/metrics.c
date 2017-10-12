@@ -18,14 +18,25 @@
  */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_filter.h>
+#include <fluent-bit/flb_output.h>
+
 #include <fluent-bit/flb_http_server.h>
+#include <msgpack.h>
 
-#include "metrics.h"
-#include "plugins.h"
-
-int api_v1_registration(struct flb_hs *hs)
+/* API: expose built-in metrics */
+static void cb_metrics(mk_request_t *request, void *data)
 {
-    api_v1_metrics(hs);
-    api_v1_plugins(hs);
+    mk_http_status(request, 200);
+    mk_http_send(request, "OK\n", 3, NULL);
+    mk_http_done(request);
+}
+
+/* Perform registration */
+int api_v1_metrics(struct flb_hs *hs)
+{
+    mk_vhost_handler(hs->ctx, hs->vid, "/api/v1/metrics", cb_metrics, hs);
     return 0;
 }

@@ -17,15 +17,12 @@
  *  limitations under the License.
  */
 
+#ifndef FLB_HS_API_V1_METRICS_H
+#define FLB_HS_API_V1_METRICS_H
+
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_http_server.h>
 
-#include "metrics.h"
-#include "plugins.h"
+int api_v1_metrics(struct flb_hs *hs);
 
-int api_v1_registration(struct flb_hs *hs)
-{
-    api_v1_metrics(hs);
-    api_v1_plugins(hs);
-    return 0;
-}
+#endif
