@@ -2,7 +2,7 @@
 
 /*  Monkey HTTP Server (Duda I/O)
  *  -----------------------------
- *  Copyright 2015 Monkey Software LLC <eduardo@monkey.io>
+ *  Copyright 2017 Eduardo Silva <eduardo@monkey.io>
  *  Copyright 2014, Zeying Xie <swpdtz at gmail dot com>
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");

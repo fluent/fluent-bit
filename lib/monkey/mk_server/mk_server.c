@@ -2,7 +2,7 @@
 
 /*  Monkey HTTP Server
  *  ==================
- *  Copyright 2001-2015 Monkey Software LLC <eduardo@monkey.io>
+ *  Copyright 2001-2017 Eduardo Silva <eduardo@monkey.io>
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@
 #include <monkey/mk_server_tls.h>
 #include <monkey/mk_scheduler.h>
 #include <monkey/mk_core.h>
+#include <monkey/mk_fifo.h>
 #include <monkey/mk_http_thread.h>
 
 #include <sys/socket.h>
@@ -254,6 +255,34 @@ void mk_server_launch_workers(struct mk_server *server)
     }
 }
 
+/*
+ * When using the FIFO interface, this function get's the FIFO worker
+ * context and register the pipe file descriptor into the main event
+ * loop.
+ *
+ * note: this function is invoked by each worker thread.
+ */
+static int mk_server_fifo_worker_setup(struct mk_event_loop *evl)
+{
+    int ret;
+    struct mk_fifo_worker *fw;
+
+    fw = pthread_getspecific(mk_server_fifo_key);
+    if (!fw) {
+        return -1;
+    }
+
+    ret = mk_event_add(evl, fw->channel[0],
+                       MK_EVENT_FIFO, MK_EVENT_READ,
+                       fw);
+    if (ret != 0) {
+        mk_err("[server] Error registering fifo worker channel: %s",
+               strerror(errno));
+        return -1;
+    }
+
+    return 0;
+}
 
 /*
  * The loop_balancer() runs in the main process context and is considered
@@ -357,7 +386,7 @@ void mk_server_worker_loop(struct mk_server *server)
     /*
      * The worker will NOT process any connection until the master
      * process through mk_server_loop() send us the green light
-     * signal MK_SERVER_S;IGNAL_START.
+     * signal MK_SERVER_SIGNAL_START.
      */
     mk_event_wait(evl);
     mk_event_foreach(event, evl) {
@@ -386,6 +415,14 @@ void mk_server_worker_loop(struct mk_server *server)
                          MK_EVENT_LISTENER, MK_EVENT_READ,
                          listener);
         }
+    }
+
+    /*
+     * If running in library mode, register the FIFO pipe file descriptors
+     * into the main event loop.
+     */
+    if (server->lib_mode == MK_TRUE) {
+        mk_server_fifo_worker_setup(evl);
     }
 
     /* create a new timeout file descriptor */
@@ -479,6 +516,10 @@ void mk_server_worker_loop(struct mk_server *server)
             }
             else if (event->type == MK_EVENT_THREAD) {
                 mk_http_thread_event(event);
+                continue;
+            }
+            else if (event->type == MK_EVENT_FIFO) {
+                mk_fifo_worker_read(event);
                 continue;
             }
         }

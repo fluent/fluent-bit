@@ -2,7 +2,7 @@
 
 /*  Monkey HTTP Server
  *  ==================
- *  Copyright 2001-2015 Monkey Software LLC <eduardo@monkey.io>
+ *  Copyright 2001-2017 Eduardo Silva <eduardo@monkey.io>
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -42,6 +42,8 @@ struct mk_server_listen
 struct mk_server_timeout {
     struct mk_event event;
 };
+
+pthread_key_t mk_server_fifo_key;
 
 #ifdef MK_HAVE_C_TLS
 extern __thread struct mk_list *server_listen;

@@ -2,7 +2,7 @@
 
 /*  Monkey HTTP Server
  *  ==================
- *  Copyright 2001-2015 Monkey Software LLC <eduardo@monkey.io>
+ *  Copyright 2001-2017 Eduardo Silva <eduardo@monkey.io>
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -139,9 +139,10 @@ struct mk_server
     char server_signature_header[32];
     int  server_signature_header_len;
 
-    /* Lib mode: event loop and channel manager */
-    struct mk_event_loop *lib_evl;
-    int lib_ch_manager[2];
+    /* Library  mode */
+    int lib_mode;                   /* is running in Library mode ? */
+    int lib_ch_manager[2];          /* lib channel manager */
+    struct mk_event_loop *lib_evl;  /* lib event loop */
 
     /* Scheduler context (struct mk_sched_ctx) */
     void *sched_ctx;
