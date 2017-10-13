@@ -157,7 +157,9 @@ if(NOT CMAKE_SYSTEM_NAME MATCHES "Darwin")
 endif()
 
 # HTTP Server
-add_subdirectory(http_server)
+if(FLB_HTTP_SERVER)
+  add_subdirectory(http_server)
+endif()
 
 # Proxy interfaces
 add_subdirectory(proxy)
