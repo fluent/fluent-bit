@@ -65,7 +65,8 @@ static int configure(struct record_modifier_ctx *ctx,
             mod_record = flb_malloc(sizeof(struct modifier_record));
             split = flb_utils_split(prop->val, ' ', 1);
             if (mk_list_size(split) != 2) {
-                flb_error("[%s] invalid record parameters",PLUGIN_NAME);
+                flb_error("[%s] invalid record parameters, expects 'KEY VALUE'",
+                          PLUGIN_NAME);
                 flb_free(mod_record);
                 flb_utils_split_free(split);
                 continue;
