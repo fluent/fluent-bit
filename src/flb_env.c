@@ -59,6 +59,34 @@ static inline int buf_append(struct flb_buf *buf, char *str, int len)
     return 0;
 }
 
+/* Preset some useful variables */
+static int env_preset(struct flb_env *env)
+{
+    int ret;
+    char *buf;
+    char tmp[512];
+
+    /*
+     * ${HOSTNAME} this variable is very useful to identify records,
+     * despite this variable is recognized by the Shell, that does not
+     * means that is exposed as a real environment variable, e.g:
+     *
+     *  1. $ echo $HOSTNAME
+     *     monotop
+     *  2. $ env | grep HOSTNAME
+     *     (nothing)
+     */
+    buf = getenv("HOSTNAME");
+    if (!buf) {
+        ret = gethostname(tmp, sizeof(tmp) - 1);
+        if (ret == 0) {
+            flb_env_set(env, "HOSTNAME", tmp);
+        }
+    }
+
+    return 0;
+}
+
 struct flb_env *flb_env_create()
 {
     struct flb_env *env;
@@ -78,6 +106,8 @@ struct flb_env *flb_env_create()
     }
 
     env->ht = ht;
+    env_preset(env);
+
     return env;
 }
 
