@@ -49,6 +49,10 @@ static int configure(struct record_modifier_ctx *ctx,
 
         if (!strcasecmp(prop->key, "remove_key")) {
             mod_key = flb_malloc(sizeof(struct modifier_key));
+            if (!mod_key) {
+                flb_errno();
+                continue;
+            }
             mod_key->key     = prop->val;
             mod_key->key_len = strlen(prop->val);
             mk_list_add(&mod_key->_head, &ctx->remove_keys);
@@ -56,6 +60,10 @@ static int configure(struct record_modifier_ctx *ctx,
         }
         else if (!strcasecmp(prop->key, "whitelist_key")) {
             mod_key = flb_malloc(sizeof(struct modifier_key));
+            if (!mod_key) {
+                flb_errno();
+                continue;
+            }
             mod_key->key     = prop->val;
             mod_key->key_len = strlen(prop->val);
             mk_list_add(&mod_key->_head, &ctx->whitelist_keys);
@@ -63,6 +71,10 @@ static int configure(struct record_modifier_ctx *ctx,
         }
         else if (!strcasecmp(prop->key, "record")) {
             mod_record = flb_malloc(sizeof(struct modifier_record));
+            if (!mod_record) {
+                flb_errno();
+                continue;
+            }
             split = flb_utils_split(prop->val, ' ', 1);
             if (mk_list_size(split) != 2) {
                 flb_error("[%s] invalid record parameters, expects 'KEY VALUE'",
