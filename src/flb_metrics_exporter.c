@@ -47,6 +47,10 @@ static int collect_inputs(struct flb_me *me, struct flb_config *ctx)
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
+    msgpack_pack_map(&mp_pck, 1);
+    msgpack_pack_str(&mp_pck, 5);
+    msgpack_pack_str_body(&mp_pck, "input", 5);
+
     mk_list_foreach(head, &ctx->inputs) {
         i = mk_list_entry(head, struct flb_input_instance, _head);
         if (!i->metrics) {
