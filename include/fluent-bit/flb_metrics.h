@@ -24,8 +24,13 @@
 #define FLB_METRICS_H
 
 /* Metrics IDs for general purpose (used by core and Plugins */
-#define FLB_METRIC_N_RECORDS  0
-#define FLB_METRIC_N_BYTES    1
+#define FLB_METRIC_N_RECORDS   0
+#define FLB_METRIC_N_BYTES     1
+
+#define FLB_METRIC_OUT_OK_RECORDS  10
+#define FLB_METRIC_OUT_OK_BYTES    11
+#define FLB_METRIC_OUT_ERROR       12
+#define FLB_METRIC_OUT_RETRY       13
 
 struct flb_metric {
     int id;
