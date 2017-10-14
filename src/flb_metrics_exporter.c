@@ -28,28 +28,23 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_http_server.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_metrics_exporter.h>
 
-static int collect_inputs(struct flb_me *me, struct flb_config *ctx)
+static int collect_inputs(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
+                          struct flb_config *ctx)
 {
     int total = 0;
     size_t s;
     char *buf;
     struct mk_list *head;
     struct flb_input_instance *i;
-    msgpack_sbuffer mp_sbuf;
-    msgpack_packer mp_pck;
 
-    /* Prepare new outgoing buffer */
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-
-    msgpack_pack_map(&mp_pck, 1);
-    msgpack_pack_str(&mp_pck, 5);
-    msgpack_pack_str_body(&mp_pck, "input", 5);
+    msgpack_pack_str(mp_pck, 5);
+    msgpack_pack_str_body(mp_pck, "input", 5);
 
     mk_list_foreach(head, &ctx->inputs) {
         i = mk_list_entry(head, struct flb_input_instance, _head);
@@ -59,7 +54,7 @@ static int collect_inputs(struct flb_me *me, struct flb_config *ctx)
         total++; /* FIXME: keep total number in cache */
     }
 
-    msgpack_pack_map(&mp_pck, total);
+    msgpack_pack_map(mp_pck, total);
     mk_list_foreach(head, &ctx->inputs) {
         i = mk_list_entry(head, struct flb_input_instance, _head);
         if (!i->metrics) {
@@ -67,11 +62,70 @@ static int collect_inputs(struct flb_me *me, struct flb_config *ctx)
         }
 
         flb_metrics_dump_values(&buf, &s, i->metrics);
-        msgpack_pack_str(&mp_pck, i->metrics->title_len);
-        msgpack_pack_str_body(&mp_pck, i->metrics->title, i->metrics->title_len);
-        msgpack_sbuffer_write(&mp_sbuf, buf, s);
+        msgpack_pack_str(mp_pck, i->metrics->title_len);
+        msgpack_pack_str_body(mp_pck, i->metrics->title, i->metrics->title_len);
+        msgpack_sbuffer_write(mp_sbuf, buf, s);
         flb_free(buf);
     }
+
+    return 0;
+}
+
+static int collect_outputs(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
+                           struct flb_config *ctx)
+{
+    int total = 0;
+    size_t s;
+    char *buf;
+    struct mk_list *head;
+    struct flb_output_instance *i;
+
+    msgpack_pack_str(mp_pck, 6);
+    msgpack_pack_str_body(mp_pck, "output", 6);
+
+    mk_list_foreach(head, &ctx->outputs) {
+        i = mk_list_entry(head, struct flb_output_instance, _head);
+        if (!i->metrics) {
+            continue;
+        }
+        total++; /* FIXME: keep total number in cache */
+    }
+
+    msgpack_pack_map(mp_pck, total);
+    mk_list_foreach(head, &ctx->outputs) {
+        i = mk_list_entry(head, struct flb_output_instance, _head);
+        if (!i->metrics) {
+            continue;
+        }
+
+        flb_metrics_dump_values(&buf, &s, i->metrics);
+        msgpack_pack_str(mp_pck, i->metrics->title_len);
+        msgpack_pack_str_body(mp_pck, i->metrics->title, i->metrics->title_len);
+        msgpack_sbuffer_write(mp_sbuf, buf, s);
+        flb_free(buf);
+    }
+
+    return 0;
+}
+
+static int collect_metrics(struct flb_me *me)
+{
+    int keys;
+    struct flb_config *ctx = me->config;
+
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+
+    /* Prepare new outgoing buffer */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    keys = 2; /* input, output */
+    msgpack_pack_map(&mp_pck, keys);
+
+    /* Collect metrics from input instances */
+    collect_inputs(&mp_sbuf, &mp_pck, me->config);
+    collect_outputs(&mp_sbuf, &mp_pck, me->config);
 
 #ifdef FLB_HAVE_HTTP_SERVER
     if (ctx->http_server == FLB_TRUE) {
@@ -80,13 +134,6 @@ static int collect_inputs(struct flb_me *me, struct flb_config *ctx)
 #endif
     msgpack_sbuffer_destroy(&mp_sbuf);
 
-    return 0;
-}
-
-static int collect_metrics(struct flb_me *me)
-{
-    /* Collect metrics from input instances */
-    collect_inputs(me, me->config);
 
     return 0;
 }
