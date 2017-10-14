@@ -178,6 +178,10 @@ struct flb_output_instance {
     struct mk_list properties;           /* properties / configuration   */
     struct mk_list _head;                /* link to config->inputs       */
 
+#ifdef FLB_HAVE_METRICS
+    struct flb_metrics *metrics;         /* metrics                      */
+#endif
+
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;
 };
@@ -415,6 +419,9 @@ static inline void flb_output_return(int ret, struct flb_thread *th) {
     uint64_t val;
     struct flb_task *task;
     struct flb_output_thread *out_th;
+#ifdef FLB_HAVE_METRICS
+    int records;
+#endif
 
     out_th = (struct flb_output_thread *) FLB_THREAD_DATA(th);
     task = out_th->task;
@@ -435,6 +442,24 @@ static inline void flb_output_return(int ret, struct flb_thread *th) {
     if (n == -1) {
         flb_errno();
     }
+
+#ifdef FLB_HAVE_METRICS
+    if (out_th->o_ins->metrics) {
+        if (ret == FLB_OK) {
+            records = flb_mp_count(task->buf, task->size);
+            flb_metrics_sum(FLB_METRIC_OUT_OK_RECORDS, records,
+                            out_th->o_ins->metrics);
+            flb_metrics_sum(FLB_METRIC_OUT_OK_BYTES, task->size,
+                            out_th->o_ins->metrics);
+        }
+        else if (ret == FLB_ERROR) {
+            flb_metrics_sum(FLB_METRIC_OUT_ERROR, 1, out_th->o_ins->metrics);
+        }
+        else if (ret == FLB_RETRY) {
+            /* FIXME */
+        }
+    }
+#endif
 }
 
 static inline void flb_output_return_do(int x)

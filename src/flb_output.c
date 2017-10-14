@@ -123,6 +123,14 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
         }
     }
 #endif
+
+    /* Remove metrics */
+#ifdef FLB_HAVE_METRICS
+    if (ins->metrics) {
+        flb_metrics_destroy(ins->metrics);
+    }
+#endif
+
     /* release properties */
     flb_output_free_properties(ins);
 
@@ -273,6 +281,17 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     }
     mk_list_init(&instance->properties);
     mk_list_add(&instance->_head, &config->outputs);
+
+    /* Metrics */
+#ifdef FLB_HAVE_METRICS
+    instance->metrics = flb_metrics_create(instance->name);
+    if (instance->metrics) {
+        flb_metrics_add(FLB_METRIC_OUT_OK_RECORDS, "proc_records", instance->metrics);
+        flb_metrics_add(FLB_METRIC_OUT_OK_BYTES, "proc_bytes", instance->metrics);
+        flb_metrics_add(FLB_METRIC_OUT_ERROR, "errors", instance->metrics);
+        flb_metrics_add(FLB_METRIC_OUT_RETRY, "retries", instance->metrics);
+    }
+#endif
 
     return instance;
 }
