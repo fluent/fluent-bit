@@ -1,12 +1,39 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
-#include <gtest/gtest.h>
 #include <fluent-bit.h>
-#include "data/json_invalid.h"
-#include "data/json_small.h"
-#include "data/json_long.h"
+#include "flb_tests_runtime.h"
 
-TEST(Outputs, json_invalid) {
+/* Test data */
+#include "data/common/json_invalid.h" /* JSON_INVALID */
+#include "data/common/json_long.h"    /* JSON_LONG    */
+#include "data/common/json_small.h"   /* JSON_SMALL   */
+
+/* Test functions */
+void flb_test_flowcounter_json_invalid(void);
+void flb_test_flowcounter_json_long(void);
+void flb_test_flowcounter_json_small(void);
+void flb_test_flowcounter_unit_second(void);
+void flb_test_flowcounter_unit_minute(void);
+void flb_test_flowcounter_unit_hour(void);
+void flb_test_flowcounter_unit_day(void);
+void flb_test_flowcounter_unit_invalid(void);
+
+/* Test list */
+TEST_LIST = {
+    {"json_invalid",    flb_test_flowcounter_json_invalid },
+    {"json_long",       flb_test_flowcounter_json_long    },
+    {"json_small",      flb_test_flowcounter_json_small   },
+    {"unit_second",     flb_test_flowcounter_unit_second  },
+    {"unit_minute",     flb_test_flowcounter_unit_minute  },
+    {"unit_hour",       flb_test_flowcounter_unit_hour    },
+    {"unit_day",        flb_test_flowcounter_unit_day     },
+    {"unit_invalid",    flb_test_flowcounter_unit_invalid },
+    {NULL, NULL}
+};
+
+
+void flb_test_flowcounter_json_invalid(void)
+{
     int i;
     int ret;
     int bytes;
@@ -18,19 +45,19 @@ TEST(Outputs, json_invalid) {
     ctx = flb_create();
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    EXPECT_TRUE(in_ffd >= 0);
+    TEST_CHECK(in_ffd >= 0);
     flb_input_set(ctx, in_ffd, "tag", "test", NULL);
 
     out_ffd = flb_output(ctx, (char *) "flowcounter", NULL);
-    EXPECT_TRUE(out_ffd >= 0);
+    TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
 
     ret = flb_start(ctx);
-    EXPECT_EQ(ret, 0);
+    TEST_CHECK(ret == 0);
 
     for (i = 0; i < (int) sizeof(JSON_INVALID) - 1; i++) {
         bytes = flb_lib_push(ctx, in_ffd, p + i, 1);
-        EXPECT_EQ(bytes, 1);
+        TEST_CHECK(bytes == 1);
     }
 
     flb_stop(ctx);
@@ -38,7 +65,8 @@ TEST(Outputs, json_invalid) {
 }
 
 /* It writes a very long JSON map (> 100KB) byte by byte */
-TEST(Outputs, json_long) {
+void flb_test_flowcounter_json_long(void)
+{
     int i;
     int ret;
     int bytes;
@@ -50,19 +78,19 @@ TEST(Outputs, json_long) {
     ctx = flb_create();
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    EXPECT_TRUE(in_ffd >= 0);
+    TEST_CHECK(in_ffd >= 0);
     flb_input_set(ctx, in_ffd, "tag", "test", NULL);
 
     out_ffd = flb_output(ctx, (char *) "flowcounter", NULL);
-    EXPECT_TRUE(out_ffd >= 0);
+    TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
 
     ret = flb_start(ctx);
-    EXPECT_EQ(ret, 0);
+    TEST_CHECK(ret == 0);
 
     for (i = 0; i < (int) sizeof(JSON_LONG) - 1; i++) {
         bytes = flb_lib_push(ctx, in_ffd, p + i, 1);
-        EXPECT_EQ(bytes, 1);
+        TEST_CHECK(bytes == 1);
     }
 
     sleep(1); /* waiting flush */
@@ -71,7 +99,8 @@ TEST(Outputs, json_long) {
     flb_destroy(ctx);
 }
 
-TEST(Outputs, json_small) {
+void flb_test_flowcounter_json_small(void)
+{
     int i;
     int ret;
     int bytes;
@@ -83,19 +112,19 @@ TEST(Outputs, json_small) {
     ctx = flb_create();
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    EXPECT_TRUE(in_ffd >= 0);
+    TEST_CHECK(in_ffd >= 0);
     flb_input_set(ctx, in_ffd, "tag", "test", NULL);
 
     out_ffd = flb_output(ctx, (char *) "flowcounter", NULL);
-    EXPECT_TRUE(out_ffd >= 0);
+    TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
 
     ret = flb_start(ctx);
-    EXPECT_EQ(ret, 0);
+    TEST_CHECK(ret == 0);
 
     for (i = 0; i < (int) sizeof(JSON_SMALL) - 1; i++) {
         bytes = flb_lib_push(ctx, in_ffd, p + i, 1);
-        EXPECT_EQ(bytes, 1);
+        TEST_CHECK(bytes == 1);
     }
 
     sleep(1); /* waiting flush */
@@ -104,7 +133,8 @@ TEST(Outputs, json_small) {
     flb_destroy(ctx);
 }
 
-TEST(Outputs, unit_second) {
+void flb_test_flowcounter_unit_second(void)
+{
     int i;
     int ret;
     int bytes;
@@ -116,20 +146,20 @@ TEST(Outputs, unit_second) {
     ctx = flb_create();
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    EXPECT_TRUE(in_ffd >= 0);
+    TEST_CHECK(in_ffd >= 0);
     flb_input_set(ctx, in_ffd, "tag", "test", NULL);
 
     out_ffd = flb_output(ctx, (char *) "flowcounter", NULL);
-    EXPECT_TRUE(out_ffd >= 0);
+    TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
     flb_output_set(ctx, out_ffd, "Unit", "second", NULL);
 
     ret = flb_start(ctx);
-    EXPECT_EQ(ret, 0);
+    TEST_CHECK(ret == 0);
 
     for (i = 0; i < (int) sizeof(JSON_SMALL) - 1; i++) {
         bytes = flb_lib_push(ctx, in_ffd, p + i, 1);
-        EXPECT_EQ(bytes, 1);
+        TEST_CHECK(bytes == 1);
     }
 
     sleep(1); /* waiting flush */
@@ -138,7 +168,8 @@ TEST(Outputs, unit_second) {
     flb_destroy(ctx);
 }
 
-TEST(Outputs, unit_minute) {
+void flb_test_flowcounter_unit_minute(void)
+{
     int i;
     int ret;
     int bytes;
@@ -150,20 +181,20 @@ TEST(Outputs, unit_minute) {
     ctx = flb_create();
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    EXPECT_TRUE(in_ffd >= 0);
+    TEST_CHECK(in_ffd >= 0);
     flb_input_set(ctx, in_ffd, "tag", "test", NULL);
 
     out_ffd = flb_output(ctx, (char *) "flowcounter", NULL);
-    EXPECT_TRUE(out_ffd >= 0);
+    TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
     flb_output_set(ctx, out_ffd, "Unit", "minute", NULL);
 
     ret = flb_start(ctx);
-    EXPECT_EQ(ret, 0);
+    TEST_CHECK(ret == 0);
 
     for (i = 0; i < (int) sizeof(JSON_SMALL) - 1; i++) {
         bytes = flb_lib_push(ctx, in_ffd, p + i, 1);
-        EXPECT_EQ(bytes, 1);
+        TEST_CHECK(bytes == 1);
     }
 
     sleep(1); /* waiting flush */
@@ -172,7 +203,8 @@ TEST(Outputs, unit_minute) {
     flb_destroy(ctx);
 }
 
-TEST(Outputs, unit_hour) {
+void flb_test_flowcounter_unit_hour(void)
+{
     int i;
     int ret;
     int bytes;
@@ -184,20 +216,20 @@ TEST(Outputs, unit_hour) {
     ctx = flb_create();
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    EXPECT_TRUE(in_ffd >= 0);
+    TEST_CHECK(in_ffd >= 0);
     flb_input_set(ctx, in_ffd, "tag", "test", NULL);
 
     out_ffd = flb_output(ctx, (char *) "flowcounter", NULL);
-    EXPECT_TRUE(out_ffd >= 0);
+    TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
     flb_output_set(ctx, out_ffd, "Unit", "hour", NULL);
 
     ret = flb_start(ctx);
-    EXPECT_EQ(ret, 0);
+    TEST_CHECK(ret == 0);
 
     for (i = 0; i < (int) sizeof(JSON_SMALL) - 1; i++) {
         bytes = flb_lib_push(ctx, in_ffd, p + i, 1);
-        EXPECT_EQ(bytes, 1);
+        TEST_CHECK(bytes == 1);
     }
 
     sleep(1); /* waiting flush */
@@ -206,7 +238,8 @@ TEST(Outputs, unit_hour) {
     flb_destroy(ctx);
 }
 
-TEST(Outputs, unit_day) {
+void flb_test_flowcounter_unit_day(void)
+{
     int i;
     int ret;
     int bytes;
@@ -218,20 +251,20 @@ TEST(Outputs, unit_day) {
     ctx = flb_create();
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    EXPECT_TRUE(in_ffd >= 0);
+    TEST_CHECK(in_ffd >= 0);
     flb_input_set(ctx, in_ffd, "tag", "test", NULL);
 
     out_ffd = flb_output(ctx, (char *) "flowcounter", NULL);
-    EXPECT_TRUE(out_ffd >= 0);
+    TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
     flb_output_set(ctx, out_ffd, "Unit", "day", NULL);
 
     ret = flb_start(ctx);
-    EXPECT_EQ(ret, 0);
+    TEST_CHECK(ret == 0);
 
     for (i = 0; i < (int) sizeof(JSON_SMALL) - 1; i++) {
         bytes = flb_lib_push(ctx, in_ffd, p + i, 1);
-        EXPECT_EQ(bytes, 1);
+        TEST_CHECK(bytes == 1);
     }
 
     sleep(1); /* waiting flush */
@@ -240,7 +273,8 @@ TEST(Outputs, unit_day) {
     flb_destroy(ctx);
 }
 
-TEST(Outputs, unit_invalid) {
+void flb_test_flowcounter_unit_invalid(void)
+{
     int i;
     int ret;
     int bytes;
@@ -252,20 +286,20 @@ TEST(Outputs, unit_invalid) {
     ctx = flb_create();
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    EXPECT_TRUE(in_ffd >= 0);
+    TEST_CHECK(in_ffd >= 0);
     flb_input_set(ctx, in_ffd, "tag", "test", NULL);
 
     out_ffd = flb_output(ctx, (char *) "flowcounter", NULL);
-    EXPECT_TRUE(out_ffd >= 0);
+    TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
     flb_output_set(ctx, out_ffd, "Unit", "xxx", NULL);
 
     ret = flb_start(ctx);
-    EXPECT_EQ(ret, 0);
+    TEST_CHECK(ret == 0);
 
     for (i = 0; i < (int) sizeof(JSON_SMALL) - 1; i++) {
         bytes = flb_lib_push(ctx, in_ffd, p + i, 1);
-        EXPECT_EQ(bytes, 1);
+        TEST_CHECK(bytes == 1);
     }
 
     sleep(1); /* waiting flush */

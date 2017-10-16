@@ -1,14 +1,33 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
-#include <gtest/gtest.h>
 #include <fluent-bit.h>
-#include "data/json_invalid.h"
-#include "data/json_small.h"
-#include "data/json_long.h"
+#include "flb_tests_runtime.h"
+
+/* Test data */
+#include "data/common/json_invalid.h" /* JSON_INVALID */
+#include "data/common/json_long.h"    /* JSON_LONG    */
+#include "data/common/json_small.h"   /* JSON_SMALL   */
+
+/* Test functions */
+void flb_test_exit_json_invalid(void);
+void flb_test_exit_json_long(void);
+void flb_test_exit_json_small(void);
+void flb_test_exit_keep_alive(void);
+
+/* Test list */
+TEST_LIST = {
+    {"json_invalid",    flb_test_exit_json_invalid },
+    {"json_long",       flb_test_exit_json_long    },
+    {"json_small",      flb_test_exit_json_small   },
+    {"keep_alive",      flb_test_exit_keep_alive   },
+    {NULL, NULL}
+};
+
 
 #define WAIT_STOP (5+1) /* pause in flb_engine_stop and buffer period */
 
-TEST(Outputs, json_invalid) {
+void flb_test_exit_json_invalid(void)
+{
     int i;
     int ret;
     int bytes;
@@ -20,19 +39,19 @@ TEST(Outputs, json_invalid) {
     ctx = flb_create();
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    EXPECT_TRUE(in_ffd >= 0);
+    TEST_CHECK(in_ffd >= 0);
     flb_input_set(ctx, in_ffd, "tag", "test", NULL);
 
     out_ffd = flb_output(ctx, (char *) "exit", NULL);
-    EXPECT_TRUE(out_ffd >= 0);
+    TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
 
     ret = flb_start(ctx);
-    EXPECT_EQ(ret, 0);
+    TEST_CHECK(ret == 0);
 
     for (i = 0; i < (int) sizeof(JSON_INVALID) - 1; i++) {
         bytes = flb_lib_push(ctx, in_ffd, p + i, 1);
-        EXPECT_EQ(bytes, 1);
+        TEST_CHECK(bytes == 1);
     }
 
     sleep(WAIT_STOP); /* waiting stop automatically */
@@ -42,7 +61,8 @@ TEST(Outputs, json_invalid) {
 }
 
 /* It writes a very long JSON map (> 100KB) byte by byte */
-TEST(Outputs, json_long) {
+void flb_test_exit_json_long(void)
+{
     int i;
     int ret;
     int bytes;
@@ -54,19 +74,19 @@ TEST(Outputs, json_long) {
     ctx = flb_create();
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    EXPECT_TRUE(in_ffd >= 0);
+    TEST_CHECK(in_ffd >= 0);
     flb_input_set(ctx, in_ffd, "tag", "test", NULL);
 
     out_ffd = flb_output(ctx, (char *) "exit", NULL);
-    EXPECT_TRUE(out_ffd >= 0);
+    TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
 
     ret = flb_start(ctx);
-    EXPECT_EQ(ret, 0);
+    TEST_CHECK(ret == 0);
 
     for (i = 0; i < (int) sizeof(JSON_LONG) - 1; i++) {
         bytes = flb_lib_push(ctx, in_ffd, p + i, 1);
-        EXPECT_EQ(bytes, 1);
+        TEST_CHECK(bytes == 1);
     }
 
     sleep(WAIT_STOP); /* waiting stop automatically */
@@ -75,7 +95,8 @@ TEST(Outputs, json_long) {
     flb_destroy(ctx);
 }
 
-TEST(Outputs, json_small) {
+void flb_test_exit_json_small(void)
+{
     int i;
     int ret;
     int bytes;
@@ -87,19 +108,19 @@ TEST(Outputs, json_small) {
     ctx = flb_create();
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    EXPECT_TRUE(in_ffd >= 0);
+    TEST_CHECK(in_ffd >= 0);
     flb_input_set(ctx, in_ffd, "tag", "test", NULL);
 
     out_ffd = flb_output(ctx, (char *) "exit", NULL);
-    EXPECT_TRUE(out_ffd >= 0);
+    TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
 
     ret = flb_start(ctx);
-    EXPECT_EQ(ret, 0);
+    TEST_CHECK(ret == 0);
 
     for (i = 0; i < (int) sizeof(JSON_SMALL) - 1; i++) {
         bytes = flb_lib_push(ctx, in_ffd, p + i, 1);
-        EXPECT_EQ(bytes, 1);
+        TEST_CHECK(bytes == 1);
     }
 
     sleep(WAIT_STOP); /* waiting stop automatically */
@@ -108,7 +129,8 @@ TEST(Outputs, json_small) {
     flb_destroy(ctx);
 }
 
-TEST(Outputs, keep_alive) {
+void flb_test_exit_keep_alive(void)
+{
     int i;
     int ret;
     int bytes;
@@ -120,20 +142,20 @@ TEST(Outputs, keep_alive) {
     ctx = flb_create();
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    EXPECT_TRUE(in_ffd >= 0);
+    TEST_CHECK(in_ffd >= 0);
     flb_input_set(ctx, in_ffd, "tag", "test", NULL);
 
     out_ffd = flb_output(ctx, (char *) "exit", NULL);
-    EXPECT_TRUE(out_ffd >= 0);
+    TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
     flb_output_set(ctx, out_ffd, "flush_count", "10", NULL);
 
     ret = flb_start(ctx);
-    EXPECT_EQ(ret, 0);
+    TEST_CHECK(ret == 0);
 
     for (i = 0; i < (int) sizeof(JSON_SMALL) - 1; i++) {
         bytes = flb_lib_push(ctx, in_ffd, p + i, 1);
-        EXPECT_EQ(bytes, 1);
+        TEST_CHECK(bytes == 1);
     }
 
     sleep(WAIT_STOP); /* waiting flush */
