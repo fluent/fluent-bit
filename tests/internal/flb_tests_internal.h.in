@@ -20,7 +20,7 @@
 #ifndef FLB_TEST_INTERNAL_H
 #define FLB_TEST_INTERNAL_H
 
-#include "cutest/cutest.h"
+#include "acutest/acutest.h"
 #define FLB_TESTS_DATA_PATH "@FLB_TESTS_DATA_PATH@"
 
 #endif
