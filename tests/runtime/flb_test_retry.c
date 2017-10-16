@@ -1,12 +1,25 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
-#include <gtest/gtest.h>
 #include <fluent-bit.h>
-#include "data/json_invalid.h"
-#include "data/json_small.h"
-#include "data/json_long.h"
+#include "flb_tests_runtime.h"
 
-TEST(Outputs, json_invalid) {
+/* Test data */
+#include "data/common/json_invalid.h" /* JSON_INVALID */
+
+/* Test functions */
+void flb_test_retry_json_invalid(void);
+void flb_test_retry_normal(void);
+
+/* Test list */
+TEST_LIST = {
+    {"json_invalid",    flb_test_retry_json_invalid },
+    {"normal",          flb_test_retry_normal       },
+    {NULL, NULL}
+};
+
+
+void flb_test_retry_json_invalid(void)
+{
     int i;
     int ret;
     int bytes;
@@ -18,26 +31,27 @@ TEST(Outputs, json_invalid) {
     ctx = flb_create();
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    EXPECT_TRUE(in_ffd >= 0);
+    TEST_CHECK(in_ffd >= 0);
     flb_input_set(ctx, in_ffd, "tag", "test", NULL);
 
     out_ffd = flb_output(ctx, (char *) "retry", NULL);
-    EXPECT_TRUE(out_ffd >= 0);
+    TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
 
     ret = flb_start(ctx);
-    EXPECT_EQ(ret, 0);
+    TEST_CHECK(ret == 0);
 
     for (i = 0; i < (int) sizeof(JSON_INVALID) - 1; i++) {
         bytes = flb_lib_push(ctx, in_ffd, p + i, 1);
-        EXPECT_EQ(bytes, 1);
+        TEST_CHECK(bytes == 1);
     }
 
     flb_stop(ctx);
     flb_destroy(ctx);
 }
 
-TEST(Outputs, retry_normal) {
+void flb_test_retry_normal(void)
+{
     int i;
     int ret;
     int bytes;
@@ -49,22 +63,22 @@ TEST(Outputs, retry_normal) {
     ctx = flb_create();
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    EXPECT_TRUE(in_ffd >= 0);
+    TEST_CHECK(in_ffd >= 0);
     flb_input_set(ctx, in_ffd, "tag", "test", NULL);
 
     out_ffd = flb_output(ctx, (char *) "retry", NULL);
-    EXPECT_TRUE(out_ffd >= 0);
+    TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
     flb_output_set(ctx, out_ffd, "retry", "10", NULL);
 
     ret = flb_start(ctx);
-    EXPECT_EQ(ret, 0);
+    TEST_CHECK(ret == 0);
 
     for (i = 0; i < 256; i++) {
         memset(p, '\0', sizeof(p));
         snprintf(p, sizeof(p), "[%d, {\"val\": %d,\"END_KEY\": \"JSON_END\"}]", i, (i * i));
         bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
-        EXPECT_EQ(bytes, strlen(p));
+        TEST_CHECK(bytes == strlen(p));
     }
 
     sleep(1); /* waiting flush */

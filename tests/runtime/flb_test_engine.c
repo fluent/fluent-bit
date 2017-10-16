@@ -17,23 +17,52 @@
  *  limitations under the License.
  */
 
-#include <gtest/gtest.h>
 #include <fluent-bit.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
 
+#include "flb_tests_runtime.h"
+
+/* Test data*/
+
+/* Test functions*/
+void flb_test_engine_wildcard(void);
+
+/* Test list */
+TEST_LIST = {
+    {"wildcard",    flb_test_engine_wildcard },
+    {NULL, NULL}
+};
+
+
 pthread_mutex_t result_mutex;
 bool result;
+
+void set_result(bool val)
+{
+    pthread_mutex_lock(&result_mutex);
+    result = val;
+    pthread_mutex_unlock(&result_mutex);
+}
+
+bool get_result(void)
+{
+    bool val;
+
+    pthread_mutex_lock(&result_mutex);
+    val = result;
+    pthread_mutex_unlock(&result_mutex);
+
+    return val;
+}
 
 int callback_test(void* data, size_t size)
 {
     if (size > 0) {
         free(data);
-        pthread_mutex_lock(&result_mutex);
-        result = true;/* success */
-        pthread_mutex_unlock(&result_mutex);
+        set_result(true); /* success */
     }
     return 0;
 }
@@ -48,44 +77,42 @@ int check_routing(const char* tag, const char* match, bool expect)
 
     /* initialize */
     ret = pthread_mutex_init(&result_mutex, NULL);
-    result = false;
-    EXPECT_EQ(ret, 0);
+    TEST_CHECK(ret == 0);
+    set_result(false);
 
     ctx = flb_create();
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    EXPECT_TRUE(in_ffd >= 0);
+    TEST_CHECK(in_ffd >= 0);
     flb_input_set(ctx, in_ffd, "tag", tag, NULL);
 
     out_ffd = flb_output(ctx, (char *) "lib", (void*)callback_test);
-    EXPECT_TRUE(out_ffd >= 0);
+    TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", match, NULL);
 
     flb_service_set(ctx, "Flush", "1", "Daemon", "false", NULL);
 
     ret = flb_start(ctx);
-    EXPECT_EQ(ret, 0);
+    TEST_CHECK(ret == 0);
 
     /* start test */
     flb_lib_push(ctx, in_ffd, str, strlen(str));
     sleep(1);/*waiting flush*/
 
-    pthread_mutex_lock(&result_mutex);
-    ret = result;
-    pthread_mutex_unlock(&result_mutex);
-    EXPECT_EQ(ret, expect);
+    ret = get_result();
+    TEST_CHECK(ret == expect);
 
     /* finalize */
     flb_stop(ctx);
     flb_destroy(ctx);
 
     ret = pthread_mutex_destroy(&result_mutex);
-    EXPECT_EQ(ret, 0);
+    TEST_CHECK(ret == 0);
 
     return 0;
 }
 
-TEST(Engine, wildcard)
+void flb_test_engine_wildcard(void)
 {
     struct test_wildcard_fmt {
         const char* tag;
@@ -94,7 +121,7 @@ TEST(Engine, wildcard)
     };
     int i = 0;
 
-    test_wildcard_fmt checklist[] =
+    struct test_wildcard_fmt checklist[] =
     {
         {"cpu.rpi","cpu.rpi", true  },
         {"cpu.rpi","cpu.ard", false },

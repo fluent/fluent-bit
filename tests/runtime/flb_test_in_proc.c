@@ -17,27 +17,57 @@
  *  limitations under the License.
  */
 
-#include <gtest/gtest.h>
 #include <fluent-bit.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include "flb_tests_runtime.h"
+
+/* Test data */
+
+/* Test functions */
+void flb_test_in_proc_selfcheck(void);
+void flb_test_in_proc_absent_process(void);
+
+/* Test list */
+TEST_LIST = {
+    {"selfcheck",       flb_test_in_proc_selfcheck      },
+    {"absent_process",  flb_test_in_proc_absent_process },
+    {NULL, NULL}
+};
+
 
 pthread_mutex_t result_mutex;
-int result;
+bool result;
+
+void set_result(bool val)
+{
+    pthread_mutex_lock(&result_mutex);
+    result = val;
+    pthread_mutex_unlock(&result_mutex);
+}
+
+bool get_result(void)
+{
+    bool val;
+
+    pthread_mutex_lock(&result_mutex);
+    val = result;
+    pthread_mutex_unlock(&result_mutex);
+
+    return val;
+}
 
 int callback_test(void* data, size_t size)
 {
     if (size > 0) {
         free(data);
-        pthread_mutex_lock(&result_mutex);
-        result = 1;/* success */
-        pthread_mutex_unlock(&result_mutex);
+        set_result(true); /* success */
     }
     return 0;
 }
 
-TEST(Inputs, selfcheck) 
+void flb_test_in_proc_selfcheck(void)
 {
     int           ret    = 0;
     flb_ctx_t    *ctx    = NULL;
@@ -46,75 +76,68 @@ TEST(Inputs, selfcheck)
 
     /* initialize */
     ret = pthread_mutex_init(&result_mutex, NULL);
-    result = 0;
-    EXPECT_EQ(ret, 0);
+    TEST_CHECK(ret == 0);
+    set_result(false);
 
     ctx = flb_create();
 
     in_ffd = flb_input(ctx, (char *) "proc", NULL);
-    EXPECT_TRUE(in_ffd >= 0);
+    TEST_CHECK(in_ffd >= 0);
     flb_input_set(ctx, in_ffd, "tag", "test",
                   "interval_sec", "1", "proc_name", "flb_test_in_proc",
                   "alert", "true", "mem", "on", "fd", "on", NULL);
 
     out_ffd = flb_output(ctx, (char *) "lib", (void*)callback_test);
-    EXPECT_TRUE(out_ffd >= 0);
+    TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
 
     flb_service_set(ctx, "Flush", "1", NULL);
 
     ret = flb_start(ctx);
-    EXPECT_EQ(ret, 0);
+    TEST_CHECK(ret == 0);
 
     /* start test */
-    pthread_mutex_lock(&result_mutex);
-    ret = result; /* No data should be flushed */
-    pthread_mutex_unlock(&result_mutex);
-    EXPECT_EQ(ret, 0);
+    ret = get_result(); /* No data should be flushed */
+    TEST_CHECK(ret == false);
 
     sleep(2);
-    pthread_mutex_lock(&result_mutex);
-    ret = result; /* No data should be flushed */
-    result = 0;   /* clear flag */
-    pthread_mutex_unlock(&result_mutex);
-    EXPECT_EQ(ret, 0);
+    ret = get_result(); /* No data should be flushed */
+    TEST_CHECK(ret == false);
+    set_result(false); /* clear flag */
 
     /* finalize */
     flb_stop(ctx);
     flb_destroy(ctx);
 
     ret = pthread_mutex_destroy(&result_mutex);
-    EXPECT_EQ(ret, 0);
+    TEST_CHECK(ret == 0);
 }
 
 
-TEST(Inputs, absent_process) {
+void flb_test_in_proc_absent_process(void)
+{
 
     int           ret    = 0;
     flb_ctx_t    *ctx    = NULL;
     int in_ffd;
     int out_ffd;
 
-    /* initialize */
-    result = 0;
-    EXPECT_EQ(ret, 0);
-
     ctx = flb_create();
 
     in_ffd = flb_input(ctx, (char *) "proc", NULL);
-    EXPECT_TRUE(in_ffd >= 0);
+    TEST_CHECK(in_ffd >= 0);
     flb_input_set(ctx, in_ffd, "tag", "test",
                   "interval_sec", "1", "proc_name", "",
                   "alert", "true", "mem", "on", "fd", "on", NULL);
 
     out_ffd = flb_output(ctx, (char *) "lib", (void*)callback_test);
-    EXPECT_TRUE(out_ffd >= 0);
+    TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
 
     flb_service_set(ctx, "Flush", "2", NULL);
 
     ret = flb_start(ctx);
-    EXPECT_EQ(ret, 0); // error occurs but return value is true
+    TEST_CHECK(ret == 0); // error occurs but return value is true
 
     flb_stop(ctx);
     flb_destroy(ctx);
