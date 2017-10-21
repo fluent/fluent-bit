@@ -62,6 +62,7 @@ enum {
     FLB_PARSER_TYPE_FLOAT,
     FLB_PARSER_TYPE_BOOL,
     FLB_PARSER_TYPE_STRING,
+    FLB_PARSER_TYPE_HEX,
 };
 
 static inline time_t flb_parser_tm2time(const struct tm *src)
