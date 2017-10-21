@@ -11,9 +11,10 @@ set(src
   flb_log.c
   flb_env.c
   flb_uri.c
-  flb_sds.c
   flb_hash.c
   flb_pack.c
+  flb_sds.c
+
   flb_sha1.c
   flb_pipe.c
   flb_meta.c

@@ -32,6 +32,9 @@ struct flb_hs_buf {
     int users;
     char *data;
     size_t size;
+
+    char *raw_data;
+    size_t raw_size;
     struct mk_list _head;
 };
 
