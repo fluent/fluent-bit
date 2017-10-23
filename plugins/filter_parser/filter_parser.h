@@ -22,13 +22,17 @@
 
 #include <fluent-bit/flb_parser.h>
 
+struct filter_parser {
+    struct flb_parser *parser;
+    struct mk_list _head;
+};
+
 struct filter_parser_ctx {
     char     *key_name;
     int    key_name_len;
-
     int    reserve_data;
 
-    struct flb_parser *parser;
+    struct mk_list parsers;
 };
 
 #endif /* FLB_FILTER_PARSER_H */
