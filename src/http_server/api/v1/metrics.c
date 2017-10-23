@@ -216,7 +216,7 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
                 flb_sds_cat(sds, k.via.str.ptr, k.via.str.size);
                 flb_sds_cat(sds, "_", 1);
                 flb_sds_cat(sds, mk.via.str.ptr, mk.via.str.size);
-                flb_sds_cat(sds, "{name=\"", 7);
+                flb_sds_cat(sds, "_total{name=\"", 13);
                 flb_sds_cat(sds, sk.via.str.ptr, sk.via.str.size);
                 flb_sds_cat(sds, "\"} ", 3);
 
