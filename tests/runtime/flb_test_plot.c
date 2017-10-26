@@ -19,7 +19,7 @@ TEST_LIST = {
     {NULL, NULL}
 };
 
-#define TEST_LOGFILE "flb-test-file.log"
+#define TEST_LOGFILE "flb_test_plot_dummy.log"
 
 void flb_test_plot_json_invalid(void)
 {

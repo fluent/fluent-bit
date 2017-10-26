@@ -28,7 +28,7 @@ TEST_LIST = {
 };
 
 
-#define TEST_LOGFILE "flb-test-file.log"
+#define TEST_LOGFILE "flb_test_file_dummy.log"
 
 void flb_test_file_json_invalid(void)
 {
