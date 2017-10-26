@@ -89,6 +89,12 @@ if(FLB_OUT_LIB)
       )
   endif()
 
+  if(FLB_IN_DISK)
+    list(APPEND check_PROGRAMS
+      flb_test_in_disk.c
+      )
+  endif()
+
   if(FLB_IN_HEAD)
     list(APPEND check_PROGRAMS
       flb_test_in_head.c
