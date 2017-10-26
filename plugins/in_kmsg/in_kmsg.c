@@ -19,7 +19,6 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
-#include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_time.h>
 
@@ -281,7 +280,9 @@ int in_kmsg_init(struct flb_input_instance *in,
     /* get the system boot time */
     ret = boot_time(&ctx->boot_time);
     if (ret == -1) {
-        flb_utils_error_c("Could not get system boot time for kmsg input plugin");
+        flb_error("Could not get system boot time for kmsg input plugin");
+        flb_free(ctx);
+        return -1;
     }
 
     /* set context */
@@ -293,7 +294,9 @@ int in_kmsg_init(struct flb_input_instance *in,
                                         ctx->fd,
                                         config);
     if (ret == -1) {
-        flb_utils_error_c("Could not set collector for kmsg input plugin");
+        flb_error("Could not set collector for kmsg input plugin");
+        flb_free(ctx);
+        return -1;
     }
 
     return 0;

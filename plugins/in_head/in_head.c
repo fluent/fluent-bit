@@ -369,7 +369,7 @@ static int in_head_init(struct flb_input_instance *in,
 
     head_config->buf = flb_malloc(head_config->buf_size);
     if (head_config->buf == NULL) {
-        flb_utils_error_c("could not allocate head buffer");
+        flb_error("could not allocate head buffer");
         goto init_error;
     }
 
@@ -383,7 +383,7 @@ static int in_head_init(struct flb_input_instance *in,
                                        head_config->interval_sec,
                                        head_config->interval_nsec, config);
     if (ret < 0) {
-        flb_utils_error_c("could not set collector for head input plugin");
+        flb_error("could not set collector for head input plugin");
         goto init_error;
     }
 

@@ -21,7 +21,6 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_error.h>
-#include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_pack.h>
 
@@ -293,7 +292,7 @@ static int in_disk_init(struct flb_input_instance *in,
                                        disk_config->interval_sec,
                                        disk_config->interval_nsec, config);
     if (ret < 0) {
-        flb_utils_error_c("could not set collector for disk input plugin");
+        flb_error("could not set collector for disk input plugin");
         goto init_error;
     }
 
