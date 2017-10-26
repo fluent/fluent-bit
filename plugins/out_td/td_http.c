@@ -113,7 +113,7 @@ static void *gzip_compress(void *data, size_t len, size_t *out_len)
     *out_len = strm.total_out;
 
     /* Construct the GZip CRC32 (footer) */
-    ulong crc;
+    uLong crc;
     int footer_start = strm.total_out + 10;
 
     crc = crc32(0, data, len);
