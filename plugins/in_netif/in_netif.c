@@ -269,7 +269,7 @@ static int in_netif_init(struct flb_input_instance *in,
         return -1;
     }
 
-    if ( configure(ctx, in, &interval_sec, &interval_nsec) < 0) {
+    if (configure(ctx, in, &interval_sec, &interval_nsec) < 0) {
         config_destroy(ctx);
         return -1;
     }
@@ -284,7 +284,9 @@ static int in_netif_init(struct flb_input_instance *in,
                                        interval_nsec,
                                        config);
     if (ret == -1) {
-        flb_utils_error_c("Could not set collector for Proc input plugin");
+        flb_error("Could not set collector for Proc input plugin");
+        config_destroy(ctx);
+        return -1;
     }
 
     return 0;

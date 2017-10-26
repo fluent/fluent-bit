@@ -22,7 +22,6 @@
 
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
-#include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 
 #define LIB_BUF_CHUNK   65536

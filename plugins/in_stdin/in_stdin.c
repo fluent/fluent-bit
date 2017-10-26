@@ -202,7 +202,9 @@ static int in_stdin_init(struct flb_input_instance *in,
     fd = dup(STDIN_FILENO);
     if (fd == -1) {
         perror("dup");
-        flb_utils_error_c("Could not open standard input!");
+        flb_error("Could not open standard input!");
+        flb_free(ctx);
+        return -1;
     }
     ctx->fd = fd;
 
@@ -230,7 +232,9 @@ static int in_stdin_init(struct flb_input_instance *in,
                                         ctx->fd,
                                         config);
     if (ret == -1) {
-        flb_utils_error_c("Could not set collector for STDIN input plugin");
+        flb_error("Could not set collector for STDIN input plugin");
+        flb_free(ctx);
+        return -1;
     }
     ctx->coll_fd = ret;
 

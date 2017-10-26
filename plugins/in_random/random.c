@@ -21,7 +21,6 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_error.h>
-#include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_stats.h>
 #include <fluent-bit/flb_pack.h>
 #include <msgpack.h>
@@ -164,7 +163,7 @@ static int in_random_init(struct flb_input_instance *in,
                                        ctx->interval_sec,
                                        ctx->interval_nsec, config);
     if (ret < 0) {
-        flb_utils_error_c("could not set collector for head input plugin");
+        flb_error("could not set collector for head input plugin");
         flb_free(ctx);
         return -1;
     }

@@ -24,7 +24,6 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
-#include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_http_client.h>
@@ -151,7 +150,7 @@ int cb_td_init(struct flb_output_instance *ins, struct flb_config *config,
 
     ctx = td_config_init(ins);
     if (!ctx) {
-        flb_utils_warn_c("[out_td] Error reading configuration");
+        flb_warn("[out_td] Error reading configuration");
         return -1;
     }
 

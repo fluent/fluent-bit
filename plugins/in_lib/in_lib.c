@@ -118,7 +118,9 @@ int in_lib_init(struct flb_input_instance *in,
     ctx->buf_len = 0;
 
     if (!ctx->buf_data) {
-        flb_utils_error_c("Could not allocate initial buf memory buffer");
+        flb_error("Could not allocate initial buf memory buffer");
+        flb_free(ctx);
+        return -1;
     }
 
     /* Init communication channel */
@@ -134,7 +136,10 @@ int in_lib_init(struct flb_input_instance *in,
                                         ctx->fd,
                                         config);
     if (ret == -1) {
-        flb_utils_error_c("Could not set collector for LIB input plugin");
+        flb_error("Could not set collector for LIB input plugin");
+        flb_free(ctx->buf_data);
+        flb_free(ctx);
+        return -1;
     }
 
     flb_pack_state_init(&ctx->state);

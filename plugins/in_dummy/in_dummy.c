@@ -25,7 +25,6 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_error.h>
-#include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
 
@@ -149,7 +148,7 @@ static int in_dummy_init(struct flb_input_instance *in,
                                        tm.tv_sec,
                                        tm.tv_nsec, config);
     if (ret < 0) {
-        flb_utils_error_c("could not set collector for dummy input plugin");
+        flb_error("could not set collector for dummy input plugin");
         config_destroy(ctx);
         return -1;
     }
