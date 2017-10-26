@@ -326,6 +326,9 @@ static int proc_types_str(char *types_str, struct flb_parser_types **types)
         else if(!strcasecmp(type_str, "float")){
             (*types)[i].type = FLB_PARSER_TYPE_FLOAT;
         }
+        else if(!strcasecmp(type_str, "hex")){
+            (*types)[i].type = FLB_PARSER_TYPE_HEX;
+        }
         else {
             (*types)[i].type = FLB_PARSER_TYPE_STRING;
         }
@@ -758,6 +761,17 @@ int flb_parser_typecast(char *key, int key_len,
                     msgpack_pack_int64(pck, lval);
                 }
                 break;
+            case FLB_PARSER_TYPE_HEX:
+                {
+                    unsigned long long lval;
+                    tmp_char = val[val_len];
+                    val[val_len] = '\0';
+                    lval = strtoull(val, NULL, 16);
+                    val[val_len] = tmp_char;
+                    msgpack_pack_uint64(pck, lval);
+                }
+                break;
+
             case FLB_PARSER_TYPE_FLOAT:
                 {
                     double dval;
