@@ -25,7 +25,13 @@
 #include <fluent-bit/flb_http_client.h>
 
 #include "td_config.h"
+
+#ifdef FLB_SYSTEM_MBEDTLS
+#include "zlib.h"
+#define Z_DEFAULT_WINDOW_BITS 15
+#else
 #include "miniz/miniz.c"
+#endif
 
 #define TD_HTTP_HEADER_SIZE  512
 
@@ -107,10 +113,10 @@ static void *gzip_compress(void *data, size_t len, size_t *out_len)
     *out_len = strm.total_out;
 
     /* Construct the GZip CRC32 (footer) */
-    mz_ulong crc;
+    ulong crc;
     int footer_start = strm.total_out + 10;
 
-    crc = mz_crc32(MZ_CRC32_INIT, data, len);
+    crc = crc32(0, data, len);
     pb = buf;
     pb[footer_start] = crc & 0xFF;
     pb[footer_start + 1] = (crc >> 8) & 0xFF;

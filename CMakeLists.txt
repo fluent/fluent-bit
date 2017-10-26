@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 2.8)
 project(fluent-bit)
 
+set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
 # Update CFLAGS
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -fPIC ")
 if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Windows")
@@ -46,6 +48,8 @@ option(FLB_POSIX_TLS          "Force POSIX thread storage"   No)
 option(FLB_WITHOUT_INOTIFY    "Disable inotify support"      No)
 option(FLB_SQLDB              "Enable SQL embedded DB"       No)
 option(FLB_HTTP_SERVER        "Enable HTTP Server"           No)
+# Usage of System Libraries
+option(FLB_SYSTEM_MBEDTLS     "Use mbedtls provided by system"  No)
 
 # Metrics: Experimental Feature, disabled by default on 0.12 series
 # but enabled in the upcoming 0.13 release. Note that development
@@ -228,11 +232,22 @@ endif()
 
 if(FLB_TLS)
   FLB_DEFINITION(FLB_HAVE_TLS)
-  option(ENABLE_TESTING  OFF)
-  option(ENABLE_PROGRAMS OFF)
-  option(INSTALL_MBEDTLS_HEADERS OFF)
-  add_subdirectory(lib/mbedtls-2.5.1 EXCLUDE_FROM_ALL)
-  include_directories(lib/mbedtls-2.5.1/include)
+  if (FLB_SYSTEM_MBEDTLS)
+    find_package(ZLIB REQUIRED)
+    find_package(MbedTls REQUIRED)
+    include_directories(${ZLIB_INCLUDE_DIRS} ${MBEDTLS_INCLUDE_DIR})
+    add_definitions(-DFLB_SYSTEM_MBEDTLS=1)
+    set(extra_libs
+      ${extra_libs}
+      ${MBEDTLS_LIBRARY}
+      ${ZLIB_LIBRARIES})
+  else()
+    option(ENABLE_TESTING  OFF)
+    option(ENABLE_PROGRAMS OFF)
+    option(INSTALL_MBEDTLS_HEADERS OFF)
+    add_subdirectory(lib/mbedtls-2.5.1 EXCLUDE_FROM_ALL)
+    include_directories(lib/mbedtls-2.5.1/include)
+  endif()
 endif()
 
 # Metrics
