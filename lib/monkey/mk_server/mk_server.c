@@ -549,7 +549,9 @@ void mk_server_loop(struct mk_server *server)
     /* Rename worker */
     mk_utils_worker_rename("monkey: server");
 
-    mk_info("HTTP Server started");
+    if (server->lib_mode == MK_FALSE) {
+        mk_info("HTTP Server started");
+    }
 
     /* Wake up workers */
     val = MK_SERVER_SIGNAL_START;
