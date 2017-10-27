@@ -325,9 +325,10 @@ static int cb_modifier_exit(void *data, struct flb_config *config)
 {
     struct record_modifier_ctx *ctx = data;
 
-    delete_list(ctx);
-
-    flb_free(ctx);
+    if (ctx != NULL) {
+        delete_list(ctx);
+        flb_free(ctx);
+    }
     return 0;
 }
 

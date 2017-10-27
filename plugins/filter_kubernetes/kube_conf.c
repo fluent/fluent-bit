@@ -203,6 +203,10 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
 
 void flb_kube_conf_destroy(struct flb_kube *ctx)
 {
+    if (ctx == NULL) {
+        return;
+    }
+
     if (ctx->hash_table) {
         flb_hash_destroy(ctx->hash_table);
     }
