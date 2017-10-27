@@ -290,6 +290,8 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         flb_metrics_add(FLB_METRIC_OUT_OK_BYTES, "proc_bytes", instance->metrics);
         flb_metrics_add(FLB_METRIC_OUT_ERROR, "errors", instance->metrics);
         flb_metrics_add(FLB_METRIC_OUT_RETRY, "retries", instance->metrics);
+        flb_metrics_add(FLB_METRIC_OUT_RETRY_FAILED,
+                        "retries_failed", instance->metrics);
     }
 #endif
 

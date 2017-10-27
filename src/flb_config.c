@@ -108,6 +108,7 @@ struct flb_config *flb_config_init()
     config->verbose      = 3;
 
 #ifdef FLB_HAVE_HTTP_SERVER
+    config->http_ctx     = NULL;
     config->http_server  = FLB_FALSE;
     config->http_port    = flb_strdup(FLB_CONFIG_HTTP_PORT);
 #endif

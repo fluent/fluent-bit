@@ -456,7 +456,10 @@ static inline void flb_output_return(int ret, struct flb_thread *th) {
             flb_metrics_sum(FLB_METRIC_OUT_ERROR, 1, out_th->o_ins->metrics);
         }
         else if (ret == FLB_RETRY) {
-            /* FIXME */
+            /*
+             * Counting retries is happening in the event loop/scheduler side
+             * since it also needs to count if some retry fails to re-schedule.
+             */
         }
     }
 #endif

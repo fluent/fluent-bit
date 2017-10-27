@@ -191,6 +191,11 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
                     flb_buffer_chunk_pop(config->buffer_ctx, thread_id, task);
                 }
 #endif
+
+#ifdef FLB_HAVE_METRICS
+                flb_metrics_sum(FLB_METRIC_OUT_RETRY_FAILED, 1,
+                                out_th->o_ins->metrics);
+#endif
                 /* Notify about this failed retry */
                 flb_warn("[engine] Task cannot be retried: "
                          "task_id=%i thread_id=%i output=%s",
@@ -203,6 +208,10 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
 
                 return 0;
             }
+
+#ifdef FLB_HAVE_METRICS
+            flb_metrics_sum(FLB_METRIC_OUT_RETRY, 1, out_th->o_ins->metrics);
+#endif
 
             /* Always destroy the old thread */
             flb_output_thread_destroy_id(thread_id, task);
