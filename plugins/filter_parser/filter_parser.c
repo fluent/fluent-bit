@@ -315,8 +315,10 @@ static int cb_parser_exit(void *data, struct flb_config *config)
 {
     struct filter_parser_ctx *ctx = data;
 
-    delete_parsers(ctx);
-    flb_free(ctx);
+    if (ctx != NULL) {
+        delete_parsers(ctx);
+        flb_free(ctx);
+    }
     return 0;
 }
 
