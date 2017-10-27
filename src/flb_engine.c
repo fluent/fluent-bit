@@ -487,7 +487,8 @@ int flb_engine_start(struct flb_config *config)
     /* Initialize HTTP Server */
 #ifdef FLB_HAVE_HTTP_SERVER
     if (config->http_server == FLB_TRUE) {
-        config->http_ctx = flb_hs_create(config->http_port, config);
+        config->http_ctx = flb_hs_create(config->http_listen, config->http_port,
+                                         config);
         flb_hs_start(config->http_ctx);
     }
 #endif

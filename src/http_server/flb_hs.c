@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_http_server.h>
 
 #include <monkey/mk_lib.h>
@@ -41,9 +42,12 @@ int flb_hs_push_metrics(struct flb_hs *hs, void *data, size_t size)
 }
 
 /* Create ROOT endpoints */
-struct flb_hs *flb_hs_create(char *tcp_port, struct flb_config *config)
+struct flb_hs *flb_hs_create(char *listen, char *tcp_port,
+                             struct flb_config *config)
 {
     int vid;
+    char *iface;
+    char tmp[32];
     struct flb_hs *hs;
 
     hs = flb_calloc(1, sizeof(struct flb_hs));
@@ -64,7 +68,9 @@ struct flb_hs *flb_hs_create(char *tcp_port, struct flb_config *config)
     }
     hs->config = config;
 
-    mk_config_set(hs->ctx, "Listen", tcp_port, NULL);
+    /* Compose listen address */
+    snprintf(tmp, sizeof(tmp) -1, "%s:%s", listen, tcp_port);
+    mk_config_set(hs->ctx, "Listen", tmp, NULL);
     vid = mk_vhost_create(hs->ctx, NULL);
     hs->vid = vid;
 
@@ -85,7 +91,16 @@ struct flb_hs *flb_hs_create(char *tcp_port, struct flb_config *config)
 
 int flb_hs_start(struct flb_hs *hs)
 {
-    return mk_start(hs->ctx);
+    int ret;
+    struct flb_config *config = hs->config;
+
+    ret = mk_start(hs->ctx);
+
+    if (ret == 0) {
+        flb_info("[http_server] listen iface=%s tcp_port=%s",
+                 config->http_listen, config->http_port);
+    }
+    return ret;
 }
 
 int flb_hs_destroy(struct flb_hs *hs)

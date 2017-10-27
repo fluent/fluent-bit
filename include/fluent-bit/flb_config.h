@@ -37,6 +37,7 @@
 #define FLB_FLUSH_LIBCO         2
 
 #define FLB_CONFIG_FLUSH_SECS   5
+#define FLB_CONFIG_HTTP_LISTEN  "0.0.0.0"
 #define FLB_CONFIG_HTTP_PORT    "2020"
 #define FLB_CONFIG_DEFAULT_TAG  "fluent_bit"
 
@@ -138,9 +139,10 @@ struct flb_config {
 
     /* HTTP Server */
 #ifdef FLB_HAVE_HTTP_SERVER
-    int http_server;
-    char *http_port;
-    void *http_ctx;
+    int http_server;          /* HTTP Server running    */
+    char *http_port;          /* HTTP Port / TCP number */
+    char *http_listen;        /* Interface Address      */
+    void *http_ctx;           /* Monkey HTTP context    */
 #endif
 
 #ifdef FLB_HAVE_BUFFERING
@@ -191,7 +193,8 @@ enum conf_type {
 #define FLB_CONF_STR_LOGLEVEL "Log_Level"
 #define FLB_CONF_STR_PARSERS_FILE "Parsers_File"
 #ifdef FLB_HAVE_HTTP_SERVER
-#define FLB_CONF_STR_HTTP_MONITOR "HTTP_Monitor"
+#define FLB_CONF_STR_HTTP_SERVER  "HTTP_Server"
+#define FLB_CONF_STR_HTTP_LISTEN  "HTTP_Listen"
 #define FLB_CONF_STR_HTTP_PORT    "HTTP_Port"
 #endif /* FLB_HAVE_HTTP_SERVER */
 #ifdef FLB_HAVE_BUFFERING

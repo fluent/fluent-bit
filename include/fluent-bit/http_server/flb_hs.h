@@ -51,7 +51,8 @@ struct flb_hs {
     char *ep_root_buf;
 };
 
-struct flb_hs *flb_hs_create(char *tcp_port, struct flb_config *config);
+struct flb_hs *flb_hs_create(char *listen, char *tcp_port,
+                             struct flb_config *config);
 int flb_hs_push_metrics(struct flb_hs *hs, void *data, size_t size);
 int flb_hs_destroy(struct flb_hs *ctx);
 int flb_hs_start(struct flb_hs *hs);

@@ -521,6 +521,7 @@ int main(int argc, char **argv)
         { "sosreport",   no_argument      , NULL, 'S' },
 #ifdef FLB_HAVE_HTTP_SERVER
         { "http_server", no_argument      , NULL, 'H' },
+        { "http_listen", required_argument, NULL, 'L' },
         { "http_port",   required_argument, NULL, 'P' },
 #endif
         { NULL, 0, NULL, 0 }
@@ -558,7 +559,7 @@ int main(int argc, char **argv)
     }
 
     /* Parse the command line options */
-    while ((opt = getopt_long(argc, argv, "b:B:c:df:i:m:o:R:F:p:e:t:l:vqVhHP:S",
+    while ((opt = getopt_long(argc, argv, "b:B:c:df:i:m:o:R:F:p:e:t:l:vqVhL:HP:S",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
@@ -662,7 +663,16 @@ int main(int argc, char **argv)
         case 'H':
             config->http_server = FLB_TRUE;
             break;
+        case 'L':
+            if (config->http_listen) {
+                flb_free(config->http_listen);
+            }
+            config->http_listen = flb_strdup(optarg);
+            break;
         case 'P':
+            if (config->http_port) {
+                flb_free(config->http_port);
+            }
             config->http_port = flb_strdup(optarg);
             break;
 #endif
@@ -682,7 +692,6 @@ int main(int argc, char **argv)
             flb_help(EXIT_FAILURE, config);
         }
     }
-
 
     if (config->verbose != FLB_LOG_OFF) {
         flb_banner();
