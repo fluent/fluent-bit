@@ -116,7 +116,6 @@ static inline int process_line(char *line,
     uint64_t val;
     char *p = line;
     char *end = NULL;
-    char msg[1024];
     struct flb_time ts;
 
     /* Increase buffer position */
@@ -168,9 +167,6 @@ static inline int process_line(char *line,
     p++;
 
     line_len = strlen(p);
-    strncpy(msg, p, line_len);
-    msg[line_len] = '\0';
-
     flb_input_buf_write_start(i_ins);
 
     /*
@@ -199,8 +195,8 @@ static inline int process_line(char *line,
 
     msgpack_pack_str(&i_ins->mp_pck, 3);
     msgpack_pack_str_body(&i_ins->mp_pck, "msg", 3);
-    msgpack_pack_str(&i_ins->mp_pck, line_len);
-    msgpack_pack_str_body(&i_ins->mp_pck, p, line_len);
+    msgpack_pack_str(&i_ins->mp_pck, line_len - 1);
+    msgpack_pack_str_body(&i_ins->mp_pck, p, line_len - 1);
 
     flb_input_buf_write_end(i_ins);
 
@@ -210,7 +206,7 @@ static inline int process_line(char *line,
               ts,
               (long int) tv.tv_sec,
               (long int) tv.tv_usec,
-              (const char *) msg);
+              (const char *) p);
 
     return 0;
 
@@ -225,18 +221,23 @@ static int in_kmsg_collect(struct flb_input_instance *i_ins,
 {
     int ret;
     int bytes;
-    char line[2024];
     struct flb_in_kmsg_config *ctx = in_context;
 
-    bytes = read(ctx->fd, line, sizeof(line) -1);
+    bytes = read(ctx->fd, ctx->buf_data, ctx->buf_size - 1);
     if (bytes == -1) {
         if (errno == -EPIPE) {
             return -1;
         }
         return 0;
     }
+    else if (bytes == 0) {
+        flb_errno();
+        return 0;
+    }
+    ctx->buf_len += bytes;
+
     /* Always set a delimiter to avoid buffer trash */
-    line[bytes - 1] = '\0';
+    ctx->buf_data[ctx->buf_len] = '\0';
 
     /* Check if our buffer is full */
     if (ctx->buffer_id + 1 == KMSG_BUFFER_SIZE) {
@@ -247,9 +248,9 @@ static int in_kmsg_collect(struct flb_input_instance *i_ins,
     }
 
     /* Process and enqueue the received line */
-    process_line(line, i_ins, ctx);
+    process_line(ctx->buf_data, i_ins, ctx);
+    ctx->buf_len = 0;
 
-    flb_stats_update(in_kmsg_plugin.stats_fd, bytes, 1);
     return 0;
 }
 
@@ -268,10 +269,22 @@ int in_kmsg_init(struct flb_input_instance *in,
         return -1;
     }
 
+    ctx->buf_data = flb_malloc(FLB_KMSG_BUF_SIZE);
+    if (!ctx->buf_data) {
+        flb_errno();
+        flb_free(ctx);
+        return -1;
+    }
+    ctx->buf_len = 0;
+    ctx->buf_size = FLB_KMSG_BUF_SIZE;
+
+    /* set context */
+    flb_input_set_context(in, ctx);
+
     /* open device */
     fd = open(FLB_KMSG_DEV, O_RDONLY);
     if (fd == -1) {
-        perror("open");
+        flb_errno();
         flb_free(ctx);
         return -1;
     }
@@ -284,9 +297,6 @@ int in_kmsg_init(struct flb_input_instance *in,
         flb_free(ctx);
         return -1;
     }
-
-    /* set context */
-    flb_input_set_context(in, ctx);
 
     /* Set our collector based on a file descriptor event */
     ret = flb_input_set_collector_event(in,
@@ -311,6 +321,7 @@ static int in_kmsg_exit(void *data, struct flb_config *config)
         close(ctx->fd);
     }
 
+    flb_free(ctx->buf_data);
     flb_free(ctx);
     return 0;
 }

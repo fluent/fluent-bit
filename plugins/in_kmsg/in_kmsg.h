@@ -22,7 +22,8 @@
 
 #include <stdint.h>
 
-#define FLB_KMSG_DEV  "/dev/kmsg"
+#define FLB_KMSG_DEV        "/dev/kmsg"
+#define FLB_KMSG_BUF_SIZE   4096
 
 /* Alert levels, taken from util-linux sources */
 #define FLB_KLOG_EMERG      0
@@ -46,6 +47,11 @@ struct flb_in_kmsg_config {
 
     /* Line processing */
     int buffer_id;
+
+    /* Buffer */
+    char *buf_data;
+    size_t buf_len;
+    size_t buf_size;
 };
 
 int in_kmsg_start();
