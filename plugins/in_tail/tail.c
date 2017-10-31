@@ -136,7 +136,12 @@ static int in_tail_collect_static(struct flb_input_instance *i_ins,
         case FLB_TAIL_WAIT:
             /* Promote file to 'events' type handler */
             flb_debug("[in_tail] file=%s promote to TAIL_EVENT", file->name);
-            flb_tail_file_to_event(file);
+            ret = flb_tail_file_to_event(file);
+            if (ret == -1) {
+                flb_debug("[in_tail] file=%s cannot promote, unregistering",
+                          file->name);
+                flb_tail_file_remove(file);
+            }
             break;
         }
     }

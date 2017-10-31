@@ -672,6 +672,10 @@ int flb_tail_file_to_event(struct flb_tail_file *file)
 
     /* Check if the file promoted have pending bytes */
     ret = fstat(file->fd, &st);
+    if (ret != 0) {
+        return -1;
+    }
+
     if (file->offset < st.st_size) {
         file->pending_bytes = (st.st_size - file->offset);
         tail_signal_pending(file->config);
@@ -685,7 +689,7 @@ int flb_tail_file_to_event(struct flb_tail_file *file)
     if (strcmp(name, file->name) != 0) {
         ret = stat(name, &st_rotated);
         if (ret == -1) {
-            flb_errno();
+            return -1;
         }
         else if (st_rotated.st_ino != st.st_ino) {
             flb_trace("[in_tail] static file rotated: %s => to %s",
@@ -705,7 +709,6 @@ int flb_tail_file_to_event(struct flb_tail_file *file)
     mk_list_del(&file->_head);
     mk_list_add(&file->_head, &file->config->files_event);
     file->tail_mode = FLB_TAIL_EVENT;
-
 
     return 0;
 }
