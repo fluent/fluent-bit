@@ -114,6 +114,7 @@ int flb_http_basic_auth(struct flb_http_client *c, char *user, char *passwd);
 int flb_http_do(struct flb_http_client *c, size_t *bytes);
 void flb_http_client_destroy(struct flb_http_client *c);
 int flb_http_buffer_size(struct flb_http_client *c, size_t size);
+size_t flb_http_buffer_available(struct flb_http_client *c);
 int flb_http_buffer_increase(struct flb_http_client *c, size_t size,
                              size_t *out_size);
 
