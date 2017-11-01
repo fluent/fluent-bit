@@ -72,6 +72,7 @@ option(FLB_PROXY_GO           "Enable Go plugins support"   Yes)
 # Build-in Plugins
 option(FLB_IN_CPU          "Enable CPU input plugin"            Yes)
 option(FLB_IN_DISK         "Enable Disk input plugin"           Yes)
+option(FLB_IN_EXEC         "Enable Exec input plugin"           Yes)
 option(FLB_IN_FORWARD      "Enable Forward input plugin"        Yes)
 option(FLB_IN_HEALTH       "Enable Health input plugin"         Yes)
 option(FLB_IN_HTTP         "Enable HTTP input plugin"            No)
@@ -131,6 +132,7 @@ if(FLB_ALL)
   set(FLB_IN_DISK      1)
   set(FLB_IN_DUMMY     1)
   set(FLB_IN_NETIF     1)
+  set(FLB_IN_EXEC      1)
 
   # Output plugins
   set(FLB_OUT_ES       1)

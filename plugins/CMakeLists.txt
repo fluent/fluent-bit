@@ -101,6 +101,7 @@ endif()
 
 REGISTER_IN_PLUGIN("in_dummy")
 REGISTER_IN_PLUGIN("in_head")
+REGISTER_IN_PLUGIN("in_exec")
 REGISTER_IN_PLUGIN("in_health")
 REGISTER_IN_PLUGIN("in_http")
 
