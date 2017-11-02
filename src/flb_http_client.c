@@ -584,8 +584,9 @@ int flb_http_buffer_increase(struct flb_http_client *c, size_t size,
     /* Limit exceeded, adjust */
     if (c->resp.data_size_max != 0) {
         if (new_size > c->resp.data_size_max) {
-            new_size = c->resp.data_size_max - c->resp.data_size;
-            if (new_size <= 0) {
+            new_size = c->resp.data_size_max;
+            if (new_size <= c->resp.data_size) {
+                /* Can't expand the buffer any further. */
                 return -1;
             }
         }
