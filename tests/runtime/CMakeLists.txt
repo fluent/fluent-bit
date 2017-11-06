@@ -5,73 +5,73 @@ include_directories(acutest/)
 if(FLB_IN_LIB)
   if(FLB_OUT_LIB)
     list(APPEND check_PROGRAMS
-      flb_test_engine.c
+      core_engine.c
       )
   endif()
 
   if(FLB_OUT_COUNTER)
     list(APPEND check_PROGRAMS
-      flb_test_counter.c
+      out_counter.c
       )
   endif()
 
   if(FLB_OUT_ES)
     list(APPEND check_PROGRAMS
-      flb_test_elasticsearch.c
+      out_elasticsearch.c
       )
   endif()
 
   if(FLB_OUT_EXIT)
     list(APPEND check_PROGRAMS
-      flb_test_exit.c
+      out_exit.c
       )
   endif()
 
   if(FLB_OUT_FILE)
     list(APPEND check_PROGRAMS
-      flb_test_file.c
+      out_file.c
       )
   endif()
 
   if(FLB_OUT_FLOWCOUNTER)
     list(APPEND check_PROGRAMS
-      flb_test_flowcounter.c
+      out_flowcounter.c
       )
   endif()
 
   if(FLB_OUT_FORWARD)
     list(APPEND check_PROGRAMS
-      flb_test_forward.c
+      out_forward.c
       )
   endif()
 
   if(FLB_OUT_NULL)
     list(APPEND check_PROGRAMS
-      flb_test_null.c
+      out_null.c
       )
   endif()
 
   if(FLB_OUT_PLOT)
     list(APPEND check_PROGRAMS
-      flb_test_plot.c
+      out_plot.c
       )
   endif()
 
   if(FLB_OUT_RETRY)
     list(APPEND check_PROGRAMS
-      flb_test_retry.c
+      out_retry.c
       )
   endif()
 
   if(FLB_OUT_STDOUT)
     list(APPEND check_PROGRAMS
-      flb_test_stdout.c
+      out_stdout.c
       )
   endif()
 
   if(FLB_OUT_TD)
     list(APPEND check_PROGRAMS
-      flb_test_td.c
+      out_td.c
       )
   endif()
 endif()
@@ -79,43 +79,43 @@ endif()
 if(FLB_OUT_LIB)
   if(FLB_IN_CPU)
     list(APPEND check_PROGRAMS
-      flb_test_in_cpu.c
+      in_cpu.c
       )
   endif()
 
   if(FLB_IN_DUMMY)
     list(APPEND check_PROGRAMS
-      flb_test_in_dummy.c
+      in_dummy.c
       )
   endif()
 
   if(FLB_IN_DISK)
     list(APPEND check_PROGRAMS
-      flb_test_in_disk.c
+      in_disk.c
       )
   endif()
 
   if(FLB_IN_HEAD)
     list(APPEND check_PROGRAMS
-      flb_test_in_head.c
+      in_head.c
       )
   endif()
 
   if(FLB_IN_MEM)
     list(APPEND check_PROGRAMS
-      flb_test_in_mem.c
+      in_mem.c
       )
   endif()
 
   if(FLB_IN_PROC)
     list(APPEND check_PROGRAMS
-      flb_test_in_proc.c
+      in_proc.c
       )
   endif()
 
   if(FLB_IN_RANDOM)
     list(APPEND check_PROGRAMS
-      flb_test_in_random.c
+      in_random.c
       )
   endif()
 endif()
@@ -123,13 +123,13 @@ endif()
 if(FLB_IN_LIB AND FLB_OUT_LIB)
   if(FLB_FILTER_STDOUT)
     list(APPEND check_PROGRAMS
-      flb_test_filter_stdout.c
+      filter_stdout.c
       )
   endif()
 
   if(FLB_FILTER_GREP)
     list(APPEND check_PROGRAMS
-      flb_test_filter_grep.c
+      filter_grep.c
       )
   endif()
 endif()
@@ -141,6 +141,7 @@ configure_file(
 
 foreach(source_file ${check_PROGRAMS})
   get_filename_component(source_file_we ${source_file} NAME_WE)
+  set(source_file_we flb-rt-${source_file_we})
   add_executable(
     ${source_file_we}
     ${source_file}
