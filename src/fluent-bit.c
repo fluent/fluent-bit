@@ -739,6 +739,10 @@ int main(int argc, char **argv)
     }
 #endif
 
-    flb_engine_start(config);
+    ret = flb_engine_start(config);
+    if (ret == -1) {
+        flb_engine_shutdown(config);
+    }
+
     return 0;
 }
