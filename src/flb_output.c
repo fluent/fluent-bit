@@ -450,6 +450,8 @@ int flb_output_init(struct flb_config *config)
         ret = p->cb_init(ins, config, ins->data);
         mk_list_init(&ins->th_queue);
         if (ret == -1) {
+            flb_error("[output] Failed to initialize '%s' plugin",
+                      p->name);
             return -1;
         }
 
