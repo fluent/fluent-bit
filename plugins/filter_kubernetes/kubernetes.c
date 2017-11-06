@@ -104,7 +104,7 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
     int new_map_size = 0;
     int log_index = -1;
     int log_size = 0;
-    int json_size;
+    int json_size = 0;
     int log_buf_entries = 0;
     size_t off = 0;
     char *tmp;
@@ -207,8 +207,21 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
     for (i = 0; i < map_size; i++) {
         k = source_map.via.map.ptr[i].key;
         v = source_map.via.map.ptr[i].val;
-        msgpack_pack_object(pck, k);
-        msgpack_pack_object(pck, v);
+
+        /*
+         * If the original 'log' field was unescaped and converted to
+         * msgpack properly, re-pack the new string version to avoid
+         * multiple escape sequences in outgoing plugins.
+         */
+        if (log_buf && log_index == i) {
+            msgpack_pack_object(pck, k);
+            msgpack_pack_str(pck, json_size);
+            msgpack_pack_str_body(pck, ctx->merge_json_buf, json_size);
+        }
+        else {
+            msgpack_pack_object(pck, k);
+            msgpack_pack_object(pck, v);
+        }
     }
 
     /* Merged JSON */
