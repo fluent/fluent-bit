@@ -115,7 +115,10 @@ flb_ctx_t *flb_create()
     }
     ctx->config = config;
 
-    /* Initialize our pipe to send data to our worker */
+    /*
+     * Initialize our pipe to send data to our worker, used
+     * by 'lib' input plugin.
+     */
     ret = flb_pipe_create(config->ch_data);
     if (ret == -1) {
         perror("pipe");
@@ -381,10 +384,15 @@ int flb_lib_push(flb_ctx_t *ctx, int ffd, void *data, size_t len)
 
 static void flb_lib_worker(void *data)
 {
+    int ret;
     struct flb_config *config = data;
 
     flb_log_init(config, FLB_LOG_STDERR, FLB_LOG_INFO, NULL);
-    flb_engine_start(config);
+    ret = flb_engine_start(config);
+    if (ret == -1) {
+        flb_engine_failed(config);
+        flb_engine_shutdown(config);
+    }
 }
 
 /* Return the current time to be used by lib callers */
@@ -427,6 +435,10 @@ int flb_start(flb_ctx_t *ctx)
             flb_debug("[lib] backend started");
             break;
         }
+        else if (val == FLB_ENGINE_FAILED) {
+            flb_error("[lib] backend failed");
+            return -1;
+        }
     }
 
     return 0;
@@ -436,6 +448,10 @@ int flb_start(flb_ctx_t *ctx)
 int flb_stop(flb_ctx_t *ctx)
 {
     int ret;
+
+    if (!ctx->config) {
+        return 0;
+    }
 
     if (ctx->config->file) {
         mk_rconf_free(ctx->config->file);
