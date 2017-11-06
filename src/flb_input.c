@@ -561,8 +561,8 @@ int flb_input_collector_start(int coll_id, struct flb_input_instance *in)
     struct mk_list *head;
     struct flb_input_collector *coll;
 
-    mk_list_foreach(head, &in->config->collectors) {
-        coll = mk_list_entry(head, struct flb_input_collector, _head);
+    mk_list_foreach(head, &in->collectors) {
+        coll = mk_list_entry(head, struct flb_input_collector, _head_ins);
         if (coll->id == coll_id) {
             ret = collector_start(coll, in->config);
             if (ret == -1) {
