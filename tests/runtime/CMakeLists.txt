@@ -2,136 +2,52 @@ find_package(Threads REQUIRED)
 
 include_directories(acutest/)
 
-if(FLB_IN_LIB)
-  if(FLB_OUT_LIB)
-    list(APPEND check_PROGRAMS
-      core_engine.c
+define_property(GLOBAL PROPERTY CHECK_PROGRAMS
+  BRIEF_DOCS "Runtime Test Programs"
+  FULL_DOCS "Runtime Test Programs")
+set_property(GLOBAL PROPERTY CHECK_PROGRAMS "")
+
+# Macro to set definitions
+macro(FLB_RT_TEST BUILT src)
+  if (${BUILT})
+    list(APPEND CHECK_PROGRAMS
+      ${src}
       )
   endif()
+endmacro()
 
-  if(FLB_OUT_COUNTER)
-    list(APPEND check_PROGRAMS
-      out_counter.c
-      )
-  endif()
-
-  if(FLB_OUT_ES)
-    list(APPEND check_PROGRAMS
-      out_elasticsearch.c
-      )
-  endif()
-
-  if(FLB_OUT_EXIT)
-    list(APPEND check_PROGRAMS
-      out_exit.c
-      )
-  endif()
-
-  if(FLB_OUT_FILE)
-    list(APPEND check_PROGRAMS
-      out_file.c
-      )
-  endif()
-
-  if(FLB_OUT_FLOWCOUNTER)
-    list(APPEND check_PROGRAMS
-      out_flowcounter.c
-      )
-  endif()
-
-  if(FLB_OUT_FORWARD)
-    list(APPEND check_PROGRAMS
-      out_forward.c
-      )
-  endif()
-
-  if(FLB_OUT_NULL)
-    list(APPEND check_PROGRAMS
-      out_null.c
-      )
-  endif()
-
-  if(FLB_OUT_PLOT)
-    list(APPEND check_PROGRAMS
-      out_plot.c
-      )
-  endif()
-
-  if(FLB_OUT_RETRY)
-    list(APPEND check_PROGRAMS
-      out_retry.c
-      )
-  endif()
-
-  if(FLB_OUT_STDOUT)
-    list(APPEND check_PROGRAMS
-      out_stdout.c
-      )
-  endif()
-
-  if(FLB_OUT_TD)
-    list(APPEND check_PROGRAMS
-      out_td.c
-      )
-  endif()
-endif()
-
+# Input Plugins
 if(FLB_OUT_LIB)
-  if(FLB_IN_CPU)
-    list(APPEND check_PROGRAMS
-      in_cpu.c
-      )
-  endif()
-
-  if(FLB_IN_DUMMY)
-    list(APPEND check_PROGRAMS
-      in_dummy.c
-      )
-  endif()
-
-  if(FLB_IN_DISK)
-    list(APPEND check_PROGRAMS
-      in_disk.c
-      )
-  endif()
-
-  if(FLB_IN_HEAD)
-    list(APPEND check_PROGRAMS
-      in_head.c
-      )
-  endif()
-
-  if(FLB_IN_MEM)
-    list(APPEND check_PROGRAMS
-      in_mem.c
-      )
-  endif()
-
-  if(FLB_IN_PROC)
-    list(APPEND check_PROGRAMS
-      in_proc.c
-      )
-  endif()
-
-  if(FLB_IN_RANDOM)
-    list(APPEND check_PROGRAMS
-      in_random.c
-      )
-  endif()
+  FLB_RT_TEST(FLB_IN_CPU           "in_cpu.c")
+  FLB_RT_TEST(FLB_IN_DUMMY         "in_dummy.c")
+  FLB_RT_TEST(FLB_IN_DISK          "in_disk.c")
+  FLB_RT_TEST(FLB_IN_HEAD          "in_head.c")
+  FLB_RT_TEST(FLB_IN_MEM           "in_mem.c")
+  FLB_RT_TEST(FLB_IN_PROC          "in_proc.c")
+  FLB_RT_TEST(FLB_IN_RANDOM        "in_random.c")
 endif()
 
+# Filter Plugins
 if(FLB_IN_LIB AND FLB_OUT_LIB)
-  if(FLB_FILTER_STDOUT)
-    list(APPEND check_PROGRAMS
-      filter_stdout.c
-      )
-  endif()
+  FLB_RT_TEST(FLB_FILTER_STDOUT    "filter_stdout.c")
+  FLB_RT_TEST(FLB_FILTER_GREP      "filter_grep.c")
+endif()
 
-  if(FLB_FILTER_GREP)
-    list(APPEND check_PROGRAMS
-      filter_grep.c
-      )
-  endif()
+
+# Output Plugins
+if(FLB_IN_LIB)
+  FLB_RT_TEST(FLB_OUT_LIB          "core_engine.c")
+  FLB_RT_TEST(FLB_OUT_COUNTER      "out_counter.c")
+  FLB_RT_TEST(FLB_OUT_ES           "out_elasticsearch.c")
+  FLB_RT_TEST(FLB_OUT_EXIT         "out_exit.c")
+  FLB_RT_TEST(FLB_OUT_FILE         "out_file.c")
+  FLB_RT_TEST(FLB_OUT_FLOWCOUNTER  "out_flowcounter.c")
+  FLB_RT_TEST(FLB_OUT_FORWARD      "out_forward.c")
+  FLB_RT_TEST(FLB_OUT_NULL         "out_null.c")
+  FLB_RT_TEST(FLB_OUT_PLOT         "out_plot.c")
+  FLB_RT_TEST(FLB_OUT_RETRY        "out_retry.c")
+  FLB_RT_TEST(FLB_OUT_STDOUT       "out_stdout.c")
+  FLB_RT_TEST(FLB_OUT_TD           "out_td.c")
 endif()
 
 configure_file(
@@ -139,7 +55,7 @@ configure_file(
   "${CMAKE_CURRENT_SOURCE_DIR}/flb_tests_runtime.h"
   )
 
-foreach(source_file ${check_PROGRAMS})
+foreach(source_file ${CHECK_PROGRAMS})
   get_filename_component(source_file_we ${source_file} NAME_WE)
   set(source_file_we flb-rt-${source_file_we})
   add_executable(
