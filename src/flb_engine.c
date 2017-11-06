@@ -325,8 +325,27 @@ static int flb_engine_started(struct flb_config *config)
         return -1;
     }
 
-    val = FLB_ENGINE_EV_STARTED;
+    val = FLB_ENGINE_STARTED;
     return flb_pipe_w(config->ch_notif[1], &val, sizeof(uint64_t));
+}
+
+int flb_engine_failed(struct flb_config *config)
+{
+    int ret;
+    uint64_t val;
+
+    /* Check the channel is valid (enabled by library mode) */
+    if (config->ch_notif[1] <= 0) {
+        return -1;
+    }
+
+    val = FLB_ENGINE_FAILED;
+    ret = flb_pipe_w(config->ch_notif[1], &val, sizeof(uint64_t));
+    if (ret == -1) {
+        flb_error("[engine] fail to dispatch FAILED message");
+    }
+
+    return ret;
 }
 
 static int flb_engine_log_start(struct flb_config *config)
@@ -397,7 +416,7 @@ int flb_engine_start(struct flb_config *config)
                                   config);
     if (ret != 0) {
         flb_error("[engine] could not create manager channels");
-        exit(EXIT_FAILURE);
+        return -1;
     }
 
     /* Initialize input plugins */
@@ -409,7 +428,6 @@ int flb_engine_start(struct flb_config *config)
     /* Initialize output plugins */
     ret = flb_output_init(config);
     if (ret == -1 && config->support_mode == FLB_FALSE) {
-        flb_engine_shutdown(config);
         return -1;
     }
 
@@ -433,7 +451,6 @@ int flb_engine_start(struct flb_config *config)
     ret = flb_sched_init(config);
     if (ret == -1) {
         flb_error("[engine] scheduler could not start");
-        flb_engine_shutdown(config);
         return -1;
     }
 
@@ -446,6 +463,7 @@ int flb_engine_start(struct flb_config *config)
     /* Prepare routing paths */
     ret = flb_router_io_set(config);
     if (ret == -1) {
+        flb_error("[engine] router failed");
         return -1;
     }
 
