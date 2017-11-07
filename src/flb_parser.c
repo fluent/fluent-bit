@@ -387,6 +387,7 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
         regex = NULL;
         time_fmt = NULL;
         time_key = NULL;
+        time_keep = FLB_FALSE;
         time_offset = NULL;
         types_str = NULL;
 
@@ -429,6 +430,7 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
                                        MK_RCONF_STR);
         if (str) {
             time_keep = flb_utils_bool(str);
+            flb_free(str);
         }
         else {
             time_keep = FLB_FALSE;
