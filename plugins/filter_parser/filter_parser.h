@@ -20,13 +20,21 @@
 #ifndef FLB_FILTER_PARSER_H
 #define FLB_FILTER_PARSER_H
 
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_parser.h>
 
-struct filter_parser_ctx {
-    char     *key_name;
-    int    key_name_len;
+#define FLB_PARSER_UNS_BUF_SIZE  4096
 
+struct filter_parser_ctx {
+    char   *key_name;
+    int    key_name_len;
     int    reserve_data;
+    int    unescape_key;
+
+    /* Unescape buffer */
+    int buf_size;
+    int buf_len;
+    char *buf_data;
 
     struct flb_parser *parser;
 };

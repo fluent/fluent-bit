@@ -29,6 +29,60 @@
 
 #include "filter_parser.h"
 
+static int unescape_string(char *buf, int buf_len, char **unesc_buf)
+{
+    int i = 0;
+    int j = 0;
+    char *p;
+    char n;
+
+    p = *unesc_buf;
+    while (i < buf_len) {
+        if (buf[i] == '\\') {
+            if (i + 1 < buf_len) {
+                n = buf[i + 1];
+                if (n != 'a' && n != 'b' &&
+                    n != 't' && n != 'n' &&
+                    n != 'v' && n != 'f' &&
+                    n != 'r') {
+                    i++;
+                }
+                else {
+                    if (n == 'a') {
+                        p[j++] = '\a';
+                    }
+                    else if (n == 'b') {
+                        p[j++] = '\b';
+                    }
+                    else if (n == 't') {
+                        p[j++] = '\t';
+                    }
+                    else if (n == 'n') {
+                        p[j++] = '\n';
+                    }
+                    else if (n == 'v') {
+                        p[j++] = '\v';
+                    }
+                    else if (n == 'f') {
+                        p[j++] = '\f';
+                    }
+                    else if (n == 'r') {
+                        p[j++] = '\r';
+                    }
+                    i += 2;
+                    continue;
+                }
+            }
+            else {
+                i++;
+            }
+        }
+        p[j++] = buf[i++];
+    }
+    p[j] = '\0';
+    return j;
+}
+
 static int msgpackobj2char(msgpack_object *obj,
                            char **ret_char, int *ret_char_size)
 {
@@ -52,13 +106,13 @@ static int configure(struct filter_parser_ctx *ctx,
                      struct flb_filter_instance *f_ins,
                      struct flb_config *config)
 {
-
     struct flb_config_prop *prop = NULL;
     struct mk_list *head = NULL;
 
     ctx->key_name = NULL;
     ctx->parser   = NULL;
     ctx->reserve_data = FLB_FALSE;
+    ctx->unescape_key = FLB_FALSE;
 
     /* Iterate all filter properties */
     mk_list_foreach(head, &f_ins->properties) {
@@ -74,6 +128,20 @@ static int configure(struct filter_parser_ctx *ctx,
                 flb_error("[filter_parser] requested parser '%s' not found", prop->val);
             }
         }
+
+        if (!strcasecmp(prop->key, "unescape_key") &&
+            ctx->unescape_key == FLB_FALSE) {
+            ctx->unescape_key = flb_utils_bool(prop->val);
+
+            /* Buffer to handle unescape_key case */
+            ctx->buf_data = flb_malloc(FLB_PARSER_UNS_BUF_SIZE);
+            if (!ctx->buf_data) {
+                return -1;
+            }
+            ctx->buf_len = 0;
+            ctx->buf_size = FLB_PARSER_UNS_BUF_SIZE;
+        }
+
         if (!strcasecmp(prop->key, "reserve_data")) {
             ctx->reserve_data = flb_utils_bool(prop->val);
         }
@@ -136,8 +204,11 @@ static int cb_parser_filter(void *data, size_t bytes,
 
     msgpack_object_kv *kv;
     int i;
+    int unescape;
+    int unesc_size;
     int ret = FLB_FILTER_NOTOUCH;
     int map_num;
+    char *tmp;
     char *key_str;
     int key_len;
     char *val_str;
@@ -192,6 +263,42 @@ static int cb_parser_filter(void *data, size_t bytes,
                         /* val is not string */
                         continue;
                     }
+
+                    unescape = FLB_FALSE;
+                    if (ctx->unescape_key == FLB_TRUE) {
+                        if (val_len >= ctx->buf_size) {
+                            tmp = flb_realloc(ctx->buf_data, val_len);
+                            if (tmp) {
+                                ctx->buf_data = tmp;
+                                ctx->buf_size = val_len;
+                                ctx->buf_len = 0;
+                                unescape = FLB_TRUE;
+                            }
+                            else {
+                                flb_errno();
+                                ctx->unescape_key = FLB_FALSE;
+                                unescape = FLB_FALSE;
+                            }
+                        }
+                        else {
+                            unescape = FLB_TRUE;
+                        }
+                    }
+
+
+                    if (unescape == FLB_TRUE) {
+                        unesc_size = unescape_string(val_str, val_len,
+                                                     &ctx->buf_data);
+                        ctx->buf_data[unesc_size] = '\0';
+                        val_str = ctx->buf_data;
+                        val_len = unesc_size;
+                    }
+
+
+                    /* Reset time */
+                    flb_time_zero(&parsed_time);
+
+                    /* Parse record */
                     if (flb_parser_do(ctx->parser,
                                       val_str, val_len,
                                       (void **)&out_buf, &out_size, &parsed_time) >= 0) {
@@ -260,8 +367,6 @@ static int cb_parser_filter(void *data, size_t bytes,
     *ret_buf = tmp_sbuf.data;
     *ret_bytes = tmp_sbuf.size;
 
-
-
     return ret;
 }
 
@@ -269,6 +374,10 @@ static int cb_parser_filter(void *data, size_t bytes,
 static int cb_parser_exit(void *data, struct flb_config *config)
 {
     struct filter_parser_ctx *ctx = data;
+
+    if (ctx->unescape_key == FLB_TRUE) {
+        flb_free(ctx->buf_data);
+    }
 
     flb_free(ctx);
     return 0;
