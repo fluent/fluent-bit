@@ -122,7 +122,7 @@ static int in_exec_config_read(struct flb_in_exec_config *exec_config,
     /* filepath setting */
     cmd = flb_input_get_property("command", in);
     if (cmd == NULL) {
-        flb_error("[in_exec] no input 'cmd' was given");
+        flb_error("[in_exec] no input 'command' was given");
         return -1;
     }
     exec_config->cmd = cmd;
