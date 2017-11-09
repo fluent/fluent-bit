@@ -99,7 +99,8 @@ static int in_exec_collect(struct flb_input_instance *i_ins,
         }
     }
 
-    
+    ret = 0; /* success */
+
  collect_end:
     if(cmdp != NULL){
         pclose(cmdp);
