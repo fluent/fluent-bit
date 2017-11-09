@@ -66,6 +66,10 @@
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_thread.h>
 
+#if defined(_WIN32) || defined(_WIN64)
+#define read(fd,buf,len)        recv(fd,(char*)buf,(int) len,0)
+#endif
+
 FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
                                   struct flb_thread *th)
 {

@@ -29,14 +29,14 @@
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 #endif
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include <winsock2.h>
 #include <windows.h>
 #endif
 
 #include "util-internal.h"
 
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -59,7 +59,7 @@
 #include "openssl-compat.h"
 
 #include <string.h>
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include <io.h>
 #define read _read
 #define write _write

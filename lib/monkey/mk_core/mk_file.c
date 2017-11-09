@@ -28,7 +28,7 @@
 
 #include "mk_core.h"
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include <mk_core/mk_dep_unistd.h>
 #else
 #include <unistd.h>
@@ -74,7 +74,7 @@ int mk_file_get_info(const char *path, struct file_info *f_info, int mode)
         f_info->is_file = MK_FALSE;
     }
 
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
     gid_t EGID = getegid();
     gid_t EUID = geteuid();
 

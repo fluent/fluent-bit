@@ -29,7 +29,7 @@
 /* The old tests here need assertions to work. */
 #undef NDEBUG
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include <winsock2.h>
 #include <windows.h>
 #endif
@@ -42,7 +42,7 @@
 #include <sys/time.h>
 #endif
 #include <sys/queue.h>
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 #include <sys/socket.h>
 #include <sys/wait.h>
 #include <signal.h>
@@ -77,7 +77,7 @@
 #include "bufferevent-internal.h"
 #include "evthread-internal.h"
 #include "util-internal.h"
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include "iocp-internal.h"
 #endif
 
@@ -732,11 +732,18 @@ test_bufferevent_connect(void *arg)
 		be_flags |= BEV_OPT_THREADSAFE;
 	}
 	bufferevent_connect_test_flags = be_flags;
-#ifdef _WIN32
+#if defined(_WIN32)
 	if (!strcmp((char*)data->setup_data, "unset_connectex")) {
 		struct win32_extension_fns *ext =
 		    (struct win32_extension_fns *)
 		    event_get_win32_extension_fns_();
+		ext->ConnectEx = NULL;
+	}
+#elif defined(_WIN64)
+	if (!strcmp((char*)data->setup_data, "unset_connectex")) {
+		struct win64_extension_fns *ext =
+		    (struct win64_extension_fns *)
+		    event_get_win64_extension_fns_();
 		ext->ConnectEx = NULL;
 	}
 #endif

@@ -26,7 +26,7 @@
 #include "util-internal.h"
 #include "event2/event-config.h"
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include <winsock2.h>
 #include <windows.h>
 #else
@@ -40,7 +40,7 @@
 static void
 sock_perror(const char *s)
 {
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	const char *err = evutil_socket_error_to_string(EVUTIL_SOCKET_ERROR());
 	fprintf(stderr, "%s: %s\n", s, err);
 #else
@@ -78,7 +78,7 @@ main(int argc, char **argv)
 	struct event_base *base;
 	struct timeval now;
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	WORD wVersionRequested;
 	WSADATA wsaData;
 
@@ -87,7 +87,7 @@ main(int argc, char **argv)
 	WSAStartup(wVersionRequested, &wsaData);
 #endif
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #define LOCAL_SOCKETPAIR_AF AF_INET
 #else
 #define LOCAL_SOCKETPAIR_AF AF_UNIX

@@ -44,6 +44,7 @@ include_directories(
   ../lib/jsmn
   ../lib/msgpack-c-0b7cabd/include
   ../lib/monkey/include/
+  ../lib/onigmo/
   ${extra_headers}
   )
 
@@ -151,7 +152,7 @@ else()
 endif()
 
 # Link timer library
-if(NOT CMAKE_SYSTEM_NAME MATCHES "Darwin")
+if(NOT CMAKE_SYSTEM_NAME MATCHES "Darwin" AND NOT CMAKE_SYSTEM_NAME MATCHES "Windows")
   set(FLB_DEPS
     ${FLB_DEPS}
     rt

@@ -26,7 +26,7 @@
 
 #include "event2/event-config.h"
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include <winsock2.h>
 #include <windows.h>
 #else
@@ -52,7 +52,7 @@
 #include <time.h>
 
 struct cpu_usage_timer {
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	HANDLE thread;
 	FILETIME usertimeBegin;
 	FILETIME kerneltimeBegin;
@@ -64,7 +64,7 @@ struct cpu_usage_timer {
 static void
 start_cpu_usage_timer(struct cpu_usage_timer *timer)
 {
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	int r;
 	FILETIME createtime, exittime;
 	timer->thread = GetCurrentThread();
@@ -77,7 +77,7 @@ start_cpu_usage_timer(struct cpu_usage_timer *timer)
 
 	evutil_gettimeofday(&timer->timeBegin, NULL);
 }
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 static ev_int64_t
 filetime_to_100nsec(const FILETIME *ft)
 {
@@ -104,7 +104,7 @@ static void
 get_cpu_usage(struct cpu_usage_timer *timer, double *secElapsedOut,
     double *secUsedOut, double *usageOut)
 {
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	double usertime_seconds, kerneltime_seconds;
 	FILETIME createtime, exittime, usertimeEnd, kerneltimeEnd;
 	int r;
@@ -114,7 +114,7 @@ get_cpu_usage(struct cpu_usage_timer *timer, double *secElapsedOut,
 	struct timeval timeEnd, timeDiff;
 	double secondsPassed, secondsUsed;
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	r = GetThreadTimes(timer->thread, &createtime, &exittime,
 	    &usertimeEnd, &kerneltimeEnd);
 	if (r==0) printf("GetThreadTimes failed.");
@@ -171,7 +171,7 @@ main(int argc, char **argv)
 
 	double usage, secPassed, secUsed;
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	WORD wVersionRequested;
 	WSADATA wsaData;
 

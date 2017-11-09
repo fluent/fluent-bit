@@ -60,7 +60,8 @@
 #include "mbedtls/threading.h"
 #endif
 
-#if defined(_WIN32) && !defined(EFIX64) && !defined(EFI32)
+
+#if ( defined(_WIN32) || defined(_WIN64) ) && !defined(EFIX64) && !defined(EFI32)
 #include <windows.h>
 #else
 #include <time.h>
@@ -68,11 +69,11 @@
 
 #if defined(MBEDTLS_FS_IO)
 #include <stdio.h>
-#if !defined(_WIN32) || defined(EFIX64) || defined(EFI32)
+#if ( !defined(_WIN32) && !defined(_WIN64) )|| defined(EFIX64) || defined(EFI32)
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <dirent.h>
-#endif /* !_WIN32 || EFIX64 || EFI32 */
+#endif /* ( !_WIN32 && !_WIN64) || EFIX64 || EFI32 */
 #endif
 
 /* Implementation that should never be optimized out by the compiler */
@@ -1104,7 +1105,7 @@ int mbedtls_x509_crt_parse_file( mbedtls_x509_crt *chain, const char *path )
 int mbedtls_x509_crt_parse_path( mbedtls_x509_crt *chain, const char *path )
 {
     int ret = 0;
-#if defined(_WIN32) && !defined(EFIX64) && !defined(EFI32)
+#if ( defined(_WIN32) || defined(_WIN64) ) && !defined(EFIX64) && !defined(EFI32)
     int w_ret;
     WCHAR szDir[MAX_PATH];
     char filename[MAX_PATH];
@@ -1160,7 +1161,7 @@ int mbedtls_x509_crt_parse_path( mbedtls_x509_crt *chain, const char *path )
         ret = MBEDTLS_ERR_X509_FILE_IO_ERROR;
 
     FindClose( hFind );
-#else /* _WIN32 */
+#else /* _WIN32 || _WIN64 */
     int t_ret;
     int snp_ret;
     struct stat sb;
@@ -1215,7 +1216,7 @@ cleanup:
         ret = MBEDTLS_ERR_THREADING_MUTEX_ERROR;
 #endif
 
-#endif /* _WIN32 */
+#endif /* _WIN32 || _WIN64 */
 
     return( ret );
 }

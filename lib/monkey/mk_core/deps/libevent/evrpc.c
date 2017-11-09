@@ -32,10 +32,15 @@
 #include <winsock2.h>
 #include <windows.h>
 #undef WIN32_LEAN_AND_MEAN
+#elif defined(_WIN64)
+#define WIN64_LEAN_AND_MEAN
+#include <winsock2.h>
+#include <windows.h>
+#undef WIN64_LEAN_AND_MEAN
 #endif
 
 #include <sys/types.h>
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 #include <sys/socket.h>
 #endif
 #ifdef EVENT__HAVE_SYS_TIME_H
@@ -44,7 +49,7 @@
 #include <sys/queue.h>
 #include <stdio.h>
 #include <stdlib.h>
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 #include <unistd.h>
 #endif
 #include <errno.h>

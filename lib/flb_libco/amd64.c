@@ -24,7 +24,7 @@ static void (*co_swap)(cothread_t, cothread_t) = 0;
 #else
   text_section
 #endif
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
   /* ABI: Win64 */
   static const unsigned char co_swap_function[4096] = {
     0x48, 0x89, 0x22,              /* mov [rdx],rsp          */

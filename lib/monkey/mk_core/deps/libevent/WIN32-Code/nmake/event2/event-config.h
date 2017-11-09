@@ -311,14 +311,14 @@
 #define EVENT__SIZEOF_SHORT 2
 
 /* The size of `size_t', as computed by sizeof. */
-#ifdef _WIN64
+#if defined(_WIN64) || defined(_WIN32)
 #define EVENT__SIZEOF_SIZE_T 8
 #else
 #define EVENT__SIZEOF_SIZE_T 4
 #endif
 
 /* The size of `void *', as computed by sizeof. */
-#ifdef _WIN64
+#if defined(_WIN64) || defined(_WIN32)
 #define EVENT__SIZEOF_VOID_P 8
 #else
 #define EVENT__SIZEOF_VOID_P 4

@@ -90,9 +90,9 @@ if(CMAKE_COMPILER_IS_CLANG)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wmissing-declarations -Wmissing-prototypes -Wdocumentation -Wno-documentation-deprecated-sync -Wunreachable-code")
 endif(CMAKE_COMPILER_IS_CLANG)
 
-if(WIN32)
+if(WIN32 OR WIN64)
     set(libs ${libs} ws2_32)
-endif(WIN32)
+endif(WIN32 OR WIN64)
 
 if(USE_PKCS11_HELPER_LIBRARY)
     set(libs ${libs} pkcs11-helper)

@@ -25,7 +25,7 @@ set(git_names git eg)
 
 # Prefer .cmd variants on Windows unless running in a Makefile
 # in the MSYS shell.
-if(WIN32)
+if(WIN32 OR WIN64)
   if(NOT CMAKE_GENERATOR MATCHES "MSYS")
     set(git_names git.cmd git eg.cmd eg)
   endif()

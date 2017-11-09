@@ -8,7 +8,7 @@
 /******************************************************************************/
 /* Data. */
 
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 #  define PAGES_PROT_COMMIT (PROT_READ | PROT_WRITE)
 #  define PAGES_PROT_DECOMMIT (PROT_NONE)
 static int	mmap_flags;
@@ -27,7 +27,7 @@ pages_map(void *addr, size_t size, bool *commit)
 	if (os_overcommits)
 		*commit = true;
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	/*
 	 * If VirtualAlloc can't allocate at the given address when one is
 	 * given, it fails and returns NULL.
@@ -65,7 +65,7 @@ void
 pages_unmap(void *addr, size_t size)
 {
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	if (VirtualFree(addr, 0, MEM_RELEASE) == 0)
 #else
 	if (munmap(addr, size) == -1)
@@ -75,7 +75,7 @@ pages_unmap(void *addr, size_t size)
 
 		buferror(get_errno(), buf, sizeof(buf));
 		malloc_printf("<jemalloc>: Error in "
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 		              "VirtualFree"
 #else
 		              "munmap"
@@ -93,7 +93,7 @@ pages_trim(void *addr, size_t alloc_size, size_t leadsize, size_t size,
 	void *ret = (void *)((uintptr_t)addr + leadsize);
 
 	assert(alloc_size >= leadsize + size);
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	{
 		void *new_addr;
 
@@ -125,7 +125,7 @@ pages_commit_impl(void *addr, size_t size, bool commit)
 	if (os_overcommits)
 		return (true);
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	return (commit ? (addr != VirtualAlloc(addr, size, MEM_COMMIT,
 	    PAGE_READWRITE)) : (!VirtualFree(addr, size, MEM_DECOMMIT)));
 #else
@@ -167,7 +167,7 @@ pages_purge(void *addr, size_t size)
 {
 	bool unzeroed;
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	VirtualAlloc(addr, size, MEM_RESET, PAGE_READWRITE);
 	unzeroed = true;
 #elif (defined(JEMALLOC_PURGE_MADVISE_FREE) || \
@@ -284,7 +284,7 @@ void
 pages_boot(void)
 {
 
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 	mmap_flags = MAP_PRIVATE | MAP_ANON;
 #endif
 

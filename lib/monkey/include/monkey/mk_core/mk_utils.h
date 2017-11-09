@@ -64,7 +64,7 @@ int mk_utils_print_errno(int n);
 pthread_key_t mk_utils_error_key;
 
 /* Windows don't have strerror_r, instead it have strerror_s */
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
   /* Reset as this is defined by mk_pthread.h */
   #ifdef strerror_r
     #undef strerror_r
@@ -111,7 +111,7 @@ static inline void mk_utils_libc_warn(char *caller, char *file, int line)
 int mk_utils_worker_spawn(void (*func) (void *), void *arg, pthread_t *tid);
 int mk_utils_worker_rename(const char *title);
 
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 int mk_utils_set_daemon();
 int mk_utils_register_pid(char *path);
 int mk_utils_remove_pid(char *path);

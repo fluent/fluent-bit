@@ -70,7 +70,11 @@ static inline time_t flb_parser_tm2time(const struct tm *src)
     struct tm tmp;
 
     tmp = *src;
+#if !defined(_WIN64) && !defined(_WIN32)
     return timegm(&tmp) - src->tm_gmtoff;
+#else
+    return 0;
+#endif
 }
 
 

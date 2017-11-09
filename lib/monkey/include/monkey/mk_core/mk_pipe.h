@@ -23,7 +23,7 @@
 #include "mk_core_info.h"
 
 /* For Windows we need a workaround to play with pipe(2) */
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include <io.h>
 #include <fcntl.h>
 #define pipe(fds) _pipe(fds, 4096, _O_BINARY)

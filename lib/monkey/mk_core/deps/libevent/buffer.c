@@ -28,7 +28,7 @@
 #include "event2/event-config.h"
 #include "evconfig-private.h"
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include <winsock2.h>
 #include <windows.h>
 #include <io.h>
@@ -225,7 +225,7 @@ evbuffer_chain_free(struct evbuffer_chain *chain)
 			    struct evbuffer_chain_file_segment,
 			    chain);
 		if (info->segment) {
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 			if (info->segment->is_mapping)
 				UnmapViewOfFile(chain->buffer);
 #endif
@@ -2161,7 +2161,7 @@ evbuffer_expand(struct evbuffer *buf, size_t datlen)
  * Reads data from a file descriptor into a buffer.
  */
 
-#if defined(EVENT__HAVE_SYS_UIO_H) || defined(_WIN32)
+#if defined(EVENT__HAVE_SYS_UIO_H) || defined(_WIN32) || defined(_WIN64)
 #define USE_IOVEC_IMPL
 #endif
 
@@ -2249,7 +2249,7 @@ evbuffer_read_setup_vecs_(struct evbuffer *buf, ev_ssize_t howmuch,
 static int
 get_n_bytes_readable_on_socket(evutil_socket_t fd)
 {
-#if defined(FIONREAD) && defined(_WIN32)
+#if defined(FIONREAD) && (defined(_WIN32) || defined(_WIN64) )
 	unsigned long lng = EVBUFFER_MAX_READ;
 	if (ioctlsocket(fd, FIONREAD, &lng) < 0)
 		return -1;
@@ -2316,7 +2316,7 @@ evbuffer_read(struct evbuffer *buf, evutil_socket_t fd, int howmuch)
 			WSABUF_FROM_EVBUFFER_IOV(&vecs[i], &ev_vecs[i]);
 #endif
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 		{
 			DWORD bytesRead;
 			DWORD flags=0;
@@ -2347,7 +2347,7 @@ evbuffer_read(struct evbuffer *buf, evutil_socket_t fd, int howmuch)
 	/* We can append new data at this point */
 	p = chain->buffer + chain->misalign + chain->off;
 
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 	n = read(fd, p, howmuch);
 #else
 	n = recv(fd, p, howmuch, 0);
@@ -2435,7 +2435,7 @@ evbuffer_write_iovec(struct evbuffer *buffer, evutil_socket_t fd,
 	if (! i)
 		return 0;
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	{
 		DWORD bytesSent;
 		if (WSASend(fd, iov, i, &bytesSent, 0, NULL, NULL))
@@ -2531,7 +2531,7 @@ evbuffer_write_atmost(struct evbuffer *buffer, evutil_socket_t fd,
 #endif
 #ifdef USE_IOVEC_IMPL
 		n = evbuffer_write_iovec(buffer, fd, howmuch);
-#elif defined(_WIN32)
+#elif defined(_WIN32) || defined(_WIN64)
 		/* XXX(nickm) Don't disable this code until we know if
 		 * the WSARecv code above works. */
 		void *p = evbuffer_pullup(buffer, howmuch);
@@ -2961,7 +2961,7 @@ evbuffer_file_segment_new(
 	seg->file_offset = offset;
 	seg->cleanup_cb = NULL;
 	seg->cleanup_cb_arg = NULL;
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #ifndef lseek
 #define lseek _lseeki64
 #endif
@@ -3069,7 +3069,7 @@ evbuffer_file_segment_materialize(struct evbuffer_file_segment *seg)
 		}
 	}
 #endif
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	if (!(flags & EVBUF_FS_DISABLE_MMAP)) {
 		intptr_t h = _get_osfhandle(fd);
 		HANDLE m;
@@ -3150,7 +3150,7 @@ evbuffer_file_segment_free(struct evbuffer_file_segment *seg)
 	EVUTIL_ASSERT(refcnt == 0);
 
 	if (seg->is_mapping) {
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 		CloseHandle(seg->mapping_handle);
 #elif defined (EVENT__HAVE_MMAP)
 		off_t offset_leftover;
@@ -3165,9 +3165,9 @@ evbuffer_file_segment_free(struct evbuffer_file_segment *seg)
 	if ((seg->flags & EVBUF_FS_CLOSE_ON_FREE) && seg->fd >= 0) {
 		close(seg->fd);
 	}
-	
+
 	if (seg->cleanup_cb) {
-		(*seg->cleanup_cb)((struct evbuffer_file_segment const*)seg, 
+		(*seg->cleanup_cb)((struct evbuffer_file_segment const*)seg,
 		    seg->flags, seg->cleanup_cb_arg);
 		seg->cleanup_cb = NULL;
 		seg->cleanup_cb_arg = NULL;
@@ -3226,7 +3226,7 @@ evbuffer_add_file_segment(struct evbuffer *buf,
 		chain->off = length;
 		chain->buffer_len = chain->misalign + length;
 	} else if (seg->is_mapping) {
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 		ev_uint64_t total_offset = seg->mmap_offset+offset;
 		ev_uint64_t offset_rounded=0, offset_remaining=0;
 		LPVOID data;

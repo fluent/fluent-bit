@@ -27,14 +27,19 @@
 #include "event2/event-config.h"
 #include "evconfig-private.h"
 
-#ifdef _WIN32
+#if defined(_WIN32)
 #include <winsock2.h>
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #undef WIN32_LEAN_AND_MEAN
+#elif defined(_WIN64)
+#include <winsock2.h>
+#define WIN64_LEAN_AND_MEAN
+#include <windows.h>
+#undef WIN64_LEAN_AND_MEAN
 #endif
 #include <sys/types.h>
-#if !defined(_WIN32) && defined(EVENT__HAVE_SYS_TIME_H)
+#if (!defined(_WIN32) && !defined(_WIN64)) && defined(EVENT__HAVE_SYS_TIME_H)
 #include <sys/time.h>
 #endif
 #include <sys/queue.h>
@@ -92,7 +97,7 @@ extern const struct eventop kqops;
 #ifdef EVENT__HAVE_DEVPOLL
 extern const struct eventop devpollops;
 #endif
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 extern const struct eventop win32ops;
 #endif
 
@@ -116,7 +121,7 @@ static const struct eventop *eventops[] = {
 #ifdef EVENT__HAVE_SELECT
 	&selectops,
 #endif
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	&win32ops,
 #endif
 	NULL
@@ -690,7 +695,7 @@ event_base_new_with_config(const struct event_config *cfg)
 	}
 #endif
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	if (cfg && (cfg->flags & EVENT_BASE_FLAG_STARTUP_IOCP))
 		event_base_start_iocp_(base, cfg->n_cpus_hint);
 #endif
@@ -701,7 +706,7 @@ event_base_new_with_config(const struct event_config *cfg)
 int
 event_base_start_iocp_(struct event_base *base, int n_cpus)
 {
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	if (base->iocp)
 		return 0;
 	base->iocp = event_iocp_port_launch_(n_cpus);
@@ -718,7 +723,7 @@ event_base_start_iocp_(struct event_base *base, int n_cpus)
 void
 event_base_stop_iocp_(struct event_base *base)
 {
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	int rv;
 
 	if (!base->iocp)
@@ -811,7 +816,7 @@ event_base_free_(struct event_base *base, int run_finalizers)
 	}
 	/* XXX(niels) - check for internal events first */
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	event_base_stop_iocp_(base);
 #endif
 
@@ -2459,7 +2464,7 @@ evthread_notify_base_default(struct event_base *base)
 	char buf[1];
 	int r;
 	buf[0] = (char) 0;
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	r = send(base->th_notify_fd[1], buf, 1, 0);
 #else
 	r = write(base->th_notify_fd[1], buf, 1);
@@ -3457,7 +3462,7 @@ event_mm_calloc_(size_t count, size_t size)
 			return memset(p, 0, sz);
 	} else {
 		void *p = calloc(count, size);
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 		/* Windows calloc doesn't reliably set ENOMEM */
 		if (p == NULL)
 			goto error;
@@ -3487,7 +3492,7 @@ event_mm_strdup_(const char *str)
 		if (p)
 			return memcpy(p, str, ln+1);
 	} else
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 		return _strdup(str);
 #else
 		return strdup(str);
@@ -3550,7 +3555,7 @@ evthread_notify_drain_default(evutil_socket_t fd, short what, void *arg)
 {
 	unsigned char buf[1024];
 	struct event_base *base = arg;
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	while (recv(fd, (char*)buf, sizeof(buf), 0) > 0)
 		;
 #else

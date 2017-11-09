@@ -41,7 +41,7 @@ extern "C" {
 #include "event2/bufferevent_struct.h"
 
 #include "ipv6-internal.h"
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include <ws2tcpip.h>
 #endif
 #ifdef EVENT__HAVE_NETINET_IN_H
@@ -306,7 +306,7 @@ extern const struct bufferevent_ops bufferevent_ops_pair;
 #define BEV_IS_FILTER(bevp) ((bevp)->be_ops == &bufferevent_ops_filter)
 #define BEV_IS_PAIR(bevp) ((bevp)->be_ops == &bufferevent_ops_pair)
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 extern const struct bufferevent_ops bufferevent_ops_async;
 #define BEV_IS_ASYNC(bevp) ((bevp)->be_ops == &bufferevent_ops_async)
 #else

@@ -63,7 +63,7 @@
 #define MK_EP_SOCKET_DONE     3
 /* ---- end ---- */
 
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(_WIN64)
     #include "mk_event_libevent.h"
 #elif defined(MK_HAVE_EVENT_SELECT)
     #include "mk_event_select.h"

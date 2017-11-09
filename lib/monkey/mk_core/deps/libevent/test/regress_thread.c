@@ -43,7 +43,7 @@
 
 #ifdef EVENT__HAVE_PTHREADS
 #include <pthread.h>
-#elif defined(_WIN32)
+#elif defined(_WIN64)
 #include <process.h>
 #endif
 #include <assert.h>
@@ -141,7 +141,7 @@ basic_thread(void *arg)
 }
 
 static int notification_fd_used = 0;
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 static int got_sigchld = 0;
 static void
 sigchld_cb(evutil_socket_t fd, short event, void *arg)
@@ -184,7 +184,7 @@ thread_basic(void *arg)
 		tt_abort_msg("Couldn't make base notifiable!");
 	}
 
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 	if (data->setup_data && !strcmp(data->setup_data, "forking")) {
 		pid_t pid;
 		int status;
@@ -571,7 +571,7 @@ end:
 struct testcase_t thread_testcases[] = {
 	{ "basic", thread_basic, TT_FORK|TT_NEED_THREADS|TT_NEED_BASE,
 	  &basic_setup, NULL },
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 	{ "forking", thread_basic, TT_FORK|TT_NEED_THREADS|TT_NEED_BASE,
 	  &basic_setup, (char*)"forking" },
 #endif
@@ -579,7 +579,7 @@ struct testcase_t thread_testcases[] = {
 	{ "deferred_cb_skew", thread_deferred_cb_skew,
 	  TT_FORK|TT_NEED_THREADS|TT_OFF_BY_DEFAULT,
 	  &basic_setup, NULL },
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 	/****** XXX TODO FIXME windows seems to be having some timing trouble,
 	 * looking into it now. / ellzey
 	 ******/

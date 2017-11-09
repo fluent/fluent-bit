@@ -32,6 +32,11 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #undef WIN32_LEAN_AND_MEAN
+#elif defined(_WIN64)
+#include <winsock2.h>
+#define WIN64_LEAN_AND_MEAN
+#include <windows.h>
+#undef WIN64_LEAN_AND_MEAN
 #endif
 
 #include <sys/types.h>
@@ -44,7 +49,7 @@
 #include <sys/timeb.h>
 #endif
 #if !defined(EVENT__HAVE_NANOSLEEP) && !defined(EVENT_HAVE_USLEEP) && \
-	!defined(_WIN32)
+	!defined(_WIN32) && !defined(_WIN64)
 #include <sys/select.h>
 #endif
 #include <time.h>
@@ -52,7 +57,7 @@
 #include <string.h>
 
 /** evutil_usleep_() */
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(_WIN64)
 #elif defined(EVENT__HAVE_NANOSLEEP)
 #elif defined(EVENT__HAVE_USLEEP)
 #include <unistd.h>
@@ -124,7 +129,7 @@ evutil_usleep_(const struct timeval *tv)
 {
 	if (!tv)
 		return;
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(_WIN64)
 	{
 		long msec = evutil_tv_to_msec_(tv);
 		Sleep((DWORD)msec);
@@ -156,7 +161,7 @@ evutil_date_rfc1123(char *date, const size_t datelen, struct tm *cur_p) {
 
 	/* If `cur_p` is null, set system's current time. */
 	if (cur_p == NULL) {
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 		cur_p = gmtime(&t);
 #else
 		{
@@ -374,7 +379,7 @@ evutil_gettime_monotonic_(struct evutil_monotonic_timer *base,
 }
 #endif
 
-#if defined(HAVE_WIN32_MONOTONIC)
+#if defined(HAVE_WIN32_MONOTONIC) || defined(HAVE_WIN64_MONOTONIC)
 /* =====
    Turn we now to Windows.  Want monontonic time on Windows?
 

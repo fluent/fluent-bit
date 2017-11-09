@@ -33,7 +33,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 #include <unistd.h>
 #include <sys/time.h>
 #endif
@@ -83,7 +83,7 @@ main(int argc, char **argv)
 {
 	struct timeval tv;
 	int i;
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	WORD wVersionRequested;
 	WSADATA wsaData;
 

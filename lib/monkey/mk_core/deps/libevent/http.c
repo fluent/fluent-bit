@@ -48,7 +48,7 @@
 #include <sys/wait.h>
 #endif
 
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 #include <sys/socket.h>
 #include <sys/stat.h>
 #else
@@ -68,7 +68,7 @@
 #include <netdb.h>
 #endif
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include <winsock2.h>
 #endif
 
@@ -76,7 +76,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 #include <syslog.h>
 #endif
 #include <signal.h>
@@ -1551,7 +1551,7 @@ evhttp_connection_cb(struct bufferevent *bufev, short what, void *arg)
 		 * when connecting to a local address.  the cleanup is going
 		 * to reschedule this function call.
 		 */
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 		if (errno == ECONNREFUSED)
 			goto cleanup;
 #endif

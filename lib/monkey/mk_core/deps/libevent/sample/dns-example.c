@@ -16,7 +16,7 @@
 #include <unistd.h>
 #endif
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <getopt.h>
@@ -178,7 +178,7 @@ main(int c, char **v) {
 		}
 	}
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	{
 		WSADATA WSAData;
 		WSAStartup(0x101, &WSAData);
@@ -209,7 +209,7 @@ main(int c, char **v) {
 	}
 	if (optind < c) {
 		int res;
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 		if (o.resolv_conf == NULL && !o.ns)
 			res = evdns_base_config_windows_nameservers(evdns_base);
 		else

@@ -39,7 +39,7 @@
 #include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_log.h>
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 
 /*
  * Building on Windows means that Monkey library (lib/monkey) and it
@@ -109,7 +109,11 @@ ssize_t flb_pipe_read_all(int fd, void *buf, size_t count)
                  * return until all data have been read, just sleep a little
                  * bit (0.05 seconds)
                  */
+#if defined(_WIN32) || defined(_WIN64)
+                Sleep(50000);
+#else
                 usleep(50000);
+#endif
                 continue;
             }
         }
@@ -140,7 +144,11 @@ ssize_t flb_pipe_write_all(int fd, void *buf, size_t count)
                  * return until all data have been read, just sleep a little
                  * bit (0.05 seconds)
                  */
+#if defined(_WIN32) || defined(_WIN64)
+                Sleep(50000);
+#else
                 usleep(50000);
+#endif
                 continue;
             }
         }

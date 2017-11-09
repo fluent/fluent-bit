@@ -26,7 +26,7 @@
  */
 #include "util-internal.h"
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include <winsock2.h>
 #include <windows.h>
 #endif
@@ -43,7 +43,7 @@
 #include <sys/time.h>
 #endif
 #include <sys/queue.h>
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 #include <sys/socket.h>
 #include <sys/wait.h>
 #include <signal.h>
@@ -73,7 +73,7 @@
 
 #include "regress.h"
 
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 #include "regress.gen.h"
 #endif
 
@@ -93,7 +93,7 @@ static struct timeval tcalled;
 
 #define TEST1	"this is a test"
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #define write(fd,buf,len) send((fd),(buf),(int)(len),0)
 #define read(fd,buf,len) recv((fd),(buf),(int)(len),0)
 #endif
@@ -400,7 +400,7 @@ test_simpleclose(void *ptr)
 	short got_read_on_close = 0, got_write_on_close = 0;
 	char buf[1024];
 	memset(buf, 99, sizeof(buf));
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #define LOCAL_SOCKETPAIR_AF AF_INET
 #else
 #define LOCAL_SOCKETPAIR_AF AF_UNIX
@@ -816,7 +816,7 @@ end:
 	data->base = NULL;
 }
 
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 
 #define current_base event_global_current_base_
 extern struct event_base *current_base;
@@ -2874,7 +2874,7 @@ end:
 	}
 }
 
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 /* You can't do this test on windows, since dup2 doesn't work on sockets */
 
 /* Regression test for our workaround for a fun epoll/linux related bug
@@ -3286,7 +3286,7 @@ test_active_by_fd(void *arg)
 	struct event_base *base = data->base;
 	struct event *ev1 = NULL, *ev2 = NULL, *ev3 = NULL, *ev4 = NULL;
 	int e1,e2,e3,e4;
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 	struct event *evsig = NULL;
 	int es;
 #endif
@@ -3313,7 +3313,7 @@ test_active_by_fd(void *arg)
 	tt_assert(ev2);
 	tt_assert(ev3);
 	tt_assert(ev4);
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 	evsig = event_new(base, SIGHUP, EV_SIGNAL, tabf_cb, &es);
 	tt_assert(evsig);
 	event_add(evsig, &tenmin);
@@ -3330,7 +3330,7 @@ test_active_by_fd(void *arg)
 	/* Trigger 2, 3, 4 */
 	event_base_active_by_fd(base, data->pair[0], EV_WRITE);
 	event_base_active_by_fd(base, data->pair[1], EV_READ);
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 	event_base_active_by_signal(base, SIGHUP);
 #endif
 
@@ -3343,7 +3343,7 @@ test_active_by_fd(void *arg)
 	tt_int_op(e3, ==, EV_READ | 0x10000);
 	/* Mask out EV_WRITE here, since it could be genuinely writeable. */
 	tt_int_op((e4 & ~EV_WRITE), ==, EV_READ | 0x10000);
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 	tt_int_op(es, ==, EV_SIGNAL | 0x10000);
 #endif
 
@@ -3356,7 +3356,7 @@ end:
 		event_free(ev3);
 	if (ev4)
 		event_free(ev4);
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 	if (evsig)
 		event_free(evsig);
 #endif
@@ -3416,7 +3416,7 @@ struct testcase_t main_testcases[] = {
 	{ "event_closed_fd_poll", test_event_closed_fd_poll, TT_ISOLATED, &basic_setup,
 	  NULL },
 
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 	{ "dup_fd", test_dup_fd, TT_ISOLATED, &basic_setup, NULL },
 #endif
 	{ "mm_functions", test_mm_functions, TT_FORK, NULL, NULL },
@@ -3435,7 +3435,7 @@ struct testcase_t main_testcases[] = {
 
 	BASIC(active_by_fd, TT_FORK|TT_NEED_BASE|TT_NEED_SOCKETPAIR),
 
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 	LEGACY(fork, TT_ISOLATED),
 #endif
 #ifdef EVENT__HAVE_PTHREADS
@@ -3456,7 +3456,7 @@ struct testcase_t evtag_testcases[] = {
 };
 
 struct testcase_t signal_testcases[] = {
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 	LEGACY(simplestsignal, TT_ISOLATED),
 	LEGACY(simplesignal, TT_ISOLATED),
 	LEGACY(multiplesignal, TT_ISOLATED),

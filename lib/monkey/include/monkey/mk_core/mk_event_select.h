@@ -20,7 +20,7 @@
 #ifndef MK_EVENT_SELECT_H
 #define MK_EVENT_SELECT_H
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include <Winsock2.h>
 #else
 #include <sys/select.h>

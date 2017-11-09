@@ -28,7 +28,7 @@
 #include <mk_core/mk_utils.h>
 #include <mk_core/mk_event.h>
 
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(_WIN64)
     #include "mk_event_libevent.c"
 #elif defined(MK_HAVE_EVENT_SELECT)
     #include "mk_event_select.c"

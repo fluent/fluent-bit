@@ -20,7 +20,7 @@
 #ifndef FLB_NETWORK_H
 #define FLB_NETWORK_H
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #else

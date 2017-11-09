@@ -3,7 +3,7 @@
 
 typedef struct malloc_mutex_s malloc_mutex_t;
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #  define MALLOC_MUTEX_INITIALIZER
 #elif (defined(JEMALLOC_OS_UNFAIR_LOCK))
 #  define MALLOC_MUTEX_INITIALIZER					\
@@ -32,12 +32,18 @@ typedef struct malloc_mutex_s malloc_mutex_t;
 #ifdef JEMALLOC_H_STRUCTS
 
 struct malloc_mutex_s {
-#ifdef _WIN32
-#  if _WIN32_WINNT >= 0x0600
-	SRWLOCK         	lock;
-#  else
-	CRITICAL_SECTION	lock;
-#  endif
+#if defined(_WIN32)
+    #if _WIN32_WINNT >= 0x0600
+        SRWLOCK         	lock;
+    #else
+        CRITICAL_SECTION	lock;
+    #endif
+#elif defined(_WIN64)
+    #if _WIN64_WINNT >= 0x0600
+        SRWLOCK         	lock;
+    #else
+        CRITICAL_SECTION	lock;
+    #endif
 #elif (defined(JEMALLOC_OS_UNFAIR_LOCK))
 	os_unfair_lock		lock;
 #elif (defined(JEMALLOC_OSSPIN))
@@ -87,12 +93,18 @@ malloc_mutex_lock(tsdn_t *tsdn, malloc_mutex_t *mutex)
 
 	witness_assert_not_owner(tsdn, &mutex->witness);
 	if (isthreaded) {
-#ifdef _WIN32
-#  if _WIN32_WINNT >= 0x0600
-		AcquireSRWLockExclusive(&mutex->lock);
-#  else
-		EnterCriticalSection(&mutex->lock);
-#  endif
+#if defined(_WIN32)
+    #if _WIN32_WINNT >= 0x0600
+        AcquireSRWLockExclusive(&mutex->lock);
+    #else
+        EnterCriticalSection(&mutex->lock);
+    #endif
+#elif defined(_WIN64)
+    #if _WIN64_WINNT >= 0x0600
+        AcquireSRWLockExclusive(&mutex->lock);
+    #else
+        EnterCriticalSection(&mutex->lock);
+    #endif
 #elif (defined(JEMALLOC_OS_UNFAIR_LOCK))
 		os_unfair_lock_lock(&mutex->lock);
 #elif (defined(JEMALLOC_OSSPIN))
@@ -110,12 +122,18 @@ malloc_mutex_unlock(tsdn_t *tsdn, malloc_mutex_t *mutex)
 
 	witness_unlock(tsdn, &mutex->witness);
 	if (isthreaded) {
-#ifdef _WIN32
-#  if _WIN32_WINNT >= 0x0600
+#if defined(_WIN32)
+    #if _WIN32_WINNT >= 0x0600
 		ReleaseSRWLockExclusive(&mutex->lock);
-#  else
+    #else
 		LeaveCriticalSection(&mutex->lock);
-#  endif
+    #endif
+#elif defined(_WIN64)
+    #if _WIN64_WINNT >= 0x0600
+		ReleaseSRWLockExclusive(&mutex->lock);
+    #else
+		LeaveCriticalSection(&mutex->lock);
+    #endif
 #elif (defined(JEMALLOC_OS_UNFAIR_LOCK))
 		os_unfair_lock_unlock(&mutex->lock);
 #elif (defined(JEMALLOC_OSSPIN))

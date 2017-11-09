@@ -1,5 +1,5 @@
 /* Abstraction layer for threading in tests. */
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 typedef HANDLE thd_t;
 #else
 typedef pthread_t thd_t;

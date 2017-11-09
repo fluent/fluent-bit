@@ -125,7 +125,7 @@ struct eventop {
 	size_t fdinfo_len;
 };
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 /* If we're on win32, then file descriptors are not nice low densely packed
    integers.  Instead, they are pointer-like windows handles, and we want to
    use a hashtable instead of an array to map fds to events.
@@ -314,7 +314,7 @@ struct event_base {
 	/** The event whose callback is executing right now */
 	struct event_callback *current_event;
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	/** IOCP support structure, if IOCP is enabled. */
 	struct event_iocp_port *iocp;
 #endif

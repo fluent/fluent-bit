@@ -36,6 +36,14 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_utf8.h>
 
+#if defined(_WIN32) || defined(_WIN64)
+#define PATH_MAX 1024
+#endif
+
+#define get_key(a, b, c)   mk_rconf_section_get_key(a, b, c)
+#define n_get_key(a, b, c) (intptr_t) get_key(a, b, c)
+#define s_get_key(a, b, c) (char *) get_key(a, b, c)
+
 void flb_utils_error(int err)
 {
     char *msg = NULL;

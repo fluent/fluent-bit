@@ -4604,7 +4604,7 @@ extern \"C\" {
 #endif
 
 /* Keep this code in sync between libtool.m4, ltmain, lt_system.h, and tests.  */
-#if defined _WIN32 || defined __CYGWIN__ || defined _WIN32_WCE
+#if defined _WIN64 || defined __CYGWIN__ || defined _WIN64_WCE
 /* DATA imports from DLLs on WIN32 can't be const, because runtime
    relocations are performed -- see ld's documentation on pseudo-relocs.  */
 # define LT_DLSYM_CONST
@@ -4682,7 +4682,7 @@ extern \"C\" {
           case $host in
 	    *cygwin* | *mingw* | *cegcc* )
 	      # if an import library, we need to obtain dlname
-	      if func_win32_import_lib_p "$dlprefile"; then
+	      if func_WIN64_import_lib_p "$dlprefile"; then
 	        func_tr_sh "$dlprefile"
 	        eval "curr_lafile=\$libfile_$func_tr_sh_result"
 	        dlprefile_dlbasename=
@@ -4911,14 +4911,14 @@ func_cygming_ms_implib_p ()
   test -n "$func_cygming_ms_implib_tmp"
 }
 
-# func_win32_libid arg
+# func_WIN64_libid arg
 # return the library type of file 'arg'
 #
 # Need a lot of goo to handle *both* DLLs and import libs
 # Has to be a shell function in order to 'eat' the argument
 # that is supplied when $file_magic_command is called.
 # Despite the name, also deal with 64 bit binaries.
-func_win32_libid ()
+func_WIN64_libid ()
 {
   $debug_cmd
 
@@ -5607,7 +5607,7 @@ int setenv (const char *, const char *, int);
 # define PATH_SEPARATOR ':'
 #endif
 
-#if defined _WIN32 || defined __MSDOS__ || defined __DJGPP__ || \
+#if defined _WIN64 || defined __MSDOS__ || defined __DJGPP__ || \
   defined __OS2__
 # define HAVE_DOS_BASED_FILE_SYSTEM
 # define FOPEN_WB "wb"
@@ -6325,7 +6325,7 @@ EOF
      (getenv ("COMSPEC") != NULL ? getenv ("COMSPEC") :
       ({ OSVERSIONINFO v; v.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
          GetVersionEx(&v);
-         v.dwPlatformId == VER_PLATFORM_WIN32_NT;
+         v.dwPlatformId == VER_PLATFORM_WIN64_NT;
       }) ? "cmd.exe" : "command.com").
    Instead it simply concatenates the arguments, separated by ' ', and calls
    CreateProcess().  We must quote the arguments since Win32 CreateProcess()
@@ -6456,9 +6456,9 @@ EOF
 }
 # end: func_emit_cwrapperexe_src
 
-# func_win32_import_lib_p ARG
+# func_WIN64_import_lib_p ARG
 # True if ARG is an import lib, as indicated by $file_magic_cmd
-func_win32_import_lib_p ()
+func_WIN64_import_lib_p ()
 {
     $debug_cmd
 

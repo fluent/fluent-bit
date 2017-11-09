@@ -24,7 +24,7 @@
 
 #if defined (MK_THREADS_POSIX)    /* Heaven */
 #include <pthread.h>
-#elif defined (MK_THREADS_WIN32)  /* Not Heaven */
+#elif defined (MK_THREADS_WIN32) || defined (MK_THREADS_WIN64)  /* Not Heaven */
 #include "external/winpthreads.h"
 #endif
 

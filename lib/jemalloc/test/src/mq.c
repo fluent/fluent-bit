@@ -10,7 +10,7 @@ mq_nanosleep(unsigned ns)
 
 	assert(ns <= 1000*1000*1000);
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	Sleep(ns / 1000);
 #else
 	{

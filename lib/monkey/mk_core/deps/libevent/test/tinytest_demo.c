@@ -36,7 +36,7 @@
 #include <string.h>
 #include <errno.h>
 #include <time.h>
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include <windows.h>
 #else
 #include <unistd.h>
@@ -177,7 +177,7 @@ test_timeout(void *ptr)
 	time_t t1, t2;
 	(void)ptr;
 	t1 = time(NULL);
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	Sleep(5000);
 #else
 	sleep(5);

@@ -39,7 +39,7 @@
 #if !defined(MBEDTLS_TIMING_ALT)
 
 #if !defined(unix) && !defined(__unix__) && !defined(__unix) && \
-    !defined(__APPLE__) && !defined(_WIN32)
+    !defined(__APPLE__) && !defined(_WIN32) && !defined(_WIN64)
 #error "This module only works on Unix and Windows, see MBEDTLS_TIMING_C in config.h"
 #endif
 
@@ -47,7 +47,7 @@
 #define asm __asm
 #endif
 
-#if defined(_WIN32) && !defined(EFIX64) && !defined(EFI32)
+#if ( defined(_WIN32) || defined(_WIN64) ) && !defined(EFIX64) && !defined(EFI32)
 
 #include <windows.h>
 #include <winbase.h>
@@ -70,7 +70,7 @@ struct _hr_time
     struct timeval start;
 };
 
-#endif /* _WIN32 && !EFIX64 && !EFI32 */
+#endif /* (_WIN32 || _WIN64) && !EFIX64 && !EFI32 */
 
 #if !defined(HAVE_HARDCLOCK) && defined(MBEDTLS_HAVE_ASM) &&  \
     ( defined(_MSC_VER) && defined(_M_IX86) ) || defined(__WATCOMC__)
@@ -240,7 +240,7 @@ unsigned long mbedtls_timing_hardclock( void )
 
 volatile int mbedtls_timing_alarmed = 0;
 
-#if defined(_WIN32) && !defined(EFIX64) && !defined(EFI32)
+#if ( defined(_WIN32) || defined(_WIN64) ) && !defined(EFIX64) && !defined(EFI32)
 
 unsigned long mbedtls_timing_get_timer( struct mbedtls_timing_hr_time *val, int reset )
 {
@@ -281,7 +281,7 @@ void mbedtls_set_alarm( int seconds )
     CloseHandle( CreateThread( NULL, 0, TimerProc, NULL, 0, &ThreadId ) );
 }
 
-#else /* _WIN32 && !EFIX64 && !EFI32 */
+#else /* (_WIN32 || _WIN64) && !EFIX64 && !EFI32 */
 
 unsigned long mbedtls_timing_get_timer( struct mbedtls_timing_hr_time *val, int reset )
 {
@@ -317,7 +317,7 @@ void mbedtls_set_alarm( int seconds )
     alarm( seconds );
 }
 
-#endif /* _WIN32 && !EFIX64 && !EFI32 */
+#endif /* ( _WIN32 || _WIN64 ) && !EFIX64 && !EFI32 */
 
 /*
  * Set delays to watch

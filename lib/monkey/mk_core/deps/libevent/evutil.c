@@ -40,6 +40,19 @@
 /* For structs needed by GetAdaptersAddresses */
 #define _WIN32_WINNT 0x0501
 #include <iphlpapi.h>
+#elif defined(_WIN64)
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#define WIN64_LEAN_AND_MEAN
+#include <windows.h>
+#undef WIN64_LEAN_AND_MEAN
+#include <io.h>
+#include <tchar.h>
+#include <process.h>
+#undef _WIN64_WINNT
+/* For structs needed by GetAdaptersAddresses */
+#define _WIN64_WINNT 0x0501
+#include <iphlpapi.h>
 #endif
 
 #include <sys/types.h>
@@ -86,7 +99,7 @@
 #include "strlcpy-internal.h"
 #include "ipv6-internal.h"
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #define HT_NO_CACHE_HASH_VALUES
 #include "ht-internal.h"
 #define open _open
@@ -170,7 +183,7 @@ evutil_read_file_(const char *filename, char **content_out, size_t *len_out,
 		return -2;
 	}
 	read_so_far = 0;
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #define N_TO_READ(x) ((x) > INT_MAX) ? INT_MAX : ((int)(x))
 #else
 #define N_TO_READ(x) (x)
@@ -196,7 +209,7 @@ evutil_read_file_(const char *filename, char **content_out, size_t *len_out,
 int
 evutil_socketpair(int family, int type, int protocol, evutil_socket_t fd[2])
 {
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 	return socketpair(family, type, protocol, fd);
 #else
 	return evutil_ersatz_socketpair_(family, type, protocol, fd);
@@ -214,7 +227,7 @@ evutil_ersatz_socketpair_(int family, int type, int protocol,
 	 * for now, and really, when localhost is down sometimes, we
 	 * have other problems too.
 	 */
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #define ERR(e) WSA##e
 #else
 #define ERR(e) e
@@ -227,7 +240,7 @@ evutil_ersatz_socketpair_(int family, int type, int protocol,
 	ev_socklen_t size;
 	int saved_errno = -1;
 	int family_test;
-	
+
 	family_test = family != AF_INET;
 #ifdef AF_UNIX
 	family_test = family_test && (family != AF_UNIX);
@@ -236,7 +249,7 @@ evutil_ersatz_socketpair_(int family, int type, int protocol,
 		EVUTIL_SET_SOCKET_ERROR(ERR(EAFNOSUPPORT));
 		return -1;
 	}
-	
+
 	if (!fd) {
 		EVUTIL_SET_SOCKET_ERROR(ERR(EINVAL));
 		return -1;
@@ -312,7 +325,7 @@ evutil_ersatz_socketpair_(int family, int type, int protocol,
 int
 evutil_make_socket_nonblocking(evutil_socket_t fd)
 {
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	{
 		unsigned long nonblocking = 1;
 		if (ioctlsocket(fd, FIONBIO, &nonblocking) == SOCKET_ERROR) {
@@ -345,7 +358,7 @@ evutil_make_socket_nonblocking(evutil_socket_t fd)
 static int
 evutil_fast_socket_nonblocking(evutil_socket_t fd)
 {
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	return evutil_make_socket_nonblocking(fd);
 #else
 	if (fcntl(fd, F_SETFL, O_NONBLOCK) == -1) {
@@ -359,7 +372,7 @@ evutil_fast_socket_nonblocking(evutil_socket_t fd)
 int
 evutil_make_listen_socket_reuseable(evutil_socket_t sock)
 {
-#if defined(SO_REUSEADDR) && !defined(_WIN32)
+#if defined(SO_REUSEADDR) && !defined(_WIN32) && !defined(_WIN64)
 	int one = 1;
 	/* REUSEADDR on Unix means, "don't hang on to this address after the
 	 * listener is closed."  On Windows, though, it means "don't keep other
@@ -392,9 +405,9 @@ evutil_make_tcp_listen_socket_deferred(evutil_socket_t sock)
 	int one = 1;
 
 	/* TCP_DEFER_ACCEPT tells the kernel to call defer accept() only after data
-	 * has arrived and ready to read */ 
+	 * has arrived and ready to read */
 	return setsockopt(sock, IPPROTO_TCP, TCP_DEFER_ACCEPT, &one,
-		(ev_socklen_t)sizeof(one)); 
+		(ev_socklen_t)sizeof(one));
 #endif
 	return 0;
 }
@@ -402,7 +415,7 @@ evutil_make_tcp_listen_socket_deferred(evutil_socket_t sock)
 int
 evutil_make_socket_closeonexec(evutil_socket_t fd)
 {
-#if !defined(_WIN32) && defined(EVENT__HAVE_SETFD)
+#if !defined(_WIN32) && !defined(_WIN64) && defined(EVENT__HAVE_SETFD)
 	int flags;
 	if ((flags = fcntl(fd, F_GETFD, NULL)) < 0) {
 		event_warn("fcntl(%d, F_GETFD)", fd);
@@ -425,7 +438,7 @@ evutil_make_socket_closeonexec(evutil_socket_t fd)
 static int
 evutil_fast_socket_closeonexec(evutil_socket_t fd)
 {
-#if !defined(_WIN32) && defined(EVENT__HAVE_SETFD)
+#if !defined(_WIN32) && !defined(_WIN64) && defined(EVENT__HAVE_SETFD)
 	if (fcntl(fd, F_SETFD, FD_CLOEXEC) == -1) {
 		event_warn("fcntl(%d, F_SETFD)", fd);
 		return -1;
@@ -437,7 +450,7 @@ evutil_fast_socket_closeonexec(evutil_socket_t fd)
 int
 evutil_closesocket(evutil_socket_t sock)
 {
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 	return close(sock);
 #else
 	return closesocket(sock);
@@ -451,7 +464,7 @@ evutil_strtoll(const char *s, char **endptr, int base)
 	return (ev_int64_t)strtoll(s, endptr, base);
 #elif EVENT__SIZEOF_LONG == 8
 	return (ev_int64_t)strtol(s, endptr, base);
-#elif defined(_WIN32) && defined(_MSC_VER) && _MSC_VER < 1300
+#elif (defined(_WIN32) || defined(_WIN64)) && defined(_MSC_VER) && _MSC_VER < 1300
 	/* XXXX on old versions of MS APIs, we only support base
 	 * 10. */
 	ev_int64_t r;
@@ -467,7 +480,7 @@ evutil_strtoll(const char *s, char **endptr, int base)
 	if (endptr)
 		*endptr = (char*) s;
 	return r;
-#elif defined(_WIN32)
+#elif (defined(_WIN32) || defined(_WIN64))
 	return (ev_int64_t) _strtoi64(s, endptr, base);
 #elif defined(EVENT__SIZEOF_LONG_LONG) && EVENT__SIZEOF_LONG_LONG == 8
 	long long r;
@@ -504,7 +517,7 @@ evutil_strtoll(const char *s, char **endptr, int base)
 #endif
 }
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 int
 evutil_socket_geterror(evutil_socket_t sock)
 {
@@ -639,7 +652,7 @@ evutil_found_ifaddr(const struct sockaddr *sa)
 	}
 }
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 typedef ULONG (WINAPI *GetAdaptersAddresses_fn_t)(
               ULONG, ULONG, PVOID, PIP_ADAPTER_ADDRESSES, PULONG);
 #endif
@@ -665,7 +678,7 @@ evutil_check_ifaddrs(void)
 
 	freeifaddrs(ifa);
 	return 0;
-#elif defined(_WIN32)
+#elif (defined(_WIN32) || defined(_WIN64))
 	/* Windows XP began to provide GetAdaptersAddresses. Windows 2000 had a
 	   "GetAdaptersInfo", but that's deprecated; let's just try
 	   GetAdaptersAddresses and fall back to connect+getsockname.
@@ -878,7 +891,7 @@ evutil_parse_servname(const char *servname, const char *protocol,
 	int n = parse_numeric_servname(servname);
 	if (n>=0)
 		return n;
-#if defined(EVENT__HAVE_GETSERVBYNAME) || defined(_WIN32)
+#if defined(EVENT__HAVE_GETSERVBYNAME) || defined(_WIN32) || defined(_WIN64)
 	if (!(hints->ai_flags & EVUTIL_AI_NUMERICSERV)) {
 		struct servent *ent = getservbyname(servname, protocol);
 		if (ent) {
@@ -1390,7 +1403,7 @@ evutil_getaddrinfo(const char *nodename, const char *servname,
 	 *   ever resolving even a literal IPv6 address when
 	 *   ai_addrtype is PF_UNSPEC.
 	 */
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	{
 		int tmp_port;
 		err = evutil_getaddrinfo_common_(nodename,servname,&hints,
@@ -1487,7 +1500,7 @@ evutil_getaddrinfo(const char *nodename, const char *servname,
 		/* fall back to gethostbyname. */
 		/* XXXX This needs a lock everywhere but Windows. */
 		ent = gethostbyname(nodename);
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 		err = WSAGetLastError();
 #else
 		err = h_errno;
@@ -1637,7 +1650,7 @@ evutil_gai_strerror(int err)
 	case EVUTIL_EAI_SYSTEM:
 		return "system error";
 	default:
-#if defined(USE_NATIVE_GETADDRINFO) && defined(_WIN32)
+#if defined(USE_NATIVE_GETADDRINFO) && (defined(_WIN32) || defined(_WIN64))
 		return gai_strerrorA(err);
 #elif defined(USE_NATIVE_GETADDRINFO)
 		return gai_strerror(err);
@@ -1647,7 +1660,7 @@ evutil_gai_strerror(int err)
 	}
 }
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 /* destructively remove a trailing line terminator from s */
 static void
 chomp (char *s)
@@ -1838,7 +1851,7 @@ evutil_vsnprintf(char *buf, size_t buflen, const char *format, va_list ap)
 	int r;
 	if (!buflen)
 		return 0;
-#if defined(_MSC_VER) || defined(_WIN32)
+#if defined(_MSC_VER) || defined(_WIN32) || defined(_WIN64)
 	r = _vsnprintf(buf, buflen, format, ap);
 	if (r < 0)
 		r = _vscprintf(format, ap);
@@ -2403,7 +2416,7 @@ evutil_weakrand_seed_(struct evutil_weakrand_state *state, ev_uint32_t seed)
 		struct timeval tv;
 		evutil_gettimeofday(&tv, NULL);
 		seed = (ev_uint32_t)tv.tv_sec + (ev_uint32_t)tv.tv_usec;
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 		seed += (ev_uint32_t) _getpid();
 #else
 		seed += (ev_uint32_t) getpid();
@@ -2496,7 +2509,7 @@ evutil_hex_char_to_int_(char c)
 	return -1;
 }
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 HMODULE
 evutil_load_windows_system_library_(const TCHAR *library_name)
 {
@@ -2629,7 +2642,7 @@ evutil_make_internal_pipe_(evutil_socket_t fd[2])
 	}
 #endif
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #define LOCAL_SOCKETPAIR_AF AF_INET
 #else
 #define LOCAL_SOCKETPAIR_AF AF_UNIX

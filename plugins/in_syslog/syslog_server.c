@@ -23,10 +23,10 @@
 #include <fluent-bit/flb_socket.h>
 #include <fluent-bit/flb_network.h>
 
-#include <unistd.h>
+//#include <unistd.h>
 #include <sys/types.h>
-#include <sys/socket.h>
-#include <sys/un.h>
+//#include <sys/socket.h>
+//#include <sys/un.h>
 
 #include "syslog.h"
 

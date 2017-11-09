@@ -56,6 +56,10 @@ struct flb_config *config;
 #define n_get_key(a, b, c) (intptr_t) get_key(a, b, c)
 #define s_get_key(a, b, c) (char *) get_key(a, b, c)
 
+#if defined(_WIN32) || defined(_WIN64)
+#define PATH_MAX 1024
+#endif
+
 static void flb_help(int rc, struct flb_config *config)
 {
     struct mk_list *head;
@@ -147,7 +151,7 @@ static void flb_signal_handler(int signal)
 
     switch (signal) {
     case SIGINT:
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
     case SIGQUIT:
     case SIGHUP:
 #endif
@@ -168,7 +172,7 @@ static void flb_signal_handler(int signal)
 static void flb_signal_init()
 {
     signal(SIGINT,  &flb_signal_handler);
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
     signal(SIGQUIT, &flb_signal_handler);
     signal(SIGHUP,  &flb_signal_handler);
 #endif
@@ -269,10 +273,21 @@ static int flb_service_conf_path_set(struct flb_config *config, char *file)
     char *end;
     char path[PATH_MAX + 1];
 
+#if !defined(_WIN32) && !defined(_WIN64)
     p = realpath(file, path);
     if (!p) {
         return -1;
     }
+#else
+    DWORD  retval = 0;
+
+    retval = GetFullPathName(file, PATH_MAX + 1, path, NULL);
+    if (retval == 0)
+    {
+        return -1;
+    }
+#endif
+
 
     /* lookup path ending and truncate */
     end = strrchr(path, '/');
@@ -493,7 +508,7 @@ int main(int argc, char **argv)
     struct flb_output_instance *out = NULL;
     struct flb_filter_instance *filter = NULL;
 
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
     /* Setup long-options */
     static const struct option long_opts[] = {
         { "buf_path",    required_argument, NULL, 'b' },
@@ -534,7 +549,7 @@ int main(int argc, char **argv)
 #endif
 
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
     /* Initialize sockets */
     WSADATA wsaData;
     int err;
@@ -558,9 +573,13 @@ int main(int argc, char **argv)
         exit(EXIT_FAILURE);
     }
 
+#if !defined(_WIN64) && !defined(_WIN32)
     /* Parse the command line options */
-    while ((opt = getopt_long(argc, argv, "b:B:c:df:i:m:o:R:F:p:e:t:l:vqVhL:HP:S",
+    while ((opt = getopt_long(argc, argv, "b:B:c:df:i:m:o:R:F:p:e:t:l:vqVhHP:S",
                               long_opts, NULL)) != -1) {
+#else
+    while ((opt = getopt(argc, argv, "b:B:c:df:i:m:o:R:F:p:e:t:l:vqVhHP:S")) != -1) {
+#endif
 
         switch (opt) {
 #ifdef FLB_HAVE_BUFFERING

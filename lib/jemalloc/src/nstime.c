@@ -97,7 +97,7 @@ nstime_divide(const nstime_t *time, const nstime_t *divisor)
 	return (time->ns / divisor->ns);
 }
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #  define NSTIME_MONOTONIC true
 static void
 nstime_get(nstime_t *time)

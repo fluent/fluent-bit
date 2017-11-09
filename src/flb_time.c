@@ -22,7 +22,11 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_time.h>
 
+#if defined(_WIN32) || defined(_WIN64)
+#define FLB_TIME_FORCE_FMT_INT
+#else
 #include <arpa/inet.h>
+#endif
 #include <string.h>
 
 #define ONESEC_IN_NSEC 1000000000

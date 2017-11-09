@@ -6,7 +6,7 @@
 
 /* Runtime configuration options. */
 const char	*je_malloc_conf
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
     JEMALLOC_ATTR(weak)
 #endif
     ;
@@ -206,8 +206,10 @@ static bool			malloc_initializer = NO_INITIALIZER;
 #endif
 
 /* Used to avoid initialization races. */
-#ifdef _WIN32
-#if _WIN32_WINNT >= 0x0600
+#if defined(_WIN32) || defined(_WIN64)
+#if _WIN32_WINNT >= 0x0600 
+static malloc_mutex_t	init_lock = SRWLOCK_INIT;
+#elif _WIN64_WINNT >= 0x0600 
 static malloc_mutex_t	init_lock = SRWLOCK_INIT;
 #else
 static malloc_mutex_t	init_lock;
@@ -809,7 +811,7 @@ malloc_ncpus(void)
 {
 	long result;
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	SYSTEM_INFO si;
 	GetSystemInfo(&si);
 	result = si.dwNumberOfProcessors;
@@ -985,7 +987,7 @@ malloc_conf_init(void)
 			break;
 		case 2: {
 			ssize_t linklen = 0;
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 			int saved_errno = errno;
 			const char *linkname =
 #  ifdef JEMALLOC_PREFIX
@@ -1418,7 +1420,7 @@ malloc_init_hard_recursible(void)
 	ncpus = malloc_ncpus();
 
 #if (defined(JEMALLOC_HAVE_PTHREAD_ATFORK) && !defined(JEMALLOC_MUTEX_INIT_CB) \
-    && !defined(JEMALLOC_ZONE) && !defined(_WIN32) && \
+    && !defined(JEMALLOC_ZONE) && !defined(_WIN32) && !defined(_WIN64) && \
     !defined(__native_client__))
 	/* LinuxThreads' pthread_atfork() allocates. */
 	if (pthread_atfork(jemalloc_prefork, jemalloc_postfork_parent,
@@ -1480,9 +1482,9 @@ malloc_init_hard(void)
 {
 	tsd_t *tsd;
 
-#if defined(_WIN32) && _WIN32_WINNT < 0x0600
+#if (defined(_WIN32) && _WIN32_WINNT < 0x0600) || (defined(_WIN64) && _WIN64_WINNT < 0x0600)
 	_init_init_lock();
-#endif
+#endif    
 	malloc_mutex_lock(TSDN_NULL, &init_lock);
 	if (!malloc_init_hard_needed()) {
 		malloc_mutex_unlock(TSDN_NULL, &init_lock);

@@ -45,6 +45,11 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #undef WIN32_LEAN_AND_MEAN
+#elif defined(_WIN64)
+#include <winsock2.h>
+#define WIN64_LEAN_AND_MEAN
+#include <windows.h>
+#undef WIN64_LEAN_AND_MEAN
 #endif
 #include <sys/types.h>
 #include <stdio.h>

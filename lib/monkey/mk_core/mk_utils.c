@@ -33,7 +33,7 @@
 
 #if defined (__linux__)
 #include <sys/prctl.h>
-#elif defined (_WIN32)
+#elif defined (_WIN32) || defined (_WIN64)
   #ifndef localtime_r
     struct tm *localtime_r(time_t *_clock, struct tm *_result)
     {
@@ -249,7 +249,7 @@ int mk_utils_worker_spawn(void (*func) (void *), void *arg, pthread_t *tid)
     return 0;
 }
 
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 /* Run current process in background mode (daemon, evil Monkey >:) */
 int mk_utils_set_daemon()
 {

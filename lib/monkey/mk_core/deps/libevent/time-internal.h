@@ -49,6 +49,8 @@ extern "C" {
 #define HAVE_MACH_MONOTONIC
 #elif defined(_WIN32)
 #define HAVE_WIN32_MONOTONIC
+#elif defined(_WIN64)
+#define HAVE_WIN64_MONOTONIC
 #else
 #define HAVE_FALLBACK_MONOTONIC
 #endif
@@ -56,7 +58,7 @@ extern "C" {
 long evutil_tv_to_msec_(const struct timeval *tv);
 void evutil_usleep_(const struct timeval *tv);
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 typedef ULONGLONG (WINAPI *ev_GetTickCount_func)(void);
 #endif
 
@@ -70,7 +72,7 @@ struct evutil_monotonic_timer {
 	int monotonic_clock;
 #endif
 
-#ifdef HAVE_WIN32_MONOTONIC
+#if defined(HAVE_WIN32_MONOTONIC) || defined(HAVE_WIN64_MONOTONIC)
 	ev_GetTickCount_func GetTickCount64_fn;
 	ev_GetTickCount_func GetTickCount_fn;
 	ev_uint64_t last_tick_count;

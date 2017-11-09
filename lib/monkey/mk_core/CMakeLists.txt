@@ -20,6 +20,7 @@ endmacro()
 # Set threading system
 if (CMAKE_SYSTEM_NAME MATCHES "Windows")
   MK_DEFINITION(MK_THREADS_WIN32)
+  MK_DEFINITION(MK_THREADS_WIN64)
   set(src
     ${src}
     "external/wingetopt.c"

@@ -48,7 +48,7 @@ static const unsigned char co_swap_function[4096] = {
   0xff, 0xe0,        /* jmp eax          */
 };
 
-#ifdef _WIN32
+#if defined(_WIN32)
   #include <windows.h>
 
   static void co_init() {

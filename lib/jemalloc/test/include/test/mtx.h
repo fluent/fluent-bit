@@ -6,7 +6,7 @@
  */
 
 typedef struct {
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	CRITICAL_SECTION	lock;
 #elif (defined(JEMALLOC_OS_UNFAIR_LOCK))
 	os_unfair_lock		lock;

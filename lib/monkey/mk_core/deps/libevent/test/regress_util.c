@@ -25,7 +25,7 @@
  */
 #include "../util-internal.h"
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include <winsock2.h>
 #include <windows.h>
 #include <ws2tcpip.h>
@@ -35,7 +35,7 @@
 
 #include <sys/types.h>
 
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -499,7 +499,7 @@ fatalfn(int exitcode)
 		exit(exitcode);
 }
 
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 #define CAN_CHECK_ERR
 static void
 check_error_logging(void (*fn)(void), int wantexitcode,
@@ -539,7 +539,7 @@ static void
 sock_err_fn(void)
 {
 	evutil_socket_t fd = socket(AF_INET, SOCK_STREAM, 0);
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	EVUTIL_SET_SOCKET_ERROR(WSAEWOULDBLOCK);
 #else
 	errno = EAGAIN;
@@ -611,7 +611,7 @@ test_evutil_log(void *ptr)
 
 	/* Try with a socket errno. */
 	fd = socket(AF_INET, SOCK_STREAM, 0);
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	evutil_snprintf(buf, sizeof(buf),
 	    "Unhappy socket: %s",
 	    evutil_socket_error_to_string(WSAEWOULDBLOCK));
@@ -1117,7 +1117,7 @@ end:
 		evutil_freeaddrinfo(ai);
 }
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 static void
 test_evutil_loadsyslib(void *arg)
 {
@@ -1294,7 +1294,7 @@ test_evutil_monotonic_res(void *data_)
 	if (fallback)
 		flags |= EV_MONOT_FALLBACK;
 	if (precise || fallback) {
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 		wantres = 10*1000;
 		acceptdiff = 1000;
 #else
@@ -1380,7 +1380,7 @@ end:
 
 static void
 create_tm_from_unix_epoch(struct tm *cur_p, const time_t t) {
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	cur_p = gmtime(&t);
 #else
 	gmtime_r(&t, cur_p);
@@ -1459,7 +1459,7 @@ struct testcase_t util_testcases[] = {
 	{ "rand", test_evutil_rand, TT_FORK, NULL, NULL },
 	{ "getaddrinfo", test_evutil_getaddrinfo, TT_FORK, NULL, NULL },
 	{ "getaddrinfo_live", test_evutil_getaddrinfo_live, TT_FORK|TT_OFF_BY_DEFAULT, NULL, NULL },
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	{ "loadsyslib", test_evutil_loadsyslib, TT_FORK, NULL, NULL },
 #endif
 	{ "mm_malloc", test_event_malloc, 0, NULL, NULL },

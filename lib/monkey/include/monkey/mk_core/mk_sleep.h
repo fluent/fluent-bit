@@ -25,7 +25,7 @@
 #ifdef __GNUC__      /* Heaven */
 #include <time.h>
 #include <unistd.h>
-#elif _WIN32        /* Not Heaven */
+#elif defined (MK_THREADS_WIN32) || defined (MK_THREADS_WIN64)     /* Not Heaven */
 
 /* WIN32 conversion */
 #define sleep(x)         _sleep(x * 1000)
@@ -38,9 +38,11 @@ static inline BOOLEAN nanosleep(LONGLONG ns){
 	/* Declarations */
 	HANDLE timer;	/* Timer handle */
 	LARGE_INTEGER li;	/* Time defintion */
-	/* Create timer */
-	if(!(timer = CreateWaitableTimer(NULL, TRUE, NULL)))
+#if !defined (_WIN32) && defined (_WIN64)	
+    /* Create timer */
+    if(!(timer = CreateWaitableTimer(NULL, TRUE, NULL)))
 		return FALSE;
+#endif    
 	/* Set timer properties */
 	li.QuadPart = -ns;
 	if(!SetWaitableTimer(timer, &li, 0, NULL, NULL, FALSE)){

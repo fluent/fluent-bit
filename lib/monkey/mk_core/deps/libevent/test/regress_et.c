@@ -26,7 +26,7 @@
 #include "../util-internal.h"
 #include "event2/event-config.h"
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include <winsock2.h>
 #endif
 #include <sys/types.h>
@@ -38,7 +38,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 #include <sys/time.h>
 #include <unistd.h>
 #endif
@@ -67,7 +67,7 @@ read_cb(evutil_socket_t fd, short event, void *arg)
 		event_del(arg);
 }
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #define LOCAL_SOCKETPAIR_AF AF_INET
 #else
 #define LOCAL_SOCKETPAIR_AF AF_UNIX

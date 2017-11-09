@@ -111,7 +111,7 @@ typedef uint32_t  uint_fast32_t;
 typedef uint64_t  uint_fast64_t;
 
 // 7.18.1.4 Integer types capable of holding object pointers
-#ifdef _WIN64 // [
+#if defined(_WIN64) // [
    typedef signed __int64    intptr_t;
    typedef unsigned __int64  uintptr_t;
 #else // _WIN64 ][
@@ -171,7 +171,7 @@ typedef uint64_t  uintmax_t;
 #define UINT_FAST64_MAX  UINT64_MAX
 
 // 7.18.2.4 Limits of integer types capable of holding object pointers
-#ifdef _WIN64 // [
+#if defined(_WIN64) // [
 #  define INTPTR_MIN   INT64_MIN
 #  define INTPTR_MAX   INT64_MAX
 #  define UINTPTR_MAX  UINT64_MAX
@@ -188,7 +188,7 @@ typedef uint64_t  uintmax_t;
 
 // 7.18.3 Limits of other integer types
 
-#ifdef _WIN64 // [
+#if defined(_WIN64) // [
 #  define PTRDIFF_MIN  _I64_MIN
 #  define PTRDIFF_MAX  _I64_MAX
 #else  // _WIN64 ][

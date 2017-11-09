@@ -36,6 +36,16 @@
 #include <windows.h>
 #undef WIN32_LEAN_AND_MEAN
 #include <sys/locking.h>
+#elifdef _WIN64
+#ifndef _WIN64_WINNT
+/* Minimum required for InitializeCriticalSectionAndSpinCount */
+#define _WIN64_WINNT 0x0403
+#endif
+#include <winsock2.h>
+#define WIN64_LEAN_AND_MEAN
+#include <windows.h>
+#undef WIN64_LEAN_AND_MEAN
+#include <sys/locking.h>
 #endif
 
 struct event_base;
@@ -94,7 +104,7 @@ evthread_win32_get_id(void)
 	return (unsigned long) GetCurrentThreadId();
 }
 
-#ifdef WIN32_HAVE_CONDITION_VARIABLES
+#ifdef WIN32_HAVE_CONDITION_VARIABLES || WIN64_HAVE_CONDITION_VARIABLES
 static void WINAPI (*InitializeConditionVariable_fn)(PCONDITION_VARIABLE)
 	= NULL;
 static BOOL WINAPI (*SleepConditionVariableCS_fn)(
@@ -316,7 +326,7 @@ evthread_use_windows_threads(void)
 		evthread_win32_cond_signal,
 		evthread_win32_cond_wait
 	};
-#ifdef WIN32_HAVE_CONDITION_VARIABLES
+#ifdef WIN32_HAVE_CONDITION_VARIABLES || WIN64_HAVE_CONDITION_VARIABLES
 	struct evthread_condition_callbacks condvar_cbs = {
 		EVTHREAD_CONDITION_API_VERSION,
 		evthread_win32_condvar_alloc,
@@ -328,7 +338,7 @@ evthread_use_windows_threads(void)
 
 	evthread_set_lock_callbacks(&cbs);
 	evthread_set_id_callback(evthread_win32_get_id);
-#ifdef WIN32_HAVE_CONDITION_VARIABLES
+#ifdef WIN32_HAVE_CONDITION_VARIABLES || WIN64_HAVE_CONDITION_VARIABLES
 	if (evthread_win32_condvar_init()) {
 		evthread_set_condition_callbacks(&condvar_cbs);
 		return 0;

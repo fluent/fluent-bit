@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_stats.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_parser.h>
+#include <fluent-bit/flb_time.h>
 #include <msgpack.h>
 
 #include <stdio.h>
@@ -32,6 +33,11 @@
 #include <string.h>
 
 #include "in_exec.h"
+
+#if defined(_WIN32) || defined(_WIN64)
+#define popen _popen
+#define pclose _pclose
+#endif
 
 /* cb_collect callback */
 static int in_exec_collect(struct flb_input_instance *i_ins,

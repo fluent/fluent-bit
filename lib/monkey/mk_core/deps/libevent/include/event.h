@@ -56,13 +56,20 @@ extern "C" {
 /* For int types. */
 #include <evutil.h>
 
-#ifdef _WIN32
+#if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <winsock2.h>
 #include <windows.h>
 #undef WIN32_LEAN_AND_MEAN
+#elif defined(_WIN64)
+#ifndef WIN64_LEAN_AND_MEAN
+#define WIN64_LEAN_AND_MEAN
+#endif
+#include <winsock2.h>
+#include <windows.h>
+#undef WIN64_LEAN_AND_MEAN
 #endif
 
 #include <event2/event_struct.h>

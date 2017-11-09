@@ -40,6 +40,11 @@
 #include <winsock2.h>
 #include <windows.h>
 #undef WIN32_LEAN_AND_MEAN
+#elif defined(_WIN64)
+#define WIN64_LEAN_AND_MEAN
+#include <winsock2.h>
+#include <windows.h>
+#undef WIN64_LEAN_AND_MEAN
 #endif
 
 #ifdef EVENT__HAVE_SYS_IOCTL_H
@@ -54,7 +59,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 #include <syslog.h>
 #endif
 #ifdef EVENT__HAVE_UNISTD_H

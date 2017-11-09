@@ -26,7 +26,8 @@
 #include <fcntl.h>
 #include <errno.h>
 
-#ifdef _WIN32
+
+#if defined(_WIN64) || defined(_WIN32)
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #else
@@ -145,7 +146,7 @@ int flb_net_socket_tcp_nodelay(flb_sockfd_t fd)
 
 int flb_net_socket_nonblocking(flb_sockfd_t fd)
 {
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
     unsigned long on = 1;
     if (ioctlsocket(fd, FIONBIO, &on) != 0) {
 #else

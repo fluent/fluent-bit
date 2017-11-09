@@ -1,12 +1,12 @@
 #include "test/jemalloc_test.h"
 
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 #include <sys/wait.h>
 #endif
 
 TEST_BEGIN(test_fork)
 {
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 	void *p;
 	pid_t pid;
 

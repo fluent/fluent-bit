@@ -48,57 +48,17 @@ static int msgpackobj2char(msgpack_object *obj,
     return ret;
 }
 
-static int add_parser(char *parser, struct filter_parser_ctx *ctx,
-                       struct flb_config *config)
-{
-    struct flb_parser *p;
-    struct filter_parser *fp;
-
-    p = flb_parser_get(parser, config);
-    if (!p) {
-        return -1;
-    }
-
-    fp = flb_malloc(sizeof(struct filter_parser));
-    if (!fp) {
-        flb_errno();
-        return -1;
-    }
-
-    fp->parser = p;
-    mk_list_add(&fp->_head, &ctx->parsers);
-    return 0;
-}
-
-static int delete_parsers(struct filter_parser_ctx *ctx)
-{
-    int c;
-    struct mk_list *tmp;
-    struct mk_list *head;
-    struct filter_parser *fp;
-
-    mk_list_foreach_safe(head, tmp, &ctx->parsers) {
-        fp = mk_list_entry(head, struct filter_parser, _head);
-        mk_list_del(&fp->_head);
-        flb_free(fp);
-        c++;
-    }
-
-    return c;
-}
-
 static int configure(struct filter_parser_ctx *ctx,
                      struct flb_filter_instance *f_ins,
                      struct flb_config *config)
 {
-    int ret;
+
     struct flb_config_prop *prop = NULL;
     struct mk_list *head = NULL;
 
-
     ctx->key_name = NULL;
+    ctx->parser   = NULL;
     ctx->reserve_data = FLB_FALSE;
-    mk_list_init(&ctx->parsers);
 
     /* Iterate all filter properties */
     mk_list_foreach(head, &f_ins->properties) {
@@ -109,21 +69,22 @@ static int configure(struct filter_parser_ctx *ctx,
             ctx->key_name_len = strlen(prop->val);
         }
         if (!strcasecmp(prop->key, "parser")) {
-            ret = add_parser(prop->val, ctx, config);
-            if (ret == -1) {
+            ctx->parser  = flb_parser_get(prop->val, config);
+            if (ctx->parser == NULL) {
                 flb_error("[filter_parser] requested parser '%s' not found", prop->val);
             }
         }
         if (!strcasecmp(prop->key, "reserve_data")) {
             ctx->reserve_data = flb_utils_bool(prop->val);
         }
+
     }
 
     if (ctx->key_name == NULL) {
         flb_error("[filter_parser] \"key_name\" is missing\n");
         return -1;
     }
-    if (mk_list_size(&ctx->parsers) == 0) {
+    if (ctx->parser == NULL) {
         flb_error("[filter_parser] Invalid \"parser\"\n");
         return -1;
     }
@@ -165,7 +126,6 @@ static int cb_parser_filter(void *data, size_t bytes,
                             void *context,
                             struct flb_config *config)
 {
-    int parsed = FLB_FALSE;
     struct filter_parser_ctx *ctx = context;
     msgpack_unpacked result;
     size_t off = 0;
@@ -191,8 +151,6 @@ static int cb_parser_filter(void *data, size_t bytes,
     msgpack_object_kv **append_arr = NULL;
     size_t            append_arr_len;
     int                append_arr_i;
-    struct mk_list *head;
-    struct filter_parser *fp;
 
     /* Create temporal msgpack buffer */
     msgpack_sbuffer_init(&tmp_sbuf);
@@ -218,8 +176,7 @@ static int cb_parser_filter(void *data, size_t bytes,
                 }
             }
 
-            parsed = FLB_FALSE;
-            for (i = 0; i < map_num && parsed == FLB_FALSE; i++) {
+            for (i = 0; i < map_num; i++) {
                 kv = &obj->via.map.ptr[i];
                 if (ctx->reserve_data) {
                     append_arr[append_arr_i] = kv;
@@ -235,27 +192,23 @@ static int cb_parser_filter(void *data, size_t bytes,
                         /* val is not string */
                         continue;
                     }
-
-                    /* Lookup parser */
-                    mk_list_foreach(head, &ctx->parsers) {
-                        fp = mk_list_entry(head, struct filter_parser, _head);
-
-                        ret = flb_parser_do(fp->parser, val_str, val_len,
-                                            (void **) &out_buf, &out_size,
-                                            &parsed_time);
-                        if (ret >= 0) {
-                            parsed = FLB_TRUE;
-
-                            if (flb_time_to_double(&parsed_time) != 0) {
-                                flb_time_copy(&tm, &parsed_time);
-                            }
-                            if (ctx->reserve_data) {
-                                append_arr_i--;
-                                append_arr_len--;
-                                append_arr[append_arr_i] = NULL;
-                            }
+                    if (flb_parser_do(ctx->parser,
+                                      val_str, val_len,
+                                      (void **)&out_buf, &out_size, &parsed_time) >= 0) {
+                        if (flb_time_to_double(&parsed_time) != 0) {
+                            flb_time_copy(&tm, &parsed_time);
+                        }
+                        if (ctx->reserve_data) {
+                            append_arr_i--;
+                            append_arr_len--;
+                            append_arr[append_arr_i] = NULL;
+                        }
+                        else {
                             break;
                         }
+                    }
+                    else {
+                        flb_warn("[filter_parser] parse error");
                     }
                 }
             }
@@ -307,6 +260,8 @@ static int cb_parser_filter(void *data, size_t bytes,
     *ret_buf = tmp_sbuf.data;
     *ret_bytes = tmp_sbuf.size;
 
+
+
     return ret;
 }
 
@@ -315,10 +270,7 @@ static int cb_parser_exit(void *data, struct flb_config *config)
 {
     struct filter_parser_ctx *ctx = data;
 
-    if (ctx != NULL) {
-        delete_parsers(ctx);
-        flb_free(ctx);
-    }
+    flb_free(ctx);
     return 0;
 }
 

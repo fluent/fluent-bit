@@ -153,14 +153,14 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
         ctx->logstash_format = bool_value(tmp);
     }
     else {
-        ctx->logstash_format = FLB_FALSE;
+        ctx->logstash_format = FLB_TRUE;
     }
 
     /* Logstash_Prefix */
     tmp = flb_output_get_property("logstash_prefix", ins);
     if (tmp) {
         ctx->logstash_prefix = flb_strdup(tmp);
-        ctx->logstash_prefix_len = strlen(tmp);
+        ctx->logstash_prefix_len = (int)strlen(tmp);
     }
     else if (ctx->logstash_format == FLB_TRUE) {
         ctx->logstash_prefix = flb_strdup(FLB_ES_DEFAULT_PREFIX);
@@ -171,7 +171,7 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
     tmp = flb_output_get_property("logstash_dateformat", ins);
     if (tmp) {
         ctx->logstash_dateformat = flb_strdup(tmp);
-        ctx->logstash_dateformat_len = strlen(tmp);
+        ctx->logstash_dateformat_len = (int)strlen(tmp);
     }
     else if (ctx->logstash_format == FLB_TRUE) {
         ctx->logstash_dateformat = flb_strdup(FLB_ES_DEFAULT_TIME_FMT);
@@ -182,7 +182,7 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
     tmp = flb_output_get_property("time_key", ins);
     if (tmp) {
         ctx->time_key = flb_strdup(tmp);
-        ctx->time_key_len = strlen(tmp);
+        ctx->time_key_len = (int)strlen(tmp);
     }
     else {
         ctx->time_key = flb_strdup(FLB_ES_DEFAULT_TIME_KEY);
@@ -193,7 +193,7 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
     tmp = flb_output_get_property("time_key_format", ins);
     if (tmp) {
         ctx->time_key_format = flb_strdup(tmp);
-        ctx->time_key_format_len = strlen(tmp);
+        ctx->time_key_format_len = (int)strlen(tmp);
     }
     else {
         ctx->time_key_format = flb_strdup(FLB_ES_DEFAULT_TIME_KEYF);
@@ -214,7 +214,7 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
         tmp = flb_output_get_property("tag_key", ins);
         if (tmp) {
             ctx->tag_key = flb_strdup(tmp);
-            ctx->tag_key_len = strlen(tmp);
+            ctx->tag_key_len = (int)strlen(tmp);
             if (tmp[0] != '_') {
                 flb_warn("[out_es] consider use a tag_key that starts with '_'");
             }

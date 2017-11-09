@@ -51,7 +51,7 @@
 
 #ifndef ARC4RANDOM_NO_INCLUDES
 #include "evconfig-private.h"
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include <wincrypt.h>
 #include <process.h>
 #else
@@ -80,7 +80,7 @@ struct arc4_stream {
 	unsigned char s[256];
 };
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #define getpid _getpid
 #define pid_t int
 #endif
@@ -121,7 +121,7 @@ arc4_addrandom(const unsigned char *dat, int datlen)
 	rs.j = rs.i;
 }
 
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 static ssize_t
 read_all(int fd, unsigned char *buf, size_t count)
 {
@@ -141,10 +141,35 @@ read_all(int fd, unsigned char *buf, size_t count)
 }
 #endif
 
-#ifdef _WIN32
+#if defined(_WIN32)
 #define TRY_SEED_WIN32
 static int
 arc4_seed_win32(void)
+{
+	/* This is adapted from Tor's crypto_seed_rng() */
+	static int provider_set = 0;
+	static HCRYPTPROV provider;
+	unsigned char buf[ADD_ENTROPY];
+
+	if (!provider_set) {
+		if (!CryptAcquireContext(&provider, NULL, NULL, PROV_RSA_FULL,
+		    CRYPT_VERIFYCONTEXT)) {
+			if (GetLastError() != (DWORD)NTE_BAD_KEYSET)
+				return -1;
+		}
+		provider_set = 1;
+	}
+	if (!CryptGenRandom(provider, sizeof(buf), buf))
+		return -1;
+	arc4_addrandom(buf, sizeof(buf));
+	evutil_memclear_(buf, sizeof(buf));
+	arc4_seeded_ok = 1;
+	return 0;
+}
+#elif defined(_WIN64)
+#define TRY_SEED_WIN64
+static int
+arc4_seed_win64(void)
 {
 	/* This is adapted from Tor's crypto_seed_rng() */
 	static int provider_set = 0;
@@ -292,7 +317,7 @@ arc4_seed_proc_sys_kernel_random_uuid(void)
 }
 #endif
 
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 #define TRY_SEED_URANDOM
 static char *arc4random_urandom_filename = NULL;
 
@@ -345,6 +370,9 @@ arc4_seed(void)
 	 * one of these sources turns out to be broken, that would be bad. */
 #ifdef TRY_SEED_WIN32
 	if (0 == arc4_seed_win32())
+		ok = 1;
+#elif defined(TRY_SEED_WIN64)
+	if (0 == arc4_seed_win64())
 		ok = 1;
 #endif
 #ifdef TRY_SEED_URANDOM

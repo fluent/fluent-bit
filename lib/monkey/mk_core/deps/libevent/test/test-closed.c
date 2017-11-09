@@ -27,7 +27,7 @@
 #include "../util-internal.h"
 #include "event2/event-config.h"
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include <winsock2.h>
 #else
 #include <unistd.h>

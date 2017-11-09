@@ -23,7 +23,7 @@
 
 #include <stddef.h>
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 /* Windows */
 #define container_of(address, type, field) ((type *)(                   \
                                                      (PCHAR)(address) - \

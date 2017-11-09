@@ -38,7 +38,7 @@
 # define ARG_UNUSED
 #endif
 
-#if defined(_WIN32) && !defined(__GNUC__)
+#if defined(_WIN64) && !defined(__GNUC__)
 # define xsnprintf   sprintf_s
 # define xstrncpy(dest,src,size)   strncpy_s(dest,size,src,_TRUNCATE)
 #else

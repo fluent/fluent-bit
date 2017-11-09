@@ -759,7 +759,7 @@ chunks_rtree_node_alloc(size_t nelms)
 bool
 chunk_boot(void)
 {
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	SYSTEM_INFO info;
 	GetSystemInfo(&info);
 

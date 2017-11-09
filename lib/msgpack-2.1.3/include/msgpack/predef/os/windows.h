@@ -22,6 +22,7 @@ http://www.boost.org/LICENSE_1_0.txt)
     [[`_WIN32`] [__predef_detection__]]
     [[`_WIN64`] [__predef_detection__]]
     [[`__WIN32__`] [__predef_detection__]]
+	[[`__WIN64__`] [__predef_detection__]]
     [[`__TOS_WIN__`] [__predef_detection__]]
     [[`__WINDOWS__`] [__predef_detection__]]
     ]
@@ -31,7 +32,7 @@ http://www.boost.org/LICENSE_1_0.txt)
 
 #if !defined(MSGPACK_PREDEF_DETAIL_OS_DETECTED) && ( \
     defined(_WIN32) || defined(_WIN64) || \
-    defined(__WIN32__) || defined(__TOS_WIN__) || \
+    defined(__WIN32__) || defined(__WIN64__) || defined(__TOS_WIN__) || \
     defined(__WINDOWS__) \
     )
 #   undef MSGPACK_OS_WINDOWS

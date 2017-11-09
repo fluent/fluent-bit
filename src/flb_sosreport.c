@@ -26,8 +26,8 @@
 #include <fluent-bit/flb_version.h>
 #include <fluent-bit/flb_utils.h>
 
-#include <unistd.h>
-#include <sys/utsname.h>
+//#include <unistd.h>
+//#include <sys/utsname.h>
 
 static void print_key(char *key)
 {
@@ -120,7 +120,7 @@ int flb_sosreport(struct flb_config *config)
     struct flb_filter_instance *ins_filter;
     struct flb_output_instance *ins_out;
     struct flb_router_path *route;
-    struct utsname uts;
+    //struct utsname uts;
 
     printf("\n");
     printf("Fluent Bit Enterprise - SOS Report\n");
@@ -142,18 +142,18 @@ int flb_sosreport(struct flb_config *config)
     printf("\n");
 
     /* Operating System */
-    uname(&uts);
+   /* uname(&uts);
     printf("[Operating System]\n");
     printf("    Name\t\t%s\n", uts.sysname);
     printf("    Release\t\t%s\n", uts.release);
     printf("    Version\t\t%s\n", uts.version);
-    printf("\n");
+    printf("\n");*/
 
     /* Basic hardware info */
-    printf("[Hardware]\n");
+    /*printf("[Hardware]\n");
     printf("    Architecture\t%s\n", uts.machine);
     printf("    Processors\t\t%i\n",  (int) sysconf(_SC_NPROCESSORS_ONLN));
-    printf("\n");
+    printf("\n");*/
 
     /* Fluent Bit */
     printf("[Built Plugins]\n");

@@ -34,6 +34,11 @@
 #include <winsock2.h>
 #include <windows.h>
 #undef WIN32_LEAN_AND_MEAN
+#elif defined(_WIN64)
+#define WIN64_LEAN_AND_MEAN
+#include <winsock2.h>
+#include <windows.h>
+#undef WIN64_LEAN_AND_MEAN
 #endif
 #include <sys/types.h>
 #ifdef EVENT__HAVE_SYS_TIME_H
@@ -82,7 +87,7 @@
   on Linux do a reasonable thing using signalfd.
 */
 
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 /* Windows wants us to call our signal handlers as __cdecl.  Nobody else
  * expects you to do anything crazy like this. */
 #define __cdecl
@@ -141,7 +146,7 @@ evsig_cb(evutil_socket_t fd, short what, void *arg)
 	memset(&ncaught, 0, sizeof(ncaught));
 
 	while (1) {
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 		n = recv(fd, signals, sizeof(signals), 0);
 #else
 		n = read(fd, signals, sizeof(signals));
@@ -179,7 +184,7 @@ evsig_init_(struct event_base *base)
 	 * signals that got delivered.
 	 */
 	if (evutil_make_internal_pipe_(base->sig.ev_signal_pair) == -1) {
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 		/* Make this nonfatal on win32, where sometimes people
 		   have localhost firewalled. */
 		event_sock_warn(-1, "%s: socketpair", __func__);
@@ -377,7 +382,7 @@ static void __cdecl
 evsig_handler(int sig)
 {
 	int save_errno = errno;
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	int socket_errno = EVUTIL_SOCKET_ERROR();
 #endif
 	ev_uint8_t msg;
@@ -395,7 +400,7 @@ evsig_handler(int sig)
 
 	/* Wake up our notification mechanism */
 	msg = sig;
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	send(evsig_base_fd, (char*)&msg, 1, 0);
 #else
 	{
@@ -404,7 +409,7 @@ evsig_handler(int sig)
 	}
 #endif
 	errno = save_errno;
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	EVUTIL_SET_SOCKET_ERROR(socket_errno);
 #endif
 }

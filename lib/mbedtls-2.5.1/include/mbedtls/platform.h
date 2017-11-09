@@ -52,6 +52,8 @@ extern "C" {
 #if !defined(MBEDTLS_PLATFORM_STD_SNPRINTF)
 #if defined(_WIN32)
 #define MBEDTLS_PLATFORM_STD_SNPRINTF   mbedtls_platform_win32_snprintf /**< Default snprintf to use  */
+#elif defined(_WIN64)
+#define MBEDTLS_PLATFORM_STD_SNPRINTF   mbedtls_platform_win64_snprintf /**< Default snprintf to use  */
 #else
 #define MBEDTLS_PLATFORM_STD_SNPRINTF   snprintf /**< Default snprintf to use  */
 #endif
@@ -189,6 +191,11 @@ int mbedtls_platform_set_printf( int (*printf_func)( const char *, ... ) );
 #if defined(_WIN32)
 /* For Windows (inc. MSYS2), we provide our own fixed implementation */
 int mbedtls_platform_win32_snprintf( char *s, size_t n, const char *fmt, ... );
+#endif
+
+#if defined(_WIN64)
+/* For Windows (inc. MSYS2), we provide our own fixed implementation */
+int mbedtls_platform_win64_snprintf( char *s, size_t n, const char *fmt, ... );
 #endif
 
 #if defined(MBEDTLS_PLATFORM_SNPRINTF_ALT)

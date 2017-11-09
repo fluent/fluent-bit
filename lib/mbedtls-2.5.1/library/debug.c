@@ -90,7 +90,7 @@ void mbedtls_debug_print_msg( const mbedtls_ssl_context *ssl, int level,
         return;
 
     va_start( argp, format );
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(_WIN64)
 #if defined(_TRUNCATE)
     ret = _vsnprintf_s( str, DEBUG_BUF_SIZE, _TRUNCATE, format, argp );
 #else

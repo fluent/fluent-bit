@@ -31,6 +31,10 @@
 #include <limits.h>
 #include <string.h>
 
+#if defined(_WIN32) || defined(_WIN64)
+#define PATH_MAX 1024
+#endif
+
 static inline uint32_t digits10(uint64_t v) {
     if (v < 10) return 1;
     if (v < 100) return 2;
@@ -630,7 +634,12 @@ int flb_parser_time_lookup(char *time_str, size_t tsize,
             time_now = now;
         }
 
+#if defined(_WIN64) || defined(_WIN32)
+        tmy = *(gmtime(&time_now));
+#else
         gmtime_r(&time_now, &tmy);
+#endif
+
         uint64_t t = tmy.tm_year + 1900;
 
         fmt = tmp;
@@ -644,10 +653,18 @@ int flb_parser_time_lookup(char *time_str, size_t tsize,
 
         time_ptr = tmp;
         time_len = strlen(tmp);
+#if defined(_WIN64) || defined(_WIN32)
+        strftime(p, time_len, parser->time_fmt_year, tm);
+#else
         p = strptime(time_ptr, parser->time_fmt_year, tm);
+#endif
     }
     else {
-        p = strptime(time_ptr, parser->time_fmt, tm);
+#if defined(_WIN64) || defined(_WIN32)
+        strftime(p, time_len, parser->time_fmt_year, tm);
+#else
+        p = strptime(time_ptr, parser->time_fmt_year, tm);
+#endif
     }
 
     if (p != NULL) {
@@ -671,7 +688,9 @@ int flb_parser_time_lookup(char *time_str, size_t tsize,
                 /* Check if the timezone failed */
                 if (tmdiff == -1) {
                     /* Try to find a workaround for time offset resolution */
+#if !defined(_WIN64) && !defined(_WIN32)
                     tm->tm_gmtoff = parser->time_offset;
+#endif
                 }
                 else {
                     flb_warn("[parser] Error parsing time string");
@@ -679,13 +698,17 @@ int flb_parser_time_lookup(char *time_str, size_t tsize,
                 }
             }
             else {
+#if !defined(_WIN64) && !defined(_WIN32)
                 tm->tm_gmtoff = tmdiff;
+#endif
             }
             *ns = tmfrac;
         }
         else {
             if (parser->time_with_tz == FLB_FALSE) {
+#if !defined(_WIN64) && !defined(_WIN32)
                 tm->tm_gmtoff = parser->time_offset;
+#endif
             }
         }
         return 0;

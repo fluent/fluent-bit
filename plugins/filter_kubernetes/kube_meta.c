@@ -27,7 +27,9 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#if !defined(_WIN64) && !defined(_WIN32)
 #include <unistd.h>
+#endif
 #include <msgpack.h>
 #include "kube_conf.h"
 #include "kube_meta.h"
@@ -618,6 +620,7 @@ static int flb_dummy_meta(char **out_buf, size_t *out_size)
 {
     int len;
     time_t t;
+    struct tm  st_tm;
     char stime[32];
     struct tm result;
     msgpack_sbuffer mp_sbuf;
@@ -625,7 +628,12 @@ static int flb_dummy_meta(char **out_buf, size_t *out_size)
 
     t = time(NULL);
     localtime_r(&t, &result);
+#if defined(_WIN32) || defined(_WIN64)
+    st_tm = *gmtime(&t);
+    strcpy(stime, asctime(&st_tm));
+#else
     asctime_r(&result, stime);
+#endif
     len = strlen(stime) - 1;
 
     msgpack_sbuffer_init(&mp_sbuf);

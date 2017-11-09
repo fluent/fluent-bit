@@ -26,7 +26,7 @@
  */
 #include "util-internal.h"
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include <winsock2.h>
 #include <windows.h>
 #endif
@@ -39,7 +39,7 @@
 #include <sys/time.h>
 #endif
 #include <sys/queue.h>
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 #include <sys/socket.h>
 #include <sys/wait.h>
 #include <signal.h>

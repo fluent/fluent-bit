@@ -38,7 +38,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 #include <unistd.h>
 #endif
 #include <errno.h>
@@ -48,7 +48,7 @@
 int
 main(int argc, char **argv)
 {
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	WORD wVersionRequested;
 	WSADATA wsaData;
 

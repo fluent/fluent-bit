@@ -8,7 +8,11 @@
 #include "libco.h"
 
 #define WINVER 0x0400
+#if defined(_WIN32)
 #define _WIN32_WINNT 0x0400
+#elif defined(_WIN64)
+#define _WIN64_WINNT 0x0400
+#endif
 #include <windows.h>
 
 #ifdef __cplusplus

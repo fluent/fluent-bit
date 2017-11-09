@@ -77,7 +77,7 @@ extern "C" {
    data," and we need to look at the error code.  Second, Windows defines
    a different set of error codes for sockets. */
 
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 
 #if EAGAIN == EWOULDBLOCK
 #define EVUTIL_ERR_IS_EAGAIN(e) \
@@ -395,7 +395,7 @@ int evutil_hex_char_to_int_(char c);
 void evutil_free_secure_rng_globals_(void);
 void evutil_free_globals_(void);
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 HMODULE evutil_load_windows_system_library_(const TCHAR *library_name);
 #endif
 
@@ -413,7 +413,7 @@ HMODULE evutil_load_windows_system_library_(const TCHAR *library_name);
 #endif
 #endif
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #define EV_SOCK_FMT EV_I64_FMT
 #define EV_SOCK_ARG(x) EV_I64_ARG((x))
 #else

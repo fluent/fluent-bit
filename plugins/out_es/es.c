@@ -227,7 +227,7 @@ static char *elasticsearch_format(void *data, size_t bytes,
         msgpack_pack_str_body(&tmp_pck, ctx->time_key, ctx->time_key_len);
 
         /* Format the time */
-        gmtime_r(&tms.tm.tv_sec, &tm);
+        tm = *(gmtime(&tms.tm.tv_sec));
         s = strftime(time_formatted, sizeof(time_formatted) - 1,
                      ctx->time_key_format, &tm);
         len = snprintf(time_formatted + s, sizeof(time_formatted) - 1 - s,

@@ -2,7 +2,7 @@
  * This sample code shows how to use Libevent to read from a named pipe.
  * XXX This code could make better use of the Libevent interfaces.
  *
- * XXX This does not work on Windows; ignore everything inside the _WIN32 block.
+ * XXX This does not work on Windows; ignore everything inside the _WIN32 and _WIN64 block.
  *
  * On UNIX, compile with:
  * cc -I/usr/local/include -o event-read-fifo event-read-fifo.c \
@@ -13,7 +13,7 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(_WIN64)
 #include <sys/queue.h>
 #include <unistd.h>
 #include <sys/time.h>
@@ -36,13 +36,13 @@ fifo_read(evutil_socket_t fd, short event, void *arg)
 	char buf[255];
 	int len;
 	struct event *ev = arg;
-#ifdef _WIN32
+#if defined(_WIN32) || defined(_WIN64)
 	DWORD dwBytesRead;
 #endif
 
 	fprintf(stderr, "fifo_read called with fd: %d, event: %d, arg: %p\n",
 	    (int)fd, event, arg);
-#ifdef _WIN32
+#if defined(_WIN32) || defined(_WIN64)
 	len = ReadFile((HANDLE)fd, buf, sizeof(buf) - 1, &dwBytesRead, NULL);
 
 	/* Check for end of file. */
@@ -72,7 +72,7 @@ fifo_read(evutil_socket_t fd, short event, void *arg)
 }
 
 /* On Unix, cleanup event.fifo if SIGINT is received. */
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(_WIN64)
 static void
 signal_cb(evutil_socket_t fd, short event, void *arg)
 {
@@ -86,7 +86,7 @@ main(int argc, char **argv)
 {
 	struct event *evfifo;
 	struct event_base* base;
-#ifdef _WIN32
+#if defined(_WIN32) || defined(_WIN64)
 	HANDLE socket;
 	/* Open a file. */
 	socket = CreateFileA("test.txt",	/* open File */
@@ -133,7 +133,7 @@ main(int argc, char **argv)
 	base = event_base_new();
 
 	/* Initalize one event */
-#ifdef _WIN32
+#if defined(_WIN32) || defined(_WIN64)
 	evfifo = event_new(base, (evutil_socket_t)socket, EV_READ|EV_PERSIST, fifo_read,
                            event_self_cbarg());
 #else
@@ -150,7 +150,7 @@ main(int argc, char **argv)
 
 	event_base_dispatch(base);
 	event_base_free(base);
-#ifdef _WIN32
+#if defined(_WIN32) || defined(_WIN64)
 	CloseHandle(socket);
 #else
 	close(socket);

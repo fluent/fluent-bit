@@ -40,8 +40,11 @@
 #ifdef EVENT__HAVE_SYS_TIME_H
 #include <sys/time.h>
 #endif
-#ifdef _WIN32
+#if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#elif defined(_WIN64)
+#define WIN64_LEAN_AND_MEAN
 #include <windows.h>
 #else
 #include <sys/socket.h>
@@ -57,7 +60,7 @@
 #endif
 #include <errno.h>
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include <getopt.h>
 #endif
 
@@ -143,7 +146,7 @@ main(int argc, char **argv)
 	struct timeval *tv;
 	evutil_socket_t *cp;
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	WSADATA WSAData;
 	WSAStartup(0x101, &WSAData);
 #endif

@@ -32,8 +32,8 @@ malloc_tsd_no_cleanup(void *arg)
 	not_reached();
 }
 
-#if defined(JEMALLOC_MALLOC_THREAD_CLEANUP) || defined(_WIN32)
-#ifndef _WIN32
+#if defined(JEMALLOC_MALLOC_THREAD_CLEANUP) || defined(_WIN32) || defined(_WIN64)
+#if !defined(_WIN64) && !defined(_WIN32)
 JEMALLOC_EXPORT
 #endif
 void
@@ -127,7 +127,7 @@ malloc_tsd_boot1(void)
 	*tsd_arenas_tdata_bypassp_get(tsd_fetch()) = false;
 }
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 static BOOL WINAPI
 _tls_callback(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
 {
@@ -163,7 +163,7 @@ BOOL	(WINAPI *const tls_callback)(HINSTANCE hinstDLL,
 #endif
 
 #if (!defined(JEMALLOC_MALLOC_THREAD_CLEANUP) && !defined(JEMALLOC_TLS) && \
-    !defined(_WIN32))
+    !defined(_WIN32) && !defined(_WIN64))
 void *
 tsd_init_check_recursion(tsd_init_head_t *head, tsd_init_block_t *block)
 {

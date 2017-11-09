@@ -27,7 +27,7 @@
 #include "../util-internal.h"
 #include "event2/event-config.h"
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include <winsock2.h>
 #else
 #include <unistd.h>
@@ -85,7 +85,7 @@ main(int argc, char **argv)
 	const char *test = "test string";
 	evutil_socket_t pair[2];
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	WORD wVersionRequested;
 	WSADATA wsaData;
 

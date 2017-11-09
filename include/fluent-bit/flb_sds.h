@@ -34,11 +34,18 @@
 
 typedef char *flb_sds_t;
 
+#ifdef _GNUC
+#define ATTR_PACKED __attribute__((__packed__))
+#else
+#define ATTR_PACKED
+#endif
+
+
 struct flb_sds {
     uint64_t len;        /* used */
     uint64_t alloc;      /* excluding the header and null terminator */
     char buf[];
-} __attribute__ ((__packed__));
+} ATTR_PACKED;
 
 #define FLB_SDS_HEADER(s)  ((struct flb_sds *) (s - FLB_SDS_HEADER_SIZE))
 

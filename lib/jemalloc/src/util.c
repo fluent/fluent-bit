@@ -89,7 +89,7 @@ int
 buferror(int err, char *buf, size_t buflen)
 {
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM, NULL, err, 0,
 	    (LPSTR)buf, (DWORD)buflen, NULL);
 	return (0);

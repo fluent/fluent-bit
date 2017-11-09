@@ -151,7 +151,7 @@
   #else
     #define MK_EXPORT
   #endif
-#elif defined(_WIN32)
+#elif defined(_WIN32) || defined(_WIN64)
   #define MK_EXPORT __declspec(dllexport)
 #endif
 

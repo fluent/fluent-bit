@@ -7,7 +7,7 @@
 typedef bool (*malloc_tsd_cleanup_t)(void);
 
 #if (!defined(JEMALLOC_MALLOC_THREAD_CLEANUP) && !defined(JEMALLOC_TLS) && \
-    !defined(_WIN32))
+    !defined(_WIN32) && !defined(_WIN64))
 typedef struct tsd_init_block_s tsd_init_block_t;
 typedef struct tsd_init_head_s tsd_init_head_t;
 #endif
@@ -80,7 +80,7 @@ typedef enum {
 #define	malloc_tsd_types(a_name, a_type)
 #elif (defined(JEMALLOC_TLS))
 #define	malloc_tsd_types(a_name, a_type)
-#elif (defined(_WIN32))
+#elif (defined(_WIN32) || defined(_WIN64))
 #define	malloc_tsd_types(a_name, a_type)				\
 typedef struct {							\
 	bool	initialized;						\
@@ -120,7 +120,7 @@ extern bool		a_name##tsd_booted;
 extern __thread a_type	a_name##tsd_tls;				\
 extern pthread_key_t	a_name##tsd_tsd;				\
 extern bool		a_name##tsd_booted;
-#elif (defined(_WIN32))
+#elif (defined(_WIN32) || defined(_WIN64))
 #define	malloc_tsd_externs(a_name, a_type)				\
 extern DWORD		a_name##tsd_tsd;				\
 extern a_name##tsd_wrapper_t	a_name##tsd_boot_wrapper;		\
@@ -147,7 +147,7 @@ a_attr __thread a_type JEMALLOC_TLS_MODEL				\
     a_name##tsd_tls = a_initializer;					\
 a_attr pthread_key_t	a_name##tsd_tsd;				\
 a_attr bool		a_name##tsd_booted = false;
-#elif (defined(_WIN32))
+#elif (defined(_WIN32) || defined(_WIN64))
 #define	malloc_tsd_data(a_attr, a_name, a_type, a_initializer)		\
 a_attr DWORD		a_name##tsd_tsd;				\
 a_attr a_name##tsd_wrapper_t a_name##tsd_boot_wrapper = {		\
@@ -300,7 +300,7 @@ a_name##tsd_set(a_type *val)						\
 		}							\
 	}								\
 }
-#elif (defined(_WIN32))
+#elif (defined(_WIN32) || defined(_WIN64))
 #define	malloc_tsd_funcs(a_attr, a_name, a_type, a_initializer,		\
     a_cleanup)								\
 /* Initialization/cleanup. */						\
@@ -577,7 +577,7 @@ a_name##tsd_set(a_type *val)						\
 #ifdef JEMALLOC_H_STRUCTS
 
 #if (!defined(JEMALLOC_MALLOC_THREAD_CLEANUP) && !defined(JEMALLOC_TLS) && \
-    !defined(_WIN32))
+    !defined(_WIN32) && !defined(_WIN64))
 struct tsd_init_block_s {
 	ql_elm(tsd_init_block_t)	link;
 	pthread_t			thread;
@@ -654,7 +654,7 @@ void	malloc_tsd_cleanup_register(bool (*f)(void));
 tsd_t	*malloc_tsd_boot0(void);
 void	malloc_tsd_boot1(void);
 #if (!defined(JEMALLOC_MALLOC_THREAD_CLEANUP) && !defined(JEMALLOC_TLS) && \
-    !defined(_WIN32))
+    !defined(_WIN32) && !defined(_WIN64))
 void	*tsd_init_check_recursion(tsd_init_head_t *head,
     tsd_init_block_t *block);
 void	tsd_init_finish(tsd_init_head_t *head, tsd_init_block_t *block);

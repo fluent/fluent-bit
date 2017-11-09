@@ -18,7 +18,7 @@
 #       cmake -G "Visual Studio 10" ..
 #       start libevent.sln
 #
-if (WIN32)
+if (WIN32 OR WIN64)
     cmake_minimum_required(VERSION 3.1 FATAL_ERROR)
 else()
     cmake_minimum_required(VERSION 2.8.0 FATAL_ERROR)
@@ -213,7 +213,7 @@ if (APPLE)
 endif()
 
 # Winsock.
-if(WIN32)
+if(WIN32 OR WIN64)
     set(CMAKE_EXTRA_INCLUDE_FILES winsock2.h ws2tcpip.h)
     set(CMAKE_REQUIRED_LIBRARIES  ws2_32.lib)
     set(CMAKE_REQUIRED_DEFINITIONS -FIwinsock2.h -FIws2tcpip.h)
@@ -376,7 +376,7 @@ if(HAVE_PORT_H AND HAVE_PORT_CREATE)
     set(EVENT__HAVE_EVENT_PORTS 1)
 endif()
 
-if(NOT WIN32)
+if(NOT WIN32 AND NOT WIN64)
     CHECK_FUNCTION_EXISTS_EX(select EVENT__HAVE_SELECT)
 endif()
 
@@ -391,7 +391,7 @@ CHECK_TYPE_SIZE("unsigned int" EVENT__SIZEOF_UNSIGNED_INT BUILTIN_TYPES_ONLY)
 CHECK_TYPE_SIZE("long" EVENT__SIZEOF_LONG BUILTIN_TYPES_ONLY)
 CHECK_TYPE_SIZE("long long" EVENT__SIZEOF_LONG_LONG BUILTIN_TYPES_ONLY)
 
-if(WIN32)
+if(WIN32 OR WIN64)
     # These aren't available until Windows Vista.
     # But you can still link them. They just won't be found when running the exe.
     set(EVENT__HAVE_INET_NTOP 0)
@@ -512,7 +512,7 @@ CHECK_SYMBOL_EXISTS(_POSIX_SOURCE "stdio.h" EVENT___POSIX_SOURCE)
 if(EVENT__HAVE_NETDB_H)
     list(APPEND CMAKE_EXTRA_INCLUDE_FILES netdb.h)
     CHECK_TYPE_SIZE("struct addrinfo" EVENT__HAVE_STRUCT_ADDRINFO)
-elseif(WIN32)
+elseif(WIN32 OR WIN64)
     list(APPEND CMAKE_EXTRA_INCLUDE_FILES ws2tcpip.h)
     CHECK_TYPE_SIZE("struct addrinfo" EVENT__HAVE_STRUCT_ADDRINFO)
 endif()
@@ -526,6 +526,13 @@ if (WIN32)
     else()
         set(SOCKADDR_HEADERS winsock2.h ws2tcpip.h)
     endif()
+elseif (WIN64)
+    set(CMAKE_REQUIRED_DEFINITIONS "-DWIN64_LEAN_AND_MEAN")
+    if (_MSC_VER LESS 1300)
+        set(SOCKADDR_HEADERS winsock.h)
+    else()
+        set(SOCKADDR_HEADERS winsock2.h ws2tcpip.h)
+    endif()    
 else()
     if (EVENT__HAVE_NETINET_IN_H)
         set(SOCKADDR_HEADERS ${SOCKADDR_HEADERS} netinet/in.h)
@@ -695,7 +702,7 @@ if (NOT EVENT__DISABLE_OPENSSL)
 endif()
 
 if (NOT EVENT__DISABLE_THREAD_SUPPORT)
-    if (WIN32)
+    if (WIN32 OR WIN64)
         list(APPEND SRC_CORE evthread_win32.c)
     else()
         find_package(Threads REQUIRED)
@@ -736,7 +743,7 @@ include_directories(BEFORE ${PROJECT_SOURCE_DIR}
     ${PROJECT_SOURCE_DIR}/compat
     ${PROJECT_SOURCE_DIR}/include)
 
-if(WIN32)
+if(WIN32 OR WIN64)
     list(APPEND SRC_CORE
         buffer_iocp.c
         bufferevent_async.c
@@ -746,7 +753,9 @@ if(WIN32)
     list(APPEND HDR_PRIVATE WIN32-Code/getopt.h)
 
     set(EVENT__DNS_USE_FTIME_FOR_ID 1)
+if(WIN32 OR WIN64)
     set(LIB_PLATFORM ws2_32)
+endif()    
     add_definitions(
             -D_CRT_SECURE_NO_WARNINGS
             -D_CRT_NONSTDC_NO_DEPRECATE)
@@ -910,7 +919,7 @@ if (NOT EVENT__DISABLE_SAMPLES)
         add_dependencies(${SAMPLE} event_extra)
     endforeach()
 
-    if (WIN32)
+    if (WIN32 OR WIN64)
         target_sources(dns-example PUBLIC
                        WIN32-Code/getopt.c
                        WIN32-Code/getopt_long.c)
@@ -921,7 +930,7 @@ if (NOT EVENT__DISABLE_BENCHMARK)
     foreach (BENCHMARK bench bench_cascade bench_http bench_httpclient)
         set(BENCH_SRC test/${BENCHMARK}.c)
 
-        if (WIN32)
+        if (WIN32 OR WIN64)
             list(APPEND BENCH_SRC
                             WIN32-Code/getopt.c
                             WIN32-Code/getopt_long.c)
@@ -994,7 +1003,7 @@ if (NOT EVENT__DISABLE_TESTS)
                 ${SRC_CORE}
                 ${SRC_EXTRA})
 
-            if (WIN32)
+            if (WIN32 OR WIN64)
                 list(APPEND SRC_REGRESS test/regress_iocp.c)
                 if (NOT EVENT__DISABLE_THREAD_SUPPORT)
                     list(APPEND SRC_REGRESS test/regress_thread.c)
@@ -1106,6 +1115,10 @@ if (NOT EVENT__DISABLE_TESTS)
 
     if (WIN32)
         list(APPEND BACKENDS WIN32)
+    endif()
+
+    if (WIN64)
+        list(APPEND BACKENDS WIN64)
     endif()
 
 
@@ -1244,9 +1257,9 @@ if (NOT EVENT__DISABLE_TESTS)
     # Add a "make verify" target, same as for autoconf.
     # (Important! This will unset all EVENT_NO* environment variables.
     #  If they are set in the shell the tests are running using simply "ctest" or "make test" will fail)
-    if (WIN32)
+    if (WIN32 OR WIN64)
         # Windows doesn't have "unset". But you can use "set VAR=" instead.
-        # We need to guard against the possibility taht EVENT_NOWIN32 is set, and all test failing
+        # We need to guard against the possibility taht EVENT_NOWIN64 is set, and all test failing
         # since no event backend being available.
         file(TO_NATIVE_PATH ${CMAKE_CTEST_COMMAND} WINDOWS_CTEST_COMMAND)
 
@@ -1334,7 +1347,7 @@ set(EVENT_INSTALL_LIB_DIR       lib CACHE PATH "Installation directory for libra
 set(EVENT_INSTALL_BIN_DIR       bin CACHE PATH "Installation directory for executables")
 set(EVENT_INSTALL_INCLUDE_DIR   include CACHE PATH "Installation directory for header files")
 
-if(WIN32 AND NOT CYGWIN)
+if((WIN32 OR WIN64) AND NOT CYGWIN)
   set(DEF_INSTALL_CMAKE_DIR cmake)
 else()
   set(DEF_INSTALL_CMAKE_DIR lib/cmake/libevent)

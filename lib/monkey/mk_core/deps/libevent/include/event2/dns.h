@@ -488,7 +488,7 @@ int evdns_base_load_hosts(struct evdns_base *base, const char *hosts_fname);
   @return 0 if successful, or -1 if an error occurred
   @see evdns_resolv_conf_parse()
  */
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 EVENT2_EXPORT_SYMBOL
 int evdns_base_config_windows_nameservers(struct evdns_base *);
 #define EVDNS_BASE_CONFIG_WINDOWS_NAMESERVERS_IMPLEMENTED

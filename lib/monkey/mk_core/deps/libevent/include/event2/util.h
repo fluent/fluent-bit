@@ -64,7 +64,7 @@ extern "C" {
 #include <netdb.h>
 #endif
 
-#ifdef _WIN32
+#if defined(_WIN32) || defined(_WIN64)
 #include <winsock2.h>
 #ifdef EVENT__HAVE_GETADDRINFO
 /* for EAI_* definitions. */
@@ -116,7 +116,7 @@ extern "C" {
 #ifdef EVENT__HAVE_UINT64_T
 #define ev_uint64_t uint64_t
 #define ev_int64_t int64_t
-#elif defined(_WIN32)
+#elif defined(_WIN32) || defined(_WIN64)
 #define ev_uint64_t unsigned __int64
 #define ev_int64_t signed __int64
 #elif EVENT__SIZEOF_LONG_LONG == 8
@@ -135,7 +135,7 @@ extern "C" {
 #ifdef EVENT__HAVE_UINT32_T
 #define ev_uint32_t uint32_t
 #define ev_int32_t int32_t
-#elif defined(_WIN32)
+#elif defined(_WIN32) || defined(_WIN64)
 #define ev_uint32_t unsigned int
 #define ev_int32_t signed int
 #elif EVENT__SIZEOF_LONG == 4
@@ -154,7 +154,7 @@ extern "C" {
 #ifdef EVENT__HAVE_UINT16_T
 #define ev_uint16_t uint16_t
 #define ev_int16_t  int16_t
-#elif defined(_WIN32)
+#elif defined(_WIN32) || defined(_WIN64)
 #define ev_uint16_t unsigned short
 #define ev_int16_t  signed short
 #elif EVENT__SIZEOF_INT == 2
@@ -210,7 +210,7 @@ extern "C" {
  * at runtime, and so putting in any dependency on off_t would risk API
  * mismatch.
  */
-#ifdef _WIN32
+#if defined(_WIN32) || defined(_WIN64)
 #define ev_off_t ev_int64_t
 #elif EVENT__SIZEOF_OFF_T == 8
 #define ev_off_t ev_int64_t
@@ -288,7 +288,7 @@ extern "C" {
 #define EV_SSIZE_MIN ((-EV_SSIZE_MAX) - 1)
 /**@}*/
 
-#ifdef _WIN32
+#if defined(_WIN32) || defined(_WIN64)
 #define ev_socklen_t int
 #elif defined(EVENT__socklen_t)
 #define ev_socklen_t EVENT__socklen_t
@@ -306,7 +306,7 @@ extern "C" {
 /**
  * A type wide enough to hold the output of "socket()" or "accept()".  On
  * Windows, this is an intptr_t; elsewhere, it is an int. */
-#ifdef _WIN32
+#if defined(_WIN32) || defined(_WIN64)
 #define evutil_socket_t intptr_t
 #else
 #define evutil_socket_t int
@@ -458,7 +458,7 @@ int evutil_closesocket(evutil_socket_t sock);
 EVENT2_EXPORT_SYMBOL
 int evutil_make_tcp_listen_socket_deferred(evutil_socket_t sock);
 
-#ifdef _WIN32
+#if defined(_WIN32) || defined(_WIN64)
 /** Return the most recent socket error.  Not idempotent on all platforms. */
 #define EVUTIL_SOCKET_ERROR() WSAGetLastError()
 /** Replace the most recent socket error with errcode */

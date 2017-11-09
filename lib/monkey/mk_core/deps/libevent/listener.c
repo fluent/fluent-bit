@@ -37,6 +37,14 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <mswsock.h>
+#elif defined(_WIN64)
+#ifndef _WIN64_WINNT
+/* Minimum required for InitializeCriticalSectionAndSpinCount */
+#define _WIN64_WINNT 0x0403
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <mswsock.h>
 #endif
 #include <errno.h>
 #ifdef EVENT__HAVE_SYS_SOCKET_H
@@ -57,7 +65,7 @@
 #include "util-internal.h"
 #include "log-internal.h"
 #include "evthread-internal.h"
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include "iocp-internal.h"
 #include "defer-internal.h"
 #include "event-internal.h"
@@ -89,7 +97,7 @@ struct evconnlistener_event {
 	struct event listener;
 };
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 struct evconnlistener_iocp {
 	struct evconnlistener base;
 	evutil_socket_t fd;
@@ -159,7 +167,7 @@ evconnlistener_new(struct event_base *base,
 {
 	struct evconnlistener_event *lev;
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	if (base && event_base_get_iocp_(base)) {
 		const struct win32_extension_fns *ext =
 			event_get_win32_extension_fns_();
@@ -446,7 +454,7 @@ listener_read_cb(evutil_socket_t fd, short what, void *p)
 	}
 }
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 struct accepting_socket {
 	CRITICAL_SECTION lock;
 	struct event_overlapped overlapped;

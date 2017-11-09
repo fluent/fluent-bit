@@ -20,12 +20,13 @@
 #ifndef FLB_PIPE_H
 #define FLB_PIPE_H
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include <event.h>
+typedef intptr_t ssize_t;
 #define flb_pipefd_t evutil_socket_t
 #define flb_sockfd_t evutil_socket_t
-#define flb_pipe_w(fd, buf, len) send(fd, buf, len, 0)
-#define flb_pipe_r(fd, buf, len) recv(fd, buf, len, 0)
+#define flb_pipe_w(fd, buf, len) send(fd, (char*)buf, len, 0)
+#define flb_pipe_r(fd, buf, len) recv(fd, (char*)buf, len, 0)
 #else
 #include <unistd.h>
 #define flb_pipefd_t int

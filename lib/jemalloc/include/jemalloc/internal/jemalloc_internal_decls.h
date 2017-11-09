@@ -2,7 +2,7 @@
 #define	JEMALLOC_INTERNAL_DECLS_H
 
 #include <math.h>
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #  include <windows.h>
 #  include "msvc_compat/windows_extra.h"
 

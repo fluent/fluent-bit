@@ -1,6 +1,6 @@
 #include "test/jemalloc_test.h"
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 void
 thd_create(thd_t *thd, void *(*proc)(void *), void *arg)
 {

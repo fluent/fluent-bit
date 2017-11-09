@@ -21,7 +21,7 @@
 #include <string.h>
 #include <errno.h>
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
@@ -119,7 +119,7 @@ err_openssl(const char *func)
 	exit(1);
 }
 
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 /* See http://archives.seul.org/libevent/users/Jan-2013/msg00039.html */
 static int cert_verify_callback(X509_STORE_CTX *x509_ctx, void *arg)
 {
@@ -259,7 +259,7 @@ main(int argc, char **argv)
 		goto error;
 	}
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	{
 		WORD wVersionRequested;
 		WSADATA wsaData;
@@ -273,7 +273,7 @@ main(int argc, char **argv)
 			goto error;
 		}
 	}
-#endif // _WIN32
+#endif // _WIN64
 
 	http_uri = evhttp_uri_parse(url);
 	if (http_uri == NULL) {
@@ -335,7 +335,7 @@ main(int argc, char **argv)
 		goto error;
 	}
 
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 	/* TODO: Add certificate loading on Windows as well */
 
 	/* Attempt to use the system's trusted root certificates.
@@ -368,9 +368,9 @@ main(int argc, char **argv)
 	 * "wrapping" OpenSSL's routine, not replacing it. */
 	SSL_CTX_set_cert_verify_callback(ssl_ctx, cert_verify_callback,
 					  (void *) host);
-#else // _WIN32
+#else // _WIN64
 	(void)crt;
-#endif // _WIN32
+#endif // _WIN64
 
 	// Create event base
 	base = event_base_new();
@@ -494,7 +494,7 @@ cleanup:
 	sk_SSL_COMP_free(SSL_COMP_get_compression_methods());
 #endif /*OPENSSL_VERSION_NUMBER < 0x10100000L */
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	WSACleanup();
 #endif
 

@@ -20,7 +20,7 @@
 #ifndef FLB_SOCKET_H
 #define FLB_SOCKET_H
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include <event.h>
 #define flb_sockfd_t         evutil_socket_t
 #define flb_socket_close(fd) evutil_closesocket(fd)

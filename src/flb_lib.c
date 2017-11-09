@@ -35,6 +35,10 @@
 #include <mcheck.h>
 #endif
 
+#if defined(_WIN32) || defined(_WIN64)
+#define read(fd,buf,len)        recv(fd,(char*)buf,(int) len,0)
+#endif
+
 extern struct flb_input_plugin in_lib_plugin;
 
 static inline struct flb_input_instance *in_instance_get(flb_ctx_t *ctx,

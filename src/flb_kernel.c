@@ -22,7 +22,7 @@
 #include <fluent-bit/flb_kernel.h>
 #include <fluent-bit/flb_utils.h>
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 
 /* Dummy function for Windows environment */
 struct flb_kernel *flb_kernel_info()

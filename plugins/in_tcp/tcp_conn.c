@@ -27,6 +27,11 @@
 #include "tcp.h"
 #include "tcp_conn.h"
 
+#if defined(_WIN32) || defined(_WIN64)
+#define read(fd,buf,len)        recv(fd,(char*)buf,(int) len,0)
+#define write(fd,buf,len)       send(fd,(char*)buf,(int) len,0)
+#endif
+
 static inline void consume_bytes(char *buf, int bytes, int length)
 {
     memmove(buf, buf + bytes, length - bytes);
@@ -199,7 +204,11 @@ struct tcp_conn *tcp_conn_add(int fd, struct flb_in_tcp_config *ctx)
     conn->buf_data = flb_malloc(ctx->chunk_size);
     if (!conn->buf_data) {
         perror("malloc");
-        close(fd);
+#if defined(_WIN32) || defined(_WIN64)
+    _close(fd);
+#else
+    close(fd);
+#endif
         flb_error("[in_tcp] could not allocate new connection");
         flb_free(conn);
         return NULL;
@@ -215,7 +224,11 @@ struct tcp_conn *tcp_conn_add(int fd, struct flb_in_tcp_config *ctx)
     ret = mk_event_add(ctx->evl, fd, FLB_ENGINE_EV_CUSTOM, MK_EVENT_READ, conn);
     if (ret == -1) {
         flb_error("[in_tcp] could not register new connection");
-        close(fd);
+#if defined(_WIN32) || defined(_WIN64)
+    _close(fd);
+#else
+    close(fd);
+#endif
         flb_free(conn->buf_data);
         flb_free(conn);
         return NULL;
@@ -239,7 +252,11 @@ int tcp_conn_del(struct tcp_conn *conn)
 
     /* Release resources */
     mk_list_del(&conn->_head);
+#if defined(_WIN32) || defined(_WIN64)
+    _close(conn->fd);
+#else
     close(conn->fd);
+#endif
     flb_free(conn->buf_data);
     flb_free(conn);
 

@@ -26,7 +26,7 @@
  */
 #include "util-internal.h"
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include <winsock2.h>
 #include <windows.h>
 #include <io.h>
@@ -59,7 +59,7 @@
 #include <sys/stat.h>
 #endif
 
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 #include <sys/socket.h>
 #include <sys/wait.h>
 #include <signal.h>
@@ -121,7 +121,7 @@ static void dnslogcb(int w, const char *m)
 int
 regress_make_tmpfile(const void *data, size_t datalen, char **filename_out)
 {
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 	char tmpfilename[32];
 	int fd;
 	*filename_out = NULL;
@@ -169,7 +169,7 @@ regress_make_tmpfile(const void *data, size_t datalen, char **filename_out)
 #endif
 }
 
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 pid_t
 regress_fork(void)
 {
@@ -193,7 +193,7 @@ basic_test_setup(const struct testcase_t *testcase)
 	evutil_socket_t spair[2] = { -1, -1 };
 	struct basic_test_data *data = NULL;
 
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 	if (testcase->flags & TT_ENABLE_IOCP_FLAG)
 		return (void*)TT_SKIP;
 #endif
@@ -358,7 +358,7 @@ const struct testcase_setup_t legacy_setup = {
 
 /* ============================================================ */
 
-#if (!defined(EVENT__HAVE_PTHREADS) && !defined(_WIN32)) || defined(EVENT__DISABLE_THREAD_SUPPORT)
+#if (!defined(EVENT__HAVE_PTHREADS) && !defined(_WIN64)) || defined(EVENT__DISABLE_THREAD_SUPPORT)
 struct testcase_t thread_testcases[] = {
 	{ "basic", NULL, TT_SKIP, NULL, NULL },
 	END_OF_TESTCASES
@@ -380,7 +380,7 @@ struct testgroup_t testgroups[] = {
 	{ "rpc/", rpc_testcases },
 	{ "thread/", thread_testcases },
 	{ "listener/", listener_testcases },
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	{ "iocp/", iocp_testcases },
 	{ "iocp/bufferevent/", bufferevent_iocp_testcases },
 	{ "iocp/listener/", listener_iocp_testcases },
@@ -418,7 +418,7 @@ int libevent_tests_running_in_debug_mode = 0;
 int
 main(int argc, const char **argv)
 {
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	WORD wVersionRequested;
 	WSADATA wsaData;
 
@@ -427,12 +427,12 @@ main(int argc, const char **argv)
 	(void) WSAStartup(wVersionRequested, &wsaData);
 #endif
 
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 	if (signal(SIGPIPE, SIG_IGN) == SIG_ERR)
 		return 1;
 #endif
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	tinytest_skip(testgroups, "http/connection_retry");
 	tinytest_skip(testgroups, "http/https_connection_retry");
 #endif

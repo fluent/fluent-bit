@@ -40,11 +40,13 @@ static void step_callback(void *data)
     /* Set the worker context global */
     FLB_TLS_SET(flb_worker_ctx, worker);
 
+#if !defined(_WIN32) && !defined(_WIN64)
     /* Initialize worker-required data */
     ret = flb_log_worker_init(worker);
     if (ret == -1) {
         fprintf(stderr, "[worker] error initializing log-worker context\n");
     }
+#endif
 
     /* not too scary :) */
     worker->func(worker->data);

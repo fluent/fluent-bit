@@ -31,7 +31,7 @@
 #include <assert.h>
 #include <math.h>
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #else
@@ -67,7 +67,7 @@ static int cfg_connlimit_tolerance = -1;
 static int cfg_grouplimit_tolerance = -1;
 static int cfg_stddev_tolerance = -1;
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 static int cfg_enable_iocp = 0;
 #endif
 
@@ -277,7 +277,7 @@ test_ratelimiting(void)
 
 	base_cfg = event_config_new();
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	if (cfg_enable_iocp) {
 #ifdef EVTHREAD_USE_WINDOWS_THREADS_IMPLEMENTED
 		evthread_use_windows_threads();
@@ -486,7 +486,7 @@ static struct option {
 	{ "--check-connlimit", &cfg_connlimit_tolerance, 0, 0 },
 	{ "--check-grouplimit", &cfg_grouplimit_tolerance, 0, 0 },
 	{ "--check-stddev", &cfg_stddev_tolerance, 0, 0 },
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	{ "--iocp", &cfg_enable_iocp, 0, 1 },
 #endif
 	{ NULL, NULL, -1, 0 },
@@ -545,7 +545,7 @@ main(int argc, char **argv)
 	int i,j;
 	double ratio;
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	WORD wVersionRequested = MAKEWORD(2,2);
 	WSADATA wsaData;
 
@@ -554,7 +554,7 @@ main(int argc, char **argv)
 
 	evutil_weakrand_seed_(&weakrand_state, 0);
 
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 	if (signal(SIGPIPE, SIG_IGN) == SIG_ERR)
 		return 1;
 #endif
@@ -588,7 +588,7 @@ main(int argc, char **argv)
 	{
 		struct timeval tv;
 		evutil_gettimeofday(&tv, NULL);
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 		srand(tv.tv_usec);
 #else
 		srandom(tv.tv_usec);

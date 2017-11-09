@@ -49,7 +49,7 @@
 #include <unistd.h>
 #endif
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include <winsock2.h>
 #endif
 

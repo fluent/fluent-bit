@@ -38,7 +38,7 @@
 #error "mbed TLS requires a platform with 8-bit chars"
 #endif
 
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(_WIN64)
 #if !defined(MBEDTLS_PLATFORM_C)
 #error "MBEDTLS_PLATFORM_C is required on Windows"
 #endif
@@ -49,7 +49,7 @@
     !defined(MBEDTLS_PLATFORM_SNPRINTF_MACRO)
 #define MBEDTLS_PLATFORM_SNPRINTF_ALT
 #endif
-#endif /* _WIN32 */
+#endif /* _WIN32 || _WIN64 */
 
 #if defined(TARGET_LIKE_MBED) && \
     ( defined(MBEDTLS_NET_C) || defined(MBEDTLS_TIMING_C) )

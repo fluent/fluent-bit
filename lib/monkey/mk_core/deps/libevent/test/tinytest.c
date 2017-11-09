@@ -33,7 +33,7 @@
 
 #ifndef NO_FORKING
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include <windows.h>
 #else
 #include <sys/types.h>
@@ -79,7 +79,7 @@ const char *cur_test_prefix = NULL; /**< prefix of the current test group */
 /** Name of the current test, if we haven't logged is yet. Used for --quiet */
 const char *cur_test_name = NULL;
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 /* Copy of argv[0] for win32. */
 static char commandname[MAX_PATH+1];
 #endif
@@ -121,7 +121,7 @@ static enum outcome
 testcase_run_forked_(const struct testgroup_t *group,
 		     const struct testcase_t *testcase)
 {
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	/* Fork? On Win32?  How primitive!  We'll do what the smart kids do:
 	   we'll invoke our own exe (whose name we recall from the command
 	   line) with a command line that tells it to run just the test we
@@ -382,7 +382,7 @@ tinytest_main(int c, const char **v, struct testgroup_t *groups)
 {
 	int i, j, n=0;
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	const char *sp = strrchr(v[0], '.');
 	const char *extension = "";
 	if (!sp || stricmp(sp, ".exe"))

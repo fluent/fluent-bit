@@ -29,6 +29,11 @@
 /* Minimum required for InitializeCriticalSectionAndSpinCount */
 #define _WIN32_WINNT 0x0403
 #endif
+#ifndef _WIN64_WINNT
+/* Minimum required for InitializeCriticalSectionAndSpinCount */
+#define _WIN64_WINNT 0x0403
+#endif
+
 #include <winsock2.h>
 #include <windows.h>
 #include <process.h>
@@ -286,7 +291,7 @@ event_iocp_activate_overlapped_(
 struct event_iocp_port *
 event_base_get_iocp_(struct event_base *base)
 {
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	return base->iocp;
 #else
 	return NULL;

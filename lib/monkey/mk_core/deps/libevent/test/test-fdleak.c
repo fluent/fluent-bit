@@ -26,7 +26,7 @@
 
 #include "event2/event-config.h"
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #endif
@@ -50,7 +50,7 @@
 
 /* Number of requests to make. Setting this too high might result in the machine
    running out of ephemeral ports */
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #define MAX_REQUESTS 1000
 #else
 #define MAX_REQUESTS 4000
@@ -230,7 +230,7 @@ main(int argc, char **argv)
 	}
 #endif
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	WSADATA WSAData;
 	WSAStartup(0x101, &WSAData);
 #endif

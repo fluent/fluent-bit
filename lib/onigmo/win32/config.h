@@ -12,7 +12,7 @@
 #define SIZEOF_LONG_LONG 8
 #define SIZEOF___INT64 8
 #define SIZEOF_OFF_T 4
-#ifdef _WIN64
+#if defined(_WIN64) || defined(_WIN32)
 # define SIZEOF_VOIDP 8
 #else
 # define SIZEOF_VOIDP 4

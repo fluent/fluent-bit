@@ -9,7 +9,7 @@
 #include <event2/event-config.h>
 
 #include <sys/stat.h>
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 #include <sys/queue.h>
 #include <unistd.h>
 #include <sys/time.h>
@@ -46,7 +46,7 @@ main(int argc, char **argv)
 {
 	struct event *signal_int;
 	struct event_base* base;
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	WORD wVersionRequested;
 	WSADATA wsaData;
 

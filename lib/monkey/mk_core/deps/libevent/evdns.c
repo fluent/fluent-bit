@@ -75,11 +75,18 @@
 #include <sys/stat.h>
 #include <stdio.h>
 #include <stdarg.h>
-#ifdef _WIN32
+#if defined(_WIN32)
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #ifndef _WIN32_IE
 #define _WIN32_IE 0x400
+#endif
+#include <shlobj.h>
+#elif defined(_WIN64)
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#ifndef _WIN64_IE
+#define _WIN64_IE 0x400
 #endif
 #include <shlobj.h>
 #endif
@@ -99,7 +106,7 @@
 #include "ipv6-internal.h"
 #include "util-internal.h"
 #include "evthread-internal.h"
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include <ctype.h>
 #include <winsock2.h>
 #include <windows.h>
@@ -3584,7 +3591,7 @@ evdns_base_resolv_conf_parse(struct evdns_base *base, int flags, const char *con
 static char *
 evdns_get_default_hosts_filename(void)
 {
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	/* Windows is a little coy about where it puts its configuration
 	 * files.  Sure, they're _usually_ in C:\windows\system32, but
 	 * there's no reason in principle they couldn't be in
@@ -3666,7 +3673,7 @@ evdns_resolv_conf_parse(int flags, const char *const filename) {
 }
 
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 /* Add multiple nameservers from a space-or-comma-separated list. */
 static int
 evdns_nameserver_ip_add_line(struct evdns_base *base, const char *ips) {
@@ -3957,7 +3964,7 @@ evdns_base_new(struct event_base *event_base, int flags)
 
 	if (flags & EVDNS_BASE_INITIALIZE_NAMESERVERS) {
 		int r;
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 		r = evdns_base_config_windows_nameservers(base);
 #else
 		r = evdns_base_resolv_conf_parse(base, DNS_OPTIONS_ALL, "/etc/resolv.conf");

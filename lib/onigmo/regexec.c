@@ -1301,13 +1301,13 @@ static int backref_match_at_nested_level(regex_t* reg,
 
 #ifdef ONIG_DEBUG_STATISTICS
 
-# ifdef _WIN32
+# ifdef _WIN64
 #  include <windows.h>
 static LARGE_INTEGER ts, te, freq;
 #  define GETTIME(t)	  QueryPerformanceCounter(&(t))
 #  define TIMEDIFF(te,ts) (unsigned long )(((te).QuadPart - (ts).QuadPart) \
 			    * 1000000 / freq.QuadPart)
-# else /* _WIN32 */
+# else /* _WIN64 */
 
 #  define USE_TIMEOFDAY
 
@@ -1331,7 +1331,7 @@ static struct tms ts, te;
 #   define TIMEDIFF(te,ts)  ((te).tms_utime - (ts).tms_utime)
 #  endif /* USE_TIMEOFDAY */
 
-# endif /* _WIN32 */
+# endif /* _WIN64 */
 
 static int OpCounter[256];
 static int OpPrevCounter[256];
@@ -1360,7 +1360,7 @@ onig_statistics_init(void)
     OpCounter[i] = OpPrevCounter[i] = 0; OpTime[i] = 0;
   }
   MaxStackDepth = 0;
-# ifdef _WIN32
+# ifdef _WIN64
   QueryPerformanceFrequency(&freq);
 # endif
 }

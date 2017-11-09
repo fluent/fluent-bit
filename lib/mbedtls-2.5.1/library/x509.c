@@ -64,7 +64,7 @@
 #include "mbedtls/platform_time.h"
 #endif
 
-#if defined(_WIN32) && !defined(EFIX64) && !defined(EFI32)
+#if ( defined(_WIN32) || defined(_WIN64) ) && !defined(EFIX64) && !defined(EFI32)
 #include <windows.h>
 #else
 #include <time.h>
@@ -72,7 +72,7 @@
 
 #if defined(MBEDTLS_FS_IO)
 #include <stdio.h>
-#if !defined(_WIN32)
+#if !defined(_WIN32) && !defined(_WIN64)
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <dirent.h>
@@ -897,7 +897,7 @@ int mbedtls_x509_key_size_helper( char *buf, size_t buf_size, const char *name )
  * Set the time structure to the current time.
  * Return 0 on success, non-zero on failure.
  */
-#if defined(_WIN32) && !defined(EFIX64) && !defined(EFI32)
+#if ( defined(_WIN32) || defined(_WIN64) ) && !defined(EFIX64) && !defined(EFI32)
 static int x509_get_current_time( mbedtls_x509_time *now )
 {
     SYSTEMTIME st;
@@ -947,7 +947,7 @@ static int x509_get_current_time( mbedtls_x509_time *now )
 
     return( ret );
 }
-#endif /* _WIN32 && !EFIX64 && !EFI32 */
+#endif /* ( _WIN32 || _WIN64 ) && !EFIX64 && !EFI32 */
 
 /*
  * Return 0 if before <= after, 1 otherwise

@@ -1,6 +1,6 @@
 #ifdef CHECK_FUNCTION_EXISTS
 
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 char CHECK_FUNCTION_EXISTS();
 #endif
 
@@ -11,7 +11,7 @@ int main(){
 #else
 int main(int ac, char*av[]){
 #endif
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
   void * p = &CHECK_FUNCTION_EXISTS;
 #else
   CHECK_FUNCTION_EXISTS();

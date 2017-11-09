@@ -89,7 +89,7 @@ typedef struct {
 
 
 #ifndef ONIG_EXTERN
-# if defined(_WIN32) && !defined(__GNUC__)
+# if defined(_WIN64) && !defined(__GNUC__)
 #  if defined(EXPORT)
 #   define ONIG_EXTERN   extern __declspec(dllexport)
 #  else

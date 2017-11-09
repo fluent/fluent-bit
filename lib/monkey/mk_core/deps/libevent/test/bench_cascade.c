@@ -32,8 +32,11 @@
 #ifdef EVENT__HAVE_SYS_TIME_H
 #include <sys/time.h>
 #endif
-#ifdef _WIN32
+#if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#elif defined(_WIN64)
+#define WIN64_LEAN_AND_MEAN
 #include <windows.h>
 #else
 #include <sys/socket.h>
@@ -146,7 +149,7 @@ main(int argc, char **argv)
 	struct timeval *tv;
 
 	int num_pipes = 100;
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	WSADATA WSAData;
 	WSAStartup(0x101, &WSAData);
 #endif
@@ -180,7 +183,7 @@ main(int argc, char **argv)
 			tv->tv_sec * 1000000L + tv->tv_usec);
 	}
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	WSACleanup();
 #endif
 

@@ -44,14 +44,17 @@
 #if !defined(MBEDTLS_NO_PLATFORM_ENTROPY)
 
 #if !defined(unix) && !defined(__unix__) && !defined(__unix) && \
-    !defined(__APPLE__) && !defined(_WIN32)
+    !defined(__APPLE__) && !defined(_WIN32) && !defined(_WIN64)
 #error "Platform entropy sources only work on Unix and Windows, see MBEDTLS_NO_PLATFORM_ENTROPY in config.h"
 #endif
 
-#if defined(_WIN32) && !defined(EFIX64) && !defined(EFI32)
+#if (defined(_WIN32) || defined(_WIN64)) && !defined(EFIX64) && !defined(EFI32)
 
-#if !defined(_WIN32_WINNT)
+#if defined(_WIN32) && !defined(_WIN32_WINNT)
 #define _WIN32_WINNT 0x0400
+#endif
+#if defined(_WIN64) && !defined(_WIN64_WINNT)
+#define _WIN64_WINNT 0x0400
 #endif
 #include <windows.h>
 #include <wincrypt.h>
@@ -80,7 +83,7 @@ int mbedtls_platform_entropy_poll( void *data, unsigned char *output, size_t len
 
     return( 0 );
 }
-#else /* _WIN32 && !EFIX64 && !EFI32 */
+#else /* _WIN32 || _WIN64 && !EFIX64 && !EFI32 */
 
 /*
  * Test for Linux getrandom() support.
@@ -188,7 +191,7 @@ int mbedtls_platform_entropy_poll( void *data,
 
     return( 0 );
 }
-#endif /* _WIN32 && !EFIX64 && !EFI32 */
+#endif /* _WIN32 || _WIN64 && !EFIX64 && !EFI32 */
 #endif /* !MBEDTLS_NO_PLATFORM_ENTROPY */
 
 #if defined(MBEDTLS_TEST_NULL_ENTROPY)

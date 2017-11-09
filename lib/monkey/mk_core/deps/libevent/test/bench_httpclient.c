@@ -29,7 +29,7 @@
 #include "util-internal.h"
 
 #include <sys/types.h>
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include <winsock2.h>
 #else
 #include <sys/socket.h>
@@ -182,7 +182,7 @@ main(int argc, char **argv)
 	long long usec;
 	double throughput;
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	WSADATA WSAData;
 	WSAStartup(0x101, &WSAData);
 #endif
@@ -215,7 +215,7 @@ main(int argc, char **argv)
 	throughput = total_n_handled /
 	    (total.tv_sec+ ((double)total.tv_usec)/1000000.0);
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #define I64_FMT "%I64d"
 #define I64_TYP __int64
 #else
@@ -232,7 +232,7 @@ main(int argc, char **argv)
 	    (double)(usec/1000) / total_n_handled,
 	    (I64_TYP)total_n_bytes, n_errors);
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	WSACleanup();
 #endif
 

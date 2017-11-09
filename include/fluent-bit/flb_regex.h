@@ -23,8 +23,10 @@
 #include <stdlib.h>
 #include <stddef.h>
 
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 #include <unistd.h>
+#else
+typedef uintptr_t ssize_t;
 #endif
 
 #include <onigmo.h>

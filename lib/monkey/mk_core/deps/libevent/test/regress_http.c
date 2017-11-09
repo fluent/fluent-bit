@@ -26,7 +26,7 @@
  */
 #include "util-internal.h"
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
@@ -40,7 +40,7 @@
 #include <sys/time.h>
 #endif
 #include <sys/queue.h>
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 #include <sys/socket.h>
 #include <signal.h>
 #include <unistd.h>
@@ -191,7 +191,7 @@ http_connect(const char *address, ev_uint16_t port)
 
 	evutil_make_socket_nonblocking(fd);
 	if (connect(fd, sa, slen) == -1) {
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 		int tmp_err = WSAGetLastError();
 		if (tmp_err != WSAEINPROGRESS && tmp_err != WSAEINVAL &&
 		    tmp_err != WSAEWOULDBLOCK)
@@ -1293,7 +1293,7 @@ http_failed_request_done(struct evhttp_request *req, void *arg)
 end:
 	event_base_loopexit(arg, NULL);
 }
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 static void
 http_timed_out_request_done(struct evhttp_request *req, void *arg)
 {
@@ -1386,7 +1386,7 @@ static struct evhttp_request *
 http_cancel_test_bad_request_new(enum http_cancel_test_type type,
 	struct event_base *base)
 {
-#ifndef _WIN32
+#if !defined(_WIN64) && !defined(_WIN32)
 	if (!(type & NO_NS) && (type & SERVER_TIMEOUT))
 		return evhttp_request_new(http_timed_out_request_done, base);
 	else

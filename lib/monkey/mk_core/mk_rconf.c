@@ -23,8 +23,11 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#if !defined(_WIN32) && !defined(_WIN64)
 #include <unistd.h>
-
+#else
+#define PATH_MAX 1024
+#endif
 
 #include <mk_core/mk_rconf.h>
 #include <mk_core/mk_utils.h>
@@ -377,10 +380,20 @@ static int mk_rconf_path_set(struct mk_rconf *conf, char *file)
     char *end;
     char path[PATH_MAX + 1];
 
+#if !defined(_WIN32) && !defined(_WIN64)
     p = realpath(file, path);
     if (!p) {
         return -1;
     }
+#else    
+    DWORD  retval = 0;
+
+    retval = GetFullPathName(file, PATH_MAX + 1, path, NULL);
+    if (retval == 0)
+    {
+        return -1;
+    }
+#endif
 
     /* lookup path ending and truncate */
     end = strrchr(path, '/');

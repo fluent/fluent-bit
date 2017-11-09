@@ -30,6 +30,11 @@
 #include <fluent-bit/flb_error.h>
 #include "in_lib.h"
 
+#if defined(_WIN32) || defined(_WIN64)
+#define read(fd,buf,len)        recv(fd,(char*)buf,(int) len,0)
+#define write(fd,buf,len)       send(fd,(char*)buf,(int) len,0)
+#endif
+
 static int in_lib_collect(struct flb_input_instance *i_ins,
                           struct flb_config *config, void *in_context)
 {

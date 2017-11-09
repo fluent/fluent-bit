@@ -1,7 +1,7 @@
 /******************************************************************************/
 #ifdef JEMALLOC_H_TYPES
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 #  ifdef _WIN64
 #    define FMT64_PREFIX "ll"
 #    define FMTPTR_PREFIX "ll"
@@ -318,7 +318,7 @@ JEMALLOC_INLINE void
 set_errno(int errnum)
 {
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	SetLastError(errnum);
 #else
 	errno = errnum;
@@ -330,7 +330,7 @@ JEMALLOC_INLINE int
 get_errno(void)
 {
 
-#ifdef _WIN32
+#if defined(_WIN64) || defined(_WIN32)
 	return (GetLastError());
 #else
 	return (errno);
