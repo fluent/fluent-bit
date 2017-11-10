@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_mem.h>
 
 #include "kafka_config.h"
+#include "kafka_callbacks.h"
 
 struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
                                         struct flb_config *config)
@@ -46,6 +47,13 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
 
+    /* rdkafka configuration parameters */
+    ret = rd_kafka_conf_set(ctx->conf, "client.id", "fluent-bit",
+                            errstr, sizeof(errstr));
+    if (ret != RD_KAFKA_CONF_OK) {
+        flb_error("[out_kafka] cannot configure client.id");
+    }
+
     /* Config: Brokers */
     tmp = flb_output_get_property("brokers", ins);
     if (tmp) {
@@ -66,9 +74,24 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
 
-    rd_kafka_conf_set(ctx->conf, "queue.buffering.max.ms", "1",
-                      errstr, sizeof(errstr));
-    rd_kafka_conf_set(ctx->conf, "batch.num.messages", "1", errstr, sizeof(errstr));
+    /* Callback: message delivery */
+    rd_kafka_conf_set_dr_msg_cb(ctx->conf, cb_kafka_msg);
+
+    /* Callback: log */
+    rd_kafka_conf_set_log_cb(ctx->conf, cb_kafka_logger);
+
+
+    /* Config: Message_Key */
+    tmp = flb_output_get_property("message_key", ins);
+    if (tmp) {
+        ctx->message_key = flb_strdup(tmp);
+        ctx->message_key_len = strlen(tmp);
+    }
+    else {
+        ctx->timestamp_key = NULL;
+        ctx->timestamp_key_len = 0;
+    }
+
     /* Config: Timestamp_Key */
     tmp = flb_output_get_property("timestamp_key", ins);
     if (tmp) {
@@ -103,6 +126,8 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
 
+    flb_info("[out_kafka] brokers='%s' topic='%s'",
+             ctx->brokers, tmp);
     return ctx;
 }
 
@@ -120,6 +145,13 @@ int flb_kafka_conf_destroy(struct flb_kafka *ctx)
     }
     if (ctx->producer) {
         rd_kafka_destroy(ctx->producer);
+    }
+    if (ctx->conf) {
+        rd_kafka_conf_destroy(ctx->conf);
+    }
+
+    if (ctx->message_key) {
+        flb_free(ctx->message_key);
     }
 
     flb_free(ctx);

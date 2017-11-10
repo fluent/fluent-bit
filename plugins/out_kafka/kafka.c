@@ -24,18 +24,26 @@
 
 #include "kafka_config.h"
 
-static void dr_msg_cb (rd_kafka_t *rk,
-                       const rd_kafka_message_t *rkmessage, void *opaque) {
-        if (rkmessage->err)
-                fprintf(stderr, "%% Message delivery failed: %s\n",
-                        rd_kafka_err2str(rkmessage->err));
-        else
-                fprintf(stderr,
-                        "%% Message delivered (%zd bytes, "
-                        "partition %"PRId32")\n",
-                        rkmessage->len, rkmessage->partition);
+void cb_kafka_msg(rd_kafka_t *rk, const rd_kafka_message_t *rkmessage,
+                  void *opaque)
+{
+    if (rkmessage->err) {
+        flb_warn("[out_kafka] message delivery failed: %s",
+                 rd_kafka_err2str(rkmessage->err));
+    }
+    else {
+        flb_debug("[out_kafka] message delivered (%zd bytes, "
+                "partition %"PRId32")",
+                rkmessage->len, rkmessage->partition);
+    }
+}
 
-        /* The rkmessage is destroyed automatically by librdkafka */
+void cb_kafka_logger(const rd_kafka_t *rk, int level,
+                     const char *fac, const char *buf)
+{
+
+    flb_error("[out_kafka] %s: %s",
+              rk ? rd_kafka_name(rk) : NULL, buf);
 }
 
 static int cb_kafka_init(struct flb_output_instance *ins,
@@ -50,9 +58,6 @@ static int cb_kafka_init(struct flb_output_instance *ins,
         flb_error("[out_kafka] failed to initialize");
         return -1;
     }
-
-    /* Kafka Callback for messages delivery */
-    rd_kafka_conf_set_dr_msg_cb(ctx->conf, dr_msg_cb);
 
     /* Set global context */
     flb_output_set_context(ins, ctx);
@@ -96,18 +101,17 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
 
     ret = flb_msgpack_raw_to_json_str(mp_sbuf.data, mp_sbuf.size,
                                       &json_buf, &json_size);
-    printf("=>%s\n", json_buf);
     if (ret != 0) {
         flb_error("[out_kafka] error encoding to JSON");
         msgpack_sbuffer_destroy(&mp_sbuf);
-        return -1;
+        return FLB_ERROR;
     }
 
     ret = rd_kafka_produce(ctx->topic,
                            RD_KAFKA_PARTITION_UA,
                            RD_KAFKA_MSG_F_COPY,
                            json_buf, json_size,
-                           NULL, 0,
+                           ctx->message_key, ctx->message_key_len,
                            NULL);
     if (ret == -1) {
         fprintf(stderr,
@@ -117,11 +121,12 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
 
     }
     else {
-        rd_kafka_poll(ctx->producer, 1);
+        rd_kafka_poll(ctx->producer, -1);
     }
+
     flb_free(json_buf);
     msgpack_sbuffer_destroy(&mp_sbuf);
-    return 0;
+    return FLB_OK;
 }
 
 static void cb_kafka_flush(void *data, size_t bytes,
@@ -150,6 +155,7 @@ static void cb_kafka_flush(void *data, size_t bytes,
         }
     }
 
+    msgpack_unpacked_destroy(&result);
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 

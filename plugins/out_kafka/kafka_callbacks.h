@@ -17,33 +17,15 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_OUT_KAFKA_CONFIG_H
-#define FLB_OUT_KAFKA_CONFIG_H
+#ifndef FLB_OUT_KAFKA_CALLBACKS_H
+#define FLB_OUT_KAFKA_CALLBACKS_H
 
 #include "rdkafka.h"
 
-#define FLB_KAFKA_BROKERS   "127.0.0.1"
-#define FLB_KAFKA_TOPIC     "fluent-bit"
-#define FLB_KAFKA_TS_KEY    "@timestamp"
+void cb_kafka_msg(rd_kafka_t *rk, const rd_kafka_message_t *rkmessage,
+                  void *opaque);
 
-struct flb_kafka {
-    /* Config Parameters */
-    char *brokers;
-
-    int timestamp_key_len;
-    char *timestamp_key;
-
-    int message_key_len;
-    char *message_key;
-
-    /* Internal */
-    rd_kafka_t *producer;
-    rd_kafka_conf_t *conf;
-    rd_kafka_topic_t *topic;
-};
-
-struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
-                                        struct flb_config *config);
-int flb_kafka_conf_destroy(struct flb_kafka *ctx);
+void cb_kafka_logger(const rd_kafka_t *rk, int level,
+                     const char *fac, const char *buf);
 
 #endif
