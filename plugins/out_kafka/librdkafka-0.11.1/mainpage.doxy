@@ -1,0 +1,35 @@
+/**
+ * @mainpage librdkafka documentation
+ *
+ * librdkafka is the Apache Kafka C/C++ client library.
+ *
+ * @section intro Introduction
+ *
+ * For an introduction and manual to librdkafka see INTRODUCTION.md
+ *
+ * @section conf Configuration
+ *
+ * librdkafka is highly configurable to meet any deployment demands.
+ * It is usually safe to leave most configuration properties to their default
+ * values.
+ *
+ * See CONFIGURATION.md for the full list of supported configuration properties.
+ *
+ * @remark Application developers are recommended to provide a non-hardcoded
+ *         interface to librdkafka's string based name-value configuration
+ *         property interface, allowing users to configure any librdkafka
+ *         property directly without alterations to the application.
+ *         This allows for seamless upgrades where linking to a new version
+ *         of librdkafka automatically provides new configuration
+ *         based features.
+
+ *
+ * @section c_api C API
+ *
+ * The C API is documented in rdkafka.h
+ *
+ * @section cpp_api C++ API
+ *
+ * The C++ API is documented in rdkafkacpp.h
+ */
+

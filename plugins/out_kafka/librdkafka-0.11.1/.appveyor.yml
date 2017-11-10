@@ -1,0 +1,88 @@
+version: 0.11.0-R-post{build}
+pull_requests:
+  do_not_increment_build_number: true
+image: Visual Studio 2013
+configuration: Release
+environment:
+  matrix:
+  - platform: x64
+  - platform: win32
+install:
+- ps: "$OpenSSLVersion = \"1_0_2L\"\n$OpenSSLExe = \"OpenSSL-$OpenSSLVersion.exe\"\n\nRemove-Item C:\\OpenSSL-Win32 -recurse\nRemove-Item C:\\OpenSSL-Win64 -recurse\n\nWrite-Host \"Installing OpenSSL v1.0 32-bit ...\" -ForegroundColor Cyan\nWrite-Host \"Downloading...\"\n$exePath = \"$($env:USERPROFILE)\\Win32OpenSSL-1_0_2L.exe\"\n(New-Object Net.WebClient).DownloadFile('https://slproweb.com/download/Win32OpenSSL-1_0_2L.exe', $exePath)\nWrite-Host \"Installing...\"\ncmd /c start /wait $exePath /silent /verysilent /sp- /suppressmsgboxes /DIR=C:\\OpenSSL-Win32\nWrite-Host \"Installed\" -ForegroundColor Green\n\nWrite-Host \"Installing OpenSSL v1.0 64-bit ...\" -ForegroundColor Cyan\nWrite-Host \"Downloading...\"\n$exePath = \"$($env:USERPROFILE)\\Win64OpenSSL-1_0_2L.exe\"\n(New-Object Net.WebClient).DownloadFile('https://slproweb.com/download/Win64OpenSSL-1_0_2L.exe', $exePath)\nWrite-Host \"Installing...\"\ncmd /c start /wait $exePath /silent /verysilent /sp- /suppressmsgboxes /DIR=C:\\OpenSSL-Win64\nWrite-Host \"Installed\" -ForegroundColor Green\n\nif (!(Test-Path(\"C:\\OpenSSL-Win32\"))) {\n  echo \"Downloading https://slproweb.com/download/Win32$OpenSSLExe\"\n  Start-FileDownload 'https://slproweb.com/download/Win32$OpenSSLExe'\n  Start-Process \"Win32$OpenSSLExe\" -ArgumentList \"/silent /verysilent /sp- /suppressmsgboxes\" -Wait\n} else {\n   echo \"OpenSSL-Win32 already exists: not downloading\"\n}\n\nif (!(Test-Path(\"C:\\OpenSSL-Win64\"))) {\n  echo \"Downloading https://slproweb.com/download/Win64$OpenSSLExe\"\n  Start-FileDownload 'https://slproweb.com/download/Win64$OpenSSLExe' \n  Start-Process \"Win64$OpenSSLExe\" -ArgumentList \"/silent /verysilent /sp- /suppressmsgboxes\" -Wait\n} else {\n   echo \"OpenSSL-Win64 already exists: not downloading\"\n}\n\n\n\n# Download the CoApp tools.\n$msiPath = \"$($env:USERPROFILE)\\CoApp.Tools.Powershell.msi\"\n(New-Object Net.WebClient).DownloadFile('http://coapp.org/files/CoApp.Tools.Powershell.msi', $msiPath)\n\n# Install the CoApp tools from the downloaded .msi.\nStart-Process -FilePath msiexec -ArgumentList /i, $msiPath, /quiet -Wait\n\n# Make the tools available for later PS scripts to use.\n$env:PSModulePath = $env:PSModulePath + ';C:\\Program Files (x86)\\Outercurve Foundation\\Modules'\nImport-Module CoApp\n\n# Install NuGet\n#Install-PackageProvider NuGet -MinimumVersion '2.8.5.201' -Force\n#Import-PackageProvider NuGet -MinimumVersion '2.8.5.201' -Force\n\n# Install CoApp for creating nuget packages\n#$msiPath = \"$($env:USERPROFILE)\\CoApp.Tools.Powershell.msi\"\n#(New-Object #Net.WebClient).DownloadFile('http://downloads.coapp.org/files/CoApp.Tools.Powershell.msi', $msiPath)\n#cmd /c start /wait msiexec /i \"$msiPath\" /quiet\n\n# Install CoApp module\n#Install-Module CoApp -Force"
+cache:
+- c:\OpenSSL-Win32
+- c:\OpenSSL-Win64
+nuget:
+  account_feed: true
+  project_feed: true
+  disable_publish_on_pr: true
+before_build:
+- cmd: nuget restore win32/librdkafka.sln
+build:
+  project: win32/librdkafka.sln
+  publish_nuget: true
+  publish_nuget_symbols: true
+  include_nuget_references: true
+  parallel: true
+  verbosity: normal
+test_script:
+- cmd: if exist DISABLED\win32\outdir\v140 ( win32\outdir\v140\%PLATFORM%\%CONFIGURATION%\tests.exe -l -p1 ) else ( win32\outdir\v120\%PLATFORM%\%CONFIGURATION%\tests.exe -l -p1 )
+artifacts:
+- path: test_report*.json
+  name: Test report
+- path: '*.nupkg'
+  name: Packages
+- path: '**\*.dll'
+  name: Libraries
+- path: '**\*.lib'
+  name: Libraries
+- path: '**\*.pdb'
+  name: Libraries
+- path: '**\*.exe'
+  name: Executables
+before_deploy:
+- ps: >-
+    # FIXME: Add to Deployment condition above:
+
+    # APPVEYOR_REPO_TAG = true
+
+
+
+    # This is the CoApp .autopkg file to create.
+
+    $autopkgFile = "win32/librdkafka.autopkg"
+
+
+    # Get the ".autopkg.template" file, replace "@version" with the Appveyor version number, then save to the ".autopkg" file.
+
+    cat ($autopkgFile + ".template") | % { $_ -replace "@version", $env:appveyor_build_version } > $autopkgFile
+
+
+    # Use the CoApp tools to create NuGet native packages from the .autopkg.
+
+    Write-NuGetPackage $autopkgFile
+
+
+    # Push all newly created .nupkg files as Appveyor artifacts for later deployment.
+
+    Get-ChildItem .\*.nupkg | % { Push-AppveyorArtifact $_.FullName -FileName $_.Name }
+deploy:
+- provider: S3
+  access_key_id:
+    secure: BDJ8FdNEzVKO7MTZX50dWIvrBEPOl9oHSRQ9S/s3uu0=
+  secret_access_key:
+    secure: GBmNSeDpUa7hqqTJBT+PLMgsZCxQMBau+6Vnitzqw15UlpuaZRzid1s5egIacZO6
+  region: us-west-1
+  bucket: librdkafka-ci-packages
+  folder: librdkafka/p-librdkafka__bld-appveyor__plat-windows__arch-$(platform)__bldtype-$(configuration)__tag-$(APPVEYOR_REPO_TAG_NAME)__sha-$(APPVEYOR_REPO_COMMIT)__bid-$(APPVEYOR_BUILD_ID)
+  artifact: /.*\.(nupkg)/
+  max_error_retry: 3
+  on:
+    APPVEYOR_REPO_TAG: true
+notifications:
+- provider: Email
+  to:
+  - magnus@edenhill.se
+  on_build_success: false
+  on_build_failure: true
+  on_build_status_changed: true

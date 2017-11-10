@@ -1,0 +1,19 @@
+#!/bin/bash
+#
+# Sets version variable from git information.
+# Optional arguments:
+#   "as"
+#   VARIABLE_NAME
+#
+# Example: Set version in variable named "MYVERSION":
+#   mkl_require gitversion as MYVERSION
+
+if [[ $1 == "as" ]]; then
+    __MKL_GITVERSION_VARNAME="$2"
+else
+    __MKL_GITVERSION_VARNAME="VERSION"
+fi
+
+function checks {
+    mkl_allvar_set "gitversion" "$__MKL_GITVERSION_VARNAME" "$(git describe --abbrev=6 --tags HEAD --always)"
+}

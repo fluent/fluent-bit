@@ -1,0 +1,26 @@
+Description
+===========
+
+
+
+
+How to reproduce
+================
+
+
+
+
+Checklist
+=========
+Please provide the following information:
+
+ - [ ] librdkafka version (release number or git tag):
+ - [ ] Apache Kafka version: 
+ - [ ] librdkafka client configuration:
+ - [ ] Operating system:
+ - [ ] Using the legacy Consumer
+ - [ ] Using the high-level KafkaConsumer
+ - [ ] Provide logs (with `debug=..` as necessary) from librdkafka
+ - [ ] Provide broker log excerpts
+ - [ ] Critical issue
+

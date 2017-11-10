@@ -1,0 +1,5 @@
+dl-*
+out-*
+*.nupkg
+*.pyc
+__pycache__

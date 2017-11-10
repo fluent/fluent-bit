@@ -1,0 +1,5 @@
+pkgname=librdkafka
+pkgver=master
+pkgrel=1
+pkgdesc=The Apache Kafka C/C++ client library
+arch=('i686' 'x86_64')
