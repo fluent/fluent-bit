@@ -197,9 +197,10 @@ if(NOT FLB_WITHOUT_SHARED_LIB)
   target_link_libraries(fluent-bit-shared ${FLB_DEPS} -lpthread)
   set_target_properties(fluent-bit-shared
     PROPERTIES OUTPUT_NAME fluent-bit)
-
+if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Windows")
   # Library install routines
   install(TARGETS fluent-bit-shared LIBRARY DESTINATION lib)
+endif()  
 endif()
 
 # Static Library
