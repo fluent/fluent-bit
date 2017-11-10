@@ -1,11 +1,13 @@
 cmake_minimum_required(VERSION 2.8)
+
 project(fluent-bit)
 
 # Update CFLAGS
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -fPIC ")
 if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Windows")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -fPIC ")
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__='\"$(subst ${CMAKE_SOURCE_DIR}/,,$(abspath $<))\"'")
 else()
+  set(CMAKE_C_FLAGS " /DWIN64 /D_WINDOWS /W3 -Wall")
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__=__FILE__")
 endif()
 
@@ -90,13 +92,15 @@ option(FLB_IN_KMSG         "Enable Kernel log input plugin"     Yes)
 option(FLB_IN_LIB          "Enable library mode input plugin"   Yes)
 option(FLB_IN_RANDOM       "Enable random input plugin"         Yes)
 option(FLB_IN_SERIAL       "Enable Serial input plugin"         Yes)
-option(FLB_IN_STDIN        "Enable Standard input plugin"       Yes)
 if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Windows")
+option(FLB_IN_STDIN        "Enable Standard input plugin"       Yes)
 option(FLB_IN_SYSLOG       "Enable Syslog input plugin"         Yes)
+option(FLB_IN_TAIL         "Enable Tail input plugin"           Yes)
 else()
+option(FLB_IN_STDIN        "Enable Standard input plugin"       No)
+option(FLB_IN_TAIL         "Enable Tail input plugin"           No)
 option(FLB_IN_SYSLOG       "Enable Syslog input plugin"         No)
 endif()
-option(FLB_IN_TAIL         "Enable Tail input plugin"           Yes)
 option(FLB_IN_TCP          "Enable TCP input plugin"            Yes)
 option(FLB_IN_MQTT         "Enable MQTT Broker input plugin"    Yes)
 option(FLB_IN_HEAD         "Enable Head input plugin"           Yes)
@@ -393,13 +397,13 @@ endif()
 
 # Onigmo (Regex Engine)
 # =====================
-if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")  
+if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
     if(FLB_REGEX)
       ExternalProject_Add(onigmo
         SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/onigmo
         BUILD_IN_SOURCE 1
         CONFIGURE_COMMAND ""
-        BUILD_COMMAND build_nmake.cmd
+        BUILD_COMMAND build_nmake.cmd ARCH=x64
         INSTALL_COMMAND "")
       add_library(libonigmo STATIC IMPORTED GLOBAL)
       set_target_properties(libonigmo PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/lib/onigmo/build_x64/onigmo_s.lib")
