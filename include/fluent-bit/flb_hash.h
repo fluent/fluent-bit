@@ -29,7 +29,7 @@
 struct flb_hash_entry {
     char *key;
     size_t key_len;
-    char *val;
+    void *val;
     size_t val_size;
     struct mk_list _head;
 };
@@ -48,11 +48,11 @@ struct flb_hash *flb_hash_create(size_t size);
 void flb_hash_destroy(struct flb_hash *ht);
 
 int flb_hash_add(struct flb_hash *ht, char *key, int key_len,
-                 char *val, size_t val_size);
+                 void *val, size_t val_size);
 int flb_hash_get(struct flb_hash *ht, char *key, int key_len,
-                 char **out_buf, size_t *out_size);
-int flb_hash_get_by_id(struct flb_hash *ht, int id, char *key, char **out_buf,
-                       size_t *out_size);
+                 void **out, size_t *out_size);
+int flb_hash_get_by_id(struct flb_hash *ht, int id, char *key, int key_len,
+                       void **out, size_t *out_size);
 int flb_hash_del(struct flb_hash *ht, char *key);
 
 #endif

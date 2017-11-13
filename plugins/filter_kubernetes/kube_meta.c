@@ -692,6 +692,7 @@ int flb_kube_meta_get(struct flb_kube *ctx,
     int id;
     int ret;
     char *hash_meta_buf;
+    void *out;
     size_t hash_meta_size;
 
     if (ctx->dummy_meta == FLB_TRUE) {
@@ -708,7 +709,8 @@ int flb_kube_meta_get(struct flb_kube *ctx,
     /* Check if we have some data associated to the cache key */
     ret = flb_hash_get(ctx->hash_table,
                        meta->cache_key, meta->cache_key_len,
-                       &hash_meta_buf, &hash_meta_size);
+                       &out, &hash_meta_size);
+    hash_meta_buf = out;
     if (ret == -1) {
         /* Retrieve API server meta and merge with local meta */
         ret = get_and_merge_meta(ctx, meta,
@@ -727,8 +729,9 @@ int flb_kube_meta_get(struct flb_kube *ctx,
              * the outgoing buffer and size.
              */
             flb_free(hash_meta_buf);
-            flb_hash_get_by_id(ctx->hash_table, id, meta->cache_key,
-                               &hash_meta_buf, &hash_meta_size);
+            flb_hash_get_by_id(ctx->hash_table, id, meta->cache_key, meta->cache_key_len,
+                               &out, &hash_meta_size);
+            hash_meta_buf = out;
         }
     }
 
