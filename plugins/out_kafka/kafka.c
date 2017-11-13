@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_pack.h>
 
 #include "kafka_config.h"
+#include "kafka_topic.h"
 
 void cb_kafka_msg(rd_kafka_t *rk, const rd_kafka_message_t *rkmessage,
                   void *opaque)
@@ -72,6 +73,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     int size;
     char *json_buf;
     size_t json_size;
+    struct flb_kafka_topic *topic = NULL;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
     msgpack_object key;
@@ -97,6 +99,16 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
 
         msgpack_pack_object(&mp_pck, key);
         msgpack_pack_object(&mp_pck, val);
+
+        /* Lookup key/topic */
+        if (ctx->topic_key && !topic && val.type == MSGPACK_OBJECT_STR) {
+            if (key.via.str.size == ctx->topic_key_len &&
+                strncmp(key.via.str.ptr, ctx->topic_key, ctx->topic_key_len) == 0) {
+                topic = flb_kafka_topic_lookup((char *) val.via.str.ptr,
+                                               val.via.str.size,
+                                               ctx);
+            }
+        }
     }
 
     ret = flb_msgpack_raw_to_json_str(mp_sbuf.data, mp_sbuf.size,
@@ -107,7 +119,16 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         return FLB_ERROR;
     }
 
-    ret = rd_kafka_produce(ctx->topic,
+    if (!topic) {
+        topic = flb_kafka_topic_default(ctx);
+    }
+    if (!topic) {
+        flb_error("[out_kafka] no default topic found");
+        msgpack_sbuffer_destroy(&mp_sbuf);
+        return FLB_ERROR;
+    }
+
+    ret = rd_kafka_produce(topic->tp,
                            RD_KAFKA_PARTITION_UA,
                            RD_KAFKA_MSG_F_COPY,
                            json_buf, json_size,
@@ -116,7 +137,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     if (ret == -1) {
         fprintf(stderr,
                 "%% Failed to produce to topic %s: %s\n",
-                rd_kafka_topic_name(ctx->topic),
+                rd_kafka_topic_name(topic->tp),
                 rd_kafka_err2str(rd_kafka_last_error()));
 
     }

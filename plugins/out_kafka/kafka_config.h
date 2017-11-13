@@ -20,15 +20,29 @@
 #ifndef FLB_OUT_KAFKA_CONFIG_H
 #define FLB_OUT_KAFKA_CONFIG_H
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_output.h>
+
 #include "rdkafka.h"
 
 #define FLB_KAFKA_BROKERS   "127.0.0.1"
 #define FLB_KAFKA_TOPIC     "fluent-bit"
 #define FLB_KAFKA_TS_KEY    "@timestamp"
 
+struct flb_kafka_topic {
+    int name_len;
+    char *name;
+    rd_kafka_topic_t *tp;
+    struct mk_list _head;
+};
+
 struct flb_kafka {
     /* Config Parameters */
     char *brokers;
+
+    /* Optional topic key for routing */
+    int topic_key_len;
+    char *topic_key;
 
     int timestamp_key_len;
     char *timestamp_key;
@@ -36,10 +50,12 @@ struct flb_kafka {
     int message_key_len;
     char *message_key;
 
+    /* Head of defined topics by configuration */
+    struct mk_list topics;
+
     /* Internal */
     rd_kafka_t *producer;
     rd_kafka_conf_t *conf;
-    rd_kafka_topic_t *topic;
 };
 
 struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
