@@ -30,6 +30,7 @@
 #define FLB_HASH_EVICT_NONE       0
 #define FLB_HASH_EVICT_OLDER      1
 #define FLB_HASH_EVICT_LESS_USED  2
+#define FLB_HASH_EVICT_RANDOM     3
 
 struct flb_hash_entry {
     time_t created;
@@ -38,6 +39,7 @@ struct flb_hash_entry {
     size_t key_len;
     char *val;
     size_t val_size;
+    struct flb_hash_table *table; /* link to parent flb_hash_table */
     struct mk_list _head;         /* link to flb_hash_table->chains */
     struct mk_list _head_parent;  /* link to flb_hash->entries */
 };

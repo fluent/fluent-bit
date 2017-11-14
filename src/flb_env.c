@@ -99,7 +99,7 @@ struct flb_env *flb_env_create()
     }
 
     /* Create the hash-table */
-    ht = flb_hash_create(FLB_ENV_SIZE, FLB_HASH_EVICT_NONE, -1);
+    ht = flb_hash_create(FLB_HASH_EVICT_NONE, FLB_ENV_SIZE, -1);
     if (!ht) {
         flb_free(env);
         return NULL;
