@@ -107,7 +107,8 @@ void flb_test_filter_ratelimit(void)
                          "Bucket_Key", "filename",
                          "Records_Per_Second", "1",
                          "Records_Burst", "2",
-                         "Initial_Records_Burst", "1",
+                         "Initial_Delay_Seconds", "1",
+                         "Log_Period_Seconds", "0",
                          NULL);
     TEST_CHECK(ret == 0);
 
@@ -115,43 +116,78 @@ void flb_test_filter_ratelimit(void)
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
 
-    /* Send log messages */
-    p = "[0, {\"log\":\"1\", \"filename\":\"app-log1.txt\"}]";
+    /* Send log messages during initial delay - all should go through */
+    p = "[0, {\"log\":\"01\", \"filename\":\"app-log1.txt\"}]";
     bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
     TEST_CHECK(bytes == strlen(p));
-    /* These should be dropped */
-    p = "[0, {\"log\":\"2\", \"filename\":\"app-log1.txt\"}]";
+    p = "[0, {\"log\":\"02\", \"filename\":\"app-log1.txt\"}]";
     bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
     TEST_CHECK(bytes == strlen(p));
-    p = "[0, {\"log\":\"3\", \"filename\":\"app-log1.txt\"}]";
+    p = "[0, {\"log\":\"03\", \"filename\":\"app-log1.txt\"}]";
     bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
     TEST_CHECK(bytes == strlen(p));
 
-    /* Sleep for 3 seconds - fill up 2 tokens */
+    /* Sleep for 1 second - initial delay over */
+    sleep(1);
+
+    /* Send log messages - first two go through, due to starting with record_burst of 2 */
+    p = "[0, {\"log\":\"04\", \"filename\":\"app-log1.txt\"}]";
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    TEST_CHECK(bytes == strlen(p));
+    p = "[0, {\"log\":\"05\", \"filename\":\"app-log1.txt\"}]";
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    TEST_CHECK(bytes == strlen(p));
+    /* This should be dropped */
+    p = "[0, {\"log\":\"06\", \"filename\":\"app-log1.txt\"}]";
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    TEST_CHECK(bytes == strlen(p));
+
+    /* Sleep for 1 second - fill up 1 token */
+    sleep(1);
+    p = "[0, {\"log\":\"07\", \"filename\":\"app-log1.txt\"}]";
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    TEST_CHECK(bytes == strlen(p));
+    /* These should be dropped */
+    p = "[0, {\"log\":\"08\", \"filename\":\"app-log1.txt\"}]";
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    TEST_CHECK(bytes == strlen(p));
+    p = "[0, {\"log\":\"09\", \"filename\":\"app-log1.txt\"}]";
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    TEST_CHECK(bytes == strlen(p));
+
+    /* Sleep for 3 seconds - fill up 2 more tokens */
     sleep(3);
-    p = "[0, {\"log\":\"4\", \"filename\":\"app-log1.txt\"}]";
+    p = "[0, {\"log\":\"10\", \"filename\":\"app-log1.txt\"}]";
     bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
     TEST_CHECK(bytes == strlen(p));
-    p = "[0, {\"log\":\"5\", \"filename\":\"app-log1.txt\"}]";
+    p = "[0, {\"log\":\"11\", \"filename\":\"app-log1.txt\"}]";
     bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
     TEST_CHECK(bytes == strlen(p));
-    /* These should be dropped */
-    p = "[0, {\"log\":\"6\", \"filename\":\"app-log1.txt\"}]";
+    /* This should be dropped */
+    p = "[0, {\"log\":\"12\", \"filename\":\"app-log1.txt\"}]";
     bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
     TEST_CHECK(bytes == strlen(p));
-
 
     /* Check output */
     sleep(1); /* waiting flush */
     output = get_output(); /* 1sec passed, data should be flushed */
     TEST_CHECK_(output != NULL, "Expected output to not be NULL");
     if (output != NULL) {
-        TEST_CHECK_(output->count == 3, "Expected 3 messages but got %d - should have been rate limited",
+        TEST_CHECK_(output->count == 8, "Expected 8 messages but got %d - should have been rate limited",
                     output->count);
-        if (output->count == 3) {
-            TEST_CHECK_(strstr(output->val[0], "1") != NULL, "Expected log 1, got '%s'", output);
-            TEST_CHECK_(strstr(output->val[1], "4") != NULL, "Expected log 4, got '%s'", output);
-            TEST_CHECK_(strstr(output->val[2], "5") != NULL, "Expected log 5, got '%s'", output);
+        if (output->count == 8) {
+            TEST_CHECK_(strstr(output->val[0], "01") != NULL, "Expected log 01, got '%s'", output);
+            TEST_CHECK_(strstr(output->val[1], "02") != NULL, "Expected log 02, got '%s'", output);
+            TEST_CHECK_(strstr(output->val[2], "03") != NULL, "Expected log 03, got '%s'", output);
+            TEST_CHECK_(strstr(output->val[3], "04") != NULL, "Expected log 04, got '%s'", output);
+            TEST_CHECK_(strstr(output->val[4], "05") != NULL, "Expected log 05, got '%s'", output);
+            /* 6 is dropped */
+            TEST_CHECK_(strstr(output->val[5], "07") != NULL, "Expected log 07, got '%s'", output);
+            /* 8 is dropped */
+            /* 9 is dropped */
+            TEST_CHECK_(strstr(output->val[6], "10") != NULL, "Expected log 10, got '%s'", output);
+            TEST_CHECK_(strstr(output->val[7], "11") != NULL, "Expected log 11, got '%s'", output);
+            /* 12 is dropped */
         }
     }
 
