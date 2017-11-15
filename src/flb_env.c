@@ -122,15 +122,16 @@ int flb_env_set(struct flb_env *env, char *key, char *val)
     int id;
     int klen;
     int vlen;
-    char *out_buf;
+
+    void *out;
     size_t out_size;
 
     /* Get lengths */
     klen = strlen(key);
-    vlen = strlen(val);
+    vlen = strlen(val) + 1;
 
     /* Check if the key is already set */
-    id = flb_hash_get(env->ht, key, klen, &out_buf, &out_size);
+    id = flb_hash_get(env->ht, key, klen, &out, &out_size);
     if (id >= 0) {
         /* Remove the old entry */
         flb_hash_del(env->ht, key);
@@ -145,6 +146,7 @@ char *flb_env_get(struct flb_env *env, char *key)
 {
     int len;
     int ret;
+    void *out;
     char *out_buf;
     size_t out_size;
 
@@ -155,7 +157,8 @@ char *flb_env_get(struct flb_env *env, char *key)
     len = strlen(key);
 
     /* Try to get the value from the hash table */
-    ret = flb_hash_get(env->ht, key, len, &out_buf, &out_size);
+    ret = flb_hash_get(env->ht, key, len, &out, &out_size);
+    out_buf = out;
     if (ret >= 0) {
         return out_buf;
     }

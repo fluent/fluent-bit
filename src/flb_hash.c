@@ -148,7 +148,7 @@ void flb_hash_destroy(struct flb_hash *ht)
 }
 
 int flb_hash_add(struct flb_hash *ht, char *key, int key_len,
-                 char *val, size_t val_size)
+                 void *val, size_t val_size)
 {
     int id;
     unsigned int hash;
@@ -176,7 +176,7 @@ int flb_hash_add(struct flb_hash *ht, char *key, int key_len,
     /* Store the key and value as a new memory region */
     entry->key = flb_strdup(key);
     entry->key_len = key_len;
-    entry->val = flb_malloc(val_size + 1);
+    entry->val = flb_malloc(val_size);
     if (!entry->val) {
         flb_errno();
         flb_free(entry->key);
@@ -184,11 +184,9 @@ int flb_hash_add(struct flb_hash *ht, char *key, int key_len,
         return -1;
     }
     /*
-     * Copy the buffer and append a NULL byte in case the caller set and
-     * expects a string.
+     * Copy the val buffer.
      */
     memcpy(entry->val, val, val_size);
-    entry->val[val_size] = '\0';
     entry->val_size = val_size;
 
     /* Link the new entry in our table at the end of the list */
@@ -216,7 +214,7 @@ int flb_hash_add(struct flb_hash *ht, char *key, int key_len,
 }
 
 int flb_hash_get(struct flb_hash *ht, char *key, int key_len,
-                 char **out_buf, size_t *out_size)
+                 void **out_buf, size_t *out_size)
 {
     int id;
     unsigned int hash;
@@ -254,7 +252,7 @@ int flb_hash_get(struct flb_hash *ht, char *key, int key_len,
                 continue;
             }
 
-            if (strcmp(entry->key, key) == 0) {
+            if (strncmp(entry->key, key, key_len) == 0) {
                 break;
             }
 
@@ -280,8 +278,8 @@ int flb_hash_get(struct flb_hash *ht, char *key, int key_len,
  * Get an entry based in the table id. Note that a table id might have multiple
  * entries so the 'key' parameter is required to get an exact match.
  */
-int flb_hash_get_by_id(struct flb_hash *ht, int id, char *key, char **out_buf,
-                       size_t *out_size)
+int flb_hash_get_by_id(struct flb_hash *ht, int id, char *key, int key_len,
+                       void **out_buf, size_t *out_size)
 {
     struct mk_list *head;
     struct flb_hash_entry *entry = NULL;
@@ -299,7 +297,12 @@ int flb_hash_get_by_id(struct flb_hash *ht, int id, char *key, char **out_buf,
     else {
         mk_list_foreach(head, &table->chains) {
             entry = mk_list_entry(head, struct flb_hash_entry, _head);
-            if (strcmp(entry->key, key) == 0) {
+            if (entry->key_len != key_len) {
+                entry = NULL;
+                continue;
+            }
+
+            if (strncmp(entry->key, key, key_len) == 0) {
                 break;
             }
             entry = NULL;

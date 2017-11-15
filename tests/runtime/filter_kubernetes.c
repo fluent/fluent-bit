@@ -46,7 +46,6 @@ int callback_test(void* data, size_t size)
     return 0;
 }
 
-
 void flb_test_filter_kubernetes_merged_json(void)
 {
     int ret;

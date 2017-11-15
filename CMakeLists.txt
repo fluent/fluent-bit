@@ -112,6 +112,7 @@ option(FLB_FILTER_STDOUT   "Enable stdout filter"               Yes)
 option(FLB_FILTER_PARSER   "Enable parser filter"               Yes)
 option(FLB_FILTER_KUBERNETES "Enable kubernetes filter"         Yes)
 option(FLB_FILTER_RECORD_MODIFIER "Enable record_modifier filter" Yes)
+option(FLB_FILTER_RATELIMIT "Enable ratelimit filter"           Yes)
 
 # Enable all features
 if(FLB_ALL)

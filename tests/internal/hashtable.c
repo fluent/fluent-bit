@@ -2,6 +2,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_hash.h>
+#include <fluent-bit.h>
 
 #include "flb_tests_internal.h"
 
@@ -57,11 +58,11 @@ static int ht_add(struct flb_hash *ht, char *key, char *val)
   int idn;
   int klen;
   int vlen;
-  char *out_buf;
+  void *out_buf;
   size_t out_size;
 
   klen = strlen(key);
-  vlen = strlen(val);
+  vlen = strlen(val) + 1;
 
   /* Insert the key value */
   id = flb_hash_add(ht, key, klen, val, vlen);
@@ -87,7 +88,7 @@ void test_create_zero()
 void test_single()
 {
     int ret;
-    char *out_buf;
+    void *out_buf;
     size_t out_size;
     struct flb_hash *ht;
 

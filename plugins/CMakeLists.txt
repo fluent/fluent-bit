@@ -147,6 +147,7 @@ if(FLB_REGEX)
   REGISTER_FILTER_PLUGIN("filter_parser")
 endif()
 REGISTER_FILTER_PLUGIN("filter_record_modifier")
+REGISTER_FILTER_PLUGIN("filter_ratelimit")
 
 # Register external input and output plugins
 if(EXT_IN_PLUGINS)
