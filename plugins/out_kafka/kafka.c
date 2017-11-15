@@ -71,8 +71,8 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     int i;
     int ret;
     int size;
-    char *json_buf;
-    size_t json_size;
+    char *out_buf;
+    size_t out_size;
     struct flb_kafka_topic *topic = NULL;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
@@ -111,12 +111,18 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         }
     }
 
-    ret = flb_msgpack_raw_to_json_str(mp_sbuf.data, mp_sbuf.size,
-                                      &json_buf, &json_size);
-    if (ret != 0) {
-        flb_error("[out_kafka] error encoding to JSON");
-        msgpack_sbuffer_destroy(&mp_sbuf);
-        return FLB_ERROR;
+    if (ctx->format == FLB_KAFKA_FMT_JSON) {
+        ret = flb_msgpack_raw_to_json_str(mp_sbuf.data, mp_sbuf.size,
+                                          &out_buf, &out_size);
+        if (ret != 0) {
+            flb_error("[out_kafka] error encoding to JSON");
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            return FLB_ERROR;
+        }
+    }
+    else if (ctx->format == FLB_KAFKA_FMT_MSGP) {
+        out_buf = mp_sbuf.data;
+        out_size = mp_sbuf.size;
     }
 
     if (!topic) {
@@ -131,7 +137,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     ret = rd_kafka_produce(topic->tp,
                            RD_KAFKA_PARTITION_UA,
                            RD_KAFKA_MSG_F_COPY,
-                           json_buf, json_size,
+                           out_buf, out_size,
                            ctx->message_key, ctx->message_key_len,
                            NULL);
     if (ret == -1) {
@@ -145,7 +151,9 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         rd_kafka_poll(ctx->producer, -1);
     }
 
-    flb_free(json_buf);
+    if (ctx->format == FLB_KAFKA_FMT_JSON) {
+        flb_free(out_buf);
+    }
     msgpack_sbuffer_destroy(&mp_sbuf);
     return FLB_OK;
 }

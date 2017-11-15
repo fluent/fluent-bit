@@ -85,7 +85,6 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
     /* Callback: log */
     rd_kafka_conf_set_log_cb(ctx->conf, cb_kafka_logger);
 
-
     /* Config: Topic_Key */
     tmp = flb_output_get_property("topic_key", ins);
     if (tmp) {
@@ -94,6 +93,20 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
     }
     else {
         ctx->topic_key = NULL;
+    }
+
+    /* Config: Format */
+    tmp = flb_output_get_property("format", ins);
+    if (tmp) {
+        if (strcasecmp(tmp, "json") == 0) {
+            ctx->format = FLB_KAFKA_FMT_JSON;
+        }
+        else if (strcasecmp(tmp, "msgpack") == 0) {
+            ctx->format = FLB_KAFKA_FMT_MSGP;
+        }
+    }
+    else {
+        ctx->format = FLB_KAFKA_FMT_JSON;
     }
 
     /* Config: Message_Key */
@@ -171,9 +184,6 @@ int flb_kafka_conf_destroy(struct flb_kafka *ctx)
 
     if (ctx->producer) {
         rd_kafka_destroy(ctx->producer);
-    }
-    if (ctx->conf) {
-        //rd_kafka_conf_destroy(ctx->conf);
     }
 
     if (ctx->topic_key) {

@@ -25,6 +25,8 @@
 
 #include "rdkafka.h"
 
+#define FLB_KAFKA_FMT_JSON  0
+#define FLB_KAFKA_FMT_MSGP  1
 #define FLB_KAFKA_BROKERS   "127.0.0.1"
 #define FLB_KAFKA_TOPIC     "fluent-bit"
 #define FLB_KAFKA_TS_KEY    "@timestamp"
@@ -38,6 +40,7 @@ struct flb_kafka_topic {
 
 struct flb_kafka {
     /* Config Parameters */
+    int format;
     char *brokers;
 
     /* Optional topic key for routing */
