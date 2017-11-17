@@ -79,7 +79,7 @@ void test_create_zero()
 {
     struct flb_hash *ht;
 
-    ht  = flb_hash_create(0);
+    ht  = flb_hash_create(0, FLB_HASH_EVICT_NONE, -1);
     TEST_CHECK(ht == NULL);
 }
 
@@ -91,7 +91,7 @@ void test_single()
     size_t out_size;
     struct flb_hash *ht;
 
-    ht = flb_hash_create(1);
+    ht = flb_hash_create(1, FLB_HASH_EVICT_NONE, -1);
     TEST_CHECK(ht != NULL);
 
     ret = ht_add(ht, "key", "value");
@@ -112,7 +112,7 @@ void test_small_table()
     struct map *m;
     struct flb_hash *ht;
 
-    ht = flb_hash_create(1);
+    ht = flb_hash_create(1, FLB_HASH_EVICT_NONE, -1);
     TEST_CHECK(ht != NULL);
 
     for (i = 0; i < sizeof(entries) / sizeof(struct map); i++) {
@@ -129,7 +129,7 @@ void test_medium_table()
     struct map *m;
     struct flb_hash *ht;
 
-    ht = flb_hash_create(8);
+    ht = flb_hash_create(8, FLB_HASH_EVICT_NONE, -1);
     TEST_CHECK(ht != NULL);
 
     for (i = 0; i < sizeof(entries) / sizeof(struct map); i++) {
@@ -151,7 +151,7 @@ void test_chaining()
     struct flb_hash_table *table;
     struct flb_hash *ht;
 
-    ht = flb_hash_create(8);
+    ht = flb_hash_create(8, FLB_HASH_EVICT_NONE, -1);
     TEST_CHECK(ht != NULL);
 
     for (i = 0; i < sizeof(entries) / sizeof(struct map); i++) {
@@ -187,7 +187,7 @@ void test_delete_all()
     struct flb_hash_table *table;
     struct flb_hash *ht;
 
-    ht = flb_hash_create(8);
+    ht = flb_hash_create(8, FLB_HASH_EVICT_NONE, -1);
     TEST_CHECK(ht != NULL);
 
     total = sizeof(entries) / sizeof(struct map);
