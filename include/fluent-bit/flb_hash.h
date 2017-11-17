@@ -26,12 +26,20 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+/* Eviction modes when the table reach full capacity (if any) */
+#define FLB_HASH_EVICT_NONE       0
+#define FLB_HASH_EVICT_OLDER      1
+#define FLB_HASH_EVICT_LESS_USED  2
+
 struct flb_hash_entry {
+    time_t created;
+    uint64_t hits;
     char *key;
     size_t key_len;
     char *val;
     size_t val_size;
-    struct mk_list _head;
+    struct mk_list _head;         /* link to flb_hash_table->chains */
+    struct mk_list _head_parent;  /* link to flb_hash->entries */
 };
 
 struct flb_hash_table {
@@ -40,11 +48,15 @@ struct flb_hash_table {
 };
 
 struct flb_hash {
+    int evict_mode;
+    int max_entries;
+    int total_count;
     size_t size;
+    struct mk_list entries;
     struct flb_hash_table *table;
 };
 
-struct flb_hash *flb_hash_create(size_t size);
+struct flb_hash *flb_hash_create(int evict_mode, size_t size, int max_entries);
 void flb_hash_destroy(struct flb_hash *ht);
 
 int flb_hash_add(struct flb_hash *ht, char *key, int key_len,
