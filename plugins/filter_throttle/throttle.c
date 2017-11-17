@@ -41,18 +41,18 @@ struct ticker {
 
 void *time_ticker(void *args)
 {
-    struct ticker *t_ctx = args;
+    struct ticker *t = args;
     struct flb_time ftm;
     long timestamp;
 
-    while (!t_ctx->done) {
+    while (!t->done) {
         flb_time_get(&ftm);
         timestamp = flb_time_to_double(&ftm);
-        window_add(t_ctx->ctx->hash, timestamp, 0);
+        window_add(t->ctx->hash, timestamp, 0);
 
-        t_ctx->ctx->hash->current_timestamp = timestamp;
+        t->ctx->hash->current_timestamp = timestamp;
 
-        flb_error("current time is: %i", timestamp);
+        flb_info("[filter_throttle] %i: limist is %f per sec in window %i sec, current rate is: %i per sec", timestamp, t->ctx->max_rate, t->ctx->window_size, t->ctx->hash->total / t->ctx->hash->size);
         sleep(1);
     }
 }
