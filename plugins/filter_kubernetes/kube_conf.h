@@ -61,6 +61,7 @@ struct flb_kube {
     int api_port;
     int api_https;
     int use_journal;
+    int annotations;
     int dummy_meta;
     int tls_debug;
     int tls_verify;
