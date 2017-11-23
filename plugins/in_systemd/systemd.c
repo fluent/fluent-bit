@@ -132,7 +132,7 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
         /* Set time */
         sd_journal_get_realtime_usec(ctx->j, &usec);
         sec = usec / 1000000;
-        nsec = (usec % 1000000) / 1000;
+        nsec = (usec % 1000000) * 1000;
         flb_time_set(&tm, sec, nsec);
 
         /* Count the number of entries in the record */
