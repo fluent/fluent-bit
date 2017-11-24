@@ -31,6 +31,7 @@
 #include "es.h"
 #include "es_conf.h"
 #include "es_bulk.h"
+#include "murmur3.h"
 
 struct flb_output_plugin out_es_plugin;
 
@@ -127,8 +128,10 @@ static char *elasticsearch_format(void *data, size_t bytes,
     size_t off = 0;
     char *p;
     char *buf;
+    char *es_index;
     char logstash_index[256];
     char time_formatted[256];
+    char es_uuid[33];
     msgpack_unpacked result;
     msgpack_object root;
     msgpack_object map;
@@ -141,6 +144,7 @@ static char *elasticsearch_format(void *data, size_t bytes,
     struct flb_time tms;
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
+    uint32_t hash[4];
 
     /* Iterate the original buffer and perform adjustments */
     msgpack_unpacked_init(&result);
@@ -182,7 +186,9 @@ static char *elasticsearch_format(void *data, size_t bytes,
         memcpy(logstash_index, ctx->logstash_prefix, ctx->logstash_prefix_len);
         logstash_index[ctx->logstash_prefix_len] = '\0';
     }
-    else {
+
+    /* If logstash format and id generation is disabled, pre-generate index line for all records. */
+    if (ctx->logstash_format == FLB_FALSE && ctx->generate_id == FLB_FALSE) {
         index_len = snprintf(j_index,
                              ES_BULK_HEADER,
                              ES_BULK_INDEX_FMT,
@@ -237,6 +243,7 @@ static char *elasticsearch_format(void *data, size_t bytes,
         msgpack_pack_str(&tmp_pck, s);
         msgpack_pack_str_body(&tmp_pck, time_formatted, s);
 
+        es_index = ctx->index;
         if (ctx->logstash_format == FLB_TRUE) {
             /* Compose Index header */
             p = logstash_index + ctx->logstash_prefix_len;
@@ -247,10 +254,13 @@ static char *elasticsearch_format(void *data, size_t bytes,
                          ctx->logstash_dateformat, &tm);
             p += s;
             *p++ = '\0';
-            index_len = snprintf(j_index,
-                                 ES_BULK_HEADER,
-                                 ES_BULK_INDEX_FMT,
-                                 logstash_index, ctx->type);
+            es_index = logstash_index;
+            if (ctx->generate_id == FLB_FALSE) {
+                index_len = snprintf(j_index,
+                                     ES_BULK_HEADER,
+                                     ES_BULK_INDEX_FMT,
+                                     es_index, ctx->type);
+            }
         }
 
         /* Tag Key */
@@ -269,6 +279,15 @@ static char *elasticsearch_format(void *data, size_t bytes,
          * a dot; if some dot is found, it's replaced with an underscore.
          */
         es_pack_map_content(&tmp_pck, map);
+
+        if (ctx->generate_id == FLB_TRUE) {
+            MurmurHash3_x64_128(tmp_sbuf.data, tmp_sbuf.size, 42, hash);
+            snprintf(es_uuid, sizeof(es_uuid), "%08x%08x%08x%08x", hash[0], hash[1], hash[2], hash[3]);
+            index_len = snprintf(j_index,
+                                 ES_BULK_HEADER,
+                                 ES_BULK_INDEX_FMT_ID,
+                                 es_index, ctx->type, es_uuid);
+        }
 
         /* Convert msgpack to JSON */
         ret = flb_msgpack_raw_to_json_str(tmp_sbuf.data, tmp_sbuf.size,

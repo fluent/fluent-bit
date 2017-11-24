@@ -254,6 +254,14 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
         snprintf(ctx->uri, sizeof(ctx->uri) - 1, "/_bulk");
     }
 
+    /* Generate _id */
+    tmp = flb_output_get_property("generate_id", ins);
+    if (tmp) {
+        ctx->generate_id = bool_value(tmp);
+    } else {
+        ctx->generate_id = FLB_FALSE;
+    }
+
     return ctx;
 }
 
