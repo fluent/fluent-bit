@@ -31,6 +31,7 @@ struct filter_parser_ctx {
     char     *key_name;
     int    key_name_len;
     int    reserve_data;
+    int    preserve_key;
 
     struct mk_list parsers;
 };
