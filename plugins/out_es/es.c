@@ -131,7 +131,7 @@ static char *elasticsearch_format(void *data, size_t bytes,
     char *es_index;
     char logstash_index[256];
     char time_formatted[256];
-    char es_uuid[33];
+    char es_uuid[37];
     msgpack_unpacked result;
     msgpack_object root;
     msgpack_object map;
