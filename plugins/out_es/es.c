@@ -144,7 +144,7 @@ static char *elasticsearch_format(void *data, size_t bytes,
     struct flb_time tms;
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
-    uint32_t hash[4];
+    uint16_t hash[8];
 
     /* Iterate the original buffer and perform adjustments */
     msgpack_unpacked_init(&result);
@@ -282,7 +282,8 @@ static char *elasticsearch_format(void *data, size_t bytes,
 
         if (ctx->generate_id == FLB_TRUE) {
             MurmurHash3_x64_128(tmp_sbuf.data, tmp_sbuf.size, 42, hash);
-            snprintf(es_uuid, sizeof(es_uuid), "%08x%08x%08x%08x", hash[0], hash[1], hash[2], hash[3]);
+            snprintf(es_uuid, sizeof(es_uuid), "%04x%04x-%04x-%04x-%04x-%04x%04x%04x",
+                     hash[0], hash[1], hash[2], hash[3], hash[4], hash[5], hash[6], hash[7]);
             index_len = snprintf(j_index,
                                  ES_BULK_HEADER,
                                  ES_BULK_INDEX_FMT_ID,
