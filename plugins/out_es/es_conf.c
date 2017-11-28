@@ -255,6 +255,15 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
     else {
         ctx->replace_dots = FLB_FALSE;
     }
+
+    /* Use current time for index generation instead of message record */
+    tmp = flb_output_get_property("current_time_index", ins);
+    if (tmp) {
+        ctx->current_time_index = bool_value(tmp);
+    } else {
+        ctx->current_time_index = FLB_FALSE;
+    }
+
     return ctx;
 }
 
