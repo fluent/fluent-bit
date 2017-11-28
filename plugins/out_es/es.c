@@ -131,6 +131,7 @@ static char *elasticsearch_format(void *data, size_t bytes,
     char *es_index;
     char logstash_index[256];
     char time_formatted[256];
+    char index_formatted[256];
     char es_uuid[37];
     msgpack_unpacked result;
     msgpack_object root;
@@ -191,9 +192,9 @@ static char *elasticsearch_format(void *data, size_t bytes,
     if (ctx->logstash_format == FLB_FALSE && ctx->generate_id == FLB_FALSE) {
         flb_time_get(&tms);
         gmtime_r(&tms.tm.tv_sec, &tm);
-        s = strftime(time_formatted, sizeof(time_formatted) - 1,
+        s = strftime(index_formatted, sizeof(index_formatted) - 1,
                      ctx->index, &tm);
-        es_index = time_formatted;
+        es_index = index_formatted;
         index_len = snprintf(j_index,
                              ES_BULK_HEADER,
                              ES_BULK_INDEX_FMT,
@@ -248,7 +249,10 @@ static char *elasticsearch_format(void *data, size_t bytes,
         msgpack_pack_str(&tmp_pck, s);
         msgpack_pack_str_body(&tmp_pck, time_formatted, s);
 
-        es_index = ctx->index;
+        // make sure we handle index time format for index
+        s = strftime(index_formatted, sizeof(index_formatted) - 1,
+                     ctx->index, &tm);
+        es_index = index_formatted;
         if (ctx->logstash_format == FLB_TRUE) {
             /* Compose Index header */
             p = logstash_index + ctx->logstash_prefix_len;
