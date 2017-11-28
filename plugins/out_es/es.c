@@ -189,10 +189,15 @@ static char *elasticsearch_format(void *data, size_t bytes,
 
     /* If logstash format and id generation is disabled, pre-generate index line for all records. */
     if (ctx->logstash_format == FLB_FALSE && ctx->generate_id == FLB_FALSE) {
+        flb_time_get(&tms);
+        gmtime_r(&tms.tm.tv_sec, &tm);
+        s = strftime(time_formatted, sizeof(time_formatted) - 1,
+                     ctx->index, &tm);
+        es_index = time_formatted;
         index_len = snprintf(j_index,
                              ES_BULK_HEADER,
                              ES_BULK_INDEX_FMT,
-                             ctx->index, ctx->type);
+                             es_index, ctx->type);
     }
 
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
