@@ -212,12 +212,20 @@ static char *elasticsearch_format(void *data, size_t bytes,
             continue;
         }
 
+        /* some broken clients may have time drift up to year 1970
+         * this will generate corresponding index in Elasticsearch
+         * in order to prevent generating millions of indexes 
+         * we can set to always use current time for index generation */
+        if (ctx->current_time_index == FLB_TRUE) {
+            flb_time_get(&tms);
+        } else {
+            flb_time_pop_from_msgpack(&tms, &result, &obj);
+        }
         /*
          * Timestamp: Elasticsearch only support fractional seconds in
          * milliseconds unit, not nanoseconds, so we take our nsec value and
          * change it representation.
          */
-        flb_time_pop_from_msgpack(&tms, &result, &obj);
         tms.tm.tv_nsec = (tms.tm.tv_nsec / 1000000);
 
         map   = root.via.array.ptr[1];
