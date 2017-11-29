@@ -171,7 +171,7 @@ static int schedule_request_promote(struct flb_sched *sched)
         else {
             /* Check if we should schedule within this frame */
             if (passed + FLB_SCHED_REQUEST_FRAME >= request->timeout) {
-                next = abs(passed - request->timeout);
+                next = labs(passed - request->timeout);
                 mk_list_del(&request->_head);
                 schedule_request_now(next, request->timer, request, sched->config);
             }
