@@ -114,10 +114,10 @@ static void output_fcount(FILE* f, struct flb_out_fcount_config *ctx,
            "\"bytes/%s\":%lu }"
            "]\n",
            PLUGIN_NAME, buf->until,
-           buf->counts,
-           buf->bytes,
-           ctx->unit, buf->counts/ctx->tick,
-           ctx->unit, buf->bytes/ctx->tick);
+           (unsigned long)buf->counts,
+           (unsigned long)buf->bytes,
+           ctx->unit, (unsigned long)(buf->counts/ctx->tick),
+           ctx->unit, (unsigned long)(buf->bytes/ctx->tick));
     /* TODO filtering with tag? */
 }
 
