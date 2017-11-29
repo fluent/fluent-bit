@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_input.h>
 
 #include <stdlib.h>
+#include <fcntl.h>
 
 #include "tail_fs.h"
 #include "tail_db.h"
@@ -34,6 +35,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
 {
     int ret;
     int sec;
+    int i;
     long nsec;
     ssize_t bytes;
     char *tmp;
@@ -59,11 +61,18 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
     /* Create the pending channel */
     ret = pipe(ctx->ch_pending);
     if (ret == -1) {
-        close(ctx->ch_manager[0]);
-        close(ctx->ch_manager[1]);
         flb_errno();
-        flb_free(ctx);
+        flb_tail_config_destroy(ctx);
         return NULL;
+    }
+    /* Make pending channel non-blocking */
+    for (i = 0; i < 1; i++) {
+        ret = fcntl(ctx->ch_pending[i], F_SETFL, fcntl(ctx->ch_pending[i], F_GETFL) | O_NONBLOCK);
+        if (ret == -1) {
+            flb_errno();
+            flb_tail_config_destroy(ctx);
+            return NULL;
+        }
     }
 
     /* Config: path/pattern to read files */
@@ -257,7 +266,9 @@ int flb_tail_config_destroy(struct flb_tail_config *config)
         flb_tail_db_close(config->db);
     }
 
-    flb_free(config->key);
+    if (config->key != NULL) {
+        flb_free(config->key);
+    }
     flb_free(config);
     return 0;
 }
