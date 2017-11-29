@@ -104,9 +104,9 @@ static int in_tail_collect_pending(struct flb_input_instance *i_ins,
         }
     }
 
-    /* If no more active files, consume signal byte so we don't get called again. */
+    /* If no more active files, consume pending signal so we don't get called again. */
     if (active == 0) {
-        consume_byte(ctx->ch_pending[0]);
+        tail_consume_pending(ctx);
     }
 
     return 0;
