@@ -66,7 +66,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
         return NULL;
     }
     /* Make pending channel non-blocking */
-    for (i = 0; i < 1; i++) {
+    for (i = 0; i <= 1; i++) {
         ret = fcntl(ctx->ch_pending[i], F_SETFL, fcntl(ctx->ch_pending[i], F_GETFL) | O_NONBLOCK);
         if (ret == -1) {
             flb_errno();
