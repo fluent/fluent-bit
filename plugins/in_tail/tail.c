@@ -297,12 +297,8 @@ static void in_tail_pause(void *data, struct flb_config *config)
      * Pause general collectors:
      *
      * - static : static files lookup before promotion
-     * - scan   : scan path to find new files
-     * - rotated: rotate files lookup
      */
     flb_input_collector_pause(ctx->coll_fd_static, ctx->i_ins);
-    flb_input_collector_pause(ctx->coll_fd_scan, ctx->i_ins);
-    flb_input_collector_pause(ctx->coll_fd_rotated, ctx->i_ins);
     flb_input_collector_pause(ctx->coll_fd_pending, ctx->i_ins);
 
     if (ctx->multiline == FLB_TRUE) {
@@ -318,8 +314,6 @@ static void in_tail_resume(void *data, struct flb_config *config)
     struct flb_tail_config *ctx = data;
 
     flb_input_collector_resume(ctx->coll_fd_static, ctx->i_ins);
-    flb_input_collector_resume(ctx->coll_fd_scan, ctx->i_ins);
-    flb_input_collector_resume(ctx->coll_fd_rotated, ctx->i_ins);
     flb_input_collector_resume(ctx->coll_fd_pending, ctx->i_ins);
 
     if (ctx->multiline == FLB_TRUE) {
