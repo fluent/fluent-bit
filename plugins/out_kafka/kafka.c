@@ -71,6 +71,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     int i;
     int ret;
     int size;
+    int queue_full_retries = 0;
     char *out_buf;
     size_t out_size;
     struct flb_kafka_topic *topic = NULL;
@@ -233,6 +234,10 @@ static void cb_kafka_flush(void *data, size_t bytes,
         if (ret == FLB_ERROR) {
             msgpack_unpacked_destroy(&result);
             FLB_OUTPUT_RETURN(FLB_ERROR);
+        }
+        else if (ret == FLB_RETRY) {
+            msgpack_unpacked_destroy(&result);
+            FLB_OUTPUT_RETURN(FLB_RETRY);
         }
     }
 
