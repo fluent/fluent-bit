@@ -20,6 +20,9 @@
 #ifndef FLB_TIME_H
 #define FLB_TIME_H
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_time_utils.h>
+
 #include <time.h>
 #include <msgpack.h>
 struct flb_time {
