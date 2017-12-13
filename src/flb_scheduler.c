@@ -1,3 +1,4 @@
+
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 /*  Fluent Bit
@@ -309,7 +310,86 @@ int flb_sched_event_handler(struct flb_config *config, struct mk_event *event)
         consume_byte(sched->frame_fd);
         schedule_request_promote(sched);
     }
+    else if (timer->type == FLB_SCHED_TIMER_CUSTOM) {
+        consume_byte(timer->timer_fd);
+        flb_sched_timer_cb_disable(timer);
+        timer->cb(config, timer->data);
+        flb_sched_timer_cb_destroy(timer);
+    }
 
+    return 0;
+}
+
+/*
+ * Create a timer that once it expire, it triggers the defined callback
+ * upon creation. This interface is for generic purposes and not specific
+ * for re-tries.
+ *
+ * use-case: invoke function A() after M milliseconds.
+ */
+int flb_sched_timer_cb_create(struct flb_config *config, int ms,
+                              void (*cb)(struct flb_config *, void *),
+                              void *data)
+{
+    int fd;
+    time_t sec;
+    long nsec;
+    struct mk_event *event;
+    struct flb_sched_timer *timer;
+
+    timer = flb_sched_timer_create(config->sched);
+    if (!timer) {
+        return -1;
+    }
+
+    timer->type = FLB_SCHED_TIMER_CUSTOM;
+    timer->data = data;
+    timer->cb   = cb;
+
+    /* Initialize event */
+    event = &timer->event;
+    event->mask   = MK_EVENT_EMPTY;
+    event->status = MK_EVENT_NONE;
+
+    /* Convert from milliseconds to seconds and nanoseconds */
+    sec = (ms / 1000);
+    nsec = ((ms % 1000) * 1000000);
+
+    /* Create the frame timer */
+    fd = mk_event_timeout_create(config->evl, sec, nsec, event);
+    if (fd == -1) {
+        flb_error("[sched] cannot do timeout_create()");
+        flb_sched_timer_destroy(timer);
+        return -1;
+    }
+
+    /*
+     * Note: mk_event_timeout_create() sets a type = MK_EVENT_NOTIFICATION by
+     * default, we need to overwrite this value so we can do a clean check
+     * into the Engine when the event is triggered.
+     */
+    event->type = FLB_ENGINE_EV_SCHED;
+    timer->timer_fd = fd;
+
+    return 0;
+}
+
+/* Disable notifications, used before to destroy the context */
+int flb_sched_timer_cb_disable(struct flb_sched_timer *timer)
+{
+    int ret;
+
+    ret = close(timer->timer_fd);
+    timer->timer_fd = -1;
+    return ret;
+}
+
+int flb_sched_timer_cb_destroy(struct flb_sched_timer *timer)
+{
+    if (timer->timer_fd > 0) {
+        flb_sched_timer_cb_disable(timer);
+    }
+    flb_sched_timer_destroy(timer);
     return 0;
 }
 
