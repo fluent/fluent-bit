@@ -322,6 +322,10 @@ static int mk_rconf_read(struct mk_rconf *conf, const char *path)
         mk_string_trim(&key);
         mk_string_trim(&val);
 
+        if (strlen(val) == 0) {
+            mk_config_error(path, line, "Key has an empty value");
+        }
+
         /* Register entry: key and val are copied as duplicated */
         mk_rconf_section_entry_add(conf, key, val);
 
