@@ -322,7 +322,14 @@ static int process_data(struct flb_http_client *c)
     }
 
     /* Re-check if an ending exists, if so process payload if required */
-    if (c->resp.headers_end && c->resp.payload) {
+    if (c->resp.headers_end) {
+        /* Mark the payload */
+        if (!c->resp.payload &&
+            c->resp.headers_end - c->resp.data < c->resp.data_len) {
+            c->resp.payload = c->resp.headers_end;
+            c->resp.payload_size = (c->resp.data_len - (c->resp.headers_end - c->resp.data));
+        }
+
         if (c->resp.content_length >= 0) {
             c->resp.payload_size = c->resp.data_len;
             c->resp.payload_size -= (c->resp.headers_end - c->resp.data);
