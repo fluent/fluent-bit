@@ -136,46 +136,51 @@ static int in_disk_collect(struct flb_input_instance *i_ins,
 
     update_disk_stats(ctx);
 
-    for (i=0; i<entry; i++) {
-        if (ctx->read_total[i] >= ctx->prev_read_total[i]) {
-            read_total += ctx->read_total[i] - ctx->prev_read_total[i];
-        }
-        else {
-            /* Overflow */
-            read_total += ctx->read_total[i] +
-                (ULONG_MAX - ctx->prev_read_total[i]);
-        }
-
-        if (ctx->write_total[i] >= ctx->prev_write_total[i]) {
-            write_total += ctx->write_total[i] - ctx->prev_write_total[i];
-        }
-        else {
-            /* Overflow */
-            write_total += ctx->write_total[i] +
-                (ULONG_MAX - ctx->prev_write_total[i]);
-        }
+    if ( ctx->first_snapshot == FLB_TRUE ){
+        ctx->first_snapshot = FLB_FALSE;    /* assign first_snapshot with FLB_FALSE */
     }
+    else {
+        for (i=0; i<entry; i++) {
+            if (ctx->read_total[i] >= ctx->prev_read_total[i]) {
+                read_total += ctx->read_total[i] - ctx->prev_read_total[i];
+            }
+            else {
+                /* Overflow */
+                read_total += ctx->read_total[i] +
+                    (ULONG_MAX - ctx->prev_read_total[i]);
+            }
 
-    read_total  *= 512;
-    write_total *= 512;
+            if (ctx->write_total[i] >= ctx->prev_write_total[i]) {
+                write_total += ctx->write_total[i] - ctx->prev_write_total[i];
+            }
+            else {
+                /* Overflow */
+                write_total += ctx->write_total[i] +
+                    (ULONG_MAX - ctx->prev_write_total[i]);
+            }
+        }
 
-    /* Mark the start of a 'buffer write' operation */
-    flb_input_buf_write_start(i_ins);
+        read_total  *= 512;
+        write_total *= 512;
 
-    msgpack_pack_array(&i_ins->mp_pck, 2);
-    flb_pack_time_now(&i_ins->mp_pck);
-    msgpack_pack_map(&i_ins->mp_pck, num_map);
+        /* Mark the start of a 'buffer write' operation */
+        flb_input_buf_write_start(i_ins);
+
+        msgpack_pack_array(&i_ins->mp_pck, 2);
+        flb_pack_time_now(&i_ins->mp_pck);
+        msgpack_pack_map(&i_ins->mp_pck, num_map);
 
 
-    msgpack_pack_str(&i_ins->mp_pck, strlen(STR_KEY_READ));
-    msgpack_pack_str_body(&i_ins->mp_pck, STR_KEY_READ, strlen(STR_KEY_READ));
-    msgpack_pack_uint64(&i_ins->mp_pck, read_total);
+        msgpack_pack_str(&i_ins->mp_pck, strlen(STR_KEY_READ));
+        msgpack_pack_str_body(&i_ins->mp_pck, STR_KEY_READ, strlen(STR_KEY_READ));
+        msgpack_pack_uint64(&i_ins->mp_pck, read_total);
 
-    msgpack_pack_str(&i_ins->mp_pck, strlen(STR_KEY_WRITE));
-    msgpack_pack_str_body(&i_ins->mp_pck, STR_KEY_WRITE, strlen(STR_KEY_WRITE));
-    msgpack_pack_uint64(&i_ins->mp_pck, write_total);
+        msgpack_pack_str(&i_ins->mp_pck, strlen(STR_KEY_WRITE));
+        msgpack_pack_str_body(&i_ins->mp_pck, STR_KEY_WRITE, strlen(STR_KEY_WRITE));
+        msgpack_pack_uint64(&i_ins->mp_pck, write_total);
 
-    flb_input_buf_write_end(i_ins);
+        flb_input_buf_write_end(i_ins);
+    }
 
     return 0;
 }
@@ -258,6 +263,8 @@ static int configure(struct flb_in_disk_config *disk_config,
         disk_config->prev_write_total[i] = 0;
     }
     update_disk_stats(disk_config);
+
+    disk_config->first_snapshot = FLB_TRUE;    /* assign first_snapshot with FLB_TRUE */
 
     return 0;
 }
