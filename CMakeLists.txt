@@ -399,16 +399,6 @@ if(NOT FLB_POSIX_TLS)
   endif()
 endif()
 
-# setjmp
-check_c_source_compiles("
-    #include <setjmp.h>
-    int main() {
-        return 0;
-    }" FLB_HAVE_SETJMP)
-if(FLB_HAVE_SETJMP)
-  FLB_DEFINITION(FLB_HAVE_SETJMP)
-endif()
-
 # accept(4)
 check_c_source_compiles("
     #define _GNU_SOURCE
