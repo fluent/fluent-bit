@@ -265,7 +265,7 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
 #else
         flb_time_get(&out_time);
         flb_tail_file_pack_line(out_sbuf, out_pck, &out_time,
-                                file->buf_data, len, file);
+                                data, len, file);
 #endif
 
     go_next:
