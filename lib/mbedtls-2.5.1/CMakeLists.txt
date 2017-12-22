@@ -27,7 +27,7 @@ set(NULL_ENTROPY_WARNING "${WARNING_BORDER}"
                          "${NULL_ENTROPY_WARN_L3}"
                          "${WARNING_BORDER}")
 
-find_package(Perl)
+#find_package(Perl)
 if(PERL_FOUND)
 
     # If NULL Entropy is configured, display an appropriate warning
