@@ -242,7 +242,7 @@ static int process_chunked_data(struct flb_http_client *c)
 
     /* 3. Remove chunk ending \r\n */
     drop = 2;
-    r->chunk_processed_end += abs(val - 2);
+    r->chunk_processed_end += labs(val - 2);
     len = r->data_len - (r->chunk_processed_end - r->data);
     consume_bytes(r->chunk_processed_end, drop, len);
     r->data_len -= drop;

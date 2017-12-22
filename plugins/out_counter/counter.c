@@ -77,8 +77,8 @@ void cb_counter_flush(void *data, size_t bytes,
     ctx->total += cnt;
 
     flb_time_get(&tm);
-    printf("%f,%lu (total = %"PRIu64")\n", flb_time_to_double(&tm), cnt,
-           ctx->total);
+    printf("%f,%lu (total = %"PRIu64")\n", flb_time_to_double(&tm),
+        (unsigned long)cnt, ctx->total);
 
     FLB_OUTPUT_RETURN(FLB_OK);
 }

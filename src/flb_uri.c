@@ -134,6 +134,6 @@ void flb_uri_dump(struct flb_uri *uri)
     for (i = 0; i < uri->count; i++) {
         f = &uri->map[i];
         printf("[%i] length=%lu value='%s'\n",
-               i, f->length, f->value);
+               i, (unsigned long)f->length, f->value);
     }
 }

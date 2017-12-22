@@ -58,7 +58,7 @@ cothread_t co_create(unsigned int size, void (*entrypoint)(void),
   size &= ~15;
   *out_size = size;
 
-  if(handle = (unsigned long*)malloc(size)) {
+  if((handle = (unsigned long*)malloc(size))) {
     unsigned long* p = (unsigned long*)((unsigned char*)handle + size);
     handle[8] = (unsigned long)p;
     handle[9] = (unsigned long)entrypoint;
