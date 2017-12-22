@@ -136,6 +136,8 @@ static int configure(struct flb_in_netif_config *ctx,
     }
     ctx->interface_len = strlen(ctx->interface);
 
+    ctx->first_snapshot = FLB_TRUE;    /* assign first_snapshot with FLB_TRUE */
+    
     init_entry_linux(ctx);
     
     return 0;
@@ -221,26 +223,34 @@ static int in_netif_collect_linux(struct flb_input_instance *i_ins,
         parse_proc_line(line, ctx);
     }
 
-    flb_input_buf_write_start(i_ins);
-    
-    msgpack_pack_array(&i_ins->mp_pck, 2);
-    flb_pack_time_now(&i_ins->mp_pck);
-    msgpack_pack_map(&i_ins->mp_pck, ctx->map_num);
-    for(i=0; i<entry_len; i++) {
-        if (ctx->entry[i].checked) {
-            key_len = ctx->interface_len + ctx->entry[i].name_len + 1/* '.' */;
-
-            snprintf(key_name, key_len+1/* add null character */,
-                     "%s.%s", ctx->interface, ctx->entry[i].name);
-            msgpack_pack_str(&i_ins->mp_pck, key_len);
-            msgpack_pack_str_body(&i_ins->mp_pck, key_name, key_len);
-
-            msgpack_pack_uint64(&i_ins->mp_pck, calc_diff(&ctx->entry[i]));
-
+    if ( ctx->first_snapshot == FLB_TRUE ){   /* if in_netif are called for the first time, assign prev with now */
+        for(i=0; i<entry_len; i++) {
             ctx->entry[i].prev = ctx->entry[i].now;
         }
+        ctx->first_snapshot = FLB_FALSE;      /* assign first_snapshot with FLB_FALSE */
     }
-    flb_input_buf_write_end(i_ins);
+    else {
+        flb_input_buf_write_start(i_ins);
+    
+        msgpack_pack_array(&i_ins->mp_pck, 2);
+        flb_pack_time_now(&i_ins->mp_pck);
+        msgpack_pack_map(&i_ins->mp_pck, ctx->map_num);
+        for(i=0; i<entry_len; i++) {
+            if (ctx->entry[i].checked) {
+                key_len = ctx->interface_len + ctx->entry[i].name_len + 1/* '.' */;
+
+                snprintf(key_name, key_len+1/* add null character */,
+                     "%s.%s", ctx->interface, ctx->entry[i].name);
+                msgpack_pack_str(&i_ins->mp_pck, key_len);
+                msgpack_pack_str_body(&i_ins->mp_pck, key_name, key_len);
+
+                msgpack_pack_uint64(&i_ins->mp_pck, calc_diff(&ctx->entry[i]));
+
+                ctx->entry[i].prev = ctx->entry[i].now;
+            }
+        }
+        flb_input_buf_write_end(i_ins);
+    }
 
     fclose(fp);
     return 0;

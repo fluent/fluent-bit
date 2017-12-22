@@ -51,6 +51,7 @@ struct flb_in_netif_config {
     int  interface_len;
 
     int  verbose;
+    int  first_snapshot;   /* a feild to indicate whethor or not this is the first collect */
 
     struct netif_entry *entry;
     int entry_len;
