@@ -216,8 +216,8 @@ static int make_bool_map(struct record_modifier_ctx *ctx, msgpack_object *map,
                     mod_key->dynamic_key == FLB_FALSE) {
                     continue;
                 }
-                if (key->via.bin.size < (mod_key->key_len) &&
-                    key->via.str.size < (mod_key->key_len) &&
+                if (key->via.bin.size < mod_key->key_len &&
+                    key->via.str.size < mod_key->key_len &&
                     mod_key->dynamic_key == FLB_TRUE) {
                     continue;
                 }
