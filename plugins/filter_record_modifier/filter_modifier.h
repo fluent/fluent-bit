@@ -31,6 +31,7 @@ struct modifier_record {
 struct modifier_key {
     char *key;
     int   key_len;
+    int   dynamic_key;
     struct mk_list _head;
 };
 
