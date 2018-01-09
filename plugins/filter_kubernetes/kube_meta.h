@@ -20,6 +20,8 @@
 #ifndef FLB_FILTER_KUBE_META_H
 #define FLB_FILTER_KUBE_META_H
 
+#include "kube_props.h"
+
 struct flb_kube;
 
 struct flb_kube_meta {
@@ -57,7 +59,8 @@ int flb_kube_meta_get(struct flb_kube *ctx,
                       char *tag, int tag_len,
                       char *data, size_t data_size,
                       char **out_buf, size_t *out_size,
-                      struct flb_kube_meta *meta);
+                      struct flb_kube_meta *meta,
+                      struct flb_kube_props *props);
 int flb_kube_meta_release(struct flb_kube_meta *meta);
 
 #endif

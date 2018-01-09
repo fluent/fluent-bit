@@ -29,8 +29,10 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <msgpack.h>
+
 #include "kube_conf.h"
 #include "kube_meta.h"
+#include "kube_property.h"
 
 static int file_to_buffer(char *path, char **out_buf, size_t *out_size)
 {
@@ -141,7 +143,7 @@ static int get_api_server_info(struct flb_kube *ctx,
     size_t b_sent;
     char uri[1024];
     char *buf;
-    int size;
+    size_t size;
     struct flb_http_client *c;
     struct flb_upstream_conn *u_conn;
 
@@ -268,6 +270,8 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
     msgpack_object meta_val;
     msgpack_object spec_val;
     msgpack_object api_map;
+    msgpack_object ann_map;
+    struct flb_kube_props props = {0};
 
     /*
      * - reg_buf: is a msgpack Map containing meta captured using Regex
@@ -431,9 +435,43 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
         msgpack_pack_object(&mp_pck, v);
     }
 
+    /* Process configuration suggested through Annotations */
+    if (have_annotations) {
+        ann_map = meta_val.via.map.ptr[have_annotations].val;
+
+        /* Iterate annotations keys and look for 'logging' key */
+        if (ann_map.type == MSGPACK_OBJECT_MAP) {
+            for (i = 0; i < ann_map.via.map.size; i++) {
+                k = ann_map.via.map.ptr[i].key;
+                v = ann_map.via.map.ptr[i].val;
+
+                if (k.via.str.size > 8 && /* >= 'logging.' */
+                    strncmp(k.via.str.ptr, "logging.", 8) == 0) {
+
+                    /* Validate and set the property */
+                    flb_kube_prop_set(ctx, meta,
+                                      (char *) k.via.str.ptr + 8,
+                                      k.via.str.size - 8,
+                                      (char *) v.via.str.ptr,
+                                      v.via.str.size,
+                                      &props);
+                }
+            }
+        }
+
+        /* Pack Annotation properties */
+        void *prop_buf;
+        size_t prop_size;
+        flb_kube_prop_pack(&props, &prop_buf, &prop_size);
+        msgpack_sbuffer_write(&mp_sbuf, prop_buf, prop_size);
+        flb_kube_prop_destroy(&props);
+        flb_free(prop_buf);
+    }
+
     msgpack_unpacked_destroy(&api_result);
     msgpack_unpacked_destroy(&meta_result);
 
+    /* Set outgoing msgpack buffer */
     *out_buf = mp_sbuf.data;
     *out_size = mp_sbuf.size;
 
@@ -507,6 +545,7 @@ static inline int extract_meta(struct flb_kube *ctx, char *tag, int tag_len,
     }
 
     if (n <= 0) {
+        flb_warn("[filter_kube] invalid pattern for given tag %s", tag);
         return -1;
     }
 
@@ -689,12 +728,15 @@ int flb_kube_meta_get(struct flb_kube *ctx,
                       char *tag, int tag_len,
                       char *data, size_t data_size,
                       char **out_buf, size_t *out_size,
-                      struct flb_kube_meta *meta)
+                      struct flb_kube_meta *meta,
+                      struct flb_kube_props *props)
 {
     int id;
     int ret;
     char *hash_meta_buf;
+    size_t off = 0;
     size_t hash_meta_size;
+    msgpack_unpacked result;
 
     if (ctx->dummy_meta == FLB_TRUE) {
         flb_dummy_meta(out_buf, out_size);
@@ -734,8 +776,32 @@ int flb_kube_meta_get(struct flb_kube *ctx,
         }
     }
 
+    /*
+     * The retrieved buffer may have two serialized items:
+     *
+     * [0] = kubernetes metadata (annotations, labels)
+     * [1] = Annotation properties
+     *
+     * note: annotation properties are optional.
+     */
+    msgpack_unpacked_init(&result);
+
+    /* Unpack to get the offset/bytes of the first item */
+    msgpack_unpack_next(&result, hash_meta_buf, hash_meta_size, &off);
+
+    /* Set the pointer and proper size for the caller */
     *out_buf = hash_meta_buf;
-    *out_size = hash_meta_size;
+    *out_size = off;
+
+    /* A new unpack_next() call will succeed If annotation properties exists */
+    ret = msgpack_unpack_next(&result, hash_meta_buf, hash_meta_size, &off);
+    if (ret == MSGPACK_UNPACK_SUCCESS) {
+        /* Unpack the remaining data into properties structure */
+        flb_kube_prop_unpack(props,
+                             hash_meta_buf + *out_size,
+                             hash_meta_size - *out_size);
+    }
+    msgpack_unpacked_destroy(&result);
 
     return 0;
 }

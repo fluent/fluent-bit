@@ -52,6 +52,7 @@
 #define FLB_API_HOST  "kubernetes.default.svc"
 #define FLB_API_PORT  443
 #define FLB_API_TLS   FLB_TRUE
+
 struct kube_meta;
 
 /* Filter context */
@@ -66,14 +67,20 @@ struct flb_kube {
     int tls_debug;
     int tls_verify;
 
+    /* Configuration proposed through Annotations (boolean) */
+    int k8s_logging_parser;
+
     /* HTTP Client Setup */
     size_t buffer_size;
 
-    /* Merge JSON feature */
-    int merge_json_log;
-    int merge_json_buf_size;
-    char *merge_json_buf;
+    /* Merge Log feature */
+    int merge_log;             /* old merge_json_log */
 
+    /* Temporal buffer to unescape strings */
+    int unesc_buf_size;
+    char *unesc_buf;
+
+    /* JSON key (default 'log') */
     int merge_json_key_len;
     char *merge_json_key;
 

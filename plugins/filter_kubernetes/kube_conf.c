@@ -49,7 +49,7 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
         return NULL;
     }
     ctx->config = config;
-    ctx->merge_json_log = FLB_FALSE;
+    ctx->merge_log = FLB_FALSE;
     ctx->annotations = FLB_TRUE;
     ctx->dummy_meta = FLB_FALSE;
     ctx->tls_debug = -1;
@@ -87,10 +87,16 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
         ctx->tls_verify = flb_utils_bool(tmp);
     }
 
-    /* Merge JSON log */
+    /* Merge [JSON] log */
     tmp = flb_filter_get_property("merge_json_log", i);
     if (tmp) {
-        ctx->merge_json_log = flb_utils_bool(tmp);
+        flb_warn("[filter_kube] merge_json_log is deprecated, "
+                 "enabling 'merge_log' option instead");
+        ctx->merge_log = flb_utils_bool(tmp);
+    }
+    tmp = flb_filter_get_property("merge_log", i);
+    if (tmp) {
+        ctx->merge_log = flb_utils_bool(tmp);
     }
 
     /* Merge JSON key */
@@ -178,10 +184,37 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
         return NULL;
     }
 
-    /* Include Kubernetes Annotations */
+    /* Include Kubernetes Annotations in the final record */
     tmp = flb_filter_get_property("annotations", i);
     if (tmp) {
         ctx->annotations = flb_utils_bool(tmp);
+    }
+
+    /*
+     * The Application may 'propose' special configuration keys
+     * to the logging agent (Fluent Bit) through the annotations
+     * set in the Pod definition, e.g:
+     *
+     *  "annotations": {
+     *      "logging": {"parser": "apache"}
+     *  }
+     *
+     * As of now, Fluent Bit/filter_kubernetes supports the following
+     * options under the 'logging' map value:
+     *
+     * - k8s-logging.parser: propose Fluent Bit to parse the content
+     *                       using the  pre-defined parser in the
+     *                       value (e.g: apache).
+     *
+     * By default all options are disabled, so each option needs to
+     * be enabled manually.
+     */
+    tmp = flb_filter_get_property("k8s-logging.parser", i);
+    if (tmp) {
+        ctx->k8s_logging_parser = flb_utils_bool(tmp);
+    }
+    else {
+        ctx->k8s_logging_parser = FLB_FALSE;
     }
 
     /* Use Systemd Journal */
@@ -194,9 +227,9 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
     }
 
     /* Merge log buffer */
-    if (ctx->merge_json_log == FLB_TRUE) {
-        ctx->merge_json_buf = flb_malloc(FLB_MERGE_BUF_SIZE);
-        ctx->merge_json_buf_size = FLB_MERGE_BUF_SIZE;
+    if (ctx->merge_log == FLB_TRUE) {
+        ctx->unesc_buf = flb_malloc(FLB_MERGE_BUF_SIZE);
+        ctx->unesc_buf_size = FLB_MERGE_BUF_SIZE;
     }
 
     /* Generate dummy metadata (only for test/dev purposes) */
@@ -224,8 +257,8 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
         flb_regex_destroy(ctx->regex);
     }
 
-    if (ctx->merge_json_log == FLB_TRUE) {
-        flb_free(ctx->merge_json_buf);
+    if (ctx->merge_log == FLB_TRUE) {
+        flb_free(ctx->unesc_buf);
     }
 
     if (ctx->merge_json_key) {

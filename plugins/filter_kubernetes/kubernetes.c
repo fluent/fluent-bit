@@ -20,10 +20,12 @@
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_parser.h>
 
 #include "kube_conf.h"
 #include "kube_meta.h"
 #include "kube_regex.h"
+#include "kube_property.h"
 
 #include <stdio.h>
 #include <msgpack.h>
@@ -94,7 +96,9 @@ static int unescape_string(char *buf, int buf_len, char **unesc_buf)
 static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
                             msgpack_object source_map,
                             char *kube_buf, size_t kube_size,
-                            struct flb_kube_meta *meta, struct flb_kube *ctx)
+                            struct flb_kube_meta *meta,
+                            struct flb_parser *parser,
+                            struct flb_kube *ctx)
 {
     int i;
     int ret;
@@ -103,35 +107,29 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
     int size;
     int new_map_size = 0;
     int log_index = -1;
-    int log_size = 0;
-    int json_size = 0;
+    int unesc_len = 0;
     int log_buf_entries = 0;
     size_t off = 0;
     char *tmp;
-    char *log_buf = NULL;
+    void *log_buf = NULL;
+    size_t log_size = 0;
     msgpack_unpacked result;
     msgpack_object k;
     msgpack_object v;
     msgpack_object root;
+    struct flb_time log_time;
 
     /* Original map size */
     map_size = source_map.via.map.size;
 
-    /* If merge_json_log is enabled, we need to lookup the 'log' field */
-    if (ctx->merge_json_log == FLB_TRUE) {
+    /* If merge_log is enabled, we need to lookup the 'log' field */
+    if (ctx->merge_log == FLB_TRUE) {
         for (i = 0; i < map_size; i++) {
             k = source_map.via.map.ptr[i].key;
 
             /* Validate 'log' field */
             if (k.via.str.size == 3 &&
                 strncmp(k.via.str.ptr, "log", 3) == 0) {
-                /* do we have a JSON map ? */
-                v = source_map.via.map.ptr[i].val;
-                if (v.via.str.ptr[0] != '{') {
-                    /* not a json map, no merge can be done */
-                    break;
-                }
-
                 log_index = i;
                 break;
             }
@@ -139,18 +137,18 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
     }
 
     /*
-     * If a log_index exists, means that a JSON map is inside a Docker json
-     * like a escaped string. Before to pack it we need to convert it to a
-     * native JSON structured format.
+     * If a log_index exists, the application log content inside the Docker JSON
+     * map is a escaped string. Proceed to reserve a temporal buffer and create
+     * an unescaped version.
      */
     if (log_index != -1) {
         v = source_map.via.map.ptr[log_index].val;
-        if (v.via.str.size >= ctx->merge_json_buf_size) {
+        if (v.via.str.size >= ctx->unesc_buf_size) {
             new_size = v.via.str.size + 1;
-            tmp = flb_realloc(ctx->merge_json_buf, new_size);
+            tmp = flb_realloc(ctx->unesc_buf, new_size);
             if (tmp) {
-                ctx->merge_json_buf = tmp;
-                ctx->merge_json_buf_size = new_size;
+                ctx->unesc_buf = tmp;
+                ctx->unesc_buf_size = new_size;
             }
             else {
                 flb_errno();
@@ -158,19 +156,42 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
             }
         }
 
-        /* Do not process ending \n if set at the end of the map */
+        /*
+         * Check where to cut the string if common ending bytes like \r or \n
+         * exists.
+         */
         size = v.via.str.size;
         for (i = size - 1; i > 0; i--) {
-            if (v.via.str.ptr[i] == '}') {
-                size = i + 1;
+            if (v.via.str.ptr[i - 1] == '\\' &&
+                (v.via.str.ptr[i] == 'n' || v.via.str.ptr[i] == 'r')) {
+                size -= 2;
+                i--;
+            }
+            else {
                 break;
             }
         }
-        json_size = unescape_string((char *) v.via.str.ptr,
-                                    size, &ctx->merge_json_buf);
-        ret = flb_pack_json(ctx->merge_json_buf, json_size,
-                            &log_buf, &log_size);
-        if (ret != 0) {
+
+        /* Unescape application string */
+        unesc_len = unescape_string((char *) v.via.str.ptr,
+                                    size, &ctx->unesc_buf);
+
+        ret = -1;
+        if (parser) {
+            ret = flb_parser_do(parser, ctx->unesc_buf, unesc_len,
+                                &log_buf, &log_size, &log_time);
+            if (ret >= 0) {
+                if (flb_time_to_double(&log_time) == 0) {
+                    flb_time_get(&log_time);
+                }
+            }
+        }
+        else {
+            ret = flb_pack_json(ctx->unesc_buf, unesc_len,
+                                (char **) &log_buf, &log_size);
+        }
+
+        if (ret == -1) {
             flb_warn("[filter_kube] could not pack merged json");
         }
     }
@@ -215,8 +236,8 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
          */
         if (log_buf && log_index == i) {
             msgpack_pack_object(pck, k);
-            msgpack_pack_str(pck, json_size);
-            msgpack_pack_str_body(pck, ctx->merge_json_buf, json_size);
+            msgpack_pack_str(pck, unesc_len);
+            msgpack_pack_str_body(pck, ctx->unesc_buf, unesc_len);
         }
         else {
             msgpack_pack_object(pck, k);
@@ -315,8 +336,10 @@ static int cb_kube_filter(void *data, size_t bytes,
     msgpack_object root;
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
+    struct flb_parser *parser = NULL;
     struct flb_kube *ctx = filter_context;
     struct flb_kube_meta meta = {0};
+    struct flb_kube_props props = {0};
 
     (void) f_ins;
     (void) config;
@@ -325,9 +348,14 @@ static int cb_kube_filter(void *data, size_t bytes,
     ret = flb_kube_meta_get(ctx,
                             tag, tag_len,
                             data, bytes,
-                            &cache_buf, &cache_size, &meta);
+                            &cache_buf, &cache_size, &meta, &props);
     if (ret == -1) {
+        flb_kube_prop_destroy(&props);
         return FLB_FILTER_NOTOUCH;
+    }
+
+    if (props.parser != NULL) {
+        parser = flb_parser_get(props.parser, config);
     }
 
     /* Create temporal msgpack buffer */
@@ -353,13 +381,15 @@ static int cb_kube_filter(void *data, size_t bytes,
         ret = pack_map_content(&tmp_pck, &tmp_sbuf,
                                map,
                                cache_buf, cache_size,
-                               &meta, ctx);
+                               &meta, parser, ctx);
         if (ret != 0) {
             msgpack_sbuffer_destroy(&tmp_sbuf);
             msgpack_unpacked_destroy(&result);
             if (ctx->dummy_meta == FLB_TRUE) {
                 flb_free(cache_buf);
             }
+
+            flb_kube_prop_destroy(&props);
             return FLB_FILTER_NOTOUCH;
         }
     }
@@ -375,6 +405,8 @@ static int cb_kube_filter(void *data, size_t bytes,
     if (ctx->dummy_meta == FLB_TRUE) {
         flb_free(cache_buf);
     }
+
+    flb_kube_prop_destroy(&props);
     return FLB_FILTER_MODIFIED;
 }
 
