@@ -12,7 +12,8 @@ COPY . /tmp/src/
 
 RUN rm -rf /tmp/src/build/*
 
-RUN apt-get update && apt-get install -y build-essential cmake make wget unzip libsystemd-dev
+RUN apt-get update && apt-get install -y build-essential cmake make wget unzip libsystemd-dev libssl1.0-dev libasl-dev
+
 WORKDIR /tmp/src/build/
 RUN cmake -DFLB_DEBUG=Off -DFLB_TRACE=Off -DFLB_JEMALLOC=On -DFLB_BUFFERING=On -DFLB_TLS=On -DFLB_WITHOUT_SHARED_LIB=On -DFLB_WITHOUT_EXAMPLES=On -DFLB_OUT_KAFKA=On ..
 RUN make
