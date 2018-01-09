@@ -32,13 +32,13 @@ int flb_parser_json_do(struct flb_parser *parser,
     int i;
     int skip;
     int ret;
-    int mp_size;
     int slen;
     double tmfrac = 0;
     char *mp_buf;
     char *time_key;
     size_t off = 0;
     size_t map_size;
+    size_t mp_size;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer  mp_pck;
     msgpack_unpacked result;
