@@ -31,7 +31,7 @@ struct flb_pack_state {
     jsmn_parser parser;   /* parser state            */
 };
 
-int flb_pack_json(char *js, size_t len, char **buffer, int *size);
+int flb_pack_json(char *js, size_t len, char **buffer, size_t *size);
 int flb_pack_state_init(struct flb_pack_state *s);
 void flb_pack_state_reset(struct flb_pack_state *s);
 

@@ -173,7 +173,7 @@ static char *tokens_to_msgpack(char *js,
  * This routine do not keep a state in the parser, do not use it for big
  * JSON messages.
  */
-int flb_pack_json(char *js, size_t len, char **buffer, int *size)
+int flb_pack_json(char *js, size_t len, char **buffer, size_t *size)
 {
     int ret = -1;
     int out;
