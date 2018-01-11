@@ -70,8 +70,24 @@ static int tail_fs_event(struct flb_input_instance *i_ins,
         flb_tail_file_rotated(file);
     }
 
-    /* File was removed */
-    if (ev.mask & (IN_ATTRIB | IN_IGNORED)) {
+    /* File was removed ? */
+    if (ev.mask & IN_ATTRIB) {
+        ret = fstat(file->fd, &st);
+        if (ret == -1) {
+            flb_debug("[in_tail] error stat(2) %s, removing", file->name);
+            flb_tail_file_remove(file);
+            return 0;
+        }
+
+        /* Check if the file have been deleted */
+        if (st.st_nlink == 0) {
+            flb_debug("[in_tail] removed %s", file->name);
+            flb_tail_file_remove(file);
+            return 0;
+        }
+    }
+
+    if (ev.mask & IN_IGNORED) {
         flb_debug("[in_tail] removed %s", file->name);
         flb_tail_file_remove(file);
         return 0;
