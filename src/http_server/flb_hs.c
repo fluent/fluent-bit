@@ -105,6 +105,10 @@ int flb_hs_start(struct flb_hs *hs)
 
 int flb_hs_destroy(struct flb_hs *hs)
 {
+    if (!hs) {
+        return 0;
+    }
+
     mk_stop(hs->ctx);
     mk_destroy(hs->ctx);
 
