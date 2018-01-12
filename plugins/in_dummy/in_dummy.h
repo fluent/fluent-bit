@@ -22,11 +22,11 @@
 
 #define DEFAULT_DUMMY_MESSAGE "{\"message\":\"dummy\"}"
 struct flb_in_dummy_config {
-    char*  dummy_message;
+    char *dummy_message;
     int    dummy_message_len;
 
-    char* ref_msgpack;
-    int   ref_msgpack_size;
+    char *ref_msgpack;
+    size_t ref_msgpack_size;
 };
 
 extern struct flb_input_plugin in_dummy_plugin;
