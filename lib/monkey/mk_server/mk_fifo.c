@@ -111,7 +111,8 @@ struct mk_fifo *mk_fifo_create(pthread_key_t *key, void *data)
 }
 
 int mk_fifo_queue_create(struct mk_fifo *ctx, char *name,
-                         void (*cb)(struct mk_fifo_queue *, void *, size_t),
+                         void (*cb)(struct mk_fifo_queue *, void *,
+                                    size_t, void *),
                          void *data)
 
 {
