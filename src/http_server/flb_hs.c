@@ -46,7 +46,6 @@ struct flb_hs *flb_hs_create(char *listen, char *tcp_port,
                              struct flb_config *config)
 {
     int vid;
-    char *iface;
     char tmp[32];
     struct flb_hs *hs;
 
