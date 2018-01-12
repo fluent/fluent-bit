@@ -98,7 +98,6 @@ struct flb_kafka_topic *flb_kafka_topic_lookup(char *name,
 {
     struct mk_list *head;
     struct flb_kafka_topic *topic;
-    msgpack_unpacked unpack;
 
     if (!ctx->topic_key) {
         return flb_kafka_topic_default(ctx);
