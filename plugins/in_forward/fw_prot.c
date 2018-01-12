@@ -233,8 +233,8 @@ int fw_prot_process(struct fw_conn *conn)
             else if (entry.type == MSGPACK_OBJECT_STR ||
                      entry.type == MSGPACK_OBJECT_BIN) {
                 /* PackedForward Mode */
-                char *data;
-                size_t len;
+                char *data = NULL;
+                size_t len = 0;
 
                 if (entry.type == MSGPACK_OBJECT_STR) {
                     data = (char *) entry.via.str.ptr;
@@ -245,9 +245,11 @@ int fw_prot_process(struct fw_conn *conn)
                     len = entry.via.bin.size;
                 }
 
-                flb_input_dyntag_append_raw(conn->in,
-                                            stag, stag_len,
-                                            data, len);
+                if (data) {
+                    flb_input_dyntag_append_raw(conn->in,
+                                                stag, stag_len,
+                                                data, len);
+                }
             }
             else {
                 flb_warn("[in_fw] invalid data format, type=%i",
