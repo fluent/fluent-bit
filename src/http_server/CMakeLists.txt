@@ -1,3 +1,7 @@
+if(NOT FLB_METRICS)
+  message(FATAL_ERROR "FLB_HTTP_SERVER requires FLB_METRICS=On.")
+endif()
+
 # Core Source
 set(src
   flb_hs.c

@@ -18,6 +18,7 @@
  */
 
 #include <fluent-bit/flb_info.h>
+
 #ifdef FLB_HAVE_METRICS
 
 #ifndef FLB_METRICS_H
