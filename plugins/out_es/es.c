@@ -352,7 +352,7 @@ static int elasticsearch_error_check(struct flb_http_client *c)
     int check = FLB_TRUE;
     char *out_buf;
     size_t off = 0;
-    int out_size;
+    size_t out_size;
     msgpack_unpacked result;
     msgpack_object root;
     msgpack_object key;
