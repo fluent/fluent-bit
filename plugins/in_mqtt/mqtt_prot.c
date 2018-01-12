@@ -114,9 +114,9 @@ static int mqtt_data_append(char *topic, size_t topic_len,
                             void *in_context)
 {
     int i;
-    int out;
     int ret;
     int n_size;
+    size_t out;
     size_t off = 0;
     char *pack;
     msgpack_object root;
