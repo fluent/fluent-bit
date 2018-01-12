@@ -73,7 +73,7 @@ static int add_parser(char *parser, struct filter_parser_ctx *ctx,
 
 static int delete_parsers(struct filter_parser_ctx *ctx)
 {
-    int c;
+    int c = 0;
     struct mk_list *tmp;
     struct mk_list *head;
     struct filter_parser *fp;
