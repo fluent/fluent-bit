@@ -105,8 +105,13 @@ int flb_kube_prop_pack(struct flb_kube_props *props,
     msgpack_pack_array(&pck, size);
 
     /* Index 0: FLB_KUBE_PROP_PARSER */
-    msgpack_pack_str(&pck, flb_sds_len(props->parser));
-    msgpack_pack_str_body(&pck, props->parser, flb_sds_len(props->parser));
+    if (props->parser) {
+        msgpack_pack_str(&pck, flb_sds_len(props->parser));
+        msgpack_pack_str_body(&pck, props->parser, flb_sds_len(props->parser));
+    }
+    else {
+        msgpack_pack_nil(&pck);
+    }
 
     /* Set outgoing msgpack buffer */
     *out_buf = sbuf.data;
@@ -135,7 +140,12 @@ int flb_kube_prop_unpack(struct flb_kube_props *props, char *buf, size_t size)
 
     /* Index 0: Parser */
     o = root.via.array.ptr[FLB_KUBE_PROPS_PARSER];
-    props->parser = flb_sds_create_len((char *) o.via.str.ptr, o.via.str.size);
+    if (o.type == MSGPACK_OBJECT_NIL) {
+        props->parser = NULL;
+    }
+    else {
+        props->parser = flb_sds_create_len((char *) o.via.str.ptr, o.via.str.size);
+    }
 
     msgpack_unpacked_destroy(&result);
     return 0;
