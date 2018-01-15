@@ -35,7 +35,7 @@
 
 struct flb_output_plugin out_http_plugin;
 
-static char *msgpack_to_json(char *data, uint64_t bytes, uint64_t *out_size)
+static char *msgpack_to_json(struct flb_out_http_config *ctx, char *data, uint64_t bytes, uint64_t *out_size)
 {
     int i;
     int ret;
@@ -80,8 +80,8 @@ static char *msgpack_to_json(char *data, uint64_t bytes, uint64_t *out_size)
         msgpack_pack_map(&tmp_pck, map_size + 1);
 
         /* Append date k/v */
-        msgpack_pack_str(&tmp_pck, 4);
-        msgpack_pack_str_body(&tmp_pck, "date", 4);
+        msgpack_pack_str(&tmp_pck, ctx->json_date_key_len);
+        msgpack_pack_str_body(&tmp_pck, ctx->json_date_key, ctx->json_date_key_len);
         msgpack_pack_double(&tmp_pck, flb_time_to_double(&tm));
 
         for (i = 0; i < map_size; i++) {
@@ -274,6 +274,17 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
         }
     }
 
+    /* Date key for JSON output */
+    tmp = flb_output_get_property("json_date_key", ins);
+    if (!tmp) {
+        ctx->json_date_key     = flb_strdup("date");
+        ctx->json_date_key_len = strlen(ctx->json_date_key);
+    }
+    else {
+        ctx->json_date_key     = flb_strdup(tmp);
+        ctx->json_date_key_len = strlen(ctx->json_date_key);
+    }
+
     ctx->u = upstream;
     ctx->uri  = uri;
     ctx->host = ins->host.name;
@@ -302,7 +313,7 @@ void cb_http_flush(void *data, size_t bytes,
     (void) i_ins;
 
     if (ctx->out_format == FLB_HTTP_OUT_JSON) {
-        body = msgpack_to_json(data, bytes, &body_len);
+        body = msgpack_to_json(ctx, data, bytes, &body_len);
     }
     else {
         body = data;
@@ -401,6 +412,7 @@ int cb_http_exit(void *data, struct flb_config *config)
     flb_free(ctx->http_passwd);
     flb_free(ctx->proxy_host);
     flb_free(ctx->uri);
+    flb_free(ctx->json_date_key);
     flb_free(ctx);
 
     return 0;
