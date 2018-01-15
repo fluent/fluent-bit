@@ -192,7 +192,7 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
         }
 
         if (ret == -1) {
-            flb_warn("[filter_kube] could not pack merged json");
+            flb_debug("[filter_kube] could not merge log as requested");
         }
     }
 
