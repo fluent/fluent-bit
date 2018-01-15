@@ -42,5 +42,8 @@ RUN apt-get update \
     && apt-get autoclean
 COPY --from=builder /fluent-bit /fluent-bit
 
+#
+EXPOSE 2020
+
 # Entry point
 CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
