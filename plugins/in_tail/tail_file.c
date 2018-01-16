@@ -189,7 +189,15 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
 
     /* Parse the data content */
     data = file->buf_data;
-    while ((p = strchr(data, '\n'))) {
+    while ((data - file->buf_data) < file->buf_len) {
+        p = strchr(data, '\n');
+        /* Remove leading null characters. */
+        if (!p) {
+            data++;
+            processed_bytes++;
+            continue;
+        }
+
         len = (p - data);
 
         if (file->skip_next == FLB_TRUE) {
