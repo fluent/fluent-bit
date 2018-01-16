@@ -170,6 +170,7 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
     int ret;
     off_t processed_bytes = 0;
     char *data;
+    char *end;
     char *p;
     void *out_buf;
     size_t out_size;
@@ -189,7 +190,8 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
 
     /* Parse the data content */
     data = file->buf_data;
-    while ((p = strchr(data, '\n'))) {
+    end = data + file->buf_len;
+    while ((p = memchr(data, '\n', end - data))) {
         len = (p - data);
 
         if (file->skip_next == FLB_TRUE) {
