@@ -44,7 +44,7 @@ void test_json_pack()
     size_t len;
     char *data;
     char *out_buf;
-    int out_size;
+    size_t out_size;
 
     data = mk_file_to_buffer(JSON_SINGLE_MAP1);
     TEST_CHECK(data != NULL);
