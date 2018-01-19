@@ -509,6 +509,7 @@ static int data_compose(void *data, size_t bytes,
         *out_buf  = NULL;
         *out_size = 0;
     }
+    msgpack_unpacked_destroy(&result);
 
     return entries;
 }
@@ -581,6 +582,9 @@ void cb_forward_flush(void *data, size_t bytes,
     if (!u_conn) {
         flb_error("[out_fw] no upstream connections available");
         msgpack_sbuffer_destroy(&mp_sbuf);
+        if (ctx->time_as_integer == FLB_TRUE) {
+            flb_free(out_buf);
+        }
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
@@ -592,6 +596,9 @@ void cb_forward_flush(void *data, size_t bytes,
         if (ret == -1) {
             flb_upstream_conn_release(u_conn);
             msgpack_sbuffer_destroy(&mp_sbuf);
+            if (ctx->time_as_integer == FLB_TRUE) {
+                flb_free(out_buf);
+            }
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
     }
@@ -603,6 +610,9 @@ void cb_forward_flush(void *data, size_t bytes,
         flb_error("[out_fw] could not write chunk header");
         msgpack_sbuffer_destroy(&mp_sbuf);
         flb_upstream_conn_release(u_conn);
+        if (ctx->time_as_integer == FLB_TRUE) {
+            flb_free(out_buf);
+        }
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
