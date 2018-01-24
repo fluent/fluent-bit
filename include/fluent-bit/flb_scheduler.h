@@ -46,7 +46,21 @@ struct flb_sched_timer {
     struct mk_event event;
     int type;
     void *data;
-    struct mk_list _head;    /* link to flb_sched->timers */
+
+    /*
+     * Custom timer specific data:
+     *
+     * - timer_fd = timer file descriptor
+     * - cb       = callback to be triggerd upon expiration
+     */
+    int timer_fd;
+    void (*cb)(struct flb_config *, void *);
+
+    /* Parent context */
+    struct flb_config *config;
+
+    /* link to flb_sched->timers */
+    struct mk_list _head;
 };
 
 /* Struct representing a FLB_SCHED_TIMER_REQUEST */

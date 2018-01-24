@@ -415,11 +415,13 @@ struct flb_sched_timer *flb_sched_timer_create(struct flb_sched *sched)
     struct flb_sched_timer *timer;
 
     /* Create timer context */
-    timer = flb_malloc(sizeof(struct flb_sched_timer));
+    timer = flb_calloc(1, sizeof(struct flb_sched_timer));
     if (!timer) {
         flb_errno();
         return NULL;
     }
+    timer->timer_fd = -1;
+    timer->config = sched->config;
 
     mk_list_add(&timer->_head, &sched->timers);
     return timer;
@@ -428,6 +430,11 @@ struct flb_sched_timer *flb_sched_timer_create(struct flb_sched *sched)
 /* Destroy a timer context */
 int flb_sched_timer_destroy(struct flb_sched_timer *timer)
 {
+    mk_event_timeout_destroy(timer->config->evl, &timer->event);
+    if (timer->timer_fd > 0) {
+        flb_sched_timer_cb_disable(timer);
+    }
+
     mk_list_del(&timer->_head);
     flb_free(timer);
     return 0;
