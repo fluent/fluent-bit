@@ -185,6 +185,7 @@ int flb_me_fd_event(int fd, struct flb_me *me)
 
 int flb_me_destroy(struct flb_me *me)
 {
+    mk_event_timeout_destroy(me->config->evl, &me->event);
     flb_free(me);
     return 0;
 }
