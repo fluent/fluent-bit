@@ -199,6 +199,24 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
     return fd;
 }
 
+static inline int _mk_event_timeout_destroy(struct mk_event_ctx *ctx, void *data)
+{
+    int ret;
+    struct mk_event *event;
+    struct kevent ke = {0, 0, 0, 0, 0, 0};
+
+    event = (struct mk_event *) data;
+    EV_SET(&ke, event->fd, EVFILT_TIMER, EV_DELETE, 0,0, NULL);
+
+    ret = kevent(ctx->kfd, &ke, 1, NULL, 0, NULL);
+    if (ret < 0) {
+        mk_libc_error("kevent");
+        return ret;
+    }
+
+    return 0;
+}
+
 static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
                                            int *r_fd, int *w_fd, void *data)
 {
