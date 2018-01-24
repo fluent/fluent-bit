@@ -136,6 +136,15 @@ int mk_event_timeout_create(struct mk_event_loop *loop,
     return _mk_event_timeout_create(ctx, sec, nsec, data);
 }
 
+/* Destroy timer */
+int mk_event_timeout_destroy(struct mk_event_loop *loop, void *data)
+{
+    struct mk_event_ctx *ctx;
+
+    ctx = loop->data;
+    return _mk_event_timeout_destroy(ctx, data);
+}
+
 /* Create a new channel to distribute signals */
 int mk_event_channel_create(struct mk_event_loop *loop,
                             int *r_fd, int *w_fd,
