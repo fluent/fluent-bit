@@ -47,15 +47,6 @@ struct flb_sched_timer {
     int type;
     void *data;
 
-    /*
-     * Custom timer specific data:
-     *
-     * - timer_fd = timer file descriptor
-     * - cb       = callback to be triggerd upon expiration
-     */
-    int timer_fd;
-    void (*cb)(struct flb_config *, void *);
-
     /* Parent context */
     struct flb_config *config;
 
