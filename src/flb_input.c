@@ -660,6 +660,7 @@ int flb_input_collector_pause(int coll_id, struct flb_input_instance *in)
          * descriptor associated to the time out, when resumed a new
          * one can be created.
          */
+        mk_event_timeout_destroy(config->evl, &coll->event);
         mk_event_del(config->evl, &coll->event);
         close(coll->fd_timer);
         coll->fd_timer = -1;
