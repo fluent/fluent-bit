@@ -148,7 +148,6 @@ endif()
 if(FLB_DEV)
   set(FLB_DEBUG          On)
   set(FLB_TRACE          On)
-  set(FLB_METRICS        On)
   set(FLB_TESTS_INTERNAL On)
 endif()
 
