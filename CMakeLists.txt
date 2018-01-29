@@ -234,8 +234,8 @@ if(FLB_TLS)
   option(ENABLE_TESTING  OFF)
   option(ENABLE_PROGRAMS OFF)
   option(INSTALL_MBEDTLS_HEADERS OFF)
-  add_subdirectory(lib/mbedtls-2.5.1 EXCLUDE_FROM_ALL)
-  include_directories(lib/mbedtls-2.5.1/include)
+  add_subdirectory(lib/mbedtls-2.6.0 EXCLUDE_FROM_ALL)
+  include_directories(lib/mbedtls-2.6.0/include)
 endif()
 
 # Metrics
