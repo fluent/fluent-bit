@@ -686,9 +686,16 @@ int flb_tail_file_to_event(struct flb_tail_file *file)
 
     /* Check if this file have been rotated */
     name = flb_tail_file_name(file);
+    if (!name) {
+        flb_debug("[in_tail] cannot detect if file was rotated: %s",
+                  file->name);
+        return -1;
+    }
+
     if (strcmp(name, file->name) != 0) {
         ret = stat(name, &st_rotated);
         if (ret == -1) {
+            flb_free(name);
             return -1;
         }
         else if (st_rotated.st_ino != st.st_ino) {
