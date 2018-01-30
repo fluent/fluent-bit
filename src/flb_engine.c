@@ -533,6 +533,10 @@ int flb_engine_start(struct flb_config *config)
                 }
                 else if (ret == FLB_ENGINE_SHUTDOWN) {
                     flb_info("[engine] service stopped");
+                    if (config->shutdown_fd > 0) {
+                        mk_event_timeout_destroy(config->evl,
+                                                 &config->event_shutdown);
+                    }
                     return flb_engine_shutdown(config);
                 }
 #ifdef FLB_HAVE_STATS

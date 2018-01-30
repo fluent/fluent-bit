@@ -25,7 +25,7 @@
 #include <fluent-bit/flb_http_client.h>
 
 #include "td_config.h"
-#include "miniz/miniz.c"
+#include "miniz/miniz.h"
 
 #define TD_HTTP_HEADER_SIZE  512
 

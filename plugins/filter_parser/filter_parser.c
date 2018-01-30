@@ -116,7 +116,7 @@ static int configure(struct filter_parser_ctx *ctx,
     if (tmp) {
         ret = add_parser(tmp, ctx, config);
         if (ret == -1) {
-            flb_error("[filter_parser] requested parser '%s' not found", prop->val);
+            flb_error("[filter_parser] requested parser '%s' not found", tmp);
         }
     }
 

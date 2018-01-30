@@ -57,6 +57,9 @@ struct flb_sched_timer {
     int timer_fd;
     void (*cb)(struct flb_config *, void *);
 
+    /* Parent context */
+    struct flb_config *config;
+
     /* link to flb_sched->timers */
     struct mk_list _head;
 };

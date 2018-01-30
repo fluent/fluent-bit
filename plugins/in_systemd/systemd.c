@@ -214,9 +214,14 @@ static int in_systemd_collect_archive(struct flb_input_instance *i_ins,
 {
     int ret;
     uint64_t val;
+    ssize_t bytes;
     struct flb_systemd_config *ctx = in_context;
 
-    read(ctx->ch_manager[0], &val, sizeof(uint64_t));
+    bytes = read(ctx->ch_manager[0], &val, sizeof(uint64_t));
+    if (bytes == -1) {
+        flb_errno();
+        return -1;
+    }
 
     ret = in_systemd_collect(i_ins, config, in_context);
     if (ret == FLB_SYSTEMD_OK) {

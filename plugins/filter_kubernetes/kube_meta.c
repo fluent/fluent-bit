@@ -436,7 +436,7 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
     }
 
     /* Process configuration suggested through Annotations */
-    if (have_annotations) {
+    if (have_annotations >= 0) {
         ann_map = meta_val.via.map.ptr[have_annotations].val;
 
         /* Iterate annotations keys and look for 'logging' key */

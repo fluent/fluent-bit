@@ -101,7 +101,6 @@ struct flb_in_proc_mem_offset mem_linux[] = {
 static pid_t get_pid_from_procname_linux(const char* proc)
 {
     pid_t ret = -1;
-
     glob_t glb;
     int i;
     int fd = -1;
@@ -112,7 +111,8 @@ static pid_t get_pid_from_procname_linux(const char* proc)
     char  cmdname[FLB_CMD_LEN];
     char* bname = NULL;
 
-    if ((ret_glb = glob("/proc/*/cmdline", 0 ,NULL,&glb) != 0)) {
+    ret_glb = glob("/proc/*/cmdline", 0 ,NULL, &glb);
+    if (ret_glb != 0) {
         switch(ret_glb){
         case GLOB_NOSPACE:
             flb_warn("[%s] glob: no space", FLB_IN_PROC_NAME);
@@ -129,13 +129,13 @@ static pid_t get_pid_from_procname_linux(const char* proc)
         return ret;
     }
 
-    for(i=0; i<glb.gl_pathc; i++){
+    for (i = 0; i < glb.gl_pathc; i++) {
         fd = open(glb.gl_pathv[i], O_RDONLY);
-        if (fd<0) {
+        if (fd < 0) {
             continue;
         }
         count = read(fd, &cmdname, FLB_CMD_LEN);
-        if (count<=0){
+        if (count <= 0){
             close(fd);
             continue;
         }

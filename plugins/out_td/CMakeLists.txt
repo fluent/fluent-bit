@@ -1,4 +1,5 @@
 set(src
+  miniz/miniz.c
   td_http.c
   td_config.c
   td.c)
