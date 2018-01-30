@@ -330,7 +330,7 @@ void mk_server_loop_balancer(struct mk_server *server)
                  * Accept connection: determinate which thread may work on this
                  * new connection.
                  */
-                sched = mk_sched_next_target();
+                sched = mk_sched_next_target(server);
                 if (sched != NULL) {
                     mk_server_listen_handler(sched, event, server);
 #ifdef MK_TRACE

@@ -63,6 +63,17 @@ option(MK_WITHOUT_BIN          "Do not build binary"      No)
 option(MK_WITHOUT_CONF         "Skip configuration files" No)
 option(MK_STATIC_LIB_MODE      "Static library mode"      No)
 
+# If building just for a "library" mode, disable plugins
+if(MK_LIB_ONLY)
+  set(MK_PLUGIN_AUTH       No)
+  set(MK_PLUGIN_CGI        No)
+  set(MK_PLUGIN_CHEETAH    No)
+  set(MK_PLUGIN_DIRLISTING No)
+  set(MK_PLUGIN_FASTCGI    No)
+  set(MK_PLUGIN_LOGGER     No)
+  set(MK_PLUGIN_MANDRIL    No)
+endif()
+
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set(MK_ACCEPT        1)
   set(MK_ACCEPT4       0)
