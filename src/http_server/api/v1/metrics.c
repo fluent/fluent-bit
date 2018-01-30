@@ -139,7 +139,6 @@ static void cb_mq_metrics(mk_mq_t *queue, void *data, size_t size)
 }
 
 /* API: expose metrics in Prometheus format /api/v1/metrics/prometheus */
-
 void cb_metrics_prometheus(mk_request_t *request, void *data)
 {
     int i;
@@ -212,19 +211,19 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
                 mk = sv.via.map.ptr[m].key;
                 mv = sv.via.map.ptr[m].val;
 
-                flb_sds_cat(sds, "fluentbit_", 10);
-                flb_sds_cat(sds, k.via.str.ptr, k.via.str.size);
-                flb_sds_cat(sds, "_", 1);
-                flb_sds_cat(sds, mk.via.str.ptr, mk.via.str.size);
-                flb_sds_cat(sds, "_total{name=\"", 13);
-                flb_sds_cat(sds, sk.via.str.ptr, sk.via.str.size);
-                flb_sds_cat(sds, "\"} ", 3);
+                sds = flb_sds_cat(sds, "fluentbit_", 10);
+                sds = flb_sds_cat(sds, (char *) k.via.str.ptr, k.via.str.size);
+                sds = flb_sds_cat(sds, "_", 1);
+                sds = flb_sds_cat(sds, (char *) mk.via.str.ptr, mk.via.str.size);
+                sds = flb_sds_cat(sds, "_total{name=\"", 13);
+                sds = flb_sds_cat(sds, (char *) sk.via.str.ptr, sk.via.str.size);
+                sds = flb_sds_cat(sds, "\"} ", 3);
 
                 len = snprintf(tmp, sizeof(tmp) - 1,
                                "%lu ", mv.via.u64);
-                flb_sds_cat(sds, tmp, len);
-                flb_sds_cat(sds, time_str, time_len);
-                flb_sds_cat(sds, "\n", 1);
+                sds = flb_sds_cat(sds, tmp, len);
+                sds = flb_sds_cat(sds, time_str, time_len);
+                sds = flb_sds_cat(sds, "\n", 1);
             }
         }
     }
