@@ -34,6 +34,9 @@
 #define FLB_ERR_OUTPUT_UNIQ          102
 #define FLB_ERR_FILTER_INVALID       201
 
+/* Parser */
+#define FLB_ERR_CFG_PARSER_FILE      300
+
 /* JSON errors */
 #define FLB_ERR_JSON_INVAL           -501
 #define FLB_ERR_JSON_PART            -502

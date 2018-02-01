@@ -80,6 +80,9 @@ void flb_utils_error(int err)
     case FLB_ERR_FILTER_INVALID:
         msg = "Invalid filter plugin";
         break;
+    case FLB_ERR_CFG_PARSER_FILE:
+        msg = "Could not open parser configuration file";
+        break;
     case FLB_ERR_JSON_INVAL:
         msg = "Invalid JSON string";
         break;
