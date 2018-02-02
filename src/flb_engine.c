@@ -275,12 +275,6 @@ static FLB_INLINE int flb_engine_handle_event(flb_pipefd_t fd, int mask,
             flb_utils_pipe_byte_consume(fd);
             return FLB_ENGINE_SHUTDOWN;
         }
-#ifdef FLB_HAVE_STATS
-        else if (config->stats_fd == fd) {
-            flb_utils_timer_consume(fd);
-            return FLB_ENGINE_STATS;
-        }
-#endif
         else if (config->ch_manager[0] == fd) {
             ret = flb_engine_manager(fd, config);
             if (ret == FLB_ENGINE_STOP) {
@@ -520,11 +514,6 @@ int flb_engine_start(struct flb_config *config)
                     }
                     return flb_engine_shutdown(config);
                 }
-#ifdef FLB_HAVE_STATS
-                else if (ret == FLB_ENGINE_STATS) {
-                    //flb_stats_collect(config);
-                }
-#endif
             }
             else if (event->type & FLB_ENGINE_EV_SCHED) {
                 /* Event type registered by the Scheduler */
@@ -533,7 +522,6 @@ int flb_engine_start(struct flb_config *config)
             else if (event->type == FLB_ENGINE_EV_CUSTOM) {
                 event->handler(event);
             }
-#if defined (FLB_HAVE_FLUSH_LIBCO)
             else if (event->type == FLB_ENGINE_EV_THREAD) {
                 struct flb_upstream_conn *u_conn;
                 struct flb_thread *th;
@@ -547,8 +535,10 @@ int flb_engine_start(struct flb_config *config)
                 flb_trace("[engine] resuming thread=%p", th);
                 flb_thread_resume(th);
             }
-#endif
         }
+
+        /* Cleanup functions associated to events and timers */
+        flb_sched_timer_cleanup(config->sched);
     }
 }
 
@@ -557,6 +547,7 @@ int flb_engine_shutdown(struct flb_config *config)
 {
 
     config->is_running = FLB_FALSE;
+    flb_input_pause_all(config);
 
 #ifdef FLB_HAVE_BUFFERING
     if (config->buffer_ctx) {
