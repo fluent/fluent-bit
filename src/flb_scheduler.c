@@ -252,15 +252,23 @@ int flb_sched_request_destroy(struct flb_config *config,
 {
     struct flb_sched_timer *timer;
 
-    flb_pipe_close(req->fd);
     mk_list_del(&req->_head);
 
     timer = req->timer;
     if (config->evl && timer->event.mask != MK_EVENT_EMPTY) {
         mk_event_del(config->evl, &timer->event);
     }
+    flb_pipe_close(req->fd);
 
-    flb_sched_timer_destroy(timer);
+    /*
+     * We invalidate the timer since in the same event loop round
+     * an event associated to this timer can be present. Invalidation
+     * means the timer will do nothing and will be removed after
+     * the event loop round finish.
+     */
+    flb_sched_timer_invalidate(timer);
+
+    /* Remove request */
     flb_free(req);
 
     return 0;
@@ -293,6 +301,10 @@ int flb_sched_event_handler(struct flb_config *config, struct mk_event *event)
     struct flb_sched_request *req;
 
     timer = (struct flb_sched_timer *) event;
+    if (timer->active == FLB_FALSE) {
+        return 0;
+    }
+
     if (timer->type == FLB_SCHED_TIMER_REQUEST) {
         /* Map request struct */
         req = timer->data;
@@ -333,6 +345,7 @@ int flb_sched_init(struct flb_config *config)
     mk_list_init(&sched->requests);
     mk_list_init(&sched->requests_wait);
     mk_list_init(&sched->timers);
+    mk_list_init(&sched->timers_drop);
 
     /* Create the frame timer who enqueue 'requests' for future time */
     timer = flb_sched_timer_create(sched);
@@ -422,8 +435,22 @@ struct flb_sched_timer *flb_sched_timer_create(struct flb_sched *sched)
     }
     timer->config = sched->config;
 
+    /* Active timer (not invalidated) */
+    timer->active = FLB_TRUE;
     mk_list_add(&timer->_head, &sched->timers);
+
     return timer;
+}
+
+void flb_sched_timer_invalidate(struct flb_sched_timer *timer)
+{
+    struct flb_sched *sched;
+
+    sched  = timer->config->sched;
+
+    timer->active = FLB_FALSE;
+    mk_list_del(&timer->_head);
+    mk_list_add(&timer->_head, &sched->timers_drop);
 }
 
 /* Destroy a timer context */
@@ -433,4 +460,21 @@ int flb_sched_timer_destroy(struct flb_sched_timer *timer)
     mk_list_del(&timer->_head);
     flb_free(timer);
     return 0;
+}
+
+/* Used by the engine to cleanup pending timers waiting to be destroyed */
+int flb_sched_timer_cleanup(struct flb_sched *sched)
+{
+    int c = 0;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_sched_timer *timer;
+
+    mk_list_foreach_safe(head, tmp, &sched->timers_drop) {
+        timer = mk_list_entry(head, struct flb_sched_timer, _head);
+        flb_sched_timer_destroy(timer);
+        c++;
+    }
+
+    return c;
 }

@@ -44,6 +44,7 @@
  */
 struct flb_sched_timer {
     struct mk_event event;
+    int active;
     int type;
     void *data;
 
@@ -90,6 +91,12 @@ struct flb_sched {
 
     /* Timers: list of timers for different purposes */
     struct mk_list timers;
+
+    /*
+     * Timers_Drop: list of invalidated timers that needs to
+     * be free()d once the event loop finish the cycle.
+     */
+    struct mk_list timers_drop;
 
     /* Frame timer context */
     flb_pipefd_t frame_fd;
