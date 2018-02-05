@@ -138,9 +138,10 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
             /* There is a match, get the buffer */
             buf = flb_input_dyntag_flush(dt, &size);
             if (size == 0) {
-                if (buf) {
-                    flb_free(buf);
-                }
+                /*
+                 * Do not release the buffer since if allocated, it will be
+                 * released upon input_dyntag context destroy.
+                 */
                 continue;
             }
             if (!buf) {
@@ -150,24 +151,14 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
             flb_trace("[dyntag %s] %p tag=%s", dt->in->name, dt, dt->tag);
             task = flb_task_create(id, buf, size, dt->in, dt, dt->tag, config);
             if (!task) {
-                flb_free(buf);
+                /* Do not release the buffer, will happen on dyntag destroy */
                 continue;
             }
         }
     }
     else {
-        /*
-         * Check the source of the buffer, input plugins still can have their
-         * own msgpack buffers.
-         */
-        if (p->cb_flush_buf) {
-            buf = p->cb_flush_buf(in, &size);
-        }
-        else {
-            /* Use instance buffers */
-            buf = flb_input_flush(in, &size);
-        }
-
+        /* Get data from instance buffers */
+        buf = flb_input_flush(in, &size);
         if (!buf || size == 0) {
             if (buf) {
                 flb_free(buf);
