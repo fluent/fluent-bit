@@ -786,8 +786,8 @@ struct flb_input_dyntag *flb_input_dyntag_create(struct flb_input_instance *in,
 /* Destroy an dyntag node */
 int flb_input_dyntag_destroy(struct flb_input_dyntag *dt)
 {
-    flb_debug("[dyntag %s] %p destroy (tag=%s)",
-              dt->in->name, dt, dt->tag);
+    flb_warn("[dyntag %s] %p destroy (tag=%s, bytes=%lu)",
+             dt->in->name, dt, dt->tag, dt->mp_sbuf.size);
 
     msgpack_sbuffer_destroy(&dt->mp_sbuf);
     mk_list_del(&dt->_head);
@@ -905,7 +905,8 @@ void *flb_input_flush(struct flb_input_instance *i_ins, size_t *size)
     char *buf;
 
     if (i_ins->mp_sbuf.size == 0) {
-        return 0;
+        *size = 0;
+        return NULL;
     }
 
     /* Allocate buffer */
@@ -933,7 +934,7 @@ void *flb_input_dyntag_flush(struct flb_input_dyntag *dt, size_t *size)
     void *buf;
 
     /*
-     * MessagePack-C internal use a raw buffer for it operations, since we
+     * msgpack-c internal use a raw buffer for it operations, since we
      * already appended data we just can take out the references to avoid
      * a new memory allocation and skip a copy operation.
      */
@@ -942,13 +943,13 @@ void *flb_input_dyntag_flush(struct flb_input_dyntag *dt, size_t *size)
     *size = dt->mp_sbuf.size;
 
     /* Unset the lock, it means more data can be added */
-    dt->lock = FLB_FALSE;
+    //dt->lock = FLB_FALSE;
 
     /* Set it busy as it likely it's a reference for an outgoing task */
     dt->busy = FLB_TRUE;
 
-    msgpack_sbuffer_init(&dt->mp_sbuf);
-    msgpack_packer_init(&dt->mp_pck, &dt->mp_sbuf, msgpack_sbuffer_write);
+    //msgpack_sbuffer_init(&dt->mp_sbuf);
+    //msgpack_packer_init(&dt->mp_pck, &dt->mp_sbuf, msgpack_sbuffer_write);
 
     return buf;
 }
