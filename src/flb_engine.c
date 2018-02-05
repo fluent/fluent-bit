@@ -556,6 +556,8 @@ int flb_engine_start(struct flb_config *config)
 int flb_engine_shutdown(struct flb_config *config)
 {
 
+    config->is_running = FLB_FALSE;
+
 #ifdef FLB_HAVE_BUFFERING
     if (config->buffer_ctx) {
         flb_buffer_stop(config->buffer_ctx);
