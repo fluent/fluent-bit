@@ -788,8 +788,8 @@ struct flb_input_dyntag *flb_input_dyntag_create(struct flb_input_instance *in,
 /* Destroy an dyntag node */
 int flb_input_dyntag_destroy(struct flb_input_dyntag *dt)
 {
-    flb_warn("[dyntag %s] %p destroy (tag=%s, bytes=%lu)",
-             dt->in->name, dt, dt->tag, dt->mp_sbuf.size);
+    flb_debug("[dyntag %s] %p destroy (tag=%s, bytes=%lu)",
+              dt->in->name, dt, dt->tag, dt->mp_sbuf.size);
 
     msgpack_sbuffer_destroy(&dt->mp_sbuf);
     mk_list_del(&dt->_head);
