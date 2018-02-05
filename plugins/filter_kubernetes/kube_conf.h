@@ -84,8 +84,12 @@ struct flb_kube {
     int merge_json_key_len;
     char *merge_json_key;
 
+    /* API Server end point */
     char kube_url[1024];
+
+    /* Regex context to parse records */
     struct flb_regex *regex;
+    struct flb_parser *parser;
 
     /* TLS CA certificate file */
     char *tls_ca_path;

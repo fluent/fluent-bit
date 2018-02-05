@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_http_client.h>
 
 #ifndef FLB_HAVE_TLS
@@ -42,6 +43,7 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
     char *tmp;
     char *p;
     struct flb_kube *ctx;
+    struct flb_parser *parser;
 
     ctx = flb_calloc(1, sizeof(struct flb_kube));
     if (!ctx) {
@@ -232,6 +234,28 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
         ctx->unesc_buf_size = FLB_MERGE_BUF_SIZE;
     }
 
+    /* Custom Regex */
+    tmp = flb_filter_get_property("regex_parser", i);
+    if (tmp) {
+        /* Get custom parser */
+        ctx->parser = flb_parser_get(tmp, config);
+        if (!ctx->parser) {
+            flb_error("[filter_kube] invalid parser '%s'", tmp);
+            flb_kube_conf_destroy(ctx);
+            return NULL;
+        }
+
+        /* Force to regex parser */
+        if (ctx->parser->type != FLB_PARSER_REGEX) {
+            flb_error("[filter_kube] invalid parser type '%s'", tmp);
+            flb_kube_conf_destroy(ctx);
+            return NULL;
+        }
+        else {
+            ctx->regex = ctx->parser->regex;
+        }
+    }
+
     /* Generate dummy metadata (only for test/dev purposes) */
     tmp = flb_filter_get_property("dummy_meta", i);
     if (tmp) {
@@ -253,16 +277,17 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
         flb_hash_destroy(ctx->hash_table);
     }
 
-    if (ctx->regex) {
-        flb_regex_destroy(ctx->regex);
-    }
-
     if (ctx->merge_log == FLB_TRUE) {
         flb_free(ctx->unesc_buf);
     }
 
     if (ctx->merge_json_key) {
         flb_free(ctx->merge_json_key);
+    }
+
+    /* Destroy regex content only if a parser was not defined */
+    if (ctx->parser == NULL) {
+        flb_regex_destroy(ctx->regex);
     }
 
     flb_free(ctx->api_host);
