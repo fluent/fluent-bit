@@ -235,6 +235,12 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
                               (char**) &out_buf, &out_size, file);
                 flb_free(out_buf);
             }
+            else {
+                /* Parser failed, pack raw text */
+                flb_time_get(&out_time);
+                flb_tail_file_pack_line(out_sbuf, out_pck, &out_time,
+                                        data, len, file);
+            }
         }
         else if (ctx->multiline == FLB_TRUE) {
             ret = flb_tail_mult_process_content(now,
