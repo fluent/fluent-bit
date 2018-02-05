@@ -115,7 +115,8 @@ int flb_sched_exit(struct flb_config *config);
 
 struct flb_sched_timer *flb_sched_timer_create(struct flb_sched *sched);
 int flb_sched_timer_destroy(struct flb_sched_timer *timer);
-
+void flb_sched_timer_invalidate(struct flb_sched_timer *timer);
 int flb_sched_request_invalidate(struct flb_config *config, void *data);
+int flb_sched_timer_cleanup(struct flb_sched *sched);
 
 #endif
