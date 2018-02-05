@@ -386,7 +386,7 @@ void flb_task_destroy(struct flb_task *task)
     struct flb_task_route *route;
     struct flb_task_retry *retry;
 
-    flb_warn("[task] destroy task=%p (task_id=%i)", task, task->id);
+    flb_debug("[task] destroy task=%p (task_id=%i)", task, task->id);
 
     /* Release task_id */
     map_free_task_id(task->id, task->config);
