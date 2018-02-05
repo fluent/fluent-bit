@@ -126,6 +126,9 @@ struct flb_config {
     /* Parser Conf */
     char *parsers_file;
 
+    /* Plugins config file */
+    char *plugins_file;
+
     /* Environment */
     void *env;
 
@@ -192,6 +195,7 @@ enum conf_type {
 #define FLB_CONF_STR_LOGFILE  "Log_File"
 #define FLB_CONF_STR_LOGLEVEL "Log_Level"
 #define FLB_CONF_STR_PARSERS_FILE "Parsers_File"
+#define FLB_CONF_STR_PLUGINS_FILE "Plugins_File"
 #ifdef FLB_HAVE_HTTP_SERVER
 #define FLB_CONF_STR_HTTP_SERVER  "HTTP_Server"
 #define FLB_CONF_STR_HTTP_LISTEN  "HTTP_Listen"
