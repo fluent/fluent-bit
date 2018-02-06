@@ -44,6 +44,7 @@ struct flb_systemd_config {
     sd_journal *j;   /* Journal context */
     char *cursor;
     char *path;
+    int pending_records;
 
     /* Internal */
     int ch_manager[2];         /* pipe: channel manager    */
