@@ -20,8 +20,6 @@
 #ifndef FLB_FILTER_GREP_H
 #define FLB_FILTER_GREP_H
 
-#include <regex.h>
-
 /* rule types */
 #define GREP_REGEX    1
 #define GREP_EXCLUDE  2
@@ -36,9 +34,10 @@ struct grep_ctx {
 
 struct grep_rule {
     int type;
+    int field_len;
     char *field;
-    char *regex;
-    regex_t match;
+    char *regex_pattern;
+    struct flb_regex *regex;
     struct mk_list _head;
 };
 

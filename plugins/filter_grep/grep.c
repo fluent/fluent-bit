@@ -19,7 +19,6 @@
 
 #include <stdio.h>
 #include <sys/types.h>
-#include <regex.h>
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
@@ -27,6 +26,7 @@
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_regex.h>
 #include <msgpack.h>
 
 #include "grep.h"
@@ -40,32 +40,11 @@ static void delete_rules(struct grep_ctx *ctx)
     mk_list_foreach_safe(head, tmp, &ctx->rules) {
         rule = mk_list_entry(head, struct grep_rule, _head);
         flb_free(rule->field);
-        flb_free(rule->regex);
-        regfree(&rule->match);
+        flb_free(rule->regex_pattern);
+        flb_regex_destroy(rule->regex);
         mk_list_del(&rule->_head);
         flb_free(rule);
     }
-}
-
-static int str_to_regex(char *str, regex_t *reg)
-{
-    int ret;
-    char tmp[80];
-    char *p = str;
-
-    while (*p) {
-        if (*p == ' ') *p = '|';
-        p++;
-    }
-
-    ret = regcomp(reg, str, REG_EXTENDED|REG_ICASE|REG_NOSUB);
-    if (ret) {
-        regerror(ret, reg, tmp, sizeof(tmp));
-        flb_error("[filter_grep]: Failed to compile regex: %s", tmp);
-        return -1;
-    }
-
-    return 0;
 }
 
 static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
@@ -113,16 +92,22 @@ static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
         /* Get first value (field) */
         sentry = mk_list_entry_first(split, struct flb_split_entry, _head);
         rule->field = flb_strndup(sentry->value, sentry->len);
+        rule->field_len = sentry->len;
 
         /* Get remaining content (regular expression) */
         sentry = mk_list_entry_last(split, struct flb_split_entry, _head);
-        rule->regex = flb_strndup(sentry->value, sentry->len);
+        rule->regex_pattern = flb_strndup(sentry->value, sentry->len);
 
         /* Release split */
         flb_utils_split_free(split);
 
         /* Convert string to regex pattern */
-        str_to_regex(rule->regex, &rule->match);
+        rule->regex = flb_regex_create((unsigned char *) rule->regex_pattern);
+        if (!rule->regex) {
+            delete_rules(ctx);
+            flb_free(rule);
+            return -1;
+        }
 
         /* Link to parent list */
         mk_list_add(&rule->_head, &ctx->rules);
@@ -135,11 +120,11 @@ static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
 static inline int grep_filter_data(msgpack_object map, struct grep_ctx *ctx)
 {
     int i;
-    int ret;
     int klen;
     int vlen;
     char *key;
     char *val;
+    ssize_t ret;
     msgpack_object *k;
     msgpack_object *v;
     struct mk_list *head;
@@ -167,7 +152,8 @@ static inline int grep_filter_data(msgpack_object map, struct grep_ctx *ctx)
                 klen = k->via.bin.size;
             }
 
-            if (strncmp(key, rule->field, klen) == 0) {
+            if (rule->field_len == klen &&
+                strncmp(key, rule->field, klen) == 0) {
                 break;
             }
 
@@ -200,18 +186,10 @@ static inline int grep_filter_data(msgpack_object map, struct grep_ctx *ctx)
             return GREP_RET_EXCLUDE;
         }
 
-        /* FIXME: regexec() don't allow to set the length of the string
-         * to match, we are forced to create a new temporal buffer.
-         *
-         * The fix is to move to the new flb_regex() interface.
-         */
-        char *tmp = flb_malloc(vlen + 1);
-        memcpy(tmp, val, vlen );
-        tmp[vlen] = '\0';
+        struct flb_regex_search result;
 
-        ret = regexec(&rule->match, tmp, 0, NULL, 0);
-        flb_free(tmp);
-
+        ret = flb_regex_do(rule->regex,
+                           (unsigned char *) val, vlen, &result);
         if (ret != 0) { /* no match */
             if (rule->type == GREP_REGEX) {
                 return GREP_RET_EXCLUDE;
@@ -220,6 +198,9 @@ static inline int grep_filter_data(msgpack_object map, struct grep_ctx *ctx)
         else {
             if (rule->type == GREP_EXCLUDE) {
                 return GREP_RET_EXCLUDE;
+            }
+            else {
+                return GREP_RET_KEEP;
             }
         }
     }
