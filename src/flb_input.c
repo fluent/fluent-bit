@@ -644,7 +644,6 @@ int flb_input_collector_pause(int coll_id, struct flb_input_instance *in)
 {
     int ret;
     struct flb_config *config;
-    struct mk_event *event;
     struct flb_input_collector *coll;
 
     coll = get_collector(coll_id, in);
@@ -652,7 +651,6 @@ int flb_input_collector_pause(int coll_id, struct flb_input_instance *in)
         return -1;
     }
 
-    event = &coll->event;
     config = in->config;
     if (coll->type == FLB_COLLECT_TIME) {
         /*
@@ -661,19 +659,17 @@ int flb_input_collector_pause(int coll_id, struct flb_input_instance *in)
          * one can be created.
          */
         mk_event_timeout_destroy(config->evl, &coll->event);
-        mk_event_del(config->evl, &coll->event);
         close(coll->fd_timer);
         coll->fd_timer = -1;
     }
     else if (coll->type & (FLB_COLLECT_FD_SERVER | FLB_COLLECT_FD_EVENT)) {
-        ret = mk_event_add(config->evl,
-                           coll->fd_event,
-                           FLB_ENGINE_EV_CORE,
-                           MK_EVENT_IDLE, event);
+        ret = mk_event_del(config->evl, &coll->event);
         if (ret != 0) {
             flb_warn("[input] cannot disable event for %s", in->name);
+            return -1;
         }
     }
+
     coll->running = FLB_FALSE;
 
     return 0;
@@ -713,15 +709,21 @@ int flb_input_collector_resume(int coll_id, struct flb_input_instance *in)
         coll->fd_timer = fd;
     }
     else if (coll->type & (FLB_COLLECT_FD_SERVER | FLB_COLLECT_FD_EVENT)) {
+        event->fd     = coll->fd_event;
+        event->mask   = MK_EVENT_EMPTY;
+        event->status = MK_EVENT_NONE;
+
         ret = mk_event_add(config->evl,
                            coll->fd_event,
                            FLB_ENGINE_EV_CORE,
                            MK_EVENT_READ, event);
-        if (ret != 0) {
-            flb_warn("[input] cannot disable event for %s", in->name);
+        if (ret == -1) {
+            flb_error("[input] cannot disable/pause event for %s", in->name);
             return -1;
         }
     }
+
+    coll->running = FLB_TRUE;
 
     return 0;
 }
@@ -786,8 +788,8 @@ struct flb_input_dyntag *flb_input_dyntag_create(struct flb_input_instance *in,
 /* Destroy an dyntag node */
 int flb_input_dyntag_destroy(struct flb_input_dyntag *dt)
 {
-    flb_debug("[dyntag %s] %p destroy (tag=%s)",
-              dt->in->name, dt, dt->tag);
+    flb_debug("[dyntag %s] %p destroy (tag=%s, bytes=%lu)",
+              dt->in->name, dt, dt->tag, dt->mp_sbuf.size);
 
     msgpack_sbuffer_destroy(&dt->mp_sbuf);
     mk_list_del(&dt->_head);
@@ -905,7 +907,8 @@ void *flb_input_flush(struct flb_input_instance *i_ins, size_t *size)
     char *buf;
 
     if (i_ins->mp_sbuf.size == 0) {
-        return 0;
+        *size = 0;
+        return NULL;
     }
 
     /* Allocate buffer */
@@ -933,7 +936,7 @@ void *flb_input_dyntag_flush(struct flb_input_dyntag *dt, size_t *size)
     void *buf;
 
     /*
-     * MessagePack-C internal use a raw buffer for it operations, since we
+     * msgpack-c internal use a raw buffer for it operations, since we
      * already appended data we just can take out the references to avoid
      * a new memory allocation and skip a copy operation.
      */
@@ -942,13 +945,13 @@ void *flb_input_dyntag_flush(struct flb_input_dyntag *dt, size_t *size)
     *size = dt->mp_sbuf.size;
 
     /* Unset the lock, it means more data can be added */
-    dt->lock = FLB_FALSE;
+    //dt->lock = FLB_FALSE;
 
     /* Set it busy as it likely it's a reference for an outgoing task */
     dt->busy = FLB_TRUE;
 
-    msgpack_sbuffer_init(&dt->mp_sbuf);
-    msgpack_packer_init(&dt->mp_pck, &dt->mp_sbuf, msgpack_sbuffer_write);
+    //msgpack_sbuffer_init(&dt->mp_sbuf);
+    //msgpack_packer_init(&dt->mp_pck, &dt->mp_sbuf, msgpack_sbuffer_write);
 
     return buf;
 }
@@ -973,6 +976,10 @@ int flb_input_collector_fd(flb_pipefd_t fd, struct flb_config *config)
 
     /* No matches */
     if (!collector) {
+        return -1;
+    }
+
+    if (collector->running == FLB_FALSE) {
         return -1;
     }
 

@@ -168,7 +168,7 @@ static struct flb_task *task_alloc(struct flb_config *config)
     /* Allocate the new task */
     task = (struct flb_task *) flb_calloc(1, sizeof(struct flb_task));
     if (!task) {
-        perror("malloc");
+        flb_errno();
         return NULL;
     }
 
@@ -181,7 +181,6 @@ static struct flb_task *task_alloc(struct flb_config *config)
     map_set_task_id(task_id, task, config);
 
     flb_trace("[task %p] created (id=%i)", task, task_id);
-
 
     /* Initialize minimum variables */
     task->id        = task_id;
@@ -239,7 +238,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
 
             route = flb_malloc(sizeof(struct flb_task_route));
             if (!route) {
-                perror("malloc");
+                flb_errno();
                 continue;
             }
 
@@ -262,7 +261,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
             if (flb_router_match(tag, o_ins->match)) {
                 route = flb_malloc(sizeof(struct flb_task_route));
                 if (!route) {
-                    perror("malloc");
+                    flb_errno();
                     continue;
                 }
 
@@ -288,6 +287,12 @@ struct flb_task *flb_task_create(uint64_t ref_id,
 #ifdef FLB_HAVE_BUFFERING
     int i;
     int worker_id;
+
+    /* If no buffering is set, return right away */
+    if (!config->buffer_ctx) {
+        flb_debug("[task] created task=%p id=%i OK", task, task->id);
+        return task;
+    }
 
     /* Generate content SHA1 and it Hexa representation */
     flb_sha1_encode(buf, size, task->hash_sha1);
@@ -383,10 +388,6 @@ void flb_task_destroy(struct flb_task *task)
 
     flb_debug("[task] destroy task=%p (task_id=%i)", task, task->id);
 
-    if (task->dt) {
-        flb_input_dyntag_destroy(task->dt);
-    }
-
     /* Release task_id */
     map_free_task_id(task->id, task->config);
 
@@ -401,7 +402,14 @@ void flb_task_destroy(struct flb_task *task)
     mk_list_del(&task->_head);
 
     if (task->mapped == FLB_FALSE) {
-        flb_free(task->buf);
+        if (task->dt && task->buf) {
+            if (task->buf != task->dt->mp_sbuf.data) {
+                flb_free(task->buf);
+            }
+        }
+        else {
+            flb_free(task->buf);
+        }
     }
 #ifdef FLB_HAVE_BUFFERING
     else {
@@ -412,6 +420,11 @@ void flb_task_destroy(struct flb_task *task)
         }
     }
 #endif
+
+    if (task->dt) {
+        flb_input_dyntag_destroy(task->dt);
+    }
+
 
     /* Remove 'retries' */
     mk_list_foreach_safe(head, tmp, &task->retries) {

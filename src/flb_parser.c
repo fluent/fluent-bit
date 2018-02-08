@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
 
 #include <sys/types.h>
@@ -365,6 +366,7 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
     if (ret == -1 && errno == ENOENT) {
         /* Try to resolve the real path (if exists) */
         if (file[0] == '/') {
+            flb_utils_error(FLB_ERR_CFG_PARSER_FILE);
             return -1;
         }
 

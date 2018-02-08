@@ -36,6 +36,7 @@
 #include <fluent-bit/flb_worker.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_http_server.h>
+#include <fluent-bit/flb_plugin_proxy.h>
 
 int flb_regex_init();
 
@@ -55,6 +56,10 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STR_PARSERS_FILE,
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, parsers_file)},
+
+    {FLB_CONF_STR_PLUGINS_FILE,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, plugins_file)},
 
     {FLB_CONF_STR_LOGLEVEL,
      FLB_CONF_TYPE_STR,
@@ -180,6 +185,10 @@ void flb_config_exit(struct flb_config *config)
 
     if (config->parsers_file) {
         flb_free(config->parsers_file);
+    }
+
+    if (config->plugins_file) {
+        flb_free(config->plugins_file);
     }
 
     if (config->kernel) {
@@ -356,8 +365,18 @@ int flb_config_set_property(struct flb_config *config,
 #ifdef FLB_HAVE_REGEX
                 tmp = flb_env_var_translate(config->env, v);
                 ret = flb_parser_conf_file(tmp, config);
+                flb_free(tmp);
+                tmp = NULL;
 #endif
             }
+#ifdef FLB_HAVE_PROXY_GO
+            else if (!strncasecmp(key, FLB_CONF_STR_PLUGINS_FILE, 32)) {
+                tmp = flb_env_var_translate(config->env, v);
+                ret = flb_plugin_proxy_conf_file(tmp, config);
+                flb_free(tmp);
+                tmp = NULL;
+            }
+#endif
             else {
                 ret = 0;
                 tmp = flb_env_var_translate(config->env, v);

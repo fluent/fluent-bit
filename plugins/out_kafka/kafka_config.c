@@ -36,6 +36,7 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
     struct mk_list *topics;
     struct flb_split_entry *entry;
     struct flb_kafka *ctx;
+    struct flb_config_prop *prop;
 
     /* Configuration context */
     ctx = flb_calloc(1, sizeof(struct flb_kafka));
@@ -78,6 +79,21 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
         flb_error("[out_kafka] config: no brokers defined");
         flb_free(ctx);
         return NULL;
+    }
+
+    /* Iterate custom rdkafka properties */
+    mk_list_foreach(head, &ins->properties) {
+        prop = mk_list_entry(head, struct flb_config_prop, _head);
+        if (strncasecmp(prop->key, "rdkafka.", 8) == 0 &&
+            strlen(prop->key) > 8) {
+
+            ret = rd_kafka_conf_set(ctx->conf, prop->key + 8, prop->val,
+                                    errstr, sizeof(errstr));
+            if (ret != RD_KAFKA_CONF_OK) {
+                flb_error("[out_kafka] cannot configure '%s' property",
+                          prop->key + 8);
+            }
+        }
     }
 
     /* Callback: message delivery */
