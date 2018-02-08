@@ -106,9 +106,7 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
     if (ctx->pending_records == FLB_FALSE) {
         ret = sd_journal_process(ctx->j);
         if (ret != SD_JOURNAL_APPEND && ret != SD_JOURNAL_NOP) {
-            if (ctx->pending_records == FLB_FALSE) {
-                return FLB_SYSTEMD_NONE;
-            }
+            return FLB_SYSTEMD_NONE;
         }
     }
 
@@ -266,12 +264,27 @@ static int in_systemd_collect_archive(struct flb_input_instance *i_ins,
                                             ctx->fd,
                                             config);
         if (ret == -1) {
-            flb_error("[in_systemd] error setting up collector");
+            flb_error("[in_systemd] error setting up collector events");
             flb_systemd_config_destroy(ctx);
             return -1;
         }
         ctx->coll_fd_journal = ret;
         flb_input_collector_start(ctx->coll_fd_journal, i_ins);
+
+        /* Timer to collect pending events */
+        ret = flb_input_set_collector_time(i_ins,
+                                           in_systemd_collect,
+                                           1, 0,
+                                           config);
+        if (ret == -1) {
+            flb_error("[in_systemd] error setting up collector "
+                      "for pending events");
+            flb_systemd_config_destroy(ctx);
+            return -1;
+        }
+        ctx->coll_fd_pending = ret;
+        flb_input_collector_start(ctx->coll_fd_pending, i_ins);
+
         return 0;
     }
 
@@ -338,6 +351,7 @@ static void in_systemd_pause(void *data, struct flb_config *config)
     ret = flb_input_collector_running(ctx->coll_fd_journal, ctx->i_ins);
     if (ret == FLB_TRUE) {
         flb_input_collector_pause(ctx->coll_fd_journal, ctx->i_ins);
+        flb_input_collector_pause(ctx->coll_fd_pending, ctx->i_ins);
     }
 }
 
@@ -352,6 +366,7 @@ static void in_systemd_resume(void *data, struct flb_config *config)
     ret = flb_input_collector_running(ctx->coll_fd_journal, ctx->i_ins);
     if (ret == FLB_FALSE) {
         flb_input_collector_resume(ctx->coll_fd_journal, ctx->i_ins);
+        flb_input_collector_resume(ctx->coll_fd_pending, ctx->i_ins);
     }
 }
 
