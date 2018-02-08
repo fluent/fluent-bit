@@ -50,6 +50,7 @@ struct flb_systemd_config {
     int ch_manager[2];         /* pipe: channel manager    */
     int coll_fd_archive;       /* archive collector        */
     int coll_fd_journal;       /* journal, events mode     */
+    int coll_fd_pending;       /* pending records          */
     int dynamic_tag;
     int max_entries;
     struct flb_sqldb *db;
