@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_parser.h>
+#include <fluent-bit/flb_parser_decoder.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
@@ -97,6 +98,7 @@ struct flb_parser *flb_parser_create(char *name, char *format,
                                      int time_keep,
                                      struct flb_parser_types *types,
                                      int types_len,
+                                     struct mk_list *decoders,
                                      struct flb_config *config)
 {
     int ret;
@@ -118,11 +120,13 @@ struct flb_parser *flb_parser_create(char *name, char *format,
         }
     }
 
+    /* Allocate context */
     p = flb_calloc(1, sizeof(struct flb_parser));
     if (!p) {
         flb_errno();
         return NULL;
     }
+    p->decoders = decoders;
 
     /* Format lookup */
     if (strcmp(format, "regex") == 0) {
@@ -270,6 +274,10 @@ void flb_parser_destroy(struct flb_parser *parser)
         flb_free(parser->types);
     }
 
+    if (parser->decoders) {
+        flb_parser_decoder_list_destroy(parser->decoders);
+    }
+
     mk_list_del(&parser->_head);
     flb_free(parser);
 }
@@ -361,6 +369,7 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
     struct mk_list *head;
     struct stat st;
     struct flb_parser_types *types;
+    struct mk_list *decoders;
 
     ret = stat(file, &st);
     if (ret == -1 && errno == ENOENT) {
@@ -454,10 +463,13 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
             types_len = 0;
         }
 
+        /* Decoders */
+        decoders = flb_parser_decoder_list_create(section);
+
         /* Create the parser context */
         if (!flb_parser_create(name, format, regex,
                                time_fmt, time_key, time_offset, time_keep,
-                               types, types_len, config)) {
+                               types, types_len, decoders, config)) {
             goto fconf_error;
         }
 
@@ -481,6 +493,8 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
         if (types_str) {
             flb_free(types_str);
         }
+
+        decoders = NULL;
     }
 
     mk_rconf_free(fconf);
@@ -500,6 +514,9 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
     }
     if (types_str) {
         flb_free(types_str);
+    }
+    if (decoders) {
+        flb_parser_decoder_list_destroy(decoders);
     }
     mk_rconf_free(fconf);
     return -1;

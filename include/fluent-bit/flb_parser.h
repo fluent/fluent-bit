@@ -49,6 +49,9 @@ struct flb_parser {
     struct flb_parser_types *types; /* type casting */
     int types_len;
 
+    /* Field decoders */
+    struct mk_list *decoders;
+
     /* internal */
     int time_with_year;   /* do time_fmt consider a year (%Y) ? */
     char *time_fmt_year;
@@ -81,6 +84,7 @@ struct flb_parser *flb_parser_create(char *name, char *format,
                                      int time_keep,
                                      struct flb_parser_types *types,
                                      int types_len,
+                                     struct mk_list *decoders,
                                      struct flb_config *config);
 int flb_parser_conf_file(char *file, struct flb_config *config);
 void flb_parser_destroy(struct flb_parser *parser);

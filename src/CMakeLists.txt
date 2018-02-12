@@ -51,6 +51,7 @@ if(FLB_REGEX)
     flb_parser.c
     flb_parser_regex.c
     flb_parser_json.c
+    flb_parser_decoder.c
     )
 endif()
 
