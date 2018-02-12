@@ -202,8 +202,8 @@ int flb_parser_decoder_do(struct mk_list *decoders,
                                   &dec->buf_data);
             ret = flb_pack_json(dec->buf_data, len, &buf, &size);
             if (ret != 0) {
-                flb_warn("[parser_dec] field %s is not JSON",
-                         dec->key_name);
+                flb_debug("[parser_dec] field %s is not JSON",
+                          dec->key_name);
                 break;
             }
 
