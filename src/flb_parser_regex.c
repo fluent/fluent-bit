@@ -22,6 +22,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_parser.h>
+#include <fluent-bit/flb_parser_decoder.h>
 #include <fluent-bit/flb_regex.h>
 #include <fluent-bit/flb_str.h>
 #include <msgpack.h>
@@ -95,12 +96,14 @@ int flb_parser_regex_do(struct flb_parser *parser,
                         struct flb_time *out_time)
 {
     int ret;
-    ssize_t n;
     int arr_size;
+    int last_byte;
+    ssize_t n;
+    size_t dec_out_size;
+    char *dec_out_buf;
     struct flb_regex_search result;
     struct regex_cb_ctx pcb;
     struct flb_time *t;
-
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
 
@@ -130,8 +133,8 @@ int flb_parser_regex_do(struct flb_parser *parser,
     pcb.time_now = time(NULL);
 
     /* Iterate results and compose new buffer */
-    ret = flb_regex_parse(parser->regex, &result, cb_results, &pcb);
-    if (ret == -1) {
+    last_byte = flb_regex_parse(parser->regex, &result, cb_results, &pcb);
+    if (last_byte == -1) {
         msgpack_sbuffer_destroy(&tmp_sbuf);
         return -1;
     }
@@ -144,10 +147,22 @@ int flb_parser_regex_do(struct flb_parser *parser,
     t->tm.tv_sec  = pcb.time_lookup;
     t->tm.tv_nsec = (pcb.time_frac * 1000000000);
 
+    /* Check if some decoder was specified */
+    if (parser->decoders) {
+        ret = flb_parser_decoder_do(parser->decoders,
+                                    tmp_sbuf.data, tmp_sbuf.size,
+                                    &dec_out_buf, &dec_out_size);
+        if (ret == 0) {
+            *out_buf = dec_out_buf;
+            *out_size = dec_out_size;
+            msgpack_sbuffer_destroy(&tmp_sbuf);
+        }
+    }
+
     /*
      * The return the value >= 0, belongs to the LAST BYTE consumed by the
      * regex engine. If the last byte is lower than string length, means
      * there is more data to be processed (maybe it's a stream).
      */
-    return ret;
+    return last_byte;
 }
