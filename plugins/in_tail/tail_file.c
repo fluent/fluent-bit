@@ -408,10 +408,25 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     char *p;
     char out_tmp[PATH_MAX];
     size_t out_size;
+    struct mk_list *head;
     struct flb_tail_file *file;
 
     if (!S_ISREG(st->st_mode)) {
         return -1;
+    }
+
+    /* Double check this file is not already being monitored */
+    mk_list_foreach(head, &ctx->files_static) {
+        file = mk_list_entry(head, struct flb_tail_file, _head);
+        if (strcmp(path, file->name) == 0) {
+            return -1;
+        }
+    }
+    mk_list_foreach(head, &ctx->files_event) {
+        file = mk_list_entry(head, struct flb_tail_file, _head);
+        if (strcmp(path, file->name) == 0) {
+            return -1;
+        }
     }
 
     fd = open(path, O_RDONLY);
