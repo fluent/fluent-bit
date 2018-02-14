@@ -27,6 +27,7 @@
 
 struct flb_sqldb *flb_tail_db_open(char *path,
                                    struct flb_input_instance *in,
+                                   struct flb_tail_config *ctx,
                                    struct flb_config *config);
 
 int flb_tail_db_close(struct flb_sqldb *db);

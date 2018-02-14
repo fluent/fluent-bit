@@ -49,6 +49,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
     ctx->dynamic_tag = FLB_FALSE;
     ctx->ignore_older = 0;
     ctx->skip_long_lines = FLB_FALSE;
+    ctx->db_sync = -1;
 
     /* Create the channel manager */
     ret = pipe(ctx->ch_manager);
@@ -240,10 +241,30 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
     }
     i_ins->flags |= FLB_INPUT_DYN_TAG;
 
+    /* Database options (needs to be set before the context) */
+    tmp = flb_input_get_property("db.sync", i_ins);
+    if (tmp) {
+        if (strcasecmp(tmp, "extra") == 0) {
+            ctx->db_sync = 3;
+        }
+        else if (strcasecmp(tmp, "full") == 0) {
+            ctx->db_sync = 2;
+            }
+        else if (strcasecmp(tmp, "normal") == 0) {
+            ctx->db_sync = 1;
+        }
+        else if (strcasecmp(tmp, "off") == 0) {
+            ctx->db_sync = 0;
+        }
+        else {
+            flb_error("[in_tail] invalid database 'db.sync' value");
+        }
+    }
+
     /* Initialize database */
     tmp = flb_input_get_property("db", i_ins);
     if (tmp) {
-        ctx->db = flb_tail_db_open(tmp, i_ins, config);
+        ctx->db = flb_tail_db_open(tmp, i_ins, ctx, config);
         if (!ctx->db) {
             flb_error("[in_tail] could not open/create database");
         }
