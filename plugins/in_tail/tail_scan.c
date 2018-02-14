@@ -214,6 +214,9 @@ int flb_tail_scan(const char *path, struct flb_tail_config *ctx)
         tail_exclude_generate(ctx);
     }
 
+    /* Safe reset for globfree() */
+    globbuf.gl_pathv = NULL;
+
     /* Scan the given path */
     ret = do_glob(path, GLOB_TILDE | GLOB_ERR, NULL, &globbuf);
     if (ret != 0) {
@@ -262,10 +265,7 @@ int flb_tail_scan(const char *path, struct flb_tail_config *ctx)
         }
     }
 
-    if (globbuf.gl_pathc > 0) {
-        globfree(&globbuf);
-    }
-
+    globfree(&globbuf);
     return 0;
 }
 
