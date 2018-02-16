@@ -27,7 +27,9 @@
 #include <unistd.h>
 
 #include "tail_file.h"
+#include "tail_db.h"
 #include "tail_config.h"
+#include "tail_signal.h"
 
 struct fs_stat {
     /* last time check */
@@ -80,16 +82,19 @@ static int tail_fs_check(struct flb_input_instance *i_ins,
                          struct flb_config *config, void *in_context)
 {
     int ret;
+    off_t offset;
     char *name;
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_tail_config *ctx = in_context;
     struct flb_tail_file *file = NULL;
+    struct fs_stat *fst;
     struct stat st;
 
     /* Lookup watched file */
     mk_list_foreach_safe(head, tmp, &ctx->files_event) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
+        fst = file->fs_backend;
 
         ret = fstat(file->fd, &st);
         if (ret == -1) {
@@ -122,6 +127,33 @@ static int tail_fs_check(struct flb_input_instance *i_ins,
             flb_tail_file_rotated(file);
         }
         flb_free(name);
+
+        /* Check if the file was truncated */
+        if (file->offset > st.st_size) {
+            offset = lseek(file->fd, 0, SEEK_SET);
+            if (offset == -1) {
+                flb_errno();
+                return -1;
+            }
+
+            flb_debug("[in_tail] truncated %s", file->name);
+            file->offset = offset;
+            file->buf_len = 0;
+            memcpy(&fst->st, &st, sizeof(struct stat));
+
+            /* Update offset in database file */
+            if (ctx->db) {
+                flb_tail_db_file_offset(file, ctx);
+            }
+        }
+
+        if (file->offset < st.st_size) {
+            file->pending_bytes = (st.st_size - file->offset);
+            tail_signal_pending(ctx);
+        }
+        else {
+            file->pending_bytes = 0;
+        }
     }
 
     return 0;

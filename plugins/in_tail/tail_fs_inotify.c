@@ -29,6 +29,7 @@
 
 #include "tail_config.h"
 #include "tail_file.h"
+#include "tail_db.h"
 #include "tail_signal.h"
 
 #include <limits.h>
@@ -38,6 +39,7 @@ static int tail_fs_event(struct flb_input_instance *i_ins,
                          struct flb_config *config, void *in_context)
 {
     int ret;
+    off_t offset;
     struct mk_list *head;
     struct mk_list *tmp;
     struct flb_tail_config *ctx = in_context;
@@ -102,6 +104,24 @@ static int tail_fs_event(struct flb_input_instance *i_ins,
         if (ret == -1) {
             flb_errno();
             return -1;
+        }
+
+        /* Check if the file was truncated */
+        if (file->offset > st.st_size) {
+            offset = lseek(file->fd, 0, SEEK_SET);
+            if (offset == -1) {
+                flb_errno();
+                return -1;
+            }
+
+            flb_debug("[in_tail] truncated %s", file->name);
+            file->offset = offset;
+            file->buf_len = 0;
+
+            /* Update offset in the database file */
+            if (ctx->db) {
+                flb_tail_db_file_offset(file, ctx);
+            }
         }
 
         /* Collect the data */
