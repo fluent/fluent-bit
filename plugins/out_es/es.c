@@ -131,6 +131,7 @@ static char *elasticsearch_format(void *data, size_t bytes,
     char *es_index;
     char logstash_index[256];
     char time_formatted[256];
+    char index_formatted[256];
     char es_uuid[37];
     msgpack_unpacked result;
     msgpack_object root;
@@ -189,10 +190,15 @@ static char *elasticsearch_format(void *data, size_t bytes,
 
     /* If logstash format and id generation is disabled, pre-generate index line for all records. */
     if (ctx->logstash_format == FLB_FALSE && ctx->generate_id == FLB_FALSE) {
+        flb_time_get(&tms);
+        gmtime_r(&tms.tm.tv_sec, &tm);
+        s = strftime(index_formatted, sizeof(index_formatted) - 1,
+                     ctx->index, &tm);
+        es_index = index_formatted;
         index_len = snprintf(j_index,
                              ES_BULK_HEADER,
                              ES_BULK_INDEX_FMT,
-                             ctx->index, ctx->type);
+                             es_index, ctx->type);
     }
 
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
@@ -206,12 +212,20 @@ static char *elasticsearch_format(void *data, size_t bytes,
             continue;
         }
 
+        /* some broken clients may have time drift up to year 1970
+         * this will generate corresponding index in Elasticsearch
+         * in order to prevent generating millions of indexes 
+         * we can set to always use current time for index generation */
+        if (ctx->current_time_index == FLB_TRUE) {
+            flb_time_get(&tms);
+        } else {
+            flb_time_pop_from_msgpack(&tms, &result, &obj);
+        }
         /*
          * Timestamp: Elasticsearch only support fractional seconds in
          * milliseconds unit, not nanoseconds, so we take our nsec value and
          * change it representation.
          */
-        flb_time_pop_from_msgpack(&tms, &result, &obj);
         tms.tm.tv_nsec = (tms.tm.tv_nsec / 1000000);
 
         map   = root.via.array.ptr[1];
@@ -243,7 +257,10 @@ static char *elasticsearch_format(void *data, size_t bytes,
         msgpack_pack_str(&tmp_pck, s);
         msgpack_pack_str_body(&tmp_pck, time_formatted, s);
 
-        es_index = ctx->index;
+        // make sure we handle index time format for index
+        s = strftime(index_formatted, sizeof(index_formatted) - 1,
+                     ctx->index, &tm);
+        es_index = index_formatted;
         if (ctx->logstash_format == FLB_TRUE) {
             /* Compose Index header */
             p = logstash_index + ctx->logstash_prefix_len;

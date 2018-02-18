@@ -45,12 +45,12 @@ option(FLB_BUFFERING          "Enable buffering support"     No)
 option(FLB_POSIX_TLS          "Force POSIX thread storage"   No)
 option(FLB_WITHOUT_INOTIFY    "Disable inotify support"      No)
 option(FLB_SQLDB              "Enable SQL embedded DB"       No)
-option(FLB_HTTP_SERVER        "Enable HTTP Server"           No)
+option(FLB_HTTP_SERVER        "Enable HTTP Server"           Yes)
 
 # Metrics: Experimental Feature, disabled by default on 0.12 series
 # but enabled in the upcoming 0.13 release. Note that development
 # mode enable this feature.
-option(FLB_METRICS            "Enable metrics support"       No)
+option(FLB_METRICS            "Enable metrics support"       Yes)
 
 # Proxy Plugins
 option(FLB_PROXY_GO           "Enable Go plugins support"   Yes)
@@ -112,6 +112,7 @@ option(FLB_FILTER_GREP     "Enable grep filter"                 Yes)
 option(FLB_FILTER_STDOUT   "Enable stdout filter"               Yes)
 option(FLB_FILTER_PARSER   "Enable parser filter"               Yes)
 option(FLB_FILTER_KUBERNETES "Enable kubernetes filter"         Yes)
+option(FLB_FILTER_THROTTLE "Enable throttle filter"         Yes)
 option(FLB_FILTER_RECORD_MODIFIER "Enable record_modifier filter" Yes)
 
 # Enable all features
