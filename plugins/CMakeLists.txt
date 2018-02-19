@@ -99,6 +99,10 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   REGISTER_IN_PLUGIN("in_netif")
 endif()
 
+if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+  REGISTER_IN_PLUGIN("in_tail")
+endif()
+
 REGISTER_IN_PLUGIN("in_dummy")
 REGISTER_IN_PLUGIN("in_head")
 REGISTER_IN_PLUGIN("in_exec")
