@@ -44,7 +44,7 @@ static inline int consume_byte(flb_pipefd_t fd)
     /* We need to consume the byte */
     ret = flb_pipe_r(fd, &val, sizeof(val));
     if (ret <= 0) {
-        perror("read");
+        flb_errno();
         return -1;
     }
 
@@ -318,7 +318,9 @@ int flb_sched_event_handler(struct flb_config *config, struct mk_event *event)
     }
     else if (timer->type == FLB_SCHED_TIMER_FRAME) {
         sched = timer->data;
+#ifndef __APPLE__
         consume_byte(sched->frame_fd);
+#endif
         schedule_request_promote(sched);
     }
     else if (timer->type == FLB_SCHED_TIMER_CUSTOM) {
