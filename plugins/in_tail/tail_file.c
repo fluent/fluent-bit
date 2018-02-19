@@ -753,16 +753,21 @@ char *flb_tail_file_name(struct flb_tail_file *file)
     ssize_t s;
     char tmp[128];
     char *buf;
-
-    ret = snprintf(tmp, sizeof(tmp) - 1, "/proc/%i/fd/%i", getpid(), file->fd);
-    if (ret == -1) {
-        flb_errno();
-        return NULL;
-    }
+#ifdef __APPLE__
+    char path[PATH_MAX];
+#endif
 
     buf = flb_malloc(PATH_MAX);
     if (!buf) {
         flb_errno();
+        return NULL;
+    }
+
+#ifdef __linux__
+    ret = snprintf(tmp, sizeof(tmp) - 1, "/proc/%i/fd/%i", getpid(), file->fd);
+    if (ret == -1) {
+        flb_errno();
+        flb_free(buf);
         return NULL;
     }
 
@@ -773,6 +778,21 @@ char *flb_tail_file_name(struct flb_tail_file *file)
         return NULL;
     }
     buf[s] = '\0';
+
+#elif __APPLE__
+    int len;
+
+    ret = fcntl(file->fd, F_GETPATH, path);
+    if (ret == -1) {
+        flb_errno();
+        flb_free(buf);
+        return NULL;
+    }
+
+    len = strlen(path);
+    memcpy(buf, path, len);
+    buf[len] = '\0';
+#endif
 
     return buf;
 }
