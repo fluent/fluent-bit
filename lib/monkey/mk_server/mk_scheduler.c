@@ -18,6 +18,7 @@
  */
 
 #include <monkey/monkey.h>
+#include <monkey/mk_info.h>
 #include <monkey/mk_core.h>
 #include <monkey/mk_vhost.h>
 #include <monkey/mk_scheduler.h>
@@ -157,9 +158,12 @@ struct mk_sched_handler *mk_sched_handler_cap(char cap)
     if (cap == MK_CAP_HTTP) {
         return &mk_http_handler;
     }
+
+#ifdef MK_HAVE_HTTP2
     else if (cap == MK_CAP_HTTP2) {
         return &mk_http2_handler;
     }
+#endif
 
     return NULL;
 }
