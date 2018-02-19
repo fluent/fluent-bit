@@ -959,7 +959,7 @@ void *flb_input_dyntag_flush(struct flb_input_dyntag *dt, size_t *size)
 int flb_input_collector_fd(flb_pipefd_t fd, struct flb_config *config)
 {
     struct mk_list *head;
-    struct flb_input_collector *collector;
+    struct flb_input_collector *collector = NULL;
     struct flb_thread *th;
 
     mk_list_foreach(head, &config->collectors) {

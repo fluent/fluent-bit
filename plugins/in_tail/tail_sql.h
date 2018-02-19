@@ -50,4 +50,6 @@
 #define SQL_ROTATE_FILE                         \
     "UPDATE in_tail_files set name='%s',rotated=1 WHERE id=%"PRId64";"
 
+#define SQL_PRAGMA_SYNC                         \
+    "PRAGMA synchronous=%i;"
 #endif

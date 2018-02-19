@@ -155,6 +155,7 @@ int main(int argc, char **argv)
             exit(EXIT_SUCCESS);
         case 'h':
             mk_help(EXIT_SUCCESS);
+            break;
         case 'D':
             run_daemon = 1;
             break;

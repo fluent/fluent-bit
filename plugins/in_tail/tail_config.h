@@ -62,6 +62,7 @@ struct flb_tail_config {
 
     /* Database */
     struct flb_sqldb *db;
+    int db_sync;
 
     /* Parser / Format */
     struct flb_parser *parser;

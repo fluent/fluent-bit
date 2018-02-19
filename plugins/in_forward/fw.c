@@ -21,9 +21,47 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_network.h>
 
+#include <sys/socket.h>
+#include <sys/un.h>
+
 #include "fw.h"
 #include "fw_conn.h"
 #include "fw_config.h"
+
+static int fw_unix_create(struct flb_in_fw_config *ctx)
+{
+    flb_sockfd_t fd = -1;
+    unsigned long len;
+    size_t address_length;
+    struct sockaddr_un address;
+
+    fd = flb_net_socket_create(AF_UNIX, FLB_TRUE);
+    if (fd == -1) {
+        return -1;
+    }
+
+    ctx->server_fd = fd;
+
+    /* Prepare the unix socket path */
+    unlink(ctx->unix_path);
+    len = strlen(ctx->unix_path);
+
+    address.sun_family = AF_UNIX;
+    sprintf(address.sun_path, "%s", ctx->unix_path);
+    address_length = sizeof(address.sun_family) + len + 1;
+    if (bind(fd, (struct sockaddr *) &address, address_length) != 0) {
+        flb_errno();
+        close(fd);
+        return -1;
+    }
+
+    if (listen(fd, 5) != 0) {
+        flb_errno();
+        close(fd);
+        return -1;
+    }
+    return 0;
+}
 
 /*
  * For a server event, the collection event means a new client have arrived, we
@@ -72,16 +110,29 @@ static int in_fw_init(struct flb_input_instance *in,
     /* Set the context */
     flb_input_set_context(in, ctx);
 
-    /* Create TCP server */
-    ctx->server_fd = flb_net_server(ctx->tcp_port, ctx->listen);
-    if (ctx->server_fd > 0) {
-        flb_info("[in_fw] binding %s:%s", ctx->listen, ctx->tcp_port);
+    /* Unix Socket mode */
+    if (ctx->unix_path) {
+        ret = fw_unix_create(ctx);
+        if (ret != 0) {
+            flb_error("[in_fw] could not listen on unix://%s",
+                      ctx->unix_path);
+            fw_config_destroy(ctx);
+            return -1;
+        }
+        flb_info("[in_fw] listening on unix://%s", ctx->unix_path);
     }
     else {
-        flb_error("[in_fw] could not bind address %s:%s. Aborting",
-                  ctx->listen, ctx->tcp_port);
-        fw_config_destroy(ctx);
-        return -1;
+        /* Create TCP server */
+        ctx->server_fd = flb_net_server(ctx->tcp_port, ctx->listen);
+        if (ctx->server_fd > 0) {
+            flb_info("[in_fw] binding %s:%s", ctx->listen, ctx->tcp_port);
+        }
+        else {
+            flb_error("[in_fw] could not bind address %s:%s. Aborting",
+                      ctx->listen, ctx->tcp_port);
+            fw_config_destroy(ctx);
+            return -1;
+        }
     }
     flb_net_socket_nonblocking(ctx->server_fd);
 

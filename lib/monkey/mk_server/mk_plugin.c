@@ -251,7 +251,7 @@ void mk_plugin_api_init(struct mk_server *server)
     __builtin_prefetch(api);
 
     /* Setup and connections list */
-    api->config = server;
+    /* FIXME: api->config = server; */
 
     /* API plugins funcions */
 

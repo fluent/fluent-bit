@@ -1,5 +1,3 @@
-set(CMAKE_C_VISIBILITY_PRESET hidden)
-set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 add_definitions(-DFLB_CORE=1)
 
 # Core Source
@@ -53,6 +51,7 @@ if(FLB_REGEX)
     flb_parser.c
     flb_parser_regex.c
     flb_parser_json.c
+    flb_parser_decoder.c
     )
 endif()
 

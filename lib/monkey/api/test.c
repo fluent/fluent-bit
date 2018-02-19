@@ -132,8 +132,11 @@ int main()
         mk_mq_send(ctx, qid, &msg, len);
     }
 
+    sleep(3600);
+
     mk_stop(ctx);
     mk_destroy(ctx);
+
 
     return 0;
 }

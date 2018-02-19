@@ -676,6 +676,7 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr,
     }
 
     /* Check if this is related to a protocol upgrade */
+#ifdef MK_HAVE_HTTP2
     if (cs->parser.header_connection & MK_HTTP_PARSER_CONN_UPGRADE) {
         /* HTTP/2.0 upgrade ? */
         if (cs->parser.header_connection & MK_HTTP_PARSER_CONN_HTTP2_SE) {
@@ -700,6 +701,7 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr,
             }
         }
     }
+#endif
 
     /* Check backward directory request */
     if (memmem(sr->uri_processed.data, sr->uri_processed.len,
