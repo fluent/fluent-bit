@@ -30,32 +30,42 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
     char *listen;
     char *buffer_size;
     char *chunk_size;
+    char *p;
     struct flb_in_fw_config *config;
 
-    config = flb_malloc(sizeof(struct flb_in_fw_config));
-    memset(config, '\0', sizeof(struct flb_in_fw_config));
+    config = flb_calloc(1, sizeof(struct flb_in_fw_config));
+    if (!config) {
+        flb_errno();
+        return NULL;
+    }
 
-    /* Listen interface (if not set, defaults to 0.0.0.0) */
-    if (!i_ins->host.listen) {
-        listen = flb_input_get_property("listen", i_ins);
-        if (listen) {
-            config->listen = flb_strdup(listen);
+    p = flb_input_get_property("unix_path", i_ins);
+    if (p) {
+        config->unix_path = flb_strdup(p);
+    }
+    else {
+        /* Listen interface (if not set, defaults to 0.0.0.0) */
+        if (!i_ins->host.listen) {
+            listen = flb_input_get_property("listen", i_ins);
+            if (listen) {
+                config->listen = flb_strdup(listen);
+            }
+            else {
+                config->listen = flb_strdup("0.0.0.0");
+            }
         }
         else {
-            config->listen = flb_strdup("0.0.0.0");
+            config->listen = flb_strdup(i_ins->host.listen);
         }
-    }
-    else {
-        config->listen = flb_strdup(i_ins->host.listen);
-    }
 
-    /* Listener TCP Port */
-    if (i_ins->host.port == 0) {
-        config->tcp_port = flb_strdup("24224");
-    }
-    else {
-        snprintf(tmp, sizeof(tmp) - 1, "%d", i_ins->host.port);
-        config->tcp_port = flb_strdup(tmp);
+        /* Listener TCP Port */
+        if (i_ins->host.port == 0) {
+            config->tcp_port = flb_strdup("24224");
+        }
+        else {
+            snprintf(tmp, sizeof(tmp) - 1, "%d", i_ins->host.port);
+            config->tcp_port = flb_strdup(tmp);
+        }
     }
 
     /* Chunk size */
@@ -78,16 +88,23 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
         config->buffer_max_size  = flb_utils_size_to_bytes(buffer_size);
     }
 
-    flb_debug("[in_fw] Listen='%s' TCP_Port=%s",
-              config->listen, config->tcp_port);
-
+    if (!config->unix_path) {
+        flb_debug("[in_fw] Listen='%s' TCP_Port=%s",
+                  config->listen, config->tcp_port);
+    }
     return config;
 }
 
 int fw_config_destroy(struct flb_in_fw_config *config)
 {
-    flb_free(config->listen);
-    flb_free(config->tcp_port);
+    if (config->unix_path) {
+        unlink(config->unix_path);
+        flb_free(config->unix_path);
+    }
+    else {
+        flb_free(config->listen);
+        flb_free(config->tcp_port);
+    }
     flb_free(config);
 
     return 0;
