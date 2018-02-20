@@ -59,7 +59,8 @@ void flb_test_filter_parser_extract_fields()
 
     /* Parser */
     parser = flb_parser_create("dummy_test", "regex", "^(?<INT>[^ ]+) (?<FLOAT>[^ ]+) (?<BOOL>[^ ]+) (?<STRING>.+)$",
-                               NULL, NULL, NULL, MK_FALSE, NULL, 0, ctx->config);
+                               NULL, NULL, NULL, MK_FALSE, NULL, 0,
+                               NULL, ctx->config);
     TEST_CHECK(parser != NULL);
 
     /* Filter */
@@ -139,7 +140,8 @@ void flb_test_filter_parser_reserve_data_off()
 
     /* Parser */
     parser = flb_parser_create("dummy_test", "regex", "^(?<INT>[^ ]+) (?<FLOAT>[^ ]+) (?<BOOL>[^ ]+) (?<STRING>.+)$",
-                               NULL, NULL, NULL, MK_FALSE, NULL, 0, ctx->config);
+                               NULL, NULL, NULL, MK_FALSE, NULL, 0,
+                               NULL, ctx->config);
     TEST_CHECK(parser != NULL);
 
     /* Filter */
@@ -208,8 +210,10 @@ void flb_test_filter_parser_handle_time_key()
                   NULL);
 
     /* Parser */
-    parser = flb_parser_create("timestamp", "regex", "^(?<time>.*)$", "%Y-%m-%dT%H:%M:%S.%L", "time", NULL, MK_FALSE,
-                               NULL, 0, ctx->config);
+    parser = flb_parser_create("timestamp", "regex", "^(?<time>.*)$", "%Y-%m-%dT%H:%M:%S.%L",
+                               "time",
+                               NULL, MK_FALSE,
+                               NULL, 0, NULL, ctx->config);
     TEST_CHECK(parser != NULL);
 
     /* Filter */
@@ -283,7 +287,7 @@ void flb_test_filter_parser_ignore_malformed_time()
 
     /* Parser */
     parser = flb_parser_create("timestamp", "regex", "^(?<time>.*)$", "%Y-%m-%dT%H:%M:%S.%L", "time", NULL, MK_FALSE,
-        NULL, 0, ctx->config);
+                               NULL, 0, NULL, ctx->config);
     TEST_CHECK(parser != NULL);
 
     /* Filter */
@@ -354,7 +358,8 @@ void flb_test_filter_parser_preserve_original_field()
 
     /* Parser */
     parser = flb_parser_create("dummy_test", "regex", "^(?<INT>[^ ]+) (?<FLOAT>[^ ]+) (?<BOOL>[^ ]+) (?<STRING>.+)$",
-                               NULL, NULL, NULL, MK_FALSE, NULL, 0, ctx->config);
+                               NULL, NULL, NULL, MK_FALSE, NULL, 0,
+                               NULL, ctx->config);
     TEST_CHECK(parser != NULL);
 
     /* Filter */
