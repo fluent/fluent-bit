@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_time.h>
 #include <msgpack.h>
 
 #include "out_lib.h"
@@ -71,7 +72,7 @@ static int out_lib_init(struct flb_output_instance *ins,
 
     ctx = flb_calloc(1, sizeof(struct flb_out_lib_config));
     if (ctx == NULL) {
-        perror("calloc");
+        flb_errno();
         return -1;
     }
     if (ins->data != NULL) {
@@ -96,11 +97,18 @@ static void out_lib_flush(void *data, size_t bytes,
                           void *out_context,
                           struct flb_config *config)
 {
+    int len;
     size_t off = 0;
     size_t last_off = 0;
     size_t data_size = 0;
+    size_t alloc_size = 0;
+    size_t out_size = 0;
+    char *buf = NULL;
+    char *out_buf = NULL;
     char *data_for_user = NULL;
+    msgpack_object *obj;
     msgpack_unpacked result;
+    struct flb_time tm;
     struct flb_out_lib_config *ctx = out_context;
     (void) i_ins;
     (void) config;
@@ -122,15 +130,32 @@ static void out_lib_flush(void *data, size_t bytes,
             data_size = bytes;
             break;
         case FLB_OUT_LIB_FMT_JSON:
-            /* JSON is larger than msgpack, just a hint */
-            data_size = (off - last_off) + 128;
-            last_off   = off;
-            data_for_user = flb_msgpack_to_json_str(data_size, &result.data);
-            if (!data_for_user) {
+            /* JSON is larger than msgpack */
+            alloc_size = (off - last_off) + 128;
+            last_off = off;
+
+            flb_time_pop_from_msgpack(&tm, &result, &obj);
+            buf = flb_msgpack_to_json_str(alloc_size, obj);
+            if (!buf) {
                 msgpack_unpacked_destroy(&result);
                 FLB_OUTPUT_RETURN(FLB_ERROR);
             }
-            data_size = strlen(data_for_user);
+
+            len = strlen(buf);
+            out_size = len + 20;
+            out_buf = flb_malloc(out_size);
+            if (!out_buf) {
+                flb_errno();
+                msgpack_unpacked_destroy(&result);
+                FLB_OUTPUT_RETURN(FLB_ERROR);
+            }
+
+            len = snprintf(out_buf, out_size, "[%f, %s]",
+                           flb_time_to_double(&tm),
+                           buf);
+            flb_free(buf);
+            data_for_user = out_buf;
+            data_size = len;
             break;
         }
 
