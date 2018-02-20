@@ -20,8 +20,9 @@
 #ifndef FLB_OUT_HTTP_H
 #define FLB_OUT_HTTP_H
 
-#define FLB_HTTP_OUT_MSGPACK    0
-#define FLB_HTTP_OUT_JSON       1
+#define FLB_HTTP_OUT_MSGPACK        0
+#define FLB_HTTP_OUT_JSON           1
+#define FLB_HTTP_OUT_JSON_STREAM    2
 
 #define FLB_HTTP_CONTENT_TYPE   "Content-Type"
 #define FLB_HTTP_MIME_MSGPACK   "application/msgpack"
@@ -45,7 +46,7 @@ struct flb_out_http_config {
     /* HTTP URI */
     char *uri;
     char *host;
-    int  port;
+    int port;
 
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
