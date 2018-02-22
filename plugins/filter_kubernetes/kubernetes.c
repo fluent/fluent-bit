@@ -183,12 +183,10 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
                             struct flb_kube *ctx)
 {
     int i;
-    int ret;
     int map_size;
     int merge_status = -1;
     int new_map_size = 0;
     int log_index = -1;
-    int unesc_len = 0;
     int log_buf_entries = 0;
     size_t off = 0;
     void *log_buf = NULL;
@@ -257,9 +255,6 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
         else if (merge_status == MERGE_BINARY) {
             /* object 'v' represents the original binary log */
             log_buf_entries = v.via.map.size;
-        }
-        else {
-
         }
     }
 
