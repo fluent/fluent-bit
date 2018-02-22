@@ -53,3 +53,11 @@ All log files used in these tests have been generated in a single Kubernetes clu
 | Log File    | apache-logs-annotated-invalid_default_apache-logs-annotated-invalid-b8aab41f6104d7d7ea121852cd00276d8fe42d2a3192b3ae8f949477a272b91b.log |
 | Command     | $ kubectl run apache-logs-annotated-invalid --rm --attach --restart=Never --image=edsiper/apache_logs |
 | Command     | $ kubectl annotate pods apache-logs-annotated-invalid logging.parser='404' |
+
+#### JSON Stringify
+
+|             |                                                              |
+| ----------- | ------------------------------------------------------------ |
+| Description | Application writes a JSON message, it become stringified by Docker. |
+| Log File    | json-logs_default_json-logs-c053db7370be9c33d64677f9759863d850ebe35104069bec241cd1bb4674bd19.log |
+| Command     | $ kubectl run json-logs --rm --attach --restart=Never --image=edsiper/json_logs |
