@@ -29,9 +29,10 @@ enum {
 #define FLB_FMT_STR_MSGPACK "msgpack"
 #define FLB_FMT_STR_JSON    "json"
 
-struct flb_out_lib_config{
+struct flb_out_lib_config {
     int format;
-    int (*user_callback)(void* data, size_t size);
+    int (*cb_func)(void *record, size_t size, void *data);
+    void *cb_data;
 };
 
 #endif

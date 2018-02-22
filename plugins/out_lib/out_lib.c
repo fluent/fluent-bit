@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_lib.h>
 #include <msgpack.h>
 
 #include "out_lib.h"
@@ -66,20 +67,21 @@ static int out_lib_init(struct flb_output_instance *ins,
                         void *data)
 {
     struct flb_out_lib_config *ctx = NULL;
-
+    struct flb_lib_out_cb *cb_data = data;
     (void) config;
-    (void) data;
 
     ctx = flb_calloc(1, sizeof(struct flb_out_lib_config));
     if (ctx == NULL) {
         flb_errno();
         return -1;
     }
-    if (ins->data != NULL) {
-        /* set user callback */
-        ctx->user_callback = ins->data;
+
+    if (cb_data) {
+        /* Set user callback and data */
+        ctx->cb_func = cb_data->cb;
+        ctx->cb_data = cb_data->data;
     }
-    else{
+    else {
         flb_error("[out_lib] Callback is not set");
         flb_free(ctx);
         return -1;
@@ -142,7 +144,7 @@ static void out_lib_flush(void *data, size_t bytes,
             }
 
             len = strlen(buf);
-            out_size = len + 20;
+            out_size = len + 32;
             out_buf = flb_malloc(out_size);
             if (!out_buf) {
                 flb_errno();
@@ -160,7 +162,7 @@ static void out_lib_flush(void *data, size_t bytes,
         }
 
         /* Invoke user callback */
-        ctx->user_callback(data_for_user, data_size);
+        ctx->cb_func(data_for_user, data_size, ctx->cb_data);
     }
 
     msgpack_unpacked_destroy(&result);
