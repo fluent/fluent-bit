@@ -53,6 +53,7 @@ if(FLB_IN_LIB)
   FLB_RT_TEST(FLB_OUT_TD           "out_td.c")
 endif()
 
+set(FLB_TESTS_DATA_PATH ${CMAKE_CURRENT_SOURCE_DIR}/)
 configure_file(
   "${CMAKE_CURRENT_SOURCE_DIR}/flb_tests_runtime.h.in"
   "${CMAKE_CURRENT_SOURCE_DIR}/flb_tests_runtime.h"

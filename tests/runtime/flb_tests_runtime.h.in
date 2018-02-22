@@ -21,5 +21,6 @@
 #define FLB_TESTS_RUNTIME_H
 
 #include "../lib/acutest/acutest.h"
+#define FLB_TESTS_DATA_PATH "@FLB_TESTS_DATA_PATH@"
 
 #endif
