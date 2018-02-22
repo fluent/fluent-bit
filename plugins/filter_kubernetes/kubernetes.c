@@ -30,6 +30,117 @@
 #include <stdio.h>
 #include <msgpack.h>
 
+/* Merge status used by merge_log_handler() */
+#define MERGE_UNESCAPED   0 /* merge unescaped string in temporal buffer */
+#define MERGE_PARSED      1 /* merge parsed string (log_buf)             */
+#define MERGE_BINARY      2 /* merge direct binary object (v)            */
+
+static int unescape_string(char *buf, int buf_len, char **unesc_buf)
+{
+    int i = 0;
+    int j = 0;
+    char *p;
+    char n;
+
+    p = *unesc_buf;
+    while (i < buf_len) {
+        if (buf[i] == '\\') {
+            if (i + 1 < buf_len) {
+                n = buf[i + 1];
+                if (n != 'a' && n != 'b' &&
+                    n != 't' && n != 'n' &&
+                    n != 'v' && n != 'f' &&
+                    n != 'r') {
+                    i++;
+                }
+            }
+            else {
+                i++;
+            }
+        }
+        p[j++] = buf[i++];
+    }
+    p[j] = '\0';
+    return j;
+}
+
+static int merge_log_handler(msgpack_object o,
+                             struct flb_parser *parser,
+                             void **out_buf, size_t *out_size,
+                             struct flb_time *log_time,
+                             struct flb_kube *ctx)
+{
+    int i;
+    int ret;
+    int size;
+    int new_size;
+    int unesc_len = 0;
+    char *tmp;
+
+    /* Reset vars */
+    *out_buf = NULL;
+    *out_size = 0;
+    ctx->unesc_buf_len = 0;
+
+    /* Allocate more space if required */
+    if (o.via.str.size >= ctx->unesc_buf_size) {
+        new_size = o.via.str.size + 1;
+        tmp = flb_realloc(ctx->unesc_buf, new_size);
+        if (tmp) {
+            ctx->unesc_buf = tmp;
+            ctx->unesc_buf_size = new_size;
+        }
+        else {
+            flb_errno();
+            return -1;
+        }
+    }
+
+    /*
+     * Check where to cut the string if common ending bytes like \r or \n
+     * exists.
+     */
+    size = o.via.str.size;
+    for (i = size - 1; i > 0; i--) {
+        if (o.via.str.ptr[i - 1] == '\\' &&
+            (o.via.str.ptr[i] == 'n' || o.via.str.ptr[i] == 'r')) {
+            size -= 2;
+            i--;
+        }
+        else {
+            break;
+        }
+    }
+
+    /* Unescape application string */
+    unesc_len = unescape_string((char *) o.via.str.ptr,
+                                size, &ctx->unesc_buf);
+    ctx->unesc_buf_len = unesc_len;
+
+    ret = -1;
+    if (parser) {
+        ret = flb_parser_do(parser, ctx->unesc_buf, unesc_len,
+                            out_buf, out_size, log_time);
+        if (ret >= 0) {
+            if (flb_time_to_double(log_time) == 0) {
+                flb_time_get(log_time);
+            }
+            return MERGE_PARSED;
+        }
+    }
+    else {
+        ret = flb_pack_json(ctx->unesc_buf, unesc_len,
+                            (char **) out_buf, out_size);
+    }
+
+    if (ret == -1) {
+        flb_debug("[filter_kube] could not merge JSON log as requested");
+        return MERGE_UNESCAPED;
+    }
+
+    return MERGE_PARSED;
+}
+
 static int cb_kube_init(struct flb_filter_instance *f_ins,
                         struct flb_config *config,
                         void *data)
@@ -64,35 +175,6 @@ static int cb_kube_init(struct flb_filter_instance *f_ins,
     return 0;
 }
 
-static int unescape_string(char *buf, int buf_len, char **unesc_buf)
-{
-    int i = 0;
-    int j = 0;
-    char *p;
-    char n;
-
-    p = *unesc_buf;
-    while (i < buf_len) {
-        if (buf[i] == '\\') {
-            if (i + 1 < buf_len) {
-                n = buf[i + 1];
-                if (n != 'a' && n != 'b' &&
-                    n != 't' && n != 'n' &&
-                    n != 'v' && n != 'f' &&
-                    n != 'r') {
-                    i++;
-                }
-            }
-            else {
-                i++;
-            }
-        }
-        p[j++] = buf[i++];
-    }
-    p[j] = '\0';
-    return j;
-}
-
 static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
                             msgpack_object source_map,
                             char *kube_buf, size_t kube_size,
@@ -102,15 +184,13 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
 {
     int i;
     int ret;
-    int new_size;
     int map_size;
-    int size;
+    int merge_status = -1;
     int new_map_size = 0;
     int log_index = -1;
     int unesc_len = 0;
     int log_buf_entries = 0;
     size_t off = 0;
-    char *tmp;
     void *log_buf = NULL;
     size_t log_size = 0;
     msgpack_unpacked result;
@@ -136,6 +216,10 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
         }
     }
 
+    if (flb_time_to_double(&log_time) == 0) {
+        flb_time_get(&log_time);
+    }
+
     /*
      * If a log_index exists, the application log content inside the Docker JSON
      * map is a escaped string. Proceed to reserve a temporal buffer and create
@@ -143,70 +227,40 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
      */
     if (log_index != -1) {
         v = source_map.via.map.ptr[log_index].val;
-        if (v.via.str.size >= ctx->unesc_buf_size) {
-            new_size = v.via.str.size + 1;
-            tmp = flb_realloc(ctx->unesc_buf, new_size);
-            if (tmp) {
-                ctx->unesc_buf = tmp;
-                ctx->unesc_buf_size = new_size;
-            }
-            else {
-                flb_errno();
-                return -1;
-            }
+        if (v.type == MSGPACK_OBJECT_STR) {
+            merge_status = merge_log_handler(v, parser,
+                                             &log_buf, &log_size, &log_time,
+                                             ctx);
         }
+        else if (v.type == MSGPACK_OBJECT_MAP) {
+            /* This is the easiest way, no extra processing required */
+            merge_status = MERGE_BINARY;
+        }
+    }
+    else {
 
-        /*
-         * Check where to cut the string if common ending bytes like \r or \n
-         * exists.
-         */
-        size = v.via.str.size;
-        for (i = size - 1; i > 0; i--) {
-            if (v.via.str.ptr[i - 1] == '\\' &&
-                (v.via.str.ptr[i] == 'n' || v.via.str.ptr[i] == 'r')) {
-                size -= 2;
-                i--;
-            }
-            else {
-                break;
-            }
-        }
-
-        /* Unescape application string */
-        unesc_len = unescape_string((char *) v.via.str.ptr,
-                                    size, &ctx->unesc_buf);
-
-        ret = -1;
-        if (parser) {
-            ret = flb_parser_do(parser, ctx->unesc_buf, unesc_len,
-                                &log_buf, &log_size, &log_time);
-            if (ret >= 0) {
-                if (flb_time_to_double(&log_time) == 0) {
-                    flb_time_get(&log_time);
-                }
-            }
-        }
-        else {
-            ret = flb_pack_json(ctx->unesc_buf, unesc_len,
-                                (char **) &log_buf, &log_size);
-        }
-
-        if (ret == -1) {
-            flb_debug("[filter_kube] could not merge log as requested");
-        }
     }
 
     /* Determinate the size of the new map */
     new_map_size = map_size;
 
     /* If a merged json exists, check the number of entries in that new map */
-    if (log_buf && log_index != -1) {
-        off = 0;
-        msgpack_unpacked_init(&result);
-        msgpack_unpack_next(&result, log_buf, log_size, &off);
-        root = result.data;
-        log_buf_entries = root.via.map.size;
-        msgpack_unpacked_destroy(&result);
+    if (log_index != -1) {
+        if (merge_status == MERGE_PARSED) {
+            off = 0;
+            msgpack_unpacked_init(&result);
+            msgpack_unpack_next(&result, log_buf, log_size, &off);
+            root = result.data;
+            log_buf_entries = root.via.map.size;
+            msgpack_unpacked_destroy(&result);
+        }
+        else if (merge_status == MERGE_BINARY) {
+            /* object 'v' represents the original binary log */
+            log_buf_entries = v.via.map.size;
+        }
+        else {
+
+        }
     }
 
     /* Kubernetes metadata */
@@ -234,38 +288,51 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
          * msgpack properly, re-pack the new string version to avoid
          * multiple escape sequences in outgoing plugins.
          */
-        if (log_buf && log_index == i) {
+        if (log_index == i &&
+            (merge_status == MERGE_UNESCAPED || merge_status == MERGE_PARSED)) {
             msgpack_pack_object(pck, k);
-            msgpack_pack_str(pck, unesc_len);
-            msgpack_pack_str_body(pck, ctx->unesc_buf, unesc_len);
+            msgpack_pack_str(pck, ctx->unesc_buf_len);
+            msgpack_pack_str_body(pck, ctx->unesc_buf, ctx->unesc_buf_len);
         }
-        else {
+        else { /* MERGE_BINARY ? */
             msgpack_pack_object(pck, k);
             msgpack_pack_object(pck, v);
         }
     }
 
-    /* Merged JSON */
-    if (log_buf && log_index != -1) {
-        if (ctx->merge_json_key && log_buf_entries > 0) {
-            msgpack_pack_str(pck, ctx->merge_json_key_len);
-            msgpack_pack_str_body(pck, ctx->merge_json_key,
-                                  ctx->merge_json_key_len);
-            msgpack_pack_map(pck, log_buf_entries);
-        }
+    /* Merge Log */
+    if (log_index != -1) {
+        if (merge_status == MERGE_PARSED) {
+            if (ctx->merge_json_key && log_buf_entries > 0) {
+                msgpack_pack_str(pck, ctx->merge_json_key_len);
+                msgpack_pack_str_body(pck, ctx->merge_json_key,
+                                      ctx->merge_json_key_len);
+                msgpack_pack_map(pck, log_buf_entries);
+            }
 
-        off = 0;
-        msgpack_unpacked_init(&result);
-        msgpack_unpack_next(&result, log_buf, log_size, &off);
-        root = result.data;
-        for (i = 0; i < log_buf_entries; i++) {
-            k = root.via.map.ptr[i].key;
-            v = root.via.map.ptr[i].val;
-            msgpack_pack_object(pck, k);
-            msgpack_pack_object(pck, v);
+            off = 0;
+            msgpack_unpacked_init(&result);
+            msgpack_unpack_next(&result, log_buf, log_size, &off);
+            root = result.data;
+            for (i = 0; i < log_buf_entries; i++) {
+                k = root.via.map.ptr[i].key;
+                v = root.via.map.ptr[i].val;
+                msgpack_pack_object(pck, k);
+                msgpack_pack_object(pck, v);
+            }
+            msgpack_unpacked_destroy(&result);
+            flb_free(log_buf);
         }
-        msgpack_unpacked_destroy(&result);
-        flb_free(log_buf);
+        else if (merge_status == MERGE_BINARY) {
+            msgpack_object bin_map;
+            bin_map = source_map.via.map.ptr[log_index].val;
+            for (i = 0; i < bin_map.via.map.size; i++) {
+                k = bin_map.via.map.ptr[i].key;
+                v = bin_map.via.map.ptr[i].val;
+                msgpack_pack_object(pck, k);
+                msgpack_pack_object(pck, v);
+            }
+        }
     }
 
     /* Kubernetes */

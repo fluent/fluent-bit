@@ -77,7 +77,8 @@ struct flb_kube {
     int merge_log;             /* old merge_json_log */
 
     /* Temporal buffer to unescape strings */
-    int unesc_buf_size;
+    size_t unesc_buf_size;
+    size_t unesc_buf_len;
     char *unesc_buf;
 
     /* JSON key (default 'log') */

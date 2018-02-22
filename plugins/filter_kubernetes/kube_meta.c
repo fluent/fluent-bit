@@ -92,7 +92,7 @@ static int get_local_pod_info(struct flb_kube *ctx)
          * If it fails, it's just informational, as likely the caller
          * wanted to connect using the Proxy instead from inside a POD.
          */
-        flb_error("[filter_kube] cannot open %s", FLB_KUBE_NAMESPACE);
+        flb_warn("[filter_kube] cannot open %s", FLB_KUBE_NAMESPACE);
         return FLB_FALSE;
     }
 
@@ -173,7 +173,9 @@ static int get_api_server_info(struct flb_kube *ctx,
 
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
     flb_http_add_header(c, "Connection", 10, "close", 5);
-    flb_http_add_header(c, "Authorization", 13, ctx->auth, ctx->auth_len);
+    if (ctx->auth_len > 0) {
+        flb_http_add_header(c, "Authorization", 13, ctx->auth, ctx->auth_len);
+    }
 
     /* Perform request */
     ret = flb_http_do(c, &b_sent);
