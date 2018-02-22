@@ -456,7 +456,7 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
 
     buf = flb_calloc(1, FLB_HTTP_BUF_SIZE);
     if (!buf) {
-        perror("malloc");
+        flb_errno();
         return NULL;
     }
 
@@ -485,7 +485,7 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
     }
 
     if (ret == -1) {
-        perror("snprintf");
+        flb_errno();
         flb_free(buf);
         return NULL;
     }
