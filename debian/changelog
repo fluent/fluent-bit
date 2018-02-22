@@ -1,3 +1,75 @@
+td-agent-bit (0.13.0) stable; urgency=low
+
+  * Based on Fluent Bit v0.13.0
+
+ -- Eduardo Silva <eduardo@treasure-data.com>  Thu, 22 Feb 2018 22:00:00 -0600
+
+td-agent-bit (0.12.15) stable; urgency=low
+
+  * Based on Fluent Bit v0.12.15
+
+ -- Eduardo Silva <eduardo@treasure-data.com>  Tue, 20 Feb 2018 22:00:00 -0600
+
+td-agent-bit (0.12.14) stable; urgency=low
+
+  * Based on Fluent Bit v0.12.14
+
+ -- Eduardo Silva <eduardo@treasure-data.com>  Mon, 12 Feb 2018 22:00:00 -0600
+
+td-agent-bit (0.12.13) stable; urgency=low
+
+  * Based on Fluent Bit v0.12.13
+
+ -- Eduardo Silva <eduardo@treasure-data.com>  Thu, 01 Feb 2018 22:00:00 -0600
+
+td-agent-bit (0.12.12) stable; urgency=low
+
+  * Based on Fluent Bit v0.12.12
+
+ -- Eduardo Silva <eduardo@treasure-data.com>  Wed, 17 Jan 2018 22:00:00 -0600
+
+td-agent-bit (0.12.11) stable; urgency=low
+
+  * Based on Fluent Bit v0.12.11
+
+ -- Eduardo Silva <eduardo@treasure-data.com>  Wed, 20 Dec 2017 22:00:00 -0600
+
+td-agent-bit (0.12.10) stable; urgency=low
+
+  * Based on Fluent Bit v0.12.10
+
+ -- Eduardo Silva <eduardo@treasure-data.com>  Wed, 29 Nov 2017 22:00:00 -0600
+
+td-agent-bit (0.12.9) stable; urgency=low
+
+  * Based on Fluent Bit v0.12.9
+
+ -- Eduardo Silva <eduardo@treasure-data.com>  Fri, 24 Nov 2017 22:00:00 -0600
+
+td-agent-bit (0.12.8) stable; urgency=low
+
+  * Based on Fluent Bit v0.12.8
+
+ -- Eduardo Silva <eduardo@treasure-data.com>  Fri, 10 Nov 2017 22:00:00 -0600
+
+td-agent-bit (0.12.7) stable; urgency=low
+
+  * Based on Fluent Bit v0.12.7
+
+ -- Eduardo Silva <eduardo@treasure-data.com>  Wed, 01 Nov 2017 22:00:00 -0600
+
+td-agent-bit (0.12.6) stable; urgency=low
+
+  * Based on Fluent Bit v0.12.6
+
+ -- Eduardo Silva <eduardo@treasure-data.com>  Fri, 13 Oct 2017 22:00:00 -0600
+
+td-agent-bit (0.12.5) stable; urgency=low
+
+  * Based on Fluent Bit v0.12.5
+
+ -- Eduardo Silva <eduardo@treasure-data.com>  Fri, 06 Oct 2017 22:00:00 -0600
+
 td-agent-bit (0.12.4) stable; urgency=low
 
   * Based on Fluent Bit v0.12.4
