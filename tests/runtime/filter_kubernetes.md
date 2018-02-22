@@ -16,11 +16,9 @@ All log files used in these tests have been generated in a single Kubernetes clu
 
 - [Apache Logs Annotated Invalid](#apache-logs-annotated-invalid)
 
-- JSON Stringify
+- [JSON Stringify](#json-stringify)
 
-- JSON Map
-
-- JSON Invalid
+- [JSON Invalid](#json-invalid)
 
 - No Log
 
@@ -61,3 +59,11 @@ All log files used in these tests have been generated in a single Kubernetes clu
 | Description | Application writes a JSON message, it become stringified by Docker. |
 | Log File    | json-logs_default_json-logs-c053db7370be9c33d64677f9759863d850ebe35104069bec241cd1bb4674bd19.log |
 | Command     | $ kubectl run json-logs --rm --attach --restart=Never --image=edsiper/json_logs |
+
+#### JSON Invalid
+
+|             |                                                              |
+| ----------- | ------------------------------------------------------------ |
+| Description | Application writes an invalid JSON message.                  |
+| Log File    | json-logs-invalid_default_json-logs-invalid-054e8bb83c2cc890bae4a184e7a2f96f18dfb121f83e4c5c5541dd452fa4e58e.log |
+| Command     | $ kubectl run json-logs-invalid --rm --attach --restart=Never --image=edsiper/json_logs_invalid |

@@ -22,6 +22,7 @@ struct kube_test {
 #define T_APACHE_LOGS_ANN      DPATH "apache-logs-annotated"
 #define T_APACHE_LOGS_ANN_INV  DPATH "apache-logs-annotated-invalid"
 #define T_JSON_LOGS            DPATH "json-logs"
+#define T_JSON_LOGS_INV        DPATH "json-logs-invalid"
 
 static int file_to_buf(char *path, char **out_buf, size_t *out_size)
 {
@@ -314,10 +315,22 @@ void flb_test_json_logs()
     kube_test_destroy(ctx);
 }
 
+void flb_test_json_logs_invalid()
+{
+    struct kube_test *ctx;
+
+    ctx = kube_test_create(T_JSON_LOGS_INV);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+    kube_test_destroy(ctx);
+}
+
 TEST_LIST = {
     {"kube_apache_logs", flb_test_apache_logs},
     {"kube_apache_logs_annotated", flb_test_apache_logs_annotated},
     {"kube_apache_logs_annotated_invalid", flb_test_apache_logs_annotated_invalid},
     {"kube_json_logs", flb_test_json_logs},
+    {"kube_json_logs_invalid", flb_test_json_logs_invalid},
     {NULL, NULL}
 };
