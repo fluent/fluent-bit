@@ -715,8 +715,13 @@ int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config)
     ret = get_api_server_info(ctx, ctx->namespace, ctx->podname,
                               &meta_buf, &meta_size);
     if (ret == -1) {
-        flb_error("[filter_kube] could not get meta for POD %s",
-                  ctx->podname);
+        if (!ctx->podname) {
+            flb_warn("[filter_kube] could not get meta for local POD");
+        }
+        else {
+            flb_warn("[filter_kube] could not get meta for POD %s",
+                     ctx->podname);
+        }
         return -1;
     }
     flb_info("[filter_kube] API server connectivity OK");
