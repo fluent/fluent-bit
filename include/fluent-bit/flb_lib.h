@@ -30,6 +30,12 @@ struct flb_lib_ctx {
     struct flb_config *config;
 };
 
+/* Used on out_lib to define a callback and further opaque data */
+struct flb_lib_out_cb {
+    int (*cb) (void *record, size_t size, void *data);
+    void *data;
+};
+
 /* For Fluent Bit library callers, we only export the following symbols */
 typedef struct flb_lib_ctx         flb_ctx_t;
 
