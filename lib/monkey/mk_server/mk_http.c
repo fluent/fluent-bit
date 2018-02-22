@@ -713,7 +713,9 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr,
     if (sr->_content_length.data &&
         (sr->method != MK_METHOD_POST &&
          sr->method != MK_METHOD_PUT)) {
-        return mk_http_error(MK_CLIENT_BAD_REQUEST, cs, sr, server);
+        //FIXME return mk_http_error(MK_CLIENT_BAD_REQUEST, cs, sr, server);
+        sr->_content_length.data = NULL;
+        sr->_content_length.len = 0;
     }
 
 
