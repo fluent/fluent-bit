@@ -39,6 +39,10 @@
     #define MSG_DONTWAIT 0
 #endif
 
+#ifndef MSG_NOSIGNAL
+    #define MSG_NOSIGNAL 0
+#endif
+
 /*
  * Version 1.1 (11/2013)
  * A GELF message is a GZIP’d or ZLIB’d JSON string with the following fields:
