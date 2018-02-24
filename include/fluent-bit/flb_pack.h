@@ -22,6 +22,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_time.h>
 #include <jsmn/jsmn.h>
 #include <msgpack.h>
 
@@ -55,4 +56,24 @@ int flb_pack_time_now(msgpack_packer *pck);
 int flb_msgpack_expand_map(char *map_data, size_t map_size,
                            msgpack_object_kv **obj_arr, int obj_arr_len,
                            char** out_buf, int* out_size);
+
+struct flb_gelf_fields {
+    char *timestamp_key;
+    int timestamp_key_len;
+    char *host_key;
+    int host_key_len;
+    char *short_message_key;
+    int short_message_key_len;
+    char *full_message_key;
+    int full_message_key_len;
+    char *level_key;
+    int level_key_len;
+};
+
+flb_sds_t flb_msgpack_to_gelf(flb_sds_t s, msgpack_object *o,
+   struct flb_time *tm, struct flb_gelf_fields *fields);
+
+flb_sds_t flb_msgpack_raw_to_gelf(char *buf, size_t buf_size,
+   struct flb_time *tm, struct flb_gelf_fields *fields);
+
 #endif
