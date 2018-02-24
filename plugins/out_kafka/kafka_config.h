@@ -22,11 +22,13 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_pack.h>
 
 #include "rdkafka.h"
 
 #define FLB_KAFKA_FMT_JSON  0
 #define FLB_KAFKA_FMT_MSGP  1
+#define FLB_KAFKA_FMT_GELF  2
 #define FLB_KAFKA_BROKERS   "127.0.0.1"
 #define FLB_KAFKA_TOPIC     "fluent-bit"
 #define FLB_KAFKA_TS_KEY    "@timestamp"
@@ -52,6 +54,9 @@ struct flb_kafka {
 
     int message_key_len;
     char *message_key;
+
+    /* Gelf Keys */
+    struct flb_gelf_fields gelf_fields;
 
     /* Head of defined topics by configuration */
     struct mk_list topics;
