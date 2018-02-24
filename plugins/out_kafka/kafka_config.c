@@ -121,6 +121,9 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
         else if (strcasecmp(tmp, "msgpack") == 0) {
             ctx->format = FLB_KAFKA_FMT_MSGP;
         }
+        else if (strcasecmp(tmp, "gelf") == 0) {
+            ctx->format = FLB_KAFKA_FMT_GELF;
+        }
     }
     else {
         ctx->format = FLB_KAFKA_FMT_JSON;
@@ -146,6 +149,61 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
     else {
         ctx->timestamp_key = FLB_KAFKA_TS_KEY;
         ctx->timestamp_key_len = strlen(FLB_KAFKA_TS_KEY);
+    }
+
+    /* Config Gelf_Timestamp_Key */
+    tmp = flb_output_get_property("gelf_timestamp_key", ins);
+    if (tmp) {
+        ctx->gelf_fields.timestamp_key     = flb_strdup(tmp);
+        ctx->gelf_fields.timestamp_key_len = strlen(tmp);
+    }
+    else {
+        ctx->gelf_fields.timestamp_key     = NULL;
+        ctx->gelf_fields.timestamp_key_len = 0;
+    }
+
+    /* Config Gelf_Host_Key */
+    tmp = flb_output_get_property("gelf_host_key", ins);
+    if (tmp) {
+        ctx->gelf_fields.host_key     = flb_strdup(tmp);
+        ctx->gelf_fields.host_key_len = strlen(tmp);
+    }
+    else {
+        ctx->gelf_fields.host_key     = NULL;
+        ctx->gelf_fields.host_key_len = 0;
+    }
+
+    /* Config Gelf_Short_Message_Key */
+    tmp = flb_output_get_property("gelf_short_message_key", ins);
+    if (tmp) {
+        ctx->gelf_fields.short_message_key     = flb_strdup(tmp);
+        ctx->gelf_fields.short_message_key_len = strlen(tmp);
+    }
+    else {
+        ctx->gelf_fields.short_message_key     = NULL;
+        ctx->gelf_fields.short_message_key_len = 0;
+    }
+
+    /* Config Gelf_Full_Message_Key */
+    tmp = flb_output_get_property("gelf_full_message_key", ins);
+    if (tmp) {
+        ctx->gelf_fields.full_message_key     = flb_strdup(tmp);
+        ctx->gelf_fields.full_message_key_len = strlen(tmp);
+    }
+    else {
+        ctx->gelf_fields.full_message_key     = NULL;
+        ctx->gelf_fields.full_message_key_len = 0;
+    }
+
+    /* Config Gelf_Level_Key */
+    tmp = flb_output_get_property("gelf_level_key", ins);
+    if (tmp) {
+        ctx->gelf_fields.level_key     = flb_strdup(tmp);
+        ctx->gelf_fields.level_key_len = strlen(tmp);
+    }
+    else {
+        ctx->gelf_fields.level_key     = NULL;
+        ctx->gelf_fields.level_key_len = 0;
     }
 
     /* Kafka Producer */
@@ -209,6 +267,26 @@ int flb_kafka_conf_destroy(struct flb_kafka *ctx)
 
     if (ctx->message_key) {
         flb_free(ctx->message_key);
+    }
+
+    if (ctx->gelf_fields.timestamp_key) {
+        flb_free(ctx->gelf_fields.timestamp_key);
+    }
+
+    if (ctx->gelf_fields.short_message_key) {
+        flb_free(ctx->gelf_fields.short_message_key);
+    }
+
+    if (ctx->gelf_fields.full_message_key) {
+        flb_free(ctx->gelf_fields.full_message_key);
+    }
+
+    if (ctx->gelf_fields.host_key) {
+        flb_free(ctx->gelf_fields.host_key);
+    }
+
+    if (ctx->gelf_fields.level_key) {
+        flb_free(ctx->gelf_fields.level_key);
     }
 
     flb_free(ctx);
