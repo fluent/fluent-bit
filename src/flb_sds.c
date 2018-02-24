@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_utf8.h>
+#include <stdarg.h>
 
 static flb_sds_t sds_alloc(size_t size)
 {
@@ -311,6 +312,53 @@ flb_sds_t flb_sds_cat_utf8 (flb_sds_t s, char *str, int str_len)
     }
 
     s[head->len] = '\0';
+
+    return s;
+}
+
+flb_sds_t flb_sds_printf(flb_sds_t s, const char *fmt, ...)
+{
+    va_list ap;
+    int len = strlen(fmt)*2;
+    int size;
+    flb_sds_t tmp = NULL;
+    struct flb_sds *head;
+
+    if (len < 64) len = 64;
+
+    if (flb_sds_avail(s)< len) {
+        tmp = flb_sds_increase(s, len);
+        if (!tmp) {
+            return NULL;
+        }
+        s = tmp;
+    }
+
+    va_start(ap, fmt);
+
+    size = vsnprintf((char *) (s + flb_sds_len(s)), flb_sds_avail(s), fmt, ap);
+    if (size < 0) {
+        flb_warn("[%s] buggy vsnprintf return %d", __FUNCTION__, size);
+        return NULL;
+    }
+    if (size > flb_sds_avail(s)) {
+        tmp = flb_sds_increase(s, size);
+        if (!tmp) {
+            return NULL;
+        }
+        s = tmp;
+        size = vsnprintf((char *) (s + flb_sds_len(s)), flb_sds_avail(s), fmt, ap);
+        if (size > flb_sds_avail(s)) {
+            flb_warn("[%s] vsnprintf is insatiable ", __FUNCTION__);
+            return NULL;
+        }
+    }
+
+    head = FLB_SDS_HEADER(s);
+    head->len += size;
+    s[head->len] = '\0';
+
+    va_end(ap);
 
     return s;
 }
