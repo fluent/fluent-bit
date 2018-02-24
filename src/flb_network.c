@@ -252,6 +252,51 @@ flb_sockfd_t flb_net_tcp_connect(char *host, unsigned long port)
     return fd;
 }
 
+/* "Connect" to a UDP socket server and returns the file descriptor */
+flb_sockfd_t flb_net_udp_connect(char *host, unsigned long port)
+{
+    flb_sockfd_t fd = -1;
+    int ret;
+    struct addrinfo hints;
+    struct addrinfo *res, *rp;
+    char _port[6];
+
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_DGRAM;
+
+    snprintf(_port, sizeof(_port), "%lu", port);
+    ret = getaddrinfo(host, _port, &hints, &res);
+    if (ret != 0) {
+        flb_warn("net_udp_connect: getaddrinfo(host='%s'): %s",
+                 host, gai_strerror(ret));
+        return -1;
+    }
+
+    for (rp = res; rp != NULL; rp = rp->ai_next) {
+        fd = flb_net_socket_create_udp(rp->ai_family, 0);
+        if (fd == -1) {
+            flb_error("Error creating client socket, retrying");
+            continue;
+        }
+
+        if (connect(fd, rp->ai_addr, rp->ai_addrlen) == -1) {
+            flb_error("Cannot connect to %s port %s", host, _port);
+            flb_socket_close(fd);
+            continue;
+        }
+        break;
+    }
+
+    freeaddrinfo(res);
+
+    if (rp == NULL) {
+        return -1;
+    }
+
+    return fd;
+}
+
 /* Connect to a TCP socket server and returns the file descriptor */
 int flb_net_tcp_fd_connect(flb_sockfd_t fd, char *host, unsigned long port)
 {
