@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_utf8.h>
 
 static flb_sds_t sds_alloc(size_t size)
 {
@@ -152,6 +153,163 @@ flb_sds_t flb_sds_copy(flb_sds_t s, char *str, int len)
 
     head = FLB_SDS_HEADER(s);
     head->len = len;
+    s[head->len] = '\0';
+
+    return s;
+}
+
+flb_sds_t flb_sds_cat_utf8 (flb_sds_t s, char *str, int str_len)
+{
+    static const char int2hex[] = "0123456789abcdef";
+    int i;
+    int b;
+    int ret;
+    int hex_bytes;
+    uint32_t cp;
+    uint32_t state = 0;
+    uint32_t c;
+    uint8_t *p;
+    struct flb_sds *head;
+
+    head = FLB_SDS_HEADER(s);
+
+    if (flb_sds_avail(s) <= str_len) {
+        if ((s = flb_sds_increase(s, str_len)) == NULL) {
+            return NULL;
+        }
+        head = FLB_SDS_HEADER(s);
+    }
+
+    for (i = 0; i < str_len; i++) {
+        if (flb_sds_avail(s) < 6) {
+            if ((s = flb_sds_increase(s, 6)) == NULL) {
+                return NULL;
+            }
+            head = FLB_SDS_HEADER(s);
+        }
+
+        c = (uint32_t) str[i];
+        if (c == '\\' || c == '"') {
+            s[head->len++] = '\\';
+            s[head->len++] = c;
+        }
+        else if (c >= '\b' && c <= '\r') {
+            s[head->len++] = '\\';
+            switch (c) {
+            case '\n':
+                s[head->len++] = 'n';
+                break;
+            case '\t':
+                s[head->len++] = 't';
+                break;
+            case '\b':
+                s[head->len++] = 'b';
+                break;
+            case '\f':
+                s[head->len++] = 'f';
+                break;
+            case '\r':
+                s[head->len++] = 'r';
+                break;
+            case '\v':
+                s[head->len++] = 'u';
+                s[head->len++] = '0';
+                s[head->len++] = '0';
+                s[head->len++] = '0';
+                s[head->len++] = 'b';
+                break;
+            }
+        }
+        else if (c < 32 || c == 0x7f) {
+            if (flb_sds_avail(s) < 6) {
+                if ((s = flb_sds_increase(s, 6)) == NULL) {
+                    return NULL;
+                }
+                head = FLB_SDS_HEADER(s);
+            }
+            s[head->len++] = '\\';
+            s[head->len++] = 'u';
+            s[head->len++] = '0';
+            s[head->len++] = '0';
+            s[head->len++] = int2hex[ (unsigned char) ((c & 0xf0) >> 4)];
+            s[head->len++] = int2hex[ (unsigned char) (c & 0x0f)];
+        }
+        else if (c >= 0x80 && c <= 0xFFFF) {
+            hex_bytes = flb_utf8_len(str + i);
+            if (flb_sds_avail(s) < 6) {
+                if ((s = flb_sds_increase(s, 2 + 6)) == NULL) {
+                    return NULL;
+                }
+                head = FLB_SDS_HEADER(s);
+            }
+
+            state = FLB_UTF8_ACCEPT;
+            cp = 0;
+            for (b = 0; b < hex_bytes; b++) {
+                p = (unsigned char *) str + i + b;
+                ret = flb_utf8_decode(&state, &cp, *p);
+                if (ret == 0) {
+                    break;
+                }
+            }
+
+            if (state != FLB_UTF8_ACCEPT) {
+                /* Invalid UTF-8 hex, just skip utf-8 bytes */
+                break;
+            }
+            else {
+                s[head->len++] = '\\';
+                s[head->len++] = 'u';
+                s[head->len++] = int2hex[ (unsigned char) ((cp & 0xf000) >> 12)];
+                s[head->len++] = int2hex[ (unsigned char) ((cp & 0x0f00) >> 8)];
+                s[head->len++] = int2hex[ (unsigned char) ((cp & 0xf0) >> 4)];
+                s[head->len++] = int2hex[ (unsigned char) (cp & 0x0f)];
+            }
+            i += (hex_bytes - 1);
+        }
+        else if (c > 0xFFFF) {
+            hex_bytes = flb_utf8_len(str + i);
+            if (flb_sds_avail(s) < 10) {
+                if ((s = flb_sds_increase(s, 10)) == NULL) {
+                    return NULL;
+                }
+                head = FLB_SDS_HEADER(s);
+            }
+
+            state = FLB_UTF8_ACCEPT;
+            cp = 0;
+            for (b = 0; b < hex_bytes; b++) {
+                p = (unsigned char *) str + i + b;
+                ret = flb_utf8_decode(&state, &cp, *p);
+                if (ret == 0) {
+                    break;
+                }
+            }
+
+            if (state != FLB_UTF8_ACCEPT) {
+                /* Invalid UTF-8 hex, just skip utf-8 bytes */
+                flb_warn("[pack] invalid UTF-8 bytes, skipping");
+                break;
+            }
+            else {
+                s[head->len++] = '\\';
+                s[head->len++] = 'u';
+                s[head->len++] = '0';
+                s[head->len++] = '0';
+                s[head->len++] = int2hex[ (unsigned char) ((cp & 0xf00000) >> 20)];
+                s[head->len++] = int2hex[ (unsigned char) ((cp & 0x0f0000) >> 16)];
+                s[head->len++] = int2hex[ (unsigned char) ((cp & 0xf000) >> 12)];
+                s[head->len++] = int2hex[ (unsigned char) ((cp & 0x0f00) >> 8)];
+                s[head->len++] = int2hex[ (unsigned char) ((cp & 0xf0) >> 4)];
+                s[head->len++] = int2hex[ (unsigned char) (cp & 0x0f)];
+            }
+            i += (hex_bytes - 1);
+        }
+        else {
+            s[head->len++] = c;
+        }
+    }
+
     s[head->len] = '\0';
 
     return s;
