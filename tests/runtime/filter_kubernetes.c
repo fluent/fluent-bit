@@ -9,10 +9,15 @@ struct kube_test {
     mk_ctx_t *http;
 };
 
-#define KUBE_IP   "127.0.0.1"
-#define KUBE_PORT "8002"
-#define KUBE_URL  "http://" KUBE_IP ":" KUBE_PORT
-#define DPATH     FLB_TESTS_DATA_PATH "/data/kubernetes/"
+/* Test target mode */
+#define KUBE_TAIL     0
+#define KUBE_SYSTEMD  1
+
+/* Constants */
+#define KUBE_IP       "127.0.0.1"
+#define KUBE_PORT     "8002"
+#define KUBE_URL      "http://" KUBE_IP ":" KUBE_PORT
+#define DPATH         FLB_TESTS_DATA_PATH "/data/kubernetes/"
 
 /*
  * Data files
@@ -23,6 +28,7 @@ struct kube_test {
 #define T_APACHE_LOGS_ANN_INV  DPATH "apache-logs-annotated-invalid"
 #define T_JSON_LOGS            DPATH "json-logs"
 #define T_JSON_LOGS_INV        DPATH "json-logs-invalid"
+#define T_SYSTEMD_SIMPLE       DPATH "kairosdb-914055854-b63vq"
 
 static int file_to_buf(char *path, char **out_buf, size_t *out_size)
 {
@@ -187,12 +193,11 @@ static int cb_check_result(void *record, size_t size, void *data)
     if (size > 0) {
         flb_free(record);
     }
-
     flb_free(out);
     return 0;
 }
 
-static struct kube_test *kube_test_create(char *target)
+static struct kube_test *kube_test_create(char *target, int type)
 {
     int ret;
     int in_ffd;
@@ -223,23 +228,44 @@ static struct kube_test *kube_test_create(char *target)
                     "Flush", "1",
                     "Parsers_File", "../conf/parsers.conf",
                     NULL);
-    in_ffd = flb_input(ctx->flb, "tail", NULL);
-    ret = flb_input_set(ctx->flb, in_ffd,
-                        "Tag", "kube.*",
-                        "Path", path,
-                        "Parser", "docker",
-                        "Decode_Field", "json log",
-                        NULL);
-    TEST_CHECK(ret == 0);
+
+    if (type == KUBE_TAIL) {
+        in_ffd = flb_input(ctx->flb, "tail", NULL);
+        ret = flb_input_set(ctx->flb, in_ffd,
+                            "Tag", "kube.*",
+                            "Path", path,
+                            "Parser", "docker",
+                            "Decode_Field", "json log",
+                            NULL);
+        TEST_CHECK(ret == 0);
+    }
+    else if (type == KUBE_SYSTEMD) {
+        in_ffd = flb_input(ctx->flb, "systemd", NULL);
+        ret = flb_input_set(ctx->flb, in_ffd,
+                            "Tag", "kube.*",
+                            "Systemd_Filter", "KUBE_TEST=2018",
+                            NULL);
+        TEST_CHECK(ret == 0);
+    }
 
     filter_ffd = flb_filter(ctx->flb, "kubernetes", NULL);
     ret = flb_filter_set(ctx->flb, filter_ffd,
                          "Match", "kube.*",
                          "Kube_URL", KUBE_URL,
                          "Merge_Log", "On",
-                         "Regex_Parser", "filter-kube-test",
                          "k8s-logging.parser", "On",
                          NULL);
+
+    if (type == KUBE_TAIL) {
+        ret = flb_filter_set(ctx->flb, filter_ffd,
+                             "Regex_Parser", "filter-kube-test",
+                             NULL);
+    }
+    else if (type == KUBE_SYSTEMD) {
+        flb_filter_set(ctx->flb, filter_ffd,
+                       "Use_Journal", "On",
+                       NULL);
+    }
 
     /* Prepare output callback context*/
     cb_data.cb = cb_check_result;
@@ -275,7 +301,7 @@ void flb_test_apache_logs()
 {
     struct kube_test *ctx;
 
-    ctx = kube_test_create(T_APACHE_LOGS);
+    ctx = kube_test_create(T_APACHE_LOGS, KUBE_TAIL);
     if (!ctx) {
         exit(EXIT_FAILURE);
     }
@@ -286,7 +312,7 @@ void flb_test_apache_logs_annotated()
 {
     struct kube_test *ctx;
 
-    ctx = kube_test_create(T_APACHE_LOGS_ANN);
+    ctx = kube_test_create(T_APACHE_LOGS_ANN, KUBE_TAIL);
     if (!ctx) {
         exit(EXIT_FAILURE);
     }
@@ -297,7 +323,7 @@ void flb_test_apache_logs_annotated_invalid()
 {
     struct kube_test *ctx;
 
-    ctx = kube_test_create(T_APACHE_LOGS_ANN_INV);
+    ctx = kube_test_create(T_APACHE_LOGS_ANN_INV, KUBE_TAIL);
     if (!ctx) {
         exit(EXIT_FAILURE);
     }
@@ -308,7 +334,7 @@ void flb_test_json_logs()
 {
     struct kube_test *ctx;
 
-    ctx = kube_test_create(T_JSON_LOGS);
+    ctx = kube_test_create(T_JSON_LOGS, KUBE_TAIL);
     if (!ctx) {
         exit(EXIT_FAILURE);
     }
@@ -319,12 +345,38 @@ void flb_test_json_logs_invalid()
 {
     struct kube_test *ctx;
 
-    ctx = kube_test_create(T_JSON_LOGS_INV);
+    ctx = kube_test_create(T_JSON_LOGS_INV, KUBE_TAIL);
     if (!ctx) {
         exit(EXIT_FAILURE);
     }
     kube_test_destroy(ctx);
 }
+
+#include <systemd/sd-journal.h>
+void flb_test_systemd_logs()
+{
+    struct kube_test *ctx;
+
+    /* Send test message to Journal */
+    sd_journal_send(
+                    "@timestamp=2018-02-23T08:58:45.0Z",
+                    "PRIORITY=6",
+                    "CONTAINER_NAME=k8s_kairosdb_kairosdb-914055854-b63vq_default_d6c53deb-05a4-11e8-a8c4-080027435fb7_23",
+                    "CONTAINER_TAG=",
+                    "CONTAINER_ID=56e257661383",
+                    "CONTAINER_ID_FULL=56e257661383836fac4cd90a23ee8a7a02ee1538c8f35657d1a90f3de1065a22",
+                    "MESSAGE=08:58:45.839 [qtp151442075-47] DEBUG [HttpParser.java:281] - filled 157/157",
+                    "KUBE_TEST=2018",
+                    NULL);
+
+    ctx = kube_test_create(T_SYSTEMD_SIMPLE, KUBE_SYSTEMD);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+    kube_test_destroy(ctx);
+
+}
+
 
 TEST_LIST = {
     {"kube_apache_logs", flb_test_apache_logs},
@@ -332,5 +384,6 @@ TEST_LIST = {
     {"kube_apache_logs_annotated_invalid", flb_test_apache_logs_annotated_invalid},
     {"kube_json_logs", flb_test_json_logs},
     {"kube_json_logs_invalid", flb_test_json_logs_invalid},
+    {"kube_systemd_logs", flb_test_systemd_logs},
     {NULL, NULL}
 };
