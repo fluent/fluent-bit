@@ -195,7 +195,7 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
     msgpack_object k;
     msgpack_object v;
     msgpack_object root;
-    struct flb_time log_time;
+    struct flb_time log_time = {0};
 
     /* Original map size */
     map_size = source_map.via.map.size;
@@ -389,6 +389,7 @@ static int cb_kube_filter(void *data, size_t bytes,
                           struct flb_config *config)
 {
     int ret;
+    size_t pre = 0;
     size_t off = 0;
     char *cache_buf = NULL;
     size_t cache_size = 0;
@@ -402,22 +403,23 @@ static int cb_kube_filter(void *data, size_t bytes,
     struct flb_kube *ctx = filter_context;
     struct flb_kube_meta meta = {0};
     struct flb_kube_props props = {0};
-
     (void) f_ins;
     (void) config;
 
-    /* Check if we have some cached metadata for the incoming events */
-    ret = flb_kube_meta_get(ctx,
-                            tag, tag_len,
-                            data, bytes,
-                            &cache_buf, &cache_size, &meta, &props);
-    if (ret == -1) {
-        flb_kube_prop_destroy(&props);
-        return FLB_FILTER_NOTOUCH;
-    }
+    if (ctx->use_journal == FLB_FALSE) {
+        /* Check if we have some cached metadata for the incoming events */
+        ret = flb_kube_meta_get(ctx,
+                                tag, tag_len,
+                                data, bytes,
+                                &cache_buf, &cache_size, &meta, &props);
+        if (ret == -1) {
+            flb_kube_prop_destroy(&props);
+            return FLB_FILTER_NOTOUCH;
+        }
 
-    if (props.parser != NULL) {
-        parser = flb_parser_get(props.parser, config);
+        if (props.parser != NULL) {
+            parser = flb_parser_get(props.parser, config);
+        }
     }
 
     /* Create temporal msgpack buffer */
@@ -430,6 +432,33 @@ static int cb_kube_filter(void *data, size_t bytes,
         root = result.data;
         if (root.type != MSGPACK_OBJECT_ARRAY) {
             continue;
+        }
+
+        /*
+         * Journal entries can be origined by different Pods, so we are forced
+         * to parse and check it metadata.
+         *
+         * note: when the source is in_tail the situation is different since all
+         * records passed to the filter have a unique source log file.
+         */
+        if (ctx->use_journal == FLB_TRUE) {
+            parser = NULL;
+            cache_buf = NULL;
+            memset(&props, '\0', sizeof(struct flb_kube_props));
+
+            ret = flb_kube_meta_get(ctx,
+                                    tag, tag_len,
+                                    data + pre, off - pre,
+                                    &cache_buf, &cache_size, &meta, &props);
+            if (ret == -1) {
+                flb_kube_prop_destroy(&props);
+                return FLB_FILTER_NOTOUCH;
+            }
+
+            if (props.parser != NULL) {
+                parser = flb_parser_get(props.parser, config);
+            }
+            pre = off;
         }
 
         /* get time and map */
@@ -451,14 +480,21 @@ static int cb_kube_filter(void *data, size_t bytes,
                 flb_free(cache_buf);
             }
 
+            flb_kube_meta_release(&meta);
             flb_kube_prop_destroy(&props);
             return FLB_FILTER_NOTOUCH;
+        }
+
+        if (ctx->use_journal == FLB_TRUE) {
+            flb_kube_meta_release(&meta);
         }
     }
     msgpack_unpacked_destroy(&result);
 
     /* Release meta fields */
-    flb_kube_meta_release(&meta);
+    if (ctx->use_journal == FLB_FALSE) {
+        flb_kube_meta_release(&meta);
+    }
 
     /* link new buffers */
     *out_buf   = tmp_sbuf.data;
