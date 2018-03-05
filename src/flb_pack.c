@@ -96,6 +96,10 @@ static char *tokens_to_msgpack(char *js,
     msgpack_packer pck;
     msgpack_sbuffer sbuf;
 
+    if (arr_size == 0) {
+        return NULL;
+    }
+
     /* initialize buffers */
     msgpack_sbuffer_init(&sbuf);
     msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
@@ -112,7 +116,6 @@ static char *tokens_to_msgpack(char *js,
         }
 
         flen = (t->end - t->start);
-
         switch (t->type) {
         case JSMN_OBJECT:
             msgpack_pack_map(&pck, t->size);
@@ -177,7 +180,7 @@ int flb_pack_json(char *js, size_t len, char **buffer, size_t *size)
 {
     int ret = -1;
     int out;
-    char *buf;
+    char *buf = NULL;
     struct flb_pack_state state;
 
     ret = flb_pack_state_init(&state);
