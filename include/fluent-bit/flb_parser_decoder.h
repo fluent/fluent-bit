@@ -24,18 +24,25 @@
 #include <monkey/mk_core.h>
 
 /* Decoder types */
-#define FLB_PARSER_DEC_JSON  0
+#define FLB_PARSER_DEC_JSON     0  /* decode_json()    */
+#define FLB_PARSER_DEC_ESCAPED  1  /* decode_escaped() */
+
+/* Decoder actions */
+#define FLB_PARSER_ACT_NONE     0
+#define FLB_PARSER_ACT_TRY_NEXT 1
 
 #define FLB_PARSER_DEC_BUF_SIZE 1024*8  /* 8KB */
 
 struct flb_parser_dec {
     int type;
+    int action;
 
     /* Key name */
     int key_len;
     char *key_name;
 
     /* Temporal buffer for data decoding */
+    int buf_len;
     char *buf_data;
     size_t buf_size;
 
