@@ -156,6 +156,7 @@ void test_parser_time_lookup()
     int len;
     int ret;
     int toff;
+    int year_diff = 0;
     double ns;
     time_t now;
     time_t epoch;
@@ -188,12 +189,30 @@ void test_parser_time_lookup()
             p->time_offset = t->utc_offset;
         }
 
+        /* Adjust timestamp for parsers using no-year */
+        if (p->time_with_year == FLB_FALSE) {
+            time_t time_test = t->epoch;
+            struct tm tm_now;
+            struct tm tm_test;
+
+            gmtime_r(&now, &tm_now);
+            gmtime_r(&time_test, &tm_test);
+
+            if (tm_now.tm_year != tm_test.tm_year) {
+                year_diff = ((tm_now.tm_year - tm_test.tm_year) * 31536000);
+            }
+        }
+        else {
+            year_diff = 0;
+        }
+
         /* Lookup time */
         len = strlen(t->time_string);
         ret = flb_parser_time_lookup(t->time_string, len, now, p, &tm, &ns);
         TEST_CHECK(ret == 0);
 
         epoch = flb_parser_tm2time(&tm);
+        epoch -= year_diff;
         TEST_CHECK(t->epoch == epoch);
         TEST_CHECK(t->frac_seconds == ns);
 
@@ -213,6 +232,8 @@ void test_json_parser_time_lookup()
     int ret;
     int len;
     int toff;
+    int year_diff = 0;
+    time_t epoch;
     long nsec;
     char buf[512];
     void *out_buf;
@@ -245,6 +266,24 @@ void test_json_parser_time_lookup()
             p->time_offset = t->utc_offset;
         }
 
+        /* Adjust timestamp for parsers using no-year */
+        if (p->time_with_year == FLB_FALSE) {
+            time_t time_now = time(NULL);
+            time_t time_test = t->epoch;
+            struct tm tm_now;
+            struct tm tm_test;
+
+            gmtime_r(&time_now, &tm_now);
+            gmtime_r(&time_test, &tm_test);
+
+            if (tm_now.tm_year != tm_test.tm_year) {
+                year_diff = ((tm_now.tm_year - tm_test.tm_year) * 31536000);
+            }
+        }
+        else {
+            year_diff = 0;
+        }
+
         /* Compose the string */
         len = snprintf(buf, sizeof(buf) - 1, JSON_FMT_01, t->time_string);
 
@@ -254,7 +293,9 @@ void test_json_parser_time_lookup()
         TEST_CHECK(out_buf != NULL);
 
         /* Check time */
-        TEST_CHECK(out_time.tm.tv_sec == t->epoch);
+        epoch = t->epoch + year_diff;
+
+        TEST_CHECK(out_time.tm.tv_sec == epoch);
         nsec = t->frac_seconds * 1000000000;
         TEST_CHECK(out_time.tm.tv_nsec == nsec);
 
@@ -276,6 +317,8 @@ void test_regex_parser_time_lookup()
     int ret;
     int len;
     int toff;
+    int year_diff = 0;
+    time_t epoch;
     long nsec;
     char buf[512];
     void *out_buf;
@@ -308,6 +351,24 @@ void test_regex_parser_time_lookup()
             p->time_offset = t->utc_offset;
         }
 
+        /* Adjust timestamp for parsers using no-year */
+        if (p->time_with_year == FLB_FALSE) {
+            time_t time_now = time(NULL);
+            time_t time_test = t->epoch;
+            struct tm tm_now;
+            struct tm tm_test;
+
+            gmtime_r(&time_now, &tm_now);
+            gmtime_r(&time_test, &tm_test);
+
+            if (tm_now.tm_year != tm_test.tm_year) {
+                year_diff = ((tm_now.tm_year - tm_test.tm_year) * 31536000);
+            }
+        }
+        else {
+            year_diff = 0;
+        }
+
         /* Compose the string */
         len = snprintf(buf, sizeof(buf) - 1, REGEX_FMT_01, t->time_string);
 
@@ -316,8 +377,11 @@ void test_regex_parser_time_lookup()
         TEST_CHECK(ret != -1);
         TEST_CHECK(out_buf != NULL);
 
+        /* Adjust time without year */
+        epoch = t->epoch + year_diff;
+
         /* Check time */
-        TEST_CHECK(out_time.tm.tv_sec == t->epoch);
+        TEST_CHECK(out_time.tm.tv_sec == epoch);
         nsec = t->frac_seconds * 1000000000;
         TEST_CHECK(out_time.tm.tv_nsec == nsec);
 
