@@ -28,6 +28,7 @@ struct flb_sqldb {
     char *desc;               /* database description          */
     int shared;               /* is it a shared handler ?      */
     int users;                /* number of active users        */
+    void *parent;             /* if shared, ref to parent      */
     sqlite3 *handler;         /* SQLite3 handler               */
     struct mk_list _head;     /* Link to config->sqldb_list    */
 };
