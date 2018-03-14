@@ -72,9 +72,31 @@ static void signal_init()
     signal(SIGTERM, &signal_handler);
 }
 
+static void cb_queue_message(mk_mq_t *queue, void *data, size_t size, void *ctx)
+{
+    size_t i;
+    char *buf;
+    (void) ctx;
+    (void) queue;
+
+    printf("=== cb queue message === \n");
+    printf(" => %lu bytes\n", size);
+    printf(" => ");
+
+    buf = data;
+    for (i = 0; i < size; i++) {
+        printf("%c", buf[i]);
+    }
+    printf("\n\n");
+}
+
 int main()
 {
+    int i = 0;
+    int len;
     int vid;
+    int qid;
+    char msg[800000];
 
     signal_init();
 
@@ -82,6 +104,9 @@ int main()
     if (!ctx) {
         return -1;
     }
+
+    /* Create a message queue and a callback for each message */
+    qid = mk_mq_create(ctx, "/data", cb_queue_message, NULL);
 
     mk_config_set(ctx,
                   "Listen", API_PORT,
@@ -101,9 +126,17 @@ int main()
     mk_info("Service: http://%s:%s/test",  API_ADDR, API_PORT);
     mk_start(ctx);
 
-    while (1) {
-        sleep(1000);
+
+    for (i = 0; i < 1000; i++) {
+        len = snprintf(msg, sizeof(msg) - 1, "[...] message ID: %i\n", i);
+        mk_mq_send(ctx, qid, &msg, len);
     }
+
+    sleep(3600);
+
+    mk_stop(ctx);
+    mk_destroy(ctx);
+
 
     return 0;
 }

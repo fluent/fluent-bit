@@ -43,6 +43,7 @@ option(MK_PTHREAD_TLS    "Use old Pthread TLS mode"     No)
 option(MK_SYSTEM_MALLOC  "Use system memory allocator"  No)
 option(MK_MBEDTLS_SHARED "Use mbedtls shared lib"       No)
 option(MK_VALGRIND       "Enable Valgrind support"      No)
+option(MK_HTTP2          "Enable HTTP Support (dev)"    No)
 
 # Plugins: what should be build ?, these options
 # will be processed later on the plugins/CMakeLists.txt file
@@ -62,6 +63,17 @@ option(MK_PLUGIN_TLS           "TLS/SSL support"          No)
 option(MK_WITHOUT_BIN          "Do not build binary"      No)
 option(MK_WITHOUT_CONF         "Skip configuration files" No)
 option(MK_STATIC_LIB_MODE      "Static library mode"      No)
+
+# If building just for a "library" mode, disable plugins
+if(MK_LIB_ONLY)
+  set(MK_PLUGIN_AUTH       No)
+  set(MK_PLUGIN_CGI        No)
+  set(MK_PLUGIN_CHEETAH    No)
+  set(MK_PLUGIN_DIRLISTING No)
+  set(MK_PLUGIN_FASTCGI    No)
+  set(MK_PLUGIN_LOGGER     No)
+  set(MK_PLUGIN_MANDRIL    No)
+endif()
 
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set(MK_ACCEPT        1)
@@ -97,6 +109,12 @@ macro(MK_DEFINITION var)
   set(MK_BUILD_FLAGS "${MK_BUILD_FLAGS}#ifndef ${var}\n#define ${var}\n#endif\n")
 endmacro()
 
+# Enable experimental (dev) HTTP/2 support
+if (MK_HTTP2)
+  MK_DEFINITION(MK_HAVE_HTTP2)
+endif()
+
+
 # Check for accept(2) v/s accept(4)
 list(APPEND CMAKE_REQUIRED_DEFINITIONS -D_GNU_SOURCE)
 check_symbol_exists(accept4 "sys/socket.h" HAVE_ACCEPT4)
@@ -118,6 +136,7 @@ endif()
 # Check Trace
 if(MK_TRACE)
   MK_DEFINITION(MK_TRACE)
+  MK_DEFINITION(MK_HAVE_TRACE)
 endif()
 
 # Check Uclib library

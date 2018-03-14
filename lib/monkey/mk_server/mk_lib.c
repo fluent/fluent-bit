@@ -2,7 +2,7 @@
 
 /*  Monkey HTTP Server
  *  ==================
- *  Copyright 2001-2015 Monkey Software LLC <eduardo@monkey.io>
+ *  Copyright 2001-2017 Eduardo Silva <eduardo@monkey.io>
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -28,6 +28,8 @@
 #include <monkey/monkey.h>
 #include <monkey/mk_stream.h>
 #include <monkey/mk_thread.h>
+#include <monkey/mk_scheduler.h>
+#include <monkey/mk_fifo.h>
 
 #define config_eq(a, b) strcasecmp(a, b)
 
@@ -54,11 +56,27 @@ mk_ctx_t *mk_create()
 
     /* Create Monkey server instance */
     ctx->server = mk_server_create();
+
+    /*
+     * FIFO
+     * ====
+     * Before to prepare the background service, we create a MK_FIFO interface
+     * for further communication between the caller (user) and HTTP end-point
+     * callbacks.
+     */
+    ctx->fifo = mk_fifo_create(&mk_server_fifo_key, ctx->server);
+
+    /*
+     * FIFO: Set workers callback associated to the Monkey scheduler to prepare them
+     * before to enter the event loop
+     */
+    mk_sched_worker_cb_add(ctx->server, mk_fifo_worker_setup, ctx->fifo);
     return ctx;
 }
 
 int mk_destroy(mk_ctx_t *ctx)
 {
+    mk_fifo_destroy(ctx->fifo);
     mk_mem_free(ctx);
 
     return 0;
@@ -159,6 +177,8 @@ int mk_start(mk_ctx_t *ctx)
     struct mk_event *event;
     struct mk_server *server;
 
+    server = ctx->server;
+
     ret = mk_utils_worker_spawn(mk_lib_worker, ctx, &tid);
     if (ret == -1) {
         return -1;
@@ -166,7 +186,6 @@ int mk_start(mk_ctx_t *ctx)
     ctx->worker_tid = tid;
 
     /* Wait for the started signal so we can return to the caller */
-    server = ctx->server;
     mk_event_wait(server->lib_evl);
     mk_event_foreach(event, server->lib_evl) {
         fd = event->fd;
@@ -577,6 +596,27 @@ static void free_chunk_header(struct mk_stream_input *input)
     input->buffer = NULL;
 }
 
+
+/* Check if response headers were processed, otherwise prepare them */
+static int headers_setup(mk_request_t *req)
+{
+    /*
+     * Let's keep it simple for now: if the headers have not been sent, do it
+     * now and then send the body content just queued.
+     */
+    if (req->headers.sent == MK_FALSE) {
+        /* Force chunked-transfer encoding */
+        if (req->protocol == MK_HTTP_PROTOCOL_11) {
+            req->headers.transfer_encoding = MK_HEADER_TE_TYPE_CHUNKED;
+        }
+        else {
+            req->headers.content_length = -1;
+        }
+        mk_header_prepare(req->session, req, req->session->server);
+    }
+    return 0;
+}
+
 /* Enqueue some data for the body response */
 int mk_http_send(mk_request_t *req, char *buf, size_t len,
                  void (*cb_finish)(mk_request_t *))
@@ -626,20 +666,8 @@ int mk_http_send(mk_request_t *req, char *buf, size_t len,
                                "\r\n", 2, NULL, NULL);
     }
 
-    /*
-     * Let's keep it simple for now: if the headers have not been sent, do it
-     * now and then send the body content just queued.
-     */
-    if (req->headers.sent == MK_FALSE) {
-        /* Force chunked-transfer encoding */
-        if (req->protocol == MK_HTTP_PROTOCOL_11) {
-            req->headers.transfer_encoding = MK_HEADER_TE_TYPE_CHUNKED;
-        }
-        else {
-            req->headers.content_length = -1;
-        }
-        mk_header_prepare(req->session, req, req->session->server);
-    }
+    /* Validate if the response headers are ready */
+    headers_setup(req);
 
     /* Flush channel data */
     ret = mk_http_flush(req);
@@ -658,69 +686,37 @@ int mk_http_done(mk_request_t *req)
     if (req->session->channel->status != MK_CHANNEL_OK) {
         return -1;
     }
-    /*
 
-    struct mk_channel *channel;
-    struct mk_event *event;
-
-    channel = req->session->channel;
-    event = channel->event;
-
-    printf("event type => ");
-    switch (event->type) {
-    case MK_EVENT_NOTIFICATION:
-        printf("notification");
-        break;
-    case MK_EVENT_LISTENER:
-        printf("listener");
-        break;
-    case MK_EVENT_CONNECTION:
-        printf("connection");
-        break;
-    case MK_EVENT_CUSTOM:
-        printf("custom");
-        break;
-    case MK_EVENT_THREAD:
-        printf("thread");
-        break;
-    default:
-        printf("OTHER: %i", event->type);
-    };
-
-    printf(", status => ");
-    if (event->status == MK_EVENT_NONE) {
-        printf("MK_EVENT_NONE");
-    }
-    else if (event->status == MK_EVENT_REGISTERED) {
-        printf("MK_EVENT_REGISTERED");
-    }
-
-    printf(", mask =>");
-    if (event->mask & MK_EVENT_EMPTY) {
-        printf(" MK_EVENT_EMPTY");
-    }
-    if (event->mask & MK_EVENT_READ) {
-        printf(" MK_EVENT_READ");
-    }
-    if (event->mask & MK_EVENT_WRITE) {
-        printf(" MK_EVENT_WRITE");
-    }
-    if (event->mask & MK_EVENT_SLEEP) {
-        printf(" MK_EVENT_SLEEP");
-    }
-    if (event->mask & MK_EVENT_CLOSE) {
-        printf(" MK_EVENT_CLOSE");
-    }
-    if (event->mask & MK_EVENT_IDLE) {
-        printf(" MK_EVENT_IDLE");
-    }
-    printf("\n");
-    fflush(stdout);
-    */
+    /* Validate if the response headers are ready */
+    headers_setup(req);
 
     if (req->headers.transfer_encoding == MK_HEADER_TE_TYPE_CHUNKED) {
         /* Append end-of-chunk bytes */
         mk_http_send(req, NULL, 0, NULL);
+    }
+
+    return 0;
+}
+
+/* Create a messaging queue end-point */
+int mk_mq_create(mk_ctx_t *ctx, char *name, void (*cb), void *data)
+{
+    int id;
+
+    id = mk_fifo_queue_create(ctx->fifo, name, cb, data);
+    return id;
+}
+
+/* Write a message to a specific queue ID */
+int mk_mq_send(mk_ctx_t *ctx, int qid, void *data, size_t size)
+{
+    return mk_fifo_send(ctx->fifo, qid, data, size);
+}
+
+int mk_main()
+{
+    while (1) {
+        sleep(60);
     }
 
     return 0;

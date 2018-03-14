@@ -2,7 +2,7 @@
 
 /*  Monkey HTTP Server
  *  ==================
- *  Copyright 2001-2015 Monkey Software LLC <eduardo@monkey.io>
+ *  Copyright 2001-2017 Eduardo Silva <eduardo@monkey.io>
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@
 #include <monkey/mk_plugin.h>
 #include <monkey/mk_vhost.h>
 #include <monkey/mk_mimetype.h>
+#include <monkey/mk_info.h>
 
 #include <ctype.h>
 #include <limits.h>
@@ -217,6 +218,7 @@ int mk_config_listen_parse(char *value, struct mk_server *server)
         flags |= ~MK_CAP_HTTP;
     }
 
+#ifdef MK_HAVE_HTTP2
     if (mk_config_key_have(list, "h2")) {
         flags |= (MK_CAP_HTTP2 | MK_CAP_SOCK_TLS);
     }
@@ -224,6 +226,7 @@ int mk_config_listen_parse(char *value, struct mk_server *server)
     if (mk_config_key_have(list, "h2c")) {
         flags |= MK_CAP_HTTP2;
     }
+#endif
 
     if (mk_config_key_have(list, "tls")) {
         flags |= MK_CAP_SOCK_TLS;

@@ -2,7 +2,7 @@
 
 /*  Monkey HTTP Server
  *  ==================
- *  Copyright 2001-2015 Monkey Software LLC <eduardo@monkey.io>
+ *  Copyright 2001-2017 Eduardo Silva <eduardo@monkey.io>
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@
 
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <regex.h>
 
 #include <monkey/monkey.h>
 #include <monkey/mk_user.h>
@@ -675,6 +676,7 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr,
     }
 
     /* Check if this is related to a protocol upgrade */
+#ifdef MK_HAVE_HTTP2
     if (cs->parser.header_connection & MK_HTTP_PARSER_CONN_UPGRADE) {
         /* HTTP/2.0 upgrade ? */
         if (cs->parser.header_connection & MK_HTTP_PARSER_CONN_HTTP2_SE) {
@@ -699,6 +701,7 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr,
             }
         }
     }
+#endif
 
     /* Check backward directory request */
     if (memmem(sr->uri_processed.data, sr->uri_processed.len,
@@ -730,7 +733,7 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr,
         handlers = &sr->host_conf->handlers;
         mk_list_foreach(head, handlers) {
             h_handler = mk_list_entry(head, struct mk_vhost_handler, _head);
-            if (regexec(&h_handler->match,
+            if (regexec(h_handler->match,
                         sr->uri_processed.data, 0, NULL, 0) != 0) {
                 continue;
             }
@@ -746,7 +749,7 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr,
                     return -1;
                 }
                 mk_http_thread_start(mth);
-                return 0;
+                return MK_EXIT_OK;
             }
             else {
                 if (!h_handler->handler) {
@@ -865,7 +868,7 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr,
         handlers = &sr->host_conf->handlers;
         mk_list_foreach(head, handlers) {
             h_handler = mk_list_entry(head, struct mk_vhost_handler, _head);
-            if (regexec(&h_handler->match,
+            if (regexec(h_handler->match,
                         uri, 0, NULL, 0) != 0) {
                 continue;
             }

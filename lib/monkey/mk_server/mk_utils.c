@@ -2,7 +2,7 @@
 
 /*  Monkey HTTP Server
  *  ==================
- *  Copyright 2001-2015 Monkey Software LLC <eduardo@monkey.io>
+ *  Copyright 2001-2017 Eduardo Silva <eduardo@monkey.io>
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -373,8 +373,8 @@ unsigned int mk_utils_gen_hash(const void *key, int len)
 
     /* Handle the last few bytes of the input array  */
     switch(len) {
-    case 3: h ^= data[2] << 16;
-    case 2: h ^= data[1] << 8;
+    case 3: h ^= data[2] << 16;   // fallthrough
+    case 2: h ^= data[1] << 8;    // fallthrough
     case 1: h ^= data[0]; h *= m;
     };
 

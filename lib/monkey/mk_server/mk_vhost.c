@@ -2,7 +2,7 @@
 
 /*  Monkey HTTP Server
  *  ==================
- *  Copyright 2001-2015 Monkey Software LLC <eduardo@monkey.io>
+ *  Copyright 2001-2017 Eduardo Silva <eduardo@monkey.io>
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@
 #include <monkey/mk_http_status.h>
 #include <monkey/mk_info.h>
 
+#include <regex.h>
 #include <sys/stat.h>
 #include <dirent.h>
 #include <fcntl.h>
@@ -322,12 +323,17 @@ struct mk_vhost_handler *mk_vhost_handler_match(char *match,
     if (!h) {
         return NULL;
     }
-    h->name = NULL;
-    h->cb   = cb;
-    h->data = data;
+    h->name  = NULL;
+    h->cb    = cb;
+    h->data  = data;
+    h->match = mk_mem_alloc(sizeof(regex_t));
+    if (!h->match) {
+        mk_mem_free(h);
+        return NULL;
+    }
     mk_list_init(&h->params);
 
-    ret = str_to_regex(match, &h->match);
+    ret = str_to_regex(match, h->match);
     if (ret == -1) {
         mk_mem_free(h);
         return NULL;
@@ -521,7 +527,7 @@ struct mk_vhost *mk_vhost_read(char *path)
                 entry = mk_list_entry(head_line, struct mk_string_line, _head);
                 switch (i) {
                 case 0:
-                    ret = str_to_regex(entry->val, &h_handler->match);
+                    ret = str_to_regex(entry->val, h_handler->match);
                     if (ret == -1) {
                         return NULL;
                     }
@@ -739,7 +745,8 @@ static void mk_vhost_handler_free(struct mk_vhost_handler *h)
         mk_mem_free(param);
     }
 
-    regfree(&h->match);
+    regfree(h->match);
+    mk_mem_free(h->match);
     mk_mem_free(h->name);
     mk_mem_free(h);
 }

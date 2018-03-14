@@ -2,7 +2,7 @@
 
 /*  Monkey HTTP Server
  *  ==================
- *  Copyright 2001-2015 Monkey Software LLC <eduardo@monkey.io>
+ *  Copyright 2001-2017 Eduardo Silva <eduardo@monkey.io>
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -74,6 +74,7 @@ struct mk_server *mk_server_create()
     }
 
     /* Library mode: event loop */
+    server->lib_mode = MK_TRUE;
     server->lib_evl = mk_event_loop_create(8);
     if (!server->lib_evl) {
         mk_mem_free(server);

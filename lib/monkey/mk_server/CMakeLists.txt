@@ -3,6 +3,7 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
 set(src
   monkey.c
   mk_lib.c
+  mk_fifo.c
   mk_mimetype.c
   mk_vhost.c
   mk_header.c
@@ -12,7 +13,6 @@ set(src
   mk_stream.c
   mk_scheduler.c
   mk_http.c
-  mk_http2.c
   mk_http_parser.c
   mk_http_thread.c
   mk_socket.c
@@ -23,6 +23,13 @@ set(src
   mk_kernel.c
   mk_plugin.c
   )
+
+if(MK_HTTP2)
+  set(src
+    ${src}
+    "mk_http2.c"
+    )
+endif()
 
 # Always build a static library, thats our core :)
 add_library(monkey-core-static STATIC ${src})

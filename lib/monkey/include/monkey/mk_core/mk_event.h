@@ -2,7 +2,7 @@
 
 /*  Monkey HTTP Server
  *  ==================
- *  Copyright 2001-2015 Monkey Software LLC <eduardo@monkey.io>
+ *  Copyright 2001-2017 Eduardo Silva <eduardo@monkey.io>
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -27,9 +27,10 @@
 /* Events type family */
 #define MK_EVENT_NOTIFICATION    0    /* notification channel (pipe)      */
 #define MK_EVENT_LISTENER        1    /* listener socket                  */
-#define MK_EVENT_CONNECTION      2    /* data on active connection        */
-#define MK_EVENT_CUSTOM          3    /* custom fd registered             */
-#define MK_EVENT_THREAD          4    /* thread-coroutine                 */
+#define MK_EVENT_FIFO            2    /* FIFO - Messaging                 */
+#define MK_EVENT_CONNECTION      3    /* data on active connection        */
+#define MK_EVENT_CUSTOM          4    /* custom fd registered             */
+#define MK_EVENT_THREAD          5    /* thread-coroutine                 */
 
 /* Event triggered for file descriptors  */
 #define MK_EVENT_EMPTY           0

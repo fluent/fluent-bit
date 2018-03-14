@@ -2,7 +2,7 @@
 
 /*  Monkey HTTP Server
  *  ==================
- *  Copyright 2001-2015 Monkey Software LLC <eduardo@monkey.io>
+ *  Copyright 2001-2017 Eduardo Silva <eduardo@monkey.io>
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -26,13 +26,18 @@
 #include <monkey/mk_tls.h>
 #include <monkey/mk_vhost.h>
 #include <monkey/mk_config.h>
+#include <monkey/mk_fifo.h>
 #include <monkey/mk_http_internal.h>
+
+#include <pthread.h>
 
 struct mk_lib_ctx {
     pthread_t worker_tid;
     struct mk_server *server;
+    struct mk_fifo *fifo;
 };
 
+typedef struct mk_fifo_queue mk_mq_t;
 typedef struct mk_lib_ctx mk_ctx_t;
 typedef struct mk_http_request mk_request_t;
 typedef struct mk_http_session mk_session_t;
@@ -46,6 +51,7 @@ MK_EXPORT int mk_destroy(mk_ctx_t *ctx);
 MK_EXPORT int mk_config_set(mk_ctx_t *ctx, ...);
 
 MK_EXPORT int mk_vhost_create(mk_ctx_t *ctx, char *name);
+
 MK_EXPORT int mk_vhost_set(mk_ctx_t *ctx, int vid, ...);
 MK_EXPORT int mk_vhost_handler(mk_ctx_t *ctx, int vid, char *regex,
                                void (*cb)(mk_request_t *, void *), void *data);
@@ -61,4 +67,11 @@ MK_EXPORT int mk_http_done(mk_request_t *req);
 MK_EXPORT int mk_worker_callback(mk_ctx_t *ctx,
                                  void (*cb_func) (void *),
                                  void *data);
+//MK_EXPORT int mk_mq_create(mk_ctx_t *ctx, char *name);
+MK_EXPORT int mk_mq_create(mk_ctx_t *ctx, char *name, void (*cb), void *data);
+
+MK_EXPORT int mk_mq_send(mk_ctx_t *ctx, int qid, void *data, size_t size);
+
+MK_EXPORT int mk_main();
+
 #endif

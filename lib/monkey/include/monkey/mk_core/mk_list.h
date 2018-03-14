@@ -2,7 +2,7 @@
 
 /*  Monkey HTTP Server
  *  ==================
- *  Copyright 2001-2015 Monkey Software LLC <eduardo@monkey.io>
+ *  Copyright 2001-2017 Eduardo Silva <eduardo@monkey.io>
  *  Copyright (C) 2010, Jonathan Gonzalez V. <zeus@gnu.org>
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -141,6 +141,11 @@ static inline void mk_list_cat(struct mk_list *list, struct mk_list *head)
 #define mk_list_foreach(curr, head) for( curr = (head)->next; curr != (head); curr = curr->next )
 #define mk_list_foreach_safe(curr, n, head) \
     for (curr = (head)->next, n = curr->next; curr != (head); curr = n, n = curr->next)
+
+
+#define mk_list_foreach_r(curr, head) for( curr = (head)->prev; curr != (head); curr = curr->prev )
+#define mk_list_foreach_safe_r(curr, n, head) \
+    for (curr = (head)->prev, n = curr->prev; curr != (head); curr = n, n = curr->prev)
 
 #define mk_list_entry( ptr, type, member ) container_of( ptr, type, member )
 

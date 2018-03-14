@@ -2,7 +2,7 @@
 
 /*  Monkey HTTP Server
  *  ==================
- *  Copyright 2001-2015 Monkey Software LLC <eduardo@monkey.io>
+ *  Copyright 2001-2017 Eduardo Silva <eduardo@monkey.io>
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@
 #include <monkey/mk_server_tls.h>
 #include <monkey/mk_scheduler.h>
 #include <monkey/mk_core.h>
+#include <monkey/mk_fifo.h>
 #include <monkey/mk_http_thread.h>
 
 #include <sys/socket.h>
@@ -200,6 +201,7 @@ struct mk_list *mk_server_listen_init(struct mk_server *server)
                 listener->protocol = protocol;
             }
 
+#ifdef MK_HAVE_HTTP2
             if (listen->flags & MK_CAP_HTTP2) {
                 protocol = mk_sched_handler_cap(MK_CAP_HTTP2);
                 if (!protocol) {
@@ -208,7 +210,7 @@ struct mk_list *mk_server_listen_init(struct mk_server *server)
                 }
                 listener->protocol = protocol;
             }
-
+#endif
             listener->network = mk_plugin_cap(MK_CAP_SOCK_PLAIN, server);
 
             if (listen->flags & MK_CAP_SOCK_TLS) {
@@ -254,6 +256,34 @@ void mk_server_launch_workers(struct mk_server *server)
     }
 }
 
+/*
+ * When using the FIFO interface, this function get's the FIFO worker
+ * context and register the pipe file descriptor into the main event
+ * loop.
+ *
+ * note: this function is invoked by each worker thread.
+ */
+static int mk_server_fifo_worker_setup(struct mk_event_loop *evl)
+{
+    int ret;
+    struct mk_fifo_worker *fw;
+
+    fw = pthread_getspecific(mk_server_fifo_key);
+    if (!fw) {
+        return -1;
+    }
+
+    ret = mk_event_add(evl, fw->channel[0],
+                       MK_EVENT_FIFO, MK_EVENT_READ,
+                       fw);
+    if (ret != 0) {
+        mk_err("[server] Error registering fifo worker channel: %s",
+               strerror(errno));
+        return -1;
+    }
+
+    return 0;
+}
 
 /*
  * The loop_balancer() runs in the main process context and is considered
@@ -301,10 +331,10 @@ void mk_server_loop_balancer(struct mk_server *server)
                  * Accept connection: determinate which thread may work on this
                  * new connection.
                  */
-                sched = mk_sched_next_target();
+                sched = mk_sched_next_target(server);
                 if (sched != NULL) {
                     mk_server_listen_handler(sched, event, server);
-#ifdef MK_TRACE
+#ifdef MK_HAVE_TRACE
                     int i;
                     struct mk_sched_ctx *ctx = server->sched_ctx;
 
@@ -357,7 +387,7 @@ void mk_server_worker_loop(struct mk_server *server)
     /*
      * The worker will NOT process any connection until the master
      * process through mk_server_loop() send us the green light
-     * signal MK_SERVER_S;IGNAL_START.
+     * signal MK_SERVER_SIGNAL_START.
      */
     mk_event_wait(evl);
     mk_event_foreach(event, evl) {
@@ -386,6 +416,14 @@ void mk_server_worker_loop(struct mk_server *server)
                          MK_EVENT_LISTENER, MK_EVENT_READ,
                          listener);
         }
+    }
+
+    /*
+     * If running in library mode, register the FIFO pipe file descriptors
+     * into the main event loop.
+     */
+    if (server->lib_mode == MK_TRUE) {
+        mk_server_fifo_worker_setup(evl);
     }
 
     /* create a new timeout file descriptor */
@@ -481,6 +519,10 @@ void mk_server_worker_loop(struct mk_server *server)
                 mk_http_thread_event(event);
                 continue;
             }
+            else if (event->type == MK_EVENT_FIFO) {
+                mk_fifo_worker_read(event);
+                continue;
+            }
         }
         mk_sched_threads_purge(sched);
         mk_sched_event_free_all(sched);
@@ -508,7 +550,9 @@ void mk_server_loop(struct mk_server *server)
     /* Rename worker */
     mk_utils_worker_rename("monkey: server");
 
-    mk_info("HTTP Server started");
+    if (server->lib_mode == MK_FALSE) {
+        mk_info("HTTP Server started");
+    }
 
     /* Wake up workers */
     val = MK_SERVER_SIGNAL_START;
