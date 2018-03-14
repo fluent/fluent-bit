@@ -346,6 +346,7 @@ int flb_config_set_property(struct flb_config *config,
 #ifdef FLB_HAVE_REGEX
                 tmp = flb_env_var_translate(config->env, v);
                 ret = flb_parser_conf_file(tmp, config);
+                flb_free(tmp);
 #endif
             }
             else {
