@@ -596,6 +596,27 @@ static void free_chunk_header(struct mk_stream_input *input)
     input->buffer = NULL;
 }
 
+
+/* Check if response headers were processed, otherwise prepare them */
+static int headers_setup(mk_request_t *req)
+{
+    /*
+     * Let's keep it simple for now: if the headers have not been sent, do it
+     * now and then send the body content just queued.
+     */
+    if (req->headers.sent == MK_FALSE) {
+        /* Force chunked-transfer encoding */
+        if (req->protocol == MK_HTTP_PROTOCOL_11) {
+            req->headers.transfer_encoding = MK_HEADER_TE_TYPE_CHUNKED;
+        }
+        else {
+            req->headers.content_length = -1;
+        }
+        mk_header_prepare(req->session, req, req->session->server);
+    }
+    return 0;
+}
+
 /* Enqueue some data for the body response */
 int mk_http_send(mk_request_t *req, char *buf, size_t len,
                  void (*cb_finish)(mk_request_t *))
@@ -645,20 +666,8 @@ int mk_http_send(mk_request_t *req, char *buf, size_t len,
                                "\r\n", 2, NULL, NULL);
     }
 
-    /*
-     * Let's keep it simple for now: if the headers have not been sent, do it
-     * now and then send the body content just queued.
-     */
-    if (req->headers.sent == MK_FALSE) {
-        /* Force chunked-transfer encoding */
-        if (req->protocol == MK_HTTP_PROTOCOL_11) {
-            req->headers.transfer_encoding = MK_HEADER_TE_TYPE_CHUNKED;
-        }
-        else {
-            req->headers.content_length = -1;
-        }
-        mk_header_prepare(req->session, req, req->session->server);
-    }
+    /* Validate if the response headers are ready */
+    headers_setup(req);
 
     /* Flush channel data */
     ret = mk_http_flush(req);
@@ -677,6 +686,9 @@ int mk_http_done(mk_request_t *req)
     if (req->session->channel->status != MK_CHANNEL_OK) {
         return -1;
     }
+
+    /* Validate if the response headers are ready */
+    headers_setup(req);
 
     if (req->headers.transfer_encoding == MK_HEADER_TE_TYPE_CHUNKED) {
         /* Append end-of-chunk bytes */
