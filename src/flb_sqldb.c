@@ -40,6 +40,7 @@ struct flb_sqldb *flb_sqldb_open(char *path, const char *desc,
         flb_errno();
         return NULL;
     }
+    db->parent = NULL;
     db->shared = FLB_FALSE;
     db->users  = 0;
 
@@ -51,7 +52,7 @@ struct flb_sqldb *flb_sqldb_open(char *path, const char *desc,
     mk_list_foreach(head, &config->sqldb_list) {
         db_temp = mk_list_entry(head, struct flb_sqldb, _head);
 
-        /* The right shared db needs to be the original one */
+        /* Only lookup for original database, not contexts already shared */
         if (db_temp->shared == FLB_TRUE) {
             continue;
         }
@@ -70,6 +71,7 @@ struct flb_sqldb *flb_sqldb_open(char *path, const char *desc,
         /* Setup the new context */
         db->handler = db_temp->handler;
         db->shared  = FLB_TRUE;
+        db->parent  = db_temp;
     }
     else {
         ret = sqlite3_open(path, &sdb);
@@ -90,13 +92,21 @@ struct flb_sqldb *flb_sqldb_open(char *path, const char *desc,
 
 int flb_sqldb_close(struct flb_sqldb *db)
 {
-    sqlite3_close(db->handler);
+    struct flb_sqldb *parent;
+
+    if (db->shared == FLB_TRUE) {
+        parent = db->parent;
+        parent->users--;
+    }
+    else {
+        sqlite3_close(db->handler);
+    }
     mk_list_del(&db->_head);
     flb_free(db->path);
     flb_free(db->desc);
     flb_free(db);
 
-    return -1;
+    return 0;
 }
 
 int flb_sqldb_query(struct flb_sqldb *db, char *sql,
