@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_time.h>
 
 #include <msgpack.h>
+#include <string.h>
 #include "filter_modifier.h"
 
 #define PLUGIN_NAME "filter_record_modifier"
@@ -38,10 +39,12 @@ static int configure(struct record_modifier_ctx *ctx,
     struct modifier_key    *mod_key;
     struct modifier_record *mod_record;
     struct flb_split_entry *sentry;
+    char *tmp;
 
     ctx->records_num = 0;
     ctx->remove_keys_num = 0;
     ctx->whitelist_keys_num = 0;
+    ctx->suffix_type = FLB_FALSE;
 
     /* Iterate all filter properties */
     mk_list_foreach(head, &f_ins->properties) {
@@ -110,6 +113,11 @@ static int configure(struct record_modifier_ctx *ctx,
             mk_list_add(&mod_record->_head, &ctx->records);
             ctx->records_num++;
         }
+    }
+
+    tmp = flb_filter_get_property("suffix_type", f_ins);
+    if (tmp) {
+        ctx->suffix_type = flb_utils_bool(tmp);
     }
 
     if (ctx->remove_keys_num > 0 && ctx->whitelist_keys_num > 0) {
@@ -242,6 +250,59 @@ static int make_bool_map(struct record_modifier_ctx *ctx, msgpack_object *map,
     return ret;
 }
 
+static char suffix_key_type(msgpack_packer *tmp_pck, msgpack_object *key, msgpack_object *val)
+{
+    char suffix = 0;
+
+    switch(val->type) {
+    case MSGPACK_OBJECT_NIL:
+    case MSGPACK_OBJECT_ARRAY:
+    case MSGPACK_OBJECT_MAP:
+        break;
+
+    case MSGPACK_OBJECT_BOOLEAN:
+        suffix = 'b';
+        break;
+
+    case MSGPACK_OBJECT_POSITIVE_INTEGER:
+    case MSGPACK_OBJECT_NEGATIVE_INTEGER:
+        suffix = 'i';
+        break;
+    case MSGPACK_OBJECT_FLOAT32:
+    case MSGPACK_OBJECT_FLOAT64:
+        suffix = 'f';
+        break;
+
+    case MSGPACK_OBJECT_STR:
+        suffix = 's';
+        break;
+
+    case MSGPACK_OBJECT_BIN:
+        suffix = 'n';
+        break;
+
+    case MSGPACK_OBJECT_EXT:
+        suffix = 'e';
+        break;
+
+    default:
+        flb_warn("[%s] unknown msgpack type %i", __FUNCTION__, val->type);
+    }
+
+    if ( suffix != 0 ) {
+        int sfsize = key->via.str.size+2;
+        char *skey = flb_strndup(key->via.str.ptr, sfsize);
+        memset(&skey[sfsize-2], '_', 1);
+        memset(&skey[sfsize-1], suffix, 1);
+        msgpack_pack_str(tmp_pck, sfsize);
+        msgpack_pack_str_body(tmp_pck, skey, sfsize);
+        flb_free(skey);
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
 static int cb_modifier_filter(void *data, size_t bytes,
                                   char *tag, int tag_len,
                                   void **out_buf, size_t *out_size,
@@ -309,7 +370,14 @@ static int cb_modifier_filter(void *data, size_t bytes,
         kv = obj->via.map.ptr;
         for(i=0; bool_map[i] != TAIL_OF_ARRAY; i++) {
             if (bool_map[i] == TO_BE_REMAINED) {
-                msgpack_pack_object(&tmp_pck, (kv+i)->key);
+                char is_suffixed = FLB_FALSE;
+                if ( ctx->suffix_type && suffix_key_type(&tmp_pck, &(kv+i)->key, &(kv+i)->val) == FLB_TRUE) {
+                    is_suffixed = FLB_TRUE;
+                    is_modified = FLB_TRUE;
+                }
+                if (is_suffixed == FLB_FALSE) {
+                    msgpack_pack_object(&tmp_pck, (kv+i)->key);
+                }
                 msgpack_pack_object(&tmp_pck, (kv+i)->val);
             }
         }

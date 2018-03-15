@@ -39,6 +39,7 @@ struct record_modifier_ctx {
     int records_num;
     int remove_keys_num;
     int whitelist_keys_num;
+    int suffix_type;
     struct mk_list records;
     struct mk_list remove_keys;
     struct mk_list whitelist_keys;
