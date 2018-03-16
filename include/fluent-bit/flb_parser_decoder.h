@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2017 Treasure Data Inc.
+ *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -21,33 +21,39 @@
 #define FLB_PARSER_DECODER_H
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_sds.h>
 #include <monkey/mk_core.h>
 
-/* Decoder types */
+/* Decoder behavior */
+#define FLB_PARSER_DEC_DEFAULT  0  /* results place as separate keys    */
+#define FLB_PARSER_DEC_AS       1  /* results replace current key/value */
+
+/* Decoder Backend */
 #define FLB_PARSER_DEC_JSON     0  /* decode_json()    */
 #define FLB_PARSER_DEC_ESCAPED  1  /* decode_escaped() */
 
 /* Decoder actions */
 #define FLB_PARSER_ACT_NONE     0
 #define FLB_PARSER_ACT_TRY_NEXT 1
+#define FLB_PARSER_ACT_DO_NEXT  2
 
 #define FLB_PARSER_DEC_BUF_SIZE 1024*8  /* 8KB */
 
-struct flb_parser_dec {
-    int type;
-    int action;
+struct flb_parser_dec_rule {
+    int type;              /* decode_field, decode_field_as    */
+    int backend;           /* backend handler: json, escaped   */
+    int action;            /* actions: try_next, do_next       */
 
-    /* Key name */
-    int key_len;
-    char *key_name;
-
-    /* Temporal buffer for data decoding */
-    int buf_len;
-    char *buf_data;
-    size_t buf_size;
-
-    /* Link to parser->decoders list */
+    /* Link to flb_parser_dec->rules list head */
     struct mk_list _head;
+};
+
+struct flb_parser_dec {
+    flb_sds_t key;
+    flb_sds_t buffer;        /* temporal buffer for decoding work */
+    int add_extra_keys;      /* if type == FLB_PARSER_DEC_DEFAULT, flag is True */
+    struct mk_list rules;    /* list head for decoder key rules */
+    struct mk_list _head;    /* link to parser->decoders */
 };
 
 struct mk_list *flb_parser_decoder_list_create(struct mk_rconf_section *section);
