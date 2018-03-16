@@ -132,11 +132,11 @@ int tcp_conn_event(void *data)
         ret = flb_pack_json_state(conn->buf_data, conn->buf_len,
                                   &pack, &out_size, &conn->pack_state);
         if (ret == FLB_ERR_JSON_PART) {
-            flb_debug("[in_serial] JSON incomplete, waiting for more data...");
+            flb_debug("[in_tcp] JSON incomplete, waiting for more data...");
             return 0;
         }
         else if (ret == FLB_ERR_JSON_INVAL) {
-            flb_debug("[in_serial] invalid JSON message, skipping");
+            flb_debug("[in_tcp] invalid JSON message, skipping");
             flb_pack_state_reset(&conn->pack_state);
             flb_pack_state_init(&conn->pack_state);
             conn->pack_state.multiple = FLB_TRUE;
