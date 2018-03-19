@@ -134,6 +134,29 @@ flb_sds_t flb_sds_cat(flb_sds_t s, char *str, int len)
     return s;
 }
 
+flb_sds_t flb_sds_copy(flb_sds_t s, char *str, int len)
+{
+    size_t avail;
+    struct flb_sds *head;
+    flb_sds_t tmp = NULL;
+
+    avail = flb_sds_alloc(s);
+    if (avail < len) {
+        tmp = flb_sds_increase(s, len);
+        if (!tmp) {
+            return NULL;
+        }
+        s = tmp;
+    }
+    memcpy((char *) s, str, len);
+
+    head = FLB_SDS_HEADER(s);
+    head->len = len;
+    s[head->len] = '\0';
+
+    return s;
+}
+
 int flb_sds_destroy(flb_sds_t s)
 {
     struct flb_sds *head;
