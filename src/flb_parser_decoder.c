@@ -26,6 +26,9 @@
 #include <fluent-bit/flb_utils.h>
 #include <msgpack.h>
 
+#define TYPE_OUT_STRING  0  /* unstructured text         */
+#define TYPE_OUT_OBJECT  1  /* structured msgpack object */
+
 static int unescape_string(char *buf, int buf_len, char **unesc_buf)
 {
     int i = 0;
@@ -82,7 +85,7 @@ static int unescape_string(char *buf, int buf_len, char **unesc_buf)
 /* Decode a stringified JSON message */
 static int decode_json(struct flb_parser_dec *dec,
                        char *in_buf, size_t in_size,
-                       char **out_buf, size_t *out_size)
+                       char **out_buf, size_t *out_size, int *out_type)
 {
     int len;
     int ret;
@@ -112,13 +115,14 @@ static int decode_json(struct flb_parser_dec *dec,
 
     *out_buf = buf;
     *out_size = size;
+    *out_type = TYPE_OUT_OBJECT;
 
     return 0;
 }
 
 static int decode_escaped(struct flb_parser_dec *dec,
                           char *in_buf, size_t in_size,
-                          char **out_buf, size_t *out_size)
+                          char **out_buf, size_t *out_size, int *out_type)
 {
     int len;
 
@@ -126,6 +130,70 @@ static int decode_escaped(struct flb_parser_dec *dec,
     len = unescape_string(in_buf, in_size, &dec->buffer);
     *out_buf = dec->buffer;
     *out_size = len;
+    *out_type = TYPE_OUT_STRING;
+
+    return 0;
+}
+
+
+static int merge_record_and_extra_keys(char *in_buf, size_t in_size,
+                                       char *extra_buf, size_t extra_size,
+                                       char **out_buf, size_t *out_size)
+{
+    int i;
+    int ret;
+    int map_size = 0;
+    size_t in_off = 0;
+    size_t extra_off = 0;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer  mp_pck;
+    msgpack_unpacked in_result;
+    msgpack_unpacked extra_result;
+    msgpack_object k;
+    msgpack_object v;
+    msgpack_object map;
+
+    msgpack_unpacked_init(&in_result);
+    msgpack_unpacked_init(&extra_result);
+
+    /* Check if the extra buffer have some serialized data */
+    ret = msgpack_unpack_next(&extra_result, extra_buf, extra_size, &extra_off);
+    if (ret != MSGPACK_UNPACK_SUCCESS) {
+        msgpack_unpacked_destroy(&in_result);
+        msgpack_unpacked_destroy(&extra_result);
+        return -1;
+    }
+    msgpack_unpack_next(&in_result, in_buf, in_size, &in_off);
+
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    map_size = in_result.data.via.map.size;
+    map_size += extra_result.data.via.map.size;
+
+    msgpack_pack_map(&mp_pck, map_size);
+    map = in_result.data;
+    for (i = 0; i < map.via.map.size; i++) {
+        k = map.via.map.ptr[i].key;
+        v = map.via.map.ptr[i].val;
+        msgpack_pack_object(&mp_pck, k);
+        msgpack_pack_object(&mp_pck, v);
+    }
+
+    map = extra_result.data;
+    for (i = 0; i < map.via.map.size; i++) {
+        k = map.via.map.ptr[i].key;
+        v = map.via.map.ptr[i].val;
+        msgpack_pack_object(&mp_pck, k);
+        msgpack_pack_object(&mp_pck, v);
+    }
+
+    msgpack_unpacked_destroy(&in_result);
+    msgpack_unpacked_destroy(&extra_result);
+
+    *out_buf = mp_sbuf.data;
+    *out_size = mp_sbuf.size;
 
     return 0;
 }
@@ -141,18 +209,22 @@ int flb_parser_decoder_do(struct mk_list *decoders,
     int i;
     int ret;
     int matched;
-    int decoded;
     int is_decoded;
     int is_decoded_as;
-    int count_new_keys;
+    int in_type;
+    int out_type;
+    int dec_type;
+    int extra_keys = FLB_FALSE;
     size_t off = 0;
     char *dec_buf;
     size_t dec_size;
-    char *tmp;
-    flb_sds_t tmp_sds;
+    flb_sds_t tmp_sds = NULL;
+    flb_sds_t data_sds = NULL;
+    flb_sds_t in_sds = NULL;
+    flb_sds_t out_sds = NULL;
     struct mk_list *head;
     struct mk_list *r_head;
-    struct flb_parser_dec *dec;
+    struct flb_parser_dec *dec = NULL;
     struct flb_parser_dec_rule *rule;
     msgpack_object k;
     msgpack_object v;
@@ -161,10 +233,8 @@ int flb_parser_decoder_do(struct mk_list *decoders,
     msgpack_sbuffer mp_sbuf;
     msgpack_packer  mp_pck;
     /* Contexts to handle extra keys to be appended at the end of the log */
-    size_t extra_off;
     msgpack_sbuffer extra_mp_sbuf;
     msgpack_packer  extra_mp_pck;
-    msgpack_unpacked extra_result;
 
     /* Initialize unpacker */
     msgpack_unpacked_init(&result);
@@ -191,8 +261,6 @@ int flb_parser_decoder_do(struct mk_list *decoders,
         /* Try to match this key name with decoder's rule */
         mk_list_foreach(head, decoders) {
             dec = mk_list_entry(head, struct flb_parser_dec, _head);
-            int r = flb_sds_cmp(dec->key, (char *) k.via.str.ptr,
-                                k.via.str.size);
             if (flb_sds_cmp(dec->key, (char *) k.via.str.ptr,
                             k.via.str.size) == 0) {
                 /* we have a match, stop the check */
@@ -241,12 +309,6 @@ int flb_parser_decoder_do(struct mk_list *decoders,
             continue;
         }
 
-        /* Check if the current key name matches some decoder rule */
-        decoded = FLB_FALSE;
-
-        /* New keys counter: used for a successful Decode_Field case */
-        count_new_keys = 0;
-
         /*
          * Per key, we allow only one successful 'Decode_Field' and one
          * successful 'Decode_Field_As' rules. Otherwise it may lead
@@ -275,6 +337,21 @@ int flb_parser_decoder_do(struct mk_list *decoders,
             continue;
         }
 
+        if (!in_sds) {
+            in_sds  = flb_sds_create_size(v.via.str.size);
+            if (!in_sds) {
+                break;
+            }
+            out_sds = flb_sds_create_size(v.via.str.size);
+            if (!out_sds) {
+                break;
+            }
+            data_sds = flb_sds_create_size(v.via.str.size);
+        }
+
+        /* Copy original content */
+        flb_sds_copy(data_sds, (char *) v.via.str.ptr, v.via.str.size);
+
         /*
          * We got a match: 'key name' == 'decoder field name', validate
          * that we have enough space in our temporal buffer.
@@ -292,7 +369,6 @@ int flb_parser_decoder_do(struct mk_list *decoders,
 
         /* Process decoder rules */
         ret = -1;
-        decoded = FLB_FALSE;
         dec_buf = NULL;
 
         /*
@@ -303,6 +379,7 @@ int flb_parser_decoder_do(struct mk_list *decoders,
          * The content of this buffer is just a serialized number of maps.
          */
         if (dec->add_extra_keys == FLB_TRUE) {
+            extra_keys = FLB_TRUE;
             msgpack_sbuffer_init(&extra_mp_sbuf);
             msgpack_packer_init(&extra_mp_pck, &extra_mp_sbuf,
                                 msgpack_sbuffer_write);
@@ -311,14 +388,25 @@ int flb_parser_decoder_do(struct mk_list *decoders,
         mk_list_foreach(r_head, &dec->rules) {
             rule = mk_list_entry(r_head, struct flb_parser_dec_rule, _head);
 
+            if (rule->type == FLB_PARSER_DEC_DEFAULT &&
+                rule->action == FLB_PARSER_ACT_DO_NEXT &&
+                is_decoded == FLB_TRUE) {
+                continue;
+            }
+
+            if (is_decoded_as == FLB_TRUE && in_type != TYPE_OUT_STRING) {
+                continue;
+            }
+
             /* Process using defined decoder backend */
             if (rule->backend == FLB_PARSER_DEC_JSON) {
-                ret = decode_json(dec, (char *) v.via.str.ptr, v.via.str.size,
-                                  &dec_buf, &dec_size);
+                ret = decode_json(dec, (char *) data_sds, flb_sds_len(data_sds),
+                                  &dec_buf, &dec_size, &dec_type);
             }
             else if (rule->backend == FLB_PARSER_DEC_ESCAPED) {
-                ret = decode_escaped(dec, (char *) v.via.str.ptr, v.via.str.size,
-                                     &dec_buf, &dec_size);
+                ret = decode_escaped(dec,
+                                     (char *) data_sds, flb_sds_len(data_sds),
+                                     &dec_buf, &dec_size, &dec_type);
             }
 
             /* Check decoder status */
@@ -333,42 +421,25 @@ int flb_parser_decoder_do(struct mk_list *decoders,
                 break;
             }
 
-            decoded = FLB_TRUE;
-
-            /* Pack the key */
-            msgpack_pack_object(&mp_pck, k);
-
-            /* Content was decoded, now.. where to pack the results ? */
+            /* Internal packing: replace value content in the same key */
             if (rule->type == FLB_PARSER_DEC_AS) {
-                /* The value of the key will be replaced with the results */
-                if (dec_buf == dec->buffer) {
-                    msgpack_pack_str(&mp_pck, dec_size);
-                    msgpack_pack_str_body(&mp_pck, dec_buf, dec_size);
-                }
-                else {
-                    msgpack_sbuffer_write(&mp_sbuf, dec_buf, dec_size);
-                }
-
+                flb_sds_copy(in_sds, dec_buf, dec_size);
+                flb_sds_copy(data_sds, dec_buf, dec_size);
+                in_type = dec_type;
                 is_decoded_as = FLB_TRUE;
             }
             else if (rule->type == FLB_PARSER_DEC_DEFAULT) {
-                /*
-                 * Decoded results will be packaged as separate key/values,
-                 * but it keeps the original value in place.
-                 */
-                msgpack_pack_object(&mp_pck, v);
-
-                /* Pack the content into the extra msgpack buffer */
-                if (dec_buf == dec->buffer) {
-                    msgpack_pack_str(&extra_mp_pck, dec_size);
-                    msgpack_pack_str_body(&extra_mp_pck, dec_buf, dec_size);
-                }
-                else {
-                    msgpack_sbuffer_write(&extra_mp_sbuf, dec_buf, dec_size);
-                }
-
+                flb_sds_copy(out_sds, dec_buf, dec_size);
+                out_type = dec_type;
                 is_decoded = FLB_TRUE;
             }
+
+
+            if (dec_buf != dec->buffer) {
+                flb_free(dec_buf);
+            }
+            dec_buf = NULL;
+            dec_size = 0;
 
             /* Apply more rules ? */
             if (rule->action == FLB_PARSER_ACT_DO_NEXT) {
@@ -377,25 +448,62 @@ int flb_parser_decoder_do(struct mk_list *decoders,
             break;
         }
 
-        flb_pack_print(extra_mp_sbuf.data, extra_mp_sbuf.size);
+        /* Package the key */
+        msgpack_pack_object(&mp_pck, k);
 
-        if (decoded == FLB_TRUE) {
-            if (dec_buf != dec->buffer) {
-                flb_free(dec_buf);
+        /* We need to place some value for the key in question */
+        if (is_decoded_as == FLB_TRUE) {
+            if (in_type == TYPE_OUT_STRING) {
+                msgpack_pack_str(&mp_pck, flb_sds_len(in_sds));
+                msgpack_pack_str_body(&mp_pck,
+                                      in_sds, flb_sds_len(in_sds));
             }
-            dec_buf = NULL;
-            dec_size = 0;
+            else if (in_type == TYPE_OUT_OBJECT) {
+                msgpack_sbuffer_write(&mp_sbuf,
+                                      in_sds, flb_sds_len(in_sds));
+            }
         }
         else {
-            msgpack_pack_object(&mp_pck, k);
+            /* Pack original value */
             msgpack_pack_object(&mp_pck, v);
         }
 
+        /* Package as external keys */
+        if (is_decoded == FLB_TRUE) {
+            if (out_type == TYPE_OUT_STRING) {
+                flb_error("[parser_decoder] string type is not allowed");
+            }
+            else if (out_type == TYPE_OUT_OBJECT) {
+                msgpack_sbuffer_write(&extra_mp_sbuf,
+                                      out_sds, flb_sds_len(out_sds));
+            }
+        }
+    }
+
+    if (in_sds) {
+        flb_sds_destroy(in_sds);
+    }
+    if (out_sds) {
+        flb_sds_destroy(out_sds);
+    }
+    if (data_sds) {
+        flb_sds_destroy(data_sds);
     }
 
     msgpack_unpacked_destroy(&result);
     *out_buf = mp_sbuf.data;
     *out_size = mp_sbuf.size;
+
+    if (extra_keys == FLB_TRUE) {
+        ret = merge_record_and_extra_keys(mp_sbuf.data, mp_sbuf.size,
+                                          extra_mp_sbuf.data, extra_mp_sbuf.size,
+                                          out_buf, out_size);
+        msgpack_sbuffer_destroy(&extra_mp_sbuf);
+        if (ret == 0) {
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            return 0;
+        }
+    }
 
     return 0;
 }
@@ -617,6 +725,7 @@ int flb_parser_decoder_list_destroy(struct mk_list *list)
 
         mk_list_del(&dec->_head);
         flb_sds_destroy(dec->key);
+        flb_sds_destroy(dec->buffer);
         flb_free(dec);
         c++;
     }
