@@ -102,6 +102,12 @@ static int merge_log_handler(msgpack_object o,
      */
     size = o.via.str.size;
     for (i = size - 1; i > 0; i--) {
+        if (o.via.str.ptr[i] == '\n') {
+            size -= 1;
+            i--;
+            continue;
+        }
+
         if (o.via.str.ptr[i - 1] == '\\' &&
             (o.via.str.ptr[i] == 'n' || o.via.str.ptr[i] == 'r')) {
             size -= 2;
