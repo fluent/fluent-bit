@@ -204,7 +204,11 @@ struct flb_parser *flb_parser_create(char *name, char *format,
             tmp = strstr(p->time_fmt, "%S.%L");
         }
         else {
-            tmp = strstr(p->time_fmt_year, "%S.%L");
+            tmp = strstr(p->time_fmt_year, "%s.%L");
+
+            if (tmp == NULL) {
+                tmp = strstr(p->time_fmt_year, "%S.%L");
+            }
         }
         if (tmp) {
             tmp[2] = '\0';

@@ -262,6 +262,82 @@ void flb_test_filter_parser_handle_time_key()
     flb_destroy(ctx);
 }
 
+void flb_test_filter_parser_handle_time_key_with_fractional_timestamp()
+{
+    int ret;
+    int bytes;
+    char *p, *output, *expected;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int filter_ffd;
+    struct flb_parser *parser;
+
+    ctx = flb_create();
+
+    /* Configure service */
+    flb_service_set(ctx, "Flush", "1", "Log_Level", "debug", NULL);
+
+    /* Input */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd,
+                  "Tag", "test",
+                  NULL);
+
+    /* Parser */
+    parser = flb_parser_create("timestamp", "regex", "^(?<time>.*)$", "%s.%L",
+                               "time",
+                               NULL, MK_FALSE,
+                               NULL, 0, NULL, ctx->config);
+    TEST_CHECK(parser != NULL);
+
+    /* Filter */
+    filter_ffd = flb_filter(ctx, (char *) "parser", NULL);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd,
+                         "Match", "test",
+                         "Key_Name", "@timestamp",
+                         "Parser", "timestamp",
+                         "Reserve_Data", "On",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Output */
+    out_ffd = flb_output(ctx, (char *) "lib", (void*)callback_test);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "Match", "*",
+                   "format", "json",
+                   NULL);
+
+    /* Start the engine */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data */
+    p = "[1448403340, {\"@timestamp\":\"1509575121.648\", \"message\":\"This is an example\"}]";
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    TEST_CHECK(bytes == strlen(p));
+
+    sleep(1); /* waiting flush */
+    output = get_output(); /* 1sec passed, data should be flushed */
+    TEST_CHECK_(output != NULL, "Expected output to not be NULL");
+    if (output != NULL) {
+        /* check the timestamp field was updated correctly */
+        /* this is in fluent-bits extended timestamp format */
+        expected = "[\"\\x59\\xfffffffa\\x49\\xffffffd1\\x26\\xffffff9f\\xffffffb2\\x00\", {";
+        TEST_CHECK_(strstr(output, expected) != NULL, "Expected output to contain '%s', got '%s'", expected, output);
+        /* check additional field is preserved */
+        expected = "\"message\":\"This is an example\"";
+        TEST_CHECK_(strstr(output, expected) != NULL, "Expected output to contain '%s', got '%s'", expected, output);
+        free(output);
+    }
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 void flb_test_filter_parser_ignore_malformed_time()
 {
     int ret;
