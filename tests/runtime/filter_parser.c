@@ -25,7 +25,7 @@ char *get_output(void)
     return val;
 }
 
-int callback_test(void* data, size_t size)
+int callback_test(void* data, size_t size, void* cb_data)
 {
     if (size > 0) {
         flb_debug("[test_filter_parser] received message: %s", data);
@@ -44,6 +44,10 @@ void flb_test_filter_parser_extract_fields()
     int out_ffd;
     int filter_ffd;
     struct flb_parser *parser;
+
+    struct flb_lib_out_cb cb;
+    cb.cb   = callback_test;
+    cb.data = NULL;
 
     ctx = flb_create();
 
@@ -76,7 +80,7 @@ void flb_test_filter_parser_extract_fields()
     TEST_CHECK(ret == 0);
 
     /* Output */
-    out_ffd = flb_output(ctx, (char *) "lib", (void*)callback_test);
+    out_ffd = flb_output(ctx, (char *) "lib", &cb);
     TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd,
                    "Match", "*",
@@ -126,6 +130,10 @@ void flb_test_filter_parser_reserve_data_off()
     int filter_ffd;
     struct flb_parser *parser;
 
+    struct flb_lib_out_cb cb;
+    cb.cb   = callback_test;
+    cb.data = NULL;
+
     ctx = flb_create();
 
     /* Configure service */
@@ -156,7 +164,7 @@ void flb_test_filter_parser_reserve_data_off()
     TEST_CHECK(ret == 0);
 
     /* Output */
-    out_ffd = flb_output(ctx, (char *) "lib", (void*)callback_test);
+    out_ffd = flb_output(ctx, (char *) "lib", &cb);
     TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd,
                    "Match", "*",
@@ -197,6 +205,10 @@ void flb_test_filter_parser_handle_time_key()
     int filter_ffd;
     struct flb_parser *parser;
 
+    struct flb_lib_out_cb cb;
+    cb.cb   = callback_test;
+    cb.data = NULL;
+
     ctx = flb_create();
 
     /* Configure service */
@@ -228,7 +240,7 @@ void flb_test_filter_parser_handle_time_key()
     TEST_CHECK(ret == 0);
 
     /* Output */
-    out_ffd = flb_output(ctx, (char *) "lib", (void*)callback_test);
+    out_ffd = flb_output(ctx, (char *) "lib", &cb);
     TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd,
                    "Match", "*",
@@ -273,6 +285,10 @@ void flb_test_filter_parser_ignore_malformed_time()
     int filter_ffd;
     struct flb_parser *parser;
 
+    struct flb_lib_out_cb cb;
+    cb.cb   = callback_test;
+    cb.data = NULL;
+
     ctx = flb_create();
 
     /* Configure service */
@@ -303,7 +319,7 @@ void flb_test_filter_parser_ignore_malformed_time()
     TEST_CHECK(ret == 0);
 
     /* Output */
-    out_ffd = flb_output(ctx, (char *) "lib", (void*)callback_test);
+    out_ffd = flb_output(ctx, (char *) "lib", &cb);
     TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd,
                    "Match", "*",
@@ -344,6 +360,10 @@ void flb_test_filter_parser_preserve_original_field()
     int filter_ffd;
     struct flb_parser *parser;
 
+    struct flb_lib_out_cb cb;
+    cb.cb   = callback_test;
+    cb.data = NULL;
+
     ctx = flb_create();
 
     /* Configure service */
@@ -375,7 +395,7 @@ void flb_test_filter_parser_preserve_original_field()
     TEST_CHECK(ret == 0);
 
     /* Output */
-    out_ffd = flb_output(ctx, (char *) "lib", (void*)callback_test);
+    out_ffd = flb_output(ctx, (char *) "lib", &cb);
     TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd,
                    "Match", "*",

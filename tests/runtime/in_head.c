@@ -56,10 +56,10 @@ bool get_result(void)
     return val;
 }
 
-int callback_test(void* data, size_t size)
+int callback_test(void* data, size_t size, void* cb_data)
 {
     if (size > 0) {
-        free(data);
+        flb_lib_free(data);
         set_result(true); /* success */
     }
     return 0;
@@ -73,6 +73,10 @@ void flb_test_in_head_flush_2s_2times(void)
     int out_ffd;
     char  path[] = "/dev/urandom";
 
+    struct flb_lib_out_cb cb;
+    cb.cb   = callback_test;
+    cb.data = NULL;
+
     /* initialize */
     ret = pthread_mutex_init(&result_mutex, NULL);
     TEST_CHECK(ret == 0);
@@ -85,7 +89,7 @@ void flb_test_in_head_flush_2s_2times(void)
     flb_input_set(ctx, in_ffd, "tag", "test",
                   "Interval_Sec", "1", "File", path,NULL);
 
-    out_ffd = flb_output(ctx, (char *) "lib", (void*)callback_test);
+    out_ffd = flb_output(ctx, (char *) "lib", &cb);
     TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
 
