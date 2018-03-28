@@ -219,6 +219,12 @@ macro(MK_SET_OPTION option value)
 endmacro()
 MK_SET_OPTION(MK_SYSTEM_MALLOC      ON)
 
+# Runtime Tests (filter_kubernetes) requires HTTP Server
+if(FLB_TESTS_RUNTIME)
+  FLB_OPTION(FLB_HTTP_SERVER  ON)
+endif()
+
+# Build Monkey HTTP Server
 if(FLB_HTTP_SERVER)
   add_subdirectory(lib/monkey/ EXCLUDE_FROM_ALL)
 else()
