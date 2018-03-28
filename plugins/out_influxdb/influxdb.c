@@ -268,7 +268,7 @@ int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *config,
     }
 
     /* Allocate plugin context */
-    ctx = flb_malloc(sizeof(struct flb_influxdb_config));
+    ctx = flb_calloc(1, sizeof(struct flb_influxdb_config));
     if (!ctx) {
         flb_errno();
         return -1;
@@ -305,6 +305,20 @@ int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *config,
 
     if (ins->host.ipv6 == FLB_TRUE) {
         io_flags |= FLB_IO_IPV6;
+    }
+
+    /* HTTP Auth */
+    tmp = flb_output_get_property("http_user", ins);
+    if (tmp) {
+        ctx->http_user = flb_strdup(tmp);
+
+        tmp = flb_output_get_property("http_passwd", ins);
+        if (tmp) {
+            ctx->http_passwd = flb_strdup(tmp);
+        }
+        else {
+            ctx->http_passwd = flb_strdup("");
+        }
     }
 
     /* Prepare an upstream handler */
@@ -358,6 +372,10 @@ void cb_influxdb_flush(void *data, size_t bytes,
                         pack, bytes_out, NULL, 0, NULL, 0);
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
 
+    if (ctx->http_user && ctx->http_passwd) {
+        flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
+    }
+
     ret = flb_http_do(c, &b_sent);
     if (ret == 0) {
         if (c->resp.payload_size > 0) {
@@ -386,6 +404,13 @@ void cb_influxdb_flush(void *data, size_t bytes,
 int cb_influxdb_exit(void *data, struct flb_config *config)
 {
     struct flb_influxdb_config *ctx = data;
+
+    if (ctx->http_user) {
+        flb_free(ctx->http_user);
+    }
+    if (ctx->http_passwd) {
+        flb_free(ctx->http_passwd);
+    }
 
     flb_upstream_destroy(ctx->u);
     flb_free(ctx->db_name);

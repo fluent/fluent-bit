@@ -34,6 +34,10 @@ struct flb_influxdb_config {
     char *db_name;
     int  db_len;
 
+    /* HTTP Auth */
+    char *http_user;
+    char *http_passwd;
+
     /* sequence tag */
     char *seq_name;
     int seq_len;
