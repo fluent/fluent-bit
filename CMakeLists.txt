@@ -326,6 +326,17 @@ if(FLB_MTRACE)
   endif()
 endif()
 
+# timespec_get() support
+check_c_source_compiles("
+  #include <time.h>
+  int main() {
+     struct tm tm;
+     return timespec_get(&tm, TIME_UTC);
+  }" FLB_HAVE_TIMESPEC_GET)
+if(FLB_HAVE_TIMESPEC_GET)
+  FLB_DEFINITION(FLB_HAVE_TIMESPEC_GET)
+endif()
+
 if(FLB_TD)
   FLB_DEFINITION(FLB_IS_TD_AGENT)
   FLB_OPTION(FLB_JEMALLOC ON)
