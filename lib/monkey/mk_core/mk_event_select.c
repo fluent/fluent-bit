@@ -28,8 +28,10 @@
 
 struct fd_timer {
     int    fd;
+    int    run;
     time_t sec;
     long   nsec;
+    pthread_t tid;
 };
 
 static inline int _mk_event_init()
@@ -162,7 +164,7 @@ void _timeout_worker(void *arg)
     t_spec.tv_sec  = timer->sec;
     t_spec.tv_nsec = timer->nsec;
 
-    while (1) {
+    while (timer->run == MK_TRUE) {
         /* sleep for a while */
         nanosleep(&t_spec, NULL);
 
@@ -174,8 +176,7 @@ void _timeout_worker(void *arg)
         }
     }
 
-    close(timer->fd);
-    free(timer);
+    pthread_exit(NULL);
 }
 
 /*
@@ -191,7 +192,6 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
     int fd[2];
     struct mk_event *event;
     struct fd_timer *timer;
-    pthread_t tid;
 
     timer = mk_mem_alloc(sizeof(struct fd_timer));
     if (!timer) {
@@ -217,9 +217,12 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
     timer->fd   = fd[1];
     timer->sec  = sec;
     timer->nsec = nsec;
+    timer->run  = MK_TRUE;
+
+    event->data = timer;
 
     /* Now the dirty workaround, create a thread */
-    ret = mk_utils_worker_spawn(_timeout_worker, timer, &tid);
+    ret = mk_utils_worker_spawn(_timeout_worker, timer, &timer->tid);
     if (ret < 0) {
         close(fd[0]);
         close(fd[1]);
@@ -228,6 +231,30 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
     }
 
     return fd[0];
+}
+
+static inline int _mk_event_timeout_destroy(struct mk_event_ctx *ctx, void *data)
+{
+    int fd;
+    struct mk_event *event;
+    struct fd_timer *timer;
+
+    event = (struct mk_event *) data;
+
+    fd = event->fd;
+    _mk_event_del(ctx, event);
+
+    timer = event->data;
+    timer->run = MK_FALSE;
+
+    /* Wait for the background worker to finish */
+    pthread_join(timer->tid, NULL);
+
+    /* Cleanup */
+    close(timer->fd);
+    close(fd);
+    mk_mem_free(timer);
+    return 0;
 }
 
 static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
