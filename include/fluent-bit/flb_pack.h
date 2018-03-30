@@ -20,8 +20,11 @@
 #ifndef FLB_PACK_H
 #define FLB_PACK_H
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_sds.h>
 #include <jsmn/jsmn.h>
 #include <msgpack.h>
+
 struct flb_pack_state {
     int multiple;         /* support multiple jsons? */
     int tokens_count;     /* number of parsed tokens */
@@ -46,6 +49,8 @@ int flb_msgpack_to_json(char *json_str, size_t str_len,
 char* flb_msgpack_to_json_str(size_t size, msgpack_object *obj);
 int flb_msgpack_raw_to_json_str(char *buf, size_t buf_size,
                                 char **out_buf, size_t *out_size);
+flb_sds_t flb_msgpack_raw_to_json_sds(void *in_buf, size_t in_size);
+
 int flb_pack_time_now(msgpack_packer *pck);
 int flb_msgpack_expand_map(char *map_data, size_t map_size,
                            msgpack_object_kv **obj_arr, int obj_arr_len,

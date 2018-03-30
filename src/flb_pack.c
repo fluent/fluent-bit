@@ -22,6 +22,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
@@ -512,6 +513,53 @@ int flb_msgpack_to_json(char *json_str, size_t json_size,
     ret = msgpack2json(json_str, &off, json_size, obj);
     json_str[off] = '\0';
     return ret ? off: ret;
+}
+
+flb_sds_t flb_msgpack_raw_to_json_sds(void *in_buf, size_t in_size)
+{
+    int ret;
+    size_t off = 0;
+    size_t out_size;
+    msgpack_unpacked result;
+    msgpack_object *root;
+    flb_sds_t out_buf;
+    flb_sds_t tmp_buf;
+
+    out_size = in_size * 1.5;
+    out_buf = flb_sds_create_size(out_size);
+    if (!out_buf) {
+        flb_errno();
+        return NULL;
+    }
+
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, in_buf, in_size, &off);
+    root = &result.data;
+
+    while (1) {
+        ret = flb_msgpack_to_json(out_buf, out_size, root);
+        if (ret <= 0) {
+            tmp_buf = flb_sds_increase(out_buf, 256);
+            if (tmp_buf) {
+                out_buf = tmp_buf;
+                out_size += 256;
+            }
+            else {
+                flb_errno();
+                flb_sds_destroy(out_buf);
+                msgpack_unpacked_destroy(&result);
+                return NULL;
+            }
+        }
+        else {
+            break;
+        }
+    }
+
+    msgpack_unpacked_destroy(&result);
+    flb_sds_len_set(out_buf, ret);
+
+    return out_buf;
 }
 
 /**
