@@ -63,7 +63,9 @@ static char *influxdb_format(char *tag, int tag_len,
     msgpack_object map;
     msgpack_object *obj;
     struct flb_time tm;
-    struct influxdb_bulk *bulk;
+    struct influxdb_bulk *bulk = NULL;
+    struct influxdb_bulk *bulk_head = NULL;
+    struct influxdb_bulk *bulk_body = NULL;
 
 
     /* Iterate the original buffer and perform adjustments */
@@ -92,7 +94,17 @@ static char *influxdb_format(char *tag, int tag_len,
     /* Create the bulk composer */
     bulk = influxdb_bulk_create();
     if (!bulk) {
-        return NULL;
+        goto error;
+    }
+
+    bulk_head = influxdb_bulk_create();
+    if (!bulk_head) {
+        goto error;
+    }
+
+    bulk_body = influxdb_bulk_create();
+    if (!bulk_body) {
+        goto error;
     }
 
     off = 0;
@@ -122,14 +134,12 @@ static char *influxdb_format(char *tag, int tag_len,
             ctx->seq++;
         }
 
-        ret = influxdb_bulk_append_header(bulk,
+        ret = influxdb_bulk_append_header(bulk_head,
                                           tag, tag_len,
                                           seq,
                                           ctx->seq_name, ctx->seq_len);
         if (ret == -1) {
-            influxdb_bulk_destroy(bulk);
-            msgpack_unpacked_destroy(&result);
-            return NULL;
+            goto error;
         }
 
         for (i = 0; i < n_size - 1; i++) {
@@ -209,20 +219,27 @@ static char *influxdb_format(char *tag, int tag_len,
                                               &str, &str_size);
                 if (ret == -1) {
                     flb_errno();
-                    influxdb_bulk_destroy(bulk);
-                    msgpack_unpacked_destroy(&result);
-                    return NULL;
+                    goto error;
                 }
 
                 val = str;
                 val_len = str_size;
             }
 
-            /* Append key/value data into the bulk */
-            ret = influxdb_bulk_append_kv(bulk,
-                                          key, key_len,
-                                          val, val_len,
-                                          i, quote);
+            if (is_tagged_key(ctx, key, key_len, v->type)) {
+                /* Append key/value data into the bulk_head */
+                ret = influxdb_bulk_append_kv(bulk_head,
+                                              key, key_len,
+                                              val, val_len,
+                                              quote);
+            }
+            else {
+                /* Append key/value data into the bulk_body */
+                ret = influxdb_bulk_append_kv(bulk_body,
+                                              key, key_len,
+                                              val, val_len,
+                                              quote);
+            }
 
             if (quote == FLB_TRUE) {
                 flb_free(str);
@@ -231,20 +248,26 @@ static char *influxdb_format(char *tag, int tag_len,
 
             if (ret == -1) {
                 flb_error("[out_influxdb] cannot append key/value");
-                influxdb_bulk_destroy(bulk);
-                msgpack_unpacked_destroy(&result);
-                return NULL;
+                goto error;
             }
         }
 
         /* Append the timestamp */
-        ret = influxdb_bulk_append_timestamp(bulk, &tm);
+        ret = influxdb_bulk_append_timestamp(bulk_body, &tm);
         if (ret == -1) {
             flb_error("[out_influxdb] cannot append timestamp");
-            influxdb_bulk_destroy(bulk);
-            msgpack_unpacked_destroy(&result);
-            return NULL;
+            goto error;
         }
+
+        /* Append collected data to final bulk */
+        if (influxdb_bulk_append_bulk(bulk, bulk_head, '\n') != 0 ||
+            influxdb_bulk_append_bulk(bulk, bulk_body, ' ') != 0) {
+            goto error;
+        }
+
+        /* Reset bulk_head and bulk_body */
+        bulk_head->len = 0;
+        bulk_body->len = 0;
     }
 
     msgpack_unpacked_destroy(&result);
@@ -258,8 +281,23 @@ static char *influxdb_format(char *tag, int tag_len,
      * return the bulk->ptr buffer
      */
     flb_free(bulk);
+    influxdb_bulk_destroy(bulk_head);
+    influxdb_bulk_destroy(bulk_body);
 
     return buf;
+
+error:
+    if (bulk != NULL) {
+        influxdb_bulk_destroy(bulk);
+    }
+    if (bulk_head != NULL) {
+        influxdb_bulk_destroy(bulk_head);
+    }
+    if (bulk_body != NULL) {
+        influxdb_bulk_destroy(bulk_body);
+    }
+    msgpack_unpacked_destroy(&result);
+    return NULL;
 }
 
 int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *config,
@@ -479,10 +517,12 @@ int is_tagged_key(struct flb_influxdb_config *ctx, char *key, int kl, int type)
     struct mk_list *head;
     struct flb_split_entry *entry;
 
-    mk_list_foreach(head, ctx->tag_keys) {
-        entry = mk_list_entry(head, struct flb_split_entry ,_head);
-        if (kl == entry->len && strncmp(key, entry->value, kl)) {
-            return FLB_TRUE;
+    if (ctx->tag_keys) {
+        mk_list_foreach(head, ctx->tag_keys) {
+            entry = mk_list_entry(head, struct flb_split_entry ,_head);
+            if (kl == entry->len && strncmp(key, entry->value, kl) == 0) {
+                return FLB_TRUE;
+            }
         }
     }
 

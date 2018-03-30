@@ -41,7 +41,12 @@ int influxdb_bulk_append_header(struct influxdb_bulk *bulk,
 int influxdb_bulk_append_kv(struct influxdb_bulk *bulk,
                             char *key, int k_len,
                             char *val, int v_len,
-                            int more, int quote);
+                            int quote);
+
+int influxdb_bulk_append_bulk(struct influxdb_bulk *bulk_to,
+                              struct influxdb_bulk *bulk_from,
+                              char separator);
+
 void influxdb_bulk_destroy(struct influxdb_bulk *bulk);
 int influxdb_bulk_append_timestamp(struct influxdb_bulk *bulk,
                                    struct flb_time *t);
