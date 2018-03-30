@@ -118,6 +118,7 @@ struct flb_tls_context *flb_tls_context_new(int verify,
         ret = mbedtls_x509_crt_parse_path(&ctx->ca_cert, ca_path);
         if (ret < 0) {
             io_tls_error(ret);
+            flb_error("[TLS] error reading certificates from /etc/ssl/certs/");
             goto error;
         }
     }
