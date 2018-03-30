@@ -48,6 +48,11 @@ static inline size_t flb_sds_len(flb_sds_t s)
     return FLB_SDS_HEADER(s)->len;
 }
 
+static inline void flb_sds_len_set(flb_sds_t s, size_t len)
+{
+    FLB_SDS_HEADER(s)->len = len;
+}
+
 static inline size_t flb_sds_alloc(flb_sds_t s)
 {
     return FLB_SDS_HEADER(s)->alloc;
