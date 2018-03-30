@@ -30,6 +30,18 @@
 #include "influxdb_bulk.h"
 
 /*
+ * Returns FLB_TRUE if the specified value is true, otherwise FLB_FALSE
+ */
+static int bool_value(char *v);
+
+/*
+ * Returns FLB_TRUE when the specified key is in Tag_Keys list,
+ * otherwise FLB_FALSE
+ */
+static int is_tagged_key(struct flb_influxdb_config *ctx,
+                         char *key, int kl, int type);
+
+/*
  * Convert the internal Fluent Bit data representation to the required one
  * by InfluxDB.
  */
@@ -321,6 +333,24 @@ int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *config,
         }
     }
 
+    /* Auto_Tags */
+    tmp = flb_output_get_property("auto_tags", ins);
+    if (tmp) {
+        ctx->auto_tags = bool_value(tmp);
+    }
+    else {
+        ctx->auto_tags = FLB_FALSE;
+    }
+
+    /* Tag_Keys */
+    tmp = flb_output_get_property("tag_keys", ins);
+    if (tmp) {
+        ctx->tag_keys = flb_utils_split(tmp, ' ', 256);
+    }
+    else {
+        ctx->tag_keys = NULL;
+    }
+
     /* Prepare an upstream handler */
     upstream = flb_upstream_create(config,
                                    ins->host.name,
@@ -411,6 +441,9 @@ int cb_influxdb_exit(void *data, struct flb_config *config)
     if (ctx->http_passwd) {
         flb_free(ctx->http_passwd);
     }
+    if (ctx->tag_keys) {
+        flb_utils_split_free(ctx->tag_keys);
+    }
 
     flb_upstream_destroy(ctx->u);
     flb_free(ctx->db_name);
@@ -418,6 +451,42 @@ int cb_influxdb_exit(void *data, struct flb_config *config)
     flb_free(ctx);
 
     return 0;
+}
+
+int bool_value(char *v)
+{
+    if (strcasecmp(v, "true") == 0) {
+        return FLB_TRUE;
+    }
+    else if (strcasecmp(v, "on") == 0) {
+        return FLB_TRUE;
+    }
+    else if (strcasecmp(v, "yes") == 0) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+int is_tagged_key(struct flb_influxdb_config *ctx, char *key, int kl, int type)
+{
+    if (type == MSGPACK_OBJECT_STR) {
+        if (ctx->auto_tags) {
+            return FLB_TRUE;
+        }
+    }
+
+    struct mk_list *head;
+    struct flb_split_entry *entry;
+
+    mk_list_foreach(head, ctx->tag_keys) {
+        entry = mk_list_entry(head, struct flb_split_entry ,_head);
+        if (kl == entry->len && strncmp(key, entry->value, kl)) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
 }
 
 struct flb_output_plugin out_influxdb_plugin = {
