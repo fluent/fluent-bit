@@ -52,8 +52,6 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
         io_flags = FLB_IO_TCP;
     }
 
-    io_flags = FLB_IO_TLS;
-
     if (ins->host.ipv6 == FLB_TRUE) {
         io_flags |= FLB_IO_IPV6;
     }
