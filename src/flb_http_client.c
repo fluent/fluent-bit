@@ -346,6 +346,9 @@ static int process_data(struct flb_http_client *c)
                 return FLB_HTTP_OK;
             }
         }
+        else {
+            return FLB_HTTP_OK;
+        }
     }
     else if (c->resp.headers_end && c->resp.content_length <= 0) {
         return FLB_HTTP_OK;
