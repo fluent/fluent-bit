@@ -350,7 +350,11 @@ int flb_parser_decoder_do(struct mk_list *decoders,
         }
 
         /* Copy original content */
-        flb_sds_copy(data_sds, (char *) v.via.str.ptr, v.via.str.size);
+        tmp_sds = flb_sds_copy(data_sds, (char *) v.via.str.ptr,
+                               v.via.str.size);
+        if (tmp_sds != data_sds) {
+            data_sds = tmp_sds;
+        }
 
         /*
          * We got a match: 'key name' == 'decoder field name', validate
@@ -622,7 +626,6 @@ struct mk_list *flb_parser_decoder_list_create(struct mk_rconf_section *section)
         if (size < 2) {
             flb_error("[parser] invalid number of parameters in decoder");
             flb_utils_split_free(split);
-            flb_free(list);
             flb_parser_decoder_list_destroy(list);
             return NULL;
         }
@@ -673,6 +676,7 @@ struct mk_list *flb_parser_decoder_list_create(struct mk_rconf_section *section)
         dec_rule = flb_calloc(1, sizeof(struct flb_parser_dec_rule));
         if (!dec_rule) {
             flb_errno();
+            flb_utils_split_free(split);
             flb_parser_decoder_list_destroy(list);
             return NULL;
         }
