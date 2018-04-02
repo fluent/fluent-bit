@@ -665,7 +665,6 @@ struct mk_list *flb_parser_decoder_list_create(struct mk_rconf_section *section)
             /* Unexpected error */
             flb_error("[parser] unexpected error, could not get a decoder");
             flb_utils_split_free(split);
-            flb_free(list);
             flb_parser_decoder_list_destroy(list);
             return NULL;
         }
