@@ -93,7 +93,6 @@ static int configure(struct filter_parser_ctx *ctx,
                      struct flb_config *config)
 {
     int ret;
-    struct flb_config_prop *prop = NULL;
     char *tmp;
 
     ctx->key_name = NULL;
@@ -221,6 +220,12 @@ static int cb_parser_filter(void *data, size_t bytes,
             if (ctx->reserve_data) {
                 append_arr_len = obj->via.map.size;
                 append_arr = flb_malloc(sizeof(msgpack_object_kv*) * append_arr_len);
+                if (!append_arr) {
+                    flb_errno();
+                    msgpack_unpacked_destroy(&result);
+                    msgpack_sbuffer_destroy(&tmp_sbuf);
+                    return FLB_FILTER_NOTOUCH;
+                }
 
                 for (i = 0; i < append_arr_len; i++){
                     append_arr[i] = NULL;
