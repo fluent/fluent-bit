@@ -423,13 +423,22 @@ int flb_parser_decoder_do(struct mk_list *decoders,
 
             /* Internal packing: replace value content in the same key */
             if (rule->type == FLB_PARSER_DEC_AS) {
-                flb_sds_copy(in_sds, dec_buf, dec_size);
-                flb_sds_copy(data_sds, dec_buf, dec_size);
+                tmp_sds = flb_sds_copy(in_sds, dec_buf, dec_size);
+                if (tmp_sds != in_sds) {
+                    in_sds = tmp_sds;
+                }
+                tmp_sds = flb_sds_copy(data_sds, dec_buf, dec_size);
+                if (tmp_sds != data_sds) {
+                    data_sds = tmp_sds;
+                }
                 in_type = dec_type;
                 is_decoded_as = FLB_TRUE;
             }
             else if (rule->type == FLB_PARSER_DEC_DEFAULT) {
-                flb_sds_copy(out_sds, dec_buf, dec_size);
+                tmp_sds = flb_sds_copy(out_sds, dec_buf, dec_size);
+                if (tmp_sds != out_sds) {
+                    out_sds = tmp_sds;
+                }
                 out_type = dec_type;
                 is_decoded = FLB_TRUE;
             }
