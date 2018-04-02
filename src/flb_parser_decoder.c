@@ -665,7 +665,6 @@ struct mk_list *flb_parser_decoder_list_create(struct mk_rconf_section *section)
         dec_rule = flb_calloc(1, sizeof(struct flb_parser_dec_rule));
         if (!dec_rule) {
             flb_errno();
-            flb_free(list);
             flb_parser_decoder_list_destroy(list);
             return NULL;
         }
