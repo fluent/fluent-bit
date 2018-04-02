@@ -187,9 +187,16 @@ static void cb_splunk_flush(void *data, size_t bytes,
         goto retry;
     }
     else {
-        /* The request was issued successfully, validate the 'error' field */
-        flb_debug("[out_splunk] HTTP Status=%i", c->resp.status);
-        goto retry;
+        if (c->resp.status != 200) {
+            if (c->resp.payload_size > 0) {
+                flb_warn("[out_splunk] http_status=%i:\n%s",
+                         c->resp.status, c->resp.payload);
+            }
+            else {
+                flb_warn("[out_splunk] http_status=%i", c->resp.status);
+            }
+            goto retry;
+        }
     }
 
     /* Cleanup */
