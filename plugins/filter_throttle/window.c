@@ -35,8 +35,8 @@ struct throttle_window *window_create(size_t size) {
     }
 
     tw = flb_malloc(sizeof(struct throttle_window));
-
     if (!tw) {
+        flb_errno();
         return NULL;
     }
 
@@ -46,7 +46,8 @@ struct throttle_window *window_create(size_t size) {
     tw->max_index = -1;
     tw->table = flb_calloc(size, sizeof(struct throttle_pane));
     if (!tw->table) {
-        flb_error("Could not allocate initial window memory");
+        flb_errno();
+        flb_free(tw);
         return NULL;
     }
 
