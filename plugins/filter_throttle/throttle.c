@@ -82,6 +82,8 @@ void *time_ticker(void *args)
         }
         sleep(t->seconds);
     }
+
+    return NULL;
 }
 
 /* Given a msgpack record, do some filter action based on the defined rules */
