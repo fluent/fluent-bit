@@ -378,17 +378,20 @@ void cb_influxdb_flush(void *data, size_t bytes,
 
     ret = flb_http_do(c, &b_sent);
     if (ret == 0) {
-        if (c->resp.payload_size > 0) {
-            flb_debug("[out_influxdb] http_do=%i http_status=%i\n%s",
-                      ret, c->resp.status, c->resp.payload);
+        if (c->resp.status != 200 && c->resp.status != 204) {
+            if (c->resp.payload_size > 0) {
+                flb_error("[out_influxdb] http_status=%i\n%s",
+                          ret, c->resp.status, c->resp.payload);
+            }
+            else {
+                flb_debug("[out_influxdb] http_status=%i",
+                          ret, c->resp.status);
+            }
         }
-        else {
-            flb_debug("[out_influxdb] http_do=%i http_status=%i",
-                      ret, c->resp.status);
-        }
+        flb_debug("[out_influxdb] http_do=%i OK", ret);
     }
     else {
-        flb_debug("[out_influxdb] http_do=%i", ret);
+        flb_warn("[out_influxdb] http_do=%i", ret);
     }
 
     flb_http_client_destroy(c);
