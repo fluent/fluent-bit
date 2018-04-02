@@ -89,7 +89,7 @@ void *time_ticker(void *args)
 /* Given a msgpack record, do some filter action based on the defined rules */
 static inline int throttle_data(struct flb_filter_throttle_ctx *ctx)
 {
-    if ( ctx->hash->total / ctx->hash->size >= ctx->max_rate) {
+    if ((ctx->hash->total / (double) ctx->hash->size) >= ctx->max_rate) {
         return THROTTLE_RET_DROP;
     }
 
