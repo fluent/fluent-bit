@@ -47,7 +47,7 @@ static int prop_set_parser(struct flb_kube *ctx, struct flb_kube_meta *meta,
 
     /* Parser property must be allowed by k8s-logging.parser */
     if (ctx->k8s_logging_parser == FLB_FALSE) {
-        prop_not_allowed("logging.parser", meta);
+        prop_not_allowed("fluentbit.io/parser", meta);
         return -1;
     }
 

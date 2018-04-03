@@ -447,13 +447,13 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
                 k = ann_map.via.map.ptr[i].key;
                 v = ann_map.via.map.ptr[i].val;
 
-                if (k.via.str.size > 8 && /* >= 'logging.' */
-                    strncmp(k.via.str.ptr, "logging.", 8) == 0) {
+                if (k.via.str.size > 13 && /* >= 'fluentbit.io/' */
+                    strncmp(k.via.str.ptr, "fluentbit.io/", 13) == 0) {
 
                     /* Validate and set the property */
                     flb_kube_prop_set(ctx, meta,
-                                      (char *) k.via.str.ptr + 8,
-                                      k.via.str.size - 8,
+                                      (char *) k.via.str.ptr + 13,
+                                      k.via.str.size - 13,
                                       (char *) v.via.str.ptr,
                                       v.via.str.size,
                                       &props);
