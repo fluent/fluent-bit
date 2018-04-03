@@ -230,7 +230,7 @@ int flb_tail_scan(const char *path, struct flb_tail_config *ctx)
         case GLOB_NOMATCH:
             ret = stat(path, &st);
             if (ret == -1) {
-                flb_error("[in_tail] Cannot read info from: %s", path);
+                flb_debug("[in_tail] Cannot read info from: %s", path);
             }
             else {
                 ret = access(path, R_OK);
@@ -238,7 +238,7 @@ int flb_tail_scan(const char *path, struct flb_tail_config *ctx)
                     flb_error("[in_tail] NO read access for path: %s", path);
                 }
                 else {
-                    flb_warn("[in_tail] NO matches for path: %s", path);
+                    flb_debug("[in_tail] NO matches for path: %s", path);
                 }
             }
             return 0;
