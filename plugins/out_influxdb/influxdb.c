@@ -252,17 +252,24 @@ static char *influxdb_format(char *tag, int tag_len,
             }
         }
 
-        /* Append the timestamp */
-        ret = influxdb_bulk_append_timestamp(bulk_body, &tm);
-        if (ret == -1) {
-            flb_error("[out_influxdb] cannot append timestamp");
-            goto error;
-        }
+        /* Check have data fields */
+        if (bulk_body->len > 0) {
+            /* Append the timestamp */
+            ret = influxdb_bulk_append_timestamp(bulk_body, &tm);
+            if (ret == -1) {
+                flb_error("[out_influxdb] cannot append timestamp");
+                goto error;
+            }
 
-        /* Append collected data to final bulk */
-        if (influxdb_bulk_append_bulk(bulk, bulk_head, '\n') != 0 ||
-            influxdb_bulk_append_bulk(bulk, bulk_body, ' ') != 0) {
-            goto error;
+            /* Append collected data to final bulk */
+            if (influxdb_bulk_append_bulk(bulk, bulk_head, '\n') != 0 ||
+                influxdb_bulk_append_bulk(bulk, bulk_body, ' ') != 0) {
+                goto error;
+            }
+        } else {
+            flb_error("[out_influxdb] cannot send record, "
+                      "because all field is tagged in record");
+            /* Following records maybe ok, so continue processing */
         }
 
         /* Reset bulk_head and bulk_body */
