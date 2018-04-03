@@ -42,6 +42,12 @@ struct flb_influxdb_config {
     char *seq_name;
     int seq_len;
 
+    /* auto_tags: on/off */
+    int auto_tags;
+
+    /* tag_keys: space separated list of key */
+    struct mk_list *tag_keys;
+
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
 };

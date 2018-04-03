@@ -108,9 +108,6 @@ int influxdb_bulk_append_header(struct influxdb_bulk *bulk,
     ret = snprintf(bulk->ptr + bulk->len, 32, "%" PRIu64, seq_n);
     bulk->len += ret;
 
-    bulk->ptr[bulk->len] = ' ';
-    bulk->len++;
-
     /* Add a NULL byte for debugging purposes */
     bulk->ptr[bulk->len] = '\0';
 
@@ -120,7 +117,7 @@ int influxdb_bulk_append_header(struct influxdb_bulk *bulk,
 int influxdb_bulk_append_kv(struct influxdb_bulk *bulk,
                             char *key, int k_len,
                             char *val, int v_len,
-                            int more, int quote)
+                            int quote)
 {
     int ret;
     int required;
@@ -136,7 +133,7 @@ int influxdb_bulk_append_kv(struct influxdb_bulk *bulk,
         return -1;
     }
 
-    if (more) {
+    if (bulk->len > 0) {
         bulk->ptr[bulk->len] = ',';
         bulk->len++;
     }
@@ -182,12 +179,35 @@ int influxdb_bulk_append_timestamp(struct influxdb_bulk *bulk,
 
     /* Timestamp is in Nanoseconds */
     timestamp = (t->tm.tv_sec * 1000000000) + t->tm.tv_nsec;
-    len = snprintf(bulk->ptr + bulk->len, 127, " %" PRIu64 " \n", timestamp);
+    len = snprintf(bulk->ptr + bulk->len, 127, " %" PRIu64, timestamp);
     if (len == -1) {
         return -1;
     }
     bulk->len += len;
     bulk->ptr[bulk->len] = '\0';
+
+    return 0;
+};
+
+int influxdb_bulk_append_bulk(struct influxdb_bulk *bulk_to,
+                              struct influxdb_bulk *bulk_from,
+                              char separator)
+{
+    if (influxdb_bulk_buffer(bulk_to, bulk_from->len + 2) != 0) {
+        return -1;
+    }
+
+    if (bulk_to->len > 0) {
+        bulk_to->ptr[bulk_to->len] = separator;
+        bulk_to->len += 1;
+    }
+
+    memcpy(bulk_to->ptr + bulk_to->len,
+           bulk_from->ptr, bulk_from->len * sizeof(char));
+    bulk_to->len += bulk_from->len;
+
+    /* Add a NULL byte for always terminating with NULL */
+    bulk_to->ptr[bulk_to->len] = '\0';
 
     return 0;
 };
