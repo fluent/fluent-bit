@@ -1,6 +1,9 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
-/*
+/*  Fluent Bit
+ *  ==========
+ *  Copyright (C) 2015-2017 Treasure Data Inc.
+ *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
  *  You may obtain a copy of the License at
@@ -51,13 +54,12 @@ static void teardown(struct filter_modify_ctx *ctx)
     }
 }
 
-static void helper_pack_string(msgpack_packer * packer, const char *str)
+static void helper_pack_string(msgpack_packer * packer, const char *str, int len)
 {
     if (str == NULL) {
         msgpack_pack_nil(packer);
     }
     else {
-        int len = (int) strlen(str);
         msgpack_pack_str(packer, len);
         msgpack_pack_str_body(packer, str, len);
     }
@@ -206,7 +208,7 @@ static inline void pack_map_with_rename(msgpack_packer * packer,
         }
 
         if (matched) {
-            helper_pack_string(packer, matched_rule->val);
+            helper_pack_string(packer, matched_rule->val, matched_rule->val_len);
         }
         else {
             msgpack_pack_object(packer, map->via.map.ptr[i].key);
@@ -227,8 +229,8 @@ static inline void pack_map_with_missing_keys(msgpack_packer * packer,
     mk_list_foreach(head, rules) {
         rule = mk_list_entry(head, struct modify_rule, _head);
         if (map_count_records_matching_rule(map, rule) == 0) {
-            helper_pack_string(packer, rule->key);
-            helper_pack_string(packer, rule->val);
+            helper_pack_string(packer, rule->key, rule->key_len);
+            helper_pack_string(packer, rule->val, rule->val_len);
         }
     }
 }
@@ -313,7 +315,7 @@ static int cb_modify_filter(void *data, size_t bytes,
 
     // Records come in the format,
     //
-    // [ TIMESTAMP, { K1:V1, K2:V2, ...} ], 
+    // [ TIMESTAMP, { K1:V1, K2:V2, ...} ],
     // [ TIMESTAMP, { K1:V1, K2:V2, ...} ]
     //
     // Example record,
