@@ -18,6 +18,7 @@
  */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_parser.h>
 
 #include <msgpack.h>
@@ -75,6 +76,32 @@ static int prop_set_parser(struct flb_kube *ctx, struct flb_kube_meta *meta,
     return 0;
 }
 
+static int prop_set_exclude(struct flb_kube *ctx, struct flb_kube_meta *meta,
+                            char *val_buf, size_t val_len,
+                            struct flb_kube_props *props)
+{
+    char *tmp;
+
+    /* Exclude property must be allowed by k8s-logging.exclude */
+    if (ctx->k8s_logging_exclude == FLB_FALSE) {
+        prop_not_allowed("fluentbit.io/exclude", meta);
+        return -1;
+    }
+
+    /* Get the bool value */
+    tmp = flb_strndup(val_buf, val_len);
+    if (!tmp) {
+        flb_errno();
+        return -1;
+    }
+
+    /* Save the exclude property in the context */
+    props->exclude = flb_utils_bool(tmp);
+    flb_free(tmp);
+
+    return 0;
+}
+
 int flb_kube_prop_set(struct flb_kube *ctx, struct flb_kube_meta *meta,
                       char *prop, int prop_len,
                       char *val_buf, size_t val_len,
@@ -82,6 +109,9 @@ int flb_kube_prop_set(struct flb_kube *ctx, struct flb_kube_meta *meta,
 {
     if (prop_cmp("parser", prop_len, prop)) {
         prop_set_parser(ctx, meta, val_buf, val_len, props);
+    }
+    else if (prop_cmp("exclude", prop_len, prop)) {
+        prop_set_exclude(ctx, meta, val_buf, val_len, props);
     }
 
     return 0;
@@ -95,7 +125,7 @@ int flb_kube_prop_pack(struct flb_kube_props *props,
     msgpack_sbuffer sbuf;
 
     /* Number of fields in props structure */
-    size = 1;
+    size = 2;
 
     /* Create msgpack buffer */
     msgpack_sbuffer_init(&sbuf);
@@ -111,6 +141,14 @@ int flb_kube_prop_pack(struct flb_kube_props *props,
     }
     else {
         msgpack_pack_nil(&pck);
+    }
+
+    /* Index 1: FLB_KUBE_PROP_EXCLUDE */
+    if (props->exclude == FLB_TRUE) {
+        msgpack_pack_true(&pck);
+    }
+    else {
+        msgpack_pack_false(&pck);
     }
 
     /* Set outgoing msgpack buffer */
@@ -145,6 +183,15 @@ int flb_kube_prop_unpack(struct flb_kube_props *props, char *buf, size_t size)
     }
     else {
         props->parser = flb_sds_create_len((char *) o.via.str.ptr, o.via.str.size);
+    }
+
+    /* Index 1: Exclude */
+    o = root.via.array.ptr[FLB_KUBE_PROPS_EXCLUDE];
+    if (o.via.boolean == FLB_TRUE) {
+        props->exclude = FLB_TRUE;
+    }
+    else {
+        props->exclude = FLB_FALSE;
     }
 
     msgpack_unpacked_destroy(&result);

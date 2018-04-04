@@ -426,6 +426,13 @@ static int cb_kube_filter(void *data, size_t bytes,
         if (props.parser != NULL) {
             parser = flb_parser_get(props.parser, config);
         }
+
+        if (props.exclude == FLB_TRUE) {
+            *out_buf   = NULL;
+            *out_bytes = 0;
+            flb_kube_prop_destroy(&props);
+            return FLB_FILTER_MODIFIED;
+        }
     }
 
     /* Create temporal msgpack buffer */
@@ -464,6 +471,12 @@ static int cb_kube_filter(void *data, size_t bytes,
             if (props.parser != NULL) {
                 parser = flb_parser_get(props.parser, config);
             }
+
+            if (props.exclude == FLB_TRUE) {
+                /* Skip this record */
+                continue;
+            }
+
             pre = off;
         }
 

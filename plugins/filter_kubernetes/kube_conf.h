@@ -68,7 +68,8 @@ struct flb_kube {
     int tls_verify;
 
     /* Configuration proposed through Annotations (boolean) */
-    int k8s_logging_parser;
+    int k8s_logging_parser;   /* allow to process a suggested parser ? */
+    int k8s_logging_exclude;  /* allowed to suggest to exclude logs ?  */
 
     /* HTTP Client Setup */
     size_t buffer_size;

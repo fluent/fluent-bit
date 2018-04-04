@@ -219,6 +219,14 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
         ctx->k8s_logging_parser = FLB_FALSE;
     }
 
+    tmp = flb_filter_get_property("k8s-logging.exclude", i);
+    if (tmp) {
+        ctx->k8s_logging_exclude = flb_utils_bool(tmp);
+    }
+    else {
+        ctx->k8s_logging_exclude = FLB_FALSE;
+    }
+
     /* Use Systemd Journal */
     tmp = flb_filter_get_property("use_journal", i);
     if (tmp) {

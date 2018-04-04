@@ -25,9 +25,11 @@
 
 /* Property structure/array index */
 #define FLB_KUBE_PROPS_PARSER   0
+#define FLB_KUBE_PROPS_EXCLUDE  1
 
 struct flb_kube_props {
-    flb_sds_t parser;      /* logging.parser */
+    flb_sds_t parser;      /* suggested parser     */
+    int exclude;           /* bool: exclude logs ? */
 };
 
 #endif
