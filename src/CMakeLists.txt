@@ -228,6 +228,10 @@ if(NOT FLB_WITHOUT_BIN)
     target_link_libraries(fluent-bit-bin libjemalloc)
   endif()
 
+  if(FLB_BACKTRACE)
+    target_link_libraries(fluent-bit-bin libbacktrace)
+  endif()
+
   target_link_libraries(fluent-bit-bin fluent-bit-static ${CMAKE_THREAD_LIBS_INIT})
 
   set_target_properties(fluent-bit-bin

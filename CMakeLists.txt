@@ -46,6 +46,7 @@ option(FLB_POSIX_TLS          "Force POSIX thread storage"   No)
 option(FLB_WITHOUT_INOTIFY    "Disable inotify support"      No)
 option(FLB_SQLDB              "Enable SQL embedded DB"       No)
 option(FLB_HTTP_SERVER        "Enable HTTP Server"           No)
+option(FLB_BACKTRACE          "Enable stacktrace support"   Yes)
 
 # Metrics: Experimental Feature, disabled by default on 0.12 series
 # but enabled in the upcoming 0.13 release. Note that development
@@ -383,6 +384,21 @@ if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   include_directories("${CMAKE_CURRENT_BINARY_DIR}/include/")
 else()
   FLB_OPTION(FLB_JEMALLOC OFF)
+endif()
+
+# LibBacktrace (friendly stacktrace support)
+# =========================================
+if(FLB_BACKTRACE)
+  FLB_DEFINITION(FLB_HAVE_LIBBACKTRACE)
+  ExternalProject_Add(backtrace
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-177940370/
+    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-177940370/configure ${AUTOCONF_HOST_OPT} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
+    BUILD_COMMAND ${MAKE}
+    )
+  add_library(libbacktrace STATIC IMPORTED GLOBAL)
+  set_target_properties(libbacktrace PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/lib/libbacktrace.a")
+  add_dependencies(libbacktrace backtrace)
+  include_directories("${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/include/")
 endif()
 
 # Onigmo (Regex Engine)
