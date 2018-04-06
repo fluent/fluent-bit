@@ -42,6 +42,62 @@
 #include <fluent-bit/flb_plugin_proxy.h>
 #include <fluent-bit/flb_parser.h>
 
+/* Libbacktrace support */
+#ifdef FLB_HAVE_LIBBACKTRACE
+#include <backtrace.h>
+#include <backtrace-supported.h>
+
+struct flb_stacktrace {
+    struct backtrace_state *state;
+	int error;
+    int line;
+};
+
+struct flb_stacktrace flb_st;
+
+static void flb_stacktrace_error_callback(void *data,
+                                          const char *msg, int errnum)
+{
+    struct flb_stacktrace *ctx = data;
+    fprintf(stderr, "ERROR: %s (%d)", msg, errnum);
+	ctx->error = 1;
+}
+
+static int flb_stacktrace_print_callback(void *data, uintptr_t pc,
+                                         const char *filename, int lineno,
+                                         const char *function)
+{
+    struct flb_stacktrace *p = data;
+
+    fprintf(stdout, "#%-2i 0x%-17lx in  %s() at %s:%d\n",
+            p->line,
+            (unsigned long) pc,
+            function == NULL ? "???" : function,
+            filename == NULL ? "???" : filename + sizeof(FLB_SOURCE_DIR),
+            lineno);
+    p->line++;
+    return 0;
+}
+
+static inline void flb_stacktrace_init(char *prog)
+{
+    memset(&flb_st, '\0', sizeof(struct flb_stacktrace));
+    flb_st.state = backtrace_create_state(prog,
+                                          BACKTRACE_SUPPORTS_THREADS,
+                                          flb_stacktrace_error_callback, NULL);
+}
+
+void flb_stacktrace_print()
+{
+    struct flb_stacktrace *ctx;
+
+    ctx = &flb_st;
+    backtrace_full(ctx->state, 3, flb_stacktrace_print_callback,
+                   flb_stacktrace_error_callback, ctx);
+}
+
+#endif
+
 #ifdef FLB_HAVE_MTRACE
 #include <mcheck.h>
 #endif
@@ -160,6 +216,11 @@ static void flb_signal_handler(int signal)
     case SIGTERM:
         flb_engine_exit(config);
         break;
+    case SIGSEGV:
+#ifdef FLB_HAVE_LIBBACKTRACE
+        flb_stacktrace_print();
+        abort();
+#endif
     default:
         break;
     }
@@ -173,6 +234,7 @@ static void flb_signal_init()
     signal(SIGHUP,  &flb_signal_handler);
 #endif
     signal(SIGTERM, &flb_signal_handler);
+    signal(SIGSEGV, &flb_signal_handler);
 }
 
 static int input_set_property(struct flb_input_instance *in, char *kv)
@@ -492,6 +554,10 @@ int main(int argc, char **argv)
     struct flb_input_instance *in = NULL;
     struct flb_output_instance *out = NULL;
     struct flb_filter_instance *filter = NULL;
+
+#ifdef FLB_HAVE_LIBBACKTRACE
+    flb_stacktrace_init(argv[0]);
+#endif
 
 #ifndef _WIN32
     /* Setup long-options */
