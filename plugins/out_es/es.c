@@ -406,7 +406,6 @@ static int elasticsearch_error_check(struct flb_http_client *c)
             goto done;
         }
 
-        msgpack_object_print(stdout, key);
         if (key.via.str.size != 6) {
             continue;
         }
