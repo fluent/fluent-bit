@@ -215,16 +215,17 @@ if(FLB_BUFFERING)
   add_subdirectory(lib/sha1)
 endif()
 
-# MK Core
-macro(MK_SET_OPTION option value)
-  set(${option} ${value} CACHE "" INTERNAL FORCE)
-endmacro()
-MK_SET_OPTION(MK_SYSTEM_MALLOC      ON)
-
 # Runtime Tests (filter_kubernetes) requires HTTP Server
 if(FLB_TESTS_RUNTIME)
   FLB_OPTION(FLB_HTTP_SERVER  ON)
 endif()
+
+# MK Core
+macro(MK_SET_OPTION option value)
+  set(${option} ${value} CACHE "" INTERNAL FORCE)
+endmacro()
+MK_SET_OPTION(MK_SYSTEM_MALLOC  ON)
+MK_SET_OPTION(MK_DEBUG          ON)
 
 # Build Monkey HTTP Server
 if(FLB_HTTP_SERVER)
