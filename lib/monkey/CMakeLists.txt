@@ -43,6 +43,7 @@ option(MK_PTHREAD_TLS    "Use old Pthread TLS mode"     No)
 option(MK_SYSTEM_MALLOC  "Use system memory allocator"  No)
 option(MK_MBEDTLS_SHARED "Use mbedtls shared lib"       No)
 option(MK_VALGRIND       "Enable Valgrind support"      No)
+option(MK_FUZZ_MODE      "Enable HonggFuzz mode"        No)
 option(MK_HTTP2          "Enable HTTP Support (dev)"    No)
 
 # Plugins: what should be build ?, these options
@@ -113,7 +114,6 @@ endmacro()
 if (MK_HTTP2)
   MK_DEFINITION(MK_HAVE_HTTP2)
 endif()
-
 
 # Check for accept(2) v/s accept(4)
 list(APPEND CMAKE_REQUIRED_DEFINITIONS -D_GNU_SOURCE)
@@ -366,3 +366,7 @@ if(NOT SKIP_EMPTY_DIRS)
 endif()
 
 add_subdirectory(api)
+
+if(MK_FUZZ_MODE)
+  add_subdirectory(fuzz)
+endif()

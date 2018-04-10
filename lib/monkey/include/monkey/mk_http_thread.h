@@ -28,6 +28,7 @@
 #define MK_HTTP_THREAD_PLUGIN  1
 
 struct mk_http_thread {
+    int close;                        /* Close TCP connection ?  */
     struct mk_http_session *session;  /* HTTP session            */
     struct mk_http_request *request;  /* HTTP request            */
     struct mk_thread       *parent;   /* Parent thread           */
@@ -50,6 +51,6 @@ int mk_http_thread_destroy(struct mk_http_thread *mth);
 int mk_http_thread_event(struct mk_event *event);
 
 int mk_http_thread_start(struct mk_http_thread *mth);
-int mk_http_thread_purge(struct mk_http_thread *mth);
+int mk_http_thread_purge(struct mk_http_thread *mth, int close);
 
 #endif

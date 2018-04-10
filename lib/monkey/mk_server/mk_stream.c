@@ -55,6 +55,11 @@ static inline size_t channel_write_in_file(struct mk_channel *channel,
     return bytes;
 }
 
+size_t mk_stream_size(struct mk_stream *stream)
+{
+    return (stream->bytes_total - stream->bytes_offset);
+}
+
 /*
  * It 'intent' to write a few streams over the channel and alter the
  * channel notification side if required: READ -> WRITE.

@@ -339,5 +339,6 @@ void mk_sched_worker_cb_free(struct mk_server *server);
 int mk_sched_send_signal(struct mk_server *server, uint64_t val);
 int mk_sched_workers_join(struct mk_server *server);
 int mk_sched_threads_purge(struct mk_sched_worker *sched);
+int mk_sched_threads_destroy_all(struct mk_sched_worker *sched);
 
 #endif

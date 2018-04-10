@@ -8,7 +8,7 @@
 #include <unistd.h>
 
 #define API_ADDR   "127.0.0.1"
-#define API_PORT   "2020"
+#define API_PORT   "8080"
 
 /* Main context set as global so the signal handler can use it */
 mk_ctx_t *ctx;
@@ -16,6 +16,16 @@ mk_ctx_t *ctx;
 void cb_worker(void *data)
 {
     mk_info("[api test] test worker callback; data=%p", data);
+}
+
+void cb_main(mk_request_t *request, void *data)
+{
+    (void) data;
+
+    mk_http_status(request, 200);
+    mk_http_header(request, "X-Monkey", 8, "OK", 2);
+    mk_http_send(request, ":)\n", 3, NULL);
+    mk_http_done(request);
 }
 
 void cb_test_chunks(mk_request_t *request, void *data)
@@ -90,6 +100,7 @@ static void cb_queue_message(mk_mq_t *queue, void *data, size_t size, void *ctx)
     printf("\n\n");
 }
 
+
 int main()
 {
     int i = 0;
@@ -110,6 +121,7 @@ int main()
 
     mk_config_set(ctx,
                   "Listen", API_PORT,
+                  //"Timeout", "1",
                   NULL);
 
     vid = mk_vhost_create(ctx, NULL);
@@ -118,16 +130,16 @@ int main()
                  NULL);
     mk_vhost_handler(ctx, vid, "/test_chunks", cb_test_chunks, NULL);
     mk_vhost_handler(ctx, vid, "/test_big_chunk", cb_test_big_chunk, NULL);
+    mk_vhost_handler(ctx, vid, "/", cb_main, NULL);
 
     mk_worker_callback(ctx,
                        cb_worker,
                        ctx);
 
-    mk_info("Service: http://%s:%s/test",  API_ADDR, API_PORT);
+    mk_info("Service: http://%s:%s/test_chunks",  API_ADDR, API_PORT);
     mk_start(ctx);
 
-
-    for (i = 0; i < 1000; i++) {
+    for (i = 0; i < 5; i++) {
         len = snprintf(msg, sizeof(msg) - 1, "[...] message ID: %i\n", i);
         mk_mq_send(ctx, qid, &msg, len);
     }

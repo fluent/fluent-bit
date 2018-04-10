@@ -82,6 +82,11 @@ static inline int _mk_event_add(struct mk_event_ctx *ctx, int fd,
         event->type = type;
         event->status = MK_EVENT_REGISTERED;
     }
+    else {
+        if (type != MK_EVENT_UNMODIFIED) {
+            event->type = type;
+        }
+    }
 
     /* Read flag */
     if ((event->mask ^ MK_EVENT_READ) && (events & MK_EVENT_READ)) {

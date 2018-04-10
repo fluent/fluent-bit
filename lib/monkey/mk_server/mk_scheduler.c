@@ -64,8 +64,9 @@ static inline int _next_target(struct mk_server *server)
 
     cur = (ctx->workers[0].accepted_connections -
            ctx->workers[0].closed_connections);
-    if (cur == 0)
+    if (cur == 0) {
         return 0;
+    }
 
     /* Finds the lowest load worker */
     for (i = 1; i < server->workers; i++) {
@@ -474,6 +475,7 @@ int mk_sched_init(struct mk_server *server)
         mk_mem_free(ctx);
         return -1;
     }
+    memset(ctx->workers, '\0', size);
 
     /* Initialize helpers */
     pthread_mutex_init(&pth_mutex, NULL);
@@ -596,18 +598,42 @@ int mk_sched_check_timeouts(struct mk_sched_worker *sched,
     return 0;
 }
 
-int mk_sched_threads_purge(struct mk_sched_worker *sched)
+static int sched_thread_cleanup(struct mk_sched_worker *sched,
+                                struct mk_list *list)
 {
     int c = 0;
     struct mk_list *tmp;
     struct mk_list *head;
     struct mk_http_thread *mth;
 
-    mk_list_foreach_safe(head, tmp, &sched->threads_purge) {
+    mk_list_foreach_safe(head, tmp, list) {
         mth = mk_list_entry(head, struct mk_http_thread, _head);
+        if (mth->close == MK_TRUE) {
+            mk_sched_drop_connection(mth->session->conn, sched,
+                                     mth->session->server);
+        }
         mk_http_thread_destroy(mth);
         c++;
     }
+
+    return c;
+
+}
+
+int mk_sched_threads_purge(struct mk_sched_worker *sched)
+{
+    int c = 0;
+
+    c = sched_thread_cleanup(sched, &sched->threads_purge);
+    return c;
+}
+
+int mk_sched_threads_destroy_all(struct mk_sched_worker *sched)
+{
+    int c = 0;
+
+    c = sched_thread_cleanup(sched, &sched->threads_purge);
+    c += sched_thread_cleanup(sched, &sched->threads);
 
     return c;
 }

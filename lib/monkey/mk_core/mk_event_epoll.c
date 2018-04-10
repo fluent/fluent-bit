@@ -111,13 +111,16 @@ static inline int _mk_event_add(struct mk_event_ctx *ctx, int fd,
     if (event->mask == MK_EVENT_EMPTY) {
         op = EPOLL_CTL_ADD;
         event->fd   = fd;
-        event->type = type;
         event->status = MK_EVENT_REGISTERED;
+        event->type = type;
+
     }
     else {
         op = EPOLL_CTL_MOD;
+        if (type != MK_EVENT_UNMODIFIED) {
+            event->type = type;
+        }
     }
-
     ep_event.events = EPOLLERR | EPOLLHUP | EPOLLRDHUP;
     ep_event.data.ptr = data;
 

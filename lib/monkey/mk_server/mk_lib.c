@@ -694,6 +694,14 @@ int mk_http_done(mk_request_t *req)
         /* Append end-of-chunk bytes */
         mk_http_send(req, NULL, 0, NULL);
     }
+    else {
+        mk_http_send(req, NULL, 0, NULL);
+    }
+
+    if (req->session->close_now == MK_TRUE) {
+        mk_lib_yield(req);
+        mk_http_session_remove(req->session, req->session->server);
+    }
 
     return 0;
 }

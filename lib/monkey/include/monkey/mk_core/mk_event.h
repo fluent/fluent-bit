@@ -25,6 +25,7 @@
 #define MK_EVENT_H
 
 /* Events type family */
+#define MK_EVENT_UNMODIFIED     -1    /* keep old event type              */
 #define MK_EVENT_NOTIFICATION    0    /* notification channel (pipe)      */
 #define MK_EVENT_LISTENER        1    /* listener socket                  */
 #define MK_EVENT_FIFO            2    /* FIFO - Messaging                 */
