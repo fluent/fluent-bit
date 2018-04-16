@@ -564,6 +564,7 @@ int mk_sched_drop_connection(struct mk_sched_conn *conn,
                              struct mk_sched_worker *sched,
                              struct mk_server *server)
 {
+    mk_sched_threads_destroy_all(sched);
     return mk_sched_remove_client(conn, sched, server);
 }
 
@@ -605,13 +606,10 @@ static int sched_thread_cleanup(struct mk_sched_worker *sched,
     struct mk_list *tmp;
     struct mk_list *head;
     struct mk_http_thread *mth;
+    (void) sched;
 
     mk_list_foreach_safe(head, tmp, list) {
         mth = mk_list_entry(head, struct mk_http_thread, _head);
-        if (mth->close == MK_TRUE) {
-            mk_sched_drop_connection(mth->session->conn, sched,
-                                     mth->session->server);
-        }
         mk_http_thread_destroy(mth);
         c++;
     }

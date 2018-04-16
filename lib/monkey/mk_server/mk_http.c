@@ -83,6 +83,8 @@ void mk_http_request_init(struct mk_http_session *session,
     request->real_path.data = NULL;
     request->handler_data = NULL;
 
+    request->in_file.fd = -1;
+
     /* Response Headers */
     mk_header_response_reset(&request->headers);
 
@@ -715,7 +717,6 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr,
          sr->method != MK_METHOD_PUT)) {
         sr->_content_length.data = NULL;
         sr->_content_length.len = 0;
-        //return mk_http_error(MK_CLIENT_BAD_REQUEST, cs, sr, server);
     }
 
     ret_file = mk_file_get_info(sr->real_path.data, &sr->file_info, MK_FILE_READ);
@@ -734,6 +735,7 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr,
         handlers = &sr->host_conf->handlers;
         mk_list_foreach(head, handlers) {
             h_handler = mk_list_entry(head, struct mk_vhost_handler, _head);
+
             if (regexec(h_handler->match,
                         sr->uri_processed.data, 0, NULL, 0) != 0) {
                 continue;
@@ -1379,10 +1381,6 @@ void mk_http_session_remove(struct mk_http_session *cs,
     mk_list_del(&cs->request_list);
 
     cs->_sched_init = MK_FALSE;
-
-    /* Remove any pending thread context */
-    struct mk_sched_worker *sched = mk_sched_get_thread_conf();
-    mk_sched_threads_destroy_all(sched);
 }
 
 /* FIXME: nobody is using this */
@@ -1608,15 +1606,15 @@ int mk_http_sched_done(struct mk_sched_conn *conn,
                        struct mk_server *server)
 {
     (void) worker;
-    struct mk_http_session *cs;
+    struct mk_http_session *session;
     struct mk_http_request *sr;
 
-    cs = mk_http_session_get(conn);
-    sr = mk_list_entry_first(&cs->request_list, struct mk_http_request, _head);
+    session = mk_http_session_get(conn);
+    sr = mk_list_entry_first(&session->request_list,
+                             struct mk_http_request, _head);
+    mk_plugin_stage_run_40(session, sr, server);
 
-    mk_plugin_stage_run_40(cs, sr, server);
-
-    return mk_http_request_end(cs, server);
+    return mk_http_request_end(session, server);
 }
 
 struct mk_sched_handler mk_http_handler = {

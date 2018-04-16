@@ -700,7 +700,6 @@ int mk_http_done(mk_request_t *req)
 
     if (req->session->close_now == MK_TRUE) {
         mk_lib_yield(req);
-        mk_http_session_remove(req->session, req->session->server);
     }
 
     return 0;

@@ -193,10 +193,8 @@ static inline int header_lookup(struct mk_http_parser *p, char *buffer)
     struct row_entry *h;
 
     len = (p->header_sep - p->header_key);
-
-    for (i = p->header_min; i <= p->header_max; i++) {
+    for (i = p->header_min; i <= p->header_max && i >= 0; i++) {
         h = &mk_headers_table[i];
-
         /* Check string length first */
         if (h->len != len) {
             continue;
@@ -381,7 +379,6 @@ int mk_http_parser(struct mk_http_request *req, struct mk_http_parser *p,
     int len;
 
     /* lazy test
-
     printf("p->i=%i buf_len=%i\n",
            p->i, buf_len);
 
