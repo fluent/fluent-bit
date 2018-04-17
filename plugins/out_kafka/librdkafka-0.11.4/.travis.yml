@@ -1,0 +1,42 @@
+language: c
+cache: ccache
+env:
+- ARCH=x64
+compiler:
+- gcc
+- clang
+os:
+- linux
+- osx
+dist: trusty
+sudo: false
+before_install:
+  - if [[ "${TRAVIS_OS_NAME}_$CC" == "linux_gcc" ]]; then sudo make -C packaging/rpm MOCK_CONFIG=el7-x86_64 prepare_ubuntu ; fi
+before_script:
+ - ccache -s || echo "CCache is not available."
+script:
+- rm -rf artifacts dest
+- mkdir dest artifacts
+- if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then CPPFLAGS="-I/usr/local/opt/openssl/include
+  -L/usr/local/opt/openssl/lib" ./configure --enable-static --disable-lz4 --prefix="$PWD/dest" ; else ./configure --enable-static --disable-lz4 --prefix="$PWD/dest" ; fi
+- make -j2 all examples check && make -C tests run_local
+- make install
+- (cd dest && tar cvzf ../artifacts/librdkafka.tar.gz .)
+- if [[ "${TRAVIS_OS_NAME}_$CC" == "linux_gcc" ]]; then sudo make -C packaging/rpm MOCK_CONFIG=el7-x86_64 all copy-artifacts ; fi
+- if [[ "${TRAVIS_OS_NAME}_$CC" == "linux_gcc" ]]; then docker run -it -v $PWD:/v microsoft/dotnet:2-sdk /v/packaging/tools/build-debian.sh /v /v/artifacts/librdkafka-debian9.tgz; fi
+deploy:
+  provider: s3
+  access_key_id:
+    secure: "nGcknL5JZ5XYCEJ96UeDtnLOOidWsfXrk2x91Z9Ip2AyrUtdfZBc8BX16C7SAQbBeb4PQu/OjRBQWTIRqU64ZEQU1Z0lHjxCiGEt5HO0YlXWvZ8OJGAQ0wSmrQED850lWjGW2z5MpDqqxbZyATE8VksW5dtGiHgNuITinVW8Lok="
+  secret_access_key:
+    secure: "J+LygNeoXQImN9E7EARNmcgLpqm6hoRjxwHJaen9opeuSDowKDpZxP7ixSml3BEn2pJJ4kpsdj5A8t5uius+qC4nu9mqSAZcmdKeSmliCbH7kj4J9MR7LBcXk3Uf515QGm7y4nzw+c1PmpteYL5S06Kgqp+KkPRLKTS2NevVZuY="
+  bucket: librdkafka-ci-packages
+  region: us-west-1
+  skip_cleanup: true
+  local-dir: artifacts
+  upload-dir: librdkafka/p-librdkafka__bld-travis__plat-${TRAVIS_OS_NAME}__arch-${ARCH}__tag-${TRAVIS_TAG}__sha-${TRAVIS_COMMIT}__bid-${TRAVIS_JOB_NUMBER}
+  on:
+    condition: "$CC = gcc"
+    repo: edenhill/librdkafka
+    all_branches: true
+    tags: true

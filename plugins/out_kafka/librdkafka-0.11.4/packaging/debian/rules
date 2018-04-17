@@ -1,0 +1,19 @@
+#!/usr/bin/make -f
+
+# Uncomment this to turn on verbose mode.
+#export DH_VERBOSE=1
+
+%:
+	dh $@
+
+override_dh_strip:
+	dh_strip --dbg-package=librdkafka1-dbg
+
+override_dh_auto_install:
+	dh_auto_install
+	install -D -m 0644 rdkafka.pc \
+		debian/librdkafka-dev/usr/lib/${DEB_HOST_MULTIARCH}/pkgconfig/rdkafka.pc
+	install -D -m 0644 rdkafka-static.pc \
+		debian/librdkafka-dev/usr/lib/${DEB_HOST_MULTIARCH}/pkgconfig/rdkafka-static.pc
+
+.PHONY: override_dh_strip override_dh_auth_install

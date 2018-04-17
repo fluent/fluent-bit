@@ -1,10 +1,11 @@
 # Build librdkafka
-option(RDKAFKA_BUILD_EXAMPLES OFF)
-option(RDKAFKA_BUILD_TESTS OFF)
-add_subdirectory(librdkafka-0.11.3 EXCLUDE_FROM_ALL)
+FLB_OPTION(RDKAFKA_BUILD_STATIC    On)
+FLB_OPTION(RDKAFKA_BUILD_EXAMPLES Off)
+FLB_OPTION(RDKAFKA_BUILD_TESTS    Off)
+add_subdirectory(librdkafka-0.11.4 EXCLUDE_FROM_ALL)
 
 # librdkafka headers
-include_directories(librdkafka-0.11.3/src/)
+include_directories(librdkafka-0.11.4/src/)
 
 # Fluent Bit Kafka Output plugin
 set(src
@@ -13,3 +14,4 @@ set(src
   kafka.c)
 
 FLB_PLUGIN(out_kafka "${src}" "rdkafka")
+target_link_libraries(flb-plugin-out_kafka -lpthread)
