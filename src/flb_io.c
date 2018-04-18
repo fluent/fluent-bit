@@ -252,6 +252,7 @@ static FLB_INLINE int net_io_write_async(struct flb_thread *th,
 {
     int ret = 0;
     int error;
+    uint32_t mask;
     ssize_t bytes;
     size_t total = 0;
     size_t to_send;
@@ -282,9 +283,7 @@ static FLB_INLINE int net_io_write_async(struct flb_thread *th,
 
     if (bytes == -1) {
         if (errno == EAGAIN) {
-            MK_EVENT_NEW(&u_conn->event);
             u_conn->thread = th;
-
             ret = mk_event_add(u->evl,
                                u_conn->fd,
                                FLB_ENGINE_EV_THREAD,
@@ -303,6 +302,9 @@ static FLB_INLINE int net_io_write_async(struct flb_thread *th,
              */
             flb_thread_yield(th, FLB_FALSE);
 
+            /* Save events mask since mk_event_del() will reset it */
+            mask = u_conn->event.mask;
+
             /* We got a notification, remove the event registered */
             ret = mk_event_del(u->evl, &u_conn->event);
             if (ret == -1) {
@@ -310,7 +312,7 @@ static FLB_INLINE int net_io_write_async(struct flb_thread *th,
             }
 
             /* Check the connection status */
-            if (u_conn->event.mask & MK_EVENT_WRITE) {
+            if (mask & MK_EVENT_WRITE) {
                 ret = getsockopt(u_conn->fd, SOL_SOCKET, SO_ERROR, &error, &slen);
                 if (ret == -1) {
                     flb_error("[io] could not validate socket status");
@@ -336,9 +338,6 @@ static FLB_INLINE int net_io_write_async(struct flb_thread *th,
             return -1;
         }
     }
-
-    /* Update statistics */
-    //flb_stats_update(out->stats_fd, ret, 0);
 
     /* Update counters */
     total += bytes;
