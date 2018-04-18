@@ -135,7 +135,7 @@ static inline bool is_json_escape(char *c)
       );
 }
 
-int unescape_string_utf8(char *buf, int sz, char *src)
+static int unescape_string_utf8(char *in_buf, int sz, char *out_buf)
 {
     u_int32_t ch;
     char temp[4];
@@ -146,17 +146,17 @@ int unescape_string_utf8(char *buf, int sz, char *src)
     int esc_in = 0;
     int esc_out = 0;
 
-    while (*src && count_in < sz) {
-        next = src + 1;
-        if (*src == '\\' && !is_json_escape(next)) {
-            esc_in = u8_read_escape_sequence((src + 1), &ch) + 1;
+    while (*in_buf && count_in < sz) {
+        next = in_buf + 1;
+        if (*in_buf == '\\' && !is_json_escape(next)) {
+            esc_in = u8_read_escape_sequence((in_buf + 1), &ch) + 1;
         }
         else {
-            ch = (u_int32_t)*src;
+            ch = (u_int32_t)*in_buf;
             esc_in = 1;
         }
 
-        src += esc_in;
+        in_buf += esc_in;
         count_in += esc_in;
 
         esc_out = u8_wc_toutf8(temp, ch);
@@ -165,13 +165,13 @@ int unescape_string_utf8(char *buf, int sz, char *src)
             flb_error("Crossing over string boundary");
             break;
         }
-        memcpy(&buf[count_out], temp, esc_out);
+        memcpy(&out_buf[count_out], temp, esc_out);
         count_out += esc_out;
     }
     if (count_in < sz) {
-        flb_error("Not at boundary but still NULL terminating : %d - '%s'", sz, src);
+        flb_error("Not at boundary but still NULL terminating : %d - '%s'", sz, in_buf);
     }
-    buf[count_in - 1] = '\0';
+    out_buf[count_in - 1] = '\0';
     return count_out;
 }
 
@@ -287,7 +287,7 @@ static int decode_escaped_utf8(struct flb_parser_dec *dec,
 {
     int len;
 
-    len = unescape_string_utf8(in_buf, in_size, &dec->buffer);
+    len = unescape_string_utf8(in_buf, in_size, dec->buffer);
     *out_buf = dec->buffer;
     *out_size = len;
     *out_type = TYPE_OUT_STRING;
