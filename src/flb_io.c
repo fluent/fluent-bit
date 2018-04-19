@@ -73,6 +73,7 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
     int err;
     int error = 0;
     uint32_t mask;
+    char so_error_buf[256];
     flb_sockfd_t fd;
     socklen_t len = sizeof(error);
     struct flb_upstream *u = u_conn->u;
@@ -165,8 +166,9 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
 
             if (error != 0) {
                 /* Connection is broken, not much to do here */
-                flb_error("[io] TCP connection failed: %s:%i",
-                          u->tcp_host, u->tcp_port);
+                strerror_r(error, so_error_buf, sizeof(so_error_buf) - 1);
+                flb_error("[io] TCP connection failed: %s:%i (%s)",
+                          u->tcp_host, u->tcp_port, so_error_buf);
                 flb_socket_close(fd);
                 return -1;
             }
@@ -257,6 +259,7 @@ static FLB_INLINE int net_io_write_async(struct flb_thread *th,
     size_t total = 0;
     size_t to_send;
     socklen_t slen = sizeof(error);
+    char so_error_buf[256];
     struct flb_upstream *u = u_conn->u;
 
  retry:
@@ -321,8 +324,9 @@ static FLB_INLINE int net_io_write_async(struct flb_thread *th,
 
                 if (error != 0) {
                     /* Connection is broken, not much to do here */
-                    flb_error("[io] TCP connection failed: %s:%i",
-                              u->tcp_host, u->tcp_port);
+                    strerror_r(error, so_error_buf, sizeof(so_error_buf) - 1);
+                    flb_error("[io] TCP connection failed: %s:%i (%s)",
+                              u->tcp_host, u->tcp_port, so_error_buf);
                     return -1;
                 }
 
