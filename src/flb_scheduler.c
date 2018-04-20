@@ -499,6 +499,13 @@ int flb_sched_exit(struct flb_config *config)
         c++;
     }
 
+    /* Delete timers drop list */
+    mk_list_foreach_safe(head, tmp, &sched->timers_drop) {
+        timer = mk_list_entry(head, struct flb_sched_timer, _head);
+        flb_sched_timer_destroy(timer);
+        c++;
+    }
+
     flb_free(sched);
     return c;
 }
@@ -516,6 +523,7 @@ struct flb_sched_timer *flb_sched_timer_create(struct flb_sched *sched)
     }
     timer->timer_fd = -1;
     timer->config = sched->config;
+    timer->data = NULL;
 
     /* Active timer (not invalidated) */
     timer->active = FLB_TRUE;
