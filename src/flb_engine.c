@@ -170,7 +170,7 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
 #endif
             flb_task_retry_clean(task, out_th->parent);
             flb_output_thread_destroy_id(thread_id, task);
-            if (task->users == 0) {
+            if (task->users == 0 && mk_list_size(&task->retries) == 0) {
                 flb_task_destroy(task);
             }
         }
@@ -202,7 +202,7 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
                          task->id, out_th->id, out_th->o_ins->name);
 
                 flb_output_thread_destroy_id(thread_id, task);
-                if (task->users == 0) {
+                if (task->users == 0 && mk_list_size(&task->retries) == 0) {
                     flb_task_destroy(task);
                 }
 
@@ -229,7 +229,7 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
                 flb_warn("[sched] retry for task %i could not be scheduled",
                          task->id);
                 flb_task_retry_destroy(retry);
-                if (task->users == 0) {
+                if (task->users == 0 && mk_list_size(&task->retries) == 0) {
                     flb_task_destroy(task);
                 }
             }
@@ -240,7 +240,7 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
         }
         else if (ret == FLB_ERROR) {
             flb_output_thread_destroy_id(thread_id, task);
-            if (task->users == 0) {
+            if (task->users == 0 && mk_list_size(&task->retries) == 0) {
                 flb_task_destroy(task);
             }
         }
