@@ -148,6 +148,8 @@ int flb_task_retry_clean(struct flb_task *task, void *data)
 
     out_th = (struct flb_output_thread *) FLB_THREAD_DATA(data);
     o_ins = out_th->o_ins;
+
+    /* Delete 'retries' only associated with the output instance */
     mk_list_foreach_safe(head, tmp, &task->retries) {
         retry = mk_list_entry(head, struct flb_task_retry, _head);
         if (retry->o_ins == o_ins) {
