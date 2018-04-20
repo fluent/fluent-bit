@@ -325,8 +325,10 @@ static FLB_INLINE int net_io_write_async(struct flb_thread *th,
                 if (error != 0) {
                     /* Connection is broken, not much to do here */
                     strerror_r(error, so_error_buf, sizeof(so_error_buf) - 1);
-                    flb_error("[io] TCP connection failed: %s:%i (%s)",
+                    flb_error("[io fd=%i] error sending data to: %s:%i (%s)",
+                              u_conn->fd,
                               u->tcp_host, u->tcp_port, so_error_buf);
+
                     return -1;
                 }
 
@@ -453,6 +455,7 @@ int flb_io_net_write(struct flb_upstream_conn *u_conn, void *data,
         ret = flb_io_tls_net_write(th, u_conn, data, len, out_len);
     }
 #endif
+
     if (ret == -1 && u_conn->fd > 0) {
         flb_socket_close(u_conn->fd);
         u_conn->fd = -1;
