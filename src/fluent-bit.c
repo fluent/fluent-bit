@@ -219,8 +219,8 @@ static void flb_signal_handler(int signal)
     case SIGSEGV:
 #ifdef FLB_HAVE_LIBBACKTRACE
         flb_stacktrace_print();
-        abort();
 #endif
+        abort();
     default:
         break;
     }
