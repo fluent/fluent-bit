@@ -68,6 +68,13 @@ int flb_parser_json_do(struct flb_parser *parser,
             return -1;
         }
     }
+    else {
+        if (mp_size > 0) {
+            flb_free(mp_buf);
+        }
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
 
     /* Export results (might change later) */
     tmp_out_buf = mp_buf;
