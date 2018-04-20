@@ -359,21 +359,26 @@ void cb_http_flush(void *data, size_t bytes,
          *  - 205: Reset content
          */
         if (c->resp.status < 200 || c->resp.status > 205) {
-            flb_error("[out_http] HTTP STATUS=%i", c->resp.status);
+            flb_error("[out_http] %s:%i, HTTP status=%i",
+                      ctx->host, ctx->port, c->resp.status);
             out_ret = FLB_RETRY;
         }
         else {
             if (c->resp.payload) {
-                flb_info("[out_http] HTTP STATUS=%i\n%s",
+                flb_info("[out_http] %s:%i, HTTP status=%i\n%s",
+                         ctx->host, ctx->port,
                          c->resp.status, c->resp.payload);
             }
             else {
-                flb_info("[out_http] HTTP STATUS=%i", c->resp.status);
+                flb_info("[out_http] %s:%i, HTTP status=%i",
+                         ctx->host, ctx->port,
+                         c->resp.status);
             }
         }
     }
     else {
-        flb_error("[out_http] could not flush records (http_do=%i)", ret);
+        flb_error("[out_http] could not flush records to %s:%i (http_do=%i)",
+                  ctx->host, ctx->port, ret);
         out_ret = FLB_RETRY;
     }
 
