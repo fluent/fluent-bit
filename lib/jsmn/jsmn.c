@@ -1,5 +1,88 @@
 #include "jsmn.h"
 
+#ifdef JSMN_STRICT
+
+typedef enum {
+	JSMN_TOK_UNDEFINED = 0,
+	JSMN_TOK_STRING = 1,
+	JSMN_TOK_VALUE,
+	JSMN_TOK_OPENING_BRACE,
+	JSMN_TOK_CLOSING_BRACE,
+	JSMN_TOK_OPENING_BRACKET,
+	JSMN_TOK_CLOSING_BRACKET,
+	JSMN_TOK_COLON,
+	JSMN_TOK_COMA,
+	JSMN_TOK_END,
+} jsmn_tok_type_t;
+
+/**
+ * Next token type depends on context.
+ */
+static inline jsmn_tok_type_t jsmn_string_next_tok(jsmntok_t *token_parent,
+						   jsmn_tok_type_t toktype)
+{
+	if (token_parent->type == JSMN_ARRAY && toktype == JSMN_TOK_COMA) {
+		return JSMN_TOK_VALUE;
+	} else if (toktype == JSMN_TOK_OPENING_BRACE || toktype == JSMN_TOK_COMA) {
+		return JSMN_TOK_STRING;
+	}
+	return JSMN_TOK_VALUE;
+}
+
+static const jsmn_tok_type_t coma_expected[] = {
+	JSMN_TOK_UNDEFINED, /* tokens == NULL */
+	JSMN_TOK_OPENING_BRACE,
+	JSMN_TOK_CLOSING_BRACE,
+	JSMN_TOK_OPENING_BRACKET,
+	JSMN_TOK_CLOSING_BRACKET,
+	JSMN_TOK_VALUE,
+	JSMN_TOK_END
+};
+
+static const jsmn_tok_type_t double_quote_expected[] = {
+	JSMN_TOK_OPENING_BRACE,
+	JSMN_TOK_OPENING_BRACKET,
+	JSMN_TOK_COLON,
+	JSMN_TOK_COMA,
+	JSMN_TOK_END
+};
+
+static const jsmn_tok_type_t closing_brace_expected[] = {
+	JSMN_TOK_UNDEFINED, /* tokens == NULL */
+	JSMN_TOK_VALUE,
+	JSMN_TOK_OPENING_BRACE,
+	JSMN_TOK_CLOSING_BRACKET,
+	JSMN_TOK_CLOSING_BRACE,
+	JSMN_TOK_END
+};
+
+static const jsmn_tok_type_t closing_bracket_expected[] = {
+	JSMN_TOK_UNDEFINED, /* tokens == NULL */
+	JSMN_TOK_VALUE,
+	JSMN_TOK_OPENING_BRACKET,
+	JSMN_TOK_CLOSING_BRACKET,
+	JSMN_TOK_CLOSING_BRACE,
+	JSMN_TOK_END
+};
+
+/**
+ * Return 0 if 'toktype' is found in the 'expected' token list.
+ * Otherwise return -1;
+ */
+static inline int jsmn_tok_expected(jsmn_tok_type_t curr_toktype,
+				    const jsmn_tok_type_t *expected)
+{
+        int i = 0;
+	for (i = 0; expected[i] != JSMN_TOK_END; ++i) {
+		if (curr_toktype == expected[i]) {
+			return 0;
+		}
+	}
+	return -1;
+}
+
+#endif
+
 /**
  * Allocates a fresh unused token from the token pull.
  */
@@ -17,6 +100,7 @@ static jsmntok_t *jsmn_alloc_token(jsmn_parser *parser,
 #endif
 	return tok;
 }
+
 
 /**
  * Fills token type and boundaries.
@@ -162,6 +246,10 @@ int jsmn_parse(jsmn_parser *parser, const char *js, size_t len,
 		c = js[parser->pos];
 		switch (c) {
 			case '{': case '[':
+#ifdef JSMN_STRICT
+				parser->toktype = (c == '{') ?
+					JSMN_TOK_OPENING_BRACE : JSMN_TOK_OPENING_BRACKET;
+#endif
 				count++;
 				if (tokens == NULL) {
 					break;
@@ -180,6 +268,21 @@ int jsmn_parse(jsmn_parser *parser, const char *js, size_t len,
 				parser->toksuper = parser->toknext - 1;
 				break;
 			case '}': case ']':
+#ifdef JSMN_STRICT
+				if (tokens != NULL) {
+					if (c == '}') {
+						if (jsmn_tok_expected
+						    (parser->toktype, closing_brace_expected)) {
+							return JSMN_ERROR_INVAL;
+						}
+					} else if (jsmn_tok_expected
+						   (parser->toktype, closing_bracket_expected )) {
+						return JSMN_ERROR_INVAL;
+					}
+				}
+				parser->toktype = (c == '}') ?
+					JSMN_TOK_CLOSING_BRACE : JSMN_TOK_CLOSING_BRACKET;
+#endif
 				if (tokens == NULL)
 					break;
 				type = (c == '}' ? JSMN_OBJECT : JSMN_ARRAY);
@@ -229,18 +332,41 @@ int jsmn_parse(jsmn_parser *parser, const char *js, size_t len,
 #endif
 				break;
 			case '\"':
+#ifdef JSMN_STRICT
+				if (jsmn_tok_expected(parser->toktype, double_quote_expected)) {
+					return JSMN_ERROR_INVAL;
+				}
+#endif
 				r = jsmn_parse_string(parser, js, len, tokens, num_tokens);
 				if (r < 0) return r;
 				count++;
 				if (parser->toksuper != -1 && tokens != NULL)
 					tokens[parser->toksuper].size++;
+#ifdef JSMN_STRICT
+				if (tokens != NULL) {
+					parser->toktype = jsmn_string_next_tok
+						(&tokens[parser->toksuper], parser->toktype);
+				}
+#endif
 				break;
 			case '\t' : case '\r' : case '\n' : case ' ':
 				break;
 			case ':':
 				parser->toksuper = parser->toknext - 1;
+#ifdef JSMN_STRICT
+				if (parser->toktype != JSMN_TOK_STRING) {
+					return JSMN_ERROR_INVAL;
+				}
+				parser->toktype = JSMN_TOK_COLON;
+#endif
 				break;
 			case ',':
+#ifdef JSMN_STRICT
+				if (tokens != NULL &&
+				    jsmn_tok_expected(parser->toktype, coma_expected)) {
+					return JSMN_ERROR_INVAL;
+				}
+#endif
 				if (tokens != NULL && parser->toksuper != -1 &&
 						tokens[parser->toksuper].type != JSMN_ARRAY &&
 						tokens[parser->toksuper].type != JSMN_OBJECT) {
@@ -256,7 +382,11 @@ int jsmn_parse(jsmn_parser *parser, const char *js, size_t len,
 						}
 					}
 #endif
+
 				}
+#ifdef JSMN_STRICT
+				parser->toktype = JSMN_TOK_COMA;
+#endif
 				break;
 #ifdef JSMN_STRICT
 			/* In strict mode primitives are: numbers and booleans */
@@ -271,6 +401,7 @@ int jsmn_parse(jsmn_parser *parser, const char *js, size_t len,
 						return JSMN_ERROR_INVAL;
 					}
 				}
+				parser->toktype = JSMN_TOK_VALUE;
 #else
 			/* In non-strict mode every unquoted value is a primitive */
 			default:
@@ -310,5 +441,7 @@ void jsmn_init(jsmn_parser *parser) {
 	parser->pos = 0;
 	parser->toknext = 0;
 	parser->toksuper = -1;
+#ifdef JSMN_STRICT
+	parser->toktype = 0;
+#endif
 }
-
