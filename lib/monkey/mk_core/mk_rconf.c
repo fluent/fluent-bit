@@ -24,7 +24,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
-
+#include <glob.h>
 
 #include <mk_core/mk_rconf.h>
 #include <mk_core/mk_utils.h>
@@ -163,6 +163,9 @@ static int mk_rconf_meta_add(struct mk_rconf *conf, char *buf, int len)
     return 0;
 }
 
+/* To call this function from mk_rconf_read */
+static int mk_rconf_read_glob(struct mk_rconf *conf, const char * path);
+
 static int mk_rconf_read(struct mk_rconf *conf, const char *path)
 {
     int i;
@@ -236,7 +239,12 @@ static int mk_rconf_read(struct mk_rconf *conf, const char *path)
         }
 
         if (len > 9 && strncasecmp(buf, "@INCLUDE ", 9) == 0) {
-            ret = mk_rconf_read(conf, buf + 9);
+            if ( strchr(buf + 9, '*') != NULL) {
+                ret = mk_rconf_read_glob(conf, buf + 9);
+            }
+            else {
+                ret = mk_rconf_read(conf, buf + 9);
+            }
             if (ret == -1) {
                 conf->level--;
                 fclose(f);
@@ -373,6 +381,53 @@ static int mk_rconf_read(struct mk_rconf *conf, const char *path)
     mk_list_add(&file->_head, &conf->includes);
     conf->level--;
     return 0;
+}
+
+static int mk_rconf_read_glob(struct mk_rconf *conf, const char * path)
+{
+    int ret = -1;
+    glob_t glb;
+    char tmp[PATH_MAX];
+    
+    const char *glb_path;
+    size_t i;
+    int ret_glb = -1;
+
+    if (conf->root_path) {
+        snprintf(tmp, PATH_MAX, "%s/%s", conf->root_path, path);
+        glb_path = tmp;
+    }
+    else {
+        glb_path = path;
+    }
+
+    ret_glb = glob(glb_path, GLOB_NOSORT, NULL, &glb);
+    if (ret_glb != 0) {
+        switch(ret_glb){
+        case GLOB_NOSPACE:
+            mk_warn("[%s] glob: no space", __FUNCTION__);
+            break;
+        case GLOB_NOMATCH:
+            mk_warn("[%s] glob: no match", __FUNCTION__);
+            break;
+        case GLOB_ABORTED:
+            mk_warn("[%s] glob: aborted", __FUNCTION__);
+            break;
+        default:
+            mk_warn("[%s] glob: other error", __FUNCTION__);
+        }
+        return ret;
+    }
+
+    for (i = 0; i < glb.gl_pathc; i++) {
+        ret = mk_rconf_read(conf, glb.gl_pathv[i]);
+        if (ret < 0) {
+            break;
+        }
+    }
+
+    globfree(&glb);
+    return ret;
 }
 
 static int mk_rconf_path_set(struct mk_rconf *conf, char *file)
