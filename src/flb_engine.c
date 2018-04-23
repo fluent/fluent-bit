@@ -389,7 +389,7 @@ int flb_engine_start(struct flb_config *config)
         return -1;
     }
 
-    flb_info("[engine] started");
+    flb_info("[engine] started (pid=%i)", getpid());
     flb_thread_prepare();
 
     /* Create the event loop and set it in the global configuration */
