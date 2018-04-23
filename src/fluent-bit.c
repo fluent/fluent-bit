@@ -196,11 +196,27 @@ static void flb_banner()
     printf("%sCopyright (C) Treasure Data%s\n\n", ANSI_BOLD ANSI_YELLOW, ANSI_RESET);
 }
 
+#define flb_print_signal(X) case X:                       \
+    write (STDERR_FILENO, #X ")\n" , sizeof(#X ")\n")-1); \
+    break;
 
 static void flb_signal_handler(int signal)
 {
-    write(STDERR_FILENO, "[engine] caught signal\n", 23);
+    char s[] = "[engine] caught signal (";
 
+    /* write signal number */
+    write(STDERR_FILENO, s, sizeof(s) - 1);
+    switch (signal) {
+        flb_print_signal(SIGINT);
+#ifndef _WIN32
+        flb_print_signal(SIGQUIT);
+        flb_print_signal(SIGHUP);
+#endif
+        flb_print_signal(SIGTERM);
+        flb_print_signal(SIGSEGV);
+    };
+
+    /* Signal handlers */
     switch (signal) {
     case SIGINT:
 #ifndef _WIN32
