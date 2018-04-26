@@ -193,6 +193,10 @@ struct flb_tls_session *flb_tls_session_new(struct flb_tls_context *ctx)
     int ret;
     struct flb_tls_session *session;
 
+    if (!ctx) {
+        return NULL;
+    }
+
     session = flb_malloc(sizeof(struct flb_tls_session));
     if (!session) {
         return NULL;
