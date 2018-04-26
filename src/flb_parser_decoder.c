@@ -616,7 +616,6 @@ struct mk_list *flb_parser_decoder_list_create(struct mk_rconf_section *section)
         split = flb_utils_split(entry->val, ' ', 3);
         if (!split) {
             flb_error("[parser] invalid number of parameters in decoder");
-            flb_free(list);
             flb_parser_decoder_list_destroy(list);
             return NULL;
         }
