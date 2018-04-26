@@ -176,6 +176,7 @@ static int build_headers(struct flb_http_client *c,
     str_hash = flb_sds_create_size(256);
     if (!str_hash) {
         flb_errno();
+        flb_sds_destroy(rfc1123date);
         return -1;
     }
 
