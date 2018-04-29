@@ -17,7 +17,7 @@ RUN rm -rf /tmp/src/build/*
 RUN apt-get update && apt-get dist-upgrade -y && apt-get install -y build-essential cmake make wget unzip libsystemd-dev libssl1.0-dev libasl-dev
 
 WORKDIR /tmp/src/build/
-RUN cmake -DFLB_DEBUG=Off \
+RUN cmake -DFLB_DEBUG=On \
           -DFLB_TRACE=Off \
           -DFLB_JEMALLOC=On \
           -DFLB_BUFFERING=On \
