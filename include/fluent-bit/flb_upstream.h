@@ -37,7 +37,7 @@
  * --- flb_io.h ---
  *   #define  FLB_IO_TCP    1
  *   #define  FLB_IO_TLS    2
- *   #define  FLB_IO_ASYNC  4
+ *   #define  FLB_IO_ASYNC  8
  * ---
  */
 
