@@ -12,7 +12,7 @@
       "run": "apache-logs-annotated"
     },
     "annotations": {
-      "logging.parser": "apache"
+      "fluentbit.io/parser": "apache"
     }
   },
   "spec": {
@@ -30,7 +30,7 @@
         "name": "apache-logs-annotated",
         "image": "edsiper/apache_logs",
         "resources": {
-          
+
         },
         "volumeMounts": [
           {
@@ -51,7 +51,7 @@
     "serviceAccount": "default",
     "nodeName": "minikube",
     "securityContext": {
-      
+
     },
     "schedulerName": "default-scheduler"
   },
@@ -89,7 +89,7 @@
           }
         },
         "lastState": {
-          
+
         },
         "ready": true,
         "restartCount": 0,
