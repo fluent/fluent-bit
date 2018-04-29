@@ -24,7 +24,7 @@
 #define FLB_AZURE_HOST               ".ods.opinsights.azure.com"
 #define FLB_AZURE_PORT               443
 #define FLB_AZURE_RESOURCE           "/api/logs"
-#define FLB_AZURE_LOG_TYPE           "fluent-bit"
+#define FLB_AZURE_LOG_TYPE           "fluentbit"
 #define FLB_AZURE_TIME_KEY           "@timestamp"
 
 #include <fluent-bit/flb_info.h>

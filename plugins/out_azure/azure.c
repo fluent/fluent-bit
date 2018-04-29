@@ -145,9 +145,8 @@ static int build_headers(struct flb_http_client *c,
     flb_sds_t rfc1123date;
     flb_sds_t str_hash;
     struct tm tm = {0};
-    unsigned char hmac_hash[64] = {0};
+    unsigned char hmac_hash[32] = {0};
     mbedtls_md_context_t mctx;
-    mbedtls_md_type_t md_type = MBEDTLS_MD_SHA256;
 
     /* Format Date */
     rfc1123date = flb_sds_create_size(32);
@@ -191,7 +190,7 @@ static int build_headers(struct flb_http_client *c,
 
     /* Authorization signature */
     mbedtls_md_init(&mctx);
-    mbedtls_md_setup(&mctx, mbedtls_md_info_from_type(md_type) , 1);
+    mbedtls_md_setup(&mctx, mbedtls_md_info_from_type(MBEDTLS_MD_SHA256) , 1);
     mbedtls_md_hmac_starts(&mctx, (unsigned char *) ctx->dec_shared_key,
                            flb_sds_len(ctx->dec_shared_key));
     mbedtls_md_hmac_update(&mctx, (unsigned char *) str_hash,
