@@ -357,7 +357,8 @@ void cb_http_flush(void *data, size_t bytes,
         if (body != data) {
             flb_free(body);
         }
-        flb_error("[out_http] no upstream connections available");
+        flb_error("[out_http] no upstream connections available to %s:%i",
+                  u->tcp_host, u->tcp_port);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
