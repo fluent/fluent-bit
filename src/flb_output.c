@@ -117,7 +117,7 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
     flb_free(ins->match);
 
 #ifdef FLB_HAVE_TLS
-    if (ins->p->flags & FLB_IO_TLS && ins->use_tls) {
+    if (ins->flags & FLB_IO_TLS) {
         if (ins->tls.context) {
             flb_tls_context_destroy(ins->tls.context);
         }
@@ -191,6 +191,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
 {
     int ret = -1;
     int mask_id;
+    int flags = 0;
     struct mk_list *head;
     struct flb_output_plugin *plugin;
     struct flb_output_instance *instance = NULL;
@@ -254,13 +255,28 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     else {
         instance->context = plugin->proxy;
     }
+
+    instance->flags       = instance->p->flags;
     instance->data        = data;
     instance->upstream    = NULL;
     instance->match       = NULL;
     instance->retry_limit = 1;
     instance->host.name   = NULL;
 
-    instance->use_tls        = FLB_FALSE;
+    /* Parent plugin flags */
+    flags = instance->flags;
+    if (flags & FLB_IO_TCP) {
+        instance->use_tls = FLB_FALSE;
+    }
+    else if (flags & FLB_IO_TLS) {
+        instance->use_tls = FLB_TRUE;
+    }
+    else if (flags & FLB_IO_OPT_TLS) {
+        /* TLS must be enabled manually in the config */
+        instance->use_tls = FLB_FALSE;
+        instance->flags |= FLB_IO_TLS;
+    }
+
 #ifdef FLB_HAVE_TLS
     instance->tls.context    = NULL;
     instance->tls_debug      = -1;
@@ -365,6 +381,12 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
 #ifdef FLB_HAVE_TLS
     else if (prop_key_check("tls", k, len) == 0 && tmp) {
         if (strcasecmp(tmp, "true") == 0 || strcasecmp(tmp, "on") == 0) {
+            if ((out->flags & FLB_IO_TLS) == 0) {
+                flb_error("[config] %s don't support TLS", out->name);
+                flb_free(tmp);
+                return -1;
+            }
+
             out->use_tls = FLB_TRUE;
         }
         else {
@@ -452,7 +474,7 @@ int flb_output_init(struct flb_config *config)
 #endif
 
 #ifdef FLB_HAVE_TLS
-        if (p->flags & FLB_IO_TLS && ins->use_tls) {
+        if (ins->flags & FLB_IO_TLS) {
             ins->tls.context = flb_tls_context_new(ins->tls_verify,
                                                    ins->tls_debug,
                                                    ins->tls_ca_path,
