@@ -101,12 +101,20 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
         ctx->merge_log = flb_utils_bool(tmp);
     }
 
-    /* Merge JSON key */
+    /*
+     * FIXME: option disabled due to bug when composing
+     * new outgoing map (also missing unit tests).
+     *
+     * To be re-enabled during 0.13.x series.
+     *
+     * Merge JSON key
+     *
     tmp = flb_filter_get_property("merge_json_key", i);
     if (tmp) {
         ctx->merge_json_key = flb_strdup(tmp);
         ctx->merge_json_key_len = strlen(tmp);
     }
+    */
 
     /* Get Kubernetes API server */
     url = flb_filter_get_property("kube_url", i);
