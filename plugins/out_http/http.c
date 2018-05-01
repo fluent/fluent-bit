@@ -120,8 +120,10 @@ static char *msgpack_to_json(struct flb_out_http_config *ctx, char *data, uint64
                     level++;
                 else if (*p == '}')
                     level--;
-                else if ((*p == '[' || *p == ']' || *p == ',') && level == 0)
+                else if ((*p == '[' || *p == ']') && level == 0)
                     *p=' ';
+                else if (*p == ',' && level == 0)
+                    *p='\n';
             }
         }
     }
