@@ -23,6 +23,7 @@
 #define FLB_HTTP_OUT_MSGPACK        0
 #define FLB_HTTP_OUT_JSON           1
 #define FLB_HTTP_OUT_JSON_STREAM    2
+#define FLB_HTTP_OUT_JSON_LINES     3
 
 #define FLB_HTTP_CONTENT_TYPE   "Content-Type"
 #define FLB_HTTP_MIME_MSGPACK   "application/msgpack"
