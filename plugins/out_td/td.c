@@ -214,12 +214,13 @@ static void cb_td_flush(void *data, size_t bytes,
     /* Issue HTTP request */
     ret = flb_http_do(c, &b_sent);
     if (ret == 0) {
-        flb_debug("[out_td] http_do=%i http_status=%i",
-                  ret, c->resp.status);
+        flb_info("[out_td] HTTP status=%i", c->resp.status);
     }
     else {
-        flb_debug("[out_td] http_do=%i", ret);
+        flb_error("[out_td] http_do=%i", ret);
     }
+
+    flb_free(pack);
     flb_free(body);
 
     /* release */
