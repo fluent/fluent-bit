@@ -4,6 +4,36 @@ td-agent-bit (0.13.0) stable; urgency=low
 
  -- Eduardo Silva <eduardo@treasure-data.com>  Thu, 22 Feb 2018 22:00:00 -0600
 
+td-agent-bit (0.12.19) stable; urgency=low
+
+  * Based on Fluent Bit v0.12.19
+
+ -- Eduardo Silva <eduardo@treasure-data.com>  Fri, 27 Apr 2018 17:30:00 -0600
+
+td-agent-bit (0.12.18-2) stable; urgency=low
+
+  * Based on Fluent Bit v0.12.18-2
+
+ -- Eduardo Silva <eduardo@treasure-data.com>  Fri, 20 Apr 2018 17:30:00 -0600
+
+td-agent-bit (0.12.18) stable; urgency=low
+
+  * Based on Fluent Bit v0.12.18
+
+ -- Eduardo Silva <eduardo@treasure-data.com>  Fri, 20 Apr 2018 11:30:00 -0600
+
+td-agent-bit (0.12.17) stable; urgency=low
+
+  * Based on Fluent Bit v0.12.17
+
+ -- Eduardo Silva <eduardo@treasure-data.com>  Wed, 04 Apr 2018 22:00:00 -0600
+
+td-agent-bit (0.12.16) stable; urgency=low
+
+  * Based on Fluent Bit v0.12.16
+
+ -- Eduardo Silva <eduardo@treasure-data.com>  Fri, 16 Mar 2018 22:00:00 -0600
+
 td-agent-bit (0.12.15) stable; urgency=low
 
   * Based on Fluent Bit v0.12.15
