@@ -53,20 +53,11 @@ struct flb_kafka {
     int message_key_len;
     char *message_key;
 
+    int message_key_field_len;
+    char *message_key_field;
+
     /* Head of defined topics by configuration */
     struct mk_list topics;
-
-    /*
-     * Blocked Status: since rdkafka have it own buffering queue, there is a
-     * chance that the queue becomes full, when that happens our default
-     * behavior is the following:
-     *
-     * - out_kafka yields and try to continue every second until it succeed. In
-     *   the meanwhile blocked flag gets FLB_TRUE value.
-     * - when flushing more records and blocked == FLB_TRUE, issue
-     *   a retry.
-     */
-    int blocked;
 
     /* Internal */
     rd_kafka_t *producer;

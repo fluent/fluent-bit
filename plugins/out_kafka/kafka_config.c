@@ -44,7 +44,6 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
         flb_errno();
         return NULL;
     }
-    ctx->blocked = FLB_FALSE;
 
     /* rdkafka config context */
     ctx->conf = rd_kafka_conf_new();
@@ -58,7 +57,7 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
     ret = rd_kafka_conf_set(ctx->conf, "client.id", "fluent-bit",
                             errstr, sizeof(errstr));
     if (ret != RD_KAFKA_CONF_OK) {
-        flb_error("[out_kafka] cannot configure client.id");
+        flb_error("[out_kafka] cannot configure client.id: %s", errstr);
     }
 
     /* Config: Brokers */
@@ -133,8 +132,19 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
         ctx->message_key_len = strlen(tmp);
     }
     else {
-        ctx->timestamp_key = NULL;
-        ctx->timestamp_key_len = 0;
+        ctx->message_key = NULL;
+        ctx->message_key_len = 0;
+    }
+
+    /* Config: Message_Key_Field */
+    tmp = flb_output_get_property("message_key_field", ins);
+    if (tmp) {
+        ctx->message_key_field = flb_strdup(tmp);
+        ctx->message_key_field_len = strlen(tmp);
+    }
+    else {
+        ctx->message_key_field = NULL;
+        ctx->message_key_field_len = 0;
     }
 
     /* Config: Timestamp_Key */
@@ -144,7 +154,7 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
         ctx->timestamp_key_len = strlen(tmp);
     }
     else {
-        ctx->timestamp_key = FLB_KAFKA_TS_KEY;
+        ctx->timestamp_key = flb_strdup(FLB_KAFKA_TS_KEY);
         ctx->timestamp_key_len = strlen(FLB_KAFKA_TS_KEY);
     }
 
@@ -207,8 +217,16 @@ int flb_kafka_conf_destroy(struct flb_kafka *ctx)
         flb_free(ctx->topic_key);
     }
 
+    if (ctx->timestamp_key) {
+        flb_free(ctx->timestamp_key);
+    }
+
     if (ctx->message_key) {
         flb_free(ctx->message_key);
+    }
+
+    if (ctx->message_key_field) {
+        flb_free(ctx->message_key_field);
     }
 
     flb_free(ctx);

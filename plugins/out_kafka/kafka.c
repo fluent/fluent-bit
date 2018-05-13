@@ -79,6 +79,8 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     msgpack_packer mp_pck;
     msgpack_object key;
     msgpack_object val;
+    const char* message_key = NULL;
+    int message_key_len = 0;
 
     /* Init temporal buffers */
     msgpack_sbuffer_init(&mp_sbuf);
@@ -110,6 +112,19 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
                                                ctx);
             }
         }
+        /* Set message key */
+        if (ctx->message_key_field && !message_key && val.type == MSGPACK_OBJECT_STR) {
+            if (key.via.str.size == ctx->message_key_field_len &&
+                strncmp(key.via.str.ptr, ctx->message_key_field, ctx->message_key_field_len) == 0) {
+                message_key = val.via.str.ptr;
+                message_key_len = val.via.str.size;
+            }
+        }
+    }
+
+    if (!message_key) {
+        message_key = ctx->message_key;
+        message_key_len = ctx->message_key_len;
     }
 
     if (ctx->format == FLB_KAFKA_FMT_JSON) {
@@ -144,11 +159,12 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         return FLB_RETRY;
     }
 
+    rd_kafka_poll(ctx->producer, 0);
     ret = rd_kafka_produce(topic->tp,
                            RD_KAFKA_PARTITION_UA,
                            RD_KAFKA_MSG_F_COPY,
                            out_buf, out_size,
-                           ctx->message_key, ctx->message_key_len,
+                           message_key, message_key_len,
                            NULL);
     if (ret == -1) {
         fprintf(stderr,
@@ -163,13 +179,6 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         if (rd_kafka_last_error() == RD_KAFKA_RESP_ERR__QUEUE_FULL) {
             flb_warn("[out_kafka] internal queue is full, "
                      "retrying in one second");
-
-            /*
-             * If the queue is full, first make sure to discard any further
-             * flush request from the engine. This means 'the caller will
-             * issue a retry at a later time'.
-             */
-            ctx->blocked = FLB_TRUE;
 
             /*
              * Next step is to give it some time to the background rdkafka
@@ -191,7 +200,6 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         flb_debug("[out_kafka] enqueued message (%zd bytes) for topic '%s'",
                   out_size, rd_kafka_topic_name(topic->tp));
     }
-    ctx->blocked = FLB_FALSE;
 
     rd_kafka_poll(ctx->producer, 0);
     if (ctx->format == FLB_KAFKA_FMT_JSON) {
@@ -215,15 +223,6 @@ static void cb_kafka_flush(void *data, size_t bytes,
     struct flb_time tms;
     msgpack_object *obj;
     msgpack_unpacked result;
-
-    /*
-     * If the context is blocked, means rdkafka queue is full and no more
-     * messages can be appended. For our called (Fluent Bit engine) means
-     * that is not possible to work on this now and it need to 'retry'.
-     */
-    if (ctx->blocked == FLB_TRUE) {
-        FLB_OUTPUT_RETURN(FLB_RETRY);
-    }
 
     /* Iterate the original buffer and perform adjustments */
     msgpack_unpacked_init(&result);
