@@ -154,6 +154,11 @@ if(FLB_REGEX)
   REGISTER_FILTER_PLUGIN("filter_kubernetes")
   REGISTER_FILTER_PLUGIN("filter_parser")
 endif()
+
+if(FLB_LUAJIT)
+  REGISTER_FILTER_PLUGIN("filter_lua")
+endif()
+
 REGISTER_FILTER_PLUGIN("filter_record_modifier")
 
 # Register external input and output plugins
