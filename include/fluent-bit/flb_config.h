@@ -159,6 +159,11 @@ struct flb_config {
     struct mk_list sqldb_list;
 #endif
 
+    /* LuaJIT environment's context */
+#ifdef FLB_HAVE_LUAJIT
+    struct mk_list luajit_list;
+#endif
+
     /*
      * Input table-id: table to keep a reference of thread-IDs used by the
      * input plugins.
