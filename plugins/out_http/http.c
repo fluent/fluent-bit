@@ -125,12 +125,17 @@ static char *msgpack_to_json(struct flb_out_http_config *ctx, char *data, uint64
                                       &json_buf, &json_size);
 
     /* Optionally convert to JSON stream from JSON array */
-    if (ctx->out_format == FLB_HTTP_OUT_JSON_STREAM) {
+    if ((ctx->out_format == FLB_HTTP_OUT_JSON_STREAM) ||
+        (ctx->out_format == FLB_HTTP_OUT_JSON_LINES)) {
         char *p;
         char *end = json_buf + json_size;
         int level = 0;
         int in_string = FLB_FALSE;
         int in_escape = FLB_FALSE;
+        char separator = ' ';
+        if (ctx->out_format == FLB_HTTP_OUT_JSON_LINES) {
+            separator = '\n';
+        }
 
         for (p = json_buf; p!=end; p++) {
             if (in_escape)
@@ -144,8 +149,10 @@ static char *msgpack_to_json(struct flb_out_http_config *ctx, char *data, uint64
                     level++;
                 else if (*p == '}')
                     level--;
-                else if ((*p == '[' || *p == ']' || *p == ',') && level == 0)
-                    *p=' ';
+                else if ((*p == '[' || *p == ']') && level == 0)
+                    *p = ' ';
+                else if (*p == ',' && level == 0)
+                    *p = separator;
             }
         }
     }
@@ -323,6 +330,9 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
         else if (strcasecmp(tmp, "json_stream") == 0) {
             ctx->out_format = FLB_HTTP_OUT_JSON_STREAM;
         }
+        else if (strcasecmp(tmp, "json_lines") == 0) {
+            ctx->out_format = FLB_HTTP_OUT_JSON_LINES;
+        }
         else {
             flb_warn("[out_http] unrecognized 'format' option. Using 'msgpack'");
         }
@@ -369,7 +379,9 @@ void cb_http_flush(void *data, size_t bytes,
     uint64_t body_len;
     (void)i_ins;
 
-    if ((ctx->out_format == FLB_HTTP_OUT_JSON) || (ctx->out_format == FLB_HTTP_OUT_JSON_STREAM)) {
+    if ((ctx->out_format == FLB_HTTP_OUT_JSON) ||
+        (ctx->out_format == FLB_HTTP_OUT_JSON_STREAM) ||
+        (ctx->out_format == FLB_HTTP_OUT_JSON_LINES)) {
         body = msgpack_to_json(ctx, data, bytes, &body_len);
     }
     else {
@@ -396,7 +408,9 @@ void cb_http_flush(void *data, size_t bytes,
                         ctx->proxy, 0);
 
     /* Append headers */
-    if ((ctx->out_format == FLB_HTTP_OUT_JSON) || (ctx->out_format == FLB_HTTP_OUT_JSON_STREAM)) {
+    if ((ctx->out_format == FLB_HTTP_OUT_JSON) ||
+        (ctx->out_format == FLB_HTTP_OUT_JSON_STREAM) ||
+        (ctx->out_format == FLB_HTTP_OUT_JSON_LINES)) {
         flb_http_add_header(c,
                             FLB_HTTP_CONTENT_TYPE,
                             sizeof(FLB_HTTP_CONTENT_TYPE) - 1,
@@ -457,7 +471,9 @@ void cb_http_flush(void *data, size_t bytes,
     /* Release the connection */
     flb_upstream_conn_release(u_conn);
 
-    if ((ctx->out_format == FLB_HTTP_OUT_JSON) || (ctx->out_format == FLB_HTTP_OUT_JSON_STREAM)) {
+    if ((ctx->out_format == FLB_HTTP_OUT_JSON) ||
+        (ctx->out_format == FLB_HTTP_OUT_JSON_STREAM) ||
+        (ctx->out_format == FLB_HTTP_OUT_JSON_LINES)) {
         flb_free(body);
     }
 
