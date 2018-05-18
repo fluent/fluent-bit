@@ -23,6 +23,7 @@
 #define FLB_HTTP_OUT_MSGPACK        0
 #define FLB_HTTP_OUT_JSON           1
 #define FLB_HTTP_OUT_JSON_STREAM    2
+#define FLB_HTTP_OUT_JSON_LINES     3
 
 #define FLB_JSON_DATE_DOUBLE      0
 #define FLB_JSON_DATE_ISO8601     1
