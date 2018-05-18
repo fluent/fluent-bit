@@ -317,6 +317,14 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
         }
     }
 
+    /* Tag in header */
+    tmp = flb_output_get_property("header_tag", ins);
+    if (tmp) {
+      ctx->header_tag = flb_strdup(tmp);
+      ctx->headertag_len = strlen(ctx->header_tag);
+      flb_info("[out_http] configure to pass tag in header: %s", ctx->header_tag);
+    }
+
     /* Output format */
     ctx->out_format = FLB_HTTP_OUT_MSGPACK;
     tmp = flb_output_get_property("format", ins);
@@ -425,6 +433,13 @@ void cb_http_flush(void *data, size_t bytes,
                             sizeof(FLB_HTTP_MIME_MSGPACK) - 1);
     }
 
+    if (ctx->header_tag) {
+        flb_http_add_header(c,
+                        ctx->header_tag,
+                        ctx->headertag_len,
+                        tag, tag_len);
+    }
+
     if (ctx->http_user && ctx->http_passwd) {
         flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
     }
@@ -493,6 +508,7 @@ int cb_http_exit(void *data, struct flb_config *config)
     flb_free(ctx->proxy_host);
     flb_free(ctx->uri);
     flb_free(ctx->json_date_key);
+    flb_free(ctx->header_tag);
     flb_free(ctx);
 
     return 0;
