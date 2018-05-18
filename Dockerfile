@@ -33,7 +33,7 @@ RUN install bin/fluent-bit /fluent-bit/bin/
 COPY conf/fluent-bit.conf \
      conf/parsers.conf \
      conf/parsers_java.conf \
-     conf/parsers_mult.conf \
+     conf/parsers_extra.conf \
      conf/parsers_openstack.conf \
      conf/parsers_cinder.conf \
      /fluent-bit/etc/
