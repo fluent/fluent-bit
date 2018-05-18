@@ -55,6 +55,10 @@ struct flb_out_http_config {
     char *host;
     int port;
 
+    /* Include tag in header */
+    char *header_tag;
+    size_t headertag_len;
+
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
 };
