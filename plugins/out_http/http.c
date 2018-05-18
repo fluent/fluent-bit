@@ -39,18 +39,22 @@ static char *msgpack_to_json(struct flb_out_http_config *ctx, char *data, uint64
 {
     int i;
     int ret;
+    int len;
     int array_size = 0;
     int map_size;
     size_t off = 0;
     char *json_buf;
     size_t json_size;
+    char time_formatted[32];
+    size_t s;
     msgpack_unpacked result;
     msgpack_object root;
     msgpack_object map;
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
     msgpack_object *obj;
-    struct flb_time tm;
+    struct tm tm;
+    struct flb_time tms;
 
     /* Iterate the original buffer and perform adjustments */
     msgpack_unpacked_init(&result);
@@ -73,16 +77,36 @@ static char *msgpack_to_json(struct flb_out_http_config *ctx, char *data, uint64
             continue;
         }
 
-        flb_time_pop_from_msgpack(&tm, &result, &obj);
+        flb_time_pop_from_msgpack(&tms, &result, &obj);
         map = root.via.array.ptr[1];
 
         map_size = map.via.map.size;
         msgpack_pack_map(&tmp_pck, map_size + 1);
 
-        /* Append date k/v */
+        /* Append date key */
         msgpack_pack_str(&tmp_pck, ctx->json_date_key_len);
         msgpack_pack_str_body(&tmp_pck, ctx->json_date_key, ctx->json_date_key_len);
-        msgpack_pack_double(&tmp_pck, flb_time_to_double(&tm));
+
+        /* Append date value */
+        switch (ctx->json_date_format) {
+            case FLB_JSON_DATE_DOUBLE:
+                msgpack_pack_double(&tmp_pck, flb_time_to_double(&tms));
+                break;
+
+            case FLB_JSON_DATE_ISO8601:
+                /* Format the time; use microsecond precision (not nanoseconds). */
+                gmtime_r(&tms.tm.tv_sec, &tm);
+                s = strftime(time_formatted, sizeof(time_formatted) - 1,
+                             FLB_JSON_DATE_ISO8601_FMT, &tm);
+
+                len = snprintf(time_formatted + s, sizeof(time_formatted) - 1 - s,
+                               ".%06" PRIu64 "Z", (uint64_t) tms.tm.tv_nsec / 1000);
+                s += len;
+
+                msgpack_pack_str(&tmp_pck, s);
+                msgpack_pack_str_body(&tmp_pck, time_formatted, s);
+                break;
+        }
 
         for (i = 0; i < map_size; i++) {
             msgpack_object *k = &map.via.map.ptr[i].key;
@@ -304,16 +328,19 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
         }
     }
 
+    /* Date format for JSON output */
+    ctx->json_date_format = FLB_JSON_DATE_DOUBLE;
+    tmp = flb_output_get_property("json_date_format", ins);
+    if (tmp) {
+        if (strcasecmp(tmp, "iso8601") == 0) {
+            ctx->json_date_format = FLB_JSON_DATE_ISO8601;
+        }
+    }
+
     /* Date key for JSON output */
     tmp = flb_output_get_property("json_date_key", ins);
-    if (!tmp) {
-        ctx->json_date_key     = flb_strdup("date");
-        ctx->json_date_key_len = strlen(ctx->json_date_key);
-    }
-    else {
-        ctx->json_date_key     = flb_strdup(tmp);
-        ctx->json_date_key_len = strlen(ctx->json_date_key);
-    }
+    ctx->json_date_key = flb_strdup(tmp ? tmp : "date");
+    ctx->json_date_key_len = strlen(ctx->json_date_key);
 
     ctx->u = upstream;
     ctx->uri = uri;
