@@ -464,6 +464,8 @@ static int cb_kube_filter(void *data, size_t bytes,
                                     data + pre, off - pre,
                                     &cache_buf, &cache_size, &meta, &props);
             if (ret == -1) {
+                msgpack_sbuffer_destroy(&tmp_sbuf);
+                msgpack_unpacked_destroy(&result);
                 flb_kube_prop_destroy(&props);
                 return FLB_FILTER_NOTOUCH;
             }
