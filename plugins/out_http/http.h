@@ -24,6 +24,10 @@
 #define FLB_HTTP_OUT_JSON           1
 #define FLB_HTTP_OUT_JSON_STREAM    2
 
+#define FLB_JSON_DATE_DOUBLE      0
+#define FLB_JSON_DATE_ISO8601     1
+#define FLB_JSON_DATE_ISO8601_FMT "%Y-%m-%dT%H:%M:%S"
+
 #define FLB_HTTP_CONTENT_TYPE   "Content-Type"
 #define FLB_HTTP_MIME_MSGPACK   "application/msgpack"
 #define FLB_HTTP_MIME_JSON      "application/json"
@@ -40,6 +44,8 @@ struct flb_out_http_config {
 
     /* Output format */
     int out_format;
+
+    int json_date_format;
     char *json_date_key;
     size_t json_date_key_len;
 
