@@ -52,8 +52,8 @@ int flb_utils_bool(char *val);
 void flb_utils_bytes_to_human_readable_size(size_t bytes,
                                             char *out_buf, size_t size);
 int flb_utils_time_split(char *time, int *sec, long *nsec);
+int flb_utils_read_escape_sequence_as_utf8(char *str, int len, char *dest, int *dest_used);
 int flb_utils_write_str(char *buf, int *off, size_t size,
                         char *str, size_t str_len);
 int flb_utils_write_str_buf(char *str, size_t str_len, char **out, size_t *out_size);
-
 #endif

@@ -9,7 +9,7 @@ def gen_json(f):
 
     print f
 
-    with io.open(f, 'rb') as raw:
+    with open(f, 'rb') as raw:
         data = raw.read()
 
     out_mp = f[:-4] + ".mp"

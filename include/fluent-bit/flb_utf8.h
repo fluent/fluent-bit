@@ -100,4 +100,31 @@ void flb_utf8_print(uint8_t *s) {
     }
 }
 
+int flb_utf8_encode(char *dest, u_int32_t ch)
+{
+    if (ch < 0x80) {
+        dest[0] = (char)ch;
+        return 1;
+    }
+    if (ch < 0x800) {
+        dest[0] = (ch>>6) | 0xC0;
+        dest[1] = (ch & 0x3F) | 0x80;
+        return 2;
+    }
+    if (ch < 0x10000) {
+        dest[0] = (ch>>12) | 0xE0;
+        dest[1] = ((ch>>6) & 0x3F) | 0x80;
+        dest[2] = (ch & 0x3F) | 0x80;
+        return 3;
+    }
+    if (ch < 0x110000) {
+        dest[0] = (ch>>18) | 0xF0;
+        dest[1] = ((ch>>12) & 0x3F) | 0x80;
+        dest[2] = ((ch>>6) & 0x3F) | 0x80;
+        dest[3] = (ch & 0x3F) | 0x80;
+        return 4;
+    }
+    return 0;
+}
+
 #endif

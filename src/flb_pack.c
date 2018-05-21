@@ -84,6 +84,49 @@ static inline int is_float(char *buf, int len)
     return 0;
 }
 
+static int unescape_json_str(char *json_str, int json_len,
+                             char *dest_str) {
+    int i;
+    int mark = 0;
+    int offset = 0;
+    char temp[4];
+    int temp_len;
+
+    for (i = 0; i < json_len; ) {
+        if (json_str[i] == '\\' && i + 1 < json_len) {
+            memcpy(dest_str + offset, json_str + mark, i - mark);
+            offset += i - mark;
+
+            switch (json_str[i + 1]) {
+                case '"':
+                case '\\':
+                case '\'':
+                case '/':
+                    temp[0] = json_str[i + 1];
+                    temp_len = 1;
+                    i += 2;
+                    break;
+                default:
+                    i += flb_utils_read_escape_sequence_as_utf8(
+                        json_str + i, json_len - i, temp, &temp_len);
+                    break;
+            }
+
+            memcpy(dest_str + offset, temp, temp_len);
+            offset += temp_len;
+
+            mark = i;
+        } else {
+            i++;
+        }
+    }
+    if (i != mark) {
+        memcpy(dest_str + offset, json_str + mark, i - mark);
+        offset += i - mark;
+    }
+    return offset;
+}
+
 /* Receive a tokenized JSON message and convert it to MsgPack */
 static char *tokens_to_msgpack(char *js,
                                jsmntok_t *tokens, int arr_size, int *out_size,
@@ -91,8 +134,11 @@ static char *tokens_to_msgpack(char *js,
 {
     int i;
     int flen;
+    int dbuf_len = 40;
+    int dstr_len;
     char *p;
     char *buf;
+    char *dbuf;
     jsmntok_t *t;
     msgpack_packer pck;
     msgpack_sbuffer sbuf;
@@ -104,6 +150,11 @@ static char *tokens_to_msgpack(char *js,
     /* initialize buffers */
     msgpack_sbuffer_init(&sbuf);
     msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
+
+    dbuf = flb_malloc(dbuf_len);
+    if (!dbuf) {
+        return NULL;
+    }
 
     for (i = 0; i < arr_size ; i++) {
         t = &tokens[i];
@@ -125,8 +176,14 @@ static char *tokens_to_msgpack(char *js,
             msgpack_pack_array(&pck, t->size);
             break;
         case JSMN_STRING:
-            msgpack_pack_str(&pck, flen);
-            msgpack_pack_str_body(&pck, js + t->start, flen);
+            if (dbuf_len < flen) {
+                flb_free(dbuf);
+                dbuf = flb_malloc(flen);
+                dbuf_len = flen;
+            }
+            dstr_len = unescape_json_str(js + t->start, flen, dbuf);
+            msgpack_pack_str(&pck, dstr_len);
+            msgpack_pack_str_body(&pck, dbuf, dstr_len);
             break;
         case JSMN_PRIMITIVE:
             p = js + t->start;
@@ -149,6 +206,7 @@ static char *tokens_to_msgpack(char *js,
             }
             break;
         case JSMN_UNDEFINED:
+            flb_free(dbuf);
             msgpack_sbuffer_destroy(&sbuf);
             return NULL;
         }
@@ -159,11 +217,13 @@ static char *tokens_to_msgpack(char *js,
     buf = flb_malloc(sbuf.size);
     if (!buf) {
         flb_errno();
+        flb_free(dbuf);
         msgpack_sbuffer_destroy(&sbuf);
         return NULL;
     }
 
     memcpy(buf, sbuf.data, sbuf.size);
+    flb_free(dbuf);
     msgpack_sbuffer_destroy(&sbuf);
 
     return buf;

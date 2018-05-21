@@ -446,7 +446,7 @@ void test_utf8_to_json()
         ret = strcmp(file_json, out_buf);
         if (ret != 0) {
             TEST_CHECK(ret == 0);
-            printf("[test] %s\n", test->json);
+            printf("[test] mp->json %s\n", test->json);
             printf("       EXPECTED => '%s'\n", file_json);
             printf("       ENCODED  => '%s'\n", out_buf);
         }
@@ -455,7 +455,29 @@ void test_utf8_to_json()
 
         if (out_buf) {
             flb_free(out_buf);
+            out_buf = NULL;
         }
+
+        /* JSMN doesn't support parsing primitives at the top level. */
+        if (file_json[0] == '{') {
+            ret = flb_pack_json(file_json, json_size, &out_buf, &out_size);
+            TEST_CHECK(ret == 0);
+            
+            ret = memcmp(file_msgp, out_buf, (out_size < msgp_size) ? out_size : msgp_size);
+            if (ret != 0) {
+                TEST_CHECK(ret == 0);
+                printf("[test] json->mp %s\n", test->json);
+                printf("       EXPECTED => (%d) '%.*s'\n", msgp_size, msgp_size, file_msgp);
+                printf("       ENCODED  => (%d) '%.*s'\n", out_size, out_size, out_buf);
+            }
+            
+            TEST_CHECK(out_size == msgp_size);
+            
+            if (out_buf) {
+                flb_free(out_buf);
+            }
+        }
+        
         flb_free(file_msgp);
         flb_free(file_json);
     }

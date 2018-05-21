@@ -498,7 +498,6 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
     int required;
     int len;
     int hex_bytes;
-    uint32_t codepoint;
     uint32_t state = 0;
     char tmp[16];
     size_t available;
@@ -514,12 +513,27 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
 
     written = *off;
     p = buf + *off;
-    for (i = 0; i < str_len; i++) {
+    for (i = 0; i < str_len; i += hex_bytes) {
         if ((available - written) < 2) {
             return FLB_FALSE;
         }
 
-        c = (uint32_t) str[i];
+        hex_bytes = flb_utf8_len(str + i);
+        c = 0;
+        state = FLB_UTF8_ACCEPT;
+        for (b = 0; b < hex_bytes; b++) {
+            s = (unsigned char *) str + i + b;
+            ret = flb_utf8_decode(&state, &c, *s);
+            if (ret == 0) {
+                break;
+            }
+        }
+        if (state != FLB_UTF8_ACCEPT) {
+            /* Invalid UTF-8 hex, just skip utf-8 bytes */
+            flb_warn("[pack] invalid UTF-8 bytes, skipping");
+            break;
+        }
+
         if (c == '\\' || c == '"') {
             *p++ = '\\';
             *p++ = c;
@@ -559,59 +573,34 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
             p += len;
         }
         else if (c >= 0x80 && c <= 0xFFFF) {
-            hex_bytes = flb_utf8_len(str + i);
-            if ((available - written) < (2 + hex_bytes)) {
+            len = snprintf(tmp, sizeof(tmp) - 1, "\\u%.4x", c);
+            if ((available - written) < len) {
                 return FLB_FALSE;
             }
 
-            state = FLB_UTF8_ACCEPT;
-            codepoint = 0;
-            for (b = 0; b < hex_bytes; b++) {
-                s = (unsigned char *) str + i + b;
-                ret = flb_utf8_decode(&state, &codepoint, *s);
-                if (ret == 0) {
-                    break;
-                }
-            }
-
-            if (state != FLB_UTF8_ACCEPT) {
-                /* Invalid UTF-8 hex, just skip utf-8 bytes */
-                break;
-            }
-            else {
-                len = snprintf(tmp, sizeof(tmp) - 1, "\\u%.4x", codepoint);
-                encoded_to_buf(p, tmp, len);
-                p += len;
-            }
-            i += (hex_bytes - 1);
+            encoded_to_buf(p, tmp, len);
+            p += len;
         }
-        else if (c > 0xFFFF) {
-            hex_bytes = flb_utf8_len(str + i);
-            if ((available - written) < (4 + hex_bytes)) {
+        else if (c > 0xFFFF && c < 0x10000) {
+            len = snprintf(tmp, sizeof(tmp) - 1, "\\u%04x", c);
+            if ((available - written) < len) {
                 return FLB_FALSE;
             }
 
-            state = FLB_UTF8_ACCEPT;
-            codepoint = 0;
-            for (b = 0; b < hex_bytes; b++) {
-                s = (unsigned char *) str + i + b;
-                ret = flb_utf8_decode(&state, &codepoint, *s);
-                if (ret == 0) {
-                    break;
-                }
+            encoded_to_buf(p, tmp, len);
+            p += len;
+        }
+        else if (c > 0x10000) {
+            /* we're going to encode these as surrogate pairs to be compatible with JSON */
+            len = snprintf(tmp, sizeof(tmp) - 1, "\\u%04x\\u%04x",
+                           (c - 0x10000) / 0x400 + 0xD800,
+                           (c - 0x10000) % 0x400 + 0xDC00);
+            if ((available - written) < len) {
+                return FLB_FALSE;
             }
 
-            if (state != FLB_UTF8_ACCEPT) {
-                /* Invalid UTF-8 hex, just skip utf-8 bytes */
-                flb_warn("[pack] invalid UTF-8 bytes, skipping");
-                break;
-            }
-            else {
-                len = snprintf(tmp, sizeof(tmp) - 1, "\\u%04x", codepoint);
-                encoded_to_buf(p, tmp, len);
-                p += len;
-            }
-            i += (hex_bytes - 1);
+            encoded_to_buf(p, tmp, len);
+            p += len;
         }
         else {
             *p++ = c;
@@ -661,4 +650,112 @@ int flb_utils_write_str_buf(char *str, size_t str_len, char **out, size_t *out_s
     *out = buf;
     *out_size = off;
     return 0;
+}
+
+static int octal_digit(char c)
+{
+    return (c >= '0' && c <= '7');
+}
+
+static int hex_digit(char c)
+{
+    return ((c >= '0' && c <= '9') ||
+            (c >= 'A' && c <= 'F') ||
+            (c >= 'a' && c <= 'f'));
+}
+
+static int flb_utils_read_escape_sequence(char *str, int len, u_int32_t *dest)
+{
+    u_int32_t ch;
+    char digs[9]="\0\0\0\0\0\0\0\0";
+    int dno=0, i=1;
+
+    ch = (u_int32_t)str[0];    /* take literal character */
+
+    if (str[0] == 'n')
+        ch = L'\n';
+    else if (str[0] == 't')
+        ch = L'\t';
+    else if (str[0] == 'r')
+        ch = L'\r';
+    else if (str[0] == 'b')
+        ch = L'\b';
+    else if (str[0] == 'f')
+        ch = L'\f';
+    else if (str[0] == 'v')
+        ch = L'\v';
+    else if (str[0] == 'a')
+        ch = L'\a';
+    else if (octal_digit(str[0])) {
+        i = 0;
+        do {
+            digs[dno++] = str[i++];
+        } while (octal_digit(str[i]) && dno < 3 && dno < len);
+        ch = strtol(digs, NULL, 8);
+    }
+    else if (str[0] == 'x') {
+        while (hex_digit(str[i]) && dno < 2 && dno < len) {
+            digs[dno++] = str[i++];
+        }
+        if (dno > 0)
+            ch = strtol(digs, NULL, 16);
+    }
+    else if (str[0] == 'u') {
+        while (hex_digit(str[i]) && dno < 4 && dno < len) {
+            digs[dno++] = str[i++];
+        }
+        if (dno > 0)
+            ch = strtol(digs, NULL, 16);
+    }
+    else if (str[0] == 'U') {
+        while (hex_digit(str[i]) && dno < 8 && dno < len) {
+            digs[dno++] = str[i++];
+        }
+        if (dno > 0)
+            ch = strtol(digs, NULL, 16);
+    }
+    *dest = ch;
+
+    return i;
+}
+
+/* assumes that src points to the backslash
+   assumes dest has at least 8 bytes available
+   returns number of input characters processed */
+int flb_utils_read_escape_sequence_as_utf8(char *str, int len, char *dest, int *dest_used) {
+    u_int32_t ch32;
+    u_int32_t ch;
+    int ret;
+    int ret_surrogate;
+    int used;
+    int read_surrogate_pair;
+
+    /* skip \ */
+    str++;
+    len--;
+
+    ret = flb_utils_read_escape_sequence(str, len, &ch32);
+    read_surrogate_pair = ch32 >= 0xD800 && ch32 <= 0xDBFF && ret + 1 < len && str[ret] == '\\';
+    if (read_surrogate_pair) {
+        ch = (ch32 - 0xD800) * 0x400;
+
+        ret_surrogate = flb_utils_read_escape_sequence(str + ret + 1, len - ret - 1, &ch32);
+        if (ch32 >= 0xDC00) {
+            ret += 1 + ret_surrogate;
+
+            ch += ch32 - 0xDC00;
+            ch += 0x10000;
+        } else {
+            ch = ch / 0x400 - 0xD800;
+        }
+    } else {
+        ch = ch32;
+    }
+    used = flb_utf8_encode(dest, ch);
+
+    if (dest_used) {
+        *dest_used = used;
+    }
+
+    return ret + 1; /* for the initial \ */
 }
