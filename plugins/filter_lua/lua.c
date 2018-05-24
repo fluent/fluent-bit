@@ -106,6 +106,19 @@ int msgpack_map_to_json(struct lua_filter *lf, msgpack_object *obj)
     return 0;
 }
 
+static int is_valid_func(struct flb_luajit *lua, flb_sds_t func)
+{
+    int ret = FLB_FALSE;
+    
+    lua_getglobal(lua, func);
+    if (lua_isfunction(lua, -1)) {
+        ret = FLB_TRUE;
+    }
+    lua_pop(lua, -1); /* discard return value of isfunction */
+    
+    return ret;
+}
+
 static int cb_lua_init(struct flb_filter_instance *f_ins,
                        struct flb_config *config,
                        void *data)
@@ -136,6 +149,13 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
         return -1;
     }
     lua_pcall(ctx->lua->state, 0, 0, 0);
+
+    if (is_valid_func(ctx->lua->state, ctx->call) != FLB_TRUE) {
+        flb_error("[filter_lua] function %s is not found", ctx->call);
+
+        lua_config_destroy(ctx);
+        return -1;
+    }
 
     /* Set context */
     flb_filter_set_context(f_ins, ctx);

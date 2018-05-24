@@ -38,6 +38,7 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
     struct mk_list *head;
     struct flb_config_prop *prop;
     struct flb_systemd_config *ctx;
+    int journal_filter_is_and;
 
     /* Allocate space for the configuration */
     ctx = flb_calloc(1, sizeof(struct flb_systemd_config));
@@ -121,6 +122,21 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
         ctx->max_entries = FLB_SYSTEND_ENTRIES;
     }
 
+    tmp = flb_input_get_property("systemd_filter_type", i_ins);
+    if (tmp) {
+        if (strcasecmp(tmp, "and") == 0) {
+            journal_filter_is_and = FLB_TRUE;
+        } else if (strcasecmp(tmp, "or") == 0) {
+            journal_filter_is_and = FLB_FALSE;
+        } else {
+            flb_error("[in_systemd] systemd_filter_type must be 'and' or 'or'. Got %s", tmp);
+            flb_free(ctx);
+            return NULL;
+        }
+    } else {
+        journal_filter_is_and = FLB_FALSE;
+    }
+
     /* Load Systemd filters, iterate all properties */
     mk_list_foreach(head, &i_ins->properties) {
         prop = mk_list_entry(head, struct flb_config_prop, _head);
@@ -128,11 +144,16 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
             continue;
         }
 
-        flb_debug("[in_systemd] add filter: %s", prop->val);
+        flb_debug("[in_systemd] add filter: %s (%s)", prop->val,
+                  journal_filter_is_and ? "and" : "or");
 
         /* Apply filter/match */
         sd_journal_add_match(ctx->j, prop->val, 0);
-        sd_journal_add_disjunction(ctx->j);
+        if (journal_filter_is_and) {
+            sd_journal_add_conjunction(ctx->j);
+        } else {
+            sd_journal_add_disjunction(ctx->j);
+        }
     }
 
     /* Seek to head by default or tail if specified in configuration */
