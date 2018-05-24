@@ -25,9 +25,15 @@
 #include <fluent-bit/flb_parser_decoder.h>
 #include <fluent-bit/flb_regex.h>
 #include <fluent-bit/flb_str.h>
+
 #include <msgpack.h>
 
+/* don't do this at home */
+#define pack_uint16(buf, d) _msgpack_store16(buf, (uint16_t) d)
+#define pack_uint32(buf, d) _msgpack_store32(buf, (uint32_t) d)
+
 struct regex_cb_ctx {
+    int time_found;
     time_t time_lookup;
     time_t time_now;
     double time_frac;
@@ -66,6 +72,8 @@ static void cb_results(unsigned char *name, unsigned char *value,
                 flb_error("[parser:%s] Invalid time format %s.", parser->name, parser->time_fmt);
                 return;
             }
+
+            pcb->time_found = FLB_TRUE;
             pcb->time_frac = frac;
             pcb->time_lookup = flb_parser_tm2time(&tm);
 
@@ -101,6 +109,7 @@ int flb_parser_regex_do(struct flb_parser *parser,
     ssize_t n;
     size_t dec_out_size;
     char *dec_out_buf;
+    char *tmp;
     struct flb_regex_search result;
     struct regex_cb_ctx pcb;
     struct flb_time *t;
@@ -116,18 +125,14 @@ int flb_parser_regex_do(struct flb_parser *parser,
     msgpack_sbuffer_init(&tmp_sbuf);
     msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 
-    if (parser->time_fmt && parser->time_keep == FLB_FALSE) {
-        arr_size = (n - 1);
-    }
-    else {
-        arr_size = n;
-    }
-
+    /* Set a Map size with the exact number of matches returned by regex */
+    arr_size = n;
     msgpack_pack_map(&tmp_pck, arr_size);
 
     /* Callback context */
     pcb.pck = &tmp_pck;
     pcb.parser = parser;
+    pcb.time_found = FLB_FALSE;
     pcb.time_lookup = 0;
     pcb.time_frac = 0;
     pcb.time_now = time(NULL);
@@ -137,6 +142,44 @@ int flb_parser_regex_do(struct flb_parser *parser,
     if (last_byte == -1) {
         msgpack_sbuffer_destroy(&tmp_sbuf);
         return -1;
+    }
+
+    /*
+     * There some special cases when the Parser have a 'time' handling
+     * requirement, meaning: lookup for this 'time' key and resolve the
+     * real date of the record. If so, the parser by default will
+     * keep the original 'time' key field found but in other scenarios
+     * it may ask to skip it.
+     *
+     * If a time lookup is specified and the parser ask to skip the record
+     * and the time key is found, we need to adjust the msgpack header
+     * map size, initially we set a size to include all keys found, but
+     * until now we just know we are not going to include it.
+     *
+     * In order to avoid to create a new msgpack buffer and repack the
+     * map entries, we just position at the header byte and do the
+     * proper adjustment in our original buffer. Note that for cases
+     * where the map is large enough '<= 65535' or '> 65535' we have
+     * to use internal msgpack api functions since packing the bytes
+     * in Big-Endian is a requirement.
+     */
+    if (parser->time_fmt && parser->time_keep == FLB_FALSE &&
+        pcb.time_found == FLB_TRUE) {
+        arr_size = (n - 1);
+
+        tmp = tmp_sbuf.data;
+        uint8_t h = tmp[0];
+        if (h >> 4 == 0x8) { /* 1000xxxx */
+            *tmp = (uint8_t) 0x8 << 4 | ((uint8_t) arr_size);
+        }
+        else if (h == 0xde) {
+            tmp++;
+            pack_uint16(tmp, arr_size);
+        }
+        else if (h == 0xdf) {
+            tmp++;
+            pack_uint32(tmp, arr_size);
+        }
     }
 
     /* Export results */
