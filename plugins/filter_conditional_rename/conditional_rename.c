@@ -170,8 +170,9 @@ static inline void pack_map_with_rename(msgpack_packer * packer,
                                         msgpack_object * map,
                                         struct filter_conditional_rename_ctx *ctx)
 {
+    int i;
     bool matched;
-    for (int i = 0; i < map->via.map.size; i++) {
+    for (i = 0; i < map->via.map.size; i++) {
 
         matched = false;
 
@@ -192,7 +193,8 @@ static inline void pack_map_with_rename(msgpack_packer * packer,
 
 static inline bool has_matching_kv(msgpack_object * map, struct filter_conditional_rename_ctx *ctx)
 {
-    for (int i = 0; i < map->via.map.size; i++) {
+    int i;
+    for (i = 0; i < map->via.map.size; i++) {
         if (if_equal_match(&map->via.map.ptr[i], ctx)) {
             return true;
         }
