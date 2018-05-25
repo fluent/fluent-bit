@@ -121,6 +121,7 @@ option(FLB_FILTER_THROTTLE "Enable throttle filter"             Yes)
 option(FLB_FILTER_RECORD_MODIFIER "Enable record_modifier filter" Yes)
 option(FLB_FILTER_NEST     "Enable nest filter"                   Yes)
 option(FLB_FILTER_LUA      "Enable Lua scripting filter"          Yes)
+option(FLB_FILTER_CONDITIONAL_RENAME "Enable conditional_rename filter" Yes)
 
 # Enable all features
 if(FLB_ALL)
