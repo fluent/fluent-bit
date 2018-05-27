@@ -154,56 +154,46 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
     /* Config Gelf_Timestamp_Key */
     tmp = flb_output_get_property("gelf_timestamp_key", ins);
     if (tmp) {
-        ctx->gelf_fields.timestamp_key     = flb_strdup(tmp);
-        ctx->gelf_fields.timestamp_key_len = strlen(tmp);
+        ctx->gelf_fields.timestamp_key = flb_sds_create(tmp);
     }
     else {
-        ctx->gelf_fields.timestamp_key     = NULL;
-        ctx->gelf_fields.timestamp_key_len = 0;
+        ctx->gelf_fields.timestamp_key = NULL;
     }
 
     /* Config Gelf_Host_Key */
     tmp = flb_output_get_property("gelf_host_key", ins);
     if (tmp) {
-        ctx->gelf_fields.host_key     = flb_strdup(tmp);
-        ctx->gelf_fields.host_key_len = strlen(tmp);
+        ctx->gelf_fields.host_key = flb_sds_create(tmp);
     }
     else {
-        ctx->gelf_fields.host_key     = NULL;
-        ctx->gelf_fields.host_key_len = 0;
+        ctx->gelf_fields.host_key = NULL;
     }
 
     /* Config Gelf_Short_Message_Key */
     tmp = flb_output_get_property("gelf_short_message_key", ins);
     if (tmp) {
-        ctx->gelf_fields.short_message_key     = flb_strdup(tmp);
-        ctx->gelf_fields.short_message_key_len = strlen(tmp);
+        ctx->gelf_fields.short_message_key = flb_sds_create(tmp);
     }
     else {
-        ctx->gelf_fields.short_message_key     = NULL;
-        ctx->gelf_fields.short_message_key_len = 0;
+        ctx->gelf_fields.short_message_key = NULL;
     }
 
     /* Config Gelf_Full_Message_Key */
     tmp = flb_output_get_property("gelf_full_message_key", ins);
     if (tmp) {
-        ctx->gelf_fields.full_message_key     = flb_strdup(tmp);
-        ctx->gelf_fields.full_message_key_len = strlen(tmp);
+        ctx->gelf_fields.full_message_key = flb_sds_create(tmp);
     }
     else {
-        ctx->gelf_fields.full_message_key     = NULL;
-        ctx->gelf_fields.full_message_key_len = 0;
+        ctx->gelf_fields.full_message_key = NULL;
     }
 
     /* Config Gelf_Level_Key */
     tmp = flb_output_get_property("gelf_level_key", ins);
     if (tmp) {
-        ctx->gelf_fields.level_key     = flb_strdup(tmp);
-        ctx->gelf_fields.level_key_len = strlen(tmp);
+        ctx->gelf_fields.level_key = flb_sds_create(tmp);
     }
     else {
-        ctx->gelf_fields.level_key     = NULL;
-        ctx->gelf_fields.level_key_len = 0;
+        ctx->gelf_fields.level_key = NULL;
     }
 
     /* Kafka Producer */

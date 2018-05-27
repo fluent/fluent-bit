@@ -1,4 +1,4 @@
-/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/*-*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 /*  Fluent Bit
  *  ==========
@@ -1022,7 +1022,7 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t s, msgpack_object *o,
 
     if (fields != NULL && fields->host_key != NULL) {
          host_key = fields->host_key;
-         host_key_len = fields->host_key_len;
+         host_key_len = flb_sds_len(fields->host_key);
     }
     else {
          host_key = "host";
@@ -1031,7 +1031,7 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t s, msgpack_object *o,
 
     if (fields != NULL && fields->timestamp_key != NULL) {
         timestamp_key = fields->timestamp_key;
-        timestamp_key_len = fields->timestamp_key_len;
+        timestamp_key_len = flb_sds_len(fields->timestamp_key);
     }
     else {
         timestamp_key = "timestamp";
@@ -1040,7 +1040,7 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t s, msgpack_object *o,
 
     if (fields != NULL && fields->level_key != NULL) {
         level_key = fields->level_key;
-        level_key_len = fields->level_key_len;
+        level_key_len = flb_sds_len(fields->level_key);
     }
     else {
         level_key = "level";
@@ -1049,7 +1049,7 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t s, msgpack_object *o,
 
     if (fields != NULL && fields->short_message_key != NULL) {
         short_message_key = fields->short_message_key;
-        short_message_key_len = fields->short_message_key_len;
+        short_message_key_len = flb_sds_len(fields->short_message_key);
     }
     else {
         short_message_key = "short_message";
@@ -1058,7 +1058,7 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t s, msgpack_object *o,
 
     if (fields != NULL && fields->full_message_key != NULL) {
         full_message_key = fields->full_message_key;
-        full_message_key_len = fields->full_message_key_len;
+        full_message_key_len = flb_sds_len(fields->full_message_key);
     }
     else {
         full_message_key = "full_message";

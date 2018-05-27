@@ -58,16 +58,11 @@ int flb_msgpack_expand_map(char *map_data, size_t map_size,
                            char** out_buf, int* out_size);
 
 struct flb_gelf_fields {
-    char *timestamp_key;
-    int timestamp_key_len;
-    char *host_key;
-    int host_key_len;
-    char *short_message_key;
-    int short_message_key_len;
-    char *full_message_key;
-    int full_message_key_len;
-    char *level_key;
-    int level_key_len;
+    flb_sds_t timestamp_key;
+    flb_sds_t host_key;
+    flb_sds_t short_message_key;
+    flb_sds_t full_message_key;
+    flb_sds_t level_key;
 };
 
 flb_sds_t flb_msgpack_to_gelf(flb_sds_t s, msgpack_object *o,
