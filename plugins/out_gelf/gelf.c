@@ -301,7 +301,6 @@ void cb_gelf_flush(void *data, size_t bytes,
                 ret = gelf_send_udp(ctx, s, flb_sds_len(s));
                 if (ret == -1) {
                     flb_sds_destroy(s);
-                    flb_upstream_conn_release(u_conn);
                     FLB_OUTPUT_RETURN(FLB_RETRY);
                 }
             }
