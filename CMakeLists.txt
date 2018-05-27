@@ -14,8 +14,6 @@ include(ExternalProject)
 include(cmake/FindJournald.cmake)
 include(cmake/FindMonkey.cmake)
 
-find_package( ZLIB REQUIRED )
-
 # Output paths
 set(FLB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
@@ -169,6 +167,10 @@ if(FLB_DEV)
   set(FLB_METRICS        On)
   set(FLB_HTTP_SERVER    On)
   set(FLB_TESTS_INTERNAL On)
+endif()
+
+if(FLB_OUT_GELF)
+  find_package( ZLIB REQUIRED )
 endif()
 
 # Macro to set definitions
