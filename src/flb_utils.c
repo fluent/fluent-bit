@@ -492,7 +492,6 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
                         char *str, size_t str_len)
 {
     int i;
-    int b;
     int ret;
     int written = 0;
     int required;
@@ -518,20 +517,19 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
             return FLB_FALSE;
         }
 
-        hex_bytes = flb_utf8_len(str + i);
         c = 0;
         state = FLB_UTF8_ACCEPT;
-        for (b = 0; b < hex_bytes; b++) {
-            s = (unsigned char *) str + i + b;
+        for (hex_bytes = 0; i + hex_bytes < str_len; hex_bytes++) {
+            s = (unsigned char *) str + i + hex_bytes;
             ret = flb_utf8_decode(&state, &c, *s);
-            if (ret == 0) {
+            if (ret == FLB_UTF8_ACCEPT) {
+                hex_bytes++;
                 break;
             }
         }
         if (state != FLB_UTF8_ACCEPT) {
             /* Invalid UTF-8 hex, just skip utf-8 bytes */
             flb_warn("[pack] invalid UTF-8 bytes, skipping");
-            break;
         }
 
         if (c == '\\' || c == '"') {
