@@ -132,6 +132,10 @@ struct flb_config *flb_config_init()
     mk_list_init(&config->sqldb_list);
 #endif
 
+#ifdef FLB_HAVE_LUAJIT
+    mk_list_init(&config->luajit_list);
+#endif
+
     mk_list_init(&config->collectors);
     mk_list_init(&config->in_plugins);
     mk_list_init(&config->parser_plugins);

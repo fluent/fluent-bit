@@ -99,7 +99,7 @@ static int in_stdin_collect(struct flb_input_instance *i_ins,
 
     bytes = read(ctx->fd,
                  ctx->buf + ctx->buf_len,
-                 sizeof(ctx->buf) - ctx->buf_len);
+                 sizeof(ctx->buf) - ctx->buf_len - 1);
     flb_trace("in_stdin read() = %i", bytes);
 
     if (bytes == 0) {
@@ -171,7 +171,7 @@ static int in_stdin_collect(struct flb_input_instance *i_ins,
             ctx->buf_len = 0;
             break;
         }
-        else if (ret > 0) {
+        else if (ret >= 0) {
             /*
              * 'ret' is the last byte consumed by the regex engine, we need
              * to advance it position.

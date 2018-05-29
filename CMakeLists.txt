@@ -22,31 +22,32 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/library")
 
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  0)
-set(FLB_VERSION_MINOR 13)
+set(FLB_VERSION_MINOR 14)
 set(FLB_VERSION_PATCH  0)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 # Build Options
-option(FLB_ALL                "Enable all features"          No)
-option(FLB_DEBUG              "Build with debug symbols"     No)
-option(FLB_JEMALLOC           "Build with Jemalloc support"  No)
-option(FLB_REGEX              "Build wiht Regex support"    Yes)
-option(FLB_TLS                "Build with SSL/TLS support"   No)
-option(FLB_WITHOUT_BIN        "Do not build executable"      No)
-option(FLB_WITHOUT_EXAMPLES   "Do not build examples"        No)
-option(FLB_WITHOUT_SHARED_LIB "Do not build shared library"  No)
-option(FLB_STATS              "Enable stats support"         No)
-option(FLB_VALGRIND           "Enable Valgrind support"      No)
-option(FLB_TRACE              "Enable trace mode"            No)
-option(FLB_TESTS_RUNTIME      "Enable runtime tests"         No)
-option(FLB_TESTS_INTERNAL     "Enabel internal tests"        No)
-option(FLB_MTRACE             "Enable mtrace support"        No)
-option(FLB_BUFFERING          "Enable buffering support"     No)
-option(FLB_POSIX_TLS          "Force POSIX thread storage"   No)
-option(FLB_WITHOUT_INOTIFY    "Disable inotify support"      No)
-option(FLB_SQLDB              "Enable SQL embedded DB"       No)
-option(FLB_HTTP_SERVER        "Enable HTTP Server"           No)
-option(FLB_BACKTRACE          "Enable stacktrace support"   Yes)
+option(FLB_ALL                "Enable all features"           No)
+option(FLB_DEBUG              "Build with debug symbols"      No)
+option(FLB_JEMALLOC           "Build with Jemalloc support"   No)
+option(FLB_REGEX              "Build wiht Regex support"     Yes)
+option(FLB_TLS                "Build with SSL/TLS support"    No)
+option(FLB_WITHOUT_BIN        "Do not build executable"       No)
+option(FLB_WITHOUT_EXAMPLES   "Do not build examples"         No)
+option(FLB_WITHOUT_SHARED_LIB "Do not build shared library"   No)
+option(FLB_STATS              "Enable stats support"          No)
+option(FLB_VALGRIND           "Enable Valgrind support"       No)
+option(FLB_TRACE              "Enable trace mode"             No)
+option(FLB_TESTS_RUNTIME      "Enable runtime tests"          No)
+option(FLB_TESTS_INTERNAL     "Enabel internal tests"         No)
+option(FLB_MTRACE             "Enable mtrace support"         No)
+option(FLB_BUFFERING          "Enable buffering support"      No)
+option(FLB_POSIX_TLS          "Force POSIX thread storage"    No)
+option(FLB_WITHOUT_INOTIFY    "Disable inotify support"       No)
+option(FLB_SQLDB              "Enable SQL embedded DB"        No)
+option(FLB_HTTP_SERVER        "Enable HTTP Server"            No)
+option(FLB_BACKTRACE          "Enable stacktrace support"    Yes)
+option(FLB_LUAJIT             "Enable Lua Scripting support" Yes)
 
 # Metrics: Experimental Feature, disabled by default on 0.12 series
 # but enabled in the upcoming 0.13 release. Note that development
@@ -112,11 +113,14 @@ option(FLB_OUT_FLOWCOUNTER "Enable flowcount output plugin"     Yes)
 option(FLB_OUT_KAFKA       "Enable Kafka output plugin"          No)
 option(FLB_OUT_KAFKA_REST  "Enable Kafka Rest output plugin"    Yes)
 option(FLB_FILTER_GREP     "Enable grep filter"                 Yes)
+option(FLB_FILTER_MODIFY   "Enable modify filter"               Yes)
 option(FLB_FILTER_STDOUT   "Enable stdout filter"               Yes)
 option(FLB_FILTER_PARSER   "Enable parser filter"               Yes)
 option(FLB_FILTER_KUBERNETES "Enable kubernetes filter"         Yes)
 option(FLB_FILTER_THROTTLE "Enable throttle filter"             Yes)
 option(FLB_FILTER_RECORD_MODIFIER "Enable record_modifier filter" Yes)
+option(FLB_FILTER_NEST     "Enable nest filter"                   Yes)
+option(FLB_FILTER_LUA      "Enable Lua scripting filter"          Yes)
 
 # Enable all features
 if(FLB_ALL)
@@ -185,6 +189,7 @@ include_directories(
   lib/flb_libco
   lib/sha1
   lib/msgpack-2.1.3/include
+  lib/luajit-2.0.5/src/
   ${MONKEY_INCLUDE_DIR}
   )
 
@@ -418,6 +423,22 @@ if(FLB_REGEX)
   add_dependencies(libonigmo onigmo)
   include_directories("${CMAKE_CURRENT_BINARY_DIR}/include/")
   FLB_DEFINITION(FLB_HAVE_REGEX)
+endif()
+
+# LuaJIT (Scripting Support)
+# ==========================
+if(FLB_LUAJIT)
+  set(LUA_PATH ${CMAKE_CURRENT_SOURCE_DIR}/lib/luajit-2.0.5)
+  ExternalProject_Add(luajit
+    SOURCE_DIR ${LUA_PATH}
+    CONFIGURE_COMMAND ${LUA_PATH}/configure
+    BUILD_COMMAND make BUILD_MODE=static XCFLAGS="-fPIC" -C ${LUA_PATH}
+    INSTALL_COMMAND cp ${LUA_PATH}/src/libluajit.a "${CMAKE_CURRENT_BINARY_DIR}/lib/libluajit.a")
+  add_library(libluajit STATIC IMPORTED GLOBAL)
+  set_target_properties(libluajit PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/lib/libluajit.a")
+  add_dependencies(libluajit luajit)
+  include_directories("${CMAKE_CURRENT_BINARY_DIR}/include/")
+  FLB_DEFINITION(FLB_HAVE_LUAJIT)
 endif()
 
 # Pthread Local Storage

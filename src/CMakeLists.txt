@@ -42,6 +42,7 @@ include_directories(
   ../lib/jsmn
   ../lib/msgpack-c-0b7cabd/include
   ../lib/monkey/include/
+  ../lib/luajit-2.0.5/src/
   ${extra_headers}
   )
 
@@ -101,11 +102,17 @@ if(FLB_BUFFERING)
     )
 endif()
 
+if(FLB_LUAJIT)
+  set(src
+    ${src}
+    "flb_luajit.c"
+    )
+endif()
+
 # Link to libco
 set(extra_libs
   ${extra_libs}
   "co")
-
 
 if(FLB_JEMALLOC)
   set(extra_libs
@@ -123,6 +130,12 @@ if(FLB_REGEX)
     )
 endif()
 
+if(FLB_LUAJIT)
+  set(extra_libs
+    ${extra_libs}
+    "libluajit")
+endif()
+
 if(FLB_SQLDB)
   set(src
     ${src}
@@ -132,6 +145,7 @@ if(FLB_SQLDB)
     ${extra_libs}
     "sqlite3")
 endif()
+
 
 include(CheckSymbolExists)
 check_symbol_exists(accept4 "sys/socket.h" HAVE_ACCEPT4)

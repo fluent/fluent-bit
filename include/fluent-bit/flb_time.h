@@ -66,6 +66,12 @@ static inline void flb_time_copy(struct flb_time *dst, struct flb_time *src)
     dst->tm.tv_nsec = src->tm.tv_nsec;
 }
 
+static inline void flb_time_from_double(struct flb_time *dst, double d)
+{
+    dst->tm.tv_sec = (int) d;
+    dst->tm.tv_nsec = (d - dst->tm.tv_sec) * 1000000000L;
+}
+
 int flb_time_get(struct flb_time *tm);
 double flb_time_to_double(struct flb_time *tm);
 int flb_time_diff(struct flb_time *time1,

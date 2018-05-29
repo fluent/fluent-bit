@@ -39,18 +39,22 @@ static char *msgpack_to_json(struct flb_out_http_config *ctx, char *data, uint64
 {
     int i;
     int ret;
+    int len;
     int array_size = 0;
     int map_size;
     size_t off = 0;
     char *json_buf;
     size_t json_size;
+    char time_formatted[32];
+    size_t s;
     msgpack_unpacked result;
     msgpack_object root;
     msgpack_object map;
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
     msgpack_object *obj;
-    struct flb_time tm;
+    struct tm tm;
+    struct flb_time tms;
 
     /* Iterate the original buffer and perform adjustments */
     msgpack_unpacked_init(&result);
@@ -73,16 +77,36 @@ static char *msgpack_to_json(struct flb_out_http_config *ctx, char *data, uint64
             continue;
         }
 
-        flb_time_pop_from_msgpack(&tm, &result, &obj);
+        flb_time_pop_from_msgpack(&tms, &result, &obj);
         map = root.via.array.ptr[1];
 
         map_size = map.via.map.size;
         msgpack_pack_map(&tmp_pck, map_size + 1);
 
-        /* Append date k/v */
+        /* Append date key */
         msgpack_pack_str(&tmp_pck, ctx->json_date_key_len);
         msgpack_pack_str_body(&tmp_pck, ctx->json_date_key, ctx->json_date_key_len);
-        msgpack_pack_double(&tmp_pck, flb_time_to_double(&tm));
+
+        /* Append date value */
+        switch (ctx->json_date_format) {
+            case FLB_JSON_DATE_DOUBLE:
+                msgpack_pack_double(&tmp_pck, flb_time_to_double(&tms));
+                break;
+
+            case FLB_JSON_DATE_ISO8601:
+                /* Format the time; use microsecond precision (not nanoseconds). */
+                gmtime_r(&tms.tm.tv_sec, &tm);
+                s = strftime(time_formatted, sizeof(time_formatted) - 1,
+                             FLB_JSON_DATE_ISO8601_FMT, &tm);
+
+                len = snprintf(time_formatted + s, sizeof(time_formatted) - 1 - s,
+                               ".%06" PRIu64 "Z", (uint64_t) tms.tm.tv_nsec / 1000);
+                s += len;
+
+                msgpack_pack_str(&tmp_pck, s);
+                msgpack_pack_str_body(&tmp_pck, time_formatted, s);
+                break;
+        }
 
         for (i = 0; i < map_size; i++) {
             msgpack_object *k = &map.via.map.ptr[i].key;
@@ -101,12 +125,17 @@ static char *msgpack_to_json(struct flb_out_http_config *ctx, char *data, uint64
                                       &json_buf, &json_size);
 
     /* Optionally convert to JSON stream from JSON array */
-    if (ctx->out_format == FLB_HTTP_OUT_JSON_STREAM) {
+    if ((ctx->out_format == FLB_HTTP_OUT_JSON_STREAM) ||
+        (ctx->out_format == FLB_HTTP_OUT_JSON_LINES)) {
         char *p;
         char *end = json_buf + json_size;
         int level = 0;
         int in_string = FLB_FALSE;
         int in_escape = FLB_FALSE;
+        char separator = ' ';
+        if (ctx->out_format == FLB_HTTP_OUT_JSON_LINES) {
+            separator = '\n';
+        }
 
         for (p = json_buf; p!=end; p++) {
             if (in_escape)
@@ -120,8 +149,10 @@ static char *msgpack_to_json(struct flb_out_http_config *ctx, char *data, uint64
                     level++;
                 else if (*p == '}')
                     level--;
-                else if ((*p == '[' || *p == ']' || *p == ',') && level == 0)
-                    *p=' ';
+                else if ((*p == '[' || *p == ']') && level == 0)
+                    *p = ' ';
+                else if (*p == ',' && level == 0)
+                    *p = separator;
             }
         }
     }
@@ -286,6 +317,14 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
         }
     }
 
+    /* Tag in header */
+    tmp = flb_output_get_property("header_tag", ins);
+    if (tmp) {
+      ctx->header_tag = flb_strdup(tmp);
+      ctx->headertag_len = strlen(ctx->header_tag);
+      flb_info("[out_http] configure to pass tag in header: %s", ctx->header_tag);
+    }
+
     /* Output format */
     ctx->out_format = FLB_HTTP_OUT_MSGPACK;
     tmp = flb_output_get_property("format", ins);
@@ -299,21 +338,27 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
         else if (strcasecmp(tmp, "json_stream") == 0) {
             ctx->out_format = FLB_HTTP_OUT_JSON_STREAM;
         }
+        else if (strcasecmp(tmp, "json_lines") == 0) {
+            ctx->out_format = FLB_HTTP_OUT_JSON_LINES;
+        }
         else {
             flb_warn("[out_http] unrecognized 'format' option. Using 'msgpack'");
         }
     }
 
+    /* Date format for JSON output */
+    ctx->json_date_format = FLB_JSON_DATE_DOUBLE;
+    tmp = flb_output_get_property("json_date_format", ins);
+    if (tmp) {
+        if (strcasecmp(tmp, "iso8601") == 0) {
+            ctx->json_date_format = FLB_JSON_DATE_ISO8601;
+        }
+    }
+
     /* Date key for JSON output */
     tmp = flb_output_get_property("json_date_key", ins);
-    if (!tmp) {
-        ctx->json_date_key     = flb_strdup("date");
-        ctx->json_date_key_len = strlen(ctx->json_date_key);
-    }
-    else {
-        ctx->json_date_key     = flb_strdup(tmp);
-        ctx->json_date_key_len = strlen(ctx->json_date_key);
-    }
+    ctx->json_date_key = flb_strdup(tmp ? tmp : "date");
+    ctx->json_date_key_len = strlen(ctx->json_date_key);
 
     ctx->u = upstream;
     ctx->uri = uri;
@@ -342,7 +387,9 @@ void cb_http_flush(void *data, size_t bytes,
     uint64_t body_len;
     (void)i_ins;
 
-    if ((ctx->out_format == FLB_HTTP_OUT_JSON) || (ctx->out_format == FLB_HTTP_OUT_JSON_STREAM)) {
+    if ((ctx->out_format == FLB_HTTP_OUT_JSON) ||
+        (ctx->out_format == FLB_HTTP_OUT_JSON_STREAM) ||
+        (ctx->out_format == FLB_HTTP_OUT_JSON_LINES)) {
         body = msgpack_to_json(ctx, data, bytes, &body_len);
     }
     else {
@@ -369,7 +416,9 @@ void cb_http_flush(void *data, size_t bytes,
                         ctx->proxy, 0);
 
     /* Append headers */
-    if ((ctx->out_format == FLB_HTTP_OUT_JSON) || (ctx->out_format == FLB_HTTP_OUT_JSON_STREAM)) {
+    if ((ctx->out_format == FLB_HTTP_OUT_JSON) ||
+        (ctx->out_format == FLB_HTTP_OUT_JSON_STREAM) ||
+        (ctx->out_format == FLB_HTTP_OUT_JSON_LINES)) {
         flb_http_add_header(c,
                             FLB_HTTP_CONTENT_TYPE,
                             sizeof(FLB_HTTP_CONTENT_TYPE) - 1,
@@ -382,6 +431,13 @@ void cb_http_flush(void *data, size_t bytes,
                             sizeof(FLB_HTTP_CONTENT_TYPE) - 1,
                             FLB_HTTP_MIME_MSGPACK,
                             sizeof(FLB_HTTP_MIME_MSGPACK) - 1);
+    }
+
+    if (ctx->header_tag) {
+        flb_http_add_header(c,
+                        ctx->header_tag,
+                        ctx->headertag_len,
+                        tag, tag_len);
     }
 
     if (ctx->http_user && ctx->http_passwd) {
@@ -430,7 +486,9 @@ void cb_http_flush(void *data, size_t bytes,
     /* Release the connection */
     flb_upstream_conn_release(u_conn);
 
-    if ((ctx->out_format == FLB_HTTP_OUT_JSON) || (ctx->out_format == FLB_HTTP_OUT_JSON_STREAM)) {
+    if ((ctx->out_format == FLB_HTTP_OUT_JSON) ||
+        (ctx->out_format == FLB_HTTP_OUT_JSON_STREAM) ||
+        (ctx->out_format == FLB_HTTP_OUT_JSON_LINES)) {
         flb_free(body);
     }
 
@@ -450,6 +508,7 @@ int cb_http_exit(void *data, struct flb_config *config)
     flb_free(ctx->proxy_host);
     flb_free(ctx->uri);
     flb_free(ctx->json_date_key);
+    flb_free(ctx->header_tag);
     flb_free(ctx);
 
     return 0;
