@@ -4,7 +4,7 @@
 
    - cb_print   => Print records to the standard output
    - cb_drop    => Drop the record
-   - cb_replace => Replace record content with a new JSON map
+   - cb_replace => Replace record content with a new table
 
    The key inside each function is to do a proper handling of the
    return values. Each function must return 3 values:
@@ -17,7 +17,7 @@
                  0 record not modified, keep the original
                  1 record was modified, replace content
    - timestamp: Unix timestamp with precision (double)
-   - record   : JSON map with multiple key/val
+   - record   : Table with multiple key/val
 
    Uppon return if code == 1 (modified), then filter_lua plugin
    will replace the original timestamp and record with the returned
@@ -41,6 +41,8 @@ end
 -- Compose a new JSON map and report it
 function cb_replace(tag, timestamp, record)
    -- Record modified, so 'code' return value (first parameter) is 1
-   new_record = "{\"new\": 12345, \"old\": " .. record .. "}"
+   new_record = {}
+   new_record["new"] = 12345
+   new_record["old"] = record
    return 1, timestamp, new_record
 end

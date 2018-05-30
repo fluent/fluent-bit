@@ -60,53 +60,181 @@ int is_valid_map(char *data, size_t bytes)
     return FLB_TRUE;
 }
 
-/*
- * This function is similar to flb_msgpack_to_json_str() but it have
- * two main differences:
- *
- * - use a pre-allocated buffer to perform the decoding operation
- * - use flb_sds_t data type instead of normal char *
- */
-int msgpack_map_to_json(struct lua_filter *lf, msgpack_object *obj)
+static int lua_pushmsgpack(lua_State *l, msgpack_object *o)
 {
-    int ret;
-    size_t size;
-    flb_sds_t tmp;
+    int i;
+    int size;
 
-    if (obj == NULL) {
-        return -1;
-    }
+    lua_checkstack(l, 3);
 
-    /* Reset length */
-    flb_sds_len_set(lf->buffer, 0);
-
-    while (1) {
-        /* Get buffer size */
-        size = flb_sds_alloc(lf->buffer);
-
-        /* Decode from msgpack to json */
-        ret = flb_msgpack_to_json(lf->buffer, size, obj);
-        if (ret <= 0) {
-            /* buffer is too small */
-            tmp = flb_sds_increase(lf->buffer, LUA_BUFFER_CHUNK);
-            if (tmp) {
-                lf->buffer = tmp;
-            }
-            else {
-                flb_error("[filter_lua] cannot adjust decode buffer size");
-                flb_errno();
-                return -1;
-            }
-        }
-        else {
+    switch(o->type) {
+        case MSGPACK_OBJECT_NIL:
+            lua_pushnil(l);
             break;
-        }
+
+        case MSGPACK_OBJECT_BOOLEAN:
+            lua_pushboolean(l, o->via.boolean);
+            break;
+
+        case MSGPACK_OBJECT_POSITIVE_INTEGER:
+            lua_pushnumber(l, (double) o->via.u64);
+            break;
+
+        case MSGPACK_OBJECT_NEGATIVE_INTEGER:
+            lua_pushnumber(l, (double) o->via.i64);
+            break;
+
+        case MSGPACK_OBJECT_FLOAT32:
+        case MSGPACK_OBJECT_FLOAT64:
+            lua_pushnumber(l, (double) o->via.f64);
+            break;
+
+        case MSGPACK_OBJECT_STR:
+            lua_pushlstring(l, (char*)o->via.str.ptr, o->via.str.size);
+            break;
+
+        case MSGPACK_OBJECT_BIN:
+            lua_pushlstring(l, (char*)o->via.bin.ptr, o->via.bin.size);
+            break;
+
+        case MSGPACK_OBJECT_EXT:
+            lua_pushlstring(l, (char*)o->via.ext.ptr, o->via.ext.size);
+            break;
+
+        case MSGPACK_OBJECT_ARRAY:
+            size = o->via.array.size;
+            lua_createtable(l, size, 0);
+            if (size != 0) {
+                msgpack_object *p = o->via.array.ptr;
+                for (i = 0; i < size; i++) {
+                    lua_pushmsgpack(l, p+i);
+                    lua_rawseti (l, -2, i+1);
+                }
+            }
+            break;
+
+        case MSGPACK_OBJECT_MAP:
+            size = o->via.map.size;
+            lua_createtable(l, 0, size);
+            if (size != 0) {
+                msgpack_object_kv *p = o->via.map.ptr;
+                for (i = 0; i < size; i++) {
+                    lua_pushmsgpack(l, &(p+i)->key);
+                    lua_pushmsgpack(l, &(p+i)->val);
+                    lua_settable(l, -3);
+                }
+            }
+            break;
     }
 
-    return 0;
+    return FLB_TRUE;
 }
 
-static int is_valid_func(struct flb_luajit *lua, flb_sds_t func)
+static int lua_arraylength(lua_State *l)
+{
+    lua_Integer n;
+    int count = 0;
+    int max = 0;
+
+    lua_pushnil(l);
+    while (lua_next(l, -2) != 0) {
+        if (lua_type(l, -2) == LUA_TNUMBER) {
+            n = lua_tonumber(l, -2);
+            if (n > 0) {
+                max = n > max ? n : max;
+                count++;
+                lua_pop(l, 1);
+                continue;
+            }
+        }
+        lua_pop(l, 2);
+        return -1;
+    }
+    if (max != count)
+        return -1;
+    return max;
+}
+
+static void lua_tomsgpack(lua_State *l, msgpack_packer *pck, int index)
+{
+    int len;
+    int i;
+
+    switch (lua_type(l, -1 + index)) {
+        case LUA_TSTRING:
+            {
+                const char *str;
+                size_t len;
+
+                str = lua_tolstring(l, -1 + index, &len);
+
+                msgpack_pack_str(pck, len);
+                msgpack_pack_str_body(pck, str, len);
+            }
+            break;
+        case LUA_TNUMBER:
+            {
+                double num = lua_tonumber(l, -1 + index);
+
+                if (num == (int)num)
+                    msgpack_pack_int64(pck, (int)num);
+                else
+                    msgpack_pack_double(pck, num);
+            }
+            break;
+        case LUA_TBOOLEAN:
+            if (lua_toboolean(l, -1 + index))
+                msgpack_pack_true(pck);
+            else
+                msgpack_pack_false(pck);
+            break;
+        case LUA_TTABLE:
+            len = lua_arraylength(l);
+            if (len > 0) {
+                msgpack_pack_array(pck, len);
+                for (i = 1; i <= len; i++) {
+                    lua_rawgeti(l, -1, i);
+                    lua_tomsgpack(l, pck, 0);
+                    lua_pop(l, 1);
+                }
+            } else
+            {
+                len = 0;
+
+                lua_pushnil(l);
+                while (lua_next(l, -2) != 0) {
+                    lua_pop(l, 1);
+                    len++;
+                }
+                msgpack_pack_map(pck, len);
+
+                lua_pushnil(l);
+                while (lua_next(l, -2) != 0) {
+                  lua_tomsgpack(l, pck, -1);
+                  lua_tomsgpack(l, pck, 0);
+                  lua_pop(l, 1);
+               }
+            }
+            break;
+        case LUA_TNIL:
+            msgpack_pack_nil(pck);
+            break;
+
+         case LUA_TLIGHTUSERDATA:
+            if (lua_touserdata(l, -1 + index) == NULL) {
+                msgpack_pack_nil(pck);
+                break;
+            }
+         case LUA_TFUNCTION:
+         case LUA_TUSERDATA:
+         case LUA_TTHREAD:
+           /* cannot serialize */
+           break;
+    }
+}
+
+
+static int is_valid_func(lua_State *lua, flb_sds_t func)
 {
     int ret = FLB_FALSE;
     
@@ -171,7 +299,6 @@ static int cb_lua_filter(void *data, size_t bytes,
                          struct flb_config *config)
 {
     int ret;
-    size_t len;
     size_t off = 0;
     (void) f_ins;
     (void) config;
@@ -181,14 +308,11 @@ static int cb_lua_filter(void *data, size_t bytes,
     msgpack_unpacked result;
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
-    char *pack_data;
-    size_t pack_size;
     struct flb_time t;
     struct lua_filter *ctx = filter_context;
     /* Lua return values */
     int l_code;
     double l_timestamp;
-    char *l_record;
 
     /* Create temporal msgpack buffer */
     msgpack_sbuffer_init(&tmp_sbuf);
@@ -196,35 +320,30 @@ static int cb_lua_filter(void *data, size_t bytes,
 
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
+        msgpack_packer data_pck;
+        msgpack_sbuffer data_sbuf;
+
+        msgpack_sbuffer_init(&data_sbuf);
+        msgpack_packer_init(&data_pck, &data_sbuf, msgpack_sbuffer_write);
+
         root = result.data;
 
         /* Get timestamp */
         flb_time_pop_from_msgpack(&t, &result, &p);
         ts = flb_time_to_double(&t);
 
-        /* Decode from msgpack to JSON */
-        ret = msgpack_map_to_json(ctx, p);
-        if (ret == -1) {
-            msgpack_sbuffer_destroy(&tmp_sbuf);
-            msgpack_unpacked_destroy(&result);
-            return FLB_FILTER_NOTOUCH;
-        }
-
         /* Prepare function call, pass 3 arguments, expect 3 return values */
         lua_getglobal(ctx->lua->state, ctx->call);
         lua_pushstring(ctx->lua->state, tag);
         lua_pushnumber(ctx->lua->state, ts);
-        lua_pushstring(ctx->lua->state, ctx->buffer);
+        lua_pushmsgpack(ctx->lua->state, p);
         lua_call(ctx->lua->state, 3, 3);
 
         /* Initialize Return values */
         l_code = 0;
         l_timestamp = ts;
-        l_record = ctx->buffer;
-        len = flb_sds_len(ctx->buffer);
 
-        /* Record: must be a JSON Map if it was modified */
-        l_record = (char *) lua_tolstring(ctx->lua->state, -1, &len);
+        lua_tomsgpack(ctx->lua->state, &data_pck, 0);
         lua_pop(ctx->lua->state, 1);
 
         l_timestamp = (double) lua_tonumber(ctx->lua->state, -1);
@@ -235,38 +354,19 @@ static int cb_lua_filter(void *data, size_t bytes,
 
         /* Validations */
         if (l_code == 1) {
-            /* Must be a valid string */
-            if (len == 0 || l_record == NULL) {
-                flb_error("[filter_lua] invalid record value for "
-                          "return code 1 at %s(), %s",
-                          ctx->call, ctx->script);
-                msgpack_sbuffer_destroy(&tmp_sbuf);
-                msgpack_unpacked_destroy(&result);
-                return FLB_FILTER_NOTOUCH;
-            }
-
-            /* Convert JSON to msgpack */
-            ret = flb_pack_json(l_record, len, &pack_data, &pack_size);
-            if (ret == -1) {
-                flb_error("[filter_lua] invalid JSON at %s(), %s",
-                          ctx->call, ctx->script);
-                msgpack_sbuffer_destroy(&tmp_sbuf);
-                msgpack_unpacked_destroy(&result);
-                return FLB_FILTER_NOTOUCH;
-            }
-
-            ret = is_valid_map(pack_data, pack_size);
+            ret = is_valid_map(data_sbuf.data, data_sbuf.size);
             if (ret == FLB_FALSE) {
-                flb_error("[filter_lua] invalid JSON map returned at %s(), %s",
+                flb_error("[filter_lua] invalid table returned at %s(), %s",
                           ctx->call, ctx->script);
                 msgpack_sbuffer_destroy(&tmp_sbuf);
+                msgpack_sbuffer_destroy(&data_sbuf);
                 msgpack_unpacked_destroy(&result);
-                flb_free(pack_data);
                 return FLB_FILTER_NOTOUCH;
             }
         }
 
         if (l_code == -1) { /* Skip record */
+            msgpack_sbuffer_destroy(&data_sbuf);
             continue;
         }
         else if (l_code == 0) { /* Keep record, repack */
@@ -280,15 +380,15 @@ static int cb_lua_filter(void *data, size_t bytes,
             flb_time_from_double(&t, l_timestamp);
             flb_time_append_to_msgpack(&t, &tmp_pck, 0);
 
-            /* Pack json map as string */
-            msgpack_sbuffer_write(&tmp_sbuf, pack_data, pack_size);
-            flb_free(pack_data);
+            /* Pack lua table */
+            msgpack_sbuffer_write(&tmp_sbuf, data_sbuf.data, data_sbuf.size);
         }
         else { /* Unexpected return code, keep original content */
             flb_error("[filter_lua] unexpected Lua script return code %i, "
                       "original record will be kept." , l_code);
             msgpack_pack_object(&tmp_pck, root);
         }
+        msgpack_sbuffer_destroy(&data_sbuf);
     }
     msgpack_unpacked_destroy(&result);
 
