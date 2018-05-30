@@ -233,7 +233,6 @@ static void lua_tomsgpack(lua_State *l, msgpack_packer *pck, int index)
     }
 }
 
-
 static int is_valid_func(lua_State *lua, flb_sds_t func)
 {
     int ret = FLB_FALSE;
