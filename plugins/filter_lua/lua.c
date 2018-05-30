@@ -60,7 +60,7 @@ int is_valid_map(char *data, size_t bytes)
     return FLB_TRUE;
 }
 
-static int lua_pushmsgpack(lua_State *l, msgpack_object *o)
+static void lua_pushmsgpack(lua_State *l, msgpack_object *o)
 {
     int i;
     int size;
@@ -127,7 +127,6 @@ static int lua_pushmsgpack(lua_State *l, msgpack_object *o)
             break;
     }
 
-    return FLB_TRUE;
 }
 
 static int lua_arraylength(lua_State *l)
