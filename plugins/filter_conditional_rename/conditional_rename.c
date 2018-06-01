@@ -76,11 +76,11 @@ static int configure(struct filter_conditional_rename_ctx *ctx,
         return -1;
     }
 
-    flb_info("[%s] will rename \"%s\"=>\"%s\" to \"%s\"=>\"%s\"", PLUGIN_NAME,
+    flb_info("[%s] if match \"%s\"=>\"%s\" rename key \"%s\" to \"%s\"", PLUGIN_NAME,
         flb_strndup(ctx->if_equal_key, ctx->if_equal_key_len),
         flb_strndup(ctx->if_equal_val, ctx->if_equal_val_len),
-        flb_strndup(ctx->rename_renamed_field, ctx->rename_renamed_field_len),
-        flb_strndup(ctx->if_equal_val, ctx->if_equal_val_len));
+        flb_strndup(ctx->rename_field, ctx->rename_field_len),
+        flb_strndup(ctx->rename_renamed_field, ctx->rename_renamed_field_len));
 
     return 0;
 }
