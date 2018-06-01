@@ -76,6 +76,12 @@ static int configure(struct filter_conditional_rename_ctx *ctx,
         return -1;
     }
 
+    flb_info("[%s] will rename \"%s\"=>\"%s\" to \"%s\"=>\"%s\"", PLUGIN_NAME,
+        flb_strndup(ctx->if_equal_key, ctx->if_equal_key_len),
+        flb_strndup(ctx->if_equal_val, ctx->if_equal_val_len),
+        flb_strndup(ctx->rename_renamed_field, ctx->rename_renamed_field_len),
+        flb_strndup(ctx->if_equal_val, ctx->if_equal_val_len));
+
     return 0;
 }
 
@@ -100,27 +106,27 @@ static int cb_conditional_rename_init(struct flb_filter_instance *f_ins,
     return 0;
 }
 
-static inline bool if_equal_match(msgpack_object_kv * kv, struct filter_conditional_rename_ctx *ctx)
+static inline bool kv_key_value_matches(msgpack_object_kv * kv, struct filter_conditional_rename_ctx *ctx)
 {
     char *key;
-    int klen;
+    int key_len;
     char *val;
-    int vlen;
+    int val_len;
 
-    msgpack_object *obj = &kv->key;
-    msgpack_object *obj2 = &kv->val; //todo correct with -> val??
+    msgpack_object *kv_key = &kv->key;
+    msgpack_object *kv_val = &kv->val;
 
-    if (obj->type == MSGPACK_OBJECT_BIN) {
-        key = (char *) obj->via.bin.ptr;
-        klen = obj->via.bin.size;
-        val = (char *) obj2->via.bin.ptr;
-        vlen = obj2->via.bin.size;
+    if (kv_key->type == MSGPACK_OBJECT_BIN) {
+        key = (char *) kv_key->via.bin.ptr;
+        key_len = kv_key->via.bin.size;
+        val = (char *) kv_val->via.bin.ptr;
+        val_len = kv_val->via.bin.size;
     }
-    else if (obj->type == MSGPACK_OBJECT_STR) {
-        key = (char *) obj->via.str.ptr;
-        klen = obj->via.str.size;
-        val = (char *) obj2->via.str.ptr;
-        vlen = obj2->via.str.size;
+    else if (kv_key->type == MSGPACK_OBJECT_STR) {
+        key = (char *) kv_key->via.str.ptr;
+        key_len = kv_key->via.str.size;
+        val = (char *) kv_val->via.str.ptr;
+        val_len = kv_val->via.str.size;
     }
     else {
         // If the key is not something we can match on then we leave it alone
@@ -128,8 +134,22 @@ static inline bool if_equal_match(msgpack_object_kv * kv, struct filter_conditio
     }
 
     // Exact match of key and value
-    return ((ctx->if_equal_key_len == klen) && (strncmp(key, ctx->if_equal_key, klen)) &&
-            (ctx->if_equal_val_len == vlen) && (strncmp(val, ctx->if_equal_val, vlen)) == 0);
+    return (ctx->if_equal_key_len == key_len) && (strncmp(key, ctx->if_equal_key, key_len) == 0) &&
+           (ctx->if_equal_val_len == val_len) && (strncmp(val, ctx->if_equal_val, val_len) == 0);
+}
+
+static inline bool has_matching_kv(msgpack_object * root, struct filter_conditional_rename_ctx *ctx)
+{
+    msgpack_object map_tmp = root->via.array.ptr[1];
+    msgpack_object * map = &map_tmp;
+
+    int i;
+    for (i = 0; i < map->via.map.size; i++) {
+        if (kv_key_value_matches(&map->via.map.ptr[i], ctx)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 static inline bool kv_key_matches(msgpack_object_kv * kv, struct filter_conditional_rename_ctx *ctx)
@@ -171,16 +191,9 @@ static inline void pack_map_with_rename(msgpack_packer * packer,
                                         struct filter_conditional_rename_ctx *ctx)
 {
     int i;
-    bool matched;
     for (i = 0; i < map->via.map.size; i++) {
 
-        matched = false;
-
         if (kv_key_matches(&map->via.map.ptr[i], ctx)) {
-            matched = true;
-        }
-
-        if (matched) {
             helper_pack_string(packer, ctx->rename_renamed_field, ctx->rename_renamed_field_len);
         }
         else {
@@ -191,31 +204,12 @@ static inline void pack_map_with_rename(msgpack_packer * packer,
     }
 }
 
-static inline bool has_matching_kv(msgpack_object * map, struct filter_conditional_rename_ctx *ctx)
-{
-    int i;
-    for (i = 0; i < map->via.map.size; i++) {
-        if (if_equal_match(&map->via.map.ptr[i], ctx)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-static inline void apply_modifying_rules(msgpack_packer * packer,
+static inline void apply_rename(msgpack_packer * packer,
                                          msgpack_object * root,
                                          struct filter_conditional_rename_ctx *ctx)
 {
     msgpack_object ts = root->via.array.ptr[0];
     msgpack_object map = root->via.array.ptr[1];
-
-    // TODO: We can scan for both rules and if they both come back 0 we can
-    // return without rewriting
-
-    bool if_equal_matches = has_matching_kv(&map, ctx);
-
-    //TODO if if_equal_matches == false -> return unmodified ELSE apply rename
-    int total_records = map.via.map.size;
 
     // * Record array init(2)
     msgpack_pack_array(packer, 2);
@@ -224,14 +218,10 @@ static inline void apply_modifying_rules(msgpack_packer * packer,
     msgpack_pack_object(packer, ts);
 
     // * * Record array item 2/2
-    msgpack_pack_map(packer, total_records);
+    msgpack_pack_map(packer, map.via.map.size);
 
     // * * * Add from input map to new map with items renamed
-    if (if_equal_matches) {
-        pack_map_with_rename(packer, &map, ctx);
-    }
-
-    //todo else return unmodified
+    pack_map_with_rename(packer, &map, ctx);
 }
 
 static int cb_conditional_rename_filter(void *data, size_t bytes,
@@ -241,10 +231,10 @@ static int cb_conditional_rename_filter(void *data, size_t bytes,
                             void *filter_context,
                             struct flb_config *config)
 {
-    msgpack_unpacked result;
     size_t off = 0;
     (void) f_ins;
     (void) config;
+    char is_modified = FLB_FALSE;
 
     struct filter_conditional_rename_ctx *ctx = filter_context;
 
@@ -254,26 +244,34 @@ static int cb_conditional_rename_filter(void *data, size_t bytes,
     msgpack_packer packer;
     msgpack_packer_init(&packer, &buffer, msgpack_sbuffer_write);
 
+    msgpack_unpacked result;
     msgpack_unpacked_init(&result);
+
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
 
-    //todo 1. if if_equal matches
-    //todo 2. then apply rename
+        if (result.data.type == MSGPACK_OBJECT_ARRAY) {
 
-            if (result.data.type == MSGPACK_OBJECT_ARRAY) {
-                apply_modifying_rules(&packer, &result.data, ctx);
+            if(has_matching_kv(&result.data, ctx)) {
+                apply_rename(&packer, &result.data, ctx);
+                is_modified = FLB_TRUE;
             }
-            else {
-                msgpack_pack_object(&packer, result.data);
-            }
+
+        } else {
+            msgpack_pack_object(&packer, result.data);
+        }
     }
     msgpack_unpacked_destroy(&result);
+
+    if (is_modified != FLB_TRUE) {
+        /* Destroy the buffer to avoid more overhead */
+        msgpack_sbuffer_destroy(&buffer);
+        return FLB_FILTER_NOTOUCH;
+    }
 
     *out_buf = buffer.data;
     *out_size = buffer.size;
 
     return FLB_FILTER_MODIFIED;
-    //todo return FLB_FILTER_NOTOUCH;
 }
 
 static int cb_conditional_rename_exit(void *data, struct flb_config *config)
