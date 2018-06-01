@@ -38,6 +38,9 @@ struct flb_splunk {
     /* Token Auth */
     flb_sds_t auth_header;
 
+    /* Send fields directly or pack data into "event" object */
+    int splunk_send_raw;
+
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
 };
