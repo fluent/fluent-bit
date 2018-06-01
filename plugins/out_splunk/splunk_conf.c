@@ -110,6 +110,15 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
         }
     }
 
+    /* Event format, send all fields or pack into event map */
+    tmp = flb_output_get_property("splunk_send_raw", ins);
+    if (tmp) {
+        ctx->splunk_send_raw = flb_utils_bool(tmp);
+    }
+    else {
+        ctx->splunk_send_raw = FLB_FALSE;
+    }
+
     return ctx;
 }
 
