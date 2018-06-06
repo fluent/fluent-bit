@@ -61,6 +61,16 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
         flb_error("[out_kafka] cannot configure client.id");
     }
 
+
+    tmp = flb_output_get_property("debug", ins);
+    if (tmp) {
+        ret = rd_kafka_conf_set(ctx->conf, "debug", tmp,
+                                errstr, sizeof(errstr));
+        if (ret != RD_KAFKA_CONF_OK) {
+            flb_error("[out_kafka] cannot configure client.id");
+        }
+    }
+
     /* Config: Brokers */
     tmp = flb_output_get_property("brokers", ins);
     if (tmp) {
