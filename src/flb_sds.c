@@ -87,16 +87,12 @@ flb_sds_t flb_sds_create_size(size_t size)
 /* Increase SDS buffer size 'len' bytes */
 flb_sds_t flb_sds_increase(flb_sds_t s, size_t len)
 {
-    size_t avail;
     size_t new_size;
     struct flb_sds *head;
+    flb_sds_t out;
     void *tmp;
 
-    avail = flb_sds_avail(s);
-    if (avail >= len) {
-        return s;
-    }
-
+    out = s;
     new_size = (FLB_SDS_HEADER_SIZE + flb_sds_alloc(s) + len + 1);
     head = FLB_SDS_HEADER(s);
     tmp = flb_realloc(head, new_size);
@@ -104,11 +100,15 @@ flb_sds_t flb_sds_increase(flb_sds_t s, size_t len)
         flb_errno();
         return NULL;
     }
-    head = tmp;
-    head->alloc += len;
-    s = head->buf;
 
-    return s;
+    if (tmp != head) {
+        head = tmp;
+    }
+
+    head->alloc += len;
+    out = head->buf;
+
+    return out;
 }
 
 flb_sds_t flb_sds_cat(flb_sds_t s, char *str, int len)
