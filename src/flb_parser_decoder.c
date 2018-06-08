@@ -519,15 +519,18 @@ int flb_parser_decoder_do(struct mk_list *decoders,
          * We got a match: 'key name' == 'decoder field name', validate
          * that we have enough space in our temporal buffer.
          */
-        if (flb_sds_alloc(dec->buffer) < v.via.str.size) {
+        if (flb_sds_alloc(dec->buffer) < flb_sds_alloc(data_sds)) {
             /* Increase buffer size */
-            size_t diff = (v.via.str.size - flb_sds_alloc(dec->buffer));
+            size_t diff;
+            diff = (flb_sds_alloc(data_sds) - flb_sds_alloc(dec->buffer));
             tmp_sds = flb_sds_increase(dec->buffer, diff);
             if (!tmp_sds) {
                 flb_errno();
                 break;
             }
-            dec->buffer = tmp_sds;
+            if (tmp_sds != dec->buffer) {
+                dec->buffer = tmp_sds;
+            }
         }
 
         /* Process decoder rules */
