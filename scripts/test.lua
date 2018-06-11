@@ -27,7 +27,14 @@
 
 -- Print record to the standard output
 function cb_print(tag, timestamp, record)
-   print(tag, string.format("%f", timestamp), record)
+   output = tag .. ":  [" .. string.format("%f", timestamp) .. ", { "
+
+   for key, val in pairs(record) do
+      output = output .. string.format(" %s => %s,", key, val)
+   end
+   
+   output = string.sub(output,1,-2) .. " }]"
+   print(output)
 
    -- Record not modified so 'code' return value is 0 (first parameter)
    return 0, 0, 0
