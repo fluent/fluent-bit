@@ -20,20 +20,53 @@
 #ifndef FLB_FILTER_MODIFY_H
 #define FLB_FILTER_MODIFY_H
 
+enum FLB_FILTER_MODIFY_RULETYPE {
+  RENAME,
+  HARD_RENAME,
+  ADD,
+  SET,
+  REMOVE,
+  REMOVE_WILDCARD,
+  COPY,
+  HARD_COPY
+};
+
+enum FLB_FILTER_MODIFY_CONDITIONTYPE {
+  KEY_EXISTS,
+  KEY_DOES_NOT_EXIST,
+  KEY_VALUE_EQUALS,
+  KEY_VALUE_DOES_NOT_EQUAL
+};
+
 struct filter_modify_ctx
 {
-    int add_key_rules_cnt;
-    int rename_key_rules_cnt;
-    struct mk_list add_key_rules;
-    struct mk_list rename_key_rules;
+  int rules_cnt;
+  struct mk_list rules;
+  int conditions_cnt;
+  struct mk_list conditions;
 };
 
 struct modify_rule
 {
-    int key_len;
-    int val_len;
-    char *key;
-    char *val;
-    struct mk_list _head;
+  enum FLB_FILTER_MODIFY_RULETYPE ruletype;
+  int key_len;
+  int val_len;
+  char *key;
+  char *val;
+  char *raw_k;
+  char *raw_v;
+  struct mk_list _head;
+};
+
+struct modify_condition
+{
+  enum FLB_FILTER_MODIFY_CONDITIONTYPE conditiontype;
+  int a_len;
+  int b_len;
+  char *a;
+  char *b;
+  char *raw_k;
+  char *raw_v;
+  struct mk_list _head;
 };
 #endif
