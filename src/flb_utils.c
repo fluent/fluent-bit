@@ -662,3 +662,85 @@ int flb_utils_write_str_buf(char *str, size_t str_len, char **out, size_t *out_s
     *out_size = off;
     return 0;
 }
+
+int flb_utils_url_split(char *in_url, char **out_protocol,
+                        char **out_host, char **out_port, char **out_uri)
+{
+    char *protocol = NULL;
+    char *host = NULL;
+    char *port = NULL;
+    char *uri = NULL;
+    char *p;
+    char *tmp;
+
+    /* Protocol */
+    p = strstr(in_url, "://");
+    if (!p) {
+        return -1;
+    }
+    if (p == in_url) {
+        return -1;
+    }
+
+    protocol = mk_string_copy_substr(in_url, 0, p - in_url);
+    if (!protocol) {
+        flb_errno();
+        return -1;
+    }
+
+    /* Check if a port is defined */
+    p += 3;
+    tmp = strchr(p, ':');
+    if (tmp) {
+        host = mk_string_copy_substr(p, 0, tmp - p);
+        if (!host) {
+            flb_errno();
+            goto error;
+        }
+        p = tmp + 1;
+
+        /* Look for an optional URI */
+        tmp = strchr(p, '/');
+        if (tmp) {
+            port = mk_string_copy_substr(p, 0, tmp - p);
+            uri = flb_strdup(tmp);
+        }
+        else {
+            port = flb_strdup(p);
+            uri = flb_strdup("/");
+        }
+    }
+    else {
+        tmp = strchr(p, '/');
+        if (tmp) {
+            host = mk_string_copy_substr(p, 0, tmp - p);
+            uri = flb_strdup(tmp);
+        }
+        else {
+            host = flb_strdup(p);
+            uri = flb_strdup("/");
+        }
+    }
+
+    *out_protocol = protocol;
+    *out_host = host;
+    *out_port = port;
+    *out_uri = uri;
+
+    return 0;
+
+ error:
+    if (protocol) {
+        flb_free(protocol);
+    }
+    if (host) {
+        flb_free(host);
+    }
+    if (port) {
+        flb_free(port);
+    }
+    if (uri) {
+        flb_free(uri);
+    }
+    return -1;
+}

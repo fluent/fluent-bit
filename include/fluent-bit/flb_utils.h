@@ -56,4 +56,7 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
                         char *str, size_t str_len);
 int flb_utils_write_str_buf(char *str, size_t str_len, char **out, size_t *out_size);
 
+int flb_utils_url_split(char *in_url, char **out_protocol,
+                        char **out_host, char **out_port, char **out_uri);
+
 #endif
