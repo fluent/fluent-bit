@@ -30,6 +30,7 @@ set(src
   flb_io.c
   flb_upstream.c
   flb_router.c
+  flb_oauth2.c
   flb_http_client.c
   flb_worker.c
   flb_time.c
