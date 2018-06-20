@@ -157,12 +157,14 @@ flb_sds_t flb_sds_copy(flb_sds_t s, char *str, int len)
     return s;
 }
 
-int flb_sds_destroy(flb_sds_t s)
+void flb_sds_destroy(flb_sds_t s)
 {
     struct flb_sds *head;
 
+    if (!s) {
+        return;
+    }
+
     head = FLB_SDS_HEADER(s);
     flb_free(head);
-
-    return 0;
 }

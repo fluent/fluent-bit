@@ -82,6 +82,6 @@ flb_sds_t flb_sds_cat(flb_sds_t s, char *str, int len);
 flb_sds_t flb_sds_increase(flb_sds_t s, size_t len);
 flb_sds_t flb_sds_copy(flb_sds_t s, char *str, int len);
 
-int flb_sds_destroy(flb_sds_t s);
+void flb_sds_destroy(flb_sds_t s);
 
 #endif
