@@ -343,17 +343,20 @@ flb_sds_t flb_sds_printf(flb_sds_t s, const char *fmt, ...)
     size = vsnprintf((char *) (s + flb_sds_len(s)), flb_sds_avail(s), fmt, ap);
     if (size < 0) {
         flb_warn("[%s] buggy vsnprintf return %d", __FUNCTION__, size);
+        va_end(ap);
         return NULL;
     }
     if (size > flb_sds_avail(s)) {
         tmp = flb_sds_increase(s, size);
         if (!tmp) {
+            va_end(ap);
             return NULL;
         }
         s = tmp;
         size = vsnprintf((char *) (s + flb_sds_len(s)), flb_sds_avail(s), fmt, ap);
         if (size > flb_sds_avail(s)) {
             flb_warn("[%s] vsnprintf is insatiable ", __FUNCTION__);
+            va_end(ap);
             return NULL;
         }
     }
