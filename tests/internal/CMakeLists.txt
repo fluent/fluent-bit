@@ -11,6 +11,7 @@ set(UNIT_TESTS_FILES
   unit_sizes.c
   hashtable.c
   http_client.c
+  utils.c
   )
 
 if(FLB_METRICS)

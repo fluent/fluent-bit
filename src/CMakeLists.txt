@@ -26,10 +26,12 @@ set(src
   flb_engine.c
   flb_engine_dispatch.c
   flb_task.c
+  flb_unescape.c
   flb_scheduler.c
   flb_io.c
   flb_upstream.c
   flb_router.c
+  flb_oauth2.c
   flb_http_client.c
   flb_worker.c
   flb_time.c

@@ -17,32 +17,33 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_OUT_SPLUNK
-#define FLB_OUT_SPLUNK
+#ifndef FLB_OAUTH2_H
+#define FLB_OAUTH2_H
 
-#define FLB_SPLUNK_DEFAULT_HOST       "127.0.0.1"
-#define FLB_SPLUNK_DEFAULT_PORT       8088
-#define FLB_SPLUNK_DEFAULT_URI        "/services/collector/event"
-#define FLB_SPLUNK_DEFAULT_TIME       "time"
-#define FLB_SPLUNK_DEFAULT_EVENT      "event"
-
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_sds.h>
 
-struct flb_splunk {
-    /* HTTP Auth */
-    char *http_user;
-    char *http_passwd;
+#define FLB_OAUTH2_PORT   "443"
 
-    /* Token Auth */
-    flb_sds_t auth_header;
+struct flb_oauth2 {
+    flb_sds_t auth_token;
+    flb_sds_t auth_url;
+    flb_sds_t payload;
 
-    /* Send fields directly or pack data into "event" object */
-    int splunk_send_raw;
+    /* Parsed URL */
+    flb_sds_t host;
+    flb_sds_t port;
+    flb_sds_t uri;
 
-    /* Upstream connection to the backend server */
+    /* Token times */
+    time_t issued;
+    time_t expires;
+
+    /* Upstream context */
     struct flb_upstream *u;
 };
+
+struct flb_oauth2 *flb_oauth2_create(char *auth_url, int expire_sec);
+void flb_oauth2_destroy(struct flb_oauth2 *ctx);
+int flb_oauth2_token_len(struct flb_oauth2 *ctx);
 
 #endif

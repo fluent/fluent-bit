@@ -23,210 +23,12 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_parser_decoder.h>
+#include <fluent-bit/flb_unescape.h>
 #include <fluent-bit/flb_utils.h>
 #include <msgpack.h>
 
 #define TYPE_OUT_STRING  0  /* unstructured text         */
 #define TYPE_OUT_OBJECT  1  /* structured msgpack object */
-
-static int octal_digit(char c)
-{
-    return (c >= '0' && c <= '7');
-}
-
-static int hex_digit(char c)
-{
-    return ((c >= '0' && c <= '9') ||
-            (c >= 'A' && c <= 'F') ||
-            (c >= 'a' && c <= 'f'));
-}
-
-static int u8_wc_toutf8(char *dest, u_int32_t ch)
-{
-    if (ch < 0x80) {
-        dest[0] = (char)ch;
-        return 1;
-    }
-    if (ch < 0x800) {
-        dest[0] = (ch>>6) | 0xC0;
-        dest[1] = (ch & 0x3F) | 0x80;
-        return 2;
-    }
-    if (ch < 0x10000) {
-        dest[0] = (ch>>12) | 0xE0;
-        dest[1] = ((ch>>6) & 0x3F) | 0x80;
-        dest[2] = (ch & 0x3F) | 0x80;
-        return 3;
-    }
-    if (ch < 0x110000) {
-        dest[0] = (ch>>18) | 0xF0;
-        dest[1] = ((ch>>12) & 0x3F) | 0x80;
-        dest[2] = ((ch>>6) & 0x3F) | 0x80;
-        dest[3] = (ch & 0x3F) | 0x80;
-        return 4;
-    }
-    return 0;
-}
-
-/* assumes that src points to the character after a backslash
-   returns number of input characters processed */
-static int u8_read_escape_sequence(char *str, u_int32_t *dest)
-{
-    u_int32_t ch;
-    char digs[9]="\0\0\0\0\0\0\0\0";
-    int dno=0, i=1;
-
-    ch = (u_int32_t)str[0];    /* take literal character */
-
-    if (str[0] == 'n')
-        ch = L'\n';
-    else if (str[0] == 't')
-        ch = L'\t';
-    else if (str[0] == 'r')
-        ch = L'\r';
-    else if (str[0] == 'b')
-        ch = L'\b';
-    else if (str[0] == 'f')
-        ch = L'\f';
-    else if (str[0] == 'v')
-        ch = L'\v';
-    else if (str[0] == 'a')
-        ch = L'\a';
-    else if (octal_digit(str[0])) {
-        i = 0;
-        do {
-            digs[dno++] = str[i++];
-        } while (octal_digit(str[i]) && dno < 3);
-        ch = strtol(digs, NULL, 8);
-    }
-    else if (str[0] == 'x') {
-        while (hex_digit(str[i]) && dno < 2) {
-            digs[dno++] = str[i++];
-        }
-        if (dno > 0)
-            ch = strtol(digs, NULL, 16);
-    }
-    else if (str[0] == 'u') {
-        while (hex_digit(str[i]) && dno < 4) {
-            digs[dno++] = str[i++];
-        }
-        if (dno > 0)
-            ch = strtol(digs, NULL, 16);
-    }
-    else if (str[0] == 'U') {
-        while (hex_digit(str[i]) && dno < 8) {
-            digs[dno++] = str[i++];
-        }
-        if (dno > 0)
-            ch = strtol(digs, NULL, 16);
-    }
-    *dest = ch;
-
-    return i;
-}
-
-static inline bool is_json_escape(char *c)
-{
-  return (
-        (*c == '\"') || // double-quote
-        (*c == '\'') || // single-quote
-        (*c == '\\') || // solidus
-        (*c == '/')     // reverse-solidus
-      );
-}
-
-static int unescape_string_utf8(char *in_buf, int sz, char *out_buf)
-{
-    u_int32_t ch;
-    char temp[4];
-    char *next;
-
-    int count_out = 0;
-    int count_in = 0;
-    int esc_in = 0;
-    int esc_out = 0;
-
-    while (*in_buf && count_in < sz) {
-        next = in_buf + 1;
-        if (*in_buf == '\\' && !is_json_escape(next)) {
-            esc_in = u8_read_escape_sequence((in_buf + 1), &ch) + 1;
-        }
-        else {
-            ch = (u_int32_t)*in_buf;
-            esc_in = 1;
-        }
-
-        in_buf += esc_in;
-        count_in += esc_in;
-
-        esc_out = u8_wc_toutf8(temp, ch);
-
-        if (esc_out > sz-count_out) {
-            flb_error("Crossing over string boundary");
-            break;
-        }
-        memcpy(&out_buf[count_out], temp, esc_out);
-        count_out += esc_out;
-    }
-    if (count_in < sz) {
-        flb_error("Not at boundary but still NULL terminating : %d - '%s'", sz, in_buf);
-    }
-    out_buf[count_in - 1] = '\0';
-    return count_out;
-}
-
-static int unescape_string(char *buf, int buf_len, char **unesc_buf)
-{
-    int i = 0;
-    int j = 0;
-    char *p;
-    char n;
-
-    p = *unesc_buf;
-    while (i < buf_len) {
-        if (buf[i] == '\\') {
-            if (i + 1 < buf_len) {
-                n = buf[i + 1];
-                if (n == 'n') {
-                    p[j++] = '\n';
-                    i++;
-                }
-                else if (n == 'a') {
-                    p[j++] = '\a';
-                    i++;
-                }
-                else if (n == 'b') {
-                    p[j++] = '\b';
-                    i++;
-                }
-                else if (n == 't') {
-                    p[j++] = '\t';
-                    i++;
-                }
-                else if (n == 'v') {
-                    p[j++] = '\v';
-                    i++;
-                }
-                else if (n == 'f') {
-                    p[j++] = '\f';
-                    i++;
-                }
-                else if (n == 'r') {
-                    p[j++] = '\r';
-                    i++;
-                }
-                i++;
-                continue;
-            }
-            else {
-                i++;
-            }
-        }
-        p[j++] = buf[i++];
-    }
-    p[j] = '\0';
-    return j;
-}
 
 /* Decode a stringified JSON message */
 static int decode_json(struct flb_parser_dec *dec,
@@ -239,7 +41,7 @@ static int decode_json(struct flb_parser_dec *dec,
     size_t size;
 
     /* JSON Decoder: content may be escaped */
-    len = unescape_string(in_buf, in_size, &dec->buffer);
+    len = flb_unescape_string(in_buf, in_size, &dec->buffer);
 
     /* Is it JSON valid ? (pre validation to avoid mem allocation on tokens */
     ret = flb_pack_json_valid(dec->buffer, len);
@@ -273,7 +75,7 @@ static int decode_escaped(struct flb_parser_dec *dec,
     int len;
 
     /* Unescape string */
-    len = unescape_string(in_buf, in_size, &dec->buffer);
+    len = flb_unescape_string(in_buf, in_size, &dec->buffer);
     *out_buf = dec->buffer;
     *out_size = len;
     *out_type = TYPE_OUT_STRING;
@@ -287,7 +89,7 @@ static int decode_escaped_utf8(struct flb_parser_dec *dec,
 {
     int len;
 
-    len = unescape_string_utf8(in_buf, in_size, dec->buffer);
+    len = flb_unescape_string_utf8(in_buf, in_size, dec->buffer);
     *out_buf = dec->buffer;
     *out_size = len;
     *out_type = TYPE_OUT_STRING;
@@ -519,15 +321,18 @@ int flb_parser_decoder_do(struct mk_list *decoders,
          * We got a match: 'key name' == 'decoder field name', validate
          * that we have enough space in our temporal buffer.
          */
-        if (flb_sds_alloc(dec->buffer) < v.via.str.size) {
+        if (flb_sds_alloc(dec->buffer) < flb_sds_alloc(data_sds)) {
             /* Increase buffer size */
-            size_t diff = (v.via.str.size - flb_sds_alloc(dec->buffer));
+            size_t diff;
+            diff = (flb_sds_alloc(data_sds) - flb_sds_alloc(dec->buffer));
             tmp_sds = flb_sds_increase(dec->buffer, diff);
             if (!tmp_sds) {
                 flb_errno();
                 break;
             }
-            dec->buffer = tmp_sds;
+            if (tmp_sds != dec->buffer) {
+                dec->buffer = tmp_sds;
+            }
         }
 
         /* Process decoder rules */

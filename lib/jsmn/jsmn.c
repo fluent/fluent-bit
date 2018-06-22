@@ -343,7 +343,7 @@ int jsmn_parse(jsmn_parser *parser, const char *js, size_t len,
 				if (parser->toksuper != -1 && tokens != NULL)
 					tokens[parser->toksuper].size++;
 #ifdef JSMN_STRICT
-				if (tokens != NULL) {
+				if (parser->toksuper != -1 && tokens != NULL) {
 					parser->toktype = jsmn_string_next_tok
 						(&tokens[parser->toksuper], parser->toktype);
 				}

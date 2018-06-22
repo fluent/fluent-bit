@@ -17,32 +17,10 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_OUT_SPLUNK
-#define FLB_OUT_SPLUNK
+#ifndef FLB_UNESCAPE_H
+#define FLB_UNESCAPE_H
 
-#define FLB_SPLUNK_DEFAULT_HOST       "127.0.0.1"
-#define FLB_SPLUNK_DEFAULT_PORT       8088
-#define FLB_SPLUNK_DEFAULT_URI        "/services/collector/event"
-#define FLB_SPLUNK_DEFAULT_TIME       "time"
-#define FLB_SPLUNK_DEFAULT_EVENT      "event"
-
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
-#include <fluent-bit/flb_sds.h>
-
-struct flb_splunk {
-    /* HTTP Auth */
-    char *http_user;
-    char *http_passwd;
-
-    /* Token Auth */
-    flb_sds_t auth_header;
-
-    /* Send fields directly or pack data into "event" object */
-    int splunk_send_raw;
-
-    /* Upstream connection to the backend server */
-    struct flb_upstream *u;
-};
+int flb_unescape_string(char *buf, int buf_len, char **unesc_buf);
+int flb_unescape_string_utf8(char *in_buf, int sz, char *out_buf);
 
 #endif

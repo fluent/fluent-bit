@@ -104,7 +104,6 @@ static int merge_log_handler(msgpack_object o,
     for (i = size - 1; i > 0; i--) {
         if (o.via.str.ptr[i] == '\n') {
             size -= 1;
-            i--;
             continue;
         }
 
@@ -189,7 +188,7 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
                             struct flb_kube *ctx)
 {
     int i;
-    int map_size;
+    int map_size = 0;
     int merge_status = -1;
     int new_map_size = 0;
     int log_index = -1;
@@ -241,9 +240,6 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
             merge_status = MERGE_BINARY;
         }
     }
-    else {
-
-    }
 
     /* Determinate the size of the new map */
     new_map_size = map_size;
@@ -255,7 +251,9 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
             msgpack_unpacked_init(&result);
             msgpack_unpack_next(&result, log_buf, log_size, &off);
             root = result.data;
-            log_buf_entries = root.via.map.size;
+            if (root.type == MSGPACK_OBJECT_MAP) {
+                log_buf_entries = root.via.map.size;
+            }
             msgpack_unpacked_destroy(&result);
         }
         else if (merge_status == MERGE_BINARY) {
@@ -277,6 +275,7 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
     else {
         new_map_size += log_buf_entries;
     }
+
     msgpack_pack_map(pck, new_map_size);
 
     /* Original map */
