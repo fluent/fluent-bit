@@ -1255,7 +1255,7 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t s, msgpack_object *o,
     }
 
     if (short_message_key_found == FLB_FALSE) {
-        flb_error("[flb_msgpack_to_gelf] empty short_message not allowed");
+        flb_error("[flb_msgpack_to_gelf] missing short_message key");
         return NULL;
     }
 
