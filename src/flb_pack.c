@@ -996,7 +996,6 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t s, msgpack_object *o,
 {
     int i;
     int loop;
-    msgpack_unpacked result;
 
     int host_key_found = FLB_FALSE;
     int timestamp_key_found = FLB_FALSE;
@@ -1064,8 +1063,6 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t s, msgpack_object *o,
         full_message_key = "full_message";
         full_message_key_len = 12;
     }
-
-    msgpack_unpacked_init(&result);
 
     s = flb_sds_cat(s, "{\"version\":\"1.1\"", 16);
     if (s == NULL) return NULL;
