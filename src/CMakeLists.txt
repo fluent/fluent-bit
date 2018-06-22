@@ -26,6 +26,7 @@ set(src
   flb_engine.c
   flb_engine_dispatch.c
   flb_task.c
+  flb_unescape.c
   flb_scheduler.c
   flb_io.c
   flb_upstream.c
