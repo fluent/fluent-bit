@@ -266,7 +266,7 @@ void cb_gelf_flush(void *data, size_t bytes,
         u_conn = flb_upstream_conn_get(ctx->u);
         if (!u_conn) {
             flb_error("[out_gelf] no upstream connections available");
-            FLB_OUTPUT_RETURN(FLB_ERROR);
+            FLB_OUTPUT_RETURN(FLB_RETRY);
         }
     }
 
@@ -291,7 +291,7 @@ void cb_gelf_flush(void *data, size_t bytes,
         s = flb_sds_create_size(size);
         if (s == NULL) {
             msgpack_unpacked_destroy(&result);
-            return;
+            FLB_OUTPUT_RETURN(FLB_ERROR);
         }
 
         tmp = flb_msgpack_to_gelf (s, &map, &tm, &(ctx->fields));
@@ -300,6 +300,7 @@ void cb_gelf_flush(void *data, size_t bytes,
             if (ctx->mode == FLB_GELF_UDP) {
                 ret = gelf_send_udp(ctx, s, flb_sds_len(s));
                 if (ret == -1) {
+                    msgpack_unpacked_destroy(&result);
                     flb_sds_destroy(s);
                     FLB_OUTPUT_RETURN(FLB_RETRY);
                 }
@@ -310,8 +311,9 @@ void cb_gelf_flush(void *data, size_t bytes,
                                        s, flb_sds_len(s) + 1, &bytes_sent);
                 if (ret == -1) {
                     flb_errno();
-                    flb_sds_destroy(s);
                     flb_upstream_conn_release(u_conn);
+                    msgpack_unpacked_destroy(&result);
+                    flb_sds_destroy(s);
                     FLB_OUTPUT_RETURN(FLB_RETRY);
                 }
             }
