@@ -569,7 +569,7 @@ void cb_http_flush(void *data, size_t bytes,
                         void *out_context,
                         struct flb_config *config)
 {
-    int ret;
+    int ret = FLB_ERROR;
     struct flb_out_http_config *ctx = out_context;
     void *body = NULL;
     uint64_t body_len;
