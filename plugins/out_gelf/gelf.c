@@ -385,17 +385,11 @@ int cb_gelf_init(struct flb_output_instance *ins, struct flb_config *config,
     if (tmp) {
         ctx->fields.timestamp_key = flb_sds_create(tmp);
     }
-    else {
-        ctx->fields.timestamp_key = NULL;
-    }
 
     /* Config Gelf_Host_Key */
     tmp = flb_output_get_property("gelf_host_key", ins);
     if (tmp) {
         ctx->fields.host_key = flb_sds_create(tmp);
-    }
-    else {
-        ctx->fields.host_key = NULL;
     }
 
     /* Config Gelf_Short_Message_Key */
@@ -403,26 +397,17 @@ int cb_gelf_init(struct flb_output_instance *ins, struct flb_config *config,
     if (tmp) {
         ctx->fields.short_message_key = flb_sds_create(tmp);
     }
-    else {
-        ctx->fields.short_message_key = NULL;
-    }
 
     /* Config Gelf_Full_Message_Key */
     tmp = flb_output_get_property("gelf_full_message_key", ins);
     if (tmp) {
         ctx->fields.full_message_key = flb_sds_create(tmp);
     }
-    else {
-        ctx->fields.full_message_key = NULL;
-    }
 
     /* Config Gelf_Level_Key */
     tmp = flb_output_get_property("gelf_level_key", ins);
     if (tmp) {
         ctx->fields.level_key = flb_sds_create(tmp);
-    }
-    else {
-        ctx->fields.level_key = NULL;
     }
 
     /* Config UDP Packet_Size */
@@ -512,25 +497,11 @@ int cb_gelf_exit(void *data, struct flb_config *config)
         close(ctx->fd);
     }
 
-    if (ctx->fields.timestamp_key) {
-        flb_sds_destroy(ctx->fields.timestamp_key);
-    }
-
-    if (ctx->fields.short_message_key) {
-        flb_sds_destroy(ctx->fields.short_message_key);
-    }
-
-    if (ctx->fields.full_message_key) {
-        flb_sds_destroy(ctx->fields.full_message_key);
-    }
-
-    if (ctx->fields.host_key) {
-        flb_sds_destroy(ctx->fields.host_key);
-    }
-
-    if (ctx->fields.level_key) {
-        flb_sds_destroy(ctx->fields.level_key);
-    }
+    flb_sds_destroy(ctx->fields.timestamp_key);
+    flb_sds_destroy(ctx->fields.host_key);
+    flb_sds_destroy(ctx->fields.short_message_key);
+    flb_sds_destroy(ctx->fields.full_message_key);
+    flb_sds_destroy(ctx->fields.level_key);
 
     gelf_zlib_end(&(ctx->stream));
 
