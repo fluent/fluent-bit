@@ -733,10 +733,11 @@ int flb_msgpack_expand_map(char *map_data, size_t map_size,
     return 0;
 }
 
-static flb_sds_t flb_msgpack_gelf_key(flb_sds_t s, int in_array,
+static flb_sds_t flb_msgpack_gelf_key(flb_sds_t *s, int in_array,
     char *prefix_key, int prefix_key_len, int concat, char *key, int key_len)
 {
     int i;
+    flb_sds_t tmp;
     static char valid_char[256] = {
        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0,
@@ -753,9 +754,9 @@ static flb_sds_t flb_msgpack_gelf_key(flb_sds_t s, int in_array,
     /* check valid key char [A-Za-z0-9_\.\-] */
     for(i=0; i < prefix_key_len; i++) {
         if (!valid_char[(unsigned char)prefix_key[i]]) {
-           flb_debug("[%s] invalid key char '%.*s'",  __FUNCTION__,
-                     prefix_key, prefix_key_len);
-           return NULL;
+            flb_debug("[%s] invalid key char '%.*s'",  __FUNCTION__,
+                      prefix_key, prefix_key_len);
+            return NULL;
         }
     }
     for(i=0; i < key_len; i++) {
@@ -767,158 +768,203 @@ static flb_sds_t flb_msgpack_gelf_key(flb_sds_t s, int in_array,
     }
 
     if (in_array == FLB_FALSE) {
-       s = flb_sds_cat(s, ", \"", 3);
-        if (s == NULL) return NULL;
+        tmp = flb_sds_cat(*s, ", \"", 3);
+        if (tmp == NULL) return NULL;
+        *s = tmp;
     }
 
     if (prefix_key_len > 0) {
-       s = flb_sds_cat(s, prefix_key, prefix_key_len);
-       if (s == NULL) return NULL;
+        tmp = flb_sds_cat(*s, prefix_key, prefix_key_len);
+        if (tmp == NULL) return NULL;
+        *s = tmp;
     }
 
     if (concat == FLB_TRUE) {
-       s = flb_sds_cat(s, "_", 1);
-       if (s == NULL) return NULL;
+        tmp = flb_sds_cat(*s, "_", 1);
+        if (tmp == NULL) return NULL;
+        *s = tmp;
     }
 
     if (key_len > 0) {
-       s = flb_sds_cat(s, key, key_len);
-       if (s == NULL) return NULL;
+        tmp = flb_sds_cat(*s, key, key_len);
+        if (tmp == NULL) return NULL;
+        *s = tmp;
     }
 
     if (in_array == FLB_FALSE) {
-        s = flb_sds_cat(s, "\":", 2);
+        tmp = flb_sds_cat(*s, "\":", 2);
+        if (tmp == NULL) return NULL;
+        *s = tmp;
     } else {
-        s = flb_sds_cat(s, "=", 1);
+        tmp = flb_sds_cat(*s, "=", 1);
+        if (tmp == NULL) return NULL;
+        *s = tmp;
     }
 
-   return s;
+    return *s;
 }
 
-static flb_sds_t flb_msgpack_gelf_value(flb_sds_t s, int quote,
+static flb_sds_t flb_msgpack_gelf_value(flb_sds_t *s, int quote,
                                         char *val, int val_len)
 {
-   if (quote == FLB_TRUE) {
-       s = flb_sds_cat(s, "\"", 1);
-       if (s == NULL) return NULL;
+    flb_sds_t tmp;
 
-       if (val_len > 0) {
-           s = flb_sds_cat_utf8(s, val, val_len);
-           if (s == NULL) return NULL;
-       }
+    if (quote == FLB_TRUE) {
+        tmp = flb_sds_cat(*s, "\"", 1);
+        if (tmp == NULL) return NULL;
+        *s = tmp;
 
-       s = flb_sds_cat(s, "\"", 1);
-   } else {
-       s = flb_sds_cat(s, val, val_len);
-   }
+        if (val_len > 0) {
+            tmp = flb_sds_cat_utf8(s, val, val_len);
+            if (tmp == NULL) return NULL;
+            *s = tmp;
+        }
 
-   return s;
+        tmp = flb_sds_cat(*s, "\"", 1);
+        if (tmp == NULL) return NULL;
+        *s = tmp;
+    } else {
+        tmp = flb_sds_cat(*s, val, val_len);
+        if (tmp == NULL) return NULL;
+        *s = tmp;
+    }
+
+    return *s;
 }
 
-static flb_sds_t flb_msgpack_gelf_value_ext(flb_sds_t s, int quote,
+static flb_sds_t flb_msgpack_gelf_value_ext(flb_sds_t *s, int quote,
                                             char *val, int val_len)
 {
-   static const char int2hex[] = "0123456789abcdef";
+    static const char int2hex[] = "0123456789abcdef";
+    flb_sds_t tmp;
 
-   if (quote == FLB_TRUE) {
-       s = flb_sds_cat(s, "\"", 1);
-       if (s == NULL) return NULL;
-   }
-   /* ext body. fortmat is similar to printf(1) */
-   {
-       int i;
-       char temp[5];
-       for(i=0; i < val_len; i++) {
-           char c = (char)val[i];
-           temp[0] = '\\';
-           temp[1] = 'x';
-           temp[2] = int2hex[ (unsigned char) ((c & 0xf0) >> 4)];
-           temp[3] = int2hex[ (unsigned char) (c & 0x0f)];
-           temp[4] = '\0';
-           s = flb_sds_cat(s, temp, 4);
-           if (s == NULL) return NULL;
-       }
-   }
-   if (quote == FLB_TRUE) {
-       s = flb_sds_cat(s, "\"", 1);
-   }
+    if (quote == FLB_TRUE) {
+        tmp = flb_sds_cat(*s, "\"", 1);
+        if (tmp == NULL) return NULL;
+        *s = tmp;
+    }
+    /* ext body. fortmat is similar to printf(1) */
+    {
+        int i;
+        char temp[5];
+        for(i=0; i < val_len; i++) {
+            char c = (char)val[i];
+            temp[0] = '\\';
+            temp[1] = 'x';
+            temp[2] = int2hex[ (unsigned char) ((c & 0xf0) >> 4)];
+            temp[3] = int2hex[ (unsigned char) (c & 0x0f)];
+            temp[4] = '\0';
+            tmp = flb_sds_cat(*s, temp, 4);
+            if (tmp == NULL) return NULL;
+            *s = tmp;
+        }
+    }
+    if (quote == FLB_TRUE) {
+        tmp = flb_sds_cat(*s, "\"", 1);
+        if (tmp == NULL) return NULL;
+        *s = tmp;
+    }
 
-   return s;
+    return *s;
 }
 
-static flb_sds_t flb_msgpack_gelf_flatten(flb_sds_t s, msgpack_object *o,
+static flb_sds_t flb_msgpack_gelf_flatten(flb_sds_t *s, msgpack_object *o,
                                           char *prefix, int prefix_len,
                                           int in_array)
 {
     int i;
     int loop;
+    flb_sds_t tmp;
 
     switch(o->type) {
     case MSGPACK_OBJECT_NIL:
-        s = flb_sds_cat(s, "null", 4);
+        tmp = flb_sds_cat(*s, "null", 4);
+        if (tmp == NULL) return NULL;
+        *s = tmp;
         break;
 
     case MSGPACK_OBJECT_BOOLEAN:
         if (o->via.boolean) {
-            s = flb_msgpack_gelf_value(s, !in_array, "true", 4);
+            tmp = flb_msgpack_gelf_value(s, !in_array, "true", 4);
         } else {
-            s = flb_msgpack_gelf_value(s, !in_array, "false", 5);
+            tmp = flb_msgpack_gelf_value(s, !in_array, "false", 5);
         }
+        if (tmp == NULL) return NULL;
+        *s = tmp;
         break;
 
     case MSGPACK_OBJECT_POSITIVE_INTEGER:
-        s = flb_sds_printf(s, "%lu", (unsigned long)o->via.u64);
+        tmp = flb_sds_printf(s, "%lu", (unsigned long)o->via.u64);
+        if (tmp == NULL) return NULL;
+        *s = tmp;
         break;
 
     case MSGPACK_OBJECT_NEGATIVE_INTEGER:
-        s = flb_sds_printf(s, "%ld", (signed long)o->via.i64);
+        tmp = flb_sds_printf(s, "%ld", (signed long)o->via.i64);
+        if (tmp == NULL) return NULL;
+        *s = tmp;
         break;
 
     case MSGPACK_OBJECT_FLOAT32:
     case MSGPACK_OBJECT_FLOAT64:
-        s = flb_sds_printf(s, "%f", o->via.f64);
+        tmp = flb_sds_printf(s, "%f", o->via.f64);
+        if (tmp == NULL) return NULL;
+        *s = tmp;
         break;
 
     case MSGPACK_OBJECT_STR:
-        s = flb_msgpack_gelf_value(s, !in_array,
-                                   (char *)o->via.str.ptr,
-                                   o->via.str.size);
+        tmp = flb_msgpack_gelf_value(s, !in_array,
+                                     (char *)o->via.str.ptr,
+                                     o->via.str.size);
+        if (tmp == NULL) return NULL;
+        *s = tmp;
         break;
 
     case MSGPACK_OBJECT_BIN:
-        s = flb_msgpack_gelf_value(s, !in_array,
-                                   (char *)o->via.bin.ptr,
-                                   o->via.bin.size);
+        tmp = flb_msgpack_gelf_value(s, !in_array,
+                                     (char *)o->via.bin.ptr,
+                                     o->via.bin.size);
+        if (tmp == NULL) return NULL;
+        *s = tmp;
         break;
 
     case MSGPACK_OBJECT_EXT:
-        s = flb_msgpack_gelf_value_ext(s, !in_array,
-                                       (char *)o->via.ext.ptr,
-                                       o->via.ext.size);
+        tmp = flb_msgpack_gelf_value_ext(s, !in_array,
+                                         (char *)o->via.ext.ptr,
+                                         o->via.ext.size);
+        if (tmp == NULL) return NULL;
+        *s = tmp;
         break;
 
     case MSGPACK_OBJECT_ARRAY:
         loop = o->via.array.size;
 
         if (!in_array) {
-            s = flb_sds_cat(s, "\"", 1);
-            if (s == NULL) return NULL;
+            tmp = flb_sds_cat(*s, "\"", 1);
+            if (tmp == NULL) NULL;
+            *s = tmp;
         }
         if (loop != 0) {
             msgpack_object* p = o->via.array.ptr;
             for (i=0; i<loop; i++) {
                 if (i > 0) {
-                     if ((s = flb_sds_cat(s, ", ", 2)) == NULL)
-                          return NULL;
+                     tmp = flb_sds_cat(*s, ", ", 2);
+                     if (tmp == NULL) return NULL;
+                     *s = tmp;
                 }
-                s = flb_msgpack_gelf_flatten(s, p+i,
-                                             prefix, prefix_len,
-                                             FLB_TRUE);
-                if (s == NULL) return NULL;
+                tmp = flb_msgpack_gelf_flatten(s, p+i,
+                                               prefix, prefix_len,
+                                               FLB_TRUE);
+                if (tmp == NULL) return NULL;
+                *s = tmp;
             }
         }
 
-        if (!in_array) s = flb_sds_cat(s, "\"", 1);
+        if (!in_array) {
+            tmp = flb_sds_cat(*s, "\"", 1);
+            if (tmp == NULL) return NULL;
+            *s = tmp;
+        }
         break;
 
     case MSGPACK_OBJECT_MAP:
@@ -955,35 +1001,36 @@ static flb_sds_t flb_msgpack_gelf_flatten(flb_sds_t s, msgpack_object *o,
                     }
                     obj_prefix[obj_prefix_len] = '\0';
 
-                    s = flb_msgpack_gelf_flatten(s, v,
-                                                 obj_prefix, obj_prefix_len,
-                                                 in_array);
-                    if (s == NULL) {
-                        flb_free(obj_prefix);
-                        return NULL;
-                    }
+                    tmp = flb_msgpack_gelf_flatten(s, v,
+                                                   obj_prefix, obj_prefix_len,
+                                                   in_array);
+                    if (tmp == NULL) return NULL;
+                    *s = tmp;
 
 		    flb_free(obj_prefix);
                 } else {
                     if (in_array == FLB_TRUE && i > 0) {
-                        s = flb_sds_cat(s, " ", 1);
-                        if (s == NULL) return NULL;
+                        tmp = flb_sds_cat(*s, " ", 1);
+                        if (tmp == NULL) return NULL;
+                        *s = tmp;
                     }
                     if (in_array && prefix_len <= 0) {
-                        s = flb_msgpack_gelf_key(s, in_array,
-                                                 NULL, 0,
-                                                 FLB_FALSE,
-                                                 key, key_len);
+                        tmp = flb_msgpack_gelf_key(s, in_array,
+                                                   NULL, 0,
+                                                   FLB_FALSE,
+                                                   key, key_len);
                     } else {
-                        s = flb_msgpack_gelf_key(s, in_array,
-                                                 prefix, prefix_len,
-                                                 FLB_TRUE,
-                                                 key, key_len);
+                        tmp = flb_msgpack_gelf_key(s, in_array,
+                                                   prefix, prefix_len,
+                                                   FLB_TRUE,
+                                                   key, key_len);
                     }
-                    if (s == NULL) return NULL;
+                    if (tmp == NULL) return NULL;
+                    *s = tmp;
 
-                    s = flb_msgpack_gelf_flatten(s, v, NULL, 0, in_array);
-                    if (s == NULL) return NULL;
+                    tmp = flb_msgpack_gelf_flatten(s, v, NULL, 0, in_array);
+                    if (tmp == NULL) return NULL;
+                    *s = tmp;
                 }
             }
         }
@@ -993,14 +1040,15 @@ static flb_sds_t flb_msgpack_gelf_flatten(flb_sds_t s, msgpack_object *o,
         flb_warn("[%s] unknown msgpack type %i", __FUNCTION__, o->type);
     }
 
-    return s;
+    return *s;
 }
 
-flb_sds_t flb_msgpack_to_gelf(flb_sds_t s, msgpack_object *o,
+flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
    struct flb_time *tm, struct flb_gelf_fields *fields)
 {
     int i;
     int loop;
+    flb_sds_t tmp;
 
     int host_key_found = FLB_FALSE;
     int timestamp_key_found = FLB_FALSE;
@@ -1025,12 +1073,12 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t s, msgpack_object *o,
     }
 
     if (fields != NULL && fields->host_key != NULL) {
-         host_key = fields->host_key;
-         host_key_len = flb_sds_len(fields->host_key);
+        host_key = fields->host_key;
+        host_key_len = flb_sds_len(fields->host_key);
     }
     else {
-         host_key = "host";
-         host_key_len = 4;
+        host_key = "host";
+        host_key_len = 4;
     }
 
     if (fields != NULL && fields->timestamp_key != NULL) {
@@ -1069,8 +1117,9 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t s, msgpack_object *o,
         full_message_key_len = 12;
     }
 
-    s = flb_sds_cat(s, "{\"version\":\"1.1\"", 16);
-    if (s == NULL) return NULL;
+    tmp = flb_sds_cat(*s, "{\"version\":\"1.1\"", 16);
+    if (tmp == NULL) return NULL;
+    *s = tmp;
 
     loop = o->via.map.size;
     if (loop != 0) {
@@ -1157,26 +1206,29 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t s, msgpack_object *o,
                 strncpy(prefix + 1, key, key_len);
                 prefix[prefix_len] = '\0';
 
-                s = flb_msgpack_gelf_flatten (s, v,
-                                              prefix, prefix_len, FLB_FALSE);
+                tmp = flb_msgpack_gelf_flatten (s, v,
+                                                prefix, prefix_len, FLB_FALSE);
 
+                if (tmp == NULL) return NULL;
+                *s = tmp;
                 flb_free(prefix);
 
             }
             else if (v->type == MSGPACK_OBJECT_ARRAY) {
                 if (custom_key == FLB_TRUE) {
-                    s = flb_msgpack_gelf_key(s, FLB_FALSE, "_", 1, FLB_FALSE,
+                    tmp = flb_msgpack_gelf_key(s, FLB_FALSE, "_", 1, FLB_FALSE,
                                              key, key_len);
-                    if (s == NULL) return NULL;
                 }
                 else {
-                    s = flb_msgpack_gelf_key(s, FLB_FALSE, NULL, 0, FLB_FALSE,
+                    tmp = flb_msgpack_gelf_key(s, FLB_FALSE, NULL, 0, FLB_FALSE,
                                              key, key_len);
-                    if (s == NULL) return NULL;
                 }
+                if (tmp == NULL) return NULL;
+                *s = tmp;
 
-                s = flb_msgpack_gelf_flatten(s, v, NULL, 0, FLB_FALSE);
-                if (s == NULL) return NULL;
+                tmp = flb_msgpack_gelf_flatten(s, v, NULL, 0, FLB_FALSE);
+                if (tmp == NULL) return NULL;
+                *s = tmp;
             }
             else {
                 char temp[48] = {0};
@@ -1228,35 +1280,37 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t s, msgpack_object *o,
                 }
 
                 if (custom_key == FLB_TRUE) {
-                    s = flb_msgpack_gelf_key(s, FLB_FALSE, "_", 1, FLB_FALSE,
+                    tmp = flb_msgpack_gelf_key(s, FLB_FALSE, "_", 1, FLB_FALSE,
                                              key, key_len);
-                    if (s == NULL) return NULL;
                 }
                 else {
-                    s = flb_msgpack_gelf_key(s, FLB_FALSE, NULL, 0, FLB_FALSE,
+                    tmp = flb_msgpack_gelf_key(s, FLB_FALSE, NULL, 0, FLB_FALSE,
                                              key, key_len);
-                    if (s == NULL) return NULL;
                 }
+                if (tmp == NULL) return NULL;
+                *s = tmp;
 
                 if (v->type == MSGPACK_OBJECT_EXT) {
-                    s = flb_msgpack_gelf_value_ext(s, quote, val, val_len);
-                    if (s == NULL) return NULL;
+                    tmp = flb_msgpack_gelf_value_ext(s, quote, val, val_len);
                 }
                 else {
-                    s = flb_msgpack_gelf_value(s, quote, val, val_len);
-                    if (s == NULL) return NULL;
+                    tmp = flb_msgpack_gelf_value(s, quote, val, val_len);
                 }
+                if (tmp == NULL) return NULL;
+                *s = tmp;
             }
         }
     }
 
     if (timestamp_key_found == FLB_FALSE && tm != NULL) {
-        s = flb_msgpack_gelf_key(s, FLB_FALSE, NULL, 0, FLB_FALSE,
-                                 "timestamp", 9);
-        if (s == NULL) return NULL;
+        tmp = flb_msgpack_gelf_key(s, FLB_FALSE, NULL, 0, FLB_FALSE,
+                                   "timestamp", 9);
+        if (tmp == NULL) return NULL;
+        *s = tmp;
 
-        s = flb_sds_printf(s, "%f", flb_time_to_double(tm));
-        if (s == NULL) return NULL;
+        tmp = flb_sds_printf(s, "%f", flb_time_to_double(tm));
+        if (tmp == NULL) return NULL;
+        *s = tmp;
     }
 
     if (short_message_key_found == FLB_FALSE) {
@@ -1264,9 +1318,11 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t s, msgpack_object *o,
         return NULL;
     }
 
-    s = flb_sds_cat(s, "}", 1);
+    tmp = flb_sds_cat(*s, "}", 1);
+    if (tmp == NULL) return NULL;
+    *s = tmp;
 
-    return s;
+    return *s;
 }
 
 flb_sds_t flb_msgpack_raw_to_gelf(char *buf, size_t buf_size,
@@ -1275,9 +1331,9 @@ flb_sds_t flb_msgpack_raw_to_gelf(char *buf, size_t buf_size,
     int ret;
     size_t off = 0;
     size_t gelf_size;
-    char *tmp;
     msgpack_unpacked result;
     flb_sds_t s;
+    flb_sds_t tmp;
 
     if (!buf || buf_size <= 0) {
         return NULL;
@@ -1296,7 +1352,7 @@ flb_sds_t flb_msgpack_raw_to_gelf(char *buf, size_t buf_size,
         return NULL;
     }
 
-    tmp = flb_msgpack_to_gelf(s, &result.data, tm, fields);
+    tmp = flb_msgpack_to_gelf(&s, &result.data, tm, fields);
     if (tmp == NULL) {
         flb_sds_destroy(s);
         msgpack_unpacked_destroy(&result);

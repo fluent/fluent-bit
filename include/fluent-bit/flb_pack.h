@@ -65,7 +65,7 @@ struct flb_gelf_fields {
     flb_sds_t level_key;
 };
 
-flb_sds_t flb_msgpack_to_gelf(flb_sds_t s, msgpack_object *o,
+flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
    struct flb_time *tm, struct flb_gelf_fields *fields);
 
 flb_sds_t flb_msgpack_raw_to_gelf(char *buf, size_t buf_size,

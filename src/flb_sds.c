@@ -159,7 +159,7 @@ flb_sds_t flb_sds_copy(flb_sds_t s, char *str, int len)
     return s;
 }
 
-flb_sds_t flb_sds_cat_utf8 (flb_sds_t s, char *str, int str_len)
+flb_sds_t flb_sds_cat_utf8 (flb_sds_t *sds, char *str, int str_len)
 {
     static const char int2hex[] = "0123456789abcdef";
     int i;
@@ -171,21 +171,24 @@ flb_sds_t flb_sds_cat_utf8 (flb_sds_t s, char *str, int str_len)
     uint32_t c;
     uint8_t *p;
     struct flb_sds *head;
+    flb_sds_t tmp;
+    flb_sds_t s;
 
+    s = *sds;
     head = FLB_SDS_HEADER(s);
 
     if (flb_sds_avail(s) <= str_len) {
-        if ((s = flb_sds_increase(s, str_len)) == NULL) {
-            return NULL;
-        }
+        tmp = flb_sds_increase(s, str_len);
+        if (tmp == NULL) return NULL;
+        *sds = s = tmp;
         head = FLB_SDS_HEADER(s);
     }
 
     for (i = 0; i < str_len; i++) {
         if (flb_sds_avail(s) < 6) {
-            if ((s = flb_sds_increase(s, 6)) == NULL) {
-                return NULL;
-            }
+            tmp = flb_sds_increase(s, 6);
+            if (tmp == NULL) return NULL;
+            *sds = s = tmp;
             head = FLB_SDS_HEADER(s);
         }
 
@@ -223,9 +226,9 @@ flb_sds_t flb_sds_cat_utf8 (flb_sds_t s, char *str, int str_len)
         }
         else if (c < 32 || c == 0x7f) {
             if (flb_sds_avail(s) < 6) {
-                if ((s = flb_sds_increase(s, 6)) == NULL) {
-                    return NULL;
-                }
+                tmp = flb_sds_increase(s, 6);
+                if (tmp == NULL) return NULL;
+                *sds = s = tmp;
                 head = FLB_SDS_HEADER(s);
             }
             s[head->len++] = '\\';
@@ -238,9 +241,9 @@ flb_sds_t flb_sds_cat_utf8 (flb_sds_t s, char *str, int str_len)
         else if (c >= 0x80 && c <= 0xFFFF) {
             hex_bytes = flb_utf8_len(str + i);
             if (flb_sds_avail(s) < 6) {
-                if ((s = flb_sds_increase(s, 2 + 6)) == NULL) {
-                    return NULL;
-                }
+                tmp = flb_sds_increase(s, 2 + 6);
+                if (tmp == NULL) return NULL;
+                *sds = s = tmp;
                 head = FLB_SDS_HEADER(s);
             }
 
@@ -271,9 +274,9 @@ flb_sds_t flb_sds_cat_utf8 (flb_sds_t s, char *str, int str_len)
         else if (c > 0xFFFF) {
             hex_bytes = flb_utf8_len(str + i);
             if (flb_sds_avail(s) < 10) {
-                if ((s = flb_sds_increase(s, 10)) == NULL) {
-                    return NULL;
-                }
+                tmp = flb_sds_increase(s, 10);
+                if (tmp == NULL) return NULL;
+                *sds = s = tmp;
                 head = FLB_SDS_HEADER(s);
             }
 
@@ -316,22 +319,24 @@ flb_sds_t flb_sds_cat_utf8 (flb_sds_t s, char *str, int str_len)
     return s;
 }
 
-flb_sds_t flb_sds_printf(flb_sds_t s, const char *fmt, ...)
+flb_sds_t flb_sds_printf(flb_sds_t *sds, const char *fmt, ...)
 {
     va_list ap;
     int len = strlen(fmt)*2;
     int size;
     flb_sds_t tmp = NULL;
+    flb_sds_t s;
     struct flb_sds *head;
 
     if (len < 64) len = 64;
 
+    s = *sds;
     if (flb_sds_avail(s)< len) {
         tmp = flb_sds_increase(s, len);
         if (!tmp) {
             return NULL;
         }
-        s = tmp;
+        *sds = s = tmp;
     }
 
     va_start(ap, fmt);
@@ -348,7 +353,7 @@ flb_sds_t flb_sds_printf(flb_sds_t s, const char *fmt, ...)
             va_end(ap);
             return NULL;
         }
-        s = tmp;
+        *sds = s = tmp;
         size = vsnprintf((char *) (s + flb_sds_len(s)), flb_sds_avail(s), fmt, ap);
         if (size > flb_sds_avail(s)) {
             flb_warn("[%s] vsnprintf is insatiable ", __FUNCTION__);

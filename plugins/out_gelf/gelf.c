@@ -287,14 +287,14 @@ void cb_gelf_flush(void *data, size_t bytes,
         flb_time_pop_from_msgpack(&tm, &result, &obj);
         map = root.via.array.ptr[1];
 
-        size = (size * 1.3);
+        size = (size * 1.4);
         s = flb_sds_create_size(size);
         if (s == NULL) {
             msgpack_unpacked_destroy(&result);
             FLB_OUTPUT_RETURN(FLB_ERROR);
         }
 
-        tmp = flb_msgpack_to_gelf (s, &map, &tm, &(ctx->fields));
+        tmp = flb_msgpack_to_gelf(&s, &map, &tm, &(ctx->fields));
         if (tmp != NULL) {
             s = tmp;
             if (ctx->mode == FLB_GELF_UDP) {
