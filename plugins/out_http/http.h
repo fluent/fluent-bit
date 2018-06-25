@@ -61,6 +61,18 @@ struct flb_out_http_config {
 
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
+
+    /* Arbitrary HTTP headers */
+    struct mk_list headers;
+    int headers_cnt;
+};
+
+struct out_http_header {
+    char *key;
+    int key_len;
+    char *val;
+    int val_len;
+    struct mk_list _head;
 };
 
 #endif
