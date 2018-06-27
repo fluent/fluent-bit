@@ -19,7 +19,6 @@
 
 #include <stdio.h>
 #include <sys/types.h>
-#include <regex.h>
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
@@ -27,6 +26,7 @@
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_regex.h>
 #include <msgpack.h>
 
 #include "modify.h"
@@ -45,6 +45,12 @@ static void teardown(struct filter_modify_ctx *ctx)
         flb_free(condition->b);
         flb_free(condition->raw_k);
         flb_free(condition->raw_v);
+        if (condition->a_is_regex) {
+            flb_regex_destroy(condition->a_regex);
+        }
+        if (condition->b_is_regex) {
+            flb_regex_destroy(condition->b_regex);
+        }
         mk_list_del(&condition->_head);
         flb_free(condition);
     }
@@ -55,6 +61,8 @@ static void teardown(struct filter_modify_ctx *ctx)
         flb_free(rule->val);
         flb_free(rule->raw_k);
         flb_free(rule->raw_v);
+        flb_regex_destroy(rule->key_regex);
+        flb_regex_destroy(rule->val_regex);
         mk_list_del(&rule->_head);
         flb_free(rule);
     }
@@ -118,6 +126,7 @@ static int setup(struct filter_modify_ctx *ctx,
             //
 
             condition = flb_malloc(sizeof(struct modify_condition));
+
             if (!condition) {
                 flb_error
                     ("[filter_modify] Unable to allocate memory for condition");
@@ -127,6 +136,8 @@ static int setup(struct filter_modify_ctx *ctx,
                 return -1;
             }
 
+            condition->a_is_regex = false;
+            condition->b_is_regex = false;
             condition->raw_k = flb_strndup(prop->key, strlen(prop->key));
             condition->raw_v = flb_strndup(prop->val, strlen(prop->val));
 
@@ -139,12 +150,44 @@ static int setup(struct filter_modify_ctx *ctx,
             else if (strcasecmp(sentry->value, "key_does_not_exist") == 0) {
                 condition->conditiontype = KEY_DOES_NOT_EXIST;
             }
+            else if (strcasecmp(sentry->value, "a_key_matches") == 0) {
+                condition->conditiontype = A_KEY_MATCHES;
+                condition->a_is_regex = true;
+            }
+            else if (strcasecmp(sentry->value, "no_key_matches") == 0) {
+                condition->conditiontype = NO_KEY_MATCHES;
+                condition->a_is_regex = true;
+            }
             else if (strcasecmp(sentry->value, "key_value_equals") == 0) {
                 condition->conditiontype = KEY_VALUE_EQUALS;
             }
             else if (strcasecmp(sentry->value, "key_value_does_not_equal") ==
                      0) {
                 condition->conditiontype = KEY_VALUE_DOES_NOT_EQUAL;
+            }
+            else if (strcasecmp(sentry->value, "key_value_matches") == 0) {
+                condition->conditiontype = KEY_VALUE_MATCHES;
+                condition->a_is_regex = true;
+            }
+            else if (strcasecmp(sentry->value, "key_value_does_not_match") ==
+                     0) {
+                condition->conditiontype = KEY_VALUE_DOES_NOT_MATCH;
+                condition->b_is_regex = true;
+            }
+            else if (strcasecmp
+                     (sentry->value,
+                      "matching_keys_have_matching_values") == 0) {
+                condition->conditiontype = MATCHING_KEYS_HAVE_MATCHING_VALUES;
+                condition->a_is_regex = true;
+                condition->b_is_regex = true;
+            }
+            else if (strcasecmp
+                     (sentry->value,
+                      "matching_keys_do_not_have_matching_values") == 0) {
+                condition->conditiontype =
+                    MATCHING_KEYS_DO_NOT_HAVE_MATCHING_VALUES;
+                condition->a_is_regex = true;
+                condition->b_is_regex = true;
             }
             else {
                 flb_error("[filter_modify] Invalid config for %s : %s",
@@ -172,6 +215,38 @@ static int setup(struct filter_modify_ctx *ctx,
                 condition->b_len = 0;
             }
 
+            if (condition->a_is_regex) {
+                if (condition->a_len < 1) {
+                    flb_error
+                        ("[filter_modify] Unable to create regex for condition %s %s",
+                         condition->raw_k, condition->raw_v);
+                    return -1;
+                }
+                else {
+                    flb_debug
+                        ("[filter_modify] Creating regex for condition A : %s %s : %s",
+                         condition->raw_k, condition->raw_v, condition->a);
+                    condition->a_regex =
+                        flb_regex_create((unsigned char *) condition->a);
+                }
+            }
+
+            if (condition->b_is_regex) {
+                if (condition->b_len < 1) {
+                    flb_error
+                        ("[filter_modify] Unable to create regex for condition %s %s",
+                         condition->raw_k, condition->raw_v);
+                    return -1;
+                }
+                else {
+                    flb_debug
+                        ("[filter_modify] Creating regex for condition B : %s %s : %s",
+                         condition->raw_k, condition->raw_v, condition->b);
+                    condition->b_regex =
+                        flb_regex_create((unsigned char *) condition->b);
+                }
+            }
+
             flb_utils_split_free(split);
 
             mk_list_add(&condition->_head, &ctx->conditions);
@@ -184,6 +259,7 @@ static int setup(struct filter_modify_ctx *ctx,
             //
 
             rule = flb_malloc(sizeof(struct modify_rule));
+
             if (!rule) {
                 flb_error
                     ("[filter_modify] Unable to allocate memory for rule");
@@ -193,6 +269,8 @@ static int setup(struct filter_modify_ctx *ctx,
                 return -1;
             }
 
+            rule->key_is_regex = false;
+            rule->val_is_regex = false;
             rule->raw_k = flb_strndup(prop->key, strlen(prop->key));
             rule->raw_v = flb_strndup(prop->val, strlen(prop->val));
 
@@ -213,6 +291,10 @@ static int setup(struct filter_modify_ctx *ctx,
                 }
                 else if (strcasecmp(prop->key, "remove_wildcard") == 0) {
                     rule->ruletype = REMOVE_WILDCARD;
+                }
+                else if (strcasecmp(prop->key, "remove_regex") == 0) {
+                    rule->ruletype = REMOVE_REGEX;
+                    rule->key_is_regex = true;
                 }
                 else {
                     flb_error
@@ -257,6 +339,28 @@ static int setup(struct filter_modify_ctx *ctx,
                 }
             }
 
+            if (rule->key_is_regex && rule->key_len == 0) {
+                flb_error
+                    ("[filter_modify] Unable to create regex for rule %s %s",
+                     rule->raw_k, rule->raw_v);
+                return -1;
+            }
+            else {
+                rule->key_regex =
+                    flb_regex_create((unsigned char *) rule->key);
+            }
+
+            if (rule->val_is_regex && rule->val_len == 0) {
+                flb_error
+                    ("[filter_modify] Unable to create regex for rule %s %s",
+                     rule->raw_k, rule->raw_v);
+                return -1;
+            }
+            else {
+                rule->val_regex =
+                    flb_regex_create((unsigned char *) rule->val);
+            }
+
             mk_list_add(&rule->_head, &ctx->rules);
             ctx->rules_cnt++;
         }
@@ -267,6 +371,108 @@ static int setup(struct filter_modify_ctx *ctx,
         ("[filter_modify] Initialized modify filter with %d conditions and %d rules",
          ctx->conditions_cnt, ctx->rules_cnt);
     return 0;
+}
+
+//
+// Regex matchers
+//
+
+static inline bool helper_msgpack_object_matches_regex(msgpack_object * obj,
+                                                       struct flb_regex
+                                                       *regex)
+{
+    char *key;
+    int len;
+    struct flb_regex_search result;
+
+    if (obj->type == MSGPACK_OBJECT_BIN) {
+        return false;
+        key = (char *) obj->via.bin.ptr;
+        len = obj->via.bin.size;
+    }
+    else if (obj->type == MSGPACK_OBJECT_STR) {
+        key = (char *) obj->via.str.ptr;
+        len = obj->via.str.size;
+    }
+    else {
+        return false;
+    }
+
+    return (flb_regex_do(regex, (unsigned char *) key, len, &result) == 0);
+}
+
+static inline bool kv_key_matches_regex(msgpack_object_kv * kv,
+                                        struct flb_regex *regex)
+{
+    return helper_msgpack_object_matches_regex(&kv->key, regex);
+}
+
+static inline bool kv_val_matches_regex(msgpack_object_kv * kv,
+                                        struct flb_regex *regex)
+{
+    return helper_msgpack_object_matches_regex(&kv->val, regex);
+}
+
+static inline bool kv_key_does_not_match_regex(msgpack_object_kv * kv,
+                                               struct flb_regex *regex)
+{
+    return !kv_key_matches_regex(kv, regex);
+}
+
+static inline bool kv_key_matches_regex_rule_key(msgpack_object_kv * kv,
+                                                 struct modify_rule *rule)
+{
+    return kv_key_matches_regex(kv, rule->key_regex);
+}
+
+static inline bool kv_key_does_not_match_regex_rule_key(msgpack_object_kv *
+                                                        kv,
+                                                        struct modify_rule
+                                                        *rule)
+{
+    return !kv_key_matches_regex_rule_key(kv, rule);
+}
+
+static inline bool kv_key_matches_regex_rule_val(msgpack_object_kv * kv,
+                                                 struct modify_rule *rule)
+{
+    return kv_key_matches_regex(kv, rule->val_regex);
+}
+
+static inline bool kv_key_does_not_match_regex_rule_val(msgpack_object_kv *
+                                                        kv,
+                                                        struct modify_rule
+                                                        *rule)
+{
+    return !kv_key_matches_regex_rule_val(kv, rule);
+}
+
+static inline int map_count_keys_matching_regex(msgpack_object * map,
+                                                struct flb_regex *regex)
+{
+    int i;
+    int count = 0;
+
+    for (i = 0; i < map->via.map.size; i++) {
+        if (kv_key_matches_regex(&map->via.map.ptr[i], regex)) {
+            count++;
+        }
+    }
+    return count;
+}
+
+static inline int map_count_keys_not_matching_regex(msgpack_object * map,
+                                                    struct flb_regex *regex)
+{
+    int i;
+    int count = 0;
+
+    for (i = 0; i < map->via.map.size; i++) {
+        if (!kv_key_matches_regex(&map->via.map.ptr[i], regex)) {
+            count++;
+        }
+    }
+    return count;
 }
 
 //
@@ -526,6 +732,21 @@ static inline bool evaluate_condition_KEY_DOES_NOT_EXIST(msgpack_object * map,
     return !evaluate_condition_KEY_EXISTS(map, condition);
 }
 
+static inline bool evaluate_condition_A_KEY_MATCHES(msgpack_object * map,
+                                                    struct modify_condition
+                                                    *condition)
+{
+    return (map_count_keys_matching_regex(map, condition->a_regex) > 0);
+}
+
+static inline bool evaluate_condition_NO_KEY_MATCHES(msgpack_object * map,
+                                                     struct
+                                                     modify_condition
+                                                     *condition)
+{
+    return !evaluate_condition_A_KEY_MATCHES(map, condition);
+}
+
 static inline bool evaluate_condition_KEY_VALUE_EQUALS(msgpack_object * map,
                                                        struct
                                                        modify_condition
@@ -559,6 +780,74 @@ static inline bool evaluate_condition_KEY_VALUE_DOES_NOT_EQUAL(msgpack_object
     return !evaluate_condition_KEY_VALUE_EQUALS(map, condition);
 }
 
+static inline bool evaluate_condition_KEY_VALUE_MATCHES(msgpack_object * map,
+                                                        struct
+                                                        modify_condition
+                                                        *condition)
+{
+    int i;
+    bool match = false;
+    msgpack_object_kv *kv;
+
+    for (i = 0; i < map->via.map.size; i++) {
+        kv = &map->via.map.ptr[i];
+        if (kv_key_matches_str(kv, condition->a, condition->a_len)) {
+            if (kv_val_matches_regex(kv, condition->b_regex)) {
+                flb_debug
+                    ("[filter_modify] : Match for condition KEY_VALUE_MATCHES %s",
+                     condition->b);
+                match = true;
+                break;
+            }
+        }
+    }
+    return match;
+}
+
+static inline bool evaluate_condition_KEY_VALUE_DOES_NOT_MATCH(msgpack_object
+                                                               * map,
+                                                               struct
+                                                               modify_condition
+                                                               *condition)
+{
+    return !evaluate_condition_KEY_VALUE_MATCHES(map, condition);
+}
+
+static inline bool
+evaluate_condition_MATCHING_KEYS_HAVE_MATCHING_VALUES(msgpack_object * map,
+                                                      struct modify_condition
+                                                      *condition)
+{
+    int i;
+    bool match = true;
+    msgpack_object_kv *kv;
+
+    for (i = 0; i < map->via.map.size; i++) {
+        kv = &map->via.map.ptr[i];
+        if (kv_key_matches_regex(kv, condition->a_regex)) {
+            if (!kv_val_matches_regex(kv, condition->b_regex)) {
+                flb_debug
+                    ("[filter_modify] : Match MISSED for condition MATCHING_KEYS_HAVE_MATCHING_VALUES %s",
+                     condition->b);
+                match = false;
+                break;
+            }
+        }
+    }
+    return match;
+}
+
+static inline bool
+evaluate_condition_MATCHING_KEYS_DO_NOT_HAVE_MATCHING_VALUES(msgpack_object *
+                                                             map,
+                                                             struct
+                                                             modify_condition
+                                                             *condition)
+{
+    return !evaluate_condition_MATCHING_KEYS_HAVE_MATCHING_VALUES(map,
+                                                                  condition);
+}
+
 static inline bool evaluate_condition(msgpack_object * map,
                                       struct modify_condition *condition)
 {
@@ -567,10 +856,25 @@ static inline bool evaluate_condition(msgpack_object * map,
         return evaluate_condition_KEY_EXISTS(map, condition);
     case KEY_DOES_NOT_EXIST:
         return evaluate_condition_KEY_DOES_NOT_EXIST(map, condition);
+    case A_KEY_MATCHES:
+        return evaluate_condition_A_KEY_MATCHES(map, condition);
+    case NO_KEY_MATCHES:
+        return evaluate_condition_NO_KEY_MATCHES(map, condition);
     case KEY_VALUE_EQUALS:
         return evaluate_condition_KEY_VALUE_EQUALS(map, condition);
     case KEY_VALUE_DOES_NOT_EQUAL:
         return evaluate_condition_KEY_VALUE_DOES_NOT_EQUAL(map, condition);
+    case KEY_VALUE_MATCHES:
+        return evaluate_condition_KEY_VALUE_MATCHES(map, condition);
+    case KEY_VALUE_DOES_NOT_MATCH:
+        return evaluate_condition_KEY_VALUE_DOES_NOT_MATCH(map, condition);
+    case MATCHING_KEYS_HAVE_MATCHING_VALUES:
+        return evaluate_condition_MATCHING_KEYS_HAVE_MATCHING_VALUES(map,
+                                                                     condition);
+    case MATCHING_KEYS_DO_NOT_HAVE_MATCHING_VALUES:
+        return
+            evaluate_condition_MATCHING_KEYS_DO_NOT_HAVE_MATCHING_VALUES(map,
+                                                                         condition);
     default:
         flb_warn
             ("[filter_modify] Unknown conditiontype for condition %s : %s, assuming result FAILED TO MEET CONDITION",
@@ -883,6 +1187,23 @@ static inline int apply_rule_REMOVE_WILDCARD(msgpack_packer * packer,
     }
 }
 
+static inline int apply_rule_REMOVE_REGEX(msgpack_packer * packer,
+                                          msgpack_object * map,
+                                          struct modify_rule *rule)
+{
+    int matches = map_count_keys_matching_regex(map, rule->key_regex);
+
+    if (matches == 0) {
+        return FLB_FILTER_NOTOUCH;
+    }
+    else {
+        msgpack_pack_map(packer, map->via.map.size - matches);
+        map_pack_each_fn(packer, map, rule,
+                         kv_key_does_not_match_regex_rule_key);
+        return FLB_FILTER_MODIFIED;
+    }
+}
+
 static inline int apply_modifying_rule(msgpack_packer * packer,
                                        msgpack_object * map,
                                        struct modify_rule *rule)
@@ -900,6 +1221,8 @@ static inline int apply_modifying_rule(msgpack_packer * packer,
         return apply_rule_REMOVE(packer, map, rule);
     case REMOVE_WILDCARD:
         return apply_rule_REMOVE_WILDCARD(packer, map, rule);
+    case REMOVE_REGEX:
+        return apply_rule_REMOVE_REGEX(packer, map, rule);
     case COPY:
         return apply_rule_COPY(packer, map, rule);
     case HARD_COPY:
