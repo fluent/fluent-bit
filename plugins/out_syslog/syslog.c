@@ -70,6 +70,7 @@ static void cb_syslog_flush(void *data, size_t bytes,
     flb_info("ctx: %p", ctx);
     flb_info("[out_syslog] flush addr=%s", ctx->addr);
     // TODO: flush to syslog upstream
+
     // TODO: retry and reconnect
     FLB_OUTPUT_RETURN(FLB_OK);
     return;
