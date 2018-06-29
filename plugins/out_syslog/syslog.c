@@ -69,71 +69,10 @@ static void cb_syslog_flush(void *data, size_t bytes,
     flb_info("[out_syslog] flush\n");
     flb_info("ctx: %p", ctx);
     flb_info("[out_syslog] flush addr=%s", ctx->addr);
-    // TODO flush to syslog upstream
+    // TODO: flush to syslog upstream
+    // TODO: retry and reconnect
     FLB_OUTPUT_RETURN(FLB_OK);
     return;
-
-//     FILE * fp;
-// 
-//     msgpack_unpacked result;
-//     size_t off = 0;
-//     size_t last_off = 0;
-//     size_t alloc_size = 0;
-//     char *out_syslog;
-//     char *buf;
-//     msgpack_object *obj;
-//     struct flb_time tm;
-//     (void) i_ins;
-//     (void) config;
-// 
-//     /* Set the right output */
-//     if (!ctx->out_syslog) {
-//         out_syslog = tag;
-//     }
-//     else {
-//         out_syslog = ctx->out_syslog;
-//     }
-// 
-//     /* Open output syslog with default name as the Tag */
-//     fp = fopen(out_syslog, "a+");
-//     if (fp == NULL) {
-//         flb_errno();
-//         FLB_OUTPUT_RETURN(FLB_ERROR);
-//     }
-// 
-//     /*
-//      * Upon flush, for each array, lookup the time and the first field
-//      * of the map to use as a data point.
-//      */
-//     msgpack_unpacked_init(&result);
-//     while (msgpack_unpack_next(&result, data, bytes, &off)) {
-//         alloc_size = (off - last_off) + 128; /* JSON is larger than msgpack */
-//         last_off = off;
-// 
-//         flb_time_pop_from_msgpack(&tm, &result, &obj);
-// 
-//         switch (ctx->format){
-//         case FLB_OUT_SYSLOG_FMT_JSON:
-//             buf = flb_msgpack_to_json_str(alloc_size, obj);
-//             if (buf) {
-//                 fprintf(fp, "%s: [%f, %s]\n",
-//                         tag,
-//                         flb_time_to_double(&tm),
-//                         buf);
-//                 flb_free(buf);
-//             }
-//             else {
-//                 msgpack_unpacked_destroy(&result);
-//                 fclose(fp);
-//                 FLB_OUTPUT_RETURN(FLB_RETRY);
-//             }
-//             break;
-//         }
-//     }
-//     msgpack_unpacked_destroy(&result);
-//     fclose(fp);
-// 
-//     FLB_OUTPUT_RETURN(FLB_OK);
 }
 
 static int cb_syslog_exit(void *data, struct flb_config *config)
