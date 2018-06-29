@@ -5,4 +5,5 @@ lib/onigmo
 tests/internal/flb_tests_internal.h
 build/
 lib/*/src/*.o
+lib/*/src/*.so
 lib/*/src/host/*.o
