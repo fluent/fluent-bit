@@ -3,3 +3,6 @@ _book/
 lib/jemalloc
 lib/onigmo
 tests/internal/flb_tests_internal.h
+build/
+lib/*/src/*.o
+lib/*/src/host/*.o
