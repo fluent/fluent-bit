@@ -70,6 +70,7 @@ $ bin/fluent-bit -i cpu -o stdout
 | Plot               | plot | generate a file for gnuplot |
 | Standard Output    | stdout                  | prints the records to the standard output stream |
 | Treasure Data      | td                      | flush records to [Treasure Data](http://treasuredata.com) service (cloud analytics)|
+| Syslog             | syslog  | flush messages to syslog daemon(s) | 
 
 ## Official Documentation
 
