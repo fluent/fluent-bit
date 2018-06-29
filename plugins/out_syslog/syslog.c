@@ -31,141 +31,63 @@
 
 #include "syslog.h"
 
-struct flb_syslog_conf {
-    char *out_syslog;
-    char *delimiter;
-    char *label_delimiter;
-    int  format;
-};
-
-static char* check_delimiter(char *str)
-{
-    if (str == NULL) {
-        return NULL;
-    }
-
-    if (!strcasecmp(str, "\\t") || !strcasecmp(str, "tab")) {
-        return "\t";
-    }
-    else if (!strcasecmp(str, "space")) {
-        return " ";
-    }
-    else if (!strcasecmp(str, "comma")) {
-        return ",";
-    }
-
-    return NULL;
-}
-
-
 static int cb_syslog_init(struct flb_output_instance *ins,
                         struct flb_config *config,
                         void *data)
 {
     fprintf(stderr, "cb_syslog_init\n");
-
-    char *tmp;
-    char *ret_str;
-    (void) config;
-    (void) data;
-    struct flb_syslog_conf *conf;
-
-    conf = flb_calloc(1, sizeof(struct flb_syslog_conf));
-    if (!conf) {
-        flb_errno();
-        return -1;
-    }
-
-    conf->format = FLB_OUT_SYSLOG_FMT_JSON;/* default */
-    conf->delimiter = NULL;
-    conf->label_delimiter = NULL;
-
-    /* Optional output syslog name/path */
-    tmp = flb_output_get_property("Path", ins);
-    if (tmp) {
-        conf->out_syslog = tmp;
-    }
-
-    /* Optional, syslog format */
-    tmp = flb_output_get_property("Format", ins);
-    if (tmp && !strcasecmp(tmp, "csv")){
-        conf->format    = FLB_OUT_SYSLOG_FMT_CSV;
-        conf->delimiter = ",";
-    }
-    else if(tmp && !strcasecmp(tmp, "ltsv")) {
-        conf->format    = FLB_OUT_SYSLOG_FMT_LTSV;
-        conf->delimiter = "\t";
-        conf->label_delimiter = ":";
-    }
-
-    tmp = flb_output_get_property("delimiter", ins);
-    ret_str = check_delimiter(tmp);
-    if (ret_str != NULL) {
-        conf->delimiter = ret_str;
-    }
-
-    tmp = flb_output_get_property("label_delimiter", ins);
-    ret_str = check_delimiter(tmp);
-    if (ret_str != NULL) {
-        conf->label_delimiter = ret_str;
-    }
-
-    /* Set the context */
-    flb_output_set_context(ins, conf);
-
     return 0;
-}
 
-static int csv_output(FILE *fp,
-                      struct flb_time *tm,
-                      msgpack_object *obj,
-                      struct flb_syslog_conf *ctx)
-{
-    msgpack_object_kv *kv = NULL;
-    int i;
-    int map_size;
-
-    if (obj->type == MSGPACK_OBJECT_MAP && obj->via.map.size > 0) {
-        kv = obj->via.map.ptr;
-        map_size = obj->via.map.size;
-        fprintf(fp, "%f%s", flb_time_to_double(tm), ctx->delimiter);
-        for (i=0; i<map_size-1; i++) {
-            msgpack_object_print(fp, (kv+i)->val);
-            fprintf(fp, "%s", ctx->delimiter);
-        }
-        msgpack_object_print(fp, (kv+(map_size-1))->val);
-        fprintf(fp, "\n");
-    }
-    return 0;
-}
-
-static int ltsv_output(FILE *fp,
-                      struct flb_time *tm,
-                      msgpack_object *obj,
-                      struct flb_syslog_conf *ctx)
-{
-    msgpack_object_kv *kv = NULL;
-    int i;
-    int map_size;
-
-    if (obj->type == MSGPACK_OBJECT_MAP && obj->via.map.size > 0) {
-        kv = obj->via.map.ptr;
-        map_size = obj->via.map.size;
-        fprintf(fp, "\"time\"%s%f%s",
-                ctx->label_delimiter,
-                flb_time_to_double(tm),
-                ctx->delimiter);
-        for (i=0; i<map_size-1; i++) {
-            msgpack_object_print(fp, (kv+i)->key);
-            fprintf(fp, "%s", ctx->label_delimiter);
-            msgpack_object_print(fp, (kv+i)->val);
-            fprintf(fp, "%s", ctx->delimiter);
-        }
-        msgpack_object_print(fp, (kv+(map_size-1))->key);
-        fprintf(fp, "%s", ctx->label_delimiter);
-        msgpack_object_print(fp, (kv+(map_size-1))->val);
-        fprintf(fp, "\n");
-    }
+//     struct flb_upstream *upstream;
+//     char *tmp;
+//     char *ret_str;
+//     (void) config;
+//     (void) data;
+// 
+//     struct flb_syslog_conf *conf;
+//     conf = flb_calloc(1, sizeof(struct flb_syslog_conf));
+//     if (!conf) {
+//         flb_errno();
+//         return -1;
+//     }
+// 
+//     conf->format = FLB_OUT_SYSLOG_FMT_JSON;/* default */
+//     conf->delimiter = NULL;
+//     conf->label_delimiter = NULL;
+// 
+//     /* Optional output syslog name/path */
+//     tmp = flb_output_get_property("Path", ins);
+//     if (tmp) {
+//         conf->out_syslog = tmp;
+//     }
+// 
+//     /* Optional, syslog format */
+//     tmp = flb_output_get_property("Format", ins);
+//     if (tmp && !strcasecmp(tmp, "csv")){
+//         conf->format    = FLB_OUT_SYSLOG_FMT_CSV;
+//         conf->delimiter = ",";
+//     }
+//     else if(tmp && !strcasecmp(tmp, "ltsv")) {
+//         conf->format    = FLB_OUT_SYSLOG_FMT_LTSV;
+//         conf->delimiter = "\t";
+//         conf->label_delimiter = ":";
+//     }
+// 
+//     tmp = flb_output_get_property("delimiter", ins);
+//     ret_str = check_delimiter(tmp);
+//     if (ret_str != NULL) {
+//         conf->delimiter = ret_str;
+//     }
+// 
+//     tmp = flb_output_get_property("label_delimiter", ins);
+//     ret_str = check_delimiter(tmp);
+//     if (ret_str != NULL) {
+//         conf->label_delimiter = ret_str;
+//     }
+// 
+//     /* Set the context */
+//     flb_output_set_context(ins, conf);
+// 
     return 0;
 }
 
@@ -175,77 +97,77 @@ static void cb_syslog_flush(void *data, size_t bytes,
                           void *out_context,
                           struct flb_config *config)
 {
-    FILE * fp;
-    msgpack_unpacked result;
-    size_t off = 0;
-    size_t last_off = 0;
-    size_t alloc_size = 0;
-    char *out_syslog;
-    char *buf;
-    msgpack_object *obj;
-    struct flb_syslog_conf *ctx = out_context;
-    struct flb_time tm;
-    (void) i_ins;
-    (void) config;
-
-    /* Set the right output */
-    if (!ctx->out_syslog) {
-        out_syslog = tag;
-    }
-    else {
-        out_syslog = ctx->out_syslog;
-    }
-
-    /* Open output syslog with default name as the Tag */
-    fp = fopen(out_syslog, "a+");
-    if (fp == NULL) {
-        flb_errno();
-        FLB_OUTPUT_RETURN(FLB_ERROR);
-    }
-
-    /*
-     * Upon flush, for each array, lookup the time and the first field
-     * of the map to use as a data point.
-     */
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
-        alloc_size = (off - last_off) + 128; /* JSON is larger than msgpack */
-        last_off = off;
-
-        flb_time_pop_from_msgpack(&tm, &result, &obj);
-
-        switch (ctx->format){
-        case FLB_OUT_SYSLOG_FMT_JSON:
-            buf = flb_msgpack_to_json_str(alloc_size, obj);
-            if (buf) {
-                fprintf(fp, "%s: [%f, %s]\n",
-                        tag,
-                        flb_time_to_double(&tm),
-                        buf);
-                flb_free(buf);
-            }
-            else {
-                msgpack_unpacked_destroy(&result);
-                fclose(fp);
-                FLB_OUTPUT_RETURN(FLB_RETRY);
-            }
-            break;
-        case FLB_OUT_SYSLOG_FMT_CSV:
-            csv_output(fp, &tm, obj, ctx);
-            break;
-        case FLB_OUT_SYSLOG_FMT_LTSV:
-            ltsv_output(fp, &tm, obj, ctx);
-            break;
-        }
-    }
-    msgpack_unpacked_destroy(&result);
-    fclose(fp);
-
+    fprintf(stderr, "cb_syslog_flush\n");
     FLB_OUTPUT_RETURN(FLB_OK);
+    return;
+
+//     FILE * fp;
+// 
+//     msgpack_unpacked result;
+//     size_t off = 0;
+//     size_t last_off = 0;
+//     size_t alloc_size = 0;
+//     char *out_syslog;
+//     char *buf;
+//     msgpack_object *obj;
+//     struct flb_syslog_conf *ctx = out_context;
+//     struct flb_time tm;
+//     (void) i_ins;
+//     (void) config;
+// 
+//     /* Set the right output */
+//     if (!ctx->out_syslog) {
+//         out_syslog = tag;
+//     }
+//     else {
+//         out_syslog = ctx->out_syslog;
+//     }
+// 
+//     /* Open output syslog with default name as the Tag */
+//     fp = fopen(out_syslog, "a+");
+//     if (fp == NULL) {
+//         flb_errno();
+//         FLB_OUTPUT_RETURN(FLB_ERROR);
+//     }
+// 
+//     /*
+//      * Upon flush, for each array, lookup the time and the first field
+//      * of the map to use as a data point.
+//      */
+//     msgpack_unpacked_init(&result);
+//     while (msgpack_unpack_next(&result, data, bytes, &off)) {
+//         alloc_size = (off - last_off) + 128; /* JSON is larger than msgpack */
+//         last_off = off;
+// 
+//         flb_time_pop_from_msgpack(&tm, &result, &obj);
+// 
+//         switch (ctx->format){
+//         case FLB_OUT_SYSLOG_FMT_JSON:
+//             buf = flb_msgpack_to_json_str(alloc_size, obj);
+//             if (buf) {
+//                 fprintf(fp, "%s: [%f, %s]\n",
+//                         tag,
+//                         flb_time_to_double(&tm),
+//                         buf);
+//                 flb_free(buf);
+//             }
+//             else {
+//                 msgpack_unpacked_destroy(&result);
+//                 fclose(fp);
+//                 FLB_OUTPUT_RETURN(FLB_RETRY);
+//             }
+//             break;
+//         }
+//     }
+//     msgpack_unpacked_destroy(&result);
+//     fclose(fp);
+// 
+//     FLB_OUTPUT_RETURN(FLB_OK);
 }
 
 static int cb_syslog_exit(void *data, struct flb_config *config)
 {
+    // TODO
     struct flb_syslog_conf *ctx = data;
 
     flb_free(ctx);

@@ -20,11 +20,12 @@
 #ifndef FLB_OUT_SYSLOG
 #define FLB_OUT_SYSLOG
 
-enum {
-    FLB_OUT_SYSLOG_FMT_JSON,
-    FLB_OUT_SYSLOG_FMT_CSV,
-    FLB_OUT_SYSLOG_FMT_LTSV,
-    FLB_OUT_SYSLOG_FMT_OTHER,
+struct flb_syslog_conf {
+    char *host;
+    int port;
+
+    /* Upstream connection to the backend server */
+    struct flb_upstream *u;
 };
 
 #endif
