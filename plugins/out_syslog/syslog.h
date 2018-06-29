@@ -21,8 +21,7 @@
 #define FLB_OUT_SYSLOG
 
 struct flb_syslog_conf {
-    char *host;
-    int port;
+    char *addr;
 
     /* Upstream connection to the backend server */
     struct flb_upstream *u;

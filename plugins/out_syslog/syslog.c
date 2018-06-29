@@ -35,56 +35,28 @@ static int cb_syslog_init(struct flb_output_instance *ins,
                         struct flb_config *config,
                         void *data)
 {
-    fprintf(stderr, "cb_syslog_init\n");
-    return 0;
+    (void) config;
+    (void) data;
+    char *tmp;
+    // struct flb_upstream *upstream;
+    struct flb_syslog_conf *ctx;
 
-//     struct flb_upstream *upstream;
-//     char *tmp;
-//     char *ret_str;
-//     (void) config;
-//     (void) data;
-// 
-//     struct flb_syslog_conf *conf;
-//     conf = flb_calloc(1, sizeof(struct flb_syslog_conf));
-//     if (!conf) {
-//         flb_errno();
-//         return -1;
-//     }
-// 
-//     conf->format = FLB_OUT_SYSLOG_FMT_JSON;/* default */
-//     conf->delimiter = NULL;
-//     conf->label_delimiter = NULL;
-// 
-//     /* Optional output syslog name/path */
-//     tmp = flb_output_get_property("Path", ins);
-//     if (tmp) {
-//         conf->out_syslog = tmp;
-//     }
-// 
-//     /* Optional, syslog format */
-//     tmp = flb_output_get_property("Format", ins);
-//     if (tmp && !strcasecmp(tmp, "csv")){
-//         conf->format    = FLB_OUT_SYSLOG_FMT_CSV;
-//         conf->delimiter = ",";
-//     }
-//     else if(tmp && !strcasecmp(tmp, "ltsv")) {
-//         conf->format    = FLB_OUT_SYSLOG_FMT_LTSV;
-//         conf->delimiter = "\t";
-//         conf->label_delimiter = ":";
-//     }
-// 
-//     tmp = flb_output_get_property("delimiter", ins);
-//     ret_str = check_delimiter(tmp);
-//     if (ret_str != NULL) {
-//         conf->delimiter = ret_str;
-//     }
-// 
-//     tmp = flb_output_get_property("label_delimiter", ins);
-//     ret_str = check_delimiter(tmp);
-//     if (ret_str != NULL) {
-//         conf->label_delimiter = ret_str;
-//     }
-// 
+    /* Allocate context */
+    ctx = flb_calloc(1, sizeof(struct flb_syslog_conf));
+    if (!ctx) {
+        flb_errno();
+        return -1;
+    }
+
+    tmp = flb_output_get_property("addr", ins);
+    if (tmp) {
+        ctx->addr = flb_strdup(tmp);
+    }
+    flb_info("[out_syslog] addr=%s", ctx->addr);
+
+    fprintf(stderr, "here\n");
+    fprintf(stderr, "\ninit\n");
+    return 0;
 //     /* Set the context */
 //     flb_output_set_context(ins, conf);
 // 
