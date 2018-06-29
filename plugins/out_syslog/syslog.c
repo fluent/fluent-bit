@@ -53,13 +53,9 @@ static int cb_syslog_init(struct flb_output_instance *ins,
         ctx->addr = flb_strdup(tmp);
     }
     flb_info("[out_syslog] addr=%s", ctx->addr);
-
-    fprintf(stderr, "here\n");
-    fprintf(stderr, "\ninit\n");
-    return 0;
-//     /* Set the context */
-//     flb_output_set_context(ins, conf);
-// 
+    // TODO: connect to upstream
+    /* Set the context */
+    flb_output_set_context(ins, ctx);
     return 0;
 }
 
@@ -69,7 +65,11 @@ static void cb_syslog_flush(void *data, size_t bytes,
                           void *out_context,
                           struct flb_config *config)
 {
-    fprintf(stderr, "cb_syslog_flush\n");
+    struct flb_syslog_conf *ctx = out_context;
+    flb_info("[out_syslog] flush\n");
+    flb_info("ctx: %p", ctx);
+    flb_info("[out_syslog] flush addr=%s", ctx->addr);
+    // TODO flush to syslog upstream
     FLB_OUTPUT_RETURN(FLB_OK);
     return;
 
@@ -82,7 +82,6 @@ static void cb_syslog_flush(void *data, size_t bytes,
 //     char *out_syslog;
 //     char *buf;
 //     msgpack_object *obj;
-//     struct flb_syslog_conf *ctx = out_context;
 //     struct flb_time tm;
 //     (void) i_ins;
 //     (void) config;
@@ -139,7 +138,6 @@ static void cb_syslog_flush(void *data, size_t bytes,
 
 static int cb_syslog_exit(void *data, struct flb_config *config)
 {
-    // TODO
     struct flb_syslog_conf *ctx = data;
 
     flb_free(ctx);
