@@ -71,6 +71,27 @@ static inline int pack_json(struct flb_in_stdin_config *ctx,
     return 0;
 }
 
+static inline int pack_raw(struct flb_in_stdin_config *ctx,
+                           char *data, size_t data_size)
+{
+    flb_input_buf_write_start(ctx->i_in);
+
+    msgpack_pack_array(&ctx->i_in->mp_pck, 2);
+    flb_pack_time_now(&ctx->i_in->mp_pck);
+
+    msgpack_pack_map(&ctx->i_in->mp_pck, 1);
+
+    msgpack_pack_str(&ctx->i_in->mp_pck, 3);
+    msgpack_pack_str_body(&ctx->i_in->mp_pck, "log", 3);
+
+    msgpack_pack_str(&ctx->i_in->mp_pck, data_size);
+    msgpack_pack_str_body(&ctx->i_in->mp_pck, data, data_size);
+
+    flb_input_buf_write_end(ctx->i_in);
+
+    return 0;
+}
+
 static inline int pack_regex(struct flb_in_stdin_config *ctx,
                              struct flb_time *t, char *data, size_t data_size)
 {
@@ -94,6 +115,7 @@ static int in_stdin_collect(struct flb_input_instance *i_ins,
     char *pack;
     void *out_buf;
     size_t out_size;
+    jsmntok_t *token;
     struct flb_time out_time;
     struct flb_in_stdin_config *ctx = in_context;
 
@@ -132,7 +154,13 @@ static int in_stdin_collect(struct flb_input_instance *i_ins,
                 return -1;
             }
 
-            pack_json(ctx, pack, pack_size);
+            token = (jsmntok_t *) &ctx->pack_state.tokens[0];
+            if (token->type != JSMN_OBJECT) {
+                pack_raw(ctx, ctx->buf, ctx->buf_len);
+            }
+            else {
+                pack_json(ctx, pack, pack_size);
+            }
 
             consume_bytes(ctx->buf, ctx->pack_state.last_byte, ctx->buf_len);
             ctx->buf_len -= ctx->pack_state.last_byte;
