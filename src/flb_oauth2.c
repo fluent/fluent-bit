@@ -93,7 +93,7 @@ struct flb_oauth2 *flb_oauth2_create(char *auth_url, int expire_sec)
 
     /* Populate context */
     ctx->host = flb_sds_create(host);
-    if (ctx->host) {
+    if (!ctx->host) {
         flb_errno();
         goto error;
     }
@@ -130,6 +130,13 @@ int flb_oauth2_payload_append(struct flb_oauth2 *ctx,
 {
     int size;
     flb_sds_t tmp;
+
+    if (key_len == -1) {
+        key_len = strlen(key_str);
+    }
+    if (val_len == -1) {
+        val_len = strlen(val_str);
+    }
 
     /*
      * Make sure we have enough space in the sds buffer, otherwise
