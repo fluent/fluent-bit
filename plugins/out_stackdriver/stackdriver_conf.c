@@ -30,6 +30,7 @@
 #include "stackdriver_conf.h"
 
 static inline int key_cmp(char *str, int len, char *cmp) {
+
     if (strlen(cmp) != len) {
         return -1;
     }
@@ -47,7 +48,6 @@ static int read_credentials_file(char *creds, struct flb_stackdriver *ctx)
     char *buf;
     char *key;
     char *val;
-    char *len;
     flb_sds_t tmp;
     struct stat st;
     jsmn_parser parser;
@@ -168,7 +168,6 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
 {
     int ret;
     char *tmp;
-    struct flb_upstream *upstream;
     struct flb_stackdriver *ctx;
 
     /* Allocate config context */
@@ -177,6 +176,7 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         flb_errno();
         return NULL;
     }
+    ctx->config = config;
 
     /* Lookup credentials file */
     tmp = flb_output_get_property("google_service_credentials", ins);

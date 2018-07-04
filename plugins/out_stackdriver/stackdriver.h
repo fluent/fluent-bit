@@ -50,6 +50,10 @@ struct flb_stackdriver {
 
     /* oauth2 context wth upstream connection */
     struct flb_oauth2 *o;
+    struct flb_upstream *u;
+
+    /* Fluent Bit context */
+    struct flb_config *config;
 };
 
 #endif

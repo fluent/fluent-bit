@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_oauth2.h>
 
 #include <msgpack.h>
 
@@ -30,6 +31,42 @@
 #include "stackdriver_conf.h"
 #include <mbedtls/base64.h>
 #include <mbedtls/sha256.h>
+
+/*
+ * Base64 Encoding in JWT must:
+ *
+ * - remove any trailing padding '=' character
+ * - replace '+' with '-'
+ * - replace '/' with '_'
+ *
+ * ref: https://www.rfc-editor.org/rfc/rfc7515.txt Appendix C
+ */
+int jwt_base64_url_encode(unsigned char *out_buf, size_t out_size,
+                          unsigned char *in_buf, size_t in_size,
+                          size_t *olen)
+
+{
+    int i;
+    size_t len;
+
+    /* do normal base64 encoding */
+    mbedtls_base64_encode(out_buf, out_size - 1,
+                          &len, in_buf, in_size);
+
+    /* Replace '+' and '/' characters */
+    for (i = 0; i < len && out_buf[i] != '='; i++) {
+        if (out_buf[i] == '+') {
+            out_buf[i] = '-';
+        }
+        else if (out_buf[i] == '/') {
+            out_buf[i] = '_';
+        }
+    }
+
+    /* Now 'i' becomes the new length */
+    *olen = i;
+    return 0;
+}
 
 static int jwt_encode(char *payload, char *secret,
                       char **out_signature, size_t *out_size)
@@ -74,9 +111,8 @@ static int jwt_encode(char *payload, char *secret,
 
     /* Encode Payload */
     len = strlen(payload);
-    mbedtls_base64_encode((unsigned char *) buf, buf_size - 1,
-                          &olen,
-                          (const unsigned char *) payload, len);
+    jwt_base64_url_encode((unsigned char *) buf, buf_size,
+                          (unsigned char *) payload, len, &olen);
 
     /* Append Payload */
     flb_sds_cat(out, buf, olen);
@@ -128,8 +164,8 @@ static int jwt_encode(char *payload, char *secret,
         flb_sds_destroy(out);
         return -1;
     }
-    mbedtls_base64_encode((unsigned char *) sigd, 2048,
-                          &olen, (unsigned char *) sig, 256);
+
+    jwt_base64_url_encode((unsigned char *) sigd, 2048, sig, 256, &olen);
 
     flb_sds_cat(out, ".", 1);
     flb_sds_cat(out, sigd, olen);
@@ -143,23 +179,14 @@ static int jwt_encode(char *payload, char *secret,
     return 0;
 }
 
-static int cb_stackdriver_init(struct flb_output_instance *ins,
-                          struct flb_config *config, void *data)
+static int get_google_token(struct flb_stackdriver *ctx)
 {
     int ret;
+    char *sig_data;
+    size_t sig_size;
     time_t issued;
     time_t expires;
     char payload[1024];
-    char *sig_data;
-    size_t sig_size;
-    struct flb_stackdriver *ctx;
-
-    /* Create config context */
-    ctx = flb_stackdriver_conf_create(ins, config);
-    if (!ctx) {
-        flb_error("[out_stackdriver] configuration failed");
-        return -1;
-    }
 
     /* JWT encode for oauth2 */
     issued = time(NULL);
@@ -169,17 +196,75 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
              "{\"iss\": \"%s\", \"scope\": \"%s\", "
              "\"aud\": \"%s\", \"exp\": %lu, \"iat\": %lu}",
              ctx->client_email, FLB_STD_SCOPE,
-             FLB_STD_AUTH_URL, expires, issued);
+             FLB_STD_AUTH_URL,
+             expires, issued);
 
     /* Compose JWT signature */
     ret = jwt_encode(payload, ctx->private_key, &sig_data, &sig_size);
     if (ret != 0) {
         flb_error("[out_stackdriver] JWT signature generation failed");
-        flb_stackdriver_conf_destroy(ctx);
         return -1;
     }
 
+    flb_debug("[out_stackdriver] JWT signature:\n%s", sig_data);
+
+    /* Get Authorization Token */
+    ctx->o = flb_oauth2_create(ctx->config, FLB_STD_AUTH_URL, 3000);
+    if (!ctx->o) {
+        flb_free(sig_data);
+        flb_error("[out_stackdriver] cannot create oauth2 context");
+        return -1;
+    }
+
+    ret = flb_oauth2_payload_append(ctx->o,
+                                    "grant_type", -1,
+                                    "urn:ietf:params:oauth:"
+                                    "grant-type:jwt-bearer", -1);
+    if (ret == -1) {
+        flb_error("[out_stackdriver] error appending oauth2 params");
+        flb_free(sig_data);
+        return -1;
+    }
+
+    ret = flb_oauth2_payload_append(ctx->o,
+                                    "assertion", -1,
+                                    sig_data, sig_size);
+    if (ret == -1) {
+        flb_error("[out_stackdriver] error appending oauth2 params");
+        flb_free(sig_data);
+        return -1;
+    }
+
+    /* FIXME: to be continued (already retrieving token) */
+    flb_oauth2_token_get(ctx->o);
+
+}
+
+static int cb_stackdriver_init(struct flb_output_instance *ins,
+                          struct flb_config *config, void *data)
+{
+    struct flb_stackdriver *ctx;
+
+    /* Create config context */
+    ctx = flb_stackdriver_conf_create(ins, config);
+    if (!ctx) {
+        flb_error("[out_stackdriver] configuration failed");
+        return -1;
+    }
+
+    /* Set context */
     flb_output_set_context(ins, ctx);
+
+    /* Create Upstream context for Stackdriver Logging (no oauth2 service) */
+    ctx->u = flb_upstream_create_url(config, FLB_STD_AUTH_URL,
+                                     FLB_IO_TLS, &ins->tls);
+    if (!ctx->u) {
+        flb_error("[out_stackdriver] upstream creation failed");
+        return -1;
+    }
+
+    get_google_token(ctx);
+
     return 0;
 }
 
@@ -189,14 +274,7 @@ static void cb_stackdriver_flush(void *data, size_t bytes,
                             void *out_context,
                             struct flb_config *config)
 {
-    int ret;
-    size_t b_sent;
-    char *buf_data;
-    size_t buf_size;
-    struct flb_stackdriver *ctx = out_context;
-    struct flb_upstream_conn *u_conn;
-    struct flb_http_client *c;
-    flb_sds_t payload;
+    //struct flb_stackdriver *ctx = out_context;
     (void) i_ins;
     (void) config;
 
@@ -206,6 +284,14 @@ static void cb_stackdriver_flush(void *data, size_t bytes,
 static int cb_stackdriver_exit(void *data, struct flb_config *config)
 {
     struct flb_stackdriver *ctx = data;
+
+    if (!ctx) {
+        return -1;
+    }
+
+    if (ctx->u) {
+        flb_upstream_destroy(ctx->u);
+    }
 
     flb_stackdriver_conf_destroy(ctx);
     return 0;
