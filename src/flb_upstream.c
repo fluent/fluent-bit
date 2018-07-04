@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_io_tls.h>
 #include <fluent-bit/flb_tls.h>
+#include <fluent-bit/flb_utils.h>
 
 /* Creates a new upstream context */
 struct flb_upstream *flb_upstream_create(struct flb_config *config,
@@ -35,7 +36,7 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
 
     u = flb_calloc(1, sizeof(struct flb_upstream));
     if (!u) {
-        perror("malloc");
+        flb_errno();
         return NULL;
     }
 
@@ -68,6 +69,70 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
 #ifdef FLB_HAVE_FLUSH_PTHREADS
     pthread_mutex_init(&u->mutex_queue, NULL);
 #endif
+
+    return u;
+}
+
+/* Create an upstream context using a valid URL (protocol, host and port) */
+struct flb_upstream *flb_upstream_create_url(struct flb_config *config,
+                                             char *url, int flags, void *tls)
+{
+    int ret;
+    int tmp_port = 0;
+    char *prot = NULL;
+    char *host = NULL;
+    char *port = NULL;
+    char *uri = NULL;
+    struct flb_upstream *u = NULL;
+
+    /* Parse and split URL */
+    ret = flb_utils_url_split(url, &prot, &host, &port, &uri);
+    if (ret == -1) {
+        flb_error("[upstream] invalid URL: %s", url);
+        return NULL;
+    }
+
+    if (!prot) {
+        flb_error("[upstream] unknown protocol type from URL: %s", url);
+        goto out;
+    }
+
+    /* Manage some default ports */
+    if (!port) {
+        if (strcasecmp(prot, "http") == 0) {
+            tmp_port = 80;
+        }
+        else if (strcasecmp(prot, "https") == 0) {
+            tmp_port = 443;
+        }
+    }
+    else {
+        tmp_port = atoi(port);
+    }
+
+    if (tmp_port <= 0) {
+        flb_error("[upstream] unknown TCP port in URL: %s", url);
+        return NULL;
+    }
+
+    u = flb_upstream_create(config, host, tmp_port, flags, tls);
+    if (!u) {
+        flb_error("[upstream] error creating context from URL: %s", url);
+    }
+
+ out:
+    if (prot) {
+        flb_free(prot);
+    }
+    if (host) {
+        flb_free(host);
+    }
+    if (port) {
+        flb_free(port);
+    }
+    if (uri) {
+        flb_free(uri);
+    }
 
     return u;
 }
