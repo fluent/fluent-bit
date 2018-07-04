@@ -20,9 +20,11 @@
 #ifndef FLB_OAUTH2_H
 #define FLB_OAUTH2_H
 
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_sds.h>
 
-#define FLB_OAUTH2_PORT   "443"
+#define FLB_OAUTH2_PORT          "443"
+#define FLB_OAUTH2_HTTP_ENCODING "application/x-www-form-urlencoded"
 
 struct flb_oauth2 {
     flb_sds_t auth_token;
@@ -38,12 +40,23 @@ struct flb_oauth2 {
     time_t issued;
     time_t expires;
 
+#ifdef FLB_HAVE_TLS
+    struct flb_tls tls;
+#else
+    void *tls;
+#endif
+
     /* Upstream context */
     struct flb_upstream *u;
 };
 
-struct flb_oauth2 *flb_oauth2_create(char *auth_url, int expire_sec);
+struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
+                                     char *auth_url, int expire_sec);
 void flb_oauth2_destroy(struct flb_oauth2 *ctx);
 int flb_oauth2_token_len(struct flb_oauth2 *ctx);
+int flb_oauth2_payload_append(struct flb_oauth2 *ctx,
+                              char *key_str, int key_len,
+                              char *val_str, int val_len);
+char *flb_oauth2_token_get(struct flb_oauth2 *ctx);
 
 #endif

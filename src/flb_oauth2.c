@@ -39,7 +39,8 @@
         flb_free(uri);                          \
     }
 
-struct flb_oauth2 *flb_oauth2_create(char *auth_url, int expire_sec)
+struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
+                                     char *auth_url, int expire_sec)
 {
     int ret;
     char *prot = NULL;
@@ -113,6 +114,30 @@ struct flb_oauth2 *flb_oauth2_create(char *auth_url, int expire_sec)
         goto error;
     }
 
+    /* Create TLS context */
+    ctx->tls.context = flb_tls_context_new(FLB_TRUE,  /* verify */
+                                           -1,        /* debug */
+                                           NULL,      /* ca_path */
+                                           NULL,      /* ca_file */
+                                           NULL,      /* crt_file */
+                                           NULL,      /* key_file */
+                                           NULL);     /* key_passwd */
+    if (!ctx->tls.context) {
+        flb_error("[oauth2] error initializing TLS context");
+        goto error;
+    }
+
+    /* Create Upstream context */
+    ctx->u = flb_upstream_create_url(config, auth_url,
+                                     FLB_IO_TLS, &ctx->tls);
+    if (!ctx->u) {
+        flb_error("[oauth2] error creating upstream context");
+        goto error;
+    }
+
+    /* Remove Upstream Async flag */
+    ctx->u->flags &= ~(FLB_IO_ASYNC);
+
     free_temporal_buffers();
     return ctx;
 
@@ -182,16 +207,75 @@ void flb_oauth2_destroy(struct flb_oauth2 *ctx)
         flb_sds_destroy(ctx->payload);
     }
 
+    if (ctx->u) {
+        flb_upstream_destroy(ctx->u);
+    }
+
     flb_free(ctx);
 }
 
 char *flb_oauth2_token_get(struct flb_oauth2 *ctx)
 {
-    if (ctx->auth_token) {
+    int ret;
+    size_t b_sent;
+    struct flb_upstream_conn *u_conn;
+    struct flb_http_client *c;
+
+    if (!ctx->auth_token) {
+        return NULL;
+    }
+
+    if (flb_sds_len(ctx->auth_token) > 0) {
         return ctx->auth_token;
     }
 
     /* Get Token and store it in the context */
+    u_conn = flb_upstream_conn_get(ctx->u);
+    if (!u_conn) {
+        flb_error("[oauth2] could not get an upstream connection");
+        return NULL;
+    }
+
+    /* Create HTTP client context */
+    c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->uri,
+                        ctx->payload, flb_sds_len(ctx->payload),
+                        ctx->host, atoi(ctx->port),
+                        NULL, 0);
+    if (!c) {
+        flb_error("[oauth2] error creating HTTP client context");
+        flb_upstream_conn_release(u_conn);
+        return NULL;
+    }
+
+    /* Append HTTP Header */
+    flb_http_add_header(c,
+                        FLB_HTTP_HEADER_CONTENT_TYPE,
+                        sizeof(FLB_HTTP_HEADER_CONTENT_TYPE) -1,
+                        FLB_OAUTH2_HTTP_ENCODING,
+                        sizeof(FLB_OAUTH2_HTTP_ENCODING) - 1);
+
+    /* Issue request */
+    ret = flb_http_do(c, &b_sent);
+    if (ret != 0) {
+        flb_warn("[oauth2] cannot issue request, http_do=%i, ret");
+    }
+    else {
+        flb_info("[oauth2] HTTP Status=%i", c->resp.status);
+        if (c->resp.payload_size > 0) {
+            if (c->resp.status == 200) {
+                flb_debug("[oauth2] payload:\n%s", c->resp.payload);
+            }
+            else {
+                flb_info("[oauth2] payload:\n%s", c->resp.payload);
+            }
+        }
+    }
+
+    /* Extract token */
+    if (c->resp.payload_size > 0 && c->resp.status == 200) {
+        /* FIXME */
+    }
+
     return NULL;
 }
 
