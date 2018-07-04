@@ -50,7 +50,8 @@
 #define FLB_HTTP_NOT_FOUND        2 /* header not found */
 
 /* Useful headers */
-#define FLB_HTTP_HEADER_AUTH   "Authorization"
+#define FLB_HTTP_HEADER_AUTH         "Authorization"
+#define FLB_HTTP_HEADER_CONTENT_TYPE "Content-Type"
 
 struct flb_http_response {
     int status;                /* HTTP response status          */
