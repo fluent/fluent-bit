@@ -27,7 +27,6 @@
 #define FLB_OAUTH2_HTTP_ENCODING "application/x-www-form-urlencoded"
 
 struct flb_oauth2 {
-    flb_sds_t auth_token;
     flb_sds_t auth_url;
     flb_sds_t payload;
 
@@ -36,10 +35,16 @@ struct flb_oauth2 {
     flb_sds_t port;
     flb_sds_t uri;
 
-    /* Token times */
+    /* Token times set by the caller */
     time_t issued;
     time_t expires;
 
+    /* Token info after successful auth */
+    flb_sds_t access_token;
+    flb_sds_t token_type;
+    uint64_t  expires_in;
+
+    /* TLS Context */
 #ifdef FLB_HAVE_TLS
     struct flb_tls tls;
 #else

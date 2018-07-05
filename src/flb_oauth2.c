@@ -25,6 +25,8 @@
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_http_client.h>
 
+#include <jsmn/jsmn.h>
+
 #define free_temporal_buffers()                 \
     if (prot) {                                 \
         flb_free(prot);                         \
@@ -38,6 +40,94 @@
     if (uri) {                                  \
         flb_free(uri);                          \
     }
+
+static inline int key_cmp(char *str, int len, char *cmp) {
+
+    if (strlen(cmp) != len) {
+        return -1;
+    }
+
+    return strncasecmp(str, cmp, len);
+}
+
+static int parse_json_response(char *json_data, size_t json_size,
+                               struct flb_oauth2 *ctx)
+{
+    int i;
+    int ret;
+    int key_len;
+    int val_len;
+    int tokens_size = 32;
+    char *key;
+    char *val;
+    jsmn_parser parser;
+    jsmntok_t *t;
+    jsmntok_t *tokens;
+
+    jsmn_init(&parser);
+    tokens = flb_calloc(1, sizeof(jsmntok_t) * tokens_size);
+    if (!tokens) {
+        flb_errno();
+        return -1;
+    }
+
+    ret = jsmn_parse(&parser, json_data, json_size, tokens, tokens_size);
+    if (ret <= 0) {
+        flb_error("[oauth2] cannot parse payload:\n%s", json_data);
+        flb_free(tokens);
+        return -1;
+    }
+
+    t = &tokens[0];
+    if (t->type != JSMN_OBJECT) {
+        flb_error("[oauth2] invalid JSON response:\n%s", json_data);
+        flb_free(tokens);
+        return -1;
+    }
+
+    /* Parse JSON tokens */
+    for (i = 1; i < ret; i++) {
+        t = &tokens[i];
+
+        if (t->type != JSMN_STRING) {
+            continue;
+        }
+
+        if (t->start == -1 || t->end == -1 || (t->start == 0 && t->end == 0)){
+            break;
+        }
+
+        /* Key */
+        key = json_data + t->start;
+        key_len = (t->end - t->start);
+
+        /* Value */
+        i++;
+        t = &tokens[i];
+        val = json_data + t->start;
+        val_len = (t->end - t->start);
+
+        if (key_cmp(key, key_len, "access_token") == 0) {
+            ctx->access_token = flb_sds_create_len(val, val_len);
+        }
+        else if (key_cmp(key, key_len, "token_type") == 0) {
+            ctx->token_type = flb_sds_create_len(val, val_len);
+        }
+        else if (key_cmp(key, key_len, "expires_in") == 0) {
+            ctx->expires_in = atol(val);
+        }
+    }
+
+    flb_free(tokens);
+    if (!ctx->access_token || !ctx->token_type || ctx->expires_in < 60) {
+        flb_sds_destroy(ctx->access_token);
+        flb_sds_destroy(ctx->token_type);
+        ctx->expires_in = 0;
+        return -1;
+    }
+
+    return 0;
+}
 
 struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
                                      char *auth_url, int expire_sec)
@@ -195,22 +285,17 @@ int flb_oauth2_payload_append(struct flb_oauth2 *ctx,
 
 void flb_oauth2_destroy(struct flb_oauth2 *ctx)
 {
-    if (ctx->auth_token) {
-        flb_sds_destroy(ctx->auth_token);
-    }
+    flb_sds_destroy(ctx->auth_url);
+    flb_sds_destroy(ctx->payload);
 
-    if (ctx->auth_url) {
-        flb_sds_destroy(ctx->auth_url);
-    }
+    flb_sds_destroy(ctx->host);
+    flb_sds_destroy(ctx->port);
+    flb_sds_destroy(ctx->uri);
 
-    if (ctx->payload) {
-        flb_sds_destroy(ctx->payload);
-    }
+    flb_sds_destroy(ctx->access_token);
+    flb_sds_destroy(ctx->token_type);
 
-    if (ctx->u) {
-        flb_upstream_destroy(ctx->u);
-    }
-
+    flb_upstream_destroy(ctx->u);
     flb_free(ctx);
 }
 
@@ -221,12 +306,10 @@ char *flb_oauth2_token_get(struct flb_oauth2 *ctx)
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
 
-    if (!ctx->auth_token) {
-        return NULL;
-    }
-
-    if (flb_sds_len(ctx->auth_token) > 0) {
-        return ctx->auth_token;
+    if (ctx->access_token) {
+        if (flb_sds_len(ctx->access_token) > 0) {
+            return ctx->access_token;
+        }
     }
 
     /* Get Token and store it in the context */
@@ -273,7 +356,12 @@ char *flb_oauth2_token_get(struct flb_oauth2 *ctx)
 
     /* Extract token */
     if (c->resp.payload_size > 0 && c->resp.status == 200) {
-        /* FIXME */
+        ret = parse_json_response(c->resp.payload, c->resp.payload_size, ctx);
+        if (ret == 0) {
+            flb_info("[oauth2] access token from '%s:%s' retrieved",
+                     ctx->host, ctx->port);
+            return ctx->access_token;
+        }
     }
 
     return NULL;
@@ -281,9 +369,9 @@ char *flb_oauth2_token_get(struct flb_oauth2 *ctx)
 
 int flb_oauth2_token_len(struct flb_oauth2 *ctx)
 {
-    if (!ctx->auth_token) {
+    if (!ctx->access_token) {
         return -1;
     }
 
-    return flb_sds_len(ctx->auth_token);
+    return flb_sds_len(ctx->access_token);
 }
