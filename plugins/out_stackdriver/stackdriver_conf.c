@@ -72,7 +72,7 @@ static int read_credentials_file(char *creds, struct flb_stackdriver *ctx)
     /* Read file content */
     buf = mk_file_to_buffer(creds);
     if (!buf) {
-        flb_error("[out_stackdriver] error reading credentials file: %",
+        flb_error("[out_stackdriver] error reading credentials file: %s",
                   creds);
         return -1;
     }
@@ -88,7 +88,7 @@ static int read_credentials_file(char *creds, struct flb_stackdriver *ctx)
 
     ret = jsmn_parse(&parser, buf, st.st_size, tokens, tok_size);
     if (ret <= 0) {
-        flb_error("[out_stackdriver] invalid JSON credentials file: %",
+        flb_error("[out_stackdriver] invalid JSON credentials file: %s",
                   creds);
         flb_free(buf);
         flb_free(tokens);
@@ -97,7 +97,7 @@ static int read_credentials_file(char *creds, struct flb_stackdriver *ctx)
 
     t = &tokens[0];
     if (t->type != JSMN_OBJECT) {
-        flb_error("[out_stackdriver] invalid JSON map on file: %",
+        flb_error("[out_stackdriver] invalid JSON map on file: %s",
                   creds);
         flb_free(buf);
         flb_free(tokens);

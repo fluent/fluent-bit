@@ -182,6 +182,7 @@ static int jwt_encode(char *payload, char *secret,
 static int get_google_token(struct flb_stackdriver *ctx)
 {
     int ret;
+    char *token;
     char *sig_data;
     size_t sig_size;
     time_t issued;
@@ -211,7 +212,7 @@ static int get_google_token(struct flb_stackdriver *ctx)
     /* Get Authorization Token */
     ctx->o = flb_oauth2_create(ctx->config, FLB_STD_AUTH_URL, 3000);
     if (!ctx->o) {
-        flb_free(sig_data);
+        flb_sds_destroy(sig_data);
         flb_error("[out_stackdriver] cannot create oauth2 context");
         return -1;
     }
@@ -222,7 +223,7 @@ static int get_google_token(struct flb_stackdriver *ctx)
                                     "grant-type:jwt-bearer", -1);
     if (ret == -1) {
         flb_error("[out_stackdriver] error appending oauth2 params");
-        flb_free(sig_data);
+        flb_sds_destroy(sig_data);
         return -1;
     }
 
@@ -231,18 +232,25 @@ static int get_google_token(struct flb_stackdriver *ctx)
                                     sig_data, sig_size);
     if (ret == -1) {
         flb_error("[out_stackdriver] error appending oauth2 params");
-        flb_free(sig_data);
+        flb_sds_destroy(sig_data);
+        return -1;
+    }
+    flb_sds_destroy(sig_data);
+
+    /* Retrieve access token */
+    token = flb_oauth2_token_get(ctx->o);
+    if (!token) {
+        flb_error("[out_stackdriver] error retrieving oauth2 access token");
         return -1;
     }
 
-    /* FIXME: to be continued (already retrieving token) */
-    flb_oauth2_token_get(ctx->o);
-
+    return 0;
 }
 
 static int cb_stackdriver_init(struct flb_output_instance *ins,
                           struct flb_config *config, void *data)
 {
+    int ret;
     struct flb_stackdriver *ctx;
 
     /* Create config context */
@@ -263,7 +271,11 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
         return -1;
     }
 
-    get_google_token(ctx);
+    /* Retrieve oauth2 token */
+    ret = get_google_token(ctx);
+    if (ret == -1) {
+        flb_warn("[out_stackdriver] token retrieval failed");
+    }
 
     return 0;
 }
