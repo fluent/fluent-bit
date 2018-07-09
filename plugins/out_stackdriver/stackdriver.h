@@ -34,6 +34,9 @@
 /* Stackdriver authorization URL */
 #define FLB_STD_AUTH_URL   "https://www.googleapis.com/oauth2/v4/token"
 
+/* Timestamp format */
+#define FLB_STD_TIME_FMT  "%Y-%m-%dT%H:%M:%S"
+
 struct flb_stackdriver {
     /* credentials */
     flb_sds_t credentials_file;
@@ -47,6 +50,11 @@ struct flb_stackdriver {
     flb_sds_t client_id;
     flb_sds_t auth_uri;
     flb_sds_t token_uri;
+
+    /* metadata server (GCP specific, WIP) */
+    flb_sds_t zone;
+    flb_sds_t vm_id;
+    flb_sds_t vm_name;
 
     /* oauth2 context wth upstream connection */
     struct flb_oauth2 *o;

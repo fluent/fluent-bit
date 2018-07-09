@@ -286,10 +286,75 @@ static void cb_stackdriver_flush(void *data, size_t bytes,
                             void *out_context,
                             struct flb_config *config)
 {
-    //struct flb_stackdriver *ctx = out_context;
     (void) i_ins;
     (void) config;
+    char path[PATH_MAX];
+    char time_formatted[255];
+    size_t s;
+    size_t off = 0;
+    int len;
+    int array_size = 0;
+    struct flb_stackdriver *ctx = out_context;
+    struct tm tm;
+    struct flb_time tms;
+    msgpack_object *obj;
+    msgpack_object root;
+    msgpack_unpacked result;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
 
+    /* Count number of records */
+    msgpack_unpacked_init(&result);
+    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+        array_size++;
+    }
+    msgpack_unpacked_destroy(&result);
+    msgpack_unpacked_init(&result);
+
+    /* Create temporal msgpack buffer */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    off = 0;
+    msgpack_unpack_next(&result, data, bytes, &off);
+
+    root = result.data;
+
+    /* Get timestamp */
+    flb_time_pop_from_msgpack(&tms, &result, &obj);
+
+    msgpack_pack_map(&mp_pck, 3);
+
+    /* jsonPayload */
+    msgpack_pack_str(&mp_pck, 11);
+    msgpack_pack_str_body(&mp_pck, "jsonPayload", 11);
+    msgpack_pack_object(&mp_pck, *obj);
+
+    /* logName */
+    len = snprintf(path, sizeof(path) - 1,
+                   "projects/%s/logs/%s", ctx->project_id, tag);
+
+    msgpack_pack_str(&mp_pck, 7);
+    msgpack_pack_str_body(&mp_pck, "logName", 7);
+    msgpack_pack_str(&mp_pck, len);
+    msgpack_pack_str_body(&mp_pck, path, len);
+
+    /* timestamp */
+    msgpack_pack_str(&mp_pck, 9);
+    msgpack_pack_str_body(&mp_pck, "timestamp", 9);
+
+    /* Format the time */
+    gmtime_r(&tms.tm.tv_sec, &tm);
+    s = strftime(time_formatted, sizeof(time_formatted) - 1,
+                 FLB_STD_TIME_FMT, &tm);
+    len = snprintf(time_formatted + s, sizeof(time_formatted) - 1 - s,
+                   ".%09" PRIu64 "Z", (uint64_t) tms.tm.tv_nsec);
+    s += len;
+    msgpack_pack_str(&mp_pck, s);
+    msgpack_pack_str_body(&mp_pck, time_formatted, s);
+
+    flb_pack_print(mp_sbuf.data, mp_sbuf.size);
+    exit(1);
     FLB_OUTPUT_RETURN(FLB_RETRY);
 }
 
