@@ -29,8 +29,8 @@
 #include <msgpack.h>
 
 /*
- * This function validate if a msgpack formed from a Lua script JSON
- * content is a valid Map
+ * This function validate if a msgpack formed from a Lua script
+ * is a valid Map
  */
 int is_valid_map(char *data, size_t bytes)
 {
@@ -61,25 +61,53 @@ int is_valid_map(char *data, size_t bytes)
 }
 
 /*
- *  https://gist.github.com/rtsisyk/6103290
+ *  Based on ffi_new (luajit/src/lib_ffi.c)
  */
-static void lua_pushcdata(lua_State *l, CTypeID ctypeid, uint32_t size, void *value)
+static void *lua_pushcdata(lua_State *l, CTypeID ctypeid)
 {
     CTSize sz;
-    void **data;
-
+    /* Get ctype info */
     CTState *cts = ctype_cts(l);
-    CType *ct = ctype_raw(cts, ctypeid);
-    lj_ctype_info(cts, ctypeid, &sz);
-    GCcdata *cd = lj_cdata_new(cts, ctypeid, size);
-    TValue *o = l->top;
+    CTInfo info = lj_ctype_info(cts, ctypeid, &sz);
 
+    /* Allocate C data object. */
+    GCcdata *cd = lj_cdata_new(cts, ctypeid, sz);
+
+    /* Put cdata in the stack */
+    TValue *o = l->top;
     setcdataV(l, o, cd);
-    lj_cconv_ct_init(cts, ct, sz, (uint8_t *) cdataptr(cd), o, 0);
     incr_top(l);
 
-    data = cdataptr(cd);
-    *data = value;
+    if (ctype_isstruct(info)) {
+        /* Initialize cdata. */
+        CType *ct = ctype_raw(cts, ctypeid);
+        lj_cconv_ct_init(cts, ct, sz, cdataptr(cd), o, (MSize)(l->top - o));
+
+        /* Handle ctype __gc metamethod. Use the fast lookup here. */
+        cTValue *tv = lj_tab_getinth(cts->miscmap, -(int32_t)ctypeid);
+        if (tv && tvistab(tv) && (tv = lj_meta_fast(l, tabV(tv), MM_gc))) {
+            GCtab *t = cts->finalizer;
+            if (gcref(t->metatable)) {
+              /* Add to finalizer table, if still enabled. */
+              copyTV(l, lj_tab_set(l, t, o-1), tv);
+              lj_gc_anybarriert(l, t);
+              cd->marked |= LJ_GC_CDATA_FIN;
+            }
+        }
+    }
+
+    lj_gc_check(l);
+    return cdataptr(cd);
+}
+
+static void lua_pushuint64(lua_State *l, uint64_t value)
+{
+    *(uint64_t *) lua_pushcdata(l, CTID_UINT64) = value;
+}
+
+static void lua_pushint64(lua_State *l, int64_t value)
+{
+    *(int64_t *) lua_pushcdata(l, CTID_INT64) = value;
 }
 
 static void lua_pushmsgpack(lua_State *l, msgpack_object *o)
@@ -99,11 +127,11 @@ static void lua_pushmsgpack(lua_State *l, msgpack_object *o)
             break;
 
         case MSGPACK_OBJECT_POSITIVE_INTEGER:
-            lua_pushcdata(l, CTID_UINT64, sizeof(uint64_t), (void *)o->via.u64);
+	    lua_pushint64(l, o->via.u64);
             break;
 
         case MSGPACK_OBJECT_NEGATIVE_INTEGER:
-            lua_pushcdata(l, CTID_INT64, sizeof(int64_t), (void *)o->via.i64);
+	    lua_pushuint64(l, o->via.i64);
             break;
 
         case MSGPACK_OBJECT_FLOAT32:
@@ -236,28 +264,48 @@ static void lua_tomsgpack(lua_State *l, msgpack_packer *pck, int index)
         case LUA_TNIL:
             msgpack_pack_nil(pck);
             break;
-
-        case LUA_TLIGHTUSERDATA:
-            if (lua_touserdata(l, -1 + index) == NULL) {
-                msgpack_pack_nil(pck);
-                break;
-            }
-        case LUA_TFUNCTION:
-        case LUA_TUSERDATA:
-        case LUA_TTHREAD:
-          /* cannot serialize */
-          break;
-
         case LUA_TCDATA:
             {
-                int idx = lua_gettop(l) - 1 + index + 1;
+                int idx = lua_gettop(l) + index;
                 GCcdata *cd = cdataV(l->base + idx - 1);
+		void *cdata = cdataptr(cd);
                 switch (cd->ctypeid) {
+                    case CTID_BOOL:
+			if (*(bool*)cdata)
+                            msgpack_pack_true(pck);
+                        else
+                            msgpack_pack_false(pck);
+                        break;
+                    case CTID_CCHAR:
+                    case CTID_INT8:
+                        msgpack_pack_int64(pck, *(int8_t *)cdata);
+                        break;
+                    case CTID_INT16:
+                        msgpack_pack_int64(pck, *(int16_t *)cdata);
+                        break;
+                    case CTID_INT32:
+                        msgpack_pack_int64(pck, *(int32_t *)cdata);
+                        break;
                     case CTID_INT64:
-                        msgpack_pack_int64(pck, *(int64_t *)cdataptr(cd));
+                        msgpack_pack_int64(pck, *(int64_t *)cdata);
+                        break;
+                    case CTID_UINT8:
+                        msgpack_pack_uint64(pck, *(uint8_t *)cdata);
+                        break;
+                    case CTID_UINT16:
+                        msgpack_pack_uint64(pck, *(uint16_t *)cdata);
+                        break;
+                    case CTID_UINT32:
+                        msgpack_pack_uint32(pck, *(uint32_t *)cdata);
                         break;
                     case CTID_UINT64:
-                        msgpack_pack_uint64(pck, *(uint64_t *)cdataptr(cd));
+                        msgpack_pack_uint64(pck, *(uint64_t *)cdata);
+                        break;
+                    case CTID_FLOAT:
+                        msgpack_pack_double(pck, *(float *)cdata);
+                        break;
+                    case CTID_DOUBLE:
+                        msgpack_pack_double(pck, *(double *)cdata);
                         break;
                     default:
                         msgpack_pack_nil(pck);
@@ -265,6 +313,15 @@ static void lua_tomsgpack(lua_State *l, msgpack_packer *pck, int index)
                 }
             }
             break;
+        case LUA_TLIGHTUSERDATA:
+        case LUA_TFUNCTION:
+        case LUA_TUSERDATA:
+        case LUA_TTHREAD:
+        default:
+            /* cannot serialize */
+            msgpack_pack_nil(pck);
+            break;
+
     }
 }
 
