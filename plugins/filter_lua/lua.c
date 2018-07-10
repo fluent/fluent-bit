@@ -128,11 +128,11 @@ static void lua_pushmsgpack(lua_State *l, msgpack_object *o)
             break;
 
         case MSGPACK_OBJECT_POSITIVE_INTEGER:
-	    lua_pushint64(l, o->via.u64);
+	    lua_pushuint64(l, o->via.u64);
             break;
 
         case MSGPACK_OBJECT_NEGATIVE_INTEGER:
-	    lua_pushuint64(l, o->via.i64);
+	    lua_pushint64(l, o->via.i64);
             break;
 
         case MSGPACK_OBJECT_FLOAT32:
