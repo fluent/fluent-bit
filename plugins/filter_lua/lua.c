@@ -297,7 +297,7 @@ static void lua_tomsgpack(lua_State *l, msgpack_packer *pck, int index)
                         msgpack_pack_uint64(pck, *(uint16_t *)cdata);
                         break;
                     case CTID_UINT32:
-                        msgpack_pack_uint32(pck, *(uint32_t *)cdata);
+                        msgpack_pack_uint64(pck, *(uint32_t *)cdata);
                         break;
                     case CTID_UINT64:
                         msgpack_pack_uint64(pck, *(uint64_t *)cdata);
