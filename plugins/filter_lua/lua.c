@@ -69,6 +69,7 @@ static void *lua_pushcdata(lua_State *l, CTypeID ctypeid)
     /* Get ctype info */
     CTState *cts = ctype_cts(l);
     CTInfo info = lj_ctype_info(cts, ctypeid, &sz);
+    /* TODO: check if sz == CTSIZE_INVALID */
 
     /* Allocate C data object. */
     GCcdata *cd = lj_cdata_new(cts, ctypeid, sz);
