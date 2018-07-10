@@ -132,7 +132,7 @@ static char *kafka_rest_format(void *data, size_t bytes,
         s = strftime(time_formatted, sizeof(time_formatted) - 1,
                      ctx->time_key_format, &tm);
         len = snprintf(time_formatted + s, sizeof(time_formatted) - 1 - s,
-                       ".%" PRIu64 "Z", (uint64_t) tms.tm.tv_nsec);
+                       ".%09" PRIu64 "Z", (uint64_t) tms.tm.tv_nsec);
         s += len;
         msgpack_pack_str(&mp_pck, s);
         msgpack_pack_str_body(&mp_pck, time_formatted, s);

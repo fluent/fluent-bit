@@ -27,6 +27,7 @@ enum FLB_FILTER_MODIFY_RULETYPE {
   SET,
   REMOVE,
   REMOVE_WILDCARD,
+  REMOVE_REGEX,
   COPY,
   HARD_COPY
 };
@@ -34,8 +35,14 @@ enum FLB_FILTER_MODIFY_RULETYPE {
 enum FLB_FILTER_MODIFY_CONDITIONTYPE {
   KEY_EXISTS,
   KEY_DOES_NOT_EXIST,
+  A_KEY_MATCHES,
+  NO_KEY_MATCHES,
   KEY_VALUE_EQUALS,
-  KEY_VALUE_DOES_NOT_EQUAL
+  KEY_VALUE_DOES_NOT_EQUAL,
+  KEY_VALUE_MATCHES,
+  KEY_VALUE_DOES_NOT_MATCH,
+  MATCHING_KEYS_HAVE_MATCHING_VALUES,
+  MATCHING_KEYS_DO_NOT_HAVE_MATCHING_VALUES
 };
 
 struct filter_modify_ctx
@@ -53,6 +60,10 @@ struct modify_rule
   int val_len;
   char *key;
   char *val;
+  bool key_is_regex;
+  bool val_is_regex;
+  struct flb_regex *key_regex;
+  struct flb_regex *val_regex;
   char *raw_k;
   char *raw_v;
   struct mk_list _head;
@@ -65,6 +76,10 @@ struct modify_condition
   int b_len;
   char *a;
   char *b;
+  bool a_is_regex;
+  bool b_is_regex;
+  struct flb_regex *a_regex;
+  struct flb_regex *b_regex;
   char *raw_k;
   char *raw_v;
   struct mk_list _head;

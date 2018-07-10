@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_utils.h>
 #include <msgpack.h>
 
 #include <stdio.h>
@@ -177,6 +178,12 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
     struct flb_upstream *upstream;
     struct flb_out_http_config *ctx = NULL;
     (void)data;
+
+    struct mk_list *head;
+    struct mk_list *split;
+    struct flb_split_entry *sentry;
+    struct flb_config_prop *prop;
+    struct out_http_header *header;
 
     /* Allocate plugin context */
     ctx = flb_calloc(1, sizeof(struct flb_out_http_config));
@@ -399,6 +406,40 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
     ctx->host = ins->host.name;
     ctx->port = ins->host.port;
 
+    /* Arbitrary HTTP headers to add */
+
+    ctx->headers_cnt = 0;
+    mk_list_init(&ctx->headers);
+
+    mk_list_foreach(head, &ins->properties) {
+        prop = mk_list_entry(head, struct flb_config_prop, _head);
+        split = flb_utils_split(prop->val, ' ', 2);
+
+        if (strcasecmp(prop->key, "header") == 0) {
+
+            header = flb_malloc(sizeof(struct out_http_header));
+            if (!header) {
+                flb_error
+                    ("[out_http] Unable to allocate memory for header");
+                flb_free(header);
+                return -1;
+            }
+
+            sentry = mk_list_entry_first(split, struct flb_split_entry, _head);
+            header->key_len = strlen(sentry->value);
+            header->key = flb_strndup(sentry->value, header->key_len);
+
+            sentry = mk_list_entry_last(split, struct flb_split_entry, _head);
+            header->val_len = strlen(sentry->value);
+            header->val = flb_strndup(sentry->value, header->val_len);
+
+            mk_list_add(&header->_head, &ctx->headers);
+            ctx->headers_cnt++;
+        }
+    }
+
+    flb_utils_split_free(split);
+
     /* Set the plugin context */
     flb_output_set_context(ins, ctx);
     return 0;
@@ -411,6 +452,9 @@ static int http_post (struct flb_out_http_config *ctx, void *body, size_t body_l
     struct flb_upstream *u;
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct out_http_header *header;
     int ret;
 
     /* Get upstream context and connection */
@@ -456,6 +500,15 @@ static int http_post (struct flb_out_http_config *ctx, void *body, size_t body_l
 
     if (ctx->http_user && ctx->http_passwd) {
         flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
+    }
+
+    mk_list_foreach_safe(head, tmp, &ctx->headers) {
+        header = mk_list_entry(head, struct out_http_header, _head);
+        flb_http_add_header(c,
+                        header->key,
+                        header->key_len,
+                        header->val,
+                        header->val_len);
     }
 
     ret = flb_http_do(c, &b_sent);
@@ -598,6 +651,10 @@ int cb_http_exit(void *data, struct flb_config *config)
 {
     struct flb_out_http_config *ctx = data;
 
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct out_http_header *header;
+
     if (ctx->u) {
         flb_upstream_destroy(ctx->u);
     }
@@ -614,6 +671,15 @@ int cb_http_exit(void *data, struct flb_config *config)
     flb_free(ctx->uri);
     flb_free(ctx->json_date_key);
     flb_free(ctx->header_tag);
+
+    mk_list_foreach_safe(head, tmp, &ctx->headers) {
+        header = mk_list_entry(head, struct out_http_header, _head);
+        flb_free(header->key);
+        flb_free(header->val);
+        mk_list_del(&header->_head);
+        flb_free(header);
+    }
+
     flb_free(ctx);
 
     return 0;
