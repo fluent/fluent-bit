@@ -104,22 +104,32 @@ static int ltsv_parser(struct flb_parser *parser,
 
     while (c < end) {
         label = c;
-        while (ltvs_label[*c] && (c < end)) c++;
+        while (ltvs_label[*c] && (c < end)) {
+            c++;
+        }
         label_len = c - label;
-        if (c == end) break;
+        if (c == end) {
+            break;
+        }
 
-        if (*c != ':') break;
+        if (*c != ':') {
+            break;
+        }
         c++;
-        if (c == end) break;
 
         field = c;
-        while (ltvs_field[*c] && (c < end)) c++;
+        if (c != end) {
+            while (ltvs_field[*c] && (c < end)) {
+                c++;
+            }
+        }
         field_len = c - field;
 
-        if (label_len > 0 && field_len > 0) {
+        if (label_len > 0) {
             int time_found = FLB_FALSE;
 
             if (parser->time_fmt && label_len == time_key_len &&
+                field_len > 0 &&
                 !strncmp((char *)label, time_key, label_len)) {
                 if (do_pack) {
                     ret = flb_parser_time_lookup((char *) field, field_len,
@@ -156,14 +166,24 @@ static int ltsv_parser(struct flb_parser *parser,
             }
         }
 
-        if (c == end) break;
-        if (*c == '\t') c++;
-        if (c == end) break;
+        if (c == end) {
+            break;
+        }
+        if (*c == '\t') {
+            c++;
+        }
+        if (c == end) {
+            break;
+        }
 
         if (*c == '\r') {
             c++;
-            if (c == end) break;
-            if (*c == '\n') c++;
+            if (c == end) {
+                break;
+            }
+            if (*c == '\n') {
+                c++;
+            }
             break;
         }
         if (*c == '\n') {
