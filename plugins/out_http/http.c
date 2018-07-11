@@ -174,6 +174,7 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
     int io_flags = 0;
     char *uri = NULL;
     char *tmp;
+    char *json_date_format;
     struct flb_upstream *upstream;
     struct flb_out_http_config *ctx = NULL;
     (void)data;
@@ -357,9 +358,12 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
     ctx->json_date_format = FLB_JSON_DATE_DOUBLE;
     tmp = flb_output_get_property("json_date_format", ins);
     if (tmp) {
-        if (strcasecmp(tmp, "iso8601") == 0) {
+        json_date_format= flb_strdup(tmp);
+        if (strcasecmp(json_date_format, "iso8601") == 0) {
             ctx->json_date_format = FLB_JSON_DATE_ISO8601;
         }
+
+        flb_free(json_date_format);
     }
 
     /* Date key for JSON output */
