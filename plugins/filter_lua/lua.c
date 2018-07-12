@@ -28,6 +28,21 @@
 #include "lua_config.h"
 #include <msgpack.h>
 
+static int lua_atpanic_handler(lua_State * l)
+{
+    struct lua_filter *ctx;
+
+    lua_getglobal(l, "__FLUENTBIT_DATA");
+    ctx = (struct lua_filter*)lua_touserdata(l, -1);
+    lua_pop(l, 1);
+
+    if (ctx != NULL) {
+        longjmp(ctx->lua_panic_jmp, 1);
+    }
+
+    return 0;
+}
+
 /*
  * This function validate if a msgpack formed from a Lua script
  * is a valid Map
@@ -382,6 +397,9 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
         return -1;
     }
 
+    lua_pushlightuserdata(ctx->lua->state, ctx);
+    lua_setglobal(ctx->lua->state, "__FLUENTBIT_DATA");
+
     /* Set context */
     flb_filter_set_context(f_ins, ctx);
 
@@ -429,25 +447,38 @@ static int cb_lua_filter(void *data, size_t bytes,
         flb_time_pop_from_msgpack(&t, &result, &p);
         ts = flb_time_to_double(&t);
 
-        /* Prepare function call, pass 3 arguments, expect 3 return values */
-        lua_getglobal(ctx->lua->state, ctx->call);
-        lua_pushstring(ctx->lua->state, tag);
-        lua_pushnumber(ctx->lua->state, ts);
-        lua_pushmsgpack(ctx->lua->state, p);
-        lua_call(ctx->lua->state, 3, 3);
+        lua_atpanic(ctx->lua->state, &lua_atpanic_handler);
+        if (setjmp(ctx->lua_panic_jmp) == 0) {
+            /* Prepare function call, pass 3 arguments, expect 3 return values */
+            lua_getglobal(ctx->lua->state, ctx->call);
+            lua_pushstring(ctx->lua->state, tag);
+            lua_pushnumber(ctx->lua->state, ts);
+            lua_pushmsgpack(ctx->lua->state, p);
+            lua_call(ctx->lua->state, 3, 3);
 
-        /* Initialize Return values */
-        l_code = 0;
-        l_timestamp = ts;
+            /* Initialize Return values */
+            l_code = 0;
+            l_timestamp = ts;
 
-        lua_tomsgpack(ctx->lua->state, &data_pck, 0);
-        lua_pop(ctx->lua->state, 1);
+            lua_tomsgpack(ctx->lua->state, &data_pck, 0);
+            lua_pop(ctx->lua->state, 1);
 
-        l_timestamp = (double) lua_tonumber(ctx->lua->state, -1);
-        lua_pop(ctx->lua->state, 1);
+            l_timestamp = (double) lua_tonumber(ctx->lua->state, -1);
+            lua_pop(ctx->lua->state, 1);
 
-        l_code = (int) lua_tointeger(ctx->lua->state, -1);
-        lua_pop(ctx->lua->state, 1);
+            l_code = (int) lua_tointeger(ctx->lua->state, -1);
+            lua_pop(ctx->lua->state, 1);
+        }
+        else {
+            lua_atpanic(ctx->lua->state, NULL);
+            flb_error("[filter_lua] Lua PANIC: %s",
+                      lua_tostring(ctx->lua->state, -1));
+            msgpack_sbuffer_destroy(&tmp_sbuf);
+            msgpack_sbuffer_destroy(&data_sbuf);
+            msgpack_unpacked_destroy(&result);
+            return FLB_FILTER_NOTOUCH;
+        }
+        lua_atpanic(ctx->lua->state, NULL);
 
         /* Validations */
         if (l_code == 1) {

@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_luajit.h>
 #include <fluent-bit/flb_sds.h>
+#include <setjmp.h>
 
 #define LUA_BUFFER_CHUNK    1024*8  /* 8K should be enough to get started */
 
@@ -32,6 +33,7 @@ struct lua_filter {
     flb_sds_t call;         /* function name   */
     flb_sds_t buffer;       /* json dec buffer */
     struct flb_luajit *lua; /* state context   */
+    jmp_buf lua_panic_jmp;
 };
 
 struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
