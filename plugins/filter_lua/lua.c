@@ -27,13 +27,19 @@
 
 #include "lua_config.h"
 #include <msgpack.h>
-#include <setjmp.h>
 
-static jmp_buf lua_panic_jmp;
-
-static int lua_atpanic_handler(lua_State * L)
+static int lua_atpanic_handler(lua_State * l)
 {
-    longjmp(lua_panic_jmp, 1);
+    struct lua_filter *ctx;
+
+    lua_getglobal(l, "__FLUENTBIT_DATA");
+    ctx = (struct lua_filter*)lua_touserdata(l, -1);
+    lua_pop(l, 1);
+
+    if (ctx != NULL) {
+        longjmp(ctx->lua_panic_jmp, 1);
+    }
+
     return 0;
 }
 
@@ -391,6 +397,9 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
         return -1;
     }
 
+    lua_pushlightuserdata(ctx->lua->state, ctx);
+    lua_setglobal(ctx->lua->state, "__FLUENTBIT_DATA");
+
     /* Set context */
     flb_filter_set_context(f_ins, ctx);
 
@@ -439,7 +448,7 @@ static int cb_lua_filter(void *data, size_t bytes,
         ts = flb_time_to_double(&t);
 
         lua_atpanic(ctx->lua->state, &lua_atpanic_handler);
-        if (setjmp(lua_panic_jmp) == 0) {
+        if (setjmp(ctx->lua_panic_jmp) == 0) {
             /* Prepare function call, pass 3 arguments, expect 3 return values */
             lua_getglobal(ctx->lua->state, ctx->call);
             lua_pushstring(ctx->lua->state, tag);
