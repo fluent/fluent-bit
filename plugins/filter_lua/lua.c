@@ -391,8 +391,6 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
         return -1;
     }
 
-    lua_atpanic(ctx->lua->state, &lua_atpanic_handler);
-
     /* Set context */
     flb_filter_set_context(f_ins, ctx);
 
@@ -440,6 +438,7 @@ static int cb_lua_filter(void *data, size_t bytes,
         flb_time_pop_from_msgpack(&t, &result, &p);
         ts = flb_time_to_double(&t);
 
+        lua_atpanic(ctx->lua->state, &lua_atpanic_handler);
         if (setjmp(lua_panic_jmp) == 0) {
             /* Prepare function call, pass 3 arguments, expect 3 return values */
             lua_getglobal(ctx->lua->state, ctx->call);
@@ -462,6 +461,7 @@ static int cb_lua_filter(void *data, size_t bytes,
             lua_pop(ctx->lua->state, 1);
         }
         else {
+            lua_atpanic(ctx->lua->state, NULL);
             flb_error("[filter_lua] Lua PANIC: %s",
                       lua_tostring(ctx->lua->state, -1));
             msgpack_sbuffer_destroy(&tmp_sbuf);
@@ -469,6 +469,7 @@ static int cb_lua_filter(void *data, size_t bytes,
             msgpack_unpacked_destroy(&result);
             return FLB_FILTER_NOTOUCH;
         }
+        lua_atpanic(ctx->lua->state, NULL);
 
         /* Validations */
         if (l_code == 1) {
