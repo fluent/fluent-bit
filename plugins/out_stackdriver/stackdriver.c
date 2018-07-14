@@ -254,7 +254,7 @@ static int get_oauth2_token(struct flb_stackdriver *ctx)
 
 static char *get_google_token(struct flb_stackdriver *ctx)
 {
-    int ret = -1;
+    int ret = 0;
 
     if (!ctx->o) {
         ret = get_oauth2_token(ctx);
