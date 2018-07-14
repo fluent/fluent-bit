@@ -672,6 +672,7 @@ int flb_utils_url_split(char *in_url, char **out_protocol,
     char *uri = NULL;
     char *p;
     char *tmp;
+    char *sep;
 
     /* Protocol */
     p = strstr(in_url, "://");
@@ -688,9 +689,20 @@ int flb_utils_url_split(char *in_url, char **out_protocol,
         return -1;
     }
 
-    /* Check if a port is defined */
+    /* Advance position after protocol */
     p += 3;
+
+    /* Check for first '/' */
+    sep = strchr(p, '/');
     tmp = strchr(p, ':');
+
+    /* Validate port separator is found before the first slash */
+    if (sep && tmp) {
+        if (tmp > sep) {
+            tmp = NULL;
+        }
+    }
+
     if (tmp) {
         host = mk_string_copy_substr(p, 0, tmp - p);
         if (!host) {
