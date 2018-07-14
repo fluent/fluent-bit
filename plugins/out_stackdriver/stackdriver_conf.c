@@ -38,6 +38,15 @@ static inline int key_cmp(char *str, int len, char *cmp) {
     return strncasecmp(str, cmp, len);
 }
 
+static int validate_resource(char *res)
+{
+    if (strcasecmp(res, "global") != 0) {
+        return -1;
+    }
+
+    return 0;
+}
+
 static int read_credentials_file(char *creds, struct flb_stackdriver *ctx)
 {
     int i;
@@ -240,6 +249,21 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         return NULL;
     }
 
+    /* Resource type (only 'global' is supported) */
+    tmp = flb_output_get_property("resource", ins);
+    if (tmp) {
+        if (validate_resource(tmp) != 0) {
+            flb_error("[out_stackdriver] unsupported resource type '%s'",
+                      tmp);
+            flb_stackdriver_conf_destroy(ctx);
+            return NULL;
+        }
+        ctx->resource = flb_sds_create(tmp);
+    }
+    else {
+        ctx->resource = flb_sds_create(FLB_SDS_RESOURCE_TYPE);
+    }
+
     return ctx;
 }
 
@@ -258,6 +282,7 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
     flb_sds_destroy(ctx->client_id);
     flb_sds_destroy(ctx->auth_uri);
     flb_sds_destroy(ctx->token_uri);
+    flb_sds_destroy(ctx->resource);
 
     if (ctx->o) {
         flb_oauth2_destroy(ctx->o);

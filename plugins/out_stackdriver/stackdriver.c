@@ -144,6 +144,7 @@ static int jwt_encode(char *payload, char *secret,
         flb_error("[out_stackdriver] error creating RSA context");
         flb_free(buf);
         flb_sds_destroy(out);
+        mbedtls_pk_free(&pk_ctx);
         return -1;
     }
 
@@ -154,6 +155,7 @@ static int jwt_encode(char *payload, char *secret,
         flb_error("[out_stackdriver] error signing SHA256");
         flb_free(buf);
         flb_sds_destroy(out);
+        mbedtls_pk_free(&pk_ctx);
         return -1;
     }
 
@@ -162,6 +164,7 @@ static int jwt_encode(char *payload, char *secret,
         flb_errno();
         flb_free(buf);
         flb_sds_destroy(out);
+        mbedtls_pk_free(&pk_ctx);
         return -1;
     }
 
@@ -175,11 +178,13 @@ static int jwt_encode(char *payload, char *secret,
 
     flb_free(buf);
     flb_free(sigd);
+    mbedtls_pk_free(&pk_ctx);
 
     return 0;
 }
 
-static int get_google_token(struct flb_stackdriver *ctx)
+/* Create a new oauth2 context and get a oauth2 token */
+static int get_oauth2_token(struct flb_stackdriver *ctx)
 {
     int ret;
     char *token;
@@ -209,7 +214,7 @@ static int get_google_token(struct flb_stackdriver *ctx)
 
     flb_debug("[out_stackdriver] JWT signature:\n%s", sig_data);
 
-    /* Get Authorization Token */
+    /* Create oauth2 context */
     ctx->o = flb_oauth2_create(ctx->config, FLB_STD_AUTH_URL, 3000);
     if (!ctx->o) {
         flb_sds_destroy(sig_data);
@@ -247,10 +252,29 @@ static int get_google_token(struct flb_stackdriver *ctx)
     return 0;
 }
 
+static char *get_google_token(struct flb_stackdriver *ctx)
+{
+    int ret = -1;
+
+    if (!ctx->o) {
+        ret = get_oauth2_token(ctx);
+    }
+    else if (flb_oauth2_token_expired(ctx->o) == FLB_TRUE) {
+        flb_oauth2_destroy(ctx->o);
+        ret = get_oauth2_token(ctx);
+    }
+
+    if (ret != 0) {
+        return NULL;
+    }
+
+    return ctx->o->access_token;
+}
+
 static int cb_stackdriver_init(struct flb_output_instance *ins,
                           struct flb_config *config, void *data)
 {
-    int ret;
+    char *token;
     struct flb_stackdriver *ctx;
 
     /* Create config context */
@@ -264,7 +288,7 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     flb_output_set_context(ins, ctx);
 
     /* Create Upstream context for Stackdriver Logging (no oauth2 service) */
-    ctx->u = flb_upstream_create_url(config, FLB_STD_AUTH_URL,
+    ctx->u = flb_upstream_create_url(config, FLB_STD_WRITE_URL,
                                      FLB_IO_TLS, &ins->tls);
     if (!ctx->u) {
         flb_error("[out_stackdriver] upstream creation failed");
@@ -272,36 +296,34 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     }
 
     /* Retrieve oauth2 token */
-    ret = get_google_token(ctx);
-    if (ret == -1) {
+    token = get_google_token(ctx);
+    if (!token) {
         flb_warn("[out_stackdriver] token retrieval failed");
     }
 
     return 0;
 }
 
-static void cb_stackdriver_flush(void *data, size_t bytes,
-                            char *tag, int tag_len,
-                            struct flb_input_instance *i_ins,
-                            void *out_context,
-                            struct flb_config *config)
+static int stackdriver_format(void *data, size_t bytes,
+                              char *tag, size_t tag_len,
+                              char **out_data, size_t *out_size,
+                              struct flb_stackdriver *ctx)
 {
-    (void) i_ins;
-    (void) config;
-    char path[PATH_MAX];
-    char time_formatted[255];
-    size_t s;
-    size_t off = 0;
+    int ret;
     int len;
     int array_size = 0;
-    struct flb_stackdriver *ctx = out_context;
+    size_t s;
+    size_t off = 0;
+    char path[PATH_MAX];
+    char time_formatted[255];
     struct tm tm;
     struct flb_time tms;
     msgpack_object *obj;
-    msgpack_object root;
     msgpack_unpacked result;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
+    char *json_buf;
+    size_t json_size;
 
     /* Count number of records */
     msgpack_unpacked_init(&result);
@@ -315,47 +337,207 @@ static void cb_stackdriver_flush(void *data, size_t bytes,
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    off = 0;
-    msgpack_unpack_next(&result, data, bytes, &off);
+    /*
+     * Pack root map (resource & entries):
+     *
+     * {"resource": {"type": "...", "labels": {...},
+     *  "entries": []
+     */
+    msgpack_pack_map(&mp_pck, 2);
 
-    root = result.data;
+    msgpack_pack_str(&mp_pck, 8);
+    msgpack_pack_str_body(&mp_pck, "resource", 8);
 
-    /* Get timestamp */
-    flb_time_pop_from_msgpack(&tms, &result, &obj);
+    /* type & labels */
+    msgpack_pack_map(&mp_pck, 2);
 
-    msgpack_pack_map(&mp_pck, 3);
+    /* type */
+    msgpack_pack_str(&mp_pck, 4);
+    msgpack_pack_str_body(&mp_pck, "type", 4);
+    msgpack_pack_str(&mp_pck, flb_sds_len(ctx->resource));
+    msgpack_pack_str_body(&mp_pck, ctx->resource,
+                          flb_sds_len(ctx->resource));
 
-    /* jsonPayload */
-    msgpack_pack_str(&mp_pck, 11);
-    msgpack_pack_str_body(&mp_pck, "jsonPayload", 11);
-    msgpack_pack_object(&mp_pck, *obj);
+    /* labels (we only append 'project_id' at the moment) */
+    msgpack_pack_str(&mp_pck, 6);
+    msgpack_pack_str_body(&mp_pck, "labels", 6);
 
-    /* logName */
-    len = snprintf(path, sizeof(path) - 1,
-                   "projects/%s/logs/%s", ctx->project_id, tag);
+    msgpack_pack_map(&mp_pck, 1);
+    msgpack_pack_str(&mp_pck, 10);
+    msgpack_pack_str_body(&mp_pck, "project_id", 10);
+    msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
+    msgpack_pack_str_body(&mp_pck,
+                          ctx->project_id, flb_sds_len(ctx->project_id));
 
     msgpack_pack_str(&mp_pck, 7);
-    msgpack_pack_str_body(&mp_pck, "logName", 7);
-    msgpack_pack_str(&mp_pck, len);
-    msgpack_pack_str_body(&mp_pck, path, len);
+    msgpack_pack_str_body(&mp_pck, "entries", 7);
 
-    /* timestamp */
-    msgpack_pack_str(&mp_pck, 9);
-    msgpack_pack_str_body(&mp_pck, "timestamp", 9);
+    /* Append entries */
+    msgpack_pack_array(&mp_pck, array_size);
 
-    /* Format the time */
-    gmtime_r(&tms.tm.tv_sec, &tm);
-    s = strftime(time_formatted, sizeof(time_formatted) - 1,
-                 FLB_STD_TIME_FMT, &tm);
-    len = snprintf(time_formatted + s, sizeof(time_formatted) - 1 - s,
-                   ".%09" PRIu64 "Z", (uint64_t) tms.tm.tv_nsec);
-    s += len;
-    msgpack_pack_str(&mp_pck, s);
-    msgpack_pack_str_body(&mp_pck, time_formatted, s);
+    off = 0;
+    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+        /* Get timestamp */
+        flb_time_pop_from_msgpack(&tms, &result, &obj);
 
-    flb_pack_print(mp_sbuf.data, mp_sbuf.size);
-    exit(1);
-    FLB_OUTPUT_RETURN(FLB_RETRY);
+        /*
+         * Pack entry
+         *
+         * {
+         *  "logName": "...",
+         *  "jsonPayload": {...},
+         *  "timestamp": "..."
+         * }
+         */
+        msgpack_pack_map(&mp_pck, 3);
+
+
+        /* jsonPayload */
+        msgpack_pack_str(&mp_pck, 11);
+        msgpack_pack_str_body(&mp_pck, "jsonPayload", 11);
+        msgpack_pack_object(&mp_pck, *obj);
+
+        /* logName */
+        len = snprintf(path, sizeof(path) - 1,
+                       "projects/%s/logs/%s", ctx->project_id, tag);
+
+        msgpack_pack_str(&mp_pck, 7);
+        msgpack_pack_str_body(&mp_pck, "logName", 7);
+        msgpack_pack_str(&mp_pck, len);
+        msgpack_pack_str_body(&mp_pck, path, len);
+
+        /* timestamp */
+        msgpack_pack_str(&mp_pck, 9);
+        msgpack_pack_str_body(&mp_pck, "timestamp", 9);
+
+        /* Format the time */
+        gmtime_r(&tms.tm.tv_sec, &tm);
+        s = strftime(time_formatted, sizeof(time_formatted) - 1,
+                     FLB_STD_TIME_FMT, &tm);
+        len = snprintf(time_formatted + s, sizeof(time_formatted) - 1 - s,
+                       ".%09" PRIu64 "Z", (uint64_t) tms.tm.tv_nsec);
+        s += len;
+
+        msgpack_pack_str(&mp_pck, s);
+        msgpack_pack_str_body(&mp_pck, time_formatted, s);
+    }
+
+    /* Convert from msgpack to JSON */
+    ret = flb_msgpack_raw_to_json_str(mp_sbuf.data, mp_sbuf.size,
+                                      &json_buf, &json_size);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+
+    if (ret != 0) {
+        flb_error("[out_stackdriver] error formatting JSON payload");
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+
+    *out_data = json_buf;
+    *out_size = json_size;
+
+    return 0;
+}
+
+static void set_authorization_header(struct flb_http_client *c,
+                                     char *token)
+{
+    int len;
+    char header[512];
+
+    len = snprintf(header, sizeof(header) - 1,
+                   "Bearer %s", token);
+    flb_http_add_header(c, "Authorization", 13, header, len);
+}
+
+static void cb_stackdriver_flush(void *data, size_t bytes,
+                            char *tag, int tag_len,
+                            struct flb_input_instance *i_ins,
+                            void *out_context,
+                            struct flb_config *config)
+{
+    (void) i_ins;
+    (void) config;
+    int ret;
+    int ret_code = FLB_RETRY;
+    size_t b_sent;
+    char *token;
+    char *payload_buf;
+    size_t payload_size;
+    struct flb_stackdriver *ctx = out_context;
+    struct flb_upstream_conn *u_conn;
+    struct flb_http_client *c;
+
+    /* Get upstream connection */
+    u_conn = flb_upstream_conn_get(ctx->u);
+    if (!u_conn) {
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
+    /* Reformat msgpack to stackdriver JSON payload */
+    ret = stackdriver_format(data, bytes, tag, tag_len,
+                             &payload_buf, &payload_size, ctx);
+    if (ret != 0) {
+        flb_upstream_conn_release(u_conn);
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
+    /* Get or renew Token */
+    token = get_google_token(ctx);
+    if (!token) {
+        flb_error("[out_stackdriver] cannot retrieve oauth2 token");
+        flb_upstream_conn_release(u_conn);
+        flb_free(payload_buf);
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
+    /* Compose HTTP Client request */
+    c = flb_http_client(u_conn, FLB_HTTP_POST, FLB_STD_WRITE_URI,
+                        payload_buf, payload_size, NULL, 0, NULL, 0);
+
+    flb_http_buffer_size(c, 4192);
+
+    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+    flb_http_add_header(c, "Content-Type", 12, "application/json", 20);
+
+    /* Compose and append Authorization header */
+    set_authorization_header(c, token);
+
+    /* Send HTTP request */
+    ret = flb_http_do(c, &b_sent);
+
+    /* validate response */
+    if (ret != 0) {
+        flb_warn("[out_stackdriver] http_do=%i", ret);
+        ret_code = FLB_RETRY;
+    }
+    else {
+        /* The request was issued successfully, validate the 'error' field */
+        flb_debug("[out_stackdriver] HTTP Status=%i", c->resp.status);
+        if (c->resp.status == 200) {
+            ret_code = FLB_OK;
+        }
+        else {
+            if (c->resp.payload_size > 0) {
+                /* we got an error */
+                flb_warn("[out_stackdriver] Elasticsearch error\n%s",
+                         c->resp.payload);
+            }
+            else {
+                flb_debug("[out_stackdriver] response\n%s",
+                          c->resp.payload);
+            }
+            ret_code = FLB_RETRY;
+        }
+    }
+
+    /* Cleanup */
+    flb_free(payload_buf);
+    flb_http_client_destroy(c);
+    flb_upstream_conn_release(u_conn);
+
+    /* Done */
+    FLB_OUTPUT_RETURN(ret_code);
 }
 
 static int cb_stackdriver_exit(void *data, struct flb_config *config)

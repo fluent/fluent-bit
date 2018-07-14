@@ -29,13 +29,21 @@
 #define FLB_STD_TOKEN_REFRESH 3000
 
 /* Stackdriver Logging write scope */
-#define FLB_STD_SCOPE      "https://www.googleapis.com/auth/logging.write"
+#define FLB_STD_SCOPE     "https://www.googleapis.com/auth/logging.write"
 
 /* Stackdriver authorization URL */
-#define FLB_STD_AUTH_URL   "https://www.googleapis.com/oauth2/v4/token"
+#define FLB_STD_AUTH_URL  "https://www.googleapis.com/oauth2/v4/token"
+
+/* Stackdriver Logging 'write' end-point */
+#define FLB_STD_WRITE_URI "/v2/entries:write"
+#define FLB_STD_WRITE_URL \
+    "https://logging.googleapis.com" FLB_STD_WRITE_URI
 
 /* Timestamp format */
 #define FLB_STD_TIME_FMT  "%Y-%m-%dT%H:%M:%S"
+
+/* Default Resource type */
+#define FLB_SDS_RESOURCE_TYPE "global"
 
 struct flb_stackdriver {
     /* credentials */
@@ -56,8 +64,13 @@ struct flb_stackdriver {
     flb_sds_t vm_id;
     flb_sds_t vm_name;
 
-    /* oauth2 context wth upstream connection */
+    /* other */
+    flb_sds_t resource;
+
+    /* oauth2 context */
     struct flb_oauth2 *o;
+
+    /* upstream context for stackdriver write end-point */
     struct flb_upstream *u;
 
     /* Fluent Bit context */
