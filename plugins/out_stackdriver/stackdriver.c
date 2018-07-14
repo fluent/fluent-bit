@@ -520,7 +520,7 @@ static void cb_stackdriver_flush(void *data, size_t bytes,
         else {
             if (c->resp.payload_size > 0) {
                 /* we got an error */
-                flb_warn("[out_stackdriver] Elasticsearch error\n%s",
+                flb_warn("[out_stackdriver] error\n%s",
                          c->resp.payload);
             }
             else {
