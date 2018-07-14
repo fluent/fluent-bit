@@ -392,7 +392,7 @@ int flb_oauth2_token_expired(struct flb_oauth2 *ctx)
     }
 
     now = time(NULL);
-    if (ctx->expires >= now) {
+    if (ctx->expires <= now) {
         return FLB_TRUE;
     }
 
