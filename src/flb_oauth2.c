@@ -285,6 +285,8 @@ int flb_oauth2_payload_append(struct flb_oauth2 *ctx,
 
 void flb_oauth2_destroy(struct flb_oauth2 *ctx)
 {
+    flb_tls_context_destroy(ctx->tls.context);
+
     flb_sds_destroy(ctx->auth_url);
     flb_sds_destroy(ctx->payload);
 
@@ -303,11 +305,14 @@ char *flb_oauth2_token_get(struct flb_oauth2 *ctx)
 {
     int ret;
     size_t b_sent;
+    time_t now;
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
 
+    now = time(NULL);
     if (ctx->access_token) {
-        if (flb_sds_len(ctx->access_token) > 0) {
+        /* validate expired token */
+        if (ctx->expires < now && flb_sds_len(ctx->access_token) > 0) {
             return ctx->access_token;
         }
     }
@@ -360,10 +365,12 @@ char *flb_oauth2_token_get(struct flb_oauth2 *ctx)
         if (ret == 0) {
             flb_info("[oauth2] access token from '%s:%s' retrieved",
                      ctx->host, ctx->port);
+            flb_http_client_destroy(c);
             return ctx->access_token;
         }
     }
 
+    flb_http_client_destroy(c);
     return NULL;
 }
 
@@ -374,4 +381,20 @@ int flb_oauth2_token_len(struct flb_oauth2 *ctx)
     }
 
     return flb_sds_len(ctx->access_token);
+}
+
+int flb_oauth2_token_expired(struct flb_oauth2 *ctx)
+{
+    time_t now;
+
+    if (!ctx->access_token) {
+        return FLB_TRUE;
+    }
+
+    now = time(NULL);
+    if (ctx->expires >= now) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
 }
