@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_gzip.h>
 #include <msgpack.h>
 
 #include <stdio.h>
@@ -353,6 +354,13 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
         }
     }
 
+    /* Gzip encode body */
+    ctx->gzip_encode = FLB_FALSE;
+    tmp = flb_output_get_property("gzip_encode", ins);
+    if (tmp) {
+        ctx->gzip_encode = flb_utils_bool(tmp);
+    }
+
     /* Date format for JSON output */
     ctx->json_date_format = FLB_JSON_DATE_DOUBLE;
     tmp = flb_output_get_property("json_date_format", ins);
@@ -427,6 +435,8 @@ void cb_http_flush(void *data, size_t bytes,
     void *body = NULL;
     uint64_t body_len;
     (void)i_ins;
+    char *gz_body;
+    size_t gz_size;
 
     struct mk_list *tmp;
     struct mk_list *head;
@@ -440,6 +450,13 @@ void cb_http_flush(void *data, size_t bytes,
     else {
         body = data;
         body_len = bytes;
+    }
+
+    if (ctx->gzip_encode) {
+        gz_body = flb_gzip_compress(body, body_len, &gz_size);
+        free(body);
+        body = gz_body;
+        body_len = gz_size;
     }
 
     /* Get upstream context and connection */
@@ -483,6 +500,14 @@ void cb_http_flush(void *data, size_t bytes,
                         ctx->header_tag,
                         ctx->headertag_len,
                         tag, tag_len);
+    }
+
+    if (ctx->gzip_encode) {
+        flb_http_add_header(c,
+            FLB_HTTP_CONTENT_ENCODING,
+            sizeof(FLB_HTTP_CONTENT_ENCODING) - 1,
+            FLB_HTTP_ENCODING_GZIP,
+            sizeof(FLB_HTTP_ENCODING_GZIP) - 1);
     }
 
     if (ctx->http_user && ctx->http_passwd) {
