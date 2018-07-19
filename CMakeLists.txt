@@ -191,6 +191,7 @@ include_directories(
   lib/sha1
   lib/msgpack-2.1.3/include
   lib/luajit-2.0.5/src/
+  lib/miniz
   ${MONKEY_INCLUDE_DIR}
   )
 
@@ -269,6 +270,9 @@ if(FLB_SQLDB)
   add_subdirectory(lib/sqlite-amalgamation-3230000)
   include_directories(lib/sqlite-amalgamation-3230000)
 endif()
+
+# Gzip by default
+add_subdirectory(lib/miniz)
 
 if(FLB_BUFFERING)
   FLB_DEFINITION(FLB_HAVE_BUFFERING)

@@ -14,6 +14,7 @@ set(src
   flb_sds.c
 
   flb_sha1.c
+  flb_gzip.c
   flb_pipe.c
   flb_meta.c
   flb_kernel.c
@@ -234,6 +235,9 @@ endif()
 if(FLB_BUFFERING)
   target_link_libraries(fluent-bit-static sha1)
 endif()
+
+# gzip is enabled by default
+target_link_libraries(fluent-bit-static miniz)
 
 # Binary / Executable
 if(NOT FLB_WITHOUT_BIN)
