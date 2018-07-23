@@ -192,19 +192,6 @@ static char *elasticsearch_format(void *data, size_t bytes,
         logstash_index[ctx->logstash_prefix_len] = '\0';
     }
 
-    /* If logstash format and id generation is disabled, pre-generate index line for all records. */
-    if (ctx->logstash_format == FLB_FALSE && ctx->generate_id == FLB_FALSE) {
-        flb_time_get(&tms);
-        gmtime_r(&tms.tm.tv_sec, &tm);
-        s = strftime(index_formatted, sizeof(index_formatted) - 1,
-                     ctx->index, &tm);
-        es_index = index_formatted;
-        index_len = snprintf(j_index,
-                             ES_BULK_HEADER,
-                             ES_BULK_INDEX_FMT,
-                             es_index, ctx->type);
-    }
-
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
         if (result.data.type != MSGPACK_OBJECT_ARRAY) {
             continue;
@@ -261,10 +248,6 @@ static char *elasticsearch_format(void *data, size_t bytes,
         msgpack_pack_str(&tmp_pck, s);
         msgpack_pack_str_body(&tmp_pck, time_formatted, s);
 
-        // make sure we handle index time format for index
-        s = strftime(index_formatted, sizeof(index_formatted) - 1,
-                     ctx->index, &tm);
-        es_index = index_formatted;
         if (ctx->logstash_format == FLB_TRUE) {
             /* Compose Index header */
             p = logstash_index + ctx->logstash_prefix_len;
@@ -282,6 +265,15 @@ static char *elasticsearch_format(void *data, size_t bytes,
                                      ES_BULK_INDEX_FMT,
                                      es_index, ctx->type);
             }
+        } else {
+            // make sure we handle index time format for index
+            s = strftime(index_formatted, sizeof(index_formatted) - 1,
+                    ctx->index, &tm);
+            es_index = index_formatted;
+            index_len = snprintf(j_index,
+                    ES_BULK_HEADER,
+                    ES_BULK_INDEX_FMT,
+                    es_index, ctx->type);
         }
 
         /* Tag Key */
