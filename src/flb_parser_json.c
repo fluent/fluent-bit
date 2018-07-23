@@ -38,10 +38,12 @@ int flb_parser_json_do(struct flb_parser *parser,
     char *mp_buf = NULL;
     char *time_key;
     char *tmp_out_buf = NULL;
+    char tmp[255];
     size_t tmp_out_size = 0;
     size_t off = 0;
     size_t map_size;
     size_t mp_size;
+    size_t len;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer  mp_pck;
     msgpack_unpacked result;
@@ -153,10 +155,19 @@ int flb_parser_json_do(struct flb_parser *parser,
     ret = flb_parser_time_lookup((char *) v->via.str.ptr, v->via.str.size,
                                  0, parser, &tm, &tmfrac);
     if (ret == -1) {
-        msgpack_unpacked_destroy(&result);
-        return *out_size;
+        len = v->via.str.size;
+        if (len > sizeof(tmp) - 1) {
+            len = sizeof(tmp) - 1;
+        }
+        memcpy(tmp, v->via.str.ptr, len);
+        tmp[len] = '\0';
+        flb_warn("[parser:%s] Invalid time format %s for '%s'.",
+                 parser->name, parser->time_fmt, tmp);
+        time_lookup = time(NULL);
     }
-    time_lookup = flb_parser_tm2time(&tm);
+    else {
+        time_lookup = flb_parser_tm2time(&tm);
+    }
 
     /* Compose a new map without the time_key field */
     msgpack_sbuffer_init(&mp_sbuf);
