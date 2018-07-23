@@ -48,6 +48,7 @@ static void cb_results(unsigned char *name, unsigned char *value,
     int ret;
     double frac = 0;
     char *time_key;
+    char tmp[255];
     struct regex_cb_ctx *pcb = data;
     struct flb_parser *parser = pcb->parser;
     struct tm tm = {0};
@@ -69,8 +70,14 @@ static void cb_results(unsigned char *name, unsigned char *value,
             ret = flb_parser_time_lookup((char *) value, vlen,
                                          pcb->time_now, parser, &tm, &frac);
             if (ret == -1) {
-                flb_error("[parser:%s] Invalid time format %s.", parser->name, parser->time_fmt);
-                return;
+                if (vlen > sizeof(tmp) - 1) {
+                    vlen = sizeof(tmp) - 1;
+                }
+                memcpy(tmp, value, vlen);
+                tmp[vlen] = '\0';
+                flb_warn("[parser:%s] Invalid time format %s for '%s'.",
+                         parser->name, parser->time_fmt, tmp);
+                goto pack;
             }
 
             pcb->time_found = FLB_TRUE;
@@ -83,6 +90,7 @@ static void cb_results(unsigned char *name, unsigned char *value,
         }
     }
 
+ pack:
     if (parser->types_len != 0) {
         flb_parser_typecast((char*)name, len,
                             (char*)value, vlen,
@@ -163,8 +171,9 @@ int flb_parser_regex_do(struct flb_parser *parser,
      * to use internal msgpack api functions since packing the bytes
      * in Big-Endian is a requirement.
      */
-    if (parser->time_fmt && parser->time_keep == FLB_FALSE &&
-        pcb.time_found == FLB_TRUE) {
+     if (parser->time_fmt && parser->time_keep == FLB_FALSE &&
+         pcb.time_found == FLB_TRUE) {
+
         arr_size = (n - 1);
 
         tmp = tmp_sbuf.data;
