@@ -95,6 +95,11 @@ static int cb_file_init(struct flb_output_instance *ins,
         conf->delimiter = "\t";
         conf->label_delimiter = ":";
     }
+    else if(tmp && !strcasecmp(tmp, "plain")) {
+        conf->format    = FLB_OUT_FILE_FMT_PLAIN;
+        conf->delimiter = NULL;
+        conf->label_delimiter = NULL;
+    }
 
     tmp = flb_output_get_property("delimiter", ins);
     ret_str = check_delimiter(tmp);
@@ -167,6 +172,22 @@ static int ltsv_output(FILE *fp,
     return 0;
 }
 
+static int plain_output(FILE *fp,
+                      msgpack_object *obj,
+                      size_t alloc_size
+                      )
+{
+    char *buf;
+
+    buf = flb_msgpack_to_json_str(alloc_size, obj);
+    if (buf) {
+        fprintf(fp, "%s\n",
+                buf);
+        flb_free(buf);
+    }
+    return 0;
+}
+
 static void cb_file_flush(void *data, size_t bytes,
                           char *tag, int tag_len,
                           struct flb_input_instance *i_ins,
@@ -233,6 +254,9 @@ static void cb_file_flush(void *data, size_t bytes,
             break;
         case FLB_OUT_FILE_FMT_LTSV:
             ltsv_output(fp, &tm, obj, ctx);
+            break;
+        case FLB_OUT_FILE_FMT_PLAIN:
+            plain_output(fp, obj, alloc_size);
             break;
         }
     }
