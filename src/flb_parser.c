@@ -134,10 +134,10 @@ struct flb_parser *flb_parser_create(char *name, char *format,
     p->decoders = decoders;
 
     /* Format lookup */
-    if (strcmp(format, "regex") == 0) {
+    if (strcasecmp(format, "regex") == 0) {
         p->type = FLB_PARSER_REGEX;
     }
-    else if (strcmp(format, "json") == 0) {
+    else if (strcasecmp(format, "json") == 0) {
         p->type = FLB_PARSER_JSON;
     }
     else if (strcmp(format, "ltsv") == 0) {
