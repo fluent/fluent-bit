@@ -50,7 +50,13 @@ struct flb_out_td_config *td_config_init(struct flb_output_instance *o_ins)
         return NULL;
     }
 
+    /* Allocate context */
     config = flb_calloc(1, sizeof(struct flb_out_td_config));
+    if (!config) {
+        flb_errno();
+        return NULL;
+    }
+
     config->fd       = -1;
     config->api      = api;
     config->db_name  = db_name;
