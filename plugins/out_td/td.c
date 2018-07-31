@@ -154,7 +154,12 @@ int cb_td_init(struct flb_output_instance *ins, struct flb_config *config,
         return -1;
     }
 
-    ins->host.name = flb_strdup("api.treasuredata.com");
+    if (ctx->region == FLB_TD_REGION_US) {
+        ins->host.name = flb_strdup("api.treasuredata.com");
+    }
+    else if (ctx->region == FLB_TD_REGION_JP) {
+        ins->host.name = flb_strdup("api.treasuredata.co.jp");
+    }
     ins->host.port = 443;
 
     upstream = flb_upstream_create(config,
@@ -213,21 +218,44 @@ static void cb_td_flush(void *data, size_t bytes,
 
     /* Issue HTTP request */
     ret = flb_http_do(c, &b_sent);
+
+    /* Release Resources */
+    flb_free(pack);
+    flb_free(body);
+
+    /* Validate HTTP status */
     if (ret == 0) {
-        flb_info("[out_td] HTTP status=%i", c->resp.status);
+        /* We expect a HTTP 200 OK */
+        if (c->resp.status != 200) {
+            if (c->resp.payload_size > 0) {
+                flb_warn("[out_td] HTTP status %i\n%s",
+                         c->resp.status, c->resp.payload);
+            }
+            else {
+                flb_warn("[out_td] HTTP status %i", c->resp.status);
+            }
+            goto retry;
+        }
+        else {
+            flb_info("[out_td] HTTP status 200 OK");
+        }
     }
     else {
         flb_error("[out_td] http_do=%i", ret);
+        goto retry;
     }
-
-    flb_free(pack);
-    flb_free(body);
 
     /* release */
     flb_upstream_conn_release(u_conn);
     flb_http_client_destroy(c);
 
     FLB_OUTPUT_RETURN(FLB_OK);
+
+ retry:
+    flb_upstream_conn_release(u_conn);
+    flb_http_client_destroy(c);
+
+    FLB_OUTPUT_RETURN(FLB_RETRY);
 }
 
 int cb_td_exit(void *data, struct flb_config *config)
