@@ -24,6 +24,7 @@
 
 struct flb_out_td_config *td_config_init(struct flb_output_instance *o_ins)
 {
+    char *tmp;
     char *api;
     char *db_name;
     char *db_table;
@@ -49,13 +50,32 @@ struct flb_out_td_config *td_config_init(struct flb_output_instance *o_ins)
         return NULL;
     }
 
-    config = flb_malloc(sizeof(struct flb_out_td_config));
+    config = flb_calloc(1, sizeof(struct flb_out_td_config));
     config->fd       = -1;
     config->api      = api;
     config->db_name  = db_name;
     config->db_table = db_table;
 
-    flb_debug("TreasureData / database='%s' table='%s'",
+    /* Lookup desired region */
+    tmp = flb_output_get_property("region", o_ins);
+    if (tmp) {
+        if (strcasecmp(tmp, "us") == 0) {
+            config->region = FLB_TD_REGION_US;
+        }
+        else if (strcasecmp(tmp, "jp") == 0) {
+            config->region = FLB_TD_REGION_JP;
+        }
+        else {
+            flb_error("[out_td] invalid region in configuration");
+            flb_free(config);
+            return NULL;
+        }
+    }
+    else {
+        config->region = FLB_TD_REGION_US;
+    }
+
+    flb_info("[out_td] Treasure Data / database='%s' table='%s'",
               config->db_name, config->db_table);
 
     return config;

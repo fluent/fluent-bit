@@ -23,9 +23,12 @@
 #include <fluent-bit.h>
 #include <fluent-bit/flb_io.h>
 
+#define FLB_TD_REGION_US    0
+#define FLB_TD_REGION_JP    1
+
 struct flb_out_td_config {
     int fd;           /* Socket to destination/backend */
-
+    int region;       /* TD Region end-point */
     char *api;
     char *db_name;
     char *db_table;
