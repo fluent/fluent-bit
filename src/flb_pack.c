@@ -211,20 +211,6 @@ int flb_pack_json(char *js, size_t len, char **buffer, size_t *size)
     return ret;
 }
 
-int flb_pack_json_valid(char *json, size_t len)
-{
-    int ret;
-    jsmn_parser parser;
-
-    jsmn_init(&parser);
-    ret = jsmn_parse(&parser, json, len, NULL, 0);
-    if (ret <= 0) {
-        return -1;
-    }
-
-    return 0;
-}
-
 /* Initialize a JSON packer state */
 int flb_pack_state_init(struct flb_pack_state *s)
 {
