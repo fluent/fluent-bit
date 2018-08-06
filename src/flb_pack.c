@@ -42,12 +42,11 @@ static int json_tokenise(char *js, size_t len,
 
     ret = jsmn_parse(&state->parser, js, len,
                      state->tokens, state->tokens_size);
-
     while (ret == JSMN_ERROR_NOMEM) {
         n = state->tokens_size += 256;
         tmp = flb_realloc(state->tokens, sizeof(jsmntok_t) * n);
         if (!tmp) {
-            perror("realloc");
+            flb_errno();
             return -1;
         }
         state->tokens = tmp;
@@ -181,6 +180,7 @@ int flb_pack_json(char *js, size_t len, char **buffer, size_t *size)
 {
     int ret = -1;
     int out;
+    int last;
     char *buf = NULL;
     struct flb_pack_state state;
 
@@ -194,7 +194,11 @@ int flb_pack_json(char *js, size_t len, char **buffer, size_t *size)
         goto flb_pack_json_end;
     }
 
-    int last;
+    if (state.tokens_count == 0) {
+        ret = -1;
+        goto flb_pack_json_end;
+    }
+
     buf = tokens_to_msgpack(js, state.tokens, state.tokens_count, &out, &last);
     if (!buf) {
         ret = -1;
@@ -293,6 +297,11 @@ int flb_pack_json_state(char *js, size_t len,
     }
     else if (ret != 0) {
         return ret;
+    }
+
+    if (state->tokens_count == 0) {
+        state->last_byte = last;
+        return FLB_ERR_JSON_INVAL;
     }
 
     buf = tokens_to_msgpack(js, state->tokens, state->tokens_count, &out, &last);
