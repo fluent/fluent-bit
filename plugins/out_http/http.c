@@ -179,7 +179,7 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
     (void)data;
 
     struct mk_list *head;
-    struct mk_list *split;
+    struct mk_list *split = NULL;
     struct flb_split_entry *sentry;
     struct flb_config_prop *prop;
     struct out_http_header *header;
@@ -373,21 +373,16 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
     ctx->port = ins->host.port;
 
     /* Arbitrary HTTP headers to add */
-
     ctx->headers_cnt = 0;
     mk_list_init(&ctx->headers);
 
     mk_list_foreach(head, &ins->properties) {
         prop = mk_list_entry(head, struct flb_config_prop, _head);
         split = flb_utils_split(prop->val, ' ', 2);
-
         if (strcasecmp(prop->key, "header") == 0) {
-
             header = flb_malloc(sizeof(struct out_http_header));
             if (!header) {
-                flb_error
-                    ("[out_http] Unable to allocate memory for header");
-                flb_free(header);
+                flb_errno();
                 return -1;
             }
 
@@ -402,9 +397,8 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
             mk_list_add(&header->_head, &ctx->headers);
             ctx->headers_cnt++;
         }
+        flb_utils_split_free(split);
     }
-
-    flb_utils_split_free(split);
 
     /* Set the plugin context */
     flb_output_set_context(ins, ctx);
