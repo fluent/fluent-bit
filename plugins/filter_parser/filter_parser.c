@@ -185,6 +185,7 @@ static int cb_parser_filter(void *data, size_t bytes,
     msgpack_object_kv *kv;
     int i;
     int ret = FLB_FILTER_NOTOUCH;
+    int parse_ret = -1;
     int map_num;
     char *key_str;
     int key_len;
@@ -254,10 +255,10 @@ static int cb_parser_filter(void *data, size_t bytes,
                     mk_list_foreach(head, &ctx->parsers) {
                         fp = mk_list_entry(head, struct filter_parser, _head);
 
-                        ret = flb_parser_do(fp->parser, val_str, val_len,
+                        parse_ret = flb_parser_do(fp->parser, val_str, val_len,
                                             (void **) &out_buf, &out_size,
                                             &parsed_time);
-                        if (ret >= 0) {
+                        if (parse_ret >= 0) {
                             if (flb_time_to_double(&parsed_time) != 0) {
                                 flb_time_copy(&tm, &parsed_time);
                             }
