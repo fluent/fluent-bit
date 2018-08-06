@@ -43,15 +43,8 @@ static int decode_json(struct flb_parser_dec *dec,
     /* JSON Decoder: content may be escaped */
     len = flb_unescape_string(in_buf, in_size, &dec->buffer);
 
-    /* Is it JSON valid ? (pre validation to avoid mem allocation on tokens */
-    ret = flb_pack_json_valid(dec->buffer, len);
-    if (ret == -1) {
-        /* Invalid or no JSON Message */
-        return -1;
-    }
-
-    /* It must be a map */
-    if (dec->buffer[0] != '{') {
+    /* It must be a map or array */
+    if (dec->buffer[0] != '{' && dec->buffer[0] != '[') {
         return -1;
     }
 
