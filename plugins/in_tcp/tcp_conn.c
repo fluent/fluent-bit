@@ -92,7 +92,7 @@ int tcp_conn_event(void *data)
             size = conn->buf_size + ctx->chunk_size;
             tmp = flb_realloc(conn->buf_data, size);
             if (!tmp) {
-                perror("realloc");
+                flb_errno();
                 return -1;
             }
             flb_trace("[in_tcp] fd=%i buffer realloc %i -> %i",
@@ -136,11 +136,11 @@ int tcp_conn_event(void *data)
             return 0;
         }
         else if (ret == FLB_ERR_JSON_INVAL) {
-            flb_debug("[in_tcp] invalid JSON message, skipping");
+            flb_warn("[in_tcp] invalid JSON message, skipping");
             flb_pack_state_reset(&conn->pack_state);
             flb_pack_state_init(&conn->pack_state);
+            conn->buf_len = 0;
             conn->pack_state.multiple = FLB_TRUE;
-
             return -1;
         }
 
@@ -179,6 +179,7 @@ struct tcp_conn *tcp_conn_add(int fd, struct flb_in_tcp_config *ctx)
 
     conn = flb_malloc(sizeof(struct tcp_conn));
     if (!conn) {
+        flb_errno();
         return NULL;
     }
 
@@ -198,7 +199,7 @@ struct tcp_conn *tcp_conn_add(int fd, struct flb_in_tcp_config *ctx)
 
     conn->buf_data = flb_malloc(ctx->chunk_size);
     if (!conn->buf_data) {
-        perror("malloc");
+        flb_errno();
         close(fd);
         flb_error("[in_tcp] could not allocate new connection");
         flb_free(conn);
