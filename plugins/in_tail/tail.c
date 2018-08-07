@@ -248,6 +248,13 @@ static int in_tail_init(struct flb_input_instance *in,
     }
     ctx->coll_fd_pending = ret;
 
+
+    if (ctx->multiline == FLB_TRUE && ctx->parser) {
+        ctx->parser = NULL;
+        flb_warn("[in_tail] on multiline mode 'Parser' is not allowed "
+                 "(parser disabled)");
+    }
+
     /* Register callback to process multiline queued buffer */
     if (ctx->multiline == FLB_TRUE) {
         ret = flb_input_set_collector_time(in, flb_tail_mult_pending_flush,

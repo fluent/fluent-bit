@@ -97,13 +97,6 @@ int flb_tail_mult_create(struct flb_tail_config *ctx,
         }
     }
 
-    /* Double check and warn if the user is using something not expected */
-    tmp = flb_input_get_property("parser", i_ins);
-    if (tmp) {
-        flb_warn("[in_tail] the 'Parser %s' config is omitted in Multiline mode",
-                 tmp);
-    }
-
     return 0;
 }
 
