@@ -247,6 +247,14 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
         ctx->generate_id = FLB_FALSE;
     }
 
+    /* Replace dots */
+    tmp = flb_output_get_property("replace_dots", ins);
+    if (tmp) {
+        ctx->replace_dots = flb_utils_bool(tmp);
+    }
+    else {
+        ctx->replace_dots = FLB_FALSE;
+    }
     return ctx;
 }
 

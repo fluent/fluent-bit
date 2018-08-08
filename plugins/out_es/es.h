@@ -43,6 +43,12 @@ struct flb_elasticsearch {
     size_t buffer_size;
 
     /*
+     * If enabled, replace field name dots with underscore, required for
+     * Elasticsearch 2.0-2.3.
+     */
+    int replace_dots;
+
+    /*
      * Logstash compatibility options
      * ==============================
      */

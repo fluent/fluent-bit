@@ -35,7 +35,9 @@
 
 struct flb_output_plugin out_es_plugin;
 
-static inline void es_pack_map_content(msgpack_packer *tmp_pck, msgpack_object map)
+static inline void es_pack_map_content(msgpack_packer *tmp_pck,
+                                       msgpack_object map,
+                                       struct flb_elasticsearch *ctx)
 {
     int i;
     char *ptr_key = NULL;
@@ -79,11 +81,13 @@ static inline void es_pack_map_content(msgpack_packer *tmp_pck, msgpack_object m
          *
          *   https://goo.gl/R5NMTr
          */
-        char *p   = ptr_key;
-        char *end = ptr_key + key_size;
-        while (p != end) {
-            if (*p == '.') *p = '_';
-            p++;
+        if (ctx->replace_dots == FLB_TRUE) {
+            char *p   = ptr_key;
+            char *end = ptr_key + key_size;
+            while (p != end) {
+                if (*p == '.') *p = '_';
+                p++;
+            }
         }
 
         /* Append the key */
@@ -102,7 +106,7 @@ static inline void es_pack_map_content(msgpack_packer *tmp_pck, msgpack_object m
          */
         if (v->type == MSGPACK_OBJECT_MAP) {
             msgpack_pack_map(tmp_pck, v->via.map.size);
-            es_pack_map_content(tmp_pck, *v);
+            es_pack_map_content(tmp_pck, *v, ctx);
         }
         else {
             msgpack_pack_object(tmp_pck, *v);
@@ -278,7 +282,7 @@ static char *elasticsearch_format(void *data, size_t bytes,
          * Elasticsearch have a restriction that key names cannot contain
          * a dot; if some dot is found, it's replaced with an underscore.
          */
-        es_pack_map_content(&tmp_pck, map);
+        es_pack_map_content(&tmp_pck, map, ctx);
 
         if (ctx->generate_id == FLB_TRUE) {
             MurmurHash3_x64_128(tmp_sbuf.data, tmp_sbuf.size, 42, hash);
