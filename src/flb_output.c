@@ -441,6 +441,19 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
     return 0;
 }
 
+/* Configure a default hostname and TCP port if they are not set */
+void flb_output_net_default(char *host, int port,
+                            struct flb_output_instance *o_ins)
+{
+    /* Set default network configuration */
+    if (!o_ins->host.name) {
+        o_ins->host.name = flb_strdup(host);
+    }
+    if (o_ins->host.port == 0) {
+        o_ins->host.port = port;
+    }
+}
+
 char *flb_output_get_property(char *key, struct flb_output_instance *o_ins)
 {
     return flb_config_prop_get(key, &o_ins->properties);
