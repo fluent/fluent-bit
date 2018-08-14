@@ -30,6 +30,8 @@ set(src
   flb_scheduler.c
   flb_io.c
   flb_upstream.c
+  flb_upstream_ha.c
+  flb_upstream_node.c
   flb_router.c
   flb_oauth2.c
   flb_http_client.c
