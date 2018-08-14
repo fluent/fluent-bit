@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_utils.h>
 #include <msgpack.h>
 
@@ -348,6 +349,9 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
         else if (strcasecmp(tmp, "json_lines") == 0) {
             ctx->out_format = FLB_HTTP_OUT_JSON_LINES;
         }
+        else if (strcasecmp(tmp, "gelf") == 0) {
+            ctx->out_format = FLB_HTTP_OUT_GELF;
+        }
         else {
             flb_warn("[out_http] unrecognized 'format' option. Using 'msgpack'");
         }
@@ -366,6 +370,36 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
     tmp = flb_output_get_property("json_date_key", ins);
     ctx->json_date_key = flb_strdup(tmp ? tmp : "date");
     ctx->json_date_key_len = strlen(ctx->json_date_key);
+
+    /* Config Gelf_Timestamp_Key */
+    tmp = flb_output_get_property("gelf_timestamp_key", ins);
+    if (tmp) {
+        ctx->gelf_fields.timestamp_key = flb_sds_create(tmp);
+    }
+
+    /* Config Gelf_Host_Key */
+    tmp = flb_output_get_property("gelf_host_key", ins);
+    if (tmp) {
+        ctx->gelf_fields.host_key = flb_sds_create(tmp);
+    }
+
+    /* Config Gelf_Short_Message_Key */
+    tmp = flb_output_get_property("gelf_short_message_key", ins);
+    if (tmp) {
+        ctx->gelf_fields.short_message_key = flb_sds_create(tmp);
+    }
+
+    /* Config Gelf_Full_Message_Key */
+    tmp = flb_output_get_property("gelf_full_message_key", ins);
+    if (tmp) {
+        ctx->gelf_fields.full_message_key = flb_sds_create(tmp);
+    }
+
+    /* Config Gelf_Level_Key */
+    tmp = flb_output_get_property("gelf_level_key", ins);
+    if (tmp) {
+        ctx->gelf_fields.level_key = flb_sds_create(tmp);
+    }
 
     ctx->u = upstream;
     ctx->uri = uri;
@@ -405,47 +439,25 @@ int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
     return 0;
 }
 
-void cb_http_flush(void *data, size_t bytes,
-                        char *tag, int tag_len,
-                        struct flb_input_instance *i_ins,
-                        void *out_context,
-                        struct flb_config *config)
+static int http_post (struct flb_out_http_config *ctx, void *body, size_t body_len, char *tag, int tag_len)
 {
-    int ret;
     int out_ret = FLB_OK;
     size_t b_sent;
-    struct flb_out_http_config *ctx = out_context;
     struct flb_upstream *u;
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
-    void *body = NULL;
-    uint64_t body_len;
-    (void)i_ins;
-
     struct mk_list *tmp;
     struct mk_list *head;
     struct out_http_header *header;
-
-    if ((ctx->out_format == FLB_HTTP_OUT_JSON) ||
-        (ctx->out_format == FLB_HTTP_OUT_JSON_STREAM) ||
-        (ctx->out_format == FLB_HTTP_OUT_JSON_LINES)) {
-        body = msgpack_to_json(ctx, data, bytes, &body_len);
-    }
-    else {
-        body = data;
-        body_len = bytes;
-    }
+    int ret;
 
     /* Get upstream context and connection */
     u = ctx->u;
     u_conn = flb_upstream_conn_get(u);
     if (!u_conn) {
-        if (body != data) {
-            flb_free(body);
-        }
         flb_error("[out_http] no upstream connections available to %s:%i",
                   u->tcp_host, u->tcp_port);
-        FLB_OUTPUT_RETURN(FLB_RETRY);
+        return FLB_RETRY;
     }
 
     /* Create HTTP client context */
@@ -457,7 +469,8 @@ void cb_http_flush(void *data, size_t bytes,
     /* Append headers */
     if ((ctx->out_format == FLB_HTTP_OUT_JSON) ||
         (ctx->out_format == FLB_HTTP_OUT_JSON_STREAM) ||
-        (ctx->out_format == FLB_HTTP_OUT_JSON_LINES)) {
+        (ctx->out_format == FLB_HTTP_OUT_JSON_LINES) ||
+        (ctx->out_format == FLB_HTTP_OUT_GELF)) {
         flb_http_add_header(c,
                             FLB_HTTP_CONTENT_TYPE,
                             sizeof(FLB_HTTP_CONTENT_TYPE) - 1,
@@ -534,13 +547,98 @@ void cb_http_flush(void *data, size_t bytes,
     /* Release the connection */
     flb_upstream_conn_release(u_conn);
 
+    return out_ret;
+}
+
+static int http_gelf(struct flb_out_http_config *ctx, char *data, uint64_t bytes, char *tag, int tag_len)
+{
+    flb_sds_t s;
+    flb_sds_t tmp;
+    msgpack_unpacked result;
+    size_t off = 0;
+    size_t prev_off = 0;
+    size_t size = 0;
+    msgpack_object root;
+    msgpack_object map;
+    msgpack_object *obj;
+    struct flb_time tm;
+    int ret;
+
+    msgpack_unpacked_init(&result);
+
+    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+        size = off - prev_off;
+        prev_off = off;
+        if (result.data.type != MSGPACK_OBJECT_ARRAY) {
+            continue;
+        }
+
+        root = result.data;
+        if (root.via.array.size != 2) {
+            continue;
+        }
+
+        flb_time_pop_from_msgpack(&tm, &result, &obj);
+        map = root.via.array.ptr[1];
+
+        size = (size * 1.4);
+        s = flb_sds_create_size(size);
+        if (s == NULL) {
+            msgpack_unpacked_destroy(&result);
+            return FLB_RETRY;
+        }
+
+        tmp = flb_msgpack_to_gelf(&s, &map, &tm, &(ctx->gelf_fields));
+        if (tmp != NULL) {
+            s = tmp;
+            ret = http_post(ctx, s, flb_sds_len(s), tag, tag_len);
+            if (ret != FLB_OK) {
+                msgpack_unpacked_destroy(&result);
+                flb_sds_destroy(s);
+                return ret;
+            }
+        }
+        else {
+            flb_error("[out_http] error encoding to GELF");
+        }
+
+        flb_sds_destroy(s);
+    }
+
+    msgpack_unpacked_destroy(&result);
+
+    return FLB_OK;
+}
+
+void cb_http_flush(void *data, size_t bytes,
+                        char *tag, int tag_len,
+                        struct flb_input_instance *i_ins,
+                        void *out_context,
+                        struct flb_config *config)
+{
+    int ret = FLB_ERROR;
+    struct flb_out_http_config *ctx = out_context;
+    void *body = NULL;
+    uint64_t body_len;
+    (void)i_ins;
+
     if ((ctx->out_format == FLB_HTTP_OUT_JSON) ||
         (ctx->out_format == FLB_HTTP_OUT_JSON_STREAM) ||
         (ctx->out_format == FLB_HTTP_OUT_JSON_LINES)) {
-        flb_free(body);
+        body = msgpack_to_json(ctx, data, bytes, &body_len);
+        if (body != NULL) {
+            ret = http_post(ctx, body, body_len, tag, tag_len);
+            flb_free(body);
+        }
+    }
+    else if (ctx->out_format == FLB_HTTP_OUT_GELF) {
+        ret = http_gelf(ctx, data, bytes, tag, tag_len);
+    }
+    else {
+        ret = http_post(ctx, data, bytes, tag, tag_len);
     }
 
-    FLB_OUTPUT_RETURN(out_ret);
+    FLB_OUTPUT_RETURN(ret);
 }
 
 int cb_http_exit(void *data, struct flb_config *config)
@@ -554,6 +652,12 @@ int cb_http_exit(void *data, struct flb_config *config)
     if (ctx->u) {
         flb_upstream_destroy(ctx->u);
     }
+
+    flb_sds_destroy(ctx->gelf_fields.timestamp_key);
+    flb_sds_destroy(ctx->gelf_fields.host_key);
+    flb_sds_destroy(ctx->gelf_fields.short_message_key);
+    flb_sds_destroy(ctx->gelf_fields.full_message_key);
+    flb_sds_destroy(ctx->gelf_fields.level_key);
 
     flb_free(ctx->http_user);
     flb_free(ctx->http_passwd);
