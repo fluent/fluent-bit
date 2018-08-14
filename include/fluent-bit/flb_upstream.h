@@ -20,7 +20,6 @@
 #ifndef FLB_UPSTREAM_H
 #define FLB_UPSTREAM_H
 
-
 #include <monkey/mk_core.h>
 
 #include <fluent-bit/flb_info.h>
@@ -60,6 +59,14 @@ struct flb_upstream {
     int max_connections;
 
     /*
+     * If an upstream context has been created in HA mode, this flag is
+     * set to True and the field 'ha_ctx' will reference a HA upstream
+     * context.
+     */
+    int ha_mode;
+    void *ha_ctx;
+
+    /*
      * This field is a linked-list-head for upstream connections that
      * are available for usage. When a connection is taken, it's moved to the
      * 'busy_queue' list.
@@ -75,10 +82,6 @@ struct flb_upstream {
 #ifdef FLB_HAVE_TLS
     /* context with mbedTLS data to handle certificates and keys */
     struct flb_tls *tls;
-#endif
-
-#ifdef FLB_HAVE_FLUSH_PTHREADS
-    pthread_mutex_t mutex_queue;
 #endif
 };
 
