@@ -43,7 +43,6 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
     char *tmp;
     char *p;
     struct flb_kube *ctx;
-    struct flb_parser *parser;
 
     ctx = flb_calloc(1, sizeof(struct flb_kube));
     if (!ctx) {
