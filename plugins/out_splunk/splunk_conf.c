@@ -17,6 +17,9 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_utils.h>
+
 #include "splunk.h"
 #include "splunk_conf.h"
 
