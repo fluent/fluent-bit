@@ -96,7 +96,7 @@ struct flb_upstream *flb_upstream_create_url(struct flb_config *config,
 
     if (tmp_port <= 0) {
         flb_error("[upstream] unknown TCP port in URL: %s", url);
-        return NULL;
+        goto out;
     }
 
     u = flb_upstream_create(config, host, tmp_port, flags, tls);
