@@ -223,6 +223,7 @@ static int setup(struct filter_modify_ctx *ctx,
                         ("[filter_modify] Unable to create regex for condition %s %s",
                          condition->raw_k, condition->raw_v);
                     condition_free(condition);
+                    flb_utils_split_free(split);
                     return -1;
                 }
                 else {
@@ -240,6 +241,7 @@ static int setup(struct filter_modify_ctx *ctx,
                               "for condition %s %s",
                               condition->raw_k, condition->raw_v);
                     condition_free(condition);
+                    flb_utils_split_free(split);
                     return -1;
                 }
                 else {
