@@ -518,6 +518,7 @@ static int forward_config_simple(struct flb_forward *ctx,
                                    ins->host.port,
                                    io_flags, (void *) &ins->tls);
     if (!upstream) {
+        flb_free(fc);
         flb_free(ctx);
         return -1;
     }
