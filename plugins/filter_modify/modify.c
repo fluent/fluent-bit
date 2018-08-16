@@ -387,8 +387,6 @@ static inline bool helper_msgpack_object_matches_regex(msgpack_object * obj,
 
     if (obj->type == MSGPACK_OBJECT_BIN) {
         return false;
-        key = (char *) obj->via.bin.ptr;
-        len = obj->via.bin.size;
     }
     else if (obj->type == MSGPACK_OBJECT_STR) {
         key = (char *) obj->via.str.ptr;
