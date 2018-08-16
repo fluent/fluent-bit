@@ -55,6 +55,10 @@ flb_sds_t flb_sds_create_len(char *str, int len)
     struct flb_sds *head;
 
     s = sds_alloc(len);
+    if (!s) {
+        return NULL;
+    }
+
     if (str) {
         memcpy(s, str, len);
         s[len] = '\0';
