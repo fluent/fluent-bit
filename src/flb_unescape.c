@@ -124,11 +124,12 @@ static int u8_read_escape_sequence(char *str, uint32_t *dest)
 static inline int is_json_escape(char *c)
 {
   return (
-        (*c == '\"') || // double-quote
-        (*c == '\'') || // single-quote
-        (*c == '\\') || // solidus
-        (*c == '/')     // reverse-solidus
-      );
+          (*c == '\"') || /* double-quote */
+          (*c == '\'') || /* single-quote */
+          (*c == '\\') || /* solidus      */
+          (*c == 'n')  || /* new-line     */
+          (*c == '/')     /* reverse-solidus */
+          );
 }
 
 int flb_unescape_string_utf8(char *in_buf, int sz, char *out_buf)
