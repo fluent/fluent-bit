@@ -14,7 +14,18 @@ COPY . /tmp/src/
 
 RUN rm -rf /tmp/src/build/*
 
-RUN apt-get update && apt-get dist-upgrade -y && apt-get install -y build-essential cmake make wget unzip libsystemd-dev libssl1.0-dev libasl-dev
+RUN apt-get update && \
+    apt-get dist-upgrade -y && \
+    apt-get install -y \
+      build-essential \
+      cmake \
+      make \
+      wget \
+      unzip \
+      libsystemd-dev \
+      libssl1.0-dev \
+      libasl-dev \
+      libsasl2-dev
 
 WORKDIR /tmp/src/build/
 RUN cmake -DFLB_DEBUG=On \
@@ -44,7 +55,7 @@ LABEL Description="Fluent Bit docker image" Vendor="Fluent Organization" Version
 
 RUN apt-get update \
     && apt-get dist-upgrade -y \
-    && apt-get install --no-install-recommends ca-certificates libssl1.0.2 -y \
+    && apt-get install --no-install-recommends ca-certificates libssl1.0.2 libsasl2-2 -y \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get autoclean
 COPY --from=builder /fluent-bit /fluent-bit
