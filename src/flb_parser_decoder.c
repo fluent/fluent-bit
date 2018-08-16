@@ -131,6 +131,7 @@ static inline bool is_json_escape(char *c)
         (*c == '\"') || // double-quote
         (*c == '\'') || // single-quote
         (*c == '\\') || // solidus
+        (*c == 'n')  || // new-line
         (*c == '/')     // reverse-solidus
       );
 }
