@@ -3,8 +3,8 @@ FROM gcr.io/google-containers/debian-base-amd64:0.3 as builder
 # Fluent Bit version
 ENV FLB_MAJOR 0
 ENV FLB_MINOR 13
-ENV FLB_PATCH 7
-ENV FLB_VERSION 0.13.7
+ENV FLB_PATCH 8
+ENV FLB_VERSION 0.13.8
 
 ENV DEBIAN_FRONTEND noninteractive
 
