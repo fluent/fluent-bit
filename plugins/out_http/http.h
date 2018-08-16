@@ -33,7 +33,7 @@
 #define FLB_HTTP_MIME_MSGPACK   "application/msgpack"
 #define FLB_HTTP_MIME_JSON      "application/json"
 
-struct flb_out_http_config {
+struct flb_out_http {
     /* HTTP Auth */
     char *http_user;
     char *http_passwd;
