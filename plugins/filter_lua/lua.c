@@ -329,13 +329,13 @@ static void lua_tomsgpack(lua_State *l, msgpack_packer *pck, int index)
 static int is_valid_func(lua_State *lua, flb_sds_t func)
 {
     int ret = FLB_FALSE;
-    
+
     lua_getglobal(lua, func);
     if (lua_isfunction(lua, -1)) {
         ret = FLB_TRUE;
     }
     lua_pop(lua, -1); /* discard return value of isfunction */
-    
+
     return ret;
 }
 
@@ -358,6 +358,7 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
     /* Create LuaJIT state/vm */
     lj = flb_luajit_create(config);
     if (!lj) {
+        lua_config_destroy(ctx);
         return -1;
     }
     ctx->lua = lj;
