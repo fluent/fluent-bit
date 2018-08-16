@@ -145,12 +145,13 @@ static int read_credentials_file(char *creds, struct flb_stackdriver *ctx)
         }
         else if (key_cmp(key, key_len, "private_key") == 0) {
             tmp = flb_sds_create_len(val, val_len);
-
-            /* Unescape private key */
-            ctx->private_key = flb_sds_create_size(flb_sds_alloc(tmp));
-            flb_unescape_string(tmp, flb_sds_len(tmp),
-                                &ctx->private_key);
-            flb_sds_destroy(tmp);
+            if (tmp) {
+                /* Unescape private key */
+                ctx->private_key = flb_sds_create_size(flb_sds_alloc(tmp));
+                flb_unescape_string(tmp, flb_sds_len(tmp),
+                                    &ctx->private_key);
+                flb_sds_destroy(tmp);
+            }
         }
         else if (key_cmp(key, key_len, "client_email") == 0) {
             ctx->client_email = flb_sds_create_len(val, val_len);
