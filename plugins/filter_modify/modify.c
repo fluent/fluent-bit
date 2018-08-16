@@ -89,7 +89,7 @@ static int setup(struct filter_modify_ctx *ctx,
     struct mk_list *split;
     struct flb_split_entry *sentry;
     struct flb_config_prop *prop;
-    struct modify_rule *rule;
+    struct modify_rule *rule = NULL;
     struct modify_condition *condition;
 
     int list_size;
@@ -115,7 +115,6 @@ static int setup(struct filter_modify_ctx *ctx,
         if (list_size == 0 || list_size > 3) {
             flb_error("[filter_modify] Invalid config for %s", prop->key);
             teardown(ctx);
-            flb_free(rule);
             flb_utils_split_free(split);
             return -1;
         }
@@ -259,7 +258,6 @@ static int setup(struct filter_modify_ctx *ctx,
             //
 
             rule = flb_malloc(sizeof(struct modify_rule));
-
             if (!rule) {
                 flb_error
                     ("[filter_modify] Unable to allocate memory for rule");
