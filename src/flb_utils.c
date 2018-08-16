@@ -745,9 +745,6 @@ int flb_utils_url_split(char *in_url, char **out_protocol,
     if (protocol) {
         flb_free(protocol);
     }
-    if (host) {
-        flb_free(host);
-    }
     if (port) {
         flb_free(port);
     }
