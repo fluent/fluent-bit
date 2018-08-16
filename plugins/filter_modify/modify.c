@@ -31,6 +31,21 @@
 
 #include "modify.h"
 
+static void condition_free(struct modify_condition *condition)
+{
+    flb_free(condition->a);
+    flb_free(condition->b);
+    flb_free(condition->raw_k);
+    flb_free(condition->raw_v);
+
+    if (condition->a_is_regex) {
+        flb_regex_destroy(condition->a_regex);
+    }
+    if (condition->b_is_regex) {
+        flb_regex_destroy(condition->b_regex);
+    }
+}
+
 static void teardown(struct filter_modify_ctx *ctx)
 {
     struct mk_list *tmp;
@@ -41,18 +56,8 @@ static void teardown(struct filter_modify_ctx *ctx)
 
     mk_list_foreach_safe(head, tmp, &ctx->conditions) {
         condition = mk_list_entry(head, struct modify_condition, _head);
-        flb_free(condition->a);
-        flb_free(condition->b);
-        flb_free(condition->raw_k);
-        flb_free(condition->raw_v);
-        if (condition->a_is_regex) {
-            flb_regex_destroy(condition->a_regex);
-        }
-        if (condition->b_is_regex) {
-            flb_regex_destroy(condition->b_regex);
-        }
         mk_list_del(&condition->_head);
-        flb_free(condition);
+        condition_free(condition);
     }
 
     mk_list_foreach_safe(head, tmp, &ctx->rules) {
@@ -124,13 +129,11 @@ static int setup(struct filter_modify_ctx *ctx,
             // Build a condition
             //
 
-            condition = flb_malloc(sizeof(struct modify_condition));
-
+            condition = flb_calloc(1, sizeof(struct modify_condition));
             if (!condition) {
-                flb_error
-                    ("[filter_modify] Unable to allocate memory for condition");
+                flb_error("[filter_modify] Unable to allocate memory for "
+                          "condition");
                 teardown(ctx);
-                flb_free(condition);
                 flb_utils_split_free(split);
                 return -1;
             }
@@ -192,7 +195,7 @@ static int setup(struct filter_modify_ctx *ctx,
                 flb_error("[filter_modify] Invalid config for %s : %s",
                           prop->key, prop->val);
                 teardown(ctx);
-                flb_free(condition);
+                condition_free(condition);
                 flb_utils_split_free(split);
                 return -1;
             }
@@ -219,6 +222,7 @@ static int setup(struct filter_modify_ctx *ctx,
                     flb_error
                         ("[filter_modify] Unable to create regex for condition %s %s",
                          condition->raw_k, condition->raw_v);
+                    condition_free(condition);
                     return -1;
                 }
                 else {
@@ -232,9 +236,10 @@ static int setup(struct filter_modify_ctx *ctx,
 
             if (condition->b_is_regex) {
                 if (condition->b_len < 1) {
-                    flb_error
-                        ("[filter_modify] Unable to create regex for condition %s %s",
-                         condition->raw_k, condition->raw_v);
+                    flb_error("[filter_modify] Unable to create regex "
+                              "for condition %s %s",
+                              condition->raw_k, condition->raw_v);
+                    condition_free(condition);
                     return -1;
                 }
                 else {
