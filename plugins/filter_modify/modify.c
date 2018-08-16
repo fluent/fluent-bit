@@ -269,7 +269,6 @@ static int setup(struct filter_modify_ctx *ctx,
                 flb_error
                     ("[filter_modify] Unable to allocate memory for rule");
                 teardown(ctx);
-                flb_free(condition);
                 flb_utils_split_free(split);
                 return -1;
             }
