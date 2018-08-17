@@ -100,14 +100,20 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
         ctx->merge_log = flb_utils_bool(tmp);
     }
 
-    /*
-     * FIXME: option disabled due to bug when composing
-     * new outgoing map (also missing unit tests).
-     */
+    /* Merge processed log under a new key */
     tmp = flb_filter_get_property("merge_log_key", i);
     if (tmp) {
         ctx->merge_log_key = flb_strdup(tmp);
         ctx->merge_log_key_len = strlen(tmp);
+    }
+
+    /* On merge, trim field values (remove possible \n or \r) */
+    tmp = flb_filter_get_property("merge_log_trim", i);
+    if (tmp) {
+        ctx->merge_log_trim = flb_utils_bool(tmp);
+    }
+    else {
+        ctx->merge_log_trim = FLB_TRUE;
     }
 
     /* Get Kubernetes API server */

@@ -82,6 +82,12 @@ struct flb_kube {
     size_t unesc_buf_len;
     char *unesc_buf;
 
+    /*
+     * Merge Log Trim: if merge_log is enabled, this flag allows to trim
+     * the value and remove any trailing \n or \r.
+     */
+    int merge_log_trim;
+
     /* Log key, old merge_json_key (default 'log') */
     int merge_log_key_len;
     char *merge_log_key;

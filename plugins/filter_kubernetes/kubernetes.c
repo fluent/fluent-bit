@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_parser.h>
+#include <fluent-bit/flb_unescape.h>
 
 #include "kube_conf.h"
 #include "kube_meta.h"
@@ -35,33 +36,28 @@
 #define MERGE_PARSED      1 /* merge parsed string (log_buf)             */
 #define MERGE_BINARY      2 /* merge direct binary object (v)            */
 
-static int unescape_string(char *buf, int buf_len, char **unesc_buf)
+static int value_trim_size(msgpack_object o)
 {
-    int i = 0;
-    int j = 0;
-    char *p;
-    char n;
+    int i;
+    int size = o.via.str.size;
 
-    p = *unesc_buf;
-    while (i < buf_len) {
-        if (buf[i] == '\\') {
-            if (i + 1 < buf_len) {
-                n = buf[i + 1];
-                if (n != 'a' && n != 'b' &&
-                    n != 't' && n != 'n' &&
-                    n != 'v' && n != 'f' &&
-                    n != 'r') {
-                    i++;
-                }
-            }
-            else {
-                i++;
-            }
+    for (i = size - 1; i > 0; i--) {
+        if (o.via.str.ptr[i] == '\n') {
+            size -= 1;
+            continue;
         }
-        p[j++] = buf[i++];
+
+        if (o.via.str.ptr[i - 1] == '\\' &&
+            (o.via.str.ptr[i] == 'n' || o.via.str.ptr[i] == 'r')) {
+            size -= 2;
+            i--;
+        }
+        else {
+            break;
+        }
     }
-    p[j] = '\0';
-    return j;
+
+    return size;
 }
 
 static int merge_log_handler(msgpack_object o,
@@ -70,7 +66,6 @@ static int merge_log_handler(msgpack_object o,
                              struct flb_time *log_time,
                              struct flb_kube *ctx)
 {
-    int i;
     int ret;
     int size;
     int new_size;
@@ -96,30 +91,10 @@ static int merge_log_handler(msgpack_object o,
         }
     }
 
-    /*
-     * Check where to cut the string if common ending bytes like \r or \n
-     * exists.
-     */
-    size = o.via.str.size;
-    for (i = size - 1; i > 0; i--) {
-        if (o.via.str.ptr[i] == '\n') {
-            size -= 1;
-            continue;
-        }
-
-        if (o.via.str.ptr[i - 1] == '\\' &&
-            (o.via.str.ptr[i] == 'n' || o.via.str.ptr[i] == 'r')) {
-            size -= 2;
-            i--;
-        }
-        else {
-            break;
-        }
-    }
-
     /* Unescape application string */
-    unesc_len = unescape_string((char *) o.via.str.ptr,
-                                size, &ctx->unesc_buf);
+    size = o.via.str.size;
+    unesc_len = flb_unescape_string((char *) o.via.str.ptr,
+                                    size, &ctx->unesc_buf);
     ctx->unesc_buf_len = unesc_len;
 
     ret = -1;
@@ -316,9 +291,22 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
             root = result.data;
             for (i = 0; i < log_buf_entries; i++) {
                 k = root.via.map.ptr[i].key;
-                v = root.via.map.ptr[i].val;
                 msgpack_pack_object(pck, k);
-                msgpack_pack_object(pck, v);
+
+                v = root.via.map.ptr[i].val;
+                /*
+                 * If this is the last string value, trim any remaining
+                 * break line or return carrier character.
+                 */
+                if (v.type == MSGPACK_OBJECT_STR &&
+                    ctx->merge_log_trim == FLB_TRUE) {
+                    int s = value_trim_size(v);
+                    msgpack_pack_str(pck, s);
+                    msgpack_pack_str_body(pck, v.via.str.ptr, s);
+                }
+                else {
+                    msgpack_pack_object(pck, v);
+                }
             }
             msgpack_unpacked_destroy(&result);
             flb_free(log_buf);

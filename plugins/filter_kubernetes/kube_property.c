@@ -71,7 +71,6 @@ static int prop_set_parser(struct flb_kube *ctx, struct flb_kube_meta *meta,
 
     /* Save the parser in the properties context */
     props->parser = flb_sds_create(tmp);
-
     flb_free(tmp);
     return 0;
 }
