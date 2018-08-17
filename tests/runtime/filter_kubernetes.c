@@ -23,12 +23,13 @@ struct kube_test {
  * Data files
  * ==========
  */
-#define T_APACHE_LOGS          DPATH "apache-logs"
-#define T_APACHE_LOGS_ANN      DPATH "apache-logs-annotated"
-#define T_APACHE_LOGS_ANN_INV  DPATH "apache-logs-annotated-invalid"
-#define T_JSON_LOGS            DPATH "json-logs"
-#define T_JSON_LOGS_INV        DPATH "json-logs-invalid"
-#define T_SYSTEMD_SIMPLE       DPATH "kairosdb-914055854-b63vq"
+#define T_APACHE_LOGS           DPATH "apache-logs"
+#define T_APACHE_LOGS_ANN       DPATH "apache-logs-annotated"
+#define T_APACHE_LOGS_ANN_INV   DPATH "apache-logs-annotated-invalid"
+#define T_APACHE_LOGS_ANN_MERGE DPATH "apache-logs-annotated-merge"
+#define T_JSON_LOGS             DPATH "json-logs"
+#define T_JSON_LOGS_INV         DPATH "json-logs-invalid"
+#define T_SYSTEMD_SIMPLE        DPATH "kairosdb-914055854-b63vq"
 
 static int file_to_buf(char *path, char **out_buf, size_t *out_size)
 {
@@ -197,13 +198,16 @@ static int cb_check_result(void *record, size_t size, void *data)
     return 0;
 }
 
-static struct kube_test *kube_test_create(char *target, int type)
+static struct kube_test *kube_test_create(char *target, int type, ...)
 {
     int ret;
     int in_ffd;
     int filter_ffd;
     int out_ffd;
+    char *key;
+    char *value;
     char path[PATH_MAX];
+    va_list va;
     struct kube_test *ctx;
     struct flb_lib_out_cb cb_data;
 
@@ -252,9 +256,20 @@ static struct kube_test *kube_test_create(char *target, int type)
     ret = flb_filter_set(ctx->flb, filter_ffd,
                          "Match", "kube.*",
                          "Kube_URL", KUBE_URL,
-                         "Merge_Log", "On",
                          "k8s-logging.parser", "On",
                          NULL);
+
+    /* Iterate number of arguments for filter_kubernetes additional options */
+    va_start(va, type);
+    while ((key = va_arg(va, char *))) {
+        value = va_arg(va, char *);
+        if (!value) {
+            /* Wrong parameter */
+            break;
+        }
+        flb_filter_set(ctx->flb, filter_ffd, key, value, NULL);
+    }
+    va_end(va);
 
     if (type == KUBE_TAIL) {
         ret = flb_filter_set(ctx->flb, filter_ffd,
@@ -301,7 +316,7 @@ void flb_test_apache_logs()
 {
     struct kube_test *ctx;
 
-    ctx = kube_test_create(T_APACHE_LOGS, KUBE_TAIL);
+    ctx = kube_test_create(T_APACHE_LOGS, KUBE_TAIL, NULL);
     if (!ctx) {
         exit(EXIT_FAILURE);
     }
@@ -312,7 +327,9 @@ void flb_test_apache_logs_annotated()
 {
     struct kube_test *ctx;
 
-    ctx = kube_test_create(T_APACHE_LOGS_ANN, KUBE_TAIL);
+    ctx = kube_test_create(T_APACHE_LOGS_ANN, KUBE_TAIL,
+                           "Merge_Log", "On",
+                           NULL);
     if (!ctx) {
         exit(EXIT_FAILURE);
     }
@@ -323,7 +340,21 @@ void flb_test_apache_logs_annotated_invalid()
 {
     struct kube_test *ctx;
 
-    ctx = kube_test_create(T_APACHE_LOGS_ANN_INV, KUBE_TAIL);
+    ctx = kube_test_create(T_APACHE_LOGS_ANN_INV, KUBE_TAIL,
+                           NULL);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+    kube_test_destroy(ctx);
+}
+
+void flb_test_apache_logs_annotated_merge()
+{
+    struct kube_test *ctx;
+
+    ctx = kube_test_create(T_APACHE_LOGS_ANN_MERGE, KUBE_TAIL,
+                           "Merge_Log", "On",
+                           "Merge_Log_Key", "merge", NULL);
     if (!ctx) {
         exit(EXIT_FAILURE);
     }
@@ -334,7 +365,9 @@ void flb_test_json_logs()
 {
     struct kube_test *ctx;
 
-    ctx = kube_test_create(T_JSON_LOGS, KUBE_TAIL);
+    ctx = kube_test_create(T_JSON_LOGS, KUBE_TAIL,
+                           "Merge_Log", "On",
+                           NULL);
     if (!ctx) {
         exit(EXIT_FAILURE);
     }
@@ -369,7 +402,9 @@ void flb_test_systemd_logs()
                     "KUBE_TEST=2018",
                     NULL);
 
-    ctx = kube_test_create(T_SYSTEMD_SIMPLE, KUBE_SYSTEMD);
+    ctx = kube_test_create(T_SYSTEMD_SIMPLE, KUBE_SYSTEMD,
+                           "Merge_Log", "On",
+                           NULL);
     if (!ctx) {
         exit(EXIT_FAILURE);
     }
@@ -382,6 +417,7 @@ TEST_LIST = {
     {"kube_apache_logs", flb_test_apache_logs},
     {"kube_apache_logs_annotated", flb_test_apache_logs_annotated},
     {"kube_apache_logs_annotated_invalid", flb_test_apache_logs_annotated_invalid},
+    {"kube_apache_logs_annotated_merge_log", flb_test_apache_logs_annotated_merge},
     {"kube_json_logs", flb_test_json_logs},
     {"kube_json_logs_invalid", flb_test_json_logs_invalid},
     {"kube_systemd_logs", flb_test_systemd_logs},
