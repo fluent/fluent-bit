@@ -268,7 +268,7 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
     }
 
     /* Start packaging the final map */
-    if (ctx->merge_json_key != NULL) {
+    if (ctx->merge_log_key != NULL) {
         /* Make room for one new key that will hold the original log entries */
         new_map_size++;
     }
@@ -303,10 +303,10 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
     /* Merge Log */
     if (log_index != -1) {
         if (merge_status == MERGE_PARSED) {
-            if (ctx->merge_json_key && log_buf_entries > 0) {
-                msgpack_pack_str(pck, ctx->merge_json_key_len);
-                msgpack_pack_str_body(pck, ctx->merge_json_key,
-                                      ctx->merge_json_key_len);
+            if (ctx->merge_log_key && log_buf_entries > 0) {
+                msgpack_pack_str(pck, ctx->merge_log_key_len);
+                msgpack_pack_str_body(pck, ctx->merge_log_key,
+                                      ctx->merge_log_key_len);
                 msgpack_pack_map(pck, log_buf_entries);
             }
 

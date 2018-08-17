@@ -103,17 +103,12 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
     /*
      * FIXME: option disabled due to bug when composing
      * new outgoing map (also missing unit tests).
-     *
-     * To be re-enabled during 0.13.x series.
-     *
-     * Merge JSON key
-     *
-    tmp = flb_filter_get_property("merge_json_key", i);
+     */
+    tmp = flb_filter_get_property("merge_log_key", i);
     if (tmp) {
-        ctx->merge_json_key = flb_strdup(tmp);
-        ctx->merge_json_key_len = strlen(tmp);
+        ctx->merge_log_key = flb_strdup(tmp);
+        ctx->merge_log_key_len = strlen(tmp);
     }
-    */
 
     /* Get Kubernetes API server */
     url = flb_filter_get_property("kube_url", i);
@@ -296,8 +291,8 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
         flb_free(ctx->unesc_buf);
     }
 
-    if (ctx->merge_json_key) {
-        flb_free(ctx->merge_json_key);
+    if (ctx->merge_log_key) {
+        flb_free(ctx->merge_log_key);
     }
 
     /* Destroy regex content only if a parser was not defined */

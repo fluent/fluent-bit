@@ -82,9 +82,9 @@ struct flb_kube {
     size_t unesc_buf_len;
     char *unesc_buf;
 
-    /* JSON key (default 'log') */
-    int merge_json_key_len;
-    char *merge_json_key;
+    /* Log key, old merge_json_key (default 'log') */
+    int merge_log_key_len;
+    char *merge_log_key;
 
     /* API Server end point */
     char kube_url[1024];
