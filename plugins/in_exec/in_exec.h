@@ -31,8 +31,11 @@
 #define DEFAULT_INTERVAL_NSEC 0
 
 struct flb_in_exec_config {
-    char  *cmd;
+    char **argv;
     struct flb_parser  *parser;
+    pid_t  pid;
+    FILE  *cmdp;
+    bool   follow;
 };
 
 extern struct flb_input_plugin in_exec_plugin;

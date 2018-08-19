@@ -27,19 +27,115 @@
 #include <fluent-bit/flb_parser.h>
 #include <msgpack.h>
 
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
+#include <sys/wait.h>
 
 #include "in_exec.h"
+
+/* open non-blocking stream from pipe */
+int in_exec_spawn_parent(int pipefd[2], struct flb_in_exec_config *config)
+{
+    if (close(pipefd[1]) == -1) {
+        flb_errno();
+        return 1;
+    }
+
+    if (config->follow) {
+        if (fcntl(pipefd[0], F_SETFL, fcntl(pipefd[0], F_GETFL, 0) | O_NONBLOCK) == -1) {
+            flb_errno();
+            return 1;
+        }
+    }
+
+    config->cmdp = fdopen(pipefd[0], "r");
+
+    return 0;
+}
+
+/* connect a pipe to an execv() process */
+int in_exec_spawn_child(int pipefd[], struct flb_in_exec_config *config)
+{
+    if (close(pipefd[0]) == -1) {
+        flb_errno();
+        return 1;
+    }
+
+    if (dup2(pipefd[1], 1) == -1) {
+        flb_errno();
+        return 1;
+    }
+    if (dup2(pipefd[1], 2) == -1) {
+        flb_errno();
+        return 1;
+    }
+
+    struct rlimit rlp = {0};
+    if (getrlimit(RLIMIT_NOFILE, &rlp) == -1) {
+        flb_errno();
+        return 1;
+    }
+
+    for (int otherfd = 3; otherfd < rlp.rlim_cur; otherfd++) {
+        close(otherfd);
+    }
+
+    if (execvp(config->argv[0], config->argv) == -1) {
+        flb_errno();
+        return 1;
+    };
+
+    return 0;
+}
+
+/* check if child process is running; if not, create pipe and fork+exec it */
+int in_exec_spawn(struct flb_in_exec_config *config)
+{
+    if (config->pid != 0) {
+        int wstatus;
+        int wresult = waitpid(config->pid, &wstatus, WNOHANG);
+        if (wresult == config->pid) {
+            config->pid = 0;
+            if (config->cmdp != NULL) {
+                if (fclose(config->cmdp) != 0) {
+                    flb_errno();
+                    return 1;
+                }
+                config->cmdp = NULL;
+            }
+        }
+        else if (wresult < 0) {
+            flb_errno();
+            return 1;
+        }
+    }
+
+    if (config->pid == 0) {
+        int pipefd[2];
+        if (pipe(pipefd) == -1) {
+            flb_errno();
+            return 1;
+        }
+
+        if ((config->pid = fork()) > 0) {
+            return in_exec_spawn_parent(pipefd, config);
+        }
+        else {
+            return in_exec_spawn_child(pipefd, config);
+        }
+    }
+
+    return 0;
+}
 
 /* cb_collect callback */
 static int in_exec_collect(struct flb_input_instance *i_ins,
                            struct flb_config *config, void *in_context)
 {
-    int ret = -1;
     size_t str_len = 0;
-    FILE *cmdp = NULL;
     char buf[DEFAULT_BUF_SIZE] = {0};
     struct flb_in_exec_config *exec_config = in_context;
 
@@ -49,14 +145,12 @@ static int in_exec_collect(struct flb_input_instance *i_ins,
     size_t out_size = 0;
     struct flb_time out_time;
 
-    cmdp = popen(exec_config->cmd, "r");
-    if (cmdp == NULL) {
-        flb_debug("[in_exec] %s failed", exec_config->cmd);
-        goto collect_end;
+    if (in_exec_spawn(exec_config) != 0) {
+        return 1;
     }
 
     if (exec_config->parser) {
-        while (fgets(buf, DEFAULT_BUF_SIZE - 1,cmdp) != NULL) {
+        while (fgets(buf, DEFAULT_BUF_SIZE - 1, exec_config->cmdp) != NULL) {
             str_len = strlen(buf);
             buf[str_len-1] = '\0'; /* chomp */
 
@@ -79,8 +173,8 @@ static int in_exec_collect(struct flb_input_instance *i_ins,
             }
         }
     }
-    else{
-        while (fgets(buf, DEFAULT_BUF_SIZE - 1,cmdp) != NULL) {
+    else {
+        while (fgets(buf, DEFAULT_BUF_SIZE - 1, exec_config->cmdp) != NULL) {
             str_len = strlen(buf);
             buf[str_len-1] = '\0'; /* chomp */
 
@@ -100,14 +194,7 @@ static int in_exec_collect(struct flb_input_instance *i_ins,
         }
     }
 
-    ret = 0; /* success */
-
- collect_end:
-    if(cmdp != NULL){
-        pclose(cmdp);
-    }
-
-    return ret;
+    return 0;
 }
 
 /* read config file and*/
@@ -120,6 +207,8 @@ static int in_exec_config_read(struct flb_in_exec_config *exec_config,
 {
     char *cmd = NULL;
     char *pval = NULL;
+    char *follow = NULL;
+    int argc = 0;
 
     /* filepath setting */
     cmd = flb_input_get_property("command", in);
@@ -127,8 +216,30 @@ static int in_exec_config_read(struct flb_in_exec_config *exec_config,
         flb_error("[in_exec] no input 'command' was given");
         return -1;
     }
-    exec_config->cmd = cmd;
 
+    /* split into an argv array */
+    for (char *arg = strtok_r(cmd, " ", &cmd); arg != NULL; arg = strtok_r(NULL, " ", &cmd)) {
+        exec_config->argv = flb_realloc(exec_config->argv, (argc + 2) * sizeof(char *));
+        exec_config->argv[argc++] = arg;
+    }
+    exec_config->argv[argc] = NULL;
+
+    /* follow setting */
+    follow = flb_input_get_property("follow", in);
+    if (follow != NULL) {
+        if (strcasecmp(follow, "true") == 0) {
+            exec_config->follow = 1;
+        }
+        else if (strcasecmp(follow, "false") == 0) {
+            exec_config->follow = 0;
+        }
+        else {
+            flb_error("[in_exec] property 'follow' should be either 'true' or 'false'");
+            return -1;
+        }
+    }
+
+    /* parser setting */
     pval = flb_input_get_property("parser", in);
     if (pval != NULL) {
         exec_config->parser = flb_parser_get(pval, config);
@@ -168,6 +279,9 @@ static int in_exec_config_read(struct flb_in_exec_config *exec_config,
 
 static void delete_exec_config(struct flb_in_exec_config *exec_config)
 {
+    if (exec_config && exec_config->argv) {
+        flb_free(exec_config->argv);
+    }
     if (exec_config) {
         flb_free(exec_config);
     }
@@ -187,7 +301,11 @@ static int in_exec_init(struct flb_input_instance *in,
     if (exec_config == NULL) {
         return -1;
     }
+    exec_config->argv = NULL;
     exec_config->parser = NULL;
+    exec_config->pid = 0;
+    exec_config->cmdp = NULL;
+    exec_config->follow = 0;
 
     /* Initialize exec config */
     ret = in_exec_config_read(exec_config, in, config, &interval_sec, &interval_nsec);
