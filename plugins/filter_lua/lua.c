@@ -363,11 +363,6 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
     }
     ctx->lua = lj;
 
-    /* Initialize ffi to use CDATA */
-    luaopen_ffi(ctx->lua->state);
-    /* Clean stack */
-    lua_settop(ctx->lua->state, 0);
-
     /* Load Script */
     ret = flb_luajit_load_script(ctx->lua, ctx->script);
     if (ret == -1) {
