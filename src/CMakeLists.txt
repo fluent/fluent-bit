@@ -209,7 +209,7 @@ set(FLB_DEPS
   )
 
 # Shared Library
-if(NOT FLB_WITHOUT_SHARED_LIB)
+if(FLB_SHARED_LIB)
   add_library(fluent-bit-shared SHARED ${src})
   target_link_libraries(fluent-bit-shared ${FLB_DEPS} -lpthread)
   set_target_properties(fluent-bit-shared
@@ -239,7 +239,7 @@ if(FLB_BUFFERING)
 endif()
 
 # Binary / Executable
-if(NOT FLB_WITHOUT_BIN)
+if(FLB_BINARY)
   find_package (Threads)
   add_executable(fluent-bit-bin fluent-bit.c)
 
