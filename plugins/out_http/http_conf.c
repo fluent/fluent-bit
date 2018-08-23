@@ -228,7 +228,7 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
 
     mk_list_foreach(head, &ins->properties) {
         prop = mk_list_entry(head, struct flb_config_prop, _head);
-        split = flb_utils_split(prop->val, ' ', 2);
+        split = flb_utils_split(prop->val, ' ', 1);
         if (strcasecmp(prop->key, "header") == 0) {
             header = flb_malloc(sizeof(struct out_http_header));
             if (!header) {
