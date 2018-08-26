@@ -100,7 +100,7 @@ struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
     lf->l2c_types_num = 0;
     tmp = flb_filter_get_property("c_int_key", ins);
     if (tmp) {
-        split = flb_utils_split(tmp, ' ', 1);
+        split = flb_utils_split(tmp, ' ', L2C_TYPES_NUM_MAX);
         mk_list_foreach_safe(head, tmp_list, split) {
             l2c = flb_malloc(sizeof(struct l2c_type));
 

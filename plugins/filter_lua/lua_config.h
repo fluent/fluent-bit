@@ -32,6 +32,7 @@ struct l2c_type {
     struct mk_list _head;
 };
 
+#define L2C_TYPES_NUM_MAX 16
 struct lua_filter {
     flb_sds_t script;         /* lua script path */
     flb_sds_t call;           /* function name   */
