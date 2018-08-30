@@ -243,7 +243,7 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
     }
 
     /* Start packaging the final map */
-    if (ctx->merge_log_key != NULL) {
+    if (merge_status == MERGE_PARSED && ctx->merge_log_key != NULL) {
         /* Make room for one new key that will hold the original log entries */
         new_map_size++;
     }
