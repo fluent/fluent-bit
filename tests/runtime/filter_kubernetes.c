@@ -323,6 +323,20 @@ void flb_test_apache_logs()
     kube_test_destroy(ctx);
 }
 
+void flb_test_apache_logs_merge()
+{
+    struct kube_test *ctx;
+
+    ctx = kube_test_create(T_APACHE_LOGS, KUBE_TAIL,
+                           "Merge_Log", "On",
+                           "Merge_Log_Key", "merge",
+                           NULL);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+    kube_test_destroy(ctx);
+}
+
 void flb_test_apache_logs_annotated()
 {
     struct kube_test *ctx;
@@ -415,6 +429,7 @@ void flb_test_systemd_logs()
 
 TEST_LIST = {
     {"kube_apache_logs", flb_test_apache_logs},
+    {"kube_apache_logs_merge", flb_test_apache_logs_merge},
     {"kube_apache_logs_annotated", flb_test_apache_logs_annotated},
     {"kube_apache_logs_annotated_invalid", flb_test_apache_logs_annotated_invalid},
     {"kube_apache_logs_annotated_merge_log", flb_test_apache_logs_annotated_merge},
