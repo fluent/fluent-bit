@@ -38,7 +38,6 @@ char *get_output(void)
 
 void flb_test_filter_nest_single(void)
 {
-    int i;
     int ret;
     int bytes;
     char *p, *output, *expected;
@@ -87,4 +86,3 @@ void flb_test_filter_nest_single(void)
     flb_stop(ctx);
     flb_destroy(ctx);
 }
-
