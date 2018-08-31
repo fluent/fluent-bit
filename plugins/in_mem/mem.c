@@ -87,6 +87,22 @@ static char *field(char *data, char *field)
     return value;
 }
 #endif
+
+static uint64_t calc_kb(unsigned long amount, unsigned int unit)
+{
+    unsigned long long bytes = amount;
+
+    /* Recent Linux versions return memory/swap sizes as multiples */
+    /*     of a certain size unit. See sysinfo(2) for details. */
+    if (unit > 1) {
+        bytes = bytes * unit;
+    }
+
+    bytes = bytes / 1024;
+
+    return (uint64_t) bytes;
+}
+
 static int mem_calc(struct flb_in_mem_info *m_info)
 {
     int ret;
@@ -99,16 +115,16 @@ static int mem_calc(struct flb_in_mem_info *m_info)
     }
 
     /* set values in KBs */
-    m_info->mem_total     = info.totalram / 1024;
+    m_info->mem_total     = calc_kb(info.totalram, info.mem_unit);
 
     /* This value seems to be MemAvailable if it is supported */
     /*     or MemFree on legacy linux */
-    m_info->mem_free      = info.freeram  / 1024;
+    m_info->mem_free      = calc_kb(info.freeram, info.mem_unit);
 
     m_info->mem_used      = m_info->mem_total - m_info->mem_free;
 
-    m_info->swap_total    = info.totalswap / 1024;
-    m_info->swap_free     = info.freeswap  / 1024;
+    m_info->swap_total    = calc_kb(info.totalswap, info.mem_unit);
+    m_info->swap_free     = calc_kb(info.freeswap, info.mem_unit);
     m_info->swap_used     = m_info->swap_total - m_info->swap_free;
 
     return 0;
