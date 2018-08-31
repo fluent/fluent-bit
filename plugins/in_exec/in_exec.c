@@ -79,7 +79,8 @@ int in_exec_spawn_child(int pipefd[], struct flb_in_exec_config *config)
         return 1;
     }
 
-    for (int otherfd = 3; otherfd < rlp.rlim_cur; otherfd++) {
+    int otherfd;
+    for (otherfd = 3; otherfd < rlp.rlim_cur; otherfd++) {
         close(otherfd);
     }
 
@@ -218,7 +219,8 @@ static int in_exec_config_read(struct flb_in_exec_config *exec_config,
     }
 
     /* split into an argv array */
-    for (char *arg = strtok_r(cmd, " ", &cmd); arg != NULL; arg = strtok_r(NULL, " ", &cmd)) {
+    char *arg = NULL;
+    for (arg = strtok_r(cmd, " ", &cmd); arg != NULL; arg = strtok_r(NULL, " ", &cmd)) {
         exec_config->argv = flb_realloc(exec_config->argv, (argc + 2) * sizeof(char *));
         exec_config->argv[argc++] = arg;
     }
