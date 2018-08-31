@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_gzip.h>
 #include <msgpack.h>
 
 #include <stdio.h>
@@ -178,6 +179,133 @@ static int cb_http_init(struct flb_output_instance *ins,
         return -1;
     }
 
+    if (ins->host.uri) {
+        uri = flb_strdup(ins->host.uri->full);
+    }
+    else {
+        tmp = flb_output_get_property("uri", ins);
+        if (tmp) {
+            uri = flb_strdup(tmp);
+        }
+    }
+
+    if (!uri) {
+        uri = flb_strdup("/");
+    }
+    else if (uri[0] != '/') {
+        ulen = strlen(uri);
+        tmp = flb_malloc(ulen + 2);
+        tmp[0] = '/';
+        memcpy(tmp + 1, uri, ulen);
+        tmp[ulen + 1] = '\0';
+        flb_free(uri);
+        uri = tmp;
+    }
+
+
+    /* HTTP Auth */
+    tmp = flb_output_get_property("http_user", ins);
+    if (tmp) {
+        ctx->http_user = flb_strdup(tmp);
+
+        tmp = flb_output_get_property("http_passwd", ins);
+        if (tmp) {
+            ctx->http_passwd = flb_strdup(tmp);
+        }
+        else {
+            ctx->http_passwd = flb_strdup("");
+        }
+    }
+
+    /* Tag in header */
+    tmp = flb_output_get_property("header_tag", ins);
+    if (tmp) {
+      ctx->header_tag = flb_strdup(tmp);
+      ctx->headertag_len = strlen(ctx->header_tag);
+      flb_info("[out_http] configure to pass tag in header: %s", ctx->header_tag);
+    }
+
+    /* Output format */
+    ctx->out_format = FLB_HTTP_OUT_MSGPACK;
+    tmp = flb_output_get_property("format", ins);
+    if (tmp) {
+        if (strcasecmp(tmp, "msgpack") == 0) {
+            ctx->out_format = FLB_HTTP_OUT_MSGPACK;
+        }
+        else if (strcasecmp(tmp, "json") == 0) {
+            ctx->out_format = FLB_HTTP_OUT_JSON;
+        }
+        else if (strcasecmp(tmp, "json_stream") == 0) {
+            ctx->out_format = FLB_HTTP_OUT_JSON_STREAM;
+        }
+        else if (strcasecmp(tmp, "json_lines") == 0) {
+            ctx->out_format = FLB_HTTP_OUT_JSON_LINES;
+        }
+        else {
+            flb_warn("[out_http] unrecognized 'format' option. Using 'msgpack'");
+        }
+    }
+
+    /* Gzip encode body */
+    ctx->gzip_encode = FLB_FALSE;
+    tmp = flb_output_get_property("gzip_encode", ins);
+    if (tmp) {
+        ctx->gzip_encode = flb_utils_bool(tmp);
+    }
+
+    /* Date format for JSON output */
+    ctx->json_date_format = FLB_JSON_DATE_DOUBLE;
+    tmp = flb_output_get_property("json_date_format", ins);
+    if (tmp) {
+        if (strcasecmp(tmp, "iso8601") == 0) {
+            ctx->json_date_format = FLB_JSON_DATE_ISO8601;
+        }
+    }
+
+    /* Date key for JSON output */
+    tmp = flb_output_get_property("json_date_key", ins);
+    ctx->json_date_key = flb_strdup(tmp ? tmp : "date");
+    ctx->json_date_key_len = strlen(ctx->json_date_key);
+
+    ctx->u = upstream;
+    ctx->uri = uri;
+    ctx->host = ins->host.name;
+    ctx->port = ins->host.port;
+
+    /* Arbitrary HTTP headers to add */
+
+    ctx->headers_cnt = 0;
+    mk_list_init(&ctx->headers);
+
+    mk_list_foreach(head, &ins->properties) {
+        prop = mk_list_entry(head, struct flb_config_prop, _head);
+        split = flb_utils_split(prop->val, ' ', 2);
+
+        if (strcasecmp(prop->key, "header") == 0) {
+
+            header = flb_malloc(sizeof(struct out_http_header));
+            if (!header) {
+                flb_error
+                    ("[out_http] Unable to allocate memory for header");
+                flb_free(header);
+                return -1;
+            }
+
+            sentry = mk_list_entry_first(split, struct flb_split_entry, _head);
+            header->key_len = strlen(sentry->value);
+            header->key = flb_strndup(sentry->value, header->key_len);
+
+            sentry = mk_list_entry_last(split, struct flb_split_entry, _head);
+            header->val_len = strlen(sentry->value);
+            header->val = flb_strndup(sentry->value, header->val_len);
+
+            mk_list_add(&header->_head, &ctx->headers);
+            ctx->headers_cnt++;
+        }
+    }
+
+    flb_utils_split_free(split);
+
     /* Set the plugin context */
     flb_output_set_context(ins, ctx);
 
@@ -200,6 +328,8 @@ static void cb_http_flush(void *data, size_t bytes,
     void *body = NULL;
     uint64_t body_len;
     (void)i_ins;
+    char *gz_body;
+    size_t gz_size;
 
     struct mk_list *tmp;
     struct mk_list *head;
@@ -213,6 +343,13 @@ static void cb_http_flush(void *data, size_t bytes,
     else {
         body = data;
         body_len = bytes;
+    }
+
+    if (ctx->gzip_encode) {
+        gz_body = flb_gzip_compress(body, body_len, &gz_size);
+        free(body);
+        body = gz_body;
+        body_len = gz_size;
     }
 
     /* Get upstream context and connection */
@@ -256,6 +393,14 @@ static void cb_http_flush(void *data, size_t bytes,
                         ctx->header_tag,
                         ctx->headertag_len,
                         tag, tag_len);
+    }
+
+    if (ctx->gzip_encode) {
+        flb_http_add_header(c,
+            FLB_HTTP_CONTENT_ENCODING,
+            sizeof(FLB_HTTP_CONTENT_ENCODING) - 1,
+            FLB_HTTP_ENCODING_GZIP,
+            sizeof(FLB_HTTP_ENCODING_GZIP) - 1);
     }
 
     if (ctx->http_user && ctx->http_passwd) {

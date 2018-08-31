@@ -32,6 +32,8 @@
 #define FLB_HTTP_CONTENT_TYPE   "Content-Type"
 #define FLB_HTTP_MIME_MSGPACK   "application/msgpack"
 #define FLB_HTTP_MIME_JSON      "application/json"
+#define FLB_HTTP_CONTENT_ENCODING "Content-Encoding"
+#define FLB_HTTP_ENCODING_GZIP "gzip"
 
 struct flb_out_http {
     /* HTTP Auth */
@@ -65,6 +67,9 @@ struct flb_out_http {
     /* Arbitrary HTTP headers */
     struct mk_list headers;
     int headers_cnt;
+
+    /* gzip content-encoding */
+    int gzip_encode;
 };
 
 struct out_http_header {
