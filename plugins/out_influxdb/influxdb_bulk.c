@@ -24,6 +24,8 @@
 #include <fluent-bit.h>
 #include "influxdb_bulk.h"
 
+static const uint64_t ONE_BILLION = 1000000000;
+ 
 static int influxdb_bulk_buffer(struct influxdb_bulk *bulk, int required)
 {
     int new_size;
@@ -178,7 +180,7 @@ int influxdb_bulk_append_timestamp(struct influxdb_bulk *bulk,
     }
 
     /* Timestamp is in Nanoseconds */
-    timestamp = (t->tm.tv_sec * 1000000000) + t->tm.tv_nsec;
+    timestamp = (t->tm.tv_sec * ONE_BILLION) + t->tm.tv_nsec;
     len = snprintf(bulk->ptr + bulk->len, 127, " %" PRIu64, timestamp);
     if (len == -1) {
         return -1;
