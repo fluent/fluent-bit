@@ -87,7 +87,7 @@ int splunk_format(void *in_buf, size_t in_bytes,
         map = root.via.array.ptr[1];
         map_size = map.via.map.size;
 
-        if (ctx->splunk_send_raw) {
+        if (ctx->splunk_send_raw == FLB_TRUE) {
             msgpack_pack_map(&mp_pck, 1 + map_size /* time + all k/v */);
         } else {
             msgpack_pack_map(&mp_pck, 2 /* time + event */);
@@ -100,7 +100,7 @@ int splunk_format(void *in_buf, size_t in_bytes,
                               sizeof(FLB_SPLUNK_DEFAULT_TIME) - 1);
         msgpack_pack_double(&mp_pck, t);
 
-        if (!ctx->splunk_send_raw) {
+        if (ctx->splunk_send_raw == FLB_FALSE) {
             /* Add k/v pairs under the key 'event' instead of to the top level object */
             msgpack_pack_str(&mp_pck, sizeof(FLB_SPLUNK_DEFAULT_EVENT) -1);
             msgpack_pack_str_body(&mp_pck,
