@@ -190,7 +190,7 @@ include_directories(
   lib/flb_libco
   lib/sha1
   lib/msgpack-2.1.3/include
-  lib/luajit-2.0.5/src/
+  lib/LuaJIT-2.1.0-beta3/src/
   ${MONKEY_INCLUDE_DIR}
   )
 
@@ -429,7 +429,7 @@ endif()
 # LuaJIT (Scripting Support)
 # ==========================
 if(FLB_LUAJIT)
-  set(LUA_PATH ${CMAKE_CURRENT_SOURCE_DIR}/lib/luajit-2.0.5)
+  set(LUA_PATH ${CMAKE_CURRENT_SOURCE_DIR}/lib/LuaJIT-2.1.0-beta3)
   ExternalProject_Add(luajit
     SOURCE_DIR ${LUA_PATH}
     CONFIGURE_COMMAND ${LUA_PATH}/configure
