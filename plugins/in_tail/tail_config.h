@@ -24,6 +24,9 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_macros.h>
+#ifdef FLB_HAVE_REGEX
+#include <fluent-bit/flb_regex.h>
+#endif
 
 struct flb_tail_config {
     int fd_notify;             /* inotify fd               */
@@ -47,6 +50,9 @@ struct flb_tail_config {
 
     /* Configuration */
     int dynamic_tag;           /* dynamic tag ? e.g: abc.*     */
+#ifdef FLB_HAVE_REGEX
+    struct flb_regex *tag_regex;/* path to tag regex           */
+#endif
     int refresh_interval_sec;  /* seconds to re-scan           */
     long refresh_interval_nsec;/* nanoseconds to re-scan       */
     int rotate_wait;           /* sec to wait on rotated files */
