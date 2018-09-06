@@ -31,6 +31,10 @@
 #include "tail_config.h"
 #include "tail_file_internal.h"
 
+#ifdef FLB_HAVE_REGEX
+#define FLB_HASH_TABLE_SIZE 50
+#endif
+
 int flb_tail_file_to_event(struct flb_tail_file *file);
 int flb_tail_file_chunk(struct flb_tail_file *file);
 int flb_tail_file_append(char *path, struct stat *st, int mode,

@@ -26,6 +26,10 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_parser.h>
+#ifdef FLB_HAVE_REGEX
+#include <fluent-bit/flb_regex.h>
+#include <fluent-bit/flb_hash.h>
+#endif
 
 #include "tail.h"
 #include "tail_file.h"
@@ -303,71 +307,156 @@ static inline void drop_bytes(char *buf, size_t len, int pos, int bytes)
             len - pos - bytes);
 }
 
+#ifdef FLB_HAVE_REGEX
+static void cb_results(unsigned char *name, unsigned char *value,
+                       size_t vlen, void *data)
+{
+    struct flb_hash *ht = data;
+    char *p;
+
+    while ((p = strchr((char *) value, '.'))) {
+        *p = '_';
+    }
+
+    flb_hash_add(ht, (char *) name, strlen((char *) name), (char *) value, vlen);
+}
+#endif
+
+#ifdef FLB_HAVE_REGEX
+static int tag_compose(char *tag, struct flb_regex *tag_regex, char *fname, char **out_buf, size_t *out_size)
+#else
 static int tag_compose(char *tag, char *fname, char **out_buf, size_t *out_size)
+#endif
 {
     int i;
     int len;
     char *p;
     char *buf = *out_buf;
     size_t buf_s = 0;
+#ifdef FLB_HAVE_REGEX
+    ssize_t n;
+    struct flb_regex_search result;
+    struct flb_hash *ht;
+    char *beg;
+    char *end;
+    int ret;
+    char *tmp;
+    size_t tmp_s;
+#endif
 
-    p = strchr(tag, '*');
-    if (!p) {
-        return -1;
+#ifdef FLB_HAVE_REGEX
+    if (tag_regex) {
+        n = flb_regex_do(tag_regex, (unsigned char *) fname, strlen(fname), &result);
+        if (n <= 0) {
+            flb_error("[in_tail] invalid pattern for given file %s", fname);
+            return -1;
+        }
+        else {
+            ht = flb_hash_create(FLB_HASH_EVICT_NONE, FLB_HASH_TABLE_SIZE, FLB_HASH_TABLE_SIZE);
+            flb_regex_parse(tag_regex, &result, cb_results, ht);
+
+            for (p = tag, beg = p; (beg = strchr(p, '<')); p = end + 2) {
+                if (beg != p) {
+                    len = (beg - p);
+                    memcpy(buf + buf_s, p, len);
+                    buf_s += len;
+                }
+
+                beg++;
+
+                end = strchr(beg, '>');
+                if (end && !memchr(beg, '<', end - beg)) {
+                    end--;
+
+                    len = end - beg + 1;
+                    ret = flb_hash_get(ht, beg, len, &tmp, &tmp_s);
+                    if (ret != -1) {
+                        memcpy(buf + buf_s, tmp, tmp_s);
+                        buf_s += tmp_s;
+                    }
+                    else {
+                        memcpy(buf + buf_s, "_", 1);
+                        buf_s++;
+                    }
+                }
+                else {
+                    flb_error("[in_tail] missing closing angle bracket in tag %s at position %i", tag, beg - tag);
+                    flb_hash_destroy(ht);
+                    return -1;
+                }
+            }
+
+            flb_hash_destroy(ht);
+
+            if (*p) {
+                len = strlen(p);
+                memcpy(buf + buf_s, p, len);
+                buf_s += len;
+            }
+        }
     }
+    else {
+#endif
+        p = strchr(tag, '*');
+        if (!p) {
+            return -1;
+        }
 
-    /* Copy tag prefix if any */
-    len = (p - tag);
-    if (len > 0) {
-        memcpy(buf, tag, len);
+        /* Copy tag prefix if any */
+        len = (p - tag);
+        if (len > 0) {
+            memcpy(buf, tag, len);
+            buf_s += len;
+        }
+
+        /* Append file name */
+        len = strlen(fname);
+        memcpy(buf + buf_s, fname, len);
         buf_s += len;
-    }
 
-    /* Append file name */
-    len = strlen(fname);
-    memcpy(buf + buf_s, fname, len);
-    buf_s += len;
+        /* Tag suffix (if any) */
+        p++;
+        if (*p) {
+            len = strlen(tag);
+            memcpy(buf + buf_s, p, (len - (p - tag)));
+            buf_s += (len - (p - tag));
+        }
 
-    /* Tag suffix (if any) */
-    p++;
-    if (*p) {
-        len = strlen(tag);
-        memcpy(buf + buf_s, p, (len - (p - tag)));
-        buf_s += (len - (p - tag));
-    }
-
-    /* Sanitize buffer */
-    for (i = 0; i < buf_s; i++) {
-        if (buf[i] == '/') {
-            if (i > 0) {
-                buf[i] = '.';
+        /* Sanitize buffer */
+        for (i = 0; i < buf_s; i++) {
+            if (buf[i] == '/') {
+                if (i > 0) {
+                    buf[i] = '.';
+                }
+                else {
+                    drop_bytes(buf, buf_s, i, 1);
+                    buf_s--;
+                    i--;
+                }
             }
-            else {
-                drop_bytes(buf, buf_s, i, 1);
-                buf_s--;
-                i--;
+
+            if (buf[i] == '.' && i > 0) {
+                if (buf[i - 1] == '.') {
+                    drop_bytes(buf, buf_s, i, 1);
+                    buf_s--;
+                    i--;
+                }
+            }
+            else if (buf[i] == '*') {
+                    drop_bytes(buf, buf_s, i, 1);
+                    buf_s--;
+                    i--;
             }
         }
 
-        if (buf[i] == '.' && i > 0) {
-            if (buf[i - 1] == '.') {
-                drop_bytes(buf, buf_s, i, 1);
-                buf_s--;
-                i--;
-            }
+        /* Check for an ending '.' */
+        if (buf[buf_s - 1] == '.') {
+            drop_bytes(buf, buf_s, buf_s - 1, 1);
+            buf_s--;
         }
-        else if (buf[i] == '*') {
-                drop_bytes(buf, buf_s, i, 1);
-                buf_s--;
-                i--;
-        }
+#ifdef FLB_HAVE_REGEX
     }
-
-    /* Check for an ending '.' */
-    if (buf[buf_s - 1] == '.') {
-        drop_bytes(buf, buf_s, buf_s - 1, 1);
-        buf_s--;
-    }
+#endif
 
     buf[buf_s] = '\0';
     *out_size = buf_s;
@@ -482,7 +571,11 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     /* Initialize (optional) dynamic tag */
     if (ctx->dynamic_tag == FLB_TRUE) {
         p = out_tmp;
+#ifdef FLB_HAVE_REGEX
+        ret = tag_compose(ctx->i_ins->tag, ctx->tag_regex, path, &p, &out_size);
+#else
         ret = tag_compose(ctx->i_ins->tag, path, &p, &out_size);
+#endif
         if (ret == 0) {
             file->tag_len = out_size;
             file->tag_buf = flb_strdup(p);

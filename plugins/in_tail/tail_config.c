@@ -234,6 +234,22 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
     mk_list_init(&ctx->files_rotated);
     ctx->db = NULL;
 
+#ifdef FLB_HAVE_REGEX
+    tmp = flb_input_get_property("tag_regex", i_ins);
+    if (tmp) {
+        ctx->tag_regex = flb_regex_create((unsigned char *) tmp);
+        if (ctx->tag_regex) {
+            ctx->dynamic_tag = FLB_TRUE;
+        }
+        else {
+            flb_error("[in_tail] invalid 'tag_regex' config value");
+        }
+    }
+    else {
+        ctx->tag_regex = NULL;
+    }
+#endif
+
     /* Check if it should use dynamic tags */
     tmp = strchr(i_ins->tag, '*');
     if (tmp) {
@@ -282,6 +298,12 @@ int flb_tail_config_destroy(struct flb_tail_config *config)
     close(config->ch_manager[1]);
     close(config->ch_pending[0]);
     close(config->ch_pending[1]);
+
+#ifdef FLB_HAVE_REGEX
+    if (config->tag_regex) {
+        flb_regex_destroy(config->tag_regex);
+    }
+#endif
 
     if (config->db != NULL) {
         flb_tail_db_close(config->db);
