@@ -40,7 +40,7 @@ static inline void snapshot_key_format(int cpus, struct cpu_snapshot *snap_arr)
     struct cpu_snapshot *snap;
 
     snap = &snap_arr[0];
-    strncpy(snap->k_cpu.name, "cpu", 3);
+    memcpy(snap->k_cpu.name, "cpu", 3);
     snap->k_cpu.name[3] = '\0';
 
     for (i = 1; i <= cpus; i++) {
