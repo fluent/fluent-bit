@@ -330,7 +330,7 @@ static int tag_compose(char *tag, char *fname, char **out_buf, size_t *out_size)
 
     /* Tag suffix (if any) */
     p++;
-    if (p) {
+    if (*p) {
         len = strlen(tag);
         memcpy(buf + buf_s, p, (len - (p - tag)));
         buf_s += (len - (p - tag));
