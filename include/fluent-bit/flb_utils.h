@@ -27,6 +27,7 @@
 struct flb_split_entry {
     char *value;
     int len;
+    off_t last_pos;
     struct mk_list _head;
 };
 
