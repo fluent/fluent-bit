@@ -233,20 +233,40 @@ struct mk_list *flb_utils_split(char *line, int separator, int max_split)
             val = mk_string_copy_substr(line, i, len);
             val_len = len - i;
             end = len;
-
         }
+
+        /* Update last position */
+        i = end;
 
         /* Create new entry */
         new = flb_malloc(sizeof(struct flb_split_entry));
+        if (!new) {
+            flb_errno();
+            flb_free(val);
+            flb_utils_split_free(list);
+            return NULL;
+        }
         new->value = val;
         new->len = val_len;
-
+        new->last_pos = i;
         mk_list_add(&new->_head, list);
-        i = end + 1;
-
         count++;
+
+        /* Update index for next loop */
+        i++;
+
+        /*
+         * If the counter exceeded the maximum specified and there
+         * are still remaining bytes, append those bytes in a new
+         * and last entry.
+         */
         if (count >= max_split && max_split > 0 && i < len) {
             new = flb_malloc(sizeof(struct flb_split_entry));
+            if (!new) {
+                flb_errno();
+                flb_utils_split_free(list);
+                return NULL;
+            }
             new->value = mk_string_copy_substr(line, i, len);
             new->len   = len - i;
             mk_list_add(&new->_head, list);
