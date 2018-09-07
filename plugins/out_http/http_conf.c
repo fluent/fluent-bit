@@ -28,6 +28,7 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
                                           struct flb_config *config)
 {
     int ulen;
+    int len;
     int io_flags = 0;
     char *uri = NULL;
     char *tmp;
@@ -228,7 +229,12 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
 
     mk_list_foreach(head, &ins->properties) {
         prop = mk_list_entry(head, struct flb_config_prop, _head);
-        split = flb_utils_split(prop->val, ' ', 2);
+        split = flb_utils_split(prop->val, ' ', 1);
+
+        if (!split) {
+            continue;
+        }
+
         if (strcasecmp(prop->key, "header") == 0) {
             header = flb_malloc(sizeof(struct out_http_header));
             if (!header) {
@@ -238,15 +244,31 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
                 return NULL;
             }
 
-            sentry = mk_list_entry_first(split, struct flb_split_entry, _head);
+            sentry = mk_list_entry_first(split, struct flb_split_entry,
+                                         _head);
+
+            len = strlen(prop->val);
+            if (sentry->last_pos == len) {
+                /* Missing value */
+                flb_error("[out_http] missing header value");
+                flb_utils_split_free(split);
+                flb_http_conf_destroy(ctx);
+                return NULL;
+            }
+
+            /* Header Name */
             header->key_len = strlen(sentry->value);
             header->key = flb_strndup(sentry->value, header->key_len);
 
-            sentry = mk_list_entry_last(split, struct flb_split_entry, _head);
-            header->val_len = strlen(sentry->value);
-            header->val = flb_strndup(sentry->value, header->val_len);
-
+            /*
+             * Header Value: compose using the offset value from
+             * the first split entry.
+             */
+            header->val = flb_strndup(prop->val + sentry->last_pos,
+                                      len - sentry->last_pos);
+            header->val_len = strlen(header->val);
             mk_list_add(&header->_head, &ctx->headers);
+
             ctx->headers_cnt++;
         }
         flb_utils_split_free(split);
@@ -260,6 +282,10 @@ void flb_http_conf_destroy(struct flb_out_http *ctx)
     struct mk_list *tmp;
     struct mk_list *head;
     struct out_http_header *header;
+
+    if (!ctx) {
+        return;
+    }
 
     if (ctx->u) {
         flb_upstream_destroy(ctx->u);
@@ -281,4 +307,5 @@ void flb_http_conf_destroy(struct flb_out_http *ctx)
     }
 
     flb_free(ctx);
+    ctx = NULL;
 }
