@@ -48,7 +48,7 @@ static int in_exec_collect(struct flb_input_instance *i_ins,
     void *out_buf = NULL;
     size_t out_size = 0;
     struct flb_time out_time;
-    
+
     cmdp = popen(exec_config->cmd, "r");
     if (cmdp == NULL) {
         flb_debug("[in_exec] %s failed", exec_config->cmd);
@@ -60,6 +60,7 @@ static int in_exec_collect(struct flb_input_instance *i_ins,
             str_len = strlen(buf);
             buf[str_len-1] = '\0'; /* chomp */
 
+            flb_time_get(&out_time);
             parser_ret = flb_parser_do(exec_config->parser, buf, str_len-1,
                                 &out_buf, &out_size, &out_time);
             if (parser_ret >= 0) {
@@ -72,7 +73,7 @@ static int in_exec_collect(struct flb_input_instance *i_ins,
                 msgpack_pack_array(&i_ins->mp_pck, 2);
                 flb_time_append_to_msgpack(&out_time, &i_ins->mp_pck, 0);
                 msgpack_sbuffer_write(&i_ins->mp_sbuf, out_buf, out_size);
-                
+
                 flb_input_buf_write_end(i_ins);
                 flb_free(out_buf);
             }
@@ -84,7 +85,7 @@ static int in_exec_collect(struct flb_input_instance *i_ins,
             buf[str_len-1] = '\0'; /* chomp */
 
             flb_input_buf_write_start(i_ins);
-            
+
             msgpack_pack_array(&i_ins->mp_pck, 2);
             flb_pack_time_now(&i_ins->mp_pck);
             msgpack_pack_map(&i_ins->mp_pck, 1);
@@ -105,7 +106,7 @@ static int in_exec_collect(struct flb_input_instance *i_ins,
     if(cmdp != NULL){
         pclose(cmdp);
     }
-    
+
     return ret;
 }
 
@@ -187,7 +188,7 @@ static int in_exec_init(struct flb_input_instance *in,
         return -1;
     }
     exec_config->parser = NULL;
-    
+
     /* Initialize exec config */
     ret = in_exec_config_read(exec_config, in, config, &interval_sec, &interval_nsec);
     if (ret < 0) {
@@ -213,7 +214,7 @@ static int in_exec_init(struct flb_input_instance *in,
     return -1;
 }
 
-int in_exec_exit(void *data, struct flb_config *config)
+static int in_exec_exit(void *data, struct flb_config *config)
 {
     (void) *config;
     struct flb_in_exec_config *exec_config = data;
