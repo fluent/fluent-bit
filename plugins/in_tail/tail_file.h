@@ -31,6 +31,20 @@
 #include "tail_config.h"
 #include "tail_file_internal.h"
 
+static inline int flb_tail_file_name_cmp(char *name,
+                                        struct flb_tail_file *file)
+{
+#ifdef __linux__
+    return strcmp(name, file->name);
+#else
+    printf("cmp => name_cmp=%s name=%s real=%s\n",
+           name, file->name, file->real_name);
+    return strcmp(name, file->real_name);
+#endif
+}
+
+int flb_tail_file_name_dup(char *path, struct flb_tail_file *file);
+
 int flb_tail_file_to_event(struct flb_tail_file *file);
 int flb_tail_file_chunk(struct flb_tail_file *file);
 int flb_tail_file_append(char *path, struct stat *st, int mode,

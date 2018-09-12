@@ -35,7 +35,10 @@ struct flb_tail_file {
     off_t offset;
     off_t last_line;
     ino_t inode;
-    char *name;                 /* target file name */
+    char *name;                 /* target file name given by scan routine */
+#if !defined(__linux)
+    char *real_name;            /* real file name in the file system */
+#endif
     size_t name_len;
     time_t rotated;
     off_t pending_bytes;
