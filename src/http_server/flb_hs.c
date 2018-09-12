@@ -54,6 +54,7 @@ struct flb_hs *flb_hs_create(char *listen, char *tcp_port,
         flb_errno();
         return NULL;
     }
+    hs->config = config;
 
     /* Setup endpoint specific data */
     flb_hs_endpoints(hs);
@@ -65,7 +66,6 @@ struct flb_hs *flb_hs_create(char *listen, char *tcp_port,
         flb_free(hs);
         return NULL;
     }
-    hs->config = config;
 
     /* Compose listen address */
     snprintf(tmp, sizeof(tmp) -1, "%s:%s", listen, tcp_port);
