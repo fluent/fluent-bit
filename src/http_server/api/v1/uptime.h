@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2017 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -17,18 +17,12 @@
  *  limitations under the License.
  */
 
+#ifndef FLB_HS_API_V1_UPTIME_H
+#define FLB_HS_API_V1_UPTIME_H
+
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_http_server.h>
 
-#include "uptime.h"
-#include "metrics.h"
-#include "plugins.h"
+int api_v1_uptime(struct flb_hs *hs);
 
-int api_v1_registration(struct flb_hs *hs)
-{
-    api_v1_uptime(hs);
-    api_v1_metrics(hs);
-    api_v1_plugins(hs);
-
-    return 0;
-}
+#endif

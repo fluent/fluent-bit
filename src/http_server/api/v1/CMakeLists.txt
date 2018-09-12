@@ -1,5 +1,6 @@
 # api/v1
 set(src
+  uptime.c
   metrics.c
   plugins.c
   register.c
