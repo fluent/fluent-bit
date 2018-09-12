@@ -464,7 +464,7 @@ static int tag_compose(char *tag, char *fname, char **out_buf, size_t *out_size)
     return 0;
 }
 
-int flb_tail_file_exists(char *f, struct flb_tail_config *ctx)
+int flb_tail_file_exists(char *name, struct flb_tail_config *ctx)
 {
     struct mk_list *head;
     struct flb_tail_file *file;
@@ -472,7 +472,7 @@ int flb_tail_file_exists(char *f, struct flb_tail_config *ctx)
     /* Iterate static list */
     mk_list_foreach(head, &ctx->files_static) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
-        if (strcmp(file->name, f) == 0) {
+        if (flb_tail_file_name_cmp(name, file) == 0) {
             return FLB_TRUE;
         }
     }
@@ -480,7 +480,7 @@ int flb_tail_file_exists(char *f, struct flb_tail_config *ctx)
     /* Iterate dynamic list */
     mk_list_foreach(head, &ctx->files_event) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
-        if (strcmp(file->name, f) == 0) {
+        if (flb_tail_file_name_cmp(name, file) == 0) {
             return FLB_TRUE;
         }
     }
@@ -507,13 +507,13 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     /* Double check this file is not already being monitored */
     mk_list_foreach(head, &ctx->files_static) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
-        if (strcmp(path, file->name) == 0) {
+        if (flb_tail_file_name_cmp(path, file) == 0) {
             return -1;
         }
     }
     mk_list_foreach(head, &ctx->files_event) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
-        if (strcmp(path, file->name) == 0) {
+        if (flb_tail_file_name_cmp(path, file) == 0) {
             return -1;
         }
     }
@@ -525,7 +525,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         return -1;
     }
 
-    file = flb_malloc(sizeof(struct flb_tail_file));
+    file = flb_calloc(1, sizeof(struct flb_tail_file));
     if (!file) {
         flb_errno();
         close(fd);
@@ -535,8 +535,26 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     /* Initialize */
     file->watch_fd  = -1;
     file->fd        = fd;
-    file->name      = flb_strdup(path);
-    file->name_len  = strlen(file->name);
+
+    /*
+     * Duplicate string into 'file' structure, the called function
+     * take cares to resolve real-name of the file in case we are
+     * running in a non-Linux system.
+     *
+     * Depending of the operating system, the way to obtain the file
+     * name associated to it file descriptor can have different behaviors
+     * specifically if it root path it's under a symbolic link. On Linux
+     * we can trust the file name but in others it's better to solve it
+     * with some extra calls.
+     */
+    ret = flb_tail_file_name_dup(path, file);
+    if (!file->name) {
+        flb_errno();
+        close(fd);
+        flb_free(file);
+        return -1;
+    }
+
     file->offset    = 0;
     file->inode     = st->st_ino;
     file->size      = st->st_size;
@@ -639,6 +657,9 @@ void flb_tail_file_remove(struct flb_tail_file *file)
 
     flb_free(file->buf_data);
     flb_free(file->name);
+#if !defined(__linux__)
+    flb_free(file->real_name);
+#endif
     flb_free(file);
 }
 
@@ -808,7 +829,7 @@ int flb_tail_file_to_event(struct flb_tail_file *file)
         return -1;
     }
 
-    if (strcmp(name, file->name) != 0) {
+    if (flb_tail_file_name_cmp(name, file) != 0) {
         ret = stat(name, &st_rotated);
         if (ret == -1) {
             flb_free(name);
@@ -843,10 +864,11 @@ int flb_tail_file_to_event(struct flb_tail_file *file)
 char *flb_tail_file_name(struct flb_tail_file *file)
 {
     int ret;
+    char *buf;
+#ifdef __linux__
     ssize_t s;
     char tmp[128];
-    char *buf;
-#ifdef __APPLE__
+#elif defined(__APPLE__)
     char path[PATH_MAX];
 #endif
 
@@ -890,6 +912,31 @@ char *flb_tail_file_name(struct flb_tail_file *file)
     return buf;
 }
 
+int flb_tail_file_name_dup(char *path, struct flb_tail_file *file)
+{
+    file->name = flb_strdup(path);
+    if (!file->name) {
+        flb_errno();
+        return -1;
+    }
+    file->name_len = strlen(file->name);
+
+#if !defined(__linux__)
+    if (file->real_name) {
+        flb_free(file->real_name);
+    }
+    file->real_name = flb_tail_file_name(file);
+    if (!file->real_name) {
+        flb_errno();
+        flb_free(file->name);
+        file->name = NULL;
+        return -1;
+    }
+#endif
+
+    return 0;
+}
+
 /* Invoked every time a file was rotated */
 int flb_tail_file_rotated(struct flb_tail_file *file)
 {
@@ -929,7 +976,8 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
 
     /* Update local file entry */
     tmp        = file->name;
-    file->name = name;
+    flb_tail_file_name_dup(name, file);
+
     if (file->rotated == 0) {
         file->rotated = time(NULL);
         mk_list_add(&file->_rotate_head, &file->config->files_rotated);
