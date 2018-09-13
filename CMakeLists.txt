@@ -266,8 +266,8 @@ endif()
 
 if(FLB_SQLDB)
   FLB_DEFINITION(FLB_HAVE_SQLDB)
-  add_subdirectory(lib/sqlite-amalgamation-3230000)
-  include_directories(lib/sqlite-amalgamation-3230000)
+  add_subdirectory(lib/sqlite-amalgamation-3240000)
+  include_directories(lib/sqlite-amalgamation-3240000)
 endif()
 
 if(FLB_BUFFERING)
