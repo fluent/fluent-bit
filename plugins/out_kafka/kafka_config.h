@@ -52,6 +52,10 @@ struct flb_kafka {
     int timestamp_key_len;
     char *timestamp_key;
 
+    /* time key format */
+    int time_key_format_len;
+    char *time_key_format;
+
     int message_key_len;
     char *message_key;
 

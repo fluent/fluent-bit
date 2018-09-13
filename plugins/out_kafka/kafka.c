@@ -65,16 +65,20 @@ static int cb_kafka_init(struct flb_output_instance *ins,
     return 0;
 }
 
-int produce_message(struct flb_time *tm, msgpack_object *map,
+int produce_message(struct flb_time *tms, msgpack_object *map,
                     struct flb_kafka *ctx, struct flb_config *config)
 {
     int i;
     int ret;
     int size;
+    int len;
     int queue_full_retries = 0;
     char *out_buf;
+    char time_formatted[256];
     size_t out_size;
+    size_t s;
     struct flb_kafka_topic *topic = NULL;
+    struct tm tm;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
     msgpack_object key;
@@ -92,9 +96,22 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
 
         /* Pack timestamp */
         msgpack_pack_str(&mp_pck, ctx->timestamp_key_len);
-        msgpack_pack_str_body(&mp_pck,
-                              ctx->timestamp_key, ctx->timestamp_key_len);
-        msgpack_pack_double(&mp_pck, flb_time_to_double(tm));
+
+        if (ctx->time_key_format) {
+          gmtime_r(&(*tms).tm.tv_sec, &tm);
+          s = strftime(time_formatted, sizeof(time_formatted) - 1,
+                       ctx->time_key_format, &tm);
+          len = snprintf(time_formatted + s, sizeof(time_formatted) - 1 - s,
+                         ".%" PRIu64 "Z", (uint64_t) (*tms).tm.tv_nsec);
+          s += len;
+          msgpack_pack_str(&mp_pck, s);
+          msgpack_pack_str_body(&mp_pck, time_formatted, s);
+        }
+        else {
+          msgpack_pack_str_body(&mp_pck,
+                               ctx->timestamp_key, ctx->timestamp_key_len);
+          msgpack_pack_double(&mp_pck, flb_time_to_double(tm));
+        }
     }
     else {
         size = map->via.map.size;

@@ -180,6 +180,16 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
     if (tmp) {
         ctx->gelf_fields.level_key = flb_sds_create(tmp);
     }
+    /* Config: Time_Key_Format */
+    tmp = flb_output_get_property("time_key_format", ins);
+    if(tmp){
+        ctx->time_key_format = flb_strdup(tmp);
+        ctx->time_key_format_len = strlen(tmp);
+    }
+    else {
+       ctx->time_key_format = NULL;
+       ctx->time_key_format_len = 0;
+    }
 
     /* Kafka Producer */
     ctx->producer = rd_kafka_new(RD_KAFKA_PRODUCER, ctx->conf,
