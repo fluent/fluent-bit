@@ -189,7 +189,7 @@ include_directories(
   lib/
   lib/flb_libco
   lib/sha1
-  lib/msgpack-2.1.3/include
+  lib/msgpack-3.1.1/include
   lib/LuaJIT-2.1.0-beta3/src/
   ${MONKEY_INCLUDE_DIR}
   )
@@ -211,7 +211,7 @@ option(MSGPACK_ENABLE_CXX             OFF)
 option(MSGPACK_ENABLE_SHARED          OFF)
 option(MSGPACK_BUILD_TESTS            OFF)
 option(MSGPACK_BUILD_EXAMPLES         OFF)
-add_subdirectory(lib/msgpack-2.1.3 EXCLUDE_FROM_ALL)
+add_subdirectory(lib/msgpack-3.1.1 EXCLUDE_FROM_ALL)
 
 # Lib: build the core libraries used by Fluent-Bit
 FLB_DEFINITION(JSMN_PARENT_LINKS)

@@ -1,0 +1,110 @@
+//
+// MessagePack for C++ static resolution routine
+//
+// Copyright (C) 2008-2016 FURUHASHI Sadayuki and KONDO Takatoshi
+//
+//    Distributed under the Boost Software License, Version 1.0.
+//    (See accompanying file LICENSE_1_0.txt or copy at
+//    http://www.boost.org/LICENSE_1_0.txt)
+//
+#ifndef MSGPACK_V1_CPP03_DEFINE_ARRAY_HPP
+#define MSGPACK_V1_CPP03_DEFINE_ARRAY_HPP
+
+#include "msgpack/v1/adaptor/detail/cpp03_define_array_decl.hpp"
+#include "msgpack/adaptor/msgpack_tuple.hpp"
+#include "msgpack/adaptor/adaptor_base.hpp"
+#include "msgpack/object_fwd.hpp"
+
+namespace msgpack {
+/// @cond
+MSGPACK_API_VERSION_NAMESPACE(v1) {
+/// @endcond
+namespace type {
+
+<% GENERATION_LIMIT = 31 %>
+template <>
+struct define_array<> {
+    typedef define_array<> value_type;
+    typedef tuple<> tuple_type;
+    template <typename Packer>
+    void msgpack_pack(Packer& pk) const
+    {
+        pk.pack_array(0);
+    }
+    void msgpack_unpack(msgpack::object const& o)
+    {
+        if(o.type != msgpack::type::ARRAY) { throw msgpack::type_error(); }
+    }
+    void msgpack_object(msgpack::object* o, msgpack::zone&) const
+    {
+        o->type = msgpack::type::ARRAY;
+        o->via.array.ptr = MSGPACK_NULLPTR;
+        o->via.array.size = 0;
+    }
+};
+
+/// @cond
+<%0.upto(GENERATION_LIMIT) {|i|%>
+template <typename A0<%1.upto(i) {|j|%>, typename A<%=j%><%}%>>
+struct define_array<A0<%1.upto(i) {|j|%>, A<%=j%><%}%>> {
+    typedef define_array<A0<%1.upto(i) {|j|%>, A<%=j%><%}%>> value_type;
+    typedef tuple<A0<%1.upto(i) {|j|%>, A<%=j%><%}%>> tuple_type;
+    define_array(A0& _a0<%1.upto(i) {|j|%>, A<%=j%>& _a<%=j%><%}%>) :
+        a0(_a0)<%1.upto(i) {|j|%>, a<%=j%>(_a<%=j%>)<%}%> {}
+    template <typename Packer>
+    void msgpack_pack(Packer& pk) const
+    {
+        pk.pack_array(<%=i+1%>);
+        <%0.upto(i) {|j|%>
+        pk.pack(a<%=j%>);<%}%>
+    }
+    void msgpack_unpack(msgpack::object const& o)
+    {
+        if(o.type != msgpack::type::ARRAY) { throw msgpack::type_error(); }
+        const size_t size = o.via.array.size;
+        if(size > 0) {
+            msgpack::object *ptr = o.via.array.ptr;
+            switch(size) {
+            default:<%(i).downto(0) {|j|%>
+            case <%=j+1%>: ptr[<%=j%>].convert(a<%=j%>);
+            // fallthrough
+<%}%>
+            }
+        }
+    }
+    void msgpack_object(msgpack::object* o, msgpack::zone& z) const
+    {
+        o->type = msgpack::type::ARRAY;
+        o->via.array.ptr = static_cast<msgpack::object*>(z.allocate_align(sizeof(msgpack::object)*<%=i+1%>, MSGPACK_ZONE_ALIGNOF(msgpack::object)));
+        o->via.array.size = <%=i+1%>;
+        <%0.upto(i) {|j|%>
+        o->via.array.ptr[<%=j%>] = msgpack::object(a<%=j%>, z);<%}%>
+    }
+    <%0.upto(i) {|j|%>
+    A<%=j%>& a<%=j%>;<%}%>
+};
+<%}%>
+/// @endcond
+
+inline define_array<> make_define_array()
+{
+    return define_array<>();
+}
+
+/// @cond
+<%0.upto(GENERATION_LIMIT) {|i|%>
+template <typename A0<%1.upto(i) {|j|%>, typename A<%=j%><%}%>>
+inline define_array<A0<%1.upto(i) {|j|%>, A<%=j%><%}%>> make_define_array(A0& a0<%1.upto(i) {|j|%>, A<%=j%>& a<%=j%><%}%>)
+{
+    return define_array<A0<%1.upto(i) {|j|%>, A<%=j%><%}%>>(a0<%1.upto(i) {|j|%>, a<%=j%><%}%>);
+}
+<%}%>
+/// @endcond
+
+}  // namespace type
+/// @cond
+}  // MSGPACK_API_VERSION_NAMESPACE(v1)
+/// @endcond
+}  // namespace msgpack
+
+#endif // MSGPACK_V1_CPP03_DEFINE_ARRAY_HPP
