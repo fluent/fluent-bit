@@ -219,11 +219,14 @@ int mk_http_thread_event(struct mk_event *event)
 {
     struct mk_sched_conn *conn = (struct mk_sched_conn *) event;
 
+    /*
     struct mk_thread *th;
     struct mk_http_thread *mth;
 
     th = conn->channel.thread;
     mth = (struct mk_http_thread *) MK_THREAD_DATA(th);
+    */
+
     mk_thread_resume(conn->channel.thread);
     return 0;
 }

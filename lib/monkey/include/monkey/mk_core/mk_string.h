@@ -21,6 +21,7 @@
 #define MK_STR_H
 
 #include <stdint.h>
+#include "mk_core_info.h"
 #include "mk_memory.h"
 #include "mk_list.h"
 #include "mk_macros.h"
@@ -45,6 +46,10 @@ struct mk_string_line
 
     struct mk_list _head;
 };
+
+#if !defined(MK_HAVE_MEMRCHR)
+void *memrchr(const void *s, int c, size_t n);
+#endif
 
 /* Lookup char into string, return position */
 int mk_string_char_search(const char *string, int c, int len);

@@ -31,7 +31,7 @@ void mk_server_info(struct mk_server *server)
     struct mk_plugin *p;
     struct mk_config_listener *l;
 
-    printf(MK_BANNER_ENTRY "Process ID is %i\n", getpid());
+    printf(MK_BANNER_ENTRY "Process ID is %ld\n", (long) getpid());
     mk_list_foreach(head, &server->listeners) {
         l = mk_list_entry(head, struct mk_config_listener, _head);
         printf(MK_BANNER_ENTRY "Server listening on %s:%s\n",

@@ -42,3 +42,7 @@ message(STATUS "LINKING ${STATIC_PLUGINS_LIBS}")
 if(MK_HAVE_LINUX_KQUEUE)
   target_link_libraries(monkey-core-static kqueue)
 endif()
+
+if (CMAKE_SYSTEM_NAME MATCHES "SunOS")
+  target_link_libraries(monkey-core-static socket nsl)
+endif()

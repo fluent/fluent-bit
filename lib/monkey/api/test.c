@@ -90,7 +90,7 @@ static void cb_queue_message(mk_mq_t *queue, void *data, size_t size, void *ctx)
     (void) queue;
 
     printf("=== cb queue message === \n");
-    printf(" => %lu bytes\n", size);
+    printf(" => %zu bytes\n", size);
     printf(" => ");
 
     buf = data;

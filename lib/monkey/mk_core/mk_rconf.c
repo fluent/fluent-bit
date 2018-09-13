@@ -174,7 +174,7 @@ static int mk_rconf_read(struct mk_rconf *conf, const char *path)
     int line = 0;
     int indent_len = -1;
     int n_keys = 0;
-    char buf[1024];
+    char *buf;
     char tmp[PATH_MAX];
     char *section = NULL;
     char *indent = NULL;
@@ -216,8 +216,15 @@ static int mk_rconf_read(struct mk_rconf *conf, const char *path)
         return -1;
     }
 
+    /* Allocate temporal buffer to read file content */
+    buf = mk_mem_alloc(MK_RCONF_KV_SIZE);
+    if (!buf) {
+        perror("malloc");
+        return -1;
+    }
+
     /* looking for configuration directives */
-    while (fgets(buf, 1024, f)) {
+    while (fgets(buf, MK_RCONF_KV_SIZE, f)) {
         len = strlen(buf);
         if (buf[len - 1] == '\n') {
             buf[--len] = 0;
@@ -239,7 +246,7 @@ static int mk_rconf_read(struct mk_rconf *conf, const char *path)
         }
 
         if (len > 9 && strncasecmp(buf, "@INCLUDE ", 9) == 0) {
-            if ( strchr(buf + 9, '*') != NULL) {
+            if (strchr(buf + 9, '*') != NULL) {
                 ret = mk_rconf_read_glob(conf, buf + 9);
             }
             else {
@@ -251,6 +258,7 @@ static int mk_rconf_read(struct mk_rconf *conf, const char *path)
                 if (indent) {
                     mk_mem_free(indent);
                 }
+                mk_mem_free(buf);
                 return -1;
             }
             continue;
@@ -262,6 +270,7 @@ static int mk_rconf_read(struct mk_rconf *conf, const char *path)
                 if (indent) {
                     mk_mem_free(indent);
                 }
+                mk_mem_free(buf);
                 return -1;
             }
             continue;
@@ -368,6 +377,7 @@ static int mk_rconf_read(struct mk_rconf *conf, const char *path)
     if (indent) {
         mk_mem_free(indent);
     }
+    mk_mem_free(buf);
 
     /* Append this file to the list */
     file = mk_mem_alloc(sizeof(struct mk_rconf_file));
@@ -388,7 +398,7 @@ static int mk_rconf_read_glob(struct mk_rconf *conf, const char * path)
     int ret = -1;
     glob_t glb;
     char tmp[PATH_MAX];
-    
+
     const char *glb_path;
     size_t i;
     int ret_glb = -1;
