@@ -17,8 +17,7 @@
  *  limitations under the License.
  */
 
-#include <stdio.h>
-
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
@@ -27,7 +26,9 @@
 
 #include "stdout.h"
 
-static char *msgpack_to_json(struct flb_out_stdout_config *ctx, char *data, uint64_t bytes, uint64_t *out_size)
+static char *msgpack_to_json(struct flb_out_stdout_config *ctx,
+                             char *data, uint64_t bytes,
+                             uint64_t *out_size)
 {
     int i;
     int ret;
@@ -155,12 +156,11 @@ static char *msgpack_to_json(struct flb_out_stdout_config *ctx, char *data, uint
 }
 
 
-int cb_stdout_init(struct flb_output_instance *ins, struct flb_config *config,
-                   void *data)
+static int cb_stdout_init(struct flb_output_instance *ins,
+                          struct flb_config *config, void *data)
 {
     char *tmp;
     struct flb_out_stdout_config *ctx = NULL;
-
     (void) ins;
     (void) config;
     (void) data;
@@ -203,11 +203,11 @@ int cb_stdout_init(struct flb_output_instance *ins, struct flb_config *config,
     return 0;
 }
 
-void cb_stdout_flush(void *data, size_t bytes,
-                     char *tag, int tag_len,
-                     struct flb_input_instance *i_ins,
-                     void *out_context,
-                     struct flb_config *config)
+static void cb_stdout_flush(void *data, size_t bytes,
+                            char *tag, int tag_len,
+                            struct flb_input_instance *i_ins,
+                            void *out_context,
+                            struct flb_config *config)
 {
     msgpack_unpacked result;
     size_t off = 0, cnt = 0;
@@ -240,10 +240,26 @@ void cb_stdout_flush(void *data, size_t bytes,
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 
+static int cb_stdout_exit(void *data, struct flb_config *config)
+{
+    struct flb_out_stdout_config *ctx = data;
+
+    if (!ctx) {
+        return 0;
+    }
+
+    if (ctx->json_date_key) {
+        flb_free(ctx->json_date_key);
+    }
+    flb_free(ctx);
+    return 0;
+}
+
 struct flb_output_plugin out_stdout_plugin = {
     .name         = "stdout",
     .description  = "Prints events to STDOUT",
     .cb_init      = cb_stdout_init,
     .cb_flush     = cb_stdout_flush,
+    .cb_exit      = cb_stdout_exit,
     .flags        = 0,
 };
