@@ -88,6 +88,7 @@ int flb_net_host_set(char *plugin_name, struct flb_net_host *host, char *address
             return -1;
         }
         host->name = copy_substr(s, e - s);
+        host->ipv6 = FLB_TRUE;
         s = e + 1;
     } else {
         e = s;
