@@ -324,6 +324,49 @@ flb_sockfd_t flb_net_server(char *port, char *listen_addr)
     return fd;
 }
 
+flb_sockfd_t flb_net_server_udp(char *port, char *listen_addr)
+{
+    flb_sockfd_t fd = -1;
+    int ret;
+    struct addrinfo hints;
+    struct addrinfo *res, *rp;
+
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_DGRAM;
+    hints.ai_flags = AI_PASSIVE;
+
+    ret = getaddrinfo(listen_addr, port, &hints, &res);
+    if (ret != 0) {
+        flb_warn("net_server_udp: getaddrinfo(listen='%s:%s'): %s",
+                 listen_addr, port, gai_strerror(ret));
+        return -1;
+    }
+
+    for (rp = res; rp != NULL; rp = rp->ai_next) {
+        fd = flb_net_socket_create_udp(rp->ai_family, 0);
+        if (fd == -1) {
+            flb_error("Error creating server socket, retrying");
+            continue;
+        }
+
+        ret = flb_net_bind_udp(fd, rp->ai_addr, rp->ai_addrlen);
+        if(ret == -1) {
+            flb_warn("Cannot listen on %s port %s", listen_addr, port);
+            flb_socket_close(fd);
+            continue;
+        }
+        break;
+    }
+    freeaddrinfo(res);
+
+    if (rp == NULL) {
+        return -1;
+    }
+
+    return fd;
+}
+
 int flb_net_bind(flb_sockfd_t fd, const struct sockaddr *addr,
                  socklen_t addrlen, int backlog)
 {
@@ -339,6 +382,20 @@ int flb_net_bind(flb_sockfd_t fd, const struct sockaddr *addr,
     if(ret == -1 ) {
         flb_error("Error setting up the listener");
         return -1;
+    }
+
+    return ret;
+}
+
+int flb_net_bind_udp(flb_sockfd_t fd, const struct sockaddr *addr,
+                 socklen_t addrlen)
+{
+    int ret;
+
+    ret = bind(fd, addr, addrlen);
+    if( ret == -1 ) {
+        flb_error("Error binding socket");
+        return ret;
     }
 
     return ret;

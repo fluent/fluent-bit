@@ -59,8 +59,11 @@ flb_sockfd_t flb_net_socket_create_udp(int family, int nonblock);
 flb_sockfd_t flb_net_tcp_connect(char *host, unsigned long port);
 int flb_net_tcp_fd_connect(flb_sockfd_t fd, char *host, unsigned long port);
 flb_sockfd_t flb_net_server(char *port, char *listen_addr);
+flb_sockfd_t flb_net_server_udp(char *port, char *listen_addr);
 int flb_net_bind(flb_sockfd_t fd, const struct sockaddr *addr,
                  socklen_t addrlen, int backlog);
+int flb_net_bind_udp(flb_sockfd_t fd, const struct sockaddr *addr,
+                 socklen_t addrlen);
 flb_sockfd_t flb_net_accept(flb_sockfd_t server_fd);
 int flb_net_socket_ip_str(flb_sockfd_t fd, char **buf, int size, unsigned long *len);
 
