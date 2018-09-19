@@ -612,7 +612,7 @@ static int data_compose(void *data, size_t bytes,
         msgpack_sbuffer_init(&mp_sbuf);
         msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-        while (msgpack_unpack_next(&result, data, bytes, &off)) {
+        while (msgpack_unpack_next(&result, data, bytes, &off) >= 0) {
             /* Gather time */
             flb_time_pop_from_msgpack(&tm, &result, &mp_obj);
 
@@ -624,7 +624,7 @@ static int data_compose(void *data, size_t bytes,
         }
     }
     else {
-        while (msgpack_unpack_next(&result, data, bytes, &off)) {
+        while (msgpack_unpack_next(&result, data, bytes, &off) >= 0) {
             entries++;
         }
     }

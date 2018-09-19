@@ -92,7 +92,11 @@ int flb_parser_json_do(struct flb_parser *parser,
             off = 0;
             msgpack_unpacked_destroy(&result);
             msgpack_unpacked_init(&result);
-            msgpack_unpack_next(&result, tmp_out_buf, tmp_out_size, &off);
+            if (msgpack_unpack_next(&result, tmp_out_buf, tmp_out_size, &off) < 0)
+{
+            msgpack_unpacked_destroy(&result);
+return -1;
+}
             map = result.data;
         }
     }

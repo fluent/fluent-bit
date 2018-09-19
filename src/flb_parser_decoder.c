@@ -117,7 +117,10 @@ static int merge_record_and_extra_keys(char *in_buf, size_t in_size,
         msgpack_unpacked_destroy(&extra_result);
         return -1;
     }
-    msgpack_unpack_next(&in_result, in_buf, in_size, &in_off);
+    ret = msgpack_unpack_next(&in_result, in_buf, in_size, &in_off);
+    if (ret != MSGPACK_UNPACK_SUCCESS) {
+        return -1;
+    }
 
 
     msgpack_sbuffer_init(&mp_sbuf);
@@ -192,7 +195,8 @@ int flb_parser_decoder_do(struct mk_list *decoders,
 
     /* Initialize unpacker */
     msgpack_unpacked_init(&result);
-    msgpack_unpack_next(&result, in_buf, in_size, &off);
+    if (msgpack_unpack_next(&result, in_buf, in_size, &off) < 0)
+        return -1;
     map = result.data;
 
     if (map.type != MSGPACK_OBJECT_MAP) {

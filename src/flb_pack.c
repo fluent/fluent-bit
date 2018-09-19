@@ -323,7 +323,7 @@ void flb_pack_print(char *data, size_t bytes)
     size_t off = 0, cnt = 0;
 
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) >= 0) {
         printf("[%zd] ", cnt++);
         msgpack_object_print(stdout, result.data);
         printf("\n");
@@ -529,7 +529,8 @@ flb_sds_t flb_msgpack_raw_to_json_sds(void *in_buf, size_t in_size)
     }
 
     msgpack_unpacked_init(&result);
-    msgpack_unpack_next(&result, in_buf, in_size, &off);
+    if (msgpack_unpack_next(&result, in_buf, in_size, &off) < 0)
+        return NULL;
     root = &result.data;
 
     while (1) {
@@ -689,7 +690,7 @@ int flb_msgpack_expand_map(char *map_data, size_t map_size,
     }
 
     msgpack_unpacked_init(&result);
-    if (!(i=msgpack_unpack_next(&result, map_data, map_size, &off))){
+    if ((i=msgpack_unpack_next(&result, map_data, map_size, &off)) < 0){
         return -1;
     }
     if (result.data.type != MSGPACK_OBJECT_MAP) {
