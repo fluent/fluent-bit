@@ -51,7 +51,7 @@ static char *human_readable_size(long size)
 }
 
 /* Read file content into a memory buffer */
-static char *file_to_buffer(const char *path)
+static char *file_to_buffer(const char *path, long *read_size)
 {
     FILE *fp;
     char *buffer;
@@ -68,6 +68,7 @@ static char *file_to_buffer(const char *path)
         flb_errno();
         return NULL;
     }
+    memset(buffer, 0, PROC_STAT_BUF_SIZE);
 
     bytes = fread(buffer, PROC_STAT_BUF_SIZE, 1, fp);
     if (bytes < 0) {
@@ -76,7 +77,10 @@ static char *file_to_buffer(const char *path)
         flb_errno();
         return NULL;
     }
-
+    if (feof(fp)) {
+        *read_size = PROC_STAT_BUF_SIZE;
+    }
+    
     fclose(fp);
     return buffer;
 }
@@ -85,6 +89,7 @@ static char *file_to_buffer(const char *path)
 struct proc_task *proc_stat(pid_t pid, int page_size)
 {
     int ret;
+    long read_size = 0;
     char *p, *q;
     char *buf;
     char pid_path[PROC_PID_SIZE];
@@ -103,8 +108,8 @@ struct proc_task *proc_stat(pid_t pid, int page_size)
         return NULL;
     }
 
-    buf = file_to_buffer(pid_path);
-    if (!buf) {
+    buf = file_to_buffer(pid_path, &read_size);
+    if (!buf || read_size == 0) {
         flb_free(t);
         return NULL;
     }
@@ -121,8 +126,18 @@ struct proc_task *proc_stat(pid_t pid, int page_size)
     }
     p++;
 
-    q = p;
-    while (*q != ')') q++;
+    /* seek from tail of file.  */
+    q = buf + (read_size-1);
+    while (*q != ')' && read_size > 0) {
+        q--;
+        read_size--;
+    }
+    if (p==q || read_size == 0) {
+        flb_free(buf);
+        flb_free(t);
+        return NULL;
+    }
+
     strncpy(t->comm, p, q - p);
     q += 2;
 
