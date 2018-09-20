@@ -243,6 +243,10 @@ if(FLB_BINARY)
   find_package (Threads)
   add_executable(fluent-bit-bin fluent-bit.c)
 
+  if(FLB_STATIC_CONF)
+    add_dependencies(fluent-bit-bin flb-static-conf)
+  endif()
+
   if(FLB_JEMALLOC)
     target_link_libraries(fluent-bit-bin libjemalloc)
   endif()
