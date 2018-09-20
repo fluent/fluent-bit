@@ -223,7 +223,24 @@ struct flb_parser *flb_parser_create(char *name, char *format,
             p->time_frac_secs = (tmp + 3);
         }
         else {
-            p->time_frac_secs = NULL;
+            /* same as above but with comma seperator */
+            if (p->time_with_year == FLB_TRUE) {
+                tmp = strstr(p->time_fmt, "%S,%L");
+            }
+            else {
+                tmp = strstr(p->time_fmt_year, "%s,%L");
+
+                if (tmp == NULL) {
+                    tmp = strstr(p->time_fmt_year, "%S,%L");
+                }
+            }
+            if (tmp) {
+                tmp[2] = '\0';
+                p->time_frac_secs = (tmp + 3);
+            }
+            else {
+                p->time_frac_secs = NULL;
+            }
         }
 
         /* Check if the format contains a timezone (%z) */
@@ -688,7 +705,7 @@ int flb_parser_time_lookup(char *time_str, size_t tsize,
 
     if (p != NULL) {
         /* Check if we have fractional seconds */
-        if (parser->time_frac_secs && *p == '.') {
+        if (parser->time_frac_secs && (*p == '.' || *p == ',')) {
             /*
              * Further parser routines needs a null byte, for fractional seconds
              * we make a safe copy of the content.
@@ -737,15 +754,26 @@ int flb_parser_frac_tzone(char *str, int len, double *frac, int *tmdiff)
     char *p;
     char *end;
     double d;
+    char *pstr;
 
     /* Fractional seconds */
-    d = strtod(str, &end);
-    if ((d == 0 && end == str) || !end) {
-        return -1;
+    /* Normalize the fractional seperator to be '.' since that's what strtod()
+     * expects in standard C locale */
+    if (*str == ',') {
+        pstr = flb_strdup(str);
+        pstr[0] = '.';
+    }
+    else {
+        pstr = str;
+    }
+    d = strtod(pstr, &end);
+    if ((d == 0 && end == pstr) || !end) {
+        ret=-1;
+        goto free_and_return;
     }
     *frac = d;
 
-    tz_len = len - (end - str);
+    tz_len = len - (end - pstr);
     p = end;
     while (*p == ' ') p++;
 
@@ -753,10 +781,14 @@ int flb_parser_frac_tzone(char *str, int len, double *frac, int *tmdiff)
     ret = flb_parser_tzone_offset(p, tz_len, tmdiff);
     if (ret == -1) {
         *tmdiff = -1;
-        return -1;
+        goto free_and_return;
     }
 
-    return 0;
+free_and_return:
+    if (pstr != str) {
+        flb_free(pstr);
+    }
+    return ret;
 }
 
 int flb_parser_typecast(char *key, int key_len,
