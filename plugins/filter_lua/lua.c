@@ -154,10 +154,43 @@ static int lua_arraylength(lua_State *l)
     return max;
 }
 
-static void lua_tomsgpack(lua_State *l, msgpack_packer *pck, int index)
+static void lua_tomsgpack(struct lua_filter *lf, msgpack_packer *pck, int index);
+static void try_to_convert_data_type(struct lua_filter *lf,
+                                     msgpack_packer *pck,
+                                     int index)
+{
+    size_t   len;
+    const char *tmp = NULL;
+    lua_State *l = lf->lua->state;
+
+    struct mk_list  *tmp_list = NULL;
+    struct mk_list  *head     = NULL;
+    struct l2c_type *l2c      = NULL;
+
+    if ((lua_type(l, -2) == LUA_TSTRING) 
+        && lua_type(l, -1) == LUA_TNUMBER){
+        tmp = lua_tolstring(l, -2, &len);
+        
+        mk_list_foreach_safe(head, tmp_list, &lf->l2c_types) {
+            l2c = mk_list_entry(head, struct l2c_type, _head);
+            if (!strncmp(l2c->key, tmp, len)) {
+                lua_tomsgpack(lf, pck, -1);
+                msgpack_pack_int64(pck, (int)lua_tonumber(l, -1));
+                return;
+            }
+        }
+    }
+
+    /* not matched */
+    lua_tomsgpack(lf, pck, -1);
+    lua_tomsgpack(lf, pck, 0);
+}
+
+static void lua_tomsgpack(struct lua_filter *lf, msgpack_packer *pck, int index)
 {
     int len;
     int i;
+    lua_State *l = lf->lua->state;
 
     switch (lua_type(l, -1 + index)) {
         case LUA_TSTRING:
@@ -174,11 +207,7 @@ static void lua_tomsgpack(lua_State *l, msgpack_packer *pck, int index)
         case LUA_TNUMBER:
             {
                 double num = lua_tonumber(l, -1 + index);
-
-                if (num == (int)num)
-                    msgpack_pack_int64(pck, (int)num);
-                else
-                    msgpack_pack_double(pck, num);
+                msgpack_pack_double(pck, num);
             }
             break;
         case LUA_TBOOLEAN:
@@ -193,13 +222,12 @@ static void lua_tomsgpack(lua_State *l, msgpack_packer *pck, int index)
                 msgpack_pack_array(pck, len);
                 for (i = 1; i <= len; i++) {
                     lua_rawgeti(l, -1, i);
-                    lua_tomsgpack(l, pck, 0);
+                    lua_tomsgpack(lf, pck, 0);
                     lua_pop(l, 1);
                 }
             } else
             {
                 len = 0;
-
                 lua_pushnil(l);
                 while (lua_next(l, -2) != 0) {
                     lua_pop(l, 1);
@@ -208,11 +236,20 @@ static void lua_tomsgpack(lua_State *l, msgpack_packer *pck, int index)
                 msgpack_pack_map(pck, len);
 
                 lua_pushnil(l);
-                while (lua_next(l, -2) != 0) {
-                  lua_tomsgpack(l, pck, -1);
-                  lua_tomsgpack(l, pck, 0);
-                  lua_pop(l, 1);
-               }
+
+                if (lf->l2c_types_num > 0) {
+                    /* type conversion */
+                    while (lua_next(l, -2) != 0) {
+                        try_to_convert_data_type(lf, pck, index);
+                        lua_pop(l, 1);
+                    }
+                } else {
+                    while (lua_next(l, -2) != 0) {
+                        lua_tomsgpack(lf, pck, -1);
+                        lua_tomsgpack(lf, pck, 0);
+                        lua_pop(l, 1);
+                    }
+                }
             }
             break;
         case LUA_TNIL:
@@ -342,7 +379,7 @@ static int cb_lua_filter(void *data, size_t bytes,
         l_code = 0;
         l_timestamp = ts;
 
-        lua_tomsgpack(ctx->lua->state, &data_pck, 0);
+        lua_tomsgpack(ctx, &data_pck, 0);
         lua_pop(ctx->lua->state, 1);
 
         l_timestamp = (double) lua_tonumber(ctx->lua->state, -1);
