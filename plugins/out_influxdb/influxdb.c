@@ -456,11 +456,11 @@ void cb_influxdb_flush(void *data, size_t bytes,
         if (c->resp.status != 200 && c->resp.status != 204) {
             if (c->resp.payload_size > 0) {
                 flb_error("[out_influxdb] http_status=%i\n%s",
-                          ret, c->resp.status, c->resp.payload);
+                          c->resp.status, c->resp.payload);
             }
             else {
                 flb_debug("[out_influxdb] http_status=%i",
-                          ret, c->resp.status);
+                          c->resp.status);
             }
         }
         flb_debug("[out_influxdb] http_do=%i OK", ret);
