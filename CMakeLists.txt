@@ -171,7 +171,10 @@ if(FLB_DEV)
 endif()
 
 if(FLB_OUT_GELF)
-  find_package( ZLIB REQUIRED )
+  find_package( ZLIB )
+  if ( NOT ZLIB_FOUND )
+     set(FLB_OUT_GELF 0)
+  endif()
 endif()
 
 # Macro to set definitions
