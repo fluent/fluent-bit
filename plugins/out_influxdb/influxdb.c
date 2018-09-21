@@ -42,6 +42,22 @@ static int is_tagged_key(struct flb_influxdb_config *ctx,
                          char *key, int kl, int type);
 
 /*
+ * Increments the timestamp when it is duplicated
+ */
+static void influxdb_tsmod(struct flb_time *ts, struct flb_time *dupe,
+                           struct flb_time *last) {
+    if (flb_time_equal(ts, last) || flb_time_equal(ts, dupe)) {
+        ++dupe->tm.tv_nsec;
+        flb_time_copy(last, ts);
+        flb_time_copy(ts, dupe);
+    }
+    else {
+        flb_time_copy(last, ts);
+        flb_time_copy(dupe, ts);
+    }
+}
+
+/*
  * Convert the internal Fluent Bit data representation to the required one
  * by InfluxDB.
  */
@@ -254,6 +270,8 @@ static char *influxdb_format(char *tag, int tag_len,
 
         /* Check have data fields */
         if (bulk_body->len > 0) {
+            /* Modify timestamp in avoidance of duplication */
+            influxdb_tsmod(&tm, &ctx->ts_dupe, &ctx->ts_last);
             /* Append the timestamp */
             ret = influxdb_bulk_append_timestamp(bulk_body, &tm);
             if (ret == -1) {
@@ -408,6 +426,9 @@ int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *config,
     }
     ctx->u   = upstream;
     ctx->seq = 0;
+
+    flb_time_zero(&ctx->ts_dupe);
+    flb_time_zero(&ctx->ts_last);
 
     flb_debug("[out_influxdb] host=%s port=%i", ins->host.name, ins->host.port);
     flb_output_set_context(ins, ctx);
