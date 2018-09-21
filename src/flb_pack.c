@@ -506,7 +506,7 @@ int flb_msgpack_to_json(char *json_str, size_t json_size,
         return -1;
     }
 
-    ret = msgpack2json(json_str, &off, json_size, obj);
+    ret = msgpack2json(json_str, &off, json_size - 1, obj);
     json_str[off] = '\0';
     return ret ? off: ret;
 }
