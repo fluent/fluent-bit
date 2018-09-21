@@ -231,7 +231,7 @@ static char *influxdb_format(char *tag, int tag_len,
                 ret = influxdb_bulk_append_kv(bulk_head,
                                               key, key_len,
                                               val, val_len,
-                                              quote);
+                                              false);
             }
             else {
                 /* Append key/value data into the bulk_body */
