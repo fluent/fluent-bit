@@ -25,7 +25,9 @@ RUN apt-get update && \
       libsystemd-dev \
       libssl1.0-dev \
       libasl-dev \
-      libsasl2-dev
+      libsasl2-dev \
+      pkg-config \
+      zlib1g-dev
 
 WORKDIR /tmp/src/build/
 RUN cmake -DFLB_DEBUG=On \
