@@ -19,6 +19,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <inttypes.h>
 #include <time.h>
 
 #include <fluent-bit/flb_info.h>
@@ -108,10 +109,10 @@ static void output_fcount(FILE* f, struct flb_out_fcount_config *ctx,
 {
     fprintf(f,
            "[%s] [%lu, {"
-           "\"counts\":%lu, "
-           "\"bytes\":%lu, "
-           "\"counts/%s\":%lu, "
-           "\"bytes/%s\":%lu }"
+           "\"counts\":%"PRIu64", "
+           "\"bytes\":%"PRIu64", "
+           "\"counts/%s\":%"PRIu64", "
+           "\"bytes/%s\":%"PRIu64" }"
            "]\n",
            PLUGIN_NAME, buf->until,
            buf->counts,
