@@ -36,6 +36,48 @@
 #define MERGE_PARSED      1 /* merge parsed string (log_buf)             */
 #define MERGE_BINARY      2 /* merge direct binary object (v)            */
 
+#define T_LOG_STREAM "stream"
+#define T_LOG_STDERR "stderr"
+
+static int is_stream_stderr(void *data, size_t bytes)
+{
+    int i;
+    msgpack_unpacked result;
+    size_t off = 0;
+    msgpack_object root;
+    msgpack_object_map map;
+    msgpack_object k;
+    msgpack_object v;
+    msgpack_unpacked_init(&result);
+    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+        root = result.data;
+        if (root.type != MSGPACK_OBJECT_ARRAY) {
+            continue;
+        }
+
+        if (root.via.array.ptr[1].type != MSGPACK_OBJECT_MAP) {
+            continue;
+        }
+        map = root.via.array.ptr[1].via.map;
+        for (i = 0; i < map.size; i++) {
+            k = map.ptr[i].key;
+            v = map.ptr[i].val;
+
+            if (k.type == MSGPACK_OBJECT_STR) {
+                /* Validate 'log' field */
+                if (k.via.str.size == sizeof(T_LOG_STREAM)-1 &&
+                strncmp(k.via.str.ptr, T_LOG_STREAM, sizeof(T_LOG_STREAM)-1) == 0) {
+                    if (!strncmp(v.via.str.ptr, T_LOG_STDERR, sizeof(T_LOG_STDERR)-1)) {
+                        return 1;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    return 0;
+}
+
 static int value_trim_size(msgpack_object o)
 {
     int i;
@@ -395,6 +437,7 @@ static int cb_kube_filter(void *data, size_t bytes,
                           struct flb_config *config)
 {
     int ret;
+    int is_stderr = 0;
     size_t pre = 0;
     size_t off = 0;
     char *cache_buf = NULL;
@@ -424,16 +467,20 @@ static int cb_kube_filter(void *data, size_t bytes,
             return FLB_FILTER_NOTOUCH;
         }
 
-        if (props.parser != NULL) {
-            parser = flb_parser_get(props.parser, config);
-        }
-
         if (props.exclude == FLB_TRUE) {
             *out_buf   = NULL;
             *out_bytes = 0;
             flb_kube_prop_destroy(&props);
             return FLB_FILTER_MODIFIED;
         }
+    }
+
+    is_stderr = is_stream_stderr(data, bytes);
+    if (is_stderr && props.stderr_parser != NULL) {
+        parser = flb_parser_get(props.stderr_parser, config);
+    }
+    else if (props.stdout_parser != NULL) {
+        parser = flb_parser_get(props.stdout_parser, config);
     }
 
     /* Create temporal msgpack buffer */
@@ -469,10 +516,6 @@ static int cb_kube_filter(void *data, size_t bytes,
                 msgpack_unpacked_destroy(&result);
                 flb_kube_prop_destroy(&props);
                 return FLB_FILTER_NOTOUCH;
-            }
-
-            if (props.parser != NULL) {
-                parser = flb_parser_get(props.parser, config);
             }
 
             if (props.exclude == FLB_TRUE) {

@@ -24,12 +24,14 @@
 #include <fluent-bit/flb_sds.h>
 
 /* Property structure/array index */
-#define FLB_KUBE_PROPS_PARSER   0
-#define FLB_KUBE_PROPS_EXCLUDE  1
+#define FLB_KUBE_PROPS_STDOUT_PARSER   0
+#define FLB_KUBE_PROPS_STDERR_PARSER   1
+#define FLB_KUBE_PROPS_EXCLUDE  2
 
 struct flb_kube_props {
-    flb_sds_t parser;      /* suggested parser     */
-    int exclude;           /* bool: exclude logs ? */
+    flb_sds_t stdout_parser; /* suggested parser for stdout, and stderr if not spec */
+    flb_sds_t stderr_parser; /* suggested parser for stderr-only */
+    int exclude;             /* bool: exclude logs ? */
 };
 
 #endif
