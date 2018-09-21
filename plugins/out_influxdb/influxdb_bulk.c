@@ -112,18 +112,20 @@ int influxdb_bulk_append_header(struct influxdb_bulk *bulk,
     memcpy(bulk->ptr + bulk->len, tag, tag_len);
     bulk->len += tag_len;
 
-    bulk->ptr[bulk->len] = ',';
-    bulk->len++;
+    if (seq_len != 0) {
+        bulk->ptr[bulk->len] = ',';
+        bulk->len++;
 
-    /* Sequence number */
-    memcpy(bulk->ptr + bulk->len, seq, seq_len);
-    bulk->len += seq_len;
+        /* Sequence number */
+        memcpy(bulk->ptr + bulk->len, seq, seq_len);
+        bulk->len += seq_len;
 
-    bulk->ptr[bulk->len] = '=';
-    bulk->len++;
+        bulk->ptr[bulk->len] = '=';
+        bulk->len++;
 
-    ret = snprintf(bulk->ptr + bulk->len, 32, "%" PRIu64, seq_n);
-    bulk->len += ret;
+        ret = snprintf(bulk->ptr + bulk->len, 32, "%" PRIu64, seq_n);
+        bulk->len += ret;
+    }
 
     /* Add a NULL byte for debugging purposes */
     bulk->ptr[bulk->len] = '\0';

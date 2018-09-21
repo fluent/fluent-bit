@@ -371,6 +371,9 @@ int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *config,
     if (!tmp) {
         ctx->seq_name = flb_strdup("_seq");
     }
+    else if (strcmp(tmp, "off") == 0) {
+        ctx->seq_name = flb_strdup("");
+    }
     else {
         ctx->seq_name = flb_strdup(tmp);
     }
