@@ -251,6 +251,7 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
             if (sentry->last_pos == len) {
                 /* Missing value */
                 flb_error("[out_http] missing header value");
+                flb_free(header);
                 flb_utils_split_free(split);
                 flb_http_conf_destroy(ctx);
                 return NULL;
