@@ -989,6 +989,7 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
         tail_signal_manager(file->config);
     }
     flb_free(tmp);
+    flb_free(name);
 
     return 0;
 }
