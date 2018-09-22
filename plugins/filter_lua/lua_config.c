@@ -37,7 +37,7 @@ struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
     int ret;
     char *tmp;
     char *tmp_key;
-    char buf[1024];
+    char buf[PATH_MAX];
     char *script = NULL;
     (void) config;
     struct stat st;
@@ -76,7 +76,8 @@ struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
         }
 
         if (config->conf_path) {
-            snprintf(buf, PATH_MAX, "%s%s", config->conf_path, tmp);
+            snprintf(buf, sizeof(buf) - 1, "%s%s",
+                     config->conf_path, tmp);
             script = buf;
         }
     }
