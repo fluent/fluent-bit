@@ -64,6 +64,7 @@ struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
         flb_free(lf);
         return NULL;
     }
+    script = tmp;
 
     /* Compose path */
     ret = stat(tmp, &st);
@@ -78,9 +79,6 @@ struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
             snprintf(buf, PATH_MAX, "%s%s", config->conf_path, tmp);
             script = buf;
         }
-    }
-    else {
-        script = tmp;
     }
 
     /* Validate script path */
