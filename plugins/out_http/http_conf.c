@@ -20,6 +20,8 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_sds.h>
 
 #include "http.h"
 #include "http_conf.h"
@@ -199,6 +201,9 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
         else if (strcasecmp(tmp, "json_lines") == 0) {
             ctx->out_format = FLB_HTTP_OUT_JSON_LINES;
         }
+        else if (strcasecmp(tmp, "gelf") == 0) {
+            ctx->out_format = FLB_HTTP_OUT_GELF;
+        }
         else {
             flb_warn("[out_http] unrecognized 'format' option. Using 'msgpack'");
         }
@@ -217,6 +222,36 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
     tmp = flb_output_get_property("json_date_key", ins);
     ctx->json_date_key = flb_strdup(tmp ? tmp : "date");
     ctx->json_date_key_len = strlen(ctx->json_date_key);
+
+    /* Config Gelf_Timestamp_Key */
+    tmp = flb_output_get_property("gelf_timestamp_key", ins);
+    if (tmp) {
+        ctx->gelf_fields.timestamp_key = flb_sds_create(tmp);
+    }
+
+    /* Config Gelf_Host_Key */
+    tmp = flb_output_get_property("gelf_host_key", ins);
+    if (tmp) {
+        ctx->gelf_fields.host_key = flb_sds_create(tmp);
+    }
+
+    /* Config Gelf_Short_Message_Key */
+    tmp = flb_output_get_property("gelf_short_message_key", ins);
+    if (tmp) {
+        ctx->gelf_fields.short_message_key = flb_sds_create(tmp);
+    }
+
+    /* Config Gelf_Full_Message_Key */
+    tmp = flb_output_get_property("gelf_full_message_key", ins);
+    if (tmp) {
+        ctx->gelf_fields.full_message_key = flb_sds_create(tmp);
+    }
+
+    /* Config Gelf_Level_Key */
+    tmp = flb_output_get_property("gelf_level_key", ins);
+    if (tmp) {
+        ctx->gelf_fields.level_key = flb_sds_create(tmp);
+    }
 
     ctx->u = upstream;
     ctx->uri = uri;
@@ -306,6 +341,12 @@ void flb_http_conf_destroy(struct flb_out_http *ctx)
         mk_list_del(&header->_head);
         flb_free(header);
     }
+
+    flb_sds_destroy(ctx->gelf_fields.timestamp_key);
+    flb_sds_destroy(ctx->gelf_fields.host_key);
+    flb_sds_destroy(ctx->gelf_fields.short_message_key);
+    flb_sds_destroy(ctx->gelf_fields.full_message_key);
+    flb_sds_destroy(ctx->gelf_fields.level_key);
 
     flb_free(ctx);
     ctx = NULL;
