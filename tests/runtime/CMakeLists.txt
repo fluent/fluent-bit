@@ -25,6 +25,7 @@ if(FLB_OUT_LIB)
   FLB_RT_TEST(FLB_IN_MEM           "in_mem.c")
   FLB_RT_TEST(FLB_IN_PROC          "in_proc.c")
   FLB_RT_TEST(FLB_IN_RANDOM        "in_random.c")
+  FLB_RT_TEST(FLB_IN_DOCKER        "in_docker.c")
 endif()
 
 # Filter Plugins
