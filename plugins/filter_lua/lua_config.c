@@ -26,8 +26,10 @@
 
 #include "lua_config.h"
 
-#include <fcntl.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
                                      struct flb_config *config)
@@ -35,7 +37,10 @@ struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
     int ret;
     char *tmp;
     char *tmp_key;
+    char buf[PATH_MAX];
+    char *script = NULL;
     (void) config;
+    struct stat st;
     struct lua_filter *lf;
     struct mk_list *split   = NULL;
     struct mk_list *head    = NULL;
@@ -59,16 +64,33 @@ struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
         flb_free(lf);
         return NULL;
     }
+    script = tmp;
 
-    /* Validate path */
-    ret = access(tmp, R_OK);
+    /* Compose path */
+    ret = stat(tmp, &st);
+    if (ret == -1 && errno == ENOENT) {
+        if (tmp[0] == '/') {
+            flb_error("[filter_lua] cannot access script '%s'", tmp);
+            flb_free(lf);
+            return NULL;
+        }
+
+        if (config->conf_path) {
+            snprintf(buf, sizeof(buf) - 1, "%s%s",
+                     config->conf_path, tmp);
+            script = buf;
+        }
+    }
+
+    /* Validate script path */
+    ret = access(script, R_OK);
     if (ret == -1) {
-        flb_error("[filter_lua] cannot access script '%s'", tmp);
+        flb_error("[filter_lua] cannot access script '%s'", script);
         flb_free(lf);
         return NULL;
     }
 
-    lf->script = flb_sds_create(tmp);
+    lf->script = flb_sds_create(script);
     if (!lf->script) {
         flb_error("[filter_lua] could not allocate string");
         flb_free(lf);
@@ -96,7 +118,7 @@ struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
         lua_config_destroy(lf);
         return NULL;
     }
-    
+
     lf->l2c_types_num = 0;
     tmp = flb_filter_get_property("type_int_key", ins);
     if (tmp) {

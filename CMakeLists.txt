@@ -48,6 +48,7 @@ option(FLB_SQLDB              "Enable SQL embedded DB"        No)
 option(FLB_HTTP_SERVER        "Enable HTTP Server"            No)
 option(FLB_BACKTRACE          "Enable stacktrace support"    Yes)
 option(FLB_LUAJIT             "Enable Lua Scripting support" Yes)
+option(FLB_STATIC_CONF        "Build binary using static configuration")
 
 # Metrics: Experimental Feature, disabled by default on 0.12 series
 # but enabled in the upcoming 0.13 release. Note that development
@@ -170,7 +171,10 @@ if(FLB_DEV)
 endif()
 
 if(FLB_OUT_GELF)
-  find_package( ZLIB REQUIRED )
+  find_package( ZLIB )
+  if ( NOT ZLIB_FOUND )
+     set(FLB_OUT_GELF 0)
+  endif()
 endif()
 
 # Macro to set definitions
@@ -353,6 +357,15 @@ if(FLB_HAVE_TIMESPEC_GET)
   FLB_DEFINITION(FLB_HAVE_TIMESPEC_GET)
 endif()
 
+# Build tools/xxd-c
+add_subdirectory(tools/xxd-c)
+
+# Static configuration generator (using xxd-c)
+if(FLB_STATIC_CONF)
+  add_subdirectory(gen_static_conf)
+endif()
+
+# TD Agent options
 if(FLB_TD)
   FLB_DEFINITION(FLB_IS_TD_AGENT)
   FLB_OPTION(FLB_JEMALLOC ON)

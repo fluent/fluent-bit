@@ -17,21 +17,13 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_FILTER_KUBE_PROPS_H
-#define FLB_FILTER_KUBE_PROPS_H
+#ifndef FLB_STATIC_CONF_H
+#define FLB_STATIC_CONF_H
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_sds.h>
+@FLB_STATIC_CONF_INC@
 
-/* Property structure/array index */
-#define FLB_KUBE_PROPS_STDOUT_PARSER   0
-#define FLB_KUBE_PROPS_STDERR_PARSER   1
-#define FLB_KUBE_PROPS_EXCLUDE  2
-
-struct flb_kube_props {
-    flb_sds_t stdout_parser; /* suggested parser for stdout, and stderr if not spec */
-    flb_sds_t stderr_parser; /* suggested parser for stderr-only */
-    int exclude;             /* bool: exclude logs ? */
+unsigned char *flb_config_files[] = {
+    @FLB_STATIC_CONF_ARR@NULL
 };
 
 #endif
