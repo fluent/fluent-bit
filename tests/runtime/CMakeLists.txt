@@ -67,6 +67,7 @@ foreach(source_file ${CHECK_PROGRAMS})
     ${source_file_we}
     ${source_file}
     )
+  add_sanitizers(${source_file_we})
   target_link_libraries(${source_file_we}
     fluent-bit-static
     ${CMAKE_THREAD_LIBS_INIT}
