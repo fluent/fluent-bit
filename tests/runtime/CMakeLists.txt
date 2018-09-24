@@ -54,6 +54,11 @@ if(FLB_IN_LIB)
   FLB_RT_TEST(FLB_OUT_TD           "out_td.c")
 endif()
 
+set(SYSTEMD_LIB, "")
+if(FLB_HAVE_SYSTEMD)
+    set(SYSTEMD_LIB, "systemd")
+endif()
+
 set(FLB_TESTS_DATA_PATH ${CMAKE_CURRENT_SOURCE_DIR}/)
 configure_file(
   "${CMAKE_CURRENT_SOURCE_DIR}/flb_tests_runtime.h.in"
@@ -70,6 +75,7 @@ foreach(source_file ${CHECK_PROGRAMS})
   target_link_libraries(${source_file_we}
     fluent-bit-static
     ${CMAKE_THREAD_LIBS_INIT}
+    ${SYSTEMD_LIB}
     )
   add_test(${source_file_we} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${source_file_we})
   if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang" OR
