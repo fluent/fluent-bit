@@ -23,9 +23,21 @@ test:
       SKIP_EXTERNAL="elasticsearch|out_td|out_forward"
       SKIP_BROKEN="filter_nest|filter_parser|in_disk|in_proc"
       echo "Run 'internal' tests for $FLB_MEM $FLB_FLUSH"
-      for i in bin/flb-it*; do echo "===== <<$(basename $i)>> ====="; $i; done
+      for i in bin/flb-it*
+      do
+        echo "===== <<$(basename $i)>> ====="
+        $i || RES=FAIL && RES=PASS
+        printf "%-32s %s\n" $(basename $i) $RES >> test.log
+      done
       echo "Run select 'runtime' tests for $FLB_MEM $FLB_FLUSH"
-      for i in $(ls bin/flb-rt* | egrep -v "$SKIP_EXTERNAL|$SKIP_BROKEN"); do echo "===== <<$(basename $i)>> ====="; $i; done
+      for i in $(ls bin/flb-rt* | egrep -v "$SKIP_EXTERNAL|$SKIP_BROKEN")
+      do
+        echo "===== <<$(basename $i)>> ====="
+        $i || RES=FAIL && RES=PASS
+        printf "%-32s %s\n" $(basename $i) $RES >> test.log
+      done
+      echo
+      cat test.log
 
 build:
   image: cr.agilicus.com/corp-tools/docker-compose
