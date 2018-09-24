@@ -6,6 +6,7 @@ variables:
   PORT: 2375
   DOCKER_HOST: tcp://localhost:2375
   CONTAINER_IMAGE: $CI_REGISTRY/$CI_PROJECT_PATH
+  GIT_SUBMODULE_STRATEGY: recursive
 
 stages:
   - test
