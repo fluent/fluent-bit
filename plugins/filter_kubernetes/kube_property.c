@@ -32,6 +32,18 @@ static inline int prop_cmp(const char *key, size_t keylen, const char *property,
     return strncmp(key, property, keylen < proplen ? keylen : proplen) == 0;
 }
 
+static inline char *strnchr(const char *s, char c, size_t len)
+{
+    while (len > 0) {
+        if (*s == c) {
+            return s;
+        }
+        s++;
+        len--;
+    }
+    return 0;
+}
+
 static inline void prop_not_allowed(char *prop, struct flb_kube_meta *meta)
 {
     flb_warn("[filter_kube] annotation '%s' not allowed "
@@ -116,30 +128,38 @@ static int prop_set_exclude(struct flb_kube *ctx, struct flb_kube_meta *meta,
     return 0;
 }
 
+#define FLB_STDERR_PARSER_ANNOTATION   "parser_stderr"
+#define FLB_STDOUT_PARSER_ANNOTATION   "parser_stdout"
+#define FLB_UNIFIED_PARSER_ANNOTATION  "parser"
+
 int flb_kube_prop_set(struct flb_kube *ctx, struct flb_kube_meta *meta,
                       char *prop, int prop_len,
                       char *val_buf, size_t val_len,
                       struct flb_kube_props *props)
 {
-    if (prop_cmp("parser", sizeof("parser")-1, prop, prop_len)) {
-        // Parser can be:
-        // fluentbit.io/parser: FOO
-        // fluentbit.io/parser.container: BAR
-        // fluentbit.io/parser.container.stream: name
-        char *container = strstr(prop, ".");
+    // Parser can be:
+    //  fluentbit.io/parser: X
+    //  fluentbit.io/parser[-container]: X
+    //  fluentbit.io/parser_stdout[-container]: X
+    //  fluentbit.io/parser_stderr[-container: X
+    if (prop_cmp(FLB_UNIFIED_PARSER_ANNOTATION, sizeof(FLB_UNIFIED_PARSER_ANNOTATION)-1, prop, prop_len)) {
         char *stream = 0;
+        char *container = 0;
+        size_t stream_len =0;
         size_t container_len = 0;
-        size_t stream_len = 0 ;
+        if (prop_cmp(FLB_STDOUT_PARSER_ANNOTATION, sizeof(FLB_STDOUT_PARSER_ANNOTATION)-1, prop, prop_len)) {
+            stream = "stdout";
+            stream_len = sizeof("stdout");
+        }
+        else if (prop_cmp(FLB_STDERR_PARSER_ANNOTATION, sizeof(FLB_STDERR_PARSER_ANNOTATION)-1, prop, prop_len)) {
+            stream = "stderr";
+            stream_len = sizeof("stderr");
+        }
+        // Now check if we have parser-container or just parser
+        container = strnchr(prop, '-', prop_len);
         if (container) {
             container++;
             container_len = prop_len - (container - prop);
-
-            stream = strstr(container, ".");
-            if (stream) {
-                container_len = (stream - container);
-                stream++;
-                stream_len = prop_len - (stream - prop);
-            }
         }
         prop_set_parser(ctx, meta,
                         container, container_len,

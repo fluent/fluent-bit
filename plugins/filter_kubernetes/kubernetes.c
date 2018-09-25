@@ -66,8 +66,9 @@ static int is_stream_stderr(void *data, size_t bytes)
             if (k.type == MSGPACK_OBJECT_STR) {
                 /* Validate 'log' field */
                 if (k.via.str.size == sizeof(T_LOG_STREAM)-1 &&
-                strncmp(k.via.str.ptr, T_LOG_STREAM, sizeof(T_LOG_STREAM)-1) == 0) {
+                    strncmp(k.via.str.ptr, T_LOG_STREAM, sizeof(T_LOG_STREAM)-1) == 0) {
                     if (!strncmp(v.via.str.ptr, T_LOG_STDERR, sizeof(T_LOG_STDERR)-1)) {
+                        msgpack_unpacked_destroy(&result);
                         return 1;
                     }
                     break;
@@ -75,6 +76,7 @@ static int is_stream_stderr(void *data, size_t bytes)
             }
         }
     }
+    msgpack_unpacked_destroy(&result);
     return 0;
 }
 
