@@ -28,7 +28,7 @@
  * of sscanf(3) and whitespaces, programs with spaces in the name can
  * screw up when scanning the information.
  */
-#define PROC_STAT_FORMAT "%c %d %d %d %d %d %lu %lu %lu %lu %lu %lu %lu %ld %ld %ld %ld %ld %ld %lu %lu %ld"
+#define PROC_STAT_FORMAT "%c %d %d %d %d %d %u %lu %lu %lu %lu %lu %lu %ld %ld %ld %ld %ld %ld %llu %lu %ld"
 
 /* Our tast struct to read the /proc/PID/stat values */
 struct proc_task {
@@ -40,7 +40,7 @@ struct proc_task {
     int session;		       /* %d  */
     int tty_nr;			       /* %d  */
     int tpgid;			       /* %d  */
-    unsigned long flags;	   /* %lu */
+    unsigned int flags;	       /* %u  */
     unsigned long minflt;	   /* %lu */
     unsigned long cminflt;	   /* %lu */
     unsigned long majflt;	   /* %lu */
@@ -53,7 +53,7 @@ struct proc_task {
     long nice;			       /* %ld */
     long num_threads;		   /* %ld */
     long itrealvalue;		   /* %ld */
-    unsigned long starttime;   /* %lu */
+    unsigned long long starttime; /* %llu */
     unsigned long vsize;	   /* %lu */
     long rss;			       /* %ld */
 
