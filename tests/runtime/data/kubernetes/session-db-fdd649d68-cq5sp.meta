@@ -4,10 +4,10 @@
     "metadata": {
         "annotations": {
             "sidecar.istio.io/status": "{\"version\":\"2e0c897425ef3bd2729ec5f9aead7c0566c10ab326454e8e9e2b451404aee9a5\",\"initContainers\":[\"istio-init\"],\"containers\":[\"istio-proxy\"],\"volumes\":[\"istio-envoy\",\"istio-certs\"],\"imagePullSecrets\":null}",
-            "fluentbit.io/parser.istio-init.stdout": "init_stdout",
-            "fluentbit.io/parser.istio-init.stderr": "init_stderr",
-            "fluentbit.io/parser.session-db": "redis",
-            "fluentbit.io/parser.istio-proxy": "mixer"
+            "fluentbit.io/stdout-parser-istio-init": "init_stdout",
+            "fluentbit.io/stderr-parser-istio-init": "init_stderr",
+            "fluentbit.io/parser-session-db": "redis",
+            "fluentbit.io/parser-istio-proxy": "mixer"
         },
         "creationTimestamp": "2018-09-17T21:36:34Z",
         "generateName": "session-db-fdd649d68-",
