@@ -441,21 +441,21 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
         /* Name */
         name = mk_rconf_section_get_key(section, "Name", MK_RCONF_STR);
         if (!name) {
-            flb_error("[parser] no parser 'name' found");
+            flb_error("[parser] no parser 'name' found in file '%s'", cfg);
             goto fconf_error;
         }
 
         /* Format */
         format = mk_rconf_section_get_key(section, "Format", MK_RCONF_STR);
         if (!format) {
-            flb_error("[parser] no parser 'format' found");
+            flb_error("[parser] no parser 'format' found for '%s' in file '%s'", name, cfg);
             goto fconf_error;
         }
 
         /* Regex (if format is regex) */
         regex = mk_rconf_section_get_key(section, "Regex", MK_RCONF_STR);
         if (!regex && strcmp(format, "regex") == 0) {
-            flb_error("[parser] no parser 'regex' found");
+            flb_error("[parser] no parser 'regex' found for '%s' in file '%s", name, cfg);
             goto fconf_error;
         }
 
