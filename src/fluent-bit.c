@@ -192,8 +192,10 @@ static void flb_version()
 
 static void flb_banner()
 {
-    printf("%sFluent-Bit v%s%s\n", ANSI_BOLD, FLB_VERSION_STR, ANSI_RESET);
-    printf("%sCopyright (C) Treasure Data%s\n\n", ANSI_BOLD ANSI_YELLOW, ANSI_RESET);
+    fprintf(stderr, "%sFluent-Bit v%s%s\n",
+            ANSI_BOLD, FLB_VERSION_STR, ANSI_RESET);
+    fprintf(stderr, "%sCopyright (C) Treasure Data%s\n\n",
+            ANSI_BOLD ANSI_YELLOW, ANSI_RESET);
 }
 
 #define flb_print_signal(X) case X:                       \
