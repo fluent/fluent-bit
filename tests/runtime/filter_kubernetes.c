@@ -4,6 +4,10 @@
 #include <monkey/mk_lib.h>
 #include "flb_tests_runtime.h"
 
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 struct kube_test {
     flb_ctx_t *flb;
     mk_ctx_t *http;
@@ -30,6 +34,7 @@ struct kube_test {
 #define T_JSON_LOGS             DPATH "json-logs"
 #define T_JSON_LOGS_INV         DPATH "json-logs-invalid"
 #define T_SYSTEMD_SIMPLE        DPATH "kairosdb-914055854-b63vq"
+
 
 static int file_to_buf(char *path, char **out_buf, size_t *out_size)
 {
@@ -190,6 +195,9 @@ static int cb_check_result(void *record, size_t size, void *data)
      * in the output record.
      */
     check = strstr(record, out);
+    if (!check) {
+        fprintf(stderr, "record: <<%s>>, out: <<%s>>\n", record, out);
+    }
     TEST_CHECK(check != NULL);
     if (size > 0) {
         flb_free(record);
@@ -399,6 +407,7 @@ void flb_test_json_logs_invalid()
     kube_test_destroy(ctx);
 }
 
+#ifdef FLB_HAVE_SYSTEMD
 #include <systemd/sd-journal.h>
 void flb_test_systemd_logs()
 {
@@ -425,6 +434,7 @@ void flb_test_systemd_logs()
     kube_test_destroy(ctx);
 
 }
+#endif
 
 
 TEST_LIST = {
@@ -435,6 +445,8 @@ TEST_LIST = {
     {"kube_apache_logs_annotated_merge_log", flb_test_apache_logs_annotated_merge},
     {"kube_json_logs", flb_test_json_logs},
     {"kube_json_logs_invalid", flb_test_json_logs_invalid},
+#ifdef FLB_HAVE_SYSTEMD
     {"kube_systemd_logs", flb_test_systemd_logs},
+#endif
     {NULL, NULL}
 };

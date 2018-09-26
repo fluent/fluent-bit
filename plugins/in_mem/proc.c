@@ -104,6 +104,7 @@ struct proc_task *proc_stat(pid_t pid, int page_size)
     /* Compose path for /proc/PID/stat */
     ret = snprintf(pid_path, PROC_PID_SIZE, "/proc/%i/stat", pid);
     if (ret < 0) {
+        flb_free(t);
         flb_errno();
         return NULL;
     }

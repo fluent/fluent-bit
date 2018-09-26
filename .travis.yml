@@ -1,3 +1,5 @@
+dist: trusty
+sudo: required
 language: c
 compiler:
   - gcc
@@ -5,13 +7,6 @@ compiler:
 os:
   - linux
   - osx
-addons:
-  apt:
-    sources:
-      - george-edison55-precise-backports # cmake 3.2.3 / doxygen 1.8.3
-    packages:
-      - cmake
-      - cmake-data
 env:
   - FLB_MEM="-DFLB_JEMALLOC=On"
   - FLB_MEM="-DFLB_JEMALLOC=Off"
@@ -20,19 +15,33 @@ notifications:
   irc: "irc.freenode.net#fluent-bit"
 
 before_script:
-  # Install Toolchain for ksz9692 (ARM)
-  - if [ $TRAVIS_OS_NAME == linux ]; then if [ `uname -m` = x86_64 ]; then sudo apt-get install -qq --force-yes gcc-multilib > /dev/null; fi; fi
-  - if [ $TRAVIS_OS_NAME == linux ]; then wget http://fluentbit.io/ci-toolchains/ksz9692.tar.gz -O /tmp/ksz9692.tar.gz; fi
-  - if [ $TRAVIS_OS_NAME == linux ]; then tar -xf /tmp/ksz9692.tar.gz; fi
-  - if [ $TRAVIS_OS_NAME == linux ]; then export PATH=$PATH:$PWD/ksz9692/bin/; fi
-  # Unpack the sources
-  - cd build
-  - cmake -DFLB_ALL=On -DFLB_WITHOUT_EXAMPLES=On $FLB_FLUSH $FLB_MEM -DFLB_TESTS_INTERNAL=On ../
+  # Add an IPv6 config - see the corresponding Travis issue
+  # https://github.com/travis-ci/travis-ci/issues/8361
+  - if [ "${TRAVIS_OS_NAME}" == "linux" ]; then sudo sh -c 'echo 0 > /proc/sys/net/ipv6/conf/all/disable_ipv6'; fi
 
 matrix:
   exclude:
     - os: osx
       env: FLB_MEM="-DFLB_JEMALLOC=On"
 
-script: make
-after_script: make test
+script: |
+    cd build
+    cmake -DFLB_ALL=On -DFLB_WITHOUT_EXAMPLES=On $FLB_FLUSH $FLB_MEM -DFLB_TESTS_INTERNAL=On -DFLB_TESTS_RUNTIME=On ../
+    make
+    SKIP_EXTERNAL="elasticsearch|out_td|out_forward"
+    SKIP_BROKEN="filter_nest|filter_parser|in_disk|in_proc"
+    echo "Run 'internal' tests for $FLB_MEM $FLB_FLUSH"
+    for i in bin/flb-it*
+    do
+      echo "===== <<$(basename $i)>> ====="
+      $i
+    done
+    if [ "${TRAVIS_OS_NAME}" == "linux" ]
+    then
+      echo "Run select 'runtime' tests for $FLB_MEM $FLB_FLUSH"
+      for i in $(ls bin/flb-rt* | egrep -v "$SKIP_EXTERNAL|$SKIP_BROKEN")
+      do
+        echo "===== <<$(basename $i)>> ====="
+        $i
+      done
+    fi

@@ -20,12 +20,27 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 
 #include <fluent-bit.h>
+#include "influxdb.h"
 #include "influxdb_bulk.h"
 
 static const uint64_t ONE_BILLION = 1000000000;
- 
+
+static int influxdb_escape(char *out, const char *str, int size) {
+    int out_size = 0;
+    int i;
+    for (i = 0; i < size; ++i) {
+        char ch = str[i];
+        if (isspace(ch) || ch == ',' || ch == '=' || ch == '"') {
+            out[out_size++] = '\\';
+        }
+        out[out_size++] = ch;
+    }
+    return out_size;
+}
+
 static int influxdb_bulk_buffer(struct influxdb_bulk *bulk, int required)
 {
     int new_size;
@@ -97,18 +112,20 @@ int influxdb_bulk_append_header(struct influxdb_bulk *bulk,
     memcpy(bulk->ptr + bulk->len, tag, tag_len);
     bulk->len += tag_len;
 
-    bulk->ptr[bulk->len] = ',';
-    bulk->len++;
+    if (seq_len != 0) {
+        bulk->ptr[bulk->len] = ',';
+        bulk->len++;
 
-    /* Sequence number */
-    memcpy(bulk->ptr + bulk->len, seq, seq_len);
-    bulk->len += seq_len;
+        /* Sequence number */
+        memcpy(bulk->ptr + bulk->len, seq, seq_len);
+        bulk->len += seq_len;
 
-    bulk->ptr[bulk->len] = '=';
-    bulk->len++;
+        bulk->ptr[bulk->len] = '=';
+        bulk->len++;
 
-    ret = snprintf(bulk->ptr + bulk->len, 32, "%" PRIu64, seq_n);
-    bulk->len += ret;
+        ret = snprintf(bulk->ptr + bulk->len, 32, "%" PRIu64, seq_n);
+        bulk->len += ret;
+    }
 
     /* Add a NULL byte for debugging purposes */
     bulk->ptr[bulk->len] = '\0';
@@ -124,7 +141,8 @@ int influxdb_bulk_append_kv(struct influxdb_bulk *bulk,
     int ret;
     int required;
 
-    required = k_len + 1 + v_len + 1 + 1;
+    /* Reserve double space for keys and values in case of escaping */
+    required = k_len * 2 + 1 + v_len * 2 + 1 + 1;
     if (quote) {
         required += 2;
     }
@@ -141,8 +159,7 @@ int influxdb_bulk_append_kv(struct influxdb_bulk *bulk,
     }
 
     /* key */
-    memcpy(bulk->ptr + bulk->len, key, k_len);
-    bulk->len += k_len;
+    bulk->len += influxdb_escape(bulk->ptr + bulk->len, key, k_len);
 
     /* separator */
     bulk->ptr[bulk->len] = '=';
@@ -153,8 +170,7 @@ int influxdb_bulk_append_kv(struct influxdb_bulk *bulk,
         bulk->ptr[bulk->len] = '"';
         bulk->len++;
     }
-    memcpy(bulk->ptr + bulk->len, val, v_len);
-    bulk->len += v_len;
+    bulk->len += influxdb_escape(bulk->ptr + bulk->len, val, v_len);
     if (quote) {
         bulk->ptr[bulk->len] = '"';
         bulk->len++;
