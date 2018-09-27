@@ -121,20 +121,22 @@ static void out_lib_flush(void *data, size_t bytes,
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
         switch(ctx->format) {
         case FLB_OUT_LIB_FMT_MSGPACK:
+            alloc_size = (off - last_off);
+
             /* copy raw bytes */
-            data_for_user = flb_malloc(bytes);
+            data_for_user = flb_malloc(alloc_size);
             if (!data_for_user) {
                 flb_errno();
                 msgpack_unpacked_destroy(&result);
                 FLB_OUTPUT_RETURN(FLB_ERROR);
             }
-            memcpy(data_for_user, &result.data, bytes);
-            data_size = bytes;
+
+            memcpy(data_for_user, data + last_off, alloc_size);
+            data_size = alloc_size;
             break;
         case FLB_OUT_LIB_FMT_JSON:
             /* JSON is larger than msgpack */
             alloc_size = (off - last_off) + 128;
-            last_off = off;
 
             flb_time_pop_from_msgpack(&tm, &result, &obj);
             buf = flb_msgpack_to_json_str(alloc_size, obj);
@@ -163,6 +165,7 @@ static void out_lib_flush(void *data, size_t bytes,
 
         /* Invoke user callback */
         ctx->cb_func(data_for_user, data_size, ctx->cb_data);
+        last_off = off;
     }
 
     msgpack_unpacked_destroy(&result);
