@@ -9,6 +9,7 @@ http://fluentbit.io/documentation
 ## Quick Start
 
 ```
+$ git submodule update --init
 $ cd build
 $ cmake ..
 $ make
