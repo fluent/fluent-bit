@@ -55,7 +55,6 @@ static char *file_to_buffer(const char *path, long *read_size)
 {
     FILE *fp;
     char *buffer;
-    long bytes;
 
     if (!(fp = fopen(path, "r"))) {
         flb_errno();
@@ -70,17 +69,14 @@ static char *file_to_buffer(const char *path, long *read_size)
     }
     memset(buffer, 0, PROC_STAT_BUF_SIZE);
 
-    bytes = fread(buffer, PROC_STAT_BUF_SIZE, 1, fp);
-    if (bytes < 0) {
+    fread(buffer, PROC_STAT_BUF_SIZE, 1, fp);
+    if (ferror(fp) || !feof(fp)) {
         flb_free(buffer);
         fclose(fp);
-        flb_errno();
         return NULL;
     }
-    if (feof(fp)) {
-        *read_size = PROC_STAT_BUF_SIZE;
-    }
-    
+    *read_size = PROC_STAT_BUF_SIZE;
+
     fclose(fp);
     return buffer;
 }
