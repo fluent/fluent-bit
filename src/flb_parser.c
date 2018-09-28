@@ -398,7 +398,7 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
     struct mk_list *head;
     struct stat st;
     struct flb_parser_types *types;
-    struct mk_list *decoders;
+    struct mk_list *decoders = NULL;
 
     ret = stat(file, &st);
     if (ret == -1 && errno == ENOENT) {
