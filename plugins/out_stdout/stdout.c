@@ -224,6 +224,7 @@ static void cb_stdout_flush(void *data, size_t bytes,
         json = msgpack_to_json(ctx, data, bytes, &json_len);
         printf("%s\n", json);
         flb_free(json);
+        fflush(stdout);
     }
     else {
         msgpack_unpacked_init(&result);

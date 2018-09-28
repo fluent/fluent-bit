@@ -201,6 +201,7 @@ static int cb_check_result(void *record, size_t size, void *data)
     if (!out) {
         exit(EXIT_FAILURE);
     }
+
     sprintf(streamfilter, "\"stream\":\"%s\"", result->suffix);
     if (!result->suffix || !*result->suffix || strstr(record, streamfilter)) {
 
@@ -219,6 +220,7 @@ static int cb_check_result(void *record, size_t size, void *data)
         TEST_CHECK(check != NULL);
         result->nmatched++;
     }
+
     if (size > 0) {
         flb_free(record);
     }
