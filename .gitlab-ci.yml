@@ -83,7 +83,7 @@ usan:
   image: cr.agilicus.com/corp-tools/build-containers/base
   stage: test
   script: |
-      ./do_test -DSANITIZE_USAN=On || true
+      ./do_test -DSANITIZE_UNDEFINED=On || true
 
 build:
   image: cr.agilicus.com/corp-tools/docker-compose
