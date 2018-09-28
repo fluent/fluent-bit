@@ -185,6 +185,13 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
         }
     }
 
+    tmp = flb_input_get_property("strip_underscores", i_ins);
+    if (tmp != NULL && flb_utils_bool(tmp)) {
+        ctx->strip_underscores = FLB_TRUE;
+    } else {
+        ctx->strip_underscores = FLB_FALSE;
+    }
+
     return ctx;
 }
 
