@@ -28,12 +28,12 @@
 
 static const uint64_t ONE_BILLION = 1000000000;
 
-static int influxdb_escape(char *out, const char *str, int size) {
+static int influxdb_escape(char *out, const char *str, int size, bool quote) {
     int out_size = 0;
     int i;
     for (i = 0; i < size; ++i) {
         char ch = str[i];
-        if (isspace(ch) || ch == ',' || ch == '=' || ch == '"') {
+        if (quote ? (ch == '"') : (isspace(ch) || ch == ',' || ch == '=')) {
             out[out_size++] = '\\';
         }
         out[out_size++] = ch;
@@ -159,7 +159,7 @@ int influxdb_bulk_append_kv(struct influxdb_bulk *bulk,
     }
 
     /* key */
-    bulk->len += influxdb_escape(bulk->ptr + bulk->len, key, k_len);
+    bulk->len += influxdb_escape(bulk->ptr + bulk->len, key, k_len, false);
 
     /* separator */
     bulk->ptr[bulk->len] = '=';
@@ -170,7 +170,7 @@ int influxdb_bulk_append_kv(struct influxdb_bulk *bulk,
         bulk->ptr[bulk->len] = '"';
         bulk->len++;
     }
-    bulk->len += influxdb_escape(bulk->ptr + bulk->len, val, v_len);
+    bulk->len += influxdb_escape(bulk->ptr + bulk->len, val, v_len, quote);
     if (quote) {
         bulk->ptr[bulk->len] = '"';
         bulk->len++;
