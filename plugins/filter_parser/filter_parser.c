@@ -339,10 +339,14 @@ static int cb_parser_exit(void *data, struct flb_config *config)
 {
     struct filter_parser_ctx *ctx = data;
 
-    if (ctx != NULL) {
-        delete_parsers(ctx);
-        flb_free(ctx);
+    if (!ctx) {
+        return 0;
     }
+
+    delete_parsers(ctx);
+    flb_free(ctx->key_name);
+    flb_free(ctx);
+
     return 0;
 }
 
