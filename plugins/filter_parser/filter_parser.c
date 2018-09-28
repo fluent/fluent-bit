@@ -255,13 +255,19 @@ static int cb_parser_filter(void *data, size_t bytes,
                     mk_list_foreach(head, &ctx->parsers) {
                         fp = mk_list_entry(head, struct filter_parser, _head);
 
+                        /* Reset time */
+                        flb_time_zero(&parsed_time);
+
                         parse_ret = flb_parser_do(fp->parser, val_str, val_len,
                                             (void **) &out_buf, &out_size,
                                             &parsed_time);
                         if (parse_ret >= 0) {
-                            if (flb_time_to_double(&parsed_time) != 0) {
-                                flb_time_copy(&tm, &parsed_time);
+                            if (flb_time_to_double(&parsed_time) == 0) {
+                                flb_time_get(&parsed_time);
                             }
+
+                            flb_time_copy(&tm, &parsed_time);
+
                             if (ctx->reserve_data) {
                                 if (!ctx->preserve_key) {
                                     append_arr_i--;
