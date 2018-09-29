@@ -320,6 +320,7 @@ void test_json_pack_bug342()
         }
         flb_free(out);
     }
+    flb_pack_state_reset(&state);
     close(fd);
     TEST_CHECK(records == 240);
 }
