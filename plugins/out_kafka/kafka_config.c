@@ -254,6 +254,10 @@ int flb_kafka_conf_destroy(struct flb_kafka *ctx)
         flb_free(ctx->message_key);
     }
 
+    if (ctx->time_key_format) {
+      flb_free(ctx->time_key_format);
+    }
+
     flb_sds_destroy(ctx->gelf_fields.timestamp_key);
     flb_sds_destroy(ctx->gelf_fields.host_key);
     flb_sds_destroy(ctx->gelf_fields.short_message_key);
