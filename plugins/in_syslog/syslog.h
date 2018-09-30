@@ -45,6 +45,11 @@ struct flb_syslog {
     int server_fd;
     char *unix_path;
 
+    /* UDP buffer, data length and buffer size */
+    char *buffer_data;
+    size_t buffer_len;
+    size_t buffer_size;
+
     /* Buffers setup */
     size_t buffer_max_size;
     size_t buffer_chunk_size;
