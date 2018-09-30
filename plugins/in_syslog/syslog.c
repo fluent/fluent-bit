@@ -66,21 +66,25 @@ static int in_syslog_collect_tcp(struct flb_input_instance *i_ins,
  * one syslog message and it should not exceed 1KB.
  */
 static int in_syslog_collect_udp(struct flb_input_instance *i_ins,
-                                 struct flb_config *config, void *in_context)
+                                 struct flb_config *config,
+                                 void *in_context)
 {
     int bytes;
-    char buf[1024];
     struct flb_syslog *ctx = in_context;
     (void) i_ins;
 
-    bytes = recvfrom(ctx->server_fd, buf, sizeof(buf) - 1, 0, NULL, NULL);
+    bytes = recvfrom(ctx->server_fd,
+                     ctx->buffer_data, ctx->buffer_size - 1, 0,
+                     NULL, NULL);
     if (bytes > 0) {
-        buf[bytes] = '\0';
-        syslog_prot_process_udp(buf, bytes, ctx);
+        ctx->buffer_data[bytes] = '\0';
+        ctx->buffer_len = bytes;
+        syslog_prot_process_udp(ctx->buffer_data, ctx->buffer_len, ctx);
     }
     else {
         flb_errno();
     }
+    ctx->buffer_len = 0;
 
     return 0;
 }
