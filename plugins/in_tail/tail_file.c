@@ -626,7 +626,8 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
      */
     if (ctx->db) {
         flb_tail_db_file_set(file, ctx);
-    } else {
+    }
+    else {
         file->offset = lseek(file->fd, 0, SEEK_END);
     }
 
