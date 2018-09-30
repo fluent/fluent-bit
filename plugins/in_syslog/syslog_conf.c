@@ -43,6 +43,7 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *i_ins,
     }
     ctx->evl = config->evl;
     ctx->i_ins = i_ins;
+    ctx->buffer_data = NULL;
     mk_list_init(&ctx->connections);
 
     /* Syslog mode: unix_udp, unix_tcp, tcp or udp */
@@ -147,6 +148,10 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *i_ins,
 
 int syslog_conf_destroy(struct flb_syslog *ctx)
 {
+    if (ctx->buffer_data) {
+        flb_free(ctx->buffer_data);
+        ctx->buffer_data = NULL;
+    }
     syslog_server_destroy(ctx);
     flb_free(ctx);
 
