@@ -26,9 +26,8 @@
 #include "influxdb.h"
 #include "influxdb_bulk.h"
 
-static const uint64_t ONE_BILLION = 1000000000;
-
-static int influxdb_escape(char *out, const char *str, int size, bool quote) {
+static int influxdb_escape(char *out, const char *str,
+                           int size, bool quote) {
     int out_size = 0;
     int i;
     for (i = 0; i < size; ++i) {

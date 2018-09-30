@@ -30,16 +30,32 @@
 #include "influxdb_bulk.h"
 
 /*
- * Returns FLB_TRUE if the specified value is true, otherwise FLB_FALSE
- */
-static int bool_value(char *v);
-
-/*
  * Returns FLB_TRUE when the specified key is in Tag_Keys list,
  * otherwise FLB_FALSE
  */
 static int is_tagged_key(struct flb_influxdb_config *ctx,
-                         char *key, int kl, int type);
+                         char *key, int kl, int type)
+{
+    if (type == MSGPACK_OBJECT_STR) {
+        if (ctx->auto_tags) {
+            return FLB_TRUE;
+        }
+    }
+
+    struct mk_list *head;
+    struct flb_split_entry *entry;
+
+    if (ctx->tag_keys) {
+        mk_list_foreach(head, ctx->tag_keys) {
+            entry = mk_list_entry(head, struct flb_split_entry ,_head);
+            if (kl == entry->len && strncmp(key, entry->value, kl) == 0) {
+                return FLB_TRUE;
+            }
+        }
+    }
+
+    return FLB_FALSE;
+}
 
 /*
  * Increments the timestamp when it is duplicated
@@ -325,8 +341,9 @@ error:
     return NULL;
 }
 
-int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *config,
-                     void *data)
+static int cb_influxdb_init(struct flb_output_instance *ins,
+                            struct flb_config *config,
+                            void *data)
 {
     int io_flags = 0;
     char *tmp;
@@ -402,7 +419,7 @@ int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *config,
     /* Auto_Tags */
     tmp = flb_output_get_property("auto_tags", ins);
     if (tmp) {
-        ctx->auto_tags = bool_value(tmp);
+        ctx->auto_tags = flb_utils_bool(tmp);
     }
     else {
         ctx->auto_tags = FLB_FALSE;
@@ -439,11 +456,11 @@ int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *config,
     return 0;
 }
 
-void cb_influxdb_flush(void *data, size_t bytes,
-                       char *tag, int tag_len,
-                       struct flb_input_instance *i_ins,
-                       void *out_context,
-                       struct flb_config *config)
+static void cb_influxdb_flush(void *data, size_t bytes,
+                              char *tag, int tag_len,
+                              struct flb_input_instance *i_ins,
+                              void *out_context,
+                              struct flb_config *config)
 {
     int ret;
     int bytes_out;
@@ -503,7 +520,7 @@ void cb_influxdb_flush(void *data, size_t bytes,
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 
-int cb_influxdb_exit(void *data, struct flb_config *config)
+static int cb_influxdb_exit(void *data, struct flb_config *config)
 {
     struct flb_influxdb_config *ctx = data;
 
@@ -523,44 +540,6 @@ int cb_influxdb_exit(void *data, struct flb_config *config)
     flb_free(ctx);
 
     return 0;
-}
-
-int bool_value(char *v)
-{
-    if (strcasecmp(v, "true") == 0) {
-        return FLB_TRUE;
-    }
-    else if (strcasecmp(v, "on") == 0) {
-        return FLB_TRUE;
-    }
-    else if (strcasecmp(v, "yes") == 0) {
-        return FLB_TRUE;
-    }
-
-    return FLB_FALSE;
-}
-
-int is_tagged_key(struct flb_influxdb_config *ctx, char *key, int kl, int type)
-{
-    if (type == MSGPACK_OBJECT_STR) {
-        if (ctx->auto_tags) {
-            return FLB_TRUE;
-        }
-    }
-
-    struct mk_list *head;
-    struct flb_split_entry *entry;
-
-    if (ctx->tag_keys) {
-        mk_list_foreach(head, ctx->tag_keys) {
-            entry = mk_list_entry(head, struct flb_split_entry ,_head);
-            if (kl == entry->len && strncmp(key, entry->value, kl) == 0) {
-                return FLB_TRUE;
-            }
-        }
-    }
-
-    return FLB_FALSE;
 }
 
 struct flb_output_plugin out_influxdb_plugin = {
