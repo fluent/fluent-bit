@@ -164,8 +164,8 @@ $(WORKDIR)/utf_32le.o:   $(encdir)/utf_32le.c regenc.h win32/config.h
 $(WORKDIR)/euc_jp.o:     $(encdir)/euc_jp.c regenc.h win32/config.h $(encdir)/jis/props.h
 $(WORKDIR)/euc_tw.o:     $(encdir)/euc_tw.c regenc.h win32/config.h
 $(WORKDIR)/euc_kr.o:     $(encdir)/euc_kr.c regenc.h win32/config.h
-$(WORKDIR)/shift_jis.o:  $(encdir)/shift_jis.c regenc.h win32/config.h $(encdir)/jis/props.h
-$(WORKDIR)/windows_31j.o: $(encdir)/windows_31j.c $(encdir)/shift_jis.c regenc.h win32/config.h $(encdir)/jis/props.h
+$(WORKDIR)/shift_jis.o:  $(encdir)/shift_jis.c $(encdir)/shift_jis.h regenc.h win32/config.h $(encdir)/jis/props.h
+$(WORKDIR)/windows_31j.o: $(encdir)/windows_31j.c $(encdir)/shift_jis.h regenc.h win32/config.h $(encdir)/jis/props.h
 $(WORKDIR)/iso_8859_1.o:  $(encdir)/iso_8859_1.c regenc.h win32/config.h
 $(WORKDIR)/iso_8859_2.o:  $(encdir)/iso_8859_2.c regenc.h win32/config.h
 $(WORKDIR)/iso_8859_3.o:  $(encdir)/iso_8859_3.c regenc.h win32/config.h

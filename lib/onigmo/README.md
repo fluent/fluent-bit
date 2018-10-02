@@ -172,6 +172,7 @@ Source Files
 |enc/euc_tw.c        |EUC-TW encoding                                        |
 |enc/euc_kr.c        |EUC-KR, EUC-CN encoding                                |
 |enc/shift_jis.c     |Shift_JIS encoding                                     |
+|enc/shift_jis.h     |Common part of Shift_JIS and Windows-31J encoding      |
 |enc/windows_31j.c   |Windows-31J (CP932) encoding                           |
 |enc/big5.c          |Big5      encoding                                     |
 |enc/gb18030.c       |GB18030   encoding                                     |
