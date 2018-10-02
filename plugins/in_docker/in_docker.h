@@ -58,7 +58,7 @@ typedef struct docker_snapshot {
     struct mk_list _head;
 } docker_snapshot;
 
-/* CPU Input configuration & context */
+/* Docker Input configuration & context */
 struct flb_in_docker_config {
     int coll_fd;                /* collector id/fd */
     int interval_sec;           /* interval collection time (Second) */
