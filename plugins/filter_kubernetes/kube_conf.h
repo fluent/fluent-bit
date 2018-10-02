@@ -66,6 +66,7 @@ struct flb_kube {
     int dummy_meta;
     int tls_debug;
     int tls_verify;
+    char *meta_preload_cache_dir;
 
     /* Configuration proposed through Annotations (boolean) */
     int k8s_logging_parser;   /* allow to process a suggested parser ? */
