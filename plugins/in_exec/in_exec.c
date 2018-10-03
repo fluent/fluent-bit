@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_stats.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_parser.h>
+#include <fluent-bit/flb_macros.h>
 #include <msgpack.h>
 
 #include <fcntl.h>
@@ -230,10 +231,10 @@ static int in_exec_config_read(struct flb_in_exec_config *exec_config,
     follow = flb_input_get_property("follow", in);
     if (follow != NULL) {
         if (strcasecmp(follow, "true") == 0) {
-            exec_config->follow = 1;
+            exec_config->follow = FLB_TRUE;
         }
         else if (strcasecmp(follow, "false") == 0) {
-            exec_config->follow = 0;
+            exec_config->follow = FLB_FALSE;
         }
         else {
             flb_error("[in_exec] property 'follow' should be either 'true' or 'false'");
