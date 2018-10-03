@@ -126,6 +126,10 @@ static char *msgpack_to_json(struct flb_out_http *ctx, char *data, uint64_t byte
     /* Format to JSON */
     ret = flb_msgpack_raw_to_json_str(tmp_sbuf.data, tmp_sbuf.size,
                                       &json_buf, &json_size);
+    if (ret != 0) {
+        msgpack_sbuffer_destroy(&tmp_sbuf);
+        return NULL;
+    }
 
     /* Optionally convert to JSON stream from JSON array */
     if ((ctx->out_format == FLB_HTTP_OUT_JSON_STREAM) ||
@@ -161,9 +165,6 @@ static char *msgpack_to_json(struct flb_out_http *ctx, char *data, uint64_t byte
     }
 
     msgpack_sbuffer_destroy(&tmp_sbuf);
-    if (ret != 0) {
-        return NULL;
-    }
 
     *out_size = json_size;
     return json_buf;
