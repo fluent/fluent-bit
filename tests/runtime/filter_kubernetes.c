@@ -1,5 +1,6 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
+#define _GNU_SOURCE /* for accept4 */
 #include <fluent-bit.h>
 #include <monkey/mk_lib.h>
 #include "flb_tests_runtime.h"
@@ -13,6 +14,12 @@ struct kube_test {
     mk_ctx_t *http;
 };
 
+struct kube_test_result {
+    char *target;
+    char *suffix;
+    int   nmatched;
+};
+
 /* Test target mode */
 #define KUBE_TAIL     0
 #define KUBE_SYSTEMD  1
@@ -22,19 +29,23 @@ struct kube_test {
 #define KUBE_PORT     "8002"
 #define KUBE_URL      "http://" KUBE_IP ":" KUBE_PORT
 #define DPATH         FLB_TESTS_DATA_PATH "/data/kubernetes/"
+#define STD_PARSER    "../conf/parsers.conf"
 
 /*
  * Data files
  * ==========
  */
-#define T_APACHE_LOGS           DPATH "apache-logs"
-#define T_APACHE_LOGS_ANN       DPATH "apache-logs-annotated"
+#define T_APACHE_LOGS           DPATH "apache-logs_default"
+#define T_APACHE_LOGS_ANN       DPATH "apache-logs-annotated_default"
 #define T_APACHE_LOGS_ANN_INV   DPATH "apache-logs-annotated-invalid"
 #define T_APACHE_LOGS_ANN_MERGE DPATH "apache-logs-annotated-merge"
-#define T_JSON_LOGS             DPATH "json-logs"
+#define T_JSON_LOGS             DPATH "json-logs_default"
 #define T_JSON_LOGS_INV         DPATH "json-logs-invalid"
 #define T_SYSTEMD_SIMPLE        DPATH "kairosdb-914055854-b63vq"
 
+#define T_MULTI_INIT            DPATH "session-db-fdd649d68-cq5sp_socks_istio-init-"
+#define T_MULTI_PROXY           DPATH "session-db-fdd649d68-cq5sp_socks_istio-proxy-"
+#define T_MULTI_REDIS           DPATH "session-db-fdd649d68-cq5sp_socks_istio-session-db-"
 
 static int file_to_buf(char *path, char **out_buf, size_t *out_size)
 {
@@ -154,7 +165,7 @@ static void api_server_stop(mk_ctx_t *ctx)
 }
 
 /* Given a target, lookup the .out file and return it content in a new buffer */
-static char *get_out_file_content(char *target)
+static char *get_out_file_content(char *target, char *suffix)
 {
     int ret;
     char file[PATH_MAX];
@@ -162,7 +173,7 @@ static char *get_out_file_content(char *target)
     char *out_buf;
     size_t out_size;
 
-    snprintf(file, sizeof(file) - 1, "%s.out", target);
+    snprintf(file, sizeof(file) - 1, "%s%s.out", target,suffix);
 
     ret = file_to_buf(file, &out_buf, &out_size);
     if (ret != 0) {
@@ -180,25 +191,34 @@ static char *get_out_file_content(char *target)
 
 static int cb_check_result(void *record, size_t size, void *data)
 {
-    char *target;
+    struct kube_test_result *result;
     char *out;
     char *check;
+    char streamfilter[64];
 
-    target = (char *) data;
-    out = get_out_file_content(target);
+    result = (struct kube_test_result *) data;
+    out = get_out_file_content(result->target, result->suffix);
     if (!out) {
         exit(EXIT_FAILURE);
     }
+    sprintf(streamfilter, "\"stream\":\"%s\"", result->suffix);
+    if (!result->suffix || !*result->suffix || strstr(record, streamfilter)) {
 
-    /*
-     * Our validation is: check that the content of out file is found
-     * in the output record.
-     */
-    check = strstr(record, out);
-    if (!check) {
-        fprintf(stderr, "record: <<%s>>, out: <<%s>>\n", record, out);
+        /*
+         * Our validation is: check that the content of out file is found
+         * in the output record.
+         */
+        check = strstr(record, out);
+        if (!check) {
+            fprintf(stderr, "Validator mismatch::\nTarget: <<%s>>, Suffix: <<%s>\n"
+                            "Filtered record: <<%s>>\nExpected record: <<%s>>\n",
+                            result->target, result->suffix, (char *)record, out);
+        } else {
+            flb_info("Log line matched expected");
+        }
+        TEST_CHECK(check != NULL);
+        result->nmatched++;
     }
-    TEST_CHECK(check != NULL);
     if (size > 0) {
         flb_free(record);
     }
@@ -206,7 +226,7 @@ static int cb_check_result(void *record, size_t size, void *data)
     return 0;
 }
 
-static struct kube_test *kube_test_create(char *target, int type, ...)
+static struct kube_test *kube_test_create(char *target, int type, char *suffix, char *parserconf, ...)
 {
     int ret;
     int in_ffd;
@@ -218,9 +238,14 @@ static struct kube_test *kube_test_create(char *target, int type, ...)
     va_list va;
     struct kube_test *ctx;
     struct flb_lib_out_cb cb_data;
+    struct kube_test_result result;
+
+    result.nmatched = 0;
+    result.target = target;
+    result.suffix = suffix;
 
     /* Compose path pattern based on target */
-    snprintf(path, sizeof(path) - 1, "%s_default*.log", target);
+    snprintf(path, sizeof(path) - 1, "%s*.log", target);
 
     ctx = flb_malloc(sizeof(struct kube_test));
     if (!ctx) {
@@ -238,7 +263,7 @@ static struct kube_test *kube_test_create(char *target, int type, ...)
     ctx->flb = flb_create();
     flb_service_set(ctx->flb,
                     "Flush", "1",
-                    "Parsers_File", "../conf/parsers.conf",
+                    "Parsers_File", parserconf,
                     NULL);
 
     if (type == KUBE_TAIL) {
@@ -268,7 +293,7 @@ static struct kube_test *kube_test_create(char *target, int type, ...)
                          NULL);
 
     /* Iterate number of arguments for filter_kubernetes additional options */
-    va_start(va, type);
+    va_start(va, parserconf);
     while ((key = va_arg(va, char *))) {
         value = va_arg(va, char *);
         if (!value) {
@@ -292,7 +317,7 @@ static struct kube_test *kube_test_create(char *target, int type, ...)
 
     /* Prepare output callback context*/
     cb_data.cb = cb_check_result;
-    cb_data.data = target;
+    cb_data.data = &result;
 
     /* Output */
     out_ffd = flb_output(ctx->flb, "lib", (void *) &cb_data);
@@ -307,6 +332,9 @@ static struct kube_test *kube_test_create(char *target, int type, ...)
     if (ret == -1) {
         exit(EXIT_FAILURE);
     }
+
+    sleep(1);
+    TEST_CHECK(result.nmatched);
 
     return ctx;
 }
@@ -324,7 +352,7 @@ void flb_test_apache_logs()
 {
     struct kube_test *ctx;
 
-    ctx = kube_test_create(T_APACHE_LOGS, KUBE_TAIL, NULL);
+    ctx = kube_test_create(T_APACHE_LOGS, KUBE_TAIL, "", STD_PARSER, NULL);
     if (!ctx) {
         exit(EXIT_FAILURE);
     }
@@ -335,7 +363,7 @@ void flb_test_apache_logs_merge()
 {
     struct kube_test *ctx;
 
-    ctx = kube_test_create(T_APACHE_LOGS, KUBE_TAIL,
+    ctx = kube_test_create(T_APACHE_LOGS, KUBE_TAIL, "", STD_PARSER,
                            "Merge_Log", "On",
                            "Merge_Log_Key", "merge",
                            NULL);
@@ -349,7 +377,7 @@ void flb_test_apache_logs_annotated()
 {
     struct kube_test *ctx;
 
-    ctx = kube_test_create(T_APACHE_LOGS_ANN, KUBE_TAIL,
+    ctx = kube_test_create(T_APACHE_LOGS_ANN, KUBE_TAIL, "", STD_PARSER,
                            "Merge_Log", "On",
                            NULL);
     if (!ctx) {
@@ -362,7 +390,7 @@ void flb_test_apache_logs_annotated_invalid()
 {
     struct kube_test *ctx;
 
-    ctx = kube_test_create(T_APACHE_LOGS_ANN_INV, KUBE_TAIL,
+    ctx = kube_test_create(T_APACHE_LOGS_ANN_INV, KUBE_TAIL, "", STD_PARSER,
                            NULL);
     if (!ctx) {
         exit(EXIT_FAILURE);
@@ -374,7 +402,7 @@ void flb_test_apache_logs_annotated_merge()
 {
     struct kube_test *ctx;
 
-    ctx = kube_test_create(T_APACHE_LOGS_ANN_MERGE, KUBE_TAIL,
+    ctx = kube_test_create(T_APACHE_LOGS_ANN_MERGE, KUBE_TAIL, "", STD_PARSER,
                            "Merge_Log", "On",
                            "Merge_Log_Key", "merge", NULL);
     if (!ctx) {
@@ -387,7 +415,7 @@ void flb_test_json_logs()
 {
     struct kube_test *ctx;
 
-    ctx = kube_test_create(T_JSON_LOGS, KUBE_TAIL,
+    ctx = kube_test_create(T_JSON_LOGS, KUBE_TAIL, "", STD_PARSER,
                            "Merge_Log", "On",
                            NULL);
     if (!ctx) {
@@ -400,7 +428,7 @@ void flb_test_json_logs_invalid()
 {
     struct kube_test *ctx;
 
-    ctx = kube_test_create(T_JSON_LOGS_INV, KUBE_TAIL);
+    ctx = kube_test_create(T_JSON_LOGS_INV, KUBE_TAIL, "", STD_PARSER, NULL);
     if (!ctx) {
         exit(EXIT_FAILURE);
     }
@@ -425,7 +453,7 @@ void flb_test_systemd_logs()
                     "KUBE_TEST=2018",
                     NULL);
 
-    ctx = kube_test_create(T_SYSTEMD_SIMPLE, KUBE_SYSTEMD,
+    ctx = kube_test_create(T_SYSTEMD_SIMPLE, KUBE_SYSTEMD, "", STD_PARSER,
                            "Merge_Log", "On",
                            NULL);
     if (!ctx) {
@@ -436,6 +464,22 @@ void flb_test_systemd_logs()
 }
 #endif
 
+void flb_test_multi_logs(char *log, char *suffix)
+{
+    struct kube_test *ctx;
+
+    flb_info("\n");
+    flb_info("Multi test: log <%s>", log);
+    ctx = kube_test_create(log, KUBE_TAIL, suffix, "../tests/runtime/data/kubernetes/multi-parsers.conf", "Merge_Log", "On", NULL);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+    kube_test_destroy(ctx);
+}
+void flb_test_multi_init_stdout() { flb_test_multi_logs(T_MULTI_INIT, "stdout"); }
+void flb_test_multi_init_stderr() { flb_test_multi_logs(T_MULTI_INIT, "stderr"); }
+void flb_test_multi_proxy() { flb_test_multi_logs(T_MULTI_PROXY, ""); }
+void flb_test_multi_redis() { flb_test_multi_logs(T_MULTI_REDIS, ""); }
 
 TEST_LIST = {
     {"kube_apache_logs", flb_test_apache_logs},
@@ -448,5 +492,9 @@ TEST_LIST = {
 #ifdef FLB_HAVE_SYSTEMD
     {"kube_systemd_logs", flb_test_systemd_logs},
 #endif
+    {"kube_multi_init_stdout", flb_test_multi_init_stdout},
+    {"kube_multi_init_stderr", flb_test_multi_init_stderr},
+    {"kube_multi_proxy", flb_test_multi_proxy},
+    {"kube_multi_redis", flb_test_multi_redis},
     {NULL, NULL}
 };

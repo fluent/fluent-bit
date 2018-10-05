@@ -27,9 +27,22 @@
 #include "kube_meta.h"
 #include "kube_property.h"
 
-#define prop_cmp(key, len, property)                                \
-    (len == sizeof(key) - 1) &&                                     \
-    (strncmp(property, key, len) == 0)
+static inline int prop_cmp(const char *key, size_t keylen, const char *property, size_t proplen)
+{
+    return strncmp(key, property, keylen < proplen ? keylen : proplen) == 0;
+}
+
+static inline char *strnchr(const char *s, char c, size_t len)
+{
+    while (len > 0) {
+        if (*s == c) {
+            return s;
+        }
+        s++;
+        len--;
+    }
+    return 0;
+}
 
 static inline void prop_not_allowed(char *prop, struct flb_kube_meta *meta)
 {
@@ -40,6 +53,8 @@ static inline void prop_not_allowed(char *prop, struct flb_kube_meta *meta)
 
 /* Property: parser */
 static int prop_set_parser(struct flb_kube *ctx, struct flb_kube_meta *meta,
+                           char *container, size_t container_len,
+                           char *stream, size_t stream_len,
                            char *val_buf, size_t val_len,
                            struct flb_kube_props *props)
 {
@@ -50,6 +65,13 @@ static int prop_set_parser(struct flb_kube *ctx, struct flb_kube_meta *meta,
     if (ctx->k8s_logging_parser == FLB_FALSE) {
         prop_not_allowed("fluentbit.io/parser", meta);
         return -1;
+    }
+
+    /* If the parser is for a specific container, and this is not
+     * that container, bail out
+     */
+    if (container && strncmp(container, meta->container_name, container_len)) {
+        return 0;
     }
 
     /* Check the parser exists */
@@ -63,14 +85,19 @@ static int prop_set_parser(struct flb_kube *ctx, struct flb_kube_meta *meta,
     parser = flb_parser_get(tmp, ctx->config);
     if (!parser) {
         flb_warn("[filter_kube] annotation parser '%s' not found "
-                 "(ns='%s' pod_name='%s')",
-                 tmp, meta->namespace, meta->podname);
+                 "(ns='%s' pod_name='%s', container_name='%s')",
+                 tmp, meta->namespace, meta->podname, meta->container_name);
         flb_free(tmp);
         return -1;
     }
 
     /* Save the parser in the properties context */
-    props->parser = flb_sds_create(tmp);
+    if (!stream || prop_cmp("stdout", sizeof("stdout")-1, stream, stream_len)) {
+        props->stdout_parser = flb_sds_create(tmp);
+    }
+    if (stream && prop_cmp("stdout", sizeof("stdout")-1, stream, stream_len)) {
+        props->stderr_parser = flb_sds_create(tmp);
+    }
     flb_free(tmp);
     return 0;
 }
@@ -101,15 +128,45 @@ static int prop_set_exclude(struct flb_kube *ctx, struct flb_kube_meta *meta,
     return 0;
 }
 
+#define FLB_STDERR_PARSER_ANNOTATION   "parser_stderr"
+#define FLB_STDOUT_PARSER_ANNOTATION   "parser_stdout"
+#define FLB_UNIFIED_PARSER_ANNOTATION  "parser"
+
 int flb_kube_prop_set(struct flb_kube *ctx, struct flb_kube_meta *meta,
                       char *prop, int prop_len,
                       char *val_buf, size_t val_len,
                       struct flb_kube_props *props)
 {
-    if (prop_cmp("parser", prop_len, prop)) {
-        prop_set_parser(ctx, meta, val_buf, val_len, props);
+    // Parser can be:
+    //  fluentbit.io/parser: X
+    //  fluentbit.io/parser[-container]: X
+    //  fluentbit.io/parser_stdout[-container]: X
+    //  fluentbit.io/parser_stderr[-container: X
+    if (prop_cmp(FLB_UNIFIED_PARSER_ANNOTATION, sizeof(FLB_UNIFIED_PARSER_ANNOTATION)-1, prop, prop_len)) {
+        char *stream = 0;
+        char *container = 0;
+        size_t stream_len =0;
+        size_t container_len = 0;
+        if (prop_cmp(FLB_STDOUT_PARSER_ANNOTATION, sizeof(FLB_STDOUT_PARSER_ANNOTATION)-1, prop, prop_len)) {
+            stream = "stdout";
+            stream_len = sizeof("stdout");
+        }
+        else if (prop_cmp(FLB_STDERR_PARSER_ANNOTATION, sizeof(FLB_STDERR_PARSER_ANNOTATION)-1, prop, prop_len)) {
+            stream = "stderr";
+            stream_len = sizeof("stderr");
+        }
+        // Now check if we have parser-container or just parser
+        container = strnchr(prop, '-', prop_len);
+        if (container) {
+            container++;
+            container_len = prop_len - (container - prop);
+        }
+        prop_set_parser(ctx, meta,
+                        container, container_len,
+                        stream, stream_len,
+                        val_buf, val_len, props);
     }
-    else if (prop_cmp("exclude", prop_len, prop)) {
+    else if (prop_cmp("exclude", sizeof("exclude")-1, prop, prop_len)) {
         prop_set_exclude(ctx, meta, val_buf, val_len, props);
     }
 
@@ -124,7 +181,7 @@ int flb_kube_prop_pack(struct flb_kube_props *props,
     msgpack_sbuffer sbuf;
 
     /* Number of fields in props structure */
-    size = 2;
+    size = 3;
 
     /* Create msgpack buffer */
     msgpack_sbuffer_init(&sbuf);
@@ -133,16 +190,24 @@ int flb_kube_prop_pack(struct flb_kube_props *props,
     /* Main array */
     msgpack_pack_array(&pck, size);
 
-    /* Index 0: FLB_KUBE_PROP_PARSER */
-    if (props->parser) {
-        msgpack_pack_str(&pck, flb_sds_len(props->parser));
-        msgpack_pack_str_body(&pck, props->parser, flb_sds_len(props->parser));
+    /* Index 0: FLB_KUBE_PROP_STDOUT_PARSER */
+    if (props->stdout_parser) {
+        msgpack_pack_str(&pck, flb_sds_len(props->stdout_parser));
+        msgpack_pack_str_body(&pck, props->stdout_parser, flb_sds_len(props->stdout_parser));
+    }
+    else {
+        msgpack_pack_nil(&pck);
+    }
+    /* Index 1: FLB_KUBE_PROP_STDERR_PARSER */
+    if (props->stderr_parser) {
+        msgpack_pack_str(&pck, flb_sds_len(props->stderr_parser));
+        msgpack_pack_str_body(&pck, props->stderr_parser, flb_sds_len(props->stderr_parser));
     }
     else {
         msgpack_pack_nil(&pck);
     }
 
-    /* Index 1: FLB_KUBE_PROP_EXCLUDE */
+    /* Index 2: FLB_KUBE_PROP_EXCLUDE */
     if (props->exclude == FLB_TRUE) {
         msgpack_pack_true(&pck);
     }
@@ -175,16 +240,25 @@ int flb_kube_prop_unpack(struct flb_kube_props *props, char *buf, size_t size)
     }
     root = result.data;
 
-    /* Index 0: Parser */
-    o = root.via.array.ptr[FLB_KUBE_PROPS_PARSER];
+    /* Index 0: stdout_parser */
+    o = root.via.array.ptr[FLB_KUBE_PROPS_STDOUT_PARSER];
     if (o.type == MSGPACK_OBJECT_NIL) {
-        props->parser = NULL;
+        props->stdout_parser = NULL;
     }
     else {
-        props->parser = flb_sds_create_len((char *) o.via.str.ptr, o.via.str.size);
+        props->stdout_parser = flb_sds_create_len((char *) o.via.str.ptr, o.via.str.size);
     }
 
-    /* Index 1: Exclude */
+    /* Index 1: stderr_parser */
+    o = root.via.array.ptr[FLB_KUBE_PROPS_STDERR_PARSER];
+    if (o.type == MSGPACK_OBJECT_NIL) {
+        props->stderr_parser = NULL;
+    }
+    else {
+        props->stderr_parser = flb_sds_create_len((char *) o.via.str.ptr, o.via.str.size);
+    }
+
+    /* Index 2: Exclude */
     o = root.via.array.ptr[FLB_KUBE_PROPS_EXCLUDE];
     if (o.via.boolean == FLB_TRUE) {
         props->exclude = FLB_TRUE;
@@ -200,7 +274,10 @@ int flb_kube_prop_unpack(struct flb_kube_props *props, char *buf, size_t size)
 /* Destroy any resource held by a props element */
 void flb_kube_prop_destroy(struct flb_kube_props *props)
 {
-    if (props->parser) {
-        flb_sds_destroy(props->parser);
+    if (props->stdout_parser) {
+        flb_sds_destroy(props->stdout_parser);
+    }
+    if (props->stderr_parser) {
+        flb_sds_destroy(props->stderr_parser);
     }
 }
