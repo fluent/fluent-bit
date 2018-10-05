@@ -14,11 +14,13 @@ stages:
 
 before_script:
   - |
+      git submodule update --recursive --remote
       cat <<EOF > do_test
       #!/bin/sh
+      set -e
       cd build
-      echo cmake -DFLB_ALL=On -DFLB_WITHOUT_EXAMPLES=On -DFLB_TESTS_INTERNAL=On -DFLB_TESTS_RUNTIME=On "\$@" ../
-      cmake -DFLB_ALL=On -DFLB_WITHOUT_EXAMPLES=On -DFLB_TESTS_INTERNAL=On -DFLB_TESTS_RUNTIME=On "\$@" ../
+      echo cmake -DFLB_ALL=On -DFLB_WITHOUT_EXAMPLES=On -DFLB_TESTS_INTERNAL=On -DFLB_SANITIZE_ADDRESS=On -DFLB_TESTS_RUNTIME=On "\$@" ../
+      cmake -DFLB_ALL=On -DFLB_WITHOUT_EXAMPLES=On -DFLB_TESTS_INTERNAL=On -DFLB_SANITIZE_ADDRESS=On -DFLB_TESTS_RUNTIME=On "\$@" ../
       make -j\$(( $(getconf _NPROCESSORS_ONLN) > 8 ? 8 : \$(getconf _NPROCESSORS_ONLN) ))
       SKIP_EXTERNAL="elasticsearch|out_td|out_forward"
       SKIP_BROKEN="filter_nest|filter_parser|in_disk|in_proc"
