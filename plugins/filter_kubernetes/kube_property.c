@@ -128,8 +128,8 @@ static int prop_set_exclude(struct flb_kube *ctx, struct flb_kube_meta *meta,
     return 0;
 }
 
-#define FLB_STDERR_PARSER_ANNOTATION   "stderr-parser"
-#define FLB_STDOUT_PARSER_ANNOTATION   "stdout-parser"
+#define FLB_STDERR_PARSER_ANNOTATION   "parser_stderr"
+#define FLB_STDOUT_PARSER_ANNOTATION   "parser_stdout"
 #define FLB_UNIFIED_PARSER_ANNOTATION  "parser"
 
 int flb_kube_prop_set(struct flb_kube *ctx, struct flb_kube_meta *meta,
@@ -137,45 +137,37 @@ int flb_kube_prop_set(struct flb_kube *ctx, struct flb_kube_meta *meta,
                       char *val_buf, size_t val_len,
                       struct flb_kube_props *props)
 {
-    char *stream = 0;
-    char *container = 0;
-    size_t stream_len =0;
-    size_t container_len = 0;
-    int is_parser = 0;
-
     // Parser can be:
-    //  fluentbit.io/stderr-parser-container: name
-    //  fluentbit.io/stdout-parser-container: name
-    //  fluentbit.io/parser-container: name
-    //  fluentbit.io/parser: name
+    //  fluentbit.io/parser: X
+    //  fluentbit.io/parser[-container]: X
+    //  fluentbit.io/parser_stdout[-container]: X
+    //  fluentbit.io/parser_stderr[-container: X
     if (prop_cmp(FLB_UNIFIED_PARSER_ANNOTATION, sizeof(FLB_UNIFIED_PARSER_ANNOTATION)-1, prop, prop_len)) {
+        char *stream = 0;
+        char *container = 0;
+        size_t stream_len =0;
+        size_t container_len = 0;
+        if (prop_cmp(FLB_STDOUT_PARSER_ANNOTATION, sizeof(FLB_STDOUT_PARSER_ANNOTATION)-1, prop, prop_len)) {
+            stream = "stdout";
+            stream_len = sizeof("stdout");
+        }
+        else if (prop_cmp(FLB_STDERR_PARSER_ANNOTATION, sizeof(FLB_STDERR_PARSER_ANNOTATION)-1, prop, prop_len)) {
+            stream = "stderr";
+            stream_len = sizeof("stderr");
+        }
         // Now check if we have parser-container or just parser
         container = strnchr(prop, '-', prop_len);
         if (container) {
             container++;
             container_len = prop_len - (container - prop);
         }
-        is_parser = 1;
-    } else if (prop_cmp(FLB_STDERR_PARSER_ANNOTATION, sizeof(FLB_STDERR_PARSER_ANNOTATION)-1, prop, prop_len)) {
-        stream = "stderr";
-        stream_len = sizeof(stderr)-1;
-        container = strnchr(prop+sizeof(stderr), '-', prop_len-sizeof("stderr"));
-        is_parser = 1;
-    } else if (prop_cmp(FLB_STDERR_PARSER_ANNOTATION, sizeof(FLB_STDOUT_PARSER_ANNOTATION)-1, prop, prop_len)) {
-        stream = "stdout";
-        stream_len = sizeof("stdout")-1;
-        container = strnchr(prop+sizeof("stdout"), '-', prop_len-sizeof("stdout"));
-        is_parser = 1;
-    }
-    else if (prop_cmp("exclude", sizeof("exclude")-1, prop, prop_len)) {
-        prop_set_exclude(ctx, meta, val_buf, val_len, props);
-    }
-
-    if (is_parser) {
         prop_set_parser(ctx, meta,
                         container, container_len,
                         stream, stream_len,
                         val_buf, val_len, props);
+    }
+    else if (prop_cmp("exclude", sizeof("exclude")-1, prop, prop_len)) {
+        prop_set_exclude(ctx, meta, val_buf, val_len, props);
     }
 
     return 0;

@@ -220,7 +220,7 @@ $(WORKDIR)\st.obj:        st.c regint.h onigmo.h win32\config.h st.h
 
 $(WORKDIR)\ascii.obj:      $(encdir)\ascii.c regenc.h win32\config.h
 $(WORKDIR)\unicode.obj:    $(encdir)\unicode.c regint.h regenc.h win32\config.h $(encdir)\unicode\casefold.h $(encdir)\unicode\name2ctype.h
-$(WORKDIR)\utf_8.obj:       $(encdir)\utf_8.c regenc.h win32\config.h
+$(WORKDIR)\utf_8.obj:      $(encdir)\utf_8.c regenc.h win32\config.h
 $(WORKDIR)\utf_16be.obj:   $(encdir)\utf_16be.c regenc.h win32\config.h
 $(WORKDIR)\utf_16le.obj:   $(encdir)\utf_16le.c regenc.h win32\config.h
 $(WORKDIR)\utf_32be.obj:   $(encdir)\utf_32be.c regenc.h win32\config.h
@@ -228,8 +228,8 @@ $(WORKDIR)\utf_32le.obj:   $(encdir)\utf_32le.c regenc.h win32\config.h
 $(WORKDIR)\euc_jp.obj:     $(encdir)\euc_jp.c regenc.h win32\config.h $(encdir)\jis\props.h
 $(WORKDIR)\euc_tw.obj:     $(encdir)\euc_tw.c regenc.h win32\config.h
 $(WORKDIR)\euc_kr.obj:     $(encdir)\euc_kr.c regenc.h win32\config.h
-$(WORKDIR)\shift_jis.obj:   $(encdir)\shift_jis.c regenc.h win32\config.h $(encdir)\jis\props.h
-$(WORKDIR)\windows_31j.obj: $(encdir)\windows_31j.c $(encdir)\shift_jis.c regenc.h win32\config.h $(encdir)\jis\props.h
+$(WORKDIR)\shift_jis.obj:  $(encdir)\shift_jis.c $(encdir)\shift_jis.h regenc.h win32\config.h $(encdir)\jis\props.h
+$(WORKDIR)\windows_31j.obj: $(encdir)\windows_31j.c $(encdir)\shift_jis.h regenc.h win32\config.h $(encdir)\jis\props.h
 $(WORKDIR)\iso_8859_1.obj:  $(encdir)\iso_8859_1.c regenc.h win32\config.h
 $(WORKDIR)\iso_8859_2.obj:  $(encdir)\iso_8859_2.c regenc.h win32\config.h
 $(WORKDIR)\iso_8859_3.obj:  $(encdir)\iso_8859_3.c regenc.h win32\config.h
