@@ -310,7 +310,7 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
     }
 
     /* Destroy regex content only if a parser was not defined */
-    if (ctx->parser == NULL) {
+    if (ctx->parser == NULL && ctx->regex) {
         flb_regex_destroy(ctx->regex);
     }
 
