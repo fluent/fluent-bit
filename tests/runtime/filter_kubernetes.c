@@ -439,8 +439,10 @@ void flb_test_systemd_logs()
 {
     struct kube_test *ctx;
 
-    /* Send test message to Journal */
-    sd_journal_send(
+    /* Send test message to Journal. If this fails (e.g. journal is not running
+     * then skip the test
+     */
+    if (sd_journal_send(
                     "@timestamp=2018-02-23T08:58:45.0Z",
                     "PRIORITY=6",
                     "CONTAINER_NAME=k8s_kairosdb_kairosdb-914055854-b63vq_default_d6c53deb-05a4-11e8-a8c4-080027435fb7_23",
@@ -449,15 +451,17 @@ void flb_test_systemd_logs()
                     "CONTAINER_ID_FULL=56e257661383836fac4cd90a23ee8a7a02ee1538c8f35657d1a90f3de1065a22",
                     "MESSAGE=08:58:45.839 [qtp151442075-47] DEBUG [HttpParser.java:281] - filled 157/157",
                     "KUBE_TEST=2018",
-                    NULL);
+                    NULL) == 0)
+    {
 
-    ctx = kube_test_create(T_SYSTEMD_SIMPLE, KUBE_SYSTEMD, "", STD_PARSER,
-                           "Merge_Log", "On",
-                           NULL);
-    if (!ctx) {
-        exit(EXIT_FAILURE);
+        ctx = kube_test_create(T_SYSTEMD_SIMPLE, KUBE_SYSTEMD, "", STD_PARSER,
+                               "Merge_Log", "On",
+                               NULL);
+        if (!ctx) {
+            exit(EXIT_FAILURE);
+        }
+        kube_test_destroy(ctx);
     }
-    kube_test_destroy(ctx);
 
 }
 #endif
