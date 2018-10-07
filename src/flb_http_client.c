@@ -58,17 +58,24 @@ static int header_lookup(struct flb_http_client *c,
 {
     char *p;
     char *crlf;
+    char *end;
 
     /* Lookup the beginning of the header */
     p = strcasestr(c->resp.data, header);
+    end = strstr(c->resp.data, "\r\n\r\n");
     if (!p) {
-        if (strstr(c->resp.data, "\r\n\r\n")) {
+        if (end) {
             /* The headers are complete but the header is not there */
             return FLB_HTTP_NOT_FOUND;
         }
 
         /* We need more data */
         return FLB_HTTP_MORE;
+    }
+
+    /* Exclude matches in the body */
+    if (end && p > end) {
+        return FLB_HTTP_NOT_FOUND;
     }
 
     /* Lookup CRLF (end of line \r\n) */
