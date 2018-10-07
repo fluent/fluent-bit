@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 2.8)
 project(fluent-bit)
 
+set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/sanitizers-cmake/cmake" ${CMAKE_MODULE_PATH})
+find_package(Sanitizers)
+
 # Update CFLAGS
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -fPIC ")
 if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Windows")
