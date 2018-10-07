@@ -52,7 +52,7 @@ void flb_test_filter_parser_extract_fields()
     ctx = flb_create();
 
     /* Configure service */
-    flb_service_set(ctx, "Flush", "1", "Log_Level", "debug", NULL);
+    flb_service_set(ctx, "Flush", "1", "Grace" "1", "Log_Level", "debug", NULL);
 
     /* Input */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -137,7 +137,7 @@ void flb_test_filter_parser_reserve_data_off()
     ctx = flb_create();
 
     /* Configure service */
-    flb_service_set(ctx, "Flush", "1", "Log_Level", "debug", NULL);
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "debug", NULL);
 
     /* Input */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -212,7 +212,7 @@ void flb_test_filter_parser_handle_time_key()
     ctx = flb_create();
 
     /* Configure service */
-    flb_service_set(ctx, "Flush", "1", "Log_Level", "debug", NULL);
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "debug", NULL);
 
     /* Input */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -288,7 +288,7 @@ void flb_test_filter_parser_handle_time_key_with_fractional_timestamp()
     ctx = flb_create();
 
     /* Configure service */
-    flb_service_set(ctx, "Flush", "1", "Log_Level", "debug", NULL);
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "debug", NULL);
 
     /* Input */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -368,7 +368,7 @@ void flb_test_filter_parser_ignore_malformed_time()
     ctx = flb_create();
 
     /* Configure service */
-    flb_service_set(ctx, "Flush", "1", "Log_Level", "debug", NULL);
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "debug", NULL);
 
     /* Input */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -443,7 +443,7 @@ void flb_test_filter_parser_preserve_original_field()
     ctx = flb_create();
 
     /* Configure service */
-    flb_service_set(ctx, "Flush", "1", "Log_Level", "debug", NULL);
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "debug", NULL);
 
     /* Input */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);

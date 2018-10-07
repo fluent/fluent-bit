@@ -44,7 +44,7 @@ void flb_test_file_json_invalid(void)
     remove(TEST_LOGFILE);
 
     ctx = flb_create();
-    flb_service_set(ctx, "Flush", "1", "Log_Level", "error", NULL);
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);
@@ -89,7 +89,7 @@ void flb_test_file_json_long(void)
     remove(TEST_LOGFILE);
 
     ctx = flb_create();
-    flb_service_set(ctx, "Flush", "1", "Log_Level", "error", NULL);
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);
@@ -135,7 +135,7 @@ void flb_test_file_json_small(void)
     remove(TEST_LOGFILE);
 
     ctx = flb_create();
-    flb_service_set(ctx, "Flush", "1", "Log_Level", "error", NULL);
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);
@@ -181,7 +181,7 @@ void flb_test_file_format_csv(void)
     remove(TEST_LOGFILE);
 
     ctx = flb_create();
-    flb_service_set(ctx, "Flush", "1", "Log_Level", "error", NULL);
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);
@@ -229,7 +229,7 @@ void flb_test_file_format_ltsv(void)
     remove(TEST_LOGFILE);
 
     ctx = flb_create();
-    flb_service_set(ctx, "Flush", "1", "Log_Level", "error", NULL);
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);
@@ -278,7 +278,7 @@ void flb_test_file_format_invalid(void)
     remove(TEST_LOGFILE);
 
     ctx = flb_create();
-    flb_service_set(ctx, "Flush", "1", "Log_Level", "error", NULL);
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);

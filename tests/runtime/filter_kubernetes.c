@@ -261,6 +261,7 @@ static struct kube_test *kube_test_create(char *target, int type, char *suffix, 
     ctx->flb = flb_create();
     flb_service_set(ctx->flb,
                     "Flush", "1",
+                    "Grace", "1",
                     "Parsers_File", parserconf,
                     NULL);
 
@@ -331,7 +332,10 @@ static struct kube_test *kube_test_create(char *target, int type, char *suffix, 
         exit(EXIT_FAILURE);
     }
 
-    sleep(1);
+    /* Poll for up to 2 seconds or until we got a match */
+    for (ret = 0; ret < 2000 && result.nmatched == 0; ret++) {
+        usleep(1000);
+    }
     TEST_CHECK(result.nmatched);
 
     return ctx;
@@ -339,7 +343,6 @@ static struct kube_test *kube_test_create(char *target, int type, char *suffix, 
 
 static void kube_test_destroy(struct kube_test *ctx)
 {
-    sleep(1);
     flb_stop(ctx->flb);
     flb_destroy(ctx->flb);
     api_server_stop(ctx->http);

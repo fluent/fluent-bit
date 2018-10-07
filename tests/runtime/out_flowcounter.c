@@ -43,7 +43,7 @@ void flb_test_flowcounter_json_invalid(void)
     int out_ffd;
 
     ctx = flb_create();
-    flb_service_set(ctx, "Flush", "1", "Log_Level", "error", NULL);
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);
@@ -77,7 +77,7 @@ void flb_test_flowcounter_json_long(void)
     int out_ffd;
 
     ctx = flb_create();
-    flb_service_set(ctx, "Flush", "1", "Log_Level", "error", NULL);
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);
@@ -112,7 +112,7 @@ void flb_test_flowcounter_json_small(void)
     int out_ffd;
 
     ctx = flb_create();
-    flb_service_set(ctx, "Flush", "1", "Log_Level", "error", NULL);
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);
@@ -147,7 +147,7 @@ void flb_test_flowcounter_unit_second(void)
     int out_ffd;
 
     ctx = flb_create();
-    flb_service_set(ctx, "Flush", "1", "Log_Level", "error", NULL);
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);
@@ -183,7 +183,7 @@ void flb_test_flowcounter_unit_minute(void)
     int out_ffd;
 
     ctx = flb_create();
-    flb_service_set(ctx, "Flush", "1", "Log_Level", "error", NULL);
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);
@@ -219,7 +219,7 @@ void flb_test_flowcounter_unit_hour(void)
     int out_ffd;
 
     ctx = flb_create();
-    flb_service_set(ctx, "Flush", "1", "Log_Level", "error", NULL);
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);
@@ -255,7 +255,7 @@ void flb_test_flowcounter_unit_day(void)
     int out_ffd;
 
     ctx = flb_create();
-    flb_service_set(ctx, "Flush", "1", "Log_Level", "error", NULL);
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);
@@ -291,7 +291,7 @@ void flb_test_flowcounter_unit_invalid(void)
     int out_ffd;
 
     ctx = flb_create();
-    flb_service_set(ctx, "Flush", "1", "Log_Level", "error", NULL);
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);

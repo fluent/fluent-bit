@@ -55,6 +55,7 @@ struct flb_config {
     int support_mode;         /* enterprise support mode ?      */
     int is_running;           /* service running ?              */
     int flush;                /* Flush timeout                  */
+    int grace;                /* Grace on shutdown              */
     flb_pipefd_t flush_fd;    /* Timer FD associated to flush   */
     int flush_method;         /* Flush method set at build time */
 
@@ -196,6 +197,7 @@ enum conf_type {
 };
 
 #define FLB_CONF_STR_FLUSH    "Flush"
+#define FLB_CONF_STR_GRACE    "Grace"
 #define FLB_CONF_STR_DAEMON   "Daemon"
 #define FLB_CONF_STR_LOGFILE  "Log_File"
 #define FLB_CONF_STR_LOGLEVEL "Log_Level"
