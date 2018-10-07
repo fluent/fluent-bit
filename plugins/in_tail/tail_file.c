@@ -22,6 +22,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <time.h>
+#include <libgen.h>
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
@@ -590,7 +591,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     if (ctx->dynamic_tag == FLB_TRUE) {
         p = out_tmp;
 #ifdef FLB_HAVE_REGEX
-        ret = tag_compose(ctx->i_ins->tag, ctx->tag_regex, path, &p, &out_size);
+        ret = tag_compose(ctx->i_ins->tag, ctx->tag_regex, basename(path), &p, &out_size);
 #else
         ret = tag_compose(ctx->i_ins->tag, path, &p, &out_size);
 #endif

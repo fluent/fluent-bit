@@ -154,6 +154,14 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
         }
     }
 
+    /* If set, meta-data load will be attempted from files in this dir,
+       falling back to API if not existing.
+    */
+    tmp = flb_filter_get_property("kube_meta_preload_cache_dir", i);
+    if (tmp) {
+        ctx->meta_preload_cache_dir = flb_strdup(tmp);
+    }
+
     /* Kubernetes TLS */
     if (ctx->api_https == FLB_TRUE) {
         /* CA file */
@@ -302,7 +310,7 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
     }
 
     /* Destroy regex content only if a parser was not defined */
-    if (ctx->parser == NULL) {
+    if (ctx->parser == NULL && ctx->regex) {
         flb_regex_destroy(ctx->regex);
     }
 

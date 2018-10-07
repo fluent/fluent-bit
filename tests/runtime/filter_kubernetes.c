@@ -213,8 +213,6 @@ static int cb_check_result(void *record, size_t size, void *data)
             fprintf(stderr, "Validator mismatch::\nTarget: <<%s>>, Suffix: <<%s>\n"
                             "Filtered record: <<%s>>\nExpected record: <<%s>>\n",
                             result->target, result->suffix, (char *)record, out);
-        } else {
-            flb_info("Log line matched expected");
         }
         TEST_CHECK(check != NULL);
         result->nmatched++;
