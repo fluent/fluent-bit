@@ -1,0 +1,113 @@
+---
+image: cr.agilicus.com/corp-tools/docker-compose
+
+variables:
+  DOCKER_DRIVER: overlay2
+  PORT: 2375
+  DOCKER_HOST: tcp://localhost:2375
+  CONTAINER_IMAGE: $CI_REGISTRY/$CI_PROJECT_PATH
+  GIT_SUBMODULE_STRATEGY: recursive
+
+stages:
+  - test
+  - build
+
+before_script:
+  - |
+      git submodule update --recursive --remote
+      cat <<EOF > do_test
+      #!/bin/sh
+      set -e
+      cd build
+      echo cmake -DFLB_ALL=On -DFLB_WITHOUT_EXAMPLES=On -DFLB_TESTS_INTERNAL=On -DFLB_SANITIZE_ADDRESS=On -DFLB_TESTS_RUNTIME=On "\$@" ../
+      cmake -DFLB_ALL=On -DFLB_WITHOUT_EXAMPLES=On -DFLB_TESTS_INTERNAL=On -DFLB_SANITIZE_ADDRESS=On -DFLB_TESTS_RUNTIME=On "\$@" ../
+      make -j\$(( $(getconf _NPROCESSORS_ONLN) > 8 ? 8 : \$(getconf _NPROCESSORS_ONLN) ))
+      SKIP_EXTERNAL="elasticsearch|out_td|out_forward"
+      SKIP_BROKEN="filter_nest|filter_parser|in_disk|in_proc"
+      echo "Run 'internal' tests for \$@"
+      for i in bin/flb-it*
+      do
+        echo "===== <<\$(basename \$i)>> ====="
+        \$i
+        if [ \$? -eq 0 ]
+        then
+          RES=PASS
+        else
+          RES=FAIL
+        fi
+        printf "%-32s %s\n" \$(basename \$i) \$RES >> test.log
+      done
+      echo "Run select 'runtime' tests for \$FLB_MEM \$FLB_FLUSH"
+      for i in \$(ls bin/flb-rt* | egrep -v "\$SKIP_EXTERNAL|\$SKIP_BROKEN")
+      do
+        echo "===== <<\$(basename \$i)>> ====="
+        \$i
+        if [ \$? -eq 0 ]
+        then
+          RES=PASS
+        else
+          RES=FAIL
+        fi
+        printf "%-32s %s\n" \$(basename \$i) \$RES >> test.log
+      done
+      echo
+      echo "Results for $*"
+      cat test.log
+      EOF
+      echo "Catted to file"
+      chmod a+rx do_test
+
+test:
+  image: cr.agilicus.com/corp-tools/build-containers/base
+  stage: test
+  script: |
+      ./do_test
+
+asan:
+  image: cr.agilicus.com/corp-tools/build-containers/base
+  stage: test
+  script: |
+      ./do_test -DSANITIZE_ADDRESS=On || true
+
+tsan:
+  image: cr.agilicus.com/corp-tools/build-containers/base
+  stage: test
+  script: |
+      ./do_test -DSANITIZE_THREAD=On || true
+
+msan:
+  image: cr.agilicus.com/corp-tools/build-containers/base
+  stage: test
+  script: |
+      ./do_test -DSANITIZE_MEMORY=On || true
+
+usan:
+  image: cr.agilicus.com/corp-tools/build-containers/base
+  stage: test
+  script: |
+      ./do_test -DSANITIZE_UNDEFINED=On || true
+
+build:
+  image: cr.agilicus.com/corp-tools/docker-compose
+  stage: build
+  services:
+    - name: docker:dind
+  artifacts:
+    name: "$CI_PROJECT_PATH-$CI_COMMIT_REF_NAME"
+    paths:
+      - reports/
+  script: |
+      echo Start build
+      docker login -u gitlab-ci-token -p $CI_BUILD_TOKEN $CI_REGISTRY
+      docker build --tag $CONTAINER_IMAGE:$CI_COMMIT_REF_NAME .
+      clairctl analyze --log-level debug $CONTAINER_IMAGE:$CI_COMMIT_REF_NAME || true
+      echo Generate JSON report
+      clairctl report -f json $CONTAINER_IMAGE:$CI_COMMIT_REF_NAME || true
+      echo Generate HTML report
+      clairctl report -f html $CONTAINER_IMAGE:$CI_COMMIT_REF_NAME || true
+      docker push $CONTAINER_IMAGE:$CI_COMMIT_REF_NAME
+      if [ "$CI_COMMIT_REF_NAME" = "integration" ];
+      then
+        docker tag $CONTAINER_IMAGE:$CI_COMMIT_REF_NAME $CONTAINER_IMAGE:latest
+        docker push $CONTAINER_IMAGE:latest
+      fi

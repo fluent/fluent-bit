@@ -45,6 +45,10 @@ struct flb_service_config service_configs[] = {
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, flush)},
 
+    {FLB_CONF_STR_GRACE,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, grace)},
+
     {FLB_CONF_STR_DAEMON,
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, daemon)},
@@ -114,6 +118,7 @@ struct flb_config *flb_config_init()
     config->init_time    = time(NULL);
     config->kernel       = flb_kernel_info();
     config->verbose      = 3;
+    config->grace        = 5;
 
 #ifdef FLB_HAVE_HTTP_SERVER
     config->http_ctx     = NULL;

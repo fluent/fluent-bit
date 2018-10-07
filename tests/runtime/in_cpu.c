@@ -91,7 +91,7 @@ void flb_test_in_cpu_flush_2s_2times(void)
     TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
 
-    flb_service_set(ctx, "Flush", "2", NULL);
+    flb_service_set(ctx, "Flush", "2", "Grace", "1", NULL);
 
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);

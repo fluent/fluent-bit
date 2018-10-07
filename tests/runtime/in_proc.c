@@ -95,7 +95,7 @@ void flb_test_in_proc_selfcheck(void)
     TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
 
-    flb_service_set(ctx, "Flush", "1", NULL);
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", NULL);
 
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
@@ -142,7 +142,7 @@ void flb_test_in_proc_absent_process(void)
     TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
 
-    flb_service_set(ctx, "Flush", "2", NULL);
+    flb_service_set(ctx, "Flush", "2", "Grace", "1", NULL);
 
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0); // error occurs but return value is true

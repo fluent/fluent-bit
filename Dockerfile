@@ -26,6 +26,7 @@ RUN apt-get update && \
       libssl1.0-dev \
       libasl-dev \
       libsasl2-dev \
+      pkg-config \
       zlib1g-dev
 
 WORKDIR /tmp/src/build/
