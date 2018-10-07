@@ -94,7 +94,7 @@ int check_routing(const char* tag, const char* match, bool expect)
     TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", match, NULL);
 
-    flb_service_set(ctx, "Flush", "1", "Daemon", "false", NULL);
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Daemon", "false", NULL);
 
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
