@@ -1,2 +1,2 @@
-{"log":"format_type stderr\n","stream":"stderr","time":"2018-09-17T21:36:50.598656444Z"}
+{"log":"format_type: stderr\n","stream":"stderr","time":"2018-09-17T21:36:50.598656444Z"}
 {"log":"the_format: stdout\n","stream":"stdout","time":"2018-09-17T21:36:50.598656444Z"}
