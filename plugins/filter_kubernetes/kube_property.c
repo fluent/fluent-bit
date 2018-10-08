@@ -95,7 +95,7 @@ static int prop_set_parser(struct flb_kube *ctx, struct flb_kube_meta *meta,
     if (!stream || prop_cmp("stdout", sizeof("stdout")-1, stream, stream_len)) {
         props->stdout_parser = flb_sds_create(tmp);
     }
-    if (stream && prop_cmp("stdout", sizeof("stdout")-1, stream, stream_len)) {
+    if (stream && prop_cmp("stderr", sizeof("stderr")-1, stream, stream_len)) {
         props->stderr_parser = flb_sds_create(tmp);
     }
     flb_free(tmp);
