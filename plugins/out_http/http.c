@@ -276,9 +276,9 @@ static int http_post (struct flb_out_http *ctx,
         }
         else {
             if (c->resp.payload) {
-                flb_info("[out_http] %s:%i, HTTP status=%i\n%s",
+                flb_info("[out_http] %s:%i, HTTP status=%i (%i bytes)",
                          ctx->host, ctx->port,
-                         c->resp.status, c->resp.payload);
+                         c->resp.status, c->resp.payload_size);
             }
             else {
                 flb_info("[out_http] %s:%i, HTTP status=%i",
