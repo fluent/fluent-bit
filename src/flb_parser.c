@@ -196,6 +196,12 @@ struct flb_parser *flb_parser_create(char *name, char *format,
             *tmp++ = '\0';
         }
 
+        /* Check if the format contains a timezone (%z) */
+        if (strstr(p->time_fmt, "%z") || strstr(p->time_fmt, "%Z") ||
+            strstr(p->time_fmt, "%SZ") || strstr(p->time_fmt, "%S.%LZ")) {
+            p->time_with_tz = FLB_TRUE;
+        }
+
         /*
          * Check if the format expect fractional seconds
          *
@@ -220,7 +226,7 @@ struct flb_parser *flb_parser_create(char *name, char *format,
         }
         if (tmp) {
             tmp[2] = '\0';
-            p->time_frac_secs = (tmp + 3);
+            p->time_frac_secs = (tmp + 5);
         }
         else {
             /* same as above but with comma seperator */
@@ -236,20 +242,11 @@ struct flb_parser *flb_parser_create(char *name, char *format,
             }
             if (tmp) {
                 tmp[2] = '\0';
-                p->time_frac_secs = (tmp + 3);
+                p->time_frac_secs = (tmp + 5);
             }
             else {
                 p->time_frac_secs = NULL;
             }
-        }
-
-        /* Check if the format contains a timezone (%z) */
-        tmp = strstr(p->time_fmt, "%z");
-        if (tmp) {
-            p->time_with_tz = FLB_TRUE;
-        }
-        else if (strstr(p->time_fmt, "%SZ") || strstr(p->time_fmt, "%S.%LZ")) {
-            p->time_with_tz = FLB_TRUE;
         }
 
         /* Optional fixed timezone offset */
@@ -643,7 +640,6 @@ int flb_parser_time_lookup(char *time_str, size_t tsize,
 {
     int ret;
     int slen;
-    int tmdiff = 0;
     time_t time_now;
     double tmfrac = 0;
     char *p = NULL;
@@ -718,41 +714,34 @@ int flb_parser_time_lookup(char *time_str, size_t tsize,
             fs_tmp[slen] = '\0';
 
             /* Parse fractional seconds */
-            tmdiff = 0;
-            ret = flb_parser_frac_tzone(fs_tmp, slen, &tmfrac, &tmdiff);
+            ret = flb_parser_frac(fs_tmp, slen, &tmfrac, &time_ptr);
             if (ret == -1) {
-                /* Check if the timezone failed */
-                if (tmdiff == -1) {
-                    /* Try to find a workaround for time offset resolution */
-                    tm->tm_gmtoff = parser->time_offset;
-                }
-                else {
-                    flb_warn("[parser] Error parsing time string");
-                    return -1;
-                }
-            }
-            else {
-                tm->tm_gmtoff = tmdiff;
+                flb_warn("[parser] Error parsing time string");
+                return -1;
             }
             *ns = tmfrac;
-        }
-        else {
-            if (parser->time_with_tz == FLB_FALSE) {
-                tm->tm_gmtoff = parser->time_offset;
+
+            p = strptime(time_ptr, parser->time_frac_secs, tm);
+
+            if (p == NULL) {
+                return -1;
             }
         }
+
+        if (parser->time_with_tz == FLB_FALSE) {
+            tm->tm_gmtoff = parser->time_offset;
+        }
+
         return 0;
     }
 
     return -1;
 }
 
-int flb_parser_frac_tzone(char *str, int len, double *frac, int *tmdiff)
+int flb_parser_frac(char *str, int len, double *frac, char **end)
 {
-    int ret;
-    int tz_len;
+    int ret = 0;
     char *p;
-    char *end;
     double d;
     char *pstr;
 
@@ -766,23 +755,13 @@ int flb_parser_frac_tzone(char *str, int len, double *frac, int *tmdiff)
     else {
         pstr = str;
     }
-    d = strtod(pstr, &end);
-    if ((d == 0 && end == pstr) || !end) {
+    d = strtod(pstr, &p);
+    if ((d == 0 && p == pstr) || !p) {
         ret=-1;
         goto free_and_return;
     }
     *frac = d;
-
-    tz_len = len - (end - pstr);
-    p = end;
-    while (*p == ' ') p++;
-
-    tz_len -= (p - end);
-    ret = flb_parser_tzone_offset(p, tz_len, tmdiff);
-    if (ret == -1) {
-        *tmdiff = -1;
-        goto free_and_return;
-    }
+    *end = str + (p - pstr);
 
 free_and_return:
     if (pstr != str) {
