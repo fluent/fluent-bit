@@ -43,6 +43,10 @@
 #include <fluent-bit/flb_sosreport.h>
 #include <fluent-bit/flb_http_server.h>
 
+#ifdef FLB_HAVE_INOTIFY
+#include <sys/inotify.h>
+#endif
+
 #ifdef FLB_HAVE_METRICS
 #include <fluent-bit/flb_metrics_exporter.h>
 #endif
@@ -366,6 +370,20 @@ static int flb_engine_log_start(struct flb_config *config)
     return 0;
 }
 
+/* Unregister the listener and then exit engine */
+int flb_engine_config_changed_handler(void *data)
+{
+    struct inotify_event ev;
+    struct mk_event *mev = data;
+    struct flb_config *config = mev->data;
+
+    flb_info("[engine] exiting due to config change (pid=%i)", getpid());
+    read(config->conf_change_fd, &ev, sizeof(ev));
+
+    mk_event_del(config->evl, mev);
+    return flb_engine_exit(config);
+}
+
 int flb_engine_start(struct flb_config *config)
 {
     int ret;
@@ -502,6 +520,17 @@ int flb_engine_start(struct flb_config *config)
         config->http_ctx = flb_hs_create(config->http_listen, config->http_port,
                                          config);
         flb_hs_start(config->http_ctx);
+    }
+#endif
+
+#ifdef FLB_HAVE_INOTIFY
+    /* Watch the config dir for changes */
+    if (config->conf_change_fd > 0) {
+        struct mk_event ev;
+        memset(&ev, 0, sizeof(ev));
+        ev.data = config;
+        ev.handler = flb_engine_config_changed_handler;
+        mk_event_add(evl, config->conf_change_fd, FLB_ENGINE_EV_CUSTOM, MK_EVENT_READ, &ev);
     }
 #endif
 

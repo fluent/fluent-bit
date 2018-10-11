@@ -126,6 +126,9 @@ static void flb_help(int rc, struct flb_config *config)
     printf("  -B  --buf_workers=N\tnumber of workers for buffering\n");
 #endif
     printf("  -c  --config=FILE\tspecify an optional configuration file\n");
+#ifdef FLB_HAVE_INOTIFY
+    printf("  -C, --config_watch\tWatch the config dir, restart on change\n");
+#endif
 #ifdef FLB_HAVE_FORK
     printf("  -d, --daemon\t\trun Fluent Bit in background mode\n");
 #endif
@@ -369,6 +372,18 @@ static int flb_service_conf_path_set(struct flb_config *config, char *file)
     return 0;
 }
 
+static int flb_service_conf_watcher_set(struct flb_config *config)
+{
+#ifdef FLB_HAVE_INOTIFY
+#include <sys/inotify.h>
+    if (config->conf_watch && config->conf_path) {
+        config->conf_change_fd = inotify_init();
+        inotify_add_watch(config->conf_change_fd, config->conf_path, IN_CLOSE_WRITE | IN_CREATE | IN_DELETE | IN_DELETE_SELF | IN_MODIFY | IN_MOVE_SELF);
+    }
+#endif
+    return 0;
+}
+
 static int flb_service_conf(struct flb_config *config, char *file)
 {
     int ret = -1;
@@ -557,6 +572,8 @@ static int flb_service_conf(struct flb_config *config, char *file)
         }
     }
 
+    flb_service_conf_watcher_set(config);
+
     ret = 0;
 
  flb_service_conf_end:
@@ -589,6 +606,9 @@ int main(int argc, char **argv)
     static const struct option long_opts[] = {
         { "buf_path",        required_argument, NULL, 'b' },
         { "buf_workers",     required_argument, NULL, 'B' },
+#ifdef FLB_HAVE_INOTIFY
+        { "config_watch",    no_argument,       NULL, 'C' },
+#endif
         { "config",          required_argument, NULL, 'c' },
 #ifdef FLB_HAVE_FORK
         { "daemon",          no_argument      , NULL, 'd' },
@@ -654,11 +674,16 @@ int main(int argc, char **argv)
 
     /* Parse the command line options */
     while ((opt = getopt_long(argc, argv,
-                              "b:B:c:df:i:m:o:R:F:p:e:"
+                              "b:B:c:Cdf:i:m:o:R:F:p:e:"
                               "t:l:vqVhL:HP:s:S",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
+#ifdef FLB_HAVE_INOTIFY
+        case 'C':
+            config->conf_watch = FLB_TRUE;
+            break;
+#endif
 #ifdef FLB_HAVE_BUFFERING
         case 'b':
             config->buffer_path = flb_strdup(optarg);

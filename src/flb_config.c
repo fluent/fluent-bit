@@ -96,6 +96,10 @@ struct flb_service_config service_configs[] = {
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, coro_stack_size)},
 
+    {FLB_CONF_STR_CONFIG_WATCH,
+     FLB_CONF_TYPE_BOOL,
+     offsetof(struct flb_config, conf_watch)},
+
     {NULL, FLB_CONF_TYPE_OTHER, 0} /* end of array */
 };
 
