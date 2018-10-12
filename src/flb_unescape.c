@@ -168,7 +168,7 @@ int flb_unescape_string_utf8(char *in_buf, int sz, char *out_buf)
     if (count_in < sz) {
         flb_error("Not at boundary but still NULL terminating : %d - '%s'", sz, in_buf);
     }
-    out_buf[count_in - 1] = '\0';
+    out_buf[count_out] = '\0';
     return count_out;
 }
 
