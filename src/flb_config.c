@@ -21,6 +21,7 @@
 #include <stdlib.h>
 #include <signal.h>
 #include <stddef.h>
+#include <dirent.h>
 
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
@@ -54,6 +55,10 @@ struct flb_service_config service_configs[] = {
      offsetof(struct flb_config, log_file)},
 
     {FLB_CONF_STR_PARSERS_FILE,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, parsers_file)},
+
+    {FLB_CONF_STR_PARSERS_DIR,
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, parsers_file)},
 
@@ -373,6 +378,43 @@ int flb_config_set_property(struct flb_config *config,
                 tmp = NULL;
 #endif
             }
+            else if (!strncasecmp(key, FLB_CONF_STR_PARSERS_DIR, 32)) {
+#ifdef FLB_HAVE_REGEX
+                tmp = flb_env_var_translate(config->env, v);
+                char *parsers_dir = malloc(strlen(config->conf_path) + strlen(tmp) + 2);
+
+                if( strcmp (config->conf_path, "" ) ) {
+                    if ( tmp[0] != '/' ) {
+		                strcpy(parsers_dir, config->conf_path);
+		                strcat(parsers_dir, "/");
+                        strcat(parsers_dir, tmp);
+                    }
+                } else {
+                    parsers_dir = tmp;
+                }
+
+                struct dirent *dp;
+                DIR *dfd;
+                if ((dfd = opendir(parsers_dir)) == NULL) {
+                    fprintf(stderr, "Can't open %s\n", parsers_dir);
+                    return 0;
+                }
+
+                while ((dp = readdir(dfd)) != NULL) {
+                    if ( strcmp(dp->d_name+strlen(dp->d_name)-4,"conf") == 0 ) {
+                        char *fullpath = malloc(strlen(parsers_dir) + strlen(dp->d_name) + 1);
+		                strcpy(fullpath, parsers_dir);
+                        strcat(fullpath, dp->d_name);
+
+                        ret += flb_parser_conf_file(fullpath, config);
+                    }
+                }
+
+                flb_free(tmp);
+                tmp=NULL;
+#endif
+            }
+
 #ifdef FLB_HAVE_PROXY_GO
             else if (!strncasecmp(key, FLB_CONF_STR_PLUGINS_FILE, 32)) {
                 tmp = flb_env_var_translate(config->env, v);
