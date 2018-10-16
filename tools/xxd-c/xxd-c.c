@@ -130,7 +130,7 @@ static int xxdc_convert(char *in, char *out, char *name)
                 fwrite("\n    ", 5, 1, f_out);
             }
             len = snprintf(tmp, sizeof(tmp) - 1,
-                           "0x%02x%s ", buf[i], (i+1 < size) ? ",": "");
+                           "0x%02x%s ", buf[i], ",");
             fwrite(tmp, len, 1, f_out);
         }
     }
