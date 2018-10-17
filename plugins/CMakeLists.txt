@@ -154,6 +154,7 @@ if (NOT CMAKE_SYSTEM_NAME MATCHES "Windows")
 endif()
 REGISTER_FILTER_PLUGIN("filter_stdout")
 REGISTER_FILTER_PLUGIN("filter_throttle")
+REGISTER_FILTER_PLUGIN("filter_join_partial")
 
 if(FLB_REGEX)
   REGISTER_FILTER_PLUGIN("filter_kubernetes")

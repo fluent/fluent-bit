@@ -123,6 +123,7 @@ option(FLB_FILTER_PARSER   "Enable parser filter"               Yes)
 option(FLB_FILTER_KUBERNETES "Enable kubernetes filter"         Yes)
 option(FLB_FILTER_THROTTLE "Enable throttle filter"             Yes)
 option(FLB_FILTER_RECORD_MODIFIER "Enable record_modifier filter" Yes)
+option(FLB_FILTER_JOIN_PARTIAL    "Enable join_partial filter"    Yes)
 option(FLB_FILTER_NEST     "Enable nest filter"                   Yes)
 option(FLB_FILTER_LUA      "Enable Lua scripting filter"          Yes)
 
