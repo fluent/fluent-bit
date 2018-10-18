@@ -121,9 +121,18 @@ static int xxdc_convert(char *in, char *out, char *name)
         return -1;
     }
 
+    /* Pre-processor header */
     len = snprintf(tmp, sizeof(tmp) - 1,
-                   "unsigned char __%s[] = {", sname);
+                   "#ifndef XXD_C_%s\n"
+                   "#define XXD_C_%s\n\n", sname, sname);
     fwrite(tmp, len, 1, f_out);
+
+    /* Define byte array */
+    len = snprintf(tmp, sizeof(tmp) - 1,
+                   "static unsigned char __%s[] = {", sname);
+    fwrite(tmp, len, 1, f_out);
+
+    /* Write bytes */
     while ((size = fread(buf, sizeof(char), XXDC_CHUNK, f_in)) > 0) {
         for (i = 0; i < size; i++) {
             if (i % 12 == 0) {
@@ -134,7 +143,7 @@ static int xxdc_convert(char *in, char *out, char *name)
             fwrite(tmp, len, 1, f_out);
         }
     }
-    fwrite("\n};\n", 4, 1, f_out);
+    fwrite("\n};\n\n#endif\n", 12, 1, f_out);
     fclose(f_in);
 
     if (out) {
