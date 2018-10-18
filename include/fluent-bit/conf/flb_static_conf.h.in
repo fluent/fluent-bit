@@ -22,8 +22,9 @@
 
 @FLB_STATIC_CONF_INC@
 
-unsigned char *flb_config_files[] = {
-    @FLB_STATIC_CONF_ARR@NULL
+static unsigned char *flb_config_files[@FLB_STATIC_CONF_ARR_SIZE@][2] = {
+    @FLB_STATIC_CONF_ARR@
 };
 
+static unsigned int flb_config_files_size = @FLB_STATIC_CONF_ARR_SIZE@;
 #endif
