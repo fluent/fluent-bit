@@ -20,7 +20,6 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_config.h>
-#include <fluent-bit/flb_stats.h>
 #include <fluent-bit/flb_pack.h>
 
 #include <stdio.h>
@@ -360,8 +359,6 @@ int in_cpu_collect(struct flb_input_instance *i_ins,
     flb_trace("[in_cpu] CPU %0.2f%%", s->p_cpu);
 
     flb_input_buf_write_end(i_ins);
-
-    flb_stats_update(in_cpu_plugin.stats_fd, 0, 1);
 
     return 0;
 }
