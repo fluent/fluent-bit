@@ -19,7 +19,6 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
-#include <fluent-bit/flb_stats.h>
 #include <fluent-bit/flb_kernel.h>
 #include <fluent-bit/flb_pack.h>
 
@@ -266,7 +265,6 @@ static int in_mem_collect(struct flb_input_instance *i_ins,
     ++ctx->idx;
 
     flb_input_buf_write_end(i_ins);
-    flb_stats_update(in_mem_plugin.stats_fd, 0, 1);
     return 0;
 }
 
