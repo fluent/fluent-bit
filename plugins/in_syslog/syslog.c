@@ -28,7 +28,6 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
-#include <fluent-bit/flb_stats.h>
 
 #include "syslog.h"
 #include "syslog_conf.h"
