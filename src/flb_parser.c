@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_config.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -400,6 +401,7 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
     struct flb_parser_types *types;
     struct mk_list *decoders;
 
+#ifndef FLB_HAVE_STATIC_CONF
     ret = stat(file, &st);
     if (ret == -1 && errno == ENOENT) {
         /* Try to resolve the real path (if exists) */
@@ -417,8 +419,11 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
         cfg = file;
     }
 
-    flb_debug("[parser] opening file %s", cfg);
     fconf = mk_rconf_open(cfg);
+#else
+    fconf = flb_config_static_open(file);
+#endif
+
     if (!fconf) {
         return -1;
     }

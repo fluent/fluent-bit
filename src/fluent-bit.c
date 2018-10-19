@@ -381,7 +381,12 @@ static int flb_service_conf(struct flb_config *config, char *file)
     struct flb_output_instance *out;
     struct flb_filter_instance *filter;
 
+#ifdef FLB_HAVE_STATIC_CONF
+    fconf = flb_config_static_open(file);
+#else
     fconf = mk_rconf_open(file);
+#endif
+
     if (!fconf) {
         return -1;
     }
@@ -642,6 +647,8 @@ int main(int argc, char **argv)
         exit(EXIT_FAILURE);
     }
 
+#ifndef FLB_HAVE_STATIC_CONF
+
     /* Parse the command line options */
     while ((opt = getopt_long(argc, argv, "b:B:c:df:i:m:o:R:F:p:e:t:l:vqVhL:HP:S",
                               long_opts, NULL)) != -1) {
@@ -776,12 +783,14 @@ int main(int argc, char **argv)
             flb_help(EXIT_FAILURE, config);
         }
     }
+#endif /* !FLB_HAVE_STATIC_CONF */
 
     if (config->verbose != FLB_LOG_OFF) {
         flb_banner();
     }
 
     /* Validate config file */
+#ifndef FLB_HAVE_STATIC_CONF
     if (cfg_file) {
         if (access(cfg_file, R_OK) != 0) {
             flb_utils_error(FLB_ERR_CFG_FILE);
@@ -794,6 +803,12 @@ int main(int argc, char **argv)
         }
         flb_free(cfg_file);
     }
+#else
+    ret = flb_service_conf(config, "fluent-bit.conf");
+    if (ret != 0) {
+        flb_utils_error(FLB_ERR_CFG_FILE_STOP);
+    }
+#endif
 
     /* Validate flush time (seconds) */
     if (config->flush < 1) {

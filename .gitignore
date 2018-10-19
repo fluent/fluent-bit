@@ -8,6 +8,7 @@ build/*
 include/fluent-bit/flb_info.h
 include/fluent-bit/flb_plugins.h
 include/fluent-bit/flb_version.h
+include/fluent-bit/conf/*.h
 init/fluent-bit.service
 lib/monkey/monkey.service
 lib/monkey/include/monkey/mk_core/mk_core_info.h

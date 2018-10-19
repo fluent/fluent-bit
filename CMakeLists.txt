@@ -379,6 +379,7 @@ add_subdirectory(tools/xxd-c)
 
 # Static configuration generator (using xxd-c)
 if(FLB_STATIC_CONF)
+  FLB_DEFINITION(FLB_HAVE_STATIC_CONF)
   add_subdirectory(gen_static_conf)
 endif()
 

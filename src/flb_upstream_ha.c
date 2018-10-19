@@ -275,6 +275,7 @@ struct flb_upstream_ha *flb_upstream_ha_from_file(char *file,
     struct flb_upstream_ha *ups;
     struct flb_upstream_node *node;
 
+#ifndef FLB_HAVE_STATIC_CONF
     ret = stat(file, &st);
     if (ret == -1 && errno == ENOENT) {
         /* Try to resolve the real path (if exists) */
@@ -290,9 +291,12 @@ struct flb_upstream_ha *flb_upstream_ha_from_file(char *file,
     else {
         cfg = file;
     }
-
     flb_debug("[upstream_ha] opening file %s", cfg);
     fconf = mk_rconf_open(cfg);
+#else
+    fconf = flb_config_static_open(file);
+#endif
+
     if (!fconf) {
         return NULL;
     }

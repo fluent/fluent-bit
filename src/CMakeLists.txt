@@ -151,6 +151,12 @@ if(FLB_SQLDB)
     "sqlite3")
 endif()
 
+if(FLB_STATIC_CONF)
+  set(src
+    ${src}
+    "flb_config_static.c"
+    )
+endif()
 
 include(CheckSymbolExists)
 check_symbol_exists(accept4 "sys/socket.h" HAVE_ACCEPT4)
