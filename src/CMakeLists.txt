@@ -83,13 +83,6 @@ if(FLB_PROXY_GO)
     )
 endif()
 
-if(FLB_STATS)
-  set(src
-    ${src}
-    "flb_stats.c"
-    )
-endif()
-
 if(FLB_METRICS)
   set(src
     ${src}

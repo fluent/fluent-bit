@@ -35,7 +35,6 @@ option(FLB_TLS                "Build with SSL/TLS support"    No)
 option(FLB_BINARY             "Build executable binary"      Yes)
 option(FLB_EXAMPLES           "Build examples"               Yes)
 option(FLB_SHARED_LIB         "Build shared library"         Yes)
-option(FLB_STATS              "Enable stats support"          No)
 option(FLB_VALGRIND           "Enable Valgrind support"       No)
 option(FLB_TRACE              "Enable trace mode"             No)
 option(FLB_TESTS_RUNTIME      "Enable runtime tests"          No)
@@ -303,10 +302,6 @@ endif()
 
 if(FLB_TRACE)
   FLB_DEFINITION(FLB_HAVE_TRACE)
-endif()
-
-if(FLB_STATS)
-  FLB_DEFINITION(FLB_HAVE_STATS)
 endif()
 
 if(FLB_HTTP_SERVER)

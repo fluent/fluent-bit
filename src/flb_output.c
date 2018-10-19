@@ -510,13 +510,6 @@ int flb_output_init(struct flb_config *config)
                       p->name);
             return -1;
         }
-
-
-#ifdef FLB_HAVE_STATS
-        //struct flb_stats *stats;
-        //stats = &out->stats;
-        //stats->n = -1;
-#endif
     }
 
     /* Iterate list of proxies plugins */

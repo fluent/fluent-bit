@@ -30,7 +30,6 @@
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_tls.h>
 #include <fluent-bit/flb_io_tls.h>
-#include <fluent-bit/flb_stats.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_network.h>
