@@ -54,7 +54,12 @@ struct flb_thread {
     void (*cb_destroy) (void *);
 };
 
+#ifdef FLB_CORO_STACK_SIZE
+#define FLB_THREAD_STACK_SIZE      FLB_CORO_STACK_SIZE
+#else
 #define FLB_THREAD_STACK_SIZE      ((3 * PTHREAD_STACK_MIN) / 2)
+#endif
+
 #define FLB_THREAD_DATA(th)        (((char *) th) + sizeof(struct flb_thread))
 
 FLB_EXPORT pthread_key_t flb_thread_key;

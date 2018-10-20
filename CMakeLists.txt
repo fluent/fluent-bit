@@ -48,6 +48,7 @@ option(FLB_SQLDB              "Enable SQL embedded DB"        No)
 option(FLB_HTTP_SERVER        "Enable HTTP Server"            No)
 option(FLB_BACKTRACE          "Enable stacktrace support"    Yes)
 option(FLB_LUAJIT             "Enable Lua Scripting support" Yes)
+option(FLB_CORO_STACK_SIZE    "Set coroutine stack size")
 
 # Metrics: Experimental Feature, disabled by default on 0.12 series
 # but enabled in the upcoming 0.13 release. Note that development
@@ -347,6 +348,15 @@ if(FLB_HAVE_TIMESPEC_GET)
   FLB_DEFINITION(FLB_HAVE_TIMESPEC_GET)
 endif()
 
+# Special definition to set the coroutine stack size
+if(FLB_CORO_STACK_SIZE)
+  add_definitions(-DFLB_CORO_STACK_SIZE=${FLB_CORO_STACK_SIZE})
+  set(FLB_BUILD_FLAGS "${FLB_BUILD_FLAGS}#ifndef FLB_CORO_STACK_SIZE\n#define FLB_CORO_STACK_SIZE ${FLB_CORO_STACK_SIZE}\n#endif\n")
+else()
+
+endif()
+
+# TD Agent options
 if(FLB_TD)
   FLB_DEFINITION(FLB_IS_TD_AGENT)
   FLB_OPTION(FLB_JEMALLOC ON)
