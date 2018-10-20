@@ -49,6 +49,7 @@ option(FLB_BACKTRACE          "Enable stacktrace support"    Yes)
 option(FLB_LUAJIT             "Enable Lua Scripting support" Yes)
 option(FLB_STATIC_CONF        "Build binary using static configuration")
 option(FLB_SANITIZE_ADDRESS   "Enable address sanitizer"      No)
+option(FLB_CORO_STACK_SIZE    "Set coroutine stack size")
 
 # Metrics: Experimental Feature, disabled by default on 0.12 series
 # but enabled in the upcoming 0.13 release. Note that development
@@ -376,6 +377,14 @@ add_subdirectory(tools/xxd-c)
 if(FLB_STATIC_CONF)
   FLB_DEFINITION(FLB_HAVE_STATIC_CONF)
   add_subdirectory(gen_static_conf)
+endif()
+
+# Special definition to set the coroutine stack size
+if(FLB_CORO_STACK_SIZE)
+  add_definitions(-DFLB_CORO_STACK_SIZE=${FLB_CORO_STACK_SIZE})
+  set(FLB_BUILD_FLAGS "${FLB_BUILD_FLAGS}#ifndef FLB_CORO_STACK_SIZE\n#define FLB_CORO_STACK_SIZE ${FLB_CORO_STACK_SIZE}\n#endif\n")
+else()
+
 endif()
 
 # TD Agent options
