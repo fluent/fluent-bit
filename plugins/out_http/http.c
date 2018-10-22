@@ -352,6 +352,9 @@ static int http_gelf(struct flb_out_http *ctx,
         }
         else {
             flb_error("[out_http] error encoding to GELF");
+            msgpack_unpacked_destroy(&result);
+            flb_sds_destroy(s);
+            return FLB_RETRY;
         }
 
         flb_sds_destroy(s);
