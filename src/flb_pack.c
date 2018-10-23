@@ -1203,8 +1203,10 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
 
                 tmp = flb_msgpack_gelf_flatten (s, v,
                                                 prefix, prefix_len, FLB_FALSE);
-
-                if (tmp == NULL) return NULL;
+                if (tmp == NULL) {
+                    flb_free(prefix);
+                    return NULL;
+                }
                 *s = tmp;
                 flb_free(prefix);
 
