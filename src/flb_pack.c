@@ -1177,7 +1177,7 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
                 if (full_message_key_found == FLB_TRUE) continue;
                 full_message_key_found = FLB_TRUE;
                 key = "full_message";
-                key_len = 13;
+                key_len = 12;
             }
             else if ((key_len == 2)  && !strncmp(key, "id", 2)) {
                 /* _id key not allowed */
