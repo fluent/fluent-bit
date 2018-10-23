@@ -28,6 +28,7 @@
 #include "tail_db.h"
 #include "tail_config.h"
 #include "tail_scan.h"
+#include "tail_dockermode.h"
 #include "tail_multiline.h"
 
 struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
@@ -152,6 +153,19 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
         if (ret == FLB_TRUE) {
             ctx->multiline = FLB_TRUE;
             ret = flb_tail_mult_create(ctx, i_ins, config);
+            if (ret == -1) {
+                return NULL;
+            }
+        }
+    }
+
+    /* Config: Docker mode */
+    tmp = flb_input_get_property("docker_mode", i_ins);
+    if (tmp) {
+        ret = flb_utils_bool(tmp);
+        if (ret == FLB_TRUE) {
+            ctx->docker_mode = FLB_TRUE;
+            ret = flb_tail_dmode_create(ctx, i_ins, config);
             if (ret == -1) {
                 return NULL;
             }

@@ -42,6 +42,7 @@ struct flb_tail_config {
     int coll_fd_scan;
     int coll_fd_rotated;
     int coll_fd_pending;
+    int coll_fd_dmode_flush;
     int coll_fd_mult_flush;
 
     /* Backend collectors */
@@ -79,6 +80,10 @@ struct flb_tail_config {
     int multiline_flush;       /* multiline flush/wait */
     struct flb_parser *mult_parser_firstline;
     struct mk_list mult_parsers;
+
+    /* Docker mode */
+    int docker_mode;           /* Docker mode enabled ?  */
+    int docker_mode_flush;     /* Docker mode flush/wait */
 
     /* Lists head for files consumed statically (read) and by events (inotify) */
     struct mk_list files_static;
