@@ -13,6 +13,8 @@ include(GNUInstallDirs)
 include(ExternalProject)
 include(cmake/FindJournald.cmake)
 include(cmake/FindMonkey.cmake)
+set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/sanitizers-cmake/cmake" ${CMAKE_MODULE_PATH})
+find_package(Sanitizers)
 
 # Output paths
 set(FLB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -48,7 +50,6 @@ option(FLB_HTTP_SERVER        "Enable HTTP Server"            No)
 option(FLB_BACKTRACE          "Enable stacktrace support"    Yes)
 option(FLB_LUAJIT             "Enable Lua Scripting support" Yes)
 option(FLB_STATIC_CONF        "Build binary using static configuration")
-option(FLB_SANITIZE_ADDRESS   "Enable address sanitizer"      No)
 option(FLB_CORO_STACK_SIZE    "Set coroutine stack size")
 
 # Metrics: Experimental Feature, disabled by default on 0.12 series
@@ -192,22 +193,6 @@ endmacro()
 # Enable Debug symbols if specified
 if(FLB_DEBUG)
   set(CMAKE_BUILD_TYPE "Debug")
-endif()
-
-# Find Sanitize Address if enabled
-if(FLB_SANITIZE_ADDRESS)
-  set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/sanitizers-cmake/cmake" ${CMAKE_MODULE_PATH})
-  add_definitions(-DSANITIZE_ADDRESS=On)
-  find_package(Sanitizers)
-
-  # Note that this package don't define Sanitizers_FOUND:
-  # https://github.com/arsenm/sanitizers-cmake/issues/16
-  if (NOT DEFINED SANITIZE_LINK_STATIC)
-    message(FATAL_ERROR "CMake Sanitizer not found, update git submodules")
-  else()
-    FLB_DEFINITION(FLB_HAVE_SANITIZE_ADDRESS)
-    message(STATUS "Enabling address sanitizer")
-  endif()
 endif()
 
 # General Headers
