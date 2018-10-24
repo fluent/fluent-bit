@@ -28,7 +28,7 @@
 #define FLB_ES_DEFAULT_TIME_FMT   "%Y.%m.%d"
 #define FLB_ES_DEFAULT_TIME_KEY   "@timestamp"
 #define FLB_ES_DEFAULT_TIME_KEYF  "%Y-%m-%dT%H:%M:%S"
-#define FLB_ES_DEFAULT_TAG_KEY    "_flb-key"
+#define FLB_ES_DEFAULT_TAG_KEY    "flb-key"
 
 struct flb_elasticsearch {
     /* Elasticsearch index (database) and type (table) */
