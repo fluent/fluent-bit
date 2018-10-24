@@ -195,6 +195,11 @@ if(FLB_DEBUG)
   set(CMAKE_BUILD_TYPE "Debug")
 endif()
 
+# Is sanitize_address defined ?
+if(SANITIZE_ADDRESS)
+  FLB_DEFINITION(FLB_HAVE_SANITIZE_ADDRESS)
+endif()
+
 # General Headers
 include_directories(
   include/
