@@ -152,7 +152,10 @@ static int merge_log_handler(msgpack_object o,
             return MERGE_PARSED;
         }
     }
-    else {
+    else if (ctx->unesc_buf[0] == '[' || ctx->unesc_buf[0] == '{') {
+        /* Optimisation: avoid trying to pack if it cannot be a valid JSON
+         * object
+         */
         ret = flb_pack_json(ctx->unesc_buf, unesc_len,
                             (char **) out_buf, out_size);
     }
