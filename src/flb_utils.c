@@ -89,6 +89,9 @@ void flb_utils_error(int err)
     case FLB_ERR_JSON_PART:
         msg = "Truncated JSON string";
         break;
+    case FLB_ERR_CORO_STACK_SIZE:
+        msg = "Invalid coroutine stack size";
+        break;
     }
 
     if (!msg) {
