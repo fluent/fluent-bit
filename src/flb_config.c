@@ -88,6 +88,10 @@ struct flb_service_config service_configs[] = {
      offsetof(struct flb_config, buffer_workers)},
 #endif
 
+    {FLB_CONF_STR_CORO_STACK_SIZE,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, coro_stack_size)},
+
     {NULL, FLB_CONF_TYPE_OTHER, 0} /* end of array */
 };
 
@@ -136,6 +140,10 @@ struct flb_config *flb_config_init()
     mk_list_init(&config->luajit_list);
 #endif
 
+    /* Set default coroutines stack size */
+    config->coro_stack_size = FLB_THREAD_STACK_SIZE;
+
+    /* Initialize linked lists */
     mk_list_init(&config->collectors);
     mk_list_init(&config->in_plugins);
     mk_list_init(&config->parser_plugins);
