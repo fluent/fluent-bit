@@ -416,7 +416,7 @@ struct flb_thread *flb_input_thread_collect(struct flb_input_collector *coll,
     }
 
     th->caller = co_active();
-    th->callee = co_create(FLB_THREAD_STACK_SIZE,
+    th->callee = co_create(config->coro_stack_size,
                            input_pre_cb_collect, &stack_size);
 
 #ifdef FLB_HAVE_VALGRIND
