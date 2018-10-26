@@ -345,7 +345,7 @@ struct flb_thread *flb_output_thread(struct flb_task *task,
     out_th->parent  = th;
 
     th->caller = co_active();
-    th->callee = co_create(FLB_THREAD_STACK_SIZE,
+    th->callee = co_create(config->coro_stack_size,
                            output_pre_cb_flush, &stack_size);
 
 #ifdef FLB_HAVE_VALGRIND
