@@ -146,6 +146,8 @@ static void flb_help(int rc, struct flb_config *config)
     printf("  -P, --port\t\tset HTTP server TCP port (default: %s)\n",
            FLB_CONFIG_HTTP_PORT);
 #endif
+    printf("  -s, --coro_stack_size\tSet coroutines stack size in bytes "
+           "(default: %i)\n", config->coro_stack_size);
     printf("  -q, --quiet\t\tquiet mode\n");
     printf("  -S, --sosreport\tsupport report for Enterprise customers\n");
     printf("  -V, --version\t\tshow version number\n");
@@ -580,33 +582,34 @@ int main(int argc, char **argv)
 #ifndef _WIN32
     /* Setup long-options */
     static const struct option long_opts[] = {
-        { "buf_path",    required_argument, NULL, 'b' },
-        { "buf_workers", required_argument, NULL, 'B' },
-        { "config",      required_argument, NULL, 'c' },
+        { "buf_path",        required_argument, NULL, 'b' },
+        { "buf_workers",     required_argument, NULL, 'B' },
+        { "config",          required_argument, NULL, 'c' },
 #ifdef FLB_HAVE_FORK
-        { "daemon",      no_argument      , NULL, 'd' },
+        { "daemon",          no_argument      , NULL, 'd' },
 #endif
-        { "flush",       required_argument, NULL, 'f' },
-        { "http",        no_argument      , NULL, 'H' },
-        { "log_file",    required_argument, NULL, 'l' },
-        { "port",        required_argument, NULL, 'P' },
-        { "input",       required_argument, NULL, 'i' },
-        { "match",       required_argument, NULL, 'm' },
-        { "output",      required_argument, NULL, 'o' },
-        { "filter",      required_argument, NULL, 'F' },
-        { "parser",      required_argument, NULL, 'R' },
-        { "prop",        required_argument, NULL, 'p' },
-        { "plugin",      required_argument, NULL, 'e' },
-        { "tag",         required_argument, NULL, 't' },
-        { "version",     no_argument      , NULL, 'V' },
-        { "verbose",     no_argument      , NULL, 'v' },
-        { "quiet",       no_argument      , NULL, 'q' },
-        { "help",        no_argument      , NULL, 'h' },
-        { "sosreport",   no_argument      , NULL, 'S' },
+        { "flush",           required_argument, NULL, 'f' },
+        { "http",            no_argument      , NULL, 'H' },
+        { "log_file",        required_argument, NULL, 'l' },
+        { "port",            required_argument, NULL, 'P' },
+        { "input",           required_argument, NULL, 'i' },
+        { "match",           required_argument, NULL, 'm' },
+        { "output",          required_argument, NULL, 'o' },
+        { "filter",          required_argument, NULL, 'F' },
+        { "parser",          required_argument, NULL, 'R' },
+        { "prop",            required_argument, NULL, 'p' },
+        { "plugin",          required_argument, NULL, 'e' },
+        { "tag",             required_argument, NULL, 't' },
+        { "version",         no_argument      , NULL, 'V' },
+        { "verbose",         no_argument      , NULL, 'v' },
+        { "quiet",           no_argument      , NULL, 'q' },
+        { "help",            no_argument      , NULL, 'h' },
+        { "coro_stack_size", required_argument, NULL, 's'},
+        { "sosreport",       no_argument      , NULL, 'S' },
 #ifdef FLB_HAVE_HTTP_SERVER
-        { "http_server", no_argument      , NULL, 'H' },
-        { "http_listen", required_argument, NULL, 'L' },
-        { "http_port",   required_argument, NULL, 'P' },
+        { "http_server",     no_argument      , NULL, 'H' },
+        { "http_listen",     required_argument, NULL, 'L' },
+        { "http_port",       required_argument, NULL, 'P' },
 #endif
         { NULL, 0, NULL, 0 }
     };
@@ -643,7 +646,9 @@ int main(int argc, char **argv)
     }
 
     /* Parse the command line options */
-    while ((opt = getopt_long(argc, argv, "b:B:c:df:i:m:o:R:F:p:e:t:l:vqVhL:HP:S",
+    while ((opt = getopt_long(argc, argv,
+                              "b:B:c:df:i:m:o:R:F:p:e:"
+                              "t:l:vqVhL:HP:s:S",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
@@ -769,6 +774,9 @@ int main(int argc, char **argv)
         case 'q':
             config->verbose = FLB_LOG_OFF;
             break;
+        case 's':
+            config->coro_stack_size = (unsigned int) atoi(optarg);
+            break;
         case 'S':
             config->support_mode = FLB_TRUE;
             break;
@@ -793,6 +801,11 @@ int main(int argc, char **argv)
             flb_utils_error(FLB_ERR_CFG_FILE_STOP);
         }
         flb_free(cfg_file);
+    }
+
+    /* Check co-routine stack size */
+    if (config->coro_stack_size < getpagesize()) {
+        flb_utils_error(FLB_ERR_CORO_STACK_SIZE);
     }
 
     /* Validate flush time (seconds) */
