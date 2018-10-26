@@ -257,6 +257,8 @@ static int cb_throttle_exit(void *data, struct flb_config *config)
 {
     struct flb_filter_throttle_ctx *ctx = data;
 
+    flb_free(ctx->hash->table);
+    flb_free(ctx->hash);
     flb_free(ctx);
     return 0;
 }
