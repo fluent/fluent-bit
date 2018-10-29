@@ -870,6 +870,11 @@ int flb_input_dyntag_append_obj(struct flb_input_instance *in,
         dt->lock = FLB_TRUE;
     }
 
+    /* Make sure the data was not filtered out and the buffer size is zero */
+    if (dt->mp_sbuf.size == 0) {
+        flb_input_dyntag_destroy(dt);
+    }
+
     return 0;
 }
 
@@ -896,6 +901,11 @@ int flb_input_dyntag_append_raw(struct flb_input_instance *in,
     /* Lock buffers where size > 2MB */
     if (dt->mp_sbuf.size > 2048000) {
         dt->lock = FLB_TRUE;
+    }
+
+    /* Make sure the data was not filtered out and the buffer size is zero */
+    if (dt->mp_sbuf.size == 0) {
+        flb_input_dyntag_destroy(dt);
     }
 
     return 0;
