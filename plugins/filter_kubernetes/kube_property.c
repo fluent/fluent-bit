@@ -32,7 +32,7 @@ static inline int prop_cmp(const char *key, size_t keylen, const char *property,
     return strncmp(key, property, keylen < proplen ? keylen : proplen) == 0;
 }
 
-static inline char *strnchr(const char *s, char c, size_t len)
+static inline const char *strnchr(const char *s, char c, size_t len)
 {
     while (len > 0) {
         if (*s == c) {
@@ -53,7 +53,7 @@ static inline void prop_not_allowed(char *prop, struct flb_kube_meta *meta)
 
 /* Property: parser */
 static int prop_set_parser(struct flb_kube *ctx, struct flb_kube_meta *meta,
-                           char *container, size_t container_len,
+                           const char *container, size_t container_len,
                            char *stream, size_t stream_len,
                            char *val_buf, size_t val_len,
                            struct flb_kube_props *props)
@@ -144,7 +144,7 @@ int flb_kube_prop_set(struct flb_kube *ctx, struct flb_kube_meta *meta,
     //  fluentbit.io/parser_stderr[-container: X
     if (prop_cmp(FLB_UNIFIED_PARSER_ANNOTATION, sizeof(FLB_UNIFIED_PARSER_ANNOTATION)-1, prop, prop_len)) {
         char *stream = 0;
-        char *container = 0;
+        const char *container = 0;
         size_t stream_len =0;
         size_t container_len = 0;
         if (prop_cmp(FLB_STDOUT_PARSER_ANNOTATION, sizeof(FLB_STDOUT_PARSER_ANNOTATION)-1, prop, prop_len)) {
