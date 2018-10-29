@@ -326,6 +326,10 @@ static char *elasticsearch_format(void *data, size_t bytes,
      * return the bulk->ptr buffer
      */
     flb_free(bulk);
+    if (ctx->trace_output) {
+        printf("%s", buf);
+        fflush(stdout);
+    }
     return buf;
 }
 
