@@ -358,6 +358,7 @@ static int elasticsearch_error_check(struct flb_http_client *c)
     int i;
     int ret;
     int check = FLB_TRUE;
+    int root_type;
     char *out_buf;
     size_t off = 0;
     size_t out_size;
@@ -373,7 +374,7 @@ static int elasticsearch_error_check(struct flb_http_client *c)
      */
     /* Convert JSON payload to msgpack */
     ret = flb_pack_json(c->resp.payload, c->resp.payload_size,
-                        &out_buf, &out_size);
+                        &out_buf, &out_size, &root_type);
     if (ret == -1) {
         /* Is this an incomplete HTTP Request ? */
         if (c->resp.payload_size <= 0) {
