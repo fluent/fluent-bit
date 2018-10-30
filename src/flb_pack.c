@@ -177,7 +177,9 @@ static char *tokens_to_msgpack(char *js,
  * This routine do not keep a state in the parser, do not use it for big
  * JSON messages.
  */
-int flb_pack_json(char *js, size_t len, char **buffer, size_t *size)
+int flb_pack_json(char *js, size_t len, char **buffer, size_t *size,
+                  int *root_type)
+
 {
     int ret = -1;
     int out;
@@ -206,6 +208,7 @@ int flb_pack_json(char *js, size_t len, char **buffer, size_t *size)
         goto flb_pack_json_end;
     }
 
+    *root_type = state.tokens[0].type;
     *size = out;
     *buffer = buf;
 
