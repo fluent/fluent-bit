@@ -37,6 +37,7 @@ static int decode_json(struct flb_parser_dec *dec,
 {
     int len;
     int ret;
+    int root_type;
     char *buf;
     size_t size;
 
@@ -49,8 +50,14 @@ static int decode_json(struct flb_parser_dec *dec,
     }
 
     /* Convert from unescaped JSON to MessagePack */
-    ret = flb_pack_json(dec->buffer, len, &buf, &size);
+    ret = flb_pack_json(dec->buffer, len, &buf, &size, &root_type);
     if (ret != 0) {
+        return -1;
+    }
+
+    /* Only process a packed JSON object */
+    if (root_type != FLB_PACK_JSON_OBJECT) {
+        flb_free(buf);
         return -1;
     }
 
