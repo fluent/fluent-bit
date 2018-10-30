@@ -140,6 +140,7 @@ static int get_api_server_info(struct flb_kube *ctx,
                                char **out_buf, size_t *out_size)
 {
     int ret;
+    int root_type;
     size_t b_sent;
     char uri[1024];
     char *buf;
@@ -193,7 +194,7 @@ static int get_api_server_info(struct flb_kube *ctx,
     }
 
     ret = flb_pack_json(c->resp.payload, c->resp.payload_size,
-                        &buf, &size);
+                        &buf, &size, &root_type);
 
     /* release resources */
     flb_http_client_destroy(c);
