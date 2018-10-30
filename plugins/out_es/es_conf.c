@@ -255,6 +255,16 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
     else {
         ctx->replace_dots = FLB_FALSE;
     }
+
+    /* Trace output */
+    tmp = flb_output_get_property("Trace_Output", ins);
+    if (tmp) {
+        ctx->trace_output = flb_utils_bool(tmp);
+    }
+    else {
+        ctx->trace_output = FLB_FALSE;
+    }
+
     return ctx;
 }
 
