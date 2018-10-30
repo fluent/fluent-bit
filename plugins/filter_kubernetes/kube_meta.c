@@ -142,6 +142,7 @@ static int get_api_server_info(struct flb_kube *ctx,
 {
     int ret;
     int packed = -1;
+    int root_type;
     size_t b_sent;
     char uri[1024];
     char *buf;
@@ -179,7 +180,7 @@ static int get_api_server_info(struct flb_kube *ctx,
         }
         if (payload_size) {
             packed = flb_pack_json(payload, payload_size,
-                                &buf, &size);
+                                   &buf, &size, &root_type);
             flb_free(payload);
         }
     }
@@ -230,7 +231,7 @@ static int get_api_server_info(struct flb_kube *ctx,
             return -1;
         }
         packed = flb_pack_json(c->resp.payload, c->resp.payload_size,
-                            &buf, &size);
+                               &buf, &size, &root_type);
 
         /* release resources */
         flb_http_client_destroy(c);

@@ -114,6 +114,7 @@ static int merge_log_handler(msgpack_object o,
     int size;
     int new_size;
     int unesc_len = 0;
+    int root_type;
     char *tmp;
 
     /* Reset vars */
@@ -154,7 +155,13 @@ static int merge_log_handler(msgpack_object o,
     }
     else {
         ret = flb_pack_json(ctx->unesc_buf, unesc_len,
-                            (char **) out_buf, out_size);
+                            (char **) out_buf, out_size, &root_type);
+        if (ret == 0 && root_type != FLB_PACK_JSON_OBJECT) {
+            flb_debug("[filter_kube] could not merge JSON, root_type=%i",
+                      root_type);
+            flb_free(*out_buf);
+            return MERGE_UNESCAPED;
+        }
     }
 
     if (ret == -1) {
