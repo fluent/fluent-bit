@@ -116,6 +116,7 @@ static int mqtt_data_append(char *topic, size_t topic_len,
     int i;
     int ret;
     int n_size;
+    int root_type;
     size_t out;
     size_t off = 0;
     char *pack;
@@ -124,7 +125,7 @@ static int mqtt_data_append(char *topic, size_t topic_len,
     struct flb_in_mqtt_config *ctx = in_context;
 
     /* Convert our incoming JSON to MsgPack */
-    ret = flb_pack_json(msg, msg_len, &pack, &out);
+    ret = flb_pack_json(msg, msg_len, &pack, &out, &root_type);
     if (ret != 0) {
         flb_warn("MQTT Packet incomplete or is not JSON");
         return -1;
