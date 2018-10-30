@@ -34,6 +34,7 @@ int flb_parser_json_do(struct flb_parser *parser,
     int skip;
     int ret;
     int slen;
+    int root_type;
     double tmfrac = 0;
     char *mp_buf = NULL;
     char *time_key;
@@ -55,7 +56,7 @@ int flb_parser_json_do(struct flb_parser *parser,
     struct flb_time *t;
 
     /* Convert incoming in_buf JSON message to message pack format */
-    ret = flb_pack_json(in_buf, in_size, &mp_buf, &mp_size);
+    ret = flb_pack_json(in_buf, in_size, &mp_buf, &mp_size, &root_type);
     if (ret != 0) {
         return -1;
     }
