@@ -1406,10 +1406,15 @@ static int cb_modify_filter(void *data, size_t bytes,
     }
     msgpack_unpacked_destroy(&result);
 
+    if(modifications == 0) {
+        msgpack_sbuffer_destroy(&buffer);
+        return FLB_FILTER_NOTOUCH;
+    }
+
     *out_buf = buffer.data;
     *out_size = buffer.size;
 
-    return (modifications == 0) ? FLB_FILTER_NOTOUCH : FLB_FILTER_MODIFIED;
+    return FLB_FILTER_MODIFIED;
 }
 
 static int cb_modify_exit(void *data, struct flb_config *config)
