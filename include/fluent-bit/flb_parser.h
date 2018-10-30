@@ -30,6 +30,7 @@
 #define FLB_PARSER_REGEX 1
 #define FLB_PARSER_JSON  2
 #define FLB_PARSER_LTSV  3
+#define FLB_PARSER_LOGFMT 4
 
 struct flb_parser_types {
     char *key;

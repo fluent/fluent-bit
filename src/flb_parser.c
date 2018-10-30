@@ -97,6 +97,11 @@ int flb_parser_ltsv_do(struct flb_parser *parser,
                        void **out_buf, size_t *out_size,
                        struct flb_time *out_time);
 
+int flb_parser_logfmt_do(struct flb_parser *parser,
+                         char *buf, size_t length,
+                         void **out_buf, size_t *out_size,
+                         struct flb_time *out_time);
+
 struct flb_parser *flb_parser_create(char *name, char *format,
                                      char *p_regex,
                                      char *time_fmt, char *time_key,
@@ -143,6 +148,9 @@ struct flb_parser *flb_parser_create(char *name, char *format,
     }
     else if (strcmp(format, "ltsv") == 0) {
         p->type = FLB_PARSER_LTSV;
+    }
+    else if (strcmp(format, "logfmt") == 0) {
+        p->type = FLB_PARSER_LOGFMT;
     }
     else {
         flb_error("[parser:%s] Invalid format %s", name, format);
@@ -586,6 +594,10 @@ int flb_parser_do(struct flb_parser *parser, char *buf, size_t length,
     }
     else if (parser->type == FLB_PARSER_LTSV) {
         return flb_parser_ltsv_do(parser, buf, length,
+                                  out_buf, out_size, out_time);
+    }
+    else if (parser->type == FLB_PARSER_LOGFMT) {
+        return flb_parser_logfmt_do(parser, buf, length,
                                   out_buf, out_size, out_time);
     }
 
