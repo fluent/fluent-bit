@@ -28,38 +28,6 @@
 #include "lua_config.h"
 #include <msgpack.h>
 
-/*
- * This function validate if a msgpack formed from a Lua script JSON
- * content is a valid Map
- */
-int is_valid_map(char *data, size_t bytes)
-{
-    int ret;
-    size_t off = 0;
-    msgpack_object root;
-    msgpack_unpacked result;
-
-    msgpack_unpacked_init(&result);
-    ret = msgpack_unpack_next(&result, data, bytes, &off);
-    if (ret != MSGPACK_UNPACK_SUCCESS) {
-        msgpack_unpacked_destroy(&result);
-        return FLB_FALSE;
-    }
-    root = result.data;
-    if (root.type != MSGPACK_OBJECT_MAP) {
-        msgpack_unpacked_destroy(&result);
-        return FLB_FALSE;
-    }
-
-    if (root.via.map.size <= 0) {
-        msgpack_unpacked_destroy(&result);
-        return FLB_FALSE;
-    }
-
-    msgpack_unpacked_destroy(&result);
-    return FLB_TRUE;
-}
-
 static void lua_pushmsgpack(lua_State *l, msgpack_object *o)
 {
     int i;
@@ -327,6 +295,83 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
     return 0;
 }
 
+static int pack_result (double ts, msgpack_packer *pck, msgpack_sbuffer *sbuf,
+                        char *data, size_t bytes)
+{
+    int ret;
+    int size;
+    int i;
+    size_t off = 0;
+    msgpack_object root;
+    msgpack_unpacked result;
+    struct flb_time t;
+
+    msgpack_unpacked_init(&result);
+    ret = msgpack_unpack_next(&result, data, bytes, &off);
+    if (ret != MSGPACK_UNPACK_SUCCESS) {
+        msgpack_unpacked_destroy(&result);
+        return FLB_FALSE;
+    }
+
+    root = result.data;
+    /* check for array */
+    if (root.type == MSGPACK_OBJECT_ARRAY) {
+        size = root.via.array.size;
+        if (size > 0) {
+            msgpack_object *map = root.via.array.ptr;
+            for (i = 0; i < size; i++) {
+                if ((map+i)->type != MSGPACK_OBJECT_MAP) {
+                    msgpack_unpacked_destroy(&result);
+                    return FLB_FALSE;
+                }
+                if ((map+i)->via.map.size <= 0) {
+                    msgpack_unpacked_destroy(&result);
+                    return FLB_FALSE;
+                }
+                /* main array */
+                msgpack_pack_array(pck, 2);
+
+                /* timestamp: convert from double to Fluent Bit format */
+                flb_time_from_double(&t, ts);
+                flb_time_append_to_msgpack(&t, pck, 0);
+
+                /* Pack lua table */
+                msgpack_pack_object(pck, *(map+i));
+            }
+            msgpack_unpacked_destroy(&result);
+            return FLB_TRUE;
+        }
+        else {
+            msgpack_unpacked_destroy(&result);
+            return FLB_FALSE;
+        }
+    }
+
+    /* check for map */
+    if (root.type != MSGPACK_OBJECT_MAP) {
+        msgpack_unpacked_destroy(&result);
+        return FLB_FALSE;
+    }
+
+    if (root.via.map.size <= 0) {
+        msgpack_unpacked_destroy(&result);
+        return FLB_FALSE;
+    }
+
+    /* main array */
+    msgpack_pack_array(pck, 2);
+
+    /* timestamp: convert from double to Fluent Bit format */
+    flb_time_from_double(&t, ts);
+    flb_time_append_to_msgpack(&t, pck, 0);
+
+    /* Pack lua table */
+    msgpack_sbuffer_write(sbuf, data, bytes);
+
+    msgpack_unpacked_destroy(&result);
+    return FLB_TRUE;
+}
+
 static int cb_lua_filter(void *data, size_t bytes,
                          char *tag, int tag_len,
                          void **out_buf, size_t *out_bytes,
@@ -388,19 +433,6 @@ static int cb_lua_filter(void *data, size_t bytes,
         l_code = (int) lua_tointeger(ctx->lua->state, -1);
         lua_pop(ctx->lua->state, 1);
 
-        /* Validations */
-        if (l_code == 1) {
-            ret = is_valid_map(data_sbuf.data, data_sbuf.size);
-            if (ret == FLB_FALSE) {
-                flb_error("[filter_lua] invalid table returned at %s(), %s",
-                          ctx->call, ctx->script);
-                msgpack_sbuffer_destroy(&tmp_sbuf);
-                msgpack_sbuffer_destroy(&data_sbuf);
-                msgpack_unpacked_destroy(&result);
-                return FLB_FILTER_NOTOUCH;
-            }
-        }
-
         if (l_code == -1) { /* Skip record */
             msgpack_sbuffer_destroy(&data_sbuf);
             continue;
@@ -409,15 +441,16 @@ static int cb_lua_filter(void *data, size_t bytes,
             msgpack_pack_object(&tmp_pck, root);
         }
         else if (l_code == 1) { /* Modified, pack new data */
-            /* main array */
-            msgpack_pack_array(&tmp_pck, 2);
-
-            /* timestamp: convert from double to Fluent Bit format */
-            flb_time_from_double(&t, l_timestamp);
-            flb_time_append_to_msgpack(&t, &tmp_pck, 0);
-
-            /* Pack lua table */
-            msgpack_sbuffer_write(&tmp_sbuf, data_sbuf.data, data_sbuf.size);
+            ret = pack_result(l_timestamp, &tmp_pck, &tmp_sbuf,
+                              data_sbuf.data, data_sbuf.size);
+            if (ret == FLB_FALSE) {
+                flb_error("[filter_lua] invalid table returned at %s(), %s",
+                          ctx->call, ctx->script);
+                msgpack_sbuffer_destroy(&tmp_sbuf);
+                msgpack_sbuffer_destroy(&data_sbuf);
+                msgpack_unpacked_destroy(&result);
+                return FLB_FILTER_NOTOUCH;
+            }
         }
         else { /* Unexpected return code, keep original content */
             flb_error("[filter_lua] unexpected Lua script return code %i, "
