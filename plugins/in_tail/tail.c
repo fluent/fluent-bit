@@ -144,6 +144,11 @@ static int in_tail_collect_static(struct flb_input_instance *i_ins,
                           file->name);
                 flb_tail_file_remove(file);
             }
+            if (file->config->exit_on_eof) {
+                flb_info("[in_tail] file=%s ended, stop", file->name);
+                flb_engine_shutdown(config);
+                exit(0);
+            }
             break;
         }
     }

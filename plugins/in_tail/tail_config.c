@@ -211,6 +211,12 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
         ctx->skip_long_lines = flb_utils_bool(tmp);
     }
 
+    /* Config: Exit on EOF (for testing) */
+    tmp = flb_input_get_property("exit_on_eof", i_ins);
+    if (tmp) {
+        ctx->exit_on_eof = flb_utils_bool(tmp);
+    }
+
     /* Validate buffer limit */
     if (ctx->buf_chunk_size > ctx->buf_max_size) {
         flb_error("[in_tail] buffer_max_size must be >= buffer_chunk");
