@@ -370,6 +370,7 @@ static int flb_engine_log_start(struct flb_config *config)
     return 0;
 }
 
+#ifdef FLB_HAVE_INOTIFY
 /* Unregister the listener and then exit engine */
 int flb_engine_config_changed_handler(void *data)
 {
@@ -383,6 +384,7 @@ int flb_engine_config_changed_handler(void *data)
     mk_event_del(config->evl, mev);
     return flb_engine_exit(config);
 }
+#endif
 
 int flb_engine_start(struct flb_config *config)
 {
