@@ -108,6 +108,9 @@ static int xxdc_convert(char *in, char *out, char *name)
     if (!f_in) {
         perror("fopen");
         fprintf(stderr, "error opening input file: %s\n", in);
+        if (out) {
+            fclose(f_out);
+        }
         return -1;
     }
 
