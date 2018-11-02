@@ -163,19 +163,19 @@ static int get_api_server_info(struct flb_kube *ctx,
             struct stat sb;
             int fd = open(uri, O_RDONLY, 0);
             if (fd > 0) {
-                if (fstat(fd, &sb) == 0)
-                {
+                if (fstat(fd, &sb) == 0) {
                     payload = flb_malloc(sb.st_size);
                     if (payload) {
                         ret = read(fd, payload, sb.st_size);
                         if (ret == sb.st_size) {
                             payload_size = ret;
-                        } else {
+                        }
+                        else {
                             free(payload);
                         }
                     }
-                    close(fd);
                 }
+                close(fd);
             }
         }
         if (payload_size) {
