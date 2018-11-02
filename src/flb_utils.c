@@ -535,7 +535,6 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
         return FLB_FALSE;
     }
 
-    written = *off;
     p = buf + *off;
     for (i = 0; i < str_len; i++) {
         if ((available - written) < 2) {
