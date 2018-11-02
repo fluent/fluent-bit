@@ -297,6 +297,9 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
         return;
     }
 
+    if (ctx->meta_preload_cache_dir) {
+        flb_free(ctx->meta_preload_cache_dir);
+    }
     if (ctx->hash_table) {
         flb_hash_destroy(ctx->hash_table);
     }
