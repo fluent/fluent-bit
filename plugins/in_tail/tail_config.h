@@ -65,6 +65,7 @@ struct flb_tail_config {
     char *key;                 /* key for unstructured record  */
     int   key_len;             /* length of key ^              */
     int   skip_long_lines;     /* skip long lines              */
+    int   exit_on_eof;         /* exit fluent-bit on EOF, test */
 
     /* Database */
     struct flb_sqldb *db;
