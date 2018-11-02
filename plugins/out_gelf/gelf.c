@@ -137,6 +137,7 @@ static void gelf_zlib_end(z_stream *stream)
 static int gelf_send_udp_chunked (struct flb_out_gelf_config *ctx, void *msg,
                                   size_t msg_size)
 {
+    int ret;
     uint8_t header[12];
     uint8_t n;
     size_t chunks;
@@ -185,7 +186,10 @@ static int gelf_send_udp_chunked (struct flb_out_gelf_config *ctx, void *msg,
             iov[1].iov_len = ctx->pckt_size;
         }
 
-        sendmsg(ctx->fd, &msghdr, MSG_DONTWAIT | MSG_NOSIGNAL);
+        ret = sendmsg(ctx->fd, &msghdr, MSG_DONTWAIT | MSG_NOSIGNAL);
+        if (ret == -1) {
+            flb_errno();
+        }
         offset += ctx->pckt_size;
     }
 
