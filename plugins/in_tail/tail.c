@@ -136,6 +136,11 @@ static int in_tail_collect_static(struct flb_input_instance *i_ins,
             active++;
             continue;
         case FLB_TAIL_WAIT:
+            if (file->config->exit_on_eof) {
+                flb_info("[in_tail] file=%s ended, stop", file->name);
+                flb_engine_shutdown(config);
+                exit(0);
+            }
             /* Promote file to 'events' type handler */
             flb_debug("[in_tail] file=%s promote to TAIL_EVENT", file->name);
             ret = flb_tail_file_to_event(file);
@@ -143,11 +148,6 @@ static int in_tail_collect_static(struct flb_input_instance *i_ins,
                 flb_debug("[in_tail] file=%s cannot promote, unregistering",
                           file->name);
                 flb_tail_file_remove(file);
-            }
-            if (file->config->exit_on_eof) {
-                flb_info("[in_tail] file=%s ended, stop", file->name);
-                flb_engine_shutdown(config);
-                exit(0);
             }
             break;
         }
