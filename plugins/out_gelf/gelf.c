@@ -199,11 +199,17 @@ static int gelf_send_udp_chunked (struct flb_out_gelf_config *ctx, void *msg,
 static int gelf_send_udp_pckt (struct flb_out_gelf_config *ctx, char *msg,
                                size_t msg_size)
 {
+    int ret;
+
     if (msg_size > ctx->pckt_size) {
         gelf_send_udp_chunked(ctx, msg, msg_size);
     }
     else {
-        send(ctx->fd, msg, msg_size, MSG_DONTWAIT | MSG_NOSIGNAL);
+        ret = send(ctx->fd, msg, msg_size, MSG_DONTWAIT | MSG_NOSIGNAL);
+        if (ret == -1) {
+            flb_errno();
+            return -1;
+        }
     }
 
     return 0;
