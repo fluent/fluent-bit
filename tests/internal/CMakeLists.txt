@@ -47,23 +47,26 @@ endforeach()
 foreach(source_file ${UNIT_TESTS_FILES})
   get_filename_component(source_file_we ${source_file} NAME_WE)
   set(source_file_we flb-it-${source_file_we})
-  add_executable(
-    ${source_file_we}
-    ${source_file}
-    )
-  add_sanitizers(${source_file_we})
-
-  if(FLB_JEMALLOC)
-    target_link_libraries(${source_file_we} libjemalloc ${CMAKE_THREAD_LIBS_INIT})
+  if(FLB_WITHOUT_${source_file_we})
+    message("Skipping test ${source_file_we}")
   else()
-    target_link_libraries(${source_file_we} ${CMAKE_THREAD_LIBS_INIT})
-  endif()
+    add_executable(
+      ${source_file_we}
+      ${source_file}
+      )
+    add_sanitizers(${source_file_we})
 
-  target_link_libraries(${source_file_we} fluent-bit-static)
+    if(FLB_JEMALLOC)
+      target_link_libraries(${source_file_we} libjemalloc ${CMAKE_THREAD_LIBS_INIT})
+    else()
+      target_link_libraries(${source_file_we} ${CMAKE_THREAD_LIBS_INIT})
+    endif()
 
-  add_test(${source_file_we} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${source_file_we})
-  if("${CMAKE_C_COMPILER_ID}" STREQUAL "Clang" OR
-      "${CMAKE_C_COMPILER_ID}" STREQUAL "GNU")
-    set_property(TARGET ${source_file_we} APPEND_STRING PROPERTY COMPILE_FLAGS "-Wall -g -O3")
+    target_link_libraries(${source_file_we} fluent-bit-static)
+
+    add_test(NAME ${source_file_we}
+            COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${source_file_we}
+            WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/build)
+    set_tests_properties(${source_file_we} PROPERTIES LABELS "internal")
   endif()
 endforeach()
