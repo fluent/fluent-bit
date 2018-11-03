@@ -343,7 +343,6 @@ static struct kube_test *kube_test_create(char *target, int type, char *suffix, 
 
 static void kube_test_destroy(struct kube_test *ctx)
 {
-    flb_stop(ctx->flb);
     flb_destroy(ctx->flb);
     api_server_stop(ctx->http);
     flb_free(ctx);
