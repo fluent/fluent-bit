@@ -1,47 +1,55 @@
-dist: trusty
-sudo: required
+dist: xenial
 language: c
+# The leak sanitizer uses ptrace, which doesn't work under the
+# travis container infrastructure, so we enable 'sudo'
+sudo: true
+
+git:
+  depth: 3
+
 compiler:
   - gcc
   - clang
-os:
-  - linux
-  - osx
-env:
-  - FLB_MEM="-DFLB_JEMALLOC=On"
-  - FLB_MEM="-DFLB_JEMALLOC=Off"
 
-notifications:
-  irc: "irc.freenode.net#fluent-bit"
+env:
+  - FLB_OPT="-DFLB_JEMALLOC=On"
+  - FLB_OPT="-DFLB_JEMALLOC=Off"
+  - FLB_OPT="-DSANITIZE_ADDRESS=On"
+  - FLB_OPT="-DSANITIZE_UNDEFINED=On"
+  - FLB_OPT="-DSANITIZE_MEMORY=On"
+
+# Many errors on this
+#  - FLB_OPT="-DSANITIZE_THREAD=On"
 
 before_script:
-  # Add an IPv6 config - see the corresponding Travis issue
-  # https://github.com/travis-ci/travis-ci/issues/8361
-  - if [ "${TRAVIS_OS_NAME}" == "linux" ]; then sudo sh -c 'echo 0 > /proc/sys/net/ipv6/conf/all/disable_ipv6'; fi
 
 matrix:
-  exclude:
+  include:
     - os: osx
-      env: FLB_MEM="-DFLB_JEMALLOC=On"
+      env: FLB_OPT="-DFLB_JEMALLOC=Off"
+      script: |
+        ci/do-ut || true
+    - os: linux
+      dist: xenial
+      sudo: true
+      language: node_js
+        - "9"
+      compiler: gcc
+      env: DOCKER_BUILD=1
+      script: |
+        echo "===== BUILD DOCKER IMAGE ======="
+        docker build -t test-image -f Dockerfile .
+        npm install -g bats
 
 script: |
-    cd build
-    cmake -DFLB_ALL=On -DFLB_WITHOUT_EXAMPLES=On $FLB_FLUSH $FLB_MEM -DFLB_TESTS_INTERNAL=On -DFLB_TESTS_RUNTIME=On ../
-    make
-    SKIP_EXTERNAL="elasticsearch|out_td|out_forward"
-    SKIP_BROKEN="filter_nest|filter_parser|in_disk|in_proc"
-    echo "Run 'internal' tests for $FLB_MEM $FLB_FLUSH"
-    for i in bin/flb-it*
-    do
-      echo "===== <<$(basename $i)>> ====="
-      $i
-    done
-    if [ "${TRAVIS_OS_NAME}" == "linux" ]
-    then
-      echo "Run select 'runtime' tests for $FLB_MEM $FLB_FLUSH"
-      for i in $(ls bin/flb-rt* | egrep -v "$SKIP_EXTERNAL|$SKIP_BROKEN")
-      do
-        echo "===== <<$(basename $i)>> ====="
-        $i
-      done
-    fi
+  echo "CC = $CC, CXX = $CXX"
+  sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 90
+  sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-7 90
+  ci/do-ut
+addons:
+  apt:
+    sources:
+      - ubuntu-toolchain-r-test
+    packages:
+      - gcc-7
+      - g++-7
