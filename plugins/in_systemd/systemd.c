@@ -176,6 +176,9 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
             key = (char *) data;
             sep = strchr(key, '=');
             len = (sep - key);
+            if (ctx->strip_underscores == FLB_TRUE && key[0] == '_') {
+                key++; len--;
+            }
             msgpack_pack_str(&mp_pck, len);
             msgpack_pack_str_body(&mp_pck, key, len);
 

@@ -53,6 +53,7 @@ struct flb_systemd_config {
     int coll_fd_pending;       /* pending records          */
     int dynamic_tag;
     int max_entries;
+    int strip_underscores;
     struct flb_sqldb *db;
     struct flb_input_instance *i_ins;
 };
