@@ -266,6 +266,53 @@ char *flb_input_get_property(char *key, struct flb_input_instance *i)
     return flb_config_prop_get(key, &i->properties);
 }
 
+static void flb_input_free(struct flb_input_instance *in)
+{
+    struct mk_list *head_prop;
+    struct flb_config_prop *prop;
+    struct mk_list *tmp_prop;
+    /* Remove URI context */
+    if (in->host.uri) {
+        flb_uri_destroy(in->host.uri);
+    }
+    flb_free(in->host.name);
+    flb_free(in->host.address);
+
+    /* Destroy buffer */
+    msgpack_sbuffer_destroy(&in->mp_sbuf);
+    msgpack_zone_free(in->mp_zone);
+
+    /* release the tag if any */
+    flb_free(in->tag);
+
+    /* Let the engine remove any pending task */
+    flb_engine_destroy_tasks(&in->tasks);
+
+    /* release properties */
+    mk_list_foreach_safe(head_prop, tmp_prop, &in->properties) {
+        prop = mk_list_entry(head_prop, struct flb_config_prop, _head);
+
+        flb_free(prop->key);
+        flb_free(prop->val);
+
+        mk_list_del(&prop->_head);
+        flb_free(prop);
+    }
+
+    flb_input_dyntag_exit(in);
+
+    /* Remove metrics */
+#ifdef FLB_HAVE_METRICS
+    if (in->metrics) {
+        flb_metrics_destroy(in->metrics);
+    }
+#endif
+
+    /* Unlink and release */
+    mk_list_del(&in->_head);
+    flb_free(in);
+}
+
 /* Initialize all inputs */
 void flb_input_initialize_all(struct flb_config *config)
 {
@@ -299,14 +346,7 @@ void flb_input_initialize_all(struct flb_config *config)
             if (ret != 0) {
                 flb_error("Failed initialize input %s",
                           in->name);
-                mk_list_del(&in->_head);
-                if (p->flags & FLB_INPUT_NET) {
-                    flb_free(in->tag);
-                    flb_free(in->host.uri);
-                    flb_free(in->host.name);
-                    flb_free(in->host.address);
-                }
-                flb_free(in);
+                flb_input_free(in);
             }
         }
     }
@@ -332,14 +372,12 @@ void flb_input_pre_run_all(struct flb_config *config)
     }
 }
 
+
 /* Invoke all exit input callbacks */
 void flb_input_exit_all(struct flb_config *config)
 {
     struct mk_list *tmp;
     struct mk_list *head;
-    struct mk_list *tmp_prop;
-    struct mk_list *head_prop;
-    struct flb_config_prop *prop;
     struct flb_input_instance *in;
     struct flb_input_plugin *p;
 
@@ -354,47 +392,7 @@ void flb_input_exit_all(struct flb_config *config)
         if (p->cb_exit) {
             p->cb_exit(in->context, config);
         }
-
-        /* Remove URI context */
-        if (in->host.uri) {
-            flb_uri_destroy(in->host.uri);
-        }
-        flb_free(in->host.name);
-        flb_free(in->host.address);
-
-        /* Destroy buffer */
-        msgpack_sbuffer_destroy(&in->mp_sbuf);
-        msgpack_zone_free(in->mp_zone);
-
-        /* release the tag if any */
-        flb_free(in->tag);
-
-        /* Let the engine remove any pending task */
-        flb_engine_destroy_tasks(&in->tasks);
-
-        /* release properties */
-        mk_list_foreach_safe(head_prop, tmp_prop, &in->properties) {
-            prop = mk_list_entry(head_prop, struct flb_config_prop, _head);
-
-            flb_free(prop->key);
-            flb_free(prop->val);
-
-            mk_list_del(&prop->_head);
-            flb_free(prop);
-        }
-
-        flb_input_dyntag_exit(in);
-
-        /* Remove metrics */
-#ifdef FLB_HAVE_METRICS
-        if (in->metrics) {
-            flb_metrics_destroy(in->metrics);
-        }
-#endif
-
-        /* Unlink and release */
-        mk_list_del(&in->_head);
-        flb_free(in);
+        flb_input_free(in);
     }
 }
 
