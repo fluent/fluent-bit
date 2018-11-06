@@ -36,6 +36,7 @@
 #include "tail_scan.h"
 #include "tail_signal.h"
 #include "tail_config.h"
+#include "tail_dockermode.h"
 #include "tail_multiline.h"
 
 static inline int consume_byte(int fd)
@@ -259,6 +260,19 @@ static int in_tail_init(struct flb_input_instance *in,
                  "(parser disabled)");
     }
 
+    /* Register callback to process docker mode queued buffer */
+    if (ctx->docker_mode == FLB_TRUE) {
+        ret = flb_input_set_collector_time(in, flb_tail_dmode_pending_flush,
+                                           ctx->docker_mode_flush, 0,
+                                           config);
+        if (ret == -1) {
+            ctx->docker_mode = FLB_FALSE;
+            flb_tail_config_destroy(ctx);
+            return -1;
+        }
+        ctx->coll_fd_dmode_flush = ret;
+    }
+
     /* Register callback to process multiline queued buffer */
     if (ctx->multiline == FLB_TRUE) {
         ret = flb_input_set_collector_time(in, flb_tail_mult_pending_flush,
@@ -312,6 +326,10 @@ static void in_tail_pause(void *data, struct flb_config *config)
     flb_input_collector_pause(ctx->coll_fd_static, ctx->i_ins);
     flb_input_collector_pause(ctx->coll_fd_pending, ctx->i_ins);
 
+    if (ctx->docker_mode == FLB_TRUE) {
+        flb_input_collector_pause(ctx->coll_fd_dmode_flush, ctx->i_ins);
+    }
+
     if (ctx->multiline == FLB_TRUE) {
         flb_input_collector_pause(ctx->coll_fd_mult_flush, ctx->i_ins);
     }
@@ -326,6 +344,10 @@ static void in_tail_resume(void *data, struct flb_config *config)
 
     flb_input_collector_resume(ctx->coll_fd_static, ctx->i_ins);
     flb_input_collector_resume(ctx->coll_fd_pending, ctx->i_ins);
+
+    if (ctx->docker_mode == FLB_TRUE) {
+        flb_input_collector_resume(ctx->coll_fd_dmode_flush, ctx->i_ins);
+    }
 
     if (ctx->multiline == FLB_TRUE) {
         flb_input_collector_resume(ctx->coll_fd_mult_flush, ctx->i_ins);

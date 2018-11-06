@@ -34,8 +34,8 @@
 
 #define try_to_write_str  flb_utils_write_str
 
-static int json_tokenise(char *js, size_t len,
-                         struct flb_pack_state *state)
+int flb_json_tokenise(char *js, size_t len,
+                      struct flb_pack_state *state)
 {
     int ret;
     int n;
@@ -191,7 +191,7 @@ int flb_pack_json(char *js, size_t len, char **buffer, size_t *size,
     if (ret != 0) {
         return -1;
     }
-    ret = json_tokenise(js, len, &state);
+    ret = flb_json_tokenise(js, len, &state);
     if (ret != 0) {
         ret = -1;
         goto flb_pack_json_end;
@@ -263,7 +263,7 @@ int flb_pack_json_state(char *js, size_t len,
     char *buf;
     jsmntok_t *t;
 
-    ret = json_tokenise(js, len, state);
+    ret = flb_json_tokenise(js, len, state);
     state->multiple = FLB_TRUE;
     if (ret == FLB_ERR_JSON_PART && state->multiple == FLB_TRUE) {
         /*

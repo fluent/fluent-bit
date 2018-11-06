@@ -37,6 +37,7 @@
 #include "tail_config.h"
 #include "tail_db.h"
 #include "tail_signal.h"
+#include "tail_dockermode.h"
 #include "tail_multiline.h"
 #include "tail_scan.h"
 
@@ -113,9 +114,9 @@ static int append_record_to_map(char **data, size_t *data_size,
     return 0;
 }
 
-static inline int pack_line_map(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
-                                struct flb_time *time, char **data,
-                                size_t *data_size, struct flb_tail_file *file)
+int flb_tail_pack_line_map(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
+                           struct flb_time *time, char **data,
+                           size_t *data_size, struct flb_tail_file *file)
 {
     int map_num = 1;
 
@@ -179,6 +180,10 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
     char *p;
     void *out_buf;
     size_t out_size;
+    char *line;
+    size_t line_len;
+    char *repl_line;
+    size_t repl_line_len;
     time_t now = time(NULL);
     struct flb_time out_time = {};
     msgpack_sbuffer mp_sbuf;
@@ -216,10 +221,35 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
         /* Reset time for each line */
         flb_time_zero(&out_time);
 
+        line = data;
+        line_len = len;
+        repl_line = NULL;
+
+        if (ctx->docker_mode) {
+            ret = flb_tail_dmode_process_content(now, line, line_len,
+                                                 &repl_line, &repl_line_len,
+                                                 file, ctx);
+            if (ret >= 0) {
+                if (repl_line == line) {
+                    repl_line = NULL;
+                }
+                else {
+                    line = repl_line;
+                    line_len = repl_line_len;
+                }
+                if (ret == 0) {
+                    goto go_next;
+                }
+            }
+            else {
+                flb_tail_dmode_flush(out_sbuf, out_pck, file, ctx);
+            }
+        }
+
 #ifdef FLB_HAVE_REGEX
         if (ctx->parser) {
             /* Common parser (non-multiline) */
-            ret = flb_parser_do(ctx->parser, data, len,
+            ret = flb_parser_do(ctx->parser, line, line_len,
                                 &out_buf, &out_size, &out_time);
             if (ret >= 0) {
                 if (flb_time_to_double(&out_time) == 0) {
@@ -238,8 +268,8 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
                     flb_tail_mult_flush(out_sbuf, out_pck, file, ctx);
                 }
 
-                pack_line_map(out_sbuf, out_pck, &out_time,
-                              (char**) &out_buf, &out_size, file);
+                flb_tail_pack_line_map(out_sbuf, out_pck, &out_time,
+                                       (char**) &out_buf, &out_size, file);
                 flb_free(out_buf);
             }
             else {
@@ -251,7 +281,7 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
         }
         else if (ctx->multiline == FLB_TRUE) {
             ret = flb_tail_mult_process_content(now,
-                                                data, len, file, ctx);
+                                                line, line_len, file, ctx);
 
             /* No multiline */
             if (ret == FLB_TAIL_MULT_NA) {
@@ -260,7 +290,7 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
 
                 flb_time_get(&out_time);
                 flb_tail_file_pack_line(out_sbuf, out_pck, &out_time,
-                                        data, len, file);
+                                        line, line_len, file);
             }
             else if (ret == FLB_TAIL_MULT_MORE) {
                 /* we need more data, do nothing */
@@ -273,15 +303,17 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
         else {
             flb_time_get(&out_time);
             flb_tail_file_pack_line(out_sbuf, out_pck, &out_time,
-                                    data, len, file);
+                                    line, line_len, file);
         }
 #else
         flb_time_get(&out_time);
         flb_tail_file_pack_line(out_sbuf, out_pck, &out_time,
-                                data, len, file);
+                                line, line_len, file);
 #endif
 
     go_next:
+        flb_free(repl_line);
+        repl_line = NULL;
         /* Adjust counters */
         data += len + 1;
         processed_bytes += len + 1;
@@ -571,7 +603,10 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file->mult_keys = 0;
     file->mult_flush_timeout = 0;
     file->mult_skipping = FLB_FALSE;
-    file->mult_sbuf.data = NULL;
+    msgpack_sbuffer_init(&file->mult_sbuf);
+    file->dmode_flush_timeout = 0;
+    file->dmode_buf = flb_sds_create_size(ctx->docker_mode == FLB_TRUE ? 65536 : 0);
+    file->dmode_lastline = flb_sds_create_size(ctx->docker_mode == FLB_TRUE ? 20000 : 0);
     file->db_id     = 0;
     file->skip_next = FLB_FALSE;
     file->skip_warn = FLB_FALSE;
@@ -649,6 +684,8 @@ void flb_tail_file_remove(struct flb_tail_file *file)
         mk_list_del(&file->_rotate_head);
     }
 
+    flb_sds_destroy(file->dmode_buf);
+    flb_sds_destroy(file->dmode_lastline);
     mk_list_del(&file->_head);
     flb_tail_fs_remove(file);
     close(file->fd);

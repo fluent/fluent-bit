@@ -21,6 +21,7 @@
 #define FLB_TAIL_INTERNAL_H
 
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_sds.h>
 
 #include "tail.h"
 #include "tail_config.h"
@@ -55,6 +56,11 @@ struct flb_tail_file {
     msgpack_sbuffer mult_sbuf;  /* temporal msgpack buffer               */
     msgpack_packer mult_pck;    /* temporal msgpack packer               */
     struct flb_time mult_time;  /* multiline time parsed from first line */
+
+    /* docker mode */
+    time_t dmode_flush_timeout; /* time when docker mode started         */
+    flb_sds_t dmode_buf;        /* buffer for docker mode                */
+    flb_sds_t dmode_lastline;   /* last incomplete line                  */
 
     /* buffering */
     off_t parsed;

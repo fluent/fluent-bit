@@ -1,6 +1,7 @@
 set(src
   tail_file.c
   tail_multiline.c
+  tail_dockermode.c
   tail_scan.c
   tail_config.c
   tail_db.c

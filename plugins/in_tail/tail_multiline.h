@@ -54,8 +54,4 @@ int flb_tail_mult_flush(msgpack_sbuffer *mp_sbuf,
 int flb_tail_mult_pending_flush(struct flb_input_instance *i_ins,
                                 struct flb_config *config, void *context);
 
-int flb_tail_file_pack_line(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
-                            struct flb_time *time, char *data, size_t data_size,
-                            struct flb_tail_file *file);
-
 #endif
