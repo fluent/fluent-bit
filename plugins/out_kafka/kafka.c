@@ -94,9 +94,6 @@ int produce_message(struct flb_time *tms, msgpack_object *map,
         size = map->via.map.size + 1;
         msgpack_pack_map(&mp_pck, size);
 
-        /* Pack timestamp */
-        msgpack_pack_str(&mp_pck, ctx->timestamp_key_len);
-
         if (ctx->time_key_format) {
           gmtime_r(&(*tms).tm.tv_sec, &tm);
           s = strftime(time_formatted, sizeof(time_formatted) - 1,
@@ -108,6 +105,8 @@ int produce_message(struct flb_time *tms, msgpack_object *map,
           msgpack_pack_str_body(&mp_pck, time_formatted, s);
         }
         else {
+          /* Pack timestamp */
+          msgpack_pack_str(&mp_pck, ctx->timestamp_key_len);
           msgpack_pack_str_body(&mp_pck,
                                ctx->timestamp_key, ctx->timestamp_key_len);
           msgpack_pack_double(&mp_pck, flb_time_to_double(tm));
