@@ -200,9 +200,6 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
         if (tmp) {
             ctx->tag_key = flb_strdup(tmp);
             ctx->tag_key_len = strlen(tmp);
-            if (tmp[0] != '_') {
-                flb_warn("[out_es] consider use a tag_key that starts with '_'");
-            }
         }
         else {
             ctx->tag_key = flb_strdup(FLB_ES_DEFAULT_TAG_KEY);
