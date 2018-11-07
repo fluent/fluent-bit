@@ -448,6 +448,7 @@ int flb_start(flb_ctx_t *ctx)
 int flb_stop(flb_ctx_t *ctx)
 {
     int ret;
+    pthread_t tid;
 
     if (!ctx->config) {
         return 0;
@@ -458,8 +459,10 @@ int flb_stop(flb_ctx_t *ctx)
     }
 
     flb_debug("[lib] sending STOP signal to the engine");
+
+    tid = ctx->config->worker;
     flb_engine_exit(ctx->config);
-    ret = pthread_join(ctx->config->worker, NULL);
+    ret = pthread_join(tid, NULL);
     flb_debug("[lib] Fluent Bit engine stopped");
 
     return ret;
