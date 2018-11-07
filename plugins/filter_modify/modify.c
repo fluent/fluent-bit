@@ -169,7 +169,7 @@ static int setup(struct filter_modify_ctx *ctx,
             }
             else if (strcasecmp(sentry->value, "key_value_matches") == 0) {
                 condition->conditiontype = KEY_VALUE_MATCHES;
-                condition->a_is_regex = true;
+                condition->b_is_regex = true;
             }
             else if (strcasecmp(sentry->value, "key_value_does_not_match") ==
                      0) {
