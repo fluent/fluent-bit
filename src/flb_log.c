@@ -107,7 +107,7 @@ static inline int log_read(flb_pipefd_t fd, struct flb_log *log)
 static void log_worker_collector(void *data)
 {
     int run = FLB_TRUE;
-    struct mk_event *event;
+    struct mk_event *event = NULL;
     struct flb_log *log = data;
 
     FLB_TLS_SET(flb_log_ctx, log);
@@ -149,7 +149,7 @@ int flb_log_worker_init(void *data)
     }
 
     /* Register the read-end of the pipe (log[0]) into the event loop */
-    MK_EVENT_NEW(&worker->event);
+    MK_EVENT_ZERO(&worker->event);
     ret = mk_event_add(log->evl, worker->log[0],
                        FLB_LOG_EVENT, MK_EVENT_READ, &worker->event);
     if (ret == -1) {
@@ -222,7 +222,7 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
         config->log = NULL;
         return NULL;
     }
-    MK_EVENT_NEW(&log->event);
+    MK_EVENT_ZERO(&log->event);
 
     /* Register channel manager into the event loop */
     ret = mk_event_add(log->evl, log->ch_mng[0],
