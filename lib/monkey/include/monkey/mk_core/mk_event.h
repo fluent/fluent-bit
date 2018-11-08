@@ -105,6 +105,11 @@ static inline void MK_EVENT_INIT(struct mk_event *ev, int fd, void *data,
     ev->handler = callback;
 }
 
+static inline void MK_EVENT_ZERO(struct mk_event *e)
+{
+    MK_EVENT_INIT(e, -1, NULL, NULL);
+}
+
 static inline void MK_EVENT_NEW(struct mk_event *e)
 {
     e->mask   = MK_EVENT_EMPTY;
