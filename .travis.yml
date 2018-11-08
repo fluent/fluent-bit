@@ -16,7 +16,17 @@ env:
   - FLB_OPT="-DFLB_JEMALLOC=Off"
   - FLB_OPT="-DSANITIZE_ADDRESS=On"
   - FLB_OPT="-DSANITIZE_UNDEFINED=On"
-  - FLB_OPT="-DSANITIZE_MEMORY=On"
+
+# Disable Memory Sanitizer since it causes conflicts on coroutines
+# interfaces. We need to add the stack registrations otherwise it
+# fails with:
+#
+#   ==22536==ERROR: MemorySanitizer: SEGV on unknown...7fe2231f8c48 T22537)
+#   ==22536==The signal is caused by a READ memory access.
+#   ==22536==Hint: PC is at a non-executable region. Maybe a wild jump?
+#            #0 0xaadc6f in _fini (...in/flb-rt-in_cpu+0xaadc6f)
+#
+#  - FLB_OPT="-DSANITIZE_MEMORY=On"
 
 # Many errors on this
 #  - FLB_OPT="-DSANITIZE_THREAD=On"
