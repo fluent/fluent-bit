@@ -521,6 +521,8 @@ struct flb_sched_timer *flb_sched_timer_create(struct flb_sched *sched)
         flb_errno();
         return NULL;
     }
+    MK_EVENT_ZERO(&timer->event);
+
     timer->timer_fd = -1;
     timer->config = sched->config;
     timer->data = NULL;
