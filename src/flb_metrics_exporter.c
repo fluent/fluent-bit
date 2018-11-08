@@ -155,7 +155,7 @@ struct flb_me *flb_me_create(struct flb_config *ctx)
 
     /* Initialize event loop context */
     event = &me->event;
-    MK_EVENT_NEW(event);
+    MK_EVENT_ZERO(event);
 
     /* Run every one second */
     fd = mk_event_timeout_create(ctx->evl, 1, 0, &me->event);
