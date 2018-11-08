@@ -102,9 +102,14 @@ struct flb_config *flb_config_init()
 
     config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
-        perror("malloc");
+        flb_errno();
         return NULL;
     }
+
+    MK_EVENT_ZERO(&config->ch_event);
+    MK_EVENT_ZERO(&config->event_flush);
+    MK_EVENT_ZERO(&config->event_shutdown);
+
     config->is_running = FLB_TRUE;
 
     /* Flush */
