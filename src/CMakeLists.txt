@@ -236,10 +236,6 @@ if(FLB_JEMALLOC)
   target_link_libraries(fluent-bit-static libjemalloc)
 endif()
 
-if(FLB_BUFFERING)
-  target_link_libraries(fluent-bit-static sha1)
-endif()
-
 # Binary / Executable
 if(FLB_BINARY)
   find_package (Threads)
