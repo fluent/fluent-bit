@@ -169,6 +169,7 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
     struct mk_event *event;
 
     mk_bug(!data);
+    memset(&its, '\0', sizeof(struct itimerspec));
 
     /* expiration interval */
     its.it_interval.tv_sec  = sec;
