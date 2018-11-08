@@ -22,7 +22,7 @@
 #ifndef FLB_SHA1_H
 #define FLB_SHA1_H
 
-#include "sha1.h"
+#include <mbedtls/sha1.h>
 
 void flb_sha1_encode(const void *data_in, unsigned long length,
                      unsigned char *data_out);
