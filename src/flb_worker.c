@@ -73,6 +73,8 @@ int flb_worker_create(void (*func) (void *), void *arg, pthread_t *tid,
         perror("malloc");
         return -1;
     }
+    MK_EVENT_ZERO(&worker->event);
+
     worker->func   = func;
     worker->data   = arg;
     worker->config = config;
