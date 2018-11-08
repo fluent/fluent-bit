@@ -474,7 +474,7 @@ int flb_input_set_collector_time(struct flb_input_instance *in,
     collector->nanoseconds = nanoseconds;
     collector->instance    = in;
     collector->running     = FLB_FALSE;
-    MK_EVENT_NEW(&collector->event);
+    MK_EVENT_ZERO(&collector->event);
     mk_list_add(&collector->_head, &config->collectors);
     mk_list_add(&collector->_head_ins, &in->collectors);
 
@@ -499,7 +499,7 @@ int flb_input_set_collector_event(struct flb_input_instance *in,
     collector->nanoseconds = -1;
     collector->instance    = in;
     collector->running     = FLB_FALSE;
-    MK_EVENT_NEW(&collector->event);
+    MK_EVENT_ZERO(&collector->event);
     mk_list_add(&collector->_head, &config->collectors);
     mk_list_add(&collector->_head_ins, &in->collectors);
 
@@ -746,7 +746,7 @@ int flb_input_set_collector_socket(struct flb_input_instance *in,
     collector->nanoseconds = -1;
     collector->instance    = in;
     collector->running     = FLB_FALSE;
-    MK_EVENT_NEW(&collector->event);
+    MK_EVENT_ZERO(&collector->event);
     mk_list_add(&collector->_head, &config->collectors);
     mk_list_add(&collector->_head_ins, &in->collectors);
 
