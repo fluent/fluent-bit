@@ -1,4 +1,4 @@
-FROM launcher.gcr.io/google/debian9 as builder
+FROM debian:stretch as builder
 
 # Fluent Bit version
 ENV FLB_MAJOR 0
