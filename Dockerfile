@@ -39,7 +39,7 @@ RUN cmake -DFLB_DEBUG=Off \
           -DFLB_OUT_KAFKA=On ..
 
 RUN make -j $(getconf _NPROCESSORS_ONLN)
-RUN install bin/fluent-bit /fluent-bit/bin/
+RUN strip bin/fluent-bit && install bin/fluent-bit /fluent-bit/bin/
 
 # Configuration files
 COPY conf/fluent-bit.conf \
@@ -48,6 +48,7 @@ COPY conf/fluent-bit.conf \
      conf/parsers_extra.conf \
      conf/parsers_openstack.conf \
      conf/parsers_cinder.conf \
+     conf/plugins.conf \
      /fluent-bit/etc/
 
 FROM gcr.io/distroless/cc
