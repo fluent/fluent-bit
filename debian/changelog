@@ -1,3 +1,9 @@
+td-agent-bit (0.14.7-2) stable; urgency=low
+
+  * Fluent Bit v0.14.7-2 (fix systemd support)
+
+ -- Eduardo Silva <eduardo@treasure-data.com>  Mon, 12 Nov 2018 08:00:00 -0600
+
 td-agent-bit (0.14.7) stable; urgency=low
 
   * Fluent Bit v0.14.7
