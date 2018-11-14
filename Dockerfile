@@ -1,10 +1,10 @@
 FROM launcher.gcr.io/google/debian9 as builder
 
 # Fluent Bit version
-ENV FLB_MAJOR 0
-ENV FLB_MINOR 15
+ENV FLB_MAJOR 1
+ENV FLB_MINOR 0
 ENV FLB_PATCH 0
-ENV FLB_VERSION 0.15.0
+ENV FLB_VERSION 1.0.0
 
 ENV DEBIAN_FRONTEND noninteractive
 
