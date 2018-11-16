@@ -149,11 +149,9 @@ struct flb_config {
     void *http_ctx;           /* Monkey HTTP context    */
 #endif
 
-#ifdef FLB_HAVE_BUFFERING
-    struct flb_buffer *buffer_ctx;
-    int buffer_workers;
+    /* Chunk I/O Buffering */
+    void *cio;
     char *buffer_path;
-#endif
 
     /* Embedded SQL Database support (SQLite3) */
 #ifdef FLB_HAVE_SQLDB
@@ -218,12 +216,7 @@ enum conf_type {
 #define FLB_CONF_STR_HTTP_PORT    "HTTP_Port"
 #endif /* !FLB_HAVE_HTTP_SERVER */
 
-/* FLB_HAVE_BUFFERING */
-#ifdef FLB_HAVE_BUFFERING
-#define FLB_CONF_STR_BUF_PATH     "Buffer_Path"
-#define FLB_CONF_STR_BUF_WORKERS  "Buffer_Workers"
-#endif /* !FLB_HAVE_BUFFERING */
-
+#define FLB_CONF_STR_BUF_PATH        "Buffer_Path"
 #define FLB_CONF_STR_CORO_STACK_SIZE "Coro_Stack_Size"
 
 #endif

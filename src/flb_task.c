@@ -30,12 +30,6 @@
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_scheduler.h>
 
-#ifdef FLB_HAVE_BUFFERING
-#include <fluent-bit/flb_sha1.h>
-#include <fluent-bit/flb_buffer_chunk.h>
-#include <fluent-bit/flb_buffer_qchunk.h>
-#endif
-
 /*
  * Every task created must have an unique ID, this function lookup the
  * lowest number available in the tasks_map.
@@ -286,38 +280,6 @@ struct flb_task *flb_task_create(uint64_t ref_id,
         return NULL;
     }
 
-#ifdef FLB_HAVE_BUFFERING
-    int i;
-    int worker_id;
-
-    /* If no buffering is set, return right away */
-    if (!config->buffer_ctx) {
-        flb_debug("[task] created task=%p id=%i OK", task, task->id);
-        return task;
-    }
-
-    /* Generate content SHA1 and it Hexa representation */
-    flb_sha1_encode(buf, size, task->hash_sha1);
-    for (i = 0; i < 20; ++i) {
-        sprintf(&task->hash_hex[i*2], "%02x", task->hash_sha1[i]);
-    }
-    task->hash_hex[40] = '\0';
-
-    /*
-     * Generate a buffer chunk push request, note that suggested routes
-     * are passed through the 'routes_mask' bit mask variable.
-     */
-    worker_id = flb_buffer_chunk_push(config->buffer_ctx, buf, size, tag,
-                                      routes_mask, task->hash_hex);
-
-    task->worker_id = worker_id;
-    flb_debug("[task->buffer] worker_id=%i", worker_id);
-#endif
-
-#ifdef FLB_HAVE_FLUSH_PTHREADS
-    pthread_mutex_init(&task->mutex_threads, NULL);
-#endif
-
     flb_debug("[task] created task=%p id=%i OK", task, task->id);
     return task;
 }
@@ -355,9 +317,6 @@ struct flb_task *flb_task_create_direct(uint64_t ref_id,
     task->i_ins     = i_ins;
     task->dt        = NULL;
     task->mapped    = FLB_TRUE;
-#ifdef FLB_HAVE_BUFFERING
-    memcpy(&task->hash_hex, hash, 41);
-#endif
     mk_list_add(&task->_head, &i_ins->tasks);
 
     /* Iterate output instances and try to match the routes */
@@ -413,15 +372,15 @@ void flb_task_destroy(struct flb_task *task)
             flb_free(task->buf);
         }
     }
-#ifdef FLB_HAVE_BUFFERING
     else {
-        /* Likely there is a qchunk associated to this tasks */
+        #warning "FIXME: cleanup chunk"
+        /* Likely there is a qchunk associated to this tasks
         if (task->ref_id > 0 && task->config->buffer_ctx) {
             flb_buffer_qchunk_signal(FLB_BUFFER_QC_POP_REQUEST, task->ref_id,
                                      task->config->buffer_ctx->qworker);
         }
+        */
     }
-#endif
 
     if (task->dt) {
         flb_input_dyntag_destroy(task->dt);

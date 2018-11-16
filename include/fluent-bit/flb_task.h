@@ -22,7 +22,6 @@
 
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_buffer.h>
 #include <fluent-bit/flb_input.h>
 
 /* Task status */
@@ -84,12 +83,6 @@ struct flb_task {
     char *tag;                          /* original tag              */
     char *buf;                          /* buffer                    */
     size_t size;                        /* buffer data size          */
-#ifdef FLB_HAVE_BUFFERING
-    int worker_id;                      /* Buffer worker that owns this task */
-    int qchunk_id;                      /* qchunk id if it comes from buffer */
-    unsigned char hash_sha1[20];        /* SHA1(buf)                         */
-    char hash_hex[41];                  /* Hex string for hash_sha1          */
-#endif
     struct flb_input_dyntag *dt;        /* dyntag node (if applies)      */
     struct flb_input_instance *i_ins;   /* input instance                */
     struct mk_list threads;             /* ref flb_input_instance->tasks */

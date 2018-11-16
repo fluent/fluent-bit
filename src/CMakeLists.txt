@@ -12,8 +12,6 @@ set(src
   flb_hash.c
   flb_pack.c
   flb_sds.c
-
-  flb_sha1.c
   flb_pipe.c
   flb_meta.c
   flb_kernel.c
@@ -89,15 +87,6 @@ if(FLB_METRICS)
     ${src}
     "flb_metrics.c"
     "flb_metrics_exporter.c"
-    )
-endif()
-
-if(FLB_BUFFERING)
-  set(src
-    ${src}
-    "flb_buffer.c"
-    "flb_buffer_chunk.c"
-    "flb_buffer_qchunk.c"
     )
 endif()
 
@@ -203,6 +192,7 @@ set(FLB_DEPS
   mk_core
   jsmn
   msgpackc-static
+  chunkio-static
   ${FLB_PLUGINS}
   ${FLB_PROXY_PLUGINS}
   ${extra_libs}

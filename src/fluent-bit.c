@@ -121,10 +121,7 @@ static void flb_help(int rc, struct flb_config *config)
 
     printf("Usage: fluent-bit [OPTION]\n\n");
     printf("%sAvailable Options%s\n", ANSI_BOLD, ANSI_RESET);
-#ifdef FLB_HAVE_BUFFERING
     printf("  -b  --buf_path=PATH\tspecify a buffering path\n");
-    printf("  -B  --buf_workers=N\tnumber of workers for buffering\n");
-#endif
     printf("  -c  --config=FILE\tspecify an optional configuration file\n");
 #ifdef FLB_HAVE_FORK
     printf("  -d, --daemon\t\trun Fluent Bit in background mode\n");
@@ -659,17 +656,9 @@ int main(int argc, char **argv)
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
-#ifdef FLB_HAVE_BUFFERING
         case 'b':
             config->buffer_path = flb_strdup(optarg);
-            if (config->buffer_workers <= 0) {
-                config->buffer_workers = 1;
-            }
             break;
-        case 'B':
-            config->buffer_workers = atoi(optarg);
-            break;
-#endif
         case 'c':
             cfg_file = flb_strdup(optarg);
             break;
