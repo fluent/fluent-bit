@@ -785,7 +785,7 @@ int flb_parser_frac_tzone(char *str, int len, double *frac, int *tmdiff)
     }
     d = strtod(pstr, &end);
     if ((d == 0 && end == pstr) || !end) {
-        ret=-1;
+        ret = -1;
         goto free_and_return;
     }
     *frac = d;
