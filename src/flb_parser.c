@@ -772,9 +772,10 @@ int flb_parser_frac(char *str, int len, double *frac, char **end)
     else {
         pstr = str;
     }
+
     d = strtod(pstr, &p);
     if ((d == 0 && p == pstr) || !p) {
-        ret=-1;
+        ret = -1;
         goto free_and_return;
     }
     *frac = d;
