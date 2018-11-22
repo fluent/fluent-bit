@@ -2,6 +2,7 @@
 
 #define _GNU_SOURCE /* for accept4 */
 #include <fluent-bit.h>
+#include <fluent-bit/flb_info.h>
 #include "flb_tests_runtime.h"
 
 #include <sys/types.h>
@@ -157,7 +158,7 @@ static struct kube_test *kube_test_create(char *target, int type, char *suffix, 
     va_list va;
     struct kube_test *ctx;
     struct flb_lib_out_cb cb_data;
-    struct kube_test_result result;
+    struct kube_test_result result = {0};
 
     result.nmatched = 0;
     result.target = target;
@@ -242,6 +243,19 @@ static struct kube_test *kube_test_create(char *target, int type, char *suffix, 
                    "format", "json",
                    NULL);
 
+    /*
+     *  If the source of data is Systemd, just let the output lib plugin
+     * to process one record only, otherwise when the test case stop after
+     * the first callback it destroy the contexts, but out_lib still have
+     * pending data to flush. This option solves the problem.
+     */
+    if (type == KUBE_SYSTEMD) {
+        flb_output_set(ctx->flb, out_ffd,
+                       "Max_Records", "1",
+                       NULL);
+    }
+
+    /* Start the engine */
     ret = flb_start(ctx->flb);
     TEST_CHECK(ret == 0);
     if (ret == -1) {
@@ -358,10 +372,12 @@ void flb_test_systemd_logs()
     struct stat statb;
     struct kube_test *ctx;
 
-    if (stat("/run/systemd/journal/socket", &statb) == 0 && statb.st_mode & S_IFSOCK) {
+    if (stat("/run/systemd/journal/socket", &statb) == 0 &&
+        statb.st_mode & S_IFSOCK) {
 
-        /* Send test message to Journal. If this fails (e.g. journal is not running
-         * then skip the test
+        /*
+         * Send test message to Journal. If this fails (e.g. journal is
+         * not running then skip the test.
          */
         if (sd_journal_send(
                         "@timestamp=2018-02-23T08:58:45.0Z",
