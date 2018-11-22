@@ -31,6 +31,7 @@ enum {
 
 struct flb_out_lib_config {
     int format;
+    int max_records;
     int (*cb_func)(void *record, size_t size, void *data);
     void *cb_data;
 };
