@@ -12,7 +12,6 @@ echo "use $ASAN_SYMBOLIZER_PATH"
 SKIP_TESTS="flb-rt-out_elasticsearch
 flb-rt-out_td
 flb-rt-out_forward
-flb-rt-filter_nest
 flb-rt-in_disk
 flb-rt-in_proc"
 
