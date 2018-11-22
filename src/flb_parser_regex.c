@@ -82,7 +82,8 @@ static void cb_results(unsigned char *name, unsigned char *value,
                 tmp[vlen] = '\0';
                 flb_warn("[parser:%s] Invalid time format %s for '%s'.",
                          parser->name, parser->time_fmt, tmp);
-                goto pack;
+                pcb->num_skipped++;
+                return;
             }
 
             pcb->time_frac = frac;
