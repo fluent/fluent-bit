@@ -154,6 +154,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
             ctx->multiline = FLB_TRUE;
             ret = flb_tail_mult_create(ctx, i_ins, config);
             if (ret == -1) {
+                flb_tail_config_destroy(ctx);
                 return NULL;
             }
         }
@@ -167,6 +168,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
             ctx->docker_mode = FLB_TRUE;
             ret = flb_tail_dmode_create(ctx, i_ins, config);
             if (ret == -1) {
+                flb_tail_config_destroy(ctx);
                 return NULL;
             }
         }
