@@ -39,7 +39,7 @@ RUN cmake -DFLB_DEBUG=Off \
           -DFLB_OUT_KAFKA=On ..
 
 RUN make -j $(getconf _NPROCESSORS_ONLN)
-RUN strip bin/fluent-bit && install bin/fluent-bit /fluent-bit/bin/
+RUN install bin/fluent-bit /fluent-bit/bin/
 
 # Configuration files
 COPY conf/fluent-bit.conf \
