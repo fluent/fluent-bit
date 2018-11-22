@@ -14,7 +14,6 @@ flb-rt-out_elasticsearch
 flb-rt-out_td
 flb-rt-out_forward
 flb-rt-filter_nest
-flb-rt_filter_parser
 flb-rt-in_disk
 flb-rt-in_proc"
 
@@ -58,4 +57,3 @@ echo
 echo "Run unit tests for $FLB_OPT on $nparallel VCPU"
 echo
 ctest -j $nparallel --build-run-dir $PWD --output-on-failure
-
