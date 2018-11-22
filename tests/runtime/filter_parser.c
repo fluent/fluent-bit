@@ -101,7 +101,7 @@ void flb_test_filter_parser_extract_fields()
     TEST_CHECK_(output != NULL, "Expected output to not be NULL");
     if (output != NULL) {
         /* check timestamp */
-        expected = "[\"\\x56\\x54\\xffffffe1\\xffffff8c\\x00\\x00\\x00\\x00\", {";
+        expected = "[1448403340.000000, {";
         TEST_CHECK_(strstr(output, expected) != NULL, "Expected output to contain '%s', got '%s'", expected, output);
         /* check fields were extracted */
         expected = "\"INT\":\"100\", \"FLOAT\":\"0.5\", \"BOOL\":\"true\", \"STRING\":\"This is an example\"";
@@ -262,7 +262,7 @@ void flb_test_filter_parser_handle_time_key()
     if (output != NULL) {
         /* check the timestamp field was updated correctly */
         /* this is in fluent-bits extended timestamp format */
-        expected = "[\"\\x59\\xfffffffa\\x49\\xffffffd1\\x26\\xffffff9f\\xffffffb2\\x00\", {";
+        expected = "[1509575121.648000, {";
         TEST_CHECK_(strstr(output, expected) != NULL, "Expected output to contain '%s', got '%s'", expected, output);
         /* check additional field is preserved */
         expected = "\"message\":\"This is an example\"";
@@ -378,7 +378,9 @@ void flb_test_filter_parser_ignore_malformed_time()
                   NULL);
 
     /* Parser */
-    parser = flb_parser_create("timestamp", "regex", "^(?<time>.*)$", "%Y-%m-%dT%H:%M:%S.%L", "time", NULL, MK_FALSE,
+    parser = flb_parser_create("timestamp", "regex",
+                               "^(?<time>.*)$", "%Y-%m-%dT%H:%M:%S.%L", "time",
+                               NULL, FLB_FALSE,
                                NULL, 0, NULL, ctx->config);
     TEST_CHECK(parser != NULL);
 
@@ -416,7 +418,7 @@ void flb_test_filter_parser_ignore_malformed_time()
     TEST_CHECK_(output != NULL, "Expected output to not be NULL");
     if (output != NULL) {
         /* check the timestamp field was ignored and we received everything else */
-        expected = "[\"\\x56\\x54\\xffffffe1\\xffffff8c\\x00\\x00\\x00\\x00\", {\"@timestamp\":\"2017_$!^-11-01T22:25:21.648\", \"log\":\"An example\"}]";
+        expected = "[1448403340.000000, {\"@timestamp\":\"2017_$!^-11-01T22:25:21.648\", \"log\":\"An example\"}]";
         TEST_CHECK_(strcmp(output, expected) == 0, "Expected output to be '%s', got '%s'", expected, output);
         free(output);
     }
