@@ -514,7 +514,6 @@ static int cb_kube_filter(void *data, size_t bytes,
         if (ctx->use_journal == FLB_TRUE) {
             parser = NULL;
             cache_buf = NULL;
-            memset(&meta, '\0', sizeof(struct flb_kube_meta));
             memset(&props, '\0', sizeof(struct flb_kube_props));
 
             ret = flb_kube_meta_get(ctx,

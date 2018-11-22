@@ -597,11 +597,12 @@ static inline int extract_meta(struct flb_kube *ctx, char *tag, int tag_len,
 
     /* Compose API server cache key */
     if (meta->podname && meta->namespace) {
-        meta->cache_key_len = meta->podname_len + meta->namespace_len + meta->container_name_len + 1;
+        /* calculate estimated buffer size */
+        n = meta->namespace_len + 1 + meta->podname_len + 1;
         if (meta->container_name) {
-            meta->cache_key_len += meta->container_name_len + 2;
+            n += meta->container_name_len + 1;
         }
-        meta->cache_key = flb_malloc(meta->cache_key_len + 1);
+        meta->cache_key = flb_malloc(n);
         if (!meta->cache_key) {
             flb_errno();
             return -1;
@@ -626,6 +627,7 @@ static inline int extract_meta(struct flb_kube *ctx, char *tag, int tag_len,
         }
 
         meta->cache_key[off] = '\0';
+        meta->cache_key_len = off;
     }
     else {
         meta->cache_key = NULL;
