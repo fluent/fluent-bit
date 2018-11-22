@@ -29,12 +29,28 @@
 
 /* wildcard support */
 /* tag and match should be null terminated. */
+#ifdef FLB_HAVE_REGEX
+int flb_router_match(const char *tag,
+                     const char *match,
+                     struct flb_regex *match_regex)
+#else
 int flb_router_match(const char *tag, const char *match)
+#endif
 {
     int ret = 0;
     char *pos = NULL;
 
-    while (1) {
+#ifdef FLB_HAVE_REGEX
+    struct flb_regex_search result;
+    int n;
+    if (match_regex) {
+        n = onig_match(match_regex->regex, tag, tag + strlen(tag), tag, 0, ONIG_OPTION_NONE);
+        if (n > 0) {
+            return 1;
+        }
+    }
+#endif
+    while (match) {
         if (*match == '*') {
             while (*++match == '*'){
                 /* skip successive '*' */
@@ -47,7 +63,14 @@ int flb_router_match(const char *tag, const char *match)
 
             /* FIXME: we need to avoid recursive calls here */
             while ((pos = strchr(tag, (int) *match))) {
+#ifndef FLB_HAVE_REGEX
                 if (flb_router_match(pos, match) ){
+#else
+                /* We don't need to pass the regex recursively,
+                 * we matched in order above
+                 */
+                if (flb_router_match(pos, match, NULL) ){
+#endif
                     ret = 1;
                     break;
                 }
@@ -117,7 +140,11 @@ int flb_router_io_set(struct flb_config *config)
                                     struct flb_input_instance, _head);
         o_ins = mk_list_entry_first(&config->outputs,
                                     struct flb_output_instance, _head);
-        if (!o_ins->match) {
+        if (!o_ins->match
+#ifdef FLB_HAVE_REGEX
+            && !o_ins->match_regex
+#endif
+            ) {
             flb_debug("[router] default match rule %s:%s",
                       i_ins->name, o_ins->name);
             o_ins->match = flb_strdup("*");
@@ -154,13 +181,21 @@ int flb_router_io_set(struct flb_config *config)
         /* Try to find a match with output instances */
         mk_list_foreach(o_head, &config->outputs) {
             o_ins = mk_list_entry(o_head, struct flb_output_instance, _head);
-            if (!o_ins->match) {
+            if (!o_ins->match
+#ifdef FLB_HAVE_REGEX
+                && !o_ins->match_regex
+#endif
+                ) {
                 flb_warn("[router] NO match for %s output instance",
                           o_ins->name);
                 continue;
             }
 
-            if (flb_router_match(i_ins->tag, o_ins->match)) {
+            if (flb_router_match(i_ins->tag, o_ins->match
+#ifdef FLB_HAVE_REGEX
+                , o_ins->match_regex
+#endif
+            )) {
                 flb_debug("[router] match rule %s:%s",
                           i_ins->name, o_ins->name);
                 flb_router_connect(i_ins, o_ins);

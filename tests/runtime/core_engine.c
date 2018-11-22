@@ -18,7 +18,6 @@
  */
 
 #include <fluent-bit.h>
-#include <pthread.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
@@ -36,42 +35,51 @@ TEST_LIST = {
     {NULL, NULL}
 };
 
-
-pthread_mutex_t result_mutex;
-bool result;
-
-void set_result(bool val)
+#define MAX_WAIT_TIME 1500
+int64_t result_time;
+static inline int64_t set_result(int64_t v)
 {
-    pthread_mutex_lock(&result_mutex);
-    result = val;
-    pthread_mutex_unlock(&result_mutex);
+    int64_t old = __sync_lock_test_and_set(&result_time, v);
+    return old;
 }
 
-bool get_result(void)
+static inline int64_t get_result(void)
 {
-    bool val;
+    int64_t old = __sync_fetch_and_add(&result_time, 0);
 
-    pthread_mutex_lock(&result_mutex);
-    val = result;
-    pthread_mutex_unlock(&result_mutex);
+    return old;
+}
 
-    return val;
+static inline int64_t time_in_ms()
+{
+    int ms;
+    struct timespec s;
+    TEST_CHECK(clock_gettime(CLOCK_MONOTONIC, &s) == 0);
+    ms = s.tv_nsec / 1.0e6;
+    if (ms >= 1000) {
+        ms = 0;
+    }
+    return 1000 * s.tv_sec + ms;
 }
 
 int callback_test(void* data, size_t size, void* cb_data)
 {
     if (size > 0) {
         flb_lib_free(data);
-        set_result(true); /* success */
+        set_result(time_in_ms()); /* success */
     }
     return 0;
 }
 
-int check_routing(const char* tag, const char* match, bool expect)
+int check_routing(const char* tag,
+                  const char* match,
+                  const char* match_regex,
+                  bool expect)
 {
     int in_ffd;
     int out_ffd;
-    bool          ret    = false;
+    int64_t ret;
+    int64_t start;
     flb_ctx_t    *ctx    = NULL;
     char         *str    = (char*)"[1, {\"key\":\"value\"}]";
 
@@ -80,10 +88,6 @@ int check_routing(const char* tag, const char* match, bool expect)
     cb.data = NULL;
 
     /* initialize */
-    ret = pthread_mutex_init(&result_mutex, NULL);
-    TEST_CHECK(ret == 0);
-    set_result(false);
-
     ctx = flb_create();
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -92,7 +96,12 @@ int check_routing(const char* tag, const char* match, bool expect)
 
     out_ffd = flb_output(ctx, (char *) "lib", &cb);
     TEST_CHECK(out_ffd >= 0);
-    flb_output_set(ctx, out_ffd, "match", match, NULL);
+    if (match) {
+        flb_output_set(ctx, out_ffd, "match", match, NULL);
+    }
+    if (match_regex) {
+        flb_output_set(ctx, out_ffd, "match_regex", match_regex, NULL);
+    }
 
     flb_service_set(ctx, "Flush", "1", "Grace", "1", "Daemon", "false", NULL);
 
@@ -101,17 +110,23 @@ int check_routing(const char* tag, const char* match, bool expect)
 
     /* start test */
     flb_lib_push(ctx, in_ffd, str, strlen(str));
-    sleep(1);/*waiting flush*/
+    set_result(0);
+    start = time_in_ms();
+    while ( (ret = get_result()) == 0 && (time_in_ms() - start < MAX_WAIT_TIME))
+        usleep(10);
 
-    ret = get_result();
-    TEST_CHECK(ret == expect);
+    if (expect ? ret == 0 : ret > 0) {
+        flb_error("Mismatch: tag:%s, match:%s, match_regex:%s, expect:%s\n",
+                    tag,
+                    match ? match : "null",
+                    match_regex ? match_regex : "null",
+                    expect ? "true" : "false");
+    }
+    TEST_CHECK(expect ? ret > 0 : ret == 0);
 
     /* finalize */
     flb_stop(ctx);
     flb_destroy(ctx);
-
-    ret = pthread_mutex_destroy(&result_mutex);
-    TEST_CHECK(ret == 0);
 
     return 0;
 }
@@ -121,26 +136,30 @@ void flb_test_engine_wildcard(void)
     struct test_wildcard_fmt {
         const char* tag;
         const char* match;
+        const char* match_regex;
         bool        expect;
     };
     int i = 0;
 
     struct test_wildcard_fmt checklist[] =
     {
-        {"cpu.rpi","cpu.rpi", true  },
-        {"cpu.rpi","cpu.ard", false },
-        {"cpu.rpi","cpu.*",   true  },
-        {"cpu.rpi","*",       true  },
-        {"cpu.rpi","*.*",     true  },
-        {"cpu.rpi","*.rpi",   true  },
-        {"cpu.rpi","mem.*",   false },
-        {"cpu.rpi","*u.r*",   true  },
-        {NULL, NULL, 0}
+        {"cpu.rpi","cpu.rpi", NULL, true  },
+        {"cpu.rpi","cpu.ard", NULL, false },
+        {"cpu.rpi","cpu.*",   NULL, true  },
+        {"cpu.rpi","*",       NULL, true  },
+        {"cpu.rpi","*.*",     NULL, true  },
+        {"cpu.rpi","*.rpi",   NULL, true  },
+        {"cpu.rpi","mem.*",   NULL, false },
+        {"cpu.rpi","*u.r*",   NULL, true  },
+        {"cpu.rpi",NULL,      "[a-z]*", true  },
+        {"cpu.rpi",NULL,      "[A-Z]*", false },
+        {NULL, NULL, NULL, 0}
     };
 
     while(checklist[i].tag != NULL){
         check_routing(checklist[i].tag,
                       checklist[i].match,
+                      checklist[i].match_regex,
                       checklist[i].expect);
         i++;
     }

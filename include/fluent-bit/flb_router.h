@@ -22,12 +22,18 @@
 
 #include <fluent-bit/flb_output.h>
 
+
 struct flb_router_path {
     struct flb_output_instance *ins;
     struct mk_list _head;
 };
 
+#ifdef FLB_HAVE_REGEX
+#include <fluent-bit/flb_regex.h>
+int flb_router_match(const char *tag, const char *match, struct flb_regex *);
+#else
 int flb_router_match(const char *tag, const char *match);
+#endif
 int flb_router_io_set(struct flb_config *config);
 void flb_router_exit(struct flb_config *config);
 
