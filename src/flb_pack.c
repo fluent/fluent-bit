@@ -345,9 +345,9 @@ static int pack_print_fluent_record(size_t cnt, msgpack_unpacked result)
     flb_time_pop_from_msgpack(&tms, &result, &obj);
 
     unix_time = flb_time_to_double(&tms);
-    fprintf(stdout, "[%zd] [%f] ", cnt, unix_time);
+    fprintf(stdout, "[%zd] [%f, ", cnt, unix_time);
     msgpack_object_print(stdout, *obj);
-    fprintf(stdout, "\n");
+    fprintf(stdout, "]\n");
 
     return 0;
 }
