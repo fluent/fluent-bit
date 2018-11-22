@@ -96,7 +96,6 @@ static void cb_results(unsigned char *name, unsigned char *value,
         }
     }
 
- pack:
     if (parser->types_len != 0) {
         flb_parser_typecast((char*)name, len,
                             (char*)value, vlen,
