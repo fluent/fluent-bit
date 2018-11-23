@@ -66,6 +66,7 @@ static int tag_compose(char *tag, char *unit_name,
 static int in_systemd_collect(struct flb_input_instance *i_ins,
                               struct flb_config *config, void *in_context)
 {
+    int count;
     int ret;
     int ret_j;
     int len;
@@ -147,6 +148,9 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
         while (sd_journal_enumerate_data(ctx->j, &data, &length)) {
             entries++;
         }
+        if (entries > ctx->max_fields) {
+            entries = ctx->max_fields;
+        }
         sd_journal_restart_data(ctx->j);
 
         /*
@@ -172,7 +176,9 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
         flb_time_append_to_msgpack(&tm, &mp_pck, 0);
 
         msgpack_pack_map(&mp_pck, entries);
-        while (sd_journal_enumerate_data(ctx->j, &data, &length)) {
+        count = 0;
+        while (sd_journal_enumerate_data(ctx->j, &data, &length) &&
+               count < entries) {
             key = (char *) data;
             sep = strchr(key, '=');
             len = (sep - key);
@@ -186,6 +192,8 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
             len = length - (sep - key) - 1;
             msgpack_pack_str(&mp_pck,  len);
             msgpack_pack_str_body(&mp_pck, val, len);
+
+            count++;
         }
         rows++;
 
