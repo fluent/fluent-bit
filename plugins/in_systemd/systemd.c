@@ -78,12 +78,12 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
     char *sep;
     char *key;
     char *val;
-    char *tag;
-    char *last_tag = NULL;
     char *cursor = NULL;
-    size_t last_tag_len;
+    char *tag;
     size_t tag_len;
-    char out_tag[PATH_MAX];
+    char new_tag[PATH_MAX];
+    char last_tag[PATH_MAX];
+    size_t last_tag_len = 0;
     const void *data;
     struct flb_systemd_config *ctx = in_context;
     struct flb_time tm;
@@ -115,12 +115,12 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
         if (ctx->dynamic_tag) {
             ret = sd_journal_get_data(ctx->j, "_SYSTEMD_UNIT", &data, &length);
             if (ret == 0) {
-                tag = out_tag;
+                tag = new_tag;
                 tag_compose(ctx->i_ins->tag, (char *) data + 14, length - 14,
                             &tag, &tag_len);
             }
             else {
-                tag = out_tag;
+                tag = new_tag;
                 tag_compose(ctx->i_ins->tag,
                             FLB_SYSTEMD_UNKNOWN, sizeof(FLB_SYSTEMD_UNKNOWN) - 1,
                             &tag, &tag_len);
@@ -131,8 +131,8 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
             tag_len = ctx->i_ins->tag_len;
         }
 
-        if (last_tag == NULL) {
-            last_tag = tag;
+        if (last_tag_len == 0) {
+            strncpy(last_tag, tag, tag_len);
             last_tag_len = tag_len;
         }
 
@@ -157,13 +157,13 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
         if (mp_sbuf.size > 0 &&
             ((last_tag_len != tag_len) || (strncmp(last_tag, tag, tag_len) != 0))) {
             flb_input_dyntag_append_raw(ctx->i_ins,
-                                        tag, tag_len,
+                                        last_tag, last_tag_len,
                                         mp_sbuf.data,
                                         mp_sbuf.size);
             msgpack_sbuffer_destroy(&mp_sbuf);
             msgpack_sbuffer_init(&mp_sbuf);
 
-            last_tag = tag;
+            strncpy(last_tag, tag, tag_len);
             last_tag_len = tag_len;
         }
 
@@ -197,7 +197,7 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
                                         mp_sbuf.size);
             msgpack_sbuffer_destroy(&mp_sbuf);
             msgpack_sbuffer_init(&mp_sbuf);
-            last_tag = tag;
+            strncpy(last_tag, tag, tag_len);
             last_tag_len = tag_len;
             ret_j = -1;
             break;
