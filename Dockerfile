@@ -48,6 +48,7 @@ COPY conf/fluent-bit.conf \
      conf/parsers_extra.conf \
      conf/parsers_openstack.conf \
      conf/parsers_cinder.conf \
+     conf/plugins.conf \
      /fluent-bit/etc/
 
 FROM gcr.io/distroless/cc
