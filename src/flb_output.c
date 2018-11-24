@@ -352,6 +352,7 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
 #ifdef FLB_HAVE_REGEX
     if (prop_key_check("match_regex", k, len) == 0) {
         out->match_regex = flb_regex_create((unsigned char *) tmp);
+        flb_free(tmp);
     }
     else
 #endif
