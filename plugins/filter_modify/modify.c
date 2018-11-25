@@ -400,7 +400,7 @@ static inline bool helper_msgpack_object_matches_regex(msgpack_object * obj,
         return false;
     }
 
-    return flb_regex_match(regex, (unsigned char *) key, len) > 0;
+    return flb_regex_find(regex, (unsigned char *) key, len) > 0;
 }
 
 static inline bool kv_key_matches_regex(msgpack_object_kv * kv,

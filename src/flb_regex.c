@@ -156,7 +156,7 @@ ssize_t flb_regex_do(struct flb_regex *r, unsigned char *str, size_t slen,
     return ret;
 }
 
-int flb_regex_match(struct flb_regex *r, unsigned char *str, size_t slen)
+int flb_regex_find(struct flb_regex *r, unsigned char *str, size_t slen)
 {
     int ret;
     unsigned char *start;
