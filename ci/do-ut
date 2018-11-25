@@ -55,3 +55,15 @@ echo
 echo "Run unit tests for $FLB_OPT on $nparallel VCPU"
 echo
 ctest -j $nparallel --build-run-dir $PWD --output-on-failure
+res=$?
+
+if [[ "$FLB_OPT" =~ COVERAGE  ]]
+then
+    mkdir -p coverage
+    find lib -name "*.gcda" -o -name "*.gcno" -print0 | xargs -0 -r rm
+    gcovr -p -r .. . | cut -c1-100
+    gcovr --html --html-details -p -r .. -o coverage/index.html .
+    echo
+    echo "See coverage/index.html for code-coverage details"
+fi
+exit $res
