@@ -91,6 +91,7 @@ struct flb_config {
      */
     int conf_watch;
     flb_pipefd_t conf_change_fd;    /* Inotify fd associated to conf_watch */
+    struct mk_event event_config_change;
 
     /* Event */
     struct mk_event event_flush;

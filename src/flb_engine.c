@@ -528,11 +528,14 @@ int flb_engine_start(struct flb_config *config)
 #ifdef FLB_HAVE_INOTIFY
     /* Watch the config dir for changes */
     if (config->conf_change_fd > 0) {
-        struct mk_event ev;
-        memset(&ev, 0, sizeof(ev));
-        ev.data = config;
-        ev.handler = flb_engine_config_changed_handler;
-        mk_event_add(evl, config->conf_change_fd, FLB_ENGINE_EV_CUSTOM, MK_EVENT_READ, &ev);
+        memset(&config->event_config_change, 0, sizeof(config->event_config_change));
+        config->event_config_change.data = config;
+        config->event_config_change.handler = flb_engine_config_changed_handler;
+        mk_event_add(evl,
+                     config->conf_change_fd,
+                     FLB_ENGINE_EV_CUSTOM,
+                     MK_EVENT_READ,
+                     &config->event_config_change);
     }
 #endif
 
