@@ -25,6 +25,11 @@
 #include "systemd_config.h"
 #include "systemd_db.h"
 
+/* msgpack helpers to pack unsigned ints (it takes care of endianness */
+#define pack_uint16(buf, d) _msgpack_store16(buf, (uint16_t) d)
+#define pack_uint32(buf, d) _msgpack_store32(buf, (uint32_t) d)
+
+/* tag composer */
 static int tag_compose(char *tag, char *unit_name,
                        int unit_size, char **out_buf, size_t *out_size)
 {
@@ -73,17 +78,20 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
     int rows = 0;
     time_t sec;
     long nsec;
+    uint8_t h;
     uint64_t usec;
     size_t length;
     char *sep;
     char *key;
     char *val;
-    char *tag;
-    char *last_tag = NULL;
+    char *tmp;
     char *cursor = NULL;
-    size_t last_tag_len;
+    char *tag;
+    char new_tag[PATH_MAX];
+    char last_tag[PATH_MAX];
     size_t tag_len;
-    char out_tag[PATH_MAX];
+    size_t last_tag_len = 0;
+    off_t off;
     const void *data;
     struct flb_systemd_config *ctx = in_context;
     struct flb_time tm;
@@ -115,12 +123,12 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
         if (ctx->dynamic_tag) {
             ret = sd_journal_get_data(ctx->j, "_SYSTEMD_UNIT", &data, &length);
             if (ret == 0) {
-                tag = out_tag;
+                tag = new_tag;
                 tag_compose(ctx->i_ins->tag, (char *) data + 14, length - 14,
                             &tag, &tag_len);
             }
             else {
-                tag = out_tag;
+                tag = new_tag;
                 tag_compose(ctx->i_ins->tag,
                             FLB_SYSTEMD_UNKNOWN, sizeof(FLB_SYSTEMD_UNKNOWN) - 1,
                             &tag, &tag_len);
@@ -131,8 +139,8 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
             tag_len = ctx->i_ins->tag_len;
         }
 
-        if (last_tag == NULL) {
-            last_tag = tag;
+        if (last_tag_len == 0) {
+            strncpy(last_tag, tag, tag_len);
             last_tag_len = tag_len;
         }
 
@@ -142,13 +150,6 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
         nsec = (usec % 1000000) * 1000;
         flb_time_set(&tm, sec, nsec);
 
-        /* Count the number of entries in the record */
-        entries = 0;
-        while (sd_journal_enumerate_data(ctx->j, &data, &length)) {
-            entries++;
-        }
-        sd_journal_restart_data(ctx->j);
-
         /*
          * The new incoming record can have a different tag than previous one,
          * so a new msgpack buffer is required. We ingest the data and prepare
@@ -157,13 +158,13 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
         if (mp_sbuf.size > 0 &&
             ((last_tag_len != tag_len) || (strncmp(last_tag, tag, tag_len) != 0))) {
             flb_input_dyntag_append_raw(ctx->i_ins,
-                                        tag, tag_len,
+                                        last_tag, last_tag_len,
                                         mp_sbuf.data,
                                         mp_sbuf.size);
             msgpack_sbuffer_destroy(&mp_sbuf);
             msgpack_sbuffer_init(&mp_sbuf);
 
-            last_tag = tag;
+            strncpy(last_tag, tag, tag_len);
             last_tag_len = tag_len;
         }
 
@@ -171,8 +172,23 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
         msgpack_pack_array(&mp_pck, 2);
         flb_time_append_to_msgpack(&tm, &mp_pck, 0);
 
-        msgpack_pack_map(&mp_pck, entries);
-        while (sd_journal_enumerate_data(ctx->j, &data, &length)) {
+        /*
+         * Save the current size/position of the buffer since this is
+         * where the Map header will be stored.
+         */
+        off = mp_sbuf.size;
+
+        /*
+         * Register the maximum fields allowed per entry in the map. With
+         * this approach we can ingest all the fields and then just adjust
+         * the map size if required.
+         */
+        msgpack_pack_map(&mp_pck, ctx->max_fields);
+
+        /* Pack every field in the entry */
+        entries = 0;
+        while (sd_journal_enumerate_data(ctx->j, &data, &length) &&
+               entries < ctx->max_fields) {
             key = (char *) data;
             sep = strchr(key, '=');
             len = (sep - key);
@@ -186,8 +202,28 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
             len = length - (sep - key) - 1;
             msgpack_pack_str(&mp_pck,  len);
             msgpack_pack_str_body(&mp_pck, val, len);
+
+            entries++;
         }
         rows++;
+
+        /*
+         * The fields were packed, now we need to adjust the msgpack map size
+         * to set the proper number of fields appended to the record.
+         */
+        tmp = mp_sbuf.data + off;
+        h = tmp[0];
+        if (h >> 4 == 0x8) {
+            *tmp = (uint8_t) 0x8 << 4 | ((uint8_t) entries);
+        }
+        else if (h == 0xde) {
+            tmp++;
+            pack_uint16(tmp, entries);
+        }
+        else if (h == 0xdf) {
+            tmp++;
+            pack_uint32(tmp, entries);
+        }
 
         /*
          * Some journals can have too much data, pause if we have processed
@@ -200,7 +236,7 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
                                         mp_sbuf.size);
             msgpack_sbuffer_destroy(&mp_sbuf);
             msgpack_sbuffer_init(&mp_sbuf);
-            last_tag = tag;
+            strncpy(last_tag, tag, tag_len);
             last_tag_len = tag_len;
             ret_j = -1;
             break;

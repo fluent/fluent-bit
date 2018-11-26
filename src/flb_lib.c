@@ -138,6 +138,13 @@ flb_ctx_t *flb_create()
 
     /* Prepare the notification channels */
     ctx->event_channel = flb_calloc(1, sizeof(struct mk_event));
+    if (!ctx->event_channel) {
+        perror("calloc");
+        flb_config_exit(ctx->config);
+        flb_free(ctx);
+        return NULL;
+    }
+
     MK_EVENT_ZERO(ctx->event_channel);
 
     ret = mk_event_channel_create(config->ch_evl,

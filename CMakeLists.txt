@@ -31,6 +31,7 @@ set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PAT
 # Build Options
 option(FLB_ALL                "Enable all features"           No)
 option(FLB_DEBUG              "Build with debug symbols"      No)
+option(FLB_COVERAGE           "Build with code-coverage"      No)
 option(FLB_JEMALLOC           "Build with Jemalloc support"   No)
 option(FLB_REGEX              "Build wiht Regex support"     Yes)
 option(FLB_TLS                "Build with SSL/TLS support"    No)
@@ -170,6 +171,11 @@ if(FLB_DEV)
   set(FLB_METRICS        On)
   set(FLB_HTTP_SERVER    On)
   set(FLB_TESTS_INTERNAL On)
+endif()
+
+if(FLB_COVERAGE)
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 --coverage -fprofile-arcs -ftest-coverage")
+  set(CMAKE_BUILD_TYPE "Debug")
 endif()
 
 if(FLB_OUT_GELF)

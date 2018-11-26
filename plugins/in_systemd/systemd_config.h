@@ -35,7 +35,8 @@
 /* constants */
 #define FLB_SYSTEMD_UNIT     "_SYSTEMD_UNIT"
 #define FLB_SYSTEMD_UNKNOWN  "unknown"
-#define FLB_SYSTEND_ENTRIES  5000
+#define FLB_SYSTEMD_MAX_FIELDS   8000
+#define FLB_SYSTEMD_MAX_ENTRIES  5000
 
 /* Input configuration & context */
 struct flb_systemd_config {
@@ -52,7 +53,8 @@ struct flb_systemd_config {
     int coll_fd_journal;       /* journal, events mode     */
     int coll_fd_pending;       /* pending records          */
     int dynamic_tag;
-    int max_entries;
+    int max_fields;            /* max number of fields per record */
+    int max_entries;           /* max number of records per iteration */
     int strip_underscores;
     struct flb_sqldb *db;
     struct flb_input_instance *i_ins;

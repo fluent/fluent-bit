@@ -40,6 +40,14 @@ matrix:
       script: |
         ci/do-ut || true
     - os: linux
+      env: FLB_OPT="-DFLB_COVERAGE=On"
+      dist: xenial
+      sudo: true
+      language: c
+      compiler: gcc
+      script: |
+        ci/do-ut
+    - os: linux
       dist: xenial
       sudo: true
       language: node_js
@@ -69,3 +77,5 @@ addons:
       - gcc-7
       - g++-7
       - libsystemd-dev
+      - gcovr
+
