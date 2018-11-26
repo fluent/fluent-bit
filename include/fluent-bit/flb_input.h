@@ -21,6 +21,7 @@
 #define FLB_INPUT_H
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_input_chunk.h>
 #include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_network.h>
@@ -180,6 +181,9 @@ struct flb_input_instance {
      */
     struct flb_net_host host;
 
+    /* Reference to struct flb_storage_input context */
+    void *storage;
+
     /* MessagePack buffers: the plugin use these contexts to append records */
     int mp_records;
     size_t mp_buf_write_size;
@@ -228,6 +232,7 @@ struct flb_input_instance {
     struct mk_list _head;                /* link to config->inputs     */
     struct mk_list routes;               /* flb_router_path's list     */
     struct mk_list dyntags;              /* dyntag nodes               */
+    struct mk_list chunks;               /* storage chunks             */
     struct mk_list properties;           /* properties / configuration */
     struct mk_list collectors;           /* collectors                 */
 

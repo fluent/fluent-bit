@@ -126,6 +126,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->context  = NULL;
         instance->data     = data;
         instance->threaded = FLB_FALSE;
+        instance->storage  = NULL;
 
         /* net */
         instance->host.name    = NULL;
@@ -147,6 +148,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         /* Initialize list heads */
         mk_list_init(&instance->routes);
         mk_list_init(&instance->tasks);
+        mk_list_init(&instance->chunks);
         mk_list_init(&instance->dyntags);
         mk_list_init(&instance->properties);
         mk_list_init(&instance->collectors);
@@ -389,7 +391,7 @@ void flb_input_exit_all(struct flb_config *config)
             continue;
         }
 
-        if (p->cb_exit) {
+        if (p->cb_exit && in->context) {
             p->cb_exit(in->context, config);
         }
         flb_input_free(in);
