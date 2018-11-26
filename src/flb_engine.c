@@ -39,6 +39,7 @@
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_sosreport.h>
+#include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_http_server.h>
 
 #ifdef FLB_HAVE_METRICS
@@ -109,7 +110,6 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
         if (key == FLB_ENGINE_STOP) {
             flb_trace("[engine] flush enqueued data");
             flb_engine_flush(config, NULL);
-            #warning "FIXME: stop cio library context"
             return FLB_ENGINE_STOP;
         }
     }
@@ -349,6 +349,12 @@ int flb_engine_start(struct flb_config *config)
         return -1;
     }
 
+    /* Start the Storage engine */
+    ret = flb_storage_create(config);
+    if (ret == -1) {
+        return -1;
+    }
+
     flb_info("[engine] started (pid=%i)", getpid());
 
     /* Debug coroutine stack size */
@@ -510,7 +516,8 @@ int flb_engine_shutdown(struct flb_config *config)
     config->is_running = FLB_FALSE;
     flb_input_pause_all(config);
 
-    #warning "FIXME: engine: shutdown, stop cio"
+    /* Destroy the storage context */
+    flb_storage_destroy(config);
 
     /* router */
     flb_router_exit(config);
@@ -554,6 +561,5 @@ int flb_engine_exit(struct flb_config *config)
 
     val = FLB_ENGINE_EV_STOP;
     ret = flb_pipe_w(config->ch_manager[1], &val, sizeof(uint64_t));
-
     return ret;
 }
