@@ -20,12 +20,15 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_http_server.h>
 
+#include "uptime.h"
 #include "metrics.h"
 #include "plugins.h"
 
 int api_v1_registration(struct flb_hs *hs)
 {
+    api_v1_uptime(hs);
     api_v1_metrics(hs);
     api_v1_plugins(hs);
+
     return 0;
 }

@@ -24,6 +24,9 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_macros.h>
+#ifdef FLB_HAVE_REGEX
+#include <fluent-bit/flb_regex.h>
+#endif
 
 struct flb_tail_config {
     int fd_notify;             /* inotify fd               */
@@ -39,6 +42,7 @@ struct flb_tail_config {
     int coll_fd_scan;
     int coll_fd_rotated;
     int coll_fd_pending;
+    int coll_fd_dmode_flush;
     int coll_fd_mult_flush;
 
     /* Backend collectors */
@@ -47,6 +51,9 @@ struct flb_tail_config {
 
     /* Configuration */
     int dynamic_tag;           /* dynamic tag ? e.g: abc.*     */
+#ifdef FLB_HAVE_REGEX
+    struct flb_regex *tag_regex;/* path to tag regex           */
+#endif
     int refresh_interval_sec;  /* seconds to re-scan           */
     long refresh_interval_nsec;/* nanoseconds to re-scan       */
     int rotate_wait;           /* sec to wait on rotated files */
@@ -59,6 +66,7 @@ struct flb_tail_config {
     char *key;                 /* key for unstructured record  */
     int   key_len;             /* length of key ^              */
     int   skip_long_lines;     /* skip long lines              */
+    int   exit_on_eof;         /* exit fluent-bit on EOF, test */
 
     /* Database */
     struct flb_sqldb *db;
@@ -72,6 +80,10 @@ struct flb_tail_config {
     int multiline_flush;       /* multiline flush/wait */
     struct flb_parser *mult_parser_firstline;
     struct mk_list mult_parsers;
+
+    /* Docker mode */
+    int docker_mode;           /* Docker mode enabled ?  */
+    int docker_mode_flush;     /* Docker mode flush/wait */
 
     /* Lists head for files consumed statically (read) and by events (inotify) */
     struct mk_list files_static;

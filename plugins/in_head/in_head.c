@@ -22,7 +22,6 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
-#include <fluent-bit/flb_stats.h>
 #include <fluent-bit/flb_pack.h>
 #include <msgpack.h>
 
@@ -54,7 +53,7 @@ static int read_lines(struct flb_in_head_config *head_config)
         perror("fopen");
         return -1;
     }
-    
+
     for(i=0; i<head_config->lines; i++){
         ret_buf = fgets(buf, BUF_SIZE_MAX-1, fp);
         if (ret_buf == NULL) {
@@ -153,7 +152,6 @@ static int single_value_per_record(struct flb_input_instance *i_ins,
     ret = 0;
 
     flb_input_buf_write_end(i_ins);
-    flb_stats_update(in_head_plugin.stats_fd, 0, 1);
 
     return ret;
 
@@ -180,7 +178,7 @@ static int split_lines_per_record(struct flb_input_instance *i_ins,
     if (head_config->add_path == FLB_TRUE) {
         num_map++;
     }
-    
+
     /* Mark the start of a 'buffer write' operation */
     flb_input_buf_write_start(i_ins);
 
@@ -220,7 +218,6 @@ static int split_lines_per_record(struct flb_input_instance *i_ins,
     }
 
     flb_input_buf_write_end(i_ins);
-    flb_stats_update(in_head_plugin.stats_fd, 0, 1);
 
     fclose(fp);
     return 0;

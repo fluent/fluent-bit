@@ -55,6 +55,7 @@ struct flb_config {
     int support_mode;         /* enterprise support mode ?      */
     int is_running;           /* service running ?              */
     int flush;                /* Flush timeout                  */
+    int grace;                /* Grace on shutdown              */
     flb_pipefd_t flush_fd;    /* Timer FD associated to flush   */
     int flush_method;         /* Flush method set at build time */
 
@@ -164,6 +165,9 @@ struct flb_config {
     struct mk_list luajit_list;
 #endif
 
+    /* Co-routines */
+    unsigned int coro_stack_size;
+
     /*
      * Input table-id: table to keep a reference of thread-IDs used by the
      * input plugins.
@@ -182,6 +186,10 @@ void flb_config_exit(struct flb_config *config);
 char *flb_config_prop_get(char *key, struct mk_list *list);
 int flb_config_set_property(struct flb_config *config,
                             char *k, char *v);
+#ifdef FLB_HAVE_STATIC_CONF
+struct mk_rconf *flb_config_static_open(char *file);
+#endif
+
 struct flb_service_config {
     char    *key;
     int     type;
@@ -196,20 +204,26 @@ enum conf_type {
 };
 
 #define FLB_CONF_STR_FLUSH    "Flush"
+#define FLB_CONF_STR_GRACE    "Grace"
 #define FLB_CONF_STR_DAEMON   "Daemon"
 #define FLB_CONF_STR_LOGFILE  "Log_File"
 #define FLB_CONF_STR_LOGLEVEL "Log_Level"
 #define FLB_CONF_STR_PARSERS_FILE "Parsers_File"
 #define FLB_CONF_STR_PLUGINS_FILE "Plugins_File"
+
+/* FLB_HAVE_HTTP_SERVER */
 #ifdef FLB_HAVE_HTTP_SERVER
 #define FLB_CONF_STR_HTTP_SERVER  "HTTP_Server"
 #define FLB_CONF_STR_HTTP_LISTEN  "HTTP_Listen"
 #define FLB_CONF_STR_HTTP_PORT    "HTTP_Port"
-#endif /* FLB_HAVE_HTTP_SERVER */
+#endif /* !FLB_HAVE_HTTP_SERVER */
+
+/* FLB_HAVE_BUFFERING */
 #ifdef FLB_HAVE_BUFFERING
 #define FLB_CONF_STR_BUF_PATH     "Buffer_Path"
 #define FLB_CONF_STR_BUF_WORKERS  "Buffer_Workers"
-#endif /*FLB_HAVE_BUFFERING*/
+#endif /* !FLB_HAVE_BUFFERING */
 
+#define FLB_CONF_STR_CORO_STACK_SIZE "Coro_Stack_Size"
 
 #endif

@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 
+#include <mk_core/mk_core_info.h>
 #include <mk_core/mk_macros.h>
 #include <mk_core/mk_utils.h>
 #include <mk_core/mk_memory.h>
@@ -36,7 +37,7 @@
 #include <stdio.h>
 
 /* OSX and Windows lacks of memrchr() */
-#if defined (__APPLE__) || defined (_WIN32)
+#if !defined(MK_HAVE_MEMRCHR)
 void *memrchr(const void *s, int c, size_t n)
 {
     const unsigned char *cp;

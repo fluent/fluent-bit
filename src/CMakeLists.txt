@@ -30,6 +30,8 @@ set(src
   flb_scheduler.c
   flb_io.c
   flb_upstream.c
+  flb_upstream_ha.c
+  flb_upstream_node.c
   flb_router.c
   flb_oauth2.c
   flb_http_client.c
@@ -56,6 +58,7 @@ if(FLB_REGEX)
     flb_parser_json.c
     flb_parser_decoder.c
     flb_parser_ltsv.c
+    flb_parser_logfmt.c
     )
 endif()
 
@@ -78,13 +81,6 @@ if(FLB_PROXY_GO)
   set(src
     ${src}
     "flb_plugin_proxy.c"
-    )
-endif()
-
-if(FLB_STATS)
-  set(src
-    ${src}
-    "flb_stats.c"
     )
 endif()
 
@@ -149,6 +145,12 @@ if(FLB_SQLDB)
     "sqlite3")
 endif()
 
+if(FLB_STATIC_CONF)
+  set(src
+    ${src}
+    "flb_config_static.c"
+    )
+endif()
 
 include(CheckSymbolExists)
 check_symbol_exists(accept4 "sys/socket.h" HAVE_ACCEPT4)
@@ -207,8 +209,9 @@ set(FLB_DEPS
   )
 
 # Shared Library
-if(NOT FLB_WITHOUT_SHARED_LIB)
+if(FLB_SHARED_LIB)
   add_library(fluent-bit-shared SHARED ${src})
+  add_sanitizers(fluent-bit-shared)
   target_link_libraries(fluent-bit-shared ${FLB_DEPS} -lpthread)
   set_target_properties(fluent-bit-shared
     PROPERTIES OUTPUT_NAME fluent-bit)
@@ -219,6 +222,7 @@ endif()
 
 # Static Library
 add_library(fluent-bit-static STATIC ${src})
+add_sanitizers(fluent-bit-static)
 target_link_libraries(fluent-bit-static ${FLB_DEPS})
 
 if(MSVC)
@@ -232,14 +236,15 @@ if(FLB_JEMALLOC)
   target_link_libraries(fluent-bit-static libjemalloc)
 endif()
 
-if(FLB_BUFFERING)
-  target_link_libraries(fluent-bit-static sha1)
-endif()
-
 # Binary / Executable
-if(NOT FLB_WITHOUT_BIN)
+if(FLB_BINARY)
   find_package (Threads)
   add_executable(fluent-bit-bin fluent-bit.c)
+  add_sanitizers(fluent-bit-bin)
+
+  if(FLB_STATIC_CONF)
+    add_dependencies(fluent-bit-bin flb-static-conf)
+  endif()
 
   if(FLB_JEMALLOC)
     target_link_libraries(fluent-bit-bin libjemalloc)
@@ -257,15 +262,23 @@ if(NOT FLB_WITHOUT_BIN)
     ENABLE_EXPORTS ON)
   install(TARGETS fluent-bit-bin RUNTIME DESTINATION ${CMAKE_INSTALL_FULL_BINDIR})
 
-  # Detect init system, install systemd or init.d script
-  if(IS_DIRECTORY /lib/systemd/system)
+  # Detect init system, install upstart, systemd or init.d script
+  if(IS_DIRECTORY /usr/share/upstart)
+    set(FLB_UPSTART_SCRIPT "${PROJECT_SOURCE_DIR}/init/${FLB_OUT_NAME}.conf")
+    configure_file(
+      "${PROJECT_SOURCE_DIR}/init/upstart.in"
+      ${FLB_UPSTART_SCRIPT}
+      )
+    install(FILES ${FLB_UPSTART_SCRIPT} DESTINATION /etc/init)
+    install(DIRECTORY DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}${FLB_OUT_NAME}/")
+  elseif(IS_DIRECTORY /lib/systemd/system)
     set(FLB_SYSTEMD_SCRIPT "${PROJECT_SOURCE_DIR}/init/${FLB_OUT_NAME}.service")
     configure_file(
       "${PROJECT_SOURCE_DIR}/init/systemd.in"
       ${FLB_SYSTEMD_SCRIPT}
       )
     install(FILES ${FLB_SYSTEMD_SCRIPT} DESTINATION /lib/systemd/system)
-    install(DIRECTORY DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/")
+    install(DIRECTORY DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}${FLB_OUT_NAME}/")
   else()
     # FIXME: should we support Sysv init script ?
   endif()

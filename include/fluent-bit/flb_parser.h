@@ -30,6 +30,7 @@
 #define FLB_PARSER_REGEX 1
 #define FLB_PARSER_JSON  2
 #define FLB_PARSER_LTSV  3
+#define FLB_PARSER_LOGFMT 4
 
 struct flb_parser_types {
     char *key;
@@ -95,7 +96,7 @@ int flb_parser_do(struct flb_parser *parser, char *buf, size_t length,
 
 void flb_parser_exit(struct flb_config *config);
 int flb_parser_tzone_offset(char *str, int len, int *tmdiff);
-int flb_parser_frac_tzone(char *str, int len, double *frac, int *tmdiff);
+int flb_parser_frac(char *str, int len, double *frac, char **end);
 int flb_parser_time_lookup(char *time, size_t tsize, time_t now,
                            struct flb_parser *parser,
                            struct tm *tm, double *ns);

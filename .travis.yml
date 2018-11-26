@@ -1,38 +1,65 @@
+dist: xenial
 language: c
+# The leak sanitizer uses ptrace, which doesn't work under the
+# travis container infrastructure, so we enable 'sudo'
+sudo: true
+
+git:
+  depth: 3
+
 compiler:
   - gcc
   - clang
-os:
-  - linux
-  - osx
+
+env:
+  - FLB_OPT="-DFLB_JEMALLOC=On"
+  - FLB_OPT="-DFLB_JEMALLOC=Off"
+  - FLB_OPT="-DSANITIZE_ADDRESS=On"
+  - FLB_OPT="-DSANITIZE_UNDEFINED=On"
+
+# Disable Memory Sanitizer since it causes conflicts on coroutines
+# interfaces. We need to add the stack registrations otherwise it
+# fails with:
+#
+#   ==22536==ERROR: MemorySanitizer: SEGV on unknown...7fe2231f8c48 T22537)
+#   ==22536==The signal is caused by a READ memory access.
+#   ==22536==Hint: PC is at a non-executable region. Maybe a wild jump?
+#            #0 0xaadc6f in _fini (...in/flb-rt-in_cpu+0xaadc6f)
+#
+#  - FLB_OPT="-DSANITIZE_MEMORY=On"
+
+# Many errors on this
+#  - FLB_OPT="-DSANITIZE_THREAD=On"
+
+before_script:
+
+matrix:
+  include:
+    - os: osx
+      env: FLB_OPT="-DFLB_JEMALLOC=Off"
+      script: |
+        ci/do-ut || true
+    - os: linux
+      dist: xenial
+      sudo: true
+      language: node_js
+        - "9"
+      compiler: gcc
+      env: DOCKER_BUILD=1
+      script: |
+        echo "===== BUILD DOCKER IMAGE ======="
+        docker build -t test-image -f Dockerfile .
+        npm install -g bats
+
+script: |
+  echo "CC = $CC, CXX = $CXX"
+  sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 90
+  sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-7 90
+  ci/do-ut
 addons:
   apt:
     sources:
-      - george-edison55-precise-backports # cmake 3.2.3 / doxygen 1.8.3
+      - ubuntu-toolchain-r-test
     packages:
-      - cmake
-      - cmake-data
-env:
-  - FLB_MEM="-DFLB_JEMALLOC=On"
-  - FLB_MEM="-DFLB_JEMALLOC=Off"
-
-notifications:
-  irc: "irc.freenode.net#fluent-bit"
-
-before_script:
-  # Install Toolchain for ksz9692 (ARM)
-  - if [ $TRAVIS_OS_NAME == linux ]; then if [ `uname -m` = x86_64 ]; then sudo apt-get install -qq --force-yes gcc-multilib > /dev/null; fi; fi
-  - if [ $TRAVIS_OS_NAME == linux ]; then wget http://fluentbit.io/ci-toolchains/ksz9692.tar.gz -O /tmp/ksz9692.tar.gz; fi
-  - if [ $TRAVIS_OS_NAME == linux ]; then tar -xf /tmp/ksz9692.tar.gz; fi
-  - if [ $TRAVIS_OS_NAME == linux ]; then export PATH=$PATH:$PWD/ksz9692/bin/; fi
-  # Unpack the sources
-  - cd build
-  - cmake -DFLB_ALL=On -DFLB_WITHOUT_EXAMPLES=On $FLB_FLUSH $FLB_MEM -DFLB_TESTS_INTERNAL=On ../
-
-matrix:
-  exclude:
-    - os: osx
-      env: FLB_MEM="-DFLB_JEMALLOC=On"
-
-script: make
-after_script: make test
+      - gcc-7
+      - g++-7

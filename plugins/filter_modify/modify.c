@@ -31,6 +31,21 @@
 
 #include "modify.h"
 
+static void condition_free(struct modify_condition *condition)
+{
+    flb_free(condition->a);
+    flb_free(condition->b);
+    flb_free(condition->raw_k);
+    flb_free(condition->raw_v);
+
+    if (condition->a_is_regex) {
+        flb_regex_destroy(condition->a_regex);
+    }
+    if (condition->b_is_regex) {
+        flb_regex_destroy(condition->b_regex);
+    }
+}
+
 static void teardown(struct filter_modify_ctx *ctx)
 {
     struct mk_list *tmp;
@@ -41,18 +56,8 @@ static void teardown(struct filter_modify_ctx *ctx)
 
     mk_list_foreach_safe(head, tmp, &ctx->conditions) {
         condition = mk_list_entry(head, struct modify_condition, _head);
-        flb_free(condition->a);
-        flb_free(condition->b);
-        flb_free(condition->raw_k);
-        flb_free(condition->raw_v);
-        if (condition->a_is_regex) {
-            flb_regex_destroy(condition->a_regex);
-        }
-        if (condition->b_is_regex) {
-            flb_regex_destroy(condition->b_regex);
-        }
         mk_list_del(&condition->_head);
-        flb_free(condition);
+        condition_free(condition);
     }
 
     mk_list_foreach_safe(head, tmp, &ctx->rules) {
@@ -89,7 +94,7 @@ static int setup(struct filter_modify_ctx *ctx,
     struct mk_list *split;
     struct flb_split_entry *sentry;
     struct flb_config_prop *prop;
-    struct modify_rule *rule;
+    struct modify_rule *rule = NULL;
     struct modify_condition *condition;
 
     int list_size;
@@ -115,7 +120,6 @@ static int setup(struct filter_modify_ctx *ctx,
         if (list_size == 0 || list_size > 3) {
             flb_error("[filter_modify] Invalid config for %s", prop->key);
             teardown(ctx);
-            flb_free(rule);
             flb_utils_split_free(split);
             return -1;
         }
@@ -125,13 +129,11 @@ static int setup(struct filter_modify_ctx *ctx,
             // Build a condition
             //
 
-            condition = flb_malloc(sizeof(struct modify_condition));
-
+            condition = flb_calloc(1, sizeof(struct modify_condition));
             if (!condition) {
-                flb_error
-                    ("[filter_modify] Unable to allocate memory for condition");
+                flb_error("[filter_modify] Unable to allocate memory for "
+                          "condition");
                 teardown(ctx);
-                flb_free(condition);
                 flb_utils_split_free(split);
                 return -1;
             }
@@ -167,7 +169,7 @@ static int setup(struct filter_modify_ctx *ctx,
             }
             else if (strcasecmp(sentry->value, "key_value_matches") == 0) {
                 condition->conditiontype = KEY_VALUE_MATCHES;
-                condition->a_is_regex = true;
+                condition->b_is_regex = true;
             }
             else if (strcasecmp(sentry->value, "key_value_does_not_match") ==
                      0) {
@@ -193,7 +195,7 @@ static int setup(struct filter_modify_ctx *ctx,
                 flb_error("[filter_modify] Invalid config for %s : %s",
                           prop->key, prop->val);
                 teardown(ctx);
-                flb_free(condition);
+                condition_free(condition);
                 flb_utils_split_free(split);
                 return -1;
             }
@@ -220,6 +222,8 @@ static int setup(struct filter_modify_ctx *ctx,
                     flb_error
                         ("[filter_modify] Unable to create regex for condition %s %s",
                          condition->raw_k, condition->raw_v);
+                    condition_free(condition);
+                    flb_utils_split_free(split);
                     return -1;
                 }
                 else {
@@ -233,9 +237,11 @@ static int setup(struct filter_modify_ctx *ctx,
 
             if (condition->b_is_regex) {
                 if (condition->b_len < 1) {
-                    flb_error
-                        ("[filter_modify] Unable to create regex for condition %s %s",
-                         condition->raw_k, condition->raw_v);
+                    flb_error("[filter_modify] Unable to create regex "
+                              "for condition %s %s",
+                              condition->raw_k, condition->raw_v);
+                    condition_free(condition);
+                    flb_utils_split_free(split);
                     return -1;
                 }
                 else {
@@ -259,12 +265,10 @@ static int setup(struct filter_modify_ctx *ctx,
             //
 
             rule = flb_malloc(sizeof(struct modify_rule));
-
             if (!rule) {
                 flb_error
                     ("[filter_modify] Unable to allocate memory for rule");
                 teardown(ctx);
-                flb_free(condition);
                 flb_utils_split_free(split);
                 return -1;
             }
@@ -387,8 +391,6 @@ static inline bool helper_msgpack_object_matches_regex(msgpack_object * obj,
 
     if (obj->type == MSGPACK_OBJECT_BIN) {
         return false;
-        key = (char *) obj->via.bin.ptr;
-        len = obj->via.bin.size;
     }
     else if (obj->type == MSGPACK_OBJECT_STR) {
         key = (char *) obj->via.str.ptr;
@@ -1404,10 +1406,15 @@ static int cb_modify_filter(void *data, size_t bytes,
     }
     msgpack_unpacked_destroy(&result);
 
+    if(modifications == 0) {
+        msgpack_sbuffer_destroy(&buffer);
+        return FLB_FILTER_NOTOUCH;
+    }
+
     *out_buf = buffer.data;
     *out_size = buffer.size;
 
-    return (modifications == 0) ? FLB_FILTER_NOTOUCH : FLB_FILTER_MODIFIED;
+    return FLB_FILTER_MODIFIED;
 }
 
 static int cb_modify_exit(void *data, struct flb_config *config)

@@ -43,7 +43,6 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
     char *tmp;
     char *p;
     struct flb_kube *ctx;
-    struct flb_parser *parser;
 
     ctx = flb_calloc(1, sizeof(struct flb_kube));
     if (!ctx) {
@@ -101,20 +100,21 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
         ctx->merge_log = flb_utils_bool(tmp);
     }
 
-    /*
-     * FIXME: option disabled due to bug when composing
-     * new outgoing map (also missing unit tests).
-     *
-     * To be re-enabled during 0.13.x series.
-     *
-     * Merge JSON key
-     *
-    tmp = flb_filter_get_property("merge_json_key", i);
+    /* Merge processed log under a new key */
+    tmp = flb_filter_get_property("merge_log_key", i);
     if (tmp) {
-        ctx->merge_json_key = flb_strdup(tmp);
-        ctx->merge_json_key_len = strlen(tmp);
+        ctx->merge_log_key = flb_strdup(tmp);
+        ctx->merge_log_key_len = strlen(tmp);
     }
-    */
+
+    /* On merge, trim field values (remove possible \n or \r) */
+    tmp = flb_filter_get_property("merge_log_trim", i);
+    if (tmp) {
+        ctx->merge_log_trim = flb_utils_bool(tmp);
+    }
+    else {
+        ctx->merge_log_trim = FLB_TRUE;
+    }
 
     /* Get Kubernetes API server */
     url = flb_filter_get_property("kube_url", i);
@@ -152,6 +152,14 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
             ctx->api_host = flb_strdup(p);
             ctx->api_port = FLB_API_PORT;
         }
+    }
+
+    /* If set, meta-data load will be attempted from files in this dir,
+       falling back to API if not existing.
+    */
+    tmp = flb_filter_get_property("kube_meta_preload_cache_dir", i);
+    if (tmp) {
+        ctx->meta_preload_cache_dir = flb_strdup(tmp);
     }
 
     /* Kubernetes TLS */
@@ -289,6 +297,9 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
         return;
     }
 
+    if (ctx->meta_preload_cache_dir) {
+        flb_free(ctx->meta_preload_cache_dir);
+    }
     if (ctx->hash_table) {
         flb_hash_destroy(ctx->hash_table);
     }
@@ -297,12 +308,12 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
         flb_free(ctx->unesc_buf);
     }
 
-    if (ctx->merge_json_key) {
-        flb_free(ctx->merge_json_key);
+    if (ctx->merge_log_key) {
+        flb_free(ctx->merge_log_key);
     }
 
     /* Destroy regex content only if a parser was not defined */
-    if (ctx->parser == NULL) {
+    if (ctx->parser == NULL && ctx->regex) {
         flb_regex_destroy(ctx->regex);
     }
 

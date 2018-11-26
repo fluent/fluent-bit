@@ -239,6 +239,7 @@ int flb_plugin_proxy_conf_file(char *file, struct flb_config *config)
     struct mk_list *head_e;
     struct stat st;
 
+#ifndef FLB_HAVE_STATIC_CONF
     ret = stat(file, &st);
     if (ret == -1 && errno == ENOENT) {
         /* Try to resolve the real path (if exists) */
@@ -258,6 +259,10 @@ int flb_plugin_proxy_conf_file(char *file, struct flb_config *config)
 
     flb_debug("[plugin] opening configuration file %s", cfg);
     fconf = mk_rconf_open(cfg);
+#else
+    fconf = flb_config_static_open(file);
+#endif
+
     if (!fconf) {
         return -1;
     }

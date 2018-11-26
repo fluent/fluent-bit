@@ -21,19 +21,32 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_utils.h>
 
 #include "lua_config.h"
 
-#include <fcntl.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
                                      struct flb_config *config)
 {
     int ret;
     char *tmp;
+    char *tmp_key;
+    char buf[PATH_MAX];
+    char *script = NULL;
     (void) config;
+    struct stat st;
     struct lua_filter *lf;
+    struct mk_list *split   = NULL;
+    struct mk_list *head    = NULL;
+    struct mk_list *tmp_list= NULL;
+    struct l2c_type  *l2c   = NULL;
+    struct flb_split_entry *sentry = NULL;
 
     /* Allocate context */
     lf = flb_calloc(1, sizeof(struct lua_filter));
@@ -42,6 +55,8 @@ struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
         return NULL;
     }
 
+    mk_list_init(&lf->l2c_types);
+
     /* Config: script */
     tmp = flb_filter_get_property("script", ins);
     if (!tmp) {
@@ -49,16 +64,33 @@ struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
         flb_free(lf);
         return NULL;
     }
+    script = tmp;
 
-    /* Validate path */
-    ret = access(tmp, R_OK);
+    /* Compose path */
+    ret = stat(tmp, &st);
+    if (ret == -1 && errno == ENOENT) {
+        if (tmp[0] == '/') {
+            flb_error("[filter_lua] cannot access script '%s'", tmp);
+            flb_free(lf);
+            return NULL;
+        }
+
+        if (config->conf_path) {
+            snprintf(buf, sizeof(buf) - 1, "%s%s",
+                     config->conf_path, tmp);
+            script = buf;
+        }
+    }
+
+    /* Validate script path */
+    ret = access(script, R_OK);
     if (ret == -1) {
-        flb_error("[filter_lua] cannot access script '%s'", tmp);
+        flb_error("[filter_lua] cannot access script '%s'", script);
         flb_free(lf);
         return NULL;
     }
 
-    lf->script = flb_sds_create(tmp);
+    lf->script = flb_sds_create(script);
     if (!lf->script) {
         flb_error("[filter_lua] could not allocate string");
         flb_free(lf);
@@ -87,11 +119,35 @@ struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
         return NULL;
     }
 
+    lf->l2c_types_num = 0;
+    tmp = flb_filter_get_property("type_int_key", ins);
+    if (tmp) {
+        split = flb_utils_split(tmp, ' ', L2C_TYPES_NUM_MAX);
+        mk_list_foreach_safe(head, tmp_list, split) {
+            l2c = flb_malloc(sizeof(struct l2c_type));
+
+            sentry = mk_list_entry(head, struct flb_split_entry, _head);
+
+            tmp_key = flb_strndup(sentry->value, sentry->len);
+            l2c->key = flb_sds_create(tmp_key);
+            flb_free(tmp_key);
+
+            mk_list_add(&l2c->_head, &lf->l2c_types);
+            lf->l2c_types_num++;
+        }
+        flb_utils_split_free(split);
+    }
+
+
     return lf;
 }
 
 void lua_config_destroy(struct lua_filter *lf)
 {
+    struct mk_list  *tmp_list = NULL;
+    struct mk_list  *head     = NULL;
+    struct l2c_type *l2c      = NULL;
+
     if (!lf) {
         return;
     }
@@ -105,5 +161,18 @@ void lua_config_destroy(struct lua_filter *lf)
     if (lf->buffer) {
         flb_sds_destroy(lf->buffer);
     }
+
+    mk_list_foreach_safe(head, tmp_list, &lf->l2c_types) {
+        l2c = mk_list_entry(head, struct l2c_type, _head);
+        if (l2c) {
+            if (l2c->key) {
+                flb_sds_destroy(l2c->key);
+            }
+            mk_list_del(&l2c->_head);
+            flb_free(l2c);
+        }
+    }
+
+
     flb_free(lf);
 }

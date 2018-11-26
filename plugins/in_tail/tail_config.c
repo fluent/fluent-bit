@@ -28,6 +28,7 @@
 #include "tail_db.h"
 #include "tail_config.h"
 #include "tail_scan.h"
+#include "tail_dockermode.h"
 #include "tail_multiline.h"
 
 struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
@@ -153,6 +154,21 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
             ctx->multiline = FLB_TRUE;
             ret = flb_tail_mult_create(ctx, i_ins, config);
             if (ret == -1) {
+                flb_tail_config_destroy(ctx);
+                return NULL;
+            }
+        }
+    }
+
+    /* Config: Docker mode */
+    tmp = flb_input_get_property("docker_mode", i_ins);
+    if (tmp) {
+        ret = flb_utils_bool(tmp);
+        if (ret == FLB_TRUE) {
+            ctx->docker_mode = FLB_TRUE;
+            ret = flb_tail_dmode_create(ctx, i_ins, config);
+            if (ret == -1) {
+                flb_tail_config_destroy(ctx);
                 return NULL;
             }
         }
@@ -211,6 +227,12 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
         ctx->skip_long_lines = flb_utils_bool(tmp);
     }
 
+    /* Config: Exit on EOF (for testing) */
+    tmp = flb_input_get_property("exit_on_eof", i_ins);
+    if (tmp) {
+        ctx->exit_on_eof = flb_utils_bool(tmp);
+    }
+
     /* Validate buffer limit */
     if (ctx->buf_chunk_size > ctx->buf_max_size) {
         flb_error("[in_tail] buffer_max_size must be >= buffer_chunk");
@@ -233,6 +255,22 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
     mk_list_init(&ctx->files_event);
     mk_list_init(&ctx->files_rotated);
     ctx->db = NULL;
+
+#ifdef FLB_HAVE_REGEX
+    tmp = flb_input_get_property("tag_regex", i_ins);
+    if (tmp) {
+        ctx->tag_regex = flb_regex_create((unsigned char *) tmp);
+        if (ctx->tag_regex) {
+            ctx->dynamic_tag = FLB_TRUE;
+        }
+        else {
+            flb_error("[in_tail] invalid 'tag_regex' config value");
+        }
+    }
+    else {
+        ctx->tag_regex = NULL;
+    }
+#endif
 
     /* Check if it should use dynamic tags */
     tmp = strchr(i_ins->tag, '*');
@@ -282,6 +320,12 @@ int flb_tail_config_destroy(struct flb_tail_config *config)
     close(config->ch_manager[1]);
     close(config->ch_pending[0]);
     close(config->ch_pending[1]);
+
+#ifdef FLB_HAVE_REGEX
+    if (config->tag_regex) {
+        flb_regex_destroy(config->tag_regex);
+    }
+#endif
 
     if (config->db != NULL) {
         flb_tail_db_close(config->db);

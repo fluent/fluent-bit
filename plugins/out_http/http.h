@@ -24,6 +24,7 @@
 #define FLB_HTTP_OUT_JSON           1
 #define FLB_HTTP_OUT_JSON_STREAM    2
 #define FLB_HTTP_OUT_JSON_LINES     3
+#define FLB_HTTP_OUT_GELF           4
 
 #define FLB_JSON_DATE_DOUBLE      0
 #define FLB_JSON_DATE_ISO8601     1
@@ -33,7 +34,7 @@
 #define FLB_HTTP_MIME_MSGPACK   "application/msgpack"
 #define FLB_HTTP_MIME_JSON      "application/json"
 
-struct flb_out_http_config {
+struct flb_out_http {
     /* HTTP Auth */
     char *http_user;
     char *http_passwd;
@@ -54,6 +55,9 @@ struct flb_out_http_config {
     char *uri;
     char *host;
     int port;
+
+    /* GELF fields */
+    struct flb_gelf_fields gelf_fields;
 
     /* Include tag in header */
     char *header_tag;

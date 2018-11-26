@@ -22,7 +22,8 @@ libonigmo_la_SOURCES = regint.h regparse.h regenc.h st.h \
 	$(encdir)/utf_16be.c $(encdir)/utf_16le.c \
 	$(encdir)/utf_32be.c $(encdir)/utf_32le.c \
 	$(encdir)/unicode/casefold.h $(encdir)/unicode/name2ctype.h \
-	$(encdir)/euc_jp.c $(encdir)/shift_jis.c $(encdir)/windows_31j.c \
+	$(encdir)/euc_jp.c $(encdir)/shift_jis.c $(encdir)/shift_jis.h \
+	$(encdir)/windows_31j.c \
 	$(encdir)/jis/props.h $(encdir)/jis/props.kwd \
 	$(encdir)/iso_8859.h $(encdir)/iso_8859_1.c \
 	$(encdir)/iso_8859_2.c  $(encdir)/iso_8859_3.c \

@@ -72,6 +72,10 @@ static inline void flb_time_from_double(struct flb_time *dst, double d)
     dst->tm.tv_nsec = (d - dst->tm.tv_sec) * 1000000000L;
 }
 
+static inline int flb_time_equal(struct flb_time *t0, struct flb_time *t1) {
+    return t0->tm.tv_sec == t1->tm.tv_sec && t0->tm.tv_nsec == t1->tm.tv_nsec;
+}
+
 int flb_time_get(struct flb_time *tm);
 double flb_time_to_double(struct flb_time *tm);
 int flb_time_diff(struct flb_time *time1,

@@ -13,6 +13,8 @@ include(GNUInstallDirs)
 include(ExternalProject)
 include(cmake/FindJournald.cmake)
 include(cmake/FindMonkey.cmake)
+set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/sanitizers-cmake/cmake" ${CMAKE_MODULE_PATH})
+find_package(Sanitizers)
 
 # Output paths
 set(FLB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -21,8 +23,8 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/lib")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/library")
 
 # Fluent Bit Version
-set(FLB_VERSION_MAJOR  0)
-set(FLB_VERSION_MINOR 14)
+set(FLB_VERSION_MAJOR  1)
+set(FLB_VERSION_MINOR  0)
 set(FLB_VERSION_PATCH  0)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
@@ -32,22 +34,23 @@ option(FLB_DEBUG              "Build with debug symbols"      No)
 option(FLB_JEMALLOC           "Build with Jemalloc support"   No)
 option(FLB_REGEX              "Build wiht Regex support"     Yes)
 option(FLB_TLS                "Build with SSL/TLS support"    No)
-option(FLB_WITHOUT_BIN        "Do not build executable"       No)
-option(FLB_WITHOUT_EXAMPLES   "Do not build examples"         No)
-option(FLB_WITHOUT_SHARED_LIB "Do not build shared library"   No)
-option(FLB_STATS              "Enable stats support"          No)
+option(FLB_BINARY             "Build executable binary"      Yes)
+option(FLB_EXAMPLES           "Build examples"               Yes)
+option(FLB_SHARED_LIB         "Build shared library"         Yes)
 option(FLB_VALGRIND           "Enable Valgrind support"       No)
 option(FLB_TRACE              "Enable trace mode"             No)
 option(FLB_TESTS_RUNTIME      "Enable runtime tests"          No)
-option(FLB_TESTS_INTERNAL     "Enabel internal tests"         No)
+option(FLB_TESTS_INTERNAL     "Enable internal tests"         No)
 option(FLB_MTRACE             "Enable mtrace support"         No)
 option(FLB_BUFFERING          "Enable buffering support"      No)
 option(FLB_POSIX_TLS          "Force POSIX thread storage"    No)
-option(FLB_WITHOUT_INOTIFY    "Disable inotify support"       No)
+option(FLB_INOTIFY            "Enable inotify support"       Yes)
 option(FLB_SQLDB              "Enable SQL embedded DB"        No)
 option(FLB_HTTP_SERVER        "Enable HTTP Server"            No)
 option(FLB_BACKTRACE          "Enable stacktrace support"    Yes)
 option(FLB_LUAJIT             "Enable Lua Scripting support" Yes)
+option(FLB_STATIC_CONF        "Build binary using static configuration")
+option(FLB_CORO_STACK_SIZE    "Set coroutine stack size")
 
 # Metrics: Experimental Feature, disabled by default on 0.12 series
 # but enabled in the upcoming 0.13 release. Note that development
@@ -98,6 +101,7 @@ option(FLB_OUT_COUNTER     "Enable Counter output plugin"       Yes)
 option(FLB_OUT_ES          "Enable Elasticsearch output plugin" Yes)
 option(FLB_OUT_EXIT        "Enable Exit output plugin"          Yes)
 option(FLB_OUT_FORWARD     "Enable Forward output plugin"       Yes)
+option(FLB_OUT_GELF        "Enable GELF output plugin"          Yes)
 option(FLB_OUT_HTTP        "Enable HTTP output plugin"          Yes)
 option(FLB_OUT_INFLUXDB    "Enable InfluxDB output plugin"      Yes)
 option(FLB_OUT_NATS        "Enable NATS output plugin"          Yes)
@@ -147,6 +151,7 @@ if(FLB_ALL)
   # Output plugins
   set(FLB_OUT_ES       1)
   set(FLB_OUT_FORWARD  1)
+  set(FLB_OUT_GELF     1)
   set(FLB_OUT_HTTP     1)
   set(FLB_OUT_NATS     1)
   set(FLB_OUT_NULL     1)
@@ -167,6 +172,13 @@ if(FLB_DEV)
   set(FLB_TESTS_INTERNAL On)
 endif()
 
+if(FLB_OUT_GELF)
+  find_package( ZLIB )
+  if ( NOT ZLIB_FOUND )
+     set(FLB_OUT_GELF 0)
+  endif()
+endif()
+
 # Macro to set definitions
 macro(FLB_DEFINITION var)
   add_definitions(-D${var})
@@ -183,14 +195,18 @@ if(FLB_DEBUG)
   set(CMAKE_BUILD_TYPE "Debug")
 endif()
 
+# Is sanitize_address defined ?
+if(SANITIZE_ADDRESS)
+  FLB_DEFINITION(FLB_HAVE_SANITIZE_ADDRESS)
+endif()
+
 # General Headers
 include_directories(
   include/
   lib/
   lib/flb_libco
-  lib/sha1
-  lib/msgpack-2.1.3/include
-  lib/luajit-2.0.5/src/
+  lib/msgpack-3.1.1/include
+  lib/LuaJIT-2.1.0-beta3/src/
   ${MONKEY_INCLUDE_DIR}
   )
 
@@ -211,16 +227,12 @@ option(MSGPACK_ENABLE_CXX             OFF)
 option(MSGPACK_ENABLE_SHARED          OFF)
 option(MSGPACK_BUILD_TESTS            OFF)
 option(MSGPACK_BUILD_EXAMPLES         OFF)
-add_subdirectory(lib/msgpack-2.1.3 EXCLUDE_FROM_ALL)
+add_subdirectory(lib/msgpack-3.1.1 EXCLUDE_FROM_ALL)
 
 # Lib: build the core libraries used by Fluent-Bit
 FLB_DEFINITION(JSMN_PARENT_LINKS)
 FLB_DEFINITION(JSMN_STRICT)
 add_subdirectory(lib/jsmn)
-
-if(FLB_BUFFERING)
-  add_subdirectory(lib/sha1)
-endif()
 
 # Runtime Tests (filter_kubernetes) requires HTTP Server
 if(FLB_TESTS_RUNTIME)
@@ -251,8 +263,8 @@ if(FLB_TLS)
   option(ENABLE_TESTING  OFF)
   option(ENABLE_PROGRAMS OFF)
   option(INSTALL_MBEDTLS_HEADERS OFF)
-  add_subdirectory(lib/mbedtls-2.8.0 EXCLUDE_FROM_ALL)
-  include_directories(lib/mbedtls-2.8.0/include)
+  add_subdirectory(lib/mbedtls-2.13.0 EXCLUDE_FROM_ALL)
+  include_directories(lib/mbedtls-2.13.0/include)
 endif()
 
 # Metrics
@@ -266,8 +278,8 @@ endif()
 
 if(FLB_SQLDB)
   FLB_DEFINITION(FLB_HAVE_SQLDB)
-  add_subdirectory(lib/sqlite-amalgamation-3230000)
-  include_directories(lib/sqlite-amalgamation-3230000)
+  add_subdirectory(lib/sqlite-amalgamation-3240000)
+  include_directories(lib/sqlite-amalgamation-3240000)
 endif()
 
 if(FLB_BUFFERING)
@@ -276,10 +288,6 @@ endif()
 
 if(FLB_TRACE)
   FLB_DEFINITION(FLB_HAVE_TRACE)
-endif()
-
-if(FLB_STATS)
-  FLB_DEFINITION(FLB_HAVE_STATS)
 endif()
 
 if(FLB_HTTP_SERVER)
@@ -347,6 +355,24 @@ if(FLB_HAVE_TIMESPEC_GET)
   FLB_DEFINITION(FLB_HAVE_TIMESPEC_GET)
 endif()
 
+# Build tools/xxd-c
+add_subdirectory(tools/xxd-c)
+
+# Static configuration generator (using xxd-c)
+if(FLB_STATIC_CONF)
+  FLB_DEFINITION(FLB_HAVE_STATIC_CONF)
+  add_subdirectory(gen_static_conf)
+endif()
+
+# Special definition to set the coroutine stack size
+if(FLB_CORO_STACK_SIZE)
+  add_definitions(-DFLB_CORO_STACK_SIZE=${FLB_CORO_STACK_SIZE})
+  set(FLB_BUILD_FLAGS "${FLB_BUILD_FLAGS}#ifndef FLB_CORO_STACK_SIZE\n#define FLB_CORO_STACK_SIZE ${FLB_CORO_STACK_SIZE}\n#endif\n")
+else()
+
+endif()
+
+# TD Agent options
 if(FLB_TD)
   FLB_DEFINITION(FLB_IS_TD_AGENT)
   FLB_OPTION(FLB_JEMALLOC ON)
@@ -399,8 +425,8 @@ endif()
 if(FLB_BACKTRACE)
   FLB_DEFINITION(FLB_HAVE_LIBBACKTRACE)
   ExternalProject_Add(backtrace
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-177940370/
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-177940370/configure ${AUTOCONF_HOST_OPT} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-5a99ff7f/
+    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-5a99ff7f/configure ${AUTOCONF_HOST_OPT} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
     BUILD_COMMAND ${MAKE}
     )
   add_library(libbacktrace STATIC IMPORTED GLOBAL)
@@ -429,7 +455,7 @@ endif()
 # LuaJIT (Scripting Support)
 # ==========================
 if(FLB_LUAJIT)
-  set(LUA_PATH ${CMAKE_CURRENT_SOURCE_DIR}/lib/luajit-2.0.5)
+  set(LUA_PATH ${CMAKE_CURRENT_SOURCE_DIR}/lib/LuaJIT-2.1.0-beta3)
   ExternalProject_Add(luajit
     SOURCE_DIR ${LUA_PATH}
     CONFIGURE_COMMAND ${LUA_PATH}/configure
@@ -474,7 +500,7 @@ if(FLB_HAVE_ACCEPT4)
 endif()
 
 # inotify_init(2)
-if(NOT FLB_WITHOUT_INOTIFY)
+if(FLB_INOTIFY)
   check_c_source_compiles("
     #include <sys/inotify.h>
     int main() {
@@ -500,7 +526,7 @@ add_subdirectory(include)
 add_subdirectory(plugins)
 add_subdirectory(src)
 
-if(NOT FLB_WITHOUT_EXAMPLES)
+if(FLB_EXAMPLES)
   add_subdirectory(examples)
 endif()
 

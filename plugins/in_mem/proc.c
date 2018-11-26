@@ -55,25 +55,23 @@ static char *file_to_buffer(const char *path)
 {
     FILE *fp;
     char *buffer;
-    long bytes;
 
     if (!(fp = fopen(path, "r"))) {
         flb_errno();
         return NULL;
     }
 
-    buffer = flb_malloc(PROC_STAT_BUF_SIZE);
+    buffer = flb_calloc(1, PROC_STAT_BUF_SIZE);
     if (!buffer) {
         fclose(fp);
         flb_errno();
         return NULL;
     }
 
-    bytes = fread(buffer, PROC_STAT_BUF_SIZE, 1, fp);
-    if (bytes < 0) {
+    fread(buffer, PROC_STAT_BUF_SIZE, 1, fp);
+    if (ferror(fp) || !feof(fp)) {
         flb_free(buffer);
         fclose(fp);
-        flb_errno();
         return NULL;
     }
 
@@ -99,6 +97,7 @@ struct proc_task *proc_stat(pid_t pid, int page_size)
     /* Compose path for /proc/PID/stat */
     ret = snprintf(pid_path, PROC_PID_SIZE, "/proc/%i/stat", pid);
     if (ret < 0) {
+        flb_free(t);
         flb_errno();
         return NULL;
     }
@@ -121,8 +120,17 @@ struct proc_task *proc_stat(pid_t pid, int page_size)
     }
     p++;
 
-    q = p;
-    while (*q != ')') q++;
+    /* seek from tail of file.  */
+    q = buf + (PROC_STAT_BUF_SIZE - 1);
+    while (*q != ')' && p < q) {
+        q--;
+    }
+    if (p >= q) {
+        flb_free(buf);
+        flb_free(t);
+        return NULL;
+    }
+
     strncpy(t->comm, p, q - p);
     q += 2;
 

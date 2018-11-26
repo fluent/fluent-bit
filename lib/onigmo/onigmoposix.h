@@ -140,6 +140,7 @@ ONIG_EXTERN int  onig_set_default_syntax(const OnigSyntaxType* syntax);
 ONIG_EXTERN void onig_copy_syntax(OnigSyntaxType* to, const OnigSyntaxType* from);
 ONIG_EXTERN const char* onig_version(void);
 ONIG_EXTERN const char* onig_copyright(void);
+ONIG_EXTERN int onig_end(void);
 
 #endif /* ONIGMO_H */
 

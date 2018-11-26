@@ -45,6 +45,10 @@ struct flb_service_config service_configs[] = {
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, flush)},
 
+    {FLB_CONF_STR_GRACE,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, grace)},
+
     {FLB_CONF_STR_DAEMON,
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, daemon)},
@@ -88,6 +92,10 @@ struct flb_service_config service_configs[] = {
      offsetof(struct flb_config, buffer_workers)},
 #endif
 
+    {FLB_CONF_STR_CORO_STACK_SIZE,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, coro_stack_size)},
+
     {NULL, FLB_CONF_TYPE_OTHER, 0} /* end of array */
 };
 
@@ -98,9 +106,14 @@ struct flb_config *flb_config_init()
 
     config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
-        perror("malloc");
+        flb_errno();
         return NULL;
     }
+
+    MK_EVENT_ZERO(&config->ch_event);
+    MK_EVENT_ZERO(&config->event_flush);
+    MK_EVENT_ZERO(&config->event_shutdown);
+
     config->is_running = FLB_TRUE;
 
     /* Flush */
@@ -114,6 +127,7 @@ struct flb_config *flb_config_init()
     config->init_time    = time(NULL);
     config->kernel       = flb_kernel_info();
     config->verbose      = 3;
+    config->grace        = 5;
 
 #ifdef FLB_HAVE_HTTP_SERVER
     config->http_ctx     = NULL;
@@ -136,6 +150,10 @@ struct flb_config *flb_config_init()
     mk_list_init(&config->luajit_list);
 #endif
 
+    /* Set default coroutines stack size */
+    config->coro_stack_size = FLB_THREAD_STACK_SIZE;
+
+    /* Initialize linked lists */
     mk_list_init(&config->collectors);
     mk_list_init(&config->in_plugins);
     mk_list_init(&config->parser_plugins);
@@ -363,7 +381,15 @@ int flb_config_set_property(struct flb_config *config,
     while (key != NULL) {
         if (prop_key_check(key, k,len) == 0) {
             if (!strncasecmp(key, FLB_CONF_STR_LOGLEVEL, 256)) {
-                ret = set_log_level(config, v);
+                tmp = flb_env_var_translate(config->env, v);
+                if (tmp) {
+                    ret = set_log_level(config, tmp);
+                    flb_free(tmp);
+                    tmp = NULL;
+                }
+                else {
+                    ret = set_log_level(config, v);
+                }
             }
             else if (!strncasecmp(key, FLB_CONF_STR_PARSERS_FILE, 32)) {
 #ifdef FLB_HAVE_REGEX

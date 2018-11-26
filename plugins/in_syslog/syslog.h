@@ -27,6 +27,7 @@
 #define FLB_SYSLOG_UNIX_TCP  1
 #define FLB_SYSLOG_UNIX_UDP  2
 #define FLB_SYSLOG_TCP       3
+#define FLB_SYSLOG_UDP       4
 
 /* 32KB chunk size */
 #define FLB_SYSLOG_CHUNK   32768
@@ -36,13 +37,18 @@ struct flb_syslog {
     /* Listening mode: unix udp, unix tcp or normal tcp */
     int mode;
 
-    /* TCP Network mode */
+    /* Network mode */
     char *listen;
-    char *tcp_port;
+    char *port;
 
     /* Unix socket (UDP/TCP)*/
     int server_fd;
     char *unix_path;
+
+    /* UDP buffer, data length and buffer size */
+    char *buffer_data;
+    size_t buffer_len;
+    size_t buffer_size;
 
     /* Buffers setup */
     size_t buffer_max_size;

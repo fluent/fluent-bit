@@ -24,6 +24,8 @@
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_sds.h>
 #include <msgpack.h>
 
 #include <stdio.h>
@@ -31,12 +33,12 @@
 #include <assert.h>
 #include <errno.h>
 
-
 #include "http.h"
+#include "http_conf.h"
 
 struct flb_output_plugin out_http_plugin;
 
-static char *msgpack_to_json(struct flb_out_http_config *ctx, char *data, uint64_t bytes, uint64_t *out_size)
+static char *msgpack_to_json(struct flb_out_http *ctx, char *data, uint64_t bytes, uint64_t *out_size)
 {
     int i;
     int ret;
@@ -124,6 +126,10 @@ static char *msgpack_to_json(struct flb_out_http_config *ctx, char *data, uint64
     /* Format to JSON */
     ret = flb_msgpack_raw_to_json_str(tmp_sbuf.data, tmp_sbuf.size,
                                       &json_buf, &json_size);
+    if (ret != 0) {
+        msgpack_sbuffer_destroy(&tmp_sbuf);
+        return NULL;
+    }
 
     /* Optionally convert to JSON stream from JSON array */
     if ((ctx->out_format == FLB_HTTP_OUT_JSON_STREAM) ||
@@ -159,293 +165,50 @@ static char *msgpack_to_json(struct flb_out_http_config *ctx, char *data, uint64
     }
 
     msgpack_sbuffer_destroy(&tmp_sbuf);
-    if (ret != 0) {
-        return NULL;
-    }
 
     *out_size = json_size;
     return json_buf;
 }
 
-int cb_http_init(struct flb_output_instance *ins, struct flb_config *config,
-                     void *data)
+static int cb_http_init(struct flb_output_instance *ins,
+                        struct flb_config *config, void *data)
 {
-    int ulen;
-    int io_flags = 0;
-    char *uri = NULL;
-    char *tmp;
-    struct flb_upstream *upstream;
-    struct flb_out_http_config *ctx = NULL;
-    (void)data;
+    struct flb_out_http *ctx = NULL;
+    (void) data;
 
-    struct mk_list *head;
-    struct mk_list *split = NULL;
-    struct flb_split_entry *sentry;
-    struct flb_config_prop *prop;
-    struct out_http_header *header;
-
-    /* Allocate plugin context */
-    ctx = flb_calloc(1, sizeof(struct flb_out_http_config));
+    ctx = flb_http_conf_create(ins, config);
     if (!ctx) {
-        flb_errno();
         return -1;
-    }
-    /*
-     * Check if a Proxy have been set, if so the Upstream manager will use
-     * the Proxy end-point and then we let the HTTP client know about it, so
-     * it can adjust the HTTP requests.
-     */
-    tmp = flb_output_get_property("proxy", ins);
-    if (tmp) {
-        /*
-         * Here we just want to lookup two things: host and port, we are
-         * going to skip validations as most of them are handled by the HTTP
-         * Client in a later stage.
-         */
-        char *p;
-        char *addr;
-
-        addr = strstr(tmp, "//");
-        if (!addr) {
-            flb_free(ctx);
-            return -1;
-        }
-        addr += 2;              /* get right to the host section */
-        if (*addr == '[') {     /* IPv6 */
-            p = strchr(addr, ']');
-            if (!p) {
-                flb_free(ctx);
-                return -1;
-            }
-            ctx->proxy_host = strndup(addr + 1, (p - addr - 1));
-            p++;
-            if (*p == ':') {
-                p++;
-                ctx->proxy_port = atoi(p);
-            }
-            else {
-            }
-        }
-        else {
-            /* Port lookup */
-            p = strchr(addr, ':');
-            if (p) {
-                p++;
-                ctx->proxy_port = atoi(p);
-                ctx->proxy_host = strndup(addr, (p - addr) - 1);
-            }
-            else {
-                ctx->proxy_host = flb_strdup(addr);
-                ctx->proxy_port = 80;
-            }
-        }
-        ctx->proxy = tmp;
-    }
-    else {
-        if (!ins->host.name) {
-            ins->host.name = flb_strdup("127.0.0.1");
-        }
-        if (ins->host.port == 0) {
-            ins->host.port = 80;
-        }
-    }
-
-    /* Check if SSL/TLS is enabled */
-#ifdef FLB_HAVE_TLS
-    if (ins->use_tls == FLB_TRUE) {
-        io_flags = FLB_IO_TLS;
-    }
-    else {
-        io_flags = FLB_IO_TCP;
-    }
-#else
-    io_flags = FLB_IO_TCP;
-#endif
-
-    if (ins->host.ipv6 == FLB_TRUE) {
-        io_flags |= FLB_IO_IPV6;
-    }
-
-    if (ctx->proxy) {
-        flb_trace("[out_http] Upstream Proxy=%s:%i",
-                  ctx->proxy_host, ctx->proxy_port);
-        upstream = flb_upstream_create(config,
-                                       ctx->proxy_host,
-                                       ctx->proxy_port,
-                                       io_flags, (void *)&ins->tls);
-    }
-    else {
-        upstream = flb_upstream_create(config,
-                                       ins->host.name,
-                                       ins->host.port,
-                                       io_flags, (void *)&ins->tls);
-    }
-
-    if (!upstream) {
-        flb_free(ctx);
-        return -1;
-    }
-
-    if (ins->host.uri) {
-        uri = flb_strdup(ins->host.uri->full);
-    }
-    else {
-        tmp = flb_output_get_property("uri", ins);
-        if (tmp) {
-            uri = flb_strdup(tmp);
-        }
-    }
-
-    if (!uri) {
-        uri = flb_strdup("/");
-    }
-    else if (uri[0] != '/') {
-        ulen = strlen(uri);
-        tmp = flb_malloc(ulen + 2);
-        tmp[0] = '/';
-        memcpy(tmp + 1, uri, ulen);
-        tmp[ulen + 1] = '\0';
-        flb_free(uri);
-        uri = tmp;
-    }
-
-
-    /* HTTP Auth */
-    tmp = flb_output_get_property("http_user", ins);
-    if (tmp) {
-        ctx->http_user = flb_strdup(tmp);
-
-        tmp = flb_output_get_property("http_passwd", ins);
-        if (tmp) {
-            ctx->http_passwd = flb_strdup(tmp);
-        }
-        else {
-            ctx->http_passwd = flb_strdup("");
-        }
-    }
-
-    /* Tag in header */
-    tmp = flb_output_get_property("header_tag", ins);
-    if (tmp) {
-      ctx->header_tag = flb_strdup(tmp);
-      ctx->headertag_len = strlen(ctx->header_tag);
-      flb_info("[out_http] configure to pass tag in header: %s", ctx->header_tag);
-    }
-
-    /* Output format */
-    ctx->out_format = FLB_HTTP_OUT_MSGPACK;
-    tmp = flb_output_get_property("format", ins);
-    if (tmp) {
-        if (strcasecmp(tmp, "msgpack") == 0) {
-            ctx->out_format = FLB_HTTP_OUT_MSGPACK;
-        }
-        else if (strcasecmp(tmp, "json") == 0) {
-            ctx->out_format = FLB_HTTP_OUT_JSON;
-        }
-        else if (strcasecmp(tmp, "json_stream") == 0) {
-            ctx->out_format = FLB_HTTP_OUT_JSON_STREAM;
-        }
-        else if (strcasecmp(tmp, "json_lines") == 0) {
-            ctx->out_format = FLB_HTTP_OUT_JSON_LINES;
-        }
-        else {
-            flb_warn("[out_http] unrecognized 'format' option. Using 'msgpack'");
-        }
-    }
-
-    /* Date format for JSON output */
-    ctx->json_date_format = FLB_JSON_DATE_DOUBLE;
-    tmp = flb_output_get_property("json_date_format", ins);
-    if (tmp) {
-        if (strcasecmp(tmp, "iso8601") == 0) {
-            ctx->json_date_format = FLB_JSON_DATE_ISO8601;
-        }
-    }
-
-    /* Date key for JSON output */
-    tmp = flb_output_get_property("json_date_key", ins);
-    ctx->json_date_key = flb_strdup(tmp ? tmp : "date");
-    ctx->json_date_key_len = strlen(ctx->json_date_key);
-
-    ctx->u = upstream;
-    ctx->uri = uri;
-    ctx->host = ins->host.name;
-    ctx->port = ins->host.port;
-
-    /* Arbitrary HTTP headers to add */
-    ctx->headers_cnt = 0;
-    mk_list_init(&ctx->headers);
-
-    mk_list_foreach(head, &ins->properties) {
-        prop = mk_list_entry(head, struct flb_config_prop, _head);
-        split = flb_utils_split(prop->val, ' ', 2);
-        if (strcasecmp(prop->key, "header") == 0) {
-            header = flb_malloc(sizeof(struct out_http_header));
-            if (!header) {
-                flb_errno();
-                return -1;
-            }
-
-            sentry = mk_list_entry_first(split, struct flb_split_entry, _head);
-            header->key_len = strlen(sentry->value);
-            header->key = flb_strndup(sentry->value, header->key_len);
-
-            sentry = mk_list_entry_last(split, struct flb_split_entry, _head);
-            header->val_len = strlen(sentry->value);
-            header->val = flb_strndup(sentry->value, header->val_len);
-
-            mk_list_add(&header->_head, &ctx->headers);
-            ctx->headers_cnt++;
-        }
-        flb_utils_split_free(split);
     }
 
     /* Set the plugin context */
     flb_output_set_context(ins, ctx);
+
     return 0;
 }
 
-void cb_http_flush(void *data, size_t bytes,
-                        char *tag, int tag_len,
-                        struct flb_input_instance *i_ins,
-                        void *out_context,
-                        struct flb_config *config)
+static int http_post (struct flb_out_http *ctx,
+                      void *body, size_t body_len,
+                      char *tag, int tag_len)
 {
     int ret;
     int out_ret = FLB_OK;
     size_t b_sent;
-    struct flb_out_http_config *ctx = out_context;
     struct flb_upstream *u;
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
-    void *body = NULL;
-    uint64_t body_len;
-    (void)i_ins;
 
     struct mk_list *tmp;
     struct mk_list *head;
     struct out_http_header *header;
 
-    if ((ctx->out_format == FLB_HTTP_OUT_JSON) ||
-        (ctx->out_format == FLB_HTTP_OUT_JSON_STREAM) ||
-        (ctx->out_format == FLB_HTTP_OUT_JSON_LINES)) {
-        body = msgpack_to_json(ctx, data, bytes, &body_len);
-    }
-    else {
-        body = data;
-        body_len = bytes;
-    }
-
     /* Get upstream context and connection */
     u = ctx->u;
     u_conn = flb_upstream_conn_get(u);
     if (!u_conn) {
-        if (body != data) {
-            flb_free(body);
-        }
         flb_error("[out_http] no upstream connections available to %s:%i",
                   u->tcp_host, u->tcp_port);
-        FLB_OUTPUT_RETURN(FLB_RETRY);
+        return FLB_RETRY;
     }
 
     /* Create HTTP client context */
@@ -457,7 +220,8 @@ void cb_http_flush(void *data, size_t bytes,
     /* Append headers */
     if ((ctx->out_format == FLB_HTTP_OUT_JSON) ||
         (ctx->out_format == FLB_HTTP_OUT_JSON_STREAM) ||
-        (ctx->out_format == FLB_HTTP_OUT_JSON_LINES)) {
+        (ctx->out_format == FLB_HTTP_OUT_JSON_LINES) ||
+        (ctx->out_format == FLB_HTTP_OUT_GELF)) {
         flb_http_add_header(c,
                             FLB_HTTP_CONTENT_TYPE,
                             sizeof(FLB_HTTP_CONTENT_TYPE) - 1,
@@ -534,44 +298,106 @@ void cb_http_flush(void *data, size_t bytes,
     /* Release the connection */
     flb_upstream_conn_release(u_conn);
 
+    return out_ret;
+}
+
+static int http_gelf(struct flb_out_http *ctx,
+                     char *data, uint64_t bytes, char *tag, int tag_len)
+{
+    flb_sds_t s;
+    flb_sds_t tmp;
+    msgpack_unpacked result;
+    size_t off = 0;
+    size_t prev_off = 0;
+    size_t size = 0;
+    msgpack_object root;
+    msgpack_object map;
+    msgpack_object *obj;
+    struct flb_time tm;
+    int ret;
+
+    msgpack_unpacked_init(&result);
+
+    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+        size = off - prev_off;
+        prev_off = off;
+        if (result.data.type != MSGPACK_OBJECT_ARRAY) {
+            continue;
+        }
+
+        root = result.data;
+        if (root.via.array.size != 2) {
+            continue;
+        }
+
+        flb_time_pop_from_msgpack(&tm, &result, &obj);
+        map = root.via.array.ptr[1];
+
+        size = (size * 1.4);
+        s = flb_sds_create_size(size);
+        if (s == NULL) {
+            msgpack_unpacked_destroy(&result);
+            return FLB_RETRY;
+        }
+
+        tmp = flb_msgpack_to_gelf(&s, &map, &tm, &(ctx->gelf_fields));
+        if (tmp != NULL) {
+            s = tmp;
+            ret = http_post(ctx, s, flb_sds_len(s), tag, tag_len);
+            if (ret != FLB_OK) {
+                msgpack_unpacked_destroy(&result);
+                flb_sds_destroy(s);
+                return ret;
+            }
+        }
+        else {
+            flb_error("[out_http] error encoding to GELF");
+        }
+
+        flb_sds_destroy(s);
+    }
+
+    msgpack_unpacked_destroy(&result);
+
+    return FLB_OK;
+}
+
+static void cb_http_flush(void *data, size_t bytes,
+                          char *tag, int tag_len,
+                          struct flb_input_instance *i_ins,
+                          void *out_context,
+                          struct flb_config *config)
+{
+    int ret = FLB_ERROR;
+    struct flb_out_http *ctx = out_context;
+    void *body = NULL;
+    uint64_t body_len;
+    (void)i_ins;
+
     if ((ctx->out_format == FLB_HTTP_OUT_JSON) ||
         (ctx->out_format == FLB_HTTP_OUT_JSON_STREAM) ||
         (ctx->out_format == FLB_HTTP_OUT_JSON_LINES)) {
-        flb_free(body);
+        body = msgpack_to_json(ctx, data, bytes, &body_len);
+        if (body != NULL) {
+            ret = http_post(ctx, body, body_len, tag, tag_len);
+            flb_free(body);
+        }
+    }
+    else if (ctx->out_format == FLB_HTTP_OUT_GELF) {
+        ret = http_gelf(ctx, data, bytes, tag, tag_len);
+    }
+    else {
+        ret = http_post(ctx, data, bytes, tag, tag_len);
     }
 
-    FLB_OUTPUT_RETURN(out_ret);
+    FLB_OUTPUT_RETURN(ret);
 }
 
-int cb_http_exit(void *data, struct flb_config *config)
+static int cb_http_exit(void *data, struct flb_config *config)
 {
-    struct flb_out_http_config *ctx = data;
+    struct flb_out_http *ctx = data;
 
-    struct mk_list *tmp;
-    struct mk_list *head;
-    struct out_http_header *header;
-
-    if (ctx->u) {
-        flb_upstream_destroy(ctx->u);
-    }
-
-    flb_free(ctx->http_user);
-    flb_free(ctx->http_passwd);
-    flb_free(ctx->proxy_host);
-    flb_free(ctx->uri);
-    flb_free(ctx->json_date_key);
-    flb_free(ctx->header_tag);
-
-    mk_list_foreach_safe(head, tmp, &ctx->headers) {
-        header = mk_list_entry(head, struct out_http_header, _head);
-        flb_free(header->key);
-        flb_free(header->val);
-        mk_list_del(&header->_head);
-        flb_free(header);
-    }
-
-    flb_free(ctx);
-
+    flb_http_conf_destroy(ctx);
     return 0;
 }
 

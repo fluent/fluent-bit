@@ -30,7 +30,6 @@
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_tls.h>
 #include <fluent-bit/flb_io_tls.h>
-#include <fluent-bit/flb_stats.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_network.h>
@@ -118,7 +117,7 @@ struct flb_tls_context *flb_tls_context_new(int verify,
         ret = mbedtls_x509_crt_parse_path(&ctx->ca_cert, ca_path);
         if (ret < 0) {
             io_tls_error(ret);
-            flb_error("[TLS] error reading certificates from /etc/ssl/certs/");
+            flb_error("[TLS] error reading certificates from %s", ca_path);
             goto error;
         }
     }

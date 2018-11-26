@@ -123,7 +123,7 @@ static int tail_fs_check(struct flb_input_instance *i_ins,
          * user is using an absolute path, otherwise we will be rotating the
          * wrong file.
          */
-        if (strcmp(name, file->name) != 0) {
+        if (flb_tail_file_name_cmp(name, file) != 0) {
             flb_tail_file_rotated(file);
         }
         flb_free(name);

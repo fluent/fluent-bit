@@ -255,13 +255,25 @@ static int cb_parser_filter(void *data, size_t bytes,
                     mk_list_foreach(head, &ctx->parsers) {
                         fp = mk_list_entry(head, struct filter_parser, _head);
 
+                        /* Reset time */
+                        flb_time_zero(&parsed_time);
+
                         parse_ret = flb_parser_do(fp->parser, val_str, val_len,
                                             (void **) &out_buf, &out_size,
                                             &parsed_time);
                         if (parse_ret >= 0) {
-                            if (flb_time_to_double(&parsed_time) != 0) {
+                            /*
+                             * If the parser succeeded we need to check the
+                             * status of the parsed time. If the time was
+                             * parsed successfully 'parsed_time' will be
+                             * different than zero, if so, override the time
+                             * holder with the new value, otherwise keep the
+                             * original.
+                             */
+                            if (flb_time_to_double(&parsed_time) != 0.0) {
                                 flb_time_copy(&tm, &parsed_time);
                             }
+
                             if (ctx->reserve_data) {
                                 if (!ctx->preserve_key) {
                                     append_arr_i--;
@@ -333,10 +345,13 @@ static int cb_parser_exit(void *data, struct flb_config *config)
 {
     struct filter_parser_ctx *ctx = data;
 
-    if (ctx != NULL) {
-        delete_parsers(ctx);
-        flb_free(ctx);
+    if (!ctx) {
+        return 0;
     }
+
+    delete_parsers(ctx);
+    flb_free(ctx->key_name);
+    flb_free(ctx);
     return 0;
 }
 

@@ -31,6 +31,21 @@
 #include "tail_config.h"
 #include "tail_file_internal.h"
 
+#ifdef FLB_HAVE_REGEX
+#define FLB_HASH_TABLE_SIZE 50
+#endif
+
+static inline int flb_tail_file_name_cmp(char *name,
+                                        struct flb_tail_file *file)
+{
+#ifdef __linux__
+    return strcmp(name, file->name);
+#else
+    return strcmp(name, file->real_name);
+#endif
+}
+
+int flb_tail_file_name_dup(char *path, struct flb_tail_file *file);
 int flb_tail_file_to_event(struct flb_tail_file *file);
 int flb_tail_file_chunk(struct flb_tail_file *file);
 int flb_tail_file_append(char *path, struct stat *st, int mode,
@@ -42,5 +57,11 @@ char *flb_tail_file_name(struct flb_tail_file *file);
 int flb_tail_file_rotated(struct flb_tail_file *file);
 int flb_tail_file_rotated_purge(struct flb_input_instance *i_ins,
                                 struct flb_config *config, void *context);
+int flb_tail_pack_line_map(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
+                           struct flb_time *time, char **data,
+                           size_t *data_size, struct flb_tail_file *file);
+int flb_tail_file_pack_line(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
+                            struct flb_time *time, char *data, size_t data_size,
+                            struct flb_tail_file *file);
 
 #endif

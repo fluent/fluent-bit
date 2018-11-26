@@ -1,0 +1,120 @@
+//
+// MessagePack for C++ static resolution routine
+//
+// Copyright (C) 2015-2016 KONDO Takatoshi
+//
+//    Distributed under the Boost Software License, Version 1.0.
+//    (See accompanying file LICENSE_1_0.txt or copy at
+//    http://www.boost.org/LICENSE_1_0.txt)
+//
+#ifndef MSGPACK_V1_CPP03_DEFINE_MAP_HPP
+#define MSGPACK_V1_CPP03_DEFINE_MAP_HPP
+
+#include "msgpack/v1/adaptor/detail/cpp03_define_map_decl.hpp"
+#include "msgpack/adaptor/msgpack_tuple.hpp"
+#include "msgpack/adaptor/adaptor_base.hpp"
+#include "msgpack/object_fwd.hpp"
+
+#include <map>
+
+namespace msgpack {
+/// @cond
+MSGPACK_API_VERSION_NAMESPACE(v1) {
+/// @endcond
+namespace type {
+
+<% GENERATION_LIMIT = 31 %>
+template <>
+struct define_map<> {
+    template <typename Packer>
+    void msgpack_pack(Packer& pk) const
+    {
+        pk.pack_map(0);
+    }
+    void msgpack_unpack(msgpack::object const& o) const
+    {
+        if(o.type != msgpack::type::MAP) { throw msgpack::type_error(); }
+    }
+    void msgpack_object(msgpack::object* o, msgpack::zone&) const
+    {
+        o->type = msgpack::type::MAP;
+        o->via.map.ptr = MSGPACK_NULLPTR;
+        o->via.map.size = 0;
+    }
+};
+
+/// @cond
+<%1.step(GENERATION_LIMIT+1,2) {|i|%>
+template <typename A0<%1.upto(i) {|j|%>, typename A<%=j%><%}%>>
+struct define_map<A0<%1.upto(i) {|j|%>, A<%=j%><%}%>> {
+    define_map(A0& _a0<%1.upto(i) {|j|%>, A<%=j%>& _a<%=j%><%}%>) :
+        a0(_a0)<%1.upto(i) {|j|%>, a<%=j%>(_a<%=j%>)<%}%> {}
+    template <typename Packer>
+    void msgpack_pack(Packer& pk) const
+    {
+        pk.pack_map(<%=(i+1)/2%>);
+        <%0.upto(i) {|j|%>
+        pk.pack(a<%=j%>);<%}%>
+    }
+    void msgpack_unpack(msgpack::object const& o) const
+    {
+        if(o.type != msgpack::type::MAP) { throw msgpack::type_error(); }
+        std::map<std::string, msgpack::object const*> kvmap;
+        for (uint32_t i = 0; i < o.via.map.size; ++i) {
+            if (o.via.map.ptr[i].key.type != msgpack::type::STR) { throw msgpack::type_error(); }
+            kvmap.insert(
+                std::map<std::string, msgpack::object const*>::value_type(
+                    std::string(
+                        o.via.map.ptr[i].key.via.str.ptr,
+                        o.via.map.ptr[i].key.via.str.size),
+                    &o.via.map.ptr[i].val
+                )
+            );
+        }
+        <%0.step(i,2) {|j|%>
+        {
+            std::map<std::string, msgpack::object const*>::const_iterator it = kvmap.find(a<%=j%>);
+            if (it != kvmap.end()) {
+                it->second->convert(a<%=j+1%>);
+            }
+        }
+        <%}%>
+    }
+    void msgpack_object(msgpack::object* o, msgpack::zone& z) const
+    {
+        o->type = msgpack::type::MAP;
+        o->via.map.ptr = static_cast<msgpack::object_kv*>(z.allocate_align(sizeof(msgpack::object_kv)*<%=(i+1)/2%>, MSGPACK_ZONE_ALIGNOF(msgpack::object_kv)));
+        o->via.map.size = <%=(i+1)/2%>;
+        <%0.step(i,2) {|j|%>
+        o->via.map.ptr[<%=j/2%>].key = msgpack::object(a<%=j%>, z);
+        o->via.map.ptr[<%=j/2%>].val = msgpack::object(a<%=j+1%>, z);
+        <%}%>
+    }
+    <%0.upto(i) {|j|%>
+    A<%=j%>& a<%=j%>;<%}%>
+};
+<%}%>
+/// @endcond
+
+inline define_map<> make_define_map()
+{
+    return define_map<>();
+}
+
+/// @cond
+<%0.upto(GENERATION_LIMIT) {|i|%>
+template <typename A0<%1.upto(i) {|j|%>, typename A<%=j%><%}%>>
+inline define_map<A0<%1.upto(i) {|j|%>, A<%=j%><%}%>> make_define_map(A0& a0<%1.upto(i) {|j|%>, A<%=j%>& a<%=j%><%}%>)
+{
+    return define_map<A0<%1.upto(i) {|j|%>, A<%=j%><%}%>>(a0<%1.upto(i) {|j|%>, a<%=j%><%}%>);
+}
+<%}%>
+/// @endcond
+
+}  // namespace type
+/// @cond
+}  // MSGPACK_API_VERSION_NAMESPACE(v1)
+/// @endcond
+}  // namespace msgpack
+
+#endif // MSGPACK_V1_CPP03_DEFINE_MAP_HPP

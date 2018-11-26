@@ -138,6 +138,15 @@ flb_ctx_t *flb_create()
 
     /* Prepare the notification channels */
     ctx->event_channel = flb_calloc(1, sizeof(struct mk_event));
+    if (!ctx->event_channel) {
+        perror("calloc");
+        flb_config_exit(ctx->config);
+        flb_free(ctx);
+        return NULL;
+    }
+
+    MK_EVENT_ZERO(ctx->event_channel);
+
     ret = mk_event_channel_create(config->ch_evl,
                                   &config->ch_notif[0],
                                   &config->ch_notif[1],
@@ -448,6 +457,7 @@ int flb_start(flb_ctx_t *ctx)
 int flb_stop(flb_ctx_t *ctx)
 {
     int ret;
+    pthread_t tid;
 
     if (!ctx->config) {
         return 0;
@@ -458,8 +468,10 @@ int flb_stop(flb_ctx_t *ctx)
     }
 
     flb_debug("[lib] sending STOP signal to the engine");
+
+    tid = ctx->config->worker;
     flb_engine_exit(ctx->config);
-    ret = pthread_join(ctx->config->worker, NULL);
+    ret = pthread_join(tid, NULL);
     flb_debug("[lib] Fluent Bit engine stopped");
 
     return ret;

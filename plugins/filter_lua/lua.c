@@ -28,89 +28,6 @@
 #include "lua_config.h"
 #include <msgpack.h>
 
-/*
- * This function validate if a msgpack formed from a Lua script
- * is a valid Map
- */
-int is_valid_map(char *data, size_t bytes)
-{
-    int ret;
-    size_t off = 0;
-    msgpack_object root;
-    msgpack_unpacked result;
-
-    msgpack_unpacked_init(&result);
-    ret = msgpack_unpack_next(&result, data, bytes, &off);
-    if (ret != MSGPACK_UNPACK_SUCCESS) {
-        msgpack_unpacked_destroy(&result);
-        return FLB_FALSE;
-    }
-    root = result.data;
-    if (root.type != MSGPACK_OBJECT_MAP) {
-        msgpack_unpacked_destroy(&result);
-        return FLB_FALSE;
-    }
-
-    if (root.via.map.size <= 0) {
-        msgpack_unpacked_destroy(&result);
-        return FLB_FALSE;
-    }
-
-    msgpack_unpacked_destroy(&result);
-    return FLB_TRUE;
-}
-
-/*
- *  Based on ffi_new (luajit/src/lib_ffi.c)
- */
-static void *lua_pushcdata(lua_State *l, CTypeID ctypeid)
-{
-    CTSize sz;
-    /* Get ctype info */
-    CTState *cts = ctype_cts(l);
-    CTInfo info = lj_ctype_info(cts, ctypeid, &sz);
-    /* TODO: check if sz == CTSIZE_INVALID */
-
-    /* Allocate C data object. */
-    GCcdata *cd = lj_cdata_new(cts, ctypeid, sz);
-
-    /* Put cdata in the stack */
-    TValue *o = l->top;
-    setcdataV(l, o, cd);
-    incr_top(l);
-
-    if (ctype_isstruct(info)) {
-        /* Initialize cdata. */
-        CType *ct = ctype_raw(cts, ctypeid);
-        lj_cconv_ct_init(cts, ct, sz, cdataptr(cd), o, (MSize)(l->top - o));
-
-        /* Handle ctype __gc metamethod. Use the fast lookup here. */
-        cTValue *tv = lj_tab_getinth(cts->miscmap, -(int32_t)ctypeid);
-        if (tv && tvistab(tv) && (tv = lj_meta_fast(l, tabV(tv), MM_gc))) {
-            GCtab *t = cts->finalizer;
-            if (gcref(t->metatable)) {
-              /* Add to finalizer table, if still enabled. */
-              copyTV(l, lj_tab_set(l, t, o-1), tv);
-              lj_gc_anybarriert(l, t);
-              cd->marked |= LJ_GC_CDATA_FIN;
-            }
-        }
-    }
-
-    lj_gc_check(l);
-    return cdataptr(cd);
-}
-
-static void lua_pushuint64(lua_State *l, uint64_t value)
-{
-    *(uint64_t *) lua_pushcdata(l, CTID_UINT64) = value;
-}
-
-static void lua_pushint64(lua_State *l, int64_t value)
-{
-    *(int64_t *) lua_pushcdata(l, CTID_INT64) = value;
-}
-
 static void lua_pushmsgpack(lua_State *l, msgpack_object *o)
 {
     int i;
@@ -128,11 +45,11 @@ static void lua_pushmsgpack(lua_State *l, msgpack_object *o)
             break;
 
         case MSGPACK_OBJECT_POSITIVE_INTEGER:
-            lua_pushuint64(l, o->via.u64);
+            lua_pushnumber(l, (double) o->via.u64);
             break;
 
         case MSGPACK_OBJECT_NEGATIVE_INTEGER:
-            lua_pushint64(l, o->via.i64);
+            lua_pushnumber(l, (double) o->via.i64);
             break;
 
         case MSGPACK_OBJECT_FLOAT32:
@@ -205,10 +122,43 @@ static int lua_arraylength(lua_State *l)
     return max;
 }
 
-static void lua_tomsgpack(lua_State *l, msgpack_packer *pck, int index)
+static void lua_tomsgpack(struct lua_filter *lf, msgpack_packer *pck, int index);
+static void try_to_convert_data_type(struct lua_filter *lf,
+                                     msgpack_packer *pck,
+                                     int index)
+{
+    size_t   len;
+    const char *tmp = NULL;
+    lua_State *l = lf->lua->state;
+
+    struct mk_list  *tmp_list = NULL;
+    struct mk_list  *head     = NULL;
+    struct l2c_type *l2c      = NULL;
+
+    if ((lua_type(l, -2) == LUA_TSTRING) 
+        && lua_type(l, -1) == LUA_TNUMBER){
+        tmp = lua_tolstring(l, -2, &len);
+        
+        mk_list_foreach_safe(head, tmp_list, &lf->l2c_types) {
+            l2c = mk_list_entry(head, struct l2c_type, _head);
+            if (!strncmp(l2c->key, tmp, len)) {
+                lua_tomsgpack(lf, pck, -1);
+                msgpack_pack_int64(pck, (int)lua_tonumber(l, -1));
+                return;
+            }
+        }
+    }
+
+    /* not matched */
+    lua_tomsgpack(lf, pck, -1);
+    lua_tomsgpack(lf, pck, 0);
+}
+
+static void lua_tomsgpack(struct lua_filter *lf, msgpack_packer *pck, int index)
 {
     int len;
     int i;
+    lua_State *l = lf->lua->state;
 
     switch (lua_type(l, -1 + index)) {
         case LUA_TSTRING:
@@ -240,13 +190,12 @@ static void lua_tomsgpack(lua_State *l, msgpack_packer *pck, int index)
                 msgpack_pack_array(pck, len);
                 for (i = 1; i <= len; i++) {
                     lua_rawgeti(l, -1, i);
-                    lua_tomsgpack(l, pck, 0);
+                    lua_tomsgpack(lf, pck, 0);
                     lua_pop(l, 1);
                 }
             } else
             {
                 len = 0;
-
                 lua_pushnil(l);
                 while (lua_next(l, -2) != 0) {
                     lua_pop(l, 1);
@@ -255,87 +204,49 @@ static void lua_tomsgpack(lua_State *l, msgpack_packer *pck, int index)
                 msgpack_pack_map(pck, len);
 
                 lua_pushnil(l);
-                while (lua_next(l, -2) != 0) {
-                  lua_tomsgpack(l, pck, -1);
-                  lua_tomsgpack(l, pck, 0);
-                  lua_pop(l, 1);
-               }
+
+                if (lf->l2c_types_num > 0) {
+                    /* type conversion */
+                    while (lua_next(l, -2) != 0) {
+                        try_to_convert_data_type(lf, pck, index);
+                        lua_pop(l, 1);
+                    }
+                } else {
+                    while (lua_next(l, -2) != 0) {
+                        lua_tomsgpack(lf, pck, -1);
+                        lua_tomsgpack(lf, pck, 0);
+                        lua_pop(l, 1);
+                    }
+                }
             }
             break;
         case LUA_TNIL:
             msgpack_pack_nil(pck);
             break;
-        case LUA_TCDATA:
-            {
-                int idx = lua_gettop(l) + index;
-                GCcdata *cd = cdataV(l->base + idx - 1);
-		void *cdata = cdataptr(cd);
-                switch (cd->ctypeid) {
-                    case CTID_BOOL:
-			if (*(bool*)cdata)
-                            msgpack_pack_true(pck);
-                        else
-                            msgpack_pack_false(pck);
-                        break;
-                    case CTID_CCHAR:
-                    case CTID_INT8:
-                        msgpack_pack_int64(pck, *(int8_t *)cdata);
-                        break;
-                    case CTID_INT16:
-                        msgpack_pack_int64(pck, *(int16_t *)cdata);
-                        break;
-                    case CTID_INT32:
-                        msgpack_pack_int64(pck, *(int32_t *)cdata);
-                        break;
-                    case CTID_INT64:
-                        msgpack_pack_int64(pck, *(int64_t *)cdata);
-                        break;
-                    case CTID_UINT8:
-                        msgpack_pack_uint64(pck, *(uint8_t *)cdata);
-                        break;
-                    case CTID_UINT16:
-                        msgpack_pack_uint64(pck, *(uint16_t *)cdata);
-                        break;
-                    case CTID_UINT32:
-                        msgpack_pack_uint64(pck, *(uint32_t *)cdata);
-                        break;
-                    case CTID_UINT64:
-                        msgpack_pack_uint64(pck, *(uint64_t *)cdata);
-                        break;
-                    case CTID_FLOAT:
-                        msgpack_pack_double(pck, *(float *)cdata);
-                        break;
-                    case CTID_DOUBLE:
-                        msgpack_pack_double(pck, *(double *)cdata);
-                        break;
-                    default:
-                        msgpack_pack_nil(pck);
-                        break;
-                }
-            }
-            break;
-        case LUA_TLIGHTUSERDATA:
-        case LUA_TFUNCTION:
-        case LUA_TUSERDATA:
-        case LUA_TTHREAD:
-        default:
-            /* cannot serialize */
-            msgpack_pack_nil(pck);
-            break;
 
+         case LUA_TLIGHTUSERDATA:
+            if (lua_touserdata(l, -1 + index) == NULL) {
+                msgpack_pack_nil(pck);
+                break;
+            }
+         case LUA_TFUNCTION:
+         case LUA_TUSERDATA:
+         case LUA_TTHREAD:
+           /* cannot serialize */
+           break;
     }
 }
 
 static int is_valid_func(lua_State *lua, flb_sds_t func)
 {
     int ret = FLB_FALSE;
-    
+
     lua_getglobal(lua, func);
     if (lua_isfunction(lua, -1)) {
         ret = FLB_TRUE;
     }
     lua_pop(lua, -1); /* discard return value of isfunction */
-    
+
     return ret;
 }
 
@@ -358,14 +269,10 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
     /* Create LuaJIT state/vm */
     lj = flb_luajit_create(config);
     if (!lj) {
+        lua_config_destroy(ctx);
         return -1;
     }
     ctx->lua = lj;
-
-    /* Initialize ffi to use CDATA */
-    luaopen_ffi(ctx->lua->state);
-    /* Clean stack */
-    lua_settop(ctx->lua->state, 0);
 
     /* Load Script */
     ret = flb_luajit_load_script(ctx->lua, ctx->script);
@@ -386,6 +293,83 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
     flb_filter_set_context(f_ins, ctx);
 
     return 0;
+}
+
+static int pack_result (double ts, msgpack_packer *pck, msgpack_sbuffer *sbuf,
+                        char *data, size_t bytes)
+{
+    int ret;
+    int size;
+    int i;
+    size_t off = 0;
+    msgpack_object root;
+    msgpack_unpacked result;
+    struct flb_time t;
+
+    msgpack_unpacked_init(&result);
+    ret = msgpack_unpack_next(&result, data, bytes, &off);
+    if (ret != MSGPACK_UNPACK_SUCCESS) {
+        msgpack_unpacked_destroy(&result);
+        return FLB_FALSE;
+    }
+
+    root = result.data;
+    /* check for array */
+    if (root.type == MSGPACK_OBJECT_ARRAY) {
+        size = root.via.array.size;
+        if (size > 0) {
+            msgpack_object *map = root.via.array.ptr;
+            for (i = 0; i < size; i++) {
+                if ((map+i)->type != MSGPACK_OBJECT_MAP) {
+                    msgpack_unpacked_destroy(&result);
+                    return FLB_FALSE;
+                }
+                if ((map+i)->via.map.size <= 0) {
+                    msgpack_unpacked_destroy(&result);
+                    return FLB_FALSE;
+                }
+                /* main array */
+                msgpack_pack_array(pck, 2);
+
+                /* timestamp: convert from double to Fluent Bit format */
+                flb_time_from_double(&t, ts);
+                flb_time_append_to_msgpack(&t, pck, 0);
+
+                /* Pack lua table */
+                msgpack_pack_object(pck, *(map+i));
+            }
+            msgpack_unpacked_destroy(&result);
+            return FLB_TRUE;
+        }
+        else {
+            msgpack_unpacked_destroy(&result);
+            return FLB_FALSE;
+        }
+    }
+
+    /* check for map */
+    if (root.type != MSGPACK_OBJECT_MAP) {
+        msgpack_unpacked_destroy(&result);
+        return FLB_FALSE;
+    }
+
+    if (root.via.map.size <= 0) {
+        msgpack_unpacked_destroy(&result);
+        return FLB_FALSE;
+    }
+
+    /* main array */
+    msgpack_pack_array(pck, 2);
+
+    /* timestamp: convert from double to Fluent Bit format */
+    flb_time_from_double(&t, ts);
+    flb_time_append_to_msgpack(&t, pck, 0);
+
+    /* Pack lua table */
+    msgpack_sbuffer_write(sbuf, data, bytes);
+
+    msgpack_unpacked_destroy(&result);
+    return FLB_TRUE;
 }
 
 static int cb_lua_filter(void *data, size_t bytes,
@@ -440,7 +424,7 @@ static int cb_lua_filter(void *data, size_t bytes,
         l_code = 0;
         l_timestamp = ts;
 
-        lua_tomsgpack(ctx->lua->state, &data_pck, 0);
+        lua_tomsgpack(ctx, &data_pck, 0);
         lua_pop(ctx->lua->state, 1);
 
         l_timestamp = (double) lua_tonumber(ctx->lua->state, -1);
@@ -448,19 +432,6 @@ static int cb_lua_filter(void *data, size_t bytes,
 
         l_code = (int) lua_tointeger(ctx->lua->state, -1);
         lua_pop(ctx->lua->state, 1);
-
-        /* Validations */
-        if (l_code == 1) {
-            ret = is_valid_map(data_sbuf.data, data_sbuf.size);
-            if (ret == FLB_FALSE) {
-                flb_error("[filter_lua] invalid table returned at %s(), %s",
-                          ctx->call, ctx->script);
-                msgpack_sbuffer_destroy(&tmp_sbuf);
-                msgpack_sbuffer_destroy(&data_sbuf);
-                msgpack_unpacked_destroy(&result);
-                return FLB_FILTER_NOTOUCH;
-            }
-        }
 
         if (l_code == -1) { /* Skip record */
             msgpack_sbuffer_destroy(&data_sbuf);
@@ -470,15 +441,16 @@ static int cb_lua_filter(void *data, size_t bytes,
             msgpack_pack_object(&tmp_pck, root);
         }
         else if (l_code == 1) { /* Modified, pack new data */
-            /* main array */
-            msgpack_pack_array(&tmp_pck, 2);
-
-            /* timestamp: convert from double to Fluent Bit format */
-            flb_time_from_double(&t, l_timestamp);
-            flb_time_append_to_msgpack(&t, &tmp_pck, 0);
-
-            /* Pack lua table */
-            msgpack_sbuffer_write(&tmp_sbuf, data_sbuf.data, data_sbuf.size);
+            ret = pack_result(l_timestamp, &tmp_pck, &tmp_sbuf,
+                              data_sbuf.data, data_sbuf.size);
+            if (ret == FLB_FALSE) {
+                flb_error("[filter_lua] invalid table returned at %s(), %s",
+                          ctx->call, ctx->script);
+                msgpack_sbuffer_destroy(&tmp_sbuf);
+                msgpack_sbuffer_destroy(&data_sbuf);
+                msgpack_unpacked_destroy(&result);
+                return FLB_FILTER_NOTOUCH;
+            }
         }
         else { /* Unexpected return code, keep original content */
             flb_error("[filter_lua] unexpected Lua script return code %i, "

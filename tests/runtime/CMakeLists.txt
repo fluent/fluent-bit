@@ -54,6 +54,11 @@ if(FLB_IN_LIB)
   FLB_RT_TEST(FLB_OUT_TD           "out_td.c")
 endif()
 
+set(SYSTEMD_LIB, "")
+if(FLB_HAVE_SYSTEMD)
+    set(SYSTEMD_LIB, "systemd")
+endif()
+
 set(FLB_TESTS_DATA_PATH ${CMAKE_CURRENT_SOURCE_DIR}/)
 configure_file(
   "${CMAKE_CURRENT_SOURCE_DIR}/flb_tests_runtime.h.in"
@@ -61,19 +66,25 @@ configure_file(
   )
 
 foreach(source_file ${CHECK_PROGRAMS})
-  get_filename_component(source_file_we ${source_file} NAME_WE)
-  set(source_file_we flb-rt-${source_file_we})
-  add_executable(
-    ${source_file_we}
-    ${source_file}
-    )
-  target_link_libraries(${source_file_we}
-    fluent-bit-static
-    ${CMAKE_THREAD_LIBS_INIT}
-    )
-  add_test(${source_file_we} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${source_file_we})
-  if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang" OR
-      "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
-    set_property(TARGET ${source_file_we} APPEND_STRING PROPERTY COMPILE_FLAGS "-Wall -g -O3")
+  get_filename_component(o_source_file_we ${source_file} NAME_WE)
+  set(source_file_we flb-rt-${o_source_file_we})
+  if(FLB_WITHOUT_${source_file_we})
+    message("Skipping test ${source_file_we}")
+  else()
+    add_executable(
+      ${source_file_we}
+      ${source_file}
+      )
+    add_sanitizers(${source_file_we})
+    target_link_libraries(${source_file_we}
+      fluent-bit-static
+      ${CMAKE_THREAD_LIBS_INIT}
+      ${SYSTEMD_LIB}
+      )
+    add_test(NAME ${source_file_we}
+            COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${source_file_we}
+            WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/build)
+    set_tests_properties(${source_file_we} PROPERTIES LABELS "runtime")
+    set_property(TARGET ${source_file_we} APPEND_STRING PROPERTY COMPILE_FLAGS "-D${o_source_file_we}")
   endif()
 endforeach()

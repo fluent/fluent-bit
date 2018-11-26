@@ -27,6 +27,7 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <msgpack.h>
 
@@ -140,6 +141,8 @@ static int get_api_server_info(struct flb_kube *ctx,
                                char **out_buf, size_t *out_size)
 {
     int ret;
+    int packed = -1;
+    int root_type;
     size_t b_sent;
     char uri[1024];
     char *buf;
@@ -147,60 +150,98 @@ static int get_api_server_info(struct flb_kube *ctx,
     struct flb_http_client *c;
     struct flb_upstream_conn *u_conn;
 
-    if (!ctx->upstream) {
-        return -1;
-    }
+    /*
+     * If a file exists called namespace-podname.meta, load it and use it.
+     * If not, fall back to API. This is primarily for diagnostic purposes,
+     * e.g. debugging new parsers.
+     */
+    if (ctx->meta_preload_cache_dir && namespace && podname) {
+        int fd;
+        char *payload = NULL;
+        size_t payload_size = 0;
+        struct stat sb;
 
-    u_conn = flb_upstream_conn_get(ctx->upstream);
-    if (!u_conn) {
-        flb_error("[filter_kube] upstream connection error");
-        return -1;
-    }
-
-    ret = snprintf(uri, sizeof(uri) - 1,
-                   FLB_KUBE_API_FMT,
-                   namespace, podname);
-    if (ret == -1) {
-        flb_upstream_conn_release(u_conn);
-        return -1;
-    }
-
-    /* Compose HTTP Client request */
-    c = flb_http_client(u_conn, FLB_HTTP_GET,
-                        uri,
-                        NULL, 0, NULL, 0, NULL, 0);
-    flb_http_buffer_size(c, ctx->buffer_size);
-
-    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
-    flb_http_add_header(c, "Connection", 10, "close", 5);
-    if (ctx->auth_len > 0) {
-        flb_http_add_header(c, "Authorization", 13, ctx->auth, ctx->auth_len);
-    }
-
-    /* Perform request */
-    ret = flb_http_do(c, &b_sent);
-    flb_debug("[filter_kube] API Server (ns=%s, pod=%s) http_do=%i, HTTP Status: %i",
-              namespace, podname, ret, c->resp.status);
-
-    if (ret != 0 || c->resp.status != 200) {
-        if (c->resp.payload_size > 0) {
-            flb_debug("[filter_kube] API Server response\n%s",
-                      c->resp.payload);
+        ret = snprintf(uri, sizeof(uri) - 1, "%s/%s-%s.meta", ctx->meta_preload_cache_dir, namespace, podname);
+        if (ret > 0) {
+            fd = open(uri, O_RDONLY, 0);
+            if (fd > 0) {
+                if (fstat(fd, &sb) == 0) {
+                    payload = flb_malloc(sb.st_size);
+                    if (payload) {
+                        ret = read(fd, payload, sb.st_size);
+                        if (ret == sb.st_size) {
+                            payload_size = ret;
+                        }
+                    }
+                }
+                close(fd);
+            }
         }
+        if (payload_size) {
+            packed = flb_pack_json(payload, payload_size,
+                                   &buf, &size, &root_type);
+        }
+
+        if (payload) {
+            flb_free(payload);
+        }
+    }
+
+    if (packed == -1) {
+        if (!ctx->upstream) {
+            return -1;
+        }
+
+        u_conn = flb_upstream_conn_get(ctx->upstream);
+        if (!u_conn) {
+            flb_error("[filter_kube] upstream connection error");
+            return -1;
+        }
+
+        ret = snprintf(uri, sizeof(uri) - 1,
+                       FLB_KUBE_API_FMT,
+                       namespace, podname);
+        if (ret == -1) {
+            flb_upstream_conn_release(u_conn);
+            return -1;
+        }
+
+        /* Compose HTTP Client request */
+        c = flb_http_client(u_conn, FLB_HTTP_GET,
+                            uri,
+                            NULL, 0, NULL, 0, NULL, 0);
+        flb_http_buffer_size(c, ctx->buffer_size);
+
+        flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+        flb_http_add_header(c, "Connection", 10, "close", 5);
+        if (ctx->auth_len > 0) {
+            flb_http_add_header(c, "Authorization", 13, ctx->auth, ctx->auth_len);
+        }
+
+        /* Perform request */
+        ret = flb_http_do(c, &b_sent);
+        flb_debug("[filter_kube] API Server (ns=%s, pod=%s) http_do=%i, HTTP Status: %i",
+                  namespace, podname, ret, c->resp.status);
+
+        if (ret != 0 || c->resp.status != 200) {
+            if (c->resp.payload_size > 0) {
+                flb_debug("[filter_kube] API Server response\n%s",
+                          c->resp.payload);
+            }
+            flb_http_client_destroy(c);
+            flb_upstream_conn_release(u_conn);
+            return -1;
+        }
+        packed = flb_pack_json(c->resp.payload, c->resp.payload_size,
+                               &buf, &size, &root_type);
+
+        /* release resources */
         flb_http_client_destroy(c);
         flb_upstream_conn_release(u_conn);
-        return -1;
     }
 
-    ret = flb_pack_json(c->resp.payload, c->resp.payload_size,
-                        &buf, &size);
-
-    /* release resources */
-    flb_http_client_destroy(c);
-    flb_upstream_conn_release(u_conn);
-
     /* validate pack */
-    if (ret == -1) {
+    if (packed == -1) {
         return -1;
     }
 
@@ -556,8 +597,12 @@ static inline int extract_meta(struct flb_kube *ctx, char *tag, int tag_len,
 
     /* Compose API server cache key */
     if (meta->podname && meta->namespace) {
-        meta->cache_key_len = meta->podname_len + meta->namespace_len + 1;
-        meta->cache_key = flb_malloc(meta->cache_key_len + 1);
+        /* calculate estimated buffer size */
+        n = meta->namespace_len + 1 + meta->podname_len + 1;
+        if (meta->container_name) {
+            n += meta->container_name_len + 1;
+        }
+        meta->cache_key = flb_malloc(n);
         if (!meta->cache_key) {
             flb_errno();
             return -1;
@@ -573,7 +618,16 @@ static inline int extract_meta(struct flb_kube *ctx, char *tag, int tag_len,
         /* Copy podname */
         memcpy(meta->cache_key + off, meta->podname, meta->podname_len);
         off += meta->podname_len;
+
+        if (meta->container_name) {
+            /* Separator */
+            meta->cache_key[off++] = ':';
+            memcpy(meta->cache_key + off, meta->container_name, meta->container_name_len);
+            off += meta->container_name_len;
+        }
+
         meta->cache_key[off] = '\0';
+        meta->cache_key_len = off;
     }
     else {
         meta->cache_key = NULL;

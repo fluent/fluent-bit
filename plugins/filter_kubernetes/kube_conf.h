@@ -66,6 +66,7 @@ struct flb_kube {
     int dummy_meta;
     int tls_debug;
     int tls_verify;
+    char *meta_preload_cache_dir;
 
     /* Configuration proposed through Annotations (boolean) */
     int k8s_logging_parser;   /* allow to process a suggested parser ? */
@@ -82,9 +83,15 @@ struct flb_kube {
     size_t unesc_buf_len;
     char *unesc_buf;
 
-    /* JSON key (default 'log') */
-    int merge_json_key_len;
-    char *merge_json_key;
+    /*
+     * Merge Log Trim: if merge_log is enabled, this flag allows to trim
+     * the value and remove any trailing \n or \r.
+     */
+    int merge_log_trim;
+
+    /* Log key, old merge_json_key (default 'log') */
+    int merge_log_key_len;
+    char *merge_log_key;
 
     /* API Server end point */
     char kube_url[1024];

@@ -137,8 +137,7 @@ static int configure(struct filter_nest_ctx *ctx,
         }
     }
 
-    // Sanity checks
-
+    /* Sanity checks */
     if (ctx->remove_prefix && ctx->add_prefix) {
         flb_error("[filter_nest] Add_prefix and Remove_prefix are exclusive");
         return -1;
@@ -171,7 +170,7 @@ static void helper_pack_string(msgpack_packer * packer, const char *str,
     }
 }
 
-static void helper_pack_string_remove_prefix(msgpack_packer * packer, 
+static void helper_pack_string_remove_prefix(msgpack_packer * packer,
         struct filter_nest_ctx *ctx,
         const char *str,
         int len)
@@ -184,13 +183,13 @@ static void helper_pack_string_remove_prefix(msgpack_packer * packer,
         msgpack_pack_str_body(packer, (str + ctx->prefix_len), size);
     }
     else {
-        // Key does not contain specified prefix
+        /* Key does not contain specified prefix */
         msgpack_pack_str(packer, len);
         msgpack_pack_str_body(packer, str, len);
     }
 }
 
-static void helper_pack_string_add_prefix(msgpack_packer * packer, 
+static void helper_pack_string_add_prefix(msgpack_packer * packer,
         struct filter_nest_ctx *ctx,
         const char *str,
         int len)
@@ -286,7 +285,7 @@ static inline bool is_kv_to_nest(msgpack_object_kv * kv,
         klen = obj->via.str.size;
     }
     else {
-        // If the key is not something we can match on then we leave it alone
+        /* If the key is not something we can match on, leave it alone */
         return false;
     }
 
@@ -294,13 +293,13 @@ static inline bool is_kv_to_nest(msgpack_object_kv * kv,
         wildcard = mk_list_entry(head, struct filter_nest_wildcard, _head);
 
         if (wildcard->key_is_dynamic) {
-            // This will positively match "ABC123" with prefix "ABC*" 
+            /* This will positively match "ABC123" with prefix "ABC*" */
             if (strncmp(key, wildcard->key, wildcard->key_len) == 0) {
                 return true;
             }
         }
         else {
-            // This will positively match "ABC" with prefix "ABC" 
+            /* This will positively match "ABC" with prefix "ABC" */
             if ((wildcard->key_len == klen) &&
                     (strncmp(key, wildcard->key, klen) == 0)
               ) {
@@ -338,7 +337,7 @@ static inline bool is_kv_to_lift(msgpack_object_kv * kv,
         klen = obj->via.str.size;
     }
     else {
-        // If the key is not something we can match on then we leave it alone
+        /* If the key is not something we can match on, leave it alone */
         return false;
     }
 
@@ -433,10 +432,12 @@ static inline int apply_lifting_rules(msgpack_packer * packer,
         return 0;
     }
 
-    // New items at top level =
-    //   current size
-    //   - number of maps to lift
-    //   + number of element inside maps to lift
+    /*
+     * New items at top level =
+     *   current size
+     *   - number of maps to lift
+     *   + number of element inside maps to lift
+     */
     int toplevel_items =
         (map.via.map.size - items_to_lift) + count_items_to_lift(&map, ctx);
 
@@ -444,20 +445,22 @@ static inline int apply_lifting_rules(msgpack_packer * packer,
         ("[filter_nest] Lift : Outer map size is %d, will be %d, lifting %d record(s)",
          map.via.map.size, toplevel_items, items_to_lift);
 
-    // * Record array init(2)
+    /* Record array init(2) */
     msgpack_pack_array(packer, 2);
 
-    // * * Record array item 1/2
+    /* Record array item 1/2 */
     msgpack_pack_object(packer, ts);
 
-    // * * Record array item 2/2
-    // * * Create a new map with top-level number of items
+    /*
+     * Record array item 2/2
+     * Create a new map with top-level number of items
+     */
     msgpack_pack_map(packer, (size_t) toplevel_items);
 
-    // * * Pack all current top-level items excluding the key keys
+    /* Pack all current top-level items excluding the key keys */
     map_pack_each_fn(packer, &map, ctx, &is_not_kv_to_lift);
 
-    // * * Lift and pack all elements in key keys
+    /* Lift and pack all elements in key keys */
     map_lift_each_fn(packer, &map, ctx, &is_kv_to_lift);
 
     return 1;
@@ -483,24 +486,26 @@ static inline int apply_nesting_rules(msgpack_packer * packer,
         ("[filter_nest] Nest : Outer map size is %d, will be %d, nested map size will be %d",
          map.via.map.size, toplevel_items, items_to_nest);
 
-    // * Record array init(2)
+    /* Record array init(2) */
     msgpack_pack_array(packer, 2);
 
-    // * * Record array item 1/2
+    /* Record array item 1/2 */
     msgpack_pack_object(packer, ts);
 
-    // * * Record array item 2/2
-    // * * Create a new map with toplevel items +1 for nested map
+    /*
+     * Record array item 2/2
+     * Create a new map with toplevel items +1 for nested map
+     */
     msgpack_pack_map(packer, toplevel_items);
     map_pack_each_fn(packer, &map, ctx, &is_not_kv_to_nest);
 
-    // * * * Pack the nested map key
+    /* Pack the nested map key */
     helper_pack_string(packer, ctx->key, ctx->key_len);
 
-    // * * * Create the nest map value
+    /* Create the nest map value */
     msgpack_pack_map(packer, items_to_nest);
 
-    // * * * * Pack the nested items
+    /* Pack the nested items */
     map_transform_and_pack_each_fn(packer, &map, ctx, &is_kv_to_nest);
 
     return 1;
@@ -550,13 +555,15 @@ static int cb_nest_filter(void *data, size_t bytes,
     msgpack_packer packer;
     msgpack_packer_init(&packer, &buffer, msgpack_sbuffer_write);
 
-    // Records come in the format,
-    //
-    // [ TIMESTAMP, { K1=>V1, K2=>V2, ...} ],
-    // [ TIMESTAMP, { K1=>V1, K2=>V2, ...} ]
-    //
-    // Example record,
-    // [1123123, {"Mem.total"=>4050908, "Mem.used"=>476576, "Mem.free"=>3574332 } ]
+    /*
+     * Records come in the format,
+     *
+     * [ TIMESTAMP, { K1=>V1, K2=>V2, ...} ],
+     * [ TIMESTAMP, { K1=>V1, K2=>V2, ...} ]
+     *
+     * Example record,
+     * [1123123, {"Mem.total"=>4050908, "Mem.used"=>476, "Mem.free"=>3574332 }]
+     */
 
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off)) {

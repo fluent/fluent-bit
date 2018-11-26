@@ -290,7 +290,7 @@ int flb_hash_get(struct flb_hash *ht, char *key, int key_len,
                                     struct flb_hash_entry,
                                     _head);
 
-        if (strcmp(entry->key, key) != 0) {
+        if (strncmp(entry->key, key, key_len) != 0) {
             entry = NULL;
         }
     }

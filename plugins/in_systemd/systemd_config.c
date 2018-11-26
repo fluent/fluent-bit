@@ -113,13 +113,22 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
         }
     }
 
+    /* Max number of fields per record/entry */
+    tmp = flb_input_get_property("max_fields", i_ins);
+    if (tmp) {
+        ctx->max_fields = atoi(tmp);
+    }
+    else {
+        ctx->max_fields = FLB_SYSTEMD_MAX_FIELDS;
+    }
+
     /* Max number of entries per notification */
     tmp = flb_input_get_property("max_entries", i_ins);
     if (tmp) {
         ctx->max_entries = atoi(tmp);
     }
     else {
-        ctx->max_entries = FLB_SYSTEND_ENTRIES;
+        ctx->max_entries = FLB_SYSTEMD_MAX_ENTRIES;
     }
 
     tmp = flb_input_get_property("systemd_filter_type", i_ins);
@@ -183,6 +192,13 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
             }
             flb_free(tmp);
         }
+    }
+
+    tmp = flb_input_get_property("strip_underscores", i_ins);
+    if (tmp != NULL && flb_utils_bool(tmp)) {
+        ctx->strip_underscores = FLB_TRUE;
+    } else {
+        ctx->strip_underscores = FLB_FALSE;
     }
 
     return ctx;

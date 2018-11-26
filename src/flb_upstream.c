@@ -45,29 +45,13 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
     u->flags         = flags;
     u->evl           = config->evl;
     u->n_connections = 0;
+    u->flags |= FLB_IO_ASYNC;
+
     mk_list_init(&u->av_queue);
     mk_list_init(&u->busy_queue);
 
-    /*
-     * If Fluent Bit was built with FLUSH_PTHREADS, means each operation inside
-     * the thread will not have access to the main event loop and it's quite
-     * independent, for hence all network operations must work in
-     * 'blocking mode'.
-     */
-    if (config->flush_method == FLB_FLUSH_PTHREADS) {
-        /* remove ASYNC flag in case it was set */
-        u->flags &= ~(FLB_IO_ASYNC);
-    }
-    else {
-        u->flags |= FLB_IO_ASYNC;
-    }
-
 #ifdef FLB_HAVE_TLS
     u->tls      = (struct flb_tls *) tls;
-#endif
-
-#ifdef FLB_HAVE_FLUSH_PTHREADS
-    pthread_mutex_init(&u->mutex_queue, NULL);
 #endif
 
     return u;
@@ -112,7 +96,7 @@ struct flb_upstream *flb_upstream_create_url(struct flb_config *config,
 
     if (tmp_port <= 0) {
         flb_error("[upstream] unknown TCP port in URL: %s", url);
-        return NULL;
+        goto out;
     }
 
     u = flb_upstream_create(config, host, tmp_port, flags, tls);
@@ -190,17 +174,8 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
         return NULL;
     }
 
-#ifdef FLB_HAVE_FLUSH_PTHREADS
-    pthread_mutex_lock(&u->mutex_queue);
-#endif
-
     /* Link new connection to the busy queue */
     mk_list_add(&conn->_head, &u->busy_queue);
-
-#ifdef FLB_HAVE_FLUSH_PTHREADS
-    pthread_mutex_unlock(&u->mutex_queue);
-#endif
-
     u->n_connections++;
 
     return conn;
@@ -283,16 +258,8 @@ int flb_upstream_conn_release(struct flb_upstream_conn *u_conn)
     }
 #endif
 
-#ifdef FLB_HAVE_FLUSH_PTHREADS
-    pthread_mutex_lock(&u->mutex_queue);
-#endif
-
     /* remove connection from the queue */
     mk_list_del(&u_conn->_head);
-
-#ifdef FLB_HAVE_FLUSH_PTHREADS
-    pthread_mutex_unlock(&u->mutex_queue);
-#endif
 
     u->n_connections--;
     flb_free(u_conn);

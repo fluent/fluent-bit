@@ -25,13 +25,6 @@
 #include <lauxlib.h>
 #include <lua.h>
 #include <lualib.h>
-#include <lj_lib.h>
-#include <lj_ctype.h>
-#include <lj_cdata.h>
-#include <lj_cconv.h>
-#include <lj_state.h>
-#include <lj_tab.h>
-#include <lj_meta.h>
 
 /* Lua Context */
 struct flb_luajit {

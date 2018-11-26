@@ -36,11 +36,11 @@ To make easier to build plugins, we have published a _fluent-bit-go_ package:
 
 http://github.com/fluent/fluent-bit-go
 
-In the same repository we have published a plugin example called __out_gstdout__ that when runs, it just print the records to the standard output:
+In the same repository we have published a plugin example called __out_gstdout__ that just prints the records to the standard output:
 
 https://github.com/fluent/fluent-bit-go/tree/master/examples/out_gstdout
 
-As minimum, a Go plugin looks like this:
+At a minimum, a Go plugin looks like this:
 
 ```go
 package main
@@ -75,7 +75,7 @@ To build the code above, use the following line:
 $ go build -buildmode=c-shared -o out_gstdout.so out_gstdout.go
 ```
 
-after a few seconds a shared library called _out\_gstdout.so_ will be available. It's really important to double check the final .so file is what do we expect. Doing a _ldd_ over the library we should see something similar to this:
+Once built, a shared library called _out\_gstdout.so_ will be available. It's really important to double check the final .so file is what we expect. Doing a _ldd_ over the library we should see something similar to this:
 
 ```
 $ ldd out_gstdout.so

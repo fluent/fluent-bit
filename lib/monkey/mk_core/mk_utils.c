@@ -319,7 +319,7 @@ int mk_utils_register_pid(char *path)
         exit(EXIT_FAILURE);
     }
 
-    sprintf(pidstr, "%i", getpid());
+    sprintf(pidstr, "%ld", (long) getpid());
     ssize_t write_len = strlen(pidstr);
     if (write(fd, pidstr, write_len) != write_len) {
         close(fd);

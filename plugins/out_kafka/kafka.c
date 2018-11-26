@@ -79,20 +79,27 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     msgpack_packer mp_pck;
     msgpack_object key;
     msgpack_object val;
+    flb_sds_t s;
 
     /* Init temporal buffers */
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    /* Make room for the timestamp */
-    size = map->via.map.size + 1;
-    msgpack_pack_map(&mp_pck, size);
+    if (ctx->format == FLB_KAFKA_FMT_JSON || ctx->format == FLB_KAFKA_FMT_MSGP) {
+        /* Make room for the timestamp */
+        size = map->via.map.size + 1;
+        msgpack_pack_map(&mp_pck, size);
 
-    /* Pack timestamp */
-    msgpack_pack_str(&mp_pck, ctx->timestamp_key_len);
-    msgpack_pack_str_body(&mp_pck,
-                          ctx->timestamp_key, ctx->timestamp_key_len);
-    msgpack_pack_double(&mp_pck, flb_time_to_double(tm));
+        /* Pack timestamp */
+        msgpack_pack_str(&mp_pck, ctx->timestamp_key_len);
+        msgpack_pack_str_body(&mp_pck,
+                              ctx->timestamp_key, ctx->timestamp_key_len);
+        msgpack_pack_double(&mp_pck, flb_time_to_double(tm));
+    }
+    else {
+        size = map->via.map.size;
+        msgpack_pack_map(&mp_pck, size);
+    }
 
     for (i = 0; i < map->via.map.size; i++) {
         key = map->via.map.ptr[i].key;
@@ -125,6 +132,17 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         out_buf = mp_sbuf.data;
         out_size = mp_sbuf.size;
     }
+    else if (ctx->format == FLB_KAFKA_FMT_GELF) {
+        s = flb_msgpack_raw_to_gelf(mp_sbuf.data, mp_sbuf.size,
+                                    tm, &(ctx->gelf_fields));
+        if (s == NULL) {
+            flb_error("[out_kafka] error encoding to GELF");
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            return FLB_ERROR;
+        }
+        out_buf = s;
+        out_size = flb_sds_len(s);
+    }
 
     if (!topic) {
         topic = flb_kafka_topic_default(ctx);
@@ -139,6 +157,9 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     if (queue_full_retries >= 10) {
         if (ctx->format == FLB_KAFKA_FMT_JSON) {
             flb_free(out_buf);
+        }
+        if (ctx->format == FLB_KAFKA_FMT_GELF) {
+            flb_sds_destroy(s);
         }
         msgpack_sbuffer_destroy(&mp_sbuf);
         return FLB_RETRY;
@@ -196,6 +217,9 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     rd_kafka_poll(ctx->producer, 0);
     if (ctx->format == FLB_KAFKA_FMT_JSON) {
         flb_free(out_buf);
+    }
+    if (ctx->format == FLB_KAFKA_FMT_GELF) {
+        flb_sds_destroy(s);
     }
 
     msgpack_sbuffer_destroy(&mp_sbuf);

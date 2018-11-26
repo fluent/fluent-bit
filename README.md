@@ -4,7 +4,7 @@
 
 For more details about it capabilities and general features please visit the official documentation:
 
-http://fluentbit.io/documentation
+https://docs.fluentbit.io/
 
 ## Quick Start
 
@@ -32,7 +32,7 @@ $ bin/fluent-bit -i cpu -o stdout
 | MQTT               | mqtt    | start a MQTT server and receive publish messages |
 | Netif              | netif   | usage of network interface |
 | Kernel Ring Buffer | kmsg    | read Linux Kernel messages, same behavior as the __dmesg__ command line program |
-| Syslog             | syslog  | read messages from a syslog daemon | 
+| Syslog             | syslog  | read messages from a syslog daemon |
 | Systemd/Journald   | systemd | read messages from journald, part of the systemd suite |
 | Serial Port        | serial  | read from serial port |
 | Standard Input     | stdin   | read from the standard input |

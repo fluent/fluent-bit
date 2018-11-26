@@ -124,11 +124,12 @@ static int u8_read_escape_sequence(char *str, uint32_t *dest)
 static inline int is_json_escape(char *c)
 {
   return (
-        (*c == '\"') || // double-quote
-        (*c == '\'') || // single-quote
-        (*c == '\\') || // solidus
-        (*c == '/')     // reverse-solidus
-      );
+          (*c == '\"') || /* double-quote */
+          (*c == '\'') || /* single-quote */
+          (*c == '\\') || /* solidus      */
+          (*c == 'n')  || /* new-line     */
+          (*c == '/')     /* reverse-solidus */
+          );
 }
 
 int flb_unescape_string_utf8(char *in_buf, int sz, char *out_buf)
@@ -167,7 +168,7 @@ int flb_unescape_string_utf8(char *in_buf, int sz, char *out_buf)
     if (count_in < sz) {
         flb_error("Not at boundary but still NULL terminating : %d - '%s'", sz, in_buf);
     }
-    out_buf[count_in - 1] = '\0';
+    out_buf[count_out] = '\0';
     return count_out;
 }
 
@@ -209,6 +210,10 @@ int flb_unescape_string(char *buf, int buf_len, char **unesc_buf)
                 }
                 else if (n == 'r') {
                     p[j++] = '\r';
+                    i++;
+                }
+                else if (n == '\\') {
+                    p[j++] = '\\';
                     i++;
                 }
                 i++;

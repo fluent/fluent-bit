@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_config.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -96,6 +97,11 @@ int flb_parser_ltsv_do(struct flb_parser *parser,
                        void **out_buf, size_t *out_size,
                        struct flb_time *out_time);
 
+int flb_parser_logfmt_do(struct flb_parser *parser,
+                         char *buf, size_t length,
+                         void **out_buf, size_t *out_size,
+                         struct flb_time *out_time);
+
 struct flb_parser *flb_parser_create(char *name, char *format,
                                      char *p_regex,
                                      char *time_fmt, char *time_key,
@@ -142,6 +148,9 @@ struct flb_parser *flb_parser_create(char *name, char *format,
     }
     else if (strcmp(format, "ltsv") == 0) {
         p->type = FLB_PARSER_LTSV;
+    }
+    else if (strcmp(format, "logfmt") == 0) {
+        p->type = FLB_PARSER_LOGFMT;
     }
     else {
         flb_error("[parser:%s] Invalid format %s", name, format);
@@ -196,6 +205,12 @@ struct flb_parser *flb_parser_create(char *name, char *format,
             *tmp++ = '\0';
         }
 
+        /* Check if the format contains a timezone (%z) */
+        if (strstr(p->time_fmt, "%z") || strstr(p->time_fmt, "%Z") ||
+            strstr(p->time_fmt, "%SZ") || strstr(p->time_fmt, "%S.%LZ")) {
+            p->time_with_tz = FLB_TRUE;
+        }
+
         /*
          * Check if the format expect fractional seconds
          *
@@ -220,19 +235,27 @@ struct flb_parser *flb_parser_create(char *name, char *format,
         }
         if (tmp) {
             tmp[2] = '\0';
-            p->time_frac_secs = (tmp + 3);
+            p->time_frac_secs = (tmp + 5);
         }
         else {
-            p->time_frac_secs = NULL;
-        }
+            /* same as above but with comma seperator */
+            if (p->time_with_year == FLB_TRUE) {
+                tmp = strstr(p->time_fmt, "%S,%L");
+            }
+            else {
+                tmp = strstr(p->time_fmt_year, "%s,%L");
 
-        /* Check if the format contains a timezone (%z) */
-        tmp = strstr(p->time_fmt, "%z");
-        if (tmp) {
-            p->time_with_tz = FLB_TRUE;
-        }
-        else if (strstr(p->time_fmt, "%SZ") || strstr(p->time_fmt, "%S.%LZ")) {
-            p->time_with_tz = FLB_TRUE;
+                if (tmp == NULL) {
+                    tmp = strstr(p->time_fmt_year, "%S,%L");
+                }
+            }
+            if (tmp) {
+                tmp[2] = '\0';
+                p->time_frac_secs = (tmp + 5);
+            }
+            else {
+                p->time_frac_secs = NULL;
+            }
         }
 
         /* Optional fixed timezone offset */
@@ -383,6 +406,7 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
     struct flb_parser_types *types;
     struct mk_list *decoders;
 
+#ifndef FLB_HAVE_STATIC_CONF
     ret = stat(file, &st);
     if (ret == -1 && errno == ENOENT) {
         /* Try to resolve the real path (if exists) */
@@ -400,8 +424,11 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
         cfg = file;
     }
 
-    flb_debug("[parser] opening file %s", cfg);
     fconf = mk_rconf_open(cfg);
+#else
+    fconf = flb_config_static_open(file);
+#endif
+
     if (!fconf) {
         return -1;
     }
@@ -424,21 +451,21 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
         /* Name */
         name = mk_rconf_section_get_key(section, "Name", MK_RCONF_STR);
         if (!name) {
-            flb_error("[parser] no parser 'name' found");
+            flb_error("[parser] no parser 'name' found in file '%s'", cfg);
             goto fconf_error;
         }
 
         /* Format */
         format = mk_rconf_section_get_key(section, "Format", MK_RCONF_STR);
         if (!format) {
-            flb_error("[parser] no parser 'format' found");
+            flb_error("[parser] no parser 'format' found for '%s' in file '%s'", name, cfg);
             goto fconf_error;
         }
 
         /* Regex (if format is regex) */
         regex = mk_rconf_section_get_key(section, "Regex", MK_RCONF_STR);
         if (!regex && strcmp(format, "regex") == 0) {
-            flb_error("[parser] no parser 'regex' found");
+            flb_error("[parser] no parser 'regex' found for '%s' in file '%s", name, cfg);
             goto fconf_error;
         }
 
@@ -566,6 +593,10 @@ int flb_parser_do(struct flb_parser *parser, char *buf, size_t length,
         return flb_parser_ltsv_do(parser, buf, length,
                                   out_buf, out_size, out_time);
     }
+    else if (parser->type == FLB_PARSER_LOGFMT) {
+        return flb_parser_logfmt_do(parser, buf, length,
+                                  out_buf, out_size, out_time);
+    }
 
     return -1;
 }
@@ -626,7 +657,6 @@ int flb_parser_time_lookup(char *time_str, size_t tsize,
 {
     int ret;
     int slen;
-    int tmdiff = 0;
     time_t time_now;
     double tmfrac = 0;
     char *p = NULL;
@@ -688,7 +718,7 @@ int flb_parser_time_lookup(char *time_str, size_t tsize,
 
     if (p != NULL) {
         /* Check if we have fractional seconds */
-        if (parser->time_frac_secs && *p == '.') {
+        if (parser->time_frac_secs && (*p == '.' || *p == ',')) {
             /*
              * Further parser routines needs a null byte, for fractional seconds
              * we make a safe copy of the content.
@@ -701,62 +731,61 @@ int flb_parser_time_lookup(char *time_str, size_t tsize,
             fs_tmp[slen] = '\0';
 
             /* Parse fractional seconds */
-            tmdiff = 0;
-            ret = flb_parser_frac_tzone(fs_tmp, slen, &tmfrac, &tmdiff);
+            ret = flb_parser_frac(fs_tmp, slen, &tmfrac, &time_ptr);
             if (ret == -1) {
-                /* Check if the timezone failed */
-                if (tmdiff == -1) {
-                    /* Try to find a workaround for time offset resolution */
-                    tm->tm_gmtoff = parser->time_offset;
-                }
-                else {
-                    flb_warn("[parser] Error parsing time string");
-                    return -1;
-                }
-            }
-            else {
-                tm->tm_gmtoff = tmdiff;
+                flb_warn("[parser] Error parsing time string");
+                return -1;
             }
             *ns = tmfrac;
-        }
-        else {
-            if (parser->time_with_tz == FLB_FALSE) {
-                tm->tm_gmtoff = parser->time_offset;
+
+            p = strptime(time_ptr, parser->time_frac_secs, tm);
+
+            if (p == NULL) {
+                return -1;
             }
         }
+
+        if (parser->time_with_tz == FLB_FALSE) {
+            tm->tm_gmtoff = parser->time_offset;
+        }
+
         return 0;
     }
 
     return -1;
 }
 
-int flb_parser_frac_tzone(char *str, int len, double *frac, int *tmdiff)
+int flb_parser_frac(char *str, int len, double *frac, char **end)
 {
-    int ret;
-    int tz_len;
+    int ret = 0;
     char *p;
-    char *end;
     double d;
+    char *pstr;
 
     /* Fractional seconds */
-    d = strtod(str, &end);
-    if ((d == 0 && end == str) || !end) {
-        return -1;
+    /* Normalize the fractional seperator to be '.' since that's what strtod()
+     * expects in standard C locale */
+    if (*str == ',') {
+        pstr = flb_strdup(str);
+        pstr[0] = '.';
+    }
+    else {
+        pstr = str;
+    }
+
+    d = strtod(pstr, &p);
+    if ((d == 0 && p == pstr) || !p) {
+        ret = -1;
+        goto free_and_return;
     }
     *frac = d;
+    *end = str + (p - pstr);
 
-    tz_len = len - (end - str);
-    p = end;
-    while (*p == ' ') p++;
-
-    tz_len -= (p - end);
-    ret = flb_parser_tzone_offset(p, tz_len, tmdiff);
-    if (ret == -1) {
-        *tmdiff = -1;
-        return -1;
+free_and_return:
+    if (pstr != str) {
+        flb_free(pstr);
     }
-
-    return 0;
+    return ret;
 }
 
 int flb_parser_typecast(char *key, int key_len,

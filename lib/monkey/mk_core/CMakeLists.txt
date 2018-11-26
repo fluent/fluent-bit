@@ -114,6 +114,22 @@ if (HAVE_EVENTFD)
   MK_DEFINITION(MK_HAVE_EVENTFD)
 endif()
 
+# Validate memrchr()
+check_c_source_compiles("
+   #define _GNU_SOURCE
+   #include <string.h>
+   int main() {
+      memrchr(\"test\", 'e', 4);
+      return 0;
+   }" MK_HAVE_MEMRCHR)
+
+include(CheckFunctionExists)
+CHECK_FUNCTION_EXISTS(memrchr MK_HAVE_MEMRCHR)
+
+if (MK_HAVE_MEMRCHR)
+  MK_DEFINITION(MK_HAVE_MEMRCHR)
+endif()
+
 configure_file(
   "${CMAKE_CURRENT_SOURCE_DIR}/../include/monkey/mk_core/mk_core_info.h.in"
   "${CMAKE_CURRENT_SOURCE_DIR}/../include/monkey/mk_core/mk_core_info.h"

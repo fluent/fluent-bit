@@ -41,6 +41,7 @@ static inline void consume_bytes(char *buf, int bytes, int length)
 void test_json_pack()
 {
     int ret;
+    int root_type;
     size_t len;
     char *data;
     char *out_buf;
@@ -51,7 +52,7 @@ void test_json_pack()
 
     len = strlen(data);
 
-    ret = flb_pack_json(data, len, &out_buf, &out_size);
+    ret = flb_pack_json(data, len, &out_buf, &out_size, &root_type);
     TEST_CHECK(ret == 0);
 
     flb_free(data);
@@ -320,6 +321,7 @@ void test_json_pack_bug342()
         }
         flb_free(out);
     }
+    flb_pack_state_reset(&state);
     close(fd);
     TEST_CHECK(records == 240);
 }

@@ -220,7 +220,7 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
                 sds = flb_sds_cat(sds, "\"} ", 3);
 
                 len = snprintf(tmp, sizeof(tmp) - 1,
-                               "%lu ", mv.via.u64);
+                               "%" PRIu64 " ", mv.via.u64);
                 sds = flb_sds_cat(sds, tmp, len);
                 sds = flb_sds_cat(sds, time_str, time_len);
                 sds = flb_sds_cat(sds, "\n", 1);

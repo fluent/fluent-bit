@@ -43,9 +43,10 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *i_ins,
     }
     ctx->evl = config->evl;
     ctx->i_ins = i_ins;
+    ctx->buffer_data = NULL;
     mk_list_init(&ctx->connections);
 
-    /* Syslog mode: unix_udp, unix_tcp, or tcp */
+    /* Syslog mode: unix_udp, unix_tcp, tcp or udp */
     tmp = flb_input_get_property("mode", i_ins);
     if (tmp) {
         if (strcasecmp(tmp, "unix_tcp") == 0) {
@@ -56,6 +57,9 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *i_ins,
         }
         else if (strcasecmp(tmp, "tcp") == 0) {
             ctx->mode = FLB_SYSLOG_TCP;
+        }
+        else if (strcasecmp(tmp, "udp") == 0) {
+            ctx->mode = FLB_SYSLOG_UDP;
         }
         else {
             flb_error("[in_syslog] Unknown syslog mode %s", tmp);
@@ -68,7 +72,7 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *i_ins,
     }
 
     /* Check if TCP mode was requested */
-    if (ctx->mode == FLB_SYSLOG_TCP) {
+    if (ctx->mode == FLB_SYSLOG_TCP || ctx->mode == FLB_SYSLOG_UDP) {
         /* Listen interface */
         if (!i_ins->host.listen) {
             tmp = flb_input_get_property("listen", i_ins);
@@ -83,13 +87,13 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *i_ins,
             ctx->listen = flb_strdup(i_ins->host.listen);
         }
 
-        /* TCP port */
+        /* port */
         if (i_ins->host.port == 0) {
-            ctx->tcp_port = flb_strdup("5140");
+            ctx->port = flb_strdup("5140");
         }
         else {
             snprintf(port, sizeof(port) - 1, "%d", i_ins->host.port);
-            ctx->tcp_port = flb_strdup(port);
+            ctx->port = flb_strdup(port);
         }
     }
 
@@ -125,7 +129,7 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *i_ins,
         ctx->parser = flb_parser_get(tmp, config);
     }
     else {
-        if (ctx->mode == FLB_SYSLOG_TCP) {
+        if (ctx->mode == FLB_SYSLOG_TCP || ctx->mode == FLB_SYSLOG_UDP) {
             ctx->parser = flb_parser_get("syslog-rfc5424", config);
         }
         else {
@@ -144,6 +148,10 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *i_ins,
 
 int syslog_conf_destroy(struct flb_syslog *ctx)
 {
+    if (ctx->buffer_data) {
+        flb_free(ctx->buffer_data);
+        ctx->buffer_data = NULL;
+    }
     syslog_server_destroy(ctx);
     flb_free(ctx);
 

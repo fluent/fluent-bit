@@ -51,10 +51,6 @@
 #include <fluent-bit/flb_buffer_chunk.h>
 #endif
 
-#ifdef FLB_HAVE_STATS
-#include <fluent-bit/flb_stats.h>
-#endif
-
 int flb_engine_destroy_tasks(struct mk_list *tasks)
 {
     int c = 0;
@@ -373,6 +369,7 @@ static int flb_engine_log_start(struct flb_config *config)
 int flb_engine_start(struct flb_config *config)
 {
     int ret;
+    char tmp[16];
     struct mk_event *event;
     struct mk_event_loop *evl;
 
@@ -390,6 +387,12 @@ int flb_engine_start(struct flb_config *config)
     }
 
     flb_info("[engine] started (pid=%i)", getpid());
+
+    /* Debug coroutine stack size */
+    flb_utils_bytes_to_human_readable_size(config->coro_stack_size,
+                                           (char *) &tmp, sizeof(tmp));
+    flb_debug("[engine] coroutine stack size: %lu bytes (%s)",
+              config->coro_stack_size, tmp);
     flb_thread_prepare();
 
     /* Create the event loop and set it in the global configuration */
@@ -447,9 +450,6 @@ int flb_engine_start(struct flb_config *config)
         flb_error("[engine] scheduler could not start");
         return -1;
     }
-
-    /* Initialize the stats interface (just if FLB_HAVE_STATS is defined) */
-    flb_stats_init(config);
 
     /* Initialize collectors */
     flb_input_collectors_start(config);
@@ -516,14 +516,14 @@ int flb_engine_start(struct flb_config *config)
                 if (ret == FLB_ENGINE_STOP) {
                     /*
                      * We are preparing to shutdown, we give a graceful time
-                     * of 5 seconds to process any pending event.
+                     * of (default 5) seconds to process any pending event.
                      */
                     event = &config->event_shutdown;
                     event->mask = MK_EVENT_EMPTY;
                     event->status = MK_EVENT_NONE;
-                    config->shutdown_fd = mk_event_timeout_create(evl, 5, 0, event);
+                    config->shutdown_fd = mk_event_timeout_create(evl, config->grace, 0, event);
 
-                    flb_warn("[engine] service will stop in 5 seconds");
+                    flb_warn("[engine] service will stop in %u seconds", config->grace);
                 }
                 else if (ret == FLB_ENGINE_SHUTDOWN) {
                     flb_info("[engine] service stopped");

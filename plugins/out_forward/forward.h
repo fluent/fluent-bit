@@ -21,6 +21,7 @@
 #define FLB_OUT_FORWARD
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_sds.h>
 
 #ifdef FLB_HAVE_TLS
 #include <mbedtls/entropy.h>
@@ -28,15 +29,22 @@
 #include <mbedtls/ctr_drbg.h>
 #endif
 
-struct flb_out_forward_config {
+/*
+ * Configuration: we put this separate from the main
+ * context so every Upstream Node can have it own configuration
+ * reference and pass it smoothly to the required caller.
+ *
+ * On simple mode (no HA), the structure is referenced
+ * by flb_forward->config. In HA mode the structure is referenced
+ * by the Upstream node context as an opaque data type.
+ */
+struct flb_forward_config {
     int secured;              /* Using Secure Forward mode ?  */
     int time_as_integer;      /* Use backward compatible timestamp ? */
 
     /* config */
-    int shared_key_len;       /* shared key length            */
-    char *shared_key;         /* shared key                   */
-    int self_hostname_len;    /* hostname length              */
-    char *self_hostname;      /* hostname used in certificate */
+    flb_sds_t shared_key;     /* shared key                   */
+    flb_sds_t self_hostname;  /* hotname used in certificate  */
 
     /* mbedTLS specifics */
 #ifdef FLB_HAVE_TLS
@@ -45,8 +53,19 @@ struct flb_out_forward_config {
     mbedtls_ctr_drbg_context tls_ctr_drbg;
 #endif
 
-    /* Upstream handler */
+    struct mk_list _head;     /* Link to list flb_forward->configs */
+};
+
+/* Plugin Context */
+struct flb_forward {
+    /* if HA mode is enabled */
+    int ha_mode;              /* High Availability mode enabled ? */
+    char *ha_upstream;        /* Upstream configuration file      */
+    struct flb_upstream_ha *ha;
+
+    /* Upstream handler and config context for single mode (no HA) */
     struct flb_upstream *u;
+    struct mk_list configs;
 };
 
 #endif

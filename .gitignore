@@ -3,3 +3,12 @@ _book/
 lib/jemalloc
 lib/onigmo
 tests/internal/flb_tests_internal.h
+tests/runtime/flb_tests_runtime.h
+build/*
+include/fluent-bit/flb_info.h
+include/fluent-bit/flb_plugins.h
+include/fluent-bit/flb_version.h
+include/fluent-bit/conf/*.h
+init/fluent-bit.service
+lib/monkey/monkey.service
+lib/monkey/include/monkey/mk_core/mk_core_info.h

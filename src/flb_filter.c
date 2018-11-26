@@ -93,6 +93,12 @@ void flb_filter_do(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
 
             /* Override buffer just if it was modified */
             if (ret == FLB_FILTER_MODIFIED) {
+                /* all records removed, no data to continue processing */
+                if (out_size == 0) {
+                    mp_sbuf->size = 0;
+                    break;
+                }
+
                 flb_filter_replace(mp_sbuf, mp_pck,    /* msgpack        */
                                    bytes,              /* passed data    */
                                    out_buf, out_size); /* new data       */

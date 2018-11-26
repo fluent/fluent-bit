@@ -21,15 +21,16 @@
 
 #ifdef FLB_HAVE_BUFFERING /* Only buffering uses SHA-1 at the moment */
 
-#include "sha1.h"
+#include <mbedtls/sha1.h>
 
 void flb_sha1_encode(const void *data_in, unsigned long length,
                      unsigned char *data_out)
 {
-    SHA_CTX sha;
-    SHA1_Init(&sha);
-    SHA1_Update(&sha, data_in, length);
-    SHA1_Final(data_out, &sha);
+    mbedtls_sha1_context ctx;
+
+    mbedtls_sha1_init(&ctx);
+    mbedtls_sha1_update_ret(&ctx, data_in, length);
+    mbedtls_sha1_finish_ret(&ctx, data_out);
 }
 
 #endif

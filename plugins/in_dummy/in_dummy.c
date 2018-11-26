@@ -74,6 +74,7 @@ static int configure(struct flb_in_dummy_config *ctx,
                                  struct timespec *tm)
 {
     char *str = NULL;
+    int root_type;
     int  ret = -1;
     long val  = 0;
 
@@ -101,7 +102,7 @@ static int configure(struct flb_in_dummy_config *ctx,
 
     ret = flb_pack_json(ctx->dummy_message,
                   ctx->dummy_message_len,
-                  &ctx->ref_msgpack, &ctx->ref_msgpack_size);
+                        &ctx->ref_msgpack, &ctx->ref_msgpack_size, &root_type);
     if (ret != 0) {
         flb_warn("[in_dummy] Data is incomplete. Use default string.");
 
@@ -111,7 +112,8 @@ static int configure(struct flb_in_dummy_config *ctx,
 
         ret = flb_pack_json(ctx->dummy_message,
                             ctx->dummy_message_len,
-                            &ctx->ref_msgpack, &ctx->ref_msgpack_size);
+                            &ctx->ref_msgpack, &ctx->ref_msgpack_size,
+                            &root_type);
         if (ret != 0) {
             flb_error("[in_dummy] Unexpected error");
             return -1;

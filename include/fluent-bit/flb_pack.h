@@ -22,8 +22,15 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_time.h>
 #include <jsmn/jsmn.h>
 #include <msgpack.h>
+
+#define FLB_PACK_JSON_UNDEFINED    JSMN_UNDEFINED
+#define FLB_PACK_JSON_OBJECT       JSMN_OBJECT
+#define FLB_PACK_JSON_ARRAY        JSMN_ARRAY
+#define FLB_PACK_JSON_STRING       JSMN_STRING
+#define FLB_PACK_JSON_PRIMITIVE    JSMN_PRIMITIVE
 
 struct flb_pack_state {
     int multiple;         /* support multiple jsons? */
@@ -34,7 +41,9 @@ struct flb_pack_state {
     jsmn_parser parser;   /* parser state            */
 };
 
-int flb_pack_json(char *js, size_t len, char **buffer, size_t *size);
+int flb_json_tokenise(char *js, size_t len, struct flb_pack_state *state);
+int flb_pack_json(char *js, size_t len, char **buffer, size_t *size,
+                  int *root_type);
 int flb_pack_state_init(struct flb_pack_state *s);
 void flb_pack_state_reset(struct flb_pack_state *s);
 
@@ -55,4 +64,19 @@ int flb_pack_time_now(msgpack_packer *pck);
 int flb_msgpack_expand_map(char *map_data, size_t map_size,
                            msgpack_object_kv **obj_arr, int obj_arr_len,
                            char** out_buf, int* out_size);
+
+struct flb_gelf_fields {
+    flb_sds_t timestamp_key;
+    flb_sds_t host_key;
+    flb_sds_t short_message_key;
+    flb_sds_t full_message_key;
+    flb_sds_t level_key;
+};
+
+flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
+   struct flb_time *tm, struct flb_gelf_fields *fields);
+
+flb_sds_t flb_msgpack_raw_to_gelf(char *buf, size_t buf_size,
+   struct flb_time *tm, struct flb_gelf_fields *fields);
+
 #endif
