@@ -330,11 +330,11 @@ int flb_tail_dmode_pending_flush(struct flb_input_instance *i_ins,
 
         flb_tail_dmode_flush(&mp_sbuf, &mp_pck, file, ctx);
 
-        flb_input_dyntag_append_raw(i_ins,
-                                    file->tag_buf,
-                                    file->tag_len,
-                                    mp_sbuf.data,
-                                    mp_sbuf.size);
+        flb_input_chunk_append_raw(i_ins,
+                                   file->tag_buf,
+                                   file->tag_len,
+                                   mp_sbuf.data,
+                                   mp_sbuf.size);
         msgpack_sbuffer_destroy(&mp_sbuf);
     }
 
