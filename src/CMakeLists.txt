@@ -246,6 +246,10 @@ if(FLB_BINARY)
     add_dependencies(fluent-bit-bin flb-static-conf)
   endif()
 
+  if(FLB_REGEX)
+    target_link_libraries(fluent-bit-bin libonigmo)
+  endif()
+
   if(FLB_JEMALLOC)
     target_link_libraries(fluent-bit-bin libjemalloc)
   endif()

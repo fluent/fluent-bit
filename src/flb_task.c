@@ -260,7 +260,11 @@ struct flb_task *flb_task_create(uint64_t ref_id,
                 continue;
             }
 
-            if (flb_router_match(tag, o_ins->match)) {
+            if (flb_router_match(tag, o_ins->match
+#ifdef FLB_HAVE_REGEX
+                , o_ins->match_regex
+#endif
+            )) {
                 route = flb_malloc(sizeof(struct flb_task_route));
                 if (!route) {
                     flb_errno();
