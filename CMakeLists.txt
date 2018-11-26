@@ -31,6 +31,7 @@ set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PAT
 # Build Options
 option(FLB_ALL                "Enable all features"           No)
 option(FLB_DEBUG              "Build with debug symbols"      No)
+option(FLB_COVERAGE           "Build with code-coverage"      No)
 option(FLB_JEMALLOC           "Build with Jemalloc support"   No)
 option(FLB_REGEX              "Build wiht Regex support"     Yes)
 option(FLB_TLS                "Build with SSL/TLS support"    No)
@@ -170,6 +171,11 @@ if(FLB_DEV)
   set(FLB_METRICS        On)
   set(FLB_HTTP_SERVER    On)
   set(FLB_TESTS_INTERNAL On)
+endif()
+
+if(FLB_COVERAGE)
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 --coverage -fprofile-arcs -ftest-coverage")
+  set(CMAKE_BUILD_TYPE "Debug")
 endif()
 
 if(FLB_OUT_GELF)
@@ -409,7 +415,7 @@ if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc
     CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc/configure ${AUTOCONF_HOST_OPT} --with-lg-quantum=3 --enable-cc-silence --prefix=<INSTALL_DIR>
     CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
-    BUILD_COMMAND ${MAKE}
+    BUILD_COMMAND $(MAKE)
     INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
     INSTALL_COMMAND $(MAKE) install_lib_static install_include)
   add_library(libjemalloc STATIC IMPORTED GLOBAL)
@@ -427,7 +433,7 @@ if(FLB_BACKTRACE)
   ExternalProject_Add(backtrace
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-5a99ff7f/
     CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-5a99ff7f/configure ${AUTOCONF_HOST_OPT} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
-    BUILD_COMMAND ${MAKE}
+    BUILD_COMMAND $(MAKE)
     )
   add_library(libbacktrace STATIC IMPORTED GLOBAL)
   set_target_properties(libbacktrace PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/lib/libbacktrace.a")
@@ -442,7 +448,7 @@ if(FLB_REGEX)
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/onigmo
     CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/onigmo/configure ${AUTOCONF_HOST_OPT} --with-pic --disable-shared --enable-static --prefix=<INSTALL_DIR>
     CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
-    BUILD_COMMAND ${MAKE}
+    BUILD_COMMAND $(MAKE)
     INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
     INSTALL_COMMAND $(MAKE) install)
   add_library(libonigmo STATIC IMPORTED GLOBAL)
@@ -459,7 +465,7 @@ if(FLB_LUAJIT)
   ExternalProject_Add(luajit
     SOURCE_DIR ${LUA_PATH}
     CONFIGURE_COMMAND ${LUA_PATH}/configure
-    BUILD_COMMAND make BUILD_MODE=static XCFLAGS="-fPIC" -C ${LUA_PATH}
+    BUILD_COMMAND $(MAKE) BUILD_MODE=static XCFLAGS="-fPIC" -C ${LUA_PATH}
     INSTALL_COMMAND cp ${LUA_PATH}/src/libluajit.a "${CMAKE_CURRENT_BINARY_DIR}/lib/libluajit.a")
   add_library(libluajit STATIC IMPORTED GLOBAL)
   set_target_properties(libluajit PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/lib/libluajit.a")

@@ -116,6 +116,12 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
     flb_free(ins->host.address);
     flb_free(ins->match);
 
+#ifdef FLB_HAVE_REGEX
+        if (ins->match_regex) {
+            flb_regex_destroy(ins->match_regex);
+        }
+#endif
+
 #ifdef FLB_HAVE_TLS
     if (ins->flags & FLB_IO_TLS) {
         if (ins->tls.context) {
@@ -343,6 +349,13 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
     }
 
     /* Check if the key is a known/shared property */
+#ifdef FLB_HAVE_REGEX
+    if (prop_key_check("match_regex", k, len) == 0) {
+        out->match_regex = flb_regex_create((unsigned char *) tmp);
+        flb_free(tmp);
+    }
+    else
+#endif
     if (prop_key_check("match", k, len) == 0) {
         out->match = tmp;
     }

@@ -77,7 +77,11 @@ void flb_filter_do(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
 
     mk_list_foreach(head, &config->filters) {
         f_ins = mk_list_entry(head, struct flb_filter_instance, _head);
-        if (flb_router_match(tag, f_ins->match)) {
+        if (flb_router_match(tag, f_ins->match
+#ifdef FLB_HAVE_REGEX
+        , f_ins->match_regex
+#endif
+           )) {
             /* Reset filtered buffer */
             out_buf = NULL;
             out_size = 0;
@@ -126,6 +130,12 @@ int flb_filter_set_property(struct flb_filter_instance *filter, char *k, char *v
     }
 
     /* Check if the key is a known/shared property */
+#ifdef FLB_HAVE_REGEX
+    if (prop_key_check("match_regex", k, len) == 0) {
+        filter->match_regex = flb_regex_create((unsigned char *) tmp);
+    }
+    else
+#endif
     if (prop_key_check("match", k, len) == 0) {
         filter->match = tmp;
     }
@@ -185,6 +195,12 @@ void flb_filter_exit(struct flb_config *config)
             flb_free(ins->match);
         }
 
+#ifdef FLB_HAVE_REGEX
+        if (ins->match_regex) {
+            flb_regex_destroy(ins->match_regex);
+        }
+#endif
+
         mk_list_del(&ins->_head);
         flb_free(ins);
     }
@@ -232,6 +248,9 @@ struct flb_filter_instance *flb_filter_new(struct flb_config *config,
     instance->p     = plugin;
     instance->data  = data;
     instance->match = NULL;
+#ifdef FLB_HAVE_REGEX
+    instance->match_regex = NULL;
+#endif
     mk_list_init(&instance->properties);
     mk_list_add(&instance->_head, &config->filters);
 
@@ -254,7 +273,11 @@ void flb_filter_initialize_all(struct flb_config *config)
     mk_list_foreach_safe(head, tmp, &config->filters) {
         in = mk_list_entry(head, struct flb_filter_instance, _head);
 
-        if (!in->match) {
+        if (!in->match
+#ifdef FLB_HAVE_REGEX
+            && !in->match_regex
+#endif
+            ) {
             flb_warn("[filter] NO match rule for %s filter instance, unloading.",
                      in->name);
             mk_list_del(&in->_head);
@@ -283,6 +306,12 @@ void flb_filter_initialize_all(struct flb_config *config)
                 if (in->match != NULL) {
                     flb_free(in->match);
                 }
+
+#ifdef FLB_HAVE_REGEX
+                if (in->match_regex) {
+                    flb_regex_destroy(in->match_regex);
+                }
+#endif
 
                 mk_list_del(&in->_head);
                 flb_free(in);

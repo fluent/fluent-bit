@@ -40,6 +40,14 @@ matrix:
       script: |
         ci/do-ut || true
     - os: linux
+      env: FLB_OPT="-DFLB_COVERAGE=On"
+      dist: xenial
+      sudo: true
+      language: c
+      compiler: gcc
+      script: |
+        ci/do-ut
+    - os: linux
       dist: xenial
       sudo: true
       language: node_js
@@ -50,12 +58,17 @@ matrix:
         echo "===== BUILD DOCKER IMAGE ======="
         docker build -t test-image -f Dockerfile .
         npm install -g bats
+      addons:
+        apt:
+          sources: {}
+          packages: {}
 
 script: |
   echo "CC = $CC, CXX = $CXX"
   sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 90
   sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-7 90
-  ci/do-ut
+  sudo usermod -a -G systemd-journal $(id -un)
+  sudo -E su -p travis -c "PATH=$PATH ci/do-ut"
 addons:
   apt:
     sources:
@@ -63,3 +76,6 @@ addons:
     packages:
       - gcc-7
       - g++-7
+      - libsystemd-dev
+      - gcovr
+

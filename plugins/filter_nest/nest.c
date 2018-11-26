@@ -19,7 +19,6 @@
 
 #include <stdio.h>
 #include <sys/types.h>
-#include <regex.h>
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>

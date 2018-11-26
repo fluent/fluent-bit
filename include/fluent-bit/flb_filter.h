@@ -20,6 +20,10 @@
 #ifndef FLB_FILTER_H
 #define FLB_FILTER_H
 
+#ifdef FLB_HAVE_REGEX
+#include <fluent-bit/flb_regex.h>
+#endif
+
 #include <fluent-bit/flb_config.h>
 #include <msgpack.h>
 
@@ -49,6 +53,9 @@ struct flb_filter_instance {
     int id;                        /* instance id              */
     char name[16];                 /* numbered name            */
     char *match;                   /* match rule based on Tags */
+#ifdef FLB_HAVE_REGEX
+    struct flb_regex *match_regex; /* match rule (regex) based on Tags */
+#endif
     void *context;                 /* Instance local context   */
     void *data;
     struct flb_filter_plugin *p;   /* original plugin          */
