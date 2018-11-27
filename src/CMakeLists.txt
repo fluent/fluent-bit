@@ -16,6 +16,7 @@ set(src
   flb_meta.c
   flb_kernel.c
   flb_input.c
+  flb_input_chunk.c
   flb_filter.c
   flb_output.c
   flb_config.c
@@ -27,6 +28,7 @@ set(src
   flb_unescape.c
   flb_scheduler.c
   flb_io.c
+  flb_storage.c
   flb_upstream.c
   flb_upstream_ha.c
   flb_upstream_node.c

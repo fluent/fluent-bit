@@ -229,8 +229,8 @@ option(MSGPACK_BUILD_EXAMPLES         OFF)
 add_subdirectory(lib/msgpack-3.1.1 EXCLUDE_FROM_ALL)
 
 # Chunk I/O
-option(CIO_LIB_STATIC  ON)
-option(CIO_LIB_SHARED  OFF)
+FLB_OPTION(CIO_LIB_STATIC  ON)
+FLB_OPTION(CIO_LIB_SHARED  OFF)
 add_subdirectory(lib/chunkio EXCLUDE_FROM_ALL)
 
 # Lib: build the core libraries used by Fluent-Bit
