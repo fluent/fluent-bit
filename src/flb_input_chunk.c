@@ -82,6 +82,8 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
         /* truncate length */
         tag_len = 65535;
     }
+
+    /* Write tag into metadata section */
     ret = cio_meta_write(chunk, tag, tag_len);
     if (ret == -1) {
         flb_error("[input chunk] could not write metadata");
@@ -282,4 +284,21 @@ void *flb_input_chunk_flush(struct flb_input_chunk *ic, size_t *size)
     ic->busy = FLB_TRUE;
 
     return buf;
+}
+
+int flb_input_chunk_release_lock(struct flb_input_chunk *ic)
+{
+    if (ic->busy == FLB_FALSE) {
+        return -1;
+    }
+
+    ic->busy = FLB_FALSE;
+    return 0;
+}
+
+int flb_input_chunk_get_tag(struct flb_input_chunk *ic,
+                            char **tag_buf, int *tag_len)
+{
+    return cio_meta_read(ic->chunk, tag_buf, tag_len);
+
 }
