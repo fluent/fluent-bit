@@ -99,6 +99,12 @@ static int storage_input_create(struct cio_ctx *cio,
         type = CIO_STORE_MEM;
     }
 
+    if (type == CIO_STORE_FS && cio->root_path == NULL) {
+        flb_error("[storage] instance '%s' requested filesystem storage "
+                  "but no filesystem path was defined.", in->name);
+        return -1;
+    }
+
     /* allocate storage context for the input instance */
     si = flb_malloc(sizeof(struct flb_storage_input));
     if (!si) {
@@ -164,6 +170,7 @@ static void storage_contexts_destroy(struct flb_config *config)
 
 int flb_storage_create(struct flb_config *ctx)
 {
+    int ret;
     int flags;
     struct cio_ctx *cio;
 
@@ -198,7 +205,11 @@ int flb_storage_create(struct flb_config *ctx)
     ctx->cio = cio;
 
     /* Create streams for input instances */
-    storage_contexts_create(ctx);
+    ret = storage_contexts_create(ctx);
+    if (ret == -1) {
+        return -1;
+    }
+
 
     /* print storage info */
     print_storage_info(cio);
