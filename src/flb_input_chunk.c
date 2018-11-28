@@ -243,9 +243,9 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
 #endif
 
     /* Apply filters */
-    flb_filter_chunk_do(ic,
-                        buf, buf_size,
-                        tag, tag_len, in->config);
+    flb_filter_do(ic,
+                  buf, buf_size,
+                  tag, tag_len, in->config);
 
     /* Get chunk size */
     size = cio_chunk_get_content_size(ic->chunk);
