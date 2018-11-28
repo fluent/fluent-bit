@@ -197,8 +197,8 @@ struct flb_task *flb_task_create(uint64_t ref_id,
                                  char *buf,
                                  size_t size,
                                  struct flb_input_instance *i_ins,
-                                 struct flb_input_dyntag *dt,
-                                 char *tag,
+                                 void *ic,
+                                 char *tag_buf, int tag_len,
                                  struct flb_config *config)
 {
     int count = 0;
@@ -206,8 +206,6 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     struct flb_task *task;
     struct flb_task_route *route;
     struct flb_output_instance *o_ins;
-    struct flb_router_path *router_path;
-    struct mk_list *head;
     struct mk_list *o_head;
 
     task = task_alloc(config);
@@ -215,23 +213,27 @@ struct flb_task *flb_task_create(uint64_t ref_id,
         return NULL;
     }
 
+    task->tag = tag_buf;
+    task->tag_len = tag_len;
+
     /* Keep track of origins */
     task->ref_id = ref_id;
-    task->tag    = flb_strdup(tag);
     task->buf    = buf;
     task->size   = size;
     task->i_ins  = i_ins;
-    task->dt     = dt;
+    task->ic     = ic;
     task->destinations = 0;
     mk_list_add(&task->_head, &i_ins->tasks);
 
-    /* Routes */
-    if (!dt) {
-        /* A non-dynamic tag input plugin have static routes */
-        mk_list_foreach(head, &i_ins->routes) {
-            router_path = mk_list_entry(head, struct flb_router_path, _head);
-            o_ins = router_path->ins;
+    /* Find matching routes for the incoming tag */
+    mk_list_foreach(o_head, &config->outputs) {
+        o_ins = mk_list_entry(o_head,
+                              struct flb_output_instance, _head);
+        if (!o_ins->match) {
+            continue;
+        }
 
+        if (flb_router_match(tag_buf, tag_len, o_ins->match)) {
             route = flb_malloc(sizeof(struct flb_task_route));
             if (!route) {
                 flb_errno();
@@ -242,32 +244,8 @@ struct flb_task *flb_task_create(uint64_t ref_id,
             mk_list_add(&route->_head, &task->routes);
             count++;
 
+            /* set the routes as a mask */
             routes_mask |= o_ins->mask_id;
-        }
-    }
-    else {
-        /* Find dynamic routes for the incoming tag */
-        mk_list_foreach(o_head, &config->outputs) {
-            o_ins = mk_list_entry(o_head,
-                                  struct flb_output_instance, _head);
-            if (!o_ins->match) {
-                continue;
-            }
-
-            if (flb_router_match(tag, o_ins->match)) {
-                route = flb_malloc(sizeof(struct flb_task_route));
-                if (!route) {
-                    flb_errno();
-                    continue;
-                }
-
-                route->out = o_ins;
-                mk_list_add(&route->_head, &task->routes);
-                count++;
-
-                /* set the routes as a mask */
-                routes_mask |= o_ins->mask_id;
-            }
         }
     }
 
@@ -359,33 +337,11 @@ void flb_task_destroy(struct flb_task *task)
         flb_free(route);
     }
 
-    /* Unlink and release */
+    /* Unlink and release task */
     mk_list_del(&task->_head);
 
-    if (task->mapped == FLB_FALSE) {
-        if (task->dt && task->buf) {
-            if (task->buf != task->dt->mp_sbuf.data) {
-                flb_free(task->buf);
-            }
-        }
-        else {
-            flb_free(task->buf);
-        }
-    }
-    else {
-        #warning "FIXME: cleanup chunk"
-        /* Likely there is a qchunk associated to this tasks
-        if (task->ref_id > 0 && task->config->buffer_ctx) {
-            flb_buffer_qchunk_signal(FLB_BUFFER_QC_POP_REQUEST, task->ref_id,
-                                     task->config->buffer_ctx->qworker);
-        }
-        */
-    }
-
-    if (task->dt) {
-        flb_input_dyntag_destroy(task->dt);
-    }
-
+    /* destroy chunk */
+    flb_input_chunk_destroy(task->ic);
 
     /* Remove 'retries' */
     mk_list_foreach_safe(head, tmp, &task->retries) {
@@ -394,8 +350,6 @@ void flb_task_destroy(struct flb_task *task)
     }
 
     flb_input_buf_size_set(task->i_ins);
-
-    flb_free(task->tag);
     flb_free(task);
 }
 
@@ -405,15 +359,6 @@ void flb_task_add_thread(struct flb_thread *thread,
 {
     struct flb_output_thread *out_th;
 
-    /*
-     * It's likely a previous thread have marked this task ready to be deleted,
-     * we must check this usual condition that could happen when one input_create
-     * instance must flush the data to many destinations.
-     */
-#ifdef FLB_HAVE_FLUSH_PTHREADS
-    pthread_mutex_lock(&task->mutex_threads);
-#endif
-
     out_th = (struct flb_output_thread *) FLB_THREAD_DATA(thread);
 
     /* Always set an incremental thread_id */
@@ -421,8 +366,4 @@ void flb_task_add_thread(struct flb_thread *thread,
     task->n_threads++;
     task->users++;
     mk_list_add(&out_th->_head, &task->threads);
-
-#ifdef FLB_HAVE_FLUSH_PTHREADS
-    pthread_mutex_unlock(&task->mutex_threads);
-#endif
 }
