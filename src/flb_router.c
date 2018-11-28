@@ -27,9 +27,8 @@
 
 #include <string.h>
 
-/* wildcard support */
-/* tag and match should be null terminated. */
-int flb_router_match(const char *tag, const char *match)
+static inline int router_match(const char *tag, int tag_len, const char *match,
+                               off_t off)
 {
     int ret = 0;
     char *pos = NULL;
@@ -45,30 +44,35 @@ int flb_router_match(const char *tag, const char *match)
                 break;
             }
 
-            /* FIXME: we need to avoid recursive calls here */
-            while ((pos = strchr(tag, (int) *match))) {
-                if (flb_router_match(pos, match) ){
+            while ((pos = memchr(tag + off, (int) *match, tag_len - off))) {
+                off += pos - (tag + off);
+                if (router_match(tag, tag_len, match, off)) {
                     ret = 1;
                     break;
                 }
-                tag = pos+1;
+                off++;
             }
             break;
         }
-        else if (*tag != *match ) {
+        else if (tag[off] != *match ) {
             /* mismatch! */
             break;
         }
-        else if (*tag == '\0'){
+        else if (off + 1 >= tag_len) {
             /* end of tag. so matched! */
             ret = 1;
             break;
         }
-        tag++;
+        off++;
         match++;
     }
 
     return ret;
+}
+
+int flb_router_match(const char *tag, int tag_len, const char *match)
+{
+    return router_match(tag, tag_len, match, 0);
 }
 
 /* Associate and input and output instances due to a previous match */
@@ -160,7 +164,8 @@ int flb_router_io_set(struct flb_config *config)
                 continue;
             }
 
-            if (flb_router_match(i_ins->tag, o_ins->match)) {
+            if (flb_router_match(i_ins->tag, i_ins->tag_len,
+                                 o_ins->match)) {
                 flb_debug("[router] match rule %s:%s",
                           i_ins->name, o_ins->name);
                 flb_router_connect(i_ins, o_ins);
