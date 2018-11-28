@@ -670,7 +670,7 @@ int flb_msgpack_raw_to_json_str(char *buf, size_t buf_size,
         return -1;
     }
 
-    json_size = (buf_size * 1.2);
+    json_size = (buf_size * 1.8);
     json_buf = flb_calloc(1, json_size);
     if (!json_buf) {
         flb_errno();
@@ -681,7 +681,7 @@ int flb_msgpack_raw_to_json_str(char *buf, size_t buf_size,
     while (1) {
         ret = flb_msgpack_to_json(json_buf, json_size, &result.data);
         if (ret <= 0) {
-            json_size += 128;
+            json_size *= 2;
             tmp = flb_realloc(json_buf, json_size);
             if (!tmp) {
                 flb_errno();
