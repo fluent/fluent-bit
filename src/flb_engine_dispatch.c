@@ -155,10 +155,10 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
         }
 
         /* Create a task */
-        task = flb_task_chunk_create(id, buf_data, buf_size,
-                                     ic->in, ic,
-                                     tag_buf, tag_len,
-                                     config);
+        task = flb_task_create(id, buf_data, buf_size,
+                               ic->in, ic,
+                               tag_buf, tag_len,
+                               config);
         if (!task) {
             /* Do not release the buffer, will happen on dyntag destroy */
             continue;
