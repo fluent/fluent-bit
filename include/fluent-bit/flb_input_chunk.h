@@ -48,5 +48,8 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
                                char *tag, size_t tag_len,
                                void *buf, size_t buf_size);
 void *flb_input_chunk_flush(struct flb_input_chunk *ic, size_t *size);
+int flb_input_chunk_release_lock(struct flb_input_chunk *ic);
+int flb_input_chunk_get_tag(struct flb_input_chunk *ic,
+                            char **tag_buf, int *tag_len);
 
 #endif
