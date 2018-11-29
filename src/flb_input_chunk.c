@@ -161,40 +161,6 @@ static struct flb_input_chunk *input_chunk_get(char *tag, int tag_len,
     return ic;
 }
 
-int flb_input_chunk_append_obj(struct flb_input_instance *in,
-                               char *tag, int tag_len,
-                               msgpack_object data)
-{
-    size_t size;
-    struct flb_input_chunk *ic;
-
-    ic = input_chunk_get(tag, tag_len, in);
-    if (!ic) {
-        return -1;
-    }
-
-    /* FIXME: protect buffers for filtering */
-
-    //flb_input_dbuf_write_start(dt);
-    msgpack_pack_object(&ic->mp_pck, data);
-    //flb_input_dbuf_write_end(dt);
-
-    /* Get chunk size */
-    size = cio_chunk_get_content_size(ic->chunk);
-
-    /* Lock buffers if current chunk size is > 2MB */
-    if (size > 2048000) {
-        cio_chunk_lock(ic->chunk);
-    }
-
-    /* Make sure the data was not filtered out and the buffer size is zero */
-    if (size == 0) {
-        flb_input_chunk_destroy(ic);
-    }
-
-    return 0;
-}
-
 /* Append a RAW MessagPack buffer to the input instance */
 int flb_input_chunk_append_raw(struct flb_input_instance *in,
                                char *tag, size_t tag_len,
