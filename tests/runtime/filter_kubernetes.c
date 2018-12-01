@@ -146,7 +146,14 @@ static int cb_check_result(void *record, size_t size, void *data)
     return 0;
 }
 
-static struct kube_test *kube_test_create(char *target, int type, char *suffix, char *parserconf, ...)
+static void kube_test_destroy(struct kube_test *ctx)
+{
+    flb_stop(ctx->flb);
+    flb_destroy(ctx->flb);
+    flb_free(ctx);
+}
+
+static void kube_test_create(char *target, int type, char *suffix, char *parserconf, ...)
 {
     int ret;
     int in_ffd;
@@ -268,101 +275,51 @@ static struct kube_test *kube_test_create(char *target, int type, char *suffix, 
     }
     TEST_CHECK(result.nmatched);
 
-    return ctx;
-}
-
-static void kube_test_destroy(struct kube_test *ctx)
-{
-    flb_stop(ctx->flb);
-    flb_destroy(ctx->flb);
-    flb_free(ctx);
+    kube_test_destroy(ctx);
 }
 
 void flb_test_apache_logs()
 {
-    struct kube_test *ctx;
-
-    ctx = kube_test_create(T_APACHE_LOGS, KUBE_TAIL, "", STD_PARSER, NULL);
-    if (!ctx) {
-        exit(EXIT_FAILURE);
-    }
-    kube_test_destroy(ctx);
+    kube_test_create(T_APACHE_LOGS, KUBE_TAIL, "", STD_PARSER, NULL);
 }
 
 void flb_test_apache_logs_merge()
 {
-    struct kube_test *ctx;
-
-    ctx = kube_test_create(T_APACHE_LOGS, KUBE_TAIL, "", STD_PARSER,
-                           "Merge_Log", "On",
-                           "Merge_Log_Key", "merge",
-                           NULL);
-    if (!ctx) {
-        exit(EXIT_FAILURE);
-    }
-    kube_test_destroy(ctx);
+    kube_test_create(T_APACHE_LOGS, KUBE_TAIL, "", STD_PARSER,
+                     "Merge_Log", "On",
+                     "Merge_Log_Key", "merge",
+                     NULL);
 }
 
 void flb_test_apache_logs_annotated()
 {
-    struct kube_test *ctx;
-
-    ctx = kube_test_create(T_APACHE_LOGS_ANN, KUBE_TAIL, "", STD_PARSER,
-                           "Merge_Log", "On",
-                           NULL);
-    if (!ctx) {
-        exit(EXIT_FAILURE);
-    }
-    kube_test_destroy(ctx);
+    kube_test_create(T_APACHE_LOGS_ANN, KUBE_TAIL, "", STD_PARSER,
+                     "Merge_Log", "On",
+                     NULL);
 }
 
 void flb_test_apache_logs_annotated_invalid()
 {
-    struct kube_test *ctx;
-
-    ctx = kube_test_create(T_APACHE_LOGS_ANN_INV, KUBE_TAIL, "", STD_PARSER,
-                           NULL);
-    if (!ctx) {
-        exit(EXIT_FAILURE);
-    }
-    kube_test_destroy(ctx);
+    kube_test_create(T_APACHE_LOGS_ANN_INV, KUBE_TAIL, "", STD_PARSER, NULL);
 }
 
 void flb_test_apache_logs_annotated_merge()
 {
-    struct kube_test *ctx;
-
-    ctx = kube_test_create(T_APACHE_LOGS_ANN_MERGE, KUBE_TAIL, "", STD_PARSER,
-                           "Merge_Log", "On",
-                           "Merge_Log_Key", "merge", NULL);
-    if (!ctx) {
-        exit(EXIT_FAILURE);
-    }
-    kube_test_destroy(ctx);
+    kube_test_create(T_APACHE_LOGS_ANN_MERGE, KUBE_TAIL, "", STD_PARSER,
+                     "Merge_Log", "On",
+                     "Merge_Log_Key", "merge", NULL);
 }
 
 void flb_test_json_logs()
 {
-    struct kube_test *ctx;
-
-    ctx = kube_test_create(T_JSON_LOGS, KUBE_TAIL, "", STD_PARSER,
-                           "Merge_Log", "On",
-                           NULL);
-    if (!ctx) {
-        exit(EXIT_FAILURE);
-    }
-    kube_test_destroy(ctx);
+    kube_test_create(T_JSON_LOGS, KUBE_TAIL, "", STD_PARSER,
+                     "Merge_Log", "On",
+                     NULL);
 }
 
 void flb_test_json_logs_invalid()
 {
-    struct kube_test *ctx;
-
-    ctx = kube_test_create(T_JSON_LOGS_INV, KUBE_TAIL, "", STD_PARSER, NULL);
-    if (!ctx) {
-        exit(EXIT_FAILURE);
-    }
-    kube_test_destroy(ctx);
+    kube_test_create(T_JSON_LOGS_INV, KUBE_TAIL, "", STD_PARSER, NULL);
 }
 
 #ifdef FLB_HAVE_SYSTEMD
@@ -370,7 +327,6 @@ void flb_test_json_logs_invalid()
 void flb_test_systemd_logs()
 {
     struct stat statb;
-    struct kube_test *ctx;
 
     if (stat("/run/systemd/journal/socket", &statb) == 0 &&
         statb.st_mode & S_IFSOCK) {
@@ -390,13 +346,9 @@ void flb_test_systemd_logs()
                         "KUBE_TEST=2018",
                         NULL) == 0) {
 
-            ctx = kube_test_create(T_SYSTEMD_SIMPLE, KUBE_SYSTEMD, "", STD_PARSER,
-                                   "Merge_Log", "On",
-                                   NULL);
-            if (!ctx) {
-                exit(EXIT_FAILURE);
-            }
-            kube_test_destroy(ctx);
+            kube_test_create(T_SYSTEMD_SIMPLE, KUBE_SYSTEMD, "", STD_PARSER,
+                             "Merge_Log", "On",
+                             NULL);
         }
     }
 }
@@ -404,15 +356,9 @@ void flb_test_systemd_logs()
 
 void flb_test_multi_logs(char *log, char *suffix)
 {
-    struct kube_test *ctx;
-
     flb_info("\n");
     flb_info("Multi test: log <%s>", log);
-    ctx = kube_test_create(log, KUBE_TAIL, suffix, "../tests/runtime/data/kubernetes/multi-parsers.conf", "Merge_Log", "On", NULL);
-    if (!ctx) {
-        exit(EXIT_FAILURE);
-    }
-    kube_test_destroy(ctx);
+    kube_test_create(log, KUBE_TAIL, suffix, "../tests/runtime/data/kubernetes/multi-parsers.conf", "Merge_Log", "On", NULL);
 }
 void flb_test_multi_init_stdout() { flb_test_multi_logs(T_MULTI_INIT, "stdout"); }
 void flb_test_multi_init_stderr() { flb_test_multi_logs(T_MULTI_INIT, "stderr"); }
