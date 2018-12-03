@@ -36,6 +36,11 @@ static void generate_chunk_name(struct flb_input_instance *in,
              tm.tm.tv_sec, tm.tm.tv_nsec);
 }
 
+ssize_t flb_input_chunk_get_size(struct flb_input_chunk *ic)
+{
+    return cio_chunk_get_content_size(ic->chunk);
+}
+
 int flb_input_chunk_write(void *data, const char *buf, size_t len)
 {
     struct flb_input_chunk *ic;
@@ -161,6 +166,88 @@ static struct flb_input_chunk *input_chunk_get(char *tag, int tag_len,
     return ic;
 }
 
+static inline int flb_input_chunk_is_overlimit(struct flb_input_instance *i)
+{
+    if (i->mem_buf_limit <= 0) {
+        return FLB_FALSE;
+    }
+
+    if (i->mem_chunks_size >= i->mem_buf_limit) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+/*
+ * Count and update the number of bytes being used by the instance. Also
+ * check if the instance is paused, if so, check if it can be resumed if
+ * is not longer over the limits.
+ */
+int flb_input_chunk_set_limits(struct flb_input_instance *in)
+{
+    size_t total;
+    ssize_t bytes;
+    struct mk_list *head;
+    struct flb_input_chunk *ic;
+
+    /*
+     * Check all chunks associated to the input instance and summarize
+     * the number of bytes in use.
+     */
+    total = 0;
+    mk_list_foreach(head, &in->chunks) {
+        ic = mk_list_entry(head, struct flb_input_chunk, _head);
+        bytes = flb_input_chunk_get_size(ic);
+        if (bytes < 0) {
+            flb_error("[input chunk] %s cannot retrieve chunk size",
+                      in->name);
+            continue;
+        }
+        total += bytes;
+    }
+
+    /* Register the total into the context variable */
+    in->mem_chunks_size = total;
+
+    /*
+     * After the adjustments, validate if the plugin is overlimit or paused
+     * and perform further adjustments.
+     */
+    if (flb_input_chunk_is_overlimit(in) == FLB_FALSE &&
+        flb_input_buf_paused(in) && in->config->is_running == FLB_TRUE) {
+        in->mem_buf_status = FLB_INPUT_RUNNING;
+        if (in->p->cb_resume) {
+            in->p->cb_resume(in->context, in->config);
+            flb_debug("[input] %s resume (mem buf overlimit)",
+                      in->name);
+        }
+    }
+
+    return 0;
+}
+
+/*
+ * If the number of bytes in use by the chunks are over the imposed limit
+ * by configuration, pause the instance.
+ */
+static inline int flb_input_chunk_protect(struct flb_input_instance *i)
+{
+    if (flb_input_chunk_is_overlimit(i) == FLB_TRUE) {
+        flb_debug("[input] %s paused (mem buf overlimit)",
+                 i->name);
+        if (!flb_input_buf_paused(i)) {
+            if (i->p->cb_pause) {
+                i->p->cb_pause(i->context, i->config);
+            }
+        }
+        i->mem_buf_status = FLB_INPUT_PAUSED;
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
 /* Append a RAW MessagPack buffer to the input instance */
 int flb_input_chunk_append_raw(struct flb_input_instance *in,
                                char *tag, size_t tag_len,
@@ -225,6 +312,10 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
     if (size == 0) {
         flb_input_chunk_destroy(ic);
     }
+
+    /* Update memory counters and adjust limits if any */
+    flb_input_chunk_set_limits(in);
+    flb_input_chunk_protect(in);
 
     return 0;
 }
