@@ -349,7 +349,7 @@ void flb_task_destroy(struct flb_task *task)
         flb_task_retry_destroy(retry);
     }
 
-    flb_input_buf_size_set(task->i_ins);
+    flb_input_chunk_set_limits(task->i_ins);
     flb_free(task);
 }
 
