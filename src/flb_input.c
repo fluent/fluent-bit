@@ -169,8 +169,9 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         }
 
         instance->mp_total_buf_size = 0;
-        instance->mp_buf_limit = 0;
-        instance->mp_buf_status = FLB_INPUT_RUNNING;
+        instance->mem_buf_status = FLB_INPUT_RUNNING;
+        instance->mem_buf_limit = 0;
+        instance->mem_chunks_size = 0;
 
         /* Metrics */
 #ifdef FLB_HAVE_METRICS
@@ -227,7 +228,7 @@ int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
         if (limit == -1) {
             return -1;
         }
-        in->mp_buf_limit = (size_t) limit;
+        in->mem_buf_limit = (size_t) limit;
     }
     else if (prop_key_check("listen", k, len) == 0) {
         in->host.listen = tmp;
@@ -634,7 +635,7 @@ int flb_input_pause_all(struct flb_config *config)
             }
             paused++;
         }
-        in->mp_buf_status = FLB_INPUT_PAUSED;
+        in->mem_buf_status = FLB_INPUT_PAUSED;
     }
 
     return paused;
