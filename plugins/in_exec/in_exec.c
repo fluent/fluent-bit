@@ -41,6 +41,8 @@ static int in_exec_collect(struct flb_input_instance *i_ins,
     FILE *cmdp = NULL;
     char buf[DEFAULT_BUF_SIZE] = {0};
     struct flb_in_exec_config *exec_config = in_context;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
 
     /* variables for parser */
     int parser_ret = -1;
@@ -67,35 +69,43 @@ static int in_exec_collect(struct flb_input_instance *i_ins,
                     flb_time_get(&out_time);
                 }
 
-                flb_input_buf_write_start(i_ins);
+                /* Initialize local msgpack buffer */
+                msgpack_sbuffer_init(&mp_sbuf);
+                msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-                msgpack_pack_array(&i_ins->mp_pck, 2);
-                flb_time_append_to_msgpack(&out_time, &i_ins->mp_pck, 0);
-                msgpack_sbuffer_write(&i_ins->mp_sbuf, out_buf, out_size);
+                msgpack_pack_array(&mp_pck, 2);
+                flb_time_append_to_msgpack(&out_time, &mp_pck, 0);
+                msgpack_sbuffer_write(&mp_sbuf, out_buf, out_size);
 
-                flb_input_buf_write_end(i_ins);
+                flb_input_chunk_append_raw(i_ins, NULL, 0,
+                                           mp_sbuf.data, mp_sbuf.size);
+                msgpack_sbuffer_destroy(&mp_sbuf);
                 flb_free(out_buf);
             }
         }
     }
-    else{
+    else {
         while (fgets(buf, DEFAULT_BUF_SIZE - 1,cmdp) != NULL) {
             str_len = strlen(buf);
             buf[str_len-1] = '\0'; /* chomp */
 
-            flb_input_buf_write_start(i_ins);
+            /* Initialize local msgpack buffer */
+            msgpack_sbuffer_init(&mp_sbuf);
+            msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-            msgpack_pack_array(&i_ins->mp_pck, 2);
-            flb_pack_time_now(&i_ins->mp_pck);
-            msgpack_pack_map(&i_ins->mp_pck, 1);
+            msgpack_pack_array(&mp_pck, 2);
+            flb_pack_time_now(&mp_pck);
+            msgpack_pack_map(&mp_pck, 1);
 
-            msgpack_pack_str(&i_ins->mp_pck, 4);
-            msgpack_pack_str_body(&i_ins->mp_pck, "exec", 4);
-            msgpack_pack_str(&i_ins->mp_pck, str_len-1);
-            msgpack_pack_str_body(&i_ins->mp_pck,
+            msgpack_pack_str(&mp_pck, 4);
+            msgpack_pack_str_body(&mp_pck, "exec", 4);
+            msgpack_pack_str(&mp_pck, str_len-1);
+            msgpack_pack_str_body(&mp_pck,
                                   buf, str_len-1);
 
-            flb_input_buf_write_end(i_ins);
+            flb_input_chunk_append_raw(i_ins, NULL, 0,
+                                       mp_sbuf.data, mp_sbuf.size);
+            msgpack_sbuffer_destroy(&mp_sbuf);
         }
     }
 
