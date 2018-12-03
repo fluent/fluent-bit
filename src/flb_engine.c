@@ -149,8 +149,6 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
 
         /* A thread has finished, delete it */
         if (ret == FLB_OK) {
-            #warning "FIXME: thread finished, cleanup chunk"
-
             flb_task_retry_clean(task, out_th->parent);
             flb_output_thread_destroy_id(thread_id, task);
             if (task->users == 0 && mk_list_size(&task->retries) == 0) {
@@ -169,8 +167,6 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
                  * - No enough memory (unlikely)
                  * - It reached the maximum number of re-tries
                  */
-                #warning "FIXME: retry failed, delete chunk"
-
 #ifdef FLB_HAVE_METRICS
                 flb_metrics_sum(FLB_METRIC_OUT_RETRY_FAILED, 1,
                                 out_th->o_ins->metrics);
@@ -430,9 +426,7 @@ int flb_engine_start(struct flb_config *config)
         return -1;
     }
 
-    /* Enable Buffering Support */
-    #warning "FIXME: engine: start cio context ?"
-
+    /* Support mode only */
     if (config->support_mode == FLB_TRUE) {
         sleep(1);
         flb_sosreport(config);
