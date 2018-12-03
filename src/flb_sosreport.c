@@ -203,8 +203,8 @@ int flb_sosreport(struct flb_config *config)
             print_host(&ins_in->host);
         }
 
-        if (ins_in->mp_buf_limit > 0) {
-            flb_utils_bytes_to_human_readable_size(ins_in->mp_buf_limit,
+        if (ins_in->mem_buf_limit > 0) {
+            flb_utils_bytes_to_human_readable_size(ins_in->mem_buf_limit,
                                                    tmp, sizeof(tmp) - 1);
             printf("    Mem_Buf_Limit\t%s\n", tmp);
         }
