@@ -212,8 +212,6 @@ int fw_prot_process(struct fw_conn *conn)
                 /* Compose the new array */
                 struct msgpack_sbuffer mp_sbuf;
                 struct msgpack_packer mp_pck;
-                msgpack_unpacked r_out;
-                size_t off = 0;
 
                 msgpack_sbuffer_init(&mp_sbuf);
                 msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
