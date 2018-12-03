@@ -850,68 +850,6 @@ struct flb_input_dyntag *flb_input_dyntag_get(char *tag, size_t tag_len,
     return dt;
 }
 
-/* Append a MessagPack Object to the input instance */
-int flb_input_dyntag_append_obj(struct flb_input_instance *in,
-                                char *tag, size_t tag_len,
-                                msgpack_object data)
-{
-    struct flb_input_dyntag *dt;
-
-    dt = flb_input_dyntag_get(tag, tag_len, in);
-    if (!dt) {
-        return -1;
-    }
-
-    flb_input_dbuf_write_start(dt);
-    msgpack_pack_object(&dt->mp_pck, data);
-    flb_input_dbuf_write_end(dt);
-
-    /* Lock buffers where size > 2MB */
-    if (dt->mp_sbuf.size > 2048000) {
-        dt->lock = FLB_TRUE;
-    }
-
-    /* Make sure the data was not filtered out and the buffer size is zero */
-    if (dt->mp_sbuf.size == 0) {
-        flb_input_dyntag_destroy(dt);
-    }
-
-    return 0;
-}
-
-/* Append a RAW MessagPack buffer to the input instance */
-int flb_input_dyntag_append_raw(struct flb_input_instance *in,
-                                char *tag, size_t tag_len,
-                                void *buf, size_t buf_size)
-{
-    struct flb_input_dyntag *dt;
-
-    dt = flb_input_dyntag_get(tag, tag_len, in);
-    if (!dt) {
-        return -1;
-    }
-
-    /* Mark buf write */
-    flb_input_dbuf_write_start(dt);
-
-    msgpack_sbuffer_write(&dt->mp_sbuf, buf, buf_size);
-
-    /* Unmark buf write */
-    flb_input_dbuf_write_end(dt);
-
-    /* Lock buffers where size > 2MB */
-    if (dt->mp_sbuf.size > 2048000) {
-        dt->lock = FLB_TRUE;
-    }
-
-    /* Make sure the data was not filtered out and the buffer size is zero */
-    if (dt->mp_sbuf.size == 0) {
-        flb_input_dyntag_destroy(dt);
-    }
-
-    return 0;
-}
-
 /* Flush a buffer from an input instance (new since v0.11) */
 void *flb_input_flush(struct flb_input_instance *i_ins, size_t *size)
 {

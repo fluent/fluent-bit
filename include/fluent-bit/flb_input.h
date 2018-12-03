@@ -482,12 +482,6 @@ static inline int flb_input_buf_paused(struct flb_input_instance *i)
     return FLB_FALSE;
 }
 
-/* Temporal calls to disable old API in the meanwhile plugins are updated */
-#define flb_input_buf_write_start(x) do {} while(0);
-#define flb_input_buf_write_end(x) do {} while(0);
-#define flb_input_dbuf_write_start(x) do {} while(0);
-#define flb_input_dbuf_write_end(x) do {} while(0);
-
 static inline void FLB_INPUT_RETURN()
 {
     struct flb_thread *th;
