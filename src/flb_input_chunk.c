@@ -268,6 +268,15 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
     }
 
     /*
+     * Some callers might not set a custom tag, on that case just inherit
+     * the instance name.
+     */
+    if (!tag) {
+        tag = in->name;
+        tag_len = strlen(in->name);
+    }
+
+    /*
      * Get a target input chunk, can be one with remaining space available
      * or a new one.
      */
