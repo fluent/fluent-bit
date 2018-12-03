@@ -130,7 +130,6 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
     mk_list_foreach_safe(head, tmp, &in->chunks) {
         ic = mk_list_entry(head, struct flb_input_chunk, _head);
         if (ic->busy == FLB_TRUE) {
-            printf("chunk is busy\n");
             continue;
         }
 
