@@ -83,8 +83,8 @@ static int in_health_collect(struct flb_input_instance *i_ins,
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
     /* Pack data */
-    msgpack_pack_array(&i_ins->mp_pck, 2);
-    flb_pack_time_now(&i_ins->mp_pck);
+    msgpack_pack_array(&mp_pck, 2);
+    flb_pack_time_now(&mp_pck);
 
     /* extract map field */
     if (ctx->add_host) {
@@ -93,32 +93,32 @@ static int in_health_collect(struct flb_input_instance *i_ins,
     if (ctx->add_port) {
         map_num++;
     }
-    msgpack_pack_map(&i_ins->mp_pck, map_num);
+    msgpack_pack_map(&mp_pck, map_num);
 
     /* Status */
-    msgpack_pack_str(&i_ins->mp_pck, 5);
-    msgpack_pack_str_body(&i_ins->mp_pck, "alive", 5);
+    msgpack_pack_str(&mp_pck, 5);
+    msgpack_pack_str_body(&mp_pck, "alive", 5);
 
     if (alive) {
-        msgpack_pack_true(&i_ins->mp_pck);
+        msgpack_pack_true(&mp_pck);
     }
     else {
-        msgpack_pack_false(&i_ins->mp_pck);
+        msgpack_pack_false(&mp_pck);
     }
 
     if (ctx->add_host) {
         /* append hostname */
-        msgpack_pack_str(&i_ins->mp_pck, strlen("hostname"));
-        msgpack_pack_str_body(&i_ins->mp_pck, "hostname", strlen("hostname"));
-        msgpack_pack_str(&i_ins->mp_pck, ctx->len_host);
-        msgpack_pack_str_body(&i_ins->mp_pck, ctx->hostname, ctx->len_host);
+        msgpack_pack_str(&mp_pck, strlen("hostname"));
+        msgpack_pack_str_body(&mp_pck, "hostname", strlen("hostname"));
+        msgpack_pack_str(&mp_pck, ctx->len_host);
+        msgpack_pack_str_body(&mp_pck, ctx->hostname, ctx->len_host);
     }
 
     if (ctx->add_port) {
         /* append port number */
-        msgpack_pack_str(&i_ins->mp_pck, strlen("port"));
-        msgpack_pack_str_body(&i_ins->mp_pck, "port", strlen("port"));
-        msgpack_pack_int32(&i_ins->mp_pck, ctx->port);
+        msgpack_pack_str(&mp_pck, strlen("port"));
+        msgpack_pack_str_body(&mp_pck, "port", strlen("port"));
+        msgpack_pack_int32(&mp_pck, ctx->port);
     }
 
     flb_input_chunk_append_raw(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
