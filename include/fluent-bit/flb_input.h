@@ -48,7 +48,6 @@
 
 /* Input plugin masks */
 #define FLB_INPUT_NET         4   /* input address may set host and port   */
-#define FLB_INPUT_DYN_TAG     64  /* the plugin generate it own tags       */
 #define FLB_INPUT_THREAD     128  /* plugin requires a thread on callbacks */
 
 /* Input status */
@@ -109,32 +108,6 @@ struct flb_input_plugin {
 };
 
 /*
- * For input plugins which adds FLB_INPUT_DYN_TAG to the registration flag,
- * they usually report a set of new records under a dynamic Tags. Internally
- * the input plugin use the API function 'flb_input_dyntag_content()' to
- * register that info. The function will look for a matching flb_input_dyntag
- * structure node or create a new one if required.
- */
-struct flb_input_dyntag {
-    int busy;   /* buffer is being flushed        */
-    int lock;   /* cannot longer append more data */
-
-    /* Tag */
-    int tag_len;
-    char *tag;
-
-    /* MessagePack */
-    size_t mp_buf_write_size;
-    msgpack_sbuffer mp_sbuf;   /* msgpack sbuffer */
-    msgpack_packer mp_pck;     /* msgpack packer  */
-
-    /* Link to parent list on flb_input_instance */
-    struct mk_list _head;
-
-    struct flb_input_instance *in;
-};
-
-/*
  * Each initialized plugin must have an instance, same plugin may be
  * loaded more than one time.
  *
@@ -184,13 +157,6 @@ struct flb_input_instance {
     /* Reference to struct flb_storage_input context */
     void *storage;
 
-    /* MessagePack buffers: the plugin use these contexts to append records */
-    int mp_records;
-    size_t mp_buf_write_size;
-    msgpack_packer  mp_pck;
-    msgpack_sbuffer mp_sbuf;
-    msgpack_zone  *mp_zone;
-
     /*
      * Buffers counter: it count the total of memory used by fixed and dynamic
      * messgage pack buffers used by the input plugin instance.
@@ -233,7 +199,6 @@ struct flb_input_instance {
 
     struct mk_list _head;                /* link to config->inputs     */
     struct mk_list routes;               /* flb_router_path's list     */
-    struct mk_list dyntags;              /* dyntag nodes               */
     struct mk_list chunks;               /* storage chunks             */
     struct mk_list properties;           /* properties / configuration */
     struct mk_list collectors;           /* collectors                 */
@@ -527,19 +492,7 @@ void flb_input_initialize_all(struct flb_config *config);
 void flb_input_pre_run_all(struct flb_config *config);
 void flb_input_exit_all(struct flb_config *config);
 
-/* Dyntag handlers */
-struct flb_input_dyntag *flb_input_dyntag_create(struct flb_input_instance *in,
-                                                 char *tag, int tag_len);
-int flb_input_dyntag_destroy(struct flb_input_dyntag *dt);
-int flb_input_dyntag_append_obj(struct flb_input_instance *in,
-                                char *tag, size_t tag_len,
-                                msgpack_object data);
-int flb_input_dyntag_append_raw(struct flb_input_instance *in,
-                                char *tag, size_t tag_len,
-                                void *buf, size_t buf_size);
 void *flb_input_flush(struct flb_input_instance *i_ins, size_t *size);
-void *flb_input_dyntag_flush(struct flb_input_dyntag *dt, size_t *size);
-void flb_input_dyntag_exit(struct flb_input_instance *in);
 int flb_input_pause_all(struct flb_config *config);
 
 #endif
