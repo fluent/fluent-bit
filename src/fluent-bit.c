@@ -121,10 +121,7 @@ static void flb_help(int rc, struct flb_config *config)
 
     printf("Usage: fluent-bit [OPTION]\n\n");
     printf("%sAvailable Options%s\n", ANSI_BOLD, ANSI_RESET);
-#ifdef FLB_HAVE_BUFFERING
-    printf("  -b  --buf_path=PATH\tspecify a buffering path\n");
-    printf("  -B  --buf_workers=N\tnumber of workers for buffering\n");
-#endif
+    printf("  -b  --storage_path=PATH\tspecify a storage buffering path\n");
     printf("  -c  --config=FILE\tspecify an optional configuration file\n");
 #ifdef FLB_HAVE_FORK
     printf("  -d, --daemon\t\trun Fluent Bit in background mode\n");
@@ -587,8 +584,7 @@ int main(int argc, char **argv)
 #ifndef _WIN32
     /* Setup long-options */
     static const struct option long_opts[] = {
-        { "buf_path",        required_argument, NULL, 'b' },
-        { "buf_workers",     required_argument, NULL, 'B' },
+        { "storage_path",    required_argument, NULL, 'b' },
         { "config",          required_argument, NULL, 'c' },
 #ifdef FLB_HAVE_FORK
         { "daemon",          no_argument      , NULL, 'd' },
@@ -654,22 +650,14 @@ int main(int argc, char **argv)
 
     /* Parse the command line options */
     while ((opt = getopt_long(argc, argv,
-                              "b:B:c:df:i:m:o:R:F:p:e:"
+                              "b:c:df:i:m:o:R:F:p:e:"
                               "t:l:vqVhL:HP:s:S",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
-#ifdef FLB_HAVE_BUFFERING
         case 'b':
-            config->buffer_path = flb_strdup(optarg);
-            if (config->buffer_workers <= 0) {
-                config->buffer_workers = 1;
-            }
+            config->storage_path = flb_strdup(optarg);
             break;
-        case 'B':
-            config->buffer_workers = atoi(optarg);
-            break;
-#endif
         case 'c':
             cfg_file = flb_strdup(optarg);
             break;

@@ -27,15 +27,8 @@
 
 #include <string.h>
 
-/* wildcard support */
-/* tag and match should be null terminated. */
-#ifdef FLB_HAVE_REGEX
-int flb_router_match(const char *tag,
-                     const char *match,
-                     struct flb_regex *match_regex)
-#else
-int flb_router_match(const char *tag, const char *match)
-#endif
+static inline int router_match(const char *tag, int tag_len, const char *match,
+                               off_t off)
 {
     int ret = 0;
     char *pos = NULL;
@@ -44,12 +37,14 @@ int flb_router_match(const char *tag, const char *match)
     struct flb_regex_search result;
     int n;
     if (match_regex) {
-        n = onig_match(match_regex->regex, tag, tag + strlen(tag), tag, 0, ONIG_OPTION_NONE);
+        n = onig_match(match_regex->regex, tag, tag_len, tag, 0,
+                       ONIG_OPTION_NONE);
         if (n > 0) {
             return 1;
         }
     }
 #endif
+
     while (match) {
         if (*match == '*') {
             while (*++match == '*'){
@@ -61,37 +56,49 @@ int flb_router_match(const char *tag, const char *match)
                 break;
             }
 
-            /* FIXME: we need to avoid recursive calls here */
-            while ((pos = strchr(tag, (int) *match))) {
+            while ((pos = memchr(tag + off, (int) *match, tag_len - off))) {
+                off += pos - (tag + off);
+
 #ifndef FLB_HAVE_REGEX
-                if (flb_router_match(pos, match) ){
+                if (router_match(pos, match, off)) {
 #else
                 /* We don't need to pass the regex recursively,
                  * we matched in order above
                  */
-                if (flb_router_match(pos, match, NULL) ){
+                if (router_match(tag, tag_len, match, off, NULL)) {
 #endif
                     ret = 1;
                     break;
                 }
-                tag = pos+1;
+                off++;
             }
             break;
         }
-        else if (*tag != *match ) {
+        else if (tag[off] != *match ) {
             /* mismatch! */
             break;
         }
-        else if (*tag == '\0'){
+        else if (off + 1 >= tag_len) {
             /* end of tag. so matched! */
             ret = 1;
             break;
         }
-        tag++;
+        off++;
         match++;
     }
 
     return ret;
+}
+
+#ifdef FLB_HAVE_REGEX
+int flb_router_match(const char *tag, int tag_len,
+                     const char *match,
+                     struct flb_regex *match_regex)
+#else
+int flb_router_match(const char *tag, int tag_len, const char *match)
+#endif
+{
+    return router_match(tag, tag_len, match, 0);
 }
 
 /* Associate and input and output instances due to a previous match */
@@ -191,7 +198,7 @@ int flb_router_io_set(struct flb_config *config)
                 continue;
             }
 
-            if (flb_router_match(i_ins->tag, o_ins->match
+            if (flb_router_match(i_ins->tag, i_ins->tag_len, o_ins->match
 #ifdef FLB_HAVE_REGEX
                 , o_ins->match_regex
 #endif

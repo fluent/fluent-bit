@@ -122,6 +122,8 @@ static int mqtt_data_append(char *topic, size_t topic_len,
     char *pack;
     msgpack_object root;
     msgpack_unpacked result;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
     struct flb_in_mqtt_config *ctx = in_context;
 
     /* Convert our incoming JSON to MsgPack */
@@ -144,27 +146,30 @@ static int mqtt_data_append(char *topic, size_t topic_len,
     }
     root = result.data;
 
-    /* Mark the start of a 'buffer write' operation */
-    flb_input_buf_write_start(ctx->i_ins);
+    /* Initialize local msgpack buffer */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    msgpack_pack_array(&ctx->i_ins->mp_pck, 2);
-    flb_pack_time_now(&ctx->i_ins->mp_pck);
+    /* Pack data */
+    msgpack_pack_array(&mp_pck, 2);
+    flb_pack_time_now(&mp_pck);
 
     n_size = root.via.map.size;
-    msgpack_pack_map(&ctx->i_ins->mp_pck, n_size + 1);
-    msgpack_pack_str(&ctx->i_ins->mp_pck, 5);
-    msgpack_pack_str_body(&ctx->i_ins->mp_pck, "topic", 5);
-    msgpack_pack_str(&ctx->i_ins->mp_pck, topic_len);
-    msgpack_pack_str_body(&ctx->i_ins->mp_pck, topic, topic_len);
+    msgpack_pack_map(&mp_pck, n_size + 1);
+    msgpack_pack_str(&mp_pck, 5);
+    msgpack_pack_str_body(&mp_pck, "topic", 5);
+    msgpack_pack_str(&mp_pck, topic_len);
+    msgpack_pack_str_body(&mp_pck, topic, topic_len);
 
     /* Re-pack original KVs */
     for (i = 0; i < n_size; i++) {
-        msgpack_pack_object(&ctx->i_ins->mp_pck, root.via.map.ptr[i].key);
-        msgpack_pack_object(&ctx->i_ins->mp_pck, root.via.map.ptr[i].val);
+        msgpack_pack_object(&mp_pck, root.via.map.ptr[i].key);
+        msgpack_pack_object(&mp_pck, root.via.map.ptr[i].val);
     }
 
-    /* End of buffer write */
-    flb_input_buf_write_end(ctx->i_ins);
+
+    flb_input_chunk_append_raw(ctx->i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    msgpack_sbuffer_destroy(&mp_sbuf);
 
     msgpack_unpacked_destroy(&result);
     flb_free(pack);

@@ -58,10 +58,12 @@ struct flb_in_health_config {
 static int in_health_collect(struct flb_input_instance *i_ins,
                              struct flb_config *config, void *in_context)
 {
+    int map_num = 1;
     uint8_t alive;
     struct flb_in_health_config *ctx = in_context;
     struct flb_upstream_conn *u_conn;
-    int map_num = 1;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
 
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
@@ -76,13 +78,11 @@ static int in_health_collect(struct flb_input_instance *i_ins,
         FLB_INPUT_RETURN();
     }
 
-    /*
-     * Store the new data into the MessagePack buffer,
-     */
+    /* Initialize local msgpack buffer */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    /* Mark the start of a 'buffer write' operation */
-    flb_input_buf_write_start(i_ins);
-
+    /* Pack data */
     msgpack_pack_array(&i_ins->mp_pck, 2);
     flb_pack_time_now(&i_ins->mp_pck);
 
@@ -121,7 +121,8 @@ static int in_health_collect(struct flb_input_instance *i_ins,
         msgpack_pack_int32(&i_ins->mp_pck, ctx->port);
     }
 
-    flb_input_buf_write_end(i_ins);
+    flb_input_chunk_append_raw(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    msgpack_sbuffer_destroy(&mp_sbuf);
 
     FLB_INPUT_RETURN();
     return 0;

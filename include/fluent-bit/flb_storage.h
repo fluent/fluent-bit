@@ -17,14 +17,25 @@
  *  limitations under the License.
  */
 
-#ifdef FLB_HAVE_BUFFERING /* Only buffering uses SHA-1 at the moment */
+#ifndef FLB_STORAGE_H
+#define FLB_STORAGE_H
 
-#ifndef FLB_SHA1_H
-#define FLB_SHA1_H
+#include <fluent-bit/flb_info.h>
+#include <chunkio/chunkio.h>
 
-#include <mbedtls/sha1.h>
+/*
+ * The storage structure helps to associate the contexts between
+ * input instances and the chunkio context and further streams.
+ *
+ * Each input instance have a stream associated.
+ */
 
-void flb_sha1_encode(const void *data_in, unsigned long length,
-                     unsigned char *data_out);
-#endif
+struct flb_storage_input {
+    struct cio_stream *stream;
+    struct cio_ctx *cio;
+};
+
+int flb_storage_create(struct flb_config *ctx);
+void flb_storage_destroy(struct flb_config *ctx);
+
 #endif

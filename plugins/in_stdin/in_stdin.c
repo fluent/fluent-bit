@@ -42,7 +42,8 @@ static inline void consume_bytes(char *buf, int bytes, int length)
     memmove(buf, buf + bytes, length - bytes);
 }
 
-static inline int pack_json(struct flb_in_stdin_config *ctx,
+static inline int pack_json(msgpack_packer *mp_pck,
+                            struct flb_in_stdin_config *ctx,
                             char *data, size_t data_size)
 {
     size_t off = 0;
@@ -52,56 +53,48 @@ static inline int pack_json(struct flb_in_stdin_config *ctx,
     /* Queue the data with time field */
     msgpack_unpacked_init(&result);
 
-    flb_input_buf_write_start(ctx->i_in);
-
     while (msgpack_unpack_next(&result, data, data_size, &off)) {
         if (result.data.type == MSGPACK_OBJECT_MAP) {
             /* { map => val, map => val, map => val } */
-            msgpack_pack_array(&ctx->i_in->mp_pck, 2);
-            flb_pack_time_now(&ctx->i_in->mp_pck);
-            msgpack_pack_str_body(&ctx->i_in->mp_pck, data + start, off - start);
-        } else {
-            msgpack_pack_str_body(&ctx->i_in->mp_pck, data + start, off - start);
+            msgpack_pack_array(mp_pck, 2);
+            flb_pack_time_now(mp_pck);
+            msgpack_pack_str_body(mp_pck, data + start, off - start);
+        }
+        else {
+            msgpack_pack_str_body(mp_pck, data + start, off - start);
         }
         start = off;
     }
-    flb_input_buf_write_end(ctx->i_in);
-    msgpack_unpacked_destroy(&result);
 
+    msgpack_unpacked_destroy(&result);
     return 0;
 }
 
-static inline int pack_raw(struct flb_in_stdin_config *ctx,
+static inline int pack_raw(msgpack_packer *mp_pck,
+                           struct flb_in_stdin_config *ctx,
                            char *data, size_t data_size)
 {
-    flb_input_buf_write_start(ctx->i_in);
+    msgpack_pack_array(mp_pck, 2);
+    flb_pack_time_now(mp_pck);
 
-    msgpack_pack_array(&ctx->i_in->mp_pck, 2);
-    flb_pack_time_now(&ctx->i_in->mp_pck);
+    msgpack_pack_map(mp_pck, 1);
 
-    msgpack_pack_map(&ctx->i_in->mp_pck, 1);
+    msgpack_pack_str(mp_pck, 3);
+    msgpack_pack_str_body(mp_pck, "log", 3);
 
-    msgpack_pack_str(&ctx->i_in->mp_pck, 3);
-    msgpack_pack_str_body(&ctx->i_in->mp_pck, "log", 3);
-
-    msgpack_pack_str(&ctx->i_in->mp_pck, data_size);
-    msgpack_pack_str_body(&ctx->i_in->mp_pck, data, data_size);
-
-    flb_input_buf_write_end(ctx->i_in);
+    msgpack_pack_str(mp_pck, data_size);
+    msgpack_pack_str_body(mp_pck, data, data_size);
 
     return 0;
 }
 
-static inline int pack_regex(struct flb_in_stdin_config *ctx,
+static inline int pack_regex(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
+                             struct flb_in_stdin_config *ctx,
                              struct flb_time *t, char *data, size_t data_size)
 {
-    flb_input_buf_write_start(ctx->i_in);
-
-    msgpack_pack_array(&ctx->i_in->mp_pck, 2);
-    flb_time_append_to_msgpack(t, &ctx->i_in->mp_pck, 0);
-    msgpack_sbuffer_write(&ctx->i_in->mp_sbuf, data, data_size);
-
-    flb_input_buf_write_end(ctx->i_in);
+    msgpack_pack_array(mp_pck, 2);
+    flb_time_append_to_msgpack(t, mp_pck, 0);
+    msgpack_sbuffer_write(mp_sbuf, data, data_size);
 
     return 0;
 }
@@ -118,6 +111,8 @@ static int in_stdin_collect(struct flb_input_instance *i_ins,
     jsmntok_t *token;
     struct flb_time out_time;
     struct flb_in_stdin_config *ctx = in_context;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
 
     bytes = read(ctx->fd,
                  ctx->buf + ctx->buf_len,
@@ -136,13 +131,18 @@ static int in_stdin_collect(struct flb_input_instance *i_ins,
     ctx->buf_len += bytes;
     ctx->buf[ctx->buf_len] = '\0';
 
+    /* Initialize local msgpack buffer */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
     while (ctx->buf_len > 0) {
         /* Try built-in JSON parser */
         if (!ctx->parser) {
             ret = flb_pack_json_state(ctx->buf, ctx->buf_len,
                                       &pack, &pack_size, &ctx->pack_state);
             if (ret == FLB_ERR_JSON_PART) {
-                flb_debug("[in_stdin] data incomplete, waiting for more data...");
+                flb_debug("[in_stdin] data incomplete, waiting for more...");
+                msgpack_sbuffer_destroy(&mp_sbuf);
                 return 0;
             }
             else if (ret == FLB_ERR_JSON_INVAL) {
@@ -151,15 +151,16 @@ static int in_stdin_collect(struct flb_input_instance *i_ins,
                 flb_pack_state_init(&ctx->pack_state);
                 ctx->pack_state.multiple = FLB_TRUE;
                 ctx->buf_len = 0;
+                msgpack_sbuffer_destroy(&mp_sbuf);
                 return -1;
             }
 
             token = (jsmntok_t *) &ctx->pack_state.tokens[0];
             if (token->type != JSMN_OBJECT) {
-                pack_raw(ctx, ctx->buf, ctx->buf_len);
+                pack_raw(&mp_pck, ctx, ctx->buf, ctx->buf_len);
             }
             else {
-                pack_json(ctx, pack, pack_size);
+                pack_json(&mp_pck, ctx, pack, pack_size);
             }
 
             consume_bytes(ctx->buf, ctx->pack_state.last_byte, ctx->buf_len);
@@ -172,6 +173,9 @@ static int in_stdin_collect(struct flb_input_instance *i_ins,
 
             flb_free(pack);
 
+            flb_input_chunk_append_raw(i_ins, NULL, 0,
+                                       mp_sbuf.data, mp_sbuf.size);
+            msgpack_sbuffer_destroy(&mp_sbuf);
             return 0;
         }
         else {
@@ -185,12 +189,17 @@ static int in_stdin_collect(struct flb_input_instance *i_ins,
                 if (flb_time_to_double(&out_time) == 0) {
                     flb_time_get(&out_time);
                 }
-                pack_regex(ctx, &out_time, out_buf, out_size);
+                pack_regex(&mp_sbuf, &mp_pck,
+                           ctx, &out_time, out_buf, out_size);
                 flb_free(out_buf);
+                flb_input_chunk_append_raw(i_ins, NULL, 0,
+                                           mp_sbuf.data, mp_sbuf.size);
+                msgpack_sbuffer_destroy(&mp_sbuf);
             }
             else {
                 /* we need more data ? */
                 flb_trace("[in_stdin] data mismatch or incomplete");
+                msgpack_sbuffer_destroy(&mp_sbuf);
                 return 0;
             }
         }
@@ -211,6 +220,7 @@ static int in_stdin_collect(struct flb_input_instance *i_ins,
         }
     }
 
+    msgpack_sbuffer_destroy(&mp_sbuf);
     return 0;
 }
 

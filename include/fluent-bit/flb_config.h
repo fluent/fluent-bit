@@ -149,11 +149,11 @@ struct flb_config {
     void *http_ctx;           /* Monkey HTTP context    */
 #endif
 
-#ifdef FLB_HAVE_BUFFERING
-    struct flb_buffer *buffer_ctx;
-    int buffer_workers;
-    char *buffer_path;
-#endif
+    /* Chunk I/O Buffering */
+    void *cio;
+    char *storage_path;
+    char *storage_sync;
+    int   storage_checksum;
 
     /* Embedded SQL Database support (SQLite3) */
 #ifdef FLB_HAVE_SQLDB
@@ -203,27 +203,27 @@ enum conf_type {
     FLB_CONF_TYPE_OTHER,
 };
 
-#define FLB_CONF_STR_FLUSH    "Flush"
-#define FLB_CONF_STR_GRACE    "Grace"
-#define FLB_CONF_STR_DAEMON   "Daemon"
-#define FLB_CONF_STR_LOGFILE  "Log_File"
-#define FLB_CONF_STR_LOGLEVEL "Log_Level"
-#define FLB_CONF_STR_PARSERS_FILE "Parsers_File"
-#define FLB_CONF_STR_PLUGINS_FILE "Plugins_File"
+#define FLB_CONF_STR_FLUSH           "Flush"
+#define FLB_CONF_STR_GRACE           "Grace"
+#define FLB_CONF_STR_DAEMON          "Daemon"
+#define FLB_CONF_STR_LOGFILE         "Log_File"
+#define FLB_CONF_STR_LOGLEVEL        "Log_Level"
+#define FLB_CONF_STR_PARSERS_FILE    "Parsers_File"
+#define FLB_CONF_STR_PLUGINS_FILE    "Plugins_File"
 
 /* FLB_HAVE_HTTP_SERVER */
 #ifdef FLB_HAVE_HTTP_SERVER
-#define FLB_CONF_STR_HTTP_SERVER  "HTTP_Server"
-#define FLB_CONF_STR_HTTP_LISTEN  "HTTP_Listen"
-#define FLB_CONF_STR_HTTP_PORT    "HTTP_Port"
+#define FLB_CONF_STR_HTTP_SERVER     "HTTP_Server"
+#define FLB_CONF_STR_HTTP_LISTEN     "HTTP_Listen"
+#define FLB_CONF_STR_HTTP_PORT       "HTTP_Port"
 #endif /* !FLB_HAVE_HTTP_SERVER */
 
-/* FLB_HAVE_BUFFERING */
-#ifdef FLB_HAVE_BUFFERING
-#define FLB_CONF_STR_BUF_PATH     "Buffer_Path"
-#define FLB_CONF_STR_BUF_WORKERS  "Buffer_Workers"
-#endif /* !FLB_HAVE_BUFFERING */
+/* Storage / Chunk I/O */
+#define FLB_CONF_STORAGE_PATH        "storage.path"
+#define FLB_CONF_STORAGE_SYNC        "storage.sync"
+#define FLB_CONF_STORAGE_CHECKSUM    "storage.checksum"
 
+/* Coroutines */
 #define FLB_CONF_STR_CORO_STACK_SIZE "Coro_Stack_Size"
 
 #endif

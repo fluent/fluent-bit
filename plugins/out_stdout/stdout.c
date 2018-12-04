@@ -213,6 +213,7 @@ static void cb_stdout_flush(void *data, size_t bytes,
     size_t off = 0, cnt = 0;
     struct flb_out_stdout_config *ctx = out_context;
     char *json = NULL;
+    char *buf = NULL;
     uint64_t json_len;
 
     (void) i_ins;
@@ -227,15 +228,24 @@ static void cb_stdout_flush(void *data, size_t bytes,
         fflush(stdout);
     }
     else {
+        /* A tag might not contain a NULL byte */
+        buf = flb_malloc(tag_len + 1);
+        if (!buf) {
+            flb_errno();
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+        memcpy(buf, tag, tag_len);
+        buf[tag_len] = '\0';
         msgpack_unpacked_init(&result);
         while (msgpack_unpack_next(&result, data, bytes, &off)) {
-            printf("[%zd] %s: [", cnt++, tag);
+            printf("[%zd] %s: [", cnt++, buf);
             flb_time_pop_from_msgpack(&tmp, &result, &p);
             printf("%"PRIu32".%09lu, ", (uint32_t)tmp.tm.tv_sec, tmp.tm.tv_nsec);
             msgpack_object_print(stdout, *p);
             printf("]\n");
         }
         msgpack_unpacked_destroy(&result);
+        flb_free(buf);
     }
 
     FLB_OUTPUT_RETURN(FLB_OK);

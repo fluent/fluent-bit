@@ -25,6 +25,7 @@
 #endif
 
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_input_chunk.h>
 #include <msgpack.h>
 
 #define FLB_FILTER_MODIFIED 1
@@ -72,7 +73,7 @@ char *flb_filter_get_property(char *key, struct flb_filter_instance *i);
 struct flb_filter_instance *flb_filter_new(struct flb_config *config,
                                            char *filter, void *data);
 void flb_filter_exit(struct flb_config *config);
-void flb_filter_do(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
+void flb_filter_do(struct flb_input_chunk *ic,
                    void *data, size_t bytes,
                    char *tag, int tag_len,
                    struct flb_config *config);

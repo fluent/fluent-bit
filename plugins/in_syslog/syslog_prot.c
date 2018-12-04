@@ -30,12 +30,23 @@ static inline void consume_bytes(char *buf, int bytes, int length)
     memmove(buf, buf + bytes, length - bytes);
 }
 
-static inline int pack_line(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
+static inline int pack_line(struct flb_syslog *ctx,
                             struct flb_time *time, char *data, size_t data_size)
 {
-    msgpack_pack_array(mp_pck, 2);
-    flb_time_append_to_msgpack(time, mp_pck, 0);
-    msgpack_sbuffer_write(mp_sbuf, data, data_size);
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+
+    /* Initialize local msgpack buffer */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    msgpack_pack_array(&mp_pck, 2);
+    flb_time_append_to_msgpack(time, &mp_pck, 0);
+    msgpack_sbuffer_write(&mp_sbuf, data, data_size);
+
+    flb_input_chunk_append_raw(ctx->i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+
     return 0;
 }
 
@@ -50,14 +61,6 @@ int syslog_prot_process(struct syslog_conn *conn)
     size_t out_size;
     struct flb_time out_time;
     struct flb_syslog *ctx = conn->ctx;
-
-    msgpack_sbuffer *out_sbuf;
-    msgpack_packer *out_pck;
-
-    out_sbuf = &conn->in->mp_sbuf;
-    out_pck  = &conn->in->mp_pck;
-
-    flb_input_buf_write_start(conn->in);
 
     eof = p = conn->buf_data;
     end = conn->buf_data + conn->buf_len;
@@ -96,8 +99,7 @@ int syslog_prot_process(struct syslog_conn *conn)
         ret = flb_parser_do(ctx->parser, p, len,
                             &out_buf, &out_size, &out_time);
         if (ret >= 0) {
-            pack_line(out_sbuf, out_pck, &out_time,
-                      out_buf, out_size);
+            pack_line(ctx, &out_time, out_buf, out_size);
             flb_free(out_buf);
         }
         else {
@@ -114,8 +116,6 @@ int syslog_prot_process(struct syslog_conn *conn)
     conn->buf_parsed = 0;
     conn->buf_data[conn->buf_len] = '\0';
 
-    flb_input_buf_write_end(conn->in);
-
     return 0;
 }
 
@@ -125,13 +125,6 @@ int syslog_prot_process_udp(char *buf, size_t size, struct flb_syslog *ctx)
     void *out_buf;
     size_t out_size;
     struct flb_time out_time = {0};
-    msgpack_sbuffer *out_sbuf;
-    msgpack_packer *out_pck;
-
-    out_sbuf = &ctx->i_ins->mp_sbuf;
-    out_pck  = &ctx->i_ins->mp_pck;
-
-    flb_input_buf_write_start(ctx->i_ins);
 
     ret = flb_parser_do(ctx->parser, buf, size,
                         &out_buf, &out_size, &out_time);
@@ -139,16 +132,13 @@ int syslog_prot_process_udp(char *buf, size_t size, struct flb_syslog *ctx)
         if (flb_time_to_double(&out_time) == 0) {
             flb_time_get(&out_time);
         }
-        pack_line(out_sbuf, out_pck, &out_time,
-                  out_buf, out_size);
+        pack_line(ctx, &out_time, out_buf, out_size);
         flb_free(out_buf);
     }
     else {
         flb_warn("[in_syslog] error parsing log message");
         return -1;
     }
-
-    flb_input_buf_write_end(ctx->i_ins);
 
     return 0;
 }

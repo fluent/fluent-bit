@@ -38,30 +38,36 @@ static inline int process_pack(struct tcp_conn *conn,
     size_t off = 0;
     msgpack_unpacked result;
     msgpack_object entry;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
 
-    flb_input_buf_write_start(conn->in);
+    /* Initialize local msgpack buffer */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
     /* First pack the results, iterate concatenated messages */
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, pack, size, &off)) {
         entry = result.data;
 
-        msgpack_pack_array(&conn->in->mp_pck, 2);
-        flb_pack_time_now(&conn->in->mp_pck);
+        msgpack_pack_array(&mp_pck, 2);
+        flb_pack_time_now(&mp_pck);
 
         if (entry.type == MSGPACK_OBJECT_MAP) {
-            msgpack_pack_object(&conn->in->mp_pck, entry);
+            msgpack_pack_object(&mp_pck, entry);
         }
         else {
-            msgpack_pack_map(&conn->in->mp_pck, 1);
-            msgpack_pack_str(&conn->in->mp_pck, 3);
-            msgpack_pack_str_body(&conn->in->mp_pck, "msg", 3);
-            msgpack_pack_object(&conn->in->mp_pck, entry);
+            msgpack_pack_map(&mp_pck, 1);
+            msgpack_pack_str(&mp_pck, 3);
+            msgpack_pack_str_body(&mp_pck, "msg", 3);
+            msgpack_pack_object(&mp_pck, entry);
         }
     }
-    flb_input_buf_write_end(conn->in);
 
     msgpack_unpacked_destroy(&result);
+
+    flb_input_chunk_append_raw(conn->in, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    msgpack_sbuffer_destroy(&mp_sbuf);
 
     return 0;
 }

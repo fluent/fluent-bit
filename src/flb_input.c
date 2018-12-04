@@ -126,6 +126,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->context  = NULL;
         instance->data     = data;
         instance->threaded = FLB_FALSE;
+        instance->storage  = NULL;
 
         /* net */
         instance->host.name    = NULL;
@@ -147,6 +148,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         /* Initialize list heads */
         mk_list_init(&instance->routes);
         mk_list_init(&instance->tasks);
+        mk_list_init(&instance->chunks);
         mk_list_init(&instance->dyntags);
         mk_list_init(&instance->properties);
         mk_list_init(&instance->collectors);
@@ -167,8 +169,9 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         }
 
         instance->mp_total_buf_size = 0;
-        instance->mp_buf_limit = 0;
-        instance->mp_buf_status = FLB_INPUT_RUNNING;
+        instance->mem_buf_status = FLB_INPUT_RUNNING;
+        instance->mem_buf_limit = 0;
+        instance->mem_chunks_size = 0;
 
         /* Metrics */
 #ifdef FLB_HAVE_METRICS
@@ -225,7 +228,7 @@ int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
         if (limit == -1) {
             return -1;
         }
-        in->mp_buf_limit = (size_t) limit;
+        in->mem_buf_limit = (size_t) limit;
     }
     else if (prop_key_check("listen", k, len) == 0) {
         in->host.listen = tmp;
@@ -389,7 +392,7 @@ void flb_input_exit_all(struct flb_config *config)
             continue;
         }
 
-        if (p->cb_exit) {
+        if (p->cb_exit && in->context) {
             p->cb_exit(in->context, config);
         }
         flb_input_free(in);
@@ -632,7 +635,7 @@ int flb_input_pause_all(struct flb_config *config)
             }
             paused++;
         }
-        in->mp_buf_status = FLB_INPUT_PAUSED;
+        in->mem_buf_status = FLB_INPUT_PAUSED;
     }
 
     return paused;
@@ -845,68 +848,6 @@ struct flb_input_dyntag *flb_input_dyntag_get(char *tag, size_t tag_len,
     }
 
     return dt;
-}
-
-/* Append a MessagPack Object to the input instance */
-int flb_input_dyntag_append_obj(struct flb_input_instance *in,
-                                char *tag, size_t tag_len,
-                                msgpack_object data)
-{
-    struct flb_input_dyntag *dt;
-
-    dt = flb_input_dyntag_get(tag, tag_len, in);
-    if (!dt) {
-        return -1;
-    }
-
-    flb_input_dbuf_write_start(dt);
-    msgpack_pack_object(&dt->mp_pck, data);
-    flb_input_dbuf_write_end(dt);
-
-    /* Lock buffers where size > 2MB */
-    if (dt->mp_sbuf.size > 2048000) {
-        dt->lock = FLB_TRUE;
-    }
-
-    /* Make sure the data was not filtered out and the buffer size is zero */
-    if (dt->mp_sbuf.size == 0) {
-        flb_input_dyntag_destroy(dt);
-    }
-
-    return 0;
-}
-
-/* Append a RAW MessagPack buffer to the input instance */
-int flb_input_dyntag_append_raw(struct flb_input_instance *in,
-                                char *tag, size_t tag_len,
-                                void *buf, size_t buf_size)
-{
-    struct flb_input_dyntag *dt;
-
-    dt = flb_input_dyntag_get(tag, tag_len, in);
-    if (!dt) {
-        return -1;
-    }
-
-    /* Mark buf write */
-    flb_input_dbuf_write_start(dt);
-
-    msgpack_sbuffer_write(&dt->mp_sbuf, buf, buf_size);
-
-    /* Unmark buf write */
-    flb_input_dbuf_write_end(dt);
-
-    /* Lock buffers where size > 2MB */
-    if (dt->mp_sbuf.size > 2048000) {
-        dt->lock = FLB_TRUE;
-    }
-
-    /* Make sure the data was not filtered out and the buffer size is zero */
-    if (dt->mp_sbuf.size == 0) {
-        flb_input_dyntag_destroy(dt);
-    }
-
-    return 0;
 }
 
 /* Flush a buffer from an input instance (new since v0.11) */

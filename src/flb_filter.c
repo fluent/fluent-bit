@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_router.h>
+#include <chunkio/chunkio.h>
 
 static inline int instance_id(struct flb_filter_plugin *p,
                               struct flb_config *config)
@@ -52,32 +53,29 @@ static inline int prop_key_check(char *key, char *kv, int k_len)
     return -1;
 }
 
-/*
- * If a filter plugin returned a new buffer, we need to replace the
- * old buffer comming from the input instance.
- */
-static void flb_filter_replace(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
-                               size_t old_size,
-                               void *new_buf, size_t new_size)
-{
-    mp_sbuf->size -= old_size;
-    msgpack_sbuffer_write(mp_sbuf, new_buf, new_size);
-}
-
-void flb_filter_do(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
+void flb_filter_do(struct flb_input_chunk *ic,
                    void *data, size_t bytes,
                    char *tag, int tag_len,
                    struct flb_config *config)
 {
     int ret;
     void *out_buf;
+    size_t cur_size;
     size_t out_size;
+    ssize_t content_size;
     struct mk_list *head;
     struct flb_filter_instance *f_ins;
 
+    content_size = cio_chunk_get_content_size(ic->chunk);
+    if (content_size <= 0) {
+        flb_error("[filter] cannot retrieve original content size");
+        return;
+    }
+    content_size -= bytes;
+
     mk_list_foreach(head, &config->filters) {
         f_ins = mk_list_entry(head, struct flb_filter_instance, _head);
-        if (flb_router_match(tag, f_ins->match
+        if (flb_router_match(tag, tag_len, f_ins->match
 #ifdef FLB_HAVE_REGEX
         , f_ins->match_regex
 #endif
@@ -99,19 +97,18 @@ void flb_filter_do(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
             if (ret == FLB_FILTER_MODIFIED) {
                 /* all records removed, no data to continue processing */
                 if (out_size == 0) {
-                    mp_sbuf->size = 0;
+                    /* reset data content length */
+                    flb_input_chunk_write_at(ic, content_size, "", 0);
                     break;
                 }
 
-                flb_filter_replace(mp_sbuf, mp_pck,    /* msgpack        */
-                                   bytes,              /* passed data    */
-                                   out_buf, out_size); /* new data       */
-                /* Release new temporal buffer */
-                flb_free(out_buf);
-
+                ret = flb_input_chunk_write_at(ic, content_size,
+                                               out_buf, out_size);
                 /* Point back the 'data' pointer to the new address */
                 bytes = out_size;
-                data  = mp_sbuf->data + (mp_sbuf->size - out_size);
+                data = cio_chunk_get_content(ic->chunk, &cur_size);
+                data += content_size;
+                flb_free(out_buf);
             }
         }
     }

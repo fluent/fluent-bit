@@ -188,6 +188,8 @@ static int in_mem_collect(struct flb_input_instance *i_ins,
     struct proc_task *task = NULL;
     struct flb_in_mem_config *ctx = in_context;
     struct flb_in_mem_info info;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
 
     if (ctx->pid) {
         task = proc_stat(ctx->pid, ctx->page_size);
@@ -210,50 +212,52 @@ static int in_mem_collect(struct flb_input_instance *i_ins,
         entries += 2;
     }
 
-    /* Mark the start of a 'buffer write' operation */
-    flb_input_buf_write_start(i_ins);
+    /* Initialize local msgpack buffer */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    msgpack_pack_array(&i_ins->mp_pck, 2);
-    flb_pack_time_now(&i_ins->mp_pck);
-    msgpack_pack_map(&i_ins->mp_pck, entries);
+    /* Pack the data */
+    msgpack_pack_array(&mp_pck, 2);
+    flb_pack_time_now(&mp_pck);
+    msgpack_pack_map(&mp_pck, entries);
 
-    msgpack_pack_str(&i_ins->mp_pck, 9);
-    msgpack_pack_str_body(&i_ins->mp_pck, "Mem.total", 9);
-    msgpack_pack_uint64(&i_ins->mp_pck, info.mem_total);
+    msgpack_pack_str(&mp_pck, 9);
+    msgpack_pack_str_body(&mp_pck, "Mem.total", 9);
+    msgpack_pack_uint64(&mp_pck, info.mem_total);
 
-    msgpack_pack_str(&i_ins->mp_pck, 8);
-    msgpack_pack_str_body(&i_ins->mp_pck, "Mem.used", 8);
-    msgpack_pack_uint64(&i_ins->mp_pck, info.mem_used);
+    msgpack_pack_str(&mp_pck, 8);
+    msgpack_pack_str_body(&mp_pck, "Mem.used", 8);
+    msgpack_pack_uint64(&mp_pck, info.mem_used);
 
-    msgpack_pack_str(&i_ins->mp_pck, 8);
-    msgpack_pack_str_body(&i_ins->mp_pck, "Mem.free", 8);
-    msgpack_pack_uint64(&i_ins->mp_pck, info.mem_free);
+    msgpack_pack_str(&mp_pck, 8);
+    msgpack_pack_str_body(&mp_pck, "Mem.free", 8);
+    msgpack_pack_uint64(&mp_pck, info.mem_free);
 
-    msgpack_pack_str(&i_ins->mp_pck, 10);
-    msgpack_pack_str_body(&i_ins->mp_pck, "Swap.total", 10);
-    msgpack_pack_uint64(&i_ins->mp_pck, info.swap_total);
+    msgpack_pack_str(&mp_pck, 10);
+    msgpack_pack_str_body(&mp_pck, "Swap.total", 10);
+    msgpack_pack_uint64(&mp_pck, info.swap_total);
 
-    msgpack_pack_str(&i_ins->mp_pck, 9);
-    msgpack_pack_str_body(&i_ins->mp_pck, "Swap.used", 9);
-    msgpack_pack_uint64(&i_ins->mp_pck, info.swap_used);
+    msgpack_pack_str(&mp_pck, 9);
+    msgpack_pack_str_body(&mp_pck, "Swap.used", 9);
+    msgpack_pack_uint64(&mp_pck, info.swap_used);
 
-    msgpack_pack_str(&i_ins->mp_pck, 9);
-    msgpack_pack_str_body(&i_ins->mp_pck, "Swap.free", 9);
-    msgpack_pack_uint64(&i_ins->mp_pck, info.swap_free);
+    msgpack_pack_str(&mp_pck, 9);
+    msgpack_pack_str_body(&mp_pck, "Swap.free", 9);
+    msgpack_pack_uint64(&mp_pck, info.swap_free);
 
 
     if (task) {
         /* RSS bytes */
-        msgpack_pack_str(&i_ins->mp_pck, 10);
-        msgpack_pack_str_body(&i_ins->mp_pck, "proc_bytes", 10);
-        msgpack_pack_uint64(&i_ins->mp_pck, task->proc_rss);
+        msgpack_pack_str(&mp_pck, 10);
+        msgpack_pack_str_body(&mp_pck, "proc_bytes", 10);
+        msgpack_pack_uint64(&mp_pck, task->proc_rss);
 
         /* RSS Human readable format */
         len = strlen(task->proc_rss_hr);
-        msgpack_pack_str(&i_ins->mp_pck, 7);
-        msgpack_pack_str_body(&i_ins->mp_pck, "proc_hr", 7);
-        msgpack_pack_str(&i_ins->mp_pck, len);
-        msgpack_pack_str_body(&i_ins->mp_pck, task->proc_rss_hr, len);
+        msgpack_pack_str(&mp_pck, 7);
+        msgpack_pack_str_body(&mp_pck, "proc_hr", 7);
+        msgpack_pack_str(&mp_pck, len);
+        msgpack_pack_str_body(&mp_pck, task->proc_rss_hr, len);
 
         proc_free(task);
     }
@@ -264,7 +268,9 @@ static int in_mem_collect(struct flb_input_instance *i_ins,
               info.swap_total, info.swap_used, info.swap_free);
     ++ctx->idx;
 
-    flb_input_buf_write_end(i_ins);
+    flb_input_chunk_append_raw(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+
     return 0;
 }
 
