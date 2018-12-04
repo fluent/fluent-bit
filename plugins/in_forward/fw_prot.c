@@ -242,9 +242,9 @@ int fw_prot_process(struct fw_conn *conn)
                 }
 
                 if (data) {
-                    flb_input_dyntag_append_raw(conn->in,
-                                                stag, stag_len,
-                                                data, len);
+                    flb_input_chunk_append_raw(conn->in,
+                                               stag, stag_len,
+                                               data, len);
                 }
             }
             else {
