@@ -286,8 +286,6 @@ static void flb_input_free(struct flb_input_instance *in)
         flb_free(prop);
     }
 
-    flb_input_dyntag_exit(in);
-
     /* Remove metrics */
 #ifdef FLB_HAVE_METRICS
     if (in->metrics) {
