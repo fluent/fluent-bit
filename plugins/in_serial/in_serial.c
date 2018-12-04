@@ -63,7 +63,8 @@ static inline int process_line(msgpack_packer *mp_pck, char *line, int len,
     return 0;
 }
 
-static inline int process_pack(struct flb_in_serial_config *ctx,
+static inline int process_pack(msgpack_packer *mp_pck,
+                               struct flb_in_serial_config *ctx,
                                char *pack, size_t size)
 {
     size_t off = 0;
@@ -75,13 +76,13 @@ static inline int process_pack(struct flb_in_serial_config *ctx,
     while (msgpack_unpack_next(&result, pack, size, &off)) {
         entry = result.data;
 
-        msgpack_pack_array(&ctx->i_ins->mp_pck, 2);
-        msgpack_pack_uint64(&ctx->i_ins->mp_pck, time(NULL));
+        msgpack_pack_array(mp_pck, 2);
+        msgpack_pack_uint64(mp_pck, time(NULL));
 
-        msgpack_pack_map(&ctx->i_ins->mp_pck, 1);
-        msgpack_pack_str(&ctx->i_ins->mp_pck, 3);
-        msgpack_pack_str_body(&ctx->i_ins->mp_pck, "msg", 3);
-        msgpack_pack_object(&ctx->i_ins->mp_pck, entry);
+        msgpack_pack_map(mp_pck, 1);
+        msgpack_pack_str(mp_pck, 3);
+        msgpack_pack_str_body(mp_pck, "msg", 3);
+        msgpack_pack_object(mp_pck, entry);
     }
 
     msgpack_unpacked_destroy(&result);
@@ -212,7 +213,7 @@ static int in_serial_collect(struct flb_input_instance *in,
              * Given the Tokens used for the packaged message, append
              * the records and then adjust buffer.
              */
-            process_pack(ctx, pack, out_size);
+            process_pack(&mp_pck, ctx, pack, out_size);
             flb_free(pack);
 
             consume_bytes(ctx->buf_data, ctx->pack_state.last_byte, ctx->buf_len);
