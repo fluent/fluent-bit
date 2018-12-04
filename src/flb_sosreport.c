@@ -70,10 +70,6 @@ static void input_flags(int flags)
         printf("NET ");
     }
 
-    if (flags & FLB_INPUT_DYN_TAG) {
-        printf("DYN_TAG ");
-    }
-
     if (flags & FLB_INPUT_THREAD) {
         printf("THREAD ");
     }

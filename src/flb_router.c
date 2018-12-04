@@ -177,16 +177,6 @@ int flb_router_io_set(struct flb_config *config)
             continue;
         }
 
-        /*
-         * Pre-routing rules cannot exists for a plugin which have dynamic
-         * tags.
-         */
-        if (i_ins->flags & FLB_INPUT_DYN_TAG) {
-            flb_debug("[router] input=%s 'DYNAMIC TAG'",
-                      i_ins->name);
-            continue;
-        }
-
         if (!i_ins->tag) {
             flb_warn("[router] NO tag for %s input instance",
                      i_ins->name);
