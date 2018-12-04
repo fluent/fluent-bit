@@ -45,8 +45,6 @@ matrix:
       sudo: true
       language: c
       compiler: gcc
-      script: |
-        ci/do-ut
     - os: linux
       dist: xenial
       sudo: true
