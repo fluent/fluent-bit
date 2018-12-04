@@ -102,7 +102,6 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
     else {
         ctx->dynamic_tag = FLB_FALSE;
     }
-    ctx->i_ins->flags |= FLB_INPUT_DYN_TAG;
 
     /* Database file */
     tmp = flb_input_get_property("db", i_ins);
