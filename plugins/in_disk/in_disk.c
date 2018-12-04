@@ -170,18 +170,18 @@ static int in_disk_collect(struct flb_input_instance *i_ins,
         msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
         /* Pack data */
-        msgpack_pack_array(&i_ins->mp_pck, 2);
-        flb_pack_time_now(&i_ins->mp_pck);
-        msgpack_pack_map(&i_ins->mp_pck, num_map);
+        msgpack_pack_array(&mp_pck, 2);
+        flb_pack_time_now(&mp_pck);
+        msgpack_pack_map(&mp_pck, num_map);
 
 
-        msgpack_pack_str(&i_ins->mp_pck, strlen(STR_KEY_READ));
-        msgpack_pack_str_body(&i_ins->mp_pck, STR_KEY_READ, strlen(STR_KEY_READ));
-        msgpack_pack_uint64(&i_ins->mp_pck, read_total);
+        msgpack_pack_str(&mp_pck, strlen(STR_KEY_READ));
+        msgpack_pack_str_body(&mp_pck, STR_KEY_READ, strlen(STR_KEY_READ));
+        msgpack_pack_uint64(&mp_pck, read_total);
 
-        msgpack_pack_str(&i_ins->mp_pck, strlen(STR_KEY_WRITE));
-        msgpack_pack_str_body(&i_ins->mp_pck, STR_KEY_WRITE, strlen(STR_KEY_WRITE));
-        msgpack_pack_uint64(&i_ins->mp_pck, write_total);
+        msgpack_pack_str(&mp_pck, strlen(STR_KEY_WRITE));
+        msgpack_pack_str_body(&mp_pck, STR_KEY_WRITE, strlen(STR_KEY_WRITE));
+        msgpack_pack_uint64(&mp_pck, write_total);
 
         flb_input_chunk_append_raw(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
         msgpack_sbuffer_destroy(&mp_sbuf);
