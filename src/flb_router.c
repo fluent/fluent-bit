@@ -28,21 +28,26 @@
 #include <string.h>
 
 static inline int router_match(const char *tag, int tag_len, const char *match,
-                               off_t off)
+                               off_t off, void *match_r)
 {
     int ret = 0;
     char *pos = NULL;
 
 #ifdef FLB_HAVE_REGEX
-    struct flb_regex_search result;
+    struct flb_regex *match_regex = match_r;
     int n;
     if (match_regex) {
-        n = onig_match(match_regex->regex, tag, tag_len, tag, 0,
+        n = onig_match(match_regex->regex,
+                       (unsigned char *) tag,
+                       (unsigned char *) tag + tag_len,
+                       (unsigned char *) tag, 0,
                        ONIG_OPTION_NONE);
         if (n > 0) {
             return 1;
         }
     }
+#else
+    (void) match_r;
 #endif
 
     while (match) {
@@ -94,12 +99,17 @@ static inline int router_match(const char *tag, int tag_len, const char *match,
 int flb_router_match(const char *tag, int tag_len,
                      const char *match,
                      struct flb_regex *match_regex)
+{
+    return router_match(tag, tag_len, match, 0, match_regex);
+}
+
 #else
 int flb_router_match(const char *tag, int tag_len, const char *match)
-#endif
 {
-    return router_match(tag, tag_len, match, 0);
+    return router_match(tag, tag_len, match, 0, NULL);
 }
+#endif
+
 
 /* Associate and input and output instances due to a previous match */
 static int flb_router_connect(struct flb_input_instance *in,
