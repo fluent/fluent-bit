@@ -267,62 +267,6 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     return task;
 }
 
-/*
- * Create an engine task to handle the output plugin flushing work. Not that
- * doing a direct Task will not do buffering.
- */
-struct flb_task *flb_task_create_direct(uint64_t ref_id,
-                                        char *buf,
-                                        size_t size,
-                                        struct flb_input_instance *i_ins,
-                                        char *tag,
-                                        char *hash,
-                                        uint64_t routes,
-                                        struct flb_config *config)
-{
-    int count = 0;
-    struct mk_list *head;
-    struct flb_task *task;
-    struct flb_task_route *route;
-    struct flb_output_instance *o_ins;
-
-    /* Allocate a task structure */
-    task = task_alloc(config);
-    if (!task) {
-        return NULL;
-    }
-
-    /* Keep track of origins */
-    task->ref_id    = ref_id;
-    task->tag       = flb_strdup(tag);
-    task->buf       = buf;
-    task->size      = size;
-    task->i_ins     = i_ins;
-    task->dt        = NULL;
-    task->mapped    = FLB_TRUE;
-    mk_list_add(&task->_head, &i_ins->tasks);
-
-    /* Iterate output instances and try to match the routes */
-    mk_list_foreach(head, &config->outputs) {
-        o_ins = mk_list_entry(head, struct flb_output_instance, _head);
-        if (o_ins->mask_id & routes) {
-            route = flb_malloc(sizeof(struct flb_task_route));
-            if (!route) {
-                perror("malloc");
-                continue;
-            }
-
-            route->out = o_ins;
-            mk_list_add(&route->_head, &task->routes);
-            count++;
-        }
-    }
-
-    flb_debug("[task] create_direct: %i routes", count);
-
-    return task;
-}
-
 void flb_task_destroy(struct flb_task *task)
 {
     struct mk_list *tmp;

@@ -105,15 +105,6 @@ struct flb_task *flb_task_create(uint64_t ref_id,
                                  void *ic,
                                  char *tag_buf, int tag_len,
                                  struct flb_config *config);
-struct flb_task *flb_task_create_direct(uint64_t ref_id,
-                                        char *buf,
-                                        size_t size,
-                                        struct flb_input_instance *i_ins,
-                                        char *tag,
-                                        char *hash,
-                                        uint64_t routes,
-                                        struct flb_config *config);
-
 void flb_task_add_thread(struct flb_thread *thread,
                          struct flb_task *task);
 
