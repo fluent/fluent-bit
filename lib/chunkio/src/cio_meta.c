@@ -131,9 +131,15 @@ int cio_meta_write(struct cio_chunk *ch, char *buf, size_t size)
     /* If there is no enough space, increase the file size and it memory map */
     if (content_av < size) {
         new_size = (size - meta_av) + cf->data_size + CIO_FILE_HEADER_MIN;
-
+        /* OSX mman does not implement mremap or MREMAP_MAYMOVE. */
+#ifndef MREMAP_MAYMOVE
+        if (munmap(cf->data_size, size) == -1)
+            return -1;
+        tmp = mmap(0, new_size, PROT_READ | PROT_WRITE, MAP_SHARED, cf->fd, 0);
+#else
         /* Increase memory map size */
         tmp = mremap(cf->map, cf->alloc_size, new_size, MREMAP_MAYMOVE);
+#endif
         if (tmp == MAP_FAILED) {
             cio_errno();
             cio_log_error(ch->ctx,

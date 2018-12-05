@@ -22,6 +22,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 #include <libgen.h>
@@ -48,6 +49,7 @@ int cio_os_isdir(const char *dir)
 int cio_os_mkpath(const char *dir, mode_t mode)
 {
     struct stat st;
+    char *dup_dir = NULL;
 
     if (!dir) {
         errno = EINVAL;
@@ -58,6 +60,11 @@ int cio_os_mkpath(const char *dir, mode_t mode)
         return 0;
     }
 
-    cio_os_mkpath(dirname(strdupa(dir)), mode);
+    dup_dir = strdup(dir);
+    if (!dup_dir) {
+        return 1;
+    }
+    cio_os_mkpath(dirname(dup_dir), mode);
+    free(dup_dir);
     return mkdir(dir, mode);
 }
