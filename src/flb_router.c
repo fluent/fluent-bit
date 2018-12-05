@@ -65,7 +65,7 @@ static inline int router_match(const char *tag, int tag_len, const char *match,
                 off += pos - (tag + off);
 
 #ifndef FLB_HAVE_REGEX
-                if (router_match(pos, match, off)) {
+                if (router_match(tag, tag_len, match, off, NULL)) {
 #else
                 /* We don't need to pass the regex recursively,
                  * we matched in order above
