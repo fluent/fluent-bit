@@ -50,7 +50,7 @@ macro(REGISTER_OUT_PLUGIN name)
   endif()
 endmacro()
 
-# REGISTER_OUT_PLUGIN
+# REGISTER_FILTER_PLUGIN
 macro(REGISTER_FILTER_PLUGIN name)
   string(FIND ${name} "=" pos)
   if(pos GREATER -1)
