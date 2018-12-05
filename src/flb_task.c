@@ -229,16 +229,12 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     mk_list_foreach(o_head, &config->outputs) {
         o_ins = mk_list_entry(o_head,
                               struct flb_output_instance, _head);
-        if (!o_ins->match) {
-            continue;
-        }
 
         if (flb_router_match(task->tag, task->tag_len, o_ins->match
 #ifdef FLB_HAVE_REGEX
                              , o_ins->match_regex
 #endif
                              )) {
-
             route = flb_malloc(sizeof(struct flb_task_route));
             if (!route) {
                 flb_errno();
