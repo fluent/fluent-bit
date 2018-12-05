@@ -17,8 +17,11 @@
 #include "crc32.h"     /* include the header file generated with pycrc */
 #include <stdlib.h>
 #include <stdint.h>
-#include <endian.h>
-
+#ifdef __APPLE__
+#  include <machine/endian.h>
+#else
+#  include <endian.h>
+#endif
 
 
 /**
