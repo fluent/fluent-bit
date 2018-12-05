@@ -46,7 +46,10 @@ matrix:
       language: c
       compiler: gcc
       script: |
-        ci/do-ut
+        sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 90
+        sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-7 90
+        sudo usermod -a -G systemd-journal $(id -un)
+        sudo -E su -p travis -c "PATH=$PATH ci/do-ut"
     - os: linux
       dist: xenial
       sudo: true
@@ -78,4 +81,3 @@ addons:
       - g++-7
       - libsystemd-dev
       - gcovr
-

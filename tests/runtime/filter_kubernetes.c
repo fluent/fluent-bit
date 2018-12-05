@@ -23,6 +23,10 @@ struct kube_test_result {
 #define KUBE_TAIL     0
 #define KUBE_SYSTEMD  1
 
+#ifdef FLB_HAVE_SYSTEMD
+int flb_test_systemd_send(void);
+#endif
+
 /* Constants */
 #define KUBE_IP       "127.0.0.1"
 #define KUBE_PORT     "8002"
@@ -198,6 +202,7 @@ static void kube_test_create(char *target, int type, char *suffix, char *parserc
                             NULL);
         TEST_CHECK(ret == 0);
     }
+#ifdef FLB_HAVE_SYSTEMD
     else if (type == KUBE_SYSTEMD) {
         in_ffd = flb_input(ctx->flb, "systemd", NULL);
         ret = flb_input_set(ctx->flb, in_ffd,
@@ -206,6 +211,7 @@ static void kube_test_create(char *target, int type, char *suffix, char *parserc
                             NULL);
         TEST_CHECK(ret == 0);
     }
+#endif
 
     filter_ffd = flb_filter(ctx->flb, "kubernetes", NULL);
     ret = flb_filter_set(ctx->flb, filter_ffd,
@@ -232,11 +238,13 @@ static void kube_test_create(char *target, int type, char *suffix, char *parserc
                              "Regex_Parser", "filter-kube-test",
                              NULL);
     }
+#ifdef FLB_HAVE_SYSTEMD
     else if (type == KUBE_SYSTEMD) {
         flb_filter_set(ctx->flb, filter_ffd,
                        "Use_Journal", "On",
                        NULL);
     }
+#endif
 
     /* Prepare output callback context*/
     cb_data.cb = cb_check_result;
@@ -250,6 +258,7 @@ static void kube_test_create(char *target, int type, char *suffix, char *parserc
                    "format", "json",
                    NULL);
 
+#ifdef FLB_HAVE_SYSTEMD
     /*
      *  If the source of data is Systemd, just let the output lib plugin
      * to process one record only, otherwise when the test case stop after
@@ -261,6 +270,7 @@ static void kube_test_create(char *target, int type, char *suffix, char *parserc
                        "Max_Records", "1",
                        NULL);
     }
+#endif
 
     /* Start the engine */
     ret = flb_start(ctx->flb);
@@ -268,6 +278,12 @@ static void kube_test_create(char *target, int type, char *suffix, char *parserc
     if (ret == -1) {
         exit(EXIT_FAILURE);
     }
+#ifdef FLB_HAVE_SYSTEMD
+    if (type == KUBE_SYSTEMD) {
+        TEST_CHECK_(flb_test_systemd_send() >= 0,
+                    "Error sending sample message to journal");
+    }
+#endif
 
     /* Poll for up to 2 seconds or until we got a match */
     for (ret = 0; ret < 2000 && result.nmatched == 0; ret++) {
@@ -323,33 +339,84 @@ void flb_test_json_logs_invalid()
 }
 
 #ifdef FLB_HAVE_SYSTEMD
+#define CONTAINER_NAME "CONTAINER_NAME=k8s_kairosdb_kairosdb-914055854-b63vq_default_d6c53deb-05a4-11e8-a8c4-080027435fb7_23"
 #include <systemd/sd-journal.h>
+
+int flb_test_systemd_send()
+{
+    return sd_journal_send(
+            "@timestamp=2018-02-23T08:58:45.0Z",
+            "PRIORITY=6",
+            CONTAINER_NAME,
+            "CONTAINER_TAG=",
+            "CONTAINER_ID=56e257661383",
+            "CONTAINER_ID_FULL=56e257661383836fac4cd90a23ee8a7a02ee1538c8f35657d1a90f3de1065a22",
+            "MESSAGE=08:58:45.839 [qtp151442075-47] DEBUG [HttpParser.java:281] - filled 157/157",
+            "KUBE_TEST=2018",
+            NULL);
+}
+
 void flb_test_systemd_logs()
 {
     struct stat statb;
+    struct kube_test *ctx;
 
     if (stat("/run/systemd/journal/socket", &statb) == 0 &&
         statb.st_mode & S_IFSOCK) {
+
+        int r;
+        sd_journal *journal;
+        r = sd_journal_open(&journal, 0);
+        if (r < 0) {
+            flb_error("Skip test: journal error: ", strerror(-r));
+            return;
+        }
+
+        r = sd_journal_get_fd(journal);
+        if (r < 0) {
+            flb_error("Skip test: journal fd error: ", strerror(-r));
+            sd_journal_close(journal);
+            return;
+        }
+        sd_journal_add_match(journal, CONTAINER_NAME, 0);
+        sd_journal_seek_tail(journal);
 
         /*
          * Send test message to Journal. If this fails (e.g. journal is
          * not running then skip the test.
          */
-        if (sd_journal_send(
-                        "@timestamp=2018-02-23T08:58:45.0Z",
-                        "PRIORITY=6",
-                        "CONTAINER_NAME=k8s_kairosdb_kairosdb-914055854-b63vq_default_d6c53deb-05a4-11e8-a8c4-080027435fb7_23",
-                        "CONTAINER_TAG=",
-                        "CONTAINER_ID=56e257661383",
-                        "CONTAINER_ID_FULL=56e257661383836fac4cd90a23ee8a7a02ee1538c8f35657d1a90f3de1065a22",
-                        "MESSAGE=08:58:45.839 [qtp151442075-47] DEBUG [HttpParser.java:281] - filled 157/157",
-                        "KUBE_TEST=2018",
-                        NULL) == 0) {
+        if (flb_test_systemd_send() < 0) {
 
-            kube_test_create(T_SYSTEMD_SIMPLE, KUBE_SYSTEMD, "", STD_PARSER,
-                             "Merge_Log", "On",
-                             NULL);
+            flb_error("Skip test: journal send error: ", strerror(-r));
+            sd_journal_close(journal);
+            return;
         }
+
+        r = sd_journal_previous(journal);
+        if (r < 0) {
+            flb_error("Skip test: journal previous error: ", strerror(-r));
+            sd_journal_close(journal);
+            return;
+        }
+
+        r = sd_journal_next(journal);
+        if (r < 0) {
+            flb_error("Skip test: journal next error: ", strerror(-r));
+            sd_journal_close(journal);
+            return;
+        }
+
+        r = sd_journal_wait(journal, 2000);
+        if (r < 0) {
+            flb_error("Skip test: journal wait error: ", strerror(-r));
+            sd_journal_close(journal);
+            return;
+        }
+        sd_journal_close(journal);
+
+        kube_test_create(T_SYSTEMD_SIMPLE, KUBE_SYSTEMD, "", STD_PARSER,
+                         "Merge_Log", "On",
+                         NULL);
     }
 }
 #endif
