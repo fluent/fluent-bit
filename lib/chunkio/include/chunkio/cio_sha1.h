@@ -1,8 +1,8 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
-/*  Fluent Bit
- *  ==========
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+/*  Chunk I/O
+ *  =========
+ *  Copyright 2018 Eduardo Silva <eduardo@monkey.io>
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -17,20 +17,20 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
+#ifndef CIO_SHA1_H
+#define CIO_SHA1_H
 
-#ifdef FLB_HAVE_BUFFERING /* Only buffering uses SHA-1 at the moment */
+#include <sha1/sha1.h>
 
-#include <mbedtls/sha1.h>
+struct cio_sha1 {
+    SHA_CTX sha;
+};
 
-void flb_sha1_encode(const void *data_in, unsigned long length,
-                     unsigned char *data_out)
-{
-    mbedtls_sha1_context ctx;
-
-    mbedtls_sha1_init(&ctx);
-    mbedtls_sha1_update_ret(&ctx, data_in, length);
-    mbedtls_sha1_finish_ret(&ctx, data_out);
-}
+void cio_sha1_init(struct cio_sha1 *ctx);
+void cio_sha1_update(struct cio_sha1 *ctx, const void *data, unsigned long len);
+void cio_sha1_final(unsigned char hash[20], struct cio_sha1 *ctx);
+void cio_sha1_hash(const void *data_in, unsigned long length,
+                   unsigned char *data_out, void *state);
+void cio_sha1_to_hex(unsigned char *in, char *out);
 
 #endif

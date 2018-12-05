@@ -116,6 +116,8 @@ static inline int process_line(char *line,
     uint64_t val;
     char *p = line;
     char *end = NULL;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
     struct flb_time ts;
 
     /* Increase buffer position */
@@ -167,38 +169,42 @@ static inline int process_line(char *line,
     p++;
 
     line_len = strlen(p);
-    flb_input_buf_write_start(i_ins);
+
+    /* Initialize local msgpack buffer */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
     /*
      * Store the new data into the MessagePack buffer,
      * we handle this as a list of maps.
      */
-    msgpack_pack_array(&i_ins->mp_pck, 2);
-    flb_time_append_to_msgpack(&ts, &i_ins->mp_pck, 0);
+    msgpack_pack_array(&mp_pck, 2);
+    flb_time_append_to_msgpack(&ts, &mp_pck, 0);
 
-    msgpack_pack_map(&i_ins->mp_pck, 5);
-    msgpack_pack_str(&i_ins->mp_pck, 8);
-    msgpack_pack_str_body(&i_ins->mp_pck, "priority", 8);
-    msgpack_pack_char(&i_ins->mp_pck, priority);
+    msgpack_pack_map(&mp_pck, 5);
+    msgpack_pack_str(&mp_pck, 8);
+    msgpack_pack_str_body(&mp_pck, "priority", 8);
+    msgpack_pack_char(&mp_pck, priority);
 
-    msgpack_pack_str(&i_ins->mp_pck, 8);
-    msgpack_pack_str_body(&i_ins->mp_pck, "sequence", 8);
-    msgpack_pack_uint64(&i_ins->mp_pck, sequence);
+    msgpack_pack_str(&mp_pck, 8);
+    msgpack_pack_str_body(&mp_pck, "sequence", 8);
+    msgpack_pack_uint64(&mp_pck, sequence);
 
-    msgpack_pack_str(&i_ins->mp_pck, 3);
-    msgpack_pack_str_body(&i_ins->mp_pck, "sec", 3);
-    msgpack_pack_uint64(&i_ins->mp_pck, tv.tv_sec);
+    msgpack_pack_str(&mp_pck, 3);
+    msgpack_pack_str_body(&mp_pck, "sec", 3);
+    msgpack_pack_uint64(&mp_pck, tv.tv_sec);
 
-    msgpack_pack_str(&i_ins->mp_pck, 4);
-    msgpack_pack_str_body(&i_ins->mp_pck, "usec", 4);
-    msgpack_pack_uint64(&i_ins->mp_pck, tv.tv_usec);
+    msgpack_pack_str(&mp_pck, 4);
+    msgpack_pack_str_body(&mp_pck, "usec", 4);
+    msgpack_pack_uint64(&mp_pck, tv.tv_usec);
 
-    msgpack_pack_str(&i_ins->mp_pck, 3);
-    msgpack_pack_str_body(&i_ins->mp_pck, "msg", 3);
-    msgpack_pack_str(&i_ins->mp_pck, line_len - 1);
-    msgpack_pack_str_body(&i_ins->mp_pck, p, line_len - 1);
+    msgpack_pack_str(&mp_pck, 3);
+    msgpack_pack_str_body(&mp_pck, "msg", 3);
+    msgpack_pack_str(&mp_pck, line_len - 1);
+    msgpack_pack_str_body(&mp_pck, p, line_len - 1);
 
-    flb_input_buf_write_end(i_ins);
+    flb_input_chunk_append_raw(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    msgpack_sbuffer_destroy(&mp_sbuf);
 
     flb_trace("[in_kmsg] pri=%i seq=%" PRIu64 " ts=%ld sec=%ld usec=%ld '%s'",
               priority,

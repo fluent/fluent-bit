@@ -82,16 +82,18 @@ struct flb_service_config service_configs[] = {
      offsetof(struct flb_config, http_port)},
 #endif
 
-#ifdef FLB_HAVE_BUFFERING
-    {FLB_CONF_STR_BUF_PATH,
+    /* Storage */
+    {FLB_CONF_STORAGE_PATH,
      FLB_CONF_TYPE_STR,
-     offsetof(struct flb_config, buffer_path)},
+     offsetof(struct flb_config, storage_path)},
+    {FLB_CONF_STORAGE_SYNC,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, storage_sync)},
+    {FLB_CONF_STORAGE_CHECKSUM,
+     FLB_CONF_TYPE_BOOL,
+     offsetof(struct flb_config, storage_checksum)},
 
-    {FLB_CONF_STR_BUF_WORKERS,
-     FLB_CONF_TYPE_INT,
-     offsetof(struct flb_config, buffer_workers)},
-#endif
-
+    /* Coroutines */
     {FLB_CONF_STR_CORO_STACK_SIZE,
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, coro_stack_size)},
@@ -140,11 +142,8 @@ struct flb_config *flb_config_init()
     config->http_port    = flb_strdup(FLB_CONFIG_HTTP_PORT);
 #endif
 
-#ifdef FLB_HAVE_BUFFERING
-    config->buffer_ctx     = NULL;
-    config->buffer_path    = NULL;
-    config->buffer_workers = 0;
-#endif
+    config->cio          = NULL;
+    config->storage_path = NULL;
 
 #ifdef FLB_HAVE_SQLDB
     mk_list_init(&config->sqldb_list);
@@ -298,9 +297,9 @@ void flb_config_exit(struct flb_config *config)
     flb_stats_exit(config);
 #endif
 
-#ifdef FLB_HAVE_BUFFERING
-    flb_free(config->buffer_path);
-#endif
+    if (config->storage_path) {
+        flb_free(config->storage_path);
+    }
 
     if (config->evl) {
         mk_event_loop_destroy(config->evl);

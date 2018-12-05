@@ -12,12 +12,11 @@ set(src
   flb_hash.c
   flb_pack.c
   flb_sds.c
-
-  flb_sha1.c
   flb_pipe.c
   flb_meta.c
   flb_kernel.c
   flb_input.c
+  flb_input_chunk.c
   flb_filter.c
   flb_output.c
   flb_config.c
@@ -29,6 +28,7 @@ set(src
   flb_unescape.c
   flb_scheduler.c
   flb_io.c
+  flb_storage.c
   flb_upstream.c
   flb_upstream_ha.c
   flb_upstream_node.c
@@ -89,15 +89,6 @@ if(FLB_METRICS)
     ${src}
     "flb_metrics.c"
     "flb_metrics_exporter.c"
-    )
-endif()
-
-if(FLB_BUFFERING)
-  set(src
-    ${src}
-    "flb_buffer.c"
-    "flb_buffer_chunk.c"
-    "flb_buffer_qchunk.c"
     )
 endif()
 
@@ -203,6 +194,7 @@ set(FLB_DEPS
   mk_core
   jsmn
   msgpackc-static
+  chunkio-static
   ${FLB_PLUGINS}
   ${FLB_PROXY_PLUGINS}
   ${extra_libs}

@@ -323,12 +323,13 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
     file->parsed = file->buf_len;
     *bytes = processed_bytes;
 
-    /* Append the temporal buffer to a dyntag, then release it */
-    flb_input_dyntag_append_raw(ctx->i_ins,
-                                file->tag_buf,
-                                file->tag_len,
-                                out_sbuf->data,
-                                out_sbuf->size);
+    /* Append buffer content to a chunk */
+    flb_input_chunk_append_raw(ctx->i_ins,
+                               file->tag_buf,
+                               file->tag_len,
+                               out_sbuf->data,
+                               out_sbuf->size);
+
     msgpack_sbuffer_destroy(out_sbuf);
     return lines;
 }

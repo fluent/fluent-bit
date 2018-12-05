@@ -1,8 +1,8 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
-/*  Fluent Bit
- *  ==========
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+/*  Chunk I/O
+ *  =========
+ *  Copyright 2018 Eduardo Silva <eduardo@monkey.io>
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -17,14 +17,10 @@
  *  limitations under the License.
  */
 
-#ifdef FLB_HAVE_BUFFERING /* Only buffering uses SHA-1 at the moment */
+#ifndef CIO_UTILS_H
+#define CIO_UTILS_H
 
-#ifndef FLB_SHA1_H
-#define FLB_SHA1_H
+int cio_utils_recursive_delete(const char *dir);
+int cio_utils_read_file(const char *path, char **buf, size_t *size);
 
-#include <mbedtls/sha1.h>
-
-void flb_sha1_encode(const void *data_in, unsigned long length,
-                     unsigned char *data_out);
-#endif
 #endif

@@ -32,7 +32,10 @@
 
 #include "in_disk.h"
 
-static char* shift_line(const char *line, char separator, int *idx,
+#define LINE_SIZE 256
+#define BUF_SIZE  32
+
+static char *shift_line(const char *line, char separator, int *idx,
                         char *buf, int buf_size)
 {
     char pack_mode = FLB_FALSE;
@@ -61,9 +64,6 @@ static char* shift_line(const char *line, char separator, int *idx,
     }
 }
 
-
-#define LINE_SIZE 256
-#define BUF_SIZE  32
 static int update_disk_stats(struct flb_in_disk_config *ctx)
 {
     char line[LINE_SIZE] = {0};
@@ -81,12 +81,12 @@ static int update_disk_stats(struct flb_in_disk_config *ctx)
         return -1;
     }
 
-    while(fgets(line, LINE_SIZE-1, fp) != NULL) {
+    while (fgets(line, LINE_SIZE-1, fp) != NULL) {
         i_line = 0;
         i_field = 0;
         skip_line = FLB_FALSE;
-        while(skip_line != FLB_TRUE &&
-              shift_line(line, ' ', &i_line, buf, BUF_SIZE-1) != NULL) {
+        while (skip_line != FLB_TRUE &&
+               shift_line(line, ' ', &i_line, buf, BUF_SIZE-1) != NULL) {
             i_field++;
             switch(i_field) {
             case 3: /* device name */
@@ -125,6 +125,8 @@ static int in_disk_collect(struct flb_input_instance *i_ins,
     struct flb_in_disk_config *ctx = in_context;
     (void) *i_ins;
     (void) *config;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
 
     /* The type of sector size is unsigned long in kernel source */
     unsigned long   read_total = 0;
@@ -163,23 +165,26 @@ static int in_disk_collect(struct flb_input_instance *i_ins,
         read_total  *= 512;
         write_total *= 512;
 
-        /* Mark the start of a 'buffer write' operation */
-        flb_input_buf_write_start(i_ins);
+        /* Initialize local msgpack buffer */
+        msgpack_sbuffer_init(&mp_sbuf);
+        msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-        msgpack_pack_array(&i_ins->mp_pck, 2);
-        flb_pack_time_now(&i_ins->mp_pck);
-        msgpack_pack_map(&i_ins->mp_pck, num_map);
+        /* Pack data */
+        msgpack_pack_array(&mp_pck, 2);
+        flb_pack_time_now(&mp_pck);
+        msgpack_pack_map(&mp_pck, num_map);
 
 
-        msgpack_pack_str(&i_ins->mp_pck, strlen(STR_KEY_READ));
-        msgpack_pack_str_body(&i_ins->mp_pck, STR_KEY_READ, strlen(STR_KEY_READ));
-        msgpack_pack_uint64(&i_ins->mp_pck, read_total);
+        msgpack_pack_str(&mp_pck, strlen(STR_KEY_READ));
+        msgpack_pack_str_body(&mp_pck, STR_KEY_READ, strlen(STR_KEY_READ));
+        msgpack_pack_uint64(&mp_pck, read_total);
 
-        msgpack_pack_str(&i_ins->mp_pck, strlen(STR_KEY_WRITE));
-        msgpack_pack_str_body(&i_ins->mp_pck, STR_KEY_WRITE, strlen(STR_KEY_WRITE));
-        msgpack_pack_uint64(&i_ins->mp_pck, write_total);
+        msgpack_pack_str(&mp_pck, strlen(STR_KEY_WRITE));
+        msgpack_pack_str_body(&mp_pck, STR_KEY_WRITE, strlen(STR_KEY_WRITE));
+        msgpack_pack_uint64(&mp_pck, write_total);
 
-        flb_input_buf_write_end(i_ins);
+        flb_input_chunk_append_raw(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+        msgpack_sbuffer_destroy(&mp_sbuf);
     }
 
     return 0;

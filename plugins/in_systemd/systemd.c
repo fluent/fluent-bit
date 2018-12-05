@@ -157,10 +157,10 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
          */
         if (mp_sbuf.size > 0 &&
             ((last_tag_len != tag_len) || (strncmp(last_tag, tag, tag_len) != 0))) {
-            flb_input_dyntag_append_raw(ctx->i_ins,
-                                        last_tag, last_tag_len,
-                                        mp_sbuf.data,
-                                        mp_sbuf.size);
+            flb_input_chunk_append_raw(ctx->i_ins,
+                                       last_tag, last_tag_len,
+                                       mp_sbuf.data,
+                                       mp_sbuf.size);
             msgpack_sbuffer_destroy(&mp_sbuf);
             msgpack_sbuffer_init(&mp_sbuf);
 
@@ -230,10 +230,10 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
          * more than 1MB. Journal will resume later.
          */
         if (mp_sbuf.size > 1024000) {
-            flb_input_dyntag_append_raw(ctx->i_ins,
-                                        tag, tag_len,
-                                        mp_sbuf.data,
-                                        mp_sbuf.size);
+            flb_input_chunk_append_raw(ctx->i_ins,
+                                       tag, tag_len,
+                                       mp_sbuf.data,
+                                       mp_sbuf.size);
             msgpack_sbuffer_destroy(&mp_sbuf);
             msgpack_sbuffer_init(&mp_sbuf);
             strncpy(last_tag, tag, tag_len);
@@ -259,10 +259,10 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
 
     /* Write any pending data into the buffer */
     if (mp_sbuf.size > 0) {
-        flb_input_dyntag_append_raw(ctx->i_ins,
-                                    tag, tag_len,
-                                    mp_sbuf.data,
-                                    mp_sbuf.size);
+        flb_input_chunk_append_raw(ctx->i_ins,
+                                   tag, tag_len,
+                                   mp_sbuf.data,
+                                   mp_sbuf.size);
     }
     msgpack_sbuffer_destroy(&mp_sbuf);
 

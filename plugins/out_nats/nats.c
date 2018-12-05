@@ -189,8 +189,8 @@ void cb_nats_flush(void *data, size_t bytes,
     }
 
     /* Compose the NATS Publish request */
-    request = flb_malloc(json_len + 32);
-    req_len = snprintf(request, json_len + 32, "PUB %s %zu\r\n",
+    request = flb_malloc(json_len + tag_len + 32);
+    req_len = snprintf(request, tag_len + 32, "PUB %s %zu\r\n",
                        tag, json_len);
 
     /* Append JSON message and ending CRLF */

@@ -41,25 +41,21 @@
 #include "in_serial.h"
 #include "in_serial_config.h"
 
-static inline int process_line(char *line, int len,
+static inline int process_line(msgpack_packer *mp_pck, char *line, int len,
                                struct flb_in_serial_config *ctx)
 {
-
-    flb_input_buf_write_start(ctx->i_ins);
 
     /*
      * Store the new data into the MessagePack buffer,
      * we handle this as a list of maps.
      */
-    msgpack_pack_array(&ctx->i_ins->mp_pck, 2);
-    flb_pack_time_now(&ctx->i_ins->mp_pck);
-    msgpack_pack_map(&ctx->i_ins->mp_pck, 1);
-    msgpack_pack_str(&ctx->i_ins->mp_pck, 3);
-    msgpack_pack_str_body(&ctx->i_ins->mp_pck, "msg", 3);
-    msgpack_pack_str(&ctx->i_ins->mp_pck, len);
-    msgpack_pack_str_body(&ctx->i_ins->mp_pck, line, len);
-
-    flb_input_buf_write_end(ctx->i_ins);
+    msgpack_pack_array(mp_pck, 2);
+    flb_pack_time_now(mp_pck);
+    msgpack_pack_map(mp_pck, 1);
+    msgpack_pack_str(mp_pck, 3);
+    msgpack_pack_str_body(mp_pck, "msg", 3);
+    msgpack_pack_str(mp_pck, len);
+    msgpack_pack_str_body(mp_pck, line, len);
 
     flb_debug("[in_serial] message '%s'",
               (const char *) line);
@@ -67,7 +63,8 @@ static inline int process_line(char *line, int len,
     return 0;
 }
 
-static inline int process_pack(struct flb_in_serial_config *ctx,
+static inline int process_pack(msgpack_packer *mp_pck,
+                               struct flb_in_serial_config *ctx,
                                char *pack, size_t size)
 {
     size_t off = 0;
@@ -79,13 +76,13 @@ static inline int process_pack(struct flb_in_serial_config *ctx,
     while (msgpack_unpack_next(&result, pack, size, &off)) {
         entry = result.data;
 
-        msgpack_pack_array(&ctx->i_ins->mp_pck, 2);
-        msgpack_pack_uint64(&ctx->i_ins->mp_pck, time(NULL));
+        msgpack_pack_array(mp_pck, 2);
+        msgpack_pack_uint64(mp_pck, time(NULL));
 
-        msgpack_pack_map(&ctx->i_ins->mp_pck, 1);
-        msgpack_pack_str(&ctx->i_ins->mp_pck, 3);
-        msgpack_pack_str_body(&ctx->i_ins->mp_pck, "msg", 3);
-        msgpack_pack_object(&ctx->i_ins->mp_pck, entry);
+        msgpack_pack_map(mp_pck, 1);
+        msgpack_pack_str(mp_pck, 3);
+        msgpack_pack_str_body(mp_pck, "msg", 3);
+        msgpack_pack_object(mp_pck, entry);
     }
 
     msgpack_unpacked_destroy(&result);
@@ -110,18 +107,26 @@ static int in_serial_collect(struct flb_input_instance *in,
     char *sep;
     char *buf;
     struct flb_in_serial_config *ctx = in_context;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+
+    /* Initialize local msgpack buffer */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
     while (1) {
         available = (sizeof(ctx->buf_data) -1) - ctx->buf_len;
         if (available > 1) {
             bytes = read(ctx->fd, ctx->buf_data + ctx->buf_len, available);
             if (bytes == -1) {
+                msgpack_sbuffer_destroy(&mp_sbuf);
                 if (errno == EPIPE || errno == EINTR) {
                     return -1;
                 }
                 return 0;
             }
             else if (bytes == 0) {
+                msgpack_sbuffer_destroy(&mp_sbuf);
                 return 0;
             }
         }
@@ -164,7 +169,7 @@ static int in_serial_collect(struct flb_input_instance *in,
                 len = (sep - ctx->buf_data);
                 if (len > 0) {
                     /* process the line based in the separator position */
-                    process_line(buf, len, ctx);
+                    process_line(&mp_pck, buf, len, ctx);
                     consume_bytes(ctx->buf_data, len + ctx->sep_len, ctx->buf_len);
                     ctx->buf_len -= (len + ctx->sep_len);
                     hits++;
@@ -179,6 +184,7 @@ static int in_serial_collect(struct flb_input_instance *in,
             if (hits == 0 && available <= 1) {
                 flb_debug("[in_serial] no separator found, no more space");
                 ctx->buf_len = 0;
+                msgpack_sbuffer_destroy(&mp_sbuf);
                 return 0;
             }
         }
@@ -191,6 +197,7 @@ static int in_serial_collect(struct flb_input_instance *in,
                                       &pack, &out_size, &ctx->pack_state);
             if (ret == FLB_ERR_JSON_PART) {
                 flb_debug("[in_serial] JSON incomplete, waiting for more data...");
+                msgpack_sbuffer_destroy(&mp_sbuf);
                 return 0;
             }
             else if (ret == FLB_ERR_JSON_INVAL) {
@@ -198,7 +205,7 @@ static int in_serial_collect(struct flb_input_instance *in,
                 flb_pack_state_reset(&ctx->pack_state);
                 flb_pack_state_init(&ctx->pack_state);
                 ctx->pack_state.multiple = FLB_TRUE;
-
+                msgpack_sbuffer_destroy(&mp_sbuf);
                 return -1;
             }
 
@@ -206,7 +213,7 @@ static int in_serial_collect(struct flb_input_instance *in,
              * Given the Tokens used for the packaged message, append
              * the records and then adjust buffer.
              */
-            process_pack(ctx, pack, out_size);
+            process_pack(&mp_pck, ctx, pack, out_size);
             flb_free(pack);
 
             consume_bytes(ctx->buf_data, ctx->pack_state.last_byte, ctx->buf_len);
@@ -219,10 +226,13 @@ static int in_serial_collect(struct flb_input_instance *in,
         }
         else {
             /* Process and enqueue the received line */
-            process_line(ctx->buf_data, ctx->buf_len, ctx);
+            process_line(&mp_pck, ctx->buf_data, ctx->buf_len, ctx);
             ctx->buf_len = 0;
         }
     }
+
+    flb_input_chunk_append_raw(in, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    msgpack_sbuffer_destroy(&mp_sbuf);
 
     return 0;
 }

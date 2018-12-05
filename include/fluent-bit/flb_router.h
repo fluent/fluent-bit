@@ -20,8 +20,8 @@
 #ifndef FLB_ROUTER_H
 #define FLB_ROUTER_H
 
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
-
 
 struct flb_router_path {
     struct flb_output_instance *ins;
@@ -30,9 +30,10 @@ struct flb_router_path {
 
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>
-int flb_router_match(const char *tag, const char *match, struct flb_regex *);
+int flb_router_match(const char *tag, int tag_len,
+                     const char *match, struct flb_regex *match_regex);
 #else
-int flb_router_match(const char *tag, const char *match);
+int flb_router_match(const char *tag, int tag_len, const char *match);
 #endif
 int flb_router_io_set(struct flb_config *config);
 void flb_router_exit(struct flb_config *config);

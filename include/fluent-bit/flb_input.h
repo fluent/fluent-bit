@@ -21,6 +21,7 @@
 #define FLB_INPUT_H
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_input_chunk.h>
 #include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_network.h>
@@ -47,7 +48,6 @@
 
 /* Input plugin masks */
 #define FLB_INPUT_NET         4   /* input address may set host and port   */
-#define FLB_INPUT_DYN_TAG     64  /* the plugin generate it own tags       */
 #define FLB_INPUT_THREAD     128  /* plugin requires a thread on callbacks */
 
 /* Input status */
@@ -108,32 +108,6 @@ struct flb_input_plugin {
 };
 
 /*
- * For input plugins which adds FLB_INPUT_DYN_TAG to the registration flag,
- * they usually report a set of new records under a dynamic Tags. Internally
- * the input plugin use the API function 'flb_input_dyntag_content()' to
- * register that info. The function will look for a matching flb_input_dyntag
- * structure node or create a new one if required.
- */
-struct flb_input_dyntag {
-    int busy;   /* buffer is being flushed        */
-    int lock;   /* cannot longer append more data */
-
-    /* Tag */
-    int tag_len;
-    char *tag;
-
-    /* MessagePack */
-    size_t mp_buf_write_size;
-    msgpack_sbuffer mp_sbuf;   /* msgpack sbuffer */
-    msgpack_packer mp_pck;     /* msgpack packer  */
-
-    /* Link to parent list on flb_input_instance */
-    struct mk_list _head;
-
-    struct flb_input_instance *in;
-};
-
-/*
  * Each initialized plugin must have an instance, same plugin may be
  * loaded more than one time.
  *
@@ -180,18 +154,15 @@ struct flb_input_instance {
      */
     struct flb_net_host host;
 
-    /* MessagePack buffers: the plugin use these contexts to append records */
-    int mp_records;
-    size_t mp_buf_write_size;
-    msgpack_packer  mp_pck;
-    msgpack_sbuffer mp_sbuf;
-    msgpack_zone  *mp_zone;
+    /* Reference to struct flb_storage_input context */
+    void *storage;
 
     /*
      * Buffers counter: it count the total of memory used by fixed and dynamic
      * messgage pack buffers used by the input plugin instance.
      */
-    size_t mp_total_buf_size;
+    size_t mem_chunks_size;
+    size_t mp_total_buf_size; /* FIXME: to be deprecated */
 
     /*
      * Buffer limit: optional limit set by configuration so this input instance
@@ -205,14 +176,15 @@ struct flb_input_instance {
      * callback will be triggered, from that moment the plugin can append more
      * data.
      */
-    size_t mp_buf_limit;
+    size_t mem_buf_limit;
 
-    /* Define the buf status:
+    /*
+     * Define the buffer status:
      *
      * - FLB_INPUT_RUNNING -> can append more data
      * - FLB_INPUT_PAUSED  -> cannot append data
      */
-    int mp_buf_status;
+    int mem_buf_status;
 
     /*
      * Optional data passed to the plugin, this info is useful when
@@ -227,7 +199,7 @@ struct flb_input_instance {
 
     struct mk_list _head;                /* link to config->inputs     */
     struct mk_list routes;               /* flb_router_path's list     */
-    struct mk_list dyntags;              /* dyntag nodes               */
+    struct mk_list chunks;               /* storage chunks             */
     struct mk_list properties;           /* properties / configuration */
     struct mk_list collectors;           /* collectors                 */
 
@@ -466,189 +438,13 @@ static inline void flb_input_return(struct flb_thread *th) {
     }
 }
 
-static inline int flb_input_buf_overlimit(struct flb_input_instance *i)
-{
-    if (i->mp_buf_limit <= 0) {
-        return FLB_FALSE;
-    }
-
-    if (i->mp_total_buf_size >= i->mp_buf_limit) {
-        return FLB_TRUE;
-    }
-
-    return FLB_FALSE;
-}
-
 static inline int flb_input_buf_paused(struct flb_input_instance *i)
 {
-    if (i->mp_buf_status == FLB_INPUT_PAUSED) {
+    if (i->mem_buf_status == FLB_INPUT_PAUSED) {
         return FLB_TRUE;
     }
 
     return FLB_FALSE;
-}
-
-static inline int flb_input_buf_size_set(struct flb_input_instance *in)
-{
-    size_t total = 0;
-    struct mk_list *head;
-    struct flb_input_dyntag *dtp;
-
-    /* Itearate each dyntag structure and count total bytes */
-    mk_list_foreach(head, &in->dyntags) {
-        dtp = mk_list_entry(head, struct flb_input_dyntag, _head);
-        total += dtp->mp_sbuf.size;
-    }
-
-    total += in->mp_sbuf.size;
-    in->mp_total_buf_size = total;
-
-    if (flb_input_buf_overlimit(in) == FLB_FALSE &&
-        flb_input_buf_paused(in) && in->config->is_running == FLB_TRUE) {
-        in->mp_buf_status = FLB_INPUT_RUNNING;
-        if (in->p->cb_resume) {
-            in->p->cb_resume(in->context, in->config);
-            flb_debug("[input] %s resume (mem buf overlimit)",
-                      in->name);
-
-        }
-
-    }
-
-    return 0;
-}
-
-/* Return FLB_TRUE if it have been paused, otherwise FLB_FALSE */
-static inline int flb_input_buf_check(struct flb_input_instance *i)
-{
-
-    if (flb_input_buf_overlimit(i) == FLB_TRUE) {
-        flb_debug("[input] %s paused (mem buf overlimit)",
-                 i->name);
-        if (!flb_input_buf_paused(i)) {
-            if (i->p->cb_pause) {
-                i->p->cb_pause(i->context, i->config);
-            }
-        }
-        i->mp_buf_status = FLB_INPUT_PAUSED;
-        return FLB_TRUE;
-    }
-
-    return FLB_FALSE;
-}
-
-/*
- * Most of input plugins (except the ones handle dynamic tags) writes directly
- * to the msgpack buffers located in the input instance. Since we don't have
- * 100% control of 'when' this happens, we need a way to keep track of
- * these events. We introduce two basic functions for the purpose:
- *
- *  - flb_input_buf_write_start()
- *  - flb_input_buf_write_end()
- *
- * These functions aims to keep track when each buffer is being modified and
- * the number of bytes that have changed.
- */
-static inline void flb_input_buf_write_start(struct flb_input_instance *i)
-{
-    /* Save the current size of the buffer before an incoming modification */
-    i->mp_buf_write_size = i->mp_sbuf.size;
-}
-
-static inline void flb_input_buf_write_end(struct flb_input_instance *i)
-{
-    size_t bytes;
-    void *buf;
-#ifdef FLB_HAVE_METRICS
-    int records;
-#endif
-
-    /* Get the number of new bytes */
-    bytes = (i->mp_sbuf.size - i->mp_buf_write_size);
-    if (bytes == 0) {
-        return;
-    }
-
-#ifdef FLB_HAVE_METRICS
-    records = flb_mp_count(i->mp_sbuf.data + i->mp_buf_write_size, bytes);
-    if (records > 0) {
-        flb_metrics_sum(FLB_METRIC_N_RECORDS, records, i->metrics);
-        flb_metrics_sum(FLB_METRIC_N_BYTES, bytes, i->metrics);
-    }
-#endif
-
-    if (flb_input_buf_paused(i) == FLB_TRUE) {
-        i->mp_sbuf.size = i->mp_buf_write_size;
-        flb_debug("[input] %s is paused, cannot append records",
-                  i->name);
-        return;
-    }
-
-    /* Call the filter handler */
-    buf = i->mp_sbuf.data + i->mp_buf_write_size;
-    flb_filter_do(&i->mp_sbuf, &i->mp_pck,
-                  buf, bytes,
-                  i->tag, i->tag_len, i->config);
-
-    /*
-     * Update buffer size counter: this kind of input instance have just
-     * one msgpack buffer to use as a counter.
-     */
-    flb_input_buf_size_set(i);
-    flb_debug("[input %s] [mem buf] size = %lu", i->name, i->mp_total_buf_size);
-
-    /* Check if we are over the buf limit */
-    flb_input_buf_check(i);
-}
-
-static inline void flb_input_dbuf_write_start(struct flb_input_dyntag *dt)
-{
-    /* Save the current size of the buffer before an incoming modification */
-    dt->mp_buf_write_size = dt->mp_sbuf.size;
-}
-
-static inline void flb_input_dbuf_write_end(struct flb_input_dyntag *dt)
-{
-    size_t bytes;
-    void *buf;
-#ifdef FLB_HAVE_METRICS
-    int records;
-#endif
-    struct flb_input_instance *in = dt->in;
-
-    /* Get the number of new bytes */
-    bytes = (dt->mp_sbuf.size - dt->mp_buf_write_size);
-    if (bytes == 0) {
-        return;
-    }
-
-    if (flb_input_buf_paused(in) == FLB_TRUE) {
-        dt->mp_sbuf.size = dt->mp_buf_write_size;
-        flb_debug("[input] %s is paused, cannot append records",
-                  in->name);
-        return;
-    }
-
-#ifdef FLB_HAVE_METRICS
-    records = flb_mp_count(dt->mp_sbuf.data + dt->mp_buf_write_size, bytes);
-    if (records > 0) {
-        flb_metrics_sum(FLB_METRIC_N_RECORDS, records, in->metrics);
-        flb_metrics_sum(FLB_METRIC_N_BYTES, bytes, in->metrics);
-    }
-#endif
-
-    /* Call the filter handler */
-    buf = dt->mp_sbuf.data + dt->mp_buf_write_size;
-    flb_filter_do(&dt->mp_sbuf, &dt->mp_pck,
-                  buf, bytes,
-                  dt->tag, dt->tag_len, dt->in->config);
-
-    /* Itearate each dyntag structure and count total bytes */
-    flb_input_buf_size_set(in);
-    flb_debug("[input %s] [mem buf] size = %lu", in->name, in->mp_total_buf_size);
-
-    /* Check if we are over the buf limit */
-    flb_input_buf_check(in);
 }
 
 static inline void FLB_INPUT_RETURN()
@@ -696,19 +492,7 @@ void flb_input_initialize_all(struct flb_config *config);
 void flb_input_pre_run_all(struct flb_config *config);
 void flb_input_exit_all(struct flb_config *config);
 
-/* Dyntag handlers */
-struct flb_input_dyntag *flb_input_dyntag_create(struct flb_input_instance *in,
-                                                 char *tag, int tag_len);
-int flb_input_dyntag_destroy(struct flb_input_dyntag *dt);
-int flb_input_dyntag_append_obj(struct flb_input_instance *in,
-                                char *tag, size_t tag_len,
-                                msgpack_object data);
-int flb_input_dyntag_append_raw(struct flb_input_instance *in,
-                                char *tag, size_t tag_len,
-                                void *buf, size_t buf_size);
 void *flb_input_flush(struct flb_input_instance *i_ins, size_t *size);
-void *flb_input_dyntag_flush(struct flb_input_dyntag *dt, size_t *size);
-void flb_input_dyntag_exit(struct flb_input_instance *in);
 int flb_input_pause_all(struct flb_config *config);
 
 #endif

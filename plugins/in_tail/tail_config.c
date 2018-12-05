@@ -47,7 +47,6 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
         flb_errno();
         return NULL;
     }
-    ctx->dynamic_tag = FLB_FALSE;
     ctx->ignore_older = 0;
     ctx->skip_long_lines = FLB_FALSE;
     ctx->db_sync = -1;
@@ -277,7 +276,6 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
     if (tmp) {
         ctx->dynamic_tag = FLB_TRUE;
     }
-    i_ins->flags |= FLB_INPUT_DYN_TAG;
 
     /* Database options (needs to be set before the context) */
     tmp = flb_input_get_property("db.sync", i_ins);

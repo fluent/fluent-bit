@@ -43,7 +43,6 @@ option(FLB_TRACE              "Enable trace mode"             No)
 option(FLB_TESTS_RUNTIME      "Enable runtime tests"          No)
 option(FLB_TESTS_INTERNAL     "Enable internal tests"         No)
 option(FLB_MTRACE             "Enable mtrace support"         No)
-option(FLB_BUFFERING          "Enable buffering support"      No)
 option(FLB_POSIX_TLS          "Force POSIX thread storage"    No)
 option(FLB_INOTIFY            "Enable inotify support"       Yes)
 option(FLB_SQLDB              "Enable SQL embedded DB"        No)
@@ -133,7 +132,6 @@ if(FLB_ALL)
   # Global
   set(FLB_DEBUG        1)
   set(FLB_TLS          1)
-  set(FLB_BUFFERING    1)
 
   # Input plugins
   set(FLB_IN_CPU       1)
@@ -212,6 +210,7 @@ include_directories(
   lib/
   lib/flb_libco
   lib/msgpack-3.1.1/include
+  lib/chunkio/include
   lib/LuaJIT-2.1.0-beta3/src/
   ${MONKEY_INCLUDE_DIR}
   )
@@ -234,6 +233,11 @@ option(MSGPACK_ENABLE_SHARED          OFF)
 option(MSGPACK_BUILD_TESTS            OFF)
 option(MSGPACK_BUILD_EXAMPLES         OFF)
 add_subdirectory(lib/msgpack-3.1.1 EXCLUDE_FROM_ALL)
+
+# Chunk I/O
+FLB_OPTION(CIO_LIB_STATIC  ON)
+FLB_OPTION(CIO_LIB_SHARED  OFF)
+add_subdirectory(lib/chunkio EXCLUDE_FROM_ALL)
 
 # Lib: build the core libraries used by Fluent-Bit
 FLB_DEFINITION(JSMN_PARENT_LINKS)
@@ -286,10 +290,6 @@ if(FLB_SQLDB)
   FLB_DEFINITION(FLB_HAVE_SQLDB)
   add_subdirectory(lib/sqlite-amalgamation-3240000)
   include_directories(lib/sqlite-amalgamation-3240000)
-endif()
-
-if(FLB_BUFFERING)
-  FLB_DEFINITION(FLB_HAVE_BUFFERING)
 endif()
 
 if(FLB_TRACE)
