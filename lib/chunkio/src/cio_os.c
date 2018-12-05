@@ -48,6 +48,7 @@ int cio_os_isdir(const char *dir)
 int cio_os_mkpath(const char *dir, mode_t mode)
 {
     struct stat st;
+    char *dup_dir;
 
     if (!dir) {
         errno = EINVAL;
@@ -58,6 +59,8 @@ int cio_os_mkpath(const char *dir, mode_t mode)
         return 0;
     }
 
-    cio_os_mkpath(dirname(strdupa(dir)), mode);
+    dup_dir = strdup(dir);
+    cio_os_mkpath(dirname(dup_dir), mode);
+    free(dup_dir);
     return mkdir(dir, mode);
 }
