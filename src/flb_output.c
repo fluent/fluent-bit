@@ -266,6 +266,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     instance->data        = data;
     instance->upstream    = NULL;
     instance->match       = NULL;
+    instance->match_regex = NULL;
     instance->retry_limit = 1;
     instance->host.name   = NULL;
 
