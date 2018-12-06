@@ -128,7 +128,7 @@ static int storage_input_create(struct cio_ctx *cio,
     return 0;
 }
 
-static void storage_input_destroy(struct flb_input_instance *in)
+void flb_input_storage_destroy(struct flb_input_instance *in)
 {
     flb_free(in->storage);
     in->storage = NULL;
@@ -164,7 +164,7 @@ static void storage_contexts_destroy(struct flb_config *config)
     /* Iterate each input instance and destroy the context */
     mk_list_foreach(head, &config->inputs) {
         in = mk_list_entry(head, struct flb_input_instance, _head);
-        storage_input_destroy(in);
+        flb_input_storage_destroy(in);
     }
 }
 

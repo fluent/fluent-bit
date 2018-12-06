@@ -359,7 +359,6 @@ int flb_test_systemd_send()
 void flb_test_systemd_logs()
 {
     struct stat statb;
-    struct kube_test *ctx;
 
     if (stat("/run/systemd/journal/socket", &statb) == 0 &&
         statb.st_mode & S_IFSOCK) {

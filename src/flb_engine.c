@@ -544,9 +544,6 @@ int flb_engine_shutdown(struct flb_config *config)
     config->is_running = FLB_FALSE;
     flb_input_pause_all(config);
 
-    /* Destroy the storage context */
-    flb_storage_destroy(config);
-
     /* router */
     flb_router_exit(config);
 
@@ -559,6 +556,10 @@ int flb_engine_shutdown(struct flb_config *config)
     flb_filter_exit(config);
     flb_input_exit_all(config);
     flb_output_exit(config);
+
+    /* Destroy the storage context */
+    flb_storage_destroy(config);
+
 
     /* metrics */
 #ifdef FLB_HAVE_METRICS

@@ -294,6 +294,10 @@ static void flb_input_free(struct flb_input_instance *in)
     }
 #endif
 
+    if (in->storage) {
+        flb_input_storage_destroy(in);
+    }
+
     /* Unlink and release */
     mk_list_del(&in->_head);
     flb_free(in);
