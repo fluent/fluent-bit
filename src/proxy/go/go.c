@@ -107,13 +107,14 @@ int proxy_go_init(struct flb_plugin_proxy *proxy)
     plugin->o_ins = proxy->instance;
 
     ret = plugin->cb_init(plugin);
-    if (ret == -1) {
-        fprintf(stderr, "[go proxy]: plugin failed to initialize\n");
+    if (ret <= 0) {
+        flb_error("[go proxy]: plugin '%s' failed to initialize",
+                  plugin->name);
         flb_free(plugin);
         return -1;
     }
 
-    return 0;
+    return ret;
 }
 
 int proxy_go_flush(struct flb_plugin_proxy *proxy, void *data, size_t size,
