@@ -37,6 +37,6 @@ struct flb_storage_input {
 
 int flb_storage_create(struct flb_config *ctx);
 void flb_storage_destroy(struct flb_config *ctx);
-void flb_input_storage_destroy(struct flb_input_instance *in);
+void flb_storage_input_destroy(struct flb_input_instance *in);
 
 #endif
