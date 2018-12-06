@@ -20,7 +20,6 @@
 #ifndef MK_SOCKET_H
 #define MK_SOCKET_H
 
-#define _GNU_SOURCE
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netdb.h>
@@ -69,29 +68,10 @@ int mk_socket_open(char *path, int async);
 int mk_socket_reset(int socket);
 int mk_socket_bind(int socket_fd, const struct sockaddr *addr,
                    socklen_t addrlen, int backlog, struct mk_server *server);
-
 int mk_socket_server(char *port, char *listen_addr,
                      int reuse_port, struct mk_server *server);
-
 int mk_socket_ip_str(int socket_fd, char **buf, int size, unsigned long *len);
+int mk_socket_accept(int server_fd);
 
-
-static inline int mk_socket_accept(int server_fd)
-{
-    int remote_fd;
-
-    struct sockaddr sock_addr;
-    socklen_t socket_size = sizeof(struct sockaddr);
-
-#ifdef MK_HAVE_ACCEPT4
-    remote_fd = accept4(server_fd, &sock_addr, &socket_size,
-                        SOCK_NONBLOCK | SOCK_CLOEXEC);
-#else
-    remote_fd = accept(server_fd, &sock_addr, &socket_size);
-    mk_socket_set_nonblocking(remote_fd);
-#endif
-
-    return remote_fd;
-}
 
 #endif
