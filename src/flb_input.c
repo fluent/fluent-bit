@@ -120,6 +120,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         snprintf(instance->name, sizeof(instance->name) - 1,
                  "%s.%i", plugin->name, id);
 
+        instance->alias    = NULL;
         instance->id       = id;
         instance->flags    = plugin->flags;
         instance->p        = plugin;
@@ -212,6 +213,9 @@ int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
         in->tag     = tmp;
         in->tag_len = strlen(tmp);
     }
+    else if (prop_key_check("alias", k, len) == 0 && tmp) {
+        in->alias = tmp;
+    }
     else if (prop_key_check("mem_buf_limit", k, len) == 0 && tmp) {
         limit = flb_utils_size_to_bytes(tmp);
         flb_free(tmp);
@@ -259,11 +263,26 @@ char *flb_input_get_property(char *key, struct flb_input_instance *i)
     return flb_config_prop_get(key, &i->properties);
 }
 
+/* Return an instance name or alias */
+char *flb_input_name(struct flb_input_instance *in)
+{
+    if (in->alias) {
+        return in->alias;
+    }
+
+    return in->name;
+}
+
 static void flb_input_free(struct flb_input_instance *in)
 {
     struct mk_list *head_prop;
     struct flb_config_prop *prop;
     struct mk_list *tmp_prop;
+
+    if (in->alias) {
+        flb_free(in->alias);
+    }
+
     /* Remove URI context */
     if (in->host.uri) {
         flb_uri_destroy(in->host.uri);

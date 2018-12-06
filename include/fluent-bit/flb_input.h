@@ -130,6 +130,7 @@ struct flb_input_instance {
     flb_pipefd_t channel[2];             /* pipe(2) channel              */
     int threaded;                        /* bool / Threaded instance ?   */
     char name[16];                       /* numbered name (cpu -> cpu.0) */
+    char *alias;                         /* alias name for the instance  */
     void *context;                       /* plugin configuration context */
     struct flb_input_plugin *p;          /* original plugin              */
 
