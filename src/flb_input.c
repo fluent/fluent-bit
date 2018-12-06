@@ -164,14 +164,6 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->mem_buf_limit = 0;
         instance->mem_chunks_size = 0;
 
-        /* Metrics */
-#ifdef FLB_HAVE_METRICS
-        instance->metrics = flb_metrics_create(instance->name);
-        if (instance->metrics) {
-            flb_metrics_add(FLB_METRIC_N_RECORDS, "records", instance->metrics);
-            flb_metrics_add(FLB_METRIC_N_BYTES, "bytes", instance->metrics);
-        }
-#endif
         mk_list_add(&instance->_head, &config->inputs);
     }
 
@@ -327,6 +319,7 @@ static void flb_input_free(struct flb_input_instance *in)
 void flb_input_initialize_all(struct flb_config *config)
 {
     int ret;
+    char *name;
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_input_instance *in;
@@ -344,6 +337,19 @@ void flb_input_initialize_all(struct flb_config *config)
         if (!p) {
             continue;
         }
+
+        /* Metrics */
+#ifdef FLB_HAVE_METRICS
+        /* Get name or alias for the instance */
+        name = flb_input_name(in);
+
+        /* Create the metrics context */
+        in->metrics = flb_metrics_create(name);
+        if (in->metrics) {
+            flb_metrics_add(FLB_METRIC_N_RECORDS, "records", in->metrics);
+            flb_metrics_add(FLB_METRIC_N_BYTES, "bytes", in->metrics);
+        }
+#endif
 
         /* Initialize the input */
         if (p->cb_init) {
