@@ -31,6 +31,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_metrics.h>
+#include <fluent-bit/flb_storage.h>
 
 #define protcmp(a, b)  strncasecmp(a, b, strlen(a))
 
@@ -295,7 +296,7 @@ static void flb_input_free(struct flb_input_instance *in)
 #endif
 
     if (in->storage) {
-        flb_input_storage_destroy(in);
+        flb_storage_input_destroy(in);
     }
 
     /* Unlink and release */
