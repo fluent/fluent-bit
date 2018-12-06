@@ -6,6 +6,7 @@ set(UNIT_TESTS_FILES
   pack.c
   pipe.c
   sds.c
+  router.c
   parser.c
   network.c
   unit_sizes.c

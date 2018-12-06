@@ -123,6 +123,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->flags    = plugin->flags;
         instance->p        = plugin;
         instance->tag      = NULL;
+        instance->tag_len  = 0;
         instance->context  = NULL;
         instance->data     = data;
         instance->threaded = FLB_FALSE;

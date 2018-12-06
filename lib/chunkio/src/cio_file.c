@@ -414,9 +414,15 @@ int cio_file_write(struct cio_chunk *ch, const void *buf, size_t count)
                           "[cio_file] error setting new file size on write");
             return -1;
         }
-
+        /* OSX mman does not implement mremap or MREMAP_MAYMOVE. */
+#ifndef MREMAP_MAYMOVE
+        if (munmap(cf->data_size, av_size) == -1)
+            return -1;
+        tmp = mmap(0, new_size, PROT_READ | PROT_WRITE, MAP_SHARED, cf->fd, 0);
+#else
         tmp = mremap(cf->map, cf->alloc_size,
                      new_size, MREMAP_MAYMOVE);
+#endif
         if (tmp == MAP_FAILED) {
             cio_errno();
             cio_log_error(ch->ctx,
@@ -528,6 +534,9 @@ int cio_file_fs_size_change(struct cio_file *cf, size_t new_size)
         return 0;
     }
 
+    /* macOS does not have fallocate().
+     * So, we should use ftruncate always. */
+#ifndef __APPLE__
     if (new_size > cf->alloc_size) {
         /*
          * To increase the file size we use fallocate() since this option
@@ -539,7 +548,9 @@ int cio_file_fs_size_change(struct cio_file *cf, size_t new_size)
          */
         ret = fallocate(cf->fd, 0, 0, new_size);
     }
-    else {
+    else
+#endif
+    {
         ret = ftruncate(cf->fd, new_size);
     }
 

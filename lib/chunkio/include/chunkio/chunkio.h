@@ -68,5 +68,6 @@ int cio_set_log_level(struct cio_ctx *ctx, int level);
 
 int cio_meta_write(struct cio_chunk *ch, char *buf, size_t size);
 int cio_meta_cmp(struct cio_chunk *ch, char *meta_buf, int meta_len);
+int cio_meta_read(struct cio_chunk *ch, char **meta_buf, int *meta_len);
 
 #endif

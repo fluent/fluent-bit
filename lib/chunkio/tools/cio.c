@@ -29,6 +29,10 @@
 #include <limits.h>
 #include <signal.h>
 #include <time.h>
+#ifdef __MACH__
+#  include <mach/clock.h>
+#  include <mach/mach.h>
+#endif
 
 #define ANSI_RESET "\033[0m"
 #define ANSI_BOLD  "\033[1m"
@@ -195,6 +199,21 @@ static int cio_default_root_path(char *path, int size)
     return 0;
 }
 
+static void cio_timespec_get(struct timespec *t)
+{
+#ifdef __MACH__ // macOS does not have timespec_get, use clock_get_time
+    clock_serv_t cclock;
+    mach_timespec_t mts;
+    host_get_clock_service(mach_host_self(), CALENDAR_CLOCK, &cclock);
+    clock_get_time(cclock, &mts);
+    mach_port_deallocate(mach_task_self(), cclock);
+    t->tv_sec = mts.tv_sec;
+    t->tv_nsec = mts.tv_nsec;
+#else
+    timespec_get(&t, TIME_UTC);
+#endif
+}
+
 /* command/list: iterate root path and list content */
 static int cb_cmd_list(struct cio_ctx *ctx)
 {
@@ -351,7 +370,7 @@ static void cb_cmd_perf(struct cio_ctx *ctx, int opt_buffer, char *pfile,
     }
 
     /* Perf-write test */
-    timespec_get(&t1, TIME_UTC);
+    cio_timespec_get(&t1);
     for (i = 0; i < files; i++) {
         snprintf(tmp, sizeof(tmp), "perf-test-%04i.txt", i);
         carr[i] = cio_chunk_open(ctx, stream, tmp, CIO_OPEN, in_size);
@@ -374,7 +393,7 @@ static void cb_cmd_perf(struct cio_ctx *ctx, int opt_buffer, char *pfile,
         cio_chunk_sync(carr[i]);
         cio_chunk_close(carr[i], CIO_FALSE);
     }
-    timespec_get(&t2, TIME_UTC);
+    cio_timespec_get(&t2);
 
     /* Check timing */
     time_diff(&t1, &t2, &t_final);

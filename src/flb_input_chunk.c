@@ -269,11 +269,17 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
 
     /*
      * Some callers might not set a custom tag, on that case just inherit
-     * the instance name.
+     * the fixed instance tag or instance name.
      */
     if (!tag) {
-        tag = in->name;
-        tag_len = strlen(in->name);
+        if (in->tag && in->tag_len > 0) {
+            tag = in->tag;
+            tag_len = in->tag_len;
+        }
+        else {
+            tag = in->name;
+            tag_len = strlen(in->name);
+        }
     }
 
     /*
