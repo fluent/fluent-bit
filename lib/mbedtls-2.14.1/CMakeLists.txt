@@ -47,7 +47,7 @@ set(CTR_DRBG_128_BIT_KEY_WARNING "${WARNING_BORDER}"
                          "${WARNING_BORDER}")
 
 find_package(PythonInterp)
-find_package(Perl)
+#find_package(Perl)
 if(PERL_FOUND)
 
     # If 128-bit keys are configured for CTR_DRBG, display an appropriate warning
