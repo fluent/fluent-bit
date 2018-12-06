@@ -45,8 +45,7 @@ int flb_engine_dispatch_retry(struct flb_task_retry *retry,
                            retry->o_ins,
                            config,
                            task->buf, task->size,
-                           task->tag,
-                           strlen(task->tag));
+                           task->tag, task->tag_len);
     if (!th) {
         return -1;
     }
