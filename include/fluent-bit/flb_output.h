@@ -114,6 +114,7 @@ struct flb_output_plugin {
 struct flb_output_instance {
     uint64_t mask_id;                    /* internal bitmask for routing */
     char name[16];                       /* numbered name (cpu -> cpu.0) */
+    char *alias;                         /* alias name for the instance  */
     int flags;                           /* inherit flags from plugin    */
     struct flb_output_plugin *p;         /* original plugin              */
     void *context;                       /* plugin configuration context */
