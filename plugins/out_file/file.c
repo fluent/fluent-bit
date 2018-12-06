@@ -201,6 +201,7 @@ static void cb_file_flush(void *data, size_t bytes,
     size_t alloc_size = 0;
     char *out_file;
     char *buf;
+    char *tag_buf;
     msgpack_object *obj;
     struct flb_file_conf *ctx = out_context;
     struct flb_time tm;
@@ -222,6 +223,14 @@ static void cb_file_flush(void *data, size_t bytes,
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 
+    tag_buf = flb_malloc(tag_len + 1);
+    if (!tag_buf) {
+        flb_errno();
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+    memcpy(tag_buf, tag, tag_len);
+    tag_buf[tag_len] = '\0';
+
     /*
      * Upon flush, for each array, lookup the time and the first field
      * of the map to use as a data point.
@@ -238,7 +247,7 @@ static void cb_file_flush(void *data, size_t bytes,
             buf = flb_msgpack_to_json_str(alloc_size, obj);
             if (buf) {
                 fprintf(fp, "%s: [%f, %s]\n",
-                        tag,
+                        tag_buf,
                         flb_time_to_double(&tm),
                         buf);
                 flb_free(buf);
@@ -260,6 +269,8 @@ static void cb_file_flush(void *data, size_t bytes,
             break;
         }
     }
+
+    flb_free(tag_buf);
     msgpack_unpacked_destroy(&result);
     fclose(fp);
 
