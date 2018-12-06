@@ -29,6 +29,6 @@ int proxy_go_register(struct flb_plugin_proxy *proxy,
 int proxy_go_init(struct flb_plugin_proxy *proxy);
 
 int proxy_go_flush(struct flb_plugin_proxy *proxy, void *data, size_t size,
-                   char *tag);
+                   char *tag, int tag_len);
 
 #endif
