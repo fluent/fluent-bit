@@ -2,10 +2,10 @@
 FLB_OPTION(RDKAFKA_BUILD_STATIC    On)
 FLB_OPTION(RDKAFKA_BUILD_EXAMPLES Off)
 FLB_OPTION(RDKAFKA_BUILD_TESTS    Off)
-add_subdirectory(librdkafka-0.11.4 EXCLUDE_FROM_ALL)
+add_subdirectory(librdkafka-0.11.6 EXCLUDE_FROM_ALL)
 
 # librdkafka headers
-include_directories(librdkafka-0.11.4/src/)
+include_directories(librdkafka-0.11.6/src/)
 
 # Fluent Bit Kafka Output plugin
 set(src
