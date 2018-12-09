@@ -248,6 +248,10 @@ void flb_filter_exit(struct flb_config *config)
         }
 #endif
 
+        if (ins->alias) {
+            flb_free(ins->alias);
+        }
+
         mk_list_del(&ins->_head);
         flb_free(ins);
     }
