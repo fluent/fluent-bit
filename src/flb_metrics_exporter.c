@@ -71,6 +71,43 @@ static int collect_inputs(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
     return 0;
 }
 
+static int collect_filters(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
+                           struct flb_config *ctx)
+{
+    int total = 0;
+    size_t s;
+    char *buf;
+    struct mk_list *head;
+    struct flb_filter_instance *i;
+
+    msgpack_pack_str(mp_pck, 6);
+    msgpack_pack_str_body(mp_pck, "filter", 6);
+
+    mk_list_foreach(head, &ctx->filters) {
+        i = mk_list_entry(head, struct flb_filter_instance, _head);
+        if (!i->metrics) {
+            continue;
+        }
+        total++;
+    }
+
+    msgpack_pack_map(mp_pck, total);
+    mk_list_foreach(head, &ctx->filters) {
+        i = mk_list_entry(head, struct flb_filter_instance, _head);
+        if (!i->metrics) {
+            continue;
+        }
+
+        flb_metrics_dump_values(&buf, &s, i->metrics);
+        msgpack_pack_str(mp_pck, i->metrics->title_len);
+        msgpack_pack_str_body(mp_pck, i->metrics->title, i->metrics->title_len);
+        msgpack_sbuffer_write(mp_sbuf, buf, s);
+        flb_free(buf);
+    }
+
+    return 0;
+}
+
 static int collect_outputs(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                            struct flb_config *ctx)
 {
@@ -120,11 +157,12 @@ static int collect_metrics(struct flb_me *me)
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    keys = 2; /* input, output */
+    keys = 3; /* input, filter, output */
     msgpack_pack_map(&mp_pck, keys);
 
     /* Collect metrics from input instances */
     collect_inputs(&mp_sbuf, &mp_pck, me->config);
+    collect_filters(&mp_sbuf, &mp_pck, me->config);
     collect_outputs(&mp_sbuf, &mp_pck, me->config);
 
 #ifdef FLB_HAVE_HTTP_SERVER
