@@ -176,6 +176,9 @@ int flb_filter_set_property(struct flb_filter_instance *filter, char *k, char *v
     if (prop_key_check("match", k, len) == 0) {
         filter->match = tmp;
     }
+    else if (prop_key_check("alias", k, len) == 0 && tmp) {
+        filter->alias = tmp;
+    }
     else {
         /* Append any remaining configuration key to prop list */
         prop = flb_malloc(sizeof(struct flb_config_prop));
