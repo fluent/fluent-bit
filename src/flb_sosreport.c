@@ -17,6 +17,7 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
@@ -26,7 +27,6 @@
 #include <fluent-bit/flb_version.h>
 #include <fluent-bit/flb_utils.h>
 
-#include <unistd.h>
 #include <sys/utsname.h>
 
 static void print_key(char *key)

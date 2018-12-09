@@ -36,6 +36,7 @@
  * is not a socket.
  */
 
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_log.h>
 
@@ -73,7 +74,6 @@ int flb_pipe_close(flb_pipefd_t fd)
 #else
 /* All other flavors of Unix/BSD are OK */
 
-#include <unistd.h>
 #include <stdint.h>
 
 int flb_pipe_create(flb_pipefd_t pipefd[2])

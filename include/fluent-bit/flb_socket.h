@@ -20,6 +20,8 @@
 #ifndef FLB_SOCKET_H
 #define FLB_SOCKET_H
 
+#include <fluent-bit/flb_compat.h>
+
 #ifdef _WIN32
 #include <event.h>
 #define flb_sockfd_t         evutil_socket_t
@@ -29,7 +31,6 @@
 #else
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <unistd.h>
 #define flb_sockfd_t         int
 #define flb_socket_close(fd) close(fd)
 #define flb_socket_error(fd) errno
