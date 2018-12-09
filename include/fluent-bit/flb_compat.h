@@ -23,4 +23,10 @@
 /* libmonkey exposes compat macros for <unistd.h> */
 #include <monkey/mk_core.h>
 
+/* Windows compatibility utils */
+#ifdef _MSC_VER
+#include <windows.h>
+#define PATH_MAX MAX_PATH
+#endif
+
 #endif

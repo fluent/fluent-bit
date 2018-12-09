@@ -26,6 +26,7 @@
 #include <signal.h>
 
 #include <monkey/mk_core.h>
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_macros.h>
