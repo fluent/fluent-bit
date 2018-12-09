@@ -20,12 +20,10 @@
 #ifndef FLB_REGEX_H
 #define FLB_REGEX_H
 
+#include <fluent-bit/flb_compat.h>
+
 #include <stdlib.h>
 #include <stddef.h>
-
-#ifndef _WIN32
-#include <unistd.h>
-#endif
 
 #include <onigmo.h>
 
