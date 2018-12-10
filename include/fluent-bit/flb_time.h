@@ -29,11 +29,6 @@ struct flb_time {
     struct timespec tm;
 };
 
-#undef FLB_TIME_FORCE_FMT_INT
-#ifdef TARGET_OS_MAC
-#define FLB_TIME_FORCE_FMT_INT /* FIXME */
-#endif
-
 /*
    to represent eventtime of fluentd
    see also
