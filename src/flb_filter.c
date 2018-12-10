@@ -247,7 +247,6 @@ void flb_filter_exit(struct flb_config *config)
             flb_metrics_destroy(ins->metrics);
         }
 #endif
-
         if (ins->alias) {
             flb_free(ins->alias);
         }
@@ -358,10 +357,17 @@ void flb_filter_initialize_all(struct flb_config *config)
 
         /* Create the metrics context */
         in->metrics = flb_metrics_create(name);
-        if (in->metrics) {
-            flb_metrics_add(FLB_METRIC_N_DROPPED, "drop_records", in->metrics);
-            flb_metrics_add(FLB_METRIC_N_ADDED, "add_records", in->metrics);
+        if (!in->metrics) {
+            flb_warn("[filter] cannot initialize metrics for %s filter, "
+                     "unloading.", name);
+            mk_list_del(&in->_head);
+            flb_free(in);
+            continue;
         }
+
+        /* Register filter metrics */
+        flb_metrics_add(FLB_METRIC_N_DROPPED, "drop_records", in->metrics);
+        flb_metrics_add(FLB_METRIC_N_ADDED, "add_records", in->metrics);
 #endif
 
         /* Initialize the input */
@@ -389,6 +395,9 @@ void flb_filter_initialize_all(struct flb_config *config)
                 }
 #endif
 
+#ifdef FLB_HAVE_METRICS
+                flb_metrics_destroy(in->metrics);
+#endif
                 mk_list_del(&in->_head);
                 flb_free(in);
             }
