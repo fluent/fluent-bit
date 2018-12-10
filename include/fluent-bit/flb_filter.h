@@ -58,7 +58,7 @@ struct flb_filter_plugin {
 
 struct flb_filter_instance {
     int id;                        /* instance id              */
-    char name[16];                 /* numbered name            */
+    char name[32];                 /* numbered name            */
     char *alias;                   /* alias name               */
     char *match;                   /* match rule based on Tags */
 #ifdef FLB_HAVE_REGEX
