@@ -152,6 +152,7 @@ struct flb_config {
     /* Chunk I/O Buffering */
     void *cio;
     char *storage_path;
+    void *storage_input_plugin;
     char *storage_sync;
     int   storage_checksum;
 
