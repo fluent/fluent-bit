@@ -86,7 +86,8 @@ static int collector_id(struct flb_input_instance *in)
 
 /* Create an input plugin instance */
 struct flb_input_instance *flb_input_new(struct flb_config *config,
-                                         char *input, void *data)
+                                         char *input, void *data,
+                                         int public_only)
 {
     int id;
     int ret;
@@ -103,6 +104,14 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         if (!check_protocol(plugin->name, input)) {
             plugin = NULL;
             continue;
+        }
+
+        /*
+         * Check if the plugin is private and validate the 'public_only'
+         * requirement.
+         */
+        if (public_only == FLB_TRUE && plugin->flags & FLB_INPUT_PRIVATE) {
+            return NULL;
         }
 
         /* Create plugin instance */

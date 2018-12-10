@@ -47,8 +47,9 @@
 #define FLB_COLLECT_FD_SERVER   4
 
 /* Input plugin masks */
-#define FLB_INPUT_NET         4   /* input address may set host and port   */
+#define FLB_INPUT_NET          4  /* input address may set host and port   */
 #define FLB_INPUT_THREAD     128  /* plugin requires a thread on callbacks */
+#define FLB_INPUT_PRIVATE    256  /* plugin is not published/exposed       */
 
 /* Input status */
 #define FLB_INPUT_RUNNING     1
@@ -129,7 +130,7 @@ struct flb_input_instance {
     int id;                              /* instance id                  */
     flb_pipefd_t channel[2];             /* pipe(2) channel              */
     int threaded;                        /* bool / Threaded instance ?   */
-    char name[16];                       /* numbered name (cpu -> cpu.0) */
+    char name[32];                       /* numbered name (cpu -> cpu.0) */
     char *alias;                         /* alias name for the instance  */
     void *context;                       /* plugin configuration context */
     struct flb_input_plugin *p;          /* original plugin              */
@@ -458,7 +459,8 @@ static inline void FLB_INPUT_RETURN()
 
 int flb_input_register_all(struct flb_config *config);
 struct flb_input_instance *flb_input_new(struct flb_config *config,
-                                         char *input, void *data);
+                                         char *input, void *data,
+                                         int public_only);
 int flb_input_set_property(struct flb_input_instance *in, char *k, char *v);
 char *flb_input_get_property(char *key, struct flb_input_instance *i);
 
@@ -495,5 +497,6 @@ void flb_input_exit_all(struct flb_config *config);
 
 void *flb_input_flush(struct flb_input_instance *i_ins, size_t *size);
 int flb_input_pause_all(struct flb_config *config);
+char *flb_input_name(struct flb_input_instance *in);
 
 #endif
