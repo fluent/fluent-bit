@@ -35,8 +35,6 @@
 #include <mcheck.h>
 #endif
 
-extern struct flb_input_plugin in_lib_plugin;
-
 static inline struct flb_input_instance *in_instance_get(flb_ctx_t *ctx,
                                                          int ffd)
 {
@@ -184,7 +182,7 @@ int flb_input(flb_ctx_t *ctx, char *input, void *data)
 {
     struct flb_input_instance *i_ins;
 
-    i_ins = flb_input_new(ctx->config, input, data);
+    i_ins = flb_input_new(ctx->config, input, data, FLB_TRUE);
     if (!i_ins) {
         return -1;
     }
