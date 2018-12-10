@@ -188,6 +188,100 @@ static int cio_file_format_check(struct cio_chunk *ch,
 }
 
 /*
+ * This function creates the memory map for the open file descriptor plus
+ * setup the chunk structure reference.
+ */
+static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
+{
+    int ret;
+    int oflags;
+    size_t fs_size = 0;
+    ssize_t content_size;
+    struct stat fst;
+    struct cio_file *cf;
+
+    cf = (struct cio_file *) ch->backend;
+    if (cf->map != NULL) {
+        return -1;
+    }
+
+    /* Check if some previous content exists */
+    ret = fstat(cf->fd, &fst);
+    if (ret == -1) {
+        cio_errno();
+        cio_file_close(ch, CIO_FALSE);
+        return -1;
+    }
+
+    /* Get file size from the file system */
+    fs_size = fst.st_size;
+
+    /* Mmap */
+    if (cf->flags & CIO_OPEN) {
+        oflags = PROT_READ | PROT_WRITE;
+    }
+    else if (cf->flags & CIO_OPEN_RD) {
+        oflags = PROT_READ;
+    }
+
+    /* If the file is not empty, use file size for the memory map */
+    if (fs_size > 0) {
+        size = fs_size;
+        cf->synced = CIO_TRUE;
+    }
+    else if (fs_size == 0) {
+        cf->synced = CIO_FALSE;
+
+        /* Adjust size to make room for headers */
+        if (size < CIO_FILE_HEADER_MIN) {
+            size += CIO_FILE_HEADER_MIN;
+        }
+
+        /* For empty files, make room in the file system */
+        size = ROUND_UP(size, cio_page_size);
+        ret = cio_file_fs_size_change(cf, size);
+        if (ret == -1) {
+            cio_errno();
+            cio_file_close(ch, CIO_TRUE);
+            return -1;
+        }
+    }
+
+    /* Map the file */
+    size = ROUND_UP(size, cio_page_size);
+    cf->map = mmap(0, size, oflags, MAP_SHARED, cf->fd, 0);
+    if (cf->map == MAP_FAILED) {
+        cio_errno();
+        cf->map = NULL;
+        cio_file_close(ch, CIO_TRUE);
+        return -1;
+    }
+    cf->alloc_size = size;
+
+    /* check content data size */
+    if (fs_size > 0) {
+        content_size = cio_file_st_get_content_size(cf->map, fs_size);
+        if (content_size == -1) {
+            cio_log_error(ctx, "invalid content size %s", cf->path);
+            cio_file_close(ch, CIO_TRUE);
+            return -1;
+        }
+        cf->data_size = content_size;
+        cf->fs_size = fs_size;
+    }
+    else {
+        cf->data_size = 0;
+        cf->fs_size = 0;
+    }
+
+    cio_file_format_check(ch, cf, cf->flags);
+    cf->st_content = cio_file_st_get_content(cf->map);
+    cio_log_debug(ctx, "%s:%s mapped OK", ch->st->name, ch->name);
+
+    return 0;
+}
+
+/*
  * Open or create a data file: the following behavior is expected depending
  * of the passed flags:
  *
@@ -207,13 +301,8 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
     int psize;
     int ret;
     int len;
-    int oflags;
-    size_t fs_size = 0;
-    ssize_t content_size;
     char *path;
     struct cio_file *cf;
-    struct stat fst;
-    (void) ctx;
 
     len = strlen(ch->name);
     if (len == 1 && (ch->name[0] == '.' || ch->name[0] == '/')) {
@@ -251,6 +340,7 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
     cf->st_content = NULL;
     cf->crc_cur = cio_crc32_init();
     cf->path = path;
+    cf->map = NULL;
 
     /* Open file descriptor */
     if (flags & CIO_OPEN) {
@@ -266,80 +356,20 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
         cio_file_close(ch, CIO_FALSE);
         return NULL;
     }
+    ch->backend = cf;
 
-    /* Check if some previous content exists */
-    ret = fstat(cf->fd, &fst);
-    if (ret == -1) {
-        cio_errno();
-        cio_file_close(ch, CIO_FALSE);
-        return NULL;
-    }
-
-    /* Get file size from the file system */
-    fs_size = fst.st_size;
-
-    /* Mmap */
-    if (flags & CIO_OPEN) {
-        oflags = PROT_READ | PROT_WRITE;
-    }
-    else if (flags & CIO_OPEN_RD) {
-        oflags = PROT_READ;
-    }
-
-    /* If the file is not empty, use file size for the memory map */
-    if (fs_size > 0) {
-        size = fs_size;
-        cf->synced = CIO_TRUE;
-    }
-    else if (fs_size == 0) {
-        cf->synced = CIO_FALSE;
-
-        /* Adjust size to make room for headers */
-        if (size < CIO_FILE_HEADER_MIN) {
-            size += CIO_FILE_HEADER_MIN;
-        }
-
-        /* For empty files, make room in the file system */
-        size = ROUND_UP(size, cio_page_size);
-        ret = cio_file_fs_size_change(cf, size);
+    /*
+     * Map the file 'only' if it was not opened in read-only mode. There some
+     * cases where the caller can have multiple files to be processed and don't
+     * want to mmap them until is required.
+     */
+    if ((flags & CIO_OPEN_RD) == 0) {
+        ret = mmap_file(ctx, ch, size);
         if (ret == -1) {
-            cio_errno();
-            cio_file_close(ch, CIO_TRUE);
+            cio_log_error(ctx, "cannot mmap file %s", path);
             return NULL;
         }
     }
-
-    /* Map the file */
-    size = ROUND_UP(size, cio_page_size);
-    cf->map = mmap(0, size, oflags, MAP_SHARED, cf->fd, 0);
-    if (cf->map == MAP_FAILED) {
-        cio_errno();
-        cf->map = NULL;
-        cio_file_close(ch, CIO_TRUE);
-        return NULL;
-    }
-    cf->alloc_size = size;
-
-    /* check content data size */
-    if (fs_size > 0) {
-        content_size = cio_file_st_get_content_size(cf->map, fs_size);
-        if (content_size == -1) {
-            cio_log_error(ctx, "invalid content size %s", path);
-            cio_file_close(ch, CIO_TRUE);
-            return NULL;
-        }
-        cf->data_size = content_size;
-        cf->fs_size = fs_size;
-    }
-    else {
-        cf->data_size = 0;
-        cf->fs_size = 0;
-    }
-
-    cio_file_format_check(ch, cf, flags);
-    cf->st_content = cio_file_st_get_content(cf->map);
-    cio_log_debug(ctx, "%s:%s mapped OK", st->name, ch->name);
-
     return cf;
 }
 
@@ -398,9 +428,6 @@ int cio_file_write(struct cio_chunk *ch, const void *buf, size_t count)
     if (count > av_size) {
         if (av_size + cf->realloc_size < count) {
             new_size = cf->alloc_size + count;
-            cio_log_debug(ch->ctx,
-                          "[cio file] realloc size is not big enough "
-                          "for incoming data, consider to increase it");
         }
         else {
             new_size = cf->alloc_size + cf->realloc_size;
@@ -584,8 +611,10 @@ void cio_file_scan_dump(struct cio_ctx *ctx, struct cio_stream *st)
         ch = mk_list_entry(head, struct cio_chunk, _head);
         cf = ch->backend;
 
-        snprintf(tmp, sizeof(tmp) -1, "%s/%s", st->name, ch->name);
+        /* Mmap file if it have not been done before */
+        mmap_file(ctx, ch, 0);
 
+        snprintf(tmp, sizeof(tmp) -1, "%s/%s", st->name, ch->name);
         meta_len = cio_file_st_get_meta_len(cf->map);
 
         p = cio_file_st_get_hash(cf->map);

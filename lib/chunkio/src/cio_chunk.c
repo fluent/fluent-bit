@@ -225,12 +225,7 @@ void cio_chunk_close_stream(struct cio_stream *st)
 
     mk_list_foreach_safe(head, tmp, &st->files) {
         ch = mk_list_entry(head, struct cio_chunk, _head);
-        if (st->type == CIO_STORE_FS) {
-            cio_file_close(ch, CIO_FALSE);
-        }
-        else if (st->type == CIO_STORE_MEM) {
-            cio_memfs_close(ch);
-        }
+        cio_chunk_close(ch, CIO_FALSE);
     }
 }
 

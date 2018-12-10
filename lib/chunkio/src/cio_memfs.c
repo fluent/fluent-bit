@@ -75,9 +75,6 @@ int cio_memfs_write(struct cio_chunk *ch, const void *buf, size_t count)
     if (count > av_size) {
         if (av_size + mf->realloc_size < count) {
             new_size = mf->buf_size + count;
-            cio_log_debug(ch->ctx,
-                          "[cio memfs] realloc size is not big enough "
-                          "for incoming data, consider to increase it");
         }
         else {
             new_size = mf->buf_size + mf->realloc_size;
