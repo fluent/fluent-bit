@@ -4,7 +4,12 @@ project(fluent-bit)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Update CFLAGS
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall ")
+if (MSVC)
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4")
+else()
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
+endif()
+
 if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Windows")
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__='\"$(subst ${CMAKE_SOURCE_DIR}/,,$(abspath $<))\"'")
 else()
