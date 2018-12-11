@@ -130,11 +130,11 @@ static size_t get_available_size(struct cio_file *cf)
 static int cio_file_format_check(struct cio_chunk *ch,
                                  struct cio_file *cf, int flags)
 {
-    char *p;
+    unsigned char *p;
     crc_t crc_check;
     crc_t crc;
 
-    p = cf->map;
+    p = (unsigned char *) cf->map;
 
     /* If the file is empty, put the structure on it */
     if (cf->fs_size == 0) {
@@ -166,7 +166,7 @@ static int cio_file_format_check(struct cio_chunk *ch,
         }
 
         /* Get hash stored in the mmap */
-        p = cio_file_st_get_hash(cf->map);
+        p = (unsigned char *) cio_file_st_get_hash(cf->map);
 
         /* Calculate data checksum in variable */
         cio_file_calculate_checksum(cf, &crc);
@@ -202,7 +202,7 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
 
     cf = (struct cio_file *) ch->backend;
     if (cf->map != NULL) {
-        return -1;
+        return 0;
     }
 
     /* Check if some previous content exists */
@@ -274,9 +274,27 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
         cf->fs_size = 0;
     }
 
-    cio_file_format_check(ch, cf, cf->flags);
+    ret = cio_file_format_check(ch, cf, cf->flags);
+    if (ret == -1) {
+        return -1;
+    }
+
     cf->st_content = cio_file_st_get_content(cf->map);
     cio_log_debug(ctx, "%s:%s mapped OK", ch->st->name, ch->name);
+
+    return 0;
+}
+
+int cio_file_read_prepare(struct cio_ctx *ctx, struct cio_chunk *ch)
+
+{
+    int ret;
+    struct cio_file *cf = ch->backend;
+
+    if (!cf->map) {
+        ret = mmap_file(ctx, ch, 0);
+        return ret;
+    }
 
     return 0;
 }
@@ -303,6 +321,7 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
     int len;
     char *path;
     struct cio_file *cf;
+    struct stat fst;
 
     len = strlen(ch->name);
     if (len == 1 && (ch->name[0] == '.' || ch->name[0] == '/')) {
@@ -357,6 +376,15 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
         return NULL;
     }
     ch->backend = cf;
+
+    /* Store the current real size */
+    ret = fstat(cf->fd, &fst);
+    if (ret == -1) {
+        cio_errno();
+        cio_file_close(ch, CIO_FALSE);
+        return NULL;
+    }
+    cf->fs_size = fst.st_size;
 
     /*
      * Map the file 'only' if it was not opened in read-only mode. There some

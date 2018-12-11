@@ -45,8 +45,9 @@ int cio_chunk_write(struct cio_chunk *ch, const void *buf, size_t count);
 int cio_chunk_write_at(struct cio_chunk *ch, off_t offset,
                        const void *buf, size_t count);
 int cio_chunk_sync(struct cio_chunk *ch);
-void *cio_chunk_get_content(struct cio_chunk *ch, size_t *size);
+int cio_chunk_get_content(struct cio_chunk *ch, char **buf, size_t *size);
 ssize_t cio_chunk_get_content_size(struct cio_chunk *ch);
+ssize_t cio_chunk_get_real_size(struct cio_chunk *ch);
 size_t cio_chunk_get_content_end_pos(struct cio_chunk *ch);
 void cio_chunk_close_stream(struct cio_stream *st);
 char *cio_chunk_hash(struct cio_chunk *ch);

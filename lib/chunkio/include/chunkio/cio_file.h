@@ -55,5 +55,6 @@ char *cio_file_hash(struct cio_file *cf);
 void cio_file_hash_print(struct cio_file *cf);
 void cio_file_calculate_checksum(struct cio_file *cf, crc_t *out);
 void cio_file_scan_dump(struct cio_ctx *ctx, struct cio_stream *st);
+int cio_file_read_prepare(struct cio_ctx *ctx, struct cio_chunk *ch);
 
 #endif

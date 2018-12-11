@@ -157,8 +157,9 @@ int cio_chunk_sync(struct cio_chunk *ch)
     return ret;
 }
 
-void *cio_chunk_get_content(struct cio_chunk *ch, size_t *size)
+int cio_chunk_get_content(struct cio_chunk *ch, char **buf, size_t *size)
 {
+    int ret;
     int type;
     struct cio_memfs *mf;
     struct cio_file *cf;
@@ -167,15 +168,21 @@ void *cio_chunk_get_content(struct cio_chunk *ch, size_t *size)
     if (type == CIO_STORE_MEM) {
         mf = ch->backend;
         *size = mf->buf_len;
-        return mf->buf_data;
+        *buf = mf->buf_data;
+        return 0;
     }
     else if (type == CIO_STORE_FS) {
         cf = ch->backend;
+        ret = cio_file_read_prepare(ch->ctx, ch);
+        if (ret == -1) {
+            return -1;
+        }
         *size = cf->data_size;
-        return cio_file_st_get_content(cf->map);
+        *buf = cio_file_st_get_content(cf->map);
+        return 0;
     }
 
-    return NULL;
+    return -1;
 }
 
 size_t cio_chunk_get_content_end_pos(struct cio_chunk *ch)
@@ -212,6 +219,25 @@ ssize_t cio_chunk_get_content_size(struct cio_chunk *ch)
     else if (type == CIO_STORE_FS) {
         cf = ch->backend;
         return cf->data_size;
+    }
+
+    return -1;
+}
+
+ssize_t cio_chunk_get_real_size(struct cio_chunk *ch)
+{
+    int type;
+    struct cio_memfs *mf;
+    struct cio_file *cf;
+
+    type = ch->st->type;
+    if (type == CIO_STORE_MEM) {
+        mf = ch->backend;
+        return mf->buf_len;
+    }
+    else if (type == CIO_STORE_FS) {
+        cf = ch->backend;
+        return cf->fs_size;
     }
 
     return -1;

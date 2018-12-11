@@ -24,6 +24,11 @@
 #  define htole16(x) OSSwapHostToLittleInt16(x)
 #  define be16toh(x) OSSwapBigToHostInt16(x)
 #  define le16toh(x) OSSwapLittleToHostInt16(x)
+#elif defined(_WIN32)
+#  define htobe16(x) htons(x)
+#  define htole16(x) (x)
+#  define be16toh(x) ntohs(x)
+#  define le16toh(x) (x)
 #else
 #  include <endian.h>
 #endif
