@@ -143,7 +143,7 @@ static void out_lib_flush(void *data, size_t bytes,
                 FLB_OUTPUT_RETURN(FLB_ERROR);
             }
 
-            memcpy(data_for_user, data + last_off, alloc_size);
+            memcpy(data_for_user, (char *) data + last_off, alloc_size);
             data_size = alloc_size;
             break;
         case FLB_OUT_LIB_FMT_JSON:
