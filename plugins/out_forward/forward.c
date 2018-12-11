@@ -218,7 +218,7 @@ static int secure_forward_ping(struct flb_upstream_conn *u_conn,
 static int secure_forward_pong(char *buf, int buf_size)
 {
     int ret;
-    char msg[32] = {};
+    char msg[32] = {0};
     size_t off = 0;
     msgpack_unpacked result;
     msgpack_object root;
