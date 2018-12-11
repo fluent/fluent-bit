@@ -110,7 +110,7 @@ struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
         /* Create a new re-try instance */
         retry = flb_malloc(sizeof(struct flb_task_retry));
         if (!retry) {
-            perror("malloc");
+            flb_errno();
             return NULL;
         }
 
@@ -255,7 +255,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
         flb_debug("[task] created task=%p id=%i without routes, dropping.",
                   task, task->id);
         task->buf = NULL;
-        flb_task_destroy(task);
+        flb_task_destroy(task, FLB_TRUE);
         return NULL;
     }
 
@@ -263,7 +263,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     return task;
 }
 
-void flb_task_destroy(struct flb_task *task)
+void flb_task_destroy(struct flb_task *task, int delete)
 {
     struct mk_list *tmp;
     struct mk_list *head;
@@ -286,7 +286,7 @@ void flb_task_destroy(struct flb_task *task)
     mk_list_del(&task->_head);
 
     /* destroy chunk */
-    flb_input_chunk_destroy(task->ic);
+    flb_input_chunk_destroy(task->ic, delete);
 
     /* Remove 'retries' */
     mk_list_foreach_safe(head, tmp, &task->retries) {

@@ -92,6 +92,9 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STORAGE_CHECKSUM,
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, storage_checksum)},
+    {FLB_CONF_STORAGE_BL_MEM_LIMIT,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, storage_bl_mem_limit)},
 
     /* Coroutines */
     {FLB_CONF_STR_CORO_STACK_SIZE,
@@ -120,11 +123,7 @@ struct flb_config *flb_config_init()
 
     /* Flush */
     config->flush        = FLB_CONFIG_FLUSH_SECS;
-#if defined FLB_HAVE_FLUSH_PTHREADS
-    config->flush_method = FLB_FLUSH_PTHREADS;
-#elif defined FLB_HAVE_FLUSH_LIBCO
     config->flush_method = FLB_FLUSH_LIBCO;
-#endif
     config->daemon       = FLB_FALSE;
     config->init_time    = time(NULL);
     config->kernel       = flb_kernel_info();
@@ -140,6 +139,7 @@ struct flb_config *flb_config_init()
 
     config->cio          = NULL;
     config->storage_path = NULL;
+    config->storage_input_plugin = NULL;
 
 #ifdef FLB_HAVE_SQLDB
     mk_list_init(&config->sqldb_list);

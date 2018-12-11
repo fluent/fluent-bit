@@ -111,7 +111,7 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
 {
     int ret;
     char *buf_data;
-    size_t buf_size;
+    size_t buf_size = 0;
     char *tag_buf;
     int tag_len;
     struct mk_list *tmp;

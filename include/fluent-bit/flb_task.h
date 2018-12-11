@@ -108,7 +108,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
 void flb_task_add_thread(struct flb_thread *thread,
                          struct flb_task *task);
 
-void flb_task_destroy(struct flb_task *task);
+void flb_task_destroy(struct flb_task *task, int delete);
 
 struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
                                              void *data);

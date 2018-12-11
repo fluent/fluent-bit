@@ -23,6 +23,8 @@
 #include <fluent-bit/flb_info.h>
 #include <chunkio/chunkio.h>
 
+#define FLB_STORAGE_BL_MEM_LIMIT "5M"
+
 /*
  * The storage structure helps to associate the contexts between
  * input instances and the chunkio context and further streams.

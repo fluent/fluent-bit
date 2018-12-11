@@ -22,12 +22,15 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_storage.h>
 
-static void print_storage_info(struct cio_ctx *cio)
+static void print_storage_info(struct flb_config *ctx, struct cio_ctx *cio)
 {
+    size_t size;
     char *sync;
     char *checksum;
+    struct flb_input_instance *in;
 
-    flb_info("storage: initialized");
+    flb_info("[storage] initializing...");
+
     if (cio->root_path) {
         flb_info("[storage] root path '%s'", cio->root_path);
     }
@@ -51,6 +54,12 @@ static void print_storage_info(struct cio_ctx *cio)
 
     flb_info("[storage] %s synchronization mode, checksum %s",
              sync, checksum);
+
+    /* Storage input plugin */
+    if (ctx->storage_input_plugin) {
+        in = (struct flb_input_instance *) ctx->storage_input_plugin;
+        flb_info("[storage] backlog input plugin: %s", in->name);
+    }
 }
 
 static int log_cb(struct cio_ctx *ctx, int level, const char *file, int line,
@@ -77,6 +86,7 @@ static int storage_input_create(struct cio_ctx *cio,
 {
     int type;
     char *tmp;
+    char *name;
     struct flb_storage_input *si;
     struct cio_stream *stream;
 
@@ -91,7 +101,7 @@ static int storage_input_create(struct cio_ctx *cio,
         }
         else {
             flb_error("[storage] invalid type '%s' on instance %s",
-                      tmp, in->name);
+                      tmp, flb_input_name(in));;
             return -1;
         }
     }
@@ -101,7 +111,8 @@ static int storage_input_create(struct cio_ctx *cio,
 
     if (type == CIO_STORE_FS && cio->root_path == NULL) {
         flb_error("[storage] instance '%s' requested filesystem storage "
-                  "but no filesystem path was defined.", in->name);
+                  "but no filesystem path was defined.",
+                  flb_input_name(in));
         return -1;
     }
 
@@ -112,10 +123,14 @@ static int storage_input_create(struct cio_ctx *cio,
         return -1;
     }
 
-    stream = cio_stream_create(cio, in->name, type);
+    /* get stream name */
+    name = flb_input_name(in);
+
+    /* create stream for input instance */
+    stream = cio_stream_create(cio, name, type);
     if (!stream) {
         flb_error("[storage] cannot create stream for instance %s",
-                  in->name);
+                  name);
         flb_free(si);
         return -1;
     }
@@ -172,6 +187,8 @@ int flb_storage_create(struct flb_config *ctx)
 {
     int ret;
     int flags;
+    size_t size;
+    struct flb_input_instance *in = NULL;
     struct cio_ctx *cio;
 
     /* always use read/write mode */
@@ -204,15 +221,35 @@ int flb_storage_create(struct flb_config *ctx)
     }
     ctx->cio = cio;
 
+    /*
+     * If we have a filesystem storage path, create an instance of the
+     * storage_backlog input plugin to consume any possible pending
+     * chunks.
+     */
+    if (ctx->storage_path) {
+        in = flb_input_new(ctx, "storage_backlog", cio, FLB_FALSE);
+        if (!in) {
+            flb_error("[storage] cannot init storage backlog input plugin");
+            cio_destroy(cio);
+            ctx->cio = NULL;
+            return -1;
+        }
+        ctx->storage_input_plugin = in;
+
+        /* Set a queue memory limit */
+        if (!ctx->storage_bl_mem_limit) {
+            ctx->storage_bl_mem_limit = flb_strdup(FLB_STORAGE_BL_MEM_LIMIT);
+        }
+    }
+
     /* Create streams for input instances */
     ret = storage_contexts_create(ctx);
     if (ret == -1) {
         return -1;
     }
 
-
     /* print storage info */
-    print_storage_info(cio);
+    print_storage_info(ctx, cio);
 
     return 0;
 }
@@ -224,6 +261,10 @@ void flb_storage_destroy(struct flb_config *ctx)
     /* Destroy Chunk I/O context */
     cio = (struct cio_ctx *) ctx->cio;
     cio_destroy(cio);
+
+    if (ctx->storage_bl_mem_limit) {
+        flb_free(ctx->storage_bl_mem_limit);
+    }
 
     /* Delete references from input instances */
     storage_contexts_destroy(ctx);
