@@ -60,6 +60,46 @@ int flb_input_chunk_write_at(void *data, off_t offset,
     return cio_chunk_write_at(ic->chunk, offset, buf, len);
 }
 
+/* Create an input chunk using a Chunk I/O */
+struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
+                                            void *chunk)
+{
+    int ret;
+    int records;
+    char *buf_data;
+    size_t buf_size;
+    struct flb_input_chunk *ic;
+
+    /* Create context for the input instance */
+    ic = flb_malloc(sizeof(struct flb_input_chunk));
+    if (!ic) {
+        flb_errno();
+        return NULL;
+    }
+
+    ic->busy = FLB_FALSE;
+    ic->chunk = chunk;
+    ic->in = in;
+    msgpack_packer_init(&ic->mp_pck, ic, flb_input_chunk_write);
+    mk_list_add(&ic->_head, &in->chunks);
+
+#ifdef FLB_HAVE_METRICS
+    ret = cio_chunk_get_content(ic->chunk, &buf_data, &buf_size);
+    if (ret == -1) {
+        flb_error("[input chunk] error retrieving content for metrics");
+        return ic;
+    }
+
+    records = flb_mp_count(buf_data, buf_size);
+    if (records > 0) {
+        flb_metrics_sum(FLB_METRIC_N_RECORDS, records, in->metrics);
+        flb_metrics_sum(FLB_METRIC_N_BYTES, buf_size, in->metrics);
+    }
+#endif
+
+    return ic;
+}
+
 struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
                                                char *tag, int tag_len)
 {
@@ -111,26 +151,13 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
     return ic;
 }
 
-int flb_input_chunk_destroy(struct flb_input_chunk *ic)
+int flb_input_chunk_destroy(struct flb_input_chunk *ic, int delete)
 {
-    cio_chunk_close(ic->chunk, CIO_TRUE);
+    cio_chunk_close(ic->chunk, delete);
     mk_list_del(&ic->_head);
     flb_free(ic);
 
     return 0;
-}
-
-/* analog for flb_input_dyntag_exit() */
-void flb_input_chunk_destroy_all(struct flb_input_instance *in)
-{
-    struct mk_list *tmp;
-    struct mk_list *head;
-    struct flb_input_chunk *ic;
-
-    mk_list_foreach_safe(head, tmp, &in->chunks) {
-        ic = mk_list_entry(head, struct flb_input_chunk, _head);
-        flb_input_chunk_destroy(ic);
-    }
 }
 
 /* Return or create an available chunk to write data */
@@ -180,6 +207,29 @@ static inline int flb_input_chunk_is_overlimit(struct flb_input_instance *i)
 }
 
 /*
+ * Check all chunks associated to the input instance and summarize
+ * the number of bytes in use.
+ */
+size_t flb_input_chunk_total_size(struct flb_input_instance *in)
+{
+    ssize_t bytes;
+    size_t total = 0;
+    struct mk_list *head;
+    struct flb_input_chunk *ic;
+
+    mk_list_foreach(head, &in->chunks) {
+        ic = mk_list_entry(head, struct flb_input_chunk, _head);
+        bytes = flb_input_chunk_get_size(ic);
+        if (bytes <= 0) {
+            continue;
+        }
+        total += bytes;
+    }
+
+    return total;
+}
+
+/*
  * Count and update the number of bytes being used by the instance. Also
  * check if the instance is paused, if so, check if it can be resumed if
  * is not longer over the limits.
@@ -187,25 +237,9 @@ static inline int flb_input_chunk_is_overlimit(struct flb_input_instance *i)
 int flb_input_chunk_set_limits(struct flb_input_instance *in)
 {
     size_t total;
-    ssize_t bytes;
-    struct mk_list *head;
-    struct flb_input_chunk *ic;
 
-    /*
-     * Check all chunks associated to the input instance and summarize
-     * the number of bytes in use.
-     */
-    total = 0;
-    mk_list_foreach(head, &in->chunks) {
-        ic = mk_list_entry(head, struct flb_input_chunk, _head);
-        bytes = flb_input_chunk_get_size(ic);
-        if (bytes < 0) {
-            flb_error("[input chunk] %s cannot retrieve chunk size",
-                      in->name);
-            continue;
-        }
-        total += bytes;
-    }
+    /* Gather total number of enqueued bytes */
+    total = flb_input_chunk_total_size(in);
 
     /* Register the total into the context variable */
     in->mem_chunks_size = total;
@@ -325,7 +359,7 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
 
     /* Make sure the data was not filtered out and the buffer size is zero */
     if (size == 0) {
-        flb_input_chunk_destroy(ic);
+        flb_input_chunk_destroy(ic, FLB_TRUE);
     }
 
     /* Update memory counters and adjust limits if any */
@@ -338,15 +372,20 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
 /* Retrieve a raw buffer from a dyntag node */
 void *flb_input_chunk_flush(struct flb_input_chunk *ic, size_t *size)
 {
-    void *buf;
+    int ret;
+    char *buf = NULL;
 
     /*
      * msgpack-c internal use a raw buffer for it operations, since we
      * already appended data we just can take out the references to avoid
      * a new memory allocation and skip a copy operation.
      */
+    ret = cio_chunk_get_content(ic->chunk, &buf, size);
+    if (ret == -1) {
+        flb_error("[input chunk] error retrieving chunk content");
+        return NULL;
+    }
 
-    buf = cio_chunk_get_content(ic->chunk, size);
     if (!buf) {
         *size = 0;
         return NULL;
