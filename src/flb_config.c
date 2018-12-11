@@ -92,6 +92,9 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STORAGE_CHECKSUM,
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, storage_checksum)},
+    {FLB_CONF_STORAGE_BL_MEM_LIMIT,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, storage_bl_mem_limit)},
 
     /* Coroutines */
     {FLB_CONF_STR_CORO_STACK_SIZE,
