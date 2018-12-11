@@ -224,6 +224,7 @@ int flb_sched_request_create(struct flb_config *config, void *data, int tries)
 
     /* Get suggested wait_time for this request */
     seconds = backoff_full_jitter(FLB_SCHED_BASE, FLB_SCHED_CAP, tries);
+    seconds += 1;
 
     /* Populare request */
     request->fd      = -1;
