@@ -144,7 +144,8 @@ void flb_filter_do(struct flb_input_chunk *ic,
                                                out_buf, out_size);
                 /* Point back the 'data' pointer to the new address */
                 bytes = out_size;
-                data = cio_chunk_get_content(ic->chunk, &cur_size);
+                ret = cio_chunk_get_content(ic->chunk,
+                                            data, &cur_size);
                 data += content_size;
                 flb_free(out_buf);
             }
