@@ -160,7 +160,7 @@ else()
 endif()
 
 # Link timer library
-if(NOT CMAKE_SYSTEM_NAME MATCHES "Darwin")
+if(CMAKE_SYSTEM_NAME MATCHES "Linux")
   set(FLB_DEPS
     ${FLB_DEPS}
     rt
