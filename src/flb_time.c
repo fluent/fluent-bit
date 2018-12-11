@@ -21,6 +21,10 @@
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_time.h>
+#ifdef FLB_HAVE_CLOCK_GET_TIME
+#  include <mach/clock.h>
+#  include <mach/mach.h>
+#endif
 
 #include <arpa/inet.h>
 #include <string.h>
@@ -45,6 +49,14 @@ static int _flb_time_get(struct flb_time *tm)
 #elif defined FLB_HAVE_TIMESPEC_GET
     /* C11 supported! */
     return timespec_get(&tm->tm, TIME_UTC);
+#elif defined FLB_CLOCK_GET_TIME
+    clock_serv_t cclock;
+    mach_timespec_t mts;
+    host_get_clock_service(mach_host_self(), CALENDAR_CLOCK, &cclock);
+    clock_get_time(cclock, &mts);
+    tm->tv_sec = mts.tv_sec;
+    tm->tv_nsec = mts.tv_nsec;
+    return mach_port_deallocate(mach_task_self(), cclock);
 #else /* __STDC_VERSION__ */
     return clock_gettime(CLOCK_REALTIME, &tm->tm);
 #endif

@@ -362,6 +362,21 @@ if(FLB_HAVE_TIMESPEC_GET)
   FLB_DEFINITION(FLB_HAVE_TIMESPEC_GET)
 endif()
 
+# clock_get_time() support for macOS.
+check_c_source_compiles("
+  #include <mach/clock.h>
+  #include <mach/mach.h>
+  int main() {
+      clock_serv_t cclock;
+      mach_timespec_t mts;
+      host_get_clock_service(mach_host_self(), CALENDAR_CLOCK, &cclock);
+      clock_get_time(cclock, &mts);
+      return mach_port_deallocate(mach_task_self(), cclock);
+  }" FLB_HAVE_CLOCK_GET_TIME)
+if(FLB_HAVE_CLOCK_GET_TIME)
+  FLB_DEFINITION(FLB_HAVE_CLOCK_GET_TIME)
+endif()
+
 # Build tools/xxd-c
 add_subdirectory(tools/xxd-c)
 
