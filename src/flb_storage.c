@@ -24,6 +24,7 @@
 
 static void print_storage_info(struct flb_config *ctx, struct cio_ctx *cio)
 {
+    size_t size;
     char *sync;
     char *checksum;
     struct flb_input_instance *in;
@@ -54,6 +55,7 @@ static void print_storage_info(struct flb_config *ctx, struct cio_ctx *cio)
     flb_info("[storage] %s synchronization mode, checksum %s",
              sync, checksum);
 
+    /* Storage input plugin */
     if (ctx->storage_input_plugin) {
         in = (struct flb_input_instance *) ctx->storage_input_plugin;
         flb_info("[storage] backlog input plugin: %s", in->name);
@@ -185,6 +187,7 @@ int flb_storage_create(struct flb_config *ctx)
 {
     int ret;
     int flags;
+    size_t size;
     struct flb_input_instance *in = NULL;
     struct cio_ctx *cio;
 
@@ -232,6 +235,11 @@ int flb_storage_create(struct flb_config *ctx)
             return -1;
         }
         ctx->storage_input_plugin = in;
+
+        /* Set a queue memory limit */
+        if (!ctx->storage_bl_mem_limit) {
+            ctx->storage_bl_mem_limit = flb_strdup(FLB_STORAGE_BL_MEM_LIMIT);
+        }
     }
 
     /* Create streams for input instances */
@@ -239,7 +247,6 @@ int flb_storage_create(struct flb_config *ctx)
     if (ret == -1) {
         return -1;
     }
-
 
     /* print storage info */
     print_storage_info(ctx, cio);
@@ -254,6 +261,10 @@ void flb_storage_destroy(struct flb_config *ctx)
     /* Destroy Chunk I/O context */
     cio = (struct cio_ctx *) ctx->cio;
     cio_destroy(cio);
+
+    if (ctx->storage_bl_mem_limit) {
+        flb_free(ctx->storage_bl_mem_limit);
+    }
 
     /* Delete references from input instances */
     storage_contexts_destroy(ctx);

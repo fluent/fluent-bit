@@ -23,7 +23,7 @@
 #include <fluent-bit/flb_info.h>
 #include <chunkio/chunkio.h>
 
-#define FLB_STORAGE_FS_QUEUE_LIMIT  1024*1000 /* 1MB */
+#define FLB_STORAGE_BL_MEM_LIMIT "5M"
 
 /*
  * The storage structure helps to associate the contexts between
