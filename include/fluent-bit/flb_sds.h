@@ -35,11 +35,13 @@
 
 typedef char *flb_sds_t;
 
+#pragma pack(push, 1)
 struct flb_sds {
     uint64_t len;        /* used */
     uint64_t alloc;      /* excluding the header and null terminator */
     char buf[];
-} __attribute__ ((__packed__));
+};
+#pragma pack(pop)
 
 #define FLB_SDS_HEADER(s)  ((struct flb_sds *) (s - FLB_SDS_HEADER_SIZE))
 
