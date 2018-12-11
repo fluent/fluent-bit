@@ -33,8 +33,6 @@ set(src
   flb_upstream_ha.c
   flb_upstream_node.c
   flb_router.c
-  flb_oauth2.c
-  flb_http_client.c
   flb_worker.c
   flb_time.c
   flb_sosreport.c
@@ -68,6 +66,8 @@ if(FLB_TLS)
   set(src
     ${src}
     "flb_io_tls.c"
+    "flb_oauth2.c"
+    "flb_http_client.c"
     )
 
   # Make sure our output targets links to the TLS library
