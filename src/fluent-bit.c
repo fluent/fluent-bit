@@ -350,7 +350,11 @@ static int flb_service_conf_path_set(struct flb_config *config, char *file)
     char *end;
     char path[PATH_MAX + 1];
 
+#ifdef _MSC_VER
+    p = _fullpath(path, file, PATH_MAX + 1);
+#else
     p = realpath(file, path);
+#endif
     if (!p) {
         return -1;
     }
