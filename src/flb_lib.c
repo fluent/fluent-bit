@@ -35,8 +35,6 @@
 #include <mcheck.h>
 #endif
 
-extern struct flb_input_plugin in_lib_plugin;
-
 static inline struct flb_input_instance *in_instance_get(flb_ctx_t *ctx,
                                                          int ffd)
 {
@@ -138,6 +136,13 @@ flb_ctx_t *flb_create()
 
     /* Prepare the notification channels */
     ctx->event_channel = flb_calloc(1, sizeof(struct mk_event));
+    if (!ctx->event_channel) {
+        perror("calloc");
+        flb_config_exit(ctx->config);
+        flb_free(ctx);
+        return NULL;
+    }
+
     MK_EVENT_ZERO(ctx->event_channel);
 
     ret = mk_event_channel_create(config->ch_evl,
@@ -177,7 +182,7 @@ int flb_input(flb_ctx_t *ctx, char *input, void *data)
 {
     struct flb_input_instance *i_ins;
 
-    i_ins = flb_input_new(ctx->config, input, data);
+    i_ins = flb_input_new(ctx->config, input, data, FLB_TRUE);
     if (!i_ins) {
         return -1;
     }

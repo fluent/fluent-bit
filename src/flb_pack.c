@@ -320,13 +320,52 @@ int flb_pack_json_state(char *js, size_t len,
     return 0;
 }
 
+static int pack_print_fluent_record(size_t cnt, msgpack_unpacked result)
+{
+    double unix_time;
+    msgpack_object o;
+    msgpack_object *obj;
+    msgpack_object root;
+    struct flb_time tms;
+
+    root = result.data;
+    if (root.type != MSGPACK_OBJECT_ARRAY) {
+        return -1;
+    }
+
+    /* decode expected timestamp only (integer, float or ext) */
+    o = root.via.array.ptr[0];
+    if (o.type != MSGPACK_OBJECT_POSITIVE_INTEGER &&
+        o.type != MSGPACK_OBJECT_FLOAT &&
+        o.type != MSGPACK_OBJECT_EXT) {
+        return -1;
+    }
+
+    /* This is a Fluent Bit record, just do the proper unpacking/printing */
+    flb_time_pop_from_msgpack(&tms, &result, &obj);
+
+    unix_time = flb_time_to_double(&tms);
+    fprintf(stdout, "[%zd] [%f, ", cnt, unix_time);
+    msgpack_object_print(stdout, *obj);
+    fprintf(stdout, "]\n");
+
+    return 0;
+}
+
 void flb_pack_print(char *data, size_t bytes)
 {
+    int ret;
     msgpack_unpacked result;
     size_t off = 0, cnt = 0;
 
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
+        /* Check if we are processing an internal Fluent Bit record */
+        ret = pack_print_fluent_record(cnt, result);
+        if (ret == 0) {
+            continue;
+        }
+
         printf("[%zd] ", cnt++);
         msgpack_object_print(stdout, result.data);
         printf("\n");
@@ -631,7 +670,7 @@ int flb_msgpack_raw_to_json_str(char *buf, size_t buf_size,
         return -1;
     }
 
-    json_size = (buf_size * 1.2);
+    json_size = (buf_size * 1.8);
     json_buf = flb_calloc(1, json_size);
     if (!json_buf) {
         flb_errno();
@@ -642,7 +681,7 @@ int flb_msgpack_raw_to_json_str(char *buf, size_t buf_size,
     while (1) {
         ret = flb_msgpack_to_json(json_buf, json_size, &result.data);
         if (ret <= 0) {
-            json_size += 128;
+            json_size *= 2;
             tmp = flb_realloc(json_buf, json_size);
             if (!tmp) {
                 flb_errno();

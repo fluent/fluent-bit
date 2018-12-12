@@ -84,9 +84,9 @@ struct flb_in_cpu_config {
                                  "cpu%i.p_%s", i - 1, #key)
 
 #define CPU_PACK_SNAP(s, key)                                           \
-    msgpack_pack_str(&i_ins->mp_pck, s->k_##key.length);                  \
-    msgpack_pack_str_body(&i_ins->mp_pck, s->k_##key.name, s->k_##key.length); \
-    msgpack_pack_double(&i_ins->mp_pck, s->p_##key)
+    msgpack_pack_str(&mp_pck, s->k_##key.length);                       \
+    msgpack_pack_str_body(&mp_pck, s->k_##key.name, s->k_##key.length); \
+    msgpack_pack_double(&mp_pck, s->p_##key)
 
 #define ULL_ABS(a, b)  (a > b) ? a - b : b - a
 

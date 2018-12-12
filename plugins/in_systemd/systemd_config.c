@@ -102,7 +102,6 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
     else {
         ctx->dynamic_tag = FLB_FALSE;
     }
-    ctx->i_ins->flags |= FLB_INPUT_DYN_TAG;
 
     /* Database file */
     tmp = flb_input_get_property("db", i_ins);
@@ -113,13 +112,22 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
         }
     }
 
+    /* Max number of fields per record/entry */
+    tmp = flb_input_get_property("max_fields", i_ins);
+    if (tmp) {
+        ctx->max_fields = atoi(tmp);
+    }
+    else {
+        ctx->max_fields = FLB_SYSTEMD_MAX_FIELDS;
+    }
+
     /* Max number of entries per notification */
     tmp = flb_input_get_property("max_entries", i_ins);
     if (tmp) {
         ctx->max_entries = atoi(tmp);
     }
     else {
-        ctx->max_entries = FLB_SYSTEND_ENTRIES;
+        ctx->max_entries = FLB_SYSTEMD_MAX_ENTRIES;
     }
 
     tmp = flb_input_get_property("systemd_filter_type", i_ins);

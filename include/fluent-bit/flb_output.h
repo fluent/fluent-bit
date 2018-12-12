@@ -40,6 +40,10 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
 
+#ifdef FLB_HAVE_REGEX
+#include <fluent-bit/flb_regex.h>
+#endif
+
 /* Output plugin masks */
 #define FLB_OUTPUT_NET          32  /* output address may set host and port */
 #define FLB_OUTPUT_PLUGIN_CORE   0
@@ -109,7 +113,8 @@ struct flb_output_plugin {
  */
 struct flb_output_instance {
     uint64_t mask_id;                    /* internal bitmask for routing */
-    char name[16];                       /* numbered name (cpu -> cpu.0) */
+    char name[32];                       /* numbered name (cpu -> cpu.0) */
+    char *alias;                         /* alias name for the instance  */
     int flags;                           /* inherit flags from plugin    */
     struct flb_output_plugin *p;         /* original plugin              */
     void *context;                       /* plugin configuration context */
@@ -118,6 +123,9 @@ struct flb_output_instance {
     int retry_limit;                     /* max of retries allowed       */
     int use_tls;                         /* bool, try to use TLS for I/O */
     char *match;                         /* match rule for tag/routing   */
+#ifdef FLB_HAVE_REGEX
+    struct flb_regex *match_regex;       /* match rule (regex) based on Tags */
+#endif
 
 #ifdef FLB_HAVE_TLS
     int tls_verify;                      /* Verify certs (default: true) */

@@ -48,6 +48,14 @@ static int configure(struct flb_out_lib_config *ctx,
         }
     }
 
+    tmp = flb_output_get_property("max_records", ins);
+    if (tmp) {
+        ctx->max_records = atoi(tmp);
+    }
+    else {
+        ctx->max_records = 0;
+    }
+
     return 0;
 }
 
@@ -100,6 +108,7 @@ static void out_lib_flush(void *data, size_t bytes,
                           struct flb_config *config)
 {
     int len;
+    int count = 0;
     size_t off = 0;
     size_t last_off = 0;
     size_t data_size = 0;
@@ -119,6 +128,9 @@ static void out_lib_flush(void *data, size_t bytes,
 
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
+        if (ctx->max_records > 0 && count >= ctx->max_records) {
+            break;
+        }
         switch(ctx->format) {
         case FLB_OUT_LIB_FMT_MSGPACK:
             alloc_size = (off - last_off);
@@ -166,6 +178,7 @@ static void out_lib_flush(void *data, size_t bytes,
         /* Invoke user callback */
         ctx->cb_func(data_for_user, data_size, ctx->cb_data);
         last_off = off;
+        count++;
     }
 
     msgpack_unpacked_destroy(&result);

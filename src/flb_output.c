@@ -107,6 +107,10 @@ static void flb_output_free_properties(struct flb_output_instance *ins)
 
 int flb_output_instance_destroy(struct flb_output_instance *ins)
 {
+    if (ins->alias) {
+        flb_free(ins->alias);
+    }
+
     /* Remove URI context */
     if (ins->host.uri) {
         flb_uri_destroy(ins->host.uri);
@@ -115,6 +119,12 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
     flb_free(ins->host.name);
     flb_free(ins->host.address);
     flb_free(ins->match);
+
+#ifdef FLB_HAVE_REGEX
+        if (ins->match_regex) {
+            flb_regex_destroy(ins->match_regex);
+        }
+#endif
 
 #ifdef FLB_HAVE_TLS
     if (ins->flags & FLB_IO_TLS) {
@@ -256,10 +266,12 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         instance->context = plugin->proxy;
     }
 
+    instance->alias       = NULL;
     instance->flags       = instance->p->flags;
     instance->data        = data;
     instance->upstream    = NULL;
     instance->match       = NULL;
+    instance->match_regex = NULL;
     instance->retry_limit = 1;
     instance->host.name   = NULL;
 
@@ -298,19 +310,6 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     mk_list_init(&instance->properties);
     mk_list_add(&instance->_head, &config->outputs);
 
-    /* Metrics */
-#ifdef FLB_HAVE_METRICS
-    instance->metrics = flb_metrics_create(instance->name);
-    if (instance->metrics) {
-        flb_metrics_add(FLB_METRIC_OUT_OK_RECORDS, "proc_records", instance->metrics);
-        flb_metrics_add(FLB_METRIC_OUT_OK_BYTES, "proc_bytes", instance->metrics);
-        flb_metrics_add(FLB_METRIC_OUT_ERROR, "errors", instance->metrics);
-        flb_metrics_add(FLB_METRIC_OUT_RETRY, "retries", instance->metrics);
-        flb_metrics_add(FLB_METRIC_OUT_RETRY_FAILED,
-                        "retries_failed", instance->metrics);
-    }
-#endif
-
     return instance;
 }
 
@@ -345,6 +344,15 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
     /* Check if the key is a known/shared property */
     if (prop_key_check("match", k, len) == 0) {
         out->match = tmp;
+    }
+#ifdef FLB_HAVE_REGEX
+    else if (prop_key_check("match_regex", k, len) == 0) {
+        out->match_regex = flb_regex_create((unsigned char *) tmp);
+        flb_free(tmp);
+    }
+#endif
+    else if (prop_key_check("alias", k, len) == 0 && tmp) {
+        out->alias = tmp;
     }
     else if (prop_key_check("host", k, len) == 0) {
         out->host.name = tmp;
@@ -454,6 +462,16 @@ void flb_output_net_default(char *host, int port,
     }
 }
 
+/* Return an instance name or alias */
+char *flb_output_name(struct flb_output_instance *in)
+{
+    if (in->alias) {
+        return in->alias;
+    }
+
+    return in->name;
+}
+
 char *flb_output_get_property(char *key, struct flb_output_instance *o_ins)
 {
     return flb_config_prop_get(key, &o_ins->properties);
@@ -463,6 +481,7 @@ char *flb_output_get_property(char *key, struct flb_output_instance *o_ins)
 int flb_output_init(struct flb_config *config)
 {
     int ret;
+    char *name;
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_output_instance *ins;
@@ -478,10 +497,33 @@ int flb_output_init(struct flb_config *config)
         ins = mk_list_entry(head, struct flb_output_instance, _head);
         p = ins->p;
 
+        /* Metrics */
+#ifdef FLB_HAVE_METRICS
+        /* Get name or alias for the instance */
+        name = flb_output_name(ins);
+
+        ins->metrics = flb_metrics_create(name);
+        if (ins->metrics) {
+            flb_metrics_add(FLB_METRIC_OUT_OK_RECORDS,
+                            "proc_records", ins->metrics);
+            flb_metrics_add(FLB_METRIC_OUT_OK_BYTES,
+                            "proc_bytes", ins->metrics);
+            flb_metrics_add(FLB_METRIC_OUT_ERROR,
+                            "errors", ins->metrics);
+            flb_metrics_add(FLB_METRIC_OUT_RETRY,
+                            "retries", ins->metrics);
+            flb_metrics_add(FLB_METRIC_OUT_RETRY_FAILED,
+                        "retries_failed", ins->metrics);
+        }
+#endif
+
 #ifdef FLB_HAVE_PROXY_GO
         /* Proxy plugins have heir own initialization */
         if (p->type == FLB_OUTPUT_PLUGIN_PROXY) {
-            flb_plugin_proxy_init(p->proxy, ins, config);
+            ret = flb_plugin_proxy_init(p->proxy, ins, config);
+            if (ret == -1) {
+                return -1;
+            }
             continue;
         }
 #endif

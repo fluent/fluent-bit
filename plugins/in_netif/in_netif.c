@@ -137,9 +137,9 @@ static int configure(struct flb_in_netif_config *ctx,
     ctx->interface_len = strlen(ctx->interface);
 
     ctx->first_snapshot = FLB_TRUE;    /* assign first_snapshot with FLB_TRUE */
-    
+
     init_entry_linux(ctx);
-    
+
     return 0;
 }
 
@@ -161,7 +161,7 @@ static int parse_proc_line(char *line,
 
     int i = 0;
     int entry_num;
-    
+
     split = flb_utils_split(line, ' ', 256);
     entry_num = mk_list_size(split);
     if (entry_num != ctx->entry_len + 1) {
@@ -213,6 +213,8 @@ static int in_netif_collect_linux(struct flb_input_instance *i_ins,
     int  key_len;
     int i;
     int entry_len = ctx->entry_len;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
 
     fp = fopen("/proc/net/dev", "r");
     if (fp == NULL) {
@@ -223,33 +225,42 @@ static int in_netif_collect_linux(struct flb_input_instance *i_ins,
         parse_proc_line(line, ctx);
     }
 
-    if ( ctx->first_snapshot == FLB_TRUE ){   /* if in_netif are called for the first time, assign prev with now */
-        for(i=0; i<entry_len; i++) {
+    if (ctx->first_snapshot == FLB_TRUE) {
+        /* if in_netif are called for the first time, assign prev with now */
+        for (i = 0; i < entry_len; i++) {
             ctx->entry[i].prev = ctx->entry[i].now;
         }
-        ctx->first_snapshot = FLB_FALSE;      /* assign first_snapshot with FLB_FALSE */
+
+        /* assign first_snapshot with FLB_FALSE */
+        ctx->first_snapshot = FLB_FALSE;
     }
     else {
-        flb_input_buf_write_start(i_ins);
-    
-        msgpack_pack_array(&i_ins->mp_pck, 2);
-        flb_pack_time_now(&i_ins->mp_pck);
-        msgpack_pack_map(&i_ins->mp_pck, ctx->map_num);
-        for(i=0; i<entry_len; i++) {
+        /* Initialize local msgpack buffer */
+        msgpack_sbuffer_init(&mp_sbuf);
+        msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+        /* Pack data */
+        msgpack_pack_array(&mp_pck, 2);
+        flb_pack_time_now(&mp_pck);
+        msgpack_pack_map(&mp_pck, ctx->map_num);
+
+        for (i = 0; i < entry_len; i++) {
             if (ctx->entry[i].checked) {
                 key_len = ctx->interface_len + ctx->entry[i].name_len + 1/* '.' */;
 
-                snprintf(key_name, key_len+1/* add null character */,
-                     "%s.%s", ctx->interface, ctx->entry[i].name);
-                msgpack_pack_str(&i_ins->mp_pck, key_len);
-                msgpack_pack_str_body(&i_ins->mp_pck, key_name, key_len);
+                snprintf(key_name, key_len + 1 /* add null character */,
+                         "%s.%s", ctx->interface, ctx->entry[i].name);
+                msgpack_pack_str(&mp_pck, key_len);
+                msgpack_pack_str_body(&mp_pck, key_name, key_len);
 
-                msgpack_pack_uint64(&i_ins->mp_pck, calc_diff(&ctx->entry[i]));
+                msgpack_pack_uint64(&mp_pck, calc_diff(&ctx->entry[i]));
 
                 ctx->entry[i].prev = ctx->entry[i].now;
             }
         }
-        flb_input_buf_write_end(i_ins);
+
+        flb_input_chunk_append_raw(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+        msgpack_sbuffer_destroy(&mp_sbuf);
     }
 
     fclose(fp);

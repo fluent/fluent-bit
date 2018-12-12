@@ -178,5 +178,5 @@ struct flb_input_plugin in_forward_plugin = {
     .cb_collect   = in_fw_collect,
     .cb_flush_buf = NULL,
     .cb_exit      = in_fw_exit,
-    .flags        = FLB_INPUT_NET | FLB_INPUT_DYN_TAG
+    .flags        = FLB_INPUT_NET
 };

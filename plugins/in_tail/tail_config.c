@@ -47,7 +47,6 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
         flb_errno();
         return NULL;
     }
-    ctx->dynamic_tag = FLB_FALSE;
     ctx->ignore_older = 0;
     ctx->skip_long_lines = FLB_FALSE;
     ctx->db_sync = -1;
@@ -154,6 +153,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
             ctx->multiline = FLB_TRUE;
             ret = flb_tail_mult_create(ctx, i_ins, config);
             if (ret == -1) {
+                flb_tail_config_destroy(ctx);
                 return NULL;
             }
         }
@@ -167,6 +167,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
             ctx->docker_mode = FLB_TRUE;
             ret = flb_tail_dmode_create(ctx, i_ins, config);
             if (ret == -1) {
+                flb_tail_config_destroy(ctx);
                 return NULL;
             }
         }
@@ -275,7 +276,6 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
     if (tmp) {
         ctx->dynamic_tag = FLB_TRUE;
     }
-    i_ins->flags |= FLB_INPUT_DYN_TAG;
 
     /* Database options (needs to be set before the context) */
     tmp = flb_input_get_property("db.sync", i_ins);

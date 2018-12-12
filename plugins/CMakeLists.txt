@@ -50,7 +50,7 @@ macro(REGISTER_OUT_PLUGIN name)
   endif()
 endmacro()
 
-# REGISTER_OUT_PLUGIN
+# REGISTER_FILTER_PLUGIN
 macro(REGISTER_FILTER_PLUGIN name)
   string(FIND ${name} "=" pos)
   if(pos GREATER -1)
@@ -109,6 +109,7 @@ REGISTER_IN_PLUGIN("in_head")
 REGISTER_IN_PLUGIN("in_exec")
 REGISTER_IN_PLUGIN("in_health")
 REGISTER_IN_PLUGIN("in_http")
+REGISTER_IN_PLUGIN("in_storage_backlog")
 
 if (NOT CMAKE_SYSTEM_NAME MATCHES "Windows")
   REGISTER_IN_PLUGIN("in_serial")

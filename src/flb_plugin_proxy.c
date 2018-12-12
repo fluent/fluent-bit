@@ -52,7 +52,7 @@ static void flb_proxy_cb_flush(void *data, size_t bytes,
 #ifdef FLB_HAVE_PROXY_GO
     if (p->proxy == FLB_PROXY_GOLANG) {
         flb_trace("[GO] entering go_flush()");
-        ret = proxy_go_flush(p, data, bytes, tag);
+        ret = proxy_go_flush(p, data, bytes, tag, tag_len);
     }
 #else
     (void) p;

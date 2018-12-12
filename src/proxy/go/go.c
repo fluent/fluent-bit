@@ -107,18 +107,34 @@ int proxy_go_init(struct flb_plugin_proxy *proxy)
     plugin->o_ins = proxy->instance;
 
     ret = plugin->cb_init(plugin);
-    if (ret == -1) {
-        fprintf(stderr, "[go proxy]: plugin failed to initialize\n");
+    if (ret <= 0) {
+        flb_error("[go proxy]: plugin '%s' failed to initialize",
+                  plugin->name);
         flb_free(plugin);
         return -1;
     }
 
-    return 0;
+    return ret;
 }
 
 int proxy_go_flush(struct flb_plugin_proxy *proxy, void *data, size_t size,
-                   char *tag)
+                   char *tag, int tag_len)
 {
+    int ret;
+    char *buf;
     struct flbgo_output_plugin *plugin = proxy->data;
-    return plugin->cb_flush(data, size, tag);
+
+    /* temporal buffer for the tag */
+    buf = flb_malloc(tag_len + 1);
+    if (!buf) {
+        flb_errno();
+        return -1;
+    }
+
+    memcpy(buf, tag, tag_len);
+    buf[tag_len] = '\0';
+
+    ret = plugin->cb_flush(data, size, buf);
+    flb_free(buf);
+    return ret;
 }

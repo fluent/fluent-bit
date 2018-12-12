@@ -18,6 +18,7 @@
  */
 
 #include <fluent-bit/flb_info.h>
+#include <monkey/mk_core.h>
 
 #ifdef FLB_HAVE_METRICS
 
@@ -27,6 +28,8 @@
 /* Metrics IDs for general purpose (used by core and Plugins */
 #define FLB_METRIC_N_RECORDS   0
 #define FLB_METRIC_N_BYTES     1
+#define FLB_METRIC_N_DROPPED   2
+#define FLB_METRIC_N_ADDED     3
 
 #define FLB_METRIC_OUT_OK_RECORDS     10
 #define FLB_METRIC_OUT_OK_BYTES       11
