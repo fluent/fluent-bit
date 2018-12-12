@@ -21,6 +21,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_parser.h>
+#include <fluent-bit/flb_time.h>
 
 #include "syslog.h"
 #include "syslog_conn.h"
