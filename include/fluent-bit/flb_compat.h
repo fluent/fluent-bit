@@ -31,6 +31,13 @@
 #define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
 #include <windows.h>
+
+static inline int getpagesize(void)
+{
+    SYSTEM_INFO info;
+    GetSystemInfo(&info);
+    return info.dwPageSize;
+}
 #else
 #include <netdb.h>
 #include <netinet/in.h>
