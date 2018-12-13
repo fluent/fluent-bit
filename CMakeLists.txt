@@ -378,6 +378,20 @@ if(FLB_HAVE_CLOCK_GET_TIME)
   FLB_DEFINITION(FLB_HAVE_CLOCK_GET_TIME)
 endif()
 
+# unix socket support
+check_c_source_compiles("
+  #include <sys/types.h>
+  #include <sys/socket.h>
+  int main() {
+      int sock;
+      sock = socket(AF_UNIX, SOCK_STREAM, 0);
+      close(sock);
+      return 0;
+  }" FLB_HAVE_UNIX_SOCKET)
+if(FLB_HAVE_UNIX_SOCKET)
+  FLB_DEFINITION(FLB_HAVE_UNIX_SOCKET)
+endif()
+
 # Build tools/xxd-c
 add_subdirectory(tools/xxd-c)
 
