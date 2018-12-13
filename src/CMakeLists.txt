@@ -209,7 +209,9 @@ if(FLB_SHARED_LIB)
     PROPERTIES OUTPUT_NAME fluent-bit)
 
   # Library install routines
-  install(TARGETS fluent-bit-shared LIBRARY DESTINATION lib)
+  install(TARGETS fluent-bit-shared
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
 # Static Library
