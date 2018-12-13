@@ -24,7 +24,6 @@
 
 static void print_storage_info(struct flb_config *ctx, struct cio_ctx *cio)
 {
-    size_t size;
     char *sync;
     char *checksum;
     struct flb_input_instance *in;
@@ -187,7 +186,6 @@ int flb_storage_create(struct flb_config *ctx)
 {
     int ret;
     int flags;
-    size_t size;
     struct flb_input_instance *in = NULL;
     struct cio_ctx *cio;
 
