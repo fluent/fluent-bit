@@ -21,13 +21,16 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_network.h>
 
+#ifdef FLB_HAVE_UNIX_SOCKET
 #include <sys/socket.h>
 #include <sys/un.h>
+#endif
 
 #include "fw.h"
 #include "fw_conn.h"
 #include "fw_config.h"
 
+#ifdef FLB_HAVE_UNIX_SOCKET
 static int fw_unix_create(struct flb_in_fw_config *ctx)
 {
     flb_sockfd_t fd = -1;
@@ -62,6 +65,7 @@ static int fw_unix_create(struct flb_in_fw_config *ctx)
     }
     return 0;
 }
+#endif
 
 /*
  * For a server event, the collection event means a new client have arrived, we
@@ -112,6 +116,12 @@ static int in_fw_init(struct flb_input_instance *in,
 
     /* Unix Socket mode */
     if (ctx->unix_path) {
+#ifndef FLB_HAVE_UNIX_SOCKET
+        flb_error("[in_fw] unix address is not supported %s:%s. Aborting",
+            ctx->listen, ctx->tcp_port);
+        fw_config_destroy(ctx);
+        return -1;
+#else
         ret = fw_unix_create(ctx);
         if (ret != 0) {
             flb_error("[in_fw] could not listen on unix://%s",
@@ -120,6 +130,7 @@ static int in_fw_init(struct flb_input_instance *in,
             return -1;
         }
         flb_info("[in_fw] listening on unix://%s", ctx->unix_path);
+#endif
     }
     else {
         /* Create TCP server */
