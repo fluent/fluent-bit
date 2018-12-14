@@ -263,7 +263,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     return task;
 }
 
-void flb_task_destroy(struct flb_task *task, int delete)
+void flb_task_destroy(struct flb_task *task, int del)
 {
     struct mk_list *tmp;
     struct mk_list *head;
@@ -286,7 +286,7 @@ void flb_task_destroy(struct flb_task *task, int delete)
     mk_list_del(&task->_head);
 
     /* destroy chunk */
-    flb_input_chunk_destroy(task->ic, delete);
+    flb_input_chunk_destroy(task->ic, del);
 
     /* Remove 'retries' */
     mk_list_foreach_safe(head, tmp, &task->retries) {
