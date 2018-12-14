@@ -151,9 +151,9 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
     return ic;
 }
 
-int flb_input_chunk_destroy(struct flb_input_chunk *ic, int delete)
+int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del)
 {
-    cio_chunk_close(ic->chunk, delete);
+    cio_chunk_close(ic->chunk, del);
     mk_list_del(&ic->_head);
     flb_free(ic);
 
