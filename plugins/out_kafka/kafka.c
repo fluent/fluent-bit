@@ -76,7 +76,7 @@ int produce_message(struct flb_time *tms, msgpack_object *map,
     char *out_buf;
     char time_formatted[256];
     size_t out_size;
-    size_t s;
+    size_t str_time;
     struct flb_kafka_topic *topic = NULL;
     struct tm tm;
     msgpack_sbuffer mp_sbuf;
@@ -96,20 +96,20 @@ int produce_message(struct flb_time *tms, msgpack_object *map,
 
         if (ctx->time_key_format) {
           gmtime_r(&(*tms).tm.tv_sec, &tm);
-          s = strftime(time_formatted, sizeof(time_formatted) - 1,
+          str_time = strftime(time_formatted, sizeof(time_formatted) - 1,
                        ctx->time_key_format, &tm);
-          len = snprintf(time_formatted + s, sizeof(time_formatted) - 1 - s,
+          len = snprintf(time_formatted + str_time, sizeof(time_formatted) - 1 - str_time,
                          ".%" PRIu64 "Z", (uint64_t) (*tms).tm.tv_nsec);
-          s += len;
-          msgpack_pack_str(&mp_pck, s);
-          msgpack_pack_str_body(&mp_pck, time_formatted, s);
+          str_time += len;
+          msgpack_pack_str(&mp_pck, str_time);
+          msgpack_pack_str_body(&mp_pck, time_formatted, str_time);
         }
         else {
           /* Pack timestamp */
           msgpack_pack_str(&mp_pck, ctx->timestamp_key_len);
           msgpack_pack_str_body(&mp_pck,
                                ctx->timestamp_key, ctx->timestamp_key_len);
-          msgpack_pack_double(&mp_pck, flb_time_to_double(tm));
+          msgpack_pack_double(&mp_pck, flb_time_to_double(tms));
         }
     }
     else {
@@ -150,7 +150,7 @@ int produce_message(struct flb_time *tms, msgpack_object *map,
     }
     else if (ctx->format == FLB_KAFKA_FMT_GELF) {
         s = flb_msgpack_raw_to_gelf(mp_sbuf.data, mp_sbuf.size,
-                                    tm, &(ctx->gelf_fields));
+                                    tms, &(ctx->gelf_fields));
         if (s == NULL) {
             flb_error("[out_kafka] error encoding to GELF");
             msgpack_sbuffer_destroy(&mp_sbuf);
