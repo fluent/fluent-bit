@@ -179,7 +179,7 @@ int flb_sosreport(struct flb_config *config)
 
     /* Config: [SERVER] */
     printf("[SERVER] Runtime configuration\n");
-    printf("    Flush\t\t%i\n", config->flush);
+    printf("    Flush\t\t%f\n", config->flush);
     printf("    Daemon\t\t%s\n", config->daemon ? "On": "Off");
     printf("    Log_Level\t\t%s\n", log_level(config->verbose));
     printf("\n");
