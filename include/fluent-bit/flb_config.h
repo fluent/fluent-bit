@@ -200,6 +200,7 @@ struct flb_service_config {
 
 enum conf_type {
     FLB_CONF_TYPE_INT,
+    FLB_CONF_TYPE_DOUBLE,
     FLB_CONF_TYPE_BOOL,
     FLB_CONF_TYPE_STR,
     FLB_CONF_TYPE_OTHER,

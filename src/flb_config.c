@@ -42,7 +42,7 @@ int flb_regex_init();
 
 struct flb_service_config service_configs[] = {
     {FLB_CONF_STR_FLUSH,
-     FLB_CONF_TYPE_INT,
+     FLB_CONF_TYPE_DOUBLE,
      offsetof(struct flb_config, flush)},
 
     {FLB_CONF_STR_GRACE,
@@ -372,6 +372,7 @@ int flb_config_set_property(struct flb_config *config,
     int i=0;
     int ret = -1;
     int *i_val;
+    double *d_val;
     char **s_val;
     size_t len = strnlen(k, 256);
     char *key = service_configs[0].key;
@@ -413,6 +414,11 @@ int flb_config_set_property(struct flb_config *config,
                 case FLB_CONF_TYPE_INT:
                     i_val  = (int*)((char*)config + service_configs[i].offset);
                     *i_val = atoi(tmp);
+                    flb_free(tmp);
+                    break;
+                case FLB_CONF_TYPE_DOUBLE:
+                    d_val  = (double*)((char*)config + service_configs[i].offset);
+                    *d_val = atof(tmp);
                     flb_free(tmp);
                     break;
                 case FLB_CONF_TYPE_BOOL:
