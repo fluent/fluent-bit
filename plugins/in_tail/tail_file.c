@@ -675,6 +675,10 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         }
     }
 
+#ifdef FLB_HAVE_METRICS
+    flb_metrics_sum(FLB_TAIL_METRIC_F_OPENED, 1, ctx->i_ins->metrics);
+#endif
+
     flb_debug("[in_tail] add to scan queue %s, offset=%lu", path, file->offset);
     return 0;
 }
@@ -699,6 +703,12 @@ void flb_tail_file_remove(struct flb_tail_file *file)
 #if !defined(__linux__)
     flb_free(file->real_name);
 #endif
+
+#ifdef FLB_HAVE_METRICS
+    flb_metrics_sum(FLB_TAIL_METRIC_F_CLOSED, 1,
+                    file->config->i_ins->metrics);
+#endif
+
     flb_free(file);
 }
 
@@ -994,6 +1004,11 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
             create = FLB_TRUE;
         }
     }
+
+#ifdef FLB_HAVE_METRICS
+    flb_metrics_sum(FLB_TAIL_METRIC_F_ROTATED,
+                    1, file->config->i_ins->metrics);
+#endif
 
     /* Get the new file name */
     name = flb_tail_file_name(file);

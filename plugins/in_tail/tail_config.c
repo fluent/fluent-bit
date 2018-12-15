@@ -47,6 +47,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
         flb_errno();
         return NULL;
     }
+    ctx->i_ins = i_ins;
     ctx->ignore_older = 0;
     ctx->skip_long_lines = FLB_FALSE;
     ctx->db_sync = -1;
@@ -305,6 +306,15 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
             flb_error("[in_tail] could not open/create database");
         }
     }
+
+#ifdef FLB_HAVE_METRICS
+    flb_metrics_add(FLB_TAIL_METRIC_F_OPENED,
+                    "files_opened", ctx->i_ins->metrics);
+    flb_metrics_add(FLB_TAIL_METRIC_F_CLOSED,
+                    "files_closed", ctx->i_ins->metrics);
+    flb_metrics_add(FLB_TAIL_METRIC_F_ROTATED,
+                    "files_rotated", ctx->i_ins->metrics);
+#endif
 
     return ctx;
 }

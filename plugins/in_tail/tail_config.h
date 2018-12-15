@@ -28,6 +28,13 @@
 #include <fluent-bit/flb_regex.h>
 #endif
 
+/* Metrics */
+#ifdef FLB_HAVE_METRICS
+#define FLB_TAIL_METRIC_F_OPENED  100  /* number of opened files  */
+#define FLB_TAIL_METRIC_F_CLOSED  101  /* number of closed files  */
+#define FLB_TAIL_METRIC_F_ROTATED 102  /* number of rotated files */
+#endif
+
 struct flb_tail_config {
     int fd_notify;             /* inotify fd               */
     int ch_manager[2];         /* pipe: channel manager    */
