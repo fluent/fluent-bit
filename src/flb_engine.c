@@ -329,6 +329,7 @@ int flb_engine_start(struct flb_config *config)
 {
     int ret;
     char tmp[16];
+    struct flb_time t_flush;
     struct mk_event *event;
     struct mk_event_loop *evl;
 
@@ -404,7 +405,11 @@ int flb_engine_start(struct flb_config *config)
     event->mask = MK_EVENT_EMPTY;
     event->status = MK_EVENT_NONE;
 
-    config->flush_fd = mk_event_timeout_create(evl, config->flush, 0, event);
+    flb_time_from_double(&t_flush, config->flush);
+    config->flush_fd = mk_event_timeout_create(evl,
+                                               t_flush.tm.tv_sec,
+                                               t_flush.tm.tv_nsec,
+                                               event);
     if (config->flush_fd == -1) {
         flb_utils_error(FLB_ERR_CFG_FLUSH_CREATE);
     }

@@ -54,7 +54,7 @@ struct flb_config {
 
     int support_mode;         /* enterprise support mode ?      */
     int is_running;           /* service running ?              */
-    int flush;                /* Flush timeout                  */
+    double flush;             /* Flush timeout                  */
     int grace;                /* Grace on shutdown              */
     flb_pipefd_t flush_fd;    /* Timer FD associated to flush   */
     int flush_method;         /* Flush method set at build time */
