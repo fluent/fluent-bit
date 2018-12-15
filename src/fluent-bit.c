@@ -679,7 +679,7 @@ int main(int argc, char **argv)
             exit(EXIT_FAILURE);
 #endif
         case 'f':
-            config->flush = atoi(optarg);
+            config->flush = atof(optarg);
             break;
         case 'i':
             in = flb_input_new(config, optarg, NULL, FLB_TRUE);
@@ -812,7 +812,7 @@ int main(int argc, char **argv)
     }
 
     /* Validate flush time (seconds) */
-    if (config->flush < 1) {
+    if (config->flush <= (double) 0.0) {
         flb_utils_error(FLB_ERR_CFG_FLUSH);
     }
 
