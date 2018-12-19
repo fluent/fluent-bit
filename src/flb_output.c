@@ -271,6 +271,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     instance->data        = data;
     instance->upstream    = NULL;
     instance->match       = NULL;
+    instance->match_len   = 0;
     instance->match_regex = NULL;
     instance->retry_limit = 1;
     instance->host.name   = NULL;
@@ -344,6 +345,7 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
     /* Check if the key is a known/shared property */
     if (prop_key_check("match", k, len) == 0) {
         out->match = tmp;
+        out->match_len = strlen(tmp);
     }
 #ifdef FLB_HAVE_REGEX
     else if (prop_key_check("match_regex", k, len) == 0) {

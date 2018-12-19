@@ -61,6 +61,7 @@ struct flb_filter_instance {
     char name[32];                 /* numbered name            */
     char *alias;                   /* alias name               */
     char *match;                   /* match rule based on Tags */
+    int  match_len;
 #ifdef FLB_HAVE_REGEX
     struct flb_regex *match_regex; /* match rule (regex) based on Tags */
 #endif

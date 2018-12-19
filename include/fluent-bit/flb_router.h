@@ -31,9 +31,11 @@ struct flb_router_path {
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>
 int flb_router_match(const char *tag, int tag_len,
-                     const char *match, struct flb_regex *match_regex);
+                     const char *match, int match_len, 
+                     struct flb_regex *match_regex);
 #else
-int flb_router_match(const char *tag, int tag_len, const char *match);
+int flb_router_match(const char *tag, int tag_len,
+                     const char *match, int match_len);
 #endif
 int flb_router_io_set(struct flb_config *config);
 void flb_router_exit(struct flb_config *config);

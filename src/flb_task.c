@@ -230,7 +230,8 @@ struct flb_task *flb_task_create(uint64_t ref_id,
         o_ins = mk_list_entry(o_head,
                               struct flb_output_instance, _head);
 
-        if (flb_router_match(task->tag, task->tag_len, o_ins->match
+        if (flb_router_match(task->tag, task->tag_len,
+                             o_ins->match, o_ins->match_len
 #ifdef FLB_HAVE_REGEX
                              , o_ins->match_regex
 #endif

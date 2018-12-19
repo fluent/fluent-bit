@@ -83,7 +83,7 @@ void flb_filter_do(struct flb_input_chunk *ic,
     /* Iterate filters */
     mk_list_foreach(head, &config->filters) {
         f_ins = mk_list_entry(head, struct flb_filter_instance, _head);
-        if (flb_router_match(tag, tag_len, f_ins->match
+        if (flb_router_match(tag, tag_len, f_ins->match, f_ins->match_len
 #ifdef FLB_HAVE_REGEX
         , f_ins->match_regex
 #endif
@@ -176,6 +176,7 @@ int flb_filter_set_property(struct flb_filter_instance *filter, char *k, char *v
 #endif
     if (prop_key_check("match", k, len) == 0) {
         filter->match = tmp;
+        filter->match_len = strlen(tmp);
     }
     else if (prop_key_check("alias", k, len) == 0 && tmp) {
         filter->alias = tmp;
@@ -300,6 +301,7 @@ struct flb_filter_instance *flb_filter_new(struct flb_config *config,
     instance->p     = plugin;
     instance->data  = data;
     instance->match = NULL;
+    instance->match_len = 0;
 #ifdef FLB_HAVE_REGEX
     instance->match_regex = NULL;
 #endif

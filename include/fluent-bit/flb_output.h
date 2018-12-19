@@ -123,6 +123,7 @@ struct flb_output_instance {
     int retry_limit;                     /* max of retries allowed       */
     int use_tls;                         /* bool, try to use TLS for I/O */
     char *match;                         /* match rule for tag/routing   */
+    int  match_len;
 #ifdef FLB_HAVE_REGEX
     struct flb_regex *match_regex;       /* match rule (regex) based on Tags */
 #endif

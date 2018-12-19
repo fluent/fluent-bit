@@ -27,8 +27,11 @@
 
 #include <string.h>
 
-static inline int router_match(const char *tag, int tag_len, const char *match,
-                               off_t off, void *match_r)
+#define is_tail(off, len) (off >= len ? 1 : 0)
+
+static inline int router_match(const char *tag, int tag_len,
+                               const char *match, int match_len,
+                               off_t tag_off, off_t match_off, void *match_r)
 {
     int ret = 0;
     char *pos = NULL;
@@ -51,62 +54,77 @@ static inline int router_match(const char *tag, int tag_len, const char *match,
 #endif
 
     while (match) {
-        if (*match == '*') {
-            while (*++match == '*'){
+        if (match[match_off] == '*') {
+            while (match[match_off] == '*'){
                 /* skip successive '*' */
-            }
-            if(*match == '\0'){
-                /*  '*' is last of string */
-                ret = 1;
-                break;
+                match_off++;
+                if ( is_tail(match_off, match_len) ) {
+                    ret = 1;
+                    goto router_match_end;
+                }
             }
 
-            while ((pos = memchr(tag + off, (int) *match, tag_len - off))) {
-                off += pos - (tag + off);
+            while ( (pos = memchr(tag + tag_off,
+                                 (int) match[match_off],
+                                 tag_len - tag_off))) {
+                tag_off = pos - tag;
 
 #ifndef FLB_HAVE_REGEX
-                if (router_match(tag, tag_len, match, off, NULL)) {
+                if (router_match(tag, tag_len, match, match_len,
+                                 tag_off, match_off, NULL)) {
 #else
                 /* We don't need to pass the regex recursively,
                  * we matched in order above
                  */
-                if (router_match(tag, tag_len, match, off, NULL)) {
+                if (router_match(tag, tag_len, match, match_len,
+                                     tag_off, match_off, NULL)) {
 #endif
                     ret = 1;
-                    break;
+                    goto router_match_end;
                 }
-                off++;
+                tag_off++;
+                if ( is_tail(tag_off, tag_len) ) {
+                    goto router_match_end;
+                }
+            }
+            continue;
+        }
+        else if (tag[tag_off] != match[match_off]) {
+            /* mismatch! */
+            goto router_match_end;
+        }
+        tag_off++;
+        match_off++;
+
+        /* check tail */
+        if ( is_tail(match_off, match_len) ) {
+            if ( is_tail( tag_off, tag_len) ) {
+                ret = 1;
             }
             break;
         }
-        else if (tag[off] != *match ) {
-            /* mismatch! */
+        if ( is_tail(tag_off, tag_len) ) {
             break;
         }
-        else if (off + 1 >= tag_len) {
-            /* end of tag. so matched! */
-            ret = 1;
-            break;
-        }
-        off++;
-        match++;
     }
 
+router_match_end:
     return ret;
 }
 
 #ifdef FLB_HAVE_REGEX
 int flb_router_match(const char *tag, int tag_len,
-                     const char *match,
+                     const char *match, int match_len,
                      struct flb_regex *match_regex)
 {
-    return router_match(tag, tag_len, match, 0, match_regex);
+    return router_match(tag, tag_len, match, match_len, 0, 0, match_regex);
 }
 
 #else
-int flb_router_match(const char *tag, int tag_len, const char *match)
+int flb_router_match(const char *tag, int tag_len, 
+                     const char *match, int match_len)
 {
-    return router_match(tag, tag_len, match, 0, NULL);
+    return router_match(tag, tag_len, match, match_len, 0, 0, NULL);
 }
 #endif
 
@@ -198,7 +216,8 @@ int flb_router_io_set(struct flb_config *config)
                 continue;
             }
 
-            if (flb_router_match(i_ins->tag, i_ins->tag_len, o_ins->match
+            if (flb_router_match(i_ins->tag, i_ins->tag_len, 
+                                 o_ins->match, o_ins->match_len
 #ifdef FLB_HAVE_REGEX
                 , o_ins->match_regex
 #endif
