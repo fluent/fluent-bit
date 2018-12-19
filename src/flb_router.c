@@ -27,10 +27,13 @@
 
 #include <string.h>
 
-static inline int router_match(const char *tag, int tag_len, const char *match,
-                               off_t off, void *match_r)
+/* wildcard support */
+/* tag and match should be null terminated. */
+static inline int router_match(const char *tag, int tag_len,
+                               const char *match,
+                               void *match_r)
 {
-    int ret = 0;
+    int ret = FLB_FALSE;
     char *pos = NULL;
 
 #ifdef FLB_HAVE_REGEX
@@ -61,34 +64,32 @@ static inline int router_match(const char *tag, int tag_len, const char *match,
                 break;
             }
 
-            while ((pos = memchr(tag + off, (int) *match, tag_len - off))) {
-                off += pos - (tag + off);
-
+            while ((pos = strchr(tag, (int) *match))) {
 #ifndef FLB_HAVE_REGEX
-                if (router_match(tag, tag_len, match, off, NULL)) {
+                if (router_match(pos, tag_len, match, NULL)) {
 #else
                 /* We don't need to pass the regex recursively,
                  * we matched in order above
                  */
-                if (router_match(tag, tag_len, match, off, NULL)) {
+                if (router_match(pos, tag_len, match, NULL)) {
 #endif
                     ret = 1;
                     break;
                 }
-                off++;
+                tag = pos+1;
             }
             break;
         }
-        else if (tag[off] != *match ) {
+        else if (*tag != *match ) {
             /* mismatch! */
             break;
         }
-        else if (off + 1 >= tag_len) {
+        else if (*tag == '\0'){
             /* end of tag. so matched! */
             ret = 1;
             break;
         }
-        off++;
+        tag++;
         match++;
     }
 
@@ -100,13 +101,13 @@ int flb_router_match(const char *tag, int tag_len,
                      const char *match,
                      struct flb_regex *match_regex)
 {
-    return router_match(tag, tag_len, match, 0, match_regex);
+    return router_match(tag, tag_len, match, match_regex);
 }
 
 #else
 int flb_router_match(const char *tag, int tag_len, const char *match)
 {
-    return router_match(tag, tag_len, match, 0, NULL);
+    return router_match(tag, tag_len, match, NULL);
 }
 #endif
 
