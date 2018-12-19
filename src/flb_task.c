@@ -208,12 +208,21 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     struct flb_output_instance *o_ins;
     struct mk_list *o_head;
 
+    /* allocate task */
     task = task_alloc(config);
     if (!task) {
         return NULL;
     }
 
-    task->tag = tag_buf;
+    /* create a copy of the tag */
+    task->tag = flb_malloc(tag_len + 1);
+    if (!task->tag) {
+        flb_errno();
+        flb_free(task);
+        return NULL;
+    }
+    memcpy(task->tag, tag_buf, tag_len);
+    task->tag[tag_len] = '\0';
     task->tag_len = tag_len;
 
     /* Keep track of origins */
@@ -295,6 +304,7 @@ void flb_task_destroy(struct flb_task *task, int del)
     }
 
     flb_input_chunk_set_limits(task->i_ins);
+    flb_free(task->tag);
     flb_free(task);
 }
 
