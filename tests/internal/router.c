@@ -12,6 +12,7 @@ struct check {
 };
 
 struct check route_checks[] = {
+
     {"file.apache.log", "file.*.log" , FLB_TRUE},
     {"cpu.rpi"        , "cpu.rpi"    , FLB_TRUE},
     {"cpu.rpi"        , "cpu.*"      , FLB_TRUE},
@@ -22,7 +23,8 @@ struct check route_checks[] = {
     {"cpu.rpi"        , "*u.r*"      , FLB_TRUE},
     {"hoge"           , "hogeeeeeee" , FLB_FALSE},
     {"hogeeeeee"      , "hoge"       , FLB_FALSE},
-    {"hoge"           , "AhogeA"     , FLB_FALSE}
+    {"hoge"           , "AhogeA"     , FLB_FALSE},
+    {"test"           , "test"       , FLB_TRUE}
 };
 
 void test_router_wildcard()
