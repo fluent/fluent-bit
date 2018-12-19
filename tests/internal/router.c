@@ -20,22 +20,27 @@ struct check route_checks[] = {
     {"cpu.rpi"        , "*.rpi"      , FLB_TRUE},
     {"cpu.rpi"        , "mem.*"      , FLB_FALSE},
     {"cpu.rpi"        , "*u.r*"      , FLB_TRUE},
-    {"hoge"           , "hogeeeeeee" , FLB_FALSE}
+    {"hoge"           , "hogeeeeeee" , FLB_FALSE},
+    {"hogeeeeee"      , "hoge"       , FLB_FALSE},
+    {"hoge"           , "AhogeA"     , FLB_FALSE}
 };
 
 void test_router_wildcard()
 {
     int i;
     int ret;
-    int len;
+    int tag_len;
+    int match_len;
     int checks = 0;
     struct check *c;
 
     checks = sizeof(route_checks) / sizeof(struct check);
     for (i = 0; i < checks; i++) {
         c = &route_checks[i];
-        len = strlen(c->tag);
-        ret = flb_router_match(c->tag, len, c->match, NULL);
+        tag_len = strlen(c->tag);
+        match_len = strlen(c->match);
+        printf("tag:%s match:%s\n",c->tag, c->match);
+        ret = flb_router_match(c->tag, tag_len, c->match, match_len, NULL);
         TEST_CHECK(ret == c->matched);
     }
 }
