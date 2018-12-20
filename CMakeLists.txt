@@ -482,17 +482,26 @@ endif()
 # Onigmo (Regex Engine)
 # =====================
 if(FLB_REGEX)
-  ExternalProject_Add(onigmo
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/onigmo
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/onigmo/configure ${AUTOCONF_HOST_OPT} --with-pic --disable-shared --enable-static --prefix=<INSTALL_DIR>
-    CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
-    BUILD_COMMAND $(MAKE)
-    INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
-    INSTALL_COMMAND $(MAKE) install)
-  add_library(libonigmo STATIC IMPORTED GLOBAL)
-  set_target_properties(libonigmo PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/lib/libonigmo.a")
-  add_dependencies(libonigmo onigmo)
-  include_directories("${CMAKE_CURRENT_BINARY_DIR}/include/")
+  if(NOT MSVC)
+    ExternalProject_Add(onigmo
+      SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/onigmo
+      CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/onigmo/configure ${AUTOCONF_HOST_OPT} --with-pic --disable-shared --enable-static --prefix=<INSTALL_DIR>
+      CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
+      BUILD_COMMAND $(MAKE)
+      INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
+      INSTALL_COMMAND $(MAKE) install)
+    add_library(libonigmo STATIC IMPORTED GLOBAL)
+    set_target_properties(libonigmo PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/lib/libonigmo.a")
+    add_dependencies(libonigmo onigmo)
+    include_directories("${CMAKE_CURRENT_BINARY_DIR}/include/")
+  else()
+    # When we use MSVC, use CMakeLists.txt!
+    add_subdirectory(lib/onigmo-cmake)
+    include_directories(
+      lib/onigmo
+      ${PROJECT_BINARY_DIR}/lib/onigmo
+      )
+  endif()
   FLB_DEFINITION(FLB_HAVE_REGEX)
 endif()
 
