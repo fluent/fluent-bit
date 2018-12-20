@@ -16,6 +16,12 @@ else()
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__=__FILE__")
 endif()
 
+if(CMAKE_SIZEOF_VOID_P MATCHES 8)
+  set(FLB_ARCH "x64")
+else()
+  set(FLB_ARCH "x86")
+endif()
+
 include(GNUInstallDirs)
 include(ExternalProject)
 include(cmake/FindJournald.cmake)
@@ -487,15 +493,29 @@ endif()
 # Onigmo (Regex Engine)
 # =====================
 if(FLB_REGEX)
-  ExternalProject_Add(onigmo
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/onigmo
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/onigmo/configure ${AUTOCONF_HOST_OPT} --with-pic --disable-shared --enable-static --prefix=<INSTALL_DIR>
-    CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
-    BUILD_COMMAND $(MAKE)
-    INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
-    INSTALL_COMMAND $(MAKE) install)
+  if(MSVC)
+    ExternalProject_Add(onigmo
+      BUILD_IN_SOURCE TRUE
+      SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/onigmo
+      INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
+      CONFIGURE_COMMAND cmake -E copy win32/Makefile win32/config.h .
+      BUILD_COMMAND nmake ARCH=${FLB_ARCH}
+      INSTALL_COMMAND cmake -E copy build_${FLB_ARCH}/onigmo_s.lib <INSTALL_DIR>/lib/libonigmo.lib
+              COMMAND cmake -E copy onigmo.h <INSTALL_DIR>/include/)
+    set(ONIG_STATIC_LIB "${CMAKE_CURRENT_BINARY_DIR}/lib/libonigmo.lib")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DONIG_EXTERN=extern")
+  else()
+    ExternalProject_Add(onigmo
+      SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/onigmo
+      CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/onigmo/configure ${AUTOCONF_HOST_OPT} --with-pic --disable-shared --enable-static --prefix=<INSTALL_DIR>
+      CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
+      BUILD_COMMAND $(MAKE)
+      INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
+      INSTALL_COMMAND $(MAKE) install)
+    set(ONIG_STATIC_LIB "${CMAKE_CURRENT_BINARY_DIR}/lib/libonigmo.a")
+  endif()
   add_library(libonigmo STATIC IMPORTED GLOBAL)
-  set_target_properties(libonigmo PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/lib/libonigmo.a")
+  set_target_properties(libonigmo PROPERTIES IMPORTED_LOCATION "${ONIG_STATIC_LIB}")
   add_dependencies(libonigmo onigmo)
   include_directories("${CMAKE_CURRENT_BINARY_DIR}/include/")
   FLB_DEFINITION(FLB_HAVE_REGEX)
