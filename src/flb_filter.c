@@ -64,6 +64,7 @@ void flb_filter_do(struct flb_input_chunk *ic,
     int in_records = 0;
     int out_records = 0;
     int diff = 0;
+    char *ntag;
     char *work_data;
     size_t work_size;
     void *out_buf;
@@ -76,6 +77,17 @@ void flb_filter_do(struct flb_input_chunk *ic,
     msgpack_zone *mp_zone = NULL;
 
 
+    /* For the incoming Tag make sure to create a NULL terminated reference */
+    ntag = flb_malloc(tag_len + 1);
+    if (!ntag) {
+        flb_errno();
+        flb_error("[filter] could not filter record due to memory problems");
+        return;
+    }
+    memcpy(ntag, tag, tag_len);
+    ntag[tag_len] = '\0';
+
+
     work_data = (char *) data;
     work_size = bytes;
 
@@ -85,7 +97,7 @@ void flb_filter_do(struct flb_input_chunk *ic,
     /* Iterate filters */
     mk_list_foreach(head, &config->filters) {
         f_ins = mk_list_entry(head, struct flb_filter_instance, _head);
-        if (flb_router_match(tag, tag_len, f_ins->match
+        if (flb_router_match(ntag, tag_len, f_ins->match
 #ifdef FLB_HAVE_REGEX
         , f_ins->match_regex
 #endif
@@ -100,7 +112,7 @@ void flb_filter_do(struct flb_input_chunk *ic,
             write_at = (content_size - work_size);
 
             /* Count number of incoming records */
-            in_records = flb_mp_count_zone(data, bytes, mp_zone);
+            in_records = flb_mp_count_zone(work_data, work_size, mp_zone);
 
             /* Invoke the filter callback */
             ret = f_ins->p->cb_filter(work_data,      /* msgpack buffer   */
@@ -117,7 +129,7 @@ void flb_filter_do(struct flb_input_chunk *ic,
                 /* all records removed, no data to continue processing */
                 if (out_size == 0) {
                     /* reset data content length */
-                    flb_input_chunk_write_at(ic, content_size, "", 0);
+                    flb_input_chunk_write_at(ic, write_at, "", 0);
 
 #ifdef FLB_HAVE_METRICS
                     /* Summarize all records removed */
@@ -161,6 +173,7 @@ void flb_filter_do(struct flb_input_chunk *ic,
     }
 
     msgpack_zone_free(mp_zone);
+    flb_free(ntag);
 }
 
 int flb_filter_set_property(struct flb_filter_instance *filter, char *k, char *v)
