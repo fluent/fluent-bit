@@ -109,7 +109,7 @@ ssize_t flb_pipe_read_all(int fd, void *buf, size_t count)
                  * return until all data have been read, just sleep a little
                  * bit (0.05 seconds)
                  */
-                usleep(50000);
+                flb_time_msleep(50);
                 continue;
             }
         }
@@ -140,7 +140,7 @@ ssize_t flb_pipe_write_all(int fd, void *buf, size_t count)
                  * return until all data have been read, just sleep a little
                  * bit (0.05 seconds)
                  */
-                usleep(50000);
+                flb_time_msleep(50);
                 continue;
             }
         }

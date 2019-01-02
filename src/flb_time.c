@@ -28,6 +28,8 @@
 
 #include <arpa/inet.h>
 #include <string.h>
+#include <inttypes.h>
+#include <time.h>
 
 #define ONESEC_IN_NSEC 1000000000
 
@@ -65,6 +67,20 @@ static int _flb_time_get(struct flb_time *tm)
 int flb_time_get(struct flb_time *tm)
 {
     return _flb_time_get(tm);
+}
+
+/* A portable function to sleep N msec */
+int flb_time_msleep(uint32_t ms)
+{
+#ifdef _MSC_VER
+    Sleep((DWORD) ms);
+    return 0;
+#else
+    struct timespec ts;
+    ts.tv_sec = ms / 1000;
+    ts.tv_nsec = (ms % 1000) * 1000000;
+    return nanosleep(&ts, NULL);
+#endif
 }
 
 double flb_time_to_double(struct flb_time *tm)
