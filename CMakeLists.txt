@@ -180,6 +180,11 @@ if(FLB_DEV)
   set(FLB_TESTS_INTERNAL On)
 endif()
 
+# Tweak build targets for Windows
+if(CMAKE_SYSTEM_NAME MATCHES "Windows")
+  include(cmake/windows-setup.cmake)
+endif()
+
 if(FLB_COVERAGE)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 --coverage -fprofile-arcs -ftest-coverage")
   set(CMAKE_BUILD_TYPE "Debug")

@@ -1,0 +1,71 @@
+# Custom build settings for Windows (MSVC)
+#
+# Not all plugins are supported on Windows yet. This file tweaks
+# the build flags so that we can compile fluent-bit on it.
+
+set(FLB_REGEX                  No)
+set(FLB_BACKTRACE              No)
+set(FLB_LUAJIT                 No)
+set(FLB_EXAMPLES               No)
+
+# INPUT plugins
+# =============
+set(FLB_IN_CPU                 No)
+set(FLB_IN_DISK                No)
+set(FLB_IN_EXEC                No)
+set(FLB_IN_FORWARD             No)
+set(FLB_IN_HEALTH              No)
+set(FLB_IN_HTTP                No)
+set(FLB_IN_MEM                 No)
+set(FLB_IN_KMSG                No)
+set(FLB_IN_LIB                 No)
+set(FLB_IN_RANDOM              No)
+set(FLB_IN_SERIAL              No)
+set(FLB_IN_STDIN               No)
+set(FLB_IN_SYSLOG              No)
+set(FLB_IN_TAIL                No)
+set(FLB_IN_TCP                 No)
+set(FLB_IN_MQTT                No)
+set(FLB_IN_HEAD                No)
+set(FLB_IN_PROC                No)
+set(FLB_IN_SYSTEMD             No)
+set(FLB_IN_DUMMY              Yes)
+set(FLB_IN_NETIF               No)
+set(FLB_IN_STORAGE_BACKLOG     No)
+
+# OUTPUT plugins
+# ==============
+set(FLB_OUT_AZURE              No)
+set(FLB_OUT_BIGQUERY           No)
+set(FLB_OUT_COUNTER           Yes)
+set(FLB_OUT_ES                 No)
+set(FLB_OUT_EXIT               No)
+set(FLB_OUT_FORWARD            No)
+set(FLB_OUT_GELF               No)
+set(FLB_OUT_HTTP               No)
+set(FLB_OUT_INFLUXDB           No)
+set(FLB_OUT_NATS               No)
+set(FLB_OUT_PLOT               No)
+set(FLB_OUT_FILE               No)
+set(FLB_OUT_TD                 No)
+set(FLB_OUT_RETRY              No)
+set(FLB_OUT_SPLUNK             No)
+set(FLB_OUT_STACKDRIVER        No)
+set(FLB_OUT_STDOUT            Yes)
+set(FLB_OUT_LIB                No)
+set(FLB_OUT_NULL               No)
+set(FLB_OUT_FLOWCOUNTER       Yes)
+set(FLB_OUT_KAFKA              No)
+set(FLB_OUT_KAFKA_REST         No)
+
+# FILTER plugins
+# ==============
+set(FLB_FILTER_GREP            No)
+set(FLB_FILTER_MODIFY          No)
+set(FLB_FILTER_STDOUT          No)
+set(FLB_FILTER_PARSER          No)
+set(FLB_FILTER_KUBERNETES      No)
+set(FLB_FILTER_THROTTLE        No)
+set(FLB_FILTER_NEST            No)
+set(FLB_FILTER_LUA             No)
+set(FLB_FILTER_RECORD_MODIFIER No)
