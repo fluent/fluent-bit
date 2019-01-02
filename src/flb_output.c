@@ -271,7 +271,9 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     instance->data        = data;
     instance->upstream    = NULL;
     instance->match       = NULL;
+#ifdef FLB_HAVE_REGEX
     instance->match_regex = NULL;
+#endif
     instance->retry_limit = 1;
     instance->host.name   = NULL;
 
