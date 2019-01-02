@@ -44,6 +44,41 @@ static docker_info* init_docker_info(char *id)
     return docker;
 }
 
+static char* read_line(FILE *fin)
+{
+    char *buffer;
+    char *tmp;
+    int read_chars = 0;
+    int bufsize = 1215;
+    char *line = (char *) flb_calloc(bufsize, sizeof(char));
+
+    if (!line) {
+        return NULL;
+    }
+
+    buffer = line;
+
+    while (fgets(buffer, bufsize - read_chars, fin)) {
+        read_chars = strlen(line);
+
+        if (line[read_chars - 1] == '\n') {
+            line[read_chars - 1] = '\0';
+            return line;
+        } else {
+            bufsize = 2 * bufsize;
+            tmp = realloc(line, bufsize);
+            if (tmp) {
+                line = tmp;
+                buffer = line + read_chars;
+            } else {
+                flb_free(line);
+                return NULL;
+            }
+        }
+    }
+    return NULL;
+}
+
 /* This method returns list of currently running docker ids. */
 static struct mk_list* get_active_dockers()
 {
@@ -133,12 +168,89 @@ static char* get_mem_used_file(char *id)
     return path;
 }
 
+static char* get_config_file(char *id)
+{
+    if (!id)
+        return NULL;
+
+    char *path = (char *) flb_calloc(107, sizeof(char));
+    if (!path) {
+        perror("calloc");
+        return NULL;
+    }
+    strcat(path, DOCKER_LIB_ROOT);
+    strcat(path, "/");
+    strcat(path, id);
+    strcat(path, "/");
+    strcat(path, DOCKER_CONFIG_JSON);
+    
+    return path;
+}
+
+static char* extract_name(char *line, char *start)
+{
+    char buff[256];
+    int skip = 9;
+    int len = 0;
+    
+    if (start != NULL) {
+        char *curr = start + skip;
+        while (*curr != '"') {
+            buff[len++] = *curr;
+            curr++;
+        }
+        
+        if (len > 0) {
+            char *name = (char *) flb_calloc(len + 1, sizeof(char));
+            memcpy(name, buff, len);
+            
+            return name;
+        }
+    }
+    
+    return NULL;
+}
+
+static char* get_container_name(char *id)
+{
+    char *container_name = NULL;
+    char *config_file = get_config_file(id);
+    FILE *f;
+    char *line;
+
+    if (config_file != NULL) {
+        f = fopen(config_file, "r");
+
+        if (!f) {
+            perror(config_file);
+            return NULL;
+        }
+        
+        if (f) {
+            while ((line = read_line(f))) {
+                char *index = strstr(line, DOCKER_NAME_ARG);
+                if (index != NULL) {
+                    container_name = extract_name(line, index);
+                    flb_free(line);
+                    break;
+                }
+                flb_free(line);
+            }
+        }
+    }
+
+    flb_free(config_file);
+    fclose(f);
+    
+    return container_name;
+}
+
 /* Returns CPU metrics for docker id. */
 static cpu_snapshot* get_docker_cpu_snapshot(char *id)
 {
     cpu_snapshot *snapshot = NULL;
     char *usage_file = get_cpu_used_file(id);
-    long int cpu_used = -1;
+    unsigned long cpu_used = 0;
     FILE *f;
 
     if (usage_file != NULL) {
@@ -148,7 +260,7 @@ static cpu_snapshot* get_docker_cpu_snapshot(char *id)
             perror(usage_file);
             return NULL;
         }
-
+        
         fscanf(f, "%ld", &cpu_used);
 
         snapshot = (cpu_snapshot *) flb_calloc(1, sizeof(cpu_snapshot));
@@ -156,6 +268,7 @@ static cpu_snapshot* get_docker_cpu_snapshot(char *id)
             perror("calloc");
             return NULL;
         }
+
         snapshot->used = cpu_used;
 
         flb_free(usage_file);
@@ -286,6 +399,7 @@ static struct mk_list* get_docker_stats(struct mk_list *dockers)
     mk_list_foreach(head, dockers) {
         docker = mk_list_entry(head, docker_info, _head);
         docker_snapshot *snapshot = init_snapshot(docker->id);
+        snapshot->name = get_container_name(docker->id);
         snapshot->cpu = get_docker_cpu_snapshot(docker->id);
         snapshot->mem = get_docker_mem_snapshot(docker->id);
         mk_list_add(&snapshot->_head, snapshots);
@@ -442,13 +556,22 @@ static void flush_snapshot(struct flb_input_instance *i_ins,
     /* Timestamp */
     msgpack_pack_array(&i_ins->mp_pck, 2);
     flb_pack_time_now(&i_ins->mp_pck);
-    msgpack_pack_map(&i_ins->mp_pck, 4);
+    msgpack_pack_map(&i_ins->mp_pck, 5);
 
     /* Docker ID [12 chars] */
     msgpack_pack_str(&i_ins->mp_pck, 2);
     msgpack_pack_str_body(&i_ins->mp_pck, "id", 2);
     msgpack_pack_str(&i_ins->mp_pck, DOCKER_SHORT_ID_LEN);
     msgpack_pack_str_body(&i_ins->mp_pck, snapshot->id, DOCKER_SHORT_ID_LEN);
+    
+    /* Docker Name */
+    if (snapshot->name != NULL) {
+        int name_len = strlen(snapshot->name);
+        msgpack_pack_str(&i_ins->mp_pck, 4);
+        msgpack_pack_str_body(&i_ins->mp_pck, "name", 4);
+        msgpack_pack_str(&i_ins->mp_pck, name_len);
+        msgpack_pack_str_body(&i_ins->mp_pck, snapshot->name, name_len);
+    }
 
     /* CPU used [nanoseconds] */
     msgpack_pack_str(&i_ins->mp_pck, 8);
@@ -466,7 +589,7 @@ static void flush_snapshot(struct flb_input_instance *i_ins,
     msgpack_pack_unsigned_int(&i_ins->mp_pck, snapshot->mem->limit);
 
     flb_trace("[in_docker] ID %s CPU %lu MEMORY", snapshot->id,
-        snapshot->cpu->used, snapshot->mem->used);
+        snapshot->cpu->used, *(snapshot->mem->used));
 }
 
 static void flush_snapshots(struct flb_input_instance *i_ins,
@@ -486,14 +609,16 @@ static void flush_snapshots(struct flb_input_instance *i_ins,
 
 static void free_snapshots(struct mk_list *snaps)
 {
-    if (!snaps)
+    if (snaps == NULL)
         return;
 
     struct mk_list *head;
     struct docker_snapshot *snap;
-    mk_list_foreach(head, snaps) {
+    struct mk_list *tmp;
+    mk_list_foreach_safe(head, tmp, snaps) {
         snap = mk_list_entry(head, docker_snapshot, _head);
         flb_free(snap->id);
+        flb_free(snap->name);
         flb_free(snap->cpu);
         flb_free(snap->mem);
         flb_free(snap);
@@ -503,12 +628,13 @@ static void free_snapshots(struct mk_list *snaps)
 
 static void free_docker_list(struct mk_list *dockers)
 {
-    if (!dockers)
+    if (dockers == NULL)
         return;
 
     struct mk_list *head;
+    struct mk_list *tmp;
     struct docker_info *docker;
-    mk_list_foreach(head, dockers) {
+    mk_list_foreach_safe(head, tmp, dockers) {
         docker = mk_list_entry(head, docker_info, _head);
         flb_free(docker->id);
         flb_free(docker);
@@ -542,7 +668,13 @@ int in_docker_collect(struct flb_input_instance *i_ins,
 
     free_snapshots(snaps);
     free_docker_list(active);
-    free_docker_list(filtered);
+    
+    if (ctx->whitelist != NULL
+        || ctx->blacklist != NULL)
+        free_docker_list(filtered);
+    
+    if (active != filtered)
+        flb_free(filtered);
 
     return 0;
 }
@@ -579,7 +711,7 @@ struct flb_input_plugin in_docker_plugin = {
     .cb_init      = in_docker_init,
     .cb_pre_run   = NULL,
     .cb_collect   = in_docker_collect,
-    .cb_flush_buf = NULL,
+    .cb_flush_buf  = NULL,
     .cb_pause     = in_docker_pause,
     .cb_resume    = in_docker_resume,
     .cb_exit      = in_docker_exit

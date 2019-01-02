@@ -34,6 +34,9 @@
 #define DOCKER_MEM_LIMIT_FILE "memory.limit_in_bytes"
 #define DOCKER_MEM_USAGE_FILE "memory.usage_in_bytes"
 #define DOCKER_CPU_USAGE_FILE "cpuacct.usage"
+#define DOCKER_LIB_ROOT       "/var/lib/docker/containers"
+#define DOCKER_CONFIG_JSON    "config.v2.json"
+#define DOCKER_NAME_ARG       "\"Name\""
 #define DEFAULT_INTERVAL_SEC  1
 #define DEFAULT_INTERVAL_NSEC 0
 
@@ -53,6 +56,7 @@ typedef struct mem_snapshot {
 
 typedef struct docker_snapshot {
     char *id;
+    char *name;
     mem_snapshot *mem;
     cpu_snapshot *cpu;
     struct mk_list _head;
