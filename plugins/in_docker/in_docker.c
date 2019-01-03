@@ -373,7 +373,7 @@ static bool is_exists(struct mk_list *list, char *id)
 
         /* id could be of length 12 or 64 */
         int id_len = strlen(item->id);
-        char *cmp = flb_calloc(id_len, sizeof(char));
+        char *cmp = flb_calloc(id_len + 1, sizeof(char));
         memcpy(cmp, id, id_len);
         if (strcmp(item->id, cmp) == 0) {
             result = true;
@@ -672,9 +672,6 @@ int in_docker_collect(struct flb_input_instance *i_ins,
     if (ctx->whitelist != NULL
         || ctx->blacklist != NULL)
         free_docker_list(filtered);
-    
-    if (active != filtered)
-        flb_free(filtered);
 
     return 0;
 }
