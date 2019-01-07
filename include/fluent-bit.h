@@ -1,7 +1,8 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
-/*  Fluent Bit demo
- *  ===============
+/*  Fluent Bit
+ *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2016 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");

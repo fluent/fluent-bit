@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -121,6 +122,7 @@ int flb_sosreport(struct flb_config *config)
     printf("\n");
     printf("Fluent Bit Enterprise - SOS Report\n");
     printf("==================================\n");
+ *  Copyright (C) 2019      The Fluent Bit Authors
     printf("The following report aims to be used by Fluent Bit and Fluentd "
            "Enterprise\nCustomers of Treasure Data. For more details visit:\n\n"
            "    %shttps://fluentd.treasuredata.com%s\n\n", ANSI_BOLD, ANSI_RESET);
