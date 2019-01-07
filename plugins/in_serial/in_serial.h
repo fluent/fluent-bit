@@ -2,6 +2,7 @@
 
 /*  Serial input plugin for Fluent Bit
  *  ==================================
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2016 Takeshi HASEGAWA
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
