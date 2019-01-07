@@ -266,7 +266,7 @@ if(FLB_BINARY)
       ${FLB_UPSTART_SCRIPT}
       )
     install(FILES ${FLB_UPSTART_SCRIPT} DESTINATION /etc/init)
-    install(DIRECTORY DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}${FLB_OUT_NAME}/")
+    install(DIRECTORY DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/")
   elseif(IS_DIRECTORY /lib/systemd/system)
     set(FLB_SYSTEMD_SCRIPT "${PROJECT_SOURCE_DIR}/init/${FLB_OUT_NAME}.service")
     configure_file(
@@ -274,7 +274,7 @@ if(FLB_BINARY)
       ${FLB_SYSTEMD_SCRIPT}
       )
     install(FILES ${FLB_SYSTEMD_SCRIPT} DESTINATION /lib/systemd/system)
-    install(DIRECTORY DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}${FLB_OUT_NAME}/")
+    install(DIRECTORY DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/")
   else()
     # FIXME: should we support Sysv init script ?
   endif()
