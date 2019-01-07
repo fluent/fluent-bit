@@ -140,8 +140,7 @@ static int in_tail_collect_static(struct flb_input_instance *i_ins,
         case FLB_TAIL_WAIT:
             if (file->config->exit_on_eof) {
                 flb_info("[in_tail] file=%s ended, stop", file->name);
-                flb_engine_shutdown(config);
-                exit(0);
+                flb_engine_exit(config);
             }
             /* Promote file to 'events' type handler */
             flb_debug("[in_tail] file=%s promote to TAIL_EVENT", file->name);

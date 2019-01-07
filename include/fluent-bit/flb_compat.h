@@ -24,4 +24,19 @@
 /* libmonkey exposes compat macros for <unistd.h> */
 #include <monkey/mk_core.h>
 
+/* Windows compatibility utils */
+#ifdef _MSC_VER
+#define PATH_MAX MAX_PATH
+
+#define WIN32_LEAN_AND_MEAN
+#include <winsock2.h>
+#include <windows.h>
+#else
+#include <netdb.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#endif
+
 #endif

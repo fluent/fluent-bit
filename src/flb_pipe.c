@@ -102,7 +102,7 @@ ssize_t flb_pipe_read_all(int fd, void *buf, size_t count)
     size_t total = 0;
 
     do {
-        bytes = flb_pipe_r(fd, buf + total, count - total);
+        bytes = flb_pipe_r(fd, (char *) buf + total, count - total);
         if (bytes == -1) {
             if (errno == EAGAIN) {
                 /*
@@ -110,7 +110,7 @@ ssize_t flb_pipe_read_all(int fd, void *buf, size_t count)
                  * return until all data have been read, just sleep a little
                  * bit (0.05 seconds)
                  */
-                usleep(50000);
+                flb_time_msleep(50);
                 continue;
             }
         }
@@ -133,7 +133,7 @@ ssize_t flb_pipe_write_all(int fd, void *buf, size_t count)
     size_t total = 0;
 
     do {
-        bytes = flb_pipe_w(fd, buf + total, count - total);
+        bytes = flb_pipe_w(fd, (const char *) buf + total, count - total);
         if (bytes == -1) {
             if (errno == EAGAIN) {
                 /*
@@ -141,7 +141,7 @@ ssize_t flb_pipe_write_all(int fd, void *buf, size_t count)
                  * return until all data have been read, just sleep a little
                  * bit (0.05 seconds)
                  */
-                usleep(50000);
+                flb_time_msleep(50);
                 continue;
             }
         }

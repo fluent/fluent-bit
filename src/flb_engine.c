@@ -22,6 +22,7 @@
 #include <stdlib.h>
 
 #include <monkey/mk_core.h>
+#include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_bits.h>
 
