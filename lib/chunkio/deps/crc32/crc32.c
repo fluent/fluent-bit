@@ -29,6 +29,8 @@
 #  define htole16(x) (x)
 #  define be16toh(x) ntohs(x)
 #  define le16toh(x) (x)
+#elif defined(__FreeBSD__)
+#  include <sys/endian.h>
 #else
 #  include <endian.h>
 #endif
