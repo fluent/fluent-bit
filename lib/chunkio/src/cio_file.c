@@ -591,7 +591,7 @@ int cio_file_fs_size_change(struct cio_file *cf, size_t new_size)
 
     /* macOS does not have fallocate().
      * So, we should use ftruncate always. */
-#ifndef __APPLE__
+#ifdef __linux__
     if (new_size > cf->alloc_size) {
         /*
          * To increase the file size we use fallocate() since this option
