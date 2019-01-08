@@ -40,6 +40,7 @@
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_time.h>
 
 #ifdef _WIN32
 
