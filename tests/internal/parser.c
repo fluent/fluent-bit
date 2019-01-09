@@ -79,14 +79,15 @@ struct time_check time_entries[] = {
     /* Same date for different timezones, same timestamp */
     {"generic_TZ"   , "07/17/2017 20:17:03 +0000"  , 1500322623, 0,   0},
     {"generic_TZ"   , "07/18/2017 01:47:03 +0530"  , 1500322623, 0,   0},
-    {"generic_TZ"   , "07/18/2017 01:47:03 +05:30"  , 1500322623, 0,   0},
     {"generic_TZ"   , "07/18/2017 05:17:03 +0900"  , 1500322623, 0,   0},
     {"generic_TZ"   , "07/17/2017 22:17:03 +0200"  , 1500322623, 0,   0},
     {"generic_N_TZ" , "07/17/2017 22:17:03.1 +0200", 1500322623, 0.1, 0},
-    {"generic_N_TZ" , "07/17/2017 22:17:03.1 +02:00", 1500322623, 0.1, 0},
     {"generic_NC_TZ", "07/17/2017 22:17:03,1 +0200",  1500322623, 0.1, 0},
+#ifndef __APPLE__
+    {"generic_TZ"   , "07/18/2017 01:47:03 +05:30"  , 1500322623, 0,   0},
+    {"generic_N_TZ" , "07/17/2017 22:17:03.1 +02:00", 1500322623, 0.1, 0},
     {"generic_NC_TZ", "07/17/2017 22:17:03,1 +02:00", 1500322623, 0.1, 0},
-
+#endif
     /* Same date for different timezones, same timestamp w/ fixed UTC offset */
     {"generic"   , "07/18/2017 01:47:03"   , 1500322623, 0,   19800},
     {"generic"   , "07/18/2017 05:17:03"   , 1500322623, 0,   32400},
@@ -173,9 +174,7 @@ void test_parser_time_lookup()
     struct time_check *t;
     struct tm tm;
 
-    /* Dummy config context */
-    config = flb_malloc(sizeof(struct flb_config));
-    mk_list_init(&config->parsers);
+    config = flb_config_init();
 
     load_json_parsers(config);
 
@@ -217,7 +216,10 @@ void test_parser_time_lookup()
         /* Lookup time */
         len = strlen(t->time_string);
         ret = flb_parser_time_lookup(t->time_string, len, now, p, &tm, &ns);
-        TEST_CHECK(ret == 0);
+        if(!(TEST_CHECK(ret == 0))) {
+            TEST_MSG("time lookup error: parser:'%s'  timestr:'%s'", t->parser_name, t->time_string);
+            continue;
+        }
 
         epoch = flb_parser_tm2time(&tm);
         epoch -= year_diff;
@@ -230,7 +232,7 @@ void test_parser_time_lookup()
     }
 
     flb_parser_exit(config);
-    flb_free(config);
+    flb_config_exit(config);
 }
 
 /* Do time lookup using the JSON parser backend*/
@@ -251,9 +253,7 @@ void test_json_parser_time_lookup()
     struct flb_config *config;
     struct time_check *t;
 
-    /* Dummy config context */
-    config = flb_malloc(sizeof(struct flb_config));
-    mk_list_init(&config->parsers);
+    config = flb_config_init();
 
     /* Load parsers */
     load_json_parsers(config);
@@ -315,7 +315,7 @@ void test_json_parser_time_lookup()
     }
 
     flb_parser_exit(config);
-    flb_free(config);
+    flb_config_exit(config);
 }
 
 /* Do time lookup using the Regex parser backend*/
@@ -336,9 +336,7 @@ void test_regex_parser_time_lookup()
     struct flb_config *config;
     struct time_check *t;
 
-    /* Dummy config context */
-    config = flb_malloc(sizeof(struct flb_config));
-    mk_list_init(&config->parsers);
+    config = flb_config_init();
 
     /* Load parsers */
     load_regex_parsers(config);
@@ -401,7 +399,7 @@ void test_regex_parser_time_lookup()
     }
 
     flb_parser_exit(config);
-    flb_free(config);
+    flb_config_exit(config);
 }
 
 TEST_LIST = {
