@@ -217,6 +217,11 @@ int flb_tail_fs_add(struct flb_tail_file *file)
     watch_fd = inotify_add_watch(ctx->fd_notify, file->name, flags);
     if (watch_fd == -1) {
         flb_errno();
+        if (errno == ENOSPC) {
+            flb_error("[in_tail] inotify: The user limit on the total number "
+                      "of inotify watches was reached or the kernel failed to "
+                      "allocate a needed resource (ENOSPC)");
+        }
         return -1;
     }
     file->watch_fd = watch_fd;
