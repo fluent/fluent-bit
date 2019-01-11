@@ -69,7 +69,7 @@ static inline char *cio_file_st_get_hash(char *map)
 /* Return metadata length */
 static inline uint16_t cio_file_st_get_meta_len(char *map)
 {
-    return (uint16_t) (map[22] << 8) | map[23];
+    return (uint16_t) ((uint8_t) map[22] << 8) | (uint8_t) map[23];
 }
 
 /* Set metadata length */

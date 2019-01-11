@@ -17,6 +17,7 @@
  *  limitations under the License.
  */
 
+#include <chunkio/chunkio_compat.h>
 #include <chunkio/chunkio.h>
 #include <chunkio/cio_file.h>
 #include <chunkio/cio_memfs.h>
@@ -46,6 +47,12 @@ struct cio_chunk *cio_chunk_open(struct cio_ctx *ctx, struct cio_stream *st,
         cio_log_error(ctx, "[cio chunk] invalid file name");
         return NULL;
     }
+#ifndef CIO_HAVE_BACKEND_FILESYSTEM
+    if (st->type == CIO_STORE_FS) {
+        cio_log_error(ctx, "[cio chunk] file system backend not supported");
+        return NULL;
+    }
+#endif
 
     /* allocate chunk context */
     ch = malloc(sizeof(struct cio_chunk));
@@ -88,11 +95,11 @@ void cio_chunk_close(struct cio_chunk *ch, int delete)
     int type;
 
     type = ch->st->type;
-    if (type == CIO_STORE_FS) {
-        cio_file_close(ch, delete);
-    }
-    else if (type == CIO_STORE_MEM) {
+    if (type == CIO_STORE_MEM) {
         cio_memfs_close(ch);
+    }
+    else if (type == CIO_STORE_FS) {
+        cio_file_close(ch, delete);
     }
 
     mk_list_del(&ch->_head);
@@ -112,13 +119,13 @@ int cio_chunk_write_at(struct cio_chunk *ch, off_t offset,
     struct cio_file *cf;
 
     type = ch->st->type;
-    if (type == CIO_STORE_FS) {
-        cf = ch->backend;
-        cf->data_size = offset;
-    }
-    else if (type == CIO_STORE_MEM) {
+    if (type == CIO_STORE_MEM) {
         mf = ch->backend;
         mf->buf_len = offset;
+    }
+    else if (type == CIO_STORE_FS) {
+        cf = ch->backend;
+        cf->data_size = offset;
     }
 
     /*
@@ -130,15 +137,15 @@ int cio_chunk_write_at(struct cio_chunk *ch, off_t offset,
 
 int cio_chunk_write(struct cio_chunk *ch, const void *buf, size_t count)
 {
-    int ret;
+    int ret = 0;
     int type;
 
     type = ch->st->type;
-    if (type == CIO_STORE_FS) {
-        ret = cio_file_write(ch, buf, count);
-    }
-    else if (type == CIO_STORE_MEM) {
+    if (type == CIO_STORE_MEM) {
         ret = cio_memfs_write(ch, buf, count);
+    }
+    else if (type == CIO_STORE_FS) {
+        ret = cio_file_write(ch, buf, count);
     }
 
     return ret;
@@ -159,7 +166,7 @@ int cio_chunk_sync(struct cio_chunk *ch)
 
 int cio_chunk_get_content(struct cio_chunk *ch, char **buf, size_t *size)
 {
-    int ret;
+    int ret = 0;
     int type;
     struct cio_memfs *mf;
     struct cio_file *cf;
@@ -169,7 +176,7 @@ int cio_chunk_get_content(struct cio_chunk *ch, char **buf, size_t *size)
         mf = ch->backend;
         *size = mf->buf_len;
         *buf = mf->buf_data;
-        return 0;
+        return ret;
     }
     else if (type == CIO_STORE_FS) {
         cf = ch->backend;
@@ -179,7 +186,7 @@ int cio_chunk_get_content(struct cio_chunk *ch, char **buf, size_t *size)
         }
         *size = cf->data_size;
         *buf = cio_file_st_get_content(cf->map);
-        return 0;
+        return ret;
     }
 
     return -1;

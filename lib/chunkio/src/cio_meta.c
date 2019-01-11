@@ -18,9 +18,9 @@
  */
 
 #define _GNU_SOURCE
-#include <sys/mman.h>
 #include <string.h>
 
+#include <chunkio/chunkio_compat.h>
 #include <chunkio/chunkio.h>
 #include <chunkio/cio_file.h>
 #include <chunkio/cio_file_st.h>
@@ -43,46 +43,14 @@
  * empty metadata with specific sizes.
  */
 
-/*
- * adjust_layout: if metadata has changed, we need to adjust the content
- * data and reference pointers.
- */
-static int adjust_layout(struct cio_chunk *ch,
-                         struct cio_file *cf, size_t meta_size)
-{
-    cio_file_st_set_meta_len(cf->map, (uint16_t) meta_size);
-
-    /* Update checksum */
-    if (ch->ctx->flags & CIO_CHECKSUM) {
-        /* reset current crc since we are calculating from zero */
-        cf->crc_cur = cio_crc32_init();
-        cio_file_calculate_checksum(cf, &cf->crc_cur);
-    }
-
-    /* Sync changes to disk */
-    cf->synced = CIO_FALSE;
-
-    return 0;
-}
-
 int cio_meta_write(struct cio_chunk *ch, char *buf, size_t size)
 {
-    int ret;
-    char *meta;
-    char *cur_content_data;
-    char *new_content_data;
-    size_t new_size;
-    size_t content_av;
-    size_t meta_av;
-    void *tmp;
-    struct cio_file *cf = ch->backend;
     struct cio_memfs *mf;
 
     if (size > 65535) {
         return -1;
     }
 
-    /* Handle in-memory metadata */
     if (ch->st->type == CIO_STORE_MEM) {
         mf = (struct cio_memfs *) ch->backend;
         if (mf->meta_data) {
@@ -98,81 +66,10 @@ int cio_meta_write(struct cio_chunk *ch, char *buf, size_t size)
         mf->meta_len = size;
         return 0;
     }
-
-    /* Get metadata pointer */
-    meta = cio_file_st_get_meta(cf->map);
-
-    /* Check if meta already have some space available to overwrite */
-    meta_av = cio_file_st_get_meta_len(cf->map);
-
-    /* If there is some space available, just overwrite */
-    if (meta_av >= size) {
-        /* copy new metadata */
-        memcpy(meta, buf, size);
-
-        /* there are some remaining bytes, adjust.. */
-        cur_content_data = cio_file_st_get_content(cf->map);
-        new_content_data = meta + size;
-        memmove(new_content_data, cur_content_data, cf->data_size);
-        adjust_layout(ch, cf, size);
-
-        return 0;
+    else if (ch->st->type == CIO_STORE_FS) {
+        return cio_file_write_metadata(ch, buf, size);
     }
-
-    /*
-     * The optimal case is if there is no content data, the non-optimal case
-     * where we need to increase the memory map size, move the content area
-     * bytes to a different position and write the metadata.
-     *
-     * Calculate the available space in the content area.
-     */
-    content_av = cf->alloc_size - cf->data_size;
-
-    /* If there is no enough space, increase the file size and it memory map */
-    if (content_av < size) {
-        new_size = (size - meta_av) + cf->data_size + CIO_FILE_HEADER_MIN;
-        /* OSX mman does not implement mremap or MREMAP_MAYMOVE. */
-#ifndef MREMAP_MAYMOVE
-        if (munmap(cf->data_size, size) == -1)
-            return -1;
-        tmp = mmap(0, new_size, PROT_READ | PROT_WRITE, MAP_SHARED, cf->fd, 0);
-#else
-        /* Increase memory map size */
-        tmp = mremap(cf->map, cf->alloc_size, new_size, MREMAP_MAYMOVE);
-#endif
-        if (tmp == MAP_FAILED) {
-            cio_errno();
-            cio_log_error(ch->ctx,
-                          "[cio meta] data exceeds available space "
-                          "(alloc=%lu current_size=%lu meta_size=%lu)",
-                          cf->alloc_size, cf->data_size, size);
-            return -1;
-
-        }
-        cf->map = tmp;
-        cf->alloc_size = new_size;
-
-        /* Alter file size (file system) */
-        ret = cio_file_fs_size_change(cf, new_size);
-        if (ret == -1) {
-            cio_errno();
-            return -1;
-        }
-    }
-
-    /* get meta reference again in case the map address has changed */
-    meta = cio_file_st_get_meta(cf->map);
-
-    /* set new position for the content data */
-    cur_content_data = cio_file_st_get_content(cf->map);
-    new_content_data = meta + size;
-    memmove(new_content_data, cur_content_data, size);
-
-    /* copy new metadata */
-    memcpy(meta, buf, size);
-    adjust_layout(ch, cf, size);
-
-    return 0;
+    return -1;
 }
 
 int cio_meta_read(struct cio_chunk *ch, char **meta_buf, int *meta_len)
@@ -183,7 +80,20 @@ int cio_meta_read(struct cio_chunk *ch, char **meta_buf, int *meta_len)
     struct cio_memfs *mf;
 
     /* In-memory type */
-    if (ch->st->type == CIO_STORE_FS) {
+    if (ch->st->type == CIO_STORE_MEM) {
+        mf = (struct cio_memfs *) ch->backend;
+
+        /* no metadata */
+        if (!mf->meta_data) {
+            return -1;
+        }
+
+        *meta_buf = mf->meta_data;
+        *meta_len = mf->meta_len;
+
+        return 0;
+    }
+    else if (ch->st->type == CIO_STORE_FS) {
         cf = ch->backend;
 
         len = cio_file_st_get_meta_len(cf->map);
@@ -194,19 +104,6 @@ int cio_meta_read(struct cio_chunk *ch, char **meta_buf, int *meta_len)
         meta = cio_file_st_get_meta(cf->map);
         *meta_buf = meta;
         *meta_len = len;
-
-        return 0;
-    }
-    else if (ch->st->type == CIO_STORE_MEM) {
-        mf = (struct cio_memfs *) ch->backend;
-
-        /* no metadata */
-        if (!mf->meta_data) {
-            return -1;
-        }
-
-        *meta_buf = mf->meta_data;
-        *meta_len = mf->meta_len;
 
         return 0;
     }
@@ -243,7 +140,6 @@ int cio_meta_cmp(struct cio_chunk *ch, char *meta_buf, int meta_len)
 
         return -1;
     }
-
 
     /* File system type */
     len = cio_file_st_get_meta_len(cf->map);

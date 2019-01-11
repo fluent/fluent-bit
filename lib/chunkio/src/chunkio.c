@@ -19,9 +19,9 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <string.h>
 
+#include <chunkio/chunkio_compat.h>
 #include <chunkio/chunkio.h>
 #include <chunkio/cio_os.h>
 #include <chunkio/cio_log.h>
@@ -63,6 +63,12 @@ struct cio_ctx *cio_create(const char *root_path,
         fprintf(stderr, "[cio] invalid log level, aborting");
         return NULL;
     }
+#ifndef CIO_HAVE_BACKEND_FILESYSTEM
+    if (root_path) {
+        fprintf(stderr, "[cio] file system backend not supported\n");
+        return NULL;
+    }
+#endif
 
     cio_page_size = getpagesize();
 

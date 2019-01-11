@@ -21,9 +21,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
-#include <dirent.h>
-#include <arpa/inet.h>
 
+#include <chunkio/chunkio_compat.h>
 #include <chunkio/chunkio.h>
 #include <chunkio/cio_stream.h>
 #include <chunkio/cio_file.h>
@@ -31,6 +30,7 @@
 #include <chunkio/cio_chunk.h>
 #include <chunkio/cio_log.h>
 
+#ifdef CIO_HAVE_BACKEND_FILESYSTEM
 static int cio_scan_stream_files(struct cio_ctx *ctx, struct cio_stream *st)
 {
     int len;
@@ -119,6 +119,13 @@ int cio_scan_streams(struct cio_ctx *ctx)
     closedir(dir);
     return 0;
 }
+#else
+int cio_scan_streams(struct cio_ctx *ctx)
+{
+    cio_log_error(ctx, "[cio scan] file system backend not supported");
+    return -1;
+}
+#endif
 
 void cio_scan_dump(struct cio_ctx *ctx)
 {
@@ -133,11 +140,11 @@ void cio_scan_dump(struct cio_ctx *ctx)
         printf(" stream:%-60s%i chunks\n",
                st->name, mk_list_size(&st->files));
 
-        if (st->type == CIO_STORE_FS) {
-            cio_file_scan_dump(ctx, st);
-        }
-        else if (st->type == CIO_STORE_MEM) {
+        if (st->type == CIO_STORE_MEM) {
             cio_memfs_scan_dump(ctx, st);
+        }
+        else if (st->type == CIO_STORE_FS) {
+            cio_file_scan_dump(ctx, st);
         }
     }
 }
