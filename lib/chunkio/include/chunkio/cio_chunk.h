@@ -20,7 +20,7 @@
 #ifndef CIO_CHUNK_H
 #define CIO_CHUNK_H
 
-#include <unistd.h>
+#include <sys/types.h>
 #include <inttypes.h>
 
 struct cio_chunk {

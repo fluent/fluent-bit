@@ -2,7 +2,6 @@ set(src
   cio_os.c
   cio_log.c
   cio_memfs.c
-  cio_file.c
   cio_chunk.c
   cio_meta.c
   cio_scan.c
@@ -10,6 +9,18 @@ set(src
   cio_stream.c
   chunkio.c
   )
+
+if(CIO_BACKEND_FILESYSTEM)
+  set(src
+    ${src}
+    cio_file.c
+    )
+else()
+  set(src
+    ${src}
+    cio_file_compat.c
+    )
+endif()
 
 if(CIO_LIB_STATIC)
   add_library(chunkio-static STATIC ${src})

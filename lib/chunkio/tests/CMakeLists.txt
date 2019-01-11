@@ -2,9 +2,14 @@ include_directories(lib/acutest)
 
 set(UNIT_TESTS_FILES
   context.c
-  fs.c
   memfs.c
   )
+if(CIO_BACKEND_FILESYSTEM)
+  set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    fs.c
+    )
+endif()
 
 set(CIO_TESTS_DATA_PATH ${CMAKE_CURRENT_SOURCE_DIR}/)
 configure_file(

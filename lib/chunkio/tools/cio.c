@@ -19,7 +19,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
+#include <chunkio/chunkio_compat.h>
 #include <getopt.h>
 #include <string.h>
 #include <sys/types.h>
@@ -82,11 +82,14 @@ static void cio_help(int rc)
     printf("  -l, --list\t\tlist environment content\n");
     printf("  -F, --full-sync\tforce data flush to disk\n");
     printf("  -k, --checksum\tenable CRC32 checksum\n");
+    printf("  -f, --filename=FILE\tset name of file to create\n");
     printf("  -p, --perf=FILE\trun performance test\n");
     printf("  -w, --perf-writes=N\tset number of writes for performance mode "
            "(default: 5)\n");
-    printf("  -f, --perf-files=N\tset number of files to create on "
+    printf("  -e, --perf-files=N\tset number of files to create on "
            "performance mode (default: 1000)\n");
+    printf("  -S, --silent\t\tmake chunkio quiet during the operation\n");
+    printf("  -v, --verbose\t\tincrease logging verbosity\n");
     printf("  -h, --help\t\tprint this help\n");
     exit(rc);
 }
@@ -153,7 +156,8 @@ static void cio_signal_init()
     signal(SIGSEGV, &cio_signal_handler);
 }
 
-static int log_cb(struct cio_ctx *ctx, const char *file, int line,
+
+static int log_cb(struct cio_ctx *ctx, int level, const char *file, int line,
                   char *str)
 {
     char *dtitle = "chunkio";

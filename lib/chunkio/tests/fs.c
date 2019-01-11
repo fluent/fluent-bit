@@ -34,7 +34,7 @@
 #define CIO_FILE_400KB    CIO_TESTS_DATA_PATH "/data/400kb.txt"
 
 /* Logging callback, once called it just turn on the log_check flag */
-static int log_cb(struct cio_ctx *ctx, const char *file, int line,
+static int log_cb(struct cio_ctx *ctx, int level, const char *file, int line,
                   char *str)
 {
     (void) ctx;
