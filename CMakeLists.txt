@@ -503,7 +503,7 @@ if(FLB_LUAJIT)
   ExternalProject_Add(luajit
     SOURCE_DIR ${LUA_PATH}
     CONFIGURE_COMMAND ${LUA_PATH}/configure
-    BUILD_COMMAND $(MAKE) BUILD_MODE=static XCFLAGS="-fPIC" -C ${LUA_PATH}
+    BUILD_COMMAND $(MAKE) CC=${CMAKE_C_COMPILER} BUILD_MODE=static XCFLAGS="-fPIC" -C ${LUA_PATH}
     INSTALL_COMMAND cp ${LUA_PATH}/src/libluajit.a "${CMAKE_CURRENT_BINARY_DIR}/lib/libluajit.a")
   add_library(libluajit STATIC IMPORTED GLOBAL)
   set_target_properties(libluajit PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/lib/libluajit.a")
