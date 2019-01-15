@@ -12,11 +12,12 @@ SECTION = "net"
 
 SRC_URI = "git://github.com/fluent/fluent-bit.git"
 
-PR = "r0"
-PV = "0.1.0"
+PV = "0.14+git${SRCPV}"
+SRCREV = "master"
 
 S = "${WORKDIR}/git"
-SRCREV = "master"
-EXTRA_OECMAKE = "-DFLB_XBEE=1"
+HOST_SYS_ARCH = "${HOST_ARCH}"
+HOST_SYS_TRIPLE = "${HOST_SYS_ARCH}-unknown-linux"
+EXTRA_OECMAKE = "-DGNU_HOST=${HOST_SYS_TRIPLE} -DFLB_WITHOUT_EXAMPLES=On -DFLB_LUAJIT=Off -DFLB_FILTER_LUA=Off"
 
 inherit cmake
