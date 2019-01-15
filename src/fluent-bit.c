@@ -589,7 +589,6 @@ int main(int argc, char **argv)
     flb_stacktrace_init(argv[0]);
 #endif
 
-#ifndef _WIN32
     /* Setup long-options */
     static const struct option long_opts[] = {
         { "storage_path",    required_argument, NULL, 'b' },
@@ -624,7 +623,6 @@ int main(int argc, char **argv)
 #endif
         { NULL, 0, NULL, 0 }
     };
-#endif
 
 #ifdef FLB_HAVE_MTRACE
     /* Start tracing malloc and free */
