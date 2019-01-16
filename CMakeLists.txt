@@ -375,6 +375,18 @@ if(FLB_HAVE_TIMESPEC_GET)
   FLB_DEFINITION(FLB_HAVE_TIMESPEC_GET)
 endif()
 
+# gmtoff support
+check_c_source_compiles("
+  #include <time.h>
+  int main() {
+     struct tm tm;
+     tm.tm_gmtoff = 0;
+     return 0;
+  }" FLB_HAVE_GMTOFF)
+if(FLB_HAVE_GMTOFF)
+  FLB_DEFINITION(FLB_HAVE_GMTOFF)
+endif()
+
 # clock_get_time() support for macOS.
 check_c_source_compiles("
   #include <mach/clock.h>
