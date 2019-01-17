@@ -16,6 +16,12 @@ else()
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__=__FILE__")
 endif()
 
+if(CMAKE_SIZEOF_VOID_P MATCHES 8)
+  set(FLB_ARCH "x64")
+else()
+  set(FLB_ARCH "x86")
+endif()
+
 include(GNUInstallDirs)
 include(ExternalProject)
 include(cmake/FindJournald.cmake)
@@ -488,8 +494,8 @@ if(FLB_REGEX)
       SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/onigmo
       INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
       CONFIGURE_COMMAND cmake -E copy <SOURCE_DIR>/win32/Makefile <SOURCE_DIR>/win32/config.h <SOURCE_DIR>
-      BUILD_COMMAND nmake
-      INSTALL_COMMAND cmake -E copy <SOURCE_DIR>/build_x86/onigmo_s.lib <INSTALL_DIR>/lib/libonigmo.lib
+      BUILD_COMMAND nmake ARCH=${FLB_ARCH}
+      INSTALL_COMMAND cmake -E copy <SOURCE_DIR>/build_${FLB_ARCH}/onigmo_s.lib <INSTALL_DIR>/lib/libonigmo.lib
               COMMAND cmake -E copy <SOURCE_DIR>/onigmo.h <INSTALL_DIR>/include/
     )
     add_library(libonigmo STATIC IMPORTED GLOBAL)
