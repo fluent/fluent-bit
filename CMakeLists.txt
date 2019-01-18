@@ -40,7 +40,8 @@ option(FLB_ALL                "Enable all features"           No)
 option(FLB_DEBUG              "Build with debug symbols"      No)
 option(FLB_COVERAGE           "Build with code-coverage"      No)
 option(FLB_JEMALLOC           "Build with Jemalloc support"   No)
-option(FLB_REGEX              "Build wiht Regex support"     Yes)
+option(FLB_REGEX              "Build with Regex support"     Yes)
+option(FLB_PARSER             "Build with Parser support"    Yes)
 option(FLB_TLS                "Build with SSL/TLS support"    No)
 option(FLB_BINARY             "Build executable binary"      Yes)
 option(FLB_EXAMPLES           "Build examples"               Yes)
@@ -211,6 +212,12 @@ endmacro()
 # Enable Debug symbols if specified
 if(FLB_DEBUG)
   set(CMAKE_BUILD_TYPE "Debug")
+endif()
+
+if(FLB_PARSER)
+  FLB_DEFINITION(FLB_HAVE_PARSER)
+  message("Enabling FLB_REGEX since FLB_PARSER requires")
+  set(FLB_REGEX On)
 endif()
 
 # Is sanitize_address defined ?

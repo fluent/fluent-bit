@@ -48,7 +48,7 @@ include_directories(
   ${extra_headers}
   )
 
-if(FLB_REGEX)
+if(FLB_PARSER)
   set(src
     ${src}
     flb_parser.c
