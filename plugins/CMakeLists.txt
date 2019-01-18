@@ -203,6 +203,7 @@ REGISTER_FILTER_PLUGIN("filter_alter_size")
 REGISTER_FILTER_PLUGIN("filter_aws")
 REGISTER_FILTER_PLUGIN("filter_record_modifier")
 REGISTER_FILTER_PLUGIN("filter_throttle")
+REGISTER_FILTER_PLUGIN("filter_size_throttle")
 
 if(FLB_REGEX)
   REGISTER_FILTER_PLUGIN("filter_grep")
