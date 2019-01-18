@@ -3,7 +3,7 @@
 # Not all plugins are supported on Windows yet. This file tweaks
 # the build flags so that we can compile fluent-bit on it.
 
-set(FLB_REGEX                  No)
+set(FLB_REGEX                 Yes)
 set(FLB_BACKTRACE              No)
 set(FLB_LUAJIT                Yes)
 set(FLB_EXAMPLES               No)
@@ -61,12 +61,12 @@ set(FLB_OUT_KAFKA_REST         No)
 
 # FILTER plugins
 # ==============
-set(FLB_FILTER_GREP            No)
-set(FLB_FILTER_MODIFY          No)
-set(FLB_FILTER_STDOUT          No)
+set(FLB_FILTER_GREP           Yes)
+set(FLB_FILTER_MODIFY         Yes)
+set(FLB_FILTER_STDOUT         Yes)
 set(FLB_FILTER_PARSER          No)
 set(FLB_FILTER_KUBERNETES      No)
 set(FLB_FILTER_THROTTLE        No)
 set(FLB_FILTER_NEST            No)
-set(FLB_FILTER_LUA             No)
-set(FLB_FILTER_RECORD_MODIFIER No)
+set(FLB_FILTER_LUA            Yes)
+set(FLB_FILTER_RECORD_MODIFIER Yes)
