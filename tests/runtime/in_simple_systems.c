@@ -171,10 +171,6 @@ void flb_test_in_mem_flush_2s_2times()
 {
     do_test("mem", NULL);
 }
-void flb_test_in_docker_flush_2s_2times()
-{
-    do_test("docker", NULL);
-}
 
 #ifdef in_proc
 void flb_test_in_proc_absent_process(void)
@@ -195,6 +191,40 @@ void flb_test_in_proc_absent_process(void)
     flb_input_set(ctx, in_ffd, "tag", "test",
                   "interval_sec", "1", "proc_name", "",
                   "alert", "true", "mem", "on", "fd", "on", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "lib", &cb);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "test", NULL);
+
+    flb_service_set(ctx, "Flush", "2", "Grace", "1", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0); // error occurs but return value is true
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+#endif
+
+#ifdef in_docker
+void flb_test_in_docker_absent(void)
+{
+    int ret;
+    flb_ctx_t    *ctx    = NULL;
+    int in_ffd;
+    int out_ffd;
+
+    struct flb_lib_out_cb cb;
+    cb.cb   = callback_test;
+    cb.data = NULL;
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "docker", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test",
+                  "whitelist", "000000000000",
+                    "blacklist", "000000000000", NULL);
 
     out_ffd = flb_output(ctx, (char *) "lib", &cb);
     TEST_CHECK(out_ffd >= 0);
@@ -232,7 +262,7 @@ TEST_LIST = {
     {"dummy_flush_2s_2times",   flb_test_in_dummy_flush_2s_2times },
 #endif
 #ifdef in_docker
-    {"docker_flush_2s_2times",     flb_test_in_docker_flush_2s_2times },
+    {"docker_absent",     flb_test_in_docker_absent },
 #endif
 #ifdef in_mem
     {"mem_flush_2s_2times",     flb_test_in_mem_flush_2s_2times },
