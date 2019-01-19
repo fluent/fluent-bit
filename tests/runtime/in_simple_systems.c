@@ -150,7 +150,7 @@ void flb_test_in_proc_flush_2s_2times()
 }
 void flb_test_in_head_flush_2s_2times()
 {
-    do_test("head", 
+    do_test("head",
             "Interval_Sec", "1",
             "File", "/dev/urandom",
             NULL);
@@ -170,6 +170,10 @@ void flb_test_in_dummy_flush_2s_2times()
 void flb_test_in_mem_flush_2s_2times()
 {
     do_test("mem", NULL);
+}
+void flb_test_in_docker_flush_2s_2times()
+{
+    do_test("docker", NULL);
 }
 
 #ifdef in_proc
@@ -226,6 +230,9 @@ TEST_LIST = {
 #endif
 #ifdef in_dummy
     {"dummy_flush_2s_2times",   flb_test_in_dummy_flush_2s_2times },
+#endif
+#ifdef in_docker
+    {"docker_flush_2s_2times",     flb_test_in_docker_flush_2s_2times },
 #endif
 #ifdef in_mem
     {"mem_flush_2s_2times",     flb_test_in_mem_flush_2s_2times },

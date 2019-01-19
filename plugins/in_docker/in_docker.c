@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,7 +21,6 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_config.h>
-#include <fluent-bit/flb_stats.h>
 #include <fluent-bit/flb_pack.h>
 
 #include <stdio.h>
@@ -38,7 +38,16 @@ struct flb_input_plugin in_docker_plugin;
 static docker_info* init_docker_info(char *id)
 {
     docker_info *docker = flb_malloc(sizeof(docker_info));
+    if (!docker) {
+        flb_errno();
+        return NULL;
+    }
+
     docker->id = flb_malloc(sizeof(char)*(strlen(id) + 1));
+    if (!docker->id) {
+        flb_errno();
+        return NULL;
+    }
     strcpy(docker->id, id);
 
     return docker;
@@ -53,6 +62,7 @@ static char* read_line(FILE *fin)
     char *line = (char *) flb_calloc(bufsize, sizeof(char));
 
     if (!line) {
+        flb_errno();
         return NULL;
     }
 
@@ -66,7 +76,11 @@ static char* read_line(FILE *fin)
             return line;
         } else {
             bufsize = 2 * bufsize;
-            tmp = realloc(line, bufsize);
+            tmp = flb_realloc(line, bufsize);
+            if (!tmp) {
+                flb_errno();
+                return NULL;
+            }
             if (tmp) {
                 line = tmp;
                 buffer = line + read_chars;
@@ -85,6 +99,10 @@ static struct mk_list* get_active_dockers()
     DIR *dp;
     struct dirent *ep;
     struct mk_list *list = flb_malloc(sizeof(struct mk_list));
+    if (!list) {
+        flb_errno();
+        return NULL;
+    }
     mk_list_init(list);
 
     dp = opendir(DOCKER_CGROUP_CPU_DIR);
@@ -116,7 +134,7 @@ static char* get_cpu_used_file(char *id)
 
     char *path = (char *) flb_calloc(105, sizeof(char));
     if (!path) {
-        perror("calloc");
+        flb_errno();
         return NULL;
     }
     strcat(path, DOCKER_CGROUP_CPU_DIR);
@@ -136,7 +154,7 @@ static char* get_mem_limit_file(char *id)
 
     char *path = (char *) flb_calloc(116, sizeof(char));
     if (!path) {
-        perror("calloc");
+        flb_errno();
         return NULL;
     }
     strcat(path, DOCKER_CGROUP_MEM_DIR);
@@ -156,7 +174,7 @@ static char* get_mem_used_file(char *id)
 
     char *path = (char *) flb_calloc(116, sizeof(char));
     if (!path) {
-        perror("calloc");
+        flb_errno();
         return NULL;
     }
     strcat(path, DOCKER_CGROUP_MEM_DIR);
@@ -175,7 +193,7 @@ static char* get_config_file(char *id)
 
     char *path = (char *) flb_calloc(107, sizeof(char));
     if (!path) {
-        perror("calloc");
+        flb_errno();
         return NULL;
     }
     strcat(path, DOCKER_LIB_ROOT);
@@ -183,7 +201,7 @@ static char* get_config_file(char *id)
     strcat(path, id);
     strcat(path, "/");
     strcat(path, DOCKER_CONFIG_JSON);
-    
+
     return path;
 }
 
@@ -192,22 +210,26 @@ static char* extract_name(char *line, char *start)
     char buff[256];
     int skip = 9;
     int len = 0;
-    
+
     if (start != NULL) {
         char *curr = start + skip;
         while (*curr != '"') {
             buff[len++] = *curr;
             curr++;
         }
-        
+
         if (len > 0) {
             char *name = (char *) flb_calloc(len + 1, sizeof(char));
+            if (!name) {
+                flb_errno();
+                return NULL;
+            }
             memcpy(name, buff, len);
-            
+
             return name;
         }
     }
-    
+
     return NULL;
 }
 
@@ -225,7 +247,7 @@ static char* get_container_name(char *id)
             perror(config_file);
             return NULL;
         }
-        
+
         if (f) {
             while ((line = read_line(f))) {
                 char *index = strstr(line, DOCKER_NAME_ARG);
@@ -241,7 +263,7 @@ static char* get_container_name(char *id)
 
     flb_free(config_file);
     fclose(f);
-    
+
     return container_name;
 }
 
@@ -260,12 +282,12 @@ static cpu_snapshot* get_docker_cpu_snapshot(char *id)
             perror(usage_file);
             return NULL;
         }
-        
+
         fscanf(f, "%ld", &cpu_used);
 
         snapshot = (cpu_snapshot *) flb_calloc(1, sizeof(cpu_snapshot));
         if (!snapshot) {
-            perror("calloc");
+            flb_errno();
             return NULL;
         }
 
@@ -332,7 +354,7 @@ static mem_snapshot* get_docker_mem_snapshot(char *id)
     mem_snapshot *snapshot = NULL;
     snapshot = (mem_snapshot *) flb_calloc(1, sizeof(mem_snapshot));
     if (!snapshot) {
-        perror("calloc");
+        flb_errno();
         return NULL;
     }
 
@@ -346,13 +368,13 @@ static docker_snapshot* init_snapshot(char *id)
 {
     docker_snapshot *snapshot = (docker_snapshot *) flb_malloc(sizeof(docker_snapshot));
     if (!snapshot) {
-        perror("malloc");
+        flb_errno();
         return NULL;
     }
     int id_len = strlen(id) + 1;
     snapshot->id = (char *) flb_malloc((id_len)*sizeof(char));
     if (!snapshot->id) {
-        perror("malloc");
+        flb_errno();
         return NULL;
     }
     strcpy(snapshot->id, id);
@@ -374,6 +396,10 @@ static bool is_exists(struct mk_list *list, char *id)
         /* id could be of length 12 or 64 */
         int id_len = strlen(item->id);
         char *cmp = flb_calloc(id_len + 1, sizeof(char));
+        if (!cmp) {
+            flb_errno();
+            return NULL;
+        }
         memcpy(cmp, id, id_len);
         if (strcmp(item->id, cmp) == 0) {
             result = true;
@@ -393,6 +419,10 @@ static struct mk_list* get_docker_stats(struct mk_list *dockers)
 
     struct docker_info *docker;
     struct mk_list *snapshots = flb_malloc(sizeof(struct mk_list));
+    if (!snapshots) {
+        flb_errno();
+        return NULL;
+    }
     struct mk_list *head;
 
     mk_list_init(snapshots);
@@ -416,6 +446,10 @@ static struct mk_list* get_ids_from_str(char *space_delimited_str)
      struct mk_list *tmp;
      struct flb_split_entry *part;
      struct mk_list *dockers = flb_malloc(sizeof(struct mk_list));
+     if (!dockers) {
+        flb_errno();
+        return NULL;
+    }
 
      mk_list_init(dockers);
      str_parts = flb_utils_split(space_delimited_str, ' ', 256);
@@ -465,6 +499,10 @@ static struct mk_list* apply_filters(struct flb_in_docker_config *ctx,
         return dockers;
 
     struct mk_list *filtered = flb_malloc(sizeof(struct mk_list));
+    if (!filtered) {
+        flb_errno();
+        return NULL;
+    }
     struct mk_list *head;
     struct mk_list *tmp;
     docker_info *docker;
@@ -513,7 +551,7 @@ static int in_docker_init(struct flb_input_instance *in,
     /* Allocate space for the configuration */
     ctx = flb_calloc(1, sizeof(struct flb_in_docker_config));
     if (!ctx) {
-        perror("calloc");
+        flb_errno();
         return -1;
     }
     ctx->i_ins = in;
@@ -534,7 +572,7 @@ static int in_docker_init(struct flb_input_instance *in,
     flb_input_set_context(in, ctx);
 
     /* Set our collector based on time, CPU usage every 1 second */
-    ret = flb_input_set_collector_time(in, 
+    ret = flb_input_set_collector_time(in,
                                        in_docker_collect, ctx->interval_sec,
                                        ctx->interval_nsec, config);
     if (ret == -1) {
@@ -553,43 +591,52 @@ static void flush_snapshot(struct flb_input_instance *i_ins,
     if (!snapshot)
         return;
 
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
     /* Timestamp */
-    msgpack_pack_array(&i_ins->mp_pck, 2);
-    flb_pack_time_now(&i_ins->mp_pck);
-    msgpack_pack_map(&i_ins->mp_pck, 5);
+    msgpack_pack_array(&mp_pck, 2);
+    flb_pack_time_now(&mp_pck);
+    msgpack_pack_map(&mp_pck, 5);
 
     /* Docker ID [12 chars] */
-    msgpack_pack_str(&i_ins->mp_pck, 2);
-    msgpack_pack_str_body(&i_ins->mp_pck, "id", 2);
-    msgpack_pack_str(&i_ins->mp_pck, DOCKER_SHORT_ID_LEN);
-    msgpack_pack_str_body(&i_ins->mp_pck, snapshot->id, DOCKER_SHORT_ID_LEN);
-    
+    msgpack_pack_str(&mp_pck, 2);
+    msgpack_pack_str_body(&mp_pck, "id", 2);
+    msgpack_pack_str(&mp_pck, DOCKER_SHORT_ID_LEN);
+    msgpack_pack_str_body(&mp_pck, snapshot->id, DOCKER_SHORT_ID_LEN);
+
     /* Docker Name */
     if (snapshot->name != NULL) {
         int name_len = strlen(snapshot->name);
-        msgpack_pack_str(&i_ins->mp_pck, 4);
-        msgpack_pack_str_body(&i_ins->mp_pck, "name", 4);
-        msgpack_pack_str(&i_ins->mp_pck, name_len);
-        msgpack_pack_str_body(&i_ins->mp_pck, snapshot->name, name_len);
+        msgpack_pack_str(&mp_pck, 4);
+        msgpack_pack_str_body(&mp_pck, "name", 4);
+        msgpack_pack_str(&mp_pck, name_len);
+        msgpack_pack_str_body(&mp_pck, snapshot->name, name_len);
     }
 
     /* CPU used [nanoseconds] */
-    msgpack_pack_str(&i_ins->mp_pck, 8);
-    msgpack_pack_str_body(&i_ins->mp_pck, "cpu_used", 8);
-    msgpack_pack_unsigned_long(&i_ins->mp_pck, snapshot->cpu->used);
+    msgpack_pack_str(&mp_pck, 8);
+    msgpack_pack_str_body(&mp_pck, "cpu_used", 8);
+    msgpack_pack_unsigned_long(&mp_pck, snapshot->cpu->used);
 
     /* Memory used [bytes] */
-    msgpack_pack_str(&i_ins->mp_pck, 8);
-    msgpack_pack_str_body(&i_ins->mp_pck, "mem_used", 8);
-    msgpack_pack_unsigned_long(&i_ins->mp_pck, snapshot->mem->used);
+    msgpack_pack_str(&mp_pck, 8);
+    msgpack_pack_str_body(&mp_pck, "mem_used", 8);
+    msgpack_pack_unsigned_long(&mp_pck, snapshot->mem->used);
 
     /* Memory limit [bytes] */
-    msgpack_pack_str(&i_ins->mp_pck, 9);
-    msgpack_pack_str_body(&i_ins->mp_pck, "mem_limit", 9);
-    msgpack_pack_unsigned_int(&i_ins->mp_pck, snapshot->mem->limit);
+    msgpack_pack_str(&mp_pck, 9);
+    msgpack_pack_str_body(&mp_pck, "mem_limit", 9);
+    msgpack_pack_unsigned_int(&mp_pck, snapshot->mem->limit);
 
     flb_trace("[in_docker] ID %s CPU %lu MEMORY", snapshot->id,
         snapshot->cpu->used, *(snapshot->mem->used));
+
+    flb_input_chunk_append_raw(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    msgpack_sbuffer_destroy(&mp_sbuf);
 }
 
 static void flush_snapshots(struct flb_input_instance *i_ins,
@@ -598,13 +645,10 @@ static void flush_snapshots(struct flb_input_instance *i_ins,
     struct mk_list *head;
     docker_snapshot *snapshot;
 
-    /* Mark the start of a 'buffer write' operation */
-    flb_input_buf_write_start(i_ins);
     mk_list_foreach(head, snapshots) {
         snapshot = mk_list_entry(head, docker_snapshot, _head);
         flush_snapshot(i_ins, snapshot);
     }
-    flb_input_buf_write_end(i_ins);
 }
 
 static void free_snapshots(struct mk_list *snaps)
@@ -659,16 +703,15 @@ int in_docker_collect(struct flb_input_instance *i_ins,
 
     /* Get Mem/CPU stats of dockers. */
     snaps = get_docker_stats(filtered);
-    if (!snaps)
+    if (!snaps) {
         return 0;
+    }
 
     flush_snapshots(i_ins, snaps);
 
-    flb_stats_update(in_docker_plugin.stats_fd, 0, 1);
-
     free_snapshots(snaps);
     free_docker_list(active);
-    
+
     if (ctx->whitelist != NULL
         || ctx->blacklist != NULL)
         free_docker_list(filtered);
