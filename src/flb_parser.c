@@ -28,6 +28,8 @@
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_env.h>
+#include <fluent-bit/flb_str.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -406,6 +408,7 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
     struct stat st;
     struct flb_parser_types *types;
     struct mk_list *decoders;
+    char *tmp_str;
 
 #ifndef FLB_HAVE_STATIC_CONF
     ret = stat(file, &st);
@@ -443,6 +446,7 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
         time_key = NULL;
         time_offset = NULL;
         types_str = NULL;
+        tmp_str = NULL;
 
         section = mk_list_entry(head, struct mk_rconf_section, _head);
         if (strcasecmp(section->name, "PARSER") != 0) {
@@ -456,11 +460,27 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
             goto fconf_error;
         }
 
+        tmp_str = flb_env_var_translate(config->env, name);
+        if(tmp_str) {
+            flb_free(name);
+            name = flb_strdup(tmp_str);
+            flb_free(tmp_str);
+            tmp_str = NULL;
+        }
+
         /* Format */
         format = mk_rconf_section_get_key(section, "Format", MK_RCONF_STR);
         if (!format) {
             flb_error("[parser] no parser 'format' found for '%s' in file '%s'", name, cfg);
             goto fconf_error;
+        }
+
+        tmp_str = flb_env_var_translate(config->env, format);
+        if(tmp_str) {
+            flb_free(format);
+            format = flb_strdup(tmp_str);
+            flb_free(tmp_str);
+            tmp_str = NULL;
         }
 
         /* Regex (if format is regex) */
@@ -470,19 +490,54 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
             goto fconf_error;
         }
 
+        if(regex) {
+            tmp_str = flb_env_var_translate(config->env, regex);
+            if(tmp_str) {
+                flb_free(regex);
+                regex = flb_strdup(tmp_str);
+                flb_free(tmp_str);
+                tmp_str = NULL;
+           }
+        }
+
         /* Time_Format */
         time_fmt = mk_rconf_section_get_key(section, "Time_Format",
                                             MK_RCONF_STR);
+        if(time_fmt) {
+            tmp_str = flb_env_var_translate(config->env, time_fmt);
+            if(tmp_str) {
+               flb_free(time_fmt);
+               time_fmt = flb_strdup(tmp_str);
+               flb_free(tmp_str);
+               tmp_str = NULL;
+            }
+        }
 
         /* Time_Key */
         time_key = mk_rconf_section_get_key(section, "Time_Key",
                                             MK_RCONF_STR);
+        if(time_key) {
+            tmp_str =flb_env_var_translate(config->env, time_key);
+            if(tmp_str) {
+                flb_free(time_key);
+                time_key = flb_strdup(tmp_str);
+                flb_free(tmp_str);
+                tmp_str = NULL;
+            }
+        }
 
         /* Time_Keep */
         str = mk_rconf_section_get_key(section, "Time_Keep",
                                        MK_RCONF_STR);
         if (str) {
-            time_keep = flb_utils_bool(str);
+            tmp_str = flb_env_var_translate(config->env, str);
+            if(tmp_str){
+                time_keep = flb_utils_bool(tmp_str);
+                flb_free(tmp_str);
+                tmp_str = NULL;
+            }else{
+                time_keep = flb_utils_bool(str);
+            }
             flb_free(str);
         }
         else {
@@ -493,10 +548,26 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
         time_offset = mk_rconf_section_get_key(section, "Time_Offset",
                                                MK_RCONF_STR);
 
+        if(time_offset){
+            tmp_str = flb_env_var_translate(config->env, time_offset);
+            if(tmp_str){
+                flb_free(time_offset);
+                time_offset = flb_strdup(tmp_str);
+                flb_free(tmp_str);
+                tmp_str = NULL;
+            }
+        }
         /* Types */
         types_str = mk_rconf_section_get_key(section, "Types",
                                             MK_RCONF_STR);
         if (types_str != NULL) {
+            tmp_str = flb_env_var_translate(config->env, types_str);
+            if(tmp_str){
+                flb_free(types_str);
+                types_str = flb_strdup(tmp_str);
+                flb_free(tmp_str);
+                tmp_str = NULL;
+            }
             types_len = proc_types_str(types_str, &types);
         }
         else {
