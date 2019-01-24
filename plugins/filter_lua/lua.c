@@ -18,6 +18,7 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_luajit.h>
