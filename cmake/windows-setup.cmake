@@ -5,7 +5,7 @@
 
 set(FLB_REGEX                  No)
 set(FLB_BACKTRACE              No)
-set(FLB_LUAJIT                 No)
+set(FLB_LUAJIT                Yes)
 set(FLB_EXAMPLES               No)
 set(FLB_PARSER                 No)
 

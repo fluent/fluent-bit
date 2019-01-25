@@ -513,16 +513,7 @@ endif()
 # LuaJIT (Scripting Support)
 # ==========================
 if(FLB_LUAJIT)
-  set(LUA_PATH ${CMAKE_CURRENT_SOURCE_DIR}/lib/LuaJIT-2.1.0-beta3)
-  ExternalProject_Add(luajit
-    SOURCE_DIR ${LUA_PATH}
-    CONFIGURE_COMMAND ${LUA_PATH}/configure
-    BUILD_COMMAND $(MAKE) CC=${CMAKE_C_COMPILER} BUILD_MODE=static XCFLAGS="-fPIC" -C ${LUA_PATH}
-    INSTALL_COMMAND cp ${LUA_PATH}/src/libluajit.a "${CMAKE_CURRENT_BINARY_DIR}/lib/libluajit.a")
-  add_library(libluajit STATIC IMPORTED GLOBAL)
-  set_target_properties(libluajit PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/lib/libluajit.a")
-  add_dependencies(libluajit luajit)
-  include_directories("${CMAKE_CURRENT_BINARY_DIR}/include/")
+  include(cmake/luajit.cmake)
   FLB_DEFINITION(FLB_HAVE_LUAJIT)
 endif()
 
