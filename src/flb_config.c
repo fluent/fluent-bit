@@ -393,7 +393,7 @@ int flb_config_set_property(struct flb_config *config,
                 }
             }
             else if (!strncasecmp(key, FLB_CONF_STR_PARSERS_FILE, 32)) {
-#ifdef FLB_HAVE_REGEX
+#ifdef FLB_HAVE_PARSER
                 tmp = flb_env_var_translate(config->env, v);
                 ret = flb_parser_conf_file(tmp, config);
                 flb_free(tmp);
