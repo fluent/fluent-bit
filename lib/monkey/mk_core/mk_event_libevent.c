@@ -174,6 +174,10 @@ static void cb_timeout(evutil_socket_t fd, short flags, void *data)
     ret = send(ev_map->pipe[1], &val, sizeof(uint64_t), 0);
     if (ret == -1) {
         perror("write");
+        evutil_closesocket(ev_map->pipe[1]);
+        event_del(ev_map->event);
+        event_free(ev_map->event);
+        mk_mem_free(ev_map);
     }
 }
 
@@ -225,6 +229,14 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
     event->mask = MK_EVENT_READ;
 
     return fd[0];
+}
+
+static inline int _mk_event_timeout_destroy(struct mk_event_ctx *ctx, void *data)
+{
+    struct mk_event *event;
+    event = (struct mk_event *) data;
+    evutil_closesocket(event->fd);
+    return _mk_event_del(ctx, data);
 }
 
 static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,

@@ -1,5 +1,5 @@
 set(static_plugins "" CACHE INTERNAL "static_plugins")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # CHECK_STATIC_PLUGIN: Check if a plugin will be linked statically
 macro(CHECK_STATIC_PLUGIN name)

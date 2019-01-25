@@ -22,7 +22,6 @@ if (CMAKE_SYSTEM_NAME MATCHES "Windows")
   MK_DEFINITION(MK_THREADS_WIN32)
   set(src
     ${src}
-    "external/wingetopt.c"
     "external/winpthreads.c"
     )
   include_directories(deps/libevent/include)
