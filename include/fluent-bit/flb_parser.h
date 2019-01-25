@@ -74,9 +74,15 @@ enum {
 static inline time_t flb_parser_tm2time(const struct tm *src)
 {
     struct tm tmp;
+    time_t res;
 
     tmp = *src;
-    return timegm(&tmp) - src->tm_gmtoff;
+#ifdef FLB_HAVE_GMTOFF
+    res = timegm(&tmp) - src->tm_gmtoff;
+#else
+    res = timegm(&tmp);
+#endif
+    return res;
 }
 
 
