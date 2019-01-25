@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_version.h>
 #include <msgpack.h>
 
 #include <stdio.h>
@@ -203,6 +204,8 @@ static int http_post (struct flb_out_http *ctx,
     struct mk_list *head;
     struct out_http_header *header;
 
+    char flb_user_agent[12 + sizeof(FLB_VERSION_STR)];
+
     /* Get upstream context and connection */
     u = ctx->u;
     u_conn = flb_upstream_conn_get(u);
@@ -248,7 +251,8 @@ static int http_post (struct flb_out_http *ctx,
         flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
     }
 
-    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+    snprintf(flb_user_agent, sizeof(flb_user_agent) - 1, "Fluent-Bit/%s", FLB_VERSION_STR);
+    flb_http_add_header(c, "User-Agent", 10, flb_user_agent, sizeof(flb_user_agent));
 
     mk_list_foreach_safe(head, tmp, &ctx->headers) {
         header = mk_list_entry(head, struct out_http_header, _head);
