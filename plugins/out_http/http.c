@@ -248,6 +248,8 @@ static int http_post (struct flb_out_http *ctx,
         flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
     }
 
+    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+
     mk_list_foreach_safe(head, tmp, &ctx->headers) {
         header = mk_list_entry(head, struct out_http_header, _head);
         flb_http_add_header(c,
