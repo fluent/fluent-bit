@@ -42,6 +42,7 @@ int flb_test_systemd_send(void);
 #define T_APACHE_LOGS_ANN       DPATH "apache-logs-annotated_default"
 #define T_APACHE_LOGS_ANN_INV   DPATH "apache-logs-annotated-invalid"
 #define T_APACHE_LOGS_ANN_MERGE DPATH "apache-logs-annotated-merge"
+#define T_APACHE_LOGS_ANN_EXCL  DPATH "apache-logs-annotated-exclude"
 #define T_JSON_LOGS             DPATH "json-logs_default"
 #define T_JSON_LOGS_INV         DPATH "json-logs-invalid"
 #define T_SYSTEMD_SIMPLE        DPATH "kairosdb-914055854-b63vq"
@@ -218,6 +219,7 @@ static void kube_test_create(char *target, int type, char *suffix, char *parserc
                          "Match", "kube.*",
                          "Kube_URL", KUBE_URL,
                          "k8s-logging.parser", "On",
+                         "k8s-logging.exclude", "On",
                          "Kube_Meta_Preload_Cache_Dir", "../tests/runtime/data/kubernetes",
                          NULL);
 
@@ -317,6 +319,11 @@ void flb_test_apache_logs_annotated()
 void flb_test_apache_logs_annotated_invalid()
 {
     kube_test_create(T_APACHE_LOGS_ANN_INV, KUBE_TAIL, "", STD_PARSER, NULL);
+}
+
+void flb_test_apache_logs_annotated_exclude()
+{
+    kube_test_create(T_APACHE_LOGS_ANN_EXCL, KUBE_TAIL, "", STD_PARSER, NULL);
 }
 
 void flb_test_apache_logs_annotated_merge()
@@ -436,6 +443,7 @@ TEST_LIST = {
     {"kube_apache_logs_merge", flb_test_apache_logs_merge},
     {"kube_apache_logs_annotated", flb_test_apache_logs_annotated},
     {"kube_apache_logs_annotated_invalid", flb_test_apache_logs_annotated_invalid},
+    {"kube_apache_logs_annotated_exclude", flb_test_apache_logs_annotated_exclude},
     {"kube_apache_logs_annotated_merge_log", flb_test_apache_logs_annotated_merge},
     {"kube_json_logs", flb_test_json_logs},
     {"kube_json_logs_invalid", flb_test_json_logs_invalid},
