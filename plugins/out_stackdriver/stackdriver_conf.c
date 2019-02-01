@@ -41,7 +41,8 @@ static inline int key_cmp(char *str, int len, char *cmp) {
 
 static int validate_resource(char *res)
 {
-    if (strcasecmp(res, "global") != 0) {
+    if (strcasecmp(res, "global") != 0 &&
+        strcasecmp(res, "gce_instance") != 0) {
         return -1;
     }
 
@@ -239,19 +240,31 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         }
     }
 
-    if (!ctx->client_email) {
+    /*
+     * If only client email has been provided, fetch token from
+     * the GCE metadata server.
+     *
+     * If no credentials have been provided, fetch token from the GCE
+     * metadata server for default account.
+     */
+    if (!ctx->client_email && ctx->private_key) {
         flb_error("[out_stackdriver] client_email is not defined");
         flb_stackdriver_conf_destroy(ctx);
         return NULL;
     }
 
+    if (!ctx->client_email) {
+        flb_warn("[out_stackdriver] client_email is not defined, using "
+                 "a default one");
+        ctx->client_email = flb_sds_create("default");
+    }
     if (!ctx->private_key) {
-        flb_error("[out_stackdriver] private_key is not defined");
-        flb_stackdriver_conf_destroy(ctx);
-        return NULL;
+        flb_warn("[out_stackdriver] private_key is not defined, fetching "
+                 "it from metadata server");
+        ctx->metadata_server_auth = true;
     }
 
-    /* Resource type (only 'global' is supported) */
+    /* Resource type (only 'global' and 'gce_instance' are supported) */
     tmp = flb_output_get_property("resource", ins);
     if (tmp) {
         if (validate_resource(tmp) != 0) {
@@ -288,6 +301,10 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
 
     if (ctx->o) {
         flb_oauth2_destroy(ctx->o);
+    }
+    if (ctx->metadata_server_auth) {
+      flb_sds_destroy(ctx->zone);
+      flb_sds_destroy(ctx->instance_id);
     }
 
     flb_free(ctx);
