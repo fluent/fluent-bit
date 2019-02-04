@@ -247,13 +247,14 @@ void flb_config_exit(struct flb_config *config)
     /* Collectors */
     mk_list_foreach_safe(head, tmp, &config->collectors) {
         collector = mk_list_entry(head, struct flb_input_collector, _head);
-        mk_event_del(config->evl, &collector->event);
 
         if (collector->type == FLB_COLLECT_TIME) {
             mk_event_timeout_destroy(config->evl, &collector->event);
             if (collector->fd_timer > 0) {
                 close(collector->fd_timer);
             }
+        } else {
+            mk_event_del(config->evl, &collector->event);
         }
 
         mk_list_del(&collector->_head);
