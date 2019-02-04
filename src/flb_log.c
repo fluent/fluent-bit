@@ -110,6 +110,7 @@ static void log_worker_collector(void *data)
     struct mk_event *event = NULL;
     struct flb_log *log = data;
 
+    FLB_TLS_INIT(flb_log_ctx);
     FLB_TLS_SET(flb_log_ctx, log);
 
     /* Signal the caller */
