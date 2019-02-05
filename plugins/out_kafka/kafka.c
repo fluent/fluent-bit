@@ -95,7 +95,31 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         msgpack_pack_str(&mp_pck, ctx->timestamp_key_len);
         msgpack_pack_str_body(&mp_pck,
                               ctx->timestamp_key, ctx->timestamp_key_len);
-        msgpack_pack_double(&mp_pck, flb_time_to_double(tm));
+        switch (ctx->timestamp_format) {
+            case FLB_JSON_DATE_DOUBLE:
+                msgpack_pack_double(&mp_pck, flb_time_to_double(tm));
+                break;
+
+            case FLB_JSON_DATE_ISO8601:
+                {
+                size_t date_len;
+                int len;
+                struct tm _tm;
+                char time_formatted[32];
+                /* Format the time; use microsecond precision (not nanoseconds). */
+                gmtime_r(&tm->tm.tv_sec, &_tm);
+                date_len = strftime(time_formatted, sizeof(time_formatted) - 1,
+                             FLB_JSON_DATE_ISO8601_FMT, &_tm);
+
+                len = snprintf(time_formatted + date_len, sizeof(time_formatted) - 1 - date_len,
+                               ".%06" PRIu64 "Z", (uint64_t) tm->tm.tv_nsec / 1000);
+                date_len += len;
+
+                msgpack_pack_str(&mp_pck, date_len);
+                msgpack_pack_str_body(&mp_pck, time_formatted, date_len);
+                }
+                break;
+        }
     }
     else {
         size = map->via.map.size;
