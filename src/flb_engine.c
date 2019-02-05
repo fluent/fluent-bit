@@ -229,6 +229,11 @@ static FLB_INLINE int flb_engine_handle_event(flb_pipefd_t fd, int mask,
 {
     int ret;
 
+    /* flb_engine_shutdown was already initiated */
+    if (config->is_running == FLB_FALSE) {
+        return 0;
+    }
+
     if (mask & MK_EVENT_READ) {
         /* Check if we need to flush */
         if (config->flush_fd == fd) {
@@ -499,7 +504,9 @@ int flb_engine_start(struct flb_config *config)
         }
 
         /* Cleanup functions associated to events and timers */
-        flb_sched_timer_cleanup(config->sched);
+        if (config->is_running == FLB_TRUE) {
+            flb_sched_timer_cleanup(config->sched);
+        }
     }
 }
 
@@ -549,8 +556,6 @@ int flb_engine_exit(struct flb_config *config)
 {
     int ret;
     uint64_t val = FLB_ENGINE_EV_STOP;
-
-    config->is_running = FLB_FALSE;
 
     flb_input_pause_all(config);
 
