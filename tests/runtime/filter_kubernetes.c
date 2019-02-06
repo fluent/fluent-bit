@@ -158,7 +158,7 @@ static void kube_test_destroy(struct kube_test *ctx)
     flb_free(ctx);
 }
 
-static void kube_test_create(char *target, int type, char *suffix, char *parserconf, ...)
+static void kube_test_create(char *target, int type, char *suffix, char *parserconf, int nExpected, ...)
 {
     int ret;
     int in_ffd;
@@ -224,7 +224,7 @@ static void kube_test_create(char *target, int type, char *suffix, char *parserc
                          NULL);
 
     /* Iterate number of arguments for filter_kubernetes additional options */
-    va_start(va, parserconf);
+    va_start(va, nExpected);
     while ((key = va_arg(va, char *))) {
         value = va_arg(va, char *);
         if (!value) {
@@ -291,19 +291,20 @@ static void kube_test_create(char *target, int type, char *suffix, char *parserc
     for (ret = 0; ret < 2000 && result.nmatched == 0; ret++) {
         usleep(1000);
     }
-    TEST_CHECK(result.nmatched);
+    TEST_CHECK(result.nmatched == nExpected);
 
     kube_test_destroy(ctx);
 }
 
 void flb_test_apache_logs()
 {
-    kube_test_create(T_APACHE_LOGS, KUBE_TAIL, "", STD_PARSER, NULL);
+    kube_test_create(T_APACHE_LOGS, KUBE_TAIL, "", STD_PARSER, 1, NULL);
 }
 
 void flb_test_apache_logs_merge()
 {
     kube_test_create(T_APACHE_LOGS, KUBE_TAIL, "", STD_PARSER,
+                     1,
                      "Merge_Log", "On",
                      "Merge_Log_Key", "merge",
                      NULL);
@@ -312,37 +313,38 @@ void flb_test_apache_logs_merge()
 void flb_test_apache_logs_annotated()
 {
     kube_test_create(T_APACHE_LOGS_ANN, KUBE_TAIL, "", STD_PARSER,
+                     1,
                      "Merge_Log", "On",
                      NULL);
 }
 
 void flb_test_apache_logs_annotated_invalid()
 {
-    kube_test_create(T_APACHE_LOGS_ANN_INV, KUBE_TAIL, "", STD_PARSER, NULL);
+    kube_test_create(T_APACHE_LOGS_ANN_INV, KUBE_TAIL, "", STD_PARSER, 1, NULL);
 }
 
 void flb_test_apache_logs_annotated_exclude()
 {
-    kube_test_create(T_APACHE_LOGS_ANN_EXCL, KUBE_TAIL, "", STD_PARSER, NULL);
+    kube_test_create(T_APACHE_LOGS_ANN_EXCL, KUBE_TAIL, "", STD_PARSER, 0, NULL);
 }
 
 void flb_test_apache_logs_annotated_merge()
 {
-    kube_test_create(T_APACHE_LOGS_ANN_MERGE, KUBE_TAIL, "", STD_PARSER,
+    kube_test_create(T_APACHE_LOGS_ANN_MERGE, KUBE_TAIL, "", STD_PARSER, 1,
                      "Merge_Log", "On",
                      "Merge_Log_Key", "merge", NULL);
 }
 
 void flb_test_json_logs()
 {
-    kube_test_create(T_JSON_LOGS, KUBE_TAIL, "", STD_PARSER,
+    kube_test_create(T_JSON_LOGS, KUBE_TAIL, "", STD_PARSER, 1,
                      "Merge_Log", "On",
                      NULL);
 }
 
 void flb_test_json_logs_invalid()
 {
-    kube_test_create(T_JSON_LOGS_INV, KUBE_TAIL, "", STD_PARSER, NULL);
+    kube_test_create(T_JSON_LOGS_INV, KUBE_TAIL, "", STD_PARSER, 1, NULL);
 }
 
 #ifdef FLB_HAVE_SYSTEMD
@@ -420,7 +422,7 @@ void flb_test_systemd_logs()
         }
         sd_journal_close(journal);
 
-        kube_test_create(T_SYSTEMD_SIMPLE, KUBE_SYSTEMD, "", STD_PARSER,
+        kube_test_create(T_SYSTEMD_SIMPLE, KUBE_SYSTEMD, "", STD_PARSER, 1,
                          "Merge_Log", "On",
                          NULL);
     }
@@ -431,7 +433,7 @@ void flb_test_multi_logs(char *log, char *suffix)
 {
     flb_info("\n");
     flb_info("Multi test: log <%s>", log);
-    kube_test_create(log, KUBE_TAIL, suffix, "../tests/runtime/data/kubernetes/multi-parsers.conf", "Merge_Log", "On", NULL);
+    kube_test_create(log, KUBE_TAIL, suffix, "../tests/runtime/data/kubernetes/multi-parsers.conf", 1, "Merge_Log", "On", NULL);
 }
 void flb_test_multi_init_stdout() { flb_test_multi_logs(T_MULTI_INIT, "stdout"); }
 void flb_test_multi_init_stderr() { flb_test_multi_logs(T_MULTI_INIT, "stderr"); }
