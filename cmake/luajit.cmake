@@ -23,13 +23,15 @@ ExternalProject_Add(luajit
 
 # luajit (Windows)
 # ================
-ExternalProject_Add(luajit-windows
-  BUILD_IN_SOURCE TRUE
-  EXCLUDE_FROM_ALL TRUE
-  SOURCE_DIR ${LUAJIT_SRC}/src
-  CONFIGURE_COMMAND ""
-  BUILD_COMMAND ./msvcbuild.bat static
-  INSTALL_COMMAND cmake -E copy lua51.lib "${LUAJIT_DEST}/lib/libluajit.lib")
+if (MSVC)
+  ExternalProject_Add(luajit-windows
+    BUILD_IN_SOURCE TRUE
+    EXCLUDE_FROM_ALL TRUE
+    SOURCE_DIR ${LUAJIT_SRC}/src
+    CONFIGURE_COMMAND ""
+    BUILD_COMMAND ./msvcbuild.bat static
+    INSTALL_COMMAND cmake -E copy lua51.lib "${LUAJIT_DEST}/lib/libluajit.lib")
+endif()
 
 # Hook the buld definition to 'libluajit' target
 if(MSVC)
