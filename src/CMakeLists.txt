@@ -261,21 +261,21 @@ if(FLB_BINARY)
   install(TARGETS fluent-bit-bin RUNTIME DESTINATION ${CMAKE_INSTALL_FULL_BINDIR})
 
   # Detect init system, install upstart, systemd or init.d script
-  if(IS_DIRECTORY /usr/share/upstart)
-    set(FLB_UPSTART_SCRIPT "${PROJECT_SOURCE_DIR}/init/${FLB_OUT_NAME}.conf")
-    configure_file(
-      "${PROJECT_SOURCE_DIR}/init/upstart.in"
-      ${FLB_UPSTART_SCRIPT}
-      )
-    install(FILES ${FLB_UPSTART_SCRIPT} DESTINATION /etc/init)
-    install(DIRECTORY DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/")
-  elseif(IS_DIRECTORY /lib/systemd/system)
+  if(IS_DIRECTORY /lib/systemd/system)
     set(FLB_SYSTEMD_SCRIPT "${PROJECT_SOURCE_DIR}/init/${FLB_OUT_NAME}.service")
     configure_file(
       "${PROJECT_SOURCE_DIR}/init/systemd.in"
       ${FLB_SYSTEMD_SCRIPT}
       )
     install(FILES ${FLB_SYSTEMD_SCRIPT} DESTINATION /lib/systemd/system)
+    install(DIRECTORY DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/")
+  elseif(IS_DIRECTORY /usr/share/upstart)
+    set(FLB_UPSTART_SCRIPT "${PROJECT_SOURCE_DIR}/init/${FLB_OUT_NAME}.conf")
+    configure_file(
+      "${PROJECT_SOURCE_DIR}/init/upstart.in"
+      ${FLB_UPSTART_SCRIPT}
+      )
+    install(FILES ${FLB_UPSTART_SCRIPT} DESTINATION /etc/init)
     install(DIRECTORY DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/")
   else()
     # FIXME: should we support Sysv init script ?
@@ -288,6 +288,10 @@ if(FLB_BINARY)
 
   install(FILES
     "${PROJECT_SOURCE_DIR}/conf/parsers.conf"
+    DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/")
+
+  install(FILES
+    "${PROJECT_SOURCE_DIR}/conf/plugins.conf"
     DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/")
 
 endif()
