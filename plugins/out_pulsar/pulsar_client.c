@@ -60,9 +60,16 @@ struct flb_pulsar_client *flb_pulsar_client_create(struct flb_output_instance
     }
 
     // producer init
-    char *topic = "fluent-bit";
-    // pulsar_producer_configuration_set_producer_name(client->producer_config,
-    //                                                 "fluent-bit");
+    char *producer_name = flb_output_get_property("producer_name", ins);
+
+    if (producer_name) {
+        pulsar_producer_configuration_set_producer_name(client->producer_config,
+                                                        producer_name);
+    }
+
+    char *property = NULL;
+    char *topic = (property = flb_output_get_property("topic", ins)) ? property : "fluent-bit";
+
     pulsar_result create_producer_result = pulsar_client_create_producer(client->client, topic, client->producer_config,
                                                                         &client->producer);
     if (create_producer_result != pulsar_result_Ok || !client->producer) {
