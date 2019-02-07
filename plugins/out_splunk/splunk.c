@@ -74,7 +74,7 @@ int splunk_format(void *in_buf, size_t in_bytes,
     /* Iterate the original buffer and perform adjustments */
     msgpack_unpacked_init(&result);
 
-    while (msgpack_unpack_next(&result, in_buf, in_bytes, &off)) {
+    while (msgpack_unpack_next(&result, in_buf, in_bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         root = result.data;
 
         /* Get timestamp */

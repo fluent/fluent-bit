@@ -360,7 +360,7 @@ void flb_pack_print(char *data, size_t bytes)
     size_t off = 0, cnt = 0;
 
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         /* Check if we are processing an internal Fluent Bit record */
         ret = pack_print_fluent_record(cnt, result);
         if (ret == 0) {
@@ -667,7 +667,7 @@ int flb_msgpack_raw_to_json_str(char *buf, size_t buf_size,
 
     msgpack_unpacked_init(&result);
     ret = msgpack_unpack_next(&result, buf, buf_size, &off);
-    if (ret == -1) {
+    if (ret != MSGPACK_UNPACK_SUCCESS) {
         return -1;
     }
 
@@ -732,7 +732,7 @@ int flb_msgpack_expand_map(char *map_data, size_t map_size,
     }
 
     msgpack_unpacked_init(&result);
-    if (!(i=msgpack_unpack_next(&result, map_data, map_size, &off))){
+    if ( (i=msgpack_unpack_next(&result, map_data, map_size, &off)) != MSGPACK_UNPACK_SUCCESS ){
         return -1;
     }
     if (result.data.type != MSGPACK_OBJECT_MAP) {
@@ -1381,7 +1381,7 @@ flb_sds_t flb_msgpack_raw_to_gelf(char *buf, size_t buf_size,
 
     msgpack_unpacked_init(&result);
     ret = msgpack_unpack_next(&result, buf, buf_size, &off);
-    if (ret == -1) {
+    if (ret != MSGPACK_UNPACK_SUCCESS) {
         return NULL;
     }
 

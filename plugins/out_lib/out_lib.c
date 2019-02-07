@@ -128,7 +128,7 @@ static void out_lib_flush(void *data, size_t bytes,
     (void) tag_len;
 
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         if (ctx->max_records > 0 && count >= ctx->max_records) {
             break;
         }
