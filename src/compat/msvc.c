@@ -18,32 +18,18 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_COMPAT_H
-#define FLB_COMPAT_H
+#include <fluent-bit/flb_compat.h>
 
-/* libmonkey exposes compat macros for <unistd.h> */
-#include <monkey/mk_core.h>
+int getpagesize(void)
+{
+    SYSTEM_INFO info;
+    GetSystemInfo(&info);
+    return info.dwPageSize;
+}
 
-#ifdef _MSC_VER
-#define PATH_MAX MAX_PATH
-
-#define WIN32_LEAN_AND_MEAN
-#include <winsock2.h>
-#include <windows.h>
-
-/* compat/msvc.c */
-extern int getpagesize(void);
-extern struct tm *gmtime_r(const time_t *timep, struct tm *result);
-
-/* mk_utils.c */
-extern struct tm *localtime_r(const time_t *timep, struct tm * result);
-#endif
-
-#ifndef _MSC_VER
-#include <netdb.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#endif
-#endif
+struct tm *gmtime_r(const time_t *timep, struct tm *result)
+{
+    if (gmtime_s(result, timep))
+        return NULL;
+    return result;
+}

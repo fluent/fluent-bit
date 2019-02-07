@@ -60,6 +60,13 @@ if(FLB_PARSER)
     )
 endif()
 
+if(MSVC)
+  set(src
+    ${src}
+    "compat/msvc.c"
+    )
+endif()
+
 # Fluent Bit have TLS support
 if(FLB_TLS)
   # Register the TLS interface and functions
