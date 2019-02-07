@@ -26,66 +26,77 @@ struct flb_pulsar_client *flb_pulsar_client_create(struct flb_output_instance
                                                    *ins,
                                                    struct flb_config *config)
 {
-
-    struct flb_pulsar_client *ctx =
+    struct flb_pulsar_client *client =
         flb_calloc(1, sizeof(struct flb_pulsar_client));
 
-    if (!ctx) {
+    if (!client) {
         flb_errno();
         return NULL;
     }
 
-    ctx->client_config = pulsar_client_configuration_create();
-    ctx->producer_config = pulsar_producer_configuration_create();
-    pulsar_producer_configuration_set_producer_name(ctx->producer_config,
-                                                    "fluent-bit");
+    client->client_config = pulsar_client_configuration_create();
+    client->producer_config = pulsar_producer_configuration_create();
 
-    flb_output_net_default("localhost", 6650, ins);
-
-    // /tenant/namespace/topic
-    char *topic = "fluent-bit";
-
-    struct flb_uri *uri = ins->host.uri;
-
-    if (uri && uri->count > 0) {
-        struct flb_uri_field *tmp;
-        topic = (tmp =
-                 flb_uri_get(ins->host.uri,
-                             0)) ? flb_strdup(tmp->value) : topic;
+    if (!client->client_config || !client->producer_config) {
+        flb_error("[out_pulsar] Unable to create pulsar configuration objects");
+        flb_pulsar_client_destroy(client);
+        return NULL;
     }
 
+    // client init
+    flb_output_net_default("localhost", 6650, ins);
     char *service_url =
         flb_malloc(9 + strlen(ins->host.name) +
                    ceil(log10(ins->host.port)) + 1);
     sprintf(service_url, "pulsar://%s:%d", ins->host.name, ins->host.port);
 
-    ctx->client = pulsar_client_create(service_url, ctx->client_config);
-    pulsar_client_create_producer(ctx->client, topic, ctx->producer_config,
-                                  &ctx->producer);
-    return ctx;
+    client->client = pulsar_client_create(service_url, client->client_config);
+    flb_free(service_url);
+
+    if (!client->client) {
+        flb_error("[out_pulsar] Unable to create client object for service URL %s", service_url);
+        flb_pulsar_client_destroy(client);
+        return NULL;
+    }
+
+    // producer init
+    char *topic = "fluent-bit";
+    // pulsar_producer_configuration_set_producer_name(client->producer_config,
+    //                                                 "fluent-bit");
+    pulsar_result create_producer_result = pulsar_client_create_producer(client->client, topic, client->producer_config,
+                                                                        &client->producer);
+    if (create_producer_result != pulsar_result_Ok || !client->producer) {
+        flb_error("[out_pulsar] Failed to create producer, result was %s (pointer is %s)",
+            pulsar_result_str(create_producer_result),
+            client->producer ? "not null" : "NULL");
+        flb_pulsar_client_destroy(client);
+        return NULL;
+    }
+
+    return client;
 }
 
-int flb_pulsar_client_destroy(struct flb_pulsar_client *ctx)
+int flb_pulsar_client_destroy(struct flb_pulsar_client *client)
 {
-    if (ctx) {
-        if (ctx->producer) {
-            pulsar_producer_close(ctx->producer);
-            pulsar_producer_free(ctx->producer);
+    if (client) {
+        if (client->producer) {
+            pulsar_producer_close(client->producer);
+            pulsar_producer_free(client->producer);
         }
 
-        if (ctx->producer_config) {
-            pulsar_producer_configuration_free(ctx->producer_config);
+        if (client->producer_config) {
+            pulsar_producer_configuration_free(client->producer_config);
         }
 
-        if (ctx->client) {
-            pulsar_client_close(ctx->client);
-            pulsar_client_free(ctx->client);
+        if (client->client) {
+            pulsar_client_close(client->client);
+            pulsar_client_free(client->client);
         }
 
-        if (ctx->client_config) {
-            pulsar_client_configuration_free(ctx->client_config);
+        if (client->client_config) {
+            pulsar_client_configuration_free(client->client_config);
         }
-        flb_free(ctx);
+        flb_free(client);
     }
 
     return 0;

@@ -32,6 +32,11 @@ static int cb_pulsar_init(struct flb_output_instance *ins,
                           struct flb_config *config, void *data)
 {
     struct flb_pulsar_context *ctx = flb_pulsar_context_create(ins, config);
+    if (!ctx) {
+        flb_error("[out_pulsar] cannot initialize plugin");
+        return -1;
+    }
+
     flb_output_set_context(ins, ctx);
     return 0;
 }

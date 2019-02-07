@@ -40,6 +40,12 @@ struct flb_pulsar_context *flb_pulsar_context_create(struct
 
     ctx->client = flb_pulsar_client_create(ins, config);
     ctx->publish_fn = &flb_pulsar_context_produce_message;
+
+    if (!ctx->client) {
+        flb_pulsar_context_destroy(ctx);
+        return NULL;
+    }
+
     return ctx;
 }
 
