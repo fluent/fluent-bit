@@ -1,0 +1,78 @@
+status.html
+.metadata
+test-output
+test-results
+dependency-reduced-pom.xml
+logs
+/data
+pulsar-broker/tmp.*
+pulsar-broker/src/test/resources/log4j2.yaml
+pulsar-functions/worker/test-tenant/
+*.log
+*.nar
+
+*.versionsBackup
+*/bin
+
+# Eclipse
+.classpath
+.project
+.settings/
+.recommenders/
+
+# Intellij
+.idea/
+*.iml
+*.iws
+
+# Mac
+**/.DS_Store
+
+# VisualStudioCode artifacts
+.vscode/
+
+# Maven
+log/
+target/
+
+# Python
+*.pyc
+
+# Perf tools
+*.hgrm
+
+# tmp files
+*.pid
+
+# Generated website
+generated-site/
+
+# Ansible and Terraform artifacts
+deployment/terraform-ansible/deploy-pulsar.retry
+deployment/terraform-ansible/aws/.terraform/
+deployment/terraform-ansible/aws/.terraform.tfstate.lock.info
+deployment/terraform-ansible/aws/terraform.tfstate
+deployment/terraform-ansible/aws/terraform.tfstate.backup
+
+# Vagrant
+**/.vagrant
+
+
+pulsar-client-cpp/python/pkg/osx/**/*.bak
+pulsar-client-cpp/python/pkg/osx/**/build.sh
+pulsar-client-cpp/python/pkg/osx/**/*.whl
+pulsar-client-cpp/python/pkg/osx/**/*.template2
+pulsar-client-cpp/python/wheelhouse
+
+# CI generated files
+.repository
+docker.debug-info
+
+# Yarn
+
+**/yarn.lock
+
+# docusaurus
+
+**/website/i18n/*
+**/website/translated_docs*
