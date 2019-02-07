@@ -22,6 +22,13 @@ RUN apt-get update && \
       libsystemd-dev \
       zlib1g-dev
 
+# Apache Pulsar pre-requisites
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      libprotobuf-dev \
+      protobuf-compiler \
+      libboost-all-dev
+
 RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log /tmp/src/
 COPY . /tmp/src/
 RUN rm -rf /tmp/src/build/*
@@ -36,7 +43,8 @@ RUN cmake -DFLB_DEBUG=Off \
           -DFLB_EXAMPLES=Off \
           -DFLB_HTTP_SERVER=On \
           -DFLB_IN_SYSTEMD=On \
-          -DFLB_OUT_KAFKA=On ..
+          -DFLB_OUT_KAFKA=On \
+          -DFLB_OUT_PULSAR=On ..
 
 RUN make -j $(getconf _NPROCESSORS_ONLN)
 RUN install bin/fluent-bit /fluent-bit/bin/
