@@ -67,8 +67,6 @@ struct flb_pulsar_client *flb_pulsar_client_create(struct flb_output_instance
                                                         producer_name);
     }
     pulsar_producer_configuration_set_compression_type(client->producer_config, pulsar_CompressionLZ4);
-    pulsar_producer_configuration_set_batching_enabled(client->producer_config, 1);
-    pulsar_producer_configuration_set_batching_max_publish_delay_ms(client->producer_config, 100);
     pulsar_producer_configuration_set_block_if_queue_full(client->producer_config, 1);
 
     char *property = NULL;
