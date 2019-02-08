@@ -18,8 +18,7 @@ void test_http_buffer_increase()
     struct flb_upstream_conn *u_conn;
     struct flb_config *config;
 
-    /* Dummy contexts */
-    config = flb_calloc(1, sizeof(struct flb_config));
+    config = flb_config_init();
     TEST_CHECK(config != NULL);
 
     u = flb_upstream_create(config, "127.0.0.1", 80, 0, NULL);
@@ -77,7 +76,7 @@ void test_http_buffer_increase()
     flb_free(u_conn);
     flb_http_client_destroy(c);
     flb_upstream_destroy(u);
-    flb_free(config);
+    flb_config_exit(config);
 }
 
 TEST_LIST = {
