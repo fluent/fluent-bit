@@ -411,7 +411,7 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
     struct mk_rconf_section *section;
     struct mk_list *head;
     struct stat st;
-    struct flb_parser_types *types;
+    struct flb_parser_types *types = NULL;
     struct mk_list *decoders;
 
 #ifndef FLB_HAVE_STATIC_CONF
