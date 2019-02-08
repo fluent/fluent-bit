@@ -77,16 +77,6 @@ static void cb_pulsar_flush(void *data, size_t bytes,
     msgpack_object *obj;
     msgpack_unpacked result;
 
-    /*
-     * If the context is blocked, means rdkafka queue is full and no more
-     * messages can be appended. For our called (Fluent Bit engine) means
-     * that is not possible to work on this now and it need to 'retry'.
-     */
-    // if (ctx->blocked == FLB_TRUE) {
-    //     FLB_OUTPUT_RETURN(FLB_RETRY);
-    // }
-
-    /* Iterate the original buffer and perform adjustments */
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
         flb_time_pop_from_msgpack(&tms, &result, &obj);
