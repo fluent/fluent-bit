@@ -148,10 +148,10 @@ static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event
 
     ev_map = event->data;
     if (ev_map->pipe[0] > 0) {
-        close(ev_map->pipe[0]);
+        evutil_closesocket(ev_map->pipe[0]);
     }
     if (ev_map->pipe[1] > 0) {
-        close(ev_map->pipe[1]);
+        evutil_closesocket(ev_map->pipe[1]);
     }
 
     ret = event_del(ev_map->event);
