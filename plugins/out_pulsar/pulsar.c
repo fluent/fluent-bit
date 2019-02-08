@@ -41,14 +41,14 @@ static int cb_pulsar_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static int produce_message(struct flb_time *tm, msgpack_object * map,
+static int produce_message(struct flb_time *tm, msgpack_object *map,
                     struct flb_pulsar_context *ctx, struct flb_config *config)
 {
-    char *out_buf;
-    out_buf = flb_msgpack_to_json_str(1024, map);
+    const size_t INITIAL_BUFFER_ALLOCATION = 1024;
+    char *const out_buf = flb_msgpack_to_json_str(INITIAL_BUFFER_ALLOCATION, map);
 
     if (!out_buf) {
-        flb_error("[out_kafka] error encoding to JSON");
+        flb_error("[out_pulsar] error encoding to JSON");
         return FLB_ERROR;
     }
 
