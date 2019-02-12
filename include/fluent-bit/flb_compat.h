@@ -46,6 +46,11 @@ static inline struct tm *gmtime_r(const time_t *timep, struct tm *result)
     return result;
 }
 
+static inline time_t timegm(struct tm *tm)
+{
+    return _mkgmtime(tm);
+}
+
 /* mk_utils.c exposes localtime_r */
 extern struct tm *localtime_r(const time_t *timep, struct tm * result);
 
