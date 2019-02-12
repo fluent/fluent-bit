@@ -118,7 +118,7 @@ FLB_PULSAR_TEST(producer_config_defaults)
     struct flb_output_instance *instance = prepare_output_instance();
 
     pulsar_producer_configuration_t *producer_cfg =
-        flb_pulsar_config_build_producer_config(instance);
+        flb_pulsar_config_producer_config_create(instance);
 
     TEST_CHECK(strcmp
                (pulsar_producer_configuration_get_producer_name(producer_cfg),
@@ -131,22 +131,6 @@ FLB_PULSAR_TEST(producer_config_defaults)
                (producer_cfg) == 0);
 
     pulsar_producer_configuration_free(producer_cfg);
-
-    // struct flb_pulsar_context ctxt = mock_context();
-    // flb_output_set_context(instance, &ctxt);
-
-    // ret = flb_start(ctx);
-    // TEST_CHECK(ret == 0);
-
-    // struct flb_pulsar_context *c = instance->context;
-
-    // pulsar_producer_configuration_t* config_t = c->client->producer_config;
-    // TEST_CHECK(strcmp(pulsar_producer_configuration_get_producer_name(config_t), "") == 0);
-    // TEST_CHECK(pulsar_producer_configuration_get_compression_type(config_t) == pulsar_CompressionLZ4);
-    // TEST_CHECK(pulsar_producer_configuration_get_block_if_queue_full(config_t) == 1);
-
-    // flb_stop(ctx);
-    // flb_destroy(ctx);
     tear_down();
 }
 
@@ -156,7 +140,7 @@ FLB_PULSAR_TEST(producer_config_send_timeout)
 
     flb_output_set_property(instance, "send_timeout", "1234");
     pulsar_producer_configuration_t *producer_cfg =
-        flb_pulsar_config_build_producer_config(instance);
+        flb_pulsar_config_producer_config_create(instance);
 
     TEST_CHECK(pulsar_producer_configuration_get_send_timeout(producer_cfg) ==
                1234);
@@ -172,11 +156,11 @@ FLB_PULSAR_TEST(producer_config_compression_type_none)
     pulsar_producer_configuration_t *producer_cfg;
 
     flb_output_set_property(instance, "compression_type", "None");
-    producer_cfg = flb_pulsar_config_build_producer_config(instance);
+    producer_cfg = flb_pulsar_config_producer_config_create(instance);
     TEST_CHECK(pulsar_producer_configuration_get_compression_type
                (producer_cfg) == pulsar_CompressionNone);
-    pulsar_producer_configuration_free(producer_cfg);
 
+    pulsar_producer_configuration_free(producer_cfg);
     tear_down();
 }
 
@@ -187,11 +171,11 @@ FLB_PULSAR_TEST(producer_config_compression_type_zlib)
     pulsar_producer_configuration_t *producer_cfg;
 
     flb_output_set_property(instance, "compression_type", "zLIB");
-    producer_cfg = flb_pulsar_config_build_producer_config(instance);
+    producer_cfg = flb_pulsar_config_producer_config_create(instance);
     TEST_CHECK(pulsar_producer_configuration_get_compression_type
                (producer_cfg) == pulsar_CompressionZLib);
-    pulsar_producer_configuration_free(producer_cfg);
 
+    pulsar_producer_configuration_free(producer_cfg);
     tear_down();
 }
 
@@ -201,11 +185,11 @@ FLB_PULSAR_TEST(producer_config_compression_type_lz4)
 
     pulsar_producer_configuration_t *producer_cfg;
     flb_output_set_property(instance, "compression_type", "lz4");
-    producer_cfg = flb_pulsar_config_build_producer_config(instance);
+    producer_cfg = flb_pulsar_config_producer_config_create(instance);
     TEST_CHECK(pulsar_producer_configuration_get_compression_type
                (producer_cfg) == pulsar_CompressionLZ4);
-    pulsar_producer_configuration_free(producer_cfg);
 
+    pulsar_producer_configuration_free(producer_cfg);
     tear_down();
 }
 
@@ -215,11 +199,11 @@ FLB_PULSAR_TEST(producer_config_compression_type_invalid)
 
     pulsar_producer_configuration_t *producer_cfg;
     flb_output_set_property(instance, "compression_type", "something-bogus");
-    producer_cfg = flb_pulsar_config_build_producer_config(instance);
+    producer_cfg = flb_pulsar_config_producer_config_create(instance);
     TEST_CHECK(pulsar_producer_configuration_get_compression_type
                (producer_cfg) == pulsar_CompressionLZ4);
-    pulsar_producer_configuration_free(producer_cfg);
 
+    pulsar_producer_configuration_free(producer_cfg);
     tear_down();
 }
 
@@ -229,11 +213,11 @@ FLB_PULSAR_TEST(producer_config_max_pending_messages)
 
     pulsar_producer_configuration_t *producer_cfg;
     flb_output_set_property(instance, "max_pending_messages", "42");
-    producer_cfg = flb_pulsar_config_build_producer_config(instance);
+    producer_cfg = flb_pulsar_config_producer_config_create(instance);
     TEST_CHECK(pulsar_producer_configuration_get_max_pending_messages
                (producer_cfg) == 42);
-    pulsar_producer_configuration_free(producer_cfg);
 
+    pulsar_producer_configuration_free(producer_cfg);
     tear_down();
 }
 
@@ -245,13 +229,13 @@ FLB_PULSAR_TEST(producer_config_batching_settings)
     flb_output_set_property(instance, "batching_enabled", "on");
     flb_output_set_property(instance, "batching_max_publish_delay_ms", "314");
 
-    producer_cfg = flb_pulsar_config_build_producer_config(instance);
+    producer_cfg = flb_pulsar_config_producer_config_create(instance);
     TEST_CHECK(pulsar_producer_configuration_get_batching_enabled
                (producer_cfg) == 1);
     TEST_CHECK(pulsar_producer_configuration_get_batching_max_publish_delay_ms
                (producer_cfg) == 314);
-    pulsar_producer_configuration_free(producer_cfg);
 
+    pulsar_producer_configuration_free(producer_cfg);
     tear_down();
 }
 
@@ -260,7 +244,7 @@ FLB_PULSAR_TEST(client_config_defaults)
     struct flb_output_instance *instance = prepare_output_instance();
 
     pulsar_client_configuration_t *client_cfg =
-        flb_pulsar_config_build_client_config(instance);
+        flb_pulsar_config_client_config_create(instance);
 
     TEST_CHECK_(client_cfg != NULL,
                 "This test should check that auth method defaults to none, "
@@ -278,7 +262,7 @@ FLB_PULSAR_TEST(client_config_auth_tls)
     flb_output_set_property(instance, "auth_method", "TLS");
     flb_output_set_property(instance, "auth_params", "I'm a tls auth param");
     pulsar_client_configuration_t *client_cfg =
-        flb_pulsar_config_build_client_config(instance);
+        flb_pulsar_config_client_config_create(instance);
 
     TEST_CHECK_(client_cfg != NULL,
                 "This test should check that auth method is correctly 'tls', "
@@ -296,7 +280,7 @@ FLB_PULSAR_TEST(client_config_auth_token)
     flb_output_set_property(instance, "auth_params",
                             "I'm a token auth param");
     pulsar_client_configuration_t *client_cfg =
-        flb_pulsar_config_build_client_config(instance);
+        flb_pulsar_config_client_config_create(instance);
 
     TEST_CHECK_(client_cfg != NULL,
                 "This test should check that auth method is correctly 'token', "
@@ -318,7 +302,7 @@ FLB_PULSAR_TEST(client_config_auth_athenz)
                             "  \"privateKey\": \"fake\","
                             "  \"ztsUrl\": \"fake\" }");
     pulsar_client_configuration_t *client_cfg =
-        flb_pulsar_config_build_client_config(instance);
+        flb_pulsar_config_client_config_create(instance);
 
     TEST_CHECK_(client_cfg != NULL,
                 "This test should check that auth method is correctly 'athenz', "
@@ -336,7 +320,7 @@ FLB_PULSAR_TEST(client_config_auth_custom)
     flb_output_set_property(instance, "auth_params",
                             "I'm a custom auth param");
     pulsar_client_configuration_t *client_cfg =
-        flb_pulsar_config_build_client_config(instance);
+        flb_pulsar_config_client_config_create(instance);
 
     TEST_CHECK_(client_cfg != NULL,
                 "This test should check that auth method supports a custom path,"
@@ -352,13 +336,16 @@ FLB_PULSAR_TEST(client_config_with_tls_on_defaults)
     flb_output_set_property(instance, "tls", "on");
 
     pulsar_client_configuration_t *client_cfg =
-        flb_pulsar_config_build_client_config(instance);
+        flb_pulsar_config_client_config_create(instance);
     TEST_CHECK(pulsar_client_configuration_is_use_tls(client_cfg) == 1);
     TEST_CHECK(pulsar_client_configuration_is_tls_allow_insecure_connection
                (client_cfg) == 0);
     TEST_CHECK(strcmp
                (pulsar_client_configuration_get_tls_trust_certs_file_path
                 (client_cfg), "") == 0);
+
+    pulsar_client_configuration_free(client_cfg);
+    tear_down();
 }
 
 FLB_PULSAR_TEST(client_config_with_tls_options)
@@ -369,11 +356,14 @@ FLB_PULSAR_TEST(client_config_with_tls_options)
     flb_output_set_property(instance, "tls.ca_file", "/path/to/certs");
 
     pulsar_client_configuration_t *client_cfg =
-        flb_pulsar_config_build_client_config(instance);
+        flb_pulsar_config_client_config_create(instance);
     TEST_CHECK(pulsar_client_configuration_is_use_tls(client_cfg) == 1);
     TEST_CHECK(pulsar_client_configuration_is_tls_allow_insecure_connection
                (client_cfg) == 1);
     TEST_CHECK(strcmp
                (pulsar_client_configuration_get_tls_trust_certs_file_path
                 (client_cfg), "/path/to/certs") == 0);
+
+    pulsar_client_configuration_free(client_cfg);
+    tear_down();
 }

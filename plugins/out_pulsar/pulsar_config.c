@@ -28,31 +28,10 @@
 static pulsar_compression_type convert_compression_setting_to_pulsar_enum(char
                                                                           const
                                                                           *const
-                                                                          value)
-{
-    pulsar_compression_type result = pulsar_CompressionLZ4;
-
-    if (!value) {
-        return result;
-    }
-
-    if (strcasecmp(value, "none") == 0) {
-        result = pulsar_CompressionNone;
-    }
-    else if (strcasecmp(value, "zlib") == 0) {
-        result = pulsar_CompressionZLib;
-    }
-    else if (strcasecmp(value, "lz4") != 0) {
-        flb_warn
-            ("[out_pulsar] Invalid compression_type %s; defaulting to LZ4",
-             value);
-    }
-
-    return result;
-}
+                                                                          value);
 
 pulsar_producer_configuration_t
-    * flb_pulsar_config_build_producer_config(struct flb_output_instance *
+    * flb_pulsar_config_producer_config_create(struct flb_output_instance *
                                               const ins)
 {
     pulsar_producer_configuration_t *cfg =
@@ -106,20 +85,9 @@ pulsar_producer_configuration_t
     return cfg;
 }
 
-static char *normalize_auth_method(char *const value)
-{
-    if (!(value && strcasecmp(value, "none"))) {
-        return NULL;
-    }
+static char *normalize_auth_method(char *const value);
 
-    for (char *ch = value; ch < value + strlen(value); ++ch) {
-        *ch = tolower(*ch);
-    }
-
-    return value;
-}
-
-pulsar_client_configuration_t *flb_pulsar_config_build_client_config(struct
+pulsar_client_configuration_t *flb_pulsar_config_client_config_create(struct
                                                                      flb_output_instance
                                                                      *
                                                                      const
@@ -170,4 +138,58 @@ pulsar_client_configuration_t *flb_pulsar_config_build_client_config(struct
 
     return cfg;
 
+}
+
+void flb_pulsar_config_producer_config_destroy(pulsar_producer_configuration_t *cfg)
+{
+    if (cfg) {
+        pulsar_producer_configuration_free(cfg);
+    }
+}
+
+void flb_pulsar_config_client_config_destroy(pulsar_client_configuration_t *cfg)
+{
+    if (cfg) {
+        pulsar_client_configuration_free(cfg);
+    }
+}
+
+
+static pulsar_compression_type convert_compression_setting_to_pulsar_enum(char
+                                                                          const
+                                                                          *const
+                                                                          value)
+{
+    pulsar_compression_type result = pulsar_CompressionLZ4;
+
+    if (!value) {
+        return result;
+    }
+
+    if (strcasecmp(value, "none") == 0) {
+        result = pulsar_CompressionNone;
+    }
+    else if (strcasecmp(value, "zlib") == 0) {
+        result = pulsar_CompressionZLib;
+    }
+    else if (strcasecmp(value, "lz4") != 0) {
+        flb_warn
+            ("[out_pulsar] Invalid compression_type %s; defaulting to LZ4",
+             value);
+    }
+
+    return result;
+}
+
+static char *normalize_auth_method(char *const value)
+{
+    if (!(value && strcasecmp(value, "none"))) {
+        return NULL;
+    }
+
+    for (char *ch = value; ch < value + strlen(value); ++ch) {
+        *ch = tolower(*ch);
+    }
+
+    return value;
 }

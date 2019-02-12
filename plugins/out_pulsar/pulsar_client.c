@@ -35,8 +35,8 @@ struct flb_pulsar_client *flb_pulsar_client_create(struct flb_output_instance
         return NULL;
     }
 
-    client->client_config = flb_pulsar_config_build_client_config(ins);
-    client->producer_config = flb_pulsar_config_build_producer_config(ins);
+    client->client_config = flb_pulsar_config_client_config_create(ins);
+    client->producer_config = flb_pulsar_config_producer_config_create(ins);
 
     if (!client->client_config || !client->producer_config) {
         flb_error
@@ -45,14 +45,13 @@ struct flb_pulsar_client *flb_pulsar_client_create(struct flb_output_instance
         return NULL;
     }
 
-    // client init
     flb_output_net_default("localhost", 6650, ins);
     char *service_url =
         flb_malloc(13 + strlen(ins->host.name) +
                    ceil(log10(ins->host.port)) + 1);
     sprintf(service_url, "pulsar%s://%s:%d", (ins->use_tls ? "+ssl" : ""), ins->host.name, ins->host.port);
-
     client->client = pulsar_client_create(service_url, client->client_config);
+    flb_free(service_url);
 
     if (!client->client) {
         flb_error
@@ -71,11 +70,11 @@ pulsar_result flb_pulsar_client_create_producer(struct flb_pulsar_client *
                                                 ins)
 {
     pulsar_result result = pulsar_result_UnknownError;
-    char *property = NULL;
-    char *topic = (property = flb_output_get_property("topic",
-                                                      ins)) ? property :
-        "fluent-bit";
 
+    char *topic = flb_output_get_property("topic", ins);
+    if (!topic) {
+        topic = "fluent-bit";
+    }
 
     if (client && client->client && client->producer_config) {
         pulsar_result create_producer_result =
@@ -114,7 +113,7 @@ int flb_pulsar_client_destroy(struct flb_pulsar_client *client)
         }
 
         if (client->producer_config) {
-            pulsar_producer_configuration_free(client->producer_config);
+            flb_pulsar_config_producer_config_destroy(client->producer_config);
         }
 
         if (client->client) {
@@ -123,7 +122,7 @@ int flb_pulsar_client_destroy(struct flb_pulsar_client *client)
         }
 
         if (client->client_config) {
-            pulsar_client_configuration_free(client->client_config);
+            flb_pulsar_config_client_config_destroy(client->client_config);
         }
         flb_free(client);
     }
