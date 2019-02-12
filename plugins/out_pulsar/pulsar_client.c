@@ -18,7 +18,8 @@
  *  limitations under the License.
  */
 
-#include "pulsar_client.h"
+#include "./pulsar_client.h"
+#include "./pulsar_config.h"
 
 #include <math.h>
 
@@ -35,14 +36,6 @@ struct flb_pulsar_client *flb_pulsar_client_create(struct flb_output_instance
     }
 
     client->client_config = pulsar_client_configuration_create();
-    client->producer_config = pulsar_producer_configuration_create();
-
-    if (!client->client_config || !client->producer_config) {
-        flb_error
-            ("[out_pulsar] Unable to create pulsar configuration objects");
-        flb_pulsar_client_destroy(client);
-        return NULL;
-    }
 
     // client init
     flb_output_net_default("localhost", 6650, ins);
@@ -62,19 +55,16 @@ struct flb_pulsar_client *flb_pulsar_client_create(struct flb_output_instance
         return NULL;
     }
 
-    // producer init
-    char *producer_name = flb_output_get_property("producer_name", ins);
-
-    if (producer_name) {
-        pulsar_producer_configuration_set_producer_name
-            (client->producer_config, producer_name);
-    }
-    pulsar_producer_configuration_set_compression_type
-        (client->producer_config, pulsar_CompressionLZ4);
-    pulsar_producer_configuration_set_block_if_queue_full
-        (client->producer_config, 1);
-
+    client->producer_config = flb_pulsar_config_build_producer_config(ins);
     return client;
+
+    if (!client->client_config || !client->producer_config) {
+        flb_error
+            ("[out_pulsar] Unable to create pulsar configuration objects");
+        flb_pulsar_client_destroy(client);
+        return NULL;
+    }
+
 }
 
 pulsar_result flb_pulsar_client_create_producer(struct flb_pulsar_client *

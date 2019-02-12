@@ -34,6 +34,7 @@ add_subdirectory(pulsar-client-2.2.1/pulsar-client-cpp EXCLUDE_FROM_ALL)
 set(src
   pulsar.c
   pulsar_client.c
+  pulsar_config.c
   pulsar_context.c)
 
 FLB_PLUGIN(out_pulsar "${src}" "pulsarStatic")

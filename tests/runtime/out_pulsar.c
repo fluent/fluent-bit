@@ -22,17 +22,32 @@
 #include "flb_tests_runtime.h"
 
 #include "../../plugins/out_pulsar/pulsar_context.h"
+#include "../../plugins/out_pulsar/pulsar_config.h"
 
 /* Test functions */
 #define FLB_PULSAR_TEST(name) void flb_test_pulsar_##name(void)
 
 FLB_PULSAR_TEST(producer_config_defaults);
+FLB_PULSAR_TEST(producer_config_send_timeout);
+FLB_PULSAR_TEST(producer_config_compression_type_none);
+FLB_PULSAR_TEST(producer_config_compression_type_zlib);
+FLB_PULSAR_TEST(producer_config_compression_type_lz4);
+FLB_PULSAR_TEST(producer_config_compression_type_invalid);
+FLB_PULSAR_TEST(producer_config_max_pending_messages);
+FLB_PULSAR_TEST(producer_config_batching_settings);
 
-#define FLB_PULSAR_TEST_CASE(name) { "flb_test_pulsar_" #name, flb_test_pulsar_##name }
+#define FLB_PULSAR_TEST_ENTRY(name) { "flb_test_pulsar_" #name, flb_test_pulsar_##name }
 
 /* Test list */
 TEST_LIST = {
-    FLB_PULSAR_TEST_CASE(producer_config_defaults), {
+    FLB_PULSAR_TEST_ENTRY(producer_config_defaults),
+        FLB_PULSAR_TEST_ENTRY(producer_config_send_timeout),
+        FLB_PULSAR_TEST_ENTRY(producer_config_compression_type_none),
+        FLB_PULSAR_TEST_ENTRY(producer_config_compression_type_zlib),
+        FLB_PULSAR_TEST_ENTRY(producer_config_compression_type_lz4),
+        FLB_PULSAR_TEST_ENTRY(producer_config_compression_type_invalid),
+        FLB_PULSAR_TEST_ENTRY(producer_config_max_pending_messages),
+        FLB_PULSAR_TEST_ENTRY(producer_config_batching_settings), {
     NULL, NULL}
 };
 
@@ -55,12 +70,12 @@ struct flb_pulsar_context mock_context()
     return mock;
 }
 
-FLB_PULSAR_TEST(producer_config_defaults)
+static flb_ctx_t *ctx = NULL;
+
+struct flb_output_instance *prepare_output_instance()
 {
-    flb_ctx_t *ctx;
     int in_ffd;
     int out_ffd;
-    int ret;
 
     ctx = flb_create();
     TEST_CHECK(ctx != NULL);
@@ -73,28 +88,155 @@ FLB_PULSAR_TEST(producer_config_defaults)
     TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
 
-    struct flb_output_instance *instance =
-        mk_list_entry_last(&ctx->config->outputs,
-                           struct flb_output_instance,
-                           _head);
+    return mk_list_entry_last(&ctx->config->outputs,
+                              struct flb_output_instance, _head);
+}
 
-    struct flb_pulsar_context ctxt = mock_context();
-    flb_output_set_context(instance, &ctxt);
+void tear_down(void)
+{
+    if (ctx) {
+        flb_destroy(ctx);
+    }
+}
 
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
+FLB_PULSAR_TEST(producer_config_defaults)
+{
+    struct flb_output_instance *instance = prepare_output_instance();
 
-    struct flb_pulsar_context *c = instance->context;
+    pulsar_producer_configuration_t *producer_cfg =
+        flb_pulsar_config_build_producer_config(instance);
 
-    pulsar_producer_configuration_t *config_t = c->client->producer_config;
     TEST_CHECK(strcmp
-               (pulsar_producer_configuration_get_producer_name(config_t),
+               (pulsar_producer_configuration_get_producer_name(producer_cfg),
                 "") == 0);
-    TEST_CHECK(pulsar_producer_configuration_get_compression_type(config_t) ==
-               pulsar_CompressionLZ4);
-    TEST_CHECK(pulsar_producer_configuration_get_block_if_queue_full(config_t)
-               == 1);
+    TEST_CHECK(pulsar_producer_configuration_get_compression_type
+               (producer_cfg) == pulsar_CompressionLZ4);
+    TEST_CHECK(pulsar_producer_configuration_get_block_if_queue_full
+               (producer_cfg) == 1);
+    TEST_CHECK(pulsar_producer_configuration_get_batching_enabled
+               (producer_cfg) == 0);
 
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    pulsar_producer_configuration_free(producer_cfg);
+
+    // struct flb_pulsar_context ctxt = mock_context();
+    // flb_output_set_context(instance, &ctxt);
+
+    // ret = flb_start(ctx);
+    // TEST_CHECK(ret == 0);
+
+    // struct flb_pulsar_context *c = instance->context;
+
+    // pulsar_producer_configuration_t* config_t = c->client->producer_config;
+    // TEST_CHECK(strcmp(pulsar_producer_configuration_get_producer_name(config_t), "") == 0);
+    // TEST_CHECK(pulsar_producer_configuration_get_compression_type(config_t) == pulsar_CompressionLZ4);
+    // TEST_CHECK(pulsar_producer_configuration_get_block_if_queue_full(config_t) == 1);
+
+    // flb_stop(ctx);
+    // flb_destroy(ctx);
+    tear_down();
+}
+
+FLB_PULSAR_TEST(producer_config_send_timeout)
+{
+    struct flb_output_instance *instance = prepare_output_instance();
+
+    flb_output_set_property(instance, "send_timeout", "1234");
+    pulsar_producer_configuration_t *producer_cfg =
+        flb_pulsar_config_build_producer_config(instance);
+
+    TEST_CHECK(pulsar_producer_configuration_get_send_timeout(producer_cfg) ==
+               1234);
+
+    pulsar_producer_configuration_free(producer_cfg);
+    tear_down();
+}
+
+FLB_PULSAR_TEST(producer_config_compression_type_none)
+{
+    struct flb_output_instance *instance = prepare_output_instance();
+
+    pulsar_producer_configuration_t *producer_cfg;
+
+    flb_output_set_property(instance, "compression_type", "None");
+    producer_cfg = flb_pulsar_config_build_producer_config(instance);
+    TEST_CHECK(pulsar_producer_configuration_get_compression_type
+               (producer_cfg) == pulsar_CompressionNone);
+    pulsar_producer_configuration_free(producer_cfg);
+
+    tear_down();
+}
+
+FLB_PULSAR_TEST(producer_config_compression_type_zlib)
+{
+    struct flb_output_instance *instance = prepare_output_instance();
+
+    pulsar_producer_configuration_t *producer_cfg;
+
+    flb_output_set_property(instance, "compression_type", "zLIB");
+    producer_cfg = flb_pulsar_config_build_producer_config(instance);
+    TEST_CHECK(pulsar_producer_configuration_get_compression_type
+               (producer_cfg) == pulsar_CompressionZLib);
+    pulsar_producer_configuration_free(producer_cfg);
+
+    tear_down();
+}
+
+FLB_PULSAR_TEST(producer_config_compression_type_lz4)
+{
+    struct flb_output_instance *instance = prepare_output_instance();
+
+    pulsar_producer_configuration_t *producer_cfg;
+    flb_output_set_property(instance, "compression_type", "lz4");
+    producer_cfg = flb_pulsar_config_build_producer_config(instance);
+    TEST_CHECK(pulsar_producer_configuration_get_compression_type
+               (producer_cfg) == pulsar_CompressionLZ4);
+    pulsar_producer_configuration_free(producer_cfg);
+
+    tear_down();
+}
+
+FLB_PULSAR_TEST(producer_config_compression_type_invalid)
+{
+    struct flb_output_instance *instance = prepare_output_instance();
+
+    pulsar_producer_configuration_t *producer_cfg;
+    flb_output_set_property(instance, "compression_type", "something-bogus");
+    producer_cfg = flb_pulsar_config_build_producer_config(instance);
+    TEST_CHECK(pulsar_producer_configuration_get_compression_type
+               (producer_cfg) == pulsar_CompressionLZ4);
+    pulsar_producer_configuration_free(producer_cfg);
+
+    tear_down();
+}
+
+FLB_PULSAR_TEST(producer_config_max_pending_messages)
+{
+    struct flb_output_instance *instance = prepare_output_instance();
+
+    pulsar_producer_configuration_t *producer_cfg;
+    flb_output_set_property(instance, "max_pending_messages", "42");
+    producer_cfg = flb_pulsar_config_build_producer_config(instance);
+    TEST_CHECK(pulsar_producer_configuration_get_max_pending_messages
+               (producer_cfg) == 42);
+    pulsar_producer_configuration_free(producer_cfg);
+
+    tear_down();
+}
+
+FLB_PULSAR_TEST(producer_config_batching_settings)
+{
+    struct flb_output_instance *instance = prepare_output_instance();
+
+    pulsar_producer_configuration_t *producer_cfg;
+    flb_output_set_property(instance, "batching_enabled", "on");
+    flb_output_set_property(instance, "batching_max_publish_delay_ms", "314");
+
+    producer_cfg = flb_pulsar_config_build_producer_config(instance);
+    TEST_CHECK(pulsar_producer_configuration_get_batching_enabled
+               (producer_cfg) == 1);
+    TEST_CHECK(pulsar_producer_configuration_get_batching_max_publish_delay_ms
+               (producer_cfg) == 314);
+    pulsar_producer_configuration_free(producer_cfg);
+
+    tear_down();
 }
