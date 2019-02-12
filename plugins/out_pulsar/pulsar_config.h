@@ -26,9 +26,12 @@
 #include <pulsar/c/client.h>
 
 pulsar_producer_configuration_t
-    *flb_pulsar_config_build_producer_config(struct flb_output_instance *
-                                             const ins);
+    * flb_pulsar_config_build_producer_config(struct flb_output_instance *
+                                              const ins);
 
-//pulsar_client_configuration_t *flb_pulsar_config_determine_client_config(flb_output_instance const* const ins);
+pulsar_client_configuration_t *flb_pulsar_config_build_client_config(struct
+                                                                     flb_output_instance
+                                                                     *const
+                                                                     ins);
 
 #endif

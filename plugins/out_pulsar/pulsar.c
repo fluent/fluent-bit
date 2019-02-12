@@ -121,5 +121,5 @@ struct flb_output_plugin out_pulsar_plugin = {
     .cb_pre_run = cb_pulsar_pre_run,
     .cb_flush = cb_pulsar_flush,
     .cb_exit = cb_pulsar_exit,
-    .flags = FLB_OUTPUT_NET
+    .flags = FLB_OUTPUT_NET | FLB_IO_OPT_TLS
 };

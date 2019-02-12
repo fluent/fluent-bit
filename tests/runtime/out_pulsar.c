@@ -35,6 +35,13 @@ FLB_PULSAR_TEST(producer_config_compression_type_lz4);
 FLB_PULSAR_TEST(producer_config_compression_type_invalid);
 FLB_PULSAR_TEST(producer_config_max_pending_messages);
 FLB_PULSAR_TEST(producer_config_batching_settings);
+FLB_PULSAR_TEST(client_config_defaults);
+FLB_PULSAR_TEST(client_config_auth_tls);
+FLB_PULSAR_TEST(client_config_auth_athenz);
+FLB_PULSAR_TEST(client_config_auth_token);
+FLB_PULSAR_TEST(client_config_auth_custom);
+FLB_PULSAR_TEST(client_config_with_tls_on_defaults);
+FLB_PULSAR_TEST(client_config_with_tls_options);
 
 #define FLB_PULSAR_TEST_ENTRY(name) { "flb_test_pulsar_" #name, flb_test_pulsar_##name }
 
@@ -47,7 +54,14 @@ TEST_LIST = {
         FLB_PULSAR_TEST_ENTRY(producer_config_compression_type_lz4),
         FLB_PULSAR_TEST_ENTRY(producer_config_compression_type_invalid),
         FLB_PULSAR_TEST_ENTRY(producer_config_max_pending_messages),
-        FLB_PULSAR_TEST_ENTRY(producer_config_batching_settings), {
+        FLB_PULSAR_TEST_ENTRY(producer_config_batching_settings),
+        FLB_PULSAR_TEST_ENTRY(client_config_defaults),
+        FLB_PULSAR_TEST_ENTRY(client_config_auth_tls),
+        FLB_PULSAR_TEST_ENTRY(client_config_auth_athenz),
+        FLB_PULSAR_TEST_ENTRY(client_config_auth_token),
+        FLB_PULSAR_TEST_ENTRY(client_config_auth_custom),
+        FLB_PULSAR_TEST_ENTRY(client_config_with_tls_on_defaults),
+        FLB_PULSAR_TEST_ENTRY(client_config_with_tls_options), {
     NULL, NULL}
 };
 
@@ -239,4 +253,127 @@ FLB_PULSAR_TEST(producer_config_batching_settings)
     pulsar_producer_configuration_free(producer_cfg);
 
     tear_down();
+}
+
+FLB_PULSAR_TEST(client_config_defaults)
+{
+    struct flb_output_instance *instance = prepare_output_instance();
+
+    pulsar_client_configuration_t *client_cfg =
+        flb_pulsar_config_build_client_config(instance);
+
+    TEST_CHECK_(client_cfg != NULL,
+                "This test should check that auth method defaults to none, "
+                "but there is no method to get the auth method from the config.");
+    TEST_CHECK(pulsar_client_configuration_is_use_tls(client_cfg) == 0);
+
+    pulsar_client_configuration_free(client_cfg);
+    tear_down();
+}
+
+FLB_PULSAR_TEST(client_config_auth_tls)
+{
+    struct flb_output_instance *instance = prepare_output_instance();
+
+    flb_output_set_property(instance, "auth_method", "TLS");
+    flb_output_set_property(instance, "auth_params", "I'm a tls auth param");
+    pulsar_client_configuration_t *client_cfg =
+        flb_pulsar_config_build_client_config(instance);
+
+    TEST_CHECK_(client_cfg != NULL,
+                "This test should check that auth method is correctly 'tls', "
+                "but the Pulsar C API provides no means to do so.");
+
+    pulsar_client_configuration_free(client_cfg);
+    tear_down();
+}
+
+FLB_PULSAR_TEST(client_config_auth_token)
+{
+    struct flb_output_instance *instance = prepare_output_instance();
+
+    flb_output_set_property(instance, "auth_method", "toKeN");
+    flb_output_set_property(instance, "auth_params",
+                            "I'm a token auth param");
+    pulsar_client_configuration_t *client_cfg =
+        flb_pulsar_config_build_client_config(instance);
+
+    TEST_CHECK_(client_cfg != NULL,
+                "This test should check that auth method is correctly 'token', "
+                "but the Pulsar C API provides no means to do so.");
+
+    pulsar_client_configuration_free(client_cfg);
+    tear_down();
+}
+
+FLB_PULSAR_TEST(client_config_auth_athenz)
+{
+    struct flb_output_instance *instance = prepare_output_instance();
+
+    flb_output_set_property(instance, "auth_method", "Athenz");
+    flb_output_set_property(instance, "auth_params",
+                            "{ \"tenantDomain\": \"fake\","
+                            "  \"tenantService\": \"fake\","
+                            "  \"providerDomain\": \"fake\","
+                            "  \"privateKey\": \"fake\","
+                            "  \"ztsUrl\": \"fake\" }");
+    pulsar_client_configuration_t *client_cfg =
+        flb_pulsar_config_build_client_config(instance);
+
+    TEST_CHECK_(client_cfg != NULL,
+                "This test should check that auth method is correctly 'athenz', "
+                "but the Pulsar C API provides no means to do so.");
+
+    pulsar_client_configuration_free(client_cfg);
+    tear_down();
+}
+
+FLB_PULSAR_TEST(client_config_auth_custom)
+{
+    struct flb_output_instance *instance = prepare_output_instance();
+
+    flb_output_set_property(instance, "auth_method", "/path/to/custom.so");
+    flb_output_set_property(instance, "auth_params",
+                            "I'm a custom auth param");
+    pulsar_client_configuration_t *client_cfg =
+        flb_pulsar_config_build_client_config(instance);
+
+    TEST_CHECK_(client_cfg != NULL,
+                "This test should check that auth method supports a custom path,"
+                "but the Pulsar C API provides no means to do so.");
+
+    pulsar_client_configuration_free(client_cfg);
+    tear_down();
+}
+
+FLB_PULSAR_TEST(client_config_with_tls_on_defaults)
+{
+    struct flb_output_instance *instance = prepare_output_instance();
+    flb_output_set_property(instance, "tls", "on");
+
+    pulsar_client_configuration_t *client_cfg =
+        flb_pulsar_config_build_client_config(instance);
+    TEST_CHECK(pulsar_client_configuration_is_use_tls(client_cfg) == 1);
+    TEST_CHECK(pulsar_client_configuration_is_tls_allow_insecure_connection
+               (client_cfg) == 0);
+    TEST_CHECK(strcmp
+               (pulsar_client_configuration_get_tls_trust_certs_file_path
+                (client_cfg), "") == 0);
+}
+
+FLB_PULSAR_TEST(client_config_with_tls_options)
+{
+    struct flb_output_instance *instance = prepare_output_instance();
+    flb_output_set_property(instance, "tls", "on");
+    flb_output_set_property(instance, "tls.verify", "off");
+    flb_output_set_property(instance, "tls.ca_file", "/path/to/certs");
+
+    pulsar_client_configuration_t *client_cfg =
+        flb_pulsar_config_build_client_config(instance);
+    TEST_CHECK(pulsar_client_configuration_is_use_tls(client_cfg) == 1);
+    TEST_CHECK(pulsar_client_configuration_is_tls_allow_insecure_connection
+               (client_cfg) == 1);
+    TEST_CHECK(strcmp
+               (pulsar_client_configuration_get_tls_trust_certs_file_path
+                (client_cfg), "/path/to/certs") == 0);
 }

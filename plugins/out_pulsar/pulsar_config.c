@@ -21,6 +21,9 @@
 #include "./pulsar_config.h"
 
 #include "../../include/fluent-bit/flb_utils.h"
+#include <pulsar/c/authentication.h>
+
+#include <ctype.h>
 
 static pulsar_compression_type convert_compression_setting_to_pulsar_enum(char
                                                                           const
@@ -49,11 +52,15 @@ static pulsar_compression_type convert_compression_setting_to_pulsar_enum(char
 }
 
 pulsar_producer_configuration_t
-    *flb_pulsar_config_build_producer_config(struct flb_output_instance *
-                                             const ins)
+    * flb_pulsar_config_build_producer_config(struct flb_output_instance *
+                                              const ins)
 {
     pulsar_producer_configuration_t *cfg =
         pulsar_producer_configuration_create();
+
+    if (!cfg) {
+        return NULL;
+    }
 
     char *producer_name = flb_output_get_property("producer_name", ins);
     if (producer_name) {
@@ -97,4 +104,70 @@ pulsar_producer_configuration_t
     pulsar_producer_configuration_set_block_if_queue_full(cfg, 1);
 
     return cfg;
+}
+
+static char *normalize_auth_method(char *const value)
+{
+    if (!(value && strcasecmp(value, "none"))) {
+        return NULL;
+    }
+
+    for (char *ch = value; ch < value + strlen(value); ++ch) {
+        *ch = tolower(*ch);
+    }
+
+    return value;
+}
+
+pulsar_client_configuration_t *flb_pulsar_config_build_client_config(struct
+                                                                     flb_output_instance
+                                                                     *
+                                                                     const
+                                                                     ins)
+{
+    pulsar_client_configuration_t *cfg = pulsar_client_configuration_create();
+
+    if (!cfg) {
+        return NULL;
+    }
+
+    char *config_auth_method = flb_output_get_property("auth_method", ins);
+    char *auth_method = normalize_auth_method(config_auth_method);
+
+    if (auth_method) {
+        char *auth_params = flb_output_get_property("auth_params", ins);
+        if (!auth_params) {
+            flb_warn
+                ("[out_pulsar] Auth_Method is set (%s) but no Auth_Params were provided, using empty string.",
+                 auth_method);
+            auth_params = "";
+        }
+
+        pulsar_authentication_t *auth =
+            pulsar_authentication_create(auth_method, auth_params);
+        if (!auth) {
+            flb_error
+                ("[out_pulsar] Failed to create client authentication policy (method: %s, params: %s)",
+                 auth_method, auth_params);
+            pulsar_client_configuration_free(cfg);
+            return NULL;
+        }
+
+        pulsar_client_configuration_set_auth(cfg, auth);
+    }
+
+    if (ins->use_tls) {
+        pulsar_client_configuration_set_use_tls(cfg, 1);
+        pulsar_client_configuration_set_tls_allow_insecure_connection(cfg,
+                                                                      !ins->
+                                                                      tls_verify);
+        if (ins->tls_ca_file) {
+            pulsar_client_configuration_set_tls_trust_certs_file_path(cfg,
+                                                                      ins->
+                                                                      tls_ca_file);
+        }
+    }
+
+    return cfg;
+
 }

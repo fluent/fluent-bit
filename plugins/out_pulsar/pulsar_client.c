@@ -35,17 +35,24 @@ struct flb_pulsar_client *flb_pulsar_client_create(struct flb_output_instance
         return NULL;
     }
 
-    client->client_config = pulsar_client_configuration_create();
+    client->client_config = flb_pulsar_config_build_client_config(ins);
+    client->producer_config = flb_pulsar_config_build_producer_config(ins);
+
+    if (!client->client_config || !client->producer_config) {
+        flb_error
+            ("[out_pulsar] Unable to create pulsar configuration objects");
+        flb_pulsar_client_destroy(client);
+        return NULL;
+    }
 
     // client init
     flb_output_net_default("localhost", 6650, ins);
     char *service_url =
-        flb_malloc(9 + strlen(ins->host.name) +
+        flb_malloc(13 + strlen(ins->host.name) +
                    ceil(log10(ins->host.port)) + 1);
-    sprintf(service_url, "pulsar://%s:%d", ins->host.name, ins->host.port);
+    sprintf(service_url, "pulsar%s://%s:%d", (ins->use_tls ? "+ssl" : ""), ins->host.name, ins->host.port);
 
     client->client = pulsar_client_create(service_url, client->client_config);
-    flb_free(service_url);
 
     if (!client->client) {
         flb_error
@@ -55,16 +62,7 @@ struct flb_pulsar_client *flb_pulsar_client_create(struct flb_output_instance
         return NULL;
     }
 
-    client->producer_config = flb_pulsar_config_build_producer_config(ins);
     return client;
-
-    if (!client->client_config || !client->producer_config) {
-        flb_error
-            ("[out_pulsar] Unable to create pulsar configuration objects");
-        flb_pulsar_client_destroy(client);
-        return NULL;
-    }
-
 }
 
 pulsar_result flb_pulsar_client_create_producer(struct flb_pulsar_client *
