@@ -19,17 +19,20 @@
  */
 
 #include "pulsar_context.h"
+#include "pulsar_client.h"
 
-pulsar_result flb_pulsar_context_produce_message(struct flb_pulsar_context *
-                                                 context,
+pulsar_result flb_pulsar_context_produce_message(struct flb_pulsar_context
+                                                 *context,
                                                  pulsar_message_t * msg);
+
+pulsar_result flb_pulsar_context_create_producer(struct flb_pulsar_context
+                                                 *context);
 
 struct flb_pulsar_context *flb_pulsar_context_create(struct
                                                      flb_output_instance *ins,
                                                      struct flb_config
                                                      *config)
 {
-
     struct flb_pulsar_context *ctx =
         flb_calloc(1, sizeof(struct flb_pulsar_context));
 
@@ -38,8 +41,20 @@ struct flb_pulsar_context *flb_pulsar_context_create(struct
         return NULL;
     }
 
+    ctx->output_instance = ins;
     ctx->client = flb_pulsar_client_create(ins, config);
-    ctx->publish_fn = &flb_pulsar_context_produce_message;
+
+    struct flb_pulsar_context *exsiting_ctx = ins->context;
+    if (exsiting_ctx) {
+        flb_warn
+            ("[out_pulsar] Context already established; this should only happen in Unit Tests.");
+        ctx->publish_fn = exsiting_ctx->publish_fn;
+        ctx->connect_fn = exsiting_ctx->connect_fn;
+    }
+    else {
+        ctx->publish_fn = &flb_pulsar_context_produce_message;
+        ctx->connect_fn = &flb_pulsar_context_create_producer;
+    }
 
     if (!ctx->client) {
         flb_pulsar_context_destroy(ctx);
@@ -47,6 +62,20 @@ struct flb_pulsar_context *flb_pulsar_context_create(struct
     }
 
     return ctx;
+}
+
+pulsar_result flb_pulsar_context_create_producer(struct flb_pulsar_context *
+                                                 context)
+{
+    return flb_pulsar_client_create_producer(context->client,
+                                             context->output_instance);
+}
+
+pulsar_result flb_pulsar_context_produce_message(struct flb_pulsar_context *
+                                                 context,
+                                                 pulsar_message_t * msg)
+{
+    return flb_pulsar_client_produce_message(context->client, msg);
 }
 
 int flb_pulsar_context_destroy(struct flb_pulsar_context *ctx)
@@ -57,11 +86,4 @@ int flb_pulsar_context_destroy(struct flb_pulsar_context *ctx)
     }
 
     return 0;
-}
-
-pulsar_result flb_pulsar_context_produce_message(struct flb_pulsar_context *
-                                                 context,
-                                                 pulsar_message_t * msg)
-{
-    return pulsar_producer_send(context->client->producer, msg);
 }

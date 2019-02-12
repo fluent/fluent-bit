@@ -41,11 +41,22 @@ static int cb_pulsar_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static int produce_message(struct flb_time *tm, msgpack_object *map,
-                    struct flb_pulsar_context *ctx, struct flb_config *config)
+static int cb_pulsar_pre_run(void *out_context, struct flb_config *config)
+{
+    struct flb_pulsar_context *ctx = out_context;
+    if (ctx->connect_fn(ctx) != pulsar_result_Ok) {
+        return -1;
+    }
+    return 0;
+}
+
+static int produce_message(struct flb_time *tm, msgpack_object * map,
+                           struct flb_pulsar_context *ctx,
+                           struct flb_config *config)
 {
     const size_t INITIAL_BUFFER_ALLOCATION = 1024;
-    char *const out_buf = flb_msgpack_to_json_str(INITIAL_BUFFER_ALLOCATION, map);
+    char *const out_buf =
+        flb_msgpack_to_json_str(INITIAL_BUFFER_ALLOCATION, map);
 
     if (!out_buf) {
         flb_error("[out_pulsar] error encoding to JSON");
@@ -107,6 +118,7 @@ struct flb_output_plugin out_pulsar_plugin = {
     .name = "pulsar",
     .description = "Pulsar Native Client",
     .cb_init = cb_pulsar_init,
+    .cb_pre_run = cb_pulsar_pre_run,
     .cb_flush = cb_pulsar_flush,
     .cb_exit = cb_pulsar_exit,
     .flags = FLB_OUTPUT_NET

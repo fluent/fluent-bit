@@ -38,6 +38,15 @@ struct flb_pulsar_client *flb_pulsar_client_create(struct flb_output_instance
                                                    *ins,
                                                    struct flb_config *config);
 
-int flb_pulsar_client_destroy(struct flb_pulsar_client *ctx);
+pulsar_result flb_pulsar_client_create_producer(struct flb_pulsar_client
+                                                *client,
+                                                struct flb_output_instance
+                                                *ins);
+
+pulsar_result flb_pulsar_client_produce_message(struct flb_pulsar_client
+                                                *client,
+                                                pulsar_message_t * msg);
+
+int flb_pulsar_client_destroy(struct flb_pulsar_client *client);
 
 #endif
