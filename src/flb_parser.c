@@ -209,7 +209,7 @@ struct flb_parser *flb_parser_create(char *name, char *format,
         /* Check if the format contains a timezone (%z) */
         if (strstr(p->time_fmt, "%z") || strstr(p->time_fmt, "%Z") ||
             strstr(p->time_fmt, "%SZ") || strstr(p->time_fmt, "%S.%LZ")) {
-#ifdef FLB_HAVE_GMTOFF
+#if defined(FLB_HAVE_GMTOFF) || !defined(FLB_HAVE_SYSTEM_STRPTIME)
             p->time_with_tz = FLB_TRUE;
 #else
             flb_error("[parser] timezone offset not supported");
