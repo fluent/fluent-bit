@@ -87,6 +87,12 @@ pulsar_producer_configuration_t
 
 static char *normalize_auth_method(char *const value);
 
+static void log_pulsar_msg(pulsar_logger_level_t level,
+                           const char* file,
+                           int line,
+                           const char* msg,
+                           void *ctx);
+
 pulsar_client_configuration_t *flb_pulsar_config_client_config_create(struct
                                                                      flb_output_instance
                                                                      *
@@ -98,6 +104,8 @@ pulsar_client_configuration_t *flb_pulsar_config_client_config_create(struct
     if (!cfg) {
         return NULL;
     }
+
+    pulsar_client_configuration_set_logger(cfg, &log_pulsar_msg, NULL);
 
     char *config_auth_method = flb_output_get_property("auth_method", ins);
     char *auth_method = normalize_auth_method(config_auth_method);
@@ -192,4 +200,21 @@ static char *normalize_auth_method(char *const value)
     }
 
     return value;
+}
+
+static void log_pulsar_msg(pulsar_logger_level_t level,
+                           const char* file,
+                           int line,
+                           const char* msg,
+                           void *unused)
+{
+#if FLB_LOG_DEBUG == 4 && FLB_LOG_ERROR == 1
+    int flb_log_level = FLB_LOG_DEBUG - level;
+#else
+    #error "log_pulsar_msg: Log level conversion code expectations unmet."
+#endif
+
+    if (flb_log_check(flb_log_level)) {
+        flb_log_print(flb_log_level, file, line, msg);
+    }
 }
