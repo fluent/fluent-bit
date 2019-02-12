@@ -114,6 +114,9 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
      */
     if (ctx->pending_records == FLB_FALSE) {
         ret = sd_journal_process(ctx->j);
+        if (ret == SD_JOURNAL_INVALIDATE) {
+            flb_debug("[in_systemd] received event on added or removed journal file");
+        }
         if (ret != SD_JOURNAL_APPEND && ret != SD_JOURNAL_NOP) {
             return FLB_SYSTEMD_NONE;
         }
@@ -148,7 +151,9 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
         /* Set time */
         ret = sd_journal_get_realtime_usec(ctx->j, &usec);
         if (ret != 0) {
-            flb_error("[in_systemd] error reading from systemd journal. sd_journal_get_realtime_usec() return value '%s'", ret);
+            flb_error("[in_systemd] error reading from systemd journal. sd_journal_get_realtime_usec() return value '%i'", ret);
+            /* It seems the journal file was deleted (rotated). */
+            ret_j = -1;
             break;
         }
         sec = usec / 1000000;
@@ -196,7 +201,7 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
                entries < ctx->max_fields) {
             key = (char *) data;
             if (ctx->strip_underscores == FLB_TRUE && key[0] == '_') {
-                key++; 
+                key++;
                 length--;
             }
             sep = strchr(key, '=');
@@ -206,12 +211,15 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
 
             val = sep + 1;
             len = length - (sep - key) - 1;
-            msgpack_pack_str(&mp_pck,  len);
+            msgpack_pack_str(&mp_pck, len);
             msgpack_pack_str_body(&mp_pck, val, len);
 
             entries++;
         }
         rows++;
+        if (entries == ctx->max_fields) {
+            flb_debug("[in_systemd] max number of fields is reached: %i; all other fields are discarded", ctx->max_fields);
+        }
 
         /*
          * The fields were packed, now we need to adjust the msgpack map size
@@ -244,12 +252,10 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
             msgpack_sbuffer_init(&mp_sbuf);
             strncpy(last_tag, tag, tag_len);
             last_tag_len = tag_len;
-            ret_j = -1;
             break;
         }
 
         if (rows >= ctx->max_entries) {
-            ret_j = -1;
             break;
         }
     }
@@ -277,14 +283,27 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
         ctx->pending_records = FLB_FALSE;
         return FLB_SYSTEMD_OK;
     }
-
-    /*
-     * ret_j == -1, the loop was broken due to some special condition like
-     * buffer size limit or it reach the max number of rows that it supposed to
-     * process on this call. Assume there are pending records.
-     */
-    ctx->pending_records = FLB_TRUE;
-    return FLB_SYSTEMD_MORE;
+    else if (ret_j > 0) {
+        /*
+        * ret_j == 1, but the loop was broken due to some special condition like
+        * buffer size limit or it reach the max number of rows that it supposed to
+        * process on this call. Assume there are pending records.
+        */
+        ctx->pending_records = FLB_TRUE;
+        return FLB_SYSTEMD_MORE;
+    }
+    else {
+        /* Supposedly, current cursor points to a deleted file.
+         * Re-seeking to the first journal entry.
+         * Other failures, such as disk read error, would still lead to infinite loop there,
+         * but at least FLB log will be full of errors. */
+        ret = sd_journal_seek_head(ctx->j);
+        flb_error("[in_systemd] sd_journal_next() returned error %i; "
+            "journal is re-opened, unread logs are lost; "
+            "sd_journal_seek_head() returned %i", ret_j, ret);
+        ctx->pending_records = FLB_TRUE;
+        return FLB_SYSTEMD_ERROR;
+    }
 }
 
 static int in_systemd_collect_archive(struct flb_input_instance *i_ins,

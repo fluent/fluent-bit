@@ -40,6 +40,7 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
     struct flb_config_prop *prop;
     struct flb_systemd_config *ctx;
     int journal_filter_is_and;
+    size_t size;
 
     /* Allocate space for the configuration */
     ctx = flb_calloc(1, sizeof(struct flb_systemd_config));
@@ -207,6 +208,10 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
     } else {
         ctx->strip_underscores = FLB_FALSE;
     }
+
+    sd_journal_get_data_threshold(ctx->j, &size);
+    flb_debug("[in_systemd] sd_journal library may truncate values "
+        "to sd_journal_get_data_threshold() bytes: %i", size);
 
     return ctx;
 }
