@@ -32,6 +32,9 @@
 
 #define PATH_MAX MAX_PATH
 #define S_ISREG(m) (((m) & S_IFMT) == S_IFREG)
+#define timezone _timezone
+#define tzname _tzname
+#define strncasecmp _strnicmp
 
 static inline int getpagesize(void)
 {
