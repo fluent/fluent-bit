@@ -57,6 +57,7 @@ option(FLB_SQLDB              "Enable SQL embedded DB"        No)
 option(FLB_HTTP_SERVER        "Enable HTTP Server"            No)
 option(FLB_BACKTRACE          "Enable stacktrace support"    Yes)
 option(FLB_LUAJIT             "Enable Lua Scripting support" Yes)
+option(FLB_SYSTEM_STRPTIME    "Use strptime in system libc"  Yes)
 option(FLB_STATIC_CONF        "Build binary using static configuration")
 option(FLB_CORO_STACK_SIZE    "Set coroutine stack size")
 
@@ -464,6 +465,11 @@ if("${GNU_HOST}" STREQUAL "")
     set(AUTOCONF_HOST_OPT "")
 else()
     set(AUTOCONF_HOST_OPT "--host=${GNU_HOST}")
+endif()
+
+# strptime(2) support
+if (FLB_SYSTEM_STRPTIME)
+  FLB_DEFINITION(FLB_HAVE_SYSTEM_STRPTIME)
 endif()
 
 # Memory Allocator

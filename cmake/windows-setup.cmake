@@ -9,6 +9,9 @@ set(FLB_LUAJIT                Yes)
 set(FLB_EXAMPLES               No)
 set(FLB_PARSER                 No)
 
+# Windows does not support strptime(3)
+set(FLB_SYSTEM_STRPTIME        No)
+
 # INPUT plugins
 # =============
 set(FLB_IN_CPU                 No)
