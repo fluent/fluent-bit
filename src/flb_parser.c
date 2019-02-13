@@ -28,10 +28,10 @@
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_strptime.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <time.h>
 #include <limits.h>
 #include <string.h>
 
