@@ -183,49 +183,49 @@ literal:
 		 */
 		case 'c':	/* Date and time, using the locale's format. */
 			_LEGAL_ALT(_ALT_E);
-			if (!(bp = _flb_strptime(bp, nl_langinfo(D_T_FMT), tm, 0)))
+			if (!(bp = (const unsigned char *)_flb_strptime((const char *)bp, nl_langinfo(D_T_FMT), tm, 0)))
 				return (NULL);
 			break;
 
 		case 'D':	/* The date as "%m/%d/%y". */
 			_LEGAL_ALT(0);
-			if (!(bp = _flb_strptime(bp, "%m/%d/%y", tm, 0)))
+			if (!(bp = (const unsigned char *)_flb_strptime((const char *)bp, "%m/%d/%y", tm, 0)))
 				return (NULL);
 			break;
 
 		case 'F':	/* The date as "%Y-%m-%d". */
 			_LEGAL_ALT(0);
-			if (!(bp = _flb_strptime(bp, "%Y-%m-%d", tm, 0)))
+			if (!(bp = (const unsigned char *)_flb_strptime((const char *)bp, "%Y-%m-%d", tm, 0)))
 				return (NULL);
 			continue;
 
 		case 'R':	/* The time as "%H:%M". */
 			_LEGAL_ALT(0);
-			if (!(bp = _flb_strptime(bp, "%H:%M", tm, 0)))
+			if (!(bp = (const unsigned char *)_flb_strptime((const char *)bp, "%H:%M", tm, 0)))
 				return (NULL);
 			break;
 
 		case 'r':	/* The time as "%I:%M:%S %p". */
 			_LEGAL_ALT(0);
-			if (!(bp = _flb_strptime(bp, "%I:%M:%S %p", tm, 0)))
+			if (!(bp = (const unsigned char *)_flb_strptime((const char *)bp, "%I:%M:%S %p", tm, 0)))
 				return (NULL);
 			break;
 
 		case 'T':	/* The time as "%H:%M:%S". */
 			_LEGAL_ALT(0);
-			if (!(bp = _flb_strptime(bp, "%H:%M:%S", tm, 0)))
+			if (!(bp = (const unsigned char *)_flb_strptime((const char *)bp, "%H:%M:%S", tm, 0)))
 				return (NULL);
 			break;
 
 		case 'X':	/* The time, using the locale's format. */
 			_LEGAL_ALT(_ALT_E);
-			if (!(bp = _flb_strptime(bp, nl_langinfo(T_FMT), tm, 0)))
+			if (!(bp = (const unsigned char *)_flb_strptime((const char *)bp, nl_langinfo(T_FMT), tm, 0)))
 				return (NULL);
 			break;
 
 		case 'x':	/* The date, using the locale's format. */
 			_LEGAL_ALT(_ALT_E);
-			if (!(bp = _flb_strptime(bp, nl_langinfo(D_FMT), tm, 0)))
+			if (!(bp = (const unsigned char *)_flb_strptime((const char *)bp, nl_langinfo(D_FMT), tm, 0)))
 				return (NULL);
 			break;
 
@@ -238,12 +238,12 @@ literal:
 			for (i = 0; i < 7; i++) {
 				/* Full name. */
 				len = strlen(nl_langinfo(list_day[i]));
-				if (strncasecmp(nl_langinfo(list_day[i]), bp, len) == 0)
+				if (strncasecmp(nl_langinfo(list_day[i]), (const char *)bp, len) == 0)
 					break;
 
 				/* Abbreviated name. */
 				len = strlen(nl_langinfo(list_abday[i]));
-				if (strncasecmp(nl_langinfo(list_abday[i]), bp, len) == 0)
+				if (strncasecmp(nl_langinfo(list_abday[i]), (const char *)bp, len) == 0)
 					break;
 			}
 
@@ -263,12 +263,12 @@ literal:
 			for (i = 0; i < 12; i++) {
 				/* Full name. */
 				len = strlen(nl_langinfo(list_mon[i]));
-				if (strncasecmp(nl_langinfo(list_mon[i]), bp, len) == 0)
+				if (strncasecmp(nl_langinfo(list_mon[i]), (const char *)bp, len) == 0)
 					break;
 
 				/* Abbreviated name. */
 				len = strlen(nl_langinfo(list_abmon[i]));
-				if (strncasecmp(nl_langinfo(list_abmon[i]), bp, len) == 0)
+				if (strncasecmp(nl_langinfo(list_abmon[i]), (const char *)bp, len) == 0)
 					break;
 			}
 
@@ -341,7 +341,7 @@ literal:
 			_LEGAL_ALT(0);
 			/* AM? */
 			len = strlen(nl_langinfo(AM_STR));
-			if (strncasecmp(nl_langinfo(AM_STR), bp, len) == 0) {
+			if (strncasecmp(nl_langinfo(AM_STR), (const char *)bp, len) == 0) {
 				if (tm->tm_hour > 12)	/* i.e., 13:00 AM ?! */
 					return (NULL);
 				else if (tm->tm_hour == 12)
@@ -352,7 +352,7 @@ literal:
 			}
 			/* PM? */
 			len = strlen(nl_langinfo(PM_STR));
-			if (strncasecmp(nl_langinfo(PM_STR), bp, len) == 0) {
+			if (strncasecmp(nl_langinfo(PM_STR), (const char *)bp, len) == 0) {
 				if (tm->tm_hour > 12)	/* i.e., 13:00 PM ?! */
 					return (NULL);
 				else if (tm->tm_hour < 12)
