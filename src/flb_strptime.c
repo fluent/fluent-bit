@@ -532,7 +532,7 @@ literal:
 				ep = _find_string(bp, &i, nast, NULL, 4);
 				if (ep != NULL) {
 #ifdef FLB_HAVE_GMTOFF
-					tm->TM_GMTOFF = -5 - i;
+					tm->TM_GMTOFF = (-5 - i) * 3600;
 #endif
 #ifdef FLB_HAVE_ZONE
 					tm->TM_ZONE = (char *)nast[i];
@@ -544,7 +544,7 @@ literal:
 				if (ep != NULL) {
 					tm->tm_isdst = 1;
 #ifdef FLB_HAVE_GMTOFF
-					tm->TM_GMTOFF = -4 - i;
+					tm->TM_GMTOFF = (-4 - i) * 3600;
 #endif
 #ifdef FLB_HAVE_ZONE
 					tm->TM_ZONE = (char *)nadt[i];
@@ -559,11 +559,11 @@ literal:
 					/* Argh! No 'J'! */
 					if (*bp >= 'A' && *bp <= 'I')
 						tm->TM_GMTOFF =
-						    ('A' - 1) - (int)*bp;
+						    (('A' - 1) - (int)*bp) * 3600;
 					else if (*bp >= 'L' && *bp <= 'M')
-						tm->TM_GMTOFF = 'A' - (int)*bp;
+						tm->TM_GMTOFF = ('A' - (int)*bp) * 3600;
 					else if (*bp >= 'N' && *bp <= 'Y')
-						tm->TM_GMTOFF = (int)*bp - 'M';
+						tm->TM_GMTOFF = ((int)*bp - 'M') * 3600;
 #endif
 #ifdef FLB_HAVE_ZONE
 					tm->TM_ZONE = NULL; /* XXX */
@@ -588,14 +588,14 @@ literal:
 			}
 			switch (i) {
 			case 2:
-				offs *= 100;
+				offs *= 3600;
 				break;
 			case 4:
 				i = offs % 100;
 				if (i >= 60)
 					return NULL;
-				/* Convert minutes into decimal */
-				offs = (offs / 100) * 100 + (i * 50) / 30;
+				/* Convert hours/minutes into seconds */
+				offs = (offs / 100) * 3600 + i * 60;
 				break;
 			default:
 				return NULL;
