@@ -553,7 +553,15 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         }
     }
 
+#ifdef _MSC_VER
+    /*
+     * We need O_BINARY here in order to avoid count errors due to
+     * Windows treating '\r\n' as 1 byte in text mode.
+     */
+    fd = _open(path, _O_RDONLY | _O_BINARY);
+#else
     fd = open(path, O_RDONLY);
+#endif
     if (fd == -1) {
         flb_errno();
         flb_error("[in_tail] could not open %s", path);
