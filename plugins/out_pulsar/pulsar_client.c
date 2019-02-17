@@ -49,7 +49,8 @@ struct flb_pulsar_client *flb_pulsar_client_create(struct flb_output_instance
     char *service_url =
         flb_malloc(13 + strlen(ins->host.name) +
                    ceil(log10(ins->host.port)) + 1);
-    sprintf(service_url, "pulsar%s://%s:%d", (ins->use_tls ? "+ssl" : ""), ins->host.name, ins->host.port);
+    sprintf(service_url, "pulsar%s://%s:%d", (ins->use_tls ? "+ssl" : ""),
+            ins->host.name, ins->host.port);
     client->client = pulsar_client_create(service_url, client->client_config);
     flb_free(service_url);
 
@@ -100,7 +101,9 @@ pulsar_result flb_pulsar_client_produce_message(struct flb_pulsar_client *
                                                 client,
                                                 pulsar_message_t * msg)
 {
-    return pulsar_producer_send(client->producer, msg);
+    pulsar_result result = pulsar_producer_send(client->producer, msg);
+    pulsar_message_free(msg);
+    return result;
 }
 
 
@@ -113,7 +116,8 @@ int flb_pulsar_client_destroy(struct flb_pulsar_client *client)
         }
 
         if (client->producer_config) {
-            flb_pulsar_config_producer_config_destroy(client->producer_config);
+            flb_pulsar_config_producer_config_destroy(client->
+                                                      producer_config);
         }
 
         if (client->client) {

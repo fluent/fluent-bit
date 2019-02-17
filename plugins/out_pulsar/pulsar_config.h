@@ -26,16 +26,19 @@
 #include <pulsar/c/client.h>
 
 pulsar_producer_configuration_t
-    * flb_pulsar_config_producer_config_create(struct flb_output_instance *
-                                              const ins);
+    *
+flb_pulsar_config_producer_config_create(struct flb_output_instance *const
+                                         ins);
 
 pulsar_client_configuration_t *flb_pulsar_config_client_config_create(struct
-                                                                     flb_output_instance
-                                                                     *const
-                                                                     ins);
+                                                                      flb_output_instance
+                                                                      *const
+                                                                      ins);
 
-void flb_pulsar_config_producer_config_destroy(pulsar_producer_configuration_t *cfg);
+void flb_pulsar_config_producer_config_destroy(pulsar_producer_configuration_t
+                                               * cfg);
 
-void flb_pulsar_config_client_config_destroy(pulsar_client_configuration_t *cfg);
+void flb_pulsar_config_client_config_destroy(pulsar_client_configuration_t *
+                                             cfg);
 
 #endif

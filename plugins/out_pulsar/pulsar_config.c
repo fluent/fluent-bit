@@ -31,8 +31,9 @@ static pulsar_compression_type convert_compression_setting_to_pulsar_enum(char
                                                                           value);
 
 pulsar_producer_configuration_t
-    * flb_pulsar_config_producer_config_create(struct flb_output_instance *
-                                              const ins)
+    *
+flb_pulsar_config_producer_config_create(struct flb_output_instance *const
+                                         ins)
 {
     pulsar_producer_configuration_t *cfg =
         pulsar_producer_configuration_create();
@@ -88,16 +89,13 @@ pulsar_producer_configuration_t
 static char *normalize_auth_method(char *const value);
 
 static void log_pulsar_msg(pulsar_logger_level_t level,
-                           const char* file,
-                           int line,
-                           const char* msg,
-                           void *ctx);
+                           const char *file,
+                           int line, const char *msg, void *ctx);
 
 pulsar_client_configuration_t *flb_pulsar_config_client_config_create(struct
-                                                                     flb_output_instance
-                                                                     *
-                                                                     const
-                                                                     ins)
+                                                                      flb_output_instance
+                                                                      *const
+                                                                      ins)
 {
     pulsar_client_configuration_t *cfg = pulsar_client_configuration_create();
 
@@ -135,12 +133,10 @@ pulsar_client_configuration_t *flb_pulsar_config_client_config_create(struct
     if (ins->use_tls) {
         pulsar_client_configuration_set_use_tls(cfg, 1);
         pulsar_client_configuration_set_tls_allow_insecure_connection(cfg,
-                                                                      !ins->
-                                                                      tls_verify);
+                                                                      !ins->tls_verify);
         if (ins->tls_ca_file) {
             pulsar_client_configuration_set_tls_trust_certs_file_path(cfg,
-                                                                      ins->
-                                                                      tls_ca_file);
+                                                                      ins->tls_ca_file);
         }
     }
 
@@ -148,14 +144,16 @@ pulsar_client_configuration_t *flb_pulsar_config_client_config_create(struct
 
 }
 
-void flb_pulsar_config_producer_config_destroy(pulsar_producer_configuration_t *cfg)
+void flb_pulsar_config_producer_config_destroy(pulsar_producer_configuration_t
+                                               * cfg)
 {
     if (cfg) {
         pulsar_producer_configuration_free(cfg);
     }
 }
 
-void flb_pulsar_config_client_config_destroy(pulsar_client_configuration_t *cfg)
+void flb_pulsar_config_client_config_destroy(pulsar_client_configuration_t *
+                                             cfg)
 {
     if (cfg) {
         pulsar_client_configuration_free(cfg);
@@ -203,15 +201,13 @@ static char *normalize_auth_method(char *const value)
 }
 
 static void log_pulsar_msg(pulsar_logger_level_t level,
-                           const char* file,
-                           int line,
-                           const char* msg,
-                           void *unused)
+                           const char *file,
+                           int line, const char *msg, void *unused)
 {
 #if FLB_LOG_DEBUG == 4 && FLB_LOG_ERROR == 1
     int flb_log_level = FLB_LOG_DEBUG - level;
 #else
-    #error "log_pulsar_msg: Log level conversion code expectations unmet."
+#error "log_pulsar_msg: Log level conversion code expectations unmet."
 #endif
 
     if (flb_log_check(flb_log_level)) {

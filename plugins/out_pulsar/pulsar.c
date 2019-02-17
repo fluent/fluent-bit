@@ -57,6 +57,7 @@ static int produce_message(struct flb_time *tm, msgpack_object * map,
     const size_t INITIAL_BUFFER_ALLOCATION = 1024;
     char *const out_buf =
         flb_msgpack_to_json_str(INITIAL_BUFFER_ALLOCATION, map);
+    int result = FLB_ERROR;
 
     if (!out_buf) {
         flb_error("[out_pulsar] error encoding to JSON");
@@ -65,15 +66,27 @@ static int produce_message(struct flb_time *tm, msgpack_object * map,
 
     pulsar_message_t *msg = pulsar_message_create();
     pulsar_message_set_content(msg, out_buf, strlen(out_buf));
-    if (ctx->publish_fn(ctx, msg) != pulsar_result_Ok) {
-        flb_free(out_buf);
-        pulsar_message_free(msg);
-        return FLB_ERROR;
+
+    pulsar_result publish_result = ctx->publish_fn(ctx, msg);
+    switch (publish_result) {
+    case pulsar_result_Ok:
+        result = FLB_OK;
+        break;
+    case pulsar_result_Timeout:
+    case pulsar_result_ProducerBlockedQuotaExceededException:
+    case pulsar_result_ProducerBlockedQuotaExceededError:
+        flb_warn("[out_pulsar] Message failed to send due to %s; will retry.",
+                 pulsar_result_str(publish_result));
+        result = FLB_RETRY;
+        break;
+    default:
+        flb_error("[out_pulsar] Message failed due to %s.",
+                  pulsar_result_str(publish_result));
+        break;
     }
 
     flb_free(out_buf);
-    pulsar_message_free(msg);
-    return FLB_OK;
+    return result;
 }
 
 static void cb_pulsar_flush(void *data, size_t bytes,
@@ -81,7 +94,7 @@ static void cb_pulsar_flush(void *data, size_t bytes,
                             struct flb_input_instance *i_ins,
                             void *out_context, struct flb_config *config)
 {
-    int ret;
+    int ret = FLB_OK;
     size_t off = 0;
     struct flb_pulsar_context *ctx = out_context;
     struct flb_time tms;
@@ -93,18 +106,13 @@ static void cb_pulsar_flush(void *data, size_t bytes,
         flb_time_pop_from_msgpack(&tms, &result, &obj);
 
         ret = produce_message(&tms, obj, ctx, config);
-        if (ret == FLB_ERROR) {
-            msgpack_unpacked_destroy(&result);
-            FLB_OUTPUT_RETURN(FLB_ERROR);
-        }
-        else if (ret == FLB_RETRY) {
-            msgpack_unpacked_destroy(&result);
-            FLB_OUTPUT_RETURN(FLB_RETRY);
+        if (ret != FLB_OK) {
+            break;
         }
     }
 
     msgpack_unpacked_destroy(&result);
-    FLB_OUTPUT_RETURN(FLB_OK);
+    FLB_OUTPUT_RETURN(ret);
 }
 
 static int cb_pulsar_exit(void *data, struct flb_config *config)
