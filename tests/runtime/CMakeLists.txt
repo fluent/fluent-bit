@@ -72,9 +72,11 @@ foreach(source_file ${CHECK_PROGRAMS})
   if(FLB_WITHOUT_${source_file_we})
     message("Skipping test ${source_file_we}")
   else()
+    file(GLOB helpers helpers/${o_source_file_we}/*.c*)
     add_executable(
       ${source_file_we}
       ${source_file}
+      ${helpers}
       )
     add_sanitizers(${source_file_we})
     target_link_libraries(${source_file_we}
