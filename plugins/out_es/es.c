@@ -136,6 +136,7 @@ static char *elasticsearch_format(void *data, size_t bytes,
     char *es_index;
     char logstash_index[256];
     char time_formatted[256];
+    char index_formatted[256];
     char es_uuid[37];
     msgpack_unpacked result;
     msgpack_object root;
@@ -187,19 +188,43 @@ static char *elasticsearch_format(void *data, size_t bytes,
     msgpack_unpacked_destroy(&result);
     msgpack_unpacked_init(&result);
 
+    /* Copy logstash prefix if logstash format is enabled */
     if (ctx->logstash_format == FLB_TRUE) {
         memcpy(logstash_index, ctx->logstash_prefix, ctx->logstash_prefix_len);
         logstash_index[ctx->logstash_prefix_len] = '\0';
     }
 
-    /* If logstash format and id generation is disabled, pre-generate index line for all records. */
+    /*
+     * If logstash format and id generation are disabled, pre-generate
+     * the index line for all records.
+     *
+     * The header stored in 'j_index' will be used for the all records on
+     * this payload.
+     */
     if (ctx->logstash_format == FLB_FALSE && ctx->generate_id == FLB_FALSE) {
+        flb_time_get(&tms);
+        gmtime_r(&tms.tm.tv_sec, &tm);
+        s = strftime(index_formatted, sizeof(index_formatted) - 1,
+                     ctx->index, &tm);
+        es_index = index_formatted;
+
         index_len = snprintf(j_index,
                              ES_BULK_HEADER,
                              ES_BULK_INDEX_FMT,
-                             ctx->index, ctx->type);
+                             es_index, ctx->type);
     }
 
+    /*
+     * Some broken clients may have time drift up to year 1970
+     * this will generate corresponding index in Elasticsearch
+     * in order to prevent generating millions of indexes
+     * we can set to always use current time for index generation
+     */
+    if (ctx->current_time_index == FLB_TRUE) {
+        flb_time_get(&tms);
+    }
+
+    /* Iterate each record and do further formatting */
     while (msgpack_unpack_next(&result, data, bytes, &off)) {
         if (result.data.type != MSGPACK_OBJECT_ARRAY) {
             continue;
@@ -211,12 +236,16 @@ static char *elasticsearch_format(void *data, size_t bytes,
             continue;
         }
 
+        /* Only pop time from record if current_time_index is disabled */
+        if (ctx->current_time_index == FLB_FALSE) {
+            flb_time_pop_from_msgpack(&tms, &result, &obj);
+        }
+
         /*
          * Timestamp: Elasticsearch only support fractional seconds in
          * milliseconds unit, not nanoseconds, so we take our nsec value and
          * change it representation.
          */
-        flb_time_pop_from_msgpack(&tms, &result, &obj);
         tms.tm.tv_nsec = (tms.tm.tv_nsec / 1000000);
 
         map   = root.via.array.ptr[1];
@@ -267,6 +296,12 @@ static char *elasticsearch_format(void *data, size_t bytes,
                                      es_index, ctx->type);
             }
         }
+        else if (ctx->current_time_index == FLB_TRUE) {
+            /* Make sure we handle index time format for index */
+            s = strftime(index_formatted, sizeof(index_formatted) - 1,
+                         ctx->index, &tm);
+            es_index = index_formatted;
+        }
 
         /* Tag Key */
         if (ctx->include_tag_key == FLB_TRUE) {
@@ -287,8 +322,10 @@ static char *elasticsearch_format(void *data, size_t bytes,
 
         if (ctx->generate_id == FLB_TRUE) {
             MurmurHash3_x64_128(tmp_sbuf.data, tmp_sbuf.size, 42, hash);
-            snprintf(es_uuid, sizeof(es_uuid), "%04x%04x-%04x-%04x-%04x-%04x%04x%04x",
-                     hash[0], hash[1], hash[2], hash[3], hash[4], hash[5], hash[6], hash[7]);
+            snprintf(es_uuid, sizeof(es_uuid),
+                     "%04x%04x-%04x-%04x-%04x-%04x%04x%04x",
+                     hash[0], hash[1], hash[2], hash[3],
+                     hash[4], hash[5], hash[6], hash[7]);
             index_len = snprintf(j_index,
                                  ES_BULK_HEADER,
                                  ES_BULK_INDEX_FMT_ID,
@@ -305,7 +342,6 @@ static char *elasticsearch_format(void *data, size_t bytes,
             return NULL;
         }
 
-        /* Append JSON on Index buf */
         ret = es_bulk_append(bulk, j_index, index_len, json_buf, json_size);
         flb_free(json_buf);
         if (ret == -1) {

@@ -59,6 +59,7 @@ struct flb_elasticsearch {
     /* enabled/disabled */
     int logstash_format;
     int generate_id;
+    int current_time_index;
 
     /* prefix */
     int logstash_prefix_len;
