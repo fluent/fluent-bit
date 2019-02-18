@@ -48,6 +48,10 @@
 #include <fluent-bit/flb_metrics_exporter.h>
 #endif
 
+#ifdef FLB_HAVE_STREAM_PROCESSOR
+#include <fluent-bit/stream_processor/flb_sp.h>
+#endif
+
 int flb_engine_destroy_tasks(struct mk_list *tasks)
 {
     int c = 0;
@@ -459,8 +463,16 @@ int flb_engine_start(struct flb_config *config)
     }
 #endif
 
+#ifdef FLB_HAVE_STREAM_PROCESSOR
+    config->stream_processor_ctx = flb_sp_create(config);
+    if (!config->stream_processor_ctx) {
+        flb_error("[engine] could not initialize stream processor");
+    }
+#endif
+
     /* Signal that we have started */
     flb_engine_started(config);
+
 
     while (1) {
         mk_event_wait(evl);
@@ -537,9 +549,14 @@ int flb_engine_shutdown(struct flb_config *config)
     flb_input_exit_all(config);
     flb_output_exit(config);
 
+#ifdef FLB_HAVE_STREAM_PROCESSOR
+    if (config->stream_processor_ctx) {
+        flb_sp_destroy(config->stream_processor_ctx);
+    }
+#endif
+
     /* Destroy the storage context */
     flb_storage_destroy(config);
-
 
     /* metrics */
 #ifdef FLB_HAVE_METRICS

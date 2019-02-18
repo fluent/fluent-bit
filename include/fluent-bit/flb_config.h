@@ -168,6 +168,11 @@ struct flb_config {
     struct mk_list luajit_list;
 #endif
 
+#ifdef FLB_HAVE_STREAM_PROCESSOR
+    char *stream_processor_file;       /* SP configuration file */
+    void *stream_processor_ctx;        /* SP context */
+#endif
+
     /* Co-routines */
     unsigned int coro_stack_size;
 
@@ -207,13 +212,14 @@ enum conf_type {
     FLB_CONF_TYPE_OTHER,
 };
 
-#define FLB_CONF_STR_FLUSH           "Flush"
-#define FLB_CONF_STR_GRACE           "Grace"
-#define FLB_CONF_STR_DAEMON          "Daemon"
-#define FLB_CONF_STR_LOGFILE         "Log_File"
-#define FLB_CONF_STR_LOGLEVEL        "Log_Level"
-#define FLB_CONF_STR_PARSERS_FILE    "Parsers_File"
-#define FLB_CONF_STR_PLUGINS_FILE    "Plugins_File"
+#define FLB_CONF_STR_FLUSH        "Flush"
+#define FLB_CONF_STR_GRACE        "Grace"
+#define FLB_CONF_STR_DAEMON       "Daemon"
+#define FLB_CONF_STR_LOGFILE      "Log_File"
+#define FLB_CONF_STR_LOGLEVEL     "Log_Level"
+#define FLB_CONF_STR_PARSERS_FILE "Parsers_File"
+#define FLB_CONF_STR_PLUGINS_FILE "Plugins_File"
+#define FLB_CONF_STR_STREAMS_FILE "Streams_File"
 
 /* FLB_HAVE_HTTP_SERVER */
 #ifdef FLB_HAVE_HTTP_SERVER
