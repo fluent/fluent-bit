@@ -64,7 +64,7 @@ int flb_parser_json_do(struct flb_parser *parser,
 
     /* Make sure object is a map */
     msgpack_unpacked_init(&result);
-    if (msgpack_unpack_next(&result, mp_buf, mp_size, &off)) {
+    if (msgpack_unpack_next(&result, mp_buf, mp_size, &off) == MSGPACK_UNPACK_SUCCESS) {
         map = result.data;
         if (map.type != MSGPACK_OBJECT_MAP) {
             flb_free(mp_buf);
