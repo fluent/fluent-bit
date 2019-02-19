@@ -34,6 +34,8 @@
 struct flb_in_exec_config {
     char  *cmd;
     struct flb_parser  *parser;
+    char *buf;
+    size_t buf_size;
 };
 
 extern struct flb_input_plugin in_exec_plugin;
