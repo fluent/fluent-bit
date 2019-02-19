@@ -1213,6 +1213,19 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
                 level_key_found = FLB_TRUE;
                 key = "level";
                 key_len = 5;
+                if (v->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
+                        if ( v->via.u64 > 7 ) {
+                            flb_error("[flb_msgpack_to_gelf] level is %" PRIu64 ", but should be in 0..6", v->via.u64);
+                            return NULL;
+                        }
+                } else if (v->type == MSGPACK_OBJECT_STR){
+                    val     = (char *) v->via.str.ptr;
+                    val_len = v->via.str.size;
+                    if ( val_len != 1 || val[0] < '0' || val[0] > '6' ) {
+                            flb_error("[flb_msgpack_to_gelf] level is '%s', but should be in 0..6", val);
+                            return NULL;
+                    }
+                }
             }
             else if ((key_len == full_message_key_len) &&
                      !strncmp(key, full_message_key, full_message_key_len)) {
