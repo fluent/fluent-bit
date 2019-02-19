@@ -150,6 +150,11 @@ static char *elasticsearch_format(void *data, size_t bytes,
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
     uint16_t hash[8];
+    const char *es_index_custom;
+    int es_index_custom_len;
+    int i;
+    msgpack_object key;
+    msgpack_object val;
 
     /* Iterate the original buffer and perform adjustments */
     msgpack_unpacked_init(&result);
@@ -250,6 +255,34 @@ static char *elasticsearch_format(void *data, size_t bytes,
         map   = root.via.array.ptr[1];
         map_size = map.via.map.size;
 
+        es_index_custom_len = 0;
+        if (ctx->logstash_prefix_key_len != 0) {
+            for (i = 0; i < map_size; i++) {
+                key = map.via.map.ptr[i].key;
+                if (key.type != MSGPACK_OBJECT_STR) {
+                    continue;
+                }
+                if (key.via.str.size != ctx->logstash_prefix_key_len) {
+                    continue;
+                }
+                if (strncmp(key.via.str.ptr, ctx->logstash_prefix_key, ctx->logstash_prefix_key_len) != 0) {
+                    continue;
+                }
+                val = map.via.map.ptr[i].val;
+                if (val.type != MSGPACK_OBJECT_STR) {
+                    continue;
+                }
+                if (val.via.str.size >= 128) {
+                    continue;
+                }
+                es_index_custom = val.via.str.ptr;
+                es_index_custom_len = val.via.str.size;
+                memcpy(logstash_index, es_index_custom, es_index_custom_len);
+                logstash_index[es_index_custom_len] = '\0';
+                break;
+            }
+        }
+
         /* Create temporal msgpack buffer */
         msgpack_sbuffer_init(&tmp_sbuf);
         msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
@@ -279,7 +312,11 @@ static char *elasticsearch_format(void *data, size_t bytes,
         es_index = ctx->index;
         if (ctx->logstash_format == FLB_TRUE) {
             /* Compose Index header */
-            p = logstash_index + ctx->logstash_prefix_len;
+            if (es_index_custom_len > 0) {
+                p = logstash_index + es_index_custom_len;
+            } else {
+                p = logstash_index + ctx->logstash_prefix_len;
+            }
             *p++ = '-';
 
             len = p - logstash_index;
