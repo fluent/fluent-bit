@@ -65,6 +65,10 @@ struct flb_elasticsearch {
     int logstash_prefix_len;
     char *logstash_prefix;
 
+    /* prefix key */
+    int logstash_prefix_key_len;
+    char *logstash_prefix_key;
+
     /* date format */
     int logstash_dateformat_len;
     char *logstash_dateformat;
