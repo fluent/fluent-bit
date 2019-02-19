@@ -68,7 +68,7 @@ int azure_format(void *in_buf, size_t in_bytes,
 
     /* Count number of items */
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, in_buf, in_bytes, &off)) {
+    while (msgpack_unpack_next(&result, in_buf, in_bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         array_size++;
     }
     msgpack_unpacked_destroy(&result);
@@ -80,7 +80,7 @@ int azure_format(void *in_buf, size_t in_bytes,
     msgpack_pack_array(&mp_pck, array_size);
 
     off = 0;
-    while (msgpack_unpack_next(&result, in_buf, in_bytes, &off)) {
+    while (msgpack_unpack_next(&result, in_buf, in_bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         root = result.data;
 
         /* Get timestamp */

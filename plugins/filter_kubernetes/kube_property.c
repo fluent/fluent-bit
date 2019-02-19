@@ -234,7 +234,7 @@ int flb_kube_prop_unpack(struct flb_kube_props *props, char *buf, size_t size)
 
     msgpack_unpacked_init(&result);
     ret = msgpack_unpack_next(&result, buf, size, &off);
-    if (ret == -1) {
+    if (ret == MSGPACK_UNPACK_PARSE_ERROR) {
         msgpack_unpacked_destroy(&result);
         return -1;
     }

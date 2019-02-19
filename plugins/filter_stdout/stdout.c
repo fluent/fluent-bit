@@ -54,7 +54,7 @@ static int cb_stdout_filter(void *data, size_t bytes,
     msgpack_object *p;
 
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         printf("[%zd] %s: [", cnt++, tag);
         flb_time_pop_from_msgpack(&tmp, &result, &p);
         printf("%"PRIu32".%09lu, ", (uint32_t)tmp.tm.tv_sec, tmp.tm.tv_nsec);

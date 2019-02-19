@@ -373,7 +373,7 @@ int flb_tail_mult_flush(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
     msgpack_unpacked_init(&result);
     msgpack_unpacked_init(&cont);
 
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         root = result.data;
         if (root.type != MSGPACK_OBJECT_MAP) {
             continue;
@@ -389,7 +389,7 @@ int flb_tail_mult_flush(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
             /* Always check if the 'next' entry is a continuation */
             total = 0;
             if (i + 1 == root.via.map.size) {
-                while (msgpack_unpack_next(&cont, data, bytes, &next_off)) {
+                while (msgpack_unpack_next(&cont, data, bytes, &next_off) == MSGPACK_UNPACK_SUCCESS) {
                     next = cont.data;
                     if (next.type != MSGPACK_OBJECT_STR) {
                         break;
@@ -410,7 +410,7 @@ int flb_tail_mult_flush(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                  * value field.
                  */
                 next_off = off;
-                while (msgpack_unpack_next(&cont, data, bytes, &next_off)) {
+                while (msgpack_unpack_next(&cont, data, bytes, &next_off) == MSGPACK_UNPACK_SUCCESS) {
                     next = cont.data;
                     if (next.type != MSGPACK_OBJECT_STR) {
                         break;

@@ -65,7 +65,7 @@ static char *kafka_rest_format(void *data, size_t bytes,
     msgpack_unpacked_init(&result);
 
     /* Count number of entries */
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         arr_size++;
     }
     msgpack_unpacked_destroy(&result);
@@ -80,7 +80,7 @@ static char *kafka_rest_format(void *data, size_t bytes,
 
     /* Iterate and compose array content */
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         root = result.data;
 
         map = root.via.array.ptr[1];
