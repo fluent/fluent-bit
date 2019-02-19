@@ -145,7 +145,7 @@ static void try_to_convert_data_type(struct lua_filter *lf,
             l2c = mk_list_entry(head, struct l2c_type, _head);
             if (!strncmp(l2c->key, tmp, len)) {
                 lua_tomsgpack(lf, pck, -1);
-                msgpack_pack_int64(pck, (int)lua_tonumber(l, -1));
+                msgpack_pack_int64(pck, (int64_t)lua_tonumber(l, -1));
                 return;
             }
         }

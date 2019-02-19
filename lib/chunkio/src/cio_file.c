@@ -577,8 +577,10 @@ int cio_file_write_metadata(struct cio_chunk *ch, char *buf, size_t size)
         new_size = (size - meta_av) + cf->data_size + CIO_FILE_HEADER_MIN;
         /* OSX mman does not implement mremap or MREMAP_MAYMOVE. */
 #ifndef MREMAP_MAYMOVE
-        if (munmap(cf->data_size, size) == -1)
+        if (munmap(cf->map, cf->alloc_size) == -1) {
+            cio_errno();
             return -1;
+        }
         tmp = mmap(0, new_size, PROT_READ | PROT_WRITE, MAP_SHARED, cf->fd, 0);
 #else
         /* Increase memory map size */

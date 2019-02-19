@@ -18,30 +18,18 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_PIPE_H
-#define FLB_PIPE_H
+#ifndef FLB_STRPTIME_H
+#define FLB_STRPTIME_H
 
-#include <fluent-bit/flb_compat.h>
-
-#ifdef _WIN32
-#include <event.h>
-#define flb_pipefd_t evutil_socket_t
-#define flb_sockfd_t evutil_socket_t
-#define flb_pipe_w(fd, buf, len) send(fd, buf, len, 0)
-#define flb_pipe_r(fd, buf, len) recv(fd, buf, len, 0)
-#else
-#define flb_pipefd_t int
-#define flb_sockfd_t int
-#define flb_pipe_w(fd, buf, len) write(fd, buf, len)
-#define flb_pipe_r(fd, buf, len) read(fd, buf, len)
+/* Load system strptime(3) */
+#ifndef _XOPEN_SOURCE
+#define _XOPEN_SOURCE
 #endif
+#include <time.h>
 
-int flb_pipe_create(flb_pipefd_t pipefd[2]);
-void flb_pipe_destroy(flb_pipefd_t pipefd[2]);
-int flb_pipe_close(flb_pipefd_t fd);
-int flb_pipe_set_nonblocking(flb_pipefd_t fd);
-int flb_pipe_check_eagain(void);
-ssize_t flb_pipe_read_all(int fd, void *buf, size_t count);
-ssize_t flb_pipe_write_all(int fd, void *buf, size_t count);
-
+/* Override strptime if requested */
+#ifndef FLB_HAVE_SYSTEM_STRPTIME
+extern char *flb_strptime(const char *s, const char *format, struct tm *tm);
+#define strptime flb_strptime
+#endif
 #endif

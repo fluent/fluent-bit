@@ -28,10 +28,10 @@
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_strptime.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <time.h>
 #include <limits.h>
 #include <string.h>
 
@@ -411,7 +411,7 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
     struct mk_rconf_section *section;
     struct mk_list *head;
     struct stat st;
-    struct flb_parser_types *types;
+    struct flb_parser_types *types = NULL;
     struct mk_list *decoders;
 
 #ifndef FLB_HAVE_STATIC_CONF

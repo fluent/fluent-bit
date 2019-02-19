@@ -26,11 +26,15 @@
 
 /* Windows compatibility utils */
 #ifdef _MSC_VER
-#define PATH_MAX MAX_PATH
-
 #define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
 #include <windows.h>
+
+#define PATH_MAX MAX_PATH
+#define S_ISREG(m) (((m) & S_IFMT) == S_IFREG)
+#define timezone _timezone
+#define tzname _tzname
+#define strncasecmp _strnicmp
 
 static inline int getpagesize(void)
 {
@@ -44,6 +48,26 @@ static inline struct tm *gmtime_r(const time_t *timep, struct tm *result)
     if (gmtime_s(result, timep))
         return NULL;
     return result;
+}
+
+static inline time_t timegm(struct tm *tm)
+{
+    return _mkgmtime(tm);
+}
+
+static inline char* basename(const char *path)
+{
+    char drive[_MAX_DRIVE];
+    char dir[_MAX_DIR];
+    char fname[_MAX_FNAME];
+    char ext[_MAX_EXT];
+    static char buf[_MAX_PATH];
+
+    _splitpath_s(path, drive, _MAX_DRIVE, dir, _MAX_DIR,
+                       fname, _MAX_FNAME, ext, _MAX_EXT);
+
+    _makepath_s(buf, _MAX_PATH, "", "", fname, ext);
+    return buf;
 }
 
 /* mk_utils.c exposes localtime_r */

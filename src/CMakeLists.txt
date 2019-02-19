@@ -143,6 +143,13 @@ if(FLB_STATIC_CONF)
     )
 endif()
 
+if(NOT FLB_SYSTEM_STRPTIME)
+  set(src
+    ${src}
+    "flb_strptime.c"
+    )
+endif()
+
 include(CheckSymbolExists)
 check_symbol_exists(accept4 "sys/socket.h" HAVE_ACCEPT4)
 

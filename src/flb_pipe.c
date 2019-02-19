@@ -27,11 +27,12 @@
  * This file aims to wrap around the required backend calls depending
  * of the operating system.
  *
- * This file provides 3 interfaces:
+ * This file provides 4 interfaces:
  *
- * - flb_pipe_create : create a pair of connected file descriptors or sockets.
- * - flb_pipe_destroy: destroy a pair of connected fds or sockets.
- * - flb_pipe_close  : close individual end of a pipe.
+ * - flb_pipe_create          : create a pair of connected file descriptors or sockets.
+ * - flb_pipe_destroy         : destroy a pair of connected fds or sockets.
+ * - flb_pipe_close           : close individual end of a pipe.
+ * - flb_pipe_set_nonblocking : make a socket nonblocking
  *
  * we need to have a 'closer' handler because for Windows a file descriptor
  * is not a socket.
@@ -73,10 +74,21 @@ int flb_pipe_close(flb_pipefd_t fd)
     return evutil_closesocket(fd);
 }
 
+int flb_pipe_set_nonblocking(flb_pipefd_t fd)
+{
+    return evutil_make_socket_nonblocking(fd);
+}
+
+int flb_pipe_check_eagain(void)
+{
+    return WSAGetLastError() == WSAEWOULDBLOCK;
+}
+
 #else
 /* All other flavors of Unix/BSD are OK */
 
 #include <stdint.h>
+#include <fcntl.h>
 
 int flb_pipe_create(flb_pipefd_t pipefd[2])
 {
@@ -94,6 +106,20 @@ int flb_pipe_close(flb_pipefd_t fd)
     return close(fd);
 }
 
+int flb_pipe_set_nonblocking(flb_pipefd_t fd)
+{
+    int flags = fcntl(fd, F_GETFL);
+    if (flags < 0)
+        return -1;
+    if (flags & O_NONBLOCK)
+        return 0;
+    return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+}
+
+int flb_pipe_check_eagain(void)
+{
+    return errno == EAGAIN || errno == EWOULDBLOCK;
+}
 #endif
 
 /* Blocking read until receive 'count' bytes */
