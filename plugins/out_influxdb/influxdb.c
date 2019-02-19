@@ -127,7 +127,7 @@ static char *influxdb_format(char *tag, int tag_len,
     off = 0;
     msgpack_unpacked_destroy(&result);
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         if (result.data.type != MSGPACK_OBJECT_ARRAY) {
             continue;
         }

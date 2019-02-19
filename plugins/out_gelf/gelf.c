@@ -283,7 +283,7 @@ void cb_gelf_flush(void *data, size_t bytes,
 
     msgpack_unpacked_init(&result);
 
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         size = off - prev_off;
         prev_off = off;
         if (result.data.type != MSGPACK_OBJECT_ARRAY) {

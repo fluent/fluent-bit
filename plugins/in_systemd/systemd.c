@@ -146,7 +146,11 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
         }
 
         /* Set time */
-        sd_journal_get_realtime_usec(ctx->j, &usec);
+        ret = sd_journal_get_realtime_usec(ctx->j, &usec);
+        if (ret != 0) {
+            flb_error("[in_systemd] error reading from systemd journal. sd_journal_get_realtime_usec() return value '%s'", ret);
+            break;
+        }
         sec = usec / 1000000;
         nsec = (usec % 1000000) * 1000;
         flb_time_set(&tm, sec, nsec);
@@ -188,7 +192,7 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
 
         /* Pack every field in the entry */
         entries = 0;
-        while (sd_journal_enumerate_data(ctx->j, &data, &length) &&
+        while (sd_journal_enumerate_data(ctx->j, &data, &length) > 0 &&
                entries < ctx->max_fields) {
             key = (char *) data;
             sep = strchr(key, '=');

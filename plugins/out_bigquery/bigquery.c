@@ -328,7 +328,7 @@ static int bigquery_format(void *data, size_t bytes,
 
     /* Count number of records */
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         array_size++;
     }
     msgpack_unpacked_destroy(&result);
@@ -359,7 +359,7 @@ static int bigquery_format(void *data, size_t bytes,
     msgpack_pack_array(&mp_pck, array_size);
 
     off = 0;
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         /* Get timestamp */
         flb_time_pop_from_msgpack(&tms, &result, &obj);
 

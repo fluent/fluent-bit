@@ -275,7 +275,7 @@ static int cb_modifier_filter(void *data, size_t bytes,
 
     /* Iterate each item to know map number */
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         map_num = 0;
         removed_map_num = 0;
         if (result.data.type != MSGPACK_OBJECT_ARRAY) {

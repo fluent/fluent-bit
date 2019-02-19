@@ -402,7 +402,7 @@ static int cb_lua_filter(void *data, size_t bytes,
     msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         msgpack_packer data_pck;
         msgpack_sbuffer data_sbuf;
 

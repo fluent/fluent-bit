@@ -54,7 +54,7 @@ static inline int pack_json(msgpack_packer *mp_pck,
     /* Queue the data with time field */
     msgpack_unpacked_init(&result);
 
-    while (msgpack_unpack_next(&result, data, data_size, &off)) {
+    while (msgpack_unpack_next(&result, data, data_size, &off) == MSGPACK_UNPACK_SUCCESS) {
         if (result.data.type == MSGPACK_OBJECT_MAP) {
             /* { map => val, map => val, map => val } */
             msgpack_pack_array(mp_pck, 2);
