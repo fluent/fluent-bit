@@ -255,7 +255,7 @@ void flb_tail_dmode_flush(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
     size_t repl_line_len = 0;
     void *out_buf = NULL;
     size_t out_size;
-    struct flb_time out_time = {};
+    struct flb_time out_time = {0};
     time_t now = time(NULL);
 
     if (flb_sds_len(file->dmode_lastline) == 0) {

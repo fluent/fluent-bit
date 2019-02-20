@@ -186,7 +186,7 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
     char *repl_line;
     size_t repl_line_len;
     time_t now = time(NULL);
-    struct flb_time out_time = {};
+    struct flb_time out_time = {0};
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
     msgpack_sbuffer *out_sbuf;
