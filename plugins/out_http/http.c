@@ -110,6 +110,10 @@ static char *msgpack_to_json(struct flb_out_http *ctx, char *data, uint64_t byte
                 msgpack_pack_str(&tmp_pck, s);
                 msgpack_pack_str_body(&tmp_pck, time_formatted, s);
                 break;
+
+            case FLB_JSON_DATE_EPOCH:
+                msgpack_pack_uint64(&tmp_pck, (long long unsigned)(tms.tm.tv_sec));
+                break;
         }
 
         for (i = 0; i < map_size; i++) {
