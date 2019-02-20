@@ -180,13 +180,12 @@ static int in_cpu_init(struct flb_input_instance *in,
 
     /* Collection time setting */
     pval = flb_input_get_property("interval_sec", in);
-    if (pval != NULL && atoi(pval) > 0) {
-        ctx->interval_sec = atoi(pval);
+    if (pval != NULL && flb_utils_time_split(pval, &ctx->interval_sec, &ctx->interval_nsec) == 0) {
     }
     else {
         ctx->interval_sec = DEFAULT_INTERVAL_SEC;
+        ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
     }
-    ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
 
     /* Initialize buffers for CPU stats */
     ret = snapshots_init(ctx->n_processors, &ctx->cstats);
