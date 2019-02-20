@@ -66,4 +66,7 @@ int flb_oauth2_payload_append(struct flb_oauth2 *ctx,
 char *flb_oauth2_token_get(struct flb_oauth2 *ctx);
 int flb_oauth2_token_expired(struct flb_oauth2 *ctx);
 
+int flb_oauth2_parse_json_response(char *json_data, size_t json_size,
+                        struct flb_oauth2 *ctx);
+
 #endif

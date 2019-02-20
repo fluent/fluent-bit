@@ -59,11 +59,12 @@ struct flb_stackdriver {
     flb_sds_t client_id;
     flb_sds_t auth_uri;
     flb_sds_t token_uri;
+    bool metadata_server_auth;
 
     /* metadata server (GCP specific, WIP) */
     flb_sds_t zone;
-    flb_sds_t vm_id;
-    flb_sds_t vm_name;
+    flb_sds_t instance_id;
+    flb_sds_t instance_name;
 
     /* other */
     flb_sds_t resource;
@@ -73,6 +74,9 @@ struct flb_stackdriver {
 
     /* upstream context for stackdriver write end-point */
     struct flb_upstream *u;
+
+    /* upstream context for metadata end-point */
+    struct flb_upstream *metadata_u;
 
     /* Fluent Bit context */
     struct flb_config *config;
