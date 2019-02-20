@@ -23,8 +23,8 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <unistd.h>
 
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_input.h>
 
 #include "tail.h"

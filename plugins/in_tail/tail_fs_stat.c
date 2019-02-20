@@ -20,12 +20,12 @@
 
 #define _DEFAULT_SOURCE
 
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <unistd.h>
 
 #include "tail_file.h"
 #include "tail_db.h"
