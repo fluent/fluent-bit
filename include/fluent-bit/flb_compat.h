@@ -79,6 +79,7 @@ extern struct tm *localtime_r(const time_t *timep, struct tm * result);
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <libgen.h>
 #endif
 
 #endif
