@@ -250,8 +250,8 @@ void flb_config_exit(struct flb_config *config)
         collector = mk_list_entry(head, struct flb_input_collector, _head);
 
         if (collector->type == FLB_COLLECT_TIME) {
-            mk_event_timeout_destroy(config->evl, &collector->event);
             if (collector->fd_timer > 0) {
+                mk_event_timeout_destroy(config->evl, &collector->event);
                 mk_event_closesocket(collector->fd_timer);
             }
         } else {
