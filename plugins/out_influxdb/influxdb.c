@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_pack.h>
 #include <msgpack.h>
 
 #include <stdio.h>
@@ -73,6 +74,7 @@ static char *influxdb_format(char *tag, int tag_len,
     size_t off = 0;
     char *buf;
     char *str = NULL;
+    char *map_str = NULL;
     size_t str_size;
     char tmp[128];
     msgpack_unpacked result;
@@ -225,6 +227,13 @@ static char *influxdb_format(char *tag, int tag_len,
                 val     = (char *) v->via.bin.ptr;
                 val_len = v->via.bin.size;
             }
+            else if (v->type == MSGPACK_OBJECT_MAP) {
+                /* Map value */
+                quote = FLB_TRUE;
+                /* Use bytes temporarily */
+                val = map_str = flb_msgpack_to_json_str(bytes, v);
+                val_len = strlen(val);
+            }
 
             if (!val || !key) {
                 continue;
@@ -256,6 +265,11 @@ static char *influxdb_format(char *tag, int tag_len,
                                               key, key_len,
                                               val, val_len,
                                               quote);
+            }
+
+            if(map_str){
+                flb_free(map_str);
+                map_str = NULL;
             }
 
             if (quote == FLB_TRUE) {
