@@ -238,6 +238,7 @@ include_directories(
   )
 
 if(FLB_STREAM_PROCESSOR)
+  set(FLB_IN_STREAM_PROCESSOR On)
   FLB_DEFINITION(FLB_HAVE_STREAM_PROCESSOR)
 endif()
 

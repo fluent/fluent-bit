@@ -110,6 +110,10 @@ REGISTER_IN_PLUGIN("in_health")
 REGISTER_IN_PLUGIN("in_http")
 REGISTER_IN_PLUGIN("in_storage_backlog")
 
+if (FLB_STREAM_PROCESSOR)
+  REGISTER_IN_PLUGIN("in_stream_processor")
+endif()
+
 if (NOT CMAKE_SYSTEM_NAME MATCHES "Windows")
   REGISTER_IN_PLUGIN("in_serial")
 endif()
