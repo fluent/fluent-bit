@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/stream_processor/flb_sp.h>
+#include <fluent-bit/stream_processor/flb_sp_stream.h>
 #include <fluent-bit/stream_processor/flb_sp_parser.h>
 
 #include <stdlib.h>
@@ -405,8 +406,8 @@ int flb_sp_task_create(struct flb_sp *sp, char *name, char *query)
     struct flb_sp_task *task;
 
     /*
-     * Before create the task, validate the incoming exec query and create
-     * the context.
+     * Parse and validate the incoming exec query and create the 'command'
+     * context (this will be associated to the task in a later step
      */
     cmd = flb_sp_cmd_create(query);
     if (!cmd) {
@@ -414,6 +415,7 @@ int flb_sp_task_create(struct flb_sp *sp, char *name, char *query)
         return -1;
     }
 
+    /* Create the task context */
     task = flb_calloc(1, sizeof(struct flb_sp_task));
     if (!task) {
         flb_errno();
@@ -435,6 +437,7 @@ int flb_sp_task_create(struct flb_sp *sp, char *name, char *query)
         return -1;
     }
 
+    task->sp = sp;
     task->cmd = cmd;
     mk_list_add(&task->_head, &sp->tasks);
 
@@ -457,9 +460,22 @@ int flb_sp_task_create(struct flb_sp *sp, char *name, char *query)
     }
 
     /*
+     * If the task involves a stream creation (CREATE STREAM abc..), create
+     * the stream.
+     */
+    if (cmd->type == FLB_SP_CREATE_STREAM) {
+        ret = flb_sp_stream_create(cmd->stream_name, task, sp);
+        if (ret == -1) {
+            flb_error("[sp] could not create stream '%s'", cmd->stream_name);
+            flb_sp_task_destroy(task);
+            return -1;
+        }
+    }
+
+    /*
      * Based in the command type, check if the source of data is a known
      * stream so make a reference on this task for a quick comparisson and
-     * access when processing data.
+     * access it when processing data.
      */
     sp_task_to_instance(task, sp);
     return 0;
@@ -470,6 +486,10 @@ void flb_sp_task_destroy(struct flb_sp_task *task)
     flb_sds_destroy(task->name);
     flb_sds_destroy(task->query);
     mk_list_del(&task->_head);
+
+    if (task->stream) {
+        flb_sp_stream_destroy(task->stream, task->sp);
+    }
 
     flb_sp_cmd_destroy(task->cmd);
     flb_free(task);
@@ -510,9 +530,10 @@ struct flb_sp *flb_sp_create(struct flb_config *config)
  * Process data, task and it defined command involves the call of aggregation
  * functions (AVG, SUM, COUNT, MIN, MAX).
  */
-static void sp_process_data_aggr(char *buf_data, size_t buf_size,
-                                 struct flb_sp_task *task,
-                                 struct flb_sp *sp)
+static int sp_process_data_aggr(char *buf_data, size_t buf_size,
+                                char **out_buf, size_t *out_size,
+                                struct flb_sp_task *task,
+                                struct flb_sp *sp)
 {
     int i;
     int ok;
@@ -543,7 +564,7 @@ static void sp_process_data_aggr(char *buf_data, size_t buf_size,
     nums = flb_calloc(1, sizeof(struct aggr_num) * map_entries);
     if (!nums) {
         flb_errno();
-        return;
+        return -1;
     }
 
     /* vars initialization */
@@ -640,6 +661,7 @@ static void sp_process_data_aggr(char *buf_data, size_t buf_size,
             }
         }
     }
+    msgpack_unpacked_destroy(&result);
 
     /* Packaging results */
     ckey = mk_list_entry_first(&cmd->keys, struct flb_sp_cmd_key, _head);
@@ -719,22 +741,27 @@ static void sp_process_data_aggr(char *buf_data, size_t buf_size,
         ckey = mk_list_entry_next(&ckey->_head, struct flb_sp_cmd_key,
                                   _head, &cmd->keys);
     }
-    flb_pack_print(mp_sbuf.data, mp_sbuf.size);
-    msgpack_sbuffer_destroy(&mp_sbuf);
+
     flb_free(nums);
+    *out_buf = mp_sbuf.data;
+    *out_size = mp_sbuf.size;
+
+    return records;
 }
 
 /*
  * Data processing (no aggregation functions)
  */
-static void sp_process_data(char *buf_data, size_t buf_size,
-                            struct flb_sp_task *task,
-                            struct flb_sp *sp)
+static int sp_process_data(char *buf_data, size_t buf_size,
+                           char **out_buf, size_t *out_size,
+                           struct flb_sp_task *task,
+                           struct flb_sp *sp)
 {
     int i;
     int ok;
     int map_size;
     int map_entries;
+    int records = 0;
     uint8_t h;
     off_t map_off;
     off_t no_data;
@@ -762,6 +789,7 @@ static void sp_process_data(char *buf_data, size_t buf_size,
     /* Iterate incoming records */
     while (msgpack_unpack_next(&result, buf_data, buf_size, &off) == ok) {
         root = result.data;
+        records++;
 
         /* extract timestamp */
         flb_time_pop_from_msgpack(&tms, &result, &obj);
@@ -867,9 +895,18 @@ static void sp_process_data(char *buf_data, size_t buf_size,
         }
     }
 
-    flb_pack_print(mp_sbuf.data, mp_sbuf.size);
     msgpack_unpacked_destroy(&result);
-    msgpack_sbuffer_destroy(&mp_sbuf);
+
+    if (records == 0) {
+        msgpack_sbuffer_destroy(&mp_sbuf);
+        return 0;
+    }
+
+    /* set outgoing results */
+    *out_buf = mp_sbuf.data;
+    *out_size = mp_sbuf.size;
+
+    return records;
 }
 
 /* Iterate and find input chunks to process */
@@ -877,6 +914,9 @@ int flb_sp_do(struct flb_sp *sp, struct flb_input_instance *in,
               char *buf_data, size_t buf_size)
 
 {
+    int ret;
+    size_t out_size;
+    char *out_buf;
     struct mk_list *head;
     struct flb_sp_task *task;
     struct flb_sp_cmd *cmd;
@@ -887,18 +927,43 @@ int flb_sp_do(struct flb_sp *sp, struct flb_input_instance *in,
         cmd = task->cmd;
         if (cmd->source_type == FLB_SP_STREAM) {
             if (task->source_instance == in) {
-                /* for debug/test purposes only */
-                flb_info("query: %s", task->name);
-
                 /*
                  * We found a task associated to one instance, do data
                  * processing.
                  */
                 if (task->aggr_keys == FLB_TRUE) {
-                    sp_process_data_aggr(buf_data, buf_size, task, sp);
+                    ret = sp_process_data_aggr(buf_data, buf_size,
+                                               &out_buf, &out_size,
+                                               task, sp);
                 }
                 else {
-                    sp_process_data(buf_data, buf_size, task, sp);
+                    ret = sp_process_data(buf_data, buf_size,
+                                          &out_buf, &out_size,
+                                          task, sp);
+                }
+
+                if (ret == -1) {
+                    flb_error("[sp] error processing records for '%'",
+                              task->name);
+                    continue;
+                }
+
+                if (ret == 0) {
+                    /* no records */
+                    continue;
+                }
+
+                /*
+                 * This task involves append data to a stream, which
+                 * means: register the output of the query as data
+                 * generated by an input instance plugin.
+                 */
+                if (task->stream) {
+                    flb_sp_stream_append_data(out_buf, out_size, task->stream);
+                }
+                else {
+                    flb_pack_print(out_buf, out_size);
+                    flb_free(out_buf);
                 }
             }
         }

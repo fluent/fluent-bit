@@ -32,9 +32,20 @@
 #define FLB_SP_MIN       4
 #define FLB_SP_MAX       5
 
+/* Command type */
+#define FLB_SP_CREATE_STREAM 0
+#define FLB_SP_SELECT        1
+
 /* Source type */
 #define FLB_SP_STREAM    0
 #define FLB_SP_TAG       1
+
+/* Property (key/value */
+struct flb_sp_cmd_prop {
+    flb_sds_t key;            /* key name */
+    flb_sds_t val;            /* value name */
+    struct mk_list _head;     /* Link to flb_sp_cmd->stream_props */
+};
 
 /* Key selection */
 struct flb_sp_cmd_key {
@@ -45,14 +56,29 @@ struct flb_sp_cmd_key {
 };
 
 struct flb_sp_cmd {
-    struct mk_list keys;      /* head of record fields */
-    int source_type;          /* STREAM or TAG */
-    char *source_name;
+    int type;                      /* FLB_SP_CREATE_STREAM or FLB_SP_SELECT */
+
+    /* Stream creation */
+    flb_sds_t stream_name;         /* Name for created stream */
+    struct mk_list stream_props;   /* Stream properties: WITH(a='b',..) */
+
+    /* Selection */
+    struct mk_list keys;           /* list head of record fields */
+
+    /* Source of data */
+    int source_type;               /* FLB_SP_STREAM or FLB_SP_TAG */
+    flb_sds_t source_name;         /* Name after stream: or tag:  */
 };
 
 struct flb_sp_cmd *flb_sp_cmd_create(char *sql);
 void flb_sp_cmd_destroy(struct flb_sp_cmd *cmd);
 
+/* Stream */
+int flb_sp_cmd_stream_new(struct flb_sp_cmd *cmd, char *stream_name);
+int flb_sp_cmd_stream_prop_add(struct flb_sp_cmd *cmd, char *key, char *val);
+void flb_sp_cmd_stream_prop_del(struct flb_sp_cmd_prop *prop);
+
+/* Selection keys */
 int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int aggr,
                        char *key_name, char *key_alias);
 void flb_sp_cmd_key_del(struct flb_sp_cmd_key *key);

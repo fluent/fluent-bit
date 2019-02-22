@@ -37,8 +37,15 @@ struct flb_sp_task {
      */
     void *source_instance;
 
+    /*
+     * If the command created a new stream, this field keeps a reference to
+     * the initialized stream context.
+     */
+    void *stream;
+
     int aggr_keys;           /* do commands contains aggregated keys ? */
-    struct flb_sp_cmd *cmd;  /* (SQL) commands   */
+    struct flb_sp *sp;       /* parent context */
+    struct flb_sp_cmd *cmd;  /* (SQL) commands */
     struct mk_list _head;    /* link to parent list flb_sp->tasks */
 };
 
@@ -49,6 +56,9 @@ struct flb_sp {
 
 struct flb_sp *flb_sp_create(struct flb_config *config);
 void flb_sp_destroy(struct flb_sp *sp);
+
+int flb_sp_do(struct flb_sp *sp, struct flb_input_instance *in,
+              char *buf_data, size_t buf_size);
 
 int flb_sp_task_create(struct flb_sp *sp, char *name, char *query);
 void flb_sp_task_destroy(struct flb_sp_task *task);

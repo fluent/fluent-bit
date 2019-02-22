@@ -10,6 +10,7 @@ add_subdirectory(parser)
 
 set(src
   flb_sp.c
+  flb_sp_stream.c
   )
 
 add_library(flb-sp STATIC ${src})

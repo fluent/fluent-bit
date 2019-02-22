@@ -21,16 +21,11 @@ void yyerror (struct flb_sp_cmd *cmd, void *scanner, const char *str)
     fprintf(stderr, "error: %s\n", str);
 }
 
-int yywrap(struct flb_sp_cmd *cmd)
-{
-    return 1;
-}
-
 %} /* EOF C code */
 
 
-/* Known Tokens */
-%token SELECT AVG SUM COUNT MAX MIN AS FROM FROM_STREAM FROM_TAG TAG WHERE IDENTIFIER INTEGER QUOTE QUOTED
+/* Known Tokens (refer to sql.l) */
+%token CREATE STREAM WITH SELECT AVG SUM COUNT MAX MIN AS FROM FROM_STREAM FROM_TAG TAG WHERE IDENTIFIER INTEGER QUOTE QUOTED
 
 /* Union and field types */
 %union
@@ -46,11 +41,42 @@ int yywrap(struct flb_sp_cmd *cmd)
 %type <string>  record_keys
 %type <string>  record_key
 %type <string>  alias
+%type <string>  prop_key
+%type <string>  prop_val
 
 %% /* rules section */
 
-line: SELECT keys FROM source ';'
+statements: create | select
+
+/* Parser for 'CREATE STREAM' statement */
+create:
+      CREATE STREAM IDENTIFIER AS select
       {
+        flb_sp_cmd_stream_new(cmd, $3);
+        flb_free($3);
+      }
+      |
+      CREATE STREAM IDENTIFIER WITH '(' properties ')' AS select
+      {
+        flb_sp_cmd_stream_new(cmd, $3);
+        flb_free($3);
+      }
+      properties: property
+                  |
+                  properties ',' property
+      property: prop_key '=' QUOTE prop_val QUOTE
+                  {
+                    flb_sp_cmd_stream_prop_add(cmd, $1, $4);
+                    flb_free($1);
+                    flb_free($4);
+                  }
+      prop_key: IDENTIFIER
+      prop_val: IDENTIFIER
+
+/* Parser for 'SELECT' statement */
+select: SELECT keys FROM source ';'
+      {
+        cmd->type = FLB_SP_SELECT;
       }
       |
       SELECT keys FROM source WHERE condition ';'

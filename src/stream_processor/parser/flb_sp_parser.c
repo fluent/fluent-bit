@@ -18,6 +18,7 @@ void flb_sp_cmd_destroy(struct flb_sp_cmd *cmd)
     struct mk_list *head;
     struct mk_list *tmp;
     struct flb_sp_cmd_key *key;
+    struct flb_sp_cmd_prop *prop;
 
     /* remove keys */
     mk_list_foreach_safe(head, tmp, &cmd->keys) {
@@ -26,7 +27,16 @@ void flb_sp_cmd_destroy(struct flb_sp_cmd *cmd)
         flb_sp_cmd_key_del(key);
     }
 
-    flb_free(cmd->source_name);
+    /* stream */
+    if (cmd->stream_name) {
+        mk_list_foreach_safe(head, tmp, &cmd->stream_props) {
+            prop = mk_list_entry(head, struct flb_sp_cmd_prop, _head);
+            mk_list_del(&prop->_head);
+            flb_sp_cmd_stream_prop_del(prop);
+        }
+        flb_sds_destroy(cmd->stream_name);
+    }
+    flb_sds_destroy(cmd->source_name);
     flb_free(cmd);
 }
 
@@ -91,7 +101,7 @@ int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int aggr_func,
 int flb_sp_cmd_source(struct flb_sp_cmd *cmd, int type, char *source)
 {
     cmd->source_type = type;
-    cmd->source_name = flb_strdup(source);
+    cmd->source_name = flb_sds_create(source);
     if (!cmd->source_name) {
         flb_errno();
         return -1;
@@ -136,6 +146,7 @@ struct flb_sp_cmd *flb_sp_cmd_create(char *sql)
         flb_errno();
         return NULL;
     }
+    mk_list_init(&cmd->stream_props);
     mk_list_init(&cmd->keys);
 
     /* Flex/Bison work */
@@ -152,4 +163,53 @@ struct flb_sp_cmd *flb_sp_cmd_create(char *sql)
     yylex_destroy(scanner);
 
     return cmd;
+}
+
+int flb_sp_cmd_stream_new(struct flb_sp_cmd *cmd, char *stream_name)
+{
+    cmd->stream_name = flb_sds_create(stream_name);
+    if (!cmd->stream_name) {
+        return -1;
+    }
+
+    cmd->type = FLB_SP_CREATE_STREAM;
+    return 0;
+}
+
+int flb_sp_cmd_stream_prop_add(struct flb_sp_cmd *cmd, char *key, char *val)
+{
+    struct flb_sp_cmd_prop *prop;
+
+    prop = flb_malloc(sizeof(struct flb_sp_cmd_prop));
+    if (!prop) {
+        flb_errno();
+        return -1;
+    }
+
+    prop->key = flb_sds_create(key);
+    if (!prop->key) {
+        flb_free(prop);
+        return -1;
+    }
+
+    prop->val = flb_sds_create(val);
+    if (!prop->val) {
+        flb_free(prop->key);
+        flb_free(prop);
+        return -1;
+    }
+
+    mk_list_add(&prop->_head, &cmd->stream_props);
+    return 0;
+}
+
+void flb_sp_cmd_stream_prop_del(struct flb_sp_cmd_prop *prop)
+{
+    if (prop->key) {
+        flb_sds_destroy(prop->key);
+    }
+    if (prop->val) {
+        flb_sds_destroy(prop->val);
+    }
+    flb_free(prop);
 }

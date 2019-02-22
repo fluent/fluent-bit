@@ -13,6 +13,9 @@
 
 %%
 
+CREATE                  return CREATE;
+STREAM                  return STREAM;
+WITH                    return WITH;
 SELECT                  return SELECT;
 SUM                     return SUM;
 AVG                     return AVG;
