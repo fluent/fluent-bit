@@ -554,6 +554,7 @@ static int sp_process_data_aggr(char *buf_data, size_t buf_size,
     msgpack_object key;
     msgpack_object val;
     struct mk_list *head;
+    struct flb_time tm;
     struct flb_sp_cmd *cmd = task->cmd;
     struct flb_sp_cmd_key *ckey;
 
@@ -573,7 +574,11 @@ static int sp_process_data_aggr(char *buf_data, size_t buf_size,
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    /* set outgoing map and it fixed size */
+    /* set outgoing array + map and it fixed size */
+    msgpack_pack_array(&mp_pck, 2);
+
+    flb_time_get(&tm);
+    flb_time_append_to_msgpack(&tm, &mp_pck, 0);
     msgpack_pack_map(&mp_pck, map_entries);
 
     /* Iterate incoming records */
