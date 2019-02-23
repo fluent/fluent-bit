@@ -16,6 +16,7 @@ struct kube_test {
 struct kube_test_result {
     char *target;
     char *suffix;
+    int   type;
     int   nmatched;
 };
 
@@ -25,6 +26,7 @@ struct kube_test_result {
 
 #ifdef FLB_HAVE_SYSTEMD
 int flb_test_systemd_send(void);
+char kube_test_id[64];
 #endif
 
 /* Constants */
@@ -128,21 +130,39 @@ static int cb_check_result(void *record, size_t size, void *data)
     if (!out) {
         exit(EXIT_FAILURE);
     }
-    sprintf(streamfilter, "\"stream\":\"%s\"", result->suffix);
-    if (!result->suffix || !*result->suffix || strstr(record, streamfilter)) {
-
-        /*
-         * Our validation is: check that the content of out file is found
-         * in the output record.
+    if (result->type == KUBE_SYSTEMD) {
+        char *skip_record, *skip_out;
+        /* Skip the other records since some are created by systemd,
+           only check the kubernetes annotations
          */
-        check = strstr(record, out);
-        if (!check) {
-            fprintf(stderr, "Validator mismatch::\nTarget: <<%s>>, Suffix: <<%s>\n"
-                            "Filtered record: <<%s>>\nExpected record: <<%s>>\n",
-                            result->target, result->suffix, (char *)record, out);
+        skip_out = strstr(out, "\"kubernetes\":");
+        skip_record = strstr(record, "\"kubernetes\":");
+        if (skip_out && skip_record) {
+            TEST_CHECK(strcmp(skip_record, skip_out) == 0);
+            result->nmatched++;
         }
-        TEST_CHECK(check != NULL);
-        result->nmatched++;
+    } else {
+        sprintf(streamfilter, "\"stream\":\"%s\"", result->suffix);
+        if (!result->suffix ||
+            !*result->suffix ||
+            strstr(record, streamfilter)) {
+
+            /*
+             * Our validation is: check that the content of out file is found
+             * in the output record.
+             */
+            check = strstr(record, out);
+            if (!check) {
+                fprintf(stderr, "Validator mismatch::\n"
+                                "Target: <<%s>>, Suffix: <<%s>\n"
+                                "Filtered record: <<%s>>\n"
+                                "Expected record: <<%s>>\n",
+                                result->target, result->suffix,
+                                (char *)record, out);
+            }
+            TEST_CHECK(check != NULL);
+            result->nmatched++;
+        }
     }
     if (size > 0) {
         flb_free(record);
@@ -175,6 +195,7 @@ static void kube_test_create(char *target, int type, char *suffix, char *parserc
     result.nmatched = 0;
     result.target = target;
     result.suffix = suffix;
+    result.type = type;
 
     /* Compose path pattern based on target */
     snprintf(path, sizeof(path) - 1, "%s*.log", target);
@@ -205,10 +226,11 @@ static void kube_test_create(char *target, int type, char *suffix, char *parserc
     }
 #ifdef FLB_HAVE_SYSTEMD
     else if (type == KUBE_SYSTEMD) {
+        sprintf(kube_test_id, "KUBE_TEST=%u%lu", getpid(), random());
         in_ffd = flb_input(ctx->flb, "systemd", NULL);
         ret = flb_input_set(ctx->flb, in_ffd,
                             "Tag", "kube.*",
-                            "Systemd_Filter", "KUBE_TEST=2018",
+                            "Systemd_Filter", kube_test_id,
                             NULL);
         TEST_CHECK(ret == 0);
     }
@@ -361,13 +383,16 @@ int flb_test_systemd_send()
             "CONTAINER_ID=56e257661383",
             "CONTAINER_ID_FULL=56e257661383836fac4cd90a23ee8a7a02ee1538c8f35657d1a90f3de1065a22",
             "MESSAGE=08:58:45.839 [qtp151442075-47] DEBUG [HttpParser.java:281] - filled 157/157",
-            "KUBE_TEST=2018",
+            kube_test_id,
             NULL);
 }
 
 void flb_test_systemd_logs()
 {
     struct stat statb;
+    /* We want to avoid possibly getting a log from a previous run,
+       so create a unique-id for each 'send' */
+    sprintf(kube_test_id, "KUBE_TEST=%u%lu", getpid(), random());
 
     if (stat("/run/systemd/journal/socket", &statb) == 0 &&
         statb.st_mode & S_IFSOCK) {

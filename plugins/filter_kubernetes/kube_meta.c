@@ -290,6 +290,98 @@ static void cb_results(unsigned char *name, unsigned char *value,
     return;
 }
 
+/*
+ * As per Kubernetes Pod spec,
+ * https://kubernetes.io/docs/concepts/workloads/pods/pod/, we look
+ * for status.containerStatuses.{containerID, imageID} where
+ * status.containerStatus.name == our container name
+ * status:
+ *   ...
+ *   containerStatuses:
+ *   - containerID: XXX
+ *     image: YYY
+ *     imageID: ZZZ
+ *     ...
+ *     name: nginx-ingress-microk8s
+*/
+#define CONTAINER_STATUSES "containerStatuses"
+static void extract_container_hash(struct flb_kube_meta *meta,
+                                   msgpack_object status)
+{
+    int i;
+    msgpack_object k, v;
+    int docker_id_len = 0;
+    int container_hash_len = 0;
+    const char *container_hash;
+    const char *docker_id;
+    int name_found = FLB_FALSE;
+    /* Process status/containerStatus map for docker_id, container_hash */
+    for (i = 0;
+         (meta->docker_id_len == 0 || meta->container_hash_len == 0) &&
+         i < status.via.map.size; i++) {
+        k = status.via.map.ptr[i].key;
+        if (k.via.str.size == sizeof(CONTAINER_STATUSES)-1 &&
+            strncmp(k.via.str.ptr,
+                    CONTAINER_STATUSES,
+                    sizeof(CONTAINER_STATUSES)-1) == 0) {
+            int j;
+            v = status.via.map.ptr[i].val;
+            for (j = 0;
+                 (meta->docker_id_len == 0 ||
+                  meta->container_hash_len == 0) && j < v.via.array.size;
+                 j++) {
+                int l;
+                msgpack_object k1, k2;
+                msgpack_object_str v2;
+                k1 = v.via.array.ptr[j];
+                for (l = 0;
+                     (meta->docker_id_len == 0 ||
+                      meta->container_hash_len == 0) &&
+                     l < k1.via.map.size; l++) {
+                    k2 = k1.via.map.ptr[l].key;
+                    v2 = k1.via.map.ptr[l].val.via.str;
+                    if (k2.via.str.size == sizeof("name") -1 &&
+                        !strncmp(k2.via.str.ptr, "name", k2.via.str.size)) {
+                        if (v2.size == meta->container_name_len &&
+                            !strncmp(v2.ptr,
+                                     meta->container_name,
+                                     meta->container_name_len)) {
+                            name_found = FLB_TRUE;
+                        }
+                    }
+                    if (k2.via.str.size == sizeof("containerID") - 1 &&
+                        !strncmp(k2.via.str.ptr,
+                                 "containerID",
+                                 k2.via.str.size)) {
+                        docker_id = v2.ptr;
+                        docker_id_len = v2.size;
+                    }
+                    else if (k2.via.str.size == sizeof("imageID") - 1 &&
+                              !strncmp(v2.ptr,
+                                       "imageID",
+                                      v2.size)) {
+                        container_hash = v2.ptr;
+                        container_hash_len = v2.size;
+                    }
+                }
+                if (name_found) {
+                    if (container_hash_len && !meta->container_hash_len) {
+                        meta->container_hash_len = container_hash_len;
+                        meta->container_hash = flb_strndup(container_hash,
+                                                           container_hash_len);
+                        meta->skip++;
+                    }
+                    if (docker_id_len && !meta->docker_id_len) {
+                        meta->docker_id_len = docker_id_len;
+                        meta->docker_id = flb_strndup(docker_id, docker_id_len);
+                        meta->skip++;
+                    }
+                }
+            }
+        }
+    }
+}
+
 static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
                       char *api_buf, size_t api_size,
                       char **out_buf, size_t *out_size)
@@ -299,6 +391,7 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
     int map_size;
     int meta_found = FLB_FALSE;
     int spec_found = FLB_FALSE;
+    int status_found = FLB_FALSE;
     int have_uid = -1;
     int have_labels = -1;
     int have_annotations = -1;
@@ -313,6 +406,7 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
     msgpack_object v;
     msgpack_object meta_val;
     msgpack_object spec_val;
+    msgpack_object status_val;
     msgpack_object api_map;
     msgpack_object ann_map;
     struct flb_kube_props props = {0};
@@ -363,24 +457,24 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
      * }
      *
      * We are interested into the 'metadata' map value.
+     * We are also interested in the spec.nodeName.
+     * We are also interested in the status.containerStatuses.
      */
-    for (i = 0; i < api_map.via.map.size; i++) {
-        k = api_map.via.map.ptr[i].key;
-        if (k.via.str.size == 8 && strncmp(k.via.str.ptr, "metadata", 8) == 0) {
+    for (i = 0; !(meta_found && spec_found && status_found) &&
+                i < api_map.via.map.size; i++) {
+	k = api_map.via.map.ptr[i].key;
+        if (k.via.str.size == 8 && !strncmp(k.via.str.ptr, "metadata", 8)) {
             meta_val = api_map.via.map.ptr[i].val;
             meta_found = FLB_TRUE;
-            break;
         }
-    }
-
-    /* We are also interested in the nodeName from 'spec' map value. */
-    for (i = 0; i < api_map.via.map.size; i++) {
-       k = api_map.via.map.ptr[i].key;
-       if (k.via.str.size == 4 && strncmp(k.via.str.ptr, "spec", 4) == 0) {
+	else if (k.via.str.size == 4 && !strncmp(k.via.str.ptr, "spec", 4)) {
            spec_val = api_map.via.map.ptr[i].val;
            spec_found = FLB_TRUE;
-           break;
-       }
+        }
+	else if (k.via.str.size == 6 && !strncmp(k.via.str.ptr, "status", 6)) {
+           status_val = api_map.via.map.ptr[i].val;
+           status_found = FLB_TRUE;
+	}
     }
 
     if (meta_found == FLB_FALSE) {
@@ -429,6 +523,10 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
                 break;
             }
         }
+    }
+
+    if ((!meta->container_hash || !meta->docker_id) && status_found) {
+        extract_container_hash(meta, status_val);
     }
 
     /* Append Regex fields */
