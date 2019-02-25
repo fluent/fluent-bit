@@ -792,14 +792,14 @@ static flb_sds_t flb_msgpack_gelf_key(flb_sds_t *s, int in_array,
     for(i=0; i < prefix_key_len; i++) {
         if (!valid_char[(unsigned char)prefix_key[i]]) {
             flb_debug("[%s] invalid key char '%.*s'",  __FUNCTION__,
-                      prefix_key, prefix_key_len);
+                      prefix_key_len, prefix_key);
             return NULL;
         }
     }
     for(i=0; i < key_len; i++) {
         if (!valid_char[(unsigned char)key[i]]) {
             flb_debug("[%s] invalid key char '%.*s'",  __FUNCTION__,
-                      key, key_len);
+                      key_len, key);
             return NULL;
         }
     }
