@@ -38,8 +38,13 @@
 
 struct flb_tail_config {
     int fd_notify;             /* inotify fd               */
+#ifdef _WIN32
+    intptr_t ch_manager[2];    /* pipe: channel manager    */
+    intptr_t ch_pending[2];    /* pipe: pending events     */
+#else
     int ch_manager[2];         /* pipe: channel manager    */
     int ch_pending[2];         /* pipe: pending events     */
+#endif
 
     /* Buffer Config */
     size_t buf_chunk_size;     /* allocation chunks        */
