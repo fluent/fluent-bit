@@ -109,12 +109,14 @@ int flb_sp_stream_create(char *name, struct flb_sp_task *task,
     /* Initialize plugin collector (event callback) */
     flb_input_collector_start(0, in);
 
+#ifdef FLB_HAVE_METRICS
     /* Override Metrics title */
     ret = flb_metrics_title(name, in->metrics);
     if (ret == -1) {
         flb_warn("[sp] cannot set metrics title, using fallback name %s",
                  in->name);
     }
+#endif
 
     /* Storage context */
     ret = flb_storage_input_create(sp->config->cio, in);
