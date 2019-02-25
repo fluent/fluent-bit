@@ -26,6 +26,13 @@
 #include "kafka_config.h"
 #include "kafka_topic.h"
 
+static int cb_timer(struct flb_output_instance *in,
+                    struct flb_config *config)
+{
+    flb_info("[out_kafka] timer test");
+    return 0;
+}
+
 void cb_kafka_msg(rd_kafka_t *rk, const rd_kafka_message_t *rkmessage,
                   void *opaque)
 {
@@ -48,6 +55,25 @@ void cb_kafka_logger(const rd_kafka_t *rk, int level,
               rk ? rd_kafka_name(rk) : NULL, buf);
 }
 
+/* pre_run is called after initialization */
+static int cb_kafka_pre_run(void *data, struct flb_config *config)
+{
+    int ret;
+    struct flb_output_instance *o_ins;
+    struct flb_kafka *ctx;
+
+    ctx = (struct flb_kafka *) data;
+    o_ins = ctx->parent;
+
+    ret = flb_output_event_timer_start(ctx->et, o_ins, config);
+    if (ret != 0) {
+        flb_error("[out_kafka] error starting event timer");
+        return -1;
+    }
+
+    return 0;
+}
+
 static int cb_kafka_init(struct flb_output_instance *ins,
                          struct flb_config *config,
                          void *data)
@@ -63,6 +89,14 @@ static int cb_kafka_init(struct flb_output_instance *ins,
 
     /* Set global context */
     flb_output_set_context(ins, ctx);
+
+    /* Create timer */
+    ctx->et = flb_output_event_timer_create(ins, cb_timer, 1, 0, config);
+    if (!ctx->et) {
+        flb_error("[out_kafka] cannot create event timer");
+        return -1;
+    }
+
     return 0;
 }
 
@@ -298,6 +332,10 @@ static int cb_kafka_exit(void *data, struct flb_config *config)
 {
     struct flb_kafka *ctx = data;
 
+    /* destroy timer */
+    flb_output_event_timer_destroy(ctx->et, ctx->parent, config);
+
+    /* destroy config context */
     flb_kafka_conf_destroy(ctx);
     return 0;
 }
@@ -306,6 +344,7 @@ struct flb_output_plugin out_kafka_plugin = {
     .name         = "kafka",
     .description  = "Kafka",
     .cb_init      = cb_kafka_init,
+    .cb_pre_run   = cb_kafka_pre_run,
     .cb_flush     = cb_kafka_flush,
     .cb_exit      = cb_kafka_exit,
     .flags        = 0

@@ -82,6 +82,12 @@ struct flb_kafka {
     /* Internal */
     rd_kafka_t *producer;
     rd_kafka_conf_t *conf;
+
+    /* Timer callback */
+    struct flb_output_event_timer *et;
+
+    /* Parent */
+    struct flb_output_instance *parent;
 };
 
 struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,

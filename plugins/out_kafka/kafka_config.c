@@ -46,6 +46,7 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
     ctx->blocked = FLB_FALSE;
+    ctx->parent = ins;
 
     /* rdkafka config context */
     ctx->conf = rd_kafka_conf_new();
