@@ -220,41 +220,42 @@ void flb_config_exit(struct flb_config *config)
 
     /* release resources */
     if (config->ch_event.fd) {
-        close(config->ch_event.fd);
+        mk_event_closesocket(config->ch_event.fd);
     }
 
     /* Pipe */
     if (config->ch_data[0]) {
-        close(config->ch_data[0]);
-        close(config->ch_data[1]);
+        mk_event_closesocket(config->ch_data[0]);
+        mk_event_closesocket(config->ch_data[1]);
     }
 
     /* Channel manager */
     if (config->ch_manager[0] > 0) {
-        close(config->ch_manager[0]);
+        mk_event_closesocket(config->ch_manager[0]);
         if (config->ch_manager[0] != config->ch_manager[1]) {
-            close(config->ch_manager[1]);
+            mk_event_closesocket(config->ch_manager[1]);
         }
     }
 
     /* Channel notifications */
     if (config->ch_notif[0] > 0) {
-        close(config->ch_notif[0]);
+        mk_event_closesocket(config->ch_notif[0]);
         if (config->ch_notif[0] != config->ch_notif[1]) {
-            close(config->ch_notif[1]);
+            mk_event_closesocket(config->ch_notif[1]);
         }
     }
 
     /* Collectors */
     mk_list_foreach_safe(head, tmp, &config->collectors) {
         collector = mk_list_entry(head, struct flb_input_collector, _head);
-        mk_event_del(config->evl, &collector->event);
 
         if (collector->type == FLB_COLLECT_TIME) {
             mk_event_timeout_destroy(config->evl, &collector->event);
             if (collector->fd_timer > 0) {
-                close(collector->fd_timer);
+                mk_event_closesocket(collector->fd_timer);
             }
+        } else {
+            mk_event_del(config->evl, &collector->event);
         }
 
         mk_list_del(&collector->_head);
@@ -275,7 +276,7 @@ void flb_config_exit(struct flb_config *config)
     if (config->evl) {
         mk_event_del(config->evl, &config->event_flush);
     }
-    close(config->flush_fd);
+    mk_event_closesocket(config->flush_fd);
 
     /* Release scheduler */
     flb_sched_exit(config);
@@ -393,7 +394,7 @@ int flb_config_set_property(struct flb_config *config,
                 }
             }
             else if (!strncasecmp(key, FLB_CONF_STR_PARSERS_FILE, 32)) {
-#ifdef FLB_HAVE_REGEX
+#ifdef FLB_HAVE_PARSER
                 tmp = flb_env_var_translate(config->env, v);
                 ret = flb_parser_conf_file(tmp, config);
                 flb_free(tmp);

@@ -52,7 +52,7 @@ static char *msgpack_to_json(struct flb_out_stdout_config *ctx,
 
     /* Iterate the original buffer and perform adjustments */
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         array_size++;
     }
     msgpack_unpacked_destroy(&result);
@@ -64,7 +64,7 @@ static char *msgpack_to_json(struct flb_out_stdout_config *ctx,
     msgpack_pack_array(&tmp_pck, array_size);
 
     off = 0;
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         /* Each array must have two entries: time and record */
         root = result.data;
         if (root.via.array.size != 2) {
@@ -238,7 +238,7 @@ static void cb_stdout_flush(void *data, size_t bytes,
         memcpy(buf, tag, tag_len);
         buf[tag_len] = '\0';
         msgpack_unpacked_init(&result);
-        while (msgpack_unpack_next(&result, data, bytes, &off)) {
+        while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
             printf("[%zd] %s: [", cnt++, buf);
             flb_time_pop_from_msgpack(&tmp, &result, &p);
             printf("%"PRIu32".%09lu, ", (uint32_t)tmp.tm.tv_sec, tmp.tm.tv_nsec);

@@ -135,7 +135,9 @@ static void flb_help(int rc, struct flb_config *config)
     printf("  -m, --match=MATCH\tset plugin match, same as '-p match=abc'\n");
     printf("  -o, --output=OUTPUT\tset an output\n");
     printf("  -p, --prop=\"A=B\"\tset plugin configuration property\n");
+#ifdef FLB_HAVE_PARSER
     printf("  -R, --parser=FILE\tspecify a parser configuration file\n");
+#endif
     printf("  -e, --plugin=FILE\tload an external plugin (shared lib)\n");
     printf("  -l, --log_file=FILE\twrite log info to a file\n");
     printf("  -t, --tag=TAG\t\tset plugin tag, same as '-p tag=abc'\n");
@@ -587,7 +589,6 @@ int main(int argc, char **argv)
     flb_stacktrace_init(argv[0]);
 #endif
 
-#ifndef _WIN32
     /* Setup long-options */
     static const struct option long_opts[] = {
         { "storage_path",    required_argument, NULL, 'b' },
@@ -603,7 +604,9 @@ int main(int argc, char **argv)
         { "match",           required_argument, NULL, 'm' },
         { "output",          required_argument, NULL, 'o' },
         { "filter",          required_argument, NULL, 'F' },
+#ifdef FLB_HAVE_PARSER
         { "parser",          required_argument, NULL, 'R' },
+#endif
         { "prop",            required_argument, NULL, 'p' },
         { "plugin",          required_argument, NULL, 'e' },
         { "tag",             required_argument, NULL, 't' },
@@ -620,7 +623,6 @@ int main(int argc, char **argv)
 #endif
         { NULL, 0, NULL, 0 }
     };
-#endif
 
 #ifdef FLB_HAVE_MTRACE
     /* Start tracing malloc and free */
@@ -709,7 +711,7 @@ int main(int argc, char **argv)
             }
             last_plugin = PLUGIN_OUTPUT;
             break;
-#ifdef FLB_HAVE_REGEX
+#ifdef FLB_HAVE_PARSER
         case 'R':
             ret = flb_parser_conf_file(optarg, config);
             if (ret != 0) {

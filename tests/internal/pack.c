@@ -144,7 +144,7 @@ void test_json_pack_mult()
 
     /* Validate output buffer */
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, out_buf, out_size, &off)) {
+    while (msgpack_unpack_next(&result, out_buf, out_size, &off) == MSGPACK_UNPACK_SUCCESS) {
         maps++;
         root = result.data;
         TEST_CHECK(root.type == MSGPACK_OBJECT_MAP);
@@ -221,7 +221,7 @@ void test_json_pack_mult_iter()
             off = 0;
             maps = 0;
             msgpack_unpacked_init(&result);
-            while (msgpack_unpack_next(&result, out_buf, out_size, &off)) {
+            while (msgpack_unpack_next(&result, out_buf, out_size, &off) == MSGPACK_UNPACK_SUCCESS) {
                 root = result.data;
                 TEST_CHECK(root.type == MSGPACK_OBJECT_MAP);
                 maps++;
@@ -310,7 +310,7 @@ void test_json_pack_bug342()
 
         size_t coff = 0;
         msgpack_unpacked_init(&result);
-        while (msgpack_unpack_next(&result, out, out_size, &coff)) {
+        while (msgpack_unpack_next(&result, out, out_size, &coff) == MSGPACK_UNPACK_SUCCESS) {
             records++;
         }
         msgpack_unpacked_destroy(&result);

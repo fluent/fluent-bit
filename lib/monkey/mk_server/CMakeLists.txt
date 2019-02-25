@@ -1,4 +1,4 @@
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 set(src
   monkey.c

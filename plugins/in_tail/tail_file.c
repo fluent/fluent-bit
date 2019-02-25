@@ -20,11 +20,11 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <unistd.h>
 #include <fcntl.h>
 #include <time.h>
 #include <libgen.h>
 
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_parser.h>
@@ -186,7 +186,7 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
     char *repl_line;
     size_t repl_line_len;
     time_t now = time(NULL);
-    struct flb_time out_time = {};
+    struct flb_time out_time = {0};
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
     msgpack_sbuffer *out_sbuf;
@@ -553,7 +553,15 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         }
     }
 
+#ifdef _MSC_VER
+    /*
+     * We need O_BINARY here in order to avoid count errors due to
+     * Windows treating '\r\n' as 1 byte in text mode.
+     */
+    fd = _open(path, _O_RDONLY | _O_BINARY);
+#else
     fd = open(path, O_RDONLY);
+#endif
     if (fd == -1) {
         flb_errno();
         flb_error("[in_tail] could not open %s", path);

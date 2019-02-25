@@ -56,7 +56,7 @@ static inline char* dirname(const char *path)
     return buf;
 }
 
-inline int getpagesize(void)
+static inline int getpagesize(void)
 {
     SYSTEM_INFO system_info;
     GetSystemInfo(&system_info);

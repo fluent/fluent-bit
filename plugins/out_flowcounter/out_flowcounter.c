@@ -194,7 +194,7 @@ static void out_fcount_flush(void *data, size_t bytes,
     (void) config;
 
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         flb_time_pop_from_msgpack(&tm, &result, &obj);
 
         if (ctx->event_based == FLB_FALSE) {

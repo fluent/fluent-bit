@@ -66,7 +66,7 @@ If you want to see a real example, run the following command:
 
 > $ git log dfff256eca7ad38dd94c9838fef272c99a3fffec
 
-Your pacth or patches should be fully documented, that will make the review process faster for us, and a faster merge for you.
+Your patches should be fully documented. That will make the review process faster for us and a faster merge for you.
 
 ## Code review, no feelings
 

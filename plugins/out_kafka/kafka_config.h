@@ -34,6 +34,10 @@
 #define FLB_KAFKA_TOPIC     "fluent-bit"
 #define FLB_KAFKA_TS_KEY    "@timestamp"
 
+#define FLB_JSON_DATE_DOUBLE      0
+#define FLB_JSON_DATE_ISO8601     1
+#define FLB_JSON_DATE_ISO8601_FMT "%Y-%m-%dT%H:%M:%S"
+
 struct flb_kafka_topic {
     int name_len;
     char *name;
@@ -52,6 +56,7 @@ struct flb_kafka {
 
     int timestamp_key_len;
     char *timestamp_key;
+    int timestamp_format;
 
     int message_key_len;
     char *message_key;

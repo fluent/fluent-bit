@@ -279,8 +279,7 @@ static uint32_t* co_create_(unsigned size, uintptr_t entry) {
   return t;
 }
 
-cothread_t co_create(unsigned int size, void (*entry_)(void),
-                     size_t *out_size) {
+cothread_t co_create(unsigned int size, void (*entry_)(void)) {
   uintptr_t entry = (uintptr_t)entry_;
   uint32_t* t = 0;
 
@@ -290,7 +289,6 @@ cothread_t co_create(unsigned int size, void (*entry_)(void),
     t = co_create_(size, entry);
   }
 
-  *out_size = size;
   if(t) {
     uintptr_t sp;
     int shift;

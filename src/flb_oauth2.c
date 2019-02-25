@@ -51,7 +51,7 @@ static inline int key_cmp(char *str, int len, char *cmp) {
     return strncasecmp(str, cmp, len);
 }
 
-static int parse_json_response(char *json_data, size_t json_size,
+int flb_oauth2_parse_json_response(char *json_data, size_t json_size,
                                struct flb_oauth2 *ctx)
 {
     int i;
@@ -362,7 +362,8 @@ char *flb_oauth2_token_get(struct flb_oauth2 *ctx)
 
     /* Extract token */
     if (c->resp.payload_size > 0 && c->resp.status == 200) {
-        ret = parse_json_response(c->resp.payload, c->resp.payload_size, ctx);
+        ret = flb_oauth2_parse_json_response(c->resp.payload,
+                                             c->resp.payload_size, ctx);
         if (ret == 0) {
             flb_info("[oauth2] access token from '%s:%s' retrieved",
                      ctx->host, ctx->port);

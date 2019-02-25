@@ -28,6 +28,7 @@
 
 #include <msgpack.h>
 
+#include "gce_metadata.h"
 #include "stackdriver.h"
 #include "stackdriver_conf.h"
 #include <mbedtls/base64.h>
@@ -68,6 +69,7 @@ int jwt_base64_url_encode(unsigned char *out_buf, size_t out_size,
     *olen = i;
     return 0;
 }
+
 
 static int jwt_encode(char *payload, char *secret,
                       char **out_signature, size_t *out_size)
@@ -195,6 +197,18 @@ static int get_oauth2_token(struct flb_stackdriver *ctx)
     time_t expires;
     char payload[1024];
 
+    /* Create oauth2 context */
+    ctx->o = flb_oauth2_create(ctx->config, FLB_STD_AUTH_URL, 3000);
+    if (!ctx->o) {
+      flb_error("[out_stackdriver] cannot create oauth2 context");
+      return -1;
+    }
+
+    /* In case of using metadata server, fetch token from there */
+    if (ctx->metadata_server_auth) {
+        return gce_metadata_read_token(ctx);
+    }
+
     /* JWT encode for oauth2 */
     issued = time(NULL);
     expires = issued + FLB_STD_TOKEN_REFRESH;
@@ -212,16 +226,7 @@ static int get_oauth2_token(struct flb_stackdriver *ctx)
         flb_error("[out_stackdriver] JWT signature generation failed");
         return -1;
     }
-
     flb_debug("[out_stackdriver] JWT signature:\n%s", sig_data);
-
-    /* Create oauth2 context */
-    ctx->o = flb_oauth2_create(ctx->config, FLB_STD_AUTH_URL, 3000);
-    if (!ctx->o) {
-        flb_sds_destroy(sig_data);
-        flb_error("[out_stackdriver] cannot create oauth2 context");
-        return -1;
-    }
 
     ret = flb_oauth2_payload_append(ctx->o,
                                     "grant_type", -1,
@@ -291,8 +296,17 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     /* Create Upstream context for Stackdriver Logging (no oauth2 service) */
     ctx->u = flb_upstream_create_url(config, FLB_STD_WRITE_URL,
                                      FLB_IO_TLS, &ins->tls);
+    ctx->metadata_u = flb_upstream_create_url(config, "http://metadata.google.internal",
+                                     FLB_IO_TCP, NULL);
+    ctx->u->flags &= ~FLB_IO_ASYNC;
+    ctx->metadata_u->flags &= ~FLB_IO_ASYNC;
+
     if (!ctx->u) {
         flb_error("[out_stackdriver] upstream creation failed");
+        return -1;
+    }
+    if (!ctx->metadata_u) {
+        flb_error("[out_stackdriver] metadata upstream creation failed");
         return -1;
     }
 
@@ -301,7 +315,11 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     if (!token) {
         flb_warn("[out_stackdriver] token retrieval failed");
     }
-
+    if (ctx->metadata_server_auth) {
+      gce_metadata_read_project_id(ctx);
+      gce_metadata_read_zone(ctx);
+      gce_metadata_read_instance_id(ctx);
+    }
     return 0;
 }
 
@@ -328,7 +346,7 @@ static int stackdriver_format(void *data, size_t bytes,
 
     /* Count number of records */
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         array_size++;
     }
     msgpack_unpacked_destroy(&result);
@@ -359,16 +377,38 @@ static int stackdriver_format(void *data, size_t bytes,
     msgpack_pack_str_body(&mp_pck, ctx->resource,
                           flb_sds_len(ctx->resource));
 
-    /* labels (we only append 'project_id' at the moment) */
     msgpack_pack_str(&mp_pck, 6);
     msgpack_pack_str_body(&mp_pck, "labels", 6);
 
-    msgpack_pack_map(&mp_pck, 1);
-    msgpack_pack_str(&mp_pck, 10);
-    msgpack_pack_str_body(&mp_pck, "project_id", 10);
-    msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
-    msgpack_pack_str_body(&mp_pck,
-                          ctx->project_id, flb_sds_len(ctx->project_id));
+    if (strcmp(ctx->resource, "global") == 0) {
+      /* global resource has field project_id */
+      msgpack_pack_map(&mp_pck, 1);
+      msgpack_pack_str(&mp_pck, 10);
+      msgpack_pack_str_body(&mp_pck, "project_id", 10);
+      msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
+      msgpack_pack_str_body(&mp_pck,
+                            ctx->project_id, flb_sds_len(ctx->project_id));
+    } else if (strcmp(ctx->resource, "gce_instance") == 0) {
+      /* gce_instance resource has fields project_id, zone, instance_id */
+      msgpack_pack_map(&mp_pck, 3);
+
+      msgpack_pack_str(&mp_pck, 10);
+      msgpack_pack_str_body(&mp_pck, "project_id", 10);
+      msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
+      msgpack_pack_str_body(&mp_pck,
+                            ctx->project_id, flb_sds_len(ctx->project_id));
+
+      msgpack_pack_str(&mp_pck, 4);
+      msgpack_pack_str_body(&mp_pck, "zone", 4);
+      msgpack_pack_str(&mp_pck, flb_sds_len(ctx->zone));
+      msgpack_pack_str_body(&mp_pck, ctx->zone, flb_sds_len(ctx->zone));
+
+      msgpack_pack_str(&mp_pck, 11);
+      msgpack_pack_str_body(&mp_pck, "instance_id", 11);
+      msgpack_pack_str(&mp_pck, flb_sds_len(ctx->instance_id));
+      msgpack_pack_str_body(&mp_pck,
+                            ctx->instance_id, flb_sds_len(ctx->instance_id));
+    }
 
     msgpack_pack_str(&mp_pck, 7);
     msgpack_pack_str_body(&mp_pck, "entries", 7);
@@ -377,7 +417,7 @@ static int stackdriver_format(void *data, size_t bytes,
     msgpack_pack_array(&mp_pck, array_size);
 
     off = 0;
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         /* Get timestamp */
         flb_time_pop_from_msgpack(&tms, &result, &obj);
 
@@ -391,7 +431,6 @@ static int stackdriver_format(void *data, size_t bytes,
          * }
          */
         msgpack_pack_map(&mp_pck, 3);
-
 
         /* jsonPayload */
         msgpack_pack_str(&mp_pck, 11);

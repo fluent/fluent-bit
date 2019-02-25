@@ -18,6 +18,7 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_luajit.h>
@@ -144,7 +145,7 @@ static void try_to_convert_data_type(struct lua_filter *lf,
             l2c = mk_list_entry(head, struct l2c_type, _head);
             if (!strncmp(l2c->key, tmp, len)) {
                 lua_tomsgpack(lf, pck, -1);
-                msgpack_pack_int64(pck, (int)lua_tonumber(l, -1));
+                msgpack_pack_int64(pck, (int64_t)lua_tonumber(l, -1));
                 return;
             }
         }
@@ -401,7 +402,7 @@ static int cb_lua_filter(void *data, size_t bytes,
     msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         msgpack_packer data_pck;
         msgpack_sbuffer data_sbuf;
 

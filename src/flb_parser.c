@@ -30,10 +30,9 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_str.h>
-
+#include <fluent-bit/flb_strptime.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <time.h>
 #include <limits.h>
 #include <string.h>
 
@@ -211,7 +210,14 @@ struct flb_parser *flb_parser_create(char *name, char *format,
         /* Check if the format contains a timezone (%z) */
         if (strstr(p->time_fmt, "%z") || strstr(p->time_fmt, "%Z") ||
             strstr(p->time_fmt, "%SZ") || strstr(p->time_fmt, "%S.%LZ")) {
+#ifdef FLB_HAVE_GMTOFF
             p->time_with_tz = FLB_TRUE;
+#else
+            flb_error("[parser] timezone offset not supported");
+            flb_error("[parser] you cannot use %%z/%%Z on this platform");
+            flb_free(p);
+            return NULL;
+#endif
         }
 
         /*
@@ -406,7 +412,7 @@ int flb_parser_conf_file(char *file, struct flb_config *config)
     struct mk_rconf_section *section;
     struct mk_list *head;
     struct stat st;
-    struct flb_parser_types *types;
+    struct flb_parser_types *types = NULL;
     struct mk_list *decoders;
     char *tmp_str;
 
@@ -817,9 +823,11 @@ int flb_parser_time_lookup(char *time_str, size_t tsize,
             }
         }
 
+#ifdef FLB_HAVE_GMTOFF
         if (parser->time_with_tz == FLB_FALSE) {
             tm->tm_gmtoff = parser->time_offset;
         }
+#endif
 
         return 0;
     }

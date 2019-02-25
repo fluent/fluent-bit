@@ -52,7 +52,7 @@ static int in_dummy_collect(struct flb_input_instance *i_ins,
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    while (msgpack_unpack_next(&result, pack, pack_size, &off)) {
+    while (msgpack_unpack_next(&result, pack, pack_size, &off) == MSGPACK_UNPACK_SUCCESS) {
         if (result.data.type == MSGPACK_OBJECT_MAP) {
             /* { map => val, map => val, map => val } */
             msgpack_pack_array(&mp_pck, 2);

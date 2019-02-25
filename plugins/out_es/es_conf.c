@@ -153,6 +153,13 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
         ctx->logstash_prefix_len = sizeof(FLB_ES_DEFAULT_PREFIX) - 1;
     }
 
+    /* Logstash_Prefix_Key */
+    tmp = flb_output_get_property("logstash_prefix_key", ins);
+    if (tmp) {
+        ctx->logstash_prefix_key = flb_strdup(tmp);
+        ctx->logstash_prefix_key_len = strlen(tmp);
+    }
+
     /* Logstash_DateFormat */
     tmp = flb_output_get_property("logstash_dateformat", ins);
     if (tmp) {
@@ -254,6 +261,16 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
         ctx->replace_dots = FLB_FALSE;
     }
 
+    /* Use current time for index generation instead of message record */
+    tmp = flb_output_get_property("current_time_index", ins);
+    if (tmp) {
+        ctx->current_time_index = flb_utils_bool(tmp);
+    }
+    else {
+        ctx->current_time_index = FLB_FALSE;
+    }
+
+
     /* Trace output */
     tmp = flb_output_get_property("Trace_Output", ins);
     if (tmp) {
@@ -281,6 +298,10 @@ int flb_es_conf_destroy(struct flb_elasticsearch *ctx)
 
     if (ctx->include_tag_key) {
         flb_free(ctx->tag_key);
+    }
+
+    if (ctx->logstash_prefix_key) {
+        flb_free(ctx->logstash_prefix_key);
     }
 
     flb_upstream_destroy(ctx->u);

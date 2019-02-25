@@ -148,9 +148,7 @@ REGISTER_OUT_PLUGIN("out_gelf")
 
 # FILTERS
 # =======
-if (NOT CMAKE_SYSTEM_NAME MATCHES "Windows")
-  REGISTER_FILTER_PLUGIN("filter_grep")
-endif()
+REGISTER_FILTER_PLUGIN("filter_grep")
 REGISTER_FILTER_PLUGIN("filter_stdout")
 REGISTER_FILTER_PLUGIN("filter_throttle")
 

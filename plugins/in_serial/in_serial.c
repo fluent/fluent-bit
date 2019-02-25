@@ -74,7 +74,7 @@ static inline int process_pack(msgpack_packer *mp_pck,
 
     /* First pack the results, iterate concatenated messages */
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, pack, size, &off)) {
+    while (msgpack_unpack_next(&result, pack, size, &off) == MSGPACK_UNPACK_SUCCESS) {
         entry = result.data;
 
         msgpack_pack_array(mp_pck, 2);

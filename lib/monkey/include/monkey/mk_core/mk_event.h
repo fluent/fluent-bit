@@ -74,6 +74,12 @@
     #include "mk_event_kqueue.h"
 #endif
 
+#if defined(_WIN32)
+    #define mk_event_closesocket(s) evutil_closesocket(s)
+#else
+    #define mk_event_closesocket(s) close(s)
+#endif
+
 /* Event reported by the event loop */
 struct mk_event {
     int      fd;       /* monitored file descriptor */

@@ -217,6 +217,9 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
         if (strcasecmp(tmp, "iso8601") == 0) {
             ctx->json_date_format = FLB_JSON_DATE_ISO8601;
         }
+        if (strcasecmp(tmp, "epoch") == 0) {
+            ctx->json_date_format = FLB_JSON_DATE_EPOCH;
+        }
     }
 
     /* Date key for JSON output */

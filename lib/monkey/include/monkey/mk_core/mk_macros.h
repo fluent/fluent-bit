@@ -42,23 +42,34 @@
 #define mk_warn(...)  mk_print(MK_WARN, __VA_ARGS__)
 
 /* ANSI Colors */
-#define ANSI_RESET "\033[0m"
-#define ANSI_BOLD  "\033[1m"
+#ifndef _MSC_VER
+#define ANSI_RESET    "\033[0m"
+#define ANSI_BOLD     "\033[1m"
+#define ANSI_CYAN     "\033[96m"
+#define ANSI_MAGENTA  "\033[95m"
+#define ANSI_RED      "\033[91m"
+#define ANSI_YELLOW   "\033[93m"
+#define ANSI_BLUE     "\033[94m"
+#define ANSI_GREEN    "\033[92m"
+#define ANSI_WHITE    "\033[97m"
+#else
+#define ANSI_RESET    ""
+#define ANSI_BOLD     ""
+#define ANSI_CYAN     ""
+#define ANSI_MAGENTA  ""
+#define ANSI_RED      ""
+#define ANSI_YELLOW   ""
+#define ANSI_BLUE     ""
+#define ANSI_GREEN    ""
+#define ANSI_WHITE    ""
+#endif
 
-#define ANSI_CYAN          "\033[96m"
 #define ANSI_BOLD_CYAN     ANSI_BOLD ANSI_CYAN
-#define ANSI_MAGENTA       "\033[95m"
 #define ANSI_BOLD_MAGENTA  ANSI_BOLD ANSI_MAGENTA
-#define ANSI_RED           "\033[91m"
 #define ANSI_BOLD_RED      ANSI_BOLD ANSI_RED
-#define ANSI_YELLOW        "\033[93m"
-
 #define ANSI_BOLD_YELLOW   ANSI_BOLD ANSI_YELLOW
-#define ANSI_BLUE          "\033[94m"
 #define ANSI_BOLD_BLUE     ANSI_BOLD ANSI_BLUE
-#define ANSI_GREEN         "\033[92m"
 #define ANSI_BOLD_GREEN    ANSI_BOLD ANSI_GREEN
-#define ANSI_WHITE         "\033[97m"
 #define ANSI_BOLD_WHITE    ANSI_BOLD ANSI_WHITE
 
 /* Tags */

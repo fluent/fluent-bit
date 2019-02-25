@@ -546,7 +546,7 @@ static inline int extract_meta(struct flb_kube *ctx, char *tag, int tag_len,
     if (ctx->use_journal == FLB_TRUE) {
         off = 0;
         msgpack_unpacked_init(&mp_result);
-        while (msgpack_unpack_next(&mp_result, data, data_size, &off)) {
+        while (msgpack_unpack_next(&mp_result, data, data_size, &off) == MSGPACK_UNPACK_SUCCESS) {
             root = mp_result.data;
             if (root.type != MSGPACK_OBJECT_ARRAY) {
                 continue;

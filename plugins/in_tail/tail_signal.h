@@ -22,7 +22,6 @@
 #define FLB_TAIL_SIGNAL_H
 
 #include "tail_config.h"
-#include <unistd.h>
 
 static inline int tail_signal_manager(struct flb_tail_config *ctx)
 {

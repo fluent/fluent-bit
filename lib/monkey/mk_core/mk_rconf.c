@@ -23,13 +23,18 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <unistd.h>
+#ifndef _MSC_VER
 #include <glob.h>
+#endif
 
 #include <mk_core/mk_rconf.h>
 #include <mk_core/mk_utils.h>
 #include <mk_core/mk_string.h>
 #include <mk_core/mk_list.h>
+
+#ifdef _MSC_VER
+#define PATH_MAX MAX_PATH
+#endif
 
 /* Raise a configuration schema error */
 static void mk_config_error(const char *path, int line, const char *msg)
@@ -393,6 +398,7 @@ static int mk_rconf_read(struct mk_rconf *conf, const char *path)
     return 0;
 }
 
+#ifndef _MSC_VER
 static int mk_rconf_read_glob(struct mk_rconf *conf, const char * path)
 {
     int ret = -1;
@@ -439,6 +445,14 @@ static int mk_rconf_read_glob(struct mk_rconf *conf, const char * path)
     globfree(&glb);
     return ret;
 }
+#else
+static int mk_rconf_read_glob(struct mk_rconf *conf, const char * path)
+{
+    mk_err("[config] wildcard is not supported on Windows");
+    mk_err("[config] path: %s", path);
+    return -1;
+}
+#endif
 
 static int mk_rconf_path_set(struct mk_rconf *conf, char *file)
 {
@@ -446,7 +460,11 @@ static int mk_rconf_path_set(struct mk_rconf *conf, char *file)
     char *end;
     char path[PATH_MAX + 1];
 
+#ifdef _MSC_VER
+    p = _fullpath(path, file, PATH_MAX + 1);
+#else
     p = realpath(file, path);
+#endif
     if (!p) {
         return -1;
     }

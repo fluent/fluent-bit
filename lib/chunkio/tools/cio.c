@@ -19,39 +19,57 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <chunkio/chunkio_compat.h>
-#include <getopt.h>
 #include <string.h>
 #include <sys/types.h>
-#include <sys/mman.h>
-#include <sys/time.h>
-#include <pwd.h>
 #include <limits.h>
 #include <signal.h>
 #include <time.h>
+#ifndef _MSC_VER
+#include <pwd.h>
+#endif
 #ifdef __MACH__
 #  include <mach/clock.h>
 #  include <mach/mach.h>
 #endif
 
-#define ANSI_RESET "\033[0m"
-#define ANSI_BOLD  "\033[1m"
+#include <monkey/mk_core/mk_getopt.h>
+#include <chunkio/chunkio_compat.h>
 
-#define ANSI_CYAN          "\033[96m"
+#ifndef _MSC_VER
+#define ANSI_RESET    "\033[0m"
+#define ANSI_BOLD     "\033[1m"
+#define ANSI_CYAN     "\033[96m"
+#define ANSI_MAGENTA  "\033[95m"
+#define ANSI_RED      "\033[91m"
+#define ANSI_YELLOW   "\033[93m"
+#define ANSI_BLUE     "\033[94m"
+#define ANSI_GREEN    "\033[92m"
+#define ANSI_WHITE    "\033[97m"
+#else
+#define ANSI_RESET    ""
+#define ANSI_BOLD     ""
+#define ANSI_CYAN     ""
+#define ANSI_MAGENTA  ""
+#define ANSI_RED      ""
+#define ANSI_YELLOW   ""
+#define ANSI_BLUE     ""
+#define ANSI_GREEN    ""
+#define ANSI_WHITE    ""
+#endif
+
 #define ANSI_BOLD_CYAN     ANSI_BOLD ANSI_CYAN
-#define ANSI_MAGENTA       "\033[95m"
 #define ANSI_BOLD_MAGENTA  ANSI_BOLD ANSI_MAGENTA
-#define ANSI_RED           "\033[91m"
 #define ANSI_BOLD_RED      ANSI_BOLD ANSI_RED
-#define ANSI_YELLOW        "\033[93m"
-
 #define ANSI_BOLD_YELLOW   ANSI_BOLD ANSI_YELLOW
-#define ANSI_BLUE          "\033[94m"
 #define ANSI_BOLD_BLUE     ANSI_BOLD ANSI_BLUE
-#define ANSI_GREEN         "\033[92m"
 #define ANSI_BOLD_GREEN    ANSI_BOLD ANSI_GREEN
-#define ANSI_WHITE         "\033[97m"
 #define ANSI_BOLD_WHITE    ANSI_BOLD ANSI_WHITE
+
+#ifdef _MSC_VER
+#define STDIN_FILENO _fileno( stdin )
+#define STDOUT_FILENO _fileno( stdout )
+#define STDERR_FILENO _fileno( stderr )
+#endif
 
 #define CIO_ROOT_PATH  ".cio"
 #define cio_print_signal(X) case X:                       \
@@ -102,8 +120,10 @@ static void cio_signal_handler(int signal)
     write(STDERR_FILENO, s, sizeof(s) - 1);
     switch (signal) {
         cio_print_signal(SIGINT);
+#ifndef _MSC_VER
         cio_print_signal(SIGQUIT);
         cio_print_signal(SIGHUP);
+#endif
         cio_print_signal(SIGTERM);
         cio_print_signal(SIGSEGV);
     };
@@ -111,8 +131,10 @@ static void cio_signal_handler(int signal)
     /* Signal handlers */
     switch (signal) {
     case SIGINT:
+#ifndef _MSC_VER
     case SIGQUIT:
     case SIGHUP:
+#endif
     case SIGTERM:
         _exit(EXIT_SUCCESS);
     case SIGSEGV:
@@ -126,7 +148,7 @@ void cio_bytes_to_human_readable_size(size_t bytes,
                                       char *out_buf, size_t size)
 {
     unsigned long i;
-    unsigned long u = 1024;
+    uint64_t u = 1024;
     static const char *__units[] = {
         "b", "K", "M", "G",
         "T", "P", "E", "Z", "Y", NULL
@@ -150,8 +172,10 @@ void cio_bytes_to_human_readable_size(size_t bytes,
 static void cio_signal_init()
 {
     signal(SIGINT,  &cio_signal_handler);
+#ifndef _MSC_VER
     signal(SIGQUIT, &cio_signal_handler);
     signal(SIGHUP,  &cio_signal_handler);
+#endif
     signal(SIGTERM, &cio_signal_handler);
     signal(SIGSEGV, &cio_signal_handler);
 }
@@ -181,6 +205,7 @@ static int log_cb(struct cio_ctx *ctx, int level, const char *file, int line,
     return 0;
 }
 
+#ifndef _MSC_VER
 static int cio_default_root_path(char *path, int size)
 {
     int len;
@@ -202,6 +227,12 @@ static int cio_default_root_path(char *path, int size)
 
     return 0;
 }
+#else
+static int cio_default_root_path(char *path, int size)
+{
+    return -1;
+}
+#endif
 
 static void cio_timespec_get(struct timespec *t)
 {
@@ -428,12 +459,12 @@ static void cb_cmd_perf(struct cio_ctx *ctx, int opt_buffer, char *pfile,
 
     /* Release file data and destroy context */
     free(carr);
-    munmap(in_data, in_size);
+    free(in_data);
 }
 
 int main(int argc, char **argv)
 {
-    int ret;
+    int ret = 0;
     int opt;
     int opt_silent = CIO_FALSE;
     int opt_pwrites = 5;
@@ -492,9 +523,7 @@ int main(int argc, char **argv)
             root_path = strdup(optarg);
             break;
         case 'p':
-            cio_utils_recursive_delete(CIO_PERF_PATH);
             perf_file = strdup(optarg);
-            root_path = strdup(CIO_PERF_PATH);
             cmd_perf = CIO_TRUE;
             break;
         case 'w':
@@ -529,8 +558,13 @@ int main(int argc, char **argv)
         }
     }
 
+    if (opt_buffer == CIO_STORE_FS && cmd_perf) {
+        root_path = strdup(CIO_PERF_PATH);
+        cio_utils_recursive_delete(CIO_PERF_PATH);
+    }
+
     /* Check root path, if not set, defaults to ~/.cio */
-    if (!root_path) {
+    if (opt_buffer == CIO_STORE_FS && !root_path) {
         ret = cio_default_root_path(tmp, sizeof(tmp) - 1);
         if (ret == -1) {
             fprintf(stderr,
@@ -546,7 +580,8 @@ int main(int argc, char **argv)
 
     /* Create CIO instance */
     ctx = cio_create(root_path, log_cb, verbose, flags);
-    free(root_path);
+    if (root_path)
+        free(root_path);
 
     if (!ctx) {
         exit(EXIT_FAILURE);

@@ -569,7 +569,7 @@ static int collector_start(struct flb_input_collector *coll,
                            MK_EVENT_READ, event);
         if (ret == -1) {
             flb_error("[input collector] COLLECT_EVENT registration failed");
-            close(coll->fd_event);
+            mk_event_closesocket(coll->fd_event);
             coll->running = FLB_FALSE;
             return -1;
         }
@@ -684,7 +684,7 @@ int flb_input_collector_pause(int coll_id, struct flb_input_instance *in)
          * one can be created.
          */
         mk_event_timeout_destroy(config->evl, &coll->event);
-        close(coll->fd_timer);
+        mk_event_closesocket(coll->fd_timer);
         coll->fd_timer = -1;
     }
     else if (coll->type & (FLB_COLLECT_FD_SERVER | FLB_COLLECT_FD_EVENT)) {

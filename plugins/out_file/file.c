@@ -237,7 +237,7 @@ static void cb_file_flush(void *data, size_t bytes,
      * of the map to use as a data point.
      */
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         alloc_size = (off - last_off) + 128; /* JSON is larger than msgpack */
         last_off = off;
 

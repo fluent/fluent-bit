@@ -29,6 +29,7 @@
 
 #define FLB_JSON_DATE_DOUBLE      0
 #define FLB_JSON_DATE_ISO8601     1
+#define FLB_JSON_DATE_EPOCH       2
 #define FLB_JSON_DATE_ISO8601_FMT "%Y-%m-%dT%H:%M:%S"
 
 #define FLB_HTTP_CONTENT_TYPE   "Content-Type"

@@ -136,7 +136,7 @@ static int mqtt_data_append(char *topic, size_t topic_len,
 
     off = 0;
     msgpack_unpacked_init(&result);
-    if (!msgpack_unpack_next(&result, pack, out, &off)) {
+    if (msgpack_unpack_next(&result, pack, out, &off) != MSGPACK_UNPACK_SUCCESS) {
         msgpack_unpacked_destroy(&result);
         return -1;
     }

@@ -40,7 +40,8 @@ option(FLB_ALL                "Enable all features"           No)
 option(FLB_DEBUG              "Build with debug symbols"      No)
 option(FLB_COVERAGE           "Build with code-coverage"      No)
 option(FLB_JEMALLOC           "Build with Jemalloc support"   No)
-option(FLB_REGEX              "Build wiht Regex support"     Yes)
+option(FLB_REGEX              "Build with Regex support"     Yes)
+option(FLB_PARSER             "Build with Parser support"    Yes)
 option(FLB_TLS                "Build with SSL/TLS support"    No)
 option(FLB_BINARY             "Build executable binary"      Yes)
 option(FLB_EXAMPLES           "Build examples"               Yes)
@@ -56,6 +57,7 @@ option(FLB_SQLDB              "Enable SQL embedded DB"        No)
 option(FLB_HTTP_SERVER        "Enable HTTP Server"            No)
 option(FLB_BACKTRACE          "Enable stacktrace support"    Yes)
 option(FLB_LUAJIT             "Enable Lua Scripting support" Yes)
+option(FLB_SYSTEM_STRPTIME    "Use strptime in system libc"  Yes)
 option(FLB_STATIC_CONF        "Build binary using static configuration")
 option(FLB_CORO_STACK_SIZE    "Set coroutine stack size")
 
@@ -211,6 +213,12 @@ endmacro()
 # Enable Debug symbols if specified
 if(FLB_DEBUG)
   set(CMAKE_BUILD_TYPE "Debug")
+endif()
+
+if(FLB_PARSER)
+  FLB_DEFINITION(FLB_HAVE_PARSER)
+  message("Enabling FLB_REGEX since FLB_PARSER requires")
+  set(FLB_REGEX On)
 endif()
 
 # Is sanitize_address defined ?
@@ -375,6 +383,18 @@ if(FLB_HAVE_TIMESPEC_GET)
   FLB_DEFINITION(FLB_HAVE_TIMESPEC_GET)
 endif()
 
+# gmtoff support
+check_c_source_compiles("
+  #include <time.h>
+  int main() {
+     struct tm tm;
+     tm.tm_gmtoff = 0;
+     return 0;
+  }" FLB_HAVE_GMTOFF)
+if(FLB_HAVE_GMTOFF)
+  FLB_DEFINITION(FLB_HAVE_GMTOFF)
+endif()
+
 # clock_get_time() support for macOS.
 check_c_source_compiles("
   #include <mach/clock.h>
@@ -447,6 +467,11 @@ else()
     set(AUTOCONF_HOST_OPT "--host=${GNU_HOST}")
 endif()
 
+# strptime(2) support
+if (FLB_SYSTEM_STRPTIME)
+  FLB_DEFINITION(FLB_HAVE_SYSTEM_STRPTIME)
+endif()
+
 # Memory Allocator
 # ================
 if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
@@ -487,33 +512,14 @@ endif()
 # Onigmo (Regex Engine)
 # =====================
 if(FLB_REGEX)
-  ExternalProject_Add(onigmo
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/onigmo
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/onigmo/configure ${AUTOCONF_HOST_OPT} --with-pic --disable-shared --enable-static --prefix=<INSTALL_DIR>
-    CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
-    BUILD_COMMAND $(MAKE)
-    INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
-    INSTALL_COMMAND $(MAKE) install)
-  add_library(libonigmo STATIC IMPORTED GLOBAL)
-  set_target_properties(libonigmo PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/lib/libonigmo.a")
-  add_dependencies(libonigmo onigmo)
-  include_directories("${CMAKE_CURRENT_BINARY_DIR}/include/")
+  include(cmake/onigmo.cmake)
   FLB_DEFINITION(FLB_HAVE_REGEX)
 endif()
 
 # LuaJIT (Scripting Support)
 # ==========================
 if(FLB_LUAJIT)
-  set(LUA_PATH ${CMAKE_CURRENT_SOURCE_DIR}/lib/LuaJIT-2.1.0-beta3)
-  ExternalProject_Add(luajit
-    SOURCE_DIR ${LUA_PATH}
-    CONFIGURE_COMMAND ${LUA_PATH}/configure
-    BUILD_COMMAND $(MAKE) CC=${CMAKE_C_COMPILER} BUILD_MODE=static XCFLAGS="-fPIC" -C ${LUA_PATH}
-    INSTALL_COMMAND cp ${LUA_PATH}/src/libluajit.a "${CMAKE_CURRENT_BINARY_DIR}/lib/libluajit.a")
-  add_library(libluajit STATIC IMPORTED GLOBAL)
-  set_target_properties(libluajit PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/lib/libluajit.a")
-  add_dependencies(libluajit luajit)
-  include_directories("${CMAKE_CURRENT_BINARY_DIR}/include/")
+  include(cmake/luajit.cmake)
   FLB_DEFINITION(FLB_HAVE_LUAJIT)
 endif()
 

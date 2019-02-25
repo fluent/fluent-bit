@@ -428,15 +428,14 @@ static int forward_config_ha(char *upstream_file,
         }
         fc->secured = FLB_FALSE;
 
-        /* Is TLS enabled ? */
-        if (node->tls_enabled == FLB_TRUE) {
-            fc->secured = FLB_TRUE;
-        }
-
         /* Shared key (secure_forward) */
         tmp = flb_upstream_node_get_property("shared_key", node);
         if (tmp) {
             fc->shared_key = flb_sds_create(tmp);
+	    /* Is TLS enabled ? */
+	    if (node->tls_enabled == FLB_TRUE) {
+		fc->secured = FLB_TRUE;
+	    }
         }
         else {
             fc->shared_key = NULL;
@@ -500,7 +499,9 @@ static int forward_config_simple(struct flb_forward *ctx,
 #ifdef FLB_HAVE_TLS
     if (ins->use_tls == FLB_TRUE) {
         io_flags = FLB_IO_TLS;
-        fc->secured = FLB_TRUE;
+	if (fc->shared_key) {
+	    fc->secured = FLB_TRUE;
+	}
     }
     else {
         io_flags = FLB_IO_TCP;
@@ -613,7 +614,7 @@ static int data_compose(void *data, size_t bytes,
         msgpack_sbuffer_init(&mp_sbuf);
         msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-        while (msgpack_unpack_next(&result, data, bytes, &off)) {
+        while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
             /* Gather time */
             flb_time_pop_from_msgpack(&tm, &result, &mp_obj);
 
@@ -625,7 +626,7 @@ static int data_compose(void *data, size_t bytes,
         }
     }
     else {
-        while (msgpack_unpack_next(&result, data, bytes, &off)) {
+        while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
             entries++;
         }
     }

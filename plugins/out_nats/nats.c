@@ -96,7 +96,7 @@ static int msgpack_to_json(void *data, size_t bytes,
 
     /* Iterate the original buffer and perform adjustments */
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         array_size++;
     }
     msgpack_unpacked_destroy(&result);
@@ -108,7 +108,7 @@ static int msgpack_to_json(void *data, size_t bytes,
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
     msgpack_pack_array(&mp_pck, array_size);
 
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         if (result.data.type != MSGPACK_OBJECT_ARRAY) {
             continue;
         }

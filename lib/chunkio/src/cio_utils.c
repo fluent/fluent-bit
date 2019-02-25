@@ -24,15 +24,15 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fts.h>
-#include <sys/mman.h>
 #include <errno.h>
+#ifndef _MSC_VER
+#include <fts.h>
+#endif
 
 #include <chunkio/chunkio_compat.h>
 #include <chunkio/cio_log.h>
 
+#ifndef _MSC_VER
 /*
  * Taken from StackOverflow:
  *
@@ -93,39 +93,51 @@ int cio_utils_recursive_delete(const char *dir)
 
     return ret;
 }
+#else
+int cio_utils_recursive_delete(const char *dir)
+{
+    return -1;
+}
+#endif
 
 int cio_utils_read_file(const char *path, char **buf, size_t *size)
 {
-    int fd;
     int ret;
     char *data;
+    FILE *fp;
     struct stat st;
 
-    fd = open(path, O_RDONLY);
-    if (fd == -1) {
-        perror("open");
+    fp = fopen(path, "rb");
+    if (fp == NULL) {
+        perror("fopen");
         return -1;
     }
 
-    ret = fstat(fd, &st);
+    ret = fstat(fileno(fp), &st);
     if (ret == -1) {
+        fclose(fp);
         perror("fstat");
-        close(fd);
         return -1;
     }
     if (!S_ISREG(st.st_mode)) {
-        close(fd);
+        fclose(fp);
         return -1;
     }
 
-    data = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
-    if (data == MAP_FAILED) {
-        perror("mmap");
-        close(fd);
+    data = calloc(st.st_size, 1);
+    if (!data) {
+        perror("calloc");
+        fclose(fp);
         return -1;
     }
 
-    close(fd);
+    ret = fread(data, st.st_size, 1, fp);
+    if (ret != 1) {
+        free(data);
+        fclose(fp);
+        return -1;
+    }
+    fclose(fp);
 
     *buf = data;
     *size = st.st_size;

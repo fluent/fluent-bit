@@ -40,7 +40,6 @@ static int in_exec_collect(struct flb_input_instance *i_ins,
     int ret = -1;
     size_t str_len = 0;
     FILE *cmdp = NULL;
-    char buf[DEFAULT_BUF_SIZE] = {0};
     struct flb_in_exec_config *exec_config = in_context;
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
@@ -58,13 +57,13 @@ static int in_exec_collect(struct flb_input_instance *i_ins,
     }
 
     if (exec_config->parser) {
-        while (fgets(buf, DEFAULT_BUF_SIZE - 1,cmdp) != NULL) {
-            str_len = strlen(buf);
-            buf[str_len-1] = '\0'; /* chomp */
+        while (fgets(exec_config->buf, exec_config->buf_size, cmdp) != NULL) {
+            str_len = strnlen(exec_config->buf, exec_config->buf_size);
+            exec_config->buf[str_len - 1] = '\0'; /* chomp */
 
             flb_time_get(&out_time);
-            parser_ret = flb_parser_do(exec_config->parser, buf, str_len-1,
-                                &out_buf, &out_size, &out_time);
+            parser_ret = flb_parser_do(exec_config->parser, exec_config->buf, str_len - 1,
+                                       &out_buf, &out_size, &out_time);
             if (parser_ret >= 0) {
                 if (flb_time_to_double(&out_time) == 0.0) {
                     flb_time_get(&out_time);
@@ -83,12 +82,17 @@ static int in_exec_collect(struct flb_input_instance *i_ins,
                 msgpack_sbuffer_destroy(&mp_sbuf);
                 flb_free(out_buf);
             }
+            else {
+                flb_trace("[in_exec] tried to parse '%s'", exec_config->buf);
+                flb_trace("[in_exec] buf_size %zu", exec_config->buf_size);
+                flb_error("[in_exec] parser returned an error");
+            }
         }
     }
     else {
-        while (fgets(buf, DEFAULT_BUF_SIZE - 1,cmdp) != NULL) {
-            str_len = strlen(buf);
-            buf[str_len-1] = '\0'; /* chomp */
+        while (fgets(exec_config->buf, exec_config->buf_size, cmdp) != NULL) {
+            str_len = strnlen(exec_config->buf, exec_config->buf_size);
+            exec_config->buf[str_len - 1] = '\0'; /* chomp */
 
             /* Initialize local msgpack buffer */
             msgpack_sbuffer_init(&mp_sbuf);
@@ -100,9 +104,9 @@ static int in_exec_collect(struct flb_input_instance *i_ins,
 
             msgpack_pack_str(&mp_pck, 4);
             msgpack_pack_str_body(&mp_pck, "exec", 4);
-            msgpack_pack_str(&mp_pck, str_len-1);
+            msgpack_pack_str(&mp_pck, str_len - 1);
             msgpack_pack_str_body(&mp_pck,
-                                  buf, str_len-1);
+                                  exec_config->buf, str_len - 1);
 
             flb_input_chunk_append_raw(i_ins, NULL, 0,
                                        mp_sbuf.data, mp_sbuf.size);
@@ -147,6 +151,19 @@ static int in_exec_config_read(struct flb_in_exec_config *exec_config,
         }
     }
 
+    pval = flb_input_get_property("buf_size", in);
+    if (pval != NULL) {
+        exec_config->buf_size = (size_t) flb_utils_size_to_bytes(pval);
+
+        if (exec_config->buf_size == -1) {
+            flb_error("[in_exec] buffer size '%s' is invalid", pval);
+            return -1;
+        }
+    }
+    else {
+        exec_config->buf_size = DEFAULT_BUF_SIZE;
+    }
+
     /* interval settings */
     pval = flb_input_get_property("interval_sec", in);
     if (pval != NULL && atoi(pval) >= 0) {
@@ -179,6 +196,10 @@ static int in_exec_config_read(struct flb_in_exec_config *exec_config,
 static void delete_exec_config(struct flb_in_exec_config *exec_config)
 {
     if (exec_config) {
+        /* release buffer */
+        if (exec_config->buf != NULL) {
+            flb_free(exec_config->buf);
+        }
         flb_free(exec_config);
     }
 }
@@ -189,7 +210,7 @@ static int in_exec_init(struct flb_input_instance *in,
 {
     struct flb_in_exec_config *exec_config = NULL;
     int ret = -1;
-    int interval_sec  = 0;
+    int interval_sec = 0;
     int interval_nsec = 0;
 
     /* Allocate space for the configuration */
@@ -202,6 +223,12 @@ static int in_exec_init(struct flb_input_instance *in,
     /* Initialize exec config */
     ret = in_exec_config_read(exec_config, in, config, &interval_sec, &interval_nsec);
     if (ret < 0) {
+        goto init_error;
+    }
+
+    exec_config->buf = flb_malloc(exec_config->buf_size);
+    if (exec_config->buf == NULL) {
+        flb_error("could not allocate exec buffer");
         goto init_error;
     }
 
