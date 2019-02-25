@@ -108,6 +108,9 @@ static void flb_output_free_properties(struct flb_output_instance *ins)
 
 int flb_output_instance_destroy(struct flb_output_instance *ins)
 {
+    /* destroy event timers */
+    flb_output_event_destroy_all(ins);
+
     if (ins->alias) {
         flb_free(ins->alias);
     }
@@ -311,6 +314,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         }
     }
     mk_list_init(&instance->properties);
+    mk_list_init(&instance->event_timers);
     mk_list_add(&instance->_head, &config->outputs);
 
     return instance;
@@ -581,4 +585,128 @@ int flb_output_check(struct flb_config *config)
         return -1;
     }
     return 0;
+}
+
+int flb_output_event_fd(flb_pipefd_t fd, struct flb_config *config)
+{
+    struct mk_list *head;
+    struct mk_list *o_head;
+    struct flb_output_instance *in = NULL;
+    struct flb_output_event_timer *et = NULL;
+
+    mk_list_foreach(head, &config->outputs) {
+        in = mk_list_entry(head, struct flb_output_instance, _head);
+        mk_list_foreach(o_head, &in->event_timers) {
+            et = mk_list_entry(o_head, struct flb_output_event_timer, _head);
+            if (et->fd_timer == fd) {
+                flb_utils_timer_consume(fd);
+                goto done;
+            }
+            et = NULL;
+        }
+    }
+
+ done:
+
+    /* No matches */
+    if (!et) {
+        return -1;
+    }
+
+    if (et->running == FLB_FALSE) {
+        return -1;
+    }
+
+    /* Invoke the callback */
+    et->cb_timer(in, config);
+    return 0;
+}
+
+/*
+ * Create a timer/callback. This function aims to be used from an output plugin  * that needs to perform specific work when is not doing a direct flush.
+ *
+ * This function do not start the timer, it only creates the context.
+ */
+
+struct flb_output_event_timer *
+flb_output_event_timer_create(struct flb_output_instance *in,
+                              int (*cb_timer) (struct flb_output_instance *,
+                                               struct flb_config *),
+                              time_t seconds,
+                              long nanoseconds,
+                              struct flb_config *config)
+{
+    struct mk_event *event;
+    struct flb_output_event_timer *et;
+
+    et = flb_malloc(sizeof(struct flb_output_event_timer));
+    if (!et) {
+        flb_errno();
+        return NULL;
+    }
+
+    event = &et->event;
+    event->mask = MK_EVENT_EMPTY;
+    event->status = MK_EVENT_NONE;
+
+    et->fd_timer = -1;
+    et->running = FLB_FALSE;
+    et->seconds = seconds;
+    et->nanoseconds = nanoseconds;
+    et->cb_timer = cb_timer;
+    et->in = in;
+    mk_list_add(&et->_head, &in->event_timers);
+
+    return et;
+}
+
+/* Start running an event timer */
+int flb_output_event_timer_start(struct flb_output_event_timer *et,
+                                 struct flb_output_instance *in,
+                                 struct flb_config *config)
+{
+    int fd;
+    struct mk_event *event;
+
+    event = &et->event;
+
+    fd = mk_event_timeout_create(config->evl,
+                                 et->seconds,
+                                 et->nanoseconds,
+                                 event);
+    if (fd == -1) {
+        flb_error("[output] event timer: error creating timer file descriptor");
+        et->running = FLB_FALSE;
+        return -1;
+    }
+
+    et->fd_timer = fd;
+    et->running = FLB_TRUE;
+
+    return 0;
+}
+
+/* Destroy an event timer context */
+void flb_output_event_timer_destroy(struct flb_output_event_timer *et,
+                                    struct flb_output_instance *in,
+                                    struct flb_config *config)
+{
+    (void) in;
+
+    mk_event_timeout_destroy(config->evl, &et->event);
+    mk_event_closesocket(et->fd_timer);
+    mk_list_del(&et->_head);
+    flb_free(et);
+}
+
+void flb_output_event_destroy_all(struct flb_output_instance *in)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_output_event_timer *et;
+
+    mk_list_foreach_safe(head, tmp, &in->event_timers) {
+        et = mk_list_entry(head, struct flb_output_event_timer, _head);
+        flb_output_event_timer_destroy(et, in, in->config);
+    }
 }

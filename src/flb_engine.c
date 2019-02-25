@@ -260,6 +260,12 @@ static FLB_INLINE int flb_engine_handle_event(flb_pipefd_t fd, int mask,
             return ret;
         }
 
+        /* Try to match the file descriptor with an output event */
+        ret = flb_output_event_fd(fd, config);
+        if (ret != -1) {
+            return ret;
+        }
+
         /* Metrics exporter event ? */
 #ifdef FLB_HAVE_METRICS
         ret = flb_me_fd_event(fd, config->metrics);

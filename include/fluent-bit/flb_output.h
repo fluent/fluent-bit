@@ -168,6 +168,9 @@ struct flb_output_instance {
     /* IO upstream context, if flags & (FLB_OUTPUT_TCP | FLB_OUTPUT TLS)) */
     struct flb_upstream *upstream;
 
+    /* Event timers (callbacks) */
+    struct mk_list event_timers;
+
     /*
      * The threads_queue is the head for the linked list that holds co-routines
      * nodes information that needs to be processed.
@@ -189,6 +192,19 @@ struct flb_output_instance {
 
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;
+};
+
+/* Keep context of a timer event callback */
+struct flb_output_event_timer {
+    struct mk_event event;
+    flb_pipefd_t fd_timer;
+    int running;
+    time_t seconds;
+    long nanoseconds;
+    int (*cb_timer) (struct flb_output_instance *,
+                     struct flb_config *);
+    struct flb_output_instance *in;
+    struct mk_list _head;
 };
 
 struct flb_output_thread {
@@ -499,5 +515,21 @@ void flb_output_set_context(struct flb_output_instance *ins, void *context);
 int flb_output_instance_destroy(struct flb_output_instance *ins);
 int flb_output_init(struct flb_config *config);
 int flb_output_check(struct flb_config *config);
+
+int flb_output_event_fd(flb_pipefd_t fd, struct flb_config *config);
+struct flb_output_event_timer *
+flb_output_event_timer_create(struct flb_output_instance *in,
+                                  int (*cb_timer) (struct flb_output_instance *,
+                                                   struct flb_config *),
+                                  time_t seconds,
+                                  long nanoseconds,
+                                  struct flb_config *config);
+int flb_output_event_timer_start(struct flb_output_event_timer *et,
+                                 struct flb_output_instance *in,
+                                 struct flb_config *config);
+void flb_output_event_timer_destroy(struct flb_output_event_timer *et,
+                                    struct flb_output_instance *in,
+                                    struct flb_config *config);
+void flb_output_event_destroy_all(struct flb_output_instance *in);
 
 #endif
