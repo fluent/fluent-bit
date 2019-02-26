@@ -418,8 +418,8 @@ int cb_es_init(struct flb_output_instance *ins,
         return -1;
     }
 
-    flb_debug("[out_es] host=%s port=%i index=%s type=%s",
-              ins->host.name, ins->host.port,
+    flb_debug("[out_es] host=%s port=%i uri=%s index=%s type=%s",
+              ins->host.name, ins->host.port, ctx->uri,
               ctx->index, ctx->type);
 
     flb_output_set_context(ins, ctx);
@@ -565,12 +565,12 @@ void cb_es_flush(void *data, size_t bytes,
 
     ret = flb_http_do(c, &b_sent);
     if (ret != 0) {
-        flb_warn("[out_es] http_do=%i", ret);
+        flb_warn("[out_es] http_do=%i URI=%s", ret, ctx->uri);
         goto retry;
     }
     else {
         /* The request was issued successfully, validate the 'error' field */
-        flb_debug("[out_es] HTTP Status=%i", c->resp.status);
+        flb_debug("[out_es] HTTP Status=%i URI=%s", c->resp.status, ctx->uri);
         if (c->resp.status != 200) {
             goto retry;
         }

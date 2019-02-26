@@ -32,6 +32,7 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
     int io_flags = 0;
     ssize_t ret;
     char *tmp;
+    char *path;
     struct flb_uri *uri = ins->host.uri;
     struct flb_uri_field *f_index = NULL;
     struct flb_uri_field *f_type = NULL;
@@ -234,14 +235,22 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
         }
     }
 
+    /* Elasticsearch: Path */
+    path = flb_output_get_property("path", ins);
+    if (!path) {
+        path = flb_strdup("");
+    }
+
     /* Elasticsearch: Pipeline */
     tmp = flb_output_get_property("pipeline", ins);
     if (tmp) {
-        snprintf(ctx->uri, sizeof(ctx->uri) - 1, "/_bulk/?pipeline=%s", tmp);
+        snprintf(ctx->uri, sizeof(ctx->uri) - 1, "%s/_bulk/?pipeline=%s", path, tmp);
     }
     else {
-        snprintf(ctx->uri, sizeof(ctx->uri) - 1, "/_bulk");
+        snprintf(ctx->uri, sizeof(ctx->uri) - 1, "%s/_bulk", path);
     }
+
+    flb_free(path);
 
     /* Generate _id */
     tmp = flb_output_get_property("generate_id", ins);
