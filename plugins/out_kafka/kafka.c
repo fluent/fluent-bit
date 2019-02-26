@@ -28,8 +28,10 @@
 
 static int cb_timer(struct flb_output_instance *in,
                     struct flb_config *config)
-{
-    flb_info("[out_kafka] timer test");
+{    
+    /* poll once a second to service the delivery report queue */
+    struct flb_kafka *ctx = in->context;
+    rd_kafka_poll(ctx->producer, 0);
     return 0;
 }
 
@@ -260,6 +262,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
              * to enqueue this message, if we exceed 10 times, we just
              * issue a full retry of the data chunk.
              */
+            rd_kafka_poll(ctx->producer, 0);
             flb_time_sleep(1000, config);
 
             /* Issue a re-try */
@@ -273,7 +276,24 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     }
     ctx->blocked = FLB_FALSE;
 
-    rd_kafka_poll(ctx->producer, 0);
+    /* 
+     * Call poll to service the delivery report queue. We thin this call
+     * out with a mod on nanosecond so that we don't poll on every
+     * message. It's not important that we service each and every 
+     * message here because the event timer (cb_timer) will catch any
+     * that slip through. However, it's important that we don't put 
+     * too much load on the event timer callback so we don't hit
+     * a maximum message per second (eg. 10k msg/sec based on the
+     * delivery report queue size).
+     *
+     * rd_kafka_poll is thread safe and protected with a mutex, so 
+     * the produce_message generated rd_kafka_polls can overlap with
+     * the cb_timer generated rd_kafka_polls.
+     */
+    if (tm->tm.tv_nsec % 10 == 0) {
+        rd_kafka_poll(ctx->producer, 0);
+    }
+
     if (ctx->format == FLB_KAFKA_FMT_JSON) {
         flb_free(out_buf);
     }
