@@ -22,7 +22,6 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <time.h>
-#include <libgen.h>
 
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
