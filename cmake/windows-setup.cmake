@@ -7,7 +7,7 @@ set(FLB_REGEX                 Yes)
 set(FLB_BACKTRACE              No)
 set(FLB_LUAJIT                Yes)
 set(FLB_EXAMPLES               No)
-set(FLB_PARSER                 No)
+set(FLB_PARSER                Yes)
 
 # Windows does not support strptime(3)
 set(FLB_SYSTEM_STRPTIME        No)
