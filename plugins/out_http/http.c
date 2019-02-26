@@ -283,12 +283,12 @@ static int http_post (struct flb_out_http *ctx,
         }
         else {
             if (c->resp.payload) {
-                flb_info("[out_http] %s:%i, HTTP status=%i\n%s",
+                flb_debug("[out_http] %s:%i, HTTP status=%i\n%s",
                          ctx->host, ctx->port,
                          c->resp.status, c->resp.payload);
             }
             else {
-                flb_info("[out_http] %s:%i, HTTP status=%i",
+                flb_debug("[out_http] %s:%i, HTTP status=%i",
                          ctx->host, ctx->port,
                          c->resp.status);
             }
