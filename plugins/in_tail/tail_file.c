@@ -46,6 +46,28 @@ static inline void consume_bytes(char *buf, int bytes, int length)
     memmove(buf, buf + bytes, length - bytes);
 }
 
+#ifdef _MSC_VER
+/*
+ * Open a file for reading. We need to use CreateFileA() instead of
+ * open(2) to avoid automatic file locking.
+ */
+static int open_file(const char *path)
+{
+    HANDLE h;
+    h = CreateFileA(path,
+                    GENERIC_READ,
+                    FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
+                    NULL,           /* lpSecurityAttributes */
+                    OPEN_EXISTING,  /* dwCreationDisposition */
+                    0,              /* dwFlagsAndAttributes */
+                    NULL);          /* hTemplateFile */
+    if (h == INVALID_HANDLE_VALUE) {
+        return -1;
+    }
+    return _open_osfhandle((intptr_t) h, _O_RDONLY);
+}
+#endif
+
 static int unpack_and_pack(msgpack_packer *pck, msgpack_object *root,
                            char *key, size_t key_len,
                            char *val, size_t val_len)
@@ -553,11 +575,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     }
 
 #ifdef _MSC_VER
-    /*
-     * We need O_BINARY here in order to avoid count errors due to
-     * Windows treating '\r\n' as 1 byte in text mode.
-     */
-    fd = _open(path, _O_RDONLY | _O_BINARY);
+    fd = open_file(path);
 #else
     fd = open(path, O_RDONLY);
 #endif
