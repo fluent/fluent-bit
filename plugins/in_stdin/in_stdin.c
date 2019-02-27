@@ -194,7 +194,7 @@ static int in_stdin_collect(struct flb_input_instance *i_ins,
                 flb_free(out_buf);
                 flb_input_chunk_append_raw(i_ins, NULL, 0,
                                            mp_sbuf.data, mp_sbuf.size);
-                msgpack_sbuffer_destroy(&mp_sbuf);
+                msgpack_sbuffer_clear(&mp_sbuf);
             }
             else {
                 /* we need more data ? */
