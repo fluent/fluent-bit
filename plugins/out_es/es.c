@@ -35,9 +35,9 @@
 
 struct flb_output_plugin out_es_plugin;
 
-static inline void es_pack_map_content(msgpack_packer *tmp_pck,
-                                       msgpack_object map,
-                                       struct flb_elasticsearch *ctx)
+static inline int es_pack_map_content(msgpack_packer *tmp_pck,
+                                      msgpack_object map,
+                                      struct flb_elasticsearch *ctx)
 {
     int i;
     char *ptr_key = NULL;
@@ -71,6 +71,11 @@ static inline void es_pack_map_content(msgpack_packer *tmp_pck,
         else {
             /* Long map keys have a performance penalty */
             ptr_key = flb_malloc(key_size + 1);
+            if (!ptr_key) {
+                flb_errno();
+                return -1;
+            }
+
             memcpy(ptr_key, key_ptr, key_size);
             ptr_key[key_size] = '\0';
         }
@@ -112,6 +117,8 @@ static inline void es_pack_map_content(msgpack_packer *tmp_pck,
             msgpack_pack_object(tmp_pck, *v);
         }
     }
+
+    return 0;
 }
 
 /*
@@ -354,7 +361,13 @@ static char *elasticsearch_format(void *data, size_t bytes,
          * Elasticsearch have a restriction that key names cannot contain
          * a dot; if some dot is found, it's replaced with an underscore.
          */
-        es_pack_map_content(&tmp_pck, map, ctx);
+        ret = es_pack_map_content(&tmp_pck, map, ctx);
+        if (ret == -1) {
+            msgpack_unpacked_destroy(&result);
+            msgpack_sbuffer_destroy(&tmp_sbuf);
+            es_bulk_destroy(bulk);
+            return NULL;
+        }
 
         if (ctx->generate_id == FLB_TRUE) {
             MurmurHash3_x64_128(tmp_sbuf.data, tmp_sbuf.size, 42, hash);
