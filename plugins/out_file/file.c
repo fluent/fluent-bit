@@ -227,6 +227,7 @@ static void cb_file_flush(void *data, size_t bytes,
     tag_buf = flb_malloc(tag_len + 1);
     if (!tag_buf) {
         flb_errno();
+        fclose(fp);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
     memcpy(tag_buf, tag, tag_len);
@@ -256,6 +257,7 @@ static void cb_file_flush(void *data, size_t bytes,
             else {
                 msgpack_unpacked_destroy(&result);
                 fclose(fp);
+                flb_free(tag_buf);
                 FLB_OUTPUT_RETURN(FLB_RETRY);
             }
             break;
