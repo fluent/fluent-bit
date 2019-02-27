@@ -186,6 +186,7 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
     creds = flb_calloc(1, sizeof(struct flb_bigquery_oauth_credentials));
     if (!creds) {
         flb_errno();
+        flb_free(ctx);
         return NULL;
     }
     ctx->oauth_credentials = creds;
@@ -213,7 +214,7 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
          * If no credentials file has been defined, do manual lookup of the
          * client email and the private key.
          */
-        
+
         /* Service Account Email */
         tmp = flb_output_get_property("service_account_email", ins);
         if (tmp) {
@@ -285,7 +286,7 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
         flb_bigquery_conf_destroy(ctx);
         return NULL;
     }
-    
+
     /* config: 'table_id' */
     tmp = flb_output_get_property("table_id", ins);
     if (tmp) {

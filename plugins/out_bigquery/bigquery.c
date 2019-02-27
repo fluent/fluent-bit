@@ -32,7 +32,7 @@
 #include <mbedtls/base64.h>
 #include <mbedtls/sha256.h>
 
-// TODO: The following code is copied from the Stackdriver plugin and should be 
+// TODO: The following code is copied from the Stackdriver plugin and should be
 //       factored into common library functions.
 
 /*
@@ -109,8 +109,8 @@ static int bigquery_jwt_encode(char *payload, char *secret,
     }
 
     /* Append header */
-    flb_sds_cat(out, buf, olen);
-    flb_sds_cat(out, ".", 1);
+    out = flb_sds_cat(out, buf, olen);
+    out = flb_sds_cat(out, ".", 1);
 
     /* Encode Payload */
     len = strlen(payload);
@@ -118,7 +118,7 @@ static int bigquery_jwt_encode(char *payload, char *secret,
                           (unsigned char *) payload, len, &olen);
 
     /* Append Payload */
-    flb_sds_cat(out, buf, olen);
+    out = flb_sds_cat(out, buf, olen);
 
     /* do sha256() of base64(header).base64(payload) */
     mbedtls_sha256_init(&sha256_ctx);
@@ -173,8 +173,8 @@ static int bigquery_jwt_encode(char *payload, char *secret,
 
     bigquery_jwt_base64_url_encode((unsigned char *) sigd, 2048, sig, 256, &olen);
 
-    flb_sds_cat(out, ".", 1);
-    flb_sds_cat(out, sigd, olen);
+    out = flb_sds_cat(out, ".", 1);
+    out = flb_sds_cat(out, sigd, olen);
 
     *out_signature = out;
     *out_size = flb_sds_len(out);
@@ -368,7 +368,7 @@ static int bigquery_format(void *data, size_t bytes,
          * {
          *  "json": {...}
          * }
-         * 
+         *
          * For now, we don't support the insertId that's required for duplicate detection.
          */
         msgpack_pack_map(&mp_pck, 1);
@@ -501,7 +501,7 @@ static void cb_bigquery_flush(void *data, size_t bytes,
 static int cb_bigquery_exit(void *data, struct flb_config *config)
 {
     struct flb_bigquery *ctx = data;
-    
+
     if (!ctx) {
         return -1;
     }
