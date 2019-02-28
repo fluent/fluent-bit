@@ -231,9 +231,15 @@ endif()
 if(FLB_SHARED_LIB)
   add_library(fluent-bit-shared SHARED ${src})
   add_sanitizers(fluent-bit-shared)
-  target_link_libraries(fluent-bit-shared ${FLB_DEPS} -lpthread)
   set_target_properties(fluent-bit-shared
     PROPERTIES OUTPUT_NAME fluent-bit)
+
+  # Windows doesn't provide pthread (see winpthreads.c in mk_core).
+  if(CMAKE_SYSTEM_NAME MATCHES "Windows")
+    target_link_libraries(fluent-bit-shared ${FLB_DEPS})
+  else()
+    target_link_libraries(fluent-bit-shared ${FLB_DEPS} -lpthread)
+  endif()
 
   # Library install routines
   install(TARGETS fluent-bit-shared
