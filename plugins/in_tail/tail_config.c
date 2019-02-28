@@ -54,7 +54,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
     ctx->db_sync = -1;
 
     /* Create the channel manager */
-    ret = pipe(ctx->ch_manager);
+    ret = flb_pipe_create(ctx->ch_manager);
     if (ret == -1) {
         flb_errno();
         flb_free(ctx);
@@ -62,7 +62,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
     }
 
     /* Create the pending channel */
-    ret = pipe(ctx->ch_pending);
+    ret = flb_pipe_create(ctx->ch_pending);
     if (ret == -1) {
         flb_errno();
         flb_tail_config_destroy(ctx);
@@ -70,7 +70,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
     }
     /* Make pending channel non-blocking */
     for (i = 0; i <= 1; i++) {
-        ret = fcntl(ctx->ch_pending[i], F_SETFL, fcntl(ctx->ch_pending[i], F_GETFL) | O_NONBLOCK);
+        ret = flb_pipe_set_nonblocking(ctx->ch_pending[i]);
         if (ret == -1) {
             flb_errno();
             flb_tail_config_destroy(ctx);
@@ -325,10 +325,10 @@ int flb_tail_config_destroy(struct flb_tail_config *config)
     flb_tail_mult_destroy(config);
 
     /* Close pipe ends */
-    close(config->ch_manager[0]);
-    close(config->ch_manager[1]);
-    close(config->ch_pending[0]);
-    close(config->ch_pending[1]);
+    flb_pipe_close(config->ch_manager[0]);
+    flb_pipe_close(config->ch_manager[1]);
+    flb_pipe_close(config->ch_pending[0]);
+    flb_pipe_close(config->ch_pending[1]);
 
 #ifdef FLB_HAVE_REGEX
     if (config->tag_regex) {
