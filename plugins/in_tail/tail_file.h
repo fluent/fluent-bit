@@ -39,8 +39,10 @@
 static inline int flb_tail_file_name_cmp(char *name,
                                         struct flb_tail_file *file)
 {
-#ifdef __linux__
+#if defined(__linux__)
     return strcmp(name, file->name);
+#elif defined(__MSC_VER)
+    return _stricmp(name, file->real_name);
 #else
     return strcmp(name, file->real_name);
 #endif
