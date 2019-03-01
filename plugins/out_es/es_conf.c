@@ -288,6 +288,13 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
     else {
         ctx->trace_output = FLB_FALSE;
     }
+    tmp = flb_output_get_property("Trace_Error", ins);
+    if (tmp) {
+        ctx->trace_error = flb_utils_bool(tmp);
+    }
+    else {
+        ctx->trace_error = FLB_FALSE;
+    }
 
     return ctx;
 }

@@ -481,7 +481,9 @@ static int elasticsearch_error_check(struct flb_http_client *c)
     /* Lookup error field */
     msgpack_unpacked_init(&result);
     ret = msgpack_unpack_next(&result, out_buf, out_size, &off);
-    if (ret == MSGPACK_UNPACK_SUCCESS) {
+    if (ret != MSGPACK_UNPACK_SUCCESS) {
+        flb_error("[out_es] Cannot unpack response to find error\n%s",
+                  c->resp.payload);
         return FLB_TRUE;
     }
 
@@ -585,7 +587,7 @@ void cb_es_flush(void *data, size_t bytes,
     else {
         /* The request was issued successfully, validate the 'error' field */
         flb_debug("[out_es] HTTP Status=%i URI=%s", c->resp.status, ctx->uri);
-        if (c->resp.status != 200) {
+        if (c->resp.status != 200 && c->resp.status != 201) {
             goto retry;
         }
 
@@ -597,8 +599,14 @@ void cb_es_flush(void *data, size_t bytes,
             ret = elasticsearch_error_check(c);
             if (ret == FLB_TRUE) {
                 /* we got an error */
-                flb_warn("[out_es] Elasticsearch error\n%s",
-                         c->resp.payload);
+                if (ctx->trace_error) {
+                    /*
+                     * If trace_error is set, trace the actual
+                     * input/output to Elasticsearch that caused the problem.
+                     */
+                    flb_error("[out_es] error: Input\n%s\nOutput\n%s",
+                             pack, c->resp.payload);
+                }
                 goto retry;
             }
             else {
