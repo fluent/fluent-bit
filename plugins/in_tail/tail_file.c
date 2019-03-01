@@ -180,6 +180,7 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
     char *p;
     void *out_buf;
     size_t out_size;
+    int crlf;
     char *line;
     size_t line_len;
     char *repl_line;
@@ -218,11 +219,19 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
             continue;
         }
 
+        /* Process '\r\n' */
+        crlf = (data[len-1] == '\r');
+        if (len == 1 && crlf) {
+            data += 2;
+            processed_bytes += 2;
+            continue;
+        }
+
         /* Reset time for each line */
         flb_time_zero(&out_time);
 
         line = data;
-        line_len = len;
+        line_len = len - crlf;
         repl_line = NULL;
 
         if (ctx->docker_mode) {
