@@ -21,6 +21,18 @@
 #ifndef FLB_PACK_H
 #define FLB_PACK_H
 
+typedef enum {
+    FLB_DATE_FORMAT_DOUBLE,
+    FLB_DATE_FORMAT_ISO8601,
+    FLB_DATE_FORMAT_EPOCH
+} flb_date_format_t;
+
+typedef enum {
+    FLB_JSON_FORMAT_JSON,
+    FLB_JSON_FORMAT_STREAM,
+    FLB_JSON_FORMAT_LINES
+} flb_json_format_t;
+
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
@@ -42,6 +54,12 @@ struct flb_pack_state {
     jsmn_parser parser;   /* parser state            */
 };
 
+char *flb_msgpack_to_json_with_date(char *data,
+                                    uint64_t bytes,
+                                    uint64_t *out_size,
+                                    const char *date_key,
+                                    flb_date_format_t date_format,
+				    flb_json_format_t out_format);
 int flb_json_tokenise(char *js, size_t len, struct flb_pack_state *state);
 int flb_pack_json(char *js, size_t len, char **buffer, size_t *size,
                   int *root_type);

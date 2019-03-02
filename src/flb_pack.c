@@ -21,13 +21,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_sds.h>
-#include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
 
 #include <msgpack.h>
@@ -552,6 +552,151 @@ int flb_msgpack_to_json(char *json_str, size_t json_size,
     ret = msgpack2json(json_str, &off, json_size - 1, obj);
     json_str[off] = '\0';
     return ret ? off: ret;
+}
+
+char *flb_msgpack_to_json_with_date(char *data,
+                                    uint64_t bytes,
+                                    uint64_t *out_size,
+                                    const char *date_key,
+                                    flb_date_format_t date_format,
+                                    flb_json_format_t out_format)
+{
+    int i;
+    int ret;
+    int len;
+    int array_size = 0;
+    int map_size;
+    size_t off = 0;
+    char *json_buf;
+    size_t json_size;
+    char time_formatted[32];
+    size_t s;
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_object map;
+    msgpack_sbuffer tmp_sbuf;
+    msgpack_packer tmp_pck;
+    msgpack_object *obj;
+    struct tm tm;
+    struct flb_time tms;
+
+    /* Iterate the original buffer and perform adjustments */
+    msgpack_unpacked_init(&result);
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
+        array_size++;
+    }
+    msgpack_unpacked_destroy(&result);
+    msgpack_unpacked_init(&result);
+
+    /* Create temporal msgpack buffer */
+    msgpack_sbuffer_init(&tmp_sbuf);
+    msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
+    msgpack_pack_array(&tmp_pck, array_size);
+
+    if (!date_key) {
+        date_key = "date";
+    }
+
+    off = 0;
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
+        /* Each array must have two entries: time and record */
+        root = result.data;
+        if (root.via.array.size != 2) {
+            continue;
+        }
+
+        flb_time_pop_from_msgpack(&tms, &result, &obj);
+        map = root.via.array.ptr[1];
+
+        map_size = map.via.map.size;
+        msgpack_pack_map(&tmp_pck, map_size + 1);
+
+        /* Append date key */
+        msgpack_pack_str(&tmp_pck, strlen(date_key));
+        msgpack_pack_str_body(&tmp_pck, date_key, strlen(date_key));
+
+        /* Append date value */
+        switch (date_format) {
+            case FLB_DATE_FORMAT_DOUBLE:
+                msgpack_pack_double(&tmp_pck, flb_time_to_double(&tms));
+                break;
+
+            case FLB_DATE_FORMAT_ISO8601:
+                /* Format the time; use microsecond precision (not nanoseconds). */
+                gmtime_r(&tms.tm.tv_sec, &tm);
+                s = strftime(time_formatted, sizeof(time_formatted) - 1,
+                             "%Y-%m-%dT%H:%M:%S", &tm);
+
+                len = snprintf(time_formatted + s, sizeof(time_formatted) - 1 - s,
+                               ".%06" PRIu64 "Z", (uint64_t) tms.tm.tv_nsec / 1000);
+                s += len;
+
+                msgpack_pack_str(&tmp_pck, s);
+                msgpack_pack_str_body(&tmp_pck, time_formatted, s);
+                break;
+
+            case FLB_DATE_FORMAT_EPOCH:
+                msgpack_pack_uint64(&tmp_pck, (long long unsigned)(tms.tm.tv_sec));
+                break;
+        }
+
+        for (i = 0; i < map_size; i++) {
+            msgpack_object *k = &map.via.map.ptr[i].key;
+            msgpack_object *v = &map.via.map.ptr[i].val;
+
+            msgpack_pack_object(&tmp_pck, *k);
+            msgpack_pack_object(&tmp_pck, *v);
+        }
+    }
+
+    /* Release msgpack */
+    msgpack_unpacked_destroy(&result);
+
+    /* Format to JSON */
+    ret = flb_msgpack_raw_to_json_str(tmp_sbuf.data, tmp_sbuf.size,
+                                      &json_buf, &json_size);
+    if (ret != 0) {
+        msgpack_sbuffer_destroy(&tmp_sbuf);
+        return NULL;
+    }
+
+    /* Optionally convert to JSON stream from JSON array */
+    if (out_format == FLB_JSON_FORMAT_STREAM ||
+        out_format == FLB_JSON_FORMAT_LINES) {
+        char *p;
+        char *end = json_buf + json_size;
+        int level = 0;
+        int in_string = FLB_FALSE;
+        int in_escape = FLB_FALSE;
+        char separator = ' ';
+        if (out_format == FLB_JSON_FORMAT_LINES) {
+            separator = '\n';
+        }
+
+        for (p = json_buf; p!=end; p++) {
+            if (in_escape)
+                in_escape = FLB_FALSE;
+            else if (*p == '\\')
+                in_escape = FLB_TRUE;
+            else if (*p == '"')
+                in_string = !in_string;
+            else if (!in_string) {
+                if (*p == '{')
+                    level++;
+                else if (*p == '}')
+                    level--;
+                else if ((*p == '[' || *p == ']') && level == 0)
+                    *p = ' ';
+                else if (*p == ',' && level == 0)
+                    *p = separator;
+            }
+        }
+    }
+
+    msgpack_sbuffer_destroy(&tmp_sbuf);
+
+    *out_size = json_size;
+    return json_buf;
 }
 
 flb_sds_t flb_msgpack_raw_to_json_sds(void *in_buf, size_t in_size)

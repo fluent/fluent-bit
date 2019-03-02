@@ -211,21 +211,11 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
     }
 
     /* Date format for JSON output */
-    ctx->json_date_format = FLB_JSON_DATE_DOUBLE;
-    tmp = flb_output_get_property("json_date_format", ins);
-    if (tmp) {
-        if (strcasecmp(tmp, "iso8601") == 0) {
-            ctx->json_date_format = FLB_JSON_DATE_ISO8601;
-        }
-        if (strcasecmp(tmp, "epoch") == 0) {
-            ctx->json_date_format = FLB_JSON_DATE_EPOCH;
-        }
-    }
+    ctx->json_date_format = flb_output_get_date_format("json_date_format", ins);
 
     /* Date key for JSON output */
     tmp = flb_output_get_property("json_date_key", ins);
     ctx->json_date_key = flb_strdup(tmp ? tmp : "date");
-    ctx->json_date_key_len = strlen(ctx->json_date_key);
 
     /* Config Gelf_Timestamp_Key */
     tmp = flb_output_get_property("gelf_timestamp_key", ins);

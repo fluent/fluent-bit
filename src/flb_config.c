@@ -305,7 +305,7 @@ void flb_config_exit(struct flb_config *config)
     flb_free(config);
 }
 
-char *flb_config_prop_get(char *key, struct mk_list *list)
+char *flb_config_prop_get(const char *key, struct mk_list *list)
 {
     struct mk_list *head;
     struct flb_config_prop *p;

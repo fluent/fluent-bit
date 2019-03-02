@@ -40,6 +40,7 @@
 #include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_pack.h>
 
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>
@@ -490,7 +491,9 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
                                            char *output, void *data);
 
 int flb_output_set_property(struct flb_output_instance *out, char *k, char *v);
-char *flb_output_get_property(char *key, struct flb_output_instance *o_ins);
+char *flb_output_get_property(const char *key, struct flb_output_instance *o_ins);
+flb_date_format_t flb_output_get_date_format(const char *key,
+                                             struct flb_output_instance *o_ins);
 void flb_output_net_default(char *host, int port,
                             struct flb_output_instance *o_ins);
 void flb_output_pre_run(struct flb_config *config);

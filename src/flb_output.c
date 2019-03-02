@@ -475,9 +475,27 @@ char *flb_output_name(struct flb_output_instance *in)
     return in->name;
 }
 
-char *flb_output_get_property(char *key, struct flb_output_instance *o_ins)
+char *flb_output_get_property(const char *key, struct flb_output_instance *o_ins)
 {
     return flb_config_prop_get(key, &o_ins->properties);
+}
+
+flb_date_format_t flb_output_get_date_format(const char *key,
+                                             struct flb_output_instance *o_ins)
+{
+    flb_date_format_t format = FLB_DATE_FORMAT_DOUBLE;
+    char *tmp = flb_config_prop_get(key, &o_ins->properties);
+    if (tmp) {
+        if (strcasecmp(tmp, "iso8601") == 0) {
+            format = FLB_DATE_FORMAT_ISO8601;
+        } else if (strcasecmp(tmp, "epoch") == 0) {
+            format = FLB_DATE_FORMAT_EPOCH;
+        } else if (strcasecmp(tmp, "double") == 0) {
+            format = FLB_DATE_FORMAT_DOUBLE;
+        }
+        free(tmp);
+    }
+    return format;
 }
 
 /* Trigger the output plugins setup callbacks to prepare them. */

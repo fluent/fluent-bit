@@ -49,9 +49,8 @@ struct flb_out_http {
     /* Output format */
     int out_format;
 
-    int json_date_format;
+    flb_date_format_t json_date_format;
     char *json_date_key;
-    size_t json_date_key_len;
 
     /* HTTP URI */
     char *uri;
