@@ -927,6 +927,8 @@ char *flb_tail_file_name(struct flb_tail_file *file)
     char tmp[128];
 #elif defined(__APPLE__)
     char path[PATH_MAX];
+#elif defined(_MSC_VER)
+    HANDLE h;
 #endif
 
     buf = flb_malloc(PATH_MAX);
@@ -964,8 +966,30 @@ char *flb_tail_file_name(struct flb_tail_file *file)
     len = strlen(path);
     memcpy(buf, path, len);
     buf[len] = '\0';
-#endif
 
+#elif defined(_MSC_VER)
+    int len;
+
+    h = _get_osfhandle(file->fd);
+    if (h == INVALID_HANDLE_VALUE) {
+        flb_errno();
+        flb_free(buf);
+        return NULL;
+    }
+
+    /* This function returns the length of the string excluding "\0"
+     * and the resulting path has a "\\?\" prefix.
+     */
+    len = GetFinalPathNameByHandleA(h, buf, PATH_MAX, FILE_NAME_NORMALIZED);
+    if (len == 0 || len >= PATH_MAX) {
+        flb_free(buf);
+        return NULL;
+    }
+
+    if (strstr(buf, "\\\\?\\")) {
+        memmove(buf, buf + 4, len + 1);
+    }
+#endif
     return buf;
 }
 
