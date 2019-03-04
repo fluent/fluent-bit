@@ -40,7 +40,29 @@
 #define FLB_SP_STREAM    0
 #define FLB_SP_TAG       1
 
-/* Property (key/value */
+/* Expression type */
+#define FLB_LOGICAL_OP   0
+#define FLB_EXP_KEY      1
+#define FLB_EXP_BOOL     2
+#define FLB_EXP_INT      3
+#define FLB_EXP_FLOAT    4
+#define FLB_EXP_STRING   5
+
+/* Logical operation */
+#define FLB_EXP_PAR      0
+
+#define FLB_EXP_NOT      1
+#define FLB_EXP_AND      2
+#define FLB_EXP_OR       3
+
+#define FLB_EXP_EQ       4
+#define FLB_EXP_LT       5
+#define FLB_EXP_LTE      6
+#define FLB_EXP_GT       7
+#define FLB_EXP_GTE      8
+
+
+/* Property (key/value) */
 struct flb_sp_cmd_prop {
     flb_sds_t key;            /* key name */
     flb_sds_t val;            /* value name */
@@ -65,9 +87,42 @@ struct flb_sp_cmd {
     /* Selection */
     struct mk_list keys;           /* list head of record fields */
 
+    struct flb_exp *condition;     /* WHERE condition in select statement */
+
     /* Source of data */
     int source_type;               /* FLB_SP_STREAM or FLB_SP_TAG */
     flb_sds_t source_name;         /* Name after stream: or tag:  */
+};
+
+/* condition value types */
+typedef union {
+    bool boolean;
+    int64_t i64;
+    double f64;
+    flb_sds_t string;
+} sp_val;
+
+struct flb_exp {
+    int type;
+    struct flb_exp *left;
+    struct flb_exp *right;
+};
+
+struct flb_exp_op {
+    int type;
+    struct flb_exp *left;
+    struct flb_exp *right;
+    int operation;
+};
+
+struct flb_exp_key {
+    int type;
+    flb_sds_t name;
+};
+
+struct flb_exp_val {
+    int type;
+    sp_val val;
 };
 
 struct flb_sp_cmd *flb_sp_cmd_create(char *sql);
@@ -84,5 +139,15 @@ int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int aggr,
 void flb_sp_cmd_key_del(struct flb_sp_cmd_key *key);
 int flb_sp_cmd_source(struct flb_sp_cmd *cmd, int type, char *source);
 void flb_sp_cmd_dump(struct flb_sp_cmd *cmd);
+
+void flb_sp_cmd_condition_add(struct flb_sp_cmd *cmd, struct flb_exp *e);
+struct flb_exp *flb_sp_cmd_operation(struct flb_exp *e1, struct flb_exp *e2,
+                                     int operation);
+struct flb_exp *flb_sp_cmd_comparison(struct flb_exp *key, struct flb_exp *val,
+                                      int operation);
+struct flb_exp *flb_sp_cmd_condition_key(char *key);
+struct flb_exp *flb_sp_cmd_condition_integer(int integer);
+struct flb_exp *flb_sp_cmd_condition_float(float fval);
+struct flb_exp *flb_sp_cmd_condition_string(char *string);
 
 #endif
