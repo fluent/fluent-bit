@@ -221,11 +221,8 @@ static int object_to_num(msgpack_object obj, int64_t *i, double *d)
     char *end;
     char str_num[20];
 
-    if (obj.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-        *i = obj.via.i64;
-        return 0;
-    }
-    else if (obj.type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
+    if (obj.type == MSGPACK_OBJECT_POSITIVE_INTEGER ||
+        obj.type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
         *i = obj.via.i64;
         return 0;
     }
@@ -526,6 +523,349 @@ struct flb_sp *flb_sp_create(struct flb_config *config)
     return sp;
 }
 
+static struct flb_exp_val *key_to_value(flb_sds_t ckey, msgpack_object *map)
+{
+     /* We might need to find a more efficient way to evaluate the keys
+        appeain a condition */
+    int i;
+    int map_size;
+    msgpack_object key;
+    msgpack_object val;
+    struct flb_exp_val *result;
+
+    map_size = map->via.map.size;
+
+    for (i = 0; i < map_size; i++) {
+        key = map->via.map.ptr[i].key;
+        val = map->via.map.ptr[i].val;
+
+        /* Compare by length and by key name */
+        if (flb_sds_cmp(ckey, (char *) key.via.str.ptr,
+            key.via.str.size) != 0) {
+            continue;
+        }
+
+        result = flb_malloc(sizeof(struct flb_exp_val));
+        if (!result) {
+            flb_errno();
+            return NULL;
+        }
+
+        if (val.type == MSGPACK_OBJECT_POSITIVE_INTEGER ||
+            val.type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
+            result->type = FLB_EXP_INT;
+            result->val.i64 = val.via.i64;
+            return result;
+        } else if (val.type == MSGPACK_OBJECT_FLOAT32 ||
+                   val.type == MSGPACK_OBJECT_FLOAT) {
+            result->type = FLB_EXP_FLOAT;
+            result->val.f64 = val.via.f64;
+            return result;
+        } else if (val.type == MSGPACK_OBJECT_STR) {
+            result->type = FLB_EXP_STRING;
+            result->val.string = flb_sds_create_len((char *) val.via.str.ptr,
+                                                    val.via.str.size);
+            return result;
+        }
+        else {
+            flb_free(result);
+            return NULL;
+        }
+    }
+
+    return NULL;
+}
+
+static void itof_convert(struct flb_exp_val *val) {
+    if (val->type != FLB_EXP_INT) {
+        return;
+    }
+
+    val->type = FLB_EXP_FLOAT;
+    val->val.f64 = val->val.i64;
+}
+
+static void numerical_comp(struct flb_exp_val *left,
+                           struct flb_exp_val *right,
+                           struct flb_exp_val *result, int op)
+{
+    result->type = FLB_EXP_BOOL;
+
+    if (left == NULL || right == NULL) {
+        result->val.boolean = false;
+        return;
+    }
+
+    if(left->type == FLB_EXP_INT && right->type == FLB_EXP_FLOAT) {
+        itof_convert(left);
+    } else if (left->type == FLB_EXP_FLOAT && right->type == FLB_EXP_INT) {
+        itof_convert(right);
+    }
+
+    switch (op) {
+    case FLB_EXP_EQ:
+        if (left->type == right->type) {
+            switch(left->type){
+            case FLB_EXP_BOOL:
+                result->val.boolean = (left->val.boolean == right->val.boolean);
+                break;
+            case FLB_EXP_INT:
+                result->val.boolean = (left->val.i64 == right->val.i64);
+                break;
+            case FLB_EXP_FLOAT:
+                result->val.boolean = (left->val.f64 == right->val.f64);
+                break;
+            case FLB_EXP_STRING:
+                if (flb_sds_len(left->val.string) !=
+                    flb_sds_len(right->val.string)) {
+                    result->val.boolean = false;
+                }
+                else if (strncmp(left->val.string, right->val.string,
+                                 flb_sds_len(left->val.string)) != 0) {
+                    result->val.boolean = false;
+                }
+                else {
+                    result->val.boolean = true;
+                }
+                break;
+            default:
+                result->val.boolean = false;
+                break;
+            }
+        } else
+            result->val.boolean = false;
+        break;
+    case FLB_EXP_LT:
+        if (left->type == right->type) {
+            switch(left->type){
+            case FLB_EXP_INT:
+                result->val.boolean = (left->val.i64 < right->val.i64);
+                break;
+            case FLB_EXP_FLOAT:
+                result->val.boolean = (left->val.f64 < right->val.f64);
+                break;
+            case FLB_EXP_STRING:
+                if (strncmp(left->val.string, right->val.string,
+                            flb_sds_len(left->val.string)) < 0) {
+                    result->val.boolean = true;
+                }
+                else {
+                    result->val.boolean = false;
+                }
+                break;
+            default:
+                result->val.boolean = false;
+                break;
+            }
+        } else
+            result->val.boolean = false;
+        break;
+    case FLB_EXP_LTE:
+        if (left->type == right->type) {
+            switch(left->type) {
+            case FLB_EXP_INT:
+                result->val.boolean = (left->val.i64 <= right->val.i64);
+                break;
+            case FLB_EXP_FLOAT:
+                result->val.boolean = (left->val.f64 <= right->val.f64);
+                break;
+            case FLB_EXP_STRING:
+                if (strncmp(left->val.string, right->val.string,
+                            flb_sds_len(left->val.string)) <= 0) {
+                    result->val.boolean = true;
+                }
+                else {
+                    result->val.boolean = false;
+                }
+                break;
+            default:
+                result->val.boolean = false;
+                break;
+            }
+        } else
+            result->val.boolean = false;
+        break;
+    case FLB_EXP_GT:
+        if (left->type == right->type) {
+            switch(left->type) {
+            case FLB_EXP_INT:
+                result->val.boolean = (left->val.i64 > right->val.i64);
+                break;
+            case FLB_EXP_FLOAT:
+                result->val.boolean = (left->val.f64 > right->val.f64);
+                break;
+            case FLB_EXP_STRING:
+                if (strncmp(left->val.string, right->val.string,
+                            flb_sds_len(left->val.string)) > 0) {
+                    result->val.boolean = true;
+                }
+                else {
+                    result->val.boolean = false;
+                }
+                break;
+            default:
+                result->val.boolean = false;
+                break;
+            }
+        } else
+            result->val.boolean = false;
+        break;
+    case FLB_EXP_GTE:
+        if (left->type == right->type) {
+            switch(left->type) {
+            case FLB_EXP_INT:
+                result->val.boolean = (left->val.i64 >= right->val.i64);
+                break;
+            case FLB_EXP_FLOAT:
+                result->val.boolean = (left->val.f64 >= right->val.f64);
+                break;
+            case FLB_EXP_STRING:
+                if (strncmp(left->val.string, right->val.string,
+                            flb_sds_len(left->val.string)) >= 0) {
+                    result->val.boolean = true;
+                }
+                else {
+                    result->val.boolean = false;
+                }
+                break;
+            default:
+                result->val.boolean = false;
+                break;
+            }
+        } else
+            result->val.boolean = false;
+        break;
+    }
+}
+
+static bool value_to_bool(struct flb_exp_val *val) {
+    bool result;
+
+    switch (val->type) {
+    case FLB_EXP_BOOL:
+        result = val->val.boolean;
+        break;
+    case FLB_EXP_INT:
+        result = val->val.i64 > 0;
+        break;
+    case FLB_EXP_FLOAT:
+        result = val->val.f64 > 0;
+        break;
+    case FLB_EXP_STRING:
+        result = true;
+        break;
+    }
+
+    return result;
+}
+
+
+static void logical_operation(struct flb_exp_val *left,
+                              struct flb_exp_val *right,
+                              struct flb_exp_val *result, int op)
+{
+    bool lval;
+    bool rval;
+
+    lval = left? value_to_bool(left) : false;
+    rval = right? value_to_bool(right) : false;
+
+    result->type = FLB_EXP_BOOL;
+
+    switch (op) {
+    case FLB_EXP_NOT:
+        result->val.boolean = !lval;
+        break;
+    case FLB_EXP_AND:
+        result->val.boolean = lval & rval;
+        break;
+    case FLB_EXP_OR:
+        result->val.boolean = lval | rval;
+        break;
+    }
+}
+
+static struct flb_exp_val *reduce_expression(struct flb_exp *expression,
+                                             msgpack_object *map)
+{
+    int operation;
+    struct flb_exp_val *ret, *left, *right;
+    struct flb_exp_val *result;
+
+    if (!expression) {
+        return NULL;
+    }
+
+    result = flb_malloc(sizeof(struct flb_exp_val));
+    if (!result) {
+       flb_errno();
+       return NULL;
+    }
+
+    switch (expression->type) {
+    case FLB_EXP_INT:
+        result->type = expression->type;
+        result->val.i64 = ((struct flb_exp_val *) expression)->val.i64;
+        break;
+    case FLB_EXP_FLOAT:
+        result->type = expression->type;
+        result->val.f64 = ((struct flb_exp_val *) expression)->val.f64;
+        break;
+    case FLB_EXP_STRING:
+        result->type = expression->type;
+        result->val.string = ((struct flb_exp_val *) expression)->val.string;
+        break;
+    case FLB_EXP_KEY:
+        ret = key_to_value(((struct flb_exp_key *) expression)->name, map);
+        if (!ret) {
+           flb_free(result);
+           result = NULL;
+           break;
+        }
+
+        switch (ret->type) {
+        case FLB_EXP_INT:
+            result->val.i64 = ret->val.i64;
+            break;
+        case FLB_EXP_FLOAT:
+                result->val.f64 = ret->val.f64;
+                break;
+            case FLB_EXP_STRING:
+                result->val.string = ret->val.string;
+        }
+        result->type = ret->type;
+        flb_free(ret);
+        break;
+    case FLB_LOGICAL_OP:
+        left = reduce_expression(expression->left, map);
+        right = reduce_expression(expression->right, map);
+
+        operation = ((struct flb_exp_op *) expression)->operation;
+
+        switch (operation) {
+        case FLB_EXP_PAR:
+            result->type = FLB_EXP_BOOL;
+            result->val = left->val;
+            break;
+        case FLB_EXP_EQ:
+        case FLB_EXP_LT:
+        case FLB_EXP_LTE:
+        case FLB_EXP_GT:
+        case FLB_EXP_GTE:
+            numerical_comp(left, right, result, operation);
+            break;
+        case FLB_EXP_NOT:
+        case FLB_EXP_AND:
+        case FLB_EXP_OR:
+            logical_operation(left, right, result, operation);
+            break;
+        }
+        flb_free(left);
+        flb_free(right);
+    }
+    return result;
+}
+
 /*
  * Process data, task and it defined command involves the call of aggregation
  * functions (AVG, SUM, COUNT, MIN, MAX).
@@ -784,6 +1124,7 @@ static int sp_process_data(char *buf_data, size_t buf_size,
     struct mk_list *head;
     struct flb_sp_cmd *cmd = task->cmd;
     struct flb_sp_cmd_key *cmd_key;
+    struct flb_exp_val *condition;
 
     /* Vars initialization */
     ok = MSGPACK_UNPACK_SUCCESS;
@@ -802,6 +1143,21 @@ static int sp_process_data(char *buf_data, size_t buf_size,
         /* get the map data and it size (number of items) */
         map   = root.via.array.ptr[1];
         map_size = map.via.map.size;
+
+        /* Evaluate condition */
+        if (cmd->condition) {
+            condition = reduce_expression(cmd->condition, &map);
+            if (!condition) {
+                continue;
+            } else if (!condition->val.boolean)
+            {
+                flb_free(condition);
+                continue;
+            }
+            else {
+                flb_free(condition);
+            }
+        }
 
         /*
          * If for some reason the Task keys did not insert any data, we will
