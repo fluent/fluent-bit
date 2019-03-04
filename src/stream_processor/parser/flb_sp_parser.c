@@ -213,3 +213,112 @@ void flb_sp_cmd_stream_prop_del(struct flb_sp_cmd_prop *prop)
     }
     flb_free(prop);
 }
+
+// WHERE <condition> functions
+
+struct flb_exp *flb_sp_cmd_operation(struct flb_exp *e1, struct flb_exp *e2,
+                                     int operation)
+{
+    struct flb_exp_op *expression;
+
+    expression = flb_malloc(sizeof(struct flb_exp_op));
+    if (!expression) {
+        flb_errno();
+        return NULL;
+    }
+
+    expression->type = FLB_LOGICAL_OP;
+    expression->left = e1;
+    expression->right = e2;
+    expression->operation = operation;
+
+    return (struct flb_exp *) expression;
+}
+
+struct flb_exp *flb_sp_cmd_comparison(struct flb_exp *key, struct flb_exp *val,
+                                      int operation)
+{
+    struct flb_exp_op *expression;
+
+    expression = flb_malloc(sizeof(struct flb_exp_op));
+    if (!expression) {
+        flb_errno();
+        return NULL;
+    }
+
+    expression->type = FLB_LOGICAL_OP;
+    expression->left = (struct flb_exp *) key;
+    expression->right = (struct flb_exp *) val;
+    expression->operation = operation;
+
+    return (struct flb_exp *) expression;
+}
+
+struct flb_exp *flb_sp_cmd_condition_key(char *identifier)
+{
+    struct flb_exp_key *key;
+
+    key = flb_malloc(sizeof(struct flb_exp_key));
+    if (!key) {
+        flb_errno();
+        return NULL;
+    }
+
+    key->type = FLB_EXP_KEY;
+    key->name = flb_sds_create(identifier);
+
+    return (struct flb_exp *) key;
+}
+
+struct flb_exp *flb_sp_cmd_condition_integer(int integer)
+{
+    struct flb_exp_val *val;
+
+    val = flb_malloc(sizeof(struct flb_exp_val));
+    if (!val) {
+        flb_errno();
+        return NULL;
+    }
+
+    val->type = FLB_EXP_INT;
+    val->val.i64 = integer;
+
+    return (struct flb_exp *) val;
+}
+
+struct flb_exp *flb_sp_cmd_condition_float(float fval)
+{
+    struct flb_exp_val *val;
+
+    val = flb_malloc(sizeof(struct flb_exp_val));
+    if (!val) {
+        flb_errno();
+        return NULL;
+    }
+
+    val->type = FLB_EXP_FLOAT;
+    val->val.f64 = fval;
+
+    return (struct flb_exp *) val;
+}
+
+struct flb_exp *flb_sp_cmd_condition_string(char *string)
+{
+    struct flb_exp_val *val;
+
+    val = flb_malloc(sizeof(struct flb_exp_val));
+    if (!val) {
+        flb_errno();
+        return NULL;
+    }
+
+    val->type = FLB_EXP_STRING;
+    val->val.string = flb_sds_create(string);
+
+    return (struct flb_exp *) val;
+}
+
+void flb_sp_cmd_condition_add(struct flb_sp_cmd *cmd, struct flb_exp *e)
+{
+    cmd->condition = e;
+}

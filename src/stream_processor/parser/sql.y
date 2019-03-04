@@ -25,24 +25,38 @@ void yyerror (struct flb_sp_cmd *cmd, void *scanner, const char *str)
 
 
 /* Known Tokens (refer to sql.l) */
-%token CREATE STREAM WITH SELECT AVG SUM COUNT MAX MIN AS FROM FROM_STREAM FROM_TAG TAG WHERE IDENTIFIER INTEGER QUOTE QUOTED
+/* Keywords */
+%token CREATE STREAM WITH SELECT AVG SUM COUNT MAX MIN AS FROM FROM_STREAM FROM_TAG TAG WHERE IDENTIFIER QUOTE QUOTED
+/* Value types */
+%token INTEGER FLOAT STRING
+/* Logical operation tokens */
+%token AND OR NOT LT LTE GT GTE
+/* Math operation tokens */
 
 /* Union and field types */
 %union
 {
-   int integer;
-   char *string;
-   struct flb_sp_cmd *cmd;
+    int integer;
+    float fval;
+    char *string;
+    struct flb_sp_cmd *cmd;
+    struct flb_exp *expression;
 }
 
-%type <string>  IDENTIFIER
-%type <string>  TAG
-%type <integer> INTEGER
-%type <string>  record_keys
-%type <string>  record_key
-%type <string>  alias
-%type <string>  prop_key
-%type <string>  prop_val
+%type <string>     IDENTIFIER
+%type <string>     TAG
+%type <integer>    INTEGER
+%type <fval>       FLOAT
+%type <string>     STRING
+%type <string>     record_keys
+%type <string>     record_key
+%type <string>     alias
+%type <string>     prop_key
+%type <string>     prop_val
+%type <expression> condition
+%type <expression> comparison
+%type <expression> key
+%type <expression> value
 
 %% /* rules section */
 
@@ -81,6 +95,7 @@ select: SELECT keys FROM source ';'
       |
       SELECT keys FROM source WHERE condition ';'
       {
+        flb_sp_cmd_condition_add(cmd, $6); // no flb_free for $6
       }
       keys:
            record_keys
@@ -192,14 +207,73 @@ select: SELECT keys FROM source ';'
                      flb_sp_cmd_source(cmd, FLB_SP_TAG, $2);
                      flb_free($2);
                    }
-      condition: IDENTIFIER '=' IDENTIFIER
-                 {
-                   printf("key='%s' val='%s'\n", $1, $3);
-                 }
+      condition: comparison
                  |
-                 IDENTIFIER '=' INTEGER
-                 {
-                   printf("key='%s' val='%d'\n", $1, $3);
-                 }
+                 key
+                   {
+                     $$ = flb_sp_cmd_operation($1, NULL, FLB_EXP_OR);
+                   }
                  |
-                 ;
+                 value
+                   {
+                     $$ = flb_sp_cmd_operation(NULL, $1, FLB_EXP_OR);
+                   }
+                 | '(' condition ')'
+                   {
+                     $$ = flb_sp_cmd_operation($2, NULL, FLB_EXP_PAR);
+                   }
+                 | NOT condition
+                   {
+                     $$ = flb_sp_cmd_operation($2, NULL, FLB_EXP_NOT);
+                   }
+                 | condition AND condition
+                   {
+                     $$ = flb_sp_cmd_operation($1, $3, FLB_EXP_AND);
+                   }
+                 | condition OR condition
+                   {
+                     $$ = flb_sp_cmd_operation($1, $3, FLB_EXP_OR);
+                   }
+      comparison: key '=' value
+                   {
+                     $$ = flb_sp_cmd_comparison($1, $3, FLB_EXP_EQ);
+                   }
+                  |
+                  key LT value
+                   {
+                     $$ = flb_sp_cmd_comparison($1, $3, FLB_EXP_LT);
+                   }
+                  |
+                  key LTE value
+                   {
+                     $$ = flb_sp_cmd_comparison($1, $3, FLB_EXP_LTE);
+                   }
+                  |
+                  key GT value
+                   {
+                     $$ = flb_sp_cmd_comparison($1, $3, FLB_EXP_GT);
+                   }
+                  |
+                  key GTE value
+                   {
+                     $$ = flb_sp_cmd_comparison($1, $3, FLB_EXP_GTE);
+                   }
+        key: IDENTIFIER
+                   {
+                     $$ = flb_sp_cmd_condition_key($1);
+                   }
+        value: INTEGER
+                   {
+                     $$ = flb_sp_cmd_condition_integer($1);
+                   }
+               |
+               FLOAT
+                   {
+                     $$ = flb_sp_cmd_condition_float($1);
+                   }
+               |
+               STRING
+                   {
+                     $$ = flb_sp_cmd_condition_string($1);
+                   }
+                ;
