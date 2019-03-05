@@ -180,9 +180,23 @@ static int in_cpu_init(struct flb_input_instance *in,
 
     /* Collection time setting */
     pval = flb_input_get_property("interval_sec", in);
-    if (pval != NULL && flb_utils_time_split(pval, &ctx->interval_sec, &ctx->interval_nsec) == 0) {
+    if (pval != NULL && atoi(pval) >= 0) {
+        ctx->interval_sec = atoi(pval);
     }
     else {
+        ctx->interval_sec = DEFAULT_INTERVAL_SEC;
+    }
+
+    pval = flb_input_get_property("interval_nsec", in);
+    if (pval != NULL && atoi(pval) >= 0) {
+        ctx->interval_nsec = atoi(pval);
+    }
+    else {
+        ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
+    }
+
+    if (ctx->interval_sec <= 0 && ctx->interval_nsec <= 0) {
+        /* Illegal settings. Override them. */
         ctx->interval_sec = DEFAULT_INTERVAL_SEC;
         ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
     }

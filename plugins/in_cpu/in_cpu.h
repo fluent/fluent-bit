@@ -73,7 +73,7 @@ struct flb_in_cpu_config {
     int cpu_ticks;      /* CPU ticks (Kernel setting) */
     int coll_fd;        /* collector id/fd            */
     int interval_sec;   /* interval collection time (Second) */
-    long interval_nsec; /* interval collection time (Nanosecond) */
+    int interval_nsec;  /* interval collection time (Nanosecond) */
     struct cpu_stats cstats;
     struct flb_input_instance *i_ins;
 };
