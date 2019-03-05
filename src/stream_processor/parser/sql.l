@@ -1,6 +1,7 @@
 %option caseless
 %{
 #include <stdio.h>
+#include <stdbool.h>
 #include <fluent-bit/flb_str.h>
 #include "sql_parser.h"
 
@@ -63,6 +64,9 @@ TAG:                    return FROM_TAG;
 AND                     return AND;
 OR                      return OR;
 NOT                     return NOT;
+
+"true"                  { yylval->boolean = true;  return BOOLEAN; };
+"false"                 { yylval->boolean = false;  return BOOLEAN; };
 
 -?[1-9][0-9]*           { yylval->integer = atoi(yytext);  return INTEGER; }
 -?[1-9][0-9]*\.[0-9]+   { yylval->fval = atof(yytext); return FLOAT; }

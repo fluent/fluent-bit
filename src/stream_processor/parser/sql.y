@@ -6,6 +6,7 @@
 %{
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
@@ -28,7 +29,7 @@ void yyerror (struct flb_sp_cmd *cmd, void *scanner, const char *str)
 /* Keywords */
 %token CREATE STREAM WITH SELECT AVG SUM COUNT MAX MIN AS FROM FROM_STREAM FROM_TAG TAG WHERE IDENTIFIER QUOTE QUOTED
 /* Value types */
-%token INTEGER FLOAT STRING
+%token INTEGER FLOAT STRING BOOLEAN
 /* Logical operation tokens */
 %token AND OR NOT LT LTE GT GTE
 /* Math operation tokens */
@@ -36,6 +37,7 @@ void yyerror (struct flb_sp_cmd *cmd, void *scanner, const char *str)
 /* Union and field types */
 %union
 {
+    bool boolean;
     int integer;
     float fval;
     char *string;
@@ -48,6 +50,7 @@ void yyerror (struct flb_sp_cmd *cmd, void *scanner, const char *str)
 %type <integer>    INTEGER
 %type <fval>       FLOAT
 %type <string>     STRING
+%type <boolean>    BOOLEAN
 %type <string>     record_keys
 %type <string>     record_key
 %type <string>     alias
@@ -275,5 +278,10 @@ select: SELECT keys FROM source ';'
                STRING
                    {
                      $$ = flb_sp_cmd_condition_string($1);
+                   }
+               |
+               BOOLEAN
+                   {
+                     $$ = flb_sp_cmd_condition_boolean($1);
                    }
                 ;
