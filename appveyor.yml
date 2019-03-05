@@ -1,4 +1,6 @@
-version: 0.11-winbuild-{build}
+version: v1-winbuild-{build}
+
+image: Visual Studio 2017
 
 platform:
   - Win32
@@ -9,10 +11,11 @@ configuration:
   - Release
 
 before_build:
-  - cmd: if "%platform%"=="Win32" set msvc=Visual Studio 14 2015
-  - cmd: if "%platform%"=="x64"   set msvc=Visual Studio 14 2015 Win64
+  - cmd: if "%platform%"=="Win32" set msvc=Visual Studio 15 2017
+  - cmd: if "%platform%"=="x64"   set msvc=Visual Studio 15 2017 Win64
 
 build_script:
+  - mkdir build
   - cd build
-  - cmake -G "%msvc%" -DCMAKE_BUILD_TYPE=%configuration% -DFLB_WITHOUT_SHARED_LIB=On -DFLB_WITHOUT_EXAMPLES=On ..
+  - cmake -G "%msvc%" -DCMAKE_BUILD_TYPE=%configuration% -DFLB_WITHOUT_SHARED_LIB=On -DFLB_WITHOUT_EXAMPLES=On -DCIO_BACKEND_FILESYSTEM=Off ..
   - cmake --build .
