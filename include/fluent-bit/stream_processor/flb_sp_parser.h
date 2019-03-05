@@ -149,5 +149,6 @@ struct flb_exp *flb_sp_cmd_condition_key(char *key);
 struct flb_exp *flb_sp_cmd_condition_integer(int integer);
 struct flb_exp *flb_sp_cmd_condition_float(float fval);
 struct flb_exp *flb_sp_cmd_condition_string(char *string);
+struct flb_exp *flb_sp_cmd_condition_boolean(bool boolean);
 
 #endif

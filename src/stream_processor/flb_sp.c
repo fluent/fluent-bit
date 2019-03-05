@@ -551,7 +551,12 @@ static struct flb_exp_val *key_to_value(flb_sds_t ckey, msgpack_object *map)
             return NULL;
         }
 
-        if (val.type == MSGPACK_OBJECT_POSITIVE_INTEGER ||
+        if (val.type == MSGPACK_OBJECT_BOOLEAN) {
+            result->type = FLB_EXP_BOOL;
+            result->val.boolean = val.via.boolean;
+            return result;
+        }
+        else if (val.type == MSGPACK_OBJECT_POSITIVE_INTEGER ||
             val.type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
             result->type = FLB_EXP_INT;
             result->val.i64 = val.via.i64;
@@ -803,6 +808,10 @@ static struct flb_exp_val *reduce_expression(struct flb_exp *expression,
     }
 
     switch (expression->type) {
+    case FLB_EXP_BOOL:
+        result->type = expression->type;
+        result->val.boolean = ((struct flb_exp_val *) expression)->val.boolean;
+        break;
     case FLB_EXP_INT:
         result->type = expression->type;
         result->val.i64 = ((struct flb_exp_val *) expression)->val.i64;
@@ -824,6 +833,9 @@ static struct flb_exp_val *reduce_expression(struct flb_exp *expression,
         }
 
         switch (ret->type) {
+        case FLB_EXP_BOOL:
+            result->val.boolean = ret->val.boolean;
+            break;
         case FLB_EXP_INT:
             result->val.i64 = ret->val.i64;
             break;

@@ -318,6 +318,22 @@ struct flb_exp *flb_sp_cmd_condition_string(char *string)
     return (struct flb_exp *) val;
 }
 
+struct flb_exp *flb_sp_cmd_condition_boolean(bool boolean)
+{
+    struct flb_exp_val *val;
+
+    val = flb_malloc(sizeof(struct flb_exp_val));
+    if (!val) {
+        flb_errno();
+        return NULL;
+    }
+
+    val->type = FLB_EXP_BOOL;
+    val->val.boolean = boolean;
+
+    return (struct flb_exp *) val;
+}
+
 void flb_sp_cmd_condition_add(struct flb_sp_cmd *cmd, struct flb_exp *e)
 {
     cmd->condition = e;
