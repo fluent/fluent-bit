@@ -8,14 +8,11 @@ platform:
 
 configuration:
   - Debug
-  - Release
+  # - Release # TODO
 
 before_build:
   - cmd: if "%platform%"=="Win32" set msvc=Visual Studio 15 2017
   - cmd: if "%platform%"=="x64"   set msvc=Visual Studio 15 2017 Win64
 
 build_script:
-  - mkdir build
-  - cd build
-  - cmake -G "%msvc%" -DCMAKE_BUILD_TYPE=%configuration% -DFLB_WITHOUT_SHARED_LIB=On -DFLB_WITHOUT_EXAMPLES=On -DCIO_BACKEND_FILESYSTEM=Off ..
-  - cmake --build .
+  - powershell ".\ci\do-ut.ps1;exit $LASTEXITCODE"
