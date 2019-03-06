@@ -561,12 +561,14 @@ static struct flb_exp_val *key_to_value(flb_sds_t ckey, msgpack_object *map)
             result->type = FLB_EXP_INT;
             result->val.i64 = val.via.i64;
             return result;
-        } else if (val.type == MSGPACK_OBJECT_FLOAT32 ||
+        }
+        else if (val.type == MSGPACK_OBJECT_FLOAT32 ||
                    val.type == MSGPACK_OBJECT_FLOAT) {
             result->type = FLB_EXP_FLOAT;
             result->val.f64 = val.via.f64;
             return result;
-        } else if (val.type == MSGPACK_OBJECT_STR) {
+        }
+        else if (val.type == MSGPACK_OBJECT_STR) {
             result->type = FLB_EXP_STRING;
             result->val.string = flb_sds_create_len((char *) val.via.str.ptr,
                                                     val.via.str.size);
@@ -603,7 +605,8 @@ static void numerical_comp(struct flb_exp_val *left,
 
     if(left->type == FLB_EXP_INT && right->type == FLB_EXP_FLOAT) {
         itof_convert(left);
-    } else if (left->type == FLB_EXP_FLOAT && right->type == FLB_EXP_INT) {
+    }
+    else if (left->type == FLB_EXP_FLOAT && right->type == FLB_EXP_INT) {
         itof_convert(right);
     }
 
@@ -637,8 +640,10 @@ static void numerical_comp(struct flb_exp_val *left,
                 result->val.boolean = false;
                 break;
             }
-        } else
+        }
+        else {
             result->val.boolean = false;
+        }
         break;
     case FLB_EXP_LT:
         if (left->type == right->type) {
@@ -662,8 +667,10 @@ static void numerical_comp(struct flb_exp_val *left,
                 result->val.boolean = false;
                 break;
             }
-        } else
+        }
+        else {
             result->val.boolean = false;
+        }
         break;
     case FLB_EXP_LTE:
         if (left->type == right->type) {
@@ -687,8 +694,10 @@ static void numerical_comp(struct flb_exp_val *left,
                 result->val.boolean = false;
                 break;
             }
-        } else
+        }
+        else {
             result->val.boolean = false;
+        }
         break;
     case FLB_EXP_GT:
         if (left->type == right->type) {
@@ -712,8 +721,10 @@ static void numerical_comp(struct flb_exp_val *left,
                 result->val.boolean = false;
                 break;
             }
-        } else
+        }
+        else {
             result->val.boolean = false;
+        }
         break;
     case FLB_EXP_GTE:
         if (left->type == right->type) {
@@ -737,8 +748,10 @@ static void numerical_comp(struct flb_exp_val *left,
                 result->val.boolean = false;
                 break;
             }
-        } else
+        }
+        else {
             result->val.boolean = false;
+        }
         break;
     }
 }
@@ -1161,8 +1174,8 @@ static int sp_process_data(char *buf_data, size_t buf_size,
             condition = reduce_expression(cmd->condition, &map);
             if (!condition) {
                 continue;
-            } else if (!condition->val.boolean)
-            {
+            }
+            else if (!condition->val.boolean) {
                 flb_free(condition);
                 continue;
             }

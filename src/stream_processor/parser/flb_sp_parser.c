@@ -214,7 +214,7 @@ void flb_sp_cmd_stream_prop_del(struct flb_sp_cmd_prop *prop)
     flb_free(prop);
 }
 
-// WHERE <condition> functions
+/* WHERE <condition> functions */
 
 struct flb_exp *flb_sp_cmd_operation(struct flb_exp *e1, struct flb_exp *e2,
                                      int operation)
