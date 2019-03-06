@@ -137,6 +137,13 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
         ctx->message_key_len = strlen(tmp);
     }
 
+    /* Config: Message_Key_Field */
+    tmp = flb_output_get_property("message_key_field", ins);
+    if (tmp) {
+        ctx->message_key_field = flb_strdup(tmp);
+        ctx->message_key_field_len = strlen(tmp);
+    }
+
     /* Config: Timestamp_Key */
     tmp = flb_output_get_property("timestamp_key", ins);
     if (tmp) {
@@ -248,6 +255,10 @@ int flb_kafka_conf_destroy(struct flb_kafka *ctx)
 
     if (ctx->message_key) {
         flb_free(ctx->message_key);
+    }
+    
+    if (ctx->message_key_field) {
+        flb_free(ctx->message_key_field);
     }
 
     flb_sds_destroy(ctx->gelf_fields.timestamp_key);

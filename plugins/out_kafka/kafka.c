@@ -75,6 +75,8 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     int queue_full_retries = 0;
     char *out_buf;
     size_t out_size;
+    char *message_key = NULL;
+    size_t message_key_len = 0;
     struct flb_kafka_topic *topic = NULL;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
@@ -133,6 +135,15 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         msgpack_pack_object(&mp_pck, key);
         msgpack_pack_object(&mp_pck, val);
 
+        /* Lookup message key */
+        if (ctx->message_key_field && !message_key && val.type == MSGPACK_OBJECT_STR) {
+            if (key.via.str.size == ctx->message_key_field_len &&
+                    strncmp(key.via.str.ptr, ctx->message_key_field, ctx->message_key_field_len) == 0) {
+                message_key = (char *) val.via.str.ptr;
+                message_key_len = val.via.str.size;
+            }
+        }
+
         /* Lookup key/topic */
         if (ctx->topic_key && !topic && val.type == MSGPACK_OBJECT_STR) {
             if (key.via.str.size == ctx->topic_key_len &&
@@ -169,6 +180,11 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         out_size = flb_sds_len(s);
     }
 
+    if (!message_key) {
+        message_key = ctx->message_key;
+        message_key_len = ctx->message_key_len;
+    }
+
     if (!topic) {
         topic = flb_kafka_topic_default(ctx);
     }
@@ -194,7 +210,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
                            RD_KAFKA_PARTITION_UA,
                            RD_KAFKA_MSG_F_COPY,
                            out_buf, out_size,
-                           ctx->message_key, ctx->message_key_len,
+                           message_key, message_key_len,
                            NULL);
     if (ret == -1) {
         fprintf(stderr,
