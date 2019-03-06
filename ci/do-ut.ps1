@@ -2,11 +2,15 @@ $SKIP_TESTS=@("flb-rt-out_elasticsearch",
               "flb-rt-out_td",
               "flb-rt-out_forward",
               "flb-rt-in_disk",
-              "flb-rt-in_proc",
+              "flb-rt-in_proc")
+$TODO_TESTS=@("flb-it-pipe",
+              "flb-it-parser",
+              "flb-it-unit_sizes"
               "flb-it-http_client",
               "flb-it-network",
               "flb-it-pack")
 
+$SKIP_TESTS = $SKIP_TESTS + $TODO_TESTS
 $SKIP=""
 
 foreach ($SKIP_TEST in $SKIP_TESTS) {
