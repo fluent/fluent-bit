@@ -18,7 +18,7 @@ foreach ($SKIP_TEST in $SKIP_TESTS) {
 }
 
 $GLOBAL_OPTS="-DFLB_BACKTRACE=Off -DFLB_SHARED_LIB=Off -DFLB_ALL=On -DFLB_DEBUG=On -DFLB_EXAMPLES=Off"
-mkdir build
+mkdir build -Force
 cd build
 Write-Host cmake -G """$ENV:msvc""" -DCMAKE_BUILD_TYPE="$ENV:configuration" $GLOBAL_OPTS -DFLB_TESTS_INTERNAL=On -DCIO_BACKEND_FILESYSTEM=Off $SKIP ../
 # Use Start-Process to pass 9 or more arguments

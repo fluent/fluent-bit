@@ -147,7 +147,7 @@ struct rd_kafka_s {
 
         rd_kafka_conf_t  rk_conf;
         rd_kafka_q_t    *rk_logq;          /* Log queue if `log.queue` set */
-        char             rk_name[128];
+        char             rk_name[256];
 	rd_kafkap_str_t *rk_client_id;
         rd_kafkap_str_t *rk_group_id;    /* Consumer group id */
 
