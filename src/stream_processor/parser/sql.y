@@ -98,7 +98,7 @@ select: SELECT keys FROM source ';'
       |
       SELECT keys FROM source WHERE condition ';'
       {
-        flb_sp_cmd_condition_add(cmd, $6); // no flb_free for $6
+        flb_sp_cmd_condition_add(cmd, $6); /* no flb_free for $6 */
       }
       keys:
            record_keys
