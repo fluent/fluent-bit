@@ -785,6 +785,7 @@ static void logical_operation(struct flb_exp_val *left,
     bool lval;
     bool rval;
 
+    /* Null is always interpreted as false in a logical operation */
     lval = left? value_to_bool(left) : false;
     rval = right? value_to_bool(right) : false;
 
@@ -869,8 +870,16 @@ static struct flb_exp_val *reduce_expression(struct flb_exp *expression,
 
         switch (operation) {
         case FLB_EXP_PAR:
-            result->type = FLB_EXP_BOOL;
-            result->val = left->val;
+            if (left == NULL) { /* Null is always interpreted as false in a
+                                   logical operation */
+                result->type = FLB_EXP_BOOL;
+                result->val.boolean = false;
+            }
+            else { /* Left and right sides of a logical operation reduce to
+                      boolean values */
+                result->type = FLB_EXP_BOOL;
+                result->val.boolean = left->val.boolean;
+            }
             break;
         case FLB_EXP_EQ:
         case FLB_EXP_LT:
