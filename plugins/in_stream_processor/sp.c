@@ -30,6 +30,7 @@ struct sp_chunk {
 
 struct sp_ctx {
     int coll_fd;            /* collector file descriptor to flush queue */
+    flb_sds_t tag;          /* outgoing Tag name */
     struct mk_list chunks;  /* linked list with data chunks to ingest */
     struct flb_input_instance *in;
 };
@@ -73,7 +74,7 @@ static int cb_chunks_append(struct flb_input_instance *in,
     mk_list_foreach_safe(head, tmp, &ctx->chunks) {
         chunk = mk_list_entry(head, struct sp_chunk, _head);
         flb_input_chunk_append_raw(in,
-                                   in->alias, strlen(in->alias),
+                                   ctx->tag, flb_sds_len(ctx->tag),
                                    chunk->buf_data, chunk->buf_size);
         flb_free(chunk->buf_data);
         mk_list_del(&chunk->_head);
@@ -100,6 +101,20 @@ static int cb_sp_init(struct flb_input_instance *in,
 
     /* Register context */
     flb_input_set_context(in, ctx);
+
+    /*
+     * Configure the outgoing tag: when registering records into the Engine
+     * we need to specify a Tag, if we got the default name
+     * stream_processor.N, just override it using the Alias set by the
+     * Stream Processor interface. Otherwise if the Tag is different use
+     * that one.
+     */
+    if (strncmp(in->tag, "stream_processor.", 17) == 0) {
+        ctx->tag = flb_sds_create(in->alias);
+    }
+    else {
+        ctx->tag = flb_sds_create(in->tag);
+    }
 
     /* Set our collector based on time, queue chunks every 0.5 sec */
     ret = flb_input_set_collector_time(in,
@@ -136,6 +151,7 @@ static int cb_sp_exit(void *data, struct flb_config *config)
 
     /* Upon exit, put in the queue all pending chunks */
     cb_chunks_append(ctx->in, config, ctx);
+    flb_sds_destroy(ctx->tag);
     flb_free(ctx);
 
     return 0;
