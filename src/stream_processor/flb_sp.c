@@ -931,6 +931,7 @@ static int sp_process_data_aggr(char *buf_data, size_t buf_size,
     struct flb_time tm;
     struct flb_sp_cmd *cmd = task->cmd;
     struct flb_sp_cmd_key *ckey;
+    struct flb_exp_val *condition;
 
     /* Number of expected output entries in the map */
     map_entries = mk_list_size(&cmd->keys);
@@ -963,6 +964,21 @@ static int sp_process_data_aggr(char *buf_data, size_t buf_size,
         /* get the map data and it size (number of items) */
         map   = root.via.array.ptr[1];
         map_size = map.via.map.size;
+
+        /* Evaluate condition */
+        if (cmd->condition) {
+            condition = reduce_expression(cmd->condition, &map);
+            if (!condition) {
+                continue;
+            }
+            else if (!condition->val.boolean) {
+                flb_free(condition);
+                continue;
+            }
+            else {
+                flb_free(condition);
+            }
+        }
 
         /* Iterate each map key and see if it matches any command key */
         for (i = 0; i < map_size; i++) {
