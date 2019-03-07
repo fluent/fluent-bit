@@ -132,6 +132,7 @@ void flb_sp_cmd_destroy(struct flb_sp_cmd *cmd);
 int flb_sp_cmd_stream_new(struct flb_sp_cmd *cmd, char *stream_name);
 int flb_sp_cmd_stream_prop_add(struct flb_sp_cmd *cmd, char *key, char *val);
 void flb_sp_cmd_stream_prop_del(struct flb_sp_cmd_prop *prop);
+char *flb_sp_cmd_stream_prop_get(struct flb_sp_cmd *cmd, char *key);
 
 /* Selection keys */
 int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int aggr,

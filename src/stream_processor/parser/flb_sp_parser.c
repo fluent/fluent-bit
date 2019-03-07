@@ -214,6 +214,32 @@ void flb_sp_cmd_stream_prop_del(struct flb_sp_cmd_prop *prop)
     flb_free(prop);
 }
 
+char *flb_sp_cmd_stream_prop_get(struct flb_sp_cmd *cmd, char *key)
+{
+    int len;
+    struct mk_list *head;
+    struct flb_sp_cmd_prop *prop;
+
+    if (!key) {
+        return NULL;
+    }
+    len = strlen(key);
+
+    mk_list_foreach(head, &cmd->stream_props) {
+        prop = mk_list_entry(head, struct flb_sp_cmd_prop, _head);
+        if (flb_sds_len(prop->key) != len) {
+            continue;
+        }
+
+        if (strcmp(prop->key, key) == 0) {
+            return prop->val;
+        }
+    }
+
+    return NULL;
+}
+
+
 /* WHERE <condition> functions */
 
 struct flb_exp *flb_sp_cmd_operation(struct flb_exp *e1, struct flb_exp *e2,
