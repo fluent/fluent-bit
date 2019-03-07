@@ -75,7 +75,7 @@ static int cb_file_init(struct flb_output_instance *ins,
         return -1;
     }
 
-    conf->format = FLB_OUT_FILE_FMT_JSON;/* default */
+    conf->format = FLB_OUT_FILE_FMT_JSON; /* default */
     conf->delimiter = NULL;
     conf->label_delimiter = NULL;
 
@@ -87,19 +87,26 @@ static int cb_file_init(struct flb_output_instance *ins,
 
     /* Optional, file format */
     tmp = flb_output_get_property("Format", ins);
-    if (tmp && !strcasecmp(tmp, "csv")){
-        conf->format    = FLB_OUT_FILE_FMT_CSV;
-        conf->delimiter = ",";
-    }
-    else if(tmp && !strcasecmp(tmp, "ltsv")) {
-        conf->format    = FLB_OUT_FILE_FMT_LTSV;
-        conf->delimiter = "\t";
-        conf->label_delimiter = ":";
-    }
-    else if(tmp && !strcasecmp(tmp, "plain")) {
-        conf->format    = FLB_OUT_FILE_FMT_PLAIN;
-        conf->delimiter = NULL;
-        conf->label_delimiter = NULL;
+    if (tmp) {
+        if (!strcasecmp(tmp, "csv")) {
+            conf->format    = FLB_OUT_FILE_FMT_CSV;
+            conf->delimiter = ",";
+        }
+        else if (!strcasecmp(tmp, "ltsv")) {
+            conf->format    = FLB_OUT_FILE_FMT_LTSV;
+            conf->delimiter = "\t";
+            conf->label_delimiter = ":";
+        }
+        else if (!strcasecmp(tmp, "plain")) {
+            conf->format    = FLB_OUT_FILE_FMT_PLAIN;
+            conf->delimiter = NULL;
+            conf->label_delimiter = NULL;
+        }
+        else if (!strcasecmp(tmp, "msgpack")) {
+            conf->format    = FLB_OUT_FILE_FMT_MSGPACK;
+            conf->delimiter = NULL;
+            conf->label_delimiter = NULL;
+        }
     }
 
     tmp = flb_output_get_property("delimiter", ins);
@@ -120,33 +127,31 @@ static int cb_file_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static int csv_output(FILE *fp,
-                      struct flb_time *tm,
-                      msgpack_object *obj,
+static int csv_output(FILE *fp, struct flb_time *tm, msgpack_object *obj,
                       struct flb_file_conf *ctx)
 {
-    msgpack_object_kv *kv = NULL;
     int i;
     int map_size;
+    msgpack_object_kv *kv = NULL;
 
     if (obj->type == MSGPACK_OBJECT_MAP && obj->via.map.size > 0) {
         kv = obj->via.map.ptr;
         map_size = obj->via.map.size;
         fprintf(fp, "%f%s", flb_time_to_double(tm), ctx->delimiter);
-        for (i=0; i<map_size-1; i++) {
+
+        for (i = 0; i < map_size - 1; i++) {
             msgpack_object_print(fp, (kv+i)->val);
             fprintf(fp, "%s", ctx->delimiter);
         }
+
         msgpack_object_print(fp, (kv+(map_size-1))->val);
         fprintf(fp, "\n");
     }
     return 0;
 }
 
-static int ltsv_output(FILE *fp,
-                      struct flb_time *tm,
-                      msgpack_object *obj,
-                      struct flb_file_conf *ctx)
+static int ltsv_output(FILE *fp, struct flb_time *tm, msgpack_object *obj,
+                       struct flb_file_conf *ctx)
 {
     msgpack_object_kv *kv = NULL;
     int i;
@@ -159,12 +164,14 @@ static int ltsv_output(FILE *fp,
                 ctx->label_delimiter,
                 flb_time_to_double(tm),
                 ctx->delimiter);
-        for (i=0; i<map_size-1; i++) {
+
+        for (i = 0; i < map_size - 1; i++) {
             msgpack_object_print(fp, (kv+i)->key);
             fprintf(fp, "%s", ctx->label_delimiter);
             msgpack_object_print(fp, (kv+i)->val);
             fprintf(fp, "%s", ctx->delimiter);
         }
+
         msgpack_object_print(fp, (kv+(map_size-1))->key);
         fprintf(fp, "%s", ctx->label_delimiter);
         msgpack_object_print(fp, (kv+(map_size-1))->val);
@@ -173,10 +180,7 @@ static int ltsv_output(FILE *fp,
     return 0;
 }
 
-static int plain_output(FILE *fp,
-                      msgpack_object *obj,
-                      size_t alloc_size
-                      )
+static int plain_output(FILE *fp, msgpack_object *obj, size_t alloc_size)
 {
     char *buf;
 
@@ -200,6 +204,8 @@ static void cb_file_flush(void *data, size_t bytes,
     size_t off = 0;
     size_t last_off = 0;
     size_t alloc_size = 0;
+    size_t ret;
+    size_t total;
     char *out_file;
     char *buf;
     char *tag_buf;
@@ -231,6 +237,30 @@ static void cb_file_flush(void *data, size_t bytes,
     }
     memcpy(tag_buf, tag, tag_len);
     tag_buf[tag_len] = '\0';
+
+    /*
+     * Msgpack output format used to create unit tests files, useful for
+     * Fluent Bit developers.
+     */
+    if (ctx->format == FLB_OUT_FILE_FMT_MSGPACK) {
+        off = 0;
+        total = 0;
+
+        do {
+            ret = fwrite(data + off, 1, bytes - off, fp);
+            if (ret < 0) {
+                flb_errno();
+                fclose(fp);
+                flb_free(tag_buf);
+                FLB_OUTPUT_RETURN(FLB_RETRY);
+            }
+            total += ret;
+        } while (total < bytes);
+
+        fclose(fp);
+        flb_free(tag_buf);
+        FLB_OUTPUT_RETURN(FLB_OK);
+    }
 
     /*
      * Upon flush, for each array, lookup the time and the first field
