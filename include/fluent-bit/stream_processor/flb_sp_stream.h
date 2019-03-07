@@ -26,6 +26,7 @@
 
 struct flb_sp_stream {
     flb_sds_t name;       /* stream name */
+    flb_sds_t tag;        /* tag specified through properties */
     void *in;             /* input instance context */
 };
 

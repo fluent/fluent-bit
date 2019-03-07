@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/stream_processor/flb_sp.h>
+#include <fluent-bit/stream_processor/flb_sp_parser.h>
 #include <fluent-bit/stream_processor/flb_sp_stream.h>
 
 /* Function defined in plugins/in_stream_processor/sp.c */
@@ -57,6 +58,8 @@ int flb_sp_stream_create(char *name, struct flb_sp_task *task,
                          struct flb_sp *sp)
 {
     int ret;
+    char *tag;
+    char *tmp;
     struct flb_input_instance *in;
     struct flb_sp_stream *stream;
 
@@ -68,7 +71,7 @@ int flb_sp_stream_create(char *name, struct flb_sp_task *task,
     }
 
     /* Create stream context for 'stream processor' */
-    stream = flb_malloc(sizeof(struct flb_sp_stream));
+    stream = flb_calloc(1, sizeof(struct flb_sp_stream));
     if (!stream) {
         flb_errno();
         return -1;
@@ -95,6 +98,29 @@ int flb_sp_stream_create(char *name, struct flb_sp_task *task,
     if (ret == -1) {
         flb_warn("[sp] cannot set stream name, using fallback name %s",
                  in->name);
+    }
+
+    /*
+     * Lookup for Stream properties: at this point we only care about a
+     * possible Tag defined in the query, e.g:
+     *
+     * CREATE STREAM data WITH(tag='mydata') as SELECT * FROM STREAM:apache;
+     */
+    tag = flb_sp_cmd_stream_prop_get(task->cmd, "tag");
+    if (tag) {
+        /*
+         * Duplicate value in a new variable since input instance property
+         * will be released upon plugin exit.
+         */
+        stream->tag = flb_sds_create(tag);
+        if (!stream->tag) {
+            flb_error("[sp] cannot set Tag property");
+            flb_sp_stream_destroy(stream, sp);
+            return -1;
+        }
+
+        /* Tag property is just an assignation, cannot fail */
+        flb_input_set_property(in, "tag", stream->tag);
     }
 
     /* Initialize instance */
@@ -140,6 +166,7 @@ int flb_sp_stream_append_data(char *buf_data, size_t buf_size,
 void flb_sp_stream_destroy(struct flb_sp_stream *stream, struct flb_sp *sp)
 {
     flb_sds_destroy(stream->name);
+    flb_sds_destroy(stream->tag);
     flb_input_instance_exit(stream->in, sp->config);
     flb_input_instance_free(stream->in);
     flb_free(stream);
