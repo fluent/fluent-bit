@@ -81,14 +81,14 @@ create:
       properties: property
                   |
                   properties ',' property
-      property: prop_key '=' QUOTE prop_val QUOTE
+      property: prop_key '=' prop_val
                   {
-                    flb_sp_cmd_stream_prop_add(cmd, $1, $4);
+                    flb_sp_cmd_stream_prop_add(cmd, $1, $3);
                     flb_free($1);
-                    flb_free($4);
+                    flb_free($3);
                   }
       prop_key: IDENTIFIER
-      prop_val: IDENTIFIER
+      prop_val: STRING
 
 /* Parser for 'SELECT' statement */
 select: SELECT keys FROM source ';'
