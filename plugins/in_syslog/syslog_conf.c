@@ -25,6 +25,9 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_utils.h>
+#ifdef FLB_HAVE_ICONV
+#include <fluent-bit/flb_iconv.h>
+#endif
 
 #include "syslog.h"
 #include "syslog_server.h"
@@ -36,6 +39,9 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
     const char *tmp;
     char port[16];
     struct flb_syslog *ctx;
+#ifdef FLB_HAVE_ICONV
+    char *tmp2;
+#endif
 
     ctx = flb_calloc(1, sizeof(struct flb_syslog));
     if (!ctx) {
@@ -133,6 +139,27 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
         syslog_conf_destroy(ctx);
         return NULL;
     }
+
+#ifdef FLB_HAVE_ICONV
+    tmp = flb_input_get_property("from_encoding", i_ins);
+    tmp2 = flb_input_get_property("encoding", i_ins);
+    if(tmp) {
+        if(!tmp2) {
+            tmp2 = "UTF8";
+        } else if(!strcasecmp(tmp2,"default")) {
+            tmp2 = "";
+        }
+        if(!strcasecmp(tmp,"default")) {
+            tmp = "";
+        }
+        ctx->iconvert = flb_iconv_open(tmp2,tmp);
+        if(ctx->iconvert == NULL) {
+            flb_error("[in_tail] cannot init iconv: '%s'=>'%s'", tmp, tmp2);
+        }
+    } else {
+        ctx->iconvert = NULL;
+    }
+#endif
 
     return ctx;
 }

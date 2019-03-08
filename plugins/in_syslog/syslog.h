@@ -24,6 +24,10 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
 
+#ifndef FLB_HAVE_ICONV
+#include <fluent-bit/flb_iconv.h>
+#endif
+
 /* Syslog modes */
 #define FLB_SYSLOG_UNIX_TCP  1
 #define FLB_SYSLOG_UNIX_UDP  2
@@ -63,6 +67,10 @@ struct flb_syslog {
     struct mk_list connections;
     struct mk_event_loop *evl;
     struct flb_input_instance *ins;
+
+#ifdef FLB_HAVE_ICONV
+    struct flb_iconv *iconvert;
+#endif
 };
 
 #endif
