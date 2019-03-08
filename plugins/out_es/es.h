@@ -49,6 +49,7 @@ struct flb_elasticsearch {
     int replace_dots;
 
     int trace_output;
+    int trace_error;
 
     /*
      * Logstash compatibility options
