@@ -73,6 +73,7 @@ option(FLB_SYSTEM_STRPTIME    "Use strptime in system libc"  Yes)
 option(FLB_STATIC_CONF        "Build binary using static configuration")
 option(FLB_STREAM_PROCESSOR   "Enable Stream Processor"      Yes)
 option(FLB_CORO_STACK_SIZE    "Set coroutine stack size")
+option(FLB_ICONV              "Enable iconv string decoding"  No)
 
 # Metrics: Experimental Feature, disabled by default on 0.12 series
 # but enabled in the upcoming 0.13 release. Note that development
@@ -174,6 +175,7 @@ if(FLB_ALL)
   # Global
   set(FLB_DEBUG        1)
   set(FLB_TLS          1)
+  set(FLB_ICONV        1)
 
   # Input plugins
   set(FLB_IN_CPU       1)
@@ -203,6 +205,7 @@ if(FLB_ALL)
   set(FLB_OUT_STDOUT   1)
   set(FLB_OUT_LIB      1)
   set(FLB_OUT_FLOWCOUNTER 1)
+
 endif()
 
 if(FLB_DEV)
@@ -647,6 +650,67 @@ if(FLB_INOTIFY)
   if(FLB_HAVE_INOTIFY)
     FLB_DEFINITION(FLB_HAVE_INOTIFY)
   endif()
+endif()
+
+# iconv
+if(FLB_ICONV)
+
+  if(CMAKE_VERSION VERSION_LESS 3.11.0)
+     message("cmake older than 3.11.0 .. no FindIconv module... testing here")
+     if(NOT DEFINED Iconv_IS_BUILT_IN)
+       if(DEFINED Iconv_INCLUDE_DIR AND NOT DEFINED Iconv_LIBRARY)
+          check_c_source_compiles(
+                "
+                #include <stddef.h>
+                #include <iconv.h>
+                int main() {
+                  char *a, *b;
+                  size_t i, j;
+                  iconv_t ic;
+                  ic = iconv_open(\"to\", \"from\");
+                  iconv(ic, &a, &i, &b, &j);
+                  iconv_close(ic);
+                }
+                " Iconv_IS_BUILT_IN)
+       endif()
+    endif()
+    if(NOT Iconv_IS_BUILT_IN)
+      if(DEFINED Iconv_INCLUDE_DIR AND NOT DEFINED Iconv_LIBRARIES)
+        set(CMAKE_REQUIRED_LIBRARIES  "iconv")
+        check_c_source_compiles(
+                "
+                #include <stddef.h>
+                #include <iconv.h>
+                int main() {
+                  char *a, *b;
+                  size_t i, j;
+                  iconv_t ic;
+                  ic = iconv_open(\"to\", \"from\");
+                  iconv(ic, &a, &i, &b, &j);
+                  iconv_close(ic);
+                }
+                " Iconv_FOUND)
+        if(Iconv_FOUND)
+	   set(Iconv_LIBRARIES "iconv")
+        endif()
+      endif()
+    endif()
+    
+  else()
+    include(FindIconv)
+  endif()
+
+  if(Iconv_IS_BUILT_IN)
+    message("Iconv_IS_BUILT_IN builtin is defined")
+    FLB_DEFINITION(FLB_HAVE_ICONV)
+  elseif(Iconv_LIBRARIES)
+    message("Iconv_LIBRARIES defined '${Iconv_LIBRARIES}'")
+    FLB_DEFINITION(FLB_HAVE_ICONV)
+  else()
+    message("FLB_ICONV defined iconv not given")
+    set(FLB_ICONV NO)
+  endif()
+
 endif()
 
 configure_file(

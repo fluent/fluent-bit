@@ -82,6 +82,20 @@ if(FLB_TLS)
     )
 endif()
 
+# iconv
+if(FLB_ICONV)
+  set(src
+     ${src}
+     "flb_iconv.c"
+     )
+  if(NOT Iconv_IS_BUILT_IN)
+    set(extra_libs
+      ${extra_libs}
+      ${Iconv_LIBRARIES}
+    )
+  endif()
+endif()
+
 if(FLB_PROXY_GO)
   set(src
     ${src}
