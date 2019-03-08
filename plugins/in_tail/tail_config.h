@@ -28,6 +28,10 @@
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>
 #endif
+#ifdef FLB_HAVE_ICONV
+#include <iconv.h>
+#endif
+
 
 /* Metrics */
 #ifdef FLB_HAVE_METRICS
@@ -111,6 +115,10 @@ struct flb_tail_config {
 
     /* Plugin input instance */
     struct flb_input_instance *ins;
+
+#ifdef FLB_HAVE_ICONV
+    struct flb_iconv *iconvert;
+#endif
 };
 
 struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,

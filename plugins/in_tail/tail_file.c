@@ -31,6 +31,9 @@
 #include <fluent-bit/flb_regex.h>
 #include <fluent-bit/flb_hash.h>
 #endif
+#ifdef FLB_HAVE_ICONV
+#include <fluent-bit/flb_iconv.h>
+#endif
 
 #include "tail.h"
 #include "tail_file.h"
@@ -236,6 +239,10 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
     msgpack_sbuffer *out_sbuf;
     msgpack_packer *out_pck;
     struct flb_tail_config *ctx = file->config;
+#ifdef FLB_HAVE_ICONV
+    char *iconv_data;
+    size_t iconv_len;
+#endif
 
     /* Create a temporal msgpack buffer */
     msgpack_sbuffer_init(&mp_sbuf);
@@ -277,6 +284,19 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
         line = data;
         line_len = len - crlf;
         repl_line = NULL;
+
+#ifdef FLB_HAVE_ICONV
+        iconv_data = NULL;
+        line = data;
+        line_len = len;
+        if(ctx->iconvert) {
+            ret = flb_iconv_execute(ctx->iconvert, data, len, &iconv_data, &iconv_len, FLB_ICONV_ACCEPT_NOT_CHANGED);
+            if(ret == FLB_ICONV_SUCCESS) {
+                line = iconv_data;
+                line_len  = iconv_len;
+            }
+        }
+#endif
 
         if (ctx->docker_mode) {
             ret = flb_tail_dmode_process_content(now, line, line_len,
@@ -365,6 +385,11 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
 #endif
 
     go_next:
+#ifdef FLB_HAVE_ICONV
+        if(iconv_data) {
+            flb_free(iconv_data);
+        }
+#endif
         flb_free(repl_line);
         repl_line = NULL;
         /* Adjust counters */
