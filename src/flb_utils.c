@@ -212,6 +212,10 @@ struct mk_list *flb_utils_split(char *line, int separator, int max_split)
     struct mk_list *list;
     struct flb_split_entry *new;
 
+    if (!line) {
+        return NULL;
+    }
+
     list = flb_malloc(sizeof(struct mk_list));
     if (!list) {
         flb_errno();
