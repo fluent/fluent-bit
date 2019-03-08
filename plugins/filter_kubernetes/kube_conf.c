@@ -51,6 +51,7 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
     }
     ctx->config = config;
     ctx->merge_log = FLB_FALSE;
+    ctx->labels = FLB_TRUE;
     ctx->annotations = FLB_TRUE;
     ctx->dummy_meta = FLB_FALSE;
     ctx->tls_debug = -1;
@@ -200,6 +201,12 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
     if (!ctx->hash_table) {
         flb_kube_conf_destroy(ctx);
         return NULL;
+    }
+
+    /* Include Kubernetes Labels in the final record */
+    tmp = flb_filter_get_property("labels", i);
+    if (tmp) {
+        ctx->labels = flb_utils_bool(tmp);
     }
 
     /* Include Kubernetes Annotations in the final record */

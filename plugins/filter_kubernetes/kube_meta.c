@@ -496,7 +496,9 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
         }
         else if (size == 6 && strncmp(ptr, "labels", 6) == 0) {
             have_labels = i;
-            map_size++;
+            if (ctx->labels == FLB_TRUE) {
+                map_size++;
+            }
         }
 
         else if (size == 11 && strncmp(ptr, "annotations", 11) == 0) {
@@ -552,7 +554,7 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
         msgpack_pack_object(&mp_pck, v);
     }
 
-    if (have_labels >= 0) {
+    if (have_labels >= 0 && ctx->labels == FLB_TRUE) {
         k = meta_val.via.map.ptr[have_labels].key;
         v = meta_val.via.map.ptr[have_labels].val;
 
