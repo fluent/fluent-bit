@@ -71,8 +71,8 @@ struct flb_in_cpu_config {
     int n_processors;   /* number of core processors  */
     int cpu_ticks;      /* CPU ticks (Kernel setting) */
     int coll_fd;        /* collector id/fd            */
-    int interval_sec;    /* interval collection time (Second) */
-    int interval_nsec;   /* interval collection time (Nanosecond) */
+    int interval_sec;   /* interval collection time (Second) */
+    int interval_nsec;  /* interval collection time (Nanosecond) */
     struct cpu_stats cstats;
     struct flb_input_instance *i_ins;
 };
@@ -106,7 +106,7 @@ static inline double CPU_METRIC_SYS_AVERAGE(unsigned long pre, unsigned long now
     }
 
     diff = ULL_ABS(now, pre);
-    total = (((diff / ctx->cpu_ticks) * 100) / ctx->n_processors) / ctx->interval_sec;
+    total = (((diff / ctx->cpu_ticks) * 100) / ctx->n_processors) / (ctx->interval_sec + 1e-9*ctx->interval_nsec);
 
     return total;
 }
@@ -123,7 +123,7 @@ static inline double CPU_METRIC_USAGE(unsigned long pre, unsigned long now,
     }
 
     diff = ULL_ABS(now, pre);
-    total = ((diff * 100) / ctx->cpu_ticks) / ctx->interval_sec;
+    total = ((diff * 100) / ctx->cpu_ticks) / (ctx->interval_sec + 1e-9*ctx->interval_nsec);
     return total;
 }
 
