@@ -8,6 +8,7 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_sds.h>
 #include <fluent-bit/stream_processor/flb_sp_parser.h>
 
 #include "sql_parser.h"
@@ -146,6 +147,8 @@ struct flb_sp_cmd *flb_sp_cmd_create(char *sql)
         flb_errno();
         return NULL;
     }
+    cmd->type = FLB_SP_SELECT;
+
     mk_list_init(&cmd->stream_props);
     mk_list_init(&cmd->keys);
 

@@ -33,8 +33,8 @@
 #define FLB_SP_MAX       5
 
 /* Command type */
-#define FLB_SP_CREATE_STREAM 0
-#define FLB_SP_SELECT        1
+#define FLB_SP_SELECT        0
+#define FLB_SP_CREATE_STREAM 1
 
 /* Source type */
 #define FLB_SP_STREAM    0
