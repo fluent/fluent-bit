@@ -59,7 +59,6 @@ int flb_sp_stream_create(char *name, struct flb_sp_task *task,
 {
     int ret;
     char *tag;
-    char *tmp;
     struct flb_input_instance *in;
     struct flb_sp_stream *stream;
 
