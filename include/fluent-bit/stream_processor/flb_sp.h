@@ -59,8 +59,12 @@ void flb_sp_destroy(struct flb_sp *sp);
 
 int flb_sp_do(struct flb_sp *sp, struct flb_input_instance *in,
               char *buf_data, size_t buf_size);
+int flb_sp_test_do(struct flb_sp *sp, struct flb_sp_task *task,
+                   char *buf_data, size_t buf_size,
+                   char **out_data, size_t *out_size);
 
-int flb_sp_task_create(struct flb_sp *sp, char *name, char *query);
+struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, char *name,
+                                       char *query);
 void flb_sp_task_destroy(struct flb_sp_task *task);
 
 #endif

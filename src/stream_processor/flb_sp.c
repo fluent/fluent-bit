@@ -20,6 +20,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
@@ -42,6 +43,10 @@
 #define pack_uint16(buf, d) _msgpack_store16(buf, (uint16_t) d)
 #define pack_uint32(buf, d) _msgpack_store32(buf, (uint32_t) d)
 
+/* String type to numerical conversion */
+#define FLB_STR_INT   1
+#define FLB_STR_FLOAT 2
+
 struct aggr_num {
     int type;
     int ops;
@@ -62,6 +67,7 @@ static int sp_config_file(struct flb_config *config, struct flb_sp *sp,
     struct mk_rconf *fconf;
     struct mk_rconf_section *section;
     struct mk_list *head;
+    struct flb_sp_task *task;
 
 #ifndef FLB_HAVE_STATIC_CONF
     ret = stat(file, &st);
@@ -115,8 +121,8 @@ static int sp_config_file(struct flb_config *config, struct flb_sp *sp,
         }
 
         /* Register the task */
-        ret = flb_sp_task_create(sp, name, exec);
-        if (ret == -1) {
+        task = flb_sp_task_create(sp, name, exec);
+        if (!task) {
             goto fconf_error;
         }
 
@@ -206,30 +212,91 @@ static int sp_cmd_aggregated_keys(struct flb_sp_cmd *cmd)
 }
 
 /*
+ * Convert a string to a numerical representation:
+ *
+ * - if output number is an integer, 'i' is set and returns FLB_STR_INT
+ * - if output number is a float, 'd' is set and returns FLB_STR_FLOAT
+ * - if no conversion is possible (not a number), returns -1
+ */
+static int string_to_number(char *str, int len, int64_t *i, double *d)
+{
+    int c;
+    int dots = 0;
+    char *end;
+    int64_t i_out;
+    double d_out;
+
+    /* Detect if this is a floating point number */
+    for (c = 0; c < len; c++) {
+        if (str[c] == '.') {
+            dots++;
+        }
+    }
+
+    if (dots > 1) {
+        return -1;
+    }
+    else if (dots == 1) {
+        /* Floating point number */
+        errno = 0;
+        d_out = strtold(str, &end);
+
+        /* Check for various possible errors */
+        if ((errno == ERANGE || (errno != 0 && d_out == 0))) {
+            return -1;
+        }
+
+        if (end == str) {
+            return -1;
+        }
+
+        *d = d_out;
+        return FLB_STR_FLOAT;
+    }
+    else {
+        /* Integer */
+        errno = 0;
+        i_out = strtoll(str, &end, 10);
+
+        /* Check for various possible errors */
+        if ((errno == ERANGE || (errno != 0 && i_out == 0))) {
+            return - 1;
+        }
+
+        if (end == str) {
+            return -1;
+        }
+
+        *i = i_out;
+        return FLB_STR_INT;
+    }
+
+    return -1;
+}
+
+/*
  * Convert a msgpack object value to a number 'if possible'. The conversion
  * result is either stored on 'i' for 64 bits integers or in 'd' for
  * float/doubles.
  *
  * This function aims to take care of strings representing a value too.
  */
-static int object_to_num(msgpack_object obj, int64_t *i, double *d)
+static int object_to_number(msgpack_object obj, int64_t *i, double *d)
 {
-    int c;
-    int dots = 0;
+    int ret;
     int64_t i_out;
     double d_out;
-    char *end;
     char str_num[20];
 
     if (obj.type == MSGPACK_OBJECT_POSITIVE_INTEGER ||
         obj.type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
         *i = obj.via.i64;
-        return 0;
+        return FLB_STR_INT;
     }
     else if (obj.type == MSGPACK_OBJECT_FLOAT32 ||
              obj.type == MSGPACK_OBJECT_FLOAT) {
         *d = obj.via.f64;
-        return 0;
+        return FLB_STR_FLOAT;
     }
     else if (obj.type == MSGPACK_OBJECT_STR) {
         /* A numeric representation of a string should not exceed 19 chars */
@@ -237,55 +304,18 @@ static int object_to_num(msgpack_object obj, int64_t *i, double *d)
             return -1;
         }
 
-        /* Detect if this is a floating point number */
-        for (c = 0; c < obj.via.str.size; c++) {
-            if (obj.via.str.ptr[c] == '.') {
-                dots++;
-            }
-        }
+        memcpy(str_num, obj.via.str.ptr, obj.via.str.size);
+        str_num[obj.via.str.size] = '\0';
 
-        if (dots > 1) {
-            return -1;
-        }
-        else if (dots == 1) {
-            /* Floating point number */
-            errno = 0;
-            memcpy(str_num, obj.via.str.ptr, obj.via.str.size);
-            str_num[obj.via.str.size] = '\0';
-
-            d_out = strtold(str_num, &end);
-
-            /* Check for various possible errors */
-            if ((errno == ERANGE || (errno != 0 && d_out == 0))) {
-                return -1;
-            }
-
-            if (end == obj.via.str.ptr) {
-                return -1;
-            }
-
+        ret = string_to_number(str_num, obj.via.str.size,
+                               &i_out, &d_out);
+        if (ret == FLB_STR_FLOAT) {
             *d = d_out;
-            return 0;
+            return FLB_STR_FLOAT;
         }
-        else {
-            /* Integer */
-            errno = 0;
-            memcpy(str_num, obj.via.str.ptr, obj.via.str.size);
-            str_num[obj.via.str.size] = '\0';
-
-            i_out = strtoll(str_num, &end, 10);
-
-            /* Check for various possible errors */
-            if ((errno == ERANGE || (errno != 0 && i_out == 0))) {
-                return -1;
-            }
-
-            if (end == obj.via.str.ptr) {
-                return -1;
-            }
-
+        else if (ret == FLB_STR_INT) {
             *i = i_out;
-            return 0;
+            return FLB_STR_INT;
         }
     }
 
@@ -396,7 +426,8 @@ static void aggr_max(struct aggr_num *nums, int key_id, int64_t i, double d)
     }
 }
 
-int flb_sp_task_create(struct flb_sp *sp, char *name, char *query)
+struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, char *name,
+                                       char *query)
 {
     int ret;
     struct flb_sp_cmd *cmd;
@@ -409,7 +440,7 @@ int flb_sp_task_create(struct flb_sp *sp, char *name, char *query)
     cmd = flb_sp_cmd_create(query);
     if (!cmd) {
         flb_error("[sp] invalid query on task '%s': '%s'", name, query);
-        return -1;
+        return NULL;
     }
 
     /* Create the task context */
@@ -417,13 +448,13 @@ int flb_sp_task_create(struct flb_sp *sp, char *name, char *query)
     if (!task) {
         flb_errno();
         flb_sp_cmd_destroy(cmd);
-        return -1;
+        return NULL;
     }
     task->name = flb_sds_create(name);
     if (!task->name) {
         flb_free(task);
         flb_sp_cmd_destroy(cmd);
-        return -1;
+        return NULL;
     }
 
     task->query = flb_sds_create(query);
@@ -431,7 +462,7 @@ int flb_sp_task_create(struct flb_sp *sp, char *name, char *query)
         flb_sds_destroy(task->name);
         flb_free(task);
         flb_sp_cmd_destroy(cmd);
-        return -1;
+        return NULL;
     }
 
     task->sp = sp;
@@ -450,7 +481,7 @@ int flb_sp_task_create(struct flb_sp *sp, char *name, char *query)
         flb_error("[sp] aggregated query cannot mix not aggregated keys: %s",
                   query);
         flb_sp_task_destroy(task);
-        return -1;
+        return NULL;
     }
     else if (ret > 0) {
         task->aggr_keys = FLB_TRUE;
@@ -465,7 +496,7 @@ int flb_sp_task_create(struct flb_sp *sp, char *name, char *query)
         if (ret == -1) {
             flb_error("[sp] could not create stream '%s'", cmd->stream_name);
             flb_sp_task_destroy(task);
-            return -1;
+            return NULL;
         }
     }
 
@@ -475,7 +506,7 @@ int flb_sp_task_create(struct flb_sp *sp, char *name, char *query)
      * access it when processing data.
      */
     sp_task_to_instance(task, sp);
-    return 0;
+    return task;
 }
 
 void flb_sp_task_destroy(struct flb_sp_task *task)
@@ -583,13 +614,42 @@ static struct flb_exp_val *key_to_value(flb_sds_t ckey, msgpack_object *map)
     return NULL;
 }
 
-static void itof_convert(struct flb_exp_val *val) {
+static void itof_convert(struct flb_exp_val *val)
+{
     if (val->type != FLB_EXP_INT) {
         return;
     }
 
     val->type = FLB_EXP_FLOAT;
     val->val.f64 = val->val.i64;
+}
+
+/* Convert (string) expression to number */
+static void exp_string_to_number(struct flb_exp_val *val)
+{
+    int ret;
+    int len;
+    int64_t i = 0;
+    char *str;
+    double d = 0.0;
+
+    len = flb_sds_len(val->val.string);
+    str = val->val.string;
+
+    ret = string_to_number(str, len, &i, &d);
+    if (ret == -1) {
+        return;
+    }
+
+    /* Assign to proper type */
+    if (ret == FLB_STR_FLOAT) {
+        val->type = FLB_EXP_FLOAT;
+        val->val.f64 = d;
+    }
+    else if (ret == FLB_STR_INT) {
+        val->type = FLB_EXP_INT;
+        val->val.i64 = i;
+    }
 }
 
 static void numerical_comp(struct flb_exp_val *left,
@@ -603,7 +663,12 @@ static void numerical_comp(struct flb_exp_val *left,
         return;
     }
 
-    if(left->type == FLB_EXP_INT && right->type == FLB_EXP_FLOAT) {
+    /* Check if left expression value is a number, if so, convert it */
+    if (left->type == FLB_EXP_STRING) {
+        exp_string_to_number(left);
+    }
+
+    if (left->type == FLB_EXP_INT && right->type == FLB_EXP_FLOAT) {
         itof_convert(left);
     }
     else if (left->type == FLB_EXP_FLOAT && right->type == FLB_EXP_INT) {
@@ -1021,7 +1086,7 @@ static int sp_process_data_aggr(char *buf_data, size_t buf_size,
 
                 /* Convert value to a numeric representation */
                 if (i == 0 && d == 0.0) {
-                    ret = object_to_num(val, &i, &d);
+                    ret = object_to_number(val, &i, &d);
                     if (ret == -1) {
                         /* Value cannot be represented as a number */
                         key_id++;
@@ -1381,6 +1446,42 @@ int flb_sp_do(struct flb_sp *sp, struct flb_input_instance *in,
     }
 
     return -1;
+}
+
+/*
+ * Do data processing for internal unit tests, no engine required, set
+ * results on out_data/out_size variables.
+ */
+int flb_sp_test_do(struct flb_sp *sp, struct flb_sp_task *task,
+                   char *buf_data, size_t buf_size,
+                   char **out_data, size_t *out_size)
+{
+    int ret;
+
+    if (task->aggr_keys == FLB_TRUE) {
+        ret = sp_process_data_aggr(buf_data, buf_size,
+                                   out_data, out_size,
+                                   task, sp);
+    }
+    else {
+        ret = sp_process_data(buf_data, buf_size,
+                              out_data, out_size,
+                              task, sp);
+    }
+
+    if (ret == -1) {
+        flb_error("[sp] error processing records for '%'",
+                  task->name);
+        return -1;
+    }
+
+    if (ret == 0) {
+        *out_data = NULL;
+        *out_size = 0;
+        return 0;
+    }
+
+    return 0;
 }
 
 /* Destroy stream processor context */
