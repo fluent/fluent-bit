@@ -240,7 +240,9 @@ static void test_select_keys()
         out_buf = NULL;
         out_size = 0;
 
-        ret = flb_sp_test_do(sp, task, data_buf, data_size,
+        ret = flb_sp_test_do(sp, task,
+                             "samples", 7,
+                             data_buf, data_size,
                              &out_buf, &out_size);
         if (ret == -1) {
             flb_error("[sp test] error processing check '%s'", check->name);
