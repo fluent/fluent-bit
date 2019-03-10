@@ -1,5 +1,23 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
+/*  Fluent Bit
+ *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -52,10 +70,21 @@ void flb_sp_cmd_key_del(struct flb_sp_cmd_key *key)
     flb_free(key);
 }
 
-int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int aggr_func,
+int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func,
                        char *key_name, char *key_alias)
 {
+    int aggr_func = 0;
+    int time_func = 0;
     struct flb_sp_cmd_key *key;
+
+    /* aggregation function ? */
+    if (func >= FLB_SP_AVG && func <= FLB_SP_MAX) {
+        aggr_func = func;
+    }
+    else if (func >= FLB_SP_NOW && func <= FLB_SP_UNIX_TIMESTAMP) {
+        /* Time function */
+        time_func = func;
+    }
 
     key = flb_calloc(1, sizeof(struct flb_sp_cmd_key));
     if (!key) {
@@ -93,6 +122,9 @@ int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int aggr_func,
     /* Aggregation function */
     if (aggr_func > 0) {
         key->aggr_func = aggr_func;
+    }
+    else if (time_func > 0) {
+        key->time_func = time_func;
     }
 
     mk_list_add(&key->_head, &cmd->keys);

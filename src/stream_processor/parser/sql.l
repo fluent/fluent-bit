@@ -47,23 +47,30 @@ static inline char *remove_dup_qoutes(char *s, size_t n)
 
 %%
 
+ /* SQL */
 CREATE                  return CREATE;
 STREAM                  return STREAM;
 WITH                    return WITH;
 SELECT                  return SELECT;
+AS                      return AS;
+FROM                    return FROM;
+STREAM:                 return FROM_STREAM;
+TAG:                    return FROM_TAG;
+WHERE                   return WHERE;
+AND                     return AND;
+OR                      return OR;
+NOT                     return NOT;
+
+ /* Aggregation Functions */
 SUM                     return SUM;
 AVG                     return AVG;
 COUNT                   return COUNT;
 MIN                     return MIN;
 MAX                     return MAX;
-AS                      return AS;
-FROM                    return FROM;
-WHERE                   return WHERE;
-STREAM:                 return FROM_STREAM;
-TAG:                    return FROM_TAG;
-AND                     return AND;
-OR                      return OR;
-NOT                     return NOT;
+
+ /* Date / Time Functions */
+NOW                     return NOW;
+UNIX_TIMESTAMP          return UNIX_TIMESTAMP;
 
 "true"                  { yylval->boolean = true;  return BOOLEAN; };
 "false"                 { yylval->boolean = false;  return BOOLEAN; };

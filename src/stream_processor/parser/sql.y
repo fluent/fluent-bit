@@ -26,8 +26,19 @@ void yyerror (struct flb_sp_cmd *cmd, void *scanner, const char *str)
 
 
 /* Known Tokens (refer to sql.l) */
+
 /* Keywords */
-%token CREATE STREAM WITH SELECT AVG SUM COUNT MAX MIN AS FROM FROM_STREAM FROM_TAG TAG WHERE IDENTIFIER QUOTE QUOTED
+%token IDENTIFIER QUOTE QUOTED
+
+/* Basic keywords for statements */
+%token CREATE STREAM WITH SELECT AS FROM FROM_STREAM FROM_TAG WHERE
+
+/* Aggregation functions */
+%token AVG SUM COUNT MAX MIN
+
+/* Time functions */
+%token NOW UNIX_TIMESTAMP
+
 /* Value types */
 %token INTEGER FLOAT STRING BOOLEAN
 /* Logical operation tokens */
@@ -46,7 +57,6 @@ void yyerror (struct flb_sp_cmd *cmd, void *scanner, const char *str)
 }
 
 %type <string>     IDENTIFIER
-%type <string>     TAG
 %type <integer>    INTEGER
 %type <fval>       FLOAT
 %type <string>     STRING
@@ -198,9 +208,31 @@ select: SELECT keys FROM source ';'
                      flb_free($3);
                      flb_free($6);
                   }
+                  |
+                  NOW '(' ')'
+                  {
+                     flb_sp_cmd_key_add(cmd, FLB_SP_NOW, NULL, NULL);
+                  }
+                  |
+                  NOW '(' ')' AS alias
+                  {
+                     flb_sp_cmd_key_add(cmd, FLB_SP_NOW, NULL, $5);
+                     flb_free($5);
+                  }
+                  |
+                  UNIX_TIMESTAMP '(' ')'
+                  {
+                     flb_sp_cmd_key_add(cmd, FLB_SP_UNIX_TIMESTAMP, NULL, NULL);
+                  }
+                  |
+                  UNIX_TIMESTAMP '(' ')' AS alias
+                  {
+                     flb_sp_cmd_key_add(cmd, FLB_SP_UNIX_TIMESTAMP, NULL, $5);
+                     flb_free($5);
+                  }
       alias: IDENTIFIER
       source: FROM_STREAM IDENTIFIER
-                   {
+      {
                      flb_sp_cmd_source(cmd, FLB_SP_STREAM, $2);
                      flb_free($2);
                    }

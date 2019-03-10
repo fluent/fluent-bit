@@ -32,6 +32,10 @@
 #define FLB_SP_MIN       4
 #define FLB_SP_MAX       5
 
+/* Date time functions */
+#define FLB_SP_NOW             10
+#define FLB_SP_UNIX_TIMESTAMP  11
+
 /* Command type */
 #define FLB_SP_SELECT        0
 #define FLB_SP_CREATE_STREAM 1
@@ -72,6 +76,7 @@ struct flb_sp_cmd_prop {
 /* Key selection */
 struct flb_sp_cmd_key {
     int aggr_func;            /* Aggregation function */
+    int time_func;            /* Time function */
     flb_sds_t name;           /* Key name */
     flb_sds_t alias;          /* Key output alias */
     struct mk_list _head;     /* Link to flb_sp_cmd->keys */
@@ -135,7 +140,7 @@ void flb_sp_cmd_stream_prop_del(struct flb_sp_cmd_prop *prop);
 char *flb_sp_cmd_stream_prop_get(struct flb_sp_cmd *cmd, char *key);
 
 /* Selection keys */
-int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int aggr,
+int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func,
                        char *key_name, char *key_alias);
 void flb_sp_cmd_key_del(struct flb_sp_cmd_key *key);
 int flb_sp_cmd_source(struct flb_sp_cmd *cmd, int type, char *source);

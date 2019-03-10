@@ -29,6 +29,7 @@
 #include <fluent-bit/stream_processor/flb_sp.h>
 #include <fluent-bit/stream_processor/flb_sp_stream.h>
 #include <fluent-bit/stream_processor/flb_sp_parser.h>
+#include <fluent-bit/stream_processor/flb_sp_func_time.h>
 
 #include <stdlib.h>
 #include <sys/types.h>
@@ -1219,6 +1220,7 @@ static int sp_process_data(char *buf_data, size_t buf_size,
 {
     int i;
     int ok;
+    int ret;
     int map_size;
     int map_entries;
     int records = 0;
@@ -1300,18 +1302,27 @@ static int sp_process_data(char *buf_data, size_t buf_size,
         /* Counter for new entries added to the outgoing map */
         map_entries = 0;
 
-        /* Iterate every key/value pair and compare with task field selection */
-        for (i = 0; i < map_size; i++) {
-            key = map.via.map.ptr[i].key;
-            val = map.via.map.ptr[i].val;
-
-            if (key.type != MSGPACK_OBJECT_STR) {
+        /* Iterate key selection */
+        mk_list_foreach(head, &cmd->keys) {
+            cmd_key = mk_list_entry(head, struct flb_sp_cmd_key, _head);
+            if (cmd_key->time_func > 0) {
+                /* Process time function */
+                ret = flb_sp_func_time(&mp_pck, cmd_key);
+                if (ret > 0) {
+                    map_entries += ret;
+                }
                 continue;
             }
 
-            /* Iterate task keys */
-            mk_list_foreach(head, &cmd->keys) {
-                cmd_key = mk_list_entry(head, struct flb_sp_cmd_key, _head);
+
+            /* Lookup selection key in the incoming map */
+            for (i = 0; i < map_size; i++) {
+                key = map.via.map.ptr[i].key;
+                val = map.via.map.ptr[i].val;
+
+                if (key.type != MSGPACK_OBJECT_STR) {
+                    continue;
+                }
 
                 /* Wildcard selection: * */
                 if (cmd_key->name == NULL) {
@@ -1332,7 +1343,8 @@ static int sp_process_data(char *buf_data, size_t buf_size,
 
                     /* Check if the command ask for an alias 'key AS abc' */
                     if (cmd_key->alias) {
-                        msgpack_pack_str(&mp_pck, flb_sds_len(cmd_key->alias));
+                        msgpack_pack_str(&mp_pck,
+                                         flb_sds_len(cmd_key->alias));
                         msgpack_pack_str_body(&mp_pck,
                                               cmd_key->alias,
                                               flb_sds_len(cmd_key->alias));
