@@ -32,6 +32,19 @@
 
 #define MP_UOK MSGPACK_UNPACK_SUCCESS
 
+static inline int float_cmp(double f1, double f2)
+{
+    double precision = 0.00001;
+
+    if (((f1 - precision) < f2) &&
+        ((f1 + precision) > f2)) {
+        return 1;
+    }
+    else {
+        return 0;
+    }
+}
+
 static int file_to_buf(char *path, char **out_buf, size_t *out_size)
 {
     int ret;
@@ -115,6 +128,99 @@ static int mp_count_keys(char *buf, size_t size)
     return keys;
 }
 
+/* Lookup record/row number 'id' and check that 'key' matches 'val' */
+static int mp_record_key_cmp(char *buf, size_t size,
+                             int record_id, char *key,
+                             int val_type, char *val_str, int64_t val_int64,
+                             double val_f64)
+{
+    int i;
+    int ret = FLB_FALSE;
+    int id = 0;
+    int k_len;
+    int v_len;
+    int keys;
+    size_t off = 0;
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_object map;
+    msgpack_object k;
+    msgpack_object v;
+
+    k_len = strlen(key);
+
+    msgpack_unpacked_init(&result);
+    while (msgpack_unpack_next(&result, buf, size, &off) == MP_UOK) {
+        if (id != record_id) {
+            id++;
+            continue;
+        }
+
+        root = result.data;
+        map = root.via.array.ptr[1];
+        keys += map.via.map.size;
+
+        for (i = 0; i < keys; i++) {
+            k = map.via.map.ptr[i].key;
+            v = map.via.map.ptr[i].val;
+
+            if (k.type != MSGPACK_OBJECT_STR) {
+                continue;
+            }
+
+            if (k.via.str.size != k_len) {
+                continue;
+            }
+
+            if (strncmp(k.via.str.ptr, key, k_len) != 0) {
+                continue;
+            }
+
+            /* at this point the key matched, now validate the expected value */
+            if (val_type == MSGPACK_OBJECT_FLOAT) {
+                if (v.type != MSGPACK_OBJECT_FLOAT32 &&
+                    v.type != MSGPACK_OBJECT_FLOAT) {
+                    msgpack_unpacked_destroy(&result);
+                    return FLB_FALSE;
+                }
+            }
+            else if (v.type != val_type) {
+                msgpack_unpacked_destroy(&result);
+                return FLB_FALSE;
+            }
+
+            switch (val_type) {
+            case MSGPACK_OBJECT_STR:
+                v_len = strlen(val_str);
+                msgpack_unpacked_destroy(&result);
+                if (strncmp(v.via.str.ptr, val_str, v_len) == 0) {
+                    ret = FLB_TRUE;
+                }
+                goto exit;
+            case MSGPACK_OBJECT_POSITIVE_INTEGER:
+                msgpack_unpacked_destroy(&result);
+                if (v.via.i64 == val_int64) {
+                    ret = FLB_TRUE;
+                }
+                goto exit;
+            case MSGPACK_OBJECT_FLOAT:
+                if (float_cmp(v.via.f64, val_f64)) {
+                    ret = FLB_TRUE;
+                }
+                else {
+                    printf("double mismatch: %f exp %f\n",
+                           v.via.f64, val_f64);
+                }
+                goto exit;
+            };
+        }
+    }
+
+ exit:
+    msgpack_unpacked_destroy(&result);
+    return ret;
+}
+
 /* Callback functions to perform checks over results */
 static void cb_select_all(int id, struct task_check *check,
                           char *buf, size_t size)
@@ -160,6 +266,106 @@ static void cb_select_cond_2(int id, struct task_check *check,
     TEST_CHECK(ret == 2);
 }
 
+static void cb_select_aggr(int id, struct task_check *check,
+                           char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 1 row */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 1);
+
+    /* MIN(id) is 0 */
+    ret = mp_record_key_cmp(buf, size,
+                            0, "MIN(id)",
+                            MSGPACK_OBJECT_POSITIVE_INTEGER,
+                            NULL, 0, 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* MAX(id) is 9 */
+    ret = mp_record_key_cmp(buf, size,
+                            0, "MAX(id)",
+                            MSGPACK_OBJECT_POSITIVE_INTEGER,
+                            NULL, 9, 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* COUNT(*) is 10 */
+    ret = mp_record_key_cmp(buf, size,
+                            0, "COUNT(*)",
+                            MSGPACK_OBJECT_POSITIVE_INTEGER,
+                            NULL, 10, 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* SUM(bytes) is 100.50 */
+    ret = mp_record_key_cmp(buf, size,
+                            0, "SUM(bytes)",
+                            MSGPACK_OBJECT_FLOAT,
+                            NULL, 0, 100.50);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* AVG(bytes) is 10.05 */
+    ret = mp_record_key_cmp(buf, size,
+                            0, "AVG(bytes)",
+                            MSGPACK_OBJECT_FLOAT,
+                            NULL, 0, 10.050000);
+    TEST_CHECK(ret == FLB_TRUE);
+}
+
+static void cb_func_time_now(int id, struct task_check *check,
+                             char *buf, size_t size)
+{
+    int ret;
+    char tmp[32];
+    struct tm *local;
+    time_t now = time(NULL);
+
+    local = localtime(&now);
+    strftime(tmp, sizeof(tmp) - 1, "%Y-%m-%d %H:%M:%S", local);
+
+    /* Expect 2 rows */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 2);
+
+    /* NOW() */
+    ret = mp_record_key_cmp(buf, size,
+                            0, "NOW()",
+                            MSGPACK_OBJECT_STR,
+                            tmp, 0, 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* tnow */
+    ret = mp_record_key_cmp(buf, size,
+                            1, "tnow",
+                            MSGPACK_OBJECT_STR,
+                            tmp, 0, 0);
+    TEST_CHECK(ret == FLB_TRUE);
+}
+
+static void cb_func_time_unix_timestamp(int id, struct task_check *check,
+                                        char *buf, size_t size)
+{
+    int ret;
+    time_t now = time(NULL);
+
+    /* Expect 2 rows */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 2);
+
+    /* UNIX_TIMESTAMP() */
+    ret = mp_record_key_cmp(buf, size,
+                            0, "UNIX_TIMESTAMP()",
+                            MSGPACK_OBJECT_POSITIVE_INTEGER,
+                            NULL, now, 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* tnow */
+    ret = mp_record_key_cmp(buf, size,
+                            1, "ts",
+                            MSGPACK_OBJECT_POSITIVE_INTEGER,
+                            NULL, now, 0);
+    TEST_CHECK(ret == FLB_TRUE);
+}
+
 struct task_check select_keys_checks[] = {
     {
         0,
@@ -187,6 +393,31 @@ struct task_check select_keys_checks[] = {
         "SELECT * FROM STREAM:FLB WHERE word2 = 'rlz' or word3 = 'rlz';",
         cb_select_cond_2
     },
+
+    /* Aggregation functions */
+    {
+        4,
+        "select_aggr",
+        "SELECT MIN(id), MAX(id), COUNT(*), SUM(bytes), AVG(bytes) " \
+        "FROM STREAM:FLB;",
+        cb_select_aggr,
+    },
+
+    /* Time functions */
+    {
+        4,
+        "func_time_now",
+        "SELECT NOW(), NOW() as tnow FROM STREAM:FLB WHERE bytes > 10;",
+        cb_func_time_now,
+    },
+    {
+        5,
+        "func_time_unix_timestamp",
+        "SELECT UNIX_TIMESTAMP(), UNIX_TIMESTAMP() as ts " \
+        "FROM STREAM:FLB WHERE bytes > 10;",
+        cb_func_time_unix_timestamp,
+    }
+
 };
 
 static void test_select_keys()
