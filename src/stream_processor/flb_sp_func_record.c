@@ -38,58 +38,40 @@ static inline void pack_key(msgpack_packer *mp_pck,
     }
 }
 
-static int func_now(msgpack_packer *mp_pck, struct flb_sp_cmd_key *cmd_key)
+static int func_tag(char *tag, int tag_len,
+                    msgpack_packer *mp_pck, struct flb_sp_cmd_key *cmd_key)
 {
-    size_t len;
-    time_t now;
-    char buf[32];
-    struct tm *local;
-
-    local = flb_malloc(sizeof(struct tm));
-    if (!local) {
-        flb_errno();
-        return 0;
-    }
-
-    /* Get current system time */
-    now = time(NULL);
-    localtime_r(&now, local);
-
-    /* Format string value */
-    len = strftime(buf, sizeof(buf) - 1, "%Y-%m-%d %H:%M:%S", local);
-    flb_free(local);
-
-    pack_key(mp_pck, cmd_key, "NOW()", 5);
-    msgpack_pack_str(mp_pck, len);
-    msgpack_pack_str_body(mp_pck, buf, len);
+    pack_key(mp_pck, cmd_key, "RECORD_TAG()", 12);
+    msgpack_pack_str(mp_pck, tag_len);
+    msgpack_pack_str_body(mp_pck, tag, tag_len);
 
     return 1;
 }
 
-static int func_unix_timestamp(msgpack_packer *mp_pck,
-                               struct flb_sp_cmd_key *cmd_key)
+static int func_time(struct flb_time *tms, msgpack_packer *mp_pck,
+                     struct flb_sp_cmd_key *cmd_key)
 {
-    time_t now;
+    double t;
 
-    /* Get unix timestamp */
-    now = time(NULL);
+    t = flb_time_to_double(tms);
+    pack_key(mp_pck, cmd_key, "RECORD_TIME()", 13);
+    msgpack_pack_double(mp_pck, t);
 
-    pack_key(mp_pck, cmd_key, "UNIX_TIMESTAMP()", 16);
-    msgpack_pack_uint64(mp_pck, now);
     return 1;
 }
 
 /*
- * Wrapper to handle time functions, returns the number of entries added
+ * Wrapper to handle record functions, returns the number of entries added
  * to the map.
  */
-int flb_sp_func_time(msgpack_packer *mp_pck, struct flb_sp_cmd_key *cmd_key)
+int flb_sp_func_record(char *tag, int tag_len, struct flb_time *tms,
+                       msgpack_packer *mp_pck, struct flb_sp_cmd_key *cmd_key)
 {
-    switch (cmd_key->time_func) {
-    case FLB_SP_NOW:
-        return func_now(mp_pck, cmd_key);
-    case FLB_SP_UNIX_TIMESTAMP:
-        return func_unix_timestamp(mp_pck, cmd_key);
+    switch (cmd_key->record_func) {
+    case FLB_SP_RECORD_TAG:
+        return func_tag(tag, tag_len, mp_pck, cmd_key);
+    case FLB_SP_RECORD_TIME:
+        return func_time(tms, mp_pck, cmd_key);
     };
 
     return 0;

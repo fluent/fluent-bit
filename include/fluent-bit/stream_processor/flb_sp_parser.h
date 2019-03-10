@@ -36,6 +36,14 @@
 #define FLB_SP_NOW             10
 #define FLB_SP_UNIX_TIMESTAMP  11
 
+/* Record functions */
+#define FLB_SP_RECORD_TAG      20
+#define FLB_SP_RECORD_TIME     21
+
+/* Status */
+#define FLB_SP_OK            0
+#define FLB_SP_ERROR        -1
+
 /* Command type */
 #define FLB_SP_SELECT        0
 #define FLB_SP_CREATE_STREAM 1
@@ -77,12 +85,14 @@ struct flb_sp_cmd_prop {
 struct flb_sp_cmd_key {
     int aggr_func;            /* Aggregation function */
     int time_func;            /* Time function */
+    int record_func;          /* Record function */
     flb_sds_t name;           /* Key name */
     flb_sds_t alias;          /* Key output alias */
     struct mk_list _head;     /* Link to flb_sp_cmd->keys */
 };
 
 struct flb_sp_cmd {
+    int status;
     int type;                      /* FLB_SP_CREATE_STREAM or FLB_SP_SELECT */
 
     /* Stream creation */

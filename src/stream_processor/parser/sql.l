@@ -72,6 +72,10 @@ MAX                     return MAX;
 NOW                     return NOW;
 UNIX_TIMESTAMP          return UNIX_TIMESTAMP;
 
+ /* Record information */
+RECORD_TAG              return RECORD_TAG;
+RECORD_TIME             return RECORD_TIME;
+
 "true"                  { yylval->boolean = true;  return BOOLEAN; };
 "false"                 { yylval->boolean = false;  return BOOLEAN; };
 

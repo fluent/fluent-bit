@@ -30,6 +30,7 @@
 #include <fluent-bit/stream_processor/flb_sp_stream.h>
 #include <fluent-bit/stream_processor/flb_sp_parser.h>
 #include <fluent-bit/stream_processor/flb_sp_func_time.h>
+#include <fluent-bit/stream_processor/flb_sp_func_record.h>
 
 #include <stdlib.h>
 #include <sys/types.h>
@@ -190,7 +191,7 @@ static int sp_cmd_aggregated_keys(struct flb_sp_cmd *cmd)
 
     mk_list_foreach(head, &cmd->keys) {
         key = mk_list_entry(head, struct flb_sp_cmd_key, _head);
-        if (key->time_func > 0) {
+        if (key->time_func > 0 || key->record_func > 0) {
             continue;
         }
 
@@ -445,6 +446,13 @@ struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, char *name,
     cmd = flb_sp_cmd_create(query);
     if (!cmd) {
         flb_error("[sp] invalid query on task '%s': '%s'", name, query);
+        return NULL;
+    }
+
+    /* Check if we got an invalid type due an error/restriction */
+    if (cmd->status == FLB_SP_ERROR) {
+        flb_error("[sp] invalid query on task '%s': '%s'", name, query);
+        flb_sp_cmd_destroy(cmd);
         return NULL;
     }
 
@@ -974,7 +982,8 @@ static struct flb_exp_val *reduce_expression(struct flb_exp *expression,
  * Process data, task and it defined command involves the call of aggregation
  * functions (AVG, SUM, COUNT, MIN, MAX).
  */
-static int sp_process_data_aggr(char *buf_data, size_t buf_size,
+static int sp_process_data_aggr(char *tag, int tag_len,
+                                char *buf_data, size_t buf_size,
                                 char **out_buf, size_t *out_size,
                                 struct flb_sp_task *task,
                                 struct flb_sp *sp)
@@ -1134,9 +1143,11 @@ static int sp_process_data_aggr(char *buf_data, size_t buf_size,
         /* Check if there is a defined function */
         if (ckey->time_func > 0) {
             flb_sp_func_time(&mp_pck, ckey);
-            ckey = mk_list_entry_next(&ckey->_head, struct flb_sp_cmd_key,
-                                      _head, &cmd->keys);
-            continue;
+            goto next;
+        }
+        else if (ckey->record_func > 0) {
+            flb_sp_func_record(tag, tag_len, &tm, &mp_pck, ckey);
+            goto next;
         }
 
         /* Pack key */
@@ -1211,6 +1222,7 @@ static int sp_process_data_aggr(char *buf_data, size_t buf_size,
             break;
         }
 
+    next:
         ckey = mk_list_entry_next(&ckey->_head, struct flb_sp_cmd_key,
                                   _head, &cmd->keys);
     }
@@ -1225,7 +1237,8 @@ static int sp_process_data_aggr(char *buf_data, size_t buf_size,
 /*
  * Data processing (no aggregation functions)
  */
-static int sp_process_data(char *buf_data, size_t buf_size,
+static int sp_process_data(char *tag, int tag_len,
+                           char *buf_data, size_t buf_size,
                            char **out_buf, size_t *out_size,
                            struct flb_sp_task *task,
                            struct flb_sp *sp)
@@ -1325,6 +1338,13 @@ static int sp_process_data(char *buf_data, size_t buf_size,
                 }
                 continue;
             }
+            else if (cmd_key->record_func > 0) {
+                ret = flb_sp_func_record(tag, tag_len, &tms, &mp_pck, cmd_key);
+                if (ret > 0) {
+                    map_entries += ret;
+                }
+                continue;
+            }
 
             /* Lookup selection key in the incoming map */
             for (i = 0; i < map_size; i++) {
@@ -1410,6 +1430,7 @@ static int sp_process_data(char *buf_data, size_t buf_size,
 
 /* Iterate and find input chunks to process */
 int flb_sp_do(struct flb_sp *sp, struct flb_input_instance *in,
+              char *tag, int tag_len,
               char *buf_data, size_t buf_size)
 
 {
@@ -1431,12 +1452,14 @@ int flb_sp_do(struct flb_sp *sp, struct flb_input_instance *in,
                  * processing.
                  */
                 if (task->aggr_keys == FLB_TRUE) {
-                    ret = sp_process_data_aggr(buf_data, buf_size,
+                    ret = sp_process_data_aggr(tag, tag_len,
+                                               buf_data, buf_size,
                                                &out_buf, &out_size,
                                                task, sp);
                 }
                 else {
-                    ret = sp_process_data(buf_data, buf_size,
+                    ret = sp_process_data(tag, tag_len,
+                                          buf_data, buf_size,
                                           &out_buf, &out_size,
                                           task, sp);
                 }
@@ -1482,12 +1505,14 @@ int flb_sp_test_do(struct flb_sp *sp, struct flb_sp_task *task,
     int ret;
 
     if (task->aggr_keys == FLB_TRUE) {
-        ret = sp_process_data_aggr(buf_data, buf_size,
+        ret = sp_process_data_aggr(NULL, 0,
+                                   buf_data, buf_size,
                                    out_data, out_size,
                                    task, sp);
     }
     else {
-        ret = sp_process_data(buf_data, buf_size,
+        ret = sp_process_data(NULL, 0,
+                              buf_data, buf_size,
                               out_data, out_size,
                               task, sp);
     }

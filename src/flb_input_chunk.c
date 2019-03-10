@@ -373,7 +373,9 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
 
         /* Invoke stream processor */
         flb_sp_do(in->config->stream_processor_ctx,
-                  in, c_data + ic->stream_off, c_size - ic->stream_off);
+                  in,
+                  tag, tag_len,
+                  c_data + ic->stream_off, c_size - ic->stream_off);
         ic->stream_off += (c_size - ic->stream_off);
     }
 #endif

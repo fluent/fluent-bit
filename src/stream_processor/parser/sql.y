@@ -39,6 +39,9 @@ void yyerror (struct flb_sp_cmd *cmd, void *scanner, const char *str)
 /* Time functions */
 %token NOW UNIX_TIMESTAMP
 
+ /* Record functions */
+%token RECORD_TAG RECORD_TIME
+
 /* Value types */
 %token INTEGER FLOAT STRING BOOLEAN
 /* Logical operation tokens */
@@ -110,17 +113,16 @@ select: SELECT keys FROM source ';'
       {
         flb_sp_cmd_condition_add(cmd, $6); /* no flb_free for $6 */
       }
-      keys:
-           record_keys
-           |
-           '*'
-           {
-             flb_sp_cmd_key_add(cmd, -1, NULL, NULL);
-           }
+      keys: record_keys
       record_keys: record_key
                    |
                    record_keys ',' record_key
-      record_key: IDENTIFIER
+      record_key: '*'
+                  {
+                    flb_sp_cmd_key_add(cmd, -1, NULL, NULL);
+                  }
+                  |
+                  IDENTIFIER
                   {
                     flb_sp_cmd_key_add(cmd, -1, $1, NULL);
                     flb_free($1);
@@ -230,12 +232,34 @@ select: SELECT keys FROM source ';'
                      flb_sp_cmd_key_add(cmd, FLB_SP_UNIX_TIMESTAMP, NULL, $5);
                      flb_free($5);
                   }
+                  |
+                  RECORD_TAG '(' ')'
+                  {
+                     flb_sp_cmd_key_add(cmd, FLB_SP_RECORD_TAG, NULL, NULL);
+                  }
+                  |
+                  RECORD_TAG '(' ')' AS alias
+                  {
+                     flb_sp_cmd_key_add(cmd, FLB_SP_RECORD_TAG, NULL, $5);
+                     flb_free($5);
+                  }
+                  |
+                  RECORD_TIME '(' ')'
+                  {
+                     flb_sp_cmd_key_add(cmd, FLB_SP_RECORD_TIME, NULL, NULL);
+                  }
+                  |
+                  RECORD_TIME '(' ')' AS alias
+                  {
+                     flb_sp_cmd_key_add(cmd, FLB_SP_RECORD_TIME, NULL, $5);
+                     flb_free($5);
+                  }
       alias: IDENTIFIER
       source: FROM_STREAM IDENTIFIER
-      {
+              {
                      flb_sp_cmd_source(cmd, FLB_SP_STREAM, $2);
                      flb_free($2);
-                   }
+              }
               |
               FROM_TAG IDENTIFIER
                    {

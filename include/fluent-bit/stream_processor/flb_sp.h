@@ -58,6 +58,7 @@ struct flb_sp *flb_sp_create(struct flb_config *config);
 void flb_sp_destroy(struct flb_sp *sp);
 
 int flb_sp_do(struct flb_sp *sp, struct flb_input_instance *in,
+              char *tag, int tag_len,
               char *buf_data, size_t buf_size);
 int flb_sp_test_do(struct flb_sp *sp, struct flb_sp_task *task,
                    char *buf_data, size_t buf_size,

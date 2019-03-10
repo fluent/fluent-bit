@@ -75,6 +75,7 @@ int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func,
 {
     int aggr_func = 0;
     int time_func = 0;
+    int record_func = 0;
     struct flb_sp_cmd_key *key;
 
     /* aggregation function ? */
@@ -85,10 +86,15 @@ int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func,
         /* Time function */
         time_func = func;
     }
+    else if (func >= FLB_SP_RECORD_TAG && func <= FLB_SP_RECORD_TIME) {
+        /* Record function */
+        record_func = func;
+    }
 
     key = flb_calloc(1, sizeof(struct flb_sp_cmd_key));
     if (!key) {
         flb_errno();
+        cmd->status = FLB_SP_ERROR;
         return -1;
     }
 
@@ -97,16 +103,20 @@ int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func,
         key->name = flb_sds_create(key_name);
         if (!key->name) {
             flb_sp_cmd_key_del(key);
+            cmd->status = FLB_SP_ERROR;
             return -1;
         }
     }
     else {
         /*
-         * This is a wildcard selection, make sure if any aggregation function
-         * exists only apply for COUNT().
+         * Wildcard key only allowed on:
+         * - no aggregation mode (left side / first entry)
+         * - aggregation using COUNT(*)
          */
-        if (aggr_func > 0  && aggr_func != FLB_SP_COUNT) {
+        if (mk_list_size(&cmd->keys) > 0 && aggr_func == 0 &&
+            record_func == 0 && time_func == 0) {
             flb_sp_cmd_key_del(key);
+            cmd->status = FLB_SP_ERROR;
             return -1;
         }
     }
@@ -115,6 +125,7 @@ int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func,
         key->alias = flb_sds_create(key_alias);
         if (!key->alias) {
             flb_sp_cmd_key_del(key);
+            cmd->status = FLB_SP_ERROR;
             return -1;
         }
     }
@@ -125,6 +136,9 @@ int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func,
     }
     else if (time_func > 0) {
         key->time_func = time_func;
+    }
+    else if (record_func > 0) {
+        key->record_func = record_func;
     }
 
     mk_list_add(&key->_head, &cmd->keys);
@@ -179,6 +193,7 @@ struct flb_sp_cmd *flb_sp_cmd_create(char *sql)
         flb_errno();
         return NULL;
     }
+    cmd->status = FLB_SP_OK;
     cmd->type = FLB_SP_SELECT;
 
     mk_list_init(&cmd->stream_props);
