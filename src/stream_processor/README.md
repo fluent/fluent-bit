@@ -20,3 +20,18 @@ The following is the SQL statement syntax supported by Fluent Bit stream process
 <characters>  := <letter> | <digit> | _ | <characters> <characters>
 <value>       := true | false | <integer> | <float> | '<string>'
 ```
+
+### Time Functions
+
+| name             | description                                       | example             |
+| ---------------- | ------------------------------------------------- | ------------------- |
+| NOW()            | adds system time using format: %Y-%m-%d %H:%M:%S. | 2019-03-09 21:36:05 |
+| UNIX_TIMESTAMP() | add current Unix timestamp                        | 1552196165          |
+
+### Record Functions
+
+| name          | description                                                  | example           |
+| ------------- | ------------------------------------------------------------ | ----------------- |
+| RECORD_TAG()  | append Tag string associated to the record                   | samples           |
+| RECORD_TIME() | append record Timestamp in _double_ format: seconds.nanoseconds | 1552196165.705683 |
+
