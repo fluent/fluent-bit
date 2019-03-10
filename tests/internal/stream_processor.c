@@ -192,13 +192,11 @@ static int mp_record_key_cmp(char *buf, size_t size,
             switch (val_type) {
             case MSGPACK_OBJECT_STR:
                 v_len = strlen(val_str);
-                msgpack_unpacked_destroy(&result);
                 if (strncmp(v.via.str.ptr, val_str, v_len) == 0) {
                     ret = FLB_TRUE;
                 }
                 goto exit;
             case MSGPACK_OBJECT_POSITIVE_INTEGER:
-                msgpack_unpacked_destroy(&result);
                 if (v.via.i64 == val_int64) {
                     ret = FLB_TRUE;
                 }
