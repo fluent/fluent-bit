@@ -190,6 +190,10 @@ static int sp_cmd_aggregated_keys(struct flb_sp_cmd *cmd)
 
     mk_list_foreach(head, &cmd->keys) {
         key = mk_list_entry(head, struct flb_sp_cmd_key, _head);
+        if (key->time_func > 0) {
+            continue;
+        }
+
         if (key->aggr_func > 0) { /* AVG, SUM or COUNT */
             aggr++;
         }
@@ -1127,6 +1131,14 @@ static int sp_process_data_aggr(char *buf_data, size_t buf_size,
     /* Packaging results */
     ckey = mk_list_entry_first(&cmd->keys, struct flb_sp_cmd_key, _head);
     for (i = 0; i < map_entries; i++) {
+        /* Check if there is a defined function */
+        if (ckey->time_func > 0) {
+            flb_sp_func_time(&mp_pck, ckey);
+            ckey = mk_list_entry_next(&ckey->_head, struct flb_sp_cmd_key,
+                                      _head, &cmd->keys);
+            continue;
+        }
+
         /* Pack key */
         if (ckey->alias) {
             msgpack_pack_str(&mp_pck, flb_sds_len(ckey->alias));
@@ -1313,7 +1325,6 @@ static int sp_process_data(char *buf_data, size_t buf_size,
                 }
                 continue;
             }
-
 
             /* Lookup selection key in the incoming map */
             for (i = 0; i < map_size; i++) {
