@@ -61,6 +61,7 @@ int flb_sp_do(struct flb_sp *sp, struct flb_input_instance *in,
               char *tag, int tag_len,
               char *buf_data, size_t buf_size);
 int flb_sp_test_do(struct flb_sp *sp, struct flb_sp_task *task,
+                   char *tag, int tag_len,
                    char *buf_data, size_t buf_size,
                    char **out_data, size_t *out_size);
 

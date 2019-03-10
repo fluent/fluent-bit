@@ -1499,19 +1499,20 @@ int flb_sp_do(struct flb_sp *sp, struct flb_input_instance *in,
  * results on out_data/out_size variables.
  */
 int flb_sp_test_do(struct flb_sp *sp, struct flb_sp_task *task,
+                   char *tag, int tag_len,
                    char *buf_data, size_t buf_size,
                    char **out_data, size_t *out_size)
 {
     int ret;
 
     if (task->aggr_keys == FLB_TRUE) {
-        ret = sp_process_data_aggr(NULL, 0,
+        ret = sp_process_data_aggr(tag, tag_len,
                                    buf_data, buf_size,
                                    out_data, out_size,
                                    task, sp);
     }
     else {
-        ret = sp_process_data(NULL, 0,
+        ret = sp_process_data(tag, tag_len,
                               buf_data, buf_size,
                               out_data, out_size,
                               task, sp);
