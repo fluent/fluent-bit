@@ -568,6 +568,22 @@ if(NOT FLB_POSIX_TLS)
   endif()
 endif()
 
+# Pthread Local Storage for C11 (mainly for macOS)
+# ================================================
+# We test the compiler support thread local storage
+# through _Thread_local type, otherwise Fluent Bit
+# fallback to the old POSIX pthread mode (pthread_key_t).
+if(NOT FLB_C11_TLS)
+  check_c_source_compiles("
+   _Thread_local int a;
+   int main() {
+       return 0;
+   }" FLB_HAVE_C11_TLS)
+  if(FLB_HAVE_C11_TLS)
+    FLB_DEFINITION(FLB_HAVE_C11_TLS)
+  endif()
+endif()
+
 # accept(4)
 check_c_source_compiles("
     #define _GNU_SOURCE
