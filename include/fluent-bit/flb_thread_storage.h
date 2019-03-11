@@ -30,6 +30,12 @@
 #define FLB_TLS_INIT(key)          do {} while (0)
 #define FLB_TLS_DEFINE(type, name) __thread type *name;
 
+#elif FLB_HAVE_C11_TLS
+#define FLB_TLS_SET(key, val)      key=val
+#define FLB_TLS_GET(key)           key
+#define FLB_TLS_INIT(key)          do {} while (0)
+#define FLB_TLS_DEFINE(type, name) _Thread_local type *name;
+
 #else
 
 /* Fallback mode using pthread_*() for Thread-Local-Storage usage */
