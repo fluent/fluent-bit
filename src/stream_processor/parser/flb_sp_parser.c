@@ -56,6 +56,11 @@ void flb_sp_cmd_destroy(struct flb_sp_cmd *cmd)
         flb_sds_destroy(cmd->stream_name);
     }
     flb_sds_destroy(cmd->source_name);
+
+    if (cmd->condition) {
+        flb_sp_cmd_condition_free(cmd);
+    }
+
     flb_free(cmd);
 }
 
@@ -199,6 +204,9 @@ struct flb_sp_cmd *flb_sp_cmd_create(char *sql)
     mk_list_init(&cmd->stream_props);
     mk_list_init(&cmd->keys);
 
+    /* Condition linked list (we use them to free resources) */
+    mk_list_init(&cmd->cond_list);
+
     /* Flex/Bison work */
     yylex_init(&scanner);
     buf = yy_scan_string(sql, scanner);
@@ -292,7 +300,8 @@ char *flb_sp_cmd_stream_prop_get(struct flb_sp_cmd *cmd, char *key)
 
 /* WHERE <condition> functions */
 
-struct flb_exp *flb_sp_cmd_operation(struct flb_exp *e1, struct flb_exp *e2,
+struct flb_exp *flb_sp_cmd_operation(struct flb_sp_cmd *cmd,
+                                     struct flb_exp *e1, struct flb_exp *e2,
                                      int operation)
 {
     struct flb_exp_op *expression;
@@ -307,11 +316,13 @@ struct flb_exp *flb_sp_cmd_operation(struct flb_exp *e1, struct flb_exp *e2,
     expression->left = e1;
     expression->right = e2;
     expression->operation = operation;
+    mk_list_add(&expression->_head, &cmd->cond_list);
 
     return (struct flb_exp *) expression;
 }
 
-struct flb_exp *flb_sp_cmd_comparison(struct flb_exp *key, struct flb_exp *val,
+struct flb_exp *flb_sp_cmd_comparison(struct flb_sp_cmd *cmd,
+                                      struct flb_exp *key, struct flb_exp *val,
                                       int operation)
 {
     struct flb_exp_op *expression;
@@ -326,11 +337,13 @@ struct flb_exp *flb_sp_cmd_comparison(struct flb_exp *key, struct flb_exp *val,
     expression->left = (struct flb_exp *) key;
     expression->right = (struct flb_exp *) val;
     expression->operation = operation;
+    mk_list_add(&expression->_head, &cmd->cond_list);
 
     return (struct flb_exp *) expression;
 }
 
-struct flb_exp *flb_sp_cmd_condition_key(char *identifier)
+struct flb_exp *flb_sp_cmd_condition_key(struct flb_sp_cmd *cmd,
+                                         char *identifier)
 {
     struct flb_exp_key *key;
 
@@ -342,11 +355,13 @@ struct flb_exp *flb_sp_cmd_condition_key(char *identifier)
 
     key->type = FLB_EXP_KEY;
     key->name = flb_sds_create(identifier);
+    mk_list_add(&key->_head, &cmd->cond_list);
 
     return (struct flb_exp *) key;
 }
 
-struct flb_exp *flb_sp_cmd_condition_integer(int integer)
+struct flb_exp *flb_sp_cmd_condition_integer(struct flb_sp_cmd *cmd,
+                                             int integer)
 {
     struct flb_exp_val *val;
 
@@ -358,11 +373,12 @@ struct flb_exp *flb_sp_cmd_condition_integer(int integer)
 
     val->type = FLB_EXP_INT;
     val->val.i64 = integer;
+    mk_list_add(&val->_head, &cmd->cond_list);
 
     return (struct flb_exp *) val;
 }
 
-struct flb_exp *flb_sp_cmd_condition_float(float fval)
+struct flb_exp *flb_sp_cmd_condition_float(struct flb_sp_cmd *cmd, float fval)
 {
     struct flb_exp_val *val;
 
@@ -374,11 +390,13 @@ struct flb_exp *flb_sp_cmd_condition_float(float fval)
 
     val->type = FLB_EXP_FLOAT;
     val->val.f64 = fval;
+    mk_list_add(&val->_head, &cmd->cond_list);
 
     return (struct flb_exp *) val;
 }
 
-struct flb_exp *flb_sp_cmd_condition_string(char *string)
+struct flb_exp *flb_sp_cmd_condition_string(struct flb_sp_cmd *cmd,
+                                            char *string)
 {
     struct flb_exp_val *val;
 
@@ -390,11 +408,13 @@ struct flb_exp *flb_sp_cmd_condition_string(char *string)
 
     val->type = FLB_EXP_STRING;
     val->val.string = flb_sds_create(string);
+    mk_list_add(&val->_head, &cmd->cond_list);
 
     return (struct flb_exp *) val;
 }
 
-struct flb_exp *flb_sp_cmd_condition_boolean(bool boolean)
+struct flb_exp *flb_sp_cmd_condition_boolean(struct flb_sp_cmd *cmd,
+                                             bool boolean)
 {
     struct flb_exp_val *val;
 
@@ -406,6 +426,7 @@ struct flb_exp *flb_sp_cmd_condition_boolean(bool boolean)
 
     val->type = FLB_EXP_BOOL;
     val->val.boolean = boolean;
+    mk_list_add(&val->_head, &cmd->cond_list);
 
     return (struct flb_exp *) val;
 }
@@ -413,4 +434,27 @@ struct flb_exp *flb_sp_cmd_condition_boolean(bool boolean)
 void flb_sp_cmd_condition_add(struct flb_sp_cmd *cmd, struct flb_exp *e)
 {
     cmd->condition = e;
+}
+
+void flb_sp_cmd_condition_free(struct flb_sp_cmd *cmd)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_exp *exp;
+    struct flb_exp_key *key;
+    struct flb_exp_val *val;
+
+    mk_list_foreach_safe(head, tmp, &cmd->cond_list) {
+        exp = mk_list_entry(head, struct flb_exp, _head);
+        if (exp->type == FLB_EXP_KEY) {
+            key = (struct flb_exp_key *) exp;
+            flb_sds_destroy(key->name);
+        }
+        else if (exp->type == FLB_EXP_STRING) {
+            val = (struct flb_exp_val *) exp;
+            flb_sds_destroy(val->val.string);
+        }
+        mk_list_del(&exp->_head);
+        flb_free(exp);
+    }
 }

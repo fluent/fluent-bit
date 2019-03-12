@@ -102,7 +102,9 @@ struct flb_sp_cmd {
     /* Selection */
     struct mk_list keys;           /* list head of record fields */
 
+
     struct flb_exp *condition;     /* WHERE condition in select statement */
+    struct mk_list cond_list;
 
     /* Source of data */
     int source_type;               /* FLB_SP_STREAM or FLB_SP_TAG */
@@ -119,12 +121,14 @@ typedef union {
 
 struct flb_exp {
     int type;
+    struct mk_list _head;
     struct flb_exp *left;
     struct flb_exp *right;
 };
 
 struct flb_exp_op {
     int type;
+    struct mk_list _head;
     struct flb_exp *left;
     struct flb_exp *right;
     int operation;
@@ -132,11 +136,13 @@ struct flb_exp_op {
 
 struct flb_exp_key {
     int type;
+    struct mk_list _head;
     flb_sds_t name;
 };
 
 struct flb_exp_val {
     int type;
+    struct mk_list _head;
     sp_val val;
 };
 
@@ -157,14 +163,20 @@ int flb_sp_cmd_source(struct flb_sp_cmd *cmd, int type, char *source);
 void flb_sp_cmd_dump(struct flb_sp_cmd *cmd);
 
 void flb_sp_cmd_condition_add(struct flb_sp_cmd *cmd, struct flb_exp *e);
-struct flb_exp *flb_sp_cmd_operation(struct flb_exp *e1, struct flb_exp *e2,
+struct flb_exp *flb_sp_cmd_operation(struct flb_sp_cmd *cmd,
+                                     struct flb_exp *e1, struct flb_exp *e2,
                                      int operation);
-struct flb_exp *flb_sp_cmd_comparison(struct flb_exp *key, struct flb_exp *val,
+struct flb_exp *flb_sp_cmd_comparison(struct flb_sp_cmd *cmd,
+                                      struct flb_exp *key, struct flb_exp *val,
                                       int operation);
-struct flb_exp *flb_sp_cmd_condition_key(char *key);
-struct flb_exp *flb_sp_cmd_condition_integer(int integer);
-struct flb_exp *flb_sp_cmd_condition_float(float fval);
-struct flb_exp *flb_sp_cmd_condition_string(char *string);
-struct flb_exp *flb_sp_cmd_condition_boolean(bool boolean);
+struct flb_exp *flb_sp_cmd_condition_key(struct flb_sp_cmd *cmd, char *key);
+struct flb_exp *flb_sp_cmd_condition_integer(struct flb_sp_cmd *cmd,
+                                             int integer);
+struct flb_exp *flb_sp_cmd_condition_float(struct flb_sp_cmd *cmd, float fval);
+struct flb_exp *flb_sp_cmd_condition_string(struct flb_sp_cmd *cmd,
+                                            char *string);
+struct flb_exp *flb_sp_cmd_condition_boolean(struct flb_sp_cmd *cmd,
+                                             bool boolean);
+void flb_sp_cmd_condition_free(struct flb_sp_cmd *cmd);
 
 #endif

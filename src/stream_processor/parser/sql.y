@@ -270,74 +270,76 @@ select: SELECT keys FROM source ';'
                  |
                  key
                    {
-                     $$ = flb_sp_cmd_operation($1, NULL, FLB_EXP_OR);
+                     $$ = flb_sp_cmd_operation(cmd, $1, NULL, FLB_EXP_OR);
                    }
                  |
                  value
                    {
-                     $$ = flb_sp_cmd_operation(NULL, $1, FLB_EXP_OR);
+                     $$ = flb_sp_cmd_operation(cmd, NULL, $1, FLB_EXP_OR);
                    }
                  | '(' condition ')'
                    {
-                     $$ = flb_sp_cmd_operation($2, NULL, FLB_EXP_PAR);
+                     $$ = flb_sp_cmd_operation(cmd, $2, NULL, FLB_EXP_PAR);
                    }
                  | NOT condition
                    {
-                     $$ = flb_sp_cmd_operation($2, NULL, FLB_EXP_NOT);
+                     $$ = flb_sp_cmd_operation(cmd, $2, NULL, FLB_EXP_NOT);
                    }
                  | condition AND condition
                    {
-                     $$ = flb_sp_cmd_operation($1, $3, FLB_EXP_AND);
+                     $$ = flb_sp_cmd_operation(cmd, $1, $3, FLB_EXP_AND);
                    }
                  | condition OR condition
                    {
-                     $$ = flb_sp_cmd_operation($1, $3, FLB_EXP_OR);
+                     $$ = flb_sp_cmd_operation(cmd, $1, $3, FLB_EXP_OR);
                    }
       comparison: key '=' value
                    {
-                     $$ = flb_sp_cmd_comparison($1, $3, FLB_EXP_EQ);
+                     $$ = flb_sp_cmd_comparison(cmd, $1, $3, FLB_EXP_EQ);
                    }
                   |
                   key LT value
                    {
-                     $$ = flb_sp_cmd_comparison($1, $3, FLB_EXP_LT);
+                     $$ = flb_sp_cmd_comparison(cmd, $1, $3, FLB_EXP_LT);
                    }
                   |
                   key LTE value
                    {
-                     $$ = flb_sp_cmd_comparison($1, $3, FLB_EXP_LTE);
+                     $$ = flb_sp_cmd_comparison(cmd, $1, $3, FLB_EXP_LTE);
                    }
                   |
                   key GT value
                    {
-                     $$ = flb_sp_cmd_comparison($1, $3, FLB_EXP_GT);
+                     $$ = flb_sp_cmd_comparison(cmd, $1, $3, FLB_EXP_GT);
                    }
                   |
                   key GTE value
                    {
-                     $$ = flb_sp_cmd_comparison($1, $3, FLB_EXP_GTE);
+                     $$ = flb_sp_cmd_comparison(cmd, $1, $3, FLB_EXP_GTE);
                    }
         key: IDENTIFIER
                    {
-                     $$ = flb_sp_cmd_condition_key($1);
+                     $$ = flb_sp_cmd_condition_key(cmd, $1);
+                     flb_free($1);
                    }
         value: INTEGER
                    {
-                     $$ = flb_sp_cmd_condition_integer($1);
+                     $$ = flb_sp_cmd_condition_integer(cmd, $1);
                    }
                |
                FLOAT
                    {
-                     $$ = flb_sp_cmd_condition_float($1);
+                     $$ = flb_sp_cmd_condition_float(cmd, $1);
                    }
                |
                STRING
                    {
-                     $$ = flb_sp_cmd_condition_string($1);
+                     $$ = flb_sp_cmd_condition_string(cmd, $1);
+                     flb_free($1);
                    }
                |
                BOOLEAN
                    {
-                     $$ = flb_sp_cmd_condition_boolean($1);
+                     $$ = flb_sp_cmd_condition_boolean(cmd, $1);
                    }
                 ;
