@@ -3,6 +3,7 @@
 /*  Fluent Bit
  *  ==========
  *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -26,6 +27,12 @@
 #include <fluent-bit/flb_input.h>
 #include <monkey/mk_core.h>
 
+struct flb_sp_task_window {
+    int type;
+    char *buf_data;
+    size_t buf_size;
+};
+
 struct flb_sp_task {
     flb_sds_t name;          /* task name      */
     flb_sds_t query;         /* SQL text query */
@@ -46,12 +53,14 @@ struct flb_sp_task {
     int aggr_keys;           /* do commands contains aggregated keys ? */
     struct flb_sp *sp;       /* parent context */
     struct flb_sp_cmd *cmd;  /* (SQL) commands */
-    struct mk_list _head;    /* link to parent list flb_sp->tasks */
+
+    struct flb_sp_task_window window; /* task window */
+    struct mk_list _head;             /* link to parent list flb_sp->tasks */
 };
 
 struct flb_sp {
-    struct mk_list tasks;       /* processor tasks */
-    struct flb_config *config;  /* reference to Fluent Bit context */
+    struct mk_list tasks;        /* processor tasks */
+    struct flb_config *config;   /* reference to Fluent Bit context */
 };
 
 struct flb_sp *flb_sp_create(struct flb_config *config);
