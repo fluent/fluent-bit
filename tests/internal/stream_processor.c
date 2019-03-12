@@ -28,6 +28,10 @@
 
 #include "flb_tests_internal.h"
 
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 #define DATA_SAMPLES FLB_TESTS_DATA_PATH "/data/stream_processor/samples.mp"
 
 #define MP_UOK MSGPACK_UNPACK_SUCCESS
@@ -139,7 +143,7 @@ static int mp_record_key_cmp(char *buf, size_t size,
     int id = 0;
     int k_len;
     int v_len;
-    int keys;
+    int keys = 0;
     size_t off = 0;
     msgpack_unpacked result;
     msgpack_object root;

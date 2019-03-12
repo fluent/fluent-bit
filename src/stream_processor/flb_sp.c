@@ -31,6 +31,7 @@
 #include <fluent-bit/stream_processor/flb_sp_parser.h>
 #include <fluent-bit/stream_processor/flb_sp_func_time.h>
 #include <fluent-bit/stream_processor/flb_sp_func_record.h>
+#include <fluent-bit/stream_processor/flb_sp_window.h>
 
 #include <stdlib.h>
 #include <sys/types.h>
@@ -627,6 +628,18 @@ static struct flb_exp_val *key_to_value(flb_sds_t ckey, msgpack_object *map)
     return NULL;
 }
 
+void free_value(struct flb_exp_val *v) {
+    if (!v) {
+        return;
+    }
+
+    if (v->type == FLB_EXP_STRING) {
+        flb_sds_destroy(v->val.string);
+    }
+
+    flb_free(v);
+}
+
 static void itof_convert(struct flb_exp_val *val)
 {
     if (val->type != FLB_EXP_INT) {
@@ -886,6 +899,7 @@ static struct flb_exp_val *reduce_expression(struct flb_exp *expression,
                                              msgpack_object *map)
 {
     int operation;
+    flb_sds_t s;
     struct flb_exp_val *ret, *left, *right;
     struct flb_exp_val *result;
 
@@ -913,8 +927,10 @@ static struct flb_exp_val *reduce_expression(struct flb_exp *expression,
         result->val.f64 = ((struct flb_exp_val *) expression)->val.f64;
         break;
     case FLB_EXP_STRING:
+        s = ((struct flb_exp_val *) expression)->val.string;
         result->type = expression->type;
-        result->val.string = ((struct flb_exp_val *) expression)->val.string;
+        result->val.string = flb_sds_create_size(flb_sds_len(s));
+        flb_sds_copy(result->val.string, s, flb_sds_len(s));
         break;
     case FLB_EXP_KEY:
         ret = key_to_value(((struct flb_exp_key *) expression)->name, map);
@@ -932,10 +948,10 @@ static struct flb_exp_val *reduce_expression(struct flb_exp *expression,
             result->val.i64 = ret->val.i64;
             break;
         case FLB_EXP_FLOAT:
-                result->val.f64 = ret->val.f64;
-                break;
-            case FLB_EXP_STRING:
-                result->val.string = ret->val.string;
+            result->val.f64 = ret->val.f64;
+            break;
+        case FLB_EXP_STRING:
+            result->val.string = ret->val.string;
         }
         result->type = ret->type;
         flb_free(ret);
@@ -972,8 +988,8 @@ static struct flb_exp_val *reduce_expression(struct flb_exp *expression,
             logical_operation(left, right, result, operation);
             break;
         }
-        flb_free(left);
-        flb_free(right);
+        free_value(left);
+        free_value(right);
     }
     return result;
 }
@@ -983,7 +999,6 @@ static struct flb_exp_val *reduce_expression(struct flb_exp *expression,
  * functions (AVG, SUM, COUNT, MIN, MAX).
  */
 static int sp_process_data_aggr(char *tag, int tag_len,
-                                char *buf_data, size_t buf_size,
                                 char **out_buf, size_t *out_size,
                                 struct flb_sp_task *task,
                                 struct flb_sp *sp)
@@ -1036,7 +1051,8 @@ static int sp_process_data_aggr(char *tag, int tag_len,
     msgpack_pack_map(&mp_pck, map_entries);
 
     /* Iterate incoming records */
-    while (msgpack_unpack_next(&result, buf_data, buf_size, &off) == ok) {
+    while (msgpack_unpack_next(&result, task->window.buf_data,
+                               task->window.buf_size, &off) == ok) {
         root = result.data;
         records++;
 
@@ -1452,8 +1468,14 @@ int flb_sp_do(struct flb_sp *sp, struct flb_input_instance *in,
                  * processing.
                  */
                 if (task->aggr_keys == FLB_TRUE) {
+                    ret = sp_populate_window(task, buf_data, buf_size);
+                    if (ret == -1) {
+                        flb_error("[sp] error populating window for '%'",
+                                  task->name);
+                        continue;
+                    }
+
                     ret = sp_process_data_aggr(tag, tag_len,
-                                               buf_data, buf_size,
                                                &out_buf, &out_size,
                                                task, sp);
                 }
@@ -1506,10 +1528,16 @@ int flb_sp_test_do(struct flb_sp *sp, struct flb_sp_task *task,
     int ret;
 
     if (task->aggr_keys == FLB_TRUE) {
-        ret = sp_process_data_aggr(tag, tag_len,
-                                   buf_data, buf_size,
-                                   out_data, out_size,
-                                   task, sp);
+        ret = sp_populate_window(task, buf_data, buf_size);
+        if (ret == -1) {
+            flb_error("[sp] error populating window for '%'",
+                      task->name);
+        }
+	else {
+            ret = sp_process_data_aggr(tag, tag_len,
+                                       out_data, out_size,
+                                       task, sp);
+	}
     }
     else {
         ret = sp_process_data(tag, tag_len,
