@@ -218,7 +218,7 @@ static int net_io_write(struct flb_upstream_conn *u_conn,
     while (total < len) {
         ret = send(u_conn->fd, (char *) data + total, len - total, 0);
         if (ret == -1) {
-            if (errno == EAGAIN) {
+            if (FLB_WOULDBLOCK()) {
                 /*
                  * FIXME: for now we are handling this in a very lazy way,
                  * just sleep for a second and retry (for a max of 30 tries).
@@ -286,7 +286,7 @@ static FLB_INLINE int net_io_write_async(struct flb_thread *th,
 #endif
 
     if (bytes == -1) {
-        if (errno == EAGAIN) {
+        if (FLB_WOULDBLOCK()) {
             u_conn->thread = th;
             ret = mk_event_add(u->evl,
                                u_conn->fd,
@@ -402,7 +402,7 @@ static FLB_INLINE ssize_t net_io_read_async(struct flb_thread *th,
 
     ret = read(u_conn->fd, buf, len);
     if (ret == -1) {
-        if (errno == EAGAIN) {
+        if (FLB_WOULDBLOCK()) {
             u_conn->thread = th;
             ret = mk_event_add(u->evl,
                                u_conn->fd,
