@@ -29,6 +29,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
 #include <windows.h>
+#include <Wincrypt.h>
 
 #define PATH_MAX MAX_PATH
 #define S_ISREG(m) (((m) & S_IFMT) == S_IFREG)
