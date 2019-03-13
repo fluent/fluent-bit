@@ -164,6 +164,7 @@ check_symbol_exists(accept4 "sys/socket.h" HAVE_ACCEPT4)
 if(CMAKE_SYSTEM_NAME MATCHES "Windows")
   set(FLB_DEPS
     "ws2_32.lib"
+    "crypt32.lib"
     )
 else()
   set(FLB_DEPS
