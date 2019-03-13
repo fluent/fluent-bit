@@ -292,7 +292,7 @@ static FLB_INLINE void output_params_set(struct flb_thread *th,
     co_switch(th->callee);
 }
 
-static FLB_INLINE void output_pre_cb_flush()
+static FLB_INLINE void output_pre_cb_flush(void)
 {
     void *data   = libco_param.data;
     size_t bytes = libco_param.bytes;
