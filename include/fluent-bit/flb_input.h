@@ -436,7 +436,7 @@ static inline void flb_input_return(struct flb_thread *th) {
      * We put together the return value with the task_id on the 32 bits at right
      */
     val = FLB_BITS_U64_SET(3 /* FLB_ENGINE_IN_THREAD */, in_th->id);
-    n = flb_pipe_w(in_th->config->ch_manager[1], &val, sizeof(val));
+    n = flb_pipe_w(in_th->config->ch_manager[1], (void *) &val, sizeof(val));
     if (n == -1) {
         flb_errno();
     }
