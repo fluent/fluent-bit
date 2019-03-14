@@ -22,7 +22,9 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#ifndef _WIN32
 #include <dlfcn.h>
+#endif
 
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_compat.h>
@@ -101,11 +103,18 @@ void *flb_plugin_proxy_symbol(struct flb_plugin_proxy *proxy,
 {
     void *s;
 
+#ifdef _WIN32
+    s = GetProcAddress(proxy->dso_handler, symbol);
+    if (GetLastError() != NO_ERROR) {
+        return NULL;
+    }
+#else
     dlerror();
     s = dlsym(proxy->dso_handler, symbol);
     if (dlerror() != NULL) {
         return NULL;
     }
+#endif
     return s;
 }
 
@@ -189,28 +198,60 @@ int flb_plugin_proxy_init(struct flb_plugin_proxy *proxy,
 struct flb_plugin_proxy *flb_plugin_proxy_create(const char *dso_path, int type,
                                                  struct flb_config *config)
 {
+#ifdef _WIN32
+    HMODULE handle;
+    DWORD err;
+    LPSTR errbuf = NULL;
+#else
     void *handle;
+#endif
     struct flb_plugin_proxy *proxy;
 
     /* Load shared library */
+#ifdef _WIN32
+    handle = LoadLibrary(dso_path);
+    if (!handle) {
+        err = GetLastError();
+        if (!FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER |
+                           FORMAT_MESSAGE_FROM_SYSTEM |
+                           FORMAT_MESSAGE_IGNORE_INSERTS,
+                           NULL,
+                           err,
+                           MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+                           (LPTSTR) &errbuf,
+                           _countof(errbuf), NULL))
+            errbuf[0] = '\0';
+        fprintf(stderr, "[proxy] error opening plugin %s: \"%s\"\n", dso_path, errbuf);
+        return NULL;
+    }
+#else
     handle = dlopen(dso_path, RTLD_LAZY);
     if (!handle) {
         fprintf(stderr, "[proxy] error opening plugin %s: \"%s\"\n", dso_path, dlerror());
         return NULL;
     }
+#endif
 
     /* Proxy Context */
     proxy = flb_malloc(sizeof(struct flb_plugin_proxy));
     if (!proxy) {
         flb_errno();
+#ifdef _WIN32
+        FreeLibrary(handle);
+#else
         dlclose(handle);
+#endif
         return NULL;
     }
 
     /* API Context */
     proxy->api = flb_api_create();
     if (!proxy->api) {
+#ifdef _WIN32
+        FreeLibrary(handle);
+#else
         dlclose(handle);
+#endif
         flb_free(proxy);
         return NULL;
     }
@@ -294,7 +335,11 @@ int flb_plugin_proxy_conf_file(char *file, struct flb_config *config)
 void flb_plugin_proxy_destroy(struct flb_plugin_proxy *proxy)
 {
     /* cleanup */
+#ifdef _WIN32
+    FreeLibrary(proxy->dso_handler);
+#else
     dlclose(proxy->dso_handler);
+#endif
     mk_list_del(&proxy->_head);
     flb_free(proxy);
 }
