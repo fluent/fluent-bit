@@ -141,7 +141,9 @@ static void flb_help(int rc, struct flb_config *config)
     printf("  -e, --plugin=FILE\tload an external plugin (shared lib)\n");
     printf("  -l, --log_file=FILE\twrite log info to a file\n");
     printf("  -t, --tag=TAG\t\tset plugin tag, same as '-p tag=abc'\n");
-    printf("  -v, --verbose\t\tenable verbose mode\n");
+    printf("  -v, --verbose\t\tincrease logging verbosity: use it once \
+for debug level, twice for trace level (to enable trace level use \
+-DFLB_TRACE=On with cmake, see README.md in the source code)\n");
 #ifdef FLB_HAVE_HTTP_SERVER
     printf("  -H, --http\t\tenable monitoring HTTP server\n");
     printf("  -P, --port\t\tset HTTP server TCP port (default: %s)\n",

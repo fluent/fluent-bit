@@ -17,6 +17,17 @@ $ make
 $ bin/fluent-bit -i cpu -o stdout
 ```
 
+It is also possible to set various compile time settings, see [CMakeList.txt](CMakeList.txt) and [Dockerfile](Dockerfile).  
+The following example enables trace logging and runs fluent-bit with that.  
+The command line option `-v` increases the log verbosity, the first one to debug level, the second one to trace level.
+
+```
+$ cd build
+$ cmake -DFLB_TRACE=On ..
+$ make
+$ bin/fluent-bit -vv -i cpu -o stdout
+```
+
 ## Features
 
 [Fluent Bit](http://fluentbit.io) support the following features through plugins:
