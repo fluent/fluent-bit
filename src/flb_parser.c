@@ -588,6 +588,7 @@ struct flb_parser *flb_parser_get(char *name, struct flb_config *config)
 int flb_parser_do(struct flb_parser *parser, char *buf, size_t length,
                   void **out_buf, size_t *out_size, struct flb_time *out_time)
 {
+    flb_trace("[flb-parser] parsing: %s", buf);
 
     if (parser->type == FLB_PARSER_REGEX) {
         return flb_parser_regex_do(parser, buf, length,
