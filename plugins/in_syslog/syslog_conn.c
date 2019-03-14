@@ -72,6 +72,7 @@ int syslog_conn_event(void *data)
                       bytes, conn->buf_len, conn->buf_len + bytes);
             conn->buf_len += bytes;
             conn->buf_data[conn->buf_len] = '\0';
+            flb_trace("[in_syslog] buffer after read: %s", conn->buf_data);
             ret = syslog_prot_process(conn);
             if (ret == -1) {
                 return -1;

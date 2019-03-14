@@ -78,6 +78,7 @@ int syslog_prot_process(struct syslog_conn *conn)
 
         /* Incomplete message */
         if (eof == end || (*eof != '\n' && *eof != '\0')) {
+            flb_debug("[syslog-prot] incomplete message! (Enable trace log to see the message.)");
             return 0;
         }
 
