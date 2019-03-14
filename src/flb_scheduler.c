@@ -257,9 +257,6 @@ int flb_sched_request_destroy(struct flb_config *config,
     mk_list_del(&req->_head);
 
     timer = req->timer;
-    if (config->evl && timer->event.mask != MK_EVENT_EMPTY) {
-        mk_event_del(config->evl, &timer->event);
-    }
     flb_pipe_close(req->fd);
 
     /*
