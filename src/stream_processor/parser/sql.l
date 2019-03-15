@@ -60,6 +60,7 @@ WHERE                   return WHERE;
 AND                     return AND;
 OR                      return OR;
 NOT                     return NOT;
+WINDOW                  return WINDOW;
 
  /* Aggregation Functions */
 SUM                     return SUM;
@@ -67,6 +68,14 @@ AVG                     return AVG;
 COUNT                   return COUNT;
 MIN                     return MIN;
 MAX                     return MAX;
+
+ /* Window Types */
+TUMBLING                return TUMBLING;
+
+ /* Time */
+HOUR                    return HOUR;
+MINUTE                  return MINUTE;
+SECOND                  return SECOND;
 
  /* Date / Time Functions */
 NOW                     return NOW;

@@ -20,27 +20,37 @@
 
  #include <fluent-bit/stream_processor/flb_sp.h>
  #include <fluent-bit/stream_processor/flb_sp_window.h>
+ #include <fluent-bit/stream_processor/flb_sp_parser.h>
 
-int sp_populate_window(struct flb_sp_task *task, char *buf_data, size_t buf_size)
+void flb_sp_window_prune(struct flb_sp_task *task)
+{
+    int map_entries;
+
+    switch (task->window.type) {
+    case FLB_SP_WINDOW_DEFAULT:
+    case FLB_SP_WINDOW_TUMBLING:
+        map_entries = mk_list_size(&task->cmd->keys);
+        if (task->window.nums) {
+            memset(task->window.nums, 0, sizeof(struct aggr_num) * map_entries);
+        }
+
+        task->window.records = 0;
+    break;
+    }
+}
+
+int flb_sp_window_populate(struct flb_sp_task *task, char *buf_data,
+                           size_t buf_size)
 {
     switch (task->window.type) {
-        case FLB_SP_WINDOW_DEFAULT:
-            flb_free(task->window.buf_data);
-            task->window.buf_size = 0;
-
-            task->window.buf_data = flb_malloc(buf_size);
-            if (!task) {
-                flb_errno();
-                return -1;
-            }
-
-            memcpy(task->window.buf_data, buf_data, buf_size);
-            task->window.buf_size = buf_size;
-            break;
-        default:
-            flb_error("[sp] error populating window for '%' : window tyoe unknown",
-                      task->name);
-            return -1;
+    case FLB_SP_WINDOW_DEFAULT:
+    case FLB_SP_WINDOW_TUMBLING:
+        break;
+    default:
+        flb_error("[sp] error populating window for '%s': window type unknown",
+                  task->name);
+        return -1;
     }
+
     return 0;
 }

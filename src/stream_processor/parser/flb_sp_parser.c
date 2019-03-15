@@ -297,6 +297,25 @@ char *flb_sp_cmd_stream_prop_get(struct flb_sp_cmd *cmd, char *key)
     return NULL;
 }
 
+/* WINDOW functions */
+
+void flb_sp_cmd_window(struct flb_sp_cmd *cmd,
+                       int window_type, int size, int time_unit)
+{
+    cmd->window.type = window_type;
+
+    switch (time_unit) {
+    case FLB_SP_TIME_SECOND:
+        cmd->window.size = (time_t) size;
+        break;
+    case FLB_SP_TIME_MINUTE:
+        cmd->window.size = (time_t) size * 60;
+        break;
+    case FLB_SP_TIME_HOUR:
+        cmd->window.size = (time_t) size * 3600;
+        break;
+    }
+}
 
 /* WHERE <condition> functions */
 

@@ -31,7 +31,7 @@ void yyerror (struct flb_sp_cmd *cmd, void *scanner, const char *str)
 %token IDENTIFIER QUOTE QUOTED
 
 /* Basic keywords for statements */
-%token CREATE STREAM WITH SELECT AS FROM FROM_STREAM FROM_TAG WHERE
+%token CREATE STREAM WITH SELECT AS FROM FROM_STREAM FROM_TAG WHERE WINDOW
 
 /* Aggregation functions */
 %token AVG SUM COUNT MAX MIN
@@ -44,9 +44,17 @@ void yyerror (struct flb_sp_cmd *cmd, void *scanner, const char *str)
 
 /* Value types */
 %token INTEGER FLOAT STRING BOOLEAN
+
 /* Logical operation tokens */
 %token AND OR NOT LT LTE GT GTE
-/* Math operation tokens */
+
+/* Time tokens */
+%token HOUR MINUTE SECOND
+
+/* Window tokens */
+%token TUMBLING
+
+%define parse.error verbose
 
 /* Union and field types */
 %union
@@ -73,6 +81,7 @@ void yyerror (struct flb_sp_cmd *cmd, void *scanner, const char *str)
 %type <expression> comparison
 %type <expression> key
 %type <expression> value
+%type <integer>    time
 
 %% /* rules section */
 
@@ -109,9 +118,21 @@ select: SELECT keys FROM source ';'
         cmd->type = FLB_SP_SELECT;
       }
       |
+      SELECT keys FROM source WINDOW window ';'
+      {
+        cmd->type = FLB_SP_SELECT;
+      }
+      |
       SELECT keys FROM source WHERE condition ';'
       {
+        cmd->type = FLB_SP_SELECT;
         flb_sp_cmd_condition_add(cmd, $6); /* no flb_free for $6 */
+      }
+      |
+      SELECT keys FROM source WINDOW window WHERE condition ';'
+      {
+        cmd->type = FLB_SP_SELECT;
+        flb_sp_cmd_condition_add(cmd, $8); /* no flb_free for $8 */
       }
       keys: record_keys
       record_keys: record_key
@@ -266,6 +287,10 @@ select: SELECT keys FROM source ';'
                      flb_sp_cmd_source(cmd, FLB_SP_TAG, $2);
                      flb_free($2);
                    }
+      window: TUMBLING '(' INTEGER time ')'
+              {
+                flb_sp_cmd_window(cmd, FLB_SP_WINDOW_TUMBLING, $3, $4);
+              }
       condition: comparison
                  |
                  key
@@ -342,4 +367,18 @@ select: SELECT keys FROM source ';'
                    {
                      $$ = flb_sp_cmd_condition_boolean(cmd, $1);
                    }
-                ;
+        time: SECOND
+                {
+                    $$ = FLB_SP_TIME_SECOND;
+                }
+              |
+              MINUTE
+                {
+                    $$ = FLB_SP_TIME_MINUTE;
+                }
+              |
+              HOUR
+                {
+                    $$ = FLB_SP_TIME_HOUR;
+                }
+              ;

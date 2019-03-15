@@ -27,10 +27,29 @@
 #include <fluent-bit/flb_input.h>
 #include <monkey/mk_core.h>
 
-struct flb_sp_task_window {
+struct aggr_num {
     int type;
+    int ops;
+    int64_t i64;
+    double f64;
+};
+
+struct flb_sp_window_data {
     char *buf_data;
     size_t buf_size;
+    struct mk_list _head;
+};
+
+struct flb_sp_task_window {
+    int type;
+
+    int fd;
+    struct mk_event event;
+
+    struct aggr_num *nums;
+    int records;
+
+    struct mk_list data;
 };
 
 struct flb_sp_task {
@@ -76,6 +95,7 @@ int flb_sp_test_do(struct flb_sp *sp, struct flb_sp_task *task,
 
 struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, char *name,
                                        char *query);
+int flb_sp_fd_event(int fd, struct flb_sp *sp);
 void flb_sp_task_destroy(struct flb_sp_task *task);
 
 #endif

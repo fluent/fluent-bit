@@ -18,9 +18,9 @@
  *  limitations under the License.
  */
 
- #define FLB_SP_WINDOW_DEFAULT   0
- #define FLB_SP_WINDOW_TUMBLING  1
- #define FLB_SP_WINDOW_RECORDS   2
+#define FLB_SP_WINDOW_DEFAULT   0
+#define FLB_SP_WINDOW_TUMBLING  1
 
-int sp_populate_window(struct flb_sp_task *task, char *buf_data,
-                       size_t buf_size);
+void flb_sp_window_prune(struct flb_sp_task *task);
+int flb_sp_window_populate(struct flb_sp_task *task, char *buf_data,
+                           size_t buf_size);
