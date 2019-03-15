@@ -75,16 +75,21 @@ static bool apply_suffix(double *x, char suffix_char)
 }
 
 /*add_new_pane_to_each will overides the oldes window pane with zero load and with new timestamp make it the newest. */
-inline static void add_new_pane_to_each(struct size_throttle_window **table,
+inline static void add_new_pane_to_each(struct size_throttle_table *ht,
                                         double timestamp)
 {
-    struct size_throttle_window *current_window, *tmp;
+    struct mk_list *head;
+    struct flb_hash_entry *entry;
+    struct size_throttle_window *current_window;
     struct flb_time ftm;
+
     if (!timestamp) {
         flb_time_get(&ftm);
         timestamp = flb_time_to_double(&ftm);
     }
-    HASH_ITER(hh, *table, current_window, tmp) {
+    mk_list_foreach(head, &ht->windows->entries) {
+        entry = mk_list_entry(head, struct flb_hash_entry, _head_parent);
+        current_window = (struct size_throttle_window *) (entry->val);
         add_new_pane(current_window, timestamp);
         flb_debug
             ("[%s] Add new pane to \"%s\" window: timestamp: %ld, total %lu",
@@ -94,35 +99,59 @@ inline static void add_new_pane_to_each(struct size_throttle_window **table,
     }
 }
 
-inline static void delete_older_than_n_seconds(struct size_throttle_window
-                                               **table, long seconds,
+inline static void delete_older_than_n_seconds(struct size_throttle_table *ht,
+                                               long seconds,
                                                double current_timestamp)
 {
-    struct size_throttle_window *current_window, *tmp;
+    int i;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_hash_entry *entry;
+    struct flb_hash_table *table;
+    struct size_throttle_window *current_window;
     struct flb_time ftm;
     long time_treshold;
+
     if (!current_timestamp) {
         flb_time_get(&ftm);
         current_timestamp = flb_time_to_double(&ftm);
     }
+
     time_treshold = current_timestamp - seconds;
-    HASH_ITER(hh, *table, current_window, tmp) {
-        if (time_treshold > current_window->timestamp) {
-            HASH_DEL(*table, current_window);
-            flb_info("[%s] Window \"%s\" was deleted. CT%ld   TT%ld   T%ld  ",
+    for (i = 0; i < ht->windows->size; i++) {
+        table = &ht->windows->table[i];
+        mk_list_foreach_safe(head, tmp, &table->chains) {
+            entry = mk_list_entry(head, struct flb_hash_entry, _head);
+            current_window = (struct size_throttle_window *) entry->val;
+
+            if (time_treshold > current_window->timestamp) {
+                free_stw_content(current_window);
+                mk_list_del(&entry->_head);
+                mk_list_del(&entry->_head_parent);
+                entry->table->count--;
+                ht->windows->total_count--;
+                flb_free(entry->key);
+                flb_free(entry->val);
+                flb_free(entry);
+                flb_info
+                    ("[%s] Window \"%s\" was deleted. CT%ld   TT%ld   T%ld  ",
                      PLUGIN_NAME, current_window->name,
                      (long) current_timestamp, time_treshold,
                      current_window->timestamp);
-            free_stw(current_window);
+            }
         }
     }
 }
 
-inline static void print_all(struct size_throttle_window **table)
+inline static void print_all(struct size_throttle_table *ht)
 {
-    struct size_throttle_window *current_window, *tmp;
+    struct mk_list *head;
+    struct flb_hash_entry *entry;
+    struct size_throttle_window *current_window;
 
-    HASH_ITER(hh, *table, current_window, tmp) {
+    mk_list_foreach(head, &ht->windows->entries) {
+        entry = mk_list_entry(head, struct flb_hash_entry, _head_parent);
+        current_window = (struct size_throttle_window *) entry->val;
         printf("[%s] Name %s\n", PLUGIN_NAME, current_window->name);
         printf("[%s] Timestamp %ld\n", PLUGIN_NAME,
                current_window->timestamp);
@@ -143,11 +172,11 @@ void *size_time_ticker(void *args)
         timestamp = flb_time_to_double(&ftm);
 
         pthread_mutex_lock(&ctx->hash->lock);
-        add_new_pane_to_each(&ctx->hash->windows, timestamp);
-        delete_older_than_n_seconds(&ctx->hash->windows,
+        add_new_pane_to_each(ctx->hash, timestamp);
+        delete_older_than_n_seconds(ctx->hash,
                                     ctx->window_time_duration, timestamp);
         if (ctx->print_status) {
-            print_all(&ctx->hash->windows);
+            print_all(ctx->hash);
         }
         pthread_mutex_unlock(&ctx->hash->lock);
 
@@ -232,7 +261,6 @@ static inline const msgpack_object
 
         current_field_size =
             get_msgobject_as_str(map.via.map.ptr[i].key, &current_field);
-        //printf("Looking at field %*.*s ", current_field_size, current_field);
         if (key->key_len != current_field_size) {
             continue;
         }
@@ -280,7 +308,6 @@ static inline int throttle_data_by_size(msgpack_object map,
     struct size_throttle_window *window;
     const msgpack_object *log_field;
     const msgpack_object *name_field;
-
     if (ctx->name_fields_depth > 0) {
         // We are looking for a message with a specific field. The other will not be taken to account.
         name_field = get_value_of_msgpack_object_map(map, &ctx->name_fields);
@@ -331,9 +358,9 @@ static inline int throttle_data_by_size(msgpack_object map,
     flb_debug("[%s]Load size is %lu.", PLUGIN_NAME, load_size);
 
     pthread_mutex_lock(&ctx->hash->lock);
+
     window =
-        find_size_throttle_window(&ctx->hash->windows, name_field_str,
-                                  name_field_size);
+        find_size_throttle_window(ctx->hash, name_field_str, name_field_size);
 
     if (window == NULL) {
         /*Since fluent-bit works on one thread and there is no chance someone to create the same window so we can unlock the mutex
@@ -360,10 +387,11 @@ static inline int throttle_data_by_size(msgpack_object map,
              PLUGIN_NAME, load_size, window->name,
              window->table[window->head].timestamp, window->total);
         pthread_mutex_lock(&ctx->hash->lock);
-        add_size_throttle_window(&ctx->hash->windows, window);
+        add_size_throttle_window(ctx->hash, window);
         pthread_mutex_unlock(&ctx->hash->lock);
         flb_debug("[%s] New window named \"%s\" was added with load %lu.",
                   PLUGIN_NAME, window->name, load_size);
+        flb_free(window);
     }
     else {
         /*We found the wanted window and now we are going to make check and modify it if needed */
@@ -527,6 +555,22 @@ static inline int configure(struct flb_filter_size_throttle_ctx *ctx,
     else {
         ctx->window_time_duration = SIZE_THROTTLE_DEFAULT_WINDOW_DURATION;
     }
+
+    /* Create the hash table of windows */
+    str = flb_filter_get_property("hash_table_size", f_ins);
+    if (str != NULL && (val = strtoul(str, &endp, 10)) > 0) {
+        ctx->hash = create_size_throttle_table(val);
+    }
+    else {
+        ctx->hash =
+            create_size_throttle_table
+            (SIZE_THROTTLE_WINDOW_TABLE_DEFAULT_SIZE);
+    }
+    if (ctx->hash == NULL) {
+        flb_errno();
+        return -1;
+    }
+
     return 0;
 }
 
@@ -550,13 +594,6 @@ static int cb_throttle_init(struct flb_filter_instance *f_ins,
         return -1;
     }
 
-    /* Create the hash table of windows */
-    ctx->hash = create_size_throttle_table();
-    if (ctx->hash == NULL) {
-        flb_errno();
-        return -1;
-    }
-
     if (ctx->window_time_duration < ctx->slide_interval * ctx->window_size) {
         ctx->window_time_duration = ctx->slide_interval * ctx->window_size;
     }
@@ -573,7 +610,8 @@ static int cb_throttle_init(struct flb_filter_instance *f_ins,
             flb_errno();
             return -1;
         }
-        add_size_throttle_window(&ctx->hash->windows, window);
+        add_size_throttle_window(ctx->hash, window);
+        flb_free(window);
     }
 
     ctx->ticker_id = flb_malloc(sizeof(pthread_t));
@@ -679,11 +717,9 @@ static int cb_throttle_exit(void *data, struct flb_config *config)
     ctx->done = true;
     pthread_join(*(pthread_t *) ctx->ticker_id, NULL);
     flb_free(ctx->ticker_id);
-    delete_all(&ctx->hash->windows);
+    destroy_size_throttle_table(ctx->hash);
     delete_field_key(&ctx->log_fields);
     delete_field_key(&ctx->name_fields);
-    pthread_mutex_destroy(&ctx->hash->lock);
-    flb_free(ctx->hash);
     flb_free(ctx);
     return 0;
 }

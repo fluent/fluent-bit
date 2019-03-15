@@ -21,8 +21,10 @@
 #ifndef FLB_SIZE_WINDOW_H
 #define FLB_SIZE_WINDOW_H
 
-#include "uthash.h"
+#include <fluent-bit/flb_hash.h>
 #include <pthread.h>
+
+#define FLB_SIZE_WINDOW_HASH_MAX_ENTRIES 100000
 
 struct size_throttle_pane
 {
@@ -39,12 +41,11 @@ struct size_throttle_window
     int head;
     int tail;
     struct size_throttle_pane *table;
-    UT_hash_handle hh;
 };
 
 struct size_throttle_table
 {
-    struct size_throttle_window *windows;
+    struct flb_hash *windows;
     pthread_mutex_t lock;
 };
 
@@ -91,35 +92,48 @@ inline static void add_load(struct size_throttle_window *stw,
     }
 }
 
-inline static void free_stw(struct size_throttle_window *stw)
+inline static void free_stw_content(struct size_throttle_window *stw)
 {
     flb_free(stw->name);
     flb_free(stw->table);
+}
+
+inline static void free_stw(struct size_throttle_window *stw)
+{
+    free_stw_content(stw);
     flb_free(stw);
 }
 
 inline static struct size_throttle_window *find_size_throttle_window(struct
-                                                                     size_throttle_window
-                                                                     **table,
-                                                                     const
+                                                                     size_throttle_table
+                                                                     *table,
                                                                      char
                                                                      *name,
                                                                      unsigned
                                                                      name_length)
 {
-    struct size_throttle_window *window;
-    HASH_FIND(hh, *table, name, name_length, window);
-    return window;
+    char *window = NULL;
+    size_t out_size;
+    if (flb_hash_get(table->windows, name, name_length, &window, &out_size) >=
+        0) {
+        if (out_size < sizeof(struct size_throttle_window)) {
+            flb_error("Malformed data in size window hashtable");
+            return NULL;
+        }
+        return (struct size_throttle_window *) window;
+    }
+    return NULL;
 }
 
-inline static void add_size_throttle_window(struct size_throttle_window
-                                            **table,
+inline static void add_size_throttle_window(struct size_throttle_table
+                                            *table,
                                             struct size_throttle_window
                                             *window)
 {
-    HASH_ADD_KEYPTR(hh, *table, window->name, strlen(window->name), window);
+    flb_hash_add(table->windows, window->name, strlen(window->name),
+                 (char *) window, sizeof(struct size_throttle_window));
 }
 
-void delete_all(struct size_throttle_window **table);
+void destroy_size_throttle_table(struct size_throttle_table *table);
 
 #endif

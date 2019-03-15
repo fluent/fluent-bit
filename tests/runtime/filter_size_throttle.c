@@ -132,7 +132,7 @@ void flb_test_simple_log(void)
     TEST_CHECK(ret == 0);
     ret = flb_filter_set(ctx, filter_ffd, "interval", "3s", NULL);
     TEST_CHECK(ret == 0);
-    ret = flb_filter_set(ctx, filter_ffd, "print_status", "false", NULL);
+    ret = flb_filter_set(ctx, filter_ffd, "print_status", "true", NULL);
     TEST_CHECK(ret == 0);
     ret = flb_filter_set(ctx, filter_ffd, "log_field", "log", NULL);
     TEST_CHECK(ret == 0);

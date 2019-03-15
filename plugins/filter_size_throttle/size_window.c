@@ -83,14 +83,21 @@ struct size_throttle_window *size_window_create(const char *name,
     return stw;
 }
 
-struct size_throttle_table *create_size_throttle_table()
+struct size_throttle_table *create_size_throttle_table(size_t size)
 {
     struct size_throttle_table *table;
     table = flb_malloc(sizeof(struct size_throttle_table));
     if (!table) {
         return NULL;
     }
-    table->windows = NULL;
+    table->windows =
+        flb_hash_create(FLB_HASH_EVICT_NONE, size,
+                        FLB_SIZE_WINDOW_HASH_MAX_ENTRIES);
+    if (!table->windows) {
+        flb_errno();
+        flb_free(table);
+        return NULL;
+    }
     if (pthread_mutex_init(&table->lock, NULL) != 0) {
         flb_errno();
         flb_free(table);
@@ -99,11 +106,30 @@ struct size_throttle_table *create_size_throttle_table()
     return table;
 }
 
-void delete_all(struct size_throttle_window **table)
+void destroy_size_throttle_table(struct size_throttle_table *ht)
 {
-    struct size_throttle_window *current_window, *tmp;
-    HASH_ITER(hh, *table, current_window, tmp) {
-        HASH_DEL(*table, current_window);
-        free_stw(current_window);
+    int i;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_hash_entry *entry;
+    struct flb_hash_table *table;
+
+    for (i = 0; i < ht->windows->size; i++) {
+        table = &ht->windows->table[i];
+        mk_list_foreach_safe(head, tmp, &table->chains) {
+            entry = mk_list_entry(head, struct flb_hash_entry, _head);
+            free_stw_content((struct size_throttle_window *) entry->val);
+            mk_list_del(&entry->_head);
+            mk_list_del(&entry->_head_parent);
+            entry->table->count--;
+            ht->windows->total_count--;
+            flb_free(entry->key);
+            flb_free(entry->val);
+            flb_free(entry);
+        }
     }
+    pthread_mutex_destroy(&ht->lock);
+    flb_free(ht->windows->table);
+    flb_free(ht->windows);
+    flb_free(ht);
 }
