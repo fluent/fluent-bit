@@ -271,6 +271,13 @@ static FLB_INLINE int flb_engine_handle_event(flb_pipefd_t fd, int mask,
             return ret;
         }
 #endif
+
+#ifdef FLB_HAVE_STREAM_PROCESSOR
+        ret = flb_sp_fd_event(fd, config->stream_processor_ctx);
+        if (ret != -1) {
+            return ret;
+        }
+#endif
     }
 
     return 0;

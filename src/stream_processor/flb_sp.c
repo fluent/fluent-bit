@@ -50,13 +50,6 @@
 #define FLB_STR_INT   1
 #define FLB_STR_FLOAT 2
 
-struct aggr_num {
-    int type;
-    int ops;
-    int64_t i64;
-    double f64;
-};
-
 /* Read and process file system configuration file */
 static int sp_config_file(struct flb_config *config, struct flb_sp *sp,
                           char *file)
@@ -436,7 +429,10 @@ static void aggr_max(struct aggr_num *nums, int key_id, int64_t i, double d)
 struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, char *name,
                                        char *query)
 {
+    int fd;
     int ret;
+    int map_entries;
+    struct mk_event *event;
     struct flb_sp_cmd *cmd;
     struct flb_sp_task *task;
 
@@ -489,6 +485,9 @@ struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, char *name,
      */
     task->aggr_keys = FLB_FALSE;
 
+    mk_list_init(&task->window.data);
+    task->window.nums = NULL;
+
     /* Check and validate aggregated keys */
     ret = sp_cmd_aggregated_keys(task->cmd);
     if (ret == -1) {
@@ -499,6 +498,36 @@ struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, char *name,
     }
     else if (ret > 0) {
         task->aggr_keys = FLB_TRUE;
+
+        task->window.type = cmd->window.type;
+
+        /* Number of expected output entries in the map */
+        map_entries = mk_list_size(&cmd->keys);
+
+        /* Allocate an array to keep results per key */
+        task->window.nums = flb_calloc(1, sizeof(struct aggr_num) * map_entries);
+        if (!task->window.nums) {
+            flb_errno();
+            return NULL;
+        }
+
+        /* Register a timer event when task contains aggregation rules */
+        if (task->window.type != FLB_SP_WINDOW_DEFAULT) {
+            /* Initialize event loop context */
+            event = &task->window.event;
+            MK_EVENT_ZERO(event);
+
+            /* Run every 'size' seconds */
+            fd = mk_event_timeout_create(sp->config->evl,
+                                         cmd->window.size, (long) 0,
+                                         &task->window.event);
+            if (fd == -1) {
+                flb_error("[sp] registration for task %s failed", task->name);
+                flb_free(task);
+                return NULL;
+            }
+            task->window.fd = fd;
+        }
     }
 
     /*
@@ -523,10 +552,24 @@ struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, char *name,
     return task;
 }
 
+void flb_sp_window_destroy(struct flb_sp_task_window *window) {
+    struct flb_sp_window_data *data;
+    struct mk_list *head;
+    struct mk_list *tmp;
+
+    flb_free(window->nums);
+    mk_list_foreach_safe(head, tmp, &window->data) {
+        data = mk_list_entry(head, struct flb_sp_window_data, _head);
+        flb_free(data->buf_data);
+        flb_free(data);
+    }
+}
+
 void flb_sp_task_destroy(struct flb_sp_task *task)
 {
     flb_sds_destroy(task->name);
     flb_sds_destroy(task->query);
+    flb_sp_window_destroy(&task->window);
     mk_list_del(&task->_head);
 
     if (task->stream) {
@@ -994,52 +1037,25 @@ static struct flb_exp_val *reduce_expression(struct flb_exp *expression,
     return result;
 }
 
-/*
- * Process data, task and it defined command involves the call of aggregation
- * functions (AVG, SUM, COUNT, MIN, MAX).
- */
-static int sp_process_data_aggr(char *tag, int tag_len,
-                                char **out_buf, size_t *out_size,
-                                struct flb_sp_task *task,
-                                struct flb_sp *sp)
+
+static void package_results(char *tag, int tag_len,
+                            char **out_buf, size_t *out_size,
+                            struct flb_sp_task *task)
 {
     int i;
-    int ok;
     int len;
-    int ret;
     int map_entries;
-    int map_size;
-    int key_id;
-    int records = 0;
-    struct aggr_num *nums;
-    size_t off = 0;
     char key_name[256];
-    msgpack_object root;
-    msgpack_object map;
-    msgpack_unpacked result;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer  mp_pck;
-    msgpack_object key;
-    msgpack_object val;
-    struct mk_list *head;
+    struct aggr_num *nums;
     struct flb_time tm;
-    struct flb_sp_cmd *cmd = task->cmd;
     struct flb_sp_cmd_key *ckey;
-    struct flb_exp_val *condition;
+    struct flb_sp_cmd *cmd = task->cmd;
 
-    /* Number of expected output entries in the map */
     map_entries = mk_list_size(&cmd->keys);
+    nums = task->window.nums;
 
-    /* Allocate an array to keep results per key */
-    nums = flb_calloc(1, sizeof(struct aggr_num) * map_entries);
-    if (!nums) {
-        flb_errno();
-        return -1;
-    }
-
-    /* vars initialization */
-    ok = MSGPACK_UNPACK_SUCCESS;
-    msgpack_unpacked_init(&result);
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
@@ -1050,11 +1066,140 @@ static int sp_process_data_aggr(char *tag, int tag_len,
     flb_time_append_to_msgpack(&tm, &mp_pck, 0);
     msgpack_pack_map(&mp_pck, map_entries);
 
+    /* Packaging results */
+    ckey = mk_list_entry_first(&cmd->keys, struct flb_sp_cmd_key, _head);
+    for (i = 0; i < map_entries; i++) {
+        /* Check if there is a defined function */
+        if (ckey->time_func > 0) {
+            flb_sp_func_time(&mp_pck, ckey);
+            goto next;
+        }
+        else if (ckey->record_func > 0) {
+            flb_sp_func_record(tag, tag_len, &tm, &mp_pck, ckey);
+            goto next;
+        }
+
+        /* Pack key */
+        if (ckey->alias) {
+            msgpack_pack_str(&mp_pck, flb_sds_len(ckey->alias));
+            msgpack_pack_str_body(&mp_pck,
+                                  ckey->alias,
+                                  flb_sds_len(ckey->alias));
+        }
+        else {
+            len = 0;
+            char *c_name;
+            if (!ckey->name) {
+                c_name = "*";
+            }
+            else {
+                c_name = ckey->name;
+            }
+
+            switch (ckey->aggr_func) {
+            case FLB_SP_AVG:
+                len = snprintf(key_name, sizeof(key_name) - 1,
+                               "AVG(%s)", c_name);
+                break;
+            case FLB_SP_SUM:
+                len = snprintf(key_name, sizeof(key_name) - 1,
+                               "SUM(%s)", c_name);
+                break;
+            case FLB_SP_COUNT:
+                len = snprintf(key_name, sizeof(key_name) - 1,
+                               "COUNT(%s)", c_name);
+                break;
+            case FLB_SP_MIN:
+                len = snprintf(key_name, sizeof(key_name) - 1,
+                               "MIN(%s)", c_name);
+                break;
+            case FLB_SP_MAX:
+                len = snprintf(key_name, sizeof(key_name) - 1,
+                               "MAX(%s)", c_name);
+                break;
+            }
+
+            msgpack_pack_str(&mp_pck, len);
+            msgpack_pack_str_body(&mp_pck, key_name, len);
+        }
+
+        /* Pack value */
+        switch (ckey->aggr_func) {
+        case FLB_SP_AVG:
+            /* average = sum(values) / records */
+            if (nums[i].type == FLB_SP_NUM_I64) {
+                msgpack_pack_int64(&mp_pck, nums[i].i64 / task->window.records);
+            }
+            else if (nums[i].type == FLB_SP_NUM_F64) {
+                msgpack_pack_float(&mp_pck, nums[i].f64 / task->window.records);
+            }
+            break;
+        case FLB_SP_SUM:
+        case FLB_SP_MIN:
+        case FLB_SP_MAX:
+            /* pack result stored in nums[key_id] */
+            if (nums[i].type == FLB_SP_NUM_I64) {
+                msgpack_pack_int64(&mp_pck, nums[i].i64);
+            }
+            else if (nums[i].type == FLB_SP_NUM_F64) {
+                msgpack_pack_float(&mp_pck, nums[i].f64);
+            }
+            break;
+        case FLB_SP_COUNT:
+            /* number of records in total */
+            msgpack_pack_int64(&mp_pck, task->window.records);
+            break;
+        }
+
+    next:
+        ckey = mk_list_entry_next(&ckey->_head, struct flb_sp_cmd_key,
+                                  _head, &cmd->keys);
+    }
+
+    *out_buf = mp_sbuf.data;
+    *out_size = mp_sbuf.size;
+}
+
+/*
+ * Process data, task and it defined command involves the call of aggregation
+ * functions (AVG, SUM, COUNT, MIN, MAX).
+ */
+static int sp_process_data_aggr(char *buf_data, size_t buf_size,
+                                char *tag, int tag_len,
+                                struct flb_sp_task *task,
+                                struct flb_sp *sp)
+{
+    int i;
+    int ok;
+    int ret;
+    int map_entries;
+    int map_size;
+    int key_id;
+    struct aggr_num *nums;
+    size_t off = 0;
+    msgpack_object root;
+    msgpack_object map;
+    msgpack_unpacked result;
+    msgpack_object key;
+    msgpack_object val;
+    struct mk_list *head;
+    struct flb_sp_cmd *cmd = task->cmd;
+    struct flb_sp_cmd_key *ckey;
+    struct flb_exp_val *condition;
+
+    /* Number of expected output entries in the map */
+    map_entries = mk_list_size(&cmd->keys);
+    nums = task->window.nums;
+
+    /* vars initialization */
+    ok = MSGPACK_UNPACK_SUCCESS;
+    msgpack_unpacked_init(&result);
+
+
     /* Iterate incoming records */
-    while (msgpack_unpack_next(&result, task->window.buf_data,
-                               task->window.buf_size, &off) == ok) {
+    while (msgpack_unpack_next(&result, buf_data, buf_size, &off) == ok) {
         root = result.data;
-        records++;
+        task->window.records++;
 
         /* get the map data and it size (number of items) */
         map   = root.via.array.ptr[1];
@@ -1153,101 +1298,7 @@ static int sp_process_data_aggr(char *tag, int tag_len,
     }
     msgpack_unpacked_destroy(&result);
 
-    /* Packaging results */
-    ckey = mk_list_entry_first(&cmd->keys, struct flb_sp_cmd_key, _head);
-    for (i = 0; i < map_entries; i++) {
-        /* Check if there is a defined function */
-        if (ckey->time_func > 0) {
-            flb_sp_func_time(&mp_pck, ckey);
-            goto next;
-        }
-        else if (ckey->record_func > 0) {
-            flb_sp_func_record(tag, tag_len, &tm, &mp_pck, ckey);
-            goto next;
-        }
-
-        /* Pack key */
-        if (ckey->alias) {
-            msgpack_pack_str(&mp_pck, flb_sds_len(ckey->alias));
-            msgpack_pack_str_body(&mp_pck,
-                                  ckey->alias,
-                                  flb_sds_len(ckey->alias));
-        }
-        else {
-            len = 0;
-            char *c_name;
-            if (!ckey->name) {
-                c_name = "*";
-            }
-            else {
-                c_name = ckey->name;
-            }
-
-            switch (ckey->aggr_func) {
-            case FLB_SP_AVG:
-                len = snprintf(key_name, sizeof(key_name) - 1,
-                               "AVG(%s)", c_name);
-                break;
-            case FLB_SP_SUM:
-                len = snprintf(key_name, sizeof(key_name) - 1,
-                               "SUM(%s)", c_name);
-                break;
-            case FLB_SP_COUNT:
-                len = snprintf(key_name, sizeof(key_name) - 1,
-                               "COUNT(%s)", c_name);
-                break;
-            case FLB_SP_MIN:
-                len = snprintf(key_name, sizeof(key_name) - 1,
-                               "MIN(%s)", c_name);
-                break;
-            case FLB_SP_MAX:
-                len = snprintf(key_name, sizeof(key_name) - 1,
-                               "MAX(%s)", c_name);
-                break;
-            }
-
-            msgpack_pack_str(&mp_pck, len);
-            msgpack_pack_str_body(&mp_pck, key_name, len);
-        }
-
-        /* Pack value */
-        switch (ckey->aggr_func) {
-        case FLB_SP_AVG:
-            /* average = sum(values) / records */
-            if (nums[i].type == FLB_SP_NUM_I64) {
-                msgpack_pack_float(&mp_pck, nums[i].i64 / records);
-            }
-            else if (nums[i].type == FLB_SP_NUM_F64) {
-                msgpack_pack_float(&mp_pck, nums[i].f64 / records);
-            }
-            break;
-        case FLB_SP_SUM:
-        case FLB_SP_MIN:
-        case FLB_SP_MAX:
-            /* pack result stored in nums[key_id] */
-            if (nums[i].type == FLB_SP_NUM_I64) {
-                msgpack_pack_int64(&mp_pck, nums[i].i64);
-            }
-            else if (nums[i].type == FLB_SP_NUM_F64) {
-                msgpack_pack_float(&mp_pck, nums[i].f64);
-            }
-            break;
-        case FLB_SP_COUNT:
-            /* number of records in total */
-            msgpack_pack_int64(&mp_pck, records);
-            break;
-        }
-
-    next:
-        ckey = mk_list_entry_next(&ckey->_head, struct flb_sp_cmd_key,
-                                  _head, &cmd->keys);
-    }
-
-    flb_free(nums);
-    *out_buf = mp_sbuf.data;
-    *out_size = mp_sbuf.size;
-
-    return records;
+    return task->window.records;
 }
 
 /*
@@ -1468,28 +1519,39 @@ int flb_sp_do(struct flb_sp *sp, struct flb_input_instance *in,
                  * processing.
                  */
                 if (task->aggr_keys == FLB_TRUE) {
-                    ret = sp_populate_window(task, buf_data, buf_size);
+
+                    ret = sp_process_data_aggr(buf_data, buf_size,
+                                               tag, tag_len,
+                                               task, sp);
+
                     if (ret == -1) {
-                        flb_error("[sp] error populating window for '%'",
+                       flb_error("[sp] error processing records for '%s'",
+                                 task->name);
+                       continue;
+                    }
+
+                    ret = flb_sp_window_populate(task, buf_data, buf_size);
+                    if (ret == -1) {
+                        flb_error("[sp] error populating window for '%s'",
                                   task->name);
                         continue;
                     }
 
-                    ret = sp_process_data_aggr(tag, tag_len,
-                                               &out_buf, &out_size,
-                                               task, sp);
+                    if (task->window.type == FLB_SP_WINDOW_DEFAULT) {
+                        package_results(tag, tag_len, &out_buf, &out_size, task);
+                    }
                 }
                 else {
                     ret = sp_process_data(tag, tag_len,
                                           buf_data, buf_size,
                                           &out_buf, &out_size,
                                           task, sp);
-                }
 
-                if (ret == -1) {
-                    flb_error("[sp] error processing records for '%'",
-                              task->name);
-                    continue;
+                    if (ret == -1) {
+                        flb_error("[sp] error processing records for '%s'",
+                                  task->name);
+                        continue;
+                    }
                 }
 
                 if (ret == 0) {
@@ -1502,12 +1564,19 @@ int flb_sp_do(struct flb_sp *sp, struct flb_input_instance *in,
                  * means: register the output of the query as data
                  * generated by an input instance plugin.
                  */
-                if (task->stream) {
-                    flb_sp_stream_append_data(out_buf, out_size, task->stream);
-                }
-                else {
-                    flb_pack_print(out_buf, out_size);
-                    flb_free(out_buf);
+                if (task->aggr_keys != FLB_TRUE ||
+                    task->window.type == FLB_SP_WINDOW_DEFAULT) {
+                    /*
+                     * Add to stream processing stream if there is no
+                     * aggregation function. Otherwise, write it at timer event
+                     */
+                    if (task->stream) {
+                        flb_sp_stream_append_data(out_buf, out_size, task->stream);
+                    }
+                    else {
+                        flb_pack_print(out_buf, out_size);
+                        flb_free(out_buf);
+                    }
                 }
             }
         }
@@ -1526,38 +1595,96 @@ int flb_sp_test_do(struct flb_sp *sp, struct flb_sp_task *task,
                    char **out_data, size_t *out_size)
 {
     int ret;
+    int records;
 
     if (task->aggr_keys == FLB_TRUE) {
-        ret = sp_populate_window(task, buf_data, buf_size);
+        ret = sp_process_data_aggr(buf_data, buf_size,
+                                   tag, tag_len,
+                                   task, sp);
         if (ret == -1) {
-            flb_error("[sp] error populating window for '%'",
+            flb_error("[sp] error error processing records for '%s'",
                       task->name);
+            return -1;
         }
-	else {
-            ret = sp_process_data_aggr(tag, tag_len,
-                                       out_data, out_size,
-                                       task, sp);
-	}
+
+        ret = flb_sp_window_populate(task, buf_data, buf_size);
+        if (ret == -1) {
+            flb_error("[sp] error populating window for '%s'",
+                      task->name);
+            return -1;
+        }
+
+        if (task->window.type == FLB_SP_WINDOW_DEFAULT) {
+            package_results(tag, tag_len, out_data, out_size, task);
+        }
+
+        records = task->window.records;
     }
     else {
         ret = sp_process_data(tag, tag_len,
                               buf_data, buf_size,
                               out_data, out_size,
                               task, sp);
+        if (ret == -1) {
+            flb_error("[sp] error processing records for '%s'",
+                      task->name);
+            return -1;
+        }
+        records = ret;
     }
 
-    if (ret == -1) {
-        flb_error("[sp] error processing records for '%'",
-                  task->name);
-        return -1;
-    }
-
-    if (ret == 0) {
+    if (records == 0) {
         *out_data = NULL;
         *out_size = 0;
         return 0;
     }
 
+    return 0;
+}
+
+int flb_sp_fd_event(int fd, struct flb_sp *sp)
+{
+    char *out_buf;
+    char *tag = NULL;
+    int tag_len = 0;
+    size_t out_size;
+    struct mk_list *head;
+    struct flb_sp_task *task;
+    struct flb_input_instance *in;
+
+    /* Lookup Tasks that matches the incoming event */
+    mk_list_foreach(head, &sp->tasks) {
+        task = mk_list_entry(head, struct flb_sp_task, _head);
+
+        if (fd == task->window.fd) {
+            if (task->window.records > 0) {
+                /* find inout tag from task source */
+                in = task->source_instance;
+                if (in) {
+                    if (in->tag && in->tag_len > 0) {
+                        tag = in->tag;
+                        tag_len = in->tag_len;
+                    }
+                    else {
+                        tag = in->name;
+                        tag_len = strlen(in->name);
+                    }
+                }
+                package_results(tag, tag_len, &out_buf, &out_size, task);
+                if (task->stream) {
+                    flb_sp_stream_append_data(out_buf, out_size, task->stream);
+                }
+                else {
+                    flb_pack_print(out_buf, out_size);
+                    flb_free(out_buf);
+                }
+
+                flb_sp_window_prune(task);
+            }
+            flb_utils_timer_consume(fd);
+            break;
+        }
+    }
     return 0;
 }
 

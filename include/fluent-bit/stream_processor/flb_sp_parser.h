@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/stream_processor/flb_sp.h>
+#include <fluent-bit/stream_processor/flb_sp_window.h>
 
 /* Aggregation functions */
 #define FLB_SP_AVG       1
@@ -73,6 +74,9 @@
 #define FLB_EXP_GT       7
 #define FLB_EXP_GTE      8
 
+#define FLB_SP_TIME_SECOND  0
+#define FLB_SP_TIME_MINUTE  1
+#define FLB_SP_TIME_HOUR    2
 
 /* Property (key/value) */
 struct flb_sp_cmd_prop {
@@ -91,6 +95,11 @@ struct flb_sp_cmd_key {
     struct mk_list _head;     /* Link to flb_sp_cmd->keys */
 };
 
+struct flb_sp_window {
+    int type;
+    time_t size;
+};
+
 struct flb_sp_cmd {
     int status;
     int type;                      /* FLB_SP_CREATE_STREAM or FLB_SP_SELECT */
@@ -105,6 +114,8 @@ struct flb_sp_cmd {
 
     struct flb_exp *condition;     /* WHERE condition in select statement */
     struct mk_list cond_list;
+
+    struct flb_sp_window window;   /* WINDOW window in select statement */
 
     /* Source of data */
     int source_type;               /* FLB_SP_STREAM or FLB_SP_TAG */
@@ -161,6 +172,9 @@ int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func,
 void flb_sp_cmd_key_del(struct flb_sp_cmd_key *key);
 int flb_sp_cmd_source(struct flb_sp_cmd *cmd, int type, char *source);
 void flb_sp_cmd_dump(struct flb_sp_cmd *cmd);
+
+void flb_sp_cmd_window(struct flb_sp_cmd *cmd,
+                       int window_type, int size, int time_unit);
 
 void flb_sp_cmd_condition_add(struct flb_sp_cmd *cmd, struct flb_exp *e);
 struct flb_exp *flb_sp_cmd_operation(struct flb_sp_cmd *cmd,
