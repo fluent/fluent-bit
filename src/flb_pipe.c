@@ -131,7 +131,7 @@ ssize_t flb_pipe_read_all(int fd, void *buf, size_t count)
     do {
         bytes = flb_pipe_r(fd, (char *) buf + total, count - total);
         if (bytes == -1) {
-            if (errno == EAGAIN) {
+            if (FLB_PIPE_WOULDBLOCK()) {
                 /*
                  * This could happen, since this function goal is not to
                  * return until all data have been read, just sleep a little
@@ -162,7 +162,7 @@ ssize_t flb_pipe_write_all(int fd, void *buf, size_t count)
     do {
         bytes = flb_pipe_w(fd, (const char *) buf + total, count - total);
         if (bytes == -1) {
-            if (errno == EAGAIN) {
+            if (FLB_PIPE_WOULDBLOCK()) {
                 /*
                  * This could happen, since this function goal is not to
                  * return until all data have been read, just sleep a little
