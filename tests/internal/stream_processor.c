@@ -405,15 +405,22 @@ struct task_check select_keys_checks[] = {
         cb_select_aggr,
     },
 
+    {
+        5,
+        "select_aggr_window_tumbling",
+        "SELECT MIN(id), MAX(id), COUNT(*), SUM(bytes), AVG(bytes) " \
+        "FROM STREAM:FLB WINDOW TUMBLING (1 SECOND);",
+        cb_select_aggr,
+    },
     /* Time functions */
     {
-        4,
+        6,
         "func_time_now",
         "SELECT NOW(), NOW() as tnow FROM STREAM:FLB WHERE bytes > 10;",
         cb_func_time_now,
     },
     {
-        5,
+        7,
         "func_time_unix_timestamp",
         "SELECT UNIX_TIMESTAMP(), UNIX_TIMESTAMP() as ts " \
         "FROM STREAM:FLB WHERE bytes > 10;",
@@ -442,6 +449,7 @@ static void test_select_keys()
         return;
     }
     mk_list_init(&config->inputs);
+    config->evl = mk_event_loop_create(256);
 
     sp = flb_sp_create(config);
     if (!sp) {
@@ -482,6 +490,8 @@ static void test_select_keys()
             flb_sp_task_destroy(task);
             continue;
         }
+
+        flb_sp_test_fd_event(task, &out_buf, &out_size);
 
         flb_info("[sp test] id=%i, SQL => '%s'", check->id, check->exec);
         check->cb_check(check->id, check, out_buf, out_size);

@@ -92,6 +92,7 @@ int flb_sp_test_do(struct flb_sp *sp, struct flb_sp_task *task,
                    char *tag, int tag_len,
                    char *buf_data, size_t buf_size,
                    char **out_data, size_t *out_size);
+int flb_sp_test_fd_event(struct flb_sp_task *task, char **out_data, size_t *out_size);
 
 struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, char *name,
                                        char *query);
