@@ -38,6 +38,13 @@ set(src
   flb_sosreport.c
   )
 
+if (CMAKE_SYSTEM_NAME MATCHES "Windows")
+set(src
+  ${src}
+  flb_dlfcn_win32.c
+  )
+endif()
+
 include_directories(
   .
   ../lib/
