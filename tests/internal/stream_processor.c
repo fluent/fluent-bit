@@ -496,10 +496,12 @@ static void test_select_keys()
         flb_info("[sp test] id=%i, SQL => '%s'", check->id, check->exec);
         check->cb_check(check->id, check, out_buf, out_size);
         flb_pack_print(out_buf, out_size);
+        flb_free(out_buf);
     }
 
     flb_free(data_buf);
     flb_sp_destroy(sp);
+    mk_event_loop_destroy(config->evl);
     flb_free(config);
 }
 
