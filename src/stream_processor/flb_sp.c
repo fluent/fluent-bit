@@ -715,10 +715,12 @@ static void exp_string_to_number(struct flb_exp_val *val)
 
     /* Assign to proper type */
     if (ret == FLB_STR_FLOAT) {
+        flb_sds_destroy(val->val.string);
         val->type = FLB_EXP_FLOAT;
         val->val.f64 = d;
     }
     else if (ret == FLB_STR_INT) {
+        flb_sds_destroy(val->val.string);
         val->type = FLB_EXP_INT;
         val->val.i64 = i;
     }
@@ -980,27 +982,8 @@ static struct flb_exp_val *reduce_expression(struct flb_exp *expression,
         break;
     case FLB_EXP_KEY:
         ret = key_to_value(((struct flb_exp_key *) expression)->name, map);
-        if (!ret) {
-           flb_free(result);
-           result = NULL;
-           break;
-        }
-
-        switch (ret->type) {
-        case FLB_EXP_BOOL:
-            result->val.boolean = ret->val.boolean;
-            break;
-        case FLB_EXP_INT:
-            result->val.i64 = ret->val.i64;
-            break;
-        case FLB_EXP_FLOAT:
-            result->val.f64 = ret->val.f64;
-            break;
-        case FLB_EXP_STRING:
-            result->val.string = ret->val.string;
-        }
-        result->type = ret->type;
-        flb_free(ret);
+        flb_free(result);
+        result = ret;
         break;
     case FLB_LOGICAL_OP:
         left = reduce_expression(expression->left, map);
