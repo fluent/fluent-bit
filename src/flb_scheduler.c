@@ -257,7 +257,6 @@ int flb_sched_request_destroy(struct flb_config *config,
     mk_list_del(&req->_head);
 
     timer = req->timer;
-    flb_pipe_close(req->fd);
 
     /*
      * We invalidate the timer since in the same event loop round
@@ -266,6 +265,9 @@ int flb_sched_request_destroy(struct flb_config *config,
      * the event loop round finish.
      */
     flb_sched_timer_invalidate(timer);
+
+    /* Close pipe after invalidating timer */
+    flb_pipe_close(req->fd);
 
     /* Remove request */
     flb_free(req);
