@@ -21,6 +21,10 @@
 #ifndef FLB_REGEX_H
 #define FLB_REGEX_H
 
+#include <fluent-bit/flb_info.h>
+
+#ifdef FLB_HAVE_REGEX
+
 #include <fluent-bit/flb_compat.h>
 
 #include <stdlib.h>
@@ -54,5 +58,7 @@ int flb_regex_parse(struct flb_regex *r, struct flb_regex_search *result,
                     void *data);
 int flb_regex_destroy(struct flb_regex *r);
 void flb_regex_exit();
+
+#endif
 
 #endif
