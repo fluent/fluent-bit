@@ -282,7 +282,7 @@ select: SELECT keys FROM source ';'
                      flb_free($2);
               }
               |
-              FROM_TAG IDENTIFIER
+              FROM_TAG STRING
                    {
                      flb_sp_cmd_source(cmd, FLB_SP_TAG, $2);
                      flb_free($2);
