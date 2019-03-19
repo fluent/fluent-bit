@@ -499,9 +499,6 @@ static int forward_config_simple(struct flb_forward *ctx,
 #ifdef FLB_HAVE_TLS
     if (ins->use_tls == FLB_TRUE) {
         io_flags = FLB_IO_TLS;
-	if (fc->shared_key) {
-	    fc->secured = FLB_TRUE;
-	}
     }
     else {
         io_flags = FLB_IO_TCP;
@@ -530,6 +527,7 @@ static int forward_config_simple(struct flb_forward *ctx,
     tmp = flb_output_get_property("shared_key", ins);
     if (tmp) {
         fc->shared_key = flb_sds_create(tmp);
+        fc->secured = FLB_TRUE;
     }
 
     /* Self Hostname */
