@@ -1032,6 +1032,7 @@ static void package_results(char *tag, int tag_len,
     int i;
     int len;
     int map_entries;
+    double d_val;
     char key_name[256];
     msgpack_sbuffer mp_sbuf;
     msgpack_packer  mp_pck;
@@ -1115,11 +1116,12 @@ static void package_results(char *tag, int tag_len,
         case FLB_SP_AVG:
             /* average = sum(values) / records */
             if (nums[i].type == FLB_SP_NUM_I64) {
-                msgpack_pack_int64(&mp_pck, nums[i].i64 / task->window.records);
+                d_val = (double) nums[i].i64 / task->window.records;
             }
             else if (nums[i].type == FLB_SP_NUM_F64) {
-                msgpack_pack_float(&mp_pck, nums[i].f64 / task->window.records);
+                d_val = (double) nums[i].f64 / task->window.records;
             }
+            msgpack_pack_float(&mp_pck, d_val);
             break;
         case FLB_SP_SUM:
         case FLB_SP_MIN:
@@ -1482,6 +1484,74 @@ static int sp_process_data(char *tag, int tag_len,
     return records;
 }
 
+/*
+ * Do data processing for internal unit tests, no engine required, set
+ * results on out_data/out_size variables.
+ */
+int flb_sp_test_do(struct flb_sp *sp, struct flb_sp_task *task,
+                   char *tag, int tag_len,
+                   char *buf_data, size_t buf_size,
+                   char **out_data, size_t *out_size)
+{
+    int ret;
+    int records;
+    struct flb_sp_cmd *cmd;
+
+    cmd = task->cmd;
+    if (cmd->source_type == FLB_SP_TAG) {
+        ret = flb_router_match(tag, tag_len, cmd->source_name, NULL);
+        if (ret == FLB_FALSE) {
+            *out_data = NULL;
+            *out_size = 0;
+            return 0;
+        }
+    }
+
+    if (task->aggr_keys == FLB_TRUE) {
+        ret = sp_process_data_aggr(buf_data, buf_size,
+                                   tag, tag_len,
+                                   task, sp);
+        if (ret == -1) {
+            flb_error("[sp] error error processing records for '%s'",
+                      task->name);
+            return -1;
+        }
+
+        ret = flb_sp_window_populate(task, buf_data, buf_size);
+        if (ret == -1) {
+            flb_error("[sp] error populating window for '%s'",
+                      task->name);
+            return -1;
+        }
+
+        if (task->window.type == FLB_SP_WINDOW_DEFAULT) {
+            package_results(tag, tag_len, out_data, out_size, task);
+        }
+
+        records = task->window.records;
+    }
+    else {
+        ret = sp_process_data(tag, tag_len,
+                              buf_data, buf_size,
+                              out_data, out_size,
+                              task, sp);
+        if (ret == -1) {
+            flb_error("[sp] error processing records for '%s'",
+                      task->name);
+            return -1;
+        }
+        records = ret;
+    }
+
+    if (records == 0) {
+        *out_data = NULL;
+        *out_size = 0;
+        return 0;
+    }
+
+    return 0;
+}
+
 /* Iterate and find input chunks to process */
 int flb_sp_do(struct flb_sp *sp, struct flb_input_instance *in,
               char *tag, int tag_len,
@@ -1637,74 +1707,6 @@ void flb_sp_destroy(struct flb_sp *sp)
     }
 
     flb_free(sp);
-}
-
-/*
- * Do data processing for internal unit tests, no engine required, set
- * results on out_data/out_size variables.
- */
-int flb_sp_test_do(struct flb_sp *sp, struct flb_sp_task *task,
-                   char *tag, int tag_len,
-                   char *buf_data, size_t buf_size,
-                   char **out_data, size_t *out_size)
-{
-    int ret;
-    int records;
-    struct flb_sp_cmd *cmd;
-
-    cmd = task->cmd;
-    if (cmd->source_type == FLB_SP_TAG) {
-        ret = flb_router_match(tag, tag_len, cmd->source_name, NULL);
-        if (ret == FLB_FALSE) {
-            *out_data = NULL;
-            *out_size = 0;
-            return 0;
-        }
-    }
-
-    if (task->aggr_keys == FLB_TRUE) {
-        ret = sp_process_data_aggr(buf_data, buf_size,
-                                   tag, tag_len,
-                                   task, sp);
-        if (ret == -1) {
-            flb_error("[sp] error error processing records for '%s'",
-                      task->name);
-            return -1;
-        }
-
-        ret = flb_sp_window_populate(task, buf_data, buf_size);
-        if (ret == -1) {
-            flb_error("[sp] error populating window for '%s'",
-                      task->name);
-            return -1;
-        }
-
-        if (task->window.type == FLB_SP_WINDOW_DEFAULT) {
-            package_results(tag, tag_len, out_data, out_size, task);
-        }
-
-        records = task->window.records;
-    }
-    else {
-        ret = sp_process_data(tag, tag_len,
-                              buf_data, buf_size,
-                              out_data, out_size,
-                              task, sp);
-        if (ret == -1) {
-            flb_error("[sp] error processing records for '%s'",
-                      task->name);
-            return -1;
-        }
-        records = ret;
-    }
-
-    if (records == 0) {
-        *out_data = NULL;
-        *out_size = 0;
-        return 0;
-    }
-
-    return 0;
 }
 
 int flb_sp_test_fd_event(struct flb_sp_task *task, char **out_data, size_t *out_size)
