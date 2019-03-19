@@ -21,8 +21,10 @@
 #ifndef FLB_TAIL_INTERNAL_H
 #define FLB_TAIL_INTERNAL_H
 
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_time.h>
 
 #include "tail.h"
 #include "tail_config.h"

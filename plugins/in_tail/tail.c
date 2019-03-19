@@ -273,6 +273,7 @@ static int in_tail_init(struct flb_input_instance *in,
         ctx->coll_fd_dmode_flush = ret;
     }
 
+#ifdef FLB_HAVE_PARSER
     /* Register callback to process multiline queued buffer */
     if (ctx->multiline == FLB_TRUE) {
         ret = flb_input_set_collector_time(in, flb_tail_mult_pending_flush,
@@ -285,6 +286,7 @@ static int in_tail_init(struct flb_input_instance *in,
         }
         ctx->coll_fd_mult_flush = ret;
     }
+#endif
 
     return 0;
 }

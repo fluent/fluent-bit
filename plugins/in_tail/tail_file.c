@@ -247,7 +247,7 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
             }
         }
 
-#ifdef FLB_HAVE_REGEX
+#ifdef FLB_HAVE_PARSER
         if (ctx->parser) {
             /* Common parser (non-multiline) */
             ret = flb_parser_do(ctx->parser, line, line_len,
