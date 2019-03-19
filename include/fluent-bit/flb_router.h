@@ -29,13 +29,8 @@ struct flb_router_path {
     struct mk_list _head;
 };
 
-#ifdef FLB_HAVE_REGEX
-#include <fluent-bit/flb_regex.h>
 int flb_router_match(const char *tag, int tag_len,
-                     const char *match, struct flb_regex *match_regex);
-#else
-int flb_router_match(const char *tag, int tag_len, const char *match);
-#endif
+                     const char *match, void *match_regex);
 int flb_router_io_set(struct flb_config *config);
 void flb_router_exit(struct flb_config *config);
 
