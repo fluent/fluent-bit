@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/stream_processor/flb_sp.h>
+#include <fluent-bit/stream_processor/flb_sp_window.h>
 
 #include "flb_tests_internal.h"
 
@@ -91,9 +92,12 @@ static int file_to_buf(char *path, char **out_buf, size_t *out_size)
 
 struct task_check {
     int id;
+    int window_type;
+    int window_val;
     char *name;
     char *exec;
     void (*cb_check)(int, struct task_check *, char *, size_t);
+
 };
 
 /* Helper functions */
@@ -394,15 +398,16 @@ static void cb_func_time_unix_timestamp(int id, struct task_check *check,
     TEST_CHECK(ret == FLB_TRUE);
 }
 
+/* Tests for 'test_select_keys' */
 struct task_check select_keys_checks[] = {
     {
-        0,
+        0, 0, 0,
         "select_all",
         "SELECT * FROM STREAM:FLB;",
         cb_select_all
     },
     {
-        1,
+        1, 0, 0,
         "select_id",
         "SELECT id, word2 FROM STREAM:FLB;",
         cb_select_id
@@ -410,13 +415,13 @@ struct task_check select_keys_checks[] = {
 
     /* Conditionals */
     {
-        2,
+        2, 0, 0,
         "select_cond_1",
         "SELECT * FROM STREAM:FLB WHERE bytes > 10.290;",
         cb_select_cond_1
     },
     {
-        3,
+        3, 0, 0,
         "select_cond_2",
         "SELECT * FROM STREAM:FLB WHERE word2 = 'rlz' or word3 = 'rlz';",
         cb_select_cond_2
@@ -424,15 +429,14 @@ struct task_check select_keys_checks[] = {
 
     /* Aggregation functions */
     {
-        4,
+        4, 0, 0,
         "select_aggr",
         "SELECT MIN(id), MAX(id), COUNT(*), SUM(bytes), AVG(bytes) " \
         "FROM STREAM:FLB;",
         cb_select_aggr,
     },
-
     {
-        5,
+        5, 0, 0,
         "select_aggr_window_tumbling",
         "SELECT MIN(id), MAX(id), COUNT(*), SUM(bytes), AVG(bytes) " \
         "FROM STREAM:FLB WINDOW TUMBLING (1 SECOND);",
@@ -440,13 +444,13 @@ struct task_check select_keys_checks[] = {
     },
     /* Time functions */
     {
-        6,
+        6, 0, 0,
         "func_time_now",
         "SELECT NOW(), NOW() as tnow FROM STREAM:FLB WHERE bytes > 10;",
         cb_func_time_now,
     },
     {
-        7,
+        7, 0, 0,
         "func_time_unix_timestamp",
         "SELECT UNIX_TIMESTAMP(), UNIX_TIMESTAMP() as ts " \
         "FROM STREAM:FLB WHERE bytes > 10;",
@@ -454,13 +458,13 @@ struct task_check select_keys_checks[] = {
     },
     /* Stream selection using Tag rules */
     {
-        7,
-        "select_from_tag",
+        7, 0, 0,
+        "select_from_tag_error",
         "SELECT id FROM TAG:'no-matches' WHERE bytes > 10;",
         cb_select_tag_error,
     },
     {
-        7,
+        8, 0, 0,
         "select_from_tag",
         "SELECT id FROM TAG:'samples' WHERE bytes > 10;",
         cb_select_tag_ok,
@@ -544,7 +548,127 @@ static void test_select_keys()
     flb_free(config);
 }
 
+static void cb_window_5_second(int id, struct task_check *check,
+                               char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect one record only */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 1);
+
+    /* Check SUM value result */
+    ret = mp_record_key_cmp(buf, size, 0, "SUM(id)",
+                            MSGPACK_OBJECT_POSITIVE_INTEGER,
+                            NULL, 225, 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* Check AVG value result */
+    ret = mp_record_key_cmp(buf, size, 0, "AVG(id)",
+                            MSGPACK_OBJECT_FLOAT,
+                            NULL, 0, 4.5);
+
+    TEST_CHECK(ret == FLB_TRUE);
+}
+
+/* Tests for 'test_window' */
+struct task_check window_checks[] = {
+    {
+        0, FLB_SP_WINDOW_TUMBLING, 5,
+        "window_5_seconds",
+        "SELECT SUM(id), AVG(id) FROM STREAM:FLB WINDOW TUMBLING (5 SECOND);",
+        cb_window_5_second
+    },
+};
+
+static void test_window()
+{
+    int i;
+    int t;
+    int checks;
+    int ret;
+    char *out_buf;
+    size_t out_size;
+    char *data_buf;
+    size_t data_size;
+    struct task_check *check;
+    struct flb_config *config;
+    struct flb_sp *sp;
+    struct flb_sp_task *task;
+
+    config = flb_calloc(1, sizeof(struct flb_config));
+    if (!config) {
+        flb_errno();
+        return;
+    }
+    mk_list_init(&config->inputs);
+    config->evl = mk_event_loop_create(256);
+
+    sp = flb_sp_create(config);
+    if (!sp) {
+        flb_error("[sp test] cannot create stream processor context");
+        flb_free(config);
+        return;
+    }
+
+    ret = file_to_buf(DATA_SAMPLES, &data_buf, &data_size);
+    if (ret == -1) {
+        flb_error("[sp test] cannot open DATA_SAMPLES file %s", DATA_SAMPLES);
+        flb_free(config);
+        return;
+    }
+
+    /* Total number of checks for select_keys */
+    checks = (sizeof(window_checks) / sizeof(struct task_check));
+
+    /* Run every test */
+    for (i = 0; i < checks; i++) {
+        check = (struct task_check *) &window_checks[i];
+
+        task = flb_sp_task_create(sp, check->name, check->exec);
+        if (!task) {
+            flb_error("[sp test] wrong check '%s', fix it!", check->name);
+            continue;
+        }
+
+        out_buf = NULL;
+        out_size = 0;
+
+        if (check->window_type == FLB_SP_WINDOW_TUMBLING) {
+            /* We ingest the buffer every second */
+            for (t = 0; t < check->window_val; t++) {
+                ret = flb_sp_test_do(sp, task,
+                                     "samples", 7,
+                                     data_buf, data_size,
+                                     &out_buf, &out_size);
+                if (ret == -1) {
+                    flb_error("[sp test] error processing check '%s'",
+                              check->name);
+                    flb_sp_task_destroy(task);
+                    return;
+                }
+
+                /* Sleep for 0.8 seconds, give some delta to the engine */
+                usleep(800000);
+            }
+
+            flb_sp_test_fd_event(task, &out_buf, &out_size);
+
+            flb_info("[sp test] id=%i, SQL => '%s'", check->id, check->exec);
+            check->cb_check(check->id, check, out_buf, out_size);
+            flb_pack_print(out_buf, out_size);
+            flb_free(out_buf);
+        }
+    }
+
+    flb_free(data_buf);
+    flb_sp_destroy(sp);
+    mk_event_loop_destroy(config->evl);
+    flb_free(config);
+}
+
 TEST_LIST = {
     { "select_keys", test_select_keys},
+    { "window"     , test_window},
     { NULL }
 };
