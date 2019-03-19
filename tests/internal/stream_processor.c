@@ -343,6 +343,32 @@ static void cb_func_time_now(int id, struct task_check *check,
     TEST_CHECK(ret == FLB_TRUE);
 }
 
+/* No records must be selected */
+static void cb_select_tag_error(int id, struct task_check *check,
+                                char *buf, size_t size)
+{
+    int ret;
+
+    TEST_CHECK(buf == NULL && size == 0);
+
+    /* no records expected */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 0);
+}
+
+/* No records must be selected */
+static void cb_select_tag_ok(int id, struct task_check *check,
+                             char *buf, size_t size)
+{
+    int ret;
+
+    TEST_CHECK(buf != NULL && size > 0);
+
+    /* 2 records expected */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 2);
+}
+
 static void cb_func_time_unix_timestamp(int id, struct task_check *check,
                                         char *buf, size_t size)
 {
@@ -425,6 +451,19 @@ struct task_check select_keys_checks[] = {
         "SELECT UNIX_TIMESTAMP(), UNIX_TIMESTAMP() as ts " \
         "FROM STREAM:FLB WHERE bytes > 10;",
         cb_func_time_unix_timestamp,
+    },
+    /* Stream selection using Tag rules */
+    {
+        7,
+        "select_from_tag",
+        "SELECT id FROM TAG:'no-matches' WHERE bytes > 10;",
+        cb_select_tag_error,
+    },
+    {
+        7,
+        "select_from_tag",
+        "SELECT id FROM TAG:'samples' WHERE bytes > 10;",
+        cb_select_tag_ok,
     }
 
 };
