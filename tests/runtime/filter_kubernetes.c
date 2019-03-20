@@ -350,11 +350,6 @@ void flb_test_apache_logs_annotated_exclude()
     kube_test_create(T_APACHE_LOGS_ANN_EXCL, KUBE_TAIL, "", STD_PARSER, 0, NULL);
 }
 
-void flb_test_apache_logs_annotated_exclude()
-{
-    kube_test_create(T_APACHE_LOGS_ANN_EXCL, KUBE_TAIL, "", STD_PARSER, NULL);
-}
-
 void flb_test_apache_logs_annotated_merge()
 {
     kube_test_create(T_APACHE_LOGS_ANN_MERGE, KUBE_TAIL, "", STD_PARSER, 1,
