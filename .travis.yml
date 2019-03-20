@@ -38,6 +38,8 @@ matrix:
     - os: osx
       env: FLB_OPT="-DFLB_JEMALLOC=Off"
       script: |
+        brew update
+        brew install bison flex || true
         ci/do-ut || true
     - os: linux
       env: FLB_OPT="-DFLB_COVERAGE=On"
