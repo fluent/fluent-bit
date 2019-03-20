@@ -53,10 +53,10 @@ static unsigned int gen_hash(const void *key, int len)
     uint32_t h = seed ^ len;
 
     /* Mix 4 bytes at a time into the hash */
-    const unsigned char *data = (const unsigned char *)key;
+    const unsigned char *data = (const unsigned char *) key;
 
-    while(len >= 4) {
-        uint32_t k = *(uint32_t*) data;
+    while (len >= 4) {
+        uint32_t k = *(uint32_t *) data;
 
         k *= m;
         k ^= k >> r;
@@ -70,10 +70,14 @@ static unsigned int gen_hash(const void *key, int len)
     }
 
     /* Handle the last few bytes of the input array  */
-    switch(len) {
-    case 3: h ^= data[2] << 16;
-    case 2: h ^= data[1] << 8;
-    case 1: h ^= data[0]; h *= m;
+    switch (len) {
+    case 3:
+        h ^= data[2] << 16;
+    case 2:
+        h ^= data[1] << 8;
+    case 1:
+        h ^= data[0];
+        h *= m;
     };
 
     /* Do a few final mixes of the hash to ensure the last few
@@ -85,7 +89,8 @@ static unsigned int gen_hash(const void *key, int len)
     return (unsigned int) h;
 }
 
-static inline void flb_hash_entry_free(struct flb_hash *ht, struct flb_hash_entry *entry)
+static inline void flb_hash_entry_free(struct flb_hash *ht,
+                                       struct flb_hash_entry *entry)
 {
     mk_list_del(&entry->_head);
     mk_list_del(&entry->_head_parent);
@@ -266,7 +271,7 @@ int flb_hash_add(struct flb_hash *ht, char *key, int key_len,
 }
 
 int flb_hash_get(struct flb_hash *ht, char *key, int key_len,
-                 char **out_buf, size_t *out_size)
+                 char **out_buf, size_t * out_size)
 {
     int id;
     unsigned int hash;
@@ -288,10 +293,10 @@ int flb_hash_get(struct flb_hash *ht, char *key, int key_len,
 
     if (table->count == 1) {
         entry = mk_list_entry_first(&table->chains,
-                                    struct flb_hash_entry,
-                                    _head);
+                                    struct flb_hash_entry, _head);
 
-        if (strncmp(entry->key, key, key_len) != 0) {
+        if (entry->key_len != key_len
+            || strncmp(entry->key, key, key_len) != 0) {
             entry = NULL;
         }
     }
@@ -304,7 +309,7 @@ int flb_hash_get(struct flb_hash *ht, char *key, int key_len,
                 continue;
             }
 
-            if (strcmp(entry->key, key) == 0) {
+            if (strncmp(entry->key, key, key_len) == 0) {
                 break;
             }
 
@@ -332,7 +337,7 @@ int flb_hash_get(struct flb_hash *ht, char *key, int key_len,
  * entries so the 'key' parameter is required to get an exact match.
  */
 int flb_hash_get_by_id(struct flb_hash *ht, int id, char *key, char **out_buf,
-                       size_t *out_size)
+                       size_t * out_size)
 {
     struct mk_list *head;
     struct flb_hash_entry *entry = NULL;
@@ -391,8 +396,7 @@ int flb_hash_del(struct flb_hash *ht, char *key)
     table = &ht->table[id];
     if (table->count == 1) {
         entry = mk_list_entry_first(&table->chains,
-                                    struct flb_hash_entry,
-                                    _head);
+                                    struct flb_hash_entry, _head);
     }
     else {
         mk_list_foreach(head, &table->chains) {
