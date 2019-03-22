@@ -7,6 +7,11 @@ set(sources
   flb_sp_parser.c
   )
 
+if(CMAKE_SYSTEM_NAME MATCHES "Windows")
+  FLB_DEFINITION(YY_NO_UNISTD_H)
+  message(STATUS "Specifying YY_NO_UNISTD_H")
+endif()
+
 include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_BINARY_DIR}
