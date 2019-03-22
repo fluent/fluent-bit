@@ -37,7 +37,9 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 
 /* don't do this at home */
 #define pack_uint16(buf, d) _msgpack_store16(buf, (uint16_t) d)
