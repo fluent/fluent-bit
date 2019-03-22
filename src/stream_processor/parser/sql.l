@@ -85,11 +85,11 @@ UNIX_TIMESTAMP          return UNIX_TIMESTAMP;
 RECORD_TAG              return RECORD_TAG;
 RECORD_TIME             return RECORD_TIME;
 
-"true"                  { yylval->boolean = true;  return BOOLEAN; };
-"false"                 { yylval->boolean = false;  return BOOLEAN; };
+"true"                  { yylval->boolean = true;  return BOOLTYPE; };
+"false"                 { yylval->boolean = false;  return BOOLTYPE; };
 
 -?[1-9][0-9]*           { yylval->integer = atoi(yytext);  return INTEGER; }
--?[1-9][0-9]*\.[0-9]+   { yylval->fval = atof(yytext); return FLOAT; }
+-?[1-9][0-9]*\.[0-9]+   { yylval->fval = atof(yytext); return FLOATING; }
 \'([^']|'{2})*\'        { yylval->string = remove_dup_qoutes(yytext + 1, yyleng - 2); return STRING; }
 [A-Za-z][A-Za-z0-9_]*	{ yylval->string = flb_strdup(yytext); return IDENTIFIER; }
 
