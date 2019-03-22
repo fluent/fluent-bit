@@ -37,7 +37,9 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 
 /* Aggr num type */
 #define FLB_SP_NUM_I64       0
