@@ -43,7 +43,7 @@ void yyerror (struct flb_sp_cmd *cmd, void *scanner, const char *str)
 %token RECORD_TAG RECORD_TIME
 
 /* Value types */
-%token INTEGER FLOAT STRING BOOLEAN
+%token INTEGER FLOATING STRING BOOLTYPE
 
 /* Logical operation tokens */
 %token AND OR NOT LT LTE GT GTE
@@ -69,9 +69,9 @@ void yyerror (struct flb_sp_cmd *cmd, void *scanner, const char *str)
 
 %type <string>     IDENTIFIER
 %type <integer>    INTEGER
-%type <fval>       FLOAT
+%type <fval>       FLOATING
 %type <string>     STRING
-%type <boolean>    BOOLEAN
+%type <boolean>    BOOLTYPE
 %type <string>     record_keys
 %type <string>     record_key
 %type <string>     alias
@@ -368,7 +368,7 @@ select: SELECT keys FROM source ';'
                      $$ = flb_sp_cmd_condition_integer(cmd, $1);
                    }
                |
-               FLOAT
+               FLOATING
                    {
                      $$ = flb_sp_cmd_condition_float(cmd, $1);
                    }
@@ -379,7 +379,7 @@ select: SELECT keys FROM source ';'
                      flb_free($1);
                    }
                |
-               BOOLEAN
+               BOOLTYPE
                    {
                      $$ = flb_sp_cmd_condition_boolean(cmd, $1);
                    }
