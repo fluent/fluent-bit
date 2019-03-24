@@ -73,6 +73,14 @@ static inline char* basename(const char *path)
 /* mk_utils.c exposes localtime_r */
 extern struct tm *localtime_r(const time_t *timep, struct tm * result);
 
+#include <monkey/mk_core/mk_sleep.h>
+
+static inline int usleep(LONGLONG usec)
+{
+    // Convert into 100ns unit.
+    return nanosleep(usec * 10);
+}
+
 #else
 #include <netdb.h>
 #include <netinet/in.h>
