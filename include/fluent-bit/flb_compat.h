@@ -46,6 +46,13 @@ static inline struct tm *gmtime_r(const time_t *timep, struct tm *result)
     return result;
 }
 
+#include <monkey/mk_core/mk_sleep.h>
+
+static inline int usleep(LONGLONG usec)
+{
+    return nanosleep(usec * 1000);
+}
+
 /* mk_utils.c exposes localtime_r */
 extern struct tm *localtime_r(const time_t *timep, struct tm * result);
 
