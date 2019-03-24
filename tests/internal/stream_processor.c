@@ -31,7 +31,11 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#ifdef _WIN32
+#include <fluent-bit/flb_compat.h>
+#else
 #include <unistd.h>
+#endif
 
 #define DATA_SAMPLES FLB_TESTS_DATA_PATH "/data/stream_processor/samples.mp"
 
