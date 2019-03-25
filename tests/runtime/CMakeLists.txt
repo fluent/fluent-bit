@@ -18,12 +18,15 @@ endmacro()
 
 # Input Plugins
 if(FLB_OUT_LIB)
-  FLB_RT_TEST(FLB_IN_CPU           "in_cpu.c")
-  FLB_RT_TEST(FLB_IN_DUMMY         "in_dummy.c")
-  FLB_RT_TEST(FLB_IN_DISK          "in_disk.c")
+  # These plugins works only on Linux
+  if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+    FLB_RT_TEST(FLB_IN_CPU           "in_cpu.c")
+    FLB_RT_TEST(FLB_IN_DISK          "in_disk.c")
+    FLB_RT_TEST(FLB_IN_MEM           "in_mem.c")
+    FLB_RT_TEST(FLB_IN_PROC          "in_proc.c")
+  endif()
   FLB_RT_TEST(FLB_IN_HEAD          "in_head.c")
-  FLB_RT_TEST(FLB_IN_MEM           "in_mem.c")
-  FLB_RT_TEST(FLB_IN_PROC          "in_proc.c")
+  FLB_RT_TEST(FLB_IN_DUMMY         "in_dummy.c")
   FLB_RT_TEST(FLB_IN_RANDOM        "in_random.c")
 endif()
 

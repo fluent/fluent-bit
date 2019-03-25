@@ -15,6 +15,12 @@ flb-rt-out_forward
 flb-rt-in_disk
 flb-rt-in_proc"
 
+# On macOS, kubernetes log directory which points to /var/log does not exist.
+if [ "$(uname)" = "Darwin" ]
+then
+    SKIP_TESTS+="flb-rt-filter_kubernetes"
+fi
+
 for skip in $SKIP_TESTS
 do
     SKIP="$SKIP -DFLB_WITHOUT_${skip}=1"
