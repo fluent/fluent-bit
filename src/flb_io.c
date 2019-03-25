@@ -383,7 +383,7 @@ static ssize_t net_io_read(struct flb_upstream_conn *u_conn,
 {
     int ret;
 
-    ret = read(u_conn->fd, buf, len);
+    ret = recv(u_conn->fd, buf, len, 0);
     if (ret == -1) {
         return -1;
     }
@@ -400,7 +400,7 @@ static FLB_INLINE ssize_t net_io_read_async(struct flb_thread *th,
 
  retry_read:
 
-    ret = read(u_conn->fd, buf, len);
+    ret = recv(u_conn->fd, buf, len, 0);
     if (ret == -1) {
         if (errno == EAGAIN) {
             u_conn->thread = th;
