@@ -171,14 +171,14 @@ void *size_time_ticker(void *args)
         flb_time_get(&ftm);
         timestamp = flb_time_to_double(&ftm);
 
-        pthread_mutex_lock(&ctx->hash->lock);
+        lock_size_throttle_table(ctx->hash);
         add_new_pane_to_each(ctx->hash, timestamp);
         delete_older_than_n_seconds(ctx->hash,
                                     ctx->window_time_duration, timestamp);
         if (ctx->print_status) {
             print_all(ctx->hash);
         }
-        pthread_mutex_unlock(&ctx->hash->lock);
+        unlock_size_throttle_table(ctx->hash);
 
         sleep(ctx->slide_interval);
     }
@@ -357,7 +357,7 @@ static inline int throttle_data_by_size(msgpack_object map,
     }
     flb_debug("[%s]Load size is %lu.", PLUGIN_NAME, load_size);
 
-    pthread_mutex_lock(&ctx->hash->lock);
+    lock_size_throttle_table(ctx->hash);
 
     window =
         find_size_throttle_window(ctx->hash, name_field_str, name_field_size);
@@ -365,7 +365,7 @@ static inline int throttle_data_by_size(msgpack_object map,
     if (window == NULL) {
         /*Since fluent-bit works on one thread and there is no chance someone to create the same window so we can unlock the mutex
            to give it to the ticker */
-        pthread_mutex_unlock(&ctx->hash->lock);
+        unlock_size_throttle_table(ctx->hash);
         current_rate = load_size / (double) ctx->window_size;
         if (current_rate - ctx->max_size_rate > RELATIVE_ERROR) {
             flb_info
@@ -386,9 +386,9 @@ static inline int throttle_data_by_size(msgpack_object map,
             ("[%s] Add %lu bytes to \"%s\" window: timestamp: %ld, total %lu",
              PLUGIN_NAME, load_size, window->name,
              window->table[window->head].timestamp, window->total);
-        pthread_mutex_lock(&ctx->hash->lock);
+        lock_size_throttle_table(ctx->hash);
         add_size_throttle_window(ctx->hash, window);
-        pthread_mutex_unlock(&ctx->hash->lock);
+        unlock_size_throttle_table(ctx->hash);
         flb_debug("[%s] New window named \"%s\" was added with load %lu.",
                   PLUGIN_NAME, window->name, load_size);
         flb_free(window);
@@ -401,7 +401,7 @@ static inline int throttle_data_by_size(msgpack_object map,
         current_rate =
             (window->total + load_size) / (double) ctx->window_size;
         if (current_rate - ctx->max_size_rate > RELATIVE_ERROR) {
-            pthread_mutex_unlock(&ctx->hash->lock);
+            unlock_size_throttle_table(ctx->hash);
             flb_info
                 ("[%s] Load is too much. The log %*.*s record will be dropped.",
                  PLUGIN_NAME, load_size, name_field_size, name_field_str);
@@ -412,7 +412,7 @@ static inline int throttle_data_by_size(msgpack_object map,
             ("[%s] Add %lu bytes to \"%s\" window: timestamp: %ld, total %lu",
              PLUGIN_NAME, load_size, window->name,
              window->table[window->head].timestamp, window->total);
-        pthread_mutex_unlock(&ctx->hash->lock);
+        unlock_size_throttle_table(ctx->hash);
         flb_debug("[%s] Load of %lu was added and the message was kept.",
                   PLUGIN_NAME, load_size);
     }

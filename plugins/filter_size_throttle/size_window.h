@@ -22,7 +22,6 @@
 #define FLB_SIZE_WINDOW_H
 
 #include <fluent-bit/flb_hash.h>
-#include <pthread.h>
 
 #define FLB_SIZE_WINDOW_HASH_MAX_ENTRIES 100000
 
@@ -46,7 +45,7 @@ struct size_throttle_window
 struct size_throttle_table
 {
     struct flb_hash *windows;
-    pthread_mutex_t lock;
+    void *lock;
 };
 
 struct size_throttle_table *create_size_throttle_table();
@@ -135,5 +134,8 @@ inline static void add_size_throttle_window(struct size_throttle_table
 }
 
 void destroy_size_throttle_table(struct size_throttle_table *table);
+
+void lock_size_throttle_table(struct size_throttle_table *ht);
+void unlock_size_throttle_table(struct size_throttle_table *ht);
 
 #endif

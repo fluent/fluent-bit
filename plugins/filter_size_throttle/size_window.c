@@ -27,6 +27,14 @@
 
 #include "size_window.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#elif _M_X64
+#include <windows.h>
+#else
+#include <pthread.h>
+#endif
+
 /*This function create a new size throttling window named @name with @size number of panes.
   The total amount of entries is 0 with timestamp set according of the current system time.
   The name of the window is null terminated. The length of the name @name_lenght is used
@@ -83,6 +91,90 @@ struct size_throttle_window *size_window_create(const char *name,
     return stw;
 }
 
+static inline void *create_lock()
+{
+#ifdef _WIN32
+    HANDLE lock = CreateMutex(NULL,     // default security attributes
+                              FALSE,    // initially not owned
+                              NULL);    // unnamed mutex
+    if (lock == NULL) {
+        flb_error("CreateMutex error: %d\n", GetLastError());
+        return NULL;
+    }
+    return lock;
+#elif _M_X64
+    HANDLE lock = CreateMutex(NULL,     // default security attributes
+                              FALSE,    // initially not owned
+                              NULL);    // unnamed mutex
+    if (lock == NULL) {
+        flb_error("CreateMutex error: %d\n", GetLastError());
+        return NULL;
+    }
+    return lock;
+#else
+    pthread_mutex_t *lock = flb_malloc(sizeof(pthread_mutex_t));
+    if (!lock) {
+        return NULL;
+    }
+    if (pthread_mutex_init(lock, NULL) != 0) {
+        flb_errno();
+        return NULL;
+    }
+    return lock;
+#endif
+}
+
+void lock_size_throttle_table(struct size_throttle_table *ht)
+{
+#ifdef _WIN32
+    DWORD dwWaitResult = WaitForSingleObject(ht->lock,  // handle to mutex
+                                             INFINITE); // no time-out interval
+    if (WAIT_ABANDONED == dwWaitResult) {
+        flb_warn
+            ("[filter_size_throttle]The thread got ownership of an abandoned mutex\nThe size_throttle_table is in an indeterminate state");
+    }
+#elif _M_X64
+    DWORD dwWaitResult = WaitForSingleObject(ht->lock,  // handle to mutex
+                                             INFINITE); // no time-out interval
+    if (WAIT_ABANDONED == dwWaitResult) {
+        flb_warn
+            ("[filter_size_throttle]The thread got ownership of an abandoned mutex\nThe size_throttle_table is in an indeterminate state");
+    }
+#else
+    pthread_mutex_lock(ht->lock);
+#endif
+}
+
+void unlock_size_throttle_table(struct size_throttle_table *ht)
+{
+#ifdef _WIN32
+    if (!ReleaseMutex(ht->lock)) {
+        flb_warn
+            ("[filter_size_throttle]Unable to release the ownership of size_throttle_table mutex!");
+    }
+#elif _M_X64
+    if (!ReleaseMutex(ht->lock)) {
+        flb_warn
+            ("[filter_size_throttle]Unable to release the ownership of size_throttle_table mutex!");
+    }
+#else
+    pthread_mutex_unlock(ht->lock);
+#endif
+}
+
+static inline void destroy_size_throttle_table_lock(struct size_throttle_table
+                                                    *ht)
+{
+#ifdef _WIN32
+    CloseHandle(ht->lock);
+#elif _M_X64
+    CloseHandle(ht->lock);
+#else
+    pthread_mutex_destroy(ht->lock);
+    flb_free(ht->lock);
+#endif
+}
+
 struct size_throttle_table *create_size_throttle_table(size_t size)
 {
     struct size_throttle_table *table;
@@ -98,8 +190,8 @@ struct size_throttle_table *create_size_throttle_table(size_t size)
         flb_free(table);
         return NULL;
     }
-    if (pthread_mutex_init(&table->lock, NULL) != 0) {
-        flb_errno();
+    table->lock = create_lock();
+    if (!table->lock) {
         flb_free(table);
         return NULL;
     }
@@ -128,7 +220,7 @@ void destroy_size_throttle_table(struct size_throttle_table *ht)
             flb_free(entry);
         }
     }
-    pthread_mutex_destroy(&ht->lock);
+    destroy_size_throttle_table_lock(ht);
     flb_free(ht->windows->table);
     flb_free(ht->windows);
     flb_free(ht);
