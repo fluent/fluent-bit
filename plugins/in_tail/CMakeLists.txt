@@ -8,4 +8,8 @@ set(src
   tail_fs.c
   tail.c)
 
+if(MSVC)
+FLB_PLUGIN(in_tail "${src}" "Shlwapi")
+else()
 FLB_PLUGIN(in_tail "${src}" "")
+endif()
