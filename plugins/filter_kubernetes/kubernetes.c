@@ -316,6 +316,10 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
         new_map_size += log_buf_entries;
     }
 
+    if (merge_status == MERGE_PARSED && ctx->keep_log == FLB_FALSE) {
+        new_map_size--;
+    }
+
     msgpack_pack_map(pck, new_map_size);
 
     /* Original map */
@@ -330,9 +334,11 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
          */
         if (log_index == i &&
             (merge_status == MERGE_UNESCAPED || merge_status == MERGE_PARSED)) {
-            msgpack_pack_object(pck, k);
-            msgpack_pack_str(pck, ctx->unesc_buf_len);
-            msgpack_pack_str_body(pck, ctx->unesc_buf, ctx->unesc_buf_len);
+            if (merge_status == MERGE_UNESCAPED || ctx->keep_log == FLB_TRUE) {
+                msgpack_pack_object(pck, k);
+                msgpack_pack_str(pck, ctx->unesc_buf_len);
+                msgpack_pack_str_body(pck, ctx->unesc_buf, ctx->unesc_buf_len);
+            }
         }
         else { /* MERGE_BINARY ? */
             msgpack_pack_object(pck, k);

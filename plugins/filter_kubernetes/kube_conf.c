@@ -52,6 +52,7 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
     }
     ctx->config = config;
     ctx->merge_log = FLB_FALSE;
+    ctx->keep_log = FLB_TRUE;
     ctx->labels = FLB_TRUE;
     ctx->annotations = FLB_TRUE;
     ctx->dummy_meta = FLB_FALSE;
@@ -116,6 +117,12 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
     }
     else {
         ctx->merge_log_trim = FLB_TRUE;
+    }
+
+    /* Keep original log key after successful parsing */
+    tmp = flb_filter_get_property("keep_log", i);
+    if (tmp) {
+        ctx->keep_log = flb_utils_bool(tmp);
     }
 
     /* Get Kubernetes API server */
