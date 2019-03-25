@@ -595,31 +595,47 @@ if(FLB_TESTS_INTERNAL)
   add_subdirectory(tests/internal/)
 endif()
 
+# Installer Generation (Cpack)
+# ============================
 
-### CPACK / RPM
+if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
+  set(CPACK_GENERATOR "NSIS")
+else()
+  set(CPACK_GENERATOR "RPM")
+endif()
+
 set(CPACK_PACKAGE_VERSION ${FLB_VERSION_STR})
-set(CPACK_GENERATOR "RPM")
 set(CPACK_PACKAGE_NAME "td-agent-bit")
 set(CPACK_PACKAGE_RELEASE 1)
 set(CPACK_PACKAGE_CONTACT "Eduardo Silva <eduardo@treasure-data.com>")
 set(CPACK_PACKAGE_VENDOR "Treasure Data")
 set(CPACK_PACKAGING_INSTALL_PREFIX "/opt/td-agent-bit")
 set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CPACK_PACKAGE_RELEASE}.${CMAKE_SYSTEM_PROCESSOR}")
-set(CPACK_RPM_PACKAGE_GROUP "System Environment/Daemons")
-set(CPACK_RPM_PACKAGE_LICENSE "Apache v2.0")
-set(CPACK_RPM_PACKAGE_RELEASE ${CPACK_PACKAGE_RELEASE})
-set(CPACK_PACKAGE_DESCRIPTION_FILE "${PROJECT_SOURCE_DIR}/cpack/description")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Fast data collector for Linux")
-set(CPACK_RPM_SPEC_MORE_DEFINE "%define ignore \#")
-set(CPACK_RPM_USER_FILELIST
-	"%ignore /lib"
-	"%ignore /lib/systemd"
-	"%ignore /lib/systemd/system"
-	"%ignore /lib64"
-	"%ignore /lib64/pkgconfig"
-	"%ignore /usr/local"
-	"%ignore /usr/local/bin"
-	"%ignore /opt"
-	"%ignore /etc")
+set(CPACK_RESOURCE_FILE_LICENSE "${PROJECT_SOURCE_DIR}/LICENSE")
 set(CPACK_PACKAGING_INSTALL_PREFIX "/")
+
+if(CPACK_GENERATOR MATCHES "RPM")
+  set(CPACK_RPM_PACKAGE_GROUP "System Environment/Daemons")
+  set(CPACK_RPM_PACKAGE_LICENSE "Apache v2.0")
+  set(CPACK_RPM_PACKAGE_RELEASE ${CPACK_PACKAGE_RELEASE})
+  set(CPACK_PACKAGE_DESCRIPTION_FILE "${PROJECT_SOURCE_DIR}/cpack/description")
+  set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Fast data collector for Linux")
+  set(CPACK_RPM_SPEC_MORE_DEFINE "%define ignore \#")
+  set(CPACK_RPM_USER_FILELIST
+      "%ignore /lib"
+      "%ignore /lib/systemd"
+      "%ignore /lib/systemd/system"
+      "%ignore /lib64"
+      "%ignore /lib64/pkgconfig"
+      "%ignore /usr/local"
+      "%ignore /usr/local/bin"
+      "%ignore /opt"
+      "%ignore /etc")
+endif()
+
+if(CPACK_GENERATOR MATCHES "NSIS")
+  set(CPACK_MONOLITHIC_INSTALL 1)
+  set(CPACK_PACKAGE_INSTALL_DIRECTORY "td-agent-bit")
+endif()
+
 include(CPack)
