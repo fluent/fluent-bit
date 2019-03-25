@@ -95,6 +95,7 @@ int flb_tail_db_file_set(struct flb_tail_file *file,
     int ret;
     char query[PATH_MAX];
     struct query_status qs = {0};
+    uint64_t created;
 
     /* Check if the file exists */
     snprintf(query, sizeof(query) - 1,
@@ -107,9 +108,10 @@ int flb_tail_db_file_set(struct flb_tail_file *file,
 
     if (qs.rows == 0) {
         /* Register the file */
+        created = time(NULL);
         snprintf(query, sizeof(query) - 1,
                  SQL_INSERT_FILE,
-                 file->name, 0UL, file->inode, time(NULL));
+                 file->name, (uint64_t) 0, (uint64_t) file->inode, created);
         ret = flb_sqldb_query(ctx->db, query, NULL, NULL);
         if (ret == FLB_ERROR) {
             return -1;
@@ -134,7 +136,7 @@ int flb_tail_db_file_offset(struct flb_tail_file *file,
 
     snprintf(query, sizeof(query) - 1,
              SQL_UPDATE_OFFSET,
-             file->offset, file->db_id);
+             (uint64_t) file->offset, file->db_id);
 
     ret = flb_sqldb_query(ctx->db,
                           query, NULL, NULL);
