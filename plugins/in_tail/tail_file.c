@@ -41,6 +41,28 @@
 #include "tail_multiline.h"
 #include "tail_scan.h"
 
+#ifdef _MSC_VER
+static int get_inode(int fd, uint64_t *inode)
+{
+    HANDLE h;
+    BY_HANDLE_FILE_INFORMATION info;
+
+    h = _get_osfhandle(fd);
+    if (h == INVALID_HANDLE_VALUE) {
+        flb_error("[in_tail] cannot convert fd:%i into HANDLE", fd);
+        return -1;
+    }
+
+    if (GetFileInformationByHandle(h, &info) == 0) {
+        flb_error("[in_tail] cannot get file info for fd:%i", fd);
+        return -1;
+    }
+    *inode = (uint64_t) info.nFileIndexHigh;
+    *inode = *inode << 32 | info.nFileIndexLow;
+    return 0;
+}
+#endif
+
 static inline void consume_bytes(char *buf, int bytes, int length)
 {
     memmove(buf, buf + bytes, length - bytes);
@@ -615,8 +637,16 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         return -1;
     }
 
-    file->offset    = 0;
+#ifdef _MSC_VER
+    if (get_inode(fd, &file->inode)) {
+        close(fd);
+        flb_free(file);
+        return -1;
+    }
+#else
     file->inode     = st->st_ino;
+#endif
+    file->offset    = 0;
     file->size      = st->st_size;
     file->buf_len   = 0;
     file->parsed    = 0;
