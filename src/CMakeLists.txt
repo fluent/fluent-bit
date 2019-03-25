@@ -217,8 +217,8 @@ if(FLB_SHARED_LIB)
 
   # Library install routines
   install(TARGETS fluent-bit-shared
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    LIBRARY DESTINATION ${FLB_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${FLB_INSTALL_BINDIR})
 endif()
 
 # Static Library
@@ -265,7 +265,7 @@ if(FLB_BINARY)
     PROPERTIES
     OUTPUT_NAME ${FLB_OUT_NAME}
     ENABLE_EXPORTS ON)
-  install(TARGETS fluent-bit-bin RUNTIME DESTINATION ${CMAKE_INSTALL_FULL_BINDIR})
+  install(TARGETS fluent-bit-bin RUNTIME DESTINATION ${FLB_INSTALL_BINDIR})
 
   # Detect init system, install upstart, systemd or init.d script
   if(IS_DIRECTORY /lib/systemd/system)
@@ -275,7 +275,7 @@ if(FLB_BINARY)
       ${FLB_SYSTEMD_SCRIPT}
       )
     install(FILES ${FLB_SYSTEMD_SCRIPT} DESTINATION /lib/systemd/system)
-    install(DIRECTORY DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/")
+    install(DIRECTORY DESTINATION ${FLB_INSTALL_CONFDIR})
   elseif(IS_DIRECTORY /usr/share/upstart)
     set(FLB_UPSTART_SCRIPT "${PROJECT_SOURCE_DIR}/init/${FLB_OUT_NAME}.conf")
     configure_file(
@@ -283,22 +283,22 @@ if(FLB_BINARY)
       ${FLB_UPSTART_SCRIPT}
       )
     install(FILES ${FLB_UPSTART_SCRIPT} DESTINATION /etc/init)
-    install(DIRECTORY DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/")
+    install(DIRECTORY DESTINATION ${FLB_INSTALL_CONFDIR})
   else()
     # FIXME: should we support Sysv init script ?
   endif()
 
   install(FILES
     "${PROJECT_SOURCE_DIR}/conf/fluent-bit.conf"
-    DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/"
+    DESTINATION ${FLB_INSTALL_CONFDIR}
     RENAME "${FLB_OUT_NAME}.conf")
 
   install(FILES
     "${PROJECT_SOURCE_DIR}/conf/parsers.conf"
-    DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/")
+    DESTINATION ${FLB_INSTALL_CONFDIR})
 
   install(FILES
     "${PROJECT_SOURCE_DIR}/conf/plugins.conf"
-    DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/")
+    DESTINATION ${FLB_INSTALL_CONFDIR})
 
 endif()

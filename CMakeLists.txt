@@ -576,6 +576,18 @@ configure_file(
   "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_version.h"
   )
 
+# Installation Directories
+# ========================
+if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
+  set(FLB_INSTALL_BINDIR "bin")
+  set(FLB_INSTALL_LIBDIR "lib")
+  set(FLB_INSTALL_CONFDIR "conf")
+else()
+  set(FLB_INSTALL_BINDIR ${CMAKE_INSTALL_FULL_BINDIR})
+  set(FLB_INSTALL_LIBDIR ${CMAKE_INSTALL_LIBDIR})
+  set(FLB_INSTALL_CONFDIR "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/")
+endif()
+
 # Instruct CMake to build the Fluent Bit Core
 add_subdirectory(include)
 add_subdirectory(plugins)
