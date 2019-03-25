@@ -394,7 +394,7 @@ int flb_sched_timer_cb_disable(struct flb_sched_timer *timer)
 {
     int ret;
 
-    ret = close(timer->timer_fd);
+    ret = mk_event_closesocket(timer->timer_fd);
     timer->timer_fd = -1;
     return ret;
 }
