@@ -95,6 +95,9 @@ struct flb_kube {
     int merge_log_key_len;
     char *merge_log_key;
 
+    /* Keep original log key after successful parsing */
+    int keep_log;
+
     /* API Server end point */
     char kube_url[1024];
 
