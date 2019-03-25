@@ -187,6 +187,20 @@ if(CMAKE_SYSTEM_NAME MATCHES "Windows")
   include(cmake/windows-setup.cmake)
 endif()
 
+# Tweak build targets for macOS
+if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
+    execute_process(
+    COMMAND brew --prefix
+    RESULT_VARIABLE HOMEBREW
+    OUTPUT_VARIABLE HOMEBREW_PREFIX
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+  if (HOMEBREW EQUAL 0 AND EXISTS "${HOMEBREW_PREFIX}")
+    message(STATUS "Found Homebrew at ${HOMEBREW_PREFIX}")
+    include(cmake/homebrew.cmake)
+  endif()
+endif()
+
 if(FLB_COVERAGE)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 --coverage -fprofile-arcs -ftest-coverage")
   set(CMAKE_BUILD_TYPE "Debug")
