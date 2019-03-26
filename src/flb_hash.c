@@ -396,7 +396,11 @@ int flb_hash_del(struct flb_hash *ht, char *key)
     table = &ht->table[id];
     if (table->count == 1) {
         entry = mk_list_entry_first(&table->chains,
-                                    struct flb_hash_entry, _head);
+                                    struct flb_hash_entry,
+                                    _head);
+        if (strcmp(entry->key, key) != 0) {
+            entry = NULL;
+        }
     }
     else {
         mk_list_foreach(head, &table->chains) {
