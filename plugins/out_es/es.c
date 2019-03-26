@@ -414,7 +414,7 @@ static char *elasticsearch_format(void *data, size_t bytes,
      */
     flb_free(bulk);
     if (ctx->trace_output) {
-        printf("%s", buf);
+        fwrite(buf, 1, *out_size, stdout);
         fflush(stdout);
     }
     return buf;
