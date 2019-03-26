@@ -3,6 +3,12 @@ project(fluent-bit)
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+# Define macro to identify Windows system (without Cygwin)
+if(CMAKE_SYSTEM_NAME MATCHES "Windows")
+  set(FLB_SYSTEM_WINDOWS On)
+  add_definitions(-DFLB_SYSTEM_WINDOWS)
+endif()
+
 # Update CFLAGS
 if (MSVC)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4")
