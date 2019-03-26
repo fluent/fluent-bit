@@ -45,6 +45,7 @@ static void condition_free(struct modify_condition *condition)
     if (condition->b_is_regex) {
         flb_regex_destroy(condition->b_regex);
     }
+    flb_free(condition);
 }
 
 static void teardown(struct filter_modify_ctx *ctx)
@@ -132,6 +133,7 @@ static int setup(struct filter_modify_ctx *ctx,
 
             condition = flb_calloc(1, sizeof(struct modify_condition));
             if (!condition) {
+                flb_errno();
                 flb_error("[filter_modify] Unable to allocate memory for "
                           "condition");
                 teardown(ctx);
