@@ -26,13 +26,13 @@ static int cb_check_result(void *record, size_t size, void *data)
         flb_error("Expected to find: '%s' in result '%s'",
                   expected, result);
     }
-    flb_free(record);
-
     /*
      * If you want to debug your test
      *
      * printf("Expect: '%s' in result '%s'", expected, result);
      */
+
+    flb_free(record);
     return 0;
 }
 
@@ -1004,6 +1004,65 @@ static void flb_test_cond_matching_keys_do_not_have_matching_values()
     filter_test_destroy(ctx);
 }
 
+/* Test all operations */
+static void flb_test_cond_chain()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "condition", "key_exists k1",
+                         "condition", "key_does_not_exist k2",
+                         "add", "k2 sample_2",
+                         "condition", "a_key_matches ^[a-z]1$",
+                         "add", "k3 3",
+                         "condition", "no_key_matches ^[0-9]$",
+                         "condition", "key_value_equals k1 sample",
+                         "add", "k4 4",
+                         "condition", "key_value_does_not_equal k1 sampl",
+                         "condition", "key_value_matches k1 ^[a-z]+$",
+                         "condition", "key_value_does_not_match k1 aa",
+
+                         "condition",
+                         "matching_keys_have_matching_values " \
+                         "^[a-z][0-9]$ ^[a-z]+$",
+
+                         "condition",
+                         "matching_keys_do_not_have_matching_values "   \
+                         "^[a-z][0-9]$ ^[a-z][0-9]$",
+
+                         "add", "k5 5",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = "\"k5\":\"5\"";
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    p = "[0, {\"k1\":\"sample\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    filter_test_destroy(ctx);
+}
+
 TEST_LIST = {
     /* Operations / Commands */
     {"op_set_append"            , flb_test_op_set_append },
@@ -1034,5 +1093,6 @@ TEST_LIST = {
     {"cond_matching_keys_do_not_have_matching_values",
      flb_test_cond_matching_keys_do_not_have_matching_values },
 
+    {"cond_chain", flb_test_cond_chain },
     {NULL, NULL}
 };
