@@ -7,8 +7,7 @@ platform:
   - x64
 
 configuration:
-  - Debug
-  # - Release # TODO
+  - Release
 
 before_build:
   - cmd: if "%platform%"=="Win32" set msvc=Visual Studio 15 2017
@@ -16,3 +15,9 @@ before_build:
 
 build_script:
   - powershell ".\ci\do-ut.ps1;exit $LASTEXITCODE"
+  - cd build
+  - cpack -C "%configuration%"
+
+artifacts:
+  - path: build/td-agent-bit-*.exe
+    name: td-agent-bit
