@@ -36,15 +36,15 @@
 #endif
 
 /*This function create a new size throttling window named @name with @size number of panes.
-  The total amount of entries is 0 with timestamp set according of the current system time.
+  The total amount of entries is 0 with timestamp set according to the current system time.
   The name of the window is null terminated. The length of the name @name_lenght is used
   for optimization when you use strings longer than the name you want. Otherwise use strlen(@name)
-  when such thing is no needed.*/
-struct size_throttle_window *size_window_create(const char *name,
+  when such thing is not needed.*/
+struct throttle_size_window *size_window_create(const char *name,
                                                 unsigned name_length,
                                                 unsigned int size)
 {
-    struct size_throttle_window *stw;
+    struct throttle_size_window *stw;
     struct flb_time ftm;
     int i;
 
@@ -52,7 +52,7 @@ struct size_throttle_window *size_window_create(const char *name,
         return NULL;
     }
 
-    stw = flb_malloc(sizeof(struct size_throttle_window));
+    stw = flb_malloc(sizeof(struct throttle_size_window));
     if (!stw) {
         flb_errno();
         return NULL;
@@ -62,7 +62,7 @@ struct size_throttle_window *size_window_create(const char *name,
     stw->total = 0;
     stw->head = size - 1;
     stw->tail = 0;
-    stw->table = flb_calloc(size, sizeof(struct size_throttle_pane));
+    stw->table = flb_calloc(size, sizeof(struct throttle_size_pane));
     if (!stw->table) {
         flb_errno();
         flb_free(stw);
@@ -86,7 +86,7 @@ struct size_throttle_window *size_window_create(const char *name,
         stw->table[i].size = 0;
     }
     flb_debug
-        ("[filter_size_throttle] New size throttling window named \"%s\" was created.",
+        ("[filter_throttle_size] New size throttling window named \"%s\" was created.",
          stw->name);
     return stw;
 }
@@ -124,45 +124,45 @@ static inline void *create_lock()
 #endif
 }
 
-void lock_size_throttle_table(struct size_throttle_table *ht)
+void lock_throttle_size_table(struct throttle_size_table *ht)
 {
 #ifdef _WIN32
     DWORD dwWaitResult = WaitForSingleObject(ht->lock,  // handle to mutex
                                              INFINITE); // no time-out interval
     if (WAIT_ABANDONED == dwWaitResult) {
         flb_warn
-            ("[filter_size_throttle]The thread got ownership of an abandoned mutex\nThe size_throttle_table is in an indeterminate state");
+            ("[filter_throttle_size]The thread got ownership of an abandoned mutex\nThe throttle_size_table is in an indeterminate state");
     }
 #elif _M_X64
     DWORD dwWaitResult = WaitForSingleObject(ht->lock,  // handle to mutex
                                              INFINITE); // no time-out interval
     if (WAIT_ABANDONED == dwWaitResult) {
         flb_warn
-            ("[filter_size_throttle]The thread got ownership of an abandoned mutex\nThe size_throttle_table is in an indeterminate state");
+            ("[filter_throttle_size]The thread got ownership of an abandoned mutex\nThe throttle_size_table is in an indeterminate state");
     }
 #else
     pthread_mutex_lock(ht->lock);
 #endif
 }
 
-void unlock_size_throttle_table(struct size_throttle_table *ht)
+void unlock_throttle_size_table(struct throttle_size_table *ht)
 {
 #ifdef _WIN32
     if (!ReleaseMutex(ht->lock)) {
         flb_warn
-            ("[filter_size_throttle]Unable to release the ownership of size_throttle_table mutex!");
+            ("[filter_throttle_size]Unable to release the ownership of throttle_size_table mutex!");
     }
 #elif _M_X64
     if (!ReleaseMutex(ht->lock)) {
         flb_warn
-            ("[filter_size_throttle]Unable to release the ownership of size_throttle_table mutex!");
+            ("[filter_throttle_size]Unable to release the ownership of throttle_size_table mutex!");
     }
 #else
     pthread_mutex_unlock(ht->lock);
 #endif
 }
 
-static inline void destroy_size_throttle_table_lock(struct size_throttle_table
+static inline void destroy_throttle_size_table_lock(struct throttle_size_table
                                                     *ht)
 {
 #ifdef _WIN32
@@ -175,10 +175,10 @@ static inline void destroy_size_throttle_table_lock(struct size_throttle_table
 #endif
 }
 
-struct size_throttle_table *create_size_throttle_table(size_t size)
+struct throttle_size_table *create_throttle_size_table(size_t size)
 {
-    struct size_throttle_table *table;
-    table = flb_malloc(sizeof(struct size_throttle_table));
+    struct throttle_size_table *table;
+    table = flb_malloc(sizeof(struct throttle_size_table));
     if (!table) {
         return NULL;
     }
@@ -198,7 +198,7 @@ struct size_throttle_table *create_size_throttle_table(size_t size)
     return table;
 }
 
-void destroy_size_throttle_table(struct size_throttle_table *ht)
+void destroy_throttle_size_table(struct throttle_size_table *ht)
 {
     int i;
     struct mk_list *tmp;
@@ -210,7 +210,7 @@ void destroy_size_throttle_table(struct size_throttle_table *ht)
         table = &ht->windows->table[i];
         mk_list_foreach_safe(head, tmp, &table->chains) {
             entry = mk_list_entry(head, struct flb_hash_entry, _head);
-            free_stw_content((struct size_throttle_window *) entry->val);
+            free_stw_content((struct throttle_size_window *) entry->val);
             mk_list_del(&entry->_head);
             mk_list_del(&entry->_head_parent);
             entry->table->count--;
@@ -220,7 +220,7 @@ void destroy_size_throttle_table(struct size_throttle_table *ht)
             flb_free(entry);
         }
     }
-    destroy_size_throttle_table_lock(ht);
+    destroy_throttle_size_table_lock(ht);
     flb_free(ht->windows->table);
     flb_free(ht->windows);
     flb_free(ht);

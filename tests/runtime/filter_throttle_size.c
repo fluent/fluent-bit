@@ -57,10 +57,10 @@ void test_default_log_field(void);
 /* Test list */
 TEST_LIST = {
     {
-    "size_throttle", flb_test_simple_log}, {
-    "size_throttle2", test_nestest_name_fields}, {
-    "size_throttle3", test_default_name_field}, {
-    "size_throttle4", test_default_log_field}, {
+    "throttle_size", flb_test_simple_log}, {
+    "throttle_size2", test_nestest_name_fields}, {
+    "throttle_size3", test_default_name_field}, {
+    "throttle_size4", test_default_log_field}, {
     NULL, NULL}
 };
 
@@ -86,7 +86,7 @@ char *get_output(void)
 int callback_test(void *data, size_t size, void *cb_data)
 {
     if (size > 0) {
-        flb_debug("[test_filter_size_throttle] received message: %s", data);
+        flb_debug("[test_filter_throttle_size] received message: %s", data);
         set_output(data);       /* success */
     }
     return 0;
@@ -122,7 +122,7 @@ void flb_test_simple_log(void)
     TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "Match", "*", "format", "json", NULL);
 
-    filter_ffd = flb_filter(ctx, (char *) "size_throttle", NULL);
+    filter_ffd = flb_filter(ctx, (char *) "throttle_size", NULL);
     TEST_CHECK(filter_ffd >= 0);
     ret = flb_filter_set(ctx, filter_ffd, "match", "*", NULL);
     TEST_CHECK(ret == 0);
@@ -248,7 +248,7 @@ void test_nestest_name_fields(void)
     TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "Match", "*", "format", "json", NULL);
 
-    filter_ffd = flb_filter(ctx, (char *) "size_throttle", NULL);
+    filter_ffd = flb_filter(ctx, (char *) "throttle_size", NULL);
     TEST_CHECK(filter_ffd >= 0);
     ret = flb_filter_set(ctx, filter_ffd, "match", "*", NULL);
     TEST_CHECK(ret == 0);
@@ -406,7 +406,7 @@ void test_default_name_field(void)
     TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "Match", "*", "format", "json", NULL);
 
-    filter_ffd = flb_filter(ctx, (char *) "size_throttle", NULL);
+    filter_ffd = flb_filter(ctx, (char *) "throttle_size", NULL);
     TEST_CHECK(filter_ffd >= 0);
     ret = flb_filter_set(ctx, filter_ffd, "match", "*", NULL);
     TEST_CHECK(ret == 0);
@@ -510,7 +510,7 @@ void test_default_log_field(void)
     TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "Match", "*", "format", "json", NULL);
 
-    filter_ffd = flb_filter(ctx, (char *) "size_throttle", NULL);
+    filter_ffd = flb_filter(ctx, (char *) "throttle_size", NULL);
     TEST_CHECK(filter_ffd >= 0);
     ret = flb_filter_set(ctx, filter_ffd, "match", "*", NULL);
     TEST_CHECK(ret == 0);

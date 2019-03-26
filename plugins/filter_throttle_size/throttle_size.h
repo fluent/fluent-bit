@@ -22,22 +22,22 @@
 #define FLB_SIZE_FILTER_THROTTLE_H
 
 /* actions */
-#define SIZE_THROTTLE_RET_KEEP  0
-#define SIZE_THROTTLE_RET_DROP  1
+#define throttle_size_RET_KEEP  0
+#define throttle_size_RET_DROP  1
 
 /* defaults */
-#define SIZE_THROTTLE_DEFAULT_RATE  1024*1024   //bytes
-#define SIZE_THROTTLE_DEFAULT_WINDOW  5
-#define SIZE_THROTTLE_DEFAULT_INTERVAL  1
-#define SIZE_THROTTLE_DEFAULT_STATUS FLB_FALSE;
-#define SIZE_THROTTLE_DEFAULT_LOG_FIELD  "*"
-#define SIZE_THROTTLE_DEFAULT_NAME_FIELD  "*"
-#define SIZE_THROTTLE_DEFAULT_WINDOW_DURATION 60
-#define SIZE_THROTTLE_WINDOW_TABLE_DEFAULT_SIZE 256
+#define throttle_size_DEFAULT_RATE  1024*1024   //bytes
+#define throttle_size_DEFAULT_WINDOW  5
+#define throttle_size_DEFAULT_INTERVAL  1
+#define throttle_size_DEFAULT_STATUS FLB_FALSE;
+#define throttle_size_DEFAULT_LOG_FIELD  "*"
+#define throttle_size_DEFAULT_NAME_FIELD  "*"
+#define throttle_size_DEFAULT_WINDOW_DURATION 60
+#define throttle_size_WINDOW_TABLE_DEFAULT_SIZE 256
 
 #include "size_window.h"
 
-struct flb_filter_size_throttle_ctx
+struct flb_filter_throttle_size_ctx
 {
     double max_size_rate;
     unsigned int window_size;
@@ -51,7 +51,7 @@ struct flb_filter_size_throttle_ctx
     volatile bool done;
     int print_status;
     /* internal */
-    struct size_throttle_table *hash;
+    struct throttle_size_table *hash;
 };
 
 #endif

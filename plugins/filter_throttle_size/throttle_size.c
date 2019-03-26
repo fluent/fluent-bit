@@ -32,10 +32,10 @@
 #include <msgpack.h>
 #include "stdlib.h"
 
-#include "size_throttle.h"
+#include "throttle_size.h"
 
 #undef PLUGIN_NAME
-#define PLUGIN_NAME "filter_size_throttle"
+#define PLUGIN_NAME "filter_throttle_size"
 #define RELATIVE_ERROR 0.001
 #define KEY_DEPTH 20
 #define SPLIT_DELIMITER '|'
@@ -75,12 +75,12 @@ static bool apply_suffix(double *x, char suffix_char)
 }
 
 /*add_new_pane_to_each will overides the oldes window pane with zero load and with new timestamp make it the newest. */
-inline static void add_new_pane_to_each(struct size_throttle_table *ht,
+inline static void add_new_pane_to_each(struct throttle_size_table *ht,
                                         double timestamp)
 {
     struct mk_list *head;
     struct flb_hash_entry *entry;
-    struct size_throttle_window *current_window;
+    struct throttle_size_window *current_window;
     struct flb_time ftm;
 
     if (!timestamp) {
@@ -89,7 +89,7 @@ inline static void add_new_pane_to_each(struct size_throttle_table *ht,
     }
     mk_list_foreach(head, &ht->windows->entries) {
         entry = mk_list_entry(head, struct flb_hash_entry, _head_parent);
-        current_window = (struct size_throttle_window *) (entry->val);
+        current_window = (struct throttle_size_window *) (entry->val);
         add_new_pane(current_window, timestamp);
         flb_debug
             ("[%s] Add new pane to \"%s\" window: timestamp: %ld, total %lu",
@@ -99,7 +99,7 @@ inline static void add_new_pane_to_each(struct size_throttle_table *ht,
     }
 }
 
-inline static void delete_older_than_n_seconds(struct size_throttle_table *ht,
+inline static void delete_older_than_n_seconds(struct throttle_size_table *ht,
                                                long seconds,
                                                double current_timestamp)
 {
@@ -108,7 +108,7 @@ inline static void delete_older_than_n_seconds(struct size_throttle_table *ht,
     struct mk_list *head;
     struct flb_hash_entry *entry;
     struct flb_hash_table *table;
-    struct size_throttle_window *current_window;
+    struct throttle_size_window *current_window;
     struct flb_time ftm;
     long time_treshold;
 
@@ -122,7 +122,7 @@ inline static void delete_older_than_n_seconds(struct size_throttle_table *ht,
         table = &ht->windows->table[i];
         mk_list_foreach_safe(head, tmp, &table->chains) {
             entry = mk_list_entry(head, struct flb_hash_entry, _head);
-            current_window = (struct size_throttle_window *) entry->val;
+            current_window = (struct throttle_size_window *) entry->val;
 
             if (time_treshold > current_window->timestamp) {
                 free_stw_content(current_window);
@@ -143,15 +143,15 @@ inline static void delete_older_than_n_seconds(struct size_throttle_table *ht,
     }
 }
 
-inline static void print_all(struct size_throttle_table *ht)
+inline static void print_all(struct throttle_size_table *ht)
 {
     struct mk_list *head;
     struct flb_hash_entry *entry;
-    struct size_throttle_window *current_window;
+    struct throttle_size_window *current_window;
 
     mk_list_foreach(head, &ht->windows->entries) {
         entry = mk_list_entry(head, struct flb_hash_entry, _head_parent);
-        current_window = (struct size_throttle_window *) entry->val;
+        current_window = (struct throttle_size_window *) entry->val;
         printf("[%s] Name %s\n", PLUGIN_NAME, current_window->name);
         printf("[%s] Timestamp %ld\n", PLUGIN_NAME,
                current_window->timestamp);
@@ -163,7 +163,7 @@ inline static void print_all(struct size_throttle_table *ht)
 
 void *size_time_ticker(void *args)
 {
-    struct flb_filter_size_throttle_ctx *ctx = args;
+    struct flb_filter_throttle_size_ctx *ctx = args;
     struct flb_time ftm;
     long timestamp;
 
@@ -171,14 +171,14 @@ void *size_time_ticker(void *args)
         flb_time_get(&ftm);
         timestamp = flb_time_to_double(&ftm);
 
-        lock_size_throttle_table(ctx->hash);
+        lock_throttle_size_table(ctx->hash);
         add_new_pane_to_each(ctx->hash, timestamp);
         delete_older_than_n_seconds(ctx->hash,
                                     ctx->window_time_duration, timestamp);
         if (ctx->print_status) {
             print_all(ctx->hash);
         }
-        unlock_size_throttle_table(ctx->hash);
+        unlock_throttle_size_table(ctx->hash);
 
         sleep(ctx->slide_interval);
     }
@@ -298,14 +298,14 @@ static inline const msgpack_object
 
 /* Given a msgpack record, do some filter action based on the defined rules */
 static inline int throttle_data_by_size(msgpack_object map,
-                                        struct flb_filter_size_throttle_ctx
+                                        struct flb_filter_throttle_size_ctx
                                         *ctx)
 {
     char *name_field_str = NULL;
     uint32_t name_field_size;
     unsigned long load_size;
     double current_rate;
-    struct size_throttle_window *window;
+    struct throttle_size_window *window;
     const msgpack_object *log_field;
     const msgpack_object *name_field;
     if (ctx->name_fields_depth > 0) {
@@ -316,7 +316,7 @@ static inline int throttle_data_by_size(msgpack_object map,
             flb_debug
                 ("[%s] The name field is missing , so we are keeping the log",
                  PLUGIN_NAME);
-            return SIZE_THROTTLE_RET_KEEP;
+            return throttle_size_RET_KEEP;
         }
         name_field_size = get_msgobject_as_str(*name_field, &name_field_str);
         if (name_field_str == NULL) {
@@ -324,7 +324,7 @@ static inline int throttle_data_by_size(msgpack_object map,
             flb_info
                 ("[%s] The value of the name field is nether string not binary format. The log will not be throttle",
                  PLUGIN_NAME);
-            return SIZE_THROTTLE_RET_KEEP;
+            return throttle_size_RET_KEEP;
         }
         flb_debug("[%s] Field name found.", PLUGIN_NAME);
     }
@@ -333,8 +333,8 @@ static inline int throttle_data_by_size(msgpack_object map,
             ("[%s] Using default field name. All log will be taken to account.",
              PLUGIN_NAME);
         //take all logs into account.
-        name_field_str = SIZE_THROTTLE_DEFAULT_NAME_FIELD;
-        name_field_size = strlen(SIZE_THROTTLE_DEFAULT_NAME_FIELD);
+        name_field_str = throttle_size_DEFAULT_NAME_FIELD;
+        name_field_size = strlen(throttle_size_DEFAULT_NAME_FIELD);
     }
 
     if (ctx->log_fields_depth > 0) {
@@ -344,7 +344,7 @@ static inline int throttle_data_by_size(msgpack_object map,
             flb_debug
                 ("[%s] The log field is missing so we are keeping this log",
                  PLUGIN_NAME);
-            return SIZE_THROTTLE_RET_KEEP;
+            return throttle_size_RET_KEEP;
         }
         flb_debug("[%s] Log field found.", PLUGIN_NAME);
         load_size = get_msgpack_object_size(*log_field);
@@ -357,21 +357,21 @@ static inline int throttle_data_by_size(msgpack_object map,
     }
     flb_debug("[%s]Load size is %lu.", PLUGIN_NAME, load_size);
 
-    lock_size_throttle_table(ctx->hash);
+    lock_throttle_size_table(ctx->hash);
 
     window =
-        find_size_throttle_window(ctx->hash, name_field_str, name_field_size);
+        find_throttle_size_window(ctx->hash, name_field_str, name_field_size);
 
     if (window == NULL) {
         /*Since fluent-bit works on one thread and there is no chance someone to create the same window so we can unlock the mutex
            to give it to the ticker */
-        unlock_size_throttle_table(ctx->hash);
+        unlock_throttle_size_table(ctx->hash);
         current_rate = load_size / (double) ctx->window_size;
         if (current_rate - ctx->max_size_rate > RELATIVE_ERROR) {
             flb_info
                 ("[%s] Load is too much for window \"%*.*s\". The log record will be dropped.",
                  PLUGIN_NAME, name_field_size, name_field_str);
-            return SIZE_THROTTLE_RET_DROP;
+            return throttle_size_RET_DROP;
         }
         window =
             size_window_create(name_field_str, name_field_size,
@@ -379,16 +379,16 @@ static inline int throttle_data_by_size(msgpack_object map,
         if (window == NULL) {
             flb_warn("[%s] Not enough memory. Log will be kept.", PLUGIN_NAME,
                      load_size);
-            return SIZE_THROTTLE_RET_KEEP;
+            return throttle_size_RET_KEEP;
         }
         add_load(window, load_size);
         flb_debug
             ("[%s] Add %lu bytes to \"%s\" window: timestamp: %ld, total %lu",
              PLUGIN_NAME, load_size, window->name,
              window->table[window->head].timestamp, window->total);
-        lock_size_throttle_table(ctx->hash);
-        add_size_throttle_window(ctx->hash, window);
-        unlock_size_throttle_table(ctx->hash);
+        lock_throttle_size_table(ctx->hash);
+        add_throttle_size_window(ctx->hash, window);
+        unlock_throttle_size_table(ctx->hash);
         flb_debug("[%s] New window named \"%s\" was added with load %lu.",
                   PLUGIN_NAME, window->name, load_size);
         flb_free(window);
@@ -401,22 +401,22 @@ static inline int throttle_data_by_size(msgpack_object map,
         current_rate =
             (window->total + load_size) / (double) ctx->window_size;
         if (current_rate - ctx->max_size_rate > RELATIVE_ERROR) {
-            unlock_size_throttle_table(ctx->hash);
+            unlock_throttle_size_table(ctx->hash);
             flb_info
                 ("[%s] Load is too much. The log %*.*s record will be dropped.",
                  PLUGIN_NAME, load_size, name_field_size, name_field_str);
-            return SIZE_THROTTLE_RET_DROP;
+            return throttle_size_RET_DROP;
         }
         add_load(window, load_size);
         flb_debug
             ("[%s] Add %lu bytes to \"%s\" window: timestamp: %ld, total %lu",
              PLUGIN_NAME, load_size, window->name,
              window->table[window->head].timestamp, window->total);
-        unlock_size_throttle_table(ctx->hash);
+        unlock_throttle_size_table(ctx->hash);
         flb_debug("[%s] Load of %lu was added and the message was kept.",
                   PLUGIN_NAME, load_size);
     }
-    return SIZE_THROTTLE_RET_KEEP;
+    return throttle_size_RET_KEEP;
 }
 
 /*load_field_key_list split @str into list of string representing the depth of a nested key.
@@ -470,7 +470,7 @@ static int parse_duration(char *interval, int default_seconds)
         /* Check any suffix char and update S based on the suffix.  */
         || !apply_suffix(&s, *p)) {
         flb_warn
-            ("[filter_size_throttle] invalid time interval %s falling back to default: %d second",
+            ("[filter_throttle_size] invalid time interval %s falling back to default: %d second",
              interval, default_seconds);
         return default_seconds;
     }
@@ -479,10 +479,10 @@ static int parse_duration(char *interval, int default_seconds)
     return seconds;
 }
 
-static inline int configure(struct flb_filter_size_throttle_ctx *ctx,
+static inline int configure(struct flb_filter_throttle_size_ctx *ctx,
                             struct flb_filter_instance *f_ins)
 {
-    char *str = NULL;
+    const char *str = NULL;
     double val = 0;
     char *endp;
     ssize_t bytes;
@@ -497,11 +497,11 @@ static inline int configure(struct flb_filter_size_throttle_ctx *ctx,
             ctx->max_size_rate = (double) bytes;
         }
         else {
-            ctx->max_size_rate = SIZE_THROTTLE_DEFAULT_RATE;
+            ctx->max_size_rate = throttle_size_DEFAULT_RATE;
         }
     }
     else {
-        ctx->max_size_rate = SIZE_THROTTLE_DEFAULT_RATE;
+        ctx->max_size_rate = throttle_size_DEFAULT_RATE;
     }
 
     /* windows size */
@@ -510,7 +510,7 @@ static inline int configure(struct flb_filter_size_throttle_ctx *ctx,
         ctx->window_size = val;
     }
     else {
-        ctx->window_size = SIZE_THROTTLE_DEFAULT_WINDOW;
+        ctx->window_size = throttle_size_DEFAULT_WINDOW;
     }
 
     /* print informational status */
@@ -519,17 +519,17 @@ static inline int configure(struct flb_filter_size_throttle_ctx *ctx,
         ctx->print_status = flb_utils_bool(str);
     }
     else {
-        ctx->print_status = SIZE_THROTTLE_DEFAULT_STATUS;
+        ctx->print_status = throttle_size_DEFAULT_STATUS;
     }
 
     /* sliding interval */
     str = flb_filter_get_property("interval", f_ins);
     if (str != NULL) {
         ctx->slide_interval =
-            parse_duration(str, SIZE_THROTTLE_DEFAULT_INTERVAL);
+            parse_duration(str, throttle_size_DEFAULT_INTERVAL);
     }
     else {
-        ctx->slide_interval = SIZE_THROTTLE_DEFAULT_INTERVAL;
+        ctx->slide_interval = throttle_size_DEFAULT_INTERVAL;
     }
 
     /* the field which size will be taken into account */
@@ -550,21 +550,21 @@ static inline int configure(struct flb_filter_size_throttle_ctx *ctx,
     str = flb_filter_get_property("window_time_duration", f_ins);
     if (str != NULL) {
         ctx->window_time_duration =
-            parse_duration(str, SIZE_THROTTLE_DEFAULT_WINDOW_DURATION);
+            parse_duration(str, throttle_size_DEFAULT_WINDOW_DURATION);
     }
     else {
-        ctx->window_time_duration = SIZE_THROTTLE_DEFAULT_WINDOW_DURATION;
+        ctx->window_time_duration = throttle_size_DEFAULT_WINDOW_DURATION;
     }
 
     /* Create the hash table of windows */
     str = flb_filter_get_property("hash_table_size", f_ins);
     if (str != NULL && (val = strtoul(str, &endp, 10)) > 0) {
-        ctx->hash = create_size_throttle_table(val);
+        ctx->hash = create_throttle_size_table(val);
     }
     else {
         ctx->hash =
-            create_size_throttle_table
-            (SIZE_THROTTLE_WINDOW_TABLE_DEFAULT_SIZE);
+            create_throttle_size_table
+            (throttle_size_WINDOW_TABLE_DEFAULT_SIZE);
     }
     if (ctx->hash == NULL) {
         flb_errno();
@@ -574,14 +574,14 @@ static inline int configure(struct flb_filter_size_throttle_ctx *ctx,
     return 0;
 }
 
-static int cb_throttle_init(struct flb_filter_instance *f_ins,
+static int cb_throttle_size_init(struct flb_filter_instance *f_ins,
                             struct flb_config *config, void *data)
 {
     int ret;
-    struct flb_filter_size_throttle_ctx *ctx;
+    struct flb_filter_throttle_size_ctx *ctx;
 
     /* Create context */
-    ctx = flb_malloc(sizeof(struct flb_filter_size_throttle_ctx));
+    ctx = flb_malloc(sizeof(struct flb_filter_throttle_size_ctx));
     if (!ctx) {
         flb_error("[%s] Not enough memory!", PLUGIN_NAME);
         return -1;
@@ -602,15 +602,15 @@ static int cb_throttle_init(struct flb_filter_instance *f_ins,
     // the same window which we must make at initial time to save
     // some checks later
     if (ctx->name_fields_depth == 0) {
-        struct size_throttle_window *window =
-            size_window_create(SIZE_THROTTLE_DEFAULT_NAME_FIELD,
-                               strlen(SIZE_THROTTLE_DEFAULT_NAME_FIELD),
+        struct throttle_size_window *window =
+            size_window_create(throttle_size_DEFAULT_NAME_FIELD,
+                               strlen(throttle_size_DEFAULT_NAME_FIELD),
                                ctx->window_size);
         if (window == NULL) {
             flb_errno();
             return -1;
         }
-        add_size_throttle_window(ctx->hash, window);
+        add_throttle_size_window(ctx->hash, window);
         flb_free(window);
     }
 
@@ -630,8 +630,8 @@ static int cb_throttle_init(struct flb_filter_instance *f_ins,
     return 0;
 }
 
-static int cb_throttle_filter(void *data, size_t bytes,
-                              char *tag, int tag_len,
+static int cb_throttle_size_filter(const void *data, size_t bytes,
+                              const char *tag, int tag_len,
                               void **out_buf, size_t * out_size,
                               struct flb_filter_instance *f_ins,
                               void *context, struct flb_config *config)
@@ -662,7 +662,7 @@ static int cb_throttle_filter(void *data, size_t bytes,
 
     /* Iterate each item array and apply rules */
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, (const char *)data, bytes, &off)) {
         root = result.data;
         if (root.type != MSGPACK_OBJECT_ARRAY) {
             continue;
@@ -674,11 +674,11 @@ static int cb_throttle_filter(void *data, size_t bytes,
         map = root.via.array.ptr[1];
 
         ret = throttle_data_by_size(map, context);
-        if (ret == SIZE_THROTTLE_RET_KEEP) {
+        if (ret == throttle_size_RET_KEEP) {
             msgpack_pack_object(&tmp_pck, root);
             new_size++;
         }
-        else if (ret == SIZE_THROTTLE_RET_DROP) {
+        else if (ret == throttle_size_RET_DROP) {
             /* Do nothing */
         }
     }
@@ -711,24 +711,24 @@ static void delete_field_key(struct mk_list *head)
     }
 }
 
-static int cb_throttle_exit(void *data, struct flb_config *config)
+static int cb_throttle_size_exit(void *data, struct flb_config *config)
 {
-    struct flb_filter_size_throttle_ctx *ctx = data;
+    struct flb_filter_throttle_size_ctx *ctx = data;
     ctx->done = true;
     pthread_join(*(pthread_t *) ctx->ticker_id, NULL);
     flb_free(ctx->ticker_id);
-    destroy_size_throttle_table(ctx->hash);
+    destroy_throttle_size_table(ctx->hash);
     delete_field_key(&ctx->log_fields);
     delete_field_key(&ctx->name_fields);
     flb_free(ctx);
     return 0;
 }
 
-struct flb_filter_plugin filter_size_throttle_plugin = {
-    .name = "size_throttle",
+struct flb_filter_plugin filter_throttle_size_plugin = {
+    .name = "throttle_size",
     .description = "Throttle messages by size using sliding window algorithm",
-    .cb_init = cb_throttle_init,
-    .cb_filter = cb_throttle_filter,
-    .cb_exit = cb_throttle_exit,
+    .cb_init = cb_throttle_size_init,
+    .cb_filter = cb_throttle_size_filter,
+    .cb_exit = cb_throttle_size_exit,
     .flags = 0
 };

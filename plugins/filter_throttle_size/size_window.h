@@ -25,13 +25,13 @@
 
 #define FLB_SIZE_WINDOW_HASH_MAX_ENTRIES 100000
 
-struct size_throttle_pane
+struct throttle_size_pane
 {
     long timestamp;
     unsigned long size;
 };
 
-struct size_throttle_window
+struct throttle_size_window
 {
     char *name;
     unsigned size;
@@ -39,25 +39,25 @@ struct size_throttle_window
     long timestamp;
     int head;
     int tail;
-    struct size_throttle_pane *table;
+    struct throttle_size_pane *table;
 };
 
-struct size_throttle_table
+struct throttle_size_table
 {
     struct flb_hash *windows;
     void *lock;
 };
 
-struct size_throttle_table *create_size_throttle_table();
+struct throttle_size_table *create_throttle_size_table();
 
-struct size_throttle_window *size_window_create(const char *name,
+struct throttle_size_window *size_window_create(const char *name,
                                                 unsigned name_length,
                                                 unsigned int size);
 
 /*This function adds new pane on top of the pane stack by overwriting the oldes one
   which @timestamp and load size of 0 bytes. The oldes pane's amount of load size
   is subtracted of the total amount.*/
-inline static void add_new_pane(struct size_throttle_window *stw,
+inline static void add_new_pane(struct throttle_size_window *stw,
                                 long timestamp)
 {
     unsigned long tail_size = 0;
@@ -81,7 +81,7 @@ inline static void add_new_pane(struct size_throttle_window *stw,
   @load is added to the total amount of the size throttling window.
   If @load is not 0 then the size throttling window's timestamp will be updated to the
   one which is on top of the pane stack(latest)*/
-inline static void add_load(struct size_throttle_window *stw,
+inline static void add_load(struct throttle_size_window *stw,
                             unsigned long load)
 {
     stw->table[stw->head].size += load;
@@ -91,20 +91,20 @@ inline static void add_load(struct size_throttle_window *stw,
     }
 }
 
-inline static void free_stw_content(struct size_throttle_window *stw)
+inline static void free_stw_content(struct throttle_size_window *stw)
 {
     flb_free(stw->name);
     flb_free(stw->table);
 }
 
-inline static void free_stw(struct size_throttle_window *stw)
+inline static void free_stw(struct throttle_size_window *stw)
 {
     free_stw_content(stw);
     flb_free(stw);
 }
 
-inline static struct size_throttle_window *find_size_throttle_window(struct
-                                                                     size_throttle_table
+inline static struct throttle_size_window *find_throttle_size_window(struct
+                                                                     throttle_size_table
                                                                      *table,
                                                                      char
                                                                      *name,
@@ -113,29 +113,29 @@ inline static struct size_throttle_window *find_size_throttle_window(struct
 {
     char *window = NULL;
     size_t out_size;
-    if (flb_hash_get(table->windows, name, name_length, &window, &out_size) >=
+    if (flb_hash_get(table->windows, name, name_length, (const char **)&window, &out_size) >=
         0) {
-        if (out_size < sizeof(struct size_throttle_window)) {
+        if (out_size < sizeof(struct throttle_size_window)) {
             flb_error("Malformed data in size window hashtable");
             return NULL;
         }
-        return (struct size_throttle_window *) window;
+        return (struct throttle_size_window *) window;
     }
     return NULL;
 }
 
-inline static void add_size_throttle_window(struct size_throttle_table
+inline static void add_throttle_size_window(struct throttle_size_table
                                             *table,
-                                            struct size_throttle_window
+                                            struct throttle_size_window
                                             *window)
 {
     flb_hash_add(table->windows, window->name, strlen(window->name),
-                 (char *) window, sizeof(struct size_throttle_window));
+                 (char *) window, sizeof(struct throttle_size_window));
 }
 
-void destroy_size_throttle_table(struct size_throttle_table *table);
+void destroy_throttle_size_table(struct throttle_size_table *table);
 
-void lock_size_throttle_table(struct size_throttle_table *ht);
-void unlock_size_throttle_table(struct size_throttle_table *ht);
+void lock_throttle_size_table(struct throttle_size_table *ht);
+void unlock_throttle_size_table(struct throttle_size_table *ht);
 
 #endif
