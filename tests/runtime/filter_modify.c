@@ -81,7 +81,7 @@ static struct filter_test *filter_test_create(struct flb_lib_out_cb *data)
 
 static void filter_test_destroy(struct filter_test *ctx)
 {
-    sleep(0.5);
+    sleep(0.2);
     flb_stop(ctx->flb);
     flb_destroy(ctx->flb);
     flb_free(ctx);
@@ -599,7 +599,413 @@ static void flb_test_op_hard_copy_no_exists()
     filter_test_destroy(ctx);
 }
 
+
+/* Condition: KEY_EXISTS / If key exists, make a copy */
+static void flb_test_cond_key_exists()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "condition", "key_exists k1",
+                         "copy", "k1 k3_copy",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = "\"k3_copy\":\"sample1\"";
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    p = "[0, {\"k1\":\"sample1\",\"k2\":\"sample2\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    filter_test_destroy(ctx);
+}
+
+/* Condition: KEY_DOES_NOT_EXISTS / If key does not exists, add a dummy key */
+static void flb_test_cond_key_does_not_exist()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "condition", "key_does_not_exist k3",
+                         "copy", "k1 k3",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = "\"k3\":\"sample1\"";
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    p = "[0, {\"k1\":\"sample1\",\"k2\":\"sample2\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    filter_test_destroy(ctx);
+}
+
+/* Condition: A_KEY_MATCHES / If key matches, add a dummy key */
+static void flb_test_cond_a_key_matches()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "condition", "a_key_matches ^[a-z][0-9]$",
+                         "copy", "c1 c1_matched",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = "\"c1_matched\":\"sample3\"";
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    p = "[0, {\"aa\":\"sample1\",\"bb\":\"sample2\",\"c1\":\"sample3\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    filter_test_destroy(ctx);
+}
+
+/* Condition: NO_KEY_MATCHES / If no key matches, add a dummy key */
+static void flb_test_cond_no_key_matches()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "condition", "no_key_matches ^[0-9]$",
+                         "copy", "c1 no_matches",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = "\"no_matches\":\"sample3\"";
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    p = "[0, {\"aa\":\"sample1\",\"bb\":\"sample2\",\"c1\":\"sample3\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    filter_test_destroy(ctx);
+}
+
+/* Condition: KEY_VALUE_EQUALS / If key value matches, add a dummy key */
+static void flb_test_cond_key_value_equals()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "condition", "key_value_equals bb sample2",
+                         "copy", "c1 no_matches",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = "\"no_matches\":\"sample3\"";
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    p = "[0, {\"aa\":\"sample1\",\"bb\":\"sample2\",\"c1\":\"sample3\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    filter_test_destroy(ctx);
+}
+
+/* Condition: KEY_VALUE_DOES_NOT_EQUAL / If key value mismatch, add a key */
+static void flb_test_cond_key_value_does_not_equal()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "condition", "key_value_does_not_equal bb sample3",
+                         "copy", "c1 no_matches",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = "\"no_matches\":\"sample3\"";
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    p = "[0, {\"aa\":\"sample1\",\"bb\":\"sample2\",\"c1\":\"sample3\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    filter_test_destroy(ctx);
+}
+
+/* Condition: KEY_VALUE_MATCHES / If key match, add a key */
+static void flb_test_cond_key_value_matches()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "condition", "key_value_matches k2 ^[a-z][0-9]$",
+                         "copy", "k1 matches",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = "\"matches\":\"sample1\"";
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    p = "[0, {\"k1\":\"sample1\",\"k2\":\"z2\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    filter_test_destroy(ctx);
+}
+
+/* Condition: KEY_VALUE_DOES_NOT_MATCH / If key mismatch, add a key */
+static void flb_test_cond_key_value_does_not_match()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "condition", "key_value_does_not_match k2 ^[a-z][0-9]$",
+                         "copy", "k1 no_matches",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = "\"no_matches\":\"sample1\"";
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    p = "[0, {\"k1\":\"sample1\",\"k2\":\"22\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    filter_test_destroy(ctx);
+}
+
+/* Condition: MATCHING_KEYS_HAVE_MATCHING_VALUES / If key match, add a key */
+static void flb_test_cond_matching_keys_have_matching_values()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "condition",
+                         "matching_keys_have_matching_values "\
+                         "^[a-z][0-9]$ ^[a-z][0-9]$",
+                         "copy", "k1 matches",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = "\"matches\":\"n1\"";
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    p = "[0, {\"k1\":\"n1\",\"k2\":\"n3\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    filter_test_destroy(ctx);
+}
+
+/* Condition: MATCHING_KEYS_DOES_NOT_HAVE_MATCHING_VALUES */
+static void flb_test_cond_matching_keys_do_not_have_matching_values()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "condition",
+                         "matching_keys_do_not_have_matching_values "\
+                         "^[a-z][0-9]$ ^[a-z][0-9]$",
+                         "copy", "k1 no_matches",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = "\"no_matches\":\"aa\"";
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    p = "[0, {\"k1\":\"aa\",\"k2\":\"bb\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    filter_test_destroy(ctx);
+}
+
 TEST_LIST = {
+    /* Operations / Commands */
     {"op_set_append"            , flb_test_op_set_append },
     {"op_set_replace"           , flb_test_op_set_replace },
     {"op_remove"                , flb_test_op_remove },
@@ -613,5 +1019,20 @@ TEST_LIST = {
     {"op_copy_no_exists"        , flb_test_op_copy_no_exists },
     {"op_hard_copy_exists"      , flb_test_op_hard_copy_exists },
     {"op_hard_copy_no_exists"   , flb_test_op_hard_copy_no_exists },
+
+    /* Conditions */
+    {"cond_key_exists", flb_test_cond_key_exists },
+    {"cond_key_does_not_exist", flb_test_cond_key_does_not_exist },
+    {"cond_a_key_matches", flb_test_cond_a_key_matches },
+    {"cond_no_key_matches", flb_test_cond_no_key_matches },
+    {"cond_key_value_equals", flb_test_cond_key_value_equals },
+    {"cond_key_value_does_not_equal", flb_test_cond_key_value_does_not_equal },
+    {"cond_key_value_matches", flb_test_cond_key_value_matches },
+    {"cond_key_value_does_not_match", flb_test_cond_key_value_does_not_match },
+    {"cond_matching_keys_have_matching_values",
+     flb_test_cond_matching_keys_have_matching_values },
+    {"cond_matching_keys_do_not_have_matching_values",
+     flb_test_cond_matching_keys_do_not_have_matching_values },
+
     {NULL, NULL}
 };
