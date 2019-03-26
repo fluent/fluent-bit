@@ -70,3 +70,14 @@ set(FLB_FILTER_THROTTLE        No)
 set(FLB_FILTER_NEST            No)
 set(FLB_FILTER_LUA            Yes)
 set(FLB_FILTER_RECORD_MODIFIER Yes)
+
+# Search bison and flex executables
+if(CMAKE_SYSTEM_NAME MATCHES "Windows")
+  find_package(FLEX)
+  find_package(BISON)
+
+  if (NOT (${FLEX_FOUND} AND ${BISON_FOUND}))
+    message(STATUS "flex and bison not found. Disable stream_processor building.")
+    set(FLB_STREAM_PROCESSOR No)
+  endif()
+endif()
