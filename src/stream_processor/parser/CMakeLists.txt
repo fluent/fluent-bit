@@ -25,3 +25,4 @@ add_library(flb-sp-parser STATIC
 #    )
 
 add_flex_bison_dependency(lexer parser)
+add_dependencies(flb-sp-parser libonigmo)
