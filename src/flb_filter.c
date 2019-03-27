@@ -303,7 +303,7 @@ struct flb_filter_instance *flb_filter_new(struct flb_config *config,
         return NULL;
     }
 
-    instance = flb_malloc(sizeof(struct flb_filter_instance));
+    instance = flb_calloc(1, sizeof(struct flb_filter_instance));
     if (!instance) {
         flb_errno();
         return NULL;
