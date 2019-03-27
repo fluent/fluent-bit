@@ -46,7 +46,9 @@ char kube_test_id[64];
 #define T_APACHE_LOGS_ANN_MERGE DPATH "apache-logs-annotated-merge"
 #define T_APACHE_LOGS_ANN_EXCL  DPATH "apache-logs-annotated-exclude"
 #define T_JSON_LOGS             DPATH "json-logs_default"
+#define T_JSON_LOGS_NO_KEEP     DPATH "json-logs-no-keep"
 #define T_JSON_LOGS_INV         DPATH "json-logs-invalid"
+#define T_JSON_LOGS_INV_NO_KEEP DPATH "json-logs-invalid"
 #define T_SYSTEMD_SIMPLE        DPATH "kairosdb-914055854-b63vq"
 
 #define T_MULTI_INIT            DPATH "session-db-fdd649d68-cq5sp_socks_istio-init-"
@@ -364,9 +366,25 @@ void flb_test_json_logs()
                      NULL);
 }
 
+void flb_test_json_logs_no_keep()
+{
+    kube_test_create(T_JSON_LOGS_NO_KEEP, KUBE_TAIL, "", STD_PARSER, 1,
+                     "Merge_Log", "On",
+                     "Keep_Log", "Off",
+                     NULL);
+}
+
 void flb_test_json_logs_invalid()
 {
     kube_test_create(T_JSON_LOGS_INV, KUBE_TAIL, "", STD_PARSER, 1, NULL);
+}
+
+void flb_test_json_logs_invalid_no_keep()
+{
+    kube_test_create(T_JSON_LOGS_INV_NO_KEEP, KUBE_TAIL, "", STD_PARSER, 1,
+                     "Merge_Log", "On",
+                     "Keep_Log", "Off",
+                     NULL);
 }
 
 #ifdef FLB_HAVE_SYSTEMD
@@ -473,7 +491,9 @@ TEST_LIST = {
     {"kube_apache_logs_annotated_exclude", flb_test_apache_logs_annotated_exclude},
     {"kube_apache_logs_annotated_merge_log", flb_test_apache_logs_annotated_merge},
     {"kube_json_logs", flb_test_json_logs},
+    {"kube_json_logs_no_keep", flb_test_json_logs_no_keep},
     {"kube_json_logs_invalid", flb_test_json_logs_invalid},
+    {"kube_json_logs_invalid_no_keep", flb_test_json_logs_invalid_no_keep},
 #ifdef FLB_HAVE_SYSTEMD
     {"kube_systemd_logs", flb_test_systemd_logs},
 #endif
