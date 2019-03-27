@@ -599,7 +599,9 @@ static int cb_nest_exit(void *data, struct flb_config *config)
 {
     struct filter_nest_ctx *ctx = data;
 
-    teardown(ctx);
+    if (ctx != NULL) {
+        teardown(ctx);
+    }
     flb_free(ctx);
     return 0;
 }
