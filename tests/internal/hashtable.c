@@ -5,7 +5,8 @@
 
 #include "flb_tests_internal.h"
 
-struct map {
+struct map
+{
     char *key;
     char *val;
 };
@@ -53,33 +54,34 @@ struct map entries[] = {
 
 static int ht_add(struct flb_hash *ht, char *key, char *val)
 {
-  int id;
-  int idn;
-  int klen;
-  int vlen;
-  char *out_buf;
-  size_t out_size;
+    int id;
+    int idn;
+    int klen;
+    int vlen;
+    char *out_buf;
+    size_t out_size;
 
-  klen = strlen(key);
-  vlen = strlen(val);
+    klen = strlen(key);
+    vlen = strlen(val);
 
-  /* Insert the key value */
-  id = flb_hash_add(ht, key, klen, val, vlen);
-  TEST_CHECK(id >=0);
+    /* Insert the key value */
+    id = flb_hash_add(ht, key, klen, val, vlen);
+    TEST_CHECK(id >= 0);
 
-  /* Retrieve the value of the recently added key */
-  idn = flb_hash_get(ht, key, klen, &out_buf, &out_size);
-  TEST_CHECK(idn == id);
-  TEST_CHECK(strcmp(out_buf, val) == 0);
+    /* Retrieve the value of the recently added key */
+    idn = flb_hash_get(ht, key, klen, &out_buf, &out_size);
 
-  return id;
+    TEST_CHECK(idn == id);
+    TEST_CHECK(strcmp(out_buf, val) == 0);
+
+    return id;
 }
 
 void test_create_zero()
 {
     struct flb_hash *ht;
 
-    ht  = flb_hash_create(FLB_HASH_EVICT_NONE, 0, -1);
+    ht = flb_hash_create(FLB_HASH_EVICT_NONE, 0, -1);
     TEST_CHECK(ht == NULL);
 }
 
@@ -119,7 +121,6 @@ void test_small_table()
         m = &entries[i];
         ht_add(ht, m->key, m->val);
     }
-
     flb_hash_destroy(ht);
 }
 
@@ -136,7 +137,6 @@ void test_medium_table()
         m = &entries[i];
         ht_add(ht, m->key, m->val);
     }
-
     flb_hash_destroy(ht);
 }
 
@@ -174,7 +174,7 @@ void test_chaining()
     }
 
     /* Tests diff between total, new minus 3 overrides */
-    TEST_CHECK(chains == inserts - 3);
+    TEST_CHECK(chains >= inserts - 3);
     flb_hash_destroy(ht);
 }
 
@@ -241,13 +241,32 @@ void test_random_eviction()
     flb_hash_destroy(ht);
 }
 
+void test_resizing()
+{
+    int i;
+    struct map *m;
+    struct flb_hash *ht;
+
+    ht = flb_hash_create(FLB_HASH_EVICT_NONE, 2, -1);
+    TEST_CHECK(ht != NULL);
+
+    for (i = 0; i < sizeof(entries) / sizeof(struct map); i++) {
+        m = &entries[i];
+        ht_add(ht, m->key, m->val);
+    }
+    TEST_CHECK(ht->size > 2);
+    flb_hash_destroy(ht);
+}
+
 TEST_LIST = {
-    { "zero_size", test_create_zero },
-    { "single",    test_single },
-    { "small_table", test_small_table },
-    { "medium_table", test_medium_table },
-    { "chaining_count", test_chaining },
-    { "delete_all", test_delete_all },
-    { "random_eviction", test_random_eviction },
-    { 0 }
+    {
+    "zero_size", test_create_zero}, {
+    "single", test_single}, {
+    "small_table", test_small_table}, {
+    "medium_table", test_medium_table}, {
+    "chaining_count", test_chaining}, {
+    "delete_all", test_delete_all}, {
+    "random_eviction", test_random_eviction}, {
+    "resizing", test_resizing}, {
+    0}
 };

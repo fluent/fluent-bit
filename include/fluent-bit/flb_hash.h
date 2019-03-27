@@ -32,42 +32,49 @@
 #define FLB_HASH_EVICT_OLDER      1
 #define FLB_HASH_EVICT_LESS_USED  2
 #define FLB_HASH_EVICT_RANDOM     3
+#define FLB_HASH_MAX_RESIZING_COUNTS 10U
 
-struct flb_hash_entry {
+struct flb_hash_entry
+{
     time_t created;
     uint64_t hits;
     char *key;
     size_t key_len;
     char *val;
     size_t val_size;
-    struct flb_hash_table *table; /* link to parent flb_hash_table */
-    struct mk_list _head;         /* link to flb_hash_table->chains */
-    struct mk_list _head_parent;  /* link to flb_hash->entries */
+    struct flb_hash_table *table;       /* link to parent flb_hash_table */
+    struct mk_list _head;       /* link to flb_hash_table->chains */
+    struct mk_list _head_parent;        /* link to flb_hash->entries */
 };
 
-struct flb_hash_table {
+struct flb_hash_table
+{
     int count;
     struct mk_list chains;
 };
 
-struct flb_hash {
+struct flb_hash
+{
     int evict_mode;
     int max_entries;
     int total_count;
     size_t size;
+    size_t max_hash_table_length;
+    unsigned int resize_count;
     struct mk_list entries;
     struct flb_hash_table *table;
 };
 
-struct flb_hash *flb_hash_create(int evict_mode, size_t size, int max_entries);
+struct flb_hash *flb_hash_create(int evict_mode, size_t size,
+                                 int max_entries);
 void flb_hash_destroy(struct flb_hash *ht);
 
 int flb_hash_add(struct flb_hash *ht, char *key, int key_len,
                  char *val, size_t val_size);
 int flb_hash_get(struct flb_hash *ht, char *key, int key_len,
-                 char **out_buf, size_t *out_size);
+                 char **out_buf, size_t * out_size);
 int flb_hash_get_by_id(struct flb_hash *ht, int id, char *key, char **out_buf,
-                       size_t *out_size);
+                       size_t * out_size);
 int flb_hash_del(struct flb_hash *ht, char *key);
 
 #endif
