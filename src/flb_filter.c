@@ -239,7 +239,7 @@ void flb_filter_exit(struct flb_config *config)
         p = ins->p;
 
         /* Check a exit callback */
-        if (p->cb_exit) {
+        if (p->cb_exit && ins->context) {
             p->cb_exit(ins->context, config);
         }
 
