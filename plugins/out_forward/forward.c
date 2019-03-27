@@ -428,14 +428,15 @@ static int forward_config_ha(char *upstream_file,
         }
         fc->secured = FLB_FALSE;
 
+        /* Is TLS enabled ? */
+        if (node->tls_enabled == FLB_TRUE) {
+            fc->secured = FLB_TRUE;
+        }
+
         /* Shared key (secure_forward) */
         tmp = flb_upstream_node_get_property("shared_key", node);
         if (tmp) {
             fc->shared_key = flb_sds_create(tmp);
-	    /* Is TLS enabled ? */
-	    if (node->tls_enabled == FLB_TRUE) {
-		fc->secured = FLB_TRUE;
-	    }
         }
         else {
             fc->shared_key = NULL;
@@ -499,9 +500,7 @@ static int forward_config_simple(struct flb_forward *ctx,
 #ifdef FLB_HAVE_TLS
     if (ins->use_tls == FLB_TRUE) {
         io_flags = FLB_IO_TLS;
-	if (fc->shared_key) {
-	    fc->secured = FLB_TRUE;
-	}
+        fc->secured = FLB_TRUE;
     }
     else {
         io_flags = FLB_IO_TCP;
