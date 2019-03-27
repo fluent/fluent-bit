@@ -103,6 +103,7 @@ static int in_mqtt_exit(void *data, struct flb_config *config)
     (void) *config;
     struct flb_in_mqtt_config *ctx = data;
 
+    mqtt_conn_destroy_all(ctx);
     mqtt_config_free(ctx);
 
     return 0;

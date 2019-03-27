@@ -30,8 +30,11 @@ struct flb_in_mqtt_config *mqtt_config_init(struct flb_input_instance *i_ins)
     char *listen;
     struct flb_in_mqtt_config *config;
 
-    config = flb_malloc(sizeof(struct flb_in_mqtt_config));
-    memset(config, '\0', sizeof(struct flb_in_mqtt_config));
+    config = flb_calloc(1, sizeof(struct flb_in_mqtt_config));
+    if (!config) {
+        flb_errno();
+        return NULL;
+    }
 
     /* Listen interface (if not set, defaults to 0.0.0.0) */
     if (!i_ins->host.listen) {
@@ -59,6 +62,7 @@ struct flb_in_mqtt_config *mqtt_config_init(struct flb_input_instance *i_ins)
     flb_debug("[in_mqtt] Listen='%s' TCP_Port=%s",
               config->listen, config->tcp_port);
 
+    mk_list_init(&config->conns);
     return config;
 }
 

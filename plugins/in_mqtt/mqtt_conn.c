@@ -71,6 +71,7 @@ struct mqtt_conn *mqtt_conn_add(int fd, struct flb_in_mqtt_config *ctx)
 
     conn = flb_malloc(sizeof(struct mqtt_conn));
     if (!conn) {
+        flb_errno();
         return NULL;
     }
 
@@ -99,6 +100,7 @@ struct mqtt_conn *mqtt_conn_add(int fd, struct flb_in_mqtt_config *ctx)
         return NULL;
     }
 
+    mk_list_add(&conn->_head, &ctx->conns);
     return conn;
 }
 
@@ -109,7 +111,22 @@ int mqtt_conn_del(struct mqtt_conn *conn)
 
     /* Release resources */
     close(conn->fd);
+    mk_list_del(&conn->_head);
     flb_free(conn);
+
+    return 0;
+}
+
+int mqtt_conn_destroy_all(struct flb_in_mqtt_config *ctx)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct mqtt_conn *conn;
+
+    mk_list_foreach_safe(head, tmp, &ctx->conns) {
+        conn = mk_list_entry(head, struct mqtt_conn, _head);
+        mqtt_conn_del(conn);
+    }
 
     return 0;
 }
