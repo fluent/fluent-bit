@@ -69,6 +69,13 @@ static inline int mqtt_packet_drop(struct mqtt_conn *conn)
 {
     int move_bytes;
 
+    if (conn->buf_pos == conn->buf_len) {
+        conn->buf_frame_end = 0;
+        conn->buf_len = 0;
+        conn->buf_pos = 0;
+        return 0;
+    }
+
     move_bytes = conn->buf_pos + 1;
     memmove(conn->buf,
             conn->buf + move_bytes,
@@ -383,6 +390,7 @@ int mqtt_prot_parser(struct mqtt_conn *conn)
             /* Prepare for next round */
             conn->status = MQTT_NEXT;
             conn->buf_pos = conn->buf_frame_end;
+
             mqtt_packet_drop(conn);
 
             if (conn->buf_len > 0) {
