@@ -317,6 +317,86 @@ static void cb_select_aggr(int id, struct task_check *check,
     TEST_CHECK(ret == FLB_TRUE);
 }
 
+static void cb_select_groupby(int id, struct task_check *check,
+                              char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 1 row */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 2);
+
+    /* MIN(id) is 0 for record 0 (bool=true) */
+    ret = mp_record_key_cmp(buf, size,
+                            0, "MIN(id)",
+                            MSGPACK_OBJECT_POSITIVE_INTEGER,
+                            NULL, 0, 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* MIN(id) is 6 for record 1 (bool=false)  */
+    ret = mp_record_key_cmp(buf, size,
+                            1, "MIN(id)",
+                            MSGPACK_OBJECT_POSITIVE_INTEGER,
+                            NULL, 6, 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* MAX(id) is 8 for record 0 (bool=true)  */
+    ret = mp_record_key_cmp(buf, size,
+                            0, "MAX(id)",
+                            MSGPACK_OBJECT_POSITIVE_INTEGER,
+                            NULL, 8, 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* MAX(id) is i9 for record 1 (bool=false)  */
+    ret = mp_record_key_cmp(buf, size,
+                            1, "MAX(id)",
+                            MSGPACK_OBJECT_POSITIVE_INTEGER,
+                            NULL, 9, 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* COUNT(*) is 8 for record 0 (bool=true) */
+    ret = mp_record_key_cmp(buf, size,
+                            0, "COUNT(*)",
+                            MSGPACK_OBJECT_POSITIVE_INTEGER,
+                            NULL, 8, 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* COUNT(*) is 2 for record 1 (bool=false) */
+    ret = mp_record_key_cmp(buf, size,
+                            1, "COUNT(*)",
+                            MSGPACK_OBJECT_POSITIVE_INTEGER,
+                            NULL, 2, 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* SUM(bytes) is 80.0 for record 0 (bool=true) */
+    ret = mp_record_key_cmp(buf, size,
+                            0, "SUM(bytes)",
+                            MSGPACK_OBJECT_FLOAT,
+                            NULL, 0, 80.0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* SUM(bytes) is 20.50 for record 1 (bool=false) */
+    ret = mp_record_key_cmp(buf, size,
+                            1, "SUM(bytes)",
+                            MSGPACK_OBJECT_FLOAT,
+                            NULL, 0, 20.50);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* AVG(bytes) is 10.0 for record 0 (bool=true) */
+    ret = mp_record_key_cmp(buf, size,
+                            0, "AVG(bytes)",
+                            MSGPACK_OBJECT_FLOAT,
+                            NULL, 0, 10.0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* AVG(bytes) is 10.25 for record 1 (bool=false) */
+    ret = mp_record_key_cmp(buf, size,
+                            1, "AVG(bytes)",
+                            MSGPACK_OBJECT_FLOAT,
+                            NULL, 0, 10.25);
+    TEST_CHECK(ret == FLB_TRUE);
+}
+
 static void cb_func_time_now(int id, struct task_check *check,
                              char *buf, size_t size)
 {
@@ -442,15 +522,23 @@ struct task_check select_keys_checks[] = {
         "FROM STREAM:FLB WINDOW TUMBLING (1 SECOND);",
         cb_select_aggr,
     },
-    /* Time functions */
     {
         6, 0, 0,
+        "select_aggr_window_tumbling_groupby",
+        "SELECT bool, MIN(id), MAX(id), COUNT(*), SUM(bytes), AVG(bytes) " \
+        "FROM STREAM:FLB WINDOW TUMBLING (1 SECOND) GROUP BY bool;",
+        cb_select_groupby,
+    },
+
+    /* Time functions */
+    {
+        7, 0, 0,
         "func_time_now",
         "SELECT NOW(), NOW() as tnow FROM STREAM:FLB WHERE bytes > 10;",
         cb_func_time_now,
     },
     {
-        7, 0, 0,
+        8, 0, 0,
         "func_time_unix_timestamp",
         "SELECT UNIX_TIMESTAMP(), UNIX_TIMESTAMP() as ts " \
         "FROM STREAM:FLB WHERE bytes > 10;",
@@ -458,13 +546,13 @@ struct task_check select_keys_checks[] = {
     },
     /* Stream selection using Tag rules */
     {
-        7, 0, 0,
+        9, 0, 0,
         "select_from_tag_error",
         "SELECT id FROM TAG:'no-matches' WHERE bytes > 10;",
         cb_select_tag_error,
     },
     {
-        8, 0, 0,
+        10, 0, 0,
         "select_from_tag",
         "SELECT id FROM TAG:'samples' WHERE bytes > 10;",
         cb_select_tag_ok,

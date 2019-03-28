@@ -37,6 +37,7 @@ void flb_sp_cmd_destroy(struct flb_sp_cmd *cmd)
     struct mk_list *head;
     struct mk_list *tmp;
     struct flb_sp_cmd_key *key;
+    struct flb_sp_cmd_gb_key *gb_key;
     struct flb_sp_cmd_prop *prop;
 
     /* remove keys */
@@ -44,6 +45,13 @@ void flb_sp_cmd_destroy(struct flb_sp_cmd *cmd)
         key = mk_list_entry(head, struct flb_sp_cmd_key, _head);
         mk_list_del(&key->_head);
         flb_sp_cmd_key_del(key);
+    }
+
+    /* remove groupby keys */
+    mk_list_foreach_safe(head, tmp, &cmd->gb_keys) {
+        gb_key = mk_list_entry(head, struct flb_sp_cmd_gb_key, _head);
+        mk_list_del(&gb_key->_head);
+        flb_sp_cmd_gb_key_del(gb_key);
     }
 
     /* stream */
@@ -71,6 +79,14 @@ void flb_sp_cmd_key_del(struct flb_sp_cmd_key *key)
     }
     if (key->alias) {
         flb_sds_destroy(key->alias);
+    }
+    flb_free(key);
+}
+
+void flb_sp_cmd_gb_key_del(struct flb_sp_cmd_gb_key *key)
+{
+    if (key->name) {
+        flb_sds_destroy(key->name);
     }
     flb_free(key);
 }
@@ -206,6 +222,8 @@ struct flb_sp_cmd *flb_sp_cmd_create(char *sql)
 
     /* Condition linked list (we use them to free resources) */
     mk_list_init(&cmd->cond_list);
+
+    mk_list_init(&cmd->gb_keys);
 
     /* Flex/Bison work */
     yylex_init(&scanner);
@@ -453,6 +471,26 @@ struct flb_exp *flb_sp_cmd_condition_boolean(struct flb_sp_cmd *cmd,
 void flb_sp_cmd_condition_add(struct flb_sp_cmd *cmd, struct flb_exp *e)
 {
     cmd->condition = e;
+}
+
+int flb_sp_cmd_gb_key_add(struct flb_sp_cmd *cmd, char *key)
+{
+    struct flb_sp_cmd_gb_key *gb_key;
+
+    gb_key = flb_malloc(sizeof(struct flb_sp_cmd_gb_key));
+    if (!gb_key) {
+        flb_errno();
+        return -1;
+    }
+
+    gb_key->name = flb_sds_create(key);
+    if (!gb_key->name) {
+        flb_free(gb_key);
+        return -1;
+    }
+
+    mk_list_add(&gb_key->_head, &cmd->gb_keys);
+    return 0;
 }
 
 void flb_sp_cmd_condition_free(struct flb_sp_cmd *cmd)
