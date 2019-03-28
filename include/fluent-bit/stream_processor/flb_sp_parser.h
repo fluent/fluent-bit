@@ -27,6 +27,7 @@
 #include <fluent-bit/stream_processor/flb_sp_window.h>
 
 /* Aggregation functions */
+#define FLB_SP_NOP       0
 #define FLB_SP_AVG       1
 #define FLB_SP_SUM       2
 #define FLB_SP_COUNT     3
@@ -78,6 +79,12 @@
 #define FLB_SP_TIME_MINUTE  1
 #define FLB_SP_TIME_HOUR    2
 
+/* Groupby key */
+struct flb_sp_cmd_gb_key {
+    flb_sds_t name;           /* key name */
+    struct mk_list _head;     /* Link to flb_sp_cmd->gb_keys */
+};
+
 /* Property (key/value) */
 struct flb_sp_cmd_prop {
     flb_sds_t key;            /* key name */
@@ -116,6 +123,8 @@ struct flb_sp_cmd {
     struct mk_list cond_list;
 
     struct flb_sp_window window;   /* WINDOW window in select statement */
+
+    struct mk_list gb_keys;        /* list head of group-by record fields */
 
     /* Source of data */
     int source_type;               /* FLB_SP_STREAM or FLB_SP_TAG */
@@ -191,6 +200,10 @@ struct flb_exp *flb_sp_cmd_condition_string(struct flb_sp_cmd *cmd,
                                             char *string);
 struct flb_exp *flb_sp_cmd_condition_boolean(struct flb_sp_cmd *cmd,
                                              bool boolean);
+
 void flb_sp_cmd_condition_free(struct flb_sp_cmd *cmd);
+
+int flb_sp_cmd_gb_key_add(struct flb_sp_cmd *cmd, char *key);
+void flb_sp_cmd_gb_key_del(struct flb_sp_cmd_gb_key *key);
 
 #endif

@@ -24,16 +24,27 @@
 
 void flb_sp_window_prune(struct flb_sp_task *task)
 {
-    int map_entries;
+    struct aggr_node *aggr_node;
+    struct mk_list *tmp;
+    struct mk_list *head;
 
     switch (task->window.type) {
     case FLB_SP_WINDOW_DEFAULT:
     case FLB_SP_WINDOW_TUMBLING:
-        map_entries = mk_list_size(&task->cmd->keys);
-        if (task->window.nums) {
-            memset(task->window.nums, 0, sizeof(struct aggr_num) * map_entries);
+        mk_list_foreach_safe(head, tmp, &task->window.aggr_list) {
+            aggr_node = mk_list_entry(head, struct aggr_node, _head);
+            flb_free(aggr_node->nums);
+            flb_free(aggr_node->groupby_nums);
+            mk_list_del(&aggr_node->_head);
+
+            // This cleanups both the list and tree nodes
+            flb_free(aggr_node);
         }
 
+        rb_tree_destroy(&task->window.aggr_tree);
+
+        mk_list_init(&task->window.aggr_list);
+        rb_tree_new(&task->window.aggr_tree, groupby_compare);
         task->window.records = 0;
     break;
     }

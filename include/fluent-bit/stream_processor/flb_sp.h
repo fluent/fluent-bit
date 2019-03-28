@@ -26,12 +26,32 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_input.h>
 #include <monkey/mk_core.h>
+#include <monkey/deps/rbtree/rbtree.h>
+
+/* Aggr num type */
+#define FLB_SP_NUM_I64       0
+#define FLB_SP_NUM_F64       1
+#define FLB_SP_BOOLEAN       2
+#define FLB_SP_STRING        3
 
 struct aggr_num {
     int type;
     int ops;
     int64_t i64;
     double f64;
+    bool boolean;
+    flb_sds_t string;
+};
+
+struct aggr_node {
+    int groupby_keys;
+    int records;
+    struct aggr_num *nums;
+    struct aggr_num *groupby_nums;
+
+    /* To keep track of the aggregation nodes */
+    struct rb_tree_node _rb_head;
+    struct mk_list _head;
 };
 
 struct flb_sp_window_data {
@@ -46,7 +66,8 @@ struct flb_sp_task_window {
     int fd;
     struct mk_event event;
 
-    struct aggr_num *nums;
+    struct rb_tree aggr_tree;
+    struct mk_list aggr_list;
     int records;
 
     struct mk_list data;
@@ -81,6 +102,57 @@ struct flb_sp {
     struct mk_list tasks;        /* processor tasks */
     struct flb_config *config;   /* reference to Fluent Bit context */
 };
+
+static int groupby_compare(const void *lhs, const void *rhs)
+{
+    int i;
+    struct aggr_node *left = (struct aggr_node *) lhs;
+    struct aggr_node *right = (struct aggr_node *) rhs;
+    struct aggr_num *lval;
+    struct aggr_num *rval;
+
+    for (i = 0; i < left->groupby_keys; i++) {
+        lval = &left->groupby_nums[i];
+        rval = &right->groupby_nums[i];
+
+        /* Convert integer to double if a float value appears on one side */
+        if (lval->type == FLB_SP_NUM_I64 && rval->type == FLB_SP_NUM_F64) {
+            lval->type = FLB_SP_NUM_F64;
+            lval->f64 = (double) lval->i64;
+        }
+        else if (lval->type == FLB_SP_NUM_F64 && rval->type == FLB_SP_NUM_I64) {
+            rval->type = FLB_SP_NUM_F64;
+            rval->f64 = (double) rval->i64;
+        }
+
+        if (lval->type == FLB_SP_NUM_I64 && rval->type == FLB_SP_NUM_I64) {
+            if (lval->i64 > rval->i64) {
+                return 1;
+            }
+
+            if (lval->i64 < rval->i64) {
+                return -1;
+            }
+        }
+        else if (lval->type == FLB_SP_NUM_F64 &&  rval->type == FLB_SP_NUM_F64) {
+            if (lval->f64 > rval->f64) {
+                return 1;
+            }
+
+            if (lval->f64 < rval->f64) {
+                return -1;
+            }
+        }
+        else if (lval->type == FLB_SP_STRING && rval->type == FLB_SP_STRING) {
+          return strcmp((const char *) lval->string, (const char *) rval->string);
+        }
+        else { /* Sides have different types */
+          return -1;
+        }
+    }
+
+    return 0;
+}
 
 struct flb_sp *flb_sp_create(struct flb_config *config);
 void flb_sp_destroy(struct flb_sp *sp);

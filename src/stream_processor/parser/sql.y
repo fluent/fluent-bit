@@ -31,7 +31,7 @@ void yyerror (struct flb_sp_cmd *cmd, void *scanner, const char *str)
 %token IDENTIFIER QUOTE QUOTED
 
 /* Basic keywords for statements */
-%token CREATE STREAM WITH SELECT AS FROM FROM_STREAM FROM_TAG WHERE WINDOW
+%token CREATE STREAM WITH SELECT AS FROM FROM_STREAM FROM_TAG WHERE WINDOW GROUP_BY
 
 /* Aggregation functions */
 %token AVG SUM COUNT MAX MIN
@@ -118,7 +118,17 @@ select: SELECT keys FROM source ';'
         cmd->type = FLB_SP_SELECT;
       }
       |
+      SELECT keys FROM source GROUP_BY gb_keys ';'
+      {
+        cmd->type = FLB_SP_SELECT;
+      }
+      |
       SELECT keys FROM source WINDOW window ';'
+      {
+        cmd->type = FLB_SP_SELECT;
+      }
+      |
+      SELECT keys FROM source WINDOW window GROUP_BY gb_keys ';'
       {
         cmd->type = FLB_SP_SELECT;
       }
@@ -129,7 +139,13 @@ select: SELECT keys FROM source ';'
         flb_sp_cmd_condition_add(cmd, $6); /* no flb_free for $6 */
       }
       |
-      SELECT keys FROM source WINDOW window WHERE condition ';'
+      SELECT keys FROM source WHERE condition GROUP_BY gb_keys ';'
+      {
+        cmd->type = FLB_SP_SELECT;
+        flb_sp_cmd_condition_add(cmd, $6); /* no flb_free for $6 */
+      }
+      |
+      SELECT keys FROM source WINDOW window WHERE condition GROUP_BY gb_keys ';'
       {
         cmd->type = FLB_SP_SELECT;
         flb_sp_cmd_condition_add(cmd, $8); /* no flb_free for $8 */
@@ -380,5 +396,17 @@ select: SELECT keys FROM source ';'
               HOUR
                 {
                     $$ = FLB_SP_TIME_HOUR;
+                }
+        gb_keys:
+            IDENTIFIER
+                {
+                    flb_sp_cmd_gb_key_add(cmd, $1);
+                    flb_free($1);
+                }
+            |
+            IDENTIFIER ',' gb_keys
+                {
+                    flb_sp_cmd_gb_key_add(cmd, $1);
+                    flb_free($1);
                 }
               ;

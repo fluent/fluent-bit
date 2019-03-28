@@ -61,6 +61,7 @@ AND                     return AND;
 OR                      return OR;
 NOT                     return NOT;
 WINDOW                  return WINDOW;
+"GROUP BY"              return GROUP_BY;
 
  /* Aggregation Functions */
 SUM                     return SUM;
