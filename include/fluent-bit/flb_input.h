@@ -51,6 +51,7 @@
 #define FLB_INPUT_NET          4  /* input address may set host and port   */
 #define FLB_INPUT_THREAD     128  /* plugin requires a thread on callbacks */
 #define FLB_INPUT_PRIVATE    256  /* plugin is not published/exposed       */
+#define FLB_INPUT_NOTAG      512  /* plugin might don't have tags          */
 
 /* Input status */
 #define FLB_INPUT_RUNNING     1
@@ -492,6 +493,12 @@ int flb_input_set_collector_socket(struct flb_input_instance *in,
                                    flb_pipefd_t fd,
                                    struct flb_config *config);
 int flb_input_collector_running(int coll_id, struct flb_input_instance *in);
+int flb_input_instance_init(struct flb_input_instance *in,
+                            struct flb_config *config);
+void flb_input_instance_exit(struct flb_input_instance *in,
+                             struct flb_config *config);
+void flb_input_instance_free(struct flb_input_instance *in);
+
 void flb_input_initialize_all(struct flb_config *config);
 void flb_input_pre_run_all(struct flb_config *config);
 void flb_input_exit_all(struct flb_config *config);

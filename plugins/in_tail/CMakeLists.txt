@@ -1,6 +1,5 @@
 set(src
   tail_file.c
-  tail_multiline.c
   tail_dockermode.c
   tail_scan.c
   tail_config.c
@@ -8,8 +7,15 @@ set(src
   tail_fs.c
   tail.c)
 
+if(FLB_PARSER)
+  set(src
+    ${src}
+    tail_multiline.c
+    )
+endif()
+
 if(MSVC)
-FLB_PLUGIN(in_tail "${src}" "Shlwapi")
+  FLB_PLUGIN(in_tail "${src}" "Shlwapi")
 else()
-FLB_PLUGIN(in_tail "${src}" "")
+  FLB_PLUGIN(in_tail "${src}" "")
 endif()

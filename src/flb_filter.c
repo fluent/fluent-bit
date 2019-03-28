@@ -62,9 +62,11 @@ void flb_filter_do(struct flb_input_chunk *ic,
                    struct flb_config *config)
 {
     int ret;
+#ifdef FLB_HAVE_METRICS
     int in_records = 0;
     int out_records = 0;
     int diff = 0;
+#endif
     char *ntag;
     char *work_data;
     size_t work_size;
@@ -101,6 +103,8 @@ void flb_filter_do(struct flb_input_chunk *ic,
         if (flb_router_match(ntag, tag_len, f_ins->match
 #ifdef FLB_HAVE_REGEX
         , f_ins->match_regex
+#else
+        , NULL
 #endif
            )) {
             /* Reset filtered buffer */
@@ -112,8 +116,10 @@ void flb_filter_do(struct flb_input_chunk *ic,
             /* where to position the new content if modified ? */
             write_at = (content_size - work_size);
 
+#ifdef FLB_HAVE_METRICS
             /* Count number of incoming records */
             in_records = flb_mp_count_zone(work_data, work_size, mp_zone);
+#endif
 
             /* Invoke the filter callback */
             ret = f_ins->p->cb_filter(work_data,      /* msgpack buffer   */
@@ -345,7 +351,9 @@ char *flb_filter_name(struct flb_filter_instance *in)
 void flb_filter_initialize_all(struct flb_config *config)
 {
     int ret;
+#ifdef FLB_HAVE_METRICS
     char *name;
+#endif
     struct mk_list *tmp;
     struct mk_list *head;
     struct mk_list *tmp_prop;

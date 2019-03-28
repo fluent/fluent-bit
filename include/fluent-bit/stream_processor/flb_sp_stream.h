@@ -18,20 +18,23 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_ROUTER_H
-#define FLB_ROUTER_H
+#ifndef FLB_SP_STREAM_H
+#define FLB_SP_STREAM_H
 
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_sds.h>
 
-struct flb_router_path {
-    struct flb_output_instance *ins;
-    struct mk_list _head;
+struct flb_sp_stream {
+    flb_sds_t name;       /* stream name */
+    flb_sds_t tag;        /* tag specified through properties */
+    void *in;             /* input instance context */
 };
 
-int flb_router_match(const char *tag, int tag_len,
-                     const char *match, void *match_regex);
-int flb_router_io_set(struct flb_config *config);
-void flb_router_exit(struct flb_config *config);
+int flb_sp_stream_create(char *name, struct flb_sp_task *task,
+                         struct flb_sp *sp);
+void flb_sp_stream_destroy(struct flb_sp_stream *stream, struct flb_sp *sp);
+
+int flb_sp_stream_append_data(char *buf_data, size_t buf_size,
+                              struct flb_sp_stream *stream);
 
 #endif

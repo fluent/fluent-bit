@@ -18,20 +18,14 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_ROUTER_H
-#define FLB_ROUTER_H
+#ifndef FLB_SP_FUNC_RECORD_H
+#define FLB_SP_FUNC_RECORD_H
 
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_time.h>
+#include <fluent-bit/stream_processor/flb_sp_parser.h>
 
-struct flb_router_path {
-    struct flb_output_instance *ins;
-    struct mk_list _head;
-};
-
-int flb_router_match(const char *tag, int tag_len,
-                     const char *match, void *match_regex);
-int flb_router_io_set(struct flb_config *config);
-void flb_router_exit(struct flb_config *config);
+int flb_sp_func_record(char *tag, int tag_len, struct flb_time *tms,
+                       msgpack_packer *mp_pck, struct flb_sp_cmd_key *cmd_key);
 
 #endif

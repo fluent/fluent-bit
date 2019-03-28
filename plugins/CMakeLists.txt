@@ -105,22 +105,32 @@ endif()
 
 REGISTER_IN_PLUGIN("in_dummy")
 REGISTER_IN_PLUGIN("in_head")
-REGISTER_IN_PLUGIN("in_exec")
 REGISTER_IN_PLUGIN("in_health")
 REGISTER_IN_PLUGIN("in_http")
 REGISTER_IN_PLUGIN("in_storage_backlog")
+
+if (FLB_STREAM_PROCESSOR)
+  REGISTER_IN_PLUGIN("in_stream_processor")
+endif()
 
 if (NOT CMAKE_SYSTEM_NAME MATCHES "Windows")
   REGISTER_IN_PLUGIN("in_serial")
 endif()
 
-REGISTER_IN_PLUGIN("in_stdin")
+if(FLB_REGEX)
+  REGISTER_IN_PLUGIN("in_stdin")
+endif()
+
+if(FLB_PARSER)
+  REGISTER_IN_PLUGIN("in_syslog")
+  REGISTER_IN_PLUGIN("in_exec")
+endif()
+
 REGISTER_IN_PLUGIN("in_tcp")
 REGISTER_IN_PLUGIN("in_mqtt")
 REGISTER_IN_PLUGIN("in_lib")
 REGISTER_IN_PLUGIN("in_forward")
 REGISTER_IN_PLUGIN("in_random")
-REGISTER_IN_PLUGIN("in_syslog")
 REGISTER_OUT_PLUGIN("out_azure")
 REGISTER_OUT_PLUGIN("out_bigquery")
 REGISTER_OUT_PLUGIN("out_counter")
@@ -148,11 +158,11 @@ REGISTER_OUT_PLUGIN("out_gelf")
 
 # FILTERS
 # =======
-REGISTER_FILTER_PLUGIN("filter_grep")
 REGISTER_FILTER_PLUGIN("filter_stdout")
 REGISTER_FILTER_PLUGIN("filter_throttle")
 
 if(FLB_REGEX)
+  REGISTER_FILTER_PLUGIN("filter_grep")
   REGISTER_FILTER_PLUGIN("filter_kubernetes")
   REGISTER_FILTER_PLUGIN("filter_parser")
   REGISTER_FILTER_PLUGIN("filter_nest")

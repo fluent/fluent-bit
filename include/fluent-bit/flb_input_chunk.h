@@ -29,7 +29,9 @@
 
 struct flb_input_chunk {
     int busy;                       /* buffer is being flushed  */
+    int sp_done;                    /* sp already processed this chunk */
     void *chunk;                    /* context of struct cio_chunk */
+    off_t stream_off;               /* stream offset */
     msgpack_packer mp_pck;          /* msgpack packer */
     struct flb_input_instance *in;  /* reference to parent input instance */
     struct mk_list _head;

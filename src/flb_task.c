@@ -243,6 +243,8 @@ struct flb_task *flb_task_create(uint64_t ref_id,
         if (flb_router_match(task->tag, task->tag_len, o_ins->match
 #ifdef FLB_HAVE_REGEX
                              , o_ins->match_regex
+#else
+                             , NULL
 #endif
                              )) {
             route = flb_malloc(sizeof(struct flb_task_route));

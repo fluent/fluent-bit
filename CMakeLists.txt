@@ -59,6 +59,7 @@ option(FLB_BACKTRACE          "Enable stacktrace support"    Yes)
 option(FLB_LUAJIT             "Enable Lua Scripting support" Yes)
 option(FLB_SYSTEM_STRPTIME    "Use strptime in system libc"  Yes)
 option(FLB_STATIC_CONF        "Build binary using static configuration")
+option(FLB_STREAM_PROCESSOR   "Enable Stream Processor"      Yes)
 option(FLB_CORO_STACK_SIZE    "Set coroutine stack size")
 
 # Metrics: Experimental Feature, disabled by default on 0.12 series
@@ -236,6 +237,11 @@ include_directories(
   lib/LuaJIT-2.1.0-beta3/src/
   ${MONKEY_INCLUDE_DIR}
   )
+
+if(FLB_STREAM_PROCESSOR)
+  set(FLB_IN_STREAM_PROCESSOR On)
+  FLB_DEFINITION(FLB_HAVE_STREAM_PROCESSOR)
+endif()
 
 # On Windows, the core uses libevent
 if(CMAKE_SYSTEM_NAME MATCHES "Windows")

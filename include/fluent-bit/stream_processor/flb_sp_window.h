@@ -18,20 +18,9 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_ROUTER_H
-#define FLB_ROUTER_H
+#define FLB_SP_WINDOW_DEFAULT   0
+#define FLB_SP_WINDOW_TUMBLING  1
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
-
-struct flb_router_path {
-    struct flb_output_instance *ins;
-    struct mk_list _head;
-};
-
-int flb_router_match(const char *tag, int tag_len,
-                     const char *match, void *match_regex);
-int flb_router_io_set(struct flb_config *config);
-void flb_router_exit(struct flb_config *config);
-
-#endif
+void flb_sp_window_prune(struct flb_sp_task *task);
+int flb_sp_window_populate(struct flb_sp_task *task, char *buf_data,
+                           size_t buf_size);

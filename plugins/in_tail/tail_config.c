@@ -30,7 +30,10 @@
 #include "tail_config.h"
 #include "tail_scan.h"
 #include "tail_dockermode.h"
+
+#ifdef FLB_HAVE_PARSER
 #include "tail_multiline.h"
+#endif
 
 struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
                                                struct flb_config *config)
@@ -147,6 +150,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
         }
     }
 
+#ifdef FLB_HAVE_PARSER
     /* Config: multi-line support */
     tmp = flb_input_get_property("multiline", i_ins);
     if (tmp) {
@@ -160,6 +164,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
             }
         }
     }
+#endif
 
     /* Config: Docker mode */
     tmp = flb_input_get_property("docker_mode", i_ins);
@@ -322,7 +327,10 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
 
 int flb_tail_config_destroy(struct flb_tail_config *config)
 {
+
+#ifdef FLB_HAVE_PARSER
     flb_tail_mult_destroy(config);
+#endif
 
     /* Close pipe ends */
     flb_pipe_close(config->ch_manager[0]);

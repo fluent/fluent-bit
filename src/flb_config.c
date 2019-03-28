@@ -102,6 +102,12 @@ struct flb_service_config service_configs[] = {
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, coro_stack_size)},
 
+#ifdef FLB_HAVE_STREAM_PROCESSOR
+    {FLB_CONF_STR_STREAMS_FILE,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, stream_processor_file)},
+#endif
+
     {NULL, FLB_CONF_TYPE_OTHER, 0} /* end of array */
 };
 
@@ -298,6 +304,12 @@ void flb_config_exit(struct flb_config *config)
     if (config->storage_path) {
         flb_free(config->storage_path);
     }
+
+#ifdef FLB_HAVE_STREAM_PROCESSOR
+    if (config->stream_processor_file) {
+        flb_free(config->stream_processor_file);
+    }
+#endif
 
     if (config->evl) {
         mk_event_loop_destroy(config->evl);

@@ -275,7 +275,7 @@ char *flb_input_name(struct flb_input_instance *in)
     return in->name;
 }
 
-static void flb_input_free(struct flb_input_instance *in)
+void flb_input_instance_free(struct flb_input_instance *in)
 {
     struct mk_list *head_prop;
     struct flb_config_prop *prop;
@@ -325,11 +325,55 @@ static void flb_input_free(struct flb_input_instance *in)
     flb_free(in);
 }
 
+int flb_input_instance_init(struct flb_input_instance *in,
+                            struct flb_config *config)
+{
+    int ret;
+    char *name;
+    struct flb_input_plugin *p = in->p;
+
+    /* Skip pseudo input plugins */
+    if (!p) {
+        return 0;
+    }
+
+    /* Metrics */
+#ifdef FLB_HAVE_METRICS
+    /* Get name or alias for the instance */
+    name = flb_input_name(in);
+
+    /* Create the metrics context */
+    in->metrics = flb_metrics_create(name);
+    if (in->metrics) {
+        flb_metrics_add(FLB_METRIC_N_RECORDS, "records", in->metrics);
+        flb_metrics_add(FLB_METRIC_N_BYTES, "bytes", in->metrics);
+    }
+#endif
+
+    /* Initialize the input */
+    if (p->cb_init) {
+        /* Sanity check: all non-dynamic tag input plugins must have a tag */
+        if (!in->tag) {
+            flb_input_set_property(in, "tag", in->name);
+        }
+
+        ret = p->cb_init(in, config, in->data);
+        if (ret != 0) {
+            flb_error("Failed initialize input %s",
+                      in->name);
+            flb_input_instance_free(in);
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+
 /* Initialize all inputs */
 void flb_input_initialize_all(struct flb_config *config)
 {
     int ret;
-    char *name;
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_input_instance *in;
@@ -348,32 +392,10 @@ void flb_input_initialize_all(struct flb_config *config)
             continue;
         }
 
-        /* Metrics */
-#ifdef FLB_HAVE_METRICS
-        /* Get name or alias for the instance */
-        name = flb_input_name(in);
-
-        /* Create the metrics context */
-        in->metrics = flb_metrics_create(name);
-        if (in->metrics) {
-            flb_metrics_add(FLB_METRIC_N_RECORDS, "records", in->metrics);
-            flb_metrics_add(FLB_METRIC_N_BYTES, "bytes", in->metrics);
-        }
-#endif
-
-        /* Initialize the input */
-        if (p->cb_init) {
-            /* Sanity check: all non-dynamic tag input plugins must have a tag */
-            if (!in->tag) {
-                flb_input_set_property(in, "tag", in->name);
-            }
-
-            ret = p->cb_init(in, config, in->data);
-            if (ret != 0) {
-                flb_error("Failed initialize input %s",
-                          in->name);
-                flb_input_free(in);
-            }
+        /* Initialize instance */
+        ret = flb_input_instance_init(in, config);
+        if (ret == -1) {
+            /* do nothing, it's ok if it fails */
         }
     }
 }
@@ -398,6 +420,16 @@ void flb_input_pre_run_all(struct flb_config *config)
     }
 }
 
+void flb_input_instance_exit(struct flb_input_instance *in,
+                             struct flb_config *config)
+{
+    struct flb_input_plugin *p;
+
+    p = in->p;
+    if (p->cb_exit && in->context) {
+        p->cb_exit(in->context, config);
+    }
+}
 
 /* Invoke all exit input callbacks */
 void flb_input_exit_all(struct flb_config *config)
@@ -415,10 +447,8 @@ void flb_input_exit_all(struct flb_config *config)
             continue;
         }
 
-        if (p->cb_exit && in->context) {
-            p->cb_exit(in->context, config);
-        }
-        flb_input_free(in);
+        flb_input_instance_exit(in, config);
+        flb_input_instance_free(in);
     }
 }
 

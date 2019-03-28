@@ -97,21 +97,11 @@ static inline int router_match(const char *tag, int tag_len,
     return ret;
 }
 
-#ifdef FLB_HAVE_REGEX
-int flb_router_match(const char *tag, int tag_len,
-                     const char *match,
-                     struct flb_regex *match_regex)
+int flb_router_match(const char *tag, int tag_len, const char *match,
+                     void *match_regex)
 {
     return router_match(tag, tag_len, match, match_regex);
 }
-
-#else
-int flb_router_match(const char *tag, int tag_len, const char *match)
-{
-    return router_match(tag, tag_len, match, NULL);
-}
-#endif
-
 
 /* Associate and input and output instances due to a previous match */
 static int flb_router_connect(struct flb_input_instance *in,
@@ -203,6 +193,8 @@ int flb_router_io_set(struct flb_config *config)
             if (flb_router_match(i_ins->tag, i_ins->tag_len, o_ins->match
 #ifdef FLB_HAVE_REGEX
                 , o_ins->match_regex
+#else
+                , NULL
 #endif
             )) {
                 flb_debug("[router] match rule %s:%s",

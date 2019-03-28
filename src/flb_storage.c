@@ -81,8 +81,8 @@ static int log_cb(struct cio_ctx *ctx, int level, const char *file, int line,
     return 0;
 }
 
-static int storage_input_create(struct cio_ctx *cio,
-                                struct flb_input_instance *in)
+int flb_storage_input_create(struct cio_ctx *cio,
+                             struct flb_input_instance *in)
 {
     int type;
     char *tmp;
@@ -169,7 +169,7 @@ static int storage_contexts_create(struct flb_config *config)
     /* Iterate each input instance and create a stream for it */
     mk_list_foreach(head, &config->inputs) {
         in = mk_list_entry(head, struct flb_input_instance, _head);
-        ret = storage_input_create(config->cio, in);
+        ret = flb_storage_input_create(config->cio, in);
         if (ret == -1) {
             flb_error("[storage] could not create storage for instance: %s",
                       in->name);

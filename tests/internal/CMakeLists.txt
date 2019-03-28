@@ -13,6 +13,7 @@ set(UNIT_TESTS_FILES
   hashtable.c
   http_client.c
   utils.c
+  stream_processor.c
   )
 
 if(FLB_METRICS)
@@ -61,6 +62,10 @@ foreach(source_file ${UNIT_TESTS_FILES})
       target_link_libraries(${source_file_we} libjemalloc ${CMAKE_THREAD_LIBS_INIT})
     else()
       target_link_libraries(${source_file_we} ${CMAKE_THREAD_LIBS_INIT})
+    endif()
+
+    if(FLB_STREAM_PROCESSOR)
+      target_link_libraries(${source_file_we} flb-sp)
     endif()
 
     target_link_libraries(${source_file_we} fluent-bit-static)

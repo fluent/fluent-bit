@@ -181,6 +181,11 @@ if(CMAKE_SYSTEM_NAME MATCHES "Linux")
     )
 endif()
 
+# Stream Processor
+if(FLB_STREAM_PROCESSOR)
+  add_subdirectory(stream_processor)
+endif()
+
 # HTTP Server
 if(FLB_HTTP_SERVER)
   add_subdirectory(http_server)
@@ -213,6 +218,14 @@ set(FLB_DEPS
   ${FLB_PROXY_PLUGINS}
   ${extra_libs}
   )
+
+# Stream Processor
+if(FLB_STREAM_PROCESSOR)
+  set(FLB_DEPS
+    ${FLB_DEPS}
+    flb-sp
+    )
+endif()
 
 # Shared Library
 if(FLB_SHARED_LIB)

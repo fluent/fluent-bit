@@ -146,6 +146,7 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
     ic->busy = FLB_FALSE;
     ic->chunk = chunk;
     ic->in = in;
+    ic->stream_off = 0;
     msgpack_packer_init(&ic->mp_pck, ic, flb_input_chunk_write);
     mk_list_add(&ic->_head, &in->chunks);
 
@@ -362,6 +363,22 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
     if (size == 0) {
         flb_input_chunk_destroy(ic, FLB_TRUE);
     }
+#ifdef FLB_HAVE_STREAM_PROCESSOR
+    else if (in->config->stream_processor_ctx) {
+        char *c_data;
+        size_t c_size;
+
+        /* Retrieve chunk (filtered) output content */
+        cio_chunk_get_content(ic->chunk, &c_data, &c_size);
+
+        /* Invoke stream processor */
+        flb_sp_do(in->config->stream_processor_ctx,
+                  in,
+                  tag, tag_len,
+                  c_data + ic->stream_off, c_size - ic->stream_off);
+        ic->stream_off += (c_size - ic->stream_off);
+    }
+#endif
 
     /* Update memory counters and adjust limits if any */
     flb_input_chunk_set_limits(in);
