@@ -95,41 +95,35 @@ void do_test(char *system, ...)
     TEST_CHECK(out_ffd >= 0);
     TEST_CHECK(flb_output_set(ctx, out_ffd, "match", "test", NULL) == 0);
 
-    TEST_CHECK(flb_service_set(ctx, "Flush", "3",
+    TEST_CHECK(flb_service_set(ctx, "Flush", "0.5",
                                     "Grace", "1",
                                     NULL) == 0);
 
     /* The following test tries to check if an input plugin generates
      * data in a timely manner.
      *
-     *    0  1  2  3  4  5  6  7  8 (sec)
-     *    |--C--*--F--C--*--F--C--|
+     *    0     1     2     3     4   (sec)
+     *    |--F--F--F--C--F--F--F--C--|
      *
-     *    F ... Flush (3 sec interval)
+     *    F ... Flush (0.5 sec interval)
      *    C ... Condition checks
      *
      * Since CI servers can be sometimes very slow, we wait slightly a
-     * little more (1 sec) before checking the condition.
+     * little more before checking the condition.
      */
 
     /* Start test */
     TEST_CHECK(flb_start(ctx) == 0);
 
-    /* 1 sec passed. No data should be flushed */
-    sleep(1);
+    /* 2 sec passed. It must have flushed */
+    sleep(2);
     flb_info("[test] check status 1");
-    ret = get_result();
-    TEST_CHECK(ret == 0);
-
-    /* 4 sec passed. It must have flushed once */
-    sleep(3);
-    flb_info("[test] check status 2");
     ret = get_result();
     TEST_CHECK(ret > 0);
 
-    /* 7 sec passed. It must have flushed again */
-    sleep(3);
-    flb_info("[test] check status 3");
+    /* 4 sec passed. It must have flushed */
+    sleep(2);
+    flb_info("[test] check status 2");
     ret = get_result();
     TEST_CHECK(ret > 0);
 
@@ -140,13 +134,15 @@ void do_test(char *system, ...)
 void flb_test_in_disk_flush()
 {
     do_test("disk",
-            "interval_sec", "1",
+            "interval_sec", "0",
+            "interval_nsec", "500000000",
             NULL);
 }
 void flb_test_in_proc_flush()
 {
     do_test("proc",
-            "interval_sec", "1",
+            "interval_sec", "0",
+            "interval_nsec", "500000000",
             "proc_name", "flb_test_in_proc",
             "alert", "true",
             "mem", "on",
@@ -156,7 +152,8 @@ void flb_test_in_proc_flush()
 void flb_test_in_head_flush()
 {
     do_test("head", 
-            "Interval_Sec", "1",
+            "interval_sec", "0",
+            "interval_nsec", "500000000",
             "File", "/dev/urandom",
             NULL);
 }
