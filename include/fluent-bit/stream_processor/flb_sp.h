@@ -26,7 +26,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_input.h>
 #include <monkey/mk_core.h>
-#include <monkey/deps/rbtree/rbtree.h>
+#include <rbtree.h>
 
 /* Aggr num type */
 #define FLB_SP_NUM_I64       0
