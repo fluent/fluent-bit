@@ -17,4 +17,5 @@ set(src
   )
 
 add_library(flb-sp STATIC ${src})
+target_link_libraries(flb-sp rbtree)
 target_link_libraries(flb-sp flb-sp-parser)
