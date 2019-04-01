@@ -246,6 +246,7 @@ include_directories(
   include/
   lib/
   lib/flb_libco
+  lib/rbtree
   lib/msgpack-3.1.1/include
   lib/chunkio/include
   lib/LuaJIT-2.1.0-beta3/src/
@@ -347,6 +348,10 @@ endif()
 FLB_DEFINITION(FLB_HAVE_FLUSH_LIBCO)
 if(NOT TARGET co)
   add_subdirectory(lib/flb_libco)
+endif()
+
+if(NOT TARGET rbtree)
+  add_subdirectory(lib/rbtree)
 endif()
 
 # Systemd Journald support
