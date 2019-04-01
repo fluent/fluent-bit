@@ -111,6 +111,10 @@ set(extra_libs
   ${extra_libs}
   "co")
 
+set(extra_libs
+  ${extra_libs}
+  "rbtree")
+
 if(FLB_JEMALLOC)
   set(extra_libs
     ${extra_libs}
