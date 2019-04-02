@@ -5,7 +5,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Update CFLAGS
 if (MSVC)
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W3")
 else()
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
 endif()
