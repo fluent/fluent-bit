@@ -22,7 +22,7 @@
 
 #include <pulsar/Message.h>
 #include <pulsar/MessageBuilder.h>
-#include "../../../../plugins/out_pulsar/pulsar-client-2.2.1/pulsar-client-cpp/lib/c/c_structs.h"
+#include "../../../../plugins/out_pulsar/pulsar-client-2.3.0/pulsar-client-cpp/lib/c/c_structs.h"
 
 void pulsar_build_message(pulsar_message_t * message)
 {
