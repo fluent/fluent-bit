@@ -43,9 +43,12 @@ pulsar_result flb_pulsar_client_create_producer(struct flb_pulsar_client
                                                 struct flb_output_instance
                                                 *ins);
 
-pulsar_result flb_pulsar_client_produce_message(struct flb_pulsar_client
+void flb_pulsar_client_produce_message(struct flb_pulsar_client
                                                 *client,
                                                 pulsar_message_t * msg);
+
+pulsar_result flb_pulsar_client_flush(struct flb_pulsar_client *
+                                                client);
 
 int flb_pulsar_client_destroy(struct flb_pulsar_client *client);
 

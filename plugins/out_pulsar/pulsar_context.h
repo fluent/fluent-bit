@@ -29,8 +29,10 @@ struct flb_pulsar_context
 
     struct flb_output_instance *output_instance;
 
-    pulsar_result(*publish_fn) (struct flb_pulsar_context * context,
+    void(*publish_fn) (struct flb_pulsar_context * context,
                                 pulsar_message_t * msg);
+
+    pulsar_result(*flush_fn) (struct flb_pulsar_context * context);
 
     pulsar_result(*connect_fn) (struct flb_pulsar_context * context);
 };

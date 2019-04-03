@@ -97,15 +97,19 @@ pulsar_result flb_pulsar_client_create_producer(struct flb_pulsar_client *
     return result;
 }
 
-pulsar_result flb_pulsar_client_produce_message(struct flb_pulsar_client *
+void flb_pulsar_client_produce_message(struct flb_pulsar_client *
                                                 client,
                                                 pulsar_message_t * msg)
 {
-    pulsar_result result = pulsar_producer_send(client->producer, msg);
+    pulsar_producer_send_async(client->producer, msg, NULL, NULL);
     pulsar_message_free(msg);
-    return result;
 }
 
+pulsar_result flb_pulsar_client_flush(struct flb_pulsar_client *
+                                                client)
+{
+    return pulsar_producer_flush(client->producer);
+}
 
 int flb_pulsar_client_destroy(struct flb_pulsar_client *client)
 {

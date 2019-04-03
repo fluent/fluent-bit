@@ -57,7 +57,6 @@ static int produce_message(struct flb_time *tm, msgpack_object * map,
     const size_t INITIAL_BUFFER_ALLOCATION = 1024;
     char *const out_buf =
         flb_msgpack_to_json_str(INITIAL_BUFFER_ALLOCATION, map);
-    int result = FLB_ERROR;
 
     if (!out_buf) {
         flb_error("[out_pulsar] error encoding to JSON");
@@ -67,26 +66,10 @@ static int produce_message(struct flb_time *tm, msgpack_object * map,
     pulsar_message_t *msg = pulsar_message_create();
     pulsar_message_set_content(msg, out_buf, strlen(out_buf));
 
-    pulsar_result publish_result = ctx->publish_fn(ctx, msg);
-    switch (publish_result) {
-    case pulsar_result_Ok:
-        result = FLB_OK;
-        break;
-    case pulsar_result_Timeout:
-    case pulsar_result_ProducerBlockedQuotaExceededException:
-    case pulsar_result_ProducerBlockedQuotaExceededError:
-        flb_warn("[out_pulsar] Message failed to send due to %s; will retry.",
-                 pulsar_result_str(publish_result));
-        result = FLB_RETRY;
-        break;
-    default:
-        flb_error("[out_pulsar] Message failed due to %s.",
-                  pulsar_result_str(publish_result));
-        break;
-    }
+    ctx->publish_fn(ctx, msg);
 
     flb_free(out_buf);
-    return result;
+    return FLB_OK;
 }
 
 static void cb_pulsar_flush(void *data, size_t bytes,
@@ -107,6 +90,28 @@ static void cb_pulsar_flush(void *data, size_t bytes,
 
         ret = produce_message(&tms, obj, ctx, config);
         if (ret != FLB_OK) {
+            break;
+        }
+    }
+
+    if (ret == FLB_OK) {
+        // Flush all pending messages
+        pulsar_result publish_result = ctx->flush_fn(ctx);
+        switch (publish_result) {
+        case pulsar_result_Ok:
+            ret = FLB_OK;
+            break;
+        case pulsar_result_Timeout:
+        case pulsar_result_ProducerBlockedQuotaExceededException:
+        case pulsar_result_ProducerBlockedQuotaExceededError:
+            flb_warn("[out_pulsar] Message failed to send due to %s; will retry.",
+                     pulsar_result_str(publish_result));
+            ret = FLB_RETRY;
+            break;
+        default:
+            flb_error("[out_pulsar] Message failed due to %s.",
+                      pulsar_result_str(publish_result));
+            ret = FLB_ERROR;
             break;
         }
     }

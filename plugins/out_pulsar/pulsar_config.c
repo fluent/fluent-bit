@@ -70,7 +70,8 @@ flb_pulsar_config_producer_config_create(struct flb_output_instance *const
         pulsar_producer_configuration_set_batching_enabled(cfg, value);
     }
     else {
-        pulsar_producer_configuration_set_batching_enabled(cfg, 0);
+        // Default to batching enabled
+        pulsar_producer_configuration_set_batching_enabled(cfg, 1);
     }
 
     char *batching_timeout =
@@ -79,6 +80,10 @@ flb_pulsar_config_producer_config_create(struct flb_output_instance *const
         int value = atoi(batching_timeout);
         pulsar_producer_configuration_set_batching_max_publish_delay_ms(cfg,
                                                                         value);
+    } else {
+        // Default to 100ms
+        pulsar_producer_configuration_set_batching_max_publish_delay_ms(cfg,
+                                                                        100);
     }
 
     pulsar_producer_configuration_set_block_if_queue_full(cfg, 1);
