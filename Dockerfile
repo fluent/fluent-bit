@@ -20,7 +20,8 @@ RUN apt-get update && \
       libsasl2-dev \
       pkg-config \
       libsystemd-dev \
-      zlib1g-dev
+      zlib1g-dev  \
+      libcurl4-openssl-dev
 
 # Apache Pulsar pre-requisites
 RUN apt-get update && \
