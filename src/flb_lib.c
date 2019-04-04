@@ -36,6 +36,21 @@
 #include <mcheck.h>
 #endif
 
+#ifdef FLB_SYSTEM_WINDOWS
+static inline int flb_socket_init_win32(void)
+{
+    WSADATA wsaData;
+    int err;
+
+    err = WSAStartup(MAKEWORD(2, 2), &wsaData);
+    if (err != 0) {
+        fprintf(stderr, "WSAStartup failed with error: %d\n", err);
+        return err;
+    }
+    return 0;
+}
+#endif
+
 static inline struct flb_input_instance *in_instance_get(flb_ctx_t *ctx,
                                                          int ffd)
 {
@@ -93,6 +108,13 @@ flb_ctx_t *flb_create()
 #ifdef FLB_HAVE_MTRACE
     /* Start tracing malloc and free */
     mtrace();
+#endif
+
+#ifdef FLB_SYSTEM_WINDOWS
+    /* Ensure we initialized Windows Sockets */
+    if (flb_socket_init_win32()) {
+        return NULL;
+    }
 #endif
 
     ctx = flb_calloc(1, sizeof(flb_ctx_t));
