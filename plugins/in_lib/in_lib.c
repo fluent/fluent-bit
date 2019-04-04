@@ -58,9 +58,9 @@ static int in_lib_collect(struct flb_input_instance *i_ins,
         capacity = LIB_BUF_CHUNK;
     }
 
-    bytes = read(ctx->fd,
-                 ctx->buf_data + ctx->buf_len,
-                 capacity);
+    bytes = flb_pipe_r(ctx->fd,
+                       ctx->buf_data + ctx->buf_len,
+                       capacity);
     flb_trace("in_lib read() = %i", bytes);
     if (bytes == -1) {
         perror("read");
