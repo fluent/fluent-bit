@@ -61,7 +61,7 @@ static inline int instance_id(struct flb_input_plugin *p,
 
     mk_list_foreach(head, &config->inputs) {
         entry = mk_list_entry(head, struct flb_input_instance, _head);
-        if (entry->p == p) {
+        if (entry->id == c) {
             c++;
         }
     }
