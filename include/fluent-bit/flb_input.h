@@ -369,7 +369,7 @@ static FLB_INLINE void input_params_set(struct flb_thread *th,
     co_switch(th->callee);
 }
 
-static FLB_INLINE void input_pre_cb_collect()
+static FLB_INLINE void input_pre_cb_collect(void)
 {
     struct flb_input_collector *coll = libco_in_param.coll;
     struct flb_config *config = libco_in_param.config;
@@ -436,7 +436,7 @@ static inline void flb_input_return(struct flb_thread *th) {
      * We put together the return value with the task_id on the 32 bits at right
      */
     val = FLB_BITS_U64_SET(3 /* FLB_ENGINE_IN_THREAD */, in_th->id);
-    n = flb_pipe_w(in_th->config->ch_manager[1], &val, sizeof(val));
+    n = flb_pipe_w(in_th->config->ch_manager[1], (void *) &val, sizeof(val));
     if (n == -1) {
         flb_errno();
     }
