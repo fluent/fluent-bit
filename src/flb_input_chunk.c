@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_input_chunk.h>
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/stream_processor/flb_sp.h>
 
 static void generate_chunk_name(struct flb_input_instance *in,
                                 char *out_buf, int buf_size)
