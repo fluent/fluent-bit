@@ -18,9 +18,10 @@
  *  limitations under the License.
  */
 
- #include <fluent-bit/stream_processor/flb_sp.h>
- #include <fluent-bit/stream_processor/flb_sp_window.h>
- #include <fluent-bit/stream_processor/flb_sp_parser.h>
+#include <fluent-bit/stream_processor/flb_sp.h>
+#include <fluent-bit/stream_processor/flb_sp_window.h>
+#include <fluent-bit/stream_processor/flb_sp_parser.h>
+#include <fluent-bit/stream_processor/flb_sp_groupby.h>
 
 void flb_sp_window_prune(struct flb_sp_task *task)
 {
@@ -44,7 +45,7 @@ void flb_sp_window_prune(struct flb_sp_task *task)
         rb_tree_destroy(&task->window.aggr_tree);
 
         mk_list_init(&task->window.aggr_list);
-        rb_tree_new(&task->window.aggr_tree, groupby_compare);
+        rb_tree_new(&task->window.aggr_tree, flb_sp_groupby_compare);
         task->window.records = 0;
     break;
     }

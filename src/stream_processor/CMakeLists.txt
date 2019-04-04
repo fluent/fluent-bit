@@ -14,6 +14,7 @@ set(src
   flb_sp_func_record.c
   flb_sp_stream.c
   flb_sp_window.c
+  flb_sp_groupby.c
   )
 
 add_library(flb-sp STATIC ${src})

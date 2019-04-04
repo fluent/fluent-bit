@@ -103,57 +103,6 @@ struct flb_sp {
     struct flb_config *config;   /* reference to Fluent Bit context */
 };
 
-static int groupby_compare(const void *lhs, const void *rhs)
-{
-    int i;
-    struct aggr_node *left = (struct aggr_node *) lhs;
-    struct aggr_node *right = (struct aggr_node *) rhs;
-    struct aggr_num *lval;
-    struct aggr_num *rval;
-
-    for (i = 0; i < left->groupby_keys; i++) {
-        lval = &left->groupby_nums[i];
-        rval = &right->groupby_nums[i];
-
-        /* Convert integer to double if a float value appears on one side */
-        if (lval->type == FLB_SP_NUM_I64 && rval->type == FLB_SP_NUM_F64) {
-            lval->type = FLB_SP_NUM_F64;
-            lval->f64 = (double) lval->i64;
-        }
-        else if (lval->type == FLB_SP_NUM_F64 && rval->type == FLB_SP_NUM_I64) {
-            rval->type = FLB_SP_NUM_F64;
-            rval->f64 = (double) rval->i64;
-        }
-
-        if (lval->type == FLB_SP_NUM_I64 && rval->type == FLB_SP_NUM_I64) {
-            if (lval->i64 > rval->i64) {
-                return 1;
-            }
-
-            if (lval->i64 < rval->i64) {
-                return -1;
-            }
-        }
-        else if (lval->type == FLB_SP_NUM_F64 &&  rval->type == FLB_SP_NUM_F64) {
-            if (lval->f64 > rval->f64) {
-                return 1;
-            }
-
-            if (lval->f64 < rval->f64) {
-                return -1;
-            }
-        }
-        else if (lval->type == FLB_SP_STRING && rval->type == FLB_SP_STRING) {
-          return strcmp((const char *) lval->string, (const char *) rval->string);
-        }
-        else { /* Sides have different types */
-          return -1;
-        }
-    }
-
-    return 0;
-}
-
 struct flb_sp *flb_sp_create(struct flb_config *config);
 void flb_sp_destroy(struct flb_sp *sp);
 

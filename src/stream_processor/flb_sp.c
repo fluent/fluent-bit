@@ -33,6 +33,7 @@
 #include <fluent-bit/stream_processor/flb_sp_func_time.h>
 #include <fluent-bit/stream_processor/flb_sp_func_record.h>
 #include <fluent-bit/stream_processor/flb_sp_window.h>
+#include <fluent-bit/stream_processor/flb_sp_groupby.h>
 
 #include <stdlib.h>
 #include <sys/types.h>
@@ -495,7 +496,7 @@ struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, char *name,
 
     mk_list_init(&task->window.data);
     mk_list_init(&task->window.aggr_list);
-    rb_tree_new(&task->window.aggr_tree, groupby_compare);
+    rb_tree_new(&task->window.aggr_tree, flb_sp_groupby_compare);
 
     /* Check and validate aggregated keys */
     ret = sp_cmd_aggregated_keys(task->cmd);
