@@ -429,7 +429,7 @@ int flb_start(flb_ctx_t *ctx)
     mk_event_wait(config->ch_evl);
     mk_event_foreach(event, config->ch_evl) {
         fd = event->fd;
-        bytes = read(fd, &val, sizeof(uint64_t));
+        bytes = flb_pipe_r(fd, &val, sizeof(uint64_t));
         if (bytes <= 0) {
             return -1;
         }
