@@ -29,11 +29,13 @@
 #define flb_sockfd_t evutil_socket_t
 #define flb_pipe_w(fd, buf, len) send(fd, buf, len, 0)
 #define flb_pipe_r(fd, buf, len) recv(fd, buf, len, 0)
+#define FLB_PIPE_WOULDBLOCK() (WSAGetLastError() == WSAEWOULDBLOCK)
 #else
 #define flb_pipefd_t int
 #define flb_sockfd_t int
 #define flb_pipe_w(fd, buf, len) write(fd, buf, len)
 #define flb_pipe_r(fd, buf, len) read(fd, buf, len)
+#define FLB_PIPE_WOULDBLOCK() (errno == EAGAIN || errno == EWOULDBLOCK)
 #endif
 
 int flb_pipe_create(flb_pipefd_t pipefd[2]);
