@@ -15,7 +15,6 @@ cmake -G "$ENV:msvc" -DCMAKE_BUILD_TYPE="$ENV:configuration" `
                      -D FLB_WITHOUT_flb-it-http_client=On `
                      -D FLB_WITHOUT_flb-it-network=On `
                      -D FLB_WITHOUT_flb-it-pack=On `
-                     -D FLB_WITHOUT_flb-it-stream_processor=On `
                      ../
 
 # COMPILE
