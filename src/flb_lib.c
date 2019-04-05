@@ -36,6 +36,9 @@
 #include <mcheck.h>
 #endif
 
+/* thread initializator */
+static pthread_once_t flb_lib_once = PTHREAD_ONCE_INIT;
+
 #ifdef FLB_SYSTEM_WINDOWS
 static inline int flb_socket_init_win32(void)
 {
@@ -439,6 +442,8 @@ int flb_start(flb_ctx_t *ctx)
     pthread_t tid;
     struct mk_event *event;
     struct flb_config *config;
+
+    pthread_once(&flb_lib_once, flb_thread_prepare);
 
     config = ctx->config;
     ret = mk_utils_worker_spawn(flb_lib_worker, config, &tid);
