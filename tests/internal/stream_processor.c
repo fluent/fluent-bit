@@ -577,12 +577,18 @@ static void test_select_keys()
     struct flb_config *config;
     struct flb_sp *sp;
     struct flb_sp_task *task;
+#ifdef _WIN32
+    WSADATA wsa_data;
+#endif
 
     config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
         flb_errno();
         return;
     }
+#ifdef _WIN32
+    WSAStartup(0x0201, &wsa_data);
+#endif
     mk_list_init(&config->inputs);
     mk_list_init(&config->stream_processor_tasks);
 
@@ -640,6 +646,9 @@ static void test_select_keys()
     flb_sp_destroy(sp);
     mk_event_loop_destroy(config->evl);
     flb_free(config);
+#ifdef _WIN32
+    WSACleanup();
+#endif
 }
 
 static void cb_window_5_second(int id, struct task_check *check,
@@ -689,12 +698,18 @@ static void test_window()
     struct flb_config *config;
     struct flb_sp *sp;
     struct flb_sp_task *task;
+#ifdef _WIN32
+    WSADATA wsa_data;
+#endif
 
     config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
         flb_errno();
         return;
     }
+#ifdef _WIN32
+    WSAStartup(0x0201, &wsa_data);
+#endif
     mk_list_init(&config->inputs);
     mk_list_init(&config->stream_processor_tasks);
     config->evl = mk_event_loop_create(256);
@@ -760,6 +775,9 @@ static void test_window()
     flb_sp_destroy(sp);
     mk_event_loop_destroy(config->evl);
     flb_free(config);
+#ifdef _WIN32
+    WSACleanup();
+#endif
 }
 
 TEST_LIST = {
