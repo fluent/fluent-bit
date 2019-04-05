@@ -78,12 +78,6 @@ int flb_pipe_set_nonblocking(flb_pipefd_t fd)
 {
     return evutil_make_socket_nonblocking(fd);
 }
-
-int flb_pipe_check_eagain(void)
-{
-    return WSAGetLastError() == WSAEWOULDBLOCK;
-}
-
 #else
 /* All other flavors of Unix/BSD are OK */
 
@@ -114,11 +108,6 @@ int flb_pipe_set_nonblocking(flb_pipefd_t fd)
     if (flags & O_NONBLOCK)
         return 0;
     return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-}
-
-int flb_pipe_check_eagain(void)
-{
-    return errno == EAGAIN || errno == EWOULDBLOCK;
 }
 #endif
 
