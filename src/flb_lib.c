@@ -60,13 +60,7 @@ static inline struct flb_output_instance *out_instance_get(flb_ctx_t *ctx,
 
     mk_list_foreach(head, &ctx->config->outputs) {
         o_ins = mk_list_entry(head, struct flb_output_instance, _head);
-
-        /*
-         * A small different between input/output instances. The output
-         * instances already have an unique mask_id used for routing, so we
-         * use it as an identificator for the API.
-         */
-        if (o_ins->mask_id == ffd) {
+        if (o_ins->id == ffd) {
             return o_ins;
         }
     }
@@ -201,7 +195,7 @@ int flb_output(flb_ctx_t *ctx, char *output, void *data)
         return -1;
     }
 
-    return o_ins->mask_id;
+    return o_ins->id;
 }
 
 /* Defines a new filter instance */
@@ -260,6 +254,7 @@ int flb_output_set(flb_ctx_t *ctx, int ffd, ...)
 
     o_ins = out_instance_get(ctx, ffd);
     if (!o_ins) {
+        printf("no instance ofund!\n");
         return -1;
     }
 
