@@ -27,21 +27,17 @@
 #include <fluent-bit/flb_pack.h>
 #include <chunkio/chunkio.h>
 
-static inline int instance_id(struct flb_filter_plugin *p,
-                              struct flb_config *config)
+static inline int instance_id(struct flb_config *config)
 {
-    int c = 0;
-    struct mk_list *head;
     struct flb_filter_instance *entry;
 
-    mk_list_foreach(head, &config->filters) {
-        entry = mk_list_entry(head, struct flb_filter_instance, _head);
-        if (entry->p == p) {
-            c++;
-        }
+    if (mk_list_size(&config->filters) == 0) {
+        return 0;
     }
 
-    return c;
+    entry = mk_list_entry_last(&config->filters, struct flb_filter_instance,
+                               _head);
+    return (entry->id + 1);
 }
 
 static inline int prop_key_check(char *key, char *kv, int k_len)
@@ -317,7 +313,7 @@ struct flb_filter_instance *flb_filter_new(struct flb_config *config,
     instance->config = config;
 
     /* Get an ID */
-    id =  instance_id(plugin, config);
+    id =  instance_id(config);
 
     /* format name (with instance id) */
     snprintf(instance->name, sizeof(instance->name) - 1,
