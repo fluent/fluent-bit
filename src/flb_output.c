@@ -176,21 +176,17 @@ void flb_output_exit(struct flb_config *config)
     }
 }
 
-static inline int instance_id(struct flb_output_plugin *p,
-                              struct flb_config *config) \
+static inline int instance_id(struct flb_config *config)
 {
-    int c = 0;
-    struct mk_list *head;
     struct flb_output_instance *entry;
 
-    mk_list_foreach(head, &config->outputs) {
-        entry = mk_list_entry(head, struct flb_output_instance, _head);
-        if (entry->p == p) {
-            c++;
-        }
+    if (mk_list_size(&config->outputs) == 0) {
+        return 0;
     }
 
-    return c;
+    entry = mk_list_entry_last(&config->filters, struct flb_output_instance,
+                               _head);
+    return (entry->id + 1);
 }
 
 /*
@@ -247,6 +243,8 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
      * output instance that is used later to set in an 'unsigned 64
      * bit number' where a specific task (buffer/records) should be
      * routed.
+     *
+     * note: This value is different than instance id.
      */
     if (mask_id == 0) {
         instance->mask_id = 1;
@@ -255,9 +253,12 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         instance->mask_id = (mask_id * 2);
     }
 
+    /* Retrieve an instance id for the output instance */
+    instance->id = instance_id(config);
+
     /* format name (with instance id) */
     snprintf(instance->name, sizeof(instance->name) - 1,
-             "%s.%i", plugin->name, instance_id(plugin, config));
+             "%s.%i", plugin->name, instance->id);
     instance->p = plugin;
 
     if (plugin->type == FLB_OUTPUT_PLUGIN_CORE) {
