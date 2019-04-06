@@ -32,6 +32,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_plugins.h>
+#include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_io_tls.h>
 #include <fluent-bit/flb_kernel.h>
 #include <fluent-bit/flb_worker.h>
@@ -154,6 +155,10 @@ struct flb_config *flb_config_init()
 
 #ifdef FLB_HAVE_LUAJIT
     mk_list_init(&config->luajit_list);
+#endif
+
+#ifdef FLB_HAVE_STREAM_PROCESSOR
+    flb_slist_create(&config->stream_processor_tasks);
 #endif
 
     /* Set default coroutines stack size */
@@ -309,6 +314,8 @@ void flb_config_exit(struct flb_config *config)
     if (config->stream_processor_file) {
         flb_free(config->stream_processor_file);
     }
+
+    flb_slist_destroy(&config->stream_processor_tasks);
 #endif
 
     if (config->evl) {

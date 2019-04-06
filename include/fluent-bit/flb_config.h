@@ -169,8 +169,14 @@ struct flb_config {
 #endif
 
 #ifdef FLB_HAVE_STREAM_PROCESSOR
-    char *stream_processor_file;       /* SP configuration file */
-    void *stream_processor_ctx;        /* SP context */
+    char *stream_processor_file;            /* SP configuration file */
+    void *stream_processor_ctx;             /* SP context */
+
+    /*
+     * Temporal list to hold tasks defined before the SP context is created
+     * by the engine. The list is passed upon start and destroyed.
+     */
+    struct mk_list stream_processor_tasks;
 #endif
 
     /* Co-routines */
