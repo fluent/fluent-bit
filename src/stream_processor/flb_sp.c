@@ -1679,8 +1679,7 @@ int flb_sp_test_do(struct flb_sp *sp, struct flb_sp_task *task,
             return -1;
         }
 
-        ret = flb_sp_window_populate(task, buf_data, buf_size);
-        if (ret == -1) {
+        if (flb_sp_window_populate(task, buf_data, buf_size) == -1) {
             flb_error("[sp] error populating window for '%s'",
                       task->name);
             return -1;
@@ -1756,8 +1755,7 @@ int flb_sp_do(struct flb_sp *sp, struct flb_input_instance *in,
                 continue;
             }
 
-            ret = flb_sp_window_populate(task, buf_data, buf_size);
-            if (ret == -1) {
+            if (flb_sp_window_populate(task, buf_data, buf_size) == -1) {
                 flb_error("[sp] error populating window for '%s'",
                           task->name);
                 continue;
@@ -1765,6 +1763,7 @@ int flb_sp_do(struct flb_sp *sp, struct flb_input_instance *in,
 
             if (task->window.type == FLB_SP_WINDOW_DEFAULT) {
                 package_results(tag, tag_len, &out_buf, &out_size, task);
+                flb_sp_window_prune(task);
             }
         }
         else {
