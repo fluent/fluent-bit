@@ -22,6 +22,7 @@ set(src
   flb_config.c
   flb_network.c
   flb_utils.c
+  flb_slist.c
   flb_engine.c
   flb_engine_dispatch.c
   flb_task.c
