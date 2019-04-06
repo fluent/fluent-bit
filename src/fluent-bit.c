@@ -41,6 +41,7 @@
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_plugin_proxy.h>
 #include <fluent-bit/flb_parser.h>
 
@@ -141,6 +142,9 @@ static void flb_help(int rc, struct flb_config *config)
     printf("  -e, --plugin=FILE\tload an external plugin (shared lib)\n");
     printf("  -l, --log_file=FILE\twrite log info to a file\n");
     printf("  -t, --tag=TAG\t\tset plugin tag, same as '-p tag=abc'\n");
+#ifdef FLB_HAVE_STREAM_PROCESSOR
+    printf("  -T, --sp-task=SQL\tdefine a stream processor task\n");
+#endif
     printf("  -v, --verbose\t\tenable verbose mode\n");
 #ifdef FLB_HAVE_HTTP_SERVER
     printf("  -H, --http\t\tenable monitoring HTTP server\n");
@@ -610,6 +614,9 @@ int main(int argc, char **argv)
         { "prop",            required_argument, NULL, 'p' },
         { "plugin",          required_argument, NULL, 'e' },
         { "tag",             required_argument, NULL, 't' },
+#ifdef FLB_HAVE_STREAM_PROCESSOR
+        { "sp-task",         required_argument, NULL, 'T' },
+#endif
         { "version",         no_argument      , NULL, 'V' },
         { "verbose",         no_argument      , NULL, 'v' },
         { "quiet",           no_argument      , NULL, 'q' },
@@ -659,7 +666,7 @@ int main(int argc, char **argv)
     /* Parse the command line options */
     while ((opt = getopt_long(argc, argv,
                               "b:c:df:i:m:o:R:F:p:e:"
-                              "t:l:vqVhL:HP:s:S",
+                              "t:T:l:vqVhL:HP:s:S",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
@@ -748,6 +755,11 @@ int main(int argc, char **argv)
                 flb_input_set_property(in, "tag", optarg);
             }
             break;
+#ifdef FLB_HAVE_STREAM_PROCESSOR
+        case 'T':
+            flb_slist_add(&config->stream_processor_tasks, optarg);
+            break;
+#endif
         case 'h':
             flb_help(EXIT_SUCCESS, config);
             break;
