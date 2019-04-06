@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_input.h>
@@ -595,8 +596,13 @@ void flb_sp_task_destroy(struct flb_sp_task *task)
 /* Create the stream processor context */
 struct flb_sp *flb_sp_create(struct flb_config *config)
 {
+    int i = 0;
     int ret;
+    char buf[32];
+    struct mk_list *head;
     struct flb_sp *sp;
+    struct flb_slist_entry *e;
+    struct flb_sp_task *task;
 
     /* Allocate context */
     sp = flb_malloc(sizeof(struct flb_sp));
@@ -606,6 +612,17 @@ struct flb_sp *flb_sp_create(struct flb_config *config)
     }
     sp->config = config;
     mk_list_init(&sp->tasks);
+
+    /* Check for pre-configured Tasks (command line) */
+    mk_list_foreach(head, &config->stream_processor_tasks) {
+        e = mk_list_entry(head, struct flb_slist_entry, _head);
+        snprintf(buf, sizeof(buf) - 1, "flb-console:%i", i);
+        i++;
+        task = flb_sp_task_create(sp, buf, e->str);
+        if (!task) {
+            continue;
+        }
+    }
 
     /* Lookup configuration file if any */
     if (config->stream_processor_file) {
