@@ -584,6 +584,8 @@ static void test_select_keys()
         return;
     }
     mk_list_init(&config->inputs);
+    mk_list_init(&config->stream_processor_tasks);
+
     config->evl = mk_event_loop_create(256);
 
     sp = flb_sp_create(config);
@@ -694,6 +696,7 @@ static void test_window()
         return;
     }
     mk_list_init(&config->inputs);
+    mk_list_init(&config->stream_processor_tasks);
     config->evl = mk_event_loop_create(256);
 
     sp = flb_sp_create(config);
