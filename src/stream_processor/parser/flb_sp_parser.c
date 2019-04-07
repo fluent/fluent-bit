@@ -229,7 +229,7 @@ struct flb_sp_cmd *flb_sp_cmd_create(char *sql)
     yylex_init(&scanner);
     buf = yy_scan_string(sql, scanner);
 
-    ret = yyparse(cmd, scanner);
+    ret = yyparse(cmd, sql, scanner);
     if (ret != 0) {
         flb_sp_cmd_destroy(cmd);
         return NULL;

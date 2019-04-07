@@ -1,5 +1,6 @@
 %define api.pure full
 %parse-param { struct flb_sp_cmd *cmd };
+%parse-param { char *query };
 %lex-param   { void *scanner }
 %parse-param { void *scanner }
 
@@ -17,9 +18,10 @@
 
 extern int yylex();
 
-void yyerror (struct flb_sp_cmd *cmd, void *scanner, const char *str)
+void yyerror(struct flb_sp_cmd *cmd, char *query, void *scanner,
+             const char *str)
 {
-    fprintf(stderr, "error: %s\n", str);
+    flb_error("[sp] %s at '%s'", str, query);
 }
 
 %} /* EOF C code */
