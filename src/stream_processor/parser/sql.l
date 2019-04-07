@@ -92,7 +92,8 @@ RECORD_TIME             return RECORD_TIME;
 -?[1-9][0-9]*           { yylval->integer = atoi(yytext);  return INTEGER; }
 -?[1-9][0-9]*\.[0-9]+   { yylval->fval = atof(yytext); return FLOATING; }
 \'([^']|'{2})*\'        { yylval->string = remove_dup_qoutes(yytext + 1, yyleng - 2); return STRING; }
-[A-Za-z][A-Za-z0-9_]*	{ yylval->string = flb_strdup(yytext); return IDENTIFIER; }
+
+[A-Za-z][A-Za-z0-9_.]*	{ yylval->string = flb_strdup(yytext); return IDENTIFIER; }
 
 "*"                     |
 ","                     |
