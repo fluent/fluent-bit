@@ -77,6 +77,7 @@ int flb_sp_stream_create(char *name, struct flb_sp_task *task,
     }
     stream->name = flb_sds_create(name);
     if (!stream->name) {
+        flb_free(stream);
         return -1;
     }
 
