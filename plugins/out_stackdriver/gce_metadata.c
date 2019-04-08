@@ -54,7 +54,7 @@ static int fetch_metadata(struct flb_upstream *ctx, char *uri,
   flb_http_buffer_size(c, 4096);
 
   flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
-  flb_http_add_header(c, "Content-Type", 12, "application/text", 20);
+  flb_http_add_header(c, "Content-Type", 12, "application/text", 16);
   flb_http_add_header(c, "Metadata-Flavor", 15, "Google", 6);
 
   /* Send HTTP request */
