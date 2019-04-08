@@ -164,6 +164,13 @@ void flb_filter_do(struct flb_input_chunk *ic,
 
                 ret = flb_input_chunk_write_at(ic, write_at,
                                                out_buf, out_size);
+                if (ret == -1) {
+                    flb_error("[filter] could not write data to storage. "
+                              "Skipping filtering.");
+                    flb_free(out_buf);
+                    continue;
+                }
+
                 /* Point back the 'data' pointer to the new address */
                 ret = cio_chunk_get_content(ic->chunk,
                                             &work_data, &cur_size);
