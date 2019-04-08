@@ -44,6 +44,7 @@ int flb_slist_add(struct mk_list *head, char *str)
     e->str = flb_sds_create(str);
     if (!e->str) {
         flb_free(e);
+        return -1;
     }
 
     mk_list_add(&e->_head, head);
