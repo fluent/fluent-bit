@@ -28,6 +28,38 @@
 #include <stdlib.h>
 #include <string.h>
 
+/*
+ * Copy as much as possible from src to dst. It always null-terminates
+ * the destination buffer, assuming the buffer size is dsize.
+ *
+ * Return value is strlen(src). Use it to detect a truncation:
+ *
+ *    if (strlcpy(dst, src, dsize) >= dsize) {
+ *       // some truncation occured
+ *    }
+ */
+#ifndef FLB_HAVE_STRLCPY
+static inline size_t flb_strlcpy(char *dst, const char *src, size_t dsize)
+{
+    size_t len = strlen(src);
+
+    if (!dsize) {
+        return len;
+    }
+
+    if (len < dsize) {
+        memcpy(dst, src, len);
+        dst[len] = '\0';
+    } else {
+        memcpy(dst, src, dsize - 1);
+        dst[dsize - 1] = '\0';
+    }
+    return len;
+}
+#else
+#define flb_strlcpy strlcpy
+#endif
+
 static inline char *flb_strdup(const char *s)
 {
     int len;
@@ -38,9 +70,7 @@ static inline char *flb_strdup(const char *s)
     if (!str) {
         return NULL;
     }
-    strncpy(str, s, len);
-    str[len] = '\0';
-
+    flb_strlcpy(str, s, len + 1);
     return str;
 }
 
@@ -52,9 +82,7 @@ static inline char *flb_strndup(const char *s, size_t n)
     if (!str) {
         return NULL;
     }
-    strncpy(str, s, n);
-    str[n] = '\0';
-
+    flb_strlcpy(str, s, n + 1);
     return str;
 }
 
