@@ -101,11 +101,14 @@ int gce_metadata_read_token(struct flb_stackdriver *ctx) {
   if (ret != 0) {
     flb_error("[out_stackdriver] can't fetch token from the metadata server");
     flb_sds_destroy(payload);
+    flb_sds_destroy(uri);
     return -1;
   }
 
   ret = flb_oauth2_parse_json_response(payload, flb_sds_len(payload), ctx->o);
   flb_sds_destroy(payload);
+  flb_sds_destroy(uri);
+
   if (ret != 0) {
     flb_error("[out_stackdriver] unable to parse token body");
     return -1;
