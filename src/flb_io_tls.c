@@ -157,7 +157,7 @@ struct flb_tls_context *flb_tls_context_new(int verify,
             goto error;
         }
     }
-    else if (ca_file) {
+    else if (ca_path) {
         ret = mbedtls_x509_crt_parse_path(&ctx->ca_cert, ca_path);
         if (ret < 0) {
             io_tls_error(ret);
