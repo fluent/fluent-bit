@@ -1186,6 +1186,7 @@ static void package_results(char *tag, int tag_len,
                 break;
             case FLB_SP_AVG:
                 /* average = sum(values) / records */
+                d_val = 0;
                 if (nums[i].type == FLB_SP_NUM_I64) {
                     d_val = (double) nums[i].i64 / records;
                 }
