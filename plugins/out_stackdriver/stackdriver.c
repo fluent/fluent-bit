@@ -298,9 +298,6 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
                                      FLB_IO_TLS, &ins->tls);
     ctx->metadata_u = flb_upstream_create_url(config, "http://metadata.google.internal",
                                      FLB_IO_TCP, NULL);
-    ctx->u->flags &= ~FLB_IO_ASYNC;
-    ctx->metadata_u->flags &= ~FLB_IO_ASYNC;
-
     if (!ctx->u) {
         flb_error("[out_stackdriver] upstream creation failed");
         return -1;
@@ -309,6 +306,10 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
         flb_error("[out_stackdriver] metadata upstream creation failed");
         return -1;
     }
+
+    /* Upstream Sync flags */
+    ctx->u->flags &= ~FLB_IO_ASYNC;
+    ctx->metadata_u->flags &= ~FLB_IO_ASYNC;
 
     /* Retrieve oauth2 token */
     token = get_google_token(ctx);
