@@ -199,12 +199,12 @@ static void cb_file_flush(void *data, size_t bytes,
                           void *out_context,
                           struct flb_config *config)
 {
+    int ret;
     FILE * fp;
     msgpack_unpacked result;
     size_t off = 0;
     size_t last_off = 0;
     size_t alloc_size = 0;
-    size_t ret;
     size_t total;
     char *out_file;
     char *buf;
