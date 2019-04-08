@@ -981,6 +981,7 @@ static struct flb_exp_val *reduce_expression(struct flb_exp *expression,
 {
     int operation;
     flb_sds_t s;
+    flb_sds_t tmp_sds = NULL;
     struct flb_exp_val *ret, *left, *right;
     struct flb_exp_val *result;
 
@@ -988,7 +989,7 @@ static struct flb_exp_val *reduce_expression(struct flb_exp *expression,
         return NULL;
     }
 
-    result = flb_malloc(sizeof(struct flb_exp_val));
+    result = flb_calloc(1, sizeof(struct flb_exp_val));
     if (!result) {
        flb_errno();
        return NULL;
@@ -1011,7 +1012,10 @@ static struct flb_exp_val *reduce_expression(struct flb_exp *expression,
         s = ((struct flb_exp_val *) expression)->val.string;
         result->type = expression->type;
         result->val.string = flb_sds_create_size(flb_sds_len(s));
-        flb_sds_copy(result->val.string, s, flb_sds_len(s));
+        tmp_sds = flb_sds_copy(result->val.string, s, flb_sds_len(s));
+        if (tmp_sds != result->val.string) {
+            result->val.string = tmp_sds;
+        }
         break;
     case FLB_EXP_KEY:
         ret = key_to_value(((struct flb_exp_key *) expression)->name, map);
