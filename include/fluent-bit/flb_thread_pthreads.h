@@ -79,7 +79,7 @@ struct flb_thread
     struct mk_list _head;
 };
 
-static FLB_INLINE void flb_thread_prepare()
+static FLB_INLINE void flb_thread_prepare(void)
 {
 }
 

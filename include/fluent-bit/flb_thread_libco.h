@@ -65,7 +65,7 @@ struct flb_thread {
 
 FLB_EXPORT pthread_key_t flb_thread_key;
 
-static FLB_INLINE void flb_thread_prepare()
+static FLB_INLINE void flb_thread_prepare(void)
 {
     pthread_key_create(&flb_thread_key, NULL);
 }
