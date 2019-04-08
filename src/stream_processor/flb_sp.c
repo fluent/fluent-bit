@@ -198,9 +198,15 @@ static int sp_cmd_aggregated_keys(struct flb_sp_cmd *cmd)
         else {
             mk_list_foreach(head_gb, &cmd->gb_keys) {
                 gb_key = mk_list_entry(head_gb, struct flb_sp_cmd_gb_key, _head);
-                if (flb_sds_cmp(key->name, gb_key->name, flb_sds_len(gb_key->name)) == 0) {
-                    not_aggr--;
+                if (!key->name) { /* Key name is a wildcard '*' */
+                    not_aggr++;
                     break;
+                }
+
+                if (flb_sds_cmp(key->name, gb_key->name,
+                                flb_sds_len(gb_key->name)) == 0) {
+                      not_aggr--;
+                      break;
                 }
             }
 
