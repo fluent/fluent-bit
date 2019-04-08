@@ -342,8 +342,8 @@ static char *elasticsearch_format(void *data, size_t bytes,
         }
         else if (ctx->current_time_index == FLB_TRUE) {
             /* Make sure we handle index time format for index */
-            s = strftime(index_formatted, sizeof(index_formatted) - 1,
-                         ctx->index, &tm);
+            strftime(index_formatted, sizeof(index_formatted) - 1,
+                     ctx->index, &tm);
             es_index = index_formatted;
         }
 
