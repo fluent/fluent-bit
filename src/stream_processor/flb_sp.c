@@ -1289,24 +1289,26 @@ static int sp_process_data_aggr(char *buf_data, size_t buf_size,
             gb_nums = flb_calloc(1, sizeof(struct aggr_num) * gb_entries);
             if (!gb_nums) {
                 flb_errno();
+                msgpack_unpacked_destroy(&result);
                 return -1;
             }
 
-            // extract GROUP BY values
-            for (i = 0; i < map_size; i++) { // extract group-by values
+            /* extract GROUP BY values */
+            for (i = 0; i < map_size; i++) { /* extract group-by values */
                 key = map.via.map.ptr[i].key;
                 val = map.via.map.ptr[i].val;
 
                 key_id = 0;
                 mk_list_foreach(head, &cmd->gb_keys) {
-                    gb_key = mk_list_entry(head, struct flb_sp_cmd_gb_key, _head);
-
-                    if (flb_sds_cmp(gb_key->name, (char *) key.via.str.ptr, key.via.str.size) != 0) {
+                    gb_key = mk_list_entry(head, struct flb_sp_cmd_gb_key,
+                                           _head);
+                    if (flb_sds_cmp(gb_key->name, (char *) key.via.str.ptr,
+                                    key.via.str.size) != 0) {
                         key_id++;
                         continue;
                     }
 
-                    // Convert string to number if that is possible
+                    /* Convert string to number if that is possible */
                     ret = object_to_number(val, &ival, &dval);
                     if (ret == -1 && val.type == MSGPACK_OBJECT_STR) {
                         gb_nums[key_id].type = FLB_SP_STRING;
@@ -1351,6 +1353,7 @@ static int sp_process_data_aggr(char *buf_data, size_t buf_size,
                 aggr_node->nums = flb_calloc(1, sizeof(struct aggr_num) * map_entries);
                 if (!aggr_node->nums) {
                     flb_errno();
+                    msgpack_unpacked_destroy(&result);
                     return -1;
                 }
                 nums = aggr_node->nums;
@@ -1359,12 +1362,22 @@ static int sp_process_data_aggr(char *buf_data, size_t buf_size,
             }
         }
         else { /* If query doesn't have GROUP BY */
-            if (!mk_list_size(&task->window.aggr_list))
-            {
-                aggr_node = (struct aggr_node *) flb_calloc(1, sizeof(struct aggr_node));
+            if (!mk_list_size(&task->window.aggr_list)){
+                aggr_node = flb_calloc(1, sizeof(struct aggr_node));
+                if (!aggr_node) {
+                    flb_errno();
+                    msgpack_unpacked_destroy(&result);
+                    return -1;
+                }
                 aggr_node->nums = flb_calloc(1, sizeof(struct aggr_num) * map_entries);
-                aggr_node->records = 1;
+                if (!aggr_node->nums) {
+                    flb_errno();
+                    flb_free(aggr_node);
+                    msgpack_unpacked_destroy(&result);
+                    return -1;
+                }
 
+                aggr_node->records = 1;
                 mk_list_add(&aggr_node->_head, &task->window.aggr_list);
             }
             else {
@@ -1429,7 +1442,8 @@ static int sp_process_data_aggr(char *buf_data, size_t buf_size,
                         nums[key_id].type = FLB_SP_NUM_F64;
                         nums[key_id].f64 = (double) nums[key_id].i64;
                     }
-                } else {
+                }
+                else {
                     if (val.type == MSGPACK_OBJECT_BOOLEAN) {
                         nums[key_id].type = FLB_SP_BOOLEAN;
                         nums[key_id].boolean = val.via.boolean;
@@ -1470,8 +1484,8 @@ static int sp_process_data_aggr(char *buf_data, size_t buf_size,
             }
         }
     }
-    msgpack_unpacked_destroy(&result);
 
+    msgpack_unpacked_destroy(&result);
     return task->window.records;
 }
 
