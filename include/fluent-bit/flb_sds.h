@@ -48,7 +48,7 @@ struct flb_sds {
 
 static inline size_t flb_sds_len(flb_sds_t s)
 {
-    return FLB_SDS_HEADER(s)->len;
+    return (size_t) FLB_SDS_HEADER(s)->len;
 }
 
 static inline void flb_sds_len_set(flb_sds_t s, size_t len)
@@ -58,7 +58,7 @@ static inline void flb_sds_len_set(flb_sds_t s, size_t len)
 
 static inline size_t flb_sds_alloc(flb_sds_t s)
 {
-    return FLB_SDS_HEADER(s)->alloc;
+    return (size_t) FLB_SDS_HEADER(s)->alloc;
 }
 
 static inline size_t flb_sds_avail(flb_sds_t s)
@@ -66,7 +66,7 @@ static inline size_t flb_sds_avail(flb_sds_t s)
     struct flb_sds *h;
 
     h = FLB_SDS_HEADER(s);
-    return (h->alloc - h->len);
+    return (size_t) (h->alloc - h->len);
 }
 
 static inline int flb_sds_cmp(flb_sds_t s, char *str, int len)
