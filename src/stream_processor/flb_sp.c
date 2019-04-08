@@ -929,7 +929,7 @@ static void numerical_comp(struct flb_exp_val *left,
 }
 
 static bool value_to_bool(struct flb_exp_val *val) {
-    bool result;
+    bool result = FLB_FALSE;
 
     switch (val->type) {
     case FLB_EXP_BOOL:
