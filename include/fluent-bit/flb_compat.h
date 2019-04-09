@@ -31,6 +31,7 @@
 #include <windows.h>
 #include <Wincrypt.h>
 
+#define FLB_DIRCHAR '\\'
 #define PATH_MAX MAX_PATH
 #define S_ISREG(m) (((m) & S_IFMT) == S_IFREG)
 #define timezone _timezone
@@ -89,6 +90,8 @@ static inline int usleep(LONGLONG usec)
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <libgen.h>
+
+#define FLB_DIRCHAR '/'
 #endif
 
 #endif
