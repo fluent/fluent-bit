@@ -633,6 +633,9 @@ static void invalid_queries()
         task = flb_sp_task_create(sp, "invalid_query", invalid_query_checks[i]);
         TEST_CHECK(task == NULL);
     }
+
+    flb_sp_destroy(sp);
+    flb_free(config);
 }
 
 static void test_select_keys()
