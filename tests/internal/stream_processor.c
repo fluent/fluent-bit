@@ -321,6 +321,23 @@ static void cb_select_aggr(int id, struct task_check *check,
     TEST_CHECK(ret == FLB_TRUE);
 }
 
+static void cb_select_aggr_count(int id, struct task_check *check,
+                                 char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 1 row */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 1);
+
+    /* COUNT(*) is 10 */
+    ret = mp_record_key_cmp(buf, size,
+                            0, "COUNT(*)",
+                            MSGPACK_OBJECT_POSITIVE_INTEGER,
+                            NULL, 10, 0);
+    TEST_CHECK(ret == FLB_TRUE);
+}
+
 static void cb_select_groupby(int id, struct task_check *check,
                               char *buf, size_t size)
 {
@@ -521,13 +538,20 @@ struct task_check select_keys_checks[] = {
     },
     {
         5, 0, 0,
+        "select_aggr_coount",
+        "SELECT COUNT(*) " \
+        "FROM STREAM:FLB;",
+        cb_select_aggr_count,
+    },
+    {
+        6, 0, 0,
         "select_aggr_window_tumbling",
         "SELECT MIN(id), MAX(id), COUNT(*), SUM(bytes), AVG(bytes) " \
         "FROM STREAM:FLB WINDOW TUMBLING (1 SECOND);",
         cb_select_aggr,
     },
     {
-        6, 0, 0,
+        7, 0, 0,
         "select_aggr_window_tumbling_groupby",
         "SELECT bool, MIN(id), MAX(id), COUNT(*), SUM(bytes), AVG(bytes) " \
         "FROM STREAM:FLB WINDOW TUMBLING (1 SECOND) GROUP BY bool;",
@@ -536,13 +560,13 @@ struct task_check select_keys_checks[] = {
 
     /* Time functions */
     {
-        7, 0, 0,
+        8, 0, 0,
         "func_time_now",
         "SELECT NOW(), NOW() as tnow FROM STREAM:FLB WHERE bytes > 10;",
         cb_func_time_now,
     },
     {
-        8, 0, 0,
+        9, 0, 0,
         "func_time_unix_timestamp",
         "SELECT UNIX_TIMESTAMP(), UNIX_TIMESTAMP() as ts " \
         "FROM STREAM:FLB WHERE bytes > 10;",
@@ -550,19 +574,66 @@ struct task_check select_keys_checks[] = {
     },
     /* Stream selection using Tag rules */
     {
-        9, 0, 0,
+        10, 0, 0,
         "select_from_tag_error",
         "SELECT id FROM TAG:'no-matches' WHERE bytes > 10;",
         cb_select_tag_error,
     },
     {
-        10, 0, 0,
+        11, 0, 0,
         "select_from_tag",
         "SELECT id FROM TAG:'samples' WHERE bytes > 10;",
         cb_select_tag_ok,
     }
 
 };
+
+/* Tests to check syntactically valid/semantically invalid queries */
+char *invalid_query_checks[] = {
+    "SELECT id, MIN(id) FROM STREAM:FLB;",
+    "SELECT *, COUNT(id) FROM STREAM:FLB;",
+    "SELECT id, MIN(id) FROM STREAM:FLB WINDOW TUMBLING (1 SECOND)" \
+        " GROUP BY bool;",
+    "SELECT *, COUNT(id) FROM STREAM:FLB WINDOW TUMBLING (1 SECOND)" \
+        " GROUP BY bool;",
+    "SELECT *, COUNT(bool) FROM STREAM:FLB WINDOW TUMBLING (1 SECOND)" \
+        " GROUP BY bool;",
+    "SELECT *, bool, COUNT(bool) FROM STREAM:FLB WINDOW TUMBLING (1 SECOND)" \
+        " GROUP BY bool;"
+};
+
+
+static void invalid_queries()
+{
+    int i;
+    int checks;
+    struct flb_config *config;
+    struct flb_sp *sp;
+    struct flb_sp_task *task;
+
+    /* Total number of checks for invalid */
+    checks = sizeof(invalid_query_checks) / sizeof(char *);
+
+    config = flb_calloc(1, sizeof(struct flb_config));
+    if (!config) {
+        flb_errno();
+        return;
+    }
+    mk_list_init(&config->inputs);
+    mk_list_init(&config->stream_processor_tasks);
+
+    sp = flb_sp_create(config);
+    if (!sp) {
+        flb_error("[sp test] cannot create stream processor context");
+        flb_free(config);
+        return;
+    }
+
+    for (i = 0; i < checks; i++) {
+        task = flb_sp_task_create(sp, "invalid_query", invalid_query_checks[i]);
+        TEST_CHECK(task == NULL);
+    }
+}
 
 static void test_select_keys()
 {
@@ -763,7 +834,8 @@ static void test_window()
 }
 
 TEST_LIST = {
-    { "select_keys", test_select_keys},
-    { "window"     , test_window},
+    { "invalid_queries", invalid_queries},
+    { "select_keys",     test_select_keys},
+    { "window"     ,     test_window},
     { NULL }
 };
