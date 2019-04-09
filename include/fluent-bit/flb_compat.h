@@ -72,6 +72,14 @@ static inline char* basename(const char *path)
     return buf;
 }
 
+static inline char* realpath(char *path, char *buf)
+{
+    if (buf != NULL) {
+        return NULL;  /* Read BUGS in realpath(3) */
+    }
+    return _fullpath(NULL, path, 0);
+}
+
 /* mk_utils.c exposes localtime_r */
 extern struct tm *localtime_r(const time_t *timep, struct tm * result);
 
