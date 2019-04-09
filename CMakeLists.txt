@@ -455,6 +455,17 @@ if(FLB_HAVE_UNIX_SOCKET)
   FLB_DEFINITION(FLB_HAVE_UNIX_SOCKET)
 endif()
 
+check_c_source_compiles("
+  #include <string.h>
+  int main() {
+     char buf[8];
+     strlcpy(buf, \"aiueo\", 8);
+     return 0;
+  }" FLB_HAVE_STRLCPY)
+if(FLB_HAVE_STRLCPY)
+  FLB_DEFINITION(FLB_HAVE_STRLCPY)
+endif()
+
 # Build tools/xxd-c
 add_subdirectory(tools/xxd-c)
 
