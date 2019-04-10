@@ -32,6 +32,12 @@
 
 #include "file.h"
 
+#ifdef FLB_SYSTEM_WINDOWS
+#define NEWLINE "\r\n"
+#else
+#define NEWLINE "\n"
+#endif
+
 struct flb_file_conf {
     char *out_file;
     char *delimiter;
@@ -145,7 +151,7 @@ static int csv_output(FILE *fp, struct flb_time *tm, msgpack_object *obj,
         }
 
         msgpack_object_print(fp, (kv+(map_size-1))->val);
-        fprintf(fp, "\n");
+        fprintf(fp, NEWLINE);
     }
     return 0;
 }
@@ -175,7 +181,7 @@ static int ltsv_output(FILE *fp, struct flb_time *tm, msgpack_object *obj,
         msgpack_object_print(fp, (kv+(map_size-1))->key);
         fprintf(fp, "%s", ctx->label_delimiter);
         msgpack_object_print(fp, (kv+(map_size-1))->val);
-        fprintf(fp, "\n");
+        fprintf(fp, NEWLINE);
     }
     return 0;
 }
@@ -186,7 +192,7 @@ static int plain_output(FILE *fp, msgpack_object *obj, size_t alloc_size)
 
     buf = flb_msgpack_to_json_str(alloc_size, obj);
     if (buf) {
-        fprintf(fp, "%s\n",
+        fprintf(fp, "%s" NEWLINE,
                 buf);
         flb_free(buf);
     }
@@ -224,7 +230,7 @@ static void cb_file_flush(void *data, size_t bytes,
     }
 
     /* Open output file with default name as the Tag */
-    fp = fopen(out_file, "a+");
+    fp = fopen(out_file, "ab+");
     if (fp == NULL) {
         flb_errno();
         FLB_OUTPUT_RETURN(FLB_ERROR);
@@ -248,7 +254,7 @@ static void cb_file_flush(void *data, size_t bytes,
         total = 0;
 
         do {
-            ret = fwrite(data + off, 1, bytes - off, fp);
+            ret = fwrite((char *)data + off, 1, bytes - off, fp);
             if (ret < 0) {
                 flb_errno();
                 fclose(fp);
@@ -278,7 +284,7 @@ static void cb_file_flush(void *data, size_t bytes,
         case FLB_OUT_FILE_FMT_JSON:
             buf = flb_msgpack_to_json_str(alloc_size, obj);
             if (buf) {
-                fprintf(fp, "%s: [%f, %s]\n",
+                fprintf(fp, "%s: [%f, %s]" NEWLINE,
                         tag_buf,
                         flb_time_to_double(&tm),
                         buf);
