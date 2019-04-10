@@ -9,7 +9,6 @@ cmake -G "$ENV:msvc" -DCMAKE_BUILD_TYPE="$ENV:configuration" `
                      -D FLB_WITHOUT_flb-rt-out_forward=On `
                      -D FLB_WITHOUT_flb-rt-in_disk=On `
                      -D FLB_WITHOUT_flb-rt-in_proc=On `
-                     -D FLB_WITHOUT_flb-it-pipe=On `
                      -D FLB_WITHOUT_flb-it-parser=On `
                      -D FLB_WITHOUT_flb-it-unit_sizes=On `
                      -D FLB_WITHOUT_flb-it-network=On `
