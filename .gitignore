@@ -1,3 +1,5 @@
+.idea
+.DS_Store
 *~
 _book/
 lib/jemalloc
