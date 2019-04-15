@@ -25,6 +25,7 @@
 static inline int mp_count(void *data, size_t bytes, msgpack_zone *zone)
 {
     int c = 0;
+    int ret;
     size_t off = 0;
     msgpack_zone *t = NULL;
     msgpack_object obj;
@@ -39,9 +40,15 @@ static inline int mp_count(void *data, size_t bytes, msgpack_zone *zone)
         t = zone;
     }
 
-    while (msgpack_unpack(data, bytes, &off, t, &obj) == MSGPACK_UNPACK_SUCCESS) {
-        c++;
-    }
+    do {
+        ret = msgpack_unpack(data, bytes, &off, t, &obj);
+        if (ret == MSGPACK_UNPACK_SUCCESS || ret == MSGPACK_UNPACK_EXTRA_BYTES) {
+            c++;
+        }
+        else {
+            break;
+        }
+    } while (1);
 
     msgpack_zone_clear(t);
     if (t != zone) {
