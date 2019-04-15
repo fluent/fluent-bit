@@ -65,8 +65,6 @@ static inline void print_msgpack_status(int ret, char *context)
     }
 }
 
-#ifdef FLB_HAVE_TLS
-
 /* Read a secure forward msgpack message */
 static int secure_forward_read(struct flb_upstream_conn *u_conn,
                                char *buf, size_t size, size_t *out_len)
@@ -348,6 +346,7 @@ static int secure_forward_handshake(struct flb_upstream_conn *u_conn,
     return 0;
 }
 
+#ifdef FLB_HAVE_TLS
 static int secure_forward_init(struct flb_forward_config *fc)
 {
     int ret;
@@ -378,10 +377,6 @@ static int forward_config_init(struct flb_forward_config *fc,
 #ifdef FLB_HAVE_TLS
     /* Initialize Secure Forward mode */
     if (fc->secured == FLB_TRUE) {
-        if (!fc->shared_key) {
-            flb_error("[out_fw] secure mode requires a shared_key");
-            return -1;
-        }
         secure_forward_init(fc);
     }
 #endif
@@ -433,7 +428,7 @@ static int forward_config_ha(char *upstream_file,
             fc->secured = FLB_TRUE;
         }
 
-        /* Shared key (secure_forward) */
+        /* Shared key */
         tmp = flb_upstream_node_get_property("shared_key", node);
         if (tmp) {
             fc->shared_key = flb_sds_create(tmp);
@@ -442,7 +437,7 @@ static int forward_config_ha(char *upstream_file,
             fc->shared_key = NULL;
         }
 
-        /* Self Hostname (secure_forward) */
+        /* Self Hostname (Shared key) */
         tmp = flb_upstream_node_get_property("self_hostname", node);
         if (tmp) {
             fc->self_hostname = flb_sds_create(tmp);
@@ -751,9 +746,8 @@ static void cb_forward_flush(void *data, size_t bytes,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    /* Secure Forward ? */
-#ifdef FLB_HAVE_TLS
-    if (fc->secured == FLB_TRUE) {
+    /* Shared Key */
+    if (fc->shared_key) {
         ret = secure_forward_handshake(u_conn, fc, ctx);
         flb_debug("[out_fw] handshake status = %i", ret);
         if (ret == -1) {
@@ -765,7 +759,6 @@ static void cb_forward_flush(void *data, size_t bytes,
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
     }
-#endif
 
     /* Write message header */
     ret = flb_io_net_write(u_conn, mp_sbuf.data, mp_sbuf.size, &bytes_sent);
