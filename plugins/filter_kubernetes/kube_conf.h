@@ -80,6 +80,9 @@ struct flb_kube {
     /* Merge Log feature */
     int merge_log;             /* old merge_json_log */
 
+    /* Replace dots with underscores */
+    int replace_dots;
+
     /* Temporal buffer to unescape strings */
     size_t unesc_buf_size;
     size_t unesc_buf_len;

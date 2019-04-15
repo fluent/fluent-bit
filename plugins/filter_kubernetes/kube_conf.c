@@ -223,6 +223,15 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
         ctx->annotations = flb_utils_bool(tmp);
     }
 
+    /* Replace dots with underscores in keys */
+    tmp = flb_filter_get_property("replace_dots", i);
+    if (tmp) {
+        ctx->replace_dots = flb_utils_bool(tmp);
+    }
+    else {
+        ctx->replace_dots = FLB_FALSE;
+    }
+
     /*
      * The Application may 'propose' special configuration keys
      * to the logging agent (Fluent Bit) through the annotations

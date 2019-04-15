@@ -225,10 +225,12 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
     void *log_buf = NULL;
     size_t log_size = 0;
     msgpack_unpacked result;
-    msgpack_object k;
-    msgpack_object v;
+    msgpack_object *k;
+    msgpack_object *v;
     msgpack_object root;
     struct flb_time log_time;
+    char *ptr_key = NULL;
+    char buf_key[256];
 
     /* Original map size */
     map_size = source_map.via.map.size;
@@ -236,11 +238,11 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
     /* If merge_log is enabled, we need to lookup the 'log' field */
     if (ctx->merge_log == FLB_TRUE) {
         for (i = 0; i < map_size; i++) {
-            k = source_map.via.map.ptr[i].key;
+            k = &source_map.via.map.ptr[i].key;
 
             /* Validate 'log' field */
-            if (k.via.str.size == 3 &&
-                strncmp(k.via.str.ptr, "log", 3) == 0) {
+            if (k->via.str.size == 3 &&
+                strncmp(k->via.str.ptr, "log", 3) == 0) {
                 log_index = i;
                 break;
             }
@@ -256,13 +258,13 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
      * buffer and create an unescaped version.
      */
     if (log_index != -1) {
-        v = source_map.via.map.ptr[log_index].val;
-        if (v.type == MSGPACK_OBJECT_STR) {
-            merge_status = merge_log_handler(v, parser,
+        v = &source_map.via.map.ptr[log_index].val;
+        if (v->type == MSGPACK_OBJECT_STR) {
+            merge_status = merge_log_handler(*v, parser,
                                              &log_buf, &log_size,
                                              &log_time, ctx);
         }
-        else if (v.type == MSGPACK_OBJECT_MAP) {
+        else if (v->type == MSGPACK_OBJECT_MAP) {
             /* This is the easiest way, no extra processing required */
             merge_status = MERGE_BINARY;
         }
@@ -298,7 +300,7 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
         }
         else if (merge_status == MERGE_BINARY) {
             /* object 'v' represents the original binary log */
-            log_buf_entries = v.via.map.size;
+            log_buf_entries = v->via.map.size;
         }
     }
 
@@ -324,8 +326,13 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
 
     /* Original map */
     for (i = 0; i < map_size; i++) {
-        k = source_map.via.map.ptr[i].key;
-        v = source_map.via.map.ptr[i].val;
+        k = &source_map.via.map.ptr[i].key;
+        v = &source_map.via.map.ptr[i].val;
+        ptr_key = NULL;
+
+        /* Store key */
+        char *key_ptr = NULL;
+        size_t key_size = 0;
 
         /*
          * If the original 'log' field was unescaped and converted to
@@ -335,15 +342,56 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
         if (log_index == i &&
             (merge_status == MERGE_UNESCAPED || merge_status == MERGE_PARSED)) {
             if (merge_status == MERGE_UNESCAPED || ctx->keep_log == FLB_TRUE) {
-                msgpack_pack_object(pck, k);
+                msgpack_pack_object(pck, *k);
                 msgpack_pack_str(pck, ctx->unesc_buf_len);
                 msgpack_pack_str_body(pck, ctx->unesc_buf, ctx->unesc_buf_len);
             }
         }
         else { /* MERGE_BINARY ? */
-            msgpack_pack_object(pck, k);
-            msgpack_pack_object(pck, v);
+            msgpack_pack_object(pck, *k);
+            msgpack_pack_object(pck, *v);
         }
+
+        if (k->type == MSGPACK_OBJECT_BIN) {
+            key_ptr  = (char *) k->via.bin.ptr;
+            key_size = k->via.bin.size;
+        }
+        else if (k->type == MSGPACK_OBJECT_STR) {
+            key_ptr  = (char *) k->via.str.ptr;
+            key_size = k->via.str.size;
+        }
+
+        if (key_size < (sizeof(buf_key) - 1)) {
+            memcpy(buf_key, key_ptr, key_size);
+            buf_key[key_size] = '\0';
+            ptr_key = buf_key;
+        }
+        else {
+            /* Long map keys have a performance penalty */
+            ptr_key = flb_malloc(key_size + 1);
+            if (!ptr_key) {
+                flb_errno();
+                return -1;
+            }
+
+            memcpy(ptr_key, key_ptr, key_size);
+            ptr_key[key_size] = '\0';
+        }
+
+        if (ctx->replace_dots == FLB_TRUE) {
+          char *p   = ptr_key;
+          char *end = ptr_key + key_size;
+          while (p != end) {
+            if (*p == '.') *p = '_';
+            p++;
+          }
+        }
+
+        /* Release temporal key if was allocated */
+        if (ptr_key && ptr_key != buf_key) {
+            flb_free(ptr_key);
+        }
+        ptr_key = NULL;
     }
 
     /* Merge Log */
@@ -361,22 +409,22 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
             msgpack_unpack_next(&result, log_buf, log_size, &off);
             root = result.data;
             for (i = 0; i < log_buf_entries; i++) {
-                k = root.via.map.ptr[i].key;
-                msgpack_pack_object(pck, k);
+                k = &root.via.map.ptr[i].key;
+                msgpack_pack_object(pck, *k);
 
-                v = root.via.map.ptr[i].val;
+                v = &root.via.map.ptr[i].val;
                 /*
                  * If this is the last string value, trim any remaining
                  * break line or return carrier character.
                  */
-                if (v.type == MSGPACK_OBJECT_STR &&
+                if (v->type == MSGPACK_OBJECT_STR &&
                     ctx->merge_log_trim == FLB_TRUE) {
-                    int s = value_trim_size(v);
+                    int s = value_trim_size(*v);
                     msgpack_pack_str(pck, s);
-                    msgpack_pack_str_body(pck, v.via.str.ptr, s);
+                    msgpack_pack_str_body(pck, v->via.str.ptr, s);
                 }
                 else {
-                    msgpack_pack_object(pck, v);
+                    msgpack_pack_object(pck, *v);
                 }
             }
             msgpack_unpacked_destroy(&result);
@@ -386,10 +434,10 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
             msgpack_object bin_map;
             bin_map = source_map.via.map.ptr[log_index].val;
             for (i = 0; i < bin_map.via.map.size; i++) {
-                k = bin_map.via.map.ptr[i].key;
-                v = bin_map.via.map.ptr[i].val;
-                msgpack_pack_object(pck, k);
-                msgpack_pack_object(pck, v);
+                k = &bin_map.via.map.ptr[i].key;
+                v = &bin_map.via.map.ptr[i].val;
+                msgpack_pack_object(pck, *k);
+                msgpack_pack_object(pck, *v);
             }
         }
     }
@@ -411,10 +459,10 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
         /* Pack cached kube buf entries */
         msgpack_pack_map(pck, map_size);
         for (i = 0; i < root.via.map.size; i++) {
-            k = root.via.map.ptr[i].key;
-            v = root.via.map.ptr[i].val;
-            msgpack_pack_object(pck, k);
-            msgpack_pack_object(pck, v);
+            k = &root.via.map.ptr[i].key;
+            v = &root.via.map.ptr[i].val;
+            msgpack_pack_object(pck, *k);
+            msgpack_pack_object(pck, *v);
         }
         msgpack_unpacked_destroy(&result);
 
