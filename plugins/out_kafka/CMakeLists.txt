@@ -14,4 +14,6 @@ set(src
   kafka.c)
 
 FLB_PLUGIN(out_kafka "${src}" "rdkafka")
-target_link_libraries(flb-plugin-out_kafka -lpthread)
+if (NOT MSVC)
+  target_link_libraries(flb-plugin-out_kafka -lpthread)
+endif()
