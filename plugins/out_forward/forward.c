@@ -209,7 +209,7 @@ static int secure_forward_ping(struct flb_upstream_conn *u_conn,
 
     msgpack_sbuffer_destroy(&mp_sbuf);
 
-    if (ret == 0 && bytes_sent > 0) {
+    if (ret > -1 && bytes_sent > 0) {
         return 0;
     }
 
