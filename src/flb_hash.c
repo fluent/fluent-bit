@@ -225,7 +225,7 @@ int flb_hash_add(struct flb_hash *ht, char *key, int key_len,
     entry->hits = 0;
 
     /* Store the key and value as a new memory region */
-    entry->key = flb_strdup(key);
+    entry->key = flb_strndup(key, key_len);
     entry->key_len = key_len;
     entry->val = flb_malloc(val_size + 1);
     if (!entry->val) {
