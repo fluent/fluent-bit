@@ -120,7 +120,8 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
     chunk = cio_chunk_open(storage->cio, storage->stream, name,
                            CIO_OPEN, FLB_INPUT_CHUNK_SIZE);
     if (!chunk) {
-        flb_error("[input chunk] could not create chunk file");
+        flb_error("[input chunk] could not create chunk file: %s:%s",
+                  storage->stream, name);
         return NULL;
     }
 
@@ -178,6 +179,11 @@ static struct flb_input_chunk *input_chunk_get(char *tag, int tag_len,
             continue;
         }
 
+        if (cio_chunk_is_up(ic->chunk) == CIO_FALSE) {
+            ic = NULL;
+            continue;
+        }
+
         if (cio_meta_cmp(ic->chunk, tag, tag_len) != 0) {
             ic = NULL;
             continue;
@@ -222,6 +228,12 @@ size_t flb_input_chunk_total_size(struct flb_input_instance *in)
 
     mk_list_foreach(head, &in->chunks) {
         ic = mk_list_entry(head, struct flb_input_chunk, _head);
+
+        /* Skip files who are 'down' */
+        if (cio_chunk_is_up(ic->chunk) == CIO_FALSE) {
+            continue;
+        }
+
         bytes = flb_input_chunk_get_size(ic);
         if (bytes <= 0) {
             continue;
@@ -236,8 +248,10 @@ size_t flb_input_chunk_total_size(struct flb_input_instance *in)
  * Count and update the number of bytes being used by the instance. Also
  * check if the instance is paused, if so, check if it can be resumed if
  * is not longer over the limits.
+ *
+ * It always returns the number of bytes in use.
  */
-int flb_input_chunk_set_limits(struct flb_input_instance *in)
+size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
 {
     size_t total;
 
@@ -261,7 +275,7 @@ int flb_input_chunk_set_limits(struct flb_input_instance *in)
         }
     }
 
-    return 0;
+    return total;
 }
 
 /*
@@ -285,6 +299,60 @@ static inline int flb_input_chunk_protect(struct flb_input_instance *i)
     return FLB_FALSE;
 }
 
+/*
+ * Validate if the chunk coming from the input plugin basd on config and
+ * resources usage must be 'up' or 'down' (applicable for filesystem storage
+ * type).
+ *
+ * FIXME: can we find a better name for this function ?
+ */
+int flb_input_chunk_set_up_down(struct flb_input_chunk *ic)
+{
+    size_t total;
+    struct flb_input_instance *in;
+
+    in = ic->in;
+
+    /* Gather total number of enqueued bytes */
+    total = flb_input_chunk_total_size(in);
+
+    /* Register the total into the context variable */
+    in->mem_chunks_size = total;
+
+    if (flb_input_chunk_is_overlimit(in) == FLB_TRUE) {
+        if (cio_chunk_is_up(ic->chunk) == CIO_TRUE) {
+            cio_chunk_down(ic->chunk);
+
+            /* Adjust new counters */
+            total = flb_input_chunk_total_size(ic->in);
+            in->mem_chunks_size = total;
+
+            return FLB_FALSE;
+        }
+    }
+
+    return FLB_TRUE;
+}
+
+int flb_input_chunk_down(struct flb_input_chunk *ic)
+{
+    if (cio_chunk_is_up(ic->chunk) == CIO_TRUE) {
+        return cio_chunk_down(ic->chunk);
+    }
+
+    return 0;
+}
+
+int flb_input_chunk_set_up(struct flb_input_chunk *ic)
+{
+    if (cio_chunk_is_up(ic->chunk) == CIO_FALSE) {
+        return cio_chunk_up(ic->chunk);
+    }
+
+    return 0;
+}
+
+
 /* Append a RAW MessagPack buffer to the input instance */
 int flb_input_chunk_append_raw(struct flb_input_instance *in,
                                char *tag, size_t tag_len,
@@ -293,6 +361,8 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
     int ret;
     size_t size;
     struct flb_input_chunk *ic;
+    struct flb_storage_input *si;
+
 #ifdef FLB_HAVE_METRICS
     int records;
 #endif
@@ -383,8 +453,24 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
 
     /* Update memory counters and adjust limits if any */
     flb_input_chunk_set_limits(in);
-    flb_input_chunk_protect(in);
 
+    /*
+     * Check if we are overlimit and validate if is there any filesystem
+     * storage type asociated to this input instance, if so, unload the
+     * chunk content from memory to respect imposed limits.
+     *
+     * Calling cio_chunk_down() the memory map associated and the file
+     * descriptor will be released. At any later time, it must be bring up
+     * for I/O operations.
+     */
+    si = (struct flb_storage_input *) in->storage;
+    if (flb_input_chunk_is_overlimit(in) == FLB_TRUE &&
+        si->type == CIO_STORE_FS) {
+        cio_chunk_down(ic->chunk);
+        return 0;
+    }
+
+    flb_input_chunk_protect(in);
     return 0;
 }
 
@@ -393,6 +479,14 @@ void *flb_input_chunk_flush(struct flb_input_chunk *ic, size_t *size)
 {
     int ret;
     char *buf = NULL;
+
+    if (cio_chunk_is_up(ic->chunk) == CIO_FALSE) {
+        ret = cio_chunk_up(ic->chunk);
+        if (ret == -1) {
+            flb_error("[input chunk] cannot load chunk content");
+            return NULL;
+        }
+    }
 
     /*
      * msgpack-c internal use a raw buffer for it operations, since we
