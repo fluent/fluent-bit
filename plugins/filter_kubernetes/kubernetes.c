@@ -22,7 +22,6 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_parser.h>
-#include <fluent-bit/flb_unescape.h>
 
 #include "kube_conf.h"
 #include "kube_meta.h"
@@ -33,9 +32,9 @@
 #include <msgpack.h>
 
 /* Merge status used by merge_log_handler() */
-#define MERGE_UNESCAPED   0 /* merge unescaped string in temporal buffer */
-#define MERGE_PARSED      1 /* merge parsed string (log_buf)             */
-#define MERGE_BINARY      2 /* merge direct binary object (v)            */
+#define MERGE_UNTOUCHED   0 /* merge string untouched         */
+#define MERGE_PARSED      1 /* merge parsed string (log_buf)  */
+#define MERGE_BINARY      2 /* merge direct binary object (v) */
 
 #define T_LOG_STREAM "stream"
 #define T_LOG_STDERR "stderr"
@@ -112,40 +111,15 @@ static int merge_log_handler(msgpack_object o,
                              struct flb_kube *ctx)
 {
     int ret;
-    int size;
-    int new_size;
-    int unesc_len = 0;
     int root_type;
-    char *tmp;
 
     /* Reset vars */
     *out_buf = NULL;
     *out_size = 0;
-    ctx->unesc_buf_len = 0;
-
-    /* Allocate more space if required */
-    if (o.via.str.size >= ctx->unesc_buf_size) {
-        new_size = o.via.str.size + 1;
-        tmp = flb_realloc(ctx->unesc_buf, new_size);
-        if (tmp) {
-            ctx->unesc_buf = tmp;
-            ctx->unesc_buf_size = new_size;
-        }
-        else {
-            flb_errno();
-            return -1;
-        }
-    }
-
-    /* Unescape application string */
-    size = o.via.str.size;
-    unesc_len = flb_unescape_string(o.via.str.ptr,
-                                    size, &ctx->unesc_buf);
-    ctx->unesc_buf_len = unesc_len;
 
     ret = -1;
     if (parser) {
-        ret = flb_parser_do(parser, ctx->unesc_buf, unesc_len,
+        ret = flb_parser_do(parser, o.via.str.ptr, o.via.str.size,
                             out_buf, out_size, log_time);
         if (ret >= 0) {
             if (flb_time_to_double(log_time) == 0) {
@@ -155,19 +129,19 @@ static int merge_log_handler(msgpack_object o,
         }
     }
     else {
-        ret = flb_pack_json(ctx->unesc_buf, unesc_len,
+        ret = flb_pack_json(o.via.str.ptr, o.via.str.size,
                             (char **) out_buf, out_size, &root_type);
         if (ret == 0 && root_type != FLB_PACK_JSON_OBJECT) {
             flb_debug("[filter_kube] could not merge JSON, root_type=%i",
                       root_type);
             flb_free(*out_buf);
-            return MERGE_UNESCAPED;
+            return MERGE_UNTOUCHED;
         }
     }
 
     if (ret == -1) {
         flb_debug("[filter_kube] could not merge JSON log as requested");
-        return MERGE_UNESCAPED;
+        return MERGE_UNTOUCHED;
     }
 
     return MERGE_PARSED;
@@ -250,11 +224,6 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
     /* reset */
     flb_time_zero(&log_time);
 
-    /*
-     * If a log_index exists, the application log content inside the
-     * Docker JSON map is a escaped string. Proceed to reserve a temporal
-     * buffer and create an unescaped version.
-     */
     if (log_index != -1) {
         v = source_map.via.map.ptr[log_index].val;
         if (v.type == MSGPACK_OBJECT_STR) {
@@ -269,13 +238,8 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
     }
 
     /* Append record timestamp */
-    if (merge_status == MERGE_PARSED) {
-        if (flb_time_to_double(&log_time) == 0.0) {
-            flb_time_append_to_msgpack(time_lookup, pck, 0);
-        }
-        else {
-            flb_time_append_to_msgpack(&log_time, pck, 0);
-        }
+    if (merge_status == MERGE_PARSED && flb_time_to_double(&log_time) != 0.0) {
+        flb_time_append_to_msgpack(&log_time, pck, 0);
     }
     else {
         flb_time_append_to_msgpack(time_lookup, pck, 0);
@@ -327,20 +291,8 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
         k = source_map.via.map.ptr[i].key;
         v = source_map.via.map.ptr[i].val;
 
-        /*
-         * If the original 'log' field was unescaped and converted to
-         * msgpack properly, re-pack the new string version to avoid
-         * multiple escape sequences in outgoing plugins.
-         */
-        if (log_index == i &&
-            (merge_status == MERGE_UNESCAPED || merge_status == MERGE_PARSED)) {
-            if (merge_status == MERGE_UNESCAPED || ctx->keep_log == FLB_TRUE) {
-                msgpack_pack_object(pck, k);
-                msgpack_pack_str(pck, ctx->unesc_buf_len);
-                msgpack_pack_str_body(pck, ctx->unesc_buf, ctx->unesc_buf_len);
-            }
-        }
-        else { /* MERGE_BINARY ? */
+        if (log_index != i ||
+            merge_status != MERGE_PARSED || ctx->keep_log == FLB_TRUE) {
             msgpack_pack_object(pck, k);
             msgpack_pack_object(pck, v);
         }

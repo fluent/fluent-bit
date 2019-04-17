@@ -276,12 +276,6 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
         ctx->use_journal = FLB_FALSE;
     }
 
-    /* Merge log buffer */
-    if (ctx->merge_log == FLB_TRUE) {
-        ctx->unesc_buf = flb_malloc(FLB_MERGE_BUF_SIZE);
-        ctx->unesc_buf_size = FLB_MERGE_BUF_SIZE;
-    }
-
     /* Custom Regex */
     tmp = flb_filter_get_property("regex_parser", i);
     if (tmp) {
@@ -326,10 +320,6 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
     }
     if (ctx->hash_table) {
         flb_hash_destroy(ctx->hash_table);
-    }
-
-    if (ctx->merge_log == FLB_TRUE) {
-        flb_free(ctx->unesc_buf);
     }
 
     if (ctx->merge_log_key) {
