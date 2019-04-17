@@ -37,7 +37,7 @@
 #define MERGE_PARSED      1 /* merge parsed string (log_buf)             */
 #define MERGE_MAP         2 /* merge direct binary object (v)            */
 
-static int is_stream_stderr(msgpack_object_map map)
+static int get_stream(msgpack_object_map map)
 {
     int i;
     msgpack_object k;
@@ -49,16 +49,19 @@ static int is_stream_stderr(msgpack_object_map map)
 
         if (k.type == MSGPACK_OBJECT_STR &&
             strncmp(k.via.str.ptr, "stream", k.via.str.size) == 0) {
-            if (strncmp(v.via.str.ptr, "stderr", v.via.str.size) == 0) {
-                return FLB_TRUE;
+            if (strncmp(v.via.str.ptr, "stdout", v.via.str.size) == 0) {
+                return FLB_KUBE_PROP_STREAM_STDOUT;
+            }
+            else if (strncmp(v.via.str.ptr, "stderr", v.via.str.size) == 0) {
+                return FLB_KUBE_PROP_STREAM_STDERR;
             }
             else {
-               return FLB_FALSE;
+               return FLB_KUBE_PROP_STREAM_UNKNOWN;
             }
         }
     }
 
-    return FLB_FALSE;
+    return FLB_KUBE_PROP_NO_STREAM;
 }
 
 static int value_trim_size(msgpack_object o)
@@ -463,7 +466,6 @@ static int cb_kube_filter(const void *data, size_t bytes,
                           struct flb_config *config)
 {
     int ret;
-    int is_stderr = FLB_FALSE;
     size_t pre = 0;
     size_t off = 0;
     char *dummy_cache_buf = NULL;
@@ -498,14 +500,6 @@ static int cb_kube_filter(const void *data, size_t bytes,
         if (ret == -1) {
             flb_kube_prop_destroy(&props);
             return FLB_FILTER_NOTOUCH;
-        }
-
-        if (props.exclude == FLB_TRUE) {
-            *out_buf   = NULL;
-            *out_bytes = 0;
-            flb_kube_meta_release(&meta);
-            flb_kube_prop_destroy(&props);
-            return FLB_FILTER_MODIFIED;
         }
     }
 
@@ -547,27 +541,48 @@ static int cb_kube_filter(const void *data, size_t bytes,
                 return FLB_FILTER_NOTOUCH;
             }
 
-            if (props.exclude == FLB_TRUE) {
-                /* Skip this record */
-                continue;
-            }
-
             pre = off;
         }
 
-        is_stderr = is_stream_stderr(root.via.array.ptr[1].via.map);
-
         parser = NULL;
 
-        if (is_stderr) {
-            if (props.stderr_parser != NULL) {
-                parser = flb_parser_get(props.stderr_parser, config);
+        switch (get_stream(root.via.array.ptr[1].via.map)) {
+        case FLB_KUBE_PROP_STREAM_STDOUT:
+            {
+                if (props.stdout_exclude == FLB_TRUE) {
+                    /* Skip this record */
+                    if (ctx->use_journal == FLB_TRUE) {
+                        flb_kube_meta_release(&meta);
+                    }
+                    continue;
+                }
+                if (props.stdout_parser != NULL) {
+                    parser = flb_parser_get(props.stdout_parser, config);
+                }
             }
-        }
-        else {
-            if (props.stdout_parser != NULL) {
-                parser = flb_parser_get(props.stdout_parser, config);
+            break;
+        case FLB_KUBE_PROP_STREAM_STDERR:
+            {
+                if (props.stderr_exclude == FLB_TRUE) {
+                    continue;
+                }
+                if (props.stderr_parser != NULL) {
+                    parser = flb_parser_get(props.stderr_parser, config);
+                }
             }
+            break;
+        default:
+            {
+                if (props.stdout_exclude == props.stderr_exclude &&
+                    props.stderr_exclude == FLB_TRUE) {
+                    continue;
+                }
+                if (props.stdout_parser == props.stderr_parser &&
+                    props.stderr_parser != NULL) {
+                    parser = flb_parser_get(props.stdout_parser, config);
+                }
+            }
+            break;
         }
 
         /*
