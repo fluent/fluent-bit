@@ -35,25 +35,6 @@ char kube_test_id[64];
 #define KUBE_URL         "http://" KUBE_IP ":" KUBE_PORT
 #define DPATH            FLB_TESTS_DATA_PATH "/data/kubernetes"
 
-/*
- * Data files
- * ==========
- */
-#define T_APACHE_LOGS           "default_apache-logs_apache-logs"
-#define T_APACHE_LOGS_ANN       "default_apache-logs-annotated_apache-logs-annotated"
-#define T_APACHE_LOGS_ANN_INV   "default_apache-logs-annotated-invalid_apache-logs-annotated-invalid"
-#define T_APACHE_LOGS_ANN_MERGE "default_apache-logs-annotated-merge_apache-logs-annotated-merge"
-#define T_APACHE_LOGS_ANN_EXCL  "default_apache-logs-annotated-exclude_apache-logs-annotated-exclude"
-#define T_JSON_LOGS             "default_json-logs_json-logs"
-#define T_JSON_LOGS_NO_KEEP     "default_json-logs-no-keep_json-logs-no-keep"
-#define T_JSON_LOGS_INV         "default_json-logs-invalid_json-logs-invalid"
-#define T_JSON_LOGS_INV_NO_KEEP "default_json-logs-invalid_json-logs-invalid"
-#define T_SYSTEMD_SIMPLE        "kairosdb-914055854-b63vq"
-
-#define T_MULTI_INIT            "socks_session-db-fdd649d68-cq5sp_istio-init"
-#define T_MULTI_PROXY           "socks_session-db-fdd649d68-cq5sp_istio-proxy"
-#define T_MULTI_REDIS           "socks_session-db-fdd649d68-cq5sp_session-db"
-
 static int file_to_buf(const char *path, char **out_buf, size_t *out_size)
 {
     int ret;
@@ -234,7 +215,7 @@ static void kube_test(const char *target, int type, const char *suffix, int nExp
         TEST_CHECK_(in_ffd >= 0, "initialising input");
         ret = flb_input_set(ctx.flb, in_ffd,
                             "Tag", "kube.<namespace>.<pod>.<container>",
-                            "Tag_Regex", "^" DPATH "/log/(?<namespace>.+)_(?<pod>.+)_(?<container>.+)\\.log$",
+                            "Tag_Regex", "^" DPATH "/log/(?:[^/]+/)?(?<namespace>.+)_(?<pod>.+)_(?<container>.+)\\.log$",
                             "Path", path,
                             "Parser", "docker",
                             "Docker_Mode", "On",
@@ -349,76 +330,322 @@ exit:
     }
 }
 
-static void flb_test_apache_logs()
+#define flb_test_core(target, suffix, nExpected) \
+    kube_test("core/" target, KUBE_TAIL, suffix, nExpected, NULL);
+
+static void flb_test_core_base()
 {
-    kube_test(T_APACHE_LOGS, KUBE_TAIL, NULL, 1, NULL);
+    flb_test_core("core_base_fluent-bit", NULL, 1);
 }
 
-static void flb_test_apache_logs_merge()
+static void flb_test_core_unescaping_text()
 {
-    kube_test(T_APACHE_LOGS, KUBE_TAIL, NULL, 1,
-              "Merge_Log", "On",
-              "Merge_Log_Key", "merge",
-              NULL);
+    flb_test_core("core_unescaping_text", NULL, 1);
 }
 
-static void flb_test_apache_logs_annotated()
+static void flb_test_core_unescaping_json()
 {
-    kube_test(T_APACHE_LOGS_ANN, KUBE_TAIL, NULL, 1,
-              "k8s-logging.parser", "On",
-              "Merge_Log", "On",
-              NULL);
+    flb_test_core("core_unescaping_json", NULL, 1);
 }
 
-static void flb_test_apache_logs_annotated_invalid()
+#define flb_test_options_merge_log_enabled(target, suffix, nExpected) \
+    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, \
+              "Merge_Log", "On", \
+              NULL); \
+
+#define flb_test_options_merge_log_disabled(target, suffix, nExpected) \
+    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, \
+              NULL); \
+
+static void flb_test_options_merge_log_enabled_text()
 {
-    kube_test(T_APACHE_LOGS_ANN_INV, KUBE_TAIL, NULL, 1,
-              "k8s-logging.parser", "On",
-              NULL);
+    flb_test_options_merge_log_enabled("options_merge-log-enabled_text", NULL, 1);
 }
 
-static void flb_test_apache_logs_annotated_exclude()
+static void flb_test_options_merge_log_enabled_json()
 {
-    kube_test(T_APACHE_LOGS_ANN_EXCL, KUBE_TAIL, NULL, 0,
-              "k8s-logging.exclude", "On",
-              NULL);
+    flb_test_options_merge_log_enabled("options_merge-log-enabled_json", NULL, 1);
 }
 
-static void flb_test_apache_logs_annotated_merge()
+static void flb_test_options_merge_log_enabled_invalid_json()
 {
-    kube_test(T_APACHE_LOGS_ANN_MERGE, KUBE_TAIL, NULL, 1,
-              "k8s-logging.parser", "On",
-              "Merge_Log", "On",
-              "Merge_Log_Key", "merge",
-              NULL);
+    flb_test_options_merge_log_enabled("options_merge-log-enabled_invalid-json", NULL, 1);
 }
 
-static void flb_test_json_logs()
+static void flb_test_options_merge_log_disabled_json()
 {
-    kube_test(T_JSON_LOGS, KUBE_TAIL, NULL, 1,
-              "Merge_Log", "On",
-              NULL);
+    flb_test_options_merge_log_disabled("options_merge-log-disabled_json", NULL, 1);
 }
 
-static void flb_test_json_logs_no_keep()
+#define flb_test_options_merge_log_trim_enabled(target, suffix, nExpected) \
+    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, \
+              "Merge_Log", "On", \
+              NULL); \
+
+#define flb_test_options_merge_log_trim_disabled(target, suffix, nExpected) \
+    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, \
+              "Merge_Log", "On", \
+              "Merge_Log_Trim", "Off", \
+              NULL); \
+
+static void flb_test_options_merge_log_trim_enabled_json()
 {
-    kube_test(T_JSON_LOGS_NO_KEEP, KUBE_TAIL, NULL, 1,
-              "Merge_Log", "On",
-              "Keep_Log", "Off",
-              NULL);
+    flb_test_options_merge_log_trim_enabled("options_merge-log-trim-enabled_json", NULL, 1);
 }
 
-static void flb_test_json_logs_invalid()
+static void flb_test_options_merge_log_trim_disabled_json()
 {
-    kube_test(T_JSON_LOGS_INV, KUBE_TAIL, NULL, 1, NULL);
+    flb_test_options_merge_log_trim_disabled("options_merge-log-trim-disabled_json", NULL, 1);
 }
 
-static void flb_test_json_logs_invalid_no_keep()
+#define flb_test_options_merge_log_key(target, suffix, nExpected) \
+    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, \
+              "Merge_Log", "On", \
+              "Merge_Log_Key", "merge-log-key", \
+              NULL); \
+
+static void flb_test_options_merge_log_key_json()
 {
-    kube_test(T_JSON_LOGS_INV_NO_KEEP, KUBE_TAIL, NULL, 1,
-              "Merge_Log", "On",
-              "Keep_Log", "Off",
-              NULL);
+    flb_test_options_merge_log_key("options_merge-log-key_json", NULL, 1);
+}
+
+#define flb_test_options_keep_log_enabled(target, suffix, nExpected) \
+    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, \
+              "Merge_Log", "On", \
+              NULL); \
+
+#define flb_test_options_keep_log_disabled(target, suffix, nExpected) \
+    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, \
+              "Merge_Log", "On", \
+              "Keep_Log", "Off", \
+              NULL); \
+
+static void flb_test_options_keep_log_enabled_json()
+{
+    flb_test_options_keep_log_enabled("options_keep-log-enabled_json", NULL, 1);
+}
+
+static void flb_test_options_keep_log_disabled_json()
+{
+    flb_test_options_keep_log_disabled("options_keep-log-disabled_json", NULL, 1);
+}
+
+#define flb_test_options_k8s_logging_parser_disabled(target, suffix, nExpected) \
+    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, \
+              "Merge_Log", "On", \
+              NULL); \
+
+static void flb_test_options_k8s_logging_parser_disabled_text_stdout()
+{
+    flb_test_options_k8s_logging_parser_disabled("options_k8s-logging-parser-disabled_text", "stdout", 1);
+}
+
+static void flb_test_options_k8s_logging_parser_disabled_text_stderr()
+{
+    flb_test_options_k8s_logging_parser_disabled("options_k8s-logging-parser-disabled_text", "stderr", 1);
+}
+
+#define flb_test_options_k8s_logging_exclude_disabled(target, suffix, nExpected) \
+    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, \
+              "Merge_Log", "On", \
+              NULL); \
+
+static void flb_test_options_k8s_logging_exclude_disabled_text_stdout()
+{
+    flb_test_options_k8s_logging_exclude_disabled("options_k8s-logging-exclude-disabled_text", "stdout", 1);
+}
+
+static void flb_test_options_k8s_logging_exclude_disabled_text_stderr()
+{
+    flb_test_options_k8s_logging_exclude_disabled("options_k8s-logging-exclude-disabled_text", "stderr", 1);
+}
+
+#define flb_test_annotations(target, suffix, nExpected) \
+    kube_test("annotations/" target, KUBE_TAIL, suffix, nExpected, \
+              "K8s-Logging.Parser", "On", \
+              "K8s-Logging.Exclude", "On", \
+              NULL); \
+
+static void flb_test_annotations_invalid_text()
+{
+    flb_test_annotations("annotations_invalid_text", NULL, 1);
+}
+
+#define flb_test_annotations_parser(target, suffix, nExpected) \
+    kube_test("annotations-parser/" target, KUBE_TAIL, suffix, nExpected, \
+              "K8s-Logging.Parser", "On", \
+              "Merge_Log", "On", \
+              "Keep_Log", "Off", \
+              NULL); \
+
+static void flb_test_annotations_parser_regex_with_time_text()
+{
+    flb_test_annotations_parser("annotations-parser_regex-with-time_text", NULL, 1);
+}
+
+static void flb_test_annotations_parser_regex_with_time_invalid_text_1()
+{
+    flb_test_annotations_parser("annotations-parser_regex-with-time_invalid-text-1", NULL, 1);
+}
+
+static void flb_test_annotations_parser_json_with_time_json()
+{
+    flb_test_annotations_parser("annotations-parser_json-with-time_json", NULL, 1);
+}
+
+static void flb_test_annotations_parser_json_with_time_invalid_json_1()
+{
+    flb_test_annotations_parser("annotations-parser_json-with-time_invalid-json-1", NULL, 1);
+}
+
+static void flb_test_annotations_parser_invalid_text_stdout()
+{
+    flb_test_annotations_parser("annotations-parser_invalid_text", "stdout", 1);
+}
+
+static void flb_test_annotations_parser_invalid_text_stderr()
+{
+    flb_test_annotations_parser("annotations-parser_invalid_text", "stderr", 1);
+}
+
+static void flb_test_annotations_parser_stdout_text_stdout()
+{
+    flb_test_annotations_parser("annotations-parser_stdout_text", "stdout", 1);
+}
+
+static void flb_test_annotations_parser_stdout_text_stderr()
+{
+    flb_test_annotations_parser("annotations-parser_stdout_text", "stderr", 1);
+}
+
+static void flb_test_annotations_parser_stderr_text_stdout()
+{
+    flb_test_annotations_parser("annotations-parser_stderr_text", "stdout", 1);
+}
+
+static void flb_test_annotations_parser_stderr_text_stderr()
+{
+    flb_test_annotations_parser("annotations-parser_stderr_text", "stderr", 1);
+}
+
+static void flb_test_annotations_parser_multiple_1_container_1_stdout()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-1_container-1", "stdout", 1);
+}
+
+static void flb_test_annotations_parser_multiple_1_container_1_stderr()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-1_container-1", "stderr", 1);
+}
+
+static void flb_test_annotations_parser_multiple_1_container_2_stdout()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-1_container-2", "stdout", 1);
+}
+
+static void flb_test_annotations_parser_multiple_1_container_2_stderr()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-1_container-2", "stderr", 1);
+}
+
+static void flb_test_annotations_parser_multiple_1_container_3_stdout()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-1_container-3", "stdout", 1);
+}
+
+static void flb_test_annotations_parser_multiple_1_container_3_stderr()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-1_container-3", "stderr", 1);
+}
+
+static void flb_test_annotations_parser_multiple_1_container_4_stdout()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-1_container-4", "stdout", 1);
+}
+
+static void flb_test_annotations_parser_multiple_1_container_4_stderr()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-1_container-4", "stderr", 1);
+}
+
+static void flb_test_annotations_parser_multiple_1_container_5_stdout()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-1_container-5", "stdout", 1);
+}
+
+static void flb_test_annotations_parser_multiple_1_container_5_stderr()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-1_container-5", "stderr", 1);
+}
+
+static void flb_test_annotations_parser_multiple_2_container_1_stdout()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-2_container-1", "stdout", 1);
+}
+
+static void flb_test_annotations_parser_multiple_2_container_1_stderr()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-2_container-1", "stderr", 1);
+}
+
+static void flb_test_annotations_parser_multiple_2_container_2_stdout()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-2_container-2", "stdout", 1);
+}
+
+static void flb_test_annotations_parser_multiple_2_container_2_stderr()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-2_container-2", "stderr", 1);
+}
+
+static void flb_test_annotations_parser_multiple_2_container_3_stdout()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-2_container-3", "stdout", 1);
+}
+
+static void flb_test_annotations_parser_multiple_2_container_3_stderr()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-2_container-3", "stderr", 1);
+}
+
+static void flb_test_annotations_parser_multiple_2_container_4_stdout()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-2_container-4", "stdout", 1);
+}
+
+static void flb_test_annotations_parser_multiple_2_container_4_stderr()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-2_container-4", "stderr", 1);
+}
+
+static void flb_test_annotations_parser_multiple_2_container_5_stdout()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-2_container-5", "stdout", 1);
+}
+
+static void flb_test_annotations_parser_multiple_2_container_5_stderr()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-2_container-5", "stderr", 1);
+}
+
+#define flb_test_annotations_exclude(target, suffix, nExpected) \
+    kube_test("annotations-exclude/" target, KUBE_TAIL, suffix, nExpected, \
+              "K8s-Logging.Exclude", "On", \
+              NULL); \
+
+static void flb_test_annotations_exclude_default_text()
+{
+    flb_test_annotations_exclude("annotations-exclude_default_text", NULL, 0);
+}
+
+static void flb_test_annotations_exclude_invalid_text_stdout()
+{
+    flb_test_annotations_exclude("annotations-exclude_invalid_text", "stdout", 1);
+}
+
+static void flb_test_annotations_exclude_invalid_text_stderr()
+{
+    flb_test_annotations_exclude("annotations-exclude_invalid_text", "stderr", 1);
 }
 
 #ifdef FLB_HAVE_SYSTEMD
@@ -499,42 +726,66 @@ static void flb_test_systemd_logs()
         }
         sd_journal_close(journal);
 
-        kube_test(T_SYSTEMD_SIMPLE, KUBE_SYSTEMD, NULL, 1,
+        kube_test("kairosdb-914055854-b63vq", KUBE_SYSTEMD, NULL, 1,
                   "Merge_Log", "On",
                   NULL);
     }
 }
 #endif
 
-static void flb_test_multi_logs(char *log, char *suffix)
-{
-    kube_test(log, KUBE_TAIL, suffix, 1,
-              "k8s-logging.parser", "On",
-              "Merge_Log", "On",
-              NULL);
-}
-static void flb_test_multi_init_stdout() { flb_test_multi_logs(T_MULTI_INIT, "stdout"); }
-static void flb_test_multi_init_stderr() { flb_test_multi_logs(T_MULTI_INIT, "stderr"); }
-static void flb_test_multi_proxy() { flb_test_multi_logs(T_MULTI_PROXY, NULL); }
-static void flb_test_multi_redis() { flb_test_multi_logs(T_MULTI_REDIS, NULL); }
-
 TEST_LIST = {
-    {"kube_apache_logs", flb_test_apache_logs},
-    {"kube_apache_logs_merge", flb_test_apache_logs_merge},
-    {"kube_apache_logs_annotated", flb_test_apache_logs_annotated},
-    {"kube_apache_logs_annotated_invalid", flb_test_apache_logs_annotated_invalid},
-    {"kube_apache_logs_annotated_exclude", flb_test_apache_logs_annotated_exclude},
-    {"kube_apache_logs_annotated_merge_log", flb_test_apache_logs_annotated_merge},
-    {"kube_json_logs", flb_test_json_logs},
-    {"kube_json_logs_no_keep", flb_test_json_logs_no_keep},
-    {"kube_json_logs_invalid", flb_test_json_logs_invalid},
-    {"kube_json_logs_invalid_no_keep", flb_test_json_logs_invalid_no_keep},
+    {"kube_core_base", flb_test_core_base},
+    {"kube_core_unescaping_text", flb_test_core_unescaping_text},
+    {"kube_core_unescaping_json", flb_test_core_unescaping_json},
+    {"kube_options_merge_log_enabled_text", flb_test_options_merge_log_enabled_text},
+    {"kube_options_merge_log_enabled_json", flb_test_options_merge_log_enabled_json},
+    {"kube_options_merge_log_enabled_invalid_json", flb_test_options_merge_log_enabled_invalid_json},
+    {"kube_options_merge_log_disabled_json", flb_test_options_merge_log_disabled_json},
+    {"kube_options_merge_log_trim_enabled_json", flb_test_options_merge_log_trim_enabled_json},
+    {"kube_options_merge_log_trim_disabled_json", flb_test_options_merge_log_trim_disabled_json},
+    {"kube_options_merge_log_key_json", flb_test_options_merge_log_key_json},
+    {"kube_options_keep_log_enabled_json", flb_test_options_keep_log_enabled_json},
+    {"kube_options_keep_log_disabled_json", flb_test_options_keep_log_disabled_json},
+    {"kube_options_k8s_logging_parser_disabled_text_stdout", flb_test_options_k8s_logging_parser_disabled_text_stdout},
+    {"kube_options_k8s_logging_parser_disabled_text_stderr", flb_test_options_k8s_logging_parser_disabled_text_stderr},
+    {"kube_options_k8s_logging_exclude_disabled_text_stdout", flb_test_options_k8s_logging_exclude_disabled_text_stdout},
+    {"kube_options_k8s_logging_exclude_disabled_text_stderr", flb_test_options_k8s_logging_exclude_disabled_text_stderr},
+    {"kube_annotations_invalid_text", flb_test_annotations_invalid_text},
+    {"kube_annotations_parser_regex_with_time_text", flb_test_annotations_parser_regex_with_time_text},
+    {"kube_annotations_parser_regex_with_time_invalid_text_1", flb_test_annotations_parser_regex_with_time_invalid_text_1},
+    {"kube_annotations_parser_json_with_time_json", flb_test_annotations_parser_json_with_time_json},
+    {"kube_annotations_parser_json_with_time_invalid_json_1", flb_test_annotations_parser_json_with_time_invalid_json_1},
+    {"kube_annotations_parser_invalid_text_stdout", flb_test_annotations_parser_invalid_text_stdout},
+    {"kube_annotations_parser_invalid_text_stderr", flb_test_annotations_parser_invalid_text_stderr},
+    {"kube_annotations_parser_stdout_text_stdout", flb_test_annotations_parser_stdout_text_stdout},
+    {"kube_annotations_parser_stdout_text_stderr", flb_test_annotations_parser_stdout_text_stderr},
+    {"kube_annotations_parser_stderr_text_stdout", flb_test_annotations_parser_stderr_text_stdout},
+    {"kube_annotations_parser_stderr_text_stderr", flb_test_annotations_parser_stderr_text_stderr},
+    {"kube_annotations_parser_multiple_1_container_1_stdout", flb_test_annotations_parser_multiple_1_container_1_stdout},
+    {"kube_annotations_parser_multiple_1_container_1_stderr", flb_test_annotations_parser_multiple_1_container_1_stderr},
+    {"kube_annotations_parser_multiple_1_container_2_stdout", flb_test_annotations_parser_multiple_1_container_2_stdout},
+    {"kube_annotations_parser_multiple_1_container_2_stderr", flb_test_annotations_parser_multiple_1_container_2_stderr},
+    {"kube_annotations_parser_multiple_1_container_3_stdout", flb_test_annotations_parser_multiple_1_container_3_stdout},
+    {"kube_annotations_parser_multiple_1_container_3_stderr", flb_test_annotations_parser_multiple_1_container_3_stderr},
+    {"kube_annotations_parser_multiple_1_container_4_stdout", flb_test_annotations_parser_multiple_1_container_4_stdout},
+    {"kube_annotations_parser_multiple_1_container_4_stderr", flb_test_annotations_parser_multiple_1_container_4_stderr},
+    {"kube_annotations_parser_multiple_1_container_5_stdout", flb_test_annotations_parser_multiple_1_container_5_stdout},
+    {"kube_annotations_parser_multiple_1_container_5_stderr", flb_test_annotations_parser_multiple_1_container_5_stderr},
+    {"kube_annotations_parser_multiple_2_container_1_stdout", flb_test_annotations_parser_multiple_2_container_1_stdout},
+    {"kube_annotations_parser_multiple_2_container_1_stderr", flb_test_annotations_parser_multiple_2_container_1_stderr},
+    {"kube_annotations_parser_multiple_2_container_2_stdout", flb_test_annotations_parser_multiple_2_container_2_stdout},
+    {"kube_annotations_parser_multiple_2_container_2_stderr", flb_test_annotations_parser_multiple_2_container_2_stderr},
+    {"kube_annotations_parser_multiple_2_container_3_stdout", flb_test_annotations_parser_multiple_2_container_3_stdout},
+    {"kube_annotations_parser_multiple_2_container_3_stderr", flb_test_annotations_parser_multiple_2_container_3_stderr},
+    {"kube_annotations_parser_multiple_2_container_4_stdout", flb_test_annotations_parser_multiple_2_container_4_stdout},
+    {"kube_annotations_parser_multiple_2_container_4_stderr", flb_test_annotations_parser_multiple_2_container_4_stderr},
+    {"kube_annotations_parser_multiple_2_container_5_stdout", flb_test_annotations_parser_multiple_2_container_5_stdout},
+    {"kube_annotations_parser_multiple_2_container_5_stderr", flb_test_annotations_parser_multiple_2_container_5_stderr},
+    {"kube_annotations_exclude_default_text", flb_test_annotations_exclude_default_text},
+    {"kube_annotations_exclude_invalid_text_stdout", flb_test_annotations_exclude_invalid_text_stdout},
+    {"kube_annotations_exclude_invalid_text_stderr", flb_test_annotations_exclude_invalid_text_stderr},
 #ifdef FLB_HAVE_SYSTEMD
     {"kube_systemd_logs", flb_test_systemd_logs},
 #endif
-    {"kube_multi_init_stdout", flb_test_multi_init_stdout},
-    {"kube_multi_init_stderr", flb_test_multi_init_stderr},
-    {"kube_multi_proxy", flb_test_multi_proxy},
-    {"kube_multi_redis", flb_test_multi_redis},
     {NULL, NULL}
 };
