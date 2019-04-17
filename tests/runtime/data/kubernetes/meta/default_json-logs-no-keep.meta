@@ -2,17 +2,14 @@
   "kind": "Pod",
   "apiVersion": "v1",
   "metadata": {
-    "name": "apache-logs-annotated-meta",
+    "name": "json-logs-no-keep",
     "namespace": "default",
-    "selfLink": "/api/v1/namespaces/default/pods/apache-logs-annotated-meta",
-    "uid": "b6b631d4-172a-11e8-bfad-080027749cbc",
-    "resourceVersion": "16890",
-    "creationTimestamp": "2018-02-21T17:14:45Z",
+    "selfLink": "/api/v1/namespaces/default/pods/json-logs-no-keep",
+    "uid": "5ac76e2f-17d2-11e8-b34e-080027749cbc",
+    "resourceVersion": "21690",
+    "creationTimestamp": "2018-02-22T13:14:46Z",
     "labels": {
-      "run": "apache-logs-annotated-meta"
-    },
-    "annotations": {
-      "fluentbit.io/parser": "apache"
+      "run": "json-logs-no-keep"
     }
   },
   "spec": {
@@ -27,8 +24,8 @@
     ],
     "containers": [
       {
-        "name": "apache-logs-annotated-meta",
-        "image": "edsiper/apache_logs",
+        "name": "json-logs-no-keep",
+        "image": "edsiper/json_logs",
         "resources": {
 
         },
@@ -56,46 +53,52 @@
     "schedulerName": "default-scheduler"
   },
   "status": {
-    "phase": "Running",
+    "phase": "Succeeded",
     "conditions": [
       {
         "type": "Initialized",
         "status": "True",
         "lastProbeTime": null,
-        "lastTransitionTime": "2018-02-21T17:14:45Z"
+        "lastTransitionTime": "2018-02-22T13:14:46Z",
+        "reason": "PodCompleted"
       },
       {
         "type": "Ready",
-        "status": "True",
+        "status": "False",
         "lastProbeTime": null,
-        "lastTransitionTime": "2018-02-21T17:14:46Z"
+        "lastTransitionTime": "2018-02-22T13:14:53Z",
+        "reason": "PodCompleted"
       },
       {
         "type": "PodScheduled",
         "status": "True",
         "lastProbeTime": null,
-        "lastTransitionTime": "2018-02-21T17:14:45Z"
+        "lastTransitionTime": "2018-02-22T13:14:46Z"
       }
     ],
     "hostIP": "192.168.99.100",
     "podIP": "172.17.0.4",
-    "startTime": "2018-02-21T17:14:45Z",
+    "startTime": "2018-02-22T13:14:46Z",
     "containerStatuses": [
       {
-        "name": "apache-logs-annotated-meta",
+        "name": "json-logs-no-keep",
         "state": {
-          "running": {
-            "startedAt": "2018-02-21T17:14:46Z"
+          "terminated": {
+            "exitCode": 0,
+            "reason": "Completed",
+            "startedAt": "2018-02-22T13:14:47Z",
+            "finishedAt": "2018-02-22T13:14:52Z",
+            "containerID": "docker://c053db7370be9c33d64677f9759863d850ebe35104069bec241cd1bb4674bd19"
           }
         },
         "lastState": {
 
         },
-        "ready": true,
+        "ready": false,
         "restartCount": 0,
-        "image": "edsiper/apache_logs:latest",
-        "imageID": "docker-pullable://edsiper/apache_logs@sha256:bb2934bcf735363d2a009fa4a2d4c2bf5b0f37825be0e729175b46a30cecd0a8",
-        "containerID": "docker://5c79b78d458d86fff56127cc8657058c10b837d0f2c147b61afea4c8bc65fad7"
+        "image": "edsiper/json_logs:latest",
+        "imageID": "docker-pullable://edsiper/json_logs@sha256:fa40faef982358c9f88a28ceee21524c0d70ea7038b312a4f67f396d4bb5cc91",
+        "containerID": "docker://c053db7370be9c33d64677f9759863d850ebe35104069bec241cd1bb4674bd19"
       }
     ],
     "qosClass": "BestEffort"

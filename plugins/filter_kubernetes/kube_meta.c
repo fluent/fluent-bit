@@ -153,7 +153,7 @@ static int get_api_server_info(struct flb_kube *ctx,
     struct flb_upstream_conn *u_conn;
 
     /*
-     * If a file exists called namespace-podname.meta, load it and use it.
+     * If a file exists called namespace_podname.meta, load it and use it.
      * If not, fall back to API. This is primarily for diagnostic purposes,
      * e.g. debugging new parsers.
      */
@@ -163,7 +163,7 @@ static int get_api_server_info(struct flb_kube *ctx,
         size_t payload_size = 0;
         struct stat sb;
 
-        ret = snprintf(uri, sizeof(uri) - 1, "%s/%s-%s.meta", ctx->meta_preload_cache_dir, namespace, podname);
+        ret = snprintf(uri, sizeof(uri) - 1, "%s/%s_%s.meta", ctx->meta_preload_cache_dir, namespace, podname);
         if (ret > 0) {
             fd = open(uri, O_RDONLY, 0);
             if (fd > 0) {
@@ -841,35 +841,35 @@ int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config)
         return 0;
     }
 
+    /* Init network */
+    flb_kube_network_init(ctx, config);
+
     /* Gather local info */
     ret = get_local_pod_info(ctx);
     if (ret == FLB_TRUE) {
         flb_info("[filter_kube] local POD info OK");
+
+        /* Gather info from API server */
+        flb_info("[filter_kube] testing connectivity with API server...");
+        ret = get_api_server_info(ctx, ctx->namespace, ctx->podname,
+                                  &meta_buf, &meta_size);
+        if (ret == -1) {
+            if (!ctx->podname) {
+                flb_warn("[filter_kube] could not get meta for local POD");
+            }
+            else {
+                flb_warn("[filter_kube] could not get meta for POD %s",
+                         ctx->podname);
+            }
+            return -1;
+        }
+        flb_info("[filter_kube] API server connectivity OK");
+
+        flb_free(meta_buf);
     }
     else {
         flb_info("[filter_kube] not running in a POD");
     }
-
-    /* Init network */
-    flb_kube_network_init(ctx, config);
-
-    /* Gather info from API server */
-    flb_info("[filter_kube] testing connectivity with API server...");
-    ret = get_api_server_info(ctx, ctx->namespace, ctx->podname,
-                              &meta_buf, &meta_size);
-    if (ret == -1) {
-        if (!ctx->podname) {
-            flb_warn("[filter_kube] could not get meta for local POD");
-        }
-        else {
-            flb_warn("[filter_kube] could not get meta for POD %s",
-                     ctx->podname);
-        }
-        return -1;
-    }
-    flb_info("[filter_kube] API server connectivity OK");
-
-    flb_free(meta_buf);
 
     return 0;
 }
