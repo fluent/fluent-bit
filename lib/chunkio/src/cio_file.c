@@ -77,7 +77,6 @@ void cio_file_calculate_checksum(struct cio_file *cf, crc_t *out)
 
     len = content_len(cf);
     in_data = (unsigned char *) cf->map + CIO_FILE_CONTENT_OFFSET;
-
     val = cio_crc32_update(cf->crc_cur, in_data, len);
     *out = val;
 }
@@ -186,6 +185,9 @@ static int cio_file_format_check(struct cio_chunk *ch,
             return -1;
         }
 
+        /* Initialize CRC variable */
+        cf->crc_cur = cio_crc32_init();
+
         /* Get hash stored in the mmap */
         p = (unsigned char *) cio_file_st_get_hash(cf->map);
 
@@ -215,7 +217,7 @@ static int cio_file_format_check(struct cio_chunk *ch,
 static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
 {
     int ret;
-    int oflags;
+    int oflags = 0;
     size_t fs_size = 0;
     ssize_t content_size;
     struct stat fst;
@@ -306,6 +308,78 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
     return 0;
 }
 
+/*
+ * Unmap the memory for the opened file in question. It make sure
+ * to sync changes to disk first.
+ */
+static int munmap_file(struct cio_ctx *ctx, struct cio_chunk *ch)
+{
+    int ret;
+    struct cio_file *cf;
+
+    cf = (struct cio_file *) ch->backend;
+
+    /* File not mapped */
+    if (cf->map == NULL) {
+        return -1;
+    }
+
+    /* Sync pending changes to disk */
+    if (cf->synced == CIO_FALSE) {
+        ret = cio_file_sync(ch);
+        if (ret == -1) {
+            cio_log_error(ch->ctx,
+                          "[cio file] error syncing file at "
+                          "%s:%s", ch->st->name, ch->name);
+        }
+    }
+
+    /* Unmap file */
+    munmap(cf->map, cf->alloc_size);
+    cf->map = NULL;
+    cf->data_size = 0;
+    cf->alloc_size = 0;
+
+    return 0;
+}
+
+/* Open file system file, set file descriptor and file size */
+static int file_open(struct cio_ctx *ctx, struct cio_file *cf)
+{
+    int ret;
+    struct stat st;
+
+    if (cf->map || cf->fd > 0) {
+        return -1;
+    }
+
+    /* Open file descriptor */
+    if (cf->flags & CIO_OPEN) {
+        cf->fd = open(cf->path, O_RDWR | O_CREAT, (mode_t) 0600);
+    }
+    else if (cf->flags & CIO_OPEN_RD) {
+        cf->fd = open(cf->path, O_RDONLY);
+    }
+
+    if (cf->fd == -1) {
+        cio_errno();
+        cio_log_error(ctx, "cannot open/create %s", cf->path);
+        return -1;
+    }
+
+    /* Store the current real size */
+    ret = fstat(cf->fd, &st);
+    if (ret == -1) {
+        cio_errno();
+        close(cf->fd);
+        cf->fd = -1;
+        return -1;
+    }
+    cf->fs_size = st.st_size;
+
+    return 0;
+}
+
 int cio_file_read_prepare(struct cio_ctx *ctx, struct cio_chunk *ch)
 
 {
@@ -329,7 +403,7 @@ int cio_file_read_prepare(struct cio_ctx *ctx, struct cio_chunk *ch)
  *      memory map size is assigned to the given value on 'size'.
  *
  * CIO_OPEN_RD:
- *    - If file exisst, open it in read-only mode.
+ *    - If file exists, open it in read-only mode.
  */
 struct cio_file *cio_file_open(struct cio_ctx *ctx,
                                struct cio_stream *st,
@@ -342,7 +416,6 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
     int len;
     char *path;
     struct cio_file *cf;
-    struct stat fst;
 
     len = strlen(ch->name);
     if (len == 1 && (ch->name[0] == '.' || ch->name[0] == '/')) {
@@ -382,44 +455,97 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
     cf->path = path;
     cf->map = NULL;
 
-    /* Open file descriptor */
-    if (flags & CIO_OPEN) {
-        cf->fd = open(path, O_RDWR | O_CREAT, (mode_t) 0600);
-    }
-    else if (flags & CIO_OPEN_RD) {
-        cf->fd = open(path, O_RDONLY);
-    }
-
-    if (cf->fd == -1) {
-        cio_errno();
-        cio_log_error(ctx, "cannot open/create %s", path);
+    /* Open file (file descriptor and set file size) */
+    ret = file_open(ctx, cf);
+    if (ret == -1) {
         cio_file_close(ch, CIO_FALSE);
         return NULL;
     }
     ch->backend = cf;
 
-    /* Store the current real size */
-    ret = fstat(cf->fd, &fst);
+    /* Map the file */
+    ret = mmap_file(ctx, ch, size);
     if (ret == -1) {
-        cio_errno();
-        cio_file_close(ch, CIO_FALSE);
+        cio_log_error(ctx, "cannot mmap file %s", path);
         return NULL;
     }
-    cf->fs_size = fst.st_size;
 
-    /*
-     * Map the file 'only' if it was not opened in read-only mode. There some
-     * cases where the caller can have multiple files to be processed and don't
-     * want to mmap them until is required.
-     */
-    if ((flags & CIO_OPEN_RD) == 0) {
-        ret = mmap_file(ctx, ch, size);
-        if (ret == -1) {
-            cio_log_error(ctx, "cannot mmap file %s", path);
-            return NULL;
-        }
-    }
     return cf;
+}
+
+/* Put a file content back into memory, only IF it has been set 'down' before */
+int cio_file_up(struct cio_chunk *ch)
+{
+    int ret;
+    struct cio_file *cf = (struct cio_file *) ch->backend;
+
+    if (cf->map) {
+        cio_log_error(ch->ctx, "[cio file] file is already mapped: %s",
+                      ch->st->name, ch->name);
+        return -1;
+    }
+
+    if (cf->fd > 0) {
+        cio_log_error(ch->ctx, "[cio file] file descriptor already exists: "
+                      "[fd=%i] %s:%s", cf->fd, ch->st->name, ch->name);
+        return -1;
+    }
+
+    /* Open file */
+    ret = file_open(ch->ctx, cf);
+    if (ret == -1) {
+        cio_log_error(ch->ctx, "[cio file] cannot open chunk: %s/%s",
+                      ch->st->name, ch->name);
+        return -1;
+    }
+
+    /* Map content */
+    ret = mmap_file(ch->ctx, ch, cf->fs_size);
+    if (ret == -1) {
+        cio_log_error(ch->ctx, "[cio file] cannot map chunk: %s/%s",
+                      ch->st->name, ch->name);
+        close(cf->fd);
+        cf->fd = -1;
+        return -1;
+    }
+
+    return 0;
+}
+
+/* Release memory and file descriptor resources but keep context */
+int cio_file_down(struct cio_chunk *ch)
+{
+    int ret;
+    struct stat st;
+    struct cio_file *cf = (struct cio_file *) ch->backend;
+
+    if (!cf->map) {
+        cio_log_error(ch->ctx, "[cio file] file is not mapped: %s",
+                      ch->st->name, ch->name);
+        return -1;
+    }
+
+    /* unmap memory */
+    munmap_file(ch->ctx, ch);
+
+    /* Allocated map size is zero */
+    cf->alloc_size = 0;
+
+    /* Get file size */
+    ret = fstat(cf->fd, &st);
+    if (ret == -1) {
+        cio_errno();
+        cf->fs_size = 0;
+    }
+    else {
+        cf->fs_size = st.st_size;
+    }
+
+    /* Close file descriptor */
+    close(cf->fd);
+    cf->fd = -1;
+
+    return 0;
 }
 
 void cio_file_close(struct cio_chunk *ch, int delete)
@@ -427,22 +553,10 @@ void cio_file_close(struct cio_chunk *ch, int delete)
     int ret;
     struct cio_file *cf = (struct cio_file *) ch->backend;
 
-    /* check if the file needs to be synchronized */
-    if (cf->synced == CIO_FALSE && cf->map) {
-        ret = cio_file_sync(ch);
-        if (ret == -1) {
-            cio_log_error(ch->ctx,
-                          "[cio file] error doing file sync on close at "
-                          "%s:%s", ch->st->name, ch->name);
-        }
-    }
+    /* Safe unmap of the file content */
+    munmap_file(ch->ctx, ch);
 
-    /* unmap file */
-    if (cf->map) {
-        munmap(cf->map, cf->alloc_size);
-    }
-    close(cf->fd);
-
+    /* Should we delete the content from the file system ? */
     if (delete == CIO_TRUE) {
         ret = unlink(cf->path);
         if (ret == -1) {
@@ -451,6 +565,11 @@ void cio_file_close(struct cio_chunk *ch, int delete)
                           "[cio file] error deleting file at close %s:%s",
                           ch->st->name, ch->name);
         }
+    }
+
+    /* Close file descriptor */
+    if (cf->fd > 0) {
+        close(cf->fd);
     }
 
     free(cf->path);
@@ -468,6 +587,12 @@ int cio_file_write(struct cio_chunk *ch, const void *buf, size_t count)
     if (count == 0) {
         /* do nothing */
         return 0;
+    }
+
+    if (!cf->map) {
+        cio_log_error("[cio file] file is not mmaped: %s:%s",
+                      ch->st->name, ch->name);
+        return -1;
     }
 
     /* get available size */
@@ -813,4 +938,16 @@ void cio_file_scan_dump(struct cio_ctx *ctx, struct cio_stream *st)
         printf("meta_len=%d, data_size=%lu, crc=%08x\n",
                meta_len, cf->data_size, (uint32_t) crc_fs);
     }
+}
+
+/* Check if a file content is up in memory and a file descriptor is set */
+int cio_file_is_up(struct cio_chunk *ch, struct cio_file *cf)
+{
+    (void) ch;
+
+    if (cf->map && cf->fd > 0) {
+        return CIO_TRUE;
+    }
+
+    return CIO_FALSE;
 }

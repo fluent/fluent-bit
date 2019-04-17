@@ -60,4 +60,9 @@ int cio_chunk_tx_begin(struct cio_chunk *ch);
 int cio_chunk_tx_commit(struct cio_chunk *ch);
 int cio_chunk_tx_rollback(struct cio_chunk *ch);
 
+/* Chunk content up/down */
+int cio_chunk_is_up(struct cio_chunk *ch);
+int cio_chunk_up(struct cio_chunk *ch);
+int cio_chunk_down(struct cio_chunk *ch);
+
 #endif

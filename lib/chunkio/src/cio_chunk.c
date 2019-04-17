@@ -375,3 +375,49 @@ int cio_chunk_tx_rollback(struct cio_chunk *ch)
     ch->tx_active = CIO_FALSE;
     return 0;
 }
+
+/*
+ * Determinate if a Chunk content is available in memory for I/O operations. For
+ * Memory backend this is always true, for Filesystem backend it checks if the
+ * memory map exists and file descriptor is open.
+ */
+int cio_chunk_is_up(struct cio_chunk *ch)
+{
+    int type;
+    struct cio_file *cf;
+
+    type = ch->st->type;
+    if (type == CIO_STORE_MEM) {
+        return CIO_TRUE;
+    }
+    else if (type == CIO_STORE_FS) {
+        cf = ch->backend;
+        return cio_file_is_up(ch, cf);
+    }
+
+    return CIO_FALSE;
+}
+
+int cio_chunk_down(struct cio_chunk *ch)
+{
+    int type;
+
+    type = ch->st->type;
+    if (type == CIO_STORE_FS) {
+        return cio_file_down(ch);
+    }
+
+    return 0;
+}
+
+int cio_chunk_up(struct cio_chunk *ch)
+{
+    int type;
+
+    type = ch->st->type;
+    if (type == CIO_STORE_FS) {
+        return cio_file_up(ch);
+    }
+
+    return 0;
+}
