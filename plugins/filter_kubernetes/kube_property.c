@@ -31,7 +31,7 @@
 static inline int prop_cmp(const char *key, size_t keylen,
                            const char *property, size_t proplen)
 {
-    return strncmp(key, property, keylen < proplen ? keylen : proplen) == 0;
+    return proplen >= keylen && strncmp(key, property, keylen) == 0;
 }
 
 static inline const char *strnchr(const char *s, char c, size_t len)
@@ -94,10 +94,12 @@ static int prop_set_parser(struct flb_kube *ctx, struct flb_kube_meta *meta,
     }
 
     /* Save the parser in the properties context */
-    if (!stream || prop_cmp("stdout", sizeof("stdout")-1, stream, stream_len)) {
+    if ((!stream || prop_cmp("stdout", sizeof("stdout")-1, stream, stream_len)) &&
+        (container || !props->stdout_parser)) {
         props->stdout_parser = flb_sds_create(tmp);
     }
-    if (stream && prop_cmp("stderr", sizeof("stderr")-1, stream, stream_len)) {
+    if ((!stream || prop_cmp("stderr", sizeof("stderr")-1, stream, stream_len)) &&
+        (container || !props->stderr_parser)) {
         props->stderr_parser = flb_sds_create(tmp);
     }
     flb_free(tmp);
