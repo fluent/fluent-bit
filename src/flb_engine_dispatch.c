@@ -34,12 +34,20 @@
 int flb_engine_dispatch_retry(struct flb_task_retry *retry,
                               struct flb_config *config)
 {
+    size_t buf_size;
     struct flb_thread *th;
     struct flb_task *task;
     struct flb_input_instance *i_ins;
 
     task = retry->parent;
     i_ins = task->i_ins;
+
+    /* Set file up/down based on restrictions */
+    flb_input_chunk_set_up(task->ic);
+
+    /* There is a match, get the buffer */
+    task->buf = flb_input_chunk_flush(task->ic, &buf_size);
+    task->size = buf_size;
 
     th = flb_output_thread(task,
                            i_ins,
