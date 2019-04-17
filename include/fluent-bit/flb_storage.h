@@ -34,6 +34,7 @@
  */
 
 struct flb_storage_input {
+    int type;                   /* CIO_STORE_FS | CIO_STORE_MEM */
     struct cio_stream *stream;
     struct cio_ctx *cio;
 };

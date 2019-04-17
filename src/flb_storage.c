@@ -137,7 +137,7 @@ int flb_storage_input_create(struct cio_ctx *cio,
 
     si->stream = stream;
     si->cio = cio;
-
+    si->type = type;
     in->storage = si;
 
     return 0;
