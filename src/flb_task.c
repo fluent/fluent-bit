@@ -83,6 +83,7 @@ void flb_task_retry_destroy(struct flb_task_retry *retry)
 struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
                                              void *data)
 {
+    int ret;
     struct mk_list *head;
     struct mk_list *tmp;
     struct flb_task_retry *retry = NULL;
@@ -128,6 +129,14 @@ struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
         flb_debug("[retry] re-using retry for task_id=%i attemps=%i",
                   out_th->task->id, retry->attemps);
     }
+
+    /*
+     * This 'retry' was issued by an output plugin, from an Engine perspective
+     * we need to determinate if the source input plugin have some memory
+     * restrictions and if the Storage type is 'filesystem' we need to put
+     * the file content down.
+     */
+    flb_input_chunk_set_up_down(task->ic);
 
     return retry;
 }
