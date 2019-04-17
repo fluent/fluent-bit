@@ -465,6 +465,40 @@ void test_utf8_to_json()
     utf8_tests_destroy(n_tests);
 }
 
+static char *json_strings[] = {
+    "{\"stringified-json\":\"{\\\"stringified-json\\\":\\\"{\\\\\\\"stringified-json\\\\\\\":\\\\\\\"\\\\\\\"}\\\"}\", \"text\":\"quoted \\\"text with embedded quoted \\\\\\\"text\\\\\\\"\\\"\"}",
+    NULL
+};
+
+static void test_json_pack_unpack()
+{
+    int i;
+    int ret;
+    char *src_str;
+    size_t src_len;
+    char *dst_str;
+    size_t dst_len;
+    char *buf;
+    size_t size;
+    int root_type;
+
+    for (i = 0; json_strings[i] != NULL; i++) {
+        src_str = json_strings[i];
+        src_len = strlen(src_str);
+        ret = flb_pack_json(src_str, src_len, &buf, &size, &root_type);
+        TEST_CHECK_(ret == 0, "packing JSON string: %s", src_str);
+        ret = flb_msgpack_raw_to_json_str(buf, size, &dst_str, &dst_len);
+        TEST_CHECK_(ret == 0, "unpacking MP buffer for string: %s", src_str);
+        ret = strcmp(src_str, dst_str);
+        TEST_CHECK_(ret == 0, "unpacked JSON is identical to source JSON");
+        if (ret != 0) {
+            printf("Source JSON:\n%s\nUnpacked JSON:\n%s\n", src_str, dst_str);
+        }
+        flb_free(buf);
+        flb_free(dst_str);
+    }
+}
+
 TEST_LIST = {
     /* JSON maps iteration */
     { "json_pack", test_json_pack },
@@ -475,5 +509,8 @@ TEST_LIST = {
 
     /* Mixed bytes, check JSON encoding */
     { "utf8_to_json", test_utf8_to_json},
+
+    /* Test packing JSON and unpacking back */
+    { "json_pack_unpack", test_json_pack_unpack},
     { 0 }
 };
