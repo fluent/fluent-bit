@@ -36,6 +36,19 @@
 #include "kube_meta.h"
 #include "kube_property.h"
 
+#define FLB_KUBE_META_CONTAINER_STATUSES_KEY "containerStatuses"
+#define FLB_KUBE_META_CONTAINER_STATUSES_KEY_LEN \
+    (sizeof(FLB_KUBE_META_CONTAINER_STATUSES_KEY) - 1)
+#define FLB_KUBE_META_INIT_CONTAINER_STATUSES_KEY "initContainerStatuses"
+#define FLB_KUBE_META_INIT_CONTAINER_STATUSES_KEY_LEN \
+    (sizeof(FLB_KUBE_META_INIT_CONTAINER_STATUSES_KEY) - 1)
+#define FLB_KUBE_META_CONTAINER_ID_PREFIX "docker://"
+#define FLB_KUBE_META_CONTAINER_ID_PREFIX_LEN \
+    (sizeof(FLB_KUBE_META_CONTAINER_ID_PREFIX) - 1)
+#define FLB_KUBE_META_IMAGE_ID_PREFIX "docker-pullable://"
+#define FLB_KUBE_META_IMAGE_ID_PREFIX_LEN \
+    (sizeof(FLB_KUBE_META_IMAGE_ID_PREFIX) - 1)
+
 static int file_to_buffer(const char *path,
                           char **out_buf, size_t *out_size)
 {
@@ -258,6 +271,10 @@ static void cb_results(const char *name, const char *value,
 {
     struct flb_kube_meta *meta = data;
 
+    if (vlen == 0) {
+        return;
+    }
+
     if (meta->podname == NULL && strcmp(name, "pod_name") == 0) {
         meta->podname = flb_strndup(value, vlen);
         meta->podname_len = vlen;
@@ -294,8 +311,9 @@ static void cb_results(const char *name, const char *value,
 /*
  * As per Kubernetes Pod spec,
  * https://kubernetes.io/docs/concepts/workloads/pods/pod/, we look
- * for status.containerStatuses.{containerID, imageID} where
- * status.containerStatus.name == our container name
+ * for status.{initContainerStatuses, containerStatuses}.{containerID, imageID}
+ * where status.{initContainerStatuses, containerStatus}.name == our container
+ * name
  * status:
  *   ...
  *   containerStatuses:
@@ -305,7 +323,6 @@ static void cb_results(const char *name, const char *value,
  *     ...
  *     name: nginx-ingress-microk8s
 */
-#define CONTAINER_STATUSES "containerStatuses"
 static void extract_container_hash(struct flb_kube_meta *meta,
                                    msgpack_object status)
 {
@@ -321,10 +338,14 @@ static void extract_container_hash(struct flb_kube_meta *meta,
          (meta->docker_id_len == 0 || meta->container_hash_len == 0) &&
          i < status.via.map.size; i++) {
         k = status.via.map.ptr[i].key;
-        if (k.via.str.size == sizeof(CONTAINER_STATUSES)-1 &&
-            strncmp(k.via.str.ptr,
-                    CONTAINER_STATUSES,
-                    sizeof(CONTAINER_STATUSES)-1) == 0) {
+        if ((k.via.str.size == FLB_KUBE_META_CONTAINER_STATUSES_KEY_LEN &&
+             strncmp(k.via.str.ptr,
+                     FLB_KUBE_META_CONTAINER_STATUSES_KEY,
+                     FLB_KUBE_META_CONTAINER_STATUSES_KEY_LEN) == 0) ||
+            (k.via.str.size == FLB_KUBE_META_INIT_CONTAINER_STATUSES_KEY_LEN &&
+             strncmp(k.via.str.ptr,
+                     FLB_KUBE_META_INIT_CONTAINER_STATUSES_KEY,
+                     FLB_KUBE_META_INIT_CONTAINER_STATUSES_KEY_LEN) == 0)) {
             int j;
             v = status.via.map.ptr[i].val;
             for (j = 0;
@@ -341,7 +362,7 @@ static void extract_container_hash(struct flb_kube_meta *meta,
                      l < k1.via.map.size; l++) {
                     k2 = k1.via.map.ptr[l].key;
                     v2 = k1.via.map.ptr[l].val.via.str;
-                    if (k2.via.str.size == sizeof("name") -1 &&
+                    if (k2.via.str.size == sizeof("name") - 1 &&
                         !strncmp(k2.via.str.ptr, "name", k2.via.str.size)) {
                         if (v2.size == meta->container_name_len &&
                             !strncmp(v2.ptr,
@@ -349,20 +370,25 @@ static void extract_container_hash(struct flb_kube_meta *meta,
                                      meta->container_name_len)) {
                             name_found = FLB_TRUE;
                         }
+                        else {
+                            break;
+                        }
                     }
-                    if (k2.via.str.size == sizeof("containerID") - 1 &&
+                    else if (k2.via.str.size == sizeof("containerID") - 1 &&
                         !strncmp(k2.via.str.ptr,
                                  "containerID",
                                  k2.via.str.size)) {
-                        docker_id = v2.ptr;
-                        docker_id_len = v2.size;
+                        /* Strip "docker-pullable://" prefix */
+                        docker_id = v2.ptr + FLB_KUBE_META_CONTAINER_ID_PREFIX_LEN;
+                        docker_id_len = v2.size - FLB_KUBE_META_CONTAINER_ID_PREFIX_LEN;
                     }
                     else if (k2.via.str.size == sizeof("imageID") - 1 &&
-                              !strncmp(v2.ptr,
+                              !strncmp(k2.via.str.ptr,
                                        "imageID",
-                                      v2.size)) {
-                        container_hash = v2.ptr;
-                        container_hash_len = v2.size;
+                                       k2.via.str.size)) {
+                        /* Strip "docker-pullable://" prefix */
+                        container_hash = v2.ptr + FLB_KUBE_META_IMAGE_ID_PREFIX_LEN;
+                        container_hash_len = v2.size - FLB_KUBE_META_IMAGE_ID_PREFIX_LEN;
                     }
                 }
                 if (name_found) {
@@ -377,6 +403,7 @@ static void extract_container_hash(struct flb_kube_meta *meta,
                         meta->docker_id = flb_strndup(docker_id, docker_id_len);
                         meta->skip++;
                     }
+                    return;
                 }
             }
         }
@@ -463,19 +490,19 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
      */
     for (i = 0; !(meta_found && spec_found && status_found) &&
                 i < api_map.via.map.size; i++) {
-	k = api_map.via.map.ptr[i].key;
+        k = api_map.via.map.ptr[i].key;
         if (k.via.str.size == 8 && !strncmp(k.via.str.ptr, "metadata", 8)) {
             meta_val = api_map.via.map.ptr[i].val;
             meta_found = FLB_TRUE;
         }
-	else if (k.via.str.size == 4 && !strncmp(k.via.str.ptr, "spec", 4)) {
+        else if (k.via.str.size == 4 && !strncmp(k.via.str.ptr, "spec", 4)) {
            spec_val = api_map.via.map.ptr[i].val;
            spec_found = FLB_TRUE;
         }
-	else if (k.via.str.size == 6 && !strncmp(k.via.str.ptr, "status", 6)) {
+        else if (k.via.str.size == 6 && !strncmp(k.via.str.ptr, "status", 6)) {
            status_val = api_map.via.map.ptr[i].val;
            status_found = FLB_TRUE;
-	}
+        }
     }
 
     if (meta_found == FLB_FALSE) {
