@@ -69,6 +69,8 @@ static int cb_queue_chunks(struct flb_input_instance *in,
     mk_list_foreach_safe(head, tmp, &sb->backlog) {
         sbc = mk_list_entry(head, struct sb_chunk, _head);
 
+        cio_chunk_up(sbc->chunk);
+
         /* get the number of bytes being used by the chunk */
         size = cio_chunk_get_real_size(sbc->chunk);
         if (size <= 0) {
@@ -83,6 +85,7 @@ static int cb_queue_chunks(struct flb_input_instance *in,
         ic = flb_input_chunk_map(in, ch);
         if (!ic) {
             flb_error("[storage_backlog] error registering chunk");
+            cio_chunk_down(sbc->chunk);
             continue;
         }
 
@@ -143,6 +146,8 @@ static int sb_prepare_environment(struct flb_sb *sb)
                           stream->name, chunk->name);
                 continue;
             }
+
+            cio_chunk_down(chunk);
         }
     }
 
