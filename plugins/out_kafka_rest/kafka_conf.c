@@ -26,8 +26,8 @@
 #include "kafka.h"
 #include "kafka_conf.h"
 
-struct flb_kafka_rest *flb_kafka_conf_create(struct flb_output_instance *ins,
-                                             struct flb_config *config)
+struct flb_kafka_rest *flb_kr_conf_create(struct flb_output_instance *ins,
+                                          struct flb_config *config)
 {
     long part;
     int io_flags = 0;
@@ -72,7 +72,7 @@ struct flb_kafka_rest *flb_kafka_conf_create(struct flb_output_instance *ins,
                                    &ins->tls);
     if (!upstream) {
         flb_error("[out_kafka_rest] cannot create Upstream context");
-        flb_kafka_conf_destroy(ctx);
+        flb_kr_conf_destroy(ctx);
         return NULL;
     }
     ctx->u = upstream;
@@ -184,7 +184,7 @@ struct flb_kafka_rest *flb_kafka_conf_create(struct flb_output_instance *ins,
     return ctx;
 }
 
-int flb_kafka_conf_destroy(struct flb_kafka_rest *ctx)
+int flb_kr_conf_destroy(struct flb_kafka_rest *ctx)
 {
     flb_free(ctx->topic);
     flb_free(ctx->http_user);

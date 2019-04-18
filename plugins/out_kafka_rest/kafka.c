@@ -177,7 +177,7 @@ static int cb_kafka_init(struct flb_output_instance *ins,
     (void) data;
     struct flb_kafka_rest *ctx;
 
-    ctx = flb_kafka_conf_create(ins, config);
+    ctx = flb_kr_conf_create(ins, config);
     if (!ctx) {
         flb_error("[out_kafka_rest] cannot initialize plugin");
         return -1;
@@ -271,11 +271,11 @@ static void cb_kafka_flush(void *data, size_t bytes,
     FLB_OUTPUT_RETURN(FLB_RETRY);
 }
 
-int cb_kafka_exit(void *data, struct flb_config *config)
+static int cb_kafka_exit(void *data, struct flb_config *config)
 {
     struct flb_kafka_rest *ctx = data;
 
-    flb_kafka_conf_destroy(ctx);
+    flb_kr_conf_destroy(ctx);
     return 0;
 }
 
