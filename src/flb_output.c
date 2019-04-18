@@ -36,23 +36,30 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_plugin_proxy.h>
 
-#define protcmp(a, b)  strncasecmp(a, b, strlen(a))
-
 /* Validate the the output address protocol */
 static int check_protocol(char *prot, char *output)
 {
     int len;
+    char *p;
 
-    len = strlen(prot);
-    if (len > strlen(output)) {
+    p = strstr(output, "://");
+    if (p && p != output) {
+        len = p - output;
+    }
+    else {
+        len = strlen(output);
+    }
+
+    if (strlen(prot) != len) {
         return 0;
     }
 
-    if (protcmp(prot, output) != 0) {
-        return 0;
+    /* Output plugin match */
+    if (strncasecmp(prot, output, len) == 0) {
+        return 1;
     }
 
-    return 1;
+    return 0;
 }
 
 /* Invoke pre-run call for the output plugin */
@@ -233,7 +240,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     /* Create and load instance */
     instance = flb_calloc(1, sizeof(struct flb_output_instance));
     if (!instance) {
-        perror("malloc");
+        flb_errno();
         return NULL;
     }
     instance->config = config;
