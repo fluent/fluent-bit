@@ -42,11 +42,12 @@
 /* Input configuration & context */
 struct flb_systemd_config {
     /* Journal */
-    int fd;          /* Journal file descriptor */
-    sd_journal *j;   /* Journal context */
+    int fd;              /* Journal file descriptor */
+    sd_journal *j;       /* Journal context */
     char *cursor;
     char *path;
     int pending_records;
+    int read_from_tail;  /* read_from_tail option */
 
     /* Internal */
     int ch_manager[2];         /* pipe: channel manager    */

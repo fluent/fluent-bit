@@ -167,9 +167,16 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
 
     /* Seek to head by default or tail if specified in configuration */
     tmp = flb_input_get_property("read_from_tail", i_ins);
-    if (tmp != NULL && flb_utils_bool(tmp)) {
+    if (tmp) {
+        ctx->read_from_tail = flb_utils_bool(tmp);
+    }
+    else {
+        ctx->read_from_tail = FLB_FALSE;
+    }
+
+    if (ctx->read_from_tail == FLB_TRUE) {
+        /* Jump to the end and skip last entry */
         sd_journal_seek_tail(ctx->j);
-        /* Skip last entry */
         sd_journal_next_skip(ctx->j, 1);
     }
     else {
