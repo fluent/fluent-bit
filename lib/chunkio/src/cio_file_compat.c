@@ -17,6 +17,14 @@
  *  limitations under the License.
  */
 
+/*
+ * Trivial stub implementation of cio_file.h.
+ *
+ * If your C runtime doesn't offer enough functionality to compile
+ * cio_file.c, you can compile and link this file instead. See
+ * CIO_BACKEND_FILESYSTEM in chunkio/CMakeList.txt for details.
+ */
+
 #include <chunkio/chunkio_compat.h>
 #include <chunkio/chunkio.h>
 #include <chunkio/cio_chunk.h>
@@ -83,6 +91,21 @@ void cio_file_scan_dump(struct cio_ctx *ctx, struct cio_stream *st)
 }
 
 int cio_file_read_prepare(struct cio_ctx *ctx, struct cio_chunk *ch)
+{
+    return -1;
+}
+
+int cio_file_is_up(struct cio_chunk *ch, struct cio_file *cf)
+{
+    return CIO_FALSE;
+}
+
+int cio_file_down(struct cio_chunk *ch)
+{
+    return -1;
+}
+
+int cio_file_up(struct cio_chunk *ch)
 {
     return -1;
 }
