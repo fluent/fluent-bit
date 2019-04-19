@@ -50,7 +50,7 @@
 #define FLB_MERGE_BUF_SIZE  2048  /* 2KB */
 
 /* Kubernetes API server info */
-#define FLB_API_HOST  "kubernetes.default.svc.cluster.local"
+#define FLB_API_HOST  "kubernetes.default.svc"
 #define FLB_API_PORT  443
 #define FLB_API_TLS   FLB_TRUE
 
