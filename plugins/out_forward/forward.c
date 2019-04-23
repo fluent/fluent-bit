@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_upstream_ha.h>
+#include <fluent-bit/flb_sha512.h>
 #include <msgpack.h>
 
 #include "forward.h"
@@ -135,7 +136,7 @@ static int secure_forward_ping(struct flb_upstream_conn *u_conn,
     msgpack_object val;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
-    mbedtls_sha512_context sha512;
+    struct flb_sha512 sha512;
 
     /* Lookup nonce field */
     for (i = 0; i < map.via.map.size; i++) {
@@ -156,18 +157,16 @@ static int secure_forward_ping(struct flb_upstream_conn *u_conn,
     nonce_size = val.via.bin.size;
 
     /* Compose the shared key */
-    mbedtls_sha512_init(&sha512);
-    mbedtls_sha512_starts(&sha512, 0);
-    mbedtls_sha512_update(&sha512, fc->shared_key_salt, 16);
-    mbedtls_sha512_update(&sha512,
-                          (unsigned char *) fc->self_hostname,
-                          flb_sds_len(fc->self_hostname));
-    mbedtls_sha512_update(&sha512,
-                          nonce_data, nonce_size);
-    mbedtls_sha512_update(&sha512, (unsigned char *) fc->shared_key,
-                          flb_sds_len(fc->shared_key));
-    mbedtls_sha512_finish(&sha512, shared_key);
-    mbedtls_sha512_free(&sha512);
+    flb_sha512_init(&sha512);
+    flb_sha512_update(&sha512, fc->shared_key_salt, 16);
+    flb_sha512_update(&sha512,
+                      (unsigned char *) fc->self_hostname,
+                      flb_sds_len(fc->self_hostname));
+    flb_sha512_update(&sha512,
+                      nonce_data, nonce_size);
+    flb_sha512_update(&sha512, (unsigned char *) fc->shared_key,
+                      flb_sds_len(fc->shared_key));
+    flb_sha512_sum(&sha512, shared_key);
 
     /* Make hex digest representation of the new shared key */
     secure_forward_bin_to_hex(shared_key, 64, shared_key_hexdigest);
