@@ -46,6 +46,29 @@ void _secure_forward_tls_error(int ret, char *file, int line)
     mbedtls_strerror(ret, err_buf, sizeof(err_buf));
     flb_error("[io_tls] flb_io_tls.c:%i %s", line, err_buf);
 }
+
+static int secure_forward_init(struct flb_forward_config *fc)
+{
+    int ret;
+
+    /* Initialize mbedTLS entropy contexts */
+    mbedtls_entropy_init(&fc->tls_entropy);
+    mbedtls_ctr_drbg_init(&fc->tls_ctr_drbg);
+
+    ret = mbedtls_ctr_drbg_seed(&fc->tls_ctr_drbg,
+                                mbedtls_entropy_func,
+                                &fc->tls_entropy,
+                                (const unsigned char *) SECURED_BY,
+                                sizeof(SECURED_BY) -1);
+    if (ret == -1) {
+        secure_forward_tls_error(ret);
+        return -1;
+    }
+
+    /* Gernerate shared key salt */
+    mbedtls_ctr_drbg_random(&fc->tls_ctr_drbg, fc->shared_key_salt, 16);
+    return 0;
+}
 #endif
 
 static inline void print_msgpack_status(int ret, char *context)
@@ -344,31 +367,6 @@ static int secure_forward_handshake(struct flb_upstream_conn *u_conn,
     msgpack_unpacked_destroy(&result);
     return 0;
 }
-
-#ifdef FLB_HAVE_TLS
-static int secure_forward_init(struct flb_forward_config *fc)
-{
-    int ret;
-
-    /* Initialize mbedTLS entropy contexts */
-    mbedtls_entropy_init(&fc->tls_entropy);
-    mbedtls_ctr_drbg_init(&fc->tls_ctr_drbg);
-
-    ret = mbedtls_ctr_drbg_seed(&fc->tls_ctr_drbg,
-                                mbedtls_entropy_func,
-                                &fc->tls_entropy,
-                                (const unsigned char *) SECURED_BY,
-                                sizeof(SECURED_BY) -1);
-    if (ret == -1) {
-        secure_forward_tls_error(ret);
-        return -1;
-    }
-
-    /* Gernerate shared key salt */
-    mbedtls_ctr_drbg_random(&fc->tls_ctr_drbg, fc->shared_key_salt, 16);
-    return 0;
-}
-#endif
 
 static int forward_config_init(struct flb_forward_config *fc,
                                struct flb_forward *ctx)
