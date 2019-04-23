@@ -559,6 +559,27 @@ struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, char *name,
     return task;
 }
 
+/*
+ * Destroy aggregation node context: before to use this function make sure
+ * to unlink from the linked list.
+ */
+void flb_sp_aggr_node_destroy(struct aggr_node *aggr_node)
+{
+    int i;
+    struct aggr_num *num;
+
+    for (i = 0; i < aggr_node->groupby_keys; i++) {
+        num = &aggr_node->groupby_nums[i];
+        if (num->type == FLB_SP_STRING) {
+            flb_sds_destroy(num->string);
+        }
+    }
+
+    flb_free(aggr_node->nums);
+    flb_free(aggr_node->groupby_nums);
+    flb_free(aggr_node);
+}
+
 void flb_sp_window_destroy(struct flb_sp_task_window *window)
 {
     struct flb_sp_window_data *data;
@@ -575,10 +596,8 @@ void flb_sp_window_destroy(struct flb_sp_task_window *window)
 
     mk_list_foreach_safe(head, tmp, &window->aggr_list) {
         aggr_node = mk_list_entry(head, struct aggr_node, _head);
-        flb_free(aggr_node->nums);
-        flb_free(aggr_node->groupby_nums);
         mk_list_del(&aggr_node->_head);
-        flb_free(aggr_node);
+        flb_sp_aggr_node_destroy(aggr_node);
     }
 
     rb_tree_destroy(&window->aggr_tree);
@@ -1246,7 +1265,7 @@ static int sp_process_data_aggr(char *buf_data, size_t buf_size,
     msgpack_unpacked result;
     msgpack_object key;
     msgpack_object val;
-    struct aggr_num *nums;
+    struct aggr_num *nums = NULL;
     struct aggr_num *gb_nums; // group-by keys
     struct mk_list *head;
     struct flb_sp_cmd *cmd = task->cmd;
@@ -1351,8 +1370,7 @@ static int sp_process_data_aggr(char *buf_data, size_t buf_size,
                 container_of(rb_result, struct aggr_node, _rb_head)->records++;
 
                 /* We don't need aggr_node anymore */
-                flb_free(aggr_node->groupby_nums);
-                flb_free(aggr_node);
+                flb_sp_aggr_node_destroy(aggr_node);
             }
             else {
                 aggr_node->nums = flb_calloc(1, sizeof(struct aggr_num) * map_entries);
@@ -1856,12 +1874,13 @@ int flb_sp_fd_event(int fd, struct flb_sp *sp)
     char *tag = NULL;
     int tag_len = 0;
     size_t out_size;
+    struct mk_list *tmp;
     struct mk_list *head;
     struct flb_sp_task *task;
     struct flb_input_instance *in;
 
     /* Lookup Tasks that matches the incoming event */
-    mk_list_foreach(head, &sp->tasks) {
+    mk_list_foreach_safe(head, tmp, &sp->tasks) {
         task = mk_list_entry(head, struct flb_sp_task, _head);
 
         if (fd == task->window.fd) {
