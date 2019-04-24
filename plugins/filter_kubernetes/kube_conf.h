@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_io.h>
+#include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_regex.h>
 
 /*
@@ -53,6 +54,12 @@
 #define FLB_API_HOST  "kubernetes.default.svc"
 #define FLB_API_PORT  443
 #define FLB_API_TLS   FLB_TRUE
+
+/*
+ * Default expected Kubernetes tag prefix, this is used mostly when source
+ * data comes from in_tail with custom tags like: kube.service.*
+ */
+#define FLB_KUBE_TAG_PREFIX "kube.var.log.containers."
 
 struct kube_meta;
 
@@ -100,6 +107,9 @@ struct flb_kube {
 
     /* API Server end point */
     char kube_url[1024];
+
+    /* Kubernetes tag prefix */
+    flb_sds_t kube_tag_prefix;
 
     /* Regex context to parse records */
     struct flb_regex *regex;

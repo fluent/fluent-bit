@@ -629,6 +629,8 @@ static inline int extract_meta(struct flb_kube *ctx, char *tag, int tag_len,
     int i;
     size_t off = 0;
     ssize_t n;
+    int kube_tag_len;
+    unsigned char *kube_tag_str;
     char *container = NULL;
     int container_found = FLB_FALSE;
     int container_length = 0;
@@ -684,8 +686,22 @@ static inline int extract_meta(struct flb_kube *ctx, char *tag, int tag_len,
         msgpack_unpacked_destroy(&mp_result);
     }
     else {
-        /* Lookup using Tag string */
-        n = flb_regex_do(ctx->regex, (unsigned char *) tag, tag_len, &result);
+        /*
+         * Lookup metadata using regular expression. In order to let the
+         * regex work we need to know before hand what's the Tag prefix
+         * set and make sure the adjustment can be done.
+         */
+        kube_tag_len = flb_sds_len(ctx->kube_tag_prefix);
+        if (kube_tag_len + 1 >= tag_len) {
+            flb_error("[filter_kube] incoming record tag (%s) is shorter "
+                      "than kube_tag_prefix value (%s)",
+                      tag, ctx->kube_tag_prefix);
+            return -1;
+        }
+        kube_tag_str = (unsigned char *) tag + kube_tag_len;
+        kube_tag_len = tag_len - kube_tag_len;
+        n = flb_regex_do(ctx->regex, kube_tag_str, kube_tag_len, &result);
+
     }
 
     if (n <= 0) {

@@ -189,6 +189,15 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
         }
     }
 
+    /* Kubernetes Tag prefix */
+    tmp = flb_filter_get_property("kube_tag_prefix", i);
+    if (tmp) {
+        ctx->kube_tag_prefix = flb_sds_create(tmp);
+    }
+    else {
+        ctx->kube_tag_prefix = flb_sds_create(FLB_KUBE_TAG_PREFIX);
+    }
+
     /* Kubernetes Token file */
     tmp = flb_filter_get_property("kube_token_file", i);
     if (!tmp) {
@@ -326,6 +335,8 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
     if (ctx->merge_log_key) {
         flb_free(ctx->merge_log_key);
     }
+
+    flb_sds_destroy(ctx->kube_tag_prefix);
 
     /* Destroy regex content only if a parser was not defined */
     if (ctx->parser == NULL && ctx->regex) {
