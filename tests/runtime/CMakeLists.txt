@@ -63,7 +63,7 @@ if(FLB_HAVE_SYSTEMD)
     set(SYSTEMD_LIB, "systemd")
 endif()
 
-set(FLB_TESTS_DATA_PATH ${CMAKE_CURRENT_SOURCE_DIR}/)
+set(FLB_TESTS_DATA_PATH ${CMAKE_CURRENT_SOURCE_DIR})
 configure_file(
   "${CMAKE_CURRENT_SOURCE_DIR}/flb_tests_runtime.h.in"
   "${CMAKE_CURRENT_SOURCE_DIR}/flb_tests_runtime.h"
