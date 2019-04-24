@@ -1492,21 +1492,7 @@ static int sp_process_data_aggr(char *buf_data, size_t buf_size,
                     }
                     else if (val.type == MSGPACK_OBJECT_STR) {
                         nums[key_id].type = FLB_SP_STRING;
-
-                        /* Check if a previous content already exists */
-                        if (nums[key_id].string != NULL) {
-                            /* If pre-existent value is different, replace */
-                            if (flb_sds_cmp(nums[key_id].string,
-                                            (char *) val.via.str.ptr,
-                                            val.via.str.size) != 0) {
-                                flb_sds_destroy(nums[key_id].string);
-                                nums[key_id].string =
-                                    flb_sds_create_len((char *)
-                                                       val.via.str.ptr,
-                                                       val.via.str.size);
-                            }
-                        }
-                        else {
+                        if (nums[key_id].string == NULL) {
                             nums[key_id].string =
                                 flb_sds_create_len((char *) val.via.str.ptr,
                                                    val.via.str.size);
