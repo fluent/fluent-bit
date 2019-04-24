@@ -46,6 +46,7 @@ struct aggr_num {
 struct aggr_node {
     int groupby_keys;
     int records;
+    int nums_size;
     struct aggr_num *nums;
     struct aggr_num *groupby_nums;
 

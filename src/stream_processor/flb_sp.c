@@ -568,6 +568,13 @@ void flb_sp_aggr_node_destroy(struct aggr_node *aggr_node)
     int i;
     struct aggr_num *num;
 
+    for (i = 0; i < aggr_node->nums_size; i++) {
+        num = &aggr_node->nums[i];
+        if (num->type == FLB_SP_STRING) {
+            flb_sds_destroy(num->string);
+        }
+    }
+
     for (i = 0; i < aggr_node->groupby_keys; i++) {
         num = &aggr_node->groupby_nums[i];
         if (num->type == FLB_SP_STRING) {
@@ -1381,6 +1388,7 @@ static int sp_process_data_aggr(char *buf_data, size_t buf_size,
                 }
                 nums = aggr_node->nums;
                 aggr_node->records = 1;
+                aggr_node->nums_size = map_entries;
                 mk_list_add(&aggr_node->_head, &task->window.aggr_list);
             }
         }
@@ -1400,6 +1408,7 @@ static int sp_process_data_aggr(char *buf_data, size_t buf_size,
                     return -1;
                 }
 
+                aggr_node->nums_size = map_entries;
                 aggr_node->records = 1;
                 mk_list_add(&aggr_node->_head, &task->window.aggr_list);
             }
@@ -1483,10 +1492,26 @@ static int sp_process_data_aggr(char *buf_data, size_t buf_size,
                     }
                     else if (val.type == MSGPACK_OBJECT_STR) {
                         nums[key_id].type = FLB_SP_STRING;
-                        nums[key_id].string =
-                            flb_sds_create_len((char *) val.via.str.ptr,
-                                                val.via.str.size);
-                   }
+
+                        /* Check if a previous content already exists */
+                        if (nums[key_id].string != NULL) {
+                            /* If pre-existent value is different, replace */
+                            if (flb_sds_cmp(nums[key_id].string,
+                                            (char *) val.via.str.ptr,
+                                            val.via.str.size) != 0) {
+                                flb_sds_destroy(nums[key_id].string);
+                                nums[key_id].string =
+                                    flb_sds_create_len((char *)
+                                                       val.via.str.ptr,
+                                                       val.via.str.size);
+                            }
+                        }
+                        else {
+                            nums[key_id].string =
+                                flb_sds_create_len((char *) val.via.str.ptr,
+                                                   val.via.str.size);
+                        }
+                    }
                 }
 
                 switch (ckey->aggr_func) {
