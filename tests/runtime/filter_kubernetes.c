@@ -30,11 +30,11 @@ char kube_test_id[64];
 #endif
 
 /* Constants */
-#define KUBE_IP       "127.0.0.1"
-#define KUBE_PORT     "8002"
-#define KUBE_URL      "http://" KUBE_IP ":" KUBE_PORT
-#define DPATH         FLB_TESTS_DATA_PATH "/data/kubernetes/"
-#define STD_PARSER    "../conf/parsers.conf"
+#define KUBE_IP          "127.0.0.1"
+#define KUBE_PORT        "8002"
+#define KUBE_URL         "http://" KUBE_IP ":" KUBE_PORT
+#define DPATH            FLB_TESTS_DATA_PATH "/data/kubernetes/"
+#define STD_PARSER       "../conf/parsers.conf"
 
 /*
  * Data files
@@ -182,6 +182,7 @@ static void kube_test_destroy(struct kube_test *ctx)
 
 static void kube_test_create(char *target, int type, char *suffix, char *parserconf, int nExpected, ...)
 {
+    int i;
     int ret;
     int in_ffd;
     int filter_ffd;
@@ -189,6 +190,7 @@ static void kube_test_create(char *target, int type, char *suffix, char *parserc
     char *key;
     char *value;
     char path[PATH_MAX];
+    char tag_prefix[PATH_MAX];
     va_list va;
     struct kube_test *ctx;
     struct flb_lib_out_cb cb_data;
@@ -201,6 +203,18 @@ static void kube_test_create(char *target, int type, char *suffix, char *parserc
 
     /* Compose path pattern based on target */
     snprintf(path, sizeof(path) - 1, "%s*.log", target);
+
+
+    /* Kubernetes tag prefix */
+    if (type == KUBE_TAIL) {
+        ret = snprintf(tag_prefix, sizeof(tag_prefix) - 1,
+                       "kube%s.data.kubernetes.", FLB_TESTS_DATA_PATH);
+        for (i = 0; i < ret; i++) {
+            if (tag_prefix[i] == '/') {
+                tag_prefix[i] = '.';
+            }
+        }
+    }
 
     ctx = flb_malloc(sizeof(struct kube_test));
     if (!ctx) {
@@ -262,6 +276,7 @@ static void kube_test_create(char *target, int type, char *suffix, char *parserc
     if (type == KUBE_TAIL) {
         ret = flb_filter_set(ctx->flb, filter_ffd,
                              "Regex_Parser", "filter-kube-test",
+                             "Kube_Tag_Prefix", tag_prefix,
                              NULL);
     }
 #ifdef FLB_HAVE_SYSTEMD
@@ -476,8 +491,11 @@ void flb_test_multi_logs(char *log, char *suffix)
 {
     flb_info("\n");
     flb_info("Multi test: log <%s>", log);
-    kube_test_create(log, KUBE_TAIL, suffix, "../tests/runtime/data/kubernetes/multi-parsers.conf", 1, "Merge_Log", "On", NULL);
+    kube_test_create(log, KUBE_TAIL, suffix,
+                     "../tests/runtime/data/kubernetes/multi-parsers.conf", 1,
+                     "Merge_Log", "On", NULL);
 }
+
 void flb_test_multi_init_stdout() { flb_test_multi_logs(T_MULTI_INIT, "stdout"); }
 void flb_test_multi_init_stderr() { flb_test_multi_logs(T_MULTI_INIT, "stderr"); }
 void flb_test_multi_proxy() { flb_test_multi_logs(T_MULTI_PROXY, ""); }
