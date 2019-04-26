@@ -412,44 +412,8 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
         off = 0;
         msgpack_unpacked_init(&result);
         msgpack_unpack_next(&result, kube_buf, kube_size, &off);
-        root = result.data;
-
-        /* root points to a map, calc the final size */
-        map_size = root.via.map.size;
-        map_size += meta->skip;
-
-        /* Pack cached kube buf entries */
-        msgpack_pack_map(pck, map_size);
-        for (i = 0; i < root.via.map.size; i++) {
-            k = root.via.map.ptr[i].key;
-            v = root.via.map.ptr[i].val;
-            msgpack_pack_object(pck, k);
-            msgpack_pack_object(pck, v);
-        }
+        msgpack_pack_object(pck, result.data);
         msgpack_unpacked_destroy(&result);
-
-        /* Pack meta */
-        if (meta->container_name != NULL) {
-            msgpack_pack_str(pck, 14);
-            msgpack_pack_str_body(pck, "container_name", 14);
-            msgpack_pack_str(pck, meta->container_name_len);
-            msgpack_pack_str_body(pck, meta->container_name,
-                                  meta->container_name_len);
-        }
-        if (meta->docker_id != NULL) {
-            msgpack_pack_str(pck, 9);
-            msgpack_pack_str_body(pck, "docker_id", 9);
-            msgpack_pack_str(pck, meta->docker_id_len);
-            msgpack_pack_str_body(pck, meta->docker_id,
-                                  meta->docker_id_len);
-        }
-        if (meta->container_hash != NULL) {
-            msgpack_pack_str(pck, 14);
-            msgpack_pack_str_body(pck, "container_hash", 14);
-            msgpack_pack_str(pck, meta->container_hash_len);
-            msgpack_pack_str_body(pck, meta->container_hash,
-                                  meta->container_hash_len);
-        }
     }
 
     return 0;
@@ -496,7 +460,6 @@ static int cb_kube_filter(const void *data, size_t bytes,
                                     &cache_buf, &cache_size, &meta, &props);
         }
         if (ret == -1) {
-            flb_kube_prop_destroy(&props);
             return FLB_FILTER_NOTOUCH;
         }
 
@@ -533,18 +496,12 @@ static int cb_kube_filter(const void *data, size_t bytes,
          * records passed to the filter have a unique source log file.
          */
         if (ctx->use_journal == FLB_TRUE && ctx->dummy_meta == FLB_FALSE) {
-            cache_buf = NULL;
-            memset(&props, '\0', sizeof(struct flb_kube_props));
-
             ret = flb_kube_meta_get(ctx,
                                     tag, tag_len,
                                     data + pre, off - pre,
                                     &cache_buf, &cache_size, &meta, &props);
             if (ret == -1) {
-                msgpack_sbuffer_destroy(&tmp_sbuf);
-                msgpack_unpacked_destroy(&result);
-                flb_kube_prop_destroy(&props);
-                return FLB_FILTER_NOTOUCH;
+                continue;
             }
 
             if (props.exclude == FLB_TRUE) {
@@ -601,6 +558,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
 
         if (ctx->use_journal == FLB_TRUE) {
             flb_kube_meta_release(&meta);
+            flb_kube_prop_destroy(&props);
         }
     }
     msgpack_unpacked_destroy(&result);
@@ -608,6 +566,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
     /* Release meta fields */
     if (ctx->use_journal == FLB_FALSE) {
         flb_kube_meta_release(&meta);
+        flb_kube_prop_destroy(&props);
     }
 
     /* link new buffers */
@@ -618,7 +577,6 @@ static int cb_kube_filter(const void *data, size_t bytes,
         flb_free(dummy_cache_buf);
     }
 
-    flb_kube_prop_destroy(&props);
     return FLB_FILTER_MODIFIED;
 }
 

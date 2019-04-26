@@ -165,6 +165,9 @@ static int get_api_server_info(struct flb_kube *ctx,
     struct flb_http_client *c;
     struct flb_upstream_conn *u_conn;
 
+    *out_buf = NULL;
+    *out_size = 0;
+
     /*
      * If a file exists called namespace_podname.meta, load it and use it.
      * If not, fall back to API. This is primarily for diagnostic purposes,
@@ -290,19 +293,19 @@ static void cb_results(const char *name, const char *value,
              strcmp(name, "container_name") == 0) {
         meta->container_name = flb_strndup(value, vlen);
         meta->container_name_len = vlen;
-        meta->skip++;
+        meta->fields++;
     }
     else if (meta->docker_id == NULL &&
              strcmp(name, "docker_id") == 0) {
         meta->docker_id = flb_strndup(value, vlen);
         meta->docker_id_len = vlen;
-        meta->skip++;
+        meta->fields++;
     }
     else if (meta->container_hash == NULL &&
              strcmp(name, "container_hash") == 0) {
         meta->container_hash = flb_strndup(value, vlen);
         meta->container_hash_len = vlen;
-        meta->skip++;
+        meta->fields++;
     }
 
     return;
@@ -396,12 +399,12 @@ static void extract_container_hash(struct flb_kube_meta *meta,
                         meta->container_hash_len = container_hash_len;
                         meta->container_hash = flb_strndup(container_hash,
                                                            container_hash_len);
-                        meta->skip++;
+                        meta->fields++;
                     }
                     if (docker_id_len && !meta->docker_id_len) {
                         meta->docker_id_len = docker_id_len;
                         meta->docker_id = flb_strndup(docker_id, docker_id_len);
-                        meta->skip++;
+                        meta->fields++;
                     }
                     return;
                 }
@@ -416,7 +419,7 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
 {
     int i;
     int ret;
-    int map_size;
+    int map_size = 0;
     int meta_found = FLB_FALSE;
     int spec_found = FLB_FALSE;
     int status_found = FLB_FALSE;
@@ -456,108 +459,101 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    /* Set map size: current + pod_id, labels and annotations */
-    map_size = meta->fields;
-
     /* Iterate API server msgpack and lookup specific fields */
-    off = 0;
-    msgpack_unpacked_init(&api_result);
-    ret = msgpack_unpack_next(&api_result, api_buf, api_size, &off);
-    if (ret != MSGPACK_UNPACK_SUCCESS) {
-        msgpack_sbuffer_destroy(&mp_sbuf);
-        msgpack_unpacked_destroy(&api_result);
-        return -1;
-    }
+    if (api_buf != NULL) {
+        msgpack_unpacked_init(&api_result);
+        ret = msgpack_unpack_next(&api_result, api_buf, api_size, &off);
+        if (ret == MSGPACK_UNPACK_SUCCESS) {
+            api_map = api_result.data;
 
-    api_map = api_result.data;
-
-    /* At this point map points to the ROOT map, eg:
-     *
-     * {
-     *  "kind": "Pod",
-     *  "apiVersion": "v1",
-     *  "metadata": {
-     *    "name": "fluent-bit-rz47v",
-     *    "generateName": "fluent-bit-",
-     *    "namespace": "kube-system",
-     *    "selfLink": "/api/v1/namespaces/kube-system/pods/fluent-bit-rz47v",
-     *  ....
-     * }
-     *
-     * We are interested into the 'metadata' map value.
-     * We are also interested in the spec.nodeName.
-     * We are also interested in the status.containerStatuses.
-     */
-    for (i = 0; !(meta_found && spec_found && status_found) &&
-                i < api_map.via.map.size; i++) {
-        k = api_map.via.map.ptr[i].key;
-        if (k.via.str.size == 8 && !strncmp(k.via.str.ptr, "metadata", 8)) {
-            meta_val = api_map.via.map.ptr[i].val;
-            meta_found = FLB_TRUE;
-        }
-        else if (k.via.str.size == 4 && !strncmp(k.via.str.ptr, "spec", 4)) {
-           spec_val = api_map.via.map.ptr[i].val;
-           spec_found = FLB_TRUE;
-        }
-        else if (k.via.str.size == 6 && !strncmp(k.via.str.ptr, "status", 6)) {
-           status_val = api_map.via.map.ptr[i].val;
-           status_found = FLB_TRUE;
-        }
-    }
-
-    if (meta_found == FLB_FALSE) {
-        msgpack_unpacked_destroy(&api_result);
-        msgpack_sbuffer_destroy(&mp_sbuf);
-        return -1;
-    }
-
-    /* Process metadata map value */
-    msgpack_unpacked_init(&meta_result);
-    for (i = 0; i < meta_val.via.map.size; i++) {
-        k = meta_val.via.map.ptr[i].key;
-
-        const char *ptr = k.via.str.ptr;
-        size_t size = k.via.str.size;
-
-        if (size == 3 && strncmp(ptr, "uid", 3) == 0) {
-            have_uid = i;
-            map_size++;
-        }
-        else if (size == 6 && strncmp(ptr, "labels", 6) == 0) {
-            have_labels = i;
-            if (ctx->labels == FLB_TRUE) {
-                map_size++;
+            /* At this point map points to the ROOT map, eg:
+             *
+             * {
+             *  "kind": "Pod",
+             *  "apiVersion": "v1",
+             *  "metadata": {
+             *    "name": "fluent-bit-rz47v",
+             *    "generateName": "fluent-bit-",
+             *    "namespace": "kube-system",
+             *    "selfLink": "/api/v1/namespaces/kube-system/pods/fluent-bit-rz47v",
+             *  ....
+             * }
+             *
+             * We are interested into the 'metadata' map value.
+             * We are also interested in the spec.nodeName.
+             * We are also interested in the status.containerStatuses.
+             */
+            for (i = 0; !(meta_found && spec_found && status_found) &&
+                        i < api_map.via.map.size; i++) {
+                k = api_map.via.map.ptr[i].key;
+                if (k.via.str.size == 8 && !strncmp(k.via.str.ptr, "metadata", 8)) {
+                    meta_val = api_map.via.map.ptr[i].val;
+                    meta_found = FLB_TRUE;
+                }
+                else if (k.via.str.size == 4 && !strncmp(k.via.str.ptr, "spec", 4)) {
+                   spec_val = api_map.via.map.ptr[i].val;
+                   spec_found = FLB_TRUE;
+                }
+                else if (k.via.str.size == 6 && !strncmp(k.via.str.ptr, "status", 6)) {
+                   status_val = api_map.via.map.ptr[i].val;
+                   status_found = FLB_TRUE;
+                }
             }
-        }
 
-        else if (size == 11 && strncmp(ptr, "annotations", 11) == 0) {
-            have_annotations = i;
-            if (ctx->annotations == FLB_TRUE) {
-                map_size++;
+            if (meta_found == FLB_TRUE) {
+                /* Process metadata map value */
+                msgpack_unpacked_init(&meta_result);
+                for (i = 0; i < meta_val.via.map.size; i++) {
+                    k = meta_val.via.map.ptr[i].key;
+
+                    char *ptr = (char *) k.via.str.ptr;
+                    size_t size = k.via.str.size;
+
+                    if (size == 3 && strncmp(ptr, "uid", 3) == 0) {
+                        have_uid = i;
+                        map_size++;
+                    }
+                    else if (size == 6 && strncmp(ptr, "labels", 6) == 0) {
+                        have_labels = i;
+                        if (ctx->labels == FLB_TRUE) {
+                            map_size++;
+                        }
+                    }
+
+                    else if (size == 11 && strncmp(ptr, "annotations", 11) == 0) {
+                        have_annotations = i;
+                        if (ctx->annotations == FLB_TRUE) {
+                            map_size++;
+                        }
+                    }
+
+                    if (have_uid >= 0 && have_labels >= 0 && have_annotations >= 0) {
+                        break;
+                    }
+                }
             }
-        }
 
-        if (have_uid >= 0 && have_labels >= 0 && have_annotations >= 0) {
-            break;
-        }
-    }
+            /* Process spec map value for nodeName */
+            if (spec_found == FLB_TRUE) {
+                for (i = 0; i < spec_val.via.map.size; i++) {
+                    k = spec_val.via.map.ptr[i].key;
+                    if (k.via.str.size == 8 &&
+                        strncmp(k.via.str.ptr, "nodeName", 8) == 0) {
+                        have_nodename = i;
+                        map_size++;
+                        break;
+                    }
+                }
+            }
 
-    /* Process spec map value for nodeName */
-    if (spec_found == FLB_TRUE) {
-        for (i = 0; i < spec_val.via.map.size; i++) {
-            k = spec_val.via.map.ptr[i].key;
-            if (k.via.str.size == 8 &&
-                strncmp(k.via.str.ptr, "nodeName", 8) == 0) {
-                have_nodename = i;
-                map_size++;
-                break;
+            if ((!meta->container_hash || !meta->docker_id) && status_found) {
+                extract_container_hash(meta, status_val);
             }
         }
     }
 
-    if ((!meta->container_hash || !meta->docker_id) && status_found) {
-        extract_container_hash(meta, status_val);
-    }
+    /* Set map size: current + pod_id, labels and annotations */
+    map_size += meta->fields;
 
     /* Append Regex fields */
     msgpack_pack_map(&mp_pck, map_size);
@@ -607,6 +603,28 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
         msgpack_pack_object(&mp_pck, v);
     }
 
+    if (meta->container_name != NULL) {
+        msgpack_pack_str(&mp_pck, 14);
+        msgpack_pack_str_body(&mp_pck, "container_name", 14);
+        msgpack_pack_str(&mp_pck, meta->container_name_len);
+        msgpack_pack_str_body(&mp_pck, meta->container_name,
+                              meta->container_name_len);
+    }
+    if (meta->docker_id != NULL) {
+        msgpack_pack_str(&mp_pck, 9);
+        msgpack_pack_str_body(&mp_pck, "docker_id", 9);
+        msgpack_pack_str(&mp_pck, meta->docker_id_len);
+        msgpack_pack_str_body(&mp_pck, meta->docker_id,
+                              meta->docker_id_len);
+    }
+    if (meta->container_hash != NULL) {
+        msgpack_pack_str(&mp_pck, 14);
+        msgpack_pack_str_body(&mp_pck, "container_hash", 14);
+        msgpack_pack_str(&mp_pck, meta->container_hash_len);
+        msgpack_pack_str_body(&mp_pck, meta->container_hash,
+                              meta->container_hash_len);
+    }
+
     /* Process configuration suggested through Annotations */
     if (have_annotations >= 0) {
         ann_map = meta_val.via.map.ptr[have_annotations].val;
@@ -640,8 +658,12 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
         flb_free(prop_buf);
     }
 
-    msgpack_unpacked_destroy(&api_result);
-    msgpack_unpacked_destroy(&meta_result);
+    if (api_buf != NULL) {
+        msgpack_unpacked_destroy(&api_result);
+        if (meta_found == FLB_TRUE) {
+            msgpack_unpacked_destroy(&meta_result);
+        }
+    }
 
     /* Set outgoing msgpack buffer */
     *out_buf = mp_sbuf.data;
@@ -792,29 +814,20 @@ static int get_and_merge_meta(struct flb_kube *ctx, struct flb_kube_meta *meta,
     int ret;
     char *api_buf;
     size_t api_size;
-    char *merge_buf;
-    size_t merge_size;
 
-    ret = get_api_server_info(ctx,
-                              meta->namespace, meta->podname,
-                              &api_buf, &api_size);
-    if (ret == -1) {
-        return -1;
-    }
+    get_api_server_info(ctx,
+                        meta->namespace, meta->podname,
+                        &api_buf, &api_size);
 
     ret = merge_meta(meta, ctx,
                      api_buf, api_size,
-                     &merge_buf, &merge_size);
-    flb_free(api_buf);
+                     out_buf, out_size);
 
-    if (ret == -1) {
-        return -1;
+    if (api_buf != NULL) {
+        flb_free(api_buf);
     }
 
-    *out_buf = merge_buf;
-    *out_size = merge_size;
-
-    return 0;
+    return ret;
 }
 
 
@@ -960,7 +973,9 @@ int flb_kube_meta_get(struct flb_kube *ctx,
         ret = get_and_merge_meta(ctx, meta,
                                  &tmp_hash_meta_buf, &hash_meta_size);
         if (ret == -1) {
-            return -1;
+            *out_buf = NULL;
+            *out_size = 0;
+            return 0;
         }
 
         id = flb_hash_add(ctx->hash_table,

@@ -27,7 +27,6 @@ struct flb_kube;
 
 struct flb_kube_meta {
     int fields;
-    int skip;
 
     int namespace_len;
     int podname_len;
