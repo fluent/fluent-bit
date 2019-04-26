@@ -346,6 +346,11 @@ static void flb_test_core_base()
     flb_test_core("core_base_fluent-bit", NULL, 1);
 }
 
+static void flb_test_core_no_meta()
+{
+    flb_test_core("core_no-meta_text", NULL, 1);
+}
+
 static void flb_test_core_unescaping_text()
 {
     flb_test_core("core_unescaping_text", NULL, 1);
@@ -923,6 +928,7 @@ static void flb_test_systemd_logs()
 
 TEST_LIST = {
     {"kube_core_base", flb_test_core_base},
+    {"kube_core_no_meta", flb_test_core_no_meta},
     {"kube_core_unescaping_text", flb_test_core_unescaping_text},
     {"kube_core_unescaping_json", flb_test_core_unescaping_json},
     {"kube_options_merge_log_enabled_text", flb_test_options_merge_log_enabled_text},
