@@ -379,11 +379,10 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
         }
 
         if (ctx->replace_dots == FLB_TRUE) {
-          char *p   = ptr_key;
           char *end = ptr_key + key_size;
-          while (p != end) {
-            if (*p == '.') *p = '_';
-            p++;
+          while (ptr_key != end) {
+            if (*ptr_key == '.') *ptr_key = '_';
+            ptr_key++;
           }
         }
 
