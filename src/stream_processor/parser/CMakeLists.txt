@@ -23,11 +23,9 @@ add_library(flb-sp-parser STATIC
     "${CMAKE_CURRENT_BINARY_DIR}/sql_parser.c"
     )
 
-#add_executable(test-sp-parser
-#    ${sources}
-#    "${CMAKE_CURRENT_BINARY_DIR}/sql_lex.c"
-#    "${CMAKE_CURRENT_BINARY_DIR}/sql_parser.c"
-#    )
-
 add_flex_bison_dependency(lexer parser)
 add_dependencies(flb-sp-parser libonigmo)
+
+if(FLB_JEMALLOC)
+  target_link_libraries(flb-sp-parser libjemalloc)
+endif()

@@ -46,16 +46,6 @@ set(src
   )
 endif()
 
-include_directories(
-  .
-  ../lib/
-  ../lib/jsmn
-  ../lib/msgpack-c-0b7cabd/include
-  ../lib/monkey/include/
-  ../lib/luajit-2.0.5/src/
-  ${extra_headers}
-  )
-
 if(FLB_PARSER)
   set(src
     ${src}
