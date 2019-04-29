@@ -48,8 +48,8 @@ struct flb_forward_config {
     flb_sds_t self_hostname;  /* hotname used in certificate  */
 
     /* mbedTLS specifics */
-#ifdef FLB_HAVE_TLS
     unsigned char shared_key_salt[16];
+#ifdef FLB_HAVE_TLS
     mbedtls_entropy_context tls_entropy;
     mbedtls_ctr_drbg_context tls_ctr_drbg;
 #endif

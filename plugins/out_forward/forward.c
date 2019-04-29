@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_upstream_ha.h>
+#include <fluent-bit/flb_sha512.h>
 #include <msgpack.h>
 
 #include "forward.h"
@@ -44,6 +45,29 @@ void _secure_forward_tls_error(int ret, char *file, int line)
 
     mbedtls_strerror(ret, err_buf, sizeof(err_buf));
     flb_error("[io_tls] flb_io_tls.c:%i %s", line, err_buf);
+}
+
+static int secure_forward_init(struct flb_forward_config *fc)
+{
+    int ret;
+
+    /* Initialize mbedTLS entropy contexts */
+    mbedtls_entropy_init(&fc->tls_entropy);
+    mbedtls_ctr_drbg_init(&fc->tls_ctr_drbg);
+
+    ret = mbedtls_ctr_drbg_seed(&fc->tls_ctr_drbg,
+                                mbedtls_entropy_func,
+                                &fc->tls_entropy,
+                                (const unsigned char *) SECURED_BY,
+                                sizeof(SECURED_BY) -1);
+    if (ret == -1) {
+        secure_forward_tls_error(ret);
+        return -1;
+    }
+
+    /* Gernerate shared key salt */
+    mbedtls_ctr_drbg_random(&fc->tls_ctr_drbg, fc->shared_key_salt, 16);
+    return 0;
 }
 #endif
 
@@ -135,7 +159,7 @@ static int secure_forward_ping(struct flb_upstream_conn *u_conn,
     msgpack_object val;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
-    mbedtls_sha512_context sha512;
+    struct flb_sha512 sha512;
 
     /* Lookup nonce field */
     for (i = 0; i < map.via.map.size; i++) {
@@ -156,18 +180,16 @@ static int secure_forward_ping(struct flb_upstream_conn *u_conn,
     nonce_size = val.via.bin.size;
 
     /* Compose the shared key */
-    mbedtls_sha512_init(&sha512);
-    mbedtls_sha512_starts(&sha512, 0);
-    mbedtls_sha512_update(&sha512, fc->shared_key_salt, 16);
-    mbedtls_sha512_update(&sha512,
-                          (unsigned char *) fc->self_hostname,
-                          flb_sds_len(fc->self_hostname));
-    mbedtls_sha512_update(&sha512,
-                          nonce_data, nonce_size);
-    mbedtls_sha512_update(&sha512, (unsigned char *) fc->shared_key,
-                          flb_sds_len(fc->shared_key));
-    mbedtls_sha512_finish(&sha512, shared_key);
-    mbedtls_sha512_free(&sha512);
+    flb_sha512_init(&sha512);
+    flb_sha512_update(&sha512, fc->shared_key_salt, 16);
+    flb_sha512_update(&sha512,
+                      (unsigned char *) fc->self_hostname,
+                      flb_sds_len(fc->self_hostname));
+    flb_sha512_update(&sha512,
+                      nonce_data, nonce_size);
+    flb_sha512_update(&sha512, (unsigned char *) fc->shared_key,
+                      flb_sds_len(fc->shared_key));
+    flb_sha512_sum(&sha512, shared_key);
 
     /* Make hex digest representation of the new shared key */
     secure_forward_bin_to_hex(shared_key, 64, shared_key_hexdigest);
@@ -345,31 +367,6 @@ static int secure_forward_handshake(struct flb_upstream_conn *u_conn,
     msgpack_unpacked_destroy(&result);
     return 0;
 }
-
-#ifdef FLB_HAVE_TLS
-static int secure_forward_init(struct flb_forward_config *fc)
-{
-    int ret;
-
-    /* Initialize mbedTLS entropy contexts */
-    mbedtls_entropy_init(&fc->tls_entropy);
-    mbedtls_ctr_drbg_init(&fc->tls_ctr_drbg);
-
-    ret = mbedtls_ctr_drbg_seed(&fc->tls_ctr_drbg,
-                                mbedtls_entropy_func,
-                                &fc->tls_entropy,
-                                (const unsigned char *) SECURED_BY,
-                                sizeof(SECURED_BY) -1);
-    if (ret == -1) {
-        secure_forward_tls_error(ret);
-        return -1;
-    }
-
-    /* Gernerate shared key salt */
-    mbedtls_ctr_drbg_random(&fc->tls_ctr_drbg, fc->shared_key_salt, 16);
-    return 0;
-}
-#endif
 
 static int forward_config_init(struct flb_forward_config *fc,
                                struct flb_forward *ctx)

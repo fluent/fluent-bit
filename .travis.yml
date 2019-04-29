@@ -53,16 +53,16 @@ matrix:
         sudo usermod -a -G systemd-journal $(id -un)
         sudo -E su -p travis -c "PATH=$PATH ci/do-ut"
     - os: linux
+      services:
+        - docker
       dist: xenial
       sudo: true
-      language: node_js
-        - "9"
+      language: c
       compiler: gcc
       env: DOCKER_BUILD=1
       script: |
         echo "===== BUILD DOCKER IMAGE ======="
         docker build -t test-image -f Dockerfile .
-        npm install -g bats
       addons:
         apt:
           sources: {}

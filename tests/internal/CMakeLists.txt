@@ -6,6 +6,7 @@ set(UNIT_TESTS_FILES
   pack.c
   pipe.c
   sds.c
+  sha512.c
   router.c
   parser.c
   network.c
@@ -13,8 +14,14 @@ set(UNIT_TESTS_FILES
   hashtable.c
   http_client.c
   utils.c
-  stream_processor.c
   )
+
+if(FLB_STREAM_PROCESSOR)
+  set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    stream_processor.c
+    )
+endif()
 
 if(FLB_METRICS)
   set(UNIT_TESTS_FILES
