@@ -539,7 +539,7 @@ int flb_output_init(struct flb_config *config)
 #endif
 
 #ifdef FLB_HAVE_PROXY_GO
-        /* Proxy plugins have heir own initialization */
+        /* Proxy plugins have their own initialization */
         if (p->type == FLB_OUTPUT_PLUGIN_PROXY) {
             ret = flb_plugin_proxy_init(p->proxy, ins, config);
             if (ret == -1) {
@@ -574,14 +574,6 @@ int flb_output_init(struct flb_config *config)
             return -1;
         }
     }
-
-    /* Iterate list of proxies plugins */
-    mk_list_foreach(head, &config->proxies) {
-        //proxy = mk_list_entry(head, struct flb_plugin_proxy, _head);
-        //flb_plugin_proxy_init(proxy, config);
-        //printf("load proxy name = %s\n", proxy->name);
-    }
-
 
     return 0;
 }
