@@ -83,7 +83,6 @@ void flb_task_retry_destroy(struct flb_task_retry *retry)
 struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
                                              void *data)
 {
-    int ret;
     struct mk_list *head;
     struct mk_list *tmp;
     struct flb_task_retry *retry = NULL;
