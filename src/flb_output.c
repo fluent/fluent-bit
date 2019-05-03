@@ -272,7 +272,17 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         instance->context = NULL;
     }
     else {
-        instance->context = plugin->proxy;
+        struct flb_plugin_proxy_context *ctx;
+
+        ctx = flb_calloc(1, sizeof(struct flb_plugin_proxy_context));
+        if (!ctx) {
+            perror("calloc");
+            return NULL;
+        }
+
+        ctx->proxy = plugin->proxy;
+
+        instance->context = ctx;
     }
 
     instance->alias       = NULL;

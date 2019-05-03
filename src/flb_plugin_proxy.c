@@ -49,18 +49,18 @@ static void flb_proxy_cb_flush(void *data, size_t bytes,
                                struct flb_config *config)
 {
     int ret = FLB_ERROR;
-    struct flb_plugin_proxy *p = out_context;
+    struct flb_plugin_proxy_context *ctx = out_context;
     (void) tag_len;
     (void) i_ins;
     (void) config;
 
 #ifdef FLB_HAVE_PROXY_GO
-    if (p->proxy == FLB_PROXY_GOLANG) {
+    if (ctx->proxy->proxy == FLB_PROXY_GOLANG) {
         flb_trace("[GO] entering go_flush()");
-        ret = proxy_go_flush(p, data, bytes, tag, tag_len);
+        ret = proxy_go_flush(ctx, data, bytes, tag, tag_len);
     }
 #else
-    (void) p;
+    (void) ctx;
 #endif
 
     if (ret != FLB_OK && ret != FLB_RETRY && ret != FLB_ERROR) {
