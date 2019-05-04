@@ -119,6 +119,7 @@ static int flb_tls_load_system_cert(struct flb_tls_context *ctx)
 
 struct flb_tls_context *flb_tls_context_new(int verify,
                                             int debug,
+                                            char *vhost,
                                             char *ca_path,
                                             char *ca_file, char *crt_file,
                                             char *key_file, char *key_passwd)
@@ -133,6 +134,7 @@ struct flb_tls_context *flb_tls_context_new(int verify,
     }
     ctx->verify    = verify;
     ctx->debug     = debug;
+    ctx->vhost     = vhost;
     ctx->certs_set = 0;
 
     mbedtls_entropy_init(&ctx->entropy);
@@ -331,7 +333,10 @@ int net_io_tls_handshake(void *_u_conn, void *_th)
         flb_error("[io_tls] could not create tls session");
         return -1;
     }
-    mbedtls_ssl_set_hostname(&session->ssl,u->tcp_host);
+    if (!u->tls->context->vhost) {
+        u->tls->context->vhost = u->tcp_host;
+    }
+    mbedtls_ssl_set_hostname(&session->ssl, u->tls->context->vhost);
 
     /* Store session and mbedtls net context fd */
     u_conn->tls_session = session;

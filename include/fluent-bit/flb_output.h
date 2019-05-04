@@ -132,6 +132,7 @@ struct flb_output_instance {
 #ifdef FLB_HAVE_TLS
     int tls_verify;                      /* Verify certs (default: true) */
     int tls_debug;                       /* mbedtls debug level          */
+    char *tls_vhost;                     /* Virtual hostname for SNI     */
     char *tls_ca_path;                   /* Path to certificates         */
     char *tls_ca_file;                   /* CA root cert                 */
     char *tls_crt_file;                  /* Certificate                  */

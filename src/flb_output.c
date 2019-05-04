@@ -83,6 +83,9 @@ static void flb_output_free_properties(struct flb_output_instance *ins)
     flb_kv_release(&ins->properties);
 
 #ifdef FLB_HAVE_TLS
+    if (ins->tls_vhost) {
+        flb_sds_destroy(ins->tls_vhost);
+    }
     if (ins->tls_ca_path) {
         flb_sds_destroy(ins->tls_ca_path);
     }
@@ -304,6 +307,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     instance->tls.context    = NULL;
     instance->tls_debug      = -1;
     instance->tls_verify     = FLB_TRUE;
+    instance->tls_vhost      = NULL;
     instance->tls_ca_path    = NULL;
     instance->tls_ca_file    = NULL;
     instance->tls_crt_file   = NULL;
@@ -428,6 +432,9 @@ int flb_output_set_property(struct flb_output_instance *out,
         out->tls_debug = atoi(tmp);
         flb_sds_destroy(tmp);
     }
+    else if (prop_key_check("tls.vhost", k, len) == 0) {
+        out->tls_vhost = tmp;
+    }
     else if (prop_key_check("tls.ca_path", k, len) == 0) {
         out->tls_ca_path = tmp;
     }
@@ -545,6 +552,7 @@ int flb_output_init(struct flb_config *config)
         if (ins->flags & FLB_IO_TLS) {
             ins->tls.context = flb_tls_context_new(ins->tls_verify,
                                                    ins->tls_debug,
+                                                   ins->tls_vhost,
                                                    ins->tls_ca_path,
                                                    ins->tls_ca_file,
                                                    ins->tls_crt_file,
