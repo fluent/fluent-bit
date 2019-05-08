@@ -28,6 +28,7 @@
 #include <systemd/sd-journal.h>
 
 /* return values */
+#define FLB_SYSTEMD_ERROR   -1 /* Systemd journal file read error. */
 #define FLB_SYSTEMD_NONE     0
 #define FLB_SYSTEMD_OK       1
 #define FLB_SYSTEMD_MORE     2
