@@ -345,6 +345,7 @@ int flb_input_instance_init(struct flb_input_instance *in,
     /* Create the metrics context */
     in->metrics = flb_metrics_create(name);
     if (in->metrics) {
+        flb_metrics_add(FLB_METRIC_N_DROPPED, "dropped", in->metrics);
         flb_metrics_add(FLB_METRIC_N_RECORDS, "records", in->metrics);
         flb_metrics_add(FLB_METRIC_N_BYTES, "bytes", in->metrics);
     }

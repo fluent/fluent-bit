@@ -365,12 +365,16 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
 
 #ifdef FLB_HAVE_METRICS
     int records;
+    records = flb_mp_count(buf, buf_size);
 #endif
 
     /* Check if the input plugin has been paused */
     if (flb_input_buf_paused(in) == FLB_TRUE) {
         flb_debug("[input chunk] %s is paused, cannot append records",
                   in->name);
+#ifdef FLB_HAVE_METRICS
+        flb_metrics_sum(FLB_METRIC_N_DROPPED, records, in->metrics);
+#endif
         return -1;
     }
 
@@ -396,6 +400,9 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
     ic = input_chunk_get(tag, tag_len, in);
     if (!ic) {
         flb_error("[input chunk] no available chunk");
+#ifdef FLB_HAVE_METRICS
+        flb_metrics_sum(FLB_METRIC_N_DROPPED, records, in->metrics);
+#endif
         return -1;
     }
 
@@ -404,13 +411,15 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
     if (ret == -1) {
         flb_error("[input chunk] error writing data from %s instance",
                   in->name);
+#ifdef FLB_HAVE_METRICS
+        flb_metrics_sum(FLB_METRIC_N_DROPPED, records, in->metrics);
+#endif
         cio_chunk_tx_rollback(ic->chunk);
         return -1;
     }
 
     /* Update 'input' metrics */
 #ifdef FLB_HAVE_METRICS
-    records = flb_mp_count(buf, buf_size);
     if (records > 0) {
         flb_metrics_sum(FLB_METRIC_N_RECORDS, records, in->metrics);
         flb_metrics_sum(FLB_METRIC_N_BYTES, buf_size, in->metrics);
