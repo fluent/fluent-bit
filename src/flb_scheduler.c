@@ -182,6 +182,25 @@ static int schedule_request_promote(struct flb_sched *sched)
     return 0;
 }
 
+static double ipow(double base, int exp)
+{
+    double result = 1;
+
+    for (;;) {
+        if (exp & 1) {
+            result *= base;
+        }
+
+        exp >>= 1;
+        if (!exp) {
+            break;
+        }
+        base *= base;
+    }
+
+    return result;
+}
+
 /*
  * The 'backoff full jitter' algorithm implements a capped backoff with a jitter
  * to generate numbers to be used as 'wait times', this implementation is fully
@@ -191,10 +210,10 @@ static int schedule_request_promote(struct flb_sched *sched)
  */
 static int backoff_full_jitter(int base, int cap, int n)
 {
-    int exp;
+    int temp;
 
-    exp = xmin(cap, (1 << n /*pow(2, n)*/) * base);
-    return random_uniform(0, exp);
+    temp = xmin(cap, ipow(base * 2, n));
+    return random_uniform(base, temp);
 }
 
 /* Schedule the 'retry' for a thread buffer flush */
