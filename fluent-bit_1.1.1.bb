@@ -1,8 +1,6 @@
 # Fluent Bit - Yocto / Bitbake
 # ============================
-# The following Bitbake recipe aims to be used as a reference for testing
-# or development purposes. This recipe takes Fluent Bit from GIT master
-# which is under active development and not suggested for production.
+# The following Bitbake package the latest Fluent Bit stable release.
 
 SUMMARY = "Fast Log processor and Forwarder"
 DESCRIPTION = "Fluent Bit is a data collector, processor and  \
@@ -18,10 +16,10 @@ LIC_FILES_CHKSUM = "file://LICENSE;md5=2ee41112a44fe7014dce33e26468ba93"
 SECTION = "net"
 
 PR = "r0"
-PV = "1.1-git"
+PV = "1.1.1"
 
-SRCREV = "${AUTOREV}"
-SRC_URI = "git://github.com/fluent/fluent-bit"
+SRCREV = "v${PV}"
+SRC_URI = "git://github.com/fluent/fluent-bit.git;nobranch=1"
 
 S = "${WORKDIR}/git"
 DEPENDS = "zlib bison flex"
