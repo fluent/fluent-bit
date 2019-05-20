@@ -47,7 +47,7 @@ struct mk_list *flb_utils_split(char *line, int separator, int max_split);
 
 void flb_utils_split_free(struct mk_list *list);
 int flb_utils_timer_consume(flb_pipefd_t fd);
-ssize_t flb_utils_size_to_bytes(char *size);
+int64_t flb_utils_size_to_bytes(char *size);
 int flb_utils_time_to_seconds(char *time);
 int flb_utils_pipe_byte_consume(flb_pipefd_t fd);
 int flb_utils_bool(char *val);
