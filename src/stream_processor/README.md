@@ -14,8 +14,10 @@ The following is the SQL statement syntax supported by Fluent Bit stream process
 <exp>         := <id> | <fun>
 <fun>         := AVG(<id>) | SUM(<id>) | COUNT(<id>) | COUNT(*) | MIN(<id>) | MAX(<id>)
 <source>      := STREAM:<id> | TAG:<id>
+<<<<<<< HEAD
 <condition>   := <id> | <value> | <id> <relation> <value> | (<condition>)
                | NOT <condition> | <condition> AND <condition> | <condition> OR <condition>
+               | EXISTS <id> | <id> IS NULL | <id> IS NOT NULL
 <relation>    := = | < | <= | > | >=
 <id>          := <letter> <characters>
 <characters>  := <letter> | <digit> | _ | <characters> <characters>

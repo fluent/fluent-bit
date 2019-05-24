@@ -61,19 +61,24 @@
 #define FLB_EXP_INT      3
 #define FLB_EXP_FLOAT    4
 #define FLB_EXP_STRING   5
+#define FLB_EXP_NULL     6
 
 /* Logical operation */
-#define FLB_EXP_PAR      0
+#define FLB_EXP_PAR         0
 
-#define FLB_EXP_NOT      1
-#define FLB_EXP_AND      2
-#define FLB_EXP_OR       3
+#define FLB_EXP_NOT         1
+#define FLB_EXP_AND         2
+#define FLB_EXP_OR          3
 
-#define FLB_EXP_EQ       4
-#define FLB_EXP_LT       5
-#define FLB_EXP_LTE      6
-#define FLB_EXP_GT       7
-#define FLB_EXP_GTE      8
+#define FLB_EXP_EQ          4
+#define FLB_EXP_LT          5
+#define FLB_EXP_LTE         6
+#define FLB_EXP_GT          7
+#define FLB_EXP_GTE         8
+
+#define FLB_EXP_EXISTS      9
+#define FLB_EXP_IS_NULL     10
+#define FLB_EXP_IS_NOT_NULL 11
 
 #define FLB_SP_TIME_SECOND  0
 #define FLB_SP_TIME_MINUTE  1
@@ -212,8 +217,9 @@ struct flb_exp *flb_sp_cmd_condition_string(struct flb_sp_cmd *cmd,
                                             char *string);
 struct flb_exp *flb_sp_cmd_condition_boolean(struct flb_sp_cmd *cmd,
                                              bool boolean);
+struct flb_exp *flb_sp_cmd_condition_null(struct flb_sp_cmd *cmd);
 
-void flb_sp_cmd_condition_free(struct flb_sp_cmd *cmd);
+void flb_sp_cmd_condition_del(struct flb_sp_cmd *cmd);
 
 int flb_sp_cmd_gb_key_add(struct flb_sp_cmd *cmd, char *key);
 void flb_sp_cmd_gb_key_del(struct flb_sp_cmd_gb_key *key);

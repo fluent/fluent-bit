@@ -61,7 +61,11 @@ AND                     return AND;
 OR                      return OR;
 NOT                     return NOT;
 WINDOW                  return WINDOW;
+EXISTS                  return EXISTS;
 "GROUP BY"              return GROUP_BY;
+
+IS                      return IS;
+NULL                    return NUL;
 
  /* Aggregation Functions */
 SUM                     return SUM;
@@ -86,14 +90,14 @@ UNIX_TIMESTAMP          return UNIX_TIMESTAMP;
 RECORD_TAG              return RECORD_TAG;
 RECORD_TIME             return RECORD_TIME;
 
-"true"                  { yylval->boolean = true;  return BOOLTYPE; };
-"false"                 { yylval->boolean = false;  return BOOLTYPE; };
+"true"                     { yylval->boolean = true;  return BOOLTYPE; };
+"false"                    { yylval->boolean = false;  return BOOLTYPE; };
 
--?[1-9][0-9]*           { yylval->integer = atoi(yytext);  return INTEGER; }
--?[1-9][0-9]*\.[0-9]+   { yylval->fval = atof(yytext); return FLOATING; }
-\'([^']|'{2})*\'        { yylval->string = remove_dup_qoutes(yytext + 1, yyleng - 2); return STRING; }
+-?[1-9][0-9]*|0            { yylval->integer = atoi(yytext);  return INTEGER; }
+(-?[1-9][0-9]*|0)\.[0-9]+  { yylval->fval = atof(yytext); return FLOATING; }
+\'([^']|'{2})*\'           { yylval->string = remove_dup_qoutes(yytext + 1, yyleng - 2); return STRING; }
 
-[A-Za-z][A-Za-z0-9_.]*	{ yylval->string = flb_strdup(yytext); return IDENTIFIER; }
+[A-Za-z][A-Za-z0-9_.]*	   { yylval->string = flb_strdup(yytext); return IDENTIFIER; }
 
 "*"                     |
 ","                     |
