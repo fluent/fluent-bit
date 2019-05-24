@@ -321,8 +321,13 @@ char *flb_oauth2_token_get(struct flb_oauth2 *ctx)
     /* Get Token and store it in the context */
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
-        flb_error("[oauth2] could not get an upstream connection");
-        return NULL;
+        ctx->u->flags |= FLB_IO_IPV6;
+        u_conn = flb_upstream_conn_get(ctx->u);
+        if (!u_conn) {
+            flb_error("[oauth2] could not get an upstream connection");
+            ctx->u->flags &= ~FLB_IO_IPV6;
+            return NULL;
+        }
     }
 
     /* Create HTTP client context */
