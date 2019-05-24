@@ -352,28 +352,25 @@ static void flb_service_conf_err(struct mk_rconf_section *section, char *key)
 
 static int flb_service_conf_path_set(struct flb_config *config, char *file)
 {
-    char *p;
     char *end;
-    char path[PATH_MAX + 1];
+    char *path;
 
-#ifdef _MSC_VER
-    p = _fullpath(path, file, PATH_MAX + 1);
-#else
-    p = realpath(file, path);
-#endif
-    if (!p) {
+    path = realpath(file, NULL);
+    if (!path) {
         return -1;
     }
 
     /* lookup path ending and truncate */
-    end = strrchr(path, '/');
+    end = strrchr(path, FLB_DIRCHAR);
     if (!end) {
+        free(path);
         return -1;
     }
 
     end++;
     *end = '\0';
     config->conf_path = flb_strdup(path);
+    free(path);
 
     return 0;
 }

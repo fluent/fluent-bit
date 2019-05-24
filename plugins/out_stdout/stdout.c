@@ -248,6 +248,7 @@ static void cb_stdout_flush(void *data, size_t bytes,
         msgpack_unpacked_destroy(&result);
         flb_free(buf);
     }
+    fflush(stdout);
 
     FLB_OUTPUT_RETURN(FLB_OK);
 }

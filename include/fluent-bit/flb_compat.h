@@ -31,6 +31,7 @@
 #include <windows.h>
 #include <Wincrypt.h>
 
+#define FLB_DIRCHAR '\\'
 #define PATH_MAX MAX_PATH
 #define S_ISREG(m) (((m) & S_IFMT) == S_IFREG)
 #define timezone _timezone
@@ -71,6 +72,14 @@ static inline char* basename(const char *path)
     return buf;
 }
 
+static inline char* realpath(char *path, char *buf)
+{
+    if (buf != NULL) {
+        return NULL;  /* Read BUGS in realpath(3) */
+    }
+    return _fullpath(NULL, path, 0);
+}
+
 /* mk_utils.c exposes localtime_r */
 extern struct tm *localtime_r(const time_t *timep, struct tm * result);
 
@@ -89,6 +98,8 @@ static inline int usleep(LONGLONG usec)
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <libgen.h>
+
+#define FLB_DIRCHAR '/'
 #endif
 
 #endif
