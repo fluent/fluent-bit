@@ -187,6 +187,7 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
 
     ret = timerfd_settime(timer_fd, TFD_TIMER_ABSTIME, &its, NULL);
     if (ret < 0) {
+        close(timer_fd);
         mk_libc_error("timerfd_settime");
         return -1;
     }
