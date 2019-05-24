@@ -282,6 +282,7 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
 {
     char *token;
     struct flb_stackdriver *ctx;
+    int io_flags = FLB_IO_TLS;
 
     /* Create config context */
     ctx = flb_stackdriver_conf_create(ins, config);
@@ -293,9 +294,14 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     /* Set context */
     flb_output_set_context(ins, ctx);
 
+    /* Network mode IPv6 */
+    if (ins->host.ipv6 == FLB_TRUE) {
+        io_flags |= FLB_IO_IPV6;
+    }
+
     /* Create Upstream context for Stackdriver Logging (no oauth2 service) */
     ctx->u = flb_upstream_create_url(config, FLB_STD_WRITE_URL,
-                                     FLB_IO_TLS, &ins->tls);
+                                     io_flags, &ins->tls);
     ctx->metadata_u = flb_upstream_create_url(config, "http://metadata.google.internal",
                                      FLB_IO_TCP, NULL);
     if (!ctx->u) {
