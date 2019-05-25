@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_slist.h>
 #include <fluent-bit/stream_processor/flb_sp_parser.h>
 
 #include "sql_parser.h"
@@ -67,6 +68,11 @@ void flb_sp_cmd_destroy(struct flb_sp_cmd *cmd)
 
     if (cmd->condition) {
         flb_sp_cmd_condition_free(cmd);
+    }
+
+    if (cmd->tmp_subkeys) {
+        flb_slist_destroy(cmd->tmp_subkeys);
+        flb_free(cmd->tmp_subkeys);
     }
 
     flb_free(cmd);
@@ -224,6 +230,15 @@ struct flb_sp_cmd *flb_sp_cmd_create(char *sql)
     mk_list_init(&cmd->cond_list);
 
     mk_list_init(&cmd->gb_keys);
+
+    /* Allocate temporal list and initialize */
+    cmd->tmp_subkeys = flb_malloc(sizeof(struct mk_list));
+    if (!cmd->tmp_subkeys) {
+        flb_errno();
+        flb_free(cmd);
+        return NULL;
+    }
+    flb_slist_create(cmd->tmp_subkeys);
 
     /* Flex/Bison work */
     yylex_init(&scanner);
@@ -384,7 +399,7 @@ struct flb_exp *flb_sp_cmd_condition_key(struct flb_sp_cmd *cmd,
 {
     struct flb_exp_key *key;
 
-    key = flb_malloc(sizeof(struct flb_exp_key));
+    key = flb_calloc(1, sizeof(struct flb_exp_key));
     if (!key) {
         flb_errno();
         return NULL;
@@ -393,6 +408,21 @@ struct flb_exp *flb_sp_cmd_condition_key(struct flb_sp_cmd *cmd,
     key->type = FLB_EXP_KEY;
     key->name = flb_sds_create(identifier);
     mk_list_add(&key->_head, &cmd->cond_list);
+
+    /* Lookup for any subkeys in the temporal list */
+    if (mk_list_size(cmd->tmp_subkeys) > 0) {
+        key->subkeys = cmd->tmp_subkeys;
+        cmd->tmp_subkeys = flb_malloc(sizeof(struct mk_list));
+        if (!cmd->tmp_subkeys) {
+            flb_errno();
+            cmd->tmp_subkeys = key->subkeys;
+            flb_sds_destroy(key->name);
+            mk_list_del(&key->_head);
+            flb_free(key);
+            return NULL;
+        }
+        flb_slist_create(cmd->tmp_subkeys);
+    }
 
     return (struct flb_exp *) key;
 }
@@ -506,6 +536,10 @@ void flb_sp_cmd_condition_free(struct flb_sp_cmd *cmd)
         if (exp->type == FLB_EXP_KEY) {
             key = (struct flb_exp_key *) exp;
             flb_sds_destroy(key->name);
+            if (key->subkeys) {
+                flb_slist_destroy(key->subkeys);
+                flb_free(key->subkeys);
+            }
         }
         else if (exp->type == FLB_EXP_STRING) {
             val = (struct flb_exp_val *) exp;

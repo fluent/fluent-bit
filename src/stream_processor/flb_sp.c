@@ -672,18 +672,105 @@ struct flb_sp *flb_sp_create(struct flb_config *config)
     return sp;
 }
 
-static struct flb_exp_val *key_to_value(flb_sds_t ckey, msgpack_object *map)
+/* Lookup perfect match of sub-keys and map content */
+static int subkey_to_value(struct flb_exp_key *ekey, msgpack_object *map,
+                           struct flb_exp_val *result)
+{
+    int i = 0;
+    int levels;
+    int matched = 0;
+    msgpack_object *key_found = NULL;
+    msgpack_object key;
+    msgpack_object val;
+    msgpack_object cur_map;
+    struct mk_list *head;
+    struct flb_slist_entry *entry;
+
+    /* Expected number of map levels in the map */
+    levels = mk_list_size(ekey->subkeys);
+
+    cur_map = *map;
+
+    mk_list_foreach(head, ekey->subkeys) {
+        /* Key expected key entry */
+        entry = mk_list_entry(head, struct flb_slist_entry, _head);
+
+        /* Get map entry that matches entry name */
+        for (i = 0; i < cur_map.via.map.size; i++) {
+            key = cur_map.via.map.ptr[i].key;
+            val = cur_map.via.map.ptr[i].val;
+
+            /* A bit obvious, but it's better to validate data type */
+            if (key.type != MSGPACK_OBJECT_STR) {
+                continue;
+            }
+
+            /* Compare strings by length and content */
+            if (flb_sds_cmp(entry->str,
+                            (char *) key.via.str.ptr,
+                            key.via.str.size) != 0) {
+                key_found = NULL;
+                continue;
+            }
+
+            key_found = &key;
+            cur_map = val;
+            matched++;
+            break;
+        }
+
+        if (levels == matched) {
+            break;
+        }
+    }
+
+    /* No matches */
+    if (!key_found || (matched > 0 && levels != matched)) {
+        return -1;
+    }
+
+    /* Compose result with found value */
+    if (val.type == MSGPACK_OBJECT_BOOLEAN) {
+        result->type = FLB_EXP_BOOL;
+        result->val.boolean = val.via.boolean;
+        return 0;
+    }
+    else if (val.type == MSGPACK_OBJECT_POSITIVE_INTEGER ||
+             val.type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
+        result->type = FLB_EXP_INT;
+        result->val.i64 = val.via.i64;
+        return 0;
+    }
+    else if (val.type == MSGPACK_OBJECT_FLOAT32 ||
+             val.type == MSGPACK_OBJECT_FLOAT) {
+        result->type = FLB_EXP_FLOAT;
+        result->val.f64 = val.via.f64;
+        return 0;
+    }
+    else if (val.type == MSGPACK_OBJECT_STR) {
+        result->type = FLB_EXP_STRING;
+        result->val.string = flb_sds_create_len((char *) val.via.str.ptr,
+                                                val.via.str.size);
+        return 0;
+    }
+
+    return -1;
+}
+
+static struct flb_exp_val *key_to_value(struct flb_exp_key *ekey,
+                                        msgpack_object *map)
 {
      /* We might need to find a more efficient way to evaluate the keys
         appeain a condition */
     int i;
+    int ret;
     int map_size;
     msgpack_object key;
     msgpack_object val;
     struct flb_exp_val *result;
+    flb_sds_t ckey = ekey->name;
 
     map_size = map->via.map.size;
-
     for (i = 0; i < map_size; i++) {
         key = map->via.map.ptr[i].key;
         val = map->via.map.ptr[i].val;
@@ -722,6 +809,16 @@ static struct flb_exp_val *key_to_value(flb_sds_t ckey, msgpack_object *map)
             result->val.string = flb_sds_create_len((char *) val.via.str.ptr,
                                                     val.via.str.size);
             return result;
+        }
+        else if (val.type == MSGPACK_OBJECT_MAP && ekey->subkeys != NULL) {
+            ret = subkey_to_value(ekey, &val, result);
+            if (ret == 0) {
+                return result;
+            }
+            else {
+                flb_free(result);
+                return NULL;
+            }
         }
         else {
             flb_free(result);
@@ -797,7 +894,7 @@ static void numerical_comp(struct flb_exp_val *left,
     }
 
     /* Check if left expression value is a number, if so, convert it */
-    if (left->type == FLB_EXP_STRING) {
+    if (left->type == FLB_EXP_STRING && right->type != FLB_EXP_STRING) {
         exp_string_to_number(left);
     }
 
@@ -1044,7 +1141,7 @@ static struct flb_exp_val *reduce_expression(struct flb_exp *expression,
         }
         break;
     case FLB_EXP_KEY:
-        ret = key_to_value(((struct flb_exp_key *) expression)->name, map);
+        ret = key_to_value((struct flb_exp_key *) expression, map);
         flb_free(result);
         result = ret;
         break;

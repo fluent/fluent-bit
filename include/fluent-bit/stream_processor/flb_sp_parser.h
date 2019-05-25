@@ -126,6 +126,17 @@ struct flb_sp_cmd {
 
     struct mk_list gb_keys;        /* list head of group-by record fields */
 
+    /*
+     * When parsing a SQL statement that have conditionals keys with sub-keys
+     * like record['a']['b']['c'], the following 'tmp_subkeys' list will hold
+     * a list of the discovered sub-keys (linked list).
+     *
+     * When the parser gets into the parent field name (record), the list is
+     * moved to the proper struct flb_sp_key->subkeys list pointer and this
+     * field is re-created again as an empty list.
+     */
+    struct mk_list *tmp_subkeys;
+
     /* Source of data */
     int source_type;               /* FLB_SP_STREAM or FLB_SP_TAG */
     flb_sds_t source_name;         /* Name after stream: or tag:  */
@@ -158,6 +169,7 @@ struct flb_exp_key {
     int type;
     struct mk_list _head;
     flb_sds_t name;
+    struct mk_list *subkeys;
 };
 
 struct flb_exp_val {

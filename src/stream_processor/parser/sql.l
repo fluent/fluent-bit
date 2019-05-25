@@ -100,6 +100,8 @@ RECORD_TIME             return RECORD_TIME;
 "="                     |
 "("                     |
 ")"                     |
+"["                     |
+"]"                     |
 ";"                     { return yytext[0]; }
 
 "<"                     return LT;

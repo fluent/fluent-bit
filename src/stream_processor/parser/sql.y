@@ -11,6 +11,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_slist.h>
 #include <fluent-bit/stream_processor/flb_sp_parser.h>
 
 #include "sql_parser.h"
@@ -365,6 +366,19 @@ select: SELECT keys FROM source ';'
                      $$ = flb_sp_cmd_condition_key(cmd, $1);
                      flb_free($1);
                    }
+             |
+             IDENTIFIER subkey
+                   {
+                     $$ = flb_sp_cmd_condition_key(cmd, $1);
+                     flb_free($1);
+                   }
+        subkey: '[' STRING ']'
+                   {
+                     flb_slist_add(cmd->tmp_subkeys, $2);
+                     flb_free($2);
+                   }
+             |
+             subkey subkey
         value: INTEGER
                    {
                      $$ = flb_sp_cmd_condition_integer(cmd, $1);
