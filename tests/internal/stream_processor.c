@@ -37,7 +37,11 @@
 #include <unistd.h>
 #endif
 
-#define DATA_SAMPLES FLB_TESTS_DATA_PATH "/data/stream_processor/samples.mp"
+#define DATA_SAMPLES                                        \
+    FLB_TESTS_DATA_PATH "/data/stream_processor/samples.mp"
+
+#define DATA_SAMPLES_SUBKEYS                                        \
+    FLB_TESTS_DATA_PATH "/data/stream_processor/samples-subkeys.mp"
 
 #define MP_UOK MSGPACK_UNPACK_SUCCESS
 
@@ -588,6 +592,64 @@ struct task_check select_keys_checks[] = {
 
 };
 
+
+
+/* Callback functions to perform checks over results */
+static void cb_select_sub_blue(int id, struct task_check *check,
+                               char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 1 row */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 1);
+}
+
+static void cb_select_sub_num(int id, struct task_check *check,
+                              char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 2 rows */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 2);
+}
+
+static void cb_select_sub_colors(int id, struct task_check *check,
+                                 char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 2 rows */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 3);
+}
+
+/* Tests for 'test_select_subkeys' */
+struct task_check select_subkeys_checks[] = {
+    {
+        0, 0, 0,
+        "select_sub_blue",
+        "SELECT * FROM STREAM:FLB WHERE map['sub1']['sub2']['color'] = 'blue';",
+        cb_select_sub_blue
+    },
+    {
+        1, 0, 0,
+        "select_sub_num",
+        "SELECT * FROM STREAM:FLB WHERE map['sub1']['sub2'] = 123;",
+        cb_select_sub_num
+    },
+    {
+        2, 0, 0,
+        "select_sub_colors",
+        "SELECT * FROM STREAM:FLB WHERE "            \
+        "map['sub1']['sub2']['color'] = 'blue' OR "  \
+        "map['sub1']['sub2']['color'] = 'red'  OR "  \
+        "map['color'] = 'blue'; ",
+        cb_select_sub_colors
+    },
+};
+
 /* Tests to check syntactically valid/semantically invalid queries */
 char *invalid_query_checks[] = {
     "SELECT id, MIN(id) FROM STREAM:FLB;",
@@ -688,6 +750,94 @@ static void test_select_keys()
     /* Run every test */
     for (i = 0; i < checks; i++) {
         check = (struct task_check *) &select_keys_checks[i];
+
+        task = flb_sp_task_create(sp, check->name, check->exec);
+        if (!task) {
+            flb_error("[sp test] wrong check '%s', fix it!", check->name);
+            continue;
+        }
+
+        out_buf = NULL;
+        out_size = 0;
+
+        ret = flb_sp_test_do(sp, task,
+                             "samples", 7,
+                             data_buf, data_size,
+                             &out_buf, &out_size);
+        if (ret == -1) {
+            flb_error("[sp test] error processing check '%s'", check->name);
+            flb_sp_task_destroy(task);
+            continue;
+        }
+
+        flb_sp_test_fd_event(task, &out_buf, &out_size);
+
+        flb_info("[sp test] id=%i, SQL => '%s'", check->id, check->exec);
+        check->cb_check(check->id, check, out_buf, out_size);
+        flb_pack_print(out_buf, out_size);
+        flb_free(out_buf);
+    }
+
+    flb_free(data_buf);
+    flb_sp_destroy(sp);
+    mk_event_loop_destroy(config->evl);
+    flb_free(config);
+#ifdef _WIN32
+    WSACleanup();
+#endif
+}
+
+static void test_select_subkeys()
+{
+    int i;
+    int checks;
+    int ret;
+    char *out_buf;
+    size_t out_size;
+    char *data_buf;
+    size_t data_size;
+    struct task_check *check;
+    struct flb_config *config;
+    struct flb_sp *sp;
+    struct flb_sp_task *task;
+#ifdef _WIN32
+    WSADATA wsa_data;
+#endif
+
+    config = flb_calloc(1, sizeof(struct flb_config));
+    if (!config) {
+        flb_errno();
+        return;
+    }
+#ifdef _WIN32
+    WSAStartup(0x0201, &wsa_data);
+#endif
+    mk_list_init(&config->inputs);
+    mk_list_init(&config->stream_processor_tasks);
+
+    config->evl = mk_event_loop_create(256);
+
+    sp = flb_sp_create(config);
+    if (!sp) {
+        flb_error("[sp test] cannot create stream processor context");
+        flb_free(config);
+        return;
+    }
+
+    ret = file_to_buf(DATA_SAMPLES_SUBKEYS, &data_buf, &data_size);
+    if (ret == -1) {
+        flb_error("[sp test] cannot open DATA_SAMPLES file %s",
+                  DATA_SAMPLES_SUBKEYS);
+        flb_free(config);
+        return;
+    }
+
+    /* Total number of checks for select_subkeys */
+    checks = (sizeof(select_subkeys_checks) / sizeof(struct task_check));
+
+    /* Run every test */
+    for (i = 0; i < checks; i++) {
+        check = (struct task_check *) &select_subkeys_checks[i];
 
         task = flb_sp_task_create(sp, check->name, check->exec);
         if (!task) {
@@ -857,6 +1007,7 @@ static void test_window()
 TEST_LIST = {
     { "invalid_queries", invalid_queries},
     { "select_keys",     test_select_keys},
+    { "select_subkeys",  test_select_subkeys},
     { "window"     ,     test_window},
     { NULL }
 };
