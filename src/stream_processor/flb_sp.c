@@ -714,7 +714,10 @@ static int subkey_to_value(struct flb_exp_key *ekey, msgpack_object *map,
             }
 
             key_found = &key;
-            cur_map = val;
+
+            if (val.type == MSGPACK_OBJECT_MAP) {
+                cur_map = val;
+            }
             matched++;
             break;
         }
