@@ -252,8 +252,8 @@ static int gelf_send_udp(struct flb_out_gelf_config *ctx, char *msg,
   return 0;
 }
 
-void cb_gelf_flush(void *data, size_t bytes,
-                   char *tag, int tag_len,
+void cb_gelf_flush(const void *data, size_t bytes,
+                   const char *tag, int tag_len,
                    struct flb_input_instance *i_ins,
                    void *out_context,
                    struct flb_config *config)
@@ -350,7 +350,7 @@ int cb_gelf_init(struct flb_output_instance *ins, struct flb_config *config,
 {
     int ret;
     int fd;
-    char *tmp;
+    const char *tmp;
     struct flb_out_gelf_config *ctx = NULL;
 
 
