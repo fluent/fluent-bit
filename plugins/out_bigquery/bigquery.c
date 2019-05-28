@@ -310,8 +310,8 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static int bigquery_format(void *data, size_t bytes,
-                           char *tag, size_t tag_len,
+static int bigquery_format(const void *data, size_t bytes,
+                           const char *tag, size_t tag_len,
                            char **out_data, size_t *out_size,
                            struct flb_bigquery *ctx)
 {
@@ -408,8 +408,8 @@ static void set_authorization_header(struct flb_http_client *c,
     flb_http_add_header(c, "Authorization", 13, header, len);
 }
 
-static void cb_bigquery_flush(void *data, size_t bytes,
-                              char *tag, int tag_len,
+static void cb_bigquery_flush(const void *data, size_t bytes,
+                              const char *tag, int tag_len,
                               struct flb_input_instance *i_ins,
                               void *out_context,
                               struct flb_config *config)

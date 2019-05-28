@@ -171,7 +171,7 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
                                               struct flb_config *config)
 {
     int ret;
-    char *tmp;
+    const char *tmp;
     struct flb_bigquery *ctx;
     struct flb_bigquery_oauth_credentials *creds;
 
@@ -260,11 +260,8 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
     }
     else {
        if (creds->project_id) {
-            tmp = flb_sds_create(creds->project_id);
-            if (tmp) {
-                ctx->project_id = tmp;
-            }
-            else {
+            ctx->project_id = flb_sds_create(creds->project_id);
+            if (!ctx->project_id) {
                 flb_error("[out_bigquery] failed extracting 'project_id' from credentials.");
                 flb_bigquery_conf_destroy(ctx);
                 return NULL;
