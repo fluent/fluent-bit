@@ -137,7 +137,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         if (ctx->topic_key && !topic && val.type == MSGPACK_OBJECT_STR) {
             if (key.via.str.size == ctx->topic_key_len &&
                 strncmp(key.via.str.ptr, ctx->topic_key, ctx->topic_key_len) == 0) {
-                topic = flb_kafka_topic_lookup((char *) val.via.str.ptr,
+                topic = flb_kafka_topic_lookup(val.via.str.ptr,
                                                val.via.str.size,
                                                ctx);
             }
@@ -251,8 +251,8 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     return FLB_OK;
 }
 
-static void cb_kafka_flush(void *data, size_t bytes,
-                           char *tag, int tag_len,
+static void cb_kafka_flush(const void *data, size_t bytes,
+                           const char *tag, int tag_len,
                            struct flb_input_instance *i_ins,
                            void *out_context,
                            struct flb_config *config)

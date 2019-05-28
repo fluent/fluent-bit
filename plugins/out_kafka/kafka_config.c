@@ -31,7 +31,7 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
                                         struct flb_config *config)
 {
     int ret;
-    char *tmp;
+    const char *tmp;
     char errstr[512];
     struct mk_list *head;
     struct mk_list *topics;
