@@ -197,11 +197,11 @@ struct flb_config {
 
 struct flb_config *flb_config_init();
 void flb_config_exit(struct flb_config *config);
-char *flb_config_prop_get(char *key, struct mk_list *list);
+const char *flb_config_prop_get(const char *key, struct mk_list *list);
 int flb_config_set_property(struct flb_config *config,
-                            char *k, char *v);
+                            const char *k, const char *v);
 #ifdef FLB_HAVE_STATIC_CONF
-struct mk_rconf *flb_config_static_open(char *file);
+struct mk_rconf *flb_config_static_open(const char *file);
 #endif
 
 struct flb_service_config {

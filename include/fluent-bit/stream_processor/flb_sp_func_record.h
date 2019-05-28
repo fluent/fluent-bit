@@ -25,7 +25,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/stream_processor/flb_sp_parser.h>
 
-int flb_sp_func_record(char *tag, int tag_len, struct flb_time *tms,
+int flb_sp_func_record(const char *tag, int tag_len, struct flb_time *tms,
                        msgpack_packer *mp_pck, struct flb_sp_cmd_key *cmd_key);
 
 #endif

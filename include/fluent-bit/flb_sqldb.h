@@ -34,11 +34,11 @@ struct flb_sqldb {
     struct mk_list _head;     /* Link to config->sqldb_list    */
 };
 
-struct flb_sqldb *flb_sqldb_open(char *path, const char *desc,
+struct flb_sqldb *flb_sqldb_open(const char *path, const char *desc,
                                  struct flb_config *config);
 int flb_sqldb_close(struct flb_sqldb *db);
 
-int flb_sqldb_query(struct flb_sqldb *db, char *sql,
+int flb_sqldb_query(struct flb_sqldb *db, const char *sql,
                     int (*callback) (void *, int, char **, char **),
                     void *data);
 int64_t flb_sqldb_last_id(struct flb_sqldb *db);

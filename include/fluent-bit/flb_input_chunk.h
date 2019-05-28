@@ -38,22 +38,22 @@ struct flb_input_chunk {
 };
 
 struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
-                                               char *tag, int tag_len);
+                                               const char *tag, int tag_len);
 int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del);
 void flb_input_chunk_destroy_all(struct flb_input_instance *in);
 int flb_input_chunk_write(void *data, const char *buf, size_t len);
 int flb_input_chunk_write_at(void *data, off_t offset,
                              const char *buf, size_t len);
 int flb_input_chunk_append_obj(struct flb_input_instance *in,
-                               char *tag, int tag_len,
+                               const char *tag, int tag_len,
                                msgpack_object data);
 int flb_input_chunk_append_raw(struct flb_input_instance *in,
-                               char *tag, size_t tag_len,
-                               void *buf, size_t buf_size);
-void *flb_input_chunk_flush(struct flb_input_chunk *ic, size_t *size);
+                               const char *tag, size_t tag_len,
+                               const void *buf, size_t buf_size);
+const void *flb_input_chunk_flush(struct flb_input_chunk *ic, size_t *size);
 int flb_input_chunk_release_lock(struct flb_input_chunk *ic);
 int flb_input_chunk_get_tag(struct flb_input_chunk *ic,
-                            char **tag_buf, int *tag_len);
+                            const char **tag_buf, int *tag_len);
 ssize_t flb_input_chunk_get_size(struct flb_input_chunk *ic);
 size_t flb_input_chunk_set_limits(struct flb_input_instance *in);
 size_t flb_input_chunk_total_size(struct flb_input_instance *in);

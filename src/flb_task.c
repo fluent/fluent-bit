@@ -203,11 +203,11 @@ static struct flb_task *task_alloc(struct flb_config *config)
 
 /* Create an engine task to handle the output plugin flushing work */
 struct flb_task *flb_task_create(uint64_t ref_id,
-                                 char *buf,
+                                 const char *buf,
                                  size_t size,
                                  struct flb_input_instance *i_ins,
                                  void *ic,
-                                 char *tag_buf, int tag_len,
+                                 const char *tag_buf, int tag_len,
                                  struct flb_config *config)
 {
     int count = 0;

@@ -37,7 +37,7 @@
 #include <fluent-bit/flb_plugin_proxy.h>
 
 /* Validate the the output address protocol */
-static int check_protocol(char *prot, char *output)
+static int check_protocol(const char *prot, const char *output)
 {
     int len;
     char *p;
@@ -201,7 +201,7 @@ static inline int instance_id(struct flb_config *config)
  * proper type and if valid, populate the global config.
  */
 struct flb_output_instance *flb_output_new(struct flb_config *config,
-                                           char *output, void *data)
+                                           const char *output, void *data)
 {
     int ret = -1;
     int mask_id;
@@ -334,7 +334,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     return instance;
 }
 
-static inline int prop_key_check(char *key, char *kv, int k_len)
+static inline int prop_key_check(const char *key, const char *kv, int k_len)
 {
     int len;
 
@@ -347,7 +347,8 @@ static inline int prop_key_check(char *key, char *kv, int k_len)
 }
 
 /* Override a configuration property for the given input_instance plugin */
-int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
+int flb_output_set_property(struct flb_output_instance *out,
+                            const char *k, const char *v)
 {
     int len;
     char *tmp;
@@ -368,7 +369,7 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
     }
 #ifdef FLB_HAVE_REGEX
     else if (prop_key_check("match_regex", k, len) == 0) {
-        out->match_regex = flb_regex_create((unsigned char *) tmp);
+        out->match_regex = flb_regex_create(tmp);
         flb_free(tmp);
     }
 #endif
@@ -471,7 +472,7 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
 }
 
 /* Configure a default hostname and TCP port if they are not set */
-void flb_output_net_default(char *host, int port,
+void flb_output_net_default(const char *host, const int port,
                             struct flb_output_instance *o_ins)
 {
     /* Set default network configuration */
@@ -484,7 +485,7 @@ void flb_output_net_default(char *host, int port,
 }
 
 /* Return an instance name or alias */
-char *flb_output_name(struct flb_output_instance *in)
+const char *flb_output_name(struct flb_output_instance *in)
 {
     if (in->alias) {
         return in->alias;
@@ -493,7 +494,7 @@ char *flb_output_name(struct flb_output_instance *in)
     return in->name;
 }
 
-char *flb_output_get_property(char *key, struct flb_output_instance *o_ins)
+const char *flb_output_get_property(const char *key, struct flb_output_instance *o_ins)
 {
     return flb_config_prop_get(key, &o_ins->properties);
 }
@@ -502,7 +503,7 @@ char *flb_output_get_property(char *key, struct flb_output_instance *o_ins)
 int flb_output_init(struct flb_config *config)
 {
     int ret;
-    char *name;
+    const char *name;
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_output_instance *ins;

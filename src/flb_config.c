@@ -324,7 +324,7 @@ void flb_config_exit(struct flb_config *config)
     flb_free(config);
 }
 
-char *flb_config_prop_get(char *key, struct mk_list *list)
+const char *flb_config_prop_get(const char *key, struct mk_list *list)
 {
     struct mk_list *head;
     struct flb_config_prop *p;
@@ -339,7 +339,7 @@ char *flb_config_prop_get(char *key, struct mk_list *list)
     return NULL;
 }
 
-static inline int prop_key_check(char *key, char *kv, int k_len)
+static inline int prop_key_check(const char *key, const char *kv, int k_len)
 {
     size_t len;
 
@@ -350,7 +350,7 @@ static inline int prop_key_check(char *key, char *kv, int k_len)
     return -1;
 }
 
-static int set_log_level(struct flb_config *config, char *v_str)
+static int set_log_level(struct flb_config *config, const char *v_str)
 {
     if (v_str != NULL) {
         if (strcasecmp(v_str, "error") == 0) {
@@ -378,7 +378,7 @@ static int set_log_level(struct flb_config *config, char *v_str)
     return 0;
 }
 
-static inline int atobool(char*v)
+static inline int atobool(const char *v)
 {
     return  (strcasecmp("true", v) == 0 ||
              strcasecmp("on", v) == 0 ||
@@ -388,7 +388,7 @@ static inline int atobool(char*v)
 }
 
 int flb_config_set_property(struct flb_config *config,
-                            char *k, char *v)
+                            const char *k, const char *v)
 {
     int i=0;
     int ret = -1;

@@ -74,7 +74,7 @@ struct flb_metric *flb_metrics_get_id(int id, struct flb_metrics *metrics)
     return NULL;
 }
 
-struct flb_metrics *flb_metrics_create(char *title)
+struct flb_metrics *flb_metrics_create(const char *title)
 {
     int ret;
     struct flb_metrics *metrics;
@@ -99,7 +99,7 @@ struct flb_metrics *flb_metrics_create(char *title)
     return metrics;
 }
 
-int flb_metrics_title(char *title, struct flb_metrics *metrics)
+int flb_metrics_title(const char *title, struct flb_metrics *metrics)
 {
     int ret;
 
@@ -112,7 +112,7 @@ int flb_metrics_title(char *title, struct flb_metrics *metrics)
     return 0;
 }
 
-int flb_metrics_add(int id, char *title, struct flb_metrics *metrics)
+int flb_metrics_add(int id, const char *title, struct flb_metrics *metrics)
 {
     int ret;
     struct flb_metric *m;

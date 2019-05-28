@@ -33,27 +33,26 @@
 #include <onigmo.h>
 
 struct flb_regex {
-    unsigned char *pattern;
     OnigRegex regex;
 };
 
 struct flb_regex_search {
     int last_pos;
     OnigRegion *region;
-    unsigned char *str;
-    void (*cb_match) (unsigned char *,          /* name  */
-                      unsigned char *, size_t,  /* value */
+    const char *str;
+    void (*cb_match) (const char *,          /* name  */
+                      const char *, size_t,  /* value */
                       void *);                  /* caller data */
     void *data;
 };
 
 int flb_regex_init();
-struct flb_regex *flb_regex_create(unsigned char *pattern);
-ssize_t flb_regex_do(struct flb_regex *r, unsigned char *str, size_t slen,
+struct flb_regex *flb_regex_create(const char *pattern);
+ssize_t flb_regex_do(struct flb_regex *r, const char *str, size_t slen,
                      struct flb_regex_search *result);
 int flb_regex_parse(struct flb_regex *r, struct flb_regex_search *result,
-                    void (*cb_match) (unsigned char *,          /* name  */
-                                      unsigned char *, size_t,  /* value */
+                    void (*cb_match) (const char *,          /* name  */
+                                      const char *, size_t,  /* value */
                                       void *),                  /* caller data */
                     void *data);
 int flb_regex_destroy(struct flb_regex *r);

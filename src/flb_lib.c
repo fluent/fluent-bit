@@ -87,7 +87,7 @@ static inline struct flb_output_instance *out_instance_get(flb_ctx_t *ctx,
 }
 
 static inline struct flb_filter_instance *filter_instance_get(flb_ctx_t *ctx,
-                                                         int ffd)
+                                                              int ffd)
 {
     struct mk_list *head;
     struct flb_filter_instance *f_ins;
@@ -198,7 +198,7 @@ void flb_destroy(flb_ctx_t *ctx)
 }
 
 /* Defines a new input instance */
-int flb_input(flb_ctx_t *ctx, char *input, void *data)
+int flb_input(flb_ctx_t *ctx, const char *input, void *data)
 {
     struct flb_input_instance *i_ins;
 
@@ -211,7 +211,7 @@ int flb_input(flb_ctx_t *ctx, char *input, void *data)
 }
 
 /* Defines a new output instance */
-int flb_output(flb_ctx_t *ctx, char *output, void *data)
+int flb_output(flb_ctx_t *ctx, const char *output, void *data)
 {
     struct flb_output_instance *o_ins;
 
@@ -224,7 +224,7 @@ int flb_output(flb_ctx_t *ctx, char *output, void *data)
 }
 
 /* Defines a new filter instance */
-int flb_filter(flb_ctx_t *ctx, char *filter, void *data)
+int flb_filter(flb_ctx_t *ctx, const char *filter, void *data)
 {
     struct flb_filter_instance *f_ins;
 
@@ -364,7 +364,7 @@ int flb_service_set(flb_ctx_t *ctx, ...)
 }
 
 /* Load a configuration file that may be used by the input or output plugin */
-int flb_lib_config_file(struct flb_lib_ctx *ctx, char *path)
+int flb_lib_config_file(struct flb_lib_ctx *ctx, const char *path)
 {
     if (access(path, R_OK) != 0) {
         perror("access");
@@ -392,7 +392,7 @@ int flb_lib_free(void* data)
 
 
 /* Push some data into the Engine */
-int flb_lib_push(flb_ctx_t *ctx, int ffd, void *data, size_t len)
+int flb_lib_push(flb_ctx_t *ctx, int ffd, const void *data, size_t len)
 {
     int ret;
     struct flb_input_instance *i_ins;

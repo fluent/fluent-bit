@@ -22,5 +22,5 @@
 #define FLB_SP_WINDOW_TUMBLING  1
 
 void flb_sp_window_prune(struct flb_sp_task *task);
-int flb_sp_window_populate(struct flb_sp_task *task, char *buf_data,
+int flb_sp_window_populate(struct flb_sp_task *task, const char *buf_data,
                            size_t buf_size);

@@ -54,8 +54,8 @@ static int header_available(struct flb_http_client *c, int bytes)
 
 /* Try to find a header value in the buffer */
 static int header_lookup(struct flb_http_client *c,
-                         char *header, int header_len,
-                         char **out_val, int *out_len)
+                         const char *header, int header_len,
+                         const char **out_val, int *out_len)
 {
     char *p;
     char *crlf;
@@ -98,7 +98,7 @@ static int check_chunked_encoding(struct flb_http_client *c)
 {
     int ret;
     int len;
-    char *header = NULL;
+    const char *header = NULL;
 
     ret = header_lookup(c, "Transfer-Encoding: ", 19,
                         &header, &len);
@@ -123,7 +123,7 @@ static int check_content_length(struct flb_http_client *c)
 {
     int ret;
     int len;
-    char *header;
+    const char *header;
     char tmp[256];
 
     if (c->resp.status == 204) {
@@ -365,14 +365,14 @@ static int process_data(struct flb_http_client *c)
     return FLB_HTTP_MORE;
 }
 
-static int proxy_parse(char *proxy, struct flb_http_client *c)
+static int proxy_parse(const char *proxy, struct flb_http_client *c)
 {
     int len;
     int port;
     int off = 0;
-    char *s;
-    char *e;
-    char *host;
+    const char *s;
+    const char *e;
+    const char *host;
 
     len = strlen(proxy);
     if (len < 7) {
@@ -429,10 +429,10 @@ static int proxy_parse(char *proxy, struct flb_http_client *c)
 }
 
 struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
-                                        int method, char *uri,
-                                        char *body, size_t body_len,
-                                        char *host, int port,
-                                        char *proxy, int flags)
+                                        int method, const char *uri,
+                                        const char *body, size_t body_len,
+                                        const char *host, int port,
+                                        const char *proxy, int flags)
 {
     int ret;
     char *buf = NULL;
@@ -653,8 +653,8 @@ int flb_http_buffer_increase(struct flb_http_client *c, size_t size,
 
 /* Append a custom HTTP header to the request */
 int flb_http_add_header(struct flb_http_client *c,
-                        char *key, size_t key_len,
-                        char *val, size_t val_len)
+                        const char *key, size_t key_len,
+                        const char *val, size_t val_len)
 {
     int required;
     int new_size;
@@ -707,7 +707,8 @@ int flb_http_add_header(struct flb_http_client *c,
     return 0;
 }
 
-int flb_http_basic_auth(struct flb_http_client *c, char *user, char *passwd)
+int flb_http_basic_auth(struct flb_http_client *c,
+                        const char *user, const char *passwd)
 {
     int ret;
     int len_u;

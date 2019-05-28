@@ -28,7 +28,7 @@
 #include <fluent-bit/flb_upstream.h>
 
 int net_io_tls_write(struct flb_thread *th, struct flb_upstream_conn *u_conn,
-                     void *data, size_t len, size_t *out_len);
+                     const void *data, size_t len, size_t *out_len);
 int net_io_tls_read(struct flb_thread *th, struct flb_upstream_conn *u_conn,
                     void *buf, size_t len);
 

@@ -35,7 +35,7 @@
 
 #define try_to_write_str  flb_utils_write_str
 
-int flb_json_tokenise(char *js, size_t len,
+int flb_json_tokenise(const char *js, size_t len,
                       struct flb_pack_state *state)
 {
     int ret;
@@ -71,10 +71,10 @@ int flb_json_tokenise(char *js, size_t len,
     return 0;
 }
 
-static inline int is_float(char *buf, int len)
+static inline int is_float(const char *buf, int len)
 {
-    char *end = buf + len;
-    char *p = buf;
+    const char *end = buf + len;
+    const char *p = buf;
 
     while (p <= end) {
         if (*p == '.') {
@@ -86,15 +86,15 @@ static inline int is_float(char *buf, int len)
 }
 
 /* Receive a tokenized JSON message and convert it to MsgPack */
-static char *tokens_to_msgpack(char *js,
-                               jsmntok_t *tokens, int arr_size, int *out_size,
+static char *tokens_to_msgpack(const char *js,
+                               const jsmntok_t *tokens, int arr_size, int *out_size,
                                int *last_byte)
 {
     int i;
     int flen;
-    char *p;
+    const char *p;
     char *buf;
-    jsmntok_t *t;
+    const jsmntok_t *t;
     msgpack_packer pck;
     msgpack_sbuffer sbuf;
 
@@ -178,7 +178,7 @@ static char *tokens_to_msgpack(char *js,
  * This routine do not keep a state in the parser, do not use it for big
  * JSON messages.
  */
-int flb_pack_json(char *js, size_t len, char **buffer, size_t *size,
+int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size,
                   int *root_type)
 
 {
@@ -253,7 +253,7 @@ void flb_pack_state_reset(struct flb_pack_state *s)
  * keeps a parser and tokens state, allowing to process big messages and
  * resume the parsing process instead of start from zero.
  */
-int flb_pack_json_state(char *js, size_t len,
+int flb_pack_json_state(const char *js, size_t len,
                         char **buffer, int *size,
                         struct flb_pack_state *state)
 {
@@ -353,7 +353,7 @@ static int pack_print_fluent_record(size_t cnt, msgpack_unpacked result)
     return 0;
 }
 
-void flb_pack_print(char *data, size_t bytes)
+void flb_pack_print(const char *data, size_t bytes)
 {
     int ret;
     msgpack_unpacked result;
@@ -376,7 +376,7 @@ void flb_pack_print(char *data, size_t bytes)
 
 
 static inline int try_to_write(char *buf, int *off, size_t left,
-                               char *str, size_t str_len)
+                               const char *str, size_t str_len)
 {
     if (str_len <= 0){
         str_len = strlen(str);
@@ -390,7 +390,7 @@ static inline int try_to_write(char *buf, int *off, size_t left,
 }
 
 
-static int msgpack2json(char *buf, int *off, size_t left, msgpack_object *o)
+static int msgpack2json(char *buf, int *off, size_t left, const msgpack_object *o)
 {
     int ret = FLB_FALSE;
     int i;
@@ -434,7 +434,7 @@ static int msgpack2json(char *buf, int *off, size_t left, msgpack_object *o)
     case MSGPACK_OBJECT_STR:
         if (try_to_write(buf, off, left, "\"", 1) &&
             (o->via.str.size > 0 ?
-             try_to_write_str(buf, off, left, (char*)o->via.str.ptr, o->via.str.size)
+             try_to_write_str(buf, off, left, o->via.str.ptr, o->via.str.size)
              : 1/* nothing to do */) &&
             try_to_write(buf, off, left, "\"", 1)) {
             ret = FLB_TRUE;
@@ -444,7 +444,7 @@ static int msgpack2json(char *buf, int *off, size_t left, msgpack_object *o)
     case MSGPACK_OBJECT_BIN:
         if (try_to_write(buf, off, left, "\"", 1) &&
             (o->via.bin.size > 0 ?
-             try_to_write_str(buf, off, left, (char*)o->via.bin.ptr, o->via.bin.size)
+             try_to_write_str(buf, off, left, o->via.bin.ptr, o->via.bin.size)
               : 1 /* nothing to do */) &&
             try_to_write(buf, off, left, "\"", 1)) {
             ret = FLB_TRUE;
@@ -540,7 +540,7 @@ static int msgpack2json(char *buf, int *off, size_t left, msgpack_object *o)
  *  @return success   ? a number characters filled : negative value
  */
 int flb_msgpack_to_json(char *json_str, size_t json_size,
-                        msgpack_object *obj)
+                        const msgpack_object *obj)
 {
     int ret = -1;
     int off = 0;
@@ -554,7 +554,7 @@ int flb_msgpack_to_json(char *json_str, size_t json_size,
     return ret ? off: ret;
 }
 
-flb_sds_t flb_msgpack_raw_to_json_sds(void *in_buf, size_t in_size)
+flb_sds_t flb_msgpack_raw_to_json_sds(const void *in_buf, size_t in_size)
 {
     int ret;
     size_t off = 0;
@@ -608,7 +608,7 @@ flb_sds_t flb_msgpack_raw_to_json_sds(void *in_buf, size_t in_size)
  *  @param  data     The msgpack_unpacked data.
  *  @return success  ? allocated json str ptr : NULL
  */
-char *flb_msgpack_to_json_str(size_t size, msgpack_object *obj)
+char *flb_msgpack_to_json_str(size_t size, const msgpack_object *obj)
 {
     int ret;
     char *buf = NULL;
@@ -651,7 +651,7 @@ char *flb_msgpack_to_json_str(size_t size, msgpack_object *obj)
     return buf;
 }
 
-int flb_msgpack_raw_to_json_str(char *buf, size_t buf_size,
+int flb_msgpack_raw_to_json_str(const char *buf, size_t buf_size,
                                 char **out_buf, size_t *out_size)
 {
     int ret;
@@ -772,7 +772,9 @@ int flb_msgpack_expand_map(char *map_data, size_t map_size,
 }
 
 static flb_sds_t flb_msgpack_gelf_key(flb_sds_t *s, int in_array,
-    char *prefix_key, int prefix_key_len, int concat, char *key, int key_len)
+                                      const char *prefix_key, int prefix_key_len,
+                                      int concat,
+                                      const char *key, int key_len)
 {
     int i;
     flb_sds_t tmp;
@@ -843,7 +845,7 @@ static flb_sds_t flb_msgpack_gelf_key(flb_sds_t *s, int in_array,
 }
 
 static flb_sds_t flb_msgpack_gelf_value(flb_sds_t *s, int quote,
-                                        char *val, int val_len)
+                                        const char *val, int val_len)
 {
     flb_sds_t tmp;
 
@@ -871,7 +873,7 @@ static flb_sds_t flb_msgpack_gelf_value(flb_sds_t *s, int quote,
 }
 
 static flb_sds_t flb_msgpack_gelf_value_ext(flb_sds_t *s, int quote,
-                                            char *val, int val_len)
+                                            const char *val, int val_len)
 {
     static const char int2hex[] = "0123456789abcdef";
     flb_sds_t tmp;
@@ -907,7 +909,7 @@ static flb_sds_t flb_msgpack_gelf_value_ext(flb_sds_t *s, int quote,
 }
 
 static flb_sds_t flb_msgpack_gelf_flatten(flb_sds_t *s, msgpack_object *o,
-                                          char *prefix, int prefix_len,
+                                          const char *prefix, int prefix_len,
                                           int in_array)
 {
     int i;
@@ -952,7 +954,7 @@ static flb_sds_t flb_msgpack_gelf_flatten(flb_sds_t *s, msgpack_object *o,
 
     case MSGPACK_OBJECT_STR:
         tmp = flb_msgpack_gelf_value(s, !in_array,
-                                     (char *)o->via.str.ptr,
+                                     o->via.str.ptr,
                                      o->via.str.size);
         if (tmp == NULL) return NULL;
         *s = tmp;
@@ -960,7 +962,7 @@ static flb_sds_t flb_msgpack_gelf_flatten(flb_sds_t *s, msgpack_object *o,
 
     case MSGPACK_OBJECT_BIN:
         tmp = flb_msgpack_gelf_value(s, !in_array,
-                                     (char *)o->via.bin.ptr,
+                                     o->via.bin.ptr,
                                      o->via.bin.size);
         if (tmp == NULL) return NULL;
         *s = tmp;
@@ -968,7 +970,7 @@ static flb_sds_t flb_msgpack_gelf_flatten(flb_sds_t *s, msgpack_object *o,
 
     case MSGPACK_OBJECT_EXT:
         tmp = flb_msgpack_gelf_value_ext(s, !in_array,
-                                         (char *)o->via.ext.ptr,
+                                         o->via.ext.ptr,
                                          o->via.ext.size);
         if (tmp == NULL) return NULL;
         *s = tmp;
@@ -1013,7 +1015,7 @@ static flb_sds_t flb_msgpack_gelf_flatten(flb_sds_t *s, msgpack_object *o,
                 msgpack_object *k = &((p+i)->key);
                 msgpack_object *v = &((p+i)->val);
 
-                char *key = (char *) k->via.str.ptr;
+                const char *key = k->via.str.ptr;
                 int key_len = k->via.str.size;
 
                 if (v->type == MSGPACK_OBJECT_MAP) {
@@ -1164,9 +1166,9 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
         msgpack_object_kv *p = o->via.map.ptr;
 
         for (i = 0; i < loop; i++) {
-            char *key = NULL;
+            const char *key = NULL;
             int key_len;
-            char *val = NULL;
+            const char *val = NULL;
             int val_len;
             int quote = FLB_FALSE;
             int custom_key = FLB_FALSE;
@@ -1179,11 +1181,11 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
             }
 
             if (k->type == MSGPACK_OBJECT_STR) {
-                key = (char *) k->via.str.ptr;
+                key = k->via.str.ptr;
                 key_len = k->via.str.size;
             }
             else {
-                key = (char *) k->via.bin.ptr;
+                key = k->via.bin.ptr;
                 key_len = k->via.bin.size;
             }
 
@@ -1220,7 +1222,7 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
                             return NULL;
                         }
                 } else if (v->type == MSGPACK_OBJECT_STR){
-                    val     = (char *) v->via.str.ptr;
+                    val     = v->via.str.ptr;
                     val_len = v->via.str.size;
                     if ( val_len != 1 || val[0] < '0' || val[0] > '7' ) {
                             flb_error("[flb_msgpack_to_gelf] level is '%.*s', but should be in 0..7", val_len, val);
@@ -1313,18 +1315,18 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
                 else if (v->type == MSGPACK_OBJECT_STR) {
                     /* String value */
                     quote   = FLB_TRUE;
-                    val     = (char *) v->via.str.ptr;
+                    val     = v->via.str.ptr;
                     val_len = v->via.str.size;
                 }
                 else if (v->type == MSGPACK_OBJECT_BIN) {
                     /* Bin value */
                     quote   = FLB_TRUE;
-                    val     = (char *) v->via.bin.ptr;
+                    val     = v->via.bin.ptr;
                     val_len = v->via.bin.size;
                 }
                 else if (v->type == MSGPACK_OBJECT_EXT) {
                     quote   = FLB_TRUE;
-                    val     = (char *)o->via.ext.ptr;
+                    val     = o->via.ext.ptr;
                     val_len = o->via.ext.size;
                 }
 

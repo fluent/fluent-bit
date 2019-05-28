@@ -108,16 +108,16 @@ struct flb_sp *flb_sp_create(struct flb_config *config);
 void flb_sp_destroy(struct flb_sp *sp);
 
 int flb_sp_do(struct flb_sp *sp, struct flb_input_instance *in,
-              char *tag, int tag_len,
-              char *buf_data, size_t buf_size);
+              const char *tag, int tag_len,
+              const char *buf_data, size_t buf_size);
 int flb_sp_test_do(struct flb_sp *sp, struct flb_sp_task *task,
-                   char *tag, int tag_len,
-                   char *buf_data, size_t buf_size,
+                   const char *tag, int tag_len,
+                   const char *buf_data, size_t buf_size,
                    char **out_data, size_t *out_size);
 int flb_sp_test_fd_event(struct flb_sp_task *task, char **out_data, size_t *out_size);
 
-struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, char *name,
-                                       char *query);
+struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, const char *name,
+                                       const char *query);
 int flb_sp_fd_event(int fd, struct flb_sp *sp);
 void flb_sp_task_destroy(struct flb_sp_task *task);
 void flb_sp_aggr_node_destroy(struct aggr_node *aggr_node);

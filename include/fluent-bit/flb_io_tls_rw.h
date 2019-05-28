@@ -32,7 +32,7 @@
 int flb_io_tls_net_read(struct flb_thread *th, struct flb_upstream_conn *u_conn,
                         void *buf, size_t len);
 int flb_io_tls_net_write(struct flb_thread *th, struct flb_upstream_conn *u_conn,
-                         void *data, size_t len, size_t *out_len);
+                         const void *data, size_t len, size_t *out_len);
 
 #endif
 

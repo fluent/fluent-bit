@@ -29,11 +29,11 @@
 #include <fluent-bit/stream_processor/flb_sp_stream.h>
 
 /* Function defined in plugins/in_stream_processor/sp.c */
-int in_stream_processor_add_chunk(char *buf_data, size_t buf_size,
+int in_stream_processor_add_chunk(const char *buf_data, size_t buf_size,
                                   struct flb_input_instance *in);
 
 /* Check if a given stream name already exists */
-static int sp_stream_name_exists(char *name, struct flb_config *config)
+static int sp_stream_name_exists(const char *name, struct flb_config *config)
 {
     struct mk_list *head;
     struct flb_input_instance *in;
@@ -54,11 +54,11 @@ static int sp_stream_name_exists(char *name, struct flb_config *config)
     return FLB_FALSE;
 }
 
-int flb_sp_stream_create(char *name, struct flb_sp_task *task,
+int flb_sp_stream_create(const char *name, struct flb_sp_task *task,
                          struct flb_sp *sp)
 {
     int ret;
-    char *tag;
+    const char *tag;
     struct flb_input_instance *in;
     struct flb_sp_stream *stream;
 
@@ -157,7 +157,7 @@ int flb_sp_stream_create(char *name, struct flb_sp_task *task,
     return 0;
 }
 
-int flb_sp_stream_append_data(char *buf_data, size_t buf_size,
+int flb_sp_stream_append_data(const char *buf_data, size_t buf_size,
                               struct flb_sp_stream *stream)
 {
     return in_stream_processor_add_chunk(buf_data, buf_size, stream->in);

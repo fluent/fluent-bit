@@ -57,7 +57,7 @@ static int ht_add(struct flb_hash *ht, char *key, char *val)
   int idn;
   int klen;
   int vlen;
-  char *out_buf;
+  const char *out_buf;
   size_t out_size;
 
   klen = strlen(key);
@@ -87,7 +87,7 @@ void test_create_zero()
 void test_single()
 {
     int ret;
-    char *out_buf;
+    const char *out_buf;
     size_t out_size;
     struct flb_hash *ht;
 
@@ -219,7 +219,7 @@ void test_delete_all()
 void test_random_eviction()
 {
     int ret;
-    char *out_buf;
+    const char *out_buf;
     size_t out_size;
     struct flb_hash *ht;
 

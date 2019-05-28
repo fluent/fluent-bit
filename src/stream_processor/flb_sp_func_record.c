@@ -25,7 +25,7 @@
 
 static inline void pack_key(msgpack_packer *mp_pck,
                             struct flb_sp_cmd_key *cmd_key,
-                            char *name, int len)
+                            const char *name, int len)
 {
     if (cmd_key->alias) {
         msgpack_pack_str(mp_pck, flb_sds_len(cmd_key->alias));
@@ -38,7 +38,7 @@ static inline void pack_key(msgpack_packer *mp_pck,
     }
 }
 
-static int func_tag(char *tag, int tag_len,
+static int func_tag(const char *tag, int tag_len,
                     msgpack_packer *mp_pck, struct flb_sp_cmd_key *cmd_key)
 {
     pack_key(mp_pck, cmd_key, "RECORD_TAG()", 12);
@@ -64,7 +64,7 @@ static int func_time(struct flb_time *tms, msgpack_packer *mp_pck,
  * Wrapper to handle record functions, returns the number of entries added
  * to the map.
  */
-int flb_sp_func_record(char *tag, int tag_len, struct flb_time *tms,
+int flb_sp_func_record(const char *tag, int tag_len, struct flb_time *tms,
                        msgpack_packer *mp_pck, struct flb_sp_cmd_key *cmd_key)
 {
     switch (cmd_key->record_func) {

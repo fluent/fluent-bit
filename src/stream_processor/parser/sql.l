@@ -5,7 +5,7 @@
 #include <fluent-bit/flb_str.h>
 #include "sql_parser.h"
 
-static inline char *remove_dup_qoutes(char *s, size_t n)
+static inline char *remove_dup_qoutes(const char *s, size_t n)
 {
     char *str;
     int dups;

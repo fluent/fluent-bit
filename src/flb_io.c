@@ -200,7 +200,7 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
 }
 
 static int net_io_write(struct flb_upstream_conn *u_conn,
-                        void *data, size_t len, size_t *out_len)
+                        const void *data, size_t len, size_t *out_len)
 {
     int ret;
     int tries = 0;
@@ -251,7 +251,7 @@ static int net_io_write(struct flb_upstream_conn *u_conn,
  */
 static FLB_INLINE int net_io_write_async(struct flb_thread *th,
                                          struct flb_upstream_conn *u_conn,
-                                         void *data, size_t len, size_t *out_len)
+                                         const void *data, size_t len, size_t *out_len)
 {
     int ret = 0;
     int error;
@@ -429,7 +429,7 @@ static FLB_INLINE ssize_t net_io_read_async(struct flb_thread *th,
 }
 
 /* Write data to an upstream connection/server */
-int flb_io_net_write(struct flb_upstream_conn *u_conn, void *data,
+int flb_io_net_write(struct flb_upstream_conn *u_conn, const void *data,
                      size_t len, size_t *out_len)
 {
     int ret = -1;

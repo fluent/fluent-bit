@@ -40,7 +40,7 @@ static inline int instance_id(struct flb_config *config)
     return (entry->id + 1);
 }
 
-static inline int prop_key_check(char *key, char *kv, int k_len)
+static inline int prop_key_check(const char *key, const char *kv, int k_len)
 {
     int len;
 
@@ -53,8 +53,8 @@ static inline int prop_key_check(char *key, char *kv, int k_len)
 }
 
 void flb_filter_do(struct flb_input_chunk *ic,
-                   void *data, size_t bytes,
-                   char *tag, int tag_len,
+                   const void *data, size_t bytes,
+                   const char *tag, int tag_len,
                    struct flb_config *config)
 {
     int ret;
@@ -64,7 +64,7 @@ void flb_filter_do(struct flb_input_chunk *ic,
     int diff = 0;
 #endif
     char *ntag;
-    char *work_data;
+    const char *work_data;
     size_t work_size;
     void *out_buf;
     size_t cur_size;
@@ -87,7 +87,7 @@ void flb_filter_do(struct flb_input_chunk *ic,
     ntag[tag_len] = '\0';
 
 
-    work_data = (char *) data;
+    work_data = (const char *) data;
     work_size = bytes;
 
     /* Count number of incoming records */
@@ -186,7 +186,8 @@ void flb_filter_do(struct flb_input_chunk *ic,
     flb_free(ntag);
 }
 
-int flb_filter_set_property(struct flb_filter_instance *filter, char *k, char *v)
+int flb_filter_set_property(struct flb_filter_instance *filter,
+                            const char *k, const char *v)
 {
     int len;
     char *tmp;
@@ -201,7 +202,7 @@ int flb_filter_set_property(struct flb_filter_instance *filter, char *k, char *v
     /* Check if the key is a known/shared property */
 #ifdef FLB_HAVE_REGEX
     if (prop_key_check("match_regex", k, len) == 0) {
-        filter->match_regex = flb_regex_create((unsigned char *) tmp);
+        filter->match_regex = flb_regex_create(tmp);
     }
     else
 #endif
@@ -227,7 +228,7 @@ int flb_filter_set_property(struct flb_filter_instance *filter, char *k, char *v
     return 0;
 }
 
-char *flb_filter_get_property(char *key, struct flb_filter_instance *i)
+const char *flb_filter_get_property(const char *key, struct flb_filter_instance *i)
 {
     return flb_config_prop_get(key, &i->properties);
 }
@@ -289,7 +290,7 @@ void flb_filter_exit(struct flb_config *config)
 }
 
 struct flb_filter_instance *flb_filter_new(struct flb_config *config,
-                                           char *filter, void *data)
+                                           const char *filter, void *data)
 {
     int id;
     struct mk_list *head;
@@ -341,7 +342,7 @@ struct flb_filter_instance *flb_filter_new(struct flb_config *config,
 }
 
 /* Return an instance name or alias */
-char *flb_filter_name(struct flb_filter_instance *in)
+const char *flb_filter_name(struct flb_filter_instance *in)
 {
     if (in->alias) {
         return in->alias;
@@ -355,7 +356,7 @@ void flb_filter_initialize_all(struct flb_config *config)
 {
     int ret;
 #ifdef FLB_HAVE_METRICS
-    char *name;
+    const char *name;
 #endif
     struct mk_list *tmp;
     struct mk_list *head;

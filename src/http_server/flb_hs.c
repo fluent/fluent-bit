@@ -43,7 +43,7 @@ int flb_hs_push_metrics(struct flb_hs *hs, void *data, size_t size)
 }
 
 /* Create ROOT endpoints */
-struct flb_hs *flb_hs_create(char *listen, char *tcp_port,
+struct flb_hs *flb_hs_create(const char *listen, const char *tcp_port,
                              struct flb_config *config)
 {
     int vid;

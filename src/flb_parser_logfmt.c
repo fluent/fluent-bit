@@ -62,7 +62,7 @@ static char ident_byte[256] = {
 };
 
 static int logfmt_parser(struct flb_parser *parser,
-                         char *in_buf, size_t in_size,
+                         const char *in_buf, size_t in_size,
                          msgpack_packer *tmp_pck,
                          char *time_key, size_t time_key_len,
                          time_t *time_lookup, double *tmfrac,
@@ -70,12 +70,12 @@ static int logfmt_parser(struct flb_parser *parser,
 {
     int ret;
     struct tm tm = {0};
-    unsigned char *key = NULL;
+    const unsigned char *key = NULL;
     size_t key_len = 0;
-    unsigned char *value = NULL;
+    const unsigned char *value = NULL;
     size_t value_len = 0;
-    unsigned char *c = (unsigned char *)in_buf;
-    unsigned char *end = c + in_size;
+    const unsigned char *c = (const unsigned char *)in_buf;
+    const unsigned char *end = c + in_size;
     int last_byte;
     int do_pack = FLB_TRUE;
     int value_escape = FLB_FALSE;
@@ -144,9 +144,9 @@ static int logfmt_parser(struct flb_parser *parser,
 
             if (parser->time_fmt && key_len == time_key_len &&
                 value_len > 0 &&
-                !strncmp((char *)key, time_key, key_len)) {
+                !strncmp((const char *)key, time_key, key_len)) {
                 if (do_pack) {
-                    ret = flb_parser_time_lookup((char *) value, value_len,
+                    ret = flb_parser_time_lookup((const char *) value, value_len,
                                                   0, parser, &tm, tmfrac);
                     if (ret == -1) {
                        flb_error("[parser:%s] Invalid time format %s.",
@@ -161,15 +161,15 @@ static int logfmt_parser(struct flb_parser *parser,
             if (time_found == FLB_FALSE || parser->time_keep == FLB_TRUE) {
                 if (do_pack) {
                     if (parser->types_len != 0) {
-                        flb_parser_typecast((char*) key, key_len,
-                                            (char*) value, value_len,
+                        flb_parser_typecast((const char*) key, key_len,
+                                            (const char*) value, value_len,
                                             tmp_pck,
                                             parser->types,
                                             parser->types_len);
                     }
                     else {
                         msgpack_pack_str(tmp_pck, key_len);
-                        msgpack_pack_str_body(tmp_pck, (char *)key, key_len);
+                        msgpack_pack_str_body(tmp_pck, (const char *)key, key_len);
                         if (value_len == 0) {
                             msgpack_pack_true(tmp_pck);
                         }
@@ -184,14 +184,14 @@ static int logfmt_parser(struct flb_parser *parser,
                                     return -1;
                                 }
                                 out_str[0] = 0;
-                                flb_unescape_string_utf8((char *)value,
+                                flb_unescape_string_utf8((const char *)value,
                                                           value_len,
                                                           out_str);
                                 out_len = strlen(out_str);
 
                                 msgpack_pack_str(tmp_pck, out_len);
                                 msgpack_pack_str_body(tmp_pck,
-                                                      (char *)out_str,
+                                                      out_str,
                                                       out_len);
 
                                 flb_free(out_str);
@@ -199,7 +199,7 @@ static int logfmt_parser(struct flb_parser *parser,
                             else {
                                 msgpack_pack_str(tmp_pck, value_len);
                                 msgpack_pack_str_body(tmp_pck,
-                                                      (char *)value,
+                                                      (const char *)value,
                                                       value_len);
                             }
                         }
@@ -230,13 +230,13 @@ static int logfmt_parser(struct flb_parser *parser,
             break;
         }
     }
-    last_byte = (char *)c - in_buf;
+    last_byte = (const char *)c - in_buf;
 
     return last_byte;
 }
 
 int flb_parser_logfmt_do(struct flb_parser *parser,
-                        char *in_buf, size_t in_size,
+                        const char *in_buf, size_t in_size,
                         void **out_buf, size_t *out_size,
                         struct flb_time *out_time)
 {

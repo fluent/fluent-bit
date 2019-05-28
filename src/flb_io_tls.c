@@ -225,16 +225,10 @@ static void flb_tls_debug(void *ctx, int level,
                           const char *file, int line,
                           const char *str)
 {
-    int len;
-    char *p;
-    ((void) level);
+    (void) level;
 
-    len = strlen(str);
-    p = (char *) str;
-    p[len - 1] = '\0';
-
-    flb_debug("[io_tls] %s %04d: %s", file + sizeof(FLB_SOURCE_DIR) - 1,
-              line, str);
+    flb_debug("[io_tls] %s %04d: %.*s", file + sizeof(FLB_SOURCE_DIR) - 1,
+              line, strlen(str), str);
 }
 
 struct flb_tls_session *flb_tls_session_new(struct flb_tls_context *ctx)
@@ -428,7 +422,7 @@ int flb_io_tls_net_read(struct flb_thread *th, struct flb_upstream_conn *u_conn,
 }
 
 int flb_io_tls_net_write(struct flb_thread *th, struct flb_upstream_conn *u_conn,
-                         void *data, size_t len, size_t *out_len)
+                         const void *data, size_t len, size_t *out_len)
 {
     int ret;
     size_t total = 0;

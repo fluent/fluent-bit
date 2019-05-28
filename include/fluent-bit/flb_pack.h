@@ -42,24 +42,24 @@ struct flb_pack_state {
     jsmn_parser parser;   /* parser state            */
 };
 
-int flb_json_tokenise(char *js, size_t len, struct flb_pack_state *state);
-int flb_pack_json(char *js, size_t len, char **buffer, size_t *size,
+int flb_json_tokenise(const char *js, size_t len, struct flb_pack_state *state);
+int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size,
                   int *root_type);
 int flb_pack_state_init(struct flb_pack_state *s);
 void flb_pack_state_reset(struct flb_pack_state *s);
 
-int flb_pack_json_state(char *js, size_t len,
+int flb_pack_json_state(const char *js, size_t len,
                         char **buffer, int *size,
                         struct flb_pack_state *state);
-int flb_pack_json_valid(char *json, size_t len);
+int flb_pack_json_valid(const char *json, size_t len);
 
-void flb_pack_print(char *data, size_t bytes);
+void flb_pack_print(const char *data, size_t bytes);
 int flb_msgpack_to_json(char *json_str, size_t str_len,
-                        msgpack_object *obj);
-char* flb_msgpack_to_json_str(size_t size, msgpack_object *obj);
-int flb_msgpack_raw_to_json_str(char *buf, size_t buf_size,
+                        const msgpack_object *obj);
+char* flb_msgpack_to_json_str(size_t size, const msgpack_object *obj);
+int flb_msgpack_raw_to_json_str(const char *buf, size_t buf_size,
                                 char **out_buf, size_t *out_size);
-flb_sds_t flb_msgpack_raw_to_json_sds(void *in_buf, size_t in_size);
+flb_sds_t flb_msgpack_raw_to_json_sds(const void *in_buf, size_t in_size);
 
 int flb_pack_time_now(msgpack_packer *pck);
 int flb_msgpack_expand_map(char *map_data, size_t map_size,

@@ -43,7 +43,7 @@
  * empty metadata with specific sizes.
  */
 
-int cio_meta_write(struct cio_chunk *ch, char *buf, size_t size)
+int cio_meta_write(struct cio_chunk *ch, const char *buf, size_t size)
 {
     struct cio_memfs *mf;
 
@@ -72,7 +72,7 @@ int cio_meta_write(struct cio_chunk *ch, char *buf, size_t size)
     return -1;
 }
 
-int cio_meta_read(struct cio_chunk *ch, char **meta_buf, int *meta_len)
+int cio_meta_read(struct cio_chunk *ch, const char **meta_buf, int *meta_len)
 {
     int len;
     char *meta;
@@ -112,7 +112,7 @@ int cio_meta_read(struct cio_chunk *ch, char **meta_buf, int *meta_len)
 
 }
 
-int cio_meta_cmp(struct cio_chunk *ch, char *meta_buf, int meta_len)
+int cio_meta_cmp(struct cio_chunk *ch, const char *meta_buf, int meta_len)
 {
     int len;
     char *meta;

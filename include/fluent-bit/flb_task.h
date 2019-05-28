@@ -83,7 +83,7 @@ struct flb_task {
     int destinations;                   /* number of output dests    */
     char *tag;                          /* record tag                */
     int tag_len;                        /* tag length                */
-    char *buf;                          /* buffer                    */
+    const char *buf;                    /* buffer                    */
     size_t size;                        /* buffer data size          */
     void *ic;                           /* input chunk */
     struct flb_input_dyntag *dt;        /* dyntag node (if applies)      */
@@ -100,11 +100,11 @@ struct flb_task {
 };
 
 struct flb_task *flb_task_create(uint64_t ref_id,
-                                 char *buf,
+                                 const char *buf,
                                  size_t size,
                                  struct flb_input_instance *i_ins,
                                  void *ic,
-                                 char *tag_buf, int tag_len,
+                                 const char *tag_buf, int tag_len,
                                  struct flb_config *config);
 void flb_task_add_thread(struct flb_thread *thread,
                          struct flb_task *task);
@@ -118,11 +118,11 @@ int flb_task_retry_clean(struct flb_task *task, void *data);
 
 
 struct flb_task *flb_task_chunk_create(uint64_t ref_id,
-                                       char *buf,
+                                       const char *buf,
                                        size_t size,
                                        struct flb_input_instance *i_ins,
                                        void *ic,
-                                       char *tag_buf, int tag_len,
+                                       const char *tag_buf, int tag_len,
                                        struct flb_config *config);
 
 #endif
