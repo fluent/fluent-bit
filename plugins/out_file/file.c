@@ -39,13 +39,13 @@
 #endif
 
 struct flb_file_conf {
-    char *out_file;
-    char *delimiter;
-    char *label_delimiter;
+    const char *out_file;
+    const char *delimiter;
+    const char *label_delimiter;
     int  format;
 };
 
-static char* check_delimiter(char *str)
+static char* check_delimiter(const char *str)
 {
     if (str == NULL) {
         return NULL;
@@ -69,7 +69,7 @@ static int cb_file_init(struct flb_output_instance *ins,
                         struct flb_config *config,
                         void *data)
 {
-    char *tmp;
+    const char *tmp;
     char *ret_str;
     (void) config;
     (void) data;
@@ -199,8 +199,8 @@ static int plain_output(FILE *fp, msgpack_object *obj, size_t alloc_size)
     return 0;
 }
 
-static void cb_file_flush(void *data, size_t bytes,
-                          char *tag, int tag_len,
+static void cb_file_flush(const void *data, size_t bytes,
+                          const char *tag, int tag_len,
                           struct flb_input_instance *i_ins,
                           void *out_context,
                           struct flb_config *config)
@@ -212,7 +212,7 @@ static void cb_file_flush(void *data, size_t bytes,
     size_t last_off = 0;
     size_t alloc_size = 0;
     size_t total;
-    char *out_file;
+    const char *out_file;
     char *buf;
     char *tag_buf;
     msgpack_object *obj;
