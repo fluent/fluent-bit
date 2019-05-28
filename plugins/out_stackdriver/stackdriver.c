@@ -324,8 +324,8 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static int stackdriver_format(void *data, size_t bytes,
-                              char *tag, size_t tag_len,
+static int stackdriver_format(const void *data, size_t bytes,
+                              const char *tag, size_t tag_len,
                               char **out_data, size_t *out_size,
                               struct flb_stackdriver *ctx)
 {
@@ -491,11 +491,11 @@ static void set_authorization_header(struct flb_http_client *c,
     flb_http_add_header(c, "Authorization", 13, header, len);
 }
 
-static void cb_stackdriver_flush(void *data, size_t bytes,
-                            char *tag, int tag_len,
-                            struct flb_input_instance *i_ins,
-                            void *out_context,
-                            struct flb_config *config)
+static void cb_stackdriver_flush(const void *data, size_t bytes,
+                                 const char *tag, int tag_len,
+                                 struct flb_input_instance *i_ins,
+                                 void *out_context,
+                                 struct flb_config *config)
 {
     (void) i_ins;
     (void) config;

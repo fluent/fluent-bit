@@ -30,7 +30,7 @@
 #include "stackdriver.h"
 #include "stackdriver_conf.h"
 
-static inline int key_cmp(char *str, int len, char *cmp) {
+static inline int key_cmp(const char *str, int len, const char *cmp) {
 
     if (strlen(cmp) != len) {
         return -1;
@@ -39,7 +39,7 @@ static inline int key_cmp(char *str, int len, char *cmp) {
     return strncasecmp(str, cmp, len);
 }
 
-static int validate_resource(char *res)
+static int validate_resource(const char *res)
 {
     if (strcasecmp(res, "global") != 0 &&
         strcasecmp(res, "gce_instance") != 0) {
@@ -49,7 +49,7 @@ static int validate_resource(char *res)
     return 0;
 }
 
-static int read_credentials_file(char *creds, struct flb_stackdriver *ctx)
+static int read_credentials_file(const char *creds, struct flb_stackdriver *ctx)
 {
     int i;
     int ret;
@@ -179,7 +179,7 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
                                               struct flb_config *config)
 {
     int ret;
-    char *tmp;
+    const char *tmp;
     struct flb_stackdriver *ctx;
 
     /* Allocate config context */
