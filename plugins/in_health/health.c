@@ -133,7 +133,7 @@ static int in_health_init(struct flb_input_instance *in,
                           struct flb_config *config, void *data)
 {
     int ret;
-    char *pval;
+    const char *pval;
     struct flb_in_health_config *ctx;
     (void) data;
 
