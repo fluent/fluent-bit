@@ -53,7 +53,7 @@ static int configure(struct flb_out_fcount_config *ctx,
                      struct flb_output_instance   *ins,
                      struct flb_config *config)
 {
-    char* pval = NULL;
+    const char* pval = NULL;
     int i;
     time_t base = time(NULL);
 
@@ -175,11 +175,11 @@ static struct flb_out_fcount_buffer* seek_buffer(time_t t,
 
 
 
-static void out_fcount_flush(void *data, size_t bytes,
-                     char *tag, int tag_len,
-                     struct flb_input_instance *i_ins,
-                     void *out_context,
-                     struct flb_config *config)
+static void out_fcount_flush(const void *data, size_t bytes,
+                             const char *tag, int tag_len,
+                             struct flb_input_instance *i_ins,
+                             void *out_context,
+                             struct flb_config *config)
 {
     msgpack_unpacked result;
     msgpack_object *obj;
