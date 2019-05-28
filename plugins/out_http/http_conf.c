@@ -34,7 +34,8 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
     int len;
     int io_flags = 0;
     char *uri = NULL;
-    char *tmp;
+    char *tmp_uri = NULL;
+    const char *tmp;
     struct flb_upstream *upstream;
     struct flb_out_http *ctx = NULL;
     struct mk_list *head;
@@ -156,12 +157,12 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
     }
     else if (uri[0] != '/') {
         ulen = strlen(uri);
-        tmp = flb_malloc(ulen + 2);
-        tmp[0] = '/';
-        memcpy(tmp + 1, uri, ulen);
-        tmp[ulen + 1] = '\0';
+        tmp_uri = flb_malloc(ulen + 2);
+        tmp_uri[0] = '/';
+        memcpy(tmp_uri + 1, uri, ulen);
+        tmp_uri[ulen + 1] = '\0';
         flb_free(uri);
-        uri = tmp;
+        uri = tmp_uri;
     }
 
     /* HTTP Auth */
