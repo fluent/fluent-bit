@@ -119,9 +119,9 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
                         struct flb_config *config)
 {
     int ret;
-    char *buf_data;
+    const char *buf_data;
     size_t buf_size = 0;
-    char *tag_buf;
+    const char *tag_buf;
     int tag_len;
     struct mk_list *tmp;
     struct mk_list *head;

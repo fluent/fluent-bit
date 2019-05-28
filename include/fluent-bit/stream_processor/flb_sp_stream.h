@@ -30,11 +30,11 @@ struct flb_sp_stream {
     void *in;             /* input instance context */
 };
 
-int flb_sp_stream_create(char *name, struct flb_sp_task *task,
+int flb_sp_stream_create(const char *name, struct flb_sp_task *task,
                          struct flb_sp *sp);
 void flb_sp_stream_destroy(struct flb_sp_stream *stream, struct flb_sp *sp);
 
-int flb_sp_stream_append_data(char *buf_data, size_t buf_size,
+int flb_sp_stream_append_data(const char *buf_data, size_t buf_size,
                               struct flb_sp_stream *stream);
 
 #endif

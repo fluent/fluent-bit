@@ -57,16 +57,16 @@ struct flb_oauth2 {
 };
 
 struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
-                                     char *auth_url, int expire_sec);
+                                     const char *auth_url, int expire_sec);
 void flb_oauth2_destroy(struct flb_oauth2 *ctx);
 int flb_oauth2_token_len(struct flb_oauth2 *ctx);
 int flb_oauth2_payload_append(struct flb_oauth2 *ctx,
-                              char *key_str, int key_len,
-                              char *val_str, int val_len);
+                              const char *key_str, int key_len,
+                              const char *val_str, int val_len);
 char *flb_oauth2_token_get(struct flb_oauth2 *ctx);
 int flb_oauth2_token_expired(struct flb_oauth2 *ctx);
 
-int flb_oauth2_parse_json_response(char *json_data, size_t json_size,
+int flb_oauth2_parse_json_response(const char *json_data, size_t json_size,
                         struct flb_oauth2 *ctx);
 
 #endif

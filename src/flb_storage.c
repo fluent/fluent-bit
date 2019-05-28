@@ -85,8 +85,8 @@ int flb_storage_input_create(struct cio_ctx *cio,
                              struct flb_input_instance *in)
 {
     int type;
-    char *tmp;
-    char *name;
+    const char *tmp;
+    const char *name;
     struct flb_storage_input *si;
     struct cio_stream *stream;
 

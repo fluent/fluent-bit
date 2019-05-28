@@ -30,7 +30,7 @@ struct flb_slist_entry {
 };
 
 int flb_slist_create(struct mk_list *list);
-int flb_slist_add(struct mk_list *head, char *str);
+int flb_slist_add(struct mk_list *head, const char *str);
 void flb_slist_destroy(struct mk_list *list);
 
 #endif

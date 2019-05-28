@@ -25,7 +25,7 @@
 #include <fluent-bit/flb_output.h>
 
 struct flb_api {
-    char *(*output_get_property) (char *, void *);
+    const char *(*output_get_property) (const char *, struct flb_output_instance *);
 };
 
 #ifdef FLB_CORE

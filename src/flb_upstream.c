@@ -30,7 +30,7 @@
 
 /* Creates a new upstream context */
 struct flb_upstream *flb_upstream_create(struct flb_config *config,
-                                         char *host, int port, int flags,
+                                         const char *host, int port, int flags,
                                          void *tls)
 {
     struct flb_upstream *u;
@@ -60,7 +60,8 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
 
 /* Create an upstream context using a valid URL (protocol, host and port) */
 struct flb_upstream *flb_upstream_create_url(struct flb_config *config,
-                                             char *url, int flags, void *tls)
+                                             const char *url, int flags,
+                                             void *tls)
 {
     int ret;
     int tmp_port = 0;

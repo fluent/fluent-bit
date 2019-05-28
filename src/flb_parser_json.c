@@ -27,7 +27,7 @@
 #include <fluent-bit/flb_parser_decoder.h>
 
 int flb_parser_json_do(struct flb_parser *parser,
-                       char *in_buf, size_t in_size,
+                       const char *in_buf, size_t in_size,
                        void **out_buf, size_t *out_size,
                        struct flb_time *out_time)
 {
@@ -154,7 +154,7 @@ int flb_parser_json_do(struct flb_parser *parser,
     }
 
     /* Lookup time */
-    ret = flb_parser_time_lookup((char *) v->via.str.ptr, v->via.str.size,
+    ret = flb_parser_time_lookup(v->via.str.ptr, v->via.str.size,
                                  0, parser, &tm, &tmfrac);
     if (ret == -1) {
         len = v->via.str.size;

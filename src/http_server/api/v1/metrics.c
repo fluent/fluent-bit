@@ -213,11 +213,11 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
                 mv = sv.via.map.ptr[m].val;
 
                 sds = flb_sds_cat(sds, "fluentbit_", 10);
-                sds = flb_sds_cat(sds, (char *) k.via.str.ptr, k.via.str.size);
+                sds = flb_sds_cat(sds, k.via.str.ptr, k.via.str.size);
                 sds = flb_sds_cat(sds, "_", 1);
-                sds = flb_sds_cat(sds, (char *) mk.via.str.ptr, mk.via.str.size);
+                sds = flb_sds_cat(sds, mk.via.str.ptr, mk.via.str.size);
                 sds = flb_sds_cat(sds, "_total{name=\"", 13);
-                sds = flb_sds_cat(sds, (char *) sk.via.str.ptr, sk.via.str.size);
+                sds = flb_sds_cat(sds, sk.via.str.ptr, sk.via.str.size);
                 sds = flb_sds_cat(sds, "\"} ", 3);
 
                 len = snprintf(tmp, sizeof(tmp) - 1,

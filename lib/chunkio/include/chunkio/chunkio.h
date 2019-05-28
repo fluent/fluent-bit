@@ -66,9 +66,9 @@ void cio_set_log_callback(struct cio_ctx *ctx, void (*log_cb));
 int cio_set_log_level(struct cio_ctx *ctx, int level);
 
 
-int cio_meta_write(struct cio_chunk *ch, char *buf, size_t size);
-int cio_meta_cmp(struct cio_chunk *ch, char *meta_buf, int meta_len);
-int cio_meta_read(struct cio_chunk *ch, char **meta_buf, int *meta_len);
+int cio_meta_write(struct cio_chunk *ch, const char *buf, size_t size);
+int cio_meta_cmp(struct cio_chunk *ch, const char *meta_buf, int meta_len);
+int cio_meta_read(struct cio_chunk *ch, const char **meta_buf, int *meta_len);
 
 ssize_t cio_chunk_get_real_size(struct cio_chunk *ch);
 

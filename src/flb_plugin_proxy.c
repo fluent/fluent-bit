@@ -42,8 +42,8 @@
 /* Proxies */
 #include "proxy/go/go.h"
 
-static void flb_proxy_cb_flush(void *data, size_t bytes,
-                               char *tag, int tag_len,
+static void flb_proxy_cb_flush(const void *data, size_t bytes,
+                               const char *tag, int tag_len,
                                struct flb_input_instance *i_ins,
                                void *out_context,
                                struct flb_config *config)
@@ -232,11 +232,11 @@ struct flb_plugin_proxy *flb_plugin_proxy_create(const char *dso_path, int type,
 }
 
 /* Load plugins from a configuration file */
-int flb_plugin_proxy_conf_file(char *file, struct flb_config *config)
+int flb_plugin_proxy_conf_file(const char *file, struct flb_config *config)
 {
     int ret;
     char tmp[PATH_MAX + 1];
-    char *cfg = NULL;
+    const char *cfg = NULL;
     struct mk_rconf *fconf;
     struct mk_rconf_section *section;
     struct mk_rconf_entry *entry;

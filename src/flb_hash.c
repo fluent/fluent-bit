@@ -179,8 +179,9 @@ static void flb_hash_evict_random(struct flb_hash *ht)
     }
 }
 
-int flb_hash_add(struct flb_hash *ht, char *key, int key_len,
-                 char *val, size_t val_size)
+int flb_hash_add(struct flb_hash *ht,
+                 const char *key, int key_len,
+                 const char *val, size_t val_size)
 {
     int id;
     unsigned int hash;
@@ -270,8 +271,9 @@ int flb_hash_add(struct flb_hash *ht, char *key, int key_len,
     return id;
 }
 
-int flb_hash_get(struct flb_hash *ht, char *key, int key_len,
-                 char **out_buf, size_t * out_size)
+int flb_hash_get(struct flb_hash *ht,
+                 const char *key, int key_len,
+                 const char **out_buf, size_t * out_size)
 {
     int id;
     unsigned int hash;
@@ -336,8 +338,9 @@ int flb_hash_get(struct flb_hash *ht, char *key, int key_len,
  * Get an entry based in the table id. Note that a table id might have multiple
  * entries so the 'key' parameter is required to get an exact match.
  */
-int flb_hash_get_by_id(struct flb_hash *ht, int id, char *key, char **out_buf,
-                       size_t * out_size)
+int flb_hash_get_by_id(struct flb_hash *ht, int id,
+                       const char *key,
+                       const char **out_buf, size_t * out_size)
 {
     struct mk_list *head;
     struct flb_hash_entry *entry = NULL;
@@ -372,7 +375,7 @@ int flb_hash_get_by_id(struct flb_hash *ht, int id, char *key, char **out_buf,
     return 0;
 }
 
-int flb_hash_del(struct flb_hash *ht, char *key)
+int flb_hash_del(struct flb_hash *ht, const char *key)
 {
     int id;
     int len;

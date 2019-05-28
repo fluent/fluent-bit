@@ -114,10 +114,11 @@ struct flb_upstream_conn {
 };
 
 struct flb_upstream *flb_upstream_create(struct flb_config *config,
-                                         char *host, int port, int flags,
+                                         const char *host, int port, int flags,
                                          void *tls);
 struct flb_upstream *flb_upstream_create_url(struct flb_config *config,
-                                             char *url, int flags, void *tls);
+                                             const char *url, int flags,
+                                             void *tls);
 
 int flb_upstream_destroy(struct flb_upstream *u);
 

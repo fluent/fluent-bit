@@ -53,12 +53,12 @@
 
 /* Read and process file system configuration file */
 static int sp_config_file(struct flb_config *config, struct flb_sp *sp,
-                          char *file)
+                          const char *file)
 {
     int ret;
     char *name;
     char *exec;
-    char *cfg = NULL;
+    const char *cfg = NULL;
     char tmp[PATH_MAX + 1];
     struct stat st;
     struct mk_rconf *fconf;
@@ -235,7 +235,7 @@ static int sp_cmd_aggregated_keys(struct flb_sp_cmd *cmd)
  * - if output number is a float, 'd' is set and returns FLB_STR_FLOAT
  * - if no conversion is possible (not a number), returns -1
  */
-static int string_to_number(char *str, int len, int64_t *i, double *d)
+static int string_to_number(const char *str, int len, int64_t *i, double *d)
 {
     int c;
     int dots = 0;
@@ -443,8 +443,8 @@ static void aggr_max(struct aggr_num *nums, int key_id, int64_t i, double d)
     }
 }
 
-struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, char *name,
-                                       char *query)
+struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, const char *name,
+                                       const char *query)
 {
     int fd;
     int ret;
@@ -779,7 +779,7 @@ static struct flb_exp_val *key_to_value(struct flb_exp_key *ekey,
         val = map->via.map.ptr[i].val;
 
         /* Compare by length and by key name */
-        if (flb_sds_cmp(ckey, (char *) key.via.str.ptr,
+        if (flb_sds_cmp(ckey, key.via.str.ptr,
             key.via.str.size) != 0) {
             continue;
         }
@@ -809,7 +809,7 @@ static struct flb_exp_val *key_to_value(struct flb_exp_key *ekey,
         }
         else if (val.type == MSGPACK_OBJECT_STR) {
             result->type = FLB_EXP_STRING;
-            result->val.string = flb_sds_create_len((char *) val.via.str.ptr,
+            result->val.string = flb_sds_create_len(val.via.str.ptr,
                                                     val.via.str.size);
             return result;
         }
@@ -1187,7 +1187,7 @@ static struct flb_exp_val *reduce_expression(struct flb_exp *expression,
 }
 
 
-static void package_results(char *tag, int tag_len,
+static void package_results(const char *tag, int tag_len,
                             char **out_buf, size_t *out_size,
                             struct flb_sp_task *task)
 {
@@ -1352,8 +1352,8 @@ static void package_results(char *tag, int tag_len,
  * Process data, task and it defined command involves the call of aggregation
  * functions (AVG, SUM, COUNT, MIN, MAX).
  */
-static int sp_process_data_aggr(char *buf_data, size_t buf_size,
-                                char *tag, int tag_len,
+static int sp_process_data_aggr(const char *buf_data, size_t buf_size,
+                                const char *tag, int tag_len,
                                 struct flb_sp_task *task,
                                 struct flb_sp *sp)
 {
@@ -1433,7 +1433,7 @@ static int sp_process_data_aggr(char *buf_data, size_t buf_size,
                 mk_list_foreach(head, &cmd->gb_keys) {
                     gb_key = mk_list_entry(head, struct flb_sp_cmd_gb_key,
                                            _head);
-                    if (flb_sds_cmp(gb_key->name, (char *) key.via.str.ptr,
+                    if (flb_sds_cmp(gb_key->name, key.via.str.ptr,
                                     key.via.str.size) != 0) {
                         key_id++;
                         continue;
@@ -1444,7 +1444,7 @@ static int sp_process_data_aggr(char *buf_data, size_t buf_size,
                     if (ret == -1 && val.type == MSGPACK_OBJECT_STR) {
                         gb_nums[key_id].type = FLB_SP_STRING;
                         gb_nums[key_id].string =
-                            flb_sds_create_len((char *) val.via.str.ptr,
+                            flb_sds_create_len(val.via.str.ptr,
                                                 val.via.str.size);
                         continue;
                     }
@@ -1546,7 +1546,7 @@ static int sp_process_data_aggr(char *buf_data, size_t buf_size,
                     continue;
                 }
 
-                if (flb_sds_cmp(ckey->name, (char *) key.via.str.ptr,
+                if (flb_sds_cmp(ckey->name, key.via.str.ptr,
                                 key.via.str.size) != 0) {
                     key_id++;
                     continue;
@@ -1594,7 +1594,7 @@ static int sp_process_data_aggr(char *buf_data, size_t buf_size,
                         nums[key_id].type = FLB_SP_STRING;
                         if (nums[key_id].string == NULL) {
                             nums[key_id].string =
-                                flb_sds_create_len((char *) val.via.str.ptr,
+                                flb_sds_create_len(val.via.str.ptr,
                                                    val.via.str.size);
                         }
                     }
@@ -1626,8 +1626,8 @@ static int sp_process_data_aggr(char *buf_data, size_t buf_size,
 /*
  * Data processing (no aggregation functions)
  */
-static int sp_process_data(char *tag, int tag_len,
-                           char *buf_data, size_t buf_size,
+static int sp_process_data(const char *tag, int tag_len,
+                           const char *buf_data, size_t buf_size,
                            char **out_buf, size_t *out_size,
                            struct flb_sp_task *task,
                            struct flb_sp *sp)
@@ -1822,8 +1822,8 @@ static int sp_process_data(char *tag, int tag_len,
  * results on out_data/out_size variables.
  */
 int flb_sp_test_do(struct flb_sp *sp, struct flb_sp_task *task,
-                   char *tag, int tag_len,
-                   char *buf_data, size_t buf_size,
+                   const char *tag, int tag_len,
+                   const char *buf_data, size_t buf_size,
                    char **out_data, size_t *out_size)
 {
     int ret;
@@ -1886,8 +1886,8 @@ int flb_sp_test_do(struct flb_sp *sp, struct flb_sp_task *task,
 
 /* Iterate and find input chunks to process */
 int flb_sp_do(struct flb_sp *sp, struct flb_input_instance *in,
-              char *tag, int tag_len,
-              char *buf_data, size_t buf_size)
+              const char *tag, int tag_len,
+              const char *buf_data, size_t buf_size)
 
 {
     int ret;

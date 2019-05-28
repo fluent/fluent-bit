@@ -42,7 +42,7 @@ struct regex_cb_ctx {
     msgpack_packer *pck;
 };
 
-static void cb_results(unsigned char *name, unsigned char *value,
+static void cb_results(const char *name, const char *value,
                        size_t vlen, void *data)
 {
     int len;
@@ -60,7 +60,7 @@ static void cb_results(unsigned char *name, unsigned char *value,
         return;
     }
 
-    len = strlen((char *) name);
+    len = strlen(name);
 
     /* Check if there is a time lookup field */
     if (parser->time_fmt) {
@@ -71,9 +71,9 @@ static void cb_results(unsigned char *name, unsigned char *value,
             time_key = "time";
         }
 
-        if (strcmp((char *) name, time_key) == 0) {
+        if (strcmp(name, time_key) == 0) {
             /* Lookup time */
-            ret = flb_parser_time_lookup((char *) value, vlen,
+            ret = flb_parser_time_lookup(value, vlen,
                                          pcb->time_now, parser, &tm, &frac);
             if (ret == -1) {
                 if (vlen > sizeof(tmp) - 1) {
@@ -98,22 +98,22 @@ static void cb_results(unsigned char *name, unsigned char *value,
     }
 
     if (parser->types_len != 0) {
-        flb_parser_typecast((char*)name, len,
-                            (char*)value, vlen,
+        flb_parser_typecast(name, len,
+                            value, vlen,
                             pcb->pck,
                             parser->types,
                             parser->types_len);
     }
     else {
         msgpack_pack_str(pcb->pck, len);
-        msgpack_pack_str_body(pcb->pck, (char *) name, len);
+        msgpack_pack_str_body(pcb->pck, name, len);
         msgpack_pack_str(pcb->pck, vlen);
-        msgpack_pack_str_body(pcb->pck, (char *) value, vlen);
+        msgpack_pack_str_body(pcb->pck, value, vlen);
     }
 }
 
 int flb_parser_regex_do(struct flb_parser *parser,
-                        char *buf, size_t length,
+                        const char *buf, size_t length,
                         void **out_buf, size_t *out_size,
                         struct flb_time *out_time)
 {
@@ -130,7 +130,7 @@ int flb_parser_regex_do(struct flb_parser *parser,
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
 
-    n = flb_regex_do(parser->regex, (unsigned char *) buf, length, &result);
+    n = flb_regex_do(parser->regex, buf, length, &result);
     if (n <= 0) {
         return -1;
     }

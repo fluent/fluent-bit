@@ -31,7 +31,7 @@ int flb_slist_create(struct mk_list *list)
 }
 
 /* Append string as a new node into the list */
-int flb_slist_add(struct mk_list *head, char *str)
+int flb_slist_add(struct mk_list *head, const char *str)
 {
     struct flb_slist_entry *e;
 

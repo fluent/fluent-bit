@@ -461,10 +461,11 @@ static inline void FLB_INPUT_RETURN()
 
 int flb_input_register_all(struct flb_config *config);
 struct flb_input_instance *flb_input_new(struct flb_config *config,
-                                         char *input, void *data,
+                                         const char *input, void *data,
                                          int public_only);
-int flb_input_set_property(struct flb_input_instance *in, char *k, char *v);
-char *flb_input_get_property(char *key, struct flb_input_instance *i);
+int flb_input_set_property(struct flb_input_instance *in,
+                           const char *k, const char *v);
+const char *flb_input_get_property(const char *key, struct flb_input_instance *i);
 
 int flb_input_check(struct flb_config *config);
 void flb_input_set_context(struct flb_input_instance *in, void *context);
@@ -505,6 +506,6 @@ void flb_input_exit_all(struct flb_config *config);
 
 void *flb_input_flush(struct flb_input_instance *i_ins, size_t *size);
 int flb_input_pause_all(struct flb_config *config);
-char *flb_input_name(struct flb_input_instance *in);
+const char *flb_input_name(struct flb_input_instance *in);
 
 #endif

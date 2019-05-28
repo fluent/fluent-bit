@@ -67,7 +67,7 @@ static int u8_wc_toutf8(char *dest, uint32_t ch)
 
 /* assumes that src points to the character after a backslash
    returns number of input characters processed */
-static int u8_read_escape_sequence(char *str, uint32_t *dest)
+static int u8_read_escape_sequence(const char *str, uint32_t *dest)
 {
     uint32_t ch;
     char digs[9]="\0\0\0\0\0\0\0\0";
@@ -122,26 +122,26 @@ static int u8_read_escape_sequence(char *str, uint32_t *dest)
     return i;
 }
 
-static inline int is_json_escape(char *c)
+static inline int is_json_escape(char c)
 {
     return (
-            (*c == '\"') || /* double-quote    */
-            (*c == '\'') || /* single-quote    */
-            (*c == '\\') || /* solidus         */
-            (*c == 'n')  || /* new-line        */
-            (*c == 'r')  || /* carriage return */
-            (*c == 't')  || /* horizontal tab  */
-            (*c == 'b')  || /* backspace       */
-            (*c == 'f')  || /* form feed       */
-            (*c == '/')     /* reverse-solidus */
+            (c == '\"') || /* double-quote    */
+            (c == '\'') || /* single-quote    */
+            (c == '\\') || /* solidus         */
+            (c == 'n')  || /* new-line        */
+            (c == 'r')  || /* carriage return */
+            (c == 't')  || /* horizontal tab  */
+            (c == 'b')  || /* backspace       */
+            (c == 'f')  || /* form feed       */
+            (c == '/')     /* reverse-solidus */
             );
 }
 
-int flb_unescape_string_utf8(char *in_buf, int sz, char *out_buf)
+int flb_unescape_string_utf8(const char *in_buf, int sz, char *out_buf)
 {
     uint32_t ch;
     char temp[4];
-    char *next;
+    const char *next;
 
     int count_out = 0;
     int count_in = 0;
@@ -150,7 +150,7 @@ int flb_unescape_string_utf8(char *in_buf, int sz, char *out_buf)
 
     while (*in_buf && count_in < sz) {
         next = in_buf + 1;
-        if (*in_buf == '\\' && !is_json_escape(next)) {
+        if (*in_buf == '\\' && !is_json_escape(*next)) {
             esc_in = u8_read_escape_sequence((in_buf + 1), &ch) + 1;
         }
         else {
@@ -177,7 +177,7 @@ int flb_unescape_string_utf8(char *in_buf, int sz, char *out_buf)
     return count_out;
 }
 
-int flb_unescape_string(char *buf, int buf_len, char **unesc_buf)
+int flb_unescape_string(const char *buf, int buf_len, char **unesc_buf)
 {
     int i = 0;
     int j = 0;

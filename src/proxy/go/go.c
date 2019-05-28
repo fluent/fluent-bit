@@ -59,8 +59,8 @@ struct flbgo_output_plugin {
     struct flb_plugin_proxy_context *context;
 
     int (*cb_init)();
-    int (*cb_flush)(void *, size_t, char *);
-    int (*cb_flush_ctx)(void *, void *, size_t, char *);
+    int (*cb_flush)(const void *, size_t, const char *);
+    int (*cb_flush_ctx)(void *, const void *, size_t, char *);
     int (*cb_exit)(void *);
 };
 /*------------------------EOF------------------------------------------------*/
@@ -128,8 +128,9 @@ int proxy_go_init(struct flb_plugin_proxy *proxy)
     return ret;
 }
 
-int proxy_go_flush(struct flb_plugin_proxy_context *ctx, void *data, size_t size,
-                   char *tag, int tag_len)
+int proxy_go_flush(struct flb_plugin_proxy_context *ctx,
+                   const void *data, size_t size,
+                   const char *tag, int tag_len)
 {
     int ret;
     char *buf;

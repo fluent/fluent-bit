@@ -22,7 +22,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <msgpack.h>
 
-static inline int mp_count(void *data, size_t bytes, msgpack_zone *zone)
+static inline int mp_count(const void *data, size_t bytes, msgpack_zone *zone)
 {
     int c = 0;
     int ret;
@@ -58,12 +58,12 @@ static inline int mp_count(void *data, size_t bytes, msgpack_zone *zone)
     return c;
 }
 
-int flb_mp_count(void *data, size_t bytes)
+int flb_mp_count(const void *data, size_t bytes)
 {
     return mp_count(data, bytes, NULL);
 }
 
-int flb_mp_count_zone(void *data, size_t bytes, msgpack_zone *zone)
+int flb_mp_count_zone(const void *data, size_t bytes, msgpack_zone *zone)
 {
     return mp_count(data, bytes, zone);
 }

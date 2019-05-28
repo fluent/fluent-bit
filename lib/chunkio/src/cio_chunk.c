@@ -164,7 +164,7 @@ int cio_chunk_sync(struct cio_chunk *ch)
     return ret;
 }
 
-int cio_chunk_get_content(struct cio_chunk *ch, char **buf, size_t *size)
+int cio_chunk_get_content(struct cio_chunk *ch, const char **buf, size_t *size)
 {
     int ret = 0;
     int type;

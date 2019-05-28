@@ -178,20 +178,20 @@ struct flb_exp_val {
     sp_val val;
 };
 
-struct flb_sp_cmd *flb_sp_cmd_create(char *sql);
+struct flb_sp_cmd *flb_sp_cmd_create(const char *sql);
 void flb_sp_cmd_destroy(struct flb_sp_cmd *cmd);
 
 /* Stream */
-int flb_sp_cmd_stream_new(struct flb_sp_cmd *cmd, char *stream_name);
-int flb_sp_cmd_stream_prop_add(struct flb_sp_cmd *cmd, char *key, char *val);
+int flb_sp_cmd_stream_new(struct flb_sp_cmd *cmd, const char *stream_name);
+int flb_sp_cmd_stream_prop_add(struct flb_sp_cmd *cmd, const char *key, const char *val);
 void flb_sp_cmd_stream_prop_del(struct flb_sp_cmd_prop *prop);
-char *flb_sp_cmd_stream_prop_get(struct flb_sp_cmd *cmd, char *key);
+const char *flb_sp_cmd_stream_prop_get(struct flb_sp_cmd *cmd, const char *key);
 
 /* Selection keys */
 int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func,
-                       char *key_name, char *key_alias);
+                       const char *key_name, const char *key_alias);
 void flb_sp_cmd_key_del(struct flb_sp_cmd_key *key);
-int flb_sp_cmd_source(struct flb_sp_cmd *cmd, int type, char *source);
+int flb_sp_cmd_source(struct flb_sp_cmd *cmd, int type, const char *source);
 void flb_sp_cmd_dump(struct flb_sp_cmd *cmd);
 
 void flb_sp_cmd_window(struct flb_sp_cmd *cmd,
@@ -204,18 +204,18 @@ struct flb_exp *flb_sp_cmd_operation(struct flb_sp_cmd *cmd,
 struct flb_exp *flb_sp_cmd_comparison(struct flb_sp_cmd *cmd,
                                       struct flb_exp *key, struct flb_exp *val,
                                       int operation);
-struct flb_exp *flb_sp_cmd_condition_key(struct flb_sp_cmd *cmd, char *key);
+struct flb_exp *flb_sp_cmd_condition_key(struct flb_sp_cmd *cmd, const char *key);
 struct flb_exp *flb_sp_cmd_condition_integer(struct flb_sp_cmd *cmd,
                                              int integer);
 struct flb_exp *flb_sp_cmd_condition_float(struct flb_sp_cmd *cmd, float fval);
 struct flb_exp *flb_sp_cmd_condition_string(struct flb_sp_cmd *cmd,
-                                            char *string);
+                                            const char *string);
 struct flb_exp *flb_sp_cmd_condition_boolean(struct flb_sp_cmd *cmd,
                                              bool boolean);
 
 void flb_sp_cmd_condition_free(struct flb_sp_cmd *cmd);
 
-int flb_sp_cmd_gb_key_add(struct flb_sp_cmd *cmd, char *key);
+int flb_sp_cmd_gb_key_add(struct flb_sp_cmd *cmd, const char *key);
 void flb_sp_cmd_gb_key_del(struct flb_sp_cmd_gb_key *key);
 
 #endif

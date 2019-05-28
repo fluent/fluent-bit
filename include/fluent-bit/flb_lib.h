@@ -42,9 +42,9 @@ typedef struct flb_lib_ctx         flb_ctx_t;
 
 FLB_EXPORT flb_ctx_t *flb_create();
 FLB_EXPORT void flb_destroy(flb_ctx_t *ctx);
-FLB_EXPORT int flb_input(flb_ctx_t *ctx, char *input, void *data);
-FLB_EXPORT int flb_output(flb_ctx_t *ctx, char *output, void *data);
-FLB_EXPORT int flb_filter(flb_ctx_t *ctx, char *filter, void *data);
+FLB_EXPORT int flb_input(flb_ctx_t *ctx, const char *input, void *data);
+FLB_EXPORT int flb_output(flb_ctx_t *ctx, const char *output, void *data);
+FLB_EXPORT int flb_filter(flb_ctx_t *ctx, const char *filter, void *data);
 FLB_EXPORT int flb_input_set(flb_ctx_t *ctx, int ffd, ...);
 FLB_EXPORT int flb_output_set(flb_ctx_t *ctx, int ffd, ...);
 FLB_EXPORT int flb_filter_set(flb_ctx_t *ctx, int ffd, ...);
@@ -57,7 +57,7 @@ FLB_EXPORT int flb_start(flb_ctx_t *ctx);
 FLB_EXPORT int flb_stop(flb_ctx_t *ctx);
 
 /* data ingestion for "lib" input instance */
-FLB_EXPORT int flb_lib_push(flb_ctx_t *ctx, int ffd, void *data, size_t len);
-FLB_EXPORT int flb_lib_config_file(flb_ctx_t *ctx, char *path);
+FLB_EXPORT int flb_lib_push(flb_ctx_t *ctx, int ffd, const void *data, size_t len);
+FLB_EXPORT int flb_lib_config_file(flb_ctx_t *ctx, const char *path);
 
 #endif
