@@ -267,7 +267,7 @@ static inline bool is_kv_to_nest(msgpack_object_kv * kv,
                                  struct filter_nest_ctx *ctx)
 {
 
-    char *key;
+    const char *key;
     int klen;
 
     msgpack_object *obj = &kv->key;
@@ -277,11 +277,11 @@ static inline bool is_kv_to_nest(msgpack_object_kv * kv,
     struct filter_nest_wildcard *wildcard;
 
     if (obj->type == MSGPACK_OBJECT_BIN) {
-        key = (char *) obj->via.bin.ptr;
+        key = obj->via.bin.ptr;
         klen = obj->via.bin.size;
     }
     else if (obj->type == MSGPACK_OBJECT_STR) {
-        key = (char *) obj->via.str.ptr;
+        key = obj->via.str.ptr;
         klen = obj->via.str.size;
     }
     else {
@@ -322,18 +322,18 @@ static inline bool is_kv_to_lift(msgpack_object_kv * kv,
                                  struct filter_nest_ctx *ctx)
 {
 
-    char *key;
+    const char *key;
     int klen;
     bool match;
 
     msgpack_object *obj = &kv->key;
 
     if (obj->type == MSGPACK_OBJECT_BIN) {
-        key = (char *) obj->via.bin.ptr;
+        key = obj->via.bin.ptr;
         klen = obj->via.bin.size;
     }
     else if (obj->type == MSGPACK_OBJECT_STR) {
-        key = (char *) obj->via.str.ptr;
+        key = obj->via.str.ptr;
         klen = obj->via.str.size;
     }
     else {
@@ -535,8 +535,8 @@ static int cb_nest_init(struct flb_filter_instance *f_ins,
     return 0;
 }
 
-static int cb_nest_filter(void *data, size_t bytes,
-                          char *tag, int tag_len,
+static int cb_nest_filter(const void *data, size_t bytes,
+                          const char *tag, int tag_len,
                           void **out_buf, size_t * out_size,
                           struct flb_filter_instance *f_ins,
                           void *context, struct flb_config *config)
