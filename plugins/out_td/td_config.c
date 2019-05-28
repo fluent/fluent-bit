@@ -25,10 +25,10 @@
 
 struct flb_out_td_config *td_config_init(struct flb_output_instance *o_ins)
 {
-    char *tmp;
-    char *api;
-    char *db_name;
-    char *db_table;
+    const char *tmp;
+    const char *api;
+    const char *db_name;
+    const char *db_table;
     struct flb_out_td_config *config;
 
     /* Validate TD section keys */
