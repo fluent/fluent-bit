@@ -55,30 +55,33 @@
 #define FLB_SP_TAG       1
 
 /* Expression type */
-#define FLB_LOGICAL_OP   0
-#define FLB_EXP_KEY      1
-#define FLB_EXP_BOOL     2
-#define FLB_EXP_INT      3
-#define FLB_EXP_FLOAT    4
-#define FLB_EXP_STRING   5
-#define FLB_EXP_NULL     6
+enum Expressions {
+    FLB_LOGICAL_OP = 0,
+    FLB_EXP_KEY,
+    FLB_EXP_BOOL,
+    FLB_EXP_INT,
+    FLB_EXP_FLOAT,
+    FLB_EXP_STRING,
+    FLB_EXP_NULL
+};
 
 /* Logical operation */
-#define FLB_EXP_PAR         0
+enum Operations {
+    FLB_EXP_PAR = 0,
 
-#define FLB_EXP_NOT         1
-#define FLB_EXP_AND         2
-#define FLB_EXP_OR          3
+    FLB_EXP_NOT,
+    FLB_EXP_AND,
+    FLB_EXP_OR,
 
-#define FLB_EXP_EQ          4
-#define FLB_EXP_LT          5
-#define FLB_EXP_LTE         6
-#define FLB_EXP_GT          7
-#define FLB_EXP_GTE         8
+    FLB_EXP_EQ,
+    FLB_EXP_LT,
+    FLB_EXP_LTE,
+    FLB_EXP_GT,
+    FLB_EXP_GTE,
 
-#define FLB_EXP_EXISTS      9
-#define FLB_EXP_IS_NULL     10
-#define FLB_EXP_IS_NOT_NULL 11
+    FLB_EXP_IS_NULL,
+    FLB_EXP_IS_NOT_NULL
+};
 
 #define FLB_SP_TIME_SECOND  0
 #define FLB_SP_TIME_MINUTE  1

@@ -61,7 +61,6 @@ AND                     return AND;
 OR                      return OR;
 NOT                     return NOT;
 WINDOW                  return WINDOW;
-EXISTS                  return EXISTS;
 "GROUP BY"              return GROUP_BY;
 
 IS                      return IS;

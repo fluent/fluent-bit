@@ -52,7 +52,7 @@ void yyerror(struct flb_sp_cmd *cmd, char *query, void *scanner,
 %token INTEGER FLOATING STRING BOOLTYPE
 
 /* Logical operation tokens */
-%token AND OR NOT LT LTE GT GTE EXISTS
+%token AND OR NOT LT LTE GT GTE
 
 /* Time tokens */
 %token HOUR MINUTE SECOND
@@ -311,11 +311,6 @@ select: SELECT keys FROM source window where groupby ';'
                  '(' condition ')'
                  {
                    $$ = flb_sp_cmd_operation(cmd, $2, NULL, FLB_EXP_PAR);
-                 }
-                 |
-                 EXISTS key
-                 {
-                   $$ = flb_sp_cmd_operation(cmd, $2, NULL, FLB_EXP_EXISTS);
                  }
                  |
                  NOT condition
