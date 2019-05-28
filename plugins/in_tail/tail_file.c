@@ -91,8 +91,8 @@ static int open_file(const char *path)
 #endif
 
 static int unpack_and_pack(msgpack_packer *pck, msgpack_object *root,
-                           char *key, size_t key_len,
-                           char *val, size_t val_len)
+                           const char *key, size_t key_len,
+                           const char *val, size_t val_len)
 {
     int i;
     int size = root->via.map.size;
@@ -117,8 +117,8 @@ static int unpack_and_pack(msgpack_packer *pck, msgpack_object *root,
 }
 
 static int append_record_to_map(char **data, size_t *data_size,
-                                char *key,  size_t key_len,
-                                char *val,  size_t val_len)
+                                const char *key, size_t key_len,
+                                const char *val, size_t val_len)
 {
     int ret;
     msgpack_unpacked result;
@@ -395,17 +395,17 @@ static inline void drop_bytes(char *buf, size_t len, int pos, int bytes)
 }
 
 #ifdef FLB_HAVE_REGEX
-static void cb_results(unsigned char *name, unsigned char *value,
+static void cb_results(const char *name, const char *value,
                        size_t vlen, void *data)
 {
     struct flb_hash *ht = data;
     char *p;
 
-    while ((p = strchr((char *) value, '.'))) {
+    while ((p = strchr(value, '.'))) {
         *p = '_';
     }
 
-    flb_hash_add(ht, (char *) name, strlen((char *) name), (char *) value, vlen);
+    flb_hash_add(ht, name, strlen(name), value, vlen);
 }
 #endif
 
@@ -427,13 +427,13 @@ static int tag_compose(char *tag, char *fname, char **out_buf, size_t *out_size)
     char *beg;
     char *end;
     int ret;
-    char *tmp;
+    const char *tmp;
     size_t tmp_s;
 #endif
 
 #ifdef FLB_HAVE_REGEX
     if (tag_regex) {
-        n = flb_regex_do(tag_regex, (unsigned char *) fname, strlen(fname), &result);
+        n = flb_regex_do(tag_regex, fname, strlen(fname), &result);
         if (n <= 0) {
             flb_error("[in_tail] invalid pattern for given file %s", fname);
             return -1;

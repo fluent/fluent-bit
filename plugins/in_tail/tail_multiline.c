@@ -46,7 +46,7 @@ int flb_tail_mult_create(struct flb_tail_config *ctx,
                          struct flb_config *config)
 {
     int ret;
-    char *tmp;
+    const char *tmp;
     struct mk_list *head;
     struct flb_parser *parser;
     struct flb_config_prop *p;

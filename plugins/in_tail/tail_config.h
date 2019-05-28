@@ -72,9 +72,9 @@ struct flb_tail_config {
     int rotate_wait;           /* sec to wait on rotated files */
     int ignore_older;          /* ignore fields older than X seconds        */
     time_t last_pending;       /* last time a 'pending signal' was emitted' */
-    char *path;                /* lookup path (glob)           */
-    char *exclude_path;        /* exclude path                 */
-    char *path_key;            /* key name of file path        */
+    const char *path;          /* lookup path (glob)           */
+    const char *exclude_path;  /* exclude path                 */
+    const char *path_key;      /* key name of file path        */
     int   path_key_len;        /* length of key name           */
     char *key;                 /* key for unstructured record  */
     int   key_len;             /* length of key ^              */
