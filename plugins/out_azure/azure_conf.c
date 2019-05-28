@@ -29,8 +29,8 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
     int ret;
     size_t size;
     size_t olen;
-    char *tmp;
-    char *cid = NULL;
+    const char *tmp;
+    const char *cid = NULL;
     struct flb_upstream *upstream;
     struct flb_azure *ctx;
 
