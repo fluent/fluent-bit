@@ -29,7 +29,7 @@ int flb_tail_dmode_create(struct flb_tail_config *ctx,
                           struct flb_input_instance *i_ins,
                           struct flb_config *config)
 {
-    char *tmp;
+    const char *tmp;
 
     if (ctx->multiline == FLB_TRUE) {
         flb_error("[in_tail] Docker mode cannot be enabled when multiline is enabled");
