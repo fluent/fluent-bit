@@ -44,7 +44,7 @@ struct flb_output_plugin out_td_plugin;
  * This function returns a new msgpack buffer and store the bytes length
  * in the out_size variable.
  */
-static char *td_format(void *data, size_t bytes, int *out_size)
+static char *td_format(const void *data, size_t bytes, int *out_size)
 {
     int i;
     int ret;
@@ -177,8 +177,8 @@ int cb_td_init(struct flb_output_instance *ins, struct flb_config *config,
     return 0;
 }
 
-static void cb_td_flush(void *data, size_t bytes,
-                        char *tag, int tag_len,
+static void cb_td_flush(const void *data, size_t bytes,
+                        const char *tag, int tag_len,
                         struct flb_input_instance *i_ins,
                         void *out_context,
                         struct flb_config *config)
