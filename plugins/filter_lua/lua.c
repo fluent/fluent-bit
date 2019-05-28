@@ -60,15 +60,15 @@ static void lua_pushmsgpack(lua_State *l, msgpack_object *o)
             break;
 
         case MSGPACK_OBJECT_STR:
-            lua_pushlstring(l, (char*)o->via.str.ptr, o->via.str.size);
+            lua_pushlstring(l, o->via.str.ptr, o->via.str.size);
             break;
 
         case MSGPACK_OBJECT_BIN:
-            lua_pushlstring(l, (char*)o->via.bin.ptr, o->via.bin.size);
+            lua_pushlstring(l, o->via.bin.ptr, o->via.bin.size);
             break;
 
         case MSGPACK_OBJECT_EXT:
-            lua_pushlstring(l, (char*)o->via.ext.ptr, o->via.ext.size);
+            lua_pushlstring(l, o->via.ext.ptr, o->via.ext.size);
             break;
 
         case MSGPACK_OBJECT_ARRAY:
@@ -374,8 +374,8 @@ static int pack_result (double ts, msgpack_packer *pck, msgpack_sbuffer *sbuf,
     return FLB_TRUE;
 }
 
-static int cb_lua_filter(void *data, size_t bytes,
-                         char *tag, int tag_len,
+static int cb_lua_filter(const void *data, size_t bytes,
+                         const char *tag, int tag_len,
                          void **out_buf, size_t *out_bytes,
                          struct flb_filter_instance *f_ins,
                          void *filter_context,
