@@ -132,8 +132,8 @@ static int in_exec_config_read(struct flb_in_exec_config *exec_config,
                                int *interval_nsec
 )
 {
-    char *cmd = NULL;
-    char *pval = NULL;
+    const char *cmd = NULL;
+    const char *pval = NULL;
 
     /* filepath setting */
     cmd = flb_input_get_property("command", in);
