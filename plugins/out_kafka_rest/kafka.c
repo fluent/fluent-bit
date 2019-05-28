@@ -33,8 +33,8 @@
  * Convert the internal Fluent Bit data representation to the required
  * one by Kafka REST Proxy.
  */
-static char *kafka_rest_format(void *data, size_t bytes,
-                               char *tag, int tag_len, size_t *out_size,
+static char *kafka_rest_format(const void *data, size_t bytes,
+                               const char *tag, int tag_len, size_t *out_size,
                                struct flb_kafka_rest *ctx)
 {
     int i;
@@ -190,8 +190,8 @@ static int cb_kafka_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static void cb_kafka_flush(void *data, size_t bytes,
-                           char *tag, int tag_len,
+static void cb_kafka_flush(const void *data, size_t bytes,
+                           const char *tag, int tag_len,
                            struct flb_input_instance *i_ins,
                            void *out_context,
                            struct flb_config *config)

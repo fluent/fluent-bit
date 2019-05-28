@@ -31,7 +31,7 @@ struct flb_kafka_rest *flb_kr_conf_create(struct flb_output_instance *ins,
 {
     long part;
     int io_flags = 0;
-    char *tmp;
+    const char *tmp;
     char *endptr;
     struct flb_upstream *upstream;
     struct flb_kafka_rest *ctx;
