@@ -234,7 +234,7 @@ static int setup(struct filter_modify_ctx *ctx,
                         ("[filter_modify] Creating regex for condition A : %s %s : %s",
                          condition->raw_k, condition->raw_v, condition->a);
                     condition->a_regex =
-                        flb_regex_create((unsigned char *) condition->a);
+                        flb_regex_create(condition->a);
                 }
             }
 
@@ -252,7 +252,7 @@ static int setup(struct filter_modify_ctx *ctx,
                         ("[filter_modify] Creating regex for condition B : %s %s : %s",
                          condition->raw_k, condition->raw_v, condition->b);
                     condition->b_regex =
-                        flb_regex_create((unsigned char *) condition->b);
+                        flb_regex_create(condition->b);
                 }
             }
 
@@ -354,7 +354,7 @@ static int setup(struct filter_modify_ctx *ctx,
             }
             else {
                 rule->key_regex =
-                    flb_regex_create((unsigned char *) rule->key);
+                    flb_regex_create(rule->key);
             }
 
             if (rule->val_is_regex && rule->val_len == 0) {
@@ -365,7 +365,7 @@ static int setup(struct filter_modify_ctx *ctx,
             }
             else {
                 rule->val_regex =
-                    flb_regex_create((unsigned char *) rule->val);
+                    flb_regex_create(rule->val);
             }
 
             mk_list_add(&rule->_head, &ctx->rules);
@@ -388,7 +388,7 @@ static inline bool helper_msgpack_object_matches_regex(msgpack_object * obj,
                                                        struct flb_regex
                                                        *regex)
 {
-    char *key;
+    const char *key;
     int len;
     struct flb_regex_search result;
 
@@ -396,14 +396,14 @@ static inline bool helper_msgpack_object_matches_regex(msgpack_object * obj,
         return false;
     }
     else if (obj->type == MSGPACK_OBJECT_STR) {
-        key = (char *) obj->via.str.ptr;
+        key = obj->via.str.ptr;
         len = obj->via.str.size;
     }
     else {
         return false;
     }
 
-    return (flb_regex_do(regex, (unsigned char *) key, len, &result) == 0);
+    return (flb_regex_do(regex, key, len, &result) == 0);
 }
 
 static inline bool kv_key_matches_regex(msgpack_object_kv * kv,
@@ -488,13 +488,13 @@ static inline bool helper_msgpack_object_matches_wildcard(msgpack_object *
                                                           obj, char *str,
                                                           int len)
 {
-    char *key;
+    const char *key;
 
     if (obj->type == MSGPACK_OBJECT_BIN) {
-        key = (char *) obj->via.bin.ptr;
+        key = obj->via.bin.ptr;
     }
     else if (obj->type == MSGPACK_OBJECT_STR) {
-        key = (char *) obj->via.str.ptr;
+        key = obj->via.str.ptr;
     }
     else {
         return false;
@@ -585,15 +585,15 @@ static inline bool helper_msgpack_object_matches_str(msgpack_object * obj,
                                                      char *str, int len)
 {
 
-    char *key;
+    const char *key;
     int klen;
 
     if (obj->type == MSGPACK_OBJECT_BIN) {
-        key = (char *) obj->via.bin.ptr;
+        key = obj->via.bin.ptr;
         klen = obj->via.bin.size;
     }
     else if (obj->type == MSGPACK_OBJECT_STR) {
-        key = (char *) obj->via.str.ptr;
+        key = obj->via.str.ptr;
         klen = obj->via.str.size;
     }
     else {
@@ -1368,8 +1368,8 @@ static int cb_modify_init(struct flb_filter_instance *f_ins,
     return 0;
 }
 
-static int cb_modify_filter(void *data, size_t bytes,
-                            char *tag, int tag_len,
+static int cb_modify_filter(const void *data, size_t bytes,
+                            const char *tag, int tag_len,
                             void **out_buf, size_t * out_size,
                             struct flb_filter_instance *f_ins,
                             void *context, struct flb_config *config)
