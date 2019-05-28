@@ -82,7 +82,7 @@ static int configure(struct flb_in_dummy_config *ctx,
                      struct flb_input_instance *in,
                                  struct timespec *tm)
 {
-    char *str = NULL;
+    const char *str = NULL;
     int root_type;
     int  ret = -1;
     long val  = 0;
