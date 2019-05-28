@@ -214,7 +214,7 @@ static int configure(struct flb_in_disk_config *disk_config,
                                struct flb_input_instance *in)
 {
     (void) *in;
-    char *pval = NULL;
+    const char *pval = NULL;
     int entry = 0;
     int i;
 
