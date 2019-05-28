@@ -28,7 +28,7 @@
 #include "stdout.h"
 
 static char *msgpack_to_json(struct flb_out_stdout_config *ctx,
-                             char *data, uint64_t bytes,
+                             const char *data, uint64_t bytes,
                              uint64_t *out_size)
 {
     int i;
@@ -160,7 +160,7 @@ static char *msgpack_to_json(struct flb_out_stdout_config *ctx,
 static int cb_stdout_init(struct flb_output_instance *ins,
                           struct flb_config *config, void *data)
 {
-    char *tmp;
+    const char *tmp;
     struct flb_out_stdout_config *ctx = NULL;
     (void) ins;
     (void) config;
@@ -204,8 +204,8 @@ static int cb_stdout_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static void cb_stdout_flush(void *data, size_t bytes,
-                            char *tag, int tag_len,
+static void cb_stdout_flush(const void *data, size_t bytes,
+                            const char *tag, int tag_len,
                             struct flb_input_instance *i_ins,
                             void *out_context,
                             struct flb_config *config)
