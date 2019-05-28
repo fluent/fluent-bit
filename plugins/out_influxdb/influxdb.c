@@ -33,14 +33,14 @@
 /*
  * Returns FLB_TRUE if the specified value is true, otherwise FLB_FALSE
  */
-static int bool_value(char *v);
+static int bool_value(const char *v);
 
 /*
  * Returns FLB_TRUE when the specified key is in Tag_Keys list,
  * otherwise FLB_FALSE
  */
 static int is_tagged_key(struct flb_influxdb_config *ctx,
-                         char *key, int kl, int type);
+                         const char *key, int kl, int type);
 
 /*
  * Increments the timestamp when it is duplicated
@@ -62,8 +62,8 @@ static void influxdb_tsmod(struct flb_time *ts, struct flb_time *dupe,
  * Convert the internal Fluent Bit data representation to the required one
  * by InfluxDB.
  */
-static char *influxdb_format(char *tag, int tag_len,
-                             void *data, size_t bytes, int *out_size,
+static char *influxdb_format(const char *tag, int tag_len,
+                             const void *data, size_t bytes, int *out_size,
                              struct flb_influxdb_config *ctx)
 {
     int i;
@@ -170,19 +170,19 @@ static char *influxdb_format(char *tag, int tag_len,
             int quote = FLB_FALSE;
 
             /* key */
-            char *key = NULL;
+            const char *key = NULL;
             int key_len;
 
             /* val */
-            char *val = NULL;
+            const char *val = NULL;
             int val_len;
 
             if (k->type == MSGPACK_OBJECT_STR) {
-                key = (char *) k->via.str.ptr;
+                key = k->via.str.ptr;
                 key_len = k->via.str.size;
             }
             else {
-                key = (char *) k->via.bin.ptr;
+                key = k->via.bin.ptr;
                 key_len = k->via.bin.size;
             }
 
@@ -216,13 +216,13 @@ static char *influxdb_format(char *tag, int tag_len,
             else if (v->type == MSGPACK_OBJECT_STR) {
                 /* String value */
                 quote   = FLB_TRUE;
-                val     = (char *) v->via.str.ptr;
+                val     = v->via.str.ptr;
                 val_len = v->via.str.size;
             }
             else if (v->type == MSGPACK_OBJECT_BIN) {
                 /* Bin value */
                 quote   = FLB_TRUE;
-                val     = (char *) v->via.bin.ptr;
+                val     = v->via.bin.ptr;
                 val_len = v->via.bin.size;
             }
 
@@ -330,7 +330,7 @@ int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *config,
                      void *data)
 {
     int io_flags = 0;
-    char *tmp;
+    const char *tmp;
     struct flb_upstream *upstream;
     struct flb_influxdb_config *ctx;
 
@@ -440,8 +440,8 @@ int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *config,
     return 0;
 }
 
-void cb_influxdb_flush(void *data, size_t bytes,
-                       char *tag, int tag_len,
+void cb_influxdb_flush(const void *data, size_t bytes,
+                       const char *tag, int tag_len,
                        struct flb_input_instance *i_ins,
                        void *out_context,
                        struct flb_config *config)
@@ -526,7 +526,7 @@ int cb_influxdb_exit(void *data, struct flb_config *config)
     return 0;
 }
 
-int bool_value(char *v)
+int bool_value(const char *v)
 {
     if (strcasecmp(v, "true") == 0) {
         return FLB_TRUE;
@@ -541,7 +541,7 @@ int bool_value(char *v)
     return FLB_FALSE;
 }
 
-int is_tagged_key(struct flb_influxdb_config *ctx, char *key, int kl, int type)
+int is_tagged_key(struct flb_influxdb_config *ctx, const char *key, int kl, int type)
 {
     if (type == MSGPACK_OBJECT_STR) {
         if (ctx->auto_tags) {

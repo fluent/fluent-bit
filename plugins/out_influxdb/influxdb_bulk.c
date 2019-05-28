@@ -95,8 +95,8 @@ void influxdb_bulk_destroy(struct influxdb_bulk *bulk)
 }
 
 int influxdb_bulk_append_header(struct influxdb_bulk *bulk,
-                                char *tag, int tag_len,
-                                uint64_t seq_n, char *seq, int seq_len)
+                                const char *tag, int tag_len,
+                                uint64_t seq_n, const char *seq, int seq_len)
 {
     int ret;
     int required;
@@ -135,8 +135,8 @@ int influxdb_bulk_append_header(struct influxdb_bulk *bulk,
 }
 
 int influxdb_bulk_append_kv(struct influxdb_bulk *bulk,
-                            char *key, int k_len,
-                            char *val, int v_len,
+                            const char *key, int k_len,
+                            const char *val, int v_len,
                             int quote)
 {
     int ret;
