@@ -73,8 +73,8 @@ int cb_nats_init(struct flb_output_instance *ins, struct flb_config *config,
     return 0;
 }
 
-static int msgpack_to_json(void *data, size_t bytes,
-                           char *tag, int tag_len,
+static int msgpack_to_json(const void *data, size_t bytes,
+                           const char *tag, int tag_len,
                            char **out_json, size_t *out_size)
 {
     int i;
@@ -151,8 +151,8 @@ static int msgpack_to_json(void *data, size_t bytes,
     return 0;
 }
 
-void cb_nats_flush(void *data, size_t bytes,
-                   char *tag, int tag_len,
+void cb_nats_flush(const void *data, size_t bytes,
+                   const char *tag, int tag_len,
                    struct flb_input_instance *i_ins,
                    void *out_context,
                    struct flb_config *config)
