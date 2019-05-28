@@ -31,11 +31,11 @@
 #define pack_uint32(buf, d) _msgpack_store32(buf, (uint32_t) d)
 
 /* tag composer */
-static int tag_compose(char *tag, char *unit_name,
+static int tag_compose(const char *tag, const char *unit_name,
                        int unit_size, char **out_buf, size_t *out_size)
 {
     int len;
-    char *p;
+    const char *p;
     char *buf = *out_buf;
     size_t buf_s = 0;
 
@@ -82,9 +82,9 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
     uint8_t h;
     uint64_t usec;
     size_t length;
-    char *sep;
-    char *key;
-    char *val;
+    const char *sep;
+    const char *key;
+    const char *val;
     char *tmp;
     char *cursor = NULL;
     char *tag;
@@ -128,7 +128,7 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
             ret = sd_journal_get_data(ctx->j, "_SYSTEMD_UNIT", &data, &length);
             if (ret == 0) {
                 tag = new_tag;
-                tag_compose(ctx->i_ins->tag, (char *) data + 14, length - 14,
+                tag_compose(ctx->i_ins->tag, (const char *) data + 14, length - 14,
                             &tag, &tag_len);
             }
             else {
@@ -199,7 +199,7 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
         entries = 0;
         while (sd_journal_enumerate_data(ctx->j, &data, &length) > 0 &&
                entries < ctx->max_fields) {
-            key = (char *) data;
+            key = (const char *) data;
             if (ctx->strip_underscores == FLB_TRUE && key[0] == '_') {
                 key++;
                 length--;
