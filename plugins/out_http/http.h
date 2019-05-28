@@ -42,7 +42,7 @@ struct flb_out_http {
     char *http_passwd;
 
     /* Proxy */
-    char *proxy;
+    const char *proxy;
     char *proxy_host;
     int proxy_port;
 

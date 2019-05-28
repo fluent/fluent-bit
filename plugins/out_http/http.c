@@ -39,7 +39,7 @@
 
 struct flb_output_plugin out_http_plugin;
 
-static char *msgpack_to_json(struct flb_out_http *ctx, char *data, uint64_t bytes, uint64_t *out_size)
+static char *msgpack_to_json(struct flb_out_http *ctx, const char *data, uint64_t bytes, uint64_t *out_size)
 {
     int i;
     int ret;
@@ -193,8 +193,8 @@ static int cb_http_init(struct flb_output_instance *ins,
 }
 
 static int http_post (struct flb_out_http *ctx,
-                      void *body, size_t body_len,
-                      char *tag, int tag_len)
+                      const void *body, size_t body_len,
+                      const char *tag, int tag_len)
 {
     int ret;
     int out_ret = FLB_OK;
@@ -309,7 +309,7 @@ static int http_post (struct flb_out_http *ctx,
 }
 
 static int http_gelf(struct flb_out_http *ctx,
-                     char *data, uint64_t bytes, char *tag, int tag_len)
+                     const char *data, uint64_t bytes, const char *tag, int tag_len)
 {
     flb_sds_t s;
     flb_sds_t tmp;
@@ -369,8 +369,8 @@ static int http_gelf(struct flb_out_http *ctx,
     return FLB_OK;
 }
 
-static void cb_http_flush(void *data, size_t bytes,
-                          char *tag, int tag_len,
+static void cb_http_flush(const void *data, size_t bytes,
+                          const char *tag, int tag_len,
                           struct flb_input_instance *i_ins,
                           void *out_context,
                           struct flb_config *config)
