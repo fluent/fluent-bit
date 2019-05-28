@@ -48,7 +48,7 @@ struct netif_entry {
 };
 
 struct flb_in_netif_config {
-    char *interface;
+    const char *interface;
     int  interface_len;
 
     int  verbose;
