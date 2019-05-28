@@ -44,7 +44,7 @@ static int cb_splunk_init(struct flb_output_instance *ins,
     return 0;
 }
 
-int splunk_format(void *in_buf, size_t in_bytes,
+int splunk_format(const void *in_buf, size_t in_bytes,
                   char **out_buf, size_t *out_size,
                   struct flb_splunk *ctx)
 {
@@ -149,8 +149,8 @@ int splunk_format(void *in_buf, size_t in_bytes,
     return 0;
 }
 
-static void cb_splunk_flush(void *data, size_t bytes,
-                            char *tag, int tag_len,
+static void cb_splunk_flush(const void *data, size_t bytes,
+                            const char *tag, int tag_len,
                             struct flb_input_instance *i_ins,
                             void *out_context,
                             struct flb_config *config)
