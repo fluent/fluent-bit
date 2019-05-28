@@ -134,10 +134,10 @@ static int in_mem_init(struct flb_input_instance *in,
                        struct flb_config *config, void *data)
 {
     int ret;
-    char *tmp;
+    const char *tmp;
     struct flb_in_mem_config *ctx;
     (void) data;
-    char *pval = NULL;
+    const char *pval = NULL;
 
     /* Initialize context */
     ctx = flb_malloc(sizeof(struct flb_in_mem_config));
