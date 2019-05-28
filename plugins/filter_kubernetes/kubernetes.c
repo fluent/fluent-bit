@@ -40,7 +40,7 @@
 #define T_LOG_STREAM "stream"
 #define T_LOG_STDERR "stderr"
 
-static int is_stream_stderr(void *data, size_t bytes)
+static int is_stream_stderr(const void *data, size_t bytes)
 {
     int i;
     msgpack_unpacked result;
@@ -139,7 +139,7 @@ static int merge_log_handler(msgpack_object o,
 
     /* Unescape application string */
     size = o.via.str.size;
-    unesc_len = flb_unescape_string((char *) o.via.str.ptr,
+    unesc_len = flb_unescape_string(o.via.str.ptr,
                                     size, &ctx->unesc_buf);
     ctx->unesc_buf_len = unesc_len;
 
@@ -209,7 +209,7 @@ static int cb_kube_init(struct flb_filter_instance *f_ins,
 
 static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
                             msgpack_object source_map,
-                            char *kube_buf, size_t kube_size,
+                            const char *kube_buf, size_t kube_size,
                             struct flb_kube_meta *meta,
                             struct flb_time *time_lookup,
                             struct flb_parser *parser,
@@ -445,8 +445,8 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
     return 0;
 }
 
-static int cb_kube_filter(void *data, size_t bytes,
-                          char *tag, int tag_len,
+static int cb_kube_filter(const void *data, size_t bytes,
+                          const char *tag, int tag_len,
                           void **out_buf, size_t *out_bytes,
                           struct flb_filter_instance *f_ins,
                           void *filter_context,
@@ -456,7 +456,8 @@ static int cb_kube_filter(void *data, size_t bytes,
     int is_stderr = 0;
     size_t pre = 0;
     size_t off = 0;
-    char *cache_buf = NULL;
+    char *dummy_cache_buf = NULL;
+    const char *cache_buf = NULL;
     size_t cache_size = 0;
     msgpack_unpacked result;
     msgpack_object map;
@@ -472,12 +473,18 @@ static int cb_kube_filter(void *data, size_t bytes,
     (void) f_ins;
     (void) config;
 
-    if (ctx->use_journal == FLB_FALSE) {
-        /* Check if we have some cached metadata for the incoming events */
-        ret = flb_kube_meta_get(ctx,
-                                tag, tag_len,
-                                data, bytes,
-                                &cache_buf, &cache_size, &meta, &props);
+    if (ctx->use_journal == FLB_FALSE || ctx->dummy_meta == FLB_TRUE) {
+        if (ctx->dummy_meta == FLB_TRUE) {
+            ret = flb_kube_dummy_meta_get(&dummy_cache_buf, &cache_size);
+            cache_buf = dummy_cache_buf;
+        }
+        else {
+            /* Check if we have some cached metadata for the incoming events */
+            ret = flb_kube_meta_get(ctx,
+                                    tag, tag_len,
+                                    data, bytes,
+                                    &cache_buf, &cache_size, &meta, &props);
+        }
         if (ret == -1) {
             flb_kube_prop_destroy(&props);
             return FLB_FILTER_NOTOUCH;
@@ -519,7 +526,7 @@ static int cb_kube_filter(void *data, size_t bytes,
          * note: when the source is in_tail the situation is different since all
          * records passed to the filter have a unique source log file.
          */
-        if (ctx->use_journal == FLB_TRUE) {
+        if (ctx->use_journal == FLB_TRUE && ctx->dummy_meta == FLB_FALSE) {
             parser = NULL;
             cache_buf = NULL;
             memset(&props, '\0', sizeof(struct flb_kube_props));
@@ -564,7 +571,7 @@ static int cb_kube_filter(void *data, size_t bytes,
             msgpack_sbuffer_destroy(&tmp_sbuf);
             msgpack_unpacked_destroy(&result);
             if (ctx->dummy_meta == FLB_TRUE) {
-                flb_free(cache_buf);
+                flb_free(dummy_cache_buf);
             }
 
             flb_kube_meta_release(&meta);
@@ -588,7 +595,7 @@ static int cb_kube_filter(void *data, size_t bytes,
     *out_bytes = tmp_sbuf.size;
 
     if (ctx->dummy_meta == FLB_TRUE) {
-        flb_free(cache_buf);
+        flb_free(dummy_cache_buf);
     }
 
     flb_kube_prop_destroy(&props);

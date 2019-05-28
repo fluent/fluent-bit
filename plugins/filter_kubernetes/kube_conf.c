@@ -40,9 +40,9 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
 {
     int off;
     int ret;
-    char *url;
-    char *tmp;
-    char *p;
+    const char *url;
+    const char *tmp;
+    const char *p;
     struct flb_kube *ctx;
 
     ctx = flb_calloc(1, sizeof(struct flb_kube));
