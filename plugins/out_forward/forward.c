@@ -150,7 +150,7 @@ static int secure_forward_ping(struct flb_upstream_conn *u_conn,
 {
     int i;
     int ret;
-    uint8_t *nonce_data;
+    const uint8_t *nonce_data;
     int nonce_size;
     size_t bytes_sent;
     unsigned char shared_key[64];
@@ -176,18 +176,18 @@ static int secure_forward_ping(struct flb_upstream_conn *u_conn,
         return -1;
     }
 
-    nonce_data = (unsigned char *) val.via.bin.ptr;
+    nonce_data = (const unsigned char *) val.via.bin.ptr;
     nonce_size = val.via.bin.size;
 
     /* Compose the shared key */
     flb_sha512_init(&sha512);
     flb_sha512_update(&sha512, fc->shared_key_salt, 16);
     flb_sha512_update(&sha512,
-                      (unsigned char *) fc->self_hostname,
+                      (const unsigned char *) fc->self_hostname,
                       flb_sds_len(fc->self_hostname));
     flb_sha512_update(&sha512,
                       nonce_data, nonce_size);
-    flb_sha512_update(&sha512, (unsigned char *) fc->shared_key,
+    flb_sha512_update(&sha512, (const unsigned char *) fc->shared_key,
                       flb_sds_len(fc->shared_key));
     flb_sha512_sum(&sha512, shared_key);
 
@@ -390,12 +390,12 @@ static void forward_config_destroy(struct flb_forward_config *fc)
 }
 
 /* Configure in HA mode */
-static int forward_config_ha(char *upstream_file,
+static int forward_config_ha(const char *upstream_file,
                              struct flb_forward *ctx,
                              struct flb_config *config)
 {
     int ret;
-    char *tmp;
+    const char *tmp;
     struct mk_list *head;
     struct flb_upstream_node *node;
     struct flb_forward_config *fc = NULL;
@@ -474,7 +474,7 @@ static int forward_config_simple(struct flb_forward *ctx,
 {
     int ret;
     int io_flags;
-    char *tmp;
+    const char *tmp;
     struct flb_forward_config *fc = NULL;
     struct flb_upstream *upstream;
 
@@ -555,7 +555,7 @@ static int cb_forward_init(struct flb_output_instance *ins,
                            struct flb_config *config, void *data)
 {
     int ret;
-    char *tmp;
+    const char *tmp;
     struct flb_forward *ctx;
     (void) data;
 
@@ -579,7 +579,7 @@ static int cb_forward_init(struct flb_output_instance *ins,
     return ret;
 }
 
-static int data_compose(void *data, size_t bytes,
+static int data_compose(const void *data, size_t bytes,
                         void **out_buf, size_t *out_size,
                         struct flb_forward_config *fc,
                         struct flb_forward *ctx)
@@ -668,8 +668,8 @@ static int cb_forward_exit(void *data, struct flb_config *config)
     return 0;
 }
 
-static void cb_forward_flush(void *data, size_t bytes,
-                             char *tag, int tag_len,
+static void cb_forward_flush(const void *data, size_t bytes,
+                             const char *tag, int tag_len,
                              struct flb_input_instance *i_ins,
                              void *out_context,
                              struct flb_config *config)
@@ -680,7 +680,8 @@ static void cb_forward_flush(void *data, size_t bytes,
     size_t bytes_sent;
     msgpack_packer   mp_pck;
     msgpack_sbuffer  mp_sbuf;
-    void *out_buf = NULL;
+    void *tmp_buf = NULL;
+    const void *out_buf = NULL;
     size_t out_size = 0;
     struct flb_forward *ctx = out_context;
     struct flb_forward_config *fc = NULL;
@@ -712,7 +713,8 @@ static void cb_forward_flush(void *data, size_t bytes,
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
     /* Count number of entries, is there a better way to do this ? */
-    entries = data_compose(data, bytes, &out_buf, &out_size, fc, ctx);
+    entries = data_compose(data, bytes, &tmp_buf, &out_size, fc, ctx);
+    out_buf = tmp_buf;
     if (out_buf == NULL && fc->time_as_integer == FLB_FALSE) {
         out_buf = data;
         out_size = bytes;
@@ -738,7 +740,7 @@ static void cb_forward_flush(void *data, size_t bytes,
         flb_error("[out_fw] no upstream connections available");
         msgpack_sbuffer_destroy(&mp_sbuf);
         if (fc->time_as_integer == FLB_TRUE) {
-            flb_free(out_buf);
+            flb_free(tmp_buf);
         }
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
@@ -751,7 +753,7 @@ static void cb_forward_flush(void *data, size_t bytes,
             flb_upstream_conn_release(u_conn);
             msgpack_sbuffer_destroy(&mp_sbuf);
             if (fc->time_as_integer == FLB_TRUE) {
-                flb_free(out_buf);
+                flb_free(tmp_buf);
             }
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
@@ -764,7 +766,7 @@ static void cb_forward_flush(void *data, size_t bytes,
         msgpack_sbuffer_destroy(&mp_sbuf);
         flb_upstream_conn_release(u_conn);
         if (fc->time_as_integer == FLB_TRUE) {
-            flb_free(out_buf);
+            flb_free(tmp_buf);
         }
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
@@ -777,7 +779,7 @@ static void cb_forward_flush(void *data, size_t bytes,
     if (ret == -1) {
         flb_error("[out_fw] error writing content body");
         if (fc->time_as_integer == FLB_TRUE) {
-            flb_free(out_buf);
+            flb_free(tmp_buf);
         }
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -787,7 +789,7 @@ static void cb_forward_flush(void *data, size_t bytes,
     flb_upstream_conn_release(u_conn);
 
     if (fc->time_as_integer == FLB_TRUE) {
-        flb_free(out_buf);
+        flb_free(tmp_buf);
     }
 
     flb_trace("[out_fw] ended write()=%d bytes", total);
