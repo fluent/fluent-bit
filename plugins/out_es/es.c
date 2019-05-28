@@ -52,15 +52,15 @@ static inline int es_pack_map_content(msgpack_packer *tmp_pck,
         ptr_key = NULL;
 
         /* Store key */
-        char *key_ptr = NULL;
+        const char *key_ptr = NULL;
         size_t key_size = 0;
 
         if (k->type == MSGPACK_OBJECT_BIN) {
-            key_ptr  = (char *) k->via.bin.ptr;
+            key_ptr  = k->via.bin.ptr;
             key_size = k->via.bin.size;
         }
         else if (k->type == MSGPACK_OBJECT_STR) {
-            key_ptr  = (char *) k->via.str.ptr;
+            key_ptr  = k->via.str.ptr;
             key_size = k->via.str.size;
         }
 
@@ -128,8 +128,8 @@ static inline int es_pack_map_content(msgpack_packer *tmp_pck,
  *
  * 'Sadly' this process involves to convert from Msgpack to JSON.
  */
-static char *elasticsearch_format(void *data, size_t bytes,
-                                  char *tag, int tag_len, int *out_size,
+static char *elasticsearch_format(const void *data, size_t bytes,
+                                  const char *tag, int tag_len, int *out_size,
                                   struct flb_elasticsearch *ctx)
 {
     int ret;
@@ -537,8 +537,8 @@ static int elasticsearch_error_check(struct flb_http_client *c)
     return check;
 }
 
-void cb_es_flush(void *data, size_t bytes,
-                 char *tag, int tag_len,
+void cb_es_flush(const void *data, size_t bytes,
+                 const char *tag, int tag_len,
                  struct flb_input_instance *i_ins, void *out_context,
                  struct flb_config *config)
 {
