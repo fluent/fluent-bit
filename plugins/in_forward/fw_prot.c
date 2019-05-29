@@ -130,7 +130,7 @@ int fw_prot_process(struct fw_conn *conn)
             msgpack_unpacked_destroy(&result);
 
             /* Adjust buffer data */
-            if (all_used > 0) {
+            if (conn->buf_len > all_used && all_used > 0) {
                 memmove(conn->buf, conn->buf + all_used,
                         conn->buf_len - all_used);
                 conn->buf_len -= all_used;
