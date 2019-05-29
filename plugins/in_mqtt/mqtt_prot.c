@@ -76,6 +76,14 @@ static inline int mqtt_packet_drop(struct mqtt_conn *conn)
         return 0;
     }
 
+    /* Check boundaries */
+    if (conn->buf_pos + 1 > conn->buf_len) {
+        conn->buf_frame_end = 0;
+        conn->buf_len = 0;
+        conn->buf_pos = 0;
+        return 0;
+    }
+
     move_bytes = conn->buf_pos + 1;
     memmove(conn->buf,
             conn->buf + move_bytes,
@@ -234,6 +242,13 @@ static int mqtt_handle_publish(struct mqtt_conn *conn)
     hlen = BUFC() << 8;
     conn->buf_pos++;
     hlen |= BUFC();
+
+    /* Validate topic length against current buffer capacity (overflow) */
+    if (hlen > (conn->buf_len - conn->buf_pos)) {
+        flb_debug("[in_mqtt] invalid topic length");
+        return -1;
+    }
+
     conn->buf_pos++;
     topic     = conn->buf_pos;
     topic_len = hlen;
@@ -288,6 +303,7 @@ static int mqtt_handle_ping(struct mqtt_conn *conn)
 
 int mqtt_prot_parser(struct mqtt_conn *conn)
 {
+    int ret;
     int bytes = 0;
     int length = 0;
     int pos = conn->buf_pos;
@@ -374,7 +390,10 @@ int mqtt_prot_parser(struct mqtt_conn *conn)
                 mqtt_handle_connect(conn);
             }
             else if (conn->packet_type == MQTT_PUBLISH) {
-                mqtt_handle_publish(conn);
+                ret = mqtt_handle_publish(conn);
+                if (ret == -1) {
+                    return MQTT_ERROR;
+                }
             }
             else if (conn->packet_type == MQTT_PINGREQ) {
                 mqtt_handle_ping(conn);
