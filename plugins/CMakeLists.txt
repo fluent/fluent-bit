@@ -109,7 +109,9 @@ if (FLB_STREAM_PROCESSOR)
   REGISTER_IN_PLUGIN("in_stream_processor")
 endif()
 
-if (NOT CMAKE_SYSTEM_NAME MATCHES "Windows")
+if (FLB_SYSTEM_WINDOWS)
+  REGISTER_IN_PLUGIN("in_winlog")
+else()
   REGISTER_IN_PLUGIN("in_serial")
 endif()
 
