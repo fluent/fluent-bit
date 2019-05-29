@@ -823,12 +823,18 @@ static struct flb_exp_val *key_to_value(struct flb_exp_key *ekey,
                 return NULL;
             }
         }
+        else if (val.type == MSGPACK_OBJECT_NIL) {
+            result->type = FLB_EXP_NULL;
+            return result;
+        }
         else {
             flb_free(result);
             return NULL;
         }
     }
 
+    /* NULL return means: failed memory allocation, an invalid value, or non-existing key
+     */
     return NULL;
 }
 
@@ -912,6 +918,9 @@ static void numerical_comp(struct flb_exp_val *left,
     case FLB_EXP_EQ:
         if (left->type == right->type) {
             switch(left->type){
+            case FLB_EXP_NULL:
+                result->val.boolean = true;
+                break;
             case FLB_EXP_BOOL:
                 result->val.boolean = (left->val.boolean == right->val.boolean);
                 break;
@@ -1083,11 +1092,11 @@ static void logical_operation(struct flb_exp_val *left,
     bool lval;
     bool rval;
 
+    result->type = FLB_EXP_BOOL;
+
     /* Null is always interpreted as false in a logical operation */
     lval = left? value_to_bool(left) : false;
     rval = right? value_to_bool(right) : false;
-
-    result->type = FLB_EXP_BOOL;
 
     switch (op) {
     case FLB_EXP_NOT:
@@ -1122,6 +1131,9 @@ static struct flb_exp_val *reduce_expression(struct flb_exp *expression,
     }
 
     switch (expression->type) {
+    case FLB_EXP_NULL:
+        result->type = expression->type;
+        break;
     case FLB_EXP_BOOL:
         result->type = expression->type;
         result->val.boolean = ((struct flb_exp_val *) expression)->val.boolean;

@@ -66,8 +66,8 @@ void flb_sp_cmd_destroy(struct flb_sp_cmd *cmd)
     }
     flb_sds_destroy(cmd->source_name);
 
-    if (cmd->condition) {
-        flb_sp_cmd_condition_free(cmd);
+    if (mk_list_size(&cmd->cond_list) > 0) {
+        flb_sp_cmd_condition_del(cmd);
     }
 
     if (cmd->tmp_subkeys) {
@@ -245,13 +245,14 @@ struct flb_sp_cmd *flb_sp_cmd_create(const char *sql)
     buf = yy_scan_string(sql, scanner);
 
     ret = yyparse(cmd, sql, scanner);
+
+    yy_delete_buffer(buf, scanner);
+    yylex_destroy(scanner);
+
     if (ret != 0) {
         flb_sp_cmd_destroy(cmd);
         return NULL;
     }
-
-    yy_delete_buffer(buf, scanner);
-    yylex_destroy(scanner);
 
     return cmd;
 }
@@ -498,6 +499,22 @@ struct flb_exp *flb_sp_cmd_condition_boolean(struct flb_sp_cmd *cmd,
     return (struct flb_exp *) val;
 }
 
+struct flb_exp *flb_sp_cmd_condition_null(struct flb_sp_cmd *cmd)
+{
+    struct flb_exp_val *val;
+
+    val = flb_malloc(sizeof(struct flb_exp_val));
+    if (!val) {
+        flb_errno();
+        return NULL;
+    }
+
+    val->type = FLB_EXP_NULL;
+    mk_list_add(&val->_head, &cmd->cond_list);
+
+    return (struct flb_exp *) val;
+}
+
 void flb_sp_cmd_condition_add(struct flb_sp_cmd *cmd, struct flb_exp *e)
 {
     cmd->condition = e;
@@ -523,7 +540,7 @@ int flb_sp_cmd_gb_key_add(struct flb_sp_cmd *cmd, const char *key)
     return 0;
 }
 
-void flb_sp_cmd_condition_free(struct flb_sp_cmd *cmd)
+void flb_sp_cmd_condition_del(struct flb_sp_cmd *cmd)
 {
     struct mk_list *tmp;
     struct mk_list *head;

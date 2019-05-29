@@ -241,9 +241,9 @@ static void cb_select_all(int id, struct task_check *check,
 {
     int ret;
 
-    /* Expect all 10 rows */
+    /* Expect all 11 rows */
     ret = mp_count_rows(buf, size);
-    TEST_CHECK(ret == 10);
+    TEST_CHECK(ret == 11);
 }
 
 /* Callback test: expect one key per record */
@@ -252,12 +252,12 @@ static void cb_select_id(int id, struct task_check *check,
 {
     int ret;
 
-    /* Expect all 10 rows */
+    /* Expect all 11 rows */
     ret = mp_count_rows(buf, size);
-    TEST_CHECK(ret == 10);
+    TEST_CHECK(ret == 11);
 
     ret = mp_count_keys(buf, size);
-    TEST_CHECK(ret == 12);
+    TEST_CHECK(ret == 13);
 }
 
 static void cb_select_cond_1(int id, struct task_check *check,
@@ -280,6 +280,26 @@ static void cb_select_cond_2(int id, struct task_check *check,
     TEST_CHECK(ret == 2);
 }
 
+static void cb_select_cond_not_null(int id, struct task_check *check,
+                                    char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 1 row */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 1);
+}
+
+static void cb_select_cond_null(int id, struct task_check *check,
+                                char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 1 row */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 1);
+}
+
 static void cb_select_aggr(int id, struct task_check *check,
                            char *buf, size_t size)
 {
@@ -296,32 +316,32 @@ static void cb_select_aggr(int id, struct task_check *check,
                             NULL, 0, 0);
     TEST_CHECK(ret == FLB_TRUE);
 
-    /* MAX(id) is 9 */
+    /* MAX(id) is 10 */
     ret = mp_record_key_cmp(buf, size,
                             0, "MAX(id)",
-                            MSGPACK_OBJECT_POSITIVE_INTEGER,
-                            NULL, 9, 0);
-    TEST_CHECK(ret == FLB_TRUE);
-
-    /* COUNT(*) is 10 */
-    ret = mp_record_key_cmp(buf, size,
-                            0, "COUNT(*)",
                             MSGPACK_OBJECT_POSITIVE_INTEGER,
                             NULL, 10, 0);
     TEST_CHECK(ret == FLB_TRUE);
 
-    /* SUM(bytes) is 100.50 */
+    /* COUNT(*) is 11 */
+    ret = mp_record_key_cmp(buf, size,
+                            0, "COUNT(*)",
+                            MSGPACK_OBJECT_POSITIVE_INTEGER,
+                            NULL, 11, 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* SUM(bytes) is 110.50 */
     ret = mp_record_key_cmp(buf, size,
                             0, "SUM(bytes)",
                             MSGPACK_OBJECT_FLOAT,
-                            NULL, 0, 100.50);
+                            NULL, 0, 110.50);
     TEST_CHECK(ret == FLB_TRUE);
 
-    /* AVG(bytes) is 10.05 */
+    /* AVG(bytes) is 10.04545 */
     ret = mp_record_key_cmp(buf, size,
                             0, "AVG(bytes)",
                             MSGPACK_OBJECT_FLOAT,
-                            NULL, 0, 10.050000);
+                            NULL, 0, 10.045455);
     TEST_CHECK(ret == FLB_TRUE);
 }
 
@@ -334,11 +354,11 @@ static void cb_select_aggr_count(int id, struct task_check *check,
     ret = mp_count_rows(buf, size);
     TEST_CHECK(ret == 1);
 
-    /* COUNT(*) is 10 */
+    /* COUNT(*) is 11 */
     ret = mp_record_key_cmp(buf, size,
                             0, "COUNT(*)",
                             MSGPACK_OBJECT_POSITIVE_INTEGER,
-                            NULL, 10, 0);
+                            NULL, 11, 0);
     TEST_CHECK(ret == FLB_TRUE);
 }
 
@@ -531,46 +551,58 @@ struct task_check select_keys_checks[] = {
         "SELECT * FROM STREAM:FLB WHERE word2 = 'rlz' or word3 = 'rlz';",
         cb_select_cond_2
     },
+    {
+        4, 0, 0,
+        "select_cond_not_null",
+        "SELECT * FROM STREAM:FLB WHERE word2 = 'rlz' and word3 IS NOT NULL;",
+        cb_select_cond_not_null
+    },
+    {
+        5, 0, 0,
+        "select_cond_null",
+        "SELECT * FROM STREAM:FLB WHERE word3 IS NULL;",
+        cb_select_cond_null
+    },
 
     /* Aggregation functions */
     {
-        4, 0, 0,
+        6, 0, 0,
         "select_aggr",
         "SELECT MIN(id), MAX(id), COUNT(*), SUM(bytes), AVG(bytes) " \
         "FROM STREAM:FLB;",
         cb_select_aggr,
     },
     {
-        5, 0, 0,
+        7, 0, 0,
         "select_aggr_coount",
         "SELECT COUNT(*) " \
         "FROM STREAM:FLB;",
         cb_select_aggr_count,
     },
     {
-        6, 0, 0,
+        8, 0, 0,
         "select_aggr_window_tumbling",
         "SELECT MIN(id), MAX(id), COUNT(*), SUM(bytes), AVG(bytes) " \
         "FROM STREAM:FLB WINDOW TUMBLING (1 SECOND);",
         cb_select_aggr,
     },
     {
-        7, 0, 0,
+        9, 0, 0,
         "select_aggr_window_tumbling_groupby",
         "SELECT bool, MIN(id), MAX(id), COUNT(*), SUM(bytes), AVG(bytes) " \
-        "FROM STREAM:FLB WINDOW TUMBLING (1 SECOND) GROUP BY bool;",
+        "FROM STREAM:FLB WINDOW TUMBLING (1 SECOND) WHERE word3 IS NOT NULL GROUP BY bool;",
         cb_select_groupby,
     },
 
     /* Time functions */
     {
-        8, 0, 0,
+        10, 0, 0,
         "func_time_now",
         "SELECT NOW(), NOW() as tnow FROM STREAM:FLB WHERE bytes > 10;",
         cb_func_time_now,
     },
     {
-        9, 0, 0,
+        11, 0, 0,
         "func_time_unix_timestamp",
         "SELECT UNIX_TIMESTAMP(), UNIX_TIMESTAMP() as ts " \
         "FROM STREAM:FLB WHERE bytes > 10;",
@@ -578,13 +610,13 @@ struct task_check select_keys_checks[] = {
     },
     /* Stream selection using Tag rules */
     {
-        10, 0, 0,
+        12, 0, 0,
         "select_from_tag_error",
         "SELECT id FROM TAG:'no-matches' WHERE bytes > 10;",
         cb_select_tag_error,
     },
     {
-        11, 0, 0,
+        13, 0, 0,
         "select_from_tag",
         "SELECT id FROM TAG:'samples' WHERE bytes > 10;",
         cb_select_tag_ok,
@@ -654,6 +686,7 @@ struct task_check select_subkeys_checks[] = {
 char *invalid_query_checks[] = {
     "SELECT id, MIN(id) FROM STREAM:FLB;",
     "SELECT *, COUNT(id) FROM STREAM:FLB;",
+    "SELECT * FROM TAG:FLB WHERE bool = NULL ;",
     "SELECT id, MIN(id) FROM STREAM:FLB WINDOW TUMBLING (1 SECOND)" \
         " GROUP BY bool;",
     "SELECT *, COUNT(id) FROM STREAM:FLB WINDOW TUMBLING (1 SECOND)" \
@@ -903,7 +936,7 @@ struct task_check window_checks[] = {
     {
         0, FLB_SP_WINDOW_TUMBLING, 5,
         "window_5_seconds",
-        "SELECT SUM(id), AVG(id) FROM STREAM:FLB WINDOW TUMBLING (5 SECOND);",
+        "SELECT SUM(id), AVG(id) FROM STREAM:FLB WINDOW TUMBLING (5 SECOND) WHERE word3 IS NOT NULL;",
         cb_window_5_second
     },
 };
