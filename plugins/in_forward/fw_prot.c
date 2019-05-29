@@ -141,8 +141,29 @@ int fw_prot_process(struct fw_conn *conn)
 
         /* Always summarize the total number of bytes requested to parse */
         buf_off += recv_len;
-
         ret = msgpack_unpacker_next_with_size(unp, &result, &bytes);
+
+        /*
+         * Upon parsing or memory errors, break the loop, return the error
+         * and expect the connection to be closed.
+         */
+        if (ret == MSGPACK_UNPACK_PARSE_ERROR ||
+            ret == MSGPACK_UNPACK_NOMEM_ERROR) {
+            /* A bit redunant, print out the real error */
+            if (ret == MSGPACK_UNPACK_PARSE_ERROR) {
+                flb_debug("[in_fw] err=MSGPACK_UNPACK_PARSE_ERROR");
+            }
+            else {
+                flb_error("[in_fw] err=MSGPACK_UNPACK_NOMEM_ERROR");
+            }
+
+            /* Cleanup buffers */
+            msgpack_unpacked_destroy(&result);
+            msgpack_unpacker_free(unp);
+
+            return -1;
+        }
+
         while (ret == MSGPACK_UNPACK_SUCCESS) {
             /*
              * For buffering optimization we always want to know the total
@@ -259,6 +280,7 @@ int fw_prot_process(struct fw_conn *conn)
             ret = msgpack_unpacker_next(unp, &result);
         }
     }
+
     msgpack_unpacked_destroy(&result);
     msgpack_unpacker_free(unp);
 
