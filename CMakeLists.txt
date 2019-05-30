@@ -253,7 +253,7 @@ include_directories(
   lib/
   lib/flb_libco
   lib/rbtree
-  lib/msgpack-3.1.1/include
+  lib/msgpack-3.2.0/include
   lib/chunkio/include
   lib/LuaJIT-2.1.0-beta3/src/
   ${MONKEY_INCLUDE_DIR}
@@ -281,7 +281,7 @@ option(MSGPACK_ENABLE_CXX             OFF)
 option(MSGPACK_ENABLE_SHARED          OFF)
 option(MSGPACK_BUILD_TESTS            OFF)
 option(MSGPACK_BUILD_EXAMPLES         OFF)
-add_subdirectory(lib/msgpack-3.1.1 EXCLUDE_FROM_ALL)
+add_subdirectory(lib/msgpack-3.2.0 EXCLUDE_FROM_ALL)
 
 # Chunk I/O
 FLB_OPTION(CIO_LIB_STATIC  ON)
