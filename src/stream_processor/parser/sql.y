@@ -42,6 +42,9 @@ void yyerror(struct flb_sp_cmd *cmd, const char *query, void *scanner,
 /* Aggregation functions */
 %token AVG SUM COUNT MAX MIN
 
+/* Record functions */
+%token RECORD CONTAINS
+
 /* Time functions */
 %token NOW UNIX_TIMESTAMP
 
@@ -86,6 +89,7 @@ void yyerror(struct flb_sp_cmd *cmd, const char *query, void *scanner,
 %type <expression> condition
 %type <expression> comparison
 %type <expression> key
+%type <expression> record_func
 %type <expression> value
 %type <expression> null
 %type <integer>    time
@@ -327,11 +331,7 @@ select: SELECT keys FROM source window where groupby ';'
                  {
                    $$ = flb_sp_cmd_operation(cmd, $1, $3, FLB_EXP_OR);
                  }
-      comparison: key '=' value
-                  {
-                    $$ = flb_sp_cmd_comparison(cmd, $1, $3, FLB_EXP_EQ);
-                  }
-                  |
+      comparison:
                   key IS null
                   {
                     $$ = flb_sp_cmd_comparison(cmd, $1, $3, FLB_EXP_EQ);
@@ -344,25 +344,44 @@ select: SELECT keys FROM source window where groupby ';'
                              NULL, FLB_EXP_NOT);
                   }
                   |
-                  key LT value
+                  record_func
+                  {
+                    $$ = flb_sp_cmd_comparison(cmd,
+                             $1,
+                             flb_sp_cmd_condition_boolean(cmd, true),
+                             FLB_EXP_EQ);
+                  }
+                  |
+                  record_func '=' value
+                  {
+                    $$ = flb_sp_cmd_comparison(cmd, $1, $3, FLB_EXP_EQ);
+                  }
+                  |
+                  record_func LT value
                   {
                     $$ = flb_sp_cmd_comparison(cmd, $1, $3, FLB_EXP_LT);
                   }
                   |
-                  key LTE value
+                  record_func LTE value
                   {
                     $$ = flb_sp_cmd_comparison(cmd, $1, $3, FLB_EXP_LTE);
                   }
                   |
-                  key GT value
+                  record_func GT value
                   {
                     $$ = flb_sp_cmd_comparison(cmd, $1, $3, FLB_EXP_GT);
                   }
                   |
-                  key GTE value
+                  record_func GTE value
                   {
                     $$ = flb_sp_cmd_comparison(cmd, $1, $3, FLB_EXP_GTE);
                   }
+        record_func: key /* Similar to an identity function */
+                     |
+                     RECORD '.' CONTAINS '(' key ')'
+                     {
+                       $$ = flb_sp_record_function_add(cmd, "contains", $5);
+                     }
         key: IDENTIFIER
                    {
                      $$ = flb_sp_cmd_condition_key(cmd, $1);

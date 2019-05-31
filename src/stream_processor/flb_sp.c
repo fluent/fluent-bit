@@ -823,6 +823,12 @@ static struct flb_exp_val *key_to_value(struct flb_exp_key *ekey,
                 return NULL;
             }
         }
+        else if (val.type == MSGPACK_OBJECT_MAP) {
+            /* return boolean 'true', just denoting the existence of the key */
+            result->type = FLB_EXP_BOOL;
+            result->val.boolean = true;
+            return result;
+        }
         else if (val.type == MSGPACK_OBJECT_NIL) {
             result->type = FLB_EXP_NULL;
             return result;
@@ -1159,6 +1165,12 @@ static struct flb_exp_val *reduce_expression(struct flb_exp *expression,
         ret = key_to_value((struct flb_exp_key *) expression, map);
         flb_free(result);
         result = ret;
+        break;
+    case FLB_EXP_FUNC:
+        flb_free(result);  // we don't need result
+        ret = reduce_expression(((struct flb_exp_func *) expression)->param, map);
+        result = ((struct flb_exp_func *) expression)->cb_func(ret);
+        free_value(ret);
         break;
     case FLB_LOGICAL_OP:
         left = reduce_expression(expression->left, map);

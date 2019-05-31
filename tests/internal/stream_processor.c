@@ -523,6 +523,26 @@ static void cb_func_time_unix_timestamp(int id, struct task_check *check,
     TEST_CHECK(ret == FLB_TRUE);
 }
 
+static void cb_record_contains(int id, struct task_check *check,
+                               char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 2 rows */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 2);
+}
+
+static void cb_record_not_contains(int id, struct task_check *check,
+                                   char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 0 rows */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 0);
+}
+
 /* Tests for 'test_select_keys' */
 struct task_check select_keys_checks[] = {
     {
@@ -608,6 +628,7 @@ struct task_check select_keys_checks[] = {
         "FROM STREAM:FLB WHERE bytes > 10;",
         cb_func_time_unix_timestamp,
     },
+
     /* Stream selection using Tag rules */
     {
         12, 0, 0,
@@ -620,8 +641,19 @@ struct task_check select_keys_checks[] = {
         "select_from_tag",
         "SELECT id FROM TAG:'samples' WHERE bytes > 10;",
         cb_select_tag_ok,
+    },
+    {
+        14, 0, 0,
+        "@recond.contains",
+        "SELECT id FROM TAG:'samples' WHERE bytes = 10 AND @record.contains(word2);",
+        cb_record_contains,
+    },
+    {
+        15, 0, 0,
+        "@recond.contains",
+        "SELECT id FROM TAG:'samples' WHERE @record.contains(x);",
+        cb_record_not_contains,
     }
-
 };
 
 
@@ -687,6 +719,7 @@ char *invalid_query_checks[] = {
     "SELECT id, MIN(id) FROM STREAM:FLB;",
     "SELECT *, COUNT(id) FROM STREAM:FLB;",
     "SELECT * FROM TAG:FLB WHERE bool = NULL ;",
+    "SELECT * FROM TAG:FLB WHERE @record.some_random_func() ;",
     "SELECT id, MIN(id) FROM STREAM:FLB WINDOW TUMBLING (1 SECOND)" \
         " GROUP BY bool;",
     "SELECT *, COUNT(id) FROM STREAM:FLB WINDOW TUMBLING (1 SECOND)" \
