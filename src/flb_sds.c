@@ -164,7 +164,8 @@ flb_sds_t flb_sds_copy(flb_sds_t s, const char *str, int len)
     return s;
 }
 
-flb_sds_t flb_sds_cat_utf8 (flb_sds_t *sds, const char *str, int str_len)
+flb_sds_t flb_sds_cat_utf8 (flb_sds_t *sds, const char *str, int str_len,
+                                            char *esc, size_t esc_size)
 {
     static const char int2hex[] = "0123456789abcdef";
     int i;
@@ -201,37 +202,10 @@ flb_sds_t flb_sds_cat_utf8 (flb_sds_t *sds, const char *str, int str_len)
             head = FLB_SDS_HEADER(s);
         }
 
-        c = (unsigned char)str[i];
-        if (c == '\\' || c == '"') {
+        c = (unsigned char) str[i];
+        if (esc != NULL && c < esc_size && esc[c] != 0) {
             s[head->len++] = '\\';
-            s[head->len++] = c;
-        }
-        else if (c >= '\b' && c <= '\r') {
-            s[head->len++] = '\\';
-            switch (c) {
-            case '\n':
-                s[head->len++] = 'n';
-                break;
-            case '\t':
-                s[head->len++] = 't';
-                break;
-            case '\b':
-                s[head->len++] = 'b';
-                break;
-            case '\f':
-                s[head->len++] = 'f';
-                break;
-            case '\r':
-                s[head->len++] = 'r';
-                break;
-            case '\v':
-                s[head->len++] = 'u';
-                s[head->len++] = '0';
-                s[head->len++] = '0';
-                s[head->len++] = '0';
-                s[head->len++] = 'b';
-                break;
-            }
+            s[head->len++] = esc[c];
         }
         else if (c < 32 || c == 0x7f) {
             s[head->len++] = '\\';
