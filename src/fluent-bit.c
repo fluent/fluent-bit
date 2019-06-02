@@ -437,8 +437,11 @@ static int flb_service_conf(struct flb_config *config, char *file)
     }
 
     /* Read main [SERVICE] section */
-    section = mk_rconf_section_get(fconf, "SERVICE");
-    if (section) {
+    mk_list_foreach(head, &fconf->sections) {
+        section = mk_list_entry(head, struct mk_rconf_section, _head);
+        if (strcasecmp(section->name, "SERVICE") != 0) {
+            continue;
+        }
         /* Iterate properties */
         mk_list_foreach(h_prop, &section->entries) {
             entry = mk_list_entry(h_prop, struct mk_rconf_entry, _head);
