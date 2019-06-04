@@ -429,11 +429,20 @@ int flb_io_tls_net_write(struct flb_thread *th, struct flb_upstream_conn *u_conn
     struct flb_upstream *u = u_conn->u;
 
     u_conn->thread = th;
+    size_t tls_max_frag_len = mbedtls_ssl_get_max_frag_len(
+            &u_conn->tls_session->ssl);
 
  retry_write:
-    ret = mbedtls_ssl_write(&u_conn->tls_session->ssl,
-                            (unsigned char *) data + total,
-                            len - total);
+    if (len > tls_max_frag_len && (len - total) > tls_max_frag_len)
+    {
+        ret = mbedtls_ssl_write(&u_conn->tls_session->ssl,
+                                (unsigned char *) data + total,
+                                tls_max_frag_len);
+    } else {
+        ret = mbedtls_ssl_write(&u_conn->tls_session->ssl,
+                                (unsigned char *) data + total,
+                                len - total);
+    }
     if (ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
         io_tls_event_switch(u_conn, MK_EVENT_WRITE);
         flb_thread_yield(th, FLB_FALSE);
