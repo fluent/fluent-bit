@@ -58,6 +58,7 @@ struct flb_tail_file {
     /* multiline status */
     time_t mult_flush_timeout;  /* time when multiline started           */
     int mult_firstline;         /* bool: mult firstline found ?          */
+    int mult_firstline_append;  /* bool: mult firstline appendable ?     */
     int mult_skipping;          /* skipping because ignode_older than ?  */
     int mult_keys;              /* total number of buffered keys         */
     msgpack_sbuffer mult_sbuf;  /* temporal msgpack buffer               */
