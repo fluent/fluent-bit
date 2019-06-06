@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_log.h>
 #include "sql_parser.h"
 
 static inline char *remove_dup_qoutes(const char *s, size_t n)
@@ -115,5 +116,7 @@ RECORD_TIME             return RECORD_TIME;
 \'                      return QUOTE;
 \n
 [ \t]+			/* ignore whitespace */;
+
+.	flb_error("[sp] bad input character '%s' at line %d", yytext, yylineno);
 
 %%
