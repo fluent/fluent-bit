@@ -33,9 +33,9 @@
 #include <msgpack.h>
 
 /* Merge status used by merge_log_handler() */
-#define MERGE_UNESCAPED   0 /* merge unescaped string in temporal buffer */
+#define MERGE_NONE        0 /* merge unescaped string in temporal buffer */
 #define MERGE_PARSED      1 /* merge parsed string (log_buf)             */
-#define MERGE_BINARY      2 /* merge direct binary object (v)            */
+#define MERGE_MAP         2 /* merge direct binary object (v)            */
 
 #define T_LOG_STREAM "stream"
 #define T_LOG_STDERR "stderr"
@@ -139,8 +139,8 @@ static int merge_log_handler(msgpack_object o,
 
     /* Unescape application string */
     size = o.via.str.size;
-    unesc_len = flb_unescape_string(o.via.str.ptr,
-                                    size, &ctx->unesc_buf);
+    unesc_len = flb_unescape_string_utf8(o.via.str.ptr,
+                                         size, ctx->unesc_buf);
     ctx->unesc_buf_len = unesc_len;
 
     ret = -1;
@@ -161,13 +161,13 @@ static int merge_log_handler(msgpack_object o,
             flb_debug("[filter_kube] could not merge JSON, root_type=%i",
                       root_type);
             flb_free(*out_buf);
-            return MERGE_UNESCAPED;
+            return MERGE_NONE;
         }
     }
 
     if (ret == -1) {
         flb_debug("[filter_kube] could not merge JSON log as requested");
-        return MERGE_UNESCAPED;
+        return MERGE_NONE;
     }
 
     return MERGE_PARSED;
@@ -257,14 +257,14 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
      */
     if (log_index != -1) {
         v = source_map.via.map.ptr[log_index].val;
-        if (v.type == MSGPACK_OBJECT_STR) {
+        if (v.type == MSGPACK_OBJECT_MAP) {
+            /* This is the easiest way, no extra processing required */
+            merge_status = MERGE_MAP;
+        }
+        else if (v.type == MSGPACK_OBJECT_STR) {
             merge_status = merge_log_handler(v, parser,
                                              &log_buf, &log_size,
                                              &log_time, ctx);
-        }
-        else if (v.type == MSGPACK_OBJECT_MAP) {
-            /* This is the easiest way, no extra processing required */
-            merge_status = MERGE_BINARY;
         }
     }
 
@@ -284,7 +284,7 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
     /* Determinate the size of the new map */
     new_map_size = map_size;
 
-    /* If a merged json exists, check the number of entries */
+    /* If a merged status exists, check the number of entries to merge */
     if (log_index != -1) {
         if (merge_status == MERGE_PARSED) {
             off = 0;
@@ -296,7 +296,7 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
             }
             msgpack_unpacked_destroy(&result);
         }
-        else if (merge_status == MERGE_BINARY) {
+        else if (merge_status == MERGE_MAP) {
             /* object 'v' represents the original binary log */
             log_buf_entries = v.via.map.size;
         }
@@ -307,19 +307,21 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
         new_map_size++;
     }
 
-    /* Start packaging the final map */
-    if (merge_status == MERGE_PARSED && ctx->merge_log_key != NULL) {
-        /* Make room for one new key that will hold the original log entries */
-        new_map_size++;
-    }
-    else {
-        new_map_size += log_buf_entries;
+    if (log_buf_entries > 0) {
+        if (ctx->merge_log_key != NULL) {
+            new_map_size++;
+        }
+        else {
+            new_map_size += log_buf_entries;
+        }
     }
 
-    if (merge_status == MERGE_PARSED && ctx->keep_log == FLB_FALSE) {
+    if ((merge_status == MERGE_PARSED || merge_status == MERGE_MAP) &&
+        ctx->keep_log == FLB_FALSE) {
         new_map_size--;
     }
 
+    /* Pack Map */
     msgpack_pack_map(pck, new_map_size);
 
     /* Original map */
@@ -328,19 +330,28 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
         v = source_map.via.map.ptr[i].val;
 
         /*
-         * If the original 'log' field was unescaped and converted to
-         * msgpack properly, re-pack the new string version to avoid
-         * multiple escape sequences in outgoing plugins.
+         * If log_index is set, means a merge log is a requirement but
+         * will depend on merge_status. If the parsing failed we cannot
+         * merge so we keep the 'log' key/value.
          */
-        if (log_index == i &&
-            (merge_status == MERGE_UNESCAPED || merge_status == MERGE_PARSED)) {
-            if (merge_status == MERGE_UNESCAPED || ctx->keep_log == FLB_TRUE) {
+        if (log_index == i) {
+            if (ctx->keep_log == FLB_TRUE) {
                 msgpack_pack_object(pck, k);
-                msgpack_pack_str(pck, ctx->unesc_buf_len);
-                msgpack_pack_str_body(pck, ctx->unesc_buf, ctx->unesc_buf_len);
+                if (merge_status == MERGE_NONE || merge_status == MERGE_PARSED){
+                    msgpack_pack_str(pck, ctx->unesc_buf_len);
+                    msgpack_pack_str_body(pck, ctx->unesc_buf,
+                                          ctx->unesc_buf_len);
+                }
+                else {
+                    msgpack_pack_object(pck, v);
+                }
+            }
+            else if (merge_status == MERGE_NONE) {
+                msgpack_pack_object(pck, k);
+                msgpack_pack_object(pck, v);
             }
         }
-        else { /* MERGE_BINARY ? */
+        else {
             msgpack_pack_object(pck, k);
             msgpack_pack_object(pck, v);
         }
@@ -382,12 +393,12 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
             msgpack_unpacked_destroy(&result);
             flb_free(log_buf);
         }
-        else if (merge_status == MERGE_BINARY) {
-            msgpack_object bin_map;
-            bin_map = source_map.via.map.ptr[log_index].val;
-            for (i = 0; i < bin_map.via.map.size; i++) {
-                k = bin_map.via.map.ptr[i].key;
-                v = bin_map.via.map.ptr[i].val;
+        else if (merge_status == MERGE_MAP) {
+            msgpack_object map;
+            map = source_map.via.map.ptr[log_index].val;
+            for (i = 0; i < map.via.map.size; i++) {
+                k = map.via.map.ptr[i].key;
+                v = map.via.map.ptr[i].val;
                 msgpack_pack_object(pck, k);
                 msgpack_pack_object(pck, v);
             }
