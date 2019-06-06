@@ -29,6 +29,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_unescape.h>
 
 #include <msgpack.h>
 #include <jsmn/jsmn.h>
@@ -85,10 +86,34 @@ static inline int is_float(const char *buf, int len)
     return 0;
 }
 
+/* Sanitize incoming JSON string */
+static inline int pack_string_token(const char *str, int len,
+                                    msgpack_packer *pck)
+{
+    int out_len;
+    char *out_buf;
+
+    out_buf = flb_malloc(len + 1);
+    if (!out_buf) {
+        flb_errno();
+        return -1;
+    }
+
+    /* Always decode any UTF-8 or special characters */
+    out_len = flb_unescape_string_utf8(str, len, out_buf);
+
+    /* Pack decoded text */
+    msgpack_pack_str(pck, out_len);
+    msgpack_pack_str_body(pck, out_buf, out_len);
+
+    flb_free(out_buf);
+    return out_len;
+}
+
 /* Receive a tokenized JSON message and convert it to MsgPack */
 static char *tokens_to_msgpack(const char *js,
-                               const jsmntok_t *tokens, int arr_size, int *out_size,
-                               int *last_byte)
+                               const jsmntok_t *tokens, int arr_size,
+                               int *out_size, int *last_byte)
 {
     int i;
     int flen;
@@ -126,8 +151,7 @@ static char *tokens_to_msgpack(const char *js,
             msgpack_pack_array(&pck, t->size);
             break;
         case JSMN_STRING:
-            msgpack_pack_str(&pck, flen);
-            msgpack_pack_str_body(&pck, js + t->start, flen);
+            pack_string_token(js + t->start, flen, &pck);
             break;
         case JSMN_PRIMITIVE:
             p = js + t->start;
