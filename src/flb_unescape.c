@@ -200,12 +200,18 @@ int flb_unescape_string_utf8(const char *in_buf, int sz, char *out_buf)
         count_in += esc_in;
 
         esc_out = u8_wc_toutf8(temp, ch);
-
         if (esc_out > sz-count_out) {
             flb_error("Crossing over string boundary");
             break;
         }
-        memcpy(&out_buf[count_out], temp, esc_out);
+
+        if (esc_out == 0) {
+            out_buf[count_out] = ch;
+            esc_out = 1;
+        }
+        else {
+            memcpy(&out_buf[count_out], temp, esc_out);
+        }
         count_out += esc_out;
     }
     if (count_in < sz) {
