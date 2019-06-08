@@ -62,7 +62,8 @@ enum Expressions {
     FLB_EXP_INT,
     FLB_EXP_FLOAT,
     FLB_EXP_STRING,
-    FLB_EXP_NULL
+    FLB_EXP_NULL,
+    FLB_EXP_FUNC
 };
 
 /* Logical operation */
@@ -180,6 +181,14 @@ struct flb_exp_key {
     struct mk_list *subkeys;
 };
 
+struct flb_exp_func {
+    int type;
+    struct mk_list _head;
+    flb_sds_t name;
+    struct flb_exp_val *(*cb_func) (struct flb_exp_val *);
+    struct flb_exp *param;
+};
+
 struct flb_exp_val {
     int type;
     struct mk_list _head;
@@ -221,10 +230,13 @@ struct flb_exp *flb_sp_cmd_condition_string(struct flb_sp_cmd *cmd,
 struct flb_exp *flb_sp_cmd_condition_boolean(struct flb_sp_cmd *cmd,
                                              bool boolean);
 struct flb_exp *flb_sp_cmd_condition_null(struct flb_sp_cmd *cmd);
+struct flb_exp *flb_sp_record_function_add(struct flb_sp_cmd *cmd,
+                                           char *name, struct flb_exp *param);
 
 void flb_sp_cmd_condition_del(struct flb_sp_cmd *cmd);
 
 int flb_sp_cmd_gb_key_add(struct flb_sp_cmd *cmd, const char *key);
 void flb_sp_cmd_gb_key_del(struct flb_sp_cmd_gb_key *key);
+
 
 #endif

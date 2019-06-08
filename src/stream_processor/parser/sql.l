@@ -74,6 +74,10 @@ COUNT                   return COUNT;
 MIN                     return MIN;
 MAX                     return MAX;
 
+ /* Record Functions */
+@RECORD                 return RECORD;
+CONTAINS                return CONTAINS;
+
  /* Window Types */
 TUMBLING                return TUMBLING;
 
@@ -106,6 +110,7 @@ RECORD_TIME             return RECORD_TIME;
 ")"                     |
 "["                     |
 "]"                     |
+"."                     |
 ";"                     { return yytext[0]; }
 
 "<"                     return LT;
