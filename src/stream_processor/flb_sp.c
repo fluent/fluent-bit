@@ -695,6 +695,10 @@ static int subkey_to_value(struct flb_exp_key *ekey, msgpack_object *map,
         /* Key expected key entry */
         entry = mk_list_entry(head, struct flb_slist_entry, _head);
 
+        if (cur_map.type != MSGPACK_OBJECT_MAP) {
+            break;
+        }
+
         /* Get map entry that matches entry name */
         for (i = 0; i < cur_map.via.map.size; i++) {
             key = cur_map.via.map.ptr[i].key;
@@ -714,10 +718,7 @@ static int subkey_to_value(struct flb_exp_key *ekey, msgpack_object *map,
             }
 
             key_found = &key;
-
-            if (val.type == MSGPACK_OBJECT_MAP) {
-                cur_map = val;
-            }
+            cur_map = val;
             matched++;
             break;
         }
