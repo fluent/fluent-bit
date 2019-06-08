@@ -684,9 +684,19 @@ static void cb_select_sub_colors(int id, struct task_check *check,
 {
     int ret;
 
-    /* Expect 2 rows */
+    /* Expect 3 rows */
     ret = mp_count_rows(buf, size);
     TEST_CHECK(ret == 3);
+}
+
+static void cb_select_sub_record_contains(int id, struct task_check *check,
+                                          char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 2 rows */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 2);
 }
 
 /* Tests for 'test_select_subkeys' */
@@ -711,6 +721,14 @@ struct task_check select_subkeys_checks[] = {
         "map['sub1']['sub2']['color'] = 'red'  OR "  \
         "map['color'] = 'blue'; ",
         cb_select_sub_colors
+    },
+    {
+        3, 0, 0,
+        "cb_select_sub_record_contains",
+        "SELECT * FROM STREAM:FLB WHERE "            \
+        "@record.contains(map['sub1']['sub3']) OR "  \
+        "@record.contains(map['color']); ",
+        cb_select_sub_record_contains
     },
 };
 

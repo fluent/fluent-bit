@@ -756,6 +756,12 @@ static int subkey_to_value(struct flb_exp_key *ekey, msgpack_object *map,
                                                 val.via.str.size);
         return 0;
     }
+    else if (val.type == MSGPACK_OBJECT_MAP) {
+        /* return boolean 'true', just denoting the existence of the key */
+        result->type = FLB_EXP_BOOL;
+        result->val.boolean = true;
+        return 0;
+    }
 
     return -1;
 }
