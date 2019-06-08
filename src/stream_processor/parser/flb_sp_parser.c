@@ -29,6 +29,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_slist.h>
 #include <fluent-bit/stream_processor/flb_sp_parser.h>
+#include <fluent-bit/stream_processor/flb_sp_record_func.h>
 
 #include "sql_parser.h"
 #include "sql_lex.h"
@@ -515,7 +516,39 @@ struct flb_exp *flb_sp_cmd_condition_null(struct flb_sp_cmd *cmd)
     return (struct flb_exp *) val;
 }
 
+struct flb_exp *flb_sp_record_function_add(struct flb_sp_cmd *cmd, char *name, struct flb_exp *param)
+{
+    char *rf_name;
+    int i;
+    struct flb_exp_func *func;
+
+    for (i = 0; i < RECORD_FUNCTIONS_SIZE; i++)
+    {
+        rf_name = record_functions[i];
+        if (strncmp(rf_name, name, strlen(rf_name)) == 0)
+        {
+            func = flb_calloc(1, sizeof(struct flb_exp_func));
+            if (!func) {
+                flb_errno();
+                return NULL;
+            }
+
+            func->type = FLB_EXP_FUNC;
+            func->name = flb_sds_create(name);
+            func->cb_func = record_functions_ptr[i];
+            func->param = param;
+
+            mk_list_add(&func->_head, &cmd->cond_list);
+
+            return (struct flb_exp *) func;
+        }
+    }
+
+    return NULL;
+}
+
 void flb_sp_cmd_condition_add(struct flb_sp_cmd *cmd, struct flb_exp *e)
+
 {
     cmd->condition = e;
 }
@@ -547,6 +580,7 @@ void flb_sp_cmd_condition_del(struct flb_sp_cmd *cmd)
     struct flb_exp *exp;
     struct flb_exp_key *key;
     struct flb_exp_val *val;
+    struct flb_exp_func *func;
 
     mk_list_foreach_safe(head, tmp, &cmd->cond_list) {
         exp = mk_list_entry(head, struct flb_exp, _head);
@@ -562,6 +596,11 @@ void flb_sp_cmd_condition_del(struct flb_sp_cmd *cmd)
             val = (struct flb_exp_val *) exp;
             flb_sds_destroy(val->val.string);
         }
+        else if (exp->type == FLB_EXP_FUNC) {
+            func = (struct flb_exp_func *) exp;
+            flb_sds_destroy(func->name);
+        }
+
         mk_list_del(&exp->_head);
         flb_free(exp);
     }
