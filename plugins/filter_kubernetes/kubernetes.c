@@ -144,6 +144,8 @@ static int merge_log_handler(msgpack_object o,
     ctx->unesc_buf_len = unesc_len;
 
     ret = -1;
+
+    /* Parser set by Annotation */
     if (parser) {
         ret = flb_parser_do(parser, ctx->unesc_buf, unesc_len,
                             out_buf, out_size, log_time);
@@ -154,7 +156,17 @@ static int merge_log_handler(msgpack_object o,
             return MERGE_PARSED;
         }
     }
-    else {
+    else if (ctx->merge_parser) { /* Custom parser 'merge_parser' option */
+        ret = flb_parser_do(ctx->merge_parser, ctx->unesc_buf, unesc_len,
+                            out_buf, out_size, log_time);
+        if (ret >= 0) {
+            if (flb_time_to_double(log_time) == 0) {
+                flb_time_get(log_time);
+            }
+            return MERGE_PARSED;
+        }
+    }
+    else { /* Default JSON parser */
         ret = flb_pack_json(ctx->unesc_buf, unesc_len,
                             (char **) out_buf, out_size, &root_type);
         if (ret == 0 && root_type != FLB_PACK_JSON_OBJECT) {
