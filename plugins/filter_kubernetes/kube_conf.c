@@ -119,7 +119,7 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
         ctx->merge_log_trim = FLB_TRUE;
     }
 
-    /* Keep original log key after successful parsing */
+    /* Keep original log key after successful merging/parsing */
     tmp = flb_filter_get_property("keep_log", i);
     if (tmp) {
         ctx->keep_log = flb_utils_bool(tmp);

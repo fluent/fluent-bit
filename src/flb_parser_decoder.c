@@ -36,22 +36,24 @@ static int decode_json(struct flb_parser_dec *dec,
                        const char *in_buf, size_t in_size,
                        char **out_buf, size_t *out_size, int *out_type)
 {
-    int len;
     int ret;
     int root_type;
     char *buf;
+    const char *p;
     size_t size;
+    size_t len;
 
-    /* JSON Decoder: content may be escaped */
-    len = flb_unescape_string(in_buf, in_size, &dec->buffer);
+    p = in_buf;
+    while (*p == ' ') p++;
+
+    len = in_size - (p - in_buf);
 
     /* It must be a map or array */
-    if (dec->buffer[0] != '{' && dec->buffer[0] != '[') {
+    if (p[0] != '{' && p[0] != '[') {
         return -1;
     }
 
-    /* Convert from unescaped JSON to MessagePack */
-    ret = flb_pack_json(dec->buffer, len, &buf, &size, &root_type);
+    ret = flb_pack_json(p, len, &buf, &size, &root_type);
     if (ret != 0) {
         return -1;
     }

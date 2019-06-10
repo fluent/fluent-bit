@@ -150,11 +150,49 @@ int flb_unescape_string_utf8(const char *in_buf, int sz, char *out_buf)
 
     while (*in_buf && count_in < sz) {
         next = in_buf + 1;
-        if (*in_buf == '\\' && !is_json_escape(*next)) {
-            esc_in = u8_read_escape_sequence((in_buf + 1), &ch) + 1;
+
+        if (*in_buf == '\\') {
+            if (is_json_escape(*next)) {
+                switch (*next) {
+                case '"':
+                    ch = '"';
+                    break;
+                case '\\':
+                    ch = '\\';
+                    break;
+                case '/':
+                    ch = '/';
+                    break;
+                case 'n':
+                    ch = '\n';
+                    break;
+                case 'a':
+                    ch = '\a';
+                    break;
+                case 'b':
+                    ch = '\b';
+                    break;
+                case 't':
+                    ch = '\t';
+                    break;
+                case 'v':
+                    ch = '\v';
+                    break;
+                case 'f':
+                    ch = '\f';
+                    break;
+                case 'r':
+                    ch = '\r';
+                    break;
+                }
+                esc_in = 2;
+            }
+            else {
+                esc_in = u8_read_escape_sequence((in_buf + 1), &ch) + 1;
+            }
         }
         else {
-            ch = (uint32_t)*in_buf;
+            ch = (uint32_t) *in_buf;
             esc_in = 1;
         }
 
@@ -162,12 +200,18 @@ int flb_unescape_string_utf8(const char *in_buf, int sz, char *out_buf)
         count_in += esc_in;
 
         esc_out = u8_wc_toutf8(temp, ch);
-
         if (esc_out > sz-count_out) {
             flb_error("Crossing over string boundary");
             break;
         }
-        memcpy(&out_buf[count_out], temp, esc_out);
+
+        if (esc_out == 0) {
+            out_buf[count_out] = ch;
+            esc_out = 1;
+        }
+        else {
+            memcpy(&out_buf[count_out], temp, esc_out);
+        }
         count_out += esc_out;
     }
     if (count_in < sz) {
