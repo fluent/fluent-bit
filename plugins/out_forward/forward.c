@@ -135,7 +135,7 @@ static int secure_forward_read(struct flb_upstream_conn *u_conn,
 static void secure_forward_bin_to_hex(uint8_t *buf, size_t len, char *out)
 {
     int i;
-    char map[] = "0123456789abcdef";
+    static char map[] = "0123456789abcdef";
 
 	for (i = 0; i < len; i++) {
 		out[i * 2]     = map[buf[i] >> 4];
@@ -368,6 +368,144 @@ static int secure_forward_handshake(struct flb_upstream_conn *u_conn,
     return 0;
 }
 
+static int secure_forward_write_options(struct flb_upstream_conn *u_conn,
+                                        struct flb_forward_config *fc,
+                                        struct flb_forward *ctx,
+                                        size_t size,
+                                        char *chunk,
+                                        size_t *bytes_sent_ptr)
+{
+    int ret;
+    int opt_count = 1;
+    msgpack_packer   mp_pck;
+    msgpack_sbuffer  mp_sbuf;
+    size_t bytes_sent = 0;
+    size_t chunk_size = 0;
+
+    if(chunk) {
+        chunk_size = strlen(chunk);
+        if(chunk_size > 0) {
+            opt_count++;
+        }
+    }
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    // options is map
+    msgpack_pack_map(&mp_pck,opt_count);
+
+    // "chunk": '<checksum-base-64>'
+    if(chunk && chunk_size > 0) {
+        msgpack_pack_str(&mp_pck, 5);
+        msgpack_pack_str_body(&mp_pck, "chunk", 5);
+        msgpack_pack_str(&mp_pck, chunk_size);
+        msgpack_pack_str_body(&mp_pck, chunk, chunk_size);
+    }
+
+    // "size": entries
+    msgpack_pack_str(&mp_pck, 4);
+    msgpack_pack_str_body(&mp_pck, "size", 4);
+    msgpack_pack_int64(&mp_pck, size);
+
+    ret = flb_io_net_write(u_conn, mp_sbuf.data, mp_sbuf.size, &bytes_sent);
+    if (ret == -1) {
+        msgpack_sbuffer_destroy(&mp_sbuf);
+        return -1;
+    }
+    if(bytes_sent_ptr) *bytes_sent_ptr = bytes_sent;
+    msgpack_sbuffer_destroy(&mp_sbuf);
+    return 0;
+}
+
+
+static int secure_forward_read_ack(struct flb_upstream_conn *u_conn,
+                                   struct flb_forward_config *fc,
+                                   struct flb_forward *ctx,
+                                   char *chunk)
+{
+    int ret;
+    int i;
+    size_t out_len;
+    size_t off;
+    const char *ack;
+    size_t ack_len;
+    int chunk_len;
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_object_map map;
+    msgpack_object key;
+    msgpack_object val;
+    char buf[512];  /* ack should never be bigger */
+
+    flb_trace("[out_fw] wait ACK (%s)", chunk);
+
+    chunk_len = strlen(chunk);
+
+    /* Wait for server ACK */
+    ret = secure_forward_read(u_conn, buf, sizeof(buf) - 1, &out_len);
+    if (ret == -1) {
+        flb_error("[out_fw] cannot get ack");
+        return -1;
+    }
+
+    /* Unpack message and validate */
+    off = 0;
+    msgpack_unpacked_init(&result);
+    ret = msgpack_unpack_next(&result, buf, out_len, &off);
+    if (ret != MSGPACK_UNPACK_SUCCESS) {
+        print_msgpack_status(ret, "ACK");
+        goto error;
+    }
+
+    /* Parse ACK message */
+    root = result.data;
+    if (root.type != MSGPACK_OBJECT_MAP) {
+        flb_error("[out_fw] ACK response not MAP (type:%d)", root.type);
+        goto error;
+    }
+
+    map = root.via.map;
+    ack = NULL;
+    /* Lookup ack field */
+    for (i = 0; i < map.size; i++) {
+        key = map.ptr[i].key;
+        if (key.via.str.size == 3 && strncmp(key.via.str.ptr, "ack", 3) == 0) {
+            val     = map.ptr[i].val;
+            ack_len = val.via.str.size;
+            ack     = val.via.str.ptr;
+            break;
+        }
+    }
+
+    if (!ack) {
+        flb_error("[out_fw] ack: ack not found");
+        goto error;
+    }
+
+    if(ack_len != chunk_len) {
+        flb_error("[out_fw] ack: ack len does not match ack(%d)(%.*s) chunk(%d)(%.*s)",
+                  ack_len, ack_len, ack,
+                  chunk_len, chunk_len, chunk);
+        goto error;
+    }
+
+    if (strncmp(ack, chunk, ack_len) != 0) {
+        flb_error("[out_fw] ACK: mismatch (%s)", chunk);
+        goto error;
+    }
+
+    flb_debug("[out_fw] protocol: received ACK");
+
+    msgpack_unpacked_destroy(&result);
+    return 0;
+
+ error:
+    msgpack_unpacked_destroy(&result);
+    return -1;
+
+}
+
+
 static int forward_config_init(struct flb_forward_config *fc,
                                struct flb_forward *ctx)
 {
@@ -450,6 +588,24 @@ static int forward_config_ha(const char *upstream_file,
         }
         else {
             fc->time_as_integer = FLB_FALSE;
+        }
+
+        fc->require_ack_response = FLB_FALSE;
+        fc->send_options = FLB_FALSE;
+
+        /* send always options (with size) */
+        tmp = flb_upstream_node_get_property("send_options", node);
+        if (tmp) {
+            fc->send_options = flb_utils_bool(tmp);
+        }
+
+        /* require ack response  (implies send_options) */
+        tmp = flb_upstream_node_get_property("require_ack_response", node);
+        if (tmp) {
+            fc->require_ack_response = flb_utils_bool(tmp);
+            if(fc->require_ack_response) {
+                fc->send_options = FLB_TRUE;
+            }
         }
 
         /* Initialize and validate forward_config context */
@@ -537,6 +693,24 @@ static int forward_config_simple(struct flb_forward *ctx,
     tmp = flb_output_get_property("time_as_integer", ins);
     if (tmp) {
         fc->time_as_integer = flb_utils_bool(tmp);
+    }
+
+    fc->require_ack_response = FLB_FALSE;
+    fc->send_options = FLB_FALSE;
+
+    /* send always options (with size) */
+    tmp = flb_output_get_property("send_options", ins);
+    if (tmp) {
+        fc->send_options = flb_utils_bool(tmp);
+    }
+
+    /* require ack response  (implies send_options) */
+    tmp = flb_output_get_property("require_ack_response", ins);
+    if (tmp) {
+        fc->require_ack_response = flb_utils_bool(tmp);
+        if(fc->require_ack_response) {
+            fc->send_options = FLB_TRUE;
+        }
     }
 
     /* Initialize and validate forward_config context */
@@ -689,6 +863,10 @@ static void cb_forward_flush(const void *data, size_t bytes,
     struct flb_upstream_node *node;
     (void) i_ins;
     (void) config;
+    char *chunkptr;
+    struct flb_sha512 sha512;
+    uint8_t checksum[64];
+    char checksum_hex[33];
 
     if (ctx->ha_mode == FLB_TRUE) {
         node = flb_upstream_ha_node_get(ctx->ha);
@@ -724,7 +902,7 @@ static void cb_forward_flush(const void *data, size_t bytes,
               entries, tag, tag_len);
 
     /* Output: root array */
-    msgpack_pack_array(&mp_pck, 2);
+    msgpack_pack_array(&mp_pck, fc->send_options ? 3 : 2);
     msgpack_pack_str(&mp_pck, tag_len);
     msgpack_pack_str_body(&mp_pck, tag, tag_len);
     msgpack_pack_array(&mp_pck, entries);
@@ -786,11 +964,45 @@ static void cb_forward_flush(const void *data, size_t bytes,
     }
 
     total += bytes_sent;
-    flb_upstream_conn_release(u_conn);
 
     if (fc->time_as_integer == FLB_TRUE) {
         flb_free(tmp_buf);
     }
+
+    if(fc->send_options) {
+        chunkptr = NULL;
+        if(fc->require_ack_response) {
+            /* for ack we calculate  sha512 of context, take 16 bytes,  make 32 byte hex string of it */
+            flb_sha512_init(&sha512);
+            flb_sha512_update(&sha512,data,bytes);
+            flb_sha512_sum(&sha512,checksum); // => 65 bytes
+            secure_forward_bin_to_hex(checksum, 16, checksum_hex);
+            checksum_hex[32] = '\0';
+            chunkptr = (char*) checksum_hex;
+        }
+
+        flb_debug("[out_fw] send options entries=%d chunk='%s'", entries, chunkptr ? chunkptr : "NULL");
+
+        ret = secure_forward_write_options(u_conn, fc, ctx, entries, chunkptr, &bytes_sent);
+        if(ret < 0) {
+            flb_error("[out_fw] error writing option");
+            flb_upstream_conn_release(u_conn);
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+
+        total += bytes_sent;
+
+        if(chunkptr) {
+            ret = secure_forward_read_ack(u_conn, fc, ctx, chunkptr);
+            if(ret < 0) {
+                flb_error("[out_fw] error wait ACK");
+                flb_upstream_conn_release(u_conn);
+                FLB_OUTPUT_RETURN(FLB_RETRY);
+            }
+        }
+    }
+
+    flb_upstream_conn_release(u_conn);
 
     flb_trace("[out_fw] ended write()=%d bytes", total);
     FLB_OUTPUT_RETURN(FLB_OK);
