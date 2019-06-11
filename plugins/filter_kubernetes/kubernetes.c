@@ -112,16 +112,13 @@ static int merge_log_handler(msgpack_object o,
                              struct flb_kube *ctx)
 {
     int ret;
-    int size;
     int new_size;
-    int unesc_len = 0;
     int root_type;
     char *tmp;
 
     /* Reset vars */
     *out_buf = NULL;
     *out_size = 0;
-    ctx->unesc_buf_len = 0;
 
     /* Allocate more space if required */
     if (o.via.str.size >= ctx->unesc_buf_size) {
@@ -137,17 +134,16 @@ static int merge_log_handler(msgpack_object o,
         }
     }
 
-    /* Unescape application string */
-    size = o.via.str.size;
-    unesc_len = flb_unescape_string_utf8(o.via.str.ptr,
-                                         size, ctx->unesc_buf);
-    ctx->unesc_buf_len = unesc_len;
+    /* Copy the string value and append the required NULL byte */
+    ctx->unesc_buf_len = (int) o.via.str.size;
+    memcpy(ctx->unesc_buf, o.via.str.ptr, o.via.str.size);
+    ctx->unesc_buf[ctx->unesc_buf_len] = '\0';
 
     ret = -1;
 
     /* Parser set by Annotation */
     if (parser) {
-        ret = flb_parser_do(parser, ctx->unesc_buf, unesc_len,
+        ret = flb_parser_do(parser, ctx->unesc_buf, ctx->unesc_buf_len,
                             out_buf, out_size, log_time);
         if (ret >= 0) {
             if (flb_time_to_double(log_time) == 0) {
@@ -157,7 +153,8 @@ static int merge_log_handler(msgpack_object o,
         }
     }
     else if (ctx->merge_parser) { /* Custom parser 'merge_parser' option */
-        ret = flb_parser_do(ctx->merge_parser, ctx->unesc_buf, unesc_len,
+        ret = flb_parser_do(ctx->merge_parser,
+                            ctx->unesc_buf, ctx->unesc_buf_len,
                             out_buf, out_size, log_time);
         if (ret >= 0) {
             if (flb_time_to_double(log_time) == 0) {
@@ -167,7 +164,7 @@ static int merge_log_handler(msgpack_object o,
         }
     }
     else { /* Default JSON parser */
-        ret = flb_pack_json(ctx->unesc_buf, unesc_len,
+        ret = flb_pack_json(ctx->unesc_buf, ctx->unesc_buf_len,
                             (char **) out_buf, out_size, &root_type);
         if (ret == 0 && root_type != FLB_PACK_JSON_OBJECT) {
             flb_debug("[filter_kube] could not merge JSON, root_type=%i",
@@ -383,11 +380,13 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
             msgpack_unpacked_init(&result);
             msgpack_unpack_next(&result, log_buf, log_size, &off);
             root = result.data;
+
             for (i = 0; i < log_buf_entries; i++) {
                 k = root.via.map.ptr[i].key;
                 msgpack_pack_object(pck, k);
 
                 v = root.via.map.ptr[i].val;
+
                 /*
                  * If this is the last string value, trim any remaining
                  * break line or return carrier character.
@@ -407,6 +406,14 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
         }
         else if (merge_status == MERGE_MAP) {
             msgpack_object map;
+
+            if (ctx->merge_log_key && log_buf_entries > 0) {
+                msgpack_pack_str(pck, ctx->merge_log_key_len);
+                msgpack_pack_str_body(pck, ctx->merge_log_key,
+                                      ctx->merge_log_key_len);
+                msgpack_pack_map(pck, log_buf_entries);
+            }
+
             map = source_map.via.map.ptr[log_index].val;
             for (i = 0; i < map.via.map.size; i++) {
                 k = map.via.map.ptr[i].key;
