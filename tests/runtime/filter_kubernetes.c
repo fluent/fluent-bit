@@ -157,8 +157,8 @@ static int cb_check_result(void *record, size_t size, void *data)
             if (!check) {
                 fprintf(stderr, "Validator mismatch::\n"
                                 "Target: <<%s>>, Suffix: <<%s>\n"
-                                "Filtered record: <<%s>>\n"
-                                "Expected record: <<%s>>\n",
+                                "Filtered record: <<\n%s\n>>\n"
+                                "Expected record: <<\n%s\n>>\n",
                                 result->target, result->suffix,
                                 (char *)record, out);
             }
