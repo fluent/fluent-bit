@@ -2,7 +2,7 @@
 
 The current development version of Fluent Bit, integrates support to load
 _shared_ plugins built in Golang. The interface still needs some adjustment
-but is functional, the expectation is to release Fluent Bit v0.10 with fully
+but is functional. The expectation is to release Fluent Bit v0.10 with full
 support for Go.
 
 ## Getting Started
@@ -79,9 +79,9 @@ func main() {
 }
 ```
 
-The code above is a template to write an output plugin, it's really important
-to keep the package name as  `main` and add an explicit `main()` function.
-This is a requirement as the code will be build as a shared library.
+The code above is a template to write an output plugin. It's really important
+to keep the package name as `main` and add an explicit `main()` function.
+This is a requirement as the code will be built as a shared library.
 
 To build the code above, use the following line:
 
@@ -107,4 +107,4 @@ $ ldd out_gstdout.so
 $ bin/fluent-bit -e /path/to/out_gstdout.so -i cpu -o gstdout
 ```
 
-for more details or assistance write to eduardo@treasure-data.com
+For more details or assistance write to eduardo@treasure-data.com
