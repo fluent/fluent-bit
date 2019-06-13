@@ -46,6 +46,7 @@ struct flb_sb {
 static int cb_queue_chunks(struct flb_input_instance *in,
                            struct flb_config *config, void *data)
 {
+    int ret;
     ssize_t size;
     size_t total = 0;
     struct mk_list *tmp;
@@ -69,7 +70,19 @@ static int cb_queue_chunks(struct flb_input_instance *in,
     mk_list_foreach_safe(head, tmp, &sb->backlog) {
         sbc = mk_list_entry(head, struct sb_chunk, _head);
 
-        cio_chunk_up(sbc->chunk);
+        if (cio_chunk_is_file(sbc->chunk) == CIO_TRUE &&
+            cio_chunk_is_up(sbc->chunk) == CIO_FALSE) {
+
+            ret = cio_chunk_up(sbc->chunk);
+            if (ret == -1) {
+                flb_error("[storage backlog] unregistering %s:%s",
+                          sbc->stream->name, sbc->chunk->name);
+                cio_chunk_close(sbc->chunk, CIO_FALSE);
+                mk_list_del(&sbc->_head);
+                flb_free(sbc);
+                continue;
+            }
+        }
 
         /* get the number of bytes being used by the chunk */
         size = cio_chunk_get_real_size(sbc->chunk);
@@ -78,7 +91,7 @@ static int cb_queue_chunks(struct flb_input_instance *in,
         }
 
         void *ch = sbc->chunk;
-        flb_info("[storage_backend] queueing %s:%s",
+        flb_info("[storage_backlog] queueing %s:%s",
                  sbc->stream->name, sbc->chunk->name);
 
         /* Associate this backlog chunk to this instance into the engine */
@@ -147,7 +160,9 @@ static int sb_prepare_environment(struct flb_sb *sb)
                 continue;
             }
 
-            cio_chunk_down(chunk);
+            if (cio_chunk_is_up(chunk) == CIO_TRUE) {
+                cio_chunk_down(chunk);
+            }
         }
     }
 
