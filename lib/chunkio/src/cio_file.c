@@ -2,7 +2,7 @@
 
 /*  Chunk I/O
  *  =========
- *  Copyright 2018 Eduardo Silva <eduardo@monkey.io>
+ *  Copyright 2018-2019 Eduardo Silva <eduardo@monkey.io>
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -211,6 +211,45 @@ static int cio_file_format_check(struct cio_chunk *ch,
 }
 
 /*
+ * Unmap the memory for the opened file in question. It make sure
+ * to sync changes to disk first.
+ */
+static int munmap_file(struct cio_ctx *ctx, struct cio_chunk *ch)
+{
+    int ret;
+    struct cio_file *cf;
+
+    cf = (struct cio_file *) ch->backend;
+
+    if (!cf) {
+        return -1;
+    }
+
+    /* File not mapped */
+    if (cf->map == NULL) {
+        return -1;
+    }
+
+    /* Sync pending changes to disk */
+    if (cf->synced == CIO_FALSE) {
+        ret = cio_file_sync(ch);
+        if (ret == -1) {
+            cio_log_error(ch->ctx,
+                          "[cio file] error syncing file at "
+                          "%s:%s", ch->st->name, ch->name);
+        }
+    }
+
+    /* Unmap file */
+    munmap(cf->map, cf->alloc_size);
+    cf->map = NULL;
+    cf->data_size = 0;
+    cf->alloc_size = 0;
+
+    return 0;
+}
+
+/*
  * This function creates the memory map for the open file descriptor plus
  * setup the chunk structure reference.
  */
@@ -299,46 +338,14 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
 
     ret = cio_file_format_check(ch, cf, cf->flags);
     if (ret == -1) {
+        cio_log_error(ctx, "format check failed: %s/%s",
+                      ch->st->name, ch->name);
+        munmap_file(ctx, ch);
         return -1;
     }
 
     cf->st_content = cio_file_st_get_content(cf->map);
     cio_log_debug(ctx, "%s:%s mapped OK", ch->st->name, ch->name);
-
-    return 0;
-}
-
-/*
- * Unmap the memory for the opened file in question. It make sure
- * to sync changes to disk first.
- */
-static int munmap_file(struct cio_ctx *ctx, struct cio_chunk *ch)
-{
-    int ret;
-    struct cio_file *cf;
-
-    cf = (struct cio_file *) ch->backend;
-
-    /* File not mapped */
-    if (cf->map == NULL) {
-        return -1;
-    }
-
-    /* Sync pending changes to disk */
-    if (cf->synced == CIO_FALSE) {
-        ret = cio_file_sync(ch);
-        if (ret == -1) {
-            cio_log_error(ch->ctx,
-                          "[cio file] error syncing file at "
-                          "%s:%s", ch->st->name, ch->name);
-        }
-    }
-
-    /* Unmap file */
-    munmap(cf->map, cf->alloc_size);
-    cf->map = NULL;
-    cf->data_size = 0;
-    cf->alloc_size = 0;
 
     return 0;
 }
@@ -395,6 +402,44 @@ int cio_file_read_prepare(struct cio_ctx *ctx, struct cio_chunk *ch)
 }
 
 /*
+ * If the maximum number of 'up' chunks is reached, put this chunk
+ * down (only at open time).
+ */
+static inline int open_and_up(struct cio_ctx *ctx)
+{
+    int total = 0;
+    struct mk_list *head;
+    struct mk_list *f_head;
+    struct cio_file *file;
+    struct cio_chunk *ch;
+    struct cio_stream *stream;
+
+    mk_list_foreach(head, &ctx->streams) {
+        stream = mk_list_entry(head, struct cio_stream, _head);
+
+        /* Skip memory streams, we only care about file type */
+        if (stream->type == CIO_STORE_MEM) {
+            continue;
+        }
+
+        mk_list_foreach(f_head, &stream->files) {
+            ch = mk_list_entry(f_head, struct cio_chunk, _head);
+            file = (struct cio_file *) ch->backend;
+
+            if (cio_file_is_up(NULL, file) == CIO_TRUE) {
+                total++;
+            }
+        }
+    }
+
+    if (total >= ctx->max_chunks_up) {
+        return CIO_FALSE;
+    }
+
+    return CIO_TRUE;
+}
+
+/*
  * Open or create a data file: the following behavior is expected depending
  * of the passed flags:
  *
@@ -448,12 +493,22 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
         free(path);
         return NULL;
     }
+
+    cf->fd = -1;
     cf->flags = flags;
     cf->realloc_size = getpagesize() * 8;
     cf->st_content = NULL;
     cf->crc_cur = cio_crc32_init();
     cf->path = path;
     cf->map = NULL;
+    ch->backend = cf;
+
+    /* Should we open and put this file up ? */
+    ret = open_and_up(ctx);
+    if (ret == CIO_FALSE) {
+        /* we reached our limit, let the file 'down' */
+        return cf;
+    }
 
     /* Open file (file descriptor and set file size) */
     ret = file_open(ctx, cf);
@@ -461,12 +516,11 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
         cio_file_close(ch, CIO_FALSE);
         return NULL;
     }
-    ch->backend = cf;
 
     /* Map the file */
     ret = mmap_file(ctx, ch, size);
     if (ret == -1) {
-        cio_log_error(ctx, "cannot mmap file %s", path);
+        cio_file_close(ch, CIO_FALSE);
         return NULL;
     }
 
@@ -480,7 +534,7 @@ int cio_file_up(struct cio_chunk *ch)
     struct cio_file *cf = (struct cio_file *) ch->backend;
 
     if (cf->map) {
-        cio_log_error(ch->ctx, "[cio file] file is already mapped: %s",
+        cio_log_error(ch->ctx, "[cio file] file is already mapped: %s/%s",
                       ch->st->name, ch->name);
         return -1;
     }
@@ -488,6 +542,11 @@ int cio_file_up(struct cio_chunk *ch)
     if (cf->fd > 0) {
         cio_log_error(ch->ctx, "[cio file] file descriptor already exists: "
                       "[fd=%i] %s:%s", cf->fd, ch->st->name, ch->name);
+        return -1;
+    }
+
+    ret = open_and_up(ch->ctx);
+    if (ret == CIO_FALSE) {
         return -1;
     }
 
@@ -520,7 +579,7 @@ int cio_file_down(struct cio_chunk *ch)
     struct cio_file *cf = (struct cio_file *) ch->backend;
 
     if (!cf->map) {
-        cio_log_error(ch->ctx, "[cio file] file is not mapped: %s",
+        cio_log_error(ch->ctx, "[cio file] file is not mapped: %s/%s",
                       ch->st->name, ch->name);
         return -1;
     }
@@ -544,6 +603,7 @@ int cio_file_down(struct cio_chunk *ch)
     /* Close file descriptor */
     close(cf->fd);
     cf->fd = -1;
+    cf->map = NULL;
 
     return 0;
 }
@@ -552,6 +612,10 @@ void cio_file_close(struct cio_chunk *ch, int delete)
 {
     int ret;
     struct cio_file *cf = (struct cio_file *) ch->backend;
+
+    if (!cf) {
+        return;
+    }
 
     /* Safe unmap of the file content */
     munmap_file(ch->ctx, ch);
@@ -589,7 +653,7 @@ int cio_file_write(struct cio_chunk *ch, const void *buf, size_t count)
         return 0;
     }
 
-    if (!cf->map) {
+    if (cio_chunk_is_up(ch) == CIO_FALSE) {
         cio_log_error("[cio file] file is not mmaped: %s:%s",
                       ch->st->name, ch->name);
         return -1;
@@ -656,7 +720,7 @@ int cio_file_write(struct cio_chunk *ch, const void *buf, size_t count)
     return 0;
 }
 
-int cio_file_write_metadata(struct cio_chunk *ch, const char *buf, size_t size)
+int cio_file_write_metadata(struct cio_chunk *ch, char *buf, size_t size)
 {
     int ret;
     char *meta;
@@ -892,7 +956,9 @@ void cio_file_hash_print(struct cio_file *cf)
 /* Dump files from given stream */
 void cio_file_scan_dump(struct cio_ctx *ctx, struct cio_stream *st)
 {
+    int ret;
     int meta_len;
+    int set_down = CIO_FALSE;
     char *p;
     crc_t crc;
     crc_t crc_fs;
@@ -905,8 +971,13 @@ void cio_file_scan_dump(struct cio_ctx *ctx, struct cio_stream *st)
         ch = mk_list_entry(head, struct cio_chunk, _head);
         cf = ch->backend;
 
-        /* Mmap file if it have not been done before */
-        mmap_file(ctx, ch, 0);
+        if (cio_file_is_up(ch, cf) == CIO_FALSE) {
+            ret = cio_file_up(ch);
+            if (ret == -1) {
+                continue;
+            }
+            set_down = CIO_TRUE;
+        }
 
         snprintf(tmp, sizeof(tmp) -1, "%s/%s", st->name, ch->name);
         meta_len = cio_file_st_get_meta_len(cf->map);
@@ -937,6 +1008,10 @@ void cio_file_scan_dump(struct cio_ctx *ctx, struct cio_stream *st)
         }
         printf("meta_len=%d, data_size=%lu, crc=%08x\n",
                meta_len, cf->data_size, (uint32_t) crc_fs);
+
+        if (set_down == CIO_TRUE) {
+            cio_file_down(ch);
+        }
     }
 }
 

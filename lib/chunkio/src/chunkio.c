@@ -2,7 +2,7 @@
 
 /*  Chunk I/O
  *  =========
- *  Copyright 2018 Eduardo Silva <eduardo@monkey.io>
+ *  Copyright 2018-2019 Eduardo Silva <eduardo@monkey.io>
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -78,6 +78,7 @@ struct cio_ctx *cio_create(const char *root_path,
         perror("calloc");
         return NULL;
     }
+    ctx->max_chunks_up = CIO_MAX_CHUNKS_UP;
     cio_set_log_callback(ctx, log_cb);
     cio_set_log_level(ctx, log_level);
     mk_list_init(&ctx->streams);
@@ -101,11 +102,19 @@ struct cio_ctx *cio_create(const char *root_path,
         ctx->root_path = NULL;
     }
 
+    return ctx;
+}
+
+int cio_load(struct cio_ctx *ctx)
+{
+    int ret;
+
     if (ctx->root_path) {
-        cio_scan_streams(ctx);
+        ret = cio_scan_streams(ctx);
+        return ret;
     }
 
-    return ctx;
+    return 0;
 }
 
 void cio_destroy(struct cio_ctx *ctx)
@@ -127,5 +136,15 @@ int cio_set_log_level(struct cio_ctx *ctx, int level)
     }
 
     ctx->log_level = level;
+    return 0;
+}
+
+int cio_set_max_chunks_up(struct cio_ctx *ctx, int n)
+{
+    if (n < 1) {
+        return -1;
+    }
+
+    ctx->max_chunks_up = n;
     return 0;
 }

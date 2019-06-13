@@ -45,7 +45,7 @@ int cio_chunk_write(struct cio_chunk *ch, const void *buf, size_t count);
 int cio_chunk_write_at(struct cio_chunk *ch, off_t offset,
                        const void *buf, size_t count);
 int cio_chunk_sync(struct cio_chunk *ch);
-int cio_chunk_get_content(struct cio_chunk *ch, const char **buf, size_t *size);
+int cio_chunk_get_content(struct cio_chunk *ch, char **buf, size_t *size);
 ssize_t cio_chunk_get_content_size(struct cio_chunk *ch);
 ssize_t cio_chunk_get_real_size(struct cio_chunk *ch);
 size_t cio_chunk_get_content_end_pos(struct cio_chunk *ch);
@@ -62,6 +62,7 @@ int cio_chunk_tx_rollback(struct cio_chunk *ch);
 
 /* Chunk content up/down */
 int cio_chunk_is_up(struct cio_chunk *ch);
+int cio_chunk_is_file(struct cio_chunk *ch);
 int cio_chunk_up(struct cio_chunk *ch);
 int cio_chunk_down(struct cio_chunk *ch);
 

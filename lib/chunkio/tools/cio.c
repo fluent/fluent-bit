@@ -580,13 +580,16 @@ int main(int argc, char **argv)
 
     /* Create CIO instance */
     ctx = cio_create(root_path, log_cb, verbose, flags);
-    if (root_path)
+    if (root_path) {
         free(root_path);
+    }
 
     if (!ctx) {
         exit(EXIT_FAILURE);
     }
 
+    /* Load */
+    cio_load(ctx);
     cio_log_info(ctx, "root_path => %s", ctx->root_path);
 
     /*
