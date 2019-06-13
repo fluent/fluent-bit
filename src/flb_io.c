@@ -95,6 +95,7 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
         return -1;
     }
     u_conn->fd = fd;
+    u_conn->event.fd = fd;
 
     /*
      * If we use co-routines flushing method, make sure socket
@@ -124,7 +125,7 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
             return -1;
         }
 
-        MK_EVENT_NEW(&u_conn->event);
+        MK_EVENT_ZERO(&u_conn->event);
         u_conn->thread = th;
         ret = mk_event_add(u->evl,
                            fd,
@@ -434,15 +435,11 @@ int flb_io_net_write(struct flb_upstream_conn *u_conn, const void *data,
 {
     int ret = -1;
     struct flb_upstream *u = u_conn->u;
-
-#if defined (FLB_HAVE_FLUSH_LIBCO)
     struct flb_thread *th = pthread_getspecific(flb_thread_key);
+
     flb_trace("[io thread=%p] [net_write] trying %zd bytes",
               th, len);
-#else
-    void *th = NULL;
-    flb_trace("[io] [net_write] trying %zd bytes", len);
-#endif
+
     if (u->flags & FLB_IO_TCP) {
         if (u->flags & FLB_IO_ASYNC) {
             ret = net_io_write_async(th, u_conn, data, len, out_len);
@@ -460,15 +457,11 @@ int flb_io_net_write(struct flb_upstream_conn *u_conn, const void *data,
     if (ret == -1 && u_conn->fd > 0) {
         flb_socket_close(u_conn->fd);
         u_conn->fd = -1;
+        u_conn->event.fd = -1;
     }
 
-#if defined (FLB_HAVE_FLUSH_LIBCO)
     flb_trace("[io thread=%p] [net_write] ret=%i total=%lu/%lu",
               th, ret, *out_len, len);
-#else
-    flb_trace("[io] [net_write] ret=%i total=%i",
-              ret, *out_len);
-#endif
     return ret;
 }
 
@@ -476,15 +469,10 @@ ssize_t flb_io_net_read(struct flb_upstream_conn *u_conn, void *buf, size_t len)
 {
     int ret = -1;
     struct flb_upstream *u = u_conn->u;
-
-#if defined (FLB_HAVE_FLUSH_LIBCO)
     struct flb_thread *th = pthread_getspecific(flb_thread_key);
+
     flb_trace("[io thread=%p] [net_read] try up to %zd bytes",
               th, len);
-#else
-    void *th = NULL;
-    flb_trace("[io] [net_read] try up to %zd bytes", len);
-#endif
 
     if (u->flags & FLB_IO_TCP) {
         if (u->flags & FLB_IO_ASYNC) {
