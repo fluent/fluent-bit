@@ -44,6 +44,9 @@ int cb_nats_init(struct flb_output_instance *ins, struct flb_config *config,
         ins->host.port = 4222;
     }
 
+    NATS_CONNECT_STRING = sprintf(NATS_CONNECT, flb_output_get_property("username", ins), flb_output_get_property("password", ins));
+    NATS_CONNECT_LENGTH = strlen(NATS_CONNECT_STRING);
+
     /* Allocate plugin context */
     ctx = flb_malloc(sizeof(struct flb_out_nats_config));
     if (!ctx) {
@@ -174,8 +177,8 @@ void cb_nats_flush(void *data, size_t bytes,
 
     /* Before to flush the content check if we need to start the handshake */
     ret = flb_io_net_write(u_conn,
-                           NATS_CONNECT,
-                           sizeof(NATS_CONNECT) - 1,
+                           NATS_CONNECT_STRING,
+                           NATS_CONNECT_LENGTH - 1,
                            &bytes_sent);
     if (ret == -1) {
         flb_upstream_conn_release(u_conn);

@@ -23,7 +23,12 @@
 
 #include <fluent-bit/flb_version.h>
 
-#define NATS_CONNECT "CONNECT {\"verbose\":false,\"pedantic\":false,\"ssl_required\":false,\"name\":\"fluent-bit\",\"lang\":\"c\",\"version\":\"" FLB_VERSION_STR "\"}\r\n"
+#define NATS_CONNECT_BUF_LEN 512
+
+#define NATS_CONNECT "CONNECT {\"verbose\":false,\"pedantic\":false,\"ssl_required\":false,\"name\":\"fluent-bit\",\"lang\":\"c\",\"version\":\"" FLB_VERSION_STR "\",\"username\":\"%s\",\"password\":\"%s\"}\r\n"
+
+char NATS_CONNECT_STRING[NATS_CONNECT_BUF_LEN];
+int NATS_CONNECT_LENGTH;
 
 struct flb_out_nats_config {
     struct flb_output_instance *ins;
