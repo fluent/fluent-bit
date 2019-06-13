@@ -230,6 +230,19 @@ int flb_storage_create(struct flb_config *ctx)
     }
     ctx->cio = cio;
 
+    if (ctx->storage_max_chunks_up > 0) {
+        cio_set_max_chunks_up(ctx->cio, ctx->storage_max_chunks_up);
+    }
+
+    /* Load content from the file system if any */
+    ret = cio_load(ctx->cio);
+    if (ret == -1) {
+        flb_error("[storage] error scanning root path content: %s",
+                  ctx->storage_path);
+        cio_destroy(ctx->cio);
+        return -1;
+    }
+
     /*
      * If we have a filesystem storage path, create an instance of the
      * storage_backlog input plugin to consume any possible pending

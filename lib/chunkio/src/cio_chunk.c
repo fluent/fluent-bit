@@ -67,6 +67,7 @@ struct cio_chunk *cio_chunk_open(struct cio_ctx *ctx, struct cio_stream *st,
     ch->tx_active = CIO_FALSE;
     ch->tx_crc = 0;
     ch->tx_content_length = 0;
+    ch->backend = NULL;
 
     mk_list_add(&ch->_head, &st->files);
 
@@ -79,7 +80,7 @@ struct cio_chunk *cio_chunk_open(struct cio_ctx *ctx, struct cio_stream *st,
     }
 
     if (!backend) {
-        cio_log_error(ctx, "[cio chunk] error initializing backend file");
+        mk_list_del(&ch->_head);
         free(ch->name);
         free(ch);
         return NULL;
@@ -164,7 +165,7 @@ int cio_chunk_sync(struct cio_chunk *ch)
     return ret;
 }
 
-int cio_chunk_get_content(struct cio_chunk *ch, const char **buf, size_t *size)
+int cio_chunk_get_content(struct cio_chunk *ch, char **buf, size_t *size)
 {
     int ret = 0;
     int type;
@@ -393,6 +394,18 @@ int cio_chunk_is_up(struct cio_chunk *ch)
     else if (type == CIO_STORE_FS) {
         cf = ch->backend;
         return cio_file_is_up(ch, cf);
+    }
+
+    return CIO_FALSE;
+}
+
+int cio_chunk_is_file(struct cio_chunk *ch)
+{
+    int type;
+
+    type = ch->st->type;
+    if (type == CIO_STORE_FS) {
+        return CIO_TRUE;
     }
 
     return CIO_FALSE;

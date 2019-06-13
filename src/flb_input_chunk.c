@@ -68,7 +68,7 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
 {
     int ret;
     int records;
-    const char *buf_data;
+    char *buf_data;
     size_t buf_size;
     struct flb_input_chunk *ic;
 
@@ -132,7 +132,7 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
     }
 
     /* Write tag into metadata section */
-    ret = cio_meta_write(chunk, tag, tag_len);
+    ret = cio_meta_write(chunk, (char *) tag, tag_len);
     if (ret == -1) {
         flb_error("[input chunk] could not write metadata");
         cio_chunk_close(chunk, CIO_TRUE);
@@ -184,7 +184,7 @@ static struct flb_input_chunk *input_chunk_get(const char *tag, int tag_len,
             continue;
         }
 
-        if (cio_meta_cmp(ic->chunk, tag, tag_len) != 0) {
+        if (cio_meta_cmp(ic->chunk, (char *) tag, tag_len) != 0) {
             ic = NULL;
             continue;
         }
@@ -193,7 +193,7 @@ static struct flb_input_chunk *input_chunk_get(const char *tag, int tag_len,
 
     /* No chunk was found, we need to create a new one */
     if (!ic) {
-        ic = flb_input_chunk_create(in, tag, tag_len);
+        ic = flb_input_chunk_create(in, (char *) tag, tag_len);
         if (!ic) {
             return NULL;
         }
@@ -436,7 +436,7 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
     }
 #ifdef FLB_HAVE_STREAM_PROCESSOR
     else if (in->config->stream_processor_ctx) {
-        const char *c_data;
+        char *c_data;
         size_t c_size;
 
         /* Retrieve chunk (filtered) output content */
@@ -466,7 +466,9 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
     si = (struct flb_storage_input *) in->storage;
     if (flb_input_chunk_is_overlimit(in) == FLB_TRUE &&
         si->type == CIO_STORE_FS) {
-        cio_chunk_down(ic->chunk);
+        if (cio_chunk_is_up(ic->chunk) == CIO_TRUE) {
+            cio_chunk_down(ic->chunk);
+        }
         return 0;
     }
 
@@ -478,7 +480,7 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
 const void *flb_input_chunk_flush(struct flb_input_chunk *ic, size_t *size)
 {
     int ret;
-    const char *buf = NULL;
+    char *buf = NULL;
 
     if (cio_chunk_is_up(ic->chunk) == CIO_FALSE) {
         ret = cio_chunk_up(ic->chunk);
@@ -523,6 +525,6 @@ int flb_input_chunk_release_lock(struct flb_input_chunk *ic)
 int flb_input_chunk_get_tag(struct flb_input_chunk *ic,
                             const char **tag_buf, int *tag_len)
 {
-    return cio_meta_read(ic->chunk, tag_buf, tag_len);
+    return cio_meta_read(ic->chunk, (char **) tag_buf, tag_len);
 
 }

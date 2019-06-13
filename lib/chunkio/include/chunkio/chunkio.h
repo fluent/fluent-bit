@@ -32,14 +32,17 @@
 #define CIO_DEBUG  4
 
 /* Storage backend */
-#define CIO_STORE_FS    0
-#define CIO_STORE_MEM   1
+#define CIO_STORE_FS        0
+#define CIO_STORE_MEM       1
 
 /* flags */
-#define CIO_OPEN        1   /* open/create file reference */
-#define CIO_OPEN_RD     2   /* open and read/mmap content if exists */
-#define CIO_CHECKSUM    4   /* enable checksum verification (crc32) */
-#define CIO_FULL_SYNC   8   /* force sync to fs through MAP_SYNC */
+#define CIO_OPEN            1   /* open/create file reference */
+#define CIO_OPEN_RD         2   /* open and read/mmap content if exists */
+#define CIO_CHECKSUM        4   /* enable checksum verification (crc32) */
+#define CIO_FULL_SYNC       8   /* force sync to fs through MAP_SYNC */
+
+/* defaults */
+#define CIO_MAX_CHUNKS_UP  64   /* default limit for cio_ctx->max_chunks_up */
 
 int cio_page_size;
 
@@ -51,6 +54,14 @@ struct cio_ctx {
     int log_level;
     void (*log_cb)(void *, int, const char *, int, const char *);
 
+    /*
+     * maximum open 'file' chunks: this limit helps where there are many
+     * chunks in the filesystem and you don't need all of them up in
+     * memory. For short, it restrict the open number of files and
+     * the amount of memory mapped.
+     */
+    int max_chunks_up;
+
     /* streams */
     struct mk_list streams;
 };
@@ -61,14 +72,15 @@ struct cio_ctx {
 struct cio_ctx *cio_create(const char *root_path,
                            void (*log_cb), int log_level, int flags);
 void cio_destroy(struct cio_ctx *ctx);
+int cio_load(struct cio_ctx *ctx);
 
 void cio_set_log_callback(struct cio_ctx *ctx, void (*log_cb));
 int cio_set_log_level(struct cio_ctx *ctx, int level);
+int cio_set_max_chunks_up(struct cio_ctx *ctx, int n);
 
-
-int cio_meta_write(struct cio_chunk *ch, const char *buf, size_t size);
-int cio_meta_cmp(struct cio_chunk *ch, const char *meta_buf, int meta_len);
-int cio_meta_read(struct cio_chunk *ch, const char **meta_buf, int *meta_len);
+int cio_meta_write(struct cio_chunk *ch, char *buf, size_t size);
+int cio_meta_cmp(struct cio_chunk *ch, char *meta_buf, int meta_len);
+int cio_meta_read(struct cio_chunk *ch, char **meta_buf, int *meta_len);
 
 ssize_t cio_chunk_get_real_size(struct cio_chunk *ch);
 
