@@ -156,6 +156,7 @@ struct flb_config {
     void *storage_input_plugin;
     char *storage_sync;             /* sync mode */
     int   storage_checksum;         /* checksum enabled */
+    int   storage_max_chunks_up;    /* max number of chunks 'up' in memory */
     char *storage_bl_mem_limit;     /* storage backlog memory limit */
 
     /* Embedded SQL Database support (SQLite3) */
@@ -239,6 +240,7 @@ enum conf_type {
 #define FLB_CONF_STORAGE_SYNC          "storage.sync"
 #define FLB_CONF_STORAGE_CHECKSUM      "storage.checksum"
 #define FLB_CONF_STORAGE_BL_MEM_LIMIT  "storage.backlog.mem_limit"
+#define FLB_CONF_STORAGE_MAX_CHUNKS_UP "storage.max_chunks_up"
 
 /* Coroutines */
 #define FLB_CONF_STR_CORO_STACK_SIZE "Coro_Stack_Size"
