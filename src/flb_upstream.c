@@ -156,7 +156,7 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
 
     conn = flb_malloc(sizeof(struct flb_upstream_conn));
     if (!conn) {
-        perror("malloc");
+        flb_errno();
         return NULL;
     }
     conn->u             = u;
@@ -166,7 +166,7 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
     conn->tls_session   = NULL;
 #endif
 
-    MK_EVENT_NEW(&conn->event);
+    MK_EVENT_ZERO(&conn->event);
 
     /* Start connection */
     ret = flb_io_net_connect(conn, th);
