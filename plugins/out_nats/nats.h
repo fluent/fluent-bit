@@ -25,14 +25,15 @@
 
 #define NATS_CONNECT_BUF_LEN 512
 
-#define NATS_CONNECT "CONNECT {\"verbose\":false,\"pedantic\":false,\"ssl_required\":false,\"name\":\"fluent-bit\",\"lang\":\"c\",\"version\":\"" FLB_VERSION_STR "\",\"username\":\"%s\",\"password\":\"%s\"}\r\n"
-
-char NATS_CONNECT_STRING[NATS_CONNECT_BUF_LEN];
-int NATS_CONNECT_LENGTH;
+#define NATS_CONNECT "CONNECT {\"verbose\":false,\"pedantic\":false,\"ssl_required\":false,\"name\":\"fluent-bit\",\"lang\":\"c\",\"version\":\"" FLB_VERSION_STR "\",\"user\":\"%s\",\"pass\":\"%s\"}\r\n"
 
 struct flb_out_nats_config {
     struct flb_output_instance *ins;
     struct flb_upstream *u;
+    char connect_string[NATS_CONNECT_BUF_LEN];
+    int connect_string_len;
+    char *subject;
+    int subject_len;
 };
 
 #endif

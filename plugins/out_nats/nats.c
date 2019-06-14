@@ -44,9 +44,6 @@ int cb_nats_init(struct flb_output_instance *ins, struct flb_config *config,
         ins->host.port = 4222;
     }
 
-    NATS_CONNECT_STRING = sprintf(NATS_CONNECT, flb_output_get_property("username", ins), flb_output_get_property("password", ins));
-    NATS_CONNECT_LENGTH = strlen(NATS_CONNECT_STRING);
-
     /* Allocate plugin context */
     ctx = flb_malloc(sizeof(struct flb_out_nats_config));
     if (!ctx) {
@@ -69,6 +66,16 @@ int cb_nats_init(struct flb_output_instance *ins, struct flb_config *config,
         flb_free(ctx);
         return -1;
     }
+
+    char *username = flb_output_get_property("username", ins);
+    char *password = flb_output_get_property("password", ins);
+
+    ctx->subject = flb_output_get_property("subject", ins);
+    ctx->subject_len = strlen(ctx->subject);
+
+    ctx->connect_string_len = snprintf(ctx->connect_string, NATS_CONNECT_BUF_LEN, NATS_CONNECT, username, password);
+
+
     ctx->u   = upstream;
     ctx->ins = ins;
     flb_output_set_context(ins, ctx);
@@ -165,6 +172,8 @@ void cb_nats_flush(void *data, size_t bytes,
     size_t json_len;
     char *json_msg;
     char *request;
+    int subject_len;
+    char *subject;
     int req_len;
     struct flb_out_nats_config *ctx = out_context;
     struct flb_upstream_conn *u_conn;
@@ -177,8 +186,8 @@ void cb_nats_flush(void *data, size_t bytes,
 
     /* Before to flush the content check if we need to start the handshake */
     ret = flb_io_net_write(u_conn,
-                           NATS_CONNECT_STRING,
-                           NATS_CONNECT_LENGTH - 1,
+                           ctx->connect_string,
+                           ctx->connect_string_len,
                            &bytes_sent);
     if (ret == -1) {
         flb_upstream_conn_release(u_conn);
@@ -193,18 +202,37 @@ void cb_nats_flush(void *data, size_t bytes,
     }
 
     /* Compose the NATS Publish request */
-    request = flb_malloc(json_len + tag_len + 32);
-    req_len = snprintf(request, tag_len + 32, "PUB %s %zu\r\n",
-                       tag, json_len);
+    if (ctx->subject_len == 0) {
+        subject = tag;
+        subject_len = tag_len;
+    } else {
+        subject = ctx->subject;
+        subject_len = ctx->subject_len;
+    }
 
+    #define NATS_REQUEST_PADDING 128
+    int request_alloc_len = subject_len + json_len + NATS_REQUEST_PADDING;
+    int request_len = 0;
+
+    request = flb_malloc(request_alloc_len);
+
+    int pub_len = snprintf(request, request_alloc_len, "PUB %s %zu\r\n", subject, json_len);
+    flb_debug("[out_nats] writing PUB: '%s'", request);
+    flb_debug("[out_nats] writing MSG_PAYLOAD: '%s'", json_msg);
+
+    request_len += pub_len;
     /* Append JSON message and ending CRLF */
-    memcpy(request + req_len, json_msg, json_len);
-    req_len += json_len;
-    request[req_len++] = '\r';
-    request[req_len++] = '\n';
+    //memcpy(request + request_len, json_msg, json_len);
+    int payload_len = snprintf(request + pub_len, request_alloc_len - pub_len, "%s\r\n", json_msg, json_len);
+    request_len += payload_len;
+
+    flb_debug("[out_nats] writing complete request: '%s'", request);
+    //request_len += json_len;
+    //request[pub_len++] = '\r';
+    //request[pub_len++] = '\n';
     flb_free(json_msg);
 
-    ret = flb_io_net_write(u_conn, request, req_len, &bytes_sent);
+    ret = flb_io_net_write(u_conn, request, request_len, &bytes_sent);
     if (ret == -1) {
         perror("write");
         flb_free(request);
