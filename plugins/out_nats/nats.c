@@ -75,7 +75,6 @@ int cb_nats_init(struct flb_output_instance *ins, struct flb_config *config,
 
     ctx->connect_string_len = snprintf(ctx->connect_string, NATS_CONNECT_BUF_LEN, NATS_CONNECT, username, password);
 
-
     ctx->u   = upstream;
     ctx->ins = ins;
     flb_output_set_context(ins, ctx);
@@ -201,6 +200,7 @@ void cb_nats_flush(void *data, size_t bytes,
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 
+    
     /* Compose the NATS Publish request */
     if (ctx->subject_len == 0) {
         subject = tag;
@@ -213,13 +213,13 @@ void cb_nats_flush(void *data, size_t bytes,
     #define NATS_REQUEST_PADDING 128
     int request_alloc_len = subject_len + json_len + NATS_REQUEST_PADDING;
     int request_len = 0;
-
+    
     request = flb_malloc(request_alloc_len);
 
     int pub_len = snprintf(request, request_alloc_len, "PUB %s %zu\r\n", subject, json_len);
     flb_debug("[out_nats] writing PUB: '%s'", request);
     flb_debug("[out_nats] writing MSG_PAYLOAD: '%s'", json_msg);
-
+    
     request_len += pub_len;
     /* Append JSON message and ending CRLF */
     //memcpy(request + request_len, json_msg, json_len);
