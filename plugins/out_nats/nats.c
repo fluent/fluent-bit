@@ -221,15 +221,13 @@ void cb_nats_flush(void *data, size_t bytes,
     flb_debug("[out_nats] writing MSG_PAYLOAD: '%s'", json_msg);
     
     request_len += pub_len;
+    
     /* Append JSON message and ending CRLF */
-    //memcpy(request + request_len, json_msg, json_len);
-    int payload_len = snprintf(request + pub_len, request_alloc_len - pub_len, "%s\r\n", json_msg, json_len);
+    int payload_len = snprintf(request + request_len, request_alloc_len - pub_len, "%s\r\n", json_msg, json_len);
+    
     request_len += payload_len;
 
     flb_debug("[out_nats] writing complete request: '%s'", request);
-    //request_len += json_len;
-    //request[pub_len++] = '\r';
-    //request[pub_len++] = '\n';
     flb_free(json_msg);
 
     ret = flb_io_net_write(u_conn, request, request_len, &bytes_sent);
