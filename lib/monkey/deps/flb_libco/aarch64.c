@@ -20,9 +20,6 @@
 extern "C" {
 #endif
 
-static thread_local uint64_t co_active_buffer[64];
-static thread_local cothread_t co_active_handle;
-
 asm (
       ".globl co_switch_aarch64\n"
       ".globl _co_switch_aarch64\n"
@@ -58,6 +55,16 @@ asm (
 
 /* ASM */
 void co_switch_aarch64(cothread_t handle, cothread_t current);
+
+/*
+ * NOTE! We defer to define thread locals here because GCC v7.4
+ * has a bug that over-applies ".tbss" section.
+ *
+ * Due to the bug, it would cause SIGSEGV if we place these lines
+ * before asm(). So beware when moving code around.
+ */
+static thread_local uint64_t co_active_buffer[64];
+static thread_local cothread_t co_active_handle;
 
 static void crash(void)
 {
