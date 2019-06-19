@@ -52,8 +52,8 @@ static void print_storage_info(struct flb_config *ctx, struct cio_ctx *cio)
         checksum = "disabled";
     }
 
-    flb_info("[storage] %s synchronization mode, checksum %s",
-             sync, checksum);
+    flb_info("[storage] %s synchronization mode, checksum %s, max_chunks_up=%i",
+             sync, checksum, ctx->storage_max_chunks_up);
 
     /* Storage input plugin */
     if (ctx->storage_input_plugin) {
