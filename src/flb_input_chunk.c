@@ -493,6 +493,15 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
         cio_chunk_down(ic->chunk);
     }
 
+    /*
+     * If the instance is not routable, there is no need to keep the
+     * content in the storage engine, just get rid of it.
+     */
+    if (in->routable == FLB_FALSE) {
+        flb_input_chunk_destroy(ic, FLB_TRUE);
+        return 0;
+    }
+
     /* Update memory counters and adjust limits if any */
     flb_input_chunk_set_limits(in);
 

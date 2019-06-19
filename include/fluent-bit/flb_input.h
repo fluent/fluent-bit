@@ -141,6 +141,9 @@ struct flb_input_instance {
     char *tag;                           /* Input tag for routing        */
     int tag_len;
 
+    /* By default all input instances are 'routable' */
+    int routable;
+
     /*
      * Input network info:
      *
