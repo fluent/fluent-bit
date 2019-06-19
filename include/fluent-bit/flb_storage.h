@@ -24,7 +24,8 @@
 #include <fluent-bit/flb_info.h>
 #include <chunkio/chunkio.h>
 
-#define FLB_STORAGE_BL_MEM_LIMIT "5M"
+#define FLB_STORAGE_BL_MEM_LIMIT   "5M"
+#define FLB_STORAGE_MAX_CHUNKS_UP  128
 
 /*
  * The storage structure helps to associate the contexts between
