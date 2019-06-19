@@ -62,5 +62,6 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
 int flb_input_chunk_set_up_down(struct flb_input_chunk *ic);
 int flb_input_chunk_set_up(struct flb_input_chunk *ic);
 int flb_input_chunk_down(struct flb_input_chunk *ic);
+int flb_input_chunk_is_up(struct flb_input_chunk *ic);
 
 #endif

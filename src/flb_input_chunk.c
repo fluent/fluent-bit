@@ -106,6 +106,7 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
                                                const char *tag, int tag_len)
 {
     int ret;
+    int set_down = FLB_FALSE;
     char name[256];
     struct cio_chunk *chunk;
     struct flb_storage_input *storage;
@@ -123,6 +124,20 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
         flb_error("[input chunk] could not create chunk file: %s:%s",
                   storage->stream, name);
         return NULL;
+    }
+
+    /*
+     * If the returned chunk at open is 'down', just put it up, write the
+     * content and set it down again.
+     */
+    ret = cio_chunk_is_up(chunk);
+    if (ret == CIO_FALSE) {
+        ret = cio_chunk_up_force(chunk);
+        if (ret == -1) {
+            cio_chunk_close(chunk, CIO_TRUE);
+            return NULL;
+        }
+        set_down = FLB_TRUE;
     }
 
     /* write metadata (tag) */
@@ -143,6 +158,7 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
     ic = flb_malloc(sizeof(struct flb_input_chunk));
     if (!ic) {
         flb_errno();
+        cio_chunk_close(chunk, CIO_TRUE);
         return NULL;
     }
     ic->busy = FLB_FALSE;
@@ -151,6 +167,10 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
     ic->stream_off = 0;
     msgpack_packer_init(&ic->mp_pck, ic, flb_input_chunk_write);
     mk_list_add(&ic->_head, &in->chunks);
+
+    if (set_down == FLB_TRUE) {
+        cio_chunk_down(chunk);
+    }
 
     return ic;
 }
@@ -334,6 +354,12 @@ int flb_input_chunk_set_up_down(struct flb_input_chunk *ic)
     return FLB_TRUE;
 }
 
+int flb_input_chunk_is_up(struct flb_input_chunk *ic)
+{
+    return cio_chunk_is_up(ic->chunk);
+
+}
+
 int flb_input_chunk_down(struct flb_input_chunk *ic)
 {
     if (cio_chunk_is_up(ic->chunk) == CIO_TRUE) {
@@ -359,6 +385,7 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
                                const void *buf, size_t buf_size)
 {
     int ret;
+    int set_down = FLB_FALSE;
     size_t size;
     struct flb_input_chunk *ic;
     struct flb_storage_input *si;
@@ -397,6 +424,17 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
     if (!ic) {
         flb_error("[input chunk] no available chunk");
         return -1;
+    }
+
+    /* We got the chunk, validate if is 'up' or 'down' */
+    ret = flb_input_chunk_is_up(ic);
+    if (ret == FLB_FALSE) {
+        ret = cio_chunk_up_force(ic->chunk);
+        if (ret == -1) {
+            flb_error("[input chunk] cannot retrieve temporal chunk");
+            return -1;
+        }
+        set_down = FLB_TRUE;
     }
 
     /* Write the new data */
@@ -451,6 +489,10 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
     }
 #endif
 
+    if (set_down == FLB_TRUE) {
+        cio_chunk_down(ic->chunk);
+    }
+
     /* Update memory counters and adjust limits if any */
     flb_input_chunk_set_limits(in);
 
@@ -485,7 +527,6 @@ const void *flb_input_chunk_flush(struct flb_input_chunk *ic, size_t *size)
     if (cio_chunk_is_up(ic->chunk) == CIO_FALSE) {
         ret = cio_chunk_up(ic->chunk);
         if (ret == -1) {
-            flb_error("[input chunk] cannot load chunk content");
             return NULL;
         }
     }
