@@ -1,4 +1,4 @@
 set(src
-  nats.c)
+  out_nats.c)
 
-FLB_PLUGIN(out_nats "${src}" "")
+FLB_PLUGIN(out_nats "${src}" "nats_static")

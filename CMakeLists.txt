@@ -293,6 +293,18 @@ FLB_DEFINITION(JSMN_PARENT_LINKS)
 FLB_DEFINITION(JSMN_STRICT)
 add_subdirectory(lib/jsmn)
 
+# Nats.io
+if(FLB_OUT_NATS)
+  set(NATS_SRC "${CMAKE_CURRENT_SOURCE_DIR}/lib/nats.c")
+
+  option(NATS_BUILD_EXAMPLES          OFF)
+  option(NATS_BUILD_STREAMING         OFF)
+
+  include_directories(${NATS_SRC}/src)
+  add_subdirectory(${NATS_SRC} EXCLUDE_FROM_ALL)
+
+endif()
+
 # Runtime Tests (filter_kubernetes) requires HTTP Server
 if(FLB_TESTS_RUNTIME)
   FLB_OPTION(FLB_HTTP_SERVER  ON)

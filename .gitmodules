@@ -1,0 +1,3 @@
+[submodule "lib/nats.c"]
+	path = lib/nats.c
+	url = https://github.com/nats-io/nats.c
