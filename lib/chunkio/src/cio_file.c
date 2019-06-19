@@ -422,7 +422,7 @@ static inline int open_and_up(struct cio_ctx *ctx)
             continue;
         }
 
-        mk_list_foreach(f_head, &stream->files) {
+        mk_list_foreach(f_head, &stream->chunks) {
             ch = mk_list_entry(f_head, struct cio_chunk, _head);
             file = (struct cio_file *) ch->backend;
 
@@ -527,8 +527,11 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
     return cf;
 }
 
-/* Put a file content back into memory, only IF it has been set 'down' before */
-int cio_file_up(struct cio_chunk *ch)
+/*
+ * Put a file content back into memory, only IF it has been set 'down'
+ * before.
+ */
+static int _cio_file_up(struct cio_chunk *ch, int enforced)
 {
     int ret;
     struct cio_file *cf = (struct cio_file *) ch->backend;
@@ -545,9 +548,15 @@ int cio_file_up(struct cio_chunk *ch)
         return -1;
     }
 
-    ret = open_and_up(ch->ctx);
-    if (ret == CIO_FALSE) {
-        return -1;
+    /*
+     * Enforced mechanism provides safety based on Chunk I/O storage
+     * pre-set limits.
+     */
+    if (enforced == CIO_TRUE) {
+        ret = open_and_up(ch->ctx);
+        if (ret == CIO_FALSE) {
+            return -1;
+        }
     }
 
     /* Open file */
@@ -569,6 +578,27 @@ int cio_file_up(struct cio_chunk *ch)
     }
 
     return 0;
+}
+
+/*
+ * Load a file using 'enforced' mode: do not load the file in memory
+ * if we already passed memory or max_chunks_up restrictions.
+ */
+int cio_file_up(struct cio_chunk *ch)
+{
+    return _cio_file_up(ch, CIO_TRUE);
+}
+
+/* Load a file in non-enforced mode. This means it will load the file
+ * in memory skipping restrictions set by configuration.
+ *
+ * The use case of this call is when the caller needs to write data
+ * to a file which is down due to restrictions. But then the caller
+ * must put the chunk 'down' again if that was it original status.
+ */
+int cio_file_up_force(struct cio_chunk *ch)
+{
+    return _cio_file_up(ch, CIO_FALSE);
 }
 
 /* Release memory and file descriptor resources but keep context */
@@ -731,6 +761,10 @@ int cio_file_write_metadata(struct cio_chunk *ch, char *buf, size_t size)
     size_t meta_av;
     void *tmp;
     struct cio_file *cf = ch->backend;
+
+    if (cio_file_is_up(ch, cf) == CIO_FALSE) {
+        return -1;
+    }
 
     /* Get metadata pointer */
     meta = cio_file_st_get_meta(cf->map);
@@ -967,7 +1001,7 @@ void cio_file_scan_dump(struct cio_ctx *ctx, struct cio_stream *st)
     struct cio_chunk *ch;
     struct cio_file *cf;
 
-    mk_list_foreach(head, &st->files) {
+    mk_list_foreach(head, &st->chunks) {
         ch = mk_list_entry(head, struct cio_chunk, _head);
         cf = ch->backend;
 

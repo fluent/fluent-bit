@@ -61,5 +61,6 @@ int cio_file_read_prepare(struct cio_ctx *ctx, struct cio_chunk *ch);
 int cio_file_is_up(struct cio_chunk *ch, struct cio_file *cf);
 int cio_file_down(struct cio_chunk *ch);
 int cio_file_up(struct cio_chunk *ch);
+int cio_file_up_force(struct cio_chunk *ch);
 
 #endif

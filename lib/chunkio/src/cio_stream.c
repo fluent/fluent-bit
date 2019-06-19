@@ -121,7 +121,7 @@ struct cio_stream *cio_stream_create(struct cio_ctx *ctx, const char *name,
     }
 
     st->parent = ctx;
-    mk_list_init(&st->files);
+    mk_list_init(&st->chunks);
     mk_list_add(&st->_head, &ctx->streams);
 
     cio_log_debug(ctx, "[cio stream] new stream registered: %s", name);

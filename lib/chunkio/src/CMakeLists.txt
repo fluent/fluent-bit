@@ -7,6 +7,7 @@ set(src
   cio_scan.c
   cio_utils.c
   cio_stream.c
+  cio_stats.c
   chunkio.c
   )
 

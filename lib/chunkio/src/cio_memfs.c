@@ -105,7 +105,7 @@ void cio_memfs_scan_dump(struct cio_ctx *ctx, struct cio_stream *st)
     struct cio_memfs *mf;
     struct cio_chunk *ch;
 
-    mk_list_foreach(head, &st->files) {
+    mk_list_foreach(head, &st->chunks) {
         ch = mk_list_entry(head, struct cio_chunk, _head);
         mf = ch->backend;
 

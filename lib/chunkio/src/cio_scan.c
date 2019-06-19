@@ -138,7 +138,7 @@ void cio_scan_dump(struct cio_ctx *ctx)
     mk_list_foreach(head, &ctx->streams) {
         st = mk_list_entry(head, struct cio_stream, _head);
         printf(" stream:%-60s%i chunks\n",
-               st->name, mk_list_size(&st->files));
+               st->name, mk_list_size(&st->chunks));
 
         if (st->type == CIO_STORE_MEM) {
             cio_memfs_scan_dump(ctx, st);
