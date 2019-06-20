@@ -31,6 +31,7 @@
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_parser.h>
+#include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_plugins.h>
 #include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_io_tls.h>
@@ -38,7 +39,7 @@
 #include <fluent-bit/flb_worker.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_http_server.h>
-#include <fluent-bit/flb_plugin_proxy.h>
+#include <fluent-bit/flb_plugin.h>
 
 int flb_regex_init();
 
@@ -185,8 +186,11 @@ struct flb_config *flb_config_init()
     /* Environment */
     config->env = flb_env_create();
 
-    /* Register plugins */
+    /* Register static plugins */
     flb_register_plugins(config);
+
+    /* Create environment for dynamic plugins */
+    config->dso_plugins = flb_plugin_create();
 
     /* Ignoring SIGPIPE on Windows (scary) */
 #ifndef _WIN32
@@ -282,6 +286,9 @@ void flb_config_exit(struct flb_config *config)
     if (config->conf_path) {
         flb_free(config->conf_path);
     }
+
+    /* Destroy any DSO context */
+    flb_plugin_destroy(config->dso_plugins);
 
     /* Workers */
     flb_worker_exit(config);
@@ -423,14 +430,12 @@ int flb_config_set_property(struct flb_config *config,
                 tmp = NULL;
 #endif
             }
-#ifdef FLB_HAVE_PROXY_GO
             else if (!strncasecmp(key, FLB_CONF_STR_PLUGINS_FILE, 32)) {
                 tmp = flb_env_var_translate(config->env, v);
-                ret = flb_plugin_proxy_conf_file(tmp, config);
+                ret = flb_plugin_load_config_file(tmp, config);
                 flb_free(tmp);
                 tmp = NULL;
             }
-#endif
             else {
                 ret = 0;
                 tmp = flb_env_var_translate(config->env, v);
