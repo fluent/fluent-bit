@@ -38,6 +38,7 @@ set(src
   flb_time.c
   flb_sosreport.c
   flb_sha512.c
+  flb_plugin.c
   )
 
 if (CMAKE_SYSTEM_NAME MATCHES "Windows")
