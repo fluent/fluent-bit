@@ -95,6 +95,9 @@ struct flb_config {
     /* Collectors */
     struct mk_list collectors;
 
+    /* Dynamic (dso) plugins context */
+    void *dso_plugins;
+
     /* Plugins references */
     struct mk_list in_plugins;
     struct mk_list parser_plugins;      /* not yet implemented */
