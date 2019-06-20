@@ -78,6 +78,5 @@ int flb_plugin_proxy_register(struct flb_plugin_proxy *proxy,
 struct flb_plugin_proxy *flb_plugin_proxy_create(const char *dso_path, int type,
                                                  struct flb_config *config);
 int flb_plugin_proxy_load_all(struct flb_config *config);
-int flb_plugin_proxy_conf_file(const char *file, struct flb_config *config);
 
 #endif
