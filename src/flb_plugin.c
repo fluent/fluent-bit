@@ -18,6 +18,7 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_log.h>
@@ -28,9 +29,6 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <unistd.h>
-#include <dlfcn.h>
-#include <libgen.h>
 
 #define PLUGIN_PREFIX           "flb-"
 #define PLUGIN_EXTENSION        ".so"
