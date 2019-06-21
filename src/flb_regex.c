@@ -21,10 +21,10 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_regex.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_mem.h>
 
 #include <string.h>
 #include <onigmo.h>
-
 
 static int
 cb_onig_named(const UChar *name, const UChar *name_end,
@@ -98,15 +98,16 @@ struct flb_regex *flb_regex_create(const char *pattern)
     struct flb_regex *r;
 
     /* Create context */
-    r = malloc(sizeof(struct flb_regex));
+    r = flb_malloc(sizeof(struct flb_regex));
     if (!r) {
+        flb_errno();
         return NULL;
     }
 
     /* Compile pattern */
-    ret = str_to_regex(pattern, &r->regex);
+    ret = str_to_regex(pattern, (OnigRegex *) &r->regex);
     if (ret == -1) {
-        free(r);
+        flb_free(r);
         return NULL;
     }
 
@@ -184,7 +185,7 @@ int flb_regex_parse(struct flb_regex *r, struct flb_regex_search *result,
 int flb_regex_destroy(struct flb_regex *r)
 {
     onig_free(r->regex);
-    free(r);
+    flb_free(r);
     return 0;
 }
 
