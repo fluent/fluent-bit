@@ -26,6 +26,7 @@ include(GNUInstallDirs)
 include(ExternalProject)
 include(cmake/FindJournald.cmake)
 include(cmake/FindMonkey.cmake)
+include(cmake/macros.cmake)
 set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/sanitizers-cmake/cmake" ${CMAKE_MODULE_PATH})
 find_package(Sanitizers)
 
@@ -190,6 +191,18 @@ if(FLB_DEV)
   set(FLB_TESTS_INTERNAL On)
 endif()
 
+# SSL/TLS: add encryption support
+if(FLB_OUT_TD)
+  set(FLB_TLS ON)
+endif()
+
+
+# Set Fluent Bit dependency libraries path
+include(cmake/libraries.cmake)
+
+# Export headers provided by libraries/dependencies
+include(cmake/headers.cmake)
+
 # Tweak build targets for Windows
 if(CMAKE_SYSTEM_NAME MATCHES "Windows")
   include(cmake/windows-setup.cmake)
@@ -221,16 +234,6 @@ if(FLB_OUT_GELF)
   endif()
 endif()
 
-# Macro to set definitions
-macro(FLB_DEFINITION var)
-  add_definitions(-D${var})
-  set(FLB_BUILD_FLAGS "${FLB_BUILD_FLAGS}#ifndef ${var}\n#define ${var}\n#endif\n")
-  set(FLB_INFO_FLAGS "${FLB_INFO_FLAGS} ${var}")
-endmacro()
-
-macro(FLB_OPTION option value)
-  set(${option} ${value} CACHE "" INTERNAL FORCE)
-endmacro()
 
 # Enable Debug symbols if specified
 if(FLB_DEBUG)
@@ -248,29 +251,10 @@ if(SANITIZE_ADDRESS)
   FLB_DEFINITION(FLB_HAVE_SANITIZE_ADDRESS)
 endif()
 
-# General Headers
-include_directories(
-  include/
-  lib/
-  lib/flb_libco
-  lib/rbtree
-  lib/msgpack-3.2.0/include
-  lib/chunkio/include
-  lib/LuaJIT-2.1.0-beta3/src/
-  ${MONKEY_INCLUDE_DIR}
-  )
-
+# Stream Processor
 if(FLB_STREAM_PROCESSOR)
   set(FLB_IN_STREAM_PROCESSOR On)
   FLB_DEFINITION(FLB_HAVE_STREAM_PROCESSOR)
-endif()
-
-# On Windows, the core uses libevent
-if(CMAKE_SYSTEM_NAME MATCHES "Windows")
-  include_directories(
-    lib/monkey/mk_core/deps/libevent/include
-    ${PROJECT_BINARY_DIR}/lib/monkey/mk_core/deps/libevent/include
-    )
 endif()
 
 # mk_core is aware about jemalloc usage, we need to disable this as
@@ -282,17 +266,17 @@ option(MSGPACK_ENABLE_CXX             OFF)
 option(MSGPACK_ENABLE_SHARED          OFF)
 option(MSGPACK_BUILD_TESTS            OFF)
 option(MSGPACK_BUILD_EXAMPLES         OFF)
-add_subdirectory(lib/msgpack-3.2.0 EXCLUDE_FROM_ALL)
+add_subdirectory(${FLB_PATH_LIB_MSGPACK} EXCLUDE_FROM_ALL)
 
 # Chunk I/O
 FLB_OPTION(CIO_LIB_STATIC  ON)
 FLB_OPTION(CIO_LIB_SHARED  OFF)
-add_subdirectory(lib/chunkio EXCLUDE_FROM_ALL)
+add_subdirectory(${FLB_PATH_LIB_CHUNKIO} EXCLUDE_FROM_ALL)
 
 # Lib: build the core libraries used by Fluent-Bit
 FLB_DEFINITION(JSMN_PARENT_LINKS)
 FLB_DEFINITION(JSMN_STRICT)
-add_subdirectory(lib/jsmn)
+add_subdirectory(${FLB_PATH_LIB_JSMN})
 
 # Runtime Tests (filter_kubernetes) requires HTTP Server
 if(FLB_TESTS_RUNTIME)
@@ -308,14 +292,9 @@ MK_SET_OPTION(MK_DEBUG          ON)
 
 # Build Monkey HTTP Server
 if(FLB_HTTP_SERVER)
-  add_subdirectory(lib/monkey/ EXCLUDE_FROM_ALL)
+  add_subdirectory(${FLB_PATH_LIB_MONKEY} EXCLUDE_FROM_ALL)
 else()
-  add_subdirectory(lib/monkey/mk_core EXCLUDE_FROM_ALL)
-endif()
-
-# SSL/TLS: add encryption support
-if(FLB_OUT_TD)
-  set(FLB_TLS ON)
+  add_subdirectory(${FLB_PATH_LIB_MONKEY}/mk_core EXCLUDE_FROM_ALL)
 endif()
 
 if(FLB_TLS)
@@ -323,8 +302,7 @@ if(FLB_TLS)
   option(ENABLE_TESTING  OFF)
   option(ENABLE_PROGRAMS OFF)
   option(INSTALL_MBEDTLS_HEADERS OFF)
-  add_subdirectory(lib/mbedtls-2.16.1 EXCLUDE_FROM_ALL)
-  include_directories(lib/mbedtls-2.16.1/include)
+  add_subdirectory(${FLB_PATH_LIB_MBEDTLS} EXCLUDE_FROM_ALL)
 endif()
 
 # Metrics
@@ -338,8 +316,7 @@ endif()
 
 if(FLB_SQLDB)
   FLB_DEFINITION(FLB_HAVE_SQLDB)
-  add_subdirectory(lib/sqlite-amalgamation-3240000)
-  include_directories(lib/sqlite-amalgamation-3240000)
+  add_subdirectory(${FLB_PATH_LIB_SQLITE})
 endif()
 
 if(FLB_TRACE)
@@ -354,11 +331,11 @@ endif()
 
 FLB_DEFINITION(FLB_HAVE_FLUSH_LIBCO)
 if(NOT TARGET co)
-  add_subdirectory(lib/flb_libco)
+  add_subdirectory(${FLB_PATH_LIB_SQLITE})
 endif()
 
 if(NOT TARGET rbtree)
-  add_subdirectory(lib/rbtree)
+  add_subdirectory(${FLB_PATH_LIB_RBTREE})
 endif()
 
 # Systemd Journald support
