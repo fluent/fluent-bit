@@ -22,11 +22,6 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#ifdef _WIN32
-#include <fluent-bit/flb_dlfcn_win32.h>
-#else
-#include <dlfcn.h>
-#endif
 
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_compat.h>
