@@ -31,6 +31,9 @@
 #include <windows.h>
 #include <Wincrypt.h>
 
+#include <monkey/mk_core/mk_sleep.h>
+#include <fluent-bit/flb_dlfcn_win32.h>
+
 #define FLB_DIRCHAR '\\'
 #define PATH_MAX MAX_PATH
 #define S_ISREG(m) (((m) & S_IFMT) == S_IFREG)
@@ -83,8 +86,6 @@ static inline char* realpath(char *path, char *buf)
 /* mk_utils.c exposes localtime_r */
 extern struct tm *localtime_r(const time_t *timep, struct tm * result);
 
-#include <monkey/mk_core/mk_sleep.h>
-
 static inline int usleep(LONGLONG usec)
 {
     // Convert into 100ns unit.
@@ -98,6 +99,7 @@ static inline int usleep(LONGLONG usec)
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <libgen.h>
+#include <dlfcn.h>
 
 #define FLB_DIRCHAR '/'
 #endif
