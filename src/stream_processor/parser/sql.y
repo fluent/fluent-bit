@@ -152,6 +152,19 @@ select: SELECT keys FROM source window where groupby ';'
                     flb_free($3);
                   }
                   |
+                  IDENTIFIER record_subkey
+                  {
+                    flb_sp_cmd_key_add(cmd, -1, $1, NULL);
+                    flb_free($1);
+                  }
+                  |
+                  IDENTIFIER record_subkey AS alias
+                  {
+                    flb_sp_cmd_key_add(cmd, -1, $1, $4);
+                    flb_free($1);
+                    flb_free($4);
+                  }
+                  |
                   AVG '(' IDENTIFIER ')'
                   {
                     flb_sp_cmd_key_add(cmd, FLB_SP_AVG, $3, NULL);
@@ -165,6 +178,19 @@ select: SELECT keys FROM source window where groupby ';'
                     flb_free($6);
                   }
                   |
+                  AVG '(' IDENTIFIER record_subkey ')'
+                  {
+                    flb_sp_cmd_key_add(cmd, FLB_SP_AVG, $3, NULL);
+                    flb_free($3);
+                  }
+                  |
+                  AVG '(' IDENTIFIER record_subkey ')' AS alias
+                  {
+                    flb_sp_cmd_key_add(cmd, FLB_SP_AVG, $3, $7);
+                    flb_free($3);
+                    flb_free($7);
+                  }
+                  |
                   SUM '(' IDENTIFIER ')'
                   {
                     flb_sp_cmd_key_add(cmd, FLB_SP_SUM, $3, NULL);
@@ -176,6 +202,19 @@ select: SELECT keys FROM source window where groupby ';'
                     flb_sp_cmd_key_add(cmd, FLB_SP_SUM, $3, $6);
                     flb_free($3);
                     flb_free($6);
+                  }
+                  |
+                  SUM '(' IDENTIFIER record_subkey ')'
+                  {
+                    flb_sp_cmd_key_add(cmd, FLB_SP_SUM, $3, NULL);
+                    flb_free($3);
+                  }
+                  |
+                  SUM '(' IDENTIFIER record_subkey ')' AS alias
+                  {
+                    flb_sp_cmd_key_add(cmd, FLB_SP_SUM, $3, $7);
+                    flb_free($3);
+                    flb_free($7);
                   }
                   |
                   COUNT '(' '*' ')'
@@ -202,6 +241,19 @@ select: SELECT keys FROM source window where groupby ';'
                     flb_free($6);
                   }
                   |
+                  COUNT '(' IDENTIFIER record_subkey ')'
+                  {
+                    flb_sp_cmd_key_add(cmd, FLB_SP_COUNT, $3, NULL);
+                    flb_free($3);
+                  }
+                  |
+                  COUNT '(' IDENTIFIER record_subkey ')' AS alias
+                  {
+                    flb_sp_cmd_key_add(cmd, FLB_SP_COUNT, $3, $7);
+                    flb_free($3);
+                    flb_free($7);
+                  }
+                  |
                   MIN '(' IDENTIFIER ')'
                   {
                     flb_sp_cmd_key_add(cmd, FLB_SP_MIN, $3, NULL);
@@ -215,6 +267,19 @@ select: SELECT keys FROM source window where groupby ';'
                     flb_free($6);
                   }
                   |
+                  MIN '(' IDENTIFIER record_subkey ')'
+                  {
+                    flb_sp_cmd_key_add(cmd, FLB_SP_MIN, $3, NULL);
+                    flb_free($3);
+                  }
+                  |
+                  MIN '(' IDENTIFIER record_subkey ')' AS alias
+                  {
+                    flb_sp_cmd_key_add(cmd, FLB_SP_MIN, $3, $7);
+                    flb_free($3);
+                    flb_free($7);
+                  }
+                  |
                   MAX '(' IDENTIFIER ')'
                   {
                     flb_sp_cmd_key_add(cmd, FLB_SP_MAX, $3, NULL);
@@ -226,6 +291,19 @@ select: SELECT keys FROM source window where groupby ';'
                     flb_sp_cmd_key_add(cmd, FLB_SP_MAX, $3, $6);
                     flb_free($3);
                     flb_free($6);
+                  }
+                  |
+                  MAX '(' IDENTIFIER record_subkey ')'
+                  {
+                    flb_sp_cmd_key_add(cmd, FLB_SP_MAX, $3, NULL);
+                    flb_free($3);
+                  }
+                  |
+                  MAX '(' IDENTIFIER record_subkey ')' AS alias
+                  {
+                    flb_sp_cmd_key_add(cmd, FLB_SP_MAX, $3, $7);
+                    flb_free($3);
+                    flb_free($7);
                   }
                   |
                   NOW '(' ')'
@@ -272,6 +350,13 @@ select: SELECT keys FROM source window where groupby ';'
                     flb_free($5);
                   }
       alias: IDENTIFIER
+      record_subkey: '[' STRING ']'
+             {
+               flb_slist_add(cmd->tmp_subkeys, $2);
+               flb_free($2);
+             }
+             |
+             record_subkey record_subkey
       source: FROM_STREAM IDENTIFIER
               {
                 flb_sp_cmd_source(cmd, FLB_SP_STREAM, $2);

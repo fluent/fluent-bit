@@ -106,8 +106,10 @@ struct flb_sp_cmd_key {
     int aggr_func;            /* Aggregation function */
     int time_func;            /* Time function */
     int record_func;          /* Record function */
-    flb_sds_t name;           /* Key name */
-    flb_sds_t alias;          /* Key output alias */
+    flb_sds_t name;           /* Parent Key name */
+    flb_sds_t alias;          /* Key output alias (key AS alias) */
+    flb_sds_t name_keys;      /* Key name with sub-keys */
+    struct mk_list *subkeys;  /* sub-keys selection */
     struct mk_list _head;     /* Link to flb_sp_cmd->keys */
 };
 
@@ -192,6 +194,13 @@ struct flb_exp_func {
 struct flb_exp_val {
     int type;
     struct mk_list _head;
+    sp_val val;
+};
+
+/* Represent any value object */
+struct flb_sp_value {
+    int type;
+    msgpack_object o;
     sp_val val;
 };
 

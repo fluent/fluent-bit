@@ -29,6 +29,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/stream_processor/flb_sp.h>
+#include <fluent-bit/stream_processor/flb_sp_key.h>
 #include <fluent-bit/stream_processor/flb_sp_stream.h>
 #include <fluent-bit/stream_processor/flb_sp_parser.h>
 #include <fluent-bit/stream_processor/flb_sp_func_time.h>
@@ -672,185 +673,6 @@ struct flb_sp *flb_sp_create(struct flb_config *config)
     return sp;
 }
 
-/* Lookup perfect match of sub-keys and map content */
-static int subkey_to_value(struct flb_exp_key *ekey, msgpack_object *map,
-                           struct flb_exp_val *result)
-{
-    int i = 0;
-    int levels;
-    int matched = 0;
-    msgpack_object *key_found = NULL;
-    msgpack_object key;
-    msgpack_object val;
-    msgpack_object cur_map;
-    struct mk_list *head;
-    struct flb_slist_entry *entry;
-
-    /* Expected number of map levels in the map */
-    levels = mk_list_size(ekey->subkeys);
-
-    cur_map = *map;
-
-    mk_list_foreach(head, ekey->subkeys) {
-        /* Key expected key entry */
-        entry = mk_list_entry(head, struct flb_slist_entry, _head);
-
-        if (cur_map.type != MSGPACK_OBJECT_MAP) {
-            break;
-        }
-
-        /* Get map entry that matches entry name */
-        for (i = 0; i < cur_map.via.map.size; i++) {
-            key = cur_map.via.map.ptr[i].key;
-            val = cur_map.via.map.ptr[i].val;
-
-            /* A bit obvious, but it's better to validate data type */
-            if (key.type != MSGPACK_OBJECT_STR) {
-                continue;
-            }
-
-            /* Compare strings by length and content */
-            if (flb_sds_cmp(entry->str,
-                            (char *) key.via.str.ptr,
-                            key.via.str.size) != 0) {
-                key_found = NULL;
-                continue;
-            }
-
-            key_found = &key;
-            cur_map = val;
-            matched++;
-            break;
-        }
-
-        if (levels == matched) {
-            break;
-        }
-    }
-
-    /* No matches */
-    if (!key_found || (matched > 0 && levels != matched)) {
-        return -1;
-    }
-
-    /* Compose result with found value */
-    if (val.type == MSGPACK_OBJECT_BOOLEAN) {
-        result->type = FLB_EXP_BOOL;
-        result->val.boolean = val.via.boolean;
-        return 0;
-    }
-    else if (val.type == MSGPACK_OBJECT_POSITIVE_INTEGER ||
-             val.type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
-        result->type = FLB_EXP_INT;
-        result->val.i64 = val.via.i64;
-        return 0;
-    }
-    else if (val.type == MSGPACK_OBJECT_FLOAT32 ||
-             val.type == MSGPACK_OBJECT_FLOAT) {
-        result->type = FLB_EXP_FLOAT;
-        result->val.f64 = val.via.f64;
-        return 0;
-    }
-    else if (val.type == MSGPACK_OBJECT_STR) {
-        result->type = FLB_EXP_STRING;
-        result->val.string = flb_sds_create_len((char *) val.via.str.ptr,
-                                                val.via.str.size);
-        return 0;
-    }
-    else if (val.type == MSGPACK_OBJECT_MAP) {
-        /* return boolean 'true', just denoting the existence of the key */
-        result->type = FLB_EXP_BOOL;
-        result->val.boolean = true;
-        return 0;
-    }
-
-    return -1;
-}
-
-static struct flb_exp_val *key_to_value(struct flb_exp_key *ekey,
-                                        msgpack_object *map)
-{
-     /* We might need to find a more efficient way to evaluate the keys
-        appeain a condition */
-    int i;
-    int ret;
-    int map_size;
-    msgpack_object key;
-    msgpack_object val;
-    struct flb_exp_val *result;
-    flb_sds_t ckey = ekey->name;
-
-    map_size = map->via.map.size;
-    for (i = 0; i < map_size; i++) {
-        key = map->via.map.ptr[i].key;
-        val = map->via.map.ptr[i].val;
-
-        /* Compare by length and by key name */
-        if (flb_sds_cmp(ckey, key.via.str.ptr,
-            key.via.str.size) != 0) {
-            continue;
-        }
-
-        result = flb_malloc(sizeof(struct flb_exp_val));
-        if (!result) {
-            flb_errno();
-            return NULL;
-        }
-
-        if (val.type == MSGPACK_OBJECT_BOOLEAN) {
-            result->type = FLB_EXP_BOOL;
-            result->val.boolean = val.via.boolean;
-            return result;
-        }
-        else if (val.type == MSGPACK_OBJECT_POSITIVE_INTEGER ||
-            val.type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
-            result->type = FLB_EXP_INT;
-            result->val.i64 = val.via.i64;
-            return result;
-        }
-        else if (val.type == MSGPACK_OBJECT_FLOAT32 ||
-                   val.type == MSGPACK_OBJECT_FLOAT) {
-            result->type = FLB_EXP_FLOAT;
-            result->val.f64 = val.via.f64;
-            return result;
-        }
-        else if (val.type == MSGPACK_OBJECT_STR) {
-            result->type = FLB_EXP_STRING;
-            result->val.string = flb_sds_create_len(val.via.str.ptr,
-                                                    val.via.str.size);
-            return result;
-        }
-        else if (val.type == MSGPACK_OBJECT_MAP && ekey->subkeys != NULL) {
-            ret = subkey_to_value(ekey, &val, result);
-            if (ret == 0) {
-                return result;
-            }
-            else {
-                flb_free(result);
-                return NULL;
-            }
-        }
-        else if (val.type == MSGPACK_OBJECT_MAP) {
-            /* return boolean 'true', just denoting the existence of the key */
-            result->type = FLB_EXP_BOOL;
-            result->val.boolean = true;
-            return result;
-        }
-        else if (val.type == MSGPACK_OBJECT_NIL) {
-            result->type = FLB_EXP_NULL;
-            return result;
-        }
-        else {
-            flb_free(result);
-            return NULL;
-        }
-    }
-
-    /* NULL return means: failed memory allocation, an invalid value, or non-existing key
-     */
-    return NULL;
-}
-
 void free_value(struct flb_exp_val *v)
 {
     if (!v) {
@@ -1130,6 +952,8 @@ static struct flb_exp_val *reduce_expression(struct flb_exp *expression,
     int operation;
     flb_sds_t s;
     flb_sds_t tmp_sds = NULL;
+    struct flb_exp_key *key;
+    struct flb_sp_value *sval;
     struct flb_exp_val *ret, *left, *right;
     struct flb_exp_val *result;
 
@@ -1169,9 +993,18 @@ static struct flb_exp_val *reduce_expression(struct flb_exp *expression,
         }
         break;
     case FLB_EXP_KEY:
-        ret = key_to_value((struct flb_exp_key *) expression, map);
-        flb_free(result);
-        result = ret;
+        key = (struct flb_exp_key *) expression;
+        sval = flb_sp_key_to_value(key->name, *map, key->subkeys);
+        if (sval) {
+            result->type = sval->type;
+            result->val = sval->val;
+            flb_free(sval);
+            return result;
+        }
+        else {
+            flb_free(result);
+            return NULL;
+        }
         break;
     case FLB_EXP_FUNC:
         flb_free(result);  // we don't need result
@@ -1237,7 +1070,6 @@ static void package_results(const char *tag, int tag_len,
     struct mk_list *head;
     struct aggr_node *aggr_node;
 
-
     map_entries = mk_list_size(&cmd->keys);
 
     msgpack_sbuffer_init(&mp_sbuf);
@@ -1280,6 +1112,9 @@ static void package_results(const char *tag, int tag_len,
                 char *c_name;
                 if (!ckey->name) {
                     c_name = "*";
+                }
+                else if (ckey->name_keys) {
+                    c_name = ckey->name_keys;
                 }
                 else {
                     c_name = ckey->name;
@@ -1409,6 +1244,7 @@ static int sp_process_data_aggr(const char *buf_data, size_t buf_size,
     struct flb_sp_cmd *cmd = task->cmd;
     struct flb_sp_cmd_key *ckey;
     struct flb_sp_cmd_gb_key *gb_key;
+    struct flb_sp_value *sval;
     struct flb_exp_val *condition;
     struct aggr_node *aggr_node;
     struct rb_tree_node *rb_result;
@@ -1583,16 +1419,23 @@ static int sp_process_data_aggr(const char *buf_data, size_t buf_size,
                     continue;
                 }
 
+                sval = flb_sp_key_to_value(ckey->name, map, ckey->subkeys);
+                if (!sval) {
+                    key_id++;
+                    continue;
+                }
+
                 /*
                  * Convert value to a numeric representation only if key has an
                  * assigned aggregation function
                 */
                 if (ckey->aggr_func != FLB_SP_NOP) {
                     if (ival == 0 && dval == 0.0) {
-                        ret = object_to_number(val, &ival, &dval);
+                        ret = object_to_number(sval->o, &ival, &dval);
                         if (ret == -1) {
                             /* Value cannot be represented as a number */
                             key_id++;
+                            flb_sp_key_value_destroy(sval);
                             continue;
                         }
                     }
@@ -1607,26 +1450,26 @@ static int sp_process_data_aggr(const char *buf_data, size_t buf_size,
                     }
                 }
                 else {
-                    if (val.type == MSGPACK_OBJECT_BOOLEAN) {
+                    if (sval->o.type == MSGPACK_OBJECT_BOOLEAN) {
                         nums[key_id].type = FLB_SP_BOOLEAN;
-                        nums[key_id].boolean = val.via.boolean;
+                        nums[key_id].boolean = sval->o.via.boolean;
                     }
-                    if (val.type == MSGPACK_OBJECT_POSITIVE_INTEGER ||
-                        val.type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
+                    if (sval->o.type == MSGPACK_OBJECT_POSITIVE_INTEGER ||
+                        sval->o.type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
                         nums[key_id].type = FLB_SP_NUM_I64;
-                        nums[key_id].i64 = val.via.i64;
+                        nums[key_id].i64 = sval->o.via.i64;
                     }
                     else if (val.type == MSGPACK_OBJECT_FLOAT32 ||
                              val.type == MSGPACK_OBJECT_FLOAT) {
                         nums[key_id].type = FLB_SP_NUM_F64;
-                        nums[key_id].f64 = val.via.f64;
+                        nums[key_id].f64 = sval->o.via.f64;
                     }
                     else if (val.type == MSGPACK_OBJECT_STR) {
                         nums[key_id].type = FLB_SP_STRING;
                         if (nums[key_id].string == NULL) {
                             nums[key_id].string =
-                                flb_sds_create_len(val.via.str.ptr,
-                                                   val.via.str.size);
+                                flb_sds_create_len(sval->o.via.str.ptr,
+                                                   sval->o.via.str.size);
                         }
                     }
                 }
@@ -1646,6 +1489,7 @@ static int sp_process_data_aggr(const char *buf_data, size_t buf_size,
                     break;
                 }
                 key_id++;
+                flb_sp_key_value_destroy(sval);
             }
         }
     }
@@ -1687,6 +1531,7 @@ static int sp_process_data(const char *tag, int tag_len,
     struct flb_sp_cmd *cmd = task->cmd;
     struct flb_sp_cmd_key *cmd_key;
     struct flb_exp_val *condition;
+    struct flb_sp_value *sval;
 
     /* Vars initialization */
     ok = MSGPACK_UNPACK_SUCCESS;
@@ -1784,28 +1629,44 @@ static int sp_process_data(const char *tag, int tag_len,
                 }
 
                 /* Compare lengths */
-                if (flb_sds_len(cmd_key->name) != key.via.str.size) {
+                if (flb_sds_cmp(cmd_key->name,
+                                key.via.str.ptr, key.via.str.size) != 0) {
                     continue;
                 }
 
-                /* Compare key name */
-                if (strncmp(cmd_key->name, key.via.str.ptr,
-                            key.via.str.size) == 0) {
-
-                    /* Check if the command ask for an alias 'key AS abc' */
-                    if (cmd_key->alias) {
-                        msgpack_pack_str(&mp_pck,
-                                         flb_sds_len(cmd_key->alias));
-                        msgpack_pack_str_body(&mp_pck,
-                                              cmd_key->alias,
-                                              flb_sds_len(cmd_key->alias));
-                    }
-                    else {
-                        msgpack_pack_object(&mp_pck, key);
-                    }
-                    msgpack_pack_object(&mp_pck, val);
-                    map_entries++;
+                /*
+                 * Package key name:
+                 *
+                 * Check if the command ask for an alias 'key AS abc'
+                 */
+                if (cmd_key->alias) {
+                    msgpack_pack_str(&mp_pck,
+                                     flb_sds_len(cmd_key->alias));
+                    msgpack_pack_str_body(&mp_pck,
+                                          cmd_key->alias,
+                                          flb_sds_len(cmd_key->alias));
                 }
+                else if (cmd_key->subkeys &&
+                         mk_list_size(cmd_key->subkeys) > 0) {
+                    msgpack_pack_str(&mp_pck,
+                                     flb_sds_len(cmd_key->name_keys));
+                    msgpack_pack_str_body(&mp_pck,
+                                          cmd_key->name_keys,
+                                          flb_sds_len(cmd_key->name_keys));
+                }
+                else {
+                    msgpack_pack_object(&mp_pck, key);
+                }
+
+                /* Package value */
+                sval = flb_sp_key_to_value(cmd_key->name, map,
+                                           cmd_key->subkeys);
+                if (sval) {
+                    msgpack_pack_object(&mp_pck, sval->o);
+                    flb_sp_key_value_destroy(sval);
+                }
+
+                map_entries++;
             }
         }
 
