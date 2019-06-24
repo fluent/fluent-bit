@@ -689,14 +689,110 @@ static void cb_select_sub_colors(int id, struct task_check *check,
     TEST_CHECK(ret == 3);
 }
 
+static void cb_select_sub_keys(int id, struct task_check *check,
+                               char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 1 row */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 1);
+
+    ret = mp_record_key_cmp(buf, size,
+                            0, "map['sub1']['sub2']['color']",
+                            MSGPACK_OBJECT_STR,
+                            "blue", 0, 0);
+    TEST_CHECK(ret == FLB_TRUE);
+}
+
+static void cb_select_sum_sub_keys(int id, struct task_check *check,
+                                   char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 1 row */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 1);
+
+    ret = mp_record_key_cmp(buf, size,
+                            0, "SUM(map['sub1']['sub2'])",
+                            MSGPACK_OBJECT_POSITIVE_INTEGER,
+                            NULL, 246, 0);
+    TEST_CHECK(ret == FLB_TRUE);
+}
+
+static void cb_select_avg_sub_keys(int id, struct task_check *check,
+                                   char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 1 row */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 1);
+
+    ret = mp_record_key_cmp(buf, size,
+                            0, "AVG(map['sub1']['sub2'])",
+                            MSGPACK_OBJECT_FLOAT,
+                            NULL, 0, 123.0);
+    TEST_CHECK(ret == FLB_TRUE);
+}
+
+static void cb_select_count_sub_keys(int id, struct task_check *check,
+                                     char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 1 row */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 1);
+
+    ret = mp_record_key_cmp(buf, size,
+                            0, "COUNT(map['sub1']['sub2'])",
+                            MSGPACK_OBJECT_POSITIVE_INTEGER,
+                            NULL, 2, 0);
+    TEST_CHECK(ret == FLB_TRUE);
+}
+
+static void cb_select_min_sub_keys(int id, struct task_check *check,
+                                   char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 1 row */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 1);
+
+    ret = mp_record_key_cmp(buf, size,
+                            0, "MIN(map['sub1']['sub2'])",
+                            MSGPACK_OBJECT_POSITIVE_INTEGER,
+                            NULL, 123, 0);
+    TEST_CHECK(ret == FLB_TRUE);
+}
+
+static void cb_select_max_sub_keys(int id, struct task_check *check,
+                                   char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 1 row */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 1);
+
+    ret = mp_record_key_cmp(buf, size,
+                            0, "MAX(map['sub1']['sub3'])",
+                            MSGPACK_OBJECT_FLOAT,
+                            NULL, 0, 100);
+    TEST_CHECK(ret == FLB_TRUE);
+}
+
 static void cb_select_sub_record_contains(int id, struct task_check *check,
                                           char *buf, size_t size)
 {
     int ret;
 
-    /* Expect 2 rows */
+    /* Expect 5 rows */
     ret = mp_count_rows(buf, size);
-    TEST_CHECK(ret == 2);
+    TEST_CHECK(ret == 5);
 }
 
 /* Tests for 'test_select_subkeys' */
@@ -730,6 +826,42 @@ struct task_check select_subkeys_checks[] = {
         "@record.contains(map['color']); ",
         cb_select_sub_record_contains
     },
+    {   4, 0, 0,
+        "cb_select_sub_keys",
+        "SELECT map['sub1']['sub2']['color'] FROM STREAM:FLB WHERE "    \
+        "map['sub1']['sub2']['color'] = 'blue';",
+        cb_select_sub_keys
+    },
+    {   5, 0, 0,
+        "cb_select_sum_sub_keys",
+        "SELECT SUM(map['sub1']['sub2']) FROM STREAM:FLB WHERE "    \
+        "map['sub1']['sub2'] = 123;",
+        cb_select_sum_sub_keys
+    },
+    {   6, 0, 0,
+        "cb_select_avg_sub_keys",
+        "SELECT AVG(map['sub1']['sub2']) FROM STREAM:FLB WHERE "    \
+        "map['sub1']['sub2'] = 123;",
+        cb_select_avg_sub_keys
+    },
+    {   7, 0, 0,
+        "cb_select_count_sub_keys",
+        "SELECT COUNT(map['sub1']['sub2']) FROM STREAM:FLB WHERE "    \
+        "map['sub1']['sub2'] = 123;",
+        cb_select_count_sub_keys
+    },
+    {   8, 0, 0,
+        "cb_select_min_sub_keys",
+        "SELECT MIN(map['sub1']['sub2']) FROM STREAM:FLB WHERE "  \
+        "map['sub1']['sub2'] > 0;",
+        cb_select_min_sub_keys
+    },
+    {   9, 0, 0,
+        "cb_select_max_sub_keys",
+        "SELECT MAX(map['sub1']['sub3']) FROM STREAM:FLB WHERE "  \
+        "map['sub1']['sub3'] > 0;",
+        cb_select_max_sub_keys
+    }
 };
 
 /* Tests to check syntactically valid/semantically invalid queries */
