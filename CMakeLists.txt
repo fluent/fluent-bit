@@ -331,7 +331,7 @@ endif()
 
 FLB_DEFINITION(FLB_HAVE_FLUSH_LIBCO)
 if(NOT TARGET co)
-  add_subdirectory(${FLB_PATH_LIB_SQLITE})
+  add_subdirectory(${FLB_PATH_LIB_CO})
 endif()
 
 if(NOT TARGET rbtree)
