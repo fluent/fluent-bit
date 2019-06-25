@@ -23,6 +23,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_time.h>
 #include <fluent-bit/stream_processor/flb_sp.h>
 #include <fluent-bit/stream_processor/flb_sp_window.h>
 
@@ -187,7 +188,8 @@ struct flb_exp_func {
     int type;
     struct mk_list _head;
     flb_sds_t name;
-    struct flb_exp_val *(*cb_func) (struct flb_exp_val *);
+    struct flb_exp_val *(*cb_func) (const char *, int,
+                                    struct flb_time *, struct flb_exp_val *);
     struct flb_exp *param;
 };
 

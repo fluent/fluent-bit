@@ -77,6 +77,7 @@ MAX                     return MAX;
  /* Record Functions */
 @RECORD                 return RECORD;
 CONTAINS                return CONTAINS;
+TIME                    return TIME;
 
  /* Window Types */
 TUMBLING                return TUMBLING;

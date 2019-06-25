@@ -947,6 +947,8 @@ static void logical_operation(struct flb_exp_val *left,
 }
 
 static struct flb_exp_val *reduce_expression(struct flb_exp *expression,
+                                             const char *tag, int tag_len,
+                                             struct flb_time *tms,
                                              msgpack_object *map)
 {
     int operation;
@@ -1007,14 +1009,19 @@ static struct flb_exp_val *reduce_expression(struct flb_exp *expression,
         }
         break;
     case FLB_EXP_FUNC:
-        flb_free(result);  // we don't need result
-        ret = reduce_expression(((struct flb_exp_func *) expression)->param, map);
-        result = ((struct flb_exp_func *) expression)->cb_func(ret);
+        /* we don't need result */
+        flb_free(result);
+        ret = reduce_expression(((struct flb_exp_func *) expression)->param,
+                                tag, tag_len, tms, map);
+        result = ((struct flb_exp_func *) expression)->cb_func(tag, tag_len,
+                                                               tms, ret);
         free_value(ret);
         break;
     case FLB_LOGICAL_OP:
-        left = reduce_expression(expression->left, map);
-        right = reduce_expression(expression->right, map);
+        left = reduce_expression(expression->left,
+                                 tag, tag_len, tms, map);
+        right = reduce_expression(expression->right,
+                                  tag, tag_len, tms, map);
 
         operation = ((struct flb_exp_op *) expression)->operation;
 
@@ -1238,9 +1245,11 @@ static int sp_process_data_aggr(const char *buf_data, size_t buf_size,
     msgpack_unpacked result;
     msgpack_object key;
     msgpack_object val;
+    msgpack_object *obj;
     struct aggr_num *nums = NULL;
     struct aggr_num *gb_nums; // group-by keys
     struct mk_list *head;
+    struct flb_time tms;
     struct flb_sp_cmd *cmd = task->cmd;
     struct flb_sp_cmd_key *ckey;
     struct flb_sp_cmd_gb_key *gb_key;
@@ -1262,13 +1271,17 @@ static int sp_process_data_aggr(const char *buf_data, size_t buf_size,
     while (msgpack_unpack_next(&result, buf_data, buf_size, &off) == ok) {
         root = result.data;
 
+        /* extract timestamp */
+        flb_time_pop_from_msgpack(&tms, &result, &obj);
+
         /* get the map data and it size (number of items) */
         map   = root.via.array.ptr[1];
         map_size = map.via.map.size;
 
         /* Evaluate condition */
         if (cmd->condition) {
-            condition = reduce_expression(cmd->condition, &map);
+            condition = reduce_expression(cmd->condition,
+                                          tag, tag_len, &tms, &map);
             if (!condition) {
                 continue;
             }
@@ -1553,7 +1566,8 @@ static int sp_process_data(const char *tag, int tag_len,
 
         /* Evaluate condition */
         if (cmd->condition) {
-            condition = reduce_expression(cmd->condition, &map);
+            condition = reduce_expression(cmd->condition,
+                                          tag, tag_len, &tms, &map);
             if (!condition) {
                 continue;
             }

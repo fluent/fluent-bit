@@ -43,7 +43,7 @@ void yyerror(struct flb_sp_cmd *cmd, const char *query, void *scanner,
 %token AVG SUM COUNT MAX MIN
 
 /* Record functions */
-%token RECORD CONTAINS
+%token RECORD CONTAINS TIME
 
 /* Time functions */
 %token NOW UNIX_TIMESTAMP
@@ -466,6 +466,11 @@ select: SELECT keys FROM source window where groupby ';'
                      RECORD '.' CONTAINS '(' key ')'
                      {
                        $$ = flb_sp_record_function_add(cmd, "contains", $5);
+                     }
+                     |
+                     RECORD '.' TIME '(' ')'
+                     {
+                       $$ = flb_sp_record_function_add(cmd, "time", NULL);
                      }
         key: IDENTIFIER
                    {

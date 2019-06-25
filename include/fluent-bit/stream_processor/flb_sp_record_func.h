@@ -25,37 +25,62 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/stream_processor/flb_sp_parser.h>
 
-#define RECORD_FUNCTIONS_SIZE 2
+#define RECORD_FUNCTIONS_SIZE 3
 
-typedef struct flb_exp_val *(*record_function_typ) (struct flb_exp_val *);
+typedef struct flb_exp_val *(*record_function_typ) (const char *, int,
+                                                    struct flb_time *,
+                                                    struct flb_exp_val *);
 
-struct flb_exp_val *contains(struct flb_exp_val *param) {
+struct flb_exp_val *cb_contains(const char *tag, int tag_len,
+                                struct flb_time *tms,
+                                struct flb_exp_val *param)
+{
     struct flb_exp_val *result;
 
-    if (param == NULL)
-    {
+    if (param == NULL) {
         return NULL;
     }
 
     result = flb_calloc(1, sizeof(struct flb_exp_val));
-    if (!result)
-    {
+    if (!result) {
        flb_errno();
        return NULL;
     }
 
     result->type = FLB_EXP_BOOL;
-    result->val.boolean = true;  
+    result->val.boolean = true;
+
+    return result;
+}
+
+/* Return the record timestamp */
+struct flb_exp_val *cb_time(const char *tag, int tag_len,
+                            struct flb_time *tms,
+                            struct flb_exp_val *param)
+{
+    struct flb_exp_val *result;
+    (void) param;
+
+    result = flb_calloc(1, sizeof(struct flb_exp_val));
+    if (!result) {
+        flb_errno();
+        return NULL;
+    }
+
+    result->type = FLB_EXP_FLOAT;
+    result->val.f64 = flb_time_to_double(tms);
 
     return result;
 }
 
 char *record_functions[RECORD_FUNCTIONS_SIZE] = {
-    "contains"
+                                                 "contains",
+                                                 "time"
 };
 
 record_function_typ record_functions_ptr[RECORD_FUNCTIONS_SIZE] = {
-    contains
+     cb_contains,
+     cb_time
 };
 
 #endif

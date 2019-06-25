@@ -591,7 +591,8 @@ struct flb_exp *flb_sp_cmd_condition_null(struct flb_sp_cmd *cmd)
     return (struct flb_exp *) val;
 }
 
-struct flb_exp *flb_sp_record_function_add(struct flb_sp_cmd *cmd, char *name, struct flb_exp *param)
+struct flb_exp *flb_sp_record_function_add(struct flb_sp_cmd *cmd,
+                                           char *name, struct flb_exp *param)
 {
     char *rf_name;
     int i;
