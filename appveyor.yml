@@ -27,3 +27,5 @@ build_script:
 artifacts:
   - path: build/td-agent-bit-*.exe
     name: td-agent-bit
+  - path: build/td-agent-bit-*.zip
+    name: td-agent-bit-zip
