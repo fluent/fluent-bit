@@ -1,6 +1,12 @@
 cmake_minimum_required(VERSION 2.8)
 project(fluent-bit)
 
+# Fluent Bit Version
+set(FLB_VERSION_MAJOR  1)
+set(FLB_VERSION_MINOR  3)
+set(FLB_VERSION_PATCH  0)
+set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
+
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Define macro to identify Windows system (without Cygwin)
@@ -35,12 +41,6 @@ set(FLB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/lib")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/library")
-
-# Fluent Bit Version
-set(FLB_VERSION_MAJOR  1)
-set(FLB_VERSION_MINOR  2)
-set(FLB_VERSION_PATCH  0)
-set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 # Build Options
 option(FLB_ALL                "Enable all features"           No)
