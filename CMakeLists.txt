@@ -615,8 +615,8 @@ endif()
 # Installer Generation (Cpack)
 # ============================
 
-if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
-  set(CPACK_GENERATOR "NSIS")
+if(FLB_SYSTEM_WINDOWS)
+  set(CPACK_GENERATOR "NSIS" "ZIP")
 else()
   set(CPACK_GENERATOR "RPM")
 endif()
