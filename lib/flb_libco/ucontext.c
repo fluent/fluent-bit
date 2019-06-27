@@ -18,6 +18,7 @@
 
 #define LIBCO_C
 #include "libco.h"
+#include "settings.h"
 
 #define _BSD_SOURCE
 #include <stdlib.h>
