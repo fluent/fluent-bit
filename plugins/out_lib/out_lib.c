@@ -167,7 +167,7 @@ static void out_lib_flush(const void *data, size_t bytes,
                 FLB_OUTPUT_RETURN(FLB_ERROR);
             }
 
-            len = snprintf(out_buf, out_size, "[%f, %s]",
+            len = snprintf(out_buf, out_size, "[%f,%s]",
                            flb_time_to_double(&tm),
                            buf);
             flb_free(buf);
