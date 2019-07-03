@@ -235,7 +235,7 @@ static void flb_test_op_remove_wildcard()
     TEST_CHECK(ret == 0);
 
     /* Ingest data samples */
-    p = "[0, {\"k1\":\"sample1\",\"k2\":\"sample2\",\"a3\":\"sample3\"}]";
+    p = "[0,{\"k1\":\"sample1\",\"k2\":\"sample2\",\"a3\":\"sample3\"}]";
     len = strlen(p);
     bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
     TEST_CHECK(bytes == len);
@@ -274,7 +274,7 @@ static void flb_test_op_remove_regex()
     TEST_CHECK(ret == 0);
 
     /* Ingest data samples */
-    p = "[0, {\"k1\":\"sample1\",\"k2\":\"sample2\",\"A3\":\"sample3\"}]";
+    p = "[0,{\"k1\":\"sample1\",\"k2\":\"sample2\",\"A3\":\"sample3\"}]";
     len = strlen(p);
     bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
     TEST_CHECK(bytes == len);
@@ -309,14 +309,14 @@ static void flb_test_op_rename_exists()
 
     /* Prepare output callback with expected result */
     cb_data.cb = cb_check_result;
-    cb_data.data = "\"k1\":\"sample1\", \"k2\":\"sample2\", \"A3\":\"sample3\"";
+    cb_data.data = "\"k1\":\"sample1\",\"k2\":\"sample2\",\"A3\":\"sample3\"";
 
     /* Start the engine */
     ret = flb_start(ctx->flb);
     TEST_CHECK(ret == 0);
 
     /* Ingest data samples */
-    p = "[0, {\"k1\":\"sample1\",\"k2\":\"sample2\",\"A3\":\"sample3\"}]";
+    p = "[0,{\"k1\":\"sample1\",\"k2\":\"sample2\",\"A3\":\"sample3\"}]";
     len = strlen(p);
     bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
     TEST_CHECK(bytes == len);
@@ -348,13 +348,13 @@ static void flb_test_op_rename_no_exists()
 
     /* Prepare output callback with expected result */
     cb_data.cb = cb_check_result;
-    cb_data.data = "\"k1\":\"sample1\", \"k2\":\"sample2\", \"a3\":\"sample3\"";
+    cb_data.data = "\"k1\":\"sample1\",\"k2\":\"sample2\",\"a3\":\"sample3\"";
     /* Start the engine */
     ret = flb_start(ctx->flb);
     TEST_CHECK(ret == 0);
 
     /* Ingest data samples */
-    p = "[0, {\"k1\":\"sample1\",\"k2\":\"sample2\",\"A3\":\"sample3\"}]";
+    p = "[0,{\"k1\":\"sample1\",\"k2\":\"sample2\",\"A3\":\"sample3\"}]";
     len = strlen(p);
     bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
     TEST_CHECK(bytes == len);
@@ -396,7 +396,7 @@ static void flb_test_op_hard_rename_exists()
     TEST_CHECK(ret == 0);
 
     /* Ingest data samples */
-    p = "[0, {\"k1\":\"sample1\",\"k2\":\"sample2\"}]";
+    p = "[0,{\"k1\":\"sample1\",\"k2\":\"sample2\"}]";
     len = strlen(p);
     bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
     TEST_CHECK(bytes == len);
@@ -435,7 +435,7 @@ static void flb_test_op_hard_rename_no_exists()
     TEST_CHECK(ret == 0);
 
     /* Ingest data samples */
-    p = "[0, {\"k1\":\"sample1\",\"k2\":\"sample2\"}]";
+    p = "[0,{\"k1\":\"sample1\",\"k2\":\"sample2\"}]";
     len = strlen(p);
     bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
     TEST_CHECK(bytes == len);
@@ -467,14 +467,14 @@ static void flb_test_op_copy_exists()
 
     /* Prepare output callback with expected result */
     cb_data.cb = cb_check_result;
-    cb_data.data = "\"k1\":\"sample1\", \"k2\":\"sample2\"";
+    cb_data.data = "\"k1\":\"sample1\",\"k2\":\"sample2\"";
 
     /* Start the engine */
     ret = flb_start(ctx->flb);
     TEST_CHECK(ret == 0);
 
     /* Ingest data samples */
-    p = "[0, {\"k1\":\"sample1\",\"k2\":\"sample2\"}]";
+    p = "[0,{\"k1\":\"sample1\",\"k2\":\"sample2\"}]";
     len = strlen(p);
     bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
     TEST_CHECK(bytes == len);
@@ -513,7 +513,7 @@ static void flb_test_op_copy_no_exists()
     TEST_CHECK(ret == 0);
 
     /* Ingest data samples */
-    p = "[0, {\"k1\":\"sample1\",\"k2\":\"sample2\"}]";
+    p = "[0,{\"k1\":\"sample1\",\"k2\":\"sample2\"}]";
     len = strlen(p);
     bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
     TEST_CHECK(bytes == len);
@@ -545,7 +545,7 @@ static void flb_test_op_hard_copy_exists()
 
     /* Prepare output callback with expected result */
     cb_data.cb = cb_check_result;
-    cb_data.data = "\"k1\":\"sample1\", \"k2\":\"sample1\"";
+    cb_data.data = "\"k1\":\"sample1\",\"k2\":\"sample1\"";
 
     /* Start the engine */
     ret = flb_start(ctx->flb);
@@ -591,7 +591,7 @@ static void flb_test_op_hard_copy_no_exists()
     TEST_CHECK(ret == 0);
 
     /* Ingest data samples */
-    p = "[0, {\"k1\":\"sample1\",\"k2\":\"sample2\"}]";
+    p = "[0,{\"k1\":\"sample1\",\"k2\":\"sample2\"}]";
     len = strlen(p);
     bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
     TEST_CHECK(bytes == len);
@@ -632,7 +632,7 @@ static void flb_test_cond_key_exists()
     TEST_CHECK(ret == 0);
 
     /* Ingest data samples */
-    p = "[0, {\"k1\":\"sample1\",\"k2\":\"sample2\"}]";
+    p = "[0,{\"k1\":\"sample1\",\"k2\":\"sample2\"}]";
     len = strlen(p);
     bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
     TEST_CHECK(bytes == len);
@@ -672,7 +672,7 @@ static void flb_test_cond_key_does_not_exist()
     TEST_CHECK(ret == 0);
 
     /* Ingest data samples */
-    p = "[0, {\"k1\":\"sample1\",\"k2\":\"sample2\"}]";
+    p = "[0,{\"k1\":\"sample1\",\"k2\":\"sample2\"}]";
     len = strlen(p);
     bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
     TEST_CHECK(bytes == len);
@@ -712,7 +712,7 @@ static void flb_test_cond_a_key_matches()
     TEST_CHECK(ret == 0);
 
     /* Ingest data samples */
-    p = "[0, {\"aa\":\"sample1\",\"bb\":\"sample2\",\"c1\":\"sample3\"}]";
+    p = "[0,{\"aa\":\"sample1\",\"bb\":\"sample2\",\"c1\":\"sample3\"}]";
     len = strlen(p);
     bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
     TEST_CHECK(bytes == len);
@@ -752,7 +752,7 @@ static void flb_test_cond_no_key_matches()
     TEST_CHECK(ret == 0);
 
     /* Ingest data samples */
-    p = "[0, {\"aa\":\"sample1\",\"bb\":\"sample2\",\"c1\":\"sample3\"}]";
+    p = "[0,{\"aa\":\"sample1\",\"bb\":\"sample2\",\"c1\":\"sample3\"}]";
     len = strlen(p);
     bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
     TEST_CHECK(bytes == len);
@@ -792,7 +792,7 @@ static void flb_test_cond_key_value_equals()
     TEST_CHECK(ret == 0);
 
     /* Ingest data samples */
-    p = "[0, {\"aa\":\"sample1\",\"bb\":\"sample2\",\"c1\":\"sample3\"}]";
+    p = "[0,{\"aa\":\"sample1\",\"bb\":\"sample2\",\"c1\":\"sample3\"}]";
     len = strlen(p);
     bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
     TEST_CHECK(bytes == len);
@@ -832,7 +832,7 @@ static void flb_test_cond_key_value_does_not_equal()
     TEST_CHECK(ret == 0);
 
     /* Ingest data samples */
-    p = "[0, {\"aa\":\"sample1\",\"bb\":\"sample2\",\"c1\":\"sample3\"}]";
+    p = "[0,{\"aa\":\"sample1\",\"bb\":\"sample2\",\"c1\":\"sample3\"}]";
     len = strlen(p);
     bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
     TEST_CHECK(bytes == len);
@@ -872,7 +872,7 @@ static void flb_test_cond_key_value_matches()
     TEST_CHECK(ret == 0);
 
     /* Ingest data samples */
-    p = "[0, {\"k1\":\"sample1\",\"k2\":\"z2\"}]";
+    p = "[0,{\"k1\":\"sample1\",\"k2\":\"z2\"}]";
     len = strlen(p);
     bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
     TEST_CHECK(bytes == len);
@@ -912,7 +912,7 @@ static void flb_test_cond_key_value_does_not_match()
     TEST_CHECK(ret == 0);
 
     /* Ingest data samples */
-    p = "[0, {\"k1\":\"sample1\",\"k2\":\"22\"}]";
+    p = "[0,{\"k1\":\"sample1\",\"k2\":\"22\"}]";
     len = strlen(p);
     bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
     TEST_CHECK(bytes == len);
@@ -954,7 +954,7 @@ static void flb_test_cond_matching_keys_have_matching_values()
     TEST_CHECK(ret == 0);
 
     /* Ingest data samples */
-    p = "[0, {\"k1\":\"n1\",\"k2\":\"n3\"}]";
+    p = "[0,{\"k1\":\"n1\",\"k2\":\"n3\"}]";
     len = strlen(p);
     bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
     TEST_CHECK(bytes == len);
@@ -996,7 +996,7 @@ static void flb_test_cond_matching_keys_do_not_have_matching_values()
     TEST_CHECK(ret == 0);
 
     /* Ingest data samples */
-    p = "[0, {\"k1\":\"aa\",\"k2\":\"bb\"}]";
+    p = "[0,{\"k1\":\"aa\",\"k2\":\"bb\"}]";
     len = strlen(p);
     bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
     TEST_CHECK(bytes == len);
@@ -1055,7 +1055,7 @@ static void flb_test_cond_chain()
     TEST_CHECK(ret == 0);
 
     /* Ingest data samples */
-    p = "[0, {\"k1\":\"sample\"}]";
+    p = "[0,{\"k1\":\"sample\"}]";
     len = strlen(p);
     bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
     TEST_CHECK(bytes == len);
