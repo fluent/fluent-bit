@@ -509,7 +509,7 @@ static int msgpack2json(char *buf, int *off, size_t left, const msgpack_object *
                 goto msg2json_end;
             }
             for (i=1; i<loop; i++) {
-                if (!try_to_write(buf, off, left, ", ", 2) ||
+                if (!try_to_write(buf, off, left, ",", 1) ||
                     !msgpack2json(buf, off, left, p+i)) {
                     goto msg2json_end;
                 }
@@ -533,7 +533,7 @@ static int msgpack2json(char *buf, int *off, size_t left, const msgpack_object *
             }
             for (i = 1; i < loop; i++) {
                 if (
-                    !try_to_write(buf, off, left, ", ", 2) ||
+                    !try_to_write(buf, off, left, ",", 1) ||
                     !msgpack2json(buf, off, left, &(p+i)->key) ||
                     !try_to_write(buf, off, left, ":", 1)  ||
                     !msgpack2json(buf, off, left, &(p+i)->val) ) {
