@@ -85,4 +85,4 @@ docker-build:
       - ./build
   script:
     - echo "===== BUILD DOCKER IMAGE ======="
-    - docker build -t test-image -f ./build/Dockerfile .
+    - docker build -t test-image -f ./Dockerfile .
