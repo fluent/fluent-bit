@@ -547,35 +547,37 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
         }
 
         c = (uint32_t) str[i];
-        if (c == '\\' || c == '"') {
+        if (c == '\"') {
             *p++ = '\\';
-            *p++ = c;
+            *p++ = '\"';
         }
-        else if (c >= '\a' && c <= '\r') {
+        else if (c == '\\') {
             *p++ = '\\';
-            switch (c) {
-            case '\n':
-                *p++ = 'n';
-                break;
-            case '\t':
-                *p++ = 't';
-                break;
-            case '\b':
-                *p++ = 'b';
-                break;
-            case '\f':
-                *p++ = 'f';
-                break;
-            case '\r':
-                *p++ = 'r';
-                break;
-            case '\a':
-                *p++ = 'a';
-                break;
-            case '\v':
-                *p++ = 'v';
-                break;
-            }
+            *p++ = '\\';
+        }
+        else if (c == '\n') {
+            *p++ = '\\';
+            *p++ = 'n';
+        }
+        else if (c == '\r') {
+            *p++ = '\\';
+            *p++ = 'r';
+        }
+        else if (c == '\t') {
+            *p++ = '\\';
+            *p++ = 't';
+        }
+        else if (c == '\b') {
+            *p++ = '\\';
+            *p++ = 'b';
+        }
+        else if (c == '\f') {
+            *p++ = '\\';
+            *p++ = 'f';
+        }
+        else if (c == '/') {
+            *p++ = '\\';
+            *p++ = '/';
         }
         else if (c < 32 || c == 0x7f) {
             if ((available - written) < 6) {
