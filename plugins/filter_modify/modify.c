@@ -1382,6 +1382,7 @@ static int cb_modify_filter(const void *data, size_t bytes,
     struct filter_modify_ctx *ctx = context;
 
     int modifications = 0;
+    int total_modifications = 0;
 
     msgpack_sbuffer buffer;
     msgpack_sbuffer_init(&buffer);
@@ -1400,8 +1401,14 @@ static int cb_modify_filter(const void *data, size_t bytes,
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         if (result.data.type == MSGPACK_OBJECT_ARRAY) {
-            modifications +=
+            modifications =
                 apply_modifying_rules(&packer, &result.data, ctx);
+
+            if (modifications == 0) {
+                // not matched, so copy original event.
+                msgpack_pack_object(&packer, result.data);
+            }
+            total_modifications += modifications;
         }
         else {
             msgpack_pack_object(&packer, result.data);
@@ -1409,7 +1416,7 @@ static int cb_modify_filter(const void *data, size_t bytes,
     }
     msgpack_unpacked_destroy(&result);
 
-    if(modifications == 0) {
+    if(total_modifications == 0) {
         msgpack_sbuffer_destroy(&buffer);
         return FLB_FILTER_NOTOUCH;
     }
