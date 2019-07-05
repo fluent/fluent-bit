@@ -575,10 +575,6 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
             *p++ = '\\';
             *p++ = 'f';
         }
-        else if (c == '/') {
-            *p++ = '\\';
-            *p++ = '/';
-        }
         else if (c < 32 || c == 0x7f) {
             if ((available - written) < 6) {
                 return FLB_FALSE;
