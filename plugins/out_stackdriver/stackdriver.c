@@ -330,6 +330,72 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     return 0;
 }
 
+static int validate_severity_level(const char * severity)
+{
+    int i = 0;
+
+    const char * severity_level[] = {
+        "EMERGENCY",
+        "ALERT",
+        "CRITICAL",
+        "ERROR",
+        "WARNING",
+        "NOTICE",
+        "INFO",
+        "DEBUG",
+        "DEFAULT",
+        NULL
+    };
+
+    if (severity == NULL) {
+        return -1;
+    }
+
+    for (i = 0; severity_level[i] != NULL; i++) {
+        if (strcasecmp(severity, severity_level[i]) == 0) {
+            return 0;
+        }
+    }
+    return -1;
+}
+
+static int map_get_str_kv(flb_sds_t buf, const msgpack_object *o,
+                          const flb_sds_t key)
+{
+    int i = 0;
+    msgpack_object_kv * p = NULL;
+
+    if (o == NULL || o->type != MSGPACK_OBJECT_MAP || buf == NULL) {
+        return -1;
+    }
+
+    for (i = 0; i < o->via.map.size; i++) {
+        p = &o->via.map.ptr[i];
+        if (p->key.type != MSGPACK_OBJECT_STR) {
+            continue;
+        }
+
+        if (p->val.via.str.size > 10) {
+            continue;
+        }
+
+        if (flb_sds_cmp(key, p->key.via.str.ptr, flb_sds_len(key)) == 0) {
+            flb_sds_len_set(buf, p->val.via.str.size);
+            memcpy(buf, p->val.via.str.ptr, p->val.via.str.size);
+            buf[p->val.via.str.size] = '\0';
+            return 0;
+        }
+    }
+    return -1;
+}
+
+static int get_severity_level(flb_sds_t severity, const msgpack_object * o,
+                              const flb_sds_t key)
+{
+    return (map_get_str_kv(severity, o, key)
+            || validate_severity_level(severity));
+}
+
 static int stackdriver_format(const void *data, size_t bytes,
                               const char *tag, size_t tag_len,
                               char **out_data, size_t *out_size,
@@ -344,6 +410,7 @@ static int stackdriver_format(const void *data, size_t bytes,
     char time_formatted[255];
     struct tm tm;
     struct flb_time tms;
+    flb_sds_t severity = flb_sds_create_size(10);
     msgpack_object *obj;
     msgpack_unpacked result;
     msgpack_sbuffer mp_sbuf;
@@ -437,7 +504,19 @@ static int stackdriver_format(const void *data, size_t bytes,
          *  "timestamp": "..."
          * }
          */
-        msgpack_pack_map(&mp_pck, 3);
+        if (ctx->severity_key
+            && get_severity_level(severity, obj, ctx->severity_key) == 0) {
+
+            /* additional field for severity */
+            msgpack_pack_map(&mp_pck, 4);
+            msgpack_pack_str(&mp_pck, 8);
+            msgpack_pack_str_body(&mp_pck, "severity", 8);
+            msgpack_pack_str(&mp_pck, flb_sds_len(severity));
+            msgpack_pack_str_body(&mp_pck, severity, flb_sds_len(severity));
+        }
+        else {
+            msgpack_pack_map(&mp_pck, 3);
+        }
 
         /* jsonPayload */
         msgpack_pack_str(&mp_pck, 11);
@@ -473,6 +552,7 @@ static int stackdriver_format(const void *data, size_t bytes,
     ret = flb_msgpack_raw_to_json_str(mp_sbuf.data, mp_sbuf.size,
                                       &json_buf, &json_size);
     msgpack_sbuffer_destroy(&mp_sbuf);
+    flb_sds_destroy(severity);
 
     if (ret != 0) {
         flb_error("[out_stackdriver] error formatting JSON payload");
