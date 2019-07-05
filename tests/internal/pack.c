@@ -571,8 +571,12 @@ void test_json_pack_bug1278()
             printf("failed comparing to original value\n");
         }
 
-        /* Destroy unpacker */
+        /* Relese resources */
+        flb_free(out_buf);
+        flb_sds_destroy(json);
         msgpack_unpacked_destroy(&result);
+        msgpack_sbuffer_destroy(&mp_sbuf);
+
     }
 }
 
