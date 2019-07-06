@@ -675,58 +675,6 @@ char *flb_msgpack_to_json_str(size_t size, const msgpack_object *obj)
     return buf;
 }
 
-int flb_msgpack_raw_to_json_str(const char *buf, size_t buf_size,
-                                char **out_buf, size_t *out_size)
-{
-    int ret;
-    size_t off = 0;
-    size_t json_size;
-    char *json_buf;
-    char *tmp;
-    msgpack_unpacked result;
-
-    if (!buf || buf_size <= 0) {
-        return -1;
-    }
-
-    msgpack_unpacked_init(&result);
-    ret = msgpack_unpack_next(&result, buf, buf_size, &off);
-    if (ret != MSGPACK_UNPACK_SUCCESS) {
-        return -1;
-    }
-
-    json_size = (buf_size * 1.8);
-    json_buf = flb_calloc(1, json_size);
-    if (!json_buf) {
-        flb_errno();
-        msgpack_unpacked_destroy(&result);
-        return -1;
-    }
-
-    while (1) {
-        ret = flb_msgpack_to_json(json_buf, json_size, &result.data);
-        if (ret <= 0) {
-            json_size *= 2;
-            tmp = flb_realloc(json_buf, json_size);
-            if (!tmp) {
-                flb_errno();
-                flb_free(json_buf);
-                msgpack_unpacked_destroy(&result);
-                return -1;
-            }
-            json_buf = tmp;
-            continue;
-        }
-        break;
-    }
-
-    *out_buf = json_buf;
-    *out_size = ret;
-
-    msgpack_unpacked_destroy(&result);
-    return 0;
-}
-
 int flb_pack_time_now(msgpack_packer *pck)
 {
     int ret;

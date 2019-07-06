@@ -57,8 +57,6 @@ void flb_pack_print(const char *data, size_t bytes);
 int flb_msgpack_to_json(char *json_str, size_t str_len,
                         const msgpack_object *obj);
 char* flb_msgpack_to_json_str(size_t size, const msgpack_object *obj);
-int flb_msgpack_raw_to_json_str(const char *buf, size_t buf_size,
-                                char **out_buf, size_t *out_size);
 flb_sds_t flb_msgpack_raw_to_json_sds(const void *in_buf, size_t in_size);
 
 int flb_pack_time_now(msgpack_packer *pck);
