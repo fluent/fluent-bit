@@ -79,7 +79,7 @@ int cleanup_metrics()
         entry = mk_list_entry(head, struct flb_hs_buf, _head);
         if (entry != last && entry->users == 0) {
             mk_list_del(&entry->_head);
-            flb_free(entry->data);
+            flb_sds_destroy(entry->data);
             flb_free(entry->raw_data);
             flb_free(entry);
             c++;
@@ -98,9 +98,7 @@ int cleanup_metrics()
  */
 static void cb_mq_metrics(mk_mq_t *queue, void *data, size_t size)
 {
-    int ret;
-    char *json_buf;
-    size_t json_size;
+    flb_sds_t out_data;
     struct flb_hs_buf *buf;
     struct mk_list *metrics_list = NULL;
 
@@ -116,8 +114,8 @@ static void cb_mq_metrics(mk_mq_t *queue, void *data, size_t size)
     }
 
     /* Convert msgpack to JSON */
-    ret = flb_msgpack_raw_to_json_str(data, size, &json_buf, &json_size);
-    if (ret < 0) {
+    out_data = flb_msgpack_raw_to_json_sds(data, size);
+    if (!out_data) {
         return;
     }
 
@@ -127,8 +125,7 @@ static void cb_mq_metrics(mk_mq_t *queue, void *data, size_t size)
         return;
     }
     buf->users = 0;
-    buf->data = json_buf;
-    buf->size = json_size;
+    buf->data = out_data;
 
     buf->raw_data = flb_malloc(size);
     memcpy(buf->raw_data, data, size);
@@ -255,7 +252,7 @@ static void cb_metrics(mk_request_t *request, void *data)
     buf->users++;
 
     mk_http_status(request, 200);
-    mk_http_send(request, buf->data, buf->size, NULL);
+    mk_http_send(request, buf->data, flb_sds_len(buf->data), NULL);
     mk_http_done(request);
 
     buf->users--;

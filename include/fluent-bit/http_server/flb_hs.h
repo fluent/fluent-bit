@@ -23,6 +23,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_sds.h>
 #include <monkey/mk_lib.h>
 
 /*
@@ -31,9 +32,7 @@
  */
 struct flb_hs_buf {
     int users;
-    char *data;
-    size_t size;
-
+    flb_sds_t data;
     char *raw_data;
     size_t raw_size;
     struct mk_list _head;
