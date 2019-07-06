@@ -323,6 +323,7 @@ static inline bool is_kv_to_lift(msgpack_object_kv * kv,
 {
 
     const char *key;
+    char *tmp;
     int klen;
     bool match;
 
@@ -345,9 +346,17 @@ static inline bool is_kv_to_lift(msgpack_object_kv * kv,
              (strncmp(key, ctx->key, klen) == 0));
 
     if (match && (kv->val.type != MSGPACK_OBJECT_MAP)) {
-        flb_warn
-            ("[filter_nest] Value of key '%s' is not a map. Will not attempt to lift from here",
-             key);
+        tmp = flb_malloc(klen + 1);
+        if (!tmp) {
+            flb_errno();
+            return false;
+        }
+        memcpy(tmp, key, klen);
+        tmp[klen] = '\0';
+        flb_warn("[filter_nest] Value of key '%s' is not a map. "
+                 "Will not attempt to lift from here",
+                 tmp);
+        flb_free(tmp);
         return false;
     }
     else {
