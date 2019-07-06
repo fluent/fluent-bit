@@ -409,7 +409,7 @@ void test_utf8_to_json()
     int n_tests;
     char *file_msgp;
     char *file_json;
-    char *out_buf;
+    flb_sds_t out_buf;
     size_t out_size;
     size_t msgp_size;
     size_t json_size;
@@ -440,10 +440,9 @@ void test_utf8_to_json()
 
         json_size = strlen(file_json);
 
-        out_buf = NULL;
-        ret = flb_msgpack_raw_to_json_str(file_msgp, msgp_size,
-                                          &out_buf, &out_size);
-        TEST_CHECK(ret == 0);
+        out_buf = flb_msgpack_raw_to_json_sds(file_msgp, msgp_size);
+        TEST_CHECK(out_buf != NULL);
+        out_size = flb_sds_len(out_buf);
 
         ret = strcmp(file_json, out_buf);
         if (ret != 0) {
@@ -456,7 +455,7 @@ void test_utf8_to_json()
         TEST_CHECK(out_size == json_size);
 
         if (out_buf) {
-            flb_free(out_buf);
+            flb_sds_destroy(out_buf);
         }
         flb_free(file_msgp);
         flb_free(file_json);
