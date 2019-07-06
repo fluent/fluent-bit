@@ -172,8 +172,12 @@ void flb_output_exit(struct flb_config *config)
 
         /* Check a exit callback */
         if (p->cb_exit) {
-            p->cb_exit(ins->context, config);
-        }
+            if(!p->proxy) {
+                p->cb_exit(ins->context, config);
+            } else {
+                p->cb_exit(ins->p, config);
+            }
+        } 
 
         if (ins->upstream) {
             flb_upstream_destroy(ins->upstream);

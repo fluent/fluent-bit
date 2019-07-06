@@ -66,6 +66,21 @@ static void flb_proxy_cb_flush(const void *data, size_t bytes,
 }
 
 
+static void flb_proxy_cb_exit(struct flb_output_plugin *instance,
+                           struct flb_config *config) 
+{
+    struct flb_plugin_proxy *proxy = (instance->proxy);
+    void *inst;
+
+    inst = proxy->data;
+
+    struct flbgo_output_plugin *plugin;
+    plugin = (struct flbgo_output_plugin *) inst;
+
+    plugin->cb_exit(NULL);
+    //go_plugin->cb_exit(NULL);
+}
+
 static int flb_proxy_register_output(struct flb_plugin_proxy *proxy,
                                      struct flb_plugin_proxy_def *def,
                                      struct flb_config *config)
@@ -92,6 +107,7 @@ static int flb_proxy_register_output(struct flb_plugin_proxy *proxy,
      * we put our proxy-middle callbacks to do the translation properly.
      */
     out->cb_flush = flb_proxy_cb_flush;
+    out->cb_exit = flb_proxy_cb_exit;
     return 0;
 }
 
