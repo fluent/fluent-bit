@@ -130,16 +130,18 @@ static void write_init_header(struct cio_file *cf)
 }
 
 /* Return the available size in the file map to write data */
-static size_t get_available_size(struct cio_file *cf)
+static size_t get_available_size(struct cio_file *cf, int *meta_len)
 {
     size_t av;
-    int map_len;
+    int len;
 
-    map_len = cio_file_st_get_meta_len(cf->map);
+    /* Get metadata length */
+    len = cio_file_st_get_meta_len(cf->map);
 
     av = cf->alloc_size - cf->data_size;
-    av -= (CIO_FILE_HEADER_MIN + map_len);
+    av -= (CIO_FILE_HEADER_MIN + len);
 
+    *meta_len = len;
     return av;
 }
 
@@ -673,6 +675,8 @@ void cio_file_close(struct cio_chunk *ch, int delete)
 int cio_file_write(struct cio_chunk *ch, const void *buf, size_t count)
 {
     int ret;
+    int meta_len;
+    int pre_content;
     void *tmp;
     size_t av_size;
     size_t new_size;
@@ -690,15 +694,17 @@ int cio_file_write(struct cio_chunk *ch, const void *buf, size_t count)
     }
 
     /* get available size */
-    av_size = get_available_size(cf);
+    av_size = get_available_size(cf, &meta_len);
 
     /* validate there is enough space, otherwise resize */
-    if (count > av_size) {
-        if (av_size + cf->realloc_size < count) {
-            new_size = cf->alloc_size + count;
-        }
-        else {
-            new_size = cf->alloc_size + cf->realloc_size;
+    if (av_size < count) {
+
+        /* Set the pre-content size (chunk header + metadata) */
+        pre_content = (CIO_FILE_HEADER_MIN + meta_len);
+
+        new_size = cf->alloc_size + cf->realloc_size;
+        while (new_size < (pre_content + cf->data_size + count)) {
+            new_size += cf->realloc_size;
         }
 
         new_size = ROUND_UP(new_size, cio_page_size);
@@ -847,6 +853,7 @@ int cio_file_write_metadata(struct cio_chunk *ch, char *buf, size_t size)
 int cio_file_sync(struct cio_chunk *ch)
 {
     int ret;
+    int meta_len;
     int sync_mode;
     void *tmp;
     size_t old_size;
@@ -873,7 +880,7 @@ int cio_file_sync(struct cio_chunk *ch)
     old_size = cf->alloc_size;
 
     /* If there are extra space, truncate the file size */
-    av_size = get_available_size(cf);
+    av_size = get_available_size(cf, &meta_len);
     if (av_size > 0) {
         size = cf->alloc_size - av_size;
         ret = cio_file_fs_size_change(cf, size);
