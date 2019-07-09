@@ -30,8 +30,9 @@
 struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
                                           struct flb_config *config)
 {
-    int ulen;
+    int ret;
     int len;
+    int ulen;
     int io_flags = 0;
     char *uri = NULL;
     char *tmp_uri = NULL;
@@ -184,49 +185,51 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
     if (tmp) {
       ctx->header_tag = flb_strdup(tmp);
       ctx->headertag_len = strlen(ctx->header_tag);
-      flb_info("[out_http] configure to pass tag in header: %s", ctx->header_tag);
+      flb_info("[out_http] configure to pass tag in header: %s",
+               ctx->header_tag);
     }
 
     /* Output format */
-    ctx->out_format = FLB_HTTP_OUT_MSGPACK;
+    ctx->out_format = FLB_PACK_JSON_FORMAT_NONE;
     tmp = flb_output_get_property("format", ins);
     if (tmp) {
-        if (strcasecmp(tmp, "msgpack") == 0) {
-            ctx->out_format = FLB_HTTP_OUT_MSGPACK;
-        }
-        else if (strcasecmp(tmp, "json") == 0) {
-            ctx->out_format = FLB_HTTP_OUT_JSON;
-        }
-        else if (strcasecmp(tmp, "json_stream") == 0) {
-            ctx->out_format = FLB_HTTP_OUT_JSON_STREAM;
-        }
-        else if (strcasecmp(tmp, "json_lines") == 0) {
-            ctx->out_format = FLB_HTTP_OUT_JSON_LINES;
-        }
-        else if (strcasecmp(tmp, "gelf") == 0) {
+        if (strcasecmp(tmp, "gelf") == 0) {
             ctx->out_format = FLB_HTTP_OUT_GELF;
         }
         else {
-            flb_warn("[out_http] unrecognized 'format' option. Using 'msgpack'");
+            ret = flb_pack_to_json_format_type(tmp);
+            if (ret == -1) {
+                flb_error("[out_http] unrecognized 'format' option. "
+                          "Using 'msgpack'");
+            }
+            else {
+                ctx->out_format = ret;
+            }
         }
     }
 
     /* Date format for JSON output */
-    ctx->json_date_format = FLB_JSON_DATE_DOUBLE;
+    ctx->json_date_format = FLB_PACK_JSON_DATE_DOUBLE;
     tmp = flb_output_get_property("json_date_format", ins);
     if (tmp) {
-        if (strcasecmp(tmp, "iso8601") == 0) {
-            ctx->json_date_format = FLB_JSON_DATE_ISO8601;
+        ret = flb_pack_to_json_date_type(tmp);
+        if (ret == -1) {
+            flb_error("[out_http] unrecognized 'json_date_format' option. "
+                      "Using 'double'.");
         }
-        if (strcasecmp(tmp, "epoch") == 0) {
-            ctx->json_date_format = FLB_JSON_DATE_EPOCH;
+        else {
+            ctx->json_date_format = ret;
         }
     }
 
     /* Date key for JSON output */
     tmp = flb_output_get_property("json_date_key", ins);
-    ctx->json_date_key = flb_strdup(tmp ? tmp : "date");
-    ctx->json_date_key_len = strlen(ctx->json_date_key);
+    if (tmp) {
+        ctx->json_date_key = flb_sds_create(tmp);
+    }
+    else {
+        ctx->json_date_key = flb_sds_create("date");
+    }
 
     /* Config Gelf_Timestamp_Key */
     tmp = flb_output_get_property("gelf_timestamp_key", ins);
@@ -336,8 +339,8 @@ void flb_http_conf_destroy(struct flb_out_http *ctx)
     flb_free(ctx->http_passwd);
     flb_free(ctx->proxy_host);
     flb_free(ctx->uri);
-    flb_free(ctx->json_date_key);
     flb_free(ctx->header_tag);
+    flb_sds_destroy(ctx->json_date_key);
 
     mk_list_foreach_safe(head, tmp, &ctx->headers) {
         header = mk_list_entry(head, struct out_http_header, _head);
