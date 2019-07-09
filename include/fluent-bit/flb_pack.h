@@ -27,11 +27,26 @@
 #include <jsmn/jsmn.h>
 #include <msgpack.h>
 
-#define FLB_PACK_JSON_UNDEFINED    JSMN_UNDEFINED
-#define FLB_PACK_JSON_OBJECT       JSMN_OBJECT
-#define FLB_PACK_JSON_ARRAY        JSMN_ARRAY
-#define FLB_PACK_JSON_STRING       JSMN_STRING
-#define FLB_PACK_JSON_PRIMITIVE    JSMN_PRIMITIVE
+/* JSON types */
+#define FLB_PACK_JSON_UNDEFINED     JSMN_UNDEFINED
+#define FLB_PACK_JSON_OBJECT        JSMN_OBJECT
+#define FLB_PACK_JSON_ARRAY         JSMN_ARRAY
+#define FLB_PACK_JSON_STRING        JSMN_STRING
+#define FLB_PACK_JSON_PRIMITIVE     JSMN_PRIMITIVE
+
+/* Date formats */
+#define FLB_PACK_JSON_DATE_DOUBLE   0
+#define FLB_PACK_JSON_DATE_ISO8601  1
+#define FLB_PACK_JSON_DATE_EPOCH    2
+
+/* Specific ISO8601 format */
+#define FLB_PACK_JSON_DATE_ISO8601_FMT "%Y-%m-%dT%H:%M:%S"
+
+/* JSON formats (modes) */
+#define FLB_PACK_JSON_FORMAT_NONE        0
+#define FLB_PACK_JSON_FORMAT_JSON        1
+#define FLB_PACK_JSON_FORMAT_STREAM      2
+#define FLB_PACK_JSON_FORMAT_LINES       3
 
 struct flb_pack_state {
     int multiple;         /* support multiple jsons? */
@@ -52,6 +67,12 @@ int flb_pack_json_state(const char *js, size_t len,
                         char **buffer, int *size,
                         struct flb_pack_state *state);
 int flb_pack_json_valid(const char *json, size_t len);
+
+flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
+                                          int json_format, int date_format,
+                                          flb_sds_t date_key);
+int flb_pack_to_json_format_type(const char *str);
+int flb_pack_to_json_date_type(const char *str);
 
 void flb_pack_print(const char *data, size_t bytes);
 int flb_msgpack_to_json(char *json_str, size_t str_len,
