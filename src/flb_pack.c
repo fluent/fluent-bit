@@ -413,8 +413,8 @@ static inline int try_to_write(char *buf, int *off, size_t left,
     return FLB_TRUE;
 }
 
-
-static int msgpack2json(char *buf, int *off, size_t left, const msgpack_object *o)
+static int msgpack2json(char *buf, int *off, size_t left,
+                        const msgpack_object *o)
 {
     int ret = FLB_FALSE;
     int i;
@@ -621,6 +621,249 @@ flb_sds_t flb_msgpack_raw_to_json_sds(const void *in_buf, size_t in_size)
 
     msgpack_unpacked_destroy(&result);
     flb_sds_len_set(out_buf, ret);
+
+    return out_buf;
+}
+
+/*
+ * Given a 'format' string type, return it integer representation. This
+ * is used by output plugins that uses pack functions to convert
+ * msgpack records to JSON.
+ */
+int flb_pack_to_json_format_type(const char *str)
+{
+    if (strcasecmp(str, "msgpack") == 0) {
+        return FLB_PACK_JSON_FORMAT_NONE;
+    }
+    else if (strcasecmp(str, "json") == 0) {
+        return FLB_PACK_JSON_FORMAT_JSON;
+    }
+    else if (strcasecmp(str, "json_stream") == 0) {
+        return FLB_PACK_JSON_FORMAT_STREAM;
+    }
+    else if (strcasecmp(str, "json_lines") == 0) {
+        return FLB_PACK_JSON_FORMAT_LINES;
+    }
+
+    return -1;
+}
+
+/* Given a 'date string type', return it integer representation */
+int flb_pack_to_json_date_type(const char *str)
+{
+    if (strcasecmp(str, "double") == 0) {
+        return FLB_PACK_JSON_DATE_DOUBLE;
+    }
+    else if (strcasecmp(str, "iso8601") == 0) {
+        return FLB_PACK_JSON_DATE_ISO8601;
+    }
+    else if (strcasecmp(str, "epoch") == 0) {
+        return FLB_PACK_JSON_DATE_EPOCH;
+    }
+
+    return -1;
+}
+
+
+flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
+                                          int json_format, int date_format,
+                                          flb_sds_t date_key)
+{
+    int i;
+    int len;
+    int ok = MSGPACK_UNPACK_SUCCESS;
+    int records = 0;
+    int map_size;
+    size_t off = 0;
+    char time_formatted[32];
+    size_t s;
+    flb_sds_t out_tmp;
+    flb_sds_t out_js;
+    flb_sds_t out_buf = NULL;
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_object map;
+    msgpack_sbuffer tmp_sbuf;
+    msgpack_packer tmp_pck;
+    msgpack_object *obj;
+    struct tm tm;
+    struct flb_time tms;
+
+    if (!date_key) {
+        return NULL;
+    }
+
+    /* Iterate the original buffer and perform adjustments */
+    records = flb_mp_count(data, bytes);
+    if (records <= 0) {
+        return NULL;
+    }
+
+    /* For json lines and streams mode we need a pre-allocated buffer */
+    if (json_format == FLB_PACK_JSON_FORMAT_LINES ||
+        json_format == FLB_PACK_JSON_FORMAT_STREAM) {
+        out_buf = flb_sds_create_size(bytes * 1.25);
+        if (!out_buf) {
+            flb_errno();
+            return NULL;
+        }
+    }
+
+    /* Create temporal msgpack buffer */
+    msgpack_sbuffer_init(&tmp_sbuf);
+    msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
+
+    /*
+     * If the format is the original msgpack style of one big array,
+     * registrate the array, otherwise is not necessary. FYI, original format:
+     *
+     * [
+     *   [timestamp, map],
+     *   [timestamp, map],
+     *   [T, M]...
+     * ]
+     */
+    if (json_format == FLB_PACK_JSON_FORMAT_JSON) {
+        msgpack_pack_array(&tmp_pck, records);
+    }
+
+    msgpack_unpacked_init(&result);
+    while (msgpack_unpack_next(&result, data, bytes, &off) == ok) {
+        /* Each array must have two entries: time and record */
+        root = result.data;
+        if (root.via.array.size != 2) {
+            continue;
+        }
+
+        /* Unpack time */
+        flb_time_pop_from_msgpack(&tms, &result, &obj);
+
+        /* Get the record/map */
+        map = root.via.array.ptr[1];
+        map_size = map.via.map.size;
+        msgpack_pack_map(&tmp_pck, map_size + 1);
+
+        /* Append date key */
+        msgpack_pack_str(&tmp_pck, flb_sds_len(date_key));
+        msgpack_pack_str_body(&tmp_pck, date_key, flb_sds_len(date_key));
+
+        /* Append date value */
+        switch (date_format) {
+        case FLB_PACK_JSON_DATE_DOUBLE:
+            msgpack_pack_double(&tmp_pck, flb_time_to_double(&tms));
+            break;
+        case FLB_PACK_JSON_DATE_ISO8601:
+            /* Format the time, use microsecond precision not nanoseconds */
+            gmtime_r(&tms.tm.tv_sec, &tm);
+            s = strftime(time_formatted, sizeof(time_formatted) - 1,
+                         FLB_PACK_JSON_DATE_ISO8601_FMT, &tm);
+
+            len = snprintf(time_formatted + s,
+                           sizeof(time_formatted) - 1 - s,
+                           ".%06" PRIu64 "Z",
+                           (uint64_t) tms.tm.tv_nsec / 1000);
+            s += len;
+            msgpack_pack_str(&tmp_pck, s);
+            msgpack_pack_str_body(&tmp_pck, time_formatted, s);
+            break;
+        case FLB_PACK_JSON_DATE_EPOCH:
+            msgpack_pack_uint64(&tmp_pck, (long long unsigned)(tms.tm.tv_sec));
+            break;
+        }
+
+        /* Append remaining keys/values */
+        for (i = 0; i < map_size; i++) {
+            msgpack_object *k = &map.via.map.ptr[i].key;
+            msgpack_object *v = &map.via.map.ptr[i].val;
+
+            msgpack_pack_object(&tmp_pck, *k);
+            msgpack_pack_object(&tmp_pck, *v);
+        }
+
+        /*
+         * If the format is the original msgpack style, just continue since
+         * we don't care about separator or JSON convertion at this point.
+         */
+        if (json_format == FLB_PACK_JSON_FORMAT_JSON) {
+            continue;
+        }
+
+        /*
+         * Here we handle two types of records concatenation:
+         *
+         * FLB_PACK_JSON_FORMAT_LINES: add  breakline (\n) after each record
+         *
+         *
+         *     {'ts':abc,'k1':1}
+         *     {'ts':abc,'k1':2}
+         *     {N}
+         *
+         * FLB_PACK_JSON_FORMAT_STREAM: no separators, e.g:
+         *
+         *     {'ts':abc,'k1':1}{'ts':abc,'k1':2}{N}
+         */
+        if (json_format == FLB_PACK_JSON_FORMAT_LINES ||
+            json_format == FLB_PACK_JSON_FORMAT_STREAM) {
+
+            /* Encode current record into JSON in a temporal variable */
+            out_js = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size);
+            if (!out_js) {
+                msgpack_sbuffer_destroy(&tmp_sbuf);
+                flb_sds_destroy(out_buf);
+                return NULL;
+            }
+
+            /*
+             * One map record has been converted, now append it to the
+             * outgoing out_buf sds variable.
+             */
+            out_tmp = flb_sds_cat(out_buf, out_js, flb_sds_len(out_js));
+            if (!out_tmp) {
+                msgpack_sbuffer_destroy(&tmp_sbuf);
+                flb_sds_destroy(out_js);
+                flb_sds_destroy(out_buf);
+                return NULL;
+            }
+
+            /* Release temporal json sds buffer */
+            flb_sds_destroy(out_js);
+
+            /* If a realloc happened, check the returned address */
+            if (out_tmp != out_buf) {
+                out_buf = out_tmp;
+            }
+
+            /* Append the breakline only for json lines mode */
+            if (json_format == FLB_PACK_JSON_FORMAT_LINES) {
+                out_tmp = flb_sds_cat(out_buf, "\n", 1);
+                if (!out_tmp) {
+                    msgpack_sbuffer_destroy(&tmp_sbuf);
+                    flb_sds_destroy(out_buf);
+                    return NULL;
+                }
+                if (out_tmp != out_buf) {
+                    out_buf = out_tmp;
+                }
+            }
+            msgpack_sbuffer_clear(&tmp_sbuf);
+        }
+    }
+
+    /* Release the unpacker */
+    msgpack_unpacked_destroy(&result);
+
+    /* Format to JSON */
+    if (json_format == FLB_PACK_JSON_FORMAT_JSON) {
+        out_buf = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size);
+        msgpack_sbuffer_destroy(&tmp_sbuf);
+
+        if (!out_buf) {
+            return NULL;
+        }
+    }
+    else {
+        msgpack_sbuffer_destroy(&tmp_sbuf);
+    }
 
     return out_buf;
 }
