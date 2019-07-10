@@ -43,6 +43,9 @@ struct flb_out_tcp *flb_tcp_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
 
+    /* Set default network configuration if not set */
+    flb_output_net_default("127.0.0.1", 5170, ins);
+
     /* Check if SSL/TLS is enabled */
 #ifdef FLB_HAVE_TLS
     if (ins->use_tls == FLB_TRUE) {
