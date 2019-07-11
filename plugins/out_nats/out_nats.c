@@ -29,15 +29,34 @@ closedCB(natsConnection *nc, void *closure)
     *closed = true;
 }
 
-static void setProperty(char *dest, char *property, char *defaultValue){
-    dest = flb_output_get_property(property, ins);
-    if (strlen(dest) == 0) {
-        dest = defaultValue; // Default property if it is undefined/empty
+/*static void printOptions(struct __natsOptions *opt) {
+    //flb_info("NATS options - URL: '%s', USERNAME: '%s'", opt->url, opt->user); // TODO Change to debug
+}*/
+
+static void cleanup(struct flb_out_nats_config *ctx) {
+    flb_info("NATS cleaning up"); // TODO Change to debug
+    if (ctx != NULL) {
+        if (ctx->connection != NULL) {
+            natsConnection_Destroy(ctx->connection);
+        }
+        if (ctx->options != NULL) {
+            natsOptions_Destroy(ctx->options);
+        }
+        flb_free(ctx);
     }
+    nats_Close();
 }
 
-int cb_nats_init(struct flb_output_instance *ins, struct flb_config *config,
-                   void *data)
+// TODO Consolidate this duplicate code!
+static void setProperty(struct flb_output_instance *ins, char *property, char **dest, char **defaultValue){
+    *dest = flb_output_get_property(property, ins);
+    if (strlen(defaultValue) > 0 && (*dest == NULL || strlen(*dest) == 0)) {
+        *dest = defaultValue; // Default property if it is undefined/empty
+    }
+    flb_info("NATS set property '%s' to '%s'", property, *dest); // TODO Change to debug
+}
+
+int cb_nats_init(struct flb_output_instance *ins, struct flb_config *config, void *data)
 {
 
     struct flb_out_nats_config *ctx;
@@ -48,56 +67,85 @@ int cb_nats_init(struct flb_output_instance *ins, struct flb_config *config,
         return -1;
     }
 
-    *ctx->connection   = NULL;
-    *ctx->options      = NULL;
-    *ctx->subscription = NULL;
+    ctx->connection   = NULL;
+    ctx->options      = NULL;
     ctx->closed       = true;
 
-    setProperty(ctx->subject, "subject", "fluent-bit");
-    setProperty(ctx->host, "host", "localhost");
-    setProperty(ctx->port, "port", "4222");
-    setProperty(ctx->username, "username", "");
-    setProperty(ctx->password, "password", "");
+    if (natsOptions_Create(&ctx->options) != NATS_OK) {
+        flb_error("NATS Error (%d) when creating options: '%s'", ctx->status, natsStatus_GetText(ctx->status));
+        return 1;
+    }
 
-    char        *serverUrls[NATS_MAX_SERVERS];
-    memset(serverUrls, 0, sizeof(serverUrls));
-    
+    setProperty(ins, "subject", &ctx->subject, "fluent-bit");
+    setProperty(ins, "url", &ctx->url, &NATS_DEFAULT_URL);
 
-    ctx->status = natsOptions_SetServers(ctx->options, 50);
+    flb_info("NATS using URL: '%s'", ctx->url); // TODO Change to debug
+    ctx->status = natsOptions_SetURL(ctx->options, ctx->url);
 
+    //printOptions(ctx->options);
+
+    if (ctx->status != NATS_OK) {
+        flb_error(nats_setting_error, "URL", ctx->status, natsStatus_GetText(ctx->status));
+        return(1);
+    }
 
     ctx->status = natsOptions_SetMaxReconnect(ctx->options, 50);
-    if (ctx->status == NATS_OK) {
-        ctx->status = natsOptions_SetReconnectWait(ctx->options, 100);
+    if (ctx->status != NATS_OK) {
+        flb_error(nats_setting_error, "Max Reconnect", ctx->status, natsStatus_GetText(ctx->status));
+        return(1);
     }
-    if (ctx->status == NATS_OK)
-        ctx->status = natsOptions_SetRetryOnFailedConnect(ctx->options, true, NULL, NULL);
+    
+    ctx->status = natsOptions_SetReconnectWait(ctx->options, 100);
+    if (ctx->status != NATS_OK) {
+        flb_error(nats_setting_error, "Reconnect Wait", ctx->status, natsStatus_GetText(ctx->status));
+        return(1);
+    }
+    ctx->status = natsOptions_SetRetryOnFailedConnect(ctx->options, true, NULL, NULL);
+    if (ctx->status != NATS_OK) {
+        flb_error(nats_setting_error, "Reconnect Wait", ctx->status, natsStatus_GetText(ctx->status));
+        return(1);
+    }
 
     int64_t start = nats_Now();
     ctx->status = natsConnection_Connect(&ctx->connection, ctx->options);
     int64_t elapsed = nats_Now() - start;
-
-    flb_info("NATS Connection call took %" PRId64 " ms and returned: %s", elapsed, natsStatus_GetText(ctx->status));
-
-    natsConnection_Destroy(ctx->connection);
-    ctx->connection = NULL;
-
-    ctx->status = natsOptions_SetMaxReconnect(ctx->options, 10);
-    if (ctx->status == NATS_OK)
-        ctx->status = natsOptions_SetRetryOnFailedConnect(ctx->options, true, connectedCB, NULL);
-    if (ctx->status == NATS_OK)
-        ctx->status = natsOptions_SetClosedCB(ctx->options, closedCB, (void*)&ctx->closed);
-
-    if (ctx->status != NATS_OK)
-    {
-        flb_error("NATS Error: %d - %s", ctx->status, natsStatus_GetText(ctx->status));
+    
+    if (ctx->status != NATS_OK) {
+        flb_error("NATS Error connecting: %d - %s",  ctx->status, natsStatus_GetText(ctx->status));
         return(1);
     }
 
+    flb_info("NATS Connection call took %" PRId64 " ms and returned: %s", elapsed, natsStatus_GetText(ctx->status));
+
+    if (ctx->connection != NULL) {
+        natsConnection_Destroy(ctx->connection);
+    }
+    ctx->connection = NULL;
+
+    ctx->status = natsOptions_SetMaxReconnect(ctx->options, 10);
+    if (ctx->status != NATS_OK)
+    {
+        flb_error(nats_setting_error, "Max Reconnect", ctx->status, natsStatus_GetText(ctx->status));
+        return(1);
+    }
+
+    ctx->status = natsOptions_SetRetryOnFailedConnect(ctx->options, true, connectedCB, NULL);
+    if (ctx->status != NATS_OK) {
+        flb_error(nats_setting_error, "Retry on failed connect callback", ctx->status, natsStatus_GetText(ctx->status));
+        return(1);
+    }
+
+    
+    ctx->status = natsOptions_SetClosedCB(ctx->options, closedCB, (void*)&ctx->closed);
+    if (ctx->status != NATS_OK) {
+        flb_error(nats_setting_error, "Closed CB callback", ctx->status, natsStatus_GetText(ctx->status));
+    }
+    
     ctx->status = natsConnection_Connect(&ctx->connection, ctx->options);
     flb_info("NATS Connect call returned: %s", natsStatus_GetText(ctx->status)); // TODO Change to debug
     if (ctx->status != NATS_OK) {
         flb_error("NATS Connect failed: %s", natsStatus_GetText(ctx->status));
+        return 1;
     } else {
         ctx->closed = false;
     }
@@ -127,23 +175,20 @@ void cb_nats_flush(void *data, size_t bytes,
         FLB_OUTPUT_RETURN(FLB_ERROR);
     } 
 
-    flb_info("NATS publish ('%s'): '%s'", ctx->subject, "Nats message..."); // TODO Change to debug
-    natsConnection_PublishString(ctx->connection, ctx->subject, "got it?");
+    flb_info("NATS publish to '%s', length %d", ctx->subject, bytes); // TODO Change to debug
+    natsConnection_Publish(ctx->connection, ctx->subject, data, bytes);
     
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 
 int cb_nats_exit(void *data, struct flb_config *config)
 {
-    (void) config;
-    struct flb_out_nats_config *ctx = data;
+    //(void) config;
+    //struct flb_out_nats_config *ctx = data;
 
-    natsSubscription_Destroy(ctx->subscription);
-    natsConnection_Destroy(ctx->connection);
-    natsOptions_Destroy(ctx->options);
-    nats_Close();
+    flb_info("NATS finishing"); // TODO Change to debug
 
-    flb_free(ctx);
+    cleanup((struct flb_out_nats_config*) data);
 
     return 0;
 }
@@ -154,5 +199,5 @@ struct flb_output_plugin out_nats_plugin = {
     .cb_init      = cb_nats_init,
     .cb_flush     = cb_nats_flush,
     .cb_exit      = cb_nats_exit,
-    .flags        = FLB_OUTPUT_NET,
+    //.flags        = FLB_OUTPUT_NET,
 };

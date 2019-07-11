@@ -1,5 +1,7 @@
-#ifndef FLB_OUT_NATS_H
-#define FLB_OUT_NATS_H
+
+
+#ifndef FLB_IN_NATS_H
+#define FLB_IN_NATS_H
 
 #include <fluent-bit/flb_version.h>
 
@@ -15,19 +17,21 @@
 #include <signal.h>
 #endif
 
-#define NATS_MAX_SERVERS     (10)
+// TODO consolidate this duplicate code!
+static const char *nats_setting_error = "NATS Error (%d) setting '%s': '%s'";
 
-static const char *nats_setting_error = "[STAN] NATS Error (%d) setting '%s': '%s'";
-
-struct flb_out_nats_config {
-    struct flb_output_instance *ins;
+struct flb_in_nats_config {
+    struct flb_input_instance *ins;
     natsConnection      *connection;
     natsOptions         *options;
+    natsSubscription    *subscription;
     bool                closed;
     natsStatus          status;
     
     char                *subject;
     char                *url;
 };
+
+extern struct flb_input_plugin in_nats_plugin;
 
 #endif

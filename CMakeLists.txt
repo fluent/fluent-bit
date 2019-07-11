@@ -122,6 +122,8 @@ option(FLB_OUT_FORWARD        "Enable Forward output plugin"       Yes)
 option(FLB_OUT_GELF           "Enable GELF output plugin"          Yes)
 option(FLB_OUT_HTTP           "Enable HTTP output plugin"          Yes)
 option(FLB_OUT_INFLUXDB       "Enable InfluxDB output plugin"      Yes)
+option(FLB_OUT_STAN           "Enable NATS-Streaming output plugin" Yes)
+option(FLB_IN_NATS            "Enable NATS input plugin"           Yes)
 option(FLB_OUT_NATS           "Enable NATS output plugin"          Yes)
 option(FLB_OUT_PLOT           "Enable Plot output plugin"          Yes)
 option(FLB_OUT_FILE           "Enable file output plugin"          Yes)
@@ -142,7 +144,7 @@ option(FLB_FILTER_PARSER      "Enable parser filter"               Yes)
 option(FLB_FILTER_KUBERNETES  "Enable kubernetes filter"           Yes)
 option(FLB_FILTER_THROTTLE    "Enable throttle filter"             Yes)
 option(FLB_FILTER_NEST        "Enable nest filter"                 Yes)
-option(FLB_FILTER_LUA         "Enable Lua scripting filter"        Yes)
+option(FLB_FILTER_LUA             "Enable Lua scripting filter"        Yes)
 option(FLB_FILTER_RECORD_MODIFIER "Enable record_modifier filter"  Yes)
 
 # Enable all features
@@ -170,6 +172,7 @@ if(FLB_ALL)
   set(FLB_OUT_FORWARD  1)
   set(FLB_OUT_GELF     1)
   set(FLB_OUT_HTTP     1)
+  set(FLB_OUT_STAN     1)
   set(FLB_OUT_NATS     1)
   set(FLB_OUT_NULL     1)
   set(FLB_OUT_PLOT     1)
@@ -294,15 +297,27 @@ FLB_DEFINITION(JSMN_STRICT)
 add_subdirectory(lib/jsmn)
 
 # Nats.io
-if(FLB_OUT_NATS)
+if(FLB_OUT_NATS OR FLB_IN_NATS OR FLB_OUT_STAN)
   set(NATS_SRC "${CMAKE_CURRENT_SOURCE_DIR}/lib/nats.c")
+  
+  if(FLB_OUT_STAN)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DNATS_HAS_STREAMING")
+    set(NATS_BUILD_STREAMING ON)
+  endif()
 
-  option(NATS_BUILD_EXAMPLES          OFF)
-  option(NATS_BUILD_STREAMING         OFF)
+  set(NATS_BUILD_EXAMPLES OFF)
 
   include_directories(${NATS_SRC}/src)
   add_subdirectory(${NATS_SRC} EXCLUDE_FROM_ALL)
-
+  
+  if(FLB_OUT_STAN)
+    get_directory_property(
+      LIB_OUT_PATH
+      DIRECTORY ${NATS_SRC}
+      DEFINITION NATS_PROTOBUF_LIB
+    )
+    file(INSTALL ${LIB_OUT_PATH} DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/bin/)
+  endif()
 endif()
 
 # Runtime Tests (filter_kubernetes) requires HTTP Server
