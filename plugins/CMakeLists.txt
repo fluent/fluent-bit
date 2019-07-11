@@ -123,7 +123,7 @@ if(FLB_PARSER)
 endif()
 
 if(FLB_OUT_STAN)
-  REGISTER_IN_PLUGIN("out_stan")
+  REGISTER_OUT_PLUGIN("out_stan")
 endif()
 
 if(FLB_IN_NATS)

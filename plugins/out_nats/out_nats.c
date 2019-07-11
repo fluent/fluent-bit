@@ -47,13 +47,12 @@ static void cleanup(struct flb_out_nats_config *ctx) {
     nats_Close();
 }
 
-// TODO Consolidate this duplicate code!
-static void setProperty(struct flb_output_instance *ins, char *property, char **dest, char **defaultValue){
+static void setProperty(struct flb_output_instance *ins, char *property, const char **dest, const char *defaultValue){
     *dest = flb_output_get_property(property, ins);
-    if (strlen(defaultValue) > 0 && (*dest == NULL || strlen(*dest) == 0)) {
+    if ((*dest == NULL || strlen(*dest) == 0) && strlen(defaultValue) > 0) {
         *dest = defaultValue; // Default property if it is undefined/empty
     }
-    flb_info("NATS set property '%s' to '%s'", property, *dest); // TODO Change to debug
+    flb_info("[NATS] Set property '%s' to '%s'", property, *dest); // TODO Change to debug
 }
 
 int cb_nats_init(struct flb_output_instance *ins, struct flb_config *config, void *data)
@@ -77,7 +76,7 @@ int cb_nats_init(struct flb_output_instance *ins, struct flb_config *config, voi
     }
 
     setProperty(ins, "subject", &ctx->subject, "fluent-bit");
-    setProperty(ins, "url", &ctx->url, &NATS_DEFAULT_URL);
+    setProperty(ins, "url", &ctx->url, NATS_DEFAULT_URL);
 
     flb_info("NATS using URL: '%s'", ctx->url); // TODO Change to debug
     ctx->status = natsOptions_SetURL(ctx->options, ctx->url);
@@ -193,9 +192,9 @@ int cb_nats_exit(void *data, struct flb_config *config)
     return 0;
 }
 
-struct flb_output_plugin out_nats_plugin = {
+struct flb_output_plugin out_stan_plugin = {
     .name         = "nats",
-    .description  = "NATS Server",
+    .description  = "NATS output client",
     .cb_init      = cb_nats_init,
     .cb_flush     = cb_nats_flush,
     .cb_exit      = cb_nats_exit,

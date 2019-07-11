@@ -17,7 +17,7 @@
 
 #define NATS_MAX_SERVERS     (10)
 
-static const char *nats_setting_error = "[STAN] NATS Error (%d) setting '%s': '%s'";
+static const char *nats_setting_error = "[NATS] Error (%d) setting '%s': '%s'";
 
 struct flb_out_nats_config {
     struct flb_output_instance *ins;
