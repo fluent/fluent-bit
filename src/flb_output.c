@@ -175,7 +175,7 @@ void flb_output_exit(struct flb_config *config)
             if(!p->proxy) {
                 p->cb_exit(ins->context, config);
             } else {
-                p->cb_exit(ins->p, config);
+                p->cb_exit(p, ins->context);
             }
         } 
 
