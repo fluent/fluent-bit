@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,7 +34,7 @@ struct flb_api *flb_api_create()
         return NULL;
     }
 
-    api->output_get_property = (char * (*)(char *, void *)) flb_output_get_property;
+    api->output_get_property = flb_output_get_property;
     return api;
 }
 

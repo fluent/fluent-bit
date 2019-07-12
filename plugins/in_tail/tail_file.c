@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,11 +20,10 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <unistd.h>
 #include <fcntl.h>
 #include <time.h>
-#include <libgen.h>
 
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_parser.h>
@@ -41,14 +41,58 @@
 #include "tail_multiline.h"
 #include "tail_scan.h"
 
+#ifdef _MSC_VER
+static int get_inode(int fd, uint64_t *inode)
+{
+    HANDLE h;
+    BY_HANDLE_FILE_INFORMATION info;
+
+    h = _get_osfhandle(fd);
+    if (h == INVALID_HANDLE_VALUE) {
+        flb_error("[in_tail] cannot convert fd:%i into HANDLE", fd);
+        return -1;
+    }
+
+    if (GetFileInformationByHandle(h, &info) == 0) {
+        flb_error("[in_tail] cannot get file info for fd:%i", fd);
+        return -1;
+    }
+    *inode = (uint64_t) info.nFileIndexHigh;
+    *inode = *inode << 32 | info.nFileIndexLow;
+    return 0;
+}
+#endif
+
 static inline void consume_bytes(char *buf, int bytes, int length)
 {
     memmove(buf, buf + bytes, length - bytes);
 }
 
+#ifdef _MSC_VER
+/*
+ * Open a file for reading. We need to use CreateFileA() instead of
+ * open(2) to avoid automatic file locking.
+ */
+static int open_file(const char *path)
+{
+    HANDLE h;
+    h = CreateFileA(path,
+                    GENERIC_READ,
+                    FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
+                    NULL,           /* lpSecurityAttributes */
+                    OPEN_EXISTING,  /* dwCreationDisposition */
+                    0,              /* dwFlagsAndAttributes */
+                    NULL);          /* hTemplateFile */
+    if (h == INVALID_HANDLE_VALUE) {
+        return -1;
+    }
+    return _open_osfhandle((intptr_t) h, _O_RDONLY);
+}
+#endif
+
 static int unpack_and_pack(msgpack_packer *pck, msgpack_object *root,
-                           char *key, size_t key_len,
-                           char *val, size_t val_len)
+                           const char *key, size_t key_len,
+                           const char *val, size_t val_len)
 {
     int i;
     int size = root->via.map.size;
@@ -73,8 +117,8 @@ static int unpack_and_pack(msgpack_packer *pck, msgpack_object *root,
 }
 
 static int append_record_to_map(char **data, size_t *data_size,
-                                char *key,  size_t key_len,
-                                char *val,  size_t val_len)
+                                const char *key, size_t key_len,
+                                const char *val, size_t val_len)
 {
     int ret;
     msgpack_unpacked result;
@@ -180,12 +224,13 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
     char *p;
     void *out_buf;
     size_t out_size;
+    int crlf;
     char *line;
     size_t line_len;
     char *repl_line;
     size_t repl_line_len;
     time_t now = time(NULL);
-    struct flb_time out_time = {};
+    struct flb_time out_time = {0};
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
     msgpack_sbuffer *out_sbuf;
@@ -218,11 +263,19 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
             continue;
         }
 
+        /* Process '\r\n' */
+        crlf = (data[len-1] == '\r');
+        if (len == 1 && crlf) {
+            data += 2;
+            processed_bytes += 2;
+            continue;
+        }
+
         /* Reset time for each line */
         flb_time_zero(&out_time);
 
         line = data;
-        line_len = len;
+        line_len = len - crlf;
         repl_line = NULL;
 
         if (ctx->docker_mode) {
@@ -246,7 +299,7 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
             }
         }
 
-#ifdef FLB_HAVE_REGEX
+#ifdef FLB_HAVE_PARSER
         if (ctx->parser) {
             /* Common parser (non-multiline) */
             ret = flb_parser_do(ctx->parser, line, line_len,
@@ -323,12 +376,13 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
     file->parsed = file->buf_len;
     *bytes = processed_bytes;
 
-    /* Append the temporal buffer to a dyntag, then release it */
-    flb_input_dyntag_append_raw(ctx->i_ins,
-                                file->tag_buf,
-                                file->tag_len,
-                                out_sbuf->data,
-                                out_sbuf->size);
+    /* Append buffer content to a chunk */
+    flb_input_chunk_append_raw(ctx->i_ins,
+                               file->tag_buf,
+                               file->tag_len,
+                               out_sbuf->data,
+                               out_sbuf->size);
+
     msgpack_sbuffer_destroy(out_sbuf);
     return lines;
 }
@@ -341,17 +395,17 @@ static inline void drop_bytes(char *buf, size_t len, int pos, int bytes)
 }
 
 #ifdef FLB_HAVE_REGEX
-static void cb_results(unsigned char *name, unsigned char *value,
+static void cb_results(const char *name, const char *value,
                        size_t vlen, void *data)
 {
     struct flb_hash *ht = data;
     char *p;
 
-    while ((p = strchr((char *) value, '.'))) {
+    while ((p = strchr(value, '.'))) {
         *p = '_';
     }
 
-    flb_hash_add(ht, (char *) name, strlen((char *) name), (char *) value, vlen);
+    flb_hash_add(ht, name, strlen(name), value, vlen);
 }
 #endif
 
@@ -373,13 +427,13 @@ static int tag_compose(char *tag, char *fname, char **out_buf, size_t *out_size)
     char *beg;
     char *end;
     int ret;
-    char *tmp;
+    const char *tmp;
     size_t tmp_s;
 #endif
 
 #ifdef FLB_HAVE_REGEX
     if (tag_regex) {
-        n = flb_regex_do(tag_regex, (unsigned char *) fname, strlen(fname), &result);
+        n = flb_regex_do(tag_regex, fname, strlen(fname), &result);
         if (n <= 0) {
             flb_error("[in_tail] invalid pattern for given file %s", fname);
             return -1;
@@ -551,7 +605,11 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         }
     }
 
+#ifdef _MSC_VER
+    fd = open_file(path);
+#else
     fd = open(path, O_RDONLY);
+#endif
     if (fd == -1) {
         flb_errno();
         flb_error("[in_tail] could not open %s", path);
@@ -588,8 +646,16 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         return -1;
     }
 
-    file->offset    = 0;
+#ifdef _MSC_VER
+    if (get_inode(fd, &file->inode)) {
+        close(fd);
+        flb_free(file);
+        return -1;
+    }
+#else
     file->inode     = st->st_ino;
+#endif
+    file->offset    = 0;
     file->size      = st->st_size;
     file->buf_len   = 0;
     file->parsed    = 0;
@@ -626,7 +692,8 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     if (ctx->dynamic_tag == FLB_TRUE) {
         p = out_tmp;
 #ifdef FLB_HAVE_REGEX
-        ret = tag_compose(ctx->i_ins->tag, ctx->tag_regex, basename(path), &p, &out_size);
+        ret = tag_compose(ctx->i_ins->tag, ctx->tag_regex, path, &p,
+                          &out_size);
 #else
         ret = tag_compose(ctx->i_ins->tag, path, &p, &out_size);
 #endif
@@ -674,6 +741,10 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         }
     }
 
+#ifdef FLB_HAVE_METRICS
+    flb_metrics_sum(FLB_TAIL_METRIC_F_OPENED, 1, ctx->i_ins->metrics);
+#endif
+
     flb_debug("[in_tail] add to scan queue %s, offset=%lu", path, file->offset);
     return 0;
 }
@@ -698,6 +769,12 @@ void flb_tail_file_remove(struct flb_tail_file *file)
 #if !defined(__linux__)
     flb_free(file->real_name);
 #endif
+
+#ifdef FLB_HAVE_METRICS
+    flb_metrics_sum(FLB_TAIL_METRIC_F_CLOSED, 1,
+                    file->config->i_ins->metrics);
+#endif
+
     flb_free(file);
 }
 
@@ -908,6 +985,8 @@ char *flb_tail_file_name(struct flb_tail_file *file)
     char tmp[128];
 #elif defined(__APPLE__)
     char path[PATH_MAX];
+#elif defined(_MSC_VER)
+    HANDLE h;
 #endif
 
     buf = flb_malloc(PATH_MAX);
@@ -945,8 +1024,30 @@ char *flb_tail_file_name(struct flb_tail_file *file)
     len = strlen(path);
     memcpy(buf, path, len);
     buf[len] = '\0';
-#endif
 
+#elif defined(_MSC_VER)
+    int len;
+
+    h = _get_osfhandle(file->fd);
+    if (h == INVALID_HANDLE_VALUE) {
+        flb_errno();
+        flb_free(buf);
+        return NULL;
+    }
+
+    /* This function returns the length of the string excluding "\0"
+     * and the resulting path has a "\\?\" prefix.
+     */
+    len = GetFinalPathNameByHandleA(h, buf, PATH_MAX, FILE_NAME_NORMALIZED);
+    if (len == 0 || len >= PATH_MAX) {
+        flb_free(buf);
+        return NULL;
+    }
+
+    if (strstr(buf, "\\\\?\\")) {
+        memmove(buf, buf + 4, len + 1);
+    }
+#endif
     return buf;
 }
 
@@ -993,6 +1094,11 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
             create = FLB_TRUE;
         }
     }
+
+#ifdef FLB_HAVE_METRICS
+    flb_metrics_sum(FLB_TAIL_METRIC_F_ROTATED,
+                    1, file->config->i_ins->metrics);
+#endif
 
     /* Get the new file name */
     name = flb_tail_file_name(file);

@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,11 +20,11 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_error.h>
@@ -45,7 +46,7 @@ static inline int consume_byte(int fd)
     uint64_t val;
 
     /* We need to consume the byte */
-    ret = read(fd, &val, sizeof(val));
+    ret = flb_pipe_r(fd, &val, sizeof(val));
     if (ret <= 0) {
         flb_errno();
         return -1;
@@ -139,8 +140,7 @@ static int in_tail_collect_static(struct flb_input_instance *i_ins,
         case FLB_TAIL_WAIT:
             if (file->config->exit_on_eof) {
                 flb_info("[in_tail] file=%s ended, stop", file->name);
-                flb_engine_shutdown(config);
-                exit(0);
+                flb_engine_exit(config);
             }
             /* Promote file to 'events' type handler */
             flb_debug("[in_tail] file=%s promote to TAIL_EVENT", file->name);
@@ -273,6 +273,7 @@ static int in_tail_init(struct flb_input_instance *in,
         ctx->coll_fd_dmode_flush = ret;
     }
 
+#ifdef FLB_HAVE_PARSER
     /* Register callback to process multiline queued buffer */
     if (ctx->multiline == FLB_TRUE) {
         ret = flb_input_set_collector_time(in, flb_tail_mult_pending_flush,
@@ -285,6 +286,7 @@ static int in_tail_init(struct flb_input_instance *in,
         }
         ctx->coll_fd_mult_flush = ret;
     }
+#endif
 
     return 0;
 }

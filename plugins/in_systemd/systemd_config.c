@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,12 +34,14 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
                                                      struct flb_config *config)
 {
     int ret;
-    char *tmp;
+    const char *tmp;
+    char *cursor = NULL;
     struct stat st;
     struct mk_list *head;
     struct flb_config_prop *prop;
     struct flb_systemd_config *ctx;
     int journal_filter_is_and;
+    size_t size;
 
     /* Allocate space for the configuration */
     ctx = flb_calloc(1, sizeof(struct flb_systemd_config));
@@ -102,7 +105,6 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
     else {
         ctx->dynamic_tag = FLB_FALSE;
     }
-    ctx->i_ins->flags |= FLB_INPUT_DYN_TAG;
 
     /* Database file */
     tmp = flb_input_get_property("db", i_ins);
@@ -113,13 +115,22 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
         }
     }
 
+    /* Max number of fields per record/entry */
+    tmp = flb_input_get_property("max_fields", i_ins);
+    if (tmp) {
+        ctx->max_fields = atoi(tmp);
+    }
+    else {
+        ctx->max_fields = FLB_SYSTEMD_MAX_FIELDS;
+    }
+
     /* Max number of entries per notification */
     tmp = flb_input_get_property("max_entries", i_ins);
     if (tmp) {
         ctx->max_entries = atoi(tmp);
     }
     else {
-        ctx->max_entries = FLB_SYSTEND_ENTRIES;
+        ctx->max_entries = FLB_SYSTEMD_MAX_ENTRIES;
     }
 
     tmp = flb_input_get_property("systemd_filter_type", i_ins);
@@ -158,9 +169,16 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
 
     /* Seek to head by default or tail if specified in configuration */
     tmp = flb_input_get_property("read_from_tail", i_ins);
-    if (tmp != NULL && flb_utils_bool(tmp)) {
+    if (tmp) {
+        ctx->read_from_tail = flb_utils_bool(tmp);
+    }
+    else {
+        ctx->read_from_tail = FLB_FALSE;
+    }
+
+    if (ctx->read_from_tail == FLB_TRUE) {
+        /* Jump to the end and skip last entry */
         sd_journal_seek_tail(ctx->j);
-        /* Skip last entry */
         sd_journal_next_skip(ctx->j, 1);
     }
     else {
@@ -169,11 +187,11 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
 
     /* Check if we have a cursor in our database */
     if (ctx->db) {
-        tmp = flb_systemd_db_get_cursor(ctx);
-        if (tmp) {
-            ret = sd_journal_seek_cursor(ctx->j, tmp);
+        cursor = flb_systemd_db_get_cursor(ctx);
+        if (cursor) {
+            ret = sd_journal_seek_cursor(ctx->j, cursor);
             if (ret == 0) {
-                flb_info("[in_systemd] seek_cursor=%.40s... OK", tmp);
+                flb_info("[in_systemd] seek_cursor=%.40s... OK", cursor);
 
                 /* Skip the first entry, already processed */
                 sd_journal_next_skip(ctx->j, 1);
@@ -181,7 +199,7 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
             else {
                 flb_warn("[in_systemd] seek_cursor failed");
             }
-            flb_free(tmp);
+            flb_free(cursor);
         }
     }
 
@@ -191,6 +209,10 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
     } else {
         ctx->strip_underscores = FLB_FALSE;
     }
+
+    sd_journal_get_data_threshold(ctx->j, &size);
+    flb_debug("[in_systemd] sd_journal library may truncate values "
+        "to sd_journal_get_data_threshold() bytes: %i", size);
 
     return ctx;
 }

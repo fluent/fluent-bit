@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,10 +21,10 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_regex.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_mem.h>
 
 #include <string.h>
 #include <onigmo.h>
-
 
 static int
 cb_onig_named(const UChar *name, const UChar *name_end,
@@ -43,7 +44,7 @@ cb_onig_named(const UChar *name, const UChar *name_end,
         onig_name_to_backref_number(reg, name, name_end, region);
 
         if (s->cb_match) {
-            s->cb_match((unsigned char *) name,
+            s->cb_match((const char *)name,
                         s->str + region->beg[gn],
                         region->end[gn] - region->beg[gn],
                         s->data);
@@ -57,15 +58,15 @@ cb_onig_named(const UChar *name, const UChar *name_end,
     return 0;
 }
 
-static int str_to_regex(unsigned char *pattern, OnigRegex *reg)
+static int str_to_regex(const char *pattern, OnigRegex *reg)
 {
     int ret;
     int len;
-    unsigned char *start;
-    unsigned char *end;
+    const char *start;
+    const char *end;
     OnigErrorInfo einfo;
 
-    len = strlen((char *) pattern);
+    len = strlen(pattern);
     start = pattern;
     end = pattern + len;
 
@@ -74,7 +75,8 @@ static int str_to_regex(unsigned char *pattern, OnigRegex *reg)
         end--;
     }
 
-    ret = onig_new(reg, start, end,
+    ret = onig_new(reg,
+                   (const unsigned char *)start, (const unsigned char *)end,
                    ONIG_OPTION_DEFAULT,
                    ONIG_ENCODING_UTF8, ONIG_SYNTAX_RUBY, &einfo);
 
@@ -90,34 +92,35 @@ int flb_regex_init()
     return onig_init();
 }
 
-struct flb_regex *flb_regex_create(unsigned char *pattern)
+struct flb_regex *flb_regex_create(const char *pattern)
 {
     int ret;
     struct flb_regex *r;
 
     /* Create context */
-    r = malloc(sizeof(struct flb_regex));
+    r = flb_malloc(sizeof(struct flb_regex));
     if (!r) {
+        flb_errno();
         return NULL;
     }
 
     /* Compile pattern */
-    ret = str_to_regex(pattern, &r->regex);
+    ret = str_to_regex(pattern, (OnigRegex *) &r->regex);
     if (ret == -1) {
-        free(r);
+        flb_free(r);
         return NULL;
     }
 
     return r;
 }
 
-ssize_t flb_regex_do(struct flb_regex *r, unsigned char *str, size_t slen,
+ssize_t flb_regex_do(struct flb_regex *r, const char *str, size_t slen,
                      struct flb_regex_search *result)
 {
     int ret;
-    unsigned char *start;
-    unsigned char *end;
-    unsigned char *range;
+    const char *start;
+    const char *end;
+    const char *range;
     OnigRegion *region;
 
     region = onig_region_new();
@@ -127,11 +130,16 @@ ssize_t flb_regex_do(struct flb_regex *r, unsigned char *str, size_t slen,
     }
 
     /* Search scope */
-    start = (unsigned char *) str;
+    start = str;
     end   = start + slen;
     range = end;
 
-    ret = onig_search(r->regex, str, end, start, range, region, ONIG_OPTION_NONE);
+    ret = onig_search(r->regex,
+                      (const unsigned char *)str,
+                      (const unsigned char *)end,
+                      (const unsigned char *)start,
+                      (const unsigned char *)range,
+                      region, ONIG_OPTION_NONE);
     if (ret == ONIG_MISMATCH) {
         result->region = NULL;
         onig_region_free(region, 1);
@@ -181,8 +189,8 @@ int flb_regex_find(struct flb_regex *r, unsigned char *str, size_t slen)
 
 
 int flb_regex_parse(struct flb_regex *r, struct flb_regex_search *result,
-                    void (*cb_match) (unsigned char *,          /* name  */
-                                      unsigned char *, size_t,  /* value */
+                    void (*cb_match) (const char *,          /* name  */
+                                      const char *, size_t,  /* value */
                                       void *),                  /* caller data */
                     void *data)
 {
@@ -204,7 +212,7 @@ int flb_regex_parse(struct flb_regex *r, struct flb_regex_search *result,
 int flb_regex_destroy(struct flb_regex *r)
 {
     onig_free(r->regex);
-    free(r);
+    flb_free(r);
     return 0;
 }
 

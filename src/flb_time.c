@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,12 +19,18 @@
  */
 
 #include <msgpack.h>
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_time.h>
+#ifdef FLB_HAVE_CLOCK_GET_TIME
+#  include <mach/clock.h>
+#  include <mach/mach.h>
+#endif
 
-#include <arpa/inet.h>
 #include <string.h>
+#include <inttypes.h>
+#include <time.h>
 
 #define ONESEC_IN_NSEC 1000000000
 
@@ -45,6 +52,14 @@ static int _flb_time_get(struct flb_time *tm)
 #elif defined FLB_HAVE_TIMESPEC_GET
     /* C11 supported! */
     return timespec_get(&tm->tm, TIME_UTC);
+#elif defined FLB_CLOCK_GET_TIME
+    clock_serv_t cclock;
+    mach_timespec_t mts;
+    host_get_clock_service(mach_host_self(), CALENDAR_CLOCK, &cclock);
+    clock_get_time(cclock, &mts);
+    tm->tv_sec = mts.tv_sec;
+    tm->tv_nsec = mts.tv_nsec;
+    return mach_port_deallocate(mach_task_self(), cclock);
 #else /* __STDC_VERSION__ */
     return clock_gettime(CLOCK_REALTIME, &tm->tm);
 #endif
@@ -53,6 +68,20 @@ static int _flb_time_get(struct flb_time *tm)
 int flb_time_get(struct flb_time *tm)
 {
     return _flb_time_get(tm);
+}
+
+/* A portable function to sleep N msec */
+int flb_time_msleep(uint32_t ms)
+{
+#ifdef _MSC_VER
+    Sleep((DWORD) ms);
+    return 0;
+#else
+    struct timespec ts;
+    ts.tv_sec = ms / 1000;
+    ts.tv_nsec = (ms % 1000) * 1000000;
+    return nanosleep(&ts, NULL);
+#endif
 }
 
 double flb_time_to_double(struct flb_time *tm)

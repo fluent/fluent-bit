@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,7 +33,7 @@ struct flb_buf {
     size_t len;
 };
 
-static inline int buf_append(struct flb_buf *buf, char *str, int len)
+static inline int buf_append(struct flb_buf *buf, const char *str, int len)
 {
     size_t av;
     size_t new_size;
@@ -117,12 +118,12 @@ void flb_env_destroy(struct flb_env *env)
     flb_free(env);
 }
 
-int flb_env_set(struct flb_env *env, char *key, char *val)
+int flb_env_set(struct flb_env *env, const char *key, const char *val)
 {
     int id;
     int klen;
     int vlen;
-    char *out_buf;
+    const char *out_buf;
     size_t out_size;
 
     /* Get lengths */
@@ -141,11 +142,11 @@ int flb_env_set(struct flb_env *env, char *key, char *val)
     return id;
 }
 
-char *flb_env_get(struct flb_env *env, char *key)
+const char *flb_env_get(struct flb_env *env, const char *key)
 {
     int len;
     int ret;
-    char *out_buf;
+    const char *out_buf;
     size_t out_size;
 
     if (!key) {
@@ -174,7 +175,7 @@ char *flb_env_get(struct flb_env *env, char *key)
  * Given a 'value', lookup for variables, if found, return a new composed
  * string.
  */
-char *flb_env_var_translate(struct flb_env *env, char *value)
+char *flb_env_var_translate(struct flb_env *env, const char *value)
 {
     int i;
     int len;
@@ -182,7 +183,7 @@ char *flb_env_var_translate(struct flb_env *env, char *value)
     int e_len;
     int pre_var;
     int have_var = FLB_FALSE;
-    char *env_var = NULL;
+    const char *env_var = NULL;
     char *v_start = NULL;
     char *v_end = NULL;
     char tmp[64];

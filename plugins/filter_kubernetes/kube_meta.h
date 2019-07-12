@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -55,10 +56,11 @@ struct flb_kube_meta {
 
 int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config);
 int flb_kube_meta_fetch(struct flb_kube *ctx);
+int flb_kube_dummy_meta_get(char **out_buf, size_t *out_size);
 int flb_kube_meta_get(struct flb_kube *ctx,
-                      char *tag, int tag_len,
-                      char *data, size_t data_size,
-                      char **out_buf, size_t *out_size,
+                      const char *tag, int tag_len,
+                      const char *data, size_t data_size,
+                      const char **out_buf, size_t *out_size,
                       struct flb_kube_meta *meta,
                       struct flb_kube_props *props);
 int flb_kube_meta_release(struct flb_kube_meta *meta);

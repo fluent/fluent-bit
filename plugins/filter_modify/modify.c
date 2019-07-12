@@ -2,7 +2,8 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2017 Treasure Data Inc.
+ *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -44,6 +45,7 @@ static void condition_free(struct modify_condition *condition)
     if (condition->b_is_regex) {
         flb_regex_destroy(condition->b_regex);
     }
+    flb_free(condition);
 }
 
 static void teardown(struct filter_modify_ctx *ctx)
@@ -131,6 +133,7 @@ static int setup(struct filter_modify_ctx *ctx,
 
             condition = flb_calloc(1, sizeof(struct modify_condition));
             if (!condition) {
+                flb_errno();
                 flb_error("[filter_modify] Unable to allocate memory for "
                           "condition");
                 teardown(ctx);
@@ -231,7 +234,7 @@ static int setup(struct filter_modify_ctx *ctx,
                         ("[filter_modify] Creating regex for condition A : %s %s : %s",
                          condition->raw_k, condition->raw_v, condition->a);
                     condition->a_regex =
-                        flb_regex_create((unsigned char *) condition->a);
+                        flb_regex_create(condition->a);
                 }
             }
 
@@ -249,7 +252,7 @@ static int setup(struct filter_modify_ctx *ctx,
                         ("[filter_modify] Creating regex for condition B : %s %s : %s",
                          condition->raw_k, condition->raw_v, condition->b);
                     condition->b_regex =
-                        flb_regex_create((unsigned char *) condition->b);
+                        flb_regex_create(condition->b);
                 }
             }
 
@@ -351,7 +354,7 @@ static int setup(struct filter_modify_ctx *ctx,
             }
             else {
                 rule->key_regex =
-                    flb_regex_create((unsigned char *) rule->key);
+                    flb_regex_create(rule->key);
             }
 
             if (rule->val_is_regex && rule->val_len == 0) {
@@ -362,7 +365,7 @@ static int setup(struct filter_modify_ctx *ctx,
             }
             else {
                 rule->val_regex =
-                    flb_regex_create((unsigned char *) rule->val);
+                    flb_regex_create(rule->val);
             }
 
             mk_list_add(&rule->_head, &ctx->rules);
@@ -385,7 +388,7 @@ static inline bool helper_msgpack_object_matches_regex(msgpack_object * obj,
                                                        struct flb_regex
                                                        *regex)
 {
-    char *key;
+    const char *key;
     int len;
     struct flb_regex_search result;
 
@@ -393,7 +396,7 @@ static inline bool helper_msgpack_object_matches_regex(msgpack_object * obj,
         return false;
     }
     else if (obj->type == MSGPACK_OBJECT_STR) {
-        key = (char *) obj->via.str.ptr;
+        key = obj->via.str.ptr;
         len = obj->via.str.size;
     }
     else {
@@ -485,13 +488,13 @@ static inline bool helper_msgpack_object_matches_wildcard(msgpack_object *
                                                           obj, char *str,
                                                           int len)
 {
-    char *key;
+    const char *key;
 
     if (obj->type == MSGPACK_OBJECT_BIN) {
-        key = (char *) obj->via.bin.ptr;
+        key = obj->via.bin.ptr;
     }
     else if (obj->type == MSGPACK_OBJECT_STR) {
-        key = (char *) obj->via.str.ptr;
+        key = obj->via.str.ptr;
     }
     else {
         return false;
@@ -582,15 +585,15 @@ static inline bool helper_msgpack_object_matches_str(msgpack_object * obj,
                                                      char *str, int len)
 {
 
-    char *key;
+    const char *key;
     int klen;
 
     if (obj->type == MSGPACK_OBJECT_BIN) {
-        key = (char *) obj->via.bin.ptr;
+        key = obj->via.bin.ptr;
         klen = obj->via.bin.size;
     }
     else if (obj->type == MSGPACK_OBJECT_STR) {
-        key = (char *) obj->via.str.ptr;
+        key = obj->via.str.ptr;
         klen = obj->via.str.size;
     }
     else {
@@ -1365,8 +1368,8 @@ static int cb_modify_init(struct flb_filter_instance *f_ins,
     return 0;
 }
 
-static int cb_modify_filter(void *data, size_t bytes,
-                            char *tag, int tag_len,
+static int cb_modify_filter(const void *data, size_t bytes,
+                            const char *tag, int tag_len,
                             void **out_buf, size_t * out_size,
                             struct flb_filter_instance *f_ins,
                             void *context, struct flb_config *config)
@@ -1379,6 +1382,7 @@ static int cb_modify_filter(void *data, size_t bytes,
     struct filter_modify_ctx *ctx = context;
 
     int modifications = 0;
+    int total_modifications = 0;
 
     msgpack_sbuffer buffer;
     msgpack_sbuffer_init(&buffer);
@@ -1395,10 +1399,16 @@ static int cb_modify_filter(void *data, size_t bytes,
     // [1123123, {"Mem.total"=>4050908, "Mem.used"=>476576, "Mem.free"=>3574332 } ]
 
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         if (result.data.type == MSGPACK_OBJECT_ARRAY) {
-            modifications +=
+            modifications =
                 apply_modifying_rules(&packer, &result.data, ctx);
+
+            if (modifications == 0) {
+                // not matched, so copy original event.
+                msgpack_pack_object(&packer, result.data);
+            }
+            total_modifications += modifications;
         }
         else {
             msgpack_pack_object(&packer, result.data);
@@ -1406,7 +1416,7 @@ static int cb_modify_filter(void *data, size_t bytes,
     }
     msgpack_unpacked_destroy(&result);
 
-    if(modifications == 0) {
+    if(total_modifications == 0) {
         msgpack_sbuffer_destroy(&buffer);
         return FLB_FILTER_NOTOUCH;
     }

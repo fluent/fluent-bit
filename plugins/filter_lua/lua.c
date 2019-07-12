@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,6 +18,7 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_luajit.h>
@@ -58,15 +60,15 @@ static void lua_pushmsgpack(lua_State *l, msgpack_object *o)
             break;
 
         case MSGPACK_OBJECT_STR:
-            lua_pushlstring(l, (char*)o->via.str.ptr, o->via.str.size);
+            lua_pushlstring(l, o->via.str.ptr, o->via.str.size);
             break;
 
         case MSGPACK_OBJECT_BIN:
-            lua_pushlstring(l, (char*)o->via.bin.ptr, o->via.bin.size);
+            lua_pushlstring(l, o->via.bin.ptr, o->via.bin.size);
             break;
 
         case MSGPACK_OBJECT_EXT:
-            lua_pushlstring(l, (char*)o->via.ext.ptr, o->via.ext.size);
+            lua_pushlstring(l, o->via.ext.ptr, o->via.ext.size);
             break;
 
         case MSGPACK_OBJECT_ARRAY:
@@ -143,7 +145,7 @@ static void try_to_convert_data_type(struct lua_filter *lf,
             l2c = mk_list_entry(head, struct l2c_type, _head);
             if (!strncmp(l2c->key, tmp, len)) {
                 lua_tomsgpack(lf, pck, -1);
-                msgpack_pack_int64(pck, (int)lua_tonumber(l, -1));
+                msgpack_pack_int64(pck, (int64_t)lua_tonumber(l, -1));
                 return;
             }
         }
@@ -372,8 +374,8 @@ static int pack_result (double ts, msgpack_packer *pck, msgpack_sbuffer *sbuf,
     return FLB_TRUE;
 }
 
-static int cb_lua_filter(void *data, size_t bytes,
-                         char *tag, int tag_len,
+static int cb_lua_filter(const void *data, size_t bytes,
+                         const char *tag, int tag_len,
                          void **out_buf, size_t *out_bytes,
                          struct flb_filter_instance *f_ins,
                          void *filter_context,
@@ -400,7 +402,7 @@ static int cb_lua_filter(void *data, size_t bytes,
     msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         msgpack_packer data_pck;
         msgpack_sbuffer data_sbuf;
 

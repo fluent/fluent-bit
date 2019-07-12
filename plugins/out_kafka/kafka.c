@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -94,7 +95,31 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         msgpack_pack_str(&mp_pck, ctx->timestamp_key_len);
         msgpack_pack_str_body(&mp_pck,
                               ctx->timestamp_key, ctx->timestamp_key_len);
-        msgpack_pack_double(&mp_pck, flb_time_to_double(tm));
+        switch (ctx->timestamp_format) {
+            case FLB_JSON_DATE_DOUBLE:
+                msgpack_pack_double(&mp_pck, flb_time_to_double(tm));
+                break;
+
+            case FLB_JSON_DATE_ISO8601:
+                {
+                size_t date_len;
+                int len;
+                struct tm _tm;
+                char time_formatted[32];
+                /* Format the time; use microsecond precision (not nanoseconds). */
+                gmtime_r(&tm->tm.tv_sec, &_tm);
+                date_len = strftime(time_formatted, sizeof(time_formatted) - 1,
+                             FLB_JSON_DATE_ISO8601_FMT, &_tm);
+
+                len = snprintf(time_formatted + date_len, sizeof(time_formatted) - 1 - date_len,
+                               ".%06" PRIu64 "Z", (uint64_t) tm->tm.tv_nsec / 1000);
+                date_len += len;
+
+                msgpack_pack_str(&mp_pck, date_len);
+                msgpack_pack_str_body(&mp_pck, time_formatted, date_len);
+                }
+                break;
+        }
     }
     else {
         size = map->via.map.size;
@@ -112,7 +137,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         if (ctx->topic_key && !topic && val.type == MSGPACK_OBJECT_STR) {
             if (key.via.str.size == ctx->topic_key_len &&
                 strncmp(key.via.str.ptr, ctx->topic_key, ctx->topic_key_len) == 0) {
-                topic = flb_kafka_topic_lookup((char *) val.via.str.ptr,
+                topic = flb_kafka_topic_lookup(val.via.str.ptr,
                                                val.via.str.size,
                                                ctx);
             }
@@ -120,13 +145,14 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     }
 
     if (ctx->format == FLB_KAFKA_FMT_JSON) {
-        ret = flb_msgpack_raw_to_json_str(mp_sbuf.data, mp_sbuf.size,
-                                          &out_buf, &out_size);
-        if (ret != 0) {
+        s = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+        if (!s) {
             flb_error("[out_kafka] error encoding to JSON");
             msgpack_sbuffer_destroy(&mp_sbuf);
             return FLB_ERROR;
         }
+        out_buf  = s;
+        out_size = flb_sds_len(out_buf);
     }
     else if (ctx->format == FLB_KAFKA_FMT_MSGP) {
         out_buf = mp_sbuf.data;
@@ -216,7 +242,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
 
     rd_kafka_poll(ctx->producer, 0);
     if (ctx->format == FLB_KAFKA_FMT_JSON) {
-        flb_free(out_buf);
+        flb_sds_destroy(s);
     }
     if (ctx->format == FLB_KAFKA_FMT_GELF) {
         flb_sds_destroy(s);
@@ -226,8 +252,8 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     return FLB_OK;
 }
 
-static void cb_kafka_flush(void *data, size_t bytes,
-                           char *tag, int tag_len,
+static void cb_kafka_flush(const void *data, size_t bytes,
+                           const char *tag, int tag_len,
                            struct flb_input_instance *i_ins,
                            void *out_context,
                            struct flb_config *config)
@@ -251,7 +277,7 @@ static void cb_kafka_flush(void *data, size_t bytes,
 
     /* Iterate the original buffer and perform adjustments */
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         flb_time_pop_from_msgpack(&tms, &result, &obj);
 
         ret = produce_message(&tms, obj, ctx, config);

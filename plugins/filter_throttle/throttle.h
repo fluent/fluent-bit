@@ -2,6 +2,7 @@
 
 /*  Fluent Bit Throttling
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,7 +34,7 @@
 struct flb_filter_throttle_ctx {
     double    max_rate;
     unsigned int    window_size;
-    char  *slide_interval;
+    const char  *slide_interval;
     int print_status;
 
     /* internal */

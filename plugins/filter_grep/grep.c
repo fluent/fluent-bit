@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -102,7 +103,7 @@ static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
         flb_utils_split_free(split);
 
         /* Convert string to regex pattern */
-        rule->regex = flb_regex_create((unsigned char *) rule->regex_pattern);
+        rule->regex = flb_regex_create(rule->regex_pattern);
         if (!rule->regex) {
             delete_rules(ctx);
             flb_free(rule);
@@ -122,8 +123,8 @@ static inline int grep_filter_data(msgpack_object map, struct grep_ctx *ctx)
     int i;
     int klen;
     int vlen;
-    char *key;
-    char *val;
+    const char *key;
+    const char *val;
     ssize_t ret;
     msgpack_object *k;
     msgpack_object *v;
@@ -144,11 +145,11 @@ static inline int grep_filter_data(msgpack_object map, struct grep_ctx *ctx)
             }
 
             if (k->type == MSGPACK_OBJECT_STR) {
-                key  = (char *) k->via.str.ptr;
+                key  = k->via.str.ptr;
                 klen = k->via.str.size;
             }
             else {
-                key = (char *) k->via.bin.ptr;
+                key = k->via.bin.ptr;
                 klen = k->via.bin.size;
             }
 
@@ -175,11 +176,11 @@ static inline int grep_filter_data(msgpack_object map, struct grep_ctx *ctx)
 
         /* a value must be a string */
         if (v->type == MSGPACK_OBJECT_STR) {
-            val  = (char *)v->via.str.ptr;
+            val  = v->via.str.ptr;
             vlen = v->via.str.size;
         }
         else if(v->type == MSGPACK_OBJECT_BIN) {
-            val  = (char *)v->via.bin.ptr;
+            val  = v->via.bin.ptr;
             vlen = v->via.bin.size;
         }
         else {
@@ -232,8 +233,8 @@ static int cb_grep_init(struct flb_filter_instance *f_ins,
     return 0;
 }
 
-static int cb_grep_filter(void *data, size_t bytes,
-                          char *tag, int tag_len,
+static int cb_grep_filter(const void *data, size_t bytes,
+                          const char *tag, int tag_len,
                           void **out_buf, size_t *out_size,
                           struct flb_filter_instance *f_ins,
                           void *context,
@@ -257,7 +258,7 @@ static int cb_grep_filter(void *data, size_t bytes,
 
     /* Iterate each item array and apply rules */
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         root = result.data;
         if (root.type != MSGPACK_OBJECT_ARRAY) {
             continue;

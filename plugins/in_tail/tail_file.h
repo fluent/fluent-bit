@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,8 +23,8 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <unistd.h>
 
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_input.h>
 
 #include "tail.h"
@@ -38,8 +39,10 @@
 static inline int flb_tail_file_name_cmp(char *name,
                                         struct flb_tail_file *file)
 {
-#ifdef __linux__
+#if defined(__linux__)
     return strcmp(name, file->name);
+#elif defined(FLB_SYSTEM_WINDOWS)
+    return _stricmp(name, file->real_name);
 #else
     return strcmp(name, file->real_name);
 #endif

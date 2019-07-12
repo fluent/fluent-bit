@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,6 +21,7 @@
 #ifndef FLB_ROUTER_H
 #define FLB_ROUTER_H
 
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
 
 struct flb_router_path {
@@ -27,7 +29,8 @@ struct flb_router_path {
     struct mk_list _head;
 };
 
-int flb_router_match(const char *tag, const char *match);
+int flb_router_match(const char *tag, int tag_len,
+                     const char *match, void *match_regex);
 int flb_router_io_set(struct flb_config *config);
 void flb_router_exit(struct flb_config *config);
 

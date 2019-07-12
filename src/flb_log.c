@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -110,6 +111,7 @@ static void log_worker_collector(void *data)
     struct mk_event *event = NULL;
     struct flb_log *log = data;
 
+    FLB_TLS_INIT(flb_log_ctx);
     FLB_TLS_SET(flb_log_ctx, log);
 
     /* Signal the caller */

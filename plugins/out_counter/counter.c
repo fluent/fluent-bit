@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -55,8 +56,8 @@ int cb_counter_init(struct flb_output_instance *ins,
     return 0;
 }
 
-void cb_counter_flush(void *data, size_t bytes,
-                      char *tag, int tag_len,
+void cb_counter_flush(const void *data, size_t bytes,
+                      const char *tag, int tag_len,
                       struct flb_input_instance *i_ins,
                       void *out_context,
                       struct flb_config *config)

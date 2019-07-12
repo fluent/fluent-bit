@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -151,15 +152,14 @@ static int flb_config_static_read(struct mk_rconf *conf,
     char *section = NULL;
     char *indent = NULL;
     char *key, *val;
-    char *cfg_file = (char *) fname;
     size_t off;
     struct mk_rconf_file *file;
     struct mk_rconf_section *current = NULL;
 
     /* Check this file have not been included before */
-    ret = is_file_included(conf, cfg_file);
+    ret = is_file_included(conf, fname);
     if (ret == MK_TRUE) {
-        mk_err("[config] file already included %s", cfg_file);
+        mk_err("[config] file already included %s", fname);
         return -1;
     }
 
@@ -174,7 +174,7 @@ static int flb_config_static_read(struct mk_rconf *conf,
 
     /* looking for configuration directives */
     off = 0;
-    while (static_fgets(buf, MK_RCONF_KV_SIZE, (char *) data, &off)) {
+    while (static_fgets(buf, MK_RCONF_KV_SIZE, data, &off)) {
         len = strlen(buf);
         if (buf[len - 1] == '\n') {
             buf[--len] = 0;
@@ -360,14 +360,14 @@ struct mk_rconf *flb_config_static_open(char *file)
 {
     int i;
     int ret;
-    char *k;
-    char *v;
+    const char *k;
+    const char *v;
     struct mk_rconf *conf = NULL;
 
     /* Iterate static array and lookup the file name */
     for (i = 0; i < flb_config_files_size; i++) {
-        k = (char *) flb_config_files[i][0];
-        v = (char *) flb_config_files[i][1];
+        k = flb_config_files[i][0];
+        v = flb_config_files[i][1];
 
         if (strcmp(k, file) == 0) {
             break;

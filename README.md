@@ -1,5 +1,11 @@
 ![](fluentbit_logo.png)
 
+Travis CI:
+[![Build Status](https://travis-ci.org/fluent/fluent-bit.svg?branch=master)](https://travis-ci.org/fluent/fluent-bit)
+
+GitLab CI: 
+[![pipeline status](https://gitlab.com/fluent/fluent-bit/badges/master/pipeline.svg)](https://gitlab.com/fluent/fluent-bit/commits/master)
+
 [Fluent Bit](http://fluentbit.io) is a Data Forwarder for Linux, Embedded Linux, OSX and BSD family operating systems. It's part of the [Fluentd](http://fluentd.org) Ecosystem.  Fluent Bit allows collection of information from different sources, buffering and dispatching them to different outputs such as [Fluentd](http://fluentd.org), Elasticsearch, Nats or any HTTP end-point within others. It's fully supported on x86_64, x86 and ARM architectures.
 
 For more details about it capabilities and general features please visit the official documentation:

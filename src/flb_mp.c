@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,9 +22,10 @@
 #include <fluent-bit/flb_pack.h>
 #include <msgpack.h>
 
-static inline int mp_count(void *data, size_t bytes, msgpack_zone *zone)
+static inline int mp_count(const void *data, size_t bytes, msgpack_zone *zone)
 {
     int c = 0;
+    int ret;
     size_t off = 0;
     msgpack_zone *t = NULL;
     msgpack_object obj;
@@ -38,9 +40,15 @@ static inline int mp_count(void *data, size_t bytes, msgpack_zone *zone)
         t = zone;
     }
 
-    while (msgpack_unpack(data, bytes, &off, t, &obj)) {
-        c++;
-    }
+    do {
+        ret = msgpack_unpack(data, bytes, &off, t, &obj);
+        if (ret == MSGPACK_UNPACK_SUCCESS || ret == MSGPACK_UNPACK_EXTRA_BYTES) {
+            c++;
+        }
+        else {
+            break;
+        }
+    } while (1);
 
     msgpack_zone_clear(t);
     if (t != zone) {
@@ -50,12 +58,12 @@ static inline int mp_count(void *data, size_t bytes, msgpack_zone *zone)
     return c;
 }
 
-int flb_mp_count(void *data, size_t bytes)
+int flb_mp_count(const void *data, size_t bytes)
 {
     return mp_count(data, bytes, NULL);
 }
 
-int flb_mp_count_zone(void *data, size_t bytes, msgpack_zone *zone)
+int flb_mp_count_zone(const void *data, size_t bytes, msgpack_zone *zone)
 {
     return mp_count(data, bytes, zone);
 }

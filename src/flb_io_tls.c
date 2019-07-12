@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,6 +26,7 @@
 #include <mbedtls/error.h>
 
 #include <monkey/mk_core.h>
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_io.h>
@@ -70,6 +72,51 @@ static inline int io_tls_event_switch(struct flb_upstream_conn *u_conn,
     return 0;
 }
 
+#ifdef _MSC_VER
+static int flb_tls_load_system_cert(struct flb_tls_context *ctx)
+{
+    int ret;
+    HANDLE h;
+    PCCERT_CONTEXT cert = NULL;
+
+    h = CertOpenSystemStoreA(NULL, "Root");
+    if (h == NULL) {
+        flb_error("[TLS] Cannot open cert store: %i", GetLastError());
+        return -1;
+    }
+
+    while (cert = CertEnumCertificatesInStore(h, cert)) {
+        if (cert->dwCertEncodingType & X509_ASN_ENCODING) {
+            ret = mbedtls_x509_crt_parse(&ctx->ca_cert,
+                                         cert->pbCertEncoded,
+                                         cert->cbCertEncoded);
+            if (ret) {
+                flb_debug("[TLS] cannot parse a certificate. skipping...");
+            }
+        }
+    }
+
+    if (!CertCloseStore(h, 0)) {
+        flb_error("[TLS] Cannot close cert store: %i", GetLastError());
+        return -1;
+    }
+    return 0;
+}
+#else
+static int flb_tls_load_system_cert(struct flb_tls_context *ctx)
+{
+    int ret;
+    const char ca_path[] = "/etc/ssl/certs/";
+
+    ret = mbedtls_x509_crt_parse_path(&ctx->ca_cert, ca_path);
+    if (ret < 0) {
+        flb_error("[TLS] Cannot read certificates from %s", ca_path);
+        return -1;
+    }
+    return 0;
+}
+#endif
+
 struct flb_tls_context *flb_tls_context_new(int verify,
                                             int debug,
                                             char *ca_path,
@@ -110,14 +157,17 @@ struct flb_tls_context *flb_tls_context_new(int verify,
             goto error;
         }
     }
-    else {
-        if (!ca_path) {
-            ca_path = "/etc/ssl/certs/";
-        }
+    else if (ca_path) {
         ret = mbedtls_x509_crt_parse_path(&ctx->ca_cert, ca_path);
         if (ret < 0) {
             io_tls_error(ret);
             flb_error("[TLS] error reading certificates from %s", ca_path);
+            goto error;
+        }
+    }
+    else {
+        ret = flb_tls_load_system_cert(ctx);
+        if (ret < 0) {
             goto error;
         }
     }
@@ -175,16 +225,10 @@ static void flb_tls_debug(void *ctx, int level,
                           const char *file, int line,
                           const char *str)
 {
-    int len;
-    char *p;
-    ((void) level);
+    (void) level;
 
-    len = strlen(str);
-    p = (char *) str;
-    p[len - 1] = '\0';
-
-    flb_debug("[io_tls] %s %04d: %s", file + sizeof(FLB_SOURCE_DIR) - 1,
-              line, str);
+    flb_debug("[io_tls] %s %04d: %.*s", file + sizeof(FLB_SOURCE_DIR) - 1,
+              line, strlen(str), str);
 }
 
 struct flb_tls_session *flb_tls_session_new(struct flb_tls_context *ctx)
@@ -378,7 +422,7 @@ int flb_io_tls_net_read(struct flb_thread *th, struct flb_upstream_conn *u_conn,
 }
 
 int flb_io_tls_net_write(struct flb_thread *th, struct flb_upstream_conn *u_conn,
-                         void *data, size_t len, size_t *out_len)
+                         const void *data, size_t len, size_t *out_len)
 {
     int ret;
     size_t total = 0;

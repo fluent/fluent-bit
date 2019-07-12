@@ -1,0 +1,34 @@
+# YAML definition for travis-ci.com continuous integration.
+# See https://docs.travis-ci.com/user/languages/c
+
+# Container-based infrastructure (Linux)
+# * https://docs.travis-ci.com/user/migrating-from-legacy/#How-can-I-use-container-based-infrastructure%3F
+sudo:
+- false
+
+language: c++
+
+compiler:
+    - gcc
+    - clang
+
+env:
+    - CFLAGS="-std=c99 -pedantic" CONFIG=Debug          # C99
+    - CFLAGS="-std=c99 -pedantic" CONFIG=Release
+    - CFLAGS="-std=c11 -pedantic" CONFIG=Debug          # C11
+    - CFLAGS="-std=c11 -pedantic" CONFIG=Release
+    - CXXFLAGS="-std=c++11 -pedantic" CONFIG=Debug      # C++11
+    - CXXFLAGS="-std=c++11 -pedantic" CONFIG=Release
+    # Too old compilers on travis-ci.org for these:
+    #- CXXFLAGS="-std=c++14 -pedantic" CONFIG=Debug      # C++14
+    #- CXXFLAGS="-std=c++14 -pedantic" CONFIG=Release
+    #- CXXFLAGS="-std=c++17 -pedantic" CONFIG=Debug      # C++17
+    #- CXXFLAGS="-std=c++17 -pedantic" CONFIG=Release
+
+before_script:
+    - mkdir build
+    - cd build
+    - cmake -DCMAKE_BUILD_TYPE=$CONFIG -G 'Unix Makefiles' ..
+
+script:
+    - make VERBOSE=1

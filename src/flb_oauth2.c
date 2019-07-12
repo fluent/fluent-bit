@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -41,7 +42,7 @@
         flb_free(uri);                          \
     }
 
-static inline int key_cmp(char *str, int len, char *cmp) {
+static inline int key_cmp(const char *str, int len, const char *cmp) {
 
     if (strlen(cmp) != len) {
         return -1;
@@ -50,16 +51,16 @@ static inline int key_cmp(char *str, int len, char *cmp) {
     return strncasecmp(str, cmp, len);
 }
 
-static int parse_json_response(char *json_data, size_t json_size,
-                               struct flb_oauth2 *ctx)
+int flb_oauth2_parse_json_response(const char *json_data, size_t json_size,
+                                   struct flb_oauth2 *ctx)
 {
     int i;
     int ret;
     int key_len;
     int val_len;
     int tokens_size = 32;
-    char *key;
-    char *val;
+    const char *key;
+    const char *val;
     jsmn_parser parser;
     jsmntok_t *t;
     jsmntok_t *tokens;
@@ -130,7 +131,7 @@ static int parse_json_response(char *json_data, size_t json_size,
 }
 
 struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
-                                     char *auth_url, int expire_sec)
+                                     const char *auth_url, int expire_sec)
 {
     int ret;
     char *prot = NULL;
@@ -240,8 +241,8 @@ struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
 
 /* Append a key/value to the request body */
 int flb_oauth2_payload_append(struct flb_oauth2 *ctx,
-                              char *key_str, int key_len,
-                              char *val_str, int val_len)
+                              const char *key_str, int key_len,
+                              const char *val_str, int val_len)
 {
     int size;
     flb_sds_t tmp;
@@ -320,8 +321,13 @@ char *flb_oauth2_token_get(struct flb_oauth2 *ctx)
     /* Get Token and store it in the context */
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
-        flb_error("[oauth2] could not get an upstream connection");
-        return NULL;
+        ctx->u->flags |= FLB_IO_IPV6;
+        u_conn = flb_upstream_conn_get(ctx->u);
+        if (!u_conn) {
+            flb_error("[oauth2] could not get an upstream connection");
+            ctx->u->flags &= ~FLB_IO_IPV6;
+            return NULL;
+        }
     }
 
     /* Create HTTP client context */
@@ -361,7 +367,8 @@ char *flb_oauth2_token_get(struct flb_oauth2 *ctx)
 
     /* Extract token */
     if (c->resp.payload_size > 0 && c->resp.status == 200) {
-        ret = parse_json_response(c->resp.payload, c->resp.payload_size, ctx);
+        ret = flb_oauth2_parse_json_response(c->resp.payload,
+                                             c->resp.payload_size, ctx);
         if (ret == 0) {
             flb_info("[oauth2] access token from '%s:%s' retrieved",
                      ctx->host, ctx->port);

@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,12 +26,12 @@
 #include "kafka.h"
 #include "kafka_conf.h"
 
-struct flb_kafka_rest *flb_kafka_conf_create(struct flb_output_instance *ins,
-                                             struct flb_config *config)
+struct flb_kafka_rest *flb_kr_conf_create(struct flb_output_instance *ins,
+                                          struct flb_config *config)
 {
     long part;
     int io_flags = 0;
-    char *tmp;
+    const char *tmp;
     char *endptr;
     struct flb_upstream *upstream;
     struct flb_kafka_rest *ctx;
@@ -71,7 +72,7 @@ struct flb_kafka_rest *flb_kafka_conf_create(struct flb_output_instance *ins,
                                    &ins->tls);
     if (!upstream) {
         flb_error("[out_kafka_rest] cannot create Upstream context");
-        flb_kafka_conf_destroy(ctx);
+        flb_kr_conf_destroy(ctx);
         return NULL;
     }
     ctx->u = upstream;
@@ -183,7 +184,7 @@ struct flb_kafka_rest *flb_kafka_conf_create(struct flb_output_instance *ins,
     return ctx;
 }
 
-int flb_kafka_conf_destroy(struct flb_kafka_rest *ctx)
+int flb_kr_conf_destroy(struct flb_kafka_rest *ctx)
 {
     flb_free(ctx->topic);
     flb_free(ctx->http_user);

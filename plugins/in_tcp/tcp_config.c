@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,9 +28,9 @@
 struct flb_in_tcp_config *tcp_config_init(struct flb_input_instance *i_ins)
 {
     char tmp[16];
-    char *listen;
-    char *buffer_size;
-    char *chunk_size;
+    const char *listen;
+    const char *buffer_size;
+    const char *chunk_size;
     struct flb_in_tcp_config *config;
 
     config = flb_malloc(sizeof(struct flb_in_tcp_config));

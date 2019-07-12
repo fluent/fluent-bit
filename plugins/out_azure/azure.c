@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -44,9 +45,9 @@ static int cb_azure_init(struct flb_output_instance *ins,
     return 0;
 }
 
-int azure_format(void *in_buf, size_t in_bytes,
-                  char **out_buf, size_t *out_size,
-                  struct flb_azure *ctx)
+int azure_format(const void *in_buf, size_t in_bytes,
+                 char **out_buf, size_t *out_size,
+                 struct flb_azure *ctx)
 {
     int i;
     int array_size = 0;
@@ -68,7 +69,7 @@ int azure_format(void *in_buf, size_t in_bytes,
 
     /* Count number of items */
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, in_buf, in_bytes, &off)) {
+    while (msgpack_unpack_next(&result, in_buf, in_bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         array_size++;
     }
     msgpack_unpacked_destroy(&result);
@@ -80,7 +81,7 @@ int azure_format(void *in_buf, size_t in_bytes,
     msgpack_pack_array(&mp_pck, array_size);
 
     off = 0;
-    while (msgpack_unpack_next(&result, in_buf, in_bytes, &off)) {
+    while (msgpack_unpack_next(&result, in_buf, in_bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         root = result.data;
 
         /* Get timestamp */
@@ -233,11 +234,11 @@ static int build_headers(struct flb_http_client *c,
     return 0;
 }
 
-static void cb_azure_flush(void *data, size_t bytes,
-                            char *tag, int tag_len,
-                            struct flb_input_instance *i_ins,
-                            void *out_context,
-                            struct flb_config *config)
+static void cb_azure_flush(const void *data, size_t bytes,
+                           const char *tag, int tag_len,
+                           struct flb_input_instance *i_ins,
+                           void *out_context,
+                           struct flb_config *config)
 {
     int ret;
     size_t b_sent;

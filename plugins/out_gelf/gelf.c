@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -251,8 +252,8 @@ static int gelf_send_udp(struct flb_out_gelf_config *ctx, char *msg,
   return 0;
 }
 
-void cb_gelf_flush(void *data, size_t bytes,
-                   char *tag, int tag_len,
+void cb_gelf_flush(const void *data, size_t bytes,
+                   const char *tag, int tag_len,
                    struct flb_input_instance *i_ins,
                    void *out_context,
                    struct flb_config *config)
@@ -282,7 +283,7 @@ void cb_gelf_flush(void *data, size_t bytes,
 
     msgpack_unpacked_init(&result);
 
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         size = off - prev_off;
         prev_off = off;
         if (result.data.type != MSGPACK_OBJECT_ARRAY) {
@@ -349,7 +350,7 @@ int cb_gelf_init(struct flb_output_instance *ins, struct flb_config *config,
 {
     int ret;
     int fd;
-    char *tmp;
+    const char *tmp;
     struct flb_out_gelf_config *ctx = NULL;
 
 

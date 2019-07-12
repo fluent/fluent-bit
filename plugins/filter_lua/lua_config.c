@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,6 +18,7 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_log.h>
@@ -28,17 +30,16 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <unistd.h>
 #include <fcntl.h>
 
 struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
                                      struct flb_config *config)
 {
     int ret;
-    char *tmp;
+    const char *tmp;
     char *tmp_key;
     char buf[PATH_MAX];
-    char *script = NULL;
+    const char *script = NULL;
     (void) config;
     struct stat st;
     struct lua_filter *lf;

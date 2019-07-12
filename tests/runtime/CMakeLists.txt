@@ -18,12 +18,15 @@ endmacro()
 
 # Input Plugins
 if(FLB_OUT_LIB)
-  FLB_RT_TEST(FLB_IN_CPU           "in_cpu.c")
-  FLB_RT_TEST(FLB_IN_DUMMY         "in_dummy.c")
-  FLB_RT_TEST(FLB_IN_DISK          "in_disk.c")
+  # These plugins works only on Linux
+  if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+    FLB_RT_TEST(FLB_IN_CPU           "in_cpu.c")
+    FLB_RT_TEST(FLB_IN_DISK          "in_disk.c")
+    FLB_RT_TEST(FLB_IN_MEM           "in_mem.c")
+    FLB_RT_TEST(FLB_IN_PROC          "in_proc.c")
+  endif()
   FLB_RT_TEST(FLB_IN_HEAD          "in_head.c")
-  FLB_RT_TEST(FLB_IN_MEM           "in_mem.c")
-  FLB_RT_TEST(FLB_IN_PROC          "in_proc.c")
+  FLB_RT_TEST(FLB_IN_DUMMY         "in_dummy.c")
   FLB_RT_TEST(FLB_IN_RANDOM        "in_random.c")
 endif()
 
@@ -35,6 +38,7 @@ if(FLB_IN_LIB AND FLB_OUT_LIB)
   FLB_RT_TEST(FLB_FILTER_NEST       "filter_nest.c")
   FLB_RT_TEST(FLB_FILTER_KUBERNETES "filter_kubernetes.c")
   FLB_RT_TEST(FLB_FILTER_PARSER     "filter_parser.c")
+  FLB_RT_TEST(FLB_FILTER_MODIFY     "filter_modify.c")
 endif()
 
 
@@ -59,7 +63,7 @@ if(FLB_HAVE_SYSTEMD)
     set(SYSTEMD_LIB, "systemd")
 endif()
 
-set(FLB_TESTS_DATA_PATH ${CMAKE_CURRENT_SOURCE_DIR}/)
+set(FLB_TESTS_DATA_PATH ${CMAKE_CURRENT_SOURCE_DIR})
 configure_file(
   "${CMAKE_CURRENT_SOURCE_DIR}/flb_tests_runtime.h.in"
   "${CMAKE_CURRENT_SOURCE_DIR}/flb_tests_runtime.h"

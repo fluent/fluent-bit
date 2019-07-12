@@ -1,0 +1,106 @@
+{
+  "kind": "Pod",
+  "apiVersion": "v1",
+  "metadata": {
+    "name": "json-logs-no-keep",
+    "namespace": "default",
+    "selfLink": "/api/v1/namespaces/default/pods/json-logs",
+    "uid": "5ac76e2f-17d2-11e8-b34e-080027749cbc",
+    "resourceVersion": "21690",
+    "creationTimestamp": "2018-02-22T13:14:46Z",
+    "labels": {
+      "run": "json-logs-no-keep"
+    }
+  },
+  "spec": {
+    "volumes": [
+      {
+        "name": "default-token-b9r9j",
+        "secret": {
+          "secretName": "default-token-b9r9j",
+          "defaultMode": 420
+        }
+      }
+    ],
+    "containers": [
+      {
+        "name": "json-logs",
+        "image": "edsiper/json_logs",
+        "resources": {
+
+        },
+        "volumeMounts": [
+          {
+            "name": "default-token-b9r9j",
+            "readOnly": true,
+            "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount"
+          }
+        ],
+        "terminationMessagePath": "/dev/termination-log",
+        "terminationMessagePolicy": "File",
+        "imagePullPolicy": "IfNotPresent"
+      }
+    ],
+    "restartPolicy": "Never",
+    "terminationGracePeriodSeconds": 30,
+    "dnsPolicy": "ClusterFirst",
+    "serviceAccountName": "default",
+    "serviceAccount": "default",
+    "nodeName": "minikube",
+    "securityContext": {
+
+    },
+    "schedulerName": "default-scheduler"
+  },
+  "status": {
+    "phase": "Succeeded",
+    "conditions": [
+      {
+        "type": "Initialized",
+        "status": "True",
+        "lastProbeTime": null,
+        "lastTransitionTime": "2018-02-22T13:14:46Z",
+        "reason": "PodCompleted"
+      },
+      {
+        "type": "Ready",
+        "status": "False",
+        "lastProbeTime": null,
+        "lastTransitionTime": "2018-02-22T13:14:53Z",
+        "reason": "PodCompleted"
+      },
+      {
+        "type": "PodScheduled",
+        "status": "True",
+        "lastProbeTime": null,
+        "lastTransitionTime": "2018-02-22T13:14:46Z"
+      }
+    ],
+    "hostIP": "192.168.99.100",
+    "podIP": "172.17.0.4",
+    "startTime": "2018-02-22T13:14:46Z",
+    "containerStatuses": [
+      {
+        "name": "json-logs",
+        "state": {
+          "terminated": {
+            "exitCode": 0,
+            "reason": "Completed",
+            "startedAt": "2018-02-22T13:14:47Z",
+            "finishedAt": "2018-02-22T13:14:52Z",
+            "containerID": "docker://c053db7370be9c33d64677f9759863d850ebe35104069bec241cd1bb4674bd19"
+          }
+        },
+        "lastState": {
+
+        },
+        "ready": false,
+        "restartCount": 0,
+        "image": "edsiper/json_logs:latest",
+        "imageID": "docker-pullable://edsiper/json_logs@sha256:fa40faef982358c9f88a28ceee21524c0d70ea7038b312a4f67f396d4bb5cc91",
+        "containerID": "docker://c053db7370be9c33d64677f9759863d850ebe35104069bec241cd1bb4674bd19"
+      }
+    ],
+    "qosClass": "BestEffort"
+  }
+}

@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,7 +23,7 @@
 
 #include <msgpack.h>
 
-int flb_mp_count(void *data, size_t bytes);
-int flb_mp_count_zone(void *data, size_t bytes, msgpack_zone *zone);
+int flb_mp_count(const void *data, size_t bytes);
+int flb_mp_count_zone(const void *data, size_t bytes, msgpack_zone *zone);
 
 #endif

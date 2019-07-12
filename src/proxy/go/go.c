@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,6 +33,7 @@
 /*
  * Go Plugin phases
  * ================
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *
  *  1. FLBPluginRegister(context)
  *  2. Inside FLBPluginRegister, it needs to register it self using Fluent Bit API
@@ -40,6 +42,7 @@
  *      - name: shortname of the plugin.
  *      - description: plugin description.
  *      - type: input, output, filter, whatever.
+ *      - proxy: type of proxy e.g. GOLANG
  *      - flags: optional flags, not used by Go plugins at the moment.
  *
  *     this is done through Go Wrapper:
@@ -53,8 +56,11 @@ struct flbgo_output_plugin {
     char *name;
     void *api;
     void *o_ins;
+    struct flb_plugin_proxy_context *context;
+
     int (*cb_init)();
-    int (*cb_flush)(void *, size_t, char *);
+    int (*cb_flush)(const void *, size_t, const char *);
+    int (*cb_flush_ctx)(void *, const void *, size_t, char *);
     int (*cb_exit)(void *);
 };
 /*------------------------EOF------------------------------------------------*/
@@ -74,6 +80,7 @@ int proxy_go_register(struct flb_plugin_proxy *proxy,
      *
      * - FLBPluginInit
      * - FLBPluginFlush
+     * - FLBPluginFlushCtx
      * - FLBPluginExit
      *
      * note: registration callback FLBPluginRegister() is resolved by the
@@ -88,6 +95,7 @@ int proxy_go_register(struct flb_plugin_proxy *proxy,
     }
 
     plugin->cb_flush = flb_plugin_proxy_symbol(proxy, "FLBPluginFlush");
+    plugin->cb_flush_ctx = flb_plugin_proxy_symbol(proxy, "FLBPluginFlushCtx");
     plugin->cb_exit  = flb_plugin_proxy_symbol(proxy, "FLBPluginExit");
     plugin->name     = flb_strdup(def->name);
 
@@ -105,20 +113,45 @@ int proxy_go_init(struct flb_plugin_proxy *proxy)
     /* set the API */
     plugin->api   = proxy->api;
     plugin->o_ins = proxy->instance;
+    // In order to avoid having the whole instance as part of the ABI we
+    // copy the context pointer into the plugin.
+    plugin->context = ((struct flb_output_instance *)proxy->instance)->context;
 
     ret = plugin->cb_init(plugin);
-    if (ret == -1) {
-        fprintf(stderr, "[go proxy]: plugin failed to initialize\n");
+    if (ret <= 0) {
+        flb_error("[go proxy]: plugin '%s' failed to initialize",
+                  plugin->name);
         flb_free(plugin);
         return -1;
     }
 
-    return 0;
+    return ret;
 }
 
-int proxy_go_flush(struct flb_plugin_proxy *proxy, void *data, size_t size,
-                   char *tag)
+int proxy_go_flush(struct flb_plugin_proxy_context *ctx,
+                   const void *data, size_t size,
+                   const char *tag, int tag_len)
 {
-    struct flbgo_output_plugin *plugin = proxy->data;
-    return plugin->cb_flush(data, size, tag);
+    int ret;
+    char *buf;
+    struct flbgo_output_plugin *plugin = ctx->proxy->data;
+
+    /* temporal buffer for the tag */
+    buf = flb_malloc(tag_len + 1);
+    if (!buf) {
+        flb_errno();
+        return -1;
+    }
+
+    memcpy(buf, tag, tag_len);
+    buf[tag_len] = '\0';
+
+    if (plugin->cb_flush_ctx) {
+        ret = plugin->cb_flush_ctx(ctx->remote_context, data, size, buf);
+    }
+    else {
+        ret = plugin->cb_flush(data, size, buf);
+    }
+    flb_free(buf);
+    return ret;
 }

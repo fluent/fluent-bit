@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,17 +25,37 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_router.h>
+#include <onigmo.h>
 
 #include <string.h>
 
 /* wildcard support */
 /* tag and match should be null terminated. */
-int flb_router_match(const char *tag, const char *match)
+static inline int router_match(const char *tag, int tag_len,
+                               const char *match,
+                               void *match_r)
 {
-    int ret = 0;
+    int ret = FLB_FALSE;
     char *pos = NULL;
 
-    while (1) {
+#ifdef FLB_HAVE_REGEX
+    struct flb_regex *match_regex = match_r;
+    int n;
+    if (match_regex) {
+        n = onig_match(match_regex->regex,
+                       (const unsigned char *) tag,
+                       (const unsigned char *) tag + tag_len,
+                       (const unsigned char *) tag, 0,
+                       ONIG_OPTION_NONE);
+        if (n > 0) {
+            return 1;
+        }
+    }
+#else
+    (void) match_r;
+#endif
+
+    while (match) {
         if (*match == '*') {
             while (*++match == '*'){
                 /* skip successive '*' */
@@ -45,9 +66,15 @@ int flb_router_match(const char *tag, const char *match)
                 break;
             }
 
-            /* FIXME: we need to avoid recursive calls here */
             while ((pos = strchr(tag, (int) *match))) {
-                if (flb_router_match(pos, match) ){
+#ifndef FLB_HAVE_REGEX
+                if (router_match(pos, tag_len, match, NULL)) {
+#else
+                /* We don't need to pass the regex recursively,
+                 * we matched in order above
+                 */
+                if (router_match(pos, tag_len, match, NULL)) {
+#endif
                     ret = 1;
                     break;
                 }
@@ -69,6 +96,12 @@ int flb_router_match(const char *tag, const char *match)
     }
 
     return ret;
+}
+
+int flb_router_match(const char *tag, int tag_len, const char *match,
+                     void *match_regex)
+{
+    return router_match(tag, tag_len, match, match_regex);
 }
 
 /* Associate and input and output instances due to a previous match */
@@ -117,7 +150,11 @@ int flb_router_io_set(struct flb_config *config)
                                     struct flb_input_instance, _head);
         o_ins = mk_list_entry_first(&config->outputs,
                                     struct flb_output_instance, _head);
-        if (!o_ins->match) {
+        if (!o_ins->match
+#ifdef FLB_HAVE_REGEX
+            && !o_ins->match_regex
+#endif
+            ) {
             flb_debug("[router] default match rule %s:%s",
                       i_ins->name, o_ins->name);
             o_ins->match = flb_strdup("*");
@@ -133,16 +170,6 @@ int flb_router_io_set(struct flb_config *config)
             continue;
         }
 
-        /*
-         * Pre-routing rules cannot exists for a plugin which have dynamic
-         * tags.
-         */
-        if (i_ins->flags & FLB_INPUT_DYN_TAG) {
-            flb_debug("[router] input=%s 'DYNAMIC TAG'",
-                      i_ins->name);
-            continue;
-        }
-
         if (!i_ins->tag) {
             flb_warn("[router] NO tag for %s input instance",
                      i_ins->name);
@@ -154,13 +181,23 @@ int flb_router_io_set(struct flb_config *config)
         /* Try to find a match with output instances */
         mk_list_foreach(o_head, &config->outputs) {
             o_ins = mk_list_entry(o_head, struct flb_output_instance, _head);
-            if (!o_ins->match) {
+            if (!o_ins->match
+#ifdef FLB_HAVE_REGEX
+                && !o_ins->match_regex
+#endif
+                ) {
                 flb_warn("[router] NO match for %s output instance",
                           o_ins->name);
                 continue;
             }
 
-            if (flb_router_match(i_ins->tag, o_ins->match)) {
+            if (flb_router_match(i_ins->tag, i_ins->tag_len, o_ins->match
+#ifdef FLB_HAVE_REGEX
+                , o_ins->match_regex
+#else
+                , NULL
+#endif
+            )) {
                 flb_debug("[router] match rule %s:%s",
                           i_ins->name, o_ins->name);
                 flb_router_connect(i_ins, o_ins);

@@ -1,6 +1,13 @@
-SUMMARY = "Data Collector tool for Embedded Linux"
-DESCRIPTION = "Fluent Bit is a data collector tool for Embedded Linux, \
-it support different kind of inputs and built-in metrics.              \
+# Fluent Bit - Yocto / Bitbake
+# ============================
+# The following Bitbake recipe aims to be used as a reference for testing
+# or development purposes. This recipe takes Fluent Bit from GIT master
+# which is under active development and not suggested for production.
+
+SUMMARY = "Fast Log processor and Forwarder"
+DESCRIPTION = "Fluent Bit is a data collector, processor and  \
+forwarder for Linux. It supports several input sources and \
+backends (destinations) for your data. \
 "
 
 HOMEPAGE = "http://fluentbit.io"
@@ -10,13 +17,39 @@ LICENSE = "Apache-2.0"
 LIC_FILES_CHKSUM = "file://LICENSE;md5=2ee41112a44fe7014dce33e26468ba93"
 SECTION = "net"
 
-SRC_URI = "git://github.com/fluent/fluent-bit.git"
-
 PR = "r0"
-PV = "0.1.0"
+PV = "1.1-git"
+
+SRCREV = "${AUTOREV}"
+SRC_URI = "git://github.com/fluent/fluent-bit"
 
 S = "${WORKDIR}/git"
-SRCREV = "master"
-EXTRA_OECMAKE = "-DFLB_XBEE=1"
+DEPENDS = "zlib"
+INSANE_SKIP_${PN}-dev += "dev-elf"
 
-inherit cmake
+# Use CMake 'Unix Makefiles' generator
+OECMAKE_GENERATOR ?= "Unix Makefiles"
+
+# Fluent Bit build options
+# ========================
+
+# Host related setup
+EXTRA_OECMAKE += "-DGNU_HOST=${HOST_SYS} "
+
+# Disable LuaJIT and filter_lua support
+EXTRA_OECMAKE += "-DFLB_LUAJIT=Off -DFLB_FILTER_LUA=Off "
+
+# Disable Library and examples
+EXTRA_OECMAKE += "-DFLB_SHARED_LIB=Off -DFLB_EXAMPLES=Off "
+
+# Kafka Output plugin (disabled by default): note that when
+# enabling Kafka output plugin, the backend library librdkafka
+# requires 'openssl' as a dependency.
+#
+# DEPENDS += "openssl "
+# EXTRA_OECMAKE += "-DFLB_OUT_KAFKA=On "
+
+inherit cmake systemd
+
+SYSTEMD_SERVICE_${PN} = "td-agent-bit.service"
+TARGET_CC_ARCH_append = " ${SELECTED_OPTIMIZATION}"

@@ -6,6 +6,8 @@ set(UNIT_TESTS_FILES
   pack.c
   pipe.c
   sds.c
+  sha512.c
+  router.c
   parser.c
   network.c
   unit_sizes.c
@@ -13,6 +15,13 @@ set(UNIT_TESTS_FILES
   http_client.c
   utils.c
   )
+
+if(FLB_STREAM_PROCESSOR)
+  set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    stream_processor.c
+    )
+endif()
 
 if(FLB_METRICS)
   set(UNIT_TESTS_FILES
@@ -60,6 +69,10 @@ foreach(source_file ${UNIT_TESTS_FILES})
       target_link_libraries(${source_file_we} libjemalloc ${CMAKE_THREAD_LIBS_INIT})
     else()
       target_link_libraries(${source_file_we} ${CMAKE_THREAD_LIBS_INIT})
+    endif()
+
+    if(FLB_STREAM_PROCESSOR)
+      target_link_libraries(${source_file_we} flb-sp)
     endif()
 
     target_link_libraries(${source_file_we} fluent-bit-static)

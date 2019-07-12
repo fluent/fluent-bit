@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -35,23 +36,30 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_plugin_proxy.h>
 
-#define protcmp(a, b)  strncasecmp(a, b, strlen(a))
-
 /* Validate the the output address protocol */
-static int check_protocol(char *prot, char *output)
+static int check_protocol(const char *prot, const char *output)
 {
     int len;
+    char *p;
 
-    len = strlen(prot);
-    if (len > strlen(output)) {
+    p = strstr(output, "://");
+    if (p && p != output) {
+        len = p - output;
+    }
+    else {
+        len = strlen(output);
+    }
+
+    if (strlen(prot) != len) {
         return 0;
     }
 
-    if (protcmp(prot, output) != 0) {
-        return 0;
+    /* Output plugin match */
+    if (strncasecmp(prot, output, len) == 0) {
+        return 1;
     }
 
-    return 1;
+    return 0;
 }
 
 /* Invoke pre-run call for the output plugin */
@@ -107,6 +115,10 @@ static void flb_output_free_properties(struct flb_output_instance *ins)
 
 int flb_output_instance_destroy(struct flb_output_instance *ins)
 {
+    if (ins->alias) {
+        flb_free(ins->alias);
+    }
+
     /* Remove URI context */
     if (ins->host.uri) {
         flb_uri_destroy(ins->host.uri);
@@ -115,6 +127,12 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
     flb_free(ins->host.name);
     flb_free(ins->host.address);
     flb_free(ins->match);
+
+#ifdef FLB_HAVE_REGEX
+        if (ins->match_regex) {
+            flb_regex_destroy(ins->match_regex);
+        }
+#endif
 
 #ifdef FLB_HAVE_TLS
     if (ins->flags & FLB_IO_TLS) {
@@ -165,21 +183,17 @@ void flb_output_exit(struct flb_config *config)
     }
 }
 
-static inline int instance_id(struct flb_output_plugin *p,
-                              struct flb_config *config) \
+static inline int instance_id(struct flb_config *config)
 {
-    int c = 0;
-    struct mk_list *head;
     struct flb_output_instance *entry;
 
-    mk_list_foreach(head, &config->outputs) {
-        entry = mk_list_entry(head, struct flb_output_instance, _head);
-        if (entry->p == p) {
-            c++;
-        }
+    if (mk_list_size(&config->outputs) == 0) {
+        return 0;
     }
 
-    return c;
+    entry = mk_list_entry_last(&config->filters, struct flb_output_instance,
+                               _head);
+    return (entry->id + 1);
 }
 
 /*
@@ -187,7 +201,7 @@ static inline int instance_id(struct flb_output_plugin *p,
  * proper type and if valid, populate the global config.
  */
 struct flb_output_instance *flb_output_new(struct flb_config *config,
-                                           char *output, void *data)
+                                           const char *output, void *data)
 {
     int ret = -1;
     int mask_id;
@@ -226,7 +240,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     /* Create and load instance */
     instance = flb_calloc(1, sizeof(struct flb_output_instance));
     if (!instance) {
-        perror("malloc");
+        flb_errno();
         return NULL;
     }
     instance->config = config;
@@ -236,6 +250,8 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
      * output instance that is used later to set in an 'unsigned 64
      * bit number' where a specific task (buffer/records) should be
      * routed.
+     *
+     * note: This value is different than instance id.
      */
     if (mask_id == 0) {
         instance->mask_id = 1;
@@ -244,22 +260,39 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         instance->mask_id = (mask_id * 2);
     }
 
+    /* Retrieve an instance id for the output instance */
+    instance->id = instance_id(config);
+
     /* format name (with instance id) */
     snprintf(instance->name, sizeof(instance->name) - 1,
-             "%s.%i", plugin->name, instance_id(plugin, config));
+             "%s.%i", plugin->name, instance->id);
     instance->p = plugin;
 
     if (plugin->type == FLB_OUTPUT_PLUGIN_CORE) {
         instance->context = NULL;
     }
     else {
-        instance->context = plugin->proxy;
+        struct flb_plugin_proxy_context *ctx;
+
+        ctx = flb_calloc(1, sizeof(struct flb_plugin_proxy_context));
+        if (!ctx) {
+            perror("calloc");
+            return NULL;
+        }
+
+        ctx->proxy = plugin->proxy;
+
+        instance->context = ctx;
     }
 
+    instance->alias       = NULL;
     instance->flags       = instance->p->flags;
     instance->data        = data;
     instance->upstream    = NULL;
     instance->match       = NULL;
+#ifdef FLB_HAVE_REGEX
+    instance->match_regex = NULL;
+#endif
     instance->retry_limit = 1;
     instance->host.name   = NULL;
 
@@ -298,23 +331,10 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     mk_list_init(&instance->properties);
     mk_list_add(&instance->_head, &config->outputs);
 
-    /* Metrics */
-#ifdef FLB_HAVE_METRICS
-    instance->metrics = flb_metrics_create(instance->name);
-    if (instance->metrics) {
-        flb_metrics_add(FLB_METRIC_OUT_OK_RECORDS, "proc_records", instance->metrics);
-        flb_metrics_add(FLB_METRIC_OUT_OK_BYTES, "proc_bytes", instance->metrics);
-        flb_metrics_add(FLB_METRIC_OUT_ERROR, "errors", instance->metrics);
-        flb_metrics_add(FLB_METRIC_OUT_RETRY, "retries", instance->metrics);
-        flb_metrics_add(FLB_METRIC_OUT_RETRY_FAILED,
-                        "retries_failed", instance->metrics);
-    }
-#endif
-
     return instance;
 }
 
-static inline int prop_key_check(char *key, char *kv, int k_len)
+static inline int prop_key_check(const char *key, const char *kv, int k_len)
 {
     int len;
 
@@ -327,7 +347,8 @@ static inline int prop_key_check(char *key, char *kv, int k_len)
 }
 
 /* Override a configuration property for the given input_instance plugin */
-int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
+int flb_output_set_property(struct flb_output_instance *out,
+                            const char *k, const char *v)
 {
     int len;
     char *tmp;
@@ -345,6 +366,15 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
     /* Check if the key is a known/shared property */
     if (prop_key_check("match", k, len) == 0) {
         out->match = tmp;
+    }
+#ifdef FLB_HAVE_REGEX
+    else if (prop_key_check("match_regex", k, len) == 0) {
+        out->match_regex = flb_regex_create(tmp);
+        flb_free(tmp);
+    }
+#endif
+    else if (prop_key_check("alias", k, len) == 0 && tmp) {
+        out->alias = tmp;
     }
     else if (prop_key_check("host", k, len) == 0) {
         out->host.name = tmp;
@@ -442,7 +472,7 @@ int flb_output_set_property(struct flb_output_instance *out, char *k, char *v)
 }
 
 /* Configure a default hostname and TCP port if they are not set */
-void flb_output_net_default(char *host, int port,
+void flb_output_net_default(const char *host, const int port,
                             struct flb_output_instance *o_ins)
 {
     /* Set default network configuration */
@@ -454,7 +484,17 @@ void flb_output_net_default(char *host, int port,
     }
 }
 
-char *flb_output_get_property(char *key, struct flb_output_instance *o_ins)
+/* Return an instance name or alias */
+const char *flb_output_name(struct flb_output_instance *in)
+{
+    if (in->alias) {
+        return in->alias;
+    }
+
+    return in->name;
+}
+
+const char *flb_output_get_property(const char *key, struct flb_output_instance *o_ins)
 {
     return flb_config_prop_get(key, &o_ins->properties);
 }
@@ -463,6 +503,7 @@ char *flb_output_get_property(char *key, struct flb_output_instance *o_ins)
 int flb_output_init(struct flb_config *config)
 {
     int ret;
+    const char *name;
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_output_instance *ins;
@@ -478,10 +519,33 @@ int flb_output_init(struct flb_config *config)
         ins = mk_list_entry(head, struct flb_output_instance, _head);
         p = ins->p;
 
+        /* Metrics */
+#ifdef FLB_HAVE_METRICS
+        /* Get name or alias for the instance */
+        name = flb_output_name(ins);
+
+        ins->metrics = flb_metrics_create(name);
+        if (ins->metrics) {
+            flb_metrics_add(FLB_METRIC_OUT_OK_RECORDS,
+                            "proc_records", ins->metrics);
+            flb_metrics_add(FLB_METRIC_OUT_OK_BYTES,
+                            "proc_bytes", ins->metrics);
+            flb_metrics_add(FLB_METRIC_OUT_ERROR,
+                            "errors", ins->metrics);
+            flb_metrics_add(FLB_METRIC_OUT_RETRY,
+                            "retries", ins->metrics);
+            flb_metrics_add(FLB_METRIC_OUT_RETRY_FAILED,
+                        "retries_failed", ins->metrics);
+        }
+#endif
+
 #ifdef FLB_HAVE_PROXY_GO
-        /* Proxy plugins have heir own initialization */
+        /* Proxy plugins have their own initialization */
         if (p->type == FLB_OUTPUT_PLUGIN_PROXY) {
-            flb_plugin_proxy_init(p->proxy, ins, config);
+            ret = flb_plugin_proxy_init(p->proxy, ins, config);
+            if (ret == -1) {
+                return -1;
+            }
             continue;
         }
 #endif
@@ -511,14 +575,6 @@ int flb_output_init(struct flb_config *config)
             return -1;
         }
     }
-
-    /* Iterate list of proxies plugins */
-    mk_list_foreach(head, &config->proxies) {
-        //proxy = mk_list_entry(head, struct flb_plugin_proxy, _head);
-        //flb_plugin_proxy_init(proxy, config);
-        //printf("load proxy name = %s\n", proxy->name);
-    }
-
 
     return 0;
 }

@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,7 +23,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_output.h>
-
+#include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_http_server.h>
 #include <msgpack.h>
 
@@ -30,8 +31,7 @@
 static void cb_plugins(mk_request_t *request, void *data)
 {
     int len;
-    char *out_buf;
-    size_t out_size;
+    flb_sds_t out_buf;
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
     struct mk_list *head;
@@ -91,12 +91,12 @@ static void cb_plugins(mk_request_t *request, void *data)
     }
 
     /* Export to JSON */
-    flb_msgpack_raw_to_json_str(mp_sbuf.data, mp_sbuf.size,
-                                &out_buf, &out_size);
+    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     mk_http_status(request, 200);
-    mk_http_send(request, out_buf, out_size, NULL);
+    mk_http_send(request,
+                 out_buf, flb_sds_len(out_buf), NULL);
     mk_http_done(request);
 
     flb_free(out_buf);

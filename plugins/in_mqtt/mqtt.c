@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -103,6 +104,7 @@ static int in_mqtt_exit(void *data, struct flb_config *config)
     (void) *config;
     struct flb_in_mqtt_config *ctx = data;
 
+    mqtt_conn_destroy_all(ctx);
     mqtt_config_free(ctx);
 
     return 0;

@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,6 +28,7 @@
 #include <systemd/sd-journal.h>
 
 /* return values */
+#define FLB_SYSTEMD_ERROR   -1 /* Systemd journal file read error. */
 #define FLB_SYSTEMD_NONE     0
 #define FLB_SYSTEMD_OK       1
 #define FLB_SYSTEMD_MORE     2
@@ -35,16 +37,18 @@
 /* constants */
 #define FLB_SYSTEMD_UNIT     "_SYSTEMD_UNIT"
 #define FLB_SYSTEMD_UNKNOWN  "unknown"
-#define FLB_SYSTEND_ENTRIES  5000
+#define FLB_SYSTEMD_MAX_FIELDS   8000
+#define FLB_SYSTEMD_MAX_ENTRIES  5000
 
 /* Input configuration & context */
 struct flb_systemd_config {
     /* Journal */
-    int fd;          /* Journal file descriptor */
-    sd_journal *j;   /* Journal context */
+    int fd;              /* Journal file descriptor */
+    sd_journal *j;       /* Journal context */
     char *cursor;
     char *path;
     int pending_records;
+    int read_from_tail;  /* read_from_tail option */
 
     /* Internal */
     int ch_manager[2];         /* pipe: channel manager    */
@@ -52,7 +56,8 @@ struct flb_systemd_config {
     int coll_fd_journal;       /* journal, events mode     */
     int coll_fd_pending;       /* pending records          */
     int dynamic_tag;
-    int max_entries;
+    int max_fields;            /* max number of fields per record */
+    int max_entries;           /* max number of records per iteration */
     int strip_underscores;
     struct flb_sqldb *db;
     struct flb_input_instance *i_ins;

@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,29 +34,37 @@
 
 /* cb_collect callback */
 static int in_dummy_collect(struct flb_input_instance *i_ins,
-                             struct flb_config *config, void *in_context)
+                            struct flb_config *config, void *in_context)
 {
     size_t off = 0;
     size_t start = 0;
-    msgpack_unpacked result;
     struct flb_in_dummy_config *ctx = in_context;
-    char* pack = ctx->ref_msgpack;
+    char *pack = ctx->ref_msgpack;
     int pack_size = ctx->ref_msgpack_size;
+    msgpack_unpacked result;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
 
     msgpack_unpacked_init(&result);
-    flb_input_buf_write_start(i_ins);
 
-    while (msgpack_unpack_next(&result, pack, pack_size, &off)) {
+
+    /* Initialize local msgpack buffer */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    while (msgpack_unpack_next(&result, pack, pack_size, &off) == MSGPACK_UNPACK_SUCCESS) {
         if (result.data.type == MSGPACK_OBJECT_MAP) {
             /* { map => val, map => val, map => val } */
-            msgpack_pack_array(&i_ins->mp_pck, 2);
-            flb_pack_time_now(&i_ins->mp_pck);
-            msgpack_pack_str_body(&i_ins->mp_pck, pack + start, off - start);
+            msgpack_pack_array(&mp_pck, 2);
+            flb_pack_time_now(&mp_pck);
+            msgpack_pack_str_body(&mp_pck, pack + start, off - start);
         }
         start = off;
     }
-    flb_input_buf_write_end(i_ins);
     msgpack_unpacked_destroy(&result);
+
+    flb_input_chunk_append_raw(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    msgpack_sbuffer_destroy(&mp_sbuf);
 
     return 0;
 }
@@ -73,7 +82,7 @@ static int configure(struct flb_in_dummy_config *ctx,
                      struct flb_input_instance *in,
                                  struct timespec *tm)
 {
-    char *str = NULL;
+    const char *str = NULL;
     int root_type;
     int  ret = -1;
     long val  = 0;

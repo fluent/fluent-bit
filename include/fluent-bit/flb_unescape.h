@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,7 +21,7 @@
 #ifndef FLB_UNESCAPE_H
 #define FLB_UNESCAPE_H
 
-int flb_unescape_string(char *buf, int buf_len, char **unesc_buf);
-int flb_unescape_string_utf8(char *in_buf, int sz, char *out_buf);
+int flb_unescape_string(const char *buf, int buf_len, char **unesc_buf);
+int flb_unescape_string_utf8(const char *in_buf, int sz, char *out_buf);
 
 #endif

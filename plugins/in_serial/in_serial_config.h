@@ -2,6 +2,7 @@
 
 /*  Serial input plugin for Fluent Bit
  *  ==================================
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2016 Takeshi HASEGAWA
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
@@ -38,12 +39,12 @@ struct flb_in_serial_config {
 
     /* config */
     int min_bytes;
-    char *file;
-    char *bitrate;
+    const char *file;
+    const char *bitrate;
 
     /* separator */
     int sep_len;
-    char *separator;
+    const char *separator;
 
     /* Incoming format: JSON only for now */
     int format;

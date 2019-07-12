@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,6 +19,7 @@
  */
 
 #include <fluent-bit/flb_info.h>
+#include <monkey/mk_core.h>
 
 #ifdef FLB_HAVE_METRICS
 
@@ -27,6 +29,8 @@
 /* Metrics IDs for general purpose (used by core and Plugins */
 #define FLB_METRIC_N_RECORDS   0
 #define FLB_METRIC_N_BYTES     1
+#define FLB_METRIC_N_DROPPED   2
+#define FLB_METRIC_N_ADDED     3
 
 #define FLB_METRIC_OUT_OK_RECORDS     10
 #define FLB_METRIC_OUT_OK_BYTES       11
@@ -49,9 +53,11 @@ struct flb_metrics {
     struct mk_list list;   /* Head of metrics list */
 };
 
-struct flb_metrics *flb_metrics_create(char *title);
+struct flb_metrics *flb_metrics_create(const char *title);
+int flb_metrics_title(const char *title, struct flb_metrics *metrics);
+
 struct flb_metric *flb_metrics_get_id(int id, struct flb_metrics *metrics);
-int flb_metrics_add(int id, char *title, struct flb_metrics *metrics);
+int flb_metrics_add(int id, const char *title, struct flb_metrics *metrics);
 int flb_metrics_sum(int id, size_t val, struct flb_metrics *metrics);
 int flb_metrics_print(struct flb_metrics *metrics);
 int flb_metrics_dump_values(char **out_buf, size_t *out_size,

@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,7 +29,7 @@ int flb_tail_dmode_create(struct flb_tail_config *ctx,
                           struct flb_input_instance *i_ins,
                           struct flb_config *config)
 {
-    char *tmp;
+    const char *tmp;
 
     if (ctx->multiline == FLB_TRUE) {
         flb_error("[in_tail] Docker mode cannot be enabled when multiline is enabled");
@@ -254,7 +255,7 @@ void flb_tail_dmode_flush(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
     size_t repl_line_len = 0;
     void *out_buf = NULL;
     size_t out_size;
-    struct flb_time out_time = {};
+    struct flb_time out_time = {0};
     time_t now = time(NULL);
 
     if (flb_sds_len(file->dmode_lastline) == 0) {
@@ -330,11 +331,11 @@ int flb_tail_dmode_pending_flush(struct flb_input_instance *i_ins,
 
         flb_tail_dmode_flush(&mp_sbuf, &mp_pck, file, ctx);
 
-        flb_input_dyntag_append_raw(i_ins,
-                                    file->tag_buf,
-                                    file->tag_len,
-                                    mp_sbuf.data,
-                                    mp_sbuf.size);
+        flb_input_chunk_append_raw(i_ins,
+                                   file->tag_buf,
+                                   file->tag_len,
+                                   mp_sbuf.data,
+                                   mp_sbuf.size);
         msgpack_sbuffer_destroy(&mp_sbuf);
     }
 

@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,6 +23,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_http_client.h>
 #include <msgpack.h>
 
@@ -32,17 +34,18 @@
  * Convert the internal Fluent Bit data representation to the required
  * one by Kafka REST Proxy.
  */
-static char *kafka_rest_format(void *data, size_t bytes,
-                               char *tag, int tag_len, size_t *out_size,
-                               struct flb_kafka_rest *ctx)
+static flb_sds_t kafka_rest_format(const void *data, size_t bytes,
+                                   const char *tag, int tag_len,
+                                   size_t *out_size,
+                                   struct flb_kafka_rest *ctx)
 {
     int i;
-    int ret;
     int len;
     int arr_size = 0;
     int map_size;
     size_t s;
     size_t off = 0;
+    flb_sds_t out_buf;
     char time_formatted[256];
     msgpack_unpacked result;
     msgpack_object root;
@@ -50,8 +53,6 @@ static char *kafka_rest_format(void *data, size_t bytes,
     msgpack_object *obj;
     msgpack_object key;
     msgpack_object val;
-    char *json_buf;
-    size_t json_size;
     struct tm tm;
     struct flb_time tms;
     msgpack_sbuffer mp_sbuf;
@@ -65,7 +66,7 @@ static char *kafka_rest_format(void *data, size_t bytes,
     msgpack_unpacked_init(&result);
 
     /* Count number of entries */
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         arr_size++;
     }
     msgpack_unpacked_destroy(&result);
@@ -80,7 +81,7 @@ static char *kafka_rest_format(void *data, size_t bytes,
 
     /* Iterate and compose array content */
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         root = result.data;
 
         map = root.via.array.ptr[1];
@@ -156,15 +157,14 @@ static char *kafka_rest_format(void *data, size_t bytes,
     msgpack_unpacked_destroy(&result);
 
     /* Convert to JSON */
-    ret = flb_msgpack_raw_to_json_str(mp_sbuf.data, mp_sbuf.size,
-                                      &json_buf, &json_size);
+    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
-    if (ret != 0) {
+    if (!out_buf) {
         return NULL;
     }
 
-    *out_size = json_size;
-    return json_buf;
+    *out_size = flb_sds_len(out_buf);
+    return out_buf;
 }
 
 static int cb_kafka_init(struct flb_output_instance *ins,
@@ -176,7 +176,7 @@ static int cb_kafka_init(struct flb_output_instance *ins,
     (void) data;
     struct flb_kafka_rest *ctx;
 
-    ctx = flb_kafka_conf_create(ins, config);
+    ctx = flb_kr_conf_create(ins, config);
     if (!ctx) {
         flb_error("[out_kafka_rest] cannot initialize plugin");
         return -1;
@@ -189,14 +189,14 @@ static int cb_kafka_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static void cb_kafka_flush(void *data, size_t bytes,
-                           char *tag, int tag_len,
+static void cb_kafka_flush(const void *data, size_t bytes,
+                           const char *tag, int tag_len,
                            struct flb_input_instance *i_ins,
                            void *out_context,
                            struct flb_config *config)
 {
     int ret;
-    char *js;
+    flb_sds_t js;
     size_t js_size;
     size_t b_sent;
     struct flb_http_client *c;
@@ -258,23 +258,23 @@ static void cb_kafka_flush(void *data, size_t bytes,
 
     /* Cleanup */
     flb_http_client_destroy(c);
-    flb_free(js);
+    flb_sds_destroy(js);
     flb_upstream_conn_release(u_conn);
     FLB_OUTPUT_RETURN(FLB_OK);
 
     /* Issue a retry */
  retry:
     flb_http_client_destroy(c);
-    flb_free(js);
+    flb_sds_destroy(js);
     flb_upstream_conn_release(u_conn);
     FLB_OUTPUT_RETURN(FLB_RETRY);
 }
 
-int cb_kafka_exit(void *data, struct flb_config *config)
+static int cb_kafka_exit(void *data, struct flb_config *config)
 {
     struct flb_kafka_rest *ctx = data;
 
-    flb_kafka_conf_destroy(ctx);
+    flb_kr_conf_destroy(ctx);
     return 0;
 }
 

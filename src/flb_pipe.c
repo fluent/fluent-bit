@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,18 +27,21 @@
  * This file aims to wrap around the required backend calls depending
  * of the operating system.
  *
- * This file provides 3 interfaces:
+ * This file provides 4 interfaces:
  *
- * - flb_pipe_create : create a pair of connected file descriptors or sockets.
- * - flb_pipe_destroy: destroy a pair of connected fds or sockets.
- * - flb_pipe_close  : close individual end of a pipe.
+ * - flb_pipe_create          : create a pair of connected file descriptors or sockets.
+ * - flb_pipe_destroy         : destroy a pair of connected fds or sockets.
+ * - flb_pipe_close           : close individual end of a pipe.
+ * - flb_pipe_set_nonblocking : make a socket nonblocking
  *
  * we need to have a 'closer' handler because for Windows a file descriptor
  * is not a socket.
  */
 
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_time.h>
 
 #ifdef _WIN32
 
@@ -70,11 +74,15 @@ int flb_pipe_close(flb_pipefd_t fd)
     return evutil_closesocket(fd);
 }
 
+int flb_pipe_set_nonblocking(flb_pipefd_t fd)
+{
+    return evutil_make_socket_nonblocking(fd);
+}
 #else
 /* All other flavors of Unix/BSD are OK */
 
-#include <unistd.h>
 #include <stdint.h>
+#include <fcntl.h>
 
 int flb_pipe_create(flb_pipefd_t pipefd[2])
 {
@@ -92,6 +100,15 @@ int flb_pipe_close(flb_pipefd_t fd)
     return close(fd);
 }
 
+int flb_pipe_set_nonblocking(flb_pipefd_t fd)
+{
+    int flags = fcntl(fd, F_GETFL);
+    if (flags < 0)
+        return -1;
+    if (flags & O_NONBLOCK)
+        return 0;
+    return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+}
 #endif
 
 /* Blocking read until receive 'count' bytes */
@@ -101,15 +118,15 @@ ssize_t flb_pipe_read_all(int fd, void *buf, size_t count)
     size_t total = 0;
 
     do {
-        bytes = flb_pipe_r(fd, buf + total, count - total);
+        bytes = flb_pipe_r(fd, (char *) buf + total, count - total);
         if (bytes == -1) {
-            if (errno == EAGAIN) {
+            if (FLB_PIPE_WOULDBLOCK()) {
                 /*
                  * This could happen, since this function goal is not to
                  * return until all data have been read, just sleep a little
                  * bit (0.05 seconds)
                  */
-                usleep(50000);
+                flb_time_msleep(50);
                 continue;
             }
         }
@@ -126,21 +143,21 @@ ssize_t flb_pipe_read_all(int fd, void *buf, size_t count)
 }
 
 /* Blocking write until send 'count bytes */
-ssize_t flb_pipe_write_all(int fd, void *buf, size_t count)
+ssize_t flb_pipe_write_all(int fd, const void *buf, size_t count)
 {
     ssize_t bytes;
     size_t total = 0;
 
     do {
-        bytes = flb_pipe_w(fd, buf + total, count - total);
+        bytes = flb_pipe_w(fd, (const char *) buf + total, count - total);
         if (bytes == -1) {
-            if (errno == EAGAIN) {
+            if (FLB_PIPE_WOULDBLOCK()) {
                 /*
                  * This could happen, since this function goal is not to
                  * return until all data have been read, just sleep a little
                  * bit (0.05 seconds)
                  */
-                usleep(50000);
+                flb_time_msleep(50);
                 continue;
             }
         }

@@ -1,10 +1,10 @@
-FROM launcher.gcr.io/google/debian9 as builder
+FROM debian:stretch as builder
 
 # Fluent Bit version
-ENV FLB_MAJOR 0
-ENV FLB_MINOR 15
+ENV FLB_MAJOR 1
+ENV FLB_MINOR 3
 ENV FLB_PATCH 0
-ENV FLB_VERSION 0.15.0
+ENV FLB_VERSION 1.3.0
 
 ENV DEBIAN_FRONTEND noninteractive
 
@@ -20,7 +20,9 @@ RUN apt-get update && \
       libsasl2-dev \
       pkg-config \
       libsystemd-dev \
-      zlib1g-dev
+      zlib1g-dev \
+      flex \
+      bison
 
 RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log /tmp/src/
 COPY . /tmp/src/
@@ -48,6 +50,7 @@ COPY conf/fluent-bit.conf \
      conf/parsers_extra.conf \
      conf/parsers_openstack.conf \
      conf/parsers_cinder.conf \
+     conf/plugins.conf \
      /fluent-bit/etc/
 
 FROM gcr.io/distroless/cc

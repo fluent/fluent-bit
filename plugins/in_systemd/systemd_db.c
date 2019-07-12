@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -41,7 +42,8 @@ static int cb_cursor_check(void *data, int argc, char **argv, char **cols)
     return 0;
 }
 
-struct flb_sqldb *flb_systemd_db_open(char *path, struct flb_input_instance *in,
+struct flb_sqldb *flb_systemd_db_open(const char *path,
+                                      struct flb_input_instance *in,
                                       struct flb_config *config)
 {
     int ret;
@@ -70,7 +72,7 @@ int flb_systemd_db_close(struct flb_sqldb *db)
     return 0;
 }
 
-int flb_systemd_db_set_cursor(struct flb_systemd_config *ctx, char *cursor)
+int flb_systemd_db_set_cursor(struct flb_systemd_config *ctx, const char *cursor)
 {
     int ret;
     char query[PATH_MAX];

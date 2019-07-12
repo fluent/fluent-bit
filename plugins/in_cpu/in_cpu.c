@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -163,7 +164,7 @@ static int in_cpu_init(struct flb_input_instance *in,
     int ret;
     struct flb_in_cpu_config *ctx;
     (void) data;
-    char *pval = NULL;
+    const char *pval = NULL;
 
     /* Allocate space for the configuration */
     ctx = flb_calloc(1, sizeof(struct flb_in_cpu_config));
@@ -179,13 +180,26 @@ static int in_cpu_init(struct flb_input_instance *in,
 
     /* Collection time setting */
     pval = flb_input_get_property("interval_sec", in);
-    if (pval != NULL && atoi(pval) > 0) {
+    if (pval != NULL && atoi(pval) >= 0) {
         ctx->interval_sec = atoi(pval);
     }
     else {
         ctx->interval_sec = DEFAULT_INTERVAL_SEC;
     }
-    ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
+
+    pval = flb_input_get_property("interval_nsec", in);
+    if (pval != NULL && atoi(pval) >= 0) {
+        ctx->interval_nsec = atoi(pval);
+    }
+    else {
+        ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
+    }
+
+    if (ctx->interval_sec <= 0 && ctx->interval_nsec <= 0) {
+        /* Illegal settings. Override them. */
+        ctx->interval_sec = DEFAULT_INTERVAL_SEC;
+        ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
+    }
 
     /* Initialize buffers for CPU stats */
     ret = snapshots_init(ctx->n_processors, &ctx->cstats);
@@ -310,6 +324,8 @@ int in_cpu_collect(struct flb_input_instance *i_ins,
     struct flb_in_cpu_config *ctx = in_context;
     struct cpu_stats *cstats = &ctx->cstats;
     struct cpu_snapshot *s;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
     (void) config;
 
     /* Get the current CPU usage */
@@ -320,32 +336,30 @@ int in_cpu_collect(struct flb_input_instance *i_ins,
 
     s = snapshot_percent(cstats, ctx);
 
-    /* Mark the start of a 'buffer write' operation */
-    flb_input_buf_write_start(i_ins);
-
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
     /*
      * Store the new data into the MessagePack buffer,
      */
-    msgpack_pack_array(&i_ins->mp_pck, 2);
-    flb_pack_time_now(&i_ins->mp_pck);
-    msgpack_pack_map(&i_ins->mp_pck, (ctx->n_processors * 3 ) + 3);
+    msgpack_pack_array(&mp_pck, 2);
+    flb_pack_time_now(&mp_pck);
+    msgpack_pack_map(&mp_pck, (ctx->n_processors * 3 ) + 3);
 
     /* All CPU */
-    msgpack_pack_str(&i_ins->mp_pck, 5);
-    msgpack_pack_str_body(&i_ins->mp_pck, "cpu_p", 5);
-    msgpack_pack_double(&i_ins->mp_pck, s[0].p_cpu);
+    msgpack_pack_str(&mp_pck, 5);
+    msgpack_pack_str_body(&mp_pck, "cpu_p", 5);
+    msgpack_pack_double(&mp_pck, s[0].p_cpu);
 
     /* User space CPU % */
-    msgpack_pack_str(&i_ins->mp_pck, 6);
-    msgpack_pack_str_body(&i_ins->mp_pck, "user_p", 6);
-    msgpack_pack_double(&i_ins->mp_pck, s[0].p_user);
+    msgpack_pack_str(&mp_pck, 6);
+    msgpack_pack_str_body(&mp_pck, "user_p", 6);
+    msgpack_pack_double(&mp_pck, s[0].p_user);
 
     /* System CPU % */
-    msgpack_pack_str(&i_ins->mp_pck, 8);
-    msgpack_pack_str_body(&i_ins->mp_pck, "system_p", 8);
-    msgpack_pack_double(&i_ins->mp_pck, s[0].p_system);
-
+    msgpack_pack_str(&mp_pck, 8);
+    msgpack_pack_str_body(&mp_pck, "system_p", 8);
+    msgpack_pack_double(&mp_pck, s[0].p_system);
 
     for (i = 1; i < ctx->n_processors + 1; i++) {
         struct cpu_snapshot *e = &s[i];
@@ -358,7 +372,8 @@ int in_cpu_collect(struct flb_input_instance *i_ins,
     snapshots_switch(cstats);
     flb_trace("[in_cpu] CPU %0.2f%%", s->p_cpu);
 
-    flb_input_buf_write_end(i_ins);
+    flb_input_chunk_append_raw(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    msgpack_sbuffer_destroy(&mp_sbuf);
 
     return 0;
 }

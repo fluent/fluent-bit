@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,20 +21,23 @@
 #ifndef FLB_SOCKET_H
 #define FLB_SOCKET_H
 
+#include <fluent-bit/flb_compat.h>
+
 #ifdef _WIN32
 #include <event.h>
 #define flb_sockfd_t         evutil_socket_t
 #define flb_socket_close(fd) evutil_closesocket(fd)
 #define flb_socket_error(fd) evutil_socket_geterror(fd)
 #define FLB_EINPROGRESS(e)   ((e) == WSAEWOULDBLOCK)
+#define FLB_WOULDBLOCK()     (WSAGetLastError() == WSAEWOULDBLOCK)
 #else
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <unistd.h>
 #define flb_sockfd_t         int
 #define flb_socket_close(fd) close(fd)
 #define flb_socket_error(fd) errno
 #define FLB_EINPROGRESS(e)   ((e) == EINTR || (e) == EINPROGRESS)
+#define FLB_WOULDBLOCK()     (errno == EAGAIN || errno == EWOULDBLOCK)
 #endif
 
 #endif

@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -41,7 +42,7 @@ struct flb_uri_field *flb_uri_get(struct flb_uri *uri, int pos)
  * Given a 'URI' string, split the strings separated by a slash and create a
  * context.
  */
-struct flb_uri *flb_uri_create(char *full_uri)
+struct flb_uri *flb_uri_create(const char *full_uri)
 {
     int end;
     unsigned int len;

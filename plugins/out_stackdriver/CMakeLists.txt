@@ -1,4 +1,5 @@
 set(src
+  gce_metadata.c
   stackdriver_conf.c
   stackdriver.c
   )

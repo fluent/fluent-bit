@@ -27,8 +27,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <getopt.h>
-#include <unistd.h>
+#include <monkey/mk_core/mk_getopt.h>
 
 #define XXDC_CHUNK    1024
 

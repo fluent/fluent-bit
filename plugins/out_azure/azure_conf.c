@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,8 +29,8 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
     int ret;
     size_t size;
     size_t olen;
-    char *tmp;
-    char *cid = NULL;
+    const char *tmp;
+    const char *cid = NULL;
     struct flb_upstream *upstream;
     struct flb_azure *ctx;
 

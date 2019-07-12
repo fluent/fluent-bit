@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,8 +29,8 @@
 #include <msgpack.h>
 
 struct flb_plot_conf {
-    char *out_file;
-    char *key_name;
+    const char *out_file;
+    const char *key_name;
     int key_len;
 };
 
@@ -37,7 +38,7 @@ static int cb_plot_init(struct flb_output_instance *ins,
                         struct flb_config *config,
                         void *data)
 {
-    char *tmp;
+    const char *tmp;
     (void) config;
     (void) data;
     struct flb_plot_conf *conf;
@@ -67,8 +68,8 @@ static int cb_plot_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static void cb_plot_flush(void *data, size_t bytes,
-                          char *tag, int tag_len,
+static void cb_plot_flush(const void *data, size_t bytes,
+                          const char *tag, int tag_len,
                           struct flb_input_instance *i_ins,
                           void *out_context,
                           struct flb_config *config)
@@ -78,7 +79,7 @@ static void cb_plot_flush(void *data, size_t bytes,
     struct flb_time atime;
     msgpack_unpacked result;
     size_t off = 0;
-    char *out_file;
+    const char *out_file;
     msgpack_object *map;
     msgpack_object *key = NULL;
     msgpack_object *val = NULL;
@@ -107,7 +108,7 @@ static void cb_plot_flush(void *data, size_t bytes,
      * of the map to use as a data point.
      */
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         flb_time_pop_from_msgpack(&atime, &result, &map);
 
         /*

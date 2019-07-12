@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -39,7 +40,7 @@ struct flb_uri {
 };
 
 struct flb_uri_field *flb_uri_get(struct flb_uri *uri, int pos);
-struct flb_uri *flb_uri_create(char *full_uri);
+struct flb_uri *flb_uri_create(const char *full_uri);
 void flb_uri_destroy(struct flb_uri *uri);
 void flb_uri_dump(struct flb_uri *uri);
 

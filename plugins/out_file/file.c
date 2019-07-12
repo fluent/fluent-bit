@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,14 +32,20 @@
 
 #include "file.h"
 
+#ifdef FLB_SYSTEM_WINDOWS
+#define NEWLINE "\r\n"
+#else
+#define NEWLINE "\n"
+#endif
+
 struct flb_file_conf {
-    char *out_file;
-    char *delimiter;
-    char *label_delimiter;
+    const char *out_file;
+    const char *delimiter;
+    const char *label_delimiter;
     int  format;
 };
 
-static char* check_delimiter(char *str)
+static char* check_delimiter(const char *str)
 {
     if (str == NULL) {
         return NULL;
@@ -62,7 +69,7 @@ static int cb_file_init(struct flb_output_instance *ins,
                         struct flb_config *config,
                         void *data)
 {
-    char *tmp;
+    const char *tmp;
     char *ret_str;
     (void) config;
     (void) data;
@@ -74,7 +81,7 @@ static int cb_file_init(struct flb_output_instance *ins,
         return -1;
     }
 
-    conf->format = FLB_OUT_FILE_FMT_JSON;/* default */
+    conf->format = FLB_OUT_FILE_FMT_JSON; /* default */
     conf->delimiter = NULL;
     conf->label_delimiter = NULL;
 
@@ -86,19 +93,26 @@ static int cb_file_init(struct flb_output_instance *ins,
 
     /* Optional, file format */
     tmp = flb_output_get_property("Format", ins);
-    if (tmp && !strcasecmp(tmp, "csv")){
-        conf->format    = FLB_OUT_FILE_FMT_CSV;
-        conf->delimiter = ",";
-    }
-    else if(tmp && !strcasecmp(tmp, "ltsv")) {
-        conf->format    = FLB_OUT_FILE_FMT_LTSV;
-        conf->delimiter = "\t";
-        conf->label_delimiter = ":";
-    }
-    else if(tmp && !strcasecmp(tmp, "plain")) {
-        conf->format    = FLB_OUT_FILE_FMT_PLAIN;
-        conf->delimiter = NULL;
-        conf->label_delimiter = NULL;
+    if (tmp) {
+        if (!strcasecmp(tmp, "csv")) {
+            conf->format    = FLB_OUT_FILE_FMT_CSV;
+            conf->delimiter = ",";
+        }
+        else if (!strcasecmp(tmp, "ltsv")) {
+            conf->format    = FLB_OUT_FILE_FMT_LTSV;
+            conf->delimiter = "\t";
+            conf->label_delimiter = ":";
+        }
+        else if (!strcasecmp(tmp, "plain")) {
+            conf->format    = FLB_OUT_FILE_FMT_PLAIN;
+            conf->delimiter = NULL;
+            conf->label_delimiter = NULL;
+        }
+        else if (!strcasecmp(tmp, "msgpack")) {
+            conf->format    = FLB_OUT_FILE_FMT_MSGPACK;
+            conf->delimiter = NULL;
+            conf->label_delimiter = NULL;
+        }
     }
 
     tmp = flb_output_get_property("delimiter", ins);
@@ -119,33 +133,31 @@ static int cb_file_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static int csv_output(FILE *fp,
-                      struct flb_time *tm,
-                      msgpack_object *obj,
+static int csv_output(FILE *fp, struct flb_time *tm, msgpack_object *obj,
                       struct flb_file_conf *ctx)
 {
-    msgpack_object_kv *kv = NULL;
     int i;
     int map_size;
+    msgpack_object_kv *kv = NULL;
 
     if (obj->type == MSGPACK_OBJECT_MAP && obj->via.map.size > 0) {
         kv = obj->via.map.ptr;
         map_size = obj->via.map.size;
         fprintf(fp, "%f%s", flb_time_to_double(tm), ctx->delimiter);
-        for (i=0; i<map_size-1; i++) {
+
+        for (i = 0; i < map_size - 1; i++) {
             msgpack_object_print(fp, (kv+i)->val);
             fprintf(fp, "%s", ctx->delimiter);
         }
+
         msgpack_object_print(fp, (kv+(map_size-1))->val);
-        fprintf(fp, "\n");
+        fprintf(fp, NEWLINE);
     }
     return 0;
 }
 
-static int ltsv_output(FILE *fp,
-                      struct flb_time *tm,
-                      msgpack_object *obj,
-                      struct flb_file_conf *ctx)
+static int ltsv_output(FILE *fp, struct flb_time *tm, msgpack_object *obj,
+                       struct flb_file_conf *ctx)
 {
     msgpack_object_kv *kv = NULL;
     int i;
@@ -158,49 +170,51 @@ static int ltsv_output(FILE *fp,
                 ctx->label_delimiter,
                 flb_time_to_double(tm),
                 ctx->delimiter);
-        for (i=0; i<map_size-1; i++) {
+
+        for (i = 0; i < map_size - 1; i++) {
             msgpack_object_print(fp, (kv+i)->key);
             fprintf(fp, "%s", ctx->label_delimiter);
             msgpack_object_print(fp, (kv+i)->val);
             fprintf(fp, "%s", ctx->delimiter);
         }
+
         msgpack_object_print(fp, (kv+(map_size-1))->key);
         fprintf(fp, "%s", ctx->label_delimiter);
         msgpack_object_print(fp, (kv+(map_size-1))->val);
-        fprintf(fp, "\n");
+        fprintf(fp, NEWLINE);
     }
     return 0;
 }
 
-static int plain_output(FILE *fp,
-                      msgpack_object *obj,
-                      size_t alloc_size
-                      )
+static int plain_output(FILE *fp, msgpack_object *obj, size_t alloc_size)
 {
     char *buf;
 
     buf = flb_msgpack_to_json_str(alloc_size, obj);
     if (buf) {
-        fprintf(fp, "%s\n",
+        fprintf(fp, "%s" NEWLINE,
                 buf);
         flb_free(buf);
     }
     return 0;
 }
 
-static void cb_file_flush(void *data, size_t bytes,
-                          char *tag, int tag_len,
+static void cb_file_flush(const void *data, size_t bytes,
+                          const char *tag, int tag_len,
                           struct flb_input_instance *i_ins,
                           void *out_context,
                           struct flb_config *config)
 {
+    int ret;
     FILE * fp;
     msgpack_unpacked result;
     size_t off = 0;
     size_t last_off = 0;
     size_t alloc_size = 0;
-    char *out_file;
+    size_t total;
+    const char *out_file;
     char *buf;
+    char *tag_buf;
     msgpack_object *obj;
     struct flb_file_conf *ctx = out_context;
     struct flb_time tm;
@@ -216,10 +230,43 @@ static void cb_file_flush(void *data, size_t bytes,
     }
 
     /* Open output file with default name as the Tag */
-    fp = fopen(out_file, "a+");
+    fp = fopen(out_file, "ab+");
     if (fp == NULL) {
         flb_errno();
         FLB_OUTPUT_RETURN(FLB_ERROR);
+    }
+
+    tag_buf = flb_malloc(tag_len + 1);
+    if (!tag_buf) {
+        flb_errno();
+        fclose(fp);
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+    memcpy(tag_buf, tag, tag_len);
+    tag_buf[tag_len] = '\0';
+
+    /*
+     * Msgpack output format used to create unit tests files, useful for
+     * Fluent Bit developers.
+     */
+    if (ctx->format == FLB_OUT_FILE_FMT_MSGPACK) {
+        off = 0;
+        total = 0;
+
+        do {
+            ret = fwrite((char *)data + off, 1, bytes - off, fp);
+            if (ret < 0) {
+                flb_errno();
+                fclose(fp);
+                flb_free(tag_buf);
+                FLB_OUTPUT_RETURN(FLB_RETRY);
+            }
+            total += ret;
+        } while (total < bytes);
+
+        fclose(fp);
+        flb_free(tag_buf);
+        FLB_OUTPUT_RETURN(FLB_OK);
     }
 
     /*
@@ -227,7 +274,7 @@ static void cb_file_flush(void *data, size_t bytes,
      * of the map to use as a data point.
      */
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         alloc_size = (off - last_off) + 128; /* JSON is larger than msgpack */
         last_off = off;
 
@@ -237,8 +284,8 @@ static void cb_file_flush(void *data, size_t bytes,
         case FLB_OUT_FILE_FMT_JSON:
             buf = flb_msgpack_to_json_str(alloc_size, obj);
             if (buf) {
-                fprintf(fp, "%s: [%f, %s]\n",
-                        tag,
+                fprintf(fp, "%s: [%f, %s]" NEWLINE,
+                        tag_buf,
                         flb_time_to_double(&tm),
                         buf);
                 flb_free(buf);
@@ -246,6 +293,7 @@ static void cb_file_flush(void *data, size_t bytes,
             else {
                 msgpack_unpacked_destroy(&result);
                 fclose(fp);
+                flb_free(tag_buf);
                 FLB_OUTPUT_RETURN(FLB_RETRY);
             }
             break;
@@ -260,6 +308,8 @@ static void cb_file_flush(void *data, size_t bytes,
             break;
         }
     }
+
+    flb_free(tag_buf);
     msgpack_unpacked_destroy(&result);
     fclose(fp);
 

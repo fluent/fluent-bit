@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -39,6 +40,10 @@
 #include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
+
+#ifdef FLB_HAVE_REGEX
+#include <fluent-bit/flb_regex.h>
+#endif
 
 /* Output plugin masks */
 #define FLB_OUTPUT_NET          32  /* output address may set host and port */
@@ -87,8 +92,8 @@ struct flb_output_plugin {
     int (*cb_pre_run) (void *, struct flb_config *);
 
     /* Flush callback */
-    void (*cb_flush) (void *, size_t,
-                      char *, int,
+    void (*cb_flush) (const void *, size_t,
+                      const char *, int,
                       struct flb_input_instance *,
                       void *,
                       struct flb_config *);
@@ -109,7 +114,9 @@ struct flb_output_plugin {
  */
 struct flb_output_instance {
     uint64_t mask_id;                    /* internal bitmask for routing */
-    char name[16];                       /* numbered name (cpu -> cpu.0) */
+    int id;                              /* instance id                  */
+    char name[32];                       /* numbered name (cpu -> cpu.0) */
+    char *alias;                         /* alias name for the instance  */
     int flags;                           /* inherit flags from plugin    */
     struct flb_output_plugin *p;         /* original plugin              */
     void *context;                       /* plugin configuration context */
@@ -118,6 +125,9 @@ struct flb_output_instance {
     int retry_limit;                     /* max of retries allowed       */
     int use_tls;                         /* bool, try to use TLS for I/O */
     char *match;                         /* match rule for tag/routing   */
+#ifdef FLB_HAVE_REGEX
+    struct flb_regex *match_regex;       /* match rule (regex) based on Tags */
+#endif
 
 #ifdef FLB_HAVE_TLS
     int tls_verify;                      /* Verify certs (default: true) */
@@ -184,7 +194,7 @@ struct flb_output_instance {
 
 struct flb_output_thread {
     int id;                            /* out-thread ID      */
-    void *buffer;                      /* output buffer      */
+    const void *buffer;                /* output buffer      */
     struct flb_task *task;             /* Parent flb_task    */
     struct flb_config *config;         /* FLB context        */
     struct flb_output_instance *o_ins; /* output instance    */
@@ -249,9 +259,9 @@ static FLB_INLINE void cb_output_thread_destroy(void *data)
  * that achieve the same stuff.
  */
 struct flb_libco_out_params {
-    void  *data;
+    const void  *data;
     size_t bytes;
-    char *tag;
+    const char *tag;
     int tag_len;
     struct flb_input_instance *i_ins;
     void *out_context;
@@ -263,8 +273,8 @@ struct flb_libco_out_params {
 struct flb_libco_out_params libco_param;
 
 static FLB_INLINE void output_params_set(struct flb_thread *th,
-                              void *data, size_t bytes,
-                              char *tag, int tag_len,
+                              const void *data, size_t bytes,
+                              const char *tag, int tag_len,
                               struct flb_input_instance *i_ins,
                               struct flb_output_plugin *out_plugin,
                               void *out_context, struct flb_config *config)
@@ -283,12 +293,12 @@ static FLB_INLINE void output_params_set(struct flb_thread *th,
     co_switch(th->callee);
 }
 
-static FLB_INLINE void output_pre_cb_flush()
+static FLB_INLINE void output_pre_cb_flush(void)
 {
-    void *data   = libco_param.data;
-    size_t bytes = libco_param.bytes;
-    char *tag    = libco_param.tag;
-    int tag_len  = libco_param.tag_len;
+    const void *data                 = libco_param.data;
+    size_t bytes                     = libco_param.bytes;
+    const char *tag                  = libco_param.tag;
+    int tag_len                      = libco_param.tag_len;
     struct flb_input_instance *i_ins = libco_param.i_ins;
     struct flb_output_plugin *out_p  = libco_param.out_plugin;
     void *out_context                = libco_param.out_context;
@@ -311,8 +321,8 @@ struct flb_thread *flb_output_thread(struct flb_task *task,
                                      struct flb_input_instance *i_ins,
                                      struct flb_output_instance *o_ins,
                                      struct flb_config *config,
-                                     void *buf, size_t size,
-                                     char *tag, int tag_len)
+                                     const void *buf, size_t size,
+                                     const char *tag, int tag_len)
 {
     size_t stack_size;
     struct flb_output_thread *out_th;
@@ -373,8 +383,8 @@ struct flb_thread *flb_output_thread(struct flb_task *task,
                                      struct flb_input_instance *i_ins,
                                      struct flb_output_instance *o_ins,
                                      struct flb_config *config,
-                                     void *buf, size_t size,
-                                     char *tag, int tag_len)
+                                     const void *buf, size_t size,
+                                     const char *tag, int tag_len)
 {
     struct flb_thread *th;
 
@@ -434,7 +444,7 @@ static inline void flb_output_return(int ret, struct flb_thread *th) {
     set = FLB_TASK_SET(ret, task->id, out_th->id);
     val = FLB_BITS_U64_SET(2 /* FLB_ENGINE_TASK */, set);
 
-    n = flb_pipe_w(task->config->ch_manager[1], &val, sizeof(val));
+    n = flb_pipe_w(task->config->ch_manager[1], (void *) &val, sizeof(val));
     if (n == -1) {
         flb_errno();
     }
@@ -478,11 +488,12 @@ static inline void flb_output_return_do(int x)
     return
 
 struct flb_output_instance *flb_output_new(struct flb_config *config,
-                                           char *output, void *data);
+                                           const char *output, void *data);
 
-int flb_output_set_property(struct flb_output_instance *out, char *k, char *v);
-char *flb_output_get_property(char *key, struct flb_output_instance *o_ins);
-void flb_output_net_default(char *host, int port,
+int flb_output_set_property(struct flb_output_instance *out,
+                            const char *k, const char *v);
+const char *flb_output_get_property(const char *key, struct flb_output_instance *o_ins);
+void flb_output_net_default(const char *host, int port,
                             struct flb_output_instance *o_ins);
 void flb_output_pre_run(struct flb_config *config);
 void flb_output_exit(struct flb_config *config);

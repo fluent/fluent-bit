@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -43,7 +44,7 @@ struct flb_output_plugin out_td_plugin;
  * This function returns a new msgpack buffer and store the bytes length
  * in the out_size variable.
  */
-static char *td_format(void *data, size_t bytes, int *out_size)
+static char *td_format(const void *data, size_t bytes, int *out_size)
 {
     int i;
     int ret;
@@ -69,7 +70,7 @@ static char *td_format(void *data, size_t bytes, int *out_size)
 
     /* Perform some format validation */
     ret = msgpack_unpack_next(&result, data, bytes, &off);
-    if (!ret) {
+    if (ret == MSGPACK_UNPACK_CONTINUE) {
         return NULL;
     }
 
@@ -97,7 +98,7 @@ static char *td_format(void *data, size_t bytes, int *out_size)
     off = 0;
     msgpack_unpacked_destroy(&result);
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         if (result.data.type != MSGPACK_OBJECT_ARRAY) {
             continue;
         }
@@ -176,8 +177,8 @@ int cb_td_init(struct flb_output_instance *ins, struct flb_config *config,
     return 0;
 }
 
-static void cb_td_flush(void *data, size_t bytes,
-                        char *tag, int tag_len,
+static void cb_td_flush(const void *data, size_t bytes,
+                        const char *tag, int tag_len,
                         struct flb_input_instance *i_ins,
                         void *out_context,
                         struct flb_config *config)

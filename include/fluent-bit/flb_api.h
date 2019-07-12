@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,7 +25,7 @@
 #include <fluent-bit/flb_output.h>
 
 struct flb_api {
-    char *(*output_get_property) (char *, void *);
+    const char *(*output_get_property) (const char *, struct flb_output_instance *);
 };
 
 #ifdef FLB_CORE

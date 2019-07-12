@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -34,7 +35,7 @@
  */
 
 /* @SET command: register a key/value as a configuration variable */
-static int meta_cmd_set(struct flb_config *ctx, char *params)
+static int meta_cmd_set(struct flb_config *ctx, const char *params)
 {
     int ret;
     int len;
@@ -69,7 +70,7 @@ static int meta_cmd_set(struct flb_config *ctx, char *params)
 }
 
 /* Run a specific command */
-int flb_meta_run(struct flb_config *ctx, char *cmd, char *params)
+int flb_meta_run(struct flb_config *ctx, const char *cmd, const char *params)
 {
     if (strcasecmp(cmd, "SET") == 0) {
         return meta_cmd_set(ctx, params);

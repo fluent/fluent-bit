@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -56,6 +57,14 @@ struct flb_plugin_proxy {
     struct mk_list _head;     /* link to parent config->proxies              */
 };
 
+/* This is the context for proxy plugins */
+struct flb_plugin_proxy_context {
+    /* This context is set by the remote init and is passed to remote flush */
+    void *remote_context;
+    /* A proxy ptr is needed to detect the proxy type/lang (OUTPUT/GOLANG) */
+    struct flb_plugin_proxy *proxy;
+};
+
 void *flb_plugin_proxy_symbol(struct flb_plugin_proxy *proxy,
                               const char *symbol);
 
@@ -69,6 +78,5 @@ int flb_plugin_proxy_register(struct flb_plugin_proxy *proxy,
 struct flb_plugin_proxy *flb_plugin_proxy_create(const char *dso_path, int type,
                                                  struct flb_config *config);
 int flb_plugin_proxy_load_all(struct flb_config *config);
-int flb_plugin_proxy_conf_file(char *file, struct flb_config *config);
 
 #endif

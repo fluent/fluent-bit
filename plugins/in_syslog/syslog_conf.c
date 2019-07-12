@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,7 +33,7 @@
 struct flb_syslog *syslog_conf_create(struct flb_input_instance *i_ins,
                                       struct flb_config *config)
 {
-    char *tmp;
+    const char *tmp;
     char port[16];
     struct flb_syslog *ctx;
 

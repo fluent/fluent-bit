@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,10 +30,4 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
                         struct flb_config *config);
 int flb_engine_dispatch_retry(struct flb_task_retry *retry,
                               struct flb_config *config);
-int flb_engine_dispatch_direct(uint64_t id,
-                               struct flb_input_instance *in,
-                               char *buf, size_t size,
-                               char *tag, uint64_t routes,
-                               char *hash_str,
-                               struct flb_config *config);
 #endif

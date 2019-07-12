@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,8 +27,8 @@
 
 #include "kafka.h"
 
-struct flb_kafka_rest *flb_kafka_conf_create(struct flb_output_instance *ins,
+struct flb_kafka_rest *flb_kr_conf_create(struct flb_output_instance *ins,
                                              struct flb_config *config);
-int flb_kafka_conf_destroy(struct flb_kafka_rest *ctx);
+int flb_kr_conf_destroy(struct flb_kafka_rest *ctx);
 
 #endif

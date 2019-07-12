@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -54,6 +55,10 @@ static inline ALLOCSZ_ATTR(1)
 void *flb_malloc(const size_t size) {
     void *aux;
 
+    if (size == 0) {
+        return NULL;
+    }
+
     aux = malloc(size);
     if (flb_unlikely(!aux && size)) {
         return NULL;
@@ -65,6 +70,10 @@ void *flb_malloc(const size_t size) {
 static inline ALLOCSZ_ATTR(1)
 void *flb_calloc(size_t n, const size_t size) {
     void *buf;
+
+    if (size == 0) {
+        return NULL;
+    }
 
     buf = calloc(n, size);
     if (flb_unlikely(!buf)) {
@@ -78,6 +87,13 @@ static inline ALLOCSZ_ATTR(2)
 void *flb_realloc(void *ptr, const size_t size)
 {
     void *aux;
+
+    if (size == 0) {
+        if (ptr) {
+            free(ptr);
+        }
+        return NULL;
+    }
 
     aux = realloc(ptr, size);
     if (flb_unlikely(!aux && size)) {

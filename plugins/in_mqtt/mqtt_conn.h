@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -38,9 +39,11 @@ struct mqtt_conn {
     int  buf_len;                    /* Buffer content length             */
     unsigned char buf[1024];         /* Buffer data                       */
     struct flb_in_mqtt_config *ctx;  /* Plugin configuration context      */
+    struct mk_list _head;            /* Link to flb_in_mqtt_config->conns */
 };
 
 struct mqtt_conn *mqtt_conn_add(int fd, struct flb_in_mqtt_config *ctx);
 int mqtt_conn_del(struct mqtt_conn *conn);
+int mqtt_conn_destroy_all(struct flb_in_mqtt_config *ctx);
 
 #endif

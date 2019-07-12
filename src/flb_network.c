@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,18 +27,8 @@
 #include <fcntl.h>
 #include <errno.h>
 
-#ifdef _WIN32
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#else
-#include <netdb.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#endif
-
 #include <monkey/mk_core.h>
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_socket.h>
 #include <fluent-bit/flb_mem.h>
@@ -51,7 +42,7 @@
 #endif
 
 /* Copy a sub-string in a new memory buffer */
-static char *copy_substr(char *str, int s)
+static char *copy_substr(const char *str, int s)
 {
     char *buf;
 
@@ -62,11 +53,11 @@ static char *copy_substr(char *str, int s)
     return buf;
 }
 
-int flb_net_host_set(char *plugin_name, struct flb_net_host *host, char *address)
+int flb_net_host_set(const char *plugin_name, struct flb_net_host *host, const char *address)
 {
     int len;
     int olen;
-    char *s, *e, *u;
+    const char *s, *e, *u;
 
     memset(host, '\0', sizeof(struct flb_net_host));
 
@@ -208,7 +199,7 @@ flb_sockfd_t flb_net_socket_create_udp(int family, int nonblock)
 }
 
 /* Connect to a TCP socket server and returns the file descriptor */
-flb_sockfd_t flb_net_tcp_connect(char *host, unsigned long port)
+flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port)
 {
     flb_sockfd_t fd = -1;
     int ret;
@@ -253,7 +244,7 @@ flb_sockfd_t flb_net_tcp_connect(char *host, unsigned long port)
 }
 
 /* "Connect" to a UDP socket server and returns the file descriptor */
-flb_sockfd_t flb_net_udp_connect(char *host, unsigned long port)
+flb_sockfd_t flb_net_udp_connect(const char *host, unsigned long port)
 {
     flb_sockfd_t fd = -1;
     int ret;
@@ -298,7 +289,7 @@ flb_sockfd_t flb_net_udp_connect(char *host, unsigned long port)
 }
 
 /* Connect to a TCP socket server and returns the file descriptor */
-int flb_net_tcp_fd_connect(flb_sockfd_t fd, char *host, unsigned long port)
+int flb_net_tcp_fd_connect(flb_sockfd_t fd, const char *host, unsigned long port)
 {
     int ret;
     struct addrinfo hints;
@@ -323,7 +314,7 @@ int flb_net_tcp_fd_connect(flb_sockfd_t fd, char *host, unsigned long port)
     return ret;
 }
 
-flb_sockfd_t flb_net_server(char *port, char *listen_addr)
+flb_sockfd_t flb_net_server(const char *port, const char *listen_addr)
 {
     flb_sockfd_t fd = -1;
     int ret;
@@ -369,7 +360,7 @@ flb_sockfd_t flb_net_server(char *port, char *listen_addr)
     return fd;
 }
 
-flb_sockfd_t flb_net_server_udp(char *port, char *listen_addr)
+flb_sockfd_t flb_net_server_udp(const char *port, const char *listen_addr)
 {
     flb_sockfd_t fd = -1;
     int ret;
@@ -433,7 +424,7 @@ int flb_net_bind(flb_sockfd_t fd, const struct sockaddr *addr,
 }
 
 int flb_net_bind_udp(flb_sockfd_t fd, const struct sockaddr *addr,
-                 socklen_t addrlen)
+                     socklen_t addrlen)
 {
     int ret;
 

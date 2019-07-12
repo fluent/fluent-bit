@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -109,6 +110,8 @@ static int single_value_per_record(struct flb_input_instance *i_ins,
 {
     int ret = -1;
     int num_map = 1;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
 
     head_config->buf[0] = '\0'; /* clear buf */
     head_config->buf_len =   0;
@@ -127,31 +130,34 @@ static int single_value_per_record(struct flb_input_instance *i_ins,
         num_map++;
     }
 
-    /* Mark the start of a 'buffer write' operation */
-    flb_input_buf_write_start(i_ins);
+    /* Initialize local msgpack buffer */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    msgpack_pack_array(&i_ins->mp_pck, 2);
-    flb_pack_time_now(&i_ins->mp_pck);
-    msgpack_pack_map(&i_ins->mp_pck, num_map);
+    /* Pack data */
+    msgpack_pack_array(&mp_pck, 2);
+    flb_pack_time_now(&mp_pck);
+    msgpack_pack_map(&mp_pck, num_map);
 
-    msgpack_pack_str(&i_ins->mp_pck, head_config->key_len);
-    msgpack_pack_str_body(&i_ins->mp_pck, head_config->key,
+    msgpack_pack_str(&mp_pck, head_config->key_len);
+    msgpack_pack_str_body(&mp_pck, head_config->key,
                           head_config->key_len);
-    msgpack_pack_str(&i_ins->mp_pck, head_config->buf_len);
-    msgpack_pack_str_body(&i_ins->mp_pck,
+    msgpack_pack_str(&mp_pck, head_config->buf_len);
+    msgpack_pack_str_body(&mp_pck,
                           head_config->buf, head_config->buf_len);
 
     if (head_config->add_path == FLB_TRUE) {
-        msgpack_pack_str(&i_ins->mp_pck, 4);
-        msgpack_pack_str_body(&i_ins->mp_pck, "path", 4);
-        msgpack_pack_str(&i_ins->mp_pck, head_config->path_len);
-        msgpack_pack_str_body(&i_ins->mp_pck,
+        msgpack_pack_str(&mp_pck, 4);
+        msgpack_pack_str_body(&mp_pck, "path", 4);
+        msgpack_pack_str(&mp_pck, head_config->path_len);
+        msgpack_pack_str_body(&mp_pck,
                               head_config->filepath, head_config->path_len);
     }
 
     ret = 0;
 
-    flb_input_buf_write_end(i_ins);
+    flb_input_chunk_append_raw(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    msgpack_sbuffer_destroy(&mp_sbuf);
 
     return ret;
 
@@ -168,6 +174,8 @@ static int split_lines_per_record(struct flb_input_instance *i_ins,
     int num_map = head_config->lines;
     char *ret_buf;
     char key_str[KEY_LEN_MAX] = {0};
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
 
     fp = fopen(head_config->filepath, "r");
     if (fp == NULL) {
@@ -179,22 +187,24 @@ static int split_lines_per_record(struct flb_input_instance *i_ins,
         num_map++;
     }
 
-    /* Mark the start of a 'buffer write' operation */
-    flb_input_buf_write_start(i_ins);
+    /* Initialize local msgpack buffer */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    msgpack_pack_array(&i_ins->mp_pck, 2);
-    flb_pack_time_now(&i_ins->mp_pck);
-    msgpack_pack_map(&i_ins->mp_pck, num_map);
+    /* Pack data */
+    msgpack_pack_array(&mp_pck, 2);
+    flb_pack_time_now(&mp_pck);
+    msgpack_pack_map(&mp_pck, num_map);
 
     if (head_config->add_path == FLB_TRUE) {
-        msgpack_pack_str(&i_ins->mp_pck, 4);
-        msgpack_pack_str_body(&i_ins->mp_pck, "path", 4);
-        msgpack_pack_str(&i_ins->mp_pck, head_config->path_len);
-        msgpack_pack_str_body(&i_ins->mp_pck,
+        msgpack_pack_str(&mp_pck, 4);
+        msgpack_pack_str_body(&mp_pck, "path", 4);
+        msgpack_pack_str(&mp_pck, head_config->path_len);
+        msgpack_pack_str_body(&mp_pck,
                               head_config->filepath, head_config->path_len);
     }
 
-    for(i=0; i<head_config->lines; i++){
+    for (i = 0; i < head_config->lines; i++) {
         ret_buf = fgets(head_config->buf, head_config->buf_size, fp);
         if (ret_buf == NULL) {
             head_config->buf[0] = '\0';
@@ -210,15 +220,15 @@ static int split_lines_per_record(struct flb_input_instance *i_ins,
             key_len = KEY_LEN_MAX;
         }
 
-        msgpack_pack_str(&i_ins->mp_pck, key_len);
-        msgpack_pack_str_body(&i_ins->mp_pck, key_str, key_len);
-        msgpack_pack_str(&i_ins->mp_pck, str_len);
-        msgpack_pack_str_body(&i_ins->mp_pck,
+        msgpack_pack_str(&mp_pck, key_len);
+        msgpack_pack_str_body(&mp_pck, key_str, key_len);
+        msgpack_pack_str(&mp_pck, str_len);
+        msgpack_pack_str_body(&mp_pck,
                               head_config->buf, str_len);
     }
 
-    flb_input_buf_write_end(i_ins);
-
+    flb_input_chunk_append_raw(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    msgpack_sbuffer_destroy(&mp_sbuf);
     fclose(fp);
     return 0;
 }
@@ -245,8 +255,8 @@ static int in_head_collect(struct flb_input_instance *i_ins,
 static int in_head_config_read(struct flb_in_head_config *head_config,
                                struct flb_input_instance *in)
 {
-    char *filepath = NULL;
-    char *pval = NULL;
+    const char *filepath = NULL;
+    const char *pval = NULL;
 
     /* filepath setting */
     filepath = flb_input_get_property("file", in);

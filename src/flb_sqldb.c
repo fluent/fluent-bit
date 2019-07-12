@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,7 +27,7 @@
  * Open or create a new database. Note that this function will always try to
  * use an open database and share it handler in as a new context.
  */
-struct flb_sqldb *flb_sqldb_open(char *path, const char *desc,
+struct flb_sqldb *flb_sqldb_open(const char *path, const char *desc,
                                  struct flb_config *config)
 {
     int ret;
@@ -109,7 +110,7 @@ int flb_sqldb_close(struct flb_sqldb *db)
     return 0;
 }
 
-int flb_sqldb_query(struct flb_sqldb *db, char *sql,
+int flb_sqldb_query(struct flb_sqldb *db, const char *sql,
                     int (*callback) (void *, int, char **, char **),
                     void *data)
 {

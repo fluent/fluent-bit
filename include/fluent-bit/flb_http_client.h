@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -77,7 +78,7 @@ struct flb_http_response {
 struct flb_http_proxy {
     int type;               /* One of FLB_HTTP_PROXY_ macros */
     int port;               /* TCP Port */
-    char *host;             /* Proxy Host */
+    const char *host;       /* Proxy Host */
 };
 
 /* Set a request type */
@@ -93,7 +94,7 @@ struct flb_http_client {
     char *header_buf;
 
     int body_len;
-    char *body_buf;
+    const char *body_buf;
 
     /* Proxy */
     struct flb_http_proxy proxy;
@@ -103,15 +104,16 @@ struct flb_http_client {
 };
 
 struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
-                                        int method, char *uri,
-                                        char *body, size_t body_len,
-                                        char *host, int port,
-                                        char *proxy, int flags);
+                                        int method, const char *uri,
+                                        const char *body, size_t body_len,
+                                        const char *host, int port,
+                                        const char *proxy, int flags);
 
 int flb_http_add_header(struct flb_http_client *c,
-                        char *key, size_t key_len,
-                        char *val, size_t val_len);
-int flb_http_basic_auth(struct flb_http_client *c, char *user, char *passwd);
+                        const char *key, size_t key_len,
+                        const char *val, size_t val_len);
+int flb_http_basic_auth(struct flb_http_client *c,
+                        const char *user, const char *passwd);
 int flb_http_do(struct flb_http_client *c, size_t *bytes);
 void flb_http_client_destroy(struct flb_http_client *c);
 int flb_http_buffer_size(struct flb_http_client *c, size_t size);

@@ -2,4 +2,8 @@ set(src
   lua_config.c
   lua.c)
 
-FLB_PLUGIN(filter_lua "${src}" "m")
+if(MSVC)
+  FLB_PLUGIN(filter_lua "${src}" "")
+else()
+  FLB_PLUGIN(filter_lua "${src}" "m")
+endif()

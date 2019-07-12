@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,11 +27,26 @@
 #include <jsmn/jsmn.h>
 #include <msgpack.h>
 
-#define FLB_PACK_JSON_UNDEFINED    JSMN_UNDEFINED
-#define FLB_PACK_JSON_OBJECT       JSMN_OBJECT
-#define FLB_PACK_JSON_ARRAY        JSMN_ARRAY
-#define FLB_PACK_JSON_STRING       JSMN_STRING
-#define FLB_PACK_JSON_PRIMITIVE    JSMN_PRIMITIVE
+/* JSON types */
+#define FLB_PACK_JSON_UNDEFINED     JSMN_UNDEFINED
+#define FLB_PACK_JSON_OBJECT        JSMN_OBJECT
+#define FLB_PACK_JSON_ARRAY         JSMN_ARRAY
+#define FLB_PACK_JSON_STRING        JSMN_STRING
+#define FLB_PACK_JSON_PRIMITIVE     JSMN_PRIMITIVE
+
+/* Date formats */
+#define FLB_PACK_JSON_DATE_DOUBLE   0
+#define FLB_PACK_JSON_DATE_ISO8601  1
+#define FLB_PACK_JSON_DATE_EPOCH    2
+
+/* Specific ISO8601 format */
+#define FLB_PACK_JSON_DATE_ISO8601_FMT "%Y-%m-%dT%H:%M:%S"
+
+/* JSON formats (modes) */
+#define FLB_PACK_JSON_FORMAT_NONE        0
+#define FLB_PACK_JSON_FORMAT_JSON        1
+#define FLB_PACK_JSON_FORMAT_STREAM      2
+#define FLB_PACK_JSON_FORMAT_LINES       3
 
 struct flb_pack_state {
     int multiple;         /* support multiple jsons? */
@@ -41,24 +57,28 @@ struct flb_pack_state {
     jsmn_parser parser;   /* parser state            */
 };
 
-int flb_json_tokenise(char *js, size_t len, struct flb_pack_state *state);
-int flb_pack_json(char *js, size_t len, char **buffer, size_t *size,
+int flb_json_tokenise(const char *js, size_t len, struct flb_pack_state *state);
+int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size,
                   int *root_type);
 int flb_pack_state_init(struct flb_pack_state *s);
 void flb_pack_state_reset(struct flb_pack_state *s);
 
-int flb_pack_json_state(char *js, size_t len,
+int flb_pack_json_state(const char *js, size_t len,
                         char **buffer, int *size,
                         struct flb_pack_state *state);
-int flb_pack_json_valid(char *json, size_t len);
+int flb_pack_json_valid(const char *json, size_t len);
 
-void flb_pack_print(char *data, size_t bytes);
+flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
+                                          int json_format, int date_format,
+                                          flb_sds_t date_key);
+int flb_pack_to_json_format_type(const char *str);
+int flb_pack_to_json_date_type(const char *str);
+
+void flb_pack_print(const char *data, size_t bytes);
 int flb_msgpack_to_json(char *json_str, size_t str_len,
-                        msgpack_object *obj);
-char* flb_msgpack_to_json_str(size_t size, msgpack_object *obj);
-int flb_msgpack_raw_to_json_str(char *buf, size_t buf_size,
-                                char **out_buf, size_t *out_size);
-flb_sds_t flb_msgpack_raw_to_json_sds(void *in_buf, size_t in_size);
+                        const msgpack_object *obj);
+char* flb_msgpack_to_json_str(size_t size, const msgpack_object *obj);
+flb_sds_t flb_msgpack_raw_to_json_sds(const void *in_buf, size_t in_size);
 
 int flb_pack_time_now(msgpack_packer *pck);
 int flb_msgpack_expand_map(char *map_data, size_t map_size,

@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -70,7 +71,7 @@ int es_bulk_append(struct es_bulk *bulk, char *index, int i_len,
         new_size = bulk->size + available + required + ES_BULK_CHUNK;
         ptr = flb_realloc(bulk->ptr, new_size);
         if (!ptr) {
-            perror("realloc");
+            flb_errno();
             return -1;
         }
         bulk->ptr  = ptr;

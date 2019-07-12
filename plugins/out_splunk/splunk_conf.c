@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,7 +28,7 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
                                           struct flb_config *config)
 {
     int io_flags = 0;
-    char *tmp;
+    const char *tmp;
     flb_sds_t t;
     struct flb_upstream *upstream;
     struct flb_splunk *ctx;

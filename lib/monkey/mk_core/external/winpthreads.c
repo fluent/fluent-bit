@@ -1032,6 +1032,19 @@ int pthread_key_create(pthread_key_t *key, void (* dest)(void *))
   /* Clear new region */
   memset((void *) &d[_pthread_key_max], 0, (nmax-_pthread_key_max)*sizeof(void *));
 
+  /*
+   * The memset() above won't initialize _pthread_key_dest[0], so we
+   * need to initialize it manually to avoid an undefined behaviour.
+   *
+   * Having it initialized with `(void *) 1` means we never use d[0];
+   * It's ok since pthread_setspecific() and others are not designed
+   * to handle a zero key anyway.
+   */
+  if (_pthread_key_max == 1)
+  {
+    d[0] = (void *) 1;
+  }
+
   /* Use new region */
   _pthread_key_dest = d;
   _pthread_key_sch = _pthread_key_max + 1;

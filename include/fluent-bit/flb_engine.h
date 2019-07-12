@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -50,10 +51,6 @@
 /* Engine signals: Task, it only refer to the type */
 #define FLB_ENGINE_TASK         2
 #define FLB_ENGINE_IN_THREAD    3
-
-#ifdef FLB_HAVE_BUFFERING
-#define FLB_ENGINE_BUFFER       4
-#endif
 
 int flb_engine_start(struct flb_config *config);
 int flb_engine_failed(struct flb_config *config);

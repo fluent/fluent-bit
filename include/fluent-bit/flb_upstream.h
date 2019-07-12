@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,6 +33,7 @@
 /*
  * Upstream creation FLAGS set by Fluent Bit sub-components
  * ========================================================
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *
  * --- flb_io.h ---
  *   #define  FLB_IO_TCP    1
@@ -112,10 +114,11 @@ struct flb_upstream_conn {
 };
 
 struct flb_upstream *flb_upstream_create(struct flb_config *config,
-                                         char *host, int port, int flags,
+                                         const char *host, int port, int flags,
                                          void *tls);
 struct flb_upstream *flb_upstream_create_url(struct flb_config *config,
-                                             char *url, int flags, void *tls);
+                                             const char *url, int flags,
+                                             void *tls);
 
 int flb_upstream_destroy(struct flb_upstream *u);
 

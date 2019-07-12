@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,8 +32,10 @@
 #define DEFAULT_INTERVAL_NSEC 0
 
 struct flb_in_exec_config {
-    char  *cmd;
+    const char  *cmd;
     struct flb_parser  *parser;
+    char *buf;
+    size_t buf_size;
 };
 
 extern struct flb_input_plugin in_exec_plugin;

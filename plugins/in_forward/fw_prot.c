@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,16 +33,31 @@
 #define EACH_RECV_SIZE 32
 
 static int fw_process_array(struct flb_input_instance *in,
-                            char *tag, int tag_len,
+                            const char *tag, int tag_len,
                             msgpack_object *arr)
 {
     int i;
     msgpack_object entry;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+
+    /*
+     * This process is not quite optimal from a performance perspective,
+     * we need to fix it later, likely using the offset of the original
+     * msgpack buffer.
+     *
+     * For now we iterate the array and append each entry into a chunk
+     */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
     for (i = 0; i < arr->via.array.size; i++) {
         entry = arr->via.array.ptr[i];
-        flb_input_dyntag_append_obj(in, tag, tag_len, entry);
+        msgpack_pack_object(&mp_pck, entry);
     }
+
+    flb_input_chunk_append_raw(in, tag, tag_len, mp_sbuf.data, mp_sbuf.size);
+    msgpack_sbuffer_destroy(&mp_sbuf);
 
     return i;
 }
@@ -85,7 +101,7 @@ int fw_prot_process(struct fw_conn *conn)
     int ret;
     int stag_len;
     int c = 0;
-    char *stag;
+    const char *stag;
     size_t bytes;
     size_t buf_off = 0;
     size_t recv_len;
@@ -114,19 +130,39 @@ int fw_prot_process(struct fw_conn *conn)
             msgpack_unpacked_destroy(&result);
 
             /* Adjust buffer data */
-            if (all_used > 0) {
+            if (conn->buf_len >= all_used && all_used > 0) {
                 memmove(conn->buf, conn->buf + all_used,
                         conn->buf_len - all_used);
                 conn->buf_len -= all_used;
             }
-
             return 0;
         }
 
         /* Always summarize the total number of bytes requested to parse */
         buf_off += recv_len;
-
         ret = msgpack_unpacker_next_with_size(unp, &result, &bytes);
+
+        /*
+         * Upon parsing or memory errors, break the loop, return the error
+         * and expect the connection to be closed.
+         */
+        if (ret == MSGPACK_UNPACK_PARSE_ERROR ||
+            ret == MSGPACK_UNPACK_NOMEM_ERROR) {
+            /* A bit redunant, print out the real error */
+            if (ret == MSGPACK_UNPACK_PARSE_ERROR) {
+                flb_debug("[in_fw] err=MSGPACK_UNPACK_PARSE_ERROR");
+            }
+            else {
+                flb_error("[in_fw] err=MSGPACK_UNPACK_NOMEM_ERROR");
+            }
+
+            /* Cleanup buffers */
+            msgpack_unpacked_destroy(&result);
+            msgpack_unpacker_free(unp);
+
+            return -1;
+        }
+
         while (ret == MSGPACK_UNPACK_SUCCESS) {
             /*
              * For buffering optimization we always want to know the total
@@ -175,7 +211,7 @@ int fw_prot_process(struct fw_conn *conn)
                 return -1;
             }
 
-            stag     = (char *) tag.via.str.ptr;
+            stag     = tag.via.str.ptr;
             stag_len = tag.via.str.size;
 
             entry = root.via.array.ptr[1];
@@ -185,7 +221,6 @@ int fw_prot_process(struct fw_conn *conn)
             }
             else if (entry.type == MSGPACK_OBJECT_POSITIVE_INTEGER ||
                      entry.type == MSGPACK_OBJECT_EXT) {
-
                 /* Forward format 2: [tag, time, map] */
                 map = root.via.array.ptr[2];
                 if (map.type != MSGPACK_OBJECT_MAP) {
@@ -198,8 +233,6 @@ int fw_prot_process(struct fw_conn *conn)
                 /* Compose the new array */
                 struct msgpack_sbuffer mp_sbuf;
                 struct msgpack_packer mp_pck;
-                msgpack_unpacked r_out;
-                size_t off = 0;
 
                 msgpack_sbuffer_init(&mp_sbuf);
                 msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
@@ -208,47 +241,31 @@ int fw_prot_process(struct fw_conn *conn)
                 msgpack_pack_object(&mp_pck, entry);
                 msgpack_pack_object(&mp_pck, map);
 
-                /* sbuffer to msgpack object */
-                msgpack_unpacked_init(&r_out);
-                ret = msgpack_unpack_next(&r_out,
-                                          mp_sbuf.data,
-                                          mp_sbuf.size,
-                                          &off);
-                if (ret != MSGPACK_UNPACK_SUCCESS) {
-                    msgpack_unpacked_destroy(&result);
-                    msgpack_unpacker_free(unp);
-                    return -1;
-                }
-
                 /* Register data object */
-                entry = r_out.data;
-                flb_input_dyntag_append_obj(conn->in,
-                                            stag, stag_len,
-                                            entry);
-
-                msgpack_unpacked_destroy(&r_out);
+                flb_input_chunk_append_raw(conn->in, stag, stag_len,
+                                           mp_sbuf.data, mp_sbuf.size);
                 msgpack_sbuffer_destroy(&mp_sbuf);
                 c++;
             }
             else if (entry.type == MSGPACK_OBJECT_STR ||
                      entry.type == MSGPACK_OBJECT_BIN) {
                 /* PackedForward Mode */
-                char *data = NULL;
+                const char *data = NULL;
                 size_t len = 0;
 
                 if (entry.type == MSGPACK_OBJECT_STR) {
-                    data = (char *) entry.via.str.ptr;
+                    data = entry.via.str.ptr;
                     len = entry.via.str.size;
                 }
                 else if (entry.type == MSGPACK_OBJECT_BIN) {
-                    data = (char *) entry.via.bin.ptr;
+                    data = entry.via.bin.ptr;
                     len = entry.via.bin.size;
                 }
 
                 if (data) {
-                    flb_input_dyntag_append_raw(conn->in,
-                                                stag, stag_len,
-                                                data, len);
+                    flb_input_chunk_append_raw(conn->in,
+                                               stag, stag_len,
+                                               data, len);
                 }
             }
             else {
@@ -262,6 +279,7 @@ int fw_prot_process(struct fw_conn *conn)
             ret = msgpack_unpacker_next(unp, &result);
         }
     }
+
     msgpack_unpacked_destroy(&result);
     msgpack_unpacker_free(unp);
 

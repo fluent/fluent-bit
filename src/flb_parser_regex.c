@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,7 +34,7 @@
 #define pack_uint32(buf, d) _msgpack_store32(buf, (uint32_t) d)
 
 struct regex_cb_ctx {
-    int time_found;
+    int num_skipped;
     time_t time_lookup;
     time_t time_now;
     double time_frac;
@@ -41,7 +42,7 @@ struct regex_cb_ctx {
     msgpack_packer *pck;
 };
 
-static void cb_results(unsigned char *name, unsigned char *value,
+static void cb_results(const char *name, const char *value,
                        size_t vlen, void *data)
 {
     int len;
@@ -54,7 +55,12 @@ static void cb_results(unsigned char *name, unsigned char *value,
     struct tm tm = {0};
     (void) data;
 
-    len = strlen((char *) name);
+    if (vlen == 0) {
+        pcb->num_skipped++;
+        return;
+    }
+
+    len = strlen(name);
 
     /* Check if there is a time lookup field */
     if (parser->time_fmt) {
@@ -65,9 +71,9 @@ static void cb_results(unsigned char *name, unsigned char *value,
             time_key = "time";
         }
 
-        if (strcmp((char *) name, time_key) == 0) {
+        if (strcmp(name, time_key) == 0) {
             /* Lookup time */
-            ret = flb_parser_time_lookup((char *) value, vlen,
+            ret = flb_parser_time_lookup(value, vlen,
                                          pcb->time_now, parser, &tm, &frac);
             if (ret == -1) {
                 if (vlen > sizeof(tmp) - 1) {
@@ -77,37 +83,37 @@ static void cb_results(unsigned char *name, unsigned char *value,
                 tmp[vlen] = '\0';
                 flb_warn("[parser:%s] Invalid time format %s for '%s'.",
                          parser->name, parser->time_fmt, tmp);
-                goto pack;
+                pcb->num_skipped++;
+                return;
             }
 
-            pcb->time_found = FLB_TRUE;
             pcb->time_frac = frac;
             pcb->time_lookup = flb_parser_tm2time(&tm);
 
             if (parser->time_keep == FLB_FALSE) {
+                pcb->num_skipped++;
                 return;
             }
         }
     }
 
- pack:
     if (parser->types_len != 0) {
-        flb_parser_typecast((char*)name, len,
-                            (char*)value, vlen,
+        flb_parser_typecast(name, len,
+                            value, vlen,
                             pcb->pck,
                             parser->types,
                             parser->types_len);
     }
     else {
         msgpack_pack_str(pcb->pck, len);
-        msgpack_pack_str_body(pcb->pck, (char *) name, len);
+        msgpack_pack_str_body(pcb->pck, name, len);
         msgpack_pack_str(pcb->pck, vlen);
-        msgpack_pack_str_body(pcb->pck, (char *) value, vlen);
+        msgpack_pack_str_body(pcb->pck, value, vlen);
     }
 }
 
 int flb_parser_regex_do(struct flb_parser *parser,
-                        char *buf, size_t length,
+                        const char *buf, size_t length,
                         void **out_buf, size_t *out_size,
                         struct flb_time *out_time)
 {
@@ -124,7 +130,7 @@ int flb_parser_regex_do(struct flb_parser *parser,
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
 
-    n = flb_regex_do(parser->regex, (unsigned char *) buf, length, &result);
+    n = flb_regex_do(parser->regex, buf, length, &result);
     if (n <= 0) {
         return -1;
     }
@@ -140,7 +146,7 @@ int flb_parser_regex_do(struct flb_parser *parser,
     /* Callback context */
     pcb.pck = &tmp_pck;
     pcb.parser = parser;
-    pcb.time_found = FLB_FALSE;
+    pcb.num_skipped = 0;
     pcb.time_lookup = 0;
     pcb.time_frac = 0;
     pcb.time_now = time(NULL);
@@ -164,6 +170,9 @@ int flb_parser_regex_do(struct flb_parser *parser,
      * map size, initially we set a size to include all keys found, but
      * until now we just know we are not going to include it.
      *
+     * In addition, keys without associated values are skipped too and we
+     * must take this into account in msgpack header map size adjustment.
+     *
      * In order to avoid to create a new msgpack buffer and repack the
      * map entries, we just position at the header byte and do the
      * proper adjustment in our original buffer. Note that for cases
@@ -171,10 +180,9 @@ int flb_parser_regex_do(struct flb_parser *parser,
      * to use internal msgpack api functions since packing the bytes
      * in Big-Endian is a requirement.
      */
-     if (parser->time_fmt && parser->time_keep == FLB_FALSE &&
-         pcb.time_found == FLB_TRUE) {
+     if (pcb.num_skipped > 0) {
 
-        arr_size = (n - 1);
+        arr_size = (n - pcb.num_skipped);
 
         tmp = tmp_sbuf.data;
         uint8_t h = tmp[0];

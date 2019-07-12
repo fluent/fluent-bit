@@ -17,7 +17,6 @@
  *  limitations under the License.
  */
 
-#include <unistd.h>
 #include <fluent-bit.h>
 #include <msgpack.h>
 

@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,12 +32,12 @@ struct flb_upstream_ha {
     struct mk_list nodes;      /* List of available nodes */
 };
 
-struct flb_upstream_ha *flb_upstream_ha_create(char *name);
+struct flb_upstream_ha *flb_upstream_ha_create(const char *name);
 void flb_upstream_ha_destroy(struct flb_upstream_ha *ctx);
 void flb_upstream_ha_node_add(struct flb_upstream_ha *ctx,
                               struct flb_upstream_node *node);
 struct flb_upstream_node *flb_upstream_ha_node_get(struct flb_upstream_ha *ctx);
-struct flb_upstream_ha *flb_upstream_ha_from_file(char *file,
+struct flb_upstream_ha *flb_upstream_ha_from_file(const char *file,
                                                   struct flb_config *config);
 
 #endif

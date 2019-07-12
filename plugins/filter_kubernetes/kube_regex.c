@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,10 +29,10 @@ int flb_kube_regex_init(struct flb_kube *ctx)
     /* If a custom parser is not set, use the defaults */
     if (!ctx->parser) {
         if (ctx->use_journal == FLB_TRUE) {
-            ctx->regex = flb_regex_create((unsigned char *) KUBE_JOURNAL_TO_REGEX);
+            ctx->regex = flb_regex_create(KUBE_JOURNAL_TO_REGEX);
         }
         else {
-            ctx->regex = flb_regex_create((unsigned char *) KUBE_TAG_TO_REGEX);
+            ctx->regex = flb_regex_create(KUBE_TAG_TO_REGEX);
         }
     }
 

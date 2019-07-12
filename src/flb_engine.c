@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,6 +22,7 @@
 #include <stdlib.h>
 
 #include <monkey/mk_core.h>
+#include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_bits.h>
 
@@ -36,19 +38,18 @@
 #include <fluent-bit/flb_task.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_http_server.h>
-#include <fluent-bit/flb_buffer.h>
-#include <fluent-bit/flb_buffer_qchunk.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_sosreport.h>
+#include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_http_server.h>
 
 #ifdef FLB_HAVE_METRICS
 #include <fluent-bit/flb_metrics_exporter.h>
 #endif
 
-#ifdef FLB_HAVE_BUFFERING
-#include <fluent-bit/flb_buffer_chunk.h>
+#ifdef FLB_HAVE_STREAM_PROCESSOR
+#include <fluent-bit/stream_processor/flb_sp.h>
 #endif
 
 int flb_engine_destroy_tasks(struct mk_list *tasks)
@@ -60,7 +61,7 @@ int flb_engine_destroy_tasks(struct mk_list *tasks)
 
     mk_list_foreach_safe(head, tmp, tasks) {
         task = mk_list_entry(head, struct flb_task, _head);
-        flb_task_destroy(task);
+        flb_task_destroy(task, FLB_FALSE);
         c++;
     }
 
@@ -115,11 +116,6 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
         if (key == FLB_ENGINE_STOP) {
             flb_trace("[engine] flush enqueued data");
             flb_engine_flush(config, NULL);
-#ifdef FLB_HAVE_BUFFERING
-            if (config->buffer_ctx) {
-                flb_buffer_stop(config->buffer_ctx);
-            }
-#endif
             return FLB_ENGINE_STOP;
         }
     }
@@ -159,15 +155,10 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
 
         /* A thread has finished, delete it */
         if (ret == FLB_OK) {
-#ifdef FLB_HAVE_BUFFERING
-            if (config->buffer_path) {
-                flb_buffer_chunk_pop(config->buffer_ctx, thread_id, task);
-            }
-#endif
             flb_task_retry_clean(task, out_th->parent);
             flb_output_thread_destroy_id(thread_id, task);
             if (task->users == 0 && mk_list_size(&task->retries) == 0) {
-                flb_task_destroy(task);
+                flb_task_destroy(task, FLB_TRUE);
             }
         }
         else if (ret == FLB_RETRY) {
@@ -182,12 +173,6 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
                  * - No enough memory (unlikely)
                  * - It reached the maximum number of re-tries
                  */
-#ifdef FLB_HAVE_BUFFERING
-                if (config->buffer_path) {
-                    flb_buffer_chunk_pop(config->buffer_ctx, thread_id, task);
-                }
-#endif
-
 #ifdef FLB_HAVE_METRICS
                 flb_metrics_sum(FLB_METRIC_OUT_RETRY_FAILED, 1,
                                 out_th->o_ins->metrics);
@@ -199,7 +184,7 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
 
                 flb_output_thread_destroy_id(thread_id, task);
                 if (task->users == 0 && mk_list_size(&task->retries) == 0) {
-                    flb_task_destroy(task);
+                    flb_task_destroy(task, FLB_TRUE);
                 }
 
                 return 0;
@@ -226,7 +211,7 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
                          task->id);
                 flb_task_retry_destroy(retry);
                 if (task->users == 0 && mk_list_size(&task->retries) == 0) {
-                    flb_task_destroy(task);
+                    flb_task_destroy(task, FLB_TRUE);
                 }
             }
             else {
@@ -237,20 +222,10 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
         else if (ret == FLB_ERROR) {
             flb_output_thread_destroy_id(thread_id, task);
             if (task->users == 0 && mk_list_size(&task->retries) == 0) {
-                flb_task_destroy(task);
+                flb_task_destroy(task, FLB_TRUE);
             }
         }
     }
-#ifdef FLB_HAVE_BUFFERING
-    else if (type == FLB_ENGINE_BUFFER) {
-        flb_buffer_engine_event(config->buffer_ctx, val);
-        /* CONTINUE:
-         *
-         * - create messages types for buffering interface
-         * - let qchunk ingest data here
-         */
-    }
-#endif
 
     return 0;
 }
@@ -260,21 +235,16 @@ static FLB_INLINE int flb_engine_handle_event(flb_pipefd_t fd, int mask,
 {
     int ret;
 
+    /* flb_engine_shutdown was already initiated */
+    if (config->is_running == FLB_FALSE) {
+        return 0;
+    }
+
     if (mask & MK_EVENT_READ) {
         /* Check if we need to flush */
         if (config->flush_fd == fd) {
             flb_utils_timer_consume(fd);
             flb_engine_flush(config, NULL);
-#ifdef FLB_HAVE_BUFFERING
-            /*
-             * Upon flush request, let the buffering interface to enqueue
-             * a new buffer chunk.
-             */
-            if (config->buffer_ctx) {
-                flb_buffer_qchunk_signal(FLB_BUFFER_QC_PUSH_REQUEST, 0,
-                                         config->buffer_ctx->qworker);
-            }
-#endif
             return 0;
         }
         else if (config->shutdown_fd == fd) {
@@ -297,6 +267,13 @@ static FLB_INLINE int flb_engine_handle_event(flb_pipefd_t fd, int mask,
         /* Metrics exporter event ? */
 #ifdef FLB_HAVE_METRICS
         ret = flb_me_fd_event(fd, config->metrics);
+        if (ret != -1) {
+            return ret;
+        }
+#endif
+
+#ifdef FLB_HAVE_STREAM_PROCESSOR
+        ret = flb_sp_fd_event(fd, config->stream_processor_ctx);
         if (ret != -1) {
             return ret;
         }
@@ -370,6 +347,7 @@ int flb_engine_start(struct flb_config *config)
 {
     int ret;
     char tmp[16];
+    struct flb_time t_flush;
     struct mk_event *event;
     struct mk_event_loop *evl;
 
@@ -382,6 +360,12 @@ int flb_engine_start(struct flb_config *config)
 
     /* Start the Logging service */
     ret = flb_engine_log_start(config);
+    if (ret == -1) {
+        return -1;
+    }
+
+    /* Start the Storage engine */
+    ret = flb_storage_create(config);
     if (ret == -1) {
         return -1;
     }
@@ -439,7 +423,11 @@ int flb_engine_start(struct flb_config *config)
     event->mask = MK_EVENT_EMPTY;
     event->status = MK_EVENT_NONE;
 
-    config->flush_fd = mk_event_timeout_create(evl, config->flush, 0, event);
+    flb_time_from_double(&t_flush, config->flush);
+    config->flush_fd = mk_event_timeout_create(evl,
+                                               t_flush.tm.tv_sec,
+                                               t_flush.tm.tv_nsec,
+                                               event);
     if (config->flush_fd == -1) {
         flb_utils_error(FLB_ERR_CFG_FLUSH_CREATE);
     }
@@ -461,30 +449,7 @@ int flb_engine_start(struct flb_config *config)
         return -1;
     }
 
-    /* Enable Buffering Support */
-#ifdef FLB_HAVE_BUFFERING
-    struct flb_buffer *buf_ctx;
-
-    /* If a path exists, initialize the Buffer service and workers */
-    if (config->buffer_path) {
-        buf_ctx = flb_buffer_create(config->buffer_path,
-                                    config->buffer_workers,
-                                    config);
-        if (!buf_ctx) {
-            flb_error("[engine] could not initialize buffer workers");
-            return -1;
-        }
-
-        /* Start buffer engine workers */
-        config->buffer_ctx = buf_ctx;
-        ret = flb_buffer_start(config->buffer_ctx);
-        if (ret == -1) {
-            flb_error("[buffer] buffering could not start");
-            return -1;
-        }
-    }
-#endif
-
+    /* Support mode only */
     if (config->support_mode == FLB_TRUE) {
         sleep(1);
         flb_sosreport(config);
@@ -502,6 +467,13 @@ int flb_engine_start(struct flb_config *config)
         config->http_ctx = flb_hs_create(config->http_listen, config->http_port,
                                          config);
         flb_hs_start(config->http_ctx);
+    }
+#endif
+
+#ifdef FLB_HAVE_STREAM_PROCESSOR
+    config->stream_processor_ctx = flb_sp_create(config);
+    if (!config->stream_processor_ctx) {
+        flb_error("[engine] could not initialize stream processor");
     }
 #endif
 
@@ -557,7 +529,9 @@ int flb_engine_start(struct flb_config *config)
         }
 
         /* Cleanup functions associated to events and timers */
-        flb_sched_timer_cleanup(config->sched);
+        if (config->is_running == FLB_TRUE) {
+            flb_sched_timer_cleanup(config->sched);
+        }
     }
 }
 
@@ -568,16 +542,16 @@ int flb_engine_shutdown(struct flb_config *config)
     config->is_running = FLB_FALSE;
     flb_input_pause_all(config);
 
-#ifdef FLB_HAVE_BUFFERING
-    if (config->buffer_ctx) {
-        flb_buffer_stop(config->buffer_ctx);
+#ifdef FLB_HAVE_STREAM_PROCESSOR
+    if (config->stream_processor_ctx) {
+        flb_sp_destroy(config->stream_processor_ctx);
     }
 #endif
 
     /* router */
     flb_router_exit(config);
 
-#ifdef FLB_HAVE_REGEX
+#ifdef FLB_HAVE_PARSER
     /* parsers */
     flb_parser_exit(config);
 #endif
@@ -586,6 +560,10 @@ int flb_engine_shutdown(struct flb_config *config)
     flb_filter_exit(config);
     flb_input_exit_all(config);
     flb_output_exit(config);
+
+
+    /* Destroy the storage context */
+    flb_storage_destroy(config);
 
     /* metrics */
 #ifdef FLB_HAVE_METRICS
@@ -610,12 +588,9 @@ int flb_engine_exit(struct flb_config *config)
     int ret;
     uint64_t val = FLB_ENGINE_EV_STOP;
 
-    config->is_running = FLB_FALSE;
-
     flb_input_pause_all(config);
 
     val = FLB_ENGINE_EV_STOP;
     ret = flb_pipe_w(config->ch_manager[1], &val, sizeof(uint64_t));
-
     return ret;
 }

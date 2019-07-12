@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -57,9 +58,9 @@ static int in_lib_collect(struct flb_input_instance *i_ins,
         capacity = LIB_BUF_CHUNK;
     }
 
-    bytes = read(ctx->fd,
-                 ctx->buf_data + ctx->buf_len,
-                 capacity);
+    bytes = flb_pipe_r(ctx->fd,
+                       ctx->buf_data + ctx->buf_len,
+                       capacity);
     flb_trace("in_lib read() = %i", bytes);
     if (bytes == -1) {
         perror("read");
@@ -85,12 +86,9 @@ static int in_lib_collect(struct flb_input_instance *i_ins,
     }
     ctx->buf_len = 0;
 
-    /* Mark the start of a 'buffer write' operation */
-    flb_input_buf_write_start(i_ins);
-    ret = msgpack_sbuffer_write(&ctx->i_ins->mp_sbuf, pack, out_size);
-    flb_input_buf_write_end(i_ins);
+    /* Pack data */
+    flb_input_chunk_append_raw(ctx->i_ins, NULL, 0, pack, out_size);
     flb_free(pack);
-
     flb_pack_state_reset(&ctx->state);
     flb_pack_state_init(&ctx->state);
 

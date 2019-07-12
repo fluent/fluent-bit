@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -64,7 +65,7 @@ struct flb_thread {
 
 FLB_EXPORT pthread_key_t flb_thread_key;
 
-static FLB_INLINE void flb_thread_prepare()
+static FLB_INLINE void flb_thread_prepare(void)
 {
     pthread_key_create(&flb_thread_key, NULL);
 }

@@ -12,6 +12,7 @@ unset(MONKEY_INCLUDE_DIR CACHE)
 find_path(MONKEY_INCLUDE_DIR
   NAMES monkey/mk_core.h monkey/mk_lib.h
   PATHS ${PROJECT_SOURCE_DIR}/lib/monkey/include
+  CMAKE_FIND_ROOT_PATH_BOTH
   )
 
 include(FindPackageHandleStandardArgs)

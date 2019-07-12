@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,11 +26,16 @@
 #include "systemd_config.h"
 #include "systemd_db.h"
 
-static int tag_compose(char *tag, char *unit_name,
+/* msgpack helpers to pack unsigned ints (it takes care of endianness */
+#define pack_uint16(buf, d) _msgpack_store16(buf, (uint16_t) d)
+#define pack_uint32(buf, d) _msgpack_store32(buf, (uint32_t) d)
+
+/* tag composer */
+static int tag_compose(const char *tag, const char *unit_name,
                        int unit_size, char **out_buf, size_t *out_size)
 {
     int len;
-    char *p;
+    const char *p;
     char *buf = *out_buf;
     size_t buf_s = 0;
 
@@ -73,17 +79,20 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
     int rows = 0;
     time_t sec;
     long nsec;
+    uint8_t h;
     uint64_t usec;
     size_t length;
-    char *sep;
-    char *key;
-    char *val;
-    char *tag;
-    char *last_tag = NULL;
+    const char *sep;
+    const char *key;
+    const char *val;
+    char *tmp;
     char *cursor = NULL;
-    size_t last_tag_len;
+    char *tag;
+    char new_tag[PATH_MAX];
+    char last_tag[PATH_MAX];
     size_t tag_len;
-    char out_tag[PATH_MAX];
+    size_t last_tag_len = 0;
+    off_t off;
     const void *data;
     struct flb_systemd_config *ctx = in_context;
     struct flb_time tm;
@@ -105,6 +114,9 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
      */
     if (ctx->pending_records == FLB_FALSE) {
         ret = sd_journal_process(ctx->j);
+        if (ret == SD_JOURNAL_INVALIDATE) {
+            flb_debug("[in_systemd] received event on added or removed journal file");
+        }
         if (ret != SD_JOURNAL_APPEND && ret != SD_JOURNAL_NOP) {
             return FLB_SYSTEMD_NONE;
         }
@@ -115,12 +127,12 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
         if (ctx->dynamic_tag) {
             ret = sd_journal_get_data(ctx->j, "_SYSTEMD_UNIT", &data, &length);
             if (ret == 0) {
-                tag = out_tag;
-                tag_compose(ctx->i_ins->tag, (char *) data + 14, length - 14,
+                tag = new_tag;
+                tag_compose(ctx->i_ins->tag, (const char *) data + 14, length - 14,
                             &tag, &tag_len);
             }
             else {
-                tag = out_tag;
+                tag = new_tag;
                 tag_compose(ctx->i_ins->tag,
                             FLB_SYSTEMD_UNKNOWN, sizeof(FLB_SYSTEMD_UNKNOWN) - 1,
                             &tag, &tag_len);
@@ -131,23 +143,22 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
             tag_len = ctx->i_ins->tag_len;
         }
 
-        if (last_tag == NULL) {
-            last_tag = tag;
+        if (last_tag_len == 0) {
+            strncpy(last_tag, tag, tag_len);
             last_tag_len = tag_len;
         }
 
         /* Set time */
-        sd_journal_get_realtime_usec(ctx->j, &usec);
+        ret = sd_journal_get_realtime_usec(ctx->j, &usec);
+        if (ret != 0) {
+            flb_error("[in_systemd] error reading from systemd journal. sd_journal_get_realtime_usec() return value '%i'", ret);
+            /* It seems the journal file was deleted (rotated). */
+            ret_j = -1;
+            break;
+        }
         sec = usec / 1000000;
         nsec = (usec % 1000000) * 1000;
         flb_time_set(&tm, sec, nsec);
-
-        /* Count the number of entries in the record */
-        entries = 0;
-        while (sd_journal_enumerate_data(ctx->j, &data, &length)) {
-            entries++;
-        }
-        sd_journal_restart_data(ctx->j);
 
         /*
          * The new incoming record can have a different tag than previous one,
@@ -156,14 +167,14 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
          */
         if (mp_sbuf.size > 0 &&
             ((last_tag_len != tag_len) || (strncmp(last_tag, tag, tag_len) != 0))) {
-            flb_input_dyntag_append_raw(ctx->i_ins,
-                                        tag, tag_len,
-                                        mp_sbuf.data,
-                                        mp_sbuf.size);
+            flb_input_chunk_append_raw(ctx->i_ins,
+                                       last_tag, last_tag_len,
+                                       mp_sbuf.data,
+                                       mp_sbuf.size);
             msgpack_sbuffer_destroy(&mp_sbuf);
             msgpack_sbuffer_init(&mp_sbuf);
 
-            last_tag = tag;
+            strncpy(last_tag, tag, tag_len);
             last_tag_len = tag_len;
         }
 
@@ -171,43 +182,80 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
         msgpack_pack_array(&mp_pck, 2);
         flb_time_append_to_msgpack(&tm, &mp_pck, 0);
 
-        msgpack_pack_map(&mp_pck, entries);
-        while (sd_journal_enumerate_data(ctx->j, &data, &length)) {
-            key = (char *) data;
+        /*
+         * Save the current size/position of the buffer since this is
+         * where the Map header will be stored.
+         */
+        off = mp_sbuf.size;
+
+        /*
+         * Register the maximum fields allowed per entry in the map. With
+         * this approach we can ingest all the fields and then just adjust
+         * the map size if required.
+         */
+        msgpack_pack_map(&mp_pck, ctx->max_fields);
+
+        /* Pack every field in the entry */
+        entries = 0;
+        while (sd_journal_enumerate_data(ctx->j, &data, &length) > 0 &&
+               entries < ctx->max_fields) {
+            key = (const char *) data;
+            if (ctx->strip_underscores == FLB_TRUE && key[0] == '_') {
+                key++;
+                length--;
+            }
             sep = strchr(key, '=');
             len = (sep - key);
-            if (ctx->strip_underscores == FLB_TRUE && key[0] == '_') {
-                key++; len--;
-            }
             msgpack_pack_str(&mp_pck, len);
             msgpack_pack_str_body(&mp_pck, key, len);
 
             val = sep + 1;
             len = length - (sep - key) - 1;
-            msgpack_pack_str(&mp_pck,  len);
+            msgpack_pack_str(&mp_pck, len);
             msgpack_pack_str_body(&mp_pck, val, len);
+
+            entries++;
         }
         rows++;
+        if (entries == ctx->max_fields) {
+            flb_debug("[in_systemd] max number of fields is reached: %i; all other fields are discarded", ctx->max_fields);
+        }
+
+        /*
+         * The fields were packed, now we need to adjust the msgpack map size
+         * to set the proper number of fields appended to the record.
+         */
+        tmp = mp_sbuf.data + off;
+        h = tmp[0];
+        if (h >> 4 == 0x8) {
+            *tmp = (uint8_t) 0x8 << 4 | ((uint8_t) entries);
+        }
+        else if (h == 0xde) {
+            tmp++;
+            pack_uint16(tmp, entries);
+        }
+        else if (h == 0xdf) {
+            tmp++;
+            pack_uint32(tmp, entries);
+        }
 
         /*
          * Some journals can have too much data, pause if we have processed
          * more than 1MB. Journal will resume later.
          */
         if (mp_sbuf.size > 1024000) {
-            flb_input_dyntag_append_raw(ctx->i_ins,
-                                        tag, tag_len,
-                                        mp_sbuf.data,
-                                        mp_sbuf.size);
+            flb_input_chunk_append_raw(ctx->i_ins,
+                                       tag, tag_len,
+                                       mp_sbuf.data,
+                                       mp_sbuf.size);
             msgpack_sbuffer_destroy(&mp_sbuf);
             msgpack_sbuffer_init(&mp_sbuf);
-            last_tag = tag;
+            strncpy(last_tag, tag, tag_len);
             last_tag_len = tag_len;
-            ret_j = -1;
             break;
         }
 
         if (rows >= ctx->max_entries) {
-            ret_j = -1;
             break;
         }
     }
@@ -223,10 +271,10 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
 
     /* Write any pending data into the buffer */
     if (mp_sbuf.size > 0) {
-        flb_input_dyntag_append_raw(ctx->i_ins,
-                                    tag, tag_len,
-                                    mp_sbuf.data,
-                                    mp_sbuf.size);
+        flb_input_chunk_append_raw(ctx->i_ins,
+                                   tag, tag_len,
+                                   mp_sbuf.data,
+                                   mp_sbuf.size);
     }
     msgpack_sbuffer_destroy(&mp_sbuf);
 
@@ -235,14 +283,27 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
         ctx->pending_records = FLB_FALSE;
         return FLB_SYSTEMD_OK;
     }
-
-    /*
-     * ret_j == -1, the loop was broken due to some special condition like
-     * buffer size limit or it reach the max number of rows that it supposed to
-     * process on this call. Assume there are pending records.
-     */
-    ctx->pending_records = FLB_TRUE;
-    return FLB_SYSTEMD_MORE;
+    else if (ret_j > 0) {
+        /*
+        * ret_j == 1, but the loop was broken due to some special condition like
+        * buffer size limit or it reach the max number of rows that it supposed to
+        * process on this call. Assume there are pending records.
+        */
+        ctx->pending_records = FLB_TRUE;
+        return FLB_SYSTEMD_MORE;
+    }
+    else {
+        /* Supposedly, current cursor points to a deleted file.
+         * Re-seeking to the first journal entry.
+         * Other failures, such as disk read error, would still lead to infinite loop there,
+         * but at least FLB log will be full of errors. */
+        ret = sd_journal_seek_head(ctx->j);
+        flb_error("[in_systemd] sd_journal_next() returned error %i; "
+            "journal is re-opened, unread logs are lost; "
+            "sd_journal_seek_head() returned %i", ret_j, ret);
+        ctx->pending_records = FLB_TRUE;
+        return FLB_SYSTEMD_ERROR;
+    }
 }
 
 static int in_systemd_collect_archive(struct flb_input_instance *i_ins,

@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,7 +29,8 @@ int proxy_go_register(struct flb_plugin_proxy *proxy,
 
 int proxy_go_init(struct flb_plugin_proxy *proxy);
 
-int proxy_go_flush(struct flb_plugin_proxy *proxy, void *data, size_t size,
-                   char *tag);
+int proxy_go_flush(struct flb_plugin_proxy_context *ctx,
+                   const void *data, size_t size,
+                   const char *tag, int tag_len);
 
 #endif

@@ -15,7 +15,7 @@
   #elif defined(__arm__)
     #include "arm.c"
   #elif defined(__aarch64__)
-    #include "sjlj.c"
+    #include "aarch64.c"
   #elif defined(_ARCH_PPC)
     #include "ppc.c"
   #elif defined(_WIN32)
@@ -26,8 +26,9 @@
 #elif defined(_MSC_VER)
   #if defined(_M_IX86)
     #include "x86.c"
-  #elif defined(_M_AMD64)
-    #include "amd64.c"
+// Commented out due to SIGSEGV bug
+//  #elif defined(_M_AMD64)
+//    #include "amd64.c"
   #else
     #include "fiber.c"
   #endif

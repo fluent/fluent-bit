@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -42,10 +43,11 @@
 #define SQL_UPDATE_CURSOR \
     "UPDATE in_systemd_cursor SET cursor='%s', updated=%lu;"
 
-struct flb_sqldb *flb_systemd_db_open(char *path, struct flb_input_instance *in,
+struct flb_sqldb *flb_systemd_db_open(const char *path,
+                                      struct flb_input_instance *in,
                                       struct flb_config *config);
 int flb_systemd_db_close(struct flb_sqldb *db);
-int flb_systemd_db_set_cursor(struct flb_systemd_config *ctx, char *cursor);
+int flb_systemd_db_set_cursor(struct flb_systemd_config *ctx, const char *cursor);
 char *flb_systemd_db_get_cursor(struct flb_systemd_config *ctx);
 
 #endif

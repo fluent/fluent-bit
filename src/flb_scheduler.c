@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -181,6 +182,25 @@ static int schedule_request_promote(struct flb_sched *sched)
     return 0;
 }
 
+static double ipow(double base, int exp)
+{
+    double result = 1;
+
+    for (;;) {
+        if (exp & 1) {
+            result *= base;
+        }
+
+        exp >>= 1;
+        if (!exp) {
+            break;
+        }
+        base *= base;
+    }
+
+    return result;
+}
+
 /*
  * The 'backoff full jitter' algorithm implements a capped backoff with a jitter
  * to generate numbers to be used as 'wait times', this implementation is fully
@@ -190,10 +210,10 @@ static int schedule_request_promote(struct flb_sched *sched)
  */
 static int backoff_full_jitter(int base, int cap, int n)
 {
-    int exp;
+    int temp;
 
-    exp = xmin(cap, (1 << n /*pow(2, n)*/) * base);
-    return random_uniform(0, exp);
+    temp = xmin(cap, ipow(base * 2, n));
+    return random_uniform(base, temp);
 }
 
 /* Schedule the 'retry' for a thread buffer flush */
@@ -224,6 +244,7 @@ int flb_sched_request_create(struct flb_config *config, void *data, int tries)
 
     /* Get suggested wait_time for this request */
     seconds = backoff_full_jitter(FLB_SCHED_BASE, FLB_SCHED_CAP, tries);
+    seconds += 1;
 
     /* Populare request */
     request->fd      = -1;
@@ -255,10 +276,6 @@ int flb_sched_request_destroy(struct flb_config *config,
     mk_list_del(&req->_head);
 
     timer = req->timer;
-    if (config->evl && timer->event.mask != MK_EVENT_EMPTY) {
-        mk_event_del(config->evl, &timer->event);
-    }
-    flb_pipe_close(req->fd);
 
     /*
      * We invalidate the timer since in the same event loop round
@@ -267,6 +284,9 @@ int flb_sched_request_destroy(struct flb_config *config,
      * the event loop round finish.
      */
     flb_sched_timer_invalidate(timer);
+
+    /* Close pipe after invalidating timer */
+    flb_pipe_close(req->fd);
 
     /* Remove request */
     flb_free(req);
@@ -392,7 +412,7 @@ int flb_sched_timer_cb_disable(struct flb_sched_timer *timer)
 {
     int ret;
 
-    ret = close(timer->timer_fd);
+    ret = mk_event_closesocket(timer->timer_fd);
     timer->timer_fd = -1;
     return ret;
 }

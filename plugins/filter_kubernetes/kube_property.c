@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,7 +28,8 @@
 #include "kube_meta.h"
 #include "kube_property.h"
 
-static inline int prop_cmp(const char *key, size_t keylen, const char *property, size_t proplen)
+static inline int prop_cmp(const char *key, size_t keylen,
+                           const char *property, size_t proplen)
 {
     return strncmp(key, property, keylen < proplen ? keylen : proplen) == 0;
 }
@@ -44,7 +46,7 @@ static inline const char *strnchr(const char *s, char c, size_t len)
     return 0;
 }
 
-static inline void prop_not_allowed(char *prop, struct flb_kube_meta *meta)
+static inline void prop_not_allowed(const char *prop, struct flb_kube_meta *meta)
 {
     flb_warn("[filter_kube] annotation '%s' not allowed "
              "(ns='%s' pod_name='%s')",
@@ -54,8 +56,8 @@ static inline void prop_not_allowed(char *prop, struct flb_kube_meta *meta)
 /* Property: parser */
 static int prop_set_parser(struct flb_kube *ctx, struct flb_kube_meta *meta,
                            const char *container, size_t container_len,
-                           char *stream, size_t stream_len,
-                           char *val_buf, size_t val_len,
+                           const char *stream, size_t stream_len,
+                           const char *val_buf, size_t val_len,
                            struct flb_kube_props *props)
 {
     char *tmp;
@@ -103,7 +105,7 @@ static int prop_set_parser(struct flb_kube *ctx, struct flb_kube_meta *meta,
 }
 
 static int prop_set_exclude(struct flb_kube *ctx, struct flb_kube_meta *meta,
-                            char *val_buf, size_t val_len,
+                            const char *val_buf, size_t val_len,
                             struct flb_kube_props *props)
 {
     char *tmp;
@@ -133,8 +135,8 @@ static int prop_set_exclude(struct flb_kube *ctx, struct flb_kube_meta *meta,
 #define FLB_UNIFIED_PARSER_ANNOTATION  "parser"
 
 int flb_kube_prop_set(struct flb_kube *ctx, struct flb_kube_meta *meta,
-                      char *prop, int prop_len,
-                      char *val_buf, size_t val_len,
+                      const char *prop, int prop_len,
+                      const char *val_buf, size_t val_len,
                       struct flb_kube_props *props)
 {
     // Parser can be:
@@ -222,7 +224,8 @@ int flb_kube_prop_pack(struct flb_kube_props *props,
     return 0;
 }
 
-int flb_kube_prop_unpack(struct flb_kube_props *props, char *buf, size_t size)
+int flb_kube_prop_unpack(struct flb_kube_props *props,
+                         const char *buf, size_t size)
 {
     int ret;
     size_t off = 0;
@@ -234,7 +237,7 @@ int flb_kube_prop_unpack(struct flb_kube_props *props, char *buf, size_t size)
 
     msgpack_unpacked_init(&result);
     ret = msgpack_unpack_next(&result, buf, size, &off);
-    if (ret == -1) {
+    if (ret == MSGPACK_UNPACK_PARSE_ERROR) {
         msgpack_unpacked_destroy(&result);
         return -1;
     }
@@ -246,7 +249,7 @@ int flb_kube_prop_unpack(struct flb_kube_props *props, char *buf, size_t size)
         props->stdout_parser = NULL;
     }
     else {
-        props->stdout_parser = flb_sds_create_len((char *) o.via.str.ptr, o.via.str.size);
+        props->stdout_parser = flb_sds_create_len(o.via.str.ptr, o.via.str.size);
     }
 
     /* Index 1: stderr_parser */
@@ -255,7 +258,7 @@ int flb_kube_prop_unpack(struct flb_kube_props *props, char *buf, size_t size)
         props->stderr_parser = NULL;
     }
     else {
-        props->stderr_parser = flb_sds_create_len((char *) o.via.str.ptr, o.via.str.size);
+        props->stderr_parser = flb_sds_create_len(o.via.str.ptr, o.via.str.size);
     }
 
     /* Index 2: Exclude */

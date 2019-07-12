@@ -1,8 +1,27 @@
 cmake_minimum_required(VERSION 2.8)
 project(fluent-bit)
 
+# Fluent Bit Version
+set(FLB_VERSION_MAJOR  1)
+set(FLB_VERSION_MINOR  3)
+set(FLB_VERSION_PATCH  0)
+set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
+
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+# Define macro to identify Windows system (without Cygwin)
+if(CMAKE_SYSTEM_NAME MATCHES "Windows")
+  set(FLB_SYSTEM_WINDOWS On)
+  add_definitions(-DFLB_SYSTEM_WINDOWS)
+endif()
+
 # Update CFLAGS
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -fPIC ")
+if (MSVC)
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W3")
+else()
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
+endif()
+
 if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Windows")
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__='\"$(subst ${CMAKE_SOURCE_DIR}/,,$(abspath $<))\"'")
 else()
@@ -13,6 +32,7 @@ include(GNUInstallDirs)
 include(ExternalProject)
 include(cmake/FindJournald.cmake)
 include(cmake/FindMonkey.cmake)
+include(cmake/macros.cmake)
 set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/sanitizers-cmake/cmake" ${CMAKE_MODULE_PATH})
 find_package(Sanitizers)
 
@@ -22,17 +42,13 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/lib")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/library")
 
-# Fluent Bit Version
-set(FLB_VERSION_MAJOR  0)
-set(FLB_VERSION_MINOR 15)
-set(FLB_VERSION_PATCH  0)
-set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
-
 # Build Options
 option(FLB_ALL                "Enable all features"           No)
 option(FLB_DEBUG              "Build with debug symbols"      No)
+option(FLB_COVERAGE           "Build with code-coverage"      No)
 option(FLB_JEMALLOC           "Build with Jemalloc support"   No)
-option(FLB_REGEX              "Build wiht Regex support"     Yes)
+option(FLB_REGEX              "Build with Regex support"     Yes)
+option(FLB_PARSER             "Build with Parser support"    Yes)
 option(FLB_TLS                "Build with SSL/TLS support"    No)
 option(FLB_BINARY             "Build executable binary"      Yes)
 option(FLB_EXAMPLES           "Build examples"               Yes)
@@ -42,14 +58,15 @@ option(FLB_TRACE              "Enable trace mode"             No)
 option(FLB_TESTS_RUNTIME      "Enable runtime tests"          No)
 option(FLB_TESTS_INTERNAL     "Enable internal tests"         No)
 option(FLB_MTRACE             "Enable mtrace support"         No)
-option(FLB_BUFFERING          "Enable buffering support"      No)
 option(FLB_POSIX_TLS          "Force POSIX thread storage"    No)
 option(FLB_INOTIFY            "Enable inotify support"       Yes)
 option(FLB_SQLDB              "Enable SQL embedded DB"        No)
 option(FLB_HTTP_SERVER        "Enable HTTP Server"            No)
 option(FLB_BACKTRACE          "Enable stacktrace support"    Yes)
 option(FLB_LUAJIT             "Enable Lua Scripting support" Yes)
+option(FLB_SYSTEM_STRPTIME    "Use strptime in system libc"  Yes)
 option(FLB_STATIC_CONF        "Build binary using static configuration")
+option(FLB_STREAM_PROCESSOR   "Enable Stream Processor"      Yes)
 option(FLB_CORO_STACK_SIZE    "Set coroutine stack size")
 
 # Metrics: Experimental Feature, disabled by default on 0.12 series
@@ -75,64 +92,67 @@ option(FLB_PROXY_GO           "Enable Go plugins support"   Yes)
 # systems, but specific old-toolchains do not implement it.
 
 # Build-in Plugins
-option(FLB_IN_CPU          "Enable CPU input plugin"            Yes)
-option(FLB_IN_DISK         "Enable Disk input plugin"           Yes)
-option(FLB_IN_EXEC         "Enable Exec input plugin"           Yes)
-option(FLB_IN_FORWARD      "Enable Forward input plugin"        Yes)
-option(FLB_IN_HEALTH       "Enable Health input plugin"         Yes)
-option(FLB_IN_HTTP         "Enable HTTP input plugin"            No)
-option(FLB_IN_MEM          "Enable Memory input plugin"         Yes)
-option(FLB_IN_KMSG         "Enable Kernel log input plugin"     Yes)
-option(FLB_IN_LIB          "Enable library mode input plugin"   Yes)
-option(FLB_IN_RANDOM       "Enable random input plugin"         Yes)
-option(FLB_IN_SERIAL       "Enable Serial input plugin"         Yes)
-option(FLB_IN_STDIN        "Enable Standard input plugin"       Yes)
-option(FLB_IN_SYSLOG       "Enable Syslog input plugin"         Yes)
-option(FLB_IN_TAIL         "Enable Tail input plugin"           Yes)
-option(FLB_IN_TCP          "Enable TCP input plugin"            Yes)
-option(FLB_IN_MQTT         "Enable MQTT Broker input plugin"    Yes)
-option(FLB_IN_HEAD         "Enable Head input plugin"           Yes)
-option(FLB_IN_PROC         "Enable Process input plugin"        Yes)
-option(FLB_IN_SYSTEMD      "Enable Systemd input plugin"        Yes)
-option(FLB_IN_DUMMY        "Enable Dummy input plugin"          Yes)
-option(FLB_IN_NETIF        "Enable NetworkIF input plugin"      Yes)
-option(FLB_OUT_AZURE       "Enable Azure output plugin"         Yes)
-option(FLB_OUT_COUNTER     "Enable Counter output plugin"       Yes)
-option(FLB_OUT_ES          "Enable Elasticsearch output plugin" Yes)
-option(FLB_OUT_EXIT        "Enable Exit output plugin"          Yes)
-option(FLB_OUT_FORWARD     "Enable Forward output plugin"       Yes)
-option(FLB_OUT_GELF        "Enable GELF output plugin"          Yes)
-option(FLB_OUT_HTTP        "Enable HTTP output plugin"          Yes)
-option(FLB_OUT_INFLUXDB    "Enable InfluxDB output plugin"      Yes)
-option(FLB_OUT_NATS        "Enable NATS output plugin"          Yes)
-option(FLB_OUT_PLOT        "Enable Plot output plugin"          Yes)
-option(FLB_OUT_FILE        "Enable file output plugin"          Yes)
-option(FLB_OUT_TD          "Enable Treasure Data output plugin" Yes)
-option(FLB_OUT_RETRY       "Enable Retry test output plugin"     No)
-option(FLB_OUT_SPLUNK      "Enable Splunk output plugin"        Yes)
-option(FLB_OUT_STACKDRIVER "Enable Stackdriver output plugin"   Yes)
-option(FLB_OUT_STDOUT      "Enable STDOUT output plugin"        Yes)
-option(FLB_OUT_LIB         "Enable library mode output plugin"  Yes)
-option(FLB_OUT_NULL        "Enable dev null output plugin"      Yes)
-option(FLB_OUT_FLOWCOUNTER "Enable flowcount output plugin"     Yes)
-option(FLB_OUT_KAFKA       "Enable Kafka output plugin"          No)
-option(FLB_OUT_KAFKA_REST  "Enable Kafka Rest output plugin"    Yes)
-option(FLB_FILTER_GREP     "Enable grep filter"                 Yes)
-option(FLB_FILTER_MODIFY   "Enable modify filter"               Yes)
-option(FLB_FILTER_STDOUT   "Enable stdout filter"               Yes)
-option(FLB_FILTER_PARSER   "Enable parser filter"               Yes)
-option(FLB_FILTER_KUBERNETES "Enable kubernetes filter"         Yes)
-option(FLB_FILTER_THROTTLE "Enable throttle filter"             Yes)
-option(FLB_FILTER_RECORD_MODIFIER "Enable record_modifier filter" Yes)
-option(FLB_FILTER_NEST     "Enable nest filter"                   Yes)
-option(FLB_FILTER_LUA      "Enable Lua scripting filter"          Yes)
+option(FLB_IN_CPU             "Enable CPU input plugin"            Yes)
+option(FLB_IN_DISK            "Enable Disk input plugin"           Yes)
+option(FLB_IN_EXEC            "Enable Exec input plugin"           Yes)
+option(FLB_IN_FORWARD         "Enable Forward input plugin"        Yes)
+option(FLB_IN_HEALTH          "Enable Health input plugin"         Yes)
+option(FLB_IN_HTTP            "Enable HTTP input plugin"            No)
+option(FLB_IN_MEM             "Enable Memory input plugin"         Yes)
+option(FLB_IN_KMSG            "Enable Kernel log input plugin"     Yes)
+option(FLB_IN_LIB             "Enable library mode input plugin"   Yes)
+option(FLB_IN_RANDOM          "Enable random input plugin"         Yes)
+option(FLB_IN_SERIAL          "Enable Serial input plugin"         Yes)
+option(FLB_IN_STDIN           "Enable Standard input plugin"       Yes)
+option(FLB_IN_SYSLOG          "Enable Syslog input plugin"         Yes)
+option(FLB_IN_TAIL            "Enable Tail input plugin"           Yes)
+option(FLB_IN_TCP             "Enable TCP input plugin"            Yes)
+option(FLB_IN_MQTT            "Enable MQTT Broker input plugin"    Yes)
+option(FLB_IN_HEAD            "Enable Head input plugin"           Yes)
+option(FLB_IN_PROC            "Enable Process input plugin"        Yes)
+option(FLB_IN_SYSTEMD         "Enable Systemd input plugin"        Yes)
+option(FLB_IN_DUMMY           "Enable Dummy input plugin"          Yes)
+option(FLB_IN_NETIF           "Enable NetworkIF input plugin"      Yes)
+option(FLB_IN_WINLOG          "Enable Windows Log input plugin"     No)
+option(FLB_IN_STORAGE_BACKLOG "Enable stoage backlog input plugin" Yes)
+option(FLB_OUT_AZURE          "Enable Azure output plugin"         Yes)
+option(FLB_OUT_BIGQUERY       "Enable BigQuery output plugin"      Yes)
+option(FLB_OUT_COUNTER        "Enable Counter output plugin"       Yes)
+option(FLB_OUT_ES             "Enable Elasticsearch output plugin" Yes)
+option(FLB_OUT_EXIT           "Enable Exit output plugin"          Yes)
+option(FLB_OUT_FORWARD        "Enable Forward output plugin"       Yes)
+option(FLB_OUT_GELF           "Enable GELF output plugin"          Yes)
+option(FLB_OUT_HTTP           "Enable HTTP output plugin"          Yes)
+option(FLB_OUT_INFLUXDB       "Enable InfluxDB output plugin"      Yes)
+option(FLB_OUT_NATS           "Enable NATS output plugin"          Yes)
+option(FLB_OUT_TCP            "Enable TCP output plugin"           Yes)
+option(FLB_OUT_PLOT           "Enable Plot output plugin"          Yes)
+option(FLB_OUT_FILE           "Enable file output plugin"          Yes)
+option(FLB_OUT_TD             "Enable Treasure Data output plugin" Yes)
+option(FLB_OUT_RETRY          "Enable Retry test output plugin"     No)
+option(FLB_OUT_SPLUNK         "Enable Splunk output plugin"        Yes)
+option(FLB_OUT_STACKDRIVER    "Enable Stackdriver output plugin"   Yes)
+option(FLB_OUT_STDOUT         "Enable STDOUT output plugin"        Yes)
+option(FLB_OUT_LIB            "Enable library mode output plugin"  Yes)
+option(FLB_OUT_NULL           "Enable dev null output plugin"      Yes)
+option(FLB_OUT_FLOWCOUNTER    "Enable flowcount output plugin"     Yes)
+option(FLB_OUT_KAFKA          "Enable Kafka output plugin"          No)
+option(FLB_OUT_KAFKA_REST     "Enable Kafka Rest output plugin"    Yes)
+option(FLB_FILTER_GREP        "Enable grep filter"                 Yes)
+option(FLB_FILTER_MODIFY      "Enable modify filter"               Yes)
+option(FLB_FILTER_STDOUT      "Enable stdout filter"               Yes)
+option(FLB_FILTER_PARSER      "Enable parser filter"               Yes)
+option(FLB_FILTER_KUBERNETES  "Enable kubernetes filter"           Yes)
+option(FLB_FILTER_THROTTLE    "Enable throttle filter"             Yes)
+option(FLB_FILTER_NEST        "Enable nest filter"                 Yes)
+option(FLB_FILTER_LUA         "Enable Lua scripting filter"        Yes)
+option(FLB_FILTER_RECORD_MODIFIER "Enable record_modifier filter"  Yes)
 
 # Enable all features
 if(FLB_ALL)
   # Global
   set(FLB_DEBUG        1)
   set(FLB_TLS          1)
-  set(FLB_BUFFERING    1)
 
   # Input plugins
   set(FLB_IN_CPU       1)
@@ -172,6 +192,42 @@ if(FLB_DEV)
   set(FLB_TESTS_INTERNAL On)
 endif()
 
+# SSL/TLS: add encryption support
+if(FLB_OUT_TD)
+  set(FLB_TLS ON)
+endif()
+
+
+# Set Fluent Bit dependency libraries path
+include(cmake/libraries.cmake)
+
+# Export headers provided by libraries/dependencies
+include(cmake/headers.cmake)
+
+# Tweak build targets for Windows
+if(CMAKE_SYSTEM_NAME MATCHES "Windows")
+  include(cmake/windows-setup.cmake)
+endif()
+
+# Tweak build targets for macOS
+if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
+    execute_process(
+    COMMAND brew --prefix
+    RESULT_VARIABLE HOMEBREW
+    OUTPUT_VARIABLE HOMEBREW_PREFIX
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+  if (HOMEBREW EQUAL 0 AND EXISTS "${HOMEBREW_PREFIX}")
+    message(STATUS "Found Homebrew at ${HOMEBREW_PREFIX}")
+    include(cmake/homebrew.cmake)
+  endif()
+endif()
+
+if(FLB_COVERAGE)
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 --coverage -fprofile-arcs -ftest-coverage")
+  set(CMAKE_BUILD_TYPE "Debug")
+endif()
+
 if(FLB_OUT_GELF)
   find_package( ZLIB )
   if ( NOT ZLIB_FOUND )
@@ -179,20 +235,16 @@ if(FLB_OUT_GELF)
   endif()
 endif()
 
-# Macro to set definitions
-macro(FLB_DEFINITION var)
-  add_definitions(-D${var})
-  set(FLB_BUILD_FLAGS "${FLB_BUILD_FLAGS}#ifndef ${var}\n#define ${var}\n#endif\n")
-  set(FLB_INFO_FLAGS "${FLB_INFO_FLAGS} ${var}")
-endmacro()
-
-macro(FLB_OPTION option value)
-  set(${option} ${value} CACHE "" INTERNAL FORCE)
-endmacro()
 
 # Enable Debug symbols if specified
 if(FLB_DEBUG)
   set(CMAKE_BUILD_TYPE "Debug")
+endif()
+
+if(FLB_PARSER)
+  FLB_DEFINITION(FLB_HAVE_PARSER)
+  message("Enabling FLB_REGEX since FLB_PARSER requires")
+  set(FLB_REGEX On)
 endif()
 
 # Is sanitize_address defined ?
@@ -200,22 +252,10 @@ if(SANITIZE_ADDRESS)
   FLB_DEFINITION(FLB_HAVE_SANITIZE_ADDRESS)
 endif()
 
-# General Headers
-include_directories(
-  include/
-  lib/
-  lib/flb_libco
-  lib/msgpack-3.1.1/include
-  lib/LuaJIT-2.1.0-beta3/src/
-  ${MONKEY_INCLUDE_DIR}
-  )
-
-# On Windows, the core uses libevent
-if(CMAKE_SYSTEM_NAME MATCHES "Windows")
-  include_directories(
-    lib/monkey/mk_core/deps/libevent/include
-    ${PROJECT_BINARY_DIR}/lib/monkey/mk_core/deps/libevent/include
-    )
+# Stream Processor
+if(FLB_STREAM_PROCESSOR)
+  set(FLB_IN_STREAM_PROCESSOR On)
+  FLB_DEFINITION(FLB_HAVE_STREAM_PROCESSOR)
 endif()
 
 # mk_core is aware about jemalloc usage, we need to disable this as
@@ -227,12 +267,17 @@ option(MSGPACK_ENABLE_CXX             OFF)
 option(MSGPACK_ENABLE_SHARED          OFF)
 option(MSGPACK_BUILD_TESTS            OFF)
 option(MSGPACK_BUILD_EXAMPLES         OFF)
-add_subdirectory(lib/msgpack-3.1.1 EXCLUDE_FROM_ALL)
+add_subdirectory(${FLB_PATH_LIB_MSGPACK} EXCLUDE_FROM_ALL)
+
+# Chunk I/O
+FLB_OPTION(CIO_LIB_STATIC  ON)
+FLB_OPTION(CIO_LIB_SHARED  OFF)
+add_subdirectory(${FLB_PATH_LIB_CHUNKIO} EXCLUDE_FROM_ALL)
 
 # Lib: build the core libraries used by Fluent-Bit
 FLB_DEFINITION(JSMN_PARENT_LINKS)
 FLB_DEFINITION(JSMN_STRICT)
-add_subdirectory(lib/jsmn)
+add_subdirectory(${FLB_PATH_LIB_JSMN})
 
 # Runtime Tests (filter_kubernetes) requires HTTP Server
 if(FLB_TESTS_RUNTIME)
@@ -248,14 +293,9 @@ MK_SET_OPTION(MK_DEBUG          ON)
 
 # Build Monkey HTTP Server
 if(FLB_HTTP_SERVER)
-  add_subdirectory(lib/monkey/ EXCLUDE_FROM_ALL)
+  add_subdirectory(${FLB_PATH_LIB_MONKEY} EXCLUDE_FROM_ALL)
 else()
-  add_subdirectory(lib/monkey/mk_core EXCLUDE_FROM_ALL)
-endif()
-
-# SSL/TLS: add encryption support
-if(FLB_OUT_TD)
-  set(FLB_TLS ON)
+  add_subdirectory(${FLB_PATH_LIB_MONKEY}/mk_core EXCLUDE_FROM_ALL)
 endif()
 
 if(FLB_TLS)
@@ -263,8 +303,7 @@ if(FLB_TLS)
   option(ENABLE_TESTING  OFF)
   option(ENABLE_PROGRAMS OFF)
   option(INSTALL_MBEDTLS_HEADERS OFF)
-  add_subdirectory(lib/mbedtls-2.13.0 EXCLUDE_FROM_ALL)
-  include_directories(lib/mbedtls-2.13.0/include)
+  add_subdirectory(${FLB_PATH_LIB_MBEDTLS} EXCLUDE_FROM_ALL)
 endif()
 
 # Metrics
@@ -278,12 +317,7 @@ endif()
 
 if(FLB_SQLDB)
   FLB_DEFINITION(FLB_HAVE_SQLDB)
-  add_subdirectory(lib/sqlite-amalgamation-3240000)
-  include_directories(lib/sqlite-amalgamation-3240000)
-endif()
-
-if(FLB_BUFFERING)
-  FLB_DEFINITION(FLB_HAVE_BUFFERING)
+  add_subdirectory(${FLB_PATH_LIB_SQLITE})
 endif()
 
 if(FLB_TRACE)
@@ -298,7 +332,11 @@ endif()
 
 FLB_DEFINITION(FLB_HAVE_FLUSH_LIBCO)
 if(NOT TARGET co)
-  add_subdirectory(lib/flb_libco)
+  add_subdirectory(${FLB_PATH_LIB_CO})
+endif()
+
+if(NOT TARGET rbtree)
+  add_subdirectory(${FLB_PATH_LIB_RBTREE})
 endif()
 
 # Systemd Journald support
@@ -355,6 +393,47 @@ if(FLB_HAVE_TIMESPEC_GET)
   FLB_DEFINITION(FLB_HAVE_TIMESPEC_GET)
 endif()
 
+# gmtoff support
+check_c_source_compiles("
+  #include <time.h>
+  int main() {
+     struct tm tm;
+     tm.tm_gmtoff = 0;
+     return 0;
+  }" FLB_HAVE_GMTOFF)
+if(FLB_HAVE_GMTOFF)
+  FLB_DEFINITION(FLB_HAVE_GMTOFF)
+endif()
+
+# clock_get_time() support for macOS.
+check_c_source_compiles("
+  #include <mach/clock.h>
+  #include <mach/mach.h>
+  int main() {
+      clock_serv_t cclock;
+      mach_timespec_t mts;
+      host_get_clock_service(mach_host_self(), CALENDAR_CLOCK, &cclock);
+      clock_get_time(cclock, &mts);
+      return mach_port_deallocate(mach_task_self(), cclock);
+  }" FLB_HAVE_CLOCK_GET_TIME)
+if(FLB_HAVE_CLOCK_GET_TIME)
+  FLB_DEFINITION(FLB_HAVE_CLOCK_GET_TIME)
+endif()
+
+# unix socket support
+check_c_source_compiles("
+  #include <sys/types.h>
+  #include <sys/socket.h>
+  int main() {
+      int sock;
+      sock = socket(AF_UNIX, SOCK_STREAM, 0);
+      close(sock);
+      return 0;
+  }" FLB_HAVE_UNIX_SOCKET)
+if(FLB_HAVE_UNIX_SOCKET)
+  FLB_DEFINITION(FLB_HAVE_UNIX_SOCKET)
+endif()
+
 # Build tools/xxd-c
 add_subdirectory(tools/xxd-c)
 
@@ -384,18 +463,19 @@ else()
   set(FLB_OUT_NAME "fluent-bit")
 endif()
 
-if(FLB_PROXY_GO AND (NOT CMAKE_SYSTEM_NAME MATCHES "Windows"))
+if(FLB_PROXY_GO)
   FLB_DEFINITION(FLB_HAVE_PROXY_GO)
-else()
-  if(FLB_PROXY_GO)
-    unset(FLB_PROXY_GO CACHE)
-  endif()
 endif()
 
 if("${GNU_HOST}" STREQUAL "")
     set(AUTOCONF_HOST_OPT "")
 else()
     set(AUTOCONF_HOST_OPT "--host=${GNU_HOST}")
+endif()
+
+# strptime(2) support
+if (FLB_SYSTEM_STRPTIME)
+  FLB_DEFINITION(FLB_HAVE_SYSTEM_STRPTIME)
 endif()
 
 # Memory Allocator
@@ -406,16 +486,16 @@ if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 
   # Link to Jemalloc as an external dependency
   ExternalProject_Add(jemalloc
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc/configure ${AUTOCONF_HOST_OPT} --with-lg-quantum=3 --enable-cc-silence --prefix=<INSTALL_DIR>
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.1.0
+    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.1.0/configure ${AUTOCONF_HOST_OPT} --with-lg-quantum=3 --enable-cc-silence --prefix=<INSTALL_DIR>
     CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
-    BUILD_COMMAND ${MAKE}
+    BUILD_COMMAND $(MAKE)
     INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
     INSTALL_COMMAND $(MAKE) install_lib_static install_include)
   add_library(libjemalloc STATIC IMPORTED GLOBAL)
   set_target_properties(libjemalloc PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/lib/libjemalloc_pic.a")
   add_dependencies(libjemalloc jemalloc)
-  include_directories("${CMAKE_CURRENT_BINARY_DIR}/include/")
+  include_directories("${CMAKE_BINARY_DIR}/include/")
 else()
   FLB_OPTION(FLB_JEMALLOC OFF)
 endif()
@@ -427,7 +507,7 @@ if(FLB_BACKTRACE)
   ExternalProject_Add(backtrace
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-5a99ff7f/
     CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-5a99ff7f/configure ${AUTOCONF_HOST_OPT} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
-    BUILD_COMMAND ${MAKE}
+    BUILD_COMMAND $(MAKE)
     )
   add_library(libbacktrace STATIC IMPORTED GLOBAL)
   set_target_properties(libbacktrace PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/lib/libbacktrace.a")
@@ -438,33 +518,14 @@ endif()
 # Onigmo (Regex Engine)
 # =====================
 if(FLB_REGEX)
-  ExternalProject_Add(onigmo
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/onigmo
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/onigmo/configure ${AUTOCONF_HOST_OPT} --with-pic --disable-shared --enable-static --prefix=<INSTALL_DIR>
-    CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
-    BUILD_COMMAND ${MAKE}
-    INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
-    INSTALL_COMMAND $(MAKE) install)
-  add_library(libonigmo STATIC IMPORTED GLOBAL)
-  set_target_properties(libonigmo PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/lib/libonigmo.a")
-  add_dependencies(libonigmo onigmo)
-  include_directories("${CMAKE_CURRENT_BINARY_DIR}/include/")
+  include(cmake/onigmo.cmake)
   FLB_DEFINITION(FLB_HAVE_REGEX)
 endif()
 
 # LuaJIT (Scripting Support)
 # ==========================
 if(FLB_LUAJIT)
-  set(LUA_PATH ${CMAKE_CURRENT_SOURCE_DIR}/lib/LuaJIT-2.1.0-beta3)
-  ExternalProject_Add(luajit
-    SOURCE_DIR ${LUA_PATH}
-    CONFIGURE_COMMAND ${LUA_PATH}/configure
-    BUILD_COMMAND make BUILD_MODE=static XCFLAGS="-fPIC" -C ${LUA_PATH}
-    INSTALL_COMMAND cp ${LUA_PATH}/src/libluajit.a "${CMAKE_CURRENT_BINARY_DIR}/lib/libluajit.a")
-  add_library(libluajit STATIC IMPORTED GLOBAL)
-  set_target_properties(libluajit PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/lib/libluajit.a")
-  add_dependencies(libluajit luajit)
-  include_directories("${CMAKE_CURRENT_BINARY_DIR}/include/")
+  include(cmake/luajit.cmake)
   FLB_DEFINITION(FLB_HAVE_LUAJIT)
 endif()
 
@@ -521,6 +582,18 @@ configure_file(
   "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_version.h"
   )
 
+# Installation Directories
+# ========================
+if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
+  set(FLB_INSTALL_BINDIR "bin")
+  set(FLB_INSTALL_LIBDIR "lib")
+  set(FLB_INSTALL_CONFDIR "conf")
+else()
+  set(FLB_INSTALL_BINDIR ${CMAKE_INSTALL_FULL_BINDIR})
+  set(FLB_INSTALL_LIBDIR ${CMAKE_INSTALL_LIBDIR})
+  set(FLB_INSTALL_CONFDIR "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/")
+endif()
+
 # Instruct CMake to build the Fluent Bit Core
 add_subdirectory(include)
 add_subdirectory(plugins)
@@ -540,28 +613,47 @@ if(FLB_TESTS_INTERNAL)
   add_subdirectory(tests/internal/)
 endif()
 
+# Installer Generation (Cpack)
+# ============================
 
-### CPACK / RPM
+if(FLB_SYSTEM_WINDOWS)
+  set(CPACK_GENERATOR "NSIS" "ZIP")
+else()
+  set(CPACK_GENERATOR "RPM")
+endif()
+
 set(CPACK_PACKAGE_VERSION ${FLB_VERSION_STR})
-set(CPACK_GENERATOR "RPM")
 set(CPACK_PACKAGE_NAME "td-agent-bit")
 set(CPACK_PACKAGE_RELEASE 1)
 set(CPACK_PACKAGE_CONTACT "Eduardo Silva <eduardo@treasure-data.com>")
 set(CPACK_PACKAGE_VENDOR "Treasure Data")
 set(CPACK_PACKAGING_INSTALL_PREFIX "/opt/td-agent-bit")
-set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CPACK_PACKAGE_RELEASE}.${CMAKE_SYSTEM_PROCESSOR}")
-set(CPACK_RPM_PACKAGE_GROUP "System Environment/Daemons")
-set(CPACK_RPM_PACKAGE_LICENSE "Apache v2.0")
-set(CPACK_PACKAGE_DESCRIPTION_FILE "${PROJECT_SOURCE_DIR}/cpack/description")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Fast data collector for Linux")
-set(CPACK_RPM_SPEC_MORE_DEFINE "%define ignore \#")
-set(CPACK_RPM_USER_FILELIST
-	"%ignore /lib"
-	"%ignore /lib/systemd"
-	"%ignore /lib/systemd/system"
-	"%ignore /lib64"
-	"%ignore /lib64/pkgconfig"
-	"%ignore /opt"
-	"%ignore /etc")
+set(CPACK_RESOURCE_FILE_LICENSE "${PROJECT_SOURCE_DIR}/LICENSE")
 set(CPACK_PACKAGING_INSTALL_PREFIX "/")
+
+if(CPACK_GENERATOR MATCHES "RPM")
+  set(CPACK_RPM_PACKAGE_GROUP "System Environment/Daemons")
+  set(CPACK_RPM_PACKAGE_LICENSE "Apache v2.0")
+  set(CPACK_RPM_PACKAGE_RELEASE ${CPACK_PACKAGE_RELEASE})
+  set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CPACK_PACKAGE_RELEASE}.${CMAKE_SYSTEM_PROCESSOR}")
+  set(CPACK_PACKAGE_DESCRIPTION_FILE "${PROJECT_SOURCE_DIR}/cpack/description")
+  set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Fast data collector for Linux")
+  set(CPACK_RPM_SPEC_MORE_DEFINE "%define ignore \#")
+  set(CPACK_RPM_USER_FILELIST
+      "%ignore /lib"
+      "%ignore /lib/systemd"
+      "%ignore /lib/systemd/system"
+      "%ignore /lib64"
+      "%ignore /lib64/pkgconfig"
+      "%ignore /usr/local"
+      "%ignore /usr/local/bin"
+      "%ignore /opt"
+      "%ignore /etc")
+endif()
+
+if(CPACK_GENERATOR MATCHES "NSIS")
+  set(CPACK_MONOLITHIC_INSTALL 1)
+  set(CPACK_PACKAGE_INSTALL_DIRECTORY "td-agent-bit")
+endif()
+
 include(CPack)

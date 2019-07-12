@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,7 +34,7 @@
 static int configure(struct flb_out_lib_config *ctx,
                      struct flb_output_instance *ins)
 {
-    char *tmp;
+    const char *tmp;
 
     tmp = flb_output_get_property("format", ins);
     if (!tmp) {
@@ -46,6 +47,14 @@ static int configure(struct flb_out_lib_config *ctx,
         else if (strcasecmp(tmp, FLB_FMT_STR_JSON) == 0) {
             ctx->format = FLB_OUT_LIB_FMT_JSON;
         }
+    }
+
+    tmp = flb_output_get_property("max_records", ins);
+    if (tmp) {
+        ctx->max_records = atoi(tmp);
+    }
+    else {
+        ctx->max_records = 0;
     }
 
     return 0;
@@ -93,13 +102,14 @@ static int out_lib_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static void out_lib_flush(void *data, size_t bytes,
-                          char *tag, int tag_len,
+static void out_lib_flush(const void *data, size_t bytes,
+                          const char *tag, int tag_len,
                           struct flb_input_instance *i_ins,
                           void *out_context,
                           struct flb_config *config)
 {
     int len;
+    int count = 0;
     size_t off = 0;
     size_t last_off = 0;
     size_t data_size = 0;
@@ -118,7 +128,10 @@ static void out_lib_flush(void *data, size_t bytes,
     (void) tag_len;
 
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
+        if (ctx->max_records > 0 && count >= ctx->max_records) {
+            break;
+        }
         switch(ctx->format) {
         case FLB_OUT_LIB_FMT_MSGPACK:
             alloc_size = (off - last_off);
@@ -131,7 +144,7 @@ static void out_lib_flush(void *data, size_t bytes,
                 FLB_OUTPUT_RETURN(FLB_ERROR);
             }
 
-            memcpy(data_for_user, data + last_off, alloc_size);
+            memcpy(data_for_user, (char *) data + last_off, alloc_size);
             data_size = alloc_size;
             break;
         case FLB_OUT_LIB_FMT_JSON:
@@ -154,7 +167,7 @@ static void out_lib_flush(void *data, size_t bytes,
                 FLB_OUTPUT_RETURN(FLB_ERROR);
             }
 
-            len = snprintf(out_buf, out_size, "[%f, %s]",
+            len = snprintf(out_buf, out_size, "[%f,%s]",
                            flb_time_to_double(&tm),
                            buf);
             flb_free(buf);
@@ -166,6 +179,7 @@ static void out_lib_flush(void *data, size_t bytes,
         /* Invoke user callback */
         ctx->cb_func(data_for_user, data_size, ctx->cb_data);
         last_off = off;
+        count++;
     }
 
     msgpack_unpacked_destroy(&result);

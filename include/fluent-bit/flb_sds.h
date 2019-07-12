@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -35,17 +36,19 @@
 
 typedef char *flb_sds_t;
 
+#pragma pack(push, 1)
 struct flb_sds {
     uint64_t len;        /* used */
     uint64_t alloc;      /* excluding the header and null terminator */
     char buf[];
-} __attribute__ ((__packed__));
+};
+#pragma pack(pop)
 
 #define FLB_SDS_HEADER(s)  ((struct flb_sds *) (s - FLB_SDS_HEADER_SIZE))
 
 static inline size_t flb_sds_len(flb_sds_t s)
 {
-    return FLB_SDS_HEADER(s)->len;
+    return (size_t) FLB_SDS_HEADER(s)->len;
 }
 
 static inline void flb_sds_len_set(flb_sds_t s, size_t len)
@@ -55,7 +58,7 @@ static inline void flb_sds_len_set(flb_sds_t s, size_t len)
 
 static inline size_t flb_sds_alloc(flb_sds_t s)
 {
-    return FLB_SDS_HEADER(s)->alloc;
+    return (size_t) FLB_SDS_HEADER(s)->alloc;
 }
 
 static inline size_t flb_sds_avail(flb_sds_t s)
@@ -63,10 +66,10 @@ static inline size_t flb_sds_avail(flb_sds_t s)
     struct flb_sds *h;
 
     h = FLB_SDS_HEADER(s);
-    return (h->alloc - h->len);
+    return (size_t) (h->alloc - h->len);
 }
 
-static inline int flb_sds_cmp(flb_sds_t s, char *str, int len)
+static inline int flb_sds_cmp(flb_sds_t s, const char *str, int len)
 {
     if (flb_sds_len(s) != len) {
         return -1;
@@ -75,13 +78,13 @@ static inline int flb_sds_cmp(flb_sds_t s, char *str, int len)
     return strncmp(s, str, len);
 }
 
-flb_sds_t flb_sds_create(char *str);
-flb_sds_t flb_sds_create_len(char *str, int len);
+flb_sds_t flb_sds_create(const char *str);
+flb_sds_t flb_sds_create_len(const char *str, int len);
 flb_sds_t flb_sds_create_size(size_t size);
-flb_sds_t flb_sds_cat(flb_sds_t s, char *str, int len);
-flb_sds_t flb_sds_cat_utf8(flb_sds_t *s, char *str, int len);
+flb_sds_t flb_sds_cat(flb_sds_t s, const char *str, int len);
+flb_sds_t flb_sds_cat_utf8(flb_sds_t *s, const char *str, int len);
 flb_sds_t flb_sds_increase(flb_sds_t s, size_t len);
-flb_sds_t flb_sds_copy(flb_sds_t s, char *str, int len);
+flb_sds_t flb_sds_copy(flb_sds_t s, const char *str, int len);
 void flb_sds_destroy(flb_sds_t s);
 flb_sds_t flb_sds_printf(flb_sds_t *s, const char *fmt, ...);
 

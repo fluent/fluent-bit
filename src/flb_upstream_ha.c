@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,6 +18,7 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
@@ -28,10 +30,9 @@
 #include <ctype.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <unistd.h>
 
 /* Creates an Upstream HA Context */
-struct flb_upstream_ha *flb_upstream_ha_create(char *name)
+struct flb_upstream_ha *flb_upstream_ha_create(const char *name)
 {
     struct flb_upstream_ha *ctx;
 
@@ -259,12 +260,12 @@ static struct flb_upstream_node *create_node(int id,
 }
 
 /* Read an upstream file and generate the context */
-struct flb_upstream_ha *flb_upstream_ha_from_file(char *file,
+struct flb_upstream_ha *flb_upstream_ha_from_file(const char *file,
                                                   struct flb_config *config)
 {
     int c = 0;
     int ret;
-    char *cfg = NULL;
+    const char *cfg = NULL;
     char *tmp;
     char path[PATH_MAX + 1];
     struct mk_rconf_section *u_section;

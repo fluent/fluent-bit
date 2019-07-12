@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -35,7 +36,7 @@ static int cb_exit_init(struct flb_output_instance *ins, struct flb_config *conf
 {
     (void) config;
     (void) data;
-    char *tmp;
+    const char *tmp;
     struct flb_exit *ctx;
 
     ctx = flb_malloc(sizeof(struct flb_exit));
@@ -59,8 +60,8 @@ static int cb_exit_init(struct flb_output_instance *ins, struct flb_config *conf
     return 0;
 }
 
-static void cb_exit_flush(void *data, size_t bytes,
-                          char *tag, int tag_len,
+static void cb_exit_flush(const void *data, size_t bytes,
+                          const char *tag, int tag_len,
                           struct flb_input_instance *i_ins,
                           void *out_context,
                           struct flb_config *config)

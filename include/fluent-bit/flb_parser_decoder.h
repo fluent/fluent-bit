@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -60,7 +61,7 @@ struct flb_parser_dec {
 struct mk_list *flb_parser_decoder_list_create(struct mk_rconf_section *section);
 int flb_parser_decoder_list_destroy(struct mk_list *list);
 int flb_parser_decoder_do(struct mk_list *decoders,
-                          char *in_buf, size_t in_size,
+                          const char *in_buf, size_t in_size,
                           char **out_buf, size_t *out_size);
 
 #endif

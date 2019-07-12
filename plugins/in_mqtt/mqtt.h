@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,6 +33,7 @@ struct flb_in_mqtt_config {
     char msgp[MQTT_MSGP_BUF_SIZE];     /* msgpack static buffer       */
     struct flb_input_instance *i_ins;  /* plugin input instance       */
     struct mk_event_loop *evl;         /* Event loop file descriptor  */
+    struct mk_list conns;              /* Active connections          */
 };
 
 int in_mqtt_collect(struct flb_input_instance *i_ins,

@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -100,7 +101,7 @@ static inline int throttle_data(struct flb_filter_throttle_ctx *ctx)
 
 static int configure(struct flb_filter_throttle_ctx *ctx, struct flb_filter_instance *f_ins)
 {
-    char *str = NULL;
+    const char *str = NULL;
     double val  = 0;
     char *endp;
 
@@ -139,7 +140,7 @@ static int configure(struct flb_filter_throttle_ctx *ctx, struct flb_filter_inst
     return 0;
 }
 
-static int parse_duration(char *interval)
+static int parse_duration(const char *interval)
 {
     double seconds = 0.0;
     double s;
@@ -195,12 +196,12 @@ static int cb_throttle_init(struct flb_filter_instance *f_ins,
     return 0;
 }
 
-static int cb_throttle_filter(void *data, size_t bytes,
-                          char *tag, int tag_len,
-                          void **out_buf, size_t *out_size,
-                          struct flb_filter_instance *f_ins,
-                          void *context,
-                          struct flb_config *config)
+static int cb_throttle_filter(const void *data, size_t bytes,
+                              const char *tag, int tag_len,
+                              void **out_buf, size_t *out_size,
+                              struct flb_filter_instance *f_ins,
+                              void *context,
+                              struct flb_config *config)
 {
     int ret;
     int old_size = 0;
@@ -220,7 +221,7 @@ static int cb_throttle_filter(void *data, size_t bytes,
 
     /* Iterate each item array and apply rules */
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         root = result.data;
         if (root.type != MSGPACK_OBJECT_ARRAY) {
             continue;

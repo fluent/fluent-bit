@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -43,7 +44,7 @@ static int cb_splunk_init(struct flb_output_instance *ins,
     return 0;
 }
 
-int splunk_format(void *in_buf, size_t in_bytes,
+int splunk_format(const void *in_buf, size_t in_bytes,
                   char **out_buf, size_t *out_size,
                   struct flb_splunk *ctx)
 {
@@ -73,7 +74,7 @@ int splunk_format(void *in_buf, size_t in_bytes,
     /* Iterate the original buffer and perform adjustments */
     msgpack_unpacked_init(&result);
 
-    while (msgpack_unpack_next(&result, in_buf, in_bytes, &off)) {
+    while (msgpack_unpack_next(&result, in_buf, in_bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         root = result.data;
 
         /* Get timestamp */
@@ -148,8 +149,8 @@ int splunk_format(void *in_buf, size_t in_bytes,
     return 0;
 }
 
-static void cb_splunk_flush(void *data, size_t bytes,
-                            char *tag, int tag_len,
+static void cb_splunk_flush(const void *data, size_t bytes,
+                            const char *tag, int tag_len,
                             struct flb_input_instance *i_ins,
                             void *out_context,
                             struct flb_config *config)

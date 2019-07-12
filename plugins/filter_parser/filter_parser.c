@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,17 +32,17 @@
 #include "filter_parser.h"
 
 static int msgpackobj2char(msgpack_object *obj,
-                           char **ret_char, int *ret_char_size)
+                           const char **ret_char, int *ret_char_size)
 {
     int ret = -1;
 
     if (obj->type == MSGPACK_OBJECT_STR) {
-        *ret_char      = (char*)obj->via.str.ptr;
+        *ret_char      = obj->via.str.ptr;
         *ret_char_size = obj->via.str.size;
         ret = 0;
     }
     else if (obj->type == MSGPACK_OBJECT_BIN) {
-        *ret_char      = (char*)obj->via.bin.ptr;
+        *ret_char      = obj->via.bin.ptr;
         *ret_char_size = obj->via.bin.size;
         ret = 0;
     }
@@ -49,7 +50,7 @@ static int msgpackobj2char(msgpack_object *obj,
     return ret;
 }
 
-static int add_parser(char *parser, struct filter_parser_ctx *ctx,
+static int add_parser(const char *parser, struct filter_parser_ctx *ctx,
                        struct flb_config *config)
 {
     struct flb_parser *p;
@@ -93,7 +94,9 @@ static int configure(struct filter_parser_ctx *ctx,
                      struct flb_config *config)
 {
     int ret;
-    char *tmp;
+    const char *tmp;
+    struct mk_list *head;
+    struct flb_config_prop *p;
 
     ctx->key_name = NULL;
     ctx->reserve_data = FLB_FALSE;
@@ -105,15 +108,20 @@ static int configure(struct filter_parser_ctx *ctx,
     if (tmp) {
         ctx->key_name = flb_strdup(tmp);
         ctx->key_name_len = strlen(tmp);
-    } else {
+    }
+    else {
         flb_error("[filter_parser] \"key_name\" is missing\n");
         return -1;
     }
 
-    /* Parsers */
-    tmp = flb_filter_get_property("parser", f_ins);
-    if (tmp) {
-        ret = add_parser(tmp, ctx, config);
+    /* Read all Parsers */
+    mk_list_foreach(head, &f_ins->properties) {
+        p = mk_list_entry(head, struct flb_config_prop, _head);
+        if (strcasecmp("parser", p->key) != 0) {
+            continue;
+        }
+
+        ret = add_parser(p->val, ctx, config);
         if (ret == -1) {
             flb_error("[filter_parser] requested parser '%s' not found", tmp);
         }
@@ -166,8 +174,8 @@ static int cb_parser_init(struct flb_filter_instance *f_ins,
     return 0;
 }
 
-static int cb_parser_filter(void *data, size_t bytes,
-                            char *tag, int tag_len,
+static int cb_parser_filter(const void *data, size_t bytes,
+                            const char *tag, int tag_len,
                             void **ret_buf, size_t *ret_bytes,
                             struct flb_filter_instance *f_ins,
                             void *context,
@@ -187,9 +195,9 @@ static int cb_parser_filter(void *data, size_t bytes,
     int ret = FLB_FILTER_NOTOUCH;
     int parse_ret = -1;
     int map_num;
-    char *key_str;
+    const char *key_str;
     int key_len;
-    char *val_str;
+    const char *val_str;
     int val_len;
     char *out_buf;
     size_t out_size;
@@ -208,7 +216,7 @@ static int cb_parser_filter(void *data, size_t bytes,
     msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off)) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         out_buf = NULL;
         append_arr_i = 0;
 
@@ -262,11 +270,17 @@ static int cb_parser_filter(void *data, size_t bytes,
                                             (void **) &out_buf, &out_size,
                                             &parsed_time);
                         if (parse_ret >= 0) {
-                            if (flb_time_to_double(&parsed_time) == 0) {
-                                flb_time_get(&parsed_time);
+                            /*
+                             * If the parser succeeded we need to check the
+                             * status of the parsed time. If the time was
+                             * parsed successfully 'parsed_time' will be
+                             * different than zero, if so, override the time
+                             * holder with the new value, otherwise keep the
+                             * original.
+                             */
+                            if (flb_time_to_double(&parsed_time) != 0.0) {
+                                flb_time_copy(&tm, &parsed_time);
                             }
-
-                            flb_time_copy(&tm, &parsed_time);
 
                             if (ctx->reserve_data) {
                                 if (!ctx->preserve_key) {
@@ -339,10 +353,13 @@ static int cb_parser_exit(void *data, struct flb_config *config)
 {
     struct filter_parser_ctx *ctx = data;
 
-    if (ctx != NULL) {
-        delete_parsers(ctx);
-        flb_free(ctx);
+    if (!ctx) {
+        return 0;
     }
+
+    delete_parsers(ctx);
+    flb_free(ctx->key_name);
+    flb_free(ctx);
     return 0;
 }
 

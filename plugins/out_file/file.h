@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,7 +26,7 @@ enum {
     FLB_OUT_FILE_FMT_CSV,
     FLB_OUT_FILE_FMT_LTSV,
     FLB_OUT_FILE_FMT_PLAIN,
-    FLB_OUT_FILE_FMT_OTHER,
+    FLB_OUT_FILE_FMT_MSGPACK,
 };
 
 #endif

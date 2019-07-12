@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,7 +29,11 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <fcntl.h>
+#ifdef _WIN32
+#  include <event2/util.h>
+#else
+#  include <fcntl.h>
+#endif
 
 #define DEFAULT_INTERVAL_SEC  1
 #define DEFAULT_INTERVAL_NSEC 0
@@ -50,6 +55,8 @@ static int in_random_collect(struct flb_input_instance *i_ins,
     int fd;
     int ret;
     uint64_t val;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
     struct flb_in_random_config *ctx = in_context;
 
     if (ctx->samples == 0) {
@@ -60,6 +67,9 @@ static int in_random_collect(struct flb_input_instance *i_ins,
         return -1;
     }
 
+#ifdef _WIN32
+    evutil_secure_rng_get_bytes(&val, sizeof(val));
+#else
     fd = open("/dev/urandom", O_RDONLY);
     if (fd == -1) {
         val = time(NULL);
@@ -73,20 +83,23 @@ static int in_random_collect(struct flb_input_instance *i_ins,
         }
         close(fd);
     }
+#endif
 
-    /* Mark the start of a 'buffer write' operation */
-    flb_input_buf_write_start(i_ins);
+    /* Initialize local msgpack buffer */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    msgpack_pack_array(&i_ins->mp_pck, 2);
-    flb_pack_time_now(&i_ins->mp_pck);
-    msgpack_pack_map(&i_ins->mp_pck, 1);
+    /* Pack data */
+    msgpack_pack_array(&mp_pck, 2);
+    flb_pack_time_now(&mp_pck);
+    msgpack_pack_map(&mp_pck, 1);
 
-    msgpack_pack_str(&i_ins->mp_pck, 10);
-    msgpack_pack_str_body(&i_ins->mp_pck, "rand_value", 10);
-    msgpack_pack_uint64(&i_ins->mp_pck, val);
+    msgpack_pack_str(&mp_pck, 10);
+    msgpack_pack_str_body(&mp_pck, "rand_value", 10);
+    msgpack_pack_uint64(&mp_pck, val);
 
-    flb_input_buf_write_end(i_ins);
-
+    flb_input_chunk_append_raw(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    msgpack_sbuffer_destroy(&mp_sbuf);
     ctx->samples_count++;
 
     return 0;
@@ -96,7 +109,7 @@ static int in_random_collect(struct flb_input_instance *i_ins,
 static int in_random_config_read(struct flb_in_random_config *random_config,
                                  struct flb_input_instance *in)
 {
-    char *val = NULL;
+    const char *val = NULL;
 
     /* samples */
     val = flb_input_get_property("samples", in);

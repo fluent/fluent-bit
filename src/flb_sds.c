@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -51,7 +52,7 @@ static flb_sds_t sds_alloc(size_t size)
     return s;
 }
 
-flb_sds_t flb_sds_create_len(char *str, int len)
+flb_sds_t flb_sds_create_len(const char *str, int len)
 {
     flb_sds_t s;
     struct flb_sds *head;
@@ -71,7 +72,7 @@ flb_sds_t flb_sds_create_len(char *str, int len)
     return s;
 }
 
-flb_sds_t flb_sds_create(char *str)
+flb_sds_t flb_sds_create(const char *str)
 {
     size_t len;
 
@@ -117,7 +118,7 @@ flb_sds_t flb_sds_increase(flb_sds_t s, size_t len)
     return out;
 }
 
-flb_sds_t flb_sds_cat(flb_sds_t s, char *str, int len)
+flb_sds_t flb_sds_cat(flb_sds_t s, const char *str, int len)
 {
     size_t avail;
     struct flb_sds *head;
@@ -140,7 +141,7 @@ flb_sds_t flb_sds_cat(flb_sds_t s, char *str, int len)
     return s;
 }
 
-flb_sds_t flb_sds_copy(flb_sds_t s, char *str, int len)
+flb_sds_t flb_sds_copy(flb_sds_t s, const char *str, int len)
 {
     size_t avail;
     struct flb_sds *head;
@@ -163,7 +164,7 @@ flb_sds_t flb_sds_copy(flb_sds_t s, char *str, int len)
     return s;
 }
 
-flb_sds_t flb_sds_cat_utf8 (flb_sds_t *sds, char *str, int str_len)
+flb_sds_t flb_sds_cat_utf8 (flb_sds_t *sds, const char *str, int str_len)
 {
     static const char int2hex[] = "0123456789abcdef";
     int i;
@@ -173,7 +174,7 @@ flb_sds_t flb_sds_cat_utf8 (flb_sds_t *sds, char *str, int str_len)
     uint32_t cp;
     uint32_t state = 0;
     uint32_t c;
-    uint8_t *p;
+    const uint8_t *p;
     struct flb_sds *head;
     flb_sds_t tmp;
     flb_sds_t s;
@@ -254,7 +255,7 @@ flb_sds_t flb_sds_cat_utf8 (flb_sds_t *sds, char *str, int str_len)
             state = FLB_UTF8_ACCEPT;
             cp = 0;
             for (b = 0; b < hex_bytes; b++) {
-                p = (unsigned char *) str + i + b;
+                p = (const unsigned char *) str + i + b;
                 ret = flb_utf8_decode(&state, &cp, *p);
                 if (ret == 0) {
                     break;
@@ -287,7 +288,7 @@ flb_sds_t flb_sds_cat_utf8 (flb_sds_t *sds, char *str, int str_len)
             state = FLB_UTF8_ACCEPT;
             cp = 0;
             for (b = 0; b < hex_bytes; b++) {
-                p = (unsigned char *) str + i + b;
+                p = (const unsigned char *) str + i + b;
                 ret = flb_utf8_decode(&state, &cp, *p);
                 if (ret == 0) {
                     break;

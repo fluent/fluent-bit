@@ -17,11 +17,14 @@
  *  limitations under the License.
  */
 
+#define _GNU_SOURCE
+
 #ifndef SOL_TCP
 #define SOL_TCP IPPROTO_TCP
 #endif
 
 #include <monkey/monkey.h>
+#include <monkey/mk_info.h>
 #include <monkey/mk_socket.h>
 #include <monkey/mk_kernel.h>
 #include <monkey/mk_core.h>
@@ -362,4 +365,22 @@ int mk_socket_ip_str(int socket_fd, char **buf, int size, unsigned long *len)
 
     *len = strlen(*buf);
     return 0;
+}
+
+int mk_socket_accept(int server_fd)
+{
+    int remote_fd;
+
+    struct sockaddr sock_addr;
+    socklen_t socket_size = sizeof(struct sockaddr);
+
+#ifdef MK_HAVE_ACCEPT4
+    remote_fd = accept4(server_fd, &sock_addr, &socket_size,
+                        SOCK_NONBLOCK | SOCK_CLOEXEC);
+#else
+    remote_fd = accept(server_fd, &sock_addr, &socket_size);
+    mk_socket_set_nonblocking(remote_fd);
+#endif
+
+    return remote_fd;
 }

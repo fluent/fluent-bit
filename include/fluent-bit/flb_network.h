@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,14 +21,7 @@
 #ifndef FLB_NETWORK_H
 #define FLB_NETWORK_H
 
-#ifdef _WIN32
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#else
-#include <netinet/tcp.h>
-#include <sys/socket.h>
-#endif
-
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_uri.h>
 
 /* Defines a host service and it properties */
@@ -45,7 +39,7 @@ struct flb_net_host {
 #endif
 
 /* Generic functions */
-int flb_net_host_set(char *plugin_name, struct flb_net_host *host, char *address);
+int flb_net_host_set(const char *plugin_name, struct flb_net_host *host, const char *address);
 
 /* TCP options */
 int flb_net_socket_reset(flb_sockfd_t fd);
@@ -56,11 +50,11 @@ int flb_net_socket_tcp_fastopen(flb_sockfd_t sockfd);
 /* Socket handling */
 flb_sockfd_t flb_net_socket_create(int family, int nonblock);
 flb_sockfd_t flb_net_socket_create_udp(int family, int nonblock);
-flb_sockfd_t flb_net_tcp_connect(char *host, unsigned long port);
-flb_sockfd_t flb_net_udp_connect(char *host, unsigned long port);
-int flb_net_tcp_fd_connect(flb_sockfd_t fd, char *host, unsigned long port);
-flb_sockfd_t flb_net_server(char *port, char *listen_addr);
-flb_sockfd_t flb_net_server_udp(char *port, char *listen_addr);
+flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port);
+flb_sockfd_t flb_net_udp_connect(const char *host, unsigned long port);
+int flb_net_tcp_fd_connect(flb_sockfd_t fd, const char *host, unsigned long port);
+flb_sockfd_t flb_net_server(const char *port, const char *listen_addr);
+flb_sockfd_t flb_net_server_udp(const char *port, const char *listen_addr);
 int flb_net_bind(flb_sockfd_t fd, const struct sockaddr *addr,
                  socklen_t addrlen, int backlog);
 int flb_net_bind_udp(flb_sockfd_t fd, const struct sockaddr *addr,
