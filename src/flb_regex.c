@@ -125,6 +125,7 @@ ssize_t flb_regex_do(struct flb_regex *r, const char *str, size_t slen,
 
     region = onig_region_new();
     if (!region) {
+        result->region = NULL;
         return -1;
     }
 
@@ -140,10 +141,12 @@ ssize_t flb_regex_do(struct flb_regex *r, const char *str, size_t slen,
                       (const unsigned char *)range,
                       region, ONIG_OPTION_NONE);
     if (ret == ONIG_MISMATCH) {
+        result->region = NULL;
         onig_region_free(region, 1);
         return -1;
     }
     else if (ret < 0) {
+        result->region = NULL;
         onig_region_free(region, 1);
         return -1;
     }
@@ -160,6 +163,30 @@ ssize_t flb_regex_do(struct flb_regex *r, const char *str, size_t slen,
 
     return ret;
 }
+
+int flb_regex_match(struct flb_regex *r, unsigned char *str, size_t slen)
+{
+    int ret;
+    unsigned char *start;
+    unsigned char *end;
+    unsigned char *range;
+
+    /* Search scope */
+    start = (unsigned char *) str;
+    end   = start + slen;
+    range = end;
+
+    ret = onig_search(r->regex, str, end, start, range, NULL, ONIG_OPTION_NONE);
+
+    if (ret == ONIG_MISMATCH) {
+        return 0;
+    }
+    else if (ret < 0) {
+        return ret;
+    }
+    return 1;
+}
+
 
 int flb_regex_parse(struct flb_regex *r, struct flb_regex_search *result,
                     void (*cb_match) (const char *,          /* name  */
