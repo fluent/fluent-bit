@@ -187,11 +187,8 @@ static inline int grep_filter_data(msgpack_object map, struct grep_ctx *ctx)
             return GREP_RET_EXCLUDE;
         }
 
-        struct flb_regex_search result;
-
-        ret = flb_regex_do(rule->regex,
-                           val, vlen, &result);
-        if (ret != 0) { /* no match */
+        ret = flb_regex_match(rule->regex,(unsigned char *) val, vlen);
+        if (ret <= 0) { /* no match */
             if (rule->type == GREP_REGEX) {
                 return GREP_RET_EXCLUDE;
             }
