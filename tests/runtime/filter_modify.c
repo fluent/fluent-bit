@@ -1097,7 +1097,7 @@ static int get_output_num()
 static int callback_count(void* data, size_t size, void* cb_data)
 {
     if (size > 0) {
-        flb_debug("[test_filter_nest] received message: %s", data);
+        flb_debug("[test_filter_modify] received message: %s", data);
         add_output_num(size); /* success */
     }
     return 0;
