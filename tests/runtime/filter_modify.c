@@ -36,6 +36,8 @@ static int cb_check_result(void *record, size_t size, void *data)
     return 0;
 }
 
+
+
 static struct filter_test *filter_test_create(struct flb_lib_out_cb *data)
 {
     int i_ffd;
@@ -1063,6 +1065,106 @@ static void flb_test_cond_chain()
     filter_test_destroy(ctx);
 }
 
+
+pthread_mutex_t result_mutex = PTHREAD_MUTEX_INITIALIZER;
+int  num_output = 0;
+
+
+static void add_output_num()
+{
+    pthread_mutex_lock(&result_mutex);
+    num_output++;
+    pthread_mutex_unlock(&result_mutex);
+}
+
+static void clear_output_num()
+{
+    pthread_mutex_lock(&result_mutex);
+    num_output = 0;
+    pthread_mutex_unlock(&result_mutex);
+}
+
+static int get_output_num()
+{
+    int ret;
+    pthread_mutex_lock(&result_mutex);
+    ret = num_output;
+    pthread_mutex_unlock(&result_mutex);
+
+    return ret;
+}
+
+static int callback_count(void* data, size_t size, void* cb_data)
+{
+    if (size > 0) {
+        flb_debug("[test_filter_nest] received message: %s", data);
+        add_output_num(size); /* success */
+    }
+    return 0;
+}
+
+
+// to check issue https://github.com/fluent/fluent-bit/issues/1077
+static void flb_test_not_drop_multi_event()
+{
+    int count = 0;
+    int expected = 3;
+    
+    char *p;
+    int len;
+    int ret;
+    int bytes;
+    
+    struct filter_test *ctx;
+    struct flb_lib_out_cb cb_data;
+
+
+    clear_output_num();
+    cb_data.cb = callback_count;
+    
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "condition", "key_value_equals cond true",
+                         "add", "data matched",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+        /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest multiple events */
+    p = "[0, {\"cond\":\"false\", \"data\": \"something\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    p = "[0, {\"cond\":\"true\", \"data\": \"something\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    p = "[0, {\"data\": \"something\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+    
+    sleep(1); /* waiting flush */
+    count = get_output_num();
+
+    TEST_CHECK_(count == expected, "Expected number of events %d, got %d", expected, count );
+
+    
+    filter_test_destroy(ctx);
+    
+}
+
 TEST_LIST = {
     /* Operations / Commands */
     {"op_set_append"            , flb_test_op_set_append },
@@ -1092,7 +1194,10 @@ TEST_LIST = {
      flb_test_cond_matching_keys_have_matching_values },
     {"cond_matching_keys_do_not_have_matching_values",
      flb_test_cond_matching_keys_do_not_have_matching_values },
-
     {"cond_chain", flb_test_cond_chain },
+
+    /* Bug fixes */
+    {"multiple events are not dropped", flb_test_not_drop_multi_event },
+    
     {NULL, NULL}
 };
