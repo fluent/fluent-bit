@@ -119,6 +119,7 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
                         struct flb_config *config)
 {
     int ret;
+    int t_err;
     const char *buf_data;
     size_t buf_size = 0;
     const char *tag_buf;
@@ -153,7 +154,6 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
         }
         if (!buf_data) {
             flb_input_chunk_release_lock(ic);
-
             continue;
         }
 
@@ -168,13 +168,17 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
         task = flb_task_create(id, buf_data, buf_size,
                                ic->in, ic,
                                tag_buf, tag_len,
-                               config);
+                               config, &t_err);
         if (!task) {
             /*
-             * If task creation failed, restore the input chunk to it non
-             * busy state.
+             * If task creation failed, check the error status flag. An error
+             * is associated with memory allocation or exhaustion of tasks_id,
+             * on that case the input chunk must be preserved and retried
+             * later. So we just release it busy lock.
              */
-            flb_input_chunk_release_lock(ic);
+            if (t_err == FLB_TRUE) {
+                flb_input_chunk_release_lock(ic);
+            }
             continue;
         }
     }
