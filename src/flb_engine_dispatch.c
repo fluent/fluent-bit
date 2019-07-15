@@ -148,9 +148,12 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
              * Do not release the buffer since if allocated, it will be
              * released when the task is destroyed.
              */
+            flb_input_chunk_release_lock(ic);
             continue;
         }
         if (!buf_data) {
+            flb_input_chunk_release_lock(ic);
+
             continue;
         }
 
@@ -167,7 +170,11 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
                                tag_buf, tag_len,
                                config);
         if (!task) {
-            /* Do not release the buffer, will happen on dyntag destroy */
+            /*
+             * If task creation failed, restore the input chunk to it non
+             * busy state.
+             */
+            flb_input_chunk_release_lock(ic);
             continue;
         }
     }
