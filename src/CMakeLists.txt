@@ -211,6 +211,7 @@ set(FLB_DEPS
   mk_core
   jsmn
   msgpackc-static
+  mpack-static
   chunkio-static
   ${FLB_PLUGINS}
   ${FLB_PROXY_PLUGINS}
