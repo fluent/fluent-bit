@@ -73,8 +73,6 @@ void flb_filter_do(struct flb_input_chunk *ic,
     ssize_t write_at;
     struct mk_list *head;
     struct flb_filter_instance *f_ins;
-    msgpack_zone *mp_zone = NULL;
-
 
     /* For the incoming Tag make sure to create a NULL terminated reference */
     ntag = flb_malloc(tag_len + 1);
@@ -89,9 +87,6 @@ void flb_filter_do(struct flb_input_chunk *ic,
 
     work_data = (const char *) data;
     work_size = bytes;
-
-    /* Count number of incoming records */
-    mp_zone = msgpack_zone_new(MSGPACK_ZONE_CHUNK_SIZE);
 
     /* Iterate filters */
     mk_list_foreach(head, &config->filters) {
@@ -114,7 +109,7 @@ void flb_filter_do(struct flb_input_chunk *ic,
 
 #ifdef FLB_HAVE_METRICS
             /* Count number of incoming records */
-            in_records = flb_mp_count_zone(work_data, work_size, mp_zone);
+            in_records = flb_mp_count(work_data, work_size);
 #endif
 
             /* Invoke the filter callback */
@@ -138,14 +133,13 @@ void flb_filter_do(struct flb_input_chunk *ic,
                     /* Summarize all records removed */
                     flb_metrics_sum(FLB_METRIC_N_DROPPED,
                                     in_records, f_ins->metrics);
-                    msgpack_zone_clear(mp_zone);
 #endif
 
                     break;
                 }
                 else {
 #ifdef FLB_HAVE_METRICS
-                    out_records = flb_mp_count_zone(out_buf, out_size, mp_zone);
+                    out_records = flb_mp_count(out_buf, out_size);
                     if (out_records > in_records) {
                         diff = (out_records - in_records);
                         /* Summarize new records */
@@ -160,8 +154,6 @@ void flb_filter_do(struct flb_input_chunk *ic,
                     }
 #endif
                 }
-                msgpack_zone_clear(mp_zone);
-
                 ret = flb_input_chunk_write_at(ic, write_at,
                                                out_buf, out_size);
                 if (ret == -1) {
@@ -182,7 +174,6 @@ void flb_filter_do(struct flb_input_chunk *ic,
         }
     }
 
-    msgpack_zone_free(mp_zone);
     flb_free(ntag);
 }
 
