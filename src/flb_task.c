@@ -208,7 +208,8 @@ struct flb_task *flb_task_create(uint64_t ref_id,
                                  struct flb_input_instance *i_ins,
                                  void *ic,
                                  const char *tag_buf, int tag_len,
-                                 struct flb_config *config)
+                                 struct flb_config *config,
+                                 int *err)
 {
     int count = 0;
     uint64_t routes_mask = 0;
@@ -217,9 +218,13 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     struct flb_output_instance *o_ins;
     struct mk_list *o_head;
 
+    /* No error status */
+    *err = FLB_FALSE;
+
     /* allocate task */
     task = task_alloc(config);
     if (!task) {
+        *err = FLB_TRUE;
         return NULL;
     }
 
@@ -228,6 +233,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     if (!task->tag) {
         flb_errno();
         flb_free(task);
+        *err = FLB_TRUE;
         return NULL;
     }
     memcpy(task->tag, tag_buf, tag_len);

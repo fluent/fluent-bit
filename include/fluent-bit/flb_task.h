@@ -105,7 +105,9 @@ struct flb_task *flb_task_create(uint64_t ref_id,
                                  struct flb_input_instance *i_ins,
                                  void *ic,
                                  const char *tag_buf, int tag_len,
-                                 struct flb_config *config);
+                                 struct flb_config *config,
+                                 int *err);
+
 void flb_task_add_thread(struct flb_thread *thread,
                          struct flb_task *task);
 
@@ -124,5 +126,4 @@ struct flb_task *flb_task_chunk_create(uint64_t ref_id,
                                        void *ic,
                                        const char *tag_buf, int tag_len,
                                        struct flb_config *config);
-
 #endif
