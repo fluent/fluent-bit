@@ -278,10 +278,15 @@ int flb_plugin_load_router(char *path, struct flb_config *config)
         }
     }
     else {
+#ifdef FLB_HAVE_PROXY_GO
         if (flb_plugin_proxy_create(path, 0, config) == NULL) {
             flb_error("[plugin] error loading proxy plugin: %s", path);
             return -1;
         }
+#else
+        flb_error("[plugin] unsupported plugin type at: %s", path);
+        return -1;
+#endif
     }
 
     return 0;
