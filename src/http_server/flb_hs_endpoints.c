@@ -97,7 +97,7 @@ static int endpoint_root(struct flb_hs *hs)
     out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
-    if (out_buf == 0) {
+    if (out_buf) {
         hs->ep_root_buf  = out_buf;
         hs->ep_root_size = flb_sds_len(out_buf);
     }
@@ -115,7 +115,7 @@ int flb_hs_endpoints(struct flb_hs *hs)
 int flb_hs_endpoints_free(struct flb_hs *hs)
 {
     if (hs->ep_root_buf) {
-        flb_free(hs->ep_root_buf);
+        flb_sds_destroy(hs->ep_root_buf);
     }
 
     return 0;
