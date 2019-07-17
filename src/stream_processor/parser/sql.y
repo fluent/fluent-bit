@@ -61,7 +61,7 @@ void yyerror(struct flb_sp_cmd *cmd, const char *query, void *scanner,
 %token HOUR MINUTE SECOND
 
 /* Window tokens */
-%token TUMBLING
+%token TUMBLING HOPPING ADVANCE_BY
 
 %define parse.error verbose
 
@@ -383,7 +383,12 @@ select: SELECT keys FROM source window where groupby ';'
       window_spec:
               TUMBLING '(' INTEGER time ')'
               {
-                flb_sp_cmd_window(cmd, FLB_SP_WINDOW_TUMBLING, $3, $4);
+                flb_sp_cmd_window(cmd, FLB_SP_WINDOW_TUMBLING, $3, $4, 0, 0);
+              }
+              |
+              HOPPING '(' INTEGER time ',' ADVANCE_BY INTEGER time ')'
+              {
+                flb_sp_cmd_window(cmd, FLB_SP_WINDOW_HOPPING, $3, $4, $7, $8);
               }
       condition: comparison
                  |

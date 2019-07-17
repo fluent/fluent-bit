@@ -81,6 +81,8 @@ TIME                    return TIME;
 
  /* Window Types */
 TUMBLING                return TUMBLING;
+HOPPING                 return HOPPING;
+"ADVANCE BY"            return ADVANCE_BY;
 
  /* Time */
 HOUR                    return HOUR;

@@ -117,6 +117,7 @@ struct flb_sp_cmd_key {
 struct flb_sp_window {
     int type;
     time_t size;
+    time_t advance_by;
 };
 
 struct flb_sp_cmd {
@@ -222,8 +223,9 @@ void flb_sp_cmd_key_del(struct flb_sp_cmd_key *key);
 int flb_sp_cmd_source(struct flb_sp_cmd *cmd, int type, const char *source);
 void flb_sp_cmd_dump(struct flb_sp_cmd *cmd);
 
-void flb_sp_cmd_window(struct flb_sp_cmd *cmd,
-                       int window_type, int size, int time_unit);
+int flb_sp_cmd_window(struct flb_sp_cmd *cmd, int window_type,
+                      int size, int time_unit,
+                      int advance_by_size, int advance_by_time_unit);
 
 void flb_sp_cmd_condition_add(struct flb_sp_cmd *cmd, struct flb_exp *e);
 struct flb_exp *flb_sp_cmd_operation(struct flb_sp_cmd *cmd,

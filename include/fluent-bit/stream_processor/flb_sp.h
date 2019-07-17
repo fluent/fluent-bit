@@ -61,14 +61,33 @@ struct flb_sp_window_data {
     struct mk_list _head;
 };
 
+struct flb_sp_hopping_slot {
+    struct rb_tree aggr_tree;
+    struct mk_list aggr_list;
+    int records;
+    struct mk_list _head;
+};
+
 struct flb_sp_task_window {
     int type;
 
     int fd;
     struct mk_event event;
+    struct mk_event event_hop;
 
     struct rb_tree aggr_tree;
     struct mk_list aggr_list;
+
+    /* Hopping window parameters */
+    /*
+     * first hopping window. Timer event is set to window size for the first,
+     * and will change to the advance_by time thereafter
+     */
+    bool first_hop;
+    int fd_hop;
+    int advance_by;
+    struct mk_list hopping_slot;
+
     int records;
 
     struct mk_list data;
@@ -114,7 +133,8 @@ int flb_sp_test_do(struct flb_sp *sp, struct flb_sp_task *task,
                    const char *tag, int tag_len,
                    const char *buf_data, size_t buf_size,
                    char **out_data, size_t *out_size);
-int flb_sp_test_fd_event(struct flb_sp_task *task, char **out_data, size_t *out_size);
+int flb_sp_test_fd_event(int fd, struct flb_sp_task *task, char **out_data,
+                         size_t *out_size);
 
 struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, const char *name,
                                        const char *query);
