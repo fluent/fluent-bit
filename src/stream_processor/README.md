@@ -7,7 +7,9 @@ The following is the SQL statement syntax supported by Fluent Bit stream process
 <create>      := CREATE STREAM <id> AS <select> | CREATE STREAM <id> WITH (<properties>) AS <select>
 <properties>  := <property> | <property>, <properties>
 <property>    := <id> = '<id>'
-<select>      := SELECT <keys> FROM <source> [WHERE <condition>] [WINDOW TUMBLING (<integer> SECOND)] [GROUP BY <record_keys>]
+<select>      := SELECT <keys> FROM <source> [WHERE <condition>]
+               [WINDOW TUMBLING (<integer> SECOND) | WINDOW HOPPING (<integer> SECOND, ADVANCE BY <integer> SECOND)]
+               [GROUP BY <record_keys>]
 <keys>        := '*' | <record_keys>
 <record_keys> := <record_key> | <record_key>, <record_keys>
 <record_key>  := <exp> | <exp> AS <id>
