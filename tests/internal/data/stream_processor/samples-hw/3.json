@@ -1,0 +1,3 @@
+{"id": 8, "word1": "treasure-data"   , "word3": "cncf"            , "bytes": 10     , "bool": true}
+{"id": 9, "word1": "arm"             , "word3": "linux foundation", "bytes": "10.30", "bool": false}
+{"id": 10, "word1": "fluent-bit"     , "word3": null              , "bytes": 10     , "bool": true}
