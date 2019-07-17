@@ -409,8 +409,9 @@ const char *flb_sp_cmd_stream_prop_get(struct flb_sp_cmd *cmd, const char *key)
 
 /* WINDOW functions */
 
-void flb_sp_cmd_window(struct flb_sp_cmd *cmd,
-                       int window_type, int size, int time_unit)
+int flb_sp_cmd_window(struct flb_sp_cmd *cmd,
+                      int window_type, int size, int time_unit,
+                      int advance_by_size, int advance_by_time_unit)
 {
     cmd->window.type = window_type;
 
@@ -425,6 +426,26 @@ void flb_sp_cmd_window(struct flb_sp_cmd *cmd,
         cmd->window.size = (time_t) size * 3600;
         break;
     }
+
+    if (window_type == FLB_SP_WINDOW_HOPPING) {
+        switch (advance_by_time_unit) {
+        case FLB_SP_TIME_SECOND:
+            cmd->window.advance_by = (time_t) advance_by_size;
+            break;
+        case FLB_SP_TIME_MINUTE:
+            cmd->window.advance_by = (time_t) advance_by_size * 60;
+            break;
+        case FLB_SP_TIME_HOUR:
+            cmd->window.advance_by = (time_t) advance_by_size * 3600;
+            break;
+        }
+
+        if (cmd->window.advance_by >= cmd->window.size) {
+            return -1;
+        }
+    }
+
+    return 0;
 }
 
 /* WHERE <condition> functions */
