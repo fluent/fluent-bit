@@ -1287,9 +1287,10 @@ static void test_window()
             flb_pack_print(out_buf, out_size);
             flb_free(out_buf);
         }
+
+        flb_free(data_buf);
     }
 
-    flb_free(data_buf);
     flb_sp_destroy(sp);
     mk_event_loop_destroy(config->evl);
     flb_free(config);
