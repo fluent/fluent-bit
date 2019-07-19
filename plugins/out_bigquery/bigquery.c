@@ -283,6 +283,7 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
                             struct flb_config *config, void *data)
 {
     char *token;
+    int io_flags = FLB_IO_TLS;
     struct flb_bigquery *ctx;
 
     /* Create config context */
@@ -294,8 +295,17 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
 
     flb_output_set_context(ins, ctx);
 
-    /* Create upstream context for BigQuery Streaming Inserts (no oauth2 service) */
-    ctx->u = flb_upstream_create_url(config, FLB_BIGQUERY_URL_BASE, FLB_IO_TLS, &ins->tls);
+    /* Network mode IPv6 */
+    if (ins->host.ipv6 == FLB_TRUE) {
+        io_flags |= FLB_IO_IPV6;
+    }
+
+    /*
+     * Create upstream context for BigQuery Streaming Inserts
+     * (no oauth2 service)
+     */
+    ctx->u = flb_upstream_create_url(config, FLB_BIGQUERY_URL_BASE,
+                                     io_flags, &ins->tls);
     if (!ctx->u) {
         flb_error("[out_bigquery] upstream creation failed");
         return -1;
