@@ -69,6 +69,20 @@ if(CIO_BACKEND_FILESYSTEM)
   CIO_DEFINITION(CIO_HAVE_BACKEND_FILESYSTEM)
 endif()
 
+include(CheckCSourceCompiles)
+
+# fallocate support
+check_c_source_compiles("
+  #include <fcntl.h>
+  int main() {
+     fallocate(0,0,0);
+     return 0;
+  }" CIO_HAVE_FALLOCATE)
+
+if(CIO_HAVE_FALLOCATE)
+  CIO_DEFINITION(CIO_HAVE_FALLOCATE)
+endif()
+
 include_directories(
   include
   deps/
