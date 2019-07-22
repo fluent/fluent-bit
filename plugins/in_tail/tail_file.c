@@ -673,7 +673,9 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file->dmode_flush_timeout = 0;
     file->dmode_buf = flb_sds_create_size(ctx->docker_mode == FLB_TRUE ? 65536 : 0);
     file->dmode_lastline = flb_sds_create_size(ctx->docker_mode == FLB_TRUE ? 20000 : 0);
+#ifdef FLB_HAVE_SQLDB
     file->db_id     = 0;
+#endif
     file->skip_next = FLB_FALSE;
     file->skip_warn = FLB_FALSE;
 
@@ -727,9 +729,11 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
      * Register or update the file entry, likely if the entry already exists
      * into the database, the offset may be updated.
      */
+#ifdef FLB_HAVE_SQLDB
     if (ctx->db) {
         flb_tail_db_file_set(file, ctx);
     }
+#endif
 
     /* Seek if required */
     if (file->offset > 0) {
@@ -894,9 +898,11 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
         file->buf_len -= processed_bytes;
         file->buf_data[file->buf_len] = '\0';
 
+#ifdef FLB_HAVE_SQLDB
         if (file->config->db) {
             flb_tail_db_file_offset(file, file->config);
         }
+#endif
 
         /* Data was consumed but likely some bytes still remain */
         return FLB_TAIL_OK;
@@ -1110,6 +1116,7 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
               file->name, name);
 
     /* Rotate the file in the database */
+#ifdef FLB_HAVE_SQLDB
     if (file->config->db) {
         ret = flb_tail_db_file_rotate(name, file, file->config);
         if (ret == -1) {
@@ -1117,6 +1124,7 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
                       file->name, name);
         }
     }
+#endif
 
     /* Update local file entry */
     tmp        = file->name;
