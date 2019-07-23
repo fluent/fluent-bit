@@ -18,18 +18,27 @@
  *  limitations under the License.
  */
 
+/*
+ * This file contains compatibility functions and macros for various platforms.
+ *
+ * Including this header file should make platforms behave more consistently;
+ * Add more macros if you find any missing features.
+ */
+
 #ifndef FLB_COMPAT_H
 #define FLB_COMPAT_H
 
-/* libmonkey exposes compat macros for <unistd.h> */
+/*
+ * libmonkey exposes compat macros for <unistd.h>, which some platforms lack,
+ * so include the header here.
+ */
 #include <monkey/mk_core.h>
 
-/* Windows compatibility utils */
-#ifdef _MSC_VER
+#ifdef FLB_SYSTEM_WINDOWS
 #define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
 #include <windows.h>
-#include <Wincrypt.h>
+#include <Wincrypt.h> /* flb_io_tls.c */
 
 #include <monkey/mk_core/mk_sleep.h>
 #include <fluent-bit/flb_dlfcn_win32.h>
@@ -37,6 +46,11 @@
 #define FLB_DIRCHAR '\\'
 #define PATH_MAX MAX_PATH
 #define S_ISREG(m) (((m) & S_IFMT) == S_IFREG)
+
+/*
+ * Windows prefer to add an underscore to each POSIX function.
+ * To suppress compiler warnings, we need these trivial macros.
+ */
 #define timezone _timezone
 #define tzname _tzname
 #define strncasecmp _strnicmp
