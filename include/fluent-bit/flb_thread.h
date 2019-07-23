@@ -36,11 +36,8 @@
 extern "C" {
 #endif
 
-#if defined FLB_HAVE_FLUSH_PTHREADS
-#include <fluent-bit/flb_thread_pthreads.h>
-#elif defined FLB_HAVE_FLUSH_LIBCO
+/* Use 'libco' backend for co-routines handling */
 #include <fluent-bit/flb_thread_libco.h>
-#endif
 
 #ifdef __cplusplus
 }
