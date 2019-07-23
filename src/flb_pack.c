@@ -194,6 +194,26 @@ static char *tokens_to_msgpack(const char *js,
     return buf;
 }
 
+static char *str_copy_replace(const char *src, int len, char search, char replace) {
+    char *dst = NULL;
+    int i;
+
+    dst = flb_strndup(src, len);
+
+    if (!dst) {
+        flb_errno();
+        return NULL;
+    }
+
+    for(i = 0; i < len; i++) {
+        if (dst[i] == search) {
+            dst[i] = replace;
+        }
+    }
+
+    return dst;
+}
+
 /*
  * It parse a JSON string and convert it to MessagePack format, this packer is
  * useful when a complete JSON message exists, otherwise it will fail until
@@ -1005,58 +1025,107 @@ static flb_sds_t flb_msgpack_gelf_key(flb_sds_t *s, int in_array,
        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+    char *prefix_key_copy = NULL;
+    char *key_copy = NULL;
+    flb_sds_t ret;
+
+    if (prefix_key_len > 0) {
+        prefix_key_copy = str_copy_replace(prefix_key, prefix_key_len, '/', '_');
+        if (!prefix_key_copy) {
+            ret = NULL;
+            goto cleanup;
+        }
+    }
+
+    if (key_len > 0) {
+        key_copy = str_copy_replace(key, key_len, '/', '_');
+        if (!key_copy) {
+            ret = NULL;
+            goto cleanup;
+        }
+    }
 
     /* check valid key char [A-Za-z0-9_\.\-] */
     for(i=0; i < prefix_key_len; i++) {
-        if (!valid_char[(unsigned char)prefix_key[i]]) {
-            flb_debug("[%s] invalid key char '%.*s'",  __FUNCTION__,
-                      prefix_key_len, prefix_key);
-            return NULL;
+        if (!valid_char[(unsigned char)prefix_key_copy[i]]) {
+            flb_error("[%s] invalid prefix key char at pos %d: '%.*s'",  __FUNCTION__,
+                      i, prefix_key_len, prefix_key);
+            ret = NULL;
+            goto cleanup;
         }
     }
     for(i=0; i < key_len; i++) {
-        if (!valid_char[(unsigned char)key[i]]) {
-            flb_debug("[%s] invalid key char '%.*s'",  __FUNCTION__,
-                      key_len, key);
-            return NULL;
+        if (!valid_char[(unsigned char)key_copy[i]]) {
+            flb_error("[%s] invalid key char at pos %d: '%.*s'",  __FUNCTION__,
+                      i, key_len, key);
+            ret = NULL;
+            goto cleanup;
         }
     }
 
     if (in_array == FLB_FALSE) {
         tmp = flb_sds_cat(*s, ", \"", 3);
-        if (tmp == NULL) return NULL;
+        if (tmp == NULL) {
+            ret = NULL;
+            goto cleanup;
+        }
         *s = tmp;
     }
 
     if (prefix_key_len > 0) {
-        tmp = flb_sds_cat(*s, prefix_key, prefix_key_len);
-        if (tmp == NULL) return NULL;
+        tmp = flb_sds_cat(*s, prefix_key_copy, prefix_key_len);
+        if (tmp == NULL) {
+            ret = NULL;
+            goto cleanup;
+        }
         *s = tmp;
     }
 
     if (concat == FLB_TRUE) {
         tmp = flb_sds_cat(*s, "_", 1);
-        if (tmp == NULL) return NULL;
+        if (tmp == NULL) {
+            ret = NULL;
+            goto cleanup;
+        }
         *s = tmp;
     }
 
     if (key_len > 0) {
-        tmp = flb_sds_cat(*s, key, key_len);
-        if (tmp == NULL) return NULL;
+        tmp = flb_sds_cat(*s, key_copy, key_len);
+        if (tmp == NULL) {
+            ret = NULL;
+            goto cleanup;
+        }
         *s = tmp;
     }
 
     if (in_array == FLB_FALSE) {
         tmp = flb_sds_cat(*s, "\":", 2);
-        if (tmp == NULL) return NULL;
+        if (tmp == NULL) {
+            ret = NULL;
+            goto cleanup;
+        }
         *s = tmp;
     } else {
         tmp = flb_sds_cat(*s, "=", 1);
-        if (tmp == NULL) return NULL;
+        if (tmp == NULL) {
+            ret = NULL;
+            goto cleanup;
+        }
         *s = tmp;
     }
 
-    return *s;
+    ret = *s;
+
+cleanup:
+    if (prefix_key_copy) {
+        flb_free(prefix_key_copy);
+    }
+    if (key_copy) {
+        flb_free(key_copy);
+    }
+
+    return ret;
 }
 
 static flb_sds_t flb_msgpack_gelf_value(flb_sds_t *s, int quote,
