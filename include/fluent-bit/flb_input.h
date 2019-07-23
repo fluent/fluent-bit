@@ -346,8 +346,6 @@ struct flb_thread *flb_input_thread(struct flb_input_instance *i_ins,
     return th;
 }
 
-#if defined FLB_HAVE_FLUSH_LIBCO
-
 struct flb_libco_in_params {
     struct flb_config *config;
     struct flb_input_collector *coll;
@@ -403,8 +401,6 @@ struct flb_thread *flb_input_thread_collect(struct flb_input_collector *coll,
     input_params_set(th, coll, config, coll->instance->context);
     return th;
 }
-
-#endif
 
 /*
  * This function is used by the output plugins to return. It's mandatory
