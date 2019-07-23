@@ -75,28 +75,20 @@ struct flb_task_retry {
 struct flb_task {
     int id;                             /* task id                   */
     uint64_t ref_id;                    /* external reference id     */
-    int status;                         /* new task or running ?     */
-    int mapped;                         /* is a mmap(2)ed file ?     */
-    int deleted;                        /* should be deleted ?       */
+    uint8_t status;                     /* new task or running ?     */
     int n_threads;                      /* number number of threads  */
     int users;                          /* number of users (threads) */
-    int destinations;                   /* number of output dests    */
     char *tag;                          /* record tag                */
     int tag_len;                        /* tag length                */
     const char *buf;                    /* buffer                    */
     size_t size;                        /* buffer data size          */
     void *ic;                           /* input chunk */
-    struct flb_input_dyntag *dt;        /* dyntag node (if applies)      */
-    struct flb_input_instance *i_ins;   /* input instance                */
     struct mk_list threads;             /* ref flb_input_instance->tasks */
     struct mk_list routes;              /* routes to dispatch data       */
     struct mk_list retries;             /* queued in-memory retries      */
     struct mk_list _head;               /* link to input_instance        */
+    struct flb_input_instance *i_ins;   /* input instance                */
     struct flb_config *config;          /* parent flb config             */
-
-#ifdef FLB_HAVE_FLUSH_PTHREADS
-    pthread_mutex_t mutex_threads;
-#endif
 };
 
 struct flb_task *flb_task_create(uint64_t ref_id,

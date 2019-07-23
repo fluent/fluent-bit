@@ -189,7 +189,6 @@ static struct flb_task *task_alloc(struct flb_config *config)
 
     /* Initialize minimum variables */
     task->id        = task_id;
-    task->mapped    = FLB_FALSE;
     task->config    = config;
     task->status    = FLB_TASK_NEW;
     task->n_threads = 0;
@@ -246,7 +245,6 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     task->size   = size;
     task->i_ins  = i_ins;
     task->ic     = ic;
-    task->destinations = 0;
     mk_list_add(&task->_head, &i_ins->tasks);
 
     /* Find matching routes for the incoming tag */
