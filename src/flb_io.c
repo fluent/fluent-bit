@@ -41,9 +41,6 @@
  *
  * Note that Upstreams context may define how network operations will work,
  * basically synchronous or asynchronous (non-blocking).
- *
- * When Fluent Bit is set with config->flush_mode = FLB_FLUSH_PTHREADS, all
- * operations will work in blocking (synchronous) mode.
  */
 
 #include <stdio.h>
