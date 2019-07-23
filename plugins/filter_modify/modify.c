@@ -380,17 +380,14 @@ static int setup(struct filter_modify_ctx *ctx,
     return 0;
 }
 
-//
-// Regex matchers
-//
 
+/* Regex matchers */
 static inline bool helper_msgpack_object_matches_regex(msgpack_object * obj,
                                                        struct flb_regex
                                                        *regex)
 {
-    const char *key;
     int len;
-    struct flb_regex_search result;
+    const char *key;
 
     if (obj->type == MSGPACK_OBJECT_BIN) {
         return false;
