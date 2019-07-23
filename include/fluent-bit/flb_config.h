@@ -63,11 +63,6 @@ struct flb_config {
     int daemon;               /* Run as a daemon ?              */
     flb_pipefd_t shutdown_fd; /* Shutdown FD, 5 seconds         */
 
-#ifdef FLB_HAVE_STATS
-    int stats_fd;             /* Stats FD, 1 second             */
-    struct flb_stats *stats_ctx;
-#endif
-
     int verbose;           /* Verbose mode (default OFF)     */
     time_t init_time;      /* Time when Fluent Bit started   */
 

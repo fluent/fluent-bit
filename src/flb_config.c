@@ -312,10 +312,6 @@ void flb_config_exit(struct flb_config *config)
     }
 #endif
 
-#ifdef FLB_HAVE_STATS
-    flb_stats_exit(config);
-#endif
-
     if (config->storage_path) {
         flb_free(config->storage_path);
     }
