@@ -54,6 +54,7 @@
 #define timezone _timezone
 #define tzname _tzname
 #define strncasecmp _strnicmp
+#define timegm _mkgmtime
 
 static inline int getpagesize(void)
 {
@@ -64,15 +65,24 @@ static inline int getpagesize(void)
 
 static inline struct tm *gmtime_r(const time_t *timep, struct tm *result)
 {
-    if (gmtime_s(result, timep))
+    if (gmtime_s(result, timep)) {
         return NULL;
+    }
     return result;
 }
 
-static inline time_t timegm(struct tm *tm)
+/*
+ * We can't just define localtime_r here, since mk_core/mk_utils.c is
+ * exposing a symbol with the same name inadvertently.
+ */
+static struct tm *flb_localtime_r(time_t *timep, struct tm *result)
 {
-    return _mkgmtime(tm);
+    if (localtime_s(result, timep)) {
+        return NULL;
+    }
+    return result;
 }
+#define localtime_r flb_localtime_r
 
 static inline char* basename(const char *path)
 {
@@ -97,15 +107,11 @@ static inline char* realpath(char *path, char *buf)
     return _fullpath(NULL, path, 0);
 }
 
-/* mk_utils.c exposes localtime_r */
-extern struct tm *localtime_r(const time_t *timep, struct tm * result);
-
 static inline int usleep(LONGLONG usec)
 {
     // Convert into 100ns unit.
     return nanosleep(usec * 10);
 }
-
 #else
 #include <netdb.h>
 #include <netinet/in.h>
