@@ -200,10 +200,6 @@ struct flb_input_instance {
      */
     void *data;
 
-#ifdef FLB_HAVE_STATS
-    int stats_fd;
-#endif
-
     struct mk_list _head;                /* link to config->inputs     */
     struct mk_list routes;               /* flb_router_path's list     */
     struct mk_list chunks;               /* storage chunks             */
