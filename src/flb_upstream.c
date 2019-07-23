@@ -187,9 +187,6 @@ static struct flb_upstream_conn *get_conn(struct flb_upstream *u)
 {
     struct flb_upstream_conn *conn;
 
-#ifdef FLB_HAVE_FLUSH_PTHREADS
-    pthread_mutex_lock(&u->mutex_queue);
-#endif
     /* Get the first available connection and increase the counter */
     conn = mk_list_entry_first(&u->av_queue,
                                struct flb_upstream_conn, _head);
@@ -198,10 +195,6 @@ static struct flb_upstream_conn *get_conn(struct flb_upstream *u)
     /* Move it to the busy queue */
     mk_list_del(&conn->_head);
     mk_list_add(&conn->_head, &u->busy_queue);
-
-#ifdef FLB_HAVE_FLUSH_PTHREADS
-    pthread_mutex_unlock(&u->mutex_queue);
-#endif
 
     return conn;
 }
