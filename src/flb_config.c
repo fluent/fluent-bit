@@ -135,7 +135,6 @@ struct flb_config *flb_config_init()
 
     /* Flush */
     config->flush        = FLB_CONFIG_FLUSH_SECS;
-    config->flush_method = FLB_FLUSH_LIBCO;
     config->daemon       = FLB_FALSE;
     config->init_time    = time(NULL);
     config->kernel       = flb_kernel_info();

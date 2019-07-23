@@ -33,10 +33,6 @@
 #include <fluent-bit/flb_io_tls.h>
 #endif
 
-#define FLB_FLUSH_UCONTEXT      0
-#define FLB_FLUSH_PTHREADS      1
-#define FLB_FLUSH_LIBCO         2
-
 #define FLB_CONFIG_FLUSH_SECS   5
 #define FLB_CONFIG_HTTP_LISTEN  "0.0.0.0"
 #define FLB_CONFIG_HTTP_PORT    "2020"
@@ -58,7 +54,6 @@ struct flb_config {
     double flush;             /* Flush timeout                  */
     int grace;                /* Grace on shutdown              */
     flb_pipefd_t flush_fd;    /* Timer FD associated to flush   */
-    int flush_method;         /* Flush method set at build time */
 
     int daemon;               /* Run as a daemon ?              */
     flb_pipefd_t shutdown_fd; /* Shutdown FD, 5 seconds         */
