@@ -539,6 +539,12 @@ select: SELECT keys FROM source window where groupby ';'
                    flb_free($1);
                  }
                  |
+                 IDENTIFIER subkey
+                 {
+                   flb_sp_cmd_gb_key_add(cmd, $1);
+                   flb_free($1);
+                 }
+                 |
                  IDENTIFIER ',' gb_keys
                  {
                    flb_sp_cmd_gb_key_add(cmd, $1);
