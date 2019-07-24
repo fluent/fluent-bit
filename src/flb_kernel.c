@@ -121,6 +121,7 @@ struct flb_kernel *flb_kernel_info()
     len = snprintf(kernel->s_version.data, 16, "%i.%i.%i", a, b, c);
     if (len == -1) {
         perror("snprintf");
+        flb_free(kernel);
         return NULL;
     }
     kernel->s_version.len = len;
