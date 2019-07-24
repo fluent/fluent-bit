@@ -1328,10 +1328,13 @@ static flb_sds_t flb_msgpack_gelf_flatten(flb_sds_t *s, msgpack_object *o,
                     tmp = flb_msgpack_gelf_flatten(s, v,
                                                    obj_prefix, obj_prefix_len,
                                                    in_array);
-                    if (tmp == NULL) return NULL;
+                    if (tmp == NULL) {
+                        flb_free(obj_prefix);
+                        return NULL;
+                    }
                     *s = tmp;
 
-		    flb_free(obj_prefix);
+                    flb_free(obj_prefix);
                 } else {
                     if (in_array == FLB_TRUE && i > 0) {
                         tmp = flb_sds_cat(*s, " ", 1);
