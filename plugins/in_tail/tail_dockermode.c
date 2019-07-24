@@ -141,6 +141,7 @@ static int modify_json_cond(char *js, size_t js_len,
         *out = flb_malloc(mod_len);
         if (!*out) {
             flb_errno();
+            flb_free(new_val);
             ret = -1;
             goto modify_json_cond_end;
         }
