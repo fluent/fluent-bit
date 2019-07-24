@@ -9,6 +9,8 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
 
+#include <fluent-bit/flb_nats.h>
+
 #include "in_nats.h"
 
 #define NATS_GET_MSG_TIMEOUT 10000

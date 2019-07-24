@@ -4,6 +4,8 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_time.h>
 
+#include <fluent-bit/flb_nats.h>
+
 #include <stdio.h>
 #include <msgpack.h>
 

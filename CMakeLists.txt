@@ -305,15 +305,14 @@ if(FLB_OUT_NATS OR FLB_IN_NATS OR FLB_OUT_STAN)
     set(NATS_BUILD_STREAMING ON)
   endif()
 
-  #TODO: Enable?
-  set(NATS_BUILD_WITH_TLS ON)
   set(NATS_BUILD_WITH_TLS_CLIENT_METHOD ON)
+
   set(NATS_BUILD_EXAMPLES OFF)
 
   include_directories(${NATS_SRC}/src)
   add_subdirectory(${NATS_SRC} EXCLUDE_FROM_ALL)
-  
-  if(FLB_OUT_STAN)
+
+  if(FLB_OUT_STAN OR FLB_IN_STAN)
     get_directory_property(
       LIB_OUT_PATH
       DIRECTORY ${NATS_SRC}
