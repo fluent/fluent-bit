@@ -92,10 +92,8 @@ static int in_winlog_init(struct flb_input_instance *in,
     /* Open channels */
     tmp = flb_input_get_property("channels", in);
     if (!tmp) {
-        flb_error("[in_winlog] no input 'channels' given");
-        flb_free(ctx->buf);
-        flb_free(ctx);
-        return -1;
+        flb_debug("[in_winlog] no channel provided. listening to 'Application'");
+        tmp = "Application";
     }
 
     ctx->active_channel = winlog_open_all(tmp);
