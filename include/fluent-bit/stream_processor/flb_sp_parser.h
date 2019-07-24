@@ -93,6 +93,9 @@ enum Operations {
 struct flb_sp_cmd_gb_key {
     flb_sds_t name;           /* key name */
     struct mk_list _head;     /* Link to flb_sp_cmd->gb_keys */
+    int id;                   /* Position */
+    void *gb_nums;
+    struct mk_list *subkeys;  /* sub-keys selection */
 };
 
 /* Property (key/value) */
@@ -110,6 +113,7 @@ struct flb_sp_cmd_key {
     flb_sds_t name;           /* Parent Key name */
     flb_sds_t alias;          /* Key output alias (key AS alias) */
     flb_sds_t name_keys;      /* Key name with sub-keys */
+    void *gb_key;             /* Key name reference to gb_key */
     struct mk_list *subkeys;  /* sub-keys selection */
     struct mk_list _head;     /* Link to flb_sp_cmd->keys */
 };
@@ -140,7 +144,7 @@ struct flb_sp_cmd {
     struct mk_list gb_keys;        /* list head of group-by record fields */
 
     /*
-     * When parsing a SQL statement that have conditionals keys with sub-keys
+     * When parsing a SQL statement that have references to keys with sub-keys
      * like record['a']['b']['c'], the following 'tmp_subkeys' list will hold
      * a list of the discovered sub-keys (linked list).
      *
