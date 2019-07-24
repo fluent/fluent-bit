@@ -157,6 +157,9 @@ int flb_unescape_string_utf8(const char *in_buf, int sz, char *out_buf)
                 case '"':
                     ch = '"';
                     break;
+                case '\'':
+                    ch = '\'';
+                    break;
                 case '\\':
                     ch = '\\';
                     break;
