@@ -149,11 +149,7 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
 {
     int ret;
     struct flb_upstream_conn *conn;
-#if defined (FLB_HAVE_FLUSH_LIBCO)
     struct flb_thread *th = pthread_getspecific(flb_thread_key);
-#else
-    void *th = NULL;
-#endif
 
     conn = flb_malloc(sizeof(struct flb_upstream_conn));
     if (!conn) {
