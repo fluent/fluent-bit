@@ -381,7 +381,9 @@ int mpack_tag_cmp(mpack_tag_t left, mpack_tag_t right) {
 
 #if MPACK_DEBUG && MPACK_STDIO
 static char mpack_hex_char(uint8_t hex_value) {
-    return (hex_value < 10) ? (char)('0' + hex_value) : (char)('a' + (hex_value - 10));
+    // Older compilers (e.g. GCC 4.4.7) promote the result of this ternary to
+    // int and warn under -Wconversion, so we have to cast it back to char.
+    return (char)((hex_value < 10) ? (char)('0' + hex_value) : (char)('a' + (hex_value - 10)));
 }
 
 static void mpack_tag_debug_complete_bin_ext(mpack_tag_t tag, size_t string_length, char* buffer, size_t buffer_size,

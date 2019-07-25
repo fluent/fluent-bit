@@ -33,7 +33,6 @@
 #define MPACK_H 1
 
 #define MPACK_AMALGAMATED 1
-#define MPACK_RELEASE_VERSION 1
 
 #if defined(MPACK_HAS_CONFIG) && MPACK_HAS_CONFIG
 #include "mpack-config.h"
@@ -513,10 +512,15 @@
     #define MPACK_EXTERN_C_END   /* nothing */
 #endif
 
-/* GCC versions from 4.6 to before 5.1 warn about defining a C99
- * non-static inline function before declaring it (see issue #20) */
-#ifdef __GNUC__
-    #if (__GNUC__ == 4 && __GNUC_MINOR__ >= 6)
+/* We can't push/pop diagnostics before GCC 4.6, so if you're on a really old
+ * compiler, MPack does not support the below warning flags. You will have to
+ * manually disable them to use MPack. */
+
+/* GCC versions before 5.1 warn about defining a C99 non-static inline function
+ * before declaring it (see issue #20). Diagnostic push is not supported before
+ * GCC 4.6. */
+#if defined(__GNUC__) && !defined(__clang__)
+    #if (__GNUC__ == 4 && __GNUC_MINOR__ >= 6) || (__GNUC__ == 5 && __GNUC_MINOR__ < 1)
         #ifdef __cplusplus
             #define MPACK_DECLARED_INLINE_WARNING_START \
                 _Pragma ("GCC diagnostic push") \
@@ -535,10 +539,11 @@
     #define MPACK_DECLARED_INLINE_WARNING_END /* nothing */
 #endif
 
-/* GCC versions before 4.8 warn about shadowing a function with a
- * variable that isn't a function or function pointer (like "index") */
-#ifdef __GNUC__
-    #if (__GNUC__ < 4) || (__GNUC__ == 4 && __GNUC_MINOR__ < 8)
+/* GCC versions before 4.8 warn about shadowing a function with a variable that
+ * isn't a function or function pointer (like "index"). Diagnostic push is not
+ * supported before GCC 4.6. */
+#if defined(__GNUC__) && !defined(__clang__)
+    #if __GNUC__ == 4 && __GNUC_MINOR__ >= 6 && __GNUC_MINOR__ < 8
         #define MPACK_WSHADOW_WARNING_START \
             _Pragma ("GCC diagnostic push") \
             _Pragma ("GCC diagnostic ignored \"-Wshadow\"")
@@ -552,16 +557,15 @@
 #endif
 
 #define MPACK_HEADER_START \
-    MPACK_EXTERN_C_START \
     MPACK_WSHADOW_WARNING_START \
     MPACK_DECLARED_INLINE_WARNING_START
 
 #define MPACK_HEADER_END \
     MPACK_DECLARED_INLINE_WARNING_END \
-    MPACK_WSHADOW_WARNING_END \
-    MPACK_EXTERN_C_END
+    MPACK_WSHADOW_WARNING_END
 
 MPACK_HEADER_START
+MPACK_EXTERN_C_START
 
 
 
@@ -633,7 +637,7 @@ MPACK_HEADER_START
     // translation units. If mpack-platform.c (or the amalgamation)
     // is compiled as C, its definition will be used, otherwise a
     // C++ definition will be used, and no other C files will emit
-    // a defition.
+    // a definition.
     #define MPACK_INLINE inline
 
 #elif defined(_MSC_VER)
@@ -644,13 +648,23 @@ MPACK_HEADER_START
     #define MPACK_STATIC_INLINE static __inline
 
 #elif defined(__GNUC__) && (defined(__GNUC_GNU_INLINE__) || \
-        !defined(__GNUC_STDC_INLINE__) && !defined(__GNUC_GNU_INLINE__))
+        (!defined(__GNUC_STDC_INLINE__) && !defined(__GNUC_GNU_INLINE__)))
     // GNU rules
     #if MPACK_EMIT_INLINE_DEFS
         #define MPACK_INLINE inline
     #else
         #define MPACK_INLINE extern inline
     #endif
+
+#elif defined(__TINYC__)
+    // tcc ignores the inline keyword, so we have to use static inline. We
+    // issue a warning to make sure you are aware. You can define the below
+    // macro to disable the warning. Hopefully this will be fixed soon:
+    //     https://lists.nongnu.org/archive/html/tinycc-devel/2019-06/msg00000.html
+    #ifndef MPACK_DISABLE_TINYC_INLINE_WARNING
+        #warning "Single-definition inline is not supported by tcc. All inlines will be static. Define MPACK_DISABLE_TINYC_INLINE_WARNING to disable this warning."
+    #endif
+    #define MPACK_INLINE static inline
 
 #else
     // C99 rules
@@ -779,9 +793,10 @@ MPACK_HEADER_START
 
     #ifndef MPACK_STATIC_ASSERT
         #if defined(__GNUC__)
-            #if __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 6)
+            /* Diagnostic push is not supported before GCC 4.6. */
+            #if defined(__clang__) || __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 6)
                 #ifndef __cplusplus
-                    #if __GNUC__ >= 5
+                    #if defined(__clang__) || __GNUC__ >= 5
                     #define MPACK_IGNORE_PEDANTIC "GCC diagnostic ignored \"-Wpedantic\""
                     #else
                     #define MPACK_IGNORE_PEDANTIC "GCC diagnostic ignored \"-pedantic\""
@@ -1215,6 +1230,7 @@ size_t mpack_strlen(const char* s);
  * @}
  */
 
+MPACK_EXTERN_C_END
 MPACK_HEADER_END
 
 #endif
@@ -1238,6 +1254,7 @@ MPACK_HEADER_END
 #endif
 
 MPACK_HEADER_START
+MPACK_EXTERN_C_START
 
 
 
@@ -2271,6 +2288,7 @@ bool mpack_str_check_no_null(const char* str, size_t bytes);
  * @}
  */
 
+MPACK_EXTERN_C_END
 MPACK_HEADER_END
 
 #endif
@@ -2289,9 +2307,10 @@ MPACK_HEADER_END
 
 /* #include "mpack-common.h" */
 
-MPACK_HEADER_START
-
 #if MPACK_WRITER
+
+MPACK_HEADER_START
+MPACK_EXTERN_C_START
 
 #if MPACK_WRITE_TRACKING
 struct mpack_track_t;
@@ -3162,7 +3181,7 @@ MPACK_INLINE void mpack_finish_type(mpack_writer_t* writer, mpack_type_t type) {
  * @}
  */
 
-#if MPACK_WRITER && MPACK_HAS_GENERIC && !defined(__cplusplus)
+#if MPACK_HAS_GENERIC && !defined(__cplusplus)
 
 /**
  * @name Type-Generic Writers
@@ -3226,23 +3245,20 @@ MPACK_INLINE void mpack_finish_type(mpack_writer_t* writer, mpack_type_t type) {
  * @}
  */
 
-#endif
+#endif // MPACK_HAS_GENERIC && !defined(__cplusplus)
 
-/**
- * @}
- */
-
-#endif
-
-MPACK_HEADER_END
+// The rest of this file contains C++ overloads, so we end extern "C" here.
+MPACK_EXTERN_C_END
 
 #if defined(__cplusplus) || defined(MPACK_DOXYGEN)
 
+/**
+ * @name C++ write overloads
+ * @{
+ */
+
 /*
  * C++ generic writers for primitive values
- *
- * These currently sit outside of MPACK_HEADER_END because it defines
- * extern "C". They'll be moved to a C++-specific header soon.
  */
 
 #ifdef MPACK_DOXYGEN
@@ -3368,7 +3384,20 @@ MPACK_INLINE void mpack_write_kv(mpack_writer_t* writer, const char *key, const 
     mpack_write_cstr(writer, key);
     mpack_write_cstr_or_nil(writer, value);
 }
+
+/**
+ * @}
+ */
+
 #endif /* __cplusplus */
+
+/**
+ * @}
+ */
+
+MPACK_HEADER_END
+
+#endif // MPACK_WRITER
 
 #endif
 
@@ -3386,6 +3415,7 @@ MPACK_INLINE void mpack_write_kv(mpack_writer_t* writer, const char *key, const 
 /* #include "mpack-common.h" */
 
 MPACK_HEADER_START
+MPACK_EXTERN_C_START
 
 #if MPACK_READER
 
@@ -4311,6 +4341,7 @@ MPACK_INLINE mpack_error_t mpack_reader_track_str_bytes_all(mpack_reader_t* read
 
 #endif
 
+MPACK_EXTERN_C_END
 MPACK_HEADER_END
 
 #endif
@@ -4330,6 +4361,7 @@ MPACK_HEADER_END
 /* #include "mpack-reader.h" */
 
 MPACK_HEADER_START
+MPACK_EXTERN_C_START
 
 #if MPACK_EXPECT
 
@@ -5731,6 +5763,7 @@ size_t mpack_expect_key_cstr(mpack_reader_t* reader, const char* keys[],
 
 #endif
 
+MPACK_EXTERN_C_END
 MPACK_HEADER_END
 
 #endif
@@ -5751,6 +5784,7 @@ MPACK_HEADER_END
 /* #include "mpack-reader.h" */
 
 MPACK_HEADER_START
+MPACK_EXTERN_C_START
 
 #if MPACK_NODE
 
@@ -7142,6 +7176,7 @@ bool mpack_node_map_contains_cstr(mpack_node_t node, const char* cstr);
 
 #endif
 
+MPACK_EXTERN_C_END
 MPACK_HEADER_END
 
 #endif
