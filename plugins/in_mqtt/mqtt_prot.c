@@ -291,7 +291,7 @@ static int mqtt_handle_ping(struct mqtt_conn *conn)
     int ret;
     char buf[2] = {0, 0};
 
-    mqtt_packet_header(MQTT_PINGRESP, 2 , (char *) &buf);
+    mqtt_packet_header(MQTT_PINGRESP, 0 , (char *) &buf);
 
     /* write PINGRESP message */
     ret = write(conn->event.fd, buf, 2);
