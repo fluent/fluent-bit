@@ -349,6 +349,7 @@ int flb_service_set(flb_ctx_t *ctx, ...)
         value = va_arg(va, char *);
         if (!value) {
             /* Wrong parameter */
+            va_end(va);
             return -1;
         }
 
