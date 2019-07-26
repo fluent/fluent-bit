@@ -368,6 +368,7 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
                       (sizeof(msg.msg) - 2) - len,
                       fmt, args);
     if (total < 0) {
+        va_end(args);
         return;
     }
 
