@@ -43,7 +43,13 @@ int flb_sp_groupby_compare(const void *lhs, const void *rhs)
             rval->f64 = (double) rval->i64;
         }
 
-        if (lval->type == FLB_SP_NUM_I64 && rval->type == FLB_SP_NUM_I64) {
+        /* Comparison */
+        if (lval->type == FLB_SP_BOOLEAN && rval->type == FLB_SP_BOOLEAN) {
+            if (lval->boolean != rval->boolean) {
+                return 1;
+            }
+        }
+        else if (lval->type == FLB_SP_NUM_I64 && rval->type == FLB_SP_NUM_I64) {
             if (lval->i64 > rval->i64) {
                 return 1;
             }
@@ -62,10 +68,10 @@ int flb_sp_groupby_compare(const void *lhs, const void *rhs)
             }
         }
         else if (lval->type == FLB_SP_STRING && rval->type == FLB_SP_STRING) {
-          return strcmp((const char *) lval->string, (const char *) rval->string);
+            return strcmp((const char *) lval->string, (const char *) rval->string);
         }
         else { /* Sides have different types */
-          return -1;
+            return -1;
         }
     }
 
