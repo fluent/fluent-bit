@@ -1385,7 +1385,7 @@ static int sp_process_data_aggr(const char *buf_data, size_t buf_size,
                     }
                     else if (sval->type == FLB_EXP_BOOL) {
                         gb_nums[key_id].type = FLB_SP_BOOLEAN;
-                        gb_nums[key_id].i64 = sval->val.boolean;
+                        gb_nums[key_id].boolean = sval->val.boolean;
                     }
                     else if (sval->type == FLB_EXP_INT) {
                         gb_nums[key_id].type = FLB_SP_NUM_I64;
