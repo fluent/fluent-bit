@@ -6,6 +6,9 @@
 
 #include <nats.h>
 
+#define GLOCK_SPIN_COUNT 10000
+#define NATS_SLEEP_TIME 3000
+
 //static const char *stan_setting_error = "[%s] Error (%d) setting '%s': '%s'";
 
 #endif

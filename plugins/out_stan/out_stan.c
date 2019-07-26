@@ -2,7 +2,7 @@
 #include <fluent-bit/flb_nats.h>
 #include<pthread.h> 
 
-static void stan_connection_lost(stanConnection *sc, const char *errTxt, void *closure)
+/*static void stan_connection_lost(stanConnection *sc, const char *errTxt, void *closure)
 {
     bool *closed = (bool*) closure;
 
@@ -18,20 +18,34 @@ static void nats_connection_lost(natsConnection *nc, void *closure)
     natsConnection_GetLastError(nc, &err);
     flb_warn("[STAN] NATS lost the connection: %s", err);
     //*closed = true;
-}
+}*/
 
-int stan_try_to_connect(struct flb_out_stan_config **config) {
+/*int stan_try_to_connect(struct flb_out_stan_config **config) {
     struct flb_out_stan_config *ctx = *config;
 
-    if (ctx->stan->connection != NULL) {
+    /*if (ctx->stan->connection != NULL) {
+        //flb_info("[STAN] NATS natsConnection_DrainTimeout", "");
+        //natsConnection_DrainTimeout(ctx->stan->connection, 5);
+        
+        flb_info("[STAN] NATS stanConnection_Close", "");
         stanConnection_Close(ctx->stan->connection);
+        
+        flb_info("[STAN] NATS stanConnection_Destroy", "");
         stanConnection_Destroy(ctx->stan->connection);
+        
+        flb_info("[STAN] NATS nats_CloseAndWait", "");
+        nats_Close();
+        nats_Sleep(NATS_SLEEP_TIME);
+        
+        flb_info("[STAN] NATS nats_ReleaseThreadMemory", "");
         nats_ReleaseThreadMemory();
-        nats_CloseAndWait(0);
-        nats_Open(-1);
+
+        flb_info("[STAN] NATS nats_Open", "");
+        nats_Open(GLOCK_SPIN_COUNT);
+        nats_setNATSThreadKey();
         ctx->stan->closed = true; // required?
         ctx->stan->nats->closed = true; // required?
-    }
+    }*/
 
 
     flb_info("[STAN] Connecting to '%s'", ctx->stan->nats->url); // TODO change to debug?
@@ -39,19 +53,21 @@ int stan_try_to_connect(struct flb_out_stan_config **config) {
 
     if (ctx->stan->nats->status != NATS_OK) {
         flb_error("[STAN] Error (%d) - Unable to connect: '%s'", ctx->stan->nats->status, natsStatus_GetText(ctx->stan->nats->status));
-        
         return -1;
     }
 
-    ctx->stan->closed = false;
-    ctx->stan->nats->closed = false;
+    //ctx->stan->closed = false;
+    //ctx->stan->nats->closed = false;
 
     return 0;
-}
+}*/
 
 int configure_nats(struct flb_common_nats_config **config) {
     struct flb_common_nats_config *ctx = *config;
     
+    //nats_Open(GLOCK_SPIN_COUNT);
+    //nats_setNATSThreadKey();
+
     // Initialize Nats options
     ctx->status = natsOptions_Create(&ctx->options);
     if (ctx->status != NATS_OK) {
@@ -67,11 +83,25 @@ int configure_nats(struct flb_common_nats_config **config) {
         return -1;
     }
 
-    ctx->status = natsOptions_SetClosedCB(ctx->options, nats_connection_lost, (void*)&ctx->closed);
+    /*ctx->status = natsOptions_SetSendAsap(ctx->options, true);
+    if (ctx->status != NATS_OK) {
+        flb_error(stan_setting_error, "NATS", "Send ASAP", ctx->status, natsStatus_GetText(ctx->status));
+        return -1;
+    }
+
+    ctx->status = nats_SetMessageDeliveryPoolSize(1);
+    if (ctx->status != NATS_OK) {
+        flb_error(stan_setting_error, "NATS", "Message delivery pool size", ctx->status, natsStatus_GetText(ctx->status));
+        return -1;
+    }*/
+    
+    //natsConnection_Buffered();
+    
+    /*ctx->status = natsOptions_SetClosedCB(ctx->options, nats_connection_lost, (void*)&ctx->closed);
     if (ctx->status != NATS_OK) {
         flb_error(stan_setting_error, "NATS", "Closed CB callback", ctx->status, natsStatus_GetText(ctx->status));
         return -1;
-    }
+    }*/
 
     /*ctx->status = natsOptions_SetSecure(ctx->options, true);
     if (ctx->status != NATS_OK) {
@@ -116,11 +146,11 @@ int configure_stan(struct flb_common_stan_config **config) {
     }
 
     // Set a callback handler when losing connection
-    ctx->nats->status = stanConnOptions_SetConnectionLostHandler(ctx->options, stan_connection_lost, (void*)&ctx->closed);
+    /*ctx->nats->status = stanConnOptions_SetConnectionLostHandler(ctx->options, stan_connection_lost, (void*)&ctx->closed);
     if (ctx->nats->status != NATS_OK) {
         flb_error(stan_setting_error, "STAN", "Connection lost handler", ctx->nats->status, natsStatus_GetText(ctx->nats->status));
         return -1;
-    }
+    }*/
 
     return 0;
 }
@@ -164,21 +194,35 @@ void cb_stan_flush(void *data, size_t bytes, char *tag, int tag_len, struct flb_
     if (ctx->stan->connection == NULL || ctx->stan->closed || ctx->stan->nats->closed) {
         if (ctx->stan->connection == NULL) {
             flb_error("[STAN] Error: Unable to publish because connection is undefined", "");
-        } else if (ctx->stan->nats->closed) {
+            flb_info("[STAN] Initializing connection to '%s'", ctx->stan->nats->url); // TODO change to debug?
+            ctx->stan->nats->status = stanConnection_Connect(&ctx->stan->connection, ctx->stan->cluster, ctx->stan->client_id, ctx->stan->options);
+
+            if (ctx->stan->nats->status != NATS_OK) {
+                flb_error("[STAN] Error (%d) - Unable to connect: '%s'", ctx->stan->nats->status, natsStatus_GetText(ctx->stan->nats->status));
+                return -1;
+            }
+        }/*else if (ctx->stan->nats->closed) {
             flb_error("[STAN] Error: Unable to publish because NATS connection is closed", "");
         } else if (ctx->stan->closed) {
             flb_error("[STAN] Error: Unable to publish because NATS Streaming connection is closed", "");
-        }
-        flb_info("[STAN] Trying to connect for flush"); // TODO Change to debug?
+        }*/
+        /*flb_info("[STAN] Trying to connect for flush"); // TODO Change to debug?
         if (stan_try_to_connect(&ctx) < 0) {
-            FLB_OUTPUT_RETURN(FLB_RETRY);    
-        }
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }*/
+        //FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
     flb_info("[STAN] NATS Streaming publish to '%s', length %d", ctx->stan->nats->subject, bytes); // TODO Change to debug
     ctx->stan->nats->status = stanConnection_Publish(ctx->stan->connection, ctx->stan->nats->subject, data, bytes);
     if (ctx->stan->nats->status != NATS_OK) {
         flb_error("[STAN] NATS Streaming Error (%d) - Unable to publish message: '%s'", ctx->stan->nats->status, natsStatus_GetText(ctx->stan->nats->status));
+        //TODO just for testing...
+        //ctx->stan->closed        = true;
+        //ctx->stan->nats->closed  = true;
+
+        stanConnection_ReleaseNATSConnection(ctx->stan->connection);
+
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
