@@ -380,17 +380,14 @@ static int setup(struct filter_modify_ctx *ctx,
     return 0;
 }
 
-//
-// Regex matchers
-//
 
+/* Regex matchers */
 static inline bool helper_msgpack_object_matches_regex(msgpack_object * obj,
                                                        struct flb_regex
                                                        *regex)
 {
-    const char *key;
     int len;
-    struct flb_regex_search result;
+    const char *key;
 
     if (obj->type == MSGPACK_OBJECT_BIN) {
         return false;
@@ -403,7 +400,7 @@ static inline bool helper_msgpack_object_matches_regex(msgpack_object * obj,
         return false;
     }
 
-    return (flb_regex_do(regex, key, len, &result) == 0);
+    return flb_regex_match(regex, (unsigned char *) key, len) > 0;
 }
 
 static inline bool kv_key_matches_regex(msgpack_object_kv * kv,
@@ -1382,6 +1379,7 @@ static int cb_modify_filter(const void *data, size_t bytes,
     struct filter_modify_ctx *ctx = context;
 
     int modifications = 0;
+    int total_modifications = 0;
 
     msgpack_sbuffer buffer;
     msgpack_sbuffer_init(&buffer);
@@ -1400,8 +1398,14 @@ static int cb_modify_filter(const void *data, size_t bytes,
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         if (result.data.type == MSGPACK_OBJECT_ARRAY) {
-            modifications +=
+            modifications =
                 apply_modifying_rules(&packer, &result.data, ctx);
+
+            if (modifications == 0) {
+                // not matched, so copy original event.
+                msgpack_pack_object(&packer, result.data);
+            }
+            total_modifications += modifications;
         }
         else {
             msgpack_pack_object(&packer, result.data);
@@ -1409,7 +1413,7 @@ static int cb_modify_filter(const void *data, size_t bytes,
     }
     msgpack_unpacked_destroy(&result);
 
-    if(modifications == 0) {
+    if(total_modifications == 0) {
         msgpack_sbuffer_destroy(&buffer);
         return FLB_FILTER_NOTOUCH;
     }

@@ -382,7 +382,6 @@ int mqtt_prot_parser(struct mqtt_conn *conn)
                 }
             } while (1);
 
-            conn->buf_pos += bytes - 1;
             conn->packet_length = length;
 
             /* At this point we have a full control packet in place */

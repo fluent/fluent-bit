@@ -7,17 +7,20 @@ The following is the SQL statement syntax supported by Fluent Bit stream process
 <create>      := CREATE STREAM <id> AS <select> | CREATE STREAM <id> WITH (<properties>) AS <select>
 <properties>  := <property> | <property>, <properties>
 <property>    := <id> = '<id>'
-<select>      := SELECT <keys> FROM <source> [WHERE <condition>] [WINDOW TUMBLING (<integer> SECOND)] [GROUP BY <record_keys>]
+<select>      := SELECT <keys> FROM <source> [WHERE <condition>]
+               [WINDOW TUMBLING (<integer> SECOND) | WINDOW HOPPING (<integer> SECOND, ADVANCE BY <integer> SECOND)]
+               [GROUP BY <record_keys>]
 <keys>        := '*' | <record_keys>
 <record_keys> := <record_key> | <record_key>, <record_keys>
 <record_key>  := <exp> | <exp> AS <id>
-<exp>         := <id> | <fun>
-<fun>         := AVG(<id>) | SUM(<id>) | COUNT(<id>) | COUNT(*) | MIN(<id>) | MAX(<id>)
+<exp>         := <key> | <fun>
+<fun>         := AVG(<key>) | SUM(<key>) | COUNT(<key>) | COUNT(*) | MIN(<key>) | MAX(<key>)
 <source>      := STREAM:<id> | TAG:<id>
-<<<<<<< HEAD
-<condition>   := <id> | <value> | <id> <relation> <value> | (<condition>)
+<condition>   := <key> | <value> | <key> <relation> <value> | (<condition>)
                | NOT <condition> | <condition> AND <condition> | <condition> OR <condition>
-               | EXISTS <id> | <id> IS NULL | <id> IS NOT NULL
+               | @record.contains(<key>) | <id> IS NULL | <id> IS NOT NULL
+<key>         := <id> | <id><subkey-idx>
+<subkey-idx>  := [<id>] | <subkey-idx>[<id>]
 <relation>    := = | < | <= | > | >=
 <id>          := <letter> <characters>
 <characters>  := <letter> | <digit> | _ | <characters> <characters>

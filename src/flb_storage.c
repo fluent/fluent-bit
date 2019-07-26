@@ -52,8 +52,8 @@ static void print_storage_info(struct flb_config *ctx, struct cio_ctx *cio)
         checksum = "disabled";
     }
 
-    flb_info("[storage] %s synchronization mode, checksum %s",
-             sync, checksum);
+    flb_info("[storage] %s synchronization mode, checksum %s, max_chunks_up=%i",
+             sync, checksum, ctx->storage_max_chunks_up);
 
     /* Storage input plugin */
     if (ctx->storage_input_plugin) {
@@ -230,9 +230,11 @@ int flb_storage_create(struct flb_config *ctx)
     }
     ctx->cio = cio;
 
-    if (ctx->storage_max_chunks_up > 0) {
-        cio_set_max_chunks_up(ctx->cio, ctx->storage_max_chunks_up);
+    /* Set Chunk I/O maximum number of chunks up */
+    if (ctx->storage_max_chunks_up == 0) {
+        ctx->storage_max_chunks_up = FLB_STORAGE_MAX_CHUNKS_UP;
     }
+    cio_set_max_chunks_up(ctx->cio, ctx->storage_max_chunks_up);
 
     /* Load content from the file system if any */
     ret = cio_load(ctx->cio);

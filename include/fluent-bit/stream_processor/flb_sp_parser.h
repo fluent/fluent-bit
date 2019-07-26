@@ -23,6 +23,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_time.h>
 #include <fluent-bit/stream_processor/flb_sp.h>
 #include <fluent-bit/stream_processor/flb_sp_window.h>
 
@@ -106,14 +107,17 @@ struct flb_sp_cmd_key {
     int aggr_func;            /* Aggregation function */
     int time_func;            /* Time function */
     int record_func;          /* Record function */
-    flb_sds_t name;           /* Key name */
-    flb_sds_t alias;          /* Key output alias */
+    flb_sds_t name;           /* Parent Key name */
+    flb_sds_t alias;          /* Key output alias (key AS alias) */
+    flb_sds_t name_keys;      /* Key name with sub-keys */
+    struct mk_list *subkeys;  /* sub-keys selection */
     struct mk_list _head;     /* Link to flb_sp_cmd->keys */
 };
 
 struct flb_sp_window {
     int type;
     time_t size;
+    time_t advance_by;
 };
 
 struct flb_sp_cmd {
@@ -185,13 +189,21 @@ struct flb_exp_func {
     int type;
     struct mk_list _head;
     flb_sds_t name;
-    struct flb_exp_val *(*cb_func) (struct flb_exp_val *);
+    struct flb_exp_val *(*cb_func) (const char *, int,
+                                    struct flb_time *, struct flb_exp_val *);
     struct flb_exp *param;
 };
 
 struct flb_exp_val {
     int type;
     struct mk_list _head;
+    sp_val val;
+};
+
+/* Represent any value object */
+struct flb_sp_value {
+    int type;
+    msgpack_object o;
     sp_val val;
 };
 
@@ -211,8 +223,9 @@ void flb_sp_cmd_key_del(struct flb_sp_cmd_key *key);
 int flb_sp_cmd_source(struct flb_sp_cmd *cmd, int type, const char *source);
 void flb_sp_cmd_dump(struct flb_sp_cmd *cmd);
 
-void flb_sp_cmd_window(struct flb_sp_cmd *cmd,
-                       int window_type, int size, int time_unit);
+int flb_sp_cmd_window(struct flb_sp_cmd *cmd, int window_type,
+                      int size, int time_unit,
+                      int advance_by_size, int advance_by_time_unit);
 
 void flb_sp_cmd_condition_add(struct flb_sp_cmd *cmd, struct flb_exp *e);
 struct flb_exp *flb_sp_cmd_operation(struct flb_sp_cmd *cmd,

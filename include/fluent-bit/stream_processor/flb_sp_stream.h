@@ -27,6 +27,7 @@
 struct flb_sp_stream {
     flb_sds_t name;       /* stream name */
     flb_sds_t tag;        /* tag specified through properties */
+    int routable;         /* is it routable ? */
     void *in;             /* input instance context */
 };
 

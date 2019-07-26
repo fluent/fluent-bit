@@ -30,15 +30,13 @@
 #include <stdlib.h>
 #include <stddef.h>
 
-#include <onigmo.h>
-
 struct flb_regex {
-    OnigRegex regex;
+    void *regex;
 };
 
 struct flb_regex_search {
     int last_pos;
-    OnigRegion *region;
+    void *region;
     const char *str;
     void (*cb_match) (const char *,          /* name  */
                       const char *, size_t,  /* value */
@@ -50,6 +48,9 @@ int flb_regex_init();
 struct flb_regex *flb_regex_create(const char *pattern);
 ssize_t flb_regex_do(struct flb_regex *r, const char *str, size_t slen,
                      struct flb_regex_search *result);
+
+int flb_regex_match(struct flb_regex *r, unsigned char *str, size_t slen);
+
 int flb_regex_parse(struct flb_regex *r, struct flb_regex_search *result,
                     void (*cb_match) (const char *,          /* name  */
                                       const char *, size_t,  /* value */

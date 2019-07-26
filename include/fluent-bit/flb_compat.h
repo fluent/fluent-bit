@@ -18,25 +18,43 @@
  *  limitations under the License.
  */
 
+/*
+ * This file contains compatibility functions and macros for various platforms.
+ *
+ * Including this header file should make platforms behave more consistently;
+ * Add more macros if you find any missing features.
+ */
+
 #ifndef FLB_COMPAT_H
 #define FLB_COMPAT_H
 
-/* libmonkey exposes compat macros for <unistd.h> */
+/*
+ * libmonkey exposes compat macros for <unistd.h>, which some platforms lack,
+ * so include the header here.
+ */
 #include <monkey/mk_core.h>
 
-/* Windows compatibility utils */
-#ifdef _MSC_VER
+#ifdef FLB_SYSTEM_WINDOWS
 #define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
 #include <windows.h>
-#include <Wincrypt.h>
+#include <Wincrypt.h> /* flb_io_tls.c */
+
+#include <monkey/mk_core/mk_sleep.h>
+#include <fluent-bit/flb_dlfcn_win32.h>
 
 #define FLB_DIRCHAR '\\'
 #define PATH_MAX MAX_PATH
 #define S_ISREG(m) (((m) & S_IFMT) == S_IFREG)
+
+/*
+ * Windows prefer to add an underscore to each POSIX function.
+ * To suppress compiler warnings, we need these trivial macros.
+ */
 #define timezone _timezone
 #define tzname _tzname
 #define strncasecmp _strnicmp
+#define timegm _mkgmtime
 
 static inline int getpagesize(void)
 {
@@ -47,15 +65,24 @@ static inline int getpagesize(void)
 
 static inline struct tm *gmtime_r(const time_t *timep, struct tm *result)
 {
-    if (gmtime_s(result, timep))
+    if (gmtime_s(result, timep)) {
         return NULL;
+    }
     return result;
 }
 
-static inline time_t timegm(struct tm *tm)
+/*
+ * We can't just define localtime_r here, since mk_core/mk_utils.c is
+ * exposing a symbol with the same name inadvertently.
+ */
+static struct tm *flb_localtime_r(time_t *timep, struct tm *result)
 {
-    return _mkgmtime(tm);
+    if (localtime_s(result, timep)) {
+        return NULL;
+    }
+    return result;
 }
+#define localtime_r flb_localtime_r
 
 static inline char* basename(const char *path)
 {
@@ -80,17 +107,11 @@ static inline char* realpath(char *path, char *buf)
     return _fullpath(NULL, path, 0);
 }
 
-/* mk_utils.c exposes localtime_r */
-extern struct tm *localtime_r(const time_t *timep, struct tm * result);
-
-#include <monkey/mk_core/mk_sleep.h>
-
 static inline int usleep(LONGLONG usec)
 {
     // Convert into 100ns unit.
     return nanosleep(usec * 10);
 }
-
 #else
 #include <netdb.h>
 #include <netinet/in.h>
@@ -98,6 +119,7 @@ static inline int usleep(LONGLONG usec)
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <libgen.h>
+#include <dlfcn.h>
 
 #define FLB_DIRCHAR '/'
 #endif

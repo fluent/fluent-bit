@@ -10,6 +10,7 @@ add_subdirectory(parser)
 
 set(src
   flb_sp.c
+  flb_sp_key.c
   flb_sp_func_time.c
   flb_sp_func_record.c
   flb_sp_stream.c

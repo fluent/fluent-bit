@@ -130,16 +130,18 @@ static void write_init_header(struct cio_file *cf)
 }
 
 /* Return the available size in the file map to write data */
-static size_t get_available_size(struct cio_file *cf)
+static size_t get_available_size(struct cio_file *cf, int *meta_len)
 {
     size_t av;
-    int map_len;
+    int len;
 
-    map_len = cio_file_st_get_meta_len(cf->map);
+    /* Get metadata length */
+    len = cio_file_st_get_meta_len(cf->map);
 
     av = cf->alloc_size - cf->data_size;
-    av -= (CIO_FILE_HEADER_MIN + map_len);
+    av -= (CIO_FILE_HEADER_MIN + len);
 
+    *meta_len = len;
     return av;
 }
 
@@ -422,7 +424,7 @@ static inline int open_and_up(struct cio_ctx *ctx)
             continue;
         }
 
-        mk_list_foreach(f_head, &stream->files) {
+        mk_list_foreach(f_head, &stream->chunks) {
             ch = mk_list_entry(f_head, struct cio_chunk, _head);
             file = (struct cio_file *) ch->backend;
 
@@ -527,8 +529,11 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
     return cf;
 }
 
-/* Put a file content back into memory, only IF it has been set 'down' before */
-int cio_file_up(struct cio_chunk *ch)
+/*
+ * Put a file content back into memory, only IF it has been set 'down'
+ * before.
+ */
+static int _cio_file_up(struct cio_chunk *ch, int enforced)
 {
     int ret;
     struct cio_file *cf = (struct cio_file *) ch->backend;
@@ -545,9 +550,15 @@ int cio_file_up(struct cio_chunk *ch)
         return -1;
     }
 
-    ret = open_and_up(ch->ctx);
-    if (ret == CIO_FALSE) {
-        return -1;
+    /*
+     * Enforced mechanism provides safety based on Chunk I/O storage
+     * pre-set limits.
+     */
+    if (enforced == CIO_TRUE) {
+        ret = open_and_up(ch->ctx);
+        if (ret == CIO_FALSE) {
+            return -1;
+        }
     }
 
     /* Open file */
@@ -569,6 +580,27 @@ int cio_file_up(struct cio_chunk *ch)
     }
 
     return 0;
+}
+
+/*
+ * Load a file using 'enforced' mode: do not load the file in memory
+ * if we already passed memory or max_chunks_up restrictions.
+ */
+int cio_file_up(struct cio_chunk *ch)
+{
+    return _cio_file_up(ch, CIO_TRUE);
+}
+
+/* Load a file in non-enforced mode. This means it will load the file
+ * in memory skipping restrictions set by configuration.
+ *
+ * The use case of this call is when the caller needs to write data
+ * to a file which is down due to restrictions. But then the caller
+ * must put the chunk 'down' again if that was it original status.
+ */
+int cio_file_up_force(struct cio_chunk *ch)
+{
+    return _cio_file_up(ch, CIO_FALSE);
 }
 
 /* Release memory and file descriptor resources but keep context */
@@ -643,6 +675,8 @@ void cio_file_close(struct cio_chunk *ch, int delete)
 int cio_file_write(struct cio_chunk *ch, const void *buf, size_t count)
 {
     int ret;
+    int meta_len;
+    int pre_content;
     void *tmp;
     size_t av_size;
     size_t new_size;
@@ -660,15 +694,17 @@ int cio_file_write(struct cio_chunk *ch, const void *buf, size_t count)
     }
 
     /* get available size */
-    av_size = get_available_size(cf);
+    av_size = get_available_size(cf, &meta_len);
 
     /* validate there is enough space, otherwise resize */
-    if (count > av_size) {
-        if (av_size + cf->realloc_size < count) {
-            new_size = cf->alloc_size + count;
-        }
-        else {
-            new_size = cf->alloc_size + cf->realloc_size;
+    if (av_size < count) {
+
+        /* Set the pre-content size (chunk header + metadata) */
+        pre_content = (CIO_FILE_HEADER_MIN + meta_len);
+
+        new_size = cf->alloc_size + cf->realloc_size;
+        while (new_size < (pre_content + cf->data_size + count)) {
+            new_size += cf->realloc_size;
         }
 
         new_size = ROUND_UP(new_size, cio_page_size);
@@ -731,6 +767,10 @@ int cio_file_write_metadata(struct cio_chunk *ch, char *buf, size_t size)
     size_t meta_av;
     void *tmp;
     struct cio_file *cf = ch->backend;
+
+    if (cio_file_is_up(ch, cf) == CIO_FALSE) {
+        return -1;
+    }
 
     /* Get metadata pointer */
     meta = cio_file_st_get_meta(cf->map);
@@ -813,6 +853,7 @@ int cio_file_write_metadata(struct cio_chunk *ch, char *buf, size_t size)
 int cio_file_sync(struct cio_chunk *ch)
 {
     int ret;
+    int meta_len;
     int sync_mode;
     void *tmp;
     size_t old_size;
@@ -839,7 +880,7 @@ int cio_file_sync(struct cio_chunk *ch)
     old_size = cf->alloc_size;
 
     /* If there are extra space, truncate the file size */
-    av_size = get_available_size(cf);
+    av_size = get_available_size(cf, &meta_len);
     if (av_size > 0) {
         size = cf->alloc_size - av_size;
         ret = cio_file_fs_size_change(cf, size);
@@ -967,7 +1008,7 @@ void cio_file_scan_dump(struct cio_ctx *ctx, struct cio_stream *st)
     struct cio_chunk *ch;
     struct cio_file *cf;
 
-    mk_list_foreach(head, &st->files) {
+    mk_list_foreach(head, &st->chunks) {
         ch = mk_list_entry(head, struct cio_chunk, _head);
         cf = ch->backend;
 

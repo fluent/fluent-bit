@@ -250,8 +250,6 @@ static FLB_INLINE void cb_output_thread_destroy(void *data)
     mk_list_del(&out_th->_head);
 }
 
-#if defined FLB_HAVE_FLUSH_LIBCO
-
 /*
  * libco do not support parameters in the entrypoint function due to the
  * complexity of implementation in terms of architecture and compiler, but
@@ -375,41 +373,6 @@ struct flb_thread *flb_output_thread(struct flb_task *task,
                       config);
     return th;
 }
-
-#elif defined FLB_HAVE_FLUSH_PTHREADS
-
-static FLB_INLINE
-struct flb_thread *flb_output_thread(struct flb_task *task,
-                                     struct flb_input_instance *i_ins,
-                                     struct flb_output_instance *o_ins,
-                                     struct flb_config *config,
-                                     const void *buf, size_t size,
-                                     const char *tag, int tag_len)
-{
-    struct flb_thread *th;
-
-    th = flb_thread_new();
-    if (!th) {
-        return NULL;
-    }
-
-    th->data = o_ins;
-    th->output_buffer = buf;
-    th->task = task;
-    th->config = config;
-
-    /* pthread reference data */
-    th->pth_cb.buf     = buf;
-    th->pth_cb.size    = size;
-    th->pth_cb.tag     = tag;
-    th->pth_cb.tag_len = tag_len;
-    th->pth_cb.i_ins   = i_ins;
-    th->pth_cb.o_ins   = o_ins;
-
-    return th;
-}
-
-#endif
 
 /*
  * This function is used by the output plugins to return. It's mandatory

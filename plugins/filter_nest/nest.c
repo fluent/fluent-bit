@@ -323,6 +323,7 @@ static inline bool is_kv_to_lift(msgpack_object_kv * kv,
 {
 
     const char *key;
+    char *tmp;
     int klen;
     bool match;
 
@@ -345,9 +346,17 @@ static inline bool is_kv_to_lift(msgpack_object_kv * kv,
              (strncmp(key, ctx->key, klen) == 0));
 
     if (match && (kv->val.type != MSGPACK_OBJECT_MAP)) {
-        flb_warn
-            ("[filter_nest] Value of key '%s' is not a map. Will not attempt to lift from here",
-             key);
+        tmp = flb_malloc(klen + 1);
+        if (!tmp) {
+            flb_errno();
+            return false;
+        }
+        memcpy(tmp, key, klen);
+        tmp[klen] = '\0';
+        flb_warn("[filter_nest] Value of key '%s' is not a map. "
+                 "Will not attempt to lift from here",
+                 tmp);
+        flb_free(tmp);
         return false;
     }
     else {
@@ -548,6 +557,7 @@ static int cb_nest_filter(const void *data, size_t bytes,
 
     struct filter_nest_ctx *ctx = context;
     int modified_records = 0;
+    int total_modified_records = 0;
 
     msgpack_sbuffer buffer;
     msgpack_sbuffer_init(&buffer);
@@ -567,15 +577,23 @@ static int cb_nest_filter(const void *data, size_t bytes,
 
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
+        modified_records = 0;
         if (result.data.type == MSGPACK_OBJECT_ARRAY) {
             if (ctx->operation == NEST) {
-                modified_records +=
+                modified_records =
                     apply_nesting_rules(&packer, &result.data, ctx);
             }
             else {
-                modified_records +=
+                modified_records =
                     apply_lifting_rules(&packer, &result.data, ctx);
             }
+
+            
+            if (modified_records == 0) {
+                // not matched, so copy original event.
+                msgpack_pack_object(&packer, result.data);
+            }
+            total_modified_records += modified_records;
         }
         else {
             flb_debug("[filter_nest] Record is NOT an array, skipping");
@@ -587,7 +605,7 @@ static int cb_nest_filter(const void *data, size_t bytes,
     *out_buf = buffer.data;
     *out_size = buffer.size;
 
-    if (modified_records == 0) {
+    if (total_modified_records == 0) {
         return FLB_FILTER_NOTOUCH;
     }
     else {

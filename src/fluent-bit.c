@@ -42,7 +42,7 @@
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_slist.h>
-#include <fluent-bit/flb_plugin_proxy.h>
+#include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_parser.h>
 
 /* Libbacktrace support */
@@ -678,18 +678,12 @@ int main(int argc, char **argv)
             config->daemon = FLB_TRUE;
             break;
 #endif
-
-#ifdef FLB_HAVE_PROXY_GO
         case 'e':
-            if (!flb_plugin_proxy_create(optarg, 0, config)) {
+            ret = flb_plugin_load_router(optarg, config);
+            if (ret == -1) {
                 exit(EXIT_FAILURE);
             }
             break;
-#else
-        case 'e':
-            fprintf(stderr, "Error: proxy Golang plugin not available\n");
-            exit(EXIT_FAILURE);
-#endif
         case 'f':
             config->flush = atof(optarg);
             break;

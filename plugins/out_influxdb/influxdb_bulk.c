@@ -36,6 +36,8 @@ static int influxdb_escape(char *out, const char *str, int size, bool quote) {
         char ch = str[i];
         if (quote ? (ch == '"') : (isspace(ch) || ch == ',' || ch == '=')) {
             out[out_size++] = '\\';
+        } else if (ch == '\\') {
+            out[out_size++] = '\\';
         }
         out[out_size++] = ch;
     }

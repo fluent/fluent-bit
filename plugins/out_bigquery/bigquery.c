@@ -283,6 +283,7 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
                             struct flb_config *config, void *data)
 {
     char *token;
+    int io_flags = FLB_IO_TLS;
     struct flb_bigquery *ctx;
 
     /* Create config context */
@@ -294,8 +295,17 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
 
     flb_output_set_context(ins, ctx);
 
-    /* Create upstream context for BigQuery Streaming Inserts (no oauth2 service) */
-    ctx->u = flb_upstream_create_url(config, FLB_BIGQUERY_URL_BASE, FLB_IO_TLS, &ins->tls);
+    /* Network mode IPv6 */
+    if (ins->host.ipv6 == FLB_TRUE) {
+        io_flags |= FLB_IO_IPV6;
+    }
+
+    /*
+     * Create upstream context for BigQuery Streaming Inserts
+     * (no oauth2 service)
+     */
+    ctx->u = flb_upstream_create_url(config, FLB_BIGQUERY_URL_BASE,
+                                     io_flags, &ins->tls);
     if (!ctx->u) {
         flb_error("[out_bigquery] upstream creation failed");
         return -1;
@@ -315,16 +325,14 @@ static int bigquery_format(const void *data, size_t bytes,
                            char **out_data, size_t *out_size,
                            struct flb_bigquery *ctx)
 {
-    int ret;
     int array_size = 0;
     size_t off = 0;
     struct flb_time tms;
+    flb_sds_t out_buf;
     msgpack_object *obj;
     msgpack_unpacked result;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
-    char *json_buf;
-    size_t json_size;
 
     /* Count number of records */
     msgpack_unpacked_init(&result);
@@ -381,18 +389,17 @@ static int bigquery_format(const void *data, size_t bytes,
     }
 
     /* Convert from msgpack to JSON */
-    ret = flb_msgpack_raw_to_json_str(mp_sbuf.data, mp_sbuf.size,
-                                      &json_buf, &json_size);
+    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
-    if (ret != 0) {
+    if (!out_buf) {
         flb_error("[out_bigquery] error formatting JSON payload");
         msgpack_unpacked_destroy(&result);
         return -1;
     }
 
-    *out_data = json_buf;
-    *out_size = json_size;
+    *out_data = out_buf;
+    *out_size = flb_sds_len(out_buf);
 
     return 0;
 }
@@ -420,7 +427,7 @@ static void cb_bigquery_flush(const void *data, size_t bytes,
     int ret_code = FLB_RETRY;
     size_t b_sent;
     char *token;
-    char *payload_buf;
+    flb_sds_t payload_buf;
     size_t payload_size;
     struct flb_bigquery *ctx = out_context;
     struct flb_upstream_conn *u_conn;
@@ -446,7 +453,7 @@ static void cb_bigquery_flush(const void *data, size_t bytes,
     if (!token) {
         flb_error("[out_bigquery] cannot retrieve oauth2 token");
         flb_upstream_conn_release(u_conn);
-        flb_free(payload_buf);
+        flb_sds_destroy(payload_buf);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
@@ -491,7 +498,7 @@ static void cb_bigquery_flush(const void *data, size_t bytes,
     }
 
     /* Cleanup */
-    flb_free(payload_buf);
+    flb_sds_destroy(payload_buf);
     flb_http_client_destroy(c);
     flb_upstream_conn_release(u_conn);
 

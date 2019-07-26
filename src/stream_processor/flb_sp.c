@@ -29,6 +29,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/stream_processor/flb_sp.h>
+#include <fluent-bit/stream_processor/flb_sp_key.h>
 #include <fluent-bit/stream_processor/flb_sp_stream.h>
 #include <fluent-bit/stream_processor/flb_sp_parser.h>
 #include <fluent-bit/stream_processor/flb_sp_func_time.h>
@@ -130,7 +131,7 @@ static int sp_config_file(struct flb_config *config, struct flb_sp *sp,
     mk_rconf_free(fconf);
     return 0;
 
- fconf_error:
+fconf_error:
     flb_free(name);
     flb_free(exec);
 
@@ -205,8 +206,8 @@ static int sp_cmd_aggregated_keys(struct flb_sp_cmd *cmd)
 
                 if (flb_sds_cmp(key->name, gb_key->name,
                                 flb_sds_len(gb_key->name)) == 0) {
-                      not_aggr--;
-                      break;
+                    not_aggr--;
+                    break;
                 }
             }
 
@@ -277,7 +278,7 @@ static int string_to_number(const char *str, int len, int64_t *i, double *d)
 
         /* Check for various possible errors */
         if ((errno == ERANGE || (errno != 0 && i_out == 0))) {
-            return - 1;
+            return -1;
         }
 
         if (end == str) {
@@ -505,6 +506,8 @@ struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, const char *name,
     mk_list_init(&task->window.aggr_list);
     rb_tree_new(&task->window.aggr_tree, flb_sp_groupby_compare);
 
+    mk_list_init(&task->window.hopping_slot);
+
     /* Check and validate aggregated keys */
     ret = sp_cmd_aggregated_keys(task->cmd);
     if (ret == -1) {
@@ -534,6 +537,25 @@ struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, const char *name,
                 return NULL;
             }
             task->window.fd = fd;
+
+            if (task->window.type == FLB_SP_WINDOW_HOPPING) {
+                /* Initialize event loop context */
+                event = &task->window.event_hop;
+                MK_EVENT_ZERO(event);
+
+                /* Run every 'size' seconds */
+                fd = mk_event_timeout_create(sp->config->evl,
+                                             cmd->window.advance_by, (long) 0,
+                                             &task->window.event_hop);
+                if (fd == -1) {
+                    flb_error("[sp] registration for task %s failed", task->name);
+                    flb_free(task);
+                    return NULL;
+                }
+                task->window.advance_by = cmd->window.advance_by;
+                task->window.fd_hop = fd;
+                task->window.first_hop = true;
+            }
         }
     }
 
@@ -591,8 +613,11 @@ void flb_sp_window_destroy(struct flb_sp_task_window *window)
 {
     struct flb_sp_window_data *data;
     struct aggr_node *aggr_node;
+    struct flb_sp_hopping_slot *hs;
     struct mk_list *head;
     struct mk_list *tmp;
+    struct mk_list *head_hs;
+    struct mk_list *tmp_hs;
 
     mk_list_foreach_safe(head, tmp, &window->data) {
         data = mk_list_entry(head, struct flb_sp_window_data, _head);
@@ -605,6 +630,17 @@ void flb_sp_window_destroy(struct flb_sp_task_window *window)
         aggr_node = mk_list_entry(head, struct aggr_node, _head);
         mk_list_del(&aggr_node->_head);
         flb_sp_aggr_node_destroy(aggr_node);
+    }
+
+    mk_list_foreach_safe(head, tmp, &window->hopping_slot) {
+        hs = mk_list_entry(head, struct flb_sp_hopping_slot, _head);
+        mk_list_foreach_safe(head_hs, tmp_hs, &hs->aggr_list) {
+            aggr_node = mk_list_entry(head_hs, struct aggr_node, _head);
+            mk_list_del(&aggr_node->_head);
+            flb_sp_aggr_node_destroy(aggr_node);
+        }
+        rb_tree_destroy(&hs->aggr_tree);
+        flb_free(hs);
     }
 
     rb_tree_destroy(&window->aggr_tree);
@@ -670,185 +706,6 @@ struct flb_sp *flb_sp_create(struct flb_config *config)
     sp_info(sp);
 
     return sp;
-}
-
-/* Lookup perfect match of sub-keys and map content */
-static int subkey_to_value(struct flb_exp_key *ekey, msgpack_object *map,
-                           struct flb_exp_val *result)
-{
-    int i = 0;
-    int levels;
-    int matched = 0;
-    msgpack_object *key_found = NULL;
-    msgpack_object key;
-    msgpack_object val;
-    msgpack_object cur_map;
-    struct mk_list *head;
-    struct flb_slist_entry *entry;
-
-    /* Expected number of map levels in the map */
-    levels = mk_list_size(ekey->subkeys);
-
-    cur_map = *map;
-
-    mk_list_foreach(head, ekey->subkeys) {
-        /* Key expected key entry */
-        entry = mk_list_entry(head, struct flb_slist_entry, _head);
-
-        if (cur_map.type != MSGPACK_OBJECT_MAP) {
-            break;
-        }
-
-        /* Get map entry that matches entry name */
-        for (i = 0; i < cur_map.via.map.size; i++) {
-            key = cur_map.via.map.ptr[i].key;
-            val = cur_map.via.map.ptr[i].val;
-
-            /* A bit obvious, but it's better to validate data type */
-            if (key.type != MSGPACK_OBJECT_STR) {
-                continue;
-            }
-
-            /* Compare strings by length and content */
-            if (flb_sds_cmp(entry->str,
-                            (char *) key.via.str.ptr,
-                            key.via.str.size) != 0) {
-                key_found = NULL;
-                continue;
-            }
-
-            key_found = &key;
-            cur_map = val;
-            matched++;
-            break;
-        }
-
-        if (levels == matched) {
-            break;
-        }
-    }
-
-    /* No matches */
-    if (!key_found || (matched > 0 && levels != matched)) {
-        return -1;
-    }
-
-    /* Compose result with found value */
-    if (val.type == MSGPACK_OBJECT_BOOLEAN) {
-        result->type = FLB_EXP_BOOL;
-        result->val.boolean = val.via.boolean;
-        return 0;
-    }
-    else if (val.type == MSGPACK_OBJECT_POSITIVE_INTEGER ||
-             val.type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
-        result->type = FLB_EXP_INT;
-        result->val.i64 = val.via.i64;
-        return 0;
-    }
-    else if (val.type == MSGPACK_OBJECT_FLOAT32 ||
-             val.type == MSGPACK_OBJECT_FLOAT) {
-        result->type = FLB_EXP_FLOAT;
-        result->val.f64 = val.via.f64;
-        return 0;
-    }
-    else if (val.type == MSGPACK_OBJECT_STR) {
-        result->type = FLB_EXP_STRING;
-        result->val.string = flb_sds_create_len((char *) val.via.str.ptr,
-                                                val.via.str.size);
-        return 0;
-    }
-    else if (val.type == MSGPACK_OBJECT_MAP) {
-        /* return boolean 'true', just denoting the existence of the key */
-        result->type = FLB_EXP_BOOL;
-        result->val.boolean = true;
-        return 0;
-    }
-
-    return -1;
-}
-
-static struct flb_exp_val *key_to_value(struct flb_exp_key *ekey,
-                                        msgpack_object *map)
-{
-     /* We might need to find a more efficient way to evaluate the keys
-        appeain a condition */
-    int i;
-    int ret;
-    int map_size;
-    msgpack_object key;
-    msgpack_object val;
-    struct flb_exp_val *result;
-    flb_sds_t ckey = ekey->name;
-
-    map_size = map->via.map.size;
-    for (i = 0; i < map_size; i++) {
-        key = map->via.map.ptr[i].key;
-        val = map->via.map.ptr[i].val;
-
-        /* Compare by length and by key name */
-        if (flb_sds_cmp(ckey, key.via.str.ptr,
-            key.via.str.size) != 0) {
-            continue;
-        }
-
-        result = flb_malloc(sizeof(struct flb_exp_val));
-        if (!result) {
-            flb_errno();
-            return NULL;
-        }
-
-        if (val.type == MSGPACK_OBJECT_BOOLEAN) {
-            result->type = FLB_EXP_BOOL;
-            result->val.boolean = val.via.boolean;
-            return result;
-        }
-        else if (val.type == MSGPACK_OBJECT_POSITIVE_INTEGER ||
-            val.type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
-            result->type = FLB_EXP_INT;
-            result->val.i64 = val.via.i64;
-            return result;
-        }
-        else if (val.type == MSGPACK_OBJECT_FLOAT32 ||
-                   val.type == MSGPACK_OBJECT_FLOAT) {
-            result->type = FLB_EXP_FLOAT;
-            result->val.f64 = val.via.f64;
-            return result;
-        }
-        else if (val.type == MSGPACK_OBJECT_STR) {
-            result->type = FLB_EXP_STRING;
-            result->val.string = flb_sds_create_len(val.via.str.ptr,
-                                                    val.via.str.size);
-            return result;
-        }
-        else if (val.type == MSGPACK_OBJECT_MAP && ekey->subkeys != NULL) {
-            ret = subkey_to_value(ekey, &val, result);
-            if (ret == 0) {
-                return result;
-            }
-            else {
-                flb_free(result);
-                return NULL;
-            }
-        }
-        else if (val.type == MSGPACK_OBJECT_MAP) {
-            /* return boolean 'true', just denoting the existence of the key */
-            result->type = FLB_EXP_BOOL;
-            result->val.boolean = true;
-            return result;
-        }
-        else if (val.type == MSGPACK_OBJECT_NIL) {
-            result->type = FLB_EXP_NULL;
-            return result;
-        }
-        else {
-            flb_free(result);
-            return NULL;
-        }
-    }
-
-    /* NULL return means: failed memory allocation, an invalid value, or non-existing key
-     */
-    return NULL;
 }
 
 void free_value(struct flb_exp_val *v)
@@ -930,7 +787,7 @@ static void numerical_comp(struct flb_exp_val *left,
     switch (op) {
     case FLB_EXP_EQ:
         if (left->type == right->type) {
-            switch(left->type){
+            switch(left->type) {
             case FLB_EXP_NULL:
                 result->val.boolean = true;
                 break;
@@ -967,7 +824,7 @@ static void numerical_comp(struct flb_exp_val *left,
         break;
     case FLB_EXP_LT:
         if (left->type == right->type) {
-            switch(left->type){
+            switch(left->type) {
             case FLB_EXP_INT:
                 result->val.boolean = (left->val.i64 < right->val.i64);
                 break;
@@ -1108,8 +965,8 @@ static void logical_operation(struct flb_exp_val *left,
     result->type = FLB_EXP_BOOL;
 
     /* Null is always interpreted as false in a logical operation */
-    lval = left? value_to_bool(left) : false;
-    rval = right? value_to_bool(right) : false;
+    lval = left ? value_to_bool(left) : false;
+    rval = right ? value_to_bool(right) : false;
 
     switch (op) {
     case FLB_EXP_NOT:
@@ -1125,11 +982,15 @@ static void logical_operation(struct flb_exp_val *left,
 }
 
 static struct flb_exp_val *reduce_expression(struct flb_exp *expression,
+                                             const char *tag, int tag_len,
+                                             struct flb_time *tms,
                                              msgpack_object *map)
 {
     int operation;
     flb_sds_t s;
     flb_sds_t tmp_sds = NULL;
+    struct flb_exp_key *key;
+    struct flb_sp_value *sval;
     struct flb_exp_val *ret, *left, *right;
     struct flb_exp_val *result;
 
@@ -1139,8 +1000,8 @@ static struct flb_exp_val *reduce_expression(struct flb_exp *expression,
 
     result = flb_calloc(1, sizeof(struct flb_exp_val));
     if (!result) {
-       flb_errno();
-       return NULL;
+        flb_errno();
+        return NULL;
     }
 
     switch (expression->type) {
@@ -1169,19 +1030,33 @@ static struct flb_exp_val *reduce_expression(struct flb_exp *expression,
         }
         break;
     case FLB_EXP_KEY:
-        ret = key_to_value((struct flb_exp_key *) expression, map);
-        flb_free(result);
-        result = ret;
+        key = (struct flb_exp_key *) expression;
+        sval = flb_sp_key_to_value(key->name, *map, key->subkeys);
+        if (sval) {
+            result->type = sval->type;
+            result->val = sval->val;
+            flb_free(sval);
+            return result;
+        }
+        else {
+            flb_free(result);
+            return NULL;
+        }
         break;
     case FLB_EXP_FUNC:
-        flb_free(result);  // we don't need result
-        ret = reduce_expression(((struct flb_exp_func *) expression)->param, map);
-        result = ((struct flb_exp_func *) expression)->cb_func(ret);
+        /* we don't need result */
+        flb_free(result);
+        ret = reduce_expression(((struct flb_exp_func *) expression)->param,
+                                tag, tag_len, tms, map);
+        result = ((struct flb_exp_func *) expression)->cb_func(tag, tag_len,
+                                                               tms, ret);
         free_value(ret);
         break;
     case FLB_LOGICAL_OP:
-        left = reduce_expression(expression->left, map);
-        right = reduce_expression(expression->right, map);
+        left = reduce_expression(expression->left,
+                                 tag, tag_len, tms, map);
+        right = reduce_expression(expression->right,
+                                  tag, tag_len, tms, map);
 
         operation = ((struct flb_exp_op *) expression)->operation;
 
@@ -1229,14 +1104,13 @@ static void package_results(const char *tag, int tag_len,
     int records;
     char key_name[256];
     msgpack_sbuffer mp_sbuf;
-    msgpack_packer  mp_pck;
+    msgpack_packer mp_pck;
     struct aggr_num *nums;
     struct flb_time tm;
     struct flb_sp_cmd_key *ckey;
     struct flb_sp_cmd *cmd = task->cmd;
     struct mk_list *head;
     struct aggr_node *aggr_node;
-
 
     map_entries = mk_list_size(&cmd->keys);
 
@@ -1280,6 +1154,9 @@ static void package_results(const char *tag, int tag_len,
                 char *c_name;
                 if (!ckey->name) {
                     c_name = "*";
+                }
+                else if (ckey->name_keys) {
+                    c_name = ckey->name_keys;
                 }
                 else {
                     c_name = ckey->name;
@@ -1333,8 +1210,8 @@ static void package_results(const char *tag, int tag_len,
                                           flb_sds_len(nums[i].string));
                 }
                 else if (nums[i].type == FLB_SP_BOOLEAN) {
-                   if (nums[i].boolean) {
-                       msgpack_pack_true(&mp_pck);
+                    if (nums[i].boolean) {
+                        msgpack_pack_true(&mp_pck);
                     }
                     else {
                         msgpack_pack_false(&mp_pck);
@@ -1369,7 +1246,7 @@ static void package_results(const char *tag, int tag_len,
                 break;
             }
 
-        next:
+next:
             ckey = mk_list_entry_next(&ckey->_head, struct flb_sp_cmd_key,
                                       _head, &cmd->keys);
         }
@@ -1403,12 +1280,15 @@ static int sp_process_data_aggr(const char *buf_data, size_t buf_size,
     msgpack_unpacked result;
     msgpack_object key;
     msgpack_object val;
+    msgpack_object *obj;
     struct aggr_num *nums = NULL;
     struct aggr_num *gb_nums; // group-by keys
     struct mk_list *head;
+    struct flb_time tms;
     struct flb_sp_cmd *cmd = task->cmd;
     struct flb_sp_cmd_key *ckey;
     struct flb_sp_cmd_gb_key *gb_key;
+    struct flb_sp_value *sval;
     struct flb_exp_val *condition;
     struct aggr_node *aggr_node;
     struct rb_tree_node *rb_result;
@@ -1426,13 +1306,17 @@ static int sp_process_data_aggr(const char *buf_data, size_t buf_size,
     while (msgpack_unpack_next(&result, buf_data, buf_size, &off) == ok) {
         root = result.data;
 
+        /* extract timestamp */
+        flb_time_pop_from_msgpack(&tms, &result, &obj);
+
         /* get the map data and it size (number of items) */
         map   = root.via.array.ptr[1];
         map_size = map.via.map.size;
 
         /* Evaluate condition */
         if (cmd->condition) {
-            condition = reduce_expression(cmd->condition, &map);
+            condition = reduce_expression(cmd->condition,
+                                          tag, tag_len, &tms, &map);
             if (!condition) {
                 continue;
             }
@@ -1476,7 +1360,7 @@ static int sp_process_data_aggr(const char *buf_data, size_t buf_size,
                         gb_nums[key_id].type = FLB_SP_STRING;
                         gb_nums[key_id].string =
                             flb_sds_create_len(val.via.str.ptr,
-                                                val.via.str.size);
+                                               val.via.str.size);
                         continue;
                     }
 
@@ -1524,7 +1408,7 @@ static int sp_process_data_aggr(const char *buf_data, size_t buf_size,
             }
         }
         else { /* If query doesn't have GROUP BY */
-            if (!mk_list_size(&task->window.aggr_list)){
+            if (!mk_list_size(&task->window.aggr_list)) {
                 aggr_node = flb_calloc(1, sizeof(struct aggr_node));
                 if (!aggr_node) {
                     flb_errno();
@@ -1583,16 +1467,23 @@ static int sp_process_data_aggr(const char *buf_data, size_t buf_size,
                     continue;
                 }
 
+                sval = flb_sp_key_to_value(ckey->name, map, ckey->subkeys);
+                if (!sval) {
+                    key_id++;
+                    continue;
+                }
+
                 /*
                  * Convert value to a numeric representation only if key has an
                  * assigned aggregation function
-                */
+                 */
                 if (ckey->aggr_func != FLB_SP_NOP) {
                     if (ival == 0 && dval == 0.0) {
-                        ret = object_to_number(val, &ival, &dval);
+                        ret = object_to_number(sval->o, &ival, &dval);
                         if (ret == -1) {
                             /* Value cannot be represented as a number */
                             key_id++;
+                            flb_sp_key_value_destroy(sval);
                             continue;
                         }
                     }
@@ -1607,26 +1498,26 @@ static int sp_process_data_aggr(const char *buf_data, size_t buf_size,
                     }
                 }
                 else {
-                    if (val.type == MSGPACK_OBJECT_BOOLEAN) {
+                    if (sval->o.type == MSGPACK_OBJECT_BOOLEAN) {
                         nums[key_id].type = FLB_SP_BOOLEAN;
-                        nums[key_id].boolean = val.via.boolean;
+                        nums[key_id].boolean = sval->o.via.boolean;
                     }
-                    if (val.type == MSGPACK_OBJECT_POSITIVE_INTEGER ||
-                        val.type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
+                    if (sval->o.type == MSGPACK_OBJECT_POSITIVE_INTEGER ||
+                        sval->o.type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
                         nums[key_id].type = FLB_SP_NUM_I64;
-                        nums[key_id].i64 = val.via.i64;
+                        nums[key_id].i64 = sval->o.via.i64;
                     }
                     else if (val.type == MSGPACK_OBJECT_FLOAT32 ||
                              val.type == MSGPACK_OBJECT_FLOAT) {
                         nums[key_id].type = FLB_SP_NUM_F64;
-                        nums[key_id].f64 = val.via.f64;
+                        nums[key_id].f64 = sval->o.via.f64;
                     }
                     else if (val.type == MSGPACK_OBJECT_STR) {
                         nums[key_id].type = FLB_SP_STRING;
                         if (nums[key_id].string == NULL) {
                             nums[key_id].string =
-                                flb_sds_create_len(val.via.str.ptr,
-                                                   val.via.str.size);
+                                flb_sds_create_len(sval->o.via.str.ptr,
+                                                   sval->o.via.str.size);
                         }
                     }
                 }
@@ -1646,6 +1537,7 @@ static int sp_process_data_aggr(const char *buf_data, size_t buf_size,
                     break;
                 }
                 key_id++;
+                flb_sp_key_value_destroy(sval);
             }
         }
     }
@@ -1680,13 +1572,14 @@ static int sp_process_data(const char *tag, int tag_len,
     msgpack_object val;
     msgpack_unpacked result;
     msgpack_sbuffer mp_sbuf;
-    msgpack_packer  mp_pck;
+    msgpack_packer mp_pck;
     msgpack_object map;
     struct flb_time tms;
     struct mk_list *head;
     struct flb_sp_cmd *cmd = task->cmd;
     struct flb_sp_cmd_key *cmd_key;
     struct flb_exp_val *condition;
+    struct flb_sp_value *sval;
 
     /* Vars initialization */
     ok = MSGPACK_UNPACK_SUCCESS;
@@ -1708,7 +1601,8 @@ static int sp_process_data(const char *tag, int tag_len,
 
         /* Evaluate condition */
         if (cmd->condition) {
-            condition = reduce_expression(cmd->condition, &map);
+            condition = reduce_expression(cmd->condition,
+                                          tag, tag_len, &tms, &map);
             if (!condition) {
                 continue;
             }
@@ -1784,28 +1678,44 @@ static int sp_process_data(const char *tag, int tag_len,
                 }
 
                 /* Compare lengths */
-                if (flb_sds_len(cmd_key->name) != key.via.str.size) {
+                if (flb_sds_cmp(cmd_key->name,
+                                key.via.str.ptr, key.via.str.size) != 0) {
                     continue;
                 }
 
-                /* Compare key name */
-                if (strncmp(cmd_key->name, key.via.str.ptr,
-                            key.via.str.size) == 0) {
-
-                    /* Check if the command ask for an alias 'key AS abc' */
-                    if (cmd_key->alias) {
-                        msgpack_pack_str(&mp_pck,
-                                         flb_sds_len(cmd_key->alias));
-                        msgpack_pack_str_body(&mp_pck,
-                                              cmd_key->alias,
-                                              flb_sds_len(cmd_key->alias));
-                    }
-                    else {
-                        msgpack_pack_object(&mp_pck, key);
-                    }
-                    msgpack_pack_object(&mp_pck, val);
-                    map_entries++;
+                /*
+                 * Package key name:
+                 *
+                 * Check if the command ask for an alias 'key AS abc'
+                 */
+                if (cmd_key->alias) {
+                    msgpack_pack_str(&mp_pck,
+                                     flb_sds_len(cmd_key->alias));
+                    msgpack_pack_str_body(&mp_pck,
+                                          cmd_key->alias,
+                                          flb_sds_len(cmd_key->alias));
                 }
+                else if (cmd_key->subkeys &&
+                         mk_list_size(cmd_key->subkeys) > 0) {
+                    msgpack_pack_str(&mp_pck,
+                                     flb_sds_len(cmd_key->name_keys));
+                    msgpack_pack_str_body(&mp_pck,
+                                          cmd_key->name_keys,
+                                          flb_sds_len(cmd_key->name_keys));
+                }
+                else {
+                    msgpack_pack_object(&mp_pck, key);
+                }
+
+                /* Package value */
+                sval = flb_sp_key_to_value(cmd_key->name, map,
+                                           cmd_key->subkeys);
+                if (sval) {
+                    msgpack_pack_object(&mp_pck, sval->o);
+                    flb_sp_key_value_destroy(sval);
+                }
+
+                map_entries++;
             }
         }
 
@@ -1846,6 +1756,114 @@ static int sp_process_data(const char *tag, int tag_len,
     *out_size = mp_sbuf.size;
 
     return records;
+}
+
+static int sp_process_hopping_slot(const char *tag, int tag_len,
+                                   struct flb_sp_task *task)
+{
+    int i;
+    int map_entries;
+    int gb_entries;
+    struct aggr_num *nums = NULL;
+    struct flb_sp_cmd *cmd = task->cmd;
+    struct mk_list *head;
+    struct mk_list *head_hs;
+    struct aggr_node *aggr_node;
+    struct aggr_node *aggr_node_hs;
+    struct aggr_node *aggr_node_prev;
+    struct flb_sp_hopping_slot *hs;
+    struct flb_sp_hopping_slot *hs_;
+    struct rb_tree_node *rb_result;
+    struct flb_sp_cmd_key *ckey;
+    rb_result_t result;
+
+    map_entries = mk_list_size(&cmd->keys);
+    gb_entries = mk_list_size(&cmd->gb_keys);
+
+    // Initialize a hoping slot
+    hs = flb_calloc(1, sizeof(struct flb_sp_hopping_slot));
+    if (!hs) {
+        flb_errno();
+        return -1;
+    }
+
+    mk_list_init(&hs->aggr_list);
+    rb_tree_new(&hs->aggr_tree, flb_sp_groupby_compare);
+
+    // Loop over aggregation nodes on window
+    mk_list_foreach(head, &task->window.aggr_list) {
+        // Window aggregation node
+        aggr_node = mk_list_entry(head, struct aggr_node, _head);
+
+        // Create a hopping slot aggregation node
+        aggr_node_hs = flb_calloc(1, sizeof(struct aggr_node));
+        nums = flb_calloc(1, sizeof(struct aggr_node) * map_entries);
+
+        memcpy(nums, aggr_node->nums, sizeof(struct aggr_num) * map_entries);
+        aggr_node_hs->records = aggr_node->records;
+
+        // Traverse over previous slots to calculate values/record numbers
+        mk_list_foreach(head_hs, &task->window.hopping_slot) {
+            hs_ = mk_list_entry(head_hs, struct flb_sp_hopping_slot, _head);
+            result = rb_tree_find(&hs_->aggr_tree, aggr_node, &rb_result);
+            /* If corresponding aggregation node exists in previous hopping slot,
+             * calculate aggregation values
+             */
+            if (result == RB_OK) {
+                aggr_node_prev = mk_list_entry(rb_result, struct aggr_node,
+                                               _rb_head);
+                aggr_node_hs->records -= aggr_node_prev->records;
+
+                ckey = mk_list_entry_first(&cmd->keys, struct flb_sp_cmd_key,
+                                           _head);
+                for (i = 0; i < map_entries; i++) {
+                    switch (ckey->aggr_func) {
+                    case FLB_SP_AVG:
+                    case FLB_SP_SUM:
+                        if (nums[i].type == FLB_SP_NUM_I64) {
+                            nums[i].i64 -= aggr_node_prev->nums[i].i64;
+                        }
+                        else if (nums[i].type == FLB_SP_NUM_F64) {
+                            nums[i].f64 -= aggr_node_prev->nums[i].f64;
+                        }
+                        break;
+                    }
+
+                    ckey = mk_list_entry_next(&ckey->_head, struct flb_sp_cmd_key,
+                                              _head, &cmd->keys);
+                }
+            }
+        }
+
+        if (aggr_node_hs->records > 0) {
+            aggr_node_hs->groupby_nums =
+                flb_calloc(1, sizeof(struct aggr_node) * gb_entries);
+            memcpy(aggr_node_hs->groupby_nums, aggr_node->groupby_nums,
+                   sizeof(struct aggr_num) * gb_entries);
+
+            aggr_node_hs->nums = nums;
+            aggr_node_hs->nums_size = aggr_node->nums_size;
+            aggr_node_hs->groupby_keys = aggr_node->groupby_keys;
+
+            rb_tree_insert(&hs->aggr_tree, aggr_node_hs, &aggr_node_hs->_rb_head);
+            mk_list_add(&aggr_node_hs->_head, &hs->aggr_list);
+        }
+        else {
+            flb_free(nums);
+            flb_free(aggr_node_hs->groupby_nums);
+            flb_free(aggr_node_hs);
+        }
+    }
+
+    hs->records = task->window.records;
+    mk_list_foreach(head_hs, &task->window.hopping_slot) {
+        hs_ = mk_list_entry(head_hs, struct flb_sp_hopping_slot, _head);
+        hs->records -= hs_->records;
+    }
+
+    mk_list_add(&hs->_head, &task->window.hopping_slot);
+
+    return 0;
 }
 
 /*
@@ -2012,33 +2030,40 @@ int flb_sp_do(struct flb_sp *sp, struct flb_input_instance *in,
 
 int flb_sp_fd_event(int fd, struct flb_sp *sp)
 {
+    bool update_timer_event;
     char *out_buf;
     char *tag = NULL;
     int tag_len = 0;
+    int fd_timeout = 0;
     size_t out_size;
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_sp_task *task;
     struct flb_input_instance *in;
 
+
     /* Lookup Tasks that matches the incoming event */
     mk_list_foreach_safe(head, tmp, &sp->tasks) {
         task = mk_list_entry(head, struct flb_sp_task, _head);
 
         if (fd == task->window.fd) {
-            if (task->window.records > 0) {
-                /* find inout tag from task source */
-                in = task->source_instance;
-                if (in) {
-                    if (in->tag && in->tag_len > 0) {
-                        tag = in->tag;
-                        tag_len = in->tag_len;
-                    }
-                    else {
-                        tag = in->name;
-                        tag_len = strlen(in->name);
-                    }
+            update_timer_event = task->window.type == FLB_SP_WINDOW_HOPPING &&
+                                 task->window.first_hop;
+
+            in = task->source_instance;
+            if (in) {
+                if (in->tag && in->tag_len > 0) {
+                    tag = in->tag;
+                    tag_len = in->tag_len;
                 }
+                else {
+                    tag = in->name;
+                    tag_len = strlen(in->name);
+                }
+            }
+
+            if (task->window.records > 0) {
+                /* find input tag from task source */
                 package_results(tag, tag_len, &out_buf, &out_size, task);
                 if (task->stream) {
                     flb_sp_stream_append_data(out_buf, out_size, task->stream);
@@ -2048,10 +2073,43 @@ int flb_sp_fd_event(int fd, struct flb_sp *sp)
                     flb_free(out_buf);
                 }
 
-                flb_sp_window_prune(task);
             }
+
+            flb_sp_window_prune(task);
+
             flb_utils_timer_consume(fd);
+
+            if (update_timer_event) {
+                task->window.first_hop = false;
+                mk_event_timeout_destroy(in->config->evl, &task->window.event);
+                mk_event_closesocket(fd);
+
+                fd_timeout = mk_event_timeout_create(in->config->evl,
+                                                     task->window.advance_by, (long) 0,
+                                                     &task->window.event);
+                if (fd_timeout == -1) {
+                    flb_error("[sp] registration for task (updating timer event) %s failed", task->name);
+                    return -1;
+                }
+                task->window.fd = fd_timeout;
+            }
+
             break;
+        }
+        else if (fd == task->window.fd_hop) {
+            in = task->source_instance;
+            if (in) {
+                if (in->tag && in->tag_len > 0) {
+                    tag = in->tag;
+                    tag_len = in->tag_len;
+                }
+                else {
+                    tag = in->name;
+                    tag_len = strlen(in->name);
+                }
+            }
+            sp_process_hopping_slot(tag, tag_len, task);
+            flb_utils_timer_consume(fd);
         }
     }
     return 0;
@@ -2073,24 +2131,31 @@ void flb_sp_destroy(struct flb_sp *sp)
     flb_free(sp);
 }
 
-int flb_sp_test_fd_event(struct flb_sp_task *task, char **out_data, size_t *out_size)
+int flb_sp_test_fd_event(int fd, struct flb_sp_task *task, char **out_data,
+                         size_t *out_size)
 {
     char *tag = NULL;
     int tag_len = 0;
 
     if (task->window.type != FLB_SP_WINDOW_DEFAULT) {
-        if (task->window.records > 0) {
-            /* find inout tag from task source */
-            package_results(tag, tag_len, out_data, out_size, task);
-            if (task->stream) {
-                flb_sp_stream_append_data(*out_data, *out_size, task->stream);
-            }
-            else {
-                flb_pack_print(*out_data, *out_size);
+        if (fd == task->window.fd) {
+            if (task->window.records > 0) {
+                /* find input tag from task source */
+                package_results(tag, tag_len, out_data, out_size, task);
+                if (task->stream) {
+                    flb_sp_stream_append_data(*out_data, *out_size, task->stream);
+                }
+                else {
+                    flb_pack_print(*out_data, *out_size);
+                }
             }
 
             flb_sp_window_prune(task);
         }
+        else if (fd == task->window.fd_hop) {
+            sp_process_hopping_slot(tag, tag_len, task);
+        }
+
     }
     return 0;
 }

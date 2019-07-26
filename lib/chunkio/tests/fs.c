@@ -117,6 +117,13 @@ static void test_fs_write()
             continue;
         }
 
+        /* Check that next buffers are 'down' */
+        if (i >= CIO_MAX_CHUNKS_UP) {
+            ret = cio_chunk_is_up(carr[i]);
+            TEST_CHECK(ret == CIO_FALSE);
+            cio_chunk_up_force(carr[i]);
+        }
+
         cio_chunk_write(carr[i], in_data, in_size);
         cio_chunk_write(carr[i], in_data, in_size);
 

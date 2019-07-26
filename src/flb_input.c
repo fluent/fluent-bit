@@ -118,7 +118,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         /* Create plugin instance */
         instance = flb_malloc(sizeof(struct flb_input_instance));
         if (!instance) {
-            perror("malloc");
+            flb_errno();
             return NULL;
         }
         instance->config = config;
@@ -136,6 +136,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->p        = plugin;
         instance->tag      = NULL;
         instance->tag_len  = 0;
+        instance->routable = FLB_TRUE;
         instance->context  = NULL;
         instance->data     = data;
         instance->threaded = FLB_FALSE;
@@ -215,6 +216,10 @@ int flb_input_set_property(struct flb_input_instance *in,
     if (prop_key_check("tag", k, len) == 0 && tmp) {
         in->tag     = tmp;
         in->tag_len = strlen(tmp);
+    }
+    else if (prop_key_check("routable", k, len) == 0 && tmp) {
+        in->routable = flb_utils_bool(tmp);
+        flb_free(tmp);
     }
     else if (prop_key_check("alias", k, len) == 0 && tmp) {
         in->alias = tmp;

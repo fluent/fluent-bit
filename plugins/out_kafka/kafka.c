@@ -145,13 +145,14 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     }
 
     if (ctx->format == FLB_KAFKA_FMT_JSON) {
-        ret = flb_msgpack_raw_to_json_str(mp_sbuf.data, mp_sbuf.size,
-                                          &out_buf, &out_size);
-        if (ret != 0) {
+        s = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+        if (!s) {
             flb_error("[out_kafka] error encoding to JSON");
             msgpack_sbuffer_destroy(&mp_sbuf);
             return FLB_ERROR;
         }
+        out_buf  = s;
+        out_size = flb_sds_len(out_buf);
     }
     else if (ctx->format == FLB_KAFKA_FMT_MSGP) {
         out_buf = mp_sbuf.data;
@@ -241,7 +242,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
 
     rd_kafka_poll(ctx->producer, 0);
     if (ctx->format == FLB_KAFKA_FMT_JSON) {
-        flb_free(out_buf);
+        flb_sds_destroy(s);
     }
     if (ctx->format == FLB_KAFKA_FMT_GELF) {
         flb_sds_destroy(s);

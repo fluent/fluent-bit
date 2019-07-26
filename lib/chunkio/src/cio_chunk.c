@@ -69,7 +69,7 @@ struct cio_chunk *cio_chunk_open(struct cio_ctx *ctx, struct cio_stream *st,
     ch->tx_content_length = 0;
     ch->backend = NULL;
 
-    mk_list_add(&ch->_head, &st->files);
+    mk_list_add(&ch->_head, &st->chunks);
 
     /* create backend context */
     if (st->type == CIO_STORE_FS) {
@@ -257,7 +257,7 @@ void cio_chunk_close_stream(struct cio_stream *st)
     struct mk_list *head;
     struct cio_chunk *ch;
 
-    mk_list_foreach_safe(head, tmp, &st->files) {
+    mk_list_foreach_safe(head, tmp, &st->chunks) {
         ch = mk_list_entry(head, struct cio_chunk, _head);
         cio_chunk_close(ch, CIO_FALSE);
     }
@@ -430,6 +430,18 @@ int cio_chunk_up(struct cio_chunk *ch)
     type = ch->st->type;
     if (type == CIO_STORE_FS) {
         return cio_file_up(ch);
+    }
+
+    return 0;
+}
+
+int cio_chunk_up_force(struct cio_chunk *ch)
+{
+    int type;
+
+    type = ch->st->type;
+    if (type == CIO_STORE_FS) {
+        return cio_file_up_force(ch);
     }
 
     return 0;

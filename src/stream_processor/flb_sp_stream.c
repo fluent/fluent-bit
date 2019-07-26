@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_storage.h>
+#include <fluent-bit/flb_utils.h>
 #include <fluent-bit/stream_processor/flb_sp.h>
 #include <fluent-bit/stream_processor/flb_sp_parser.h>
 #include <fluent-bit/stream_processor/flb_sp_stream.h>
@@ -58,7 +59,7 @@ int flb_sp_stream_create(const char *name, struct flb_sp_task *task,
                          struct flb_sp *sp)
 {
     int ret;
-    const char *tag;
+    const char *tmp;
     struct flb_input_instance *in;
     struct flb_sp_stream *stream;
 
@@ -106,13 +107,13 @@ int flb_sp_stream_create(const char *name, struct flb_sp_task *task,
      *
      * CREATE STREAM data WITH(tag='mydata') as SELECT * FROM STREAM:apache;
      */
-    tag = flb_sp_cmd_stream_prop_get(task->cmd, "tag");
-    if (tag) {
+    tmp = flb_sp_cmd_stream_prop_get(task->cmd, "tag");
+    if (tmp) {
         /*
          * Duplicate value in a new variable since input instance property
          * will be released upon plugin exit.
          */
-        stream->tag = flb_sds_create(tag);
+        stream->tag = flb_sds_create(tmp);
         if (!stream->tag) {
             flb_error("[sp] cannot set Tag property");
             flb_sp_stream_destroy(stream, sp);
@@ -121,6 +122,15 @@ int flb_sp_stream_create(const char *name, struct flb_sp_task *task,
 
         /* Tag property is just an assignation, cannot fail */
         flb_input_set_property(in, "tag", stream->tag);
+    }
+
+    /*
+     * Check if the new stream is 'routable' or not
+     */
+    tmp = flb_sp_cmd_stream_prop_get(task->cmd, "routable");
+    if (tmp) {
+        stream->routable = flb_utils_bool(tmp);
+        flb_input_set_property(in, "routable", tmp);
     }
 
     /* Initialize instance */

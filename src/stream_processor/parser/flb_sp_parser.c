@@ -87,6 +87,13 @@ void flb_sp_cmd_key_del(struct flb_sp_cmd_key *key)
     if (key->alias) {
         flb_sds_destroy(key->alias);
     }
+    if (key->name_keys) {
+        flb_sds_destroy(key->name_keys);
+    }
+    if (key->subkeys) {
+        flb_slist_destroy(key->subkeys);
+        flb_free(key->subkeys);
+    }
     flb_free(key);
 }
 
@@ -101,10 +108,14 @@ void flb_sp_cmd_gb_key_del(struct flb_sp_cmd_gb_key *key)
 int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func,
                        const char *key_name, const char *key_alias)
 {
+    int s;
     int aggr_func = 0;
     int time_func = 0;
     int record_func = 0;
+    char *tmp;
+    struct mk_list *head;
     struct flb_sp_cmd_key *key;
+    struct flb_slist_entry *entry;
 
     /* aggregation function ? */
     if (func >= FLB_SP_AVG && func <= FLB_SP_MAX) {
@@ -125,6 +136,7 @@ int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func,
         cmd->status = FLB_SP_ERROR;
         return -1;
     }
+    key->subkeys = NULL;
 
     /* key name and aliases works when the selection is not a wildcard */
     if (key_name) {
@@ -167,6 +179,69 @@ int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func,
     }
     else if (record_func > 0) {
         key->record_func = record_func;
+    }
+
+    /* Lookup for any subkeys in the temporal list */
+    if (mk_list_size(cmd->tmp_subkeys) > 0) {
+        /* Map context keys into this command key structure */
+        key->subkeys = cmd->tmp_subkeys;
+        cmd->tmp_subkeys = flb_malloc(sizeof(struct mk_list));
+        if (!cmd->tmp_subkeys) {
+            flb_errno();
+            cmd->tmp_subkeys = key->subkeys;
+            flb_sp_cmd_key_del(key);
+            cmd->status = FLB_SP_ERROR;
+            return -1;
+        }
+        flb_slist_create(cmd->tmp_subkeys);
+
+        /* Compose a name key that include listed sub keys */
+        s = flb_sds_len(key->name) + (16 * mk_list_size(key->subkeys));
+        key->name_keys = flb_sds_create_size(s);
+        if (!key->name_keys) {
+            flb_sp_cmd_key_del(key);
+            return -1;
+        }
+
+        tmp = flb_sds_cat(key->name_keys, key->name, flb_sds_len(key->name));
+        if (tmp != key->name_keys) {
+            key->name_keys = tmp;
+        }
+
+        mk_list_foreach(head, key->subkeys) {
+            entry = mk_list_entry(head, struct flb_slist_entry, _head);
+
+            /* prefix */
+            tmp = flb_sds_cat(key->name_keys, "['", 2);
+            if (tmp) {
+                key->name_keys = tmp;
+            }
+            else {
+                flb_sp_cmd_key_del(key);
+                return -1;
+            }
+
+            /* selected key name */
+            tmp = flb_sds_cat(key->name_keys,
+                              entry->str, flb_sds_len(entry->str));
+            if (tmp) {
+                key->name_keys = tmp;
+            }
+            else {
+                flb_sp_cmd_key_del(key);
+                return -1;
+            }
+
+            /* suffix */
+            tmp = flb_sds_cat(key->name_keys, "']", 2);
+            if (tmp) {
+                key->name_keys = tmp;
+            }
+            else {
+                flb_sp_cmd_key_del(key);
+                return -1;
+            }
+        }
     }
 
     mk_list_add(&key->_head, &cmd->keys);
@@ -334,8 +409,9 @@ const char *flb_sp_cmd_stream_prop_get(struct flb_sp_cmd *cmd, const char *key)
 
 /* WINDOW functions */
 
-void flb_sp_cmd_window(struct flb_sp_cmd *cmd,
-                       int window_type, int size, int time_unit)
+int flb_sp_cmd_window(struct flb_sp_cmd *cmd,
+                      int window_type, int size, int time_unit,
+                      int advance_by_size, int advance_by_time_unit)
 {
     cmd->window.type = window_type;
 
@@ -350,6 +426,26 @@ void flb_sp_cmd_window(struct flb_sp_cmd *cmd,
         cmd->window.size = (time_t) size * 3600;
         break;
     }
+
+    if (window_type == FLB_SP_WINDOW_HOPPING) {
+        switch (advance_by_time_unit) {
+        case FLB_SP_TIME_SECOND:
+            cmd->window.advance_by = (time_t) advance_by_size;
+            break;
+        case FLB_SP_TIME_MINUTE:
+            cmd->window.advance_by = (time_t) advance_by_size * 60;
+            break;
+        case FLB_SP_TIME_HOUR:
+            cmd->window.advance_by = (time_t) advance_by_size * 3600;
+            break;
+        }
+
+        if (cmd->window.advance_by >= cmd->window.size) {
+            return -1;
+        }
+    }
+
+    return 0;
 }
 
 /* WHERE <condition> functions */
@@ -516,7 +612,8 @@ struct flb_exp *flb_sp_cmd_condition_null(struct flb_sp_cmd *cmd)
     return (struct flb_exp *) val;
 }
 
-struct flb_exp *flb_sp_record_function_add(struct flb_sp_cmd *cmd, char *name, struct flb_exp *param)
+struct flb_exp *flb_sp_record_function_add(struct flb_sp_cmd *cmd,
+                                           char *name, struct flb_exp *param)
 {
     char *rf_name;
     int i;

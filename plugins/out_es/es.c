@@ -145,12 +145,11 @@ static char *elasticsearch_format(const void *data, size_t bytes,
     char time_formatted[256];
     char index_formatted[256];
     char es_uuid[37];
+    flb_sds_t out_buf;
     msgpack_unpacked result;
     msgpack_object root;
     msgpack_object map;
     msgpack_object *obj;
-    char *json_buf;
-    size_t json_size;
     char j_index[ES_BULK_HEADER];
     struct es_bulk *bulk;
     struct tm tm;
@@ -383,17 +382,17 @@ static char *elasticsearch_format(const void *data, size_t bytes,
         }
 
         /* Convert msgpack to JSON */
-        ret = flb_msgpack_raw_to_json_str(tmp_sbuf.data, tmp_sbuf.size,
-                                          &json_buf, &json_size);
+        out_buf = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size);
         msgpack_sbuffer_destroy(&tmp_sbuf);
-        if (ret != 0) {
+        if (!out_buf) {
             msgpack_unpacked_destroy(&result);
             es_bulk_destroy(bulk);
             return NULL;
         }
 
-        ret = es_bulk_append(bulk, j_index, index_len, json_buf, json_size);
-        flb_free(json_buf);
+        ret = es_bulk_append(bulk, j_index, index_len,
+                             out_buf, flb_sds_len(out_buf));
+        flb_sds_destroy(out_buf);
         if (ret == -1) {
             /* We likely ran out of memory, abort here */
             msgpack_unpacked_destroy(&result);

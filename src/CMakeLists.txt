@@ -38,6 +38,7 @@ set(src
   flb_time.c
   flb_sosreport.c
   flb_sha512.c
+  flb_plugin.c
   )
 
 if (CMAKE_SYSTEM_NAME MATCHES "Windows")
@@ -210,6 +211,7 @@ set(FLB_DEPS
   mk_core
   jsmn
   msgpackc-static
+  mpack-static
   chunkio-static
   ${FLB_PLUGINS}
   ${FLB_PROXY_PLUGINS}
