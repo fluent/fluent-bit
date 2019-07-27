@@ -606,15 +606,14 @@ struct task_check select_keys_checks[] = {
     {
         8, 0, 0, 0,
         "select_aggr_window_tumbling",
-        "SELECT MIN(id), MAX(id), COUNT(*), SUM(bytes), AVG(bytes) " \
-        "FROM STREAM:FLB WINDOW TUMBLING (1 SECOND);",
+        "SELECT MIN(id), MAX(id), COUNT(*), SUM(bytes), AVG(bytes) FROM STREAM:FLB;",
         cb_select_aggr,
     },
     {
         9, 0, 0, 0,
         "select_aggr_window_tumbling_groupby",
         "SELECT bool, MIN(id), MAX(id), COUNT(*), SUM(bytes), AVG(bytes) " \
-        "FROM STREAM:FLB WINDOW TUMBLING (1 SECOND) WHERE word3 IS NOT NULL GROUP BY bool;",
+        "FROM STREAM:FLB WHERE word3 IS NOT NULL GROUP BY bool;",
         cb_select_groupby,
     },
 
@@ -1144,7 +1143,22 @@ struct task_check window_checks[] = {
         cb_window_5_second
     },
     {
-        1, FLB_SP_WINDOW_HOPPING, 5, 2,
+        1, FLB_SP_WINDOW_TUMBLING, 1, 0,
+        "select_aggr_window_tumbling",
+        "SELECT MIN(id), MAX(id), COUNT(*), SUM(bytes), AVG(bytes) " \
+        "FROM STREAM:FLB WINDOW TUMBLING (1 SECOND);",
+        cb_select_aggr,
+    },
+    {
+        2, FLB_SP_WINDOW_TUMBLING, 1, 0,
+        "select_aggr_window_tumbling_groupby",
+        "SELECT bool, MIN(id), MAX(id), COUNT(*), SUM(bytes), AVG(bytes) " \
+        "FROM STREAM:FLB WINDOW TUMBLING (1 SECOND) WHERE word3 IS NOT NULL " \
+        "GROUP BY bool;",
+        cb_select_groupby,
+    },
+    {
+        3, FLB_SP_WINDOW_HOPPING, 5, 2,
         "hopping_window_5_seconds",
         "SELECT SUM(id), AVG(id) FROM STREAM:FLB WINDOW HOPPING (5 SECOND, " \
         "ADVANCE BY 2 SECOND) WHERE word3 IS NOT NULL;",
