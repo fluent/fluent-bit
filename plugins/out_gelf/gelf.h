@@ -32,7 +32,6 @@ struct flb_out_gelf_config {
     struct flb_upstream *u;
     flb_sockfd_t fd;
 
-    z_stream stream;
     int pckt_size;
     int compress;
     unsigned int seed;
