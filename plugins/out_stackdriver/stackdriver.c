@@ -330,70 +330,104 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static int validate_severity_level(const char * severity)
+static int validate_severity_level(severity_t * s,
+                                   const char * str,
+                                   const unsigned int str_size)
 {
     int i = 0;
 
-    const char * severity_level[] = {
-        "EMERGENCY",
-        "ALERT",
-        "CRITICAL",
-        "ERROR",
-        "WARNING",
-        "NOTICE",
-        "INFO",
-        "DEBUG",
-        "DEFAULT",
-        NULL
+    const static struct {
+        severity_t s;
+        const unsigned int str_size;
+        const char * str;
+    }   enum_mapping[] = {
+        {EMERGENCY, 9, "EMERGENCY"},
+        {EMERGENCY, 5, "EMERG"    },
+
+        {ALERT    , 1, "A"        },
+        {ALERT    , 5, "ALERT"    },
+
+        {CRITICAL , 1, "C"        },
+        {CRITICAL , 1, "F"        },
+        {CRITICAL , 4, "CRIT"     },
+        {CRITICAL , 5, "FATAL"    },
+        {CRITICAL , 8, "CRITICAL" },
+
+        {ERROR    , 1, "E"        },
+        {ERROR    , 3, "ERR"      },
+        {ERROR    , 5, "ERROR"    },
+        {ERROR    , 6, "SEVERE"   },
+
+        {WARNING  , 1, "W"        },
+        {WARNING  , 4, "WARN"     },
+        {WARNING  , 7, "WARNING"  },
+
+        {NOTICE   , 1, "N"        },
+        {NOTICE   , 6, "NOTICE"   },
+
+        {INFO     , 1, "I"        },
+        {INFO     , 4, "INFO"     },
+
+        {DEBUG    , 1, "D"        },
+        {DEBUG    , 5, "DEBUG"    },
+        {DEBUG    , 5, "TRACE"    },
+        {DEBUG    , 9, "TRACE_INT"},
+        {DEBUG    , 4, "FINE"     },
+        {DEBUG    , 5, "FINER"    },
+        {DEBUG    , 6, "FINEST"   },
+        {DEBUG    , 6, "CONFIG"   },
+
+        {DEFAULT  , 7, "DEFAULT"  }
     };
 
-    if (severity == NULL) {
-        return -1;
-    }
+    for (i = 0; i < sizeof (enum_mapping) / sizeof (enum_mapping[0]); ++i) {
+        if (enum_mapping[i].str_size != str_size) {
+            continue;
+        }
 
-    for (i = 0; severity_level[i] != NULL; i++) {
-        if (strcasecmp(severity, severity_level[i]) == 0) {
+        if (strncasecmp(str, enum_mapping[i].str, str_size) == 0) {
+            *s = enum_mapping[i].s;
             return 0;
         }
     }
     return -1;
 }
 
-static int map_get_str_kv(flb_sds_t buf, const msgpack_object *o,
-                          const flb_sds_t key)
+static int get_msgpack_obj(msgpack_object * subobj, const msgpack_object * o,
+                           const flb_sds_t key, const int key_size,
+                           msgpack_object_type type)
 {
     int i = 0;
     msgpack_object_kv * p = NULL;
 
-    if (o == NULL || o->type != MSGPACK_OBJECT_MAP || buf == NULL) {
+    if (o == NULL || subobj == NULL) {
         return -1;
     }
 
     for (i = 0; i < o->via.map.size; i++) {
         p = &o->via.map.ptr[i];
-        if (p->key.type != MSGPACK_OBJECT_STR) {
+        if (p->val.type != type) {
             continue;
         }
 
-        if (p->val.via.str.size > 10) {
-            continue;
-        }
-
-        if (flb_sds_cmp(key, p->key.via.str.ptr, flb_sds_len(key)) == 0) {
-            flb_sds_len_set(buf, p->val.via.str.size);
-            memcpy(buf, p->val.via.str.ptr, p->val.via.str.size);
-            buf[p->val.via.str.size] = '\0';
+        if (flb_sds_cmp(key, p->key.via.str.ptr, p->key.via.str.size) == 0) {
+            *subobj = p->val;
             return 0;
         }
     }
     return -1;
 }
 
-static int get_severity_level(flb_sds_t severity, const msgpack_object * o,
+static int get_severity_level(severity_t * s, const msgpack_object * o,
                               const flb_sds_t key)
 {
-    return (map_get_str_kv(severity, o, key)
-            || validate_severity_level(severity));
+    msgpack_object tmp;
+    if (get_msgpack_obj(&tmp, o, key, flb_sds_len(key), MSGPACK_OBJECT_STR) == 0
+        && validate_severity_level(s, tmp.via.str.ptr, tmp.via.str.size) == 0) {
+        return 0;
+    }
+    *s = 0;
+    return -1;
 }
 
 static int stackdriver_format(const void *data, size_t bytes,
@@ -410,7 +444,7 @@ static int stackdriver_format(const void *data, size_t bytes,
     char time_formatted[255];
     struct tm tm;
     struct flb_time tms;
-    flb_sds_t severity = flb_sds_create_size(10);
+    severity_t severity;
     msgpack_object *obj;
     msgpack_unpacked result;
     msgpack_sbuffer mp_sbuf;
@@ -505,14 +539,12 @@ static int stackdriver_format(const void *data, size_t bytes,
          * }
          */
         if (ctx->severity_key
-            && get_severity_level(severity, obj, ctx->severity_key) == 0) {
-
+            && get_severity_level(&severity, obj, ctx->severity_key) == 0) {
             /* additional field for severity */
             msgpack_pack_map(&mp_pck, 4);
             msgpack_pack_str(&mp_pck, 8);
             msgpack_pack_str_body(&mp_pck, "severity", 8);
-            msgpack_pack_str(&mp_pck, flb_sds_len(severity));
-            msgpack_pack_str_body(&mp_pck, severity, flb_sds_len(severity));
+            msgpack_pack_int(&mp_pck, severity);
         }
         else {
             msgpack_pack_map(&mp_pck, 3);
@@ -552,7 +584,6 @@ static int stackdriver_format(const void *data, size_t bytes,
     ret = flb_msgpack_raw_to_json_str(mp_sbuf.data, mp_sbuf.size,
                                       &json_buf, &json_size);
     msgpack_sbuffer_destroy(&mp_sbuf);
-    flb_sds_destroy(severity);
 
     if (ret != 0) {
         flb_error("[out_stackdriver] error formatting JSON payload");
