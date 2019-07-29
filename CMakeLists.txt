@@ -272,6 +272,9 @@ add_subdirectory(${FLB_PATH_LIB_MSGPACK} EXCLUDE_FROM_ALL)
 # MPack
 add_subdirectory(${FLB_PATH_LIB_MPACK} EXCLUDE_FROM_ALL)
 
+# Miniz (zip)
+add_subdirectory(${FLB_PATH_LIB_MINIZ} EXCLUDE_FROM_ALL)
+
 # Chunk I/O
 FLB_OPTION(CIO_LIB_STATIC  ON)
 FLB_OPTION(CIO_LIB_SHARED  OFF)
