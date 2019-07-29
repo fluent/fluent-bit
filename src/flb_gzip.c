@@ -61,7 +61,7 @@ int flb_gzip_compress(void *in_data, size_t in_len,
     if (!out_buf) {
         flb_errno();
         flb_error("[gzip] could not allocate outgoing buffer");
-
+        return -1;
     }
 
     /* Initialize streaming buffer context */
@@ -149,11 +149,8 @@ int flb_gzip_uncompress(void *in_data, size_t in_len,
                         void **out_data, size_t *out_len)
 {
     uint8_t *p;
-    uint32_t c;
-    int ret;
     void *out_buf;
     size_t out_size = 0;
-    mz_ulong crc;
     void *zip_data;
     size_t zip_len;
 
