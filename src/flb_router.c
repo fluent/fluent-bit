@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_router.h>
+#include <onigmo.h>
 
 #include <string.h>
 
@@ -42,9 +43,9 @@ static inline int router_match(const char *tag, int tag_len,
     int n;
     if (match_regex) {
         n = onig_match(match_regex->regex,
-                       (unsigned char *) tag,
-                       (unsigned char *) tag + tag_len,
-                       (unsigned char *) tag, 0,
+                       (const unsigned char *) tag,
+                       (const unsigned char *) tag + tag_len,
+                       (const unsigned char *) tag, 0,
                        ONIG_OPTION_NONE);
         if (n > 0) {
             return 1;

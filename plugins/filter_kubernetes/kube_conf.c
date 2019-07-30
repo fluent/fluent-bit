@@ -40,9 +40,9 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
 {
     int off;
     int ret;
-    char *url;
-    char *tmp;
-    char *p;
+    const char *url;
+    const char *tmp;
+    const char *p;
     struct flb_kube *ctx;
 
     ctx = flb_calloc(1, sizeof(struct flb_kube));
@@ -103,6 +103,18 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
         ctx->merge_log = flb_utils_bool(tmp);
     }
 
+    /* Merge Parser */
+    tmp = flb_filter_get_property("merge_parser", i);
+    if (tmp) {
+        ctx->merge_parser = flb_parser_get(tmp, config);
+        if (!ctx->merge_parser) {
+            flb_error("[filter_kube] parser '%s' is not registered", tmp);
+        }
+    }
+    else {
+        ctx->merge_parser = NULL;
+    }
+
     /* Merge processed log under a new key */
     tmp = flb_filter_get_property("merge_log_key", i);
     if (tmp) {
@@ -119,7 +131,7 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
         ctx->merge_log_trim = FLB_TRUE;
     }
 
-    /* Keep original log key after successful parsing */
+    /* Keep original log key after successful merging/parsing */
     tmp = flb_filter_get_property("keep_log", i);
     if (tmp) {
         ctx->keep_log = flb_utils_bool(tmp);

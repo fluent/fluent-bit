@@ -33,7 +33,7 @@
 #define EACH_RECV_SIZE 32
 
 static int fw_process_array(struct flb_input_instance *in,
-                            char *tag, int tag_len,
+                            const char *tag, int tag_len,
                             msgpack_object *arr)
 {
     int i;
@@ -101,7 +101,7 @@ int fw_prot_process(struct fw_conn *conn)
     int ret;
     int stag_len;
     int c = 0;
-    char *stag;
+    const char *stag;
     size_t bytes;
     size_t buf_off = 0;
     size_t recv_len;
@@ -130,12 +130,11 @@ int fw_prot_process(struct fw_conn *conn)
             msgpack_unpacked_destroy(&result);
 
             /* Adjust buffer data */
-            if (conn->buf_len > all_used && all_used > 0) {
+            if (conn->buf_len >= all_used && all_used > 0) {
                 memmove(conn->buf, conn->buf + all_used,
                         conn->buf_len - all_used);
                 conn->buf_len -= all_used;
             }
-
             return 0;
         }
 
@@ -212,7 +211,7 @@ int fw_prot_process(struct fw_conn *conn)
                 return -1;
             }
 
-            stag     = (char *) tag.via.str.ptr;
+            stag     = tag.via.str.ptr;
             stag_len = tag.via.str.size;
 
             entry = root.via.array.ptr[1];
@@ -251,15 +250,15 @@ int fw_prot_process(struct fw_conn *conn)
             else if (entry.type == MSGPACK_OBJECT_STR ||
                      entry.type == MSGPACK_OBJECT_BIN) {
                 /* PackedForward Mode */
-                char *data = NULL;
+                const char *data = NULL;
                 size_t len = 0;
 
                 if (entry.type == MSGPACK_OBJECT_STR) {
-                    data = (char *) entry.via.str.ptr;
+                    data = entry.via.str.ptr;
                     len = entry.via.str.size;
                 }
                 else if (entry.type == MSGPACK_OBJECT_BIN) {
-                    data = (char *) entry.via.bin.ptr;
+                    data = entry.via.bin.ptr;
                     len = entry.via.bin.size;
                 }
 

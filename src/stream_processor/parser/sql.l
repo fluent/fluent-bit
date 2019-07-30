@@ -3,9 +3,10 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_log.h>
 #include "sql_parser.h"
 
-static inline char *remove_dup_qoutes(char *s, size_t n)
+static inline char *remove_dup_qoutes(const char *s, size_t n)
 {
     char *str;
     int dups;
@@ -63,6 +64,9 @@ NOT                     return NOT;
 WINDOW                  return WINDOW;
 "GROUP BY"              return GROUP_BY;
 
+IS                      return IS;
+NULL                    return NUL;
+
  /* Aggregation Functions */
 SUM                     return SUM;
 AVG                     return AVG;
@@ -70,8 +74,15 @@ COUNT                   return COUNT;
 MIN                     return MIN;
 MAX                     return MAX;
 
+ /* Record Functions */
+@RECORD                 return RECORD;
+CONTAINS                return CONTAINS;
+TIME                    return TIME;
+
  /* Window Types */
 TUMBLING                return TUMBLING;
+HOPPING                 return HOPPING;
+"ADVANCE BY"            return ADVANCE_BY;
 
  /* Time */
 HOUR                    return HOUR;
@@ -86,20 +97,23 @@ UNIX_TIMESTAMP          return UNIX_TIMESTAMP;
 RECORD_TAG              return RECORD_TAG;
 RECORD_TIME             return RECORD_TIME;
 
-"true"                  { yylval->boolean = true;  return BOOLTYPE; };
-"false"                 { yylval->boolean = false;  return BOOLTYPE; };
+"true"                     { yylval->boolean = true;  return BOOLTYPE; };
+"false"                    { yylval->boolean = false;  return BOOLTYPE; };
 
--?[1-9][0-9]*           { yylval->integer = atoi(yytext);  return INTEGER; }
--?[1-9][0-9]*\.[0-9]+   { yylval->fval = atof(yytext); return FLOATING; }
-\'([^']|'{2})*\'        { yylval->string = remove_dup_qoutes(yytext + 1, yyleng - 2); return STRING; }
+-?[1-9][0-9]*|0            { yylval->integer = atoi(yytext);  return INTEGER; }
+(-?[1-9][0-9]*|0)\.[0-9]+  { yylval->fval = atof(yytext); return FLOATING; }
+\'([^']|'{2})*\'           { yylval->string = remove_dup_qoutes(yytext + 1, yyleng - 2); return STRING; }
 
-[A-Za-z][A-Za-z0-9_.]*	{ yylval->string = flb_strdup(yytext); return IDENTIFIER; }
+[_A-Za-z][A-Za-z0-9_.]*	   { yylval->string = flb_strdup(yytext); return IDENTIFIER; }
 
 "*"                     |
 ","                     |
 "="                     |
 "("                     |
 ")"                     |
+"["                     |
+"]"                     |
+"."                     |
 ";"                     { return yytext[0]; }
 
 "<"                     return LT;
@@ -110,5 +124,7 @@ RECORD_TIME             return RECORD_TIME;
 \'                      return QUOTE;
 \n
 [ \t]+			/* ignore whitespace */;
+
+.	flb_error("[sp] bad input character '%s' at line %d", yytext, yylineno);
 
 %%

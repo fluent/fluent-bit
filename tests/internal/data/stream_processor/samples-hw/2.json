@@ -1,0 +1,4 @@
+{"id": 4, "word1": "forward"         , "word3": "plain"           , "bytes": 10     , "bool": true}
+{"id": 5, "word5": "forward-protocol", "word6": "secure"          , "bytes": 10     , "bool": true}
+{"id": 6, "word1": "stream"          , "word3": "processing"      , "bytes": 10.20  , "bool": false}
+{"id": 7, "word1": "edge-rocks"      , "word6": ""                , "bytes": 10     , "bool": true}

@@ -62,12 +62,15 @@ struct flb_hash {
 struct flb_hash *flb_hash_create(int evict_mode, size_t size, int max_entries);
 void flb_hash_destroy(struct flb_hash *ht);
 
-int flb_hash_add(struct flb_hash *ht, char *key, int key_len,
-                 char *val, size_t val_size);
-int flb_hash_get(struct flb_hash *ht, char *key, int key_len,
-                 char **out_buf, size_t *out_size);
-int flb_hash_get_by_id(struct flb_hash *ht, int id, char *key, char **out_buf,
-                       size_t *out_size);
-int flb_hash_del(struct flb_hash *ht, char *key);
+int flb_hash_add(struct flb_hash *ht,
+                 const char *key, int key_len,
+                 const char *val, size_t val_size);
+int flb_hash_get(struct flb_hash *ht,
+                 const char *key, int key_len,
+                 const char **out_buf, size_t *out_size);
+int flb_hash_get_by_id(struct flb_hash *ht, int id,
+                       const char *key,
+                       const char **out_buf, size_t *out_size);
+int flb_hash_del(struct flb_hash *ht, const char *key);
 
 #endif

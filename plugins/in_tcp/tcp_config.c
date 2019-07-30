@@ -28,9 +28,9 @@
 struct flb_in_tcp_config *tcp_config_init(struct flb_input_instance *i_ins)
 {
     char tmp[16];
-    char *listen;
-    char *buffer_size;
-    char *chunk_size;
+    const char *listen;
+    const char *buffer_size;
+    const char *chunk_size;
     struct flb_in_tcp_config *config;
 
     config = flb_malloc(sizeof(struct flb_in_tcp_config));

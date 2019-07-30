@@ -46,6 +46,9 @@ struct flb_forward_config {
     /* config */
     flb_sds_t shared_key;     /* shared key                   */
     flb_sds_t self_hostname;  /* hotname used in certificate  */
+    int require_ack_response; /* Require acknowledge for "chunk" */
+    int send_options;         /* send options in messages */
+
 
     /* mbedTLS specifics */
     unsigned char shared_key_salt[16];

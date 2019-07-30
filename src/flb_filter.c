@@ -40,7 +40,7 @@ static inline int instance_id(struct flb_config *config)
     return (entry->id + 1);
 }
 
-static inline int prop_key_check(char *key, char *kv, int k_len)
+static inline int prop_key_check(const char *key, const char *kv, int k_len)
 {
     int len;
 
@@ -53,8 +53,8 @@ static inline int prop_key_check(char *key, char *kv, int k_len)
 }
 
 void flb_filter_do(struct flb_input_chunk *ic,
-                   void *data, size_t bytes,
-                   char *tag, int tag_len,
+                   const void *data, size_t bytes,
+                   const char *tag, int tag_len,
                    struct flb_config *config)
 {
     int ret;
@@ -64,7 +64,7 @@ void flb_filter_do(struct flb_input_chunk *ic,
     int diff = 0;
 #endif
     char *ntag;
-    char *work_data;
+    const char *work_data;
     size_t work_size;
     void *out_buf;
     size_t cur_size;
@@ -73,8 +73,6 @@ void flb_filter_do(struct flb_input_chunk *ic,
     ssize_t write_at;
     struct mk_list *head;
     struct flb_filter_instance *f_ins;
-    msgpack_zone *mp_zone = NULL;
-
 
     /* For the incoming Tag make sure to create a NULL terminated reference */
     ntag = flb_malloc(tag_len + 1);
@@ -87,11 +85,8 @@ void flb_filter_do(struct flb_input_chunk *ic,
     ntag[tag_len] = '\0';
 
 
-    work_data = (char *) data;
+    work_data = (const char *) data;
     work_size = bytes;
-
-    /* Count number of incoming records */
-    mp_zone = msgpack_zone_new(MSGPACK_ZONE_CHUNK_SIZE);
 
     /* Iterate filters */
     mk_list_foreach(head, &config->filters) {
@@ -114,7 +109,7 @@ void flb_filter_do(struct flb_input_chunk *ic,
 
 #ifdef FLB_HAVE_METRICS
             /* Count number of incoming records */
-            in_records = flb_mp_count_zone(work_data, work_size, mp_zone);
+            in_records = flb_mp_count(work_data, work_size);
 #endif
 
             /* Invoke the filter callback */
@@ -138,14 +133,13 @@ void flb_filter_do(struct flb_input_chunk *ic,
                     /* Summarize all records removed */
                     flb_metrics_sum(FLB_METRIC_N_DROPPED,
                                     in_records, f_ins->metrics);
-                    msgpack_zone_clear(mp_zone);
 #endif
 
                     break;
                 }
                 else {
 #ifdef FLB_HAVE_METRICS
-                    out_records = flb_mp_count_zone(out_buf, out_size, mp_zone);
+                    out_records = flb_mp_count(out_buf, out_size);
                     if (out_records > in_records) {
                         diff = (out_records - in_records);
                         /* Summarize new records */
@@ -160,8 +154,6 @@ void flb_filter_do(struct flb_input_chunk *ic,
                     }
 #endif
                 }
-                msgpack_zone_clear(mp_zone);
-
                 ret = flb_input_chunk_write_at(ic, write_at,
                                                out_buf, out_size);
                 if (ret == -1) {
@@ -173,7 +165,7 @@ void flb_filter_do(struct flb_input_chunk *ic,
 
                 /* Point back the 'data' pointer to the new address */
                 ret = cio_chunk_get_content(ic->chunk,
-                                            &work_data, &cur_size);
+                                            (char **) &work_data, &cur_size);
 
                 work_data += (cur_size - out_size);
                 work_size = out_size;
@@ -182,11 +174,11 @@ void flb_filter_do(struct flb_input_chunk *ic,
         }
     }
 
-    msgpack_zone_free(mp_zone);
     flb_free(ntag);
 }
 
-int flb_filter_set_property(struct flb_filter_instance *filter, char *k, char *v)
+int flb_filter_set_property(struct flb_filter_instance *filter,
+                            const char *k, const char *v)
 {
     int len;
     char *tmp;
@@ -201,7 +193,7 @@ int flb_filter_set_property(struct flb_filter_instance *filter, char *k, char *v
     /* Check if the key is a known/shared property */
 #ifdef FLB_HAVE_REGEX
     if (prop_key_check("match_regex", k, len) == 0) {
-        filter->match_regex = flb_regex_create((unsigned char *) tmp);
+        filter->match_regex = flb_regex_create(tmp);
     }
     else
 #endif
@@ -227,7 +219,7 @@ int flb_filter_set_property(struct flb_filter_instance *filter, char *k, char *v
     return 0;
 }
 
-char *flb_filter_get_property(char *key, struct flb_filter_instance *i)
+const char *flb_filter_get_property(const char *key, struct flb_filter_instance *i)
 {
     return flb_config_prop_get(key, &i->properties);
 }
@@ -289,7 +281,7 @@ void flb_filter_exit(struct flb_config *config)
 }
 
 struct flb_filter_instance *flb_filter_new(struct flb_config *config,
-                                           char *filter, void *data)
+                                           const char *filter, void *data)
 {
     int id;
     struct mk_list *head;
@@ -341,7 +333,7 @@ struct flb_filter_instance *flb_filter_new(struct flb_config *config,
 }
 
 /* Return an instance name or alias */
-char *flb_filter_name(struct flb_filter_instance *in)
+const char *flb_filter_name(struct flb_filter_instance *in)
 {
     if (in->alias) {
         return in->alias;
@@ -355,7 +347,7 @@ void flb_filter_initialize_all(struct flb_config *config)
 {
     int ret;
 #ifdef FLB_HAVE_METRICS
-    char *name;
+    const char *name;
 #endif
     struct mk_list *tmp;
     struct mk_list *head;

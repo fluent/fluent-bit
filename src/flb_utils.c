@@ -201,7 +201,7 @@ void flb_utils_print_setup(struct flb_config *config)
     }
 }
 
-struct mk_list *flb_utils_split(char *line, int separator, int max_split)
+struct mk_list *flb_utils_split(const char *line, int separator, int max_split)
 {
     int i = 0;
     int count = 0;
@@ -337,7 +337,11 @@ int flb_utils_pipe_byte_consume(flb_pipefd_t fd)
     return 0;
 }
 
+<<<<<<< HEAD
 int64_t flb_utils_size_to_bytes(char *size)
+=======
+int64_t flb_utils_size_to_bytes(const char *size)
+>>>>>>> master
 {
     int i;
     int len;
@@ -403,7 +407,7 @@ int64_t flb_utils_size_to_bytes(char *size)
     return val;
 }
 
-int flb_utils_time_to_seconds(char *time)
+int flb_utils_time_to_seconds(const char *time)
 {
     int len;
     size_t val;
@@ -425,7 +429,7 @@ int flb_utils_time_to_seconds(char *time)
     return val;
 }
 
-int flb_utils_bool(char *val)
+int flb_utils_bool(const char *val)
 {
     if (strcasecmp(val, "true") == 0 ||
         strcasecmp(val, "on") == 0 ||
@@ -437,7 +441,7 @@ int flb_utils_bool(char *val)
 }
 
 /* Convert a 'string' time seconds.nanoseconds to int and long values */
-int flb_utils_time_split(char *time, int *sec, long *nsec)
+int flb_utils_time_split(const char *time, int *sec, long *nsec)
 {
     char *p;
     char *end;
@@ -501,7 +505,7 @@ void flb_utils_bytes_to_human_readable_size(size_t bytes,
 }
 
 
-static inline void encoded_to_buf(char *out, char *in, int len)
+static inline void encoded_to_buf(char *out, const char *in, int len)
 {
     int i;
     char *p = out;
@@ -517,7 +521,7 @@ static inline void encoded_to_buf(char *out, char *in, int len)
  * representation.
  */
 int flb_utils_write_str(char *buf, int *off, size_t size,
-                        char *str, size_t str_len)
+                        const char *str, size_t str_len)
 {
     int i;
     int b;
@@ -547,35 +551,33 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
         }
 
         c = (uint32_t) str[i];
-        if (c == '\\' || c == '"') {
+        if (c == '\"') {
             *p++ = '\\';
-            *p++ = c;
+            *p++ = '\"';
         }
-        else if (c >= '\a' && c <= '\r') {
+        else if (c == '\\') {
             *p++ = '\\';
-            switch (c) {
-            case '\n':
-                *p++ = 'n';
-                break;
-            case '\t':
-                *p++ = 't';
-                break;
-            case '\b':
-                *p++ = 'b';
-                break;
-            case '\f':
-                *p++ = 'f';
-                break;
-            case '\r':
-                *p++ = 'r';
-                break;
-            case '\a':
-                *p++ = 'a';
-                break;
-            case '\v':
-                *p++ = 'v';
-                break;
-            }
+            *p++ = '\\';
+        }
+        else if (c == '\n') {
+            *p++ = '\\';
+            *p++ = 'n';
+        }
+        else if (c == '\r') {
+            *p++ = '\\';
+            *p++ = 'r';
+        }
+        else if (c == '\t') {
+            *p++ = '\\';
+            *p++ = 't';
+        }
+        else if (c == '\b') {
+            *p++ = '\\';
+            *p++ = 'b';
+        }
+        else if (c == '\f') {
+            *p++ = '\\';
+            *p++ = 'f';
         }
         else if (c < 32 || c == 0x7f) {
             if ((available - written) < 6) {
@@ -651,7 +653,7 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
 }
 
 
-int flb_utils_write_str_buf(char *str, size_t str_len, char **out, size_t *out_size)
+int flb_utils_write_str_buf(const char *str, size_t str_len, char **out, size_t *out_size)
 {
     int ret;
     int off;
@@ -690,7 +692,7 @@ int flb_utils_write_str_buf(char *str, size_t str_len, char **out, size_t *out_s
     return 0;
 }
 
-int flb_utils_url_split(char *in_url, char **out_protocol,
+int flb_utils_url_split(const char *in_url, char **out_protocol,
                         char **out_host, char **out_port, char **out_uri)
 {
     char *protocol = NULL;

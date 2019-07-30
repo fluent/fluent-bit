@@ -189,7 +189,6 @@ static struct flb_task *task_alloc(struct flb_config *config)
 
     /* Initialize minimum variables */
     task->id        = task_id;
-    task->mapped    = FLB_FALSE;
     task->config    = config;
     task->status    = FLB_TASK_NEW;
     task->n_threads = 0;
@@ -203,12 +202,13 @@ static struct flb_task *task_alloc(struct flb_config *config)
 
 /* Create an engine task to handle the output plugin flushing work */
 struct flb_task *flb_task_create(uint64_t ref_id,
-                                 char *buf,
+                                 const char *buf,
                                  size_t size,
                                  struct flb_input_instance *i_ins,
                                  void *ic,
-                                 char *tag_buf, int tag_len,
-                                 struct flb_config *config)
+                                 const char *tag_buf, int tag_len,
+                                 struct flb_config *config,
+                                 int *err)
 {
     int count = 0;
     uint64_t routes_mask = 0;
@@ -217,9 +217,13 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     struct flb_output_instance *o_ins;
     struct mk_list *o_head;
 
+    /* No error status */
+    *err = FLB_FALSE;
+
     /* allocate task */
     task = task_alloc(config);
     if (!task) {
+        *err = FLB_TRUE;
         return NULL;
     }
 
@@ -228,6 +232,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     if (!task->tag) {
         flb_errno();
         flb_free(task);
+        *err = FLB_TRUE;
         return NULL;
     }
     memcpy(task->tag, tag_buf, tag_len);
@@ -240,7 +245,6 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     task->size   = size;
     task->i_ins  = i_ins;
     task->ic     = ic;
-    task->destinations = 0;
     mk_list_add(&task->_head, &i_ins->tasks);
 
     /* Find matching routes for the incoming tag */

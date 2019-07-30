@@ -19,51 +19,19 @@
  */
 
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_pack.h>
-#include <msgpack.h>
+#include <mpack/mpack.h>
 
-static inline int mp_count(void *data, size_t bytes, msgpack_zone *zone)
+int flb_mp_count(const void *data, size_t bytes)
 {
-    int c = 0;
-    int ret;
-    size_t off = 0;
-    msgpack_zone *t = NULL;
-    msgpack_object obj;
+    int count = 0;
+    mpack_reader_t reader;
 
-    if (!zone) {
-        t = msgpack_zone_new(MSGPACK_ZONE_CHUNK_SIZE);
-        if (!t) {
-            return -1;
-        }
-    }
-    else {
-        t = zone;
+    mpack_reader_init_data(&reader, (const char *) data, bytes);
+    while (mpack_reader_remaining(&reader, NULL) > 0) {
+        count++;
+        mpack_discard(&reader);
     }
 
-    do {
-        ret = msgpack_unpack(data, bytes, &off, t, &obj);
-        if (ret == MSGPACK_UNPACK_SUCCESS || ret == MSGPACK_UNPACK_EXTRA_BYTES) {
-            c++;
-        }
-        else {
-            break;
-        }
-    } while (1);
-
-    msgpack_zone_clear(t);
-    if (t != zone) {
-        msgpack_zone_free(t);
-    }
-
-    return c;
-}
-
-int flb_mp_count(void *data, size_t bytes)
-{
-    return mp_count(data, bytes, NULL);
-}
-
-int flb_mp_count_zone(void *data, size_t bytes, msgpack_zone *zone)
-{
-    return mp_count(data, bytes, zone);
+    mpack_reader_destroy(&reader);
+    return count;
 }

@@ -28,7 +28,7 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
                                           struct flb_config *config)
 {
     int io_flags = 0;
-    char *tmp;
+    const char *tmp;
     flb_sds_t t;
     struct flb_upstream *upstream;
     struct flb_splunk *ctx;

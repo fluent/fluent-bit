@@ -109,7 +109,7 @@ static int in_random_collect(struct flb_input_instance *i_ins,
 static int in_random_config_read(struct flb_in_random_config *random_config,
                                  struct flb_input_instance *in)
 {
-    char *val = NULL;
+    const char *val = NULL;
 
     /* samples */
     val = flb_input_get_property("samples", in);

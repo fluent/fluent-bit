@@ -109,3 +109,8 @@ int cio_file_up(struct cio_chunk *ch)
 {
     return -1;
 }
+
+int cio_file_up_force(struct cio_chunk *ch)
+{
+    return -1;
+}

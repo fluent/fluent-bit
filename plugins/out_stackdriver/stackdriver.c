@@ -282,6 +282,7 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
 {
     char *token;
     struct flb_stackdriver *ctx;
+    int io_flags = FLB_IO_TLS;
 
     /* Create config context */
     ctx = flb_stackdriver_conf_create(ins, config);
@@ -293,9 +294,14 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     /* Set context */
     flb_output_set_context(ins, ctx);
 
+    /* Network mode IPv6 */
+    if (ins->host.ipv6 == FLB_TRUE) {
+        io_flags |= FLB_IO_IPV6;
+    }
+
     /* Create Upstream context for Stackdriver Logging (no oauth2 service) */
     ctx->u = flb_upstream_create_url(config, FLB_STD_WRITE_URL,
-                                     FLB_IO_TLS, &ins->tls);
+                                     io_flags, &ins->tls);
     ctx->metadata_u = flb_upstream_create_url(config, "http://metadata.google.internal",
                                      FLB_IO_TCP, NULL);
     if (!ctx->u) {
@@ -324,12 +330,11 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static int stackdriver_format(void *data, size_t bytes,
-                              char *tag, size_t tag_len,
+static int stackdriver_format(const void *data, size_t bytes,
+                              const char *tag, size_t tag_len,
                               char **out_data, size_t *out_size,
                               struct flb_stackdriver *ctx)
 {
-    int ret;
     int len;
     int array_size = 0;
     size_t s;
@@ -342,8 +347,7 @@ static int stackdriver_format(void *data, size_t bytes,
     msgpack_unpacked result;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
-    char *json_buf;
-    size_t json_size;
+    flb_sds_t out_buf;
 
     /* Count number of records */
     msgpack_unpacked_init(&result);
@@ -464,18 +468,17 @@ static int stackdriver_format(void *data, size_t bytes,
     }
 
     /* Convert from msgpack to JSON */
-    ret = flb_msgpack_raw_to_json_str(mp_sbuf.data, mp_sbuf.size,
-                                      &json_buf, &json_size);
+    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
-    if (ret != 0) {
+    if (!out_buf) {
         flb_error("[out_stackdriver] error formatting JSON payload");
         msgpack_unpacked_destroy(&result);
         return -1;
     }
 
-    *out_data = json_buf;
-    *out_size = json_size;
+    *out_data = out_buf;
+    *out_size = flb_sds_len(out_buf);
 
     return 0;
 }
@@ -491,11 +494,11 @@ static void set_authorization_header(struct flb_http_client *c,
     flb_http_add_header(c, "Authorization", 13, header, len);
 }
 
-static void cb_stackdriver_flush(void *data, size_t bytes,
-                            char *tag, int tag_len,
-                            struct flb_input_instance *i_ins,
-                            void *out_context,
-                            struct flb_config *config)
+static void cb_stackdriver_flush(const void *data, size_t bytes,
+                                 const char *tag, int tag_len,
+                                 struct flb_input_instance *i_ins,
+                                 void *out_context,
+                                 struct flb_config *config)
 {
     (void) i_ins;
     (void) config;
@@ -503,7 +506,7 @@ static void cb_stackdriver_flush(void *data, size_t bytes,
     int ret_code = FLB_RETRY;
     size_t b_sent;
     char *token;
-    char *payload_buf;
+    flb_sds_t payload_buf;
     size_t payload_size;
     struct flb_stackdriver *ctx = out_context;
     struct flb_upstream_conn *u_conn;
@@ -528,7 +531,7 @@ static void cb_stackdriver_flush(void *data, size_t bytes,
     if (!token) {
         flb_error("[out_stackdriver] cannot retrieve oauth2 token");
         flb_upstream_conn_release(u_conn);
-        flb_free(payload_buf);
+        flb_sds_destroy(payload_buf);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
@@ -573,7 +576,7 @@ static void cb_stackdriver_flush(void *data, size_t bytes,
     }
 
     /* Cleanup */
-    flb_free(payload_buf);
+    flb_sds_destroy(payload_buf);
     flb_http_client_destroy(c);
     flb_upstream_conn_release(u_conn);
 

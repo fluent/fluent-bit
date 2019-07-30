@@ -119,9 +119,10 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
                         struct flb_config *config)
 {
     int ret;
-    char *buf_data;
+    int t_err;
+    const char *buf_data;
     size_t buf_size = 0;
-    char *tag_buf;
+    const char *tag_buf;
     int tag_len;
     struct mk_list *tmp;
     struct mk_list *head;
@@ -148,9 +149,11 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
              * Do not release the buffer since if allocated, it will be
              * released when the task is destroyed.
              */
+            flb_input_chunk_release_lock(ic);
             continue;
         }
         if (!buf_data) {
+            flb_input_chunk_release_lock(ic);
             continue;
         }
 
@@ -165,9 +168,17 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
         task = flb_task_create(id, buf_data, buf_size,
                                ic->in, ic,
                                tag_buf, tag_len,
-                               config);
+                               config, &t_err);
         if (!task) {
-            /* Do not release the buffer, will happen on dyntag destroy */
+            /*
+             * If task creation failed, check the error status flag. An error
+             * is associated with memory allocation or exhaustion of tasks_id,
+             * on that case the input chunk must be preserved and retried
+             * later. So we just release it busy lock.
+             */
+            if (t_err == FLB_TRUE) {
+                flb_input_chunk_release_lock(ic);
+            }
             continue;
         }
     }

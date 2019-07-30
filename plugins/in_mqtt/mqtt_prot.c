@@ -269,8 +269,8 @@ static int mqtt_handle_publish(struct mqtt_conn *conn)
             mqtt_packet_header(MQTT_PUBREC, 2 , (char *) &buf);
         }
         /* Set the identifier that we are replying to */
-        buf[2] = (packet_id & 0xf0) >> 4;
-        buf[3] = (packet_id & 0xf);
+        buf[2] = (packet_id >> 8) & 0xff;
+        buf[3] = (packet_id & 0xff);
         write(conn->event.fd, buf, 4);
     }
 
@@ -382,7 +382,6 @@ int mqtt_prot_parser(struct mqtt_conn *conn)
                 }
             } while (1);
 
-            conn->buf_pos += bytes - 1;
             conn->packet_length = length;
 
             /* At this point we have a full control packet in place */

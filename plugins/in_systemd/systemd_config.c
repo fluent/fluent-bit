@@ -34,7 +34,8 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
                                                      struct flb_config *config)
 {
     int ret;
-    char *tmp;
+    const char *tmp;
+    char *cursor = NULL;
     struct stat st;
     struct mk_list *head;
     struct flb_config_prop *prop;
@@ -186,11 +187,11 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
 
     /* Check if we have a cursor in our database */
     if (ctx->db) {
-        tmp = flb_systemd_db_get_cursor(ctx);
-        if (tmp) {
-            ret = sd_journal_seek_cursor(ctx->j, tmp);
+        cursor = flb_systemd_db_get_cursor(ctx);
+        if (cursor) {
+            ret = sd_journal_seek_cursor(ctx->j, cursor);
             if (ret == 0) {
-                flb_info("[in_systemd] seek_cursor=%.40s... OK", tmp);
+                flb_info("[in_systemd] seek_cursor=%.40s... OK", cursor);
 
                 /* Skip the first entry, already processed */
                 sd_journal_next_skip(ctx->j, 1);
@@ -198,7 +199,7 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
             else {
                 flb_warn("[in_systemd] seek_cursor failed");
             }
-            flb_free(tmp);
+            flb_free(cursor);
         }
     }
 

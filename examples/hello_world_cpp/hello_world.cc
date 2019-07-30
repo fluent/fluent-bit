@@ -23,7 +23,6 @@ int main()
 {
     int i;
     int n;
-    int ret;
     char tmp[256];
     flb_ctx_t *ctx;
     int in_ffd;

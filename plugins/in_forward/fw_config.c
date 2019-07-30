@@ -28,10 +28,10 @@
 struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
 {
     char tmp[16];
-    char *listen;
-    char *buffer_size;
-    char *chunk_size;
-    char *p;
+    const char *listen;
+    const char *buffer_size;
+    const char *chunk_size;
+    const char *p;
     struct flb_in_fw_config *config;
 
     config = flb_calloc(1, sizeof(struct flb_in_fw_config));

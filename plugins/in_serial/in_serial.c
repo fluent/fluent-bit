@@ -42,7 +42,7 @@
 #include "in_serial.h"
 #include "in_serial_config.h"
 
-static inline int process_line(msgpack_packer *mp_pck, char *line, int len,
+static inline int process_line(msgpack_packer *mp_pck, const char *line, int len,
                                struct flb_in_serial_config *ctx)
 {
 
@@ -58,8 +58,7 @@ static inline int process_line(msgpack_packer *mp_pck, char *line, int len,
     msgpack_pack_str(mp_pck, len);
     msgpack_pack_str_body(mp_pck, line, len);
 
-    flb_debug("[in_serial] message '%s'",
-              (const char *) line);
+    flb_debug("[in_serial] message '%s'", line);
 
     return 0;
 }

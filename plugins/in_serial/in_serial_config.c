@@ -29,11 +29,11 @@ struct flb_in_serial_config *serial_config_read(struct flb_in_serial_config *con
                                                 struct flb_input_instance *i_ins)
 {
     uint64_t min_bytes;
-    char *file;
-    char *bitrate;
-    char *separator;
-    char *tmp;
-    char *format;
+    const char *file;
+    const char *bitrate;
+    const char *separator;
+    const char *tmp;
+    const char *format;
 
     /* Get input properties */
     file      = flb_input_get_property("file", i_ins);

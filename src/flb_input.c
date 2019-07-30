@@ -36,7 +36,7 @@
 
 #define protcmp(a, b)  strncasecmp(a, b, strlen(a))
 
-static int check_protocol(char *prot, char *output)
+static int check_protocol(const char *prot, const char *output)
 {
     int len;
 
@@ -87,7 +87,7 @@ static int collector_id(struct flb_input_instance *in)
 
 /* Create an input plugin instance */
 struct flb_input_instance *flb_input_new(struct flb_config *config,
-                                         char *input, void *data,
+                                         const char *input, void *data,
                                          int public_only)
 {
     int id;
@@ -118,7 +118,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         /* Create plugin instance */
         instance = flb_malloc(sizeof(struct flb_input_instance));
         if (!instance) {
-            perror("malloc");
+            flb_errno();
             return NULL;
         }
         instance->config = config;
@@ -136,6 +136,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->p        = plugin;
         instance->tag      = NULL;
         instance->tag_len  = 0;
+        instance->routable = FLB_TRUE;
         instance->context  = NULL;
         instance->data     = data;
         instance->threaded = FLB_FALSE;
@@ -180,7 +181,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
     return instance;
 }
 
-static inline int prop_key_check(char *key, char *kv, int k_len)
+static inline int prop_key_check(const char *key, const char *kv, int k_len)
 {
     int len;
 
@@ -194,7 +195,8 @@ static inline int prop_key_check(char *key, char *kv, int k_len)
 }
 
 /* Override a configuration property for the given input_instance plugin */
-int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
+int flb_input_set_property(struct flb_input_instance *in,
+                           const char *k, const char *v)
 {
     int len;
     ssize_t limit;
@@ -214,6 +216,10 @@ int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
     if (prop_key_check("tag", k, len) == 0 && tmp) {
         in->tag     = tmp;
         in->tag_len = strlen(tmp);
+    }
+    else if (prop_key_check("routable", k, len) == 0 && tmp) {
+        in->routable = flb_utils_bool(tmp);
+        flb_free(tmp);
     }
     else if (prop_key_check("alias", k, len) == 0 && tmp) {
         in->alias = tmp;
@@ -260,13 +266,13 @@ int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
     return 0;
 }
 
-char *flb_input_get_property(char *key, struct flb_input_instance *i)
+const char *flb_input_get_property(const char *key, struct flb_input_instance *i)
 {
     return flb_config_prop_get(key, &i->properties);
 }
 
 /* Return an instance name or alias */
-char *flb_input_name(struct flb_input_instance *in)
+const char *flb_input_name(struct flb_input_instance *in)
 {
     if (in->alias) {
         return in->alias;
@@ -329,7 +335,7 @@ int flb_input_instance_init(struct flb_input_instance *in,
                             struct flb_config *config)
 {
     int ret;
-    char *name;
+    const char *name;
     struct flb_input_plugin *p = in->p;
 
     /* Skip pseudo input plugins */

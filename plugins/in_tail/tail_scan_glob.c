@@ -42,7 +42,7 @@
 #include <sys/types.h>
 #include <pwd.h>
 
-static char *expand_tilde(char *path)
+static char *expand_tilde(const char *path)
 {
     int len;
     char user[256];
@@ -119,7 +119,6 @@ static inline int do_glob(const char *pattern, int flags,
     (void) not_used;
 
     /* Save current values */
-    tmp = (char *) pattern;
     new_flags = flags;
 
     if (flags & GLOB_TILDE) {
@@ -133,13 +132,12 @@ static inline int do_glob(const char *pattern, int flags,
          *
          * the workaround is to do our own tilde expansion in a temporary buffer.
          */
-        char *p;
 
         /* Look for a tilde */
-        p = expand_tilde((char *) pattern);
-        if (p != pattern) {
+        tmp = expand_tilde(pattern);
+        if (tmp != pattern) {
             /* the path was expanded */
-            tmp = p;
+            pattern = tmp;
         }
 
         /* remove unused flag */
@@ -148,10 +146,10 @@ static inline int do_glob(const char *pattern, int flags,
     }
 
     /* invoke glob with new parameters */
-    ret = glob(tmp, new_flags, NULL, pglob);
+    ret = glob(pattern, new_flags, NULL, pglob);
 
     /* remove temporary buffer */
-    if (tmp != pattern) {
+    if (tmp != NULL) {
         flb_free(tmp);
     }
 

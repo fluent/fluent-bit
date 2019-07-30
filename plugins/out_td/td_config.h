@@ -30,9 +30,9 @@
 struct flb_out_td_config {
     int fd;           /* Socket to destination/backend */
     int region;       /* TD Region end-point */
-    char *api;
-    char *db_name;
-    char *db_table;
+    const char *api;
+    const char *db_name;
+    const char *db_table;
 
     struct flb_upstream *u;
 };

@@ -32,7 +32,7 @@
 #define DEFAULT_INTERVAL_NSEC 0
 
 struct flb_in_exec_config {
-    char  *cmd;
+    const char  *cmd;
     struct flb_parser  *parser;
     char *buf;
     size_t buf_size;

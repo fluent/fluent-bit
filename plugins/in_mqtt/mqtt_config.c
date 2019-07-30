@@ -28,7 +28,7 @@
 struct flb_in_mqtt_config *mqtt_config_init(struct flb_input_instance *i_ins)
 {
     char tmp[16];
-    char *listen;
+    const char *listen;
     struct flb_in_mqtt_config *config;
 
     config = flb_calloc(1, sizeof(struct flb_in_mqtt_config));

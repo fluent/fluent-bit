@@ -137,7 +137,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         if (ctx->topic_key && !topic && val.type == MSGPACK_OBJECT_STR) {
             if (key.via.str.size == ctx->topic_key_len &&
                 strncmp(key.via.str.ptr, ctx->topic_key, ctx->topic_key_len) == 0) {
-                topic = flb_kafka_topic_lookup((char *) val.via.str.ptr,
+                topic = flb_kafka_topic_lookup(val.via.str.ptr,
                                                val.via.str.size,
                                                ctx);
             }
@@ -145,13 +145,14 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     }
 
     if (ctx->format == FLB_KAFKA_FMT_JSON) {
-        ret = flb_msgpack_raw_to_json_str(mp_sbuf.data, mp_sbuf.size,
-                                          &out_buf, &out_size);
-        if (ret != 0) {
+        s = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+        if (!s) {
             flb_error("[out_kafka] error encoding to JSON");
             msgpack_sbuffer_destroy(&mp_sbuf);
             return FLB_ERROR;
         }
+        out_buf  = s;
+        out_size = flb_sds_len(out_buf);
     }
     else if (ctx->format == FLB_KAFKA_FMT_MSGP) {
         out_buf = mp_sbuf.data;
@@ -241,7 +242,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
 
     rd_kafka_poll(ctx->producer, 0);
     if (ctx->format == FLB_KAFKA_FMT_JSON) {
-        flb_free(out_buf);
+        flb_sds_destroy(s);
     }
     if (ctx->format == FLB_KAFKA_FMT_GELF) {
         flb_sds_destroy(s);
@@ -251,8 +252,8 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     return FLB_OK;
 }
 
-static void cb_kafka_flush(void *data, size_t bytes,
-                           char *tag, int tag_len,
+static void cb_kafka_flush(const void *data, size_t bytes,
+                           const char *tag, int tag_len,
                            struct flb_input_instance *i_ins,
                            void *out_context,
                            struct flb_config *config)

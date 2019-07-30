@@ -37,7 +37,14 @@
 #include <unistd.h>
 #endif
 
-#define DATA_SAMPLES FLB_TESTS_DATA_PATH "/data/stream_processor/samples.mp"
+#define DATA_SAMPLES                                        \
+    FLB_TESTS_DATA_PATH "/data/stream_processor/samples.mp"
+
+#define DATA_SAMPLES_SUBKEYS                               \
+    FLB_TESTS_DATA_PATH "/data/stream_processor/samples-subkeys.mp"
+
+#define DATA_SAMPLES_HOPPING_WINDOW_PATH                   \
+    FLB_TESTS_DATA_PATH "/data/stream_processor/samples-hw/"
 
 #define MP_UOK MSGPACK_UNPACK_SUCCESS
 
@@ -98,6 +105,7 @@ struct task_check {
     int id;
     int window_type;
     int window_val;
+    int window_hop_val;
     char *name;
     char *exec;
     void (*cb_check)(int, struct task_check *, char *, size_t);
@@ -226,7 +234,7 @@ static int mp_record_key_cmp(char *buf, size_t size,
         }
     }
 
- exit:
+exit:
     msgpack_unpacked_destroy(&result);
     return ret;
 }
@@ -237,9 +245,9 @@ static void cb_select_all(int id, struct task_check *check,
 {
     int ret;
 
-    /* Expect all 10 rows */
+    /* Expect all 11 rows */
     ret = mp_count_rows(buf, size);
-    TEST_CHECK(ret == 10);
+    TEST_CHECK(ret == 11);
 }
 
 /* Callback test: expect one key per record */
@@ -248,12 +256,12 @@ static void cb_select_id(int id, struct task_check *check,
 {
     int ret;
 
-    /* Expect all 10 rows */
+    /* Expect all 11 rows */
     ret = mp_count_rows(buf, size);
-    TEST_CHECK(ret == 10);
+    TEST_CHECK(ret == 11);
 
     ret = mp_count_keys(buf, size);
-    TEST_CHECK(ret == 12);
+    TEST_CHECK(ret == 13);
 }
 
 static void cb_select_cond_1(int id, struct task_check *check,
@@ -276,6 +284,26 @@ static void cb_select_cond_2(int id, struct task_check *check,
     TEST_CHECK(ret == 2);
 }
 
+static void cb_select_cond_not_null(int id, struct task_check *check,
+                                    char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 1 row */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 1);
+}
+
+static void cb_select_cond_null(int id, struct task_check *check,
+                                char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 1 row */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 1);
+}
+
 static void cb_select_aggr(int id, struct task_check *check,
                            char *buf, size_t size)
 {
@@ -292,32 +320,32 @@ static void cb_select_aggr(int id, struct task_check *check,
                             NULL, 0, 0);
     TEST_CHECK(ret == FLB_TRUE);
 
-    /* MAX(id) is 9 */
+    /* MAX(id) is 10 */
     ret = mp_record_key_cmp(buf, size,
                             0, "MAX(id)",
-                            MSGPACK_OBJECT_POSITIVE_INTEGER,
-                            NULL, 9, 0);
-    TEST_CHECK(ret == FLB_TRUE);
-
-    /* COUNT(*) is 10 */
-    ret = mp_record_key_cmp(buf, size,
-                            0, "COUNT(*)",
                             MSGPACK_OBJECT_POSITIVE_INTEGER,
                             NULL, 10, 0);
     TEST_CHECK(ret == FLB_TRUE);
 
-    /* SUM(bytes) is 100.50 */
+    /* COUNT(*) is 11 */
+    ret = mp_record_key_cmp(buf, size,
+                            0, "COUNT(*)",
+                            MSGPACK_OBJECT_POSITIVE_INTEGER,
+                            NULL, 11, 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* SUM(bytes) is 110.50 */
     ret = mp_record_key_cmp(buf, size,
                             0, "SUM(bytes)",
                             MSGPACK_OBJECT_FLOAT,
-                            NULL, 0, 100.50);
+                            NULL, 0, 110.50);
     TEST_CHECK(ret == FLB_TRUE);
 
-    /* AVG(bytes) is 10.05 */
+    /* AVG(bytes) is 10.04545 */
     ret = mp_record_key_cmp(buf, size,
                             0, "AVG(bytes)",
                             MSGPACK_OBJECT_FLOAT,
-                            NULL, 0, 10.050000);
+                            NULL, 0, 10.045455);
     TEST_CHECK(ret == FLB_TRUE);
 }
 
@@ -330,11 +358,11 @@ static void cb_select_aggr_count(int id, struct task_check *check,
     ret = mp_count_rows(buf, size);
     TEST_CHECK(ret == 1);
 
-    /* COUNT(*) is 10 */
+    /* COUNT(*) is 11 */
     ret = mp_record_key_cmp(buf, size,
                             0, "COUNT(*)",
                             MSGPACK_OBJECT_POSITIVE_INTEGER,
-                            NULL, 10, 0);
+                            NULL, 11, 0);
     TEST_CHECK(ret == FLB_TRUE);
 }
 
@@ -499,16 +527,36 @@ static void cb_func_time_unix_timestamp(int id, struct task_check *check,
     TEST_CHECK(ret == FLB_TRUE);
 }
 
+static void cb_record_contains(int id, struct task_check *check,
+                               char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 2 rows */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 2);
+}
+
+static void cb_record_not_contains(int id, struct task_check *check,
+                                   char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 0 rows */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 0);
+}
+
 /* Tests for 'test_select_keys' */
 struct task_check select_keys_checks[] = {
     {
-        0, 0, 0,
+        0, 0, 0, 0,
         "select_all",
         "SELECT * FROM STREAM:FLB;",
         cb_select_all
     },
     {
-        1, 0, 0,
+        1, 0, 0, 0,
         "select_id",
         "SELECT id, word2 FROM STREAM:FLB;",
         cb_select_id
@@ -516,90 +564,316 @@ struct task_check select_keys_checks[] = {
 
     /* Conditionals */
     {
-        2, 0, 0,
+        2, 0, 0, 0,
         "select_cond_1",
         "SELECT * FROM STREAM:FLB WHERE bytes > 10.290;",
         cb_select_cond_1
     },
     {
-        3, 0, 0,
+        3, 0, 0, 0,
         "select_cond_2",
         "SELECT * FROM STREAM:FLB WHERE word2 = 'rlz' or word3 = 'rlz';",
         cb_select_cond_2
     },
+    {
+        4, 0, 0, 0,
+        "select_cond_not_null",
+        "SELECT * FROM STREAM:FLB WHERE word2 = 'rlz' and word3 IS NOT NULL;",
+        cb_select_cond_not_null
+    },
+    {
+        5, 0, 0, 0,
+        "select_cond_null",
+        "SELECT * FROM STREAM:FLB WHERE word3 IS NULL;",
+        cb_select_cond_null
+    },
 
     /* Aggregation functions */
     {
-        4, 0, 0,
+        6, 0, 0, 0,
         "select_aggr",
         "SELECT MIN(id), MAX(id), COUNT(*), SUM(bytes), AVG(bytes) " \
         "FROM STREAM:FLB;",
         cb_select_aggr,
     },
     {
-        5, 0, 0,
+        7, 0, 0, 0,
         "select_aggr_coount",
         "SELECT COUNT(*) " \
         "FROM STREAM:FLB;",
         cb_select_aggr_count,
     },
     {
-        6, 0, 0,
+        8, 0, 0, 0,
         "select_aggr_window_tumbling",
-        "SELECT MIN(id), MAX(id), COUNT(*), SUM(bytes), AVG(bytes) " \
-        "FROM STREAM:FLB WINDOW TUMBLING (1 SECOND);",
+        "SELECT MIN(id), MAX(id), COUNT(*), SUM(bytes), AVG(bytes) FROM STREAM:FLB;",
         cb_select_aggr,
     },
     {
-        7, 0, 0,
+        9, 0, 0, 0,
         "select_aggr_window_tumbling_groupby",
         "SELECT bool, MIN(id), MAX(id), COUNT(*), SUM(bytes), AVG(bytes) " \
-        "FROM STREAM:FLB WINDOW TUMBLING (1 SECOND) GROUP BY bool;",
+        "FROM STREAM:FLB WHERE word3 IS NOT NULL GROUP BY bool;",
         cb_select_groupby,
     },
 
     /* Time functions */
     {
-        8, 0, 0,
+        10, 0, 0, 0,
         "func_time_now",
         "SELECT NOW(), NOW() as tnow FROM STREAM:FLB WHERE bytes > 10;",
         cb_func_time_now,
     },
     {
-        9, 0, 0,
+        11, 0, 0, 0,
         "func_time_unix_timestamp",
         "SELECT UNIX_TIMESTAMP(), UNIX_TIMESTAMP() as ts " \
         "FROM STREAM:FLB WHERE bytes > 10;",
         cb_func_time_unix_timestamp,
     },
+
     /* Stream selection using Tag rules */
     {
-        10, 0, 0,
+        12, 0, 0, 0,
         "select_from_tag_error",
         "SELECT id FROM TAG:'no-matches' WHERE bytes > 10;",
         cb_select_tag_error,
     },
     {
-        11, 0, 0,
+        13, 0, 0, 0,
         "select_from_tag",
         "SELECT id FROM TAG:'samples' WHERE bytes > 10;",
         cb_select_tag_ok,
+    },
+    {
+        14, 0, 0, 0,
+        "@recond.contains",
+        "SELECT id FROM TAG:'samples' WHERE bytes = 10 AND @record.contains(word2);",
+        cb_record_contains,
+    },
+    {
+        15, 0, 0, 0,
+        "@recond.contains",
+        "SELECT id FROM TAG:'samples' WHERE @record.contains(x);",
+        cb_record_not_contains,
     }
+};
 
+
+/* Callback functions to perform checks over results */
+static void cb_select_sub_blue(int id, struct task_check *check,
+                               char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 1 row */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 1);
+}
+
+static void cb_select_sub_num(int id, struct task_check *check,
+                              char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 2 rows */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 2);
+}
+
+static void cb_select_sub_colors(int id, struct task_check *check,
+                                 char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 3 rows */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 3);
+}
+
+static void cb_select_sub_keys(int id, struct task_check *check,
+                               char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 1 row */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 1);
+
+    ret = mp_record_key_cmp(buf, size,
+                            0, "map['sub1']['sub2']['color']",
+                            MSGPACK_OBJECT_STR,
+                            "blue", 0, 0);
+    TEST_CHECK(ret == FLB_TRUE);
+}
+
+static void cb_select_sum_sub_keys(int id, struct task_check *check,
+                                   char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 1 row */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 1);
+
+    ret = mp_record_key_cmp(buf, size,
+                            0, "SUM(map['sub1']['sub2'])",
+                            MSGPACK_OBJECT_POSITIVE_INTEGER,
+                            NULL, 246, 0);
+    TEST_CHECK(ret == FLB_TRUE);
+}
+
+static void cb_select_avg_sub_keys(int id, struct task_check *check,
+                                   char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 1 row */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 1);
+
+    ret = mp_record_key_cmp(buf, size,
+                            0, "AVG(map['sub1']['sub2'])",
+                            MSGPACK_OBJECT_FLOAT,
+                            NULL, 0, 123.0);
+    TEST_CHECK(ret == FLB_TRUE);
+}
+
+static void cb_select_count_sub_keys(int id, struct task_check *check,
+                                     char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 1 row */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 1);
+
+    ret = mp_record_key_cmp(buf, size,
+                            0, "COUNT(map['sub1']['sub2'])",
+                            MSGPACK_OBJECT_POSITIVE_INTEGER,
+                            NULL, 2, 0);
+    TEST_CHECK(ret == FLB_TRUE);
+}
+
+static void cb_select_min_sub_keys(int id, struct task_check *check,
+                                   char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 1 row */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 1);
+
+    ret = mp_record_key_cmp(buf, size,
+                            0, "MIN(map['sub1']['sub2'])",
+                            MSGPACK_OBJECT_POSITIVE_INTEGER,
+                            NULL, 123, 0);
+    TEST_CHECK(ret == FLB_TRUE);
+}
+
+static void cb_select_max_sub_keys(int id, struct task_check *check,
+                                   char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 1 row */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 1);
+
+    ret = mp_record_key_cmp(buf, size,
+                            0, "MAX(map['sub1']['sub3'])",
+                            MSGPACK_OBJECT_FLOAT,
+                            NULL, 0, 100);
+    TEST_CHECK(ret == FLB_TRUE);
+}
+
+static void cb_select_sub_record_contains(int id, struct task_check *check,
+                                          char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 5 rows */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 5);
+}
+
+/* Tests for 'test_select_subkeys' */
+struct task_check select_subkeys_checks[] = {
+    {
+        0, 0, 0, 0,
+        "select_sub_blue",
+        "SELECT * FROM STREAM:FLB WHERE map['sub1']['sub2']['color'] = 'blue';",
+        cb_select_sub_blue
+    },
+    {
+        1, 0, 0, 0,
+        "select_sub_num",
+        "SELECT * FROM STREAM:FLB WHERE map['sub1']['sub2'] = 123;",
+        cb_select_sub_num
+    },
+    {
+        2, 0, 0, 0,
+        "select_sub_colors",
+        "SELECT * FROM STREAM:FLB WHERE "            \
+        "map['sub1']['sub2']['color'] = 'blue' OR "  \
+        "map['sub1']['sub2']['color'] = 'red'  OR "  \
+        "map['color'] = 'blue'; ",
+        cb_select_sub_colors
+    },
+    {
+        3, 0, 0, 0,
+        "cb_select_sub_record_contains",
+        "SELECT * FROM STREAM:FLB WHERE "            \
+        "@record.contains(map['sub1']['sub3']) OR "  \
+        "@record.contains(map['color']); ",
+        cb_select_sub_record_contains
+    },
+    {   4, 0, 0, 0,
+        "cb_select_sub_keys",
+        "SELECT map['sub1']['sub2']['color'] FROM STREAM:FLB WHERE "    \
+        "map['sub1']['sub2']['color'] = 'blue';",
+        cb_select_sub_keys},
+    {   5, 0, 0, 0,
+        "cb_select_sum_sub_keys",
+        "SELECT SUM(map['sub1']['sub2']) FROM STREAM:FLB WHERE "    \
+        "map['sub1']['sub2'] = 123;",
+        cb_select_sum_sub_keys},
+    {   6, 0, 0, 0,
+        "cb_select_avg_sub_keys",
+        "SELECT AVG(map['sub1']['sub2']) FROM STREAM:FLB WHERE "    \
+        "map['sub1']['sub2'] = 123;",
+        cb_select_avg_sub_keys},
+    {   7, 0, 0, 0,
+        "cb_select_count_sub_keys",
+        "SELECT COUNT(map['sub1']['sub2']) FROM STREAM:FLB WHERE "    \
+        "map['sub1']['sub2'] = 123;",
+        cb_select_count_sub_keys},
+    {   8, 0, 0, 0,
+        "cb_select_min_sub_keys",
+        "SELECT MIN(map['sub1']['sub2']) FROM STREAM:FLB WHERE "  \
+        "map['sub1']['sub2'] > 0;",
+        cb_select_min_sub_keys},
+    {   9, 0, 0, 0,
+        "cb_select_max_sub_keys",
+        "SELECT MAX(map['sub1']['sub3']) FROM STREAM:FLB WHERE "  \
+        "map['sub1']['sub3'] > 0;",
+        cb_select_max_sub_keys}
 };
 
 /* Tests to check syntactically valid/semantically invalid queries */
 char *invalid_query_checks[] = {
     "SELECT id, MIN(id) FROM STREAM:FLB;",
     "SELECT *, COUNT(id) FROM STREAM:FLB;",
+    "SELECT * FROM TAG:FLB WHERE bool = NULL ;",
+    "SELECT * FROM TAG:FLB WHERE @record.some_random_func() ;",
     "SELECT id, MIN(id) FROM STREAM:FLB WINDOW TUMBLING (1 SECOND)" \
-        " GROUP BY bool;",
+    " GROUP BY bool;",
     "SELECT *, COUNT(id) FROM STREAM:FLB WINDOW TUMBLING (1 SECOND)" \
-        " GROUP BY bool;",
+    " GROUP BY bool;",
     "SELECT *, COUNT(bool) FROM STREAM:FLB WINDOW TUMBLING (1 SECOND)" \
-        " GROUP BY bool;",
+    " GROUP BY bool;",
     "SELECT *, bool, COUNT(bool) FROM STREAM:FLB WINDOW TUMBLING (1 SECOND)" \
-        " GROUP BY bool;"
+    " GROUP BY bool;"
 };
 
 
@@ -708,7 +982,95 @@ static void test_select_keys()
             continue;
         }
 
-        flb_sp_test_fd_event(task, &out_buf, &out_size);
+        flb_sp_test_fd_event(task->window.fd, task, &out_buf, &out_size);
+
+        flb_info("[sp test] id=%i, SQL => '%s'", check->id, check->exec);
+        check->cb_check(check->id, check, out_buf, out_size);
+        flb_pack_print(out_buf, out_size);
+        flb_free(out_buf);
+    }
+
+    flb_free(data_buf);
+    flb_sp_destroy(sp);
+    mk_event_loop_destroy(config->evl);
+    flb_free(config);
+#ifdef _WIN32
+    WSACleanup();
+#endif
+}
+
+static void test_select_subkeys()
+{
+    int i;
+    int checks;
+    int ret;
+    char *out_buf;
+    size_t out_size;
+    char *data_buf;
+    size_t data_size;
+    struct task_check *check;
+    struct flb_config *config;
+    struct flb_sp *sp;
+    struct flb_sp_task *task;
+#ifdef _WIN32
+    WSADATA wsa_data;
+#endif
+
+    config = flb_calloc(1, sizeof(struct flb_config));
+    if (!config) {
+        flb_errno();
+        return;
+    }
+#ifdef _WIN32
+    WSAStartup(0x0201, &wsa_data);
+#endif
+    mk_list_init(&config->inputs);
+    mk_list_init(&config->stream_processor_tasks);
+
+    config->evl = mk_event_loop_create(256);
+
+    sp = flb_sp_create(config);
+    if (!sp) {
+        flb_error("[sp test] cannot create stream processor context");
+        flb_free(config);
+        return;
+    }
+
+    ret = file_to_buf(DATA_SAMPLES_SUBKEYS, &data_buf, &data_size);
+    if (ret == -1) {
+        flb_error("[sp test] cannot open DATA_SAMPLES file %s",
+                  DATA_SAMPLES_SUBKEYS);
+        flb_free(config);
+        return;
+    }
+
+    /* Total number of checks for select_subkeys */
+    checks = (sizeof(select_subkeys_checks) / sizeof(struct task_check));
+
+    /* Run every test */
+    for (i = 0; i < checks; i++) {
+        check = (struct task_check *) &select_subkeys_checks[i];
+
+        task = flb_sp_task_create(sp, check->name, check->exec);
+        if (!task) {
+            flb_error("[sp test] wrong check '%s', fix it!", check->name);
+            continue;
+        }
+
+        out_buf = NULL;
+        out_size = 0;
+
+        ret = flb_sp_test_do(sp, task,
+                             "samples", 7,
+                             data_buf, data_size,
+                             &out_buf, &out_size);
+        if (ret == -1) {
+            flb_error("[sp test] error processing check '%s'", check->name);
+            flb_sp_task_destroy(task);
+            continue;
+        }
+
+        flb_sp_test_fd_event(task->window.fd, task, &out_buf, &out_size);
 
         flb_info("[sp test] id=%i, SQL => '%s'", check->id, check->exec);
         check->cb_check(check->id, check, out_buf, out_size);
@@ -748,13 +1110,59 @@ static void cb_window_5_second(int id, struct task_check *check,
     TEST_CHECK(ret == FLB_TRUE);
 }
 
+static void cb_hopping_window_5_second(int id, struct task_check *check,
+                                       char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect one record only */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 1);
+
+    /* Check SUM value result */
+    ret = mp_record_key_cmp(buf, size, 0, "SUM(id)",
+                            MSGPACK_OBJECT_POSITIVE_INTEGER,
+                            NULL, 68, 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* Check AVG value result */
+    ret = mp_record_key_cmp(buf, size, 0, "AVG(id)",
+                            MSGPACK_OBJECT_FLOAT,
+                            NULL, 0, 4.25);
+
+    TEST_CHECK(ret == FLB_TRUE);
+}
+
 /* Tests for 'test_window' */
 struct task_check window_checks[] = {
     {
-        0, FLB_SP_WINDOW_TUMBLING, 5,
+        0, FLB_SP_WINDOW_TUMBLING, 5, 0,
         "window_5_seconds",
-        "SELECT SUM(id), AVG(id) FROM STREAM:FLB WINDOW TUMBLING (5 SECOND);",
+        "SELECT SUM(id), AVG(id) FROM STREAM:FLB WINDOW TUMBLING (5 SECOND) " \
+        "WHERE word3 IS NOT NULL;",
         cb_window_5_second
+    },
+    {
+        1, FLB_SP_WINDOW_TUMBLING, 1, 0,
+        "select_aggr_window_tumbling",
+        "SELECT MIN(id), MAX(id), COUNT(*), SUM(bytes), AVG(bytes) " \
+        "FROM STREAM:FLB WINDOW TUMBLING (1 SECOND);",
+        cb_select_aggr,
+    },
+    {
+        2, FLB_SP_WINDOW_TUMBLING, 1, 0,
+        "select_aggr_window_tumbling_groupby",
+        "SELECT bool, MIN(id), MAX(id), COUNT(*), SUM(bytes), AVG(bytes) " \
+        "FROM STREAM:FLB WINDOW TUMBLING (1 SECOND) WHERE word3 IS NOT NULL " \
+        "GROUP BY bool;",
+        cb_select_groupby,
+    },
+    {
+        3, FLB_SP_WINDOW_HOPPING, 5, 2,
+        "hopping_window_5_seconds",
+        "SELECT SUM(id), AVG(id) FROM STREAM:FLB WINDOW HOPPING (5 SECOND, " \
+        "ADVANCE BY 2 SECOND) WHERE word3 IS NOT NULL;",
+        cb_hopping_window_5_second
     },
 };
 
@@ -764,9 +1172,10 @@ static void test_window()
     int t;
     int checks;
     int ret;
-    char *out_buf;
+    char datafile[100];
+    char *out_buf = NULL;
     size_t out_size;
-    char *data_buf;
+    char *data_buf = NULL;
     size_t data_size;
     struct task_check *check;
     struct flb_config *config;
@@ -795,13 +1204,6 @@ static void test_window()
         return;
     }
 
-    ret = file_to_buf(DATA_SAMPLES, &data_buf, &data_size);
-    if (ret == -1) {
-        flb_error("[sp test] cannot open DATA_SAMPLES file %s", DATA_SAMPLES);
-        flb_free(config);
-        return;
-    }
-
     /* Total number of checks for select_keys */
     checks = (sizeof(window_checks) / sizeof(struct task_check));
 
@@ -819,6 +1221,13 @@ static void test_window()
         out_size = 0;
 
         if (check->window_type == FLB_SP_WINDOW_TUMBLING) {
+            ret = file_to_buf(DATA_SAMPLES, &data_buf, &data_size);
+            if (ret == -1) {
+                flb_error("[sp test] cannot open DATA_SAMPLES file %s", DATA_SAMPLES);
+                flb_free(config);
+                return;
+            }
+
             /* We ingest the buffer every second */
             for (t = 0; t < check->window_val; t++) {
                 ret = flb_sp_test_do(sp, task,
@@ -836,16 +1245,66 @@ static void test_window()
                 usleep(800000);
             }
 
-            flb_sp_test_fd_event(task, &out_buf, &out_size);
+            flb_sp_test_fd_event(task->window.fd, task, &out_buf, &out_size);
 
             flb_info("[sp test] id=%i, SQL => '%s'", check->id, check->exec);
             check->cb_check(check->id, check, out_buf, out_size);
             flb_pack_print(out_buf, out_size);
             flb_free(out_buf);
         }
+        else if (check->window_type == FLB_SP_WINDOW_HOPPING) {
+            /* We ingest the buffer every second */
+            task->window.fd = 0;
+            task->window.fd_hop = 1;
+            for (t = 0; t < check->window_val + check->window_hop_val; t++) {
+                sprintf(datafile, "%s%d.mp",
+                        DATA_SAMPLES_HOPPING_WINDOW_PATH, t + 1);
+                ret = file_to_buf(datafile, &data_buf, &data_size);
+                if (ret == -1) {
+                    flb_error("[sp test] cannot open DATA_SAMPLES file %s", datafile);
+                    flb_free(config);
+                    return;
+                }
+
+                ret = flb_sp_test_do(sp, task,
+                                     "samples", 7,
+                                     data_buf, data_size,
+                                     &out_buf, &out_size);
+                if (ret == -1) {
+                    flb_error("[sp test] error processing check '%s'",
+                              check->name);
+                    flb_sp_task_destroy(task);
+                    return;
+                }
+
+                /* Sleep for 0.8 seconds, give some delta to the engine */
+                usleep(800000);
+
+                /* Hopping event */
+                if ((t + 1) % check->window_hop_val == 0) {
+                    flb_sp_test_fd_event(task->window.fd_hop, task, &out_buf,
+                                         &out_size);
+                }
+
+                /* Window event */
+                if ((t + 1) % check->window_val == 0 ||
+                    (t + 1 > check->window_val && (t + 1 - check->window_val) % check->window_hop_val == 0)) {
+                    flb_free(out_buf);
+                    flb_sp_test_fd_event(task->window.fd, task, &out_buf, &out_size);
+                }
+                flb_free(data_buf);
+                data_buf = NULL;
+            }
+
+            flb_info("[sp test] id=%i, SQL => '%s'", check->id, check->exec);
+            check->cb_check(check->id, check, out_buf, out_size);
+            flb_pack_print(out_buf, out_size);
+            flb_free(out_buf);
+        }
+
+        flb_free(data_buf);
     }
 
-    flb_free(data_buf);
     flb_sp_destroy(sp);
     mk_event_loop_destroy(config->evl);
     flb_free(config);
@@ -857,6 +1316,7 @@ static void test_window()
 TEST_LIST = {
     { "invalid_queries", invalid_queries},
     { "select_keys",     test_select_keys},
-    { "window"     ,     test_window},
+    { "select_subkeys",  test_select_subkeys},
+    { "window",          test_window},
     { NULL }
 };

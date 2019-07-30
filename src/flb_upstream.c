@@ -30,7 +30,7 @@
 
 /* Creates a new upstream context */
 struct flb_upstream *flb_upstream_create(struct flb_config *config,
-                                         char *host, int port, int flags,
+                                         const char *host, int port, int flags,
                                          void *tls)
 {
     struct flb_upstream *u;
@@ -60,7 +60,8 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
 
 /* Create an upstream context using a valid URL (protocol, host and port) */
 struct flb_upstream *flb_upstream_create_url(struct flb_config *config,
-                                             char *url, int flags, void *tls)
+                                             const char *url, int flags,
+                                             void *tls)
 {
     int ret;
     int tmp_port = 0;
@@ -148,15 +149,11 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
 {
     int ret;
     struct flb_upstream_conn *conn;
-#if defined (FLB_HAVE_FLUSH_LIBCO)
     struct flb_thread *th = pthread_getspecific(flb_thread_key);
-#else
-    void *th = NULL;
-#endif
 
     conn = flb_malloc(sizeof(struct flb_upstream_conn));
     if (!conn) {
-        perror("malloc");
+        flb_errno();
         return NULL;
     }
     conn->u             = u;
@@ -166,7 +163,7 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
     conn->tls_session   = NULL;
 #endif
 
-    MK_EVENT_NEW(&conn->event);
+    MK_EVENT_ZERO(&conn->event);
 
     /* Start connection */
     ret = flb_io_net_connect(conn, th);
@@ -186,9 +183,6 @@ static struct flb_upstream_conn *get_conn(struct flb_upstream *u)
 {
     struct flb_upstream_conn *conn;
 
-#ifdef FLB_HAVE_FLUSH_PTHREADS
-    pthread_mutex_lock(&u->mutex_queue);
-#endif
     /* Get the first available connection and increase the counter */
     conn = mk_list_entry_first(&u->av_queue,
                                struct flb_upstream_conn, _head);
@@ -197,10 +191,6 @@ static struct flb_upstream_conn *get_conn(struct flb_upstream *u)
     /* Move it to the busy queue */
     mk_list_del(&conn->_head);
     mk_list_add(&conn->_head, &u->busy_queue);
-
-#ifdef FLB_HAVE_FLUSH_PTHREADS
-    pthread_mutex_unlock(&u->mutex_queue);
-#endif
 
     return conn;
 }

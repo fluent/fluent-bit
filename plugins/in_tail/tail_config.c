@@ -43,7 +43,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
     int i;
     long nsec;
     ssize_t bytes;
-    char *tmp;
+    const char *tmp;
     struct flb_tail_config *ctx;
 
     ctx = flb_calloc(1, sizeof(struct flb_tail_config));
@@ -265,7 +265,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
 #ifdef FLB_HAVE_REGEX
     tmp = flb_input_get_property("tag_regex", i_ins);
     if (tmp) {
-        ctx->tag_regex = flb_regex_create((unsigned char *) tmp);
+        ctx->tag_regex = flb_regex_create(tmp);
         if (ctx->tag_regex) {
             ctx->dynamic_tag = FLB_TRUE;
         }

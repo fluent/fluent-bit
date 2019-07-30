@@ -34,7 +34,7 @@ struct query_status {
 };
 
 /* Open or create database required by tail plugin */
-struct flb_sqldb *flb_tail_db_open(char *path,
+struct flb_sqldb *flb_tail_db_open(const char *path,
                                    struct flb_input_instance *in,
                                    struct flb_tail_config *ctx,
                                    struct flb_config *config)
@@ -148,7 +148,7 @@ int flb_tail_db_file_offset(struct flb_tail_file *file,
 }
 
 /* Mark a file as rotated */
-int flb_tail_db_file_rotate(char *new_name,
+int flb_tail_db_file_rotate(const char *new_name,
                             struct flb_tail_file *file,
                             struct flb_tail_config *ctx)
 {

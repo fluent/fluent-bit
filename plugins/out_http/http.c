@@ -37,144 +37,6 @@
 #include "http.h"
 #include "http_conf.h"
 
-struct flb_output_plugin out_http_plugin;
-
-static char *msgpack_to_json(struct flb_out_http *ctx, char *data, uint64_t bytes, uint64_t *out_size)
-{
-    int i;
-    int ret;
-    int len;
-    int array_size = 0;
-    int map_size;
-    size_t off = 0;
-    char *json_buf;
-    size_t json_size;
-    char time_formatted[32];
-    size_t s;
-    msgpack_unpacked result;
-    msgpack_object root;
-    msgpack_object map;
-    msgpack_sbuffer tmp_sbuf;
-    msgpack_packer tmp_pck;
-    msgpack_object *obj;
-    struct tm tm;
-    struct flb_time tms;
-
-    /* Iterate the original buffer and perform adjustments */
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        array_size++;
-    }
-    msgpack_unpacked_destroy(&result);
-    msgpack_unpacked_init(&result);
-
-    /* Create temporal msgpack buffer */
-    msgpack_sbuffer_init(&tmp_sbuf);
-    msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
-    msgpack_pack_array(&tmp_pck, array_size);
-
-    off = 0;
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        /* Each array must have two entries: time and record */
-        root = result.data;
-        if (root.via.array.size != 2) {
-            continue;
-        }
-
-        flb_time_pop_from_msgpack(&tms, &result, &obj);
-        map = root.via.array.ptr[1];
-
-        map_size = map.via.map.size;
-        msgpack_pack_map(&tmp_pck, map_size + 1);
-
-        /* Append date key */
-        msgpack_pack_str(&tmp_pck, ctx->json_date_key_len);
-        msgpack_pack_str_body(&tmp_pck, ctx->json_date_key, ctx->json_date_key_len);
-
-        /* Append date value */
-        switch (ctx->json_date_format) {
-            case FLB_JSON_DATE_DOUBLE:
-                msgpack_pack_double(&tmp_pck, flb_time_to_double(&tms));
-                break;
-
-            case FLB_JSON_DATE_ISO8601:
-                /* Format the time; use microsecond precision (not nanoseconds). */
-                gmtime_r(&tms.tm.tv_sec, &tm);
-                s = strftime(time_formatted, sizeof(time_formatted) - 1,
-                             FLB_JSON_DATE_ISO8601_FMT, &tm);
-
-                len = snprintf(time_formatted + s, sizeof(time_formatted) - 1 - s,
-                               ".%06" PRIu64 "Z", (uint64_t) tms.tm.tv_nsec / 1000);
-                s += len;
-
-                msgpack_pack_str(&tmp_pck, s);
-                msgpack_pack_str_body(&tmp_pck, time_formatted, s);
-                break;
-
-            case FLB_JSON_DATE_EPOCH:
-                msgpack_pack_uint64(&tmp_pck, (long long unsigned)(tms.tm.tv_sec));
-                break;
-        }
-
-        for (i = 0; i < map_size; i++) {
-            msgpack_object *k = &map.via.map.ptr[i].key;
-            msgpack_object *v = &map.via.map.ptr[i].val;
-
-            msgpack_pack_object(&tmp_pck, *k);
-            msgpack_pack_object(&tmp_pck, *v);
-        }
-    }
-
-    /* Release msgpack */
-    msgpack_unpacked_destroy(&result);
-
-    /* Format to JSON */
-    ret = flb_msgpack_raw_to_json_str(tmp_sbuf.data, tmp_sbuf.size,
-                                      &json_buf, &json_size);
-    if (ret != 0) {
-        msgpack_sbuffer_destroy(&tmp_sbuf);
-        return NULL;
-    }
-
-    /* Optionally convert to JSON stream from JSON array */
-    if ((ctx->out_format == FLB_HTTP_OUT_JSON_STREAM) ||
-        (ctx->out_format == FLB_HTTP_OUT_JSON_LINES)) {
-        char *p;
-        char *end = json_buf + json_size;
-        int level = 0;
-        int in_string = FLB_FALSE;
-        int in_escape = FLB_FALSE;
-        char separator = ' ';
-        if (ctx->out_format == FLB_HTTP_OUT_JSON_LINES) {
-            separator = '\n';
-        }
-
-        for (p = json_buf; p!=end; p++) {
-            if (in_escape)
-                in_escape = FLB_FALSE;
-            else if (*p == '\\')
-                in_escape = FLB_TRUE;
-            else if (*p == '"')
-                in_string = !in_string;
-            else if (!in_string) {
-                if (*p == '{')
-                    level++;
-                else if (*p == '}')
-                    level--;
-                else if ((*p == '[' || *p == ']') && level == 0)
-                    *p = ' ';
-                else if (*p == ',' && level == 0)
-                    *p = separator;
-            }
-        }
-    }
-
-    msgpack_sbuffer_destroy(&tmp_sbuf);
-
-    *out_size = json_size;
-    return json_buf;
-}
-
 static int cb_http_init(struct flb_output_instance *ins,
                         struct flb_config *config, void *data)
 {
@@ -192,9 +54,9 @@ static int cb_http_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static int http_post (struct flb_out_http *ctx,
-                      void *body, size_t body_len,
-                      char *tag, int tag_len)
+static int http_post(struct flb_out_http *ctx,
+                     const void *body, size_t body_len,
+                     const char *tag, int tag_len)
 {
     int ret;
     int out_ret = FLB_OK;
@@ -223,9 +85,9 @@ static int http_post (struct flb_out_http *ctx,
                         ctx->proxy, 0);
 
     /* Append headers */
-    if ((ctx->out_format == FLB_HTTP_OUT_JSON) ||
-        (ctx->out_format == FLB_HTTP_OUT_JSON_STREAM) ||
-        (ctx->out_format == FLB_HTTP_OUT_JSON_LINES) ||
+    if ((ctx->out_format == FLB_PACK_JSON_FORMAT_JSON) ||
+        (ctx->out_format == FLB_PACK_JSON_FORMAT_STREAM) ||
+        (ctx->out_format == FLB_PACK_JSON_FORMAT_LINES) ||
         (ctx->out_format == FLB_HTTP_OUT_GELF)) {
         flb_http_add_header(c,
                             FLB_HTTP_CONTENT_TYPE,
@@ -309,7 +171,8 @@ static int http_post (struct flb_out_http *ctx,
 }
 
 static int http_gelf(struct flb_out_http *ctx,
-                     char *data, uint64_t bytes, char *tag, int tag_len)
+                     const char *data, uint64_t bytes,
+                     const char *tag, int tag_len)
 {
     flb_sds_t s;
     flb_sds_t tmp;
@@ -325,7 +188,9 @@ static int http_gelf(struct flb_out_http *ctx,
 
     msgpack_unpacked_init(&result);
 
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
+    while (msgpack_unpack_next(&result, data, bytes, &off) ==
+           MSGPACK_UNPACK_SUCCESS) {
+
         size = off - prev_off;
         prev_off = off;
         if (result.data.type != MSGPACK_OBJECT_ARRAY) {
@@ -369,25 +234,28 @@ static int http_gelf(struct flb_out_http *ctx,
     return FLB_OK;
 }
 
-static void cb_http_flush(void *data, size_t bytes,
-                          char *tag, int tag_len,
+static void cb_http_flush(const void *data, size_t bytes,
+                          const char *tag, int tag_len,
                           struct flb_input_instance *i_ins,
                           void *out_context,
                           struct flb_config *config)
 {
     int ret = FLB_ERROR;
+    flb_sds_t json;
     struct flb_out_http *ctx = out_context;
-    void *body = NULL;
-    uint64_t body_len;
-    (void)i_ins;
+    (void) i_ins;
 
-    if ((ctx->out_format == FLB_HTTP_OUT_JSON) ||
-        (ctx->out_format == FLB_HTTP_OUT_JSON_STREAM) ||
-        (ctx->out_format == FLB_HTTP_OUT_JSON_LINES)) {
-        body = msgpack_to_json(ctx, data, bytes, &body_len);
-        if (body != NULL) {
-            ret = http_post(ctx, body, body_len, tag, tag_len);
-            flb_free(body);
+    if ((ctx->out_format == FLB_PACK_JSON_FORMAT_JSON) ||
+        (ctx->out_format == FLB_PACK_JSON_FORMAT_STREAM) ||
+        (ctx->out_format == FLB_PACK_JSON_FORMAT_LINES)) {
+
+        json = flb_pack_msgpack_to_json_format(data, bytes,
+                                               ctx->out_format,
+                                               ctx->json_date_format,
+                                               ctx->json_date_key);
+        if (json != NULL) {
+            ret = http_post(ctx, json, flb_sds_len(json), tag, tag_len);
+            flb_sds_destroy(json);
         }
     }
     else if (ctx->out_format == FLB_HTTP_OUT_GELF) {

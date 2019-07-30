@@ -21,9 +21,6 @@
 #ifndef FLB_MP_H
 #define FLB_MP_H
 
-#include <msgpack.h>
-
-int flb_mp_count(void *data, size_t bytes);
-int flb_mp_count_zone(void *data, size_t bytes, msgpack_zone *zone);
+int flb_mp_count(const void *data, size_t bytes);
 
 #endif

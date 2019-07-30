@@ -34,7 +34,7 @@
 static int configure(struct flb_out_lib_config *ctx,
                      struct flb_output_instance *ins)
 {
-    char *tmp;
+    const char *tmp;
 
     tmp = flb_output_get_property("format", ins);
     if (!tmp) {
@@ -102,8 +102,8 @@ static int out_lib_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static void out_lib_flush(void *data, size_t bytes,
-                          char *tag, int tag_len,
+static void out_lib_flush(const void *data, size_t bytes,
+                          const char *tag, int tag_len,
                           struct flb_input_instance *i_ins,
                           void *out_context,
                           struct flb_config *config)
@@ -167,7 +167,7 @@ static void out_lib_flush(void *data, size_t bytes,
                 FLB_OUTPUT_RETURN(FLB_ERROR);
             }
 
-            len = snprintf(out_buf, out_size, "[%f, %s]",
+            len = snprintf(out_buf, out_size, "[%f,%s]",
                            flb_time_to_double(&tm),
                            buf);
             flb_free(buf);

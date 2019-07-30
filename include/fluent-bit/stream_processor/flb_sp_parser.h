@@ -23,6 +23,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_time.h>
 #include <fluent-bit/stream_processor/flb_sp.h>
 #include <fluent-bit/stream_processor/flb_sp_window.h>
 
@@ -55,25 +56,34 @@
 #define FLB_SP_TAG       1
 
 /* Expression type */
-#define FLB_LOGICAL_OP   0
-#define FLB_EXP_KEY      1
-#define FLB_EXP_BOOL     2
-#define FLB_EXP_INT      3
-#define FLB_EXP_FLOAT    4
-#define FLB_EXP_STRING   5
+enum Expressions {
+    FLB_LOGICAL_OP = 0,
+    FLB_EXP_KEY,
+    FLB_EXP_BOOL,
+    FLB_EXP_INT,
+    FLB_EXP_FLOAT,
+    FLB_EXP_STRING,
+    FLB_EXP_NULL,
+    FLB_EXP_FUNC
+};
 
 /* Logical operation */
-#define FLB_EXP_PAR      0
+enum Operations {
+    FLB_EXP_PAR = 0,
 
-#define FLB_EXP_NOT      1
-#define FLB_EXP_AND      2
-#define FLB_EXP_OR       3
+    FLB_EXP_NOT,
+    FLB_EXP_AND,
+    FLB_EXP_OR,
 
-#define FLB_EXP_EQ       4
-#define FLB_EXP_LT       5
-#define FLB_EXP_LTE      6
-#define FLB_EXP_GT       7
-#define FLB_EXP_GTE      8
+    FLB_EXP_EQ,
+    FLB_EXP_LT,
+    FLB_EXP_LTE,
+    FLB_EXP_GT,
+    FLB_EXP_GTE,
+
+    FLB_EXP_IS_NULL,
+    FLB_EXP_IS_NOT_NULL
+};
 
 #define FLB_SP_TIME_SECOND  0
 #define FLB_SP_TIME_MINUTE  1
@@ -83,6 +93,9 @@
 struct flb_sp_cmd_gb_key {
     flb_sds_t name;           /* key name */
     struct mk_list _head;     /* Link to flb_sp_cmd->gb_keys */
+    int id;                   /* Position */
+    void *gb_nums;
+    struct mk_list *subkeys;  /* sub-keys selection */
 };
 
 /* Property (key/value) */
@@ -97,14 +110,18 @@ struct flb_sp_cmd_key {
     int aggr_func;            /* Aggregation function */
     int time_func;            /* Time function */
     int record_func;          /* Record function */
-    flb_sds_t name;           /* Key name */
-    flb_sds_t alias;          /* Key output alias */
+    flb_sds_t name;           /* Parent Key name */
+    flb_sds_t alias;          /* Key output alias (key AS alias) */
+    flb_sds_t name_keys;      /* Key name with sub-keys */
+    void *gb_key;             /* Key name reference to gb_key */
+    struct mk_list *subkeys;  /* sub-keys selection */
     struct mk_list _head;     /* Link to flb_sp_cmd->keys */
 };
 
 struct flb_sp_window {
     int type;
     time_t size;
+    time_t advance_by;
 };
 
 struct flb_sp_cmd {
@@ -125,6 +142,17 @@ struct flb_sp_cmd {
     struct flb_sp_window window;   /* WINDOW window in select statement */
 
     struct mk_list gb_keys;        /* list head of group-by record fields */
+
+    /*
+     * When parsing a SQL statement that have references to keys with sub-keys
+     * like record['a']['b']['c'], the following 'tmp_subkeys' list will hold
+     * a list of the discovered sub-keys (linked list).
+     *
+     * When the parser gets into the parent field name (record), the list is
+     * moved to the proper struct flb_sp_key->subkeys list pointer and this
+     * field is re-created again as an empty list.
+     */
+    struct mk_list *tmp_subkeys;
 
     /* Source of data */
     int source_type;               /* FLB_SP_STREAM or FLB_SP_TAG */
@@ -158,6 +186,16 @@ struct flb_exp_key {
     int type;
     struct mk_list _head;
     flb_sds_t name;
+    struct mk_list *subkeys;
+};
+
+struct flb_exp_func {
+    int type;
+    struct mk_list _head;
+    flb_sds_t name;
+    struct flb_exp_val *(*cb_func) (const char *, int,
+                                    struct flb_time *, struct flb_exp_val *);
+    struct flb_exp *param;
 };
 
 struct flb_exp_val {
@@ -166,24 +204,32 @@ struct flb_exp_val {
     sp_val val;
 };
 
-struct flb_sp_cmd *flb_sp_cmd_create(char *sql);
+/* Represent any value object */
+struct flb_sp_value {
+    int type;
+    msgpack_object o;
+    sp_val val;
+};
+
+struct flb_sp_cmd *flb_sp_cmd_create(const char *sql);
 void flb_sp_cmd_destroy(struct flb_sp_cmd *cmd);
 
 /* Stream */
-int flb_sp_cmd_stream_new(struct flb_sp_cmd *cmd, char *stream_name);
-int flb_sp_cmd_stream_prop_add(struct flb_sp_cmd *cmd, char *key, char *val);
+int flb_sp_cmd_stream_new(struct flb_sp_cmd *cmd, const char *stream_name);
+int flb_sp_cmd_stream_prop_add(struct flb_sp_cmd *cmd, const char *key, const char *val);
 void flb_sp_cmd_stream_prop_del(struct flb_sp_cmd_prop *prop);
-char *flb_sp_cmd_stream_prop_get(struct flb_sp_cmd *cmd, char *key);
+const char *flb_sp_cmd_stream_prop_get(struct flb_sp_cmd *cmd, const char *key);
 
 /* Selection keys */
 int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func,
-                       char *key_name, char *key_alias);
+                       const char *key_name, const char *key_alias);
 void flb_sp_cmd_key_del(struct flb_sp_cmd_key *key);
-int flb_sp_cmd_source(struct flb_sp_cmd *cmd, int type, char *source);
+int flb_sp_cmd_source(struct flb_sp_cmd *cmd, int type, const char *source);
 void flb_sp_cmd_dump(struct flb_sp_cmd *cmd);
 
-void flb_sp_cmd_window(struct flb_sp_cmd *cmd,
-                       int window_type, int size, int time_unit);
+int flb_sp_cmd_window(struct flb_sp_cmd *cmd, int window_type,
+                      int size, int time_unit,
+                      int advance_by_size, int advance_by_time_unit);
 
 void flb_sp_cmd_condition_add(struct flb_sp_cmd *cmd, struct flb_exp *e);
 struct flb_exp *flb_sp_cmd_operation(struct flb_sp_cmd *cmd,
@@ -192,18 +238,22 @@ struct flb_exp *flb_sp_cmd_operation(struct flb_sp_cmd *cmd,
 struct flb_exp *flb_sp_cmd_comparison(struct flb_sp_cmd *cmd,
                                       struct flb_exp *key, struct flb_exp *val,
                                       int operation);
-struct flb_exp *flb_sp_cmd_condition_key(struct flb_sp_cmd *cmd, char *key);
+struct flb_exp *flb_sp_cmd_condition_key(struct flb_sp_cmd *cmd, const char *key);
 struct flb_exp *flb_sp_cmd_condition_integer(struct flb_sp_cmd *cmd,
                                              int integer);
 struct flb_exp *flb_sp_cmd_condition_float(struct flb_sp_cmd *cmd, float fval);
 struct flb_exp *flb_sp_cmd_condition_string(struct flb_sp_cmd *cmd,
-                                            char *string);
+                                            const char *string);
 struct flb_exp *flb_sp_cmd_condition_boolean(struct flb_sp_cmd *cmd,
                                              bool boolean);
+struct flb_exp *flb_sp_cmd_condition_null(struct flb_sp_cmd *cmd);
+struct flb_exp *flb_sp_record_function_add(struct flb_sp_cmd *cmd,
+                                           char *name, struct flb_exp *param);
 
-void flb_sp_cmd_condition_free(struct flb_sp_cmd *cmd);
+void flb_sp_cmd_condition_del(struct flb_sp_cmd *cmd);
 
-int flb_sp_cmd_gb_key_add(struct flb_sp_cmd *cmd, char *key);
+int flb_sp_cmd_gb_key_add(struct flb_sp_cmd *cmd, const char *key);
 void flb_sp_cmd_gb_key_del(struct flb_sp_cmd_gb_key *key);
+
 
 #endif

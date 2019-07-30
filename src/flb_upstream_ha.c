@@ -32,7 +32,7 @@
 #include <sys/stat.h>
 
 /* Creates an Upstream HA Context */
-struct flb_upstream_ha *flb_upstream_ha_create(char *name)
+struct flb_upstream_ha *flb_upstream_ha_create(const char *name)
 {
     struct flb_upstream_ha *ctx;
 
@@ -260,12 +260,12 @@ static struct flb_upstream_node *create_node(int id,
 }
 
 /* Read an upstream file and generate the context */
-struct flb_upstream_ha *flb_upstream_ha_from_file(char *file,
+struct flb_upstream_ha *flb_upstream_ha_from_file(const char *file,
                                                   struct flb_config *config)
 {
     int c = 0;
     int ret;
-    char *cfg = NULL;
+    const char *cfg = NULL;
     char *tmp;
     char path[PATH_MAX + 1];
     struct mk_rconf_section *u_section;

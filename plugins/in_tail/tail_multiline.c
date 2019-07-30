@@ -46,7 +46,7 @@ int flb_tail_mult_create(struct flb_tail_config *ctx,
                          struct flb_config *config)
 {
     int ret;
-    char *tmp;
+    const char *tmp;
     struct mk_list *head;
     struct flb_parser *parser;
     struct flb_config_prop *p;
@@ -241,6 +241,32 @@ static inline void flb_tail_mult_append_raw(char *buf, int size,
     msgpack_pack_str_body(&file->mult_pck, buf, size);
 }
 
+/* Check if the last key value type of a map is string or not */
+static inline int is_last_key_val_string(char *buf, size_t size)
+{
+    int ret = FLB_FALSE;
+    size_t off;
+    msgpack_unpacked result;
+    msgpack_object v;
+    msgpack_object root;
+
+    off = 0;
+    msgpack_unpacked_init(&result);
+    ret = msgpack_unpack_next(&result, buf, size, &off);
+    if (ret != MSGPACK_UNPACK_SUCCESS) {
+        return ret;
+    }
+
+    root = result.data;
+    v = root.via.map.ptr[root.via.map.size - 1].val;
+    if (v.type == MSGPACK_OBJECT_STR) {
+        ret = FLB_TRUE;
+    }
+
+    msgpack_unpacked_destroy(&result);
+    return ret;
+}
+
 int flb_tail_mult_process_content(time_t now,
                                   char *buf, int len,
                                   struct flb_tail_file *file,
@@ -261,9 +287,19 @@ int flb_tail_mult_process_content(time_t now,
                         buf, len,
                         &out_buf, &out_size, &out_time);
     if (ret >= 0) {
-        flb_tail_mult_process_first(now, out_buf, out_size, &out_time,
-                                    file, ctx);
-        return FLB_TAIL_MULT_MORE;
+        /*
+         * The content is a candidate for a firstline, but we need to perform
+         * the extra-mandatory check where the last key value type must be
+         * a string, otherwise no string concatenation with continuation lines
+         * will be possible.
+         */
+        ret = is_last_key_val_string(out_buf, out_size);
+        if (ret == FLB_TRUE) {
+            flb_tail_mult_process_first(now, out_buf, out_size, &out_time,
+                                        file, ctx);
+            return FLB_TAIL_MULT_MORE;
+        }
+        flb_free(out_buf);
     }
 
     if (file->mult_skipping == FLB_TRUE) {
@@ -390,7 +426,9 @@ int flb_tail_mult_flush(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
             /* Always check if the 'next' entry is a continuation */
             total = 0;
             if (i + 1 == root.via.map.size) {
-                while (msgpack_unpack_next(&cont, data, bytes, &next_off) == MSGPACK_UNPACK_SUCCESS) {
+                while (msgpack_unpack_next(&cont, data, bytes, &next_off) ==
+                       MSGPACK_UNPACK_SUCCESS) {
+
                     next = cont.data;
                     if (next.type != MSGPACK_OBJECT_STR) {
                         break;
@@ -402,8 +440,13 @@ int flb_tail_mult_flush(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
             }
 
             msgpack_pack_object(mp_pck, k);
-            msgpack_pack_str(mp_pck, v.via.str.size + total);
-            msgpack_pack_str_body(mp_pck, v.via.str.ptr, v.via.str.size);
+            if (total > 0 && v.type == MSGPACK_OBJECT_STR) {
+                msgpack_pack_str(mp_pck, v.via.str.size + total);
+                msgpack_pack_str_body(mp_pck, v.via.str.ptr, v.via.str.size);
+            }
+            else {
+                msgpack_pack_object(mp_pck, v);
+            }
 
             if (total > 0) {
                 /*
@@ -411,7 +454,9 @@ int flb_tail_mult_flush(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                  * value field.
                  */
                 next_off = off;
-                while (msgpack_unpack_next(&cont, data, bytes, &next_off) == MSGPACK_UNPACK_SUCCESS) {
+                while (msgpack_unpack_next(&cont, data, bytes, &next_off) ==
+                       MSGPACK_UNPACK_SUCCESS) {
+
                     next = cont.data;
                     if (next.type != MSGPACK_OBJECT_STR) {
                         break;

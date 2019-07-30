@@ -231,7 +231,7 @@ static int in_stdin_init(struct flb_input_instance *in,
 {
     int fd;
     int ret;
-    char *tmp;
+    const char *tmp;
     struct flb_in_stdin_config *ctx;
     (void) data;
 

@@ -141,6 +141,9 @@ struct flb_input_instance {
     char *tag;                           /* Input tag for routing        */
     int tag_len;
 
+    /* By default all input instances are 'routable' */
+    int routable;
+
     /*
      * Input network info:
      *
@@ -196,10 +199,6 @@ struct flb_input_instance {
      * some specific data from it caller.
      */
     void *data;
-
-#ifdef FLB_HAVE_STATS
-    int stats_fd;
-#endif
 
     struct mk_list _head;                /* link to config->inputs     */
     struct mk_list routes;               /* flb_router_path's list     */
@@ -347,8 +346,6 @@ struct flb_thread *flb_input_thread(struct flb_input_instance *i_ins,
     return th;
 }
 
-#if defined FLB_HAVE_FLUSH_LIBCO
-
 struct flb_libco_in_params {
     struct flb_config *config;
     struct flb_input_collector *coll;
@@ -405,8 +402,6 @@ struct flb_thread *flb_input_thread_collect(struct flb_input_collector *coll,
     return th;
 }
 
-#endif
-
 /*
  * This function is used by the output plugins to return. It's mandatory
  * as it will take care to signal the event loop letting know the flush
@@ -461,10 +456,11 @@ static inline void FLB_INPUT_RETURN()
 
 int flb_input_register_all(struct flb_config *config);
 struct flb_input_instance *flb_input_new(struct flb_config *config,
-                                         char *input, void *data,
+                                         const char *input, void *data,
                                          int public_only);
-int flb_input_set_property(struct flb_input_instance *in, char *k, char *v);
-char *flb_input_get_property(char *key, struct flb_input_instance *i);
+int flb_input_set_property(struct flb_input_instance *in,
+                           const char *k, const char *v);
+const char *flb_input_get_property(const char *key, struct flb_input_instance *i);
 
 int flb_input_check(struct flb_config *config);
 void flb_input_set_context(struct flb_input_instance *in, void *context);
@@ -505,6 +501,6 @@ void flb_input_exit_all(struct flb_config *config);
 
 void *flb_input_flush(struct flb_input_instance *i_ins, size_t *size);
 int flb_input_pause_all(struct flb_config *config);
-char *flb_input_name(struct flb_input_instance *in);
+const char *flb_input_name(struct flb_input_instance *in);
 
 #endif

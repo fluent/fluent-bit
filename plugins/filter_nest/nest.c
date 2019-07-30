@@ -267,7 +267,7 @@ static inline bool is_kv_to_nest(msgpack_object_kv * kv,
                                  struct filter_nest_ctx *ctx)
 {
 
-    char *key;
+    const char *key;
     int klen;
 
     msgpack_object *obj = &kv->key;
@@ -277,11 +277,11 @@ static inline bool is_kv_to_nest(msgpack_object_kv * kv,
     struct filter_nest_wildcard *wildcard;
 
     if (obj->type == MSGPACK_OBJECT_BIN) {
-        key = (char *) obj->via.bin.ptr;
+        key = obj->via.bin.ptr;
         klen = obj->via.bin.size;
     }
     else if (obj->type == MSGPACK_OBJECT_STR) {
-        key = (char *) obj->via.str.ptr;
+        key = obj->via.str.ptr;
         klen = obj->via.str.size;
     }
     else {
@@ -322,18 +322,19 @@ static inline bool is_kv_to_lift(msgpack_object_kv * kv,
                                  struct filter_nest_ctx *ctx)
 {
 
-    char *key;
+    const char *key;
+    char *tmp;
     int klen;
     bool match;
 
     msgpack_object *obj = &kv->key;
 
     if (obj->type == MSGPACK_OBJECT_BIN) {
-        key = (char *) obj->via.bin.ptr;
+        key = obj->via.bin.ptr;
         klen = obj->via.bin.size;
     }
     else if (obj->type == MSGPACK_OBJECT_STR) {
-        key = (char *) obj->via.str.ptr;
+        key = obj->via.str.ptr;
         klen = obj->via.str.size;
     }
     else {
@@ -345,9 +346,17 @@ static inline bool is_kv_to_lift(msgpack_object_kv * kv,
              (strncmp(key, ctx->key, klen) == 0));
 
     if (match && (kv->val.type != MSGPACK_OBJECT_MAP)) {
-        flb_warn
-            ("[filter_nest] Value of key '%s' is not a map. Will not attempt to lift from here",
-             key);
+        tmp = flb_malloc(klen + 1);
+        if (!tmp) {
+            flb_errno();
+            return false;
+        }
+        memcpy(tmp, key, klen);
+        tmp[klen] = '\0';
+        flb_warn("[filter_nest] Value of key '%s' is not a map. "
+                 "Will not attempt to lift from here",
+                 tmp);
+        flb_free(tmp);
         return false;
     }
     else {
@@ -535,8 +544,8 @@ static int cb_nest_init(struct flb_filter_instance *f_ins,
     return 0;
 }
 
-static int cb_nest_filter(void *data, size_t bytes,
-                          char *tag, int tag_len,
+static int cb_nest_filter(const void *data, size_t bytes,
+                          const char *tag, int tag_len,
                           void **out_buf, size_t * out_size,
                           struct flb_filter_instance *f_ins,
                           void *context, struct flb_config *config)
@@ -548,6 +557,7 @@ static int cb_nest_filter(void *data, size_t bytes,
 
     struct filter_nest_ctx *ctx = context;
     int modified_records = 0;
+    int total_modified_records = 0;
 
     msgpack_sbuffer buffer;
     msgpack_sbuffer_init(&buffer);
@@ -567,15 +577,23 @@ static int cb_nest_filter(void *data, size_t bytes,
 
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
+        modified_records = 0;
         if (result.data.type == MSGPACK_OBJECT_ARRAY) {
             if (ctx->operation == NEST) {
-                modified_records +=
+                modified_records =
                     apply_nesting_rules(&packer, &result.data, ctx);
             }
             else {
-                modified_records +=
+                modified_records =
                     apply_lifting_rules(&packer, &result.data, ctx);
             }
+
+            
+            if (modified_records == 0) {
+                // not matched, so copy original event.
+                msgpack_pack_object(&packer, result.data);
+            }
+            total_modified_records += modified_records;
         }
         else {
             flb_debug("[filter_nest] Record is NOT an array, skipping");
@@ -587,7 +605,7 @@ static int cb_nest_filter(void *data, size_t bytes,
     *out_buf = buffer.data;
     *out_size = buffer.size;
 
-    if (modified_records == 0) {
+    if (total_modified_records == 0) {
         return FLB_FILTER_NOTOUCH;
     }
     else {

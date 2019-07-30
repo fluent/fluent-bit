@@ -96,7 +96,7 @@ static int configure(struct flb_in_netif_config *ctx,
                      int *interval_sec,
                      int *interval_nsec)
 {
-    char *pval = NULL;
+    const char *pval = NULL;
     ctx->map_num = 0;
 
     /* interval settings */

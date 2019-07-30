@@ -42,7 +42,7 @@
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_slist.h>
-#include <fluent-bit/flb_plugin_proxy.h>
+#include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_parser.h>
 
 /* Libbacktrace support */
@@ -352,28 +352,25 @@ static void flb_service_conf_err(struct mk_rconf_section *section, char *key)
 
 static int flb_service_conf_path_set(struct flb_config *config, char *file)
 {
-    char *p;
     char *end;
-    char path[PATH_MAX + 1];
+    char *path;
 
-#ifdef _MSC_VER
-    p = _fullpath(path, file, PATH_MAX + 1);
-#else
-    p = realpath(file, path);
-#endif
-    if (!p) {
+    path = realpath(file, NULL);
+    if (!path) {
         return -1;
     }
 
     /* lookup path ending and truncate */
-    end = strrchr(path, '/');
+    end = strrchr(path, FLB_DIRCHAR);
     if (!end) {
+        free(path);
         return -1;
     }
 
     end++;
     *end = '\0';
     config->conf_path = flb_strdup(path);
+    free(path);
 
     return 0;
 }
@@ -681,18 +678,12 @@ int main(int argc, char **argv)
             config->daemon = FLB_TRUE;
             break;
 #endif
-
-#ifdef FLB_HAVE_PROXY_GO
         case 'e':
-            if (!flb_plugin_proxy_create(optarg, 0, config)) {
+            ret = flb_plugin_load_router(optarg, config);
+            if (ret == -1) {
                 exit(EXIT_FAILURE);
             }
             break;
-#else
-        case 'e':
-            fprintf(stderr, "Error: proxy Golang plugin not available\n");
-            exit(EXIT_FAILURE);
-#endif
         case 'f':
             config->flush = atof(optarg);
             break;

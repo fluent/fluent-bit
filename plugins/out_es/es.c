@@ -52,15 +52,15 @@ static inline int es_pack_map_content(msgpack_packer *tmp_pck,
         ptr_key = NULL;
 
         /* Store key */
-        char *key_ptr = NULL;
+        const char *key_ptr = NULL;
         size_t key_size = 0;
 
         if (k->type == MSGPACK_OBJECT_BIN) {
-            key_ptr  = (char *) k->via.bin.ptr;
+            key_ptr  = k->via.bin.ptr;
             key_size = k->via.bin.size;
         }
         else if (k->type == MSGPACK_OBJECT_STR) {
-            key_ptr  = (char *) k->via.str.ptr;
+            key_ptr  = k->via.str.ptr;
             key_size = k->via.str.size;
         }
 
@@ -128,8 +128,8 @@ static inline int es_pack_map_content(msgpack_packer *tmp_pck,
  *
  * 'Sadly' this process involves to convert from Msgpack to JSON.
  */
-static char *elasticsearch_format(void *data, size_t bytes,
-                                  char *tag, int tag_len, int *out_size,
+static char *elasticsearch_format(const void *data, size_t bytes,
+                                  const char *tag, int tag_len, int *out_size,
                                   struct flb_elasticsearch *ctx)
 {
     int ret;
@@ -145,12 +145,11 @@ static char *elasticsearch_format(void *data, size_t bytes,
     char time_formatted[256];
     char index_formatted[256];
     char es_uuid[37];
+    flb_sds_t out_buf;
     msgpack_unpacked result;
     msgpack_object root;
     msgpack_object map;
     msgpack_object *obj;
-    char *json_buf;
-    size_t json_size;
     char j_index[ES_BULK_HEADER];
     struct es_bulk *bulk;
     struct tm tm;
@@ -383,17 +382,17 @@ static char *elasticsearch_format(void *data, size_t bytes,
         }
 
         /* Convert msgpack to JSON */
-        ret = flb_msgpack_raw_to_json_str(tmp_sbuf.data, tmp_sbuf.size,
-                                          &json_buf, &json_size);
+        out_buf = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size);
         msgpack_sbuffer_destroy(&tmp_sbuf);
-        if (ret != 0) {
+        if (!out_buf) {
             msgpack_unpacked_destroy(&result);
             es_bulk_destroy(bulk);
             return NULL;
         }
 
-        ret = es_bulk_append(bulk, j_index, index_len, json_buf, json_size);
-        flb_free(json_buf);
+        ret = es_bulk_append(bulk, j_index, index_len,
+                             out_buf, flb_sds_len(out_buf));
+        flb_sds_destroy(out_buf);
         if (ret == -1) {
             /* We likely ran out of memory, abort here */
             msgpack_unpacked_destroy(&result);
@@ -537,8 +536,8 @@ static int elasticsearch_error_check(struct flb_http_client *c)
     return check;
 }
 
-void cb_es_flush(void *data, size_t bytes,
-                 char *tag, int tag_len,
+void cb_es_flush(const void *data, size_t bytes,
+                 const char *tag, int tag_len,
                  struct flb_input_instance *i_ins, void *out_context,
                  struct flb_config *config)
 {

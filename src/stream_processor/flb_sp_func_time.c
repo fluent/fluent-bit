@@ -25,7 +25,7 @@
 
 static inline void pack_key(msgpack_packer *mp_pck,
                             struct flb_sp_cmd_key *cmd_key,
-                            char *name, int len)
+                            const char *name, int len)
 {
     if (cmd_key->alias) {
         msgpack_pack_str(mp_pck, flb_sds_len(cmd_key->alias));

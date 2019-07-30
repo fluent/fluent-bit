@@ -255,8 +255,8 @@ static int in_head_collect(struct flb_input_instance *i_ins,
 static int in_head_config_read(struct flb_in_head_config *head_config,
                                struct flb_input_instance *in)
 {
-    char *filepath = NULL;
-    char *pval = NULL;
+    const char *filepath = NULL;
+    const char *pval = NULL;
 
     /* filepath setting */
     filepath = flb_input_get_property("file", in);

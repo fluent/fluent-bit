@@ -164,7 +164,7 @@ static int in_cpu_init(struct flb_input_instance *in,
     int ret;
     struct flb_in_cpu_config *ctx;
     (void) data;
-    char *pval = NULL;
+    const char *pval = NULL;
 
     /* Allocate space for the configuration */
     ctx = flb_calloc(1, sizeof(struct flb_in_cpu_config));

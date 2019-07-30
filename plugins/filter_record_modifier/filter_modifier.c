@@ -243,12 +243,12 @@ static int make_bool_map(struct record_modifier_ctx *ctx, msgpack_object *map,
     return ret;
 }
 
-static int cb_modifier_filter(void *data, size_t bytes,
-                                  char *tag, int tag_len,
-                                  void **out_buf, size_t *out_size,
-                                  struct flb_filter_instance *f_ins,
-                                  void *context,
-                                  struct flb_config *config)
+static int cb_modifier_filter(const void *data, size_t bytes,
+                              const char *tag, int tag_len,
+                              void **out_buf, size_t *out_size,
+                              struct flb_filter_instance *f_ins,
+                              void *context,
+                              struct flb_config *config)
 {
     struct record_modifier_ctx *ctx = context;
     char is_modified = FLB_FALSE;

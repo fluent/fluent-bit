@@ -39,7 +39,7 @@ static const char trailingBytesForUTF8[256] = {
 };
 
 /* returns length of next utf-8 sequence */
-static inline int flb_utf8_len(char *s)
+static inline int flb_utf8_len(const char *s)
 {
     return trailingBytesForUTF8[(unsigned int)(unsigned char)s[0]] + 1;
 }
@@ -87,7 +87,7 @@ static inline uint32_t flb_utf8_decode(uint32_t *state, uint32_t *codep,
 }
 
 
-static inline void flb_utf8_print(uint8_t *s) {
+static inline void flb_utf8_print(const uint8_t *s) {
     uint32_t codepoint;
     uint32_t state = 0;
 

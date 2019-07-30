@@ -33,25 +33,27 @@
 
 /* Decode a stringified JSON message */
 static int decode_json(struct flb_parser_dec *dec,
-                       char *in_buf, size_t in_size,
+                       const char *in_buf, size_t in_size,
                        char **out_buf, size_t *out_size, int *out_type)
 {
-    int len;
     int ret;
     int root_type;
     char *buf;
+    const char *p;
     size_t size;
+    size_t len;
 
-    /* JSON Decoder: content may be escaped */
-    len = flb_unescape_string(in_buf, in_size, &dec->buffer);
+    p = in_buf;
+    while (*p == ' ') p++;
+
+    len = in_size - (p - in_buf);
 
     /* It must be a map or array */
-    if (dec->buffer[0] != '{' && dec->buffer[0] != '[') {
+    if (p[0] != '{' && p[0] != '[') {
         return -1;
     }
 
-    /* Convert from unescaped JSON to MessagePack */
-    ret = flb_pack_json(dec->buffer, len, &buf, &size, &root_type);
+    ret = flb_pack_json(p, len, &buf, &size, &root_type);
     if (ret != 0) {
         return -1;
     }
@@ -70,7 +72,7 @@ static int decode_json(struct flb_parser_dec *dec,
 }
 
 static int decode_escaped(struct flb_parser_dec *dec,
-                          char *in_buf, size_t in_size,
+                          const char *in_buf, size_t in_size,
                           char **out_buf, size_t *out_size, int *out_type)
 {
     int len;
@@ -85,8 +87,8 @@ static int decode_escaped(struct flb_parser_dec *dec,
 }
 
 static int decode_escaped_utf8(struct flb_parser_dec *dec,
-                          char *in_buf, size_t in_size,
-                          char **out_buf, size_t *out_size, int *out_type)
+                               const char *in_buf, size_t in_size,
+                               char **out_buf, size_t *out_size, int *out_type)
 {
     int len;
 
@@ -98,8 +100,8 @@ static int decode_escaped_utf8(struct flb_parser_dec *dec,
     return 0;
 }
 
-static int merge_record_and_extra_keys(char *in_buf, size_t in_size,
-                                       char *extra_buf, size_t extra_size,
+static int merge_record_and_extra_keys(const char *in_buf, size_t in_size,
+                                       const char *extra_buf, size_t extra_size,
                                        char **out_buf, size_t *out_size)
 {
     int i;
@@ -165,7 +167,7 @@ static int merge_record_and_extra_keys(char *in_buf, size_t in_size,
  * a new msgpack buffer.
  */
 int flb_parser_decoder_do(struct mk_list *decoders,
-                          char *in_buf, size_t in_size,
+                          const char *in_buf, size_t in_size,
                           char **out_buf, size_t *out_size)
 {
     int i;
@@ -223,7 +225,7 @@ int flb_parser_decoder_do(struct mk_list *decoders,
         /* Try to match this key name with decoder's rule */
         mk_list_foreach(head, decoders) {
             dec = mk_list_entry(head, struct flb_parser_dec, _head);
-            if (flb_sds_cmp(dec->key, (char *) k.via.str.ptr,
+            if (flb_sds_cmp(dec->key, k.via.str.ptr,
                             k.via.str.size) == 0) {
                 /* we have a match, stop the check */
                 matched = i;
@@ -285,7 +287,7 @@ int flb_parser_decoder_do(struct mk_list *decoders,
         /* Lookup for decoders associated to the current 'key' */
         mk_list_foreach(head, decoders) {
             dec = mk_list_entry(head, struct flb_parser_dec, _head);
-            if (flb_sds_cmp(dec->key, (char *) k.via.str.ptr,
+            if (flb_sds_cmp(dec->key, k.via.str.ptr,
                             k.via.str.size) == 0) {
                 break;
             }
@@ -312,7 +314,7 @@ int flb_parser_decoder_do(struct mk_list *decoders,
         }
 
         /* Copy original content */
-        tmp_sds = flb_sds_copy(data_sds, (char *) v.via.str.ptr,
+        tmp_sds = flb_sds_copy(data_sds, v.via.str.ptr,
                                v.via.str.size);
         if (tmp_sds != data_sds) {
             data_sds = tmp_sds;
@@ -495,7 +497,7 @@ int flb_parser_decoder_do(struct mk_list *decoders,
  * Iterate decoders list and lookup for an existing context for 'key_name',
  * if it does not exists, create and link a new one
  */
-static struct flb_parser_dec *get_decoder_key_context(char *key_name, int key_len,
+static struct flb_parser_dec *get_decoder_key_context(const char *key_name, int key_len,
                                                       struct mk_list *list)
 {
     struct mk_list *head;
