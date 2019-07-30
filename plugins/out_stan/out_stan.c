@@ -2,7 +2,7 @@
 #include <fluent-bit/flb_nats.h>
 #include<pthread.h> 
 
-/*static void stan_connection_lost(stanConnection *sc, const char *errTxt, void *closure)
+static void stan_connection_lost(stanConnection *sc, const char *errTxt, void *closure)
 {
     bool *closed = (bool*) closure;
 
@@ -10,6 +10,7 @@
     *closed = true;
 }
 
+/*
 static void nats_connection_lost(natsConnection *nc, void *closure)
 {
     bool        *closed = (bool*)closure;
@@ -45,7 +46,7 @@ static void nats_connection_lost(natsConnection *nc, void *closure)
         nats_setNATSThreadKey();
         ctx->stan->closed = true; // required?
         ctx->stan->nats->closed = true; // required?
-    }*/
+    }
 
 
     flb_info("[STAN] Connecting to '%s'", ctx->stan->nats->url); // TODO change to debug?
@@ -83,13 +84,13 @@ int configure_nats(struct flb_common_nats_config **config) {
         return -1;
     }
 
-    /*ctx->status = natsOptions_SetSendAsap(ctx->options, true);
+    ctx->status = natsOptions_SetSendAsap(ctx->options, true);
     if (ctx->status != NATS_OK) {
         flb_error(stan_setting_error, "NATS", "Send ASAP", ctx->status, natsStatus_GetText(ctx->status));
         return -1;
     }
 
-    ctx->status = nats_SetMessageDeliveryPoolSize(1);
+    /*ctx->status = nats_SetMessageDeliveryPoolSize(1);
     if (ctx->status != NATS_OK) {
         flb_error(stan_setting_error, "NATS", "Message delivery pool size", ctx->status, natsStatus_GetText(ctx->status));
         return -1;
@@ -132,6 +133,8 @@ int configure_nats(struct flb_common_nats_config **config) {
 int configure_stan(struct flb_common_stan_config **config) {
     struct flb_common_stan_config *ctx = *config;
 
+    flb_info("%s pointer: %p", "flb_common_stan_config", (void *) &ctx); // TODO Debug - remove
+    
     // Initialize STAN options
     ctx->nats->status = stanConnOptions_Create(&ctx->options);
     if (ctx->nats->status != NATS_OK) {
@@ -146,11 +149,11 @@ int configure_stan(struct flb_common_stan_config **config) {
     }
 
     // Set a callback handler when losing connection
-    /*ctx->nats->status = stanConnOptions_SetConnectionLostHandler(ctx->options, stan_connection_lost, (void*)&ctx->closed);
+    ctx->nats->status = stanConnOptions_SetConnectionLostHandler(ctx->options, stan_connection_lost, (void*)&ctx->closed);
     if (ctx->nats->status != NATS_OK) {
         flb_error(stan_setting_error, "STAN", "Connection lost handler", ctx->nats->status, natsStatus_GetText(ctx->nats->status));
         return -1;
-    }*/
+    }
 
     return 0;
 }
@@ -190,6 +193,15 @@ void cleanupStan(struct flb_out_stan_config *ctx)
 void cb_stan_flush(void *data, size_t bytes, char *tag, int tag_len, struct flb_input_instance *i_ins, void *out_context, struct flb_config *config)
 {
     struct flb_out_stan_config *ctx = out_context;
+    
+    /*flb_info("Flush pointers", ""); // TODO Debug - remove
+    flb_info("%s pointer: %p", "flb_out_stan_config", (void *) &ctx); // TODO Debug - remove
+    flb_info("%s pointer: %p", "flb_out_stan_config->stan", (void *) &ctx->stan); // TODO Debug - remove
+    flb_info("%s pointer: %p", "flb_out_stan_config->stan->connection", (void *) &ctx->stan->connection); // TODO Debug - remove
+    flb_info("%s pointer: %p", "flb_out_stan_config->stan->cluster", (void *) &ctx->stan->cluster); // TODO Debug - remove
+    flb_info("%s pointer: %p", "flb_out_stan_config->stan->client_id", (void *) &ctx->stan->client_id); // TODO Debug - remove
+    flb_info("%s pointer: %p", "flb_out_stan_config->stan->options", (void *) &ctx->stan->options); // TODO Debug - remove
+    */
 
     if (ctx->stan->connection == NULL || ctx->stan->closed || ctx->stan->nats->closed) {
         if (ctx->stan->connection == NULL) {
@@ -199,13 +211,25 @@ void cb_stan_flush(void *data, size_t bytes, char *tag, int tag_len, struct flb_
 
             if (ctx->stan->nats->status != NATS_OK) {
                 flb_error("[STAN] Error (%d) - Unable to connect: '%s'", ctx->stan->nats->status, natsStatus_GetText(ctx->stan->nats->status));
-                return -1;
+                return FLB_OUTPUT_RETURN(FLB_RETRY);
             }
-        }/*else if (ctx->stan->nats->closed) {
-            flb_error("[STAN] Error: Unable to publish because NATS connection is closed", "");
+            ctx->stan->closed = false;
         } else if (ctx->stan->closed) {
             flb_error("[STAN] Error: Unable to publish because NATS Streaming connection is closed", "");
-        }*/
+            
+            /*natsConnection *nc = NULL;
+            stanConnection_GetNATSConnection(ctx->stan->connection, &nc);
+            natsConnection_Connect(&nc, nc->opts);
+            stanConnection_ReleaseNATSConnection(ctx->stan->connection);*/
+
+            ctx->stan->nats->status = stanConnection_Connect(&ctx->stan->connection, ctx->stan->cluster, ctx->stan->client_id, ctx->stan->options);
+            if (ctx->stan->nats->status == NATS_OK) {
+                ctx->stan->closed = false;
+            }
+            return FLB_OUTPUT_RETURN(FLB_RETRY);
+        } /*else if (ctx->stan->nats->closed) {
+            flb_error("[STAN] Error: Unable to publish because NATS connection is closed", "");
+        } */
         /*flb_info("[STAN] Trying to connect for flush"); // TODO Change to debug?
         if (stan_try_to_connect(&ctx) < 0) {
             FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -218,10 +242,10 @@ void cb_stan_flush(void *data, size_t bytes, char *tag, int tag_len, struct flb_
     if (ctx->stan->nats->status != NATS_OK) {
         flb_error("[STAN] NATS Streaming Error (%d) - Unable to publish message: '%s'", ctx->stan->nats->status, natsStatus_GetText(ctx->stan->nats->status));
         //TODO just for testing...
-        //ctx->stan->closed        = true;
+        ctx->stan->closed = true;
         //ctx->stan->nats->closed  = true;
 
-        stanConnection_ReleaseNATSConnection(ctx->stan->connection);
+        //stanConnection_ReleaseNATSConnection(ctx->stan->connection);
 
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
@@ -258,6 +282,16 @@ int cb_stan_init(struct flb_output_instance *ins, struct flb_config *config, voi
         perror("malloc flb_common_stan_config->stan->nats");
         return -1;
     }
+
+    /*
+    flb_info("Init pointers", ""); // TODO Debug - remove
+    flb_info("%s pointer: %p", "flb_out_stan_config", (void *) &ctx); // TODO Debug - remove
+    flb_info("%s pointer: %p", "flb_out_stan_config->stan", (void *) &ctx->stan); // TODO Debug - remove
+    flb_info("%s pointer: %p", "flb_out_stan_config->stan->connection", (void *) &ctx->stan->connection); // TODO Debug - remove
+    flb_info("%s pointer: %p", "flb_out_stan_config->stan->cluster", (void *) &ctx->stan->cluster); // TODO Debug - remove
+    flb_info("%s pointer: %p", "flb_out_stan_config->stan->client_id", (void *) &ctx->stan->client_id); // TODO Debug - remove
+    flb_info("%s pointer: %p", "flb_out_stan_config->stan->options", (void *) &ctx->stan->options); // TODO Debug - remove
+    */
 
     ctx->stan->connection    = NULL;
     ctx->stan->options       = NULL;
