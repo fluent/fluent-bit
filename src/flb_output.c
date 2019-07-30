@@ -277,6 +277,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         ctx = flb_calloc(1, sizeof(struct flb_plugin_proxy_context));
         if (!ctx) {
             perror("calloc");
+            flb_free(instance);
             return NULL;
         }
 

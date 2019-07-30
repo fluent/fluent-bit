@@ -14,6 +14,7 @@ include_directories(
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_MBEDTLS}/include
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_SQLITE}
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_MPACK}/src
+  ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_MINIZ}/
   )
 
 # On Windows, the core uses libevent

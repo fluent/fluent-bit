@@ -1,4 +1,4 @@
-/* miniz.c 2.0.6 beta - public domain deflate/inflate, zlib-subset, ZIP reading/writing/appending, PNG writing
+/* miniz.c 2.1.0 - public domain deflate/inflate, zlib-subset, ZIP reading/writing/appending, PNG writing
    See "unlicense" statement at the end of this file.
    Rich Geldreich <richgel99@gmail.com>, last updated Oct. 13, 2013
    Implements RFC 1950: http://www.ietf.org/rfc/rfc1950.txt and RFC 1951: http://www.ietf.org/rfc/rfc1951.txt
@@ -24,7 +24,7 @@
      zlib replacement in many apps:
         The z_stream struct, optional memory allocation callbacks
         deflateInit/deflateInit2/deflate/deflateReset/deflateEnd/deflateBound
-        inflateInit/inflateInit2/inflate/inflateEnd
+        inflateInit/inflateInit2/inflate/inflateReset/inflateEnd
         compress, compress2, compressBound, uncompress
         CRC-32, Adler-32 - Using modern, minimal code size, CPU cache friendly routines.
         Supports raw deflate streams or standard zlib streams with adler-32 checking.
@@ -170,11 +170,15 @@
 #define MINIZ_LITTLE_ENDIAN 0
 #endif
 
+/* Set MINIZ_USE_UNALIGNED_LOADS_AND_STORES only if not set */
+#if !defined(MINIZ_USE_UNALIGNED_LOADS_AND_STORES)
 #if MINIZ_X86_OR_X64_CPU
 /* Set MINIZ_USE_UNALIGNED_LOADS_AND_STORES to 1 on CPU's that permit efficient integer loads and stores from unaligned addresses. */
 #define MINIZ_USE_UNALIGNED_LOADS_AND_STORES 1
+#define MINIZ_UNALIGNED_USE_MEMCPY
 #else
 #define MINIZ_USE_UNALIGNED_LOADS_AND_STORES 0
+#endif
 #endif
 
 #if defined(_M_X64) || defined(_WIN64) || defined(__MINGW64__) || defined(_LP64) || defined(__LP64__) || defined(__ia64__) || defined(__x86_64__)
@@ -234,11 +238,11 @@ enum
     MZ_DEFAULT_COMPRESSION = -1
 };
 
-#define MZ_VERSION "10.0.1"
-#define MZ_VERNUM 0xA010
+#define MZ_VERSION "10.1.0"
+#define MZ_VERNUM 0xA100
 #define MZ_VER_MAJOR 10
-#define MZ_VER_MINOR 0
-#define MZ_VER_REVISION 1
+#define MZ_VER_MINOR 1
+#define MZ_VER_REVISION 0
 #define MZ_VER_SUBREVISION 0
 
 #ifndef MINIZ_NO_ZLIB_APIS
@@ -361,6 +365,9 @@ int mz_inflateInit(mz_streamp pStream);
 /* window_bits must be MZ_DEFAULT_WINDOW_BITS (to parse zlib header/footer) or -MZ_DEFAULT_WINDOW_BITS (raw deflate). */
 int mz_inflateInit2(mz_streamp pStream, int window_bits);
 
+/* Quickly resets a compressor without having to reallocate anything. Same as calling mz_inflateEnd() followed by mz_inflateInit()/mz_inflateInit2(). */
+int mz_inflateReset(mz_streamp pStream);
+
 /* Decompresses the input stream to the output, consuming only as much of the input as needed, and writing as much to the output as possible. */
 /* Parameters: */
 /*   pStream is the stream to read from and write to. You must initialize/update the next_in, avail_in, next_out, and avail_out members. */
@@ -444,6 +451,7 @@ typedef void *const voidpc;
 #define compressBound mz_compressBound
 #define inflateInit mz_inflateInit
 #define inflateInit2 mz_inflateInit2
+#define inflateReset mz_inflateReset
 #define inflate mz_inflate
 #define inflateEnd mz_inflateEnd
 #define uncompress mz_uncompress
@@ -737,11 +745,13 @@ mz_uint32 tdefl_get_adler32(tdefl_compressor *d);
 /* strategy may be either MZ_DEFAULT_STRATEGY, MZ_FILTERED, MZ_HUFFMAN_ONLY, MZ_RLE, or MZ_FIXED */
 mz_uint tdefl_create_comp_flags_from_zip_params(int level, int window_bits, int strategy);
 
+#ifndef MINIZ_NO_MALLOC
 /* Allocate the tdefl_compressor structure in C so that */
 /* non-C language bindings to tdefl_ API don't need to worry about */
 /* structure size and allocation mechanism. */
-tdefl_compressor *tdefl_compressor_alloc();
+tdefl_compressor *tdefl_compressor_alloc(void);
 void tdefl_compressor_free(tdefl_compressor *pComp);
+#endif
 
 #ifdef __cplusplus
 }
@@ -789,12 +799,13 @@ int tinfl_decompress_mem_to_callback(const void *pIn_buf, size_t *pIn_buf_size, 
 struct tinfl_decompressor_tag;
 typedef struct tinfl_decompressor_tag tinfl_decompressor;
 
+#ifndef MINIZ_NO_MALLOC
 /* Allocate the tinfl_decompressor structure in C so that */
 /* non-C language bindings to tinfl_ API don't need to worry about */
 /* structure size and allocation mechanism. */
-
-tinfl_decompressor *tinfl_decompressor_alloc();
+tinfl_decompressor *tinfl_decompressor_alloc(void);
 void tinfl_decompressor_free(tinfl_decompressor *pDecomp);
+#endif
 
 /* Max size of LZ dictionary. */
 #define TINFL_LZ_DICT_SIZE 32768
@@ -1128,13 +1139,6 @@ MZ_FILE *mz_zip_get_cfile(mz_zip_archive *pZip);
 /* Reads n bytes of raw archive data, starting at file offset file_ofs, to pBuf. */
 size_t mz_zip_read_archive_data(mz_zip_archive *pZip, mz_uint64 file_ofs, void *pBuf, size_t n);
 
-/* Attempts to locates a file in the archive's central directory. */
-/* Valid flags: MZ_ZIP_FLAG_CASE_SENSITIVE, MZ_ZIP_FLAG_IGNORE_PATH */
-/* Returns -1 if the file cannot be found. */
-int mz_zip_locate_file(mz_zip_archive *pZip, const char *pName, const char *pComment, mz_uint flags);
-/* Returns MZ_FALSE if the file cannot be found. */
-mz_bool mz_zip_locate_file_v2(mz_zip_archive *pZip, const char *pName, const char *pComment, mz_uint flags, mz_uint32 *pIndex);
-
 /* All mz_zip funcs set the m_last_error field in the mz_zip_archive struct. These functions retrieve/manipulate this field. */
 /* Note that the m_last_error functionality is not thread safe. */
 mz_zip_error mz_zip_set_last_error(mz_zip_archive *pZip, mz_zip_error err_num);
@@ -1275,6 +1279,12 @@ mz_bool mz_zip_writer_add_mem_ex(mz_zip_archive *pZip, const char *pArchive_name
 mz_bool mz_zip_writer_add_mem_ex_v2(mz_zip_archive *pZip, const char *pArchive_name, const void *pBuf, size_t buf_size, const void *pComment, mz_uint16 comment_size, mz_uint level_and_flags,
                                     mz_uint64 uncomp_size, mz_uint32 uncomp_crc32, MZ_TIME_T *last_modified, const char *user_extra_data_local, mz_uint user_extra_data_local_len,
                                     const char *user_extra_data_central, mz_uint user_extra_data_central_len);
+
+/* Adds the contents of a file to an archive. This function also records the disk file's modified time into the archive. */
+/* File data is supplied via a read callback function. User mz_zip_writer_add_(c)file to add a file directly.*/
+mz_bool mz_zip_writer_add_read_buf_callback(mz_zip_archive *pZip, const char *pArchive_name, mz_file_read_func read_callback, void* callback_opaque, mz_uint64 size_to_add,
+	const MZ_TIME_T *pFile_time, const void *pComment, mz_uint16 comment_size, mz_uint level_and_flags, const char *user_extra_data_local, mz_uint user_extra_data_local_len,
+	const char *user_extra_data_central, mz_uint user_extra_data_central_len);
 
 #ifndef MINIZ_NO_STDIO
 /* Adds the contents of a disk file to an archive. This function also records the disk file's modified time into the archive. */

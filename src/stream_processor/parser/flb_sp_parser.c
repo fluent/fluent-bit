@@ -34,6 +34,23 @@
 #include "sql_parser.h"
 #include "sql_lex.h"
 
+static int swap_tmp_subkeys(struct mk_list **target, struct flb_sp_cmd *cmd)
+{
+    /* Map context keys into this command key structure */
+    *target = cmd->tmp_subkeys;
+
+    cmd->tmp_subkeys = flb_malloc(sizeof(struct mk_list));
+    if (!cmd->tmp_subkeys) {
+        flb_errno();
+        cmd->tmp_subkeys = *target;
+        cmd->status = FLB_SP_ERROR;
+        return -1;
+    }
+
+    flb_slist_create(cmd->tmp_subkeys);
+    return 0;
+}
+
 void flb_sp_cmd_destroy(struct flb_sp_cmd *cmd)
 {
     struct mk_list *head;
@@ -102,6 +119,10 @@ void flb_sp_cmd_gb_key_del(struct flb_sp_cmd_gb_key *key)
     if (key->name) {
         flb_sds_destroy(key->name);
     }
+    if (key->subkeys) {
+        flb_slist_destroy(key->subkeys);
+        flb_free(key->subkeys);
+    }
     flb_free(key);
 }
 
@@ -109,6 +130,7 @@ int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func,
                        const char *key_name, const char *key_alias)
 {
     int s;
+    int ret;
     int aggr_func = 0;
     int time_func = 0;
     int record_func = 0;
@@ -136,6 +158,7 @@ int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func,
         cmd->status = FLB_SP_ERROR;
         return -1;
     }
+    key->gb_key = NULL;
     key->subkeys = NULL;
 
     /* key name and aliases works when the selection is not a wildcard */
@@ -183,17 +206,11 @@ int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func,
 
     /* Lookup for any subkeys in the temporal list */
     if (mk_list_size(cmd->tmp_subkeys) > 0) {
-        /* Map context keys into this command key structure */
-        key->subkeys = cmd->tmp_subkeys;
-        cmd->tmp_subkeys = flb_malloc(sizeof(struct mk_list));
-        if (!cmd->tmp_subkeys) {
-            flb_errno();
-            cmd->tmp_subkeys = key->subkeys;
+        ret = swap_tmp_subkeys(&key->subkeys, cmd);
+        if (ret == -1) {
             flb_sp_cmd_key_del(key);
-            cmd->status = FLB_SP_ERROR;
             return -1;
         }
-        flb_slist_create(cmd->tmp_subkeys);
 
         /* Compose a name key that include listed sub keys */
         s = flb_sds_len(key->name) + (16 * mk_list_size(key->subkeys));
@@ -304,7 +321,6 @@ struct flb_sp_cmd *flb_sp_cmd_create(const char *sql)
 
     /* Condition linked list (we use them to free resources) */
     mk_list_init(&cmd->cond_list);
-
     mk_list_init(&cmd->gb_keys);
 
     /* Allocate temporal list and initialize */
@@ -495,6 +511,7 @@ struct flb_exp *flb_sp_cmd_comparison(struct flb_sp_cmd *cmd,
 struct flb_exp *flb_sp_cmd_condition_key(struct flb_sp_cmd *cmd,
                                          const char *identifier)
 {
+    int ret;
     struct flb_exp_key *key;
 
     key = flb_calloc(1, sizeof(struct flb_exp_key));
@@ -507,19 +524,12 @@ struct flb_exp *flb_sp_cmd_condition_key(struct flb_sp_cmd *cmd,
     key->name = flb_sds_create(identifier);
     mk_list_add(&key->_head, &cmd->cond_list);
 
-    /* Lookup for any subkeys in the temporal list */
-    if (mk_list_size(cmd->tmp_subkeys) > 0) {
-        key->subkeys = cmd->tmp_subkeys;
-        cmd->tmp_subkeys = flb_malloc(sizeof(struct mk_list));
-        if (!cmd->tmp_subkeys) {
-            flb_errno();
-            cmd->tmp_subkeys = key->subkeys;
-            flb_sds_destroy(key->name);
-            mk_list_del(&key->_head);
-            flb_free(key);
-            return NULL;
-        }
-        flb_slist_create(cmd->tmp_subkeys);
+    ret = swap_tmp_subkeys(&key->subkeys, cmd);
+    if (ret == -1) {
+        flb_sds_destroy(key->name);
+        mk_list_del(&key->_head);
+        flb_free(key);
+        return NULL;
     }
 
     return (struct flb_exp *) key;
@@ -652,6 +662,7 @@ void flb_sp_cmd_condition_add(struct flb_sp_cmd *cmd, struct flb_exp *e)
 
 int flb_sp_cmd_gb_key_add(struct flb_sp_cmd *cmd, const char *key)
 {
+    int ret;
     struct flb_sp_cmd_gb_key *gb_key;
 
     gb_key = flb_malloc(sizeof(struct flb_sp_cmd_gb_key));
@@ -665,8 +676,19 @@ int flb_sp_cmd_gb_key_add(struct flb_sp_cmd *cmd, const char *key)
         flb_free(gb_key);
         return -1;
     }
-
+    gb_key->subkeys = NULL;
+    gb_key->id = mk_list_size(&cmd->gb_keys);
     mk_list_add(&gb_key->_head, &cmd->gb_keys);
+
+    /* Lookup for any subkeys in the temporal list */
+    ret = swap_tmp_subkeys(&gb_key->subkeys, cmd);
+    if (ret == -1) {
+        flb_sds_destroy(gb_key->name);
+        mk_list_del(&gb_key->_head);
+        flb_free(gb_key);
+        return -1;
+    }
+
     return 0;
 }
 

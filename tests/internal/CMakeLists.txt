@@ -14,6 +14,7 @@ set(UNIT_TESTS_FILES
   hashtable.c
   http_client.c
   utils.c
+  gzip.c
   )
 
 if(FLB_STREAM_PROCESSOR)

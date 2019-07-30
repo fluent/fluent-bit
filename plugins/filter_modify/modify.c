@@ -350,6 +350,8 @@ static int setup(struct filter_modify_ctx *ctx,
                 flb_error
                     ("[filter_modify] Unable to create regex for rule %s %s",
                      rule->raw_k, rule->raw_v);
+                teardown(ctx);
+                flb_free(rule);
                 return -1;
             }
             else {

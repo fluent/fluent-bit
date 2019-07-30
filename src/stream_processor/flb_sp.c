@@ -207,6 +207,9 @@ static int sp_cmd_aggregated_keys(struct flb_sp_cmd *cmd)
                 if (flb_sds_cmp(key->name, gb_key->name,
                                 flb_sds_len(gb_key->name)) == 0) {
                     not_aggr--;
+
+                    /* Map key selector with group-by */
+                    key->gb_key = gb_key;
                     break;
                 }
             }
@@ -1105,12 +1108,13 @@ static void package_results(const char *tag, int tag_len,
     char key_name[256];
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
-    struct aggr_num *nums;
+    struct aggr_num *num;
     struct flb_time tm;
     struct flb_sp_cmd_key *ckey;
     struct flb_sp_cmd *cmd = task->cmd;
     struct mk_list *head;
     struct aggr_node *aggr_node;
+    struct flb_sp_cmd_gb_key *gb_key = NULL;
 
     map_entries = mk_list_size(&cmd->keys);
 
@@ -1119,7 +1123,6 @@ static void package_results(const char *tag, int tag_len,
 
     mk_list_foreach(head, &task->window.aggr_list) {
         aggr_node = mk_list_entry(head, struct aggr_node, _head);
-        nums = aggr_node->nums;
         records = aggr_node->records;
 
         /* set outgoing array + map and it fixed size */
@@ -1132,6 +1135,8 @@ static void package_results(const char *tag, int tag_len,
         /* Packaging results */
         ckey = mk_list_entry_first(&cmd->keys, struct flb_sp_cmd_key, _head);
         for (i = 0; i < map_entries; i++) {
+            num = &aggr_node->nums[i];
+
             /* Check if there is a defined function */
             if (ckey->time_func > 0) {
                 flb_sp_func_time(&mp_pck, ckey);
@@ -1193,24 +1198,36 @@ static void package_results(const char *tag, int tag_len,
                 msgpack_pack_str_body(&mp_pck, key_name, len);
             }
 
+            /*
+             * If a group_by key is mapped as a source of this key,
+             * change the 'num' reference to obtain the proper information
+             * for the grouped key value.
+             */
+            if (ckey->gb_key != NULL) {
+                gb_key = ckey->gb_key;
+                if (aggr_node && aggr_node->groupby_keys > 0) {
+                    num = &aggr_node->groupby_nums[gb_key->id];
+                }
+            }
+
             /* Pack value */
             switch (ckey->aggr_func) {
             case FLB_SP_NOP:
-                if (nums[i].type == FLB_SP_NUM_I64) {
-                    msgpack_pack_int64(&mp_pck, nums[i].i64);
+                if (num->type == FLB_SP_NUM_I64) {
+                    msgpack_pack_int64(&mp_pck, num->i64);
                 }
-                else if (nums[i].type == FLB_SP_NUM_F64) {
-                    msgpack_pack_float(&mp_pck, nums[i].f64);
+                else if (num->type == FLB_SP_NUM_F64) {
+                    msgpack_pack_float(&mp_pck, num->f64);
                 }
-                else if (nums[i].type == FLB_SP_STRING) {
+                else if (num->type == FLB_SP_STRING) {
                     msgpack_pack_str(&mp_pck,
-                                     flb_sds_len(nums[i].string));
+                                     flb_sds_len(num->string));
                     msgpack_pack_str_body(&mp_pck,
-                                          nums[i].string,
-                                          flb_sds_len(nums[i].string));
+                                          num->string,
+                                          flb_sds_len(num->string));
                 }
-                else if (nums[i].type == FLB_SP_BOOLEAN) {
-                    if (nums[i].boolean) {
+                else if (num->type == FLB_SP_BOOLEAN) {
+                    if (num->boolean) {
                         msgpack_pack_true(&mp_pck);
                     }
                     else {
@@ -1221,11 +1238,11 @@ static void package_results(const char *tag, int tag_len,
             case FLB_SP_AVG:
                 /* average = sum(values) / records */
                 d_val = 0;
-                if (nums[i].type == FLB_SP_NUM_I64) {
-                    d_val = (double) nums[i].i64 / records;
+                if (num->type == FLB_SP_NUM_I64) {
+                    d_val = (double) num->i64 / records;
                 }
-                else if (nums[i].type == FLB_SP_NUM_F64) {
-                    d_val = (double) nums[i].f64 / records;
+                else if (num->type == FLB_SP_NUM_F64) {
+                    d_val = (double) num->f64 / records;
                 }
                 msgpack_pack_float(&mp_pck, d_val);
                 break;
@@ -1233,11 +1250,11 @@ static void package_results(const char *tag, int tag_len,
             case FLB_SP_MIN:
             case FLB_SP_MAX:
                 /* pack result stored in nums[key_id] */
-                if (nums[i].type == FLB_SP_NUM_I64) {
-                    msgpack_pack_int64(&mp_pck, nums[i].i64);
+                if (num->type == FLB_SP_NUM_I64) {
+                    msgpack_pack_int64(&mp_pck, num->i64);
                 }
-                else if (nums[i].type == FLB_SP_NUM_F64) {
-                    msgpack_pack_float(&mp_pck, nums[i].f64);
+                else if (num->type == FLB_SP_NUM_F64) {
+                    msgpack_pack_float(&mp_pck, num->f64);
                 }
                 break;
             case FLB_SP_COUNT:
@@ -1350,35 +1367,37 @@ static int sp_process_data_aggr(const char *buf_data, size_t buf_size,
                                            _head);
                     if (flb_sds_cmp(gb_key->name, key.via.str.ptr,
                                     key.via.str.size) != 0) {
-                        key_id++;
                         continue;
                     }
 
-                    /* Convert string to number if that is possible */
-                    ret = object_to_number(val, &ival, &dval);
-                    if (ret == -1 && val.type == MSGPACK_OBJECT_STR) {
+                    sval = flb_sp_key_to_value(gb_key->name,
+                                               map,
+                                               gb_key->subkeys);
+                    if (!sval) {
+                        continue;
+                    }
+
+                    /* Associate value to nums */
+                    if (sval->type == FLB_EXP_STRING) {
                         gb_nums[key_id].type = FLB_SP_STRING;
-                        gb_nums[key_id].string =
-                            flb_sds_create_len(val.via.str.ptr,
-                                               val.via.str.size);
-                        continue;
+                        gb_nums[key_id].string = sval->val.string;
+                        sval->type = FLB_EXP_BOOL;
                     }
-
-                    if (ret == -1 && val.type == MSGPACK_OBJECT_BOOLEAN) {
+                    else if (sval->type == FLB_EXP_BOOL) {
+                        gb_nums[key_id].type = FLB_SP_BOOLEAN;
+                        gb_nums[key_id].boolean = sval->val.boolean;
+                    }
+                    else if (sval->type == FLB_EXP_INT) {
                         gb_nums[key_id].type = FLB_SP_NUM_I64;
-                        gb_nums[key_id].i64 = val.via.boolean;
-
-                        continue;
+                        gb_nums[key_id].i64 = sval->val.i64;
                     }
-
-                    if (ret == FLB_STR_INT) {
-                        gb_nums[key_id].type = FLB_SP_NUM_I64;
-                        gb_nums[key_id].i64 = ival;
-                    }
-                    else if (ret == FLB_STR_FLOAT) {
+                    else if (sval->type == FLB_EXP_FLOAT) {
                         gb_nums[key_id].type = FLB_SP_NUM_F64;
-                        gb_nums[key_id].f64 = dval;
+                        gb_nums[key_id].f64 = sval->val.f64;
                     }
+
+                    flb_sp_key_value_destroy(sval);
+                    key_id++;
                 }
             }
 

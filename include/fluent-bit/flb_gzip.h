@@ -3,6 +3,7 @@
 /*  Fluent Bit
  *  ==========
  *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -17,26 +18,15 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_OUT_GELF_H
-#define FLB_OUT_GELF_H
+#ifndef FLB_GZIP_H
+#define FLB_GZIP_H
 
-#define FLB_GELF_UDP 0
-#define FLB_GELF_TCP 1
-#define FLB_GELF_TLS 2
+#include <fluent-bit/flb_info.h>
+#include <stdio.h>
 
-struct flb_out_gelf_config {
-
-    struct flb_gelf_fields fields;
-
-    /* Upstream connection to the backend server */
-    struct flb_upstream *u;
-    flb_sockfd_t fd;
-
-    int pckt_size;
-    int compress;
-    unsigned int seed;
-
-    int mode;
-};
+int flb_gzip_compress(void *in_data, size_t in_len,
+                      void **out_data, size_t *out_len);
+int flb_gzip_uncompress(void *in_data, size_t in_len,
+                        void **out_data, size_t *out_len);
 
 #endif
