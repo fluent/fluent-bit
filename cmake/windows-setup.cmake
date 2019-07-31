@@ -37,6 +37,7 @@ set(FLB_IN_SYSTEMD             No)
 set(FLB_IN_DUMMY              Yes)
 set(FLB_IN_NETIF               No)
 set(FLB_IN_WINLOG             Yes)
+set(FLB_IN_COLLECTD            No)
 set(FLB_IN_STORAGE_BACKLOG     No)
 
 # OUTPUT plugins

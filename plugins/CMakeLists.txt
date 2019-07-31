@@ -103,6 +103,7 @@ REGISTER_IN_PLUGIN("in_dummy")
 REGISTER_IN_PLUGIN("in_head")
 REGISTER_IN_PLUGIN("in_health")
 REGISTER_IN_PLUGIN("in_http")
+REGISTER_IN_PLUGIN("in_collectd")
 REGISTER_IN_PLUGIN("in_storage_backlog")
 
 if (FLB_STREAM_PROCESSOR)
