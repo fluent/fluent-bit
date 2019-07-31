@@ -213,7 +213,6 @@ static int http_gelf(struct flb_out_http *ctx,
     flb_sds_t tmp;
     msgpack_unpacked result;
     size_t off = 0;
-    size_t prev_off = 0;
     size_t size = 0;
     msgpack_object root;
     msgpack_object map;
@@ -221,13 +220,18 @@ static int http_gelf(struct flb_out_http *ctx,
     struct flb_time tm;
     int ret;
 
-    msgpack_unpacked_init(&result);
+    size = bytes * 1.5;
 
+    /* Allocate buffer for our new payload */
+    s = flb_sds_create_size(size);
+    if (!s) {
+        return FLB_RETRY;
+    }
+
+    msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off) ==
            MSGPACK_UNPACK_SUCCESS) {
 
-        size = off - prev_off;
-        prev_off = off;
         if (result.data.type != MSGPACK_OBJECT_ARRAY) {
             continue;
         }
@@ -240,33 +244,35 @@ static int http_gelf(struct flb_out_http *ctx,
         flb_time_pop_from_msgpack(&tm, &result, &obj);
         map = root.via.array.ptr[1];
 
-        size = (size * 1.4);
-        s = flb_sds_create_size(size);
-        if (s == NULL) {
-            msgpack_unpacked_destroy(&result);
-            return FLB_RETRY;
-        }
-
         tmp = flb_msgpack_to_gelf(&s, &map, &tm, &(ctx->gelf_fields));
         if (tmp != NULL) {
             s = tmp;
-            ret = http_post(ctx, s, flb_sds_len(s), tag, tag_len);
-            if (ret != FLB_OK) {
-                msgpack_unpacked_destroy(&result);
-                flb_sds_destroy(s);
-                return ret;
-            }
         }
         else {
             flb_error("[out_http] error encoding to GELF");
+            flb_sds_destroy(s);
+            msgpack_unpacked_destroy(&result);
+            return FLB_ERROR;
         }
 
-        flb_sds_destroy(s);
+        /* Append new line */
+        tmp = flb_sds_cat(s, "\n", 1);
+        if (tmp != NULL) {
+            s = tmp;
+        }
+        else {
+            flb_error("[out_http] error concatenating records");
+            flb_sds_destroy(s);
+            msgpack_unpacked_destroy(&result);
+            return FLB_RETRY;
+        }
     }
 
+    ret = http_post(ctx, s, flb_sds_len(s), tag, tag_len);
+    flb_sds_destroy(s);
     msgpack_unpacked_destroy(&result);
 
-    return FLB_OK;
+    return ret;
 }
 
 static void cb_http_flush(const void *data, size_t bytes,
