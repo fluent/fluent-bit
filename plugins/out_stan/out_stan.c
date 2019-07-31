@@ -194,63 +194,31 @@ void cb_stan_flush(void *data, size_t bytes, char *tag, int tag_len, struct flb_
 {
     struct flb_out_stan_config *ctx = out_context;
     
-    /*flb_info("Flush pointers", ""); // TODO Debug - remove
-    flb_info("%s pointer: %p", "flb_out_stan_config", (void *) &ctx); // TODO Debug - remove
-    flb_info("%s pointer: %p", "flb_out_stan_config->stan", (void *) &ctx->stan); // TODO Debug - remove
-    flb_info("%s pointer: %p", "flb_out_stan_config->stan->connection", (void *) &ctx->stan->connection); // TODO Debug - remove
-    flb_info("%s pointer: %p", "flb_out_stan_config->stan->cluster", (void *) &ctx->stan->cluster); // TODO Debug - remove
-    flb_info("%s pointer: %p", "flb_out_stan_config->stan->client_id", (void *) &ctx->stan->client_id); // TODO Debug - remove
-    flb_info("%s pointer: %p", "flb_out_stan_config->stan->options", (void *) &ctx->stan->options); // TODO Debug - remove
-    */
-
-    if (ctx->stan->connection == NULL || ctx->stan->closed || ctx->stan->nats->closed) {
-        if (ctx->stan->connection == NULL) {
-            flb_error("[STAN] Error: Unable to publish because connection is undefined", "");
-            flb_info("[STAN] Initializing connection to '%s'", ctx->stan->nats->url); // TODO change to debug?
-            ctx->stan->nats->status = stanConnection_Connect(&ctx->stan->connection, ctx->stan->cluster, ctx->stan->client_id, ctx->stan->options);
-
-            if (ctx->stan->nats->status != NATS_OK) {
-                flb_error("[STAN] Error (%d) - Unable to connect: '%s'", ctx->stan->nats->status, natsStatus_GetText(ctx->stan->nats->status));
-                return FLB_OUTPUT_RETURN(FLB_RETRY);
-            }
+    if (ctx->stan->closed) {
+        flb_info("[STAN] Connecting to '%s'", ctx->stan->nats->url); // TODO change to debug?
+        ctx->stan->nats->status = stanConnection_Connect(&ctx->stan->connection, ctx->stan->cluster, ctx->stan->client_id, ctx->stan->options);
+        if (ctx->stan->nats->status != NATS_OK) {
+            flb_error("[STAN] Error (%d): Unable to connect: '%s'", ctx->stan->nats->status, natsStatus_GetText(ctx->stan->nats->status));
+            FLB_OUTPUT_RETURN(FLB_ERROR);
+        } else {
             ctx->stan->closed = false;
-        } else if (ctx->stan->closed) {
-            flb_error("[STAN] Error: Unable to publish because NATS Streaming connection is closed", "");
-            
-            /*natsConnection *nc = NULL;
-            stanConnection_GetNATSConnection(ctx->stan->connection, &nc);
-            natsConnection_Connect(&nc, nc->opts);
-            stanConnection_ReleaseNATSConnection(ctx->stan->connection);*/
-
-            ctx->stan->nats->status = stanConnection_Connect(&ctx->stan->connection, ctx->stan->cluster, ctx->stan->client_id, ctx->stan->options);
-            if (ctx->stan->nats->status == NATS_OK) {
-                ctx->stan->closed = false;
-            }
-            return FLB_OUTPUT_RETURN(FLB_RETRY);
-        } /*else if (ctx->stan->nats->closed) {
-            flb_error("[STAN] Error: Unable to publish because NATS connection is closed", "");
-        } */
-        /*flb_info("[STAN] Trying to connect for flush"); // TODO Change to debug?
-        if (stan_try_to_connect(&ctx) < 0) {
-            FLB_OUTPUT_RETURN(FLB_RETRY);
-        }*/
-        //FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
     }
 
-    flb_info("[STAN] NATS Streaming publish to '%s', length %d", ctx->stan->nats->subject, bytes); // TODO Change to debug
-    ctx->stan->nats->status = stanConnection_Publish(ctx->stan->connection, ctx->stan->nats->subject, data, bytes);
-    if (ctx->stan->nats->status != NATS_OK) {
-        flb_error("[STAN] NATS Streaming Error (%d) - Unable to publish message: '%s'", ctx->stan->nats->status, natsStatus_GetText(ctx->stan->nats->status));
-        //TODO just for testing...
-        ctx->stan->closed = true;
-        //ctx->stan->nats->closed  = true;
-
-        //stanConnection_ReleaseNATSConnection(ctx->stan->connection);
-
-        FLB_OUTPUT_RETURN(FLB_RETRY);
+    if (!ctx->stan->closed) {
+        flb_info("[STAN] trying to publishing to '%s', length %d", ctx->stan->nats->subject, bytes); // TODO Change to debug
+        ctx->stan->nats->status = stanConnection_Publish(ctx->stan->connection, ctx->stan->nats->subject, data, bytes);
+        if (ctx->stan->nats->status != NATS_OK) {
+            flb_error("[STAN] Error (%d) - Unable to publish message: '%s'", ctx->stan->nats->status, natsStatus_GetText(ctx->stan->nats->status));
+            FLB_OUTPUT_RETURN(FLB_ERROR);
+        } else {
+            flb_info("[STAN] published ok", ""); // TODO Change to debug
+            FLB_OUTPUT_RETURN(FLB_OK);
+        }
+    } else {
+        flb_error("[STAN] Error: Unable to publish because connection is closed", "");
+        FLB_OUTPUT_RETURN(FLB_ERROR);
     }
-
-    FLB_OUTPUT_RETURN(FLB_OK);
 }
 
 int cb_stan_exit(void *data, struct flb_config *config)
