@@ -261,6 +261,15 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
         ctx->gelf_fields.level_key = flb_sds_create(tmp);
     }
 
+    /* Compress (gzip) */
+    tmp = flb_output_get_property("compress", ins);
+    ctx->compress_gzip = FLB_FALSE;
+    if (tmp) {
+        if (strcasecmp(tmp, "gzip") == 0) {
+            ctx->compress_gzip = FLB_TRUE;
+        }
+    }
+
     ctx->u = upstream;
     ctx->uri = uri;
     ctx->host = ins->host.name;
