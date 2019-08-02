@@ -200,14 +200,14 @@ int flb_input_set_property(struct flb_input_instance *in,
 {
     int len;
     ssize_t limit;
-    char *tmp;
+    flb_sds_t tmp;
     struct flb_config_prop *prop;
 
     len = strlen(k);
     tmp = flb_env_var_translate(in->config->env, v);
     if (tmp) {
-        if (strlen(tmp) == 0) {
-            flb_free(tmp);
+        if (flb_sds_len(tmp) == 0) {
+            flb_sds_destroy(tmp);
             tmp = NULL;
         }
     }
@@ -215,18 +215,18 @@ int flb_input_set_property(struct flb_input_instance *in,
     /* Check if the key is a known/shared property */
     if (prop_key_check("tag", k, len) == 0 && tmp) {
         in->tag     = tmp;
-        in->tag_len = strlen(tmp);
+        in->tag_len = flb_sds_len(tmp);
     }
     else if (prop_key_check("routable", k, len) == 0 && tmp) {
         in->routable = flb_utils_bool(tmp);
-        flb_free(tmp);
+        flb_sds_destroy(tmp);
     }
     else if (prop_key_check("alias", k, len) == 0 && tmp) {
         in->alias = tmp;
     }
     else if (prop_key_check("mem_buf_limit", k, len) == 0 && tmp) {
         limit = flb_utils_size_to_bytes(tmp);
-        flb_free(tmp);
+        flb_sds_destroy(tmp);
         if (limit == -1) {
             return -1;
         }
@@ -241,19 +241,19 @@ int flb_input_set_property(struct flb_input_instance *in,
     else if (prop_key_check("port", k, len) == 0) {
         if (tmp) {
             in->host.port = atoi(tmp);
-            flb_free(tmp);
+            flb_sds_destroy(tmp);
         }
     }
     else if (prop_key_check("ipv6", k, len) == 0 && tmp) {
         in->host.ipv6 = flb_utils_bool(tmp);
-        flb_free(tmp);
+        flb_sds_destroy(tmp);
     }
     else {
         /* Append any remaining configuration key to prop list */
         prop = flb_malloc(sizeof(struct flb_config_prop));
         if (!prop) {
             if (tmp) {
-                flb_free(tmp);
+                flb_sds_destroy(tmp);
             }
             return -1;
         }
@@ -309,7 +309,7 @@ void flb_input_instance_free(struct flb_input_instance *in)
         prop = mk_list_entry(head_prop, struct flb_config_prop, _head);
 
         flb_free(prop->key);
-        flb_free(prop->val);
+        flb_sds_destroy(prop->val);
 
         mk_list_del(&prop->_head);
         flb_free(prop);
