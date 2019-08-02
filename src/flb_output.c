@@ -88,7 +88,7 @@ static void flb_output_free_properties(struct flb_output_instance *ins)
         prop = mk_list_entry(head, struct flb_config_prop, _head);
 
         flb_free(prop->key);
-        flb_free(prop->val);
+        flb_sds_destroy(prop->val);
 
         mk_list_del(&prop->_head);
         flb_free(prop);
@@ -352,14 +352,14 @@ int flb_output_set_property(struct flb_output_instance *out,
                             const char *k, const char *v)
 {
     int len;
-    char *tmp;
+    flb_sds_t tmp;
     struct flb_config_prop *prop;
 
     len = strlen(k);
     tmp = flb_env_var_translate(out->config->env, v);
     if (tmp) {
         if (strlen(tmp) == 0) {
-            flb_free(tmp);
+            flb_sds_destroy(tmp);
             tmp = NULL;
         }
     }
@@ -371,7 +371,7 @@ int flb_output_set_property(struct flb_output_instance *out,
 #ifdef FLB_HAVE_REGEX
     else if (prop_key_check("match_regex", k, len) == 0) {
         out->match_regex = flb_regex_create(tmp);
-        flb_free(tmp);
+        flb_sds_destroy(tmp);
     }
 #endif
     else if (prop_key_check("alias", k, len) == 0 && tmp) {
@@ -383,7 +383,7 @@ int flb_output_set_property(struct flb_output_instance *out,
     else if (prop_key_check("port", k, len) == 0) {
         if (tmp) {
             out->host.port = atoi(tmp);
-            flb_free(tmp);
+            flb_sds_destroy(tmp);
         }
         else {
             out->host.port = 0;
@@ -391,7 +391,7 @@ int flb_output_set_property(struct flb_output_instance *out,
     }
     else if (prop_key_check("ipv6", k, len) == 0 && tmp) {
         out->host.ipv6 = flb_utils_bool(tmp);
-        flb_free(tmp);
+        flb_sds_destroy(tmp);
     }
     else if (prop_key_check("retry_limit", k, len) == 0) {
         if (tmp) {
@@ -403,7 +403,7 @@ int flb_output_set_property(struct flb_output_instance *out,
             else {
                 out->retry_limit = atoi(tmp);
             }
-            flb_free(tmp);
+            flb_sds_destroy(tmp);
         }
         else {
             out->retry_limit = 0;
@@ -423,7 +423,7 @@ int flb_output_set_property(struct flb_output_instance *out,
         else {
             out->use_tls = FLB_FALSE;
         }
-        flb_free(tmp);
+        flb_sds_destroy(tmp);
     }
     else if (prop_key_check("tls.verify", k, len) == 0 && tmp) {
         if (strcasecmp(tmp, "true") == 0 || strcasecmp(tmp, "on") == 0) {
@@ -432,11 +432,11 @@ int flb_output_set_property(struct flb_output_instance *out,
         else {
             out->tls_verify = FLB_FALSE;
         }
-        flb_free(tmp);
+        flb_sds_destroy(tmp);
     }
     else if (prop_key_check("tls.debug", k, len) == 0 && tmp) {
         out->tls_debug = atoi(tmp);
-        flb_free(tmp);
+        flb_sds_destroy(tmp);
     }
     else if (prop_key_check("tls.ca_path", k, len) == 0) {
         out->tls_ca_path = tmp;
@@ -459,7 +459,7 @@ int flb_output_set_property(struct flb_output_instance *out,
         prop = flb_malloc(sizeof(struct flb_config_prop));
         if (!prop) {
             if (tmp) {
-                flb_free(tmp);
+                flb_sds_destroy(tmp);
             }
             return -1;
         }
