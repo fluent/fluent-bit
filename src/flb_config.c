@@ -40,6 +40,7 @@
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_http_server.h>
 #include <fluent-bit/flb_plugin.h>
+#include <fluent-bit/flb_utils.h>
 
 int flb_regex_init();
 
@@ -383,15 +384,6 @@ static int set_log_level(struct flb_config *config, const char *v_str)
     return 0;
 }
 
-static inline int atobool(const char *v)
-{
-    return  (strcasecmp("true", v) == 0 ||
-             strcasecmp("on", v) == 0 ||
-             strcasecmp("yes", v) == 0)
-        ? FLB_TRUE
-        : FLB_FALSE;
-}
-
 int flb_config_set_property(struct flb_config *config,
                             const char *k, const char *v)
 {
@@ -402,7 +394,7 @@ int flb_config_set_property(struct flb_config *config,
     char **s_val;
     size_t len = strnlen(k, 256);
     char *key = service_configs[0].key;
-    char *tmp = NULL;
+    flb_sds_t tmp = NULL;
 
     while (key != NULL) {
         if (prop_key_check(key, k,len) == 0) {
@@ -410,7 +402,7 @@ int flb_config_set_property(struct flb_config *config,
                 tmp = flb_env_var_translate(config->env, v);
                 if (tmp) {
                     ret = set_log_level(config, tmp);
-                    flb_free(tmp);
+                    flb_sds_destroy(tmp);
                     tmp = NULL;
                 }
                 else {
@@ -421,14 +413,14 @@ int flb_config_set_property(struct flb_config *config,
 #ifdef FLB_HAVE_PARSER
                 tmp = flb_env_var_translate(config->env, v);
                 ret = flb_parser_conf_file(tmp, config);
-                flb_free(tmp);
+                flb_sds_destroy(tmp);
                 tmp = NULL;
 #endif
             }
             else if (!strncasecmp(key, FLB_CONF_STR_PLUGINS_FILE, 32)) {
                 tmp = flb_env_var_translate(config->env, v);
                 ret = flb_plugin_load_config_file(tmp, config);
-                flb_free(tmp);
+                flb_sds_destroy(tmp);
                 tmp = NULL;
             }
             else {
@@ -438,17 +430,17 @@ int flb_config_set_property(struct flb_config *config,
                 case FLB_CONF_TYPE_INT:
                     i_val  = (int*)((char*)config + service_configs[i].offset);
                     *i_val = atoi(tmp);
-                    flb_free(tmp);
+                    flb_sds_destroy(tmp);
                     break;
                 case FLB_CONF_TYPE_DOUBLE:
                     d_val  = (double*)((char*)config + service_configs[i].offset);
                     *d_val = atof(tmp);
-                    flb_free(tmp);
+                    flb_sds_destroy(tmp);
                     break;
                 case FLB_CONF_TYPE_BOOL:
                     i_val = (int*)((char*)config+service_configs[i].offset);
-                    *i_val = atobool(tmp);
-                    flb_free(tmp);
+                    *i_val = flb_utils_bool(tmp);
+                    flb_sds_destroy(tmp);
                     break;
                 case FLB_CONF_TYPE_STR:
                     s_val = (char**)((char*)config+service_configs[i].offset);
@@ -464,7 +456,7 @@ int flb_config_set_property(struct flb_config *config,
 
             if (ret < 0) {
                 if (tmp) {
-                    flb_free(tmp);
+                    flb_sds_destroy(tmp);
                 }
                 return -1;
             }
