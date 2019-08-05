@@ -23,6 +23,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_utils.h>
@@ -94,8 +95,8 @@ static int setup(struct filter_modify_ctx *ctx,
 {
     struct mk_list *head;
     struct mk_list *split;
+    struct flb_kv *kv;
     struct flb_split_entry *sentry;
-    struct flb_config_prop *prop;
     struct modify_rule *rule = NULL;
     struct modify_condition *condition;
 
@@ -111,21 +112,21 @@ static int setup(struct filter_modify_ctx *ctx,
     //   - Switch list size
 
     mk_list_foreach(head, &f_ins->properties) {
-        prop = mk_list_entry(head, struct flb_config_prop, _head);
+        kv = mk_list_entry(head, struct flb_kv, _head);
 
-        split = flb_utils_split(prop->val, ' ', 3);
+        split = flb_utils_split(kv->val, ' ', 3);
         list_size = mk_list_size(split);
 
         // Conditions are,
         // CONDITION CONDITIONTYPE VAL_A VAL_B
 
         if (list_size == 0 || list_size > 3) {
-            flb_error("[filter_modify] Invalid config for %s", prop->key);
+            flb_error("[filter_modify] Invalid config for %s", kv->key);
             teardown(ctx);
             flb_utils_split_free(split);
             return -1;
         }
-        else if (strcasecmp(prop->key, "condition") == 0) {
+        else if (strcasecmp(kv->key, "condition") == 0) {
 
             //
             // Build a condition
@@ -143,8 +144,8 @@ static int setup(struct filter_modify_ctx *ctx,
 
             condition->a_is_regex = false;
             condition->b_is_regex = false;
-            condition->raw_k = flb_strndup(prop->key, strlen(prop->key));
-            condition->raw_v = flb_strndup(prop->val, strlen(prop->val));
+            condition->raw_k = flb_strndup(kv->key, flb_sds_len(kv->key));
+            condition->raw_v = flb_strndup(kv->val, flb_sds_len(kv->val));
 
             sentry =
                 mk_list_entry_first(split, struct flb_split_entry, _head);
@@ -196,7 +197,7 @@ static int setup(struct filter_modify_ctx *ctx,
             }
             else {
                 flb_error("[filter_modify] Invalid config for %s : %s",
-                          prop->key, prop->val);
+                          kv->key, kv->val);
                 teardown(ctx);
                 condition_free(condition);
                 flb_utils_split_free(split);
@@ -278,8 +279,8 @@ static int setup(struct filter_modify_ctx *ctx,
 
             rule->key_is_regex = false;
             rule->val_is_regex = false;
-            rule->raw_k = flb_strndup(prop->key, strlen(prop->key));
-            rule->raw_v = flb_strndup(prop->val, strlen(prop->val));
+            rule->raw_k = flb_strndup(kv->key, flb_sds_len(kv->key));
+            rule->raw_v = flb_strndup(kv->val, flb_sds_len(kv->val));
 
             sentry =
                 mk_list_entry_first(split, struct flb_split_entry, _head);
@@ -293,53 +294,53 @@ static int setup(struct filter_modify_ctx *ctx,
             flb_utils_split_free(split);
 
             if (list_size == 1) {
-                if (strcasecmp(prop->key, "remove") == 0) {
+                if (strcasecmp(kv->key, "remove") == 0) {
                     rule->ruletype = REMOVE;
                 }
-                else if (strcasecmp(prop->key, "remove_wildcard") == 0) {
+                else if (strcasecmp(kv->key, "remove_wildcard") == 0) {
                     rule->ruletype = REMOVE_WILDCARD;
                 }
-                else if (strcasecmp(prop->key, "remove_regex") == 0) {
+                else if (strcasecmp(kv->key, "remove_regex") == 0) {
                     rule->ruletype = REMOVE_REGEX;
                     rule->key_is_regex = true;
                 }
                 else {
                     flb_error
                         ("[filter_modify] Invalid operation %s : %s in configuration",
-                         prop->key, prop->val);
+                         kv->key, kv->val);
                     teardown(ctx);
                     flb_free(rule);
                     return -1;
                 }
             }
             else if (list_size == 2) {
-                if (strcasecmp(prop->key, "rename") == 0) {
+                if (strcasecmp(kv->key, "rename") == 0) {
                     rule->ruletype = RENAME;
                 }
-                else if (strcasecmp(prop->key, "hard_rename") == 0) {
+                else if (strcasecmp(kv->key, "hard_rename") == 0) {
                     rule->ruletype = HARD_RENAME;
                 }
-                else if (strcasecmp(prop->key, "add") == 0) {
+                else if (strcasecmp(kv->key, "add") == 0) {
                     rule->ruletype = ADD;
                 }
-                else if (strcasecmp(prop->key, "add_if_not_present") == 0) {
+                else if (strcasecmp(kv->key, "add_if_not_present") == 0) {
                     flb_info
                         ("[filter_modify] DEPRECATED : Operation 'add_if_not_present' has been replaced by 'add'.");
                     rule->ruletype = ADD;
                 }
-                else if (strcasecmp(prop->key, "set") == 0) {
+                else if (strcasecmp(kv->key, "set") == 0) {
                     rule->ruletype = SET;
                 }
-                else if (strcasecmp(prop->key, "copy") == 0) {
+                else if (strcasecmp(kv->key, "copy") == 0) {
                     rule->ruletype = COPY;
                 }
-                else if (strcasecmp(prop->key, "hard_copy") == 0) {
+                else if (strcasecmp(kv->key, "hard_copy") == 0) {
                     rule->ruletype = HARD_COPY;
                 }
                 else {
                     flb_error
                         ("[filter_modify] Invalid operation %s : %s in configuration",
-                         prop->key, prop->val);
+                         kv->key, kv->val);
                     teardown(ctx);
                     flb_free(rule);
                     return -1;
