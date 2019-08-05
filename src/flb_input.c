@@ -33,6 +33,7 @@
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_storage.h>
+#include <fluent-bit/flb_kv.h>
 
 #define protcmp(a, b)  strncasecmp(a, b, strlen(a))
 
@@ -152,9 +153,11 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         mk_list_init(&instance->routes);
         mk_list_init(&instance->tasks);
         mk_list_init(&instance->chunks);
-        mk_list_init(&instance->properties);
         mk_list_init(&instance->collectors);
         mk_list_init(&instance->threads);
+
+        /* Initialize properties list */
+        flb_kv_init(&instance->properties);
 
         /* Plugin use networking */
         if (plugin->flags & FLB_INPUT_NET) {
@@ -200,8 +203,8 @@ int flb_input_set_property(struct flb_input_instance *in,
 {
     int len;
     ssize_t limit;
-    flb_sds_t tmp;
-    struct flb_config_prop *prop;
+    flb_sds_t tmp = NULL;
+    struct flb_kv *kv;
 
     len = strlen(k);
     tmp = flb_env_var_translate(in->config->env, v);
@@ -249,18 +252,18 @@ int flb_input_set_property(struct flb_input_instance *in,
         flb_sds_destroy(tmp);
     }
     else {
-        /* Append any remaining configuration key to prop list */
-        prop = flb_malloc(sizeof(struct flb_config_prop));
-        if (!prop) {
+        /*
+         * Create the property, we don't pass the value since we will
+         * map it directly to avoid an extra memory allocation.
+         */
+        kv = flb_kv_item_create(&in->properties, (char *) k, NULL);
+        if (!k) {
             if (tmp) {
                 flb_sds_destroy(tmp);
             }
             return -1;
         }
-
-        prop->key = flb_strdup(k);
-        prop->val = tmp;
-        mk_list_add(&prop->_head, &in->properties);
+        kv->val = tmp;
     }
 
     return 0;
@@ -283,37 +286,26 @@ const char *flb_input_name(struct flb_input_instance *in)
 
 void flb_input_instance_free(struct flb_input_instance *in)
 {
-    struct mk_list *head_prop;
-    struct flb_config_prop *prop;
-    struct mk_list *tmp_prop;
-
     if (in->alias) {
-        flb_free(in->alias);
+        flb_sds_destroy(in->alias);
     }
 
     /* Remove URI context */
     if (in->host.uri) {
         flb_uri_destroy(in->host.uri);
     }
-    flb_free(in->host.name);
-    flb_free(in->host.address);
+
+    flb_sds_destroy(in->host.name);
+    flb_sds_destroy(in->host.address);
 
     /* release the tag if any */
-    flb_free(in->tag);
+    flb_sds_destroy(in->tag);
 
     /* Let the engine remove any pending task */
     flb_engine_destroy_tasks(&in->tasks);
 
     /* release properties */
-    mk_list_foreach_safe(head_prop, tmp_prop, &in->properties) {
-        prop = mk_list_entry(head_prop, struct flb_config_prop, _head);
-
-        flb_free(prop->key);
-        flb_sds_destroy(prop->val);
-
-        mk_list_del(&prop->_head);
-        flb_free(prop);
-    }
+    flb_kv_release(&in->properties);
 
     /* Remove metrics */
 #ifdef FLB_HAVE_METRICS
