@@ -292,19 +292,21 @@ add_subdirectory(${FLB_PATH_LIB_JSMN})
 if(FLB_OUT_NATS OR FLB_IN_NATS OR FLB_OUT_STAN)
   set(NATS_SRC "${CMAKE_CURRENT_SOURCE_DIR}/lib/nats.c")
 
-  if(FLB_OUT_STAN)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DNATS_HAS_STREAMING")
-    set(NATS_BUILD_STREAMING ON)
+  if (NOT FLB_JEMALLOC)
+    message("Enabling FLB_JEMALLOC since it is required for NATS TLS to function correctly")
+    set(FLB_JEMALLOC On)
   endif()
 
-  set(NATS_BUILD_WITH_TLS_CLIENT_METHOD ON)
+  if(FLB_OUT_STAN OR FLB_IN_STAN)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DNATS_HAS_STREAMING")
+  endif()
 
   set(NATS_BUILD_EXAMPLES OFF)
 
   include_directories(${NATS_SRC}/src)
   add_subdirectory(${NATS_SRC} EXCLUDE_FROM_ALL)
 
-  if(FLB_OUT_STAN OR FLB_IN_STAN)
+  if(NATS_BUILD_STREAMING)
     get_directory_property(
       LIB_OUT_PATH
       DIRECTORY ${NATS_SRC}

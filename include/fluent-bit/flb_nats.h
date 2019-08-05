@@ -16,10 +16,17 @@ struct flb_common_stan_config {
 
     stanConnection      *connection;
     stanConnOptions     *options;
+    stanSubOptions      *subscription_options;
     bool                closed;
 
-    const char          *cluster;   //Name of the cluster
-    const char          *client_id; //Name of the client (optional)
+    const char          *cluster;   // Name of the cluster
+    const char          *client_id; // Name of the client (optional)
+    const char          *queue_id;  // Name of the queue to subscribe too (optional)
+
+    const char          *discovery_prefix; // Prefix for NATS discovery
+    const char          *durable_name;
+
+    const char          *wait_time; // Timeout for connection attempts
 };
 
 struct flb_common_nats_config {
@@ -34,8 +41,8 @@ struct flb_common_nats_config {
     const char          *subject;       // Subject used for regular NATS and NATS Streaming
     const char          *url;           // URL used for authentication, hostname and port in regular NATS and NATS Streaming
 
-    bool                tls_enable;     // use secure (SSL/TLS) connection
-    bool                tls_unverified; // Skip TLS server certificate verification
+    const char          *tls_enable;     // use secure (SSL/TLS) connection
+    const char          *tls_unverified; // Skip TLS server certificate verification
     const char          *tls_ca_path;   // CA trusted certificates file
     const char          *tls_crt_path;  // Client certificate (PEM format only)
     const char          *tls_key_path;  // Client private key file (PEM format only)
@@ -87,18 +94,19 @@ static const char *getRandomStanClientID(size_t length) {
 }
 
 static void setProperty(const char **dest, const char *defaultValue){
-    if ((*dest == NULL || strlen(*dest) == 0) && strlen(defaultValue) > 0) {
+    if ((*dest == NULL || strlen(*dest) == 0)) {
         *dest = defaultValue; // Default property if it is undefined/empty
     }
-    flb_info("[STAN] Set property to '%s'", *dest); // TODO Change to debug
 }
 static void setByOutputProperty(struct flb_output_instance *ins, char *propertyName, const char **dest, const char *defaultValue){
     *dest = flb_output_get_property(propertyName, ins);
     setProperty(dest, defaultValue);
+    flb_info("[STAN] Setting output property '%s' to '%s'", propertyName, *dest); // TODO Change to debug
 }
 static void setByInputProperty(struct flb_input_instance *ins, char *propertyName, const char **dest, const char *defaultValue){
     *dest = flb_input_get_property(propertyName, ins);
     setProperty(dest, defaultValue);
+    flb_info("[STAN] Setting input property '%s' to '%s'", propertyName, *dest); // TODO Change to debug
 }
 
 

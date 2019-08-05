@@ -337,11 +337,7 @@ int flb_utils_pipe_byte_consume(flb_pipefd_t fd)
     return 0;
 }
 
-<<<<<<< HEAD
-int64_t flb_utils_size_to_bytes(char *size)
-=======
 int64_t flb_utils_size_to_bytes(const char *size)
->>>>>>> master
 {
     int i;
     int len;
