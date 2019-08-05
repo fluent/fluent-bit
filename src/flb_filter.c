@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_mp.h>
+#include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_pack.h>
 #include <chunkio/chunkio.h>
 
@@ -181,8 +182,8 @@ int flb_filter_set_property(struct flb_filter_instance *filter,
                             const char *k, const char *v)
 {
     int len;
-    char *tmp;
-    struct flb_config_prop *prop;
+    flb_sds_t tmp;
+    struct flb_kv *kv;
 
     len = strlen(k);
     tmp = flb_env_var_translate(filter->config->env, v);
@@ -194,6 +195,7 @@ int flb_filter_set_property(struct flb_filter_instance *filter,
 #ifdef FLB_HAVE_REGEX
     if (prop_key_check("match_regex", k, len) == 0) {
         filter->match_regex = flb_regex_create(tmp);
+        flb_sds_destroy(tmp);
     }
     else
 #endif
@@ -204,24 +206,27 @@ int flb_filter_set_property(struct flb_filter_instance *filter,
         filter->alias = tmp;
     }
     else {
-        /* Append any remaining configuration key to prop list */
-        prop = flb_malloc(sizeof(struct flb_config_prop));
-        if (!prop) {
-            flb_free(tmp);
+        /*
+         * Create the property, we don't pass the value since we will
+         * map it directly to avoid an extra memory allocation.
+         */
+        kv = flb_kv_item_create(&filter->properties, (char *) k, NULL);
+        if (!k) {
+            if (tmp) {
+                flb_sds_destroy(tmp);
+            }
             return -1;
         }
-
-        prop->key = flb_strdup(k);
-        prop->val = tmp;
-        mk_list_add(&prop->_head, &filter->properties);
+        kv->val = tmp;
     }
 
     return 0;
 }
 
-const char *flb_filter_get_property(const char *key, struct flb_filter_instance *i)
+const char *flb_filter_get_property(const char *key,
+                                    struct flb_filter_instance *i)
 {
-    return flb_config_prop_get(key, &i->properties);
+    return flb_kv_get_key_value(key, &i->properties);
 }
 
 /* Invoke exit call for the filter plugin */
@@ -229,9 +234,6 @@ void flb_filter_exit(struct flb_config *config)
 {
     struct mk_list *tmp;
     struct mk_list *head;
-    struct mk_list *tmp_prop;
-    struct mk_list *head_prop;
-    struct flb_config_prop *prop;
     struct flb_filter_instance *ins;
     struct flb_filter_plugin *p;
 
@@ -245,18 +247,10 @@ void flb_filter_exit(struct flb_config *config)
         }
 
         /* release properties */
-        mk_list_foreach_safe(head_prop, tmp_prop, &ins->properties) {
-            prop = mk_list_entry(head_prop, struct flb_config_prop, _head);
-
-            flb_free(prop->key);
-            flb_free(prop->val);
-
-            mk_list_del(&prop->_head);
-            flb_free(prop);
-        }
+        flb_kv_release(&ins->properties);
 
         if (ins->match != NULL) {
-            flb_free(ins->match);
+            flb_sds_destroy(ins->match);
         }
 
 #ifdef FLB_HAVE_REGEX
@@ -272,7 +266,7 @@ void flb_filter_exit(struct flb_config *config)
         }
 #endif
         if (ins->alias) {
-            flb_free(ins->alias);
+            flb_sds_destroy(ins->alias);
         }
 
         mk_list_del(&ins->_head);
@@ -351,9 +345,6 @@ void flb_filter_initialize_all(struct flb_config *config)
 #endif
     struct mk_list *tmp;
     struct mk_list *head;
-    struct mk_list *tmp_prop;
-    struct mk_list *head_prop;
-    struct flb_config_prop *prop;
     struct flb_filter_plugin *p;
     struct flb_filter_instance *in;
 
@@ -403,16 +394,10 @@ void flb_filter_initialize_all(struct flb_config *config)
                 flb_error("Failed initialize filter %s", in->name);
 
                 /* release properties */
-                mk_list_foreach_safe(head_prop, tmp_prop, &in->properties) {
-                    prop = mk_list_entry(head_prop, struct flb_config_prop, _head);
-                    flb_free(prop->key);
-                    flb_free(prop->val);
-                    mk_list_del(&prop->_head);
-                    flb_free(prop);
-                }
+                flb_kv_release(&in->properties);
 
                 if (in->match != NULL) {
-                    flb_free(in->match);
+                    flb_sds_destroy(in->match);
                 }
 
 #ifdef FLB_HAVE_REGEX
