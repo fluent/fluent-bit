@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_kv.h>
 
 #include "http.h"
 #include "http_conf.h"
@@ -42,7 +43,7 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
     struct mk_list *head;
     struct mk_list *split = NULL;
     struct flb_split_entry *sentry;
-    struct flb_config_prop *prop;
+    struct flb_kv *kv;
     struct out_http_header *header;
 
     /* Allocate plugin context */
@@ -280,14 +281,14 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
     mk_list_init(&ctx->headers);
 
     mk_list_foreach(head, &ins->properties) {
-        prop = mk_list_entry(head, struct flb_config_prop, _head);
-        split = flb_utils_split(prop->val, ' ', 1);
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        split = flb_utils_split(kv->val, ' ', 1);
 
         if (!split) {
             continue;
         }
 
-        if (strcasecmp(prop->key, "header") == 0) {
+        if (strcasecmp(kv->key, "header") == 0) {
             header = flb_malloc(sizeof(struct out_http_header));
             if (!header) {
                 flb_errno();
@@ -299,7 +300,7 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
             sentry = mk_list_entry_first(split, struct flb_split_entry,
                                          _head);
 
-            len = strlen(prop->val);
+            len = flb_sds_len(kv->val);
             if (sentry->last_pos == len) {
                 /* Missing value */
                 flb_error("[out_http] missing header value");
@@ -317,7 +318,7 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
              * Header Value: compose using the offset value from
              * the first split entry.
              */
-            header->val = flb_strndup(prop->val + sentry->last_pos,
+            header->val = flb_strndup(kv->val + sentry->last_pos,
                                       len - sentry->last_pos);
             header->val_len = strlen(header->val);
             mk_list_add(&header->_head, &ctx->headers);
