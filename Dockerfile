@@ -16,7 +16,6 @@ RUN apt-get update && \
       wget \
       unzip \
       libssl1.0-dev \
-      libasl-dev \
       libsasl2-dev \
       pkg-config \
       libsystemd-dev \
