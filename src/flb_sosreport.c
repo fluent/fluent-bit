@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_version.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_kv.h>
 
 #ifndef _MSC_VER
 #include <sys/utsname.h>
@@ -99,11 +100,11 @@ static void print_host(struct flb_net_host *host)
 static void print_properties(struct mk_list *props)
 {
     struct mk_list *head;
-    struct flb_config_prop *p;
+    struct flb_kv *kv;
 
     mk_list_foreach(head, props) {
-        p = mk_list_entry(head, struct flb_config_prop, _head);
-        print_kv(p->key, p->val);
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        print_kv(kv->key, kv->val);
     }
 }
 
