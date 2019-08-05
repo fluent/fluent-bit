@@ -4,6 +4,7 @@ add_definitions(-DFLB_CORE=1)
 set(src
   ${src}
   flb_mp.c
+  flb_kv.c
   flb_api.c
   flb_lib.c
   flb_log.c
