@@ -256,10 +256,10 @@ flb_sds_t flb_env_var_translate(struct flb_env *env, const char *value)
          * string.
          */
         if (have_var == FLB_TRUE) {
-            return flb_sds_create_len("", 0);
+            return flb_sds_copy(buf, "", 0);
         }
         else {
-            return flb_sds_create_len(value, len);
+            return flb_sds_copy(buf, value, len);
         }
     }
 
