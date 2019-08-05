@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_config.h>
@@ -332,17 +333,7 @@ void flb_config_exit(struct flb_config *config)
 
 const char *flb_config_prop_get(const char *key, struct mk_list *list)
 {
-    struct mk_list *head;
-    struct flb_config_prop *p;
-
-    mk_list_foreach(head, list) {
-        p = mk_list_entry(head, struct flb_config_prop, _head);
-        if (strcasecmp(key, p->key) == 0) {
-            return p->val;
-        }
-    }
-
-    return NULL;
+    return flb_kv_get_key_value(key, list);
 }
 
 static inline int prop_key_check(const char *key, const char *kv, int k_len)
