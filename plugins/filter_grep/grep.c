@@ -22,6 +22,7 @@
 #include <sys/types.h>
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_filter.h>
@@ -53,12 +54,12 @@ static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
     struct mk_list *head;
     struct mk_list *split;
     struct flb_split_entry *sentry;
-    struct flb_config_prop *prop;
+    struct flb_kv *kv;
     struct grep_rule *rule;
 
     /* Iterate all filter properties */
     mk_list_foreach(head, &f_ins->properties) {
-        prop = mk_list_entry(head, struct flb_config_prop, _head);
+        kv = mk_list_entry(head, struct flb_kv, _head);
 
         /* Create a new rule */
         rule = flb_malloc(sizeof(struct grep_rule));
@@ -68,10 +69,10 @@ static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
         }
 
         /* Get the type */
-        if (strcasecmp(prop->key, "regex") == 0) {
+        if (strcasecmp(kv->key, "regex") == 0) {
             rule->type = GREP_REGEX;
         }
-        else if (strcasecmp(prop->key, "exclude") == 0) {
+        else if (strcasecmp(kv->key, "exclude") == 0) {
             rule->type = GREP_EXCLUDE;
         }
         else {
@@ -81,7 +82,7 @@ static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
         }
 
         /* As a value we expect a pair of field name and a regular expression */
-        split = flb_utils_split(prop->val, ' ', 1);
+        split = flb_utils_split(kv->val, ' ', 1);
         if (mk_list_size(split) != 2) {
             flb_error("[filter_grep] invalid regex, expected field and regular expression");
             delete_rules(ctx);
