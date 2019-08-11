@@ -64,6 +64,7 @@ option(FLB_SQLDB              "Enable SQL embedded DB"        No)
 option(FLB_HTTP_SERVER        "Enable HTTP Server"            No)
 option(FLB_BACKTRACE          "Enable stacktrace support"    Yes)
 option(FLB_LUAJIT             "Enable Lua Scripting support" Yes)
+option(FLB_RECORD_ACCESSOR    "Enable record accessor"       Yes)
 option(FLB_SYSTEM_STRPTIME    "Use strptime in system libc"  Yes)
 option(FLB_STATIC_CONF        "Build binary using static configuration")
 option(FLB_STREAM_PROCESSOR   "Enable Stream Processor"      Yes)
@@ -223,6 +224,16 @@ if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
   endif()
 endif()
 
+
+# Optional features like Stream Processor and Record Accessor needs Flex
+# and Bison to generate it parsers.
+find_package(FLEX)
+find_package(BISON)
+
+if(FLEX_FOUND AND BISON_FOUND)
+  set(FLB_FLEX_BISON  1)
+endif()
+
 if(FLB_COVERAGE)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 --coverage -fprofile-arcs -ftest-coverage")
   set(CMAKE_BUILD_TYPE "Debug")
@@ -243,7 +254,7 @@ endif()
 
 if(FLB_PARSER)
   FLB_DEFINITION(FLB_HAVE_PARSER)
-  message("Enabling FLB_REGEX since FLB_PARSER requires")
+  message(STATUS "Enabling FLB_REGEX since FLB_PARSER requires")
   set(FLB_REGEX On)
 endif()
 
@@ -252,8 +263,31 @@ if(SANITIZE_ADDRESS)
   FLB_DEFINITION(FLB_HAVE_SANITIZE_ADDRESS)
 endif()
 
+# Record Accessor
+if(FLB_RECORD_ACCESSOR)
+  if(NOT FLB_FLEX_BISON)
+    message(FATAL_ERROR
+      "Record Accessor feature requires Flex and Bison in your system.\n"
+      "This is a build time dependency, you can either install the "
+      "dependencies or disable the feature setting the CMake option "
+      "-DFLB_RECORD_ACCESSOR=Off ."
+      )
+  endif()
+  FLB_DEFINITION(FLB_HAVE_RECORD_ACCESSOR)
+endif()
+
 # Stream Processor
 if(FLB_STREAM_PROCESSOR)
+  if(NOT FLB_FLEX_BISON)
+    message(FATAL_ERROR
+      "Stream Processor feature requires Flex and Bison in your system.\n"
+      "This is a build time dependency, you can either install the "
+      "dependencies or disable the feature setting the CMake option "
+      "-DFLB_STREAM_PROCESSOR=Off ."
+      )
+  endif()
+
+  # Enable Stream Processor internal helper plugin
   set(FLB_IN_STREAM_PROCESSOR On)
   FLB_DEFINITION(FLB_HAVE_STREAM_PROCESSOR)
 endif()
@@ -623,8 +657,6 @@ endif()
 
 if(FLB_SYSTEM_WINDOWS)
   set(CPACK_GENERATOR "NSIS" "ZIP")
-else()
-  set(CPACK_GENERATOR "RPM")
 endif()
 
 set(CPACK_PACKAGE_VERSION ${FLB_VERSION_STR})
@@ -635,27 +667,35 @@ set(CPACK_PACKAGE_VENDOR "Treasure Data")
 set(CPACK_PACKAGING_INSTALL_PREFIX "/opt/td-agent-bit")
 set(CPACK_RESOURCE_FILE_LICENSE "${PROJECT_SOURCE_DIR}/LICENSE")
 set(CPACK_PACKAGING_INSTALL_PREFIX "/")
+set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CPACK_PACKAGE_RELEASE}.${CMAKE_SYSTEM_PROCESSOR}")
 
-if(CPACK_GENERATOR MATCHES "RPM")
-  set(CPACK_RPM_PACKAGE_GROUP "System Environment/Daemons")
-  set(CPACK_RPM_PACKAGE_LICENSE "Apache v2.0")
-  set(CPACK_RPM_PACKAGE_RELEASE ${CPACK_PACKAGE_RELEASE})
-  set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CPACK_PACKAGE_RELEASE}.${CMAKE_SYSTEM_PROCESSOR}")
-  set(CPACK_PACKAGE_DESCRIPTION_FILE "${PROJECT_SOURCE_DIR}/cpack/description")
-  set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Fast data collector for Linux")
-  set(CPACK_RPM_SPEC_MORE_DEFINE "%define ignore \#")
-  set(CPACK_RPM_USER_FILELIST
-      "%ignore /lib"
-      "%ignore /lib/systemd"
-      "%ignore /lib/systemd/system"
-      "%ignore /lib64"
-      "%ignore /lib64/pkgconfig"
-      "%ignore /usr/local"
-      "%ignore /usr/local/bin"
-      "%ignore /opt"
-      "%ignore /etc")
-endif()
 
+# RPM Generation information
+set(CPACK_RPM_PACKAGE_GROUP "System Environment/Daemons")
+set(CPACK_RPM_PACKAGE_LICENSE "Apache v2.0")
+set(CPACK_RPM_PACKAGE_RELEASE ${CPACK_PACKAGE_RELEASE})
+set(CPACK_PACKAGE_DESCRIPTION_FILE "${PROJECT_SOURCE_DIR}/cpack/description")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Fast data collector for Linux")
+set(CPACK_RPM_SPEC_MORE_DEFINE "%define ignore \#")
+set(CPACK_RPM_USER_FILELIST
+  "%config(noreplace) /etc/${FLB_OUT_NAME}/${FLB_OUT_NAME}.conf"
+  "%config(noreplace) /etc/${FLB_OUT_NAME}/parsers.conf"
+  "%config(noreplace) /etc/${FLB_OUT_NAME}/plugins.conf"
+  "%ignore /lib"
+  "%ignore /lib/systemd"
+  "%ignore /lib/systemd/system"
+  "%ignore /lib64"
+  "%ignore /lib64/pkgconfig"
+  "%ignore /usr/local"
+  "%ignore /usr/local/bin"
+  "%ignore /opt"
+  "%ignore /etc")
+set(CPACK_RPM_PACKAGE_AUTOREQ ON)
+
+# CPack: DEB
+set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+
+# CPack: Windows System
 if(CPACK_GENERATOR MATCHES "NSIS")
   set(CPACK_MONOLITHIC_INSTALL 1)
   set(CPACK_PACKAGE_INSTALL_DIRECTORY "td-agent-bit")
