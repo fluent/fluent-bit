@@ -23,10 +23,11 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_sds.h>
+#include <monkey/mk_core.h>
 
 struct flb_slist_entry {
-  flb_sds_t str;
-  struct mk_list _head;
+    flb_sds_t str;
+    struct mk_list _head;
 };
 
 int flb_slist_create(struct mk_list *list);
