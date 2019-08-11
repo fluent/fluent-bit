@@ -2,11 +2,11 @@
 
 if(NOT WITHOUT_HEADERS)
   install(FILES "fluent-bit.h"
-    DESTINATION include/
+    DESTINATION ${CMAKE_INSTALL_PREFIX}/include/
     PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
 
   file(GLOB headers "fluent-bit/*.h")
   install(FILES ${headers}
-    DESTINATION include/fluent-bit
+    DESTINATION ${CMAKE_INSTALL_PREFIX}/include/fluent-bit
     PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
 endif()
