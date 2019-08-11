@@ -3,9 +3,6 @@ project(stream-processor)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
-find_package(FLEX REQUIRED)
-find_package(BISON REQUIRED)
-
 add_subdirectory(parser)
 
 set(src
