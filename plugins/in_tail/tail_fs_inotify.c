@@ -40,6 +40,7 @@ static int tail_fs_event(struct flb_input_instance *i_ins,
                          struct flb_config *config, void *in_context)
 {
     int ret;
+    int events_counter;
     off_t offset;
     struct mk_list *head;
     struct mk_list *tmp;
@@ -51,13 +52,17 @@ static int tail_fs_event(struct flb_input_instance *i_ins,
     /* Read the event */
     ret  = read(ctx->fd_notify, &ev, sizeof(struct inotify_event));
     if (ret < 1) {
+        flb_info("[in_tail] error read(2) %d", ret);
         return -1;
     }
 
     /* Lookup watched file */
+    events_counter = 0;
     mk_list_foreach_safe(head, tmp, &ctx->files_event) {
+        ++events_counter;
         file = mk_list_entry(head, struct flb_tail_file, _head);
         if (file->watch_fd != ev.wd) {
+            flb_debug("[in_tail] skipping %s, watch_fd %d, inode %ud, rotated at %lld", file->name, file->watch_fd, file->inode, (long long)file->rotated);
             file = NULL;
             continue;
         }
@@ -65,8 +70,11 @@ static int tail_fs_event(struct flb_input_instance *i_ins,
     }
 
     if (!file) {
+        flb_info("[in_tail] no file found in %d events", events_counter);
         return -1;
     }
+
+    flb_debug("[in_tail] file %s, %ud found after %d events", file->name, file->inode, events_counter);
 
     /* Check if the file was rotated */
     if (ev.mask & IN_MOVE_SELF) {
@@ -77,21 +85,21 @@ static int tail_fs_event(struct flb_input_instance *i_ins,
     if (ev.mask & IN_ATTRIB) {
         ret = fstat(file->fd, &st);
         if (ret == -1) {
-            flb_debug("[in_tail] error stat(2) %s, removing", file->name);
+            flb_error("[in_tail] error stat(2) %s, %d removing", file->name, ret);
             flb_tail_file_remove(file);
             return 0;
         }
 
         /* Check if the file have been deleted */
         if (st.st_nlink == 0) {
-            flb_debug("[in_tail] removed %s", file->name);
+            flb_info("[in_tail] removed %s", file->name);
             flb_tail_file_remove(file);
             return 0;
         }
     }
 
     if (ev.mask & IN_IGNORED) {
-        flb_debug("[in_tail] removed %s", file->name);
+        flb_info("[in_tail] removed %s", file->name);
         flb_tail_file_remove(file);
         return 0;
     }
@@ -115,7 +123,7 @@ static int tail_fs_event(struct flb_input_instance *i_ins,
                 return -1;
             }
 
-            flb_debug("[in_tail] truncated %s", file->name);
+            flb_info("[in_tail] truncated %s", file->name);
             file->offset = offset;
             file->buf_len = 0;
 
@@ -169,7 +177,7 @@ int flb_tail_fs_init(struct flb_input_instance *in,
         flb_errno();
         return -1;
     }
-    flb_debug("[in_tail] inotify watch fd=%i", fd);
+    flb_info("[in_tail] inotify watch fd=%i", fd);
     ctx->fd_notify = fd;
 
     /* This backend use Fluent Bit event-loop to trigger notifications */

@@ -745,7 +745,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     flb_metrics_sum(FLB_TAIL_METRIC_F_OPENED, 1, ctx->i_ins->metrics);
 #endif
 
-    flb_debug("[in_tail] add to scan queue %s, offset=%lu", path, file->offset);
+    flb_info("[in_tail] add to scan queue %s, offset=%lu", path, file->offset);
     return 0;
 }
 
@@ -883,7 +883,7 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
                       file->name, bytes, ret);
         }
         else {
-            flb_debug("[in_tail] file=%s ERROR", file->name);
+            flb_error("[in_tail] file=%s, %d ERROR", file->name, ret);
             return FLB_TAIL_ERROR;
         }
 
@@ -908,7 +908,7 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
     else {
         /* error */
         flb_errno();
-        flb_error("[in_tail] error reading %s", file->name);
+        flb_error("[in_tail] error reading %s, %d", file->name, errno);
         return FLB_TAIL_ERROR;
     }
 
@@ -939,7 +939,7 @@ int flb_tail_file_to_event(struct flb_tail_file *file)
     /* Check if this file have been rotated */
     name = flb_tail_file_name(file);
     if (!name) {
-        flb_debug("[in_tail] cannot detect if file was rotated: %s",
+        flb_info("[in_tail] cannot detect if file was rotated: %s",
                   file->name);
         return -1;
     }
@@ -1086,6 +1086,7 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
     struct stat st;
     struct flb_tail_config *ctx = file->config;
 
+    flb_info("[in_tail] file rotated %s, %ud", file->name, file->inode);
     /* Get stats from the original file name (if a new one exists) */
     ret = stat(file->name, &st);
     if (ret == 0) {
@@ -1103,10 +1104,11 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
     /* Get the new file name */
     name = flb_tail_file_name(file);
     if (!name) {
+        flb_info("[in_tail] cannot get new file name for %s", file->name);
         return -1;
     }
 
-    flb_debug("[in_tail] rotated: %s -> %s",
+    flb_info("[in_tail] rotated: %s -> %s",
               file->name, name);
 
     /* Rotate the file in the database */
@@ -1152,7 +1154,7 @@ int flb_tail_file_rotated_purge(struct flb_input_instance *i_ins,
     mk_list_foreach_safe(head, tmp, &ctx->files_rotated) {
         file = mk_list_entry(head, struct flb_tail_file, _rotate_head);
         if ((file->rotated + ctx->rotate_wait) <= now) {
-            flb_debug("[in_tail] purge rotated file %s", file->name);
+            flb_info("[in_tail] purge rotated file %s", file->name);
             if (file->pending_bytes > 0 && flb_input_buf_paused(i_ins)) {
                 flb_warn("[in_tail] purged rotated file while data ingestion is paused, consider increasing rotate_wait");
             }
