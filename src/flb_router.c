@@ -26,7 +26,10 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_router.h>
+
+#ifdef FLB_HAVE_REGEX
 #include <onigmo.h>
+#endif
 
 #include <string.h>
 
