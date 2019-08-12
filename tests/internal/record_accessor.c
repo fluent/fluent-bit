@@ -119,13 +119,13 @@ void cb_translate()
     fmt =                                                               \
         "START k1 => \"$k1\", k2 => $k2 (bool), k3 => $k3 (bool), "    \
         "k4 => $k4 (float), k5 => $k5 (int),"                           \
-        "k6 => $k6['s1']['s2'] (nested), k8 => $k8(nothing), ${FLB_ENV} END";
+        "k6 => $k6['s1']['s2'] (nested), k8 => $k8 (nothing), ${FLB_ENV} END";
 
     fmt_out = \
         "START k1 => \"string\", k2 => true (bool), "                   \
         "k3 => false (bool), k4 => 0.123457 (float), "                  \
-        "k5 => 123456789 (int),k6 => ['s1']['s2'] (nested), "           \
-        "k8 => (nothing), translated END";
+        "k5 => 123456789 (int),k6 => nested (nested), "           \
+        "k8 =>  (nothing), translated END";
 
     ra = flb_ra_create(fmt);
     TEST_CHECK(ra != NULL);
@@ -147,6 +147,7 @@ void cb_translate()
 
     TEST_CHECK(flb_sds_len(str) == strlen(fmt_out));
     TEST_CHECK(memcmp(str, fmt_out, strlen(fmt_out)) == 0);
+    printf("== input ==\n%s\n== output ==\n%s\n", str, fmt_out);
 
     flb_sds_destroy(str);
     flb_ra_destroy(ra);
