@@ -93,7 +93,7 @@ static int ra_parse_buffer(struct flb_record_accessor *ra, flb_sds_t buf)
         }
 
         for (end = i + 1; end < len; end++) {
-            if (buf[end] == ' ' || !isalnum(buf[end])) {
+            if (buf[end] == ' ' || buf[end] == ',' || buf[end] == '"') {
                 break;
             }
         }
@@ -228,7 +228,7 @@ void flb_ra_dump(struct flb_record_accessor *ra)
     }
 }
 
-flb_sds_t ra_translate_string(struct flb_ra_parser *rp, flb_sds_t buf)
+static flb_sds_t ra_translate_string(struct flb_ra_parser *rp, flb_sds_t buf)
 {
     flb_sds_t tmp;
 
@@ -236,8 +236,8 @@ flb_sds_t ra_translate_string(struct flb_ra_parser *rp, flb_sds_t buf)
     return tmp;
 }
 
-flb_sds_t ra_translate_keymap(struct flb_ra_parser *rp, flb_sds_t buf,
-                              msgpack_object map)
+static flb_sds_t ra_translate_keymap(struct flb_ra_parser *rp, flb_sds_t buf,
+                                     msgpack_object map, int *found)
 {
     char str[32];
     int len;
@@ -247,7 +247,11 @@ flb_sds_t ra_translate_keymap(struct flb_ra_parser *rp, flb_sds_t buf,
     /* Lookup key or subkey value */
     v = flb_ra_key_to_value(rp->key->name, map, rp->key->subkeys);
     if (!v) {
+        *found = FLB_FALSE;
         return buf;
+    }
+    else {
+        *found = FLB_TRUE;
     }
 
     /* Based on data type, convert to it string representation */
@@ -289,6 +293,7 @@ flb_sds_t flb_ra_translate(struct flb_record_accessor *ra,
                            char *tag, int tag_len,
                            msgpack_object map)
 {
+    int found;
     flb_sds_t tmp;
     flb_sds_t buf;
     struct mk_list *head;
@@ -306,7 +311,7 @@ flb_sds_t flb_ra_translate(struct flb_record_accessor *ra,
             tmp = ra_translate_string(rp, buf);
         }
         else if (rp->type == FLB_RA_PARSER_KEYMAP) {
-            tmp = ra_translate_keymap(rp, buf, map);
+            tmp = ra_translate_keymap(rp, buf, map, &found);
         }
         //else if (rp->type == FLB_RA_PARSER_FUNC) {
             //tmp = ra_translate_func(rp, buf, tag, tag_len);
@@ -320,7 +325,6 @@ flb_sds_t flb_ra_translate(struct flb_record_accessor *ra,
         if (tmp != buf) {
             buf = tmp;
         }
-
     }
 
     return buf;
