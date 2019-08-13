@@ -131,7 +131,7 @@ static int datadog_format(const void *data, size_t bytes,
         if (ctx->include_tag_key == FLB_TRUE) {
             dd_msgpack_pack_key_value_str(&mp_pck,
                                           ctx->tag_key, flb_sds_len(ctx->tag_key),
-                                          tag, sizeof(tag_len)-1);
+                                          tag, tag_len);
         }
 
         /* dd_source */
@@ -208,6 +208,7 @@ static void cb_datadog_flush(const void *data, size_t bytes,
     /* Convert input data into a Datadog JSON payload */
     ret = datadog_format(data, bytes, tag, tag_len, &payload_buf, &payload_size, ctx);
     if (ret == -1) {
+        flb_upstream_conn_release(upstream_conn);
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 
@@ -216,6 +217,10 @@ static void cb_datadog_flush(const void *data, size_t bytes,
                              payload_buf, payload_size,
                              ctx->host, ctx->port,
                              NULL, 0);
+    if (!client) {
+        flb_upstream_conn_release(upstream_conn);
+        FLB_OUTPUT_RETURN(FLB_ERROR);
+    }
 
     flb_http_add_header(client, "User-Agent", 10, "Fluent-Bit", 10);
     flb_http_add_header(client,
