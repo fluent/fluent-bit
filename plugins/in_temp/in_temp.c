@@ -204,8 +204,8 @@ int in_temp_collect(struct flb_input_instance *i_ins,
         msgpack_pack_str(&mp_pck, strlen(info[i].name));
         msgpack_pack_str_body(&mp_pck, info[i].name, strlen(info[i].name));
 
-        msgpack_pack_str(&mp_pck, 5);
-        msgpack_pack_str_body(&mp_pck, "type", 5);
+        msgpack_pack_str(&mp_pck, 4);
+        msgpack_pack_str_body(&mp_pck, "type", 4);
         msgpack_pack_str(&mp_pck, strlen(info[i].type));
         msgpack_pack_str_body(&mp_pck, info[i].type, strlen(info[i].type));
 
