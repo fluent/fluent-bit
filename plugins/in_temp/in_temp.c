@@ -44,7 +44,7 @@ struct temp_info
     double temp;                   /* from /sys/class/thermal/thermal_zoneX/temp */
 };
 
-/* Retrieve temperature(s) from the system (through /sys/class/thermal) */
+/* Retrieve temperature(s) from the system (via /sys/class/thermal) */
 static inline int proc_temperature(struct temp_info *info, int n)
 {
     int i, j;
@@ -80,7 +80,7 @@ static inline int proc_temperature(struct temp_info *info, int n)
             f = fopen(filename, "r");
             if (fgets(info[i].type, IN_TEMP_TYPE_LEN, f) && strlen(info[i].type)>1)
             {
-                 /* Remove trailing \n from fgets */
+                 /* Remove trailing \n */
                 for (j=0; info[i].type[j]; ++j)
                 {
                     if (info[i].type[j]=='\n')
@@ -89,7 +89,6 @@ static inline int proc_temperature(struct temp_info *info, int n)
                         break;
                     }
                 }
-
                 fclose(f);
 
                 snprintf(filename, FILENAME_MAX, "/sys/class/thermal/%s/temp", e->d_name);
@@ -159,7 +158,7 @@ static int in_temp_init(struct flb_input_instance *in,
                                        ctx->interval_nsec,
                                        config);
     if (ret == -1) {
-        flb_error("[in_cpu] Could not set collector for temperature input plugin");
+        flb_error("[in_temp] Could not set collector for temperature input plugin");
         return -1;
     }
     ctx->coll_fd = ret;
@@ -167,7 +166,7 @@ static int in_temp_init(struct flb_input_instance *in,
     return 0;
 }
 
-#define IN_TEMP_MAX 32
+#define IN_TEMP_N_MAX 32
 
 /* Callback to gather temperature */
 int in_temp_collect(struct flb_input_instance *i_ins,
@@ -178,10 +177,10 @@ int in_temp_collect(struct flb_input_instance *i_ins,
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
     (void) config;
-    struct temp_info info[IN_TEMP_MAX];
+    struct temp_info info[IN_TEMP_N_MAX];
 
     /* Get the current temperature(s) */
-    n = proc_temperature(info, IN_TEMP_MAX);
+    n = proc_temperature(info, IN_TEMP_N_MAX);
     if (!n) {
         return 0;
     }
