@@ -113,7 +113,7 @@ void cb_translate()
     }
 
     /* Set environment variables */
-    setenv("FLB_ENV", "translated", 1);
+    putenv("FLB_ENV=translated");
 
     /* Formatter */
     fmt =                                                               \
