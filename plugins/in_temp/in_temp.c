@@ -35,13 +35,14 @@
 
 struct flb_input_plugin in_temp_plugin;
 
+#define IN_TEMP_FILENAME_LEN   1024
 #define IN_TEMP_TYPE_LEN       256
 
 struct temp_info
 {
-    char   name[FILENAME_MAX];     /*                     .../thermal_zoneX/...  */
-    char   type[IN_TEMP_TYPE_LEN]; /* from /sys/class/thermal/thermal_zoneX/type */
-    double temp;                   /* from /sys/class/thermal/thermal_zoneX/temp */
+    char   name[IN_TEMP_FILENAME_LEN]; /*                     .../thermal_zoneX/...  */
+    char   type[IN_TEMP_TYPE_LEN];     /* from /sys/class/thermal/thermal_zoneX/type */
+    double temp;                       /* from /sys/class/thermal/thermal_zoneX/temp */
 };
 
 /* Retrieve temperature(s) from the system (via /sys/class/thermal) */
@@ -50,7 +51,7 @@ static inline int proc_temperature(struct temp_info *info, int n)
     int i, j;
     DIR *d;
     struct dirent *e;
-    char filename[FILENAME_MAX];
+    char filename[IN_TEMP_FILENAME_LEN];
     FILE *f;
     int temp;
 
@@ -60,41 +61,38 @@ static inline int proc_temperature(struct temp_info *info, int n)
     }
 
     i = 0;
-    while (i<n && (e = readdir(d)))
-    {
-        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, ".."))
-        {
+    while (i<n && (e = readdir(d))) {
+        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) {
             continue;
         }
 
-        if (e->d_type==DT_REG)
-        {
+        if (e->d_type==DT_REG) {
             continue;
         }
 
-        if (!strncmp(e->d_name, "thermal_zone", 12))
-        {
-            strncpy(info[i].name, e->d_name, FILENAME_MAX);
-
-            snprintf(filename, FILENAME_MAX, "/sys/class/thermal/%s/type", e->d_name);
-            f = fopen(filename, "r");
-            if (fgets(info[i].type, IN_TEMP_TYPE_LEN, f) && strlen(info[i].type)>1)
+        if (!strncmp(e->d_name, "thermal_zone", 12)) {
+            strncpy(info[i].name, e->d_name, IN_TEMP_FILENAME_LEN);
+            if (snprintf(filename, IN_TEMP_FILENAME_LEN, "/sys/class/thermal/%s/type", e->d_name)<=0)
             {
+                continue;
+            }
+
+            f = fopen(filename, "r");
+            if (f && fgets(info[i].type, IN_TEMP_TYPE_LEN, f) && strlen(info[i].type)>1) {
                  /* Remove trailing \n */
-                for (j=0; info[i].type[j]; ++j)
-                {
-                    if (info[i].type[j]=='\n')
-                    {
+                for (j=0; info[i].type[j]; ++j) {
+                    if (info[i].type[j]=='\n') {
                         info[i].type[j] = 0;
                         break;
                     }
                 }
                 fclose(f);
 
-                snprintf(filename, FILENAME_MAX, "/sys/class/thermal/%s/temp", e->d_name);
+                if (snprintf(filename, IN_TEMP_FILENAME_LEN, "/sys/class/thermal/%s/temp", e->d_name)<=0) {
+                    continue;
+                }
                 f = fopen(filename, "r");
-                if (fscanf(f, "%d", &temp)==1)
-                {
+                if (f && fscanf(f, "%d", &temp)==1) {
                     info[i].temp = temp/1000.0;
                     fclose(f);
                     ++i;
@@ -192,8 +190,7 @@ int in_temp_collect(struct flb_input_instance *i_ins,
      * Store the new data into the MessagePack buffer
      */
 
-    for (i=0; i<n; ++i)
-    {
+    for (i=0; i<n; ++i) {
         msgpack_pack_array(&mp_pck, 2);
         flb_pack_time_now(&mp_pck);
         msgpack_pack_map(&mp_pck, 3);
