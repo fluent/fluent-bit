@@ -21,7 +21,6 @@ if(FLB_OUT_LIB)
   # These plugins works only on Linux
   if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
     FLB_RT_TEST(FLB_IN_CPU           "in_cpu.c")
-    FLB_RT_TEST(FLB_IN_TEMP          "in_temp.c")
     FLB_RT_TEST(FLB_IN_DISK          "in_disk.c")
     FLB_RT_TEST(FLB_IN_MEM           "in_mem.c")
     FLB_RT_TEST(FLB_IN_PROC          "in_proc.c")
