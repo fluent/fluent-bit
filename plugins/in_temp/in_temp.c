@@ -94,9 +94,7 @@ static inline int proc_temperature(struct temp_info *info, int n)
                 f = fopen(filename, "r");
                 if (f && fscanf(f, "%d", &temp)==1) {
                     info[i].temp = temp/1000.0;
-                    fclose(f);
                     ++i;
-                    continue;
                 }
             }
             fclose(f);
