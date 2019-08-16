@@ -36,8 +36,8 @@
  */
 #define BUFFER_SIZE 65535
 
-#define DEFAULT_ADDRESS "0.0.0.0"
-#define DEFAULT_PORT "25826"
+#define DEFAULT_LISTEN "0.0.0.0"
+#define DEFAULT_PORT 25826
 
 /* This is where most Linux systems places a default TypesDB */
 #define DEFAULT_TYPESDB "/usr/share/collectd/types.db";
@@ -46,9 +46,9 @@ struct flb_in_collectd_config {
     char *buf;
     int bufsize;
 
-    /* Listen Address */
-    const char *address;
-    const char *port;
+    /* Server */
+    char listen[256]; /* RFC-2181 */
+    char port[6];     /* RFC-793 */
 
     /* Sockets */
     flb_sockfd_t server_fd;
@@ -70,6 +70,8 @@ static int in_collectd_init(struct flb_input_instance *in,
     const char *tmp;
     struct flb_in_collectd_config *ctx;
     struct mk_list *tdb;
+    char *listen = DEFAULT_LISTEN;
+    int port = DEFAULT_PORT;
 
     /* Initialize context */
     ctx = flb_calloc(1, sizeof(struct flb_in_collectd_config));
@@ -88,19 +90,22 @@ static int in_collectd_init(struct flb_input_instance *in,
     }
 
     /* Listening address */
-    tmp = flb_input_get_property("address", in);
-    if (tmp) {
-        ctx->address = tmp;
-    } else {
-        ctx->address = DEFAULT_ADDRESS;
+    if (in->host.listen) {
+        listen = in->host.listen;
     }
 
-    tmp = flb_input_get_property("port", in);
-    if (tmp) {
-        ctx->port = tmp;
-    } else {
-        ctx->port = DEFAULT_PORT;
+    if (strlen(listen) > sizeof(ctx->listen) - 1) {
+        flb_error("[in_collectd] too long address '%s'", listen);
+        flb_free(ctx);
+        return -1;
     }
+    strcpy(ctx->listen, listen);
+
+    /* Listening port */
+    if (in->host.port) {
+        port = in->host.port;
+    }
+    snprintf(ctx->port, sizeof(ctx->port), "%hu", port);
 
     /* TypesDB */
     tmp = flb_input_get_property("typesdb", in);
@@ -122,9 +127,9 @@ static int in_collectd_init(struct flb_input_instance *in,
     /* Set the context */
     flb_input_set_context(in, ctx);
 
-    ctx->server_fd = flb_net_server_udp(ctx->port, ctx->address);
+    ctx->server_fd = flb_net_server_udp(ctx->port, ctx->listen);
     if (ctx->server_fd < 0) {
-        flb_error("[in_collectd] failed to bind to %s:%s", ctx->address,
+        flb_error("[in_collectd] failed to bind to %s:%s", ctx->listen,
                                                            ctx->port);
         typesdb_destroy(ctx->tdb);
         flb_free(ctx->buf);
@@ -147,7 +152,7 @@ static int in_collectd_init(struct flb_input_instance *in,
     }
     ctx->coll_fd = ret;
 
-    flb_info("[in_collectd] start listening to %s:%s", ctx->address,
+    flb_info("[in_collectd] start listening to %s:%s", ctx->listen,
                                                        ctx->port);
     return 0;
 }
