@@ -18,18 +18,14 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_IN_TEMP_H
-#define FLB_IN_TEMP_H
+#ifndef FLB_IN_THERMAL_H
+#define FLB_IN_THERMAL_H
 
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 
-/* Default collection time: every 1 second (0 nanoseconds) */
-#define DEFAULT_INTERVAL_SEC    1
-#define DEFAULT_INTERVAL_NSEC   0
-
 /* Temperature Input configuration & context */
-struct flb_in_temp_config {
+struct flb_in_thermal_config {
     /* setup */
     int coll_fd;        /* collector id/fd            */
     int interval_sec;   /* interval collection time (Second) */
@@ -37,11 +33,11 @@ struct flb_in_temp_config {
     struct flb_input_instance *i_ins;
 };
 
-int in_temp_pre_run(void *in_context, struct flb_config *config);
-int in_temp_collect(struct flb_input_instance *i_ins,
+int in_thermal_pre_run(void *in_context, struct flb_config *config);
+int in_thermal_collect(struct flb_input_instance *i_ins,
                    struct flb_config *config, void *in_context);
-void *in_temp_flush(void *in_context, size_t *size);
+void *in_thermal_flush(void *in_context, size_t *size);
 
-extern struct flb_input_plugin in_temp_plugin;
+extern struct flb_input_plugin in_thermal_plugin;
 
 #endif
