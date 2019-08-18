@@ -36,8 +36,8 @@
 
 struct flb_input_plugin in_thermal_plugin;
 
-/* Default collection time: every 1 second (0 nanoseconds) */
-#define DEFAULT_INTERVAL_SEC    1
+/* Default collection time: every 60 seconds (0 nanoseconds) */
+#define DEFAULT_INTERVAL_SEC    60
 #define DEFAULT_INTERVAL_NSEC   0
 
 #define IN_THERMAL_N_MAX          32
