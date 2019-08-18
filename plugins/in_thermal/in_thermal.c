@@ -31,7 +31,7 @@
 
 #include <msgpack.h>
 
-#include "in_temp.h"
+#include "in_thermal.h"
 
 struct flb_input_plugin in_temp_plugin;
 
@@ -237,8 +237,8 @@ static int in_temp_exit(void *data, struct flb_config *config)
 }
 
 /* Plugin reference */
-struct flb_input_plugin in_temp_plugin = {
-    .name         = "temp",
+struct flb_input_plugin in_thermal_plugin = {
+    .name         = "thermal",
     .description  = "Temperature",
     .cb_init      = in_temp_init,
     .cb_pre_run   = NULL,
