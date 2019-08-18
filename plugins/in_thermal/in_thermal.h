@@ -24,12 +24,20 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 
+#ifdef FLB_HAVE_REGEX
+#include <fluent-bit/flb_regex.h>
+#endif
+
 /* Temperature Input configuration & context */
 struct flb_in_thermal_config {
     /* setup */
-    int coll_fd;        /* collector id/fd            */
-    int interval_sec;   /* interval collection time (Second) */
-    int interval_nsec;  /* interval collection time (Nanosecond) */
+    int coll_fd;                  /* collector id/fd                       */
+    int interval_sec;             /* interval collection time (Second)     */
+    int interval_nsec;            /* interval collection time (Nanosecond) */
+#ifdef FLB_HAVE_REGEX
+    struct flb_regex *name_regex; /* optional filter by name */
+    struct flb_regex *type_regex; /* optional filter by type */
+#endif
     struct flb_input_instance *i_ins;
 };
 

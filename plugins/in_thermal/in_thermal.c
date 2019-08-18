@@ -52,7 +52,7 @@ struct temp_info
 };
 
 /* Retrieve temperature(s) from the system (via /sys/class/thermal) */
-static inline int proc_temperature(struct temp_info *info, int n)
+static inline int proc_temperature(struct flb_in_thermal_config *ctx, struct temp_info *info, int n)
 {
     int i, j;
     DIR *d;
@@ -76,6 +76,10 @@ static inline int proc_temperature(struct temp_info *info, int n)
             continue;
         }
 
+        if (ctx->name_regex && !flb_regex_match(ctx->name_regex, (unsigned char *) e->d_name, strlen(e->d_name))) {
+            continue;
+        }
+
         if (!strncmp(e->d_name, "thermal_zone", 12)) {
             strncpy(info[i].name, e->d_name, IN_THERMAL_FILENAME_LEN);
             if (snprintf(filename, IN_THERMAL_FILENAME_LEN, "/sys/class/thermal/%s/type", e->d_name)<=0)
@@ -93,6 +97,10 @@ static inline int proc_temperature(struct temp_info *info, int n)
                     }
                 }
                 fclose(f);
+
+                if (ctx->type_regex && !flb_regex_match(ctx->type_regex, (unsigned char *) info[i].type, strlen(info[i].type))) {
+                    continue;
+                }
 
                 if (snprintf(filename, IN_THERMAL_FILENAME_LEN, "/sys/class/thermal/%s/temp", e->d_name)<=0) {
                     continue;
@@ -150,6 +158,26 @@ static int in_thermal_init(struct flb_input_instance *in,
         ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
     }
 
+#ifdef FLB_HAVE_REGEX
+    ctx->name_regex = NULL;
+    pval = flb_input_get_property("name_regex", in);
+    if (pval) {
+        ctx->name_regex = flb_regex_create(pval);
+        if (!ctx->name_regex) {
+            flb_error("[in_thermal] invalid 'name_regex' config value");
+        }
+    }
+
+    ctx->type_regex = NULL;
+    pval = flb_input_get_property("type_regex", in);
+    if (pval) {
+        ctx->type_regex = flb_regex_create(pval);
+        if (!ctx->type_regex) {
+            flb_error("[in_thermal] invalid 'type_regex' config value");
+        }
+    }
+#endif
+
     /* Set the context */
     flb_input_set_context(in, ctx);
 
@@ -178,9 +206,10 @@ int in_thermal_collect(struct flb_input_instance *i_ins,
     msgpack_sbuffer mp_sbuf;
     (void) config;
     struct temp_info info[IN_THERMAL_N_MAX];
+    struct flb_in_thermal_config *ctx = in_context;
 
     /* Get the current temperature(s) */
-    n = proc_temperature(info, IN_THERMAL_N_MAX);
+    n = proc_temperature(ctx, info, IN_THERMAL_N_MAX);
     if (!n) {
         return 0;
     }
@@ -236,6 +265,10 @@ static int in_thermal_exit(void *data, struct flb_config *config)
 {
     (void) *config;
     struct flb_in_thermal_config *ctx = data;
+    if (ctx) {
+        flb_regex_destroy(ctx->name_regex);
+        flb_regex_destroy(ctx->type_regex);
+    }
     flb_free(ctx);
     return 0;
 }
