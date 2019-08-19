@@ -164,7 +164,6 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
 
     if (datadog_build_url(ctx) == -1) {
         flb_error("[out_datadog] error on url generation");
-        flb_errno();
         flb_datadog_conf_destroy(ctx);
         return NULL;
     }
@@ -231,7 +230,9 @@ int flb_datadog_conf_destroy(struct flb_out_datadog *ctx)
     if (ctx->dd_tags) {
         flb_sds_destroy(ctx->dd_tags);
     }
-    flb_upstream_destroy(ctx->upstream);
+    if (ctx->upstream) {
+        flb_upstream_destroy(ctx->upstream);
+    }
     flb_free(ctx);
 
     return 0;
