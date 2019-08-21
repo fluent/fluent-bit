@@ -79,6 +79,9 @@ MAX                     return MAX;
 CONTAINS                return CONTAINS;
 TIME                    return TIME;
 
+ /* Timeseries Functions */
+TIMESERIES_FORECAST     return TIMESERIES_FORECAST;
+
  /* Window Types */
 TUMBLING                return TUMBLING;
 HOPPING                 return HOPPING;

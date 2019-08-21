@@ -26,6 +26,7 @@
 void flb_sp_window_prune(struct flb_sp_task *task)
 {
     int i;
+    int key_id;
     int map_entries;
     rb_result_t result;
     struct aggr_node *aggr_node;
@@ -44,7 +45,7 @@ void flb_sp_window_prune(struct flb_sp_task *task)
             mk_list_foreach_safe(head, tmp, &task->window.aggr_list) {
                 aggr_node = mk_list_entry(head, struct aggr_node, _head);
                 mk_list_del(&aggr_node->_head);
-                flb_sp_aggr_node_destroy(aggr_node);
+                flb_sp_aggr_node_destroy(cmd, aggr_node);
             }
 
             rb_tree_destroy(&task->window.aggr_tree);
@@ -69,11 +70,13 @@ void flb_sp_window_prune(struct flb_sp_task *task)
                     rb_tree_remove(&task->window.aggr_tree, &aggr_node->_rb_head);
                     mk_list_del(&aggr_node->_head);
                     // Destroy aggregation node
-                    flb_sp_aggr_node_destroy(aggr_node);
+                    flb_sp_aggr_node_destroy(cmd, aggr_node);
                 }
                 else {
                     aggr_node->records -= aggr_node_hs->records;
                     map_entries = mk_list_size(&cmd->keys);
+
+                    key_id = 0;
                     ckey = mk_list_entry_first(&cmd->keys,
                                                struct flb_sp_cmd_key, _head);
                     for (i = 0; i < map_entries; i++) {
@@ -88,6 +91,14 @@ void flb_sp_window_prune(struct flb_sp_task *task)
                             }
                             break;
                         }
+
+                        if (!ckey->name && ckey->timeseries_func) {
+                            ckey->timeseries->cb_func_rem(aggr_node->ts[key_id],
+                                                          aggr_node_hs->ts[key_id],
+                                                          NULL);
+                            key_id++;
+                        }
+
                         ckey = mk_list_entry_next(&ckey->_head, struct flb_sp_cmd_key,
                                                   _head, &cmd->keys);
                     }
@@ -100,7 +111,7 @@ void flb_sp_window_prune(struct flb_sp_task *task)
         mk_list_foreach_safe(head, tmp, &hs->aggr_list) {
             aggr_node_hs = mk_list_entry(head, struct aggr_node, _head);
             mk_list_del(&aggr_node_hs->_head);
-            flb_sp_aggr_node_destroy(aggr_node_hs);
+            flb_sp_aggr_node_destroy(cmd, aggr_node_hs);
         }
         rb_tree_destroy(&hs->aggr_tree);
         mk_list_del(&hs->_head);
