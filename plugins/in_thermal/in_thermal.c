@@ -265,8 +265,10 @@ static int in_thermal_exit(void *data, struct flb_config *config)
 {
     (void) *config;
     struct flb_in_thermal_config *ctx = data;
-    if (ctx) {
+    if (ctx && ctx->name_regex) {
         flb_regex_destroy(ctx->name_regex);
+    }
+    if (ctx && ctx->type_regex) {
         flb_regex_destroy(ctx->type_regex);
     }
     flb_free(ctx);
