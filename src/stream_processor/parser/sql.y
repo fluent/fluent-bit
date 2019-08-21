@@ -45,6 +45,9 @@ void yyerror(struct flb_sp_cmd *cmd, const char *query, void *scanner,
 /* Record functions */
 %token RECORD CONTAINS TIME
 
+/* Timeseries functions */
+%token TIMESERIES_FORECAST
+
 /* Time functions */
 %token NOW UNIX_TIMESTAMP
 
@@ -92,6 +95,7 @@ void yyerror(struct flb_sp_cmd *cmd, const char *query, void *scanner,
 %type <expression> record_func
 %type <expression> value
 %type <expression> null
+%type <expression> param
 %type <integer>    time
 
 %destructor { flb_free ($$); } IDENTIFIER
@@ -306,6 +310,17 @@ select: SELECT keys FROM source window where groupby ';'
                     flb_free($7);
                   }
                   |
+                  TIMESERIES_FORECAST '(' params ')'
+                  {
+                    flb_sp_cmd_timeseries(cmd, "forecast", NULL);
+                  }
+                  |
+                  TIMESERIES_FORECAST '(' params ')' AS alias
+                  {
+                    flb_sp_cmd_timeseries(cmd, "forecast", $6);
+                    flb_free($6);
+                  }
+                  |
                   NOW '(' ')'
                   {
                     flb_sp_cmd_key_add(cmd, FLB_SP_NOW, NULL, NULL);
@@ -495,6 +510,23 @@ select: SELECT keys FROM source window where groupby ';'
                    }
              |
              subkey subkey
+        param: IDENTIFIER
+               {
+                   flb_sp_cmd_param_add(cmd, flb_sp_cmd_condition_key(cmd, $1));
+                   flb_free($1);
+               }
+               |
+               IDENTIFIER record_subkey
+               {
+                   flb_sp_cmd_param_add(cmd, flb_sp_cmd_condition_key(cmd, $1));
+                   flb_free($1);
+               }
+               |
+               value
+               {
+                 flb_sp_cmd_param_add(cmd, $1);
+               }
+        params: param | param ',' params
         value: INTEGER
                {
                  $$ = flb_sp_cmd_condition_integer(cmd, $1);

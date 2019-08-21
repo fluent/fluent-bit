@@ -29,6 +29,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_slist.h>
 #include <fluent-bit/stream_processor/flb_sp_parser.h>
+#include <fluent-bit/stream_processor/flb_sp_timeseries.h>
 #include <fluent-bit/stream_processor/flb_sp_record_func.h>
 
 #include "sql_parser.h"
@@ -93,7 +94,33 @@ void flb_sp_cmd_destroy(struct flb_sp_cmd *cmd)
         flb_free(cmd->tmp_subkeys);
     }
 
+    if (cmd->tmp_params) {
+        flb_cmd_params_del(cmd->tmp_params);
+        flb_free(cmd->tmp_params);
+    }
+
     flb_free(cmd);
+}
+
+void flb_cmd_params_del(struct mk_list *params)
+{
+    struct flb_exp_param *p;
+    struct mk_list *head;
+    struct mk_list *tmp;
+
+    mk_list_foreach_safe(head, tmp, params) {
+        p = mk_list_entry(head, struct flb_exp_param, _head);
+        switch (p->type) {
+        case FLB_EXP_KEY:
+            flb_sp_cmd_key_del((struct flb_sp_cmd_key *) p->param);
+            break;
+        case FLB_EXP_STRING:
+            flb_sds_destroy(((struct flb_sp_value *) p->param)->val.string);
+            flb_free(p->param);
+            break;
+        }
+        flb_free(p);
+    }
 }
 
 void flb_sp_cmd_key_del(struct flb_sp_cmd_key *key)
@@ -111,6 +138,10 @@ void flb_sp_cmd_key_del(struct flb_sp_cmd_key *key)
         flb_slist_destroy(key->subkeys);
         flb_free(key->subkeys);
     }
+    if (key->timeseries_func) {
+        flb_cmd_params_del(&key->timeseries->params);
+        flb_free(key->timeseries);
+    }
     flb_free(key);
 }
 
@@ -126,14 +157,16 @@ void flb_sp_cmd_gb_key_del(struct flb_sp_cmd_gb_key *key)
     flb_free(key);
 }
 
-int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func,
-                       const char *key_name, const char *key_alias)
+struct flb_sp_cmd_key *flb_sp_key_create(struct flb_sp_cmd *cmd, int func,
+                                         const char *key_name,
+                                         const char *key_alias)
 {
     int s;
     int ret;
     int aggr_func = 0;
     int time_func = 0;
     int record_func = 0;
+    int timeseries_func = 0;
     char *tmp;
     struct mk_list *head;
     struct flb_sp_cmd_key *key;
@@ -151,12 +184,16 @@ int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func,
         /* Record function */
         record_func = func;
     }
+    else if (func >= FLB_SP_FORECAST && func <= FLB_SP_FORECAST) {
+        /* Timeseries function */
+        timeseries_func = func;
+    }
 
     key = flb_calloc(1, sizeof(struct flb_sp_cmd_key));
     if (!key) {
         flb_errno();
         cmd->status = FLB_SP_ERROR;
-        return -1;
+        return NULL;
     }
     key->gb_key = NULL;
     key->subkeys = NULL;
@@ -167,7 +204,7 @@ int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func,
         if (!key->name) {
             flb_sp_cmd_key_del(key);
             cmd->status = FLB_SP_ERROR;
-            return -1;
+            return NULL;
         }
     }
     else {
@@ -177,10 +214,10 @@ int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func,
          * - aggregation using COUNT(*)
          */
         if (mk_list_size(&cmd->keys) > 0 && aggr_func == 0 &&
-            record_func == 0 && time_func == 0) {
+            record_func == 0 && time_func == 0 && timeseries_func == 0) {
             flb_sp_cmd_key_del(key);
             cmd->status = FLB_SP_ERROR;
-            return -1;
+            return NULL;
         }
     }
 
@@ -189,7 +226,7 @@ int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func,
         if (!key->alias) {
             flb_sp_cmd_key_del(key);
             cmd->status = FLB_SP_ERROR;
-            return -1;
+            return NULL;
         }
     }
 
@@ -203,13 +240,17 @@ int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func,
     else if (record_func > 0) {
         key->record_func = record_func;
     }
+    else if (timeseries_func > 0) {
+        key->timeseries_func = timeseries_func;
+    }
 
     /* Lookup for any subkeys in the temporal list */
     if (mk_list_size(cmd->tmp_subkeys) > 0) {
         ret = swap_tmp_subkeys(&key->subkeys, cmd);
         if (ret == -1) {
             flb_sp_cmd_key_del(key);
-            return -1;
+            cmd->status = FLB_SP_ERROR;
+            return NULL;
         }
 
         /* Compose a name key that include listed sub keys */
@@ -217,7 +258,7 @@ int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func,
         key->name_keys = flb_sds_create_size(s);
         if (!key->name_keys) {
             flb_sp_cmd_key_del(key);
-            return -1;
+            return NULL;
         }
 
         tmp = flb_sds_cat(key->name_keys, key->name, flb_sds_len(key->name));
@@ -235,7 +276,7 @@ int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func,
             }
             else {
                 flb_sp_cmd_key_del(key);
-                return -1;
+                return NULL;
             }
 
             /* selected key name */
@@ -246,7 +287,7 @@ int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func,
             }
             else {
                 flb_sp_cmd_key_del(key);
-                return -1;
+                return NULL;
             }
 
             /* suffix */
@@ -256,12 +297,28 @@ int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func,
             }
             else {
                 flb_sp_cmd_key_del(key);
-                return -1;
+                return NULL;
             }
         }
     }
 
+    return key;
+}
+
+
+int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func,
+                       const char *key_name, const char *key_alias)
+{
+    struct flb_sp_cmd_key *key;
+
+    key = flb_sp_key_create(cmd, func, key_name, key_alias);
+
+    if (!key) {
+        return -1;
+    }
+
     mk_list_add(&key->_head, &cmd->keys);
+
     return 0;
 }
 
@@ -331,6 +388,15 @@ struct flb_sp_cmd *flb_sp_cmd_create(const char *sql)
         return NULL;
     }
     flb_slist_create(cmd->tmp_subkeys);
+
+    /* Allocate linked list and initialize */
+    cmd->tmp_params = flb_malloc(sizeof(struct mk_list));
+    if (!cmd->tmp_params) {
+        flb_errno();
+        flb_free(cmd);
+        return NULL;
+    }
+    mk_list_init(cmd->tmp_params);
 
     /* Flex/Bison work */
     yylex_init(&scanner);
@@ -723,4 +789,85 @@ void flb_sp_cmd_condition_del(struct flb_sp_cmd *cmd)
         mk_list_del(&exp->_head);
         flb_free(exp);
     }
+}
+
+/* Timeseries functions */
+int flb_sp_cmd_param_add(struct flb_sp_cmd *cmd, struct flb_exp *param)
+{
+    struct flb_exp_param *p;
+
+    p = flb_calloc(1, sizeof(struct flb_exp_param));
+
+    if (!p) {
+        return -1;
+    }
+
+    p->type = FLB_EXP_PARAM;
+    p->param = param;
+
+    mk_list_add(&p->_head, cmd->tmp_params);
+
+    return 0;
+}
+
+int flb_sp_cmd_timeseries(struct flb_sp_cmd *cmd, char *func, const char *key_alias)
+{
+    int i;
+    char *ts_name;
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct flb_sp_cmd_key *key;
+    struct flb_exp_param *param;
+    struct flb_exp_timeseries *ts;
+
+    /* Timeseries functions are keys with no name, with functions added */
+    for (i = 0; i < TIMESERIES_FUNCTIONS_SIZE; i++)
+    {
+        ts_name = timeseries_functions[i];
+        if (strncmp(ts_name, func, strlen(ts_name)) == 0)
+        {
+            key = flb_sp_key_create(cmd, i + FLB_SP_FORECAST, NULL, key_alias);
+
+            if (!key) {
+                return -1;
+            }
+
+            ts = flb_calloc(1, sizeof(struct flb_exp_timeseries));
+            if (!ts) {
+                flb_errno();
+                cmd->status = FLB_SP_ERROR;
+                return -1;
+            }
+            mk_list_init(&ts->params);
+
+            /*
+             * Traverse over temporary key list and add it to timeseries key as
+             * parameters
+             */
+            mk_list_foreach_safe(head, tmp, cmd->tmp_params) {
+                param = mk_list_entry(head, struct flb_exp_param, _head);
+                mk_list_del(&param->_head);
+                mk_list_add(&param->_head, &ts->params);
+            }
+
+            mk_list_init(cmd->tmp_params);
+
+            ts->cb_func_alloc = timeseries_functions_alloc_ptr[i];
+            ts->cb_func_clone = timeseries_functions_clone_ptr[i];
+            ts->cb_func_add = timeseries_functions_add_ptr[i];
+            ts->cb_func_rem = timeseries_functions_rem_ptr[i];
+            ts->cb_func_calc = timeseries_functions_calc_ptr[i];
+            ts->cb_func_destroy = timeseries_functions_destroy_ptr[i];
+
+            cmd->timeseries_num++;
+
+            key->timeseries = ts;
+
+            mk_list_add(&key->_head, &cmd->keys);
+
+            return 0;
+        }
+    }
+
+    return -1;
 }
