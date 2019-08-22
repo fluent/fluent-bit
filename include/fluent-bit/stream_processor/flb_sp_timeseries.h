@@ -21,6 +21,7 @@
 #ifndef FLB_SP_TIMESERIES_H
 #define FLB_SP_TIMESERIES_H
 
+#include <math.h>
 #include <fluent-bit/stream_processor/flb_sp_parser.h>
 
 #define TIMESERIES_FUNCTIONS_SIZE 1
@@ -190,7 +191,7 @@ void cb_forecast_calc(struct timeseries *ts, struct flb_sp_cmd_key *cmd_key,
         result = b0 + b1 * (val->f64 + *forecast->latest_x);
         break;
     default:
-        result = 0.0 / 0.0; // return NaN
+        result = nan("");
         break;
     }
 
