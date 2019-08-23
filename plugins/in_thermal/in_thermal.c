@@ -76,9 +76,11 @@ static inline int proc_temperature(struct flb_in_thermal_config *ctx, struct tem
             continue;
         }
 
+#ifdef FLB_HAVE_REGEX
         if (ctx->name_regex && !flb_regex_match(ctx->name_regex, (unsigned char *) e->d_name, strlen(e->d_name))) {
             continue;
         }
+#endif
 
         if (!strncmp(e->d_name, "thermal_zone", 12)) {
             strncpy(info[i].name, e->d_name, IN_THERMAL_FILENAME_LEN);
@@ -98,9 +100,11 @@ static inline int proc_temperature(struct flb_in_thermal_config *ctx, struct tem
                 }
                 fclose(f);
 
+#ifdef FLB_HAVE_REGEX
                 if (ctx->type_regex && !flb_regex_match(ctx->type_regex, (unsigned char *) info[i].type, strlen(info[i].type))) {
                     continue;
                 }
+#endif
 
                 if (snprintf(filename, IN_THERMAL_FILENAME_LEN, "/sys/class/thermal/%s/temp", e->d_name)<=0) {
                     continue;
@@ -265,12 +269,14 @@ static int in_thermal_exit(void *data, struct flb_config *config)
 {
     (void) *config;
     struct flb_in_thermal_config *ctx = data;
+#ifdef FLB_HAVE_REGEX
     if (ctx && ctx->name_regex) {
         flb_regex_destroy(ctx->name_regex);
     }
     if (ctx && ctx->type_regex) {
         flb_regex_destroy(ctx->type_regex);
     }
+#endif
     flb_free(ctx);
     return 0;
 }
