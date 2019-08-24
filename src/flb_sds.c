@@ -303,10 +303,6 @@ flb_sds_t flb_sds_cat_utf8 (flb_sds_t *sds, const char *str, int str_len)
             else {
                 s[head->len++] = '\\';
                 s[head->len++] = 'u';
-                s[head->len++] = '0';
-                s[head->len++] = '0';
-                s[head->len++] = int2hex[ (unsigned char) ((cp & 0xf00000) >> 20)];
-                s[head->len++] = int2hex[ (unsigned char) ((cp & 0x0f0000) >> 16)];
                 s[head->len++] = int2hex[ (unsigned char) ((cp & 0xf000) >> 12)];
                 s[head->len++] = int2hex[ (unsigned char) ((cp & 0x0f00) >> 8)];
                 s[head->len++] = int2hex[ (unsigned char) ((cp & 0xf0) >> 4)];
