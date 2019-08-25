@@ -156,9 +156,7 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
     }
     flb_debug("[out_datadog] ctx->host: %s", ctx->host);
 
-    if (ins->use_tls == FLB_TRUE && ins->host.port != 443) {
-        ctx->port = ins->host.port;
-    } else if (ins->use_tls == FLB_FALSE && ins->host.port != 80) {
+    if (ins->host.port != 0) {
         ctx->port = ins->host.port;
     }
 
@@ -168,6 +166,13 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
     flb_debug("[out_datadog] ctx->url: %s", ctx->url);
+    if (ctx->port == 0) {
+        ctx->port = FLB_DATADOG_DEFAULT_PORT;
+        if (ins->use_tls == FLB_FALSE) {
+            ctx->port = 80;
+        }
+    }
+    flb_debug("[out_datadog] ctx->port: %i", ctx->port);
 
     /* Date tag for JSON output */
     tmp = flb_output_get_property("json_date_key", ins);

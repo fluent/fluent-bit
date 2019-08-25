@@ -232,19 +232,19 @@ static void cb_datadog_flush(const void *data, size_t bytes,
     ret = flb_http_do(client, &b_sent);
     if (ret == 0) {
         if (client->resp.status < 200 || client->resp.status > 205) {
-            flb_error("[out_datadog] %s:%i, HTTP status=%i",
-                      ctx->host, ctx->port, client->resp.status);
+            flb_error("[out_datadog] %s%s:%i HTTP status=%i",
+                      ctx->scheme, ctx->host, ctx->port, client->resp.status);
             ret = FLB_RETRY;
         }
         else {
             if (client->resp.payload) {
-                flb_info("[out_datadog] %s%s, HTTP status=%i payload=%s",
-                         ctx->scheme, ctx->host,
+                flb_info("[out_datadog] %s%s, port=%i, HTTP status=%i payload=%s",
+                         ctx->scheme, ctx->host, ctx->port,
                          client->resp.status, client->resp.payload);
             }
             else {
-                flb_info("[out_datadog] %s%s, HTTP status=%i",
-                         ctx->scheme, ctx->host,
+                flb_info("[out_datadog] %s%s, port=%i, HTTP status=%i",
+                         ctx->scheme, ctx->host, ctx->port,
                          client->resp.status);
             }
             ret = FLB_OK;
