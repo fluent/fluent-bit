@@ -205,6 +205,7 @@ struct flb_exp_key {
     struct mk_list _head;
     flb_sds_t name;
     struct mk_list *subkeys;
+    int func;
 };
 
 struct flb_exp_func {
@@ -295,7 +296,7 @@ int flb_sp_cmd_gb_key_add(struct flb_sp_cmd *cmd, const char *key);
 void flb_sp_cmd_gb_key_del(struct flb_sp_cmd_gb_key *key);
 
 /* Timeseries */
-int flb_sp_cmd_param_add(struct flb_sp_cmd *cmd, struct flb_exp *param);
+int flb_sp_cmd_param_add(struct flb_sp_cmd *cmd, int func, struct flb_exp *param);
 int flb_sp_cmd_timeseries(struct flb_sp_cmd *cmd, char *func, const char *key_alias);
 void flb_cmd_params_del(struct mk_list *params);
 

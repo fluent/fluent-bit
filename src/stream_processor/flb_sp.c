@@ -1402,6 +1402,23 @@ static int sp_process_timeseries_data(struct flb_sp_cmd *cmd,
 
         nums_ts = f->nums;
 
+        /* Populate pre-defined function parameters */
+        key_id_ts = 0;
+        mk_list_foreach(head_ts, &ckey->timeseries->params) {
+            param = mk_list_entry(head_ts, struct flb_exp_param, _head);
+
+            switch (param->param->type) {
+            case FLB_EXP_KEY:
+                exp_key = (struct flb_exp_key *) param->param;
+
+                if (exp_key->func == FLB_SP_RECORD_TIME) {
+                    nums_ts[key_id_ts].type = FLB_SP_NUM_F64;
+                    nums_ts[key_id_ts].f64 = flb_time_to_double(tms);
+                }
+            }
+            key_id_ts++;
+        }
+
         for (i = 0; i < map_size; i++) {
             key = map.via.map.ptr[i].key;
 
