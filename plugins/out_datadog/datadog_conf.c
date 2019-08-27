@@ -25,41 +25,6 @@
 #include "datadog.h"
 #include "datadog_conf.h"
 
-static int datadog_build_url(struct flb_out_datadog *ctx) {
-    flb_sds_t portStr = NULL;
-    size_t uri_size = 0;
-    int return_code = 0;
-    char port[16];
-
-    uri_size = flb_sds_len(ctx->scheme) +
-               flb_sds_len(ctx->host) +
-               flb_sds_len(ctx->uri)+1;
-
-    if (ctx->port != 0) {
-        snprintf(port, sizeof(port) - 1, "%d", ctx->port);
-        portStr = flb_sds_create(":");
-        portStr = flb_sds_cat(portStr, port, strlen(port));
-        uri_size += flb_sds_len(portStr);
-    }
-
-    ctx->url = flb_sds_create_size(uri_size);
-    if (!ctx->url) {
-        return_code = -1;
-    } else {
-        if (ctx->port != 0) {
-            ctx->url = flb_sds_printf(&ctx->url, "%s%s%s%s", ctx->scheme, ctx->host,  portStr, ctx->uri);
-        } else {
-            ctx->url = flb_sds_printf(&ctx->url, "%s%s%s", ctx->scheme, ctx->host, ctx->uri);
-        }
-    }
-
-    if (portStr != NULL) {
-        flb_free(portStr);
-    }
-    return return_code;
-}
-
-
 struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
                                                 struct flb_config *config)
 {
@@ -159,13 +124,6 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
     if (ins->host.port != 0) {
         ctx->port = ins->host.port;
     }
-
-    if (datadog_build_url(ctx) == -1) {
-        flb_error("[out_datadog] error on url generation");
-        flb_datadog_conf_destroy(ctx);
-        return NULL;
-    }
-    flb_debug("[out_datadog] ctx->url: %s", ctx->url);
     if (ctx->port == 0) {
         ctx->port = FLB_DATADOG_DEFAULT_PORT;
         if (ins->use_tls == FLB_FALSE) {
@@ -186,15 +144,13 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
     flb_debug("[out_datadog] ctx->json_date_key: %s", ctx->json_date_key);
    
     /* Prepare an upstream handler */
-    upstream = flb_upstream_create_url(config, ctx->url, io_flags, &ins->tls);
+    upstream = flb_upstream_create(config, ctx->host, ctx->port, io_flags, &ins->tls);
     if (!upstream) {
         flb_error("[out_datadog] cannot create Upstream context");
         flb_datadog_conf_destroy(ctx);
         return NULL;
     }
     ctx->upstream = upstream;
-
-    // TODO: Add Headers and options configuration
 
     return ctx;
 }
@@ -219,9 +175,6 @@ int flb_datadog_conf_destroy(struct flb_out_datadog *ctx)
     }
     if (ctx->tag_key) {
         flb_sds_destroy(ctx->tag_key);
-    }
-    if (ctx->url) {
-        flb_sds_destroy(ctx->url);
     }
     if (ctx->json_date_key) {
         flb_sds_destroy(ctx->json_date_key);

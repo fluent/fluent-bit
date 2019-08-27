@@ -47,7 +47,6 @@ struct flb_out_datadog {
     flb_sds_t tag_key;
 
     /* final result */
-    flb_sds_t url;
     flb_sds_t json_date_key;
     int nb_additional_entries;
     flb_sds_t dd_source;
