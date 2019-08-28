@@ -184,15 +184,19 @@ flb_sds_t flb_sds_cat_utf8 (flb_sds_t *sds, const char *str, int str_len)
 
     if (flb_sds_avail(s) <= str_len) {
         tmp = flb_sds_increase(s, str_len);
-        if (tmp == NULL) return NULL;
+        if (tmp == NULL) {
+            return NULL;
+        }
         *sds = s = tmp;
         head = FLB_SDS_HEADER(s);
     }
 
     for (i = 0; i < str_len; i++) {
-        if (flb_sds_avail(s) < 6) {
-            tmp = flb_sds_increase(s, 6);
-            if (tmp == NULL) return NULL;
+        if (flb_sds_avail(s) < 8) {
+            tmp = flb_sds_increase(s, 8);
+            if (tmp == NULL) {
+                return NULL;
+            }
             *sds = s = tmp;
             head = FLB_SDS_HEADER(s);
         }
@@ -230,12 +234,6 @@ flb_sds_t flb_sds_cat_utf8 (flb_sds_t *sds, const char *str, int str_len)
             }
         }
         else if (c < 32 || c == 0x7f) {
-            if (flb_sds_avail(s) < 6) {
-                tmp = flb_sds_increase(s, 6);
-                if (tmp == NULL) return NULL;
-                *sds = s = tmp;
-                head = FLB_SDS_HEADER(s);
-            }
             s[head->len++] = '\\';
             s[head->len++] = 'u';
             s[head->len++] = '0';
@@ -245,13 +243,6 @@ flb_sds_t flb_sds_cat_utf8 (flb_sds_t *sds, const char *str, int str_len)
         }
         else if (c >= 0x80) {
             hex_bytes = flb_utf8_len(str + i);
-            if (flb_sds_avail(s) < 10) {
-                tmp = flb_sds_increase(s, 10);
-                if (tmp == NULL) return NULL;
-                *sds = s = tmp;
-                head = FLB_SDS_HEADER(s);
-            }
-
             state = FLB_UTF8_ACCEPT;
             cp = 0;
             for (b = 0; b < hex_bytes; b++) {
@@ -268,28 +259,23 @@ flb_sds_t flb_sds_cat_utf8 (flb_sds_t *sds, const char *str, int str_len)
                 break;
             }
 
-            if (cp <= 0xFFFF) {
-                s[head->len++] = '\\';
-                s[head->len++] = 'u';
-                s[head->len++] = int2hex[ (unsigned char) ((cp & 0xf000) >> 12)];
-                s[head->len++] = int2hex[ (unsigned char) ((cp & 0x0f00) >> 8)];
-                s[head->len++] = int2hex[ (unsigned char) ((cp & 0xf0) >> 4)];
-                s[head->len++] = int2hex[ (unsigned char) (cp & 0x0f)];
-                i += (hex_bytes - 1);
+            s[head->len++] = '\\';
+            s[head->len++] = 'u';
+            if (cp > 0xFFFF) {
+                c = int2hex[ (unsigned char) ((cp & 0xf00000) >> 20)];
+                if (c > 0) {
+                    s[head->len++] = int2hex[c];
+                }
+                c = int2hex[ (unsigned char) ((cp & 0x0f0000) >> 16)];
+                if (c > 0) {
+                    s[head->len++] = int2hex[c];
+                }
             }
-            else {
-                s[head->len++] = '\\';
-                s[head->len++] = 'u';
-                s[head->len++] = '0';
-                s[head->len++] = '0';
-                s[head->len++] = int2hex[ (unsigned char) ((cp & 0xf00000) >> 20)];
-                s[head->len++] = int2hex[ (unsigned char) ((cp & 0x0f0000) >> 16)];
-                s[head->len++] = int2hex[ (unsigned char) ((cp & 0xf000) >> 12)];
-                s[head->len++] = int2hex[ (unsigned char) ((cp & 0x0f00) >> 8)];
-                s[head->len++] = int2hex[ (unsigned char) ((cp & 0xf0) >> 4)];
-                s[head->len++] = int2hex[ (unsigned char) (cp & 0x0f)];
-                i += (hex_bytes - 1);
-            }
+            s[head->len++] = int2hex[ (unsigned char) ((cp & 0xf000) >> 12)];
+            s[head->len++] = int2hex[ (unsigned char) ((cp & 0x0f00) >> 8)];
+            s[head->len++] = int2hex[ (unsigned char) ((cp & 0xf0) >> 4)];
+            s[head->len++] = int2hex[ (unsigned char) (cp & 0x0f)];
+            i += (hex_bytes - 1);
         }
         else {
             s[head->len++] = c;
