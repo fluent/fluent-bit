@@ -241,6 +241,86 @@ void test_random_eviction()
     flb_hash_destroy(ht);
 }
 
+void test_less_used_eviction()
+{
+    int ret;
+    const char *out_buf;
+    size_t out_size;
+    struct flb_hash *ht;
+
+    ht = flb_hash_create(FLB_HASH_EVICT_LESS_USED, 8, 2);
+    TEST_CHECK(ht != NULL);
+
+    ret = ht_add(ht, "key1", "value1");
+    TEST_CHECK(ret != -1);
+
+    ret = ht_add(ht, "key2", "value2");
+    TEST_CHECK(ret != -1);
+
+    ret = flb_hash_get(ht, "key1", 4, &out_buf, &out_size);
+    TEST_CHECK(ret >= 0);
+
+    ret = flb_hash_get(ht, "key2", 4, &out_buf, &out_size);
+    TEST_CHECK(ret >= 0);
+
+    ret = flb_hash_get(ht, "key2", 4, &out_buf, &out_size);
+    TEST_CHECK(ret >= 0);
+
+    ret = ht_add(ht, "key3", "value3");
+    TEST_CHECK(ret != -1);
+
+    ret = flb_hash_get(ht, "key3", 4, &out_buf, &out_size);
+    TEST_CHECK(ret >= 0);
+
+    ret = flb_hash_get(ht, "key2", 4, &out_buf, &out_size);
+    TEST_CHECK(ret >= 0);
+
+    ret = flb_hash_get(ht, "key1", 4, &out_buf, &out_size);
+    TEST_CHECK(ret == -1);
+
+    flb_hash_destroy(ht);
+}
+
+void test_older_eviction()
+{
+    int ret;
+    const char *out_buf;
+    size_t out_size;
+    struct flb_hash *ht;
+
+    ht = flb_hash_create(FLB_HASH_EVICT_OLDER, 8, 2);
+    TEST_CHECK(ht != NULL);
+
+    ret = ht_add(ht, "key2", "value2");
+    TEST_CHECK(ret != -1);
+
+    ret = ht_add(ht, "key1", "value1");
+    TEST_CHECK(ret != -1);
+
+    ret = flb_hash_get(ht, "key1", 4, &out_buf, &out_size);
+    TEST_CHECK(ret >= 0);
+
+    ret = flb_hash_get(ht, "key2", 4, &out_buf, &out_size);
+    TEST_CHECK(ret >= 0);
+
+    ret = flb_hash_get(ht, "key2", 4, &out_buf, &out_size);
+    TEST_CHECK(ret >= 0);
+
+    ret = ht_add(ht, "key3", "value3");
+    TEST_CHECK(ret != -1);
+
+    ret = flb_hash_get(ht, "key3", 4, &out_buf, &out_size);
+    TEST_CHECK(ret >= 0);
+
+    ret = flb_hash_get(ht, "key2", 4, &out_buf, &out_size);
+    TEST_CHECK(ret == -1);
+
+    ret = flb_hash_get(ht, "key1", 4, &out_buf, &out_size);
+    TEST_CHECK(ret >= 0);
+
+    flb_hash_destroy(ht);
+}
+
 TEST_LIST = {
     { "zero_size", test_create_zero },
     { "single",    test_single },
@@ -249,5 +329,7 @@ TEST_LIST = {
     { "chaining_count", test_chaining },
     { "delete_all", test_delete_all },
     { "random_eviction", test_random_eviction },
+    { "less_used_eviction", test_less_used_eviction },
+    { "older_eviction", test_older_eviction },
     { 0 }
 };
