@@ -184,7 +184,7 @@ struct flb_sp_cmd_key *flb_sp_key_create(struct flb_sp_cmd *cmd, int func,
         /* Record function */
         record_func = func;
     }
-    else if (func >= FLB_SP_FORECAST && func <= FLB_SP_FORECAST) {
+    else if (func >= FLB_SP_TIMESERIES_START && func <= FLB_SP_TIMESERIES_END) {
         /* Timeseries function */
         timeseries_func = func;
     }
@@ -834,9 +834,9 @@ int flb_sp_cmd_timeseries(struct flb_sp_cmd *cmd, char *func, const char *key_al
     for (i = 0; i < TIMESERIES_FUNCTIONS_SIZE; i++)
     {
         ts_name = timeseries_functions[i];
-        if (strncmp(ts_name, func, strlen(ts_name)) == 0)
+        if (strcmp(ts_name, func) == 0)
         {
-            key = flb_sp_key_create(cmd, i + FLB_SP_FORECAST, NULL, key_alias);
+            key = flb_sp_key_create(cmd, i + FLB_SP_TIMESERIES_START, NULL, key_alias);
 
             if (!key) {
                 return -1;

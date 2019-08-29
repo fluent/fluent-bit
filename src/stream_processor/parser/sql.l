@@ -81,6 +81,7 @@ TIME                    return TIME;
 
  /* Timeseries Functions */
 TIMESERIES_FORECAST     return TIMESERIES_FORECAST;
+TIMESERIES_FORECAST_R   return TIMESERIES_FORECAST_R;
 
  /* Window Types */
 TUMBLING                return TUMBLING;

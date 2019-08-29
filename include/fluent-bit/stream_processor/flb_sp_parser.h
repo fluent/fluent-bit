@@ -44,7 +44,10 @@
 #define FLB_SP_RECORD_TIME     21
 
 /* Timeseries functions */
-#define FLB_SP_FORECAST        30
+#define FLB_SP_TIMESERIES_START  30
+#define FLB_SP_FORECAST          30
+#define FLB_SP_FORECAST_R        31
+#define FLB_SP_TIMESERIES_END    39
 
 /* Status */
 #define FLB_SP_OK            0
