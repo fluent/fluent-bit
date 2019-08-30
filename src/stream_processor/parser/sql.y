@@ -512,19 +512,24 @@ select: SELECT keys FROM source window where groupby ';'
              subkey subkey
         param: IDENTIFIER
                {
-                   flb_sp_cmd_param_add(cmd, flb_sp_cmd_condition_key(cmd, $1));
+                   flb_sp_cmd_param_add(cmd, -1, flb_sp_cmd_condition_key(cmd, $1));
                    flb_free($1);
                }
                |
                IDENTIFIER record_subkey
                {
-                   flb_sp_cmd_param_add(cmd, flb_sp_cmd_condition_key(cmd, $1));
+                   flb_sp_cmd_param_add(cmd, -1, flb_sp_cmd_condition_key(cmd, $1));
                    flb_free($1);
+               }
+               |
+               RECORD_TIME '(' ')'
+               {
+                 flb_sp_cmd_param_add(cmd, FLB_SP_RECORD_TIME, NULL);
                }
                |
                value
                {
-                 flb_sp_cmd_param_add(cmd, $1);
+                 flb_sp_cmd_param_add(cmd, -1, $1);
                }
         params: param | param ',' params
         value: INTEGER

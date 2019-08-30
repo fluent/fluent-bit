@@ -439,8 +439,7 @@ int flb_config_set_property(struct flb_config *config,
                         flb_free(*s_val); /* release before overwriting */
                     }
 
-                    *s_val = malloc(flb_sds_len(tmp) * sizeof(char));
-                    strncpy(*s_val, tmp, flb_sds_len(tmp));
+                    *s_val = flb_strdup(tmp);
                     flb_sds_destroy(tmp);
                     break;
                 default:

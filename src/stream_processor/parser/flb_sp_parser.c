@@ -792,9 +792,19 @@ void flb_sp_cmd_condition_del(struct flb_sp_cmd *cmd)
 }
 
 /* Timeseries functions */
-int flb_sp_cmd_param_add(struct flb_sp_cmd *cmd, struct flb_exp *param)
+int flb_sp_cmd_param_add(struct flb_sp_cmd *cmd, int func, struct flb_exp *param)
 {
     struct flb_exp_param *p;
+    struct flb_exp_key *key;
+
+    if (func > 0) { /* Parameter is a pre-defined function */
+        key = (struct flb_exp_key *) flb_sp_cmd_condition_key(cmd, NULL);
+        if (!key) {
+            return -1;
+        }
+        key->func = func;
+        param = (struct flb_exp *) key;
+    }
 
     p = flb_calloc(1, sizeof(struct flb_exp_param));
 
