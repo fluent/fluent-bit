@@ -62,6 +62,9 @@ struct flb_out_datadog {
     flb_sds_t dd_tags;
     flb_sds_t dd_message_key;
 
+    /* Compression mode (gzip) */
+    int compress_gzip;
+
     /* Upstream connection to the backend server */
     struct flb_upstream *upstream;
 };
