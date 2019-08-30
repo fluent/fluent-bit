@@ -103,6 +103,11 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
         ctx->dd_tags = flb_sds_create(tmp);
     }
 
+    tmp = flb_output_get_property("dd_message_key", ins);
+    if (tmp) {
+        ctx->dd_message_key = flb_sds_create(tmp);
+    }
+
     ctx->uri = flb_sds_create("/v1/input/");
     if (!ctx->uri) {
         flb_error("[out_datadog] error on uri generation");
@@ -187,6 +192,9 @@ int flb_datadog_conf_destroy(struct flb_out_datadog *ctx)
     }
     if (ctx->dd_tags) {
         flb_sds_destroy(ctx->dd_tags);
+    }
+    if (ctx->dd_message_key) {
+        flb_sds_destroy(ctx->dd_message_key);
     }
     if (ctx->upstream) {
         flb_upstream_destroy(ctx->upstream);
