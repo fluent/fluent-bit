@@ -607,6 +607,7 @@ static int cb_nest_filter(const void *data, size_t bytes,
     *out_size = buffer.size;
 
     if (total_modified_records == 0) {
+        msgpack_sbuffer_destroy(&buffer);
         return FLB_FILTER_NOTOUCH;
     }
     else {
