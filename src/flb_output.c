@@ -404,7 +404,7 @@ int flb_output_set_property(struct flb_output_instance *out,
         if (strcasecmp(tmp, "true") == 0 || strcasecmp(tmp, "on") == 0) {
             if ((out->flags & FLB_IO_TLS) == 0) {
                 flb_error("[config] %s don't support TLS", out->name);
-                flb_free(tmp);
+                flb_sds_destroy(tmp);
                 return -1;
             }
 
