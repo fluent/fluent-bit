@@ -22,9 +22,10 @@
 #define FLB_SP_TIMESERIES_H
 
 #include <math.h>
+#include <float.h>
 #include <fluent-bit/stream_processor/flb_sp_parser.h>
 
-#define TIMESERIES_FUNCTIONS_SIZE 1
+#define TIMESERIES_FUNCTIONS_SIZE 2
 
 typedef struct timeseries *(*timeseries_function_alloc_typ)(int);
 typedef struct timeseries *(*timeseries_function_clone_typ)(struct timeseries *);
@@ -209,6 +210,87 @@ void cb_forecast_calc(struct timeseries *ts, struct flb_sp_cmd_key *cmd_key,
     msgpack_pack_float(mp_pck, result);
 }
 
+void cb_forecast_r_calc(struct timeseries *ts, struct flb_sp_cmd_key *cmd_key,
+                        msgpack_packer *mp_pck, int records, struct flb_time *tm)
+{
+    double mean_x;
+    double mean_y;
+    double var_x;
+    double cov_xy;
+    double result;
+    /* y = b0 + b1 * x */
+    double b0;
+    double b1;
+
+    double maximum_x;
+    struct aggr_num *val;
+    struct timeseries_forecast *forecast;
+
+    forecast = (struct timeseries_forecast *) ts;
+
+    mean_x = forecast->sigma_x / records;
+    mean_y = forecast->sigma_y / records;
+    cov_xy = (forecast->sigma_xy / (double) records) - mean_x * mean_y;
+    var_x = (forecast->sigma_x2 / records) - mean_x * mean_x;
+
+    b1 = cov_xy / var_x;
+    b0 = mean_y - b1 * mean_x;
+
+
+    /* Get the cap (4th arguement) */
+    val = ts->nums + 3;
+    switch (val->type) {
+    case FLB_SP_NUM_I64:
+        maximum_x = (double) val->i64;
+        break;
+    case FLB_SP_NUM_F64:
+        maximum_x = val->f64;
+        break;
+    default:
+        return;
+        break;
+    }
+
+    /*
+     * calculate forecast for value (3rd argument).
+     */
+    val = ts->nums + 2;
+
+    if (b1 == 0) {
+        result = maximum_x;
+    }
+    else {
+        switch (val->type) {
+        case FLB_SP_NUM_I64:
+            result = (((double) val->i64 - b0) / b1) - *forecast->latest_x;
+            break;
+        case FLB_SP_NUM_F64:
+            result = ((val->i64 - b0) / b1) - *forecast->latest_x;
+            break;
+        default:
+            result = nan("");
+            break;
+        }
+
+        if (result < 0) {
+            result = maximum_x;
+        }
+    }
+
+    /* pack the result */
+    if (cmd_key->alias) {
+        msgpack_pack_str(mp_pck, flb_sds_len(cmd_key->alias));
+        msgpack_pack_str_body(mp_pck,
+                              cmd_key->alias,
+                              flb_sds_len(cmd_key->alias));
+    }
+    else {
+        msgpack_pack_str(mp_pck, 10);
+        msgpack_pack_str_body(mp_pck, "FORECAST_R", 10);
+    }
+    msgpack_pack_float(mp_pck, result);
+}
+
 void cb_forecast_destroy(struct timeseries *ts)
 {
     struct timeseries_forecast *forecast;
@@ -225,35 +307,42 @@ void cb_forecast_destroy(struct timeseries *ts)
 
 char *timeseries_functions[TIMESERIES_FUNCTIONS_SIZE] = {
     "forecast",
+    "forecast_r",
 };
 
 /* Timeseries function memory allocation */
 timeseries_function_alloc_typ timeseries_functions_alloc_ptr[TIMESERIES_FUNCTIONS_SIZE] = {
+    cb_forecast_alloc,
     cb_forecast_alloc,
 };
 
 /* Timeseries function clone */
 timeseries_function_clone_typ timeseries_functions_clone_ptr[TIMESERIES_FUNCTIONS_SIZE] = {
     cb_forecast_clone,
+    cb_forecast_clone,
 };
 
 /* Timeseries function record addition */
 timeseries_function_add_typ timeseries_functions_add_ptr[TIMESERIES_FUNCTIONS_SIZE] = {
+    cb_forecast_add,
     cb_forecast_add,
 };
 
 /* Timeseries function record removal */
 timeseries_function_rem_typ timeseries_functions_rem_ptr[TIMESERIES_FUNCTIONS_SIZE] = {
     cb_forecast_rem,
+    cb_forecast_rem,
 };
 
 /* Timeseries function calculation */
 timeseries_function_calc_typ timeseries_functions_calc_ptr[TIMESERIES_FUNCTIONS_SIZE] = {
     cb_forecast_calc,
+    cb_forecast_r_calc,
 };
 
 /* Timeseries function calculation */
 timeseries_function_destroy_typ timeseries_functions_destroy_ptr[TIMESERIES_FUNCTIONS_SIZE] = {
+    cb_forecast_destroy,
     cb_forecast_destroy,
 };
 

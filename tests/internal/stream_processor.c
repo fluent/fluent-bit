@@ -1179,6 +1179,52 @@ static void cb_forecast_hopping_window(int id, struct task_check *check,
     TEST_CHECK(ret == FLB_TRUE);
 }
 
+static void cb_forecast_r_tumbling_window(int id, struct task_check *check,
+                                          char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect one record only */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 1);
+
+    /* Check SUM value result */
+    ret = mp_record_key_cmp(buf, size, 0, "FORECAST_R",
+                            MSGPACK_OBJECT_FLOAT,
+                            NULL, 0, 39.0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* Check AVG value result */
+    ret = mp_record_key_cmp(buf, size, 0, "AVG(usage)",
+                            MSGPACK_OBJECT_FLOAT,
+                            NULL, 0, 60.0);
+
+    TEST_CHECK(ret == FLB_TRUE);
+}
+
+static void cb_forecast_r_hopping_window(int id, struct task_check *check,
+                                         char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect one record only */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 1);
+
+    /* Check SUM value result */
+    ret = mp_record_key_cmp(buf, size, 0, "FORECAST_R",
+                            MSGPACK_OBJECT_FLOAT,
+                            NULL, 0, 24.0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* Check AVG value result */
+    ret = mp_record_key_cmp(buf, size, 0, "AVG(usage)",
+                            MSGPACK_OBJECT_FLOAT,
+                            NULL, 0, 175.0);
+
+    TEST_CHECK(ret == FLB_TRUE);
+}
+
 /* Tests for 'test_window' */
 struct task_check window_checks[] = {
     {
@@ -1210,7 +1256,7 @@ struct task_check window_checks[] = {
         "ADVANCE BY 2 SECOND) WHERE word3 IS NOT NULL;",
         cb_hopping_window_5_second
     },
-    {
+    {    /* FORECAST */
         4, FLB_SP_WINDOW_TUMBLING, 1, 0,
         "timeseries_forecast_window_tumbling",
         "SELECT AVG(usage), TIMESERIES_FORECAST(id, usage, 20) FROM " \
@@ -1223,6 +1269,20 @@ struct task_check window_checks[] = {
         "SELECT AVG(usage), TIMESERIES_FORECAST(id, usage, 20) FROM " \
         "STREAM:FLB WINDOW HOPPING (5 SECOND, ADVANCE BY 2 SECOND);",
         cb_forecast_hopping_window
+    },
+    { /* FORECAST_R */
+        6, FLB_SP_WINDOW_TUMBLING, 1, 0,
+        "timeseries_forecast_r_window_tumbling",
+        "SELECT AVG(usage), TIMESERIES_FORECAST_R(id, usage, 500, 10000) FROM " \
+        "STREAM:FLB WINDOW TUMBLING (5 SECOND);",
+        cb_forecast_r_tumbling_window
+    },
+    {
+        7, FLB_SP_WINDOW_HOPPING, 5, 2,
+        "timeseries_forecast_r_window_hopping",
+        "SELECT AVG(usage), TIMESERIES_FORECAST_R(id, usage, 500, 10000) FROM " \
+        "STREAM:FLB WINDOW HOPPING (5 SECOND, ADVANCE BY 2 SECOND);",
+        cb_forecast_r_hopping_window
     },
 };
 
