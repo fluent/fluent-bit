@@ -122,6 +122,30 @@ static inline int proc_temperature(struct flb_in_thermal_config *ctx, struct tem
     return i;
 }
 
+static int thermal_device_exists(struct flb_in_thermal_config *ctx)
+{
+    int n;
+    struct temp_info info[IN_THERMAL_N_MAX];
+
+    n = proc_temperature(ctx, info,  IN_THERMAL_N_MAX);
+    if (!n) {
+        return FLB_FALSE;
+    }
+    return FLB_TRUE;
+}
+
+static void config_destroy(struct flb_in_thermal_config *ctx) {
+#ifdef FLB_HAVE_REGEX
+    if (ctx && ctx->name_regex) {
+        flb_regex_destroy(ctx->name_regex);
+    }
+    if (ctx && ctx->type_regex) {
+        flb_regex_destroy(ctx->type_regex);
+    }
+#endif
+    flb_free(ctx);
+}
+
 /* Init temperature input */
 static int in_thermal_init(struct flb_input_instance *in,
                        struct flb_config *config, void *data)
@@ -130,6 +154,7 @@ static int in_thermal_init(struct flb_input_instance *in,
     struct flb_in_thermal_config *ctx;
     (void) data;
     const char *pval = NULL;
+    int dev_found = FLB_FALSE;
 
     /* Allocate space for the configuration */
     ctx = flb_calloc(1, sizeof(struct flb_in_thermal_config));
@@ -181,6 +206,13 @@ static int in_thermal_init(struct flb_input_instance *in,
         }
     }
 #endif
+
+    dev_found = thermal_device_exists(ctx);
+    if (dev_found == FLB_FALSE) {
+        flb_error("[in_thermal] thermal device file not found");
+        config_destroy(ctx);
+        return -1;
+    }
 
     /* Set the context */
     flb_input_set_context(in, ctx);
@@ -269,15 +301,9 @@ static int in_thermal_exit(void *data, struct flb_config *config)
 {
     (void) *config;
     struct flb_in_thermal_config *ctx = data;
-#ifdef FLB_HAVE_REGEX
-    if (ctx && ctx->name_regex) {
-        flb_regex_destroy(ctx->name_regex);
-    }
-    if (ctx && ctx->type_regex) {
-        flb_regex_destroy(ctx->type_regex);
-    }
-#endif
-    flb_free(ctx);
+
+    config_destroy(ctx);
+    
     return 0;
 }
 
