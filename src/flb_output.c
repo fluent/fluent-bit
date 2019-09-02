@@ -84,19 +84,19 @@ static void flb_output_free_properties(struct flb_output_instance *ins)
 
 #ifdef FLB_HAVE_TLS
     if (ins->tls_ca_path) {
-        flb_free(ins->tls_ca_path);
+        flb_sds_destroy(ins->tls_ca_path);
     }
     if (ins->tls_ca_file) {
-        flb_free(ins->tls_ca_file);
+        flb_sds_destroy(ins->tls_ca_file);
     }
     if (ins->tls_crt_file) {
-        flb_free(ins->tls_crt_file);
+        flb_sds_destroy(ins->tls_crt_file);
     }
     if (ins->tls_key_file) {
-        flb_free(ins->tls_key_file);
+        flb_sds_destroy(ins->tls_key_file);
     }
     if (ins->tls_key_passwd) {
-        flb_free(ins->tls_key_passwd);
+        flb_sds_destroy(ins->tls_key_passwd);
     }
 #endif
 }
@@ -404,7 +404,7 @@ int flb_output_set_property(struct flb_output_instance *out,
         if (strcasecmp(tmp, "true") == 0 || strcasecmp(tmp, "on") == 0) {
             if ((out->flags & FLB_IO_TLS) == 0) {
                 flb_error("[config] %s don't support TLS", out->name);
-                flb_free(tmp);
+                flb_sds_destroy(tmp);
                 return -1;
             }
 
