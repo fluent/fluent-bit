@@ -69,6 +69,7 @@ struct cpu_stats {
 /* CPU Input configuration & context */
 struct flb_in_cpu_config {
     /* setup */
+    pid_t pid;          /* optional PID */
     int n_processors;   /* number of core processors  */
     int cpu_ticks;      /* CPU ticks (Kernel setting) */
     int coll_fd;        /* collector id/fd            */
@@ -96,7 +97,8 @@ struct flb_in_cpu_config {
  * takes in consideration the number CPU cores, so it return a value
  * between 0 and 100 based on 'capacity'.
  */
-static inline double CPU_METRIC_SYS_AVERAGE(unsigned long pre, unsigned long now,
+static inline double CPU_METRIC_SYS_AVERAGE(unsigned long pre,
+                                            unsigned long now,
                                             struct flb_in_cpu_config *ctx)
 {
     double diff;
@@ -124,15 +126,26 @@ static inline double CPU_METRIC_USAGE(unsigned long pre, unsigned long now,
     }
 
     diff = ULL_ABS(now, pre);
+
     total = ((diff * 100) / ctx->cpu_ticks) / (ctx->interval_sec + 1e-9*ctx->interval_nsec);
     return total;
 }
 
-int in_cpu_pre_run(void *in_context, struct flb_config *config);
-int in_cpu_collect(struct flb_input_instance *i_ins,
-                   struct flb_config *config, void *in_context);
-void *in_cpu_flush(void *in_context, size_t *size);
+/* Returns the CPU % utilization of a given CPU core */
+static inline double CPU_METRIC_PID_USAGE(unsigned long pre, unsigned long now,
+                                          struct flb_in_cpu_config *ctx)
+{
+    double diff;
+    double total = 0;
 
-extern struct flb_input_plugin in_cpu_plugin;
+    if (pre == now) {
+        return 0.0;
+    }
+
+    diff = ULL_ABS(now, pre);
+    total = 100.0 * ((diff / ctx->cpu_ticks) / (ctx->interval_sec + 1e-9*ctx->interval_nsec));
+
+    return total;
+}
 
 #endif
