@@ -120,9 +120,11 @@ static int tail_fs_event(struct flb_input_instance *i_ins,
             file->buf_len = 0;
 
             /* Update offset in the database file */
+#ifdef FLB_HAVE_SQLDB
             if (ctx->db) {
                 flb_tail_db_file_offset(file, ctx);
             }
+#endif
         }
 
         /* Collect the data */
