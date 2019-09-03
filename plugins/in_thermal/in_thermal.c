@@ -122,18 +122,6 @@ static inline int proc_temperature(struct flb_in_thermal_config *ctx, struct tem
     return i;
 }
 
-static int thermal_device_exists(struct flb_in_thermal_config *ctx)
-{
-    int n;
-    struct temp_info info[IN_THERMAL_N_MAX];
-
-    n = proc_temperature(ctx, info,  IN_THERMAL_N_MAX);
-    if (!n) {
-        return FLB_FALSE;
-    }
-    return FLB_TRUE;
-}
-
 static void config_destroy(struct flb_in_thermal_config *ctx) {
 #ifdef FLB_HAVE_REGEX
     if (ctx && ctx->name_regex) {
@@ -154,7 +142,7 @@ static int in_thermal_init(struct flb_input_instance *in,
     struct flb_in_thermal_config *ctx;
     (void) data;
     const char *pval = NULL;
-    int dev_found = FLB_FALSE;
+    struct temp_info info[IN_THERMAL_N_MAX];
 
     /* Allocate space for the configuration */
     ctx = flb_calloc(1, sizeof(struct flb_in_thermal_config));
@@ -207,11 +195,9 @@ static int in_thermal_init(struct flb_input_instance *in,
     }
 #endif
 
-    dev_found = thermal_device_exists(ctx);
-    if (dev_found == FLB_FALSE) {
-        flb_error("[in_thermal] thermal device file not found");
-        config_destroy(ctx);
-        return -1;
+    ctx->prev_device_num = proc_temperature(ctx, info,  IN_THERMAL_N_MAX);
+    if (!ctx->prev_device_num){
+        flb_warn("[in_thermal] thermal device file not found");
     }
 
     /* Set the context */
@@ -246,6 +232,11 @@ int in_thermal_collect(struct flb_input_instance *i_ins,
 
     /* Get the current temperature(s) */
     n = proc_temperature(ctx, info, IN_THERMAL_N_MAX);
+    if (n != ctx->prev_device_num) {
+        flb_info("[in_thermal] the number of thermal devices changed %d -> %d",
+                 ctx->prev_device_num, n);
+    }
+    ctx->prev_device_num = n;
     if (!n) {
         return 0;
     }
