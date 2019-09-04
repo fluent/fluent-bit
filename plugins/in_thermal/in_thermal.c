@@ -122,18 +122,6 @@ static inline int proc_temperature(struct flb_in_thermal_config *ctx, struct tem
     return i;
 }
 
-static void config_destroy(struct flb_in_thermal_config *ctx) {
-#ifdef FLB_HAVE_REGEX
-    if (ctx && ctx->name_regex) {
-        flb_regex_destroy(ctx->name_regex);
-    }
-    if (ctx && ctx->type_regex) {
-        flb_regex_destroy(ctx->type_regex);
-    }
-#endif
-    flb_free(ctx);
-}
-
 /* Init temperature input */
 static int in_thermal_init(struct flb_input_instance *in,
                        struct flb_config *config, void *data)
@@ -292,9 +280,15 @@ static int in_thermal_exit(void *data, struct flb_config *config)
 {
     (void) *config;
     struct flb_in_thermal_config *ctx = data;
-
-    config_destroy(ctx);
-    
+#ifdef FLB_HAVE_REGEX
+    if (ctx && ctx->name_regex) {
+        flb_regex_destroy(ctx->name_regex);
+    }
+    if (ctx && ctx->type_regex) {
+        flb_regex_destroy(ctx->type_regex);
+    }
+#endif
+    flb_free(ctx);
     return 0;
 }
 
