@@ -31,6 +31,8 @@
 #define FLB_DATADOG_DD_SOURCE_KEY     "ddsource"
 #define FLB_DATADOG_DD_SERVICE_KEY    "service"
 #define FLB_DATADOG_DD_TAGS_KEY       "ddtags"
+#define FLB_DATADOG_DD_MESSAGE_KEY    "message"
+#define FLB_DATADOG_DD_LOG_KEY        "log"
 
 #define FLB_DATADOG_CONTENT_TYPE   "Content-Type"
 #define FLB_DATADOG_MIME_JSON      "application/json"
@@ -52,6 +54,7 @@ struct flb_out_datadog {
     flb_sds_t dd_source;
     flb_sds_t dd_service;
     flb_sds_t dd_tags;
+    flb_sds_t dd_message_key;
 
     /* Upstream connection to the backend server */
     struct flb_upstream *upstream;
