@@ -184,7 +184,7 @@ static int in_thermal_init(struct flb_input_instance *in,
 #endif
 
     ctx->prev_device_num = proc_temperature(ctx, info,  IN_THERMAL_N_MAX);
-    if (!ctx->prev_device_num){
+    if (!ctx->prev_device_num) {
         flb_warn("[in_thermal] thermal device file not found");
     }
 
