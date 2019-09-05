@@ -45,6 +45,7 @@ struct flb_syslog {
     /* Unix socket (UDP/TCP)*/
     int server_fd;
     char *unix_path;
+    unsigned int unix_perm;
 
     /* UDP buffer, data length and buffer size */
     char *buffer_data;
