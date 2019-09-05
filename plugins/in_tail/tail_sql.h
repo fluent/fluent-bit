@@ -53,4 +53,8 @@
 
 #define SQL_PRAGMA_SYNC                         \
     "PRAGMA synchronous=%i;"
+
+#define SQL_PRAGMA_JOURNAL_MODE                 \
+    "PRAGMA journal_mode=OFF;"
+
 #endif

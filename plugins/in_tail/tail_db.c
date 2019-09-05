@@ -68,6 +68,14 @@ struct flb_sqldb *flb_tail_db_open(const char *path,
         }
     }
 
+
+    ret = flb_sqldb_query(db, SQL_PRAGMA_JOURNAL_MODE, NULL, NULL);
+    if (ret != FLB_OK) {
+        flb_error("[in_tail:db] could not set pragma 'journal_mode'");
+        flb_sqldb_close(db);
+        return NULL;
+    }
+
     return db;
 }
 
@@ -143,7 +151,6 @@ int flb_tail_db_file_offset(struct flb_tail_file *file,
     if (ret == FLB_ERROR) {
         return -1;
     }
-
     return 0;
 }
 
