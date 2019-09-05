@@ -68,6 +68,14 @@ static void dd_msgpack_pack_key_value_str(msgpack_packer* mp_pck,
     msgpack_pack_str_body(mp_pck,val, val_size);
 }
 
+static int dd_compare_msgpack_obj_key_with_str(const msgpack_object obj, const char *key, size_t key_size) {
+    if (obj.via.str.size == key_size && memcmp(obj.via.str.ptr,key, key_size) == 0) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
 static int datadog_format(const void *data, size_t bytes,
                           const char *tag, int tag_len,
                           char **out_data, size_t *out_size,
@@ -148,21 +156,27 @@ static int datadog_format(const void *data, size_t bytes,
                                           ctx->dd_service, flb_sds_len(ctx->dd_service));
         }
 
-        /* dd_tags */
-        if (ctx->dd_tags != NULL) {
-            dd_msgpack_pack_key_value_str(&mp_pck,
-                                          FLB_DATADOG_DD_TAGS_KEY, sizeof(FLB_DATADOG_DD_TAGS_KEY) -1,
-                                          ctx->dd_tags, flb_sds_len(ctx->dd_tags));
-        }
-
         /* Append initial object k/v */
         int i = 0;
         for (i = 0; i < map_size; i++) {
             k = map.via.map.ptr[i].key;
             v = map.via.map.ptr[i].val;
+            /* Mapping between input keys to specific datadog keys */
+            if (ctx->dd_message_key != NULL && dd_compare_msgpack_obj_key_with_str(k, ctx->dd_message_key, flb_sds_len(ctx->dd_message_key)) == FLB_TRUE) {
+                msgpack_pack_str(&mp_pck, sizeof(FLB_DATADOG_DD_MESSAGE_KEY)-1);
+                msgpack_pack_str_body(&mp_pck, FLB_DATADOG_DD_MESSAGE_KEY, sizeof(FLB_DATADOG_DD_MESSAGE_KEY)-1);
+            } else {
+                msgpack_pack_object(&mp_pck, k);
+            }
 
-            msgpack_pack_object(&mp_pck, k);
             msgpack_pack_object(&mp_pck, v);
+        }
+
+        /* dd_tags */
+        if (ctx->dd_tags != NULL) {
+            dd_msgpack_pack_key_value_str(&mp_pck,
+                                          FLB_DATADOG_DD_TAGS_KEY, sizeof(FLB_DATADOG_DD_TAGS_KEY) -1,
+                                          ctx->dd_tags, flb_sds_len(ctx->dd_tags));
         }
     }
 
