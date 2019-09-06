@@ -87,7 +87,7 @@ int flb_gzip_compress(void *in_data, size_t in_len,
     gzip_header(out_buf);
 
     /* Header offset */
-    pb = out_buf + FLB_GZIP_HEADER_OFFSET;
+    pb = (uint8_t *) out_buf + FLB_GZIP_HEADER_OFFSET;
 
     flush = Z_NO_FLUSH;
     while (1) {
@@ -116,7 +116,7 @@ int flb_gzip_compress(void *in_data, size_t in_len,
 
     /* Construct the gzip checksum (CRC32 footer) */
     footer_start = FLB_GZIP_HEADER_OFFSET + *out_len;
-    pb = out_buf + footer_start;
+    pb = (uint8_t *) out_buf + footer_start;
 
     crc = mz_crc32(MZ_CRC32_INIT, in_data, in_len);
     *pb++ = crc & 0xFF;
@@ -175,7 +175,7 @@ int flb_gzip_uncompress(void *in_data, size_t in_len,
     }
 
     /* Map zip content */
-    zip_data = in_data + FLB_GZIP_HEADER_OFFSET;
+    zip_data = (uint8_t *) in_data + FLB_GZIP_HEADER_OFFSET;
     zip_len = in_len - (FLB_GZIP_HEADER_OFFSET + 8);
 
     mz_stream stream;

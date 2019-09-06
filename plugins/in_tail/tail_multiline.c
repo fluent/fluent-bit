@@ -20,6 +20,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_kv.h>
 
 #include "tail_config.h"
 #include "tail_multiline.h"
@@ -49,7 +50,7 @@ int flb_tail_mult_create(struct flb_tail_config *ctx,
     const char *tmp;
     struct mk_list *head;
     struct flb_parser *parser;
-    struct flb_config_prop *p;
+    struct flb_kv *kv;
 
     tmp = flb_input_get_property("multiline_flush", i_ins);
     if (!tmp) {
@@ -79,15 +80,15 @@ int flb_tail_mult_create(struct flb_tail_config *ctx,
 
     /* Read all multiline rules */
     mk_list_foreach(head, &i_ins->properties) {
-        p = mk_list_entry(head, struct flb_config_prop, _head);
-        if (strcasecmp("parser_firstline", p->key) == 0) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        if (strcasecmp("parser_firstline", kv->key) == 0) {
             continue;
         }
 
-        if (strncasecmp("parser_", p->key, 7) == 0) {
-            parser = flb_parser_get(p->val, config);
+        if (strncasecmp("parser_", kv->key, 7) == 0) {
+            parser = flb_parser_get(kv->val, config);
             if (!parser) {
-                flb_error("[in_tail] multiline: invalid parser '%s'", p->val);
+                flb_error("[in_tail] multiline: invalid parser '%s'", kv->val);
                 return -1;
             }
 

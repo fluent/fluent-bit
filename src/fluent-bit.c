@@ -52,7 +52,7 @@
 
 struct flb_stacktrace {
     struct backtrace_state *state;
-	int error;
+    int error;
     int line;
 };
 
@@ -63,7 +63,7 @@ static void flb_stacktrace_error_callback(void *data,
 {
     struct flb_stacktrace *ctx = data;
     fprintf(stderr, "ERROR: %s (%d)", msg, errnum);
-	ctx->error = 1;
+    ctx->error = 1;
 }
 
 static int flb_stacktrace_print_callback(void *data, uintptr_t pc,
@@ -206,7 +206,7 @@ static void flb_banner()
 }
 
 #define flb_print_signal(X) case X:                       \
-    write (STDERR_FILENO, #X ")\n" , sizeof(#X ")\n")-1); \
+    write (STDERR_FILENO, #X ")\n", sizeof(#X ")\n")-1); \
     break;
 
 static void flb_signal_handler(int signal)
@@ -470,10 +470,10 @@ static int flb_service_conf(struct flb_config *config, char *file)
         mk_mem_free(name);
         if (!in) {
             fprintf(stderr, "Input plugin '%s' cannot be loaded\n", tmp);
-            mk_mem_free(tmp);
+            flb_sds_destroy(tmp);
             goto flb_service_conf_end;
         }
-        mk_mem_free(tmp);
+        flb_sds_destroy(tmp);
 
         /* Iterate other properties */
         mk_list_foreach(h_prop, &section->entries) {
@@ -512,10 +512,10 @@ static int flb_service_conf(struct flb_config *config, char *file)
         mk_mem_free(name);
         if (!out) {
             fprintf(stderr, "Output plugin '%s' cannot be loaded\n", tmp);
-            mk_mem_free(tmp);
+            flb_sds_destroy(tmp);
             goto flb_service_conf_end;
         }
-        mk_mem_free(tmp);
+        flb_sds_destroy(tmp);
 
         /* Iterate other properties */
         mk_list_foreach(h_prop, &section->entries) {
@@ -544,7 +544,7 @@ static int flb_service_conf(struct flb_config *config, char *file)
         /* Create an instace of the plugin */
         tmp = flb_env_var_translate(config->env, name);
         filter = flb_filter_new(config, tmp, NULL);
-        mk_mem_free(tmp);
+        flb_sds_destroy(tmp);
         mk_mem_free(name);
         if (!filter) {
             flb_service_conf_err(section, "Name");
@@ -565,7 +565,7 @@ static int flb_service_conf(struct flb_config *config, char *file)
 
     ret = 0;
 
- flb_service_conf_end:
+flb_service_conf_end:
     if (fconf != NULL) {
         mk_rconf_free(fconf);
     }

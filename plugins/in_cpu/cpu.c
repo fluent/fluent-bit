@@ -30,9 +30,7 @@
 
 #include <msgpack.h>
 
-#include "in_cpu.h"
-
-struct flb_input_plugin in_cpu_plugin;
+#include "cpu.h"
 
 static inline void snapshot_key_format(int cpus, struct cpu_snapshot *snap_arr)
 {
@@ -55,13 +53,13 @@ static int snapshots_init(int cpus, struct cpu_stats *cstats)
 {
     cstats->snap_a = flb_calloc(1, sizeof(struct cpu_snapshot) * (cpus + 1));
     if (!cstats->snap_a) {
-        perror("malloc");
+        flb_errno();
         return -1;
     }
 
     cstats->snap_b = flb_malloc(sizeof(struct cpu_snapshot) * (cpus + 1));
     if (!cstats->snap_b) {
-        perror("malloc");
+        flb_errno();
         return -1;
     }
 
@@ -96,6 +94,7 @@ static inline double proc_cpu_load(int cpus, struct cpu_stats *cstats)
 
     f = fopen("/proc/stat", "r");
     if (f == NULL) {
+        flb_errno();
         return -1;
     }
 
@@ -157,81 +156,78 @@ static inline double proc_cpu_load(int cpus, struct cpu_stats *cstats)
     return 0;
 }
 
-/* Init CPU input */
-static int in_cpu_init(struct flb_input_instance *in,
-                       struct flb_config *config, void *data)
+/* Retrieve CPU stats for a given PID */
+static inline double proc_cpu_pid_load(pid_t pid, struct cpu_stats *cstats)
 {
+    int i;
     int ret;
-    struct flb_in_cpu_config *ctx;
-    (void) data;
-    const char *pval = NULL;
+    char *p;
+    char line[255];
+    char *fmt = ") %c %d %d %d %d %d %u %lu %lu %lu %lu %lu %lu ";
+    FILE *f;
+    /* sscanf variables (ss_N) to perform scanning */
+    unsigned char ss_state;
+    unsigned int ss_ppid;
+    unsigned int ss_pgrp;
+    unsigned int ss_session;
+    unsigned int ss_tty_nr;
+    unsigned int ss_tpgid;
+    unsigned int ss_flags;
+    unsigned long ss_minflt;
+    unsigned long ss_cmdinflt;
+    unsigned long ss_majflt;
+    unsigned long ss_cmajflt;
+    struct cpu_snapshot *s;
+    struct cpu_snapshot *snap_arr;
 
-    /* Allocate space for the configuration */
-    ctx = flb_calloc(1, sizeof(struct flb_in_cpu_config));
-    if (!ctx) {
-        perror("calloc");
+    /* Read the process stats */
+    snprintf(line, sizeof(line) - 1, "/proc/%d/stat", pid);
+    f = fopen(line, "r");
+    if (f == NULL) {
+        flb_errno();
+        flb_error("[in_cpu] error opening stats file %s", line);
         return -1;
     }
-    ctx->i_ins = in;
 
-    /* Gather number of processors and CPU ticks */
-    ctx->n_processors = sysconf(_SC_NPROCESSORS_ONLN);
-    ctx->cpu_ticks    = sysconf(_SC_CLK_TCK);
-
-    /* Collection time setting */
-    pval = flb_input_get_property("interval_sec", in);
-    if (pval != NULL && atoi(pval) >= 0) {
-        ctx->interval_sec = atoi(pval);
+    if (cstats->snap_active == CPU_SNAP_ACTIVE_A) {
+        s = cstats->snap_a;
     }
     else {
-        ctx->interval_sec = DEFAULT_INTERVAL_SEC;
+        s = cstats->snap_b;
     }
 
-    pval = flb_input_get_property("interval_nsec", in);
-    if (pval != NULL && atoi(pval) >= 0) {
-        ctx->interval_nsec = atoi(pval);
-    }
-    else {
-        ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
-    }
-
-    if (ctx->interval_sec <= 0 && ctx->interval_nsec <= 0) {
-        /* Illegal settings. Override them. */
-        ctx->interval_sec = DEFAULT_INTERVAL_SEC;
-        ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
-    }
-
-    /* Initialize buffers for CPU stats */
-    ret = snapshots_init(ctx->n_processors, &ctx->cstats);
-    if (ret != 0) {
-        flb_free(ctx);
+    if (fgets(line, sizeof(line) - 1, f) == NULL) {
+        flb_error("[in_cpu] cannot read process %lu stats", pid);
+        fclose(f);
         return -1;
     }
 
-    /* Get CPU load, ready to be updated once fired the calc callback */
-    ret = proc_cpu_load(ctx->n_processors, &ctx->cstats);
-    if (ret != 0) {
-        flb_error("[cpu] Could not obtain CPU data");
-        flb_free(ctx);
-        return -1;
+    errno = 0;
+
+    /* skip first two values (after process name) */
+    p = line;
+    while (*p != ')') *p++;
+
+    ret = sscanf(p,
+                 fmt,
+                 &ss_state,
+                 &ss_ppid,
+                 &ss_pgrp,
+                 &ss_session,
+                 &ss_tty_nr,
+                 &ss_tpgid,
+                 &ss_flags,
+                 &ss_minflt,
+                 &ss_cmdinflt,
+                 &ss_majflt,
+                 &ss_cmajflt,
+                 &s->v_user,
+                 &s->v_system);
+    if (errno != 0) {
+        flb_errno();
     }
-    ctx->cstats.snap_active = CPU_SNAP_ACTIVE_B;
 
-    /* Set the context */
-    flb_input_set_context(in, ctx);
-
-    /* Set our collector based on time, CPU usage every 1 second */
-    ret = flb_input_set_collector_time(in,
-                                       in_cpu_collect,
-                                       ctx->interval_sec,
-                                       ctx->interval_nsec,
-                                       config);
-    if (ret == -1) {
-        flb_error("[in_cpu] Could not set collector for CPU input plugin");
-        return -1;
-    }
-    ctx->coll_fd = ret;
-
+    fclose(f);
     return 0;
 }
 
@@ -314,10 +310,51 @@ struct cpu_snapshot *snapshot_percent(struct cpu_stats *cstats,
     return arr_now;
 }
 
+struct cpu_snapshot *snapshot_pid_percent(struct cpu_stats *cstats,
+                                          struct flb_in_cpu_config *ctx)
+{
+    unsigned long sum_pre;
+    unsigned long sum_now;
+    struct cpu_snapshot *snap_pre = NULL;
+    struct cpu_snapshot *snap_now = NULL;
 
-/* Callback to gather CPU usage between now and previous snapshot */
-int in_cpu_collect(struct flb_input_instance *i_ins,
-                   struct flb_config *config, void *in_context)
+    if (cstats->snap_active == CPU_SNAP_ACTIVE_A) {
+        snap_now = cstats->snap_a;
+        snap_pre = cstats->snap_b;
+    }
+    else if (cstats->snap_active == CPU_SNAP_ACTIVE_B) {
+        snap_now = cstats->snap_b;
+        snap_pre = cstats->snap_a;
+    }
+
+    /* Calculate overall CPU usage (user space + kernel space */
+    sum_pre = (snap_pre->v_user + snap_pre->v_system);
+    sum_now = (snap_now->v_user + snap_now->v_system);
+
+    snap_now->p_cpu = CPU_METRIC_USAGE(sum_pre, sum_now, ctx);
+
+    /* User space CPU% */
+    snap_now->p_user = CPU_METRIC_USAGE(snap_pre->v_user, snap_now->v_user,
+                                        ctx);
+
+    /* Kernel space CPU% */
+    snap_now->p_system = CPU_METRIC_USAGE(snap_pre->v_system,
+                                          snap_now->v_system,
+                                          ctx);
+
+#ifdef FLB_TRACE
+    flb_trace("cpu[pid=%i] all=%s%f%s user=%s%f%s system=%s%f%s",
+              ctx->pid,
+              ANSI_BOLD, snap_now->p_cpu, ANSI_RESET,
+              ANSI_BOLD, snap_now->p_user, ANSI_RESET,
+              ANSI_BOLD, snap_now->p_system, ANSI_RESET);
+#endif
+
+    return snap_now;
+}
+
+static int cpu_collect_system(struct flb_input_instance *i_ins,
+                              struct flb_config *config, void *in_context)
 {
     int i;
     int ret;
@@ -328,9 +365,10 @@ int in_cpu_collect(struct flb_input_instance *i_ins,
     msgpack_sbuffer mp_sbuf;
     (void) config;
 
-    /* Get the current CPU usage */
+    /* Get overall system CPU usage */
     ret = proc_cpu_load(ctx->n_processors, cstats);
     if (ret != 0) {
+        flb_error("[in_cpu] error retrieving overall system CPU stats");
         return -1;
     }
 
@@ -378,19 +416,177 @@ int in_cpu_collect(struct flb_input_instance *i_ins,
     return 0;
 }
 
-static void in_cpu_pause(void *data, struct flb_config *config)
+static int cpu_collect_pid(struct flb_input_instance *i_ins,
+                           struct flb_config *config, void *in_context)
+{
+    int i;
+    int ret;
+    struct flb_in_cpu_config *ctx = in_context;
+    struct cpu_stats *cstats = &ctx->cstats;
+    struct cpu_snapshot *s;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+    (void) config;
+
+    /* Get overall system CPU usage */
+    ret = proc_cpu_pid_load(ctx->pid, cstats);
+    if (ret != 0) {
+        flb_error("[in_cpu] error retrieving PID CPU stats");
+        return -1;
+    }
+
+    s = snapshot_pid_percent(cstats, ctx);
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    /*
+     * Store the new data into the MessagePack buffer,
+     */
+    msgpack_pack_array(&mp_pck, 2);
+    flb_pack_time_now(&mp_pck);
+    msgpack_pack_map(&mp_pck, 3);
+
+    /* All CPU */
+    msgpack_pack_str(&mp_pck, 5);
+    msgpack_pack_str_body(&mp_pck, "cpu_p", 5);
+    msgpack_pack_double(&mp_pck, s->p_cpu);
+
+    /* User space CPU % */
+    msgpack_pack_str(&mp_pck, 6);
+    msgpack_pack_str_body(&mp_pck, "user_p", 6);
+    msgpack_pack_double(&mp_pck, s->p_user);
+
+    /* System CPU % */
+    msgpack_pack_str(&mp_pck, 8);
+    msgpack_pack_str_body(&mp_pck, "system_p", 8);
+    msgpack_pack_double(&mp_pck, s->p_system);
+
+    snapshots_switch(cstats);
+    flb_trace("[in_cpu] PID %i CPU %0.2f%%", ctx->pid, s->p_cpu);
+
+    flb_input_chunk_append_raw(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+
+    return 0;
+}
+
+/* Callback to gather CPU usage between now and previous snapshot */
+static int cb_cpu_collect(struct flb_input_instance *i_ins,
+                          struct flb_config *config, void *in_context)
+{
+    struct flb_in_cpu_config *ctx = in_context;
+
+    /* if a PID is get, get CPU stats only for that process */
+    if (ctx->pid >= 0) {
+        return cpu_collect_pid(i_ins, config, in_context);
+    }
+    else {
+        /* Get all system CPU stats */
+        return cpu_collect_system(i_ins, config, in_context);
+    }
+}
+
+/* Init CPU input */
+static int cb_cpu_init(struct flb_input_instance *in,
+                       struct flb_config *config, void *data)
+{
+    int ret;
+    struct flb_in_cpu_config *ctx;
+    (void) data;
+    const char *pval = NULL;
+
+    /* Allocate space for the configuration */
+    ctx = flb_calloc(1, sizeof(struct flb_in_cpu_config));
+    if (!ctx) {
+        flb_errno();
+        return -1;
+    }
+    ctx->i_ins = in;
+
+    /* Gather number of processors and CPU ticks */
+    ctx->n_processors = sysconf(_SC_NPROCESSORS_ONLN);
+    ctx->cpu_ticks    = sysconf(_SC_CLK_TCK);
+
+    /* Process ID */
+    pval = flb_input_get_property("pid", in);
+    if (pval) {
+        ctx->pid = atoi(pval);
+    }
+    else {
+        ctx->pid = -1;
+    }
+
+    /* Collection time setting */
+    pval = flb_input_get_property("interval_sec", in);
+    if (pval != NULL && atoi(pval) >= 0) {
+        ctx->interval_sec = atoi(pval);
+    }
+    else {
+        ctx->interval_sec = DEFAULT_INTERVAL_SEC;
+    }
+
+    pval = flb_input_get_property("interval_nsec", in);
+    if (pval != NULL && atoi(pval) >= 0) {
+        ctx->interval_nsec = atoi(pval);
+    }
+    else {
+        ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
+    }
+
+    if (ctx->interval_sec <= 0 && ctx->interval_nsec <= 0) {
+        /* Illegal settings. Override them. */
+        ctx->interval_sec = DEFAULT_INTERVAL_SEC;
+        ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
+    }
+
+    /* Initialize buffers for CPU stats */
+    ret = snapshots_init(ctx->n_processors, &ctx->cstats);
+    if (ret != 0) {
+        flb_free(ctx);
+        return -1;
+    }
+
+    /* Get CPU load, ready to be updated once fired the calc callback */
+    ret = proc_cpu_load(ctx->n_processors, &ctx->cstats);
+    if (ret != 0) {
+        flb_error("[cpu] Could not obtain CPU data");
+        flb_free(ctx);
+        return -1;
+    }
+    ctx->cstats.snap_active = CPU_SNAP_ACTIVE_B;
+
+    /* Set the context */
+    flb_input_set_context(in, ctx);
+
+    /* Set our collector based on time, CPU usage every 1 second */
+    ret = flb_input_set_collector_time(in,
+                                       cb_cpu_collect,
+                                       ctx->interval_sec,
+                                       ctx->interval_nsec,
+                                       config);
+    if (ret == -1) {
+        flb_error("[in_cpu] Could not set collector for CPU input plugin");
+        return -1;
+    }
+    ctx->coll_fd = ret;
+
+    return 0;
+}
+
+static void cb_cpu_pause(void *data, struct flb_config *config)
 {
     struct flb_in_cpu_config *ctx = data;
     flb_input_collector_pause(ctx->coll_fd, ctx->i_ins);
 }
 
-static void in_cpu_resume(void *data, struct flb_config *config)
+static void cb_cpu_resume(void *data, struct flb_config *config)
 {
     struct flb_in_cpu_config *ctx = data;
     flb_input_collector_resume(ctx->coll_fd, ctx->i_ins);
 }
 
-static int in_cpu_exit(void *data, struct flb_config *config)
+static int cb_cpu_exit(void *data, struct flb_config *config)
 {
     (void) *config;
     struct flb_in_cpu_config *ctx = data;
@@ -411,11 +607,11 @@ static int in_cpu_exit(void *data, struct flb_config *config)
 struct flb_input_plugin in_cpu_plugin = {
     .name         = "cpu",
     .description  = "CPU Usage",
-    .cb_init      = in_cpu_init,
+    .cb_init      = cb_cpu_init,
     .cb_pre_run   = NULL,
-    .cb_collect   = in_cpu_collect,
+    .cb_collect   = cb_cpu_collect,
     .cb_flush_buf = NULL,
-    .cb_pause     = in_cpu_pause,
-    .cb_resume    = in_cpu_resume,
-    .cb_exit      = in_cpu_exit
+    .cb_pause     = cb_cpu_pause,
+    .cb_resume    = cb_cpu_resume,
+    .cb_exit      = cb_cpu_exit
 };

@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_network.h>
 
 #include <unistd.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -60,6 +61,14 @@ static int syslog_server_unix_create(struct flb_syslog *ctx)
     address_length = sizeof(address.sun_family) + len + 1;
     if (bind(fd, (struct sockaddr *) &address, address_length) != 0) {
         flb_errno();
+        close(fd);
+        return -1;
+    }
+
+    if (chmod(address.sun_path, ctx->unix_perm)) {
+        flb_errno();
+        flb_error("[in_syslog] cannot set permission on '%s' to %04o",
+                  address.sun_path, ctx->unix_perm);
         close(fd);
         return -1;
     }

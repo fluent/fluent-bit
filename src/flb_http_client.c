@@ -679,7 +679,7 @@ int flb_http_add_header(struct flb_http_client *c,
         }
         tmp = flb_realloc(c->header_buf, new_size);
         if (!tmp) {
-            perror("realloc");
+            flb_errno();
             return -1;
         }
         c->header_buf  = tmp;
@@ -705,6 +705,18 @@ int flb_http_add_header(struct flb_http_client *c,
     c->header_buf[c->header_len++] = '\n';
 
     return 0;
+}
+
+/* Adds a header specifying that the payload is compressed with gzip */
+int flb_http_set_content_encoding_gzip(struct flb_http_client *c)
+{
+    int ret;
+
+    ret = flb_http_add_header(c,
+                              FLB_HTTP_HEADER_CONTENT_ENCODING,
+                              sizeof(FLB_HTTP_HEADER_CONTENT_ENCODING) - 1,
+                              "gzip", 4);
+    return ret;
 }
 
 int flb_http_basic_auth(struct flb_http_client *c,

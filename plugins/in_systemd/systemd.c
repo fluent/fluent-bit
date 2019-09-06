@@ -86,7 +86,9 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
     const char *key;
     const char *val;
     char *tmp;
+#ifdef FLB_HAVE_SQLDB
     char *cursor = NULL;
+#endif
     char *tag;
     char new_tag[PATH_MAX];
     char last_tag[PATH_MAX];
@@ -260,6 +262,7 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
         }
     }
 
+#ifdef FLB_HAVE_SQLDB
     /* Save cursor */
     if (ctx->db) {
         sd_journal_get_cursor(ctx->j, &cursor);
@@ -268,6 +271,7 @@ static int in_systemd_collect(struct flb_input_instance *i_ins,
             flb_free(cursor);
         }
     }
+#endif
 
     /* Write any pending data into the buffer */
     if (mp_sbuf.size > 0) {

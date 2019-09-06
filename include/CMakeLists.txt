@@ -2,11 +2,11 @@
 
 if(NOT WITHOUT_HEADERS)
   install(FILES "fluent-bit.h"
-    DESTINATION include/
+    DESTINATION ${FLB_INSTALL_INCLUDEDIR}
     PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
 
   file(GLOB headers "fluent-bit/*.h")
   install(FILES ${headers}
-    DESTINATION include/fluent-bit
+    DESTINATION ${FLB_INSTALL_INCLUDEDIR}/fluent-bit
     PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
 endif()

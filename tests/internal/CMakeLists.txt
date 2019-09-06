@@ -24,6 +24,13 @@ if(FLB_STREAM_PROCESSOR)
     )
 endif()
 
+if(FLB_RECORD_ACCESSOR)
+  set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    record_accessor.c
+    )
+endif()
+
 if(FLB_METRICS)
   set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}

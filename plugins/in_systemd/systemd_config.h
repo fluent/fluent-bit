@@ -59,7 +59,10 @@ struct flb_systemd_config {
     int max_fields;            /* max number of fields per record */
     int max_entries;           /* max number of records per iteration */
     int strip_underscores;
+
+#ifdef FLB_HAVE_SQLDB
     struct flb_sqldb *db;
+#endif
     struct flb_input_instance *i_ins;
 };
 

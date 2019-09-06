@@ -181,7 +181,7 @@ struct flb_output_instance {
     void *tls;
 #endif
 
-    struct mk_list properties;           /* properties / configuration   */
+    struct mk_list  properties;          /* properties / configuration   */
     struct mk_list _head;                /* link to config->inputs       */
 
 #ifdef FLB_HAVE_METRICS

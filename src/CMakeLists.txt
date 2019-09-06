@@ -4,6 +4,7 @@ add_definitions(-DFLB_CORE=1)
 set(src
   ${src}
   flb_mp.c
+  flb_kv.c
   flb_api.c
   flb_lib.c
   flb_log.c
@@ -155,6 +156,7 @@ if(NOT FLB_SYSTEM_STRPTIME)
     )
 endif()
 
+
 include(CheckSymbolExists)
 check_symbol_exists(accept4 "sys/socket.h" HAVE_ACCEPT4)
 
@@ -178,6 +180,17 @@ if(CMAKE_SYSTEM_NAME MATCHES "Linux")
     ${FLB_DEPS}
     rt
     )
+endif()
+
+
+# Record Accessor
+if(FLB_RECORD_ACCESSOR)
+  set(src
+    ${src}
+    "flb_record_accessor.c"
+    "flb_ra_key.c"
+    )
+  add_subdirectory(record_accessor)
 endif()
 
 # Stream Processor
@@ -219,6 +232,14 @@ set(FLB_DEPS
   ${FLB_PROXY_PLUGINS}
   ${extra_libs}
   )
+
+# Record Accessor
+if(FLB_RECORD_ACCESSOR)
+  set(FLB_DEPS
+    ${FLB_DEPS}
+    flb-ra-parser
+    )
+endif()
 
 # Stream Processor
 if(FLB_STREAM_PROCESSOR)

@@ -38,13 +38,6 @@
 #define FLB_CONFIG_HTTP_PORT    "2020"
 #define FLB_CONFIG_DEFAULT_TAG  "fluent_bit"
 
-/* Property configuration: key/value for an input/output instance */
-struct flb_config_prop {
-    char *key;
-    char *val;
-    struct mk_list _head;
-};
-
 /* Main struct to hold the configuration of the runtime service */
 struct flb_config {
     struct mk_event ch_event;

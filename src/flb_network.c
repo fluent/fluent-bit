@@ -27,31 +27,22 @@
 #include <fcntl.h>
 #include <errno.h>
 
-#include <monkey/mk_core.h>
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_socket.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_macros.h>
 
+#include <monkey/mk_core.h>
+
 #ifndef SOL_TCP
 #define SOL_TCP IPPROTO_TCP
 #endif
-
-/* Copy a sub-string in a new memory buffer */
-static char *copy_substr(const char *str, int s)
-{
-    char *buf;
-
-    buf = flb_malloc(s + 1);
-    strncpy(buf, str, s);
-    buf[s] = '\0';
-
-    return buf;
-}
 
 int flb_net_host_set(const char *plugin_name, struct flb_net_host *host, const char *address)
 {
@@ -78,7 +69,7 @@ int flb_net_host_set(const char *plugin_name, struct flb_net_host *host, const c
         if (!e) {
             return -1;
         }
-        host->name = copy_substr(s, e - s);
+        host->name = flb_sds_create_len(s, e - s);
         host->ipv6 = FLB_TRUE;
         s = e + 1;
     } else {
@@ -89,7 +80,7 @@ int flb_net_host_set(const char *plugin_name, struct flb_net_host *host, const c
         if (e == s) {
             return -1;
         }
-        host->name = copy_substr(s, e - s);
+        host->name = flb_sds_create_len(s, e - s);
         s = e;
     }
     if (*s == ':') {
@@ -100,7 +91,7 @@ int flb_net_host_set(const char *plugin_name, struct flb_net_host *host, const c
     if (u) {
         host->uri = flb_uri_create(u);
     }
-    host->address = flb_strdup(address);
+    host->address = flb_sds_create(address);
 
     if (host->name) {
         host->listen = host->name;

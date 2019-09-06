@@ -28,7 +28,7 @@
 #include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_output.h>
-
+#include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_uri.h>
 #include <fluent-bit/flb_config.h>
@@ -80,35 +80,23 @@ void flb_output_pre_run(struct flb_config *config)
 
 static void flb_output_free_properties(struct flb_output_instance *ins)
 {
-    struct mk_list *tmp;
-    struct mk_list *head;
-    struct flb_config_prop *prop;
-
-    mk_list_foreach_safe(head, tmp, &ins->properties) {
-        prop = mk_list_entry(head, struct flb_config_prop, _head);
-
-        flb_free(prop->key);
-        flb_free(prop->val);
-
-        mk_list_del(&prop->_head);
-        flb_free(prop);
-    }
+    flb_kv_release(&ins->properties);
 
 #ifdef FLB_HAVE_TLS
     if (ins->tls_ca_path) {
-        flb_free(ins->tls_ca_path);
+        flb_sds_destroy(ins->tls_ca_path);
     }
     if (ins->tls_ca_file) {
-        flb_free(ins->tls_ca_file);
+        flb_sds_destroy(ins->tls_ca_file);
     }
     if (ins->tls_crt_file) {
-        flb_free(ins->tls_crt_file);
+        flb_sds_destroy(ins->tls_crt_file);
     }
     if (ins->tls_key_file) {
-        flb_free(ins->tls_key_file);
+        flb_sds_destroy(ins->tls_key_file);
     }
     if (ins->tls_key_passwd) {
-        flb_free(ins->tls_key_passwd);
+        flb_sds_destroy(ins->tls_key_passwd);
     }
 #endif
 }
@@ -116,7 +104,7 @@ static void flb_output_free_properties(struct flb_output_instance *ins)
 int flb_output_instance_destroy(struct flb_output_instance *ins)
 {
     if (ins->alias) {
-        flb_free(ins->alias);
+        flb_sds_destroy(ins->alias);
     }
 
     /* Remove URI context */
@@ -124,9 +112,9 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
         flb_uri_destroy(ins->host.uri);
     }
 
-    flb_free(ins->host.name);
-    flb_free(ins->host.address);
-    flb_free(ins->match);
+    flb_sds_destroy(ins->host.name);
+    flb_sds_destroy(ins->host.address);
+    flb_sds_destroy(ins->match);
 
 #ifdef FLB_HAVE_REGEX
         if (ins->match_regex) {
@@ -276,7 +264,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
 
         ctx = flb_calloc(1, sizeof(struct flb_plugin_proxy_context));
         if (!ctx) {
-            perror("calloc");
+            flb_errno();
             flb_free(instance);
             return NULL;
         }
@@ -296,6 +284,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
 #endif
     instance->retry_limit = 1;
     instance->host.name   = NULL;
+    instance->host.address = NULL;
 
     /* Parent plugin flags */
     flags = instance->flags;
@@ -329,7 +318,8 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
             return NULL;
         }
     }
-    mk_list_init(&instance->properties);
+
+    flb_kv_init(&instance->properties);
     mk_list_add(&instance->_head, &config->outputs);
 
     return instance;
@@ -352,14 +342,14 @@ int flb_output_set_property(struct flb_output_instance *out,
                             const char *k, const char *v)
 {
     int len;
-    char *tmp;
-    struct flb_config_prop *prop;
+    flb_sds_t tmp;
+    struct flb_kv *kv;
 
     len = strlen(k);
     tmp = flb_env_var_translate(out->config->env, v);
     if (tmp) {
         if (strlen(tmp) == 0) {
-            flb_free(tmp);
+            flb_sds_destroy(tmp);
             tmp = NULL;
         }
     }
@@ -371,7 +361,7 @@ int flb_output_set_property(struct flb_output_instance *out,
 #ifdef FLB_HAVE_REGEX
     else if (prop_key_check("match_regex", k, len) == 0) {
         out->match_regex = flb_regex_create(tmp);
-        flb_free(tmp);
+        flb_sds_destroy(tmp);
     }
 #endif
     else if (prop_key_check("alias", k, len) == 0 && tmp) {
@@ -383,7 +373,7 @@ int flb_output_set_property(struct flb_output_instance *out,
     else if (prop_key_check("port", k, len) == 0) {
         if (tmp) {
             out->host.port = atoi(tmp);
-            flb_free(tmp);
+            flb_sds_destroy(tmp);
         }
         else {
             out->host.port = 0;
@@ -391,7 +381,7 @@ int flb_output_set_property(struct flb_output_instance *out,
     }
     else if (prop_key_check("ipv6", k, len) == 0 && tmp) {
         out->host.ipv6 = flb_utils_bool(tmp);
-        flb_free(tmp);
+        flb_sds_destroy(tmp);
     }
     else if (prop_key_check("retry_limit", k, len) == 0) {
         if (tmp) {
@@ -403,7 +393,7 @@ int flb_output_set_property(struct flb_output_instance *out,
             else {
                 out->retry_limit = atoi(tmp);
             }
-            flb_free(tmp);
+            flb_sds_destroy(tmp);
         }
         else {
             out->retry_limit = 0;
@@ -414,7 +404,7 @@ int flb_output_set_property(struct flb_output_instance *out,
         if (strcasecmp(tmp, "true") == 0 || strcasecmp(tmp, "on") == 0) {
             if ((out->flags & FLB_IO_TLS) == 0) {
                 flb_error("[config] %s don't support TLS", out->name);
-                flb_free(tmp);
+                flb_sds_destroy(tmp);
                 return -1;
             }
 
@@ -423,7 +413,7 @@ int flb_output_set_property(struct flb_output_instance *out,
         else {
             out->use_tls = FLB_FALSE;
         }
-        flb_free(tmp);
+        flb_sds_destroy(tmp);
     }
     else if (prop_key_check("tls.verify", k, len) == 0 && tmp) {
         if (strcasecmp(tmp, "true") == 0 || strcasecmp(tmp, "on") == 0) {
@@ -432,11 +422,11 @@ int flb_output_set_property(struct flb_output_instance *out,
         else {
             out->tls_verify = FLB_FALSE;
         }
-        flb_free(tmp);
+        flb_sds_destroy(tmp);
     }
     else if (prop_key_check("tls.debug", k, len) == 0 && tmp) {
         out->tls_debug = atoi(tmp);
-        flb_free(tmp);
+        flb_sds_destroy(tmp);
     }
     else if (prop_key_check("tls.ca_path", k, len) == 0) {
         out->tls_ca_path = tmp;
@@ -455,18 +445,18 @@ int flb_output_set_property(struct flb_output_instance *out,
     }
 #endif
     else {
-        /* Append any remaining configuration key to prop list */
-        prop = flb_malloc(sizeof(struct flb_config_prop));
-        if (!prop) {
+        /*
+         * Create the property, we don't pass the value since we will
+         * map it directly to avoid an extra memory allocation.
+         */
+        kv = flb_kv_item_create(&out->properties, (char *) k, NULL);
+        if (!k) {
             if (tmp) {
-                flb_free(tmp);
+                flb_sds_destroy(tmp);
             }
             return -1;
         }
-
-        prop->key = flb_strdup(k);
-        prop->val = tmp;
-        mk_list_add(&prop->_head, &out->properties);
+        kv->val = tmp;
     }
 
     return 0;
@@ -478,7 +468,7 @@ void flb_output_net_default(const char *host, const int port,
 {
     /* Set default network configuration */
     if (!o_ins->host.name) {
-        o_ins->host.name = flb_strdup(host);
+        o_ins->host.name = flb_sds_create(host);
     }
     if (o_ins->host.port == 0) {
         o_ins->host.port = port;
