@@ -151,7 +151,7 @@ option(FLB_FILTER_PARSER      "Enable parser filter"               Yes)
 option(FLB_FILTER_KUBERNETES  "Enable kubernetes filter"           Yes)
 option(FLB_FILTER_THROTTLE    "Enable throttle filter"             Yes)
 option(FLB_FILTER_NEST        "Enable nest filter"                 Yes)
-option(FLB_FILTER_LUA             "Enable Lua scripting filter"        Yes)
+option(FLB_FILTER_LUA         "Enable Lua scripting filter"        Yes)
 option(FLB_FILTER_RECORD_MODIFIER "Enable record_modifier filter"  Yes)
 
 # Enable all features
@@ -173,6 +173,8 @@ if(FLB_ALL)
   set(FLB_IN_DUMMY     1)
   set(FLB_IN_NETIF     1)
   set(FLB_IN_EXEC      1)
+  set(FLB_IN_STAN      1)
+  set(FLB_IN_NATS      1)
 
   # Output plugins
   set(FLB_OUT_ES       1)

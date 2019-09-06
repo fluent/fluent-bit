@@ -130,6 +130,10 @@ if(FLB_OUT_STAN)
   REGISTER_OUT_PLUGIN("out_stan")
 endif()
 
+if(FLB_IN_STAN)
+  REGISTER_IN_PLUGIN("in_stan")
+endif()
+
 if(FLB_IN_NATS)
   REGISTER_IN_PLUGIN("in_nats")
 endif()

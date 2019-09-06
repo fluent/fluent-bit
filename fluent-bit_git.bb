@@ -24,7 +24,7 @@ SRCREV = "${AUTOREV}"
 SRC_URI = "git://github.com/fluent/fluent-bit"
 
 S = "${WORKDIR}/git"
-DEPENDS = "zlib bison flex"
+DEPENDS = "zlib"
 INSANE_SKIP_${PN}-dev += "dev-elf"
 
 # Use CMake 'Unix Makefiles' generator

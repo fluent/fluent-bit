@@ -39,6 +39,9 @@ set(FLB_IN_NETIF               No)
 set(FLB_IN_WINLOG             Yes)
 set(FLB_IN_COLLECTD            No)
 set(FLB_IN_STORAGE_BACKLOG     No)
+set(FLB_IN_NATS                No)
+set(FLB_IN_STAN                No)
+
 
 # OUTPUT plugins
 # ==============
@@ -53,7 +56,7 @@ set(FLB_OUT_GELF               No)
 set(FLB_OUT_HTTP              Yes)
 set(FLB_OUT_INFLUXDB           No)
 set(FLB_OUT_NATS               No)
-set(FLB_IN_NATS                No)
+set(FLB_OUT_STAN               No)
 set(FLB_OUT_PLOT               No)
 set(FLB_OUT_FILE              Yes)
 set(FLB_OUT_TD                 No)
