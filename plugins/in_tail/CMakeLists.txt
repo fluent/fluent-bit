@@ -3,9 +3,14 @@ set(src
   tail_dockermode.c
   tail_scan.c
   tail_config.c
-  tail_db.c
   tail_fs.c
   tail.c)
+
+if(FLB_SQLDB)
+set(src
+    ${src}
+    tail_db.c)
+endif()
 
 if(FLB_PARSER)
   set(src

@@ -56,6 +56,9 @@ struct flb_out_http {
     char *header_tag;
     size_t headertag_len;
 
+    /* Compression mode (gzip) */
+    int compress_gzip;
+
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
 

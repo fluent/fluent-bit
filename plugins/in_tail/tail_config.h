@@ -82,8 +82,10 @@ struct flb_tail_config {
     int   exit_on_eof;         /* exit fluent-bit on EOF, test */
 
     /* Database */
+#ifdef FLB_HAVE_SQLDB
     struct flb_sqldb *db;
     int db_sync;
+#endif
 
     /* Parser / Format */
     struct flb_parser *parser;

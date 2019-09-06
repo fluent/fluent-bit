@@ -284,8 +284,12 @@ void flb_storage_destroy(struct flb_config *ctx)
 
     /* Destroy Chunk I/O context */
     cio = (struct cio_ctx *) ctx->cio;
-    cio_destroy(cio);
 
+    if (!cio) {
+        return;
+    }
+
+    cio_destroy(cio);
     if (ctx->storage_bl_mem_limit) {
         flb_free(ctx->storage_bl_mem_limit);
     }

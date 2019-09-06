@@ -347,6 +347,11 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
     now = time(NULL);
     current = localtime_r(&now, &result);
 
+    if (current == NULL) {
+        va_end(args);
+        return;
+    }
+
     len = snprintf(msg.msg, sizeof(msg.msg) - 1,
                    "%s[%s%i/%02i/%02i %02i:%02i:%02i%s]%s [%s%5s%s] ",
                    /*      time     */                    /* type */

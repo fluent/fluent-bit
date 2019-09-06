@@ -54,14 +54,8 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
         }
     }
 
-    /* Get network configuration */
-    if (!ins->host.name) {
-        ins->host.name = flb_strdup("127.0.0.1");
-    }
-
-    if (ins->host.port == 0) {
-        ins->host.port = 9200;
-    }
+    /* Set default network configuration */
+    flb_output_net_default("127.0.0.1", 9200, ins);
 
     /* use TLS ? */
     if (ins->use_tls == FLB_TRUE) {

@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_kv.h>
 #include <msgpack.h>
 
 #include <string.h>
@@ -96,7 +97,7 @@ static int configure(struct filter_parser_ctx *ctx,
     int ret;
     const char *tmp;
     struct mk_list *head;
-    struct flb_config_prop *p;
+    struct flb_kv *kv;
 
     ctx->key_name = NULL;
     ctx->reserve_data = FLB_FALSE;
@@ -116,12 +117,12 @@ static int configure(struct filter_parser_ctx *ctx,
 
     /* Read all Parsers */
     mk_list_foreach(head, &f_ins->properties) {
-        p = mk_list_entry(head, struct flb_config_prop, _head);
-        if (strcasecmp("parser", p->key) != 0) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        if (strcasecmp("parser", kv->key) != 0) {
             continue;
         }
 
-        ret = add_parser(p->val, ctx, config);
+        ret = add_parser(kv->val, ctx, config);
         if (ret == -1) {
             flb_error("[filter_parser] requested parser '%s' not found", tmp);
         }

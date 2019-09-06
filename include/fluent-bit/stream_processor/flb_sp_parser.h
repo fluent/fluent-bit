@@ -43,6 +43,12 @@
 #define FLB_SP_RECORD_TAG      20
 #define FLB_SP_RECORD_TIME     21
 
+/* Timeseries functions */
+#define FLB_SP_TIMESERIES_START  30
+#define FLB_SP_FORECAST          30
+#define FLB_SP_FORECAST_R        31
+#define FLB_SP_TIMESERIES_END    39
+
 /* Status */
 #define FLB_SP_OK            0
 #define FLB_SP_ERROR        -1
@@ -55,6 +61,10 @@
 #define FLB_SP_STREAM    0
 #define FLB_SP_TAG       1
 
+/* Parameter type */
+#define FLB_SP_KEY    0
+#define FLB_SP_VAL    1
+
 /* Expression type */
 enum Expressions {
     FLB_LOGICAL_OP = 0,
@@ -64,7 +74,9 @@ enum Expressions {
     FLB_EXP_FLOAT,
     FLB_EXP_STRING,
     FLB_EXP_NULL,
-    FLB_EXP_FUNC
+    FLB_EXP_FUNC,
+    FLB_EXP_PARAM,
+    FLB_EXP_TIMESERIES,
 };
 
 /* Logical operation */
@@ -107,15 +119,17 @@ struct flb_sp_cmd_prop {
 
 /* Key selection */
 struct flb_sp_cmd_key {
-    int aggr_func;            /* Aggregation function */
-    int time_func;            /* Time function */
-    int record_func;          /* Record function */
-    flb_sds_t name;           /* Parent Key name */
-    flb_sds_t alias;          /* Key output alias (key AS alias) */
-    flb_sds_t name_keys;      /* Key name with sub-keys */
-    void *gb_key;             /* Key name reference to gb_key */
-    struct mk_list *subkeys;  /* sub-keys selection */
-    struct mk_list _head;     /* Link to flb_sp_cmd->keys */
+    int aggr_func;             /* Aggregation function */
+    int time_func;             /* Time function */
+    int record_func;           /* Record function */
+    int timeseries_func;       /* Timeseries function */
+    flb_sds_t name;            /* Parent Key name */
+    flb_sds_t alias;           /* Key output alias (key AS alias) */
+    flb_sds_t name_keys;       /* Key name with sub-keys */
+    void *gb_key;              /* Key name reference to gb_key */
+    struct mk_list *subkeys;   /* sub-keys selection */
+    struct flb_exp_timeseries *timeseries;  /* Timeseries functions */
+    struct mk_list _head;      /* Link to flb_sp_cmd->keys */
 };
 
 struct flb_sp_window {
@@ -142,6 +156,13 @@ struct flb_sp_cmd {
     struct flb_sp_window window;   /* WINDOW window in select statement */
 
     struct mk_list gb_keys;        /* list head of group-by record fields */
+
+    int timeseries_num;            /* Number of timeseries functions */
+    /*
+     * This keeps the temporary list of parameters parameters in timeseries
+     * functions during SQL statement parsing.
+     */
+    struct mk_list *tmp_params;
 
     /*
      * When parsing a SQL statement that have references to keys with sub-keys
@@ -187,6 +208,7 @@ struct flb_exp_key {
     struct mk_list _head;
     flb_sds_t name;
     struct mk_list *subkeys;
+    int func;
 };
 
 struct flb_exp_func {
@@ -209,6 +231,27 @@ struct flb_sp_value {
     int type;
     msgpack_object o;
     sp_val val;
+};
+
+struct flb_exp_param {
+    int type;
+    struct mk_list _head;
+    struct flb_exp *param;
+};
+
+struct flb_exp_timeseries {
+    int type;
+    struct mk_list _head;
+    struct mk_list params;
+
+    struct timeseries *(*cb_func_alloc) (int);
+    struct timeseries *(*cb_func_clone) (struct timeseries *);
+    void (*cb_func_add) (struct timeseries *, struct flb_time *);
+    void (*cb_func_rem) (struct timeseries *, struct timeseries *,
+                         struct flb_time *);
+    void (*cb_func_calc) (struct timeseries *, struct flb_sp_cmd_key *,
+                          msgpack_packer *, int, struct flb_time *);
+    void (*cb_func_destroy) (struct timeseries *);
 };
 
 struct flb_sp_cmd *flb_sp_cmd_create(const char *sql);
@@ -255,5 +298,9 @@ void flb_sp_cmd_condition_del(struct flb_sp_cmd *cmd);
 int flb_sp_cmd_gb_key_add(struct flb_sp_cmd *cmd, const char *key);
 void flb_sp_cmd_gb_key_del(struct flb_sp_cmd_gb_key *key);
 
+/* Timeseries */
+int flb_sp_cmd_param_add(struct flb_sp_cmd *cmd, int func, struct flb_exp *param);
+int flb_sp_cmd_timeseries(struct flb_sp_cmd *cmd, char *func, const char *key_alias);
+void flb_cmd_params_del(struct mk_list *params);
 
 #endif

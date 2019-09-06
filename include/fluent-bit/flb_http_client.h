@@ -51,8 +51,9 @@
 #define FLB_HTTP_NOT_FOUND        2 /* header not found */
 
 /* Useful headers */
-#define FLB_HTTP_HEADER_AUTH         "Authorization"
-#define FLB_HTTP_HEADER_CONTENT_TYPE "Content-Type"
+#define FLB_HTTP_HEADER_AUTH             "Authorization"
+#define FLB_HTTP_HEADER_CONTENT_TYPE     "Content-Type"
+#define FLB_HTTP_HEADER_CONTENT_ENCODING "Content-Encoding"
 
 struct flb_http_response {
     int status;                /* HTTP response status          */
@@ -114,6 +115,7 @@ int flb_http_add_header(struct flb_http_client *c,
                         const char *val, size_t val_len);
 int flb_http_basic_auth(struct flb_http_client *c,
                         const char *user, const char *passwd);
+int flb_http_set_content_encoding_gzip(struct flb_http_client *c);
 int flb_http_do(struct flb_http_client *c, size_t *bytes);
 void flb_http_client_destroy(struct flb_http_client *c);
 int flb_http_buffer_size(struct flb_http_client *c, size_t size);

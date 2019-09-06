@@ -23,6 +23,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_utils.h>
@@ -56,7 +57,7 @@ static int configure(struct filter_nest_ctx *ctx,
 {
 
     struct mk_list *head;
-    struct flb_config_prop *prop;
+    struct flb_kv *kv;
     struct filter_nest_wildcard *wildcard;
 
     char *operation_nest = "nest";
@@ -70,22 +71,22 @@ static int configure(struct filter_nest_ctx *ctx,
     ctx->add_prefix = false;
 
     mk_list_foreach(head, &f_ins->properties) {
-        prop = mk_list_entry(head, struct flb_config_prop, _head);
+        kv = mk_list_entry(head, struct flb_kv, _head);
 
-        if (strcasecmp(prop->key, "operation") == 0) {
-            if (strncmp(prop->val, operation_nest, 4) == 0) {
+        if (strcasecmp(kv->key, "operation") == 0) {
+            if (strncmp(kv->val, operation_nest, 4) == 0) {
                 ctx->operation = NEST;
             }
-            else if (strncmp(prop->val, operation_lift, 4) == 0) {
+            else if (strncmp(kv->val, operation_lift, 4) == 0) {
                 ctx->operation = LIFT;
             }
             else {
                 flb_error
-                    ("[filter_nest] Key \"operation\" has invalid value '%s'. Expected 'nest' or 'lift'\n", prop->val);
+                    ("[filter_nest] Key \"operation\" has invalid value '%s'. Expected 'nest' or 'lift'\n", kv->val);
                 return -1;
             }
         }
-        else if (strcasecmp(prop->key, "wildcard") == 0) {
+        else if (strcasecmp(kv->key, "wildcard") == 0) {
             wildcard = flb_malloc(sizeof(struct filter_nest_wildcard));
             if (!wildcard) {
                 flb_error
@@ -94,8 +95,8 @@ static int configure(struct filter_nest_ctx *ctx,
                 return -1;
             }
 
-            wildcard->key = flb_strndup(prop->val, strlen(prop->val));
-            wildcard->key_len = strlen(prop->val);
+            wildcard->key = flb_strndup(kv->val, flb_sds_len(kv->val));
+            wildcard->key_len = flb_sds_len(kv->val);
 
             if (wildcard->key[wildcard->key_len - 1] == '*') {
                 wildcard->key_is_dynamic = true;
@@ -109,30 +110,30 @@ static int configure(struct filter_nest_ctx *ctx,
             ctx->wildcards_cnt++;
 
         }
-        else if (strcasecmp(prop->key, "nest_under") == 0) {
-            ctx->key = flb_strdup(prop->val);
-            ctx->key_len = strlen(prop->val);
+        else if (strcasecmp(kv->key, "nest_under") == 0) {
+            ctx->key = flb_strdup(kv->val);
+            ctx->key_len = flb_sds_len(kv->val);
         }
-        else if (strcasecmp(prop->key, "nested_under") == 0) {
-            ctx->key = flb_strdup(prop->val);
-            ctx->key_len = strlen(prop->val);
+        else if (strcasecmp(kv->key, "nested_under") == 0) {
+            ctx->key = flb_strdup(kv->val);
+            ctx->key_len = flb_sds_len(kv->val);
         }
-        else if (strcasecmp(prop->key, "prefix_with") == 0) {
-            ctx->prefix = flb_strdup(prop->val);
-            ctx->prefix_len = strlen(prop->val);
+        else if (strcasecmp(kv->key, "prefix_with") == 0) {
+            ctx->prefix = flb_strdup(kv->val);
+            ctx->prefix_len = flb_sds_len(kv->val);
             ctx->add_prefix = true;
         }
-        else if (strcasecmp(prop->key, "add_prefix") == 0) {
-            ctx->prefix = flb_strdup(prop->val);
-            ctx->prefix_len = strlen(prop->val);
+        else if (strcasecmp(kv->key, "add_prefix") == 0) {
+            ctx->prefix = flb_strdup(kv->val);
+            ctx->prefix_len = flb_sds_len(kv->val);
             ctx->add_prefix = true;
         }
-        else if (strcasecmp(prop->key, "remove_prefix") == 0) {
-            ctx->prefix = flb_strdup(prop->val);
-            ctx->prefix_len = strlen(prop->val);
+        else if (strcasecmp(kv->key, "remove_prefix") == 0) {
+            ctx->prefix = flb_strdup(kv->val);
+            ctx->prefix_len = flb_sds_len(kv->val);
             ctx->remove_prefix = true;
         } else {
-            flb_error("[filter_nest] Invalid configuration key '%s'", prop->key);
+            flb_error("[filter_nest] Invalid configuration key '%s'", kv->key);
             return -1;
         }
     }
@@ -588,7 +589,7 @@ static int cb_nest_filter(const void *data, size_t bytes,
                     apply_lifting_rules(&packer, &result.data, ctx);
             }
 
-            
+
             if (modified_records == 0) {
                 // not matched, so copy original event.
                 msgpack_pack_object(&packer, result.data);
@@ -606,6 +607,7 @@ static int cb_nest_filter(const void *data, size_t bytes,
     *out_size = buffer.size;
 
     if (total_modified_records == 0) {
+        msgpack_sbuffer_destroy(&buffer);
         return FLB_FILTER_NOTOUCH;
     }
     else {

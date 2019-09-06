@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_input.h>
 #include <monkey/mk_core.h>
 #include <rbtree.h>
@@ -43,12 +44,34 @@ struct aggr_num {
     flb_sds_t string;
 };
 
+struct timeseries {
+    struct aggr_num *nums;
+    struct mk_list _head;
+};
+
+struct timeseries_forecast {
+    struct aggr_num *nums;
+    struct mk_list _head;
+
+    double *offset;
+    double *latest_x;
+
+    double sigma_x;
+    double sigma_y;
+
+    double sigma_xy;
+    double sigma_x2;
+};
+
 struct aggr_node {
     int groupby_keys;
     int records;
     int nums_size;
     struct aggr_num *nums;
     struct aggr_num *groupby_nums;
+
+    /* Timeseries data */
+    struct timeseries **ts;
 
     /* To keep track of the aggregation nodes */
     struct rb_tree_node _rb_head;
@@ -140,6 +163,7 @@ struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, const char *name,
                                        const char *query);
 int flb_sp_fd_event(int fd, struct flb_sp *sp);
 void flb_sp_task_destroy(struct flb_sp_task *task);
-void flb_sp_aggr_node_destroy(struct aggr_node *aggr_node);
+void flb_sp_aggr_node_destroy(struct flb_sp_cmd *cmd,
+                              struct aggr_node *aggr_node);
 
 #endif

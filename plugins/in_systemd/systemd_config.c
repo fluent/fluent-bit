@@ -22,12 +22,16 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_kv.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
+#ifdef FLB_HAVE_SQLDB
 #include "systemd_db.h"
+#endif
+
 #include "systemd_config.h"
 
 struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *i_ins,
@@ -38,7 +42,7 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
     char *cursor = NULL;
     struct stat st;
     struct mk_list *head;
-    struct flb_config_prop *prop;
+    struct flb_kv *kv;
     struct flb_systemd_config *ctx;
     int journal_filter_is_and;
     size_t size;
@@ -106,6 +110,7 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
         ctx->dynamic_tag = FLB_FALSE;
     }
 
+#ifdef FLB_HAVE_SQLDB
     /* Database file */
     tmp = flb_input_get_property("db", i_ins);
     if (tmp) {
@@ -114,6 +119,7 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
             flb_error("[in_systemd] could not open/create database");
         }
     }
+#endif
 
     /* Max number of fields per record/entry */
     tmp = flb_input_get_property("max_fields", i_ins);
@@ -150,16 +156,16 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
 
     /* Load Systemd filters, iterate all properties */
     mk_list_foreach(head, &i_ins->properties) {
-        prop = mk_list_entry(head, struct flb_config_prop, _head);
-        if (strcasecmp(prop->key, "systemd_filter") != 0) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        if (strcasecmp(kv->key, "systemd_filter") != 0) {
             continue;
         }
 
-        flb_debug("[in_systemd] add filter: %s (%s)", prop->val,
+        flb_debug("[in_systemd] add filter: %s (%s)", kv->val,
                   journal_filter_is_and ? "and" : "or");
 
         /* Apply filter/match */
-        sd_journal_add_match(ctx->j, prop->val, 0);
+        sd_journal_add_match(ctx->j, kv->val, 0);
         if (journal_filter_is_and) {
             sd_journal_add_conjunction(ctx->j);
         } else {
@@ -185,6 +191,7 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
         sd_journal_seek_head(ctx->j);
     }
 
+#ifdef FLB_HAVE_SQLDB
     /* Check if we have a cursor in our database */
     if (ctx->db) {
         cursor = flb_systemd_db_get_cursor(ctx);
@@ -202,6 +209,7 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
             flb_free(cursor);
         }
     }
+#endif
 
     tmp = flb_input_get_property("strip_underscores", i_ins);
     if (tmp != NULL && flb_utils_bool(tmp)) {
@@ -228,9 +236,11 @@ int flb_systemd_config_destroy(struct flb_systemd_config *ctx)
         flb_free(ctx->path);
     }
 
+#ifdef FLB_HAVE_SQLDB
     if (ctx->db) {
         flb_systemd_db_close(ctx->db);
     }
+#endif
 
     close(ctx->ch_manager[0]);
     close(ctx->ch_manager[1]);

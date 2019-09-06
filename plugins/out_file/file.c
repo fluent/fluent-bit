@@ -42,6 +42,7 @@ struct flb_file_conf {
     const char *out_file;
     const char *delimiter;
     const char *label_delimiter;
+    const char *template;
     int  format;
 };
 
@@ -84,6 +85,7 @@ static int cb_file_init(struct flb_output_instance *ins,
     conf->format = FLB_OUT_FILE_FMT_JSON; /* default */
     conf->delimiter = NULL;
     conf->label_delimiter = NULL;
+    conf->template = NULL;
 
     /* Optional output file name/path */
     tmp = flb_output_get_property("Path", ins);
@@ -113,6 +115,10 @@ static int cb_file_init(struct flb_output_instance *ins,
             conf->delimiter = NULL;
             conf->label_delimiter = NULL;
         }
+        else if (!strcasecmp(tmp, "template")) {
+            conf->format    = FLB_OUT_FILE_FMT_TEMPLATE;
+            conf->template  = "{time} {message}";
+        }
     }
 
     tmp = flb_output_get_property("delimiter", ins);
@@ -125,6 +131,11 @@ static int cb_file_init(struct flb_output_instance *ins,
     ret_str = check_delimiter(tmp);
     if (ret_str != NULL) {
         conf->label_delimiter = ret_str;
+    }
+
+    tmp = flb_output_get_property("template", ins);
+    if (tmp != NULL) {
+        conf->template = tmp;
     }
 
     /* Set the context */
@@ -185,6 +196,100 @@ static int ltsv_output(FILE *fp, struct flb_time *tm, msgpack_object *obj,
     }
     return 0;
 }
+
+static int template_output_write(FILE *fp, struct flb_time *tm, msgpack_object *obj,
+                                 const char *key, int size)
+{
+    int i;
+    msgpack_object_kv *kv;
+
+    /*
+     * Right now we treat "{time}" specially and fill the placeholder
+     * with the metadata timestamp (formatted as float).
+     */
+    if (!strncmp(key, "time", size)) {
+        fprintf(fp, "%f", flb_time_to_double(tm));
+        return 0;
+    }
+
+    if (obj->type != MSGPACK_OBJECT_MAP) {
+        flb_error("[out_file] invalid object type (type=%i)", obj->type);
+        return -1;
+    }
+
+    for (i = 0; i < obj->via.map.size; i++) {
+        kv = obj->via.map.ptr + i;
+
+        if (size != kv->key.via.str.size) {
+            continue;
+        }
+
+        if (!memcmp(key, kv->key.via.str.ptr, size)) {
+            if (kv->val.type == MSGPACK_OBJECT_STR) {
+                fwrite(kv->val.via.str.ptr, 1, kv->val.via.str.size, fp);
+            } else {
+                msgpack_object_print(fp, kv->val);
+            }
+            return 0;
+        }
+    }
+    return -1;
+}
+
+/*
+ * Python-like string templating for out_file.
+ *
+ * This accepts a format string like "my name is {name}" and fills
+ * placeholders using corresponding values in a record.
+ *
+ * e.g. {"name":"Tom"} => "my name is Tom"
+ */
+static int template_output(FILE *fp, struct flb_time *tm, msgpack_object *obj,
+                           struct flb_file_conf *ctx)
+{
+    int i;
+    int len = strlen(ctx->template);
+    int keysize;
+    const char *key;
+    const char *pos;
+    const char *inbrace = NULL;  /* points to the last open brace */
+
+    for (i = 0; i < len; i++) {
+        pos = ctx->template + i;
+        if (*pos == '{') {
+            if (inbrace) {
+                /*
+                 * This means that we find another open brace inside
+                 * braces (e.g. "{a{b}"). Ignore the previous one.
+                 */
+                fwrite(inbrace, 1, pos - inbrace, fp);
+            }
+            inbrace = pos;
+        }
+        else if (*pos == '}' && inbrace) {
+            key = inbrace + 1;
+            keysize = pos - inbrace - 1;
+
+            if (template_output_write(fp, tm, obj, key, keysize)) {
+                fwrite(inbrace, 1, pos - inbrace + 1, fp);
+            }
+            inbrace = NULL;
+        }
+        else {
+            if (!inbrace) {
+                fputc(*pos, fp);
+            }
+        }
+    }
+
+    /* Handle an unclosed brace like "{abc" */
+    if (inbrace) {
+        fputs(inbrace, fp);
+    }
+    fputs(NEWLINE, fp);
+    return 0;
+}
+
 
 static int plain_output(FILE *fp, msgpack_object *obj, size_t alloc_size)
 {
@@ -305,6 +410,9 @@ static void cb_file_flush(const void *data, size_t bytes,
             break;
         case FLB_OUT_FILE_FMT_PLAIN:
             plain_output(fp, obj, alloc_size);
+            break;
+        case FLB_OUT_FILE_FMT_TEMPLATE:
+            template_output(fp, &tm, obj, ctx);
             break;
         }
     }

@@ -1371,7 +1371,8 @@ static flb_sds_t flb_msgpack_gelf_flatten(flb_sds_t *s, msgpack_object *o,
 }
 
 flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
-   struct flb_time *tm, struct flb_gelf_fields *fields)
+                              struct flb_time *tm,
+                              struct flb_gelf_fields *fields)
 {
     int i;
     int loop;
