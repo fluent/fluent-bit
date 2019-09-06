@@ -1512,9 +1512,31 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
                 } else if (v->type == MSGPACK_OBJECT_STR){
                     val     = v->via.str.ptr;
                     val_len = v->via.str.size;
-                    if ( val_len != 1 || val[0] < '0' || val[0] > '7' ) {
+                    if ( !(val_len == 1 && val[0] >= '0' && val[0] <= '7' )) {
+                        char* allowed_levels[] = {
+                            "emerg",
+                            "alert",
+                            "crit",
+                            "err",
+                            "warning",
+                            "notice",
+                            "info",
+                            "debug"
+                        };
+                        const size_t array_size = sizeof(allowed_levels) / sizeof(allowed_levels[0]);
+                        int i;
+                        
+                        for (i = 0; i < array_size; ++i) {
+                            if (!strncmp(mk_string_tolower(val), allowed_levels[i], val_len)) {
+                                v->type = MSGPACK_OBJECT_POSITIVE_INTEGER;
+                                v->via.u64 = (uint64_t)i;
+                                break;
+                            }
+                        }
+                        if (i == array_size) {
                             flb_error("[flb_msgpack_to_gelf] level is '%.*s', but should be in 0..7", val_len, val);
                             return NULL;
+                        }
                     }
                 }
             }
