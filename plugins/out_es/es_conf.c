@@ -22,12 +22,278 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_upstream.h>
+#include <fluent-bit/flb_upstream_ha.h>
 
 #include "es.h"
 #include "es_conf.h"
 
-struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
-                                             struct flb_config *config)
+/* Configure in HA mode */
+int es_config_ha(const char *upstream_file,
+                             struct flb_elasticsearch *ctx,
+                             struct flb_config *config)
+{
+    int io_flags = 0;
+    ssize_t ret;
+    const char *tmp;
+    const char *path;
+    struct mk_list *head;
+    struct flb_uri_field *f_index = NULL;
+    struct flb_uri_field *f_type = NULL;
+    struct flb_upstream_node *node;
+    struct flb_elasticsearch_config *ec = NULL;
+
+    /* Allocate context */
+    ec = flb_calloc(1, sizeof(struct flb_elasticsearch_config));
+    if (!ec) {
+        flb_errno();
+        return -1;
+    }
+
+    ctx->ha_mode = FLB_TRUE;
+    ctx->ha = flb_upstream_ha_from_file(upstream_file, config);
+    if (!ctx->ha) {
+        flb_error("[out_es] cannot load Upstream file");
+        return -1;
+    }
+
+    /* Iterate nodes and create a forward_config context */
+    mk_list_foreach(head, &ctx->ha->nodes) {
+        node = mk_list_entry(head, struct flb_upstream_node, _head);
+
+        /* Is TLS enabled ? */
+        if (node->tls_enabled == FLB_TRUE) {
+            io_flags = FLB_IO_TLS;
+        }
+        else {
+            io_flags = FLB_IO_TCP;
+        }
+
+        if (f_index) {
+            ec->index = flb_strdup(f_index->value);
+        }
+        else {
+            tmp = flb_upstream_node_get_property("index", node);
+            if (!tmp) {
+                ec->index = flb_strdup(FLB_ES_DEFAULT_INDEX);
+            }
+            else {
+                ec->index = flb_strdup(tmp);
+            }
+        }
+
+        if (f_type) {
+            ec->type = flb_strdup(f_type->value);
+        }
+        else {
+            tmp = flb_upstream_node_get_property("type", node);
+            if (!tmp) {
+                ec->type = flb_strdup(FLB_ES_DEFAULT_TYPE);
+            }
+            else {
+                ec->type = flb_strdup(tmp);
+            }
+        }
+
+        /* HTTP Auth */
+        tmp = flb_upstream_node_get_property("http_user", node);
+        if (tmp) {
+            ec->http_user = flb_strdup(tmp);
+
+            tmp = flb_upstream_node_get_property("http_passwd", node);
+            if (tmp) {
+                ec->http_passwd = flb_strdup(tmp);
+            }
+            else {
+                ec->http_passwd = flb_strdup("");
+            }
+        }
+
+        /*
+         * Logstash compatibility options
+         * ==============================
+         */
+
+        /* Logstash_Format */
+        tmp = flb_upstream_node_get_property("logstash_format", node);
+        if (tmp) {
+            ec->logstash_format = flb_utils_bool(tmp);
+        }
+        else {
+            ec->logstash_format = FLB_FALSE;
+        }
+
+        /* Logstash_Prefix */
+        tmp = flb_upstream_node_get_property("logstash_prefix", node);
+        if (tmp) {
+            ec->logstash_prefix = flb_strdup(tmp);
+            ec->logstash_prefix_len = strlen(tmp);
+        }
+        else if (ec->logstash_format == FLB_TRUE) {
+            ec->logstash_prefix = flb_strdup(FLB_ES_DEFAULT_PREFIX);
+            ec->logstash_prefix_len = sizeof(FLB_ES_DEFAULT_PREFIX) - 1;
+        }
+
+        /* Logstash_Prefix_Key */
+        tmp = flb_upstream_node_get_property("logstash_prefix_key", node);
+        if (tmp) {
+            ec->logstash_prefix_key = flb_strdup(tmp);
+            ec->logstash_prefix_key_len = strlen(tmp);
+        }
+
+        /* Logstash_DateFormat */
+        tmp = flb_upstream_node_get_property("logstash_dateformat", node);
+        if (tmp) {
+            ec->logstash_dateformat = flb_strdup(tmp);
+            ec->logstash_dateformat_len = strlen(tmp);
+        }
+        else if (ec->logstash_format == FLB_TRUE) {
+            ec->logstash_dateformat = flb_strdup(FLB_ES_DEFAULT_TIME_FMT);
+            ec->logstash_dateformat_len = sizeof(FLB_ES_DEFAULT_TIME_FMT) - 1;
+        }
+
+        /* Time Key */
+        tmp = flb_upstream_node_get_property("time_key", node);
+        if (tmp) {
+            ec->time_key = flb_strdup(tmp);
+            ec->time_key_len = strlen(tmp);
+        }
+        else {
+            ec->time_key = flb_strdup(FLB_ES_DEFAULT_TIME_KEY);
+            ec->time_key_len = sizeof(FLB_ES_DEFAULT_TIME_KEY) - 1;
+        }
+
+        /* Time Key Format */
+        tmp = flb_upstream_node_get_property("time_key_format", node);
+        if (tmp) {
+            ec->time_key_format = flb_strdup(tmp);
+            ec->time_key_format_len = strlen(tmp);
+        }
+        else {
+            ec->time_key_format = flb_strdup(FLB_ES_DEFAULT_TIME_KEYF);
+            ec->time_key_format_len = sizeof(FLB_ES_DEFAULT_TIME_KEYF) - 1;
+        }
+
+        /* Include Tag key */
+        tmp = flb_upstream_node_get_property("include_tag_key", node);
+        if (tmp) {
+            ec->include_tag_key = flb_utils_bool(tmp);
+        }
+        else {
+            ec->include_tag_key = FLB_FALSE;
+        }
+
+        /* Tag Key */
+        if (ec->include_tag_key == FLB_TRUE) {
+            tmp = flb_upstream_node_get_property("tag_key", node);
+            if (tmp) {
+                ec->tag_key = flb_strdup(tmp);
+                ec->tag_key_len = strlen(tmp);
+            }
+            else {
+                ec->tag_key = flb_strdup(FLB_ES_DEFAULT_TAG_KEY);
+                ec->tag_key_len = sizeof(FLB_ES_DEFAULT_TAG_KEY) - 1;
+            }
+        }
+
+        ec->buffer_size = FLB_HTTP_DATA_SIZE_MAX;
+        tmp = flb_upstream_node_get_property("buffer_size", node);
+        if (tmp) {
+            if (*tmp == 'f' || *tmp == 'F' || *tmp == 'o' || *tmp == 'O') {
+                /* unlimited size ? */
+                if (flb_utils_bool(tmp) == FLB_FALSE) {
+                    ec->buffer_size = 0;
+                }
+            }
+            else {
+                ret = flb_utils_size_to_bytes(tmp);
+                if (ret == -1) {
+                    flb_error("[out_es] invalid buffer_size=%s, using default", tmp);
+                }
+                else {
+                    ec->buffer_size = (size_t) ret;
+                }
+            }
+        }
+
+        /* Elasticsearch: Path */
+        path = flb_upstream_node_get_property("path", node);
+        if (!path) {
+            path = "";
+        }
+
+        /* Elasticsearch: Pipeline */
+        tmp = flb_upstream_node_get_property("pipeline", node);
+        if (tmp) {
+            snprintf(ec->uri, sizeof(ec->uri) - 1, "%s/_bulk/?pipeline=%s", path, tmp);
+        }
+        else {
+            snprintf(ec->uri, sizeof(ec->uri) - 1, "%s/_bulk", path);
+        }
+
+        /* Generate _id */
+        tmp = flb_upstream_node_get_property("generate_id", node);
+        if (tmp) {
+            ec->generate_id = flb_utils_bool(tmp);
+        } else {
+            ec->generate_id = FLB_FALSE;
+        }
+
+        /* Replace dots */
+        tmp = flb_upstream_node_get_property("replace_dots", node);
+        if (tmp) {
+            ec->replace_dots = flb_utils_bool(tmp);
+        }
+        else {
+            ec->replace_dots = FLB_FALSE;
+        }
+
+        /* Use current time for index generation instead of message record */
+        tmp = flb_upstream_node_get_property("current_time_index", node);
+        if (tmp) {
+            ec->current_time_index = flb_utils_bool(tmp);
+        }
+        else {
+            ec->current_time_index = FLB_FALSE;
+        }
+
+
+        /* Trace output */
+        tmp = flb_upstream_node_get_property("Trace_Output", node);
+        if (tmp) {
+            ec->trace_output = flb_utils_bool(tmp);
+        }
+        else {
+            ec->trace_output = FLB_FALSE;
+        }
+        tmp = flb_upstream_node_get_property("Trace_Error", node);
+        if (tmp) {
+            ec->trace_error = flb_utils_bool(tmp);
+        }
+        else {
+            ec->trace_error = FLB_FALSE;
+        }
+
+        /* Initialize and validate forward_config context */
+        mk_list_add(&ec->_head, &ctx->configs);
+
+        if (ret == -1) {
+            if (ec) {
+                flb_es_conf_destroy(ec);
+            }
+            return -1;
+        }
+
+        /* Set our elasticsearch_config context into the node */
+        flb_upstream_node_set_data(ec, node);
+    }
+
+    return 0;
+}
+
+int es_config_simple(struct flb_output_instance *ins,
+                          struct flb_elasticsearch *ctx,
+                          struct flb_config *config)
 {
 
     int io_flags = 0;
@@ -38,13 +304,12 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
     struct flb_uri_field *f_index = NULL;
     struct flb_uri_field *f_type = NULL;
     struct flb_upstream *upstream;
-    struct flb_elasticsearch *ctx;
+    struct flb_elasticsearch_config *ec = NULL;
 
     /* Allocate context */
-    ctx = flb_calloc(1, sizeof(struct flb_elasticsearch));
-    if (!ctx) {
-        flb_errno();
-        return NULL;
+    ec = flb_calloc(1, sizeof(struct flb_elasticsearch_config));
+    if (!ec) {
+        return -1;
     }
 
     if (uri) {
@@ -77,49 +342,51 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
                                    &ins->tls);
     if (!upstream) {
         flb_error("[out_es] cannot create Upstream context");
-        flb_es_conf_destroy(ctx);
-        return NULL;
+
+        flb_es_conf_destroy(ec);
+        flb_free(ctx);
+        return -1;
     }
 
     /* Set manual Index and Type */
     ctx->u = upstream;
     if (f_index) {
-        ctx->index = flb_strdup(f_index->value);
+        ec->index = flb_strdup(f_index->value);
     }
     else {
         tmp = flb_output_get_property("index", ins);
         if (!tmp) {
-            ctx->index = flb_strdup(FLB_ES_DEFAULT_INDEX);
+            ec->index = flb_strdup(FLB_ES_DEFAULT_INDEX);
         }
         else {
-            ctx->index = flb_strdup(tmp);
+            ec->index = flb_strdup(tmp);
         }
     }
 
     if (f_type) {
-        ctx->type = flb_strdup(f_type->value);
+        ec->type = flb_strdup(f_type->value);
     }
     else {
         tmp = flb_output_get_property("type", ins);
         if (!tmp) {
-            ctx->type = flb_strdup(FLB_ES_DEFAULT_TYPE);
+            ec->type = flb_strdup(FLB_ES_DEFAULT_TYPE);
         }
         else {
-            ctx->type = flb_strdup(tmp);
+            ec->type = flb_strdup(tmp);
         }
     }
 
     /* HTTP Auth */
     tmp = flb_output_get_property("http_user", ins);
     if (tmp) {
-        ctx->http_user = flb_strdup(tmp);
+        ec->http_user = flb_strdup(tmp);
 
         tmp = flb_output_get_property("http_passwd", ins);
         if (tmp) {
-            ctx->http_passwd = flb_strdup(tmp);
+            ec->http_passwd = flb_strdup(tmp);
         }
         else {
-            ctx->http_passwd = flb_strdup("");
+            ec->http_passwd = flb_strdup("");
         }
     }
 
@@ -131,92 +398,92 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
     /* Logstash_Format */
     tmp = flb_output_get_property("logstash_format", ins);
     if (tmp) {
-        ctx->logstash_format = flb_utils_bool(tmp);
+        ec->logstash_format = flb_utils_bool(tmp);
     }
     else {
-        ctx->logstash_format = FLB_FALSE;
+        ec->logstash_format = FLB_FALSE;
     }
 
     /* Logstash_Prefix */
     tmp = flb_output_get_property("logstash_prefix", ins);
     if (tmp) {
-        ctx->logstash_prefix = flb_strdup(tmp);
-        ctx->logstash_prefix_len = strlen(tmp);
+        ec->logstash_prefix = flb_strdup(tmp);
+        ec->logstash_prefix_len = strlen(tmp);
     }
-    else if (ctx->logstash_format == FLB_TRUE) {
-        ctx->logstash_prefix = flb_strdup(FLB_ES_DEFAULT_PREFIX);
-        ctx->logstash_prefix_len = sizeof(FLB_ES_DEFAULT_PREFIX) - 1;
+    else if (ec->logstash_format == FLB_TRUE) {
+        ec->logstash_prefix = flb_strdup(FLB_ES_DEFAULT_PREFIX);
+        ec->logstash_prefix_len = sizeof(FLB_ES_DEFAULT_PREFIX) - 1;
     }
 
     /* Logstash_Prefix_Key */
     tmp = flb_output_get_property("logstash_prefix_key", ins);
     if (tmp) {
-        ctx->logstash_prefix_key = flb_strdup(tmp);
-        ctx->logstash_prefix_key_len = strlen(tmp);
+        ec->logstash_prefix_key = flb_strdup(tmp);
+        ec->logstash_prefix_key_len = strlen(tmp);
     }
 
     /* Logstash_DateFormat */
     tmp = flb_output_get_property("logstash_dateformat", ins);
     if (tmp) {
-        ctx->logstash_dateformat = flb_strdup(tmp);
-        ctx->logstash_dateformat_len = strlen(tmp);
+        ec->logstash_dateformat = flb_strdup(tmp);
+        ec->logstash_dateformat_len = strlen(tmp);
     }
-    else if (ctx->logstash_format == FLB_TRUE) {
-        ctx->logstash_dateformat = flb_strdup(FLB_ES_DEFAULT_TIME_FMT);
-        ctx->logstash_dateformat_len = sizeof(FLB_ES_DEFAULT_TIME_FMT) - 1;
+    else if (ec->logstash_format == FLB_TRUE) {
+        ec->logstash_dateformat = flb_strdup(FLB_ES_DEFAULT_TIME_FMT);
+        ec->logstash_dateformat_len = sizeof(FLB_ES_DEFAULT_TIME_FMT) - 1;
     }
 
     /* Time Key */
     tmp = flb_output_get_property("time_key", ins);
     if (tmp) {
-        ctx->time_key = flb_strdup(tmp);
-        ctx->time_key_len = strlen(tmp);
+        ec->time_key = flb_strdup(tmp);
+        ec->time_key_len = strlen(tmp);
     }
     else {
-        ctx->time_key = flb_strdup(FLB_ES_DEFAULT_TIME_KEY);
-        ctx->time_key_len = sizeof(FLB_ES_DEFAULT_TIME_KEY) - 1;
+        ec->time_key = flb_strdup(FLB_ES_DEFAULT_TIME_KEY);
+        ec->time_key_len = sizeof(FLB_ES_DEFAULT_TIME_KEY) - 1;
     }
 
     /* Time Key Format */
     tmp = flb_output_get_property("time_key_format", ins);
     if (tmp) {
-        ctx->time_key_format = flb_strdup(tmp);
-        ctx->time_key_format_len = strlen(tmp);
+        ec->time_key_format = flb_strdup(tmp);
+        ec->time_key_format_len = strlen(tmp);
     }
     else {
-        ctx->time_key_format = flb_strdup(FLB_ES_DEFAULT_TIME_KEYF);
-        ctx->time_key_format_len = sizeof(FLB_ES_DEFAULT_TIME_KEYF) - 1;
+        ec->time_key_format = flb_strdup(FLB_ES_DEFAULT_TIME_KEYF);
+        ec->time_key_format_len = sizeof(FLB_ES_DEFAULT_TIME_KEYF) - 1;
     }
 
     /* Include Tag key */
     tmp = flb_output_get_property("include_tag_key", ins);
     if (tmp) {
-        ctx->include_tag_key = flb_utils_bool(tmp);
+        ec->include_tag_key = flb_utils_bool(tmp);
     }
     else {
-        ctx->include_tag_key = FLB_FALSE;
+        ec->include_tag_key = FLB_FALSE;
     }
 
     /* Tag Key */
-    if (ctx->include_tag_key == FLB_TRUE) {
+    if (ec->include_tag_key == FLB_TRUE) {
         tmp = flb_output_get_property("tag_key", ins);
         if (tmp) {
-            ctx->tag_key = flb_strdup(tmp);
-            ctx->tag_key_len = strlen(tmp);
+            ec->tag_key = flb_strdup(tmp);
+            ec->tag_key_len = strlen(tmp);
         }
         else {
-            ctx->tag_key = flb_strdup(FLB_ES_DEFAULT_TAG_KEY);
-            ctx->tag_key_len = sizeof(FLB_ES_DEFAULT_TAG_KEY) - 1;
+            ec->tag_key = flb_strdup(FLB_ES_DEFAULT_TAG_KEY);
+            ec->tag_key_len = sizeof(FLB_ES_DEFAULT_TAG_KEY) - 1;
         }
     }
 
-    ctx->buffer_size = FLB_HTTP_DATA_SIZE_MAX;
+    ec->buffer_size = FLB_HTTP_DATA_SIZE_MAX;
     tmp = flb_output_get_property("buffer_size", ins);
     if (tmp) {
         if (*tmp == 'f' || *tmp == 'F' || *tmp == 'o' || *tmp == 'O') {
             /* unlimited size ? */
             if (flb_utils_bool(tmp) == FLB_FALSE) {
-                ctx->buffer_size = 0;
+                ec->buffer_size = 0;
             }
         }
         else {
@@ -225,7 +492,7 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
                 flb_error("[out_es] invalid buffer_size=%s, using default", tmp);
             }
             else {
-                ctx->buffer_size = (size_t) ret;
+                ec->buffer_size = (size_t) ret;
             }
         }
     }
@@ -239,81 +506,87 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
     /* Elasticsearch: Pipeline */
     tmp = flb_output_get_property("pipeline", ins);
     if (tmp) {
-        snprintf(ctx->uri, sizeof(ctx->uri) - 1, "%s/_bulk/?pipeline=%s", path, tmp);
+        snprintf(ec->uri, sizeof(ec->uri) - 1, "%s/_bulk/?pipeline=%s", path, tmp);
     }
     else {
-        snprintf(ctx->uri, sizeof(ctx->uri) - 1, "%s/_bulk", path);
+        snprintf(ec->uri, sizeof(ec->uri) - 1, "%s/_bulk", path);
     }
 
     /* Generate _id */
     tmp = flb_output_get_property("generate_id", ins);
     if (tmp) {
-        ctx->generate_id = flb_utils_bool(tmp);
+        ec->generate_id = flb_utils_bool(tmp);
     } else {
-        ctx->generate_id = FLB_FALSE;
+        ec->generate_id = FLB_FALSE;
     }
 
     /* Replace dots */
     tmp = flb_output_get_property("replace_dots", ins);
     if (tmp) {
-        ctx->replace_dots = flb_utils_bool(tmp);
+        ec->replace_dots = flb_utils_bool(tmp);
     }
     else {
-        ctx->replace_dots = FLB_FALSE;
+        ec->replace_dots = FLB_FALSE;
     }
 
     /* Use current time for index generation instead of message record */
     tmp = flb_output_get_property("current_time_index", ins);
     if (tmp) {
-        ctx->current_time_index = flb_utils_bool(tmp);
+        ec->current_time_index = flb_utils_bool(tmp);
     }
     else {
-        ctx->current_time_index = FLB_FALSE;
+        ec->current_time_index = FLB_FALSE;
     }
 
 
     /* Trace output */
     tmp = flb_output_get_property("Trace_Output", ins);
     if (tmp) {
-        ctx->trace_output = flb_utils_bool(tmp);
+        ec->trace_output = flb_utils_bool(tmp);
     }
     else {
-        ctx->trace_output = FLB_FALSE;
+        ec->trace_output = FLB_FALSE;
     }
     tmp = flb_output_get_property("Trace_Error", ins);
     if (tmp) {
-        ctx->trace_error = flb_utils_bool(tmp);
+        ec->trace_error = flb_utils_bool(tmp);
     }
     else {
-        ctx->trace_error = FLB_FALSE;
+        ec->trace_error = FLB_FALSE;
     }
 
-    return ctx;
+    mk_list_add(&ec->_head, &ctx->configs);
+
+    flb_debug("[out_es] host=%s port=%i uri=%s index=%s type=%s",
+              ins->host.name, ins->host.port, ec->uri,
+              ec->index, ec->type);
+
+    return 0;
 }
 
-int flb_es_conf_destroy(struct flb_elasticsearch *ctx)
+int flb_es_conf_destroy(struct flb_elasticsearch_config *ec)
 {
-    flb_free(ctx->index);
-    flb_free(ctx->type);
+    flb_free(ec->index);
+    flb_free(ec->type);
 
-    flb_free(ctx->http_user);
-    flb_free(ctx->http_passwd);
+    flb_free(ec->http_user);
+    flb_free(ec->http_passwd);
 
-    flb_free(ctx->logstash_prefix);
-    flb_free(ctx->logstash_dateformat);
-    flb_free(ctx->time_key);
-    flb_free(ctx->time_key_format);
+    flb_free(ec->logstash_prefix);
+    flb_free(ec->logstash_dateformat);
+    flb_free(ec->time_key);
+    flb_free(ec->time_key_format);
 
-    if (ctx->include_tag_key) {
-        flb_free(ctx->tag_key);
+    if (ec->include_tag_key) {
+        flb_free(ec->tag_key);
     }
 
-    if (ctx->logstash_prefix_key) {
-        flb_free(ctx->logstash_prefix_key);
+    if (ec->logstash_prefix_key) {
+        flb_free(ec->logstash_prefix_key);
     }
 
-    flb_upstream_destroy(ctx->u);
-    flb_free(ctx);
+    //flb_upstream_destroy(ec->u);
+    flb_free(ec);
 
     return 0;
 }

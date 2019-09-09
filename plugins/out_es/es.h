@@ -31,7 +31,7 @@
 #define FLB_ES_DEFAULT_TIME_KEYF  "%Y-%m-%dT%H:%M:%S"
 #define FLB_ES_DEFAULT_TAG_KEY    "flb-key"
 
-struct flb_elasticsearch {
+struct flb_elasticsearch_config {
     /* Elasticsearch index (database) and type (table) */
     char *index;
     char *type;
@@ -90,8 +90,19 @@ struct flb_elasticsearch {
     /* Elasticsearch HTTP API */
     char uri[256];
 
-    /* Upstream connection to the backend server */
+    /* Link to list flb_elasticsearch->configs */
+    struct mk_list _head;
+};
+
+struct flb_elasticsearch {
+    /* if HA mode is enabled */
+    int ha_mode;              /* High Availability mode enabled ? */
+    char *ha_upstream;        /* Upstream configuration file      */
+    struct flb_upstream_ha *ha;
+
+    /* Upstream handler and config context for single mode (no HA) */
     struct flb_upstream *u;
+    struct mk_list configs;
 };
 
 #endif
