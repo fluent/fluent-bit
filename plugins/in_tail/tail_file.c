@@ -399,14 +399,12 @@ static void cb_results(const char *name, const char *value,
                        size_t vlen, void *data)
 {
     struct flb_hash *ht = data;
-    char *str;
-    char *p;
 
     if (vlen == 0) {
         return;
     }
 
-    flb_hash_add(ht, name, strlen(name), str, vlen);
+    flb_hash_add(ht, name, strlen(name), value, vlen);
 }
 #endif
 
