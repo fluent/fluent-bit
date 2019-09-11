@@ -29,6 +29,7 @@
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_endian.h>
 #include <msgpack.h>
 #include "netprot.h"
 #include "typesdb.h"
