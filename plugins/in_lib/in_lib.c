@@ -155,10 +155,7 @@ static int in_lib_exit(void *data, struct flb_config *config)
     }
 
     s = &ctx->state;
-    if (s->tokens) {
-        flb_free(s->tokens);
-    }
-
+    flb_pack_state_reset(s);
     flb_free(ctx);
     return 0;
 }
