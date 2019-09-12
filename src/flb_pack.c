@@ -40,20 +40,28 @@ int flb_json_tokenise(const char *js, size_t len,
                       struct flb_pack_state *state)
 {
     int ret;
-    int n;
+    int new_tokens = 256;
+    size_t old_size;
+    size_t new_size;
     void *tmp;
 
     ret = jsmn_parse(&state->parser, js, len,
                      state->tokens, state->tokens_size);
     while (ret == JSMN_ERROR_NOMEM) {
-        n = state->tokens_size += 256;
-        tmp = flb_realloc(state->tokens, sizeof(jsmntok_t) * n);
+        /* Get current size of the array in bytes */
+        old_size = state->tokens_size * sizeof(jsmntok_t);
+
+        /* New size: add capacity for new 256 entries */
+        new_size = old_size + (sizeof(jsmntok_t) * new_tokens);
+
+        tmp = flb_realloc_z(state->tokens, old_size, new_size);
         if (!tmp) {
             flb_errno();
             return -1;
         }
         state->tokens = tmp;
-        state->tokens_size = n;
+        state->tokens_size += new_tokens;
+
         ret = jsmn_parse(&state->parser, js, len,
                          state->tokens, state->tokens_size);
     }
@@ -87,17 +95,28 @@ static inline int is_float(const char *buf, int len)
 }
 
 /* Sanitize incoming JSON string */
-static inline int pack_string_token(const char *str, int len,
+static inline int pack_string_token(struct flb_pack_state *state,
+                                    const char *str, int len,
                                     msgpack_packer *pck)
 {
+    int s;
     int out_len;
+    char *tmp;
     char *out_buf;
 
-    out_buf = flb_malloc(len + 1);
-    if (!out_buf) {
-        flb_errno();
-        return -1;
+    if (state->buf_size < len + 1) {
+        s = len + 1;
+        tmp = flb_realloc(state->buf_data, s);
+        if (!tmp) {
+            flb_errno();
+            return -1;
+        }
+        else {
+            state->buf_data = tmp;
+            state->buf_size = s;
+        }
     }
+    out_buf = state->buf_data;
 
     /* Always decode any UTF-8 or special characters */
     out_len = flb_unescape_string_utf8(str, len, out_buf);
@@ -106,22 +125,26 @@ static inline int pack_string_token(const char *str, int len,
     msgpack_pack_str(pck, out_len);
     msgpack_pack_str_body(pck, out_buf, out_len);
 
-    flb_free(out_buf);
     return out_len;
 }
 
 /* Receive a tokenized JSON message and convert it to MsgPack */
-static char *tokens_to_msgpack(const char *js,
-                               const jsmntok_t *tokens, int arr_size,
+static char *tokens_to_msgpack(struct flb_pack_state *state,
+                               const char *js,
                                int *out_size, int *last_byte)
 {
     int i;
     int flen;
+    int arr_size;
     const char *p;
     char *buf;
     const jsmntok_t *t;
     msgpack_packer pck;
     msgpack_sbuffer sbuf;
+    jsmntok_t *tokens;
+
+    tokens = state->tokens;
+    arr_size = state->tokens_count;
 
     if (arr_size == 0) {
         return NULL;
@@ -151,7 +174,7 @@ static char *tokens_to_msgpack(const char *js,
             msgpack_pack_array(&pck, t->size);
             break;
         case JSMN_STRING:
-            pack_string_token(js + t->start, flen, &pck);
+            pack_string_token(state, js + t->start, flen, &pck);
             break;
         case JSMN_PRIMITIVE:
             p = js + t->start;
@@ -179,17 +202,8 @@ static char *tokens_to_msgpack(const char *js,
         }
     }
 
-    /* dump data back to a new buffer */
     *out_size = sbuf.size;
-    buf = flb_malloc(sbuf.size);
-    if (!buf) {
-        flb_errno();
-        msgpack_sbuffer_destroy(&sbuf);
-        return NULL;
-    }
-
-    memcpy(buf, sbuf.data, sbuf.size);
-    msgpack_sbuffer_destroy(&sbuf);
+    buf = sbuf.data;
 
     return buf;
 }
@@ -247,7 +261,7 @@ int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size,
         goto flb_pack_json_end;
     }
 
-    buf = tokens_to_msgpack(js, state.tokens, state.tokens_count, &out, &last);
+    buf = tokens_to_msgpack(&state, js, &out, &last);
     if (!buf) {
         ret = -1;
         goto flb_pack_json_end;
@@ -267,17 +281,30 @@ int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size,
 /* Initialize a JSON packer state */
 int flb_pack_state_init(struct flb_pack_state *s)
 {
-    int size = 256;
+    int tokens = 256;
+    size_t size = 256;
 
     jsmn_init(&s->parser);
-    s->tokens = flb_calloc(1, sizeof(jsmntok_t) * size);
+
+    size = sizeof(jsmntok_t) * tokens;
+    s->tokens = flb_calloc(1, size);
     if (!s->tokens) {
         flb_errno();
         return -1;
     }
-    s->tokens_size   = size;
+    s->tokens_size   = tokens;
     s->tokens_count  = 0;
     s->last_byte     = 0;
+    s->multiple      = FLB_FALSE;
+
+    s->buf_data = flb_malloc(size);
+    if (!s->buf_data) {
+        flb_errno();
+        flb_free(s->tokens);
+        return -1;
+    }
+    s->buf_size = size;
+    s->buf_len = 0;
 
     return 0;
 }
@@ -288,6 +315,8 @@ void flb_pack_state_reset(struct flb_pack_state *s)
     s->tokens_size  = 0;
     s->tokens_count = 0;
     s->last_byte    = 0;
+    s->buf_size     = 0;
+    flb_free(s->buf_data);
 }
 
 
@@ -353,7 +382,7 @@ int flb_pack_json_state(const char *js, size_t len,
         return FLB_ERR_JSON_INVAL;
     }
 
-    buf = tokens_to_msgpack(js, state->tokens, state->tokens_count, &out, &last);
+    buf = tokens_to_msgpack(state, js, &out, &last);
     if (!buf) {
         return -1;
     }

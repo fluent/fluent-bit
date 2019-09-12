@@ -51,10 +51,13 @@
 struct flb_pack_state {
     int multiple;         /* support multiple jsons? */
     int tokens_count;     /* number of parsed tokens */
-    int tokens_size;      /* array size of tokens    */
-    int last_byte;        /* last byte of a full msg */
-    jsmntok_t *tokens;    /* tokens array            */
-    jsmn_parser parser;   /* parser state            */
+    int tokens_size;      /* total tokens in the array */
+    int last_byte;        /* last byte of a full msg   */
+    jsmntok_t *tokens;    /* tokens array              */
+    jsmn_parser parser;   /* parser state              */
+    char *buf_data;       /* temporal buffer           */
+    size_t buf_size;      /* temporal buffer size      */
+    size_t buf_len;       /* temporal buffer length    */
 };
 
 int flb_json_tokenise(const char *js, size_t len, struct flb_pack_state *state);
