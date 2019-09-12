@@ -21,15 +21,21 @@
 #ifndef FLB_IN_TCP_H
 #define FLB_IN_TCP_H
 
-#include <msgpack.h>
+#define FLB_TCP_FMT_JSON    0  /* default */
+#define FLB_TCP_FMT_NONE    1  /* no format, use delimiters */
+
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_sds.h>
+#include <msgpack.h>
 
 struct flb_in_tcp_config {
     int server_fd;                 /* TCP server file descriptor  */
+    int format;                    /* Data format */
     size_t buffer_size;            /* Buffer size for each reader */
     size_t chunk_size;             /* Chunk allocation size       */
     char *listen;                  /* Listen interface            */
     char *tcp_port;                /* TCP Port                    */
+    flb_sds_t separator;           /* String delimiter            */
     struct mk_list connections;    /* List of active connections  */
     struct mk_event_loop *evl;     /* Event loop file descriptor  */
     struct flb_input_instance *in; /* Input plugin instace        */
