@@ -64,21 +64,20 @@ int syslog_prot_process(struct syslog_conn *conn)
     struct flb_time out_time;
     struct flb_syslog *ctx = conn->ctx;
 
-    eof = p = conn->buf_data;
+    eof = conn->buf_data;
     end = conn->buf_data + conn->buf_len;
 
     /* Always parse while some remaining bytes exists */
     while (eof < end) {
-
         /* Lookup the ending byte */
-        eof = conn->buf_data + conn->buf_parsed;
+        eof = p = conn->buf_data + conn->buf_parsed;
         while (*eof != '\n' && *eof != '\0' && eof < end) {
             eof++;
         }
 
         /* Incomplete message */
         if (eof == end || (*eof != '\n' && *eof != '\0')) {
-            return 0;
+            break;
         }
 
         /* No data ? */
@@ -91,7 +90,7 @@ int syslog_prot_process(struct syslog_conn *conn)
             end = conn->buf_data + conn->buf_len;
 
             if (conn->buf_len == 0) {
-                return 0;
+                break;
             }
 
             continue;
@@ -110,13 +109,15 @@ int syslog_prot_process(struct syslog_conn *conn)
 
         conn->buf_parsed += len + 1;
         end = conn->buf_data + conn->buf_len;
-        eof = p = conn->buf_data + conn->buf_parsed;
+        eof = conn->buf_data + conn->buf_parsed;
     }
 
-    consume_bytes(conn->buf_data, conn->buf_parsed, conn->buf_len);
-    conn->buf_len -= conn->buf_parsed;
-    conn->buf_parsed = 0;
-    conn->buf_data[conn->buf_len] = '\0';
+    if (conn->buf_parsed > 0) {
+        consume_bytes(conn->buf_data, conn->buf_parsed, conn->buf_len);
+        conn->buf_len -= conn->buf_parsed;
+        conn->buf_parsed = 0;
+        conn->buf_data[conn->buf_len] = '\0';
+    }
 
     return 0;
 }
