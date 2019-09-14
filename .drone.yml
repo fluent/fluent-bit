@@ -1,0 +1,45 @@
+---
+kind: pipeline
+name: linux-arm64
+
+platform:
+  os: linux
+  arch: arm64
+
+steps:
+- name: dryrun
+  pull: always
+  image: plugins/docker
+  settings:
+    dryrun: true
+    dockerfile: Dockerfile.arm
+    password:
+      from_secret: docker_password
+    repo: fouts/salt-master
+    username:
+      from_secret: docker_username
+    purge: true
+  when:
+    event:
+    - pull_request
+
+- name: publish
+  image: plugins/docker
+  settings:
+    dockerfile: docker/Dockerfile.linux.arm64
+    password:
+      from_secret: docker_password
+    repo: fouts/fluent-bit-arm
+    username:
+      from_secret: docker_username
+    auto_tag: true
+    auto_tag_suffix: dev-arm64
+  when:
+    exclude:
+    - pull_request
+
+trigger:
+  ref:
+  - refs/heads/master
+  - "refs/tags/**"
+  - "refs/pull/**"
