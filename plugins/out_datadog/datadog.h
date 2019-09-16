@@ -34,8 +34,13 @@
 #define FLB_DATADOG_DD_MESSAGE_KEY    "message"
 #define FLB_DATADOG_DD_LOG_KEY        "log"
 
+#define FLB_DATADOG_REMAP_PROVIDER    "ecs"
+#define FLB_DATADOG_TAG_SEPERATOR     ","
+
 #define FLB_DATADOG_CONTENT_TYPE   "Content-Type"
 #define FLB_DATADOG_MIME_JSON      "application/json"
+
+
 
 struct flb_out_datadog {
 
@@ -47,6 +52,7 @@ struct flb_out_datadog {
     flb_sds_t api_key;
     int include_tag_key;
     flb_sds_t tag_key;
+    bool remap;
 
     /* final result */
     flb_sds_t json_date_key;

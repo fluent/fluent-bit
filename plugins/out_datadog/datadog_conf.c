@@ -108,6 +108,10 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
         ctx->dd_message_key = flb_sds_create(tmp);
     }
 
+    tmp = flb_output_get_property("provider", ins);
+    ctx->remap = tmp && (strlen(tmp) == strlen(FLB_DATADOG_REMAP_PROVIDER)) && \
+        (strncmp(tmp, FLB_DATADOG_REMAP_PROVIDER, strlen(tmp)) == 0);
+
     ctx->uri = flb_sds_create("/v1/input/");
     if (!ctx->uri) {
         flb_error("[out_datadog] error on uri generation");
@@ -147,7 +151,7 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
     }
     ctx->nb_additional_entries++;
     flb_debug("[out_datadog] ctx->json_date_key: %s", ctx->json_date_key);
-   
+
     /* Prepare an upstream handler */
     upstream = flb_upstream_create(config, ctx->host, ctx->port, io_flags, &ins->tls);
     if (!upstream) {
