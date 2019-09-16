@@ -306,6 +306,7 @@ struct flb_tls_session *flb_tls_session_new(struct flb_tls_context *ctx)
 int flb_tls_session_destroy(struct flb_tls_session *session)
 {
     if (session) {
+        mbedtls_ssl_close_notify(&session->ssl);
         mbedtls_ssl_free(&session->ssl);
         mbedtls_ssl_config_free(&session->conf);
         flb_free(session);
