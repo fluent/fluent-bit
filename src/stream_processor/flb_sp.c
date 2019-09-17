@@ -2050,7 +2050,7 @@ static int sp_process_hopping_slot(const char *tag, int tag_len,
     map_entries = mk_list_size(&cmd->keys);
     gb_entries = mk_list_size(&cmd->gb_keys);
 
-    // Initialize a hoping slot
+    /* Initialize a hoping slot */
     hs = flb_calloc(1, sizeof(struct flb_sp_hopping_slot));
     if (!hs) {
         flb_errno();
@@ -2069,12 +2069,15 @@ static int sp_process_hopping_slot(const char *tag, int tag_len,
         aggr_node_hs = flb_calloc(1, sizeof(struct aggr_node));
         if (!aggr_node_hs) {
             flb_errno();
+            flb_free(hs);
             return -1;
         }
 
         nums = malloc(sizeof(struct aggr_node) * map_entries);
         if (!nums) {
             flb_errno();
+            flb_free(hs);
+            flb_free(aggr_node_hs);
             return -1;
         }
 
