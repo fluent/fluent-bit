@@ -2099,6 +2099,8 @@ static int sp_process_hopping_slot(const char *tag, int tag_len,
             if (!aggr_node_hs->ts[key_id]) {
                 flb_errno();
                 flb_free(nums);
+                flb_free(aggr_node_hs->ts);
+                flb_free(aggr_node_hs);
                 flb_free(hs);
                 return -1;
             }
