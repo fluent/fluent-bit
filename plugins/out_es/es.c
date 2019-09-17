@@ -135,7 +135,7 @@ static char *elasticsearch_format(const void *data, size_t bytes,
     int ret;
     int len;
     int map_size;
-    int index_len;
+    int index_len = 0;
     size_t s;
     size_t off = 0;
     char *p;
