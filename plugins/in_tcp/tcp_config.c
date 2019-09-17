@@ -88,6 +88,7 @@ struct flb_in_tcp_config *tcp_config_init(struct flb_input_instance *i_ins)
             flb_free(ctx);
             return NULL;
         }
+        flb_free(out);
     }
     if (!ctx->separator) {
         ctx->separator = flb_sds_create_len("\n", 1);
