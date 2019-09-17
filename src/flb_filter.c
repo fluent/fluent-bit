@@ -211,7 +211,7 @@ int flb_filter_set_property(struct flb_filter_instance *filter,
          * map it directly to avoid an extra memory allocation.
          */
         kv = flb_kv_item_create(&filter->properties, (char *) k, NULL);
-        if (!k) {
+        if (!kv) {
             if (tmp) {
                 flb_sds_destroy(tmp);
             }
