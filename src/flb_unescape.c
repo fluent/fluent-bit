@@ -122,21 +122,6 @@ static int u8_read_escape_sequence(const char *str, uint32_t *dest)
     return i;
 }
 
-static inline int is_json_escape(char c)
-{
-    return (
-            (c == '\"') || /* double-quote    */
-            (c == '\'') || /* single-quote    */
-            (c == '\\') || /* solidus         */
-            (c == 'n')  || /* new-line        */
-            (c == 'r')  || /* carriage return */
-            (c == 't')  || /* horizontal tab  */
-            (c == 'b')  || /* backspace       */
-            (c == 'f')  || /* form feed       */
-            (c == '/')     /* reverse-solidus */
-            );
-}
-
 int flb_unescape_string_utf8(const char *in_buf, int sz, char *out_buf)
 {
     uint32_t ch;
@@ -152,42 +137,36 @@ int flb_unescape_string_utf8(const char *in_buf, int sz, char *out_buf)
         next = in_buf + 1;
 
         if (*in_buf == '\\') {
-            if (is_json_escape(*next)) {
-                switch (*next) {
-                case '"':
-                    ch = '"';
-                    break;
-                case '\\':
-                    ch = '\\';
-                    break;
-                case '/':
-                    ch = '/';
-                    break;
-                case 'n':
-                    ch = '\n';
-                    break;
-                case 'a':
-                    ch = '\a';
-                    break;
-                case 'b':
-                    ch = '\b';
-                    break;
-                case 't':
-                    ch = '\t';
-                    break;
-                case 'v':
-                    ch = '\v';
-                    break;
-                case 'f':
-                    ch = '\f';
-                    break;
-                case 'r':
-                    ch = '\r';
-                    break;
-                }
-                esc_in = 2;
-            }
-            else {
+            esc_in = 2;
+            switch (*next) {
+            case '"':
+                ch = '"';
+                break;
+            case '\'':
+                ch = '\'';
+                break;
+            case '\\':
+                ch = '\\';
+                break;
+            case '/':
+                ch = '/';
+                break;
+            case 'n':
+                ch = '\n';
+                break;
+            case 'b':
+                ch = '\b';
+                break;
+            case 't':
+                ch = '\t';
+                break;
+            case 'f':
+                ch = '\f';
+                break;
+            case 'r':
+                ch = '\r';
+                break;
+            default:
                 esc_in = u8_read_escape_sequence((in_buf + 1), &ch) + 1;
             }
         }
