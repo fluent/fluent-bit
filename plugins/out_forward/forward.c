@@ -176,6 +176,50 @@ static void secure_forward_set_ping(struct flb_forward_ping *ping,
     }
 }
 
+static int secure_forward_hash_shared_key(struct flb_forward_config *fc,
+                                          struct flb_forward_ping *ping,
+                                          char *buf, int buflen)
+{
+    char *hostname = (char *) fc->self_hostname;
+    char *shared_key = (char *) fc->shared_key;
+    struct flb_sha512 sha512;
+    uint8_t hash[64];
+
+    if (buflen < 128) {
+        return -1;
+    }
+
+    flb_sha512_init(&sha512);
+    flb_sha512_update(&sha512, fc->shared_key_salt, 16);
+    flb_sha512_update(&sha512, hostname, strlen(hostname));
+    flb_sha512_update(&sha512, ping->nonce, ping->nonce_len);
+    flb_sha512_update(&sha512, shared_key, strlen(shared_key));
+    flb_sha512_sum(&sha512, hash);
+
+    secure_forward_bin_to_hex(hash, 64, buf);
+    return 0;
+}
+
+static int secure_forward_hash_password(struct flb_forward_config *fc,
+                                        struct flb_forward_ping *ping,
+                                        char *buf, int buflen)
+{
+    struct flb_sha512 sha512;
+    uint8_t hash[64];
+
+    if (buflen < 128) {
+        return -1;
+    }
+
+    flb_sha512_init(&sha512);
+    flb_sha512_update(&sha512, ping->auth, ping->auth_len);
+    flb_sha512_update(&sha512, fc->username, strlen(fc->username));
+    flb_sha512_update(&sha512, fc->password, strlen(fc->password));
+    flb_sha512_sum(&sha512, hash);
+
+    secure_forward_bin_to_hex(hash, 64, buf);
+    return 0;
+}
 
 static int secure_forward_ping(struct flb_upstream_conn *u_conn,
                                msgpack_object map,
@@ -184,12 +228,11 @@ static int secure_forward_ping(struct flb_upstream_conn *u_conn,
 {
     int ret;
     size_t bytes_sent;
-    unsigned char shared_key[64];
     char shared_key_hexdigest[128];
+    char password_hexdigest[128];
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
     struct flb_forward_ping ping;
-    struct flb_sha512 sha512;
 
     secure_forward_set_ping(&ping, &map);
 
@@ -198,20 +241,21 @@ static int secure_forward_ping(struct flb_upstream_conn *u_conn,
         return -1;
     }
 
+    if (secure_forward_hash_shared_key(fc, &ping, shared_key_hexdigest, 128)) {
+        flb_error("[out_fw] failed to hash shared_key");
+        return -1;
+    }
 
-    /* Compose the shared key */
-    flb_sha512_init(&sha512);
-    flb_sha512_update(&sha512, fc->shared_key_salt, 16);
-    flb_sha512_update(&sha512,
-                      (const unsigned char *) fc->self_hostname,
-                      flb_sds_len(fc->self_hostname));
-    flb_sha512_update(&sha512, ping.nonce, ping.nonce_len);
-    flb_sha512_update(&sha512, (const unsigned char *) fc->shared_key,
-                      flb_sds_len(fc->shared_key));
-    flb_sha512_sum(&sha512, shared_key);
-
-    /* Make hex digest representation of the new shared key */
-    secure_forward_bin_to_hex(shared_key, 64, shared_key_hexdigest);
+    if (ping.auth != NULL) {
+        if (fc->username == NULL || fc->password == NULL) {
+            flb_error("[out_fw] server requires username and password");
+            return -1;
+        }
+        if (secure_forward_hash_password(fc, &ping, password_hexdigest, 128)) {
+            flb_error("[out_fw] failed to hash password");
+            return -1;
+        }
+    }
 
     /* Prepare outgoing msgpack PING */
     msgpack_sbuffer_init(&mp_sbuf);
@@ -235,13 +279,18 @@ static int secure_forward_ping(struct flb_upstream_conn *u_conn,
     msgpack_pack_str(&mp_pck, 128);
     msgpack_pack_str_body(&mp_pck, shared_key_hexdigest, 128);
 
-    /* [4] Username (disabled) */
-    msgpack_pack_str(&mp_pck, 0);
-    msgpack_pack_str_body(&mp_pck, "", 0);
-
-    /* [5] Password-hexdigest (disabled) */
-    msgpack_pack_str(&mp_pck, 0);
-    msgpack_pack_str_body(&mp_pck, "", 0);
+    /* [4] Username and password (optional) */
+    if (ping.auth != NULL) {
+        msgpack_pack_str(&mp_pck, strlen(fc->username));
+        msgpack_pack_str_body(&mp_pck, fc->username, strlen(fc->username));
+        msgpack_pack_str(&mp_pck, 128);
+        msgpack_pack_str_body(&mp_pck, password_hexdigest, 128);
+    } else {
+        msgpack_pack_str(&mp_pck, 0);
+        msgpack_pack_str_body(&mp_pck, "", 0);
+        msgpack_pack_str(&mp_pck, 0);
+        msgpack_pack_str_body(&mp_pck, "", 0);
+    }
 
     ret = flb_io_net_write(u_conn, mp_sbuf.data, mp_sbuf.size, &bytes_sent);
     flb_debug("[out_fw] PING sent: ret=%i bytes sent=%lu", ret, bytes_sent);
@@ -591,6 +640,16 @@ static int forward_config_ha(const char *upstream_file,
             fc->shared_key = NULL;
         }
 
+        tmp = flb_upstream_node_get_property("username", node);
+        if (tmp) {
+            fc->username = tmp;
+        }
+
+        tmp = flb_upstream_node_get_property("password", node);
+        if (tmp) {
+            fc->password = tmp;
+        }
+
         /* Self Hostname (Shared key) */
         tmp = flb_upstream_node_get_property("self_hostname", node);
         if (tmp) {
@@ -696,6 +755,16 @@ static int forward_config_simple(struct flb_forward *ctx,
     tmp = flb_output_get_property("shared_key", ins);
     if (tmp) {
         fc->shared_key = flb_sds_create(tmp);
+    }
+
+    tmp = flb_output_get_property("username", ins);
+    if (tmp) {
+        fc->username = tmp;
+    }
+
+    tmp = flb_output_get_property("password", ins);
+    if (tmp) {
+        fc->password = tmp;
     }
 
     /* Self Hostname */
