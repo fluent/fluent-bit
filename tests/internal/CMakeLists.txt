@@ -84,6 +84,10 @@ foreach(source_file ${UNIT_TESTS_FILES})
       target_link_libraries(${source_file_we} flb-sp)
     endif()
 
+    if(FLB_HAVE_TLS)
+      target_link_libraries(${source_file_we} flb-ssl)
+    endif()
+
     target_link_libraries(${source_file_we} fluent-bit-static)
 
     add_test(NAME ${source_file_we}

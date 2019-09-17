@@ -78,6 +78,13 @@ if(FLB_TLS)
     ${extra_libs}
     "mbedtls"
     )
+
+  add_subdirectory(ssl)
+
+  set(FLB_DEPS
+    ${FLB_DEPS}
+    flb-ssl
+    )
 endif()
 
 if(FLB_PROXY_GO)
