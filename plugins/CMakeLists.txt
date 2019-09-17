@@ -231,6 +231,7 @@ endif()
 
 REGISTER_FILTER_PLUGIN("filter_stdout")
 
+REGISTER_FILTER_PLUGIN("filter_geoip2")
 
 # Register external input and output plugins
 if(EXT_IN_PLUGINS)
