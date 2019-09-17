@@ -238,16 +238,16 @@ int flb_upstream_conn_release(struct flb_upstream_conn *u_conn)
         mk_event_del(u->evl, &u_conn->event);
     }
 
-    if (u_conn->fd > 0) {
-        flb_socket_close(u_conn->fd);
-    }
-
 #ifdef FLB_HAVE_TLS
     if (u_conn->tls_session) {
         flb_tls_session_destroy(u_conn->tls_session);
         u_conn->tls_session = NULL;
     }
 #endif
+
+    if (u_conn->fd > 0) {
+        flb_socket_close(u_conn->fd);
+    }
 
     /* remove connection from the queue */
     mk_list_del(&u_conn->_head);
