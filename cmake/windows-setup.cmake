@@ -83,6 +83,7 @@ set(FLB_FILTER_NEST           Yes)
 set(FLB_FILTER_LUA            Yes)
 set(FLB_FILTER_RECORD_MODIFIER Yes)
 set(FLB_FILTER_REWRITE_TAG    Yes)
+set(FLB_FILTER_GEOIP2         Yes)
 
 # Search bison and flex executables
 if(CMAKE_SYSTEM_NAME MATCHES "Windows")
