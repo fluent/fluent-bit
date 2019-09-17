@@ -49,6 +49,8 @@ struct flb_forward_config {
     int require_ack_response; /* Require acknowledge for "chunk" */
     int send_options;         /* send options in messages */
 
+    const char *username;
+    const char *password;
 
     /* mbedTLS specifics */
     unsigned char shared_key_salt[16];
