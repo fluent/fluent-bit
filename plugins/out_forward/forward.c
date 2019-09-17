@@ -143,41 +143,61 @@ static void secure_forward_bin_to_hex(uint8_t *buf, size_t len, char *out)
 	}
 }
 
+static void secure_forward_set_ping(struct flb_forward_ping *ping,
+                                    msgpack_object *map)
+{
+    int i;
+    msgpack_object key;
+    msgpack_object val;
+    const char *ptr;
+    int len;
+
+    memset(ping, 0, sizeof(struct flb_forward_ping));
+    ping->keepalive = 1; /* default, as per spec */
+
+    for (i = 0; i < map->via.map.size; i++) {
+        key = map->via.map.ptr[i].key;
+        val = map->via.map.ptr[i].val;
+
+        ptr = key.via.str.ptr;
+        len = key.via.str.size;
+
+        if (len == 5 && memcmp(ptr, "nonce", len) == 0) {
+            ping->nonce = val.via.bin.ptr;
+            ping->nonce_len = val.via.bin.size;
+        }
+        else if (len == 4 && memcmp(ptr, "auth", len) == 0) {
+            ping->auth = val.via.bin.ptr;
+            ping->auth_len = val.via.bin.size;
+        }
+        else if (len == 9 && memcmp(ptr, "keepalive", len) == 0) {
+            ping->keepalive = val.via.boolean;
+        }
+    }
+}
+
+
 static int secure_forward_ping(struct flb_upstream_conn *u_conn,
                                msgpack_object map,
                                struct flb_forward_config *fc,
                                struct flb_forward *ctx)
 {
-    int i;
     int ret;
-    const uint8_t *nonce_data;
-    int nonce_size;
     size_t bytes_sent;
     unsigned char shared_key[64];
     char shared_key_hexdigest[128];
-    msgpack_object key;
-    msgpack_object val;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
+    struct flb_forward_ping ping;
     struct flb_sha512 sha512;
 
-    /* Lookup nonce field */
-    for (i = 0; i < map.via.map.size; i++) {
-        key = map.via.map.ptr[i].key;
-        if (strncmp(key.via.str.ptr, "nonce", 5) == 0 &&
-            key.via.str.size == 5){
-            val = map.via.map.ptr[i].val;
-            break;
-        }
-    }
+    secure_forward_set_ping(&ping, &map);
 
-    if (i >= map.via.map.size) {
+    if (ping.nonce == NULL) {
         flb_error("[out_fw] nonce not found");
         return -1;
     }
 
-    nonce_data = (const unsigned char *) val.via.bin.ptr;
-    nonce_size = val.via.bin.size;
 
     /* Compose the shared key */
     flb_sha512_init(&sha512);
@@ -185,8 +205,7 @@ static int secure_forward_ping(struct flb_upstream_conn *u_conn,
     flb_sha512_update(&sha512,
                       (const unsigned char *) fc->self_hostname,
                       flb_sds_len(fc->self_hostname));
-    flb_sha512_update(&sha512,
-                      nonce_data, nonce_size);
+    flb_sha512_update(&sha512, ping.nonce, ping.nonce_len);
     flb_sha512_update(&sha512, (const unsigned char *) fc->shared_key,
                       flb_sds_len(fc->shared_key));
     flb_sha512_sum(&sha512, shared_key);
