@@ -323,6 +323,7 @@ flb_sds_t flb_ra_translate(struct flb_record_accessor *ra,
             return NULL;
         }
         if (tmp != buf) {
+            flb_sds_destroy(buf);
             buf = tmp;
         }
     }
