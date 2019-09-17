@@ -660,6 +660,10 @@ int flb_http_add_header(struct flb_http_client *c,
     int new_size;
     char *tmp;
 
+    if (key_len < 1 || val_len < 1) {
+        return -1;
+    }
+
     /*
      * The new header will need enough space in the buffer:
      *
