@@ -846,6 +846,7 @@ int flb_sp_cmd_timeseries(struct flb_sp_cmd *cmd, char *func, const char *key_al
             if (!ts) {
                 flb_errno();
                 cmd->status = FLB_SP_ERROR;
+                flb_sp_cmd_key_del(key);
                 return -1;
             }
             mk_list_init(&ts->params);
