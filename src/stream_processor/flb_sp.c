@@ -2349,8 +2349,7 @@ int flb_sp_fd_event(int fd, struct flb_sp *sp)
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_sp_task *task;
-    struct flb_input_instance *in;
-
+    struct flb_input_instance *in = NULL;
 
     /* Lookup Tasks that matches the incoming event */
     mk_list_foreach_safe(head, tmp, &sp->tasks) {
@@ -2371,6 +2370,9 @@ int flb_sp_fd_event(int fd, struct flb_sp *sp)
                     tag_len = strlen(in->name);
                 }
             }
+            else {
+                in = NULL;
+            }
 
             if (task->window.records > 0) {
                 /* find input tag from task source */
@@ -2389,7 +2391,7 @@ int flb_sp_fd_event(int fd, struct flb_sp *sp)
 
             flb_utils_timer_consume(fd);
 
-            if (update_timer_event) {
+            if (update_timer_event && in) {
                 task->window.first_hop = false;
                 mk_event_timeout_destroy(in->config->evl, &task->window.event);
                 mk_event_closesocket(fd);
