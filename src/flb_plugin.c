@@ -184,7 +184,7 @@ struct flb_plugins *flb_plugin_create()
 int flb_plugin_load(char *path, struct flb_plugins *ctx,
                     struct flb_config *config)
 {
-    int type;
+    int type = -1;
     void *dso_handle;
     void *symbol = NULL;
     char *plugin_stname;
@@ -235,6 +235,12 @@ int flb_plugin_load(char *path, struct flb_plugins *ctx,
         mk_list_add(&output->_head, &config->out_plugins);
     }
     flb_free(plugin_stname);
+
+    if (type == -1) {
+        flb_error("[plugin] plugin type not defined on '%s'", path);
+        dlclose(dso_handle);
+        return -1;
+    }
 
     /* Create plugin context (internal reference only) */
     plugin = flb_malloc(sizeof(struct flb_plugin));
