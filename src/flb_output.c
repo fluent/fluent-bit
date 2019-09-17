@@ -359,7 +359,7 @@ int flb_output_set_property(struct flb_output_instance *out,
         out->match = tmp;
     }
 #ifdef FLB_HAVE_REGEX
-    else if (prop_key_check("match_regex", k, len) == 0) {
+    else if (prop_key_check("match_regex", k, len) == 0 && tmp) {
         out->match_regex = flb_regex_create(tmp);
         flb_sds_destroy(tmp);
     }
