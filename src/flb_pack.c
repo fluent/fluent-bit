@@ -1475,7 +1475,9 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
     }
 
     tmp = flb_sds_cat(*s, "{\"version\":\"1.1\"", 16);
-    if (tmp == NULL) return NULL;
+    if (tmp == NULL) {
+        return NULL;
+    }
     *s = tmp;
 
     loop = o->via.map.size;
@@ -1508,48 +1510,61 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
 
             if ((key_len == host_key_len) &&
                 !strncmp(key, host_key, host_key_len)) {
-                if (host_key_found == FLB_TRUE) continue;
+                if (host_key_found == FLB_TRUE) {
+                    continue;
+                }
                 host_key_found = FLB_TRUE;
                 key = "host";
                 key_len = 4;
             }
             else if ((key_len == short_message_key_len) &&
                      !strncmp(key, short_message_key, short_message_key_len)) {
-                if (short_message_key_found == FLB_TRUE) continue;
+                if (short_message_key_found == FLB_TRUE) {
+                    continue;
+                }
                 short_message_key_found = FLB_TRUE;
                 key = "short_message";
                 key_len = 13;
             }
             else if ((key_len == timestamp_key_len) &&
                      !strncmp(key, timestamp_key, timestamp_key_len)) {
-                if (timestamp_key_found == FLB_TRUE) continue;
+                if (timestamp_key_found == FLB_TRUE) {
+                    continue;
+                }
                 timestamp_key_found = FLB_TRUE;
                 key = "timestamp";
                 key_len = 9;
             }
             else if ((key_len == level_key_len) &&
                      !strncmp(key, level_key, level_key_len )) {
-                if (level_key_found == FLB_TRUE) continue;
+                if (level_key_found == FLB_TRUE) {
+                    continue;
+                }
                 level_key_found = FLB_TRUE;
                 key = "level";
                 key_len = 5;
                 if (v->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-                        if ( v->via.u64 > 7 ) {
-                            flb_error("[flb_msgpack_to_gelf] level is %" PRIu64 ", but should be in 0..7", v->via.u64);
-                            return NULL;
-                        }
-                } else if (v->type == MSGPACK_OBJECT_STR){
+                    if ( v->via.u64 > 7 ) {
+                        flb_error("[flb_msgpack_to_gelf] level is %" PRIu64 ", "
+                                  "but should be in 0..7", v->via.u64);
+                        return NULL;
+                    }
+                }
+                else if (v->type == MSGPACK_OBJECT_STR) {
                     val     = v->via.str.ptr;
                     val_len = v->via.str.size;
-                    if ( val_len != 1 || val[0] < '0' || val[0] > '7' ) {
-                            flb_error("[flb_msgpack_to_gelf] level is '%.*s', but should be in 0..7", val_len, val);
-                            return NULL;
+                    if (val_len != 1 || val[0] < '0' || val[0] > '7') {
+                        flb_error("[flb_msgpack_to_gelf] level is '%.*s', "
+                                  "but should be in 0..7", val_len, val);
+                        return NULL;
                     }
                 }
             }
             else if ((key_len == full_message_key_len) &&
                      !strncmp(key, full_message_key, full_message_key_len)) {
-                if (full_message_key_found == FLB_TRUE) continue;
+                if (full_message_key_found == FLB_TRUE) {
+                    continue;
+                }
                 full_message_key_found = FLB_TRUE;
                 key = "full_message";
                 key_len = 12;
@@ -1595,11 +1610,15 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
                     tmp = flb_msgpack_gelf_key(s, FLB_FALSE, NULL, 0, FLB_FALSE,
                                              key, key_len);
                 }
-                if (tmp == NULL) return NULL;
+                if (tmp == NULL) {
+                    return NULL;
+                }
                 *s = tmp;
 
                 tmp = flb_msgpack_gelf_flatten(s, v, NULL, 0, FLB_FALSE);
-                if (tmp == NULL) return NULL;
+                if (tmp == NULL) {
+                    return NULL;
+                }
                 *s = tmp;
             }
             else {
@@ -1659,7 +1678,9 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
                     tmp = flb_msgpack_gelf_key(s, FLB_FALSE, NULL, 0, FLB_FALSE,
                                              key, key_len);
                 }
-                if (tmp == NULL) return NULL;
+                if (tmp == NULL) {
+                    return NULL;
+                }
                 *s = tmp;
 
                 if (v->type == MSGPACK_OBJECT_EXT) {
@@ -1668,7 +1689,9 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
                 else {
                     tmp = flb_msgpack_gelf_value(s, quote, val, val_len);
                 }
-                if (tmp == NULL) return NULL;
+                if (tmp == NULL) {
+                    return NULL;
+                }
                 *s = tmp;
             }
         }
@@ -1677,11 +1700,15 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
     if (timestamp_key_found == FLB_FALSE && tm != NULL) {
         tmp = flb_msgpack_gelf_key(s, FLB_FALSE, NULL, 0, FLB_FALSE,
                                    "timestamp", 9);
-        if (tmp == NULL) return NULL;
+        if (tmp == NULL) {
+            return NULL;
+        }
         *s = tmp;
 
         tmp = flb_sds_printf(s, "%f", flb_time_to_double(tm));
-        if (tmp == NULL) return NULL;
+        if (tmp == NULL) {
+            return NULL;
+        }
         *s = tmp;
     }
 
@@ -1691,7 +1718,9 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
     }
 
     tmp = flb_sds_cat(*s, "}", 1);
-    if (tmp == NULL) return NULL;
+    if (tmp == NULL) {
+        return NULL;
+    }
     *s = tmp;
 
     return *s;
