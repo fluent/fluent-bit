@@ -2098,6 +2098,8 @@ static int sp_process_hopping_slot(const char *tag, int tag_len,
             aggr_node_hs->ts[key_id] = ckey->timeseries->cb_func_clone(aggr_node->ts[key_id]);
             if (!aggr_node_hs->ts[key_id]) {
                 flb_errno();
+                flb_free(nums);
+                flb_free(hs);
                 return -1;
             }
 
