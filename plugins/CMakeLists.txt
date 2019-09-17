@@ -224,6 +224,10 @@ endif()
 REGISTER_FILTER_PLUGIN("filter_stdout")
 
 
+if(FLB_MAXMINDDB)
+  REGISTER_FILTER_PLUGIN("filter_geoip2")
+endif()
+
 # Register external input and output plugins
 if(EXT_IN_PLUGINS)
   string(REPLACE "," ";" plugins ${EXT_IN_PLUGINS})
