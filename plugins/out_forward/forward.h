@@ -72,4 +72,11 @@ struct flb_forward {
     struct mk_list configs;
 };
 
+struct flb_forward_ping {
+    const char *nonce;
+    int nonce_len;
+    const char *auth;
+    int auth_len;
+    int keepalive;
+};
 #endif
