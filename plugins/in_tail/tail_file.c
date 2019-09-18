@@ -756,13 +756,13 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     return 0;
 
 error:
-    if (file->buf_data) {
-        flb_free(file->buf_data);
-    }
-    if (file->name) {
-        flb_free(file->name);
-    }
     if (file) {
+        if (file->buf_data) {
+            flb_free(file->buf_data);
+        }
+        if (file->name) {
+            flb_free(file->name);
+        }
         flb_free(file);
     }
     close(fd);
