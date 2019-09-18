@@ -72,24 +72,32 @@ static inline int proc_temperature(struct flb_in_thermal_config *ctx, struct tem
             continue;
         }
 
-        if (e->d_type==DT_REG) {
+        if (e->d_type == DT_REG) {
             continue;
         }
 
 #ifdef FLB_HAVE_REGEX
-        if (ctx->name_regex && !flb_regex_match(ctx->name_regex, (unsigned char *) e->d_name, strlen(e->d_name))) {
+        if (ctx->name_regex && !flb_regex_match(ctx->name_regex,
+                                                (unsigned char *) e->d_name,
+                                                strlen(e->d_name))) {
             continue;
         }
 #endif
 
         if (!strncmp(e->d_name, "thermal_zone", 12)) {
             strncpy(info[i].name, e->d_name, IN_THERMAL_FILENAME_LEN);
-            if (snprintf(filename, IN_THERMAL_FILENAME_LEN, "/sys/class/thermal/%s/type", e->d_name)<=0)
-            {
+            if (snprintf(filename, IN_THERMAL_FILENAME_LEN,
+                         "/sys/class/thermal/%s/type", e->d_name) <=0 ) {
                 continue;
             }
 
             f = fopen(filename, "r");
+            if (!f) {
+                flb_errno();
+                flb_error("[in_thermal] cannot read %s", filename);
+                continue;
+            }
+
             if (f && fgets(info[i].type, IN_THERMAL_TYPE_LEN, f) && strlen(info[i].type)>1) {
                  /* Remove trailing \n */
                 for (j=0; info[i].type[j]; ++j) {
