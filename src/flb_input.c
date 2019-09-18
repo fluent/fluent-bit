@@ -257,7 +257,7 @@ int flb_input_set_property(struct flb_input_instance *in,
          * map it directly to avoid an extra memory allocation.
          */
         kv = flb_kv_item_create(&in->properties, (char *) k, NULL);
-        if (!k) {
+        if (!kv) {
             if (tmp) {
                 flb_sds_destroy(tmp);
             }
