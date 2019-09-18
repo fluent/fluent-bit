@@ -34,7 +34,7 @@
 #define PLUGIN_EXTENSION        ".so"
 #define PLUGIN_STRUCT_SUFFIX    "_plugin"
 #define PLUGIN_STR_MIN                                              \
-    ((sizeof(PLUGIN_PREFIX) - 1) + sizeof(PLUGIN_EXTENSION - 1))
+    ((sizeof(PLUGIN_PREFIX) - 1) + sizeof(PLUGIN_EXTENSION) - 1)
 
 static int is_input(char *name)
 {
