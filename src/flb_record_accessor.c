@@ -187,7 +187,6 @@ struct flb_record_accessor *flb_ra_create(char *str)
     if (!ra) {
         flb_errno();
         flb_error("[record accessor] cannot create context");
-        flb_env_destroy(env);
         flb_sds_destroy(buf);
         return NULL;
     }
