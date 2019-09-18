@@ -578,6 +578,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
 {
     int fd;
     int ret;
+    int len;
     off_t offset;
     char *tag;
     size_t tag_len;
@@ -681,10 +682,11 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
 
     /* Initialize (optional) dynamic tag */
     if (ctx->dynamic_tag == FLB_TRUE) {
-        tag = flb_malloc(strlen(ctx->i_ins->tag) + strlen(path));
+        len = ctx->i_ins->tag_len + strlen(path) + 1;
+        tag = flb_malloc(len);
         if (!tag) {
-            flb_error("[in_tail] failed to allocate tag buffer");
             flb_errno();
+            flb_error("[in_tail] failed to allocate tag buffer");
             goto error;
         }
 #ifdef FLB_HAVE_REGEX
