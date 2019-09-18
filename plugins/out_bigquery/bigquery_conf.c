@@ -44,6 +44,7 @@ static int flb_bigquery_read_credentials_file(char *creds, struct flb_bigquery_o
 {
     int i;
     int ret;
+    int len;
     int key_len;
     int val_len;
     int tok_size = 32;
@@ -140,8 +141,9 @@ static int flb_bigquery_read_credentials_file(char *creds, struct flb_bigquery_o
             tmp = flb_sds_create_len(val, val_len);
             if (tmp) {
                 /* Unescape private key */
-                ctx_creds->private_key = flb_sds_create_size(flb_sds_alloc(tmp));
-                flb_unescape_string(tmp, flb_sds_len(tmp),
+                len = flb_sds_len(tmp);
+                ctx_creds->private_key = flb_sds_create_size(len);
+                flb_unescape_string(tmp, len,
                                     &ctx_creds->private_key);
                 flb_sds_destroy(tmp);
             }
