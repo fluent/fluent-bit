@@ -575,6 +575,18 @@ int flb_input_chunk_release_lock(struct flb_input_chunk *ic)
 int flb_input_chunk_get_tag(struct flb_input_chunk *ic,
                             const char **tag_buf, int *tag_len)
 {
-    return cio_meta_read(ic->chunk, (char **) tag_buf, tag_len);
+    int len;
+    int ret;
+    char *buf;
+
+    ret = cio_meta_read(ic->chunk, &buf, &len);
+    if (ret == -1) {
+        return -1;
+    }
+
+    *tag_len = len;
+    *tag_buf = buf;
+
+    return ret;
 
 }
