@@ -205,6 +205,7 @@ int flb_plugin_load(char *path, struct flb_plugins *ctx,
      */
     plugin_stname = path_to_plugin_name(path);
     if (!plugin_stname) {
+        dlclose(dso_handle);
         return -1;
     }
 
@@ -215,6 +216,7 @@ int flb_plugin_load(char *path, struct flb_plugins *ctx,
                   "registration structure is missing '%s'",
                   path, plugin_stname);
         flb_free(plugin_stname);
+        dlclose(dso_handle);
         return -1;
     }
 
