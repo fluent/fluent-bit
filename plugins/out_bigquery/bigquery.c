@@ -464,7 +464,7 @@ static void cb_bigquery_flush(const void *data, size_t bytes,
     flb_http_buffer_size(c, 4192);
 
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
-    flb_http_add_header(c, "Content-Type", 12, "application/json", 20);
+    flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
 
     /* Compose and append Authorization header */
     set_authorization_header(c, token);
