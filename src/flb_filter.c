@@ -167,9 +167,13 @@ void flb_filter_do(struct flb_input_chunk *ic,
                 /* Point back the 'data' pointer to the new address */
                 ret = cio_chunk_get_content(ic->chunk,
                                             (char **) &work_data, &cur_size);
-
-                work_data += (cur_size - out_size);
-                work_size = out_size;
+                if (ret == -1) {
+                    flb_error("[filter] error retrieving data chunk");
+                }
+                else {
+                    work_data += (cur_size - out_size);
+                    work_size = out_size;
+                }
                 flb_free(out_buf);
             }
         }
