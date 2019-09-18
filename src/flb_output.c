@@ -450,7 +450,7 @@ int flb_output_set_property(struct flb_output_instance *out,
          * map it directly to avoid an extra memory allocation.
          */
         kv = flb_kv_item_create(&out->properties, (char *) k, NULL);
-        if (!k) {
+        if (!kv) {
             if (tmp) {
                 flb_sds_destroy(tmp);
             }
