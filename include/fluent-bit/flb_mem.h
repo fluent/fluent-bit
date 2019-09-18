@@ -88,13 +88,6 @@ void *flb_realloc(void *ptr, const size_t size)
 {
     void *aux;
 
-    if (size == 0) {
-        if (ptr) {
-            free(ptr);
-        }
-        return NULL;
-    }
-
     aux = realloc(ptr, size);
     if (flb_unlikely(!aux && size)) {
         return NULL;
