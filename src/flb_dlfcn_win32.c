@@ -19,7 +19,7 @@
 
 #include <fluent-bit/flb_compat.h>
 
-static CHAR dlerrorbuf[65535];
+static CHAR dlerrorbuf[512];
 static BOOL has_error_message = FALSE;
 
 static void store_error(void)
@@ -29,13 +29,13 @@ static void store_error(void)
         return;
     }
 
-    if (!FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM |
-                       FORMAT_MESSAGE_IGNORE_INSERTS,
-                       NULL,
-                       err,
-                       MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-                       (LPTSTR) &dlerrorbuf,
-                       _countof(dlerrorbuf), NULL))
+    if (!FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM |
+                        FORMAT_MESSAGE_IGNORE_INSERTS,
+                        NULL,
+                        err,
+                        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+                        (LPTSTR) &dlerrorbuf,
+                        _countof(dlerrorbuf), NULL))
         dlerrorbuf[0] = '\0';
 
     has_error_message = TRUE;
