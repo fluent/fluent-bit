@@ -293,7 +293,7 @@ flb_sds_t flb_ra_translate(struct flb_record_accessor *ra,
                            msgpack_object map)
 {
     int found;
-    flb_sds_t tmp;
+    flb_sds_t tmp = NULL;
     flb_sds_t buf;
     struct mk_list *head;
     struct flb_ra_parser *rp;
