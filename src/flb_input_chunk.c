@@ -471,6 +471,8 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
     /* Make sure the data was not filtered out and the buffer size is zero */
     if (size == 0) {
         flb_input_chunk_destroy(ic, FLB_TRUE);
+        flb_input_chunk_set_limits(in);
+        return 0;
     }
 #ifdef FLB_HAVE_STREAM_PROCESSOR
     else if (in->config->stream_processor_ctx) {
