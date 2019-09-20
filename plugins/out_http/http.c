@@ -210,7 +210,7 @@ static int http_gelf(struct flb_out_http *ctx,
                      const char *tag, int tag_len)
 {
     flb_sds_t s;
-    flb_sds_t tmp;
+    flb_sds_t tmp = NULL;
     msgpack_unpacked result;
     size_t off = 0;
     size_t size = 0;
@@ -245,10 +245,7 @@ static int http_gelf(struct flb_out_http *ctx,
         map = root.via.array.ptr[1];
 
         tmp = flb_msgpack_to_gelf(&s, &map, &tm, &(ctx->gelf_fields));
-        if (tmp != NULL) {
-            s = tmp;
-        }
-        else {
+        if (!tmp) {
             flb_error("[out_http] error encoding to GELF");
             flb_sds_destroy(s);
             msgpack_unpacked_destroy(&result);
@@ -257,15 +254,13 @@ static int http_gelf(struct flb_out_http *ctx,
 
         /* Append new line */
         tmp = flb_sds_cat(s, "\n", 1);
-        if (tmp != NULL) {
-            s = tmp;
-        }
-        else {
+        if (!tmp) {
             flb_error("[out_http] error concatenating records");
             flb_sds_destroy(s);
             msgpack_unpacked_destroy(&result);
             return FLB_RETRY;
         }
+        s = tmp;
     }
 
     ret = http_post(ctx, s, flb_sds_len(s), tag, tag_len);
