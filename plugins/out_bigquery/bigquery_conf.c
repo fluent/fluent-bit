@@ -308,7 +308,8 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
         flb_bigquery_conf_destroy(ctx);
         return NULL;
     }
-    ctx->uri = flb_sds_printf(&ctx->uri, FLB_BIGQUERY_RESOURCE_TEMPLATE, ctx->project_id, ctx->dataset_id, ctx->table_id);
+    ctx->uri = flb_sds_printf(&ctx->uri, FLB_BIGQUERY_RESOURCE_TEMPLATE,
+                              ctx->project_id, ctx->dataset_id, ctx->table_id);
     flb_info("[out_bigquery] project='%s' dataset='%s' table='%s'",
              ctx->project_id, ctx->dataset_id, ctx->table_id);
 
