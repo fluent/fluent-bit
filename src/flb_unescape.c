@@ -189,7 +189,7 @@ int flb_unescape_string_utf8(const char *in_buf, int sz, char *out_buf)
             esc_out = 1;
         }
         else if (esc_out == 1) {
-            out_buf[count_out] = temp[0];
+            out_buf[count_out] = (char) temp[0];
         }
         else {
             memcpy(&out_buf[count_out], temp, esc_out);
