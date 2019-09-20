@@ -5,31 +5,57 @@
 
 #include "flb_tests_internal.h"
 
-static uint8_t sha512_abcdef[] = {
-    0xe3, 0x2e, 0xf1, 0x96, 0x23, 0xe8, 0xed, 0x9d,
-    0x26, 0x7f, 0x65, 0x7a, 0x81, 0x94, 0x4b, 0x3d,
-    0x07, 0xad, 0xbb, 0x76, 0x85, 0x18, 0x06, 0x8e,
-    0x88, 0x43, 0x57, 0x45, 0x56, 0x4e, 0x8d, 0x41,
-    0x50, 0xa0, 0xa7, 0x03, 0xbe, 0x2a, 0x7d, 0x88,
-    0xb6, 0x1e, 0x3d, 0x39, 0x0c, 0x2b, 0xb9, 0x7e,
-    0x2d, 0x4c, 0x31, 0x1f, 0xdc, 0x69, 0xd6, 0xb1,
-    0x26, 0x7f, 0x05, 0xf5, 0x9a, 0xa9, 0x20, 0xe7
-};
+#define SHA512_ABCDEF "e32ef19623e8ed9d267f657a81944b3d07adbb768518068e88435745564e8d4150a0a703be2a7d88b61e3d390c2bb97e2d4c311fdc69d6b1267f05f59aa920e7"
+#define SHA512_OFFBYONE "ca8b236e13383f1f2293c9e286376444e99b7f180ba85713f140b55795fd2f8625d8b84201154d7956b74e2a1e0d5fbff1b61c7288c3f45834ad409e7bdfe536"
 
-static void test_sha512()
+static void hexlify(uint8_t *hash, char *out)
+{
+    int i;
+    static const char hex[] = "0123456789abcdef";
+    char *buf = out;
+
+    for (i = 0; i < 64; i++) {
+        *buf++ = hex[hash[i] >> 4];
+        *buf++ = hex[hash[i] & 0xf];
+    }
+}
+
+static void test_sha512_abcdef()
 {
     struct flb_sha512 sha512;
     uint8_t buf[64];
+    char dhex[128];
 
     flb_sha512_init(&sha512);
     flb_sha512_update(&sha512, "abc", 3);
     flb_sha512_update(&sha512, "def", 3);
     flb_sha512_sum(&sha512, buf);
 
-    TEST_CHECK(memcmp(buf, sha512_abcdef, 64) == 0);
+    hexlify(buf, dhex);
+
+    TEST_CHECK(memcmp(dhex, SHA512_ABCDEF, 128) == 0);
+}
+
+static void test_sha512_offbyone()
+{
+    struct flb_sha512 sha512;
+    uint8_t buf[64];
+    char dhex[128];
+
+    flb_sha512_init(&sha512);
+    flb_sha512_update(&sha512, "0123456789abcdef0123456789abcdef", 32);
+    flb_sha512_update(&sha512, "0123456789abcdef0123456789abcdef", 32);
+    flb_sha512_update(&sha512, "0123456789abcdef0123456789abcdef", 32);
+    flb_sha512_update(&sha512, "0123456789abcdef0123456789abcde",  31);
+    flb_sha512_sum(&sha512, buf);
+
+    hexlify(buf, dhex);
+
+    TEST_CHECK(memcmp(dhex, SHA512_OFFBYONE, 128) == 0);
 }
 
 TEST_LIST = {
-    { "test_sha512", test_sha512 },
+    { "test_sha512_abcdef", test_sha512_abcdef },
+    { "test_sha512_offbyone", test_sha512_offbyone },
     { 0 }
 };

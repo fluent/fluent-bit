@@ -19,9 +19,8 @@
 
 #include <fluent-bit/flb_compat.h>
 
-static LPSTR errbuf;
-static CHAR *currerr;
-static char dlerrorbuf[65536];
+static CHAR dlerrorbuf[512];
+static BOOL has_error_message = FALSE;
 
 static void store_error(void)
 {
@@ -30,16 +29,16 @@ static void store_error(void)
         return;
     }
 
-    if (!FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER |
-                       FORMAT_MESSAGE_FROM_SYSTEM |
-                       FORMAT_MESSAGE_IGNORE_INSERTS,
-                       NULL,
-                       err,
-                       MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-                       (LPTSTR) &errbuf,
-                       _countof(errbuf), NULL))
-        errbuf[0] = '\0';
-    currerr = errbuf;
+    if (!FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM |
+                        FORMAT_MESSAGE_IGNORE_INSERTS,
+                        NULL,
+                        err,
+                        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+                        (LPTSTR) &dlerrorbuf,
+                        _countof(dlerrorbuf), NULL))
+        dlerrorbuf[0] = '\0';
+
+    has_error_message = TRUE;
 }
 
 __declspec(noinline)
@@ -59,14 +58,14 @@ char *dlerror(void)
 {
     char *errorptr = dlerrorbuf;
 
-    if (currerr == NULL)
+    /* POSIX requests that the second consective dlerror() calling should
+     * be return NULL.*/
+    if (!has_error_message)
     {
         return NULL;
     }
 
-    memcpy(errorptr, currerr, strlen(currerr) + 1);
-
-    currerr = NULL;
+    has_error_message = FALSE;
 
     return errorptr;
 }

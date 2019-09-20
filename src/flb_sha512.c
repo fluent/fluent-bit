@@ -98,7 +98,9 @@ static void pad(struct flb_sha512 *s)
 
 	s->buf[r++] = 0x80;
 	if (r > 112) {
-		memset(s->buf + r, 0, 128 - r);
+        if (r < 128) {
+            memset(s->buf + r, 0, 128 - r);
+        }
 		r = 0;
 		processblock(s, s->buf);
 	}
