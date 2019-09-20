@@ -246,14 +246,6 @@ if(FLB_COVERAGE)
   set(CMAKE_BUILD_TYPE "Debug")
 endif()
 
-if(FLB_OUT_GELF)
-  find_package( ZLIB )
-  if ( NOT ZLIB_FOUND )
-     set(FLB_OUT_GELF 0)
-  endif()
-endif()
-
-
 # Enable Debug symbols if specified
 if(FLB_DEBUG)
   set(CMAKE_BUILD_TYPE "Debug")
