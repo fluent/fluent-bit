@@ -202,11 +202,11 @@ static int gelf_send_udp(struct flb_out_gelf_config *ctx, char *msg,
     return 0;
 }
 
-void cb_gelf_flush(const void *data, size_t bytes,
-                   const char *tag, int tag_len,
-                   struct flb_input_instance *i_ins,
-                   void *out_context,
-                   struct flb_config *config)
+static void cb_gelf_flush(const void *data, size_t bytes,
+                          const char *tag, int tag_len,
+                          struct flb_input_instance *i_ins,
+                          void *out_context,
+                          struct flb_config *config)
 {
     struct flb_out_gelf_config *ctx = out_context;
     flb_sds_t s;
@@ -295,8 +295,8 @@ void cb_gelf_flush(const void *data, size_t bytes,
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 
-int cb_gelf_init(struct flb_output_instance *ins, struct flb_config *config,
-                 void *data)
+static int cb_gelf_init(struct flb_output_instance *ins, struct flb_config *config,
+                        void *data)
 {
     int ret;
     int fd;
@@ -413,7 +413,8 @@ int cb_gelf_init(struct flb_output_instance *ins, struct flb_config *config,
             flb_free(ctx);
             return -1;
         }
-    } else {
+    }
+    else {
         int io_flags = FLB_IO_TCP;
 
         if (ctx->mode == FLB_GELF_TLS) {
@@ -437,7 +438,7 @@ int cb_gelf_init(struct flb_output_instance *ins, struct flb_config *config,
     return 0;
 }
 
-int cb_gelf_exit(void *data, struct flb_config *config)
+static int cb_gelf_exit(void *data, struct flb_config *config)
 {
     struct flb_out_gelf_config *ctx = data;
 
