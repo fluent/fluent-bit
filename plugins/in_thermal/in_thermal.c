@@ -123,7 +123,10 @@ static inline int proc_temperature(struct flb_in_thermal_config *ctx, struct tem
                     ++i;
                 }
             }
-            fclose(f);
+
+            if (f) {
+                fclose(f);
+            }
         }
     }
     closedir(d);
