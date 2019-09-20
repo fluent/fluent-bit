@@ -15,6 +15,7 @@ set(UNIT_TESTS_FILES
   http_client.c
   utils.c
   gzip.c
+  gelf.c
   )
 
 if(FLB_STREAM_PROCESSOR)
