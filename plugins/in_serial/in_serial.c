@@ -327,7 +327,7 @@ static int cb_serial_init(struct flb_input_instance *in,
 #else
     /* Set our collector based on a timer event */
     ret = flb_input_set_collector_time(in,
-                                       in_serial_collect,
+                                       cb_serial_collect,
                                        IN_SERIAL_COLLECT_SEC,
                                        IN_SERIAL_COLLECT_NSEC,
                                        config);
