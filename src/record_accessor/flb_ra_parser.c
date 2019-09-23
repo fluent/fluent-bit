@@ -173,7 +173,6 @@ struct flb_ra_parser *flb_ra_parser_meta_create(char *str, int len)
     s = flb_sds_create_len(str, len);
     if (!s) {
         flb_errno();
-        flb_free(s);
         flb_ra_parser_destroy(rp);
         return NULL;
     }
