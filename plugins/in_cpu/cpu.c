@@ -206,7 +206,7 @@ static inline double proc_cpu_pid_load(pid_t pid, struct cpu_stats *cstats)
 
     /* skip first two values (after process name) */
     p = line;
-    while (*p != ')') *p++;
+    while (*p != ')') p++;
 
     ret = sscanf(p,
                  fmt,
