@@ -17,7 +17,7 @@ rm -rf samples.mp samples-subkeys.mp
  kill -9 $pid
 
  # Generate new msgpack files for hopping window
- files=$(find "samples-hw/" -type f -name "*.mp")
+ files=$(find "samples-hw/" -type f -name "*.mp" | sort)
 
  for file in $files
  do
