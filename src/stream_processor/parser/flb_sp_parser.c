@@ -305,7 +305,6 @@ struct flb_sp_cmd_key *flb_sp_key_create(struct flb_sp_cmd *cmd, int func,
     return key;
 }
 
-
 int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func,
                        const char *key_name, const char *key_alias)
 {
@@ -590,12 +589,14 @@ struct flb_exp *flb_sp_cmd_condition_key(struct flb_sp_cmd *cmd,
     key->name = flb_sds_create(identifier);
     mk_list_add(&key->_head, &cmd->cond_list);
 
-    ret = swap_tmp_subkeys(&key->subkeys, cmd);
-    if (ret == -1) {
-        flb_sds_destroy(key->name);
-        mk_list_del(&key->_head);
-        flb_free(key);
-        return NULL;
+    if (mk_list_size(cmd->tmp_subkeys) > 0) {
+        ret = swap_tmp_subkeys(&key->subkeys, cmd);
+        if (ret == -1) {
+            flb_sds_destroy(key->name);
+            mk_list_del(&key->_head);
+            flb_free(key);
+            return NULL;
+        }
     }
 
     return (struct flb_exp *) key;
@@ -731,7 +732,7 @@ int flb_sp_cmd_gb_key_add(struct flb_sp_cmd *cmd, const char *key)
     int ret;
     struct flb_sp_cmd_gb_key *gb_key;
 
-    gb_key = flb_malloc(sizeof(struct flb_sp_cmd_gb_key));
+    gb_key = flb_calloc(1, sizeof(struct flb_sp_cmd_gb_key));
     if (!gb_key) {
         flb_errno();
         return -1;
@@ -742,17 +743,19 @@ int flb_sp_cmd_gb_key_add(struct flb_sp_cmd *cmd, const char *key)
         flb_free(gb_key);
         return -1;
     }
-    gb_key->subkeys = NULL;
+
     gb_key->id = mk_list_size(&cmd->gb_keys);
     mk_list_add(&gb_key->_head, &cmd->gb_keys);
 
     /* Lookup for any subkeys in the temporal list */
-    ret = swap_tmp_subkeys(&gb_key->subkeys, cmd);
-    if (ret == -1) {
-        flb_sds_destroy(gb_key->name);
-        mk_list_del(&gb_key->_head);
-        flb_free(gb_key);
-        return -1;
+    if (mk_list_size(cmd->tmp_subkeys) > 0) {
+        ret = swap_tmp_subkeys(&gb_key->subkeys, cmd);
+        if (ret == -1) {
+            flb_sds_destroy(gb_key->name);
+            mk_list_del(&gb_key->_head);
+            flb_free(gb_key);
+            return -1;
+        }
     }
 
     return 0;

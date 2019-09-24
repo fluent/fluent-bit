@@ -29,6 +29,7 @@
 
 #include "datadog.h"
 #include "datadog_conf.h"
+#include "datadog_remap.h"
 
 static int cb_datadog_init(struct flb_output_instance *ins,
                            struct flb_config *config, void *data)
@@ -82,7 +83,7 @@ static int datadog_format(const void *data, size_t bytes,
                           struct flb_out_datadog *ctx)
 {
     /* for msgpack global structs */
-    size_t off = 0;   
+    size_t off = 0;
     int array_size = 0;
     msgpack_unpacked result;
     msgpack_sbuffer mp_sbuf;
@@ -98,6 +99,7 @@ static int datadog_format(const void *data, size_t bytes,
     msgpack_object v;
     /* output buffer */
     flb_sds_t out_buf;
+    flb_sds_t remapped_tags=NULL;
 
     /* Count number of records */
     msgpack_unpacked_init(&result);
@@ -125,8 +127,38 @@ static int datadog_format(const void *data, size_t bytes,
         map = root.via.array.ptr[1];
         map_size = map.via.map.size;
 
-        /* build new object(map) with additional space for datadog entries */
-        msgpack_pack_map(&mp_pck, ctx->nb_additional_entries + map_size);
+        /* msgpack requires knowing/allocating exact map size in advance, so we need to
+           loop through the map twice. First time here to count how many attr we can
+           remap to tags, and second time later where we actually perform the remapping.*/
+        int remap_cnt = 0, byte_cnt = ctx->dd_tags ? flb_sds_len(ctx->dd_tags) : 0;
+        if (ctx->remap) {
+            for (int i = 0; i < map_size; i++) {
+                if (dd_attr_need_remapping(map.via.map.ptr[i].key, map.via.map.ptr[i].val) >= 0) {
+                    remap_cnt++;
+                    /* here we also *estimated* the size of buffer needed to hold the
+                       remapped tags. We can't know the size for sure until we do the remapping,
+                       the estimation here is just for efficiency, so that appending tags won't
+                       cause repeated resizing/copying */
+                    byte_cnt += 2 * (map.via.map.ptr[i].key.via.str.size + map.via.map.ptr[i].val.via.str.size);
+                }
+            }
+            if (!remapped_tags) {
+                remapped_tags = flb_sds_create_size(byte_cnt);
+            }
+            /* we reuse this buffer across messages, which means we have to clear it for each message
+               flb_sds doesn't have a clear function, so we copy a empty string to achieve the same effect */
+            remapped_tags = flb_sds_copy(remapped_tags, "", 0);
+        }
+
+        /* build new object(map) with additional space for datadog entries
+           for those remapped attributes, we need to remove them from the map. Note: If there were
+           no dd_tags specified AND there will be remapped attributes, we need to add 1 to account
+           for the new presense of the dd_tags */
+        if (remap_cnt && (ctx->dd_tags == NULL)) {
+            msgpack_pack_map(&mp_pck, ctx->nb_additional_entries + map_size + 1 - remap_cnt);
+        } else {
+            msgpack_pack_map(&mp_pck, ctx->nb_additional_entries + map_size - remap_cnt);
+        }
 
         /* timestamp */
         msgpack_pack_str(&mp_pck, flb_sds_len(ctx->json_date_key));
@@ -157,10 +189,18 @@ static int datadog_format(const void *data, size_t bytes,
         }
 
         /* Append initial object k/v */
-        int i = 0;
+        int i = 0, ind = 0;
         for (i = 0; i < map_size; i++) {
             k = map.via.map.ptr[i].key;
             v = map.via.map.ptr[i].val;
+
+            /* actually perform the remapping here. For matched attr, we remap and append them to
+               remapped_tags buffer, then skip the rest of processing (so they won't be packed as attr) */
+            if (ctx->remap && (ind = dd_attr_need_remapping(k, v)) >=0 ) {
+                remapping[ind].remap_to_tag(remapping[ind].remap_tag_name, v, remapped_tags);
+                continue;
+            }
+
             /* Mapping between input keys to specific datadog keys */
             if (ctx->dd_message_key != NULL && dd_compare_msgpack_obj_key_with_str(k, ctx->dd_message_key, flb_sds_len(ctx->dd_message_key)) == FLB_TRUE) {
                 msgpack_pack_str(&mp_pck, sizeof(FLB_DATADOG_DD_MESSAGE_KEY)-1);
@@ -172,8 +212,17 @@ static int datadog_format(const void *data, size_t bytes,
             msgpack_pack_object(&mp_pck, v);
         }
 
-        /* dd_tags */
-        if (ctx->dd_tags != NULL) {
+        /* here we concatenate ctx->dd_tags and remapped_tags, depending on their presence */
+        if (remap_cnt) {
+            if (ctx->dd_tags != NULL) {
+                flb_sds_cat(remapped_tags, FLB_DATADOG_TAG_SEPERATOR, strlen(FLB_DATADOG_TAG_SEPERATOR));
+                flb_sds_cat(remapped_tags, ctx->dd_tags, strlen(ctx->dd_tags));
+            }
+            dd_msgpack_pack_key_value_str(&mp_pck,
+                                          FLB_DATADOG_DD_TAGS_KEY, sizeof(FLB_DATADOG_DD_TAGS_KEY) -1,
+                                          remapped_tags, flb_sds_len(remapped_tags));
+        }
+        else if (ctx->dd_tags != NULL) {
             dd_msgpack_pack_key_value_str(&mp_pck,
                                           FLB_DATADOG_DD_TAGS_KEY, sizeof(FLB_DATADOG_DD_TAGS_KEY) -1,
                                           ctx->dd_tags, flb_sds_len(ctx->dd_tags));
@@ -194,6 +243,9 @@ static int datadog_format(const void *data, size_t bytes,
     *out_size = flb_sds_len(out_buf);
     /* Cleanup */
     msgpack_unpacked_destroy(&result);
+    if (!remapped_tags) {
+        flb_sds_destroy(remapped_tags);
+    }
 
     return 0;
 }
@@ -241,7 +293,7 @@ static void cb_datadog_flush(const void *data, size_t bytes,
                         FLB_DATADOG_CONTENT_TYPE, sizeof(FLB_DATADOG_CONTENT_TYPE) - 1,
                         FLB_DATADOG_MIME_JSON, sizeof(FLB_DATADOG_MIME_JSON) - 1);
     /* TODO: Append other headers if needed*/
-    
+
     /* finaly send the query */
     ret = flb_http_do(client, &b_sent);
     if (ret == 0) {
@@ -282,7 +334,7 @@ static void cb_datadog_flush(const void *data, size_t bytes,
 static int cb_datadog_exit(void *data, struct flb_config *config)
 {
     struct flb_out_datadog *ctx = data;
- 
+
     flb_datadog_conf_destroy(ctx);
     return 0;
 }

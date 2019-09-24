@@ -787,6 +787,38 @@ static void cb_select_max_sub_keys(int id, struct task_check *check,
     TEST_CHECK(ret == FLB_TRUE);
 }
 
+static void cb_select_max_sub_keys_group_by(int id, struct task_check *check,
+                                            char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 1 row */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 3);
+
+    ret = mp_record_key_cmp(buf, size,
+                            0, "SUM(map['sub1']['sub3'])",
+                            MSGPACK_OBJECT_FLOAT,
+                            NULL, 0, 105.5);
+    TEST_CHECK(ret == FLB_TRUE);
+}
+
+static void cb_select_max_sub_keys_group_by_2(int id, struct task_check *check,
+                                              char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 1 row */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 3);
+
+    ret = mp_record_key_cmp(buf, size,
+                            0, "SUM(map['sub1']['sub3'])",
+                            MSGPACK_OBJECT_FLOAT,
+                            NULL, 0, 105.5);
+    TEST_CHECK(ret == FLB_TRUE);
+}
+
 static void cb_select_sub_record_contains(int id, struct task_check *check,
                                           char *buf, size_t size)
 {
@@ -857,7 +889,17 @@ struct task_check select_subkeys_checks[] = {
         "cb_select_max_sub_keys",
         "SELECT MAX(map['sub1']['sub3']) FROM STREAM:FLB WHERE "  \
         "map['sub1']['sub3'] > 0;",
-        cb_select_max_sub_keys}
+        cb_select_max_sub_keys},
+    {   10, 0, 0, 0,
+        "cb_select_max_sub_keys_group_by",
+        "SELECT SUM(map['sub1']['sub3']) FROM STREAM:FLB "  \
+        "GROUP BY map['mtype'];",
+        cb_select_max_sub_keys_group_by},
+    {   11, 0, 0, 0,
+        "cb_select_max_sub_keys_group_by",
+        "SELECT map['sub1']['stype'], map['mtype'], SUM(map['sub1']['sub3']) " \
+        "FROM STREAM:FLB GROUP BY map['mtype'], map['sub1']['stype'];",
+        cb_select_max_sub_keys_group_by_2}
 };
 
 /* Tests to check syntactically valid/semantically invalid queries */

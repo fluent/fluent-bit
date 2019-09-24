@@ -120,7 +120,6 @@ struct flb_hash *flb_hash_create(int evict_mode, size_t size, int max_entries)
     mk_list_init(&ht->entries);
     ht->evict_mode = evict_mode;
     ht->max_entries = max_entries;
-    ht->total_count = 0;
     ht->size = size;
     ht->total_count = 0;
     ht->table = flb_calloc(1, sizeof(struct flb_hash_table) * size);
