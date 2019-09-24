@@ -509,18 +509,11 @@ select: SELECT keys FROM source window where groupby ';'
                      flb_free($1);
                    }
              |
-             IDENTIFIER subkey
+             IDENTIFIER record_subkey
                    {
                      $$ = flb_sp_cmd_condition_key(cmd, $1);
                      flb_free($1);
                    }
-        subkey: '[' STRING ']'
-                   {
-                     flb_slist_add(cmd->tmp_subkeys, $2);
-                     flb_free($2);
-                   }
-             |
-             subkey subkey
         param: IDENTIFIER
                {
                    flb_sp_cmd_param_add(cmd, -1, flb_sp_cmd_condition_key(cmd, $1));
@@ -580,21 +573,18 @@ select: SELECT keys FROM source window where groupby ';'
               {
                 $$ = FLB_SP_TIME_HOUR;
               }
-        gb_keys: IDENTIFIER
-                 {
-                   flb_sp_cmd_gb_key_add(cmd, $1);
-                   flb_free($1);
-                 }
+        gb_keys: gb_key
                  |
-                 IDENTIFIER subkey
-                 {
-                   flb_sp_cmd_gb_key_add(cmd, $1);
-                   flb_free($1);
-                 }
-                 |
-                 IDENTIFIER ',' gb_keys
-                 {
-                   flb_sp_cmd_gb_key_add(cmd, $1);
-                   flb_free($1);
-                 }
-                 ;
+                 gb_key ',' gb_keys
+        gb_key: IDENTIFIER
+                {
+                  flb_sp_cmd_gb_key_add(cmd, $1);
+                  flb_free($1);
+                }
+                |
+                IDENTIFIER record_subkey
+                {
+                  flb_sp_cmd_gb_key_add(cmd, $1);
+                  flb_free($1);
+                }
+                ;
