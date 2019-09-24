@@ -51,7 +51,9 @@ static inline char *remove_dup_qoutes(const char *s, size_t n)
 
  /* SQL */
 CREATE                  return CREATE;
+FLUSH                   return FLUSH;
 STREAM                  return STREAM;
+SNAPSHOT                return SNAPSHOT;
 WITH                    return WITH;
 SELECT                  return SELECT;
 AS                      return AS;
@@ -64,6 +66,7 @@ OR                      return OR;
 NOT                     return NOT;
 WINDOW                  return WINDOW;
 "GROUP BY"              return GROUP_BY;
+LIMIT                   return LIMIT;
 
 IS                      return IS;
 NULL                    return NUL;
