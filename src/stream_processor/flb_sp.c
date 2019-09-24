@@ -1627,9 +1627,23 @@ static struct aggr_node * sp_process_aggregation_data(struct flb_sp_task *task,
         }
 
         aggr_node = (struct aggr_node *) flb_calloc(1, sizeof(struct aggr_node));
+        if (!aggr_node) {
+            flb_errno();
+            flb_free(gb_nums);
+            return NULL;
+        }
+
         aggr_node->groupby_keys = gb_entries;
         aggr_node->groupby_nums = gb_nums;
-        aggr_node->ts = (struct timeseries **) flb_calloc(1, sizeof(struct timeseries *) * cmd->timeseries_num);
+        if (cmd->timeseries_num > 0) {
+            aggr_node->ts = (struct timeseries **)
+                            flb_calloc(1, sizeof(struct timeseries *) * cmd->timeseries_num);
+            if (!aggr_node->ts) {
+                flb_errno();
+                flb_sp_aggr_node_destroy(cmd, aggr_node);
+                return NULL;
+            }
+        }
 
         rb_tree_find_or_insert(&task->window.aggr_tree, aggr_node, &aggr_node->_rb_head, &rb_result);
         if (&aggr_node->_rb_head != rb_result) {
@@ -1647,7 +1661,15 @@ static struct aggr_node * sp_process_aggregation_data(struct flb_sp_task *task,
             }
             aggr_node->records = 1;
             aggr_node->nums_size = map_entries;
-            aggr_node->ts = (struct timeseries **) flb_calloc(1, sizeof(struct timeseries *) * cmd->timeseries_num);
+            if (cmd->timeseries_num > 0) {
+                aggr_node->ts = (struct timeseries **)
+                                flb_calloc(1, sizeof(struct timeseries *) * cmd->timeseries_num);
+                if (!aggr_node->ts) {
+                    flb_errno();
+                    flb_sp_aggr_node_destroy(cmd, aggr_node);
+                    return NULL;
+                }
+            }
             mk_list_add(&aggr_node->_head, &task->window.aggr_list);
         }
     }
@@ -2139,8 +2161,17 @@ static int sp_process_hopping_slot(const char *tag, int tag_len,
 
         memcpy(nums, aggr_node->nums, sizeof(struct aggr_num) * map_entries);
         aggr_node_hs->records = aggr_node->records;
-        aggr_node_hs->ts = (struct timeseries **)
-                           flb_calloc(1, sizeof(struct timeseries *) * cmd->timeseries_num);
+        if (cmd->timeseries_num > 0) {
+            aggr_node_hs->ts = (struct timeseries **)
+                               flb_calloc(1, sizeof(struct timeseries *) * cmd->timeseries_num);
+            if (!aggr_node_hs->ts) {
+                flb_errno();
+                flb_free(nums);
+                flb_free(hs);
+                flb_free(aggr_node_hs);
+                return -1;
+            }
+        }
 
         /* Clone timeseries data */
         key_id = 0;
@@ -2208,8 +2239,19 @@ static int sp_process_hopping_slot(const char *tag, int tag_len,
         if (aggr_node_hs->records > 0) {
             aggr_node_hs->groupby_nums =
                 flb_calloc(1, sizeof(struct aggr_node) * gb_entries);
-            memcpy(aggr_node_hs->groupby_nums, aggr_node->groupby_nums,
-                   sizeof(struct aggr_num) * gb_entries);
+            if (gb_entries > 0 && !aggr_node_hs->groupby_nums) {
+                flb_errno();
+                flb_free(nums);
+                flb_free(hs);
+                flb_free(aggr_node_hs->ts);
+                flb_free(aggr_node_hs);
+                return -1;
+            }
+
+            if (aggr_node_hs->groupby_nums != NULL) {
+                memcpy(aggr_node_hs->groupby_nums, aggr_node->groupby_nums,
+                       sizeof(struct aggr_num) * gb_entries);
+            }
 
             aggr_node_hs->nums = nums;
             aggr_node_hs->nums_size = aggr_node->nums_size;
