@@ -228,6 +228,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
              * issue a full retry of the data chunk.
              */
             flb_time_sleep(1000, config);
+            rd_kafka_poll(ctx->producer, 0);
 
             /* Issue a re-try */
             queue_full_retries++;
