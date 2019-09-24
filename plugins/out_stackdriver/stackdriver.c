@@ -330,6 +330,106 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     return 0;
 }
 
+static int validate_severity_level(severity_t * s,
+                                   const char * str,
+                                   const unsigned int str_size)
+{
+    int i = 0;
+
+    const static struct {
+        severity_t s;
+        const unsigned int str_size;
+        const char * str;
+    }   enum_mapping[] = {
+        {EMERGENCY, 9, "EMERGENCY"},
+        {EMERGENCY, 5, "EMERG"    },
+
+        {ALERT    , 1, "A"        },
+        {ALERT    , 5, "ALERT"    },
+
+        {CRITICAL , 1, "C"        },
+        {CRITICAL , 1, "F"        },
+        {CRITICAL , 4, "CRIT"     },
+        {CRITICAL , 5, "FATAL"    },
+        {CRITICAL , 8, "CRITICAL" },
+
+        {ERROR    , 1, "E"        },
+        {ERROR    , 3, "ERR"      },
+        {ERROR    , 5, "ERROR"    },
+        {ERROR    , 6, "SEVERE"   },
+
+        {WARNING  , 1, "W"        },
+        {WARNING  , 4, "WARN"     },
+        {WARNING  , 7, "WARNING"  },
+
+        {NOTICE   , 1, "N"        },
+        {NOTICE   , 6, "NOTICE"   },
+
+        {INFO     , 1, "I"        },
+        {INFO     , 4, "INFO"     },
+
+        {DEBUG    , 1, "D"        },
+        {DEBUG    , 5, "DEBUG"    },
+        {DEBUG    , 5, "TRACE"    },
+        {DEBUG    , 9, "TRACE_INT"},
+        {DEBUG    , 4, "FINE"     },
+        {DEBUG    , 5, "FINER"    },
+        {DEBUG    , 6, "FINEST"   },
+        {DEBUG    , 6, "CONFIG"   },
+
+        {DEFAULT  , 7, "DEFAULT"  }
+    };
+
+    for (i = 0; i < sizeof (enum_mapping) / sizeof (enum_mapping[0]); ++i) {
+        if (enum_mapping[i].str_size != str_size) {
+            continue;
+        }
+
+        if (strncasecmp(str, enum_mapping[i].str, str_size) == 0) {
+            *s = enum_mapping[i].s;
+            return 0;
+        }
+    }
+    return -1;
+}
+
+static int get_msgpack_obj(msgpack_object * subobj, const msgpack_object * o,
+                           const flb_sds_t key, const int key_size,
+                           msgpack_object_type type)
+{
+    int i = 0;
+    msgpack_object_kv * p = NULL;
+
+    if (o == NULL || subobj == NULL) {
+        return -1;
+    }
+
+    for (i = 0; i < o->via.map.size; i++) {
+        p = &o->via.map.ptr[i];
+        if (p->val.type != type) {
+            continue;
+        }
+
+        if (flb_sds_cmp(key, p->key.via.str.ptr, p->key.via.str.size) == 0) {
+            *subobj = p->val;
+            return 0;
+        }
+    }
+    return -1;
+}
+
+static int get_severity_level(severity_t * s, const msgpack_object * o,
+                              const flb_sds_t key)
+{
+    msgpack_object tmp;
+    if (get_msgpack_obj(&tmp, o, key, flb_sds_len(key), MSGPACK_OBJECT_STR) == 0
+        && validate_severity_level(s, tmp.via.str.ptr, tmp.via.str.size) == 0) {
+        return 0;
+    }
+    *s = 0;
+    return -1;
+}
+
 static int stackdriver_format(const void *data, size_t bytes,
                               const char *tag, size_t tag_len,
                               char **out_data, size_t *out_size,
@@ -343,6 +443,7 @@ static int stackdriver_format(const void *data, size_t bytes,
     char time_formatted[255];
     struct tm tm;
     struct flb_time tms;
+    severity_t severity;
     msgpack_object *obj;
     msgpack_unpacked result;
     msgpack_sbuffer mp_sbuf;
@@ -435,7 +536,17 @@ static int stackdriver_format(const void *data, size_t bytes,
          *  "timestamp": "..."
          * }
          */
-        msgpack_pack_map(&mp_pck, 3);
+        if (ctx->severity_key
+            && get_severity_level(&severity, obj, ctx->severity_key) == 0) {
+            /* additional field for severity */
+            msgpack_pack_map(&mp_pck, 4);
+            msgpack_pack_str(&mp_pck, 8);
+            msgpack_pack_str_body(&mp_pck, "severity", 8);
+            msgpack_pack_int(&mp_pck, severity);
+        }
+        else {
+            msgpack_pack_map(&mp_pck, 3);
+        }
 
         /* jsonPayload */
         msgpack_pack_str(&mp_pck, 11);

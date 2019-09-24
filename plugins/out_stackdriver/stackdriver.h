@@ -68,6 +68,7 @@ struct flb_stackdriver {
 
     /* other */
     flb_sds_t resource;
+    flb_sds_t severity_key;
 
     /* oauth2 context */
     struct flb_oauth2 *o;
@@ -81,5 +82,17 @@ struct flb_stackdriver {
     /* Fluent Bit context */
     struct flb_config *config;
 };
+
+typedef enum {
+    EMERGENCY = 800,
+    ALERT     = 700,
+    CRITICAL  = 600,
+    ERROR     = 500,
+    WARNING   = 400,
+    NOTICE    = 300,
+    INFO      = 200,
+    DEBUG     = 100,
+    DEFAULT   = 0
+} severity_t;
 
 #endif
