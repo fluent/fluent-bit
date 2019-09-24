@@ -159,7 +159,6 @@ static inline double proc_cpu_load(int cpus, struct cpu_stats *cstats)
 /* Retrieve CPU stats for a given PID */
 static inline double proc_cpu_pid_load(pid_t pid, struct cpu_stats *cstats)
 {
-    int i;
     int ret;
     char *p;
     char line[255];
@@ -178,7 +177,6 @@ static inline double proc_cpu_pid_load(pid_t pid, struct cpu_stats *cstats)
     unsigned long ss_majflt;
     unsigned long ss_cmajflt;
     struct cpu_snapshot *s;
-    struct cpu_snapshot *snap_arr;
 
     /* Read the process stats */
     snprintf(line, sizeof(line) - 1, "/proc/%d/stat", pid);
@@ -208,6 +206,7 @@ static inline double proc_cpu_pid_load(pid_t pid, struct cpu_stats *cstats)
     p = line;
     while (*p != ')') p++;
 
+    errno = 0;
     ret = sscanf(p,
                  fmt,
                  &ss_state,
@@ -225,6 +224,7 @@ static inline double proc_cpu_pid_load(pid_t pid, struct cpu_stats *cstats)
                  &s->v_system);
     if (errno != 0) {
         flb_errno();
+        flb_error("[in_cpu] pid sscanf failed ret=%i", ret);
     }
 
     fclose(f);
@@ -419,7 +419,6 @@ static int cpu_collect_system(struct flb_input_instance *i_ins,
 static int cpu_collect_pid(struct flb_input_instance *i_ins,
                            struct flb_config *config, void *in_context)
 {
-    int i;
     int ret;
     struct flb_in_cpu_config *ctx = in_context;
     struct cpu_stats *cstats = &ctx->cstats;
