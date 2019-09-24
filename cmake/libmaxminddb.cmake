@@ -15,9 +15,10 @@ ExternalProject_Add(maxminddb
   BUILD_IN_SOURCE TRUE
   EXCLUDE_FROM_ALL TRUE
   SOURCE_DIR ${LIBMAXMINDDB_SRC}
-  CONFIGURE_COMMAND ./configure
+  INSTALL_DIR ${LIBMAXMINDDB_DEST}
+  CONFIGURE_COMMAND ./configure --disable-shared --prefix=${LIBMAXMINDDB_DEST}
   BUILD_COMMAND $(MAKE)
-  INSTALL_COMMAND cp src/.libs/libmaxminddb.a "${LIBMAXMINDDB_DEST}/lib/libmaxminddb.a")
+  INSTALL_COMMAND $(MAKE) install)
 
 if(MSVC)
   add_dependencies(libmaxminddb maxminddb)
