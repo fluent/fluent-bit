@@ -188,7 +188,6 @@ int subkeys_compare(struct mk_list *subkeys1, struct mk_list *subkeys2)
         return 0;
     }
 
-
     if (!subkeys1 || !subkeys2) {
         return -1;
     }
@@ -1288,7 +1287,7 @@ static void package_results(const char *tag, int tag_len,
              */
             if (ckey->gb_key != NULL) {
                 gb_key = ckey->gb_key;
-                if (aggr_node && aggr_node->groupby_keys > 0) {
+                if (aggr_node->groupby_keys > 0) {
                     num = &aggr_node->groupby_nums[gb_key->id];
                 }
             }
