@@ -50,7 +50,7 @@ static int configure(struct geoip2_ctx *ctx,
                 flb_errno();
                 continue;
             }
-            key->key = kv->val;
+            key->key = flb_strndup(kv->val, flb_sds_len(kv->val));
             key->key_len = flb_sds_len(kv->val);
             mk_list_add(&key->_head, &ctx->lookup_keys);
             ctx->lookup_keys_num++;
