@@ -31,6 +31,7 @@
 #include <fluent-bit/stream_processor/flb_sp.h>
 #include <fluent-bit/stream_processor/flb_sp_key.h>
 #include <fluent-bit/stream_processor/flb_sp_stream.h>
+#include <fluent-bit/stream_processor/flb_sp_snapshot.h>
 #include <fluent-bit/stream_processor/flb_sp_parser.h>
 #include <fluent-bit/stream_processor/flb_sp_func_time.h>
 #include <fluent-bit/stream_processor/flb_sp_func_record.h>
@@ -487,6 +488,37 @@ static void aggr_max(struct aggr_num *nums, int key_id, int64_t i, double d)
     }
 }
 
+int flb_sp_snapshot_create(struct flb_sp_task *task)
+{
+    struct flb_sp_cmd *cmd;
+    struct flb_sp_snapshot *snapshot;
+
+    cmd = task->cmd;
+
+    snapshot = (struct flb_sp_snapshot *) flb_calloc(1, sizeof(struct flb_sp_snapshot));
+    if (!snapshot)
+    {
+        flb_error("[sp] could not create snapshot '%s'", cmd->stream_name);
+        return -1;
+    }
+
+    mk_list_init(&snapshot->pages);
+    snapshot->record_limit = cmd->limit;
+
+    if (flb_sp_cmd_stream_prop_get(cmd, "seconds") != NULL) {
+        snapshot->time_limit = atoi(flb_sp_cmd_stream_prop_get(cmd, "seconds"));
+    }
+
+    if (snapshot->time_limit == 0 && snapshot->record_limit == 0) {
+        flb_error("[sp] could not create snapshot '%s': size is not defined",
+                  cmd->stream_name);
+        return -1;
+    }
+
+    task->snapshot = snapshot;
+    return 0;
+}
+
 struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, const char *name,
                                        const char *query)
 {
@@ -603,11 +635,23 @@ struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, const char *name,
         }
     }
 
+    /* Init snapshot page list */
+    if (cmd->type == FLB_SP_CREATE_SNAPSHOT) {
+        if (flb_sp_snapshot_create(task) == -1)
+        {
+            flb_sp_task_destroy(task);
+            return NULL;
+        }
+    }
+
     /*
      * If the task involves a stream creation (CREATE STREAM abc..), create
      * the stream.
      */
-    if (cmd->type == FLB_SP_CREATE_STREAM) {
+    if (cmd->type == FLB_SP_CREATE_STREAM ||
+        cmd->type == FLB_SP_CREATE_SNAPSHOT ||
+        cmd->type == FLB_SP_FLUSH_SNAPSHOT) {
+
         ret = flb_sp_stream_create(cmd->stream_name, task, sp);
         if (ret == -1) {
             flb_error("[sp] could not create stream '%s'", cmd->stream_name);
@@ -728,6 +772,7 @@ void flb_sp_task_destroy(struct flb_sp_task *task)
     flb_sds_destroy(task->name);
     flb_sds_destroy(task->query);
     flb_sp_window_destroy(task->cmd, &task->window);
+    flb_sp_snapshot_destroy(task->snapshot);
     mk_list_del(&task->_head);
 
     if (task->stream) {
@@ -1907,12 +1952,15 @@ static int sp_process_data(const char *tag, int tag_len,
     int ret;
     int map_size;
     int map_entries;
-    int records = 0;
+    int records;
     uint8_t h;
     off_t map_off;
     off_t no_data;
-    size_t off = 0;
+    size_t off;
+    size_t off_copy;
+    size_t snapshot_out_size;
     char *tmp;
+    char *snapshot_out_buffer;
     msgpack_object root;
     msgpack_object *obj;
     msgpack_object key;
@@ -1923,24 +1971,37 @@ static int sp_process_data(const char *tag, int tag_len,
     msgpack_object map;
     struct flb_time tms;
     struct mk_list *head;
-    struct flb_sp_cmd *cmd = task->cmd;
+    struct flb_sp_cmd *cmd;
     struct flb_sp_cmd_key *cmd_key;
     struct flb_exp_val *condition;
     struct flb_sp_value *sval;
 
     /* Vars initialization */
+    off = 0;
+    off_copy = off;
+    records = 0;
+    cmd = task->cmd;
     ok = MSGPACK_UNPACK_SUCCESS;
     msgpack_unpacked_init(&result);
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
+    snapshot_out_size = 0;
+    snapshot_out_buffer = NULL;
+
     /* Iterate incoming records */
     while (msgpack_unpack_next(&result, buf_data, buf_size, &off) == ok) {
         root = result.data;
-        records++;
 
         /* extract timestamp */
         flb_time_pop_from_msgpack(&tms, &result, &obj);
+
+        /* Store the buffer if the stream is a snapshot */
+        if (cmd->type == FLB_SP_CREATE_SNAPSHOT) {
+            flb_sp_snapshot_update(task, buf_data + off_copy, off - off_copy, &tms);
+            off_copy = off;
+            continue;
+        }
 
         /* get the map data and it size (number of items) */
         map   = root.via.array.ptr[1];
@@ -1961,6 +2022,15 @@ static int sp_process_data(const char *tag, int tag_len,
                 flb_free(condition);
             }
         }
+
+        records++;
+
+        /* Flush the snapshot if condition holds */
+        if (cmd->type == FLB_SP_FLUSH_SNAPSHOT) {
+            flb_sp_snapshot_flush(sp, task, &snapshot_out_buffer, &snapshot_out_size);
+            continue;
+        }
+
 
         /*
          * If for some reason the Task keys did not insert any data, we will
@@ -2096,6 +2166,20 @@ static int sp_process_data(const char *tag, int tag_len,
     if (records == 0) {
         msgpack_sbuffer_destroy(&mp_sbuf);
         return 0;
+    }
+
+    /* Use snapshot out buffer if it is flush stream */
+    if (cmd->type == FLB_SP_FLUSH_SNAPSHOT) {
+        if (snapshot_out_size == 0) {
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            flb_free(snapshot_out_buffer);
+            return 0;
+        }
+        else {
+            *out_buf = snapshot_out_buffer;
+            *out_size = snapshot_out_size;
+            return records;
+        }
     }
 
     /* set outgoing results */
@@ -2358,7 +2442,7 @@ int flb_sp_do(struct flb_sp *sp, struct flb_input_instance *in,
     struct flb_sp_task *task;
     struct flb_sp_cmd *cmd;
 
-    /* Lookup Tasks that matches the incoming instance data */
+    /* Lookup tasks that matche the incoming instance data */
     mk_list_foreach(head, &sp->tasks) {
         task = mk_list_entry(head, struct flb_sp_task, _head);
         cmd = task->cmd;

@@ -34,7 +34,8 @@ void yyerror(struct flb_sp_cmd *cmd, const char *query, void *scanner,
 %token IDENTIFIER QUOTE QUOTED
 
 /* Basic keywords for statements */
-%token CREATE STREAM WITH SELECT AS FROM FROM_STREAM FROM_TAG WHERE WINDOW GROUP_BY
+%token CREATE STREAM SNAPSHOT FLUSH WITH SELECT AS FROM FROM_STREAM FROM_TAG
+%token WHERE WINDOW GROUP_BY LIMIT
 
 /* Null keywords */
 %token IS NUL
@@ -117,6 +118,24 @@ create:
         flb_sp_cmd_stream_new(cmd, $3);
         flb_free($3);
       }
+      |
+      CREATE SNAPSHOT IDENTIFIER AS SELECT '*' FROM source limit ';'
+      {
+        flb_sp_cmd_snapshot_new(cmd, $3);
+        flb_free($3);
+      }
+      |
+      CREATE SNAPSHOT IDENTIFIER WITH '(' properties ')' AS SELECT '*' FROM source limit ';'
+      {
+        flb_sp_cmd_snapshot_new(cmd, $3);
+        flb_free($3);
+      }
+      |
+      FLUSH SNAPSHOT IDENTIFIER AS SELECT '*' FROM source where ';'
+      {
+        flb_sp_cmd_snapshot_flush_new(cmd, $3);
+        flb_free($3);
+      }
       properties: property
                   |
                   properties ',' property
@@ -130,7 +149,7 @@ create:
       prop_val: STRING
 
 /* Parser for 'SELECT' statement */
-select: SELECT keys FROM source window where groupby ';'
+select: SELECT keys FROM source window where groupby limit ';'
       {
         cmd->type = FLB_SP_SELECT;
       }
@@ -406,6 +425,12 @@ select: SELECT keys FROM source window where groupby ';'
       groupby: %empty
                |
                GROUP_BY gb_keys
+      limit: %empty
+             |
+             LIMIT INTEGER
+             {
+                 flb_sp_cmd_limit_add(cmd, $2);
+             }
       window_spec:
               TUMBLING '(' INTEGER time ')'
               {
