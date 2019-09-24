@@ -39,6 +39,7 @@ if(FLB_IN_LIB AND FLB_OUT_LIB)
   FLB_RT_TEST(FLB_FILTER_KUBERNETES "filter_kubernetes.c")
   FLB_RT_TEST(FLB_FILTER_PARSER     "filter_parser.c")
   FLB_RT_TEST(FLB_FILTER_MODIFY     "filter_modify.c")
+  FLB_RT_TEST(FLB_FILTER_GEOIP2     "filter_geoip2.c")
 endif()
 
 
