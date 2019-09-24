@@ -90,6 +90,31 @@ int flb_something(int a, int b)
 
 If your function is too long where many nested levels exists, consider to split your function in different ones and declare the spitted parts as static functions if they don't be intended to be called out of the scope of the source code file in question.
 
+### Comments in the code
+
+Commenting code is always encouraged, that makes things easier to the reader to understand what the code is doing or aims to do.
+
+In Fluent Bit, every code comment starts with a slash asterisk ```/*```  and ends with a asterisk slash ```*/```. If the text in the comment is longer than 80 characters, append a new commented line. We use the following format depending on the case:
+
+#### Single line comment
+
+```C
+/* This is my comment */
+```
+
+#### Multiline comment
+
+```c
+/*
+ * This is my comment which is longer than 80 characters, so we must use the
+ * multi-line type comments.
+ */
+```
+
+
+
+
+
 ## Commit Changes
 
 When you commit your local changes in your repository (before to push to Github), we need you take care of the following:
