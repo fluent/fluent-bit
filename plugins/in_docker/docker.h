@@ -77,6 +77,5 @@ struct flb_in_docker_config {
 
 int in_docker_collect(struct flb_input_instance *i_ins,
                       struct flb_config *config, void *in_context);
-extern struct flb_input_plugin in_docker_plugin;
 
 #endif
