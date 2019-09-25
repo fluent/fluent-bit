@@ -226,6 +226,7 @@ static void add_geoip_fields(msgpack_object *map,
         }
         path[split_size] = NULL;
         status = MMDB_aget_value(&entry, &entry_data, (const char *const *const)path);
+        flb_utils_split_free(split);
         for (int j = 0; j < split_size; j++) {
             flb_free(path[j]);
         }
@@ -398,6 +399,7 @@ static int cb_geoip2_filter(const void *data, size_t bytes,
 
         lookup_keys_hash = prepare_lookup_keys(obj, ctx);
         add_geoip_fields(obj, lookup_keys_hash, ctx, &packer);
+        flb_hash_destroy(lookup_keys_hash);
     }
     msgpack_unpacked_destroy(&unpacked);
 
