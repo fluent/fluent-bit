@@ -45,18 +45,9 @@ struct cef_ht_dic {
 };
 
 struct cef_ht_entry {
-    flb_sds_t key;
-    unsigned int hash;
-    int dib;
     int dic_size;
     struct cef_ht_dic *dic;
-    struct cef_ht *child;
-};
-
-struct cef_ht {
-    int size;
-    int used;
-    struct cef_ht_entry *tbl;
+    struct flb_hash *child;
 };
 
 struct out_cef_config {
@@ -64,7 +55,7 @@ struct out_cef_config {
     struct flb_upstream *u;
     flb_sockfd_t fd;
 
-    struct cef_ht *ht_dic;
+    struct flb_hash *ht_dic;
     int mode;
     int fmt;
 };
@@ -72,9 +63,9 @@ struct out_cef_config {
 int cef_settings (struct flb_output_instance *ins,
                   struct out_cef_config *ctx);
 
-void cef_ht_destroy (struct cef_ht *ht);
+void cef_ht_destroy (struct flb_hash *ht);
 
-struct cef_ht_entry *cef_ht_find(struct cef_ht *ht,
+struct cef_ht_entry *cef_ht_find(struct flb_hash *ht,
                                  char * key, int key_len);
 
 #endif

@@ -503,7 +503,7 @@ static flb_sds_t msgpack_cef_json(flb_sds_t *s, msgpack_object *o)
    return *s;
 }
 
-static int msgpack_to_cef_map (struct cef_ht *ht,
+static int msgpack_to_cef_map (struct flb_hash *ht,
                                      struct cef_msg *msg,
                                      msgpack_object *o)
 {
