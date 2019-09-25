@@ -197,7 +197,6 @@ static void add_geoip_fields(msgpack_object *map,
     struct mk_list *path_tmp;
     struct flb_split_entry *sentry;
     int i = 0;
-    int added = 0;
 
     mk_list_foreach_safe(head, tmp, &ctx->records) {
         record = mk_list_entry(head, struct geoip2_record, _head);
@@ -364,7 +363,6 @@ static int cb_geoip2_filter(const void *data, size_t bytes,
     msgpack_object *obj;
     msgpack_object_kv *kv;
     struct flb_hash *lookup_keys_hash;
-    int added = 0;
 
     /* Create temporal msgpack buffer */
     msgpack_sbuffer_init(&sbuffer);
