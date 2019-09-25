@@ -138,44 +138,6 @@ flb_sds_t flb_sds_cat(flb_sds_t s, const char *str, int len)
     return s;
 }
 
-flb_sds_t flb_sds_cat_replace(flb_sds_t s, const char *str, int len,
-                              char *rpl, size_t rpl_size)
-{
-    size_t avail;
-    struct flb_sds *head;
-    flb_sds_t tmp = NULL;
-    int i, c;
-
-    avail = flb_sds_avail(s);
-    if (avail < len) {
-        tmp = flb_sds_increase(s, len);
-        if (!tmp) {
-            return NULL;
-        }
-        s = tmp;
-    }
-
-    head = FLB_SDS_HEADER(s);
-
-    if (rpl == NULL) {
-        memcpy((char *) (s + flb_sds_len(s)), str, len);
-    } else {
-        for (i = 0; i < len ; i++) {
-            c = (unsigned char )str[i];
-            if (c < rpl_size && rpl[c] != 0) {
-                s[head->len + i] = rpl[c];
-            } else {
-                s[head->len + i] = c;
-            }
-        }
-    }
-
-    head->len += len;
-    s[head->len] = '\0';
-
-    return s;
-}
-
 flb_sds_t flb_sds_copy(flb_sds_t s, const char *str, int len)
 {
     size_t avail;
