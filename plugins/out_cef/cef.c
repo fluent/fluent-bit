@@ -163,34 +163,48 @@ static flb_sds_t cef_set_ext (flb_sds_t *ext, struct cef_ht_dic *dic,
 
     if (dic->clabel) {
         tmp = flb_sds_cat(*ext, dic->clabel, flb_sds_len(dic->clabel));
-        if (!tmp) return NULL;
+        if (!tmp) {
+          return NULL;
+        }
         *ext = tmp;
 
         tmp = flb_sds_cat(*ext, "=", 1);
-        if (!tmp) return NULL;
+        if (!tmp) {
+          return NULL;
+        }
         *ext = tmp;
 
         tmp = flb_sds_cat(*ext, dic->label, flb_sds_len(dic->label));
-        if (!tmp) return NULL;
+        if (!tmp) {
+          return NULL;
+        }
         *ext = tmp;
 
         tmp = flb_sds_cat(*ext, " ", 1);
-        if (!tmp) return NULL;
+        if (!tmp) {
+          return NULL;
+        }
         *ext = tmp;
 
         tmp = flb_sds_cat_utf8(ext, dic->cvalue, flb_sds_len(dic->cvalue),
                                esc_cef_ext, sizeof(esc_cef_ext));
-        if (!tmp) return NULL;
+        if (!tmp) {
+          return NULL;
+        }
         *ext = tmp;
     }
     else {
         tmp = flb_sds_cat(*ext, dic->label, flb_sds_len(dic->label));
-        if (!tmp) return NULL;
+        if (!tmp) {
+          return NULL;
+        }
         *ext = tmp;
     }
 
     tmp = flb_sds_cat(*ext, "=", 1);
-    if (!tmp) return NULL;
+    if (!tmp) {
+      return NULL;
+    }
     *ext = tmp;
 
     if ((dic->value_max_size > 0) && (val_len > dic->value_max_size)) {
@@ -198,7 +212,9 @@ static flb_sds_t cef_set_ext (flb_sds_t *ext, struct cef_ht_dic *dic,
     }
 
     tmp = flb_sds_cat_utf8(ext, val, val_len, esc_cef_ext, sizeof(esc_cef_ext));
-    if (!tmp) return NULL;
+    if (!tmp) {
+      return NULL;
+    }
     *ext = tmp;
 
     return *ext;
@@ -208,7 +224,7 @@ static int cef_set(struct cef_ht_dic *dic, int dic_size,
                    struct cef_msg *msg, char *val, int val_len)
 {
     flb_sds_t tmp;
-    int n;
+    int i, n;
 
     for (n=0; n < dic_size; n++) {
         switch (dic[n].ftype) {
@@ -235,7 +251,6 @@ static int cef_set(struct cef_ht_dic *dic, int dic_size,
                     }
                 }
                 else {
-                    int i;
                     for (i=0; cef_syslog_facility[i].name != NULL; i++) {
                         if ((cef_syslog_facility[i].len == val_len) &&
                             (!strncasecmp(cef_syslog_facility[i].name, val, val_len))) {
@@ -255,7 +270,6 @@ static int cef_set(struct cef_ht_dic *dic, int dic_size,
                     msg->syslog_severity = val[0]-'0';
                 }
                 else {
-                    int i;
                     for (i=0; cef_syslog_severity[i].name != NULL; i++) {
                         if ((cef_syslog_severity[i].len == val_len) &&
                             (!strncasecmp(cef_syslog_severity[i].name, val, val_len))) {
@@ -337,12 +351,16 @@ static int cef_set(struct cef_ht_dic *dic, int dic_size,
         case CEF_CUSTOM_EXTENSION:
             if (msg->ext_cnt > 0) {
                 tmp = flb_sds_cat(msg->ext, " ", 1);
-                if (!tmp) return -1;
+                if (!tmp) {
+                  return -1;
+                }
                 msg->ext = tmp;
             }
 
             tmp = cef_set_ext (&(msg->ext), &dic[n], val, val_len);
-            if (!tmp) return -1;
+            if (!tmp) {
+              return -1;
+            }
             msg->ext = tmp;
 
             msg->ext_cnt++;
@@ -362,7 +380,9 @@ static flb_sds_t msgpack_cef_json(flb_sds_t *s, msgpack_object *o)
     switch(o->type) {
     case MSGPACK_OBJECT_NIL:
         tmp = flb_sds_cat(*s, "null", 4);
-        if (!tmp) return NULL;
+        if (!tmp) {
+          return NULL;
+        }
         *s = tmp;
         break;
 
@@ -373,57 +393,79 @@ static flb_sds_t msgpack_cef_json(flb_sds_t *s, msgpack_object *o)
         else {
             tmp = flb_sds_cat(*s, "false", 5);
         }
-        if (!tmp) return NULL;
+        if (!tmp) {
+          return NULL;
+        }
         *s = tmp;
         break;
 
     case MSGPACK_OBJECT_POSITIVE_INTEGER:
         tmp = flb_sds_printf(s, "%lu", (unsigned long)o->via.u64);
-        if (!tmp) return NULL;
+        if (!tmp) {
+          return NULL;
+        }
         *s = tmp;
         break;
 
     case MSGPACK_OBJECT_NEGATIVE_INTEGER:
         tmp = flb_sds_printf(s, "%ld", (signed long)o->via.i64);
-        if (!tmp) return NULL;
+        if (!tmp) {
+          return NULL;
+        }
         *s = tmp;
         break;
 
     case MSGPACK_OBJECT_FLOAT32:
     case MSGPACK_OBJECT_FLOAT64:
         tmp = flb_sds_printf(s, "%f", o->via.f64);
-        if (!tmp) return NULL;
+        if (!tmp) {
+          return NULL;
+        }
         *s = tmp;
         break;
 
     case MSGPACK_OBJECT_STR:
         tmp = flb_sds_cat(*s, "\"", 1);
-        if (!tmp) return NULL;
+        if (!tmp) {
+          return NULL;
+        }
         *s = tmp;
         tmp = flb_sds_cat_utf8(s, (char *)o->via.str.ptr,
                                    o->via.str.size, esc_json, sizeof(esc_json));
-        if (!tmp) return NULL;
+        if (!tmp) {
+          return NULL;
+        }
         *s = tmp;
         tmp = flb_sds_cat(*s, "\"", 1);
-        if (!tmp) return NULL;
+        if (!tmp) {
+          return NULL;
+        }
         *s = tmp;
         break;
 
     case MSGPACK_OBJECT_BIN:
         tmp = flb_sds_cat(*s, "\"", 1);
-        if (!tmp) return NULL;
+        if (!tmp) {
+          return NULL;
+        }
         *s = tmp;
         tmp = flb_sds_cat_utf8(s, (char *)o->via.bin.ptr,
                                     o->via.bin.size, esc_json, sizeof(esc_json));
-        if (!tmp) return NULL;
+        if (!tmp) {
+          return NULL;
+        }
         *s = tmp;
         tmp = flb_sds_cat(*s, "\"", 1);
-        if (!tmp) return NULL;
+        if (!tmp) {
+          return NULL;
+        }
         *s = tmp;
         break;
     case MSGPACK_OBJECT_EXT:
         tmp = flb_sds_cat(*s, "\"", 1);
-        if (!tmp) return NULL;
+        if (!tmp) {
+          return NULL;
+        }
         *s = tmp;
         {
             static const char int2hex[] = "0123456789abcdef";
@@ -438,40 +480,54 @@ static flb_sds_t msgpack_cef_json(flb_sds_t *s, msgpack_object *o)
                 temp[3] = int2hex[ (unsigned char) (c & 0x0f)];
                 temp[4] = '\0';
                 tmp = flb_sds_cat(*s, temp, 4);
-                if (!tmp) return NULL;
+                if (!tmp) {
+                  return NULL;
+                }
                 *s = tmp;
             }
         }
         tmp = flb_sds_cat(*s, "\"", 1);
-        if (!tmp) return NULL;
+        if (!tmp) {
+          return NULL;
+        }
         *s = tmp;
         break;
     case MSGPACK_OBJECT_ARRAY:
         loop = o->via.array.size;
         tmp = flb_sds_cat(*s, "[", 1);
-        if (!tmp) return NULL;
+        if (!tmp) {
+          return NULL;
+        }
         *s = tmp;
         if (loop != 0) {
             msgpack_object* p = o->via.array.ptr;
             for (i=0; i<loop; i++) {
                 if (i > 0) {
                      tmp = flb_sds_cat(*s, ", ", 2);
-                     if (!tmp) return NULL;
+                     if (!tmp) {
+                       return NULL;
+                     }
                      *s = tmp;
                 }
                 tmp = msgpack_cef_json(s, p+i);
-                if (!tmp) return NULL;
+                if (!tmp) {
+                  return NULL;
+                }
                 *s = tmp;
             }
         }
         tmp = flb_sds_cat(*s, "]", 1);
-        if (!tmp) return NULL;
+        if (!tmp) {
+          return NULL;
+        }
         *s = tmp;
         break;
    case MSGPACK_OBJECT_MAP:
         loop = o->via.map.size;
         tmp = flb_sds_cat(*s, "{", 1);
-        if (!tmp) return NULL;
+        if (!tmp) {
+          return NULL;
+        }
         *s = tmp;
         if (loop != 0) {
             msgpack_object_kv *p = o->via.map.ptr;
@@ -480,22 +536,32 @@ static flb_sds_t msgpack_cef_json(flb_sds_t *s, msgpack_object *o)
                 msgpack_object *v = &((p+i)->val);
                 if (i > 0) {
                      tmp = flb_sds_cat(*s, ", ", 2);
-                     if (!tmp) return NULL;
+                     if (!tmp) {
+                       return NULL;
+                     }
                      *s = tmp;
                 }
                 tmp = msgpack_cef_json(s, k);
-                if (!tmp) return NULL;
+                if (!tmp) {
+                  return NULL;
+                }
                 *s = tmp;
                 tmp = flb_sds_cat(*s, ":", 1);
-                if (!tmp) return NULL;
+                if (!tmp) {
+                  return NULL;
+                }
                 *s = tmp;
                 tmp = msgpack_cef_json(s, v);
-                if (!tmp) return NULL;
+                if (!tmp) {
+                  return NULL;
+                }
                 *s = tmp;
             }
         }
         tmp = flb_sds_cat(*s, "}", 1);
-        if (!tmp) return NULL;
+        if (!tmp) {
+          return NULL;
+        }
         *s = tmp;
         break;
    }
@@ -677,107 +743,145 @@ static flb_sds_t cef_cat_prefix (struct out_cef_config *ctx,
         pri = (facility << 3) + severity;
 
         tmp = flb_sds_printf(s, "<%i>", pri);
-        if (!tmp) return NULL;
+        if (!tmp) {
+          return NULL;
+        }
         *s = tmp;
 
         gmtime_r(&tms->tm.tv_sec, &tm);
 
         ret = strftime(time_formatted, sizeof(time_formatted) - 1,
                        "%b %d %H:%M:%S ", &tm);
-        if (ret <= 0) return NULL;
+        if (ret <= 0) {
+          return NULL;
+        }
 
         tmp = flb_sds_cat(*s, time_formatted, ret);
-        if (!tmp) return NULL;
+        if (!tmp) {
+          return NULL;
+        }
         *s = tmp;
 
         if (msg->host)
         {
             tmp = flb_sds_cat(*s, msg->host, flb_sds_len(msg->host));
-            if (!tmp) return NULL;
+            if (!tmp) {
+              return NULL;
+            }
             *s = tmp;
         }
         else {
             tmp = flb_sds_cat(*s, cef_hostname, cef_hostname_len);
-            if (!tmp) return NULL;
+            if (!tmp) {
+              return NULL;
+            }
             *s = tmp;
         }
         tmp = flb_sds_cat(*s, " ", 1);
-        if (!tmp) return NULL;
+        if (!tmp) {
+          return NULL;
+        }
         *s = tmp;
     }
 
     tmp = flb_sds_cat(*s, "CEF:0|", 6);
-    if (!tmp) return NULL;
+    if (!tmp) {
+      return NULL;
+    }
     *s = tmp;
 
     if (msg->dev_vendor)
     {
         tmp = flb_sds_cat_utf8(s, msg->dev_vendor, flb_sds_len(msg->dev_vendor),
                                esc_cef_msg, sizeof(esc_cef_msg));
-        if (!tmp) return NULL;
+        if (!tmp) {
+          return NULL;
+        }
         *s = tmp;
     }
 
     tmp = flb_sds_cat(*s, "|", 1);
-    if (!tmp) return NULL;
+    if (!tmp) {
+      return NULL;
+    }
     *s = tmp;
 
     if (msg->dev_product)
     {
         tmp = flb_sds_cat_utf8(s, msg->dev_product, flb_sds_len(msg->dev_product),
                                esc_cef_msg, sizeof(esc_cef_msg));
-        if (!tmp) return NULL;
+        if (!tmp) {
+          return NULL;
+        }
         *s = tmp;
     }
 
     tmp = flb_sds_cat(*s, "|", 1);
-    if (!tmp) return NULL;
+    if (!tmp) {
+      return NULL;
+    }
     *s = tmp;
 
     if (msg->dev_version)
     {
         tmp = flb_sds_cat_utf8(s, msg->dev_version, flb_sds_len(msg->dev_version),
                                esc_cef_msg, sizeof(esc_cef_msg));
-        if (!tmp) return NULL;
+        if (!tmp) {
+          return NULL;
+        }
         *s = tmp;
     }
 
     tmp = flb_sds_cat(*s, "|", 1);
-    if (!tmp) return NULL;
+    if (!tmp) {
+      return NULL;
+    }
     *s = tmp;
 
     if (msg->dev_event_cid)
     {
         tmp = flb_sds_cat_utf8(s, msg->dev_event_cid, flb_sds_len(msg->dev_event_cid),
                                esc_cef_msg, sizeof(esc_cef_msg));
-        if (!tmp) return NULL;
+        if (!tmp) {
+           return NULL;
+        }
         *s = tmp;
     }
     tmp = flb_sds_cat(*s, "|", 1);
-    if (!tmp) return NULL;
+    if (!tmp) {
+      return NULL;
+    }
     *s = tmp;
 
     if (msg->name)
     {
         tmp = flb_sds_cat_utf8(s, msg->name, flb_sds_len(msg->name),
                                esc_cef_msg, sizeof(esc_cef_msg));
-        if (!tmp) return NULL;
+        if (!tmp) {
+          return NULL;
+        }
         *s = tmp;
     }
 
     tmp = flb_sds_cat(*s, "|", 1);
-    if (!tmp) return NULL;
+    if (!tmp) {
+      return NULL;
+    }
     *s = tmp;
 
     if (msg->severity)
     {
         tmp = flb_sds_cat_utf8(s, msg->severity, flb_sds_len(msg->severity),
                                esc_cef_msg, sizeof(esc_cef_msg));
-        if (!tmp) return NULL;
+        if (!tmp) {
+          return NULL;
+        }
         *s = tmp;
     }
     tmp = flb_sds_cat(*s, "|", 1);
-    if (!tmp) return NULL;
+    if (!tmp) {
+      return NULL;
+    }
     *s = tmp;
 
     return *s;
@@ -785,7 +889,9 @@ static flb_sds_t cef_cat_prefix (struct out_cef_config *ctx,
 
 static void cef_msg_free(struct cef_msg *msg)
 {
-    if (msg == NULL) return;
+    if (msg == NULL) {
+      return;
+    }
 
     flb_sds_destroy(msg->ext);
     flb_sds_destroy(msg->host);
