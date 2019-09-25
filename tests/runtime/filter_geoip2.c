@@ -134,8 +134,132 @@ static void flb_test_geoip2_simple()
     filter_test_destroy(ctx);
 }
 
+static void flb_test_geoip2_two_records()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "record", "city remote_addr %{city.names.en}",
+                         "record", "country remote_addr %{country.names.en}",
+                         NULL);
+
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = "\"city\":\"Boardman\",\"country\":\"United States\"";
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    p = "[0, {\"remote_addr\":\"54.202.253.200\",\"message\":\"test\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    filter_test_destroy(ctx);
+}
+
+static void flb_test_geoip2_empty()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "record", "city remote_addr %{city.names.en}",
+                         NULL);
+
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = "\"city\":null";
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    p = "[0, {\"remote_addr\":\"127.0.0.1\",\"message\":\"test\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    filter_test_destroy(ctx);
+}
+
+static void flb_test_geoip2_two_lookup_keys()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "lookup_key", "remote_addr1",
+                         "lookup_key", "remote_addr2",
+                         "record", "city1 remote_addr1 %{city.names.en}",
+                         "record", "city2 remote_addr2 %{city.names.en}",
+                         NULL);
+
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = "\"city1\":\"Boardman\",\"city2\":\"Woodbridge\"";
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    p = "[0, {\"remote_addr1\":\"54.202.253.200\",\"remote_addr2\":\"54.20.253.200\",\"message\":\"test\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    filter_test_destroy(ctx);
+}
+
 TEST_LIST = {
     /* Operations / Commands */
     {"simple", flb_test_geoip2_simple},
+    {"two records", flb_test_geoip2_two_records},
+    {"empty", flb_test_geoip2_empty},
+    {"two lookup keys", flb_test_geoip2_two_lookup_keys},
     {NULL, NULL}
 };
