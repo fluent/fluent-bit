@@ -183,9 +183,16 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
     }
 
     if (ctx->read_from_tail == FLB_TRUE) {
-        /* Jump to the end and skip last entry */
         sd_journal_seek_tail(ctx->j);
-        sd_journal_next_skip(ctx->j, 1);
+        /*
+        * Skip up to 350 records until the end of journal is found.
+        * Workaround for bug https://github.com/systemd/systemd/issues/9934
+        * Due to the bug, sd_journal_next() returns 2 last records of each journal file.
+        * 4 GB is the default journal limit, so with 25 MB/file we may get
+        * up to 4096/25*2 ~= 350 old log messages. See also fluent-bit PR #1565.
+        */
+        ret = sd_journal_next_skip(ctx->j, 350);
+        flb_debug("[in_systemd] jump to the end of journal and skip %d last entries", ret);
     }
     else {
         sd_journal_seek_head(ctx->j);
