@@ -218,6 +218,7 @@ static void add_geoip_fields(msgpack_object *map,
         split = flb_utils_split(key, '.', 2);
         split_size = mk_list_size(split);
         path = flb_malloc(sizeof(char *) * (split_size + 1));
+        i = 0;
         mk_list_foreach_safe(path_head, path_tmp, split) {
             sentry = mk_list_entry(path_head, struct flb_split_entry, _head);
             path[i] = flb_strndup(sentry->value, sentry->len);
