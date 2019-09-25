@@ -115,6 +115,7 @@ static int delete_list(struct geoip2_ctx *ctx)
     }
     mk_list_foreach_safe(head, tmp, &ctx->records) {
         record = mk_list_entry(head, struct geoip2_record, _head);
+        flb_free(record->lookup_key);
         flb_free(record->key);
         flb_free(record->val);
         mk_list_del(&record->_head);
