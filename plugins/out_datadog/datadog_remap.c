@@ -49,7 +49,7 @@ static void dd_remap_move_to_tags(const char* tag_name, msgpack_object attr_valu
 static void dd_remap_container_name(const char* tag_name, msgpack_object attr_value, flb_sds_t dd_tags)
 {
     /* remove the first / if present */
-    uint adjust = attr_value.via.str.ptr[0] == '/' ? 1 : 0;
+    unsigned int adjust = attr_value.via.str.ptr[0] == '/' ? 1 : 0;
     flb_sds_t buf = flb_sds_create_len(attr_value.via.str.ptr + adjust, attr_value.via.str.size - adjust);
     dd_remap_append_kv_to_ddtags(tag_name, buf, strlen(buf), dd_tags);
     flb_sds_destroy(buf);
