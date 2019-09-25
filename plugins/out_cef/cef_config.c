@@ -24,6 +24,8 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_kv.h>
 
 #include "cef.h"
 #include "cef_config.h"
@@ -441,7 +443,7 @@ int cef_settings (struct flb_output_instance *ins,
                   struct out_cef_config *ctx)
 {
     struct mk_list *head;
-    struct flb_config_prop *prop;
+    struct flb_kv *prop;
     int ret;
     int i;
     const char *tmp;
@@ -513,7 +515,7 @@ int cef_settings (struct flb_output_instance *ins,
 
     /* iterate all properties */
     mk_list_foreach(head, &ins->properties) {
-        prop = mk_list_entry(head, struct flb_config_prop, _head);
+        prop = mk_list_entry(head, struct flb_kv, _head);
 
         if (strncasecmp(prop->key, "cef_", 4) != 0) {
             continue;
