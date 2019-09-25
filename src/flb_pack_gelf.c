@@ -21,26 +21,6 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_pack.h>
 
-static char *str_copy_replace(const char *src, int len, char search, char replace) {
-    char *dst = NULL;
-    int i;
-
-    dst = flb_strndup(src, len);
-
-    if (!dst) {
-        flb_errno();
-        return NULL;
-    }
-
-    for(i = 0; i < len; i++) {
-        if (dst[i] == search) {
-            dst[i] = replace;
-        }
-    }
-
-    return dst;
-}
-
 static flb_sds_t flb_msgpack_gelf_key(flb_sds_t *s, int in_array,
                                       const char *prefix_key, int prefix_key_len,
                                       int concat,
@@ -60,108 +40,74 @@ static flb_sds_t flb_msgpack_gelf_key(flb_sds_t *s, int in_array,
        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-    char *prefix_key_copy = NULL;
-    char *key_copy = NULL;
-    flb_sds_t ret;
-
-    if (prefix_key_len > 0) {
-        prefix_key_copy = str_copy_replace(prefix_key, prefix_key_len, '/', '_');
-        if (!prefix_key_copy) {
-            ret = NULL;
-            goto cleanup;
-        }
-    }
-
-    if (key_len > 0) {
-        key_copy = str_copy_replace(key, key_len, '/', '_');
-        if (!key_copy) {
-            ret = NULL;
-            goto cleanup;
-        }
-    }
-
-    /* check valid key char [A-Za-z0-9_\.\-] */
-    for(i=0; i < prefix_key_len; i++) {
-        if (!valid_char[(unsigned char)prefix_key_copy[i]]) {
-            flb_error("[%s] invalid prefix key char at pos %d: '%.*s'",  __FUNCTION__,
-                      i, prefix_key_len, prefix_key);
-            ret = NULL;
-            goto cleanup;
-        }
-    }
-    for(i=0; i < key_len; i++) {
-        if (!valid_char[(unsigned char)key_copy[i]]) {
-            flb_error("[%s] invalid key char at pos %d: '%.*s'",  __FUNCTION__,
-                      i, key_len, key);
-            ret = NULL;
-            goto cleanup;
-        }
-    }
+    int start_len, end_len;
 
     if (in_array == FLB_FALSE) {
         tmp = flb_sds_cat(*s, ", \"", 3);
         if (tmp == NULL) {
-            ret = NULL;
-            goto cleanup;
+            return NULL;
         }
         *s = tmp;
     }
 
     if (prefix_key_len > 0) {
-        tmp = flb_sds_cat(*s, prefix_key_copy, prefix_key_len);
+        start_len = flb_sds_len(*s);
+
+        tmp = flb_sds_cat(*s, prefix_key, prefix_key_len);
         if (tmp == NULL) {
-            ret = NULL;
-            goto cleanup;
+            return NULL;
         }
         *s = tmp;
+
+        end_len = flb_sds_len(*s);
+        for(i=start_len; i < end_len; i++) {
+            if (!valid_char[(unsigned char)(*s)[i]]) {
+                (*s)[i] = '_';
+            }
+        }
     }
 
     if (concat == FLB_TRUE) {
         tmp = flb_sds_cat(*s, "_", 1);
         if (tmp == NULL) {
-            ret = NULL;
-            goto cleanup;
+            return NULL;
         }
         *s = tmp;
     }
 
     if (key_len > 0) {
-        tmp = flb_sds_cat(*s, key_copy, key_len);
+        start_len = flb_sds_len(*s);
+
+        tmp = flb_sds_cat(*s, key, key_len);
         if (tmp == NULL) {
-            ret = NULL;
-            goto cleanup;
+            return NULL;
         }
         *s = tmp;
+
+        end_len = flb_sds_len(*s);
+        for(i=start_len; i < end_len; i++) {
+            if (!valid_char[(unsigned char)(*s)[i]]) {
+                (*s)[i] = '_';
+            }
+        }
     }
 
     if (in_array == FLB_FALSE) {
         tmp = flb_sds_cat(*s, "\":", 2);
         if (tmp == NULL) {
-            ret = NULL;
-            goto cleanup;
+            return NULL;
         }
         *s = tmp;
     }
     else {
         tmp = flb_sds_cat(*s, "=", 1);
         if (tmp == NULL) {
-            ret = NULL;
-            goto cleanup;
+            return NULL;
         }
         *s = tmp;
     }
 
-    ret = *s;
-
-cleanup:
-    if (prefix_key_copy) {
-        flb_free(prefix_key_copy);
-    }
-    if (key_copy) {
-        flb_free(key_copy);
-    }
-
-    return ret;
+    return *s;
 }
 
 static flb_sds_t flb_msgpack_gelf_value(flb_sds_t *s, int quote,
