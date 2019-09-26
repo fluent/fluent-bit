@@ -34,7 +34,7 @@ static void store_error(void)
                         NULL,
                         err,
                         MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-                        (LPTSTR) &dlerrorbuf,
+                        dlerrorbuf,
                         _countof(dlerrorbuf), NULL))
         dlerrorbuf[0] = '\0';
 
