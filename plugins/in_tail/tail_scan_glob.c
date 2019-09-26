@@ -312,11 +312,14 @@ int flb_tail_scan_callback(struct flb_input_instance *i_ins,
                 continue;
             }
 
+            /* Append file to list */
+            if (flb_tail_file_append(globbuf.gl_pathv[i], &st,
+                                     FLB_TAIL_STATIC, ctx)) {
+                continue;
+            }
+
             flb_debug("[in_tail] append new file: %s", globbuf.gl_pathv[i]);
 
-            /* Append file to list */
-            flb_tail_file_append(globbuf.gl_pathv[i], &st,
-                                 FLB_TAIL_STATIC, ctx);
             count++;
         }
         else {

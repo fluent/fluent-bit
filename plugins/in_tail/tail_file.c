@@ -641,6 +641,18 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         goto error;
     }
 
+#if defined(__APPLE__)
+    char *name = flb_tail_file_name(file);
+    if (name == NULL) {
+        goto error;
+    }
+    if (flb_tail_file_exists(name, ctx)) {
+        flb_free(name);
+        goto error;
+    }
+    flb_free(name);
+#endif
+
 #ifdef _MSC_VER
     if (get_inode(fd, &file->inode)) {
         goto error;
