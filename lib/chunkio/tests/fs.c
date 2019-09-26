@@ -377,9 +377,42 @@ static void test_fs_up_down()
     free(in_data);
 }
 
+/* ref: https://github.com/edsiper/chunkio/pull/51 */
+static void test_issue_51()
+{
+    int fd;
+    struct cio_ctx *ctx;
+    struct cio_stream *stream;
+
+    /* Create a temporal storage */
+    ctx = cio_create("tmp", log_cb, CIO_DEBUG, 0);
+    stream = cio_stream_create(ctx, "test", CIO_STORE_FS);
+    cio_chunk_open(ctx, stream, "c", CIO_OPEN, 1000);
+    cio_destroy(ctx);
+
+    /* Corrupt the file */
+    fd = open("tmp/test/c", O_WRONLY);
+    TEST_CHECK(fd != -1);
+    if (fd == -1) {
+        perror("open");
+        exit(1);
+    }
+    ftruncate(fd, 1);
+    close(fd);
+
+    /* Re-read the content */
+    ctx = cio_create("tmp", log_cb, CIO_DEBUG, 0);
+
+    /* Upon scanning an existing stream, if not fixed, the program crashes */
+    stream = cio_stream_create(ctx, "test", CIO_STORE_FS);
+    cio_chunk_open(ctx, stream, "c", CIO_OPEN, 1000);
+    cio_destroy(ctx);
+}
+
 TEST_LIST = {
     {"fs_write",   test_fs_write},
     {"fs_checksum",  test_fs_checksum},
     {"fs_up_down", test_fs_up_down},
+    {"issue_51",   test_issue_51},
     { 0 }
 };

@@ -72,6 +72,19 @@ int cio_meta_write(struct cio_chunk *ch, char *buf, size_t size)
     return -1;
 }
 
+int cio_meta_size(struct cio_chunk *ch) {
+    if (ch->st->type == CIO_STORE_MEM) {
+        struct cio_memfs *mf = (struct cio_memfs *) ch->backend;
+        return mf->meta_len;
+    }
+    else if (ch->st->type == CIO_STORE_FS) {
+        struct cio_file *cf = ch->backend;
+        return cio_file_st_get_meta_len(cf->map);
+    }
+
+    return -1;
+}
+
 int cio_meta_read(struct cio_chunk *ch, char **meta_buf, int *meta_len)
 {
     int len;

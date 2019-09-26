@@ -117,7 +117,15 @@ static void test_log_level()
     /* Test: CIO_DEBUG */
     cio_set_log_level(ctx, CIO_DEBUG);
     log_check = 0;
+    cio_log_trace(ctx, "test");
+    TEST_CHECK(log_check == 0);
     cio_log_debug(ctx, "test");
+    TEST_CHECK(log_check == 1);
+
+    /* Test: CIO_TRACE */
+    cio_set_log_level(ctx, CIO_TRACE);
+    log_check = 0;
+    cio_log_trace(ctx, "test");
     TEST_CHECK(log_check == 1);
 
     /* destroy context */

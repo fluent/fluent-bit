@@ -30,6 +30,7 @@
 #define CIO_WARN   2
 #define CIO_INFO   3
 #define CIO_DEBUG  4
+#define CIO_TRACE  5
 
 /* Storage backend */
 #define CIO_STORE_FS        0
@@ -81,6 +82,7 @@ int cio_set_max_chunks_up(struct cio_ctx *ctx, int n);
 int cio_meta_write(struct cio_chunk *ch, char *buf, size_t size);
 int cio_meta_cmp(struct cio_chunk *ch, char *meta_buf, int meta_len);
 int cio_meta_read(struct cio_chunk *ch, char **meta_buf, int *meta_len);
+int cio_meta_size(struct cio_chunk *ch);
 
 ssize_t cio_chunk_get_real_size(struct cio_chunk *ch);
 

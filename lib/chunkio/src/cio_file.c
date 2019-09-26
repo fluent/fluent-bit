@@ -342,7 +342,7 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
     if (ret == -1) {
         cio_log_error(ctx, "format check failed: %s/%s",
                       ch->st->name, ch->name);
-        munmap_file(ctx, ch);
+        cio_file_close(ch, CIO_FALSE);
         return -1;
     }
 
@@ -522,7 +522,6 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
     /* Map the file */
     ret = mmap_file(ctx, ch, size);
     if (ret == -1) {
-        cio_file_close(ch, CIO_FALSE);
         return NULL;
     }
 
@@ -962,7 +961,7 @@ int cio_file_fs_size_change(struct cio_file *cf, size_t new_size)
 
     /* macOS does not have fallocate().
      * So, we should use ftruncate always. */
-#ifdef __linux__
+#if defined(CIO_HAVE_FALLOCATE)
     if (new_size > cf->alloc_size) {
         /*
          * To increase the file size we use fallocate() since this option
