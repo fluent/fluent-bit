@@ -76,6 +76,7 @@ static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
             rule->type = GREP_EXCLUDE;
         }
         else {
+            flb_error("[filter_grep] unknown rule type '%s'", kv->key);
             delete_rules(ctx);
             flb_free(rule);
             return -1;
@@ -106,6 +107,8 @@ static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
         /* Convert string to regex pattern */
         rule->regex = flb_regex_create(rule->regex_pattern);
         if (!rule->regex) {
+            flb_error("[filter_grep] could not compile regex pattern '%s'",
+                      rule->regex_pattern);
             delete_rules(ctx);
             flb_free(rule);
             return -1;
