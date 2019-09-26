@@ -90,11 +90,11 @@ static int configure(struct geoip2_ctx *ctx,
     }
 
     if (ctx->lookup_keys_num <= 0) {
-        flb_error("lookup_key is required at least one.");
+        flb_error("[%s] lookup_key is required at least one.", PLUGIN_NAME);
         return -1;
     }
     if (ctx->records_num <= 0) {
-        flb_error("record is required at least one.");
+        flb_error("[%s] record is required at least one.", PLUGIN_NAME);
         return -1;
     }
     return 0;
@@ -164,12 +164,14 @@ static MMDB_lookup_result_s mmdb_lookup(MMDB_s *mmdb, const char *ip)
 
     result = MMDB_lookup_string(mmdb, ip, &gai_error, &mmdb_error);
     if (gai_error != 0) {
-        flb_error("[%s] getaddrinfo failed: %s",
-                  PLUGIN_NAME, gai_strerror(gai_error));
+        flb_error("[%s] %s:%d getaddrinfo failed: %s",
+                  PLUGIN_NAME, __FUNCTION__, __LINE__,
+                  gai_strerror(gai_error));
     }
     if (mmdb_error != MMDB_SUCCESS) {
-        flb_error("[%s] lookup failed: %s",
-                  PLUGIN_NAME, MMDB_strerror(mmdb_error));
+        flb_error("[%s] %s:%d lookup failed: %s",
+                  PLUGIN_NAME, __FUNCTION__, __LINE__,
+                  MMDB_strerror(mmdb_error));
     }
 
     return result;
