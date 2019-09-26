@@ -945,11 +945,11 @@ static flb_sds_t msgpack_to_cef (struct out_cef_config *ctx, flb_sds_t *s,
     return *s;
 }
 
-void cb_cef_flush(const void *data, size_t bytes,
-                  const char *tag, int tag_len,
-                  struct flb_input_instance *i_ins,
-                  void *out_context,
-                  struct flb_config *config)
+static void cb_cef_flush(const void *data, size_t bytes,
+                         const char *tag, int tag_len,
+                         struct flb_input_instance *i_ins,
+                         void *out_context,
+                         struct flb_config *config)
 {
     struct out_cef_config *ctx = out_context;
     flb_sds_t s;
@@ -1039,8 +1039,9 @@ void cb_cef_flush(const void *data, size_t bytes,
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 
-int cb_cef_init(struct flb_output_instance *ins, struct flb_config *config,
-                 void *data)
+static int cb_cef_init(struct flb_output_instance *ins,
+                       struct flb_config *config,
+                       void *data)
 {
     struct out_cef_config *ctx = NULL;
     int ret;
@@ -1106,7 +1107,7 @@ int cb_cef_init(struct flb_output_instance *ins, struct flb_config *config,
     return 0;
 }
 
-int cb_cef_exit(void *data, struct flb_config *config)
+static int cb_cef_exit(void *data, struct flb_config *config)
 {
     struct out_cef_config *ctx = data;
 
