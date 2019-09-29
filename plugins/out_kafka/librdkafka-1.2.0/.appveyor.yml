@@ -1,0 +1,95 @@
+version: 1.0.0-R-post{build}
+pull_requests:
+  do_not_increment_build_number: true
+image: Visual Studio 2013
+configuration: Release
+environment:
+  matrix:
+  - platform: x64
+  - platform: win32
+install:
+- ps: "& .\\win32\\install-openssl.ps1"
+- ps: "& .\\win32\\install-coapp.ps1"
+cache:
+- c:\OpenSSL-Win32
+- c:\OpenSSL-Win64
+nuget:
+  account_feed: true
+  project_feed: true
+  disable_publish_on_pr: true
+before_build:
+- cmd: nuget restore win32/librdkafka.sln
+build:
+  project: win32/librdkafka.sln
+  publish_nuget: true
+  publish_nuget_symbols: true
+  include_nuget_references: true
+  parallel: true
+  verbosity: normal
+test_script:
+- cmd: if exist DISABLED\win32\outdir\v140 ( win32\outdir\v140\%PLATFORM%\%CONFIGURATION%\tests.exe -l -p1 ) else ( cd tests && ..\win32\outdir\v120\%PLATFORM%\%CONFIGURATION%\tests.exe -l -p1 && ..\win32\outdir\v120\%PLATFORM%\%CONFIGURATION%\tests.exe -l -p1 -P && cd ..)
+artifacts:
+- path: test_report*.json
+  name: Test report
+- path: '*.nupkg'
+  name: Packages
+- path: '**\*.dll'
+  name: Libraries
+- path: '**\*.lib'
+  name: Libraries
+- path: '**\*.pdb'
+  name: Libraries
+- path: '**\*.exe'
+  name: Executables
+before_deploy:
+- ps: >-
+    # FIXME: Add to Deployment condition above:
+
+    # APPVEYOR_REPO_TAG = true
+
+
+
+    # This is the CoApp .autopkg file to create.
+
+    $autopkgFile = "win32/librdkafka.autopkg"
+
+    pwd
+
+
+    ls $autopkgFile
+
+
+
+    # Get the ".autopkg.template" file, replace "@version" with the Appveyor version number, then save to the ".autopkg" file.
+
+    cat ($autopkgFile + ".template") | % { $_ -replace "@version", $env:appveyor_build_version } > $autopkgFile
+
+
+    # Use the CoApp tools to create NuGet native packages from the .autopkg.
+
+    Write-NuGetPackage $autopkgFile
+
+
+    # Push all newly created .nupkg files as Appveyor artifacts for later deployment.
+
+    Get-ChildItem .\*.nupkg | % { Push-AppveyorArtifact $_.FullName -FileName $_.Name }
+deploy:
+- provider: S3
+  access_key_id:
+    secure: iBK0xb23FMYOrOsOb8cw3YGyU+6vvPX5BF+PXuMub8M=
+  secret_access_key:
+    secure: jJsj373UiOtuXf/u0LLL0Q8XQMyu4s/ucx0+vH4GpKbAfZJUwYB4dEO1//mQDNuC
+  region: us-west-1
+  bucket: librdkafka-ci-packages
+  folder: librdkafka/p-librdkafka__bld-appveyor__plat-windows__arch-$(platform)__bldtype-$(configuration)__tag-$(APPVEYOR_REPO_TAG_NAME)__sha-$(APPVEYOR_REPO_COMMIT)__bid-$(APPVEYOR_BUILD_ID)
+  artifact: /.*\.(nupkg)/
+  max_error_retry: 3
+  on:
+    APPVEYOR_REPO_TAG: true
+notifications:
+- provider: Email
+  to:
+  - magnus@edenhill.se
+  on_build_success: false
+  on_build_failure: true
+  on_build_status_changed: true

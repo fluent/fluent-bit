@@ -1,0 +1,9 @@
+rdkafka_example
+rdkafka_performance
+rdkafka_example_cpp
+rdkafka_consumer_example
+rdkafka_consumer_example_cpp
+kafkatest_verifiable_client
+rdkafka_simple_producer
+rdkafka_idempotent_producer
+rdkafka_consume_batch

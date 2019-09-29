@@ -1,0 +1,29 @@
+#!/bin/bash
+#
+# libsasl2 support (for GSSAPI/Kerberos), without source installer.
+#
+# Usage:
+#   mkl_require libsasl2
+#
+#
+# And then call the following function from the correct place/order in checks:
+#   mkl_check libsasl2 [<action>]
+#
+
+mkl_toggle_option "Feature" ENABLE_GSSAPI "--enable-gssapi" "Enable SASL GSSAPI support with Cyrus libsasl2" "y"
+mkl_toggle_option "Feature" ENABLE_GSSAPI "--enable-sasl" "Deprecated: Alias for --enable-gssapi"
+
+function manual_checks {
+    local action=${1:-disable}
+
+    [[ $ENABLE_GSSAPI == y ]] || return 0
+
+    mkl_meta_set "libsasl2" "deb" "libsasl2-dev"
+    mkl_meta_set "libsasl2" "rpm" "cyrus-sasl"
+    mkl_meta_set "libsasl2" "apk" "cyrus-sasl-dev"
+
+    if ! mkl_lib_check "libsasl2" "WITH_SASL_CYRUS" disable CC "-lsasl2" "#include <sasl/sasl.h>" ; then
+        mkl_lib_check "libsasl" "WITH_SASL_CYRUS" disable CC "-lsasl" \
+                      "#include <sasl/sasl.h>"
+    fi
+}
