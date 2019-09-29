@@ -163,7 +163,9 @@ flb_sds_t flb_sds_cat_esc(flb_sds_t s, const char *str, int len,
     for (i = 0; i < len; i++) {
         if (flb_sds_avail(s) < 8) {
             tmp = flb_sds_increase(s, 8);
-            if (tmp == NULL) return NULL;
+            if (tmp == NULL) {
+                return NULL;
+            }
             s = tmp;
             head = FLB_SDS_HEADER(s);
         }
