@@ -150,7 +150,6 @@ flb_sds_t flb_sds_cat_esc(flb_sds_t s, const char *str, int len,
     uint32_t c;
     int i;
 
-    head = FLB_SDS_HEADER(s);
     avail = flb_sds_avail(s);
     if (avail < len) {
         tmp = flb_sds_increase(s, len);
@@ -159,6 +158,7 @@ flb_sds_t flb_sds_cat_esc(flb_sds_t s, const char *str, int len,
         }
         s = tmp;
     }
+    head = FLB_SDS_HEADER(s);
 
     for (i = 0; i < len; i++) {
         if (flb_sds_avail(s) < 8) {
@@ -177,7 +177,6 @@ flb_sds_t flb_sds_cat_esc(flb_sds_t s, const char *str, int len,
         }
     }
 
-    head = FLB_SDS_HEADER(s);
     s[head->len] = '\0';
 
     return s;
