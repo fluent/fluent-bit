@@ -3,98 +3,161 @@
 Travis CI:
 [![Build Status](https://travis-ci.org/fluent/fluent-bit.svg?branch=master)](https://travis-ci.org/fluent/fluent-bit)
 
-GitLab CI: 
-[![pipeline status](https://gitlab.com/fluent/fluent-bit/badges/master/pipeline.svg)](https://gitlab.com/fluent/fluent-bit/commits/master)
+[Fluent Bit](http://fluentbit.io) is a fast Log Processor and Forwarder for Linux, Embedded Linux, MacOS and BSD family operating systems. It's part of the [Fluentd](http://fluentd.org) Ecosystem and a [CNCF](https://cncf.io) sub-project.
 
-[Fluent Bit](http://fluentbit.io) is a Data Forwarder for Linux, Embedded Linux, OSX and BSD family operating systems. It's part of the [Fluentd](http://fluentd.org) Ecosystem.  Fluent Bit allows collection of information from different sources, buffering and dispatching them to different outputs such as [Fluentd](http://fluentd.org), Elasticsearch, Nats or any HTTP end-point within others. It's fully supported on x86_64, x86 and ARM architectures.
+Fluent Bit allows to collect log events or metrics from different sources, process them and deliver them to different backends such as [Fluentd](http://fluentd.org), Elasticsearch, NATS, InfluxDB or any custom HTTP end-point within others.
 
-For more details about it capabilities and general features please visit the official documentation:
+In addition, Fluent Bit comes with full [Stream Processing](https://docs.fluentbit.io/stream-processing/) capabilities: data manipulation and analytics using SQL queries.
 
-https://docs.fluentbit.io/
-
-## Quick Start
-
-```
-$ cd build
-$ cmake ..
-$ make
-$ bin/fluent-bit -i cpu -o stdout
-```
+Fluent Bit runs on x86_64, x86, arm32v7 and arm64v8 architectures.
 
 ## Features
 
-[Fluent Bit](http://fluentbit.io) support the following features through plugins:
+- High Performance
+- Data Parsing
+  - Convert your unstructured messages using our parsers: [JSON](https://docs.fluentbit.io/manual/parser/json), [Regex](https://docs.fluentbit.io/manual/parser/regular_expression), [LTSV](https://docs.fluentbit.io/manual/parser/ltsv) and [Logfmt](https://docs.fluentbit.io/manual/parser/logfmt)
+- Reliability and Data Integrity
+  - [Backpressure](https://docs.fluentbit.io/manual/configuration/backpressure) Handling
+  - [Data Buffering](https://docs.fluentbit.io/manual/configuration/buffering) in memory and file system
+- Networking
+  - Security: built-in TLS/SSL support
+  - Asynchronous I/O
+- Pluggable Architecture and [Extensibility](https://docs.fluentbit.io/manual/development): Inputs, Filters and Outputs
+  - More than 50 built-in plugins available
+  - Extensibility
+    - Write any input, filter or output plugin in C language
+    - Bonus: write [Filters in Lua](https://docs.fluentbit.io/manual/filter/lua) or [Output plugins in Golang](https://docs.fluentbit.io/manual/development/golang_plugins)
+- [Monitoring](https://docs.fluentbit.io/manual/configuration/monitoring): expose internal metrics over HTTP in JSON and [Prometheus](https://prometheus.io/) format
+- [Stream Processing](https://docs.fluentbit.io/stream-processing/): Perform data selection and transformation using simple SQL queries
+  - Create new streams of data using query results
+  - Aggregation Windows
+  - Data analysis and prediction: Timeseries forecasting
+- Portable: runs on Linux, MacOS, Windows and BSD systems
 
-### Input plugins
+## [Documentation](https://docs.fluentbit.io)
 
-| name               | option  | description  |
-|--------------------|---------|---------------------------------------------------------------------------------|
-| CPU                | cpu     | gather CPU usage between snapshots of one second. It support multiple cores     |
-| Disk               | disk    | usage of block device |
-| Dummy              | dummy   | generates dummy event |
-| Exec               | exec    | executes external program and collects event logs |
-| Forward            | forward | [Fluentd](http://fluentd.org) forward protocol |
-| Memory             | mem     | usage of system memory |
-| MQTT               | mqtt    | start a MQTT server and receive publish messages |
-| Netif              | netif   | usage of network interface |
-| Kernel Ring Buffer | kmsg    | read Linux Kernel messages, same behavior as the __dmesg__ command line program |
-| Syslog             | syslog  | read messages from a syslog daemon |
-| Systemd/Journald   | systemd | read messages from journald, part of the systemd suite |
-| Serial Port        | serial  | read from serial port |
-| Standard Input     | stdin   | read from the standard input |
-| Head               | head    | read first part of files |
-| Health             | health  | check health of TCP services|
-| Process            | proc    | check health of Process |
-| Random             | random  | generate random numbers |
-| Tail               | tail    | tail log files |
-| TCP                | tcp     | listen for raw JSON map messages over TCP |
+Our official project documentation for [installation](https://docs.fluentbit.io/manual/installation), [configuration](https://docs.fluentbit.io/manual/configuration), deployment and development topics is located here:
 
-### Filter Plugins
+- [https://docs.fluentbit.io](https://fluentbit.io)
 
-| name               | option     | description  |
-|--------------------|------------|---------------------------------------------------------------------------------|
-| Record Modifier    | record_modifier | Append/Remove key-value pair |
-| Grep               | grep       | Match or exclude specific records by patterns |
-| Nest               | nest       | Nest specific records by patterns |
-| Kubernetes         | kubernetes | Enrich logs with Kubernetes Metadata |
-| Stdout             | stdout     | Print records to the standard output interface |
-| Parser             | parser     | Parse records |
+### Quick Start
 
+#### Build from Scratch
 
-### Output Plugins
+If you aim to build Fluent Bit from sources, you can go ahead and start with the following commands.
 
-| name               | option                  | description  |
-|--------------------|-------------------------|---------------------------------------------------------------------------------|
-| Counter            | counter | count records |
-| Elasticsearch      | es | flush records to a Elasticsearch server |
-| File               | file | flush records to a file |
-| FlowCounter        | flowcounter| count records and its size |
-| Forward            | forward  | flush records to a [Fluentd](http://fluentd.org) service. On the [Fluentd](http://fluentd.org) side, it requires an __in_forward__.|
-| NATS               | nats | flush records to a NATS server |
-| HTTP               | http | flush records to a HTTP end point |
-| InfluxDB           | influxdb | flush records to InfluxDB time series database |
-| Plot               | plot | generate a file for gnuplot |
-| Standard Output    | stdout                  | prints the records to the standard output stream |
-| Treasure Data      | td                      | flush records to [Treasure Data](http://treasuredata.com) service (cloud analytics)|
+```bash
+$ cd build
+$ cmake ..
+$ make
+$ bin/fluent-bit -i cpu -o stdout -f 1
+```
 
-## Official Documentation
+If you are interested into more details, please refer to the [Build & Install](https://docs.fluentbit.io/manual/installation/build_install) section.
 
-The official documentation of [Fluent Bit](http://fluentbit.io) can be found in the following site:
+#### Linux Packages
 
-http://fluentbit.io/documentation/
+We provide packages for most common Linux distributions:
+
+- [Debian](https://docs.fluentbit.io/manual/installation/debian)
+- [Raspbian](https://docs.fluentbit.io/manual/installation/raspberry_pi)
+- [Ubuntu](https://docs.fluentbit.io/manual/installation/ubuntu)
+- [CentOS](https://docs.fluentbit.io/manual/installation/redhat_centos)
+
+#### Linux / Docker Container Images
+
+Our Linux containers images are the most common deployment model, thousands of new installation happen every day, learn more about the available images and tags here:
+
+- https://docs.fluentbit.io/manual/installation/docker
+
+#### Windows Packages
+
+Fluent Bit is fully supported on Windows environments, get started with the following instructions:
+
+- https://docs.fluentbit.io/manual/installation/windows
+
+### Plugins: Inputs, Filters and Outputs
+
+[Fluent Bit](http://fluentbit.io) is based in a pluggable architecture where different plugins plays a major role in the data pipeline:
+
+#### Input Plugins
+
+| name | title | description |
+| :--- | :--- | :--- |
+| [collectd](https://docs.fluentbit.io/manual/input/collectd.md) | Collectd | Listen for UDP packets from Collectd. |
+| [cpu](https://docs.fluentbit.io/manual/input/cpu.md) | CPU Usage | measure total CPU usage of the system. |
+| [disk](https://docs.fluentbit.io/manual/input/disk.md) | Disk Usage | measure Disk I/Os. |
+| [dummy](https://docs.fluentbit.io/manual/input/dummy.md) | Dummy | generate dummy event. |
+| [exec](https://docs.fluentbit.io/manual/input/exec.md) | Exec | executes external program and collects event logs. |
+| [forward](https://docs.fluentbit.io/manual/input/forward.md) | Forward | Fluentd forward protocol. |
+| [head](https://docs.fluentbit.io/manual/input/head.md) | Head | read first part of files. |
+| [health](https://docs.fluentbit.io/manual/input/health.md) | Health | Check health of TCP services. |
+| [kmsg](https://docs.fluentbit.io/manual/input/kmsg.md) | Kernel Log Buffer | read the Linux Kernel log buffer messages. |
+| [mem](https://docs.fluentbit.io/manual/input/mem.md) | Memory Usage | measure the total amount of memory used on the system. |
+| [mqtt](https://docs.fluentbit.io/manual/input/mqtt.md) | MQTT | start a MQTT server and receive publish messages. |
+| [netif](https://docs.fluentbit.io/manual/input/netif.md) | Network Traffic | measure network traffic. |
+| [proc](https://docs.fluentbit.io/manual/input/proc.md) | Process | Check health of Process. |
+| [random](https://docs.fluentbit.io/manual/input/random.md) | Random | Generate Random samples. |
+| [serial](https://docs.fluentbit.io/manual/input/serial.md) | Serial Interface | read data information from the serial interface. |
+| [stdin](https://docs.fluentbit.io/manual/input/stdin.md) | Standard Input | read data from the standard input. |
+| [syslog](https://docs.fluentbit.io/manual/input/syslog.md) | Syslog | read syslog messages from a Unix socket. |
+| [systemd](https://docs.fluentbit.io/manual/input/systemd.md) | Systemd | read logs from Systemd/Journald. |
+| [tail](https://docs.fluentbit.io/manual/input/tail.md) | Tail | Tail log files |
+| [tcp](https://docs.fluentbit.io/manual/input/tcp.md) | TCP | Listen for JSON messages over TCP. |
+| [thermal](https://docs.fluentbit.io/manual/input/thermal.md) | Thermal | measure system temperature(s). |
+
+#### Filter Plugins
+
+| name | title | description |
+| :--- | :--- | :--- |
+| [grep](https://docs.fluentbit.io/manual/filter/grep.md) | Grep | Match or exclude specific records by patterns. |
+| [kubernetes](https://docs.fluentbit.io/manual/filter/kubernetes.md) | Kubernetes | Enrich logs with Kubernetes Metadata. |
+| [lua](https://docs.fluentbit.io/manual/filter/lua.md) | Lua | Filter records using Lua Scripts. |
+| [parser](https://docs.fluentbit.io/manual/filter/parser.md) | Parser | Parse record. |
+| [record\_modifier](https://docs.fluentbit.io/manual/filter/record_modifier.md) | Record Modifier | Modify record. |
+| [stdout](https://docs.fluentbit.io/manual/filter/stdout.md) | Stdout | Print records to the standard output interface. |
+| [throttle](https://docs.fluentbit.io/manual/filter/throttle.md) | Throttle | Apply rate limit to event flow. |
+| [nest](https://docs.fluentbit.io/manual/filter/nest.md) | Nest | Nest records under a specified key |
+| [modify](https://docs.fluentbit.io/manual/filter/modify.md) | Modify | Modifications to record. |
+
+#### Output Plugins
+
+| name | title | description |
+| :--- | :--- | :--- |
+| [azure](https://docs.fluentbit.io/manual/output/azure.md) | Azure Log Analytics | Ingest records into Azure Log Analytics |
+| [bigquery](https://docs.fluentbit.io/manual/output/bigquery.md) | BigQuery | Ingest records into Google BigQuery |
+| [counter](https://docs.fluentbit.io/manual/output/counter.md) | Count Records | Simple records counter. |
+| [datadog](https://docs.fluentbit.io/manual/output/datadog.md) | Datadog | Ingest logs into Datadog. |
+| [es](https://docs.fluentbit.io/manual/output/elasticsearch.md) | Elasticsearch | flush records to a Elasticsearch server. |
+| [file](https://docs.fluentbit.io/manual/output/file.md) | File | Flush records to a file. |
+| [flowcounter](https://docs.fluentbit.io/manual/output/flowcounter.md) | FlowCounter | Count records. |
+| [forward](https://docs.fluentbit.io/manual/output/forward.md) | Forward | Fluentd forward protocol. |
+| [http](https://docs.fluentbit.io/manual/output/http.md) | HTTP | Flush records to an HTTP end point. |
+| [influxdb](https://docs.fluentbit.io/manual/output/influxdb.md) | InfluxDB | Flush records to InfluxDB time series database. |
+| [kafka](https://docs.fluentbit.io/manual/output/kafka.md) | Apache Kafka | Flush records to Apache Kafka |
+| [kafka-rest](https://docs.fluentbit.io/manual/output/kafka-rest-proxy.md) | Kafka REST Proxy | Flush records to a Kafka REST Proxy server. |
+| [stackdriver](https://docs.fluentbit.io/manual/output/stackdriver.md) | Google Stackdriver Logging | Flush records to Google Stackdriver Logging service. |
+| [stdout](https://docs.fluentbit.io/manual/output/stdout.md) | Standard Output | Flush records to the standard output. |
+| [splunk](https://docs.fluentbit.io/manual/output/splunk.md) | Splunk | Flush records to a Splunk Enterprise service |
+| [tcp](https://docs.fluentbit.io/manual/output/tcp.md) | TCP & TLS | flush records to a TCP server. |
+| [td](https://docs.fluentbit.io/manual/output/td.md) | [Treasure Data](http://www.treasuredata.com) | Flush records to the [Treasure Data](http://www.treasuredata.com) cloud service for analytics. |
+| [nats](https://docs.fluentbit.io/manual/output/nats.md) | NATS | flush records to a NATS server. |
+| [null](https://docs.fluentbit.io/manual/output/null.md) | NULL | throw away events. |
 
 ## Contributing
 
-In order to contribute to the project please refer to the [CONTRIBUTING](CONTRIBUTING.md) guidelines.
+[Fluent Bit](https://fluentbit.io) is an open project, several individuals and companies contribute in different forms like coding, documenting, testing, spreading the word at events within others. If you want to learn more about contributing opportunities please reach out to us through our [Community Channels](https://fluentbit.io/community/).
 
-## Contact
+If you are interested into contribute with bug fixes, new features or coding in general, please refer to the code [CONTRIBUTING](CONTRIBUTING.md) guidelines.
+
+## Community & Contact
 
 Feel free to join us on our Slack channel, Mailing List or IRC:
 
  - Slack: http://slack.fluentd.org (#fluent-bit channel)
  - Mailing List: https://groups.google.com/forum/#!forum/fluent-bit
- - IRC: irc.freenode.net #fluent-bit
  - Twitter: http://twitter.com/fluentbit
+ - IRC: irc.freenode.net #fluent-bit 
 
 ## License
 
@@ -102,5 +165,4 @@ This program is under the terms of the [Apache License v2.0](http://www.apache.o
 
 ## Authors
 
-[Fluent Bit](http://fluentbit.io) is made and sponsored by [Treasure Data](http://treasuredata.com) among
-other [contributors](https://github.com/fluent/fluent-bit/graphs/contributors).
+[Fluent Bit](http://fluentbit.io) is originally made and currently sponsored by [Treasure Data](http://treasuredata.com) among other [contributors](https://github.com/fluent/fluent-bit/graphs/contributors).
