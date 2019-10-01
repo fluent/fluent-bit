@@ -22,7 +22,7 @@ SRCREV = "v${PV}"
 SRC_URI = "git://github.com/fluent/fluent-bit.git;nobranch=1"
 
 S = "${WORKDIR}/git"
-DEPENDS = "zlib bison flex"
+DEPENDS = "zlib bison-native flex-native"
 INSANE_SKIP_${PN}-dev += "dev-elf"
 
 # Use CMake 'Unix Makefiles' generator
@@ -49,5 +49,5 @@ EXTRA_OECMAKE += "-DFLB_SHARED_LIB=Off -DFLB_EXAMPLES=Off "
 
 inherit cmake systemd
 
-SYSTEMD_SERVICE_${PN} = "td-agent-bit.service"
+SYSTEMD_SERVICE_${PN} = "fluent-bit.service"
 TARGET_CC_ARCH_append = " ${SELECTED_OPTIMIZATION}"
