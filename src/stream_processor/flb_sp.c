@@ -496,8 +496,7 @@ int flb_sp_snapshot_create(struct flb_sp_task *task)
     cmd = task->cmd;
 
     snapshot = (struct flb_sp_snapshot *) flb_calloc(1, sizeof(struct flb_sp_snapshot));
-    if (!snapshot)
-    {
+    if (!snapshot) {
         flb_error("[sp] could not create snapshot '%s'", cmd->stream_name);
         return -1;
     }
@@ -637,8 +636,7 @@ struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, const char *name,
 
     /* Init snapshot page list */
     if (cmd->type == FLB_SP_CREATE_SNAPSHOT) {
-        if (flb_sp_snapshot_create(task) == -1)
-        {
+        if (flb_sp_snapshot_create(task) == -1) {
             flb_sp_task_destroy(task);
             return NULL;
         }
@@ -2027,7 +2025,12 @@ static int sp_process_data(const char *tag, int tag_len,
 
         /* Flush the snapshot if condition holds */
         if (cmd->type == FLB_SP_FLUSH_SNAPSHOT) {
-            flb_sp_snapshot_flush(sp, task, &snapshot_out_buffer, &snapshot_out_size);
+            if (flb_sp_snapshot_flush(sp, task, &snapshot_out_buffer,
+                                      &snapshot_out_size) == -1) {
+                msgpack_unpacked_destroy(&result);
+                msgpack_sbuffer_destroy(&mp_sbuf);
+                return -1;
+            }
             continue;
         }
 
@@ -2442,7 +2445,7 @@ int flb_sp_do(struct flb_sp *sp, struct flb_input_instance *in,
     struct flb_sp_task *task;
     struct flb_sp_cmd *cmd;
 
-    /* Lookup tasks that matche the incoming instance data */
+    /* Lookup tasks that match the incoming instance data */
     mk_list_foreach(head, &sp->tasks) {
         task = mk_list_entry(head, struct flb_sp_task, _head);
         cmd = task->cmd;
