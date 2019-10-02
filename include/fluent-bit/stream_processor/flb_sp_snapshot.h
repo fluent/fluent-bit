@@ -42,8 +42,8 @@ struct flb_sp_snapshot {
 int flb_sp_snapshot_update(struct flb_sp_task *task, const char *buf_data,
                            size_t buf_size, struct flb_time *tms);
 
-void flb_sp_snapshot_flush(struct flb_sp *sp, struct flb_sp_task *task,
-                           char **out_buf_data, size_t *out_buf_size);
+int flb_sp_snapshot_flush(struct flb_sp *sp, struct flb_sp_task *task,
+                          char **out_buf_data, size_t *out_buf_size);
 
 void flb_sp_snapshot_destroy(struct flb_sp_snapshot *snapshot);
 

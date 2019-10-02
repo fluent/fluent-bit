@@ -182,8 +182,8 @@ int flb_sp_snapshot_update(struct flb_sp_task *task, const char *buf_data,
     return 0;
 }
 
-void flb_sp_snapshot_flush(struct flb_sp *sp, struct flb_sp_task *task,
-                           char **out_buf_data, size_t *out_buf_size)
+int flb_sp_snapshot_flush(struct flb_sp *sp, struct flb_sp_task *task,
+                          char **out_buf_data, size_t *out_buf_size)
 {
     size_t off;
     size_t page_size;
@@ -206,7 +206,8 @@ void flb_sp_snapshot_flush(struct flb_sp *sp, struct flb_sp_task *task,
         cmd = snapshot_task->cmd;
 
         if (cmd->type == FLB_SP_CREATE_SNAPSHOT &&
-            flb_sds_cmp(cmd->stream_name, snapshot_name, strlen(snapshot_name)) == 0) {
+            flb_sds_cmp(cmd->stream_name, snapshot_name,
+                        strlen(snapshot_name)) == 0) {
 
             snapshot = (struct flb_sp_snapshot *) snapshot_task->snapshot;
 
@@ -216,17 +217,28 @@ void flb_sp_snapshot_flush(struct flb_sp *sp, struct flb_sp_task *task,
 
             if (*out_buf_data == NULL) {
                 *out_buf_data = (char *) flb_malloc(snapshot->size);
+                if (!*out_buf_data) {
+                    flb_errno();
+                    return -1;
+                }
                 *out_buf_size = snapshot->size;
             }
             else {
-                *out_buf_data = (char *) flb_realloc(*out_buf_data, *out_buf_size + snapshot->size);
+                *out_buf_data = (char *) flb_realloc(*out_buf_data,
+                                                     *out_buf_size + snapshot->size);
+                if (!*out_buf_data) {
+                    flb_errno();
+                    return -1;
+                }
                 *out_buf_size = *out_buf_size + snapshot->size;
             }
 
             mk_list_foreach_safe(snapshot_head, tmp, &snapshot->pages) {
-                page = mk_list_entry_first(&snapshot->pages, struct flb_sp_snapshot_page, _head);
+                page = mk_list_entry_first(&snapshot->pages,
+                                           struct flb_sp_snapshot_page, _head);
                 page_size = page->end_pos - page->start_pos;
-                memcpy(*out_buf_data + off, page->snapshot_page + page->start_pos, page_size);
+                memcpy(*out_buf_data + off,
+                       page->snapshot_page + page->start_pos, page_size);
                 off = off + page_size;
 
                 /* Remove page from list */
@@ -241,6 +253,8 @@ void flb_sp_snapshot_flush(struct flb_sp *sp, struct flb_sp_task *task,
             snapshot->size = 0;
         }
     }
+
+    return 0;
 }
 
 void flb_sp_snapshot_destroy(struct flb_sp_snapshot *snapshot)
