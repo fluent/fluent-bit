@@ -208,6 +208,7 @@ struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
     /* Create TLS context */
     ctx->tls.context = flb_tls_context_new(FLB_TRUE,  /* verify */
                                            -1,        /* debug */
+                                           NULL,      /* vhost */
                                            NULL,      /* ca_path */
                                            NULL,      /* ca_file */
                                            NULL,      /* crt_file */
