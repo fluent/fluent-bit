@@ -61,10 +61,10 @@ struct flb_tls {
 
 struct flb_tls_context *flb_tls_context_new(int verify,
                                             int debug,
-                                            char *vhost,
-                                            char *ca_path,
-                                            char *ca_file, char *crt_file,
-                                            char *key_file, char *key_passwd);
+                                            const char *vhost,
+                                            const char *ca_path,
+                                            const char *ca_file, const char *crt_file,
+                                            const char *key_file, const char *key_passwd);
 
 void flb_tls_context_destroy(struct flb_tls_context *ctx);
 int flb_tls_session_destroy(struct flb_tls_session *session);

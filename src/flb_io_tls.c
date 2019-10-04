@@ -119,22 +119,23 @@ static int flb_tls_load_system_cert(struct flb_tls_context *ctx)
 
 struct flb_tls_context *flb_tls_context_new(int verify,
                                             int debug,
-                                            char *vhost,
-                                            char *ca_path,
-                                            char *ca_file, char *crt_file,
-                                            char *key_file, char *key_passwd)
+                                            const char *vhost,
+                                            const char *ca_path,
+                                            const char *ca_file, const char *crt_file,
+                                            const char *key_file, const char *key_passwd)
 {
     int ret;
     struct flb_tls_context *ctx;
 
     ctx = flb_calloc(1, sizeof(struct flb_tls_context));
     if (!ctx) {
-        perror("malloc");
+        flb_errno();
         return NULL;
     }
+
     ctx->verify    = verify;
     ctx->debug     = debug;
-    ctx->vhost     = vhost;
+    ctx->vhost     = (char *) vhost;
     ctx->certs_set = 0;
 
     mbedtls_entropy_init(&ctx->entropy);
