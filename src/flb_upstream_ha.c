@@ -124,6 +124,7 @@ static struct flb_upstream_node *create_node(int id,
     char *name = NULL;
     char *host = NULL;
     char *port = NULL;
+    char *tls_vhost = NULL;
     char *tls_ca_path = NULL;
     char *tls_ca_file = NULL;
     char *tls_crt_file = NULL;
@@ -133,7 +134,7 @@ static struct flb_upstream_node *create_node(int id,
     struct mk_rconf_entry *entry;
     struct flb_hash *ht;
     const char *known_keys[] = {"name", "host", "port",
-                                "tls", "tls.verify", "tls.debug",
+                                "tls", "tls.vhost", "tls.verify", "tls.debug",
                                 "tls.ca_path", "tls.ca_file", "tls.crt_file",
                                 "tls.key_file", "tls.key_passwd", NULL};
 
@@ -183,6 +184,9 @@ static struct flb_upstream_node *create_node(int id,
         tls_debug = atoi(tmp);
         flb_free(tmp);
     }
+
+    /* tls.vhost */
+    tls_vhost = mk_rconf_section_get_key(s, "tls.vhost", MK_RCONF_STR);
 
     /* tls.ca_path */
     tls_ca_path = mk_rconf_section_get_key(s, "tls.ca_path", MK_RCONF_STR);
@@ -248,7 +252,7 @@ static struct flb_upstream_node *create_node(int id,
     }
 
     node = flb_upstream_node_create(name, host, port, tls, tls_verify,
-                                    tls_debug, tls_ca_path, tls_ca_file,
+                                    tls_debug, tls_vhost, tls_ca_path, tls_ca_file,
                                     tls_crt_file, tls_key_file,
                                     tls_key_passwd, ht, config);
  error:
