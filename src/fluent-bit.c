@@ -145,7 +145,10 @@ static void flb_help(int rc, struct flb_config *config)
 #ifdef FLB_HAVE_STREAM_PROCESSOR
     printf("  -T, --sp-task=SQL\tdefine a stream processor task\n");
 #endif
-    printf("  -v, --verbose\t\tenable verbose mode\n");
+    printf("  -v, --verbose\t\tincrease logging verbosity (default: info)\n");
+#ifdef FLB_HAVE_TRACE
+    printf("  -vv\t\t\ttrace mode (available)\n");
+#endif
 #ifdef FLB_HAVE_HTTP_SERVER
     printf("  -H, --http\t\tenable monitoring HTTP server\n");
     printf("  -P, --port\t\tset HTTP server TCP port (default: %s)\n",
