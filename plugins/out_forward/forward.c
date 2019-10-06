@@ -247,10 +247,6 @@ static int secure_forward_ping(struct flb_upstream_conn *u_conn,
     }
 
     if (ping.auth != NULL) {
-        if (fc->username == NULL || fc->password == NULL) {
-            flb_error("[out_fw] server requires username and password");
-            return -1;
-        }
         if (secure_forward_hash_password(fc, &ping, password_hexdigest, 128)) {
             flb_error("[out_fw] failed to hash password");
             return -1;
@@ -644,10 +640,16 @@ static int forward_config_ha(const char *upstream_file,
         if (tmp) {
             fc->username = tmp;
         }
+        else {
+            fc->username = "";
+        }
 
         tmp = flb_upstream_node_get_property("password", node);
         if (tmp) {
             fc->password = tmp;
+        }
+        else {
+            fc->password = "";
         }
 
         /* Self Hostname (Shared key) */
@@ -761,10 +763,16 @@ static int forward_config_simple(struct flb_forward *ctx,
     if (tmp) {
         fc->username = tmp;
     }
+    else {
+        fc->username = "";
+    }
 
     tmp = flb_output_get_property("password", ins);
     if (tmp) {
         fc->password = tmp;
+    }
+    else {
+        fc->password = "";
     }
 
     /* Self Hostname */
