@@ -57,36 +57,6 @@ struct flb_input_plugin in_mem_plugin;
 
 static int in_mem_collect(struct flb_input_instance *i_ins,
                           struct flb_config *config, void *in_context);
-#if 0
-/* Locate a specific key into the buffer */
-static char *field(char *data, char *field)
-{
-    char *p;
-    char *q;
-    char *sep;
-    char *value;
-    int len = strlen(field);
-
-    p = strstr(data, field);
-    if (!p) {
-        return NULL;
-    }
-
-    sep = strchr(p, ':');
-    p = ++sep;
-    p++;
-
-    while (*p == ' ') p++;
-
-    q = strchr(p, ' ');
-    len = q - p;
-    value = flb_malloc(len + 1);
-    strncpy(value, p, len);
-    value[len] = '\0';
-
-    return value;
-}
-#endif
 
 static uint64_t calc_kb(unsigned long amount, unsigned int unit)
 {
@@ -119,7 +89,7 @@ static int mem_calc(struct flb_in_mem_info *m_info)
 
     /* This value seems to be MemAvailable if it is supported */
     /*     or MemFree on legacy linux */
-    m_info->mem_free      = calc_kb(info.freeram, info.mem_unit);
+    m_info->mem_free      = calc_kb(info.freeram + info.bufferram, info.mem_unit);
 
     m_info->mem_used      = m_info->mem_total - m_info->mem_free;
 
