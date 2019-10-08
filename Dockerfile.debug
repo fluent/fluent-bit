@@ -3,6 +3,6 @@ COPY --from=amd64/busybox:1.31.0 /bin/busybox /bin/busybox
 RUN chmod 555 /bin/busybox \
  && /bin/busybox --install
 
-FROM fluent/fluent-bit:latest
+FROM fluent/fluent-bit:1.3
 COPY --from=builder /bin/ /bin/
 
