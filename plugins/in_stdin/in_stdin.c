@@ -43,49 +43,44 @@ static inline void consume_bytes(char *buf, int bytes, int length)
     memmove(buf, buf + bytes, length - bytes);
 }
 
-static inline int pack_json(msgpack_packer *mp_pck,
-                            struct flb_in_stdin_config *ctx,
-                            char *data, size_t data_size)
+static inline int process_pack(msgpack_packer *mp_pck,
+                               struct flb_in_stdin_config *ctx,
+                               char *data, size_t data_size)
 {
     size_t off = 0;
-    size_t start = 0;
     msgpack_unpacked result;
+    msgpack_object entry;
 
     /* Queue the data with time field */
     msgpack_unpacked_init(&result);
 
     while (msgpack_unpack_next(&result, data, data_size, &off) == MSGPACK_UNPACK_SUCCESS) {
-        if (result.data.type == MSGPACK_OBJECT_MAP) {
-            /* { map => val, map => val, map => val } */
-            msgpack_pack_array(mp_pck, 2);
-            flb_pack_time_now(mp_pck);
-            msgpack_pack_str_body(mp_pck, data + start, off - start);
+        entry = result.data;
+
+        msgpack_pack_array(mp_pck, 2);
+        flb_pack_time_now(mp_pck);
+
+        if (entry.type == MSGPACK_OBJECT_MAP) {
+            msgpack_pack_object(mp_pck, entry);
+        }
+        else if (entry.type == MSGPACK_OBJECT_ARRAY) {
+            msgpack_pack_map(mp_pck, 1);
+            msgpack_pack_str(mp_pck, 3);
+            msgpack_pack_str_body(mp_pck, "log", 3);
+            msgpack_pack_object(mp_pck, entry);
         }
         else {
-            msgpack_pack_str_body(mp_pck, data + start, off - start);
+            /*
+             * Upon exception, acknowledge the user about the problem but continue
+             * working, do not discard valid JSON entries.
+             */
+            flb_error("[in_stdin] invalid record found, it's not a JSON map or array");
+            msgpack_unpacked_destroy(&result);
+            return -1;
         }
-        start = off;
     }
 
     msgpack_unpacked_destroy(&result);
-    return 0;
-}
-
-static inline int pack_raw(msgpack_packer *mp_pck,
-                           struct flb_in_stdin_config *ctx,
-                           char *data, size_t data_size)
-{
-    msgpack_pack_array(mp_pck, 2);
-    flb_pack_time_now(mp_pck);
-
-    msgpack_pack_map(mp_pck, 1);
-
-    msgpack_pack_str(mp_pck, 3);
-    msgpack_pack_str_body(mp_pck, "log", 3);
-
-    msgpack_pack_str(mp_pck, data_size);
-    msgpack_pack_str_body(mp_pck, data, data_size);
-
     return 0;
 }
 
@@ -109,7 +104,6 @@ static int in_stdin_collect(struct flb_input_instance *i_ins,
     char *pack;
     void *out_buf;
     size_t out_size;
-    jsmntok_t *token;
     struct flb_time out_time;
     struct flb_in_stdin_config *ctx = in_context;
     msgpack_packer mp_pck;
@@ -156,14 +150,10 @@ static int in_stdin_collect(struct flb_input_instance *i_ins,
                 return -1;
             }
 
-            token = (jsmntok_t *) &ctx->pack_state.tokens[0];
-            if (token->type != JSMN_OBJECT) {
-                pack_raw(&mp_pck, ctx, ctx->buf, ctx->buf_len);
-            }
-            else {
-                pack_json(&mp_pck, ctx, pack, pack_size);
-            }
+            /* Process valid packaged records */
+            process_pack(&mp_pck, ctx, pack, pack_size);
 
+            /* Move out processed bytes */
             consume_bytes(ctx->buf, ctx->pack_state.last_byte, ctx->buf_len);
             ctx->buf_len -= ctx->pack_state.last_byte;
             ctx->buf[ctx->buf_len] = '\0';
