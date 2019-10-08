@@ -84,27 +84,27 @@ Fluent Bit is fully supported on Windows environments, get started with the foll
 
 | name | title | description |
 | :--- | :--- | :--- |
-| [collectd](https://docs.fluentbit.io/manual/input/collectd.md) | Collectd | Listen for UDP packets from Collectd. |
-| [cpu](https://docs.fluentbit.io/manual/input/cpu.md) | CPU Usage | measure total CPU usage of the system. |
-| [disk](https://docs.fluentbit.io/manual/input/disk.md) | Disk Usage | measure Disk I/Os. |
-| [dummy](https://docs.fluentbit.io/manual/input/dummy.md) | Dummy | generate dummy event. |
-| [exec](https://docs.fluentbit.io/manual/input/exec.md) | Exec | executes external program and collects event logs. |
-| [forward](https://docs.fluentbit.io/manual/input/forward.md) | Forward | Fluentd forward protocol. |
-| [head](https://docs.fluentbit.io/manual/input/head.md) | Head | read first part of files. |
-| [health](https://docs.fluentbit.io/manual/input/health.md) | Health | Check health of TCP services. |
-| [kmsg](https://docs.fluentbit.io/manual/input/kmsg.md) | Kernel Log Buffer | read the Linux Kernel log buffer messages. |
-| [mem](https://docs.fluentbit.io/manual/input/mem.md) | Memory Usage | measure the total amount of memory used on the system. |
-| [mqtt](https://docs.fluentbit.io/manual/input/mqtt.md) | MQTT | start a MQTT server and receive publish messages. |
-| [netif](https://docs.fluentbit.io/manual/input/netif.md) | Network Traffic | measure network traffic. |
-| [proc](https://docs.fluentbit.io/manual/input/proc.md) | Process | Check health of Process. |
-| [random](https://docs.fluentbit.io/manual/input/random.md) | Random | Generate Random samples. |
-| [serial](https://docs.fluentbit.io/manual/input/serial.md) | Serial Interface | read data information from the serial interface. |
-| [stdin](https://docs.fluentbit.io/manual/input/stdin.md) | Standard Input | read data from the standard input. |
-| [syslog](https://docs.fluentbit.io/manual/input/syslog.md) | Syslog | read syslog messages from a Unix socket. |
-| [systemd](https://docs.fluentbit.io/manual/input/systemd.md) | Systemd | read logs from Systemd/Journald. |
-| [tail](https://docs.fluentbit.io/manual/input/tail.md) | Tail | Tail log files |
-| [tcp](https://docs.fluentbit.io/manual/input/tcp.md) | TCP | Listen for JSON messages over TCP. |
-| [thermal](https://docs.fluentbit.io/manual/input/thermal.md) | Thermal | measure system temperature(s). |
+| [collectd](https://docs.fluentbit.io/manual/input/collectd) | Collectd | Listen for UDP packets from Collectd. |
+| [cpu](https://docs.fluentbit.io/manual/input/cpu) | CPU Usage | measure total CPU usage of the system. |
+| [disk](https://docs.fluentbit.io/manual/input/disk) | Disk Usage | measure Disk I/Os. |
+| [dummy](https://docs.fluentbit.io/manual/input/dummy) | Dummy | generate dummy event. |
+| [exec](https://docs.fluentbit.io/manual/input/exec) | Exec | executes external program and collects event logs. |
+| [forward](https://docs.fluentbit.io/manual/input/forward) | Forward | Fluentd forward protocol. |
+| [head](https://docs.fluentbit.io/manual/input/head) | Head | read first part of files. |
+| [health](https://docs.fluentbit.io/manual/input/health) | Health | Check health of TCP services. |
+| [kmsg](https://docs.fluentbit.io/manual/input/kmsg) | Kernel Log Buffer | read the Linux Kernel log buffer messages. |
+| [mem](https://docs.fluentbit.io/manual/input/mem) | Memory Usage | measure the total amount of memory used on the system. |
+| [mqtt](https://docs.fluentbit.io/manual/input/mqtt) | MQTT | start a MQTT server and receive publish messages. |
+| [netif](https://docs.fluentbit.io/manual/input/netif) | Network Traffic | measure network traffic. |
+| [proc](https://docs.fluentbit.io/manual/input/proc) | Process | Check health of Process. |
+| [random](https://docs.fluentbit.io/manual/input/random) | Random | Generate Random samples. |
+| [serial](https://docs.fluentbit.io/manual/input/serial) | Serial Interface | read data information from the serial interface. |
+| [stdin](https://docs.fluentbit.io/manual/input/stdin) | Standard Input | read data from the standard input. |
+| [syslog](https://docs.fluentbit.io/manual/input/syslog) | Syslog | read syslog messages from a Unix socket. |
+| [systemd](https://docs.fluentbit.io/manual/input/systemd) | Systemd | read logs from Systemd/Journald. |
+| [tail](https://docs.fluentbit.io/manual/input/tail) | Tail | Tail log files. |
+| [tcp](https://docs.fluentbit.io/manual/input/tcp) | TCP | Listen for JSON messages over TCP. |
+| [thermal](https://docs.fluentbit.io/manual/input/thermal) | Thermal | measure system temperature(s). |
 
 #### Filter Plugins
 
