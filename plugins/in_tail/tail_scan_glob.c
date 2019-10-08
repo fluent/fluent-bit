@@ -89,7 +89,11 @@ static char *expand_tilde(const char *path)
 
         if (p) {
             tmp = flb_malloc(PATH_MAX);
-            snprintf(tmp, PATH_MAX -1, "%s%s", dir, p);
+            if (!tmp) {
+                flb_errno();
+                return NULL;
+            }
+            snprintf(tmp, PATH_MAX - 1, "%s%s", dir, p);
         }
         else {
             dir = getenv("HOME");
