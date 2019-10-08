@@ -98,7 +98,7 @@ Fluent Bit is fully supported on Windows environments, get started with the foll
 | [netif](https://docs.fluentbit.io/manual/input/netif) | Network Traffic | measure network traffic. |
 | [proc](https://docs.fluentbit.io/manual/input/proc) | Process | Check health of Process. |
 | [random](https://docs.fluentbit.io/manual/input/random) | Random | Generate Random samples. |
-| [serial](https://docs.fluentbit.io/manual/input/serial) | Serial Interface | read data information from the serial interface. |
+| [serial](https://docs.fluentbit.io/manual/input/serial) | Serial Interface | Read data information from the serial interface. |
 | [stdin](https://docs.fluentbit.io/manual/input/stdin) | Standard Input | read data from the standard input. |
 | [syslog](https://docs.fluentbit.io/manual/input/syslog) | Syslog | read syslog messages from a Unix socket. |
 | [systemd](https://docs.fluentbit.io/manual/input/systemd) | Systemd | read logs from Systemd/Journald. |
