@@ -68,6 +68,70 @@ static int fw_unix_create(struct flb_in_fw_config *ctx)
 }
 #endif
 
+#ifdef FLB_HAVE_TLS
+static int fw_ssl_server(struct flb_in_fw_config *ctx)
+{
+    struct flb_ssl *ssl;
+    struct flb_ssl_config *config;
+
+    config = flb_ssl_config_new();
+    if (config == NULL) {
+        return -1;
+    }
+
+    flb_ssl_config_set_key_file(config,
+                                ctx->tls_key_file,
+                                ctx->tls_key_passwd);
+    flb_ssl_config_set_cert_file(config, ctx->tls_crt_file);
+
+    ssl = flb_ssl_server();
+    if (ssl == NULL) {
+        flb_ssl_config_free(config);
+        return -1;
+    }
+
+    if (flb_ssl_configure(ssl, config)) {
+        flb_error("[in_fw] failed to configure ssl");
+        flb_ssl_free(ssl);
+        flb_ssl_config_free(config);
+        return -1;
+    }
+
+    if (flb_ssl_bind(ssl, ctx->listen, ctx->tcp_port)) {
+        flb_error("[in_fw] failed to bind %i:%i", ctx->listen, ctx->tcp_port);
+        flb_ssl_free(ssl);
+        flb_ssl_config_free(config);
+        return -1;
+    }
+
+    ctx->ssl = ssl;
+    ctx->ssl_config = config;
+    ctx->server_fd = flb_ssl_getfd(ssl);
+    return 0;
+}
+
+static int fw_ssl_accept(struct flb_in_fw_config *ctx)
+{
+    int fd;
+    struct fw_conn *conn;
+    struct flb_ssl *cctx;
+
+    if (flb_ssl_accept(ctx->ssl, &cctx)) {
+        flb_error("[in_fw] could not accept new TLS connection");
+        return -1;
+    }
+    fd = flb_ssl_getfd(cctx);
+
+    conn = fw_conn_add(fd, ctx);
+    if (conn == NULL) {
+        flb_ssl_free(cctx);
+        return -1;
+    }
+    conn->ssl = cctx;
+    return 0;
+}
+#endif
+
 /*
  * For a server event, the collection event means a new client have arrived, we
  * accept the connection and create a new FW instance which will wait for
@@ -80,6 +144,12 @@ static int in_fw_collect(struct flb_input_instance *i_ins,
     struct flb_in_fw_config *ctx = in_context;
     struct fw_conn *conn;
     (void) i_ins;
+
+#ifdef FLB_HAVE_TLS
+    if (ctx->ssl) {
+        return fw_ssl_accept(ctx);
+    }
+#endif
 
     /* Accept the new connection */
     fd = flb_net_accept(ctx->server_fd);
@@ -133,6 +203,13 @@ static int in_fw_init(struct flb_input_instance *in,
         flb_info("[in_fw] listening on unix://%s", ctx->unix_path);
 #endif
     }
+#ifdef FLB_HAVE_TLS
+    else if (ctx->tls_crt_file && ctx->tls_key_file) {
+        if (fw_ssl_server(ctx)) {
+            return -1;
+        }
+    }
+#endif
     else {
         /* Create TCP server */
         ctx->server_fd = flb_net_server(ctx->tcp_port, ctx->listen);
@@ -176,6 +253,12 @@ int in_fw_exit(void *data, struct flb_config *config)
         conn = mk_list_entry(head, struct fw_conn, _head);
         fw_conn_del(conn);
     }
+#ifdef FLB_HAVE_TLS
+    if (ctx->ssl) {
+        flb_ssl_free(ctx->ssl);
+        flb_ssl_config_free(ctx->ssl_config);
+    }
+#endif
 
     fw_config_destroy(ctx);
     return 0;

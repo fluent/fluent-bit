@@ -33,6 +33,7 @@ int fw_conn_event(void *data)
     int bytes;
     int available;
     int size;
+    char *ptr;
     char *tmp;
     struct mk_event *event;
     struct fw_conn *conn = data;
@@ -40,6 +41,7 @@ int fw_conn_event(void *data)
 
     event = &conn->event;
     if (event->mask & MK_EVENT_READ) {
+        ptr = conn->buf + conn->buf_len;
         available = (conn->buf_size - conn->buf_len);
         if (available < 1) {
             if (conn->buf_size + ctx->buffer_chunk_size > ctx->buffer_max_size) {
@@ -63,9 +65,19 @@ int fw_conn_event(void *data)
             available = (conn->buf_size - conn->buf_len);
         }
 
-        bytes = read(conn->fd,
-                     conn->buf + conn->buf_len, available);
-
+#ifdef FLB_HAVE_TLS
+        if (conn->ssl) {
+            bytes = flb_ssl_read(conn->ssl, ptr, available);
+            if (bytes == FLB_SSL_WANT_POLLIN) {
+                return 0;
+            }
+        }
+        else {
+            bytes = read(conn->fd, ptr, available);
+        }
+#else
+        bytes = read(conn->fd, ptr, available);
+#endif
         if (bytes > 0) {
             flb_trace("[in_fw] read()=%i pre_len=%i now_len=%i",
                       bytes, conn->buf_len, conn->buf_len + bytes);
@@ -149,6 +161,10 @@ int fw_conn_del(struct fw_conn *conn)
 {
     /* Unregister the file descriptior from the event-loop */
     mk_event_del(conn->ctx->evl, &conn->event);
+
+#if FLB_HAVE_TLS
+    flb_ssl_free(conn->ssl);
+#endif
 
     /* Release resources */
     mk_list_del(&conn->_head);

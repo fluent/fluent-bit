@@ -24,6 +24,10 @@
 #include <msgpack.h>
 #include <fluent-bit/flb_input.h>
 
+#ifdef FLB_HAVE_TLS
+#include <fluent-bit/ssl/flb_ssl.h>
+#endif
+
 struct flb_in_fw_config {
     int server_fd;               /* TCP server file descriptor  */
     size_t buffer_max_size;      /* Max Buffer size             */
@@ -39,6 +43,15 @@ struct flb_in_fw_config {
     struct mk_list connections;    /* List of active connections */
     struct mk_event_loop *evl;     /* Event loop file descriptor */
     struct flb_input_instance *in; /* Input plugin instace       */
+
+#ifdef FLB_HAVE_TLS
+    const char *tls_crt_file;
+    const char *tls_key_file;
+    const char *tls_key_passwd;
+
+    struct flb_ssl *ssl;
+    struct flb_ssl_config *ssl_config;
+#endif
 };
 
 #endif

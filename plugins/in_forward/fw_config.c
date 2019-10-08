@@ -93,6 +93,24 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
         flb_debug("[in_fw] Listen='%s' TCP_Port=%s",
                   config->listen, config->tcp_port);
     }
+
+#ifdef FLB_HAVE_TLS
+    p = flb_input_get_property("tls.crt_file", i_ins);
+    if (p) {
+        config->tls_crt_file = p;
+    }
+
+    p = flb_input_get_property("tls.key_file", i_ins);
+    if (p) {
+        config->tls_key_file = p;
+    }
+
+    p = flb_input_get_property("tls.key_passwd", i_ins);
+    if (p) {
+        config->tls_key_passwd = p;
+    }
+#endif
+
     return config;
 }
 

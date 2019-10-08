@@ -49,6 +49,10 @@ struct fw_conn {
     struct flb_in_fw_config *ctx;    /* Plugin configuration context      */
 
     struct mk_list _head;
+
+#ifdef FLB_HAVE_TLS
+    struct flb_ssl *ssl;
+#endif
 };
 
 struct fw_conn *fw_conn_add(int fd, struct flb_in_fw_config *ctx);
