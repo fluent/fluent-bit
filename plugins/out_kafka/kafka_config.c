@@ -138,8 +138,8 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
         ctx->message_key_len = strlen(tmp);
     }
     else {
-        ctx->timestamp_key = NULL;
-        ctx->timestamp_key_len = 0;
+        ctx->message_key = NULL;
+        ctx->message_key_len = 0;
     }
 
     /* Config: Timestamp_Key */
