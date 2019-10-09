@@ -261,6 +261,14 @@ static int configure(struct flb_in_disk_config *disk_config,
     disk_config->prev_write_total = (uint64_t*)flb_malloc(sizeof(uint64_t)*entry);
     disk_config->entry = entry;
 
+    if ( disk_config->read_total       == NULL ||
+         disk_config->write_total      == NULL ||
+         disk_config->prev_read_total  == NULL ||
+         disk_config->prev_write_total == NULL) {
+        flb_error("[in_disk] could not allocate memory");
+        return -1;
+    }
+
     /* initialize */
     for (i=0; i<entry; i++) {
         disk_config->read_total[i] = 0;
