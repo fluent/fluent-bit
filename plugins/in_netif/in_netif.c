@@ -144,9 +144,7 @@ static int configure(struct flb_in_netif_config *ctx,
 
     ctx->first_snapshot = FLB_TRUE;    /* assign first_snapshot with FLB_TRUE */
 
-    init_entry_linux(ctx);
-
-    return 0;
+    return init_entry_linux(ctx);
 }
 
 static inline int is_specific_interface(struct flb_in_netif_config *ctx,
