@@ -29,10 +29,16 @@
 static char *human_readable_size(long size)
 {
     long u = 1024, i, len = 128;
-    char *buf = flb_malloc(len);
+    char *buf;
     static const char *__units[] = { "b", "K", "M", "G",
-        "T", "P", "E", "Z", "Y", NULL
+                                     "T", "P", "E", "Z", "Y", NULL
     };
+
+    buf = flb_malloc(len);
+    if (!buf) {
+        flb_errno();
+        return NULL;
+    }
 
     for (i = 0; __units[i] != NULL; i++) {
         if ((size / u) == 0) {
