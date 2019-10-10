@@ -7,6 +7,10 @@ sudo: true
 git:
   depth: 3
 
+arch:
+  - amd64
+  - arm64
+
 compiler:
   - gcc
   - clang
