@@ -518,6 +518,11 @@ int flb_input_set_collector_time(struct flb_input_instance *in,
     struct flb_input_collector *collector;
 
     collector = flb_malloc(sizeof(struct flb_input_collector));
+    if (!collector) {
+        flb_errno();
+        return -1;
+    }
+
     collector->id          = collector_id(in);
     collector->type        = FLB_COLLECT_TIME;
     collector->cb_collect  = cb_collect;
@@ -543,6 +548,11 @@ int flb_input_set_collector_event(struct flb_input_instance *in,
     struct flb_input_collector *collector;
 
     collector = flb_malloc(sizeof(struct flb_input_collector));
+    if (!collector) {
+        flb_errno();
+        return -1;
+    }
+
     collector->id          = collector_id(in);
     collector->type        = FLB_COLLECT_FD_EVENT;
     collector->cb_collect  = cb_collect;
@@ -791,6 +801,11 @@ int flb_input_set_collector_socket(struct flb_input_instance *in,
     struct flb_input_collector *collector;
 
     collector = flb_malloc(sizeof(struct flb_input_collector));
+    if (!collector) {
+        flb_errno();
+        return -1;
+    }
+
     collector->type        = FLB_COLLECT_FD_SERVER;
     collector->cb_collect  = cb_new_connection;
     collector->fd_event    = fd;
