@@ -238,7 +238,7 @@ static int mk_rconf_read(struct mk_rconf *conf, const char *path)
             }
         }
         else {
-            mk_config_error(path, line, "Length of content has execeded limit");
+            mk_config_error(path, line, "Length of content has exceeded limit");
         }
 
         /* Line number */
