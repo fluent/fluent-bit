@@ -82,6 +82,7 @@ struct flb_stackdriver {
     flb_sds_t http_request_key;
     flb_sds_t service_label;
     flb_sds_t version_label;
+    flb_sds_t log_name_kubernetes_key;
 
     /* oauth2 context */
     struct flb_oauth2 *o;

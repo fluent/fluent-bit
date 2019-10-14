@@ -508,6 +508,7 @@ static int stackdriver_format(const void *data, size_t bytes,
     msgpack_object_str message;
     msgpack_object_str service;
     msgpack_object_str version;
+    msgpack_object_str log_name;
     msgpack_object *obj;
     msgpack_object json_payload;
     msgpack_object kubernetes;
@@ -612,6 +613,7 @@ static int stackdriver_format(const void *data, size_t bytes,
         kubernetes = (const msgpack_object){0};
         kubernetes_labels = (const msgpack_object){0};
         http_request = (const msgpack_object){0};
+        log_name = (const msgpack_object_str){0};
         new_message = NULL;
 
         /* Get timestamp */
@@ -772,6 +774,10 @@ static int stackdriver_format(const void *data, size_t bytes,
                 ++labels;
             }
 
+            if (ctx->log_name_kubernetes_key) {
+                get_string(&log_name, &kubernetes, ctx->log_name_kubernetes_key);
+            }
+
             msgpack_pack_map(&mp_pck, labels);
 
             msgpack_string_kv(&mp_pck, "project_id", 10,
@@ -817,8 +823,18 @@ static int stackdriver_format(const void *data, size_t bytes,
         }
 
         /* logName */
-        len = snprintf(path, sizeof(path) - 1,
-                       "projects/%s/logs/%s", ctx->project_id, tag);
+        if (log_name.ptr != NULL) {
+            flb_debug("[out_stackdriver] custom log name");
+            len = snprintf(path, sizeof(path) - 1,
+                           "projects/%s/logs/%s",
+                           ctx->project_id, flb_sds_create_len(log_name.ptr, log_name.size));
+            flb_debug("[out_stackdriver] custom log name: %s", path);
+        }
+        else {
+            flb_debug("[out_stackdriver] default log name");
+            len = snprintf(path, sizeof(path) - 1,
+                           "projects/%s/logs/%s", ctx->project_id, tag);
+        }
 
         msgpack_pack_str(&mp_pck, 7);
         msgpack_pack_str_body(&mp_pck, "logName", 7);

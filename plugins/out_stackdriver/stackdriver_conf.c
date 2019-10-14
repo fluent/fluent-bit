@@ -310,6 +310,11 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         ctx->http_request_key = flb_sds_create(tmp);
     }
     
+    tmp = flb_output_get_property("log_name_kubernetes_key", ins);
+    if (tmp) {
+        ctx->log_name_kubernetes_key = flb_sds_create(tmp);
+    }
+    
     tmp = flb_output_get_property("cluster_name_key", ins);
     ctx->cluster_name_key = flb_sds_create(tmp ? tmp : "cluster_name");
 
@@ -367,6 +372,7 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
     flb_sds_destroy(ctx->message_key);
     flb_sds_destroy(ctx->service_label);
     flb_sds_destroy(ctx->version_label);
+    flb_sds_destroy(ctx->log_name_kubernetes_key);
 
     if (ctx->o) {
         flb_oauth2_destroy(ctx->o);
