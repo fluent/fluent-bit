@@ -824,14 +824,12 @@ static int stackdriver_format(const void *data, size_t bytes,
 
         /* logName */
         if (log_name.ptr != NULL) {
-            flb_debug("[out_stackdriver] custom log name");
             len = snprintf(path, sizeof(path) - 1,
                            "projects/%s/logs/%s",
                            ctx->project_id, flb_sds_create_len(log_name.ptr, log_name.size));
             flb_debug("[out_stackdriver] custom log name: %s", path);
         }
         else {
-            flb_debug("[out_stackdriver] default log name");
             len = snprintf(path, sizeof(path) - 1,
                            "projects/%s/logs/%s", ctx->project_id, tag);
         }
