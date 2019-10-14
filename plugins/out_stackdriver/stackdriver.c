@@ -430,10 +430,65 @@ static int get_severity_level(severity_t * s, const msgpack_object * o,
     return -1;
 }
 
+static int get_string(msgpack_object_str *str, const msgpack_object * o, const flb_sds_t key)
+{
+    msgpack_object tmp;
+    if (get_msgpack_obj(&tmp, o, key, flb_sds_len(key), MSGPACK_OBJECT_STR) == 0) {
+        *str = tmp.via.str;
+        return 0;
+    }
+    *str = (const msgpack_object_str){0};
+    return -1;
+}
+
+static int get_map(msgpack_object *map, const msgpack_object * o,
+                   const flb_sds_t key)
+{
+    if (get_msgpack_obj(map, o, key, flb_sds_len(key), MSGPACK_OBJECT_MAP) == 0) {
+        return 0;
+    }
+    *map = (const msgpack_object){0};
+    return -1;
+}
+
+static void log_msgpack_obj(int verbose, const msgpack_object *obj, const char *key)
+{
+    if (verbose < 4) {
+        return;
+    }
+    char *bp;
+    size_t size;
+    FILE *stream;
+    stream = open_memstream(&bp, &size);
+    msgpack_object_print(stream, *obj);
+    fclose(stream);
+    flb_debug("[out_stackdriver] %s: %s", key, bp);
+    free(bp);
+}
+
+static void msgpack_string_kv(msgpack_packer *mp_pck, const char *label, size_t label_size,
+                              const char *value, size_t value_size)
+{
+    msgpack_pack_str(mp_pck, label_size);
+    msgpack_pack_str_body(mp_pck, label, label_size);
+    msgpack_pack_str(mp_pck, value_size);
+    msgpack_pack_str_body(mp_pck, value, value_size);
+}
+
+static void msgpack_object_string_kv(msgpack_packer *mp_pck, const char *label, size_t label_size,
+                                     const msgpack_object_str *value)
+{
+    msgpack_pack_str(mp_pck, label_size);
+    msgpack_pack_str_body(mp_pck, label, label_size);
+    msgpack_pack_str(mp_pck, value->size);
+    msgpack_pack_str_body(mp_pck, value->ptr, value->size);
+}
+
 static int stackdriver_format(const void *data, size_t bytes,
                               const char *tag, size_t tag_len,
                               char **out_data, size_t *out_size,
-                              struct flb_stackdriver *ctx)
+                              struct flb_stackdriver *ctx,
+                              int verbose)
 {
     int len;
     int array_size = 0;
@@ -444,7 +499,23 @@ static int stackdriver_format(const void *data, size_t bytes,
     struct tm tm;
     struct flb_time tms;
     severity_t severity;
+    msgpack_object_str trace;
+    msgpack_object_str cluster_name;
+    msgpack_object_str container_name;
+    msgpack_object_str namespace_id;
+    msgpack_object_str pod_id;
+    msgpack_object_str stacktrace;
+    msgpack_object_str message;
+    msgpack_object_str service;
+    msgpack_object_str version;
     msgpack_object *obj;
+    msgpack_object json_payload;
+    msgpack_object kubernetes;
+    msgpack_object kubernetes_labels;
+    msgpack_object http_request;
+    int i;
+    flb_sds_t new_message;
+    msgpack_object_kv *p;
     msgpack_unpacked result;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
@@ -468,52 +539,57 @@ static int stackdriver_format(const void *data, size_t bytes,
      * {"resource": {"type": "...", "labels": {...},
      *  "entries": []
      */
-    msgpack_pack_map(&mp_pck, 2);
+    if (strcmp(ctx->resource, "container") == 0) {
+        msgpack_pack_map(&mp_pck, 1);
+    }
+    else {
+        msgpack_pack_map(&mp_pck, 2);
 
-    msgpack_pack_str(&mp_pck, 8);
-    msgpack_pack_str_body(&mp_pck, "resource", 8);
+        msgpack_pack_str(&mp_pck, 8);
+        msgpack_pack_str_body(&mp_pck, "resource", 8);
 
-    /* type & labels */
-    msgpack_pack_map(&mp_pck, 2);
+        /* type & labels */
+        msgpack_pack_map(&mp_pck, 2);
 
-    /* type */
-    msgpack_pack_str(&mp_pck, 4);
-    msgpack_pack_str_body(&mp_pck, "type", 4);
-    msgpack_pack_str(&mp_pck, flb_sds_len(ctx->resource));
-    msgpack_pack_str_body(&mp_pck, ctx->resource,
-                          flb_sds_len(ctx->resource));
+        /* type */
+        msgpack_pack_str(&mp_pck, 4);
+        msgpack_pack_str_body(&mp_pck, "type", 4);
+        msgpack_pack_str(&mp_pck, flb_sds_len(ctx->resource));
+        msgpack_pack_str_body(&mp_pck, ctx->resource,
+                              flb_sds_len(ctx->resource));
 
-    msgpack_pack_str(&mp_pck, 6);
-    msgpack_pack_str_body(&mp_pck, "labels", 6);
+        msgpack_pack_str(&mp_pck, 6);
+        msgpack_pack_str_body(&mp_pck, "labels", 6);
 
-    if (strcmp(ctx->resource, "global") == 0) {
-      /* global resource has field project_id */
-      msgpack_pack_map(&mp_pck, 1);
-      msgpack_pack_str(&mp_pck, 10);
-      msgpack_pack_str_body(&mp_pck, "project_id", 10);
-      msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
-      msgpack_pack_str_body(&mp_pck,
-                            ctx->project_id, flb_sds_len(ctx->project_id));
-    } else if (strcmp(ctx->resource, "gce_instance") == 0) {
-      /* gce_instance resource has fields project_id, zone, instance_id */
-      msgpack_pack_map(&mp_pck, 3);
+        if (strcmp(ctx->resource, "global") == 0) {
+          /* global resource has field project_id */
+          msgpack_pack_map(&mp_pck, 1);
+          msgpack_pack_str(&mp_pck, 10);
+          msgpack_pack_str_body(&mp_pck, "project_id", 10);
+          msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
+          msgpack_pack_str_body(&mp_pck,
+                                ctx->project_id, flb_sds_len(ctx->project_id));
+        } else if (strcmp(ctx->resource, "gce_instance") == 0) {
+          /* gce_instance resource has fields project_id, zone, instance_id */
+          msgpack_pack_map(&mp_pck, 3);
 
-      msgpack_pack_str(&mp_pck, 10);
-      msgpack_pack_str_body(&mp_pck, "project_id", 10);
-      msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
-      msgpack_pack_str_body(&mp_pck,
-                            ctx->project_id, flb_sds_len(ctx->project_id));
+          msgpack_pack_str(&mp_pck, 10);
+          msgpack_pack_str_body(&mp_pck, "project_id", 10);
+          msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
+          msgpack_pack_str_body(&mp_pck,
+                                ctx->project_id, flb_sds_len(ctx->project_id));
 
-      msgpack_pack_str(&mp_pck, 4);
-      msgpack_pack_str_body(&mp_pck, "zone", 4);
-      msgpack_pack_str(&mp_pck, flb_sds_len(ctx->zone));
-      msgpack_pack_str_body(&mp_pck, ctx->zone, flb_sds_len(ctx->zone));
+          msgpack_pack_str(&mp_pck, 4);
+          msgpack_pack_str_body(&mp_pck, "zone", 4);
+          msgpack_pack_str(&mp_pck, flb_sds_len(ctx->zone));
+          msgpack_pack_str_body(&mp_pck, ctx->zone, flb_sds_len(ctx->zone));
 
-      msgpack_pack_str(&mp_pck, 11);
-      msgpack_pack_str_body(&mp_pck, "instance_id", 11);
-      msgpack_pack_str(&mp_pck, flb_sds_len(ctx->instance_id));
-      msgpack_pack_str_body(&mp_pck,
-                            ctx->instance_id, flb_sds_len(ctx->instance_id));
+          msgpack_pack_str(&mp_pck, 11);
+          msgpack_pack_str_body(&mp_pck, "instance_id", 11);
+          msgpack_pack_str(&mp_pck, flb_sds_len(ctx->instance_id));
+          msgpack_pack_str_body(&mp_pck,
+                                ctx->instance_id, flb_sds_len(ctx->instance_id));
+        }
     }
 
     msgpack_pack_str(&mp_pck, 7);
@@ -524,6 +600,20 @@ static int stackdriver_format(const void *data, size_t bytes,
 
     off = 0;
     while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
+        severity = 0;
+        trace = (const msgpack_object_str){0};
+        cluster_name = (const msgpack_object_str){0};
+        container_name = (const msgpack_object_str){0};
+        namespace_id = (const msgpack_object_str){0};
+        pod_id = (const msgpack_object_str){0};
+        stacktrace = (const msgpack_object_str){0};
+        message = (const msgpack_object_str){0};
+        json_payload = (const msgpack_object){0};
+        kubernetes = (const msgpack_object){0};
+        kubernetes_labels = (const msgpack_object){0};
+        http_request = (const msgpack_object){0};
+        new_message = NULL;
+
         /* Get timestamp */
         flb_time_pop_from_msgpack(&tms, &result, &obj);
 
@@ -531,27 +621,200 @@ static int stackdriver_format(const void *data, size_t bytes,
          * Pack entry
          *
          * {
+         *  "severity": "...",
+         *  "trace": "...",
          *  "logName": "...",
          *  "jsonPayload": {...},
+         *  "resources": {...},
+         *  "labels": {...},
          *  "timestamp": "..."
          * }
          */
+        int entries = 3;
+
         if (ctx->severity_key
             && get_severity_level(&severity, obj, ctx->severity_key) == 0) {
+            ++entries;
+        }
+
+        if (ctx->trace_key
+            && get_string(&trace, obj, ctx->trace_key) == 0) {
+            ++entries;
+        }
+
+        if (ctx->kubernetes_key
+            && get_map(&kubernetes, obj, ctx->kubernetes_key) == 0) {
+            ++entries;
+
+            if (get_map(&kubernetes_labels, &kubernetes, ctx->labels_key) == 0) {
+                ++entries;
+            }
+        }
+
+        if (ctx->http_request_key
+            && get_map(&http_request, obj, ctx->http_request_key) == 0) {
+            ++entries;
+        }
+
+        msgpack_pack_map(&mp_pck, entries);
+
+        if (severity) {
             /* additional field for severity */
-            msgpack_pack_map(&mp_pck, 4);
             msgpack_pack_str(&mp_pck, 8);
             msgpack_pack_str_body(&mp_pck, "severity", 8);
             msgpack_pack_int(&mp_pck, severity);
         }
-        else {
-            msgpack_pack_map(&mp_pck, 3);
+
+        if (trace.ptr != NULL) {
+            msgpack_object_string_kv(&mp_pck, "trace", 5, &trace);
         }
 
-        /* jsonPayload */
+        /* Get jsonPayload */
+        if (!ctx->json_key
+            || get_map(&json_payload, obj, ctx->json_key) != 0) {
+            json_payload = *obj;
+        }
+
+        /* Concatentate message with stacktrace if there's a separate stacktrace key. */
+        if (ctx->stacktrace_key
+            && get_string(&stacktrace, &json_payload, ctx->stacktrace_key) == 0
+            && get_string(&message, &json_payload, ctx->message_key) == 0) {
+
+            size_t size;
+            FILE *stream = open_memstream(&new_message, &size);
+            fwrite(message.ptr, message.size, 1, stream);
+            fwrite(" ", 1, 1, stream);
+            fwrite(stacktrace.ptr, stacktrace.size, 1, stream);
+            fwrite("\0", 1, 1, stream);
+            fclose(stream);
+            flb_debug("[out_stackdriver] new message: %s", new_message);
+        }
+
+        /* Write jsonPayload. */
         msgpack_pack_str(&mp_pck, 11);
         msgpack_pack_str_body(&mp_pck, "jsonPayload", 11);
-        msgpack_pack_object(&mp_pck, *obj);
+        if (new_message != NULL) {
+            msgpack_pack_map(&mp_pck, json_payload.via.map.size);
+
+            /* Write the serviceContext to enable error reporting */
+            msgpack_pack_str(&mp_pck, 14);
+            msgpack_pack_str_body(&mp_pck, "serviceContext", 14);
+            msgpack_pack_map(&mp_pck, 2);
+            msgpack_pack_str(&mp_pck, 7);
+            msgpack_pack_str_body(&mp_pck, "service", 7);
+            if (get_string(&service, &kubernetes_labels, ctx->service_label) == 0) {
+                msgpack_pack_str(&mp_pck, service.size);
+                msgpack_pack_str_body(&mp_pck, service.ptr, service.size);
+            }
+            else {
+                msgpack_pack_str(&mp_pck, 5);
+                msgpack_pack_str_body(&mp_pck, "other", 5);
+            }
+            msgpack_pack_str(&mp_pck, 7);
+            msgpack_pack_str_body(&mp_pck, "version", 7);
+            if (get_string(&version, &kubernetes_labels, ctx->version_label) == 0) {
+                msgpack_pack_str(&mp_pck, version.size);
+                msgpack_pack_str_body(&mp_pck, version.ptr, version.size);
+            }
+            else {
+                msgpack_pack_str(&mp_pck, 5);
+                msgpack_pack_str_body(&mp_pck, "other", 5);
+            }
+
+            for (i = 0; i < json_payload.via.map.size; i++) {
+                p = &json_payload.via.map.ptr[i];
+                if (flb_sds_cmp(ctx->message_key, p->key.via.str.ptr, p->key.via.str.size) == 0) {
+                    msgpack_pack_object(&mp_pck, p->key);
+                    msgpack_pack_str(&mp_pck, strlen(new_message));
+                    msgpack_pack_str_body(&mp_pck, new_message, strlen(new_message));
+                }
+                else if (flb_sds_cmp(
+                    ctx->stacktrace_key, p->key.via.str.ptr, p->key.via.str.size) == 0) {
+                    /* skip the stacktrace */
+                }
+                else {
+                    msgpack_pack_object(&mp_pck, p->key);
+                    msgpack_pack_object(&mp_pck, p->val);
+                }
+            }
+            free(new_message);
+        }
+        else {
+            msgpack_pack_object(&mp_pck, json_payload);
+        }
+
+        /* resource labels */
+        if (kubernetes.type != 0) {
+            log_msgpack_obj(verbose, &kubernetes, "kubernetes");
+
+            msgpack_pack_str(&mp_pck, 8);
+            msgpack_pack_str_body(&mp_pck, "resource", 8);
+            msgpack_pack_map(&mp_pck, 2);
+            msgpack_string_kv(&mp_pck, "type", 4, "container", 9);
+            msgpack_pack_str(&mp_pck, 6);
+            msgpack_pack_str_body(&mp_pck, "labels", 6);
+
+            int labels = 3;
+
+            if (get_string(&cluster_name, &kubernetes, ctx->cluster_name_key) == 0) {
+                ++labels;
+            }
+
+            if (get_string(&container_name, &kubernetes, ctx->container_name_key) == 0) {
+                ++labels;
+            }
+
+            if (get_string(&namespace_id, &kubernetes, ctx->namespace_id_key) == 0) {
+                ++labels;
+            }
+
+            if (get_string(&pod_id, &kubernetes, ctx->pod_id_key) == 0) {
+                ++labels;
+            }
+
+            msgpack_pack_map(&mp_pck, labels);
+
+            msgpack_string_kv(&mp_pck, "project_id", 10,
+                              ctx->project_id, flb_sds_len(ctx->project_id));
+            msgpack_string_kv(&mp_pck, "zone", 4,
+                              ctx->zone, flb_sds_len(ctx->zone));
+            msgpack_string_kv(&mp_pck, "instance_id", 11,
+                              ctx->instance_id, flb_sds_len(ctx->instance_id));
+
+            if (cluster_name.ptr != NULL) {
+                msgpack_object_string_kv(&mp_pck, "cluster_name", 12, &cluster_name);
+            }
+
+            if (container_name.ptr != NULL) {
+                msgpack_object_string_kv(&mp_pck, "container_name", 14, &container_name);
+            }
+
+            if (namespace_id.ptr != NULL) {
+                msgpack_object_string_kv(&mp_pck, "namespace_id", 12, &namespace_id);
+            }
+
+            if (pod_id.ptr != NULL) {
+                msgpack_object_string_kv(&mp_pck, "pod_id", 6, &pod_id);
+            }
+        }
+
+        /* additional labels from Kubernetes */
+        if (kubernetes_labels.type != 0) {
+            log_msgpack_obj(verbose, &kubernetes_labels, "labels");
+
+            msgpack_pack_str(&mp_pck, 6);
+            msgpack_pack_str_body(&mp_pck, "labels", 6);
+            msgpack_pack_object(&mp_pck, kubernetes_labels);
+        }
+
+        /* HTTP request */
+        if (http_request.type != 0) {
+            log_msgpack_obj(verbose, &kubernetes_labels, "httpRequest");
+
+            msgpack_pack_str(&mp_pck, 11);
+            msgpack_pack_str_body(&mp_pck, "httpRequest", 11);
+            msgpack_pack_object(&mp_pck, http_request);
+        }
 
         /* logName */
         len = snprintf(path, sizeof(path) - 1,
@@ -590,6 +853,8 @@ static int stackdriver_format(const void *data, size_t bytes,
 
     *out_data = out_buf;
     *out_size = flb_sds_len(out_buf);
+
+    flb_debug("[out_stackdriver] output data: %s", *out_data);
 
     return 0;
 }
@@ -631,7 +896,8 @@ static void cb_stackdriver_flush(const void *data, size_t bytes,
 
     /* Reformat msgpack to stackdriver JSON payload */
     ret = stackdriver_format(data, bytes, tag, tag_len,
-                             &payload_buf, &payload_size, ctx);
+                             &payload_buf, &payload_size, ctx,
+                             config->verbose);
     if (ret != 0) {
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_RETRY);

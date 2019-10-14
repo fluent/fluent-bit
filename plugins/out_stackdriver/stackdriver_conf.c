@@ -42,7 +42,8 @@ static inline int key_cmp(const char *str, int len, const char *cmp) {
 static int validate_resource(const char *res)
 {
     if (strcasecmp(res, "global") != 0 &&
-        strcasecmp(res, "gce_instance") != 0) {
+        strcasecmp(res, "gce_instance") != 0 &&
+        strcasecmp(res, "container") != 0) {
         return -1;
     }
 
@@ -260,11 +261,11 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     }
     if (!ctx->private_key) {
         flb_warn("[out_stackdriver] private_key is not defined, fetching "
-                 "it from metadata server");
+                 "it from metadata server?");
         ctx->metadata_server_auth = true;
     }
 
-    /* Resource type (only 'global' and 'gce_instance' are supported) */
+    /* Resource type (only 'global', 'gce_instance', and 'container' are supported) */
     tmp = flb_output_get_property("resource", ins);
     if (tmp) {
         if (validate_resource(tmp) != 0) {
@@ -283,6 +284,55 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     if (tmp) {
         ctx->severity_key = flb_sds_create(tmp);
     }
+
+    tmp = flb_output_get_property("trace_key", ins);
+    if (tmp) {
+        ctx->trace_key = flb_sds_create(tmp);
+    }
+
+    tmp = flb_output_get_property("json_key", ins);
+    if (tmp) {
+        ctx->json_key = flb_sds_create(tmp);
+    }
+
+    tmp = flb_output_get_property("kubernetes_key", ins);
+    if (tmp) {
+        ctx->kubernetes_key = flb_sds_create(tmp);
+    }
+
+    tmp = flb_output_get_property("stacktrace_key", ins);
+    if (tmp) {
+        ctx->stacktrace_key = flb_sds_create(tmp);
+    }
+
+    tmp = flb_output_get_property("http_request_key", ins);
+    if (tmp) {
+        ctx->http_request_key = flb_sds_create(tmp);
+    }
+    
+    tmp = flb_output_get_property("cluster_name_key", ins);
+    ctx->cluster_name_key = flb_sds_create(tmp ? tmp : "cluster_name");
+
+    tmp = flb_output_get_property("container_name_key", ins);
+    ctx->container_name_key = flb_sds_create(tmp ? tmp : "container_name");
+
+    tmp = flb_output_get_property("namespace_id_key", ins);
+    ctx->namespace_id_key = flb_sds_create(tmp ? tmp : "namespace_name");
+
+    tmp = flb_output_get_property("pod_id_key", ins);
+    ctx->pod_id_key = flb_sds_create(tmp ? tmp : "pod_id");
+
+    tmp = flb_output_get_property("labels_key", ins);
+    ctx->labels_key = flb_sds_create(tmp ? tmp : "labels");
+
+    tmp = flb_output_get_property("message_key", ins);
+    ctx->message_key = flb_sds_create(tmp ? tmp : "message");
+
+    tmp = flb_output_get_property("service_label", ins);
+    ctx->service_label = flb_sds_create(tmp ? tmp : "app");
+
+    tmp = flb_output_get_property("version_label", ins);
+    ctx->version_label = flb_sds_create(tmp ? tmp : "version");
 
     return ctx;
 }
@@ -304,6 +354,19 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
     flb_sds_destroy(ctx->token_uri);
     flb_sds_destroy(ctx->resource);
     flb_sds_destroy(ctx->severity_key);
+    flb_sds_destroy(ctx->trace_key);
+    flb_sds_destroy(ctx->json_key);
+    flb_sds_destroy(ctx->kubernetes_key);
+    flb_sds_destroy(ctx->stacktrace_key);
+    flb_sds_destroy(ctx->http_request_key);
+    flb_sds_destroy(ctx->cluster_name_key);
+    flb_sds_destroy(ctx->container_name_key);
+    flb_sds_destroy(ctx->namespace_id_key);
+    flb_sds_destroy(ctx->pod_id_key);
+    flb_sds_destroy(ctx->labels_key);
+    flb_sds_destroy(ctx->message_key);
+    flb_sds_destroy(ctx->service_label);
+    flb_sds_destroy(ctx->version_label);
 
     if (ctx->o) {
         flb_oauth2_destroy(ctx->o);

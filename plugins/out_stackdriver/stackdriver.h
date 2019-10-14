@@ -69,6 +69,19 @@ struct flb_stackdriver {
     /* other */
     flb_sds_t resource;
     flb_sds_t severity_key;
+    flb_sds_t trace_key;
+    flb_sds_t json_key;
+    flb_sds_t kubernetes_key;
+    flb_sds_t cluster_name_key;
+    flb_sds_t container_name_key;
+    flb_sds_t namespace_id_key;
+    flb_sds_t pod_id_key;
+    flb_sds_t labels_key;
+    flb_sds_t stacktrace_key;
+    flb_sds_t message_key;
+    flb_sds_t http_request_key;
+    flb_sds_t service_label;
+    flb_sds_t version_label;
 
     /* oauth2 context */
     struct flb_oauth2 *o;
