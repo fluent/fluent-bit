@@ -261,7 +261,7 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     }
     if (!ctx->private_key) {
         flb_warn("[out_stackdriver] private_key is not defined, fetching "
-                 "it from metadata server?");
+                 "it from metadata server");
         ctx->metadata_server_auth = true;
     }
 
@@ -298,11 +298,6 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     tmp = flb_output_get_property("kubernetes_key", ins);
     if (tmp) {
         ctx->kubernetes_key = flb_sds_create(tmp);
-    }
-
-    tmp = flb_output_get_property("stacktrace_key", ins);
-    if (tmp) {
-        ctx->stacktrace_key = flb_sds_create(tmp);
     }
 
     tmp = flb_output_get_property("http_request_key", ins);
@@ -362,7 +357,6 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
     flb_sds_destroy(ctx->trace_key);
     flb_sds_destroy(ctx->json_key);
     flb_sds_destroy(ctx->kubernetes_key);
-    flb_sds_destroy(ctx->stacktrace_key);
     flb_sds_destroy(ctx->http_request_key);
     flb_sds_destroy(ctx->cluster_name_key);
     flb_sds_destroy(ctx->container_name_key);

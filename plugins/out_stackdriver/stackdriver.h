@@ -77,7 +77,6 @@ struct flb_stackdriver {
     flb_sds_t namespace_id_key;
     flb_sds_t pod_id_key;
     flb_sds_t labels_key;
-    flb_sds_t stacktrace_key;
     flb_sds_t message_key;
     flb_sds_t http_request_key;
     flb_sds_t service_label;
