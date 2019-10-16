@@ -182,7 +182,7 @@ static inline int instance_id(struct flb_config *config)
         return 0;
     }
 
-    entry = mk_list_entry_last(&config->filters, struct flb_output_instance,
+    entry = mk_list_entry_last(&config->outputs, struct flb_output_instance,
                                _head);
     return (entry->id + 1);
 }
