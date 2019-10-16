@@ -18,6 +18,7 @@ endif()
 # Update CFLAGS
 if (MSVC)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W3")
+  add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 else()
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
 endif()
