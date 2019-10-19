@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_parser.h>
+#include <fluent-bit/flb_encode.h>
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>
 #include <fluent-bit/flb_hash.h>
@@ -207,8 +208,7 @@ int flb_tail_file_pack_line(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
 
     msgpack_pack_str(mp_pck, flb_sds_len(ctx->key));
     msgpack_pack_str_body(mp_pck, ctx->key, flb_sds_len(ctx->key));
-    msgpack_pack_str(mp_pck, data_size);
-    msgpack_pack_str_body(mp_pck, data, data_size);
+    flb_msgpack_iso_8859_2_as_utf8(mp_pck, data, data_size);
 
     return 0;
 }

@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_encode.h>
 #include <fluent-bit/flb_kv.h>
 
 #include "tail_config.h"
@@ -232,8 +233,7 @@ static inline void flb_tail_mult_append_raw(char *buf, int size,
                                             struct flb_tail_config *config)
 {
     /* Append the raw string */
-    msgpack_pack_str(&file->mult_pck, size);
-    msgpack_pack_str_body(&file->mult_pck, buf, size);
+    flb_msgpack_iso_8859_2_as_utf8(&file->mult_pck, buf, size);
 }
 
 /* Check if the last key value type of a map is string or not */
