@@ -387,6 +387,7 @@ static uint64_t get_docker_mem_limit(char *id)
 
         if (!f) {
             perror(limit_file);
+            flb_free(limit_file);
             return 0;
         }
 
