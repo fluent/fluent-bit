@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_encode.h>
 
 #include "syslog.h"
 #include "syslog_conn.h"
@@ -44,7 +45,7 @@ static inline int pack_line(struct flb_syslog *ctx,
 
     msgpack_pack_array(&mp_pck, 2);
     flb_time_append_to_msgpack(time, &mp_pck, 0);
-    msgpack_sbuffer_write(&mp_sbuf, data, data_size);
+    flb_msgpack_encode_utf8(ctx->encoding, &mp_pck, data, data_size);
 
     flb_input_chunk_append_raw(ctx->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);

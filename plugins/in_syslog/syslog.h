@@ -23,6 +23,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_encode.h>
 
 /* Syslog modes */
 #define FLB_SYSLOG_UNIX_TCP  1
@@ -55,6 +56,9 @@ struct flb_syslog {
     /* Buffers setup */
     size_t buffer_max_size;
     size_t buffer_chunk_size;
+
+    /* text encoding, NULL for UTF8 */
+    flb_encoder encoding;
 
     /* Configuration */
     struct flb_parser *parser;

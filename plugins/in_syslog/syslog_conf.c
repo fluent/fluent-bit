@@ -114,6 +114,15 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
         ctx->buffer_max_size  = flb_utils_size_to_bytes(tmp);
     }
 
+    /* Config: Text encoding other than UTF-8 */
+    tmp = flb_input_get_property("encoding", i_ins);
+    if (tmp) {
+        ctx->encoding = flb_get_encoder(tmp);
+        if (!ctx->encoding) {
+            flb_error("[in_syslog] encoding '%s' is not supported", tmp);
+        }
+    }
+
     /* Parser */
     tmp = flb_input_get_property("parser", ins);
     if (tmp) {
