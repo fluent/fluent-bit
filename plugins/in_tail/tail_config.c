@@ -159,6 +159,15 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
         }
     }
 
+    /* Config: Text encoding other than UTF-8 */
+    tmp = flb_input_get_property("encoding", i_ins);
+    if (tmp) {
+        ctx->encoding = flb_get_encoder(tmp);
+        if (!ctx->encoding) {
+            flb_error("[in_tail] encoding '%s' is not supported", tmp);
+        }
+    }
+
     /* Validate buffer limit */
     if (ctx->buf_chunk_size > ctx->buf_max_size) {
         flb_plg_error(ctx->ins, "buffer_max_size must be >= buffer_chunk");

@@ -23,6 +23,22 @@
 
 #include <msgpack.h>
 
-void flb_msgpack_iso_8859_2_as_utf8(msgpack_packer* pk, const void* b, size_t l);
+typedef void *flb_encoder;
+
+#ifdef FLB_HAVE_ENCODE
+flb_encoder flb_get_encoder(const char *encoding);
+void flb_msgpack_encode_utf8(flb_encoder enc, msgpack_packer* pk, const void* b, size_t l);
+#else
+static inline flb_encoder flb_get_encoder(const char *encoding)
+{
+    return NULL;
+}
+
+static inline void flb_msgpack_encode_utf8(flb_encoder enc, msgpack_packer* pk, const void* b, size_t l)
+{
+    msgpack_pack_str(pk, l);
+    msgpack_pack_str_body(pk, b, l);
+}
+#endif
 
 #endif /* FLB_ENCODE_H */

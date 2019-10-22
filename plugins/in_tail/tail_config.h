@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_macros.h>
+#include <fluent-bit/flb_encode.h>
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>
 #endif
@@ -79,6 +80,8 @@ struct flb_tail_config {
     flb_sds_t key;             /* key for unstructured record  */
     int   skip_long_lines;     /* skip long lines              */
     int   exit_on_eof;         /* exit fluent-bit on EOF, test */
+
+    flb_encoder encoding;      /* text encoding, NULL for UTF8 */
 
     /* Database */
 #ifdef FLB_HAVE_SQLDB

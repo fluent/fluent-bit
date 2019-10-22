@@ -233,7 +233,7 @@ static inline void flb_tail_mult_append_raw(char *buf, int size,
                                             struct flb_tail_config *config)
 {
     /* Append the raw string */
-    flb_msgpack_iso_8859_2_as_utf8(&file->mult_pck, buf, size);
+    flb_msgpack_encode_utf8(config->encoding, &file->mult_pck, buf, size);
 }
 
 /* Check if the last key value type of a map is string or not */

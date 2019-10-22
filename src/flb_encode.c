@@ -23,45 +23,48 @@
 
 #ifdef FLB_HAVE_ENCODE
 #include <tutf8e.h>
-#endif
 
-const size_t TUTF8_DEFAULT_BUFFER = 256;
+#define TUTF8_BUFFER_SIZE 256
 
-void flb_msgpack_iso_8859_2_as_utf8(msgpack_packer* pk, const void* b, size_t l)
+flb_encoder flb_get_encoder(const char *encoding)
 {
-#ifdef FLB_HAVE_ENCODE
-    size_t size = 0;
-    if (!tutf8e_buffer_length_iso_8859_2(b, l, &size) && size)
-    {
-        /* Already UTF8 encoded? */
-        if (size == l) {
-        }
-        /* Small enough for encoding to stack? */
-        else if (size<=TUTF8_DEFAULT_BUFFER)
-        {
-            size = TUTF8_DEFAULT_BUFFER;
-            char buffer[TUTF8_DEFAULT_BUFFER];
-            if (!tutf8e_buffer_encode_iso_8859_2(buffer, &size, b, l) && size) {
-                msgpack_pack_str(pk, size);
-                msgpack_pack_str_body(pk, buffer, size);
-                return;
+    return tutf8e_encoder(encoding);
+}
+
+void flb_msgpack_encode_utf8(flb_encoder enc, msgpack_packer* pk, const void* b, size_t l)
+{
+    if (enc) {
+        size_t size = 0;
+        if (!tutf8e_encoder_buffer_length(enc, b, l, &size) && size) {
+            /* Already UTF8 encoded? */
+            if (size == l) {
+            }
+            /* Small enough for encoding to stack? */
+            else if (size<=TUTF8_BUFFER_SIZE) {
+                char buffer[TUTF8_BUFFER_SIZE];
+                if (!tutf8e_encoder_buffer_encode(enc, b, l, buffer, &size) && size) {
+                    msgpack_pack_str(pk, size);
+                    msgpack_pack_str_body(pk, buffer, size);
+                    return;
+                }
+            }
+            /* malloc/free the encoded copy */
+            else {
+                char *buffer = (char *) flb_malloc(size);
+                if (buffer && !tutf8e_encoder_buffer_encode(enc, b, l, buffer, &size) && size) {
+                    msgpack_pack_str(pk, size);
+                    msgpack_pack_str_body(pk, buffer, size);
+                    free(buffer);
+                    return;
+                }
+                free(buffer);
             }
         }
-        /* malloc/free the encoded copy */
-        else {
-            char *buffer = (char *) flb_malloc(size);
-            if (buffer && !tutf8e_buffer_encode_iso_8859_2(buffer, &size, b, l) && size) {
-                msgpack_pack_str(pk, size);
-                msgpack_pack_str_body(pk, buffer, size);
-                free(buffer);
-                return;
-            }                        
-            free(buffer);
-        }
     }
-#endif
 
     /* Could not or need not encode to UTF8 */
     msgpack_pack_str(pk, l);
     msgpack_pack_str_body(pk, b, l);
 }
+#endif
+
