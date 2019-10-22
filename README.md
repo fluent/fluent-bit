@@ -110,39 +110,39 @@ Fluent Bit is fully supported on Windows environments, get started with the foll
 
 | name | title | description |
 | :--- | :--- | :--- |
-| [grep](https://docs.fluentbit.io/manual/filter/grep.md) | Grep | Match or exclude specific records by patterns. |
-| [kubernetes](https://docs.fluentbit.io/manual/filter/kubernetes.md) | Kubernetes | Enrich logs with Kubernetes Metadata. |
-| [lua](https://docs.fluentbit.io/manual/filter/lua.md) | Lua | Filter records using Lua Scripts. |
-| [parser](https://docs.fluentbit.io/manual/filter/parser.md) | Parser | Parse record. |
-| [record\_modifier](https://docs.fluentbit.io/manual/filter/record_modifier.md) | Record Modifier | Modify record. |
-| [stdout](https://docs.fluentbit.io/manual/filter/stdout.md) | Stdout | Print records to the standard output interface. |
-| [throttle](https://docs.fluentbit.io/manual/filter/throttle.md) | Throttle | Apply rate limit to event flow. |
-| [nest](https://docs.fluentbit.io/manual/filter/nest.md) | Nest | Nest records under a specified key |
-| [modify](https://docs.fluentbit.io/manual/filter/modify.md) | Modify | Modifications to record. |
+| [grep](https://docs.fluentbit.io/manual/filter/grep) | Grep | Match or exclude specific records by patterns. |
+| [kubernetes](https://docs.fluentbit.io/manual/filter/kubernetes) | Kubernetes | Enrich logs with Kubernetes Metadata. |
+| [lua](https://docs.fluentbit.io/manual/filter/lua) | Lua | Filter records using Lua Scripts. |
+| [parser](https://docs.fluentbit.io/manual/filter/parser) | Parser | Parse record. |
+| [record\_modifier](https://docs.fluentbit.io/manual/filter/record_modifier) | Record Modifier | Modify record. |
+| [stdout](https://docs.fluentbit.io/manual/filter/stdout) | Stdout | Print records to the standard output interface. |
+| [throttle](https://docs.fluentbit.io/manual/filter/throttle) | Throttle | Apply rate limit to event flow. |
+| [nest](https://docs.fluentbit.io/manual/filter/nest) | Nest | Nest records under a specified key |
+| [modify](https://docs.fluentbit.io/manual/filter/modify) | Modify | Modifications to record. |
 
 #### Output Plugins
 
 | name | title | description |
 | :--- | :--- | :--- |
-| [azure](https://docs.fluentbit.io/manual/output/azure.md) | Azure Log Analytics | Ingest records into Azure Log Analytics |
-| [bigquery](https://docs.fluentbit.io/manual/output/bigquery.md) | BigQuery | Ingest records into Google BigQuery |
-| [counter](https://docs.fluentbit.io/manual/output/counter.md) | Count Records | Simple records counter. |
-| [datadog](https://docs.fluentbit.io/manual/output/datadog.md) | Datadog | Ingest logs into Datadog. |
-| [es](https://docs.fluentbit.io/manual/output/elasticsearch.md) | Elasticsearch | flush records to a Elasticsearch server. |
-| [file](https://docs.fluentbit.io/manual/output/file.md) | File | Flush records to a file. |
-| [flowcounter](https://docs.fluentbit.io/manual/output/flowcounter.md) | FlowCounter | Count records. |
-| [forward](https://docs.fluentbit.io/manual/output/forward.md) | Forward | Fluentd forward protocol. |
-| [http](https://docs.fluentbit.io/manual/output/http.md) | HTTP | Flush records to an HTTP end point. |
-| [influxdb](https://docs.fluentbit.io/manual/output/influxdb.md) | InfluxDB | Flush records to InfluxDB time series database. |
-| [kafka](https://docs.fluentbit.io/manual/output/kafka.md) | Apache Kafka | Flush records to Apache Kafka |
-| [kafka-rest](https://docs.fluentbit.io/manual/output/kafka-rest-proxy.md) | Kafka REST Proxy | Flush records to a Kafka REST Proxy server. |
-| [stackdriver](https://docs.fluentbit.io/manual/output/stackdriver.md) | Google Stackdriver Logging | Flush records to Google Stackdriver Logging service. |
-| [stdout](https://docs.fluentbit.io/manual/output/stdout.md) | Standard Output | Flush records to the standard output. |
-| [splunk](https://docs.fluentbit.io/manual/output/splunk.md) | Splunk | Flush records to a Splunk Enterprise service |
-| [tcp](https://docs.fluentbit.io/manual/output/tcp.md) | TCP & TLS | flush records to a TCP server. |
-| [td](https://docs.fluentbit.io/manual/output/td.md) | [Treasure Data](http://www.treasuredata.com) | Flush records to the [Treasure Data](http://www.treasuredata.com) cloud service for analytics. |
-| [nats](https://docs.fluentbit.io/manual/output/nats.md) | NATS | flush records to a NATS server. |
-| [null](https://docs.fluentbit.io/manual/output/null.md) | NULL | throw away events. |
+| [azure](https://docs.fluentbit.io/manual/output/azure) | Azure Log Analytics | Ingest records into Azure Log Analytics |
+| [bigquery](https://docs.fluentbit.io/manual/output/bigquery) | BigQuery | Ingest records into Google BigQuery |
+| [counter](https://docs.fluentbit.io/manual/output/counter) | Count Records | Simple records counter. |
+| [datadog](https://docs.fluentbit.io/manual/output/datadog) | Datadog | Ingest logs into Datadog. |
+| [es](https://docs.fluentbit.io/manual/output/elasticsearch) | Elasticsearch | flush records to a Elasticsearch server. |
+| [file](https://docs.fluentbit.io/manual/output/file) | File | Flush records to a file. |
+| [flowcounter](https://docs.fluentbit.io/manual/output/flowcounter) | FlowCounter | Count records. |
+| [forward](https://docs.fluentbit.io/manual/output/forward) | Forward | Fluentd forward protocol. |
+| [http](https://docs.fluentbit.io/manual/output/http) | HTTP | Flush records to an HTTP end point. |
+| [influxdb](https://docs.fluentbit.io/manual/output/influxdb) | InfluxDB | Flush records to InfluxDB time series database. |
+| [kafka](https://docs.fluentbit.io/manual/output/kafka) | Apache Kafka | Flush records to Apache Kafka |
+| [kafka-rest](https://docs.fluentbit.io/manual/output/kafka-rest-proxy) | Kafka REST Proxy | Flush records to a Kafka REST Proxy server. |
+| [stackdriver](https://docs.fluentbit.io/manual/output/stackdriver) | Google Stackdriver Logging | Flush records to Google Stackdriver Logging service. |
+| [stdout](https://docs.fluentbit.io/manual/output/stdout) | Standard Output | Flush records to the standard output. |
+| [splunk](https://docs.fluentbit.io/manual/output/splunk) | Splunk | Flush records to a Splunk Enterprise service |
+| [tcp](https://docs.fluentbit.io/manual/output/tcp) | TCP & TLS | flush records to a TCP server. |
+| [td](https://docs.fluentbit.io/manual/output/td) | [Treasure Data](http://www.treasuredata.com) | Flush records to the [Treasure Data](http://www.treasuredata.com) cloud service for analytics. |
+| [nats](https://docs.fluentbit.io/manual/output/nats) | NATS | flush records to a NATS server. |
+| [null](https://docs.fluentbit.io/manual/output/null) | NULL | throw away events. |
 
 ## Contributing
 
