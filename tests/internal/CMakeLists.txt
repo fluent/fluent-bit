@@ -17,6 +17,7 @@ set(UNIT_TESTS_FILES
   utils.c
   gzip.c
   gelf.c
+  config_map.c
   )
 
 if(FLB_STREAM_PROCESSOR)
