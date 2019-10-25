@@ -22,6 +22,7 @@ set(src
   flb_filter.c
   flb_output.c
   flb_config.c
+  flb_config_map.c
   flb_network.c
   flb_utils.c
   flb_slist.c
