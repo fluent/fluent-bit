@@ -7,6 +7,7 @@ set(UNIT_TESTS_FILES
   pipe.c
   sds.c
   sha512.c
+  slist.c
   router.c
   parser.c
   network.c
