@@ -18,27 +18,27 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_ENCODE_H
-#define FLB_ENCODE_H
+#ifndef FLB_ENCODER_H
+#define FLB_ENCODER_H
 
 #include <msgpack.h>
 
 typedef void *flb_encoder;
 
-#ifdef FLB_HAVE_ENCODE
+#ifdef FLB_HAVE_UTF8_ENCODER
 flb_encoder flb_get_encoder(const char *encoding);
-void flb_msgpack_encode_utf8(flb_encoder enc, msgpack_packer* pk, const void* b, size_t l);
+void flb_msgpack_encode_utf8(flb_encoder encoder, const char *module, msgpack_packer *pk, const void *b, size_t l);
 #else
 static inline flb_encoder flb_get_encoder(const char *encoding)
 {
     return NULL;
 }
 
-static inline void flb_msgpack_encode_utf8(flb_encoder enc, msgpack_packer* pk, const void* b, size_t l)
+static inline void flb_msgpack_encode_utf8(flb_encoder encoder, const char *module, msgpack_packer *pk, const void *b, size_t l)
 {
     msgpack_pack_str(pk, l);
     msgpack_pack_str_body(pk, b, l);
 }
 #endif
 
-#endif /* FLB_ENCODE_H */
+#endif /* FLB_ENCODER_H */

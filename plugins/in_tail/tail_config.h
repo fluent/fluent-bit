@@ -25,7 +25,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_macros.h>
-#include <fluent-bit/flb_encode.h>
+#include <fluent-bit/flb_encoder.h>
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>
 #endif

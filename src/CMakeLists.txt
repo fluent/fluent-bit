@@ -108,7 +108,12 @@ if(FLB_HTTP_CLIENT_DEBUG)
   set(src
     ${src}
     "flb_http_client_debug.c"
-    )
+endif()
+
+if(FLB_UTF8_ENCODER)
+  set(src
+    ${src}
+    "flb_encoder.c"
 endif()
 
 if(FLB_LUAJIT)

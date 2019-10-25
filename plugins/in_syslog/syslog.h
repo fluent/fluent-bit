@@ -23,7 +23,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
-#include <fluent-bit/flb_encode.h>
+#include <fluent-bit/flb_encoder.h>
 
 /* Syslog modes */
 #define FLB_SYSLOG_UNIX_TCP  1
