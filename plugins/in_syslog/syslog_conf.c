@@ -35,6 +35,7 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *i_ins,
 {
     const char *tmp;
     char port[16];
+    int64_t size;
     struct flb_syslog *ctx;
 
     ctx = flb_calloc(1, sizeof(struct flb_syslog));
@@ -119,7 +120,13 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *i_ins,
         ctx->buffer_chunk_size = FLB_SYSLOG_CHUNK; /* 32KB */
     }
     else {
-        ctx->buffer_chunk_size = flb_utils_size_to_bytes(tmp);
+        size = flb_utils_size_to_bytes(tmp);
+        if (size < 1) {
+            flb_error("[in_syslog] invalid buffer_chunk_size '%s'", tmp);
+            syslog_conf_destroy(ctx);
+            return NULL;
+        }
+        ctx->buffer_chunk_size = size;
     }
 
     /* Buffer Max Size */
