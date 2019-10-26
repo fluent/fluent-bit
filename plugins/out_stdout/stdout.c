@@ -47,8 +47,10 @@ static int cb_stdout_init(struct flb_output_instance *ins,
 
     ret = flb_output_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
+        flb_free(ctx);
         return -1;
     }
+
     ctx->out_format = FLB_PACK_JSON_FORMAT_NONE;
     tmp = flb_output_get_property("format", ins);
     if (tmp) {
