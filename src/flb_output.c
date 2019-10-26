@@ -140,6 +140,11 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
     }
 #endif
 
+    /* destroy config map */
+    if (ins->config_map) {
+        flb_config_map_destroy(ins->config_map);
+    }
+
     /* release properties */
     flb_output_free_properties(ins);
 
@@ -504,6 +509,7 @@ int flb_output_init(struct flb_config *config)
     const char *name;
     struct mk_list *tmp;
     struct mk_list *head;
+    struct mk_list *config_map;
     struct flb_output_instance *ins;
     struct flb_output_plugin *p;
 
@@ -566,6 +572,33 @@ int flb_output_init(struct flb_config *config)
             }
         }
 #endif
+        /*
+         * Before to call the initialization callback, make sure that the received
+         * configuration parameters are valid if the plugin is registering a config map.
+         */
+        if (p->config_map) {
+            /*
+             * Create a dynamic version of the configmap that will be used by the specific
+             * instance in question.
+             */
+            config_map = flb_config_map_create(p->config_map);
+            if (!config_map) {
+                flb_error("[output] error loading config map for '%s' plugin",
+                          p->name);
+                return -1;
+            }
+            ins->config_map = config_map;
+
+            /* Validate incoming properties against config map */
+            ret = flb_config_map_properties_check(ins->p->name,
+                                                  &ins->properties, ins->config_map);
+            if (ret == -1) {
+                flb_output_instance_destroy(ins);
+                return -1;
+            }
+        }
+
+        /* Initialize plugin through it 'init callback' */
         ret = p->cb_init(ins, config, ins->data);
         mk_list_init(&ins->th_queue);
         if (ret == -1) {
