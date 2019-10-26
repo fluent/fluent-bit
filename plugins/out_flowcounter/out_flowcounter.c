@@ -30,7 +30,6 @@
 
 #include <msgpack.h>
 
-
 #include "out_flowcounter.h"
 
 #define PLUGIN_NAME "out_flowcounter"
@@ -76,14 +75,6 @@ static int configure(struct flb_out_fcount_config *ctx,
             ctx->unit = FLB_UNIT_DAY;
             ctx->tick = 86400;
         }
-    }
-
-    pval = flb_output_get_property("event_based", ins);
-    if (pval != NULL && flb_utils_bool(pval)) {
-        ctx->event_based = FLB_TRUE;
-    }
-    else {
-        ctx->event_based = FLB_FALSE;
     }
 
     flb_debug("[%s]unit is \"%s\"",PLUGIN_NAME, ctx->unit);
@@ -136,17 +127,26 @@ static void count_up(msgpack_object *obj,
 }
 
 static int out_fcount_init(struct flb_output_instance *ins, struct flb_config *config,
-                   void *data)
+                           void *data)
 {
+    int ret;
     (void) data;
 
     struct flb_out_fcount_config *ctx = NULL;
-    ctx = (struct flb_out_fcount_config*)
-        flb_malloc(sizeof(struct flb_out_fcount_config));
+
+    ctx = flb_malloc(sizeof(struct flb_out_fcount_config));
     if (ctx == NULL) {
+        flb_errno();
         flb_error("[%s] malloc failed",PLUGIN_NAME);
         return -1;
     }
+
+    ret = flb_output_config_map_set(ins, (void *) ctx);
+    if (ret == -1) {
+        flb_free(ctx);
+        return -1;
+    }
+
     configure(ctx, ins, config);
     flb_output_set_context(ins, ctx);
 
@@ -246,11 +246,29 @@ static int out_fcount_exit(void *data, struct flb_config* config)
     return 0;
 }
 
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "unit", NULL,
+     0,
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "event_based", "false",
+     offsetof(struct flb_out_fcount_config, event_based),
+     NULL
+    },
+
+    /* EOF */
+    {0, NULL, NULL, 0, NULL}
+};
+
 struct flb_output_plugin out_flowcounter_plugin = {
     .name         = "flowcounter",
     .description  = "FlowCounter",
     .cb_init      = out_fcount_init,
     .cb_flush     = out_fcount_flush,
     .cb_exit      = out_fcount_exit,
+    .config_map   = config_map,
     .flags        = 0,
 };
