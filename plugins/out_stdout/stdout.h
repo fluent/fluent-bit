@@ -21,10 +21,11 @@
 #ifndef FLB_OUT_STDOUT
 #define FLB_OUT_STDOUT
 
+
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_sds.h>
 
-struct flb_out_stdout_config {
+struct flb_stdout {
     int out_format;
     int json_date_format;
     flb_sds_t json_date_key;
