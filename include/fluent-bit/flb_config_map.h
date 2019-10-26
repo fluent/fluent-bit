@@ -30,6 +30,7 @@
 #define FLB_CONFIG_MAP_INT      1    /* integer */
 #define FLB_CONFIG_MAP_BOOL     2    /* boolean */
 #define FLB_CONFIG_MAP_DOUBLE   3    /* double */
+#define FLB_CONFIG_MAP_SIZE     4    /* string size to integer (e.g: 2M) */
 
 #define FLB_CONFIG_MAP_CLIST    30   /* comma separated list of strings */
 #define FLB_CONFIG_MAP_CLIST_1  31   /* split up to 1 node  + remaining data */
@@ -47,6 +48,7 @@ typedef union {
     int boolean;                  /* FLB_CONFIG_MAP_BOOL */
     int i_num;                    /* FLB_CONFIG_MAP_INT */
     double d_num;                 /* FLB_CONFIG_MAP_DOUBLE */
+    size_t s_num;                 /* FLB_CONFIG_MAP_SIZE */
     flb_sds_t str;                /* FLB_CONFIG_MAP_STR */
     struct mk_list *list;         /* FLB_CONFIG_MAP_CLIST and FLB_CONFIG_MAP_SLIST */
 } config_map_val;

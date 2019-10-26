@@ -135,6 +135,13 @@ struct mk_list *flb_config_map_create(struct flb_config_map *map)
             }
         }
         else if (m->type == FLB_CONFIG_MAP_BOOL) {
+            ret = flb_utils_bool(m->def_value);
+            if (ret == -1) {
+                flb_error("[config map] invalid default value for boolean '%s=%s'",
+                          m->name, m->def_value);
+                flb_config_map_destroy(list);
+                return NULL;
+            }
             new->value.boolean = flb_utils_bool(m->def_value);
         }
         else if (m->type == FLB_CONFIG_MAP_INT) {
@@ -142,6 +149,9 @@ struct mk_list *flb_config_map_create(struct flb_config_map *map)
         }
         else if (m->type == FLB_CONFIG_MAP_DOUBLE) {
             new->value.d_num = atof(m->def_value);
+        }
+        else if (m->type == FLB_CONFIG_MAP_SIZE) {
+            new->value.s_num = flb_utils_size_to_bytes(m->def_value);
         }
         else if (new->type >= FLB_CONFIG_MAP_CLIST &&
                  new->type <= FLB_CONFIG_MAP_SLIST_4) {
@@ -287,6 +297,7 @@ int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *co
     int *m_bool;
     int *m_i_num;
     double *m_d_num;
+    size_t *m_s_num;
     flb_sds_t *m_str;
     struct flb_kv *kv;
     struct mk_list *head;
@@ -314,6 +325,10 @@ int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *co
         else if (m->type == FLB_CONFIG_MAP_DOUBLE) {
             m_d_num = (double *) (base + m->offset);
             *m_d_num = m->value.d_num;
+        }
+        else if (m->type == FLB_CONFIG_MAP_SIZE) {
+            m_i_num = (int *) (base + m->offset);
+            *m_i_num = m->value.i_num;
         }
         else if (m->type == FLB_CONFIG_MAP_BOOL) {
             m_bool = (int *) (base + m->offset);
@@ -364,9 +379,19 @@ int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *co
             m_d_num = (double *) (base + m->offset);
             *m_d_num = atof(kv->val);
         }
+        else if (m->type == FLB_CONFIG_MAP_SIZE) {
+            m_s_num = (size_t *) (base + m->offset);
+            *m_s_num = flb_utils_size_to_bytes(kv->val);
+        }
         else if (m->type == FLB_CONFIG_MAP_BOOL) {
             m_bool = (int *) (base + m->offset);
-            *m_bool = flb_utils_bool(kv->val);
+            ret = flb_utils_bool(kv->val);
+            if (ret == -1) {
+                flb_error("[config map] invalid value for boolean property '%s=%s'",
+                          m->name, kv->val);
+                return -1;
+            }
+            *m_bool = ret;
         }
         else if (m->type >= FLB_CONFIG_MAP_CLIST ||
                  m->type <= FLB_CONFIG_MAP_SLIST_4) {
