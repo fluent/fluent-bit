@@ -201,8 +201,8 @@ static char *elasticsearch_format(const void *data, size_t bytes,
 
     /* Copy logstash prefix if logstash format is enabled */
     if (ctx->logstash_format == FLB_TRUE) {
-        memcpy(logstash_index, ctx->logstash_prefix, ctx->logstash_prefix_len);
-        logstash_index[ctx->logstash_prefix_len] = '\0';
+        memcpy(logstash_index, ctx->logstash_prefix, flb_sds_len(ctx->logstash_prefix));
+        logstash_index[flb_sds_len(ctx->logstash_prefix)] = '\0';
     }
 
     /*
@@ -263,16 +263,17 @@ static char *elasticsearch_format(const void *data, size_t bytes,
         map_size = map.via.map.size;
 
         es_index_custom_len = 0;
-        if (ctx->logstash_prefix_key_len != 0) {
+        if (ctx->logstash_prefix_key) {
             for (i = 0; i < map_size; i++) {
                 key = map.via.map.ptr[i].key;
                 if (key.type != MSGPACK_OBJECT_STR) {
                     continue;
                 }
-                if (key.via.str.size != ctx->logstash_prefix_key_len) {
+                if (key.via.str.size != flb_sds_len(ctx->logstash_prefix_key)) {
                     continue;
                 }
-                if (strncmp(key.via.str.ptr, ctx->logstash_prefix_key, ctx->logstash_prefix_key_len) != 0) {
+                if (strncmp(key.via.str.ptr, ctx->logstash_prefix_key,
+                            flb_sds_len(ctx->logstash_prefix_key)) != 0) {
                     continue;
                 }
                 val = map.via.map.ptr[i].val;
@@ -302,8 +303,8 @@ static char *elasticsearch_format(const void *data, size_t bytes,
         msgpack_pack_map(&tmp_pck, map_size + 1);
 
         /* Append the time key */
-        msgpack_pack_str(&tmp_pck, ctx->time_key_len);
-        msgpack_pack_str_body(&tmp_pck, ctx->time_key, ctx->time_key_len);
+        msgpack_pack_str(&tmp_pck, flb_sds_len(ctx->time_key));
+        msgpack_pack_str_body(&tmp_pck, ctx->time_key, flb_sds_len(ctx->time_key));
 
         /* Format the time */
         gmtime_r(&tms.tm.tv_sec, &tm);
@@ -322,7 +323,7 @@ static char *elasticsearch_format(const void *data, size_t bytes,
             if (es_index_custom_len > 0) {
                 p = logstash_index + es_index_custom_len;
             } else {
-                p = logstash_index + ctx->logstash_prefix_len;
+                p = logstash_index + flb_sds_len(ctx->logstash_prefix);
             }
             *p++ = '-';
 
@@ -348,8 +349,8 @@ static char *elasticsearch_format(const void *data, size_t bytes,
 
         /* Tag Key */
         if (ctx->include_tag_key == FLB_TRUE) {
-            msgpack_pack_str(&tmp_pck, ctx->tag_key_len);
-            msgpack_pack_str_body(&tmp_pck, ctx->tag_key, ctx->tag_key_len);
+            msgpack_pack_str(&tmp_pck, flb_sds_len(ctx->tag_key));
+            msgpack_pack_str_body(&tmp_pck, ctx->tag_key, flb_sds_len(ctx->tag_key));
             msgpack_pack_str(&tmp_pck, tag_len);
             msgpack_pack_str_body(&tmp_pck, tag, tag_len);
         }
@@ -640,6 +641,124 @@ int cb_es_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "index", FLB_ES_DEFAULT_INDEX,
+     offsetof(struct flb_elasticsearch, index),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "type", FLB_ES_DEFAULT_TYPE,
+     offsetof(struct flb_elasticsearch, type),
+     NULL
+    },
+
+    /* HTTP Authentication */
+    {
+     FLB_CONFIG_MAP_STR, "http_user", NULL,
+     offsetof(struct flb_elasticsearch, http_user),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "http_passwd", "",
+     offsetof(struct flb_elasticsearch, http_passwd),
+     NULL
+    },
+
+    /* Logstash compatibility */
+    {
+     FLB_CONFIG_MAP_BOOL, "logstash_format", "false",
+     offsetof(struct flb_elasticsearch, logstash_format),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "logstash_prefix", FLB_ES_DEFAULT_PREFIX,
+     offsetof(struct flb_elasticsearch, logstash_prefix),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "logstash_prefix_key", NULL,
+     offsetof(struct flb_elasticsearch, logstash_prefix_key),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "logstash_dateformat", FLB_ES_DEFAULT_TIME_FMT,
+     offsetof(struct flb_elasticsearch, logstash_dateformat),
+     NULL
+    },
+
+    /* Custom Time and Tag keys */
+    {
+     FLB_CONFIG_MAP_STR, "time_key", FLB_ES_DEFAULT_TIME_KEY,
+     offsetof(struct flb_elasticsearch, time_key),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "time_key_format", FLB_ES_DEFAULT_TIME_KEYF,
+     offsetof(struct flb_elasticsearch, time_key_format),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "include_tag_key", "false",
+     offsetof(struct flb_elasticsearch, include_tag_key),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "tag_key", FLB_ES_DEFAULT_TAG_KEY,
+     offsetof(struct flb_elasticsearch, tag_key),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_SIZE, "buffer_size", FLB_ES_DEFAULT_HTTP_MAX,
+     offsetof(struct flb_elasticsearch, buffer_size),
+     NULL
+    },
+
+    /* Elasticsearch specifics */
+    {
+     FLB_CONFIG_MAP_STR, "path", NULL,
+     0,
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "pipeline", NULL,
+     0,
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "generate_id", "false",
+     offsetof(struct flb_elasticsearch, generate_id),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "replace_dots", "false",
+     offsetof(struct flb_elasticsearch, replace_dots),
+     NULL
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "current_time_index", "false",
+     offsetof(struct flb_elasticsearch, current_time_index),
+     NULL
+    },
+
+    /* Trace */
+    {
+     FLB_CONFIG_MAP_BOOL, "trace_output", "false",
+     offsetof(struct flb_elasticsearch, trace_output),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "trace_error", "false",
+     offsetof(struct flb_elasticsearch, trace_error),
+     NULL
+    },
+
+    /* EOF */
+    {0, NULL, NULL, 0, NULL}
+};
+
 /* Plugin reference */
 struct flb_output_plugin out_es_plugin = {
     .name           = "es",
@@ -648,6 +767,7 @@ struct flb_output_plugin out_es_plugin = {
     .cb_pre_run     = NULL,
     .cb_flush       = cb_es_flush,
     .cb_exit        = cb_es_exit,
+    .config_map     = config_map,
 
     /* Plugin flags */
     .flags          = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
