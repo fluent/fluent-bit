@@ -46,7 +46,7 @@ struct flb_file_conf {
     int  format;
 };
 
-static char* check_delimiter(const char *str)
+static char *check_delimiter(const char *str)
 {
     if (str == NULL) {
         return NULL;
@@ -70,76 +70,72 @@ static int cb_file_init(struct flb_output_instance *ins,
                         struct flb_config *config,
                         void *data)
 {
+    int ret;
     const char *tmp;
     char *ret_str;
     (void) config;
     (void) data;
-    struct flb_file_conf *conf;
+    struct flb_file_conf *ctx;
 
-    conf = flb_calloc(1, sizeof(struct flb_file_conf));
-    if (!conf) {
+    ctx = flb_calloc(1, sizeof(struct flb_file_conf));
+    if (!ctx) {
         flb_errno();
         return -1;
     }
 
-    conf->format = FLB_OUT_FILE_FMT_JSON; /* default */
-    conf->delimiter = NULL;
-    conf->label_delimiter = NULL;
-    conf->template = NULL;
+    ctx->format = FLB_OUT_FILE_FMT_JSON; /* default */
+    ctx->delimiter = NULL;
+    ctx->label_delimiter = NULL;
+    ctx->template = NULL;
 
-    /* Optional output file name/path */
-    tmp = flb_output_get_property("Path", ins);
-    if (tmp) {
-        conf->out_file = tmp;
+    ret = flb_output_config_map_set(ins, (void *) ctx);
+    if (ret == -1) {
+        flb_free(ctx);
+        return -1;
     }
 
     /* Optional, file format */
     tmp = flb_output_get_property("Format", ins);
     if (tmp) {
         if (!strcasecmp(tmp, "csv")) {
-            conf->format    = FLB_OUT_FILE_FMT_CSV;
-            conf->delimiter = ",";
+            ctx->format    = FLB_OUT_FILE_FMT_CSV;
+            ctx->delimiter = ",";
         }
         else if (!strcasecmp(tmp, "ltsv")) {
-            conf->format    = FLB_OUT_FILE_FMT_LTSV;
-            conf->delimiter = "\t";
-            conf->label_delimiter = ":";
+            ctx->format    = FLB_OUT_FILE_FMT_LTSV;
+            ctx->delimiter = "\t";
+            ctx->label_delimiter = ":";
         }
         else if (!strcasecmp(tmp, "plain")) {
-            conf->format    = FLB_OUT_FILE_FMT_PLAIN;
-            conf->delimiter = NULL;
-            conf->label_delimiter = NULL;
+            ctx->format    = FLB_OUT_FILE_FMT_PLAIN;
+            ctx->delimiter = NULL;
+            ctx->label_delimiter = NULL;
         }
         else if (!strcasecmp(tmp, "msgpack")) {
-            conf->format    = FLB_OUT_FILE_FMT_MSGPACK;
-            conf->delimiter = NULL;
-            conf->label_delimiter = NULL;
+            ctx->format    = FLB_OUT_FILE_FMT_MSGPACK;
+            ctx->delimiter = NULL;
+            ctx->label_delimiter = NULL;
         }
         else if (!strcasecmp(tmp, "template")) {
-            conf->format    = FLB_OUT_FILE_FMT_TEMPLATE;
-            conf->template  = "{time} {message}";
+            ctx->format    = FLB_OUT_FILE_FMT_TEMPLATE;
+            ctx->template  = "{time} {message}";
         }
     }
 
     tmp = flb_output_get_property("delimiter", ins);
     ret_str = check_delimiter(tmp);
     if (ret_str != NULL) {
-        conf->delimiter = ret_str;
+        ctx->delimiter = ret_str;
     }
 
     tmp = flb_output_get_property("label_delimiter", ins);
     ret_str = check_delimiter(tmp);
     if (ret_str != NULL) {
-        conf->label_delimiter = ret_str;
-    }
-
-    tmp = flb_output_get_property("template", ins);
-    if (tmp != NULL) {
-        conf->template = tmp;
+        ctx->label_delimiter = ret_str;
     }
 
     /* Set the context */
-    flb_output_set_context(ins, conf);
+    flb_output_set_context(ins, ctx);
 
     return 0;
 }
@@ -428,10 +424,45 @@ static int cb_file_exit(void *data, struct flb_config *config)
 {
     struct flb_file_conf *ctx = data;
 
-    flb_free(ctx);
+    if (!ctx) {
+        return 0;
+    }
 
+    flb_free(ctx);
     return 0;
 }
+
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "path", NULL,
+     offsetof(struct flb_file_conf, out_file),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "format", NULL,
+     0,
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "delimiter", NULL,
+     0,
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "label_delimiter", NULL,
+     0,
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "template", NULL,
+     offsetof(struct flb_file_conf, template),
+     NULL
+    },
+
+    /* EOF */
+    {0, NULL, NULL, 0, NULL}
+};
 
 struct flb_output_plugin out_file_plugin = {
     .name         = "file",
@@ -439,5 +470,6 @@ struct flb_output_plugin out_file_plugin = {
     .cb_init      = cb_file_init,
     .cb_flush     = cb_file_flush,
     .cb_exit      = cb_file_exit,
+    .config_map   = config_map,
     .flags        = 0,
 };
