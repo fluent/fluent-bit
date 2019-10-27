@@ -645,118 +645,118 @@ int cb_es_exit(void *data, struct flb_config *config)
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "index", FLB_ES_DEFAULT_INDEX,
-     offsetof(struct flb_elasticsearch, index),
+     FLB_TRUE, offsetof(struct flb_elasticsearch, index),
      NULL
     },
     {
      FLB_CONFIG_MAP_STR, "type", FLB_ES_DEFAULT_TYPE,
-     offsetof(struct flb_elasticsearch, type),
+     FLB_TRUE, offsetof(struct flb_elasticsearch, type),
      NULL
     },
 
     /* HTTP Authentication */
     {
      FLB_CONFIG_MAP_STR, "http_user", NULL,
-     offsetof(struct flb_elasticsearch, http_user),
+     FLB_TRUE, offsetof(struct flb_elasticsearch, http_user),
      NULL
     },
     {
      FLB_CONFIG_MAP_STR, "http_passwd", "",
-     offsetof(struct flb_elasticsearch, http_passwd),
+     FLB_TRUE, offsetof(struct flb_elasticsearch, http_passwd),
      NULL
     },
 
     /* Logstash compatibility */
     {
      FLB_CONFIG_MAP_BOOL, "logstash_format", "false",
-     offsetof(struct flb_elasticsearch, logstash_format),
+     FLB_TRUE, offsetof(struct flb_elasticsearch, logstash_format),
      NULL
     },
     {
      FLB_CONFIG_MAP_STR, "logstash_prefix", FLB_ES_DEFAULT_PREFIX,
-     offsetof(struct flb_elasticsearch, logstash_prefix),
+     FLB_TRUE, offsetof(struct flb_elasticsearch, logstash_prefix),
      NULL
     },
     {
      FLB_CONFIG_MAP_STR, "logstash_prefix_key", NULL,
-     offsetof(struct flb_elasticsearch, logstash_prefix_key),
+     FLB_TRUE, offsetof(struct flb_elasticsearch, logstash_prefix_key),
      NULL
     },
     {
      FLB_CONFIG_MAP_STR, "logstash_dateformat", FLB_ES_DEFAULT_TIME_FMT,
-     offsetof(struct flb_elasticsearch, logstash_dateformat),
+     FLB_TRUE, offsetof(struct flb_elasticsearch, logstash_dateformat),
      NULL
     },
 
     /* Custom Time and Tag keys */
     {
      FLB_CONFIG_MAP_STR, "time_key", FLB_ES_DEFAULT_TIME_KEY,
-     offsetof(struct flb_elasticsearch, time_key),
+     FLB_TRUE, offsetof(struct flb_elasticsearch, time_key),
      NULL
     },
     {
      FLB_CONFIG_MAP_STR, "time_key_format", FLB_ES_DEFAULT_TIME_KEYF,
-     offsetof(struct flb_elasticsearch, time_key_format),
+     FLB_TRUE, offsetof(struct flb_elasticsearch, time_key_format),
      NULL
     },
     {
      FLB_CONFIG_MAP_BOOL, "include_tag_key", "false",
-     offsetof(struct flb_elasticsearch, include_tag_key),
+     FLB_TRUE, offsetof(struct flb_elasticsearch, include_tag_key),
      NULL
     },
     {
      FLB_CONFIG_MAP_STR, "tag_key", FLB_ES_DEFAULT_TAG_KEY,
-     offsetof(struct flb_elasticsearch, tag_key),
+     FLB_TRUE, offsetof(struct flb_elasticsearch, tag_key),
      NULL
     },
     {
      FLB_CONFIG_MAP_SIZE, "buffer_size", FLB_ES_DEFAULT_HTTP_MAX,
-     offsetof(struct flb_elasticsearch, buffer_size),
+     FLB_TRUE, offsetof(struct flb_elasticsearch, buffer_size),
      NULL
     },
 
     /* Elasticsearch specifics */
     {
      FLB_CONFIG_MAP_STR, "path", NULL,
-     0,
+     FLB_FALSE, 0,
      NULL
     },
     {
      FLB_CONFIG_MAP_STR, "pipeline", NULL,
-     0,
+     FLB_FALSE, 0,
      NULL
     },
     {
      FLB_CONFIG_MAP_BOOL, "generate_id", "false",
-     offsetof(struct flb_elasticsearch, generate_id),
+     FLB_TRUE, offsetof(struct flb_elasticsearch, generate_id),
      NULL
     },
     {
      FLB_CONFIG_MAP_BOOL, "replace_dots", "false",
-     offsetof(struct flb_elasticsearch, replace_dots),
+     FLB_TRUE, offsetof(struct flb_elasticsearch, replace_dots),
      NULL
     },
 
     {
      FLB_CONFIG_MAP_BOOL, "current_time_index", "false",
-     offsetof(struct flb_elasticsearch, current_time_index),
+     FLB_TRUE, offsetof(struct flb_elasticsearch, current_time_index),
      NULL
     },
 
     /* Trace */
     {
      FLB_CONFIG_MAP_BOOL, "trace_output", "false",
-     offsetof(struct flb_elasticsearch, trace_output),
+     FLB_TRUE, offsetof(struct flb_elasticsearch, trace_output),
      NULL
     },
     {
      FLB_CONFIG_MAP_BOOL, "trace_error", "false",
-     offsetof(struct flb_elasticsearch, trace_error),
+     FLB_TRUE, offsetof(struct flb_elasticsearch, trace_error),
      NULL
     },
 
     /* EOF */
-    {0, NULL, NULL, 0, NULL}
+    {0}
 };
 
 /* Plugin reference */
