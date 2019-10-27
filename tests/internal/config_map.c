@@ -22,27 +22,27 @@ struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL,
      "boolean",
      "true",
-     offsetof(struct context, boolean),
+     FLB_TRUE, offsetof(struct context, boolean),
      NULL
     },
     {
      FLB_CONFIG_MAP_INT,
      "num_int",
      "123",
-     offsetof(struct context, num_int),
+     FLB_TRUE, offsetof(struct context, num_int),
      NULL
     },
     {
      FLB_CONFIG_MAP_DOUBLE,
      "num_double", "0.12345",
-     offsetof(struct context, num_double),
+     FLB_TRUE, offsetof(struct context, num_double),
      NULL
     },
     {
      FLB_CONFIG_MAP_STR,
      "string",
      "test",
-     offsetof(struct context, string),
+     FLB_TRUE, offsetof(struct context, string),
      NULL
     },
 
@@ -50,7 +50,7 @@ struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_CLIST,
      "test_clist",
      "a,  b, c      ,d,e   ,    f,   g,h,i,jk   , lm  , n  o,pqr,,   , ,stuv,xyz",
-     offsetof(struct context, list1),
+     FLB_TRUE, offsetof(struct context, list1),
      NULL
     },
 
@@ -59,12 +59,12 @@ struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_SLIST_4,
      "test_slist",
      "a  b c      de       f   ghi jk l m n  o pqr   stuv xyz",
-     offsetof(struct context, list2),
+     FLB_TRUE, offsetof(struct context, list2),
      NULL
     },
 
      /* EOF */
-    {0, NULL, NULL, 0, NULL}
+    {0}
 };
 
 void test_helper()
