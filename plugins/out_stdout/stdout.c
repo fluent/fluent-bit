@@ -158,22 +158,22 @@ static int cb_stdout_exit(void *data, struct flb_config *config)
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "format", NULL,
-     0,
+     FLB_FALSE, 0,
      NULL
     },
     {
      FLB_CONFIG_MAP_STR, "json_date_format", NULL,
-     0,
+     FLB_FALSE, 0,
      NULL
     },
     {
      FLB_CONFIG_MAP_STR, "json_date_key", "date",
-     offsetof(struct flb_stdout, json_date_key),
+     FLB_TRUE, offsetof(struct flb_stdout, json_date_key),
      NULL
     },
 
     /* EOF */
-    {0, NULL, NULL, 0, NULL}
+    {0}
 };
 
 /* Plugin registration */
