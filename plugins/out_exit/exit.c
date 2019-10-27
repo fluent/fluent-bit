@@ -90,12 +90,12 @@ static int cb_exit_exit(void *data, struct flb_config *config)
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_INT, "flush_count", FLB_EXIT_FLUSH_COUNT,
-     offsetof(struct flb_exit, flush_count),
+     FLB_TRUE, offsetof(struct flb_exit, flush_count),
      NULL
     },
 
     /* EOF */
-    {0, NULL, NULL, 0, NULL}
+    {0}
 };
 
 struct flb_output_plugin out_exit_plugin = {
