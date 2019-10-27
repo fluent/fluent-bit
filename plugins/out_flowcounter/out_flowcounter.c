@@ -251,17 +251,17 @@ static int out_fcount_exit(void *data, struct flb_config* config)
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "unit", NULL,
-     0,
+     FLB_FALSE, 0,
      NULL
     },
     {
      FLB_CONFIG_MAP_BOOL, "event_based", "false",
-     offsetof(struct flb_flowcounter, event_based),
+     FLB_TRUE, offsetof(struct flb_flowcounter, event_based),
      NULL
     },
 
     /* EOF */
-    {0, NULL, NULL, 0, NULL}
+    {0}
 };
 
 struct flb_output_plugin out_flowcounter_plugin = {
