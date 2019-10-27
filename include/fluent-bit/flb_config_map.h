@@ -57,6 +57,7 @@ struct flb_config_map {
     int type;                     /* type */
     flb_sds_t name;               /* property name */
     flb_sds_t def_value;          /* default value */
+    int set_property;             /* set context property ? (use offset ?) */
     uintptr_t offset;             /* member offset */
     flb_sds_t desc;               /* description */
 

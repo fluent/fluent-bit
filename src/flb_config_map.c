@@ -114,6 +114,7 @@ struct mk_list *flb_config_map_create(struct flb_config_map *map)
         new->type = m->type;
         new->name = flb_sds_create(m->name);
         new->def_value = m->def_value;
+        new->set_property = m->set_property;
         new->offset = m->offset;
         mk_list_add(&new->_head, list);
 
@@ -310,7 +311,7 @@ int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *co
     /* Link processed default values into caller context */
     mk_list_foreach(m_head, map) {
         m = mk_list_entry(m_head, struct flb_config_map, _head);
-        if (!m->def_value) {
+        if (!m->def_value || m->set_property == FLB_FALSE) {
             continue;
         }
 
@@ -359,7 +360,7 @@ int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *co
             }
         }
 
-        if (!m) {
+        if (!m || m->set_property == FLB_FALSE) {
             continue;
         }
 
