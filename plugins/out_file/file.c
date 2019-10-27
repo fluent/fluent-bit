@@ -223,7 +223,8 @@ static int template_output_write(FILE *fp, struct flb_time *tm, msgpack_object *
         if (!memcmp(key, kv->key.via.str.ptr, size)) {
             if (kv->val.type == MSGPACK_OBJECT_STR) {
                 fwrite(kv->val.via.str.ptr, 1, kv->val.via.str.size, fp);
-            } else {
+            }
+            else {
                 msgpack_object_print(fp, kv->val);
             }
             return 0;
@@ -436,32 +437,32 @@ static int cb_file_exit(void *data, struct flb_config *config)
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "path", NULL,
-     offsetof(struct flb_file_conf, out_file),
+     FLB_TRUE, offsetof(struct flb_file_conf, out_file),
      NULL
     },
     {
      FLB_CONFIG_MAP_STR, "format", NULL,
-     0,
+     FLB_FALSE, 0,
      NULL
     },
     {
      FLB_CONFIG_MAP_STR, "delimiter", NULL,
-     0,
+     FLB_FALSE, 0,
      NULL
     },
     {
      FLB_CONFIG_MAP_STR, "label_delimiter", NULL,
-     0,
+     FLB_FALSE, 0,
      NULL
     },
     {
      FLB_CONFIG_MAP_STR, "template", NULL,
-     offsetof(struct flb_file_conf, template),
+     FLB_TRUE, offsetof(struct flb_file_conf, template),
      NULL
     },
 
     /* EOF */
-    {0, NULL, NULL, 0, NULL}
+    {0}
 };
 
 struct flb_output_plugin out_file_plugin = {
