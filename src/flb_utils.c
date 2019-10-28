@@ -773,3 +773,51 @@ int flb_utils_url_split(const char *in_url, char **out_protocol,
 
     return -1;
 }
+
+/*
+ * Read a file into a memory buffer. Return 0 on success, and -1 on
+ * error.
+ *
+ * Returned buffer is guaranteed to be null-terminated (assuming the
+ * function call was successfull).
+ */
+int flb_utils_read_file(const char *path, char **buf, size_t *size)
+{
+    int ret;
+    char *data;
+    FILE *fp;
+    struct stat st;
+
+    fp = fopen(path, "rb");
+    if (fp == NULL) {
+        flb_errno();
+        return -1;
+    }
+
+    ret = fstat(fileno(fp), &st);
+    if (ret == -1) {
+        flb_errno();
+        fclose(fp);
+        return -1;
+    }
+
+    data = flb_calloc(st.st_size + 1, 1);
+    if (data == NULL) {
+        flb_errno();
+        fclose(fp);
+        return -1;
+    }
+
+    ret = fread(data, st.st_size, 1, fp);
+    if (ret != 1) {
+        flb_free(data);
+        fclose(fp);
+        return -1;
+    }
+    fclose(fp);
+
+    *buf = data;
+    *size = st.st_size;
+
+    return 0;
+}

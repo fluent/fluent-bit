@@ -62,4 +62,5 @@ int flb_utils_write_str_buf(const char *str, size_t str_len,
 int flb_utils_url_split(const char *in_url, char **out_protocol,
                         char **out_host, char **out_port, char **out_uri);
 
+int flb_utils_read_file(const char *path, char **buf, size_t *size);
 #endif
