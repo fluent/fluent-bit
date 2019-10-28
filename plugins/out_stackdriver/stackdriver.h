@@ -87,15 +87,15 @@ struct flb_stackdriver {
 };
 
 typedef enum {
-    EMERGENCY = 800,
-    ALERT     = 700,
-    CRITICAL  = 600,
-    ERROR     = 500,
-    WARNING   = 400,
-    NOTICE    = 300,
-    INFO      = 200,
-    DEBUG     = 100,
-    DEFAULT   = 0
+    FLB_STD_EMERGENCY = 800,
+    FLB_STD_ALERT     = 700,
+    FLB_STD_CRITICAL  = 600,
+    FLB_STD_ERROR     = 500,
+    FLB_STD_WARNING   = 400,
+    FLB_STD_NOTICE    = 300,
+    FLB_STD_INFO      = 200,
+    FLB_STD_DEBUG     = 100,
+    FLB_STD_DEFAULT   = 0
 } severity_t;
 
 #endif
