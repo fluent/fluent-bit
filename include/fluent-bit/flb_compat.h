@@ -46,6 +46,7 @@
 #define FLB_DIRCHAR '\\'
 #define PATH_MAX MAX_PATH
 #define S_ISREG(m) (((m) & S_IFMT) == S_IFREG)
+#define S_ISLNK(m) (0)
 
 /*
  * Windows prefer to add an underscore to each POSIX function.
