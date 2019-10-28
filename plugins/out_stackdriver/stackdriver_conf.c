@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_unescape.h>
+#include <fluent-bit/flb_utils.h>
 
 #include <jsmn/jsmn.h>
 
@@ -56,6 +57,7 @@ static int read_credentials_file(const char *creds, struct flb_stackdriver *ctx)
     int key_len;
     int val_len;
     int tok_size = 32;
+    size_t size;
     char *buf;
     char *key;
     char *val;
@@ -81,8 +83,7 @@ static int read_credentials_file(const char *creds, struct flb_stackdriver *ctx)
     }
 
     /* Read file content */
-    buf = mk_file_to_buffer(creds);
-    if (!buf) {
+    if (flb_utils_read_file(creds, &buf, &size)) {
         flb_error("[out_stackdriver] error reading credentials file: %s",
                   creds);
         return -1;
