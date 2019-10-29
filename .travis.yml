@@ -77,6 +77,7 @@ script: |
   echo "CC = $CC, CXX = $CXX"
   sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 90
   sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-7 90
+  sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-6.0 90
   sudo usermod -a -G systemd-journal $(id -un)
   sudo -E su -p travis -c "PATH=$PATH ci/do-ut"
 addons:
@@ -86,5 +87,6 @@ addons:
     packages:
       - gcc-7
       - g++-7
+      - clang-6.0
       - libsystemd-dev
       - gcovr
