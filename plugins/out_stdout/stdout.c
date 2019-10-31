@@ -158,17 +158,17 @@ static int cb_stdout_exit(void *data, struct flb_config *config)
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "format", NULL,
-     FLB_FALSE, 0,
+     0, FLB_FALSE, 0,
      NULL
     },
     {
      FLB_CONFIG_MAP_STR, "json_date_format", NULL,
-     FLB_FALSE, 0,
+     0, FLB_FALSE, 0,
      NULL
     },
     {
      FLB_CONFIG_MAP_STR, "json_date_key", "date",
-     FLB_TRUE, offsetof(struct flb_stdout, json_date_key),
+     0, FLB_TRUE, offsetof(struct flb_stdout, json_date_key),
      NULL
     },
 
