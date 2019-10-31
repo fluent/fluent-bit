@@ -68,9 +68,10 @@ static int http_post(struct flb_out_http *ctx,
     struct flb_upstream *u;
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
-    struct mk_list *tmp;
     struct mk_list *head;
-    struct out_http_header *header;
+    struct flb_config_map_val *mv;
+    struct flb_slist_entry *key = NULL;
+    struct flb_slist_entry *val = NULL;
 
     /* Get upstream context and connection */
     u = ctx->u;
@@ -124,9 +125,9 @@ static int http_post(struct flb_out_http *ctx,
 
     if (ctx->header_tag) {
         flb_http_add_header(c,
-                        ctx->header_tag,
-                        ctx->headertag_len,
-                        tag, tag_len);
+                            ctx->header_tag,
+                            flb_sds_len(ctx->header_tag),
+                            tag, tag_len);
     }
 
     /* Content Encoding: gzip */
@@ -141,14 +142,13 @@ static int http_post(struct flb_out_http *ctx,
 
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
 
+    flb_config_map_foreach(head, mv, ctx->headers) {
+        key = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
+        val = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
 
-    mk_list_foreach_safe(head, tmp, &ctx->headers) {
-        header = mk_list_entry(head, struct out_http_header, _head);
         flb_http_add_header(c,
-                        header->key,
-                        header->key_len,
-                        header->val,
-                        header->val_len);
+                            key->str, flb_sds_len(key->str),
+                            val->str, flb_sds_len(val->str));
     }
 
     ret = flb_http_do(c, &b_sent);
@@ -312,13 +312,93 @@ static int cb_http_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "proxy", NULL,
+     0, FLB_FALSE, 0,
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "http_user", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, http_user),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "http_passwd", "",
+     0, FLB_TRUE, offsetof(struct flb_out_http, http_passwd),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "header_tag", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, header_tag),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "format", NULL,
+     0, FLB_FALSE, 0,
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "json_date_format", NULL,
+     0, FLB_FALSE, 0,
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "json_date_key", "date",
+     0, FLB_TRUE, offsetof(struct flb_out_http, json_date_key),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "compress", NULL,
+     0, FLB_FALSE, 0,
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_SLIST_1, "header", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_out_http, headers),
+     NULL,
+    },
+
+    /* Gelf Properties */
+    {
+     FLB_CONFIG_MAP_STR, "gelf_timestamp_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, gelf_fields.timestamp_key),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "gelf_host_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, gelf_fields.host_key),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "gelf_short_message_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, gelf_fields.short_message_key),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "gelf_full_message_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, gelf_fields.full_message_key),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "gelf_level_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, gelf_fields.level_key),
+     NULL
+    },
+
+    /* EOF */
+    {0}
+};
+
 /* Plugin reference */
 struct flb_output_plugin out_http_plugin = {
-    .name = "http",
+    .name        = "http",
     .description = "HTTP Output",
-    .cb_init = cb_http_init,
-    .cb_pre_run = NULL,
-    .cb_flush = cb_http_flush,
-    .cb_exit = cb_http_exit,
-    .flags = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
+    .cb_init     = cb_http_init,
+    .cb_pre_run  = NULL,
+    .cb_flush    = cb_http_flush,
+    .cb_exit     = cb_http_exit,
+    .config_map  = config_map,
+    .flags       = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
 };
