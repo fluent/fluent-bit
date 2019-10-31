@@ -437,27 +437,27 @@ static int cb_file_exit(void *data, struct flb_config *config)
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "path", NULL,
-     FLB_TRUE, offsetof(struct flb_file_conf, out_file),
+     0, FLB_TRUE, offsetof(struct flb_file_conf, out_file),
      NULL
     },
     {
      FLB_CONFIG_MAP_STR, "format", NULL,
-     FLB_FALSE, 0,
+     0, FLB_FALSE, 0,
      NULL
     },
     {
      FLB_CONFIG_MAP_STR, "delimiter", NULL,
-     FLB_FALSE, 0,
+     0, FLB_FALSE, 0,
      NULL
     },
     {
      FLB_CONFIG_MAP_STR, "label_delimiter", NULL,
-     FLB_FALSE, 0,
+     0, FLB_FALSE, 0,
      NULL
     },
     {
      FLB_CONFIG_MAP_STR, "template", NULL,
-     FLB_TRUE, offsetof(struct flb_file_conf, template),
+     0, FLB_TRUE, offsetof(struct flb_file_conf, template),
      NULL
     },
 
