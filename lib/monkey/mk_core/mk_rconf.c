@@ -238,7 +238,14 @@ static int mk_rconf_read(struct mk_rconf *conf, const char *path)
             }
         }
         else {
-            mk_config_error(path, line, "Length of content has execeded limit");
+            /*
+             * If we don't find a break line, validate if we got an EOF or not. No EOF
+             * means that the incoming string is not finished so we must raise an
+             * exception.
+             */
+            if (!feof(f)) {
+                mk_config_error(path, line, "Length of content has exceeded limit");
+            }
         }
 
         /* Line number */
