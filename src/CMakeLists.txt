@@ -235,6 +235,14 @@ set(FLB_DEPS
   ${extra_libs}
   )
 
+# UTF8 Encoding
+if(FLB_ENCODE)
+set(FLB_DEPS
+  ${FLB_DEPS}
+  tutf8e
+  )
+endif()
+
 # Record Accessor
 if(FLB_RECORD_ACCESSOR)
   set(FLB_DEPS
