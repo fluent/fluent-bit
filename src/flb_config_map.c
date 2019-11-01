@@ -516,7 +516,7 @@ int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *co
 
         mk_list_foreach(m_head, map) {
             m = mk_list_entry(m_head, struct flb_config_map, _head);
-            if (flb_sds_cmp(kv->key, m->name, flb_sds_len(m->name)) == 0) {
+            if (strncasecmp(kv->key, m->name, flb_sds_len(m->name)) == 0) {
                 break;
             }
             m = NULL;
