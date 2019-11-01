@@ -98,6 +98,9 @@ static ssize_t parse_payload_json(struct tcp_conn *conn)
         conn->pack_state.multiple = FLB_TRUE;
         return -1;
     }
+    else if (ret == -1) {
+        return -1;
+    }
 
     /* Process the packaged JSON and return the last byte used */
     process_pack(conn, pack, out_size);
