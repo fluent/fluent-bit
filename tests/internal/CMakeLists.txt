@@ -7,6 +7,7 @@ set(UNIT_TESTS_FILES
   pipe.c
   sds.c
   sha512.c
+  slist.c
   router.c
   parser.c
   network.c
@@ -16,6 +17,7 @@ set(UNIT_TESTS_FILES
   utils.c
   gzip.c
   gelf.c
+  config_map.c
   )
 
 if(FLB_STREAM_PROCESSOR)

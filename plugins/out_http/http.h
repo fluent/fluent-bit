@@ -53,8 +53,7 @@ struct flb_out_http {
     struct flb_gelf_fields gelf_fields;
 
     /* Include tag in header */
-    char *header_tag;
-    size_t headertag_len;
+    flb_sds_t header_tag;
 
     /* Compression mode (gzip) */
     int compress_gzip;
@@ -63,16 +62,7 @@ struct flb_out_http {
     struct flb_upstream *u;
 
     /* Arbitrary HTTP headers */
-    struct mk_list headers;
-    int headers_cnt;
-};
-
-struct out_http_header {
-    char *key;
-    int key_len;
-    char *val;
-    int val_len;
-    struct mk_list _head;
+    struct mk_list *headers;
 };
 
 #endif

@@ -432,8 +432,13 @@ int flb_utils_bool(const char *val)
         strcasecmp(val, "yes") == 0) {
         return FLB_TRUE;
     }
+    else if (strcasecmp(val, "false") == 0 ||
+             strcasecmp(val, "off") == 0 ||
+             strcasecmp(val, "no") == 0) {
+        return FLB_FALSE;
+    }
 
-    return FLB_FALSE;
+    return -1;
 }
 
 /* Convert a 'string' time seconds.nanoseconds to int and long values */

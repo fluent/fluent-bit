@@ -34,6 +34,7 @@
 #include <fluent-bit/flb_bits.h>
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_task.h>
@@ -67,6 +68,8 @@ struct flb_output_plugin {
 
     /* Plugin description */
     char *description;
+
+    struct flb_config_map *config_map;
 
     /*
      * Output network info:
@@ -182,7 +185,24 @@ struct flb_output_instance {
     void *tls;
 #endif
 
-    struct mk_list  properties;          /* properties / configuration   */
+    /*
+     * configuration properties: incoming properties set by the caller. This
+     * list is what the instance received by either a configuration file or
+     * through the command line arguments. This list is validated by the
+     * plugin.
+     */
+    struct mk_list  properties;
+
+    /*
+     * configuration map: a new API is landing on Fluent Bit v1.4 that allows
+     * plugins to specify at registration time the allowed configuration
+     * properties and it data types. Config map is an optional API for now
+     * and some plugins will take advantage of it. When the API is used, the
+     * config map will validate the configuration, set default values
+     * and merge the 'properties' (above) into the map.
+     */
+    struct mk_list *config_map;
+
     struct mk_list _head;                /* link to config->inputs       */
 
 #ifdef FLB_HAVE_METRICS
@@ -450,6 +470,12 @@ static inline void flb_output_return_do(int x)
 #define FLB_OUTPUT_RETURN(x)                                            \
     flb_output_return_do(x);                                            \
     return
+
+static inline int flb_output_config_map_set(struct flb_output_instance *ins,
+                                            void *context)
+{
+    return flb_config_map_set(&ins->properties, ins->config_map, context);
+}
 
 struct flb_output_instance *flb_output_new(struct flb_config *config,
                                            const char *output, void *data);
