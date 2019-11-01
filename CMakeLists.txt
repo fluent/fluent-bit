@@ -50,6 +50,7 @@ option(FLB_SMALL              "Optimise for small size"       No)
 option(FLB_COVERAGE           "Build with code-coverage"      No)
 option(FLB_JEMALLOC           "Build with Jemalloc support"   No)
 option(FLB_REGEX              "Build with Regex support"     Yes)
+option(FLB_ENCODE             "Build with UTF8 encoding support" Yes)
 option(FLB_PARSER             "Build with Parser support"    Yes)
 option(FLB_TLS                "Build with SSL/TLS support"    No)
 option(FLB_BINARY             "Build executable binary"      Yes)
@@ -310,6 +311,11 @@ add_subdirectory(${FLB_PATH_LIB_MPACK} EXCLUDE_FROM_ALL)
 # Miniz (zip)
 add_subdirectory(${FLB_PATH_LIB_MINIZ} EXCLUDE_FROM_ALL)
 
+# tutf8e
+if(FLB_ENCODE)
+  add_subdirectory(${FLB_PATH_LIB_TUTF8E} EXCLUDE_FROM_ALL)
+endif()
+
 # Chunk I/O
 FLB_OPTION(CIO_LIB_STATIC  ON)
 FLB_OPTION(CIO_LIB_SHARED  OFF)
@@ -556,6 +562,12 @@ endif()
 if(FLB_REGEX)
   include(cmake/onigmo.cmake)
   FLB_DEFINITION(FLB_HAVE_REGEX)
+endif()
+
+# tutf8e (UTF8 Encoding)
+# =====================
+if(FLB_ENCODE)
+  FLB_DEFINITION(FLB_HAVE_ENCODE)
 endif()
 
 # LuaJIT (Scripting Support)
