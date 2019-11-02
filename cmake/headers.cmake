@@ -19,7 +19,7 @@ include_directories(
   ${CMAKE_CURRENT_BINARY_DIR}/include
   )
 
-if(FLB_ENCODE)
+if(FLB_UTF8_ENCODER)
   include_directories(${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_TUTF8E}/include)
 endif()
 

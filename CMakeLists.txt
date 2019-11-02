@@ -50,7 +50,7 @@ option(FLB_SMALL              "Optimise for small size"       No)
 option(FLB_COVERAGE           "Build with code-coverage"      No)
 option(FLB_JEMALLOC           "Build with Jemalloc support"   No)
 option(FLB_REGEX              "Build with Regex support"     Yes)
-option(FLB_ENCODE             "Build with UTF8 encoding support" Yes)
+option(FLB_UTF8_ENCODER       "Build with UTF8 encoding support" Yes)
 option(FLB_PARSER             "Build with Parser support"    Yes)
 option(FLB_TLS                "Build with SSL/TLS support"    No)
 option(FLB_BINARY             "Build executable binary"      Yes)
@@ -312,7 +312,7 @@ add_subdirectory(${FLB_PATH_LIB_MPACK} EXCLUDE_FROM_ALL)
 add_subdirectory(${FLB_PATH_LIB_MINIZ} EXCLUDE_FROM_ALL)
 
 # tutf8e
-if(FLB_ENCODE)
+if(FLB_UTF8_ENCODER)
   add_subdirectory(${FLB_PATH_LIB_TUTF8E} EXCLUDE_FROM_ALL)
 endif()
 
@@ -566,8 +566,8 @@ endif()
 
 # tutf8e (UTF8 Encoding)
 # =====================
-if(FLB_ENCODE)
-  FLB_DEFINITION(FLB_HAVE_ENCODE)
+if(FLB_UTF8_ENCODER)
+  FLB_DEFINITION(FLB_HAVE_UTF8_ENCODER)
 endif()
 
 # LuaJIT (Scripting Support)
