@@ -191,7 +191,6 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
     }
 #endif
 
-    u_conn->connect_count++;
     flb_trace("[io] connection OK");
 
     return 0;
