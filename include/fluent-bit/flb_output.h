@@ -49,6 +49,7 @@
 #define FLB_OUTPUT_NET          32  /* output address may set host and port */
 #define FLB_OUTPUT_PLUGIN_CORE   0
 #define FLB_OUTPUT_PLUGIN_PROXY  1
+#define FLB_OUTPUT_KA_TIMEOUT   30
 
 struct flb_output_instance;
 
@@ -156,6 +157,10 @@ struct flb_output_instance {
      *   uri      = extra information that may be used by the plugin
      */
     struct flb_net_host host;
+
+    /* KeepAlive support for networking operations */
+    int keepalive;
+    int keepalive_timeout;
 
     /*
      * Optional data passed to the plugin, this info is useful when
@@ -465,5 +470,6 @@ void flb_output_set_context(struct flb_output_instance *ins, void *context);
 int flb_output_instance_destroy(struct flb_output_instance *ins);
 int flb_output_init(struct flb_config *config);
 int flb_output_check(struct flb_config *config);
+int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *ins);
 
 #endif

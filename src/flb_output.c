@@ -303,6 +303,10 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         instance->flags |= FLB_IO_TLS;
     }
 
+    /* Keepalive */
+    instance->keepalive = FLB_FALSE;
+    instance->keepalive_timeout = FLB_OUTPUT_KA_TIMEOUT;
+
 #ifdef FLB_HAVE_TLS
     instance->tls.context    = NULL;
     instance->tls_debug      = -1;
@@ -381,6 +385,24 @@ int flb_output_set_property(struct flb_output_instance *out,
         }
         else {
             out->host.port = 0;
+        }
+    }
+    else if (prop_key_check("keepalive", k, len) == 0){
+        if (tmp) {
+            out->keepalive = flb_utils_bool(tmp);
+            flb_sds_destroy(tmp);
+        }
+        else {
+            out->keepalive = FLB_FALSE;
+        }
+    }
+    else if (prop_key_check("keepalive_timeout", k, len) == 0){
+        if (tmp) {
+            out->keepalive_timeout = atoi(tmp);
+            flb_sds_destroy(tmp);
+        }
+        else {
+            out->keepalive_timeout = 10;
         }
     }
     else if (prop_key_check("ipv6", k, len) == 0 && tmp) {
@@ -590,5 +612,49 @@ int flb_output_check(struct flb_config *config)
     if (mk_list_is_empty(&config->outputs) == 0) {
         return -1;
     }
+    return 0;
+}
+
+/*
+ * Output plugins might have enabled certain features that have not been passed
+ * directly to the upstream context. In order to avoid let plugins validate specific
+ * variables from the instance context like tls, tls.x, keepalive, etc, we populate
+ * them directly through this function.
+ */
+int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *ins)
+{
+    int flags = 0;
+
+    if (!u) {
+        return -1;
+    }
+
+    /* TLS */
+#ifdef FLB_HAVE_TLS
+    if (ins->use_tls == FLB_TRUE) {
+        flags |= FLB_IO_TLS;
+    }
+    else {
+        flags |= FLB_IO_TCP;
+    }
+#else
+    flags |= FLB_IO_TCP;
+#endif
+
+    /* IPv6 */
+    if (ins->host.ipv6 == FLB_TRUE) {
+        flags |= FLB_IO_IPV6;
+    }
+
+    /* KeepAlive */
+    if (ins->keepalive == FLB_TRUE) {
+        flags |= FLB_IO_TCP_KA;
+
+        /* Keepalive timeout */
+        u->ka_timeout = ins->keepalive_timeout;
+    }
+
+    /* Set flags */
+    u->flags |= flags;
     return 0;
 }
