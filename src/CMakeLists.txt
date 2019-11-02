@@ -236,7 +236,7 @@ set(FLB_DEPS
   )
 
 # UTF8 Encoding
-if(FLB_ENCODE)
+if(FLB_UTF8_ENCODER)
 set(FLB_DEPS
   ${FLB_DEPS}
   tutf8e
