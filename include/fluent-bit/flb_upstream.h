@@ -36,9 +36,10 @@
  *  Copyright (C) 2019      The Fluent Bit Authors
  *
  * --- flb_io.h ---
- *   #define  FLB_IO_TCP    1
- *   #define  FLB_IO_TLS    2
- *   #define  FLB_IO_ASYNC  8
+ *   #define  FLB_IO_TCP      1
+ *   #define  FLB_IO_TLS      2
+ *   #define  FLB_IO_ASYNC    8
+ *   #define  FLB_IO_TCP_KA  16
  * ---
  */
 
@@ -52,13 +53,9 @@ struct flb_upstream {
 
     int n_connections;
 
-    /*
-     * An upstream handler may keep open up to 'max_connections' of
-     * TCP connections. A value minor or equal to zero means it will
-     * create a new connection on-demand if there is no one
-     * available in the 'av_queue'.
-     */
-    int max_connections;
+
+    /* Keepalive */
+    int ka_timeout;    /* maximum number of seconds that a connection can exists */
 
     /*
      * If an upstream context has been created in HA mode, this flag is
@@ -92,8 +89,15 @@ struct flb_upstream_conn {
     struct mk_event event;
     struct flb_thread *thread;
 
+    /* Socker */
     flb_sockfd_t fd;
-    int connect_count;
+
+    /* Keepalive */
+    int ka_count;        /* how many times this connection has been used */
+
+    /* Timestamps */
+    time_t ts_created;
+    time_t ts_available;  /* sets the 'start' available time */
 
     /* Upstream parent */
     struct flb_upstream *u;
@@ -110,7 +114,6 @@ struct flb_upstream_conn {
     struct flb_tls_session *tls_session;
     mbedtls_net_context tls_net_context;
 #endif
-
 };
 
 struct flb_upstream *flb_upstream_create(struct flb_config *config,

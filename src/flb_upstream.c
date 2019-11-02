@@ -123,28 +123,6 @@ struct flb_upstream *flb_upstream_create_url(struct flb_config *config,
     return u;
 }
 
-int flb_upstream_destroy(struct flb_upstream *u)
-{
-    struct mk_list *tmp;
-    struct mk_list *head;
-    struct flb_upstream_conn *u_conn;
-
-    mk_list_foreach_safe(head, tmp, &u->av_queue) {
-        u_conn = mk_list_entry(head, struct flb_upstream_conn, _head);
-        flb_upstream_conn_release(u_conn);
-    }
-
-    mk_list_foreach_safe(head, tmp, &u->busy_queue) {
-        u_conn = mk_list_entry(head, struct flb_upstream_conn, _head);
-        flb_upstream_conn_release(u_conn);
-    }
-
-    flb_free(u->tcp_host);
-    flb_free(u);
-
-    return 0;
-}
-
 static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
 {
     int ret;
@@ -158,10 +136,11 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
     }
     conn->u             = u;
     conn->fd            = -1;
-    conn->connect_count = 0;
 #ifdef FLB_HAVE_TLS
     conn->tls_session   = NULL;
 #endif
+    conn->ts_created = time(NULL);
+    conn->ts_available = 0;
 
     MK_EVENT_ZERO(&conn->event);
 
@@ -176,63 +155,20 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
     mk_list_add(&conn->_head, &u->busy_queue);
     u->n_connections++;
 
-    return conn;
-}
-
-static struct flb_upstream_conn *get_conn(struct flb_upstream *u)
-{
-    struct flb_upstream_conn *conn;
-
-    /* Get the first available connection and increase the counter */
-    conn = mk_list_entry_first(&u->av_queue,
-                               struct flb_upstream_conn, _head);
-    u->n_connections++;
-
-    /* Move it to the busy queue */
-    mk_list_del(&conn->_head);
-    mk_list_add(&conn->_head, &u->busy_queue);
+    if (conn->u->flags & FLB_IO_TCP_KA) {
+        flb_debug("[upstream] KA connection #%i to %s:%i created",
+                  conn->fd, u->tcp_host, u->tcp_port);
+    }
 
     return conn;
 }
 
-struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u)
-{
-    struct flb_upstream_conn *u_conn = NULL;
-
-    /*
-     * FIXME: for 0.9 series the keep alive mode will be enabled, useless
-     * check now as the available queue is always empty.
-     */
-    if (mk_list_is_empty(&u->av_queue) == 0) {
-
-        if (u->max_connections <= 0) {
-            u_conn = create_conn(u);
-        }
-        else if (u->n_connections < u->max_connections) {
-            u_conn = create_conn(u);
-        }
-        else {
-            return NULL;
-        }
-    }
-    else {
-        /* Get an available connection */
-        u_conn = get_conn(u);
-    }
-
-    if (!u_conn) {
-        return NULL;
-    }
-
-    return u_conn;
-}
-
-int flb_upstream_conn_release(struct flb_upstream_conn *u_conn)
+static int destroy_conn(struct flb_upstream_conn *u_conn)
 {
     struct flb_upstream *u = u_conn->u;
 
-    flb_trace("[upstream] [fd=%i] releasing connection %p",
-              u_conn->fd, u_conn);
+    flb_trace("[upstream] destroy connection #%i to %s:%i",
+              u_conn->fd, u->tcp_host, u->tcp_port);
 
     if (u->flags & FLB_IO_ASYNC) {
         mk_event_del(u->evl, &u_conn->event);
@@ -256,4 +192,104 @@ int flb_upstream_conn_release(struct flb_upstream_conn *u_conn)
     flb_free(u_conn);
 
     return 0;
+}
+
+int flb_upstream_destroy(struct flb_upstream *u)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_upstream_conn *u_conn;
+
+    mk_list_foreach_safe(head, tmp, &u->av_queue) {
+        u_conn = mk_list_entry(head, struct flb_upstream_conn, _head);
+        destroy_conn(u_conn);
+    }
+
+    mk_list_foreach_safe(head, tmp, &u->busy_queue) {
+        u_conn = mk_list_entry(head, struct flb_upstream_conn, _head);
+        destroy_conn(u_conn);
+    }
+
+    flb_free(u->tcp_host);
+    flb_free(u);
+
+    return 0;
+}
+
+struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u)
+{
+    time_t ts;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_upstream_conn *conn = NULL;
+
+    /* On non Keepalive mode, always create a new TCP connection */
+    if ((u->flags & FLB_IO_TCP_KA) == 0) {
+        return create_conn(u);
+    }
+
+    /*
+     * If we are in keepalive mode, iterate list of available connections,
+     * take a little of time to do some cleanup and assign a connection. If no
+     * entries exists, just create a new one.
+     */
+
+    ts = time(NULL);
+    mk_list_foreach_safe(head, tmp, &u->av_queue) {
+        conn = mk_list_entry(head, struct flb_upstream_conn, _head);
+
+        /* Check if is time to destroy this connection */
+        if ((ts - conn->ts_created) > u->ka_timeout) {
+            flb_debug("[upstream] KA connection #%i to %s:%i timed out, closing.",
+                      conn->fd, u->tcp_host, u->tcp_port);
+            destroy_conn(conn);
+            conn = NULL;
+            continue;
+        }
+
+        /* This connection works, let's move it to the busy queue */
+        mk_list_del(&conn->_head);
+        mk_list_add(&conn->_head, &u->busy_queue);
+        flb_debug("[upstream] KA connection #%i to %s:%i has been assigned (recycled)",
+                  conn->fd, u->tcp_host, u->tcp_port);
+        return conn;
+    }
+
+    /* No keepalive connection available, create a new one */
+    if (!conn) {
+        return create_conn(u);
+    }
+
+    return conn;
+}
+
+int flb_upstream_conn_release(struct flb_upstream_conn *conn)
+{
+    time_t ts;
+
+    /* If this is a valid KA connection just recycle */
+    if (conn->u->flags & FLB_IO_TCP_KA) {
+        /* check keepalive timeout */
+        ts = time(NULL);
+        if ((ts - conn->ts_created) > conn->u->ka_timeout) {
+            /* this connection must be dropped */
+            flb_debug("[upstream] KA connection #%i to %s:%i timed out, closing.",
+                      conn->fd, conn->u->tcp_host, conn->u->tcp_port);
+            return destroy_conn(conn);
+        }
+
+        /*
+         * This connection is still useful, move it to the 'available' queue and
+         * initialize variables.
+         */
+        mk_list_del(&conn->_head);
+        mk_list_add(&conn->_head, &conn->u->av_queue);
+        conn->ts_available = time(NULL);
+        flb_debug("[upstream] KA connection #%i to %s:%i is now available",
+                  conn->fd, conn->u->tcp_host, conn->u->tcp_port);
+        return 0;
+    }
+
+    /* No keepalive connections must be destroyed */
+    return destroy_conn(conn);
 }
