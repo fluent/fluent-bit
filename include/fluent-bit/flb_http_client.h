@@ -38,6 +38,7 @@
 /* HTTP Flags */
 #define FLB_HTTP_10          1
 #define FLB_HTTP_11          2
+#define FLB_HTTP_KA         16
 
 /* Proxy */
 #define FLB_HTTP_PROXY_NONE       0
@@ -54,6 +55,8 @@
 #define FLB_HTTP_HEADER_AUTH             "Authorization"
 #define FLB_HTTP_HEADER_CONTENT_TYPE     "Content-Type"
 #define FLB_HTTP_HEADER_CONTENT_ENCODING "Content-Encoding"
+#define FLB_HTTP_HEADER_CONNECTION       "Connection"
+#define FLB_HTTP_HEADER_KA               "keep-alive"
 
 struct flb_http_response {
     int status;                /* HTTP response status          */
