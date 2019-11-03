@@ -28,6 +28,7 @@
  * - Use upstream connections.
  * - Support 'retry' in case the HTTP server timeouts a connection.
  * - Get return Status, Headers and Body content if found.
+ * - If Upstream supports keepalive, adjust headers
  */
 
 #define _GNU_SOURCE
@@ -514,6 +515,11 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
     c->header_len  = ret;
     c->flags       = flags;
 
+    /* Is Upstream connection using keepalive mode ? */
+    if (u_conn->u->flags & FLB_IO_TCP_KA) {
+        c->flags |= FLB_HTTP_KA;
+    }
+
     /* Response */
     c->resp.content_length = -1;
 
@@ -711,6 +717,21 @@ int flb_http_add_header(struct flb_http_client *c,
     return 0;
 }
 
+static int flb_http_keepalive(struct flb_http_client *c)
+{
+    /* validate keepalive mode */
+    if ((c->flags & FLB_HTTP_KA) == 0) {
+        return -1;
+    }
+
+    /* append header */
+    return flb_http_add_header(c,
+                               FLB_HTTP_HEADER_CONNECTION,
+                               sizeof(FLB_HTTP_HEADER_CONNECTION) - 1,
+                               FLB_HTTP_HEADER_KA,
+                               sizeof(FLB_HTTP_HEADER_KA) - 1);
+}
+
 /* Adds a header specifying that the payload is compressed with gzip */
 int flb_http_set_content_encoding_gzip(struct flb_http_client *c)
 {
@@ -787,6 +808,9 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
     size_t bytes_header = 0;
     size_t bytes_body = 0;
     char *tmp;
+
+    /* Try to add keep alive header */
+    flb_http_keepalive(c);
 
     /* check enough space for the ending CRLF */
     if (header_available(c, crlf) != 0) {
