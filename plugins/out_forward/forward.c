@@ -752,6 +752,7 @@ static int forward_config_simple(struct flb_forward *ctx,
         return -1;
     }
     ctx->u = upstream;
+    flb_output_upstream_set(ctx->u, ins);
 
     /* Shared Key */
     tmp = flb_output_get_property("shared_key", ins);
