@@ -214,6 +214,9 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
     ctx->host = ins->host.name;
     ctx->port = ins->host.port;
 
+    /* Set instance flags into upstream */
+    flb_output_upstream_set(ctx->u, ins);
+
     return ctx;
 }
 
