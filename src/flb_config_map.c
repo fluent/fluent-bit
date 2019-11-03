@@ -453,6 +453,17 @@ int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *co
         m = mk_list_entry(m_head, struct flb_config_map, _head);
 
         /*
+         * If the map type allows multiple entries, the user context is a pointer
+         * for a linked list. We just point their structure to our pre-processed
+         * list of entries.
+         */
+        if (m->flags & FLB_CONFIG_MAP_MULT) {
+            m_list = (struct mk_list **) (base + m->offset);
+            *m_list = m->value.mult;
+            continue;
+        }
+
+        /*
          * If no default value exists or the map will not write to the user
          * context.. skip it.
          */
@@ -470,14 +481,6 @@ int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *co
             continue;
         }
 
-        /*
-         * If the map type allows multiple entries, the user context is a pointer
-         * for a linked list. We just point their structure to our pre-processed
-         * list of entries.
-         */
-        if (m->flags & FLB_CONFIG_MAP_MULT) {
-            continue;
-        }
 
         /* All the following steps are direct writes to the user context */
         if (m->type == FLB_CONFIG_MAP_STR) {
