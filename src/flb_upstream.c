@@ -156,7 +156,7 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
     u->n_connections++;
 
     if (conn->u->flags & FLB_IO_TCP_KA) {
-        flb_debug("[upstream] KA connection #%i to %s:%i created",
+        flb_debug("[upstream] KA connection #%i to %s:%i is connected",
                   conn->fd, u->tcp_host, u->tcp_port);
     }
 
@@ -252,6 +252,16 @@ struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u)
         mk_list_add(&conn->_head, &u->busy_queue);
         flb_debug("[upstream] KA connection #%i to %s:%i has been assigned (recycled)",
                   conn->fd, u->tcp_host, u->tcp_port);
+
+        /*
+         * Note: since we are in a keepalive connection, the socket is already being
+         * monitored for possible disconnections while idle. Upon re-use by the caller
+         * when it try to send some data, the I/O interface (flb_io.c) will put the
+         * proper event mask and reuse, there is no need to remove the socket from
+         * the event loop and re-add it again.
+         *
+         * So... just return the connection context.
+         */
         return conn;
     }
 
@@ -263,9 +273,30 @@ struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u)
     return conn;
 }
 
+/*
+ * An 'idle' and keepalive might be disconnected, if so, this callback will perform
+ * the proper connection cleanup.
+ */
+static int cb_upstream_conn_ka_dropped(void *data)
+{
+    struct flb_upstream_conn *conn;
+
+    conn = (struct flb_upstream_conn *) data;
+
+    flb_debug("[upstream] KA connection #%i to %s:%i has been disconnected "
+              "by the remote service",
+              conn->fd, conn->u->tcp_host, conn->u->tcp_port);
+    return destroy_conn(conn);
+}
+
 int flb_upstream_conn_release(struct flb_upstream_conn *conn)
 {
+    int ret;
     time_t ts;
+    struct flb_upstream *u;
+
+    /* Upstream context */
+    u = conn->u;
 
     /* If this is a valid KA connection just recycle */
     if (conn->u->flags & FLB_IO_TCP_KA) {
@@ -285,6 +316,26 @@ int flb_upstream_conn_release(struct flb_upstream_conn *conn)
         mk_list_del(&conn->_head);
         mk_list_add(&conn->_head, &conn->u->av_queue);
         conn->ts_available = time(NULL);
+
+        /*
+         * The socket at this point is not longer monitored, so if we want to be
+         * notified if the 'available keepalive connection' gets disconnected by
+         * the remote endpoint we need to add it again.
+         */
+        conn->event.handler = cb_upstream_conn_ka_dropped;
+        conn->event.data    = &conn;
+
+        ret = mk_event_add(u->evl, conn->fd,
+                           FLB_ENGINE_EV_CUSTOM,
+                           MK_EVENT_CLOSE, &conn->event);
+        if (ret == -1) {
+            /* We failed the registration, for safety just destroy the connection */
+            flb_debug("[upstream] KA connection #%i to %s:%i could not be "
+                      "registered, closing.",
+                      conn->fd, conn->u->tcp_host, conn->u->tcp_port);
+            return destroy_conn(conn);
+        }
+
         flb_debug("[upstream] KA connection #%i to %s:%i is now available",
                   conn->fd, conn->u->tcp_host, conn->u->tcp_port);
         return 0;
