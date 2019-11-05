@@ -88,9 +88,12 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
         flb_es_conf_destroy(ctx);
         return NULL;
     }
+    ctx->u = upstream;
+
+    /* Set instance flags into upstream */
+    flb_output_upstream_set(ctx->u, ins);
 
     /* Set manual Index and Type */
-    ctx->u = upstream;
     if (f_index) {
         ctx->index = flb_strdup(f_index->value); /* FIXME */
     }
