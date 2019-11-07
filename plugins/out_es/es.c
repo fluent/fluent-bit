@@ -135,7 +135,7 @@ static int es_pack_map_content(msgpack_packer *tmp_pck,
         msgpack_pack_str(tmp_pck, key_size);
         msgpack_pack_str_body(tmp_pck, ptr_key, key_size);
 
-        /* Release temporal key if was allocated */
+        /* Release temporary key if was allocated */
         if (ptr_key && ptr_key != buf_key) {
             flb_free(ptr_key);
         }
@@ -368,7 +368,7 @@ static int elasticsearch_format(struct flb_config *config,
             }
         }
 
-        /* Create temporal msgpack buffer */
+        /* Create temporary msgpack buffer */
         msgpack_sbuffer_init(&tmp_sbuf);
         msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 

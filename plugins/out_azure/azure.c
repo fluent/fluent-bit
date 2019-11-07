@@ -70,7 +70,7 @@ static int azure_format(const void *in_buf, size_t in_bytes,
     array_size = flb_mp_count(in_buf, in_bytes);
     msgpack_unpacked_init(&result);
 
-    /* Create temporal msgpack buffer */
+    /* Create temporary msgpack buffer */
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
     msgpack_pack_array(&mp_pck, array_size);
@@ -83,7 +83,7 @@ static int azure_format(const void *in_buf, size_t in_bytes,
         flb_time_pop_from_msgpack(&tm, &result, &obj);
         t = flb_time_to_double(&tm);
 
-        /* Create temporal msgpack buffer */
+        /* Create temporary msgpack buffer */
         msgpack_sbuffer_init(&tmp_sbuf);
         msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 

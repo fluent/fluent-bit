@@ -28,7 +28,7 @@
 
 #include <jsmn/jsmn.h>
 
-#define free_temporal_buffers()                 \
+#define free_temporary_buffers()                 \
     if (prot) {                                 \
         flb_free(prot);                         \
     }                                           \
@@ -230,11 +230,11 @@ struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
     /* Remove Upstream Async flag */
     ctx->u->flags &= ~(FLB_IO_ASYNC);
 
-    free_temporal_buffers();
+    free_temporary_buffers();
     return ctx;
 
  error:
-    free_temporal_buffers();
+    free_temporary_buffers();
     flb_oauth2_destroy(ctx);
 
     return NULL;

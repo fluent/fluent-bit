@@ -107,7 +107,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     msgpack_object val;
     flb_sds_t s;
 
-    /* Init temporal buffers */
+    /* Init temporary buffers */
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 

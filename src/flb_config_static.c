@@ -164,7 +164,7 @@ static int flb_config_static_read(struct mk_rconf *conf,
 
     conf->level++;
 
-    /* Allocate temporal buffer to read file content */
+    /* Allocate temporary buffer to read file content */
     buf = mk_mem_alloc(MK_RCONF_KV_SIZE);
     if (!buf) {
         perror("malloc");
@@ -297,7 +297,7 @@ static int flb_config_static_read(struct mk_rconf *conf,
         /* Register entry: key and val are copied as duplicated */
         rconf_section_entry_add(conf, key, val);
 
-        /* Free temporal key and val */
+        /* Free temporary key and val */
         mk_mem_free(key);
         mk_mem_free(val);
 

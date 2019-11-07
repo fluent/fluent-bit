@@ -433,7 +433,7 @@ void flb_storage_input_destroy(struct flb_input_instance *in)
     struct mk_list *head;
     struct flb_input_chunk *ic;
 
-    /* Save current temporal data and destroy chunk references */
+    /* Save current temporary data and destroy chunk references */
     mk_list_foreach_safe(head, tmp, &in->chunks) {
         ic = mk_list_entry(head, struct flb_input_chunk, _head);
         flb_input_chunk_destroy(ic, FLB_FALSE);

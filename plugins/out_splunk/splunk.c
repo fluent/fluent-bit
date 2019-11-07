@@ -80,7 +80,7 @@ static int splunk_format(const void *in_buf, size_t in_bytes,
         flb_time_pop_from_msgpack(&tm, &result, &obj);
         t = flb_time_to_double(&tm);
 
-        /* Create temporal msgpack buffer */
+        /* Create temporary msgpack buffer */
         msgpack_sbuffer_init(&mp_sbuf);
         msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 

@@ -41,7 +41,7 @@
 #define FLB_HASH_TABLE_SIZE 256
 
 /*
- * When merging nested JSON strings from Docker logs, we need a temporal
+ * When merging nested JSON strings from Docker logs, we need a temporary
  * buffer to perform the convertion. To optimize the process, we pre-allocate
  * a buffer for that purpose. The FLB_MERGE_BUF_SIZE defines the buffer size.
  *

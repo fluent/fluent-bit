@@ -913,7 +913,7 @@ static int stackdriver_format(struct flb_config *config,
     /* Count number of records */
     array_size = flb_mp_count(data, bytes);
 
-    /* Create temporal msgpack buffer */
+    /* Create temporary msgpack buffer */
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
