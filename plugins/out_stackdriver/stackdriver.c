@@ -430,6 +430,88 @@ static int get_severity_level(severity_t * s, const msgpack_object * o,
     return -1;
 }
 
+static int update_resource_labels(struct flb_stackdriver * ctx, msgpack_packer * mp_pck,const msgpack_object * o) {
+
+    flb_sds_t node_name_val;
+    flb_sds_t container_name;
+    flb_sds_t pod_name;
+    flb_sds_t namespace_name;
+
+    // get node name
+    msgpack_object node_name;
+    flb_sds_t node_name_key = flb_sds_create("node_name");
+    if (get_msgpack_obj(&node_name, o, node_name_key, flb_sds_len(node_name_key), MSGPACK_OBJECT_STR) == 0) {
+        flb_info("found key=%s, val=%s", node_name_key, flb_strndup(node_name.via.str.ptr, node_name.via.str.size));
+        node_name_val = flb_sds_create(flb_strndup(node_name.via.str.ptr, node_name.via.str.size));
+
+    } else {
+        flb_info("key=%s not found.", node_name_key);
+    }
+
+    // get kubernetes metadata
+    msgpack_object kube_meta;
+    flb_sds_t kube_key = flb_sds_create("kubernetes");
+    if (get_msgpack_obj(&kube_meta, o, kube_key, flb_sds_len(kube_key), MSGPACK_OBJECT_MAP) == 0) {
+        for(int i = 0; i < kube_meta.via.map.size; i++) {
+            if (strncmp("container_name", kube_meta.via.map.ptr[i].key.via.str.ptr, kube_meta.via.map.ptr[i].key.via.str.size) == 0) {
+                flb_info("container_name found %s", flb_strndup(kube_meta.via.map.ptr[i].val.via.str.ptr, kube_meta.via.map.ptr[i].val.via.str.size));
+    //            flb_sds_t container_name = flb_strndup(kube_meta.via.map.ptr[i].val.via.str.ptr, kube_meta.via.map.ptr[i].val.via.str.size);
+            }
+            if (strncmp("pod_name", kube_meta.via.map.ptr[i].key.via.str.ptr, kube_meta.via.map.ptr[i].key.via.str.size) == 0) {
+                flb_info("pod_name found %s", flb_strndup(kube_meta.via.map.ptr[i].val.via.str.ptr, kube_meta.via.map.ptr[i].val.via.str.size));
+    //            flb_sds_t pod_name = flb_strndup(kube_meta.via.map.ptr[i].val.via.str.ptr, kube_meta.via.map.ptr[i].val.via.str.size);
+            }
+            if (strncmp("namespace_name", kube_meta.via.map.ptr[i].key.via.str.ptr, kube_meta.via.map.ptr[i].key.via.str.size) == 0) {
+                flb_info("namespace_name found %s", flb_strndup(kube_meta.via.map.ptr[i].val.via.str.ptr, kube_meta.via.map.ptr[i].val.via.str.size));
+    //            flb_sds_t namespace_name = flb_strndup(kube_meta.via.map.ptr[i].val.via.str.ptr, kube_meta.via.map.ptr[i].val.via.str.size);
+            }
+        }
+    } else {
+        flb_info("key=%s not found.", kube_key);
+    }
+
+    // resource以降を作る
+    msgpack_pack_str(mp_pck, 8);
+    msgpack_pack_str_body(mp_pck, "resource", 8);
+    /* type & labels */
+    msgpack_pack_map(mp_pck, 2);
+    /* type */
+    msgpack_pack_str(mp_pck, 4);
+    msgpack_pack_str_body(mp_pck, "type", 4);
+    if (node_name_val != NULL) {
+        flb_info("val=%s", node_name_val);
+        msgpack_pack_str(mp_pck, 8);
+        msgpack_pack_str_body(mp_pck, "k8s_node", 8);
+    }
+
+    msgpack_pack_str(mp_pck, 6);
+    msgpack_pack_str_body(mp_pck, "labels", 6);
+
+    msgpack_pack_map(mp_pck, 4);
+
+    msgpack_pack_str(mp_pck, 10);
+    msgpack_pack_str_body(mp_pck, "project_id", 10);
+    msgpack_pack_str(mp_pck, flb_sds_len(ctx->project_id));
+    msgpack_pack_str_body(mp_pck,
+                          ctx->project_id, flb_sds_len(ctx->project_id));
+
+    msgpack_pack_str(mp_pck, 8);
+    msgpack_pack_str_body(mp_pck, "location", 8);
+    msgpack_pack_str(mp_pck, flb_sds_len(ctx->location));
+    msgpack_pack_str_body(mp_pck, ctx->location, flb_sds_len(ctx->location));
+
+    msgpack_pack_str(mp_pck, 12);
+    msgpack_pack_str_body(mp_pck, "cluster_name", 12);
+    msgpack_pack_str(mp_pck, flb_sds_len(ctx->cluster_name));
+    msgpack_pack_str_body(mp_pck, ctx->cluster_name, flb_sds_len(ctx->cluster_name));
+
+    msgpack_pack_str(mp_pck, flb_sds_len(node_name_key));
+    msgpack_pack_str_body(mp_pck, node_name_key, flb_sds_len(node_name_key));
+    flb_info("len=%d", flb_sds_len(node_name_val));
+    msgpack_pack_str(mp_pck, flb_sds_len(node_name_val));
+    msgpack_pack_str_body(mp_pck, node_name_val, flb_sds_len(node_name_val));
+}
+
 static int stackdriver_format(const void *data, size_t bytes,
                               const char *tag, size_t tag_len,
                               char **out_data, size_t *out_size,
@@ -470,51 +552,130 @@ static int stackdriver_format(const void *data, size_t bytes,
      */
     msgpack_pack_map(&mp_pck, 2);
 
-    msgpack_pack_str(&mp_pck, 8);
-    msgpack_pack_str_body(&mp_pck, "resource", 8);
+    if (strcmp(ctx->resource, "k8s_cluster") != 0) {
 
-    /* type & labels */
-    msgpack_pack_map(&mp_pck, 2);
+        msgpack_pack_str(&mp_pck, 8);
+        msgpack_pack_str_body(&mp_pck, "resource", 8);
 
-    /* type */
-    msgpack_pack_str(&mp_pck, 4);
-    msgpack_pack_str_body(&mp_pck, "type", 4);
-    msgpack_pack_str(&mp_pck, flb_sds_len(ctx->resource));
-    msgpack_pack_str_body(&mp_pck, ctx->resource,
-                          flb_sds_len(ctx->resource));
+        /* type & labels */
+        msgpack_pack_map(&mp_pck, 2);
 
-    msgpack_pack_str(&mp_pck, 6);
-    msgpack_pack_str_body(&mp_pck, "labels", 6);
+        /* type */
+        msgpack_pack_str(&mp_pck, 4);
+        msgpack_pack_str_body(&mp_pck, "type", 4);
+        msgpack_pack_str(&mp_pck, flb_sds_len(ctx->resource));
+        msgpack_pack_str_body(&mp_pck, ctx->resource,
+                              flb_sds_len(ctx->resource));
 
-    if (strcmp(ctx->resource, "global") == 0) {
-      /* global resource has field project_id */
-      msgpack_pack_map(&mp_pck, 1);
-      msgpack_pack_str(&mp_pck, 10);
-      msgpack_pack_str_body(&mp_pck, "project_id", 10);
-      msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
-      msgpack_pack_str_body(&mp_pck,
-                            ctx->project_id, flb_sds_len(ctx->project_id));
-    } else if (strcmp(ctx->resource, "gce_instance") == 0) {
-      /* gce_instance resource has fields project_id, zone, instance_id */
-      msgpack_pack_map(&mp_pck, 3);
+        msgpack_pack_str(&mp_pck, 6);
+        msgpack_pack_str_body(&mp_pck, "labels", 6);
 
-      msgpack_pack_str(&mp_pck, 10);
-      msgpack_pack_str_body(&mp_pck, "project_id", 10);
-      msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
-      msgpack_pack_str_body(&mp_pck,
-                            ctx->project_id, flb_sds_len(ctx->project_id));
+        if (strcmp(ctx->resource, "global") == 0) {
+          /* global resource has field project_id */
+          msgpack_pack_map(&mp_pck, 1);
+          msgpack_pack_str(&mp_pck, 10);
+          msgpack_pack_str_body(&mp_pck, "project_id", 10);
+          msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
+          msgpack_pack_str_body(&mp_pck,
+                                ctx->project_id, flb_sds_len(ctx->project_id));
+        } else if (strcmp(ctx->resource, "gce_instance") == 0) {
+          /* gce_instance resource has fields project_id, zone, instance_id */
+          msgpack_pack_map(&mp_pck, 3);
 
-      msgpack_pack_str(&mp_pck, 4);
-      msgpack_pack_str_body(&mp_pck, "zone", 4);
-      msgpack_pack_str(&mp_pck, flb_sds_len(ctx->zone));
-      msgpack_pack_str_body(&mp_pck, ctx->zone, flb_sds_len(ctx->zone));
+          msgpack_pack_str(&mp_pck, 10);
+          msgpack_pack_str_body(&mp_pck, "project_id", 10);
+          msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
+          msgpack_pack_str_body(&mp_pck,
+                                ctx->project_id, flb_sds_len(ctx->project_id));
 
-      msgpack_pack_str(&mp_pck, 11);
-      msgpack_pack_str_body(&mp_pck, "instance_id", 11);
-      msgpack_pack_str(&mp_pck, flb_sds_len(ctx->instance_id));
-      msgpack_pack_str_body(&mp_pck,
-                            ctx->instance_id, flb_sds_len(ctx->instance_id));
+          msgpack_pack_str(&mp_pck, 4);
+          msgpack_pack_str_body(&mp_pck, "zone", 4);
+          msgpack_pack_str(&mp_pck, flb_sds_len(ctx->zone));
+          msgpack_pack_str_body(&mp_pck, ctx->zone, flb_sds_len(ctx->zone));
+
+          msgpack_pack_str(&mp_pck, 11);
+          msgpack_pack_str_body(&mp_pck, "instance_id", 11);
+          msgpack_pack_str(&mp_pck, flb_sds_len(ctx->instance_id));
+          msgpack_pack_str_body(&mp_pck,
+                                ctx->instance_id, flb_sds_len(ctx->instance_id));
+        }
     }
+
+
+//    else if (strcmp(ctx->resource, "k8s_cluster") == 0) {
+//      /* k8s_cluster resource has field project_id, location, cluster_name */
+//      msgpack_pack_map(&mp_pck, 3);
+//
+//      msgpack_pack_str(&mp_pck, 10);
+//      msgpack_pack_str_body(&mp_pck, "project_id", 10);
+//      msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
+//      msgpack_pack_str_body(&mp_pck,
+//                            ctx->project_id, flb_sds_len(ctx->project_id));
+//
+//      msgpack_pack_str(&mp_pck, 8);
+//      msgpack_pack_str_body(&mp_pck, "location", 8);
+//      msgpack_pack_str(&mp_pck, flb_sds_len(ctx->location));
+//      msgpack_pack_str_body(&mp_pck, ctx->location, flb_sds_len(ctx->location));
+//
+//      msgpack_pack_str(&mp_pck, 12);
+//      msgpack_pack_str_body(&mp_pck, "cluster_name", 12);
+//      msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_name));
+//      msgpack_pack_str_body(&mp_pck, ctx->cluster_name, flb_sds_len(ctx->cluster_name));
+//
+//      off = 0;
+//      msgpack_unpacked msg;
+//      msgpack_unpacked_init(&msg);
+//      while (msgpack_unpack_next(&msg, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
+//        msgpack_object root = msg.data;
+//        if (root.type == MSGPACK_OBJECT_ARRAY) flb_info("array");
+//        if (root.type == MSGPACK_OBJECT_ARRAY) flb_info("size %d", root.via.array.size); // 2
+//        if (root.via.array.ptr[0].type == MSGPACK_OBJECT_EXT) flb_info("ext"); // array[0] is type ext
+//        flb_info("type %d", root.via.array.ptr[0].type); // 9
+//
+//        if (root.via.array.ptr[1].type == MSGPACK_OBJECT_MAP) flb_info("map"); // array[1] is type map
+//        flb_info("type %d", root.via.array.ptr[1].type); // 7 type is map
+//        flb_info("map.size %d", root.via.array.ptr[1].via.map.size); // 2
+//        flb_info("type %d", root.via.array.ptr[1].via.map.ptr[0].key.type); // 5 str
+//        flb_info("str %s", root.via.array.ptr[1].via.map.ptr[0].key.via.str.ptr); // nanika haitteru
+//        flb_info("type %d", root.via.array.ptr[1].via.map.ptr[0].val.type); // 5 str
+//        flb_info("str %s", root.via.array.ptr[1].via.map.ptr[0].val.via.str.ptr); //
+//
+//        flb_info("1-1 type %d", root.via.array.ptr[1].via.map.ptr[1].key.type); //
+//        flb_info("1-1 str %s", root.via.array.ptr[1].via.map.ptr[1].key.via.str.ptr); //
+//        flb_info("1-1 type %d", root.via.array.ptr[1].via.map.ptr[1].val.type); // 7 type is map
+//        flb_info("1-1 size %d", root.via.array.ptr[1].via.map.ptr[1].val.via.map.size); // size is 4
+//        flb_info("1-1 key str0 %s", root.via.array.ptr[1].via.map.ptr[1].val.via.map.ptr[0].key.via.str.ptr);
+//        flb_info("1-1 val str0 %s", root.via.array.ptr[1].via.map.ptr[1].val.via.map.ptr[0].val.via.str.ptr);
+//        flb_info("1-1 key str1 %s", root.via.array.ptr[1].via.map.ptr[1].val.via.map.ptr[1].key.via.str.ptr);
+//        flb_info("1-1 val str1 %s", root.via.array.ptr[1].via.map.ptr[1].val.via.map.ptr[1].val.via.str.ptr);
+//        flb_info("1-1 key str2 %s", root.via.array.ptr[1].via.map.ptr[1].val.via.map.ptr[2].key.via.str.ptr);
+//        flb_info("1-1 val str2 %s", root.via.array.ptr[1].via.map.ptr[1].val.via.map.ptr[2].val.via.str.ptr);
+//        flb_info("1-1 key str3 %s", root.via.array.ptr[1].via.map.ptr[1].val.via.map.ptr[3].key.via.str.ptr);
+//        flb_info("1-1 val str3 %s", root.via.array.ptr[1].via.map.ptr[1].val.via.map.ptr[3].val.via.str.ptr);
+
+//        msgpack_object kube_meta;
+//        flb_sds_t key = "kubernetes";
+//        get_kube_meta(&kube_meta, &root, key, flb_sds_len(key), MSGPACK_OBJECT_STR);
+//        for(int i = 0; i < kube_meta.via.map.size; i++) {
+//            if (strncmp("container_name", kube_meta.via.map.ptr[i].key.via.str.ptr, kube_meta.via.map.ptr[i].key.via.str.size) == 0) {
+//                flb_info("container_name found %s", flb_strndup(kube_meta.via.map.ptr[i].val.via.str.ptr, kube_meta.via.map.ptr[i].val.via.str.size));
+//                //flb_sds_t container_name = flb_strndup(kube_meta.via.map.ptr[i].val.via.str.ptr, kube_meta.via.map.ptr[i].val.via.str.size);
+//            }
+//            if (strncmp("pod_name", kube_meta.via.map.ptr[i].key.via.str.ptr, kube_meta.via.map.ptr[i].key.via.str.size) == 0) {
+//                flb_info("pod_name found %s", flb_strndup(kube_meta.via.map.ptr[i].val.via.str.ptr, kube_meta.via.map.ptr[i].val.via.str.size));
+//                //flb_sds_t pod_name = flb_strndup(kube_meta.via.map.ptr[i].val.via.str.ptr, kube_meta.via.map.ptr[i].val.via.str.size);
+//            }
+//            if (strncmp("namespace_name", kube_meta.via.map.ptr[i].key.via.str.ptr, kube_meta.via.map.ptr[i].key.via.str.size) == 0) {
+//                flb_info("namespace_name found %s", flb_strndup(kube_meta.via.map.ptr[i].val.via.str.ptr, kube_meta.via.map.ptr[i].val.via.str.size));
+//                //flb_sds_t namespace_name = flb_strndup(kube_meta.via.map.ptr[i].val.via.str.ptr, kube_meta.via.map.ptr[i].val.via.str.size);
+//            }
+//        }
+
+        // root.via.array.ptr[1].via.map.size の数だけ
+        // root.via.array.ptr[1].via.map.ptr[i].key に"kubernetes"があるか探す。
+        // あったらsubobjに取り出してnamespace_name, pod_name, container_nameを探す。
+//      }
+//    }
 
     msgpack_pack_str(&mp_pck, 7);
     msgpack_pack_str_body(&mp_pck, "entries", 7);
@@ -576,10 +737,17 @@ static int stackdriver_format(const void *data, size_t bytes,
 
         msgpack_pack_str(&mp_pck, s);
         msgpack_pack_str_body(&mp_pck, time_formatted, s);
+
+        // If k8s_cluster is specified, resource labels will update with
+        // the metadata in the unpacked data.
+        if (strcmp(ctx->resource, "k8s_cluster") == 0) {
+            update_resource_labels(ctx, &mp_pck, obj);
+        }
     }
 
     /* Convert from msgpack to JSON */
     out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    flb_info(out_buf);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     if (!out_buf) {

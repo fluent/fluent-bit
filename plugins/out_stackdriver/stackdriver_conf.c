@@ -42,7 +42,8 @@ static inline int key_cmp(const char *str, int len, const char *cmp) {
 static int validate_resource(const char *res)
 {
     if (strcasecmp(res, "global") != 0 &&
-        strcasecmp(res, "gce_instance") != 0) {
+        strcasecmp(res, "gce_instance") != 0 &&
+        strcasecmp(res, "k8s_cluster") != 0) {
         return -1;
     }
 
@@ -265,6 +266,7 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     }
 
     /* Resource type (only 'global' and 'gce_instance' are supported) */
+    /* Support resource type k8s_cluster */
     tmp = flb_output_get_property("resource", ins);
     if (tmp) {
         if (validate_resource(tmp) != 0) {
@@ -277,6 +279,17 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     }
     else {
         ctx->resource = flb_sds_create(FLB_SDS_RESOURCE_TYPE);
+    }
+
+    if (strcasecmp(ctx->resource, "k8s_cluster") == 0) {
+        tmp = flb_output_get_property("location", ins);
+        if (tmp) {
+            ctx->location = flb_sds_create(tmp);
+        }
+        tmp = flb_output_get_property("cluster_name", ins);
+        if (tmp) {
+            ctx->cluster_name = flb_sds_create(tmp);
+        }
     }
 
     tmp = flb_output_get_property("severity_key", ins);
@@ -303,6 +316,8 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
     flb_sds_destroy(ctx->auth_uri);
     flb_sds_destroy(ctx->token_uri);
     flb_sds_destroy(ctx->resource);
+    flb_sds_destroy(ctx->location);
+    flb_sds_destroy(ctx->cluster_name);
     flb_sds_destroy(ctx->severity_key);
 
     if (ctx->o) {

@@ -937,11 +937,32 @@ int flb_kube_dummy_meta_get(char **out_buf, size_t *out_size)
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    msgpack_pack_map(&mp_pck, 1);
+//    msgpack_pack_map(&mp_pck, 1);
+//    msgpack_pack_str(&mp_pck, 5 /* dummy */ );
+//    msgpack_pack_str_body(&mp_pck, "dummy", 5);
+//    msgpack_pack_str(&mp_pck, len);
+//    msgpack_pack_str_body(&mp_pck, stime, len);
+
+    msgpack_pack_map(&mp_pck, 4);
     msgpack_pack_str(&mp_pck, 5 /* dummy */ );
     msgpack_pack_str_body(&mp_pck, "dummy", 5);
     msgpack_pack_str(&mp_pck, len);
     msgpack_pack_str_body(&mp_pck, stime, len);
+
+    msgpack_pack_str(&mp_pck, 14 /* container_name */ );
+    msgpack_pack_str_body(&mp_pck, "container_name", 14);
+    msgpack_pack_str(&mp_pck, 14);
+    msgpack_pack_str_body(&mp_pck, "test-container", 14);
+
+    msgpack_pack_str(&mp_pck, 8 /* pod_name */ );
+    msgpack_pack_str_body(&mp_pck, "pod_name", 8);
+    msgpack_pack_str(&mp_pck, 8);
+    msgpack_pack_str_body(&mp_pck, "test-pod", 8);
+
+    msgpack_pack_str(&mp_pck, 14 /* namespace_name */ );
+    msgpack_pack_str_body(&mp_pck, "namespace_name", 14);
+    msgpack_pack_str(&mp_pck, 14);
+    msgpack_pack_str_body(&mp_pck, "test-namespace", 14);
 
     *out_buf = mp_sbuf.data;
     *out_size = mp_sbuf.size;
