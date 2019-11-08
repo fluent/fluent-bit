@@ -56,6 +56,7 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
     ctx->labels = FLB_TRUE;
     ctx->annotations = FLB_TRUE;
     ctx->dummy_meta = FLB_FALSE;
+    ctx->cache = FLB_TRUE;
     ctx->tls_debug = -1;
     ctx->tls_verify = FLB_TRUE;
     ctx->tls_ca_path = NULL;
@@ -81,11 +82,22 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
         }
     }
 
+    /* Metadata cache */
+    tmp = flb_filter_get_property("kube_meta_cache", i);
+    if (tmp) {
+        ctx->cache = flb_utils_bool(tmp);
+        if (ctx->cache == FLB_FALSE) {
+            flb_info("[filter_kube] metadata cache is disabled");
+        }
+    }
+
+    /* TLS: debug option */
     tmp = flb_filter_get_property("tls.debug", i);
     if (tmp) {
         ctx->tls_debug = atoi(tmp);
     }
 
+    /* TLS: verify certificate ? */
     tmp = flb_filter_get_property("tls.verify", i);
     if (tmp) {
         ctx->tls_verify = flb_utils_bool(tmp);

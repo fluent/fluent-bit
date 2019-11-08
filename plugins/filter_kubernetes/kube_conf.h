@@ -71,6 +71,7 @@ struct flb_kube {
     int api_https;
     int use_journal;
     int labels;
+    int cache;                /* enable/disable metadata cache (default is ON) */
     int annotations;
     int dummy_meta;
     int tls_debug;

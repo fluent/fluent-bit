@@ -335,12 +335,13 @@ static void extract_container_hash(struct flb_kube_meta *meta,
                                    msgpack_object status)
 {
     int i;
-    msgpack_object k, v;
+    int name_found = FLB_FALSE;
     int docker_id_len = 0;
     int container_hash_len = 0;
     const char *container_hash;
     const char *docker_id;
-    int name_found = FLB_FALSE;
+    msgpack_object k, v;
+
     /* Process status/containerStatus map for docker_id, container_hash */
     for (i = 0;
          (meta->docker_id_len == 0 || meta->container_hash_len == 0) &&
@@ -399,6 +400,7 @@ static void extract_container_hash(struct flb_kube_meta *meta,
                         container_hash_len = v2.size - FLB_KUBE_META_IMAGE_ID_PREFIX_LEN;
                     }
                 }
+
                 if (name_found) {
                     if (container_hash_len && !meta->container_hash_len) {
                         meta->container_hash_len = container_hash_len;
@@ -970,10 +972,21 @@ int flb_kube_meta_get(struct flb_kube *ctx,
         return -1;
     }
 
-    /* Check if we have some data associated to the cache key */
-    ret = flb_hash_get(ctx->hash_table,
-                       meta->cache_key, meta->cache_key_len,
-                       &hash_meta_buf, &hash_meta_size);
+    if (ctx->cache == FLB_TRUE) {
+        /* Check if we have some data associated to the cache key */
+        ret = flb_hash_get(ctx->hash_table,
+                           meta->cache_key, meta->cache_key_len,
+                           &hash_meta_buf, &hash_meta_size);
+    }
+    else {
+        /*
+         * Metadata cache is disabled, force metadata retrieval. Note that this
+         * mechanism is only used for testing purposes, we don't enforce the check
+         * again (hash table will be populated anyways, not relevant).
+         */
+        ret = -1;
+    }
+
     if (ret == -1) {
         /* Retrieve API server meta and merge with local meta */
         ret = get_and_merge_meta(ctx, meta,
