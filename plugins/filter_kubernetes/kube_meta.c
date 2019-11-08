@@ -338,6 +338,8 @@ static void extract_container_hash(struct flb_kube_meta *meta,
     int name_found = FLB_FALSE;
     int docker_id_len = 0;
     int container_hash_len = 0;
+    int pos;
+    char *p;
     const char *container_hash;
     const char *docker_id;
     msgpack_object k, v;
@@ -398,6 +400,18 @@ static void extract_container_hash(struct flb_kube_meta *meta,
                         /* Strip "docker-pullable://" prefix */
                         container_hash = v2.ptr + FLB_KUBE_META_IMAGE_ID_PREFIX_LEN;
                         container_hash_len = v2.size - FLB_KUBE_META_IMAGE_ID_PREFIX_LEN;
+                    }
+                    else if (k2.via.str.size > 3) {
+                        /*
+                         * Last workaround, find the separator '://' and use the
+                         * the remaining content.
+                         */
+                        pos = mk_string_search_n(v2.ptr, "://", MK_FALSE, v2.size);
+                        if (pos > 0) {
+                            p = (char *) v2.ptr + pos;
+                            container_hash = p + 3;
+                            container_hash_len = v2.size - (p - v2.ptr);
+                        }
                     }
                 }
 
