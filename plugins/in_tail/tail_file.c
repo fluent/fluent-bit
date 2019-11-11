@@ -585,7 +585,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     struct mk_list *head;
     struct flb_tail_file *file;
 
-    if (!S_ISREG(st->st_mode)) {
+    if (!S_ISREG(st->st_mode) && !S_ISFIFO(st->st_mode)) {
         return -1;
     }
 
@@ -606,7 +606,11 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
 #ifdef _MSC_VER
     fd = open_file(path);
 #else
-    fd = open(path, O_RDONLY);
+    if(S_ISREG(st->st_mode)) {
+        fd = open(path, O_RDONLY);
+    } else {
+        fd = open(path, O_RDONLY | O_NONBLOCK);
+    }
 #endif
     if (fd == -1) {
         flb_errno();

@@ -251,7 +251,7 @@ int flb_tail_scan(const char *path, struct flb_tail_config *ctx)
     /* For every entry found, generate an output list */
     for (i = 0; i < globbuf.gl_pathc; i++) {
         ret = stat(globbuf.gl_pathv[i], &st);
-        if (ret == 0 && S_ISREG(st.st_mode)) {
+        if (ret == 0 && (S_ISREG(st.st_mode) || S_ISFIFO(st.st_mode))) {
             /* Check if this file is blacklisted */
             if (tail_is_excluded(globbuf.gl_pathv[i], ctx) == FLB_TRUE) {
                 flb_debug("[in_tail] excluded=%s", globbuf.gl_pathv[i]);
@@ -305,7 +305,7 @@ int flb_tail_scan_callback(struct flb_input_instance *i_ins,
     /* For every entry found, check if is already registered or not */
     for (i = 0; i < globbuf.gl_pathc; i++) {
         ret = stat(globbuf.gl_pathv[i], &st);
-        if (ret == 0 && S_ISREG(st.st_mode)) {
+        if (ret == 0 && (S_ISREG(st.st_mode) || S_ISFIFO(st.st_mode))) {
             /* Check if this file is blacklisted */
             if (tail_is_excluded(globbuf.gl_pathv[i], ctx) == FLB_TRUE) {
                 continue;
