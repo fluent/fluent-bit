@@ -265,8 +265,7 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         ctx->metadata_server_auth = true;
     }
 
-    /* Resource type (only 'global' and 'gce_instance' are supported) */
-    /* Support resource type k8s_cluster */
+    /* Resource type (only 'global', 'gce_instance' and 'k8s_cluster' are supported) */
     tmp = flb_output_get_property("resource", ins);
     if (tmp) {
         if (validate_resource(tmp) != 0) {
