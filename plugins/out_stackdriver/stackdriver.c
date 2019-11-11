@@ -446,7 +446,8 @@ static void create_k8s_resource_labels(struct flb_stackdriver * ctx, msgpack_pac
         flb_debug("found key=%s, val=%s",
                 node_name_key, flb_strndup(node_name.via.str.ptr, node_name.via.str.size));
         node_name_val = flb_sds_create(flb_strndup(node_name.via.str.ptr, node_name.via.str.size));
-    } else {
+    }
+    else {
         flb_debug("key=%s not found.", node_name_key);
     }
 
@@ -480,7 +481,8 @@ static void create_k8s_resource_labels(struct flb_stackdriver * ctx, msgpack_pac
                                                 kube_meta.via.map.ptr[i].val.via.str.size));
             }
         }
-    } else {
+    }
+    else {
         flb_debug("key=%s not found.", kube_key);
     }
 
@@ -528,7 +530,8 @@ static void create_k8s_resource_labels(struct flb_stackdriver * ctx, msgpack_pac
         msgpack_pack_str(mp_pck, flb_sds_len(node_name_val));
         msgpack_pack_str_body(mp_pck, node_name_val, flb_sds_len(node_name_val));
 
-    } else if (container_name != NULL && pod_name != NULL) {
+    }
+    else if (container_name != NULL && pod_name != NULL) {
         /* monitored resource type k8s_container
          * https://cloud.google.com/monitoring/api/resources#tag_k8s_container */
         msgpack_pack_str(mp_pck, 13);
@@ -570,7 +573,8 @@ static void create_k8s_resource_labels(struct flb_stackdriver * ctx, msgpack_pac
         msgpack_pack_str_body(mp_pck, "namespace_name", 14);
         msgpack_pack_str(mp_pck, flb_sds_len(container_name));
         msgpack_pack_str_body(mp_pck, namespace_name, flb_sds_len(namespace_name));
-    } else {
+    }
+    else {
         /* monitored resource type k8s_cluster
          * https://cloud.google.com/monitoring/api/resources#tag_k8s_cluster */
         msgpack_pack_str(mp_pck, 11);
