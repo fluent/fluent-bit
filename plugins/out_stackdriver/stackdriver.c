@@ -430,8 +430,9 @@ static int get_severity_level(severity_t * s, const msgpack_object * o,
     return -1;
 }
 
-static void create_k8s_resource_labels(struct flb_stackdriver * ctx, msgpack_packer * mp_pck,const msgpack_object * o) {
-
+static void create_k8s_resource_labels(struct flb_stackdriver * ctx, msgpack_packer * mp_pck,
+                                        const msgpack_object * o)
+{
     flb_sds_t node_name_val = NULL;
     flb_sds_t container_name = NULL;
     flb_sds_t pod_name = NULL;
@@ -458,31 +459,25 @@ static void create_k8s_resource_labels(struct flb_stackdriver * ctx, msgpack_pac
             if (strncmp("container_name",
                         kube_meta.via.map.ptr[i].key.via.str.ptr,
                         kube_meta.via.map.ptr[i].key.via.str.size) == 0) {
-                flb_debug("container_name found %s",
-                        flb_strndup(kube_meta.via.map.ptr[i].val.via.str.ptr,
-                        kube_meta.via.map.ptr[i].val.via.str.size));
-                container_name = flb_sds_create(flb_strndup(kube_meta.via.map.ptr[i].val.via.str.ptr,
-                        kube_meta.via.map.ptr[i].val.via.str.size));
+                container_name = flb_sds_create(
+                                    flb_strndup(kube_meta.via.map.ptr[i].val.via.str.ptr,
+                                                kube_meta.via.map.ptr[i].val.via.str.size));
             }
 
             if (strncmp("pod_name",
                         kube_meta.via.map.ptr[i].key.via.str.ptr,
                         kube_meta.via.map.ptr[i].key.via.str.size) == 0) {
-                flb_debug("pod_name found %s",
-                        flb_strndup(kube_meta.via.map.ptr[i].val.via.str.ptr,
-                        kube_meta.via.map.ptr[i].val.via.str.size));
-                pod_name = flb_sds_create(flb_strndup(kube_meta.via.map.ptr[i].val.via.str.ptr,
-                        kube_meta.via.map.ptr[i].val.via.str.size));
+                pod_name = flb_sds_create(
+                            flb_strndup(kube_meta.via.map.ptr[i].val.via.str.ptr,
+                                        kube_meta.via.map.ptr[i].val.via.str.size));
             }
 
             if (strncmp("namespace_name",
                         kube_meta.via.map.ptr[i].key.via.str.ptr,
                         kube_meta.via.map.ptr[i].key.via.str.size) == 0) {
-                flb_debug("namespace_name found %s",
-                        flb_strndup(kube_meta.via.map.ptr[i].val.via.str.ptr,
-                        kube_meta.via.map.ptr[i].val.via.str.size));
-                namespace_name = flb_sds_create(flb_strndup(kube_meta.via.map.ptr[i].val.via.str.ptr,
-                        kube_meta.via.map.ptr[i].val.via.str.size));
+                namespace_name = flb_sds_create(
+                                    flb_strndup(kube_meta.via.map.ptr[i].val.via.str.ptr,
+                                                kube_meta.via.map.ptr[i].val.via.str.size));
             }
         }
     } else {
