@@ -323,17 +323,24 @@ static int extract_hash(const char * im, int sz, const char ** out, int * outsz)
     }
 
     colon = memrchr(im, ':', sz);
-    slash = memrchr(im, '/', sz);
 
-    if (colon == NULL && slash == NULL) {
+    if (colon == NULL) {
         return -1;
+    } else {
+        slash = colon;
+        while ((im + sz - slash + 1) > 0 && *(slash + 1) == '/') {
+            slash++;
+        }
+        if (slash == colon) {
+            slash = NULL;
+        }
     }
 
-    if (colon != NULL && slash == NULL && (im + sz - colon) > 0) {
+    if (slash == NULL && (im + sz - colon) > 0) {
         *out = colon + 1;
     }
 
-    if (colon != NULL && slash != NULL) {
+    if (slash != NULL) {
         if ((colon - slash) < 0 && (im + sz - slash) > 0) {
             *out = slash + 1;
         } else if ((colon - slash) > 0 && (im + sz - colon) > 0) {
@@ -341,15 +348,10 @@ static int extract_hash(const char * im, int sz, const char ** out, int * outsz)
         }
     }
 
-    if (colon == NULL && slash != NULL && (im + sz - slash) > 0) {
-        *out = slash + 1;
-    }
-
     if (*out) {
         *outsz = im + sz - *out;
         return 0;
     }
-
     return -1;
 }
 
@@ -375,8 +377,6 @@ static void extract_container_hash(struct flb_kube_meta *meta,
     msgpack_object k, v;
     int docker_id_len = 0;
     int container_hash_len = 0;
-    int pos;
-    char *p;
     const char *container_hash;
     const char *docker_id;
     const char *tmp;
@@ -439,18 +439,6 @@ static void extract_container_hash(struct flb_kube_meta *meta,
                         if (extract_hash(v2.ptr, v2.size, &tmp, &tmp_len) == 0) {
                             container_hash = tmp;
                             container_hash_len = tmp_len;
-                        }
-                    }
-                    else if (k2.via.str.size > 3) {
-                        /*
-                         * Last workaround, find the separator '://' and use the
-                         * the remaining content.
-                         */
-                        pos = mk_string_search_n(v2.ptr, "://", MK_FALSE, v2.size);
-                        if (pos > 0) {
-                            p = (char *) v2.ptr + pos;
-                            container_hash = p + 3;
-                            container_hash_len = v2.size - (p - v2.ptr);
                         }
                     }
                 }
