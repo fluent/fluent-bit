@@ -30,6 +30,7 @@
 #define FLB_KAFKA_FMT_JSON  0
 #define FLB_KAFKA_FMT_MSGP  1
 #define FLB_KAFKA_FMT_GELF  2
+#define FLB_KAFKA_FMT_RAW   3
 #define FLB_KAFKA_BROKERS   "127.0.0.1"
 #define FLB_KAFKA_TOPIC     "fluent-bit"
 #define FLB_KAFKA_TS_KEY    "@timestamp"
@@ -60,6 +61,10 @@ struct flb_kafka {
 
     int message_key_len;
     char *message_key;
+
+    /* Name of field containing the payload when using raw format */
+    int raw_key_len;
+    char *raw_key;
 
     /* Gelf Keys */
     struct flb_gelf_fields gelf_fields;

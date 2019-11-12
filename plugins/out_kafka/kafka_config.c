@@ -126,6 +126,9 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
         else if (strcasecmp(tmp, "gelf") == 0) {
             ctx->format = FLB_KAFKA_FMT_GELF;
         }
+	else if (strcasecmp(tmp, "raw") == 0) {
+            ctx->format = FLB_KAFKA_FMT_RAW;
+        }
     }
     else {
         ctx->format = FLB_KAFKA_FMT_JSON;
@@ -140,6 +143,17 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
     else {
         ctx->message_key = NULL;
         ctx->message_key_len = 0;
+    }
+
+    /* Config: Raw_Key */
+    tmp = flb_output_get_property("raw_key", ins);
+    if (tmp) {
+        ctx->raw_key = flb_strdup(tmp);
+        ctx->raw_key_len = strlen(tmp);
+    }
+    else {
+        ctx->raw_key = flb_strdup("payload");
+        ctx->raw_key_len = strlen("payload");
     }
 
     /* Config: Timestamp_Key */
