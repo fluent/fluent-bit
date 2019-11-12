@@ -39,6 +39,7 @@ set(FLB_IN_NETIF               No)
 set(FLB_IN_WINLOG             Yes)
 set(FLB_IN_COLLECTD            No)
 set(FLB_IN_STORAGE_BACKLOG     No)
+set(FLB_IN_ZMQ                 No)
 
 # OUTPUT plugins
 # ==============
