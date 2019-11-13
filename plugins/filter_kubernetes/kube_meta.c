@@ -42,12 +42,6 @@
 #define FLB_KUBE_META_INIT_CONTAINER_STATUSES_KEY "initContainerStatuses"
 #define FLB_KUBE_META_INIT_CONTAINER_STATUSES_KEY_LEN \
     (sizeof(FLB_KUBE_META_INIT_CONTAINER_STATUSES_KEY) - 1)
-#define FLB_KUBE_META_CONTAINER_ID_PREFIX "docker://"
-#define FLB_KUBE_META_CONTAINER_ID_PREFIX_LEN \
-    (sizeof(FLB_KUBE_META_CONTAINER_ID_PREFIX) - 1)
-#define FLB_KUBE_META_IMAGE_ID_PREFIX "docker-pullable://"
-#define FLB_KUBE_META_IMAGE_ID_PREFIX_LEN \
-    (sizeof(FLB_KUBE_META_IMAGE_ID_PREFIX) - 1)
 
 static int file_to_buffer(const char *path,
                           char **out_buf, size_t *out_size)
@@ -316,6 +310,51 @@ static void cb_results(const char *name, const char *value,
     return;
 }
 
+static int extract_hash(const char * im, int sz, const char ** out, int * outsz)
+{
+    char * colon = NULL;
+    char * slash = NULL;
+
+    *out = NULL;
+    *outsz = 0;
+
+    if (sz <= 1) {
+        return -1;
+    }
+
+    colon = memrchr(im, ':', sz);
+
+    if (colon == NULL) {
+        return -1;
+    } else {
+        slash = colon;
+        while ((im + sz - slash + 1) > 0 && *(slash + 1) == '/') {
+            slash++;
+        }
+        if (slash == colon) {
+            slash = NULL;
+        }
+    }
+
+    if (slash == NULL && (im + sz - colon) > 0) {
+        *out = colon + 1;
+    }
+
+    if (slash != NULL) {
+        if ((colon - slash) < 0 && (im + sz - slash) > 0) {
+            *out = slash + 1;
+        } else if ((colon - slash) > 0 && (im + sz - colon) > 0) {
+            *out = colon + 1;
+        }
+    }
+
+    if (*out) {
+        *outsz = im + sz - *out;
+        return 0;
+    }
+    return -1;
+}
+
 /*
  * As per Kubernetes Pod spec,
  * https://kubernetes.io/docs/concepts/workloads/pods/pod/, we look
@@ -338,10 +377,10 @@ static void extract_container_hash(struct flb_kube_meta *meta,
     msgpack_object k, v;
     int docker_id_len = 0;
     int container_hash_len = 0;
-    int pos;
-    char *p;
     const char *container_hash;
     const char *docker_id;
+    const char *tmp;
+    int tmp_len = 0;
     int name_found = FLB_FALSE;
     /* Process status/containerStatus map for docker_id, container_hash */
     for (i = 0;
@@ -388,28 +427,18 @@ static void extract_container_hash(struct flb_kube_meta *meta,
                         !strncmp(k2.via.str.ptr,
                                  "containerID",
                                  k2.via.str.size)) {
-                        /* Strip "docker-pullable://" prefix */
-                        docker_id = v2.ptr + FLB_KUBE_META_CONTAINER_ID_PREFIX_LEN;
-                        docker_id_len = v2.size - FLB_KUBE_META_CONTAINER_ID_PREFIX_LEN;
+                        if (extract_hash(v2.ptr, v2.size, &tmp, &tmp_len) == 0) {
+                            docker_id = tmp;
+                            docker_id_len = tmp_len;
+                        }
                     }
                     else if (k2.via.str.size == sizeof("imageID") - 1 &&
                               !strncmp(k2.via.str.ptr,
                                        "imageID",
                                        k2.via.str.size)) {
-                        /* Strip "docker-pullable://" prefix */
-                        container_hash = v2.ptr + FLB_KUBE_META_IMAGE_ID_PREFIX_LEN;
-                        container_hash_len = v2.size - FLB_KUBE_META_IMAGE_ID_PREFIX_LEN;
-                    }
-                    else if (k2.via.str.size > 3) {
-                        /*
-                         * Last workaround, find the separator '://' and use the
-                         * the remaining content.
-                         */
-                        pos = mk_string_search_n(v2.ptr, "://", MK_FALSE, v2.size);
-                        if (pos > 0) {
-                            p = (char *) v2.ptr + pos;
-                            container_hash = p + 3;
-                            container_hash_len = v2.size - (p - v2.ptr);
+                        if (extract_hash(v2.ptr, v2.size, &tmp, &tmp_len) == 0) {
+                            container_hash = tmp;
+                            container_hash_len = tmp_len;
                         }
                     }
                 }
