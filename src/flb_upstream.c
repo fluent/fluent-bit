@@ -338,6 +338,7 @@ int flb_upstream_conn_release(struct flb_upstream_conn *conn)
 
         flb_debug("[upstream] KA connection #%i to %s:%i is now available",
                   conn->fd, conn->u->tcp_host, conn->u->tcp_port);
+        conn->ka_count++;
         return 0;
     }
 
