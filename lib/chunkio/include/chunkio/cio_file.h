@@ -28,7 +28,6 @@ struct cio_file {
     int fd;                   /* file descriptor      */
     int flags;                /* open flags */
     int synced;               /* sync after latest write ? */
-    int mapped;               /* is the file content mapped ? */
     size_t fs_size;           /* original size in the file system */
     size_t data_size;         /* number of bytes used */
     size_t alloc_size;        /* allocated size       */
@@ -57,5 +56,11 @@ void cio_file_hash_print(struct cio_file *cf);
 void cio_file_calculate_checksum(struct cio_file *cf, crc_t *out);
 void cio_file_scan_dump(struct cio_ctx *ctx, struct cio_stream *st);
 int cio_file_read_prepare(struct cio_ctx *ctx, struct cio_chunk *ch);
+
+
+int cio_file_is_up(struct cio_chunk *ch, struct cio_file *cf);
+int cio_file_down(struct cio_chunk *ch);
+int cio_file_up(struct cio_chunk *ch);
+int cio_file_up_force(struct cio_chunk *ch);
 
 #endif

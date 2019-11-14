@@ -29,7 +29,11 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <fcntl.h>
+#ifdef _WIN32
+#  include <event2/util.h>
+#else
+#  include <fcntl.h>
+#endif
 
 #define DEFAULT_INTERVAL_SEC  1
 #define DEFAULT_INTERVAL_NSEC 0
@@ -63,6 +67,9 @@ static int in_random_collect(struct flb_input_instance *i_ins,
         return -1;
     }
 
+#ifdef _WIN32
+    evutil_secure_rng_get_bytes(&val, sizeof(val));
+#else
     fd = open("/dev/urandom", O_RDONLY);
     if (fd == -1) {
         val = time(NULL);
@@ -76,6 +83,7 @@ static int in_random_collect(struct flb_input_instance *i_ins,
         }
         close(fd);
     }
+#endif
 
     /* Initialize local msgpack buffer */
     msgpack_sbuffer_init(&mp_sbuf);
@@ -101,7 +109,7 @@ static int in_random_collect(struct flb_input_instance *i_ins,
 static int in_random_config_read(struct flb_in_random_config *random_config,
                                  struct flb_input_instance *in)
 {
-    char *val = NULL;
+    const char *val = NULL;
 
     /* samples */
     val = flb_input_get_property("samples", in);

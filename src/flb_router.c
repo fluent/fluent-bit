@@ -21,10 +21,15 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_router.h>
+
+#ifdef FLB_HAVE_REGEX
+#include <onigmo.h>
+#endif
 
 #include <string.h>
 
@@ -42,9 +47,9 @@ static inline int router_match(const char *tag, int tag_len,
     int n;
     if (match_regex) {
         n = onig_match(match_regex->regex,
-                       (unsigned char *) tag,
-                       (unsigned char *) tag + tag_len,
-                       (unsigned char *) tag, 0,
+                       (const unsigned char *) tag,
+                       (const unsigned char *) tag + tag_len,
+                       (const unsigned char *) tag, 0,
                        ONIG_OPTION_NONE);
         if (n > 0) {
             return 1;
@@ -97,21 +102,11 @@ static inline int router_match(const char *tag, int tag_len,
     return ret;
 }
 
-#ifdef FLB_HAVE_REGEX
-int flb_router_match(const char *tag, int tag_len,
-                     const char *match,
-                     struct flb_regex *match_regex)
+int flb_router_match(const char *tag, int tag_len, const char *match,
+                     void *match_regex)
 {
     return router_match(tag, tag_len, match, match_regex);
 }
-
-#else
-int flb_router_match(const char *tag, int tag_len, const char *match)
-{
-    return router_match(tag, tag_len, match, NULL);
-}
-#endif
-
 
 /* Associate and input and output instances due to a previous match */
 static int flb_router_connect(struct flb_input_instance *in,
@@ -166,7 +161,7 @@ int flb_router_io_set(struct flb_config *config)
             ) {
             flb_debug("[router] default match rule %s:%s",
                       i_ins->name, o_ins->name);
-            o_ins->match = flb_strdup("*");
+            o_ins->match = flb_sds_create_len("*", 1);
             flb_router_connect(i_ins, o_ins);
             return 0;
         }
@@ -203,6 +198,8 @@ int flb_router_io_set(struct flb_config *config)
             if (flb_router_match(i_ins->tag, i_ins->tag_len, o_ins->match
 #ifdef FLB_HAVE_REGEX
                 , o_ins->match_regex
+#else
+                , NULL
 #endif
             )) {
                 flb_debug("[router] match rule %s:%s",

@@ -27,8 +27,8 @@
 
 #include "kafka.h"
 
-struct flb_kafka_rest *flb_kafka_conf_create(struct flb_output_instance *ins,
+struct flb_kafka_rest *flb_kr_conf_create(struct flb_output_instance *ins,
                                              struct flb_config *config);
-int flb_kafka_conf_destroy(struct flb_kafka_rest *ctx);
+int flb_kr_conf_destroy(struct flb_kafka_rest *ctx);
 
 #endif

@@ -41,14 +41,58 @@
 #include "tail_multiline.h"
 #include "tail_scan.h"
 
+#ifdef _MSC_VER
+static int get_inode(int fd, uint64_t *inode)
+{
+    HANDLE h;
+    BY_HANDLE_FILE_INFORMATION info;
+
+    h = _get_osfhandle(fd);
+    if (h == INVALID_HANDLE_VALUE) {
+        flb_error("[in_tail] cannot convert fd:%i into HANDLE", fd);
+        return -1;
+    }
+
+    if (GetFileInformationByHandle(h, &info) == 0) {
+        flb_error("[in_tail] cannot get file info for fd:%i", fd);
+        return -1;
+    }
+    *inode = (uint64_t) info.nFileIndexHigh;
+    *inode = *inode << 32 | info.nFileIndexLow;
+    return 0;
+}
+#endif
+
 static inline void consume_bytes(char *buf, int bytes, int length)
 {
     memmove(buf, buf + bytes, length - bytes);
 }
 
+#ifdef _MSC_VER
+/*
+ * Open a file for reading. We need to use CreateFileA() instead of
+ * open(2) to avoid automatic file locking.
+ */
+static int open_file(const char *path)
+{
+    HANDLE h;
+    h = CreateFileA(path,
+                    GENERIC_READ,
+                    FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
+                    NULL,           /* lpSecurityAttributes */
+                    OPEN_EXISTING,  /* dwCreationDisposition */
+                    0,              /* dwFlagsAndAttributes */
+                    NULL);          /* hTemplateFile */
+    if (h == INVALID_HANDLE_VALUE) {
+        return -1;
+    }
+    return _open_osfhandle((intptr_t) h, _O_RDONLY);
+}
+#endif
+
 static int unpack_and_pack(msgpack_packer *pck, msgpack_object *root,
-                           char *key, size_t key_len,
-                           char *val, size_t val_len)
+                           const char *key, size_t key_len,
+                           const char *val, size_t val_len)
 {
     int i;
     int size = root->via.map.size;
@@ -73,8 +117,8 @@ static int unpack_and_pack(msgpack_packer *pck, msgpack_object *root,
 }
 
 static int append_record_to_map(char **data, size_t *data_size,
-                                char *key,  size_t key_len,
-                                char *val,  size_t val_len)
+                                const char *key, size_t key_len,
+                                const char *val, size_t val_len)
 {
     int ret;
     msgpack_unpacked result;
@@ -180,6 +224,7 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
     char *p;
     void *out_buf;
     size_t out_size;
+    int crlf;
     char *line;
     size_t line_len;
     char *repl_line;
@@ -218,11 +263,19 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
             continue;
         }
 
+        /* Process '\r\n' */
+        crlf = (data[len-1] == '\r');
+        if (len == 1 && crlf) {
+            data += 2;
+            processed_bytes += 2;
+            continue;
+        }
+
         /* Reset time for each line */
         flb_time_zero(&out_time);
 
         line = data;
-        line_len = len;
+        line_len = len - crlf;
         repl_line = NULL;
 
         if (ctx->docker_mode) {
@@ -246,7 +299,7 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
             }
         }
 
-#ifdef FLB_HAVE_REGEX
+#ifdef FLB_HAVE_PARSER
         if (ctx->parser) {
             /* Common parser (non-multiline) */
             ret = flb_parser_do(ctx->parser, line, line_len,
@@ -342,30 +395,28 @@ static inline void drop_bytes(char *buf, size_t len, int pos, int bytes)
 }
 
 #ifdef FLB_HAVE_REGEX
-static void cb_results(unsigned char *name, unsigned char *value,
+static void cb_results(const char *name, const char *value,
                        size_t vlen, void *data)
 {
     struct flb_hash *ht = data;
-    char *p;
 
-    while ((p = strchr((char *) value, '.'))) {
-        *p = '_';
+    if (vlen == 0) {
+        return;
     }
 
-    flb_hash_add(ht, (char *) name, strlen((char *) name), (char *) value, vlen);
+    flb_hash_add(ht, name, strlen(name), value, vlen);
 }
 #endif
 
 #ifdef FLB_HAVE_REGEX
-static int tag_compose(char *tag, struct flb_regex *tag_regex, char *fname, char **out_buf, size_t *out_size)
+static int tag_compose(char *tag, struct flb_regex *tag_regex, char *fname, char *out_buf, size_t *out_size)
 #else
-static int tag_compose(char *tag, char *fname, char **out_buf, size_t *out_size)
+static int tag_compose(char *tag, char *fname, char *out_buf, size_t *out_size)
 #endif
 {
     int i;
     int len;
     char *p;
-    char *buf = *out_buf;
     size_t buf_s = 0;
 #ifdef FLB_HAVE_REGEX
     ssize_t n;
@@ -374,13 +425,13 @@ static int tag_compose(char *tag, char *fname, char **out_buf, size_t *out_size)
     char *beg;
     char *end;
     int ret;
-    char *tmp;
+    const char *tmp;
     size_t tmp_s;
 #endif
 
 #ifdef FLB_HAVE_REGEX
     if (tag_regex) {
-        n = flb_regex_do(tag_regex, (unsigned char *) fname, strlen(fname), &result);
+        n = flb_regex_do(tag_regex, fname, strlen(fname), &result);
         if (n <= 0) {
             flb_error("[in_tail] invalid pattern for given file %s", fname);
             return -1;
@@ -392,7 +443,7 @@ static int tag_compose(char *tag, char *fname, char **out_buf, size_t *out_size)
             for (p = tag, beg = p; (beg = strchr(p, '<')); p = end + 2) {
                 if (beg != p) {
                     len = (beg - p);
-                    memcpy(buf + buf_s, p, len);
+                    memcpy(out_buf + buf_s, p, len);
                     buf_s += len;
                 }
 
@@ -405,11 +456,11 @@ static int tag_compose(char *tag, char *fname, char **out_buf, size_t *out_size)
                     len = end - beg + 1;
                     ret = flb_hash_get(ht, beg, len, &tmp, &tmp_s);
                     if (ret != -1) {
-                        memcpy(buf + buf_s, tmp, tmp_s);
+                        memcpy(out_buf + buf_s, tmp, tmp_s);
                         buf_s += tmp_s;
                     }
                     else {
-                        memcpy(buf + buf_s, "_", 1);
+                        memcpy(out_buf + buf_s, "_", 1);
                         buf_s++;
                     }
                 }
@@ -424,7 +475,7 @@ static int tag_compose(char *tag, char *fname, char **out_buf, size_t *out_size)
 
             if (*p) {
                 len = strlen(p);
-                memcpy(buf + buf_s, p, len);
+                memcpy(out_buf + buf_s, p, len);
                 buf_s += len;
             }
         }
@@ -439,60 +490,60 @@ static int tag_compose(char *tag, char *fname, char **out_buf, size_t *out_size)
         /* Copy tag prefix if any */
         len = (p - tag);
         if (len > 0) {
-            memcpy(buf, tag, len);
+            memcpy(out_buf, tag, len);
             buf_s += len;
         }
 
         /* Append file name */
         len = strlen(fname);
-        memcpy(buf + buf_s, fname, len);
+        memcpy(out_buf + buf_s, fname, len);
         buf_s += len;
 
         /* Tag suffix (if any) */
         p++;
         if (*p) {
             len = strlen(tag);
-            memcpy(buf + buf_s, p, (len - (p - tag)));
+            memcpy(out_buf + buf_s, p, (len - (p - tag)));
             buf_s += (len - (p - tag));
         }
 
         /* Sanitize buffer */
         for (i = 0; i < buf_s; i++) {
-            if (buf[i] == '/') {
+            if (out_buf[i] == '/') {
                 if (i > 0) {
-                    buf[i] = '.';
+                    out_buf[i] = '.';
                 }
                 else {
-                    drop_bytes(buf, buf_s, i, 1);
+                    drop_bytes(out_buf, buf_s, i, 1);
                     buf_s--;
                     i--;
                 }
             }
 
-            if (buf[i] == '.' && i > 0) {
-                if (buf[i - 1] == '.') {
-                    drop_bytes(buf, buf_s, i, 1);
+            if (out_buf[i] == '.' && i > 0) {
+                if (out_buf[i - 1] == '.') {
+                    drop_bytes(out_buf, buf_s, i, 1);
                     buf_s--;
                     i--;
                 }
             }
-            else if (buf[i] == '*') {
-                    drop_bytes(buf, buf_s, i, 1);
+            else if (out_buf[i] == '*') {
+                    drop_bytes(out_buf, buf_s, i, 1);
                     buf_s--;
                     i--;
             }
         }
 
         /* Check for an ending '.' */
-        if (buf[buf_s - 1] == '.') {
-            drop_bytes(buf, buf_s, buf_s - 1, 1);
+        if (out_buf[buf_s - 1] == '.') {
+            drop_bytes(out_buf, buf_s, buf_s - 1, 1);
             buf_s--;
         }
 #ifdef FLB_HAVE_REGEX
     }
 #endif
 
-    buf[buf_s] = '\0';
+    out_buf[buf_s] = '\0';
     *out_size = buf_s;
 
     return 0;
@@ -527,10 +578,10 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
 {
     int fd;
     int ret;
+    int len;
     off_t offset;
-    char *p;
-    char out_tmp[PATH_MAX];
-    size_t out_size;
+    char *tag;
+    size_t tag_len;
     struct mk_list *head;
     struct flb_tail_file *file;
 
@@ -553,11 +604,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     }
 
 #ifdef _MSC_VER
-    /*
-     * We need O_BINARY here in order to avoid count errors due to
-     * Windows treating '\r\n' as 1 byte in text mode.
-     */
-    fd = _open(path, _O_RDONLY | _O_BINARY);
+    fd = open_file(path);
 #else
     fd = open(path, O_RDONLY);
 #endif
@@ -570,8 +617,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file = flb_calloc(1, sizeof(struct flb_tail_file));
     if (!file) {
         flb_errno();
-        close(fd);
-        return -1;
+        goto error;
     }
 
     /* Initialize */
@@ -592,13 +638,29 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     ret = flb_tail_file_name_dup(path, file);
     if (!file->name) {
         flb_errno();
-        close(fd);
-        flb_free(file);
-        return -1;
+        goto error;
     }
 
-    file->offset    = 0;
+#if defined(__APPLE__)
+    char *name = flb_tail_file_name(file);
+    if (name == NULL) {
+        goto error;
+    }
+    if (flb_tail_file_exists(name, ctx)) {
+        flb_free(name);
+        goto error;
+    }
+    flb_free(name);
+#endif
+
+#ifdef _MSC_VER
+    if (get_inode(fd, &file->inode)) {
+        goto error;
+    }
+#else
     file->inode     = st->st_ino;
+#endif
+    file->offset    = 0;
     file->size      = st->st_size;
     file->buf_len   = 0;
     file->parsed    = 0;
@@ -616,7 +678,9 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file->dmode_flush_timeout = 0;
     file->dmode_buf = flb_sds_create_size(ctx->docker_mode == FLB_TRUE ? 65536 : 0);
     file->dmode_lastline = flb_sds_create_size(ctx->docker_mode == FLB_TRUE ? 20000 : 0);
+#ifdef FLB_HAVE_SQLDB
     file->db_id     = 0;
+#endif
     file->skip_next = FLB_FALSE;
     file->skip_warn = FLB_FALSE;
 
@@ -625,37 +689,48 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file->buf_data = flb_malloc(file->buf_size);
     if (!file->buf_data) {
         flb_errno();
-        close(fd);
-        flb_free(file->name);
-        flb_free(file);
-        return -1;
+        goto error;
     }
 
     /* Initialize (optional) dynamic tag */
     if (ctx->dynamic_tag == FLB_TRUE) {
-        p = out_tmp;
+        len = ctx->i_ins->tag_len + strlen(path) + 1;
+        tag = flb_malloc(len);
+        if (!tag) {
+            flb_errno();
+            flb_error("[in_tail] failed to allocate tag buffer");
+            goto error;
+        }
 #ifdef FLB_HAVE_REGEX
-        ret = tag_compose(ctx->i_ins->tag, ctx->tag_regex, basename(path), &p, &out_size);
+        ret = tag_compose(ctx->i_ins->tag, ctx->tag_regex, path, tag, &tag_len);
 #else
-        ret = tag_compose(ctx->i_ins->tag, path, &p, &out_size);
+        ret = tag_compose(ctx->i_ins->tag, path, tag, &tag_len);
 #endif
         if (ret == 0) {
-            file->tag_len = out_size;
-            file->tag_buf = flb_strdup(p);
+            file->tag_len = tag_len;
+            file->tag_buf = flb_strdup(tag);
+        }
+        flb_free(tag);
+        if (ret != 0) {
+            flb_error("[in_tail] failed to compose tag for file: %s", path);
+            goto error;
         }
     }
     else {
         file->tag_len = strlen(ctx->i_ins->tag);
         file->tag_buf = flb_strdup(ctx->i_ins->tag);
     }
+    if (!file->tag_buf) {
+        flb_error("[in_tail] failed to set tag for file: %s", path);
+        flb_errno();
+        goto error;
+    }
 
     /* Register this file into the fs_event monitoring */
     ret = flb_tail_fs_add(file);
     if (ret == -1) {
         flb_error("[in_tail] could not register file into fs_events");
-        flb_free(file->name);
-        flb_free(file);
-        return -1;
+        goto error;
     }
 
     if (mode == FLB_TAIL_STATIC) {
@@ -669,9 +744,11 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
      * Register or update the file entry, likely if the entry already exists
      * into the database, the offset may be updated.
      */
+#ifdef FLB_HAVE_SQLDB
     if (ctx->db) {
         flb_tail_db_file_set(file, ctx);
     }
+#endif
 
     /* Seek if required */
     if (file->offset > 0) {
@@ -679,7 +756,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         if (offset == -1) {
             flb_errno();
             flb_tail_file_remove(file);
-            return -1;
+            goto error;
         }
     }
 
@@ -689,6 +766,20 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
 
     flb_debug("[in_tail] add to scan queue %s, offset=%lu", path, file->offset);
     return 0;
+
+error:
+    if (file) {
+        if (file->buf_data) {
+            flb_free(file->buf_data);
+        }
+        if (file->name) {
+            flb_free(file->name);
+        }
+        flb_free(file);
+    }
+    close(fd);
+
+    return -1;
 }
 
 void flb_tail_file_remove(struct flb_tail_file *file)
@@ -836,9 +927,11 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
         file->buf_len -= processed_bytes;
         file->buf_data[file->buf_len] = '\0';
 
+#ifdef FLB_HAVE_SQLDB
         if (file->config->db) {
             flb_tail_db_file_offset(file, file->config);
         }
+#endif
 
         /* Data was consumed but likely some bytes still remain */
         return FLB_TAIL_OK;
@@ -1052,6 +1145,7 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
               file->name, name);
 
     /* Rotate the file in the database */
+#ifdef FLB_HAVE_SQLDB
     if (file->config->db) {
         ret = flb_tail_db_file_rotate(name, file, file->config);
         if (ret == -1) {
@@ -1059,6 +1153,7 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
                       file->name, name);
         }
     }
+#endif
 
     /* Update local file entry */
     tmp        = file->name;

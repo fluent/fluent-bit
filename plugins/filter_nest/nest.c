@@ -23,6 +23,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_utils.h>
@@ -56,7 +57,7 @@ static int configure(struct filter_nest_ctx *ctx,
 {
 
     struct mk_list *head;
-    struct flb_config_prop *prop;
+    struct flb_kv *kv;
     struct filter_nest_wildcard *wildcard;
 
     char *operation_nest = "nest";
@@ -70,22 +71,22 @@ static int configure(struct filter_nest_ctx *ctx,
     ctx->add_prefix = false;
 
     mk_list_foreach(head, &f_ins->properties) {
-        prop = mk_list_entry(head, struct flb_config_prop, _head);
+        kv = mk_list_entry(head, struct flb_kv, _head);
 
-        if (strcasecmp(prop->key, "operation") == 0) {
-            if (strncmp(prop->val, operation_nest, 4) == 0) {
+        if (strcasecmp(kv->key, "operation") == 0) {
+            if (strncmp(kv->val, operation_nest, 4) == 0) {
                 ctx->operation = NEST;
             }
-            else if (strncmp(prop->val, operation_lift, 4) == 0) {
+            else if (strncmp(kv->val, operation_lift, 4) == 0) {
                 ctx->operation = LIFT;
             }
             else {
                 flb_error
-                    ("[filter_nest] Key \"operation\" has invalid value '%s'. Expected 'nest' or 'lift'\n", prop->val);
+                    ("[filter_nest] Key \"operation\" has invalid value '%s'. Expected 'nest' or 'lift'\n", kv->val);
                 return -1;
             }
         }
-        else if (strcasecmp(prop->key, "wildcard") == 0) {
+        else if (strcasecmp(kv->key, "wildcard") == 0) {
             wildcard = flb_malloc(sizeof(struct filter_nest_wildcard));
             if (!wildcard) {
                 flb_error
@@ -94,8 +95,8 @@ static int configure(struct filter_nest_ctx *ctx,
                 return -1;
             }
 
-            wildcard->key = flb_strndup(prop->val, strlen(prop->val));
-            wildcard->key_len = strlen(prop->val);
+            wildcard->key = flb_strndup(kv->val, flb_sds_len(kv->val));
+            wildcard->key_len = flb_sds_len(kv->val);
 
             if (wildcard->key[wildcard->key_len - 1] == '*') {
                 wildcard->key_is_dynamic = true;
@@ -109,30 +110,30 @@ static int configure(struct filter_nest_ctx *ctx,
             ctx->wildcards_cnt++;
 
         }
-        else if (strcasecmp(prop->key, "nest_under") == 0) {
-            ctx->key = flb_strdup(prop->val);
-            ctx->key_len = strlen(prop->val);
+        else if (strcasecmp(kv->key, "nest_under") == 0) {
+            ctx->key = flb_strdup(kv->val);
+            ctx->key_len = flb_sds_len(kv->val);
         }
-        else if (strcasecmp(prop->key, "nested_under") == 0) {
-            ctx->key = flb_strdup(prop->val);
-            ctx->key_len = strlen(prop->val);
+        else if (strcasecmp(kv->key, "nested_under") == 0) {
+            ctx->key = flb_strdup(kv->val);
+            ctx->key_len = flb_sds_len(kv->val);
         }
-        else if (strcasecmp(prop->key, "prefix_with") == 0) {
-            ctx->prefix = flb_strdup(prop->val);
-            ctx->prefix_len = strlen(prop->val);
+        else if (strcasecmp(kv->key, "prefix_with") == 0) {
+            ctx->prefix = flb_strdup(kv->val);
+            ctx->prefix_len = flb_sds_len(kv->val);
             ctx->add_prefix = true;
         }
-        else if (strcasecmp(prop->key, "add_prefix") == 0) {
-            ctx->prefix = flb_strdup(prop->val);
-            ctx->prefix_len = strlen(prop->val);
+        else if (strcasecmp(kv->key, "add_prefix") == 0) {
+            ctx->prefix = flb_strdup(kv->val);
+            ctx->prefix_len = flb_sds_len(kv->val);
             ctx->add_prefix = true;
         }
-        else if (strcasecmp(prop->key, "remove_prefix") == 0) {
-            ctx->prefix = flb_strdup(prop->val);
-            ctx->prefix_len = strlen(prop->val);
+        else if (strcasecmp(kv->key, "remove_prefix") == 0) {
+            ctx->prefix = flb_strdup(kv->val);
+            ctx->prefix_len = flb_sds_len(kv->val);
             ctx->remove_prefix = true;
         } else {
-            flb_error("[filter_nest] Invalid configuration key '%s'", prop->key);
+            flb_error("[filter_nest] Invalid configuration key '%s'", kv->key);
             return -1;
         }
     }
@@ -267,7 +268,7 @@ static inline bool is_kv_to_nest(msgpack_object_kv * kv,
                                  struct filter_nest_ctx *ctx)
 {
 
-    char *key;
+    const char *key;
     int klen;
 
     msgpack_object *obj = &kv->key;
@@ -277,11 +278,11 @@ static inline bool is_kv_to_nest(msgpack_object_kv * kv,
     struct filter_nest_wildcard *wildcard;
 
     if (obj->type == MSGPACK_OBJECT_BIN) {
-        key = (char *) obj->via.bin.ptr;
+        key = obj->via.bin.ptr;
         klen = obj->via.bin.size;
     }
     else if (obj->type == MSGPACK_OBJECT_STR) {
-        key = (char *) obj->via.str.ptr;
+        key = obj->via.str.ptr;
         klen = obj->via.str.size;
     }
     else {
@@ -322,18 +323,19 @@ static inline bool is_kv_to_lift(msgpack_object_kv * kv,
                                  struct filter_nest_ctx *ctx)
 {
 
-    char *key;
+    const char *key;
+    char *tmp;
     int klen;
     bool match;
 
     msgpack_object *obj = &kv->key;
 
     if (obj->type == MSGPACK_OBJECT_BIN) {
-        key = (char *) obj->via.bin.ptr;
+        key = obj->via.bin.ptr;
         klen = obj->via.bin.size;
     }
     else if (obj->type == MSGPACK_OBJECT_STR) {
-        key = (char *) obj->via.str.ptr;
+        key = obj->via.str.ptr;
         klen = obj->via.str.size;
     }
     else {
@@ -345,9 +347,17 @@ static inline bool is_kv_to_lift(msgpack_object_kv * kv,
              (strncmp(key, ctx->key, klen) == 0));
 
     if (match && (kv->val.type != MSGPACK_OBJECT_MAP)) {
-        flb_warn
-            ("[filter_nest] Value of key '%s' is not a map. Will not attempt to lift from here",
-             key);
+        tmp = flb_malloc(klen + 1);
+        if (!tmp) {
+            flb_errno();
+            return false;
+        }
+        memcpy(tmp, key, klen);
+        tmp[klen] = '\0';
+        flb_warn("[filter_nest] Value of key '%s' is not a map. "
+                 "Will not attempt to lift from here",
+                 tmp);
+        flb_free(tmp);
         return false;
     }
     else {
@@ -535,8 +545,8 @@ static int cb_nest_init(struct flb_filter_instance *f_ins,
     return 0;
 }
 
-static int cb_nest_filter(void *data, size_t bytes,
-                          char *tag, int tag_len,
+static int cb_nest_filter(const void *data, size_t bytes,
+                          const char *tag, int tag_len,
                           void **out_buf, size_t * out_size,
                           struct flb_filter_instance *f_ins,
                           void *context, struct flb_config *config)
@@ -548,6 +558,7 @@ static int cb_nest_filter(void *data, size_t bytes,
 
     struct filter_nest_ctx *ctx = context;
     int modified_records = 0;
+    int total_modified_records = 0;
 
     msgpack_sbuffer buffer;
     msgpack_sbuffer_init(&buffer);
@@ -567,15 +578,23 @@ static int cb_nest_filter(void *data, size_t bytes,
 
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
+        modified_records = 0;
         if (result.data.type == MSGPACK_OBJECT_ARRAY) {
             if (ctx->operation == NEST) {
-                modified_records +=
+                modified_records =
                     apply_nesting_rules(&packer, &result.data, ctx);
             }
             else {
-                modified_records +=
+                modified_records =
                     apply_lifting_rules(&packer, &result.data, ctx);
             }
+
+
+            if (modified_records == 0) {
+                // not matched, so copy original event.
+                msgpack_pack_object(&packer, result.data);
+            }
+            total_modified_records += modified_records;
         }
         else {
             flb_debug("[filter_nest] Record is NOT an array, skipping");
@@ -587,7 +606,8 @@ static int cb_nest_filter(void *data, size_t bytes,
     *out_buf = buffer.data;
     *out_size = buffer.size;
 
-    if (modified_records == 0) {
+    if (total_modified_records == 0) {
+        msgpack_sbuffer_destroy(&buffer);
         return FLB_FILTER_NOTOUCH;
     }
     else {

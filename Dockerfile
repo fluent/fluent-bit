@@ -2,9 +2,9 @@ FROM debian:stretch as builder
 
 # Fluent Bit version
 ENV FLB_MAJOR 1
-ENV FLB_MINOR 1
+ENV FLB_MINOR 3
 ENV FLB_PATCH 0
-ENV FLB_VERSION 1.1.0
+ENV FLB_VERSION 1.3.0
 
 ENV DEBIAN_FRONTEND noninteractive
 
@@ -16,11 +16,12 @@ RUN apt-get update && \
       wget \
       unzip \
       libssl1.0-dev \
-      libasl-dev \
       libsasl2-dev \
       pkg-config \
       libsystemd-dev \
-      zlib1g-dev
+      zlib1g-dev \
+      flex \
+      bison
 
 RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log /tmp/src/
 COPY . /tmp/src/
@@ -52,7 +53,7 @@ COPY conf/fluent-bit.conf \
      /fluent-bit/etc/
 
 FROM gcr.io/distroless/cc
-MAINTAINER Eduardo Silva <eduardo@treasure-data.com>
+LABEL maintainer="Eduardo Silva <eduardo@treasure-data.com>"
 LABEL Description="Fluent Bit docker image" Vendor="Fluent Organization" Version="1.1"
 
 COPY --from=builder /usr/lib/x86_64-linux-gnu/*sasl* /usr/lib/x86_64-linux-gnu/

@@ -33,7 +33,7 @@
 #define EACH_RECV_SIZE 32
 
 static int fw_process_array(struct flb_input_instance *in,
-                            char *tag, int tag_len,
+                            const char *tag, int tag_len,
                             msgpack_object *arr)
 {
     int i;
@@ -101,7 +101,7 @@ int fw_prot_process(struct fw_conn *conn)
     int ret;
     int stag_len;
     int c = 0;
-    char *stag;
+    const char *stag;
     size_t bytes;
     size_t buf_off = 0;
     size_t recv_len;
@@ -130,19 +130,39 @@ int fw_prot_process(struct fw_conn *conn)
             msgpack_unpacked_destroy(&result);
 
             /* Adjust buffer data */
-            if (all_used > 0) {
+            if (conn->buf_len >= all_used && all_used > 0) {
                 memmove(conn->buf, conn->buf + all_used,
                         conn->buf_len - all_used);
                 conn->buf_len -= all_used;
             }
-
             return 0;
         }
 
         /* Always summarize the total number of bytes requested to parse */
         buf_off += recv_len;
-
         ret = msgpack_unpacker_next_with_size(unp, &result, &bytes);
+
+        /*
+         * Upon parsing or memory errors, break the loop, return the error
+         * and expect the connection to be closed.
+         */
+        if (ret == MSGPACK_UNPACK_PARSE_ERROR ||
+            ret == MSGPACK_UNPACK_NOMEM_ERROR) {
+            /* A bit redunant, print out the real error */
+            if (ret == MSGPACK_UNPACK_PARSE_ERROR) {
+                flb_debug("[in_fw] err=MSGPACK_UNPACK_PARSE_ERROR");
+            }
+            else {
+                flb_error("[in_fw] err=MSGPACK_UNPACK_NOMEM_ERROR");
+            }
+
+            /* Cleanup buffers */
+            msgpack_unpacked_destroy(&result);
+            msgpack_unpacker_free(unp);
+
+            return -1;
+        }
+
         while (ret == MSGPACK_UNPACK_SUCCESS) {
             /*
              * For buffering optimization we always want to know the total
@@ -191,7 +211,7 @@ int fw_prot_process(struct fw_conn *conn)
                 return -1;
             }
 
-            stag     = (char *) tag.via.str.ptr;
+            stag     = tag.via.str.ptr;
             stag_len = tag.via.str.size;
 
             entry = root.via.array.ptr[1];
@@ -230,15 +250,15 @@ int fw_prot_process(struct fw_conn *conn)
             else if (entry.type == MSGPACK_OBJECT_STR ||
                      entry.type == MSGPACK_OBJECT_BIN) {
                 /* PackedForward Mode */
-                char *data = NULL;
+                const char *data = NULL;
                 size_t len = 0;
 
                 if (entry.type == MSGPACK_OBJECT_STR) {
-                    data = (char *) entry.via.str.ptr;
+                    data = entry.via.str.ptr;
                     len = entry.via.str.size;
                 }
                 else if (entry.type == MSGPACK_OBJECT_BIN) {
-                    data = (char *) entry.via.bin.ptr;
+                    data = entry.via.bin.ptr;
                     len = entry.via.bin.size;
                 }
 
@@ -259,6 +279,7 @@ int fw_prot_process(struct fw_conn *conn)
             ret = msgpack_unpacker_next(unp, &result);
         }
     }
+
     msgpack_unpacked_destroy(&result);
     msgpack_unpacker_free(unp);
 

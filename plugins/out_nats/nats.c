@@ -73,15 +73,15 @@ int cb_nats_init(struct flb_output_instance *ins, struct flb_config *config,
     return 0;
 }
 
-static int msgpack_to_json(void *data, size_t bytes,
-                           char *tag, int tag_len,
+static int msgpack_to_json(const void *data, size_t bytes,
+                           const char *tag, int tag_len,
                            char **out_json, size_t *out_size)
 {
     int i;
-    int ret;
     int map_size;
     size_t off = 0;
     size_t array_size = 0;
+    flb_sds_t out_buf;
     msgpack_object map;
     msgpack_object root;
     msgpack_object m_key;
@@ -91,8 +91,6 @@ static int msgpack_to_json(void *data, size_t bytes,
     msgpack_unpacked result;
     msgpack_object *obj;
     struct flb_time tm;
-    char *json_buf;
-    size_t json_size;
 
     /* Iterate the original buffer and perform adjustments */
     msgpack_unpacked_init(&result);
@@ -137,22 +135,21 @@ static int msgpack_to_json(void *data, size_t bytes,
     }
     msgpack_unpacked_destroy(&result);
 
-    ret = flb_msgpack_raw_to_json_str(mp_sbuf.data, mp_sbuf.size,
-                                      &json_buf, &json_size);
+    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
-    if (ret != 0) {
+    if (!out_buf) {
         return -1;
     }
 
-    *out_json = json_buf;
-    *out_size = json_size;
+    *out_json = out_buf;
+    *out_size = flb_sds_len(out_buf);
 
     return 0;
 }
 
-void cb_nats_flush(void *data, size_t bytes,
-                   char *tag, int tag_len,
+void cb_nats_flush(const void *data, size_t bytes,
+                   const char *tag, int tag_len,
                    struct flb_input_instance *i_ins,
                    void *out_context,
                    struct flb_config *config)
@@ -160,7 +157,7 @@ void cb_nats_flush(void *data, size_t bytes,
     int ret;
     size_t bytes_sent;
     size_t json_len;
-    char *json_msg;
+    flb_sds_t json_msg;
     char *request;
     int req_len;
     struct flb_out_nats_config *ctx = out_context;
@@ -191,6 +188,13 @@ void cb_nats_flush(void *data, size_t bytes,
 
     /* Compose the NATS Publish request */
     request = flb_malloc(json_len + tag_len + 32);
+    if (!request) {
+        flb_errno();
+        flb_sds_destroy(json_msg);
+        flb_upstream_conn_release(u_conn);
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
     req_len = snprintf(request, tag_len + 32, "PUB %s %zu\r\n",
                        tag, json_len);
 
@@ -199,11 +203,11 @@ void cb_nats_flush(void *data, size_t bytes,
     req_len += json_len;
     request[req_len++] = '\r';
     request[req_len++] = '\n';
-    flb_free(json_msg);
+    flb_sds_destroy(json_msg);
 
     ret = flb_io_net_write(u_conn, request, req_len, &bytes_sent);
     if (ret == -1) {
-        perror("write");
+        flb_errno();
         flb_free(request);
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_RETRY);

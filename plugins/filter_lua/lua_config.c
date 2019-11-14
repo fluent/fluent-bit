@@ -36,10 +36,10 @@ struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
                                      struct flb_config *config)
 {
     int ret;
-    char *tmp;
+    const char *tmp;
     char *tmp_key;
     char buf[PATH_MAX];
-    char *script = NULL;
+    const char *script = NULL;
     (void) config;
     struct stat st;
     struct lua_filter *lf;

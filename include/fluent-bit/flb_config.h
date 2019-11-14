@@ -33,21 +33,10 @@
 #include <fluent-bit/flb_io_tls.h>
 #endif
 
-#define FLB_FLUSH_UCONTEXT      0
-#define FLB_FLUSH_PTHREADS      1
-#define FLB_FLUSH_LIBCO         2
-
 #define FLB_CONFIG_FLUSH_SECS   5
 #define FLB_CONFIG_HTTP_LISTEN  "0.0.0.0"
 #define FLB_CONFIG_HTTP_PORT    "2020"
 #define FLB_CONFIG_DEFAULT_TAG  "fluent_bit"
-
-/* Property configuration: key/value for an input/output instance */
-struct flb_config_prop {
-    char *key;
-    char *val;
-    struct mk_list _head;
-};
 
 /* Main struct to hold the configuration of the runtime service */
 struct flb_config {
@@ -58,15 +47,9 @@ struct flb_config {
     double flush;             /* Flush timeout                  */
     int grace;                /* Grace on shutdown              */
     flb_pipefd_t flush_fd;    /* Timer FD associated to flush   */
-    int flush_method;         /* Flush method set at build time */
 
     int daemon;               /* Run as a daemon ?              */
     flb_pipefd_t shutdown_fd; /* Shutdown FD, 5 seconds         */
-
-#ifdef FLB_HAVE_STATS
-    int stats_fd;             /* Stats FD, 1 second             */
-    struct flb_stats *stats_ctx;
-#endif
 
     int verbose;           /* Verbose mode (default OFF)     */
     time_t init_time;      /* Time when Fluent Bit started   */
@@ -94,6 +77,9 @@ struct flb_config {
 
     /* Collectors */
     struct mk_list collectors;
+
+    /* Dynamic (dso) plugins context */
+    void *dso_plugins;
 
     /* Plugins references */
     struct mk_list in_plugins;
@@ -156,6 +142,7 @@ struct flb_config {
     void *storage_input_plugin;
     char *storage_sync;             /* sync mode */
     int   storage_checksum;         /* checksum enabled */
+    int   storage_max_chunks_up;    /* max number of chunks 'up' in memory */
     char *storage_bl_mem_limit;     /* storage backlog memory limit */
 
     /* Embedded SQL Database support (SQLite3) */
@@ -166,6 +153,17 @@ struct flb_config {
     /* LuaJIT environment's context */
 #ifdef FLB_HAVE_LUAJIT
     struct mk_list luajit_list;
+#endif
+
+#ifdef FLB_HAVE_STREAM_PROCESSOR
+    char *stream_processor_file;            /* SP configuration file */
+    void *stream_processor_ctx;             /* SP context */
+
+    /*
+     * Temporal list to hold tasks defined before the SP context is created
+     * by the engine. The list is passed upon start and destroyed.
+     */
+    struct mk_list stream_processor_tasks;
 #endif
 
     /* Co-routines */
@@ -186,11 +184,11 @@ struct flb_config {
 
 struct flb_config *flb_config_init();
 void flb_config_exit(struct flb_config *config);
-char *flb_config_prop_get(char *key, struct mk_list *list);
+const char *flb_config_prop_get(const char *key, struct mk_list *list);
 int flb_config_set_property(struct flb_config *config,
-                            char *k, char *v);
+                            const char *k, const char *v);
 #ifdef FLB_HAVE_STATIC_CONF
-struct mk_rconf *flb_config_static_open(char *file);
+struct mk_rconf *flb_config_static_open(const char *file);
 #endif
 
 struct flb_service_config {
@@ -207,13 +205,14 @@ enum conf_type {
     FLB_CONF_TYPE_OTHER,
 };
 
-#define FLB_CONF_STR_FLUSH           "Flush"
-#define FLB_CONF_STR_GRACE           "Grace"
-#define FLB_CONF_STR_DAEMON          "Daemon"
-#define FLB_CONF_STR_LOGFILE         "Log_File"
-#define FLB_CONF_STR_LOGLEVEL        "Log_Level"
-#define FLB_CONF_STR_PARSERS_FILE    "Parsers_File"
-#define FLB_CONF_STR_PLUGINS_FILE    "Plugins_File"
+#define FLB_CONF_STR_FLUSH        "Flush"
+#define FLB_CONF_STR_GRACE        "Grace"
+#define FLB_CONF_STR_DAEMON       "Daemon"
+#define FLB_CONF_STR_LOGFILE      "Log_File"
+#define FLB_CONF_STR_LOGLEVEL     "Log_Level"
+#define FLB_CONF_STR_PARSERS_FILE "Parsers_File"
+#define FLB_CONF_STR_PLUGINS_FILE "Plugins_File"
+#define FLB_CONF_STR_STREAMS_FILE "Streams_File"
 
 /* FLB_HAVE_HTTP_SERVER */
 #ifdef FLB_HAVE_HTTP_SERVER
@@ -227,6 +226,7 @@ enum conf_type {
 #define FLB_CONF_STORAGE_SYNC          "storage.sync"
 #define FLB_CONF_STORAGE_CHECKSUM      "storage.checksum"
 #define FLB_CONF_STORAGE_BL_MEM_LIMIT  "storage.backlog.mem_limit"
+#define FLB_CONF_STORAGE_MAX_CHUNKS_UP "storage.max_chunks_up"
 
 /* Coroutines */
 #define FLB_CONF_STR_CORO_STACK_SIZE "Coro_Stack_Size"

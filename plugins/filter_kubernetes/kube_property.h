@@ -24,13 +24,18 @@
 #include "kube_meta.h"
 #include "kube_props.h"
 
+#define FLB_KUBE_PROP_NO_STREAM 0
+#define FLB_KUBE_PROP_STREAM_STDOUT 1
+#define FLB_KUBE_PROP_STREAM_STDERR 2
+#define FLB_KUBE_PROP_STREAM_UNKNOWN 3
+
 int flb_kube_prop_set(struct flb_kube *ctx, struct flb_kube_meta *meta,
-                      char *prop, int prop_len,
-                      char *val_buf, size_t val_len,
+                      const char *prop, int prop_len,
+                      const char *val_buf, size_t val_len,
                       struct flb_kube_props *props);
 int flb_kube_prop_pack(struct flb_kube_props *props,
                        void **out_buf, size_t *out_size);
-int flb_kube_prop_unpack(struct flb_kube_props *props, char *buf, size_t size);
+int flb_kube_prop_unpack(struct flb_kube_props *props, const char *buf, size_t size);
 void flb_kube_prop_destroy(struct flb_kube_props *props);
 
 #endif

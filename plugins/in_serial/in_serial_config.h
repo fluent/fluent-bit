@@ -39,12 +39,12 @@ struct flb_in_serial_config {
 
     /* config */
     int min_bytes;
-    char *file;
-    char *bitrate;
+    const char *file;
+    const char *bitrate;
 
     /* separator */
     int sep_len;
-    char *separator;
+    const char *separator;
 
     /* Incoming format: JSON only for now */
     int format;

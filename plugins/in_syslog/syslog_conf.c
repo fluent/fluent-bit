@@ -33,7 +33,7 @@
 struct flb_syslog *syslog_conf_create(struct flb_input_instance *i_ins,
                                       struct flb_config *config)
 {
-    char *tmp;
+    const char *tmp;
     char port[16];
     struct flb_syslog *ctx;
 
@@ -98,11 +98,18 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *i_ins,
         }
     }
 
-    /* Unix socket path */
+    /* Unix socket path and permission */
     if (ctx->mode == FLB_SYSLOG_UNIX_UDP || ctx->mode == FLB_SYSLOG_UNIX_TCP) {
         tmp = flb_input_get_property("path", i_ins);
         if (tmp) {
             ctx->unix_path = flb_strdup(tmp);
+        }
+
+        tmp = flb_input_get_property("unix_perm", i_ins);
+        if (tmp) {
+            ctx->unix_perm = strtol(tmp, NULL, 8) & 07777;
+        } else {
+            ctx->unix_perm = 0644;
         }
     }
 

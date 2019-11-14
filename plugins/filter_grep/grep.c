@@ -22,6 +22,7 @@
 #include <sys/types.h>
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_filter.h>
@@ -53,12 +54,12 @@ static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
     struct mk_list *head;
     struct mk_list *split;
     struct flb_split_entry *sentry;
-    struct flb_config_prop *prop;
+    struct flb_kv *kv;
     struct grep_rule *rule;
 
     /* Iterate all filter properties */
     mk_list_foreach(head, &f_ins->properties) {
-        prop = mk_list_entry(head, struct flb_config_prop, _head);
+        kv = mk_list_entry(head, struct flb_kv, _head);
 
         /* Create a new rule */
         rule = flb_malloc(sizeof(struct grep_rule));
@@ -68,20 +69,21 @@ static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
         }
 
         /* Get the type */
-        if (strcasecmp(prop->key, "regex") == 0) {
+        if (strcasecmp(kv->key, "regex") == 0) {
             rule->type = GREP_REGEX;
         }
-        else if (strcasecmp(prop->key, "exclude") == 0) {
+        else if (strcasecmp(kv->key, "exclude") == 0) {
             rule->type = GREP_EXCLUDE;
         }
         else {
+            flb_error("[filter_grep] unknown rule type '%s'", kv->key);
             delete_rules(ctx);
             flb_free(rule);
             return -1;
         }
 
         /* As a value we expect a pair of field name and a regular expression */
-        split = flb_utils_split(prop->val, ' ', 1);
+        split = flb_utils_split(kv->val, ' ', 1);
         if (mk_list_size(split) != 2) {
             flb_error("[filter_grep] invalid regex, expected field and regular expression");
             delete_rules(ctx);
@@ -103,8 +105,10 @@ static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
         flb_utils_split_free(split);
 
         /* Convert string to regex pattern */
-        rule->regex = flb_regex_create((unsigned char *) rule->regex_pattern);
+        rule->regex = flb_regex_create(rule->regex_pattern);
         if (!rule->regex) {
+            flb_error("[filter_grep] could not compile regex pattern '%s'",
+                      rule->regex_pattern);
             delete_rules(ctx);
             flb_free(rule);
             return -1;
@@ -123,8 +127,8 @@ static inline int grep_filter_data(msgpack_object map, struct grep_ctx *ctx)
     int i;
     int klen;
     int vlen;
-    char *key;
-    char *val;
+    const char *key;
+    const char *val;
     ssize_t ret;
     msgpack_object *k;
     msgpack_object *v;
@@ -145,11 +149,11 @@ static inline int grep_filter_data(msgpack_object map, struct grep_ctx *ctx)
             }
 
             if (k->type == MSGPACK_OBJECT_STR) {
-                key  = (char *) k->via.str.ptr;
+                key  = k->via.str.ptr;
                 klen = k->via.str.size;
             }
             else {
-                key = (char *) k->via.bin.ptr;
+                key = k->via.bin.ptr;
                 klen = k->via.bin.size;
             }
 
@@ -176,22 +180,19 @@ static inline int grep_filter_data(msgpack_object map, struct grep_ctx *ctx)
 
         /* a value must be a string */
         if (v->type == MSGPACK_OBJECT_STR) {
-            val  = (char *)v->via.str.ptr;
+            val  = v->via.str.ptr;
             vlen = v->via.str.size;
         }
         else if(v->type == MSGPACK_OBJECT_BIN) {
-            val  = (char *)v->via.bin.ptr;
+            val  = v->via.bin.ptr;
             vlen = v->via.bin.size;
         }
         else {
             return GREP_RET_EXCLUDE;
         }
 
-        struct flb_regex_search result;
-
-        ret = flb_regex_do(rule->regex,
-                           (unsigned char *) val, vlen, &result);
-        if (ret != 0) { /* no match */
+        ret = flb_regex_match(rule->regex,(unsigned char *) val, vlen);
+        if (ret <= 0) { /* no match */
             if (rule->type == GREP_REGEX) {
                 return GREP_RET_EXCLUDE;
             }
@@ -236,8 +237,8 @@ static int cb_grep_init(struct flb_filter_instance *f_ins,
     return 0;
 }
 
-static int cb_grep_filter(void *data, size_t bytes,
-                          char *tag, int tag_len,
+static int cb_grep_filter(const void *data, size_t bytes,
+                          const char *tag, int tag_len,
                           void **out_buf, size_t *out_size,
                           struct flb_filter_instance *f_ins,
                           void *context,

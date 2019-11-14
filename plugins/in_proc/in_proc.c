@@ -143,8 +143,8 @@ static pid_t get_pid_from_procname_linux(const char* proc)
         cmdname[FLB_CMD_LEN-1] = '\0';
         bname = basename(cmdname);
 
-        if (strncmp(proc, (const char*)bname, FLB_CMD_LEN) == 0) {
-            sscanf((const char*)glb.gl_pathv[i],"/proc/%ld/cmdline",&ret_scan);
+        if (strncmp(proc, bname, FLB_CMD_LEN) == 0) {
+            sscanf(glb.gl_pathv[i],"/proc/%ld/cmdline",&ret_scan);
             ret = (pid_t)ret_scan;
             close(fd);
             break;
@@ -158,7 +158,7 @@ static pid_t get_pid_from_procname_linux(const char* proc)
 static int configure(struct flb_in_proc_config *ctx,
                      struct flb_input_instance *in)
 {
-    char *pval = NULL;
+    const char *pval = NULL;
 
     /* interval settings */
     pval = flb_input_get_property("interval_sec", in);

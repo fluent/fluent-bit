@@ -30,7 +30,6 @@
 
 #include <msgpack.h>
 
-
 #include "out_flowcounter.h"
 
 #define PLUGIN_NAME "out_flowcounter"
@@ -41,7 +40,7 @@ static void count_initialized(struct flb_out_fcount_buffer* buf)
     buf->counts = 0;
 }
 
-static int time_is_valid(time_t t, struct flb_out_fcount_config* ctx)
+static int time_is_valid(time_t t, struct flb_flowcounter *ctx)
 {
     if (t < ctx->buf[ctx->index].until - ctx->tick) {
         return FLB_FALSE;
@@ -49,20 +48,19 @@ static int time_is_valid(time_t t, struct flb_out_fcount_config* ctx)
     return FLB_TRUE;
 }
 
-static int configure(struct flb_out_fcount_config *ctx,
-                     struct flb_output_instance   *ins,
+static int configure(struct flb_flowcounter *ctx,
+                     struct flb_output_instance *ins,
                      struct flb_config *config)
 {
-    char* pval = NULL;
     int i;
     time_t base = time(NULL);
+    const char* pval = NULL;
 
     /* default */
     ctx->unit = FLB_UNIT_MIN;
     ctx->tick         = 60;
 
     pval = flb_output_get_property("unit", ins);
-
     if (pval != NULL) {
         /* check unit of duration */
         if (!strcasecmp(pval, FLB_UNIT_SEC)) {
@@ -78,14 +76,6 @@ static int configure(struct flb_out_fcount_config *ctx,
             ctx->tick = 86400;
         }
     }
-    
-    pval = flb_output_get_property("event_based", ins);
-    if (pval != NULL && flb_utils_bool(pval)) {
-        ctx->event_based = FLB_TRUE;
-    }
-    else {
-        ctx->event_based = FLB_FALSE;
-    }
 
     flb_debug("[%s]unit is \"%s\"",PLUGIN_NAME, ctx->unit);
 
@@ -94,10 +84,13 @@ static int configure(struct flb_out_fcount_config *ctx,
     flb_debug("[%s]buffer size=%d",PLUGIN_NAME, ctx->size);
 
     ctx->index = 0;
-    ctx->buf = (struct flb_out_fcount_buffer*)
-        flb_malloc(sizeof(struct flb_out_fcount_buffer)*ctx->size);
+    ctx->buf = flb_malloc(sizeof(struct flb_out_fcount_buffer) * ctx->size);
+    if (!ctx->buf) {
+        flb_errno();
+        return -1;
+    }
 
-    for (i=0; i<ctx->size; i++) {
+    for (i = 0; i < ctx->size; i++) {
         ctx->buf[i].until = base + ctx->tick*i;
         count_initialized(&ctx->buf[i]);
     }
@@ -105,7 +98,7 @@ static int configure(struct flb_out_fcount_config *ctx,
     return 0;
 }
 
-static void output_fcount(FILE* f, struct flb_out_fcount_config *ctx,
+static void output_fcount(FILE *f, struct flb_flowcounter *ctx,
                           struct flb_out_fcount_buffer *buf)
 {
     fprintf(f,
@@ -124,7 +117,7 @@ static void output_fcount(FILE* f, struct flb_out_fcount_config *ctx,
 }
 
 static void count_up(msgpack_object *obj,
-                      struct flb_out_fcount_buffer *ctx, uint64_t size)
+                     struct flb_out_fcount_buffer *ctx, uint64_t size)
 {
     ctx->counts++;
     ctx->bytes += size;
@@ -132,17 +125,25 @@ static void count_up(msgpack_object *obj,
 }
 
 static int out_fcount_init(struct flb_output_instance *ins, struct flb_config *config,
-                   void *data)
+                           void *data)
 {
+    int ret;
     (void) data;
 
-    struct flb_out_fcount_config *ctx = NULL;
-    ctx = (struct flb_out_fcount_config*)
-        flb_malloc(sizeof(struct flb_out_fcount_config));
+    struct flb_flowcounter *ctx = NULL;
+
+    ctx = flb_malloc(sizeof(struct flb_flowcounter));
     if (ctx == NULL) {
-        flb_error("[%s] malloc failed",PLUGIN_NAME);
+        flb_errno();
         return -1;
     }
+
+    ret = flb_output_config_map_set(ins, (void *) ctx);
+    if (ret == -1) {
+        flb_free(ctx);
+        return -1;
+    }
+
     configure(ctx, ins, config);
     flb_output_set_context(ins, ctx);
 
@@ -150,13 +151,13 @@ static int out_fcount_init(struct flb_output_instance *ins, struct flb_config *c
 }
 
 static struct flb_out_fcount_buffer* seek_buffer(time_t t,
-                        struct flb_out_fcount_config* ctx)
+                                                 struct flb_flowcounter *ctx)
 {
     int i = ctx->index;
     int32_t diff;
 
-    while(1) {
-        diff = (int32_t)difftime(ctx->buf[i].until, t);
+    while (1) {
+        diff = (int32_t) difftime(ctx->buf[i].until, t);
         if (diff >= 0 && diff <= ctx->tick) {
             return &ctx->buf[i];
         }
@@ -166,7 +167,7 @@ static struct flb_out_fcount_buffer* seek_buffer(time_t t,
             i = 0;
         }
 
-        if(i == ctx->index) {
+        if (i == ctx->index) {
             break;
         }
     }
@@ -175,15 +176,15 @@ static struct flb_out_fcount_buffer* seek_buffer(time_t t,
 
 
 
-static void out_fcount_flush(void *data, size_t bytes,
-                     char *tag, int tag_len,
-                     struct flb_input_instance *i_ins,
-                     void *out_context,
-                     struct flb_config *config)
+static void out_fcount_flush(const void *data, size_t bytes,
+                             const char *tag, int tag_len,
+                             struct flb_input_instance *i_ins,
+                             void *out_context,
+                             struct flb_config *config)
 {
     msgpack_unpacked result;
     msgpack_object *obj;
-    struct flb_out_fcount_config *ctx = out_context;
+    struct flb_flowcounter *ctx = out_context;
     struct flb_out_fcount_buffer *buf = NULL;
     size_t off = 0;
     time_t t;
@@ -211,7 +212,7 @@ static void out_fcount_flush(void *data, size_t bytes,
 
         buf = seek_buffer(t, ctx);
 
-        while(buf == NULL) {
+        while (buf == NULL) {
             /* flush buffer */
             output_fcount(stdout, ctx, &ctx->buf[ctx->index]);
             count_initialized(&ctx->buf[ctx->index]);
@@ -235,12 +236,33 @@ static void out_fcount_flush(void *data, size_t bytes,
 
 static int out_fcount_exit(void *data, struct flb_config* config)
 {
-    struct flb_out_fcount_config *ctx = data;
+    struct flb_flowcounter *ctx = data;
+
+    if (!ctx) {
+        return 0;
+    }
 
     flb_free(ctx->buf);
     flb_free(ctx);
     return 0;
 }
+
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "unit", NULL,
+     0, FLB_FALSE, 0,
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "event_based", "false",
+     0, FLB_TRUE, offsetof(struct flb_flowcounter, event_based),
+     NULL
+    },
+
+    /* EOF */
+    {0}
+};
 
 struct flb_output_plugin out_flowcounter_plugin = {
     .name         = "flowcounter",
@@ -248,5 +270,6 @@ struct flb_output_plugin out_flowcounter_plugin = {
     .cb_init      = out_fcount_init,
     .cb_flush     = out_fcount_flush,
     .cb_exit      = out_fcount_exit,
+    .config_map   = config_map,
     .flags        = 0,
 };

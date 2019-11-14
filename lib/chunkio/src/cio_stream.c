@@ -121,7 +121,7 @@ struct cio_stream *cio_stream_create(struct cio_ctx *ctx, const char *name,
     }
 
     st->parent = ctx;
-    mk_list_init(&st->files);
+    mk_list_init(&st->chunks);
     mk_list_add(&st->_head, &ctx->streams);
 
     cio_log_debug(ctx, "[cio stream] new stream registered: %s", name);
@@ -130,6 +130,9 @@ struct cio_stream *cio_stream_create(struct cio_ctx *ctx, const char *name,
 
 void cio_stream_destroy(struct cio_stream *st)
 {
+    if (!st) {
+        return;
+    }
     /* close all files */
     cio_chunk_close_stream(st);
 
@@ -144,6 +147,10 @@ void cio_stream_destroy_all(struct cio_ctx *ctx)
     struct mk_list *tmp;
     struct mk_list *head;
     struct cio_stream *st;
+
+    if (!ctx) {
+        return;
+    }
 
     mk_list_foreach_safe(head, tmp, &ctx->streams) {
         st = mk_list_entry(head, struct cio_stream, _head);

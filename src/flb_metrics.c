@@ -74,11 +74,12 @@ struct flb_metric *flb_metrics_get_id(int id, struct flb_metrics *metrics)
     return NULL;
 }
 
-struct flb_metrics *flb_metrics_create(char *title)
+struct flb_metrics *flb_metrics_create(const char *title)
 {
     int ret;
     struct flb_metrics *metrics;
 
+    /* Create a metrics parent context */
     metrics = flb_malloc(sizeof(struct flb_metrics));
     if (!metrics) {
         flb_errno();
@@ -86,19 +87,32 @@ struct flb_metrics *flb_metrics_create(char *title)
     }
     metrics->count = 0;
 
-    ret = snprintf(metrics->title, sizeof(metrics->title) - 1, "%s", title);
+    /* Set metrics title */
+    ret = flb_metrics_title(title, metrics);
     if (ret == -1) {
-        flb_errno();
         flb_free(metrics);
         return NULL;
     }
-    metrics->title_len = strlen(metrics->title);
 
+    /* List head for specific metrics under the context */
     mk_list_init(&metrics->list);
     return metrics;
 }
 
-int flb_metrics_add(int id, char *title, struct flb_metrics *metrics)
+int flb_metrics_title(const char *title, struct flb_metrics *metrics)
+{
+    int ret;
+
+    ret = snprintf(metrics->title, sizeof(metrics->title) - 1, "%s", title);
+    if (ret == -1) {
+        flb_errno();
+        return -1;
+    }
+    metrics->title_len = strlen(metrics->title);
+    return 0;
+}
+
+int flb_metrics_add(int id, const char *title, struct flb_metrics *metrics)
 {
     int ret;
     struct flb_metric *m;

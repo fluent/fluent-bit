@@ -34,7 +34,7 @@
 struct flb_filter_throttle_ctx {
     double    max_rate;
     unsigned int    window_size;
-    char  *slide_interval;
+    const char  *slide_interval;
     int print_status;
 
     /* internal */

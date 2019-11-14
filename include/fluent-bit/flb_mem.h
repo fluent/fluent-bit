@@ -55,6 +55,10 @@ static inline ALLOCSZ_ATTR(1)
 void *flb_malloc(const size_t size) {
     void *aux;
 
+    if (size == 0) {
+        return NULL;
+    }
+
     aux = malloc(size);
     if (flb_unlikely(!aux && size)) {
         return NULL;
@@ -66,6 +70,10 @@ void *flb_malloc(const size_t size) {
 static inline ALLOCSZ_ATTR(1)
 void *flb_calloc(size_t n, const size_t size) {
     void *buf;
+
+    if (size == 0) {
+        return NULL;
+    }
 
     buf = calloc(n, size);
     if (flb_unlikely(!buf)) {
@@ -87,6 +95,28 @@ void *flb_realloc(void *ptr, const size_t size)
 
     return aux;
 }
+
+static inline ALLOCSZ_ATTR(2, 3)
+void *flb_realloc_z(void *ptr, const size_t old_size, const size_t new_size)
+{
+    void *tmp;
+    void *p;
+    size_t diff;
+
+    tmp = flb_realloc(ptr, new_size);
+    if (!tmp) {
+        return NULL;
+    }
+
+    if (new_size > old_size) {
+        diff = new_size - old_size;
+        p = ((char *) tmp + old_size);
+        memset(p, 0, diff);
+    }
+
+    return tmp;
+}
+
 
 static inline void flb_free(void *ptr) {
     free(ptr);

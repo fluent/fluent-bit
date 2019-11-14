@@ -21,16 +21,8 @@
 #ifndef FLB_OUT_HTTP_H
 #define FLB_OUT_HTTP_H
 
-#define FLB_HTTP_OUT_MSGPACK        0
-#define FLB_HTTP_OUT_JSON           1
-#define FLB_HTTP_OUT_JSON_STREAM    2
-#define FLB_HTTP_OUT_JSON_LINES     3
-#define FLB_HTTP_OUT_GELF           4
-
-#define FLB_JSON_DATE_DOUBLE      0
-#define FLB_JSON_DATE_ISO8601     1
-#define FLB_JSON_DATE_EPOCH       2
-#define FLB_JSON_DATE_ISO8601_FMT "%Y-%m-%dT%H:%M:%S"
+#define FLB_HTTP_OUT_MSGPACK        FLB_PACK_JSON_FORMAT_NONE
+#define FLB_HTTP_OUT_GELF           20
 
 #define FLB_HTTP_CONTENT_TYPE   "Content-Type"
 #define FLB_HTTP_MIME_MSGPACK   "application/msgpack"
@@ -42,7 +34,7 @@ struct flb_out_http {
     char *http_passwd;
 
     /* Proxy */
-    char *proxy;
+    const char *proxy;
     char *proxy_host;
     int proxy_port;
 
@@ -50,8 +42,7 @@ struct flb_out_http {
     int out_format;
 
     int json_date_format;
-    char *json_date_key;
-    size_t json_date_key_len;
+    flb_sds_t json_date_key;
 
     /* HTTP URI */
     char *uri;
@@ -62,23 +53,16 @@ struct flb_out_http {
     struct flb_gelf_fields gelf_fields;
 
     /* Include tag in header */
-    char *header_tag;
-    size_t headertag_len;
+    flb_sds_t header_tag;
+
+    /* Compression mode (gzip) */
+    int compress_gzip;
 
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
 
     /* Arbitrary HTTP headers */
-    struct mk_list headers;
-    int headers_cnt;
-};
-
-struct out_http_header {
-    char *key;
-    int key_len;
-    char *val;
-    int val_len;
-    struct mk_list _head;
+    struct mk_list *headers;
 };
 
 #endif

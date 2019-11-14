@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_kv.h>
 #include <msgpack.h>
 
 #include <string.h>
@@ -32,17 +33,17 @@
 #include "filter_parser.h"
 
 static int msgpackobj2char(msgpack_object *obj,
-                           char **ret_char, int *ret_char_size)
+                           const char **ret_char, int *ret_char_size)
 {
     int ret = -1;
 
     if (obj->type == MSGPACK_OBJECT_STR) {
-        *ret_char      = (char*)obj->via.str.ptr;
+        *ret_char      = obj->via.str.ptr;
         *ret_char_size = obj->via.str.size;
         ret = 0;
     }
     else if (obj->type == MSGPACK_OBJECT_BIN) {
-        *ret_char      = (char*)obj->via.bin.ptr;
+        *ret_char      = obj->via.bin.ptr;
         *ret_char_size = obj->via.bin.size;
         ret = 0;
     }
@@ -50,7 +51,7 @@ static int msgpackobj2char(msgpack_object *obj,
     return ret;
 }
 
-static int add_parser(char *parser, struct filter_parser_ctx *ctx,
+static int add_parser(const char *parser, struct filter_parser_ctx *ctx,
                        struct flb_config *config)
 {
     struct flb_parser *p;
@@ -94,9 +95,9 @@ static int configure(struct filter_parser_ctx *ctx,
                      struct flb_config *config)
 {
     int ret;
-    char *tmp;
+    const char *tmp;
     struct mk_list *head;
-    struct flb_config_prop *p;
+    struct flb_kv *kv;
 
     ctx->key_name = NULL;
     ctx->reserve_data = FLB_FALSE;
@@ -116,12 +117,12 @@ static int configure(struct filter_parser_ctx *ctx,
 
     /* Read all Parsers */
     mk_list_foreach(head, &f_ins->properties) {
-        p = mk_list_entry(head, struct flb_config_prop, _head);
-        if (strcasecmp("parser", p->key) != 0) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        if (strcasecmp("parser", kv->key) != 0) {
             continue;
         }
 
-        ret = add_parser(p->val, ctx, config);
+        ret = add_parser(kv->val, ctx, config);
         if (ret == -1) {
             flb_error("[filter_parser] requested parser '%s' not found", tmp);
         }
@@ -174,8 +175,8 @@ static int cb_parser_init(struct flb_filter_instance *f_ins,
     return 0;
 }
 
-static int cb_parser_filter(void *data, size_t bytes,
-                            char *tag, int tag_len,
+static int cb_parser_filter(const void *data, size_t bytes,
+                            const char *tag, int tag_len,
                             void **ret_buf, size_t *ret_bytes,
                             struct flb_filter_instance *f_ins,
                             void *context,
@@ -195,9 +196,9 @@ static int cb_parser_filter(void *data, size_t bytes,
     int ret = FLB_FILTER_NOTOUCH;
     int parse_ret = -1;
     int map_num;
-    char *key_str;
+    const char *key_str;
     int key_len;
-    char *val_str;
+    const char *val_str;
     int val_len;
     char *out_buf;
     size_t out_size;

@@ -1,0 +1,1 @@
+[1554141513.598656,{"log":"Simple text\n","stream":"stdout","kubernetes":{"pod_name":"multiple-1","namespace_name":"annotations-exclude","annotations":{"fluentbit.io/exclude-container-1":"true","fluentbit.io/exclude_stdout-container-2":"true","fluentbit.io/exclude_stderr-container-3":"true"},"container_name":"container-4"}}]

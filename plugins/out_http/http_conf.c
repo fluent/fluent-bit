@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_kv.h>
 
 #include "http.h"
 #include "http_conf.h"
@@ -30,23 +31,25 @@
 struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
                                           struct flb_config *config)
 {
+    int ret;
     int ulen;
-    int len;
     int io_flags = 0;
     char *uri = NULL;
-    char *tmp;
+    char *tmp_uri = NULL;
+    const char *tmp;
     struct flb_upstream *upstream;
     struct flb_out_http *ctx = NULL;
-    struct mk_list *head;
-    struct mk_list *split = NULL;
-    struct flb_split_entry *sentry;
-    struct flb_config_prop *prop;
-    struct out_http_header *header;
 
     /* Allocate plugin context */
     ctx = flb_calloc(1, sizeof(struct flb_out_http));
     if (!ctx) {
         flb_errno();
+        return NULL;
+    }
+
+    ret = flb_output_config_map_set(ins, (void *) ctx);
+    if (ret == -1) {
+        flb_free(ctx);
         return NULL;
     }
 
@@ -156,105 +159,54 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
     }
     else if (uri[0] != '/') {
         ulen = strlen(uri);
-        tmp = flb_malloc(ulen + 2);
-        tmp[0] = '/';
-        memcpy(tmp + 1, uri, ulen);
-        tmp[ulen + 1] = '\0';
+        tmp_uri = flb_malloc(ulen + 2);
+        tmp_uri[0] = '/';
+        memcpy(tmp_uri + 1, uri, ulen);
+        tmp_uri[ulen + 1] = '\0';
         flb_free(uri);
-        uri = tmp;
-    }
-
-    /* HTTP Auth */
-    tmp = flb_output_get_property("http_user", ins);
-    if (tmp) {
-        ctx->http_user = flb_strdup(tmp);
-
-        tmp = flb_output_get_property("http_passwd", ins);
-        if (tmp) {
-            ctx->http_passwd = flb_strdup(tmp);
-        }
-        else {
-            ctx->http_passwd = flb_strdup("");
-        }
-    }
-
-    /* Tag in header */
-    tmp = flb_output_get_property("header_tag", ins);
-    if (tmp) {
-      ctx->header_tag = flb_strdup(tmp);
-      ctx->headertag_len = strlen(ctx->header_tag);
-      flb_info("[out_http] configure to pass tag in header: %s", ctx->header_tag);
+        uri = tmp_uri;
     }
 
     /* Output format */
-    ctx->out_format = FLB_HTTP_OUT_MSGPACK;
+    ctx->out_format = FLB_PACK_JSON_FORMAT_NONE;
     tmp = flb_output_get_property("format", ins);
     if (tmp) {
-        if (strcasecmp(tmp, "msgpack") == 0) {
-            ctx->out_format = FLB_HTTP_OUT_MSGPACK;
-        }
-        else if (strcasecmp(tmp, "json") == 0) {
-            ctx->out_format = FLB_HTTP_OUT_JSON;
-        }
-        else if (strcasecmp(tmp, "json_stream") == 0) {
-            ctx->out_format = FLB_HTTP_OUT_JSON_STREAM;
-        }
-        else if (strcasecmp(tmp, "json_lines") == 0) {
-            ctx->out_format = FLB_HTTP_OUT_JSON_LINES;
-        }
-        else if (strcasecmp(tmp, "gelf") == 0) {
+        if (strcasecmp(tmp, "gelf") == 0) {
             ctx->out_format = FLB_HTTP_OUT_GELF;
         }
         else {
-            flb_warn("[out_http] unrecognized 'format' option. Using 'msgpack'");
+            ret = flb_pack_to_json_format_type(tmp);
+            if (ret == -1) {
+                flb_error("[out_http] unrecognized 'format' option. "
+                          "Using 'msgpack'");
+            }
+            else {
+                ctx->out_format = ret;
+            }
         }
     }
 
     /* Date format for JSON output */
-    ctx->json_date_format = FLB_JSON_DATE_DOUBLE;
+    ctx->json_date_format = FLB_PACK_JSON_DATE_DOUBLE;
     tmp = flb_output_get_property("json_date_format", ins);
     if (tmp) {
-        if (strcasecmp(tmp, "iso8601") == 0) {
-            ctx->json_date_format = FLB_JSON_DATE_ISO8601;
+        ret = flb_pack_to_json_date_type(tmp);
+        if (ret == -1) {
+            flb_error("[out_http] unrecognized 'json_date_format' option. "
+                      "Using 'double'.");
         }
-        if (strcasecmp(tmp, "epoch") == 0) {
-            ctx->json_date_format = FLB_JSON_DATE_EPOCH;
+        else {
+            ctx->json_date_format = ret;
         }
     }
 
-    /* Date key for JSON output */
-    tmp = flb_output_get_property("json_date_key", ins);
-    ctx->json_date_key = flb_strdup(tmp ? tmp : "date");
-    ctx->json_date_key_len = strlen(ctx->json_date_key);
-
-    /* Config Gelf_Timestamp_Key */
-    tmp = flb_output_get_property("gelf_timestamp_key", ins);
+    /* Compress (gzip) */
+    tmp = flb_output_get_property("compress", ins);
+    ctx->compress_gzip = FLB_FALSE;
     if (tmp) {
-        ctx->gelf_fields.timestamp_key = flb_sds_create(tmp);
-    }
-
-    /* Config Gelf_Host_Key */
-    tmp = flb_output_get_property("gelf_host_key", ins);
-    if (tmp) {
-        ctx->gelf_fields.host_key = flb_sds_create(tmp);
-    }
-
-    /* Config Gelf_Short_Message_Key */
-    tmp = flb_output_get_property("gelf_short_message_key", ins);
-    if (tmp) {
-        ctx->gelf_fields.short_message_key = flb_sds_create(tmp);
-    }
-
-    /* Config Gelf_Full_Message_Key */
-    tmp = flb_output_get_property("gelf_full_message_key", ins);
-    if (tmp) {
-        ctx->gelf_fields.full_message_key = flb_sds_create(tmp);
-    }
-
-    /* Config Gelf_Level_Key */
-    tmp = flb_output_get_property("gelf_level_key", ins);
-    if (tmp) {
-        ctx->gelf_fields.level_key = flb_sds_create(tmp);
+        if (strcasecmp(tmp, "gzip") == 0) {
+            ctx->compress_gzip = FLB_TRUE;
+        }
     }
 
     ctx->u = upstream;
@@ -262,67 +214,14 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
     ctx->host = ins->host.name;
     ctx->port = ins->host.port;
 
-    /* Arbitrary HTTP headers to add */
-    ctx->headers_cnt = 0;
-    mk_list_init(&ctx->headers);
-
-    mk_list_foreach(head, &ins->properties) {
-        prop = mk_list_entry(head, struct flb_config_prop, _head);
-        split = flb_utils_split(prop->val, ' ', 1);
-
-        if (!split) {
-            continue;
-        }
-
-        if (strcasecmp(prop->key, "header") == 0) {
-            header = flb_malloc(sizeof(struct out_http_header));
-            if (!header) {
-                flb_errno();
-                flb_utils_split_free(split);
-                flb_http_conf_destroy(ctx);
-                return NULL;
-            }
-
-            sentry = mk_list_entry_first(split, struct flb_split_entry,
-                                         _head);
-
-            len = strlen(prop->val);
-            if (sentry->last_pos == len) {
-                /* Missing value */
-                flb_error("[out_http] missing header value");
-                flb_free(header);
-                flb_utils_split_free(split);
-                flb_http_conf_destroy(ctx);
-                return NULL;
-            }
-
-            /* Header Name */
-            header->key_len = strlen(sentry->value);
-            header->key = flb_strndup(sentry->value, header->key_len);
-
-            /*
-             * Header Value: compose using the offset value from
-             * the first split entry.
-             */
-            header->val = flb_strndup(prop->val + sentry->last_pos,
-                                      len - sentry->last_pos);
-            header->val_len = strlen(header->val);
-            mk_list_add(&header->_head, &ctx->headers);
-
-            ctx->headers_cnt++;
-        }
-        flb_utils_split_free(split);
-    }
+    /* Set instance flags into upstream */
+    flb_output_upstream_set(ctx->u, ins);
 
     return ctx;
 }
 
 void flb_http_conf_destroy(struct flb_out_http *ctx)
 {
-    struct mk_list *tmp;
-    struct mk_list *head;
-    struct out_http_header *header;
-
     if (!ctx) {
         return;
     }
@@ -331,27 +230,7 @@ void flb_http_conf_destroy(struct flb_out_http *ctx)
         flb_upstream_destroy(ctx->u);
     }
 
-    flb_free(ctx->http_user);
-    flb_free(ctx->http_passwd);
     flb_free(ctx->proxy_host);
     flb_free(ctx->uri);
-    flb_free(ctx->json_date_key);
-    flb_free(ctx->header_tag);
-
-    mk_list_foreach_safe(head, tmp, &ctx->headers) {
-        header = mk_list_entry(head, struct out_http_header, _head);
-        flb_free(header->key);
-        flb_free(header->val);
-        mk_list_del(&header->_head);
-        flb_free(header);
-    }
-
-    flb_sds_destroy(ctx->gelf_fields.timestamp_key);
-    flb_sds_destroy(ctx->gelf_fields.host_key);
-    flb_sds_destroy(ctx->gelf_fields.short_message_key);
-    flb_sds_destroy(ctx->gelf_fields.full_message_key);
-    flb_sds_destroy(ctx->gelf_fields.level_key);
-
     flb_free(ctx);
-    ctx = NULL;
 }

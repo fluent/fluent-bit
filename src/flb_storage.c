@@ -52,8 +52,8 @@ static void print_storage_info(struct flb_config *ctx, struct cio_ctx *cio)
         checksum = "disabled";
     }
 
-    flb_info("[storage] %s synchronization mode, checksum %s",
-             sync, checksum);
+    flb_info("[storage] %s synchronization mode, checksum %s, max_chunks_up=%i",
+             sync, checksum, ctx->storage_max_chunks_up);
 
     /* Storage input plugin */
     if (ctx->storage_input_plugin) {
@@ -81,12 +81,12 @@ static int log_cb(struct cio_ctx *ctx, int level, const char *file, int line,
     return 0;
 }
 
-static int storage_input_create(struct cio_ctx *cio,
-                                struct flb_input_instance *in)
+int flb_storage_input_create(struct cio_ctx *cio,
+                             struct flb_input_instance *in)
 {
     int type;
-    char *tmp;
-    char *name;
+    const char *tmp;
+    const char *name;
     struct flb_storage_input *si;
     struct cio_stream *stream;
 
@@ -137,7 +137,7 @@ static int storage_input_create(struct cio_ctx *cio,
 
     si->stream = stream;
     si->cio = cio;
-
+    si->type = type;
     in->storage = si;
 
     return 0;
@@ -169,7 +169,7 @@ static int storage_contexts_create(struct flb_config *config)
     /* Iterate each input instance and create a stream for it */
     mk_list_foreach(head, &config->inputs) {
         in = mk_list_entry(head, struct flb_input_instance, _head);
-        ret = storage_input_create(config->cio, in);
+        ret = flb_storage_input_create(config->cio, in);
         if (ret == -1) {
             flb_error("[storage] could not create storage for instance: %s",
                       in->name);
@@ -230,6 +230,21 @@ int flb_storage_create(struct flb_config *ctx)
     }
     ctx->cio = cio;
 
+    /* Set Chunk I/O maximum number of chunks up */
+    if (ctx->storage_max_chunks_up == 0) {
+        ctx->storage_max_chunks_up = FLB_STORAGE_MAX_CHUNKS_UP;
+    }
+    cio_set_max_chunks_up(ctx->cio, ctx->storage_max_chunks_up);
+
+    /* Load content from the file system if any */
+    ret = cio_load(ctx->cio);
+    if (ret == -1) {
+        flb_error("[storage] error scanning root path content: %s",
+                  ctx->storage_path);
+        cio_destroy(ctx->cio);
+        return -1;
+    }
+
     /*
      * If we have a filesystem storage path, create an instance of the
      * storage_backlog input plugin to consume any possible pending
@@ -269,8 +284,12 @@ void flb_storage_destroy(struct flb_config *ctx)
 
     /* Destroy Chunk I/O context */
     cio = (struct cio_ctx *) ctx->cio;
-    cio_destroy(cio);
 
+    if (!cio) {
+        return;
+    }
+
+    cio_destroy(cio);
     if (ctx->storage_bl_mem_limit) {
         flb_free(ctx->storage_bl_mem_limit);
     }

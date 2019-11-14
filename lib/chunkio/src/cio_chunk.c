@@ -67,8 +67,9 @@ struct cio_chunk *cio_chunk_open(struct cio_ctx *ctx, struct cio_stream *st,
     ch->tx_active = CIO_FALSE;
     ch->tx_crc = 0;
     ch->tx_content_length = 0;
+    ch->backend = NULL;
 
-    mk_list_add(&ch->_head, &st->files);
+    mk_list_add(&ch->_head, &st->chunks);
 
     /* create backend context */
     if (st->type == CIO_STORE_FS) {
@@ -79,7 +80,7 @@ struct cio_chunk *cio_chunk_open(struct cio_ctx *ctx, struct cio_stream *st,
     }
 
     if (!backend) {
-        cio_log_error(ctx, "[cio chunk] error initializing backend file");
+        mk_list_del(&ch->_head);
         free(ch->name);
         free(ch);
         return NULL;
@@ -93,6 +94,10 @@ struct cio_chunk *cio_chunk_open(struct cio_ctx *ctx, struct cio_stream *st,
 void cio_chunk_close(struct cio_chunk *ch, int delete)
 {
     int type;
+
+    if (!ch) {
+        return;
+    }
 
     type = ch->st->type;
     if (type == CIO_STORE_MEM) {
@@ -256,7 +261,7 @@ void cio_chunk_close_stream(struct cio_stream *st)
     struct mk_list *head;
     struct cio_chunk *ch;
 
-    mk_list_foreach_safe(head, tmp, &st->files) {
+    mk_list_foreach_safe(head, tmp, &st->chunks) {
         ch = mk_list_entry(head, struct cio_chunk, _head);
         cio_chunk_close(ch, CIO_FALSE);
     }
@@ -356,7 +361,7 @@ int cio_chunk_tx_rollback(struct cio_chunk *ch)
     struct cio_memfs *mf;
     struct cio_file *cf;
 
-    if (ch->tx_active == CIO_TRUE) {
+    if (ch->tx_active == CIO_FALSE) {
         return -1;
     }
 
@@ -373,5 +378,75 @@ int cio_chunk_tx_rollback(struct cio_chunk *ch)
     }
 
     ch->tx_active = CIO_FALSE;
+    return 0;
+}
+
+/*
+ * Determinate if a Chunk content is available in memory for I/O operations. For
+ * Memory backend this is always true, for Filesystem backend it checks if the
+ * memory map exists and file descriptor is open.
+ */
+int cio_chunk_is_up(struct cio_chunk *ch)
+{
+    int type;
+    struct cio_file *cf;
+
+    type = ch->st->type;
+    if (type == CIO_STORE_MEM) {
+        return CIO_TRUE;
+    }
+    else if (type == CIO_STORE_FS) {
+        cf = ch->backend;
+        return cio_file_is_up(ch, cf);
+    }
+
+    return CIO_FALSE;
+}
+
+int cio_chunk_is_file(struct cio_chunk *ch)
+{
+    int type;
+
+    type = ch->st->type;
+    if (type == CIO_STORE_FS) {
+        return CIO_TRUE;
+    }
+
+    return CIO_FALSE;
+}
+
+int cio_chunk_down(struct cio_chunk *ch)
+{
+    int type;
+
+    type = ch->st->type;
+    if (type == CIO_STORE_FS) {
+        return cio_file_down(ch);
+    }
+
+    return 0;
+}
+
+int cio_chunk_up(struct cio_chunk *ch)
+{
+    int type;
+
+    type = ch->st->type;
+    if (type == CIO_STORE_FS) {
+        return cio_file_up(ch);
+    }
+
+    return 0;
+}
+
+int cio_chunk_up_force(struct cio_chunk *ch)
+{
+    int type;
+
+    type = ch->st->type;
+    if (type == CIO_STORE_FS) {
+        return cio_file_up_force(ch);
+    }
+
     return 0;
 }

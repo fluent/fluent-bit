@@ -34,8 +34,8 @@ struct flb_out_fcount_buffer {
     uint64_t bytes;
 };
 
-struct flb_out_fcount_config {
-    char*     unit;
+struct flb_flowcounter {
+    char     *unit;
     int32_t   tick;
     int       event_based;
 

@@ -46,10 +46,15 @@ struct flb_forward_config {
     /* config */
     flb_sds_t shared_key;     /* shared key                   */
     flb_sds_t self_hostname;  /* hotname used in certificate  */
+    int require_ack_response; /* Require acknowledge for "chunk" */
+    int send_options;         /* send options in messages */
+
+    const char *username;
+    const char *password;
 
     /* mbedTLS specifics */
-#ifdef FLB_HAVE_TLS
     unsigned char shared_key_salt[16];
+#ifdef FLB_HAVE_TLS
     mbedtls_entropy_context tls_entropy;
     mbedtls_ctr_drbg_context tls_ctr_drbg;
 #endif
@@ -69,4 +74,11 @@ struct flb_forward {
     struct mk_list configs;
 };
 
+struct flb_forward_ping {
+    const char *nonce;
+    int nonce_len;
+    const char *auth;
+    int auth_len;
+    int keepalive;
+};
 #endif

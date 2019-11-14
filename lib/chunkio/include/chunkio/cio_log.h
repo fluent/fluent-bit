@@ -44,6 +44,10 @@ int cio_errno_print(int errnum, const char *file, int line);
     cio_log_print(ctx, CIO_DEBUG, __FILENAME__,     \
                   __LINE__, fmt, ##__VA_ARGS__)
 
+#define cio_log_trace(ctx, fmt, ...)                \
+    cio_log_print(ctx, CIO_TRACE, __FILENAME__,     \
+                  __LINE__, fmt, ##__VA_ARGS__)
+
 #ifdef __FILENAME__
 #define cio_errno() cio_errno_print(errno, __FILENAME__, __LINE__)
 #else

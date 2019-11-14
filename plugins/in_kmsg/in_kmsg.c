@@ -106,7 +106,7 @@ static int boot_time(struct timeval *boot_time)
     return 0;
 }
 
-static inline int process_line(char *line,
+static inline int process_line(const char *line,
                                struct flb_input_instance *i_ins,
                                struct flb_in_kmsg_config *ctx)
 {
@@ -115,7 +115,7 @@ static inline int process_line(char *line,
     struct timeval tv;       /* time value                  */
     int line_len;
     uint64_t val;
-    char *p = line;
+    const char *p = line;
     char *end = NULL;
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
@@ -213,7 +213,7 @@ static inline int process_line(char *line,
               ts,
               (long int) tv.tv_sec,
               (long int) tv.tv_usec,
-              (const char *) p);
+              p);
 
     return 0;
 

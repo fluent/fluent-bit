@@ -34,12 +34,20 @@
 int flb_engine_dispatch_retry(struct flb_task_retry *retry,
                               struct flb_config *config)
 {
+    size_t buf_size;
     struct flb_thread *th;
     struct flb_task *task;
     struct flb_input_instance *i_ins;
 
     task = retry->parent;
     i_ins = task->i_ins;
+
+    /* Set file up/down based on restrictions */
+    flb_input_chunk_set_up(task->ic);
+
+    /* There is a match, get the buffer */
+    task->buf = flb_input_chunk_flush(task->ic, &buf_size);
+    task->size = buf_size;
 
     th = flb_output_thread(task,
                            i_ins,
@@ -111,9 +119,10 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
                         struct flb_config *config)
 {
     int ret;
-    char *buf_data;
+    int t_err;
+    const char *buf_data;
     size_t buf_size = 0;
-    char *tag_buf;
+    const char *tag_buf;
     int tag_len;
     struct mk_list *tmp;
     struct mk_list *head;
@@ -140,9 +149,11 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
              * Do not release the buffer since if allocated, it will be
              * released when the task is destroyed.
              */
+            flb_input_chunk_release_lock(ic);
             continue;
         }
         if (!buf_data) {
+            flb_input_chunk_release_lock(ic);
             continue;
         }
 
@@ -157,9 +168,17 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
         task = flb_task_create(id, buf_data, buf_size,
                                ic->in, ic,
                                tag_buf, tag_len,
-                               config);
+                               config, &t_err);
         if (!task) {
-            /* Do not release the buffer, will happen on dyntag destroy */
+            /*
+             * If task creation failed, check the error status flag. An error
+             * is associated with memory allocation or exhaustion of tasks_id,
+             * on that case the input chunk must be preserved and retried
+             * later. So we just release it busy lock.
+             */
+            if (t_err == FLB_TRUE) {
+                flb_input_chunk_release_lock(ic);
+            }
             continue;
         }
     }

@@ -42,7 +42,7 @@ struct flb_uri_field *flb_uri_get(struct flb_uri *uri, int pos)
  * Given a 'URI' string, split the strings separated by a slash and create a
  * context.
  */
-struct flb_uri *flb_uri_create(char *full_uri)
+struct flb_uri *flb_uri_create(const char *full_uri)
 {
     int end;
     unsigned int len;
@@ -69,7 +69,7 @@ struct flb_uri *flb_uri_create(char *full_uri)
     p = ((char *) p) + sizeof(struct flb_uri);
     uri->map = p;
 
-    /* Initilize fields list */
+    /* Initialize fields list */
     mk_list_init(&uri->list);
     uri->count = 0;
 

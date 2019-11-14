@@ -42,7 +42,7 @@
 #include "in_serial.h"
 #include "in_serial_config.h"
 
-static inline int process_line(msgpack_packer *mp_pck, char *line, int len,
+static inline int process_line(msgpack_packer *mp_pck, const char *line, int len,
                                struct flb_in_serial_config *ctx)
 {
 
@@ -58,8 +58,7 @@ static inline int process_line(msgpack_packer *mp_pck, char *line, int len,
     msgpack_pack_str(mp_pck, len);
     msgpack_pack_str_body(mp_pck, line, len);
 
-    flb_debug("[in_serial] message '%s'",
-              (const char *) line);
+    flb_debug("[in_serial] message '%s'", line);
 
     return 0;
 }
@@ -97,7 +96,7 @@ static inline void consume_bytes(char *buf, int bytes, int length)
 }
 
 /* Callback triggered when some serial msgs are available */
-static int in_serial_collect(struct flb_input_instance *in,
+static int cb_serial_collect(struct flb_input_instance *in,
                              struct flb_config *config, void *in_context)
 {
     int ret;
@@ -239,7 +238,7 @@ static int in_serial_collect(struct flb_input_instance *in,
 }
 
 /* Cleanup serial input */
-int in_serial_exit(void *in_context, struct flb_config *config)
+static int cb_serial_exit(void *in_context, struct flb_config *config)
 {
     struct flb_in_serial_config *ctx = in_context;
 
@@ -253,8 +252,8 @@ int in_serial_exit(void *in_context, struct flb_config *config)
 }
 
 /* Init serial input */
-int in_serial_init(struct flb_input_instance *in,
-                   struct flb_config *config, void *data)
+static int cb_serial_init(struct flb_input_instance *in,
+                          struct flb_config *config, void *data)
 {
     int fd;
     int ret;
@@ -264,12 +263,13 @@ int in_serial_init(struct flb_input_instance *in,
 
     ctx = flb_calloc(1, sizeof(struct flb_in_serial_config));
     if (!ctx) {
-        perror("calloc");
+        flb_errno();
         return -1;
     }
     ctx->format = FLB_SERIAL_FORMAT_NONE;
 
     if (!serial_config_read(ctx, in)) {
+        flb_free(ctx);
         return -1;
     }
 
@@ -321,13 +321,13 @@ int in_serial_init(struct flb_input_instance *in,
 #if __linux__
     /* Set our collector based on a file descriptor event */
     ret = flb_input_set_collector_event(in,
-                                        in_serial_collect,
+                                        cb_serial_collect,
                                         ctx->fd,
                                         config);
 #else
     /* Set our collector based on a timer event */
     ret = flb_input_set_collector_time(in,
-                                       in_serial_collect,
+                                       cb_serial_collect,
                                        IN_SERIAL_COLLECT_SEC,
                                        IN_SERIAL_COLLECT_NSEC,
                                        config);
@@ -344,9 +344,9 @@ int in_serial_init(struct flb_input_instance *in,
 struct flb_input_plugin in_serial_plugin = {
     .name         = "serial",
     .description  = "Serial input",
-    .cb_init      = in_serial_init,
+    .cb_init      = cb_serial_init,
     .cb_pre_run   = NULL,
-    .cb_collect   = in_serial_collect,
+    .cb_collect   = cb_serial_collect,
     .cb_flush_buf = NULL,
-    .cb_exit      = in_serial_exit
+    .cb_exit      = cb_serial_exit
 };

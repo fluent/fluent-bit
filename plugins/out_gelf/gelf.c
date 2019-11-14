@@ -22,6 +22,8 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_network.h>
 #include <msgpack.h>
 
@@ -32,7 +34,6 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <errno.h>
-#include <zlib.h>
 
 #include "gelf.h"
 
@@ -90,53 +91,8 @@
  * A message MUST NOT consist of more than 128 chunks.
  */
 
-struct flb_output_plugin out_gelf_plugin;
-
-static int gelf_zlib_init (z_stream *stream)
-{
-    memset(stream, 0, sizeof(z_stream));
-    stream->zalloc = Z_NULL;
-    stream->zfree = Z_NULL;
-    stream->opaque = Z_NULL;
-    stream->data_type = Z_TEXT;
-
-    if (deflateInit(stream, 6) != Z_OK) {
-        flb_error("[out_gelf] error initialising zlib deflate");
-        return -1;
-    }
-    return 0;
-}
-
-static int gelf_zlib_compress(z_stream *stream,
-    void *msg, size_t msg_size, void *data, size_t data_size)
-{
-    int status;
-
-    status = deflateReset(stream);
-    if(status != Z_OK)
-        return -1;
-
-    stream->avail_in = msg_size;
-    stream->next_in = msg;
-
-    stream->avail_out = data_size;
-    stream->next_out = data;
-
-    if (deflate(stream, Z_FINISH) == Z_STREAM_ERROR) {
-        flb_error("[out_gelf] error compressing with zlib deflate");
-        return -1;
-    }
-
-    return (int) stream->total_out;
-}
-
-static void gelf_zlib_end(z_stream *stream)
-{
-    deflateEnd(stream);
-}
-
-static int gelf_send_udp_chunked (struct flb_out_gelf_config *ctx, void *msg,
-                                  size_t msg_size)
+static int gelf_send_udp_chunked(struct flb_out_gelf_config *ctx, void *msg,
+                                 size_t msg_size)
 {
     int ret;
     uint8_t header[12];
@@ -219,44 +175,38 @@ static int gelf_send_udp_pckt (struct flb_out_gelf_config *ctx, char *msg,
 static int gelf_send_udp(struct flb_out_gelf_config *ctx, char *msg,
                          size_t msg_size)
 {
+    int ret;
     int status;
+    void *zdata;
+    size_t zdata_len;
 
     if (ctx->compress == FLB_TRUE || (msg_size > ctx->pckt_size)) {
-        int size;
-        size_t zdata_size = msg_size * 1.001 + 12;
-        void *zdata;
-
-        zdata = flb_malloc(zdata_size);
-        if (zdata == NULL) {
-
-          return -1;
+        ret = flb_gzip_compress(msg, msg_size, &zdata, &zdata_len);
+        if (ret != 0) {
+            return -1;
         }
 
-        size = gelf_zlib_compress(&(ctx->stream), msg, msg_size, zdata, zdata_size);
-        if (size < 0) {
-          flb_free(zdata);
-          return size;
-        }
-        status = gelf_send_udp_pckt (ctx, zdata, size);
-        if (status < 0) {
-           flb_free(zdata);
-           return status;
-        }
+        status = gelf_send_udp_pckt (ctx, zdata, zdata_len);
         flb_free(zdata);
+        if (status < 0) {
+            return status;
+        }
     }
     else {
-      status = send(ctx->fd, msg, msg_size, MSG_DONTWAIT | MSG_NOSIGNAL);
-      if (status < 0) return status;
+        status = send(ctx->fd, msg, msg_size, MSG_DONTWAIT | MSG_NOSIGNAL);
+        if (status < 0) {
+            return status;
+        }
     }
 
-  return 0;
+    return 0;
 }
 
-void cb_gelf_flush(void *data, size_t bytes,
-                   char *tag, int tag_len,
-                   struct flb_input_instance *i_ins,
-                   void *out_context,
-                   struct flb_config *config)
+static void cb_gelf_flush(const void *data, size_t bytes,
+                          const char *tag, int tag_len,
+                          struct flb_input_instance *i_ins,
+                          void *out_context,
+                          struct flb_config *config)
 {
     struct flb_out_gelf_config *ctx = out_context;
     flb_sds_t s;
@@ -345,12 +295,12 @@ void cb_gelf_flush(void *data, size_t bytes,
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 
-int cb_gelf_init(struct flb_output_instance *ins, struct flb_config *config,
-                 void *data)
+static int cb_gelf_init(struct flb_output_instance *ins, struct flb_config *config,
+                        void *data)
 {
     int ret;
     int fd;
-    char *tmp;
+    const char *tmp;
     struct flb_out_gelf_config *ctx = NULL;
 
 
@@ -433,21 +383,11 @@ int cb_gelf_init(struct flb_output_instance *ins, struct flb_config *config,
     /* Config UDP Compress */
     tmp = flb_output_get_property("compress", ins);
     if (tmp) {
-        if (strcasecmp(tmp, "true") == 0 ||
-            strcasecmp(tmp, "on") == 0) {
-            ctx->compress = FLB_TRUE;
-        }
-        else if (strcasecmp(tmp, "false") == 0 ||
-                 strcasecmp(tmp, "off") == 0) {
-            ctx->compress = FLB_FALSE;
-        }
+        ctx->compress = flb_utils_bool(tmp);
     }
     else {
         ctx->compress = FLB_TRUE;
     }
-
-    ret = gelf_zlib_init(&(ctx->stream));
-    if (ret < 0) return ret;
 
     /* init random seed */
     fd = open("/dev/urandom", O_RDONLY);
@@ -473,7 +413,8 @@ int cb_gelf_init(struct flb_output_instance *ins, struct flb_config *config,
             flb_free(ctx);
             return -1;
         }
-    } else {
+    }
+    else {
         int io_flags = FLB_IO_TCP;
 
         if (ctx->mode == FLB_GELF_TLS) {
@@ -497,7 +438,7 @@ int cb_gelf_init(struct flb_output_instance *ins, struct flb_config *config,
     return 0;
 }
 
-int cb_gelf_exit(void *data, struct flb_config *config)
+static int cb_gelf_exit(void *data, struct flb_config *config)
 {
     struct flb_out_gelf_config *ctx = data;
 
@@ -513,8 +454,6 @@ int cb_gelf_exit(void *data, struct flb_config *config)
     flb_sds_destroy(ctx->fields.short_message_key);
     flb_sds_destroy(ctx->fields.full_message_key);
     flb_sds_destroy(ctx->fields.level_key);
-
-    gelf_zlib_end(&(ctx->stream));
 
     flb_free(ctx);
 

@@ -41,9 +41,6 @@
  *
  * Note that Upstreams context may define how network operations will work,
  * basically synchronous or asynchronous (non-blocking).
- *
- * When Fluent Bit is set with config->flush_mode = FLB_FLUSH_PTHREADS, all
- * operations will work in blocking (synchronous) mode.
  */
 
 #include <stdio.h>
@@ -95,6 +92,7 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
         return -1;
     }
     u_conn->fd = fd;
+    u_conn->event.fd = fd;
 
     /*
      * If we use co-routines flushing method, make sure socket
@@ -124,7 +122,7 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
             return -1;
         }
 
-        MK_EVENT_NEW(&u_conn->event);
+        MK_EVENT_ZERO(&u_conn->event);
         u_conn->thread = th;
         ret = mk_event_add(u->evl,
                            fd,
@@ -193,14 +191,13 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
     }
 #endif
 
-    u_conn->connect_count++;
     flb_trace("[io] connection OK");
 
     return 0;
 }
 
 static int net_io_write(struct flb_upstream_conn *u_conn,
-                        void *data, size_t len, size_t *out_len)
+                        const void *data, size_t len, size_t *out_len)
 {
     int ret;
     int tries = 0;
@@ -218,7 +215,7 @@ static int net_io_write(struct flb_upstream_conn *u_conn,
     while (total < len) {
         ret = send(u_conn->fd, (char *) data + total, len - total, 0);
         if (ret == -1) {
-            if (errno == EAGAIN) {
+            if (FLB_WOULDBLOCK()) {
                 /*
                  * FIXME: for now we are handling this in a very lazy way,
                  * just sleep for a second and retry (for a max of 30 tries).
@@ -251,7 +248,7 @@ static int net_io_write(struct flb_upstream_conn *u_conn,
  */
 static FLB_INLINE int net_io_write_async(struct flb_thread *th,
                                          struct flb_upstream_conn *u_conn,
-                                         void *data, size_t len, size_t *out_len)
+                                         const void *data, size_t len, size_t *out_len)
 {
     int ret = 0;
     int error;
@@ -286,7 +283,7 @@ static FLB_INLINE int net_io_write_async(struct flb_thread *th,
 #endif
 
     if (bytes == -1) {
-        if (errno == EAGAIN) {
+        if (FLB_WOULDBLOCK()) {
             u_conn->thread = th;
             ret = mk_event_add(u->evl,
                                u_conn->fd,
@@ -383,7 +380,7 @@ static ssize_t net_io_read(struct flb_upstream_conn *u_conn,
 {
     int ret;
 
-    ret = read(u_conn->fd, buf, len);
+    ret = recv(u_conn->fd, buf, len, 0);
     if (ret == -1) {
         return -1;
     }
@@ -400,9 +397,9 @@ static FLB_INLINE ssize_t net_io_read_async(struct flb_thread *th,
 
  retry_read:
 
-    ret = read(u_conn->fd, buf, len);
+    ret = recv(u_conn->fd, buf, len, 0);
     if (ret == -1) {
-        if (errno == EAGAIN) {
+        if (FLB_WOULDBLOCK()) {
             u_conn->thread = th;
             ret = mk_event_add(u->evl,
                                u_conn->fd,
@@ -429,20 +426,16 @@ static FLB_INLINE ssize_t net_io_read_async(struct flb_thread *th,
 }
 
 /* Write data to an upstream connection/server */
-int flb_io_net_write(struct flb_upstream_conn *u_conn, void *data,
+int flb_io_net_write(struct flb_upstream_conn *u_conn, const void *data,
                      size_t len, size_t *out_len)
 {
     int ret = -1;
     struct flb_upstream *u = u_conn->u;
-
-#if defined (FLB_HAVE_FLUSH_LIBCO)
     struct flb_thread *th = pthread_getspecific(flb_thread_key);
+
     flb_trace("[io thread=%p] [net_write] trying %zd bytes",
               th, len);
-#else
-    void *th = NULL;
-    flb_trace("[io] [net_write] trying %zd bytes", len);
-#endif
+
     if (u->flags & FLB_IO_TCP) {
         if (u->flags & FLB_IO_ASYNC) {
             ret = net_io_write_async(th, u_conn, data, len, out_len);
@@ -460,15 +453,11 @@ int flb_io_net_write(struct flb_upstream_conn *u_conn, void *data,
     if (ret == -1 && u_conn->fd > 0) {
         flb_socket_close(u_conn->fd);
         u_conn->fd = -1;
+        u_conn->event.fd = -1;
     }
 
-#if defined (FLB_HAVE_FLUSH_LIBCO)
     flb_trace("[io thread=%p] [net_write] ret=%i total=%lu/%lu",
               th, ret, *out_len, len);
-#else
-    flb_trace("[io] [net_write] ret=%i total=%i",
-              ret, *out_len);
-#endif
     return ret;
 }
 
@@ -476,15 +465,10 @@ ssize_t flb_io_net_read(struct flb_upstream_conn *u_conn, void *buf, size_t len)
 {
     int ret = -1;
     struct flb_upstream *u = u_conn->u;
-
-#if defined (FLB_HAVE_FLUSH_LIBCO)
     struct flb_thread *th = pthread_getspecific(flb_thread_key);
+
     flb_trace("[io thread=%p] [net_read] try up to %zd bytes",
               th, len);
-#else
-    void *th = NULL;
-    flb_trace("[io] [net_read] try up to %zd bytes", len);
-#endif
 
     if (u->flags & FLB_IO_TCP) {
         if (u->flags & FLB_IO_ASYNC) {

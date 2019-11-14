@@ -78,12 +78,6 @@ int flb_pipe_set_nonblocking(flb_pipefd_t fd)
 {
     return evutil_make_socket_nonblocking(fd);
 }
-
-int flb_pipe_check_eagain(void)
-{
-    return WSAGetLastError() == WSAEWOULDBLOCK;
-}
-
 #else
 /* All other flavors of Unix/BSD are OK */
 
@@ -115,11 +109,6 @@ int flb_pipe_set_nonblocking(flb_pipefd_t fd)
         return 0;
     return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 }
-
-int flb_pipe_check_eagain(void)
-{
-    return errno == EAGAIN || errno == EWOULDBLOCK;
-}
 #endif
 
 /* Blocking read until receive 'count' bytes */
@@ -131,7 +120,7 @@ ssize_t flb_pipe_read_all(int fd, void *buf, size_t count)
     do {
         bytes = flb_pipe_r(fd, (char *) buf + total, count - total);
         if (bytes == -1) {
-            if (errno == EAGAIN) {
+            if (FLB_PIPE_WOULDBLOCK()) {
                 /*
                  * This could happen, since this function goal is not to
                  * return until all data have been read, just sleep a little
@@ -154,7 +143,7 @@ ssize_t flb_pipe_read_all(int fd, void *buf, size_t count)
 }
 
 /* Blocking write until send 'count bytes */
-ssize_t flb_pipe_write_all(int fd, void *buf, size_t count)
+ssize_t flb_pipe_write_all(int fd, const void *buf, size_t count)
 {
     ssize_t bytes;
     size_t total = 0;
@@ -162,7 +151,7 @@ ssize_t flb_pipe_write_all(int fd, void *buf, size_t count)
     do {
         bytes = flb_pipe_w(fd, (const char *) buf + total, count - total);
         if (bytes == -1) {
-            if (errno == EAGAIN) {
+            if (FLB_PIPE_WOULDBLOCK()) {
                 /*
                  * This could happen, since this function goal is not to
                  * return until all data have been read, just sleep a little

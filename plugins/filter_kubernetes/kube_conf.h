@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_io.h>
+#include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_regex.h>
 
 /*
@@ -50,9 +51,15 @@
 #define FLB_MERGE_BUF_SIZE  2048  /* 2KB */
 
 /* Kubernetes API server info */
-#define FLB_API_HOST  "kubernetes.default.svc.cluster.local"
+#define FLB_API_HOST  "kubernetes.default.svc"
 #define FLB_API_PORT  443
 #define FLB_API_TLS   FLB_TRUE
+
+/*
+ * Default expected Kubernetes tag prefix, this is used mostly when source
+ * data comes from in_tail with custom tags like: kube.service.*
+ */
+#define FLB_KUBE_TAG_PREFIX "kube.var.log.containers."
 
 struct kube_meta;
 
@@ -63,6 +70,7 @@ struct flb_kube {
     int api_port;
     int api_https;
     int use_journal;
+    int labels;
     int annotations;
     int dummy_meta;
     int tls_debug;
@@ -79,6 +87,8 @@ struct flb_kube {
     /* Merge Log feature */
     int merge_log;             /* old merge_json_log */
 
+    struct flb_parser *merge_parser;
+
     /* Temporal buffer to unescape strings */
     size_t unesc_buf_size;
     size_t unesc_buf_len;
@@ -94,8 +104,14 @@ struct flb_kube {
     int merge_log_key_len;
     char *merge_log_key;
 
+    /* Keep original log key after successful parsing */
+    int keep_log;
+
     /* API Server end point */
     char kube_url[1024];
+
+    /* Kubernetes tag prefix */
+    flb_sds_t kube_tag_prefix;
 
     /* Regex context to parse records */
     struct flb_regex *regex;

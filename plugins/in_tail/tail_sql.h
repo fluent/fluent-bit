@@ -43,14 +43,18 @@
 
 #define SQL_INSERT_FILE                                             \
     "INSERT INTO in_tail_files (name, offset, inode, created)"      \
-    "  VALUES ('%s', %lu, %lu, %lu);"
+    "  VALUES ('%s', %"PRIu64", %"PRIu64", %"PRIu64");"
 
 #define SQL_UPDATE_OFFSET                               \
-    "UPDATE in_tail_files set offset=%lu WHERE id=%"PRId64";"
+    "UPDATE in_tail_files set offset=%"PRIu64" WHERE id=%"PRId64";"
 
 #define SQL_ROTATE_FILE                         \
     "UPDATE in_tail_files set name='%s',rotated=1 WHERE id=%"PRId64";"
 
 #define SQL_PRAGMA_SYNC                         \
     "PRAGMA synchronous=%i;"
+
+#define SQL_PRAGMA_JOURNAL_MODE                 \
+    "PRAGMA journal_mode=OFF;"
+
 #endif

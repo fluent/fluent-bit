@@ -201,7 +201,7 @@ void flb_utils_print_setup(struct flb_config *config)
     }
 }
 
-struct mk_list *flb_utils_split(char *line, int separator, int max_split)
+struct mk_list *flb_utils_split(const char *line, int separator, int max_split)
 {
     int i = 0;
     int count = 0;
@@ -211,6 +211,10 @@ struct mk_list *flb_utils_split(char *line, int separator, int max_split)
     char *val;
     struct mk_list *list;
     struct flb_split_entry *new;
+
+    if (!line) {
+        return NULL;
+    }
 
     list = flb_malloc(sizeof(struct mk_list));
     if (!list) {
@@ -333,12 +337,12 @@ int flb_utils_pipe_byte_consume(flb_pipefd_t fd)
     return 0;
 }
 
-ssize_t flb_utils_size_to_bytes(char *size)
+int64_t flb_utils_size_to_bytes(const char *size)
 {
     int i;
     int len;
     int plen = 0;
-    size_t val;
+    int64_t val;
     char c;
     char tmp[3] = {0};
     int64_t KB = 1000;
@@ -399,7 +403,7 @@ ssize_t flb_utils_size_to_bytes(char *size)
     return val;
 }
 
-int flb_utils_time_to_seconds(char *time)
+int flb_utils_time_to_seconds(const char *time)
 {
     int len;
     size_t val;
@@ -421,19 +425,24 @@ int flb_utils_time_to_seconds(char *time)
     return val;
 }
 
-int flb_utils_bool(char *val)
+int flb_utils_bool(const char *val)
 {
     if (strcasecmp(val, "true") == 0 ||
         strcasecmp(val, "on") == 0 ||
         strcasecmp(val, "yes") == 0) {
         return FLB_TRUE;
     }
+    else if (strcasecmp(val, "false") == 0 ||
+             strcasecmp(val, "off") == 0 ||
+             strcasecmp(val, "no") == 0) {
+        return FLB_FALSE;
+    }
 
-    return FLB_FALSE;
+    return -1;
 }
 
 /* Convert a 'string' time seconds.nanoseconds to int and long values */
-int flb_utils_time_split(char *time, int *sec, long *nsec)
+int flb_utils_time_split(const char *time, int *sec, long *nsec)
 {
     char *p;
     char *end;
@@ -497,7 +506,7 @@ void flb_utils_bytes_to_human_readable_size(size_t bytes,
 }
 
 
-static inline void encoded_to_buf(char *out, char *in, int len)
+static inline void encoded_to_buf(char *out, const char *in, int len)
 {
     int i;
     char *p = out;
@@ -513,7 +522,7 @@ static inline void encoded_to_buf(char *out, char *in, int len)
  * representation.
  */
 int flb_utils_write_str(char *buf, int *off, size_t size,
-                        char *str, size_t str_len)
+                        const char *str, size_t str_len)
 {
     int i;
     int b;
@@ -543,35 +552,33 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
         }
 
         c = (uint32_t) str[i];
-        if (c == '\\' || c == '"') {
+        if (c == '\"') {
             *p++ = '\\';
-            *p++ = c;
+            *p++ = '\"';
         }
-        else if (c >= '\a' && c <= '\r') {
+        else if (c == '\\') {
             *p++ = '\\';
-            switch (c) {
-            case '\n':
-                *p++ = 'n';
-                break;
-            case '\t':
-                *p++ = 't';
-                break;
-            case '\b':
-                *p++ = 'b';
-                break;
-            case '\f':
-                *p++ = 'f';
-                break;
-            case '\r':
-                *p++ = 'r';
-                break;
-            case '\a':
-                *p++ = 'a';
-                break;
-            case '\v':
-                *p++ = 'v';
-                break;
-            }
+            *p++ = '\\';
+        }
+        else if (c == '\n') {
+            *p++ = '\\';
+            *p++ = 'n';
+        }
+        else if (c == '\r') {
+            *p++ = '\\';
+            *p++ = 'r';
+        }
+        else if (c == '\t') {
+            *p++ = '\\';
+            *p++ = 't';
+        }
+        else if (c == '\b') {
+            *p++ = '\\';
+            *p++ = 'b';
+        }
+        else if (c == '\f') {
+            *p++ = '\\';
+            *p++ = 'f';
         }
         else if (c < 32 || c == 0x7f) {
             if ((available - written) < 6) {
@@ -583,8 +590,11 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
         }
         else if (c >= 0x80 && c <= 0xFFFF) {
             hex_bytes = flb_utf8_len(str + i);
-            if ((available - written) < (2 + hex_bytes)) {
+            if (available - written < 6) {
                 return FLB_FALSE;
+            }
+            if (i + hex_bytes > str_len) {
+                break; /* skip truncated UTF-8 */
             }
 
             state = FLB_UTF8_ACCEPT;
@@ -610,8 +620,11 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
         }
         else if (c > 0xFFFF) {
             hex_bytes = flb_utf8_len(str + i);
-            if ((available - written) < (4 + hex_bytes)) {
+            if (available - written < 6) {
                 return FLB_FALSE;
+            }
+            if (i + hex_bytes > str_len) {
+                break; /* skip truncated UTF-8 */
             }
 
             state = FLB_UTF8_ACCEPT;
@@ -647,7 +660,7 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
 }
 
 
-int flb_utils_write_str_buf(char *str, size_t str_len, char **out, size_t *out_size)
+int flb_utils_write_str_buf(const char *str, size_t str_len, char **out, size_t *out_size)
 {
     int ret;
     int off;
@@ -686,7 +699,7 @@ int flb_utils_write_str_buf(char *str, size_t str_len, char **out, size_t *out_s
     return 0;
 }
 
-int flb_utils_url_split(char *in_url, char **out_protocol,
+int flb_utils_url_split(const char *in_url, char **out_protocol,
                         char **out_host, char **out_port, char **out_uri)
 {
     char *protocol = NULL;

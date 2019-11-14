@@ -37,8 +37,8 @@ static int cb_stdout_init(struct flb_filter_instance *f_ins,
     return 0;
 }
 
-static int cb_stdout_filter(void *data, size_t bytes,
-                            char *tag, int tag_len,
+static int cb_stdout_filter(const void *data, size_t bytes,
+                            const char *tag, int tag_len,
                             void **out_buf, size_t *out_bytes,
                             struct flb_filter_instance *f_ins,
                             void *filter_context,

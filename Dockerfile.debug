@@ -1,5 +1,5 @@
 FROM debian:stretch as builder
-ADD https://busybox.net/downloads/binaries/1.30.0-i686/busybox /bin/busybox
+COPY --from=amd64/busybox:1.31.0 /bin/busybox /bin/busybox
 RUN chmod 555 /bin/busybox \
  && /bin/busybox --install
 

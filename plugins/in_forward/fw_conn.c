@@ -73,6 +73,7 @@ int fw_conn_event(void *data)
 
             ret = fw_prot_process(conn);
             if (ret == -1) {
+                fw_conn_del(conn);
                 return -1;
             }
             return bytes;
@@ -92,7 +93,7 @@ int fw_conn_event(void *data)
     return 0;
 }
 
-/* Create a new mqtt request instance */
+/* Create a new Forward request instance */
 struct fw_conn *fw_conn_add(int fd, struct flb_in_fw_config *ctx)
 {
     int ret;

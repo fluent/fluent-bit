@@ -38,6 +38,7 @@
 /* HTTP Flags */
 #define FLB_HTTP_10          1
 #define FLB_HTTP_11          2
+#define FLB_HTTP_KA         16
 
 /* Proxy */
 #define FLB_HTTP_PROXY_NONE       0
@@ -51,8 +52,11 @@
 #define FLB_HTTP_NOT_FOUND        2 /* header not found */
 
 /* Useful headers */
-#define FLB_HTTP_HEADER_AUTH         "Authorization"
-#define FLB_HTTP_HEADER_CONTENT_TYPE "Content-Type"
+#define FLB_HTTP_HEADER_AUTH             "Authorization"
+#define FLB_HTTP_HEADER_CONTENT_TYPE     "Content-Type"
+#define FLB_HTTP_HEADER_CONTENT_ENCODING "Content-Encoding"
+#define FLB_HTTP_HEADER_CONNECTION       "Connection"
+#define FLB_HTTP_HEADER_KA               "keep-alive"
 
 struct flb_http_response {
     int status;                /* HTTP response status          */
@@ -78,7 +82,7 @@ struct flb_http_response {
 struct flb_http_proxy {
     int type;               /* One of FLB_HTTP_PROXY_ macros */
     int port;               /* TCP Port */
-    char *host;             /* Proxy Host */
+    const char *host;       /* Proxy Host */
 };
 
 /* Set a request type */
@@ -94,7 +98,7 @@ struct flb_http_client {
     char *header_buf;
 
     int body_len;
-    char *body_buf;
+    const char *body_buf;
 
     /* Proxy */
     struct flb_http_proxy proxy;
@@ -104,15 +108,17 @@ struct flb_http_client {
 };
 
 struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
-                                        int method, char *uri,
-                                        char *body, size_t body_len,
-                                        char *host, int port,
-                                        char *proxy, int flags);
+                                        int method, const char *uri,
+                                        const char *body, size_t body_len,
+                                        const char *host, int port,
+                                        const char *proxy, int flags);
 
 int flb_http_add_header(struct flb_http_client *c,
-                        char *key, size_t key_len,
-                        char *val, size_t val_len);
-int flb_http_basic_auth(struct flb_http_client *c, char *user, char *passwd);
+                        const char *key, size_t key_len,
+                        const char *val, size_t val_len);
+int flb_http_basic_auth(struct flb_http_client *c,
+                        const char *user, const char *passwd);
+int flb_http_set_content_encoding_gzip(struct flb_http_client *c);
 int flb_http_do(struct flb_http_client *c, size_t *bytes);
 void flb_http_client_destroy(struct flb_http_client *c);
 int flb_http_buffer_size(struct flb_http_client *c, size_t size);

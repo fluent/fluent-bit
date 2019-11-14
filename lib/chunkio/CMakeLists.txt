@@ -24,6 +24,11 @@ option(CIO_SANITIZE_ADDRESS  "Enable address sanitizer"     Off)
 option(CIO_TESTS             "Enable tests"                 Off)
 option(CIO_BACKEND_FILESYSTEM "Enable filesystem backend"   On)
 
+# Windows does not have file system backend support yet.
+if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
+  set(CIO_BACKEND_FILESYSTEM Off)
+endif()
+
 # Force Option value
 macro(CIO_OPTION option value)
   set(${option} ${value} CACHE "" INTERNAL FORCE)
@@ -62,6 +67,20 @@ endif()
 
 if(CIO_BACKEND_FILESYSTEM)
   CIO_DEFINITION(CIO_HAVE_BACKEND_FILESYSTEM)
+endif()
+
+include(CheckCSourceCompiles)
+
+# fallocate support
+check_c_source_compiles("
+  #include <fcntl.h>
+  int main() {
+     fallocate(0,0,0);
+     return 0;
+  }" CIO_HAVE_FALLOCATE)
+
+if(CIO_HAVE_FALLOCATE)
+  CIO_DEFINITION(CIO_HAVE_FALLOCATE)
 endif()
 
 include_directories(

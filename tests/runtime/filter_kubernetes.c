@@ -14,9 +14,10 @@ struct kube_test {
 };
 
 struct kube_test_result {
-    char *target;
-    char *suffix;
-    int   nmatched;
+    const char *target;
+    const char *suffix;
+    int   type;
+    int   nMatched;
 };
 
 /* Test target mode */
@@ -25,33 +26,16 @@ struct kube_test_result {
 
 #ifdef FLB_HAVE_SYSTEMD
 int flb_test_systemd_send(void);
+char kube_test_id[64];
 #endif
 
 /* Constants */
-#define KUBE_IP       "127.0.0.1"
-#define KUBE_PORT     "8002"
-#define KUBE_URL      "http://" KUBE_IP ":" KUBE_PORT
-#define DPATH         FLB_TESTS_DATA_PATH "/data/kubernetes/"
-#define STD_PARSER    "../conf/parsers.conf"
+#define KUBE_IP          "127.0.0.1"
+#define KUBE_PORT        "8002"
+#define KUBE_URL         "http://" KUBE_IP ":" KUBE_PORT
+#define DPATH            FLB_TESTS_DATA_PATH "/data/kubernetes"
 
-/*
- * Data files
- * ==========
- */
-#define T_APACHE_LOGS           DPATH "apache-logs_default"
-#define T_APACHE_LOGS_ANN       DPATH "apache-logs-annotated_default"
-#define T_APACHE_LOGS_ANN_INV   DPATH "apache-logs-annotated-invalid"
-#define T_APACHE_LOGS_ANN_MERGE DPATH "apache-logs-annotated-merge"
-#define T_APACHE_LOGS_ANN_EXCL  DPATH "apache-logs-annotated-exclude"
-#define T_JSON_LOGS             DPATH "json-logs_default"
-#define T_JSON_LOGS_INV         DPATH "json-logs-invalid"
-#define T_SYSTEMD_SIMPLE        DPATH "kairosdb-914055854-b63vq"
-
-#define T_MULTI_INIT            DPATH "session-db-fdd649d68-cq5sp_socks_istio-init-"
-#define T_MULTI_PROXY           DPATH "session-db-fdd649d68-cq5sp_socks_istio-proxy-"
-#define T_MULTI_REDIS           DPATH "session-db-fdd649d68-cq5sp_socks_istio-session-db-"
-
-static int file_to_buf(char *path, char **out_buf, size_t *out_size)
+static int file_to_buf(const char *path, char **out_buf, size_t *out_size)
 {
     int ret;
     long bytes;
@@ -92,7 +76,7 @@ static int file_to_buf(char *path, char **out_buf, size_t *out_size)
 }
 
 /* Given a target, lookup the .out file and return it content in a new buffer */
-static char *get_out_file_content(char *target, char *suffix)
+static char *get_out_file_content(const char *target, const char *suffix)
 {
     int ret;
     char file[PATH_MAX];
@@ -100,12 +84,17 @@ static char *get_out_file_content(char *target, char *suffix)
     char *out_buf;
     size_t out_size;
 
-    snprintf(file, sizeof(file) - 1, "%s%s.out", target,suffix);
+    if (suffix) {
+        snprintf(file, sizeof(file) - 1, DPATH "/out/%s_%s.out", target, suffix);
+    }
+    else {
+        snprintf(file, sizeof(file) - 1, DPATH "/out/%s.out", target);
+    }
 
     ret = file_to_buf(file, &out_buf, &out_size);
+    TEST_CHECK_(ret == 0, "getting output file content: %s", file);
     if (ret != 0) {
-        flb_error("no output file found '%s'", file);
-        exit(EXIT_FAILURE);
+        return NULL;
     }
 
     /* Sanitize content, get rid of ending \n */
@@ -119,46 +108,81 @@ static char *get_out_file_content(char *target, char *suffix)
 static int cb_check_result(void *record, size_t size, void *data)
 {
     struct kube_test_result *result;
-    char *out;
-    char *check;
-    char streamfilter[64];
+    char *out = NULL;
 
     result = (struct kube_test_result *) data;
-    out = get_out_file_content(result->target, result->suffix);
-    if (!out) {
-        exit(EXIT_FAILURE);
-    }
-    sprintf(streamfilter, "\"stream\":\"%s\"", result->suffix);
-    if (!result->suffix || !*result->suffix || strstr(record, streamfilter)) {
 
-        /*
-         * Our validation is: check that the content of out file is found
-         * in the output record.
-         */
-        check = strstr(record, out);
-        if (!check) {
-            fprintf(stderr, "Validator mismatch::\nTarget: <<%s>>, Suffix: <<%s>\n"
-                            "Filtered record: <<%s>>\nExpected record: <<%s>>\n",
-                            result->target, result->suffix, (char *)record, out);
+    if (result->type == KUBE_SYSTEMD) {
+        char *skip_record, *skip_out;
+        int check;
+
+        out = get_out_file_content(result->target, result->suffix);
+        if (!out) {
+            goto exit;
         }
-        TEST_CHECK(check != NULL);
-        result->nmatched++;
+        /* Skip the other records since some are created by systemd,
+           only check the kubernetes annotations
+         */
+        skip_out = strstr(out, "\"kubernetes\":");
+        skip_record = strstr(record, "\"kubernetes\":");
+        if (skip_out && skip_record) {
+            check = strcmp(skip_record, skip_out);
+            TEST_CHECK(check == 0);
+            if (check != 0) {
+                printf("skip_record: %s\nskip_out: %s\n",
+                         skip_record, skip_out);
+            }
+            result->nMatched++;
+        }
+    } else {
+        char *check;
+        char streamfilter[64] = {'\0'};
+
+        if (result->suffix && *result->suffix) {
+            sprintf(streamfilter, "\"stream\":\"%s\"", result->suffix);
+        }
+        if (!*streamfilter ||
+            strstr(record, streamfilter)) {
+            out = get_out_file_content(result->target, result->suffix);
+            if (!out) {
+                goto exit;
+            }
+            /*
+             * Our validation is: check that the content of out file is found
+             * in the output record.
+             */
+            check = strstr(record, out);
+            TEST_CHECK_(check != NULL,
+                       "comparing expected record with actual record");
+            if (check == NULL) {
+                if (result->suffix) {
+                    printf("Target: %s, suffix: %s\n",
+                           result->target, result->suffix);
+                }
+                else
+                {
+                    printf("Target: %s\n",
+                           result->target);
+                }
+                printf("Expected record:\n%s\n"
+                       "Actual record:\n%s\n",
+                       out, (char *)record);
+            }
+            result->nMatched++;
+        }
     }
+
+exit:
     if (size > 0) {
         flb_free(record);
     }
-    flb_free(out);
+    if (out) {
+        flb_free(out);
+    }
     return 0;
 }
 
-static void kube_test_destroy(struct kube_test *ctx)
-{
-    flb_stop(ctx->flb);
-    flb_destroy(ctx->flb);
-    flb_free(ctx);
-}
-
-static void kube_test_create(char *target, int type, char *suffix, char *parserconf, int nExpected, ...)
+static void kube_test(const char *target, int type, const char *suffix, int nExpected, ...)
 {
     int ret;
     int in_ffd;
@@ -168,60 +192,65 @@ static void kube_test_create(char *target, int type, char *suffix, char *parserc
     char *value;
     char path[PATH_MAX];
     va_list va;
-    struct kube_test *ctx;
+    struct kube_test ctx;
     struct flb_lib_out_cb cb_data;
     struct kube_test_result result = {0};
 
-    result.nmatched = 0;
+    result.nMatched = 0;
     result.target = target;
     result.suffix = suffix;
+    result.type = type;
 
-    /* Compose path pattern based on target */
-    snprintf(path, sizeof(path) - 1, "%s*.log", target);
-
-    ctx = flb_malloc(sizeof(struct kube_test));
-    if (!ctx) {
-        flb_errno();
-        TEST_CHECK(ctx != NULL);
-        exit(EXIT_FAILURE);
+    ctx.flb = flb_create();
+    TEST_CHECK_(ctx.flb != NULL, "initialising service");
+    if (!ctx.flb) {
+        goto exit;
     }
 
-    ctx->flb = flb_create();
-    flb_service_set(ctx->flb,
-                    "Flush", "1",
-                    "Grace", "1",
-                    "Parsers_File", parserconf,
-                    NULL);
+    ret = flb_service_set(ctx.flb,
+                          "Flush", "1",
+                          "Grace", "1",
+                          "Log_Level", "error",
+                          "Parsers_File", DPATH "/parsers.conf",
+                          NULL);
+    TEST_CHECK_(ret == 0, "setting service options");
 
     if (type == KUBE_TAIL) {
-        in_ffd = flb_input(ctx->flb, "tail", NULL);
-        ret = flb_input_set(ctx->flb, in_ffd,
-                            "Tag", "kube.*",
+        /* Compose path based on target */
+        snprintf(path, sizeof(path) - 1, DPATH "/log/%s.log", target);
+        TEST_CHECK_(access(path, R_OK) == 0, "accessing log file: %s", path);
+        in_ffd = flb_input(ctx.flb, "tail", NULL);
+        TEST_CHECK_(in_ffd >= 0, "initialising input");
+        ret = flb_input_set(ctx.flb, in_ffd,
+                            "Tag", "kube.<namespace>.<pod>.<container>",
+                            "Tag_Regex", "^" DPATH "/log/(?:[^/]+/)?(?<namespace>.+)_(?<pod>.+)_(?<container>.+)\\.log$",
                             "Path", path,
                             "Parser", "docker",
-                            "Decode_Field", "json log",
+                            "Docker_Mode", "On",
                             NULL);
-        TEST_CHECK(ret == 0);
+        TEST_CHECK_(ret == 0, "setting input options");
     }
 #ifdef FLB_HAVE_SYSTEMD
     else if (type == KUBE_SYSTEMD) {
-        in_ffd = flb_input(ctx->flb, "systemd", NULL);
-        ret = flb_input_set(ctx->flb, in_ffd,
+        sprintf(kube_test_id, "KUBE_TEST=%u%lu", getpid(), random());
+        in_ffd = flb_input(ctx.flb, "systemd", NULL);
+        TEST_CHECK_(in_ffd >= 0, "initialising input");
+        ret = flb_input_set(ctx.flb, in_ffd,
                             "Tag", "kube.*",
-                            "Systemd_Filter", "KUBE_TEST=2018",
+                            "Systemd_Filter", kube_test_id,
                             NULL);
-        TEST_CHECK(ret == 0);
+        TEST_CHECK_(ret == 0, "setting input options");
     }
 #endif
 
-    filter_ffd = flb_filter(ctx->flb, "kubernetes", NULL);
-    ret = flb_filter_set(ctx->flb, filter_ffd,
+    filter_ffd = flb_filter(ctx.flb, "kubernetes", NULL);
+    TEST_CHECK_(filter_ffd >= 0, "initialising filter");
+    ret = flb_filter_set(ctx.flb, filter_ffd,
                          "Match", "kube.*",
-                         "Kube_URL", KUBE_URL,
-                         "k8s-logging.parser", "On",
-                         "k8s-logging.exclude", "On",
-                         "Kube_Meta_Preload_Cache_Dir", "../tests/runtime/data/kubernetes",
+                         "Kube_Url", KUBE_URL,
+                         "Kube_Meta_Preload_Cache_Dir", DPATH "/meta",
                          NULL);
+    TEST_CHECK_(ret == 0, "setting filter options");
 
     /* Iterate number of arguments for filter_kubernetes additional options */
     va_start(va, nExpected);
@@ -231,20 +260,24 @@ static void kube_test_create(char *target, int type, char *suffix, char *parserc
             /* Wrong parameter */
             break;
         }
-        flb_filter_set(ctx->flb, filter_ffd, key, value, NULL);
+        ret = flb_filter_set(ctx.flb, filter_ffd, key, value, NULL);
+        TEST_CHECK_(ret == 0, "setting filter additional options");
     }
     va_end(va);
 
     if (type == KUBE_TAIL) {
-        ret = flb_filter_set(ctx->flb, filter_ffd,
-                             "Regex_Parser", "filter-kube-test",
+        ret = flb_filter_set(ctx.flb, filter_ffd,
+                             "Regex_Parser", "kubernetes-tag",
+                             "Kube_Tag_Prefix", "kube.",
                              NULL);
+        TEST_CHECK_(ret == 0, "setting filter specific options");
     }
 #ifdef FLB_HAVE_SYSTEMD
     else if (type == KUBE_SYSTEMD) {
-        flb_filter_set(ctx->flb, filter_ffd,
-                       "Use_Journal", "On",
-                       NULL);
+        ret = flb_filter_set(ctx.flb, filter_ffd,
+                             "Use_Journal", "On",
+                             NULL);
+        TEST_CHECK_(ret == 0, "setting filter specific options");
     }
 #endif
 
@@ -253,98 +286,559 @@ static void kube_test_create(char *target, int type, char *suffix, char *parserc
     cb_data.data = &result;
 
     /* Output */
-    out_ffd = flb_output(ctx->flb, "lib", (void *) &cb_data);
-    TEST_CHECK(out_ffd >= 0);
-    flb_output_set(ctx->flb, out_ffd,
+    out_ffd = flb_output(ctx.flb, "lib", (void *) &cb_data);
+    TEST_CHECK_(out_ffd >= 0, "initialising output");
+    flb_output_set(ctx.flb, out_ffd,
                    "Match", "kube.*",
                    "format", "json",
                    NULL);
+    TEST_CHECK_(ret == 0, "setting output options");
 
 #ifdef FLB_HAVE_SYSTEMD
     /*
-     *  If the source of data is Systemd, just let the output lib plugin
+     * If the source of data is Systemd, just let the output lib plugin
      * to process one record only, otherwise when the test case stop after
      * the first callback it destroy the contexts, but out_lib still have
      * pending data to flush. This option solves the problem.
      */
     if (type == KUBE_SYSTEMD) {
-        flb_output_set(ctx->flb, out_ffd,
+        flb_output_set(ctx.flb, out_ffd,
                        "Max_Records", "1",
                        NULL);
+        TEST_CHECK_(ret == 0, "setting output specific options");
     }
 #endif
 
     /* Start the engine */
-    ret = flb_start(ctx->flb);
-    TEST_CHECK(ret == 0);
+    ret = flb_start(ctx.flb);
+    TEST_CHECK_(ret == 0, "starting engine");
     if (ret == -1) {
-        exit(EXIT_FAILURE);
+        goto exit;
     }
 #ifdef FLB_HAVE_SYSTEMD
     if (type == KUBE_SYSTEMD) {
         TEST_CHECK_(flb_test_systemd_send() >= 0,
-                    "Error sending sample message to journal");
+                    "sending sample message to journal");
     }
 #endif
 
     /* Poll for up to 2 seconds or until we got a match */
-    for (ret = 0; ret < 2000 && result.nmatched == 0; ret++) {
+    for (ret = 0; ret < 2000 && result.nMatched == 0; ret++) {
         usleep(1000);
     }
-    TEST_CHECK(result.nmatched == nExpected);
+    TEST_CHECK(result.nMatched == nExpected);
+    TEST_MSG("result.nMatched: %i\nnExpected: %i", result.nMatched, nExpected);
 
-    kube_test_destroy(ctx);
+    ret = flb_stop(ctx.flb);
+    TEST_CHECK_(ret == 0, "stopping engine");
+
+exit:
+    if (ctx.flb) {
+        flb_destroy(ctx.flb);
+    }
 }
 
-void flb_test_apache_logs()
+#define flb_test_core(target, suffix, nExpected) \
+    kube_test("core/" target, KUBE_TAIL, suffix, nExpected, NULL);
+
+static void flb_test_core_base()
 {
-    kube_test_create(T_APACHE_LOGS, KUBE_TAIL, "", STD_PARSER, 1, NULL);
+    flb_test_core("core_base_fluent-bit", NULL, 1);
 }
 
-void flb_test_apache_logs_merge()
+static void flb_test_core_no_meta()
 {
-    kube_test_create(T_APACHE_LOGS, KUBE_TAIL, "", STD_PARSER,
-                     1,
-                     "Merge_Log", "On",
-                     "Merge_Log_Key", "merge",
-                     NULL);
+    flb_test_core("core_no-meta_text", NULL, 1);
 }
 
-void flb_test_apache_logs_annotated()
+static void flb_test_core_unescaping_text()
 {
-    kube_test_create(T_APACHE_LOGS_ANN, KUBE_TAIL, "", STD_PARSER,
-                     1,
-                     "Merge_Log", "On",
-                     NULL);
+    flb_test_core("core_unescaping_text", NULL, 1);
 }
 
-void flb_test_apache_logs_annotated_invalid()
+static void flb_test_core_unescaping_json()
 {
-    kube_test_create(T_APACHE_LOGS_ANN_INV, KUBE_TAIL, "", STD_PARSER, 1, NULL);
+    flb_test_core("core_unescaping_json", NULL, 1);
 }
 
-void flb_test_apache_logs_annotated_exclude()
+#define flb_test_options_merge_log_enabled(target, suffix, nExpected) \
+    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, \
+              "Merge_Log", "On", \
+              NULL); \
+
+#define flb_test_options_merge_log_disabled(target, suffix, nExpected) \
+    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, \
+              NULL); \
+
+static void flb_test_options_merge_log_enabled_text()
 {
-    kube_test_create(T_APACHE_LOGS_ANN_EXCL, KUBE_TAIL, "", STD_PARSER, 0, NULL);
+    flb_test_options_merge_log_enabled("options_merge-log-enabled_text", NULL, 1);
 }
 
-void flb_test_apache_logs_annotated_merge()
+static void flb_test_options_merge_log_enabled_json()
 {
-    kube_test_create(T_APACHE_LOGS_ANN_MERGE, KUBE_TAIL, "", STD_PARSER, 1,
-                     "Merge_Log", "On",
-                     "Merge_Log_Key", "merge", NULL);
+    flb_test_options_merge_log_enabled("options_merge-log-enabled_json", NULL, 1);
 }
 
-void flb_test_json_logs()
+static void flb_test_options_merge_log_enabled_invalid_json()
 {
-    kube_test_create(T_JSON_LOGS, KUBE_TAIL, "", STD_PARSER, 1,
-                     "Merge_Log", "On",
-                     NULL);
+    flb_test_options_merge_log_enabled("options_merge-log-enabled_invalid-json", NULL, 1);
 }
 
-void flb_test_json_logs_invalid()
+static void flb_test_options_merge_log_disabled_json()
 {
-    kube_test_create(T_JSON_LOGS_INV, KUBE_TAIL, "", STD_PARSER, 1, NULL);
+    flb_test_options_merge_log_disabled("options_merge-log-disabled_json", NULL, 1);
+}
+
+#define flb_test_options_merge_log_trim_enabled(target, suffix, nExpected) \
+    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, \
+              "Merge_Log", "On", \
+              NULL); \
+
+#define flb_test_options_merge_log_trim_disabled(target, suffix, nExpected) \
+    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, \
+              "Merge_Log", "On", \
+              "Merge_Log_Trim", "Off", \
+              NULL); \
+
+static void flb_test_options_merge_log_trim_enabled_json()
+{
+    flb_test_options_merge_log_trim_enabled("options_merge-log-trim-enabled_json", NULL, 1);
+}
+
+static void flb_test_options_merge_log_trim_disabled_json()
+{
+    flb_test_options_merge_log_trim_disabled("options_merge-log-trim-disabled_json", NULL, 1);
+}
+
+#define flb_test_options_merge_log_key(target, suffix, nExpected) \
+    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, \
+              "Merge_Log", "On", \
+              "Merge_Log_Key", "merge-log-key", \
+              NULL); \
+
+static void flb_test_options_merge_log_key_json()
+{
+    flb_test_options_merge_log_key("options_merge-log-key_json", NULL, 1);
+}
+
+#define flb_test_options_keep_log_enabled(target, suffix, nExpected) \
+    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, \
+              "Merge_Log", "On", \
+              NULL); \
+
+#define flb_test_options_keep_log_disabled(target, suffix, nExpected) \
+    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, \
+              "Merge_Log", "On", \
+              "Keep_Log", "Off", \
+              NULL); \
+
+static void flb_test_options_keep_log_enabled_json()
+{
+    flb_test_options_keep_log_enabled("options_keep-log-enabled_json", NULL, 1);
+}
+
+static void flb_test_options_keep_log_disabled_json()
+{
+    flb_test_options_keep_log_disabled("options_keep-log-disabled_json", NULL, 1);
+}
+
+#define flb_test_options_k8s_logging_parser_disabled(target, suffix, nExpected) \
+    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, \
+              "Merge_Log", "On", \
+              NULL); \
+
+static void flb_test_options_k8s_logging_parser_disabled_text_stdout()
+{
+    flb_test_options_k8s_logging_parser_disabled("options_k8s-logging-parser-disabled_text", "stdout", 1);
+}
+
+static void flb_test_options_k8s_logging_parser_disabled_text_stderr()
+{
+    flb_test_options_k8s_logging_parser_disabled("options_k8s-logging-parser-disabled_text", "stderr", 1);
+}
+
+#define flb_test_options_k8s_logging_exclude_disabled(target, suffix, nExpected) \
+    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, \
+              "Merge_Log", "On", \
+              NULL); \
+
+static void flb_test_options_k8s_logging_exclude_disabled_text_stdout()
+{
+    flb_test_options_k8s_logging_exclude_disabled("options_k8s-logging-exclude-disabled_text", "stdout", 1);
+}
+
+static void flb_test_options_k8s_logging_exclude_disabled_text_stderr()
+{
+    flb_test_options_k8s_logging_exclude_disabled("options_k8s-logging-exclude-disabled_text", "stderr", 1);
+}
+
+#define flb_test_annotations(target, suffix, nExpected) \
+    kube_test("annotations/" target, KUBE_TAIL, suffix, nExpected, \
+              "K8s-Logging.Parser", "On", \
+              "K8s-Logging.Exclude", "On", \
+              NULL); \
+
+static void flb_test_annotations_invalid_text()
+{
+    flb_test_annotations("annotations_invalid_text", NULL, 1);
+}
+
+#define flb_test_annotations_parser(target, suffix, nExpected) \
+    kube_test("annotations-parser/" target, KUBE_TAIL, suffix, nExpected, \
+              "K8s-Logging.Parser", "On", \
+              "Merge_Log", "On", \
+              "Keep_Log", "Off", \
+              NULL); \
+
+static void flb_test_annotations_parser_regex_with_time_text()
+{
+    flb_test_annotations_parser("annotations-parser_regex-with-time_text", NULL, 1);
+}
+
+static void flb_test_annotations_parser_regex_with_time_invalid_text_1()
+{
+    flb_test_annotations_parser("annotations-parser_regex-with-time_invalid-text-1", NULL, 1);
+}
+
+static void flb_test_annotations_parser_json_with_time_json()
+{
+    flb_test_annotations_parser("annotations-parser_json-with-time_json", NULL, 1);
+}
+
+static void flb_test_annotations_parser_json_with_time_invalid_json_1()
+{
+    flb_test_annotations_parser("annotations-parser_json-with-time_invalid-json-1", NULL, 1);
+}
+
+static void flb_test_annotations_parser_invalid_text_stdout()
+{
+    flb_test_annotations_parser("annotations-parser_invalid_text", "stdout", 1);
+}
+
+static void flb_test_annotations_parser_invalid_text_stderr()
+{
+    flb_test_annotations_parser("annotations-parser_invalid_text", "stderr", 1);
+}
+
+static void flb_test_annotations_parser_stdout_text_stdout()
+{
+    flb_test_annotations_parser("annotations-parser_stdout_text", "stdout", 1);
+}
+
+static void flb_test_annotations_parser_stdout_text_stderr()
+{
+    flb_test_annotations_parser("annotations-parser_stdout_text", "stderr", 1);
+}
+
+static void flb_test_annotations_parser_stderr_text_stdout()
+{
+    flb_test_annotations_parser("annotations-parser_stderr_text", "stdout", 1);
+}
+
+static void flb_test_annotations_parser_stderr_text_stderr()
+{
+    flb_test_annotations_parser("annotations-parser_stderr_text", "stderr", 1);
+}
+
+static void flb_test_annotations_parser_multiple_1_container_1_stdout()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-1_container-1", "stdout", 1);
+}
+
+static void flb_test_annotations_parser_multiple_1_container_1_stderr()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-1_container-1", "stderr", 1);
+}
+
+static void flb_test_annotations_parser_multiple_1_container_2_stdout()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-1_container-2", "stdout", 1);
+}
+
+static void flb_test_annotations_parser_multiple_1_container_2_stderr()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-1_container-2", "stderr", 1);
+}
+
+static void flb_test_annotations_parser_multiple_1_container_3_stdout()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-1_container-3", "stdout", 1);
+}
+
+static void flb_test_annotations_parser_multiple_1_container_3_stderr()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-1_container-3", "stderr", 1);
+}
+
+static void flb_test_annotations_parser_multiple_1_container_4_stdout()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-1_container-4", "stdout", 1);
+}
+
+static void flb_test_annotations_parser_multiple_1_container_4_stderr()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-1_container-4", "stderr", 1);
+}
+
+static void flb_test_annotations_parser_multiple_1_container_5_stdout()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-1_container-5", "stdout", 1);
+}
+
+static void flb_test_annotations_parser_multiple_1_container_5_stderr()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-1_container-5", "stderr", 1);
+}
+
+static void flb_test_annotations_parser_multiple_2_container_1_stdout()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-2_container-1", "stdout", 1);
+}
+
+static void flb_test_annotations_parser_multiple_2_container_1_stderr()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-2_container-1", "stderr", 1);
+}
+
+static void flb_test_annotations_parser_multiple_2_container_2_stdout()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-2_container-2", "stdout", 1);
+}
+
+static void flb_test_annotations_parser_multiple_2_container_2_stderr()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-2_container-2", "stderr", 1);
+}
+
+static void flb_test_annotations_parser_multiple_2_container_3_stdout()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-2_container-3", "stdout", 1);
+}
+
+static void flb_test_annotations_parser_multiple_2_container_3_stderr()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-2_container-3", "stderr", 1);
+}
+
+static void flb_test_annotations_parser_multiple_2_container_4_stdout()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-2_container-4", "stdout", 1);
+}
+
+static void flb_test_annotations_parser_multiple_2_container_4_stderr()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-2_container-4", "stderr", 1);
+}
+
+static void flb_test_annotations_parser_multiple_2_container_5_stdout()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-2_container-5", "stdout", 1);
+}
+
+static void flb_test_annotations_parser_multiple_2_container_5_stderr()
+{
+    flb_test_annotations_parser("annotations-parser_multiple-2_container-5", "stderr", 1);
+}
+
+#define flb_test_annotations_exclude(target, suffix, nExpected) \
+    kube_test("annotations-exclude/" target, KUBE_TAIL, suffix, nExpected, \
+              "K8s-Logging.Exclude", "On", \
+              NULL); \
+
+static void flb_test_annotations_exclude_default_text()
+{
+    flb_test_annotations_exclude("annotations-exclude_default_text", NULL, 0);
+}
+
+static void flb_test_annotations_exclude_invalid_text_stdout()
+{
+    flb_test_annotations_exclude("annotations-exclude_invalid_text", "stdout", 1);
+}
+
+static void flb_test_annotations_exclude_invalid_text_stderr()
+{
+    flb_test_annotations_exclude("annotations-exclude_invalid_text", "stderr", 1);
+}
+
+static void flb_test_annotations_exclude_stdout_text_stdout()
+{
+    flb_test_annotations_exclude("annotations-exclude_stdout_text", "stdout", 0);
+}
+
+static void flb_test_annotations_exclude_stdout_text_stderr()
+{
+    flb_test_annotations_exclude("annotations-exclude_stdout_text", "stderr", 1);
+}
+
+static void flb_test_annotations_exclude_stderr_text_stdout()
+{
+    flb_test_annotations_exclude("annotations-exclude_stderr_text", "stdout", 1);
+}
+
+static void flb_test_annotations_exclude_stderr_text_stderr()
+{
+    flb_test_annotations_exclude("annotations-exclude_stderr_text", "stderr", 0);
+}
+
+static void flb_test_annotations_exclude_multiple_1_container_1_stdout()
+{
+    flb_test_annotations_exclude("annotations-exclude_multiple-1_container-1", "stdout", 0);
+}
+
+static void flb_test_annotations_exclude_multiple_1_container_1_stderr()
+{
+    flb_test_annotations_exclude("annotations-exclude_multiple-1_container-1", "stderr", 0);
+}
+
+static void flb_test_annotations_exclude_multiple_1_container_2_stdout()
+{
+    flb_test_annotations_exclude("annotations-exclude_multiple-1_container-2", "stdout", 0);
+}
+
+static void flb_test_annotations_exclude_multiple_1_container_2_stderr()
+{
+    flb_test_annotations_exclude("annotations-exclude_multiple-1_container-2", "stderr", 1);
+}
+
+static void flb_test_annotations_exclude_multiple_1_container_3_stdout()
+{
+    flb_test_annotations_exclude("annotations-exclude_multiple-1_container-3", "stdout", 1);
+}
+
+static void flb_test_annotations_exclude_multiple_1_container_3_stderr()
+{
+    flb_test_annotations_exclude("annotations-exclude_multiple-1_container-3", "stderr", 0);
+}
+
+static void flb_test_annotations_exclude_multiple_1_container_4_stdout()
+{
+    flb_test_annotations_exclude("annotations-exclude_multiple-1_container-4", "stdout", 1);
+}
+
+static void flb_test_annotations_exclude_multiple_1_container_4_stderr()
+{
+    flb_test_annotations_exclude("annotations-exclude_multiple-1_container-4", "stderr", 1);
+}
+
+static void flb_test_annotations_exclude_multiple_2_container_1_stdout()
+{
+    flb_test_annotations_exclude("annotations-exclude_multiple-2_container-1", "stdout", 0);
+}
+
+static void flb_test_annotations_exclude_multiple_2_container_1_stderr()
+{
+    flb_test_annotations_exclude("annotations-exclude_multiple-2_container-1", "stderr", 0);
+}
+
+static void flb_test_annotations_exclude_multiple_2_container_2_stdout()
+{
+    flb_test_annotations_exclude("annotations-exclude_multiple-2_container-2", "stdout", 0);
+}
+
+static void flb_test_annotations_exclude_multiple_2_container_2_stderr()
+{
+    flb_test_annotations_exclude("annotations-exclude_multiple-2_container-2", "stderr", 1);
+}
+
+static void flb_test_annotations_exclude_multiple_2_container_3_stdout()
+{
+    flb_test_annotations_exclude("annotations-exclude_multiple-2_container-3", "stdout", 1);
+}
+
+static void flb_test_annotations_exclude_multiple_2_container_3_stderr()
+{
+    flb_test_annotations_exclude("annotations-exclude_multiple-2_container-3", "stderr", 0);
+}
+
+static void flb_test_annotations_exclude_multiple_2_container_4_stdout()
+{
+    flb_test_annotations_exclude("annotations-exclude_multiple-2_container-4", "stdout", 1);
+}
+
+static void flb_test_annotations_exclude_multiple_2_container_4_stderr()
+{
+    flb_test_annotations_exclude("annotations-exclude_multiple-2_container-4", "stderr", 1);
+}
+
+static void flb_test_annotations_exclude_multiple_3_container_1_stdout()
+{
+    flb_test_annotations_exclude("annotations-exclude_multiple-3_container-1", "stdout", 0);
+}
+
+static void flb_test_annotations_exclude_multiple_3_container_1_stderr()
+{
+    flb_test_annotations_exclude("annotations-exclude_multiple-3_container-1", "stderr", 0);
+}
+
+static void flb_test_annotations_exclude_multiple_3_container_2_stdout()
+{
+    flb_test_annotations_exclude("annotations-exclude_multiple-3_container-2", "stdout", 0);
+}
+
+static void flb_test_annotations_exclude_multiple_3_container_2_stderr()
+{
+    flb_test_annotations_exclude("annotations-exclude_multiple-3_container-2", "stderr", 1);
+}
+
+static void flb_test_annotations_exclude_multiple_3_container_3_stdout()
+{
+    flb_test_annotations_exclude("annotations-exclude_multiple-3_container-3", "stdout", 1);
+}
+
+static void flb_test_annotations_exclude_multiple_3_container_3_stderr()
+{
+    flb_test_annotations_exclude("annotations-exclude_multiple-3_container-3", "stderr", 0);
+}
+
+static void flb_test_annotations_exclude_multiple_3_container_4_stdout()
+{
+    flb_test_annotations_exclude("annotations-exclude_multiple-3_container-4", "stdout", 1);
+}
+
+static void flb_test_annotations_exclude_multiple_3_container_4_stderr()
+{
+    flb_test_annotations_exclude("annotations-exclude_multiple-3_container-4", "stderr", 1);
+}
+
+static void flb_test_annotations_exclude_multiple_4_container_1_stdout()
+{
+    flb_test_annotations_exclude("annotations-exclude_multiple-4_container-1", "stdout", 0);
+}
+
+static void flb_test_annotations_exclude_multiple_4_container_1_stderr()
+{
+    flb_test_annotations_exclude("annotations-exclude_multiple-4_container-1", "stderr", 0);
+}
+
+static void flb_test_annotations_exclude_multiple_4_container_2_stdout()
+{
+    flb_test_annotations_exclude("annotations-exclude_multiple-4_container-2", "stdout", 0);
+}
+
+static void flb_test_annotations_exclude_multiple_4_container_2_stderr()
+{
+    flb_test_annotations_exclude("annotations-exclude_multiple-4_container-2", "stderr", 1);
+}
+
+static void flb_test_annotations_exclude_multiple_4_container_3_stdout()
+{
+    flb_test_annotations_exclude("annotations-exclude_multiple-4_container-3", "stdout", 1);
+}
+
+static void flb_test_annotations_exclude_multiple_4_container_3_stderr()
+{
+    flb_test_annotations_exclude("annotations-exclude_multiple-4_container-3", "stderr", 0);
+}
+
+static void flb_test_annotations_exclude_multiple_4_container_4_stdout()
+{
+    flb_test_annotations_exclude("annotations-exclude_multiple-4_container-4", "stdout", 1);
+}
+
+static void flb_test_annotations_exclude_multiple_4_container_4_stderr()
+{
+    flb_test_annotations_exclude("annotations-exclude_multiple-4_container-4", "stderr", 1);
 }
 
 #ifdef FLB_HAVE_SYSTEMD
@@ -361,13 +855,16 @@ int flb_test_systemd_send()
             "CONTAINER_ID=56e257661383",
             "CONTAINER_ID_FULL=56e257661383836fac4cd90a23ee8a7a02ee1538c8f35657d1a90f3de1065a22",
             "MESSAGE=08:58:45.839 [qtp151442075-47] DEBUG [HttpParser.java:281] - filled 157/157",
-            "KUBE_TEST=2018",
+            kube_test_id,
             NULL);
 }
 
-void flb_test_systemd_logs()
+static void flb_test_systemd_logs()
 {
     struct stat statb;
+    /* We want to avoid possibly getting a log from a previous run,
+       so create a unique-id for each 'send' */
+    sprintf(kube_test_id, "KUBE_TEST=%u%lu", getpid(), random());
 
     if (stat("/run/systemd/journal/socket", &statb) == 0 &&
         statb.st_mode & S_IFSOCK) {
@@ -422,39 +919,103 @@ void flb_test_systemd_logs()
         }
         sd_journal_close(journal);
 
-        kube_test_create(T_SYSTEMD_SIMPLE, KUBE_SYSTEMD, "", STD_PARSER, 1,
-                         "Merge_Log", "On",
-                         NULL);
+        kube_test("kairosdb-914055854-b63vq", KUBE_SYSTEMD, NULL, 1,
+                  "Merge_Log", "On",
+                  NULL);
     }
 }
 #endif
 
-void flb_test_multi_logs(char *log, char *suffix)
-{
-    flb_info("\n");
-    flb_info("Multi test: log <%s>", log);
-    kube_test_create(log, KUBE_TAIL, suffix, "../tests/runtime/data/kubernetes/multi-parsers.conf", 1, "Merge_Log", "On", NULL);
-}
-void flb_test_multi_init_stdout() { flb_test_multi_logs(T_MULTI_INIT, "stdout"); }
-void flb_test_multi_init_stderr() { flb_test_multi_logs(T_MULTI_INIT, "stderr"); }
-void flb_test_multi_proxy() { flb_test_multi_logs(T_MULTI_PROXY, ""); }
-void flb_test_multi_redis() { flb_test_multi_logs(T_MULTI_REDIS, ""); }
-
 TEST_LIST = {
-    {"kube_apache_logs", flb_test_apache_logs},
-    {"kube_apache_logs_merge", flb_test_apache_logs_merge},
-    {"kube_apache_logs_annotated", flb_test_apache_logs_annotated},
-    {"kube_apache_logs_annotated_invalid", flb_test_apache_logs_annotated_invalid},
-    {"kube_apache_logs_annotated_exclude", flb_test_apache_logs_annotated_exclude},
-    {"kube_apache_logs_annotated_merge_log", flb_test_apache_logs_annotated_merge},
-    {"kube_json_logs", flb_test_json_logs},
-    {"kube_json_logs_invalid", flb_test_json_logs_invalid},
+    {"kube_core_base", flb_test_core_base},
+    {"kube_core_no_meta", flb_test_core_no_meta},
+    {"kube_core_unescaping_text", flb_test_core_unescaping_text},
+    {"kube_core_unescaping_json", flb_test_core_unescaping_json},
+    {"kube_options_merge_log_enabled_text", flb_test_options_merge_log_enabled_text},
+    {"kube_options_merge_log_enabled_json", flb_test_options_merge_log_enabled_json},
+    {"kube_options_merge_log_enabled_invalid_json", flb_test_options_merge_log_enabled_invalid_json},
+    {"kube_options_merge_log_disabled_json", flb_test_options_merge_log_disabled_json},
+    {"kube_options_merge_log_trim_enabled_json", flb_test_options_merge_log_trim_enabled_json},
+    {"kube_options_merge_log_trim_disabled_json", flb_test_options_merge_log_trim_disabled_json},
+    {"kube_options_merge_log_key_json", flb_test_options_merge_log_key_json},
+    {"kube_options_keep_log_enabled_json", flb_test_options_keep_log_enabled_json},
+    {"kube_options_keep_log_disabled_json", flb_test_options_keep_log_disabled_json},
+    {"kube_options_k8s_logging_parser_disabled_text_stdout", flb_test_options_k8s_logging_parser_disabled_text_stdout},
+    {"kube_options_k8s_logging_parser_disabled_text_stderr", flb_test_options_k8s_logging_parser_disabled_text_stderr},
+    {"kube_options_k8s_logging_exclude_disabled_text_stdout", flb_test_options_k8s_logging_exclude_disabled_text_stdout},
+    {"kube_options_k8s_logging_exclude_disabled_text_stderr", flb_test_options_k8s_logging_exclude_disabled_text_stderr},
+    {"kube_annotations_invalid_text", flb_test_annotations_invalid_text},
+    {"kube_annotations_parser_regex_with_time_text", flb_test_annotations_parser_regex_with_time_text},
+    {"kube_annotations_parser_regex_with_time_invalid_text_1", flb_test_annotations_parser_regex_with_time_invalid_text_1},
+    {"kube_annotations_parser_json_with_time_json", flb_test_annotations_parser_json_with_time_json},
+    {"kube_annotations_parser_json_with_time_invalid_json_1", flb_test_annotations_parser_json_with_time_invalid_json_1},
+    {"kube_annotations_parser_invalid_text_stdout", flb_test_annotations_parser_invalid_text_stdout},
+    {"kube_annotations_parser_invalid_text_stderr", flb_test_annotations_parser_invalid_text_stderr},
+    {"kube_annotations_parser_stdout_text_stdout", flb_test_annotations_parser_stdout_text_stdout},
+    {"kube_annotations_parser_stdout_text_stderr", flb_test_annotations_parser_stdout_text_stderr},
+    {"kube_annotations_parser_stderr_text_stdout", flb_test_annotations_parser_stderr_text_stdout},
+    {"kube_annotations_parser_stderr_text_stderr", flb_test_annotations_parser_stderr_text_stderr},
+    {"kube_annotations_parser_multiple_1_container_1_stdout", flb_test_annotations_parser_multiple_1_container_1_stdout},
+    {"kube_annotations_parser_multiple_1_container_1_stderr", flb_test_annotations_parser_multiple_1_container_1_stderr},
+    {"kube_annotations_parser_multiple_1_container_2_stdout", flb_test_annotations_parser_multiple_1_container_2_stdout},
+    {"kube_annotations_parser_multiple_1_container_2_stderr", flb_test_annotations_parser_multiple_1_container_2_stderr},
+    {"kube_annotations_parser_multiple_1_container_3_stdout", flb_test_annotations_parser_multiple_1_container_3_stdout},
+    {"kube_annotations_parser_multiple_1_container_3_stderr", flb_test_annotations_parser_multiple_1_container_3_stderr},
+    {"kube_annotations_parser_multiple_1_container_4_stdout", flb_test_annotations_parser_multiple_1_container_4_stdout},
+    {"kube_annotations_parser_multiple_1_container_4_stderr", flb_test_annotations_parser_multiple_1_container_4_stderr},
+    {"kube_annotations_parser_multiple_1_container_5_stdout", flb_test_annotations_parser_multiple_1_container_5_stdout},
+    {"kube_annotations_parser_multiple_1_container_5_stderr", flb_test_annotations_parser_multiple_1_container_5_stderr},
+    {"kube_annotations_parser_multiple_2_container_1_stdout", flb_test_annotations_parser_multiple_2_container_1_stdout},
+    {"kube_annotations_parser_multiple_2_container_1_stderr", flb_test_annotations_parser_multiple_2_container_1_stderr},
+    {"kube_annotations_parser_multiple_2_container_2_stdout", flb_test_annotations_parser_multiple_2_container_2_stdout},
+    {"kube_annotations_parser_multiple_2_container_2_stderr", flb_test_annotations_parser_multiple_2_container_2_stderr},
+    {"kube_annotations_parser_multiple_2_container_3_stdout", flb_test_annotations_parser_multiple_2_container_3_stdout},
+    {"kube_annotations_parser_multiple_2_container_3_stderr", flb_test_annotations_parser_multiple_2_container_3_stderr},
+    {"kube_annotations_parser_multiple_2_container_4_stdout", flb_test_annotations_parser_multiple_2_container_4_stdout},
+    {"kube_annotations_parser_multiple_2_container_4_stderr", flb_test_annotations_parser_multiple_2_container_4_stderr},
+    {"kube_annotations_parser_multiple_2_container_5_stdout", flb_test_annotations_parser_multiple_2_container_5_stdout},
+    {"kube_annotations_parser_multiple_2_container_5_stderr", flb_test_annotations_parser_multiple_2_container_5_stderr},
+    {"kube_annotations_exclude_default_text", flb_test_annotations_exclude_default_text},
+    {"kube_annotations_exclude_invalid_text_stdout", flb_test_annotations_exclude_invalid_text_stdout},
+    {"kube_annotations_exclude_invalid_text_stderr", flb_test_annotations_exclude_invalid_text_stderr},
+    {"kube_annotations_exclude_stdout_text_stdout", flb_test_annotations_exclude_stdout_text_stdout},
+    {"kube_annotations_exclude_stdout_text_stderr", flb_test_annotations_exclude_stdout_text_stderr},
+    {"kube_annotations_exclude_stderr_text_stdout", flb_test_annotations_exclude_stderr_text_stdout},
+    {"kube_annotations_exclude_stderr_text_stderr", flb_test_annotations_exclude_stderr_text_stderr},
+    {"kube_annotations_exclude_multiple_1_container_1_stdout", flb_test_annotations_exclude_multiple_1_container_1_stdout},
+    {"kube_annotations_exclude_multiple_1_container_1_stderr", flb_test_annotations_exclude_multiple_1_container_1_stderr},
+    {"kube_annotations_exclude_multiple_1_container_2_stdout", flb_test_annotations_exclude_multiple_1_container_2_stdout},
+    {"kube_annotations_exclude_multiple_1_container_2_stderr", flb_test_annotations_exclude_multiple_1_container_2_stderr},
+    {"kube_annotations_exclude_multiple_1_container_3_stdout", flb_test_annotations_exclude_multiple_1_container_3_stdout},
+    {"kube_annotations_exclude_multiple_1_container_3_stderr", flb_test_annotations_exclude_multiple_1_container_3_stderr},
+    {"kube_annotations_exclude_multiple_1_container_4_stdout", flb_test_annotations_exclude_multiple_1_container_4_stdout},
+    {"kube_annotations_exclude_multiple_1_container_4_stderr", flb_test_annotations_exclude_multiple_1_container_4_stderr},
+    {"kube_annotations_exclude_multiple_2_container_1_stdout", flb_test_annotations_exclude_multiple_2_container_1_stdout},
+    {"kube_annotations_exclude_multiple_2_container_1_stderr", flb_test_annotations_exclude_multiple_2_container_1_stderr},
+    {"kube_annotations_exclude_multiple_2_container_2_stdout", flb_test_annotations_exclude_multiple_2_container_2_stdout},
+    {"kube_annotations_exclude_multiple_2_container_2_stderr", flb_test_annotations_exclude_multiple_2_container_2_stderr},
+    {"kube_annotations_exclude_multiple_2_container_3_stdout", flb_test_annotations_exclude_multiple_2_container_3_stdout},
+    {"kube_annotations_exclude_multiple_2_container_3_stderr", flb_test_annotations_exclude_multiple_2_container_3_stderr},
+    {"kube_annotations_exclude_multiple_2_container_4_stdout", flb_test_annotations_exclude_multiple_2_container_4_stdout},
+    {"kube_annotations_exclude_multiple_2_container_4_stderr", flb_test_annotations_exclude_multiple_2_container_4_stderr},
+    {"kube_annotations_exclude_multiple_3_container_1_stdout", flb_test_annotations_exclude_multiple_3_container_1_stdout},
+    {"kube_annotations_exclude_multiple_3_container_1_stderr", flb_test_annotations_exclude_multiple_3_container_1_stderr},
+    {"kube_annotations_exclude_multiple_3_container_2_stdout", flb_test_annotations_exclude_multiple_3_container_2_stdout},
+    {"kube_annotations_exclude_multiple_3_container_2_stderr", flb_test_annotations_exclude_multiple_3_container_2_stderr},
+    {"kube_annotations_exclude_multiple_3_container_3_stdout", flb_test_annotations_exclude_multiple_3_container_3_stdout},
+    {"kube_annotations_exclude_multiple_3_container_3_stderr", flb_test_annotations_exclude_multiple_3_container_3_stderr},
+    {"kube_annotations_exclude_multiple_3_container_4_stdout", flb_test_annotations_exclude_multiple_3_container_4_stdout},
+    {"kube_annotations_exclude_multiple_3_container_4_stderr", flb_test_annotations_exclude_multiple_3_container_4_stderr},
+    {"kube_annotations_exclude_multiple_4_container_1_stdout", flb_test_annotations_exclude_multiple_4_container_1_stdout},
+    {"kube_annotations_exclude_multiple_4_container_1_stderr", flb_test_annotations_exclude_multiple_4_container_1_stderr},
+    {"kube_annotations_exclude_multiple_4_container_2_stdout", flb_test_annotations_exclude_multiple_4_container_2_stdout},
+    {"kube_annotations_exclude_multiple_4_container_2_stderr", flb_test_annotations_exclude_multiple_4_container_2_stderr},
+    {"kube_annotations_exclude_multiple_4_container_3_stdout", flb_test_annotations_exclude_multiple_4_container_3_stdout},
+    {"kube_annotations_exclude_multiple_4_container_3_stderr", flb_test_annotations_exclude_multiple_4_container_3_stderr},
+    {"kube_annotations_exclude_multiple_4_container_4_stdout", flb_test_annotations_exclude_multiple_4_container_4_stdout},
+    {"kube_annotations_exclude_multiple_4_container_4_stderr", flb_test_annotations_exclude_multiple_4_container_4_stderr},
 #ifdef FLB_HAVE_SYSTEMD
     {"kube_systemd_logs", flb_test_systemd_logs},
 #endif
-    {"kube_multi_init_stdout", flb_test_multi_init_stdout},
-    {"kube_multi_init_stderr", flb_test_multi_init_stderr},
-    {"kube_multi_proxy", flb_test_multi_proxy},
-    {"kube_multi_redis", flb_test_multi_redis},
     {NULL, NULL}
 };

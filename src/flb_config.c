@@ -27,17 +27,21 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_parser.h>
+#include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_plugins.h>
+#include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_io_tls.h>
 #include <fluent-bit/flb_kernel.h>
 #include <fluent-bit/flb_worker.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_http_server.h>
-#include <fluent-bit/flb_plugin_proxy.h>
+#include <fluent-bit/flb_plugin.h>
+#include <fluent-bit/flb_utils.h>
 
 int flb_regex_init();
 
@@ -96,11 +100,20 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STORAGE_BL_MEM_LIMIT,
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, storage_bl_mem_limit)},
+    {FLB_CONF_STORAGE_MAX_CHUNKS_UP,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, storage_max_chunks_up)},
 
     /* Coroutines */
     {FLB_CONF_STR_CORO_STACK_SIZE,
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, coro_stack_size)},
+
+#ifdef FLB_HAVE_STREAM_PROCESSOR
+    {FLB_CONF_STR_STREAMS_FILE,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, stream_processor_file)},
+#endif
 
     {NULL, FLB_CONF_TYPE_OTHER, 0} /* end of array */
 };
@@ -124,7 +137,6 @@ struct flb_config *flb_config_init()
 
     /* Flush */
     config->flush        = FLB_CONFIG_FLUSH_SECS;
-    config->flush_method = FLB_FLUSH_LIBCO;
     config->daemon       = FLB_FALSE;
     config->init_time    = time(NULL);
     config->kernel       = flb_kernel_info();
@@ -150,6 +162,10 @@ struct flb_config *flb_config_init()
     mk_list_init(&config->luajit_list);
 #endif
 
+#ifdef FLB_HAVE_STREAM_PROCESSOR
+    flb_slist_create(&config->stream_processor_tasks);
+#endif
+
     /* Set default coroutines stack size */
     config->coro_stack_size = FLB_THREAD_STACK_SIZE;
 
@@ -171,8 +187,11 @@ struct flb_config *flb_config_init()
     /* Environment */
     config->env = flb_env_create();
 
-    /* Register plugins */
+    /* Register static plugins */
     flb_register_plugins(config);
+
+    /* Create environment for dynamic plugins */
+    config->dso_plugins = flb_plugin_create();
 
     /* Ignoring SIGPIPE on Windows (scary) */
 #ifndef _WIN32
@@ -269,6 +288,9 @@ void flb_config_exit(struct flb_config *config)
         flb_free(config->conf_path);
     }
 
+    /* Destroy any DSO context */
+    flb_plugin_destroy(config->dso_plugins);
+
     /* Workers */
     flb_worker_exit(config);
 
@@ -291,13 +313,17 @@ void flb_config_exit(struct flb_config *config)
     }
 #endif
 
-#ifdef FLB_HAVE_STATS
-    flb_stats_exit(config);
-#endif
-
     if (config->storage_path) {
         flb_free(config->storage_path);
     }
+
+#ifdef FLB_HAVE_STREAM_PROCESSOR
+    if (config->stream_processor_file) {
+        flb_free(config->stream_processor_file);
+    }
+
+    flb_slist_destroy(&config->stream_processor_tasks);
+#endif
 
     if (config->evl) {
         mk_event_loop_destroy(config->evl);
@@ -305,22 +331,12 @@ void flb_config_exit(struct flb_config *config)
     flb_free(config);
 }
 
-char *flb_config_prop_get(char *key, struct mk_list *list)
+const char *flb_config_prop_get(const char *key, struct mk_list *list)
 {
-    struct mk_list *head;
-    struct flb_config_prop *p;
-
-    mk_list_foreach(head, list) {
-        p = mk_list_entry(head, struct flb_config_prop, _head);
-        if (strcasecmp(key, p->key) == 0) {
-            return p->val;
-        }
-    }
-
-    return NULL;
+    return flb_kv_get_key_value(key, list);
 }
 
-static inline int prop_key_check(char *key, char *kv, int k_len)
+static inline int prop_key_check(const char *key, const char *kv, int k_len)
 {
     size_t len;
 
@@ -331,7 +347,7 @@ static inline int prop_key_check(char *key, char *kv, int k_len)
     return -1;
 }
 
-static int set_log_level(struct flb_config *config, char *v_str)
+static int set_log_level(struct flb_config *config, const char *v_str)
 {
     if (v_str != NULL) {
         if (strcasecmp(v_str, "error") == 0) {
@@ -359,17 +375,8 @@ static int set_log_level(struct flb_config *config, char *v_str)
     return 0;
 }
 
-static inline int atobool(char*v)
-{
-    return  (strcasecmp("true", v) == 0 ||
-             strcasecmp("on", v) == 0 ||
-             strcasecmp("yes", v) == 0)
-        ? FLB_TRUE
-        : FLB_FALSE;
-}
-
 int flb_config_set_property(struct flb_config *config,
-                            char *k, char *v)
+                            const char *k, const char *v)
 {
     int i=0;
     int ret = -1;
@@ -378,7 +385,7 @@ int flb_config_set_property(struct flb_config *config,
     char **s_val;
     size_t len = strnlen(k, 256);
     char *key = service_configs[0].key;
-    char *tmp = NULL;
+    flb_sds_t tmp = NULL;
 
     while (key != NULL) {
         if (prop_key_check(key, k,len) == 0) {
@@ -386,7 +393,7 @@ int flb_config_set_property(struct flb_config *config,
                 tmp = flb_env_var_translate(config->env, v);
                 if (tmp) {
                     ret = set_log_level(config, tmp);
-                    flb_free(tmp);
+                    flb_sds_destroy(tmp);
                     tmp = NULL;
                 }
                 else {
@@ -397,18 +404,16 @@ int flb_config_set_property(struct flb_config *config,
 #ifdef FLB_HAVE_PARSER
                 tmp = flb_env_var_translate(config->env, v);
                 ret = flb_parser_conf_file(tmp, config);
-                flb_free(tmp);
+                flb_sds_destroy(tmp);
                 tmp = NULL;
 #endif
             }
-#ifdef FLB_HAVE_PROXY_GO
             else if (!strncasecmp(key, FLB_CONF_STR_PLUGINS_FILE, 32)) {
                 tmp = flb_env_var_translate(config->env, v);
-                ret = flb_plugin_proxy_conf_file(tmp, config);
-                flb_free(tmp);
+                ret = flb_plugin_load_config_file(tmp, config);
+                flb_sds_destroy(tmp);
                 tmp = NULL;
             }
-#endif
             else {
                 ret = 0;
                 tmp = flb_env_var_translate(config->env, v);
@@ -416,24 +421,26 @@ int flb_config_set_property(struct flb_config *config,
                 case FLB_CONF_TYPE_INT:
                     i_val  = (int*)((char*)config + service_configs[i].offset);
                     *i_val = atoi(tmp);
-                    flb_free(tmp);
+                    flb_sds_destroy(tmp);
                     break;
                 case FLB_CONF_TYPE_DOUBLE:
                     d_val  = (double*)((char*)config + service_configs[i].offset);
                     *d_val = atof(tmp);
-                    flb_free(tmp);
+                    flb_sds_destroy(tmp);
                     break;
                 case FLB_CONF_TYPE_BOOL:
                     i_val = (int*)((char*)config+service_configs[i].offset);
-                    *i_val = atobool(tmp);
-                    flb_free(tmp);
+                    *i_val = flb_utils_bool(tmp);
+                    flb_sds_destroy(tmp);
                     break;
                 case FLB_CONF_TYPE_STR:
                     s_val = (char**)((char*)config+service_configs[i].offset);
                     if ( *s_val != NULL ) {
                         flb_free(*s_val); /* release before overwriting */
                     }
-                    *s_val = tmp;
+
+                    *s_val = flb_strdup(tmp);
+                    flb_sds_destroy(tmp);
                     break;
                 default:
                     ret = -1;
@@ -442,7 +449,7 @@ int flb_config_set_property(struct flb_config *config,
 
             if (ret < 0) {
                 if (tmp) {
-                    flb_free(tmp);
+                    flb_sds_destroy(tmp);
                 }
                 return -1;
             }

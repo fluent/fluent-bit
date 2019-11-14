@@ -69,6 +69,21 @@ static inline int mqtt_packet_drop(struct mqtt_conn *conn)
 {
     int move_bytes;
 
+    if (conn->buf_pos == conn->buf_len) {
+        conn->buf_frame_end = 0;
+        conn->buf_len = 0;
+        conn->buf_pos = 0;
+        return 0;
+    }
+
+    /* Check boundaries */
+    if (conn->buf_pos + 1 > conn->buf_len) {
+        conn->buf_frame_end = 0;
+        conn->buf_len = 0;
+        conn->buf_pos = 0;
+        return 0;
+    }
+
     move_bytes = conn->buf_pos + 1;
     memmove(conn->buf,
             conn->buf + move_bytes,
@@ -227,6 +242,13 @@ static int mqtt_handle_publish(struct mqtt_conn *conn)
     hlen = BUFC() << 8;
     conn->buf_pos++;
     hlen |= BUFC();
+
+    /* Validate topic length against current buffer capacity (overflow) */
+    if (hlen > (conn->buf_len - conn->buf_pos)) {
+        flb_debug("[in_mqtt] invalid topic length");
+        return -1;
+    }
+
     conn->buf_pos++;
     topic     = conn->buf_pos;
     topic_len = hlen;
@@ -247,8 +269,8 @@ static int mqtt_handle_publish(struct mqtt_conn *conn)
             mqtt_packet_header(MQTT_PUBREC, 2 , (char *) &buf);
         }
         /* Set the identifier that we are replying to */
-        buf[2] = (packet_id & 0xf0) >> 4;
-        buf[3] = (packet_id & 0xf);
+        buf[2] = (packet_id >> 8) & 0xff;
+        buf[3] = (packet_id & 0xff);
         write(conn->event.fd, buf, 4);
     }
 
@@ -269,7 +291,7 @@ static int mqtt_handle_ping(struct mqtt_conn *conn)
     int ret;
     char buf[2] = {0, 0};
 
-    mqtt_packet_header(MQTT_PINGRESP, 2 , (char *) &buf);
+    mqtt_packet_header(MQTT_PINGRESP, 0 , (char *) &buf);
 
     /* write PINGRESP message */
     ret = write(conn->event.fd, buf, 2);
@@ -281,6 +303,7 @@ static int mqtt_handle_ping(struct mqtt_conn *conn)
 
 int mqtt_prot_parser(struct mqtt_conn *conn)
 {
+    int ret;
     int bytes = 0;
     int length = 0;
     int pos = conn->buf_pos;
@@ -359,7 +382,6 @@ int mqtt_prot_parser(struct mqtt_conn *conn)
                 }
             } while (1);
 
-            conn->buf_pos += bytes - 1;
             conn->packet_length = length;
 
             /* At this point we have a full control packet in place */
@@ -367,7 +389,10 @@ int mqtt_prot_parser(struct mqtt_conn *conn)
                 mqtt_handle_connect(conn);
             }
             else if (conn->packet_type == MQTT_PUBLISH) {
-                mqtt_handle_publish(conn);
+                ret = mqtt_handle_publish(conn);
+                if (ret == -1) {
+                    return MQTT_ERROR;
+                }
             }
             else if (conn->packet_type == MQTT_PINGREQ) {
                 mqtt_handle_ping(conn);
@@ -383,6 +408,7 @@ int mqtt_prot_parser(struct mqtt_conn *conn)
             /* Prepare for next round */
             conn->status = MQTT_NEXT;
             conn->buf_pos = conn->buf_frame_end;
+
             mqtt_packet_drop(conn);
 
             if (conn->buf_len > 0) {

@@ -18,6 +18,8 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit.h>
+
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_input.h>
@@ -30,7 +32,10 @@
 #include "tail_config.h"
 #include "tail_scan.h"
 #include "tail_dockermode.h"
+
+#ifdef FLB_HAVE_PARSER
 #include "tail_multiline.h"
+#endif
 
 struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
                                                struct flb_config *config)
@@ -40,7 +45,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
     int i;
     long nsec;
     ssize_t bytes;
-    char *tmp;
+    const char *tmp;
     struct flb_tail_config *ctx;
 
     ctx = flb_calloc(1, sizeof(struct flb_tail_config));
@@ -51,7 +56,9 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
     ctx->i_ins = i_ins;
     ctx->ignore_older = 0;
     ctx->skip_long_lines = FLB_FALSE;
+#ifdef FLB_HAVE_SQLDB
     ctx->db_sync = -1;
+#endif
 
     /* Create the channel manager */
     ret = flb_pipe_create(ctx->ch_manager);
@@ -147,6 +154,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
         }
     }
 
+#ifdef FLB_HAVE_PARSER
     /* Config: multi-line support */
     tmp = flb_input_get_property("multiline", i_ins);
     if (tmp) {
@@ -160,6 +168,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
             }
         }
     }
+#endif
 
     /* Config: Docker mode */
     tmp = flb_input_get_property("docker_mode", i_ins);
@@ -255,12 +264,14 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
     mk_list_init(&ctx->files_static);
     mk_list_init(&ctx->files_event);
     mk_list_init(&ctx->files_rotated);
+#ifdef FLB_HAVE_SQLDB
     ctx->db = NULL;
+#endif
 
 #ifdef FLB_HAVE_REGEX
     tmp = flb_input_get_property("tag_regex", i_ins);
     if (tmp) {
-        ctx->tag_regex = flb_regex_create((unsigned char *) tmp);
+        ctx->tag_regex = flb_regex_create(tmp);
         if (ctx->tag_regex) {
             ctx->dynamic_tag = FLB_TRUE;
         }
@@ -279,6 +290,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
         ctx->dynamic_tag = FLB_TRUE;
     }
 
+#ifdef FLB_HAVE_SQLDB
     /* Database options (needs to be set before the context) */
     tmp = flb_input_get_property("db.sync", i_ins);
     if (tmp) {
@@ -307,6 +319,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
             flb_error("[in_tail] could not open/create database");
         }
     }
+#endif
 
 #ifdef FLB_HAVE_METRICS
     flb_metrics_add(FLB_TAIL_METRIC_F_OPENED,
@@ -322,7 +335,10 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
 
 int flb_tail_config_destroy(struct flb_tail_config *config)
 {
+
+#ifdef FLB_HAVE_PARSER
     flb_tail_mult_destroy(config);
+#endif
 
     /* Close pipe ends */
     flb_pipe_close(config->ch_manager[0]);
@@ -336,9 +352,11 @@ int flb_tail_config_destroy(struct flb_tail_config *config)
     }
 #endif
 
+#ifdef FLB_HAVE_SQLDB
     if (config->db != NULL) {
         flb_tail_db_close(config->db);
     }
+#endif
 
     if (config->key != NULL) {
         flb_free(config->key);

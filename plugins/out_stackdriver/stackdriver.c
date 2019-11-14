@@ -282,6 +282,7 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
 {
     char *token;
     struct flb_stackdriver *ctx;
+    int io_flags = FLB_IO_TLS;
 
     /* Create config context */
     ctx = flb_stackdriver_conf_create(ins, config);
@@ -293,14 +294,16 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     /* Set context */
     flb_output_set_context(ins, ctx);
 
+    /* Network mode IPv6 */
+    if (ins->host.ipv6 == FLB_TRUE) {
+        io_flags |= FLB_IO_IPV6;
+    }
+
     /* Create Upstream context for Stackdriver Logging (no oauth2 service) */
     ctx->u = flb_upstream_create_url(config, FLB_STD_WRITE_URL,
-                                     FLB_IO_TLS, &ins->tls);
+                                     io_flags, &ins->tls);
     ctx->metadata_u = flb_upstream_create_url(config, "http://metadata.google.internal",
                                      FLB_IO_TCP, NULL);
-    ctx->u->flags &= ~FLB_IO_ASYNC;
-    ctx->metadata_u->flags &= ~FLB_IO_ASYNC;
-
     if (!ctx->u) {
         flb_error("[out_stackdriver] upstream creation failed");
         return -1;
@@ -309,6 +312,10 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
         flb_error("[out_stackdriver] metadata upstream creation failed");
         return -1;
     }
+
+    /* Upstream Sync flags */
+    ctx->u->flags &= ~FLB_IO_ASYNC;
+    ctx->metadata_u->flags &= ~FLB_IO_ASYNC;
 
     /* Retrieve oauth2 token */
     token = get_google_token(ctx);
@@ -323,12 +330,111 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static int stackdriver_format(void *data, size_t bytes,
-                              char *tag, size_t tag_len,
+static int validate_severity_level(severity_t * s,
+                                   const char * str,
+                                   const unsigned int str_size)
+{
+    int i = 0;
+
+    const static struct {
+        severity_t s;
+        const unsigned int str_size;
+        const char * str;
+    }   enum_mapping[] = {
+        {EMERGENCY, 9, "EMERGENCY"},
+        {EMERGENCY, 5, "EMERG"    },
+
+        {ALERT    , 1, "A"        },
+        {ALERT    , 5, "ALERT"    },
+
+        {CRITICAL , 1, "C"        },
+        {CRITICAL , 1, "F"        },
+        {CRITICAL , 4, "CRIT"     },
+        {CRITICAL , 5, "FATAL"    },
+        {CRITICAL , 8, "CRITICAL" },
+
+        {ERROR    , 1, "E"        },
+        {ERROR    , 3, "ERR"      },
+        {ERROR    , 5, "ERROR"    },
+        {ERROR    , 6, "SEVERE"   },
+
+        {WARNING  , 1, "W"        },
+        {WARNING  , 4, "WARN"     },
+        {WARNING  , 7, "WARNING"  },
+
+        {NOTICE   , 1, "N"        },
+        {NOTICE   , 6, "NOTICE"   },
+
+        {INFO     , 1, "I"        },
+        {INFO     , 4, "INFO"     },
+
+        {DEBUG    , 1, "D"        },
+        {DEBUG    , 5, "DEBUG"    },
+        {DEBUG    , 5, "TRACE"    },
+        {DEBUG    , 9, "TRACE_INT"},
+        {DEBUG    , 4, "FINE"     },
+        {DEBUG    , 5, "FINER"    },
+        {DEBUG    , 6, "FINEST"   },
+        {DEBUG    , 6, "CONFIG"   },
+
+        {DEFAULT  , 7, "DEFAULT"  }
+    };
+
+    for (i = 0; i < sizeof (enum_mapping) / sizeof (enum_mapping[0]); ++i) {
+        if (enum_mapping[i].str_size != str_size) {
+            continue;
+        }
+
+        if (strncasecmp(str, enum_mapping[i].str, str_size) == 0) {
+            *s = enum_mapping[i].s;
+            return 0;
+        }
+    }
+    return -1;
+}
+
+static int get_msgpack_obj(msgpack_object * subobj, const msgpack_object * o,
+                           const flb_sds_t key, const int key_size,
+                           msgpack_object_type type)
+{
+    int i = 0;
+    msgpack_object_kv * p = NULL;
+
+    if (o == NULL || subobj == NULL) {
+        return -1;
+    }
+
+    for (i = 0; i < o->via.map.size; i++) {
+        p = &o->via.map.ptr[i];
+        if (p->val.type != type) {
+            continue;
+        }
+
+        if (flb_sds_cmp(key, p->key.via.str.ptr, p->key.via.str.size) == 0) {
+            *subobj = p->val;
+            return 0;
+        }
+    }
+    return -1;
+}
+
+static int get_severity_level(severity_t * s, const msgpack_object * o,
+                              const flb_sds_t key)
+{
+    msgpack_object tmp;
+    if (get_msgpack_obj(&tmp, o, key, flb_sds_len(key), MSGPACK_OBJECT_STR) == 0
+        && validate_severity_level(s, tmp.via.str.ptr, tmp.via.str.size) == 0) {
+        return 0;
+    }
+    *s = 0;
+    return -1;
+}
+
+static int stackdriver_format(const void *data, size_t bytes,
+                              const char *tag, size_t tag_len,
                               char **out_data, size_t *out_size,
                               struct flb_stackdriver *ctx)
 {
-    int ret;
     int len;
     int array_size = 0;
     size_t s;
@@ -337,12 +443,12 @@ static int stackdriver_format(void *data, size_t bytes,
     char time_formatted[255];
     struct tm tm;
     struct flb_time tms;
+    severity_t severity;
     msgpack_object *obj;
     msgpack_unpacked result;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
-    char *json_buf;
-    size_t json_size;
+    flb_sds_t out_buf;
 
     /* Count number of records */
     msgpack_unpacked_init(&result);
@@ -430,7 +536,17 @@ static int stackdriver_format(void *data, size_t bytes,
          *  "timestamp": "..."
          * }
          */
-        msgpack_pack_map(&mp_pck, 3);
+        if (ctx->severity_key
+            && get_severity_level(&severity, obj, ctx->severity_key) == 0) {
+            /* additional field for severity */
+            msgpack_pack_map(&mp_pck, 4);
+            msgpack_pack_str(&mp_pck, 8);
+            msgpack_pack_str_body(&mp_pck, "severity", 8);
+            msgpack_pack_int(&mp_pck, severity);
+        }
+        else {
+            msgpack_pack_map(&mp_pck, 3);
+        }
 
         /* jsonPayload */
         msgpack_pack_str(&mp_pck, 11);
@@ -463,18 +579,17 @@ static int stackdriver_format(void *data, size_t bytes,
     }
 
     /* Convert from msgpack to JSON */
-    ret = flb_msgpack_raw_to_json_str(mp_sbuf.data, mp_sbuf.size,
-                                      &json_buf, &json_size);
+    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
-    if (ret != 0) {
+    if (!out_buf) {
         flb_error("[out_stackdriver] error formatting JSON payload");
         msgpack_unpacked_destroy(&result);
         return -1;
     }
 
-    *out_data = json_buf;
-    *out_size = json_size;
+    *out_data = out_buf;
+    *out_size = flb_sds_len(out_buf);
 
     return 0;
 }
@@ -490,11 +605,11 @@ static void set_authorization_header(struct flb_http_client *c,
     flb_http_add_header(c, "Authorization", 13, header, len);
 }
 
-static void cb_stackdriver_flush(void *data, size_t bytes,
-                            char *tag, int tag_len,
-                            struct flb_input_instance *i_ins,
-                            void *out_context,
-                            struct flb_config *config)
+static void cb_stackdriver_flush(const void *data, size_t bytes,
+                                 const char *tag, int tag_len,
+                                 struct flb_input_instance *i_ins,
+                                 void *out_context,
+                                 struct flb_config *config)
 {
     (void) i_ins;
     (void) config;
@@ -502,7 +617,7 @@ static void cb_stackdriver_flush(void *data, size_t bytes,
     int ret_code = FLB_RETRY;
     size_t b_sent;
     char *token;
-    char *payload_buf;
+    flb_sds_t payload_buf;
     size_t payload_size;
     struct flb_stackdriver *ctx = out_context;
     struct flb_upstream_conn *u_conn;
@@ -527,7 +642,7 @@ static void cb_stackdriver_flush(void *data, size_t bytes,
     if (!token) {
         flb_error("[out_stackdriver] cannot retrieve oauth2 token");
         flb_upstream_conn_release(u_conn);
-        flb_free(payload_buf);
+        flb_sds_destroy(payload_buf);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
@@ -538,7 +653,7 @@ static void cb_stackdriver_flush(void *data, size_t bytes,
     flb_http_buffer_size(c, 4192);
 
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
-    flb_http_add_header(c, "Content-Type", 12, "application/json", 20);
+    flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
 
     /* Compose and append Authorization header */
     set_authorization_header(c, token);
@@ -572,7 +687,7 @@ static void cb_stackdriver_flush(void *data, size_t bytes,
     }
 
     /* Cleanup */
-    flb_free(payload_buf);
+    flb_sds_destroy(payload_buf);
     flb_http_client_destroy(c);
     flb_upstream_conn_release(u_conn);
 

@@ -1,0 +1,7 @@
+{
+    "metadata": {
+        "annotations": {
+            "fluentbit.io/parser": "json-parser-with-time"
+        }
+    }
+}

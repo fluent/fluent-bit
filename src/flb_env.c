@@ -27,37 +27,16 @@
 
 #include <stdlib.h>
 
-struct flb_buf {
-    char *str;
-    size_t size;
-    size_t len;
-};
-
-static inline int buf_append(struct flb_buf *buf, char *str, int len)
+static inline flb_sds_t buf_append(flb_sds_t buf, const char *str, int len)
 {
-    size_t av;
-    size_t new_size;
-    char *tmp;
+    flb_sds_t tmp;
 
-    av = buf->size - buf->len;
-    if (av < len + 1) {
-        new_size = buf->size + len + 1;
-        tmp = flb_realloc(buf->str, new_size);
-        if (tmp) {
-            buf->str = tmp;
-            buf->size = new_size;
-        }
-        else {
-            flb_errno();
-            return -1;
-        }
+    tmp = flb_sds_cat(buf, str, len);
+    if (!tmp) {
+        return NULL;
     }
 
-    memcpy(buf->str + buf->len, str, len);
-    buf->len += len;
-    buf->str[buf->len] = '\0';
-
-    return 0;
+    return tmp;
 }
 
 /* Preset some useful variables */
@@ -118,12 +97,12 @@ void flb_env_destroy(struct flb_env *env)
     flb_free(env);
 }
 
-int flb_env_set(struct flb_env *env, char *key, char *val)
+int flb_env_set(struct flb_env *env, const char *key, const char *val)
 {
     int id;
     int klen;
     int vlen;
-    char *out_buf;
+    const char *out_buf;
     size_t out_size;
 
     /* Get lengths */
@@ -142,11 +121,11 @@ int flb_env_set(struct flb_env *env, char *key, char *val)
     return id;
 }
 
-char *flb_env_get(struct flb_env *env, char *key)
+const char *flb_env_get(struct flb_env *env, const char *key)
 {
     int len;
     int ret;
-    char *out_buf;
+    const char *out_buf;
     size_t out_size;
 
     if (!key) {
@@ -173,9 +152,9 @@ char *flb_env_get(struct flb_env *env, char *key)
 
 /*
  * Given a 'value', lookup for variables, if found, return a new composed
- * string.
+ * sds string.
  */
-char *flb_env_var_translate(struct flb_env *env, char *value)
+flb_sds_t flb_env_var_translate(struct flb_env *env, const char *value)
 {
     int i;
     int len;
@@ -183,21 +162,22 @@ char *flb_env_var_translate(struct flb_env *env, char *value)
     int e_len;
     int pre_var;
     int have_var = FLB_FALSE;
-    char *env_var = NULL;
+    const char *env_var = NULL;
     char *v_start = NULL;
     char *v_end = NULL;
     char tmp[64];
-    struct flb_buf buf;
-
-    buf.str = NULL;
-    buf.len = 0;
-    buf.size = 0;
+    flb_sds_t buf;
+    flb_sds_t s;
 
     if (!value) {
         return NULL;
     }
 
     len = strlen(value);
+    buf = flb_sds_create_size(len);
+    if (!buf) {
+        return NULL;
+    }
 
     for (i = 0; i < len; i++) {
         v_start = strstr(value + i, "${");
@@ -224,14 +204,28 @@ char *flb_env_var_translate(struct flb_env *env, char *value)
         /* Append pre-variable content */
         pre_var = (v_start - 2) - (value + i);
         if (pre_var > 0) {
-            buf_append(&buf, value + i, (v_start - 2) - (value + i));
+            s = buf_append(buf, value + i, (v_start - 2) - (value + i));
+            if (!s) {
+                flb_sds_destroy(buf);
+                return NULL;
+            }
+            if (s != buf) {
+                buf = s;
+            }
         }
 
         /* Lookup the variable in our env-hash */
         env_var = flb_env_get(env, tmp);
         if (env_var) {
             e_len = strlen(env_var);
-            buf_append(&buf, env_var, e_len);
+            s = buf_append(buf, env_var, e_len);
+            if (!s) {
+                flb_sds_destroy(buf);
+                return NULL;
+            }
+            if (s != buf) {
+                buf = s;
+            }
         }
         i += (v_start - (value + i)) + v_len;
     }
@@ -239,11 +233,18 @@ char *flb_env_var_translate(struct flb_env *env, char *value)
     /* Copy the remaining value into our buffer */
     if (v_end) {
         if (have_var == FLB_TRUE && (value + len) - (v_end + 1) > 0) {
-            buf_append(&buf, v_end + 1, (value + len) - (v_end + 1));
+            s = buf_append(buf, v_end + 1, (value + len) - (v_end + 1));
+            if (!s) {
+                flb_sds_destroy(buf);
+                return NULL;
+            }
+            if (s != buf) {
+                buf = s;
+            }
         }
     }
 
-    if (buf.len == 0) {
+    if (flb_sds_len(buf) == 0) {
         /*
          * If the output length buffer is zero, it could mean:
          *
@@ -255,12 +256,12 @@ char *flb_env_var_translate(struct flb_env *env, char *value)
          * string.
          */
         if (have_var == FLB_TRUE) {
-            return flb_strdup("");
+            return flb_sds_copy(buf, "", 0);
         }
         else {
-            return flb_strdup(value);
+            return flb_sds_copy(buf, value, len);
         }
     }
 
-    return buf.str;
+    return buf;
 }

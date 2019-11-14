@@ -45,9 +45,9 @@ static int cb_azure_init(struct flb_output_instance *ins,
     return 0;
 }
 
-int azure_format(void *in_buf, size_t in_bytes,
-                  char **out_buf, size_t *out_size,
-                  struct flb_azure *ctx)
+int azure_format(const void *in_buf, size_t in_bytes,
+                 char **out_buf, size_t *out_size,
+                 struct flb_azure *ctx)
 {
     int i;
     int array_size = 0;
@@ -234,11 +234,11 @@ static int build_headers(struct flb_http_client *c,
     return 0;
 }
 
-static void cb_azure_flush(void *data, size_t bytes,
-                            char *tag, int tag_len,
-                            struct flb_input_instance *i_ins,
-                            void *out_context,
-                            struct flb_config *config)
+static void cb_azure_flush(const void *data, size_t bytes,
+                           const char *tag, int tag_len,
+                           struct flb_input_instance *i_ins,
+                           void *out_context,
+                           struct flb_config *config)
 {
     int ret;
     size_t b_sent;

@@ -409,7 +409,7 @@ void test_utf8_to_json()
     int n_tests;
     char *file_msgp;
     char *file_json;
-    char *out_buf;
+    flb_sds_t out_buf;
     size_t out_size;
     size_t msgp_size;
     size_t json_size;
@@ -440,10 +440,9 @@ void test_utf8_to_json()
 
         json_size = strlen(file_json);
 
-        out_buf = NULL;
-        ret = flb_msgpack_raw_to_json_str(file_msgp, msgp_size,
-                                          &out_buf, &out_size);
-        TEST_CHECK(ret == 0);
+        out_buf = flb_msgpack_raw_to_json_sds(file_msgp, msgp_size);
+        TEST_CHECK(out_buf != NULL);
+        out_size = flb_sds_len(out_buf);
 
         ret = strcmp(file_json, out_buf);
         if (ret != 0) {
@@ -456,13 +455,128 @@ void test_utf8_to_json()
         TEST_CHECK(out_size == json_size);
 
         if (out_buf) {
-            flb_free(out_buf);
+            flb_sds_destroy(out_buf);
         }
         flb_free(file_msgp);
         flb_free(file_json);
     }
 
     utf8_tests_destroy(n_tests);
+}
+
+void test_json_pack_bug1278()
+{
+    int i;
+    int len;
+    int ret;
+    int items;
+    int type;
+    char *p_in;
+    char *p_out;
+    char *out_buf;
+    size_t out_size;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_object val;
+    size_t off = 0;
+    flb_sds_t json;
+    char tmp[32];
+
+    char *in[]  = {
+                   "one\atwo",
+                   "one\btwo",
+                   "one\ttwo",
+                   "one\ntwo",
+                   "one\vtwo",
+                   "one\ftwo",
+                   "one\rtwo",
+                   "\\n",
+    };
+
+    char *out[] = {
+                   "\"one\\u0007two\"",
+                   "\"one\\btwo\"",
+                   "\"one\\ttwo\"",
+                   "\"one\\ntwo\"",
+                   "\"one\\u000btwo\"",
+                   "\"one\\ftwo\"",
+                   "\"one\\rtwo\"",
+                   "\"\\\\n\"",
+    };
+
+    printf("\n");
+    items = sizeof(in) / sizeof(char *);
+    for (i = 0; i < items; i++) {
+        p_in = in[i];
+        p_out = out[i];
+
+        len = strlen(p_in);
+
+        msgpack_sbuffer_init(&mp_sbuf);
+        msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+        msgpack_pack_str(&mp_pck, len);
+        msgpack_pack_str_body(&mp_pck, p_in, len);
+
+        /* Pack raw string as JSON */
+        json = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+
+        /* Compare expected JSON output */
+        ret = strcmp(p_out, json);
+        TEST_CHECK(ret == 0);
+        if (ret != 0) {
+            printf("== JSON comparisson failed ==\n");
+            printf("expected: %s\n", p_out);
+            printf("output  : %s\n", json);
+        }
+        else {
+            printf("test %i out => %s\n", i, json);
+        }
+        /* Put JSON string in a map and convert it to msgpack */
+        snprintf(tmp, sizeof(tmp) -1 , "{\"log\": %s}", json);
+        ret = flb_pack_json(tmp, strlen(tmp), &out_buf, &out_size, &type);
+        TEST_CHECK(ret == 0);
+        if (ret != 0) {
+            printf("failed packaging to JSON\n");
+        }
+
+        /* Unpack 'log' value and compare it to the original raw */
+        off = 0;
+        msgpack_unpacked_init(&result);
+        ret = msgpack_unpack_next(&result, out_buf, out_size, &off);
+        TEST_CHECK(ret == MSGPACK_UNPACK_SUCCESS);
+
+        /* Check parent type is a map */
+        root = result.data;
+        TEST_CHECK(root.type == MSGPACK_OBJECT_MAP);
+
+        /* Get map value */
+        val = root.via.map.ptr[0].val;
+        TEST_CHECK(val.type == MSGPACK_OBJECT_STR);
+
+        /* Compare bytes length */
+        len = strlen(p_in);
+        TEST_CHECK(len == val.via.str.size);
+        if (len != val.via.str.size) {
+            printf("failed comparing string length\n");
+        }
+
+        /* Compare raw bytes */
+        ret = memcmp(val.via.str.ptr, p_in, len);
+        TEST_CHECK(ret == 0);
+        if (ret != 0) {
+            printf("failed comparing to original value\n");
+        }
+
+        /* Relese resources */
+        flb_free(out_buf);
+        flb_sds_destroy(json);
+        msgpack_unpacked_destroy(&result);
+        msgpack_sbuffer_destroy(&mp_sbuf);
+
+    }
 }
 
 TEST_LIST = {
@@ -472,6 +586,7 @@ TEST_LIST = {
     { "json_pack_mult", test_json_pack_mult},
     { "json_pack_mult_iter", test_json_pack_mult_iter},
     { "json_pack_bug342", test_json_pack_bug342},
+    { "json_pack_bug1278"  , test_json_pack_bug1278},
 
     /* Mixed bytes, check JSON encoding */
     { "utf8_to_json", test_utf8_to_json},

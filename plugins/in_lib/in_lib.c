@@ -58,9 +58,9 @@ static int in_lib_collect(struct flb_input_instance *i_ins,
         capacity = LIB_BUF_CHUNK;
     }
 
-    bytes = read(ctx->fd,
-                 ctx->buf_data + ctx->buf_len,
-                 capacity);
+    bytes = flb_pipe_r(ctx->fd,
+                       ctx->buf_data + ctx->buf_len,
+                       capacity);
     flb_trace("in_lib read() = %i", bytes);
     if (bytes == -1) {
         perror("read");
@@ -155,10 +155,7 @@ static int in_lib_exit(void *data, struct flb_config *config)
     }
 
     s = &ctx->state;
-    if (s->tokens) {
-        flb_free(s->tokens);
-    }
-
+    flb_pack_state_reset(s);
     flb_free(ctx);
     return 0;
 }

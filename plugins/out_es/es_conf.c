@@ -32,8 +32,8 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
 
     int io_flags = 0;
     ssize_t ret;
-    char *tmp;
-    char *path;
+    const char *tmp;
+    const char *path;
     struct flb_uri *uri = ins->host.uri;
     struct flb_uri_field *f_index = NULL;
     struct flb_uri_field *f_type = NULL;
@@ -54,13 +54,15 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
         }
     }
 
-    /* Get network configuration */
-    if (!ins->host.name) {
-        ins->host.name = flb_strdup("127.0.0.1");
-    }
+    /* Set default network configuration */
+    flb_output_net_default("127.0.0.1", 9200, ins);
 
-    if (ins->host.port == 0) {
-        ins->host.port = 9200;
+    /* Populate context with config map defaults and incoming properties */
+    ret = flb_output_config_map_set(ins, (void *) ctx);
+    if (ret == -1) {
+        flb_error("[out_es] configuration error");
+        flb_es_conf_destroy(ctx);
+        return NULL;
     }
 
     /* use TLS ? */
@@ -86,160 +88,29 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
         flb_es_conf_destroy(ctx);
         return NULL;
     }
+    ctx->u = upstream;
+
+    /* Set instance flags into upstream */
+    flb_output_upstream_set(ctx->u, ins);
 
     /* Set manual Index and Type */
-    ctx->u = upstream;
     if (f_index) {
-        ctx->index = flb_strdup(f_index->value);
-    }
-    else {
-        tmp = flb_output_get_property("index", ins);
-        if (!tmp) {
-            ctx->index = flb_strdup(FLB_ES_DEFAULT_INDEX);
-        }
-        else {
-            ctx->index = flb_strdup(tmp);
-        }
+        ctx->index = flb_strdup(f_index->value); /* FIXME */
     }
 
     if (f_type) {
-        ctx->type = flb_strdup(f_type->value);
-    }
-    else {
-        tmp = flb_output_get_property("type", ins);
-        if (!tmp) {
-            ctx->type = flb_strdup(FLB_ES_DEFAULT_TYPE);
-        }
-        else {
-            ctx->type = flb_strdup(tmp);
-        }
+        ctx->type = flb_strdup(f_type->value); /* FIXME */
     }
 
-    /* HTTP Auth */
-    tmp = flb_output_get_property("http_user", ins);
-    if (tmp) {
-        ctx->http_user = flb_strdup(tmp);
-
-        tmp = flb_output_get_property("http_passwd", ins);
-        if (tmp) {
-            ctx->http_passwd = flb_strdup(tmp);
-        }
-        else {
-            ctx->http_passwd = flb_strdup("");
-        }
-    }
-
-    /*
-     * Logstash compatibility options
-     * ==============================
-     */
-
-    /* Logstash_Format */
-    tmp = flb_output_get_property("logstash_format", ins);
-    if (tmp) {
-        ctx->logstash_format = flb_utils_bool(tmp);
-    }
-    else {
-        ctx->logstash_format = FLB_FALSE;
-    }
-
-    /* Logstash_Prefix */
-    tmp = flb_output_get_property("logstash_prefix", ins);
-    if (tmp) {
-        ctx->logstash_prefix = flb_strdup(tmp);
-        ctx->logstash_prefix_len = strlen(tmp);
-    }
-    else if (ctx->logstash_format == FLB_TRUE) {
-        ctx->logstash_prefix = flb_strdup(FLB_ES_DEFAULT_PREFIX);
-        ctx->logstash_prefix_len = sizeof(FLB_ES_DEFAULT_PREFIX) - 1;
-    }
-
-    /* Logstash_Prefix_Key */
-    tmp = flb_output_get_property("logstash_prefix_key", ins);
-    if (tmp) {
-        ctx->logstash_prefix_key = flb_strdup(tmp);
-        ctx->logstash_prefix_key_len = strlen(tmp);
-    }
-
-    /* Logstash_DateFormat */
-    tmp = flb_output_get_property("logstash_dateformat", ins);
-    if (tmp) {
-        ctx->logstash_dateformat = flb_strdup(tmp);
-        ctx->logstash_dateformat_len = strlen(tmp);
-    }
-    else if (ctx->logstash_format == FLB_TRUE) {
-        ctx->logstash_dateformat = flb_strdup(FLB_ES_DEFAULT_TIME_FMT);
-        ctx->logstash_dateformat_len = sizeof(FLB_ES_DEFAULT_TIME_FMT) - 1;
-    }
-
-    /* Time Key */
-    tmp = flb_output_get_property("time_key", ins);
-    if (tmp) {
-        ctx->time_key = flb_strdup(tmp);
-        ctx->time_key_len = strlen(tmp);
-    }
-    else {
-        ctx->time_key = flb_strdup(FLB_ES_DEFAULT_TIME_KEY);
-        ctx->time_key_len = sizeof(FLB_ES_DEFAULT_TIME_KEY) - 1;
-    }
-
-    /* Time Key Format */
-    tmp = flb_output_get_property("time_key_format", ins);
-    if (tmp) {
-        ctx->time_key_format = flb_strdup(tmp);
-        ctx->time_key_format_len = strlen(tmp);
-    }
-    else {
-        ctx->time_key_format = flb_strdup(FLB_ES_DEFAULT_TIME_KEYF);
-        ctx->time_key_format_len = sizeof(FLB_ES_DEFAULT_TIME_KEYF) - 1;
-    }
-
-    /* Include Tag key */
-    tmp = flb_output_get_property("include_tag_key", ins);
-    if (tmp) {
-        ctx->include_tag_key = flb_utils_bool(tmp);
-    }
-    else {
-        ctx->include_tag_key = FLB_FALSE;
-    }
-
-    /* Tag Key */
-    if (ctx->include_tag_key == FLB_TRUE) {
-        tmp = flb_output_get_property("tag_key", ins);
-        if (tmp) {
-            ctx->tag_key = flb_strdup(tmp);
-            ctx->tag_key_len = strlen(tmp);
-        }
-        else {
-            ctx->tag_key = flb_strdup(FLB_ES_DEFAULT_TAG_KEY);
-            ctx->tag_key_len = sizeof(FLB_ES_DEFAULT_TAG_KEY) - 1;
-        }
-    }
-
-    ctx->buffer_size = FLB_HTTP_DATA_SIZE_MAX;
-    tmp = flb_output_get_property("buffer_size", ins);
-    if (tmp) {
-        if (*tmp == 'f' || *tmp == 'F' || *tmp == 'o' || *tmp == 'O') {
-            /* unlimited size ? */
-            if (flb_utils_bool(tmp) == FLB_FALSE) {
-                ctx->buffer_size = 0;
-            }
-        }
-        else {
-            ret = flb_utils_size_to_bytes(tmp);
-            if (ret == -1) {
-                flb_error("[out_es] invalid buffer_size=%s, using default", tmp);
-            }
-            else {
-                ctx->buffer_size = (size_t) ret;
-            }
-        }
+    /* HTTP Payload (response) maximum buffer size (0 == unlimited) */
+    if (ctx->buffer_size == -1) {
+        ctx->buffer_size = 0;
     }
 
     /* Elasticsearch: Path */
     path = flb_output_get_property("path", ins);
     if (!path) {
-        path = flb_strdup("");
+        path = "";
     }
 
     /* Elasticsearch: Pipeline */
@@ -251,69 +122,18 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
         snprintf(ctx->uri, sizeof(ctx->uri) - 1, "%s/_bulk", path);
     }
 
-    flb_free(path);
-
-    /* Generate _id */
-    tmp = flb_output_get_property("generate_id", ins);
-    if (tmp) {
-        ctx->generate_id = flb_utils_bool(tmp);
-    } else {
-        ctx->generate_id = FLB_FALSE;
-    }
-
-    /* Replace dots */
-    tmp = flb_output_get_property("replace_dots", ins);
-    if (tmp) {
-        ctx->replace_dots = flb_utils_bool(tmp);
-    }
-    else {
-        ctx->replace_dots = FLB_FALSE;
-    }
-
-    /* Use current time for index generation instead of message record */
-    tmp = flb_output_get_property("current_time_index", ins);
-    if (tmp) {
-        ctx->current_time_index = flb_utils_bool(tmp);
-    }
-    else {
-        ctx->current_time_index = FLB_FALSE;
-    }
-
-
-    /* Trace output */
-    tmp = flb_output_get_property("Trace_Output", ins);
-    if (tmp) {
-        ctx->trace_output = flb_utils_bool(tmp);
-    }
-    else {
-        ctx->trace_output = FLB_FALSE;
-    }
-
     return ctx;
 }
 
 int flb_es_conf_destroy(struct flb_elasticsearch *ctx)
 {
-    flb_free(ctx->index);
-    flb_free(ctx->type);
-
-    flb_free(ctx->http_user);
-    flb_free(ctx->http_passwd);
-
-    flb_free(ctx->logstash_prefix);
-    flb_free(ctx->logstash_dateformat);
-    flb_free(ctx->time_key);
-    flb_free(ctx->time_key_format);
-
-    if (ctx->include_tag_key) {
-        flb_free(ctx->tag_key);
+    if (!ctx) {
+        return 0;
     }
 
-    if (ctx->logstash_prefix_key) {
-        flb_free(ctx->logstash_prefix_key);
+    if (ctx->u) {
+        flb_upstream_destroy(ctx->u);
     }
-
-    flb_upstream_destroy(ctx->u);
     flb_free(ctx);
 
     return 0;

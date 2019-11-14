@@ -81,7 +81,7 @@ static char ltvs_field[256] = {
 
 
 static int ltsv_parser(struct flb_parser *parser,
-                       char *in_buf, size_t in_size,
+                       const char *in_buf, size_t in_size,
                        msgpack_packer *tmp_pck,
                        char *time_key, size_t time_key_len,
                        time_t *time_lookup, double *tmfrac,
@@ -89,12 +89,12 @@ static int ltsv_parser(struct flb_parser *parser,
 {
     int ret;
     struct tm tm = {0};
-    unsigned char *label = NULL;
+    const unsigned char *label = NULL;
     size_t label_len = 0;
-    unsigned char *field = NULL;
+    const unsigned char *field = NULL;
     size_t field_len = 0;
-    unsigned char *c = (unsigned char *)in_buf;
-    unsigned char *end = c + in_size;
+    const unsigned char *c = (const unsigned char *)in_buf;
+    const unsigned char *end = c + in_size;
     int last_byte;
     int do_pack = FLB_TRUE;
 
@@ -131,9 +131,9 @@ static int ltsv_parser(struct flb_parser *parser,
 
             if (parser->time_fmt && label_len == time_key_len &&
                 field_len > 0 &&
-                !strncmp((char *)label, time_key, label_len)) {
+                !strncmp((const char *)label, time_key, label_len)) {
                 if (do_pack) {
-                    ret = flb_parser_time_lookup((char *) field, field_len,
+                    ret = flb_parser_time_lookup((const char *) field, field_len,
                                                   0, parser, &tm, tmfrac);
                     if (ret == -1) {
                        flb_error("[parser:%s] Invalid time format %s.",
@@ -148,17 +148,17 @@ static int ltsv_parser(struct flb_parser *parser,
             if (time_found == FLB_FALSE || parser->time_keep == FLB_TRUE) {
                 if (do_pack) {
                     if (parser->types_len != 0) {
-                        flb_parser_typecast((char*) label, label_len,
-                                            (char*) field, field_len,
+                        flb_parser_typecast((const char*) label, label_len,
+                                            (const char*) field, field_len,
                                             tmp_pck,
                                             parser->types,
                                             parser->types_len);
                     }
                     else {
                         msgpack_pack_str(tmp_pck, label_len);
-                        msgpack_pack_str_body(tmp_pck, (char *)label, label_len);
+                        msgpack_pack_str_body(tmp_pck, (const char *)label, label_len);
                         msgpack_pack_str(tmp_pck, field_len);
-                        msgpack_pack_str_body(tmp_pck, (char *)field, field_len);
+                        msgpack_pack_str_body(tmp_pck, (const char *)field, field_len);
                     }
                 }
                 else {
@@ -192,13 +192,13 @@ static int ltsv_parser(struct flb_parser *parser,
             break;
         }
     }
-    last_byte = (char *)c - in_buf;
+    last_byte = (const char *)c - in_buf;
 
     return last_byte;
 }
 
 int flb_parser_ltsv_do(struct flb_parser *parser,
-                       char *in_buf, size_t in_size,
+                       const char *in_buf, size_t in_size,
                        void **out_buf, size_t *out_size,
                        struct flb_time *out_time)
 {

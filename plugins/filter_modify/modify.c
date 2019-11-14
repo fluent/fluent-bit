@@ -23,6 +23,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_utils.h>
@@ -45,6 +46,7 @@ static void condition_free(struct modify_condition *condition)
     if (condition->b_is_regex) {
         flb_regex_destroy(condition->b_regex);
     }
+    flb_free(condition);
 }
 
 static void teardown(struct filter_modify_ctx *ctx)
@@ -93,8 +95,8 @@ static int setup(struct filter_modify_ctx *ctx,
 {
     struct mk_list *head;
     struct mk_list *split;
+    struct flb_kv *kv;
     struct flb_split_entry *sentry;
-    struct flb_config_prop *prop;
     struct modify_rule *rule = NULL;
     struct modify_condition *condition;
 
@@ -110,21 +112,21 @@ static int setup(struct filter_modify_ctx *ctx,
     //   - Switch list size
 
     mk_list_foreach(head, &f_ins->properties) {
-        prop = mk_list_entry(head, struct flb_config_prop, _head);
+        kv = mk_list_entry(head, struct flb_kv, _head);
 
-        split = flb_utils_split(prop->val, ' ', 3);
+        split = flb_utils_split(kv->val, ' ', 3);
         list_size = mk_list_size(split);
 
         // Conditions are,
         // CONDITION CONDITIONTYPE VAL_A VAL_B
 
         if (list_size == 0 || list_size > 3) {
-            flb_error("[filter_modify] Invalid config for %s", prop->key);
+            flb_error("[filter_modify] Invalid config for %s", kv->key);
             teardown(ctx);
             flb_utils_split_free(split);
             return -1;
         }
-        else if (strcasecmp(prop->key, "condition") == 0) {
+        else if (strcasecmp(kv->key, "condition") == 0) {
 
             //
             // Build a condition
@@ -132,6 +134,7 @@ static int setup(struct filter_modify_ctx *ctx,
 
             condition = flb_calloc(1, sizeof(struct modify_condition));
             if (!condition) {
+                flb_errno();
                 flb_error("[filter_modify] Unable to allocate memory for "
                           "condition");
                 teardown(ctx);
@@ -141,8 +144,8 @@ static int setup(struct filter_modify_ctx *ctx,
 
             condition->a_is_regex = false;
             condition->b_is_regex = false;
-            condition->raw_k = flb_strndup(prop->key, strlen(prop->key));
-            condition->raw_v = flb_strndup(prop->val, strlen(prop->val));
+            condition->raw_k = flb_strndup(kv->key, flb_sds_len(kv->key));
+            condition->raw_v = flb_strndup(kv->val, flb_sds_len(kv->val));
 
             sentry =
                 mk_list_entry_first(split, struct flb_split_entry, _head);
@@ -194,7 +197,7 @@ static int setup(struct filter_modify_ctx *ctx,
             }
             else {
                 flb_error("[filter_modify] Invalid config for %s : %s",
-                          prop->key, prop->val);
+                          kv->key, kv->val);
                 teardown(ctx);
                 condition_free(condition);
                 flb_utils_split_free(split);
@@ -232,7 +235,7 @@ static int setup(struct filter_modify_ctx *ctx,
                         ("[filter_modify] Creating regex for condition A : %s %s : %s",
                          condition->raw_k, condition->raw_v, condition->a);
                     condition->a_regex =
-                        flb_regex_create((unsigned char *) condition->a);
+                        flb_regex_create(condition->a);
                 }
             }
 
@@ -250,7 +253,7 @@ static int setup(struct filter_modify_ctx *ctx,
                         ("[filter_modify] Creating regex for condition B : %s %s : %s",
                          condition->raw_k, condition->raw_v, condition->b);
                     condition->b_regex =
-                        flb_regex_create((unsigned char *) condition->b);
+                        flb_regex_create(condition->b);
                 }
             }
 
@@ -276,8 +279,8 @@ static int setup(struct filter_modify_ctx *ctx,
 
             rule->key_is_regex = false;
             rule->val_is_regex = false;
-            rule->raw_k = flb_strndup(prop->key, strlen(prop->key));
-            rule->raw_v = flb_strndup(prop->val, strlen(prop->val));
+            rule->raw_k = flb_strndup(kv->key, flb_sds_len(kv->key));
+            rule->raw_v = flb_strndup(kv->val, flb_sds_len(kv->val));
 
             sentry =
                 mk_list_entry_first(split, struct flb_split_entry, _head);
@@ -291,53 +294,53 @@ static int setup(struct filter_modify_ctx *ctx,
             flb_utils_split_free(split);
 
             if (list_size == 1) {
-                if (strcasecmp(prop->key, "remove") == 0) {
+                if (strcasecmp(kv->key, "remove") == 0) {
                     rule->ruletype = REMOVE;
                 }
-                else if (strcasecmp(prop->key, "remove_wildcard") == 0) {
+                else if (strcasecmp(kv->key, "remove_wildcard") == 0) {
                     rule->ruletype = REMOVE_WILDCARD;
                 }
-                else if (strcasecmp(prop->key, "remove_regex") == 0) {
+                else if (strcasecmp(kv->key, "remove_regex") == 0) {
                     rule->ruletype = REMOVE_REGEX;
                     rule->key_is_regex = true;
                 }
                 else {
                     flb_error
                         ("[filter_modify] Invalid operation %s : %s in configuration",
-                         prop->key, prop->val);
+                         kv->key, kv->val);
                     teardown(ctx);
                     flb_free(rule);
                     return -1;
                 }
             }
             else if (list_size == 2) {
-                if (strcasecmp(prop->key, "rename") == 0) {
+                if (strcasecmp(kv->key, "rename") == 0) {
                     rule->ruletype = RENAME;
                 }
-                else if (strcasecmp(prop->key, "hard_rename") == 0) {
+                else if (strcasecmp(kv->key, "hard_rename") == 0) {
                     rule->ruletype = HARD_RENAME;
                 }
-                else if (strcasecmp(prop->key, "add") == 0) {
+                else if (strcasecmp(kv->key, "add") == 0) {
                     rule->ruletype = ADD;
                 }
-                else if (strcasecmp(prop->key, "add_if_not_present") == 0) {
+                else if (strcasecmp(kv->key, "add_if_not_present") == 0) {
                     flb_info
                         ("[filter_modify] DEPRECATED : Operation 'add_if_not_present' has been replaced by 'add'.");
                     rule->ruletype = ADD;
                 }
-                else if (strcasecmp(prop->key, "set") == 0) {
+                else if (strcasecmp(kv->key, "set") == 0) {
                     rule->ruletype = SET;
                 }
-                else if (strcasecmp(prop->key, "copy") == 0) {
+                else if (strcasecmp(kv->key, "copy") == 0) {
                     rule->ruletype = COPY;
                 }
-                else if (strcasecmp(prop->key, "hard_copy") == 0) {
+                else if (strcasecmp(kv->key, "hard_copy") == 0) {
                     rule->ruletype = HARD_COPY;
                 }
                 else {
                     flb_error
                         ("[filter_modify] Invalid operation %s : %s in configuration",
-                         prop->key, prop->val);
+                         kv->key, kv->val);
                     teardown(ctx);
                     flb_free(rule);
                     return -1;
@@ -348,11 +351,13 @@ static int setup(struct filter_modify_ctx *ctx,
                 flb_error
                     ("[filter_modify] Unable to create regex for rule %s %s",
                      rule->raw_k, rule->raw_v);
+                teardown(ctx);
+                flb_free(rule);
                 return -1;
             }
             else {
                 rule->key_regex =
-                    flb_regex_create((unsigned char *) rule->key);
+                    flb_regex_create(rule->key);
             }
 
             if (rule->val_is_regex && rule->val_len == 0) {
@@ -363,7 +368,7 @@ static int setup(struct filter_modify_ctx *ctx,
             }
             else {
                 rule->val_regex =
-                    flb_regex_create((unsigned char *) rule->val);
+                    flb_regex_create(rule->val);
             }
 
             mk_list_add(&rule->_head, &ctx->rules);
@@ -378,30 +383,27 @@ static int setup(struct filter_modify_ctx *ctx,
     return 0;
 }
 
-//
-// Regex matchers
-//
 
+/* Regex matchers */
 static inline bool helper_msgpack_object_matches_regex(msgpack_object * obj,
                                                        struct flb_regex
                                                        *regex)
 {
-    char *key;
     int len;
-    struct flb_regex_search result;
+    const char *key;
 
     if (obj->type == MSGPACK_OBJECT_BIN) {
         return false;
     }
     else if (obj->type == MSGPACK_OBJECT_STR) {
-        key = (char *) obj->via.str.ptr;
+        key = obj->via.str.ptr;
         len = obj->via.str.size;
     }
     else {
         return false;
     }
 
-    return (flb_regex_do(regex, (unsigned char *) key, len, &result) == 0);
+    return flb_regex_match(regex, (unsigned char *) key, len) > 0;
 }
 
 static inline bool kv_key_matches_regex(msgpack_object_kv * kv,
@@ -486,13 +488,13 @@ static inline bool helper_msgpack_object_matches_wildcard(msgpack_object *
                                                           obj, char *str,
                                                           int len)
 {
-    char *key;
+    const char *key;
 
     if (obj->type == MSGPACK_OBJECT_BIN) {
-        key = (char *) obj->via.bin.ptr;
+        key = obj->via.bin.ptr;
     }
     else if (obj->type == MSGPACK_OBJECT_STR) {
-        key = (char *) obj->via.str.ptr;
+        key = obj->via.str.ptr;
     }
     else {
         return false;
@@ -583,15 +585,15 @@ static inline bool helper_msgpack_object_matches_str(msgpack_object * obj,
                                                      char *str, int len)
 {
 
-    char *key;
+    const char *key;
     int klen;
 
     if (obj->type == MSGPACK_OBJECT_BIN) {
-        key = (char *) obj->via.bin.ptr;
+        key = obj->via.bin.ptr;
         klen = obj->via.bin.size;
     }
     else if (obj->type == MSGPACK_OBJECT_STR) {
-        key = (char *) obj->via.str.ptr;
+        key = obj->via.str.ptr;
         klen = obj->via.str.size;
     }
     else {
@@ -1366,8 +1368,8 @@ static int cb_modify_init(struct flb_filter_instance *f_ins,
     return 0;
 }
 
-static int cb_modify_filter(void *data, size_t bytes,
-                            char *tag, int tag_len,
+static int cb_modify_filter(const void *data, size_t bytes,
+                            const char *tag, int tag_len,
                             void **out_buf, size_t * out_size,
                             struct flb_filter_instance *f_ins,
                             void *context, struct flb_config *config)
@@ -1380,6 +1382,7 @@ static int cb_modify_filter(void *data, size_t bytes,
     struct filter_modify_ctx *ctx = context;
 
     int modifications = 0;
+    int total_modifications = 0;
 
     msgpack_sbuffer buffer;
     msgpack_sbuffer_init(&buffer);
@@ -1398,8 +1401,14 @@ static int cb_modify_filter(void *data, size_t bytes,
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         if (result.data.type == MSGPACK_OBJECT_ARRAY) {
-            modifications +=
+            modifications =
                 apply_modifying_rules(&packer, &result.data, ctx);
+
+            if (modifications == 0) {
+                // not matched, so copy original event.
+                msgpack_pack_object(&packer, result.data);
+            }
+            total_modifications += modifications;
         }
         else {
             msgpack_pack_object(&packer, result.data);
@@ -1407,7 +1416,7 @@ static int cb_modify_filter(void *data, size_t bytes,
     }
     msgpack_unpacked_destroy(&result);
 
-    if(modifications == 0) {
+    if(total_modifications == 0) {
         msgpack_sbuffer_destroy(&buffer);
         return FLB_FILTER_NOTOUCH;
     }

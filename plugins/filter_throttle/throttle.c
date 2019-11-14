@@ -101,7 +101,7 @@ static inline int throttle_data(struct flb_filter_throttle_ctx *ctx)
 
 static int configure(struct flb_filter_throttle_ctx *ctx, struct flb_filter_instance *f_ins)
 {
-    char *str = NULL;
+    const char *str = NULL;
     double val  = 0;
     char *endp;
 
@@ -140,7 +140,7 @@ static int configure(struct flb_filter_throttle_ctx *ctx, struct flb_filter_inst
     return 0;
 }
 
-static int parse_duration(char *interval)
+static int parse_duration(const char *interval)
 {
     double seconds = 0.0;
     double s;
@@ -196,12 +196,12 @@ static int cb_throttle_init(struct flb_filter_instance *f_ins,
     return 0;
 }
 
-static int cb_throttle_filter(void *data, size_t bytes,
-                          char *tag, int tag_len,
-                          void **out_buf, size_t *out_size,
-                          struct flb_filter_instance *f_ins,
-                          void *context,
-                          struct flb_config *config)
+static int cb_throttle_filter(const void *data, size_t bytes,
+                              const char *tag, int tag_len,
+                              void **out_buf, size_t *out_size,
+                              struct flb_filter_instance *f_ins,
+                              void *context,
+                              struct flb_config *config)
 {
     int ret;
     int old_size = 0;

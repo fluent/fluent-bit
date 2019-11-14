@@ -41,7 +41,8 @@
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_str.h>
-#include <fluent-bit/flb_plugin_proxy.h>
+#include <fluent-bit/flb_slist.h>
+#include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_parser.h>
 
 /* Libbacktrace support */
@@ -51,7 +52,7 @@
 
 struct flb_stacktrace {
     struct backtrace_state *state;
-	int error;
+    int error;
     int line;
 };
 
@@ -62,7 +63,7 @@ static void flb_stacktrace_error_callback(void *data,
 {
     struct flb_stacktrace *ctx = data;
     fprintf(stderr, "ERROR: %s (%d)", msg, errnum);
-	ctx->error = 1;
+    ctx->error = 1;
 }
 
 static int flb_stacktrace_print_callback(void *data, uintptr_t pc,
@@ -141,6 +142,9 @@ static void flb_help(int rc, struct flb_config *config)
     printf("  -e, --plugin=FILE\tload an external plugin (shared lib)\n");
     printf("  -l, --log_file=FILE\twrite log info to a file\n");
     printf("  -t, --tag=TAG\t\tset plugin tag, same as '-p tag=abc'\n");
+#ifdef FLB_HAVE_STREAM_PROCESSOR
+    printf("  -T, --sp-task=SQL\tdefine a stream processor task\n");
+#endif
     printf("  -v, --verbose\t\tenable verbose mode\n");
 #ifdef FLB_HAVE_HTTP_SERVER
     printf("  -H, --http\t\tenable monitoring HTTP server\n");
@@ -202,7 +206,7 @@ static void flb_banner()
 }
 
 #define flb_print_signal(X) case X:                       \
-    write (STDERR_FILENO, #X ")\n" , sizeof(#X ")\n")-1); \
+    write (STDERR_FILENO, #X ")\n", sizeof(#X ")\n")-1); \
     break;
 
 static void flb_signal_handler(int signal)
@@ -348,28 +352,25 @@ static void flb_service_conf_err(struct mk_rconf_section *section, char *key)
 
 static int flb_service_conf_path_set(struct flb_config *config, char *file)
 {
-    char *p;
     char *end;
-    char path[PATH_MAX + 1];
+    char *path;
 
-#ifdef _MSC_VER
-    p = _fullpath(path, file, PATH_MAX + 1);
-#else
-    p = realpath(file, path);
-#endif
-    if (!p) {
+    path = realpath(file, NULL);
+    if (!path) {
         return -1;
     }
 
     /* lookup path ending and truncate */
-    end = strrchr(path, '/');
+    end = strrchr(path, FLB_DIRCHAR);
     if (!end) {
+        free(path);
         return -1;
     }
 
     end++;
     *end = '\0';
     config->conf_path = flb_strdup(path);
+    free(path);
 
     return 0;
 }
@@ -469,10 +470,10 @@ static int flb_service_conf(struct flb_config *config, char *file)
         mk_mem_free(name);
         if (!in) {
             fprintf(stderr, "Input plugin '%s' cannot be loaded\n", tmp);
-            mk_mem_free(tmp);
+            flb_sds_destroy(tmp);
             goto flb_service_conf_end;
         }
-        mk_mem_free(tmp);
+        flb_sds_destroy(tmp);
 
         /* Iterate other properties */
         mk_list_foreach(h_prop, &section->entries) {
@@ -511,10 +512,10 @@ static int flb_service_conf(struct flb_config *config, char *file)
         mk_mem_free(name);
         if (!out) {
             fprintf(stderr, "Output plugin '%s' cannot be loaded\n", tmp);
-            mk_mem_free(tmp);
+            flb_sds_destroy(tmp);
             goto flb_service_conf_end;
         }
-        mk_mem_free(tmp);
+        flb_sds_destroy(tmp);
 
         /* Iterate other properties */
         mk_list_foreach(h_prop, &section->entries) {
@@ -543,7 +544,7 @@ static int flb_service_conf(struct flb_config *config, char *file)
         /* Create an instace of the plugin */
         tmp = flb_env_var_translate(config->env, name);
         filter = flb_filter_new(config, tmp, NULL);
-        mk_mem_free(tmp);
+        flb_sds_destroy(tmp);
         mk_mem_free(name);
         if (!filter) {
             flb_service_conf_err(section, "Name");
@@ -564,7 +565,7 @@ static int flb_service_conf(struct flb_config *config, char *file)
 
     ret = 0;
 
- flb_service_conf_end:
+flb_service_conf_end:
     if (fconf != NULL) {
         mk_rconf_free(fconf);
     }
@@ -610,6 +611,9 @@ int main(int argc, char **argv)
         { "prop",            required_argument, NULL, 'p' },
         { "plugin",          required_argument, NULL, 'e' },
         { "tag",             required_argument, NULL, 't' },
+#ifdef FLB_HAVE_STREAM_PROCESSOR
+        { "sp-task",         required_argument, NULL, 'T' },
+#endif
         { "version",         no_argument      , NULL, 'V' },
         { "verbose",         no_argument      , NULL, 'v' },
         { "quiet",           no_argument      , NULL, 'q' },
@@ -659,7 +663,7 @@ int main(int argc, char **argv)
     /* Parse the command line options */
     while ((opt = getopt_long(argc, argv,
                               "b:c:df:i:m:o:R:F:p:e:"
-                              "t:l:vqVhL:HP:s:S",
+                              "t:T:l:vqVhL:HP:s:S",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
@@ -674,18 +678,12 @@ int main(int argc, char **argv)
             config->daemon = FLB_TRUE;
             break;
 #endif
-
-#ifdef FLB_HAVE_PROXY_GO
         case 'e':
-            if (!flb_plugin_proxy_create(optarg, 0, config)) {
+            ret = flb_plugin_load_router(optarg, config);
+            if (ret == -1) {
                 exit(EXIT_FAILURE);
             }
             break;
-#else
-        case 'e':
-            fprintf(stderr, "Error: proxy Golang plugin not available\n");
-            exit(EXIT_FAILURE);
-#endif
         case 'f':
             config->flush = atof(optarg);
             break;
@@ -748,6 +746,11 @@ int main(int argc, char **argv)
                 flb_input_set_property(in, "tag", optarg);
             }
             break;
+#ifdef FLB_HAVE_STREAM_PROCESSOR
+        case 'T':
+            flb_slist_add(&config->stream_processor_tasks, optarg);
+            break;
+#endif
         case 'h':
             flb_help(EXIT_SUCCESS, config);
             break;

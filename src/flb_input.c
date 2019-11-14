@@ -33,10 +33,11 @@
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_storage.h>
+#include <fluent-bit/flb_kv.h>
 
 #define protcmp(a, b)  strncasecmp(a, b, strlen(a))
 
-static int check_protocol(char *prot, char *output)
+static int check_protocol(const char *prot, const char *output)
 {
     int len;
 
@@ -61,7 +62,7 @@ static inline int instance_id(struct flb_input_plugin *p,
 
     mk_list_foreach(head, &config->inputs) {
         entry = mk_list_entry(head, struct flb_input_instance, _head);
-        if (entry->p == p) {
+        if (entry->id == c) {
             c++;
         }
     }
@@ -87,7 +88,7 @@ static int collector_id(struct flb_input_instance *in)
 
 /* Create an input plugin instance */
 struct flb_input_instance *flb_input_new(struct flb_config *config,
-                                         char *input, void *data,
+                                         const char *input, void *data,
                                          int public_only)
 {
     int id;
@@ -118,7 +119,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         /* Create plugin instance */
         instance = flb_malloc(sizeof(struct flb_input_instance));
         if (!instance) {
-            perror("malloc");
+            flb_errno();
             return NULL;
         }
         instance->config = config;
@@ -136,6 +137,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->p        = plugin;
         instance->tag      = NULL;
         instance->tag_len  = 0;
+        instance->routable = FLB_TRUE;
         instance->context  = NULL;
         instance->data     = data;
         instance->threaded = FLB_FALSE;
@@ -151,9 +153,11 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         mk_list_init(&instance->routes);
         mk_list_init(&instance->tasks);
         mk_list_init(&instance->chunks);
-        mk_list_init(&instance->properties);
         mk_list_init(&instance->collectors);
         mk_list_init(&instance->threads);
+
+        /* Initialize properties list */
+        flb_kv_init(&instance->properties);
 
         /* Plugin use networking */
         if (plugin->flags & FLB_INPUT_NET) {
@@ -180,7 +184,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
     return instance;
 }
 
-static inline int prop_key_check(char *key, char *kv, int k_len)
+static inline int prop_key_check(const char *key, const char *kv, int k_len)
 {
     int len;
 
@@ -194,18 +198,19 @@ static inline int prop_key_check(char *key, char *kv, int k_len)
 }
 
 /* Override a configuration property for the given input_instance plugin */
-int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
+int flb_input_set_property(struct flb_input_instance *in,
+                           const char *k, const char *v)
 {
     int len;
     ssize_t limit;
-    char *tmp;
-    struct flb_config_prop *prop;
+    flb_sds_t tmp = NULL;
+    struct flb_kv *kv;
 
     len = strlen(k);
     tmp = flb_env_var_translate(in->config->env, v);
     if (tmp) {
-        if (strlen(tmp) == 0) {
-            flb_free(tmp);
+        if (flb_sds_len(tmp) == 0) {
+            flb_sds_destroy(tmp);
             tmp = NULL;
         }
     }
@@ -213,14 +218,18 @@ int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
     /* Check if the key is a known/shared property */
     if (prop_key_check("tag", k, len) == 0 && tmp) {
         in->tag     = tmp;
-        in->tag_len = strlen(tmp);
+        in->tag_len = flb_sds_len(tmp);
+    }
+    else if (prop_key_check("routable", k, len) == 0 && tmp) {
+        in->routable = flb_utils_bool(tmp);
+        flb_sds_destroy(tmp);
     }
     else if (prop_key_check("alias", k, len) == 0 && tmp) {
         in->alias = tmp;
     }
     else if (prop_key_check("mem_buf_limit", k, len) == 0 && tmp) {
         limit = flb_utils_size_to_bytes(tmp);
-        flb_free(tmp);
+        flb_sds_destroy(tmp);
         if (limit == -1) {
             return -1;
         }
@@ -235,38 +244,38 @@ int flb_input_set_property(struct flb_input_instance *in, char *k, char *v)
     else if (prop_key_check("port", k, len) == 0) {
         if (tmp) {
             in->host.port = atoi(tmp);
-            flb_free(tmp);
+            flb_sds_destroy(tmp);
         }
     }
     else if (prop_key_check("ipv6", k, len) == 0 && tmp) {
         in->host.ipv6 = flb_utils_bool(tmp);
-        flb_free(tmp);
+        flb_sds_destroy(tmp);
     }
     else {
-        /* Append any remaining configuration key to prop list */
-        prop = flb_malloc(sizeof(struct flb_config_prop));
-        if (!prop) {
+        /*
+         * Create the property, we don't pass the value since we will
+         * map it directly to avoid an extra memory allocation.
+         */
+        kv = flb_kv_item_create(&in->properties, (char *) k, NULL);
+        if (!kv) {
             if (tmp) {
-                flb_free(tmp);
+                flb_sds_destroy(tmp);
             }
             return -1;
         }
-
-        prop->key = flb_strdup(k);
-        prop->val = tmp;
-        mk_list_add(&prop->_head, &in->properties);
+        kv->val = tmp;
     }
 
     return 0;
 }
 
-char *flb_input_get_property(char *key, struct flb_input_instance *i)
+const char *flb_input_get_property(const char *key, struct flb_input_instance *i)
 {
     return flb_config_prop_get(key, &i->properties);
 }
 
 /* Return an instance name or alias */
-char *flb_input_name(struct flb_input_instance *in)
+const char *flb_input_name(struct flb_input_instance *in)
 {
     if (in->alias) {
         return in->alias;
@@ -275,39 +284,28 @@ char *flb_input_name(struct flb_input_instance *in)
     return in->name;
 }
 
-static void flb_input_free(struct flb_input_instance *in)
+void flb_input_instance_free(struct flb_input_instance *in)
 {
-    struct mk_list *head_prop;
-    struct flb_config_prop *prop;
-    struct mk_list *tmp_prop;
-
     if (in->alias) {
-        flb_free(in->alias);
+        flb_sds_destroy(in->alias);
     }
 
     /* Remove URI context */
     if (in->host.uri) {
         flb_uri_destroy(in->host.uri);
     }
-    flb_free(in->host.name);
-    flb_free(in->host.address);
+
+    flb_sds_destroy(in->host.name);
+    flb_sds_destroy(in->host.address);
 
     /* release the tag if any */
-    flb_free(in->tag);
+    flb_sds_destroy(in->tag);
 
     /* Let the engine remove any pending task */
     flb_engine_destroy_tasks(&in->tasks);
 
     /* release properties */
-    mk_list_foreach_safe(head_prop, tmp_prop, &in->properties) {
-        prop = mk_list_entry(head_prop, struct flb_config_prop, _head);
-
-        flb_free(prop->key);
-        flb_free(prop->val);
-
-        mk_list_del(&prop->_head);
-        flb_free(prop);
-    }
+    flb_kv_release(&in->properties);
 
     /* Remove metrics */
 #ifdef FLB_HAVE_METRICS
@@ -325,11 +323,55 @@ static void flb_input_free(struct flb_input_instance *in)
     flb_free(in);
 }
 
+int flb_input_instance_init(struct flb_input_instance *in,
+                            struct flb_config *config)
+{
+    int ret;
+    const char *name;
+    struct flb_input_plugin *p = in->p;
+
+    /* Skip pseudo input plugins */
+    if (!p) {
+        return 0;
+    }
+
+    /* Metrics */
+#ifdef FLB_HAVE_METRICS
+    /* Get name or alias for the instance */
+    name = flb_input_name(in);
+
+    /* Create the metrics context */
+    in->metrics = flb_metrics_create(name);
+    if (in->metrics) {
+        flb_metrics_add(FLB_METRIC_N_RECORDS, "records", in->metrics);
+        flb_metrics_add(FLB_METRIC_N_BYTES, "bytes", in->metrics);
+    }
+#endif
+
+    /* Initialize the input */
+    if (p->cb_init) {
+        /* Sanity check: all non-dynamic tag input plugins must have a tag */
+        if (!in->tag) {
+            flb_input_set_property(in, "tag", in->name);
+        }
+
+        ret = p->cb_init(in, config, in->data);
+        if (ret != 0) {
+            flb_error("Failed initialize input %s",
+                      in->name);
+            flb_input_instance_free(in);
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+
 /* Initialize all inputs */
 void flb_input_initialize_all(struct flb_config *config)
 {
     int ret;
-    char *name;
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_input_instance *in;
@@ -348,32 +390,10 @@ void flb_input_initialize_all(struct flb_config *config)
             continue;
         }
 
-        /* Metrics */
-#ifdef FLB_HAVE_METRICS
-        /* Get name or alias for the instance */
-        name = flb_input_name(in);
-
-        /* Create the metrics context */
-        in->metrics = flb_metrics_create(name);
-        if (in->metrics) {
-            flb_metrics_add(FLB_METRIC_N_RECORDS, "records", in->metrics);
-            flb_metrics_add(FLB_METRIC_N_BYTES, "bytes", in->metrics);
-        }
-#endif
-
-        /* Initialize the input */
-        if (p->cb_init) {
-            /* Sanity check: all non-dynamic tag input plugins must have a tag */
-            if (!in->tag) {
-                flb_input_set_property(in, "tag", in->name);
-            }
-
-            ret = p->cb_init(in, config, in->data);
-            if (ret != 0) {
-                flb_error("Failed initialize input %s",
-                          in->name);
-                flb_input_free(in);
-            }
+        /* Initialize instance */
+        ret = flb_input_instance_init(in, config);
+        if (ret == -1) {
+            /* do nothing, it's ok if it fails */
         }
     }
 }
@@ -398,6 +418,16 @@ void flb_input_pre_run_all(struct flb_config *config)
     }
 }
 
+void flb_input_instance_exit(struct flb_input_instance *in,
+                             struct flb_config *config)
+{
+    struct flb_input_plugin *p;
+
+    p = in->p;
+    if (p->cb_exit && in->context) {
+        p->cb_exit(in->context, config);
+    }
+}
 
 /* Invoke all exit input callbacks */
 void flb_input_exit_all(struct flb_config *config)
@@ -415,10 +445,8 @@ void flb_input_exit_all(struct flb_config *config)
             continue;
         }
 
-        if (p->cb_exit && in->context) {
-            p->cb_exit(in->context, config);
-        }
-        flb_input_free(in);
+        flb_input_instance_exit(in, config);
+        flb_input_instance_free(in);
     }
 }
 
@@ -490,6 +518,11 @@ int flb_input_set_collector_time(struct flb_input_instance *in,
     struct flb_input_collector *collector;
 
     collector = flb_malloc(sizeof(struct flb_input_collector));
+    if (!collector) {
+        flb_errno();
+        return -1;
+    }
+
     collector->id          = collector_id(in);
     collector->type        = FLB_COLLECT_TIME;
     collector->cb_collect  = cb_collect;
@@ -515,6 +548,11 @@ int flb_input_set_collector_event(struct flb_input_instance *in,
     struct flb_input_collector *collector;
 
     collector = flb_malloc(sizeof(struct flb_input_collector));
+    if (!collector) {
+        flb_errno();
+        return -1;
+    }
+
     collector->id          = collector_id(in);
     collector->type        = FLB_COLLECT_FD_EVENT;
     collector->cb_collect  = cb_collect;
@@ -763,6 +801,11 @@ int flb_input_set_collector_socket(struct flb_input_instance *in,
     struct flb_input_collector *collector;
 
     collector = flb_malloc(sizeof(struct flb_input_collector));
+    if (!collector) {
+        flb_errno();
+        return -1;
+    }
+
     collector->type        = FLB_COLLECT_FD_SERVER;
     collector->cb_collect  = cb_new_connection;
     collector->fd_event    = fd;

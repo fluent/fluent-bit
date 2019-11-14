@@ -53,9 +53,11 @@ struct flb_metrics {
     struct mk_list list;   /* Head of metrics list */
 };
 
-struct flb_metrics *flb_metrics_create(char *title);
+struct flb_metrics *flb_metrics_create(const char *title);
+int flb_metrics_title(const char *title, struct flb_metrics *metrics);
+
 struct flb_metric *flb_metrics_get_id(int id, struct flb_metrics *metrics);
-int flb_metrics_add(int id, char *title, struct flb_metrics *metrics);
+int flb_metrics_add(int id, const char *title, struct flb_metrics *metrics);
 int flb_metrics_sum(int id, size_t val, struct flb_metrics *metrics);
 int flb_metrics_print(struct flb_metrics *metrics);
 int flb_metrics_dump_values(char **out_buf, size_t *out_size,

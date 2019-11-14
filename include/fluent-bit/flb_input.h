@@ -51,6 +51,7 @@
 #define FLB_INPUT_NET          4  /* input address may set host and port   */
 #define FLB_INPUT_THREAD     128  /* plugin requires a thread on callbacks */
 #define FLB_INPUT_PRIVATE    256  /* plugin is not published/exposed       */
+#define FLB_INPUT_NOTAG      512  /* plugin might don't have tags          */
 
 /* Input status */
 #define FLB_INPUT_RUNNING     1
@@ -140,6 +141,9 @@ struct flb_input_instance {
     char *tag;                           /* Input tag for routing        */
     int tag_len;
 
+    /* By default all input instances are 'routable' */
+    int routable;
+
     /*
      * Input network info:
      *
@@ -195,10 +199,6 @@ struct flb_input_instance {
      * some specific data from it caller.
      */
     void *data;
-
-#ifdef FLB_HAVE_STATS
-    int stats_fd;
-#endif
 
     struct mk_list _head;                /* link to config->inputs     */
     struct mk_list routes;               /* flb_router_path's list     */
@@ -346,8 +346,6 @@ struct flb_thread *flb_input_thread(struct flb_input_instance *i_ins,
     return th;
 }
 
-#if defined FLB_HAVE_FLUSH_LIBCO
-
 struct flb_libco_in_params {
     struct flb_config *config;
     struct flb_input_collector *coll;
@@ -368,7 +366,7 @@ static FLB_INLINE void input_params_set(struct flb_thread *th,
     co_switch(th->callee);
 }
 
-static FLB_INLINE void input_pre_cb_collect()
+static FLB_INLINE void input_pre_cb_collect(void)
 {
     struct flb_input_collector *coll = libco_in_param.coll;
     struct flb_config *config = libco_in_param.config;
@@ -404,8 +402,6 @@ struct flb_thread *flb_input_thread_collect(struct flb_input_collector *coll,
     return th;
 }
 
-#endif
-
 /*
  * This function is used by the output plugins to return. It's mandatory
  * as it will take care to signal the event loop letting know the flush
@@ -435,7 +431,7 @@ static inline void flb_input_return(struct flb_thread *th) {
      * We put together the return value with the task_id on the 32 bits at right
      */
     val = FLB_BITS_U64_SET(3 /* FLB_ENGINE_IN_THREAD */, in_th->id);
-    n = flb_pipe_w(in_th->config->ch_manager[1], &val, sizeof(val));
+    n = flb_pipe_w(in_th->config->ch_manager[1], (void *) &val, sizeof(val));
     if (n == -1) {
         flb_errno();
     }
@@ -460,10 +456,11 @@ static inline void FLB_INPUT_RETURN()
 
 int flb_input_register_all(struct flb_config *config);
 struct flb_input_instance *flb_input_new(struct flb_config *config,
-                                         char *input, void *data,
+                                         const char *input, void *data,
                                          int public_only);
-int flb_input_set_property(struct flb_input_instance *in, char *k, char *v);
-char *flb_input_get_property(char *key, struct flb_input_instance *i);
+int flb_input_set_property(struct flb_input_instance *in,
+                           const char *k, const char *v);
+const char *flb_input_get_property(const char *key, struct flb_input_instance *i);
 
 int flb_input_check(struct flb_config *config);
 void flb_input_set_context(struct flb_input_instance *in, void *context);
@@ -492,12 +489,18 @@ int flb_input_set_collector_socket(struct flb_input_instance *in,
                                    flb_pipefd_t fd,
                                    struct flb_config *config);
 int flb_input_collector_running(int coll_id, struct flb_input_instance *in);
+int flb_input_instance_init(struct flb_input_instance *in,
+                            struct flb_config *config);
+void flb_input_instance_exit(struct flb_input_instance *in,
+                             struct flb_config *config);
+void flb_input_instance_free(struct flb_input_instance *in);
+
 void flb_input_initialize_all(struct flb_config *config);
 void flb_input_pre_run_all(struct flb_config *config);
 void flb_input_exit_all(struct flb_config *config);
 
 void *flb_input_flush(struct flb_input_instance *i_ins, size_t *size);
 int flb_input_pause_all(struct flb_config *config);
-char *flb_input_name(struct flb_input_instance *in);
+const char *flb_input_name(struct flb_input_instance *in);
 
 #endif

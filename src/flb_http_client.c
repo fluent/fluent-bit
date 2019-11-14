@@ -28,6 +28,7 @@
  * - Use upstream connections.
  * - Support 'retry' in case the HTTP server timeouts a connection.
  * - Get return Status, Headers and Body content if found.
+ * - If Upstream supports keepalive, adjust headers
  */
 
 #define _GNU_SOURCE
@@ -54,8 +55,8 @@ static int header_available(struct flb_http_client *c, int bytes)
 
 /* Try to find a header value in the buffer */
 static int header_lookup(struct flb_http_client *c,
-                         char *header, int header_len,
-                         char **out_val, int *out_len)
+                         const char *header, int header_len,
+                         const char **out_val, int *out_len)
 {
     char *p;
     char *crlf;
@@ -98,7 +99,7 @@ static int check_chunked_encoding(struct flb_http_client *c)
 {
     int ret;
     int len;
-    char *header = NULL;
+    const char *header = NULL;
 
     ret = header_lookup(c, "Transfer-Encoding: ", 19,
                         &header, &len);
@@ -123,7 +124,7 @@ static int check_content_length(struct flb_http_client *c)
 {
     int ret;
     int len;
-    char *header;
+    const char *header;
     char tmp[256];
 
     if (c->resp.status == 204) {
@@ -365,14 +366,14 @@ static int process_data(struct flb_http_client *c)
     return FLB_HTTP_MORE;
 }
 
-static int proxy_parse(char *proxy, struct flb_http_client *c)
+static int proxy_parse(const char *proxy, struct flb_http_client *c)
 {
     int len;
     int port;
     int off = 0;
-    char *s;
-    char *e;
-    char *host;
+    const char *s;
+    const char *e;
+    const char *host;
 
     len = strlen(proxy);
     if (len < 7) {
@@ -429,10 +430,10 @@ static int proxy_parse(char *proxy, struct flb_http_client *c)
 }
 
 struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
-                                        int method, char *uri,
-                                        char *body, size_t body_len,
-                                        char *host, int port,
-                                        char *proxy, int flags)
+                                        int method, const char *uri,
+                                        const char *body, size_t body_len,
+                                        const char *host, int port,
+                                        const char *proxy, int flags)
 {
     int ret;
     char *buf = NULL;
@@ -513,6 +514,11 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
     c->header_size = FLB_HTTP_BUF_SIZE;
     c->header_len  = ret;
     c->flags       = flags;
+
+    /* Is Upstream connection using keepalive mode ? */
+    if (u_conn->u->flags & FLB_IO_TCP_KA) {
+        c->flags |= FLB_HTTP_KA;
+    }
 
     /* Response */
     c->resp.content_length = -1;
@@ -653,12 +659,16 @@ int flb_http_buffer_increase(struct flb_http_client *c, size_t size,
 
 /* Append a custom HTTP header to the request */
 int flb_http_add_header(struct flb_http_client *c,
-                        char *key, size_t key_len,
-                        char *val, size_t val_len)
+                        const char *key, size_t key_len,
+                        const char *val, size_t val_len)
 {
     int required;
     int new_size;
     char *tmp;
+
+    if (key_len < 1 || val_len < 1) {
+        return -1;
+    }
 
     /*
      * The new header will need enough space in the buffer:
@@ -679,7 +689,7 @@ int flb_http_add_header(struct flb_http_client *c,
         }
         tmp = flb_realloc(c->header_buf, new_size);
         if (!tmp) {
-            perror("realloc");
+            flb_errno();
             return -1;
         }
         c->header_buf  = tmp;
@@ -707,7 +717,35 @@ int flb_http_add_header(struct flb_http_client *c,
     return 0;
 }
 
-int flb_http_basic_auth(struct flb_http_client *c, char *user, char *passwd)
+static int flb_http_keepalive(struct flb_http_client *c)
+{
+    /* validate keepalive mode */
+    if ((c->flags & FLB_HTTP_KA) == 0) {
+        return -1;
+    }
+
+    /* append header */
+    return flb_http_add_header(c,
+                               FLB_HTTP_HEADER_CONNECTION,
+                               sizeof(FLB_HTTP_HEADER_CONNECTION) - 1,
+                               FLB_HTTP_HEADER_KA,
+                               sizeof(FLB_HTTP_HEADER_KA) - 1);
+}
+
+/* Adds a header specifying that the payload is compressed with gzip */
+int flb_http_set_content_encoding_gzip(struct flb_http_client *c)
+{
+    int ret;
+
+    ret = flb_http_add_header(c,
+                              FLB_HTTP_HEADER_CONTENT_ENCODING,
+                              sizeof(FLB_HTTP_HEADER_CONTENT_ENCODING) - 1,
+                              "gzip", 4);
+    return ret;
+}
+
+int flb_http_basic_auth(struct flb_http_client *c,
+                        const char *user, const char *passwd)
 {
     int ret;
     int len_u;
@@ -770,6 +808,9 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
     size_t bytes_header = 0;
     size_t bytes_body = 0;
     char *tmp;
+
+    /* Try to add keep alive header */
+    flb_http_keepalive(c);
 
     /* check enough space for the ending CRLF */
     if (header_available(c, crlf) != 0) {

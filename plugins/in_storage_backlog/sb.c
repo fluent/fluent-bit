@@ -46,6 +46,7 @@ struct flb_sb {
 static int cb_queue_chunks(struct flb_input_instance *in,
                            struct flb_config *config, void *data)
 {
+    int ret;
     ssize_t size;
     size_t total = 0;
     struct mk_list *tmp;
@@ -69,6 +70,15 @@ static int cb_queue_chunks(struct flb_input_instance *in,
     mk_list_foreach_safe(head, tmp, &sb->backlog) {
         sbc = mk_list_entry(head, struct sb_chunk, _head);
 
+        /*
+         * All chunks on this backlog are 'file' based, always try to set
+         * them up. It could fail due to max_chunks_up limits.
+         */
+        ret = cio_chunk_up(sbc->chunk);
+        if (ret == -1) {
+            continue;
+        }
+
         /* get the number of bytes being used by the chunk */
         size = cio_chunk_get_real_size(sbc->chunk);
         if (size <= 0) {
@@ -76,13 +86,14 @@ static int cb_queue_chunks(struct flb_input_instance *in,
         }
 
         void *ch = sbc->chunk;
-        flb_info("[storage_backend] queueing %s:%s",
+        flb_info("[storage_backlog] queueing %s:%s",
                  sbc->stream->name, sbc->chunk->name);
 
         /* Associate this backlog chunk to this instance into the engine */
         ic = flb_input_chunk_map(in, ch);
         if (!ic) {
             flb_error("[storage_backlog] error registering chunk");
+            cio_chunk_down(sbc->chunk);
             continue;
         }
 
@@ -135,13 +146,17 @@ static int sb_prepare_environment(struct flb_sb *sb)
     cio = sb->cio;
     mk_list_foreach(head, &cio->streams) {
         stream = mk_list_entry(head, struct cio_stream, _head);
-        mk_list_foreach(c_head, &stream->files) {
+        mk_list_foreach(c_head, &stream->chunks) {
             chunk = mk_list_entry(c_head, struct cio_chunk, _head);
             ret = sb_append_chunk(chunk, stream, sb);
             if (ret == -1) {
                 flb_error("[storage_backlog] could not enqueue %s/%s",
                           stream->name, chunk->name);
                 continue;
+            }
+
+            if (cio_chunk_is_up(chunk) == CIO_TRUE) {
+                cio_chunk_down(chunk);
             }
         }
     }

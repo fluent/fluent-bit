@@ -4,6 +4,7 @@ add_definitions(-DFLB_CORE=1)
 set(src
   ${src}
   flb_mp.c
+  flb_kv.c
   flb_api.c
   flb_lib.c
   flb_log.c
@@ -11,6 +12,7 @@ set(src
   flb_uri.c
   flb_hash.c
   flb_pack.c
+  flb_pack_gelf.c
   flb_sds.c
   flb_pipe.c
   flb_meta.c
@@ -20,8 +22,10 @@ set(src
   flb_filter.c
   flb_output.c
   flb_config.c
+  flb_config_map.c
   flb_network.c
   flb_utils.c
+  flb_slist.c
   flb_engine.c
   flb_engine_dispatch.c
   flb_task.c
@@ -36,17 +40,17 @@ set(src
   flb_worker.c
   flb_time.c
   flb_sosreport.c
+  flb_sha512.c
+  flb_plugin.c
+  flb_gzip.c
   )
 
-include_directories(
-  .
-  ../lib/
-  ../lib/jsmn
-  ../lib/msgpack-c-0b7cabd/include
-  ../lib/monkey/include/
-  ../lib/luajit-2.0.5/src/
-  ${extra_headers}
+if (CMAKE_SYSTEM_NAME MATCHES "Windows")
+set(src
+  ${src}
+  flb_dlfcn_win32.c
   )
+endif()
 
 if(FLB_PARSER)
   set(src
@@ -104,6 +108,10 @@ set(extra_libs
   ${extra_libs}
   "co")
 
+set(extra_libs
+  ${extra_libs}
+  "rbtree")
+
 if(FLB_JEMALLOC)
   set(extra_libs
     ${extra_libs}
@@ -150,6 +158,7 @@ if(NOT FLB_SYSTEM_STRPTIME)
     )
 endif()
 
+
 include(CheckSymbolExists)
 check_symbol_exists(accept4 "sys/socket.h" HAVE_ACCEPT4)
 
@@ -157,6 +166,7 @@ check_symbol_exists(accept4 "sys/socket.h" HAVE_ACCEPT4)
 if(CMAKE_SYSTEM_NAME MATCHES "Windows")
   set(FLB_DEPS
     "ws2_32.lib"
+    "crypt32.lib"
     )
 else()
   set(FLB_DEPS
@@ -172,6 +182,22 @@ if(CMAKE_SYSTEM_NAME MATCHES "Linux")
     ${FLB_DEPS}
     rt
     )
+endif()
+
+
+# Record Accessor
+if(FLB_RECORD_ACCESSOR)
+  set(src
+    ${src}
+    "flb_record_accessor.c"
+    "flb_ra_key.c"
+    )
+  add_subdirectory(record_accessor)
+endif()
+
+# Stream Processor
+if(FLB_STREAM_PROCESSOR)
+  add_subdirectory(stream_processor)
 endif()
 
 # HTTP Server
@@ -201,24 +227,56 @@ set(FLB_DEPS
   mk_core
   jsmn
   msgpackc-static
+  mpack-static
   chunkio-static
+  miniz
   ${FLB_PLUGINS}
   ${FLB_PROXY_PLUGINS}
   ${extra_libs}
   )
 
+# UTF8 Encoding
+if(FLB_UTF8_ENCODER)
+set(FLB_DEPS
+  ${FLB_DEPS}
+  tutf8e
+  )
+endif()
+
+# Record Accessor
+if(FLB_RECORD_ACCESSOR)
+  set(FLB_DEPS
+    ${FLB_DEPS}
+    flb-ra-parser
+    )
+endif()
+
+# Stream Processor
+if(FLB_STREAM_PROCESSOR)
+  set(FLB_DEPS
+    ${FLB_DEPS}
+    flb-sp
+    )
+endif()
+
 # Shared Library
 if(FLB_SHARED_LIB)
   add_library(fluent-bit-shared SHARED ${src})
   add_sanitizers(fluent-bit-shared)
-  target_link_libraries(fluent-bit-shared ${FLB_DEPS} -lpthread)
   set_target_properties(fluent-bit-shared
     PROPERTIES OUTPUT_NAME fluent-bit)
 
+  # Windows doesn't provide pthread (see winpthreads.c in mk_core).
+  if(CMAKE_SYSTEM_NAME MATCHES "Windows")
+    target_link_libraries(fluent-bit-shared ${FLB_DEPS})
+  else()
+    target_link_libraries(fluent-bit-shared ${FLB_DEPS} -lpthread)
+  endif()
+
   # Library install routines
   install(TARGETS fluent-bit-shared
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    LIBRARY DESTINATION ${FLB_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${FLB_INSTALL_BINDIR})
 endif()
 
 # Static Library
@@ -265,7 +323,7 @@ if(FLB_BINARY)
     PROPERTIES
     OUTPUT_NAME ${FLB_OUT_NAME}
     ENABLE_EXPORTS ON)
-  install(TARGETS fluent-bit-bin RUNTIME DESTINATION ${CMAKE_INSTALL_FULL_BINDIR})
+  install(TARGETS fluent-bit-bin RUNTIME DESTINATION ${FLB_INSTALL_BINDIR})
 
   # Detect init system, install upstart, systemd or init.d script
   if(IS_DIRECTORY /lib/systemd/system)
@@ -275,7 +333,7 @@ if(FLB_BINARY)
       ${FLB_SYSTEMD_SCRIPT}
       )
     install(FILES ${FLB_SYSTEMD_SCRIPT} DESTINATION /lib/systemd/system)
-    install(DIRECTORY DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/")
+    install(DIRECTORY DESTINATION ${FLB_INSTALL_CONFDIR})
   elseif(IS_DIRECTORY /usr/share/upstart)
     set(FLB_UPSTART_SCRIPT "${PROJECT_SOURCE_DIR}/init/${FLB_OUT_NAME}.conf")
     configure_file(
@@ -283,22 +341,22 @@ if(FLB_BINARY)
       ${FLB_UPSTART_SCRIPT}
       )
     install(FILES ${FLB_UPSTART_SCRIPT} DESTINATION /etc/init)
-    install(DIRECTORY DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/")
+    install(DIRECTORY DESTINATION ${FLB_INSTALL_CONFDIR})
   else()
     # FIXME: should we support Sysv init script ?
   endif()
 
   install(FILES
     "${PROJECT_SOURCE_DIR}/conf/fluent-bit.conf"
-    DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/"
+    DESTINATION ${FLB_INSTALL_CONFDIR}
     RENAME "${FLB_OUT_NAME}.conf")
 
   install(FILES
     "${PROJECT_SOURCE_DIR}/conf/parsers.conf"
-    DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/")
+    DESTINATION ${FLB_INSTALL_CONFDIR})
 
   install(FILES
     "${PROJECT_SOURCE_DIR}/conf/plugins.conf"
-    DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/")
+    DESTINATION ${FLB_INSTALL_CONFDIR})
 
 endif()

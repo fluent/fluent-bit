@@ -40,9 +40,9 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
 {
     int off;
     int ret;
-    char *url;
-    char *tmp;
-    char *p;
+    const char *url;
+    const char *tmp;
+    const char *p;
     struct flb_kube *ctx;
 
     ctx = flb_calloc(1, sizeof(struct flb_kube));
@@ -52,6 +52,8 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
     }
     ctx->config = config;
     ctx->merge_log = FLB_FALSE;
+    ctx->keep_log = FLB_TRUE;
+    ctx->labels = FLB_TRUE;
     ctx->annotations = FLB_TRUE;
     ctx->dummy_meta = FLB_FALSE;
     ctx->tls_debug = -1;
@@ -101,6 +103,18 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
         ctx->merge_log = flb_utils_bool(tmp);
     }
 
+    /* Merge Parser */
+    tmp = flb_filter_get_property("merge_parser", i);
+    if (tmp) {
+        ctx->merge_parser = flb_parser_get(tmp, config);
+        if (!ctx->merge_parser) {
+            flb_error("[filter_kube] parser '%s' is not registered", tmp);
+        }
+    }
+    else {
+        ctx->merge_parser = NULL;
+    }
+
     /* Merge processed log under a new key */
     tmp = flb_filter_get_property("merge_log_key", i);
     if (tmp) {
@@ -115,6 +129,12 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
     }
     else {
         ctx->merge_log_trim = FLB_TRUE;
+    }
+
+    /* Keep original log key after successful merging/parsing */
+    tmp = flb_filter_get_property("keep_log", i);
+    if (tmp) {
+        ctx->keep_log = flb_utils_bool(tmp);
     }
 
     /* Get Kubernetes API server */
@@ -181,6 +201,15 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
         }
     }
 
+    /* Kubernetes Tag prefix */
+    tmp = flb_filter_get_property("kube_tag_prefix", i);
+    if (tmp) {
+        ctx->kube_tag_prefix = flb_sds_create(tmp);
+    }
+    else {
+        ctx->kube_tag_prefix = flb_sds_create(FLB_KUBE_TAG_PREFIX);
+    }
+
     /* Kubernetes Token file */
     tmp = flb_filter_get_property("kube_token_file", i);
     if (!tmp) {
@@ -201,6 +230,12 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
     if (!ctx->hash_table) {
         flb_kube_conf_destroy(ctx);
         return NULL;
+    }
+
+    /* Include Kubernetes Labels in the final record */
+    tmp = flb_filter_get_property("labels", i);
+    if (tmp) {
+        ctx->labels = flb_utils_bool(tmp);
     }
 
     /* Include Kubernetes Annotations in the final record */
@@ -312,6 +347,8 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
     if (ctx->merge_log_key) {
         flb_free(ctx->merge_log_key);
     }
+
+    flb_sds_destroy(ctx->kube_tag_prefix);
 
     /* Destroy regex content only if a parser was not defined */
     if (ctx->parser == NULL && ctx->regex) {

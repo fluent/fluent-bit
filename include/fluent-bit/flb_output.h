@@ -34,6 +34,7 @@
 #include <fluent-bit/flb_bits.h>
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_task.h>
@@ -49,6 +50,7 @@
 #define FLB_OUTPUT_NET          32  /* output address may set host and port */
 #define FLB_OUTPUT_PLUGIN_CORE   0
 #define FLB_OUTPUT_PLUGIN_PROXY  1
+#define FLB_OUTPUT_KA_TIMEOUT   30
 
 struct flb_output_instance;
 
@@ -67,6 +69,8 @@ struct flb_output_plugin {
 
     /* Plugin description */
     char *description;
+
+    struct flb_config_map *config_map;
 
     /*
      * Output network info:
@@ -92,8 +96,8 @@ struct flb_output_plugin {
     int (*cb_pre_run) (void *, struct flb_config *);
 
     /* Flush callback */
-    void (*cb_flush) (void *, size_t,
-                      char *, int,
+    void (*cb_flush) (const void *, size_t,
+                      const char *, int,
                       struct flb_input_instance *,
                       void *,
                       struct flb_config *);
@@ -114,6 +118,7 @@ struct flb_output_plugin {
  */
 struct flb_output_instance {
     uint64_t mask_id;                    /* internal bitmask for routing */
+    int id;                              /* instance id                  */
     char name[32];                       /* numbered name (cpu -> cpu.0) */
     char *alias;                         /* alias name for the instance  */
     int flags;                           /* inherit flags from plugin    */
@@ -131,6 +136,7 @@ struct flb_output_instance {
 #ifdef FLB_HAVE_TLS
     int tls_verify;                      /* Verify certs (default: true) */
     int tls_debug;                       /* mbedtls debug level          */
+    char *tls_vhost;                     /* Virtual hostname for SNI     */
     char *tls_ca_path;                   /* Path to certificates         */
     char *tls_ca_file;                   /* CA root cert                 */
     char *tls_crt_file;                  /* Certificate                  */
@@ -154,6 +160,10 @@ struct flb_output_instance {
      *   uri      = extra information that may be used by the plugin
      */
     struct flb_net_host host;
+
+    /* KeepAlive support for networking operations */
+    int keepalive;
+    int keepalive_timeout;
 
     /*
      * Optional data passed to the plugin, this info is useful when
@@ -180,7 +190,24 @@ struct flb_output_instance {
     void *tls;
 #endif
 
-    struct mk_list properties;           /* properties / configuration   */
+    /*
+     * configuration properties: incoming properties set by the caller. This
+     * list is what the instance received by either a configuration file or
+     * through the command line arguments. This list is validated by the
+     * plugin.
+     */
+    struct mk_list  properties;
+
+    /*
+     * configuration map: a new API is landing on Fluent Bit v1.4 that allows
+     * plugins to specify at registration time the allowed configuration
+     * properties and it data types. Config map is an optional API for now
+     * and some plugins will take advantage of it. When the API is used, the
+     * config map will validate the configuration, set default values
+     * and merge the 'properties' (above) into the map.
+     */
+    struct mk_list *config_map;
+
     struct mk_list _head;                /* link to config->inputs       */
 
 #ifdef FLB_HAVE_METRICS
@@ -193,7 +220,7 @@ struct flb_output_instance {
 
 struct flb_output_thread {
     int id;                            /* out-thread ID      */
-    void *buffer;                      /* output buffer      */
+    const void *buffer;                /* output buffer      */
     struct flb_task *task;             /* Parent flb_task    */
     struct flb_config *config;         /* FLB context        */
     struct flb_output_instance *o_ins; /* output instance    */
@@ -249,8 +276,6 @@ static FLB_INLINE void cb_output_thread_destroy(void *data)
     mk_list_del(&out_th->_head);
 }
 
-#if defined FLB_HAVE_FLUSH_LIBCO
-
 /*
  * libco do not support parameters in the entrypoint function due to the
  * complexity of implementation in terms of architecture and compiler, but
@@ -258,9 +283,9 @@ static FLB_INLINE void cb_output_thread_destroy(void *data)
  * that achieve the same stuff.
  */
 struct flb_libco_out_params {
-    void  *data;
+    const void  *data;
     size_t bytes;
-    char *tag;
+    const char *tag;
     int tag_len;
     struct flb_input_instance *i_ins;
     void *out_context;
@@ -272,8 +297,8 @@ struct flb_libco_out_params {
 struct flb_libco_out_params libco_param;
 
 static FLB_INLINE void output_params_set(struct flb_thread *th,
-                              void *data, size_t bytes,
-                              char *tag, int tag_len,
+                              const void *data, size_t bytes,
+                              const char *tag, int tag_len,
                               struct flb_input_instance *i_ins,
                               struct flb_output_plugin *out_plugin,
                               void *out_context, struct flb_config *config)
@@ -292,12 +317,12 @@ static FLB_INLINE void output_params_set(struct flb_thread *th,
     co_switch(th->callee);
 }
 
-static FLB_INLINE void output_pre_cb_flush()
+static FLB_INLINE void output_pre_cb_flush(void)
 {
-    void *data   = libco_param.data;
-    size_t bytes = libco_param.bytes;
-    char *tag    = libco_param.tag;
-    int tag_len  = libco_param.tag_len;
+    const void *data                 = libco_param.data;
+    size_t bytes                     = libco_param.bytes;
+    const char *tag                  = libco_param.tag;
+    int tag_len                      = libco_param.tag_len;
     struct flb_input_instance *i_ins = libco_param.i_ins;
     struct flb_output_plugin *out_p  = libco_param.out_plugin;
     void *out_context                = libco_param.out_context;
@@ -320,8 +345,8 @@ struct flb_thread *flb_output_thread(struct flb_task *task,
                                      struct flb_input_instance *i_ins,
                                      struct flb_output_instance *o_ins,
                                      struct flb_config *config,
-                                     void *buf, size_t size,
-                                     char *tag, int tag_len)
+                                     const void *buf, size_t size,
+                                     const char *tag, int tag_len)
 {
     size_t stack_size;
     struct flb_output_thread *out_th;
@@ -375,41 +400,6 @@ struct flb_thread *flb_output_thread(struct flb_task *task,
     return th;
 }
 
-#elif defined FLB_HAVE_FLUSH_PTHREADS
-
-static FLB_INLINE
-struct flb_thread *flb_output_thread(struct flb_task *task,
-                                     struct flb_input_instance *i_ins,
-                                     struct flb_output_instance *o_ins,
-                                     struct flb_config *config,
-                                     void *buf, size_t size,
-                                     char *tag, int tag_len)
-{
-    struct flb_thread *th;
-
-    th = flb_thread_new();
-    if (!th) {
-        return NULL;
-    }
-
-    th->data = o_ins;
-    th->output_buffer = buf;
-    th->task = task;
-    th->config = config;
-
-    /* pthread reference data */
-    th->pth_cb.buf     = buf;
-    th->pth_cb.size    = size;
-    th->pth_cb.tag     = tag;
-    th->pth_cb.tag_len = tag_len;
-    th->pth_cb.i_ins   = i_ins;
-    th->pth_cb.o_ins   = o_ins;
-
-    return th;
-}
-
-#endif
-
 /*
  * This function is used by the output plugins to return. It's mandatory
  * as it will take care to signal the event loop letting know the flush
@@ -443,7 +433,7 @@ static inline void flb_output_return(int ret, struct flb_thread *th) {
     set = FLB_TASK_SET(ret, task->id, out_th->id);
     val = FLB_BITS_U64_SET(2 /* FLB_ENGINE_TASK */, set);
 
-    n = flb_pipe_w(task->config->ch_manager[1], &val, sizeof(val));
+    n = flb_pipe_w(task->config->ch_manager[1], (void *) &val, sizeof(val));
     if (n == -1) {
         flb_errno();
     }
@@ -486,12 +476,19 @@ static inline void flb_output_return_do(int x)
     flb_output_return_do(x);                                            \
     return
 
-struct flb_output_instance *flb_output_new(struct flb_config *config,
-                                           char *output, void *data);
+static inline int flb_output_config_map_set(struct flb_output_instance *ins,
+                                            void *context)
+{
+    return flb_config_map_set(&ins->properties, ins->config_map, context);
+}
 
-int flb_output_set_property(struct flb_output_instance *out, char *k, char *v);
-char *flb_output_get_property(char *key, struct flb_output_instance *o_ins);
-void flb_output_net_default(char *host, int port,
+struct flb_output_instance *flb_output_new(struct flb_config *config,
+                                           const char *output, void *data);
+
+int flb_output_set_property(struct flb_output_instance *out,
+                            const char *k, const char *v);
+const char *flb_output_get_property(const char *key, struct flb_output_instance *o_ins);
+void flb_output_net_default(const char *host, int port,
                             struct flb_output_instance *o_ins);
 void flb_output_pre_run(struct flb_config *config);
 void flb_output_exit(struct flb_config *config);
@@ -499,5 +496,6 @@ void flb_output_set_context(struct flb_output_instance *ins, void *context);
 int flb_output_instance_destroy(struct flb_output_instance *ins);
 int flb_output_init(struct flb_config *config);
 int flb_output_check(struct flb_config *config);
+int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *ins);
 
 #endif

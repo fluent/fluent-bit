@@ -129,6 +129,14 @@ struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
                   out_th->task->id, retry->attemps);
     }
 
+    /*
+     * This 'retry' was issued by an output plugin, from an Engine perspective
+     * we need to determinate if the source input plugin have some memory
+     * restrictions and if the Storage type is 'filesystem' we need to put
+     * the file content down.
+     */
+    flb_input_chunk_set_up_down(task->ic);
+
     return retry;
 }
 
@@ -181,7 +189,6 @@ static struct flb_task *task_alloc(struct flb_config *config)
 
     /* Initialize minimum variables */
     task->id        = task_id;
-    task->mapped    = FLB_FALSE;
     task->config    = config;
     task->status    = FLB_TASK_NEW;
     task->n_threads = 0;
@@ -195,12 +202,13 @@ static struct flb_task *task_alloc(struct flb_config *config)
 
 /* Create an engine task to handle the output plugin flushing work */
 struct flb_task *flb_task_create(uint64_t ref_id,
-                                 char *buf,
+                                 const char *buf,
                                  size_t size,
                                  struct flb_input_instance *i_ins,
                                  void *ic,
-                                 char *tag_buf, int tag_len,
-                                 struct flb_config *config)
+                                 const char *tag_buf, int tag_len,
+                                 struct flb_config *config,
+                                 int *err)
 {
     int count = 0;
     uint64_t routes_mask = 0;
@@ -209,9 +217,13 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     struct flb_output_instance *o_ins;
     struct mk_list *o_head;
 
+    /* No error status */
+    *err = FLB_FALSE;
+
     /* allocate task */
     task = task_alloc(config);
     if (!task) {
+        *err = FLB_TRUE;
         return NULL;
     }
 
@@ -220,6 +232,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     if (!task->tag) {
         flb_errno();
         flb_free(task);
+        *err = FLB_TRUE;
         return NULL;
     }
     memcpy(task->tag, tag_buf, tag_len);
@@ -232,7 +245,6 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     task->size   = size;
     task->i_ins  = i_ins;
     task->ic     = ic;
-    task->destinations = 0;
     mk_list_add(&task->_head, &i_ins->tasks);
 
     /* Find matching routes for the incoming tag */
@@ -243,6 +255,8 @@ struct flb_task *flb_task_create(uint64_t ref_id,
         if (flb_router_match(task->tag, task->tag_len, o_ins->match
 #ifdef FLB_HAVE_REGEX
                              , o_ins->match_regex
+#else
+                             , NULL
 #endif
                              )) {
             route = flb_malloc(sizeof(struct flb_task_route));
