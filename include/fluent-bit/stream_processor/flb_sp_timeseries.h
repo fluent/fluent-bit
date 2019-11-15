@@ -287,7 +287,7 @@ void cb_forecast_r_calc(struct timeseries *ts, struct flb_sp_cmd_key *cmd_key,
             break;
         }
 
-        if (result < 0) {
+        if (result < 0 || result > maximum_x) {
             result = maximum_x;
         }
     }
