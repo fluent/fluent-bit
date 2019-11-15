@@ -430,6 +430,189 @@ static int get_severity_level(severity_t * s, const msgpack_object * o,
     return -1;
 }
 
+static void create_k8s_resource_labels(struct flb_stackdriver *ctx,
+                                       msgpack_packer * mp_pck,
+                                       const msgpack_object * o)
+{
+    flb_sds_t node_name_val = NULL;
+    flb_sds_t container_name = NULL;
+    flb_sds_t pod_name = NULL;
+    flb_sds_t namespace_name = NULL;
+
+    // get node name
+    msgpack_object node_name;
+    flb_sds_t node_name_key = flb_sds_create("node_name");
+    if (get_msgpack_obj
+        (&node_name, o, node_name_key, flb_sds_len(node_name_key),
+         MSGPACK_OBJECT_STR) == 0) {
+        node_name_val =
+            flb_sds_create(flb_strndup
+                           (node_name.via.str.ptr, node_name.via.str.size));
+    }
+    else {
+        flb_debug("key=%s not found.", node_name_key);
+    }
+
+    // get kubernetes metadata
+    msgpack_object kube_meta;
+    flb_sds_t kube_key = flb_sds_create("kubernetes");
+    if (get_msgpack_obj(&kube_meta, o, kube_key, flb_sds_len(kube_key),
+                        MSGPACK_OBJECT_MAP) == 0) {
+        for (int i = 0; i < kube_meta.via.map.size; i++) {
+            if (strncmp("container_name",
+                        kube_meta.via.map.ptr[i].key.via.str.ptr,
+                        kube_meta.via.map.ptr[i].key.via.str.size) == 0) {
+                container_name =
+                    flb_sds_create(flb_strndup
+                                   (kube_meta.via.map.ptr[i].val.via.str.ptr,
+                                    kube_meta.via.map.ptr[i].val.via.str.size));
+            }
+
+            if (strncmp("pod_name",
+                        kube_meta.via.map.ptr[i].key.via.str.ptr,
+                        kube_meta.via.map.ptr[i].key.via.str.size) == 0) {
+                pod_name =
+                    flb_sds_create(flb_strndup
+                                   (kube_meta.via.map.ptr[i].val.via.str.ptr,
+                                    kube_meta.via.map.ptr[i].val.via.str.size));
+            }
+
+            if (strncmp("namespace_name",
+                        kube_meta.via.map.ptr[i].key.via.str.ptr,
+                        kube_meta.via.map.ptr[i].key.via.str.size) == 0) {
+                namespace_name =
+                    flb_sds_create(flb_strndup
+                                   (kube_meta.via.map.ptr[i].val.via.str.ptr,
+                                    kube_meta.via.map.ptr[i].val.via.str.size));
+            }
+        }
+    }
+    else {
+        flb_debug("key=%s not found.", kube_key);
+    }
+
+    /* resource */
+    msgpack_pack_str(mp_pck, 8);
+    msgpack_pack_str_body(mp_pck, "resource", 8);
+
+    /* type & labels */
+    msgpack_pack_map(mp_pck, 2);
+
+    /* type */
+    msgpack_pack_str(mp_pck, 4);
+    msgpack_pack_str_body(mp_pck, "type", 4);
+
+    if (node_name_val != NULL && container_name == NULL) {
+        /* monitored resource type k8s_node
+         * https://cloud.google.com/monitoring/api/resources#tag_k8s_node */
+        msgpack_pack_str(mp_pck, 8);
+        msgpack_pack_str_body(mp_pck, "k8s_node", 8);
+
+        msgpack_pack_str(mp_pck, 6);
+        msgpack_pack_str_body(mp_pck, "labels", 6);
+
+        /* project_id, location, cluster_name, node_name */
+        msgpack_pack_map(mp_pck, 4);
+
+        msgpack_pack_str(mp_pck, 10);
+        msgpack_pack_str_body(mp_pck, "project_id", 10);
+        msgpack_pack_str(mp_pck, flb_sds_len(ctx->project_id));
+        msgpack_pack_str_body(mp_pck,
+                              ctx->project_id, flb_sds_len(ctx->project_id));
+
+        msgpack_pack_str(mp_pck, 8);
+        msgpack_pack_str_body(mp_pck, "location", 8);
+        msgpack_pack_str(mp_pck, flb_sds_len(ctx->location));
+        msgpack_pack_str_body(mp_pck, ctx->location, flb_sds_len(ctx->location));
+
+        msgpack_pack_str(mp_pck, 12);
+        msgpack_pack_str_body(mp_pck, "cluster_name", 12);
+        msgpack_pack_str(mp_pck, flb_sds_len(ctx->cluster_name));
+        msgpack_pack_str_body(mp_pck, ctx->cluster_name,
+                              flb_sds_len(ctx->cluster_name));
+
+        msgpack_pack_str(mp_pck, 9);
+        msgpack_pack_str_body(mp_pck, "node_name", 9);
+        msgpack_pack_str(mp_pck, flb_sds_len(node_name_val));
+        msgpack_pack_str_body(mp_pck, node_name_val, flb_sds_len(node_name_val));
+
+    }
+    else if (container_name != NULL && pod_name != NULL) {
+        /* monitored resource type k8s_container
+         * https://cloud.google.com/monitoring/api/resources#tag_k8s_container */
+        msgpack_pack_str(mp_pck, 13);
+        msgpack_pack_str_body(mp_pck, "k8s_container", 13);
+
+        msgpack_pack_str(mp_pck, 6);
+        msgpack_pack_str_body(mp_pck, "labels", 6);
+
+        /* project_id, location, cluster_name, container_name, pod_name, namespace_name */
+        msgpack_pack_map(mp_pck, 6);
+
+        msgpack_pack_str(mp_pck, 10);
+        msgpack_pack_str_body(mp_pck, "project_id", 10);
+        msgpack_pack_str(mp_pck, flb_sds_len(ctx->project_id));
+        msgpack_pack_str_body(mp_pck,
+                              ctx->project_id, flb_sds_len(ctx->project_id));
+
+        msgpack_pack_str(mp_pck, 8);
+        msgpack_pack_str_body(mp_pck, "location", 8);
+        msgpack_pack_str(mp_pck, flb_sds_len(ctx->location));
+        msgpack_pack_str_body(mp_pck, ctx->location, flb_sds_len(ctx->location));
+
+        msgpack_pack_str(mp_pck, 12);
+        msgpack_pack_str_body(mp_pck, "cluster_name", 12);
+        msgpack_pack_str(mp_pck, flb_sds_len(ctx->cluster_name));
+        msgpack_pack_str_body(mp_pck, ctx->cluster_name,
+                              flb_sds_len(ctx->cluster_name));
+
+        msgpack_pack_str(mp_pck, 14);
+        msgpack_pack_str_body(mp_pck, "container_name", 14);
+        msgpack_pack_str(mp_pck, flb_sds_len(container_name));
+        msgpack_pack_str_body(mp_pck, container_name,
+                              flb_sds_len(container_name));
+
+        msgpack_pack_str(mp_pck, 8);
+        msgpack_pack_str_body(mp_pck, "pod_name", 8);
+        msgpack_pack_str(mp_pck, flb_sds_len(pod_name));
+        msgpack_pack_str_body(mp_pck, pod_name, flb_sds_len(pod_name));
+
+        msgpack_pack_str(mp_pck, 14);
+        msgpack_pack_str_body(mp_pck, "namespace_name", 14);
+        msgpack_pack_str(mp_pck, flb_sds_len(container_name));
+        msgpack_pack_str_body(mp_pck, namespace_name,
+                              flb_sds_len(namespace_name));
+    }
+    else {
+        /* monitored resource type k8s_cluster
+         * https://cloud.google.com/monitoring/api/resources#tag_k8s_cluster */
+        msgpack_pack_str(mp_pck, 11);
+        msgpack_pack_str_body(mp_pck, "k8s_cluster", 11);
+
+        msgpack_pack_str(mp_pck, 6);
+        msgpack_pack_str_body(mp_pck, "labels", 6);
+
+        /* project_id, location, cluster_name */
+        msgpack_pack_map(mp_pck, 3);
+
+        msgpack_pack_str(mp_pck, 10);
+        msgpack_pack_str_body(mp_pck, "project_id", 10);
+        msgpack_pack_str(mp_pck, flb_sds_len(ctx->project_id));
+        msgpack_pack_str_body(mp_pck,
+                              ctx->project_id, flb_sds_len(ctx->project_id));
+
+        msgpack_pack_str(mp_pck, 8);
+        msgpack_pack_str_body(mp_pck, "location", 8);
+        msgpack_pack_str(mp_pck, flb_sds_len(ctx->location));
+        msgpack_pack_str_body(mp_pck, ctx->location, flb_sds_len(ctx->location));
+
+        msgpack_pack_str(mp_pck, 12);
+        msgpack_pack_str_body(mp_pck, "cluster_name", 12);
+        msgpack_pack_str(mp_pck, flb_sds_len(ctx->cluster_name));
+        msgpack_pack_str_body(mp_pck, ctx->cluster_name, flb_sds_len(ctx->cluster_name));
+    }
+}
+
 static int stackdriver_format(const void *data, size_t bytes,
                               const char *tag, size_t tag_len,
                               char **out_data, size_t *out_size,
@@ -470,50 +653,59 @@ static int stackdriver_format(const void *data, size_t bytes,
      */
     msgpack_pack_map(&mp_pck, 2);
 
-    msgpack_pack_str(&mp_pck, 8);
-    msgpack_pack_str_body(&mp_pck, "resource", 8);
+    /*
+     * If resource type is "k8s_cluster",
+     * resource labels are created based on payload data.
+     */
+    if (strcmp(ctx->resource, "k8s_cluster") != 0) {
 
-    /* type & labels */
-    msgpack_pack_map(&mp_pck, 2);
+        msgpack_pack_str(&mp_pck, 8);
+        msgpack_pack_str_body(&mp_pck, "resource", 8);
 
-    /* type */
-    msgpack_pack_str(&mp_pck, 4);
-    msgpack_pack_str_body(&mp_pck, "type", 4);
-    msgpack_pack_str(&mp_pck, flb_sds_len(ctx->resource));
-    msgpack_pack_str_body(&mp_pck, ctx->resource,
-                          flb_sds_len(ctx->resource));
+        /* type & labels */
+        msgpack_pack_map(&mp_pck, 2);
 
-    msgpack_pack_str(&mp_pck, 6);
-    msgpack_pack_str_body(&mp_pck, "labels", 6);
+        /* type */
+        msgpack_pack_str(&mp_pck, 4);
+        msgpack_pack_str_body(&mp_pck, "type", 4);
+        msgpack_pack_str(&mp_pck, flb_sds_len(ctx->resource));
+        msgpack_pack_str_body(&mp_pck, ctx->resource,
+                              flb_sds_len(ctx->resource));
 
-    if (strcmp(ctx->resource, "global") == 0) {
-      /* global resource has field project_id */
-      msgpack_pack_map(&mp_pck, 1);
-      msgpack_pack_str(&mp_pck, 10);
-      msgpack_pack_str_body(&mp_pck, "project_id", 10);
-      msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
-      msgpack_pack_str_body(&mp_pck,
-                            ctx->project_id, flb_sds_len(ctx->project_id));
-    } else if (strcmp(ctx->resource, "gce_instance") == 0) {
-      /* gce_instance resource has fields project_id, zone, instance_id */
-      msgpack_pack_map(&mp_pck, 3);
+        msgpack_pack_str(&mp_pck, 6);
+        msgpack_pack_str_body(&mp_pck, "labels", 6);
 
-      msgpack_pack_str(&mp_pck, 10);
-      msgpack_pack_str_body(&mp_pck, "project_id", 10);
-      msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
-      msgpack_pack_str_body(&mp_pck,
-                            ctx->project_id, flb_sds_len(ctx->project_id));
+        if (strcmp(ctx->resource, "global") == 0) {
+            /* global resource has field project_id */
+            msgpack_pack_map(&mp_pck, 1);
+            msgpack_pack_str(&mp_pck, 10);
+            msgpack_pack_str_body(&mp_pck, "project_id", 10);
+            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
+            msgpack_pack_str_body(&mp_pck,
+                                  ctx->project_id, flb_sds_len(ctx->project_id));
+        }
+        else if (strcmp(ctx->resource, "gce_instance") == 0) {
+            /* gce_instance resource has fields project_id, zone, instance_id */
+            msgpack_pack_map(&mp_pck, 3);
 
-      msgpack_pack_str(&mp_pck, 4);
-      msgpack_pack_str_body(&mp_pck, "zone", 4);
-      msgpack_pack_str(&mp_pck, flb_sds_len(ctx->zone));
-      msgpack_pack_str_body(&mp_pck, ctx->zone, flb_sds_len(ctx->zone));
+            msgpack_pack_str(&mp_pck, 10);
+            msgpack_pack_str_body(&mp_pck, "project_id", 10);
+            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
+            msgpack_pack_str_body(&mp_pck,
+                                  ctx->project_id, flb_sds_len(ctx->project_id));
 
-      msgpack_pack_str(&mp_pck, 11);
-      msgpack_pack_str_body(&mp_pck, "instance_id", 11);
-      msgpack_pack_str(&mp_pck, flb_sds_len(ctx->instance_id));
-      msgpack_pack_str_body(&mp_pck,
-                            ctx->instance_id, flb_sds_len(ctx->instance_id));
+            msgpack_pack_str(&mp_pck, 4);
+            msgpack_pack_str_body(&mp_pck, "zone", 4);
+            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->zone));
+            msgpack_pack_str_body(&mp_pck, ctx->zone, flb_sds_len(ctx->zone));
+
+            msgpack_pack_str(&mp_pck, 11);
+            msgpack_pack_str_body(&mp_pck, "instance_id", 11);
+            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->instance_id));
+            msgpack_pack_str_body(&mp_pck,
+                                  ctx->instance_id,
+                                  flb_sds_len(ctx->instance_id));
+        }
     }
 
     msgpack_pack_str(&mp_pck, 7);
@@ -576,6 +768,10 @@ static int stackdriver_format(const void *data, size_t bytes,
 
         msgpack_pack_str(&mp_pck, s);
         msgpack_pack_str_body(&mp_pck, time_formatted, s);
+
+        if (strcmp(ctx->resource, "k8s_cluster") == 0) {
+            create_k8s_resource_labels(ctx, &mp_pck, obj);
+        }
     }
 
     /* Convert from msgpack to JSON */
