@@ -427,8 +427,18 @@ int flb_sp_cmd_stream_new(struct flb_sp_cmd *cmd, const char *stream_name)
 
 int flb_sp_cmd_snapshot_new(struct flb_sp_cmd *cmd, const char *snapshot_name)
 {
+    const char *tmp;
+
     cmd->stream_name = flb_sds_create(snapshot_name);
     if (!cmd->stream_name) {
+        return -1;
+    }
+
+    tmp = flb_sp_cmd_stream_prop_get(cmd, "tag");
+    if (!tmp) {
+        cmd->status = FLB_SP_ERROR;
+        flb_error("[sp] tag for snapshot is required. Add WITH(tag = <TAG>) to the snapshot %s",
+                  snapshot_name);
         return -1;
     }
 
