@@ -511,6 +511,7 @@ int flb_sp_snapshot_create(struct flb_sp_task *task)
     if (snapshot->time_limit == 0 && snapshot->record_limit == 0) {
         flb_error("[sp] could not create snapshot '%s': size is not defined",
                   cmd->stream_name);
+        flb_sp_snapshot_destroy(snapshot);
         return -1;
     }
 

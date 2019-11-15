@@ -458,9 +458,6 @@ int flb_sp_cmd_snapshot_flush_new(struct flb_sp_cmd *cmd, const char *snapshot_n
 
     cmd->type = FLB_SP_FLUSH_SNAPSHOT;
 
-    /* Use filesystem storage by default for flushing */
-    flb_sp_cmd_stream_prop_add(cmd, "storage.type", "filesystem");
-
     return 0;
 }
 

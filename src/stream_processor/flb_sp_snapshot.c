@@ -55,6 +55,7 @@ static int snapshot_cleanup(struct flb_sp_snapshot *snapshot, struct flb_time *t
     struct flb_sp_snapshot_page *page;
 
     ok = MSGPACK_UNPACK_SUCCESS;
+    off = 0;
 
     while (mk_list_is_empty(&snapshot->pages) != 0) {
         page = mk_list_entry_first(&snapshot->pages, struct flb_sp_snapshot_page,
@@ -115,7 +116,7 @@ static bool snapshot_page_is_full(struct flb_sp_snapshot_page *page, size_t buf_
 
 char *flb_sp_snapshot_name_from_flush(flb_sds_t name)
 {
-    return name + strlen("__flush_");
+    return name + sizeof("__flush_") - 1;
 }
 
 int flb_sp_snapshot_update(struct flb_sp_task *task, const char *buf_data,
@@ -188,6 +189,7 @@ int flb_sp_snapshot_flush(struct flb_sp *sp, struct flb_sp_task *task,
     size_t off;
     size_t page_size;
     char *snapshot_name;
+    char *out_buf_data_tmp;
     struct flb_sp_cmd *cmd;
     struct mk_list *tmp;
     struct mk_list *head;
@@ -224,12 +226,13 @@ int flb_sp_snapshot_flush(struct flb_sp *sp, struct flb_sp_task *task,
                 *out_buf_size = snapshot->size;
             }
             else {
-                *out_buf_data = (char *) flb_realloc(*out_buf_data,
-                                                     *out_buf_size + snapshot->size);
-                if (!*out_buf_data) {
+                out_buf_data_tmp = (char *) flb_realloc(*out_buf_data,
+                                                        *out_buf_size + snapshot->size);
+                if (!out_buf_data_tmp) {
                     flb_errno();
                     return -1;
                 }
+                *out_buf_data = out_buf_data_tmp;
                 *out_buf_size = *out_buf_size + snapshot->size;
             }
 
