@@ -125,7 +125,7 @@ static int cb_slack_init(struct flb_output_instance *ins,
 
     return 0;
 
- error:
+error:
     if (protocol) {
         flb_free(protocol);
     }
@@ -143,10 +143,10 @@ static int cb_slack_init(struct flb_output_instance *ins,
 }
 
 static void cb_slack_flush(const void *data, size_t bytes,
-                            const char *tag, int tag_len,
-                            struct flb_input_instance *i_ins,
-                            void *out_context,
-                            struct flb_config *config)
+                           const char *tag, int tag_len,
+                           struct flb_input_instance *i_ins,
+                           void *out_context,
+                           struct flb_config *config)
 {
     int len;
     int ret;
@@ -178,7 +178,7 @@ static void cb_slack_flush(const void *data, size_t bytes,
         flb_time_pop_from_msgpack(&tmp, &result, &p);
 
         ret = snprintf(json + printed, size - printed,
-                       "[\"timestamp\": %"PRIu32".%09lu, ",
+                       "[\"timestamp\": %" PRIu32 ".%09lu, ",
                        (uint32_t) tmp.tm.tv_sec, tmp.tm.tv_nsec);
         printed += ret;
 
@@ -191,7 +191,7 @@ static void cb_slack_flush(const void *data, size_t bytes,
         }
 
         /* the previous call returns the remaining available space in the buffer */
-        printed += (size - printed) - ret;
+        printed += ret;
         json[printed++] = ']';
         json[printed++] = '\n';
     }
@@ -299,9 +299,9 @@ static int cb_slack_exit(void *data, struct flb_config *config)
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
     {
-     FLB_CONFIG_MAP_STR, "webhook", NULL,
-     0, FLB_TRUE, offsetof(struct flb_slack, webhook),
-     NULL
+        FLB_CONFIG_MAP_STR, "webhook", NULL,
+        0, FLB_TRUE, offsetof(struct flb_slack, webhook),
+        NULL
     },
 
     /* EOF */
