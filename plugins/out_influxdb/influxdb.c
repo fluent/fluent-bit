@@ -209,7 +209,7 @@ static char *influxdb_format(const char *tag, int tag_len,
                 val = tmp;
                 val_len = snprintf(tmp, sizeof(tmp) - 1, "%" PRId64, v->via.i64);
             }
-            else if (v->type == MSGPACK_OBJECT_FLOAT) {
+            else if (v->type == MSGPACK_OBJECT_FLOAT || v->type == MSGPACK_OBJECT_FLOAT32) {
                 val = tmp;
                 val_len = snprintf(tmp, sizeof(tmp) - 1, "%f", v->via.f64);
             }
@@ -554,7 +554,7 @@ int is_tagged_key(struct flb_influxdb_config *ctx, const char *key, int kl, int 
 
     if (ctx->tag_keys) {
         mk_list_foreach(head, ctx->tag_keys) {
-            entry = mk_list_entry(head, struct flb_split_entry ,_head);
+            entry = mk_list_entry(head, struct flb_split_entry, _head);
             if (kl == entry->len && strncmp(key, entry->value, kl) == 0) {
                 return FLB_TRUE;
             }
