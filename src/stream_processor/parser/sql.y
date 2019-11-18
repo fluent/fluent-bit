@@ -136,6 +136,12 @@ create:
         flb_sp_cmd_snapshot_flush_new(cmd, $3);
         flb_free($3);
       }
+      |
+      FLUSH SNAPSHOT IDENTIFIER WITH '(' properties ')' AS SELECT '*' FROM source where ';'
+      {
+        flb_sp_cmd_snapshot_flush_new(cmd, $3);
+        flb_free($3);
+      }
       properties: property
                   |
                   properties ',' property
