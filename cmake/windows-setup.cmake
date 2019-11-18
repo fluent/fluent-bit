@@ -74,7 +74,7 @@ set(FLB_FILTER_STDOUT         Yes)
 set(FLB_FILTER_PARSER         Yes)
 set(FLB_FILTER_KUBERNETES      No)
 set(FLB_FILTER_THROTTLE        No)
-set(FLB_FILTER_NEST            No)
+set(FLB_FILTER_NEST           Yes)
 set(FLB_FILTER_LUA            Yes)
 set(FLB_FILTER_RECORD_MODIFIER Yes)
 
