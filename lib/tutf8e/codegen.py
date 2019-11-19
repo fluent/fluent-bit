@@ -80,7 +80,8 @@ with open('src/tutf8e.c', 'w') as src:
 
 int tutf8e_string_length(const uint16_t *table, const char *input, size_t *ilen, size_t *olen)
 {
-  for (const unsigned char *i = (const unsigned char *) input; *i; ++i, (*ilen)++) {
+  const unsigned char *i;
+  for (i = (const unsigned char *) input; *i; ++i, (*ilen)++) {
     const uint16_t c = table[*i];
     if (c<0x80) {
       *olen += 1;
@@ -128,7 +129,8 @@ int tutf8e_string_encode(const uint16_t *table, const char *i, char *o, size_t *
 
 int tutf8e_buffer_length(const uint16_t *table, const char *input, size_t ilen, size_t *length)
 {
-  for (const unsigned char *i = (const unsigned char *) input; ilen; ++i, --ilen) {
+  const unsigned char *i;
+  for (i = (const unsigned char *) input; ilen; ++i, --ilen) {
     const uint16_t c = table[*i];
     if (c<0x80) {
       ++*length;
@@ -157,7 +159,8 @@ int tutf8e_buffer_encode(const uint16_t *table, const char *input, size_t ilen, 
 {
   size_t left = *olen;
   unsigned char *o = (unsigned char *) output;
-  for (const unsigned char *i = (const unsigned char *) input; ilen; ++i, --ilen) {
+  const unsigned char *i;
+  for (i = (const unsigned char *) input; ilen; ++i, --ilen) {
     const uint16_t c = table[*i];
     if (c<0x80) {
       if (left<1) return TUTF8E_TOOLONG;
