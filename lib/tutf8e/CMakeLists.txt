@@ -5,6 +5,7 @@ set(CMAKE_C_FLAGS "-Os -Wall")
 
 include_directories(include)
 add_library(tutf8e STATIC src/tutf8e.c)
+set_property(TARGET tutf8e PROPERTY C_STANDARD 99)
 
 add_executable(tutf8e-test test/test.c)
 target_link_libraries(tutf8e-test tutf8e)
