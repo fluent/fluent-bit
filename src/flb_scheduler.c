@@ -150,33 +150,63 @@ static int schedule_request_wait(struct flb_sched_request *request,
  */
 static int schedule_request_promote(struct flb_sched *sched)
 {
-    int passed;
+    int ret;
     int next;
+    int passed;
     time_t now;
     struct mk_list *tmp;
     struct mk_list *head;
+    struct mk_list failed_requests;
     struct flb_sched_request *request;
 
     now = time(NULL);
+    mk_list_init(&failed_requests);
+
     mk_list_foreach_safe(head, tmp, &sched->requests_wait) {
         request = mk_list_entry(head, struct flb_sched_request, _head);
 
         /* First check how many seconds have passed since the request creation */
         passed = (now - request->created);
+        ret = 0;
 
         /* If we passed the original time, schedule now for the next second */
         if (passed > request->timeout) {
             mk_list_del(&request->_head);
-            schedule_request_now(1, request->timer, request, sched->config);
-        }
-        else {
-            /* Check if we should schedule within this frame */
-            if (passed + FLB_SCHED_REQUEST_FRAME >= request->timeout) {
-                next = labs(passed - request->timeout);
-                mk_list_del(&request->_head);
-                schedule_request_now(next, request->timer, request, sched->config);
+            ret = schedule_request_now(1, request->timer, request, sched->config);
+            if (ret != 0) {
+                mk_list_add(&request->_head, &failed_requests);
             }
         }
+        else if (passed + FLB_SCHED_REQUEST_FRAME >= request->timeout) {
+            /* Check if we should schedule within this frame */
+            mk_list_del(&request->_head);
+            next = labs(passed - request->timeout);
+            ret = schedule_request_now(next, request->timer, request, sched->config);
+            if (ret != 0) {
+                mk_list_add(&request->_head, &failed_requests);
+            }
+        }
+        else {
+            continue;
+        }
+
+        /*
+         * If the 'request' could not be scheduled, this could only happen due to memory
+         * exhaustion or running out of file descriptors. There is no much we can do
+         * at this time.
+         */
+        if (ret == -1) {
+            flb_error("[sched] a 'retry request' could not be scheduled. the "
+                      "system might be running out of memory or file "
+                      "descriptors. The scheduler will do a retry later.");
+        }
+    }
+
+    /* For each failed request, re-add them to the wait list */
+    mk_list_foreach_safe(head, tmp, &failed_requests) {
+        request = mk_list_entry(head, struct flb_sched_request, _head);
+        mk_list_del(&request->_head);
+        mk_list_add(&request->_head, &sched->requests_wait);
     }
 
     return 0;
@@ -260,6 +290,10 @@ int flb_sched_request_create(struct flb_config *config, void *data, int tries)
     else {
         ret = schedule_request_now(seconds, timer, request, config);
         if (ret == -1) {
+            flb_error("[sched]  'retry request' could not be created. the "
+                      "system might be running out of memory or file "
+                      "descriptors.");
+            flb_sched_timer_destroy(timer);
             flb_free(request);
             return -1;
         }
