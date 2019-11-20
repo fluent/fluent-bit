@@ -364,11 +364,11 @@ int flb_sched_event_handler(struct flb_config *config, struct mk_event *event)
         req = timer->data;
         consume_byte(req->fd);
 
-        /* Dispatch 'retry' */
-        flb_engine_dispatch_retry(req->data, config);
-
         /* Destroy this scheduled request, it's not longer required */
         flb_sched_request_destroy(config, req);
+
+        /* Dispatch 'retry' */
+        flb_engine_dispatch_retry(req->data, config);
     }
     else if (timer->type == FLB_SCHED_TIMER_FRAME) {
         sched = timer->data;
