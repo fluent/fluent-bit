@@ -34,6 +34,7 @@
 int flb_engine_dispatch_retry(struct flb_task_retry *retry,
                               struct flb_config *config)
 {
+    int ret;
     size_t buf_size;
     struct flb_thread *th;
     struct flb_task *task;
@@ -43,11 +44,35 @@ int flb_engine_dispatch_retry(struct flb_task_retry *retry,
     i_ins = task->i_ins;
 
     /* Set file up/down based on restrictions */
-    flb_input_chunk_set_up(task->ic);
+    ret = flb_input_chunk_set_up(task->ic);
+    if (ret == -1) {
+        /*
+         * The re-try is not possible. The chunk is not in memory and trying to bringing it
+         * up was not possible.
+         *
+         * A common cause for this is that the Chunk I/O system is not draining fast
+         * enough like errors on delivering data. So if we cannot put the chunk in memory
+         * it cannot be retried.
+         */
+        ret = flb_task_retry_reschedule(retry, config);
+        if (ret == -1) {
+            return -1;
+        }
+
+        /* Just return because it has been re-scheduled */
+        return 0;
+    }
 
     /* There is a match, get the buffer */
     task->buf = flb_input_chunk_flush(task->ic, &buf_size);
     task->size = buf_size;
+
+    if (!task->buf) {
+        /* Could not retrieve chunk content */
+        flb_error("[engine_dispatch] could not retrieve chunk content, removing retry");
+        flb_task_retry_destroy(retry);
+        return -1;
+    }
 
     th = flb_output_thread(task,
                            i_ins,
