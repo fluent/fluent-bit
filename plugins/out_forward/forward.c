@@ -1020,8 +1020,9 @@ static void cb_forward_flush(const void *data, size_t bytes,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    /* Shared Key */
-    if (fc->shared_key) {
+    /* Shared Key
+     * if ka_count > 0 it means the handshake has already been done lately */
+    if (fc->shared_key && u_conn->ka_count == 0) {
         ret = secure_forward_handshake(u_conn, fc, ctx);
         flb_debug("[out_fw] handshake status = %i", ret);
         if (ret == -1) {
