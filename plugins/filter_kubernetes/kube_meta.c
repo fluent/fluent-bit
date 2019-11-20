@@ -382,7 +382,6 @@ static void extract_container_hash(struct flb_kube_meta *meta,
     msgpack_object k, v;
     const char *tmp;
     int tmp_len = 0;
-    int name_found = FLB_FALSE;
 
     /* Process status/containerStatus map for docker_id, container_hash */
     for (i = 0;
