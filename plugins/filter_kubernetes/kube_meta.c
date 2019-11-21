@@ -358,7 +358,7 @@ static int extract_hash(const char * im, int sz, const char ** out, int * outsz)
 /*
  * As per Kubernetes Pod spec,
  * https://kubernetes.io/docs/concepts/workloads/pods/pod/, we look
- * for status.{initContainerStatuses, containerStatuses}.{containerID, imageID}
+ * for status.{initContainerStatuses, containerStatuses}.{containerID, imageID, image}
  * where status.{initContainerStatuses, containerStatus}.name == our container
  * name
  * status:
@@ -377,14 +377,17 @@ static void extract_container_hash(struct flb_kube_meta *meta,
     msgpack_object k, v;
     int docker_id_len = 0;
     int container_hash_len = 0;
+    int container_image_len = 0;
     const char *container_hash;
     const char *docker_id;
+    const char *container_image;
     const char *tmp;
     int tmp_len = 0;
     int name_found = FLB_FALSE;
-    /* Process status/containerStatus map for docker_id, container_hash */
+    /* Process status/containerStatus map for docker_id, container_hash, container_image */
     for (i = 0;
-         (meta->docker_id_len == 0 || meta->container_hash_len == 0) &&
+         (meta->docker_id_len == 0 || meta->container_hash_len == 0 ||
+          meta->container_image_len == 0) &&
          i < status.via.map.size; i++) {
         k = status.via.map.ptr[i].key;
         if ((k.via.str.size == FLB_KUBE_META_CONTAINER_STATUSES_KEY_LEN &&
@@ -399,7 +402,8 @@ static void extract_container_hash(struct flb_kube_meta *meta,
             v = status.via.map.ptr[i].val;
             for (j = 0;
                  (meta->docker_id_len == 0 ||
-                  meta->container_hash_len == 0) && j < v.via.array.size;
+                  meta->container_hash_len == 0 ||
+                  meta->container_image_len == 0) && j < v.via.array.size;
                  j++) {
                 int l;
                 msgpack_object k1, k2;
@@ -407,7 +411,8 @@ static void extract_container_hash(struct flb_kube_meta *meta,
                 k1 = v.via.array.ptr[j];
                 for (l = 0;
                      (meta->docker_id_len == 0 ||
-                      meta->container_hash_len == 0) &&
+                      meta->container_hash_len == 0 ||
+                      meta->container_image_len == 0) &&
                      l < k1.via.map.size; l++) {
                     k2 = k1.via.map.ptr[l].key;
                     v2 = k1.via.map.ptr[l].val.via.str;
@@ -441,6 +446,13 @@ static void extract_container_hash(struct flb_kube_meta *meta,
                             container_hash_len = tmp_len;
                         }
                     }
+                    else if (k2.via.str.size == sizeof("image") - 1 &&
+                              !strncmp(k2.via.str.ptr,
+                                       "image",
+                                       k2.via.str.size)) {
+                        container_image = v2.ptr;
+                        container_image_len = v2.size;
+                    }
                 }
                 if (name_found) {
                     if (container_hash_len && !meta->container_hash_len) {
@@ -452,6 +464,11 @@ static void extract_container_hash(struct flb_kube_meta *meta,
                     if (docker_id_len && !meta->docker_id_len) {
                         meta->docker_id_len = docker_id_len;
                         meta->docker_id = flb_strndup(docker_id, docker_id_len);
+                        meta->fields++;
+                    }
+                    if (container_image_len && !meta->container_image_len) {
+                        meta->container_image_len = container_image_len;
+                        meta->container_image = flb_strndup(container_image, container_image_len);
                         meta->fields++;
                     }
                     return;
@@ -594,7 +611,7 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
                 }
             }
 
-            if ((!meta->container_hash || !meta->docker_id) && status_found) {
+            if ((!meta->container_hash || !meta->docker_id || !meta->container_image) && status_found) {
                 extract_container_hash(meta, status_val);
             }
         }
@@ -671,6 +688,13 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
         msgpack_pack_str(&mp_pck, meta->container_hash_len);
         msgpack_pack_str_body(&mp_pck, meta->container_hash,
                               meta->container_hash_len);
+    }
+    if (meta->container_image != NULL) {
+        msgpack_pack_str(&mp_pck, 15);
+        msgpack_pack_str_body(&mp_pck, "container_image", 15);
+        msgpack_pack_str(&mp_pck, meta->container_image_len);
+        msgpack_pack_str_body(&mp_pck, meta->container_image,
+                              meta->container_image_len);
     }
 
     /* Process configuration suggested through Annotations */
@@ -1098,6 +1122,11 @@ int flb_kube_meta_release(struct flb_kube_meta *meta)
 
     if (meta->container_hash) {
         flb_free(meta->container_hash);
+        r++;
+    }
+
+    if (meta->container_image) {
+        flb_free(meta->container_image);
         r++;
     }
 
