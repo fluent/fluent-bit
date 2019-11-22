@@ -286,8 +286,9 @@ static char *influxdb_format(const char *tag, int tag_len,
                 goto error;
             }
         } else {
-            flb_error("[out_influxdb] cannot send record, "
-                      "because all field is tagged in record");
+            flb_warn("[out_influxdb] skip send record, "
+                      "since no record aviliable "
+                      "or all field is tagged in record");
             /* Following records maybe ok, so continue processing */
         }
 
