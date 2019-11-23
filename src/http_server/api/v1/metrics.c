@@ -176,7 +176,7 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
     int len;
     int time_len;
     int start_time_len;
-    int index;
+    size_t index;
     size_t num_metrics = 0;
     long now;
     flb_sds_t sds;
@@ -263,7 +263,22 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
 
                 mk = sv.via.map.ptr[m].key;
                 mv = sv.via.map.ptr[m].val;
-                sds_metric = flb_sds_create_size(1024);
+
+                /* Convert metric value to string */
+                len = snprintf(tmp, sizeof(tmp) - 1, "%" PRIu64 " ", mv.via.u64);
+                if (len < 0) {
+                    goto error;
+                }
+
+                /* Allocate buffer */
+                sds_metric = flb_sds_create_size(k.via.str.size
+                                                 + mk.via.str.size
+                                                 + sk.via.str.size
+                                                 + len + time_len + 28);
+                if (sds_metric == NULL) {
+                    goto error;
+                }
+
                 sds_metric = flb_sds_cat(sds_metric, "fluentbit_", 10);
                 sds_metric = flb_sds_cat(sds_metric, k.via.str.ptr, k.via.str.size);
                 sds_metric = flb_sds_cat(sds_metric, "_", 1);
@@ -271,9 +286,6 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
                 sds_metric = flb_sds_cat(sds_metric, "_total{name=\"", 13);
                 sds_metric = flb_sds_cat(sds_metric, sk.via.str.ptr, sk.via.str.size);
                 sds_metric = flb_sds_cat(sds_metric, "\"} ", 3);
-
-                len = snprintf(tmp, sizeof(tmp) - 1,
-                               "%" PRIu64 " ", mv.via.u64);
                 sds_metric = flb_sds_cat(sds_metric, tmp, len);
                 sds_metric = flb_sds_cat(sds_metric, time_str, time_len);
                 sds_metric = flb_sds_cat(sds_metric, "\n", 1);
@@ -320,6 +332,19 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
     flb_sds_destroy(sds);
 
     mk_http_done(request);
+    return;
+
+error:
+    mk_http_status(request, 500);
+    mk_http_done(request);
+    buf->users--;
+
+    for (i = 0; i < index; i++) {
+      flb_sds_destroy(metrics_arr[i]);
+    }
+    flb_free(metrics_arr);
+    flb_sds_destroy(sds);
+    msgpack_unpacked_destroy(&result);
 }
 
 /* API: expose built-in metrics /api/v1/metrics */
