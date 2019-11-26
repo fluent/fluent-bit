@@ -152,8 +152,10 @@ static inline int do_glob(const char *pattern, int flags,
     /* invoke glob with new parameters */
     ret = glob(pattern, new_flags, NULL, pglob);
 
-    /* remove temporary buffer */
-    if (tmp != NULL) {
+    /* remove temporary buffer, if allocated by expand_tilde above.
+     * Note that this buffer is only used for libc implementations
+     * that do not support the GLOB_TILDE flag, like musl. */
+    if (tmp != NULL && tmp != pattern) {
         flb_free(tmp);
     }
 
