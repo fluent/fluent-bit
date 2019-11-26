@@ -57,16 +57,12 @@ static inline int process_pack(msgpack_packer *mp_pck,
     while (msgpack_unpack_next(&result, data, data_size, &off) == MSGPACK_UNPACK_SUCCESS) {
         entry = result.data;
 
-        msgpack_pack_array(mp_pck, 2);
-        flb_pack_time_now(mp_pck);
-
         if (entry.type == MSGPACK_OBJECT_MAP) {
+            msgpack_pack_array(mp_pck, 2);
+            flb_pack_time_now(mp_pck);
             msgpack_pack_object(mp_pck, entry);
         }
         else if (entry.type == MSGPACK_OBJECT_ARRAY) {
-            msgpack_pack_map(mp_pck, 1);
-            msgpack_pack_str(mp_pck, 3);
-            msgpack_pack_str_body(mp_pck, "log", 3);
             msgpack_pack_object(mp_pck, entry);
         }
         else {
