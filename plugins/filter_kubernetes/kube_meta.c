@@ -18,6 +18,7 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_regex.h>
@@ -29,7 +30,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <unistd.h>
 #include <msgpack.h>
 
 #include "kube_conf.h"
@@ -994,7 +994,11 @@ int flb_kube_dummy_meta_get(char **out_buf, size_t *out_size)
 
     t = time(NULL);
     localtime_r(&t, &result);
+#ifdef FLB_SYSTEM_WINDOWS
+    asctime_s(stime, sizeof(stime), &result);
+#else
     asctime_r(&result, stime);
+#endif
     len = strlen(stime) - 1;
 
     msgpack_sbuffer_init(&mp_sbuf);

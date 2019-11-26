@@ -492,7 +492,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
         if (ctx->use_journal == FLB_TRUE && ctx->dummy_meta == FLB_FALSE) {
             ret = flb_kube_meta_get(ctx,
                                     tag, tag_len,
-                                    data + pre, off - pre,
+                                    (char *) data + pre, off - pre,
                                     &cache_buf, &cache_size, &meta, &props);
             if (ret == -1) {
                 continue;
