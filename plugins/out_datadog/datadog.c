@@ -282,8 +282,11 @@ static void cb_datadog_flush(const void *data, size_t bytes,
 
     flb_sds_t payload_buf;
     size_t payload_size = 0;
+    void *final_payload_buf = NULL;
+    size_t final_payload_size = 0;
     size_t b_sent;
     int ret = FLB_ERROR;
+    int compressed = FLB_FALSE;
 
     /* Get upstream connection */
     upstream_conn = flb_upstream_conn_get(ctx->upstream);
@@ -298,9 +301,23 @@ static void cb_datadog_flush(const void *data, size_t bytes,
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 
+    /* Should we compress the payload ? */
+    if (ctx->compress_gzip == FLB_TRUE) {
+        ret = flb_gzip_compress((void *) payload_buf, payload_size,
+                                &final_payload_buf, &final_payload_size);
+        if (ret == -1) {
+            flb_error("[out_http] cannot gzip payload, disabling compression");
+        } else {
+            compressed = FLB_TRUE;
+        }
+    } else {
+        final_payload_buf = payload_buf;
+        final_payload_size = payload_size;
+    }
+
     /* Create HTTP client context */
     client = flb_http_client(upstream_conn, FLB_HTTP_POST, ctx->uri,
-                             payload_buf, payload_size,
+                             final_payload_buf, final_payload_size,
                              ctx->host, ctx->port,
                              NULL, 0);
     if (!client) {
@@ -312,8 +329,13 @@ static void cb_datadog_flush(const void *data, size_t bytes,
     flb_http_add_header(client,
                         FLB_DATADOG_CONTENT_TYPE, sizeof(FLB_DATADOG_CONTENT_TYPE) - 1,
                         FLB_DATADOG_MIME_JSON, sizeof(FLB_DATADOG_MIME_JSON) - 1);
-    /* TODO: Append other headers if needed*/
 
+    /* Content Encoding: gzip */
+    if (compressed == FLB_TRUE) {
+        flb_http_set_content_encoding_gzip(client);
+    }
+    /* TODO: Append other headers if needed*/
+    
     /* finaly send the query */
     ret = flb_http_do(client, &b_sent);
     if (ret == 0) {
@@ -342,6 +364,13 @@ static void cb_datadog_flush(const void *data, size_t bytes,
         ret = FLB_RETRY;
     }
 
+    /*
+     * If the final_payload_buf buffer is different than payload_buf, means
+     * we generated a different payload and must be freed.
+     */
+    if (final_payload_buf != payload_buf) {
+        flb_free(final_payload_buf);
+    }
     /* Destroy HTTP client context */
     flb_sds_destroy(payload_buf);
     flb_http_client_destroy(client);
