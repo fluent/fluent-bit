@@ -571,9 +571,9 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
 int flb_http_buffer_size(struct flb_http_client *c, size_t size)
 {
     if (size < c->resp.data_size_max && size != 0) {
-        flb_error("[http] requested buffer size %lu cannot exceed"
-                  "maximum size %lu",
-                  c->resp.data_size, c->resp.data_size_max);
+        flb_error("[http] requested buffer size %lu (bytes) needs to be greater than "
+                  "minimum size allowed %lu (bytes)",
+                  size, c->resp.data_size_max);
         return -1;
     }
 
