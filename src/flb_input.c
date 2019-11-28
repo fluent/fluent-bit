@@ -327,7 +327,9 @@ int flb_input_instance_init(struct flb_input_instance *in,
                             struct flb_config *config)
 {
     int ret;
+#ifdef FLB_HAVE_METRICS
     const char *name;
+#endif
     struct flb_input_plugin *p = in->p;
 
     /* Skip pseudo input plugins */
