@@ -57,11 +57,11 @@ void flb_msgpack_encode_utf8(flb_encoder encoder, const char *module, msgpack_pa
                 if (buffer && !tutf8e_encoder_buffer_encode(encoder, b, l, buffer, &size) && size) {
                     msgpack_pack_str(pk, size);
                     msgpack_pack_str_body(pk, buffer, size);
-                    free(buffer);
+                    flb_free(buffer);
                     return;
                 }
                 /* Not expecting to get here ordinarily */
-                free(buffer);
+                flb_free(buffer);
                 flb_warn("[%s] failed to encode to UTF8", module);
             }
         }
@@ -74,5 +74,47 @@ void flb_msgpack_encode_utf8(flb_encoder encoder, const char *module, msgpack_pa
     msgpack_pack_str(pk, l);
     msgpack_pack_str_body(pk, b, l);
 }
+
+int flb_parser_do_encode_utf8(flb_encoder encoder, const char *module,
+   struct flb_parser *parser, const char *b, size_t l,
+   void **out_buf, size_t *out_size, struct flb_time *out_time)
+{
+    if (encoder) {
+        size_t size = 0;
+        if (!tutf8e_encoder_buffer_length(encoder, b, l, &size) && size) {
+            /* Already UTF8 encoded? */
+            if (size == l) {
+            }
+            /* Small enough for encoding to stack? */
+            else if (size<=TUTF8_BUFFER_SIZE) {
+                char buffer[TUTF8_BUFFER_SIZE];
+                if (!tutf8e_encoder_buffer_encode(encoder, b, l, buffer, &size) && size) {
+                    return flb_parser_do(parser, buffer, size, out_buf, out_size, out_time);
+                }
+                /* Not expecting to get here ordinarily */
+                flb_warn("[%s] failed to encode to UTF8", module);
+            }
+            /* malloc/free the encoded copy */
+            else {
+                char *buffer = (char *) flb_malloc(size);
+                if (buffer && !tutf8e_encoder_buffer_encode(encoder, b, l, buffer, &size) && size) {
+                    int ret = flb_parser_do(parser, buffer, size, out_buf, out_size, out_time);
+                    flb_free(buffer);
+                    return ret;
+                }
+                /* Not expecting to get here ordinarily */
+                flb_free(buffer);
+                flb_warn("[%s] failed to encode to UTF8", module);
+            }
+        }
+        else {
+            flb_warn("[%s] failed to encode to UTF8", module);
+        }
+    }
+
+    /* Could not or need not encode to UTF8 */
+    return flb_parser_do(parser, b, l, out_buf, out_size, out_time);
+}
+
 #endif
 

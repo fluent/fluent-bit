@@ -27,7 +27,6 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_parser.h>
-#include <fluent-bit/flb_encoder.h>
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>
 #include <fluent-bit/flb_hash.h>
@@ -183,7 +182,8 @@ int flb_tail_pack_line_map(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
     return 0;
 }
 
-int flb_tail_file_pack_line(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
+int flb_tail_file_pack_line(flb_encoder encoder, const char *module,
+                            msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                             struct flb_time *time, char *data, size_t data_size,
                             struct flb_tail_file *file)
 {
@@ -208,7 +208,7 @@ int flb_tail_file_pack_line(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
 
     msgpack_pack_str(mp_pck, flb_sds_len(ctx->key));
     msgpack_pack_str_body(mp_pck, ctx->key, flb_sds_len(ctx->key));
-    flb_msgpack_encode_utf8(ctx->encoding, "in_tail", mp_pck, data, data_size);
+    flb_msgpack_encode_utf8(encoder, "in_tail", mp_pck, data, data_size);
 
     return 0;
 }
@@ -302,7 +302,7 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
 #ifdef FLB_HAVE_PARSER
         if (ctx->parser) {
             /* Common parser (non-multiline) */
-            ret = flb_parser_do(ctx->parser, line, line_len,
+            ret = flb_parser_do_encode_utf8(ctx->encoding, "in_tail", ctx->parser, line, line_len,
                                 &out_buf, &out_size, &out_time);
             if (ret >= 0) {
                 if (flb_time_to_double(&out_time) == 0) {
@@ -328,7 +328,8 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
             else {
                 /* Parser failed, pack raw text */
                 flb_time_get(&out_time);
-                flb_tail_file_pack_line(out_sbuf, out_pck, &out_time,
+                flb_tail_file_pack_line(ctx->encoding, "in_tail",
+                                        out_sbuf, out_pck, &out_time,
                                         data, len, file);
             }
         }
@@ -342,7 +343,8 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
                 flb_tail_mult_flush(out_sbuf, out_pck, file, ctx);
 
                 flb_time_get(&out_time);
-                flb_tail_file_pack_line(out_sbuf, out_pck, &out_time,
+                flb_tail_file_pack_line(ctx->encoding, "in_tail",
+                                        out_sbuf, out_pck, &out_time,
                                         line, line_len, file);
             }
             else if (ret == FLB_TAIL_MULT_MORE) {
@@ -355,12 +357,14 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
         }
         else {
             flb_time_get(&out_time);
-            flb_tail_file_pack_line(out_sbuf, out_pck, &out_time,
+            flb_tail_file_pack_line(ctx->encoding, "in_tail",
+                                    out_sbuf, out_pck, &out_time,
                                     line, line_len, file);
         }
 #else
         flb_time_get(&out_time);
-        flb_tail_file_pack_line(out_sbuf, out_pck, &out_time,
+        flb_tail_file_pack_line(ctx->encoding, "in_tail",
+                                out_sbuf, out_pck, &out_time,
                                 line, line_len, file);
 #endif
 

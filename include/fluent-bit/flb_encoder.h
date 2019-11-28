@@ -22,12 +22,16 @@
 #define FLB_ENCODER_H
 
 #include <msgpack.h>
+#include "flb_parser.h"
 
 typedef void *flb_encoder;
 
 #ifdef FLB_HAVE_UTF8_ENCODER
 flb_encoder flb_get_encoder(const char *encoding);
 void flb_msgpack_encode_utf8(flb_encoder encoder, const char *module, msgpack_packer *pk, const void *b, size_t l);
+int flb_parser_do_encode_utf8(flb_encoder encoder, const char *module,
+   struct flb_parser *parser, const char *buf, size_t length,
+   void **out_buf, size_t *out_size, struct flb_time *out_time);
 #else
 static inline flb_encoder flb_get_encoder(const char *encoding)
 {
@@ -38,6 +42,13 @@ static inline void flb_msgpack_encode_utf8(flb_encoder encoder, const char *modu
 {
     msgpack_pack_str(pk, l);
     msgpack_pack_str_body(pk, b, l);
+}
+
+static inline void flb_parser_do_encode_utf8(flb_encoder encoder, const char *module,
+   struct flb_parser *parser, const char *buf, size_t length,
+   void **out_buf, size_t *out_size, struct flb_time *out_time)
+{
+	return flb_parser_do(parser, buf, length, out_buf, out_size, out_time);
 }
 #endif
 

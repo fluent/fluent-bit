@@ -298,7 +298,8 @@ void flb_tail_dmode_flush(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
     }
 #endif
     flb_time_get(&out_time);
-    flb_tail_file_pack_line(mp_sbuf, mp_pck, &out_time,
+    /* Assumed to be UTF-8, no need to encode? */
+    flb_tail_file_pack_line(NULL, "in_tail", mp_sbuf, mp_pck, &out_time,
                             repl_line, repl_line_len, file);
 
  dmode_flush_end:
