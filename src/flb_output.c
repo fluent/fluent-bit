@@ -528,7 +528,9 @@ const char *flb_output_get_property(const char *key, struct flb_output_instance 
 int flb_output_init(struct flb_config *config)
 {
     int ret;
+#ifdef FLB_HAVE_METRICS
     const char *name;
+#endif
     struct mk_list *tmp;
     struct mk_list *head;
     struct mk_list *config_map;
