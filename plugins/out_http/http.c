@@ -361,7 +361,7 @@ static struct flb_config_map config_map[] = {
     },
     {
      FLB_CONFIG_MAP_STR, "uri", NULL,
-     0, FLB_FALSE, FLB_TRUE, offsetof(struct flb_out_http, uri),
+     0, FLB_TRUE, offsetof(struct flb_out_http, uri),
      NULL,
     },
 
