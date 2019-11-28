@@ -66,10 +66,12 @@ int flb_input_chunk_write_at(void *data, off_t offset,
 struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
                                             void *chunk)
 {
+#ifdef FLB_HAVE_METRICS
     int ret;
     int records;
     char *buf_data;
     size_t buf_size;
+#endif
     struct flb_input_chunk *ic;
 
     /* Create context for the input instance */
