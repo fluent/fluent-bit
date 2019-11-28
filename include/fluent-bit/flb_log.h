@@ -60,6 +60,11 @@ struct flb_log {
     pthread_t tid;             /* thread ID   */
     struct flb_worker *worker; /* non-real worker reference */
     struct mk_event_loop *evl;
+
+    /* Initialization variables */
+    int pth_init;
+    pthread_cond_t  pth_cond;
+    pthread_mutex_t pth_mutex;
 };
 
 static inline int flb_log_check(int l) {
