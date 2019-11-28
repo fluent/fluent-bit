@@ -379,7 +379,6 @@ int flb_engine_start(struct flb_config *config)
                                            (char *) &tmp, sizeof(tmp));
     flb_debug("[engine] coroutine stack size: %lu bytes (%s)",
               config->coro_stack_size, tmp);
-    flb_thread_prepare();
 
     /* Create the event loop and set it in the global configuration */
     evl = mk_event_loop_create(256);
