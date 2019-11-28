@@ -73,7 +73,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     int ret;
     int size;
     int queue_full_retries = 0;
-    char *out_buf;
+    char *out_buf = NULL;
     size_t out_size;
     struct flb_kafka_topic *topic = NULL;
     msgpack_sbuffer mp_sbuf;
@@ -82,9 +82,11 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     msgpack_object val;
     flb_sds_t s;
 
-    /* Init temporal buffers */
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    if (ctx->format != FLB_KAFKA_FMT_RAW) {
+        /* Init temporal buffers */
+        msgpack_sbuffer_init(&mp_sbuf);
+        msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    }
 
     if (ctx->format == FLB_KAFKA_FMT_JSON || ctx->format == FLB_KAFKA_FMT_MSGP) {
         /* Make room for the timestamp */
@@ -121,7 +123,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
                 break;
         }
     }
-    else {
+    else if (ctx->format != FLB_KAFKA_FMT_RAW) {
         size = map->via.map.size;
         msgpack_pack_map(&mp_pck, size);
     }
@@ -130,8 +132,17 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         key = map->via.map.ptr[i].key;
         val = map->via.map.ptr[i].val;
 
-        msgpack_pack_object(&mp_pck, key);
-        msgpack_pack_object(&mp_pck, val);
+        if (ctx->format == FLB_KAFKA_FMT_RAW) {
+            /* check if name of the raw key */
+            if (key.via.str.size == ctx->raw_key_len &&
+                strncmp(key.via.str.ptr, ctx->raw_key, ctx->raw_key_len) == 0) {
+                    out_buf = (char *)val.via.str.ptr;
+                    out_size = val.via.str.size;
+            }
+        } else {
+            msgpack_pack_object(&mp_pck, key);
+            msgpack_pack_object(&mp_pck, val);
+        }
 
         /* Lookup key/topic */
         if (ctx->topic_key && !topic && val.type == MSGPACK_OBJECT_STR) {
@@ -170,14 +181,23 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         out_size = flb_sds_len(s);
     }
 
+    if (out_buf == NULL) {
+        flb_warn("[out_kafka] no message to send");
+        if (ctx->format != FLB_KAFKA_FMT_RAW)
+            msgpack_sbuffer_destroy(&mp_sbuf);
+        return FLB_ERROR;
+    }
+
     if (!topic) {
         topic = flb_kafka_topic_default(ctx);
     }
     if (!topic) {
         flb_error("[out_kafka] no default topic found");
-        msgpack_sbuffer_destroy(&mp_sbuf);
+        if (ctx->format != FLB_KAFKA_FMT_RAW)
+            msgpack_sbuffer_destroy(&mp_sbuf);
         return FLB_ERROR;
     }
+
 
  retry:
     if (queue_full_retries >= 10) {
@@ -187,7 +207,8 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         if (ctx->format == FLB_KAFKA_FMT_GELF) {
             flb_sds_destroy(s);
         }
-        msgpack_sbuffer_destroy(&mp_sbuf);
+        if (ctx->format != FLB_KAFKA_FMT_RAW)
+            msgpack_sbuffer_destroy(&mp_sbuf);
         return FLB_RETRY;
     }
 
@@ -249,7 +270,8 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         flb_sds_destroy(s);
     }
 
-    msgpack_sbuffer_destroy(&mp_sbuf);
+    if (ctx->format != FLB_KAFKA_FMT_RAW)
+        msgpack_sbuffer_destroy(&mp_sbuf);
     return FLB_OK;
 }
 
