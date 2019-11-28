@@ -18,12 +18,14 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_gzip.h>
 
 #include <msgpack.h>
 
@@ -335,7 +337,7 @@ static void cb_datadog_flush(const void *data, size_t bytes,
         flb_http_set_content_encoding_gzip(client);
     }
     /* TODO: Append other headers if needed*/
-    
+
     /* finaly send the query */
     ret = flb_http_do(client, &b_sent);
     if (ret == 0) {
