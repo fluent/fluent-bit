@@ -121,6 +121,7 @@ struct flb_service_config service_configs[] = {
 
 struct flb_config *flb_config_init()
 {
+    int ret;
     struct flb_config *config;
 
     config = flb_calloc(1, sizeof(struct flb_config));
@@ -188,7 +189,12 @@ struct flb_config *flb_config_init()
     config->env = flb_env_create();
 
     /* Register static plugins */
-    flb_register_plugins(config);
+    ret = flb_plugins_register(config);
+    if (ret == -1) {
+        flb_error("[config] plugins registration failed");
+        flb_config_exit(config);
+        return NULL;
+    }
 
     /* Create environment for dynamic plugins */
     config->dso_plugins = flb_plugin_create();
@@ -328,6 +334,9 @@ void flb_config_exit(struct flb_config *config)
     if (config->evl) {
         mk_event_loop_destroy(config->evl);
     }
+
+
+    flb_plugins_unregister(config);
     flb_free(config);
 }
 
