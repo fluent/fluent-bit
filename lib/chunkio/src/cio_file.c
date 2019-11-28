@@ -302,7 +302,7 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
         }
 
         /* For empty files, make room in the file system */
-        size = ROUND_UP(size, cio_page_size);
+        size = ROUND_UP(size, ctx->page_size);
         ret = cio_file_fs_size_change(cf, size);
         if (ret == -1) {
             cio_errno();
@@ -312,7 +312,7 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
     }
 
     /* Map the file */
-    size = ROUND_UP(size, cio_page_size);
+    size = ROUND_UP(size, ctx->page_size);
     cf->map = mmap(0, size, oflags, MAP_SHARED, cf->fd, 0);
     if (cf->map == MAP_FAILED) {
         cio_errno();
@@ -706,7 +706,7 @@ int cio_file_write(struct cio_chunk *ch, const void *buf, size_t count)
             new_size += cf->realloc_size;
         }
 
-        new_size = ROUND_UP(new_size, cio_page_size);
+        new_size = ROUND_UP(new_size, ch->ctx->page_size);
         ret = cio_file_fs_size_change(cf, new_size);
         if (ret == -1) {
             cio_errno();
