@@ -34,7 +34,7 @@ include(ExternalProject)
 include(cmake/FindJournald.cmake)
 include(cmake/FindMonkey.cmake)
 include(cmake/macros.cmake)
-set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/sanitizers-cmake/cmake" ${CMAKE_MODULE_PATH})
+set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/sanitizers-cmake/cmake" ${CMAKE_MODULE_PATH})
 find_package(Sanitizers)
 
 # Output paths
