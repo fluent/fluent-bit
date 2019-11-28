@@ -25,12 +25,13 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_log.h>
 
 @FLB_IN_PLUGINS_DECL@
 @FLB_OUT_PLUGINS_DECL@
 @FLB_FILTER_PLUGINS_DECL@
 
-void flb_register_plugins(struct flb_config *config)
+int flb_plugins_register(struct flb_config *config)
 {
     struct flb_input_plugin *in;
     struct flb_output_plugin *out;
@@ -39,6 +40,35 @@ void flb_register_plugins(struct flb_config *config)
 @FLB_IN_PLUGINS_ADD@
 @FLB_OUT_PLUGINS_ADD@
 @FLB_FILTER_PLUGINS_ADD@
+
+    return 0;
+}
+
+void flb_plugins_unregister(struct flb_config *config)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_input_plugin *in;
+    struct flb_output_plugin *out;
+    struct flb_filter_plugin *filter;
+
+    mk_list_foreach_safe(head, tmp, &config->in_plugins) {
+        in = mk_list_entry(head, struct flb_input_plugin, _head);
+        mk_list_del(&in->_head);
+        flb_free(in);
+    }
+
+    mk_list_foreach_safe(head, tmp, &config->out_plugins) {
+        out = mk_list_entry(head, struct flb_output_plugin, _head);
+        mk_list_del(&out->_head);
+        flb_free(out);
+    }
+
+    mk_list_foreach_safe(head, tmp, &config->filter_plugins) {
+        filter = mk_list_entry(head, struct flb_filter_plugin, _head);
+        mk_list_del(&filter->_head);
+        flb_free(filter);
+    }
 }
 
 #endif
