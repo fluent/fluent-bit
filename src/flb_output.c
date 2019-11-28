@@ -36,6 +36,13 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_plugin_proxy.h>
 
+FLB_TLS_DEFINE(struct flb_libco_out_params, flb_libco_params);
+
+void flb_output_prepare()
+{
+    FLB_TLS_INIT(flb_libco_params);
+}
+
 /* Validate the the output address protocol */
 static int check_protocol(const char *prot, const char *output)
 {
@@ -161,6 +168,7 @@ void flb_output_exit(struct flb_config *config)
     struct mk_list *head;
     struct flb_output_instance *ins;
     struct flb_output_plugin *p;
+    void *params;
 
     mk_list_foreach_safe(head, tmp, &config->outputs) {
         ins = mk_list_entry(head, struct flb_output_instance, _head);
@@ -176,6 +184,11 @@ void flb_output_exit(struct flb_config *config)
         }
 
         flb_output_instance_destroy(ins);
+    }
+
+    params = FLB_TLS_GET(flb_libco_params);
+    if (params) {
+        flb_free(params);
     }
 }
 

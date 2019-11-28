@@ -294,7 +294,7 @@ struct flb_libco_out_params {
     struct flb_thread *th;
 };
 
-struct flb_libco_out_params libco_param;
+extern FLB_TLS_DEFINE(struct flb_libco_out_params, flb_libco_params);
 
 static FLB_INLINE void output_params_set(struct flb_thread *th,
                               const void *data, size_t bytes,
@@ -303,31 +303,61 @@ static FLB_INLINE void output_params_set(struct flb_thread *th,
                               struct flb_output_plugin *out_plugin,
                               void *out_context, struct flb_config *config)
 {
-    /* Callback parameters in order */
-    libco_param.data        = data;
-    libco_param.bytes       = bytes;
-    libco_param.tag         = tag;
-    libco_param.tag_len     = tag_len;
-    libco_param.i_ins       = i_ins;
-    libco_param.out_context = out_context;
-    libco_param.config      = config;
-    libco_param.out_plugin  = out_plugin;
+    struct flb_libco_out_params *params;
 
-    libco_param.th = th;
+    params = FLB_TLS_GET(flb_libco_params);
+    if (!params) {
+        params = (struct flb_libco_out_params *)
+            flb_malloc(sizeof(struct flb_libco_out_params));
+        if (!params) {
+            flb_errno();
+            return;
+        }
+    }
+
+    /* Callback parameters in order */
+    params->data        = data;
+    params->bytes       = bytes;
+    params->tag         = tag;
+    params->tag_len     = tag_len;
+    params->i_ins       = i_ins;
+    params->out_context = out_context;
+    params->config      = config;
+    params->out_plugin  = out_plugin;
+    params->th          = th;
+
+    FLB_TLS_SET(flb_libco_params, params);
     co_switch(th->callee);
 }
 
 static FLB_INLINE void output_pre_cb_flush(void)
 {
-    const void *data                 = libco_param.data;
-    size_t bytes                     = libco_param.bytes;
-    const char *tag                  = libco_param.tag;
-    int tag_len                      = libco_param.tag_len;
-    struct flb_input_instance *i_ins = libco_param.i_ins;
-    struct flb_output_plugin *out_p  = libco_param.out_plugin;
-    void *out_context                = libco_param.out_context;
-    struct flb_config *config        = libco_param.config;
-    struct flb_thread *th            = libco_param.th;
+    const void *data;
+    size_t bytes;
+    const char *tag;
+    int tag_len;
+    struct flb_input_instance *i_ins;
+    struct flb_output_plugin *out_p;
+    void *out_context;
+    struct flb_config *config;
+    struct flb_thread *th;
+    struct flb_libco_out_params *params;
+
+    params = FLB_TLS_GET(flb_libco_params);
+    if (!params) {
+        flb_error("[output] no co-routines params defined, unexpected");
+        return;
+    }
+
+    data        = params->data;
+    bytes       = params->bytes;
+    tag         = params->tag;
+    tag_len     = params->tag_len;
+    i_ins       = params->i_ins;
+    out_p       = params->out_plugin;
+    out_context = params->out_context;
+    config      = params->config;
+    th          = params->th;
 
     /*
      * Until this point the th->callee already set the variables, so we
@@ -497,5 +527,6 @@ int flb_output_instance_destroy(struct flb_output_instance *ins);
 int flb_output_init(struct flb_config *config);
 int flb_output_check(struct flb_config *config);
 int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *ins);
+void flb_output_prepare();
 
 #endif
