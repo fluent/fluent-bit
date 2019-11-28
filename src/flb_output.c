@@ -537,11 +537,6 @@ int flb_output_init(struct flb_config *config)
     struct flb_output_instance *ins;
     struct flb_output_plugin *p;
 
-    /* We need at least one output */
-    if (mk_list_is_empty(&config->outputs) == 0) {
-        return -1;
-    }
-
     /* Retrieve the plugin reference */
     mk_list_foreach_safe(head, tmp, &config->outputs) {
         ins = mk_list_entry(head, struct flb_output_instance, _head);
