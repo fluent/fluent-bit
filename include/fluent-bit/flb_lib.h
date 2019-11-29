@@ -40,6 +40,7 @@ struct flb_lib_out_cb {
 /* For Fluent Bit library callers, we only export the following symbols */
 typedef struct flb_lib_ctx         flb_ctx_t;
 
+FLB_EXPORT void flb_init_env();
 FLB_EXPORT flb_ctx_t *flb_create();
 FLB_EXPORT void flb_destroy(flb_ctx_t *ctx);
 FLB_EXPORT int flb_input(flb_ctx_t *ctx, const char *input, void *data);

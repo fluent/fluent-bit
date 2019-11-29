@@ -102,6 +102,12 @@ static inline struct flb_filter_instance *filter_instance_get(flb_ctx_t *ctx,
     return NULL;
 }
 
+void flb_init_env()
+{
+    flb_thread_prepare();
+    flb_output_prepare();
+}
+
 flb_ctx_t *flb_create()
 {
     int ret;
