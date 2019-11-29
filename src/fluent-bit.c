@@ -853,6 +853,10 @@ int main(int argc, char **argv)
     }
 #endif
 
+    /* Prepare pthread keys */
+    flb_thread_prepare();
+    flb_output_prepare();
+
     ret = flb_engine_start(config);
     if (ret == -1) {
         flb_engine_shutdown(config);
