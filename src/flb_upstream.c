@@ -141,6 +141,7 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
 #endif
     conn->ts_created = time(NULL);
     conn->ts_available = 0;
+    conn->ka_count = 0;
 
     MK_EVENT_ZERO(&conn->event);
 
