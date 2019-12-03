@@ -195,8 +195,8 @@ int tcp_conn_event(void *data)
         }
 
         /* Read data */
-        bytes = read(conn->fd,
-                     conn->buf_data + conn->buf_len, available);
+        bytes = recv(conn->fd,
+                     conn->buf_data + conn->buf_len, available, 0);
         if (bytes <= 0) {
             flb_trace("[in_tcp] fd=%i closed connection", event->fd);
             tcp_conn_del(conn);
@@ -292,7 +292,7 @@ struct tcp_conn *tcp_conn_add(int fd, struct flb_in_tcp_config *ctx)
     conn->buf_data = flb_malloc(ctx->chunk_size);
     if (!conn->buf_data) {
         flb_errno();
-        close(fd);
+        flb_socket_close(fd);
         flb_error("[in_tcp] could not allocate new connection");
         flb_free(conn);
         return NULL;
@@ -310,7 +310,7 @@ struct tcp_conn *tcp_conn_add(int fd, struct flb_in_tcp_config *ctx)
     ret = mk_event_add(ctx->evl, fd, FLB_ENGINE_EV_CUSTOM, MK_EVENT_READ, conn);
     if (ret == -1) {
         flb_error("[in_tcp] could not register new connection");
-        close(fd);
+        flb_socket_close(fd);
         flb_free(conn->buf_data);
         flb_free(conn);
         return NULL;
@@ -335,7 +335,7 @@ int tcp_conn_del(struct tcp_conn *conn)
 
     /* Release resources */
     mk_list_del(&conn->_head);
-    close(conn->fd);
+    flb_socket_close(conn->fd);
     flb_free(conn->buf_data);
     flb_free(conn);
 
