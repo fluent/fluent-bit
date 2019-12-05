@@ -21,7 +21,8 @@ RUN apt-get update && \
       libsystemd-dev \
       zlib1g-dev \
       flex \
-      bison
+      bison \
+      dumb-init
 
 RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log /tmp/src/
 COPY . /tmp/src/
@@ -69,6 +70,7 @@ COPY --from=builder /usr/lib/x86_64-linux-gnu/liblz4.so* /usr/lib/x86_64-linux-g
 COPY --from=builder /lib/x86_64-linux-gnu/libgcrypt.so* /lib/x86_64-linux-gnu/
 COPY --from=builder /lib/x86_64-linux-gnu/libpcre.so* /lib/x86_64-linux-gnu/
 COPY --from=builder /lib/x86_64-linux-gnu/libgpg-error.so* /lib/x86_64-linux-gnu/
+COPY --from=builder /usr/bin/dumb-init /usr/bin/dumb-init
 
 COPY --from=builder /fluent-bit /fluent-bit
 
@@ -76,4 +78,5 @@ COPY --from=builder /fluent-bit /fluent-bit
 EXPOSE 2020
 
 # Entry point
+ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
