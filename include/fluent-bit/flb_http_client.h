@@ -97,8 +97,17 @@ struct flb_http_client {
     int header_size;
     char *header_buf;
 
+    /* incoming parameters */
+    const char *uri;
+    const char *query_string;
+    const char *host;
+    int port;
+
+    /* payload */
     int body_len;
     const char *body_buf;
+
+    struct mk_list headers;
 
     /* Proxy */
     struct flb_http_proxy proxy;

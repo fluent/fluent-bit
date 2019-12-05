@@ -35,6 +35,7 @@
 #include <string.h>
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_http_client.h>
 
@@ -436,6 +437,7 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
                                         const char *proxy, int flags)
 {
     int ret;
+    char *p;
     char *buf = NULL;
     char *str_method = NULL;
     char *fmt_plain =                           \
@@ -510,10 +512,21 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
 
     c->u_conn      = u_conn;
     c->method      = method;
+    c->uri         = uri;
+    c->host        = host;
+    c->port        = port;
     c->header_buf  = buf;
     c->header_size = FLB_HTTP_BUF_SIZE;
     c->header_len  = ret;
     c->flags       = flags;
+    mk_list_init(&c->headers);
+
+    /* Check if we have a query string */
+    p = strchr(uri, '?');
+    if (p) {
+        p++;
+        c->query_string = p;
+    }
 
     /* Is Upstream connection using keepalive mode ? */
     if (u_conn->u->flags & FLB_IO_TCP_KA) {
@@ -657,18 +670,42 @@ int flb_http_buffer_increase(struct flb_http_client *c, size_t size,
     return 0;
 }
 
+
 /* Append a custom HTTP header to the request */
 int flb_http_add_header(struct flb_http_client *c,
                         const char *key, size_t key_len,
                         const char *val, size_t val_len)
 {
-    int required;
-    int new_size;
-    char *tmp;
+    struct flb_kv *kv;
 
     if (key_len < 1 || val_len < 1) {
         return -1;
     }
+
+    /* register new header in the temporal kv list */
+    kv = flb_kv_item_create_len(&c->headers,
+                                (char *) key, key_len, (char *) val, val_len);
+    if (!kv) {
+        return -1;
+    }
+
+    return 0;
+}
+
+static int http_header_push(struct flb_http_client *c, struct flb_kv *header)
+{
+    char *tmp;
+    const char *key;
+    const char *val;
+    size_t key_len;
+    size_t val_len;
+    size_t required;
+    size_t new_size;
+
+    key = header->key;
+    key_len = flb_sds_len(header->key);
+    val = header->val;
+    val_len = flb_sds_len(header->val);
 
     /*
      * The new header will need enough space in the buffer:
@@ -715,6 +752,30 @@ int flb_http_add_header(struct flb_http_client *c,
     c->header_buf[c->header_len++] = '\n';
 
     return 0;
+}
+
+
+static int http_headers_compose(struct flb_http_client *c)
+{
+    int ret;
+    struct mk_list *head;
+    struct flb_kv *header;
+
+    mk_list_foreach(head, &c->headers) {
+        header = mk_list_entry(head, struct flb_kv, _head);
+        ret = http_header_push(c, header);
+        if (ret != 0) {
+            flb_error("[http_client] cannot compose request headers");
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+static void http_headers_destroy(struct flb_http_client *c)
+{
+    flb_kv_release(&c->headers);
 }
 
 static int flb_http_keepalive(struct flb_http_client *c)
@@ -808,6 +869,12 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
     size_t bytes_header = 0;
     size_t bytes_body = 0;
     char *tmp;
+
+    /* Append pending headers */
+    ret = http_headers_compose(c);
+    if (ret == -1) {
+        return -1;
+    }
 
     /* Try to add keep alive header */
     flb_http_keepalive(c);
@@ -907,6 +974,7 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
 
 void flb_http_client_destroy(struct flb_http_client *c)
 {
+    http_headers_destroy(c);
     flb_free(c->resp.data);
     flb_free(c->header_buf);
     flb_free(c);
