@@ -68,6 +68,7 @@ option(FLB_HTTP_SERVER        "Enable HTTP Server"            No)
 option(FLB_BACKTRACE          "Enable stacktrace support"    Yes)
 option(FLB_LUAJIT             "Enable Lua Scripting support" Yes)
 option(FLB_RECORD_ACCESSOR    "Enable record accessor"       Yes)
+option(FLB_SIGNV4             "Enable AWS Signv4 support"    Yes)
 option(FLB_SYSTEM_STRPTIME    "Use strptime in system libc"  Yes)
 option(FLB_STATIC_CONF        "Build binary using static configuration")
 option(FLB_STREAM_PROCESSOR   "Enable Stream Processor"      Yes)
@@ -357,6 +358,11 @@ endif()
 # Metrics
 if(FLB_METRICS)
   FLB_DEFINITION(FLB_HAVE_METRICS)
+endif()
+
+# Signv4
+if (FLB_SIGNV4)
+  FLB_DEFINITION(FLB_HAVE_SIGNV4)
 endif()
 
 if(FLB_SQLDB)

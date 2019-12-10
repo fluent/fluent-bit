@@ -96,6 +96,13 @@ if(FLB_METRICS)
     )
 endif()
 
+if(FLB_METRICS)
+  set(src
+    ${src}
+    "flb_signv4.c"
+    )
+endif()
+
 if(FLB_LUAJIT)
   set(src
     ${src}
