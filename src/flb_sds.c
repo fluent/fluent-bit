@@ -107,11 +107,7 @@ flb_sds_t flb_sds_increase(flb_sds_t s, size_t len)
         flb_errno();
         return NULL;
     }
-
-    if (tmp != head) {
-        head = tmp;
-    }
-
+    head = (struct flb_sds *) tmp;
     head->alloc += len;
     out = head->buf;
 
@@ -308,33 +304,34 @@ flb_sds_t flb_sds_printf(flb_sds_t *sds, const char *fmt, ...)
     }
 
     va_start(ap, fmt);
-
     size = vsnprintf((char *) (s + flb_sds_len(s)), flb_sds_avail(s), fmt, ap);
     if (size < 0) {
         flb_warn("[%s] buggy vsnprintf return %d", __FUNCTION__, size);
         va_end(ap);
         return NULL;
     }
+    va_end(ap);
+
     if (size > flb_sds_avail(s)) {
         tmp = flb_sds_increase(s, size);
         if (!tmp) {
-            va_end(ap);
             return NULL;
         }
         *sds = s = tmp;
+
+        va_start(ap, fmt);
         size = vsnprintf((char *) (s + flb_sds_len(s)), flb_sds_avail(s), fmt, ap);
         if (size > flb_sds_avail(s)) {
             flb_warn("[%s] vsnprintf is insatiable ", __FUNCTION__);
             va_end(ap);
             return NULL;
         }
+        va_end(ap);
     }
 
     head = FLB_SDS_HEADER(s);
     head->len += size;
     s[head->len] = '\0';
-
-    va_end(ap);
 
     return s;
 }
