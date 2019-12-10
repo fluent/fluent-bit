@@ -285,6 +285,13 @@ struct mk_list *flb_utils_split(const char *line, int separator, int max_split)
     return list;
 }
 
+void flb_utils_split_free_entry(struct flb_split_entry *entry)
+{
+    mk_list_del(&entry->_head);
+    flb_free(entry->value);
+    flb_free(entry);
+}
+
 void flb_utils_split_free(struct mk_list *list)
 {
     struct mk_list *tmp;
@@ -293,9 +300,7 @@ void flb_utils_split_free(struct mk_list *list)
 
     mk_list_foreach_safe(head, tmp, list) {
         entry = mk_list_entry(head, struct flb_split_entry, _head);
-        mk_list_del(&entry->_head);
-        flb_free(entry->value);
-        flb_free(entry);
+        flb_utils_split_free_entry(entry);
     }
 
     flb_free(list);

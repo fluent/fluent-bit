@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_sds.h>
 
 struct flb_split_entry {
     char *value;
@@ -44,7 +45,7 @@ int flb_utils_set_daemon();
 void flb_utils_print_setup(struct flb_config *config);
 
 struct mk_list *flb_utils_split(const char *line, int separator, int max_split);
-
+void flb_utils_split_free_entry(struct flb_split_entry *entry);
 void flb_utils_split_free(struct mk_list *list);
 int flb_utils_timer_consume(flb_pipefd_t fd);
 int64_t flb_utils_size_to_bytes(const char *size);
