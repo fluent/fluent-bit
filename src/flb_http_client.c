@@ -444,6 +444,8 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
         "%s %s HTTP/1.%i\r\n"
         "Host: %s:%i\r\n"
         "Content-Length: %i\r\n";
+    char *fmt_vanilla =                         \
+        "%s %s HTTP/1.%i\r\n";
     char *fmt_proxy =                           \
         "%s http://%s:%i/%s HTTP/1.%i\r\n"
         "Host: %s:%i\r\n"
@@ -475,7 +477,7 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
     }
 
     /* FIXME: handler for HTTPS proxy */
-    if (!proxy) {
+    if (!proxy && host && port) {
         ret = snprintf(buf, FLB_HTTP_BUF_SIZE,
                        fmt_plain,
                        str_method,
@@ -485,7 +487,7 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
                        u->tcp_port,
                        body_len);
     }
-    else {
+    else if (host && port > 0) {
         ret = snprintf(buf, FLB_HTTP_BUF_SIZE,
                        fmt_proxy,
                        str_method,
@@ -496,6 +498,13 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
                        host,
                        port,
                        body_len);
+    }
+    else {
+        ret = snprintf(buf, FLB_HTTP_BUF_SIZE,
+                       fmt_vanilla,
+                       str_method,
+                       uri,
+                       flags & FLB_HTTP_10 ? 0 : 1);
     }
 
     if (ret == -1) {
