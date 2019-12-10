@@ -21,7 +21,24 @@ static void test_sds_usage()
     flb_sds_destroy(s);
 }
 
+static void test_sds_printf()
+{
+    int len;
+    flb_sds_t s;
+    flb_sds_t tmp;
+    char *str = "0123456789ABCDEFGHIJQLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvewxyz";
+
+    s = flb_sds_create_size(10);
+    tmp = flb_sds_printf(&s, "%s=%s", str, str);
+
+    len = (strlen(str) * 2) + 1;
+    TEST_CHECK(tmp == s);
+    TEST_CHECK(flb_sds_len(s) == len);
+    flb_sds_destroy(s);
+}
+
 TEST_LIST = {
-    { "sds_usage", test_sds_usage},
+    { "sds_usage" , test_sds_usage},
+    { "sds_printf", test_sds_printf},
     { 0 }
 };
