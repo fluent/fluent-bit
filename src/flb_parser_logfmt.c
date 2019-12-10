@@ -78,6 +78,7 @@ static int logfmt_parser(struct flb_parser *parser,
     const unsigned char *end = c + in_size;
     int last_byte;
     int do_pack = FLB_TRUE;
+    int value_str = FLB_FALSE;
     int value_escape = FLB_FALSE;
 
     /* if map_size is 0 only count the number of k:v */
@@ -101,6 +102,7 @@ static int logfmt_parser(struct flb_parser *parser,
         key_len = c - key;
         /* value */
         value_len = 0;
+        value_str = FLB_FALSE;
         value_escape =  FLB_FALSE;
         if (*c == '=') {
             c++;
@@ -108,6 +110,7 @@ static int logfmt_parser(struct flb_parser *parser,
                 if (*c == '"') {
                     c++;
                     value = c;
+                    value_str = FLB_TRUE;
                     while (c < end) {
                         if (*c != '\\' && *c!= '"') {
                             c++;
@@ -171,7 +174,12 @@ static int logfmt_parser(struct flb_parser *parser,
                         msgpack_pack_str(tmp_pck, key_len);
                         msgpack_pack_str_body(tmp_pck, (const char *)key, key_len);
                         if (value_len == 0) {
-                            msgpack_pack_true(tmp_pck);
+                            if (value_str == FLB_TRUE) {
+                                msgpack_pack_str(tmp_pck, 0);
+                            }
+                            else {
+                                msgpack_pack_nil(tmp_pck);
+                            }
                         }
                         else {
                             if (value_escape == FLB_TRUE) {
