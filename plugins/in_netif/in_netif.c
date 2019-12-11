@@ -71,13 +71,13 @@ static int init_entry_linux(struct flb_in_netif_config *ctx)
 {
     int i;
 
+    ctx->entry_len = sizeof(entry_name_linux) / sizeof(struct entry_define);
     ctx->entry = flb_malloc(sizeof(struct netif_entry) * ctx->entry_len);
     if (!ctx->entry) {
         flb_errno();
         return -1;
     }
 
-    ctx->entry_len = sizeof(entry_name_linux) / sizeof(struct entry_define);
     for(i = 0; i < ctx->entry_len; i++) {
         ctx->entry[i].name     = entry_name_linux[i].name;
         ctx->entry[i].name_len = strlen(entry_name_linux[i].name);
