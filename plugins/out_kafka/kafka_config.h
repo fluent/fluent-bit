@@ -60,6 +60,9 @@ struct flb_kafka {
 
     int message_key_len;
     char *message_key;
+	
+    int message_key_field_len;
+    char *message_key_field;
 
     /* Gelf Keys */
     struct flb_gelf_fields gelf_fields;
