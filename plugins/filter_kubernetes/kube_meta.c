@@ -813,7 +813,7 @@ static inline int extract_meta(struct flb_kube *ctx,
         kube_tag_len = flb_sds_len(ctx->kube_tag_prefix);
         if (kube_tag_len + 1 >= tag_len) {
             flb_error("[filter_kube] incoming record tag (%s) is shorter "
-                      "than kube_tag_prefix value (%s)",
+                      "than kube_tag_prefix value (%s), skip filter",
                       tag, ctx->kube_tag_prefix);
             return -1;
         }
