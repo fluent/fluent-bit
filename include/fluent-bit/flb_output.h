@@ -305,7 +305,7 @@ static FLB_INLINE void output_params_set(struct flb_thread *th,
 {
     struct flb_libco_out_params *params;
 
-    params = FLB_TLS_GET(flb_libco_params);
+    params = (struct flb_libco_out_params *) FLB_TLS_GET(flb_libco_params);
     if (!params) {
         params = (struct flb_libco_out_params *)
             flb_malloc(sizeof(struct flb_libco_out_params));
@@ -343,7 +343,7 @@ static FLB_INLINE void output_pre_cb_flush(void)
     struct flb_thread *th;
     struct flb_libco_out_params *params;
 
-    params = FLB_TLS_GET(flb_libco_params);
+    params = (struct flb_libco_out_params *) FLB_TLS_GET(flb_libco_params);
     if (!params) {
         flb_error("[output] no co-routines params defined, unexpected");
         return;
