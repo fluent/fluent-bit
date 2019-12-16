@@ -120,6 +120,8 @@ RECORD_TIME             return RECORD_TIME;
 "."                     |
 ";"                     { return yytext[0]; }
 
+"!="                    return NEQ;
+"<>"                    return NEQ;
 "<"                     return LT;
 "<="                    return LTE;
 ">"                     return GT;
