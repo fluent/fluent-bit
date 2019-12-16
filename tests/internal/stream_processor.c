@@ -304,6 +304,26 @@ static void cb_select_cond_null(int id, struct task_check *check,
     TEST_CHECK(ret == 1);
 }
 
+static void cb_select_not_equal_1(int id, struct task_check *check,
+                                  char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 1 row */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 2);
+}
+
+static void cb_select_not_equal_2(int id, struct task_check *check,
+                                  char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 2 row */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 2);
+}
+
 static void cb_select_aggr(int id, struct task_check *check,
                            char *buf, size_t size)
 {
@@ -587,30 +607,43 @@ struct task_check select_keys_checks[] = {
         "SELECT * FROM STREAM:FLB WHERE word3 IS NULL;",
         cb_select_cond_null
     },
+    {
+        6, 0, 0, 0,
+        "select_not_equal_1",
+        "SELECT * FROM STREAM:FLB WHERE bool != true;",
+        cb_select_not_equal_1
+    },
+    {
+        7, 0, 0, 0,
+        "select_not_equal_2",
+        "SELECT * FROM STREAM:FLB WHERE bytes <> 10;",
+        cb_select_not_equal_2
+    },
+
 
     /* Aggregation functions */
     {
-        6, 0, 0, 0,
+        8, 0, 0, 0,
         "select_aggr",
         "SELECT MIN(id), MAX(id), COUNT(*), SUM(bytes), AVG(bytes) " \
         "FROM STREAM:FLB;",
         cb_select_aggr,
     },
     {
-        7, 0, 0, 0,
+        9, 0, 0, 0,
         "select_aggr_coount",
         "SELECT COUNT(*) " \
         "FROM STREAM:FLB;",
         cb_select_aggr_count,
     },
     {
-        8, 0, 0, 0,
+        10, 0, 0, 0,
         "select_aggr_window_tumbling",
         "SELECT MIN(id), MAX(id), COUNT(*), SUM(bytes), AVG(bytes) FROM STREAM:FLB;",
         cb_select_aggr,
     },
     {
-        9, 0, 0, 0,
+        11, 0, 0, 0,
         "select_aggr_window_tumbling_groupby",
         "SELECT bool, MIN(id), MAX(id), COUNT(*), SUM(bytes), AVG(bytes) " \
         "FROM STREAM:FLB WHERE word3 IS NOT NULL GROUP BY bool;",
@@ -619,13 +652,13 @@ struct task_check select_keys_checks[] = {
 
     /* Time functions */
     {
-        10, 0, 0, 0,
+        12, 0, 0, 0,
         "func_time_now",
         "SELECT NOW(), NOW() as tnow FROM STREAM:FLB WHERE bytes > 10;",
         cb_func_time_now,
     },
     {
-        11, 0, 0, 0,
+        13, 0, 0, 0,
         "func_time_unix_timestamp",
         "SELECT UNIX_TIMESTAMP(), UNIX_TIMESTAMP() as ts " \
         "FROM STREAM:FLB WHERE bytes > 10;",
@@ -634,25 +667,25 @@ struct task_check select_keys_checks[] = {
 
     /* Stream selection using Tag rules */
     {
-        12, 0, 0, 0,
+        14, 0, 0, 0,
         "select_from_tag_error",
         "SELECT id FROM TAG:'no-matches' WHERE bytes > 10;",
         cb_select_tag_error,
     },
     {
-        13, 0, 0, 0,
+        15, 0, 0, 0,
         "select_from_tag",
         "SELECT id FROM TAG:'samples' WHERE bytes > 10;",
         cb_select_tag_ok,
     },
     {
-        14, 0, 0, 0,
+        16, 0, 0, 0,
         "@recond.contains",
         "SELECT id FROM TAG:'samples' WHERE bytes = 10 AND @record.contains(word2);",
         cb_record_contains,
     },
     {
-        15, 0, 0, 0,
+        17, 0, 0, 0,
         "@recond.contains",
         "SELECT id FROM TAG:'samples' WHERE @record.contains(x);",
         cb_record_not_contains,

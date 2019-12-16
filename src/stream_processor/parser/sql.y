@@ -58,7 +58,7 @@ void yyerror(struct flb_sp_cmd *cmd, const char *query, void *scanner,
 %token INTEGER FLOATING STRING BOOLTYPE
 
 /* Logical operation tokens */
-%token AND OR NOT LT LTE GT GTE
+%token AND OR NOT NEQ LT LTE GT GTE
 
 /* Time tokens */
 %token HOUR MINUTE SECOND
@@ -471,6 +471,14 @@ select: SELECT keys FROM source window where groupby ';'
                   record_func '=' value
                   {
                     $$ = flb_sp_cmd_comparison(cmd, $1, $3, FLB_EXP_EQ);
+                  }
+                  |
+                  record_func NEQ value
+                  {
+                    $$ = flb_sp_cmd_operation(cmd,
+                             flb_sp_cmd_comparison(cmd, $1, $3, FLB_EXP_EQ),
+                                 NULL, FLB_EXP_NOT)
+                    ;
                   }
                   |
                   record_func LT value
