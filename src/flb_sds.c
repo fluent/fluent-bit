@@ -23,6 +23,7 @@
  * SDS library created by Antirez at https://github.com/antirez/sds.
  */
 
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_log.h>
