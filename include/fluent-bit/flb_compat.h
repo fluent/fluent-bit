@@ -47,6 +47,9 @@
 #define PATH_MAX MAX_PATH
 #define S_ISREG(m) (((m) & S_IFMT) == S_IFREG)
 
+/* monkey exposes a broken vsnprintf macro. Undo it  */
+#undef vsnprintf
+
 /*
  * Windows prefer to add an underscore to each POSIX function.
  * To suppress compiler warnings, we need these trivial macros.
