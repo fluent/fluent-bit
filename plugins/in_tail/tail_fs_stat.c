@@ -123,8 +123,12 @@ static int tail_fs_check(struct flb_input_instance *i_ins,
          * Check if file still exists. This method requires explicity that the
          * user is using an absolute path, otherwise we will be rotating the
          * wrong file.
+         *
+         * flb_tail_target_file_name_cmp is a deeper compare than
+         * flb_tail_file_name_cmp. If applicable, it compares to the underlying
+         * real_name of the file.
          */
-        if (flb_tail_file_name_cmp(name, file) != 0) {
+        if (flb_tail_target_file_name_cmp(name, file) != 0) {
             flb_tail_file_rotated(file);
         }
         flb_free(name);
