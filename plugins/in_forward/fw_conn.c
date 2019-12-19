@@ -63,8 +63,8 @@ int fw_conn_event(void *data)
             available = (conn->buf_size - conn->buf_len);
         }
 
-        bytes = read(conn->fd,
-                     conn->buf + conn->buf_len, available);
+        bytes = recv(conn->fd,
+                     conn->buf + conn->buf_len, available, 0);
 
         if (bytes > 0) {
             flb_trace("[in_fw] read()=%i pre_len=%i now_len=%i",
@@ -123,7 +123,7 @@ struct fw_conn *fw_conn_add(int fd, struct flb_in_fw_config *ctx)
     conn->buf = flb_malloc(ctx->buffer_chunk_size);
     if (!conn->buf) {
         flb_errno();
-        close(fd);
+        flb_socket_close(fd);
         flb_free(conn);
         return NULL;
     }
@@ -134,7 +134,7 @@ struct fw_conn *fw_conn_add(int fd, struct flb_in_fw_config *ctx)
     ret = mk_event_add(ctx->evl, fd, FLB_ENGINE_EV_CUSTOM, MK_EVENT_READ, conn);
     if (ret == -1) {
         flb_error("[in_fw] could not register new connection");
-        close(fd);
+        flb_socket_close(fd);
         flb_free(conn->buf);
         flb_free(conn);
         return NULL;
@@ -152,7 +152,7 @@ int fw_conn_del(struct fw_conn *conn)
 
     /* Release resources */
     mk_list_del(&conn->_head);
-    close(conn->fd);
+    flb_socket_close(conn->fd);
     flb_free(conn->buf);
     flb_free(conn);
 
