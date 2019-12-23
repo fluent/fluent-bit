@@ -63,7 +63,7 @@ set(FLB_OUT_STDOUT            Yes)
 set(FLB_OUT_LIB                No)
 set(FLB_OUT_NULL              Yes)
 set(FLB_OUT_FLOWCOUNTER       Yes)
-set(FLB_OUT_KAFKA             Yes)
+set(FLB_OUT_KAFKA              No)
 set(FLB_OUT_KAFKA_REST         No)
 
 # FILTER plugins
