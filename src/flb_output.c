@@ -587,7 +587,7 @@ int flb_output_init(struct flb_config *config)
 #endif
 
 #ifdef FLB_HAVE_TLS
-        if (ins->flags & FLB_IO_TLS) {
+        if (ins->use_tls == FLB_TRUE) {
             ins->tls.context = flb_tls_context_new(ins->tls_verify,
                                                    ins->tls_debug,
                                                    ins->tls_vhost,
