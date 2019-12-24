@@ -255,6 +255,7 @@ int flb_input_set(flb_ctx_t *ctx, int ffd, ...)
         value = va_arg(va, char *);
         if (!value) {
             /* Wrong parameter */
+            va_end(va);
             return -1;
         }
         ret = flb_input_set_property(i_ins, key, value);
@@ -279,7 +280,6 @@ int flb_output_set(flb_ctx_t *ctx, int ffd, ...)
 
     o_ins = out_instance_get(ctx, ffd);
     if (!o_ins) {
-        printf("no instance ofund!\n");
         return -1;
     }
 
@@ -288,6 +288,7 @@ int flb_output_set(flb_ctx_t *ctx, int ffd, ...)
         value = va_arg(va, char *);
         if (!value) {
             /* Wrong parameter */
+            va_end(va);
             return -1;
         }
 
@@ -321,6 +322,7 @@ int flb_filter_set(flb_ctx_t *ctx, int ffd, ...)
         value = va_arg(va, char *);
         if (!value) {
             /* Wrong parameter */
+            va_end(va);
             return -1;
         }
 
