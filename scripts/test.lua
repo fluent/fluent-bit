@@ -27,7 +27,7 @@
 
 -- Print record to the standard output
 function cb_print(tag, timestamp, record)
-   output = tag .. ":  [" .. string.format("%f", timestamp) .. ", { "
+   output = string.gsub(tag, "([%w_]+)/([%w_]+)/([%w_]+)(.*)", "%1/%2/%3") .. ":  [" .. string.format("%f", timestamp) .. ", { "
 
    for key, val in pairs(record) do
       output = output .. string.format(" %s => %s,", key, val)
