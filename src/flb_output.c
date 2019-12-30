@@ -133,7 +133,7 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
 #endif
 
 #ifdef FLB_HAVE_TLS
-    if (ins->flags & FLB_IO_TLS) {
+    if (ins->use_tls == FLB_TRUE) {
         if (ins->tls.context) {
             flb_tls_context_destroy(ins->tls.context);
         }
