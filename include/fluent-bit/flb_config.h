@@ -130,6 +130,8 @@ struct flb_config {
 
     /* Logging */
     char *log_file;
+    int log_file_sz_mb;
+    int log_file_history;
     struct flb_log *log;
 
     /* Parser Conf */
@@ -280,14 +282,16 @@ enum conf_type {
     FLB_CONF_TYPE_OTHER,
 };
 
-#define FLB_CONF_STR_FLUSH        "Flush"
-#define FLB_CONF_STR_GRACE        "Grace"
-#define FLB_CONF_STR_DAEMON       "Daemon"
-#define FLB_CONF_STR_LOGFILE      "Log_File"
-#define FLB_CONF_STR_LOGLEVEL     "Log_Level"
-#define FLB_CONF_STR_PARSERS_FILE "Parsers_File"
-#define FLB_CONF_STR_PLUGINS_FILE "Plugins_File"
-#define FLB_CONF_STR_STREAMS_FILE "Streams_File"
+#define FLB_CONF_STR_FLUSH              "Flush"
+#define FLB_CONF_STR_GRACE              "Grace"
+#define FLB_CONF_STR_DAEMON             "Daemon"
+#define FLB_CONF_STR_LOGFILE            "Log_File"
+#define FLB_CONF_STR_LOGLEVEL           "Log_Level"
+#define FLB_CONF_STR_LOGFILE_SIZE       "Log_File_Size"
+#define FLB_CONF_STR_LOGFILE_HISTORY    "Log_File_History"
+#define FLB_CONF_STR_PARSERS_FILE       "Parsers_File"
+#define FLB_CONF_STR_PLUGINS_FILE       "Plugins_File"
+#define FLB_CONF_STR_STREAMS_FILE       "Streams_File"
 
 /* FLB_HAVE_HTTP_SERVER */
 #ifdef FLB_HAVE_HTTP_SERVER

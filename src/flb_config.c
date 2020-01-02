@@ -77,6 +77,14 @@ struct flb_service_config service_configs[] = {
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, log)},
 
+    {FLB_CONF_STR_LOGFILE_SIZE,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, log_file_sz_mb)},
+
+    {FLB_CONF_STR_LOGFILE_HISTORY,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, log_file_history)},
+
 #ifdef FLB_HAVE_HTTP_SERVER
     {FLB_CONF_STR_HTTP_SERVER,
      FLB_CONF_TYPE_BOOL,
