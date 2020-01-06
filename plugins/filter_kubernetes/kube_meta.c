@@ -887,7 +887,7 @@ static int get_and_merge_meta(struct flb_kube *ctx, struct flb_kube_meta *meta,
                         meta->namespace, meta->podname,
                         &api_buf, &api_size);
 
-    /* retry on apiserver query failure */
+    /* ealy return if api server response is empty which prevents the result from being cached */
     if (api_buf == NULL) {
         return -1;
     }
