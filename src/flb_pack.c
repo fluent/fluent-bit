@@ -673,6 +673,9 @@ int flb_pack_to_json_format_type(const char *str)
     else if (strcasecmp(str, "json_lines") == 0) {
         return FLB_PACK_JSON_FORMAT_LINES;
     }
+    else if (strcasecmp(str, "json_loki") == 0) {
+        return FLB_PACK_JSON_FORMAT_LOKI;
+    }
 
     return -1;
 }
@@ -717,6 +720,10 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
     msgpack_object *obj;
     struct tm tm;
     struct flb_time tms;
+    const char *message_key = "message";
+    const char *stream_key = "stream";
+    const char *streams_key = "streams";
+    const char *values_key = "values";
 
     if (!date_key) {
         return NULL;
@@ -752,7 +759,12 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
      *   [T, M]...
      * ]
      */
-    if (json_format == FLB_PACK_JSON_FORMAT_JSON) {
+    if (json_format == FLB_PACK_JSON_FORMAT_LOKI) {
+        msgpack_pack_map(&tmp_pck, 1);
+        msgpack_pack_str(&tmp_pck, strlen(streams_key));
+        msgpack_pack_str_body(&tmp_pck, streams_key, strlen(streams_key));
+    }
+    if (json_format == FLB_PACK_JSON_FORMAT_JSON || json_format == FLB_PACK_JSON_FORMAT_LOKI) {
         msgpack_pack_array(&tmp_pck, records);
     }
 
@@ -770,50 +782,100 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
         /* Get the record/map */
         map = root.via.array.ptr[1];
         map_size = map.via.map.size;
-        msgpack_pack_map(&tmp_pck, map_size + 1);
 
-        /* Append date key */
-        msgpack_pack_str(&tmp_pck, flb_sds_len(date_key));
-        msgpack_pack_str_body(&tmp_pck, date_key, flb_sds_len(date_key));
+        if (json_format == FLB_PACK_JSON_FORMAT_LOKI){
+            const char *message = "";
+            size_t message_len;
+            size_t labels_size = map_size;
+            // try to find message in record
+            for (i = 0; i < map_size; i++) {
+                msgpack_object *k = &map.via.map.ptr[i].key;
+                if (k->type != MSGPACK_OBJECT_STR || strncasecmp(k->via.str.ptr,message_key, k->via.str.size) != 0)
+                    continue;
+                msgpack_object *v = &map.via.map.ptr[i].val;
+                if (v->type != MSGPACK_OBJECT_STR)
+                    continue;
+                message = v->via.str.ptr;
+                message_len = v->via.str.size;
+                labels_size --;
+            }
 
-        /* Append date value */
-        switch (date_format) {
-        case FLB_PACK_JSON_DATE_DOUBLE:
-            msgpack_pack_double(&tmp_pck, flb_time_to_double(&tms));
-            break;
-        case FLB_PACK_JSON_DATE_ISO8601:
-            /* Format the time, use microsecond precision not nanoseconds */
-            gmtime_r(&tms.tm.tv_sec, &tm);
-            s = strftime(time_formatted, sizeof(time_formatted) - 1,
-                         FLB_PACK_JSON_DATE_ISO8601_FMT, &tm);
+            /* copy labels into stream object */
+            // TODO: this should be deduplicated
+            msgpack_pack_map(&tmp_pck, 2);
+            msgpack_pack_str(&tmp_pck, strlen(stream_key));
+            msgpack_pack_str_body(&tmp_pck, stream_key, strlen(stream_key));
+            msgpack_pack_map(&tmp_pck, labels_size);
+            for (i = 0; i < map_size; i++) {
+                msgpack_object *k = &map.via.map.ptr[i].key;
+                if (k->type == MSGPACK_OBJECT_STR && strncasecmp(k->via.str.ptr,message_key, k->via.str.size) == 0)
+                    continue;
+                msgpack_object *v = &map.via.map.ptr[i].val;
+                msgpack_pack_object(&tmp_pck, *k);
+                msgpack_pack_object(&tmp_pck, *v);
+            }
 
-            len = snprintf(time_formatted + s,
-                           sizeof(time_formatted) - 1 - s,
-                           ".%06" PRIu64 "Z",
-                           (uint64_t) tms.tm.tv_nsec / 1000);
-            s += len;
-            msgpack_pack_str(&tmp_pck, s);
-            msgpack_pack_str_body(&tmp_pck, time_formatted, s);
-            break;
-        case FLB_PACK_JSON_DATE_EPOCH:
-            msgpack_pack_uint64(&tmp_pck, (long long unsigned)(tms.tm.tv_sec));
-            break;
-        }
+            /* insert timestamp and message into values */
+            msgpack_pack_str(&tmp_pck, strlen(values_key));
+            msgpack_pack_str_body(&tmp_pck, values_key, strlen(values_key));
+            msgpack_pack_array(&tmp_pck, 1);
+            msgpack_pack_array(&tmp_pck, 2);
 
-        /* Append remaining keys/values */
-        for (i = 0; i < map_size; i++) {
-            msgpack_object *k = &map.via.map.ptr[i].key;
-            msgpack_object *v = &map.via.map.ptr[i].val;
+            len = snprintf(time_formatted,
+                           sizeof(time_formatted) - 1,
+                           "%lli%09li",
+                           (long long unsigned) tms.tm.tv_sec,
+                           (long unsigned) tms.tm.tv_nsec);
+            msgpack_pack_str(&tmp_pck, len);
+            msgpack_pack_str_body(&tmp_pck, time_formatted, len);
 
-            msgpack_pack_object(&tmp_pck, *k);
-            msgpack_pack_object(&tmp_pck, *v);
+            msgpack_pack_str(&tmp_pck, message_len);
+            msgpack_pack_str_body(&tmp_pck, message, message_len);
+        } else {
+            msgpack_pack_map(&tmp_pck, map_size + 1);
+            /* Append date key */
+            msgpack_pack_str(&tmp_pck, flb_sds_len(date_key));
+            msgpack_pack_str_body(&tmp_pck, date_key, flb_sds_len(date_key));
+
+            /* Append date value */
+            switch (date_format) {
+                case FLB_PACK_JSON_DATE_DOUBLE:
+                    msgpack_pack_double(&tmp_pck, flb_time_to_double(&tms));
+                    break;
+                case FLB_PACK_JSON_DATE_ISO8601:
+                    /* Format the time, use microsecond precision not nanoseconds */
+                    gmtime_r(&tms.tm.tv_sec, &tm);
+                    s = strftime(time_formatted, sizeof(time_formatted) - 1,
+                                 FLB_PACK_JSON_DATE_ISO8601_FMT, &tm);
+
+                    len = snprintf(time_formatted + s,
+                                   sizeof(time_formatted) - 1 - s,
+                                   ".%06" PRIu64 "Z",
+                                   (uint64_t) tms.tm.tv_nsec / 1000);
+                    s += len;
+                    msgpack_pack_str(&tmp_pck, s);
+                    msgpack_pack_str_body(&tmp_pck, time_formatted, s);
+                    break;
+                case FLB_PACK_JSON_DATE_EPOCH:
+                    msgpack_pack_uint64(&tmp_pck, (long long unsigned)(tms.tm.tv_sec));
+                    break;
+            }
+
+            /* Append remaining keys/values */
+            for (i = 0; i < map_size; i++) {
+                msgpack_object *k = &map.via.map.ptr[i].key;
+                msgpack_object *v = &map.via.map.ptr[i].val;
+
+                msgpack_pack_object(&tmp_pck, *k);
+                msgpack_pack_object(&tmp_pck, *v);
+            }
         }
 
         /*
          * If the format is the original msgpack style, just continue since
          * we don't care about separator or JSON convertion at this point.
          */
-        if (json_format == FLB_PACK_JSON_FORMAT_JSON) {
+        if (json_format == FLB_PACK_JSON_FORMAT_JSON || json_format == FLB_PACK_JSON_FORMAT_LOKI) {
             continue;
         }
 
@@ -882,7 +944,7 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
     msgpack_unpacked_destroy(&result);
 
     /* Format to JSON */
-    if (json_format == FLB_PACK_JSON_FORMAT_JSON) {
+    if (json_format == FLB_PACK_JSON_FORMAT_JSON || json_format == FLB_PACK_JSON_FORMAT_LOKI) {
         out_buf = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size);
         msgpack_sbuffer_destroy(&tmp_sbuf);
 

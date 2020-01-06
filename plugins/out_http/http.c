@@ -108,6 +108,7 @@ static int http_post(struct flb_out_http *ctx,
     if ((ctx->out_format == FLB_PACK_JSON_FORMAT_JSON) ||
         (ctx->out_format == FLB_PACK_JSON_FORMAT_STREAM) ||
         (ctx->out_format == FLB_PACK_JSON_FORMAT_LINES) ||
+        (ctx->out_format == FLB_PACK_JSON_FORMAT_LOKI) ||
         (ctx->out_format == FLB_HTTP_OUT_GELF)) {
         flb_http_add_header(c,
                             FLB_HTTP_CONTENT_TYPE,
@@ -283,7 +284,8 @@ static void cb_http_flush(const void *data, size_t bytes,
 
     if ((ctx->out_format == FLB_PACK_JSON_FORMAT_JSON) ||
         (ctx->out_format == FLB_PACK_JSON_FORMAT_STREAM) ||
-        (ctx->out_format == FLB_PACK_JSON_FORMAT_LINES)) {
+        (ctx->out_format == FLB_PACK_JSON_FORMAT_LINES) ||
+        (ctx->out_format == FLB_PACK_JSON_FORMAT_LOKI)) {
 
         json = flb_pack_msgpack_to_json_format(data, bytes,
                                                ctx->out_format,

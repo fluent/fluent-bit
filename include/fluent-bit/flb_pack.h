@@ -47,6 +47,7 @@
 #define FLB_PACK_JSON_FORMAT_JSON        1
 #define FLB_PACK_JSON_FORMAT_STREAM      2
 #define FLB_PACK_JSON_FORMAT_LINES       3
+#define FLB_PACK_JSON_FORMAT_LOKI        4
 
 struct flb_pack_state {
     int multiple;         /* support multiple jsons? */
