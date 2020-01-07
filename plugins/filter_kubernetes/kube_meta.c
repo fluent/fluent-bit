@@ -225,8 +225,10 @@ static int get_api_server_info(struct flb_kube *ctx,
 
         /* Compose HTTP Client request */
         c = flb_http_client(u_conn, FLB_HTTP_GET,
-                            uri,
-                            NULL, 0, NULL, 0, NULL, 0);
+                            uri, NULL, 0,
+                            ctx->api_host,
+                            ctx->api_port,
+                            NULL, 0);
         flb_http_buffer_size(c, ctx->buffer_size);
 
         flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
