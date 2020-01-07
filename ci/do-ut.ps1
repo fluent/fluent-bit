@@ -13,6 +13,7 @@ cmake -G "$ENV:msvc" -DCMAKE_BUILD_TYPE="$ENV:configuration" `
                      -D FLB_WITHOUT_flb-it-unit_sizes=On `
                      -D FLB_WITHOUT_flb-it-network=On `
                      -D FLB_WITHOUT_flb-it-pack=On `
+                     -D FLB_WITHOUT_flb-it-signv4=On `
                      ../
 
 # COMPILE
