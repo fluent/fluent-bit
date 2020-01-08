@@ -112,6 +112,8 @@ void do_test(char *system, ...)
      * little more before checking the condition.
      */
 
+    flb_init_env()
+
     /* Start test */
     TEST_CHECK(flb_start(ctx) == 0);
 
