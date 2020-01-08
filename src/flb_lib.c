@@ -452,7 +452,7 @@ int flb_start(flb_ctx_t *ctx)
     struct mk_event *event;
     struct flb_config *config;
 
-    pthread_once(&flb_lib_once, flb_thread_prepare);
+    pthread_once(&flb_lib_once, flb_init_env);
 
     config = ctx->config;
     ret = mk_utils_worker_spawn(flb_lib_worker, config, &tid);
