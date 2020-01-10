@@ -25,7 +25,7 @@
 
 #define NATS_CONNECT "CONNECT {\"verbose\":false,\"pedantic\":false,\"ssl_required\":false,\"name\":\"fluent-bit\",\"lang\":\"c\",\"version\":\"" FLB_VERSION_STR "\"}\r\n"
 
-struct flb_out_nats_config {
+struct flb_out_nats {
     struct flb_output_instance *ins;
     struct flb_upstream *u;
 };

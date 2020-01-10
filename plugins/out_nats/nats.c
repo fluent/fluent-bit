@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_config_map.h>
 
 #include <stdio.h>
 #include <msgpack.h>
@@ -34,18 +35,10 @@ int cb_nats_init(struct flb_output_instance *ins, struct flb_config *config,
 {
     int io_flags;
     struct flb_upstream *upstream;
-    struct flb_out_nats_config *ctx;
-
-    /* Set default network configuration */
-    if (!ins->host.name) {
-        ins->host.name = flb_strdup("127.0.0.1");
-    }
-    if (ins->host.port == 0) {
-        ins->host.port = 4222;
-    }
+    struct flb_out_nats *ctx;
 
     /* Allocate plugin context */
-    ctx = flb_malloc(sizeof(struct flb_out_nats_config));
+    ctx = flb_malloc(sizeof(struct flb_out_nats));
     if (!ctx) {
         perror("malloc");
         return -1;
@@ -160,7 +153,7 @@ void cb_nats_flush(const void *data, size_t bytes,
     flb_sds_t json_msg;
     char *request;
     int req_len;
-    struct flb_out_nats_config *ctx = out_context;
+    struct flb_out_nats *ctx = out_context;
     struct flb_upstream_conn *u_conn;
 
     u_conn = flb_upstream_conn_get(ctx->u);
@@ -221,13 +214,28 @@ void cb_nats_flush(const void *data, size_t bytes,
 int cb_nats_exit(void *data, struct flb_config *config)
 {
     (void) config;
-    struct flb_out_nats_config *ctx = data;
+    struct flb_out_nats *ctx = data;
 
     flb_upstream_destroy(ctx->u);
     flb_free(ctx);
 
     return 0;
 }
+
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "host", "127.0.0.1",
+     0,
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_INT, "port", "4222",
+     0,
+     NULL
+    },
+    /* EOF */
+    {0}
+};
 
 struct flb_output_plugin out_nats_plugin = {
     .name         = "nats",
@@ -236,4 +244,5 @@ struct flb_output_plugin out_nats_plugin = {
     .cb_flush     = cb_nats_flush,
     .cb_exit      = cb_nats_exit,
     .flags        = FLB_OUTPUT_NET,
+    .config_map   = config_map,
 };
