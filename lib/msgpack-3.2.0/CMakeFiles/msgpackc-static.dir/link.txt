@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libmsgpackc.a  CMakeFiles/msgpackc-static.dir/src/objectc.c.o CMakeFiles/msgpackc-static.dir/src/unpack.c.o CMakeFiles/msgpackc-static.dir/src/version.c.o CMakeFiles/msgpackc-static.dir/src/vrefbuffer.c.o CMakeFiles/msgpackc-static.dir/src/zone.c.o
+/usr/bin/ranlib ../../library/libmsgpackc.a

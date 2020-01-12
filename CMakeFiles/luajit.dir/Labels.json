@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/luajit"
+		},
+		{
+			"file" : "/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/luajit.rule"
+		},
+		{
+			"file" : "/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/luajit-complete.rule"
+		},
+		{
+			"file" : "/home/atibhi/Desktop/CNCF/fluent-bit/luajit-prefix/src/luajit-stamp/luajit-install.rule"
+		},
+		{
+			"file" : "/home/atibhi/Desktop/CNCF/fluent-bit/luajit-prefix/src/luajit-stamp/luajit-mkdir.rule"
+		},
+		{
+			"file" : "/home/atibhi/Desktop/CNCF/fluent-bit/luajit-prefix/src/luajit-stamp/luajit-download.rule"
+		},
+		{
+			"file" : "/home/atibhi/Desktop/CNCF/fluent-bit/luajit-prefix/src/luajit-stamp/luajit-update.rule"
+		},
+		{
+			"file" : "/home/atibhi/Desktop/CNCF/fluent-bit/luajit-prefix/src/luajit-stamp/luajit-patch.rule"
+		},
+		{
+			"file" : "/home/atibhi/Desktop/CNCF/fluent-bit/luajit-prefix/src/luajit-stamp/luajit-configure.rule"
+		},
+		{
+			"file" : "/home/atibhi/Desktop/CNCF/fluent-bit/luajit-prefix/src/luajit-stamp/luajit-build.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"luajit"
+		],
+		"name" : "luajit"
+	}
+}

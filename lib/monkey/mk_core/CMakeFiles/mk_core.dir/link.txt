@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../../library/libmk_core.a  CMakeFiles/mk_core.dir/mk_rconf.c.o CMakeFiles/mk_core.dir/mk_string.c.o CMakeFiles/mk_core.dir/mk_memory.c.o CMakeFiles/mk_core.dir/mk_event.c.o CMakeFiles/mk_core.dir/mk_utils.c.o CMakeFiles/mk_core.dir/mk_file.c.o CMakeFiles/mk_core.dir/mk_iov.c.o
+/usr/bin/ranlib ../../../library/libmk_core.a

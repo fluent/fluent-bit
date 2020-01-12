@@ -1,0 +1,1 @@
+cmd='/home/atibhi/Desktop/CNCF/fluent-bit/lib/libbacktrace-5a99ff7f/configure;--prefix=<INSTALL_DIR>;--enable-shared=no;--enable-static=yes'

@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-out_flowcounter.a  CMakeFiles/flb-plugin-out_flowcounter.dir/out_flowcounter.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-out_flowcounter.a

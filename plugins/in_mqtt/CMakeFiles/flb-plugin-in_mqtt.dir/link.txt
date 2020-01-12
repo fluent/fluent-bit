@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-in_mqtt.a  CMakeFiles/flb-plugin-in_mqtt.dir/mqtt.c.o CMakeFiles/flb-plugin-in_mqtt.dir/mqtt_conn.c.o CMakeFiles/flb-plugin-in_mqtt.dir/mqtt_prot.c.o CMakeFiles/flb-plugin-in_mqtt.dir/mqtt_config.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-in_mqtt.a

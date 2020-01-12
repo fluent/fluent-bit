@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-out_stackdriver.a  CMakeFiles/flb-plugin-out_stackdriver.dir/gce_metadata.c.o CMakeFiles/flb-plugin-out_stackdriver.dir/stackdriver_conf.c.o CMakeFiles/flb-plugin-out_stackdriver.dir/stackdriver.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-out_stackdriver.a

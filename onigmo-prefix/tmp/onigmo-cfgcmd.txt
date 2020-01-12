@@ -1,0 +1,1 @@
+cmd='./configure;--with-pic;--disable-shared;--enable-static;--prefix=/home/atibhi/Desktop/CNCF/fluent-bit;CFLAGS=-std=gnu99 -Wall -pipe -g3 -O3 -funroll-loops'

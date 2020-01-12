@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-in_stream_processor.a  CMakeFiles/flb-plugin-in_stream_processor.dir/sp.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-in_stream_processor.a

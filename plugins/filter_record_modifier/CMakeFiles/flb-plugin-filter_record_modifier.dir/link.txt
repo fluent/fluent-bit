@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-filter_record_modifier.a  CMakeFiles/flb-plugin-filter_record_modifier.dir/filter_modifier.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-filter_record_modifier.a

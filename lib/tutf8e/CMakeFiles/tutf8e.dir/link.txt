@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libtutf8e.a  CMakeFiles/tutf8e.dir/src/tutf8e.c.o
+/usr/bin/ranlib ../../library/libtutf8e.a

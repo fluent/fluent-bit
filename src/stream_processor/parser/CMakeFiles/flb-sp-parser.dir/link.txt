@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../../library/libflb-sp-parser.a  CMakeFiles/flb-sp-parser.dir/flb_sp_parser.c.o CMakeFiles/flb-sp-parser.dir/sql_lex.c.o CMakeFiles/flb-sp-parser.dir/sql_parser.c.o
+/usr/bin/ranlib ../../../library/libflb-sp-parser.a

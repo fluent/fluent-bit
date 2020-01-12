@@ -1,0 +1,13 @@
+# Target labels
+ luajit
+# Source files and their labels
+/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/luajit
+/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/luajit.rule
+/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/luajit-complete.rule
+/home/atibhi/Desktop/CNCF/fluent-bit/luajit-prefix/src/luajit-stamp/luajit-install.rule
+/home/atibhi/Desktop/CNCF/fluent-bit/luajit-prefix/src/luajit-stamp/luajit-mkdir.rule
+/home/atibhi/Desktop/CNCF/fluent-bit/luajit-prefix/src/luajit-stamp/luajit-download.rule
+/home/atibhi/Desktop/CNCF/fluent-bit/luajit-prefix/src/luajit-stamp/luajit-update.rule
+/home/atibhi/Desktop/CNCF/fluent-bit/luajit-prefix/src/luajit-stamp/luajit-patch.rule
+/home/atibhi/Desktop/CNCF/fluent-bit/luajit-prefix/src/luajit-stamp/luajit-configure.rule
+/home/atibhi/Desktop/CNCF/fluent-bit/luajit-prefix/src/luajit-stamp/luajit-build.rule

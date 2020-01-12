@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-out_es.a  CMakeFiles/flb-plugin-out_es.dir/es_bulk.c.o CMakeFiles/flb-plugin-out_es.dir/es_conf.c.o CMakeFiles/flb-plugin-out_es.dir/es.c.o CMakeFiles/flb-plugin-out_es.dir/murmur3.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-out_es.a

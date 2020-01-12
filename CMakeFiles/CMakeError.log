@@ -1,0 +1,172 @@
+Determining if the pthread_create exist failed with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_6a7e2/fast"
+/usr/bin/make -f CMakeFiles/cmTC_6a7e2.dir/build.make CMakeFiles/cmTC_6a7e2.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_6a7e2.dir/CheckSymbolExists.c.o
+/usr/bin/cc   -Wall -D__FILENAME__='"CMakeFiles/CMakeTmp/CheckSymbolExists.c"'  -fPIE   -o CMakeFiles/cmTC_6a7e2.dir/CheckSymbolExists.c.o   -c /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_6a7e2
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_6a7e2.dir/link.txt --verbose=1
+/usr/bin/cc  -Wall -D__FILENAME__='"$(subst /home/atibhi/Desktop/CNCF/fluent-bit/,,$(abspath $<))"'     -rdynamic CMakeFiles/cmTC_6a7e2.dir/CheckSymbolExists.c.o  -o cmTC_6a7e2 
+CMakeFiles/cmTC_6a7e2.dir/CheckSymbolExists.c.o: In function `main':
+CheckSymbolExists.c:(.text+0x1b): undefined reference to `pthread_create'
+collect2: error: ld returned 1 exit status
+CMakeFiles/cmTC_6a7e2.dir/build.make:97: recipe for target 'cmTC_6a7e2' failed
+make[1]: *** [cmTC_6a7e2] Error 1
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Makefile:126: recipe for target 'cmTC_6a7e2/fast' failed
+make: *** [cmTC_6a7e2/fast] Error 2
+
+File /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <pthread.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef pthread_create
+  return ((int*)(&pthread_create))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+
+Determining if the function pthread_create exists in the pthreads failed with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_c9b4e/fast"
+/usr/bin/make -f CMakeFiles/cmTC_c9b4e.dir/build.make CMakeFiles/cmTC_c9b4e.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_c9b4e.dir/CheckFunctionExists.c.o
+/usr/bin/cc   -Wall -D__FILENAME__='"/usr/share/cmake-3.10/Modules/CheckFunctionExists.c"' -DCHECK_FUNCTION_EXISTS=pthread_create -fPIE   -o CMakeFiles/cmTC_c9b4e.dir/CheckFunctionExists.c.o   -c /usr/share/cmake-3.10/Modules/CheckFunctionExists.c
+Linking C executable cmTC_c9b4e
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_c9b4e.dir/link.txt --verbose=1
+/usr/bin/cc  -Wall -D__FILENAME__='"$(subst /home/atibhi/Desktop/CNCF/fluent-bit/,,$(abspath $<))"' -DCHECK_FUNCTION_EXISTS=pthread_create    -rdynamic CMakeFiles/cmTC_c9b4e.dir/CheckFunctionExists.c.o  -o cmTC_c9b4e -lpthreads 
+/usr/bin/ld: cannot find -lpthreads
+collect2: error: ld returned 1 exit status
+CMakeFiles/cmTC_c9b4e.dir/build.make:97: recipe for target 'cmTC_c9b4e' failed
+make[1]: *** [cmTC_c9b4e] Error 1
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Makefile:126: recipe for target 'cmTC_c9b4e/fast' failed
+make: *** [cmTC_c9b4e/fast] Error 2
+
+
+Performing C++ SOURCE FILE Test MSGPACK_ENABLE_GCC_CXX_ATOMIC failed with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_da017/fast"
+/usr/bin/make -f CMakeFiles/cmTC_da017.dir/build.make CMakeFiles/cmTC_da017.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_da017.dir/src.cxx.o
+/usr/bin/c++    -DMSGPACK_DEFAULT_API_VERSION=3 -std=c++98  -DMSGPACK_ENABLE_GCC_CXX_ATOMIC -fPIE   -o CMakeFiles/cmTC_da017.dir/src.cxx.o -c /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.cxx
+/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.cxx:2:10: fatal error: bits/atomicity.h: No such file or directory
+ #include <bits/atomicity.h>
+          ^~~~~~~~~~~~~~~~~~
+compilation terminated.
+CMakeFiles/cmTC_da017.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_da017.dir/src.cxx.o' failed
+make[1]: *** [CMakeFiles/cmTC_da017.dir/src.cxx.o] Error 1
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Makefile:126: recipe for target 'cmTC_da017/fast' failed
+make: *** [cmTC_da017/fast] Error 2
+
+Source file was:
+
+#include <bits/atomicity.h>
+int atomic_sub(int i) { return __gnu_cxx::__exchange_and_add(&i, -1) - 1; }
+int atomic_add(int i) { return __gnu_cxx::__exchange_and_add(&i, 1) + 1; }
+int main(int argc, char * argv[])
+{
+    atomic_sub(1);
+    atomic_add(1);
+}
+
+Performing C SOURCE FILE Test HAVE_KQUEUE failed with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_59032/fast"
+/usr/bin/make -f CMakeFiles/cmTC_59032.dir/build.make CMakeFiles/cmTC_59032.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_59032.dir/src.c.o
+/usr/bin/cc   -Wall -D__FILENAME__='"CMakeFiles/CMakeTmp/src.c"' -DHAVE_KQUEUE -fPIE   -o CMakeFiles/cmTC_59032.dir/src.c.o   -c /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c
+/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c:2:12: fatal error: sys/event.h: No such file or directory
+   #include <sys/event.h>
+            ^~~~~~~~~~~~~
+compilation terminated.
+CMakeFiles/cmTC_59032.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_59032.dir/src.c.o' failed
+make[1]: *** [CMakeFiles/cmTC_59032.dir/src.c.o] Error 1
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Makefile:126: recipe for target 'cmTC_59032/fast' failed
+make: *** [cmTC_59032/fast] Error 2
+
+Source file was:
+
+  #include <sys/event.h>
+  int main() {
+     return kqueue();
+  }
+Performing C SOURCE FILE Test FLB_HAVE_CLOCK_GET_TIME failed with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_dcdef/fast"
+/usr/bin/make -f CMakeFiles/cmTC_dcdef.dir/build.make CMakeFiles/cmTC_dcdef.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_dcdef.dir/src.c.o
+/usr/bin/cc   -Wall -D__FILENAME__='"CMakeFiles/CMakeTmp/src.c"' -DFLB_HAVE_CLOCK_GET_TIME -fPIE   -o CMakeFiles/cmTC_dcdef.dir/src.c.o   -c /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c
+/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c:2:12: fatal error: mach/clock.h: No such file or directory
+   #include <mach/clock.h>
+            ^~~~~~~~~~~~~~
+compilation terminated.
+CMakeFiles/cmTC_dcdef.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_dcdef.dir/src.c.o' failed
+make[1]: *** [CMakeFiles/cmTC_dcdef.dir/src.c.o] Error 1
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Makefile:126: recipe for target 'cmTC_dcdef/fast' failed
+make: *** [cmTC_dcdef/fast] Error 2
+
+Source file was:
+
+  #include <mach/clock.h>
+  #include <mach/mach.h>
+  int main() {
+      clock_serv_t cclock;
+      mach_timespec_t mts;
+      host_get_clock_service(mach_host_self(), CALENDAR_CLOCK, &cclock);
+      clock_get_time(cclock, &mts);
+      return mach_port_deallocate(mach_task_self(), cclock);
+  }
+Determining if the accept4 exist failed with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_bc63a/fast"
+/usr/bin/make -f CMakeFiles/cmTC_bc63a.dir/build.make CMakeFiles/cmTC_bc63a.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_bc63a.dir/CheckSymbolExists.c.o
+/usr/bin/cc   -Wall -D__FILENAME__='"CMakeFiles/CMakeTmp/CheckSymbolExists.c"'  -fPIE   -o CMakeFiles/cmTC_bc63a.dir/CheckSymbolExists.c.o   -c /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/CheckSymbolExists.c: In function ‘main’:
+/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: error: ‘accept4’ undeclared (first use in this function); did you mean ‘accept’?
+   return ((int*)(&accept4))[argc];
+                   ^~~~~~~
+                   accept
+/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: note: each undeclared identifier is reported only once for each function it appears in
+CMakeFiles/cmTC_bc63a.dir/build.make:65: recipe for target 'CMakeFiles/cmTC_bc63a.dir/CheckSymbolExists.c.o' failed
+make[1]: *** [CMakeFiles/cmTC_bc63a.dir/CheckSymbolExists.c.o] Error 1
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Makefile:126: recipe for target 'cmTC_bc63a/fast' failed
+make: *** [cmTC_bc63a/fast] Error 2
+
+File /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <sys/socket.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef accept4
+  return ((int*)(&accept4))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+

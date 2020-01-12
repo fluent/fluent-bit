@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-in_dummy.a  CMakeFiles/flb-plugin-in_dummy.dir/in_dummy.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-in_dummy.a

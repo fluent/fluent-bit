@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-filter_parser.a  CMakeFiles/flb-plugin-filter_parser.dir/filter_parser.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-filter_parser.a

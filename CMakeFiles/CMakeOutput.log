@@ -1,0 +1,1019 @@
+The system is: Linux - 4.15.0-76-generic - x86_64
+Compiling the C compiler identification source file "CMakeCCompilerId.c" succeeded.
+Compiler: /usr/bin/cc 
+Build flags: 
+Id flags:  
+
+The output was:
+0
+
+
+Compilation of the C compiler identification source "CMakeCCompilerId.c" produced "a.out"
+
+The C compiler identification is GNU, found in "/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/3.10.2/CompilerIdC/a.out"
+
+Compiling the CXX compiler identification source file "CMakeCXXCompilerId.cpp" succeeded.
+Compiler: /usr/bin/c++ 
+Build flags: 
+Id flags:  
+
+The output was:
+0
+
+
+Compilation of the CXX compiler identification source "CMakeCXXCompilerId.cpp" produced "a.out"
+
+The CXX compiler identification is GNU, found in "/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/3.10.2/CompilerIdCXX/a.out"
+
+Determining if the C compiler works passed with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_d709b/fast"
+/usr/bin/make -f CMakeFiles/cmTC_d709b.dir/build.make CMakeFiles/cmTC_d709b.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_d709b.dir/testCCompiler.c.o
+/usr/bin/cc    -o CMakeFiles/cmTC_d709b.dir/testCCompiler.c.o   -c /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/testCCompiler.c
+Linking C executable cmTC_d709b
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_d709b.dir/link.txt --verbose=1
+/usr/bin/cc      -rdynamic CMakeFiles/cmTC_d709b.dir/testCCompiler.c.o  -o cmTC_d709b 
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+
+
+Detecting C compiler ABI info compiled with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_3fa32/fast"
+/usr/bin/make -f CMakeFiles/cmTC_3fa32.dir/build.make CMakeFiles/cmTC_3fa32.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_3fa32.dir/CMakeCCompilerABI.c.o
+/usr/bin/cc    -o CMakeFiles/cmTC_3fa32.dir/CMakeCCompilerABI.c.o   -c /usr/share/cmake-3.10/Modules/CMakeCCompilerABI.c
+Linking C executable cmTC_3fa32
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_3fa32.dir/link.txt --verbose=1
+/usr/bin/cc     -v -rdynamic CMakeFiles/cmTC_3fa32.dir/CMakeCCompilerABI.c.o  -o cmTC_3fa32 
+Using built-in specs.
+COLLECT_GCC=/usr/bin/cc
+COLLECT_LTO_WRAPPER=/usr/lib/gcc/x86_64-linux-gnu/7/lto-wrapper
+OFFLOAD_TARGET_NAMES=nvptx-none
+OFFLOAD_TARGET_DEFAULT=1
+Target: x86_64-linux-gnu
+Configured with: ../src/configure -v --with-pkgversion='Ubuntu 7.4.0-1ubuntu1~18.04.1' --with-bugurl=file:///usr/share/doc/gcc-7/README.Bugs --enable-languages=c,ada,c++,go,brig,d,fortran,objc,obj-c++ --prefix=/usr --with-gcc-major-version-only --program-suffix=-7 --program-prefix=x86_64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/lib --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --with-sysroot=/ --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-gnu-unique-object --disable-vtable-verify --enable-libmpx --enable-plugin --enable-default-pie --with-system-zlib --with-target-system-zlib --enable-objc-gc=auto --enable-multiarch --disable-werror --with-arch-32=i686 --with-abi=m64 --with-multilib-list=m32,m64,mx32 --enable-multilib --with-tune=generic --enable-offload-targets=nvptx-none --without-cuda-driver --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu
+Thread model: posix
+gcc version 7.4.0 (Ubuntu 7.4.0-1ubuntu1~18.04.1) 
+COMPILER_PATH=/usr/lib/gcc/x86_64-linux-gnu/7/:/usr/lib/gcc/x86_64-linux-gnu/7/:/usr/lib/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/7/:/usr/lib/gcc/x86_64-linux-gnu/
+LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/7/:/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/7/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/7/../../../:/lib/:/usr/lib/
+COLLECT_GCC_OPTIONS='-v' '-rdynamic' '-o' 'cmTC_3fa32' '-mtune=generic' '-march=x86-64'
+ /usr/lib/gcc/x86_64-linux-gnu/7/collect2 -plugin /usr/lib/gcc/x86_64-linux-gnu/7/liblto_plugin.so -plugin-opt=/usr/lib/gcc/x86_64-linux-gnu/7/lto-wrapper -plugin-opt=-fresolution=/tmp/ccJ3hIHu.res -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s --sysroot=/ --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -export-dynamic -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_3fa32 /usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/7/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/7 -L/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/7/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/7/../../.. CMakeFiles/cmTC_3fa32.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /usr/lib/gcc/x86_64-linux-gnu/7/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/crtn.o
+COLLECT_GCC_OPTIONS='-v' '-rdynamic' '-o' 'cmTC_3fa32' '-mtune=generic' '-march=x86-64'
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+
+
+Parsed C implicit link information from above output:
+  link line regex: [^( *|.*[/\])(ld|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\]+-)?ld|collect2)[^/\]*( |$)]
+  ignore line: [Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp]
+  ignore line: []
+  ignore line: [Run Build Command:"/usr/bin/make" "cmTC_3fa32/fast"]
+  ignore line: [/usr/bin/make -f CMakeFiles/cmTC_3fa32.dir/build.make CMakeFiles/cmTC_3fa32.dir/build]
+  ignore line: [make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp']
+  ignore line: [Building C object CMakeFiles/cmTC_3fa32.dir/CMakeCCompilerABI.c.o]
+  ignore line: [/usr/bin/cc    -o CMakeFiles/cmTC_3fa32.dir/CMakeCCompilerABI.c.o   -c /usr/share/cmake-3.10/Modules/CMakeCCompilerABI.c]
+  ignore line: [Linking C executable cmTC_3fa32]
+  ignore line: [/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_3fa32.dir/link.txt --verbose=1]
+  ignore line: [/usr/bin/cc     -v -rdynamic CMakeFiles/cmTC_3fa32.dir/CMakeCCompilerABI.c.o  -o cmTC_3fa32 ]
+  ignore line: [Using built-in specs.]
+  ignore line: [COLLECT_GCC=/usr/bin/cc]
+  ignore line: [COLLECT_LTO_WRAPPER=/usr/lib/gcc/x86_64-linux-gnu/7/lto-wrapper]
+  ignore line: [OFFLOAD_TARGET_NAMES=nvptx-none]
+  ignore line: [OFFLOAD_TARGET_DEFAULT=1]
+  ignore line: [Target: x86_64-linux-gnu]
+  ignore line: [Configured with: ../src/configure -v --with-pkgversion='Ubuntu 7.4.0-1ubuntu1~18.04.1' --with-bugurl=file:///usr/share/doc/gcc-7/README.Bugs --enable-languages=c,ada,c++,go,brig,d,fortran,objc,obj-c++ --prefix=/usr --with-gcc-major-version-only --program-suffix=-7 --program-prefix=x86_64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/lib --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --with-sysroot=/ --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-gnu-unique-object --disable-vtable-verify --enable-libmpx --enable-plugin --enable-default-pie --with-system-zlib --with-target-system-zlib --enable-objc-gc=auto --enable-multiarch --disable-werror --with-arch-32=i686 --with-abi=m64 --with-multilib-list=m32,m64,mx32 --enable-multilib --with-tune=generic --enable-offload-targets=nvptx-none --without-cuda-driver --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu]
+  ignore line: [Thread model: posix]
+  ignore line: [gcc version 7.4.0 (Ubuntu 7.4.0-1ubuntu1~18.04.1) ]
+  ignore line: [COMPILER_PATH=/usr/lib/gcc/x86_64-linux-gnu/7/:/usr/lib/gcc/x86_64-linux-gnu/7/:/usr/lib/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/7/:/usr/lib/gcc/x86_64-linux-gnu/]
+  ignore line: [LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/7/:/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/7/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/7/../../../:/lib/:/usr/lib/]
+  ignore line: [COLLECT_GCC_OPTIONS='-v' '-rdynamic' '-o' 'cmTC_3fa32' '-mtune=generic' '-march=x86-64']
+  link line: [ /usr/lib/gcc/x86_64-linux-gnu/7/collect2 -plugin /usr/lib/gcc/x86_64-linux-gnu/7/liblto_plugin.so -plugin-opt=/usr/lib/gcc/x86_64-linux-gnu/7/lto-wrapper -plugin-opt=-fresolution=/tmp/ccJ3hIHu.res -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s --sysroot=/ --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -export-dynamic -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_3fa32 /usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/7/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/7 -L/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/7/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/7/../../.. CMakeFiles/cmTC_3fa32.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /usr/lib/gcc/x86_64-linux-gnu/7/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/crtn.o]
+    arg [/usr/lib/gcc/x86_64-linux-gnu/7/collect2] ==> ignore
+    arg [-plugin] ==> ignore
+    arg [/usr/lib/gcc/x86_64-linux-gnu/7/liblto_plugin.so] ==> ignore
+    arg [-plugin-opt=/usr/lib/gcc/x86_64-linux-gnu/7/lto-wrapper] ==> ignore
+    arg [-plugin-opt=-fresolution=/tmp/ccJ3hIHu.res] ==> ignore
+    arg [-plugin-opt=-pass-through=-lgcc] ==> ignore
+    arg [-plugin-opt=-pass-through=-lgcc_s] ==> ignore
+    arg [-plugin-opt=-pass-through=-lc] ==> ignore
+    arg [-plugin-opt=-pass-through=-lgcc] ==> ignore
+    arg [-plugin-opt=-pass-through=-lgcc_s] ==> ignore
+    arg [--sysroot=/] ==> ignore
+    arg [--build-id] ==> ignore
+    arg [--eh-frame-hdr] ==> ignore
+    arg [-m] ==> ignore
+    arg [elf_x86_64] ==> ignore
+    arg [--hash-style=gnu] ==> ignore
+    arg [--as-needed] ==> ignore
+    arg [-export-dynamic] ==> ignore
+    arg [-dynamic-linker] ==> ignore
+    arg [/lib64/ld-linux-x86-64.so.2] ==> ignore
+    arg [-pie] ==> ignore
+    arg [-znow] ==> ignore
+    arg [-zrelro] ==> ignore
+    arg [-o] ==> ignore
+    arg [cmTC_3fa32] ==> ignore
+    arg [/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/Scrt1.o] ==> ignore
+    arg [/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/crti.o] ==> ignore
+    arg [/usr/lib/gcc/x86_64-linux-gnu/7/crtbeginS.o] ==> ignore
+    arg [-L/usr/lib/gcc/x86_64-linux-gnu/7] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/7]
+    arg [-L/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu]
+    arg [-L/usr/lib/gcc/x86_64-linux-gnu/7/../../../../lib] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/7/../../../../lib]
+    arg [-L/lib/x86_64-linux-gnu] ==> dir [/lib/x86_64-linux-gnu]
+    arg [-L/lib/../lib] ==> dir [/lib/../lib]
+    arg [-L/usr/lib/x86_64-linux-gnu] ==> dir [/usr/lib/x86_64-linux-gnu]
+    arg [-L/usr/lib/../lib] ==> dir [/usr/lib/../lib]
+    arg [-L/usr/lib/gcc/x86_64-linux-gnu/7/../../..] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/7/../../..]
+    arg [CMakeFiles/cmTC_3fa32.dir/CMakeCCompilerABI.c.o] ==> ignore
+    arg [-lgcc] ==> lib [gcc]
+    arg [--push-state] ==> ignore
+    arg [--as-needed] ==> ignore
+    arg [-lgcc_s] ==> lib [gcc_s]
+    arg [--pop-state] ==> ignore
+    arg [-lc] ==> lib [c]
+    arg [-lgcc] ==> lib [gcc]
+    arg [--push-state] ==> ignore
+    arg [--as-needed] ==> ignore
+    arg [-lgcc_s] ==> lib [gcc_s]
+    arg [--pop-state] ==> ignore
+    arg [/usr/lib/gcc/x86_64-linux-gnu/7/crtendS.o] ==> ignore
+    arg [/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/crtn.o] ==> ignore
+  collapse library dir [/usr/lib/gcc/x86_64-linux-gnu/7] ==> [/usr/lib/gcc/x86_64-linux-gnu/7]
+  collapse library dir [/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu] ==> [/usr/lib/x86_64-linux-gnu]
+  collapse library dir [/usr/lib/gcc/x86_64-linux-gnu/7/../../../../lib] ==> [/usr/lib]
+  collapse library dir [/lib/x86_64-linux-gnu] ==> [/lib/x86_64-linux-gnu]
+  collapse library dir [/lib/../lib] ==> [/lib]
+  collapse library dir [/usr/lib/x86_64-linux-gnu] ==> [/usr/lib/x86_64-linux-gnu]
+  collapse library dir [/usr/lib/../lib] ==> [/usr/lib]
+  collapse library dir [/usr/lib/gcc/x86_64-linux-gnu/7/../../..] ==> [/usr/lib]
+  implicit libs: [gcc;gcc_s;c;gcc;gcc_s]
+  implicit dirs: [/usr/lib/gcc/x86_64-linux-gnu/7;/usr/lib/x86_64-linux-gnu;/usr/lib;/lib/x86_64-linux-gnu;/lib]
+  implicit fwks: []
+
+
+
+
+Detecting C [-std=c11] compiler features compiled with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_28725/fast"
+/usr/bin/make -f CMakeFiles/cmTC_28725.dir/build.make CMakeFiles/cmTC_28725.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_28725.dir/feature_tests.c.o
+/usr/bin/cc   -std=c11 -o CMakeFiles/cmTC_28725.dir/feature_tests.c.o   -c /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/feature_tests.c
+Linking C executable cmTC_28725
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_28725.dir/link.txt --verbose=1
+/usr/bin/cc      -rdynamic CMakeFiles/cmTC_28725.dir/feature_tests.c.o  -o cmTC_28725 
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+
+
+    Feature record: C_FEATURE:1c_function_prototypes
+    Feature record: C_FEATURE:1c_restrict
+    Feature record: C_FEATURE:1c_static_assert
+    Feature record: C_FEATURE:1c_variadic_macros
+
+
+Detecting C [-std=c99] compiler features compiled with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_0b559/fast"
+/usr/bin/make -f CMakeFiles/cmTC_0b559.dir/build.make CMakeFiles/cmTC_0b559.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_0b559.dir/feature_tests.c.o
+/usr/bin/cc   -std=c99 -o CMakeFiles/cmTC_0b559.dir/feature_tests.c.o   -c /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/feature_tests.c
+Linking C executable cmTC_0b559
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_0b559.dir/link.txt --verbose=1
+/usr/bin/cc      -rdynamic CMakeFiles/cmTC_0b559.dir/feature_tests.c.o  -o cmTC_0b559 
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+
+
+    Feature record: C_FEATURE:1c_function_prototypes
+    Feature record: C_FEATURE:1c_restrict
+    Feature record: C_FEATURE:0c_static_assert
+    Feature record: C_FEATURE:1c_variadic_macros
+
+
+Detecting C [-std=c90] compiler features compiled with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_838dd/fast"
+/usr/bin/make -f CMakeFiles/cmTC_838dd.dir/build.make CMakeFiles/cmTC_838dd.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_838dd.dir/feature_tests.c.o
+/usr/bin/cc   -std=c90 -o CMakeFiles/cmTC_838dd.dir/feature_tests.c.o   -c /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/feature_tests.c
+Linking C executable cmTC_838dd
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_838dd.dir/link.txt --verbose=1
+/usr/bin/cc      -rdynamic CMakeFiles/cmTC_838dd.dir/feature_tests.c.o  -o cmTC_838dd 
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+
+
+    Feature record: C_FEATURE:1c_function_prototypes
+    Feature record: C_FEATURE:0c_restrict
+    Feature record: C_FEATURE:0c_static_assert
+    Feature record: C_FEATURE:0c_variadic_macros
+Determining if the CXX compiler works passed with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_1f92f/fast"
+/usr/bin/make -f CMakeFiles/cmTC_1f92f.dir/build.make CMakeFiles/cmTC_1f92f.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_1f92f.dir/testCXXCompiler.cxx.o
+/usr/bin/c++     -o CMakeFiles/cmTC_1f92f.dir/testCXXCompiler.cxx.o -c /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/testCXXCompiler.cxx
+Linking CXX executable cmTC_1f92f
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_1f92f.dir/link.txt --verbose=1
+/usr/bin/c++       -rdynamic CMakeFiles/cmTC_1f92f.dir/testCXXCompiler.cxx.o  -o cmTC_1f92f 
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+
+
+Detecting CXX compiler ABI info compiled with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_a74ff/fast"
+/usr/bin/make -f CMakeFiles/cmTC_a74ff.dir/build.make CMakeFiles/cmTC_a74ff.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_a74ff.dir/CMakeCXXCompilerABI.cpp.o
+/usr/bin/c++     -o CMakeFiles/cmTC_a74ff.dir/CMakeCXXCompilerABI.cpp.o -c /usr/share/cmake-3.10/Modules/CMakeCXXCompilerABI.cpp
+Linking CXX executable cmTC_a74ff
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_a74ff.dir/link.txt --verbose=1
+/usr/bin/c++      -v -rdynamic CMakeFiles/cmTC_a74ff.dir/CMakeCXXCompilerABI.cpp.o  -o cmTC_a74ff 
+Using built-in specs.
+COLLECT_GCC=/usr/bin/c++
+COLLECT_LTO_WRAPPER=/usr/lib/gcc/x86_64-linux-gnu/7/lto-wrapper
+OFFLOAD_TARGET_NAMES=nvptx-none
+OFFLOAD_TARGET_DEFAULT=1
+Target: x86_64-linux-gnu
+Configured with: ../src/configure -v --with-pkgversion='Ubuntu 7.4.0-1ubuntu1~18.04.1' --with-bugurl=file:///usr/share/doc/gcc-7/README.Bugs --enable-languages=c,ada,c++,go,brig,d,fortran,objc,obj-c++ --prefix=/usr --with-gcc-major-version-only --program-suffix=-7 --program-prefix=x86_64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/lib --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --with-sysroot=/ --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-gnu-unique-object --disable-vtable-verify --enable-libmpx --enable-plugin --enable-default-pie --with-system-zlib --with-target-system-zlib --enable-objc-gc=auto --enable-multiarch --disable-werror --with-arch-32=i686 --with-abi=m64 --with-multilib-list=m32,m64,mx32 --enable-multilib --with-tune=generic --enable-offload-targets=nvptx-none --without-cuda-driver --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu
+Thread model: posix
+gcc version 7.4.0 (Ubuntu 7.4.0-1ubuntu1~18.04.1) 
+COMPILER_PATH=/usr/lib/gcc/x86_64-linux-gnu/7/:/usr/lib/gcc/x86_64-linux-gnu/7/:/usr/lib/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/7/:/usr/lib/gcc/x86_64-linux-gnu/
+LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/7/:/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/7/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/7/../../../:/lib/:/usr/lib/
+COLLECT_GCC_OPTIONS='-v' '-rdynamic' '-o' 'cmTC_a74ff' '-shared-libgcc' '-mtune=generic' '-march=x86-64'
+ /usr/lib/gcc/x86_64-linux-gnu/7/collect2 -plugin /usr/lib/gcc/x86_64-linux-gnu/7/liblto_plugin.so -plugin-opt=/usr/lib/gcc/x86_64-linux-gnu/7/lto-wrapper -plugin-opt=-fresolution=/tmp/cchZBqBT.res -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc --sysroot=/ --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -export-dynamic -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_a74ff /usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/7/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/7 -L/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/7/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/7/../../.. CMakeFiles/cmTC_a74ff.dir/CMakeCXXCompilerABI.cpp.o -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc /usr/lib/gcc/x86_64-linux-gnu/7/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/crtn.o
+COLLECT_GCC_OPTIONS='-v' '-rdynamic' '-o' 'cmTC_a74ff' '-shared-libgcc' '-mtune=generic' '-march=x86-64'
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+
+
+Parsed CXX implicit link information from above output:
+  link line regex: [^( *|.*[/\])(ld|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\]+-)?ld|collect2)[^/\]*( |$)]
+  ignore line: [Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp]
+  ignore line: []
+  ignore line: [Run Build Command:"/usr/bin/make" "cmTC_a74ff/fast"]
+  ignore line: [/usr/bin/make -f CMakeFiles/cmTC_a74ff.dir/build.make CMakeFiles/cmTC_a74ff.dir/build]
+  ignore line: [make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp']
+  ignore line: [Building CXX object CMakeFiles/cmTC_a74ff.dir/CMakeCXXCompilerABI.cpp.o]
+  ignore line: [/usr/bin/c++     -o CMakeFiles/cmTC_a74ff.dir/CMakeCXXCompilerABI.cpp.o -c /usr/share/cmake-3.10/Modules/CMakeCXXCompilerABI.cpp]
+  ignore line: [Linking CXX executable cmTC_a74ff]
+  ignore line: [/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_a74ff.dir/link.txt --verbose=1]
+  ignore line: [/usr/bin/c++      -v -rdynamic CMakeFiles/cmTC_a74ff.dir/CMakeCXXCompilerABI.cpp.o  -o cmTC_a74ff ]
+  ignore line: [Using built-in specs.]
+  ignore line: [COLLECT_GCC=/usr/bin/c++]
+  ignore line: [COLLECT_LTO_WRAPPER=/usr/lib/gcc/x86_64-linux-gnu/7/lto-wrapper]
+  ignore line: [OFFLOAD_TARGET_NAMES=nvptx-none]
+  ignore line: [OFFLOAD_TARGET_DEFAULT=1]
+  ignore line: [Target: x86_64-linux-gnu]
+  ignore line: [Configured with: ../src/configure -v --with-pkgversion='Ubuntu 7.4.0-1ubuntu1~18.04.1' --with-bugurl=file:///usr/share/doc/gcc-7/README.Bugs --enable-languages=c,ada,c++,go,brig,d,fortran,objc,obj-c++ --prefix=/usr --with-gcc-major-version-only --program-suffix=-7 --program-prefix=x86_64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/lib --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --with-sysroot=/ --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-gnu-unique-object --disable-vtable-verify --enable-libmpx --enable-plugin --enable-default-pie --with-system-zlib --with-target-system-zlib --enable-objc-gc=auto --enable-multiarch --disable-werror --with-arch-32=i686 --with-abi=m64 --with-multilib-list=m32,m64,mx32 --enable-multilib --with-tune=generic --enable-offload-targets=nvptx-none --without-cuda-driver --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu]
+  ignore line: [Thread model: posix]
+  ignore line: [gcc version 7.4.0 (Ubuntu 7.4.0-1ubuntu1~18.04.1) ]
+  ignore line: [COMPILER_PATH=/usr/lib/gcc/x86_64-linux-gnu/7/:/usr/lib/gcc/x86_64-linux-gnu/7/:/usr/lib/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/7/:/usr/lib/gcc/x86_64-linux-gnu/]
+  ignore line: [LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/7/:/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/7/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/7/../../../:/lib/:/usr/lib/]
+  ignore line: [COLLECT_GCC_OPTIONS='-v' '-rdynamic' '-o' 'cmTC_a74ff' '-shared-libgcc' '-mtune=generic' '-march=x86-64']
+  link line: [ /usr/lib/gcc/x86_64-linux-gnu/7/collect2 -plugin /usr/lib/gcc/x86_64-linux-gnu/7/liblto_plugin.so -plugin-opt=/usr/lib/gcc/x86_64-linux-gnu/7/lto-wrapper -plugin-opt=-fresolution=/tmp/cchZBqBT.res -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc --sysroot=/ --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -export-dynamic -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_a74ff /usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/7/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/7 -L/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/7/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/7/../../.. CMakeFiles/cmTC_a74ff.dir/CMakeCXXCompilerABI.cpp.o -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc /usr/lib/gcc/x86_64-linux-gnu/7/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/crtn.o]
+    arg [/usr/lib/gcc/x86_64-linux-gnu/7/collect2] ==> ignore
+    arg [-plugin] ==> ignore
+    arg [/usr/lib/gcc/x86_64-linux-gnu/7/liblto_plugin.so] ==> ignore
+    arg [-plugin-opt=/usr/lib/gcc/x86_64-linux-gnu/7/lto-wrapper] ==> ignore
+    arg [-plugin-opt=-fresolution=/tmp/cchZBqBT.res] ==> ignore
+    arg [-plugin-opt=-pass-through=-lgcc_s] ==> ignore
+    arg [-plugin-opt=-pass-through=-lgcc] ==> ignore
+    arg [-plugin-opt=-pass-through=-lc] ==> ignore
+    arg [-plugin-opt=-pass-through=-lgcc_s] ==> ignore
+    arg [-plugin-opt=-pass-through=-lgcc] ==> ignore
+    arg [--sysroot=/] ==> ignore
+    arg [--build-id] ==> ignore
+    arg [--eh-frame-hdr] ==> ignore
+    arg [-m] ==> ignore
+    arg [elf_x86_64] ==> ignore
+    arg [--hash-style=gnu] ==> ignore
+    arg [--as-needed] ==> ignore
+    arg [-export-dynamic] ==> ignore
+    arg [-dynamic-linker] ==> ignore
+    arg [/lib64/ld-linux-x86-64.so.2] ==> ignore
+    arg [-pie] ==> ignore
+    arg [-znow] ==> ignore
+    arg [-zrelro] ==> ignore
+    arg [-o] ==> ignore
+    arg [cmTC_a74ff] ==> ignore
+    arg [/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/Scrt1.o] ==> ignore
+    arg [/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/crti.o] ==> ignore
+    arg [/usr/lib/gcc/x86_64-linux-gnu/7/crtbeginS.o] ==> ignore
+    arg [-L/usr/lib/gcc/x86_64-linux-gnu/7] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/7]
+    arg [-L/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu]
+    arg [-L/usr/lib/gcc/x86_64-linux-gnu/7/../../../../lib] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/7/../../../../lib]
+    arg [-L/lib/x86_64-linux-gnu] ==> dir [/lib/x86_64-linux-gnu]
+    arg [-L/lib/../lib] ==> dir [/lib/../lib]
+    arg [-L/usr/lib/x86_64-linux-gnu] ==> dir [/usr/lib/x86_64-linux-gnu]
+    arg [-L/usr/lib/../lib] ==> dir [/usr/lib/../lib]
+    arg [-L/usr/lib/gcc/x86_64-linux-gnu/7/../../..] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/7/../../..]
+    arg [CMakeFiles/cmTC_a74ff.dir/CMakeCXXCompilerABI.cpp.o] ==> ignore
+    arg [-lstdc++] ==> lib [stdc++]
+    arg [-lm] ==> lib [m]
+    arg [-lgcc_s] ==> lib [gcc_s]
+    arg [-lgcc] ==> lib [gcc]
+    arg [-lc] ==> lib [c]
+    arg [-lgcc_s] ==> lib [gcc_s]
+    arg [-lgcc] ==> lib [gcc]
+    arg [/usr/lib/gcc/x86_64-linux-gnu/7/crtendS.o] ==> ignore
+    arg [/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu/crtn.o] ==> ignore
+  collapse library dir [/usr/lib/gcc/x86_64-linux-gnu/7] ==> [/usr/lib/gcc/x86_64-linux-gnu/7]
+  collapse library dir [/usr/lib/gcc/x86_64-linux-gnu/7/../../../x86_64-linux-gnu] ==> [/usr/lib/x86_64-linux-gnu]
+  collapse library dir [/usr/lib/gcc/x86_64-linux-gnu/7/../../../../lib] ==> [/usr/lib]
+  collapse library dir [/lib/x86_64-linux-gnu] ==> [/lib/x86_64-linux-gnu]
+  collapse library dir [/lib/../lib] ==> [/lib]
+  collapse library dir [/usr/lib/x86_64-linux-gnu] ==> [/usr/lib/x86_64-linux-gnu]
+  collapse library dir [/usr/lib/../lib] ==> [/usr/lib]
+  collapse library dir [/usr/lib/gcc/x86_64-linux-gnu/7/../../..] ==> [/usr/lib]
+  implicit libs: [stdc++;m;gcc_s;gcc;c;gcc_s;gcc]
+  implicit dirs: [/usr/lib/gcc/x86_64-linux-gnu/7;/usr/lib/x86_64-linux-gnu;/usr/lib;/lib/x86_64-linux-gnu;/lib]
+  implicit fwks: []
+
+
+
+
+Detecting CXX [-std=c++1z] compiler features compiled with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_53794/fast"
+/usr/bin/make -f CMakeFiles/cmTC_53794.dir/build.make CMakeFiles/cmTC_53794.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_53794.dir/feature_tests.cxx.o
+/usr/bin/c++    -std=c++1z -o CMakeFiles/cmTC_53794.dir/feature_tests.cxx.o -c /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/feature_tests.cxx
+Linking CXX executable cmTC_53794
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_53794.dir/link.txt --verbose=1
+/usr/bin/c++       -rdynamic CMakeFiles/cmTC_53794.dir/feature_tests.cxx.o  -o cmTC_53794 
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+
+
+    Feature record: CXX_FEATURE:1cxx_aggregate_default_initializers
+    Feature record: CXX_FEATURE:1cxx_alias_templates
+    Feature record: CXX_FEATURE:1cxx_alignas
+    Feature record: CXX_FEATURE:1cxx_alignof
+    Feature record: CXX_FEATURE:1cxx_attributes
+    Feature record: CXX_FEATURE:1cxx_attribute_deprecated
+    Feature record: CXX_FEATURE:1cxx_auto_type
+    Feature record: CXX_FEATURE:1cxx_binary_literals
+    Feature record: CXX_FEATURE:1cxx_constexpr
+    Feature record: CXX_FEATURE:1cxx_contextual_conversions
+    Feature record: CXX_FEATURE:1cxx_decltype
+    Feature record: CXX_FEATURE:1cxx_decltype_auto
+    Feature record: CXX_FEATURE:1cxx_decltype_incomplete_return_types
+    Feature record: CXX_FEATURE:1cxx_default_function_template_args
+    Feature record: CXX_FEATURE:1cxx_defaulted_functions
+    Feature record: CXX_FEATURE:1cxx_defaulted_move_initializers
+    Feature record: CXX_FEATURE:1cxx_delegating_constructors
+    Feature record: CXX_FEATURE:1cxx_deleted_functions
+    Feature record: CXX_FEATURE:1cxx_digit_separators
+    Feature record: CXX_FEATURE:1cxx_enum_forward_declarations
+    Feature record: CXX_FEATURE:1cxx_explicit_conversions
+    Feature record: CXX_FEATURE:1cxx_extended_friend_declarations
+    Feature record: CXX_FEATURE:1cxx_extern_templates
+    Feature record: CXX_FEATURE:1cxx_final
+    Feature record: CXX_FEATURE:1cxx_func_identifier
+    Feature record: CXX_FEATURE:1cxx_generalized_initializers
+    Feature record: CXX_FEATURE:1cxx_generic_lambdas
+    Feature record: CXX_FEATURE:1cxx_inheriting_constructors
+    Feature record: CXX_FEATURE:1cxx_inline_namespaces
+    Feature record: CXX_FEATURE:1cxx_lambdas
+    Feature record: CXX_FEATURE:1cxx_lambda_init_captures
+    Feature record: CXX_FEATURE:1cxx_local_type_template_args
+    Feature record: CXX_FEATURE:1cxx_long_long_type
+    Feature record: CXX_FEATURE:1cxx_noexcept
+    Feature record: CXX_FEATURE:1cxx_nonstatic_member_init
+    Feature record: CXX_FEATURE:1cxx_nullptr
+    Feature record: CXX_FEATURE:1cxx_override
+    Feature record: CXX_FEATURE:1cxx_range_for
+    Feature record: CXX_FEATURE:1cxx_raw_string_literals
+    Feature record: CXX_FEATURE:1cxx_reference_qualified_functions
+    Feature record: CXX_FEATURE:1cxx_relaxed_constexpr
+    Feature record: CXX_FEATURE:1cxx_return_type_deduction
+    Feature record: CXX_FEATURE:1cxx_right_angle_brackets
+    Feature record: CXX_FEATURE:1cxx_rvalue_references
+    Feature record: CXX_FEATURE:1cxx_sizeof_member
+    Feature record: CXX_FEATURE:1cxx_static_assert
+    Feature record: CXX_FEATURE:1cxx_strong_enums
+    Feature record: CXX_FEATURE:1cxx_template_template_parameters
+    Feature record: CXX_FEATURE:1cxx_thread_local
+    Feature record: CXX_FEATURE:1cxx_trailing_return_types
+    Feature record: CXX_FEATURE:1cxx_unicode_literals
+    Feature record: CXX_FEATURE:1cxx_uniform_initialization
+    Feature record: CXX_FEATURE:1cxx_unrestricted_unions
+    Feature record: CXX_FEATURE:1cxx_user_literals
+    Feature record: CXX_FEATURE:1cxx_variable_templates
+    Feature record: CXX_FEATURE:1cxx_variadic_macros
+    Feature record: CXX_FEATURE:1cxx_variadic_templates
+
+
+Detecting CXX [-std=c++14] compiler features compiled with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_f13fa/fast"
+/usr/bin/make -f CMakeFiles/cmTC_f13fa.dir/build.make CMakeFiles/cmTC_f13fa.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_f13fa.dir/feature_tests.cxx.o
+/usr/bin/c++    -std=c++14 -o CMakeFiles/cmTC_f13fa.dir/feature_tests.cxx.o -c /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/feature_tests.cxx
+Linking CXX executable cmTC_f13fa
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_f13fa.dir/link.txt --verbose=1
+/usr/bin/c++       -rdynamic CMakeFiles/cmTC_f13fa.dir/feature_tests.cxx.o  -o cmTC_f13fa 
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+
+
+    Feature record: CXX_FEATURE:1cxx_aggregate_default_initializers
+    Feature record: CXX_FEATURE:1cxx_alias_templates
+    Feature record: CXX_FEATURE:1cxx_alignas
+    Feature record: CXX_FEATURE:1cxx_alignof
+    Feature record: CXX_FEATURE:1cxx_attributes
+    Feature record: CXX_FEATURE:1cxx_attribute_deprecated
+    Feature record: CXX_FEATURE:1cxx_auto_type
+    Feature record: CXX_FEATURE:1cxx_binary_literals
+    Feature record: CXX_FEATURE:1cxx_constexpr
+    Feature record: CXX_FEATURE:1cxx_contextual_conversions
+    Feature record: CXX_FEATURE:1cxx_decltype
+    Feature record: CXX_FEATURE:1cxx_decltype_auto
+    Feature record: CXX_FEATURE:1cxx_decltype_incomplete_return_types
+    Feature record: CXX_FEATURE:1cxx_default_function_template_args
+    Feature record: CXX_FEATURE:1cxx_defaulted_functions
+    Feature record: CXX_FEATURE:1cxx_defaulted_move_initializers
+    Feature record: CXX_FEATURE:1cxx_delegating_constructors
+    Feature record: CXX_FEATURE:1cxx_deleted_functions
+    Feature record: CXX_FEATURE:1cxx_digit_separators
+    Feature record: CXX_FEATURE:1cxx_enum_forward_declarations
+    Feature record: CXX_FEATURE:1cxx_explicit_conversions
+    Feature record: CXX_FEATURE:1cxx_extended_friend_declarations
+    Feature record: CXX_FEATURE:1cxx_extern_templates
+    Feature record: CXX_FEATURE:1cxx_final
+    Feature record: CXX_FEATURE:1cxx_func_identifier
+    Feature record: CXX_FEATURE:1cxx_generalized_initializers
+    Feature record: CXX_FEATURE:1cxx_generic_lambdas
+    Feature record: CXX_FEATURE:1cxx_inheriting_constructors
+    Feature record: CXX_FEATURE:1cxx_inline_namespaces
+    Feature record: CXX_FEATURE:1cxx_lambdas
+    Feature record: CXX_FEATURE:1cxx_lambda_init_captures
+    Feature record: CXX_FEATURE:1cxx_local_type_template_args
+    Feature record: CXX_FEATURE:1cxx_long_long_type
+    Feature record: CXX_FEATURE:1cxx_noexcept
+    Feature record: CXX_FEATURE:1cxx_nonstatic_member_init
+    Feature record: CXX_FEATURE:1cxx_nullptr
+    Feature record: CXX_FEATURE:1cxx_override
+    Feature record: CXX_FEATURE:1cxx_range_for
+    Feature record: CXX_FEATURE:1cxx_raw_string_literals
+    Feature record: CXX_FEATURE:1cxx_reference_qualified_functions
+    Feature record: CXX_FEATURE:1cxx_relaxed_constexpr
+    Feature record: CXX_FEATURE:1cxx_return_type_deduction
+    Feature record: CXX_FEATURE:1cxx_right_angle_brackets
+    Feature record: CXX_FEATURE:1cxx_rvalue_references
+    Feature record: CXX_FEATURE:1cxx_sizeof_member
+    Feature record: CXX_FEATURE:1cxx_static_assert
+    Feature record: CXX_FEATURE:1cxx_strong_enums
+    Feature record: CXX_FEATURE:1cxx_template_template_parameters
+    Feature record: CXX_FEATURE:1cxx_thread_local
+    Feature record: CXX_FEATURE:1cxx_trailing_return_types
+    Feature record: CXX_FEATURE:1cxx_unicode_literals
+    Feature record: CXX_FEATURE:1cxx_uniform_initialization
+    Feature record: CXX_FEATURE:1cxx_unrestricted_unions
+    Feature record: CXX_FEATURE:1cxx_user_literals
+    Feature record: CXX_FEATURE:1cxx_variable_templates
+    Feature record: CXX_FEATURE:1cxx_variadic_macros
+    Feature record: CXX_FEATURE:1cxx_variadic_templates
+
+
+Detecting CXX [-std=c++11] compiler features compiled with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_7ebd0/fast"
+/usr/bin/make -f CMakeFiles/cmTC_7ebd0.dir/build.make CMakeFiles/cmTC_7ebd0.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_7ebd0.dir/feature_tests.cxx.o
+/usr/bin/c++    -std=c++11 -o CMakeFiles/cmTC_7ebd0.dir/feature_tests.cxx.o -c /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/feature_tests.cxx
+Linking CXX executable cmTC_7ebd0
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_7ebd0.dir/link.txt --verbose=1
+/usr/bin/c++       -rdynamic CMakeFiles/cmTC_7ebd0.dir/feature_tests.cxx.o  -o cmTC_7ebd0 
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+
+
+    Feature record: CXX_FEATURE:0cxx_aggregate_default_initializers
+    Feature record: CXX_FEATURE:1cxx_alias_templates
+    Feature record: CXX_FEATURE:1cxx_alignas
+    Feature record: CXX_FEATURE:1cxx_alignof
+    Feature record: CXX_FEATURE:1cxx_attributes
+    Feature record: CXX_FEATURE:0cxx_attribute_deprecated
+    Feature record: CXX_FEATURE:1cxx_auto_type
+    Feature record: CXX_FEATURE:0cxx_binary_literals
+    Feature record: CXX_FEATURE:1cxx_constexpr
+    Feature record: CXX_FEATURE:0cxx_contextual_conversions
+    Feature record: CXX_FEATURE:1cxx_decltype
+    Feature record: CXX_FEATURE:0cxx_decltype_auto
+    Feature record: CXX_FEATURE:1cxx_decltype_incomplete_return_types
+    Feature record: CXX_FEATURE:1cxx_default_function_template_args
+    Feature record: CXX_FEATURE:1cxx_defaulted_functions
+    Feature record: CXX_FEATURE:1cxx_defaulted_move_initializers
+    Feature record: CXX_FEATURE:1cxx_delegating_constructors
+    Feature record: CXX_FEATURE:1cxx_deleted_functions
+    Feature record: CXX_FEATURE:0cxx_digit_separators
+    Feature record: CXX_FEATURE:1cxx_enum_forward_declarations
+    Feature record: CXX_FEATURE:1cxx_explicit_conversions
+    Feature record: CXX_FEATURE:1cxx_extended_friend_declarations
+    Feature record: CXX_FEATURE:1cxx_extern_templates
+    Feature record: CXX_FEATURE:1cxx_final
+    Feature record: CXX_FEATURE:1cxx_func_identifier
+    Feature record: CXX_FEATURE:1cxx_generalized_initializers
+    Feature record: CXX_FEATURE:0cxx_generic_lambdas
+    Feature record: CXX_FEATURE:1cxx_inheriting_constructors
+    Feature record: CXX_FEATURE:1cxx_inline_namespaces
+    Feature record: CXX_FEATURE:1cxx_lambdas
+    Feature record: CXX_FEATURE:0cxx_lambda_init_captures
+    Feature record: CXX_FEATURE:1cxx_local_type_template_args
+    Feature record: CXX_FEATURE:1cxx_long_long_type
+    Feature record: CXX_FEATURE:1cxx_noexcept
+    Feature record: CXX_FEATURE:1cxx_nonstatic_member_init
+    Feature record: CXX_FEATURE:1cxx_nullptr
+    Feature record: CXX_FEATURE:1cxx_override
+    Feature record: CXX_FEATURE:1cxx_range_for
+    Feature record: CXX_FEATURE:1cxx_raw_string_literals
+    Feature record: CXX_FEATURE:1cxx_reference_qualified_functions
+    Feature record: CXX_FEATURE:0cxx_relaxed_constexpr
+    Feature record: CXX_FEATURE:0cxx_return_type_deduction
+    Feature record: CXX_FEATURE:1cxx_right_angle_brackets
+    Feature record: CXX_FEATURE:1cxx_rvalue_references
+    Feature record: CXX_FEATURE:1cxx_sizeof_member
+    Feature record: CXX_FEATURE:1cxx_static_assert
+    Feature record: CXX_FEATURE:1cxx_strong_enums
+    Feature record: CXX_FEATURE:1cxx_template_template_parameters
+    Feature record: CXX_FEATURE:1cxx_thread_local
+    Feature record: CXX_FEATURE:1cxx_trailing_return_types
+    Feature record: CXX_FEATURE:1cxx_unicode_literals
+    Feature record: CXX_FEATURE:1cxx_uniform_initialization
+    Feature record: CXX_FEATURE:1cxx_unrestricted_unions
+    Feature record: CXX_FEATURE:1cxx_user_literals
+    Feature record: CXX_FEATURE:0cxx_variable_templates
+    Feature record: CXX_FEATURE:1cxx_variadic_macros
+    Feature record: CXX_FEATURE:1cxx_variadic_templates
+
+
+Detecting CXX [-std=c++98] compiler features compiled with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_74f2a/fast"
+/usr/bin/make -f CMakeFiles/cmTC_74f2a.dir/build.make CMakeFiles/cmTC_74f2a.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_74f2a.dir/feature_tests.cxx.o
+/usr/bin/c++    -std=c++98 -o CMakeFiles/cmTC_74f2a.dir/feature_tests.cxx.o -c /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/feature_tests.cxx
+Linking CXX executable cmTC_74f2a
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_74f2a.dir/link.txt --verbose=1
+/usr/bin/c++       -rdynamic CMakeFiles/cmTC_74f2a.dir/feature_tests.cxx.o  -o cmTC_74f2a 
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+
+
+    Feature record: CXX_FEATURE:0cxx_aggregate_default_initializers
+    Feature record: CXX_FEATURE:0cxx_alias_templates
+    Feature record: CXX_FEATURE:0cxx_alignas
+    Feature record: CXX_FEATURE:0cxx_alignof
+    Feature record: CXX_FEATURE:0cxx_attributes
+    Feature record: CXX_FEATURE:0cxx_attribute_deprecated
+    Feature record: CXX_FEATURE:0cxx_auto_type
+    Feature record: CXX_FEATURE:0cxx_binary_literals
+    Feature record: CXX_FEATURE:0cxx_constexpr
+    Feature record: CXX_FEATURE:0cxx_contextual_conversions
+    Feature record: CXX_FEATURE:0cxx_decltype
+    Feature record: CXX_FEATURE:0cxx_decltype_auto
+    Feature record: CXX_FEATURE:0cxx_decltype_incomplete_return_types
+    Feature record: CXX_FEATURE:0cxx_default_function_template_args
+    Feature record: CXX_FEATURE:0cxx_defaulted_functions
+    Feature record: CXX_FEATURE:0cxx_defaulted_move_initializers
+    Feature record: CXX_FEATURE:0cxx_delegating_constructors
+    Feature record: CXX_FEATURE:0cxx_deleted_functions
+    Feature record: CXX_FEATURE:0cxx_digit_separators
+    Feature record: CXX_FEATURE:0cxx_enum_forward_declarations
+    Feature record: CXX_FEATURE:0cxx_explicit_conversions
+    Feature record: CXX_FEATURE:0cxx_extended_friend_declarations
+    Feature record: CXX_FEATURE:0cxx_extern_templates
+    Feature record: CXX_FEATURE:0cxx_final
+    Feature record: CXX_FEATURE:0cxx_func_identifier
+    Feature record: CXX_FEATURE:0cxx_generalized_initializers
+    Feature record: CXX_FEATURE:0cxx_generic_lambdas
+    Feature record: CXX_FEATURE:0cxx_inheriting_constructors
+    Feature record: CXX_FEATURE:0cxx_inline_namespaces
+    Feature record: CXX_FEATURE:0cxx_lambdas
+    Feature record: CXX_FEATURE:0cxx_lambda_init_captures
+    Feature record: CXX_FEATURE:0cxx_local_type_template_args
+    Feature record: CXX_FEATURE:0cxx_long_long_type
+    Feature record: CXX_FEATURE:0cxx_noexcept
+    Feature record: CXX_FEATURE:0cxx_nonstatic_member_init
+    Feature record: CXX_FEATURE:0cxx_nullptr
+    Feature record: CXX_FEATURE:0cxx_override
+    Feature record: CXX_FEATURE:0cxx_range_for
+    Feature record: CXX_FEATURE:0cxx_raw_string_literals
+    Feature record: CXX_FEATURE:0cxx_reference_qualified_functions
+    Feature record: CXX_FEATURE:0cxx_relaxed_constexpr
+    Feature record: CXX_FEATURE:0cxx_return_type_deduction
+    Feature record: CXX_FEATURE:0cxx_right_angle_brackets
+    Feature record: CXX_FEATURE:0cxx_rvalue_references
+    Feature record: CXX_FEATURE:0cxx_sizeof_member
+    Feature record: CXX_FEATURE:0cxx_static_assert
+    Feature record: CXX_FEATURE:0cxx_strong_enums
+    Feature record: CXX_FEATURE:1cxx_template_template_parameters
+    Feature record: CXX_FEATURE:0cxx_thread_local
+    Feature record: CXX_FEATURE:0cxx_trailing_return_types
+    Feature record: CXX_FEATURE:0cxx_unicode_literals
+    Feature record: CXX_FEATURE:0cxx_uniform_initialization
+    Feature record: CXX_FEATURE:0cxx_unrestricted_unions
+    Feature record: CXX_FEATURE:0cxx_user_literals
+    Feature record: CXX_FEATURE:0cxx_variable_templates
+    Feature record: CXX_FEATURE:0cxx_variadic_macros
+    Feature record: CXX_FEATURE:0cxx_variadic_templates
+Determining if the include file pthread.h exists passed with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_44525/fast"
+/usr/bin/make -f CMakeFiles/cmTC_44525.dir/build.make CMakeFiles/cmTC_44525.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_44525.dir/CheckIncludeFile.c.o
+/usr/bin/cc   -Wall -D__FILENAME__='"CMakeFiles/CMakeTmp/CheckIncludeFile.c"'  -fPIE   -o CMakeFiles/cmTC_44525.dir/CheckIncludeFile.c.o   -c /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_44525
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_44525.dir/link.txt --verbose=1
+/usr/bin/cc  -Wall -D__FILENAME__='"$(subst /home/atibhi/Desktop/CNCF/fluent-bit/,,$(abspath $<))"'     -rdynamic CMakeFiles/cmTC_44525.dir/CheckIncludeFile.c.o  -o cmTC_44525 
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+
+
+Determining if the function pthread_create exists in the pthread passed with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_a7113/fast"
+/usr/bin/make -f CMakeFiles/cmTC_a7113.dir/build.make CMakeFiles/cmTC_a7113.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_a7113.dir/CheckFunctionExists.c.o
+/usr/bin/cc   -Wall -D__FILENAME__='"/usr/share/cmake-3.10/Modules/CheckFunctionExists.c"' -DCHECK_FUNCTION_EXISTS=pthread_create -fPIE   -o CMakeFiles/cmTC_a7113.dir/CheckFunctionExists.c.o   -c /usr/share/cmake-3.10/Modules/CheckFunctionExists.c
+Linking C executable cmTC_a7113
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_a7113.dir/link.txt --verbose=1
+/usr/bin/cc  -Wall -D__FILENAME__='"$(subst /home/atibhi/Desktop/CNCF/fluent-bit/,,$(abspath $<))"' -DCHECK_FUNCTION_EXISTS=pthread_create    -rdynamic CMakeFiles/cmTC_a7113.dir/CheckFunctionExists.c.o  -o cmTC_a7113 -lpthread 
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+
+
+Performing C SOURCE FILE Test CIO_HAVE_FALLOCATE succeeded with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_0d69e/fast"
+/usr/bin/make -f CMakeFiles/cmTC_0d69e.dir/build.make CMakeFiles/cmTC_0d69e.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_0d69e.dir/src.c.o
+/usr/bin/cc   -Wall -D__FILENAME__='"CMakeFiles/CMakeTmp/src.c"' -Wall  -D__FILENAME__='"CMakeFiles/CMakeTmp/src.c"' -DCIO_HAVE_FALLOCATE -fPIE   -o CMakeFiles/cmTC_0d69e.dir/src.c.o   -c /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c
+/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c: In function ‘main’:
+/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c:4:6: warning: implicit declaration of function ‘fallocate’; did you mean ‘posix_fallocate’? [-Wimplicit-function-declaration]
+      fallocate(0,0,0);
+      ^~~~~~~~~
+      posix_fallocate
+Linking C executable cmTC_0d69e
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_0d69e.dir/link.txt --verbose=1
+/usr/bin/cc  -Wall -D__FILENAME__='"$(subst /home/atibhi/Desktop/CNCF/fluent-bit/,,$(abspath $<))"' -Wall  -D__FILENAME__='"$(subst /home/atibhi/Desktop/CNCF/fluent-bit/,,$(abspath $<))"' -DCIO_HAVE_FALLOCATE    -rdynamic CMakeFiles/cmTC_0d69e.dir/src.c.o  -o cmTC_0d69e 
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+
+Source file was:
+
+  #include <fcntl.h>
+  int main() {
+     fallocate(0,0,0);
+     return 0;
+  }
+Performing C SOURCE FILE Test HAVE_STAT_H succeeded with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_f9688/fast"
+/usr/bin/make -f CMakeFiles/cmTC_f9688.dir/build.make CMakeFiles/cmTC_f9688.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_f9688.dir/src.c.o
+/usr/bin/cc   -Wall -D__FILENAME__='"CMakeFiles/CMakeTmp/src.c"' -DHAVE_STAT_H -fPIE   -o CMakeFiles/cmTC_f9688.dir/src.c.o   -c /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c
+/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c: In function ‘main’:
+/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c:6:9: warning: unused variable ‘x’ [-Wunused-variable]
+     int x = S_IXUSR;
+         ^
+Linking C executable cmTC_f9688
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_f9688.dir/link.txt --verbose=1
+/usr/bin/cc  -Wall -D__FILENAME__='"$(subst /home/atibhi/Desktop/CNCF/fluent-bit/,,$(abspath $<))"' -DHAVE_STAT_H    -rdynamic CMakeFiles/cmTC_f9688.dir/src.c.o  -o cmTC_f9688 
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+
+Source file was:
+
+  #include <sys/types.h>
+  #include <sys/stat.h>
+  #include <unistd.h>
+  int main() {
+    int x = S_IXUSR;
+    S_ISLNK(0);
+    return 0;
+  }
+Performing C SOURCE FILE Test HAVE_SYS_UIO_H succeeded with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_3ea1b/fast"
+/usr/bin/make -f CMakeFiles/cmTC_3ea1b.dir/build.make CMakeFiles/cmTC_3ea1b.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_3ea1b.dir/src.c.o
+/usr/bin/cc   -Wall -D__FILENAME__='"CMakeFiles/CMakeTmp/src.c"' -DHAVE_SYS_UIO_H -fPIE   -o CMakeFiles/cmTC_3ea1b.dir/src.c.o   -c /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c
+Linking C executable cmTC_3ea1b
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_3ea1b.dir/link.txt --verbose=1
+/usr/bin/cc  -Wall -D__FILENAME__='"$(subst /home/atibhi/Desktop/CNCF/fluent-bit/,,$(abspath $<))"' -DHAVE_SYS_UIO_H    -rdynamic CMakeFiles/cmTC_3ea1b.dir/src.c.o  -o cmTC_3ea1b 
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+
+Source file was:
+
+  #include <sys/uio.h>
+  int main() {
+     return 0;
+  }
+Performing C SOURCE FILE Test HAVE_UNISTD_H succeeded with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_4965c/fast"
+/usr/bin/make -f CMakeFiles/cmTC_4965c.dir/build.make CMakeFiles/cmTC_4965c.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_4965c.dir/src.c.o
+/usr/bin/cc   -Wall -D__FILENAME__='"CMakeFiles/CMakeTmp/src.c"' -DHAVE_UNISTD_H -fPIE   -o CMakeFiles/cmTC_4965c.dir/src.c.o   -c /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c
+Linking C executable cmTC_4965c
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_4965c.dir/link.txt --verbose=1
+/usr/bin/cc  -Wall -D__FILENAME__='"$(subst /home/atibhi/Desktop/CNCF/fluent-bit/,,$(abspath $<))"' -DHAVE_UNISTD_H    -rdynamic CMakeFiles/cmTC_4965c.dir/src.c.o  -o cmTC_4965c 
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+
+Source file was:
+
+  #include <unistd.h>
+  int main() {
+     return 0;
+  }
+Performing C SOURCE FILE Test HAVE_EPOLL succeeded with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_337be/fast"
+/usr/bin/make -f CMakeFiles/cmTC_337be.dir/build.make CMakeFiles/cmTC_337be.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_337be.dir/src.c.o
+/usr/bin/cc   -Wall -D__FILENAME__='"CMakeFiles/CMakeTmp/src.c"' -DHAVE_EPOLL -fPIE   -o CMakeFiles/cmTC_337be.dir/src.c.o   -c /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c
+Linking C executable cmTC_337be
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_337be.dir/link.txt --verbose=1
+/usr/bin/cc  -Wall -D__FILENAME__='"$(subst /home/atibhi/Desktop/CNCF/fluent-bit/,,$(abspath $<))"' -DHAVE_EPOLL    -rdynamic CMakeFiles/cmTC_337be.dir/src.c.o  -o cmTC_337be 
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+
+Source file was:
+
+  #include <sys/epoll.h>
+  int main() {
+     return epoll_create(1);
+  }
+Performing C SOURCE FILE Test HAVE_TIMERFD_CREATE succeeded with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_6fd85/fast"
+/usr/bin/make -f CMakeFiles/cmTC_6fd85.dir/build.make CMakeFiles/cmTC_6fd85.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_6fd85.dir/src.c.o
+/usr/bin/cc   -Wall -D__FILENAME__='"CMakeFiles/CMakeTmp/src.c"' -DHAVE_TIMERFD_CREATE -fPIE   -o CMakeFiles/cmTC_6fd85.dir/src.c.o   -c /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c
+Linking C executable cmTC_6fd85
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_6fd85.dir/link.txt --verbose=1
+/usr/bin/cc  -Wall -D__FILENAME__='"$(subst /home/atibhi/Desktop/CNCF/fluent-bit/,,$(abspath $<))"' -DHAVE_TIMERFD_CREATE    -rdynamic CMakeFiles/cmTC_6fd85.dir/src.c.o  -o cmTC_6fd85 
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+
+Source file was:
+
+  #include <sys/timerfd.h>
+  int main() {
+     return timerfd_create(CLOCK_REALTIME, 0);
+  }
+Performing C SOURCE FILE Test HAVE_EVENTFD succeeded with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_99249/fast"
+/usr/bin/make -f CMakeFiles/cmTC_99249.dir/build.make CMakeFiles/cmTC_99249.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_99249.dir/src.c.o
+/usr/bin/cc   -Wall -D__FILENAME__='"CMakeFiles/CMakeTmp/src.c"' -DHAVE_EVENTFD -fPIE   -o CMakeFiles/cmTC_99249.dir/src.c.o   -c /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c
+Linking C executable cmTC_99249
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_99249.dir/link.txt --verbose=1
+/usr/bin/cc  -Wall -D__FILENAME__='"$(subst /home/atibhi/Desktop/CNCF/fluent-bit/,,$(abspath $<))"' -DHAVE_EVENTFD    -rdynamic CMakeFiles/cmTC_99249.dir/src.c.o  -o cmTC_99249 
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+
+Source file was:
+
+  #include <sys/eventfd.h>
+  int main() {
+     return eventfd(0, EFD_CLOEXEC);
+  }
+Performing C SOURCE FILE Test MK_HAVE_MEMRCHR succeeded with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_fc3d2/fast"
+/usr/bin/make -f CMakeFiles/cmTC_fc3d2.dir/build.make CMakeFiles/cmTC_fc3d2.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_fc3d2.dir/src.c.o
+/usr/bin/cc   -Wall -D__FILENAME__='"CMakeFiles/CMakeTmp/src.c"' -DMK_HAVE_MEMRCHR -fPIE   -o CMakeFiles/cmTC_fc3d2.dir/src.c.o   -c /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c
+/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c: In function ‘main’:
+/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c:5:7: warning: statement with no effect [-Wunused-value]
+       memrchr("test", 'e', 4);
+       ^~~~~~~~~~~~~~~~~~~~~~~
+Linking C executable cmTC_fc3d2
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_fc3d2.dir/link.txt --verbose=1
+/usr/bin/cc  -Wall -D__FILENAME__='"$(subst /home/atibhi/Desktop/CNCF/fluent-bit/,,$(abspath $<))"' -DMK_HAVE_MEMRCHR    -rdynamic CMakeFiles/cmTC_fc3d2.dir/src.c.o  -o cmTC_fc3d2 
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+
+Source file was:
+
+   #define _GNU_SOURCE
+   #include <string.h>
+   int main() {
+      memrchr("test", 'e', 4);
+      return 0;
+   }
+Performing C SOURCE FILE Test FLB_HAVE_VALGRIND succeeded with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_4c7c0/fast"
+/usr/bin/make -f CMakeFiles/cmTC_4c7c0.dir/build.make CMakeFiles/cmTC_4c7c0.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_4c7c0.dir/src.c.o
+/usr/bin/cc   -Wall -D__FILENAME__='"CMakeFiles/CMakeTmp/src.c"' -DFLB_HAVE_VALGRIND -fPIE   -o CMakeFiles/cmTC_4c7c0.dir/src.c.o   -c /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c
+Linking C executable cmTC_4c7c0
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_4c7c0.dir/link.txt --verbose=1
+/usr/bin/cc  -Wall -D__FILENAME__='"$(subst /home/atibhi/Desktop/CNCF/fluent-bit/,,$(abspath $<))"' -DFLB_HAVE_VALGRIND    -rdynamic CMakeFiles/cmTC_4c7c0.dir/src.c.o  -o cmTC_4c7c0 
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+
+Source file was:
+
+  #include <valgrind/valgrind.h>
+  int main() {
+     return 0;
+  }
+Performing C SOURCE FILE Test FLB_HAVE_FORK succeeded with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_a8c89/fast"
+/usr/bin/make -f CMakeFiles/cmTC_a8c89.dir/build.make CMakeFiles/cmTC_a8c89.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_a8c89.dir/src.c.o
+/usr/bin/cc   -Wall -D__FILENAME__='"CMakeFiles/CMakeTmp/src.c"' -DFLB_HAVE_FORK -fPIE   -o CMakeFiles/cmTC_a8c89.dir/src.c.o   -c /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c
+Linking C executable cmTC_a8c89
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_a8c89.dir/link.txt --verbose=1
+/usr/bin/cc  -Wall -D__FILENAME__='"$(subst /home/atibhi/Desktop/CNCF/fluent-bit/,,$(abspath $<))"' -DFLB_HAVE_FORK    -rdynamic CMakeFiles/cmTC_a8c89.dir/src.c.o  -o cmTC_a8c89 
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+
+Source file was:
+
+  #include <unistd.h>
+  int main() {
+     fork();
+     return 0;
+  }
+Performing C SOURCE FILE Test FLB_HAVE_TIMESPEC_GET succeeded with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_5c69b/fast"
+/usr/bin/make -f CMakeFiles/cmTC_5c69b.dir/build.make CMakeFiles/cmTC_5c69b.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_5c69b.dir/src.c.o
+/usr/bin/cc   -Wall -D__FILENAME__='"CMakeFiles/CMakeTmp/src.c"' -DFLB_HAVE_TIMESPEC_GET -fPIE   -o CMakeFiles/cmTC_5c69b.dir/src.c.o   -c /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c
+/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c: In function ‘main’:
+/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c:5:26: warning: passing argument 1 of ‘timespec_get’ from incompatible pointer type [-Wincompatible-pointer-types]
+      return timespec_get(&tm, TIME_UTC);
+                          ^
+In file included from /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c:2:0:
+/usr/include/time.h:263:12: note: expected ‘struct timespec *’ but argument is of type ‘struct tm *’
+ extern int timespec_get (struct timespec *__ts, int __base)
+            ^~~~~~~~~~~~
+Linking C executable cmTC_5c69b
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_5c69b.dir/link.txt --verbose=1
+/usr/bin/cc  -Wall -D__FILENAME__='"$(subst /home/atibhi/Desktop/CNCF/fluent-bit/,,$(abspath $<))"' -DFLB_HAVE_TIMESPEC_GET    -rdynamic CMakeFiles/cmTC_5c69b.dir/src.c.o  -o cmTC_5c69b 
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+
+Source file was:
+
+  #include <time.h>
+  int main() {
+     struct tm tm;
+     return timespec_get(&tm, TIME_UTC);
+  }
+Performing C SOURCE FILE Test FLB_HAVE_GMTOFF succeeded with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_64c1a/fast"
+/usr/bin/make -f CMakeFiles/cmTC_64c1a.dir/build.make CMakeFiles/cmTC_64c1a.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_64c1a.dir/src.c.o
+/usr/bin/cc   -Wall -D__FILENAME__='"CMakeFiles/CMakeTmp/src.c"' -DFLB_HAVE_GMTOFF -fPIE   -o CMakeFiles/cmTC_64c1a.dir/src.c.o   -c /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c
+/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c: In function ‘main’:
+/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c:4:16: warning: variable ‘tm’ set but not used [-Wunused-but-set-variable]
+      struct tm tm;
+                ^~
+Linking C executable cmTC_64c1a
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_64c1a.dir/link.txt --verbose=1
+/usr/bin/cc  -Wall -D__FILENAME__='"$(subst /home/atibhi/Desktop/CNCF/fluent-bit/,,$(abspath $<))"' -DFLB_HAVE_GMTOFF    -rdynamic CMakeFiles/cmTC_64c1a.dir/src.c.o  -o cmTC_64c1a 
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+
+Source file was:
+
+  #include <time.h>
+  int main() {
+     struct tm tm;
+     tm.tm_gmtoff = 0;
+     return 0;
+  }
+Performing C SOURCE FILE Test FLB_HAVE_UNIX_SOCKET succeeded with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_9dd75/fast"
+/usr/bin/make -f CMakeFiles/cmTC_9dd75.dir/build.make CMakeFiles/cmTC_9dd75.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_9dd75.dir/src.c.o
+/usr/bin/cc   -Wall -D__FILENAME__='"CMakeFiles/CMakeTmp/src.c"' -DFLB_HAVE_UNIX_SOCKET -fPIE   -o CMakeFiles/cmTC_9dd75.dir/src.c.o   -c /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c
+/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c: In function ‘main’:
+/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c:7:7: warning: implicit declaration of function ‘close’ [-Wimplicit-function-declaration]
+       close(sock);
+       ^~~~~
+Linking C executable cmTC_9dd75
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_9dd75.dir/link.txt --verbose=1
+/usr/bin/cc  -Wall -D__FILENAME__='"$(subst /home/atibhi/Desktop/CNCF/fluent-bit/,,$(abspath $<))"' -DFLB_HAVE_UNIX_SOCKET    -rdynamic CMakeFiles/cmTC_9dd75.dir/src.c.o  -o cmTC_9dd75 
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+
+Source file was:
+
+  #include <sys/types.h>
+  #include <sys/socket.h>
+  int main() {
+      int sock;
+      sock = socket(AF_UNIX, SOCK_STREAM, 0);
+      close(sock);
+      return 0;
+  }
+Performing C SOURCE FILE Test FLB_HAVE_C_TLS succeeded with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_852fa/fast"
+/usr/bin/make -f CMakeFiles/cmTC_852fa.dir/build.make CMakeFiles/cmTC_852fa.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_852fa.dir/src.c.o
+/usr/bin/cc   -Wall -D__FILENAME__='"CMakeFiles/CMakeTmp/src.c"' -DFLB_HAVE_C_TLS -fPIE   -o CMakeFiles/cmTC_852fa.dir/src.c.o   -c /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c
+/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c: In function ‘main’:
+/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c:4:8: warning: implicit declaration of function ‘__tls_get_addr’ [-Wimplicit-function-declaration]
+        __tls_get_addr(0);
+        ^~~~~~~~~~~~~~
+Linking C executable cmTC_852fa
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_852fa.dir/link.txt --verbose=1
+/usr/bin/cc  -Wall -D__FILENAME__='"$(subst /home/atibhi/Desktop/CNCF/fluent-bit/,,$(abspath $<))"' -DFLB_HAVE_C_TLS    -rdynamic CMakeFiles/cmTC_852fa.dir/src.c.o  -o cmTC_852fa 
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+
+Source file was:
+
+   __thread int a;
+   int main() {
+       __tls_get_addr(0);
+       return 0;
+   }
+Performing C SOURCE FILE Test FLB_HAVE_ACCEPT4 succeeded with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_68744/fast"
+/usr/bin/make -f CMakeFiles/cmTC_68744.dir/build.make CMakeFiles/cmTC_68744.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_68744.dir/src.c.o
+/usr/bin/cc   -Wall -D__FILENAME__='"CMakeFiles/CMakeTmp/src.c"' -DFLB_HAVE_ACCEPT4 -fPIE   -o CMakeFiles/cmTC_68744.dir/src.c.o   -c /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c
+Linking C executable cmTC_68744
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_68744.dir/link.txt --verbose=1
+/usr/bin/cc  -Wall -D__FILENAME__='"$(subst /home/atibhi/Desktop/CNCF/fluent-bit/,,$(abspath $<))"' -DFLB_HAVE_ACCEPT4    -rdynamic CMakeFiles/cmTC_68744.dir/src.c.o  -o cmTC_68744 
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+
+Source file was:
+
+    #define _GNU_SOURCE
+    #include <stdio.h>
+    #include <sys/socket.h>
+    int main() {
+        accept4(0, NULL, NULL, 0);
+        return 0;
+    }
+Performing C SOURCE FILE Test FLB_HAVE_INOTIFY succeeded with the following output:
+Change Dir: /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_58078/fast"
+/usr/bin/make -f CMakeFiles/cmTC_58078.dir/build.make CMakeFiles/cmTC_58078.dir/build
+make[1]: Entering directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_58078.dir/src.c.o
+/usr/bin/cc   -Wall -D__FILENAME__='"CMakeFiles/CMakeTmp/src.c"' -DFLB_HAVE_INOTIFY -fPIE   -o CMakeFiles/cmTC_58078.dir/src.c.o   -c /home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp/src.c
+Linking C executable cmTC_58078
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_58078.dir/link.txt --verbose=1
+/usr/bin/cc  -Wall -D__FILENAME__='"$(subst /home/atibhi/Desktop/CNCF/fluent-bit/,,$(abspath $<))"' -DFLB_HAVE_INOTIFY    -rdynamic CMakeFiles/cmTC_58078.dir/src.c.o  -o cmTC_58078 
+make[1]: Leaving directory '/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/CMakeTmp'
+
+Source file was:
+
+    #include <sys/inotify.h>
+    int main() {
+        return inotify_init1(0);
+    }

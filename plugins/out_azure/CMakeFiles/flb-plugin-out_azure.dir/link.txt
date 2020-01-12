@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-out_azure.a  CMakeFiles/flb-plugin-out_azure.dir/azure_conf.c.o CMakeFiles/flb-plugin-out_azure.dir/azure.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-out_azure.a

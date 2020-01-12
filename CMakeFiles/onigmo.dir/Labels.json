@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/onigmo"
+		},
+		{
+			"file" : "/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/onigmo.rule"
+		},
+		{
+			"file" : "/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/onigmo-complete.rule"
+		},
+		{
+			"file" : "/home/atibhi/Desktop/CNCF/fluent-bit/onigmo-prefix/src/onigmo-stamp/onigmo-install.rule"
+		},
+		{
+			"file" : "/home/atibhi/Desktop/CNCF/fluent-bit/onigmo-prefix/src/onigmo-stamp/onigmo-mkdir.rule"
+		},
+		{
+			"file" : "/home/atibhi/Desktop/CNCF/fluent-bit/onigmo-prefix/src/onigmo-stamp/onigmo-download.rule"
+		},
+		{
+			"file" : "/home/atibhi/Desktop/CNCF/fluent-bit/onigmo-prefix/src/onigmo-stamp/onigmo-update.rule"
+		},
+		{
+			"file" : "/home/atibhi/Desktop/CNCF/fluent-bit/onigmo-prefix/src/onigmo-stamp/onigmo-patch.rule"
+		},
+		{
+			"file" : "/home/atibhi/Desktop/CNCF/fluent-bit/onigmo-prefix/src/onigmo-stamp/onigmo-configure.rule"
+		},
+		{
+			"file" : "/home/atibhi/Desktop/CNCF/fluent-bit/onigmo-prefix/src/onigmo-stamp/onigmo-build.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"onigmo"
+		],
+		"name" : "onigmo"
+	}
+}

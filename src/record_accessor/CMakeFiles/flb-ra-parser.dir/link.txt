@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-ra-parser.a  CMakeFiles/flb-ra-parser.dir/flb_ra_parser.c.o CMakeFiles/flb-ra-parser.dir/ra_lex.c.o CMakeFiles/flb-ra-parser.dir/ra_parser.c.o
+/usr/bin/ranlib ../../library/libflb-ra-parser.a

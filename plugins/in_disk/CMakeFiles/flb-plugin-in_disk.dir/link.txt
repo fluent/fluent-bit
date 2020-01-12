@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-in_disk.a  CMakeFiles/flb-plugin-in_disk.dir/in_disk.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-in_disk.a

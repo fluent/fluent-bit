@@ -1,0 +1,13 @@
+# Target labels
+ onigmo
+# Source files and their labels
+/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/onigmo
+/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/onigmo.rule
+/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/onigmo-complete.rule
+/home/atibhi/Desktop/CNCF/fluent-bit/onigmo-prefix/src/onigmo-stamp/onigmo-install.rule
+/home/atibhi/Desktop/CNCF/fluent-bit/onigmo-prefix/src/onigmo-stamp/onigmo-mkdir.rule
+/home/atibhi/Desktop/CNCF/fluent-bit/onigmo-prefix/src/onigmo-stamp/onigmo-download.rule
+/home/atibhi/Desktop/CNCF/fluent-bit/onigmo-prefix/src/onigmo-stamp/onigmo-update.rule
+/home/atibhi/Desktop/CNCF/fluent-bit/onigmo-prefix/src/onigmo-stamp/onigmo-patch.rule
+/home/atibhi/Desktop/CNCF/fluent-bit/onigmo-prefix/src/onigmo-stamp/onigmo-configure.rule
+/home/atibhi/Desktop/CNCF/fluent-bit/onigmo-prefix/src/onigmo-stamp/onigmo-build.rule

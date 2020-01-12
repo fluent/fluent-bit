@@ -1,0 +1,1 @@
+/usr/bin/cc  -Wall -D__FILENAME__='"$(subst /home/atibhi/Desktop/CNCF/fluent-bit/,,$(abspath $<))"' -g  -rdynamic CMakeFiles/xxd-c.dir/xxd-c.c.o  -o ../../bin/xxd-c 

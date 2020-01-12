@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../../library/libchunkio-static.a  CMakeFiles/chunkio-static.dir/cio_os.c.o CMakeFiles/chunkio-static.dir/cio_log.c.o CMakeFiles/chunkio-static.dir/cio_memfs.c.o CMakeFiles/chunkio-static.dir/cio_chunk.c.o CMakeFiles/chunkio-static.dir/cio_meta.c.o CMakeFiles/chunkio-static.dir/cio_scan.c.o CMakeFiles/chunkio-static.dir/cio_utils.c.o CMakeFiles/chunkio-static.dir/cio_stream.c.o CMakeFiles/chunkio-static.dir/cio_stats.c.o CMakeFiles/chunkio-static.dir/chunkio.c.o CMakeFiles/chunkio-static.dir/cio_file.c.o
+/usr/bin/ranlib ../../../library/libchunkio-static.a

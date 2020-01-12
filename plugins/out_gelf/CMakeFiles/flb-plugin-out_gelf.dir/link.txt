@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-out_gelf.a  CMakeFiles/flb-plugin-out_gelf.dir/gelf.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-out_gelf.a

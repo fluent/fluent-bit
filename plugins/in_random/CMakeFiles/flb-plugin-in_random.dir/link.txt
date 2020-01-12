@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-in_random.a  CMakeFiles/flb-plugin-in_random.dir/random.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-in_random.a

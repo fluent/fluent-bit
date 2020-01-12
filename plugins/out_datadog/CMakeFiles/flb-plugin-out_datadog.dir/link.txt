@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-out_datadog.a  CMakeFiles/flb-plugin-out_datadog.dir/datadog.c.o CMakeFiles/flb-plugin-out_datadog.dir/datadog_conf.c.o CMakeFiles/flb-plugin-out_datadog.dir/datadog_remap.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-out_datadog.a

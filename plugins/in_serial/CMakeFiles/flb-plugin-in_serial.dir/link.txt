@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-in_serial.a  CMakeFiles/flb-plugin-in_serial.dir/in_serial.c.o CMakeFiles/flb-plugin-in_serial.dir/in_serial_config.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-in_serial.a

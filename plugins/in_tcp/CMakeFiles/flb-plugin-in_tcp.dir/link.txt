@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-in_tcp.a  CMakeFiles/flb-plugin-in_tcp.dir/tcp.c.o CMakeFiles/flb-plugin-in_tcp.dir/tcp_conn.c.o CMakeFiles/flb-plugin-in_tcp.dir/tcp_config.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-in_tcp.a

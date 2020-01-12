@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-out_plot.a  CMakeFiles/flb-plugin-out_plot.dir/plot.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-out_plot.a

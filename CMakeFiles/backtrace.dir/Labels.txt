@@ -1,0 +1,13 @@
+# Target labels
+ backtrace
+# Source files and their labels
+/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/backtrace
+/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/backtrace.rule
+/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/backtrace-complete.rule
+/home/atibhi/Desktop/CNCF/fluent-bit/backtrace-prefix/src/backtrace-stamp/backtrace-install.rule
+/home/atibhi/Desktop/CNCF/fluent-bit/backtrace-prefix/src/backtrace-stamp/backtrace-mkdir.rule
+/home/atibhi/Desktop/CNCF/fluent-bit/backtrace-prefix/src/backtrace-stamp/backtrace-download.rule
+/home/atibhi/Desktop/CNCF/fluent-bit/backtrace-prefix/src/backtrace-stamp/backtrace-update.rule
+/home/atibhi/Desktop/CNCF/fluent-bit/backtrace-prefix/src/backtrace-stamp/backtrace-patch.rule
+/home/atibhi/Desktop/CNCF/fluent-bit/backtrace-prefix/src/backtrace-stamp/backtrace-configure.rule
+/home/atibhi/Desktop/CNCF/fluent-bit/backtrace-prefix/src/backtrace-stamp/backtrace-build.rule

@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/backtrace"
+		},
+		{
+			"file" : "/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/backtrace.rule"
+		},
+		{
+			"file" : "/home/atibhi/Desktop/CNCF/fluent-bit/CMakeFiles/backtrace-complete.rule"
+		},
+		{
+			"file" : "/home/atibhi/Desktop/CNCF/fluent-bit/backtrace-prefix/src/backtrace-stamp/backtrace-install.rule"
+		},
+		{
+			"file" : "/home/atibhi/Desktop/CNCF/fluent-bit/backtrace-prefix/src/backtrace-stamp/backtrace-mkdir.rule"
+		},
+		{
+			"file" : "/home/atibhi/Desktop/CNCF/fluent-bit/backtrace-prefix/src/backtrace-stamp/backtrace-download.rule"
+		},
+		{
+			"file" : "/home/atibhi/Desktop/CNCF/fluent-bit/backtrace-prefix/src/backtrace-stamp/backtrace-update.rule"
+		},
+		{
+			"file" : "/home/atibhi/Desktop/CNCF/fluent-bit/backtrace-prefix/src/backtrace-stamp/backtrace-patch.rule"
+		},
+		{
+			"file" : "/home/atibhi/Desktop/CNCF/fluent-bit/backtrace-prefix/src/backtrace-stamp/backtrace-configure.rule"
+		},
+		{
+			"file" : "/home/atibhi/Desktop/CNCF/fluent-bit/backtrace-prefix/src/backtrace-stamp/backtrace-build.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"backtrace"
+		],
+		"name" : "backtrace"
+	}
+}

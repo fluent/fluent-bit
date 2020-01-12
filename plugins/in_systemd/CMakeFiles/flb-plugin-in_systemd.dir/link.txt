@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-in_systemd.a  CMakeFiles/flb-plugin-in_systemd.dir/systemd_config.c.o CMakeFiles/flb-plugin-in_systemd.dir/systemd.c.o CMakeFiles/flb-plugin-in_systemd.dir/systemd_db.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-in_systemd.a

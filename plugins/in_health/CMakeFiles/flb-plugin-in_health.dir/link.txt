@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-in_health.a  CMakeFiles/flb-plugin-in_health.dir/health.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-in_health.a

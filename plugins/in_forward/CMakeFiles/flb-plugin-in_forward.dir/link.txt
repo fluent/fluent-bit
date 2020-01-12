@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-in_forward.a  CMakeFiles/flb-plugin-in_forward.dir/fw.c.o CMakeFiles/flb-plugin-in_forward.dir/fw_conn.c.o CMakeFiles/flb-plugin-in_forward.dir/fw_prot.c.o CMakeFiles/flb-plugin-in_forward.dir/fw_config.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-in_forward.a
