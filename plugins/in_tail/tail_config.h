@@ -45,6 +45,8 @@ struct flb_tail_config {
     int ch_manager[2];         /* pipe: channel manager    */
     int ch_pending[2];         /* pipe: pending events     */
 #endif
+    int ch_reads;              /* count number if signal reads */
+    int ch_writes;             /* count number of signal writes */
 
     /* Buffer Config */
     size_t buf_chunk_size;     /* allocation chunks        */
