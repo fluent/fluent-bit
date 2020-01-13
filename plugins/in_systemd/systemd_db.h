@@ -34,14 +34,21 @@
     ");"
 
 #define SQL_GET_CURSOR \
-    "SELECT * FROM in_systemd_cursor;"
+    "SELECT * FROM in_systemd_cursor LIMIT 1;"
 
 #define SQL_INSERT_CURSOR                               \
     "INSERT INTO in_systemd_cursor (cursor, updated)"   \
     "  VALUES ('%s', %lu);"
 
+#define SQL_COUNT_CURSOR                        \
+    "SELECT COUNT(*) FROM in_systemd_cursor;"
+
 #define SQL_UPDATE_CURSOR \
     "UPDATE in_systemd_cursor SET cursor='%s', updated=%lu;"
+
+#define SQL_DELETE_DUPS                             \
+    "DELETE FROM in_systemd_cursor WHERE ROWID < "  \
+    "(SELECT MAX(ROWID) FROM in_systemd_cursor);"
 
 struct flb_sqldb *flb_systemd_db_open(const char *path,
                                       struct flb_input_instance *in,
