@@ -37,12 +37,7 @@ int cb_nats_init(struct flb_output_instance *ins, struct flb_config *config,
     struct flb_out_nats_config *ctx;
 
     /* Set default network configuration */
-    if (!ins->host.name) {
-        ins->host.name = flb_strdup("127.0.0.1");
-    }
-    if (ins->host.port == 0) {
-        ins->host.port = 4222;
-    }
+    flb_output_net_default("127.0.0.1", 4222, ins);
 
     /* Allocate plugin context */
     ctx = flb_malloc(sizeof(struct flb_out_nats_config));
