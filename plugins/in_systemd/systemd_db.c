@@ -42,6 +42,44 @@ static int cb_cursor_check(void *data, int argc, char **argv, char **cols)
     return 0;
 }
 
+static int cb_count_check(void *data, int argc, char **argv, char **cols)
+{
+    struct query_status *qs = data;
+
+    qs->rows = atoll(argv[0]);
+    return 0;
+}
+
+/* sanitize database table if required */
+static void flb_systemd_db_sanitize(struct flb_sqldb *db)
+{
+    int ret;
+    struct query_status qs = {0};
+
+    memset(&qs, '\0', sizeof(qs));
+    ret = flb_sqldb_query(db,
+                          SQL_COUNT_CURSOR, cb_count_check, &qs);
+    if (ret != FLB_OK) {
+        flb_error("[in_systemd] failed counting number of rows");
+        return;
+    }
+
+    if (qs.rows > 1) {
+        flb_warn("[in_systemd] table in_systemd_cursor looks corrupted, it has "
+                 "more than one entry (rows=%i), the table content will be "
+                 "fixed", qs.rows);
+
+        /* Delete duplicates, we only preserve the last record based on it ROWID */
+        ret = flb_sqldb_query(db, SQL_DELETE_DUPS, NULL, NULL);
+        if (ret != FLB_OK) {
+            flb_error("[in_systemd] could not delete in_systemd_cursor duplicates");
+            return;
+        }
+        flb_info("[in_systemd] table in_systemd_cursor has been fixed");
+    }
+
+}
+
 struct flb_sqldb *flb_systemd_db_open(const char *path,
                                       struct flb_input_instance *in,
                                       struct flb_config *config)
@@ -62,6 +100,8 @@ struct flb_sqldb *flb_systemd_db_open(const char *path,
         flb_sqldb_close(db);
         return NULL;
     }
+
+    flb_systemd_db_sanitize(db);
 
     return db;
 }
