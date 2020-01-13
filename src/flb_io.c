@@ -31,8 +31,8 @@
  *   should not block the main thread, instead use event-driven mechanism to
  *   write when is possible.
  *
- * Output plugins that flag their selfs with FLB_OUTPUT_TCP or FLB_OUTPUT_TLS
- * can take advante of this interface.
+ * Output plugins that flag themselves with FLB_OUTPUT_TCP or FLB_OUTPUT_TLS
+ * can take advantage of this interface.
  *
  * The workflow to use this is the following:
  *
@@ -181,7 +181,7 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
     }
 
 #ifdef FLB_HAVE_TLS
-    /* Check if TLS was enabled, if so perform the handshakee */
+    /* Check if TLS was enabled, if so perform the handshake */
     if (u_conn->u->flags & FLB_IO_TLS) {
         ret = net_io_tls_handshake(u_conn, th);
         if (ret != 0) {
@@ -239,9 +239,9 @@ static int net_io_write(struct flb_upstream_conn *u_conn,
 }
 
 /*
- * Perform Async socket write(2) operations. This function depends on a
- * maine event-loop and the co-routines interface to yield/resume once
- * sockets are ready to continue.
+ * Perform Async socket write(2) operations. This function depends on a main
+ * event-loop and the co-routines interface to yield/resume once sockets are
+ * ready to continue.
  *
  * Intentionally we register/de-register the socket file descriptor from
  * the event loop each time when we require to do some work.
