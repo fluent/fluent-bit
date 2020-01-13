@@ -160,6 +160,7 @@ static int in_tail_collect_static(struct flb_input_instance *i_ins,
      */
     if (active == 0) {
         consume_byte(ctx->ch_manager[0]);
+        ctx->ch_reads++;
     }
 
     return 0;

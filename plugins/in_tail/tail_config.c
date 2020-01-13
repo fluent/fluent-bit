@@ -67,6 +67,8 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
         flb_free(ctx);
         return NULL;
     }
+    ctx->ch_reads = 0;
+    ctx->ch_writes = 0;
 
     /* Create the pending channel */
     ret = flb_pipe_create(ctx->ch_pending);
