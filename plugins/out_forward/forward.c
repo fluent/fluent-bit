@@ -628,8 +628,19 @@ static int forward_config_ha(const char *upstream_file,
         }
 
         /* Shared key */
+        tmp = flb_upstream_node_get_property("empty_shared_key", node);
+        if (tmp && flb_utils_bool(tmp)) {
+            fc->empty_shared_key = FLB_TRUE;
+        }
+        else {
+            fc->empty_shared_key = FLB_FALSE;
+        }
+
         tmp = flb_upstream_node_get_property("shared_key", node);
-        if (tmp) {
+        if (fc->empty_shared_key == FLB_TRUE) {
+            fc->shared_key = flb_sds_create("");
+        }
+        else if (tmp) {
             fc->shared_key = flb_sds_create(tmp);
         }
         else {
@@ -755,9 +766,23 @@ static int forward_config_simple(struct flb_forward *ctx,
     flb_output_upstream_set(ctx->u, ins);
 
     /* Shared Key */
+    tmp = flb_output_get_property("empty_shared_key", ins);
+    if (tmp && flb_utils_bool(tmp)) {
+        fc->empty_shared_key = FLB_TRUE;
+    }
+    else {
+        fc->empty_shared_key = FLB_FALSE;
+    }
+
     tmp = flb_output_get_property("shared_key", ins);
-    if (tmp) {
+    if (fc->empty_shared_key) {
+        fc->shared_key = flb_sds_create("");
+    }
+    else if (tmp) {
         fc->shared_key = flb_sds_create(tmp);
+    }
+    else {
+        fc->shared_key = NULL;
     }
 
     tmp = flb_output_get_property("username", ins);
