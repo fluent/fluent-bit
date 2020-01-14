@@ -22,6 +22,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <time.h>
+#include <errno.h>
 
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
@@ -553,7 +554,37 @@ int flb_tail_file_exists(char *name, struct flb_tail_config *ctx)
 {
     struct mk_list *head;
     struct flb_tail_file *file;
+#ifdef __linux__
+    char *real_name;
+    char *buf;
+#endif
 
+#ifdef __linux__
+    /* Check symbolic link file */
+    buf = flb_malloc(PATH_MAX + 1);
+    real_name = realpath(name, buf);
+    if (!real_name) {
+        flb_free(buf);
+        flb_errno();
+        return errno;
+    }
+
+    /* Double check this file is not already being monitored */
+    mk_list_foreach(head, &ctx->files_static) {
+        file = mk_list_entry(head, struct flb_tail_file, _head);
+        if (flb_tail_file_name_cmp(real_name, file) == 0) {
+            return FLB_TRUE;
+        }
+    }
+    mk_list_foreach(head, &ctx->files_event) {
+        file = mk_list_entry(head, struct flb_tail_file, _head);
+        if (flb_tail_file_name_cmp(real_name, file) == 0) {
+            return FLB_TRUE;
+        }
+    }
+
+    flb_free(buf);
+#else
     /* Iterate static list */
     mk_list_foreach(head, &ctx->files_static) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
@@ -569,7 +600,7 @@ int flb_tail_file_exists(char *name, struct flb_tail_config *ctx)
             return FLB_TRUE;
         }
     }
-
+#endif
     return FLB_FALSE;
 }
 
@@ -584,11 +615,40 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     size_t tag_len;
     struct mk_list *head;
     struct flb_tail_file *file;
+#ifdef __linux__
+    char *buf;
+    char *real_name;
+#endif
 
     if (!S_ISREG(st->st_mode)) {
         return -1;
     }
 
+#ifdef __linux__
+/* Check symbolic link file */
+    buf = flb_malloc(PATH_MAX + 1);
+    real_name = realpath(path, buf);
+    if (!real_name) {
+        flb_free(buf);
+        flb_errno();
+        return errno;
+    }
+
+    mk_list_foreach(head, &ctx->files_static) {
+        file = mk_list_entry(head, struct flb_tail_file, _head);
+        if (flb_tail_file_name_cmp(real_name, file) == 0) {
+            return -1;
+        }
+    }
+    mk_list_foreach(head, &ctx->files_event) {
+        file = mk_list_entry(head, struct flb_tail_file, _head);
+        if (flb_tail_file_name_cmp(real_name, file) == 0) {
+            return -1;
+        }
+    }
+
+    flb_free(buf);
+#else
     /* Double check this file is not already being monitored */
     mk_list_foreach(head, &ctx->files_static) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
@@ -602,6 +662,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
             return -1;
         }
     }
+#endif
 
 #ifdef _MSC_VER
     fd = open_file(path);
@@ -799,9 +860,7 @@ void flb_tail_file_remove(struct flb_tail_file *file)
 
     flb_free(file->buf_data);
     flb_free(file->name);
-#if !defined(__linux__)
     flb_free(file->real_name);
-#endif
 
 #ifdef FLB_HAVE_METRICS
     flb_metrics_sum(FLB_TAIL_METRIC_F_CLOSED, 1,
@@ -1009,7 +1068,8 @@ int flb_tail_file_to_event(struct flb_tail_file *file)
 
 /*
  * Given an open file descriptor, return the filename. This function is a
- * bit slow and it aims to be used only when a file is rotated.
+ * bit slow and it aims to be used only when a file is rotated. This function
+ * return the real name that the symlink links to.
  */
 char *flb_tail_file_name(struct flb_tail_file *file)
 {
@@ -1095,7 +1155,6 @@ int flb_tail_file_name_dup(char *path, struct flb_tail_file *file)
     }
     file->name_len = strlen(file->name);
 
-#if !defined(__linux__)
     if (file->real_name) {
         flb_free(file->real_name);
     }
@@ -1106,7 +1165,6 @@ int flb_tail_file_name_dup(char *path, struct flb_tail_file *file)
         file->name = NULL;
         return -1;
     }
-#endif
 
     return 0;
 }

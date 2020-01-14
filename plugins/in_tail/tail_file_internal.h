@@ -44,9 +44,7 @@ struct flb_tail_file {
     ino_t inode;
 #endif
     char *name;                 /* target file name given by scan routine */
-#if !defined(__linux)
     char *real_name;            /* real file name in the file system */
-#endif
     size_t name_len;
     time_t rotated;
     off_t pending_bytes;
