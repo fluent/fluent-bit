@@ -588,7 +588,14 @@ void cb_es_flush(const void *data, size_t bytes,
         /* The request was issued successfully, validate the 'error' field */
         flb_debug("[out_es] HTTP Status=%i URI=%s", c->resp.status, ctx->uri);
         if (c->resp.status != 200 && c->resp.status != 201) {
-            flb_trace("[es_out] payload response: %s", c->resp.payload);
+            if (c->resp.payload_size > 0) {
+                flb_error("[out_es] HTTP status=%i URI=%s, response:\n%s\n",
+                          c->resp.status, ctx->uri, c->resp.payload);
+            }
+            else {
+                flb_error("[out_es] HTTP status=%i URI=%s",
+                          c->resp.status, ctx->uri);
+            }
             goto retry;
         }
 
@@ -611,7 +618,7 @@ void cb_es_flush(const void *data, size_t bytes,
                 goto retry;
             }
             else {
-                flb_debug("[out_es Elasticsearch response\n%s",
+                flb_debug("[out_es] Elasticsearch response\n%s",
                           c->resp.payload);
             }
         }
