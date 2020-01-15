@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_config_map.h>
 
 #include <msgpack.h>
 
@@ -394,12 +395,40 @@ static int cb_datadog_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    {
+        FLB_CONFIG_MAP_STR, "api_key", NULL,
+        0, FLB_TRUE, offsetof(struct flb_out_datadog, api_key), 
+        NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "dd_source", NULL,
+     0, FLB_FALSE, 0,
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "dd_tags", NULL,
+     0, FLB_FALSE, 0,
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "dd_message_key", NULL,
+     0, FLB_FALSE, 0,
+     NULL
+    },
+    
+    /* EOF */
+    {0}
+};
+
 struct flb_output_plugin out_datadog_plugin = {
     .name         = "datadog",
     .description  = "Send events to DataDog HTTP Event Collector",
     .cb_init      = cb_datadog_init,
     .cb_flush     = cb_datadog_flush,
     .cb_exit      = cb_datadog_exit,
+    .config_map   = config_map,
     /* Plugin flags */
     .flags        = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
 };

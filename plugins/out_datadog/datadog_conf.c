@@ -52,12 +52,10 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
         ctx->scheme = flb_sds_create("http://");
     }
     flb_debug("[out_datadog] ctx->scheme: %s", ctx->scheme);
+    
     /* configure URI */
     api_key = flb_output_get_property("apikey", ins);
-    if (api_key) {
-        ctx->api_key = flb_sds_create(api_key);
-    }
-    else {
+    if (!ctx->api_key) {
         flb_error("[out_datadog] no ApiKey configuration key defined");
         flb_datadog_conf_destroy(ctx);
         return NULL;
