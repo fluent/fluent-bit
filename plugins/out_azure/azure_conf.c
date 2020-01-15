@@ -42,28 +42,12 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
     ctx->ins = ins;
+    
+    /* Create config map and validate expected parameters */
+    flb_output_config_map_set(ins, ctx);
 
     /* config: 'customer_id' */
     cid = flb_output_get_property("customer_id", ins);
-    if (cid) {
-        ctx->customer_id = flb_sds_create(cid);
-        if (!ctx->customer_id) {
-            flb_errno();
-            flb_free(ctx);
-            return NULL;
-        }
-    }
-
-    /* config: 'shared_key' */
-    tmp = flb_output_get_property("shared_key", ins);
-    if (tmp) {
-        ctx->shared_key = flb_sds_create(tmp);
-    }
-    else {
-        flb_plg_error(ctx->ins, "property 'shared_key' is not defined");
-        flb_azure_conf_destroy(ctx);
-        return NULL;
-    }
 
     /* decode shared key */
     size = flb_sds_len(ctx->shared_key) * 1.2;
@@ -84,36 +68,10 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
     }
     flb_sds_len_set(ctx->dec_shared_key, olen);
 
-    /* config: 'log_type' */
-    tmp = flb_output_get_property("log_type", ins);
-    if (tmp) {
-        ctx->log_type = flb_sds_create(tmp);
-    }
-    else {
-        ctx->log_type = flb_sds_create(FLB_AZURE_LOG_TYPE);
-    }
-    if (!ctx->log_type) {
-        flb_azure_conf_destroy(ctx);
-        return NULL;
-    }
-
-    /* config: 'time_key' */
-    tmp = flb_output_get_property("time_key", ins);
-    if (tmp) {
-        ctx->time_key = flb_sds_create(tmp);
-    }
-    else {
-        ctx->time_key = flb_sds_create(FLB_AZURE_TIME_KEY);
-    }
-    if (!ctx->time_key) {
-        flb_azure_conf_destroy(ctx);
-        return NULL;
-    }
-
     /* Validate hostname given by command line or 'Host' property */
     if (!ins->host.name && !cid) {
         flb_plg_error(ctx->ins, "property 'customer_id' is not defined");
-        flb_free(ctx);
+        flb_azure_conf_destroy(ctx);
         return NULL;
     }
 
@@ -141,7 +99,7 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
     ctx->host = flb_sds_create_size(256);
     if (!ctx->host) {
         flb_errno();
-        flb_free(ctx);
+        flb_azure_conf_destroy(ctx);
         return NULL;
     }
 
@@ -206,20 +164,8 @@ int flb_azure_conf_destroy(struct flb_azure *ctx)
         return -1;
     }
 
-    if (ctx->customer_id) {
-        flb_sds_destroy(ctx->customer_id);
-    }
     if (ctx->dec_shared_key) {
         flb_sds_destroy(ctx->dec_shared_key);
-    }
-    if (ctx->shared_key) {
-        flb_sds_destroy(ctx->shared_key);
-    }
-    if (ctx->log_type) {
-        flb_sds_destroy(ctx->log_type);
-    }
-    if (ctx->time_key) {
-        flb_sds_destroy(ctx->time_key);
     }
     if (ctx->host) {
         flb_sds_destroy(ctx->host);
