@@ -292,6 +292,26 @@ static struct flb_http_client *convert_request_file(char *request,
                         req->payload, req->payload ? flb_sds_len(req->payload): -1,
                         NULL, -1, NULL, 0);
 
+    /*
+     * flb_http_client automatically adds host and content-length
+     * for the tests we remove these since all headers come from
+     * the the test file
+     */
+     mk_list_foreach(head, &c->headers) {
+         kv = mk_list_entry(head, struct flb_kv, _head);
+         if (strncasecmp(kv->key, "Host", 4) == 0) {
+             flb_kv_item_destroy(kv);
+             break;
+         }
+     }
+     mk_list_foreach(head, &c->headers) {
+         kv = mk_list_entry(head, struct flb_kv, _head);
+         if (strncasecmp(kv->key, "Content-Length", 14) == 0) {
+             flb_kv_item_destroy(kv);
+             break;
+         }
+     }
+
     /* Append registered headers */
     mk_list_foreach(head, &req->headers) {
         kv = mk_list_entry(head, struct flb_kv, _head);

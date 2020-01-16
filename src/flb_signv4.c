@@ -85,18 +85,16 @@ static int hmac_sha256_sign(unsigned char out[32],
 
 static int kv_key_cmp(const void *a_arg, const void *b_arg)
 {
+    int ret;
     struct flb_kv *kv_a = *(struct flb_kv **) a_arg;
     struct flb_kv *kv_b = *(struct flb_kv **) b_arg;
 
-    return strcmp(kv_a->key, kv_b->key);
-}
+    ret = strcmp(kv_a->key, kv_b->key);
+    if (ret == 0) {
+        ret = strcmp(kv_a->val, kv_b->val);
+    }
 
-static int kv_val_cmp(const void *a_arg, const void *b_arg)
-{
-    struct flb_kv *kv_a = *(struct flb_kv **) a_arg;
-    struct flb_kv *kv_b = *(struct flb_kv **) b_arg;
-
-    return strcmp(kv_a->val, kv_b->val);
+    return ret;
 }
 
 static inline int to_encode(char c)
@@ -219,6 +217,49 @@ static flb_sds_t uri_encode(const char *uri, size_t len)
 }
 
 /*
+ * Encodes URI parameters, which can not have "/" characters in them
+ * (This happens in an STS request, the role ARN has a slash and is
+ * given as a query parameter).
+ */
+static flb_sds_t uri_encode_params(const char *uri, size_t len)
+{
+    int i;
+    flb_sds_t buf = NULL;
+    flb_sds_t tmp = NULL;
+
+    buf = flb_sds_create_size(len * 2);
+    if (!buf) {
+        flb_error("[signv4] cannot allocate buffer for URI encoding");
+        return NULL;
+    }
+
+    for (i = 0; i < len; i++) {
+        if (to_encode(uri[i]) == FLB_TRUE || uri[i] == '/') {
+            tmp = flb_sds_printf(&buf, "%%%02X", (unsigned char) *(uri + i));
+            if (!tmp) {
+                flb_error("[signv4] error formatting special character");
+                flb_sds_destroy(buf);
+                return NULL;
+            }
+            buf = tmp;
+            continue;
+        }
+
+        /* Direct assignment, just copy the character */
+        if (buf) {
+            tmp = flb_sds_cat(buf, uri + i, 1);
+            if (!tmp) {
+                flb_error("[signv4] error composing outgoing buffer");
+                flb_sds_destroy(buf);
+                return NULL;
+            }
+        }
+    }
+
+    return buf;
+}
+
+/*
  * Convert URL encoded params (query string or POST payload) to a sorted
  * key/value linked list
  */
@@ -261,9 +302,9 @@ static flb_sds_t url_params_format(char *params)
         p++;
 
         /* URI encode every key and value */
-        key = uri_encode(e->str, len);
+        key = uri_encode_params(e->str, len);
         len++;
-        val = uri_encode(p, flb_sds_len(e->str) - len);
+        val = uri_encode_params(p, flb_sds_len(e->str) - len);
         if (!key || !val) {
             flb_error("[signv4] error encoding uri for query string");
             if (key) {
@@ -314,9 +355,6 @@ static flb_sds_t url_params_format(char *params)
     }
     /* sort headers by key */
     qsort(arr, items, sizeof(struct flb_kv *), kv_key_cmp);
-
-    /* re-sort by values (duplicated keys) */
-    qsort(arr, items, sizeof(struct flb_kv *), kv_val_cmp);
 
     /* Format query string parameters */
     buf = flb_sds_create_size(items * 64);
