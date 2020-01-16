@@ -326,22 +326,16 @@ error:
     return NULL;
 }
 
-int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *config,
-                     void *data)
+static int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *config,
+                            void *data)
 {
     int io_flags = 0;
     const char *tmp;
     struct flb_upstream *upstream;
     struct flb_influxdb_config *ctx;
 
-    /* Get network configuration */
-    if (!ins->host.name) {
-        ins->host.name = flb_strdup(FLB_INFLUXDB_HOST);
-    }
-
-    if (ins->host.port == 0) {
-        ins->host.port = FLB_INFLUXDB_PORT;
-    }
+    /* Set default network configuration */
+    flb_output_net_default(FLB_INFLUXDB_HOST, FLB_INFLUXDB_PORT, ins);
 
     /* Allocate plugin context */
     ctx = flb_calloc(1, sizeof(struct flb_influxdb_config));
@@ -440,11 +434,11 @@ int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *config,
     return 0;
 }
 
-void cb_influxdb_flush(const void *data, size_t bytes,
-                       const char *tag, int tag_len,
-                       struct flb_input_instance *i_ins,
-                       void *out_context,
-                       struct flb_config *config)
+static void cb_influxdb_flush(const void *data, size_t bytes,
+                              const char *tag, int tag_len,
+                              struct flb_input_instance *i_ins,
+                              void *out_context,
+                              struct flb_config *config)
 {
     int ret;
     int bytes_out;
@@ -504,7 +498,7 @@ void cb_influxdb_flush(const void *data, size_t bytes,
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 
-int cb_influxdb_exit(void *data, struct flb_config *config)
+static int cb_influxdb_exit(void *data, struct flb_config *config)
 {
     struct flb_influxdb_config *ctx = data;
 
