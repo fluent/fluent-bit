@@ -430,6 +430,61 @@ static int proxy_parse(const char *proxy, struct flb_http_client *c)
     return 0;
 }
 
+static int add_host_and_content_length(struct flb_http_client *c)
+{
+    int len;
+    flb_sds_t tmp;
+    flb_sds_t host;
+    char *out_host;
+    int out_port;
+    struct flb_upstream *u = c->u_conn->u;
+
+    if (!c->host) {
+        out_host = u->tcp_host;
+    }
+    else {
+        out_host = (char *) c->host;
+    }
+
+    len = strlen(out_host);
+    host = flb_sds_create_size(len + 32);
+    if (!host) {
+        flb_error("[http_client] cannot create temporal buffer");
+        return -1;
+    }
+
+    if (c->port == 0) {
+        out_port = u->tcp_port;
+    }
+    else {
+        out_port = c->port;
+    }
+
+    tmp = flb_sds_printf(&host, "%s:%i", out_host, out_port);
+    if (!tmp) {
+        flb_sds_destroy(host);
+        flb_error("[http_client] cannot compose temporary host header");
+        return -1;
+    }
+
+    flb_http_add_header(c, "Host", 4, host, flb_sds_len(host));
+    flb_sds_destroy(host);
+
+    /* Content-Length */
+    if (c->body_len >= 0) {
+        tmp = flb_malloc(32);
+        if (!tmp) {
+            flb_errno();
+            return -1;
+        }
+        len = snprintf(tmp, sizeof(tmp) - 1, "%i", c->body_len);
+        flb_http_add_header(c, "Content-Length", 14, tmp, len);
+        flb_free(tmp);
+    }
+
+    return 0;
+}
+
 struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
                                         int method, const char *uri,
                                         const char *body, size_t body_len,
@@ -511,6 +566,8 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
     c->header_len  = ret;
     c->flags       = flags;
     mk_list_init(&c->headers);
+
+    add_host_and_content_length(c);
 
     /* Check if we have a query string */
     p = strchr(uri, '?');
@@ -745,90 +802,11 @@ static int http_header_push(struct flb_http_client *c, struct flb_kv *header)
     return 0;
 }
 
-static int header_exists(struct flb_http_client *c, char *header_buf, int len)
-{
-    int found = FLB_FALSE;
-    struct mk_list *head;
-    struct flb_kv *header;
-
-    mk_list_foreach(head, &c->headers) {
-        header = mk_list_entry(head, struct flb_kv, _head);
-        if (flb_sds_len(header->key) != len) {
-            continue;
-        }
-
-        if (strncasecmp(header->key, header_buf, len) == 0) {
-            found = FLB_TRUE;
-            break;
-        }
-    }
-
-    return found;
-}
-
 static int http_headers_compose(struct flb_http_client *c)
 {
     int ret;
-    int len;
-    flb_sds_t tmp;
-    flb_sds_t host;
-    char *out_host;
-    int out_port;
     struct mk_list *head;
     struct flb_kv *header;
-    struct flb_upstream *u = c->u_conn->u;
-
-    /* Check if the 'Host' header exists, if is missing, just add it */
-    ret = header_exists(c, "Host", 4);
-    if (ret == FLB_FALSE) {
-        if (!c->host) {
-            out_host = u->tcp_host;
-        }
-        else {
-            out_host = (char *) c->host;
-        }
-
-        len = strlen(out_host);
-        host = flb_sds_create_size(len + 32);
-        if (!host) {
-            flb_error("[http_client] cannot create temporal buffer");
-            return -1;
-        }
-
-        if (c->port == 0) {
-            out_port = u->tcp_port;
-        }
-        else {
-            out_port = c->port;
-        }
-
-        tmp = flb_sds_printf(&host, "%s:%i", out_host, out_port);
-        if (!tmp) {
-            flb_sds_destroy(host);
-            flb_error("[http_client] cannot compose temporal host header");
-            return -1;
-        }
-
-        flb_http_add_header(c,
-                            "Host", 4,
-                            host, flb_sds_len(host));
-        flb_sds_destroy(host);
-    }
-
-    /* Content-Length */
-    ret = header_exists(c, "Content-Length", 14);
-    if (ret == FLB_FALSE) {
-        if (c->body_len >= 0) {
-            tmp = flb_malloc(32);
-            if (!tmp) {
-                flb_errno();
-                return -1;
-        }
-            len = snprintf(tmp, sizeof(tmp) - 1, "%i", c->body_len);
-            flb_http_add_header(c, "Content-Length", 14, tmp, len);
-            flb_free(tmp);
-        }
-    }
 
     /* Push header list to one buffer */
     mk_list_foreach(head, &c->headers) {
