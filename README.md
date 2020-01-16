@@ -34,6 +34,14 @@ Fluent Bit runs on x86_64, x86, arm32v7 and arm64v8 architectures.
   - Data analysis and prediction: Timeseries forecasting
 - Portable: runs on Linux, MacOS, Windows and BSD systems
 
+## Fluent Bit in Production
+
+[Fluent Bit](https://fluentbit.io) is used widely, just on 2019 it was deployed more than **62 Million** times. The following is a preview of who uses Fluent Bit heavily in production:
+
+> If your company uses Fluent Bit and is not listed, feel free to open a Github issue and we will add the logo.
+
+![](documentation/fluentbit_users.png)
+
 ## [Documentation](https://docs.fluentbit.io)
 
 Our official project documentation for [installation](https://docs.fluentbit.io/manual/installation), [configuration](https://docs.fluentbit.io/manual/configuration), deployment and development topics is located here:
