@@ -28,13 +28,13 @@ For crypto, Fluent Bit uses [mbedtls](https://github.com/ARMmbed/mbedtls).
 #### Memory Management
 
 When you write Fluent Bit code, you will use Fluent Bit's versions of the standard C functions for working with memory:
-- [`flb_alloc()`](include/fluent-bit/flb_mem.h) - equivalent to `malloc`, allocates memory.
+- [`flb_malloc()`](include/fluent-bit/flb_mem.h) - equivalent to `malloc`, allocates memory.
 - [`flb_calloc()`](include/fluent-bit/flb_mem.h)  - equivalent to `calloc`, allocates memory and initializes it to zero.
 - [`flb_realloc()`](include/fluent-bit/flb_mem.h) - equivalent to `realloc`.
 - [`flb_free()`](include/fluent-bit/flb_mem.h) - equivalent to `free`, releases allocated memory.
 
 Note that many types have a specialized create and destroy function. For example,
-[`flb_sds_create()` and `flb_sds_destroy()`](include/fluent-bit/flb_sds.h).
+[`flb_sds_create()` and `flb_sds_destroy()`](include/fluent-bit/flb_sds.h) (more about this in the next section).
 
 #### Strings
 
@@ -70,12 +70,14 @@ static flb_sds_t make_request(struct flb_config *config)
     struct flb_upstream_conn *u_conn;
     flb_sds_t resp;
 
+    /* Create an 'upstream' context */
     upstream = flb_upstream_create(config, HOST, PORT, FLB_IO_TCP, NULL);
     if (!upstream) {
         flb_error("[example] connection initialization error");
         return -1;
     }
 
+    /* Retrieve a TCP connection from the 'upstream' context */
     u_conn = flb_upstream_conn_get(upstream);
     if (!u_conn) {
         flb_error("[example] connection initialization error");
@@ -83,7 +85,7 @@ static flb_sds_t make_request(struct flb_config *config)
         return -1;
     }
 
-    /* Compose HTTP Client request */
+    /* Create HTTP Client request/context */
     client = flb_http_client(u_conn,
                              FLB_HTTP_GET, metadata_path,
                              NULL, 0,
@@ -97,6 +99,10 @@ static flb_sds_t make_request(struct flb_config *config)
         return -1;
     }
 
+    /* Perform the HTTP request */
+	ret = flb_http_do(client, &b_sent)
+
+    /* Validate return status and HTTP status if set */
     if (ret != 0 || client->resp.status != 200) {
         if (client->resp.payload_size > 0) {
             flb_debug("[example] Request failed and returned: \n%s",
@@ -108,8 +114,9 @@ static flb_sds_t make_request(struct flb_config *config)
         return -1;
     }
 
+    /* Copy payload response to an output SDS buffer */
     data = flb_sds_create_len(client->resp.payload,
-                                   client->resp.payload_size);
+                              client->resp.payload_size);
 
     flb_http_client_destroy(client);
     flb_upstream_conn_release(u_conn);
@@ -143,20 +150,22 @@ static int example()
     struct mk_list *head;
     struct mk_list items;
     int i;
+    int len;
     char characters[] = "abcdefghijk";
     struct item *an_item;
 
+    len = strlen(characters);
+    
     /* construct a list */
     mk_list_init(&items);
 
-    for (i = 0; i < strlen(characters); i++) {
+    for (i = 0; i < len; i++) {
         an_item = flb_malloc(sizeof(struct item));
         if (!an_item) {
             flb_errno();
             return -1;
         }
         an_item->some_data = characters[i];
-
         mk_list_add(&an_item->_head, &items);
     }
 
@@ -184,7 +193,7 @@ Fluent Bit uses [msgpack](https://msgpack.org/index.html) to internally store da
 
 Fluent Bit embeds the [msgpack-c](https://github.com/msgpack/msgpack-c) library. The example below shows manipulating message pack to add a new key-value pair to a record. In Fluent Bit, the [filter_record_modifier](plugins/filter_record_modifier) plugin adds or deletes keys from records. See its code for more.
 
-```
+```c
 #define A_NEW_KEY        "key"
 #define A_NEW_KEY_LEN    3
 #define A_NEW_VALUE      "value"
