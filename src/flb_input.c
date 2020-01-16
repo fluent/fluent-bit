@@ -117,7 +117,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         }
 
         /* Create plugin instance */
-        instance = flb_malloc(sizeof(struct flb_input_instance));
+        instance = flb_calloc(1, sizeof(struct flb_input_instance));
         if (!instance) {
             flb_errno();
             return NULL;
