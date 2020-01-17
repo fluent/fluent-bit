@@ -46,11 +46,11 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
                        struct flb_config *config,
                        void *data)
 {
+    int use_v2 = FLB_TRUE;
     struct flb_filter_aws *ctx = NULL;
-    (void) data;
     struct mk_list *head;
     struct flb_kv *kv;
-    int use_v2 = FLB_TRUE;
+    (void) data;
 
     /* Iterate all filter properties */
     mk_list_foreach(head, &f_ins->properties) {
@@ -59,7 +59,8 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
         if (strcasecmp(kv->key, "imds_version") == 0) {
             if (strcasecmp(kv->val, "v1") == 0) {
                 use_v2 = FLB_FALSE;
-            } else if (strcasecmp(kv->val, "v2") != 0) {
+            }
+            else if (strcasecmp(kv->val, "v2") != 0) {
                 flb_warn("[filter_aws] Invalid value %s for config option "
                          "'imds_version'. Valid values are 'v1' and 'v2'",
                          kv->val);
@@ -68,7 +69,7 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
     }
 
     /* Create context */
-    ctx = flb_malloc(sizeof(struct flb_filter_aws));
+    ctx = flb_calloc(1, sizeof(struct flb_filter_aws));
     if (!ctx) {
         flb_errno();
         return -1;
@@ -100,6 +101,7 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
                                             NULL);
     if (!ctx->ec2_upstream) {
         flb_error("[filter_aws] connection initialization error");
+        flb_free(ctx);
         return -1;
     }
 
@@ -175,9 +177,10 @@ static int get_ec2_token(struct flb_filter_aws *ctx)
 static int get_metadata(struct flb_filter_aws *ctx, char *metadata_path,
                         flb_sds_t *metadata, size_t *metadata_len)
 {
-    struct flb_http_client *client;
-    size_t b_sent;
     int ret;
+    size_t b_sent;
+    flb_sds_t tmp;
+    struct flb_http_client *client;
     struct flb_upstream_conn *u_conn;
 
     u_conn = flb_upstream_conn_get(ctx->ec2_upstream);
@@ -205,7 +208,8 @@ static int get_metadata(struct flb_filter_aws *ctx, char *metadata_path,
                             ctx->imds_v2_token,
                             ctx->imds_v2_token_len);
         flb_debug("[filter_aws] Using IMDSv2");
-    } else {
+    }
+    else {
         flb_debug("[filter_aws] Using IMDSv1");
     }
 
@@ -224,15 +228,14 @@ static int get_metadata(struct flb_filter_aws *ctx, char *metadata_path,
         return -1;
     }
 
-    *metadata = flb_sds_create_len(client->resp.payload,
-                                   client->resp.payload_size);
-
-    if (!metadata) {
+    tmp = flb_sds_create_len(client->resp.payload, client->resp.payload_size);
+    if (!tmp) {
         flb_errno();
         flb_http_client_destroy(client);
         flb_upstream_conn_release(u_conn);
         return -1;
     }
+    *metadata = tmp;
     *metadata_len = client->resp.payload_size;
 
     flb_http_client_destroy(client);
