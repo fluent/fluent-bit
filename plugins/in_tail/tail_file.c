@@ -784,7 +784,19 @@ error:
 
 void flb_tail_file_remove(struct flb_tail_file *file)
 {
+    struct flb_tail_config *ctx;
+
+    ctx = file->config;
     if (file->rotated > 0) {
+#ifdef FLB_HAVE_SQLDB
+        /*
+         * Make sure to remove a the file entry from the database if the file
+         * was rotated and it's not longer being monitored.
+         */
+        if (ctx->db) {
+            flb_tail_db_file_delete(file, file->config);
+        }
+#endif
         mk_list_del(&file->_rotate_head);
     }
 
@@ -804,8 +816,7 @@ void flb_tail_file_remove(struct flb_tail_file *file)
 #endif
 
 #ifdef FLB_HAVE_METRICS
-    flb_metrics_sum(FLB_TAIL_METRIC_F_CLOSED, 1,
-                    file->config->i_ins->metrics);
+    flb_metrics_sum(FLB_TAIL_METRIC_F_CLOSED, 1, ctx->i_ins->metrics);
 #endif
 
     flb_free(file);

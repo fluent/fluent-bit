@@ -39,5 +39,6 @@ int flb_tail_db_file_offset(struct flb_tail_file *file,
 int flb_tail_db_file_rotate(const char *new_name,
                             struct flb_tail_file *file,
                             struct flb_tail_config *ctx);
-
+int flb_tail_db_file_delete(struct flb_tail_file *file,
+                            struct flb_tail_config *ctx);
 #endif
