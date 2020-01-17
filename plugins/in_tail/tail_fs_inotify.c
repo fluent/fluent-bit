@@ -84,7 +84,15 @@ static int tail_fs_event(struct flb_input_instance *i_ins,
 
         /* Check if the file have been deleted */
         if (st.st_nlink == 0) {
-            flb_debug("[in_tail] removed %s", file->name);
+            flb_debug("[in_tail] file has been deleted: %s", file->name);
+
+#ifdef FLB_HAVE_SQLDB
+            if (ctx->db) {
+                /* Remove file entry from the database */
+                flb_tail_db_file_delete(file, ctx);
+            }
+#endif
+            /* Remove file from the monitored list */
             flb_tail_file_remove(file);
             return 0;
         }

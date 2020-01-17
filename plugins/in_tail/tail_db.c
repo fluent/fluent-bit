@@ -177,3 +177,22 @@ int flb_tail_db_file_rotate(const char *new_name,
 
     return 0;
 }
+
+/* Delete file entry from the database */
+int flb_tail_db_file_delete(struct flb_tail_file *file,
+                            struct flb_tail_config *ctx)
+{
+    int ret;
+    char query[PATH_MAX];
+
+    /* Check if the file exists */
+    snprintf(query, sizeof(query) - 1, SQL_DELETE_FILE, file->db_id);
+    ret = flb_sqldb_query(ctx->db, query, NULL, NULL);
+    if (ret != FLB_OK) {
+        flb_error("[in_tail:db] error deleting entry from database: %s", file->name);
+        return -1;
+    }
+
+    flb_debug("[in_tail:db] file deleted from database: %s", file->name);
+    return 0;
+}
