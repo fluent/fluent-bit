@@ -55,7 +55,7 @@ struct statsd_message {
     double sample_rate;
 };
 
-static void pack_string(msgpack_packer *mp_pck, char *str, size_t len)
+static void pack_string(msgpack_packer *mp_pck, char *str, ssize_t len)
 {
     if (len < 0) {
         len = strlen(str);
