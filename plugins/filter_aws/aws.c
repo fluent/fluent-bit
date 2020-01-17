@@ -28,6 +28,9 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_io.h>
+#include <fluent-bit/flb_kv.h>
+
+#include <monkey/mk_core/mk_list.h>
 #include <msgpack.h>
 
 #include <stdlib.h>
@@ -45,6 +48,24 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
 {
     struct flb_filter_aws *ctx = NULL;
     (void) data;
+    struct mk_list *head;
+    struct flb_kv *kv;
+    int use_v2 = FLB_TRUE;
+
+    /* Iterate all filter properties */
+    mk_list_foreach(head, &f_ins->properties) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+
+        if (strcasecmp(kv->key, "imds_version") == 0) {
+            if (strcasecmp(kv->val, "v1") == 0) {
+                use_v2 = FLB_FALSE;
+            } else if (strcasecmp(kv->val, "v2") != 0) {
+                flb_warn("[filter_aws] Invalid value %s for config option "
+                         "'imds_version'. Valid values are 'v1' and 'v2'",
+                         kv->val);
+            }
+        }
+    }
 
     /* Create context */
     ctx = flb_malloc(sizeof(struct flb_filter_aws));
@@ -61,6 +82,9 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
     ctx->instance_id = NULL;
     ctx->instance_id_len = 0;
 
+    /* v1 or v2 instance metadata */
+    ctx->use_v2 = use_v2;
+
     /* enabled fields */
     ctx->instance_id_include = FLB_TRUE;
     ctx->availability_zone_include = FLB_TRUE;
@@ -70,7 +94,7 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
     ctx->metadata_retrieved = FLB_FALSE;
 
     ctx->ec2_upstream = flb_upstream_create(config,
-                                            FLB_FILTER_AWS_IMDS_V2_HOST,
+                                            FLB_FILTER_AWS_IMDS_HOST,
                                             80,
                                             FLB_IO_TCP,
                                             NULL);
@@ -104,7 +128,7 @@ static int get_ec2_token(struct flb_filter_aws *ctx)
     /* Compose HTTP Client request */
     client = flb_http_client(u_conn, FLB_HTTP_PUT,
                              FLB_FILTER_AWS_IMDS_V2_TOKEN_PATH,
-                             NULL, 0, FLB_FILTER_AWS_IMDS_V2_HOST,
+                             NULL, 0, FLB_FILTER_AWS_IMDS_HOST,
                              80, NULL, 0);
 
     if (!client) {
@@ -166,7 +190,7 @@ static int get_metadata(struct flb_filter_aws *ctx, char *metadata_path,
     client = flb_http_client(u_conn,
                              FLB_HTTP_GET, metadata_path,
                              NULL, 0,
-                             FLB_FILTER_AWS_IMDS_V2_HOST, 80,
+                             FLB_FILTER_AWS_IMDS_HOST, 80,
                              NULL, 0);
 
     if (!client) {
@@ -175,19 +199,24 @@ static int get_metadata(struct flb_filter_aws *ctx, char *metadata_path,
         return -1;
     }
 
-    flb_http_add_header(client, FLB_FILTER_AWS_IMDS_V2_TOKEN_HEADER,
-                        FLB_FILTER_AWS_IMDS_V2_TOKEN_HEADER_LEN,
-                        ctx->imds_v2_token,
-                        ctx->imds_v2_token_len);
+    if (ctx->use_v2 == FLB_TRUE) {
+        flb_http_add_header(client, FLB_FILTER_AWS_IMDS_V2_TOKEN_HEADER,
+                            FLB_FILTER_AWS_IMDS_V2_TOKEN_HEADER_LEN,
+                            ctx->imds_v2_token,
+                            ctx->imds_v2_token_len);
+        flb_debug("[filter_aws] Using IMDSv2");
+    } else {
+        flb_debug("[filter_aws] Using IMDSv1");
+    }
 
     /* Perform request */
     ret = flb_http_do(client, &b_sent);
-    flb_debug("[filter_aws] IMDSv2 metadata request http_do=%i, HTTP Status: %i",
+    flb_debug("[filter_aws] IMDS metadata request http_do=%i, HTTP Status: %i",
               ret, client->resp.status);
 
     if (ret != 0 || client->resp.status != 200) {
         if (client->resp.payload_size > 0) {
-            flb_debug("[filter_aws] IMDSv2 metadata request\n%s",
+            flb_debug("[filter_aws] IMDS metadata request\n%s",
                       client->resp.payload);
         }
         flb_http_client_destroy(client);
@@ -212,14 +241,14 @@ static int get_metadata(struct flb_filter_aws *ctx, char *metadata_path,
 }
 
 /*
- * Makes a call to IMDSv2 to set get the values of all metadata fields.
+ * Makes a call to IMDS to set get the values of all metadata fields.
  * It can be called repeatedly if some metadata calls initially do not succeed.
  */
 static int get_ec2_metadata(struct flb_filter_aws *ctx)
 {
     int ret;
 
-    if (!ctx->imds_v2_token) {
+    if (ctx->use_v2 == FLB_TRUE && !ctx->imds_v2_token) {
         ret = get_ec2_token(ctx);
 
         if (ret < 0) {
@@ -228,7 +257,7 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
     }
 
     if (ctx->instance_id_include && !ctx->instance_id) {
-        ret = get_metadata(ctx, FLB_FILTER_AWS_IMDS_V2_INSTANCE_ID_PATH,
+        ret = get_metadata(ctx, FLB_FILTER_AWS_IMDS_INSTANCE_ID_PATH,
                            &ctx->instance_id, &ctx->instance_id_len);
 
         if (ret < 0) {
@@ -237,7 +266,7 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
     }
 
     if (ctx->availability_zone_include && !ctx->availability_zone) {
-        ret = get_metadata(ctx, FLB_FILTER_AWS_IMDS_V2_AZ_PATH,
+        ret = get_metadata(ctx, FLB_FILTER_AWS_IMDS_AZ_PATH,
                            &ctx->availability_zone,
                            &ctx->availability_zone_len);
 
@@ -276,7 +305,7 @@ static int cb_aws_filter(const void *data, size_t bytes,
         ret = get_ec2_metadata(ctx);
         if (ret < 0) {
             flb_error("[filter_aws] Could not retrieve ec2 metadata "
-                      "from IMDSv2");
+                      "from IMDS");
             return FLB_FILTER_NOTOUCH;
         }
     }
