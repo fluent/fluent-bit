@@ -28,11 +28,11 @@
 
 #define FLB_FILTER_AWS_IMDS_V2_TOKEN_TTL                  21600
 
-#define FLB_FILTER_AWS_IMDS_V2_HOST                       "169.254.169.254"
+#define FLB_FILTER_AWS_IMDS_HOST                          "169.254.169.254"
 #define FLB_FILTER_AWS_IMDS_V2_TOKEN_PATH                 "/latest/api/token"
 
-#define FLB_FILTER_AWS_IMDS_V2_INSTANCE_ID_PATH           "/latest/meta-data/instance-id/"
-#define FLB_FILTER_AWS_IMDS_V2_AZ_PATH                    "/latest/meta-data/placement/availability-zone/"
+#define FLB_FILTER_AWS_IMDS_INSTANCE_ID_PATH              "/latest/meta-data/instance-id/"
+#define FLB_FILTER_AWS_IMDS_AZ_PATH                       "/latest/meta-data/placement/availability-zone/"
 
 #define FLB_FILTER_AWS_IMDS_V2_TOKEN_HEADER               "X-aws-ec2-metadata-token"
 #define FLB_FILTER_AWS_IMDS_V2_TOKEN_HEADER_LEN           24
@@ -46,13 +46,16 @@ struct flb_filter_aws {
     /* upstream connection to ec2 IMDS */
     struct flb_upstream *ec2_upstream;
 
-    /* IMDSv2 requires a token which must be present in metadata requests
-    This plugin does not refresh the token */
+    /*
+     * IMDSv2 requires a token which must be present in metadata requests
+     * This plugin does not refresh the token
+     */
     flb_sds_t imds_v2_token;
     size_t imds_v2_token_len;
 
     /* Metadata fields
-    These are queried only once; ec2 metadata is assumed to be immutable */
+     * These are queried only once; ec2 metadata is assumed to be immutable
+     */
     flb_sds_t availability_zone;
     size_t availability_zone_len;
     int availability_zone_include;
@@ -65,6 +68,9 @@ struct flb_filter_aws {
     int new_keys;
 
     int metadata_retrieved;
+
+    /* Plugin can use EC2 metadata v1 or v2; default is v2 */
+    int use_v2;
 };
 
 #endif
