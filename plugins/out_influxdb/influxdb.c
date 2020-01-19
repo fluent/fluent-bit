@@ -287,8 +287,8 @@ static char *influxdb_format(const char *tag, int tag_len,
             }
         } else {
             flb_warn("[out_influxdb] skip send record, "
-                      "since no record aviliable "
-                      "or all field is tagged in record");
+                      "since no record available "
+                      "or all fields are tagged in record");
             /* Following records maybe ok, so continue processing */
         }
 
