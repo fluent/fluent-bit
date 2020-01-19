@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_config_map.h>
 #include <msgpack.h>
 
 #include "td.h"
@@ -275,6 +276,32 @@ static int cb_td_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    {
+        FLB_CONFIG_MAP_STR, "api", NULL,
+        0, FLB_TRUE, offsetof(struct flb_td, api), 
+        NULL
+    },
+    {
+        FLB_CONFIG_MAP_STR, "database", NULL,
+        0, FLB_TRUE, offsetof(struct flb_td, db_name), 
+        NULL
+    },
+    {
+        FLB_CONFIG_MAP_STR, "table", NULL,
+        0, FLB_TRUE, offsetof(struct flb_td, db_table), 
+        NULL
+    },
+    {
+        FLB_CONFIG_MAP_STR, "region", "us",
+        0, FLB_TRUE, offsetof(struct flb_td, region), 
+        NULL
+    },
+    /* EOF */
+    {0}
+};
+
 /* Plugin reference */
 struct flb_output_plugin out_td_plugin = {
     .name           = "td",
@@ -283,5 +310,6 @@ struct flb_output_plugin out_td_plugin = {
     .cb_pre_run     = NULL,
     .cb_flush       = cb_td_flush,
     .cb_exit        = cb_td_exit,
+    .config_map     = config_map,
     .flags          = FLB_IO_TLS,
 };

@@ -77,9 +77,6 @@ struct flb_td *td_config_init(struct flb_output_instance *ins)
             return NULL;
         }
     }
-    else {
-        ctx->region = FLB_TD_REGION_US;
-    }
 
     flb_plg_info(ctx->ins, "Treasure Data / database='%s' table='%s'",
                  ctx->db_name, ctx->db_table);
