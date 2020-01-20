@@ -251,11 +251,7 @@ static int tail_filepath(char *buf, int len, const char *basedir, const char *fi
 
 int flb_tail_scan(const char *pattern, struct flb_tail_config *ctx)
 {
-    HANDLE h;
-    WIN32_FIND_DATA found;
-    struct stat st;
-    char path[MAX_PATH];
-    int ret;
+    int n_added;
 
     flb_debug("[in_tail] scanning path %s", pattern);
 
@@ -263,99 +259,23 @@ int flb_tail_scan(const char *pattern, struct flb_tail_config *ctx)
         tail_exclude_generate(ctx);
     }
 
-    h = FindFirstFileA(pattern, &found);
-    if (h == INVALID_HANDLE_VALUE) {
-        switch (GetLastError()) {
-            case ERROR_FILE_NOT_FOUND:
-                flb_debug("[in_tail] NO matches for path: %s", pattern);
-                return 0;
-            default:
-                flb_error("[in_tail] Cannot read info from: %s", pattern);
-                return -1;
-        }
+    n_added = tail_do_scan(pattern, ctx);
+    if (n_added >= 0) {
+        flb_debug("[in_tail] %i files found for '%s'", n_added, pattern);
     }
 
-    do {
-        /* WIN32_FIND_DATA.cFileName is just a file name, we need to
-         * construct a proper path by combining the original pattern.
-         */
-        ret = tail_filepath(path, MAX_PATH, pattern, found.cFileName);
-        if (ret) {
-            flb_error("[in_tail] fail to get a path for %s", found.cFileName);
-            continue;
-        }
-
-        ret = stat(path, &st);
-        if (ret == 0 && S_ISREG(st.st_mode)) {
-            if (tail_is_excluded(path, ctx) == FLB_TRUE) {
-                flb_debug("[in_tail] excluded=%s", path);
-                continue;
-            }
-
-            flb_tail_file_append(path, &st, FLB_TAIL_STATIC, ctx);
-        }
-    } while(FindNextFileA(h, &found));
-
-    FindClose(h);
     return 0;
 }
 
 int flb_tail_scan_callback(struct flb_input_instance *i_ins,
                            struct flb_config *config, void *context)
 {
-    HANDLE h;
-    WIN32_FIND_DATA found;
-    struct stat st;
-    struct flb_tail_config *ctx;
-    char path[MAX_PATH];
-    char *pattern;
-    int ret;
-    int count = 0;
+    struct flb_tail_config *ctx = (struct flb_tail_config *) context;
+    int n_added;
 
-    ctx = (struct flb_tail_config *) context;
-    pattern = ctx->path;
-
-    h = FindFirstFileA(pattern, &found);
-    if (h == INVALID_HANDLE_VALUE) {
-        switch (GetLastError()) {
-            case ERROR_FILE_NOT_FOUND:
-                return 0;
-            default:
-                flb_error("[in_tail] Cannot read info from: %s", pattern);
-                return -1;
-        }
-    }
-
-    do {
-        ret = tail_filepath(path, MAX_PATH, pattern, found.cFileName);
-        if (ret) {
-            flb_error("[in_tail] fail to get a path for %s", found.cFileName);
-            continue;
-        }
-
-        ret = stat(path, &st);
-        if (ret == 0 && S_ISREG(st.st_mode)) {
-            if (tail_is_excluded(path, ctx) == FLB_TRUE) {
-                continue;
-            }
-            ret = flb_tail_file_exists(path, ctx);
-            if (ret == FLB_TRUE) {
-                continue;
-            }
-
-            flb_debug("[in_tail] append new file: %s", path);
-
-            flb_tail_file_append(path, &st, FLB_TAIL_STATIC, ctx);
-
-            count++;
-        } else {
-            flb_debug("[in_tail] skip (invalid) entry=%s", path);
-        }
-    } while(FindNextFileA(h, &found));
-
-    FindClose(h);
-
-    if (count > 0) {
+    n_added = tail_do_scan(ctx->path, ctx);
+    if (n_added > 0) {
+        flb_debug("[in_tail] %i new files found for '%s'", n_added, ctx->path);
         tail_signal_manager(ctx);
     }
 
