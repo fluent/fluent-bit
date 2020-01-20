@@ -108,7 +108,7 @@ int flb_tail_db_file_set(struct flb_tail_file *file,
     /* Check if the file exists */
     snprintf(query, sizeof(query) - 1,
              SQL_GET_FILE,
-             file->name, file->inode);
+             file->name, (uint64_t) file->inode);
 
     memset(&qs, '\0', sizeof(qs));
     ret = flb_sqldb_query(ctx->db,
