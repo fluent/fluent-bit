@@ -567,8 +567,6 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
     c->flags       = flags;
     mk_list_init(&c->headers);
 
-    add_host_and_content_length(c);
-
     /* Check if we have a query string */
     p = strchr(uri, '?');
     if (p) {
@@ -592,6 +590,8 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
         c->body_buf = body;
         c->body_len = body_len;
     }
+
+    add_host_and_content_length(c);
 
     /* Check proxy data */
     if (proxy) {
