@@ -119,3 +119,30 @@ struct flb_kafka_topic *flb_kafka_topic_lookup(char *name,
     return flb_kafka_topic_default(ctx);
 
 }
+
+struct flb_kafka_topic *flb_kafka_topic_lookup_null(char *name,
+                                                    int name_len,
+                                                    struct flb_kafka *ctx)
+{
+    struct mk_list *head;
+    struct flb_kafka_topic *topic;
+
+    if (!ctx->topic_key) {
+        return NULL;
+    }
+
+    mk_list_foreach(head, &ctx->topics) {
+        topic = mk_list_entry(head, struct flb_kafka_topic, _head);
+        if (topic->name_len != name_len) {
+            continue;
+        }
+
+        if (strncmp(name, topic->name, topic->name_len) == 0) {
+            return topic;
+        }
+    }
+
+    /* No matches, return the default topic */
+    return NULL;
+
+}

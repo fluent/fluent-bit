@@ -114,6 +114,23 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
         ctx->topic_key = NULL;
     }
 
+    /* Config: dynamic_topic */
+    tmp = flb_output_get_property("dynamic_topic", ins);
+    if (tmp) {
+        ctx->dynamic_topic = flb_utils_bool(tmp);
+    }
+    else {
+        ctx->dynamic_topic = FLB_FALSE;
+    }
+
+    /* Config: Format */
+    tmp = flb_output_get_property("format", ins);
+    if (tmp) {
+        if (strcasecmp(tmp, "json") == 0) {
+            ctx->format = FLB_KAFKA_FMT_JSON;
+        }
+    }
+
     /* Config: Format */
     tmp = flb_output_get_property("format", ins);
     if (tmp) {

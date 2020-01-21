@@ -31,5 +31,8 @@ struct flb_kafka_topic *flb_kafka_topic_default(struct flb_kafka *ctx);
 struct flb_kafka_topic *flb_kafka_topic_lookup(char *name,
                                                int name_len,
                                                struct flb_kafka *ctx);
+struct flb_kafka_topic *flb_kafka_topic_lookup_null(char *name,
+                                               int name_len,
+                                               struct flb_kafka *ctx);
 
 #endif
