@@ -27,7 +27,8 @@
 
 -- Print record to the standard output
 function cb_print(tag, timestamp, record)
-   output = tag .. ":  [" .. string.format("%f", timestamp) .. ", { "
+   -- Takes all [alpha, numeric, :, _, -] characters, and excludes everythign else
+   output = string.gsub(tag, "([%w:_-]+)(.*)", "%1") .. ":  [" .. string.format("%f", timestamp) .. ", { "
 
    for key, val in pairs(record) do
       output = output .. string.format(" %s => %s,", key, val)
