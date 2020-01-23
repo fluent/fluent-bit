@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_upstream_ha.h>
 #include <fluent-bit/flb_sha512.h>
+#include <fluent-bit/flb_config_map.h>
 #include <msgpack.h>
 
 #include "forward.h"
@@ -636,9 +637,6 @@ static int forward_config_ha(const char *upstream_file,
         if (tmp && flb_utils_bool(tmp)) {
             fc->empty_shared_key = FLB_TRUE;
         }
-        else {
-            fc->empty_shared_key = FLB_FALSE;
-        }
 
         tmp = flb_upstream_node_get_property("shared_key", node);
         if (fc->empty_shared_key == FLB_TRUE) {
@@ -646,9 +644,6 @@ static int forward_config_ha(const char *upstream_file,
         }
         else if (tmp) {
             fc->shared_key = flb_sds_create(tmp);
-        }
-        else {
-            fc->shared_key = NULL;
         }
 
         tmp = flb_upstream_node_get_property("username", node);
@@ -680,9 +675,6 @@ static int forward_config_ha(const char *upstream_file,
         tmp = flb_upstream_node_get_property("time_as_integer", node);
         if (tmp) {
             fc->time_as_integer = flb_utils_bool(tmp);
-        }
-        else {
-            fc->time_as_integer = FLB_FALSE;
         }
 
         fc->require_ack_response = FLB_FALSE;
@@ -739,6 +731,9 @@ static int forward_config_simple(struct flb_forward *ctx,
     }
     fc->secured = FLB_FALSE;
 
+    /* Set default values */
+    flb_output_config_map_set(ins, fc);
+
     /* Check if TLS is enabled */
 #ifdef FLB_HAVE_TLS
     if (ins->use_tls == FLB_TRUE) {
@@ -785,9 +780,6 @@ static int forward_config_simple(struct flb_forward *ctx,
     else if (tmp) {
         fc->shared_key = flb_sds_create(tmp);
     }
-    else {
-        fc->shared_key = NULL;
-    }
 
     tmp = flb_output_get_property("username", ins);
     if (tmp) {
@@ -809,9 +801,6 @@ static int forward_config_simple(struct flb_forward *ctx,
     tmp = flb_output_get_property("self_hostname", ins);
     if (tmp) {
         fc->self_hostname = flb_sds_create(tmp);
-    }
-    else {
-        fc->self_hostname = flb_sds_create("localhost");
     }
 
     /* Backward compatible timing mode */
@@ -1138,6 +1127,56 @@ static void cb_forward_flush(const void *data, size_t bytes,
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_BOOL, "time_as_integer", "false",
+     0, FLB_TRUE, offsetof(struct flb_forward_config, time_as_integer),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "shared_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_forward_config, shared_key),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "self_hostname", "localhost",
+     0, FLB_TRUE, offsetof(struct flb_forward_config, self_hostname),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "empty_shared_key", "false",
+     0, FLB_TRUE, offsetof(struct flb_forward_config, empty_shared_key),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "send_options", "false",
+     0, FLB_TRUE, offsetof(struct flb_forward_config, send_options),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "require_ack_response", "false",
+     0, FLB_TRUE, offsetof(struct flb_forward_config, require_ack_response),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "username", "",
+     0, FLB_TRUE, offsetof(struct flb_forward_config, username),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "password", "",
+     0, FLB_TRUE, offsetof(struct flb_forward_config, password),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "upstream", NULL,
+     0, FLB_FALSE, 0,
+     NULL
+    },
+    /* EOF */
+    {0}
+};
+
 /* Plugin reference */
 struct flb_output_plugin out_forward_plugin = {
     .name         = "forward",
@@ -1146,5 +1185,6 @@ struct flb_output_plugin out_forward_plugin = {
     .cb_pre_run   = NULL,
     .cb_flush     = cb_forward_flush,
     .cb_exit      = cb_forward_exit,
+    .config_map   = config_map,
     .flags        = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
 };
