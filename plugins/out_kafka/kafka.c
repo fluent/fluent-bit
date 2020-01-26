@@ -153,17 +153,13 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         if (ctx->topic_key && !topic && val.type == MSGPACK_OBJECT_STR) {
             if (key.via.str.size == ctx->topic_key_len &&
                 strncmp(key.via.str.ptr, ctx->topic_key, ctx->topic_key_len) == 0) {
-                if (!ctx->dynamic_topic) {
-                    topic = flb_kafka_topic_lookup((char *) val.via.str.ptr,
-                                                   val.via.str.size,
-                                                   ctx);
-                }
+                topic = flb_kafka_topic_lookup((char *) val.via.str.ptr,
+                                               val.via.str.size,
+                                               ctx);
                 /* Add topic on the fly to topiclist and use it */
-                else {
-                    topic = flb_kafka_topic_lookup_null((char *) val.via.str.ptr,
-                                                       val.via.str.size,
-                                                       ctx);
-                    if (!topic) {
+                if (ctx->dynamic_topic) {
+                    if (strncmp(topic->name, flb_kafka_topic_default(ctx)->name, val.via.str.size) == 0 &&
+                       (strncmp(topic->name, val.via.str.ptr, val.via.str.size) != 0) ) {
                         dynamic_topic = flb_malloc(val.via.str.size + 1);
                         if (!dynamic_topic) {
                             flb_errno();
