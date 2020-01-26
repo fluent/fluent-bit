@@ -331,9 +331,6 @@ static int cb_gelf_init(struct flb_output_instance *ins, struct flb_config *conf
             return -1;
         }
     }
-    else {
-        ctx->mode = FLB_GELF_UDP;
-    }
 
     /* Config Gelf_Timestamp_Key */
     tmp = flb_output_get_property("gelf_timestamp_key", ins);
@@ -370,17 +367,11 @@ static int cb_gelf_init(struct flb_output_instance *ins, struct flb_config *conf
     if (tmp != NULL && atoi(tmp) >= 0) {
         ctx->pckt_size = atoi(tmp);
     }
-    else {
-        ctx->pckt_size = 1420;
-    }
 
     /* Config UDP Compress */
     tmp = flb_output_get_property("compress", ins);
     if (tmp) {
         ctx->compress = flb_utils_bool(tmp);
-    }
-    else {
-        ctx->compress = FLB_TRUE;
     }
 
     /* init random seed */
@@ -454,6 +445,33 @@ static int cb_gelf_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_INT, "pckt_size", '1420',
+     0, FLB_FALSE, offsetof(struct flb_out_gelf_config, pckt_size),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_INT, "compress", FLB_TRUE,
+     0, FLB_FALSE, offsetof(struct flb_out_gelf_config, compress),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_INT, "seed", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_gelf_config, seed),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_INT, "mode", FLB_GELF_UDP,
+     0, FLB_TRUE, offsetof(struct flb_out_gelf_config, mode),
+     NULL
+    },
+
+    /* EOF */
+    {0}
+};
+
 /* Plugin reference */
 struct flb_output_plugin out_gelf_plugin = {
     .name           = "gelf",
@@ -462,5 +480,6 @@ struct flb_output_plugin out_gelf_plugin = {
     .cb_pre_run     = NULL,
     .cb_flush       = cb_gelf_flush,
     .cb_exit        = cb_gelf_exit,
+    .config_map     = config_map,
     .flags          = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
 };
