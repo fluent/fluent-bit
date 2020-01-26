@@ -177,7 +177,12 @@ static flb_sds_t helper_map_options(struct mk_list *map)
             tmp = flb_sds_printf(&buf, "%s, ", m->name);
         }
         else {
-            tmp = flb_sds_printf(&buf, "and %s.", m->name);
+            if (mk_list_size(map) == 1) {
+                tmp = flb_sds_printf(&buf, "%s.", m->name);
+            }
+            else {
+                tmp = flb_sds_printf(&buf, "and %s.", m->name);
+            }
         }
 
         if (!tmp) {
