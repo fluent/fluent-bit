@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_utils.h>
 
 #include "kafka_config.h"
 #include "kafka_topic.h"
@@ -75,6 +76,10 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     int queue_full_retries = 0;
     char *out_buf;
     size_t out_size;
+    struct mk_list *head;
+    struct mk_list *topics;
+    struct flb_split_entry *entry;
+    char *dynamic_topic;
     char *message_key = NULL;
     size_t message_key_len = 0;
     struct flb_kafka_topic *topic = NULL;
@@ -151,6 +156,35 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
                 topic = flb_kafka_topic_lookup((char *) val.via.str.ptr,
                                                val.via.str.size,
                                                ctx);
+                /* Add topic on the fly to topiclist and use it */
+                if (ctx->dynamic_topic) {
+                    if (strncmp(topic->name, flb_kafka_topic_default(ctx)->name, val.via.str.size) == 0 &&
+                       (strncmp(topic->name, val.via.str.ptr, val.via.str.size) != 0) ) {
+                        dynamic_topic = flb_malloc(val.via.str.size + 1);
+                        if (!dynamic_topic) {
+                            flb_errno();
+                            /* in this case we use the default topic */
+                            break;
+                        }
+                        strncpy(dynamic_topic, val.via.str.ptr, val.via.str.size);
+                        dynamic_topic[val.via.str.size] = '\0';
+
+                        topics = flb_utils_split(dynamic_topic, ',', 1);
+                        mk_list_foreach(head, topics) {
+                            entry = mk_list_entry(head, struct flb_split_entry, _head);
+                            topic = flb_kafka_topic_create(entry->value, ctx);
+                            if (!topic) {
+                                flb_error("[out_kafka] cannot register topic '%s'",
+                                          entry->value);
+                            }
+                            else {
+                                flb_info("[out_kafka] new topic added: %s", dynamic_topic);
+                                break;
+                            }
+                        flb_free(dynamic_topic);
+                        }
+                    }
+                }
             }
         }
     }
