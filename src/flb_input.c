@@ -371,7 +371,7 @@ int flb_input_instance_init(struct flb_input_instance *in,
 
 
 /* Initialize all inputs */
-void flb_input_initialize_all(struct flb_config *config)
+void flb_input_init_all(struct flb_config *config)
 {
     int ret;
     struct mk_list *tmp;

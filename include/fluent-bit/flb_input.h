@@ -495,7 +495,7 @@ void flb_input_instance_exit(struct flb_input_instance *in,
                              struct flb_config *config);
 void flb_input_instance_free(struct flb_input_instance *in);
 
-void flb_input_initialize_all(struct flb_config *config);
+void flb_input_init_all(struct flb_config *config);
 void flb_input_pre_run_all(struct flb_config *config);
 void flb_input_exit_all(struct flb_config *config);
 
