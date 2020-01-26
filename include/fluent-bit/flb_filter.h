@@ -32,6 +32,7 @@
 #endif
 
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_input_chunk.h>
 #include <msgpack.h>
 
@@ -45,6 +46,9 @@ struct flb_filter_plugin {
     int flags;             /* Flags (not available at the moment */
     char *name;            /* Filter short name            */
     char *description;     /* Description                  */
+
+    /* Config map */
+    struct flb_config_map *config_map;
 
     /* Callbacks */
     int (*cb_init) (struct flb_filter_instance *, struct flb_config *, void *);
@@ -70,6 +74,8 @@ struct flb_filter_instance {
     void *data;
     struct flb_filter_plugin *p;   /* original plugin          */
     struct mk_list properties;     /* config properties        */
+    struct mk_list *config_map;    /* configuration map        */
+
     struct mk_list _head;          /* link to config->filters  */
 
 #ifdef FLB_HAVE_METRICS
@@ -79,6 +85,12 @@ struct flb_filter_instance {
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;
 };
+
+static inline int flb_filter_config_map_set(struct flb_filter_instance *ins,
+                                            void *context)
+{
+    return flb_config_map_set(&ins->properties, ins->config_map, context);
+}
 
 int flb_filter_set_property(struct flb_filter_instance *filter,
                             const char *k, const char *v);
@@ -92,7 +104,8 @@ void flb_filter_do(struct flb_input_chunk *ic,
                    const char *tag, int tag_len,
                    struct flb_config *config);
 const char *flb_filter_name(struct flb_filter_instance *in);
-void flb_filter_initialize_all(struct flb_config *config);
+int flb_filter_init_all(struct flb_config *config);
 void flb_filter_set_context(struct flb_filter_instance *ins, void *context);
+void flb_filter_instance_destroy(struct flb_filter_instance *ins);
 
 #endif
