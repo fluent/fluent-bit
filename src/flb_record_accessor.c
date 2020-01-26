@@ -152,42 +152,49 @@ void flb_ra_destroy(struct flb_record_accessor *ra)
     flb_free(ra);
 }
 
-struct flb_record_accessor *flb_ra_create(char *str)
+struct flb_record_accessor *flb_ra_create(char *str, int translate_env)
 {
     int ret;
     size_t hint = 0;
+    char *p;
     flb_sds_t buf;
     struct flb_env *env;
     struct mk_list *head;
     struct flb_ra_parser *rp;
     struct flb_record_accessor *ra;
 
-    /*
-     * First step is to check if some environment variable has been created
-     * as part of the string. Upon running the environment variable will be
-     * pre-set in the string.
-     */
-    env = flb_env_create();
-    if (!env) {
-        flb_error("[record accessor] cannot create environment context");
-        return NULL;
-    }
+    p = str;
+    if (translate_env == FLB_TRUE) {
+        /*
+         * Check if some environment variable has been created as part of the
+         * string. Upon running the environment variable will be pre-set in the
+         * string.
+         */
+        env = flb_env_create();
+        if (!env) {
+            flb_error("[record accessor] cannot create environment context");
+            return NULL;
+        }
 
-    /* Translate string */
-    buf = flb_env_var_translate(env, str);
-    if (!buf) {
-        flb_error("[record accessor] cannot translate string");
+        /* Translate string */
+        buf = flb_env_var_translate(env, str);
+        if (!buf) {
+            flb_error("[record accessor] cannot translate string");
+            flb_env_destroy(env);
+            return NULL;
+        }
         flb_env_destroy(env);
-        return NULL;
+        p = buf;
     }
-    flb_env_destroy(env);
 
     /* Allocate context */
     ra = flb_malloc(sizeof(struct flb_record_accessor));
     if (!ra) {
         flb_errno();
         flb_error("[record accessor] cannot create context");
-        flb_sds_destroy(buf);
+        if (translate_env == FLB_TRUE) {
+            flb_sds_destroy(buf);
+        }
         return NULL;
     }
     mk_list_init(&ra->list);
@@ -197,8 +204,10 @@ struct flb_record_accessor *flb_ra_create(char *str)
      * The buffer needs to processed where we create a list of parts, basically
      * a linked list of sds using 'slist' api.
      */
-    ret = ra_parse_buffer(ra, buf);
-    flb_sds_destroy(buf);
+    ret = ra_parse_buffer(ra, p);
+    if (translate_env) {
+        flb_sds_destroy(buf);
+    }
     if (ret == -1) {
         flb_ra_destroy(ra);
         return NULL;
@@ -328,4 +337,28 @@ flb_sds_t flb_ra_translate(struct flb_record_accessor *ra,
     }
 
     return buf;
+}
+
+/*
+ * Compare a string value against the first entry of a record accessor component, used
+ * specifically when the record accessor refers to a single key name.
+ */
+int flb_ra_strcmp(struct flb_record_accessor *ra, msgpack_object map,
+                  char *str, int len)
+{
+    struct flb_ra_parser *rp;
+
+    rp = mk_list_entry_first(&ra->list, struct flb_ra_parser, _head);
+    return flb_ra_key_strcmp(rp->key->name, map, rp->key->subkeys,
+                             rp->key->name, flb_sds_len(rp->key->name));
+}
+
+int flb_ra_regex_match(struct flb_record_accessor *ra, msgpack_object map,
+                       struct flb_regex *regex)
+{
+    struct flb_ra_parser *rp;
+
+    rp = mk_list_entry_first(&ra->list, struct flb_ra_parser, _head);
+    return flb_ra_key_regex_match(rp->key->name, map, rp->key->subkeys,
+                                  regex);
 }
