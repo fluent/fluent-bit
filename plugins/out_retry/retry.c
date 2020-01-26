@@ -28,7 +28,7 @@
 
 /* Retry context, only works with one instance */
 struct retry_ctx {
-    int n_retry;                     /* max retries before real flush (OK) */
+    int retries;                     /* max retries before real flush (OK) */
     int count;                       /* number of retries done */
     struct flb_output_instance *ins; /* plugin instance */
 };
@@ -49,14 +49,6 @@ static int cb_retry_init(struct flb_output_instance *ins,
     }
     ctx->ins = ins;
     ctx->count = 0;
-
-    tmp = flb_output_get_property("retries", ins);
-    if (!tmp) {
-        ctx->n_retry = 3;
-    }
-    else {
-        ctx->n_retry = atoi(tmp);
-    }
 
     flb_output_set_context(ins, ctx);
     return 0;
@@ -80,12 +72,12 @@ static void cb_retry_flush(const void *data, size_t bytes,
     ctx = out_context;
     ctx->count++;
 
-    if (ctx->count <= ctx->n_retry) {
-        flb_plg_debug(ctx->ins, "retry %i/%i", ctx->count, ctx->n_retry);
+    if (ctx->count <= ctx->retries) {
+        flb_plg_debug(ctx->ins, "retry %i/%i", ctx->count, ctx->retries);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
     else {
-        flb_plg_debug(ctx->ins, "flush", ctx->count, ctx->n_retry);
+        flb_plg_debug(ctx->ins, "flush", ctx->count, ctx->retries);
         ctx->count = 0;
     }
 
@@ -102,11 +94,24 @@ static int cb_retry_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    {
+        FLB_CONFIG_MAP_INT, "retries", "3",
+        0, FLB_TRUE, offsetof(struct retry_ctx, retries), 
+        NULL
+    },
+
+    /* EOF */
+    {0}
+};
+
 struct flb_output_plugin out_retry_plugin = {
     .name         = "retry",
     .description  = "Issue a retry upon flush request",
     .cb_init      = cb_retry_init,
     .cb_flush     = cb_retry_flush,
     .cb_exit      = cb_retry_exit,
+    .config_map   = config_map,
     .flags        = 0,
 };
