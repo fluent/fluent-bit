@@ -38,16 +38,6 @@ fi
 # If no v6, disable that test
 [[ ! $(ip a) =~ ::1 ]] && SKIP="$SKIP -DFLB_WITHOUT_flb-it-network=1"
 
-if [ "$CC" = "gcc" ]
-then
-    if [[ "$FLB_OPT" =~ SANITIZE  ]]
-    then
-        # https://stackoverflow.com/questions/50024731/ld-unrecognized-option-push-state-no-as-needed
-        echo Set gold linker to workaround ubsan
-        LDFLAG=-DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=gold
-    fi
-fi
-
 GLOBAL_OPTS="-DFLB_BACKTRACE=Off -DFLB_SHARED_LIB=Off -DFLB_DEBUG=On -DFLB_ALL=On -DFLB_EXAMPLES=Off"
 set -e
 mkdir -p build
