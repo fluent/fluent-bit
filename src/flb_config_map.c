@@ -27,6 +27,46 @@
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_config_map.h>
 
+static int expect_n_values(int type)
+{
+    if (type > FLB_CONFIG_MAP_CLIST && type < FLB_CONFIG_MAP_SLIST) {
+        return type - FLB_CONFIG_MAP_CLIST;
+    }
+    if (type > FLB_CONFIG_MAP_SLIST && type <= FLB_CONFIG_MAP_SLIST_4) {
+        return type - FLB_CONFIG_MAP_SLIST;
+    }
+    return -1;
+}
+
+static int check_list_size(struct mk_list *list, int type)
+{
+    int len;
+
+    len = mk_list_size(list);
+    if (type == FLB_CONFIG_MAP_SLIST_1 || type == FLB_CONFIG_MAP_CLIST_1) {
+        if (len < 1) {
+            return -1;
+        }
+    }
+    else if (type == FLB_CONFIG_MAP_SLIST_2 || type == FLB_CONFIG_MAP_CLIST_2) {
+        if (len < 2) {
+            return -1;
+        }
+    }
+    else if (type == FLB_CONFIG_MAP_SLIST_3 || type == FLB_CONFIG_MAP_CLIST_3) {
+        if (len < 3) {
+            return -1;
+        }
+    }
+    else if (type == FLB_CONFIG_MAP_SLIST_4 || type == FLB_CONFIG_MAP_CLIST_4) {
+        if (len < 4) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
 /*
  * Given a string, split the content using it proper separator generating a linked
  * list of 'slist'
@@ -437,6 +477,7 @@ static int properties_override_default(struct mk_list *properties, char *name)
 int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *context)
 {
     int ret;
+    int len;
     char *base;
     char *m_bool;
     int *m_i_num;
@@ -485,7 +526,6 @@ int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *co
         if (ret == FLB_TRUE) {
             continue;
         }
-
 
         /* All the following steps are direct writes to the user context */
         if (m->type == FLB_CONFIG_MAP_STR) {
@@ -578,6 +618,21 @@ int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *co
                     return -1;
                 }
                 entry->val.list = list;
+
+                /* Validate the number of entries are the minimum expected */
+                len = mk_list_size(list);
+                ret = check_list_size(list, m->type);
+                if (ret == -1) {
+                    flb_error("[config map] property '%s' expects %i values "
+                              "(only %i were found)",
+                              kv->key, expect_n_values(m->type), len);
+                    /*
+                     * Register the entry anyways, so on exit the resources will
+                     * be released
+                     */
+                    mk_list_add(&entry->_head, m->value.mult);
+                    return -1;
+                }
             }
 
             /* Add entry to the map 'mult' list tail */
