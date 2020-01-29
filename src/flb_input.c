@@ -197,6 +197,27 @@ static inline int prop_key_check(const char *key, const char *kv, int k_len)
     return -1;
 }
 
+int flb_input_name_exists(const char *name, struct flb_config *config)
+{
+    struct mk_list *head;
+    struct flb_input_instance *in;
+
+    mk_list_foreach(head, &config->inputs) {
+        in = mk_list_entry(head, struct flb_input_instance, _head);
+        if (strcmp(in->name, name) == 0) {
+            return FLB_TRUE;
+        }
+
+        if (in->alias) {
+            if (strcmp(in->alias, name) == 0) {
+                return FLB_TRUE;
+            }
+        }
+    }
+
+    return FLB_FALSE;
+}
+
 /* Override a configuration property for the given input_instance plugin */
 int flb_input_set_property(struct flb_input_instance *in,
                            const char *k, const char *v)
