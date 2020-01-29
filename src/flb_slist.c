@@ -95,7 +95,7 @@ int flb_slist_split_string(struct mk_list *list, const char *str,
         if (end < 0) {
             end = len - i;
         }
-        else if (end == i) {
+        else if ((end + i) == i) {
             i++;
             continue;
         }
@@ -103,7 +103,7 @@ int flb_slist_split_string(struct mk_list *list, const char *str,
         p_init = (char *) str + i;
         p_end = p_init + end - 1;
 
-        /* Remove empty spaces */
+        /* Skip empty spaces */
         while (*p_init == ' ') {
             p_init++;
         }
@@ -123,7 +123,7 @@ int flb_slist_split_string(struct mk_list *list, const char *str,
             val_len = 1;
         }
         else {
-            val_len = p_end - p_init + 1;
+            val_len = (p_end - p_init) + 1;
         }
 
         if (val_len == 0) {
