@@ -299,12 +299,18 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
     qsort(metrics_arr, num_metrics, sizeof(char *), string_cmp);
 
     /* When a new metric starts add TYPE annotation. */
+    sds = flb_sds_cat(sds, "# HELP ", 7);
+    sds = flb_sds_cat(sds, metrics_arr[0], extract_metric_name_end_position(metrics_arr[0]));
+    sds = flb_sds_cat(sds, " fluentbit_metrics\n", 20);
     sds = flb_sds_cat(sds, "# TYPE ", 7);
     sds = flb_sds_cat(sds, metrics_arr[0], extract_metric_name_end_position(metrics_arr[0]));
     sds = flb_sds_cat(sds, " counter\n", 9);
     for (i = 0; i < num_metrics; i++) {
         sds = flb_sds_cat(sds, metrics_arr[i], strlen(metrics_arr[i]));
         if ((i != num_metrics - 1) && (is_same_metric(metrics_arr[i], metrics_arr[i+1]) == 0)) {
+            sds = flb_sds_cat(sds, "# HELP ", 7);
+            sds = flb_sds_cat(sds, metrics_arr[i+1], extract_metric_name_end_position(metrics_arr[i+1]));
+            sds = flb_sds_cat(sds, " fluentbit_metrics\n", 20);
             sds = flb_sds_cat(sds, "# TYPE ", 7);
             sds = flb_sds_cat(sds, metrics_arr[i+1], extract_metric_name_end_position(metrics_arr[i+1]));
             sds = flb_sds_cat(sds, " counter\n", 9);
@@ -312,6 +318,7 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
     }
 
     /* Attach process_start_time_seconds metric. */
+    sds = flb_sds_cat(sds, "# HELP process_start_time_seconds Start time of the process since unix epoch in seconds.\n", 89);
     sds = flb_sds_cat(sds, "# TYPE process_start_time_seconds gauge\n", 40);
     sds = flb_sds_cat(sds, "process_start_time_seconds ", 27);
     sds = flb_sds_cat(sds, start_time_str, start_time_len);
