@@ -41,12 +41,11 @@ struct flb_emitter {
 };
 
 struct em_chunk *em_chunk_create(const char *tag, int tag_len,
-                                 const char *buf_data, size_t buf_size,
                                  struct flb_emitter *ctx)
 {
     struct em_chunk *ec;
 
-    ec = flb_malloc(sizeof(struct em_chunk));
+    ec = flb_calloc(1, sizeof(struct em_chunk));
     if (!ec) {
         flb_errno();
         return NULL;
@@ -67,6 +66,14 @@ struct em_chunk *em_chunk_create(const char *tag, int tag_len,
     return ec;
 }
 
+static void em_chunk_destroy(struct em_chunk *ec)
+{
+    mk_list_del(&ec->_head);
+    flb_sds_destroy(ec->tag);
+    msgpack_sbuffer_destroy(&ec->mp_sbuf);
+    flb_free(ec);
+}
+
 
 /*
  * Function used by filters to ingest custom records with custom tags, at the
@@ -77,7 +84,7 @@ int in_emitter_add_record(const char *tag, int tag_len,
                           struct flb_input_instance *in)
 {
     struct mk_list *head;
-    struct em_chunk *ec;
+    struct em_chunk *ec = NULL;
     struct flb_emitter *ctx;
 
     ctx = (struct flb_emitter *) in->context;
@@ -94,9 +101,7 @@ int in_emitter_add_record(const char *tag, int tag_len,
 
     /* No candidate chunk found, so create a new one */
     if (!ec) {
-        ec = em_chunk_create(tag, tag_len,
-                             buf_data, buf_size,
-                             ctx);
+        ec = em_chunk_create(tag, tag_len, ctx);
         if (!ec) {
             flb_error("[in_emitter] cannot create new chunk for tag: %s",
                       tag);
@@ -104,10 +109,16 @@ int in_emitter_add_record(const char *tag, int tag_len,
         }
     }
 
-
     /* Append raw msgpack data */
     msgpack_sbuffer_write(&ec->mp_sbuf, buf_data, buf_size);
     return 0;
+}
+
+int in_emitter_get_collector_id(struct flb_input_instance *in)
+{
+    struct flb_emitter *ctx = (struct flb_emitter *) in->context;
+
+    return ctx->coll_fd;
 }
 
 static int cb_queue_chunks(struct flb_input_instance *in,
@@ -127,7 +138,7 @@ static int cb_queue_chunks(struct flb_input_instance *in,
         echunk = mk_list_entry(head, struct em_chunk, _head);
 
         /* Associate this backlog chunk to this instance into the engine */
-        ret = flb_input_chunk_append_raw(ctx->i_ins,
+        ret = flb_input_chunk_append_raw(in,
                                          echunk->tag, flb_sds_len(echunk->tag),
                                          echunk->mp_sbuf.data,
                                          echunk->mp_sbuf.size);
@@ -137,9 +148,8 @@ static int cb_queue_chunks(struct flb_input_instance *in,
             continue;
         }
 
-        /* remove the reference, it's on the engine hands now */
-        mk_list_del(&echunk->_head);
-        flb_free(echunk);
+        /* Release the echunk */
+        em_chunk_destroy(echunk);
     }
 
     return 0;
@@ -164,15 +174,14 @@ static int cb_emitter_init(struct flb_input_instance *in,
     /* export plugin context */
     flb_input_set_context(in, ctx);
 
-    /* Set a collector to trigger the callback to queue data every second */
-    ret = flb_input_set_collector_time(in, cb_queue_chunks, 1, 0, config);
+    /* Set a collector to trigger the callback to queue data every 0.5 second */
+    ret = flb_input_set_collector_time(in, cb_queue_chunks, 0, 50000000, config);
     if (ret < 0) {
         flb_error("[in_emitter] could not create collector");
         flb_free(ctx);
         return -1;
     }
     ctx->coll_fd = ret;
-
     return 0;
 }
 
@@ -220,6 +229,6 @@ struct flb_input_plugin in_emitter_plugin = {
     .cb_resume    = cb_emitter_resume,
     .cb_exit      = cb_emitter_exit,
 
-    /* This plugin can only be configured and invoked by the Engine */
+    /* This plugin can only be configured and invoked by the Engine only */
     .flags        = FLB_INPUT_PRIVATE
 };
