@@ -97,10 +97,30 @@ void test_slist_split_string()
     ret = flb_slist_split_string(&list, ",,, ,, , ,   , ", ',', 2);
     TEST_CHECK(ret == 0);
     TEST_CHECK(mk_list_size(&list) == 0);
+
+
+}
+
+void test_bugs()
+{
+    int ret;
+    struct mk_list list;
+    struct flb_slist_entry *e;
+
+    ret = flb_slist_create(&list);
+
+    /* Bug found during #293 development */
+    ret = flb_slist_split_string(&list, "$key2 ab final-tag true", ' ', 4);
+    TEST_CHECK(ret == 4);
+    e = flb_slist_entry_get(&list, 2);
+    TEST_CHECK(*e->str == 'f');
+
+    flb_slist_destroy(&list);
 }
 
 TEST_LIST = {
     { "add"  , test_slist_add},
     { "split", test_slist_split_string},
+    { "bugs" , test_bugs},
     { 0 }
 };
