@@ -36,9 +36,10 @@ void flb_ra_destroy(struct flb_record_accessor *ra);
 void flb_ra_dump(struct flb_record_accessor *ra);
 flb_sds_t flb_ra_translate(struct flb_record_accessor *ra,
                            char *tag, int tag_len,
-                           msgpack_object map);
+                           msgpack_object map, struct flb_regex_search *result);
 int flb_ra_strcmp(struct flb_record_accessor *ra, msgpack_object map,
                   char *str, int len);
 int flb_ra_regex_match(struct flb_record_accessor *ra, msgpack_object map,
-                       struct flb_regex *regex);
+                       struct flb_regex *regex,
+                       struct flb_regex_search *result);
 #endif

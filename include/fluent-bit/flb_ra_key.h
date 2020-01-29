@@ -57,6 +57,6 @@ void flb_ra_key_value_destroy(struct flb_ra_value *v);
 int flb_ra_key_strcmp(flb_sds_t ckey, msgpack_object map,
                       struct mk_list *subkeys, char *str, int len);
 int flb_ra_key_regex_match(flb_sds_t ckey, msgpack_object map,
-                           struct mk_list *subkeys, struct flb_regex *regex);
-
+                           struct mk_list *subkeys, struct flb_regex *regex,
+                           struct flb_regex_search *result);
 #endif

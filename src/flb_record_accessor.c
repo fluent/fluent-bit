@@ -46,6 +46,18 @@ static struct flb_ra_parser *ra_parse_string(struct flb_record_accessor *ra,
     return rp;
 }
 
+static struct flb_ra_parser *ra_parse_regex_id(struct flb_record_accessor *ra,
+                                               int c)
+{
+    struct flb_ra_parser *rp;
+
+    rp = flb_ra_parser_regex_id_create(c);
+    if (!rp) {
+        return NULL;
+    }
+    return rp;
+}
+
 /* Create a parser context for a key map or function definition */
 static struct flb_ra_parser *ra_parse_meta(struct flb_record_accessor *ra,
                                            flb_sds_t buf, int start, int end)
@@ -67,12 +79,14 @@ static struct flb_ra_parser *ra_parse_meta(struct flb_record_accessor *ra,
  *
  * ${X}                         => environment variable
  * $key, $key[x], $key[x][y][z] => record key value
+ * $0, $1,..$9                  => regex id
  * $X()                         => built-in function
  */
 static int ra_parse_buffer(struct flb_record_accessor *ra, flb_sds_t buf)
 {
     int i;
     int n;
+    int c;
     int len;
     int pre = 0;
     int end = 0;
@@ -92,8 +106,40 @@ static int ra_parse_buffer(struct flb_record_accessor *ra, flb_sds_t buf)
             break;
         }
 
+        /*
+         * If the next character is a digit like $0,$1,$2..$9, means the user wants to use
+         * the result of a regex capture.
+         *
+         * We support up to 10 regex ids [0-9]
+         */
+        if (isdigit(buf[n])) {
+            /*
+             * Before to add the number entry, add the previous text
+             * before hitting this.
+             */
+            if (i > pre) {
+                rp = ra_parse_string(ra, buf, pre, i);
+                if (!rp) {
+                    return -1;
+                }
+                mk_list_add(&rp->_head, &ra->list);
+            }
+
+            /* Add REGEX_ID entry */
+            c = atoi(buf + n);
+            rp = ra_parse_regex_id(ra, c);
+            if (!rp) {
+                return -1;
+            }
+
+            mk_list_add(&rp->_head, &ra->list);
+            i++;
+            pre = i + 1;
+            continue;
+        }
+
         for (end = i + 1; end < len; end++) {
-            if (buf[end] == ' ' || buf[end] == ',' || buf[end] == '"') {
+            if (buf[end] == '.' || buf[end] == ' ' || buf[end] == ',' || buf[end] == '"') {
                 break;
             }
         }
@@ -128,7 +174,7 @@ static int ra_parse_buffer(struct flb_record_accessor *ra, flb_sds_t buf)
     }
 
     /* Append remaining string */
-    if (i - 1 > end) {
+    if (i - 1 > end && pre < i) {
         rp_str = ra_parse_string(ra, buf, pre, i);
         if (rp_str) {
             mk_list_add(&rp_str->_head, &ra->list);
@@ -217,7 +263,12 @@ struct flb_record_accessor *flb_ra_create(char *str, int translate_env)
     mk_list_foreach(head, &ra->list) {
         rp = mk_list_entry(head, struct flb_ra_parser, _head);
         if (rp->key) {
-            hint += flb_sds_len(rp->key->name);
+            if (rp->type == FLB_RA_PARSER_REGEX_ID) {
+                hint += 32;
+            }
+            else {
+                hint += flb_sds_len(rp->key->name);
+            }
         }
     }
     ra->size_hint = hint + 128;
@@ -234,6 +285,24 @@ void flb_ra_dump(struct flb_record_accessor *ra)
         printf("\n");
         flb_ra_parser_dump(rp);
     }
+}
+
+static flb_sds_t ra_translate_regex_id(struct flb_ra_parser *rp,
+                                       struct flb_regex_search *result,
+                                       flb_sds_t buf)
+{
+    int ret;
+    ptrdiff_t start;
+    ptrdiff_t end;
+    flb_sds_t tmp;
+
+    ret = flb_regex_results_get(result, rp->regex_id, &start, &end);
+    if (ret == -1) {
+        return buf;
+    }
+
+    tmp = flb_sds_cat(buf, result->str + start, end - start);
+    return tmp;
 }
 
 static flb_sds_t ra_translate_string(struct flb_ra_parser *rp, flb_sds_t buf)
@@ -299,7 +368,7 @@ static flb_sds_t ra_translate_keymap(struct flb_ra_parser *rp, flb_sds_t buf,
  */
 flb_sds_t flb_ra_translate(struct flb_record_accessor *ra,
                            char *tag, int tag_len,
-                           msgpack_object map)
+                           msgpack_object map, struct flb_regex_search *result)
 {
     int found;
     flb_sds_t tmp = NULL;
@@ -321,6 +390,10 @@ flb_sds_t flb_ra_translate(struct flb_record_accessor *ra,
         else if (rp->type == FLB_RA_PARSER_KEYMAP) {
             tmp = ra_translate_keymap(rp, buf, map, &found);
         }
+        else if (rp->type == FLB_RA_PARSER_REGEX_ID && result) {
+            tmp = ra_translate_regex_id(rp, result, buf);
+        }
+
         //else if (rp->type == FLB_RA_PARSER_FUNC) {
             //tmp = ra_translate_func(rp, buf, tag, tag_len);
         //}
@@ -353,12 +426,16 @@ int flb_ra_strcmp(struct flb_record_accessor *ra, msgpack_object map,
                              rp->key->name, flb_sds_len(rp->key->name));
 }
 
+/*
+ * Check if a regular expression matches a record accessor key in the
+ * given map
+ */
 int flb_ra_regex_match(struct flb_record_accessor *ra, msgpack_object map,
-                       struct flb_regex *regex)
+                       struct flb_regex *regex, struct flb_regex_search *result)
 {
     struct flb_ra_parser *rp;
 
     rp = mk_list_entry_first(&ra->list, struct flb_ra_parser, _head);
     return flb_ra_key_regex_match(rp->key->name, map, rp->key->subkeys,
-                                  regex);
+                                  regex, result);
 }

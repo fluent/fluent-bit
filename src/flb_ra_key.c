@@ -255,7 +255,8 @@ int flb_ra_key_strcmp(flb_sds_t ckey, msgpack_object map,
 }
 
 int flb_ra_key_regex_match(flb_sds_t ckey, msgpack_object map,
-                           struct mk_list *subkeys, struct flb_regex *regex)
+                           struct mk_list *subkeys, struct flb_regex *regex,
+                           struct flb_regex_search *result)
 {
     int i;
     int ret;
@@ -277,9 +278,20 @@ int flb_ra_key_regex_match(flb_sds_t ckey, msgpack_object map,
             if (out->type != MSGPACK_OBJECT_STR) {
                 return -1;
             }
-            return flb_regex_match(regex,
-                                   (unsigned char *) out->via.str.ptr,
-                                   out->via.str.size);
+
+            if (result) {
+                /* Regex + capture mode */
+                return flb_regex_do(regex,
+                                    (char *) out->via.str.ptr,
+                                    out->via.str.size,
+                                    result);
+            }
+            else {
+                /* No capture */
+                return flb_regex_match(regex,
+                                       (unsigned char *) out->via.str.ptr,
+                                       out->via.str.size);
+            }
         }
         return -1;
     }
@@ -288,8 +300,18 @@ int flb_ra_key_regex_match(flb_sds_t ckey, msgpack_object map,
         return -1;
     }
 
-    return flb_regex_match(regex, (unsigned char *) val.via.str.ptr,
-                           val.via.str.size);
+    if (result) {
+        /* Regex + capture mode */
+        return flb_regex_do(regex, (char *) val.via.str.ptr, val.via.str.size,
+                            result);
+    }
+    else {
+        /* No capture */
+        return flb_regex_match(regex, (unsigned char *) val.via.str.ptr,
+                               val.via.str.size);
+    }
+
+    return -1;
 }
 
 void flb_ra_key_value_destroy(struct flb_ra_value *v)
