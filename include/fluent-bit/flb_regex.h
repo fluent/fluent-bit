@@ -57,6 +57,11 @@ int flb_regex_parse(struct flb_regex *r, struct flb_regex_search *result,
                                       void *),                  /* caller data */
                     void *data);
 int flb_regex_destroy(struct flb_regex *r);
+int flb_regex_results_get(struct flb_regex_search *result, int i,
+                          ptrdiff_t *start, ptrdiff_t *end);
+void flb_regex_results_release(struct flb_regex_search *result);
+int flb_regex_results_size(struct flb_regex_search *result);
+
 void flb_regex_exit();
 
 #endif
