@@ -37,5 +37,6 @@ void flb_slist_destroy(struct mk_list *list);
 int flb_slist_split_string(struct mk_list *list, const char *str,
                            int separator, int max_split);
 void flb_slist_dump(struct mk_list *list);
+struct flb_slist_entry *flb_slist_entry_get(struct mk_list *list, int n);
 
 #endif

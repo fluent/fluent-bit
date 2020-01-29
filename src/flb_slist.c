@@ -190,3 +190,25 @@ void flb_slist_destroy(struct mk_list *list)
         flb_free(e);
     }
 }
+
+/* Return the entry in position number 'n' */
+struct flb_slist_entry *flb_slist_entry_get(struct mk_list *list, int n)
+{
+    int i = 0;
+    struct mk_list *head;
+    struct flb_slist_entry *e;
+
+    if (!list || mk_list_size(list) == 0) {
+        return NULL;
+    }
+
+    mk_list_foreach(head, list) {
+        if (i == n) {
+            e = mk_list_entry(head, struct flb_slist_entry, _head);
+            return e;
+        }
+        i++;
+    }
+
+    return NULL;
+}
