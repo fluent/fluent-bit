@@ -29,6 +29,8 @@
 #define FLB_RA_PARSER_KEYMAP    1  /* record map key */
 #define FLB_RA_PARSER_FUNC      2  /* record function: tag, time... */
 #define FLB_RA_PARSER_REGEX_ID  3  /* regex id / capture position */
+#define FLB_RA_PARSER_TAG       4  /* full tag */
+#define FLB_RA_PARSER_TAG_PART  5  /* tag part */
 
 struct flb_ra_key {
     flb_sds_t name;
@@ -37,7 +39,7 @@ struct flb_ra_key {
 
 struct flb_ra_parser {
     int type;                /* token type */
-    int regex_id;            /* used on type == FLB_RA_PARSER_REGEX_ID */
+    int id;                  /* used by PARSER_REGEX_ID & PARSER_TAG_PART */
     struct flb_ra_key *key;  /* context of data type */
     struct mk_list *slist;   /* temporal list for subkeys parsing */
     struct mk_list _head;    /* link to parent flb_record_accessor->list */
@@ -50,6 +52,8 @@ void flb_ra_parser_dump(struct flb_ra_parser *rp);
 struct flb_ra_parser *flb_ra_parser_string_create(char *str, int len);
 struct flb_ra_parser *flb_ra_parser_regex_id_create(int id);
 struct flb_ra_parser *flb_ra_parser_meta_create(char *str, int len);
+struct flb_ra_parser *flb_ra_parser_tag_create();
+struct flb_ra_parser *flb_ra_parser_tag_part_create(int id);
 void flb_ra_parser_destroy(struct flb_ra_parser *rp);
 
 #endif
