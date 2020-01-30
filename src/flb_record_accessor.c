@@ -87,6 +87,7 @@ static int ra_parse_buffer(struct flb_record_accessor *ra, flb_sds_t buf)
     int i;
     int n;
     int c;
+    int t;
     int len;
     int pre = 0;
     int end = 0;
@@ -99,6 +100,20 @@ static int ra_parse_buffer(struct flb_record_accessor *ra, flb_sds_t buf)
         if (buf[i] != '$') {
             continue;
         }
+
+        /*
+         * Before to add the number entry, add the previous text
+         * before hitting this.
+         */
+        if (i > pre) {
+            rp = ra_parse_string(ra, buf, pre, i);
+            if (!rp) {
+                return -1;
+            }
+            mk_list_add(&rp->_head, &ra->list);
+        }
+        pre = i;
+
 
         n = i + 1;
         if (n >= len) {
@@ -113,18 +128,6 @@ static int ra_parse_buffer(struct flb_record_accessor *ra, flb_sds_t buf)
          * We support up to 10 regex ids [0-9]
          */
         if (isdigit(buf[n])) {
-            /*
-             * Before to add the number entry, add the previous text
-             * before hitting this.
-             */
-            if (i > pre) {
-                rp = ra_parse_string(ra, buf, pre, i);
-                if (!rp) {
-                    return -1;
-                }
-                mk_list_add(&rp->_head, &ra->list);
-            }
-
             /* Add REGEX_ID entry */
             c = atoi(buf + n);
             rp = ra_parse_regex_id(ra, c);
@@ -135,6 +138,49 @@ static int ra_parse_buffer(struct flb_record_accessor *ra, flb_sds_t buf)
             mk_list_add(&rp->_head, &ra->list);
             i++;
             pre = i + 1;
+            continue;
+        }
+
+        /*
+         * If the next 3 character are 'TAG', the user might want to include the tag or
+         * part of it (e.g: TAG[n]).
+         */
+        if (n + 2 < len && strncmp(buf + n, "TAG", 3) == 0) {
+            /* Check if some [] was added */
+            if (n + 4 < len) {
+                end = -1;
+                if (buf[n + 3] == '[') {
+                    t = n + 3;
+
+                    /* Look for the ending ']' */
+                    end = mk_string_char_search(buf + t, ']', len - t);
+                    if (end == 0) {
+                        end = -1;
+                    }
+
+                    /* continue processsing */
+                    c = atoi(buf + t + 1);
+
+                    rp = flb_ra_parser_tag_part_create(c);
+                    if (!rp) {
+                        return -1;
+                    }
+                    mk_list_add(&rp->_head, &ra->list);
+
+                    i = t + end + 1;
+                    pre = i;
+                    continue;
+                }
+            }
+
+            /* Append full tag */
+            rp = flb_ra_parser_tag_create();
+            if (!rp) {
+                return -1;
+            }
+            mk_list_add(&rp->_head, &ra->list);
+            i = n + 3;
+            pre = n + 3;
             continue;
         }
 
@@ -296,12 +342,55 @@ static flb_sds_t ra_translate_regex_id(struct flb_ra_parser *rp,
     ptrdiff_t end;
     flb_sds_t tmp;
 
-    ret = flb_regex_results_get(result, rp->regex_id, &start, &end);
+    ret = flb_regex_results_get(result, rp->id, &start, &end);
     if (ret == -1) {
         return buf;
     }
 
     tmp = flb_sds_cat(buf, result->str + start, end - start);
+    return tmp;
+}
+
+static flb_sds_t ra_translate_tag(struct flb_ra_parser *rp, flb_sds_t buf,
+                                  char *tag, int tag_len)
+{
+    flb_sds_t tmp;
+
+    tmp = flb_sds_cat(buf, tag, tag_len);
+    return tmp;
+}
+
+static flb_sds_t ra_translate_tag_part(struct flb_ra_parser *rp, flb_sds_t buf,
+                                       char *tag, int tag_len)
+{
+    int i = 0;
+    int id = -1;
+    int end;
+    flb_sds_t tmp = buf;
+
+    while (i < tag_len) {
+        end = mk_string_char_search(tag + i, '.', tag_len - i);
+        if (end == -1) {
+            if (i == 0) {
+                break;
+            }
+            end = tag_len - i;
+        }
+        id++;
+        if (rp->id == id) {
+            tmp = flb_sds_cat(buf, tag + i, end);
+            break;
+        }
+
+        i += end + 1;
+    }
+
+    /* No dots in the tag */
+    if (rp->id == 0 && id == -1 && i < tag_len) {
+        tmp = flb_sds_cat(buf, tag, tag_len);
+        return tmp;
+    }
+
     return tmp;
 }
 
@@ -393,6 +482,15 @@ flb_sds_t flb_ra_translate(struct flb_record_accessor *ra,
         else if (rp->type == FLB_RA_PARSER_REGEX_ID && result) {
             tmp = ra_translate_regex_id(rp, result, buf);
         }
+        else if (rp->type == FLB_RA_PARSER_TAG) {
+            tmp = ra_translate_tag(rp, buf, tag, tag_len);
+        }
+        else if (rp->type == FLB_RA_PARSER_TAG_PART) {
+            tmp = ra_translate_tag_part(rp, buf, tag, tag_len);
+        }
+        else {
+
+        }
 
         //else if (rp->type == FLB_RA_PARSER_FUNC) {
             //tmp = ra_translate_func(rp, buf, tag, tag_len);
@@ -404,7 +502,6 @@ flb_sds_t flb_ra_translate(struct flb_record_accessor *ra,
             return NULL;
         }
         if (tmp != buf) {
-            flb_sds_destroy(buf);
             buf = tmp;
         }
     }
