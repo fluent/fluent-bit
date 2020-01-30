@@ -139,7 +139,7 @@ void cb_translate()
     map = result.data;
 
     /* Do translation */
-    str = flb_ra_translate(ra, NULL, -1, map);
+    str = flb_ra_translate(ra, NULL, -1, map, NULL);
     TEST_CHECK(str != NULL);
     if (!str) {
         exit(EXIT_FAILURE);
