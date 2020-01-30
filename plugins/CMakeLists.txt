@@ -196,6 +196,7 @@ REGISTER_OUT_PLUGIN("out_gelf")
 # FILTERS
 # =======
 REGISTER_FILTER_PLUGIN("filter_stdout")
+REGISTER_FILTER_PLUGIN("filter_rewrite_tag")
 REGISTER_FILTER_PLUGIN("filter_throttle")
 
 if(FLB_REGEX)
