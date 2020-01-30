@@ -149,7 +149,7 @@ static inline int grep_filter_data(msgpack_object map, struct grep_ctx *ctx)
     mk_list_foreach(head, &ctx->rules) {
         rule = mk_list_entry(head, struct grep_rule, _head);
 
-        ret = flb_ra_regex_match(rule->ra, map, rule->regex);
+        ret = flb_ra_regex_match(rule->ra, map, rule->regex, NULL);
         if (ret <= 0) { /* no match */
             if (rule->type == GREP_REGEX) {
                 return GREP_RET_EXCLUDE;
