@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_signv4.h>
 #include <msgpack.h>
 
 #include <time.h>
@@ -35,6 +36,50 @@
 #include "murmur3.h"
 
 struct flb_output_plugin out_es_plugin;
+
+#ifdef FLB_HAVE_SIGNV4
+static flb_sds_t add_aws_auth(struct flb_http_client *c, char *region)
+{
+    flb_sds_t signature = NULL;
+    char *access_key = NULL;
+    char *secret_key = NULL;
+    char *session_token = NULL;
+    int ret;
+
+    flb_debug("[out_es] Signing request with AWS Sigv4");
+
+    /* Amazon ES Sigv4 does not allow the host header to include the port */
+    ret = flb_http_strip_port_from_host(c);
+    if (ret < 0) {
+        flb_error("[out_es] could not strip port from host for sigv4");
+        return NULL;
+    }
+
+    /* AWS credentials */
+    access_key = getenv("AWS_ACCESS_KEY_ID");
+    if (!access_key || strlen(access_key) < 1) {
+        flb_error("[out_es] 'AWS_ACCESS_KEY_ID' not set");
+        return NULL;
+    }
+
+    secret_key = getenv("AWS_SECRET_ACCESS_KEY");
+    if (!access_key || strlen(access_key) < 1) {
+        flb_error("[out_es] 'AWS_SECRET_ACCESS_KEY' not set");
+        return NULL;
+    }
+
+    session_token = getenv("AWS_SESSION_TOKEN");
+
+    signature = flb_signv4_do(c, FLB_TRUE, FLB_TRUE, time(NULL),
+                              access_key, region, "es",
+                              secret_key, session_token);
+    if (!signature) {
+        flb_error("[out_es] could not sign request with sigv4");
+        return NULL;
+    }
+    return signature;
+}
+#endif /* FLB_HAVE_SIGNV4 */
 
 static inline int es_pack_map_content(msgpack_packer *tmp_pck,
                                       msgpack_object map,
@@ -549,6 +594,7 @@ void cb_es_flush(const void *data, size_t bytes,
     struct flb_elasticsearch *ctx = out_context;
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
+    flb_sds_t signature = NULL;
     (void) i_ins;
     (void) tag;
     (void) tag_len;
@@ -578,6 +624,15 @@ void cb_es_flush(const void *data, size_t bytes,
     if (ctx->http_user && ctx->http_passwd) {
         flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
     }
+
+    #ifdef FLB_HAVE_SIGNV4
+    if (ctx->has_aws_auth == FLB_TRUE) {
+        signature = add_aws_auth(c, ctx->aws_region);
+        if (!signature) {
+            goto retry;
+        }
+    }
+    #endif
 
     ret = flb_http_do(c, &b_sent);
     if (ret != 0) {
@@ -631,6 +686,9 @@ void cb_es_flush(const void *data, size_t bytes,
     flb_http_client_destroy(c);
     flb_free(pack);
     flb_upstream_conn_release(u_conn);
+    if (signature) {
+        flb_sds_destroy(signature);
+    }
     FLB_OUTPUT_RETURN(FLB_OK);
 
     /* Issue a retry */
@@ -673,6 +731,20 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, http_passwd),
      NULL
     },
+
+    /* AWS Authentication */
+    #ifdef FLB_HAVE_SIGNV4
+    {
+     FLB_CONFIG_MAP_BOOL, "aws_auth", "false",
+     0, FLB_TRUE, offsetof(struct flb_elasticsearch, has_aws_auth),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "aws_region", "",
+     0, FLB_TRUE, offsetof(struct flb_elasticsearch, aws_region),
+     NULL
+    },
+    #endif
 
     /* Logstash compatibility */
     {
