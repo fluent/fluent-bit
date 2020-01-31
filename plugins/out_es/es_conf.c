@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_signv4.h>
 
 #include "es.h"
 #include "es_conf.h"
@@ -121,6 +122,27 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
     else {
         snprintf(ctx->uri, sizeof(ctx->uri) - 1, "%s/_bulk", path);
     }
+
+    #ifdef FLB_HAVE_SIGNV4
+    /* AWS Auth */
+    ctx->has_aws_auth = FLB_FALSE;
+    tmp = flb_output_get_property("aws_auth", ins);
+    if (tmp) {
+        if (strncasecmp(tmp, "On", 2) == 0) {
+            ctx->has_aws_auth = FLB_TRUE;
+            flb_warn("[out_es] Enabled AWS Auth. Note: Amazon ElasticSearch "
+                     "Service support in Fluent Bit is experimental.");
+
+            tmp = flb_output_get_property("aws_region", ins);
+            if (!tmp) {
+                flb_error("[out_es] aws_auth enabled but aws_region not set");
+                flb_es_conf_destroy(ctx);
+                return NULL;
+            }
+            ctx->aws_region = (char *) tmp;
+        }
+    }
+    #endif
 
     return ctx;
 }
