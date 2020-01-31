@@ -842,7 +842,8 @@ int main(int argc, char **argv)
         flb_utils_error(FLB_ERR_OUTPUT_UNDEF);
     }
 
-    if (config->verbose == FLB_TRUE) {
+    /* debug or trace */
+    if (config->verbose >= FLB_LOG_DEBUG) {
         flb_utils_print_setup(config);
     }
 
