@@ -104,7 +104,9 @@ int syslog_prot_process(struct syslog_conn *conn)
             flb_free(out_buf);
         }
         else {
-            flb_warn("[in_syslog] error parsing log message");
+            flb_warn("[in_syslog] error parsing log message from '%s'",
+                     flb_input_name(conn->in));
+            flb_debug("[in_syslog] the message was '%.*s'", len, p);
         }
 
         conn->buf_parsed += len + 1;
