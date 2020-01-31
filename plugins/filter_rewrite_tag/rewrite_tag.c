@@ -29,29 +29,7 @@
 #include <fluent-bit/flb_record_accessor.h>
 #include <msgpack.h>
 
-/* Rewrite rule  */
-struct rewrite_rule {
-    int keep_record;                       /* keep original record ? */
-    struct flb_regex *regex;               /* matching regex */
-    struct flb_record_accessor *ra_key;    /* key record accessor */
-    struct flb_record_accessor *ra_tag;    /* tag record accessor */
-    struct mk_list _head;                  /* link to flb_rewrite_tag->rules */
-};
-
-/* Plugin context */
-struct flb_rewrite_tag {
-    flb_sds_t emitter_name;                /* emitter input plugin name */
-    struct mk_list rules;                  /* processed rules */
-    struct mk_list *cm_rules;              /* config_map rules (only strings) */
-    struct flb_input_instance *in_emitter; /* emitter input plugin instance */
-    struct flb_config *config;             /* Fluent Bit context */
-};
-
-/* Register external function to emit records, check 'plugins/in_emitter' */
-int in_emitter_add_record(const char *tag, int tag_len,
-                          const char *buf_data, size_t buf_size,
-                          struct flb_input_instance *in);
-int in_emitter_get_collector_id(struct flb_input_instance *in);
+#include "rewrite_tag.h"
 
 /* Create an emitter input instance */
 static int emitter_create(struct flb_rewrite_tag *ctx)
@@ -209,6 +187,7 @@ static int cb_rewrite_tag_init(struct flb_filter_instance *ins,
         flb_errno();
         return -1;
     }
+    ctx->in = ins;
     ctx->config = config;
     mk_list_init(&ctx->rules);
 
@@ -251,6 +230,13 @@ static int cb_rewrite_tag_init(struct flb_filter_instance *ins,
     if (ret == -1) {
         return -1;
     }
+
+    /* Register a metric to count the number of emitted records */
+#ifdef FLB_HAVE_METRICS
+    flb_metrics_add(FLB_RTAG_METRIC_EMITTED,
+                    "emit_records", ctx->in->metrics);
+#endif
+
     return 0;
 }
 
@@ -368,6 +354,11 @@ static int cb_rewrite_tag_filter(const void *data, size_t bytes,
         msgpack_sbuffer_destroy(&mp_sbuf);
         return FLB_FILTER_NOTOUCH;
     }
+#ifdef FLB_HAVE_METRICS
+    else if (emitted > 0) {
+        flb_metrics_sum(FLB_RTAG_METRIC_EMITTED, emitted, ctx->in->metrics);
+    }
+#endif
 
     *out_buf = mp_sbuf.data;
     *out_bytes = mp_sbuf.size;
