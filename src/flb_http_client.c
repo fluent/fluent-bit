@@ -41,6 +41,39 @@
 
 #include <mbedtls/base64.h>
 
+/*
+ * Removes the port from the host header
+ */
+int flb_http_strip_port_from_host(struct flb_http_client *c)
+{
+    struct mk_list *head;
+    struct flb_kv *kv;
+    char *out_host;
+    struct flb_upstream *u = c->u_conn->u;
+
+    if (!c->host) {
+        out_host = u->tcp_host;
+    } else {
+        out_host = (char *) c->host;
+    }
+
+    mk_list_foreach(head, &c->headers) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        if (strcasecmp("Host", kv->key) == 0) {
+            flb_sds_destroy(kv->val);
+            kv->val = NULL;
+            kv->val = flb_sds_create(out_host);
+            if (!kv->val) {
+                flb_errno();
+                return -1;
+            }
+            return 0;
+        }
+    }
+
+    return -1;
+}
+
 /* check if there is enough space in the client header buffer */
 static int header_available(struct flb_http_client *c, int bytes)
 {
