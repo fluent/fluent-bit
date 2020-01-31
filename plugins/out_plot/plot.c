@@ -193,11 +193,33 @@ static int cb_plot_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "out_file", NULL,
+     0, FLB_TRUE, offsetof(struct flb_plot_conf, out_file),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "key_name", NULL,
+     0, FLB_TRUE, offsetof(struct flb_plot_conf, key_name),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_INT, "key_len", NULL,
+     0, FLB_TRUE, offsetof(struct flb_plot_conf, key_len),
+     NULL
+    },
+
+    /* EOF */
+    {0}
+};
+
 struct flb_output_plugin out_plot_plugin = {
     .name         = "plot",
     .description  = "Generate data file for GNU Plot",
     .cb_init      = cb_plot_init,
     .cb_flush     = cb_plot_flush,
     .cb_exit      = cb_plot_exit,
+    .config_map   = config_map,
     .flags        = 0,
 };
