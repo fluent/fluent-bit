@@ -169,33 +169,55 @@ void flb_utils_print_setup(struct flb_config *config)
     struct flb_input_plugin *plugin;
     struct flb_input_collector *collector;
     struct flb_input_instance *in;
+    struct flb_filter_instance *f;
+    struct flb_output_instance *out;
 
-    flb_info("Configuration");
+    flb_info("Configuration:");
 
     /* general */
-    flb_info(" flush time     : %i seconds", config->flush);
+    flb_info(" flush time     | %f seconds", config->flush);
+    flb_info(" grace          | %i seconds", config->grace);
+    flb_info(" daemon         | %i", config->daemon);
 
     /* Inputs */
-    flb_info(" input plugins  : ");
+    flb_info("___________");
+    flb_info(" inputs:");
     mk_list_foreach(head, &config->inputs) {
         in = mk_list_entry(head, struct flb_input_instance, _head);
-        flb_info("%s ", in->p->name);
+        flb_info("     %s", in->p->name);
+    }
+
+    /* Filters */
+    flb_info("___________");
+    flb_info(" filters:");
+    mk_list_foreach(head, &config->filters) {
+        f = mk_list_entry(head, struct flb_filter_instance, _head);
+        flb_info("     %s", f->name);
+    }
+
+    /* Outputs */
+    flb_info("___________");
+    flb_info(" outputs:");
+    mk_list_foreach(head, &config->outputs) {
+        out = mk_list_entry(head, struct flb_output_instance, _head);
+        flb_info("     %s", out->name);
     }
 
     /* Collectors */
-    flb_info(" collectors     : ");
+    flb_info("___________");
+    flb_info(" collectors:");
     mk_list_foreach(head, &config->collectors) {
         collector = mk_list_entry(head, struct flb_input_collector, _head);
         plugin = collector->instance->p;
 
         if (collector->seconds > 0) {
             flb_info("[%s %lus,%luns] ",
-                     plugin->name,
-                     collector->seconds,
-                     collector->nanoseconds);
+                      plugin->name,
+                      collector->seconds,
+                      collector->nanoseconds);
         }
         else {
-            printf("[%s] ", plugin->name);
+            flb_info("     [%s] ", plugin->name);
         }
 
     }
