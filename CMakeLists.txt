@@ -141,6 +141,7 @@ option(FLB_OUT_PLOT           "Enable Plot output plugin"           Yes)
 option(FLB_OUT_FILE           "Enable file output plugin"           Yes)
 option(FLB_OUT_TD             "Enable Treasure Data output plugin"  Yes)
 option(FLB_OUT_RETRY          "Enable Retry test output plugin"      No)
+option(FLB_OUT_PGSQL          "Enable PostgreSQL output plugin"      No)
 option(FLB_OUT_SLACK          "Enable Slack output plugin"          Yes)
 option(FLB_OUT_SPLUNK         "Enable Splunk output plugin"         Yes)
 option(FLB_OUT_STACKDRIVER    "Enable Stackdriver output plugin"    Yes)
@@ -587,6 +588,13 @@ endif()
 if(FLB_LUAJIT)
   include(cmake/luajit.cmake)
   FLB_DEFINITION(FLB_HAVE_LUAJIT)
+endif()
+
+# PostgreSQL
+# ==========
+find_package(PostgreSQL)
+if(FLB_OUT_PGSQL AND (NOT PostgreSQL_FOUND))
+   FLB_OPTION(FLB_OUT_PGSQL OFF)
 endif()
 
 # Pthread Local Storage
