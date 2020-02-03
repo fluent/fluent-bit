@@ -131,6 +131,7 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   REGISTER_IN_PLUGIN("in_docker")
 endif()
 
+REGISTER_IN_PLUGIN("in_emitter")
 REGISTER_IN_PLUGIN("in_tail")
 REGISTER_IN_PLUGIN("in_dummy")
 REGISTER_IN_PLUGIN("in_head")
@@ -195,6 +196,7 @@ REGISTER_OUT_PLUGIN("out_gelf")
 # FILTERS
 # =======
 REGISTER_FILTER_PLUGIN("filter_stdout")
+REGISTER_FILTER_PLUGIN("filter_rewrite_tag")
 REGISTER_FILTER_PLUGIN("filter_throttle")
 
 if(FLB_REGEX)

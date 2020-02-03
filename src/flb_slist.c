@@ -95,7 +95,7 @@ int flb_slist_split_string(struct mk_list *list, const char *str,
         if (end < 0) {
             end = len - i;
         }
-        else if (end == i) {
+        else if ((end + i) == i) {
             i++;
             continue;
         }
@@ -103,7 +103,7 @@ int flb_slist_split_string(struct mk_list *list, const char *str,
         p_init = (char *) str + i;
         p_end = p_init + end - 1;
 
-        /* Remove empty spaces */
+        /* Skip empty spaces */
         while (*p_init == ' ') {
             p_init++;
         }
@@ -123,7 +123,7 @@ int flb_slist_split_string(struct mk_list *list, const char *str,
             val_len = 1;
         }
         else {
-            val_len = p_end - p_init + 1;
+            val_len = (p_end - p_init) + 1;
         }
 
         if (val_len == 0) {
@@ -189,4 +189,26 @@ void flb_slist_destroy(struct mk_list *list)
         mk_list_del(&e->_head);
         flb_free(e);
     }
+}
+
+/* Return the entry in position number 'n' */
+struct flb_slist_entry *flb_slist_entry_get(struct mk_list *list, int n)
+{
+    int i = 0;
+    struct mk_list *head;
+    struct flb_slist_entry *e;
+
+    if (!list || mk_list_size(list) == 0) {
+        return NULL;
+    }
+
+    mk_list_foreach(head, list) {
+        if (i == n) {
+            e = mk_list_entry(head, struct flb_slist_entry, _head);
+            return e;
+        }
+        i++;
+    }
+
+    return NULL;
 }

@@ -39,6 +39,16 @@ void flb_ra_parser_dump(struct flb_ra_parser *rp)
         printf("type       : STRING\n");
         printf("string     : '%s'\n", key->name);
     }
+    if (rp->type == FLB_RA_PARSER_REGEX_ID) {
+        printf("type       : REGEX_ID\n");
+        printf("integer    : '%i'\n", rp->id);
+    }
+    if (rp->type == FLB_RA_PARSER_TAG) {
+        printf("type       : TAG\n");
+    }
+    if (rp->type == FLB_RA_PARSER_TAG_PART) {
+        printf("type       : TAG[%i]\n", rp->id);
+    }
     else if (rp->type == FLB_RA_PARSER_KEYMAP) {
         printf("type       : KEYMAP\n");
         if (rp->key) {
@@ -150,6 +160,51 @@ struct flb_ra_parser *flb_ra_parser_string_create(char *str, int len)
         return NULL;
     }
     rp->key->subkeys = NULL;
+
+    return rp;
+}
+
+struct flb_ra_parser *flb_ra_parser_regex_id_create(int id)
+{
+    struct flb_ra_parser *rp;
+
+    rp = flb_ra_parser_create();
+    if (!rp) {
+        flb_error("[record accessor] could not create string context");
+        return NULL;
+    }
+
+    rp->type = FLB_RA_PARSER_REGEX_ID;
+    rp->id = id;
+    return rp;
+}
+
+struct flb_ra_parser *flb_ra_parser_tag_create()
+{
+    struct flb_ra_parser *rp;
+
+    rp = flb_ra_parser_create();
+    if (!rp) {
+        flb_error("[record accessor] could not create tag context");
+        return NULL;
+    }
+
+    rp->type = FLB_RA_PARSER_TAG;
+    return rp;
+}
+
+struct flb_ra_parser *flb_ra_parser_tag_part_create(int id)
+{
+    struct flb_ra_parser *rp;
+
+    rp = flb_ra_parser_create();
+    if (!rp) {
+        flb_error("[record accessor] could not create tag context");
+        return NULL;
+    }
+
+    rp->type = FLB_RA_PARSER_TAG_PART;
+    rp->id = id;
 
     return rp;
 }

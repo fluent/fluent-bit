@@ -33,28 +33,6 @@
 int in_stream_processor_add_chunk(const char *buf_data, size_t buf_size,
                                   struct flb_input_instance *in);
 
-/* Check if a given stream name already exists */
-static int sp_stream_name_exists(const char *name, struct flb_config *config)
-{
-    struct mk_list *head;
-    struct flb_input_instance *in;
-
-    mk_list_foreach(head, &config->inputs) {
-        in = mk_list_entry(head, struct flb_input_instance, _head);
-        if (strcmp(in->name, name) == 0) {
-            return FLB_TRUE;
-        }
-
-        if (in->alias) {
-            if (strcmp(in->alias, name) == 0) {
-                return FLB_TRUE;
-            }
-        }
-    }
-
-    return FLB_FALSE;
-}
-
 int flb_sp_stream_create(const char *name, struct flb_sp_task *task,
                          struct flb_sp *sp)
 {
@@ -64,7 +42,7 @@ int flb_sp_stream_create(const char *name, struct flb_sp_task *task,
     struct flb_sp_stream *stream;
 
     /* The name must be different than an input plugin instance name or alias */
-    ret = sp_stream_name_exists(name, sp->config);
+    ret = flb_input_name_exists(name, sp->config);
     if (ret == FLB_TRUE) {
         flb_error("[sp] stream name '%s' already exists", name);
         return -1;

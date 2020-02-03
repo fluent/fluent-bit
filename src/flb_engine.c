@@ -402,22 +402,25 @@ int flb_engine_start(struct flb_config *config)
     }
 
     /* Initialize input plugins */
-    flb_input_initialize_all(config);
+    flb_input_init_all(config);
+
+    /* Initialize filter plugins */
+    ret = flb_filter_init_all(config);
+    if (ret == -1) {
+        return -1;
+    }
 
     /* Inputs pre-run */
     flb_input_pre_run_all(config);
 
     /* Initialize output plugins */
-    ret = flb_output_init(config);
+    ret = flb_output_init_all(config);
     if (ret == -1 && config->support_mode == FLB_FALSE) {
         return -1;
     }
 
     /* Outputs pre-run */
     flb_output_pre_run(config);
-
-    /* Initialize filter plugins */
-    flb_filter_initialize_all(config);
 
     /* Create and register the timer fd for flush procedure */
     event = &config->event_flush;

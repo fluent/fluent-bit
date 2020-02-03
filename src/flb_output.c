@@ -538,7 +538,7 @@ const char *flb_output_get_property(const char *key, struct flb_output_instance 
 }
 
 /* Trigger the output plugins setup callbacks to prepare them. */
-int flb_output_init(struct flb_config *config)
+int flb_output_init_all(struct flb_config *config)
 {
     int ret;
 #ifdef FLB_HAVE_METRICS

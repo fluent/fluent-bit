@@ -495,12 +495,13 @@ void flb_input_instance_exit(struct flb_input_instance *in,
                              struct flb_config *config);
 void flb_input_instance_free(struct flb_input_instance *in);
 
-void flb_input_initialize_all(struct flb_config *config);
+void flb_input_init_all(struct flb_config *config);
 void flb_input_pre_run_all(struct flb_config *config);
 void flb_input_exit_all(struct flb_config *config);
 
 void *flb_input_flush(struct flb_input_instance *i_ins, size_t *size);
 int flb_input_pause_all(struct flb_config *config);
 const char *flb_input_name(struct flb_input_instance *in);
+int flb_input_name_exists(const char *name, struct flb_config *config);
 
 #endif
