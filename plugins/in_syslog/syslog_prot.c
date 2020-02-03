@@ -104,7 +104,10 @@ int syslog_prot_process(struct syslog_conn *conn)
             flb_free(out_buf);
         }
         else {
-            flb_warn("[in_syslog] error parsing log message");
+            flb_warn("[in_syslog] error parsing log message "
+                    "(input_plugin_alias_name='%s' parser_name='%s')",
+                     ctx->i_ins->alias, ctx->parser->name);
+            flb_debug("[in_syslog] unparsed log message: %s", out_buf);
         }
 
         conn->buf_parsed += len + 1;
@@ -139,7 +142,10 @@ int syslog_prot_process_udp(char *buf, size_t size, struct flb_syslog *ctx)
         flb_free(out_buf);
     }
     else {
-        flb_warn("[in_syslog] error parsing log message");
+        flb_warn("[in_syslog] error parsing log message "
+                 "(input_plugin_alias_name='%s' parser_name='%s')",
+                 ctx->i_ins->alias, ctx->parser->name);
+	flb_debug("[in_syslog] unparsed log message: %s", out_buf);
         return -1;
     }
 
