@@ -24,8 +24,14 @@
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_config.h>
 
+/* Lib engine status */
+#define FLB_LIB_ERROR     -1
+#define FLB_LIB_NONE       0
+#define FLB_LIB_OK         1
+
 /* Library mode context data */
 struct flb_lib_ctx {
+    int status;
     struct mk_event_loop *event_loop;
     struct mk_event *event_channel;
     struct flb_config *config;
