@@ -31,6 +31,7 @@
 #define DEFAULT_INTERVAL_NSEC 0
 
 struct flb_in_head_config {
+    int          coll_fd;
     size_t       buf_size; /* size of buf */
     ssize_t      buf_len;  /* read size */
     char         *buf;      /* read buf */
@@ -47,6 +48,7 @@ struct flb_in_head_config {
 
     int          interval_sec;
     int          interval_nsec;
+    struct flb_input_instance *ins;
 };
 
 extern struct flb_input_plugin in_head_plugin;
