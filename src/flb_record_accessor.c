@@ -249,7 +249,7 @@ struct flb_record_accessor *flb_ra_create(char *str, int translate_env)
     int ret;
     size_t hint = 0;
     char *p;
-    flb_sds_t buf;
+    flb_sds_t buf = NULL;
     struct flb_env *env;
     struct mk_list *head;
     struct flb_ra_parser *rp;
@@ -284,7 +284,7 @@ struct flb_record_accessor *flb_ra_create(char *str, int translate_env)
     if (!ra) {
         flb_errno();
         flb_error("[record accessor] cannot create context");
-        if (translate_env == FLB_TRUE) {
+        if (buf) {
             flb_sds_destroy(buf);
         }
         return NULL;
@@ -297,7 +297,7 @@ struct flb_record_accessor *flb_ra_create(char *str, int translate_env)
      * a linked list of sds using 'slist' api.
      */
     ret = ra_parse_buffer(ra, p);
-    if (translate_env) {
+    if (buf) {
         flb_sds_destroy(buf);
     }
     if (ret == -1) {

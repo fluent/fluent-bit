@@ -53,6 +53,7 @@ static void delete_rules(struct grep_ctx *ctx)
 
 static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
 {
+    flb_sds_t tmp;
     struct mk_list *head;
     struct mk_list *split;
     struct flb_split_entry *sentry;
@@ -101,8 +102,11 @@ static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
         }
         else {
             rule->field = flb_sds_create_size(sentry->len + 2);
-            flb_sds_cat(rule->field, "$", 1);
-            flb_sds_cat(rule->field, sentry->value, sentry->len);
+            tmp = flb_sds_cat(rule->field, "$", 1);
+            rule->field = tmp;
+
+            tmp = flb_sds_cat(rule->field, sentry->value, sentry->len);
+            rule->field = tmp;
         }
 
         /* Get remaining content (regular expression) */

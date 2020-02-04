@@ -272,7 +272,7 @@ void test_multiple()
     flb_kv_item_create(&prop, "mult_clist", "d, e, f");
     flb_kv_item_create(&prop, "mult_clist", "g, h, i");
 
-    flb_kv_item_create(&prop, "mult_slist", "d e f");
+    flb_kv_item_create(&prop, "mult_slist", "d e f g");
 
     map = flb_config_map_create(config_map_mult);
     TEST_CHECK(map != NULL);
