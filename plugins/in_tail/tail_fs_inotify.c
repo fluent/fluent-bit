@@ -22,6 +22,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_plugin.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,7 +37,7 @@
 #include <limits.h>
 #include <fcntl.h>
 
-static int tail_fs_event(struct flb_input_instance *i_ins,
+static int tail_fs_event(struct flb_input_instance *ins,
                          struct flb_config *config, void *in_context)
 {
     int ret;
@@ -77,14 +78,14 @@ static int tail_fs_event(struct flb_input_instance *i_ins,
     if (ev.mask & IN_ATTRIB) {
         ret = fstat(file->fd, &st);
         if (ret == -1) {
-            flb_debug("[in_tail] error stat(2) %s, removing", file->name);
+            flb_plg_debug(ins, "error stat(2) %s, removing", file->name);
             flb_tail_file_remove(file);
             return 0;
         }
 
         /* Check if the file have been deleted */
         if (st.st_nlink == 0) {
-            flb_debug("[in_tail] file has been deleted: %s", file->name);
+            flb_plg_debug(ins, "file has been deleted: %s", file->name);
 
 #ifdef FLB_HAVE_SQLDB
             if (ctx->db) {
@@ -99,7 +100,7 @@ static int tail_fs_event(struct flb_input_instance *i_ins,
     }
 
     if (ev.mask & IN_IGNORED) {
-        flb_debug("[in_tail] removed %s", file->name);
+        flb_plg_debug(ctx->ins, "file removed %s", file->name);
         flb_tail_file_remove(file);
         return 0;
     }
@@ -123,7 +124,7 @@ static int tail_fs_event(struct flb_input_instance *i_ins,
                 return -1;
             }
 
-            flb_debug("[in_tail] truncated %s", file->name);
+            flb_plg_debug(ctx->ins, "file truncated %s", file->name);
             file->offset = offset;
             file->buf_len = 0;
 
@@ -179,7 +180,7 @@ int flb_tail_fs_init(struct flb_input_instance *in,
         flb_errno();
         return -1;
     }
-    flb_debug("[in_tail] inotify watch fd=%i", fd);
+    flb_plg_debug(ctx->ins, "inotify watch fd=%i", fd);
     ctx->fd_notify = fd;
 
     /* This backend use Fluent Bit event-loop to trigger notifications */
@@ -196,12 +197,12 @@ int flb_tail_fs_init(struct flb_input_instance *in,
 
 void flb_tail_fs_pause(struct flb_tail_config *ctx)
 {
-    flb_input_collector_pause(ctx->coll_fd_fs1, ctx->i_ins);
+    flb_input_collector_pause(ctx->coll_fd_fs1, ctx->ins);
 }
 
 void flb_tail_fs_resume(struct flb_tail_config *ctx)
 {
-    flb_input_collector_resume(ctx->coll_fd_fs1, ctx->i_ins);
+    flb_input_collector_resume(ctx->coll_fd_fs1, ctx->ins);
 }
 
 int flb_tail_fs_add(struct flb_tail_file *file)
@@ -228,9 +229,9 @@ int flb_tail_fs_add(struct flb_tail_file *file)
     if (watch_fd == -1) {
         flb_errno();
         if (errno == ENOSPC) {
-            flb_error("[in_tail] inotify: The user limit on the total number "
-                      "of inotify watches was reached or the kernel failed to "
-                      "allocate a needed resource (ENOSPC)");
+            flb_plg_error(ctx->ins, "inotify: The user limit on the total "
+                          "number of inotify watches was reached or the kernel "
+                          "failed to allocate a needed resource (ENOSPC)");
         }
         return -1;
     }

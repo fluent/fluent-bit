@@ -23,8 +23,9 @@
  * based on Win32 API.
  */
 
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_compat.h>
-#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_utils.h>
 
 #include <sys/types.h>
@@ -65,7 +66,7 @@ static int tail_register_file(const char *target, struct flb_tail_config *ctx)
     char path[MAX_PATH];
 
     if (_fullpath(path, target, MAX_PATH) == NULL) {
-        flb_error("[in_tail] cannot get absolute path of %s", target);
+        flb_plg_error(ctx->ins, "cannot get absolute path of %s", target);
         return -1;
     }
 
@@ -74,7 +75,7 @@ static int tail_register_file(const char *target, struct flb_tail_config *ctx)
     }
 
     if (tail_is_excluded(path, ctx) == FLB_TRUE) {
-        flb_trace("[in_tail] skip '%s' (excluded)", path);
+        flb_plg_trace(ctx->ins, "skip '%s' (excluded)", path);
         return -1;
     }
 
@@ -102,7 +103,7 @@ static int tail_scan_pattern(const char *path, struct flb_tail_config *ctx)
     WIN32_FIND_DATA data;
 
     if (strlen(path) > MAX_PATH - 1) {
-        flb_error("[in_tail] path too long '%s'");
+        flb_plg_error(ctx->ins, "path too long '%s'");
         return -1;
     }
 
@@ -153,7 +154,7 @@ static int tail_scan_pattern(const char *path, struct flb_tail_config *ctx)
         buf[p0 - path + 1] = '\0';
 
         if (strlen(buf) + strlen(data.cFileName) + strlen(p1) > MAX_PATH - 1) {
-            flb_warn("[in_tail] '%s%s%s' is too long", buf, data.cFileName, p1);
+            flb_plg_warn(ctx->ins, "'%s%s%s' is too long", buf, data.cFileName, p1);
             continue;
         }
         strcat(buf, data.cFileName);
@@ -253,7 +254,7 @@ int flb_tail_scan(const char *pattern, struct flb_tail_config *ctx)
 {
     int n_added;
 
-    flb_debug("[in_tail] scanning path %s", pattern);
+    flb_plg_debug(ctx->ins, "scanning path %s", pattern);
 
     if (ctx->exclude_path) {
         tail_exclude_generate(ctx);
@@ -261,13 +262,13 @@ int flb_tail_scan(const char *pattern, struct flb_tail_config *ctx)
 
     n_added = tail_do_scan(pattern, ctx);
     if (n_added >= 0) {
-        flb_debug("[in_tail] %i files found for '%s'", n_added, pattern);
+        flb_plg_debug(ctx->ins, "%i files found for '%s'", n_added, pattern);
     }
 
     return 0;
 }
 
-int flb_tail_scan_callback(struct flb_input_instance *i_ins,
+int flb_tail_scan_callback(struct flb_input_instance *ins,
                            struct flb_config *config, void *context)
 {
     struct flb_tail_config *ctx = (struct flb_tail_config *) context;
@@ -275,7 +276,8 @@ int flb_tail_scan_callback(struct flb_input_instance *i_ins,
 
     n_added = tail_do_scan(ctx->path, ctx);
     if (n_added > 0) {
-        flb_debug("[in_tail] %i new files found for '%s'", n_added, ctx->path);
+        flb_plg_debug(ctx->ins, "%i new files found for '%s'",
+                      n_added, ctx->path);
         tail_signal_manager(ctx);
     }
 

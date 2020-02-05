@@ -19,6 +19,7 @@
  */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_kv.h>
 
@@ -43,7 +44,7 @@ static int tail_mult_append(struct flb_parser *parser,
 }
 
 int flb_tail_mult_create(struct flb_tail_config *ctx,
-                         struct flb_input_instance *i_ins,
+                         struct flb_input_instance *ins,
                          struct flb_config *config)
 {
     int ret;
@@ -52,7 +53,7 @@ int flb_tail_mult_create(struct flb_tail_config *ctx,
     struct flb_parser *parser;
     struct flb_kv *kv;
 
-    tmp = flb_input_get_property("multiline_flush", i_ins);
+    tmp = flb_input_get_property("multiline_flush", ins);
     if (!tmp) {
         ctx->multiline_flush = FLB_TAIL_MULT_FLUSH;
     }
@@ -64,14 +65,14 @@ int flb_tail_mult_create(struct flb_tail_config *ctx,
     }
 
     /* Get firstline parser */
-    tmp = flb_input_get_property("parser_firstline", i_ins);
+    tmp = flb_input_get_property("parser_firstline", ins);
     if (!tmp) {
-        flb_error("[in_tail] No parser defined for firstline");
+        flb_plg_error(ctx->ins, "no parser defined for firstline");
         return -1;
     }
     parser = flb_parser_get(tmp, config);
     if (!parser) {
-        flb_error("[in_tail] multiline: invalid parser '%s'", tmp);
+        flb_plg_error(ctx->ins, "multiline: invalid parser '%s'", tmp);
         return -1;
     }
 
@@ -79,7 +80,7 @@ int flb_tail_mult_create(struct flb_tail_config *ctx,
     mk_list_init(&ctx->mult_parsers);
 
     /* Read all multiline rules */
-    mk_list_foreach(head, &i_ins->properties) {
+    mk_list_foreach(head, &ins->properties) {
         kv = mk_list_entry(head, struct flb_kv, _head);
         if (strcasecmp("parser_firstline", kv->key) == 0) {
             continue;
@@ -88,7 +89,7 @@ int flb_tail_mult_create(struct flb_tail_config *ctx,
         if (strncasecmp("parser_", kv->key, 7) == 0) {
             parser = flb_parser_get(kv->val, config);
             if (!parser) {
-                flb_error("[in_tail] multiline: invalid parser '%s'", kv->val);
+                flb_plg_error(ctx->ins, "multiline: invalid parser '%s'", kv->val);
                 return -1;
             }
 
@@ -137,7 +138,7 @@ static int pack_line(char *data, size_t data_size, struct flb_tail_file *file,
     flb_time_get(&out_time);
 
     flb_tail_file_pack_line(&mp_sbuf, &mp_pck, &out_time, data, data_size, file);
-    flb_input_chunk_append_raw(ctx->i_ins,
+    flb_input_chunk_append_raw(ctx->ins,
                                file->tag_buf,
                                file->tag_len,
                                mp_sbuf.data,
@@ -167,7 +168,7 @@ int flb_tail_mult_process_first(time_t now,
         msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
         flb_tail_mult_flush(&mp_sbuf, &mp_pck, file, ctx);
-        flb_input_chunk_append_raw(ctx->i_ins,
+        flb_input_chunk_append_raw(ctx->ins,
                                    file->tag_buf,
                                    file->tag_len,
                                    mp_sbuf.data,
@@ -485,7 +486,7 @@ int flb_tail_mult_flush(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
     return 0;
 }
 
-int flb_tail_mult_pending_flush(struct flb_input_instance *i_ins,
+int flb_tail_mult_pending_flush(struct flb_input_instance *ins,
                                 struct flb_config *config, void *context)
 {
     time_t now;
@@ -516,7 +517,7 @@ int flb_tail_mult_pending_flush(struct flb_input_instance *i_ins,
 
         flb_tail_mult_flush(&mp_sbuf, &mp_pck, file, ctx);
 
-        flb_input_chunk_append_raw(i_ins,
+        flb_input_chunk_append_raw(ins,
                                    file->tag_buf,
                                    file->tag_len,
                                    mp_sbuf.data,

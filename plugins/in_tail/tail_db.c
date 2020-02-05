@@ -19,8 +19,7 @@
  */
 
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_log.h>
-#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_sqldb.h>
 
 #include "tail_db.h"
@@ -52,7 +51,7 @@ struct flb_sqldb *flb_tail_db_open(const char *path,
     /* Create table schema if it don't exists */
     ret = flb_sqldb_query(db, SQL_CREATE_FILES, NULL, NULL);
     if (ret != FLB_OK) {
-        flb_error("[in_tail:db] could not create 'track' table");
+        flb_plg_error(ctx->ins, "db: could not create 'in_tail_files' table");
         flb_sqldb_close(db);
         return NULL;
     }
@@ -62,7 +61,7 @@ struct flb_sqldb *flb_tail_db_open(const char *path,
                  ctx->db_sync);
         ret = flb_sqldb_query(db, tmp, NULL, NULL);
         if (ret != FLB_OK) {
-            flb_error("[in_tail:db] could not set pragma 'sync'");
+            flb_plg_error(ctx->ins, "db could not set pragma 'sync'");
             flb_sqldb_close(db);
             return NULL;
         }
@@ -71,7 +70,7 @@ struct flb_sqldb *flb_tail_db_open(const char *path,
 
     ret = flb_sqldb_query(db, SQL_PRAGMA_JOURNAL_MODE, NULL, NULL);
     if (ret != FLB_OK) {
-        flb_error("[in_tail:db] could not set pragma 'journal_mode'");
+        flb_plg_error(ctx->ins, "db: could not set pragma 'journal_mode'");
         flb_sqldb_close(db);
         return NULL;
     }
@@ -189,10 +188,11 @@ int flb_tail_db_file_delete(struct flb_tail_file *file,
     snprintf(query, sizeof(query) - 1, SQL_DELETE_FILE, file->db_id);
     ret = flb_sqldb_query(ctx->db, query, NULL, NULL);
     if (ret != FLB_OK) {
-        flb_error("[in_tail:db] error deleting entry from database: %s", file->name);
+        flb_plg_error(ctx->ins, "db: error deleting entry from database: %s",
+                      file->name);
         return -1;
     }
 
-    flb_debug("[in_tail:db] file deleted from database: %s", file->name);
+    flb_plg_debug(ctx->ins, "db: file deleted from database: %s", file->name);
     return 0;
 }

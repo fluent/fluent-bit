@@ -113,10 +113,10 @@ struct flb_tail_config {
     struct mk_list *exclude_list;
 
     /* Plugin input instance */
-    struct flb_input_instance *i_ins;
+    struct flb_input_instance *ins;
 };
 
-struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
+struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
                                                struct flb_config *config);
 int flb_tail_config_destroy(struct flb_tail_config *config);
 

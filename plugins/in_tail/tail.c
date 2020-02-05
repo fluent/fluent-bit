@@ -26,6 +26,7 @@
 
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
@@ -56,7 +57,7 @@ static inline int consume_byte(int fd)
 }
 
 /* cb_collect callback */
-static int in_tail_collect_pending(struct flb_input_instance *i_ins,
+static int in_tail_collect_pending(struct flb_input_instance *ins,
                                    struct flb_config *config, void *in_context)
 {
     int ret;
@@ -114,7 +115,7 @@ static int in_tail_collect_pending(struct flb_input_instance *i_ins,
 }
 
 /* cb_collect callback */
-static int in_tail_collect_static(struct flb_input_instance *i_ins,
+static int in_tail_collect_static(struct flb_input_instance *ins,
                                   struct flb_config *config, void *in_context)
 {
     int ret;
@@ -139,14 +140,14 @@ static int in_tail_collect_static(struct flb_input_instance *i_ins,
             continue;
         case FLB_TAIL_WAIT:
             if (file->config->exit_on_eof) {
-                flb_info("[in_tail] file=%s ended, stop", file->name);
+                flb_plg_info(ctx->ins, "file=%s ended, stop", file->name);
                 flb_engine_exit(config);
             }
             /* Promote file to 'events' type handler */
-            flb_debug("[in_tail] file=%s promote to TAIL_EVENT", file->name);
+            flb_plg_debug(ctx->ins, "file=%s promote to TAIL_EVENT", file->name);
             ret = flb_tail_file_to_event(file);
             if (ret == -1) {
-                flb_debug("[in_tail] file=%s cannot promote, unregistering",
+                flb_plg_debug(ctx->ins, "file=%s cannot promote, unregistering",
                           file->name);
                 flb_tail_file_remove(file);
             }
@@ -170,8 +171,9 @@ int in_tail_collect_event(void *file, struct flb_config *config)
 {
     int ret;
     struct flb_tail_file *f = file;
+    struct flb_tail_config *ctx = f->config;
 
-    flb_debug("[in_tail] file=%s event", f->name);
+    flb_plg_debug(ctx->ins, "file=%s collect event", f->name);
 
     ret = flb_tail_file_chunk(f);
     switch (ret) {
@@ -199,7 +201,7 @@ static int in_tail_init(struct flb_input_instance *in,
     if (!ctx) {
         return -1;
     }
-    ctx->i_ins = in;
+    ctx->ins = in;
 
     /* Initialize file-system watcher */
     ret = flb_tail_fs_init(in, ctx, config);
@@ -210,7 +212,7 @@ static int in_tail_init(struct flb_input_instance *in,
 
     /* Scan path */
     flb_tail_scan(ctx->path, ctx);
-    flb_trace("[in_tail] path: %s", ctx->path);
+    flb_plg_trace(in, "scan path: %s", ctx->path);
 
     /* Set plugin context */
     flb_input_set_context(in, ctx);
@@ -257,8 +259,8 @@ static int in_tail_init(struct flb_input_instance *in,
 
     if (ctx->multiline == FLB_TRUE && ctx->parser) {
         ctx->parser = NULL;
-        flb_warn("[in_tail] on multiline mode 'Parser' is not allowed "
-                 "(parser disabled)");
+        flb_plg_warn(in, "on multiline mode 'Parser' is not allowed "
+                     "(parser disabled)");
     }
 
     /* Register callback to process docker mode queued buffer */
@@ -293,11 +295,11 @@ static int in_tail_init(struct flb_input_instance *in,
 }
 
 /* Pre-run callback / before the event loop */
-static int in_tail_pre_run(struct flb_input_instance *i_ins,
+static int in_tail_pre_run(struct flb_input_instance *ins,
                            struct flb_config *config, void *in_context)
 {
     struct flb_tail_config *ctx = in_context;
-    (void) i_ins;
+    (void) ins;
 
     return tail_signal_manager(ctx);
 }
@@ -326,15 +328,15 @@ static void in_tail_pause(void *data, struct flb_config *config)
      *
      * - static : static files lookup before promotion
      */
-    flb_input_collector_pause(ctx->coll_fd_static, ctx->i_ins);
-    flb_input_collector_pause(ctx->coll_fd_pending, ctx->i_ins);
+    flb_input_collector_pause(ctx->coll_fd_static, ctx->ins);
+    flb_input_collector_pause(ctx->coll_fd_pending, ctx->ins);
 
     if (ctx->docker_mode == FLB_TRUE) {
-        flb_input_collector_pause(ctx->coll_fd_dmode_flush, ctx->i_ins);
+        flb_input_collector_pause(ctx->coll_fd_dmode_flush, ctx->ins);
     }
 
     if (ctx->multiline == FLB_TRUE) {
-        flb_input_collector_pause(ctx->coll_fd_mult_flush, ctx->i_ins);
+        flb_input_collector_pause(ctx->coll_fd_mult_flush, ctx->ins);
     }
 
     /* Pause file system backend handlers */
@@ -345,15 +347,15 @@ static void in_tail_resume(void *data, struct flb_config *config)
 {
     struct flb_tail_config *ctx = data;
 
-    flb_input_collector_resume(ctx->coll_fd_static, ctx->i_ins);
-    flb_input_collector_resume(ctx->coll_fd_pending, ctx->i_ins);
+    flb_input_collector_resume(ctx->coll_fd_static, ctx->ins);
+    flb_input_collector_resume(ctx->coll_fd_pending, ctx->ins);
 
     if (ctx->docker_mode == FLB_TRUE) {
-        flb_input_collector_resume(ctx->coll_fd_dmode_flush, ctx->i_ins);
+        flb_input_collector_resume(ctx->coll_fd_dmode_flush, ctx->ins);
     }
 
     if (ctx->multiline == FLB_TRUE) {
-        flb_input_collector_resume(ctx->coll_fd_mult_flush, ctx->i_ins);
+        flb_input_collector_resume(ctx->coll_fd_mult_flush, ctx->ins);
     }
 
     /* Pause file system backend handlers */

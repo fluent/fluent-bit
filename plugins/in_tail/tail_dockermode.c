@@ -18,6 +18,8 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_unescape.h>
 
@@ -26,17 +28,18 @@
 #include "tail_file_internal.h"
 
 int flb_tail_dmode_create(struct flb_tail_config *ctx,
-                          struct flb_input_instance *i_ins,
+                          struct flb_input_instance *ins,
                           struct flb_config *config)
 {
     const char *tmp;
 
     if (ctx->multiline == FLB_TRUE) {
-        flb_error("[in_tail] Docker mode cannot be enabled when multiline is enabled");
+        flb_plg_error(ctx->ins, "Docker mode cannot be enabled when multiline "
+                      "is enabled");
         return -1;
     }
 
-    tmp = flb_input_get_property("docker_mode_flush", i_ins);
+    tmp = flb_input_get_property("docker_mode_flush", ins);
     if (!tmp) {
         ctx->docker_mode_flush = FLB_TAIL_DMODE_FLUSH;
     }
@@ -303,7 +306,7 @@ void flb_tail_dmode_flush(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
     flb_free(out_buf);
 }
 
-int flb_tail_dmode_pending_flush(struct flb_input_instance *i_ins,
+int flb_tail_dmode_pending_flush(struct flb_input_instance *ins,
                                  struct flb_config *config, void *context)
 {
     time_t now;
@@ -332,7 +335,7 @@ int flb_tail_dmode_pending_flush(struct flb_input_instance *i_ins,
 
         flb_tail_dmode_flush(&mp_sbuf, &mp_pck, file, ctx);
 
-        flb_input_chunk_append_raw(i_ins,
+        flb_input_chunk_append_raw(ins,
                                    file->tag_buf,
                                    file->tag_len,
                                    mp_sbuf.data,

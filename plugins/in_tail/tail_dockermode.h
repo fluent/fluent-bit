@@ -25,7 +25,7 @@
 #define FLB_TAIL_DMODE_FLUSH 4
 
 int flb_tail_dmode_create(struct flb_tail_config *ctx,
-                          struct flb_input_instance *i_ins, struct flb_config *config);
+                          struct flb_input_instance *ins, struct flb_config *config);
 int flb_tail_dmode_process_content(time_t now,
                                    char* line, size_t line_len,
                                    char **repl_line, size_t *repl_line_len,
@@ -33,7 +33,7 @@ int flb_tail_dmode_process_content(time_t now,
                                    struct flb_tail_config *ctx);
 void flb_tail_dmode_flush(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                           struct flb_tail_file *file, struct flb_tail_config *ctx);
-int flb_tail_dmode_pending_flush(struct flb_input_instance *i_ins,
+int flb_tail_dmode_pending_flush(struct flb_input_instance *ins,
                                  struct flb_config *config, void *context);
 
 #endif
