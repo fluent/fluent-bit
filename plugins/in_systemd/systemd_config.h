@@ -63,7 +63,7 @@ struct flb_systemd_config {
 #ifdef FLB_HAVE_SQLDB
     struct flb_sqldb *db;
 #endif
-    struct flb_input_instance *i_ins;
+    struct flb_input_instance *ins;
 };
 
 struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *i_ins,
