@@ -142,6 +142,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->data     = data;
         instance->threaded = FLB_FALSE;
         instance->storage  = NULL;
+        instance->log_level = -1;
 
         /* net */
         instance->host.name    = NULL;
@@ -223,6 +224,7 @@ int flb_input_set_property(struct flb_input_instance *in,
                            const char *k, const char *v)
 {
     int len;
+    int ret;
     ssize_t limit;
     flb_sds_t tmp = NULL;
     struct flb_kv *kv;
@@ -240,6 +242,14 @@ int flb_input_set_property(struct flb_input_instance *in,
     if (prop_key_check("tag", k, len) == 0 && tmp) {
         in->tag     = tmp;
         in->tag_len = flb_sds_len(tmp);
+    }
+    else if (prop_key_check("log_level", k, len) == 0 && tmp) {
+        ret = flb_log_get_level_str(tmp);
+        flb_sds_destroy(tmp);
+        if (ret == -1) {
+            return -1;
+        }
+        in->log_level = ret;
     }
     else if (prop_key_check("routable", k, len) == 0 && tmp) {
         in->routable = flb_utils_bool(tmp);
@@ -352,6 +362,10 @@ int flb_input_instance_init(struct flb_input_instance *in,
     const char *name;
 #endif
     struct flb_input_plugin *p = in->p;
+
+    if (in->log_level == -1) {
+        in->log_level = config->log->level;
+    }
 
     /* Skip pseudo input plugins */
     if (!p) {
