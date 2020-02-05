@@ -39,7 +39,7 @@ FLB_TLS_DEFINE(struct flb_log, flb_log_ctx)
 /* Simple structure to dispatch messages to the log collector */
 struct log_message {
     size_t size;
-    char   msg[1024 - sizeof(size_t)];
+    char   msg[4096 - sizeof(size_t)];
 };
 
 static inline int consume_byte(flb_pipefd_t fd)
@@ -162,6 +162,30 @@ int flb_log_set_level(struct flb_config *config, int level)
 {
     config->log->level = level;
     return 0;
+}
+
+int flb_log_get_level_str(char *str)
+{
+    if (strcasecmp(str, "off") == 0) {
+        return FLB_LOG_OFF;
+    }
+    else if (strcasecmp(str, "error") == 0) {
+        return FLB_LOG_ERROR;
+    }
+    else if (strcasecmp(str, "warn") == 0) {
+        return FLB_LOG_WARN;
+    }
+    else if (strcasecmp(str, "info") == 0) {
+        return FLB_LOG_INFO;
+    }
+    else if (strcasecmp(str, "debug") == 0) {
+        return FLB_LOG_DEBUG;
+    }
+    else if (strcasecmp(str, "trace") == 0) {
+        return FLB_LOG_TRACE;
+    }
+
+    return -1;
 }
 
 int flb_log_set_file(struct flb_config *config, char *out)
