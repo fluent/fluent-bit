@@ -65,6 +65,7 @@ static inline void map_free_task_id(int id, struct flb_config *config)
     config->tasks_map[id].task = NULL;
 }
 
+
 void flb_task_retry_destroy(struct flb_task_retry *retry)
 {
     int ret;
@@ -128,7 +129,7 @@ struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
     mk_list_foreach_safe(head, tmp, &task->retries) {
         retry = mk_list_entry(head, struct flb_task_retry, _head);
         if (retry->o_ins == o_ins) {
-            if (retry->attemps > o_ins->retry_limit && o_ins->retry_limit >= 0) {
+            if (retry->attemps >= o_ins->retry_limit && o_ins->retry_limit >= 0) {
                 flb_debug("[task] task_id=%i reached retry-attemps limit %i/%i",
                           task->id, retry->attemps, o_ins->retry_limit);
                 flb_task_retry_destroy(retry);
@@ -170,6 +171,27 @@ struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
     flb_input_chunk_set_up_down(task->ic);
 
     return retry;
+}
+
+int flb_task_retry_count(struct flb_task *task, void *data)
+{
+    struct mk_list *head;
+    struct flb_task_retry *retry;
+    struct flb_output_instance *o_ins;
+    struct flb_output_thread *out_th;
+
+    out_th = (struct flb_output_thread *) FLB_THREAD_DATA(data);
+    o_ins = out_th->o_ins;
+
+    /* Delete 'retries' only associated with the output instance */
+    mk_list_foreach(head, &task->retries) {
+        retry = mk_list_entry(head, struct flb_task_retry, _head);
+        if (retry->o_ins == o_ins) {
+            return retry->attemps;
+        }
+    }
+
+    return -1;
 }
 
 /* Check if a 'retry' context exists for a specific task, if so, cleanup */
