@@ -20,9 +20,9 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_filter_plugin.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_storage.h>
-#include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_regex.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
@@ -36,60 +36,61 @@ static int emitter_create(struct flb_rewrite_tag *ctx)
 {
     int ret;
     int coll_fd;
-    struct flb_input_instance *in;
+    struct flb_input_instance *ins;
 
     ret = flb_input_name_exists(ctx->emitter_name, ctx->config);
     if (ret == FLB_TRUE) {
-        flb_error("[filter_rewrite_tag] emitter_name '%s' already exists");
+        flb_plg_error(ctx->ins, "emitter_name '%s' already exists");
         return -1;
     }
 
-    in = flb_input_new(ctx->config, "emitter", NULL, FLB_FALSE);
-    if (!in) {
-        flb_error("[filter_rewrite_tag] cannot create emitter instance");
+    ins = flb_input_new(ctx->config, "emitter", NULL, FLB_FALSE);
+    if (!ins) {
+        flb_plg_error(ctx->ins, "cannot create emitter instance");
         return -1;
     }
 
     /* Set the alias name */
-    ret = flb_input_set_property(in, "alias", ctx->emitter_name);
+    ret = flb_input_set_property(ins, "alias", ctx->emitter_name);
     if (ret == -1) {
-        flb_warn("[filter_rewrite_tag] cannot set emitter_name, using "
-                 "fallback name '%s'", in->name);
+        flb_plg_warn(ctx->ins,
+                     "cannot set emitter_name, using fallback name '%s'",
+                     ins->name);
     }
 
     /* Initialize emitter plugin */
-    ret = flb_input_instance_init(in, ctx->config);
+    ret = flb_input_instance_init(ins, ctx->config);
     if (ret == -1) {
-        flb_error("[filter_rewrite_tg] cannot initialize emitter instance '%s'",
-                  in->name);
-        flb_input_instance_exit(in, ctx->config);
-        flb_input_instance_free(in);
+        flb_plg_error(ctx->ins, "cannot initialize emitter instance '%s'",
+                      ins->name);
+        flb_input_instance_exit(ins, ctx->config);
+        flb_input_instance_free(ins);
         return -1;
     }
 
     /* Retrieve the collector id registered on the in_emitter initialization */
-    coll_fd = in_emitter_get_collector_id(in);
+    coll_fd = in_emitter_get_collector_id(ins);
 
     /* Initialize plugin collector (event callback) */
-    flb_input_collector_start(coll_fd, in);
+    flb_input_collector_start(coll_fd, ins);
 
 #ifdef FLB_HAVE_METRICS
     /* Override Metrics title */
-    ret = flb_metrics_title(ctx->emitter_name, in->metrics);
+    ret = flb_metrics_title(ctx->emitter_name, ins->metrics);
     if (ret == -1) {
-        flb_warn("[filter_rewrite_tag] cannot set metrics title, using fallback name %s",
-                 in->name);
+        flb_plg_warn(ctx->ins, "cannot set metrics title, using fallback name %s",
+                     ins->name);
     }
 #endif
 
     /* Storage context */
-    ret = flb_storage_input_create(ctx->config->cio, in);
+    ret = flb_storage_input_create(ctx->config->cio, ins);
     if (ret == -1) {
-        flb_error("[filter_rewrite_tag] cannot initialize storage for stream '%s'",
-                  ctx->emitter_name);
+        flb_plg_error(ctx->ins, "cannot initialize storage for stream '%s'",
+                      ctx->emitter_name);
         return -1;
     }
-    ctx->in_emitter = in;
+    ctx->ins_emitter = ins;
     return 0;
 }
 
@@ -187,7 +188,7 @@ static int cb_rewrite_tag_init(struct flb_filter_instance *ins,
         flb_errno();
         return -1;
     }
-    ctx->in = ins;
+    ctx->ins = ins;
     ctx->config = config;
     mk_list_init(&ctx->rules);
 
@@ -234,7 +235,7 @@ static int cb_rewrite_tag_init(struct flb_filter_instance *ins,
     /* Register a metric to count the number of emitted records */
 #ifdef FLB_HAVE_METRICS
     flb_metrics_add(FLB_RTAG_METRIC_EMITTED,
-                    "emit_records", ctx->in->metrics);
+                    "emit_records", ctx->ins->metrics);
 #endif
 
     return 0;
@@ -279,7 +280,7 @@ static int process_record(const char *tag, int tag_len, msgpack_object map,
 
     /* Emit record with new tag */
     ret = in_emitter_add_record(out_tag, flb_sds_len(out_tag), buf, buf_size,
-                                ctx->in_emitter);
+                                ctx->ins_emitter);
 
     /* Release the tag */
     flb_sds_destroy(out_tag);
@@ -356,7 +357,7 @@ static int cb_rewrite_tag_filter(const void *data, size_t bytes,
     }
 #ifdef FLB_HAVE_METRICS
     else if (emitted > 0) {
-        flb_metrics_sum(FLB_RTAG_METRIC_EMITTED, emitted, ctx->in->metrics);
+        flb_metrics_sum(FLB_RTAG_METRIC_EMITTED, emitted, ctx->ins->metrics);
     }
 #endif
 
@@ -392,7 +393,6 @@ static int cb_rewrite_tag_exit(void *data, struct flb_config *config)
     }
 
     destroy_rules(ctx);
-    flb_sds_destroy(ctx->emitter_name);
     flb_free(ctx);
 
     return 0;

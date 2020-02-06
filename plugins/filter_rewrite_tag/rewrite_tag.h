@@ -39,12 +39,12 @@ struct rewrite_rule {
 
 /* Plugin context */
 struct flb_rewrite_tag {
-    flb_sds_t emitter_name;                /* emitter input plugin name */
-    struct mk_list rules;                  /* processed rules */
-    struct mk_list *cm_rules;              /* config_map rules (only strings) */
-    struct flb_input_instance *in_emitter; /* emitter input plugin instance */
-    struct flb_filter_instance *in;        /* self-filter instance */
-    struct flb_config *config;             /* Fluent Bit context */
+    flb_sds_t emitter_name;                 /* emitter input plugin name */
+    struct mk_list rules;                   /* processed rules */
+    struct mk_list *cm_rules;               /* config_map rules (only strings) */
+    struct flb_input_instance *ins_emitter; /* emitter input plugin instance */
+    struct flb_filter_instance *ins;        /* self-filter instance */
+    struct flb_config *config;              /* Fluent Bit context */
 };
 
 /* Register external function to emit records, check 'plugins/in_emitter' */
