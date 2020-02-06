@@ -182,15 +182,16 @@ void flb_filter_do(struct flb_input_chunk *ic,
     flb_free(ntag);
 }
 
-int flb_filter_set_property(struct flb_filter_instance *filter,
+int flb_filter_set_property(struct flb_filter_instance *ins,
                             const char *k, const char *v)
 {
     int len;
+    int ret;
     flb_sds_t tmp;
     struct flb_kv *kv;
 
     len = strlen(k);
-    tmp = flb_env_var_translate(filter->config->env, v);
+    tmp = flb_env_var_translate(ins->config->env, v);
     if (!tmp) {
         return -1;
     }
@@ -198,23 +199,31 @@ int flb_filter_set_property(struct flb_filter_instance *filter,
     /* Check if the key is a known/shared property */
 #ifdef FLB_HAVE_REGEX
     if (prop_key_check("match_regex", k, len) == 0) {
-        filter->match_regex = flb_regex_create(tmp);
+        ins->match_regex = flb_regex_create(tmp);
         flb_sds_destroy(tmp);
     }
     else
 #endif
     if (prop_key_check("match", k, len) == 0) {
-        filter->match = tmp;
+        ins->match = tmp;
     }
     else if (prop_key_check("alias", k, len) == 0 && tmp) {
-        filter->alias = tmp;
+        ins->alias = tmp;
+    }
+    else if (prop_key_check("log_level", k, len) == 0 && tmp) {
+        ret = flb_log_get_level_str(tmp);
+        flb_sds_destroy(tmp);
+        if (ret == -1) {
+            return -1;
+        }
+        ins->log_level = ret;
     }
     else {
         /*
          * Create the property, we don't pass the value since we will
          * map it directly to avoid an extra memory allocation.
          */
-        kv = flb_kv_item_create(&filter->properties, (char *) k, NULL);
+        kv = flb_kv_item_create(&ins->properties, (char *) k, NULL);
         if (!kv) {
             if (tmp) {
                 flb_sds_destroy(tmp);
@@ -228,9 +237,9 @@ int flb_filter_set_property(struct flb_filter_instance *filter,
 }
 
 const char *flb_filter_get_property(const char *key,
-                                    struct flb_filter_instance *i)
+                                    struct flb_filter_instance *ins)
 {
-    return flb_kv_get_key_value(key, &i->properties);
+    return flb_kv_get_key_value(key, &ins->properties);
 }
 
 /* Invoke exit call for the filter plugin */
@@ -300,6 +309,8 @@ struct flb_filter_instance *flb_filter_new(struct flb_config *config,
 #ifdef FLB_HAVE_REGEX
     instance->match_regex = NULL;
 #endif
+    instance->log_level = -1;
+
     mk_list_init(&instance->properties);
     mk_list_add(&instance->_head, &config->filters);
 
@@ -307,13 +318,13 @@ struct flb_filter_instance *flb_filter_new(struct flb_config *config,
 }
 
 /* Return an instance name or alias */
-const char *flb_filter_name(struct flb_filter_instance *in)
+const char *flb_filter_name(struct flb_filter_instance *ins)
 {
-    if (in->alias) {
-        return in->alias;
+    if (ins->alias) {
+        return ins->alias;
     }
 
-    return in->name;
+    return ins->name;
 }
 
 /* Initialize all filter plugins */
@@ -343,6 +354,9 @@ int flb_filter_init_all(struct flb_config *config)
             mk_list_del(&ins->_head);
             flb_free(ins);
             continue;
+        }
+        if (ins->log_level == -1) {
+            ins->log_level = config->log->level;
         }
 
         p = ins->p;
