@@ -102,6 +102,7 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
     struct flb_task *task;
     struct flb_task_retry *retry;
     struct flb_output_thread *out_th;
+    struct flb_output_instance *ins;
 
     bytes = flb_pipe_r(fd, &val, sizeof(val));
     if (bytes == -1) {
@@ -154,6 +155,7 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
 
         task   = config->tasks_map[task_id].task;
         out_th = flb_output_thread_get(thread_id, task);
+        ins    = out_th->o_ins;
 
         /* A thread has finished, delete it */
         if (ret == FLB_OK) {
@@ -166,7 +168,7 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
                              flb_input_chunk_get_name(task->ic),
                              retries, out_th->id,
                              flb_input_name(task->i_ins),
-                             flb_output_name(out_th->o_ins));
+                             flb_output_name(ins));
                 }
             }
             flb_task_retry_clean(task, out_th->parent);
@@ -195,7 +197,7 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
                          flb_input_chunk_get_name(task->ic),
                          task_id,
                          flb_input_name(task->i_ins),
-                         flb_output_name(out_th->o_ins));
+                         flb_output_name(ins));
 
                 flb_output_thread_destroy_id(thread_id, task);
                 if (task->users == 0 && mk_list_size(&task->retries) == 0) {
@@ -226,7 +228,7 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
                          "input=%s > output=%s",
                          flb_input_chunk_get_name(task->ic),
                          flb_input_name(task->i_ins),
-                         flb_output_name(out_th->o_ins));
+                         flb_output_name(ins));
 
                 flb_task_retry_destroy(retry);
                 if (task->users == 0 && mk_list_size(&task->retries) == 0) {
@@ -241,7 +243,7 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
                          retry_seconds,
                          task->id,
                          flb_input_name(task->i_ins),
-                         flb_output_name(out_th->o_ins));
+                         flb_output_name(ins));
             }
         }
         else if (ret == FLB_ERROR) {
