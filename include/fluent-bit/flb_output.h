@@ -119,6 +119,7 @@ struct flb_output_plugin {
 struct flb_output_instance {
     uint64_t mask_id;                    /* internal bitmask for routing */
     int id;                              /* instance id                  */
+    int log_level;                       /* instance log level           */
     char name[32];                       /* numbered name (cpu -> cpu.0) */
     char *alias;                         /* alias name for the instance  */
     int flags;                           /* inherit flags from plugin    */
@@ -517,9 +518,10 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
 
 int flb_output_set_property(struct flb_output_instance *out,
                             const char *k, const char *v);
-const char *flb_output_get_property(const char *key, struct flb_output_instance *o_ins);
+const char *flb_output_get_property(const char *key, struct flb_output_instance *ins);
 void flb_output_net_default(const char *host, int port,
-                            struct flb_output_instance *o_ins);
+                            struct flb_output_instance *ins);
+const char *flb_output_name(struct flb_output_instance *ins);
 void flb_output_pre_run(struct flb_config *config);
 void flb_output_exit(struct flb_config *config);
 void flb_output_set_context(struct flb_output_instance *ins, void *context);

@@ -134,5 +134,6 @@ int flb_http_buffer_size(struct flb_http_client *c, size_t size);
 size_t flb_http_buffer_available(struct flb_http_client *c);
 int flb_http_buffer_increase(struct flb_http_client *c, size_t size,
                              size_t *out_size);
+int flb_http_strip_port_from_host(struct flb_http_client *c);
 
 #endif

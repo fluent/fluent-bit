@@ -795,6 +795,8 @@ int main(int argc, char **argv)
     }
 #endif /* !FLB_HAVE_STATIC_CONF */
 
+    set_log_level_from_env(config);
+
     if (config->verbose != FLB_LOG_OFF) {
         flb_banner();
     }

@@ -19,7 +19,7 @@
  */
 
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_sqldb.h>
 
 #include "systemd_config.h"
@@ -51,7 +51,8 @@ static int cb_count_check(void *data, int argc, char **argv, char **cols)
 }
 
 /* sanitize database table if required */
-static void flb_systemd_db_sanitize(struct flb_sqldb *db)
+static void flb_systemd_db_sanitize(struct flb_sqldb *db,
+                                    struct flb_input_instance *ins)
 {
     int ret;
     struct query_status qs = {0};
@@ -60,35 +61,36 @@ static void flb_systemd_db_sanitize(struct flb_sqldb *db)
     ret = flb_sqldb_query(db,
                           SQL_COUNT_CURSOR, cb_count_check, &qs);
     if (ret != FLB_OK) {
-        flb_error("[in_systemd] failed counting number of rows");
+        flb_plg_error(ins, "db: failed counting number of rows");
         return;
     }
 
     if (qs.rows > 1) {
-        flb_warn("[in_systemd] table in_systemd_cursor looks corrupted, it has "
-                 "more than one entry (rows=%i), the table content will be "
-                 "fixed", qs.rows);
+        flb_plg_warn(ins,
+                     "db: table in_systemd_cursor looks corrupted, it has "
+                     "more than one entry (rows=%i), the table content will be "
+                     "fixed", qs.rows);
 
         /* Delete duplicates, we only preserve the last record based on it ROWID */
         ret = flb_sqldb_query(db, SQL_DELETE_DUPS, NULL, NULL);
         if (ret != FLB_OK) {
-            flb_error("[in_systemd] could not delete in_systemd_cursor duplicates");
+            flb_plg_error(ins, "could not delete in_systemd_cursor duplicates");
             return;
         }
-        flb_info("[in_systemd] table in_systemd_cursor has been fixed");
+        flb_plg_info(ins, "table in_systemd_cursor has been fixed");
     }
 
 }
 
 struct flb_sqldb *flb_systemd_db_open(const char *path,
-                                      struct flb_input_instance *in,
+                                      struct flb_input_instance *ins,
                                       struct flb_config *config)
 {
     int ret;
     struct flb_sqldb *db;
 
     /* Open/create the database */
-    db = flb_sqldb_open(path, in->name, config);
+    db = flb_sqldb_open(path, ins->name, config);
     if (!db) {
         return NULL;
     }
@@ -96,12 +98,12 @@ struct flb_sqldb *flb_systemd_db_open(const char *path,
     /* Create table schema if it don't exists */
     ret = flb_sqldb_query(db, SQL_CREATE_CURSOR, NULL, NULL);
     if (ret != FLB_OK) {
-        flb_error("[in_systemd:db] could not create 'cursor' table");
+        flb_plg_error(ins, "db: could not create 'cursor' table");
         flb_sqldb_close(db);
         return NULL;
     }
 
-    flb_systemd_db_sanitize(db);
+    flb_systemd_db_sanitize(db, ins);
 
     return db;
 }

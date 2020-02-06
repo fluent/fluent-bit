@@ -67,6 +67,19 @@ struct flb_log {
     pthread_mutex_t pth_mutex;
 };
 
+/*
+ * This function is used by plugins interface to check if an incoming log message
+ * should be logged or not based in the log levels defined.
+ */
+static inline int flb_log_check_level(int level_set, int msg_level)
+{
+    if (msg_level <= level_set) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
 static inline int flb_log_check(int l) {
     struct flb_worker *w;
     w = (struct flb_worker *) FLB_TLS_GET(flb_worker_ctx);
@@ -83,6 +96,8 @@ static inline int flb_log_check(int l) {
 struct flb_log *flb_log_init(struct flb_config *config, int type,
                              int level, char *out);
 int flb_log_set_level(struct flb_config *config, int level);
+int flb_log_get_level_str(char *str);
+
 int flb_log_set_file(struct flb_config *config, char *out);
 
 int flb_log_stop(struct flb_log *log, struct flb_config *config);

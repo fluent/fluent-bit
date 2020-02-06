@@ -64,6 +64,7 @@ struct flb_filter_plugin {
 
 struct flb_filter_instance {
     int id;                        /* instance id              */
+    int log_level;                 /* instance log level       */
     char name[32];                 /* numbered name            */
     char *alias;                   /* alias name               */
     char *match;                   /* match rule based on Tags */
@@ -92,9 +93,10 @@ static inline int flb_filter_config_map_set(struct flb_filter_instance *ins,
     return flb_config_map_set(&ins->properties, ins->config_map, context);
 }
 
-int flb_filter_set_property(struct flb_filter_instance *filter,
+int flb_filter_set_property(struct flb_filter_instance *ins,
                             const char *k, const char *v);
-const char *flb_filter_get_property(const char *key, struct flb_filter_instance *i);
+const char *flb_filter_get_property(const char *key,
+                                    struct flb_filter_instance *ins);
 
 struct flb_filter_instance *flb_filter_new(struct flb_config *config,
                                            const char *filter, void *data);
@@ -103,7 +105,7 @@ void flb_filter_do(struct flb_input_chunk *ic,
                    const void *data, size_t bytes,
                    const char *tag, int tag_len,
                    struct flb_config *config);
-const char *flb_filter_name(struct flb_filter_instance *in);
+const char *flb_filter_name(struct flb_filter_instance *ins);
 int flb_filter_init_all(struct flb_config *config);
 void flb_filter_set_context(struct flb_filter_instance *ins, void *context);
 void flb_filter_instance_destroy(struct flb_filter_instance *ins);

@@ -107,6 +107,8 @@ struct flb_input_plugin {
     /* Exit */
     int (*cb_exit) (void *, struct flb_config *);
 
+    void *instance;
+
     struct mk_list _head;
 };
 
@@ -130,6 +132,7 @@ struct flb_input_instance {
     int flags;
 
     int id;                              /* instance id                  */
+    int log_level;                       /* log level for this plugin    */
     flb_pipefd_t channel[2];             /* pipe(2) channel              */
     int threaded;                        /* bool / Threaded instance ?   */
     char name[32];                       /* numbered name (cpu -> cpu.0) */

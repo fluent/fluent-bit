@@ -38,7 +38,7 @@ struct flb_tail_mult {
 };
 
 int flb_tail_mult_create(struct flb_tail_config *ctx,
-                         struct flb_input_instance *i_ins,
+                         struct flb_input_instance *ins,
                          struct flb_config *config);
 
 int flb_tail_mult_destroy(struct flb_tail_config *ctx);
@@ -52,7 +52,7 @@ int flb_tail_mult_flush(msgpack_sbuffer *mp_sbuf,
                         struct flb_tail_file *file,
                         struct flb_tail_config *ctx);
 
-int flb_tail_mult_pending_flush(struct flb_input_instance *i_ins,
+int flb_tail_mult_pending_flush(struct flb_input_instance *ins,
                                 struct flb_config *config, void *context);
 
 #endif

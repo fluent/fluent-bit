@@ -307,7 +307,7 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
 static inline int flb_input_chunk_protect(struct flb_input_instance *i)
 {
     if (flb_input_chunk_is_overlimit(i) == FLB_TRUE) {
-        flb_debug("[input] %s paused (mem buf overlimit)",
+        flb_warn("[input] %s paused (mem buf overlimit)",
                  i->name);
         if (!flb_input_buf_paused(i)) {
             if (i->p->cb_pause) {

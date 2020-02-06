@@ -24,7 +24,7 @@
 #include <fnmatch.h>
 
 #include <fluent-bit/flb_compat.h>
-#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_utils.h>
 
 #include "tail.h"
@@ -212,7 +212,7 @@ int flb_tail_scan(const char *path, struct flb_tail_config *ctx)
     glob_t globbuf;
     struct stat st;
 
-    flb_debug("[in_tail] scanning path %s", path);
+    flb_plg_debug(ctx->ins, "scanning path %s", path);
 
     /* Generate exclusion list */
     if (ctx->exclude_path) {
@@ -227,23 +227,23 @@ int flb_tail_scan(const char *path, struct flb_tail_config *ctx)
     if (ret != 0) {
         switch (ret) {
         case GLOB_NOSPACE:
-            flb_error("[in_tail] no memory space available");
+            flb_plg_error(ctx->ins, "no memory space available");
             return -1;
         case GLOB_ABORTED:
-            flb_error("[in_tail] read error, check permissions: %s", path);
+            flb_plg_error(ctx->ins, "read error, check permissions: %s", path);
             return -1;
         case GLOB_NOMATCH:
             ret = stat(path, &st);
             if (ret == -1) {
-                flb_debug("[in_tail] Cannot read info from: %s", path);
+                flb_plg_debug(ctx->ins, "cannot read info from: %s", path);
             }
             else {
                 ret = access(path, R_OK);
                 if (ret == -1 && errno == EACCES) {
-                    flb_error("[in_tail] NO read access for path: %s", path);
+                    flb_plg_error(ctx->ins, "NO read access for path: %s", path);
                 }
                 else {
-                    flb_debug("[in_tail] NO matches for path: %s", path);
+                    flb_plg_debug(ctx->ins, "NO matches for path: %s", path);
                 }
             }
             return 0;
@@ -256,7 +256,7 @@ int flb_tail_scan(const char *path, struct flb_tail_config *ctx)
         if (ret == 0 && S_ISREG(st.st_mode)) {
             /* Check if this file is blacklisted */
             if (tail_is_excluded(globbuf.gl_pathv[i], ctx) == FLB_TRUE) {
-                flb_debug("[in_tail] excluded=%s", globbuf.gl_pathv[i]);
+                flb_plg_debug(ctx->ins, "excluded=%s", globbuf.gl_pathv[i]);
                 continue;
             }
 
@@ -266,7 +266,8 @@ int flb_tail_scan(const char *path, struct flb_tail_config *ctx)
             count++;
         }
         else {
-            flb_debug("[in_tail] skip (invalid) entry=%s", globbuf.gl_pathv[i]);
+            flb_plg_debug(ctx->ins, "skip (invalid) entry=%s",
+                          globbuf.gl_pathv[i]);
         }
     }
 
@@ -278,7 +279,7 @@ int flb_tail_scan(const char *path, struct flb_tail_config *ctx)
  * Triggered by refresh_interval, it re-scan the path looking for new files
  * that match the original path pattern.
  */
-int flb_tail_scan_callback(struct flb_input_instance *i_ins,
+int flb_tail_scan_callback(struct flb_input_instance *ins,
                            struct flb_config *config, void *context)
 {
     int i;
@@ -294,10 +295,10 @@ int flb_tail_scan_callback(struct flb_input_instance *i_ins,
     if (ret != 0) {
         switch (ret) {
         case GLOB_NOSPACE:
-            flb_error("[in_tail] no memory space available");
+            flb_plg_error(ctx->ins, "no memory space available");
             return -1;
         case GLOB_ABORTED:
-            flb_error("[in_tail] read error (GLOB_ABORTED");
+            flb_plg_error(ctx->ins, "read error (GLOB_ABORTED");
             return -1;
         case GLOB_NOMATCH:
             return 0;
@@ -324,12 +325,12 @@ int flb_tail_scan_callback(struct flb_input_instance *i_ins,
                 continue;
             }
 
-            flb_debug("[in_tail] append new file: %s", globbuf.gl_pathv[i]);
+            flb_plg_debug(ctx->ins, "append new file: %s", globbuf.gl_pathv[i]);
 
             count++;
         }
         else {
-            flb_debug("[in_tail] skip (invalid) entry=%s", globbuf.gl_pathv[i]);
+            flb_plg_debug(ctx->ins, "skip (invalid) entry=%s", globbuf.gl_pathv[i]);
         }
     }
 

@@ -138,6 +138,7 @@ flb_ctx_t *flb_create()
         return NULL;
     }
     ctx->config = config;
+    ctx->status = FLB_LIB_NONE;
 
     /*
      * Initialize our pipe to send data to our worker, used
@@ -406,6 +407,12 @@ int flb_lib_push(flb_ctx_t *ctx, int ffd, const void *data, size_t len)
     int ret;
     struct flb_input_instance *i_ins;
 
+
+    if (ctx->status == FLB_LIB_NONE || ctx->status == FLB_LIB_ERROR) {
+        flb_error("[lib] cannot push data, engine is not running");
+        return -1;
+    }
+
     i_ins = in_instance_get(ctx, ffd);
     if (!i_ins) {
         return -1;
@@ -414,8 +421,10 @@ int flb_lib_push(flb_ctx_t *ctx, int ffd, const void *data, size_t len)
     ret = flb_pipe_w(i_ins->channel[1], data, len);
     if (ret == -1) {
         flb_errno();
+        printf("write to pipe failed\n");
         return -1;
     }
+    printf("wrote fdata\n");
     return ret;
 }
 
@@ -427,6 +436,7 @@ static void flb_lib_worker(void *data)
     flb_log_init(config, FLB_LOG_STDERR, FLB_LOG_INFO, NULL);
     ret = flb_engine_start(config);
     if (ret == -1) {
+        printf("shutdown engine\n");
         flb_engine_failed(config);
         flb_engine_shutdown(config);
     }
@@ -467,15 +477,18 @@ int flb_start(flb_ctx_t *ctx)
         fd = event->fd;
         bytes = flb_pipe_r(fd, &val, sizeof(uint64_t));
         if (bytes <= 0) {
+            ctx->status = FLB_LIB_ERROR;
             return -1;
         }
 
         if (val == FLB_ENGINE_STARTED) {
             flb_debug("[lib] backend started");
+            ctx->status = FLB_LIB_OK;
             break;
         }
         else if (val == FLB_ENGINE_FAILED) {
             flb_error("[lib] backend failed");
+            ctx->status = FLB_LIB_ERROR;
             return -1;
         }
     }
@@ -488,6 +501,10 @@ int flb_stop(flb_ctx_t *ctx)
 {
     int ret;
     pthread_t tid;
+
+    if (ctx->status == FLB_LIB_NONE || ctx->status == FLB_LIB_ERROR) {
+        return 0;
+    }
 
     if (!ctx->config) {
         return 0;
