@@ -96,7 +96,7 @@ if(FLB_METRICS)
     )
 endif()
 
-if(FLB_METRICS)
+if(FLB_SIGNV4 AND FLB_TLS)
   set(src
     ${src}
     "flb_signv4.c"
