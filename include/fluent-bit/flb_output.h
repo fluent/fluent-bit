@@ -458,7 +458,7 @@ static inline void flb_output_return_do(int x)
 
 struct flb_output_instance *flb_output_new(struct flb_config *config,
                                            const char *output, void *data);
-
+const char *flb_output_name(struct flb_output_instance *in);
 int flb_output_set_property(struct flb_output_instance *out,
                             const char *k, const char *v);
 const char *flb_output_get_property(const char *key, struct flb_output_instance *o_ins);
