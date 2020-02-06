@@ -107,7 +107,7 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
 {
     int ret;
     int set_down = FLB_FALSE;
-    char name[256];
+    char name[64];
     struct cio_chunk *chunk;
     struct flb_storage_input *storage;
     struct flb_input_chunk *ic;
@@ -123,6 +123,7 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
     if (!chunk) {
         flb_error("[input chunk] could not create chunk file: %s:%s",
                   storage->stream, name);
+        flb_sds_destroy(name);
         return NULL;
     }
 
@@ -150,6 +151,7 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
     ret = cio_meta_write(chunk, (char *) tag, tag_len);
     if (ret == -1) {
         flb_error("[input chunk] could not write metadata");
+        flb_sds_destroy(name);
         cio_chunk_close(chunk, CIO_TRUE);
         return NULL;
     }
@@ -572,6 +574,14 @@ int flb_input_chunk_release_lock(struct flb_input_chunk *ic)
 
     ic->busy = FLB_FALSE;
     return 0;
+}
+
+flb_sds_t flb_input_chunk_get_name(struct flb_input_chunk *ic)
+{
+    struct cio_chunk *ch;
+
+    ch = (struct cio_chunk *) ic->chunk;
+    return ch->name;
 }
 
 int flb_input_chunk_get_tag(struct flb_input_chunk *ic,

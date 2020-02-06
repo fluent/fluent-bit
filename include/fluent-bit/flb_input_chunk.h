@@ -22,6 +22,7 @@
 #define FLB_INPUT_CHUNK_H
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_sds.h>
 #include <monkey/mk_core.h>
 #include <msgpack.h>
 
@@ -52,6 +53,7 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
                                const void *buf, size_t buf_size);
 const void *flb_input_chunk_flush(struct flb_input_chunk *ic, size_t *size);
 int flb_input_chunk_release_lock(struct flb_input_chunk *ic);
+flb_sds_t flb_input_chunk_get_name(struct flb_input_chunk *ic);
 int flb_input_chunk_get_tag(struct flb_input_chunk *ic,
                             const char **tag_buf, int *tag_len);
 ssize_t flb_input_chunk_get_size(struct flb_input_chunk *ic);
