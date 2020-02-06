@@ -515,7 +515,7 @@ static inline int flb_output_config_map_set(struct flb_output_instance *ins,
 
 struct flb_output_instance *flb_output_new(struct flb_config *config,
                                            const char *output, void *data);
-
+const char *flb_output_name(struct flb_output_instance *in);
 int flb_output_set_property(struct flb_output_instance *out,
                             const char *k, const char *v);
 const char *flb_output_get_property(const char *key, struct flb_output_instance *ins);
