@@ -145,7 +145,7 @@ int syslog_prot_process_udp(char *buf, size_t size, struct flb_syslog *ctx)
         flb_warn("[in_syslog] error parsing log message "
                  "on \"%s\" with parser '%s')",
                  flb_input_name(ctx->i_ins), ctx->parser->name);
-	flb_debug("[in_syslog] unparsed log message: %.*s", size, buf);
+        flb_debug("[in_syslog] unparsed log message: %.*s", size, buf);
         return -1;
     }
 
