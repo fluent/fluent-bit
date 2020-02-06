@@ -94,11 +94,13 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
     int bytes;
     int task_id;
     int thread_id;
+    int retries;
     int retry_seconds;
     uint32_t type;
     uint32_t key;
     uint64_t val;
     struct flb_task *task;
+    struct flb_task_retry *retry;
     struct flb_output_thread *out_th;
 
     bytes = flb_pipe_r(fd, &val, sizeof(val));
@@ -155,6 +157,18 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
 
         /* A thread has finished, delete it */
         if (ret == FLB_OK) {
+            /* Inform the user if a 'retry' succedeed */
+            if (mk_list_size(&task->retries) > 0) {
+                retries = flb_task_retry_count(task, out_th->parent);
+                if (retries > 0) {
+                    flb_info("[engine] flush chunk '%s' succeeded at retry %i: "
+                             "task_id=%i, input=%s > output=%s",
+                             flb_input_chunk_get_name(task->ic),
+                             retries, out_th->id,
+                             flb_input_name(task->i_ins),
+                             flb_output_name(out_th->o_ins));
+                }
+            }
             flb_task_retry_clean(task, out_th->parent);
             flb_output_thread_destroy_id(thread_id, task);
             if (task->users == 0 && mk_list_size(&task->retries) == 0) {
@@ -163,8 +177,6 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
         }
         else if (ret == FLB_RETRY) {
             /* Create a Task-Retry */
-            struct flb_task_retry *retry;
-
             retry = flb_task_retry_create(task, out_th);
             if (!retry) {
                 /*
@@ -178,9 +190,12 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
                                 out_th->o_ins->metrics);
 #endif
                 /* Notify about this failed retry */
-                flb_warn("[engine] Task cannot be retried: "
-                         "task_id=%i thread_id=%i output=%s",
-                         task->id, out_th->id, out_th->o_ins->name);
+                flb_warn("[engine] chunk '%s' cannot be retried: "
+                         "task_id=%i, input=%s > output=%s",
+                         flb_input_chunk_get_name(task->ic),
+                         task_id,
+                         flb_input_name(task->i_ins),
+                         flb_output_name(out_th->o_ins));
 
                 flb_output_thread_destroy_id(thread_id, task);
                 if (task->users == 0 && mk_list_size(&task->retries) == 0) {
@@ -207,16 +222,26 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
              * memory available or we ran out of file descriptors.
              */
             if (retry_seconds == -1) {
-                flb_warn("[sched] retry for task %i could not be scheduled",
-                         task->id);
+                flb_warn("[engine] retry for chunk '%s' could not be scheduled: "
+                         "input=%s > output=%s",
+                         flb_input_chunk_get_name(task->ic),
+                         flb_input_name(task->i_ins),
+                         flb_output_name(out_th->o_ins));
+
                 flb_task_retry_destroy(retry);
                 if (task->users == 0 && mk_list_size(&task->retries) == 0) {
                     flb_task_destroy(task, FLB_TRUE);
                 }
             }
             else {
-                flb_debug("[sched] retry=%p %i in %i seconds",
-                          retry, task->id, retry_seconds);
+                /* Inform the user 'retry' has been scheduled */
+                flb_warn("[engine] failed to flush chunk '%s', retry in %i seconds: "
+                         "task_id=%i, input=%s > output=%s",
+                         flb_input_chunk_get_name(task->ic),
+                         retry_seconds,
+                         task->id,
+                         flb_input_name(task->i_ins),
+                         flb_output_name(out_th->o_ins));
             }
         }
         else if (ret == FLB_ERROR) {
