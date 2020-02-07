@@ -173,6 +173,19 @@ struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
     return retry;
 }
 
+/*
+ * Return FLB_TRUE or FLB_FALSE if the chunk pointed by the task was
+ * created on this running instance or it comes from a chunk in the
+ * filesystem from a previous run.
+ */
+int flb_task_from_fs_storage(struct flb_task *task)
+{
+    struct flb_input_chunk *ic;
+
+    ic = (struct flb_input_chunk *) task->ic;
+    return ic->fs_backlog;
+}
+
 int flb_task_retry_count(struct flb_task *task, void *data)
 {
     struct mk_list *head;

@@ -109,6 +109,7 @@ struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
                                              void *data);
 void flb_task_retry_destroy(struct flb_task_retry *retry);
 int flb_task_retry_reschedule(struct flb_task_retry *retry, struct flb_config *config);
+int flb_task_from_fs_storage(struct flb_task *task);
 int flb_task_retry_count(struct flb_task *task, void *data);
 int flb_task_retry_clean(struct flb_task *task, void *data);
 
