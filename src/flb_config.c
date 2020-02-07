@@ -324,6 +324,12 @@ void flb_config_exit(struct flb_config *config)
     if (config->storage_path) {
         flb_free(config->storage_path);
     }
+    if (config->storage_sync) {
+        flb_free(config->storage_sync);
+    }
+    if (config->storage_bl_mem_limit) {
+        flb_free(config->storage_bl_mem_limit);
+    }
 
 #ifdef FLB_HAVE_STREAM_PROCESSOR
     if (config->stream_processor_file) {
