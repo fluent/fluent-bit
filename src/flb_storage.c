@@ -290,9 +290,6 @@ void flb_storage_destroy(struct flb_config *ctx)
     }
 
     cio_destroy(cio);
-    if (ctx->storage_bl_mem_limit) {
-        flb_free(ctx->storage_bl_mem_limit);
-    }
 
     /* Delete references from input instances */
     storage_contexts_destroy(ctx);
