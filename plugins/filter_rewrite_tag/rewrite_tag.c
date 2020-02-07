@@ -330,7 +330,7 @@ static int cb_rewrite_tag_filter(const void *data, size_t bytes,
          * If a record was emitted, the variable 'keep' will define if the record must
          * be preserved or not.
          */
-        ret = process_record(tag, tag_len, map, data + pre, off - pre, &keep, ctx);
+        ret = process_record(tag, tag_len, map, (char *) data + pre, off - pre, &keep, ctx);
         if (ret == FLB_TRUE) {
             /* A record with the new tag was emitted */
             emitted++;
@@ -343,7 +343,7 @@ static int cb_rewrite_tag_filter(const void *data, size_t bytes,
          * - record was not emitted
          */
         if ((ret == FLB_TRUE && keep == FLB_TRUE) || ret == FLB_FALSE) {
-            msgpack_sbuffer_write(&mp_sbuf, data + pre, off - pre);
+            msgpack_sbuffer_write(&mp_sbuf, (char *) data + pre, off - pre);
         }
 
         /* Adjust previous offset */
