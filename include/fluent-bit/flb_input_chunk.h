@@ -30,6 +30,7 @@
 
 struct flb_input_chunk {
     int busy;                       /* buffer is being flushed  */
+    int fs_backlog;                 /* chunk originated from fs backlog */
     int sp_done;                    /* sp already processed this chunk */
     void *chunk;                    /* context of struct cio_chunk */
     off_t stream_off;               /* stream offset */
