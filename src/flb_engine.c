@@ -171,6 +171,14 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
                              flb_output_name(ins));
                 }
             }
+            else if (flb_task_from_fs_storage(task) == FLB_TRUE) {
+                flb_info("[engine] flush backlog chunk '%s' succeeded: "
+                         "task_id=%i, input=%s > output=%s",
+                         flb_input_chunk_get_name(task->ic),
+                         out_th->id,
+                         flb_input_name(task->i_ins),
+                         flb_output_name(ins));
+            }
             flb_task_retry_clean(task, out_th->parent);
             flb_output_thread_destroy_id(thread_id, task);
             if (task->users == 0 && mk_list_size(&task->retries) == 0) {
