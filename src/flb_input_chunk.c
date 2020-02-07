@@ -82,6 +82,7 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
     }
 
     ic->busy = FLB_FALSE;
+    ic->fs_backlog = FLB_TRUE;
     ic->chunk = chunk;
     ic->in = in;
     msgpack_packer_init(&ic->mp_pck, ic, flb_input_chunk_write);
@@ -167,6 +168,7 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
     }
     ic->busy = FLB_FALSE;
     ic->chunk = chunk;
+    ic->fs_backlog = FLB_FALSE;
     ic->in = in;
     ic->stream_off = 0;
     msgpack_packer_init(&ic->mp_pck, ic, flb_input_chunk_write);
