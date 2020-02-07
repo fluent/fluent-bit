@@ -43,7 +43,6 @@
 
 #ifdef _MSC_VER
 static int get_inode(int fd, uint64_t *inode, struct flb_tail_config *ctx)
-)
 {
     HANDLE h;
     BY_HANDLE_FILE_INFORMATION info;
