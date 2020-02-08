@@ -11,6 +11,8 @@
 struct context {
     /* Single values */
     int num_int;
+    size_t size;
+    time_t time;
     char boolean;
     double num_double;
     flb_sds_t string;
@@ -55,6 +57,25 @@ struct flb_config_map config_map[] = {
      NULL
     },
 
+    /* SIZE */
+    {
+     FLB_CONFIG_MAP_SIZE,
+     "test_size",
+     "2M",
+     0, FLB_TRUE, offsetof(struct context, size),
+     NULL
+    },
+
+    /* TIME */
+    {
+     FLB_CONFIG_MAP_TIME,
+     "test_time",
+     "2H",
+     0, FLB_TRUE, offsetof(struct context, time),
+     NULL
+    },
+
+    /* CSLIST */
     {
      FLB_CONFIG_MAP_CLIST,
      "test_clist",
@@ -174,6 +195,8 @@ void test_create()
     TEST_CHECK(ctx.boolean == 1);
     TEST_CHECK(ctx.num_int == 123);
     TEST_CHECK(ctx.num_double == 0.12345);
+    TEST_CHECK(ctx.size == 2000000);
+    TEST_CHECK(ctx.time == 7200);
     TEST_CHECK(strcmp(ctx.string, "test") == 0);
     TEST_CHECK(flb_sds_len(ctx.string) == 4);
     TEST_CHECK(mk_list_size(ctx.list1) == 15);
@@ -203,6 +226,8 @@ void test_override_defaults()
     flb_kv_item_create(&properties, "num_int", "321");
     flb_kv_item_create(&properties, "num_double", "0.54321");
     flb_kv_item_create(&properties, "string", "no test");
+    flb_kv_item_create(&properties, "test_time", "1H");
+    flb_kv_item_create(&properties, "test_size", "1M");
     flb_kv_item_create(&properties, "test_clist", "abc, def, ghi ,,,,jkl  ");
     flb_kv_item_create(&properties, "test_slist", "abc def ghi jkl m n o");
 
@@ -213,6 +238,8 @@ void test_override_defaults()
     TEST_CHECK(ctx.boolean == 0);
     TEST_CHECK(ctx.num_int == 321);
     TEST_CHECK(ctx.num_double == 0.54321);
+    TEST_CHECK(ctx.size == 1000000);
+    TEST_CHECK(ctx.time == 3600);
     TEST_CHECK(strcmp(ctx.string, "no test") == 0);
     TEST_CHECK(flb_sds_len(ctx.string) == 7);
     TEST_CHECK(mk_list_size(ctx.list1) == 4);
