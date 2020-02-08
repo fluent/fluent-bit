@@ -399,9 +399,9 @@ int flb_tail_mult_flush(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
 
     /* Append Path_Key ? */
     if (file->config->path_key != NULL) {
-        msgpack_pack_str(mp_pck, file->config->path_key_len);
+        msgpack_pack_str(mp_pck, flb_sds_len(file->config->path_key));
         msgpack_pack_str_body(mp_pck, file->config->path_key,
-                              file->config->path_key_len);
+                              flb_sds_len(file->config->path_key));
         msgpack_pack_str(mp_pck, file->name_len);
         msgpack_pack_str_body(mp_pck, file->name, file->name_len);
     }

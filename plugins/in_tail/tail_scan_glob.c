@@ -162,28 +162,6 @@ static inline int do_glob(const char *pattern, int flags,
     return ret;
 }
 
-static int tail_exclude_generate(struct flb_tail_config *ctx)
-{
-    struct mk_list *list;
-
-    /*
-     * The exclusion path might content multiple exclusion patterns, first
-     * let's split the content into a list.
-     */
-    list = flb_utils_split(ctx->exclude_path, ',', -1);
-    if (!list) {
-        return -1;
-    }
-
-    if (mk_list_is_empty(list) == 0) {
-        return 0;
-    }
-
-    /* We use the same list head returned by flb_utils_split() */
-    ctx->exclude_list = list;
-    return 0;
-}
-
 static int tail_is_excluded(char *name, struct flb_tail_config *ctx)
 {
     struct mk_list *head;
@@ -213,11 +191,6 @@ int flb_tail_scan(const char *path, struct flb_tail_config *ctx)
     struct stat st;
 
     flb_plg_debug(ctx->ins, "scanning path %s", path);
-
-    /* Generate exclusion list */
-    if (ctx->exclude_path) {
-        tail_exclude_generate(ctx);
-    }
 
     /* Safe reset for globfree() */
     globbuf.gl_pathv = NULL;

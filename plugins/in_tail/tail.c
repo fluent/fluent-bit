@@ -24,10 +24,12 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
 
@@ -362,6 +364,105 @@ static void in_tail_resume(void *data, struct flb_config *config)
     flb_tail_fs_resume(ctx);
 }
 
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "path", NULL,
+     0, FLB_TRUE, offsetof(struct flb_tail_config, path),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_CLIST, "exclude_path", NULL,
+     0, FLB_FALSE, offsetof(struct flb_tail_config, exclude_list),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "key", "log",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, key),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "refresh_interval", NULL,
+     0, FLB_FALSE, 0,
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_INT, "rotate_wait", FLB_TAIL_ROTATE_WAIT,
+     0, FLB_TRUE, offsetof(struct flb_tail_config, rotate_wait),
+     NULL
+    },
+#ifdef FLB_HAVE_PARSER
+    {
+     FLB_CONFIG_MAP_BOOL, "multiline", "false",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, multiline),
+     NULL
+    },
+#endif
+    {
+     FLB_CONFIG_MAP_BOOL, "docker_mode", "false",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, docker_mode),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "path_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_tail_config, docker_mode),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "ignore_older", "0",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, ignore_older),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_SIZE, "buffer_chunk_size", FLB_TAIL_CHUNK,
+     0, FLB_TRUE, offsetof(struct flb_tail_config, buf_chunk_size),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_SIZE, "buffer_max_size", FLB_TAIL_CHUNK,
+     0, FLB_TRUE, offsetof(struct flb_tail_config, buf_max_size),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "skip_long_lines", "false",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, skip_long_lines),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "exit_on_eof", "false",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, exit_on_eof),
+     NULL
+    },
+#ifdef FLB_HAVE_REGEX
+    {
+     FLB_CONFIG_MAP_STR, "parser", NULL,
+     0, FLB_FALSE, 0,
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "tag_regex", NULL,
+     0, FLB_FALSE, 0,
+     NULL
+    },
+#endif
+
+#ifdef FLB_HAVE_SQLDB
+    {
+     FLB_CONFIG_MAP_STR, "db.sync", NULL,
+     0, FLB_FALSE, 0,
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "db", NULL,
+     0, FLB_FALSE, 0,
+     NULL
+    },
+#endif
+
+    /* EOF */
+    {0}
+};
+
 struct flb_input_plugin in_tail_plugin = {
     .name         = "tail",
     .description  = "Tail files",
@@ -372,5 +473,6 @@ struct flb_input_plugin in_tail_plugin = {
     .cb_pause     = in_tail_pause,
     .cb_resume    = in_tail_resume,
     .cb_exit      = in_tail_exit,
+    .config_map   = config_map,
     .flags        = 0
 };

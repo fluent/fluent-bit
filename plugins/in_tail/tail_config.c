@@ -41,7 +41,6 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
     int sec;
     int i;
     long nsec;
-    ssize_t bytes;
     const char *tmp;
     struct flb_tail_config *ctx;
 
@@ -56,6 +55,14 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
 #ifdef FLB_HAVE_SQLDB
     ctx->db_sync = -1;
 #endif
+
+    /* Load the config map */
+    ret = flb_input_config_map_set(ins, (void *) ctx);
+    if (ret == -1) {
+        flb_free(ctx);
+        return NULL;
+    }
+
 
     /* Create the channel manager */
     ret = flb_pipe_create(ctx->ch_manager);
@@ -85,26 +92,10 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
     }
 
     /* Config: path/pattern to read files */
-    ctx->path = flb_input_get_property("path", ins);
     if (!ctx->path) {
         flb_plg_error(ctx->ins, "no input 'path' was given");
         flb_free(ctx);
         return NULL;
-    }
-
-    /* Config: exclude path/pattern to skip files */
-    ctx->exclude_path = flb_input_get_property("exclude_path", ins);
-    ctx->exclude_list = NULL;
-
-    /* Config: key for unstructured log */
-    tmp = flb_input_get_property("key", ins);
-    if (tmp) {
-        ctx->key = flb_strdup(tmp);
-        ctx->key_len = strlen(tmp);
-    }
-    else {
-        ctx->key = flb_strdup("log");
-        ctx->key_len = 3;
     }
 
     /* Config: seconds interval before to re-scan the path */
@@ -142,106 +133,30 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
     }
 
     /* Config: seconds interval to monitor file after rotation */
-    tmp = flb_input_get_property("rotate_wait", ins);
-    if (!tmp) {
-        ctx->rotate_wait = FLB_TAIL_ROTATE_WAIT;
-    }
-    else {
-        ctx->rotate_wait = atoi(tmp);
-        if (ctx->rotate_wait <= 0) {
-            flb_plg_error(ctx->ins, "invalid 'rotate_wait' config value");
-            flb_free(ctx);
-            return NULL;
-        }
+    if (ctx->rotate_wait <= 0) {
+        flb_plg_error(ctx->ins, "invalid 'rotate_wait' config value");
+        flb_free(ctx);
+        return NULL;
     }
 
 #ifdef FLB_HAVE_PARSER
     /* Config: multi-line support */
-    tmp = flb_input_get_property("multiline", ins);
-    if (tmp) {
-        ret = flb_utils_bool(tmp);
-        if (ret == FLB_TRUE) {
-            ctx->multiline = FLB_TRUE;
-            ret = flb_tail_mult_create(ctx, ins, config);
-            if (ret == -1) {
-                flb_tail_config_destroy(ctx);
-                return NULL;
-            }
+    if (ctx->multiline == FLB_TRUE) {
+        ret = flb_tail_mult_create(ctx, ins, config);
+        if (ret == -1) {
+            flb_tail_config_destroy(ctx);
+            return NULL;
         }
     }
 #endif
 
     /* Config: Docker mode */
-    tmp = flb_input_get_property("docker_mode", ins);
-    if (tmp) {
-        ret = flb_utils_bool(tmp);
-        if (ret == FLB_TRUE) {
-            ctx->docker_mode = FLB_TRUE;
-            ret = flb_tail_dmode_create(ctx, ins, config);
-            if (ret == -1) {
-                flb_tail_config_destroy(ctx);
-                return NULL;
-            }
+    if(ctx->docker_mode == FLB_TRUE) {
+        ret = flb_tail_dmode_create(ctx, ins, config);
+        if (ret == -1) {
+            flb_tail_config_destroy(ctx);
+            return NULL;
         }
-    }
-
-    /* Config: determine whether appending or not */
-    ctx->path_key = flb_input_get_property("path_key", ins);
-    if (ctx->path_key != NULL) {
-        ctx->path_key_len = strlen(ctx->path_key);
-    }
-    else {
-        ctx->path_key_len = 0;
-    }
-
-    tmp = flb_input_get_property("ignore_older", ins);
-    if (tmp) {
-        ctx->ignore_older = flb_utils_time_to_seconds(tmp);
-    }
-    else {
-        ctx->ignore_older = 0;
-    }
-
-    /* Config: buffer chunk size */
-    tmp = flb_input_get_property("buffer_chunk_size", ins);
-    if (tmp) {
-        bytes = flb_utils_size_to_bytes(tmp);
-        if (bytes > 0) {
-            ctx->buf_chunk_size = (size_t) bytes;
-        }
-        else {
-            ctx->buf_chunk_size = FLB_TAIL_CHUNK;
-        }
-    }
-    else {
-        ctx->buf_chunk_size = FLB_TAIL_CHUNK;
-    }
-
-    /* Config: buffer maximum size */
-    tmp = flb_input_get_property("buffer_max_size", ins);
-    if (tmp) {
-        bytes = flb_utils_size_to_bytes(tmp);
-        if (bytes > 0) {
-            ctx->buf_max_size = (size_t) bytes;
-        }
-        else {
-            ctx->buf_max_size = FLB_TAIL_CHUNK;
-        }
-    }
-    else {
-        ctx->buf_max_size = FLB_TAIL_CHUNK;
-    }
-
-    /* Config: skip long lines */
-    tmp = flb_input_get_property("skip_long_lines", ins);
-    if (tmp) {
-        ctx->skip_long_lines = flb_utils_bool(tmp);
-    }
-
-    /* Config: Exit on EOF (for testing) */
-    tmp = flb_input_get_property("exit_on_eof", ins);
-    if (tmp) {
-        ctx->exit_on_eof = flb_utils_bool(tmp);
     }
 
     /* Validate buffer limit */
@@ -359,9 +274,6 @@ int flb_tail_config_destroy(struct flb_tail_config *config)
     }
 #endif
 
-    if (config->key != NULL) {
-        flb_free(config->key);
-    }
     flb_free(config);
     return 0;
 }

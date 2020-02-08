@@ -172,7 +172,7 @@ int flb_tail_pack_line_map(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
     if (file->config->path_key != NULL) {
         append_record_to_map(data, data_size,
                              file->config->path_key,
-                             file->config->path_key_len,
+                             flb_sds_len(file->config->path_key),
                              file->name, file->name_len);
     }
 
@@ -199,15 +199,15 @@ int flb_tail_file_pack_line(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
 
     if (file->config->path_key != NULL) {
         /* append path_key */
-        msgpack_pack_str(mp_pck, file->config->path_key_len);
+        msgpack_pack_str(mp_pck, flb_sds_len(file->config->path_key));
         msgpack_pack_str_body(mp_pck, file->config->path_key,
-                              file->config->path_key_len);
+                              flb_sds_len(file->config->path_key));
         msgpack_pack_str(mp_pck, file->name_len);
         msgpack_pack_str_body(mp_pck, file->name, file->name_len);
     }
 
-    msgpack_pack_str(mp_pck, ctx->key_len);
-    msgpack_pack_str_body(mp_pck, ctx->key, ctx->key_len);
+    msgpack_pack_str(mp_pck, flb_sds_len(ctx->key));
+    msgpack_pack_str_body(mp_pck, ctx->key, flb_sds_len(ctx->key));
     msgpack_pack_str(mp_pck, data_size);
     msgpack_pack_str_body(mp_pck, data, data_size);
 
