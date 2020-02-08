@@ -123,7 +123,7 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
         snprintf(ctx->uri, sizeof(ctx->uri) - 1, "%s/_bulk", path);
     }
 
-    #ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_SIGNV4
     /* AWS Auth */
     ctx->has_aws_auth = FLB_FALSE;
     tmp = flb_output_get_property("aws_auth", ins);
@@ -142,7 +142,7 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
             ctx->aws_region = (char *) tmp;
         }
     }
-    #endif
+#endif
 
     return ctx;
 }
