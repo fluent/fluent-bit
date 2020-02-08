@@ -460,11 +460,18 @@ int flb_config_map_properties_check(char *context_name,
  */
 static int properties_override_default(struct mk_list *properties, char *name)
 {
+    int len;
     struct mk_list *head;
     struct flb_kv *kv;
 
+    len = strlen(name);
+
     mk_list_foreach(head, properties) {
         kv = mk_list_entry(head, struct flb_kv, _head);
+        if (flb_sds_len(kv->key) != len) {
+            continue;
+        }
+
         if (strcasecmp(kv->key, name) == 0) {
             return FLB_TRUE;
         }
@@ -571,6 +578,11 @@ int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *co
 
         mk_list_foreach(m_head, map) {
             m = mk_list_entry(m_head, struct flb_config_map, _head);
+            if (flb_sds_len(kv->key) != flb_sds_len(m->name)) {
+                m = NULL;
+                continue;
+            }
+
             if (strncasecmp(kv->key, m->name, flb_sds_len(m->name)) == 0) {
                 break;
             }
