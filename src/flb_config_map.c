@@ -164,6 +164,9 @@ static int translate_default_value(struct flb_config_map *map, char *val)
     else if (map->type == FLB_CONFIG_MAP_SIZE) {
         entry->val.s_num = flb_utils_size_to_bytes(val);
     }
+    else if (map->type == FLB_CONFIG_MAP_TIME) {
+        entry->val.i_num = flb_utils_time_to_seconds(val);
+    }
     else if (map->type >= FLB_CONFIG_MAP_CLIST &&
              map->type <= FLB_CONFIG_MAP_SLIST_4) {
 
@@ -544,6 +547,10 @@ int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *co
             m_s_num = (size_t *) (base + m->offset);
             *m_s_num = m->value.val.s_num;
         }
+        else if (m->type == FLB_CONFIG_MAP_TIME) {
+            m_i_num = (int *) (base + m->offset);
+            *m_i_num = m->value.val.s_num;
+        }
         else if (m->type == FLB_CONFIG_MAP_BOOL) {
             m_bool = (char *) (base + m->offset);
             *m_bool = m->value.val.boolean;
@@ -597,6 +604,9 @@ int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *co
             }
             else if (m->type == FLB_CONFIG_MAP_SIZE) {
                 entry->val.s_num = flb_utils_size_to_bytes(kv->val);
+            }
+            else if (m->type == FLB_CONFIG_MAP_TIME) {
+                entry->val.i_num = flb_utils_time_to_seconds(kv->val);
             }
             else if (m->type == FLB_CONFIG_MAP_BOOL) {
                 ret = flb_utils_bool(kv->val);
@@ -656,10 +666,6 @@ int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *co
                 m_d_num = (double *) (base + m->offset);
                 *m_d_num = atof(kv->val);
             }
-            else if (m->type == FLB_CONFIG_MAP_SIZE) {
-                m_s_num = (size_t *) (base + m->offset);
-                *m_s_num = flb_utils_size_to_bytes(kv->val);
-            }
             else if (m->type == FLB_CONFIG_MAP_BOOL) {
                 m_bool = (char *) (base + m->offset);
                 ret = flb_utils_bool(kv->val);
@@ -669,6 +675,14 @@ int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *co
                     return -1;
                 }
                 *m_bool = ret;
+            }
+            else if (m->type == FLB_CONFIG_MAP_SIZE) {
+                m_s_num = (size_t *) (base + m->offset);
+                *m_s_num = flb_utils_size_to_bytes(kv->val);
+            }
+            else if (m->type == FLB_CONFIG_MAP_TIME) {
+                m_i_num = (int *) (base + m->offset);
+                *m_i_num = flb_utils_time_to_seconds(kv->val);
             }
             else if (m->type >= FLB_CONFIG_MAP_CLIST ||
                      m->type <= FLB_CONFIG_MAP_SLIST_4) {

@@ -32,6 +32,7 @@
 #define FLB_CONFIG_MAP_BOOL     2    /* boolean */
 #define FLB_CONFIG_MAP_DOUBLE   3    /* double */
 #define FLB_CONFIG_MAP_SIZE     4    /* string size to integer (e.g: 2M) */
+#define FLB_CONFIG_MAP_TIME     5    /* string time to integer seconds (e.g: 2H) */
 
 #define FLB_CONFIG_MAP_CLIST    30   /* comma separated list of strings */
 #define FLB_CONFIG_MAP_CLIST_1  31   /* split up to 1 node  + remaining data */
