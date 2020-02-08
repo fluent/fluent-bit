@@ -18,8 +18,9 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_filter_plugin.h>
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_regex.h>
 #include <fluent-bit/flb_io.h>
@@ -102,14 +103,14 @@ static int get_local_pod_info(struct flb_kube *ctx)
          * If it fails, it's just informational, as likely the caller
          * wanted to connect using the Proxy instead from inside a POD.
          */
-        flb_warn("[filter_kube] cannot open %s", FLB_KUBE_NAMESPACE);
+        flb_plg_warn(ctx->ins, "cannot open %s", FLB_KUBE_NAMESPACE);
         return FLB_FALSE;
     }
 
     /* If a namespace was recognized, a token is mandatory */
     ret = file_to_buffer(ctx->token_file, &tk, &tk_size);
     if (ret == -1) {
-        flb_warn("[filter_kube] cannot open %s", FLB_KUBE_TOKEN);
+        flb_plg_warn(ctx->ins, "cannot open %s", FLB_KUBE_TOKEN);
     }
 
     /* Namespace */
@@ -211,7 +212,7 @@ static int get_api_server_info(struct flb_kube *ctx,
 
         u_conn = flb_upstream_conn_get(ctx->upstream);
         if (!u_conn) {
-            flb_error("[filter_kube] upstream connection error");
+            flb_plg_error(ctx->ins, "upstream connection error");
             return -1;
         }
 
@@ -237,13 +238,14 @@ static int get_api_server_info(struct flb_kube *ctx,
 
         /* Perform request */
         ret = flb_http_do(c, &b_sent);
-        flb_debug("[filter_kube] API Server (ns=%s, pod=%s) http_do=%i, HTTP Status: %i",
-                  namespace, podname, ret, c->resp.status);
+        flb_plg_debug(ctx->ins, "API Server (ns=%s, pod=%s) http_do=%i, "
+                      "HTTP Status: %i",
+                      namespace, podname, ret, c->resp.status);
 
         if (ret != 0 || c->resp.status != 200) {
             if (c->resp.payload_size > 0) {
-                flb_debug("[filter_kube] API Server response\n%s",
-                          c->resp.payload);
+                flb_plg_debug(ctx->ins, "API Server response\n%s",
+                              c->resp.payload);
             }
             flb_http_client_destroy(c);
             flb_upstream_conn_release(u_conn);
@@ -812,9 +814,9 @@ static inline int extract_meta(struct flb_kube *ctx,
          */
         kube_tag_len = flb_sds_len(ctx->kube_tag_prefix);
         if (kube_tag_len + 1 >= tag_len) {
-            flb_error("[filter_kube] incoming record tag (%s) is shorter "
-                      "than kube_tag_prefix value (%s), skip filter",
-                      tag, ctx->kube_tag_prefix);
+            flb_plg_error(ctx->ins, "incoming record tag (%s) is shorter "
+                          "than kube_tag_prefix value (%s), skip filter",
+                          tag, ctx->kube_tag_prefix);
             return -1;
         }
         kube_tag_str = tag + kube_tag_len;
@@ -823,7 +825,7 @@ static inline int extract_meta(struct flb_kube *ctx,
     }
 
     if (n <= 0) {
-        flb_warn("[filter_kube] invalid pattern for given tag %s", tag);
+        flb_plg_warn(ctx->ins, "invalid pattern for given tag %s", tag);
         return -1;
     }
 
@@ -946,7 +948,7 @@ int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config)
     size_t meta_size;
 
     if (ctx->dummy_meta == FLB_TRUE) {
-        flb_warn("[filter_kube] using Dummy Metadata");
+        flb_plg_warn(ctx->ins, "using Dummy Metadata");
         return 0;
     }
 
@@ -956,28 +958,27 @@ int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config)
     /* Gather local info */
     ret = get_local_pod_info(ctx);
     if (ret == FLB_TRUE) {
-        flb_info("[filter_kube] local POD info OK");
+        flb_plg_info(ctx->ins, "local POD info OK");
 
         /* Gather info from API server */
-        flb_info("[filter_kube] testing connectivity with API server...");
+        flb_plg_info(ctx->ins, "testing connectivity with API server...");
         ret = get_api_server_info(ctx, ctx->namespace, ctx->podname,
                                   &meta_buf, &meta_size);
         if (ret == -1) {
             if (!ctx->podname) {
-                flb_warn("[filter_kube] could not get meta for local POD");
+                flb_plg_warn(ctx->ins, "could not get meta for local POD");
             }
             else {
-                flb_warn("[filter_kube] could not get meta for POD %s",
+                flb_plg_warn(ctx->ins, "could not get meta for POD %s",
                          ctx->podname);
             }
             return -1;
         }
-        flb_info("[filter_kube] API server connectivity OK");
-
+        flb_plg_info(ctx->ins, "API server connectivity OK");
         flb_free(meta_buf);
     }
     else {
-        flb_info("[filter_kube] not running in a POD");
+        flb_plg_info(ctx->ins, "Fluent Bit not running in a POD");
     }
 
     return 0;

@@ -19,6 +19,7 @@
  */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_filter_plugin.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_str.h>
@@ -35,7 +36,7 @@
 #include "kube_meta.h"
 #include "kube_conf.h"
 
-struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
+struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
                                       struct flb_config *config)
 {
     int off;
@@ -51,20 +52,21 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
         return NULL;
     }
     ctx->config = config;
+    ctx->ins = ins;
 
     /* Set config_map properties in our local context */
-    ret = flb_filter_config_map_set(i, (void *) ctx);
+    ret = flb_filter_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
         flb_free(ctx);
         return NULL;
     }
 
     /* Merge Parser */
-    tmp = flb_filter_get_property("merge_parser", i);
+    tmp = flb_filter_get_property("merge_parser", ins);
     if (tmp) {
         ctx->merge_parser = flb_parser_get(tmp, config);
         if (!ctx->merge_parser) {
-            flb_error("[filter_kube] parser '%s' is not registered", tmp);
+            flb_plg_error(ctx->ins, "parser '%s' is not registered", tmp);
         }
     }
     else {
@@ -72,7 +74,7 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
     }
 
     /* Get Kubernetes API server */
-    url = flb_filter_get_property("kube_url", i);
+    url = flb_filter_get_property("kube_url", ins);
     if (!url) {
         ctx->api_host = flb_strdup(FLB_API_HOST);
         ctx->api_port = FLB_API_PORT;
@@ -129,19 +131,19 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
     }
 
     /* Custom Regex */
-    tmp = flb_filter_get_property("regex_parser", i);
+    tmp = flb_filter_get_property("regex_parser", ins);
     if (tmp) {
         /* Get custom parser */
         ctx->parser = flb_parser_get(tmp, config);
         if (!ctx->parser) {
-            flb_error("[filter_kube] invalid parser '%s'", tmp);
+            flb_plg_error(ctx->ins, "invalid parser '%s'", tmp);
             flb_kube_conf_destroy(ctx);
             return NULL;
         }
 
         /* Force to regex parser */
         if (ctx->parser->type != FLB_PARSER_REGEX) {
-            flb_error("[filter_kube] invalid parser type '%s'", tmp);
+            flb_plg_error(ctx->ins, "invalid parser type '%s'", tmp);
             flb_kube_conf_destroy(ctx);
             return NULL;
         }
@@ -150,8 +152,8 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
         }
     }
 
-    flb_info("[filter_kube] https=%i host=%s port=%i",
-              ctx->api_https, ctx->api_host, ctx->api_port);
+    flb_plg_info(ctx->ins, "https=%i host=%s port=%i",
+                 ctx->api_https, ctx->api_host, ctx->api_port);
     return ctx;
 }
 

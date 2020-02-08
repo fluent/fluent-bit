@@ -141,6 +141,7 @@ struct flb_kube {
     struct flb_config *config;
     struct flb_hash *hash_table;
     struct flb_upstream *upstream;
+    struct flb_filter_instance *ins;
 };
 
 struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,

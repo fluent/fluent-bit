@@ -18,6 +18,8 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_filter_plugin.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
@@ -150,7 +152,7 @@ static int merge_log_handler(msgpack_object o,
         ret = flb_pack_json(ctx->unesc_buf, ctx->unesc_buf_len,
                             (char **) out_buf, out_size, &root_type);
         if (ret == 0 && root_type != FLB_PACK_JSON_OBJECT) {
-            flb_debug("[filter_kube] could not merge JSON, root_type=%i",
+            flb_plg_debug(ctx->ins, "could not merge JSON, root_type=%i",
                       root_type);
             flb_free(*out_buf);
             return MERGE_NONE;
@@ -158,7 +160,7 @@ static int merge_log_handler(msgpack_object o,
     }
 
     if (ret == -1) {
-        flb_debug("[filter_kube] could not merge JSON log as requested");
+        flb_plg_debug(ctx->ins, "could not merge JSON log as requested");
         return MERGE_NONE;
     }
 
@@ -478,7 +480,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
         if (root.type != MSGPACK_OBJECT_ARRAY ||
             root.via.array.size != 2 ||
             root.via.array.ptr[1].type != MSGPACK_OBJECT_MAP) {
-            flb_warn("[filter_kube] unexpected record format");
+            flb_plg_warn(ctx->ins, "unexpected record format");
             continue;
         }
 
