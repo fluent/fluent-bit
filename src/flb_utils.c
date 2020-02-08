@@ -380,6 +380,10 @@ int64_t flb_utils_size_to_bytes(const char *size)
         return -1;
     }
 
+    if (strcasecmp(size, "false") == 0) {
+        return 0;
+    }
+
     len = strlen(size);
     val = atoll(size);
 
