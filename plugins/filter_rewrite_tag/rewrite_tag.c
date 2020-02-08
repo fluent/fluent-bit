@@ -64,7 +64,7 @@ static int emitter_create(struct flb_rewrite_tag *ctx)
         flb_plg_error(ctx->ins, "cannot initialize emitter instance '%s'",
                       ins->name);
         flb_input_instance_exit(ins, ctx->config);
-        flb_input_instance_free(ins);
+        flb_input_instance_destroy(ins);
         return -1;
     }
 
