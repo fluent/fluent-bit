@@ -353,9 +353,9 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
     if (log_index != -1) {
         if (merge_status == MERGE_PARSED) {
             if (ctx->merge_log_key && log_buf_entries > 0) {
-                msgpack_pack_str(pck, ctx->merge_log_key_len);
+                msgpack_pack_str(pck, flb_sds_len(ctx->merge_log_key));
                 msgpack_pack_str_body(pck, ctx->merge_log_key,
-                                      ctx->merge_log_key_len);
+                                      flb_sds_len(ctx->merge_log_key));
                 msgpack_pack_map(pck, log_buf_entries);
             }
 
@@ -391,9 +391,9 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
             msgpack_object map;
 
             if (ctx->merge_log_key && log_buf_entries > 0) {
-                msgpack_pack_str(pck, ctx->merge_log_key_len);
+                msgpack_pack_str(pck, flb_sds_len(ctx->merge_log_key));
                 msgpack_pack_str_body(pck, ctx->merge_log_key,
-                                      ctx->merge_log_key_len);
+                                      flb_sds_len(ctx->merge_log_key));
                 msgpack_pack_map(pck, log_buf_entries);
             }
 
@@ -605,11 +605,186 @@ static int cb_kube_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+
+    /* Buffer size for HTTP Client when reading responses from API Server */
+    {
+     FLB_CONFIG_MAP_SIZE, "buffer_size", "32K",
+     0, FLB_TRUE, offsetof(struct flb_kube, buffer_size),
+     NULL
+    },
+
+    /* TLS: set debug 'level' */
+    {
+     FLB_CONFIG_MAP_INT, "tls.debug", "-1",
+     0, FLB_TRUE, offsetof(struct flb_kube, tls_debug),
+     NULL
+    },
+
+    /* TLS: enable verification */
+    {
+     FLB_CONFIG_MAP_BOOL, "tls.verify", "true",
+     0, FLB_TRUE, offsetof(struct flb_kube, tls_verify),
+     NULL
+    },
+
+    /* Merge structured record as independent keys */
+    {
+     FLB_CONFIG_MAP_BOOL, "merge_log", "false",
+     0, FLB_TRUE, offsetof(struct flb_kube, merge_log),
+     NULL
+    },
+
+    /* Optional parser for 'log' key content */
+    {
+     FLB_CONFIG_MAP_STR, "merge_parser", NULL,
+     0, FLB_FALSE, 0,
+     NULL
+    },
+
+    /* New key name to merge the structured content of 'log' */
+    {
+     FLB_CONFIG_MAP_STR, "merge_log_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_kube, merge_log_key),
+     NULL
+    },
+
+    /* On merge, trim field values (remove possible ending \n or \r) */
+    {
+     FLB_CONFIG_MAP_BOOL, "merge_log_trim", "true",
+     0, FLB_TRUE, offsetof(struct flb_kube, merge_log_trim),
+     NULL
+    },
+
+    /* Keep original log key after successful merging/parsing */
+    {
+     FLB_CONFIG_MAP_BOOL, "keep_log", "true",
+     0, FLB_TRUE, offsetof(struct flb_kube, keep_log),
+     NULL
+    },
+
+    /* Full Kubernetes API server URL */
+    {
+     FLB_CONFIG_MAP_BOOL, "kube_url", NULL,
+     0, FLB_FALSE, 0,
+     NULL
+    },
+
+    /*
+     * If set, meta-data load will be attempted from files in this dir,
+     * falling back to API if not existing.
+     */
+    {
+     FLB_CONFIG_MAP_STR, "kube_meta_preload_cache_dir", NULL,
+     0, FLB_TRUE, offsetof(struct flb_kube, meta_preload_cache_dir),
+     NULL
+    },
+
+    /* Kubernetes TLS: CA file */
+    {
+     FLB_CONFIG_MAP_STR, "kube_ca_file", FLB_KUBE_CA,
+     0, FLB_TRUE, offsetof(struct flb_kube, tls_ca_file),
+     NULL
+    },
+
+    /* Kubernetes TLS: CA certs path */
+    {
+     FLB_CONFIG_MAP_STR, "kube_ca_path", NULL,
+     0, FLB_TRUE, offsetof(struct flb_kube, tls_ca_path),
+     NULL
+    },
+
+    /* Kubernetes Tag prefix */
+    {
+     FLB_CONFIG_MAP_STR, "kube_tag_prefix", FLB_KUBE_TAG_PREFIX,
+     0, FLB_TRUE, offsetof(struct flb_kube, kube_tag_prefix),
+     NULL
+    },
+
+    /* Kubernetes Token file */
+    {
+     FLB_CONFIG_MAP_STR, "kube_token_file", FLB_KUBE_TOKEN,
+     0, FLB_TRUE, offsetof(struct flb_kube, token_file),
+     NULL
+    },
+
+    /* Include Kubernetes Labels in the final record ? */
+    {
+     FLB_CONFIG_MAP_BOOL, "labels", "true",
+     0, FLB_TRUE, offsetof(struct flb_kube, labels),
+     NULL
+    },
+
+    /* Include Kubernetes Annotations in the final record ? */
+    {
+     FLB_CONFIG_MAP_BOOL, "annotations", "true",
+     0, FLB_TRUE, offsetof(struct flb_kube, annotations),
+     NULL
+    },
+
+    /*
+     * The Application may 'propose' special configuration keys
+     * to the logging agent (Fluent Bit) through the annotations
+     * set in the Pod definition, e.g:
+     *
+     *  "annotations": {
+     *      "logging": {"parser": "apache"}
+     *  }
+     *
+     * As of now, Fluent Bit/filter_kubernetes supports the following
+     * options under the 'logging' map value:
+     *
+     * - k8s-logging.parser:  propose Fluent Bit to parse the content
+     *                        using the  pre-defined parser in the
+     *                        value (e.g: apache).
+     * - k8s-logging.exclude: Fluent Bit allows Pods to exclude themselves
+     *
+     * By default all options are disabled, so each option needs to
+     * be enabled manually.
+     */
+    {
+     FLB_CONFIG_MAP_BOOL, "k8s-logging.parser", "false",
+     0, FLB_TRUE, offsetof(struct flb_kube, k8s_logging_parser),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "k8s-logging.exclude", "false",
+     0, FLB_TRUE, offsetof(struct flb_kube, k8s_logging_exclude),
+     NULL
+    },
+
+    /* Use Systemd Journal mode ? */
+    {
+     FLB_CONFIG_MAP_BOOL, "use_journal", "false",
+     0, FLB_TRUE, offsetof(struct flb_kube, use_journal),
+     NULL
+    },
+
+    /* Custom Tag Regex */
+    {
+     FLB_CONFIG_MAP_STR, "regex_parser", NULL,
+     0, FLB_FALSE, 0,
+     NULL
+    },
+
+    /* Generate dummy metadata (only for test/dev purposes) */
+    {
+     FLB_CONFIG_MAP_BOOL, "dummy_meta", "false",
+     0, FLB_TRUE, offsetof(struct flb_kube, dummy_meta),
+     NULL
+    },
+
+    /* EOF */
+    {0}
+};
+
 struct flb_filter_plugin filter_kubernetes_plugin = {
     .name         = "kubernetes",
     .description  = "Filter to append Kubernetes metadata",
     .cb_init      = cb_kube_init,
     .cb_filter    = cb_kube_filter,
     .cb_exit      = cb_kube_exit,
+    .config_map   = config_map,
     .flags        = 0
 };

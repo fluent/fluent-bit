@@ -75,7 +75,7 @@ struct flb_kube {
     int dummy_meta;
     int tls_debug;
     int tls_verify;
-    char *meta_preload_cache_dir;
+    flb_sds_t meta_preload_cache_dir;
 
     /* Configuration proposed through Annotations (boolean) */
     int k8s_logging_parser;   /* allow to process a suggested parser ? */
@@ -101,8 +101,7 @@ struct flb_kube {
     int merge_log_trim;
 
     /* Log key, old merge_json_key (default 'log') */
-    int merge_log_key_len;
-    char *merge_log_key;
+    flb_sds_t merge_log_key;
 
     /* Keep original log key after successful parsing */
     int keep_log;
