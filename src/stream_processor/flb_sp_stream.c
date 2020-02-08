@@ -116,7 +116,7 @@ int flb_sp_stream_create(const char *name, struct flb_sp_task *task,
     if (ret == -1) {
         flb_error("[sp] cannot initialize instance of in_stream_processor");
         flb_input_instance_exit(in, sp->config);
-        flb_input_instance_free(in);
+        flb_input_instance_destroy(in);
     }
     stream->in = in;
 
@@ -156,6 +156,6 @@ void flb_sp_stream_destroy(struct flb_sp_stream *stream, struct flb_sp *sp)
     flb_sds_destroy(stream->name);
     flb_sds_destroy(stream->tag);
     flb_input_instance_exit(stream->in, sp->config);
-    flb_input_instance_free(stream->in);
+    flb_input_instance_destroy(stream->in);
     flb_free(stream);
 }
