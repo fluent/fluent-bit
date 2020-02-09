@@ -42,10 +42,10 @@ struct flb_elasticsearch {
     char *http_passwd;
 
     /* AWS Auth */
-    #ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_SIGNV4
     int has_aws_auth;
     char *aws_region;
-    #endif
+#endif
 
     /* HTTP Client Setup */
     size_t buffer_size;

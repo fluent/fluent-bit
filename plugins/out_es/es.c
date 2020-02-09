@@ -618,21 +618,29 @@ void cb_es_flush(const void *data, size_t bytes,
 
     flb_http_buffer_size(c, ctx->buffer_size);
 
+#ifndef FLB_HAVE_SIGNV4
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+#endif
+
     flb_http_add_header(c, "Content-Type", 12, "application/x-ndjson", 20);
 
     if (ctx->http_user && ctx->http_passwd) {
         flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
     }
 
-    #ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_SIGNV4
     if (ctx->has_aws_auth == FLB_TRUE) {
+        /* User agent for AWS tools must start with "aws-" */
+        flb_http_add_header(c, "User-Agent", 10, "aws-fluent-bit-plugin", 21);
         signature = add_aws_auth(c, ctx->aws_region);
         if (!signature) {
             goto retry;
         }
     }
-    #endif
+    else {
+        flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+    }
+#endif
 
     ret = flb_http_do(c, &b_sent);
     if (ret != 0) {
@@ -733,7 +741,7 @@ static struct flb_config_map config_map[] = {
     },
 
     /* AWS Authentication */
-    #ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_SIGNV4
     {
      FLB_CONFIG_MAP_BOOL, "aws_auth", "false",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, has_aws_auth),
@@ -744,7 +752,7 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, aws_region),
      NULL
     },
-    #endif
+#endif
 
     /* Logstash compatibility */
     {
