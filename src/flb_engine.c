@@ -527,13 +527,12 @@ int flb_engine_start(struct flb_config *config)
                 if (ret == FLB_ENGINE_STOP) {
                     /*
                      * We are preparing to shutdown, we give a graceful time
-                     * of (default 5) seconds to process any pending event.
+                     * of 'config->grace' seconds to process any pending event.
                      */
                     event = &config->event_shutdown;
                     event->mask = MK_EVENT_EMPTY;
                     event->status = MK_EVENT_NONE;
                     config->shutdown_fd = mk_event_timeout_create(evl, config->grace, 0, event);
-
                     flb_warn("[engine] service will stop in %u seconds", config->grace);
                 }
                 else if (ret == FLB_ENGINE_SHUTDOWN) {
@@ -542,7 +541,24 @@ int flb_engine_start(struct flb_config *config)
                         mk_event_timeout_destroy(config->evl,
                                                  &config->event_shutdown);
                     }
-                    return flb_engine_shutdown(config);
+
+                    /*
+                     * Grace period has finished, but we need to check if there is
+                     * any pending running task. A running task is associated to an
+                     * output co-routine, since we don't know what's the state or
+                     * resources allocated by that co-routine, the best thing is to
+                     * wait again for the grace period and re-check again.
+                     */
+                    ret = flb_task_running_count(config);
+                    if (ret > 0) {
+                        flb_warn("[engine] shutdown delayed, grace period has "
+                                 "finished but some tasks are still running.");
+                        flb_task_running_print(config);
+                        flb_engine_exit(config);
+                    }
+                    else {
+                        return flb_engine_shutdown(config);
+                    }
                 }
             }
             else if (event->type & FLB_ENGINE_EV_SCHED) {
