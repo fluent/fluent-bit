@@ -421,10 +421,8 @@ int flb_lib_push(flb_ctx_t *ctx, int ffd, const void *data, size_t len)
     ret = flb_pipe_w(i_ins->channel[1], data, len);
     if (ret == -1) {
         flb_errno();
-        printf("write to pipe failed\n");
         return -1;
     }
-    printf("wrote fdata\n");
     return ret;
 }
 
@@ -436,7 +434,6 @@ static void flb_lib_worker(void *data)
     flb_log_init(config, FLB_LOG_STDERR, FLB_LOG_INFO, NULL);
     ret = flb_engine_start(config);
     if (ret == -1) {
-        printf("shutdown engine\n");
         flb_engine_failed(config);
         flb_engine_shutdown(config);
     }
