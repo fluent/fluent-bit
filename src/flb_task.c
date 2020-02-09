@@ -267,6 +267,69 @@ static struct flb_task *task_alloc(struct flb_config *config)
     return task;
 }
 
+/* Return the number of tasks with 'running status' */
+int flb_task_running_count(struct flb_config *config)
+{
+    int count = 0;
+    struct mk_list *head;
+    struct flb_input_instance *ins;
+
+    mk_list_foreach(head, &config->inputs) {
+        ins = mk_list_entry(head, struct flb_input_instance, _head);
+        count += mk_list_size(&ins->tasks);
+    }
+
+    return count;
+}
+
+int flb_task_running_print(struct flb_config *config)
+{
+    int count = 0;
+    flb_sds_t tmp;
+    flb_sds_t routes;
+    struct mk_list *head;
+    struct mk_list *t_head;
+    struct mk_list *r_head;
+    struct flb_task *task;
+    struct flb_task_route *route;
+    struct flb_input_instance *ins;
+
+    routes = flb_sds_create_size(256);
+    if (!routes) {
+        flb_error("[task] cannot allocate space to report pending tasks");
+        return -1;
+    }
+
+    mk_list_foreach(head, &config->inputs) {
+        ins = mk_list_entry(head, struct flb_input_instance, _head);
+        count = mk_list_size(&ins->tasks);
+        flb_info("[task] %s/%s has %i pending task(s):",
+                 ins->p->name, flb_input_name(ins), count);
+        mk_list_foreach(t_head, &ins->tasks) {
+            task = mk_list_entry(t_head, struct flb_task, _head);
+
+            mk_list_foreach(r_head, &task->routes) {
+                route = mk_list_entry(r_head, struct flb_task_route, _head);
+                tmp = flb_sds_printf(&routes, "%s/%s ",
+                                     route->out->p->name,
+                                     flb_output_name(route->out));
+                if (!tmp) {
+                    flb_sds_destroy(routes);
+                    flb_error("[task] cannot print report for pending tasks");
+                    return -1;
+                }
+                routes = tmp;
+            }
+
+            flb_info("[task]   task_id=%i still running on route(s): %s",
+                     task->id, routes);
+            flb_sds_len_set(routes, 0);
+        }
+    }
+    flb_sds_destroy(routes);
+    return 0;
+}
+
 /* Create an engine task to handle the output plugin flushing work */
 struct flb_task *flb_task_create(uint64_t ref_id,
                                  const char *buf,
