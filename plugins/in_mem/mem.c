@@ -57,36 +57,35 @@ struct flb_input_plugin in_mem_plugin;
 
 static int in_mem_collect(struct flb_input_instance *i_ins,
                           struct flb_config *config, void *in_context);
-#if 0
-/* Locate a specific key into the buffer */
-static char *field(char *data, char *field)
-{
-    char *p;
-    char *q;
-    char *sep;
-    char *value;
-    int len = strlen(field);
 
-    p = strstr(data, field);
-    if (!p) {
-        return NULL;
+static uint64_t available()
+{
+    char *buffer = NULL;
+    size_t len = 0;
+
+    FILE *f = fopen("/proc/meminfo", "r");
+    if (!f) {
+        return 0;
     }
 
-    sep = strchr(p, ':');
-    p = ++sep;
-    p++;
+    do {
+        ssize_t n = getline(&buffer, &len, f);
 
-    while (*p == ' ') p++;
+        if (n == -1) {
+            free(buffer);
+            fclose(f);
+            return 0;
+        }
 
-    q = strchr(p, ' ');
-    len = q - p;
-    value = flb_malloc(len + 1);
-    strncpy(value, p, len);
-    value[len] = '\0';
-
-    return value;
+        if (strncmp(buffer, "MemAvailable:", strlen("MemAvailable:"))==0) {
+            uint64_t ret = atoll(buffer + strlen("MemAvailable:"));  /* Kb */
+            free(buffer);
+            fclose(f);
+            return ret;
+        }
+    }
+    while (true);
 }
-#endif
 
 static uint64_t calc_kb(unsigned long amount, unsigned int unit)
 {
@@ -119,7 +118,11 @@ static int mem_calc(struct flb_in_mem_info *m_info)
 
     /* This value seems to be MemAvailable if it is supported */
     /*     or MemFree on legacy linux */
+#if 0
     m_info->mem_free      = calc_kb(info.freeram, info.mem_unit);
+#else
+    m_info->mem_free      = available();
+#endif
 
     m_info->mem_used      = m_info->mem_total - m_info->mem_free;
 
