@@ -33,7 +33,7 @@ struct flbgo_output_plugin {
     int (*cb_init)();
     int (*cb_flush)(const void *, size_t, const char *);
     int (*cb_flush_ctx)(void *, const void *, size_t, char *);
-    int (*cb_exit)(void *);
+    int (*cb_exit)();
 };
 
 int proxy_go_register(struct flb_plugin_proxy *proxy,
