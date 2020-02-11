@@ -200,6 +200,7 @@ REGISTER_OUT_PLUGIN("out_gelf")
 # =======
 REGISTER_FILTER_PLUGIN("filter_aws")
 REGISTER_FILTER_PLUGIN("filter_record_modifier")
+REGISTER_FILTER_PLUGIN("filter_replace_character")
 REGISTER_FILTER_PLUGIN("filter_throttle")
 
 if(FLB_REGEX)
@@ -220,7 +221,6 @@ if(FLB_LUAJIT)
 endif()
 
 REGISTER_FILTER_PLUGIN("filter_stdout")
-
 
 # Register external input and output plugins
 if(EXT_IN_PLUGINS)
