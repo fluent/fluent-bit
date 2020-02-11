@@ -614,63 +614,65 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_SIZE, "buffer_size", "32K",
      0, FLB_TRUE, offsetof(struct flb_kube, buffer_size),
-     NULL
+     "buffer size to receive response from API server",
     },
 
     /* TLS: set debug 'level' */
     {
-     FLB_CONFIG_MAP_INT, "tls.debug", "-1",
+     FLB_CONFIG_MAP_INT, "tls.debug", "0",
      0, FLB_TRUE, offsetof(struct flb_kube, tls_debug),
-     NULL
+     "set TLS debug level: 0 (no debug), 1 (error), "
+     "2 (state change), 3 (info) and 4 (verbose)"
     },
 
     /* TLS: enable verification */
     {
      FLB_CONFIG_MAP_BOOL, "tls.verify", "true",
      0, FLB_TRUE, offsetof(struct flb_kube, tls_verify),
-     NULL
+     "enable or disable verification of TLS peer certificate"
     },
 
     /* Merge structured record as independent keys */
     {
      FLB_CONFIG_MAP_BOOL, "merge_log", "false",
      0, FLB_TRUE, offsetof(struct flb_kube, merge_log),
-     NULL
+     "merge 'log' key content as individual keys"
     },
 
     /* Optional parser for 'log' key content */
     {
      FLB_CONFIG_MAP_STR, "merge_parser", NULL,
      0, FLB_FALSE, 0,
-     NULL
+     "specify a 'parser' name to parse the 'log' key content"
     },
 
     /* New key name to merge the structured content of 'log' */
     {
      FLB_CONFIG_MAP_STR, "merge_log_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_kube, merge_log_key),
-     NULL
+     "set the 'key' name where the content of 'key' will be placed. Only "
+     "used if the option 'merge_log' is enabled"
     },
 
     /* On merge, trim field values (remove possible ending \n or \r) */
     {
      FLB_CONFIG_MAP_BOOL, "merge_log_trim", "true",
      0, FLB_TRUE, offsetof(struct flb_kube, merge_log_trim),
-     NULL
+     "remove ending '\\n' or '\\r' characters from the log content"
     },
 
     /* Keep original log key after successful merging/parsing */
     {
      FLB_CONFIG_MAP_BOOL, "keep_log", "true",
      0, FLB_TRUE, offsetof(struct flb_kube, keep_log),
-     NULL
+     "keep original log content if it was successfully parsed and merged"
     },
 
     /* Full Kubernetes API server URL */
     {
-     FLB_CONFIG_MAP_BOOL, "kube_url", NULL,
+     FLB_CONFIG_MAP_STR, "kube_url", "https://kubernetes.default.svc",
      0, FLB_FALSE, 0,
-     NULL
+     "Kubernetes API server URL"
     },
 
     /*
@@ -680,49 +682,49 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "kube_meta_preload_cache_dir", NULL,
      0, FLB_TRUE, offsetof(struct flb_kube, meta_preload_cache_dir),
-     NULL
+     "set directory with metadata files"
     },
 
     /* Kubernetes TLS: CA file */
     {
      FLB_CONFIG_MAP_STR, "kube_ca_file", FLB_KUBE_CA,
      0, FLB_TRUE, offsetof(struct flb_kube, tls_ca_file),
-     NULL
+     "Kubernetes TLS CA file"
     },
 
     /* Kubernetes TLS: CA certs path */
     {
      FLB_CONFIG_MAP_STR, "kube_ca_path", NULL,
      0, FLB_TRUE, offsetof(struct flb_kube, tls_ca_path),
-     NULL
+     "Kubernetes TLS ca path"
     },
 
     /* Kubernetes Tag prefix */
     {
      FLB_CONFIG_MAP_STR, "kube_tag_prefix", FLB_KUBE_TAG_PREFIX,
      0, FLB_TRUE, offsetof(struct flb_kube, kube_tag_prefix),
-     NULL
+     "prefix used in tag by the input plugin"
     },
 
     /* Kubernetes Token file */
     {
      FLB_CONFIG_MAP_STR, "kube_token_file", FLB_KUBE_TOKEN,
      0, FLB_TRUE, offsetof(struct flb_kube, token_file),
-     NULL
+     "Kubernetes authorization token file"
     },
 
     /* Include Kubernetes Labels in the final record ? */
     {
      FLB_CONFIG_MAP_BOOL, "labels", "true",
      0, FLB_TRUE, offsetof(struct flb_kube, labels),
-     NULL
+     "include Kubernetes labels on every record"
     },
 
     /* Include Kubernetes Annotations in the final record ? */
     {
      FLB_CONFIG_MAP_BOOL, "annotations", "true",
      0, FLB_TRUE, offsetof(struct flb_kube, annotations),
-     NULL
+     "include Kubernetes annotations on every record"
     },
 
     /*
@@ -748,33 +750,33 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_BOOL, "k8s-logging.parser", "false",
      0, FLB_TRUE, offsetof(struct flb_kube, k8s_logging_parser),
-     NULL
+     "allow Pods to suggest a parser"
     },
     {
      FLB_CONFIG_MAP_BOOL, "k8s-logging.exclude", "false",
      0, FLB_TRUE, offsetof(struct flb_kube, k8s_logging_exclude),
-     NULL
+     "allow Pods to exclude themselves from the logging pipeline"
     },
 
     /* Use Systemd Journal mode ? */
     {
      FLB_CONFIG_MAP_BOOL, "use_journal", "false",
      0, FLB_TRUE, offsetof(struct flb_kube, use_journal),
-     NULL
+     "use Journald (Systemd) mode"
     },
 
     /* Custom Tag Regex */
     {
      FLB_CONFIG_MAP_STR, "regex_parser", NULL,
      0, FLB_FALSE, 0,
-     NULL
+     "optional regex parser to extract metadata from container name or container log file name"
     },
 
     /* Generate dummy metadata (only for test/dev purposes) */
     {
      FLB_CONFIG_MAP_BOOL, "dummy_meta", "false",
      0, FLB_TRUE, offsetof(struct flb_kube, dummy_meta),
-     NULL
+     "use 'dummy' metadata, do not talk to API server"
     },
 
     /* EOF */
