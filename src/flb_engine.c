@@ -437,7 +437,10 @@ int flb_engine_start(struct flb_config *config)
     }
 
     /* Initialize input plugins */
-    flb_input_init_all(config);
+    ret = flb_input_init_all(config);
+    if (ret == -1) {
+        return -1;
+    }
 
     /* Initialize filter plugins */
     ret = flb_filter_init_all(config);
