@@ -369,94 +369,142 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "path", NULL,
      0, FLB_TRUE, offsetof(struct flb_tail_config, path),
-     NULL
+     "pattern specifying log files or multiple ones through "
+     "the use of common wildcards."
     },
     {
      FLB_CONFIG_MAP_CLIST, "exclude_path", NULL,
      0, FLB_FALSE, offsetof(struct flb_tail_config, exclude_list),
-     NULL
+     "Set one or multiple shell patterns separated by commas to exclude "
+     "files matching a certain criteria, e.g: 'exclude_path *.gz,*.zip'"
     },
     {
      FLB_CONFIG_MAP_STR, "key", "log",
      0, FLB_TRUE, offsetof(struct flb_tail_config, key),
-     NULL
+     "when a message is unstructured (no parser applied), it's appended "
+     "as a string under the key name log. This option allows to define an "
+     "alternative name for that key."
     },
     {
-     FLB_CONFIG_MAP_STR, "refresh_interval", NULL,
+     FLB_CONFIG_MAP_STR, "refresh_interval", "60",
      0, FLB_FALSE, 0,
-     NULL
+     "interval to refresh the list of watched files expressed in seconds."
     },
     {
      FLB_CONFIG_MAP_INT, "rotate_wait", FLB_TAIL_ROTATE_WAIT,
      0, FLB_TRUE, offsetof(struct flb_tail_config, rotate_wait),
-     NULL
+     "specify the number of extra time in seconds to monitor a file once is "
+     "rotated in case some pending data is flushed."
     },
-#ifdef FLB_HAVE_PARSER
-    {
-     FLB_CONFIG_MAP_BOOL, "multiline", "false",
-     0, FLB_TRUE, offsetof(struct flb_tail_config, multiline),
-     NULL
-    },
-#endif
     {
      FLB_CONFIG_MAP_BOOL, "docker_mode", "false",
      0, FLB_TRUE, offsetof(struct flb_tail_config, docker_mode),
-     NULL
+     "If enabled, the plugin will recombine split Docker log lines before "
+     "passing them to any parser as configured above. This mode cannot be "
+     "used at the same time as Multiline."
+    },
+    {
+     FLB_CONFIG_MAP_INT, "docker_mode_flush", "4",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, docker_mode_flush),
+     "wait period time in seconds to flush queued unfinished split lines."
+
     },
     {
      FLB_CONFIG_MAP_BOOL, "path_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_tail_config, docker_mode),
-     NULL
+     "set the 'key' name where the name of monitored file will be appended."
     },
     {
      FLB_CONFIG_MAP_TIME, "ignore_older", "0",
      0, FLB_TRUE, offsetof(struct flb_tail_config, ignore_older),
-     NULL
+     "ignore records older than 'ignore_older'. Supports m,h,d (minutes, "
+     "hours, days) syntax. Default behavior is to read all records. Option "
+     "only available when a Parser is specified and it can parse the time "
+     "of a record."
     },
     {
      FLB_CONFIG_MAP_SIZE, "buffer_chunk_size", FLB_TAIL_CHUNK,
      0, FLB_TRUE, offsetof(struct flb_tail_config, buf_chunk_size),
-     NULL
+     "set the initial buffer size to read data from files. This value is "
+     "used too to increase buffer size."
     },
     {
      FLB_CONFIG_MAP_SIZE, "buffer_max_size", FLB_TAIL_CHUNK,
      0, FLB_TRUE, offsetof(struct flb_tail_config, buf_max_size),
-     NULL
+     "set the limit of the buffer size per monitored file. When a buffer "
+     "needs to be increased (e.g: very long lines), this value is used to "
+     "restrict how much the memory buffer can grow. If reading a file exceed "
+     "this limit, the file is removed from the monitored file list."
     },
     {
      FLB_CONFIG_MAP_BOOL, "skip_long_lines", "false",
      0, FLB_TRUE, offsetof(struct flb_tail_config, skip_long_lines),
-     NULL
+     "if a monitored file reach it buffer capacity due to a very long line "
+     "(buffer_max_size), the default behavior is to stop monitoring that "
+     "file. This option alter that behavior and instruct Fluent Bit to skip "
+     "long lines and continue processing other lines that fits into the buffer."
     },
     {
      FLB_CONFIG_MAP_BOOL, "exit_on_eof", "false",
      0, FLB_TRUE, offsetof(struct flb_tail_config, exit_on_eof),
-     NULL
+     "exit Fluent Bit when reaching EOF on a monitored file."
     },
 #ifdef FLB_HAVE_REGEX
     {
      FLB_CONFIG_MAP_STR, "parser", NULL,
      0, FLB_FALSE, 0,
-     NULL
+     "specify the parser name to process an unstructured message."
     },
     {
      FLB_CONFIG_MAP_STR, "tag_regex", NULL,
      0, FLB_FALSE, 0,
-     NULL
+     "set a regex to extract fields from the file name and use them later to "
+     "compose the Tag."
     },
 #endif
 
 #ifdef FLB_HAVE_SQLDB
     {
-     FLB_CONFIG_MAP_STR, "db.sync", NULL,
-     0, FLB_FALSE, 0,
-     NULL
-    },
-    {
      FLB_CONFIG_MAP_STR, "db", NULL,
      0, FLB_FALSE, 0,
-     NULL
+     "set a database file to keep track of monitored files and it offsets."
     },
+    {
+     FLB_CONFIG_MAP_STR, "db.sync", "full",
+     0, FLB_FALSE, 0,
+     "set a database sync method. values: extra, full, normal and off."
+    },
+#endif
+
+    /* Multiline Options */
+#ifdef FLB_HAVE_PARSER
+    {
+     FLB_CONFIG_MAP_BOOL, "multiline", "false",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, multiline),
+     "if enabled, the plugin will try to discover multiline messages and use "
+     "the proper parsers to compose the outgoing messages. Note that when this "
+     "option is enabled the Parser option is not used."
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "multiline_flush", FLB_TAIL_MULT_FLUSH,
+     0, FLB_TRUE, offsetof(struct flb_tail_config, multiline_flush),
+     "wait period time in seconds to process queued multiline messages."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "parser_firstline", NULL,
+     0, FLB_FALSE, 0,
+     "name of the parser that matches the beginning of a multiline message. "
+     "Note that the regular expression defined in the parser must include a "
+     "group name (named capture)."
+    },
+    {
+     FLB_CONFIG_MAP_STR_PREFIX, "parser_", NULL,
+     0, FLB_FALSE, 0,
+     "optional extra parser to interpret and structure multiline entries. This "
+     "option can be used to define multiple parsers, e.g: Parser_1 ab1, "
+     "Parser_2 ab2, Parser_N abN."
+    },
+
 #endif
 
     /* EOF */

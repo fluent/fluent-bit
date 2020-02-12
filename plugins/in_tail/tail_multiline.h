@@ -30,7 +30,7 @@
 #define FLB_TAIL_MULT_NA    -1   /* not applicable as a multiline stream */
 #define FLB_TAIL_MULT_DONE   0   /* finished a multiline stream */
 #define FLB_TAIL_MULT_MORE   1   /* expect more lines to come   */
-#define FLB_TAIL_MULT_FLUSH  4   /* max flush time for multiline */
+#define FLB_TAIL_MULT_FLUSH  "4"   /* max flush time for multiline: 4 seconds */
 
 struct flb_tail_mult {
     struct flb_parser *parser;

@@ -54,20 +54,14 @@ int flb_tail_mult_create(struct flb_tail_config *ctx,
     struct flb_kv *kv;
 
     tmp = flb_input_get_property("multiline_flush", ins);
-    if (!tmp) {
-        ctx->multiline_flush = FLB_TAIL_MULT_FLUSH;
-    }
-    else {
-        ctx->multiline_flush = atoi(tmp);
-        if (ctx->multiline_flush <= 0) {
-            ctx->multiline_flush = 1;
-        }
+    if (ctx->multiline_flush <= 0) {
+        ctx->multiline_flush = 1;
     }
 
     /* Get firstline parser */
     tmp = flb_input_get_property("parser_firstline", ins);
     if (!tmp) {
-        flb_plg_error(ctx->ins, "no parser defined for firstline");
+        flb_plg_error(ctx->ins, "multiline: no parser defined for firstline");
         return -1;
     }
     parser = flb_parser_get(tmp, config);
