@@ -115,6 +115,25 @@ struct flb_config *config;
 #define n_get_key(a, b, c) (intptr_t) get_key(a, b, c)
 #define s_get_key(a, b, c) (char *) get_key(a, b, c)
 
+static void flb_version()
+{
+    printf("Fluent Bit v%s\n", FLB_VERSION_STR);
+    exit(EXIT_SUCCESS);
+}
+
+static void flb_banner()
+{
+    fprintf(stderr, "%sFluent Bit v%s%s\n", ANSI_BOLD, FLB_VERSION_STR,
+            ANSI_RESET);
+    fprintf(stderr, "* %sCopyright (C) 2019-2020 The Fluent Bit Authors%s\n",
+            ANSI_BOLD ANSI_YELLOW, ANSI_RESET);
+    fprintf(stderr, "* %sCopyright (C) 2015-2018 Treasure Data%s\n",
+            ANSI_BOLD ANSI_YELLOW, ANSI_RESET);
+    fprintf(stderr, "* Fluent Bit is a CNCF sub-project under the "
+            "umbrella of Fluentd\n");
+    fprintf(stderr, "* https://fluentbit.io\n\n");
+}
+
 static void flb_help(int rc, struct flb_config *config)
 {
     struct mk_list *head;
@@ -194,18 +213,161 @@ static void flb_help(int rc, struct flb_config *config)
     exit(rc);
 }
 
-static void flb_version()
+/*
+ * If the description is larger than the allowed 80 chars including left
+ * padding, split the content in multiple lines and align it properly.
+ */
+static void help_plugin_description(int left_padding, char *str)
 {
-    printf("Fluent Bit v%s\n", FLB_VERSION_STR);
-    exit(EXIT_SUCCESS);
+    int len;
+    int max;
+    int line = 0;
+    char *c;
+    char *p;
+    char *end;
+    char fmt[32];
+
+    if (!str) {
+        printf("no description available\n");
+        return;
+    }
+
+    max = 80 - left_padding;
+    len = strlen(str);
+
+    if (len <= max) {
+        printf("%s\n", str);
+        return;
+    }
+
+    p = str;
+    len = strlen(str);
+    end = str + len;
+
+    while (p < end) {
+        if ((p + max) > end) {
+            c = end;
+        }
+        else {
+            c = p + max;
+            while (*c != ' ' && c > p) {
+                c--;
+            }
+        }
+
+        if (c == p) {
+            len = end - p;
+        }
+        else {
+            len = c - p;
+        }
+
+        snprintf(fmt, sizeof(fmt) - 1, "%%*s%%.%is\n", len);
+        if (line == 0) {
+            printf(fmt, 0, "", p);
+        }
+        else {
+            printf(fmt, left_padding, " ", p);
+        }
+        line++;
+        p += len + 1;
+    }
 }
 
-static void flb_banner()
+static void flb_help_plugin(int rc, struct flb_config *config, int type,
+                            struct flb_input_instance *in,
+                            struct flb_filter_instance *filter,
+                            struct flb_output_instance *out)
+
+
 {
-    fprintf(stderr, "%sFluent Bit v%s%s\n",
-            ANSI_BOLD, FLB_VERSION_STR, ANSI_RESET);
-    fprintf(stderr, "%sCopyright (C) Treasure Data%s\n\n",
-            ANSI_BOLD ANSI_YELLOW, ANSI_RESET);
+    int max = 0;
+    int len;
+    char fmt[32];
+    char def[32];
+    char *desc;
+    struct flb_config_map *opt;
+    struct flb_config_map *m;
+
+    flb_banner();
+
+    if (type == PLUGIN_INPUT) {
+        printf("%sHELP%s\n%s input plugin\n", ANSI_BOLD, ANSI_RESET,
+               in->p->name);
+        desc = in->p->description;
+        opt = m = in->p->config_map;
+    }
+    else if (type == PLUGIN_FILTER) {
+        printf("%sHELP%s\n%s filter plugin\n", ANSI_BOLD, ANSI_RESET,
+               filter->p->name);
+        desc = filter->p->description;
+        opt = m = filter->p->config_map;
+    }
+    else if (type == PLUGIN_OUTPUT) {
+        printf("%sHELP%s\n%s output plugin\n", ANSI_BOLD, ANSI_RESET,
+               out->p->name);
+        desc = out->p->description;
+        opt = m = out->p->config_map;
+    }
+
+    printf(ANSI_BOLD "\nDESCRIPTION\n" ANSI_RESET "%s\n", desc);
+
+    printf(ANSI_BOLD "\nOPTIONS\n" ANSI_RESET);
+
+    if (!opt) {
+        exit(rc);
+    }
+
+    /* Find the larger name, just for formatting purposes */
+    while (m && m->name) {
+        len = strlen(m->name);
+        if (len > max) {
+            max = len;
+        }
+        m++;
+    }
+    max += 2;
+
+    snprintf(fmt, sizeof(fmt) - 1, "%%-%is", max);
+    snprintf(def, sizeof(def) - 1, "%%*s> default: %%s, type: ");
+    m = opt;
+    while (m && m->name) {
+        printf(fmt, m->name);
+        help_plugin_description(max, m->desc);
+        if (m->def_value) {
+            printf(def, max, " ", m->def_value);
+        }
+        else {
+            printf("%*s> type: ", max, " ");
+        }
+
+        if (m->type == FLB_CONFIG_MAP_STR) {
+            printf("string");
+        }
+        else if (m->type == FLB_CONFIG_MAP_INT) {
+            printf("integer");
+        }
+        else if (m->type == FLB_CONFIG_MAP_BOOL) {
+            printf("boolean");
+        }
+        else if(m->type == FLB_CONFIG_MAP_DOUBLE) {
+            printf("double");
+        }
+        else if (m->type == FLB_CONFIG_MAP_SIZE) {
+            printf("size");
+        }
+        else if (m->type == FLB_CONFIG_MAP_TIME) {
+            printf("time");
+        }
+        else if (m->type == FLB_CONFIG_MAP_CLIST) {
+            printf("comma delimited strings");
+        }
+
+        printf("\n\n");
+        m++;
+    }
+
+    exit(rc);
 }
 
 #define flb_print_signal(X) case X:                       \
@@ -755,7 +917,13 @@ int main(int argc, char **argv)
             break;
 #endif
         case 'h':
-            flb_help(EXIT_SUCCESS, config);
+            if (last_plugin == -1) {
+                flb_help(EXIT_SUCCESS, config);
+            }
+            else {
+                flb_help_plugin(EXIT_SUCCESS, config,
+                                last_plugin, in, filter, out);
+            }
             break;
 #ifdef FLB_HAVE_HTTP_SERVER
         case 'H':
