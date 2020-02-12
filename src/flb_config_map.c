@@ -146,6 +146,17 @@ static int translate_default_value(struct flb_config_map *map, char *val)
             goto error;
         }
     }
+    else if (map->type == FLB_CONFIG_MAP_STR_PREFIX) {
+        /*
+         * For prefixed string types we don't process them, just validate
+         * that no default value has been set.
+         */
+        if (val) {
+            flb_error("[config map] invalid default value for prefixed string '%s'",
+                      map->name);
+            goto error;
+        }
+    }
     else if (map->type == FLB_CONFIG_MAP_BOOL) {
         ret = flb_utils_bool(val);
         if (ret == -1) {
@@ -414,12 +425,22 @@ int flb_config_map_properties_check(char *context_name,
         /* Lookup the key into the provided map */
         mk_list_foreach(m_head, map) {
             m = mk_list_entry(m_head, struct flb_config_map, _head);
+
             len = flb_sds_len(m->name);
-            if (len != flb_sds_len(kv->key)) {
-                continue;
+            if (m->type != FLB_CONFIG_MAP_STR_PREFIX) {
+                if (len != flb_sds_len(kv->key)) {
+                    continue;
+                }
             }
 
             if (strncasecmp(kv->key, m->name, len) == 0) {
+                if (m->type == FLB_CONFIG_MAP_STR_PREFIX) {
+                    if (flb_sds_len(kv->key) <= len) {
+                        flb_error("[config] incomplete prefixed key '%s'", kv->key);
+                        found = FLB_FALSE;
+                        break;
+                    }
+                }
                 found = FLB_TRUE;
                 break;
             }

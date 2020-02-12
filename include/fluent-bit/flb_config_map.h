@@ -27,12 +27,13 @@
 #include <monkey/mk_core.h>
 
 /* Configuration types */
-#define FLB_CONFIG_MAP_STR      0    /* string */
-#define FLB_CONFIG_MAP_INT      1    /* integer */
-#define FLB_CONFIG_MAP_BOOL     2    /* boolean */
-#define FLB_CONFIG_MAP_DOUBLE   3    /* double */
-#define FLB_CONFIG_MAP_SIZE     4    /* string size to integer (e.g: 2M) */
-#define FLB_CONFIG_MAP_TIME     5    /* string time to integer seconds (e.g: 2H) */
+#define FLB_CONFIG_MAP_STR         0    /* string */
+#define FLB_CONFIG_MAP_STR_PREFIX  1    /* string that starts with  */
+#define FLB_CONFIG_MAP_INT         2    /* integer */
+#define FLB_CONFIG_MAP_BOOL        3    /* boolean */
+#define FLB_CONFIG_MAP_DOUBLE      4    /* double */
+#define FLB_CONFIG_MAP_SIZE        5    /* string size to integer (e.g: 2M) */
+#define FLB_CONFIG_MAP_TIME        6    /* string time to integer seconds (e.g: 2H) */
 
 #define FLB_CONFIG_MAP_CLIST    30   /* comma separated list of strings */
 #define FLB_CONFIG_MAP_CLIST_1  31   /* split up to 1 node  + remaining data */
