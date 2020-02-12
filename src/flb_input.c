@@ -439,7 +439,7 @@ int flb_input_instance_init(struct flb_input_instance *ins,
 
 
 /* Initialize all inputs */
-void flb_input_init_all(struct flb_config *config)
+int flb_input_init_all(struct flb_config *config)
 {
     int ret;
     struct mk_list *tmp;
@@ -464,8 +464,11 @@ void flb_input_init_all(struct flb_config *config)
         ret = flb_input_instance_init(ins, config);
         if (ret == -1) {
             /* do nothing, it's ok if it fails */
+            return -1;
         }
     }
+
+    return 0;
 }
 
 /* Invoke all pre-run input callbacks */
