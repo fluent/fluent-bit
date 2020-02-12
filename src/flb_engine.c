@@ -411,8 +411,8 @@ int flb_engine_start(struct flb_config *config)
 
     /* Debug coroutine stack size */
     flb_utils_bytes_to_human_readable_size(config->coro_stack_size,
-                                           (char *) &tmp, sizeof(tmp));
-    flb_debug("[engine] coroutine stack size: %lu bytes (%s)",
+                                           tmp, sizeof(tmp));
+    flb_debug("[engine] coroutine stack size: %u bytes (%s)",
               config->coro_stack_size, tmp);
 
     /* Create the event loop and set it in the global configuration */
