@@ -284,8 +284,10 @@ static void flb_help_plugin(int rc, struct flb_config *config, int type,
     int max = 0;
     int len;
     char fmt[32];
+    char fmt_prf[32];
     char def[32];
     char *desc;
+    flb_sds_t tmp;
     struct flb_config_map *opt;
     struct flb_config_map *m;
 
@@ -329,10 +331,21 @@ static void flb_help_plugin(int rc, struct flb_config *config, int type,
     max += 2;
 
     snprintf(fmt, sizeof(fmt) - 1, "%%-%is", max);
+    snprintf(fmt_prf, sizeof(fmt_prf) - 1, "%%-%is", max);
     snprintf(def, sizeof(def) - 1, "%%*s> default: %%s, type: ");
     m = opt;
     while (m && m->name) {
-        printf(fmt, m->name);
+        if (m->type == FLB_CONFIG_MAP_STR_PREFIX) {
+            len = strlen(m->name);
+            tmp = flb_sds_create_size(len + 2);
+            flb_sds_printf(&tmp, "%sN", m->name);
+            printf(fmt_prf, tmp);
+            flb_sds_destroy(tmp);
+        }
+        else {
+            printf(fmt, m->name);
+        }
+
         help_plugin_description(max, m->desc);
         if (m->def_value) {
             printf(def, max, " ", m->def_value);
@@ -361,6 +374,9 @@ static void flb_help_plugin(int rc, struct flb_config *config, int type,
         }
         else if (m->type == FLB_CONFIG_MAP_CLIST) {
             printf("comma delimited strings");
+        }
+        else if (m->type == FLB_CONFIG_MAP_STR_PREFIX) {
+            printf("prefixed string");
         }
 
         printf("\n\n");
