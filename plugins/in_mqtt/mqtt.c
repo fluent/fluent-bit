@@ -19,6 +19,7 @@
  */
 
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_network.h>
 
@@ -39,6 +40,7 @@ static int in_mqtt_init(struct flb_input_instance *in,
     if (!ctx) {
         return -1;
     }
+    ctx->ins = in;
     ctx->msgp_len = 0;
 
     /* Set the context */
@@ -47,16 +49,15 @@ static int in_mqtt_init(struct flb_input_instance *in,
     /* Create TCP server */
     ctx->server_fd = flb_net_server(ctx->tcp_port, ctx->listen);
     if (ctx->server_fd > 0) {
-        flb_debug("[in_mqtt] binding %s:%s", ctx->listen, ctx->tcp_port);
+        flb_plg_info(ctx->ins, "binding %s:%s", ctx->listen, ctx->tcp_port);
     }
     else {
-        flb_error("[in_mqtt] could not bind address %s:%s",
-                  ctx->listen, ctx->tcp_port);
+        flb_plg_error(ctx->ins, "could not bind address %s:%s",
+                      ctx->listen, ctx->tcp_port);
         mqtt_config_free(ctx);
         return -1;
     }
     ctx->evl = config->evl;
-    ctx->i_ins = in;
 
     /* Collect upon data available on the standard input */
     ret = flb_input_set_collector_event(in,
@@ -64,7 +65,7 @@ static int in_mqtt_init(struct flb_input_instance *in,
                                         ctx->server_fd,
                                         config);
     if (ret == -1) {
-        flb_error("[in_mqtt] Could not set collector for MQTT input plugin");
+        flb_plg_error(ctx->ins, "could not set collector for MQTT input plugin");
         mqtt_config_free(ctx);
         return -1;
     }
@@ -77,7 +78,7 @@ static int in_mqtt_init(struct flb_input_instance *in,
  * accept the connection and create a new MQTT instance which will wait for
  * events/data (MQTT control packages)
  */
-int in_mqtt_collect(struct flb_input_instance *i_ins,
+int in_mqtt_collect(struct flb_input_instance *ins,
                     struct flb_config *config, void *in_context)
 {
     int fd;
@@ -87,11 +88,11 @@ int in_mqtt_collect(struct flb_input_instance *i_ins,
     /* Accept the new connection */
     fd = flb_net_accept(ctx->server_fd);
     if (fd == -1) {
-        flb_error("[in_mqtt] could not accept new connection");
+        flb_plg_error(ctx->ins, "could not accept new connection");
         return -1;
     }
 
-    flb_trace("[in_mqtt] [fd=%i] new TCP connection", fd);
+    flb_plg_debug(ctx->ins, "[fd=%i] new TCP connection", fd);
     conn = mqtt_conn_add(fd, ctx);
     if (!conn) {
         return -1;
@@ -103,6 +104,10 @@ static int in_mqtt_exit(void *data, struct flb_config *config)
 {
     (void) *config;
     struct flb_in_mqtt_config *ctx = data;
+
+    if (!ctx) {
+        return 0;
+    }
 
     mqtt_conn_destroy_all(ctx);
     mqtt_config_free(ctx);

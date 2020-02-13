@@ -31,7 +31,7 @@ struct flb_in_mqtt_config {
 
     int msgp_len;                      /* msgpack data length         */
     char msgp[MQTT_MSGP_BUF_SIZE];     /* msgpack static buffer       */
-    struct flb_input_instance *i_ins;  /* plugin input instance       */
+    struct flb_input_instance *ins;    /* plugin input instance       */
     struct mk_event_loop *evl;         /* Event loop file descriptor  */
     struct mk_list conns;              /* Active connections          */
 };
