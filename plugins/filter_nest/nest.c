@@ -18,19 +18,21 @@
  *  limitations under the License.
  */
 
-#include <stdio.h>
-#include <sys/types.h>
-
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_filter.h>
+#include <fluent-bit/flb_filter_plugin.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_str.h>
-#include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <msgpack.h>
 
 #include "nest.h"
+
+#include <stdio.h>
+#include <sys/types.h>
+
 
 static void teardown(struct filter_nest_ctx *ctx)
 {
@@ -81,16 +83,17 @@ static int configure(struct filter_nest_ctx *ctx,
                 ctx->operation = LIFT;
             }
             else {
-                flb_error
-                    ("[filter_nest] Key \"operation\" has invalid value '%s'. Expected 'nest' or 'lift'\n", kv->val);
+                flb_plg_error(ctx->ins, "Key \"operation\" has invalid value "
+                              "'%s'. Expected 'nest' or 'lift'\n",
+                              kv->val);
                 return -1;
             }
         }
         else if (strcasecmp(kv->key, "wildcard") == 0) {
             wildcard = flb_malloc(sizeof(struct filter_nest_wildcard));
             if (!wildcard) {
-                flb_error
-                    ("[filter_nest] Unable to allocate memory for wildcard");
+                flb_plg_error(ctx->ins, "Unable to allocate memory for "
+                              "wildcard");
                 flb_free(wildcard);
                 return -1;
             }
@@ -133,25 +136,26 @@ static int configure(struct filter_nest_ctx *ctx,
             ctx->prefix_len = flb_sds_len(kv->val);
             ctx->remove_prefix = true;
         } else {
-            flb_error("[filter_nest] Invalid configuration key '%s'", kv->key);
+            flb_plg_error(ctx->ins, "Invalid configuration key '%s'", kv->key);
             return -1;
         }
     }
 
     /* Sanity checks */
     if (ctx->remove_prefix && ctx->add_prefix) {
-        flb_error("[filter_nest] Add_prefix and Remove_prefix are exclusive");
+        flb_plg_error(ctx->ins, "Add_prefix and Remove_prefix are exclusive");
         return -1;
     }
 
     if ((ctx->operation != NEST) &&
             (ctx->operation != LIFT)) {
-        flb_error("[filter_nest] Operation can only be NEST or LIFT");
+        flb_plg_error(ctx->ins, "Operation can only be NEST or LIFT");
         return -1;
     }
 
     if ((ctx->remove_prefix || ctx->add_prefix) && ctx->prefix == 0) {
-        flb_error("[filter_nest] A prefix has to be specified for prefix add or remove operations");
+        flb_plg_error(ctx->ins, "A prefix has to be specified for prefix add "
+                      "or remove operations");
         return -1;
     }
 
@@ -354,9 +358,9 @@ static inline bool is_kv_to_lift(msgpack_object_kv * kv,
         }
         memcpy(tmp, key, klen);
         tmp[klen] = '\0';
-        flb_warn("[filter_nest] Value of key '%s' is not a map. "
-                 "Will not attempt to lift from here",
-                 tmp);
+        flb_plg_warn(ctx->ins, "Value of key '%s' is not a map. "
+                     "Will not attempt to lift from here",
+                     tmp);
         flb_free(tmp);
         return false;
     }
@@ -438,7 +442,7 @@ static inline int apply_lifting_rules(msgpack_packer * packer,
     int items_to_lift = map_count_fn(&map, ctx, &is_kv_to_lift);
 
     if (items_to_lift == 0) {
-        flb_debug("[filter_nest] Lift : No match found for %s", ctx->key);
+        flb_plg_debug(ctx->ins, "Lift : No match found for %s", ctx->key);
         return 0;
     }
 
@@ -451,9 +455,9 @@ static inline int apply_lifting_rules(msgpack_packer * packer,
     int toplevel_items =
         (map.via.map.size - items_to_lift) + count_items_to_lift(&map, ctx);
 
-    flb_debug
-        ("[filter_nest] Lift : Outer map size is %d, will be %d, lifting %d record(s)",
-         map.via.map.size, toplevel_items, items_to_lift);
+    flb_plg_debug(ctx->ins, "Lift : Outer map size is %d, will be %d, "
+                  "lifting %d record(s)",
+                  map.via.map.size, toplevel_items, items_to_lift);
 
     /* Record array init(2) */
     msgpack_pack_array(packer, 2);
@@ -476,8 +480,8 @@ static inline int apply_lifting_rules(msgpack_packer * packer,
     return 1;
 }
 
-static inline int apply_nesting_rules(msgpack_packer * packer,
-                                      msgpack_object * root,
+static inline int apply_nesting_rules(msgpack_packer *packer,
+                                      msgpack_object *root,
                                       struct filter_nest_ctx *ctx)
 {
     msgpack_object ts = root->via.array.ptr[0];
@@ -486,15 +490,15 @@ static inline int apply_nesting_rules(msgpack_packer * packer,
     size_t items_to_nest = map_count_fn(&map, ctx, &is_kv_to_nest);
 
     if (items_to_nest == 0) {
-        flb_debug("[filter_nest] Nest : No match found for %s", ctx->prefix);
+        flb_plg_debug(ctx->ins, "Nest : No match found for %s", ctx->prefix);
         return 0;
     }
 
     size_t toplevel_items = (map.via.map.size - items_to_nest + 1);
 
-    flb_debug
-        ("[filter_nest] Nest : Outer map size is %d, will be %d, nested map size will be %d",
-         map.via.map.size, toplevel_items, items_to_nest);
+    flb_plg_debug(ctx->ins, "Nest : Outer map size is %d, will be %d, nested "
+                  "map size will be %d",
+                  map.via.map.size, toplevel_items, items_to_nest);
 
     /* Record array init(2) */
     msgpack_pack_array(packer, 2);
@@ -527,13 +531,12 @@ static int cb_nest_init(struct flb_filter_instance *f_ins,
     struct filter_nest_ctx *ctx;
 
     ctx = flb_malloc(sizeof(struct filter_nest_ctx));
-
     if (!ctx) {
         flb_errno();
         return -1;
     }
-
     mk_list_init(&ctx->wildcards);
+    ctx->ins = f_ins;
     ctx->wildcards_cnt = 0;
 
     if (configure(ctx, f_ins, config) < 0) {
@@ -597,7 +600,7 @@ static int cb_nest_filter(const void *data, size_t bytes,
             total_modified_records += modified_records;
         }
         else {
-            flb_debug("[filter_nest] Record is NOT an array, skipping");
+            flb_plg_debug(ctx->ins, "Record is NOT an array, skipping");
             msgpack_pack_object(&packer, result.data);
         }
     }

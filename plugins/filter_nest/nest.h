@@ -21,6 +21,9 @@
 #ifndef FLB_FILTER_NEST_H
 #define FLB_FILTER_NEST_H
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_filter.h>
+
 enum FILTER_NEST_OPERATION {
   NEST,
   LIFT
@@ -39,6 +42,7 @@ struct filter_nest_ctx
     bool remove_prefix;
     // lift
     bool add_prefix;
+    struct flb_filter_instance *ins;
 };
 
 struct filter_nest_wildcard
