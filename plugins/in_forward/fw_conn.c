@@ -18,6 +18,8 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_network.h>
@@ -43,8 +45,8 @@ int fw_conn_event(void *data)
         available = (conn->buf_size - conn->buf_len);
         if (available < 1) {
             if (conn->buf_size + ctx->buffer_chunk_size > ctx->buffer_max_size) {
-                flb_warn("[in_fw] fd=%i incoming data exceed limit (%i bytes)",
-                         event->fd, (ctx->buffer_max_size));
+                flb_plg_warn(ctx->ins, "fd=%i incoming data exceed limit (%i bytes)",
+                             event->fd, (ctx->buffer_max_size));
                 fw_conn_del(conn);
                 return -1;
             }
@@ -55,8 +57,8 @@ int fw_conn_event(void *data)
                 flb_errno();
                 return -1;
             }
-            flb_trace("[in_fw] fd=%i buffer realloc %i -> %i",
-                      event->fd, conn->buf_size, size);
+            flb_plg_trace(ctx->ins, "fd=%i buffer realloc %i -> %i",
+                          event->fd, conn->buf_size, size);
 
             conn->buf = tmp;
             conn->buf_size = size;
@@ -67,8 +69,8 @@ int fw_conn_event(void *data)
                      conn->buf + conn->buf_len, available, 0);
 
         if (bytes > 0) {
-            flb_trace("[in_fw] read()=%i pre_len=%i now_len=%i",
-                      bytes, conn->buf_len, conn->buf_len + bytes);
+            flb_plg_trace(ctx->ins, "read()=%i pre_len=%i now_len=%i",
+                          bytes, conn->buf_len, conn->buf_len + bytes);
             conn->buf_len += bytes;
 
             ret = fw_prot_process(conn);
@@ -79,14 +81,14 @@ int fw_conn_event(void *data)
             return bytes;
         }
         else {
-            flb_trace("[in_fw] fd=%i closed connection", event->fd);
+            flb_plg_trace(ctx->ins, "fd=%i closed connection", event->fd);
             fw_conn_del(conn);
             return -1;
         }
     }
 
     if (event->mask & MK_EVENT_CLOSE) {
-        flb_trace("[in_fw] fd=%i hangup", event->fd);
+        flb_plg_trace(ctx->ins, "fd=%i hangup", event->fd);
         fw_conn_del(conn);
         return -1;
     }
@@ -102,6 +104,7 @@ struct fw_conn *fw_conn_add(int fd, struct flb_in_fw_config *ctx)
 
     conn = flb_malloc(sizeof(struct fw_conn));
     if (!conn) {
+        flb_errno();
         return NULL;
     }
 
@@ -128,12 +131,12 @@ struct fw_conn *fw_conn_add(int fd, struct flb_in_fw_config *ctx)
         return NULL;
     }
     conn->buf_size = ctx->buffer_chunk_size;
-    conn->in       = ctx->in;
+    conn->in       = ctx->ins;
 
     /* Register instance into the event loop */
     ret = mk_event_add(ctx->evl, fd, FLB_ENGINE_EV_CUSTOM, MK_EVENT_READ, conn);
     if (ret == -1) {
-        flb_error("[in_fw] could not register new connection");
+        flb_plg_error(ctx->ins, "could not register new connection");
         flb_socket_close(fd);
         flb_free(conn->buf);
         flb_free(conn);

@@ -18,12 +18,14 @@
  *  limitations under the License.
  */
 
-#include <msgpack.h>
-
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
+
+#include <msgpack.h>
 
 #include "fw.h"
 #include "fw_prot.h"
@@ -112,6 +114,7 @@ int fw_prot_process(struct fw_conn *conn)
     msgpack_unpacked result;
     msgpack_unpacker *unp;
     size_t all_used = 0;
+    struct flb_in_fw_config *ctx = conn->ctx;
 
     /*
      * [tag, time, record]
@@ -150,10 +153,10 @@ int fw_prot_process(struct fw_conn *conn)
             ret == MSGPACK_UNPACK_NOMEM_ERROR) {
             /* A bit redunant, print out the real error */
             if (ret == MSGPACK_UNPACK_PARSE_ERROR) {
-                flb_debug("[in_fw] err=MSGPACK_UNPACK_PARSE_ERROR");
+                flb_plg_debug(ctx->ins, "err=MSGPACK_UNPACK_PARSE_ERROR");
             }
             else {
-                flb_error("[in_fw] err=MSGPACK_UNPACK_NOMEM_ERROR");
+                flb_plg_error(ctx->ins, "err=MSGPACK_UNPACK_NOMEM_ERROR");
             }
 
             /* Cleanup buffers */
@@ -188,15 +191,17 @@ int fw_prot_process(struct fw_conn *conn)
             root = result.data;
 
             if (root.type != MSGPACK_OBJECT_ARRAY) {
-                flb_debug("[in_fw] parser: expecting an array (type=%i), skip.",
-                          root.type);
+                flb_plg_debug(ctx->ins,
+                              "parser: expecting an array (type=%i), skip.",
+                              root.type);
                 msgpack_unpacked_destroy(&result);
                 msgpack_unpacker_free(unp);
                 return -1;
             }
 
             if (root.via.array.size < 2) {
-                flb_debug("[in_fw] parser: array of invalid size, skip.");
+                flb_plg_debug(ctx->ins,
+                              "parser: array of invalid size, skip.");
                 msgpack_unpacked_destroy(&result);
                 msgpack_unpacker_free(unp);
                 return -1;
@@ -205,7 +210,8 @@ int fw_prot_process(struct fw_conn *conn)
             /* Get the tag */
             tag = root.via.array.ptr[0];
             if (tag.type != MSGPACK_OBJECT_STR) {
-                flb_debug("[in_fw] parser: invalid tag format, skip.");
+                flb_plg_debug(ctx->ins,
+                              "parser: invalid tag format, skip.");
                 msgpack_unpacked_destroy(&result);
                 msgpack_unpacker_free(unp);
                 return -1;
@@ -224,7 +230,7 @@ int fw_prot_process(struct fw_conn *conn)
                 /* Forward format 2: [tag, time, map] */
                 map = root.via.array.ptr[2];
                 if (map.type != MSGPACK_OBJECT_MAP) {
-                    flb_warn("[in_fw] invalid data format, map expected");
+                    flb_plg_warn(ctx->ins, "invalid data format, map expected");
                     msgpack_unpacked_destroy(&result);
                     msgpack_unpacker_free(unp);
                     return -1;
@@ -269,8 +275,8 @@ int fw_prot_process(struct fw_conn *conn)
                 }
             }
             else {
-                flb_warn("[in_fw] invalid data format, type=%i",
-                         entry.type);
+                flb_plg_warn(ctx->ins, "invalid data format, type=%i",
+                             entry.type);
                 msgpack_unpacked_destroy(&result);
                 msgpack_unpacker_free(unp);
                 return -1;
@@ -285,16 +291,16 @@ int fw_prot_process(struct fw_conn *conn)
 
     switch (ret) {
     case MSGPACK_UNPACK_EXTRA_BYTES:
-        flb_error("[in_fw] MSGPACK_UNPACK_EXTRA_BYTES");
+        flb_plg_error(ctx->ins, "MSGPACK_UNPACK_EXTRA_BYTES");
         return -1;
     case MSGPACK_UNPACK_CONTINUE:
-        flb_trace("[in_fw] MSGPACK_UNPACK_CONTINUE");
+        flb_plg_trace(ctx->ins, "MSGPACK_UNPACK_CONTINUE");
         return 1;
     case MSGPACK_UNPACK_PARSE_ERROR:
-        flb_debug("[in_fw] err=MSGPACK_UNPACK_PARSE_ERROR");
+        flb_plg_debug(ctx->ins, "err=MSGPACK_UNPACK_PARSE_ERROR");
         return -1;
     case MSGPACK_UNPACK_NOMEM_ERROR:
-        flb_error("[in_fw] err=MSGPACK_UNPACK_NOMEM_ERROR");
+        flb_plg_error(ctx->ins, "err=MSGPACK_UNPACK_NOMEM_ERROR");
         return -1;
     };
 
