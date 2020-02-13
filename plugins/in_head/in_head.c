@@ -20,6 +20,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
@@ -64,7 +65,7 @@ static int read_lines(struct flb_in_head_config *ctx)
             new_len = ctx->buf_size + str_len + 1;
             tmp = flb_malloc(new_len);
             if (tmp == NULL) {
-                flb_error("failed to allocate buffer");
+                flb_plg_error(ctx->ins, "failed to allocate buffer");
                 /* try to output partial data */
                 break;
             }
@@ -123,8 +124,8 @@ static int single_value_per_record(struct flb_input_instance *i_ins,
         read_bytes(ctx);
     }
 
-    flb_trace("%s read_len=%d buf_size=%d", __FUNCTION__,
-              ctx->buf_len, ctx->buf_size);
+    flb_plg_trace(ctx->ins, "%s read_len=%d buf_size=%d", __FUNCTION__,
+                  ctx->buf_len, ctx->buf_size);
 
     if (ctx->add_path == FLB_TRUE) {
         num_map++;
@@ -332,10 +333,10 @@ static int in_head_config_read(struct flb_in_head_config *ctx,
         }
     }
 
-    flb_debug("[in_head] buf_size=%d path=%s",
-              ctx->buf_size, ctx->filepath);
-    flb_debug("[in_head] interval_sec=%d interval_nsec=%d",
-              ctx->interval_sec, ctx->interval_nsec);
+    flb_plg_debug(ctx->ins, "buf_size=%d path=%s",
+                  ctx->buf_size, ctx->filepath);
+    flb_plg_debug(ctx->ins, "interval_sec=%d interval_nsec=%d",
+                  ctx->interval_sec, ctx->interval_nsec);
 
     return 0;
 }
@@ -370,7 +371,7 @@ static int in_head_init(struct flb_input_instance *in,
     ctx->buf_len = 0;
     ctx->add_path = FLB_FALSE;
     ctx->lines = 0;
-    ctx->ins= in;
+    ctx->ins = in;
 
     /* Initialize head config */
     ret = in_head_config_read(ctx, in);
@@ -384,8 +385,8 @@ static int in_head_init(struct flb_input_instance *in,
         goto init_error;
     }
 
-    flb_trace("%s read_len=%d buf_size=%d", __FUNCTION__, ctx->buf_len,
-              ctx->buf_size);
+    flb_plg_trace(ctx->ins, "%s read_len=%d buf_size=%d", __FUNCTION__, ctx->buf_len,
+                  ctx->buf_size);
 
     flb_input_set_context(in, ctx);
 
@@ -394,7 +395,7 @@ static int in_head_init(struct flb_input_instance *in,
                                        ctx->interval_sec,
                                        ctx->interval_nsec, config);
     if (ret < 0) {
-        flb_error("could not set collector for head input plugin");
+        flb_plg_error(ctx->ins, "could not set collector for head input plugin");
         goto init_error;
     }
 
