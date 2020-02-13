@@ -23,6 +23,7 @@
 
 #include <stdint.h>
 #include <unistd.h>
+
 #include <fluent-bit/flb_input.h>
 #include <msgpack.h>
 
@@ -58,8 +59,7 @@ struct flb_in_netif_config {
     int entry_len;
 
     int map_num;
+    struct flb_input_instance *ins;
 };
-
-extern struct flb_input_plugin in_netif_plugin;
 
 #endif /*FLB_IN_NETIF_H*/

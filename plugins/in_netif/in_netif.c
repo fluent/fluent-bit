@@ -18,7 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
@@ -26,8 +26,6 @@
 
 #include <stdio.h>
 #include "in_netif.h"
-
-
 
 struct entry_define entry_name_linux[] = {
     {"rx.bytes",       FLB_TRUE},
@@ -137,7 +135,7 @@ static int configure(struct flb_in_netif_config *ctx,
 
     ctx->interface = flb_input_get_property("interface", in);
     if (ctx->interface == NULL) {
-        flb_error("[in_netif] \"interface\" is not set");
+        flb_plg_error(ctx->ins, "'interface' is not set");
         return -1;
     }
     ctx->interface_len = strlen(ctx->interface);
@@ -150,7 +148,8 @@ static int configure(struct flb_in_netif_config *ctx,
 static inline int is_specific_interface(struct flb_in_netif_config *ctx,
                                         char* interface)
 {
-    if (ctx->interface != NULL && !strncmp(ctx->interface, interface, ctx->interface_len)) {
+    if (ctx->interface != NULL &&
+        !strncmp(ctx->interface, interface, ctx->interface_len)) {
         return FLB_TRUE;
     }
     return FLB_FALSE;
@@ -222,7 +221,8 @@ static int in_netif_collect_linux(struct flb_input_instance *i_ins,
 
     fp = fopen("/proc/net/dev", "r");
     if (fp == NULL) {
-        flb_error("[in_netif]fopen error\n");
+        flb_errno();
+        flb_plg_error(ctx->ins, "cannot open /proc/net/dev");
         return -1;
     }
     while(fgets(line, LINE_LEN-1, fp) != NULL){
@@ -272,13 +272,13 @@ static int in_netif_collect_linux(struct flb_input_instance *i_ins,
 }
 
 static int in_netif_collect(struct flb_input_instance *i_ins,
-                           struct flb_config *config, void *in_context)
+                            struct flb_config *config, void *in_context)
 {
     return in_netif_collect_linux(i_ins, config, in_context);
 }
 
 static int in_netif_init(struct flb_input_instance *in,
-                          struct flb_config *config, void *data)
+                         struct flb_config *config, void *data)
 {
     int ret;
     int interval_sec = 0;
@@ -290,9 +290,10 @@ static int in_netif_init(struct flb_input_instance *in,
     /* Allocate space for the configuration */
     ctx = flb_calloc(1, sizeof(struct flb_in_netif_config));
     if (!ctx) {
-        perror("calloc");
+        flb_errno();
         return -1;
     }
+    ctx->ins = in;
 
     if (configure(ctx, in, &interval_sec, &interval_nsec) < 0) {
         config_destroy(ctx);
@@ -309,7 +310,7 @@ static int in_netif_init(struct flb_input_instance *in,
                                        interval_nsec,
                                        config);
     if (ret == -1) {
-        flb_error("Could not set collector for Proc input plugin");
+        flb_plg_error(ctx->ins, "Could not set collector for Proc input plugin");
         config_destroy(ctx);
         return -1;
     }
