@@ -18,7 +18,8 @@
  */
 
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_filter.h>
+#include <fluent-bit/flb_filter_plugin.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_str.h>
@@ -52,6 +53,22 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
     struct flb_kv *kv;
     (void) data;
 
+    /* Create context */
+    ctx = flb_calloc(1, sizeof(struct flb_filter_aws));
+    if (!ctx) {
+        flb_errno();
+        return -1;
+    }
+
+    /* initilize all fields */
+    ctx->ins = f_ins;
+    ctx->imds_v2_token = NULL;
+    ctx->imds_v2_token_len = 0;
+    ctx->availability_zone = NULL;
+    ctx->availability_zone_len = 0;
+    ctx->instance_id = NULL;
+    ctx->instance_id_len = 0;
+
     /* Iterate all filter properties */
     mk_list_foreach(head, &f_ins->properties) {
         kv = mk_list_entry(head, struct flb_kv, _head);
@@ -61,27 +78,12 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
                 use_v2 = FLB_FALSE;
             }
             else if (strcasecmp(kv->val, "v2") != 0) {
-                flb_warn("[filter_aws] Invalid value %s for config option "
-                         "'imds_version'. Valid values are 'v1' and 'v2'",
-                         kv->val);
+                flb_plg_warn(ctx->ins, "Invalid value %s for config option "
+                             "'imds_version'. Valid values are 'v1' and 'v2'",
+                             kv->val);
             }
         }
     }
-
-    /* Create context */
-    ctx = flb_calloc(1, sizeof(struct flb_filter_aws));
-    if (!ctx) {
-        flb_errno();
-        return -1;
-    }
-
-    /* initilize all fields */
-    ctx->imds_v2_token = NULL;
-    ctx->imds_v2_token_len = 0;
-    ctx->availability_zone = NULL;
-    ctx->availability_zone_len = 0;
-    ctx->instance_id = NULL;
-    ctx->instance_id_len = 0;
 
     /* v1 or v2 instance metadata */
     ctx->use_v2 = use_v2;
@@ -100,7 +102,7 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
                                             FLB_IO_TCP,
                                             NULL);
     if (!ctx->ec2_upstream) {
-        flb_error("[filter_aws] connection initialization error");
+        flb_plg_error(ctx->ins, "connection initialization error");
         flb_free(ctx);
         return -1;
     }
@@ -116,14 +118,14 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
 /* Get an IMDSv2 token */
 static int get_ec2_token(struct flb_filter_aws *ctx)
 {
-    struct flb_http_client *client;
-    size_t b_sent;
     int ret;
+    size_t b_sent;
     struct flb_upstream_conn *u_conn;
+    struct flb_http_client *client;
 
     u_conn = flb_upstream_conn_get(ctx->ec2_upstream);
     if (!u_conn) {
-        flb_error("[filter_aws] connection initialization error");
+        flb_plg_error(ctx->ins, "connection initialization error");
         return -1;
     }
 
@@ -134,7 +136,7 @@ static int get_ec2_token(struct flb_filter_aws *ctx)
                              80, NULL, 0);
 
     if (!client) {
-        flb_error("[filter_aws] count not create http client");
+        flb_plg_error(ctx->ins, "count not create http client");
         flb_upstream_conn_release(u_conn);
         return -1;
     }
@@ -146,13 +148,13 @@ static int get_ec2_token(struct flb_filter_aws *ctx)
 
     /* Perform request */
     ret = flb_http_do(client, &b_sent);
-    flb_debug("[filter_aws] IMDSv2 token request http_do=%i, HTTP Status: %i",
+    flb_plg_debug(ctx->ins, "IMDSv2 token request http_do=%i, HTTP Status: %i",
               ret, client->resp.status);
 
     if (ret != 0 || client->resp.status != 200) {
         if (client->resp.payload_size > 0) {
-            flb_debug("[filter_aws] IMDSv2 token response\n%s",
-                      client->resp.payload);
+            flb_plg_debug(ctx->ins, "IMDSv2 token response\n%s",
+                          client->resp.payload);
         }
         flb_http_client_destroy(client);
         flb_upstream_conn_release(u_conn);
@@ -185,7 +187,7 @@ static int get_metadata(struct flb_filter_aws *ctx, char *metadata_path,
 
     u_conn = flb_upstream_conn_get(ctx->ec2_upstream);
     if (!u_conn) {
-        flb_error("[filter_aws] connection initialization error");
+        flb_plg_error(ctx->ins, "connection initialization error");
         return -1;
     }
 
@@ -197,7 +199,7 @@ static int get_metadata(struct flb_filter_aws *ctx, char *metadata_path,
                              NULL, 0);
 
     if (!client) {
-        flb_error("[filter_aws] count not create http client");
+        flb_plg_error(ctx->ins, "count not create http client");
         flb_upstream_conn_release(u_conn);
         return -1;
     }
@@ -207,21 +209,21 @@ static int get_metadata(struct flb_filter_aws *ctx, char *metadata_path,
                             FLB_FILTER_AWS_IMDS_V2_TOKEN_HEADER_LEN,
                             ctx->imds_v2_token,
                             ctx->imds_v2_token_len);
-        flb_debug("[filter_aws] Using IMDSv2");
+        flb_plg_debug(ctx->ins, "Using IMDSv2");
     }
     else {
-        flb_debug("[filter_aws] Using IMDSv1");
+        flb_plg_debug(ctx->ins, "Using IMDSv1");
     }
 
     /* Perform request */
     ret = flb_http_do(client, &b_sent);
-    flb_debug("[filter_aws] IMDS metadata request http_do=%i, HTTP Status: %i",
-              ret, client->resp.status);
+    flb_plg_debug(ctx->ins, "IMDS metadata request http_do=%i, HTTP Status: %i",
+                  ret, client->resp.status);
 
     if (ret != 0 || client->resp.status != 200) {
         if (client->resp.payload_size > 0) {
-            flb_debug("[filter_aws] IMDS metadata request\n%s",
-                      client->resp.payload);
+            flb_plg_debug(ctx->ins, "IMDS metadata request\n%s",
+                          client->resp.payload);
         }
         flb_http_client_destroy(client);
         flb_upstream_conn_release(u_conn);
@@ -307,8 +309,8 @@ static int cb_aws_filter(const void *data, size_t bytes,
     if (!ctx->metadata_retrieved) {
         ret = get_ec2_metadata(ctx);
         if (ret < 0) {
-            flb_error("[filter_aws] Could not retrieve ec2 metadata "
-                      "from IMDS");
+            flb_plg_error(ctx->ins, "Could not retrieve ec2 metadata "
+                          "from IMDS");
             return FLB_FILTER_NOTOUCH;
         }
     }

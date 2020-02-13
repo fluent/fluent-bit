@@ -20,6 +20,9 @@
 #ifndef FLB_FILTER_AWS_H
 #define FLB_FILTER_AWS_H
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_filter.h>
+
 #define FLB_FILTER_AWS_IMDS_V2_TOKEN_TTL_HEADER           "X-aws-ec2-metadata-token-ttl-seconds"
 #define FLB_FILTER_AWS_IMDS_V2_TOKEN_TTL_HEADER_LEN       36
 
@@ -71,6 +74,9 @@ struct flb_filter_aws {
 
     /* Plugin can use EC2 metadata v1 or v2; default is v2 */
     int use_v2;
+
+    /* Filter plugin instance reference */
+    struct flb_filter_instance *ins;
 };
 
 #endif
