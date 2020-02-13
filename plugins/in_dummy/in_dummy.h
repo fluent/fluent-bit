@@ -21,15 +21,18 @@
 #ifndef FLB_IN_DUMMY_H
 #define FLB_IN_DUMMY_H
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_input.h>
+
 #define DEFAULT_DUMMY_MESSAGE "{\"message\":\"dummy\"}"
-struct flb_in_dummy_config {
+
+struct flb_dummy {
     char *dummy_message;
     int    dummy_message_len;
 
     char *ref_msgpack;
     size_t ref_msgpack_size;
+    struct flb_input_instance *ins;
 };
-
-extern struct flb_input_plugin in_dummy_plugin;
 
 #endif
