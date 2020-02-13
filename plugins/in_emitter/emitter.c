@@ -20,6 +20,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_sds.h>
 
@@ -36,8 +37,8 @@ struct em_chunk {
 
 struct flb_emitter {
     int coll_fd;                        /* collector id */
-    struct flb_input_instance *i_ins;   /* input instance */
     struct mk_list chunks;              /* list of all pending chunks */
+    struct flb_input_instance *ins;     /* input instance */
 };
 
 struct em_chunk *em_chunk_create(const char *tag, int tag_len,
@@ -103,7 +104,7 @@ int in_emitter_add_record(const char *tag, int tag_len,
     if (!ec) {
         ec = em_chunk_create(tag, tag_len, ctx);
         if (!ec) {
-            flb_error("[in_emitter] cannot create new chunk for tag: %s",
+            flb_plg_error(ctx->ins, "cannot create new chunk for tag: %s",
                       tag);
             return -1;
         }
@@ -143,8 +144,8 @@ static int cb_queue_chunks(struct flb_input_instance *in,
                                          echunk->mp_sbuf.data,
                                          echunk->mp_sbuf.size);
         if (ret == -1) {
-            flb_error("[in_emitter] error registering chunk with tag: %s",
-                      echunk->tag);
+            flb_plg_error(ctx->ins, "error registering chunk with tag: %s",
+                          echunk->tag);
             continue;
         }
 
@@ -167,8 +168,7 @@ static int cb_emitter_init(struct flb_input_instance *in,
         flb_errno();
         return -1;
     }
-
-    ctx->i_ins = in;
+    ctx->ins = in;
     mk_list_init(&ctx->chunks);
 
     /* export plugin context */
@@ -177,7 +177,7 @@ static int cb_emitter_init(struct flb_input_instance *in,
     /* Set a collector to trigger the callback to queue data every 0.5 second */
     ret = flb_input_set_collector_time(in, cb_queue_chunks, 0, 50000000, config);
     if (ret < 0) {
-        flb_error("[in_emitter] could not create collector");
+        flb_plg_error(ctx->ins, "could not create collector");
         flb_free(ctx);
         return -1;
     }
@@ -188,13 +188,13 @@ static int cb_emitter_init(struct flb_input_instance *in,
 static void cb_emitter_pause(void *data, struct flb_config *config)
 {
     struct flb_emitter *ctx = data;
-    flb_input_collector_pause(ctx->coll_fd, ctx->i_ins);
+    flb_input_collector_pause(ctx->coll_fd, ctx->ins);
 }
 
 static void cb_emitter_resume(void *data, struct flb_config *config)
 {
     struct flb_emitter *ctx = data;
-    flb_input_collector_resume(ctx->coll_fd, ctx->i_ins);
+    flb_input_collector_resume(ctx->coll_fd, ctx->ins);
 }
 
 static int cb_emitter_exit(void *data, struct flb_config *config)
@@ -204,7 +204,7 @@ static int cb_emitter_exit(void *data, struct flb_config *config)
     struct flb_emitter *ctx = data;
     struct em_chunk *echunk;
 
-    flb_input_collector_pause(ctx->coll_fd, ctx->i_ins);
+    flb_input_collector_pause(ctx->coll_fd, ctx->ins);
 
     mk_list_foreach_safe(head, tmp, &ctx->chunks) {
         echunk = mk_list_entry(head, struct em_chunk, _head);
