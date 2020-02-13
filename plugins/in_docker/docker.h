@@ -66,13 +66,13 @@ typedef struct docker_snapshot {
 } docker_snapshot;
 
 /* Docker Input configuration & context */
-struct flb_in_docker_config {
+struct flb_docker {
     int coll_fd;                /* collector id/fd */
     int interval_sec;           /* interval collection time (Second) */
     int interval_nsec;          /* interval collection time (Nanosecond) */
     struct mk_list *whitelist;  /* dockers to monitor */
     struct mk_list *blacklist;  /* dockers to exclude */
-    struct flb_input_instance *i_ins;
+    struct flb_input_instance *ins;
 };
 
 int in_docker_collect(struct flb_input_instance *i_ins,
