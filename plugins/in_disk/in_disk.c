@@ -20,6 +20,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_str.h>
@@ -42,7 +43,7 @@ static char *shift_line(const char *line, char separator, int *idx,
     char pack_mode = FLB_FALSE;
     int  idx_buf = 0;
 
-    while(1) {
+    while (1) {
         if (line[*idx] == '\0') {
             /* end of line */
             return NULL;
@@ -78,7 +79,7 @@ static int update_disk_stats(struct flb_in_disk_config *ctx)
 
     fp = fopen("/proc/diskstats", "r");
     if (fp == NULL) {
-        perror("fopen");
+        flb_errno();
         return -1;
     }
 
@@ -139,11 +140,11 @@ static int in_disk_collect(struct flb_input_instance *i_ins,
 
     update_disk_stats(ctx);
 
-    if ( ctx->first_snapshot == FLB_TRUE ){
+    if (ctx->first_snapshot == FLB_TRUE) {
         ctx->first_snapshot = FLB_FALSE;    /* assign first_snapshot with FLB_FALSE */
     }
     else {
-        for (i=0; i<entry; i++) {
+        for (i = 0; i < entry; i++) {
             if (ctx->read_total[i] >= ctx->prev_read_total[i]) {
                 read_total += ctx->read_total[i] - ctx->prev_read_total[i];
             }
@@ -211,7 +212,7 @@ static int get_diskstats_entries(void)
 }
 
 static int configure(struct flb_in_disk_config *disk_config,
-                               struct flb_input_instance *in)
+                     struct flb_input_instance *in)
 {
     (void) *in;
     const char *pval = NULL;
@@ -265,7 +266,7 @@ static int configure(struct flb_in_disk_config *disk_config,
          disk_config->write_total      == NULL ||
          disk_config->prev_read_total  == NULL ||
          disk_config->prev_write_total == NULL) {
-        flb_error("[in_disk] could not allocate memory");
+        flb_plg_error(in, "could not allocate memory");
         return -1;
     }
 
@@ -313,7 +314,7 @@ static int in_disk_init(struct flb_input_instance *in,
                                        disk_config->interval_sec,
                                        disk_config->interval_nsec, config);
     if (ret < 0) {
-        flb_error("could not set collector for disk input plugin");
+        flb_plg_error(in, "could not set collector for disk input plugin");
         goto init_error;
     }
 
