@@ -24,14 +24,17 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-#include <msgpack.h>
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_error.h>
 #include "in_lib.h"
 
-static int in_lib_collect(struct flb_input_instance *i_ins,
+#include <msgpack.h>
+
+static int in_lib_collect(struct flb_input_instance *ins,
                           struct flb_config *config, void *in_context)
 {
     int ret;
@@ -50,7 +53,7 @@ static int in_lib_collect(struct flb_input_instance *i_ins,
         size = ctx->buf_size + LIB_BUF_CHUNK;
         ptr = flb_realloc(ctx->buf_data, size);
         if (!ptr) {
-            perror("realloc");
+            flb_errno();
             return -1;
         }
         ctx->buf_data = ptr;
@@ -61,7 +64,7 @@ static int in_lib_collect(struct flb_input_instance *i_ins,
     bytes = flb_pipe_r(ctx->fd,
                        ctx->buf_data + ctx->buf_len,
                        capacity);
-    flb_trace("in_lib read() = %i", bytes);
+    flb_plg_trace(ctx->ins, "in_lib read() = %i", bytes);
     if (bytes == -1) {
         perror("read");
         if (errno == -EPIPE) {
@@ -75,11 +78,11 @@ static int in_lib_collect(struct flb_input_instance *i_ins,
     ret = flb_pack_json_state(ctx->buf_data, ctx->buf_len,
                               &pack, &out_size, &ctx->state);
     if (ret == FLB_ERR_JSON_PART) {
-        flb_warn("lib data incomplete, waiting for more data...");
+        flb_plg_warn(ctx->ins, "lib data incomplete, waiting for more data...");
         return 0;
     }
     else if (ret == FLB_ERR_JSON_INVAL) {
-        flb_warn("lib data invalid");
+        flb_plg_warn(ctx->ins, "lib data invalid");
         flb_pack_state_reset(&ctx->state);
         flb_pack_state_init(&ctx->state);
         return -1;
@@ -87,7 +90,7 @@ static int in_lib_collect(struct flb_input_instance *i_ins,
     ctx->buf_len = 0;
 
     /* Pack data */
-    flb_input_chunk_append_raw(ctx->i_ins, NULL, 0, pack, out_size);
+    flb_input_chunk_append_raw(ctx->ins, NULL, 0, pack, out_size);
     flb_free(pack);
     flb_pack_state_reset(&ctx->state);
     flb_pack_state_init(&ctx->state);
@@ -96,8 +99,8 @@ static int in_lib_collect(struct flb_input_instance *i_ins,
 }
 
 /* Initialize plugin */
-int in_lib_init(struct flb_input_instance *in,
-                struct flb_config *config, void *data)
+static int in_lib_init(struct flb_input_instance *in,
+                       struct flb_config *config, void *data)
 {
     int ret;
     struct flb_in_lib_config *ctx;
@@ -108,7 +111,7 @@ int in_lib_init(struct flb_input_instance *in,
     if (!ctx) {
         return -1;
     }
-    ctx->i_ins = in;
+    ctx->ins = in;
 
     /* Buffer for incoming data */
     ctx->buf_size = LIB_BUF_CHUNK;
@@ -116,7 +119,8 @@ int in_lib_init(struct flb_input_instance *in,
     ctx->buf_len = 0;
 
     if (!ctx->buf_data) {
-        flb_error("Could not allocate initial buf memory buffer");
+        flb_errno();
+        flb_plg_error(ctx->ins, "Could not allocate initial buf memory buffer");
         flb_free(ctx);
         return -1;
     }
@@ -134,7 +138,7 @@ int in_lib_init(struct flb_input_instance *in,
                                         ctx->fd,
                                         config);
     if (ret == -1) {
-        flb_error("Could not set collector for LIB input plugin");
+        flb_plg_error(ctx->ins, "Could not set collector for LIB input plugin");
         flb_free(ctx->buf_data);
         flb_free(ctx);
         return -1;

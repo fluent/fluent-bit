@@ -35,7 +35,7 @@ struct flb_in_lib_config {
     char *buf_data;             /* the real buffer         */
 
     struct flb_pack_state state;
-    struct flb_input_instance *i_ins;
+    struct flb_input_instance *ins;
 };
 
 #endif
