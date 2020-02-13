@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_filter.h>
+#include <fluent-bit/flb_filter_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_regex.h>
@@ -79,7 +80,7 @@ static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
             rule->type = GREP_EXCLUDE;
         }
         else {
-            flb_error("[filter_grep] unknown rule type '%s'", kv->key);
+            flb_plg_error(ctx->ins, "unknown rule type '%s'", kv->key);
             delete_rules(ctx);
             flb_free(rule);
             return -1;
@@ -88,7 +89,8 @@ static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
         /* As a value we expect a pair of field name and a regular expression */
         split = flb_utils_split(kv->val, ' ', 1);
         if (mk_list_size(split) != 2) {
-            flb_error("[filter_grep] invalid regex, expected field and regular expression");
+            flb_plg_error(ctx->ins,
+                          "invalid regex, expected field and regular expression");
             delete_rules(ctx);
             flb_free(rule);
             flb_utils_split_free(split);
@@ -119,7 +121,7 @@ static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
         /* Create a record accessor context for this rule */
         rule->ra = flb_ra_create(rule->field, FLB_FALSE);
         if (!rule->ra) {
-            flb_error("[filter_grep] invalid record accessor? '%s'", rule->field);
+            flb_plg_error(ctx->ins, "invalid record accessor? '%s'", rule->field);
             delete_rules(ctx);
             flb_free(rule);
             return -1;
@@ -128,7 +130,7 @@ static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
         /* Convert string to regex pattern */
         rule->regex = flb_regex_create(rule->regex_pattern);
         if (!rule->regex) {
-            flb_error("[filter_grep] could not compile regex pattern '%s'",
+            flb_plg_error(ctx->ins, "could not compile regex pattern '%s'",
                       rule->regex_pattern);
             delete_rules(ctx);
             flb_free(rule);
@@ -186,6 +188,7 @@ static int cb_grep_init(struct flb_filter_instance *f_ins,
         return -1;
     }
     mk_list_init(&ctx->rules);
+    ctx->ins = f_ins;
 
     /* Load rules */
     ret = set_rules(ctx, f_ins);

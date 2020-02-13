@@ -22,6 +22,7 @@
 #define FLB_FILTER_GREP_H
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_record_accessor.h>
 
@@ -35,6 +36,7 @@
 
 struct grep_ctx {
     struct mk_list rules;
+    struct flb_filter_instance *ins;
 };
 
 struct grep_rule {
