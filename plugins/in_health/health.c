@@ -19,8 +19,9 @@
  */
 
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_plugin.h>
+#include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_pack.h>
@@ -53,10 +54,13 @@ struct flb_in_health_config {
 
     /* Networking */
     struct flb_upstream *u;
+
+    /* Plugin instance */
+    struct flb_input_instance *ins;
 };
 
 /* Collection aims to try to connect to the specified TCP server */
-static int in_health_collect(struct flb_input_instance *i_ins,
+static int in_health_collect(struct flb_input_instance *ins,
                              struct flb_config *config, void *in_context)
 {
     int map_num = 1;
@@ -122,7 +126,7 @@ static int in_health_collect(struct flb_input_instance *i_ins,
         msgpack_pack_int32(&mp_pck, ctx->port);
     }
 
-    flb_input_chunk_append_raw(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    flb_input_chunk_append_raw(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     FLB_INPUT_RETURN();
@@ -152,15 +156,15 @@ static int in_health_init(struct flb_input_instance *in,
     ctx->add_host = FLB_FALSE;
     ctx->len_host = 0;
     ctx->hostname = NULL;
-
     ctx->add_port = FLB_FALSE;
     ctx->port     = -1;
+    ctx->ins      = in;
 
     ctx->u = flb_upstream_create(config, in->host.name, in->host.port,
                                  FLB_IO_TCP, NULL);
     if (!ctx->u) {
         flb_free(ctx);
-        flb_error("[in_health] could not initialize upstream");
+        flb_plg_error(ctx->ins, "could not initialize upstream");
         return -1;
     }
 
@@ -221,7 +225,7 @@ static int in_health_init(struct flb_input_instance *in,
                                        ctx->interval_nsec,
                                        config);
     if (ret == -1) {
-        flb_error("Could not set collector for Health input plugin");
+        flb_plg_error(ctx->ins, "could not set collector for Health input plugin");
         flb_free(ctx);
         return -1;
     }
@@ -229,7 +233,7 @@ static int in_health_init(struct flb_input_instance *in,
     return 0;
 }
 
-int in_health_exit(void *data, struct flb_config *config)
+static int in_health_exit(void *data, struct flb_config *config)
 {
     (void) *config;
     struct flb_in_health_config *ctx = data;
