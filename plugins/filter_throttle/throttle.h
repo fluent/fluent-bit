@@ -21,6 +21,9 @@
 #ifndef FLB_FILTER_THROTTLE_H
 #define FLB_FILTER_THROTTLE_H
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_filter.h>
+
 /* actions */
 #define THROTTLE_RET_KEEP  0
 #define THROTTLE_RET_DROP  1
@@ -39,6 +42,7 @@ struct flb_filter_throttle_ctx {
 
     /* internal */
     struct throttle_window *hash;
+    struct flb_filter_instance *ins;
 };
 
 struct ticker {

@@ -18,13 +18,11 @@
  *  limitations under the License.
  */
 
-#include <stdio.h>
-#include <sys/types.h>
-
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_filter.h>
+#include <fluent-bit/flb_filter_plugin.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
-#include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_log.h>
@@ -34,6 +32,9 @@
 
 #include "throttle.h"
 #include "window.h"
+
+#include <stdio.h>
+#include <sys/types.h>
 
 
 static bool apply_suffix (double *x, char suffix_char)
@@ -70,6 +71,7 @@ void *time_ticker(void *args)
     struct ticker *t = args;
     struct flb_time ftm;
     long timestamp;
+    struct flb_filter_throttle_ctx *ctx = t->ctx;
 
     while (!t->done) {
         flb_time_get(&ftm);
@@ -79,7 +81,12 @@ void *time_ticker(void *args)
         t->ctx->hash->current_timestamp = timestamp;
 
         if (t->ctx->print_status) {
-            flb_info("[filter_throttle] %i: limit is %0.2f per %s with window size of %i, current rate is: %i per interval", timestamp, t->ctx->max_rate, t->ctx->slide_interval, t->ctx->window_size, t->ctx->hash->total / t->ctx->hash->size);
+            flb_plg_info(ctx->ins,
+                         "%i: limit is %0.2f per %s with window size of %i, "
+                         "current rate is: %i per interval",
+                         timestamp, t->ctx->max_rate, t->ctx->slide_interval,
+                         t->ctx->window_size,
+                         t->ctx->hash->total / t->ctx->hash->size);
         }
         sleep(t->seconds);
     }
@@ -140,7 +147,8 @@ static int configure(struct flb_filter_throttle_ctx *ctx, struct flb_filter_inst
     return 0;
 }
 
-static int parse_duration(const char *interval)
+static int parse_duration(struct flb_filter_throttle_ctx *ctx,
+                          const char *interval)
 {
     double seconds = 0.0;
     double s;
@@ -153,7 +161,10 @@ static int parse_duration(const char *interval)
           /* Check any suffix char and update S based on the suffix.  */
           || ! apply_suffix (&s, *p))
         {
-            flb_warn("[filter_throttle] invalid time interval %s falling back to default: 1 second", interval);
+            flb_plg_warn(ctx->ins,
+                         "invalid time interval %s falling back to default: 1 "
+                         "second",
+                         interval);
         }
 
       seconds += s;
@@ -165,9 +176,9 @@ static int cb_throttle_init(struct flb_filter_instance *f_ins,
                         void *data)
 {
     int ret;
-    struct flb_filter_throttle_ctx *ctx;
     pthread_t tid;
     struct ticker *ticker_ctx;
+    struct flb_filter_throttle_ctx *ctx;
 
     /* Create context */
     ctx = flb_malloc(sizeof(struct flb_filter_throttle_ctx));
@@ -175,6 +186,7 @@ static int cb_throttle_init(struct flb_filter_instance *f_ins,
         flb_errno();
         return -1;
     }
+    ctx->ins = f_ins;
 
     /* parse plugin configuration  */
     ret = configure(ctx, f_ins);
@@ -191,7 +203,7 @@ static int cb_throttle_init(struct flb_filter_instance *f_ins,
     ticker_ctx = flb_malloc(sizeof(struct ticker));
     ticker_ctx->ctx = ctx;
     ticker_ctx->done = false;
-    ticker_ctx->seconds = parse_duration(ctx->slide_interval);
+    ticker_ctx->seconds = parse_duration(ctx, ctx->slide_interval);
     pthread_create(&tid, NULL, &time_ticker, ticker_ctx);
     return 0;
 }
