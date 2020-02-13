@@ -18,17 +18,18 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_filter.h>
+#include <fluent-bit/flb_filter_plugin.h>
 #include <fluent-bit/flb_luajit.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
+#include <msgpack.h>
 
 #include "lua_config.h"
-#include <msgpack.h>
 
 static void lua_pushmsgpack(lua_State *l, msgpack_object *o)
 {
@@ -137,10 +138,10 @@ static void try_to_convert_data_type(struct lua_filter *lf,
     struct mk_list  *head     = NULL;
     struct l2c_type *l2c      = NULL;
 
-    if ((lua_type(l, -2) == LUA_TSTRING) 
+    if ((lua_type(l, -2) == LUA_TSTRING)
         && lua_type(l, -1) == LUA_TNUMBER){
         tmp = lua_tolstring(l, -2, &len);
-        
+
         mk_list_foreach_safe(head, tmp_list, &lf->l2c_types) {
             l2c = mk_list_entry(head, struct l2c_type, _head);
             if (!strncmp(l2c->key, tmp, len)) {
@@ -285,8 +286,7 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
     lua_pcall(ctx->lua->state, 0, 0, 0);
 
     if (is_valid_func(ctx->lua->state, ctx->call) != FLB_TRUE) {
-        flb_error("[filter_lua] function %s is not found", ctx->call);
-
+        flb_plg_error(ctx->ins, "function %s is not found", ctx->call);
         lua_config_destroy(ctx);
         return -1;
     }
@@ -446,8 +446,8 @@ static int cb_lua_filter(const void *data, size_t bytes,
             ret = pack_result(l_timestamp, &tmp_pck, &tmp_sbuf,
                               data_sbuf.data, data_sbuf.size);
             if (ret == FLB_FALSE) {
-                flb_error("[filter_lua] invalid table returned at %s(), %s",
-                          ctx->call, ctx->script);
+                flb_plg_error(ctx->ins, "invalid table returned at %s(), %s",
+                              ctx->call, ctx->script);
                 msgpack_sbuffer_destroy(&tmp_sbuf);
                 msgpack_sbuffer_destroy(&data_sbuf);
                 msgpack_unpacked_destroy(&result);
@@ -455,8 +455,8 @@ static int cb_lua_filter(const void *data, size_t bytes,
             }
         }
         else { /* Unexpected return code, keep original content */
-            flb_error("[filter_lua] unexpected Lua script return code %i, "
-                      "original record will be kept." , l_code);
+            flb_plg_error(ctx->ins, "unexpected Lua script return code %i, "
+                          "original record will be kept." , l_code);
             msgpack_pack_object(&tmp_pck, root);
         }
         msgpack_sbuffer_destroy(&data_sbuf);

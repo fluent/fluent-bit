@@ -18,8 +18,9 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_compat.h>
+#include <fluent-bit/flb_filter_plugin.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_sds.h>
@@ -55,13 +56,13 @@ struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
         flb_errno();
         return NULL;
     }
-
     mk_list_init(&lf->l2c_types);
+    lf->ins = ins;
 
     /* Config: script */
     tmp = flb_filter_get_property("script", ins);
     if (!tmp) {
-        flb_error("[filter_lua] no script path defined");
+        flb_plg_error(lf->ins, "no script path defined");
         flb_free(lf);
         return NULL;
     }
@@ -71,7 +72,7 @@ struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
     ret = stat(tmp, &st);
     if (ret == -1 && errno == ENOENT) {
         if (tmp[0] == '/') {
-            flb_error("[filter_lua] cannot access script '%s'", tmp);
+            flb_plg_error(lf->ins, "cannot access script '%s'", tmp);
             flb_free(lf);
             return NULL;
         }
@@ -86,14 +87,14 @@ struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
     /* Validate script path */
     ret = access(script, R_OK);
     if (ret == -1) {
-        flb_error("[filter_lua] cannot access script '%s'", script);
+        flb_plg_error(lf->ins, "cannot access script '%s'", script);
         flb_free(lf);
         return NULL;
     }
 
     lf->script = flb_sds_create(script);
     if (!lf->script) {
-        flb_error("[filter_lua] could not allocate string");
+        flb_plg_error(lf->ins, "could not allocate string");
         flb_free(lf);
         return NULL;
     }
@@ -101,21 +102,21 @@ struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
     /* Config: call */
     tmp = flb_filter_get_property("call", ins);
     if (!tmp) {
-        flb_error("[filter_lua] no call property defined");
+        flb_plg_error(lf->ins, "no call property defined");
         lua_config_destroy(lf);
         return NULL;
     }
 
     lf->call = flb_sds_create(tmp);
     if (!lf->call) {
-        flb_error("[filter_lua] could not allocate call");
+        flb_plg_error(lf->ins, "could not allocate call");
         lua_config_destroy(lf);
         return NULL;
     }
 
     lf->buffer = flb_sds_create_size(LUA_BUFFER_CHUNK);
     if (!lf->buffer) {
-        flb_error("[filter_lua] could not allocate decode buffer");
+        flb_plg_error(lf->ins, "could not allocate decode buffer");
         lua_config_destroy(lf);
         return NULL;
     }
@@ -173,7 +174,6 @@ void lua_config_destroy(struct lua_filter *lf)
             flb_free(l2c);
         }
     }
-
 
     flb_free(lf);
 }
