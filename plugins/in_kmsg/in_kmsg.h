@@ -21,6 +21,9 @@
 #ifndef FLB_IN_KMSG
 #define FLB_IN_KMSG
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_input.h>
+
 #include <stdint.h>
 
 #define FLB_KMSG_DEV        "/dev/kmsg"
@@ -53,9 +56,9 @@ struct flb_in_kmsg_config {
     char *buf_data;
     size_t buf_len;
     size_t buf_size;
+    struct flb_input_instance *ins;
 };
 
-int in_kmsg_start();
 
 extern struct flb_input_plugin in_kmsg_plugin;
 
