@@ -88,7 +88,7 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
 
 #ifdef FLB_HAVE_METRICS
     ret = cio_chunk_get_content(ic->chunk, &buf_data, &buf_size);
-    if (ret == -1) {
+    if (ret != CIO_OK) {
         flb_error("[input chunk] error retrieving content for metrics");
         return ic;
     }
@@ -107,6 +107,7 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
                                                const char *tag, int tag_len)
 {
     int ret;
+    int err;
     int set_down = FLB_FALSE;
     char name[64];
     struct cio_chunk *chunk;
@@ -120,7 +121,7 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
 
     /* open/create target chunk file */
     chunk = cio_chunk_open(storage->cio, storage->stream, name,
-                           CIO_OPEN, FLB_INPUT_CHUNK_SIZE);
+                           CIO_OPEN, FLB_INPUT_CHUNK_SIZE, &err);
     if (!chunk) {
         flb_error("[input chunk] could not create chunk file: %s:%s",
                   storage->stream, name);
