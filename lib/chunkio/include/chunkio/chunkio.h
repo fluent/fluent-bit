@@ -26,11 +26,11 @@
 #define CIO_TRUE   !0
 
 /* debug levels */
-#define CIO_ERROR  1
-#define CIO_WARN   2
-#define CIO_INFO   3
-#define CIO_DEBUG  4
-#define CIO_TRACE  5
+#define CIO_LOG_ERROR  1
+#define CIO_LOG_WARN   2
+#define CIO_LOG_INFO   3
+#define CIO_LOG_DEBUG  4
+#define CIO_LOG_TRACE  5
 
 /* Storage backend */
 #define CIO_STORE_FS        0
@@ -42,13 +42,18 @@
 #define CIO_CHECKSUM        4   /* enable checksum verification (crc32) */
 #define CIO_FULL_SYNC       8   /* force sync to fs through MAP_SYNC */
 
+/* Return status */
+#define CIO_CORRUPTED      -3  /* Indicate that a chunk is corrupted */
+#define CIO_RETRY          -2  /* The operations needs to be retried */
+#define CIO_ERROR          -1  /* Generic error */
+#define CIO_OK              0  /* OK */
+
 /* defaults */
 #define CIO_MAX_CHUNKS_UP  64   /* default limit for cio_ctx->max_chunks_up */
 
-int cio_page_size;
-
 struct cio_ctx {
     int flags;
+    int page_size;
     char *root_path;
 
     /* logging */

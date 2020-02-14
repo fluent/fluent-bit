@@ -49,6 +49,7 @@ static void test_fs_write()
     int i;
     int ret;
     int len;
+    int err;
     int n_files = 100;
     int flags;
     char *in_data;
@@ -68,11 +69,11 @@ static void test_fs_write()
     cio_utils_recursive_delete(CIO_ENV);
 
     /* Create main context */
-    ctx = cio_create(CIO_ENV, log_cb, CIO_INFO, flags);
+    ctx = cio_create(CIO_ENV, log_cb, CIO_LOG_INFO, flags);
     TEST_CHECK(ctx != NULL);
 
     /* Try to create a file with an invalid stream */
-    chunk = cio_chunk_open(ctx, NULL, "invalid", 0, 0);
+    chunk = cio_chunk_open(ctx, NULL, "invalid", 0, 0, &err);
     TEST_CHECK(chunk == NULL);
 
     /* Check invalid stream */
@@ -111,7 +112,7 @@ static void test_fs_write()
 
     for (i = 0; i < n_files; i++) {
         len = snprintf(tmp, sizeof(tmp), "api-test-%04i.txt", i);
-        carr[i] = cio_chunk_open(ctx, stream, tmp, CIO_OPEN, 1000000);
+        carr[i] = cio_chunk_open(ctx, stream, tmp, CIO_OPEN, 1000000, &err);
 
         if (carr[i] == NULL) {
             continue;
@@ -145,7 +146,7 @@ static void test_fs_write()
     cio_destroy(ctx);
 
     /* Create new context using the data generated above */
-    ctx = cio_create(CIO_ENV, log_cb, CIO_INFO, flags);
+    ctx = cio_create(CIO_ENV, log_cb, CIO_LOG_INFO, flags);
     TEST_CHECK(ctx != NULL);
     cio_scan_dump(ctx);
     cio_destroy(ctx);
@@ -158,6 +159,7 @@ static void test_fs_write()
 static void test_fs_checksum()
 {
     int ret;
+    int err;
     int flags;
     char *in_data;
     char *f_hash;
@@ -196,7 +198,7 @@ static void test_fs_checksum()
     /* cleanup environment */
     cio_utils_recursive_delete(CIO_ENV);
 
-    ctx = cio_create(CIO_ENV, log_cb, CIO_INFO, flags);
+    ctx = cio_create(CIO_ENV, log_cb, CIO_LOG_INFO, flags);
     TEST_CHECK(ctx != NULL);
 
     stream = cio_stream_create(ctx, "test-crc32", CIO_STORE_FS);
@@ -216,7 +218,7 @@ static void test_fs_checksum()
      *  - sync
      *  - validate crc32_test1
      */
-    chunk = cio_chunk_open(ctx, stream, "test1.out", CIO_OPEN, 10);
+    chunk = cio_chunk_open(ctx, stream, "test1.out", CIO_OPEN, 10, &err);
     TEST_CHECK(chunk != NULL);
 
     /* Check default crc32() for an empty file after sync */
@@ -262,6 +264,7 @@ static void test_fs_checksum()
 static void test_fs_up_down()
 {
     int ret;
+    int err;
     int flags;
     char *in_data;
     char *f_hash;
@@ -300,7 +303,7 @@ static void test_fs_up_down()
     /* cleanup environment */
     cio_utils_recursive_delete(CIO_ENV);
 
-    ctx = cio_create(CIO_ENV, log_cb, CIO_INFO, flags);
+    ctx = cio_create(CIO_ENV, log_cb, CIO_LOG_INFO, flags);
     TEST_CHECK(ctx != NULL);
 
     stream = cio_stream_create(ctx, "test-crc32", CIO_STORE_FS);
@@ -320,7 +323,7 @@ static void test_fs_up_down()
      *  - sync
      *  - validate crc32_test1
      */
-    chunk = cio_chunk_open(ctx, stream, "test1.out", CIO_OPEN, 10);
+    chunk = cio_chunk_open(ctx, stream, "test1.out", CIO_OPEN, 10, &err);
     TEST_CHECK(chunk != NULL);
 
     /* file down/up */
@@ -381,13 +384,14 @@ static void test_fs_up_down()
 static void test_issue_51()
 {
     int fd;
+    int err;
     struct cio_ctx *ctx;
     struct cio_stream *stream;
 
     /* Create a temporal storage */
-    ctx = cio_create("tmp", log_cb, CIO_DEBUG, 0);
+    ctx = cio_create("tmp", log_cb, CIO_LOG_DEBUG, 0);
     stream = cio_stream_create(ctx, "test", CIO_STORE_FS);
-    cio_chunk_open(ctx, stream, "c", CIO_OPEN, 1000);
+    cio_chunk_open(ctx, stream, "c", CIO_OPEN, 1000, &err);
     cio_destroy(ctx);
 
     /* Corrupt the file */
@@ -401,11 +405,11 @@ static void test_issue_51()
     close(fd);
 
     /* Re-read the content */
-    ctx = cio_create("tmp", log_cb, CIO_DEBUG, 0);
+    ctx = cio_create("tmp", log_cb, CIO_LOG_DEBUG, 0);
 
     /* Upon scanning an existing stream, if not fixed, the program crashes */
     stream = cio_stream_create(ctx, "test", CIO_STORE_FS);
-    cio_chunk_open(ctx, stream, "c", CIO_OPEN, 1000);
+    cio_chunk_open(ctx, stream, "c", CIO_OPEN, 1000, &err);
     cio_destroy(ctx);
 }
 

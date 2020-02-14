@@ -59,7 +59,7 @@ struct cio_ctx *cio_create(const char *root_path,
     int ret;
     struct cio_ctx *ctx;
 
-    if (log_level < CIO_ERROR || log_level > CIO_TRACE) {
+    if (log_level < CIO_LOG_ERROR || log_level > CIO_LOG_TRACE) {
         fprintf(stderr, "[cio] invalid log level, aborting");
         return NULL;
     }
@@ -70,14 +70,14 @@ struct cio_ctx *cio_create(const char *root_path,
     }
 #endif
 
-    cio_page_size = getpagesize();
-
     /* Create context */
     ctx = calloc(1, sizeof(struct cio_ctx));
     if (!ctx) {
         perror("calloc");
         return NULL;
     }
+
+    ctx->page_size = getpagesize();
     ctx->max_chunks_up = CIO_MAX_CHUNKS_UP;
     cio_set_log_callback(ctx, log_cb);
     cio_set_log_level(ctx, log_level);
@@ -135,7 +135,7 @@ void cio_set_log_callback(struct cio_ctx *ctx, void (*log_cb))
 
 int cio_set_log_level(struct cio_ctx *ctx, int level)
 {
-    if (level < CIO_ERROR || level > CIO_TRACE) {
+    if (level < CIO_LOG_ERROR || level > CIO_LOG_TRACE) {
         return -1;
     }
 

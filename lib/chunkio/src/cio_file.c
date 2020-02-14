@@ -266,15 +266,14 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
 
     cf = (struct cio_file *) ch->backend;
     if (cf->map != NULL) {
-        return 0;
+        return CIO_OK;
     }
 
     /* Check if some previous content exists */
     ret = fstat(cf->fd, &fst);
     if (ret == -1) {
         cio_errno();
-        cio_file_close(ch, CIO_FALSE);
-        return -1;
+        return CIO_ERROR;
     }
 
     /* Get file size from the file system */
@@ -302,23 +301,24 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
         }
 
         /* For empty files, make room in the file system */
-        size = ROUND_UP(size, cio_page_size);
+        size = ROUND_UP(size, ctx->page_size);
         ret = cio_file_fs_size_change(cf, size);
         if (ret == -1) {
             cio_errno();
-            cio_file_close(ch, CIO_TRUE);
-            return -1;
+            cio_log_error(ctx, "cannot adjust chunk size '%s' to %lu bytes",
+                          cf->path, size);
+            return CIO_ERROR;
         }
     }
 
     /* Map the file */
-    size = ROUND_UP(size, cio_page_size);
+    size = ROUND_UP(size, ctx->page_size);
     cf->map = mmap(0, size, oflags, MAP_SHARED, cf->fd, 0);
     if (cf->map == MAP_FAILED) {
         cio_errno();
         cf->map = NULL;
-        cio_file_close(ch, CIO_TRUE);
-        return -1;
+        cio_log_error(ctx, "cannot mmap/read chunk '%s'", cf->path);
+        return CIO_ERROR;
     }
     cf->alloc_size = size;
 
@@ -327,8 +327,7 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
         content_size = cio_file_st_get_content_size(cf->map, fs_size);
         if (content_size == -1) {
             cio_log_error(ctx, "invalid content size %s", cf->path);
-            cio_file_close(ch, CIO_TRUE);
-            return -1;
+            return CIO_CORRUPTED;
         }
         cf->data_size = content_size;
         cf->fs_size = fs_size;
@@ -342,14 +341,13 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
     if (ret == -1) {
         cio_log_error(ctx, "format check failed: %s/%s",
                       ch->st->name, ch->name);
-        cio_file_close(ch, CIO_FALSE);
-        return -1;
+        return CIO_CORRUPTED;
     }
 
     cf->st_content = cio_file_st_get_content(cf->map);
     cio_log_debug(ctx, "%s:%s mapped OK", ch->st->name, ch->name);
 
-    return 0;
+    return CIO_OK;
 }
 
 /* Open file system file, set file descriptor and file size */
@@ -456,7 +454,7 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
                                struct cio_stream *st,
                                struct cio_chunk *ch,
                                int flags,
-                               size_t size)
+                               size_t size, int *err)
 {
     int psize;
     int ret;
@@ -516,15 +514,19 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
     ret = file_open(ctx, cf);
     if (ret == -1) {
         cio_file_close(ch, CIO_FALSE);
+        *err = CIO_ERROR;
         return NULL;
     }
 
     /* Map the file */
     ret = mmap_file(ctx, ch, size);
-    if (ret == -1) {
+    if (ret == CIO_ERROR || ret == CIO_CORRUPTED || ret == CIO_RETRY) {
+        cio_file_close(ch, CIO_FALSE);
+        *err = ret;
         return NULL;
     }
 
+    *err = CIO_OK;
     return cf;
 }
 
@@ -540,13 +542,13 @@ static int _cio_file_up(struct cio_chunk *ch, int enforced)
     if (cf->map) {
         cio_log_error(ch->ctx, "[cio file] file is already mapped: %s/%s",
                       ch->st->name, ch->name);
-        return -1;
+        return CIO_ERROR;
     }
 
     if (cf->fd > 0) {
         cio_log_error(ch->ctx, "[cio file] file descriptor already exists: "
                       "[fd=%i] %s:%s", cf->fd, ch->st->name, ch->name);
-        return -1;
+        return CIO_ERROR;
     }
 
     /*
@@ -556,7 +558,7 @@ static int _cio_file_up(struct cio_chunk *ch, int enforced)
     if (enforced == CIO_TRUE) {
         ret = open_and_up(ch->ctx);
         if (ret == CIO_FALSE) {
-            return -1;
+            return CIO_ERROR;
         }
     }
 
@@ -565,7 +567,7 @@ static int _cio_file_up(struct cio_chunk *ch, int enforced)
     if (ret == -1) {
         cio_log_error(ch->ctx, "[cio file] cannot open chunk: %s/%s",
                       ch->st->name, ch->name);
-        return -1;
+        return CIO_ERROR;
     }
 
     /* Map content */
@@ -573,9 +575,8 @@ static int _cio_file_up(struct cio_chunk *ch, int enforced)
     if (ret == -1) {
         cio_log_error(ch->ctx, "[cio file] cannot map chunk: %s/%s",
                       ch->st->name, ch->name);
-        close(cf->fd);
-        cf->fd = -1;
-        return -1;
+        /* ret = CIO_OK, CIO_ERROR, CIO_CORRUPTED or CIO_RETRY */
+        return ret;
     }
 
     return 0;
@@ -706,7 +707,7 @@ int cio_file_write(struct cio_chunk *ch, const void *buf, size_t count)
             new_size += cf->realloc_size;
         }
 
-        new_size = ROUND_UP(new_size, cio_page_size);
+        new_size = ROUND_UP(new_size, ch->ctx->page_size);
         ret = cio_file_fs_size_change(cf, new_size);
         if (ret == -1) {
             cio_errno();
