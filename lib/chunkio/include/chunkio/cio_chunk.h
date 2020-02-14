@@ -39,7 +39,8 @@ struct cio_chunk {
 };
 
 struct cio_chunk *cio_chunk_open(struct cio_ctx *ctx, struct cio_stream *st,
-                                 const char *name, int flags, size_t size);
+                                 const char *name, int flags, size_t size,
+                                 int *err);
 void cio_chunk_close(struct cio_chunk *ch, int delete);
 int cio_chunk_write(struct cio_chunk *ch, const void *buf, size_t count);
 int cio_chunk_write_at(struct cio_chunk *ch, off_t offset,
@@ -66,5 +67,6 @@ int cio_chunk_is_file(struct cio_chunk *ch);
 int cio_chunk_up(struct cio_chunk *ch);
 int cio_chunk_up_force(struct cio_chunk *ch);
 int cio_chunk_down(struct cio_chunk *ch);
+char *cio_version();
 
 #endif
