@@ -65,16 +65,16 @@ static void print_storage_info(struct flb_config *ctx, struct cio_ctx *cio)
 static int log_cb(struct cio_ctx *ctx, int level, const char *file, int line,
                   char *str)
 {
-    if (level == CIO_ERROR) {
+    if (level == CIO_LOG_ERROR) {
         flb_error("[storage] %s", str);
     }
-    else if (level == CIO_WARN) {
+    else if (level == CIO_LOG_WARN) {
         flb_warn("[storage] %s", str);
     }
-    else if (level == CIO_INFO) {
+    else if (level == CIO_LOG_INFO) {
         flb_info("[storage] %s", str);
     }
-    else if (level == CIO_DEBUG) {
+    else if (level == CIO_LOG_DEBUG) {
         flb_debug("[storage] %s", str);
     }
 
@@ -223,7 +223,7 @@ int flb_storage_create(struct flb_config *ctx)
     }
 
     /* Create chunkio context */
-    cio = cio_create(ctx->storage_path, log_cb, CIO_DEBUG, flags);
+    cio = cio_create(ctx->storage_path, log_cb, CIO_LOG_DEBUG, flags);
     if (!cio) {
         flb_error("[storage] error initializing storage engine");
         return -1;
