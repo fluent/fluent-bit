@@ -29,7 +29,7 @@ static void print_storage_info(struct flb_config *ctx, struct cio_ctx *cio)
     char *checksum;
     struct flb_input_instance *in;
 
-    flb_info("[storage] initializing...");
+    flb_info("[storage] version=%s, initializing...", cio_version());
 
     if (cio->root_path) {
         flb_info("[storage] root path '%s'", cio->root_path);
