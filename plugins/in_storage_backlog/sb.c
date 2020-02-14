@@ -72,10 +72,19 @@ static int cb_queue_chunks(struct flb_input_instance *in,
 
         /*
          * All chunks on this backlog are 'file' based, always try to set
-         * them up. It could fail due to max_chunks_up limits.
+         * them up. We validate the status.
          */
         ret = cio_chunk_up(sbc->chunk);
-        if (ret == -1) {
+        if (ret == CIO_CORRUPTED) {
+            flb_error("[storage_backlog] removing corrupted chunk from the "
+                      "queue %s:%s",
+                      sbc->stream->name, sbc->chunk->name);
+            cio_chunk_close(sbc->chunk, FLB_FALSE);
+            mk_list_del(&sbc->_head);
+            flb_free(sbc);
+            continue;
+        }
+        else if (ret == CIO_ERROR || ret == CIO_RETRY) {
             continue;
         }
 
