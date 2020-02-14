@@ -40,6 +40,7 @@ set(FLB_IN_WINLOG             Yes)
 set(FLB_IN_COLLECTD            No)
 set(FLB_IN_STATSD             Yes)
 set(FLB_IN_STORAGE_BACKLOG     No)
+set(FLB_IN_EMITTER            Yes)
 
 # OUTPUT plugins
 # ==============
