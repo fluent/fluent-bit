@@ -49,6 +49,9 @@ struct flb_azure {
 
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
+
+    /* Plugin instance reference */
+    struct flb_output_instance *ins;
 };
 
 #endif
