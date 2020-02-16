@@ -39,7 +39,7 @@ struct flb_in_thermal_config {
     struct flb_regex *name_regex; /* optional filter by name */
     struct flb_regex *type_regex; /* optional filter by type */
 #endif
-    struct flb_input_instance *i_ins;
+    struct flb_input_instance *ins;
 };
 
 int in_thermal_pre_run(void *in_context, struct flb_config *config);
