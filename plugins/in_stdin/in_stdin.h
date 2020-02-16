@@ -34,7 +34,7 @@ struct flb_in_stdin_config {
     /* Parser / Format */
     struct flb_parser *parser;
     struct flb_pack_state pack_state;
-    struct flb_input_instance *i_in;
+    struct flb_input_instance *ins;
 };
 
 extern struct flb_input_plugin in_stdin_plugin;

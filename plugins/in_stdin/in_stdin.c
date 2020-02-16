@@ -18,9 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
-
-#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_engine.h>
@@ -70,7 +68,8 @@ static inline int process_pack(msgpack_packer *mp_pck,
              * Upon exception, acknowledge the user about the problem but continue
              * working, do not discard valid JSON entries.
              */
-            flb_error("[in_stdin] invalid record found, it's not a JSON map or array");
+            flb_plg_error(ctx->ins, "invalid record found, "
+                          "it's not a JSON map or array");
             msgpack_unpacked_destroy(&result);
             return -1;
         }
@@ -91,7 +90,7 @@ static inline int pack_regex(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
     return 0;
 }
 
-static int in_stdin_collect(struct flb_input_instance *i_ins,
+static int in_stdin_collect(struct flb_input_instance *ins,
                             struct flb_config *config, void *in_context)
 {
     int bytes = 0;
@@ -108,14 +107,14 @@ static int in_stdin_collect(struct flb_input_instance *i_ins,
     bytes = read(ctx->fd,
                  ctx->buf + ctx->buf_len,
                  sizeof(ctx->buf) - ctx->buf_len - 1);
-    flb_trace("in_stdin read() = %i", bytes);
+    flb_plg_trace(ctx->ins, "stdin read() = %i", bytes);
 
     if (bytes == 0) {
-        flb_warn("[in_stdin] end of file (stdin closed by remote end)");
+        flb_plg_warn(ctx->ins, "end of file (stdin closed by remote end)");
     }
 
     if (bytes <= 0) {
-        flb_input_collector_pause(ctx->coll_fd, ctx->i_in);
+        flb_input_collector_pause(ctx->coll_fd, ctx->ins);
         flb_engine_exit(config);
         return -1;
     }
@@ -132,12 +131,12 @@ static int in_stdin_collect(struct flb_input_instance *i_ins,
             ret = flb_pack_json_state(ctx->buf, ctx->buf_len,
                                       &pack, &pack_size, &ctx->pack_state);
             if (ret == FLB_ERR_JSON_PART) {
-                flb_debug("[in_stdin] data incomplete, waiting for more...");
+                flb_plg_debug(ctx->ins, "data incomplete, waiting for more...");
                 msgpack_sbuffer_destroy(&mp_sbuf);
                 return 0;
             }
             else if (ret == FLB_ERR_JSON_INVAL) {
-                flb_debug("[in_stdin] invalid JSON message, skipping");
+                flb_plg_debug(ctx->ins, "invalid JSON message, skipping");
                 flb_pack_state_reset(&ctx->pack_state);
                 flb_pack_state_init(&ctx->pack_state);
                 ctx->pack_state.multiple = FLB_TRUE;
@@ -160,7 +159,7 @@ static int in_stdin_collect(struct flb_input_instance *i_ins,
 
             flb_free(pack);
 
-            flb_input_chunk_append_raw(i_ins, NULL, 0,
+            flb_input_chunk_append_raw(ins, NULL, 0,
                                        mp_sbuf.data, mp_sbuf.size);
             msgpack_sbuffer_destroy(&mp_sbuf);
             return 0;
@@ -179,13 +178,13 @@ static int in_stdin_collect(struct flb_input_instance *i_ins,
                 pack_regex(&mp_sbuf, &mp_pck,
                            ctx, &out_time, out_buf, out_size);
                 flb_free(out_buf);
-                flb_input_chunk_append_raw(i_ins, NULL, 0,
+                flb_input_chunk_append_raw(ins, NULL, 0,
                                            mp_sbuf.data, mp_sbuf.size);
                 msgpack_sbuffer_clear(&mp_sbuf);
             }
             else {
                 /* we need more data ? */
-                flb_trace("[in_stdin] data mismatch or incomplete");
+                flb_plg_trace(ctx->ins, "data mismatch or incomplete");
                 msgpack_sbuffer_destroy(&mp_sbuf);
                 return 0;
             }
@@ -227,13 +226,13 @@ static int in_stdin_init(struct flb_input_instance *in,
         return -1;
     }
     ctx->buf_len = 0;
-    ctx->i_in = in;
+    ctx->ins = in;
 
     /* Clone the standard input file descriptor */
     fd = dup(STDIN_FILENO);
     if (fd == -1) {
-        perror("dup");
-        flb_error("Could not open standard input!");
+        flb_errno();
+        flb_plg_error(ctx->ins, "Could not open standard input!");
         flb_free(ctx);
         return -1;
     }
@@ -243,7 +242,7 @@ static int in_stdin_init(struct flb_input_instance *in,
     if (tmp) {
         ctx->parser = flb_parser_get(tmp, config);
         if (!ctx->parser) {
-            flb_error("[in_stdin] requested parser '%s' not found", tmp);
+            flb_plg_error(ctx->ins, "requested parser '%s' not found", tmp);
         }
     }
     else {
@@ -263,7 +262,7 @@ static int in_stdin_init(struct flb_input_instance *in,
                                         ctx->fd,
                                         config);
     if (ret == -1) {
-        flb_error("Could not set collector for STDIN input plugin");
+        flb_plg_error(ctx->ins, "Could not set collector for STDIN input plugin");
         flb_free(ctx);
         return -1;
     }
@@ -276,6 +275,10 @@ static int in_stdin_init(struct flb_input_instance *in,
 static int in_stdin_exit(void *in_context, struct flb_config *config)
 {
     struct flb_in_stdin_config *ctx = in_context;
+
+    if (!ctx) {
+        return 0;
+    }
 
     if (ctx->fd >= 0) {
         close(ctx->fd);
