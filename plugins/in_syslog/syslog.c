@@ -25,7 +25,7 @@
 #include <fcntl.h>
 
 #include <msgpack.h>
-#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
@@ -48,11 +48,11 @@ static int in_syslog_collect_tcp(struct flb_input_instance *i_ins,
     /* Accept the new connection */
     fd = flb_net_accept(ctx->server_fd);
     if (fd == -1) {
-        flb_error("[in_syslog] could not accept new connection");
+        flb_plg_error(ctx->ins, "could not accept new connection");
         return -1;
     }
 
-    flb_trace("[in_syslog] new Unix connection arrived FD=%i", fd);
+    flb_plg_debug(ctx->ins, "new Unix connection arrived FD=%i", fd);
     conn = syslog_conn_add(fd, ctx);
     if (!conn) {
         return -1;
@@ -99,13 +99,13 @@ static int in_syslog_init(struct flb_input_instance *in,
     /* Allocate space for the configuration */
     ctx = syslog_conf_create(in, config);
     if (!ctx) {
-        flb_error("[in_syslog] could not initialize plugin");
+        flb_plg_error(ctx->ins, "could not initialize plugin");
         return -1;
     }
 
     if ((ctx->mode == FLB_SYSLOG_UNIX_TCP || ctx->mode == FLB_SYSLOG_UNIX_UDP)
         && !ctx->unix_path) {
-        flb_error("[in_syslog] Unix path not defined");
+        flb_plg_error(ctx->ins, "Unix path not defined");
         syslog_conf_destroy(ctx);
         return -1;
     }
@@ -136,7 +136,7 @@ static int in_syslog_init(struct flb_input_instance *in,
     }
 
     if (ret == -1) {
-        flb_error("[in_syslog] Could not set collector");
+        flb_plg_error(ctx->ins, "Could not set collector");
         syslog_conf_destroy(ctx);
     }
 

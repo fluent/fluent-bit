@@ -18,7 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_network.h>
@@ -45,8 +45,9 @@ int syslog_conn_event(void *data)
         available = (conn->buf_size - conn->buf_len) - 1;
         if (available < 1) {
             if (conn->buf_size + ctx->buffer_chunk_size > ctx->buffer_max_size) {
-                flb_debug("[in_syslog] fd=%i incoming data exceed limit (%i bytes)",
-                          event->fd, (ctx->buffer_max_size));
+                flb_plg_debug(ctx->ins,
+                              "fd=%i incoming data exceed limit (%i bytes)",
+                              event->fd, (ctx->buffer_max_size));
                 syslog_conn_del(conn);
                 return -1;
             }
@@ -57,8 +58,8 @@ int syslog_conn_event(void *data)
                 flb_errno();
                 return -1;
             }
-            flb_trace("[in_syslog] fd=%i buffer realloc %i -> %i",
-                      event->fd, conn->buf_size, size);
+            flb_plg_trace(ctx->ins, "fd=%i buffer realloc %i -> %i",
+                          event->fd, conn->buf_size, size);
 
             conn->buf_data = tmp;
             conn->buf_size = size;
@@ -68,8 +69,8 @@ int syslog_conn_event(void *data)
         bytes = read(conn->fd,
                      conn->buf_data + conn->buf_len, available);
         if (bytes > 0) {
-            flb_trace("[in_syslog] read()=%i pre_len=%i now_len=%i",
-                      bytes, conn->buf_len, conn->buf_len + bytes);
+            flb_plg_trace(ctx->ins, "read()=%i pre_len=%i now_len=%i",
+                          bytes, conn->buf_len, conn->buf_len + bytes);
             conn->buf_len += bytes;
             conn->buf_data[conn->buf_len] = '\0';
             ret = syslog_prot_process(conn);
@@ -79,14 +80,14 @@ int syslog_conn_event(void *data)
             return bytes;
         }
         else {
-            flb_trace("[in_syslog] fd=%i closed connection", event->fd);
+            flb_plg_trace(ctx->ins, "fd=%i closed connection", event->fd);
             syslog_conn_del(conn);
             return -1;
         }
     }
 
     if (event->mask & MK_EVENT_CLOSE) {
-        flb_trace("[in_syslog] fd=%i hangup", event->fd);
+        flb_plg_trace(ctx->ins, "fd=%i hangup", event->fd);
         syslog_conn_del(conn);
         return -1;
     }
@@ -115,9 +116,9 @@ struct syslog_conn *syslog_conn_add(int fd, struct flb_syslog *ctx)
     /* Connection info */
     conn->fd      = fd;
     conn->ctx     = ctx;
+    conn->ins     = ctx->ins;
     conn->buf_len = 0;
     conn->buf_parsed = 0;
-    conn->in      = ctx->i_ins;
 
     /* Allocate read buffer */
     conn->buf_data = flb_malloc(ctx->buffer_chunk_size);
@@ -132,7 +133,7 @@ struct syslog_conn *syslog_conn_add(int fd, struct flb_syslog *ctx)
     /* Register instance into the event loop */
     ret = mk_event_add(ctx->evl, fd, FLB_ENGINE_EV_CUSTOM, MK_EVENT_READ, conn);
     if (ret == -1) {
-        flb_error("[in_fw] could not register new connection");
+        flb_plg_error(ctx->ins, "could not register new connection");
         close(fd);
         flb_free(conn->buf_data);
         flb_free(conn);

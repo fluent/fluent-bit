@@ -37,7 +37,7 @@ struct syslog_conn {
     size_t buf_size;                 /* Buffer size                       */
     size_t buf_len;                  /* Buffer length                     */
     size_t buf_parsed;               /* Parsed buffer (offset)            */
-    struct flb_input_instance *in;   /* Parent plugin instance            */
+    struct flb_input_instance *ins;  /* Parent plugin instance            */
     struct flb_syslog *ctx;          /* Plugin configuration context      */
 
     struct mk_list _head;

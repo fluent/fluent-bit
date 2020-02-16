@@ -18,14 +18,14 @@
  *  limitations under the License.
  */
 
-#include <string.h>
-
-#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_time.h>
 
 #include "syslog.h"
 #include "syslog_conn.h"
+
+#include <string.h>
 
 static inline void consume_bytes(char *buf, int bytes, int length)
 {
@@ -46,7 +46,7 @@ static inline int pack_line(struct flb_syslog *ctx,
     flb_time_append_to_msgpack(time, &mp_pck, 0);
     msgpack_sbuffer_write(&mp_sbuf, data, data_size);
 
-    flb_input_chunk_append_raw(ctx->i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    flb_input_chunk_append_raw(ctx->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     return 0;
@@ -104,10 +104,9 @@ int syslog_prot_process(struct syslog_conn *conn)
             flb_free(out_buf);
         }
         else {
-            flb_warn("[in_syslog] error parsing log message "
-                      "on \"%s\" with parser '%s')",
-                      flb_input_name(ctx->i_ins), ctx->parser->name);
-            flb_debug("[in_syslog] unparsed log message: %.*s", len, p);
+            flb_plg_warn(ctx->ins, "error parsing log message with parser '%s'",
+                         ctx->parser->name);
+            flb_plg_debug(ctx->ins, "unparsed log message: %.*s", len, p);
         }
 
         conn->buf_parsed += len + 1;
@@ -142,10 +141,9 @@ int syslog_prot_process_udp(char *buf, size_t size, struct flb_syslog *ctx)
         flb_free(out_buf);
     }
     else {
-        flb_warn("[in_syslog] error parsing log message "
-                 "on \"%s\" with parser '%s')",
-                 flb_input_name(ctx->i_ins), ctx->parser->name);
-        flb_debug("[in_syslog] unparsed log message: %.*s", size, buf);
+        flb_plg_warn(ctx->ins, "error parsing log message with parser '%s'",
+                     ctx->parser->name);
+        flb_plg_debug(ctx->ins, "unparsed log message: %.*s", size, buf);
         return -1;
     }
 

@@ -62,7 +62,7 @@ struct flb_syslog {
     /* List for connections and event loop */
     struct mk_list connections;
     struct mk_event_loop *evl;
-    struct flb_input_instance *i_ins;
+    struct flb_input_instance *ins;
 };
 
 #endif
