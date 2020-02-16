@@ -18,8 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_sds.h>
 
 struct sp_chunk {
@@ -29,10 +28,10 @@ struct sp_chunk {
 };
 
 struct sp_ctx {
-    int coll_fd;            /* collector file descriptor to flush queue */
-    flb_sds_t tag;          /* outgoing Tag name */
-    struct mk_list chunks;  /* linked list with data chunks to ingest */
-    struct flb_input_instance *in;
+    int coll_fd;                    /* collector file descriptor to flush queue */
+    flb_sds_t tag;                  /* outgoing Tag name */
+    struct mk_list chunks;          /* linked list with data chunks to ingest */
+    struct flb_input_instance *ins;
 };
 
 /*
@@ -43,10 +42,10 @@ struct sp_ctx {
  * extra memory-copies we just expose this function for direct use.
  */
 int in_stream_processor_add_chunk(char *buf_data, size_t buf_size,
-                                  struct flb_input_instance *in)
+                                  struct flb_input_instance *ins)
 {
     struct sp_chunk *chunk;
-    struct sp_ctx *ctx = (struct sp_ctx *) in->context;
+    struct sp_ctx *ctx = (struct sp_ctx *) ins->context;
 
     chunk = flb_malloc(sizeof(struct sp_chunk));
     if (!chunk) {
@@ -96,7 +95,7 @@ static int cb_sp_init(struct flb_input_instance *in,
         flb_errno();
         return -1;
     }
-    ctx->in = in;
+    ctx->ins = in;
     mk_list_init(&ctx->chunks);
 
     /* Register context */
@@ -123,7 +122,7 @@ static int cb_sp_init(struct flb_input_instance *in,
                                        500000000,
                                        config);
     if (ret == -1) {
-        flb_error("[in_stream_processor] Could not set collector");
+        flb_plg_error(ctx->ins, "Could not set collector");
         return -1;
     }
     ctx->coll_fd = ret;
@@ -135,14 +134,14 @@ static void cb_sp_pause(void *data, struct flb_config *config)
 {
     struct sp_ctx *ctx = data;
 
-    flb_input_collector_pause(ctx->coll_fd, ctx->in);
+    flb_input_collector_pause(ctx->coll_fd, ctx->ins);
 }
 
 static void cb_sp_resume(void *data, struct flb_config *config)
 {
     struct sp_ctx *ctx = data;
 
-    flb_input_collector_resume(ctx->coll_fd, ctx->in);
+    flb_input_collector_resume(ctx->coll_fd, ctx->ins);
 }
 
 static int cb_sp_exit(void *data, struct flb_config *config)
@@ -150,7 +149,7 @@ static int cb_sp_exit(void *data, struct flb_config *config)
     struct sp_ctx *ctx = data;
 
     /* Upon exit, put in the queue all pending chunks */
-    cb_chunks_append(ctx->in, config, ctx);
+    cb_chunks_append(ctx->ins, config, ctx);
     flb_sds_destroy(ctx->tag);
     flb_free(ctx);
 
