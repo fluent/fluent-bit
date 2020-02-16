@@ -34,7 +34,7 @@ spec:
         - mountPath: c:\inetpub\logs\LogFiles\W3SVC1\
           name: log-volume
       - name: fluentbit-logger
-        image: fluent/fluent-bit:1.3.3-nanoserver
+        image: fluent/fluent-bit:1.3.7-nanoserver
         imagePullPolicy: Always
         volumeMounts:
         - mountPath: c:\config

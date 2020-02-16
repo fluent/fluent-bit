@@ -5,10 +5,14 @@ The Fluent Bit Docker images should be built as follows:
 ## Linux
 
 ```bash
-docker build --no-cache -t fluent/fluent-bit:1.3.3 -f Dockerfile .
+docker build --no-cache -t fluent/fluent-bit:1.3.7 -f Dockerfile .
 ```
 
 ## Windows
+
+> Note:
+>
+> The minimum version of fluent-bit supported is `1.3.7`.
 
 The Windows version can be specified when building the Windows image. The instructions below leverage the **Windows Server Core 2019 - 1809/ltsc2019** base image. The large Windows Server Core base image is leveraged as the builder, while the smaller Windows Nano base image is leveraged for the final runtime image.
 
@@ -20,5 +24,15 @@ More information is available at:
 In addition, metadata as defined in OCI image spec annotations, is leveraged in the generated image. This is the reason for the additional `--build-arg` parameters.
 
 ```powershell
-docker build --no-cache --build-arg WINDOWS_VERSION=1809 --build-arg FLUENTBIT_VERSION=1.3.3 --build-arg IMAGE_CREATE_DATE="$(Get-Date((Get-Date).ToUniversalTime()) -UFormat '%Y-%m-%dT%H:%M:%SZ')" --build-arg IMAGE_SOURCE_REVISION="$(git rev-parse HEAD)" -t fluent/fluent-bit:1.3.3-nanoserver -f Dockerfile .
+# Minimum set of build-args
+docker build --no-cache `
+  --build-arg WINDOWS_VERSION=1809 --build-arg FLUENTBIT_VERSION=1.3.7 `
+  -t fluent/fluent-bit:1.3.7-nanoserver -f Dockerfile.windows .
+
+# Full set of build-args
+docker build --no-cache `
+  --build-arg WINDOWS_VERSION=1809 --build-arg FLUENTBIT_VERSION=1.3.7 `
+  --build-arg IMAGE_CREATE_DATE="$(Get-Date((Get-Date).ToUniversalTime()) -UFormat '%Y-%m-%dT%H:%M:%SZ')" `
+  --build-arg IMAGE_SOURCE_REVISION="$(git rev-parse HEAD)" `
+  -t fluent/fluent-bit:1.3.7-nanoserver -f Dockerfile.windows .
 ```

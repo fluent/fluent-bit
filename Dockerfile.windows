@@ -32,20 +32,15 @@ RUN Write-Host ('Creating folders'); `
     New-Item -Type Directory -Path /installation; `
     New-Item -Type Directory -Path /fluent-bit;
 
-COPY ./ci/appveyor-download.ps1 /installation/appveyor-download.ps1
 WORKDIR /installation
 
 RUN Write-Host ('Installing Fluent Bit'); `
-    /installation/appveyor-download.ps1 "v$($env:FLUENTBIT_VERSION)" -platform x64 -filetype zip; `
+    $majorminor = ([Version]::Parse("$env:FLUENTBIT_VERSION")).toString(2); `
+    $ProgressPreference = 'SilentlyContinue'; `
+    Invoke-WebRequest -Uri "http://fluentbit.io/releases/$($majorminor)/td-agent-bit-$($env:FLUENTBIT_VERSION)-win64.zip" -OutFile /installation/td-agent-bit-$($env:FLUENTBIT_VERSION)-win64.zip; `
+    $ProgressPreference = 'Continue'; `
     Expand-Archive -Path /installation/td-agent-bit-$($env:FLUENTBIT_VERSION)-win64.zip -Destination /installation/fluent-bit; `
     Move-Item -Path /installation/fluent-bit/*/* -Destination /fluent-bit/;
-
-RUN Write-Host ('Installing required OpenSSL 1.0.2s libraries - ssleay32.dll, libeay32.dll.'); `
-    $ProgressPreference = 'SilentlyContinue'; `
-    Invoke-WebRequest -Uri 'https://indy.fulgan.com/SSL/openssl-1.0.2s-x64_86-win64.zip' -OutFile /installation/openssl.zip; `
-    $ProgressPreference = 'Continue'; `
-    Expand-Archive -Path /installation/openssl.zip -Destination /installation/openssl; `
-    Move-Item -Path /installation/openssl/*.dll -Destination /fluent-bit/bin;
 
 #
 # Technique from https://github.com/StefanScherer/dockerfiles-windows/blob/master/mongo/3.6/Dockerfile
