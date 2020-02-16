@@ -18,7 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_unescape.h>
 
@@ -58,7 +58,7 @@ struct flb_in_tcp_config *tcp_config_init(struct flb_input_instance *i_ins)
             ctx->format = FLB_TCP_FMT_NONE;
         }
         else {
-            flb_error("[in_tcp] unrecognized format value '%s'", tmp);
+            flb_plg_error(ctx->ins, "unrecognized format value '%s'", tmp);
             flb_free(ctx);
             return NULL;
         }
@@ -76,7 +76,7 @@ struct flb_in_tcp_config *tcp_config_init(struct flb_input_instance *i_ins)
         }
         ret = flb_unescape_string(tmp, len, &out);
         if (ret <= 0) {
-            flb_error("[in_tcp] invalid separator");
+            flb_plg_error(ctx->ins, "invalid separator");
             flb_free(out);
             flb_free(ctx);
             return NULL;
@@ -138,8 +138,8 @@ struct flb_in_tcp_config *tcp_config_init(struct flb_input_instance *i_ins)
         ctx->buffer_size  = (atoi(buffer_size) * 1024);
     }
 
-    flb_debug("[in_tcp] Listen='%s' TCP_Port=%s",
-              ctx->listen, ctx->tcp_port);
+    flb_plg_debug(ctx->ins, "Listen='%s' TCP_Port=%s",
+                  ctx->listen, ctx->tcp_port);
 
     return ctx;
 }
