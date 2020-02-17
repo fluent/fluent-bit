@@ -24,6 +24,8 @@
 #define FLB_GELF_TCP 1
 #define FLB_GELF_TLS 2
 
+#include <fluent-bit/flb_output_plugin.h>
+
 struct flb_out_gelf_config {
 
     struct flb_gelf_fields fields;
@@ -37,6 +39,8 @@ struct flb_out_gelf_config {
     unsigned int seed;
 
     int mode;
+
+    struct flb_output_instance *ins;
 };
 
 #endif
