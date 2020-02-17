@@ -18,8 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_time.h>
@@ -44,6 +43,7 @@ static int cb_stdout_init(struct flb_output_instance *ins,
         flb_errno();
         return -1;
     }
+    ctx->ins = ins;
 
     ret = flb_output_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
@@ -56,8 +56,8 @@ static int cb_stdout_init(struct flb_output_instance *ins,
     if (tmp) {
         ret = flb_pack_to_json_format_type(tmp);
         if (ret == -1) {
-            flb_error("[out_stdout] unrecognized 'format' option. "
-                      "Using 'msgpack'");
+            flb_plg_error(ctx->ins, "unrecognized 'format' option. "
+                          "Using 'msgpack'");
         }
         else {
             ctx->out_format = ret;
@@ -70,8 +70,8 @@ static int cb_stdout_init(struct flb_output_instance *ins,
     if (tmp) {
         ret = flb_pack_to_json_date_type(tmp);
         if (ret == -1) {
-            flb_error("[out_stdout] invalid json_date_format '%s'. "
-                      "Using 'double' type", tmp);
+            flb_plg_error(ctx->ins, "invalid json_date_format '%s'. "
+                          "Using 'double' type", tmp);
         }
         else {
             ctx->json_date_format = ret;
