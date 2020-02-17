@@ -21,6 +21,7 @@
 #ifndef FLB_OUT_FLOWCOUNTER
 #define FLB_OUT_FLOWCOUNTER
 
+#include <fluent-bit/flb_output.h>
 #include <stdint.h>
 
 #define FLB_UNIT_SEC  "second"
@@ -42,6 +43,8 @@ struct flb_flowcounter {
     struct flb_out_fcount_buffer *buf;
     int index;
     int size;
+
+    struct flb_output_instance *ins;
 };
 
 #endif
