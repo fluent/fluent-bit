@@ -73,6 +73,7 @@ struct flb_forward {
     /* Upstream handler and config context for single mode (no HA) */
     struct flb_upstream *u;
     struct mk_list configs;
+    struct flb_output_instance *ins;
 };
 
 struct flb_forward_ping {
@@ -81,5 +82,7 @@ struct flb_forward_ping {
     const char *auth;
     int auth_len;
     int keepalive;
+
+
 };
 #endif
