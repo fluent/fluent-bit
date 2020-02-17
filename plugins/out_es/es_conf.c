@@ -18,7 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_http_client.h>
@@ -47,6 +47,7 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
         flb_errno();
         return NULL;
     }
+    ctx->ins = ins;
 
     if (uri) {
         if (uri->count >= 2) {
@@ -61,7 +62,7 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
     /* Populate context with config map defaults and incoming properties */
     ret = flb_output_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
-        flb_error("[out_es] configuration error");
+        flb_plg_error(ctx->ins, "configuration error");
         flb_es_conf_destroy(ctx);
         return NULL;
     }
@@ -85,7 +86,7 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
                                    io_flags,
                                    &ins->tls);
     if (!upstream) {
-        flb_error("[out_es] cannot create Upstream context");
+        flb_plg_error(ctx->ins, "cannot create Upstream context");
         flb_es_conf_destroy(ctx);
         return NULL;
     }
@@ -130,12 +131,14 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
     if (tmp) {
         if (strncasecmp(tmp, "On", 2) == 0) {
             ctx->has_aws_auth = FLB_TRUE;
-            flb_warn("[out_es] Enabled AWS Auth. Note: Amazon ElasticSearch "
-                     "Service support in Fluent Bit is experimental.");
+            flb_plg_warn(ctx->ins,
+                         "Enabled AWS Auth. Note: Amazon ElasticSearch "
+                         "Service support in Fluent Bit is experimental.");
 
             tmp = flb_output_get_property("aws_region", ins);
             if (!tmp) {
-                flb_error("[out_es] aws_auth enabled but aws_region not set");
+                flb_plg_error(ctx->ins,
+                              "aws_auth enabled but aws_region not set");
                 flb_es_conf_destroy(ctx);
                 return NULL;
             }

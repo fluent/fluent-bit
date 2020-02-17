@@ -18,8 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_http_client.h>
@@ -38,7 +37,8 @@
 struct flb_output_plugin out_es_plugin;
 
 #ifdef FLB_HAVE_SIGNV4
-static flb_sds_t add_aws_auth(struct flb_http_client *c, char *region)
+static flb_sds_t add_aws_auth(struct flb_elasticsearch *ctx,
+                              struct flb_http_client *c, char *region)
 {
     flb_sds_t signature = NULL;
     char *access_key = NULL;
@@ -46,25 +46,25 @@ static flb_sds_t add_aws_auth(struct flb_http_client *c, char *region)
     char *session_token = NULL;
     int ret;
 
-    flb_debug("[out_es] Signing request with AWS Sigv4");
+    flb_plg_debug(ctx->ins, "Signing request with AWS Sigv4");
 
     /* Amazon ES Sigv4 does not allow the host header to include the port */
     ret = flb_http_strip_port_from_host(c);
     if (ret < 0) {
-        flb_error("[out_es] could not strip port from host for sigv4");
+        flb_plg_error(ctx->ins, "could not strip port from host for sigv4");
         return NULL;
     }
 
     /* AWS credentials */
     access_key = getenv("AWS_ACCESS_KEY_ID");
     if (!access_key || strlen(access_key) < 1) {
-        flb_error("[out_es] 'AWS_ACCESS_KEY_ID' not set");
+        flb_plg_error(ctx->ins, "'AWS_ACCESS_KEY_ID' not set");
         return NULL;
     }
 
     secret_key = getenv("AWS_SECRET_ACCESS_KEY");
     if (!access_key || strlen(access_key) < 1) {
-        flb_error("[out_es] 'AWS_SECRET_ACCESS_KEY' not set");
+        flb_plg_error(ctx->ins, "'AWS_SECRET_ACCESS_KEY' not set");
         return NULL;
     }
 
@@ -74,7 +74,7 @@ static flb_sds_t add_aws_auth(struct flb_http_client *c, char *region)
                               access_key, region, "es",
                               secret_key, session_token);
     if (!signature) {
-        flb_error("[out_es] could not sign request with sigv4");
+        flb_plg_error(ctx->ins, "could not sign request with sigv4");
         return NULL;
     }
     return signature;
@@ -473,19 +473,20 @@ static int cb_es_init(struct flb_output_instance *ins,
 
     ctx = flb_es_conf_create(ins, config);
     if (!ctx) {
-        flb_error("[out_es] cannot initialize plugin");
+        flb_plg_error(ins, "cannot initialize plugin");
         return -1;
     }
 
-    flb_debug("[out_es] host=%s port=%i uri=%s index=%s type=%s",
-              ins->host.name, ins->host.port, ctx->uri,
-              ctx->index, ctx->type);
+    flb_plg_debug(ctx->ins, "host=%s port=%i uri=%s index=%s type=%s",
+                  ins->host.name, ins->host.port, ctx->uri,
+                  ctx->index, ctx->type);
 
     flb_output_set_context(ins, ctx);
     return 0;
 }
 
-static int elasticsearch_error_check(struct flb_http_client *c)
+static int elasticsearch_error_check(struct flb_elasticsearch *ctx,
+                                     struct flb_http_client *c)
 {
     int i;
     int ret;
@@ -518,8 +519,8 @@ static int elasticsearch_error_check(struct flb_http_client *c)
             return FLB_FALSE;
         }
 
-        flb_error("[out_es] could not pack/validate JSON response\n%s",
-                  c->resp.payload);
+        flb_plg_error(ctx->ins, "could not pack/validate JSON response\n%s",
+                      c->resp.payload);
         return FLB_TRUE;
     }
 
@@ -527,15 +528,15 @@ static int elasticsearch_error_check(struct flb_http_client *c)
     msgpack_unpacked_init(&result);
     ret = msgpack_unpack_next(&result, out_buf, out_size, &off);
     if (ret != MSGPACK_UNPACK_SUCCESS) {
-        flb_error("[out_es] Cannot unpack response to find error\n%s",
-                  c->resp.payload);
+        flb_plg_error(ctx->ins, "Cannot unpack response to find error\n%s",
+                      c->resp.payload);
         return FLB_TRUE;
     }
 
     root = result.data;
     if (root.type != MSGPACK_OBJECT_MAP) {
-        flb_error("[out_es] unexpected payload type=%i",
-                  root.type);
+        flb_plg_error(ctx->ins, "unexpected payload type=%i",
+                      root.type);
         check = FLB_TRUE;
         goto done;
     }
@@ -543,8 +544,8 @@ static int elasticsearch_error_check(struct flb_http_client *c)
     for (i = 0; i < root.via.map.size; i++) {
         key = root.via.map.ptr[i].key;
         if (key.type != MSGPACK_OBJECT_STR) {
-            flb_error("[out_es] unexpected key type=%i",
-                      key.type);
+            flb_plg_error(ctx->ins, "unexpected key type=%i",
+                          key.type);
             check = FLB_TRUE;
             goto done;
         }
@@ -556,8 +557,8 @@ static int elasticsearch_error_check(struct flb_http_client *c)
         if (strncmp(key.via.str.ptr, "errors", 6) == 0) {
             val = root.via.map.ptr[i].val;
             if (val.type != MSGPACK_OBJECT_BOOLEAN) {
-                flb_error("[out_es] unexpected 'error' value type=%i",
-                          val.type);
+                flb_plg_error(ctx->ins, "unexpected 'error' value type=%i",
+                              val.type);
                 check = FLB_TRUE;
                 goto done;
             }
@@ -582,10 +583,10 @@ static int elasticsearch_error_check(struct flb_http_client *c)
     return check;
 }
 
-void cb_es_flush(const void *data, size_t bytes,
-                 const char *tag, int tag_len,
-                 struct flb_input_instance *i_ins, void *out_context,
-                 struct flb_config *config)
+static void cb_es_flush(const void *data, size_t bytes,
+                        const char *tag, int tag_len,
+                        struct flb_input_instance *i_ins, void *out_context,
+                        struct flb_config *config)
 {
     int ret;
     int bytes_out;
@@ -632,7 +633,7 @@ void cb_es_flush(const void *data, size_t bytes,
     if (ctx->has_aws_auth == FLB_TRUE) {
         /* User agent for AWS tools must start with "aws-" */
         flb_http_add_header(c, "User-Agent", 10, "aws-fluent-bit-plugin", 21);
-        signature = add_aws_auth(c, ctx->aws_region);
+        signature = add_aws_auth(ctx, c, ctx->aws_region);
         if (!signature) {
             goto retry;
         }
@@ -644,20 +645,20 @@ void cb_es_flush(const void *data, size_t bytes,
 
     ret = flb_http_do(c, &b_sent);
     if (ret != 0) {
-        flb_warn("[out_es] http_do=%i URI=%s", ret, ctx->uri);
+        flb_plg_warn(ctx->ins, "http_do=%i URI=%s", ret, ctx->uri);
         goto retry;
     }
     else {
         /* The request was issued successfully, validate the 'error' field */
-        flb_debug("[out_es] HTTP Status=%i URI=%s", c->resp.status, ctx->uri);
+        flb_plg_debug(ctx->ins, "HTTP Status=%i URI=%s", c->resp.status, ctx->uri);
         if (c->resp.status != 200 && c->resp.status != 201) {
             if (c->resp.payload_size > 0) {
-                flb_error("[out_es] HTTP status=%i URI=%s, response:\n%s\n",
-                          c->resp.status, ctx->uri, c->resp.payload);
+                flb_plg_error(ctx->ins, "HTTP status=%i URI=%s, response:\n%s\n",
+                              c->resp.status, ctx->uri, c->resp.payload);
             }
             else {
-                flb_error("[out_es] HTTP status=%i URI=%s",
-                          c->resp.status, ctx->uri);
+                flb_plg_error(ctx->ins, "HTTP status=%i URI=%s",
+                              c->resp.status, ctx->uri);
             }
             goto retry;
         }
@@ -667,7 +668,7 @@ void cb_es_flush(const void *data, size_t bytes,
              * Elasticsearch payload should be JSON, we convert it to msgpack
              * and lookup the 'error' field.
              */
-            ret = elasticsearch_error_check(c);
+            ret = elasticsearch_error_check(ctx, c);
             if (ret == FLB_TRUE) {
                 /* we got an error */
                 if (ctx->trace_error) {
@@ -675,14 +676,14 @@ void cb_es_flush(const void *data, size_t bytes,
                      * If trace_error is set, trace the actual
                      * input/output to Elasticsearch that caused the problem.
                      */
-                    flb_error("[out_es] error: Input\n%s\nOutput\n%s",
-                             pack, c->resp.payload);
+                    flb_plg_error(ctx->ins, "error: Input\n%s\nOutput\n%s",
+                                  pack, c->resp.payload);
                 }
                 goto retry;
             }
             else {
-                flb_debug("[out_es] Elasticsearch response\n%s",
-                          c->resp.payload);
+                flb_plg_debug(ctx->ins, "Elasticsearch response\n%s",
+                              c->resp.payload);
             }
         }
         else {
@@ -707,7 +708,7 @@ void cb_es_flush(const void *data, size_t bytes,
     FLB_OUTPUT_RETURN(FLB_RETRY);
 }
 
-int cb_es_exit(void *data, struct flb_config *config)
+static int cb_es_exit(void *data, struct flb_config *config)
 {
     struct flb_elasticsearch *ctx = data;
 

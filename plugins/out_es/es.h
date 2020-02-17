@@ -93,6 +93,9 @@ struct flb_elasticsearch {
 
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
+
+    /* Plugin output instance reference */
+    struct flb_output_instance *ins;
 };
 
 #endif
