@@ -54,6 +54,9 @@ struct flb_kafka_rest {
 
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
+
+    /* Plugin instance */
+    struct flb_output_instance *ins;
 };
 
 

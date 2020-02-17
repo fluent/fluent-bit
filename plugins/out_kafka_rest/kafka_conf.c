@@ -19,7 +19,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_utils.h>
 
@@ -42,6 +42,7 @@ struct flb_kafka_rest *flb_kr_conf_create(struct flb_output_instance *ins,
         flb_errno();
         return NULL;
     }
+    ctx->ins = ins;
 
     /* Get network configuration */
     if (!ins->host.name) {
@@ -71,7 +72,7 @@ struct flb_kafka_rest *flb_kr_conf_create(struct flb_output_instance *ins,
                                    io_flags,
                                    &ins->tls);
     if (!upstream) {
-        flb_error("[out_kafka_rest] cannot create Upstream context");
+        flb_plg_error(ctx->ins, "cannot create Upstream context");
         flb_kr_conf_destroy(ctx);
         return NULL;
     }
@@ -129,8 +130,8 @@ struct flb_kafka_rest *flb_kr_conf_create(struct flb_output_instance *ins,
             ctx->tag_key = flb_strdup(tmp);
             ctx->tag_key_len = strlen(tmp);
             if (tmp[0] != '_') {
-                flb_warn("[out_kafka_rest] consider use a tag_key "
-                         "that starts with '_'");
+                flb_plg_warn(ctx->ins, "consider use a tag_key "
+                             "that starts with '_'");
             }
         }
         else {
@@ -146,11 +147,11 @@ struct flb_kafka_rest *flb_kr_conf_create(struct flb_output_instance *ins,
          part = strtol(tmp, &endptr, 10);
          if ((errno == ERANGE && (part == LONG_MAX || part == LONG_MIN))
              || (errno != 0 && part == 0)) {
-             flb_error("[out_kafka_rest] invalid partition number");
+             flb_plg_error(ctx->ins, "invalid partition number");
          }
 
          if (endptr == tmp) {
-             flb_error("[out_kafka_rest] invalid partition number");
+             flb_plg_error(ctx->ins, "invalid partition number");
          }
          ctx->partition = part;
     }
