@@ -18,8 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_pack.h>
@@ -42,6 +41,7 @@ struct flb_out_tcp *flb_tcp_conf_create(struct flb_output_instance *ins,
         flb_errno();
         return NULL;
     }
+    ctx->ins = ins;
 
     /* Set default network configuration if not set */
     flb_output_net_default("127.0.0.1", 5170, ins);
@@ -68,7 +68,7 @@ struct flb_out_tcp *flb_tcp_conf_create(struct flb_output_instance *ins,
                                    ins->host.port,
                                    io_flags, (void *) &ins->tls);
     if (!upstream) {
-        flb_error("[out_tcp] could not create upstream context");
+        flb_plg_error(ctx->ins, "could not create upstream context");
         flb_free(ctx);
         return NULL;
     }
@@ -79,8 +79,8 @@ struct flb_out_tcp *flb_tcp_conf_create(struct flb_output_instance *ins,
     if (tmp) {
         ret = flb_pack_to_json_format_type(tmp);
         if (ret == -1) {
-            flb_error("[out_tcp] unrecognized 'format' option '%s'. "
-                      "Using 'msgpack'", tmp);
+            flb_plg_error(ctx->ins, "unrecognized 'format' option '%s'. "
+                          "Using 'msgpack'", tmp);
         }
         else {
             ctx->out_format = ret;
@@ -93,8 +93,8 @@ struct flb_out_tcp *flb_tcp_conf_create(struct flb_output_instance *ins,
     if (tmp) {
         ret = flb_pack_to_json_date_type(tmp);
         if (ret == -1) {
-            flb_error("[out_tcp] unrecognized 'json_date_format' option '%s'. "
-                      "Using 'double'", tmp);
+            flb_plg_error(ctx->ins, "unrecognized 'json_date_format' option '%s'. "
+                          "Using 'double'", tmp);
         }
         else {
             ctx->json_date_format = ret;

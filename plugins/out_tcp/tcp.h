@@ -34,6 +34,8 @@ struct flb_out_tcp {
 
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
+
+    struct flb_output_instance *ins;
 };
 
 #endif

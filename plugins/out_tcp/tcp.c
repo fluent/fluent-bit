@@ -18,8 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_time.h>
@@ -59,19 +58,19 @@ static void cb_tcp_flush(const void *data, size_t bytes,
                          struct flb_config *config)
 {
     int ret = FLB_ERROR;
-    struct flb_out_tcp *ctx = out_context;
     size_t bytes_sent;
     flb_sds_t json = NULL;
     struct flb_upstream *u;
     struct flb_upstream_conn *u_conn;
+    struct flb_out_tcp *ctx = out_context;
     (void) i_ins;
 
     /* Get upstream context and connection */
     u = ctx->u;
     u_conn = flb_upstream_conn_get(u);
     if (!u_conn) {
-        flb_error("[out_tcp] no upstream connections available to %s:%i",
-                  u->tcp_host, u->tcp_port);
+        flb_plg_error(ctx->ins, "no upstream connections available to %s:%i",
+                      u->tcp_host, u->tcp_port);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
@@ -84,7 +83,7 @@ static void cb_tcp_flush(const void *data, size_t bytes,
                                                ctx->json_date_format,
                                                ctx->json_date_key);
         if (!json) {
-            flb_error("[out_tcp] error formatting JSON payload");
+            flb_plg_error(ctx->ins, "error formatting JSON payload");
             flb_upstream_conn_release(u_conn);
             FLB_OUTPUT_RETURN(FLB_ERROR);
         }
