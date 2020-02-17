@@ -18,8 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
@@ -72,7 +71,8 @@ int jwt_base64_url_encode(unsigned char *out_buf, size_t out_size,
 
 
 static int jwt_encode(char *payload, char *secret,
-                      char **out_signature, size_t *out_size)
+                      char **out_signature, size_t *out_size,
+                      struct flb_stackdriver *ctx)
 {
     int ret;
     int len;
@@ -135,7 +135,7 @@ static int jwt_encode(char *payload, char *secret,
     ret = mbedtls_pk_parse_key(&pk_ctx,
                                (unsigned char *) secret, len, NULL, 0);
     if (ret != 0) {
-        flb_error("[out_stackdriver] error loading private key");
+        flb_plg_error(ctx->ins, "error loading private key");
         flb_free(buf);
         flb_sds_destroy(out);
         return -1;
@@ -144,7 +144,7 @@ static int jwt_encode(char *payload, char *secret,
     /* Create RSA context */
     rsa = mbedtls_pk_rsa(pk_ctx);
     if (!rsa) {
-        flb_error("[out_stackdriver] error creating RSA context");
+        flb_plg_error(ctx->ins, "error creating RSA context");
         flb_free(buf);
         flb_sds_destroy(out);
         mbedtls_pk_free(&pk_ctx);
@@ -155,7 +155,7 @@ static int jwt_encode(char *payload, char *secret,
                                  MBEDTLS_RSA_PRIVATE, MBEDTLS_MD_SHA256,
                                  0, (unsigned char *) sha256_buf, sig);
     if (ret != 0) {
-        flb_error("[out_stackdriver] error signing SHA256");
+        flb_plg_error(ctx->ins, "error signing SHA256");
         flb_free(buf);
         flb_sds_destroy(out);
         mbedtls_pk_free(&pk_ctx);
@@ -200,8 +200,8 @@ static int get_oauth2_token(struct flb_stackdriver *ctx)
     /* Create oauth2 context */
     ctx->o = flb_oauth2_create(ctx->config, FLB_STD_AUTH_URL, 3000);
     if (!ctx->o) {
-      flb_error("[out_stackdriver] cannot create oauth2 context");
-      return -1;
+        flb_plg_error(ctx->ins, "cannot create oauth2 context");
+        return -1;
     }
 
     /* In case of using metadata server, fetch token from there */
@@ -221,19 +221,19 @@ static int get_oauth2_token(struct flb_stackdriver *ctx)
              expires, issued);
 
     /* Compose JWT signature */
-    ret = jwt_encode(payload, ctx->private_key, &sig_data, &sig_size);
+    ret = jwt_encode(payload, ctx->private_key, &sig_data, &sig_size, ctx);
     if (ret != 0) {
-        flb_error("[out_stackdriver] JWT signature generation failed");
+        flb_plg_error(ctx->ins, "JWT signature generation failed");
         return -1;
     }
-    flb_debug("[out_stackdriver] JWT signature:\n%s", sig_data);
+    flb_plg_debug(ctx->ins, "JWT signature:\n%s", sig_data);
 
     ret = flb_oauth2_payload_append(ctx->o,
                                     "grant_type", -1,
                                     "urn:ietf:params:oauth:"
                                     "grant-type:jwt-bearer", -1);
     if (ret == -1) {
-        flb_error("[out_stackdriver] error appending oauth2 params");
+        flb_plg_error(ctx->ins, "error appending oauth2 params");
         flb_sds_destroy(sig_data);
         return -1;
     }
@@ -242,7 +242,7 @@ static int get_oauth2_token(struct flb_stackdriver *ctx)
                                     "assertion", -1,
                                     sig_data, sig_size);
     if (ret == -1) {
-        flb_error("[out_stackdriver] error appending oauth2 params");
+        flb_plg_error(ctx->ins, "error appending oauth2 params");
         flb_sds_destroy(sig_data);
         return -1;
     }
@@ -251,7 +251,7 @@ static int get_oauth2_token(struct flb_stackdriver *ctx)
     /* Retrieve access token */
     token = flb_oauth2_token_get(ctx->o);
     if (!token) {
-        flb_error("[out_stackdriver] error retrieving oauth2 access token");
+        flb_plg_error(ctx->ins, "error retrieving oauth2 access token");
         return -1;
     }
 
@@ -280,14 +280,15 @@ static char *get_google_token(struct flb_stackdriver *ctx)
 static int cb_stackdriver_init(struct flb_output_instance *ins,
                           struct flb_config *config, void *data)
 {
+    int ret;
+    int io_flags = FLB_IO_TLS;
     char *token;
     struct flb_stackdriver *ctx;
-    int io_flags = FLB_IO_TLS;
 
     /* Create config context */
     ctx = flb_stackdriver_conf_create(ins, config);
     if (!ctx) {
-        flb_error("[out_stackdriver] configuration failed");
+        flb_plg_error(ctx->ins, "configuration failed");
         return -1;
     }
 
@@ -305,11 +306,11 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     ctx->metadata_u = flb_upstream_create_url(config, "http://metadata.google.internal",
                                      FLB_IO_TCP, NULL);
     if (!ctx->u) {
-        flb_error("[out_stackdriver] upstream creation failed");
+        flb_plg_error(ctx->ins, "upstream creation failed");
         return -1;
     }
     if (!ctx->metadata_u) {
-        flb_error("[out_stackdriver] metadata upstream creation failed");
+        flb_plg_error(ctx->ins, "metadata upstream creation failed");
         return -1;
     }
 
@@ -320,12 +321,24 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     /* Retrieve oauth2 token */
     token = get_google_token(ctx);
     if (!token) {
-        flb_warn("[out_stackdriver] token retrieval failed");
+        flb_plg_warn(ctx->ins, "token retrieval failed");
     }
     if (ctx->metadata_server_auth) {
-      gce_metadata_read_project_id(ctx);
-      gce_metadata_read_zone(ctx);
-      gce_metadata_read_instance_id(ctx);
+        ret = gce_metadata_read_project_id(ctx);
+        if (ret == -1) {
+            return -1;
+        }
+
+        ret = gce_metadata_read_zone(ctx);
+        if (ret == -1) {
+            return -1;
+        }
+
+        ret = gce_metadata_read_instance_id(ctx);
+        if (ret == -1) {
+            return -1;
+        }
+
     }
     return 0;
 }
@@ -451,12 +464,7 @@ static int stackdriver_format(const void *data, size_t bytes,
     flb_sds_t out_buf;
 
     /* Count number of records */
-    msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        array_size++;
-    }
-    msgpack_unpacked_destroy(&result);
-    msgpack_unpacked_init(&result);
+    array_size = flb_mp_count(data, bytes);
 
     /* Create temporal msgpack buffer */
     msgpack_sbuffer_init(&mp_sbuf);
@@ -494,7 +502,8 @@ static int stackdriver_format(const void *data, size_t bytes,
       msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
       msgpack_pack_str_body(&mp_pck,
                             ctx->project_id, flb_sds_len(ctx->project_id));
-    } else if (strcmp(ctx->resource, "gce_instance") == 0) {
+    }
+    else if (strcmp(ctx->resource, "gce_instance") == 0) {
       /* gce_instance resource has fields project_id, zone, instance_id */
       msgpack_pack_map(&mp_pck, 3);
 
@@ -523,6 +532,7 @@ static int stackdriver_format(const void *data, size_t bytes,
     msgpack_pack_array(&mp_pck, array_size);
 
     off = 0;
+    msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         /* Get timestamp */
         flb_time_pop_from_msgpack(&tms, &result, &obj);
@@ -583,7 +593,7 @@ static int stackdriver_format(const void *data, size_t bytes,
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     if (!out_buf) {
-        flb_error("[out_stackdriver] error formatting JSON payload");
+        flb_plg_error(ctx->ins, "error formatting JSON payload");
         msgpack_unpacked_destroy(&result);
         return -1;
     }
@@ -640,7 +650,7 @@ static void cb_stackdriver_flush(const void *data, size_t bytes,
     /* Get or renew Token */
     token = get_google_token(ctx);
     if (!token) {
-        flb_error("[out_stackdriver] cannot retrieve oauth2 token");
+        flb_plg_error(ctx->ins, "cannot retrieve oauth2 token");
         flb_upstream_conn_release(u_conn);
         flb_sds_destroy(payload_buf);
         FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -663,24 +673,24 @@ static void cb_stackdriver_flush(const void *data, size_t bytes,
 
     /* validate response */
     if (ret != 0) {
-        flb_warn("[out_stackdriver] http_do=%i", ret);
+        flb_plg_warn(ctx->ins, "http_do=%i", ret);
         ret_code = FLB_RETRY;
     }
     else {
         /* The request was issued successfully, validate the 'error' field */
-        flb_debug("[out_stackdriver] HTTP Status=%i", c->resp.status);
+        flb_plg_debug(ctx->ins, "HTTP Status=%i", c->resp.status);
         if (c->resp.status == 200) {
             ret_code = FLB_OK;
         }
         else {
             if (c->resp.payload_size > 0) {
                 /* we got an error */
-                flb_warn("[out_stackdriver] error\n%s",
-                         c->resp.payload);
+                flb_plg_warn(ctx->ins, "error\n%s",
+                             c->resp.payload);
             }
             else {
-                flb_debug("[out_stackdriver] response\n%s",
-                          c->resp.payload);
+                flb_plg_debug(ctx->ins, "response\n%s",
+                              c->resp.payload);
             }
             ret_code = FLB_RETRY;
         }
@@ -701,10 +711,6 @@ static int cb_stackdriver_exit(void *data, struct flb_config *config)
 
     if (!ctx) {
         return -1;
-    }
-
-    if (ctx->u) {
-        flb_upstream_destroy(ctx->u);
     }
 
     flb_stackdriver_conf_destroy(ctx);

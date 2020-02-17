@@ -79,6 +79,9 @@ struct flb_stackdriver {
     /* upstream context for metadata end-point */
     struct flb_upstream *metadata_u;
 
+    /* plugin instance */
+    struct flb_output_instance *ins;
+
     /* Fluent Bit context */
     struct flb_config *config;
 };
