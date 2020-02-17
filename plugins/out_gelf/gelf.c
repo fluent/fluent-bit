@@ -302,14 +302,8 @@ static int cb_gelf_init(struct flb_output_instance *ins, struct flb_config *conf
     const char *tmp;
     struct flb_out_gelf_config *ctx = NULL;
 
-
     /* Set default network configuration */
-    if (!ins->host.name) {
-        ins->host.name = flb_strdup("127.0.0.1");
-    }
-    if (ins->host.port == 0) {
-        ins->host.port = 12201;
-    }
+    flb_output_net_default("127.0.0.1", 12201, ins);
 
     /* Allocate plugin context */
     ctx = flb_calloc(1, sizeof(struct flb_out_gelf_config));
