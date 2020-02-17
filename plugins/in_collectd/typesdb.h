@@ -18,6 +18,8 @@
  *  limitations under the License.
  */
 
+#include "in_collectd.h"
+
 struct typesdb_node {
     char *type;
     int alloc;
@@ -27,7 +29,8 @@ struct typesdb_node {
 };
 
 /* Load and destroy TypesDB */
-struct mk_list *typesdb_load_all(const char *paths);
+struct mk_list *typesdb_load_all(struct flb_in_collectd_config *ctx,
+                                 const char *paths);
 void typesdb_destroy(struct mk_list *tdb);
 
 /* Find a node in TypesDB */
