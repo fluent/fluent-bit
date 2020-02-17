@@ -21,6 +21,8 @@
 #ifndef FLB_OUT_LIB
 #define FLB_OUT_LIB
 
+#include <fluent-bit/flb_output_plugin.h>
+
 enum {
     FLB_OUT_LIB_FMT_MSGPACK = 0,
     FLB_OUT_LIB_FMT_JSON,
@@ -35,6 +37,7 @@ struct flb_out_lib_config {
     int max_records;
     int (*cb_func)(void *record, size_t size, void *data);
     void *cb_data;
+    struct flb_output_instance *ins;
 };
 
 #endif
