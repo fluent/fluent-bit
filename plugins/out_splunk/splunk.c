@@ -18,8 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
@@ -36,7 +35,7 @@ static int cb_splunk_init(struct flb_output_instance *ins,
 
     ctx = flb_splunk_conf_create(ins, config);
     if (!ctx) {
-        flb_error("[out_splunk] configuration failed");
+        flb_plg_error(ins, "configuration failed");
         return -1;
     }
 
@@ -44,9 +43,9 @@ static int cb_splunk_init(struct flb_output_instance *ins,
     return 0;
 }
 
-int splunk_format(const void *in_buf, size_t in_bytes,
-                  char **out_buf, size_t *out_size,
-                  struct flb_splunk *ctx)
+static int splunk_format(const void *in_buf, size_t in_bytes,
+                         char **out_buf, size_t *out_size,
+                         struct flb_splunk *ctx)
 {
     int i;
     int map_size;
@@ -190,17 +189,17 @@ static void cb_splunk_flush(const void *data, size_t bytes,
                         ctx->auth_header, flb_sds_len(ctx->auth_header));
     ret = flb_http_do(c, &b_sent);
     if (ret != 0) {
-        flb_warn("[out_splunk] http_do=%i", ret);
+        flb_plg_warn(ctx->ins, "http_do=%i", ret);
         goto retry;
     }
     else {
         if (c->resp.status != 200) {
             if (c->resp.payload_size > 0) {
-                flb_warn("[out_splunk] http_status=%i:\n%s",
+                flb_plg_warn(ctx->ins, "http_status=%i:\n%s",
                          c->resp.status, c->resp.payload);
             }
             else {
-                flb_warn("[out_splunk] http_status=%i", c->resp.status);
+                flb_plg_warn(ctx->ins, "http_status=%i", c->resp.status);
             }
             goto retry;
         }
