@@ -18,8 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_time.h>
@@ -39,7 +38,7 @@ static int bool_value(const char *v);
  * Returns FLB_TRUE when the specified key is in Tag_Keys list,
  * otherwise FLB_FALSE
  */
-static int is_tagged_key(struct flb_influxdb_config *ctx,
+static int is_tagged_key(struct flb_influxdb *ctx,
                          const char *key, int kl, int type);
 
 /*
@@ -64,7 +63,7 @@ static void influxdb_tsmod(struct flb_time *ts, struct flb_time *dupe,
  */
 static char *influxdb_format(const char *tag, int tag_len,
                              const void *data, size_t bytes, int *out_size,
-                             struct flb_influxdb_config *ctx)
+                             struct flb_influxdb *ctx)
 {
     int i;
     int ret;
@@ -264,7 +263,7 @@ static char *influxdb_format(const char *tag, int tag_len,
             }
 
             if (ret == -1) {
-                flb_error("[out_influxdb] cannot append key/value");
+                flb_plg_error(ctx->ins, "cannot append key/value");
                 goto error;
             }
         }
@@ -276,7 +275,7 @@ static char *influxdb_format(const char *tag, int tag_len,
             /* Append the timestamp */
             ret = influxdb_bulk_append_timestamp(bulk_body, &tm);
             if (ret == -1) {
-                flb_error("[out_influxdb] cannot append timestamp");
+                flb_plg_error(ctx->ins, "cannot append timestamp");
                 goto error;
             }
 
@@ -285,9 +284,10 @@ static char *influxdb_format(const char *tag, int tag_len,
                 influxdb_bulk_append_bulk(bulk, bulk_body, ' ') != 0) {
                 goto error;
             }
-        } else {
-            flb_error("[out_influxdb] cannot send record, "
-                      "because all field is tagged in record");
+        }
+        else {
+            flb_plg_error(ctx->ins, "cannot send record, "
+                          "because all field is tagged in record");
             /* Following records maybe ok, so continue processing */
         }
 
@@ -332,17 +332,18 @@ static int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *
     int io_flags = 0;
     const char *tmp;
     struct flb_upstream *upstream;
-    struct flb_influxdb_config *ctx;
+    struct flb_influxdb *ctx;
 
     /* Set default network configuration */
     flb_output_net_default(FLB_INFLUXDB_HOST, FLB_INFLUXDB_PORT, ins);
 
     /* Allocate plugin context */
-    ctx = flb_calloc(1, sizeof(struct flb_influxdb_config));
+    ctx = flb_calloc(1, sizeof(struct flb_influxdb));
     if (!ctx) {
         flb_errno();
         return -1;
     }
+    ctx->ins = ins;
 
     if (ins->use_tls == FLB_TRUE) {
         io_flags = FLB_IO_TLS;
@@ -428,7 +429,7 @@ static int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *
     flb_time_zero(&ctx->ts_dupe);
     flb_time_zero(&ctx->ts_last);
 
-    flb_debug("[out_influxdb] host=%s port=%i", ins->host.name, ins->host.port);
+    flb_plg_debug(ctx->ins, "host=%s port=%i", ins->host.name, ins->host.port);
     flb_output_set_context(ins, ctx);
 
     return 0;
@@ -446,7 +447,7 @@ static void cb_influxdb_flush(const void *data, size_t bytes,
     char *pack;
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
-    struct flb_influxdb_config *ctx = out_context;
+    struct flb_influxdb *ctx = out_context;
 
     /* Convert format */
     pack = influxdb_format(tag, tag_len, data, bytes, &bytes_out, ctx);
@@ -474,18 +475,18 @@ static void cb_influxdb_flush(const void *data, size_t bytes,
     if (ret == 0) {
         if (c->resp.status != 200 && c->resp.status != 204) {
             if (c->resp.payload_size > 0) {
-                flb_error("[out_influxdb] http_status=%i\n%s",
-                          c->resp.status, c->resp.payload);
+                flb_plg_error(ctx->ins, "http_status=%i\n%s",
+                              c->resp.status, c->resp.payload);
             }
             else {
-                flb_debug("[out_influxdb] http_status=%i",
-                          c->resp.status);
+                flb_plg_debug(ctx->ins, "http_status=%i",
+                              c->resp.status);
             }
         }
-        flb_debug("[out_influxdb] http_do=%i OK", ret);
+        flb_plg_debug(ctx->ins, "http_do=%i OK", ret);
     }
     else {
-        flb_warn("[out_influxdb] http_do=%i", ret);
+        flb_plg_warn(ctx->ins, "http_do=%i", ret);
     }
 
     flb_http_client_destroy(c);
@@ -500,7 +501,7 @@ static void cb_influxdb_flush(const void *data, size_t bytes,
 
 static int cb_influxdb_exit(void *data, struct flb_config *config)
 {
-    struct flb_influxdb_config *ctx = data;
+    struct flb_influxdb *ctx = data;
 
     if (ctx->http_user) {
         flb_free(ctx->http_user);
@@ -535,7 +536,7 @@ int bool_value(const char *v)
     return FLB_FALSE;
 }
 
-int is_tagged_key(struct flb_influxdb_config *ctx, const char *key, int kl, int type)
+int is_tagged_key(struct flb_influxdb *ctx, const char *key, int kl, int type)
 {
     if (type == MSGPACK_OBJECT_STR) {
         if (ctx->auto_tags) {

@@ -27,7 +27,7 @@
 #define FLB_INFLUXDB_HOST "127.0.0.1"
 #define FLB_INFLUXDB_PORT 8086
 
-struct flb_influxdb_config {
+struct flb_influxdb {
     uint64_t seq;
 
     char uri[256];
@@ -56,6 +56,8 @@ struct flb_influxdb_config {
     /* used for incrementing identical timestamps */
     struct flb_time ts_dupe;
     struct flb_time ts_last;
+
+    struct flb_output_instance *ins;
 };
 
 #endif
