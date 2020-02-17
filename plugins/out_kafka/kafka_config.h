@@ -21,8 +21,7 @@
 #ifndef FLB_OUT_KAFKA_CONFIG_H
 #define FLB_OUT_KAFKA_CONFIG_H
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_pack.h>
 
 #include "rdkafka.h"
@@ -60,7 +59,7 @@ struct flb_kafka {
 
     int message_key_len;
     char *message_key;
-	
+
     int message_key_field_len;
     char *message_key_field;
 
@@ -85,6 +84,9 @@ struct flb_kafka {
     /* Internal */
     rd_kafka_t *producer;
     rd_kafka_conf_t *conf;
+
+    /* Plugin instance */
+    struct flb_output_instance *ins;
 };
 
 struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,

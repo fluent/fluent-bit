@@ -18,7 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
 
@@ -33,8 +33,8 @@ struct flb_kafka_topic *flb_kafka_topic_create(char *name,
 
     tp = rd_kafka_topic_new(ctx->producer, name, NULL);
     if (!tp) {
-        flb_error("[out_kafka] failed to create topic: %s",
-                  rd_kafka_err2str(rd_kafka_last_error()));
+        flb_plg_error(ctx->ins, "failed to create topic: %s",
+                      rd_kafka_err2str(rd_kafka_last_error()));
         return NULL;
     }
 
