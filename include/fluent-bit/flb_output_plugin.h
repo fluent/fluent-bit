@@ -27,28 +27,28 @@
 
 #define flb_plg_error(ctx, fmt, ...)                                    \
     if (flb_log_check_level(ctx->log_level, FLB_LOG_ERROR))             \
-        flb_log_print(FLB_LOG_ERROR, NULL, 0, "[filter:%s:%s] " fmt,    \
+        flb_log_print(FLB_LOG_ERROR, NULL, 0, "[output:%s:%s] " fmt,    \
                       ctx->p->name, flb_output_name(ctx), ##__VA_ARGS__)
 
 #define flb_plg_warn(ctx, fmt, ...)                                     \
     if (flb_log_check_level(ctx->log_level, FLB_LOG_WARN))              \
-        flb_log_print(FLB_LOG_WARN, NULL, 0, "[filter:%s:%s] " fmt,     \
+        flb_log_print(FLB_LOG_WARN, NULL, 0, "[output:%s:%s] " fmt,     \
                       ctx->p->name, flb_output_name(ctx), ##__VA_ARGS__)
 
 #define flb_plg_info(ctx, fmt, ...)                                     \
     if (flb_log_check_level(ctx->log_level, FLB_LOG_INFO))              \
-        flb_log_print(FLB_LOG_INFO, NULL, 0, "[filter:%s:%s] " fmt,     \
+        flb_log_print(FLB_LOG_INFO, NULL, 0, "[output:%s:%s] " fmt,     \
                       ctx->p->name, flb_output_name(ctx), ##__VA_ARGS__)
 
 #define flb_plg_debug(ctx, fmt, ...)                                    \
     if (flb_log_check_level(ctx->log_level, FLB_LOG_DEBUG))             \
-        flb_log_print(FLB_LOG_DEBUG, NULL, 0, "[filter:%s:%s] " fmt,    \
+        flb_log_print(FLB_LOG_DEBUG, NULL, 0, "[output:%s:%s] " fmt,    \
                       ctx->p->name, flb_output_name(ctx), ##__VA_ARGS__)
 
 #define flb_plg_trace(ctx, fmt, ...)                                    \
     if (flb_log_check_level(ctx->log_level, FLB_LOG_TRACE))             \
         flb_log_print(FLB_LOG_TRACE, NULL, 0,                           \
-                      "[filter:%s:%s at %s:%i] " fmt,                   \
+                      "[output:%s:%s at %s:%i] " fmt,                   \
                       ctx->p->name, flb_output_name(ctx), __FILENAME__, \
                       __LINE__, ##__VA_ARGS__)
 #endif
