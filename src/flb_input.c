@@ -879,6 +879,7 @@ int flb_input_set_collector_socket(struct flb_input_instance *in,
         return -1;
     }
 
+    collector->id          = collector_id(in);
     collector->type        = FLB_COLLECT_FD_SERVER;
     collector->cb_collect  = cb_new_connection;
     collector->fd_event    = fd;
