@@ -18,8 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_time.h>
@@ -29,8 +28,8 @@
 
 #include "nats.h"
 
-int cb_nats_init(struct flb_output_instance *ins, struct flb_config *config,
-                   void *data)
+static int cb_nats_init(struct flb_output_instance *ins, struct flb_config *config,
+                        void *data)
 {
     int io_flags;
     struct flb_upstream *upstream;
@@ -42,9 +41,10 @@ int cb_nats_init(struct flb_output_instance *ins, struct flb_config *config,
     /* Allocate plugin context */
     ctx = flb_malloc(sizeof(struct flb_out_nats_config));
     if (!ctx) {
-        perror("malloc");
+        flb_errno();
         return -1;
     }
+    ctx->ins = ins;
 
     io_flags = FLB_IO_TCP;
     if (ins->host.ipv6 == FLB_TRUE) {
@@ -160,7 +160,7 @@ void cb_nats_flush(const void *data, size_t bytes,
 
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
-        flb_error("[out_nats] no upstream connections available");
+        flb_plg_error(ctx->ins, "no upstream connections available");
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 

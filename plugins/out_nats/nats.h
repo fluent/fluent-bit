@@ -21,13 +21,14 @@
 #ifndef FLB_OUT_NATS_H
 #define FLB_OUT_NATS_H
 
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_version.h>
 
 #define NATS_CONNECT "CONNECT {\"verbose\":false,\"pedantic\":false,\"ssl_required\":false,\"name\":\"fluent-bit\",\"lang\":\"c\",\"version\":\"" FLB_VERSION_STR "\"}\r\n"
 
 struct flb_out_nats_config {
-    struct flb_output_instance *ins;
     struct flb_upstream *u;
+    struct flb_output_instance *ins;
 };
 
 #endif
