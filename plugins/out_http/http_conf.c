@@ -18,8 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
@@ -46,6 +45,7 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
         flb_errno();
         return NULL;
     }
+    ctx->ins = ins;
 
     ret = flb_output_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
@@ -125,8 +125,8 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
     }
 
     if (ctx->proxy) {
-        flb_trace("[out_http] Upstream Proxy=%s:%i",
-                  ctx->proxy_host, ctx->proxy_port);
+        flb_plg_trace(ctx->ins, "Upstream Proxy=%s:%i",
+                      ctx->proxy_host, ctx->proxy_port);
         upstream = flb_upstream_create(config,
                                        ctx->proxy_host,
                                        ctx->proxy_port,
@@ -177,8 +177,8 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
         else {
             ret = flb_pack_to_json_format_type(tmp);
             if (ret == -1) {
-                flb_error("[out_http] unrecognized 'format' option. "
-                          "Using 'msgpack'");
+                flb_plg_error(ctx->ins, "unrecognized 'format' option. "
+                              "Using 'msgpack'");
             }
             else {
                 ctx->out_format = ret;
@@ -192,8 +192,8 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
     if (tmp) {
         ret = flb_pack_to_json_date_type(tmp);
         if (ret == -1) {
-            flb_error("[out_http] unrecognized 'json_date_format' option. "
-                      "Using 'double'.");
+            flb_plg_error(ctx->ins, "unrecognized 'json_date_format' option. "
+                          "Using 'double'.");
         }
         else {
             ctx->json_date_format = ret;

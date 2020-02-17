@@ -63,6 +63,9 @@ struct flb_out_http {
 
     /* Arbitrary HTTP headers */
     struct mk_list *headers;
+
+    /* Plugin instance */
+    struct flb_output_instance *ins;
 };
 
 #endif
