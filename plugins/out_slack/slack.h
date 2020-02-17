@@ -26,16 +26,19 @@
 #include <fluent-bit/flb_upstream.h>
 
 struct flb_slack {
-  /* full webhook address */
-  flb_sds_t webhook;
+    /* full webhook address */
+    flb_sds_t webhook;
 
   /* processed webhook */
-  flb_sds_t host;
-  int port;
-  flb_sds_t uri;
+    flb_sds_t host;
+    int port;
+    flb_sds_t uri;
 
-  /* upstream context */
-  struct flb_upstream *u;
+    /* upstream context */
+    struct flb_upstream *u;
+
+    /* Plugin instance */
+    struct flb_output_instance *ins;
 };
 
 #endif
