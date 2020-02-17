@@ -18,32 +18,36 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_pack.h>
+
 #include <stdio.h>
 #include <unistd.h>
 #include <fcntl.h>
 
-#include <fluent-bit/flb_pack.h>
-#include <fluent-bit/flb_output.h>
 
 /* Retry context, only works with one instance */
 struct retry_ctx {
-    int n_retry;       /* max retries before real flush (OK) */
-    int count;         /* number of retries done             */
+    int n_retry;                     /* max retries before real flush (OK) */
+    int count;                       /* number of retries done */
+    struct flb_output_instance *ins; /* plugin instance */
 };
 
-int cb_retry_init(struct flb_output_instance *ins,
-                  struct flb_config *config,
-                  void *data)
+
+static int cb_retry_init(struct flb_output_instance *ins,
+                         struct flb_config *config,
+                         void *data)
 {
     (void) config;
     (void) data;
     const char *tmp;
     struct retry_ctx *ctx;
 
-    ctx = flb_malloc(sizeof(struct retry_ctx));
+    ctx = flb_calloc(1, sizeof(struct retry_ctx));
     if (!ctx) {
         return -1;
     }
+    ctx->ins = ins;
     ctx->count = 0;
 
     tmp = flb_output_get_property("retries", ins);
@@ -77,11 +81,11 @@ static void cb_retry_flush(const void *data, size_t bytes,
     ctx->count++;
 
     if (ctx->count <= ctx->n_retry) {
-        flb_debug("[retry] retry %i/%i", ctx->count, ctx->n_retry);
+        flb_plg_debug(ctx->ins, "retry %i/%i", ctx->count, ctx->n_retry);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
     else {
-        flb_debug("[retry] flush", ctx->count, ctx->n_retry);
+        flb_plg_debug(ctx->ins, "flush", ctx->count, ctx->n_retry);
         ctx->count = 0;
     }
 
