@@ -18,8 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_socket.h>
 #include <fluent-bit/flb_pack.h>
@@ -39,7 +38,7 @@ struct flb_statsd {
     char port[6];                      /* listening port (RFC-793) */
     flb_sockfd_t server_fd;            /* server socket */
     flb_pipefd_t coll_fd;              /* server handler */
-    struct flb_input_instance *i_ins;  /* input instance */
+    struct flb_input_instance *ins;    /* input instance */
 };
 
 /*
@@ -139,7 +138,8 @@ static int statsd_process_message(msgpack_packer *mp_pck,
     return 0;
 }
 
-static int statsd_process_line(msgpack_packer *mp_pck, char *line)
+static int statsd_process_line(struct flb_statsd *ctx,
+                               msgpack_packer *mp_pck, char *line)
 {
     char *colon, *bar, *atmark;
     struct statsd_message m;
@@ -150,7 +150,7 @@ static int statsd_process_line(msgpack_packer *mp_pck, char *line)
      */
     colon = strchr(line, ':');
     if (colon == NULL) {
-        flb_error("[in_statsd] no bucket name found");
+        flb_plg_error(ctx->ins, "no bucket name found");
         return -1;
     }
     m.bucket = line;
@@ -162,7 +162,7 @@ static int statsd_process_line(msgpack_packer *mp_pck, char *line)
      */
     bar = strchr(colon + 1, '|');
     if (bar == NULL) {
-        flb_error("[in_statsd] no metric type found");
+        flb_plg_error(ctx->ins, "no metric type found");
         return -1;
     }
     m.type = get_statsd_type(bar + 1);
@@ -190,14 +190,14 @@ static int statsd_process_line(msgpack_packer *mp_pck, char *line)
 }
 
 
-static int cb_statsd_receive(struct flb_input_instance *i_ins,
+static int cb_statsd_receive(struct flb_input_instance *ins,
                              struct flb_config *config, void *data)
 {
-    struct flb_statsd *ctx = data;
     char *line;
     int len;
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
+    struct flb_statsd *ctx = data;
 
     /* Receive a UDP datagram */
     len = recv(ctx->server_fd, ctx->buf, MAX_PACKET_SIZE - 1, 0);
@@ -213,23 +213,23 @@ static int cb_statsd_receive(struct flb_input_instance *i_ins,
     /* Process all messages in buffer */
     line = strtok(ctx->buf, "\n");
     while (line) {
-        flb_trace("[in_statsd] received a line: '%s'", line);
-        if (statsd_process_line(&mp_pck, line) < 0) {
-            flb_error("[in_statsd] failed to process line: '%s'", line);
+        flb_plg_trace(ctx->ins, "received a line: '%s'", line);
+        if (statsd_process_line(ctx, &mp_pck, line) < 0) {
+            flb_plg_error(ctx->ins, "failed to process line: '%s'", line);
         }
         line = strtok(NULL, "\n");
     }
 
     /* Send to output */
     if (mp_sbuf.size > 0) {
-        flb_input_chunk_append_raw(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+        flb_input_chunk_append_raw(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
     }
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     return 0;
 }
 
-static int cb_statsd_init(struct flb_input_instance *i_ins,
+static int cb_statsd_init(struct flb_input_instance *ins,
                           struct flb_config *config, void *data)
 {
     struct flb_statsd *ctx;
@@ -241,6 +241,7 @@ static int cb_statsd_init(struct flb_input_instance *i_ins,
         flb_errno();
         return -1;
     }
+    ctx->ins = ins;
 
     ctx->buf = flb_malloc(MAX_PACKET_SIZE);
     if (!ctx->buf) {
@@ -248,11 +249,10 @@ static int cb_statsd_init(struct flb_input_instance *i_ins,
         flb_free(ctx);
         return -1;
     }
-    ctx->i_ins = i_ins;
 
     /* Listening address */
-    if (i_ins->host.listen) {
-        listen = i_ins->host.listen;
+    if (ins->host.listen) {
+        listen = ins->host.listen;
     }
     else {
         listen = DEFAULT_LISTEN;
@@ -260,8 +260,8 @@ static int cb_statsd_init(struct flb_input_instance *i_ins,
     strncpy(ctx->listen, listen, sizeof(ctx->listen) - 1);
 
     /* Listening port */
-    if (i_ins->host.port) {
-        port = i_ins->host.port;
+    if (ins->host.port) {
+        port = ins->host.port;
     }
     else {
         port = DEFAULT_PORT;
@@ -269,53 +269,52 @@ static int cb_statsd_init(struct flb_input_instance *i_ins,
     snprintf(ctx->port, sizeof(ctx->port), "%hu", port);
 
     /* Export plugin context */
-    flb_input_set_context(i_ins, ctx);
+    flb_input_set_context(ins, ctx);
 
     /* Accepts metrics from UDP connections. */
     ctx->server_fd = flb_net_server_udp(ctx->port, ctx->listen);
     if (ctx->server_fd == -1) {
-        flb_error("[in_statsd] can't bind to %s:%s", ctx->listen, ctx->port);
+        flb_plg_error(ctx->ins, "can't bind to %s:%s", ctx->listen, ctx->port);
         flb_free(ctx->buf);
         flb_free(ctx);
         return -1;
     }
 
     /* Set up the UDP connection callback */
-    ctx->coll_fd = flb_input_set_collector_socket(i_ins, cb_statsd_receive,
+    ctx->coll_fd = flb_input_set_collector_socket(ins, cb_statsd_receive,
                                                   ctx->server_fd, config);
     if (ctx->coll_fd == -1) {
-        flb_error("[in_statsd] cannot set up connection callback ");
+        flb_plg_error(ctx->ins, "cannot set up connection callback ");
         flb_socket_close(ctx->server_fd);
         flb_free(ctx->buf);
         flb_free(ctx);
         return -1;
     }
 
-    flb_info("[in_statsd] start UDP server on %s:%s", ctx->listen, ctx->port);
-
+    flb_plg_info(ctx->ins, "start UDP server on %s:%s", ctx->listen, ctx->port);
     return 0;
 }
 
 static void cb_statsd_pause(void *data, struct flb_config *config)
 {
     struct flb_statsd *ctx = data;
-    flb_input_collector_pause(ctx->coll_fd, ctx->i_ins);
+    flb_input_collector_pause(ctx->coll_fd, ctx->ins);
 }
 
 static void cb_statsd_resume(void *data, struct flb_config *config)
 {
     struct flb_statsd *ctx = data;
-    flb_input_collector_resume(ctx->coll_fd, ctx->i_ins);
+    flb_input_collector_resume(ctx->coll_fd, ctx->ins);
 }
 
 static int cb_statsd_exit(void *data, struct flb_config *config)
 {
     struct flb_statsd *ctx = data;
 
-    flb_input_collector_pause(ctx->coll_fd, ctx->i_ins);
     flb_socket_close(ctx->server_fd);
     flb_free(ctx->buf);
     flb_free(ctx);
+
     return 0;
 }
 
