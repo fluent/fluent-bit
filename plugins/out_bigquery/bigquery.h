@@ -72,6 +72,9 @@ struct flb_bigquery {
 
     /* Fluent Bit context */
     struct flb_config *config;
+
+    /* Plugin output instance reference */
+    struct flb_output_instance *ins;
 };
 
 #endif
