@@ -45,13 +45,7 @@ struct flb_kafka_rest *flb_kr_conf_create(struct flb_output_instance *ins,
     ctx->ins = ins;
 
     /* Get network configuration */
-    if (!ins->host.name) {
-        ins->host.name = flb_strdup("127.0.0.1");
-    }
-
-    if (ins->host.port == 0) {
-        ins->host.port = 8082;
-    }
+    flb_output_net_default("127.0.0.1", 8082, ins);
 
     /* use TLS ? */
     if (ins->use_tls == FLB_TRUE) {
