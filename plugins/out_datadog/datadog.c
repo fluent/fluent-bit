@@ -18,8 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_http_client.h>
@@ -255,7 +254,7 @@ static int datadog_format(const void *data, size_t bytes,
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     if (!out_buf) {
-        flb_error("[out_datadog] error formatting JSON payload");
+        flb_plg_error(ctx->ins, "error formatting JSON payload");
         msgpack_unpacked_destroy(&result);
         return -1;
     }
@@ -342,27 +341,28 @@ static void cb_datadog_flush(const void *data, size_t bytes,
     ret = flb_http_do(client, &b_sent);
     if (ret == 0) {
         if (client->resp.status < 200 || client->resp.status > 205) {
-            flb_error("[out_datadog] %s%s:%i HTTP status=%i",
-                      ctx->scheme, ctx->host, ctx->port, client->resp.status);
+            flb_plg_error(ctx->ins, "%s%s:%i HTTP status=%i",
+                          ctx->scheme, ctx->host, ctx->port,
+                          client->resp.status);
             ret = FLB_RETRY;
         }
         else {
             if (client->resp.payload) {
-                flb_info("[out_datadog] %s%s, port=%i, HTTP status=%i payload=%s",
-                         ctx->scheme, ctx->host, ctx->port,
-                         client->resp.status, client->resp.payload);
+                flb_plg_info(ctx->ins, "%s%s, port=%i, HTTP status=%i payload=%s",
+                             ctx->scheme, ctx->host, ctx->port,
+                             client->resp.status, client->resp.payload);
             }
             else {
-                flb_info("[out_datadog] %s%s, port=%i, HTTP status=%i",
-                         ctx->scheme, ctx->host, ctx->port,
-                         client->resp.status);
+                flb_plg_info(ctx->ins, "%s%s, port=%i, HTTP status=%i",
+                             ctx->scheme, ctx->host, ctx->port,
+                             client->resp.status);
             }
             ret = FLB_OK;
         }
     }
     else {
-        flb_error("[out_datadog] could not flush records to %s:%i (http_do=%i)",
-                  ctx->host, ctx->port, ret);
+        flb_plg_error(ctx->ins, "could not flush records to %s:%i (http_do=%i)",
+                      ctx->host, ctx->port, ret);
         ret = FLB_RETRY;
     }
 

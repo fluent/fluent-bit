@@ -40,8 +40,6 @@
 #define FLB_DATADOG_CONTENT_TYPE   "Content-Type"
 #define FLB_DATADOG_MIME_JSON      "application/json"
 
-
-
 struct flb_out_datadog {
 
     /* Configuration */
@@ -67,6 +65,9 @@ struct flb_out_datadog {
 
     /* Upstream connection to the backend server */
     struct flb_upstream *upstream;
+
+    /* Plugin instance reference */
+    struct flb_output_instance *ins;
 };
 
 #endif // FLB_OUT_DATADOG_H

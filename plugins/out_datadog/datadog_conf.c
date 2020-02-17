@@ -18,7 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 
@@ -40,6 +40,7 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
         flb_errno();
         return NULL;
     }
+    ctx->ins = ins;
     ctx->nb_additional_entries = 0;
 
     /* use TLS ? */
@@ -51,18 +52,19 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
         io_flags = FLB_IO_TCP;
         ctx->scheme = flb_sds_create("http://");
     }
-    flb_debug("[out_datadog] ctx->scheme: %s", ctx->scheme);
+    flb_plg_debug(ctx->ins, "scheme: %s", ctx->scheme);
+
     /* configure URI */
     api_key = flb_output_get_property("apikey", ins);
     if (api_key) {
         ctx->api_key = flb_sds_create(api_key);
     }
     else {
-        flb_error("[out_datadog] no ApiKey configuration key defined");
+        flb_plg_error(ctx->ins, "no ApiKey configuration key defined");
         flb_datadog_conf_destroy(ctx);
         return NULL;
     }
-    flb_debug("[out_datadog] ctx->api_key: %s", ctx->api_key);
+    flb_plg_debug(ctx->ins, "api_key: %s", ctx->api_key);
 
     /* Include Tag key */
     tmp = flb_output_get_property("include_tag_key", ins);
@@ -114,21 +116,22 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
 
     ctx->uri = flb_sds_create("/v1/input/");
     if (!ctx->uri) {
-        flb_error("[out_datadog] error on uri generation");
+        flb_plg_error(ctx->ins, "error on uri generation");
         flb_datadog_conf_destroy(ctx);
         return NULL;
     }
     /* Add the api_key to the URI */
     ctx->uri = flb_sds_cat(ctx->uri, ctx->api_key, flb_sds_len(ctx->api_key));
-    flb_debug("[out_datadog] ctx->uri: %s", ctx->uri);
+    flb_plg_debug(ctx->ins, "uri: %s", ctx->uri);
 
     /* Get network configuration */
     if (!ins->host.name) {
         ctx->host = flb_sds_create(FLB_DATADOG_DEFAULT_HOST);
-    } else {
+    }
+    else {
         ctx->host = flb_strdup(ins->host.name);
     }
-    flb_debug("[out_datadog] ctx->host: %s", ctx->host);
+    flb_plg_debug(ctx->ins, "host: %s", ctx->host);
 
     if (ins->host.port != 0) {
         ctx->port = ins->host.port;
@@ -139,7 +142,7 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
             ctx->port = 80;
         }
     }
-    flb_debug("[out_datadog] ctx->port: %i", ctx->port);
+    flb_plg_debug(ctx->ins, "port: %i", ctx->port);
 
     /* Date tag for JSON output */
     tmp = flb_output_get_property("json_date_key", ins);
@@ -150,7 +153,7 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
         ctx->json_date_key = flb_sds_create(FLB_DATADOG_DEFAULT_TIME_KEY);
     }
     ctx->nb_additional_entries++;
-    flb_debug("[out_datadog] ctx->json_date_key: %s", ctx->json_date_key);
+    flb_plg_debug(ctx->ins, "json_date_key: %s", ctx->json_date_key);
 
     /* Compress (gzip) */
     tmp = flb_output_get_property("compress", ins);
@@ -160,12 +163,12 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
             ctx->compress_gzip = FLB_TRUE;
         }
     }
-    flb_debug("[out_datadog] ctx->compress_gzip: %i", ctx->compress_gzip);
-   
+    flb_plg_debug(ctx->ins, "compress_gzip: %i", ctx->compress_gzip);
+
     /* Prepare an upstream handler */
     upstream = flb_upstream_create(config, ctx->host, ctx->port, io_flags, &ins->tls);
     if (!upstream) {
-        flb_error("[out_datadog] cannot create Upstream context");
+        flb_plg_error(ctx->ins, "cannot create Upstream context");
         flb_datadog_conf_destroy(ctx);
         return NULL;
     }
