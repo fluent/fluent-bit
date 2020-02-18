@@ -197,28 +197,6 @@ static int tail_do_scan(const char *path, struct flb_tail_config *ctx)
     return n_added;
 }
 
-static int tail_exclude_generate(struct flb_tail_config *ctx)
-{
-    struct mk_list *list;
-
-    /*
-     * The exclusion path might content multiple exclusion patterns, first
-     * let's split the content into a list.
-     */
-    list = flb_utils_split(ctx->exclude_path, ',', -1);
-    if (!list) {
-        return -1;
-    }
-
-    if (mk_list_is_empty(list) == 0) {
-        return 0;
-    }
-
-    /* We use the same list head returned by flb_utils_split() */
-    ctx->exclude_list = list;
-    return 0;
-}
-
 static int tail_filepath(char *buf, int len, const char *basedir, const char *filename)
 {
     char drive[_MAX_DRIVE];
@@ -255,10 +233,6 @@ int flb_tail_scan(const char *pattern, struct flb_tail_config *ctx)
     int n_added;
 
     flb_plg_debug(ctx->ins, "scanning path %s", pattern);
-
-    if (ctx->exclude_path) {
-        tail_exclude_generate(ctx);
-    }
 
     n_added = tail_do_scan(pattern, ctx);
     if (n_added >= 0) {
