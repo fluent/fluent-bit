@@ -404,7 +404,7 @@ struct flb_sp_cmd *flb_sp_cmd_create(const char *sql)
     ret = flb_sp_parse(cmd, sql, scanner);
 
     flb_sp__delete_buffer(buf, scanner);
-    flb_sp_destroy(scanner);
+    flb_sp_lex_destroy(scanner);
 
     if (ret != 0) {
         flb_sp_cmd_destroy(cmd);
