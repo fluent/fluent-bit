@@ -233,15 +233,15 @@ struct flb_ra_parser *flb_ra_parser_meta_create(char *str, int len)
     }
 
     /* Flex/Bison work */
-    yylex_init(&scanner);
-    buf = yy_scan_string(s, scanner);
+    flb_ra_lex_init(&scanner);
+    buf = flb_ra__scan_string(s, scanner);
 
-    ret = yyparse(rp, s, scanner);
+    ret = flb_ra_parse(rp, s, scanner);
 
     /* release resources */
     flb_sds_destroy(s);
-    yy_delete_buffer(buf, scanner);
-    yylex_destroy(scanner);
+    flb_ra__delete_buffer(buf, scanner);
+    flb_ra_lex_destroy(scanner);
 
     /* Finish structure mapping */
     if (rp->type == FLB_RA_PARSER_KEYMAP) {

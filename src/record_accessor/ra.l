@@ -1,3 +1,4 @@
+%option prefix="flb_ra_"
 %option caseless
 %{
 #include <stdio.h>
