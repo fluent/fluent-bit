@@ -787,6 +787,10 @@ int flb_input_collector_pause(int coll_id, struct flb_input_instance *in)
         return -1;
     }
 
+    if (coll->running == FLB_FALSE) {
+        return 0;
+    }
+
     config = in->config;
     if (coll->type == FLB_COLLECT_TIME) {
         /*
