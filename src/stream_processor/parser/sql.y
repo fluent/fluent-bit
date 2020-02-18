@@ -1,4 +1,5 @@
 %define api.pure full
+%name-prefix="flb_sp_"
 %parse-param { struct flb_sp_cmd *cmd };
 %parse-param { const char *query };
 %lex-param   { void *scanner }

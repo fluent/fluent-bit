@@ -398,13 +398,13 @@ struct flb_sp_cmd *flb_sp_cmd_create(const char *sql)
     mk_list_init(cmd->tmp_params);
 
     /* Flex/Bison work */
-    yylex_init(&scanner);
-    buf = yy_scan_string(sql, scanner);
+    flb_sp_lex_init(&scanner);
+    buf = flb_sp__scan_string(sql, scanner);
 
-    ret = yyparse(cmd, sql, scanner);
+    ret = flb_sp_parse(cmd, sql, scanner);
 
-    yy_delete_buffer(buf, scanner);
-    yylex_destroy(scanner);
+    flb_sp__delete_buffer(buf, scanner);
+    flb_sp_destroy(scanner);
 
     if (ret != 0) {
         flb_sp_cmd_destroy(cmd);
