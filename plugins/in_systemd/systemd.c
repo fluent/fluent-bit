@@ -377,7 +377,7 @@ static int in_systemd_init(struct flb_input_instance *ins,
 
     ctx = flb_systemd_config_create(ins, config);
     if (!ctx) {
-        flb_plg_error(ctx->ins, "cannot initialize");
+        flb_plg_error(ins, "cannot initialize");
         return -1;
     }
 
