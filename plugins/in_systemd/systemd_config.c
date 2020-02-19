@@ -68,15 +68,15 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
         ret = stat(tmp, &st);
         if (ret == -1) {
             flb_errno();
-            flb_free(ctx);
             flb_plg_error(ctx->ins, "given path %s is invalid", tmp);
+            flb_free(ctx);
             return NULL;
         }
 
         if (!S_ISDIR(st.st_mode)) {
             flb_errno();
-            flb_free(ctx);
             flb_plg_error(ctx->ins, "given path is not a directory: %s", tmp);
+            flb_free(ctx);
             return NULL;
         }
 
@@ -94,8 +94,8 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
         ret = sd_journal_open(&ctx->j, SD_JOURNAL_LOCAL_ONLY);
     }
     if (ret != 0) {
-        flb_free(ctx);
         flb_plg_error(ctx->ins, "could not open the Journal");
+        flb_free(ctx);
         return NULL;
     }
     ctx->fd = sd_journal_get_fd(ctx->j);
