@@ -142,14 +142,14 @@ static int in_health_init(struct flb_input_instance *in,
     (void) data;
 
     if (in->host.name == NULL) {
-        flb_error("[in_health] no input 'Host' is given");
+        flb_plg_error(in, "no input 'Host' provided");
         return -1;
     }
 
     /* Allocate space for the configuration */
     ctx = flb_calloc(1, sizeof(struct flb_in_health_config));
     if (!ctx) {
-        perror("calloc");
+        flb_errno();
         return -1;
     }
     ctx->alert = FLB_FALSE;
@@ -163,8 +163,8 @@ static int in_health_init(struct flb_input_instance *in,
     ctx->u = flb_upstream_create(config, in->host.name, in->host.port,
                                  FLB_IO_TCP, NULL);
     if (!ctx->u) {
-        flb_free(ctx);
         flb_plg_error(ctx->ins, "could not initialize upstream");
+        flb_free(ctx);
         return -1;
     }
 
