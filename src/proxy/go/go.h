@@ -24,6 +24,18 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_plugin_proxy.h>
 
+struct flbgo_output_plugin {
+    char *name;
+    void *api;
+    void *o_ins;
+    struct flb_plugin_proxy_context *context;
+
+    int (*cb_init)();
+    int (*cb_flush)(const void *, size_t, const char *);
+    int (*cb_flush_ctx)(void *, const void *, size_t, char *);
+    int (*cb_exit)();
+};
+
 int proxy_go_register(struct flb_plugin_proxy *proxy,
                       struct flb_plugin_proxy_def *def);
 
