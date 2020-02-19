@@ -288,8 +288,8 @@ static void flb_help_plugin(int rc, struct flb_config *config, int type,
     char def[32];
     char *desc = NULL;
     flb_sds_t tmp;
-    struct flb_config_map *opt;
-    struct flb_config_map *m;
+    struct flb_config_map *opt = NULL;
+    struct flb_config_map *m = NULL;
 
     flb_banner();
 
