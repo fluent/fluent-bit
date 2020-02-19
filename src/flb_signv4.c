@@ -770,6 +770,7 @@ static flb_sds_t flb_signv4_canonical_request(struct flb_http_client *c,
         }
         if (!tmp) {
             flb_error("[signv4] error composing auth signed headers");
+            flb_free(arr);
             flb_kv_release(&list_tmp);
             flb_sds_destroy(cr);
             return NULL;
