@@ -288,7 +288,7 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     /* Create config context */
     ctx = flb_stackdriver_conf_create(ins, config);
     if (!ctx) {
-        flb_plg_error(ctx->ins, "configuration failed");
+        flb_plg_error(ins, "configuration failed");
         return -1;
     }
 
