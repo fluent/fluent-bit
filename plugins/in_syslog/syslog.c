@@ -99,7 +99,7 @@ static int in_syslog_init(struct flb_input_instance *in,
     /* Allocate space for the configuration */
     ctx = syslog_conf_create(in, config);
     if (!ctx) {
-        flb_plg_error(ctx->ins, "could not initialize plugin");
+        flb_plg_error(in, "could not initialize plugin");
         return -1;
     }
 
