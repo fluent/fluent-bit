@@ -241,7 +241,6 @@ static flb_sds_t uri_encode_params(const char *uri, size_t len)
                 flb_sds_destroy(buf);
                 return NULL;
             }
-            buf = tmp;
             continue;
         }
 
@@ -253,6 +252,7 @@ static flb_sds_t uri_encode_params(const char *uri, size_t len)
                 flb_sds_destroy(buf);
                 return NULL;
             }
+            buf = tmp;
         }
     }
 
