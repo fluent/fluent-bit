@@ -387,19 +387,20 @@ static uint64_t get_docker_mem_limit(char *id)
     uint64_t mem_limit = 0;
     FILE *f;
 
-    if (limit_file != NULL) {
-        f = fopen(limit_file, "r");
-
-        if (!f) {
-            perror(limit_file);
-            return 0;
-        }
-
-        fscanf(f, "%ld", &mem_limit);
-
-        flb_free(limit_file);
-        fclose(f);
+    if (!limit_file) {
+        return 0;
     }
+
+    f = fopen(limit_file, "r");
+    if (!f) {
+        flb_errno();
+        flb_free(limit_file);
+        return 0;
+    }
+
+    fscanf(f, "%ld", &mem_limit);
+    flb_free(limit_file);
+    fclose(f);
 
     return mem_limit;
 }
