@@ -286,7 +286,7 @@ static void flb_help_plugin(int rc, struct flb_config *config, int type,
     char fmt[32];
     char fmt_prf[32];
     char def[32];
-    char *desc;
+    char *desc = NULL;
     flb_sds_t tmp;
     struct flb_config_map *opt;
     struct flb_config_map *m;
@@ -312,13 +312,15 @@ static void flb_help_plugin(int rc, struct flb_config *config, int type,
         opt = m = out->p->config_map;
     }
 
-    printf(ANSI_BOLD "\nDESCRIPTION\n" ANSI_RESET "%s\n", desc);
-
-    printf(ANSI_BOLD "\nOPTIONS\n" ANSI_RESET);
+    if (desc) {
+        printf(ANSI_BOLD "\nDESCRIPTION\n" ANSI_RESET "%s\n", desc);
+    }
 
     if (!opt) {
         exit(rc);
     }
+
+    printf(ANSI_BOLD "\nOPTIONS\n" ANSI_RESET);
 
     /* Find the larger name, just for formatting purposes */
     while (m && m->name) {
