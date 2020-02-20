@@ -764,8 +764,8 @@ int flb_input_pause_all(struct flb_config *config)
     mk_list_foreach(head, &config->inputs) {
         in = mk_list_entry(head, struct flb_input_instance, _head);
         if (flb_input_buf_paused(in) == FLB_FALSE) {
-            flb_info("[input] pausing %s", flb_input_name(in));
-            if (in->p->cb_pause) {
+            if (in->p->cb_pause && in->context) {
+                flb_info("[input] pausing %s", flb_input_name(in));
                 in->p->cb_pause(in->context, in->config);
             }
             paused++;
