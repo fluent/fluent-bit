@@ -638,6 +638,10 @@ int flb_output_init_all(struct flb_config *config)
             ret = flb_config_map_properties_check(ins->p->name,
                                                   &ins->properties, ins->config_map);
             if (ret == -1) {
+                if (config->program_name) {
+                    flb_helper("try the command: %s -o %s -h\n",
+                               config->program_name, ins->p->name);
+                }
                 flb_output_instance_destroy(ins);
                 return -1;
             }
