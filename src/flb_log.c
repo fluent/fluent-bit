@@ -334,6 +334,10 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
     va_start(args, fmt);
 
     switch (type) {
+    case FLB_LOG_HELP:
+        header_title = "help";
+        header_color = ANSI_CYAN;
+        break;
     case FLB_LOG_INFO:
         header_title = "info";
         header_color = ANSI_GREEN;
