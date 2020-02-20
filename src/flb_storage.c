@@ -84,32 +84,16 @@ static int log_cb(struct cio_ctx *ctx, int level, const char *file, int line,
 int flb_storage_input_create(struct cio_ctx *cio,
                              struct flb_input_instance *in)
 {
-    int type;
-    const char *tmp;
     const char *name;
     struct flb_storage_input *si;
     struct cio_stream *stream;
 
     /* storage config: get stream type */
-    tmp = flb_input_get_property("storage.type", in);
-    if (tmp) {
-        if (strcasecmp(tmp, "filesystem") == 0) {
-            type = CIO_STORE_FS;
-        }
-        else if (strcasecmp(tmp, "memory") == 0) {
-            type = CIO_STORE_MEM;
-        }
-        else {
-            flb_error("[storage] invalid type '%s' on instance %s",
-                      tmp, flb_input_name(in));;
-            return -1;
-        }
-    }
-    else {
-        type = CIO_STORE_MEM;
+    if (in->storage_type == -1) {
+        in->storage_type = CIO_STORE_MEM;
     }
 
-    if (type == CIO_STORE_FS && cio->root_path == NULL) {
+    if (in->storage_type == CIO_STORE_FS && cio->root_path == NULL) {
         flb_error("[storage] instance '%s' requested filesystem storage "
                   "but no filesystem path was defined.",
                   flb_input_name(in));
@@ -127,7 +111,7 @@ int flb_storage_input_create(struct cio_ctx *cio,
     name = flb_input_name(in);
 
     /* create stream for input instance */
-    stream = cio_stream_create(cio, name, type);
+    stream = cio_stream_create(cio, name, in->storage_type);
     if (!stream) {
         flb_error("[storage] cannot create stream for instance %s",
                   name);
@@ -137,7 +121,7 @@ int flb_storage_input_create(struct cio_ctx *cio,
 
     si->stream = stream;
     si->cio = cio;
-    si->type = type;
+    si->type = in->storage_type;
     in->storage = si;
 
     return 0;
