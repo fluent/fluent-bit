@@ -291,6 +291,11 @@ void flb_config_exit(struct flb_config *config)
 
     flb_env_destroy(config->env);
 
+    /* Program name */
+    if (config->program_name) {
+        flb_sds_destroy(config->program_name);
+    }
+
     /* Conf path */
     if (config->conf_path) {
         flb_free(config->conf_path);
@@ -490,5 +495,16 @@ int flb_config_set_property(struct flb_config *config,
         }
         key = service_configs[++i].key;
     }
+    return 0;
+}
+
+int flb_config_set_program_name(struct flb_config *config, char *name)
+{
+    config->program_name = flb_sds_create(name);
+
+    if (!config->program_name) {
+        return -1;
+    }
+
     return 0;
 }

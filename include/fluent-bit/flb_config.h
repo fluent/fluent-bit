@@ -23,11 +23,13 @@
 
 #include <time.h>
 
-#include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_task_map.h>
+
+#include <monkey/mk_core.h>
 
 #ifdef FLB_HAVE_TLS
 #include <fluent-bit/flb_io_tls.h>
@@ -64,6 +66,8 @@ struct flb_config {
     struct mk_event_loop *ch_evl;
 
     struct mk_rconf *file;
+
+    flb_sds_t program_name;      /* argv[0] */
 
     /*
      * If a configuration file was used, this variable will contain the
@@ -187,6 +191,8 @@ void flb_config_exit(struct flb_config *config);
 const char *flb_config_prop_get(const char *key, struct mk_list *list);
 int flb_config_set_property(struct flb_config *config,
                             const char *k, const char *v);
+int flb_config_set_program_name(struct flb_config *config, char *name);
+
 int set_log_level_from_env(struct flb_config *config);
 #ifdef FLB_HAVE_STATIC_CONF
 struct mk_rconf *flb_config_static_open(const char *file);
