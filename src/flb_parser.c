@@ -705,6 +705,11 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
         }
 
         gmtime_r(&time_now, &tmy);
+
+        /* Make the timestamp default to today */
+        tm->tm_mon = tmy.tm_mon;
+        tm->tm_mday = tmy.tm_mday;
+
         uint64_t t = tmy.tm_year + 1900;
 
         fmt = tmp;
