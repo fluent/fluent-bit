@@ -413,6 +413,8 @@ int flb_input_instance_init(struct flb_input_instance *ins,
         ret = flb_config_map_properties_check(ins->p->name,
                                               &ins->properties, ins->config_map);
         if (ret == -1) {
+            flb_helper("try the command: %s -i %s -h\n",
+                       config->program_name, ins->p->name);
             flb_input_instance_destroy(ins);
             return -1;
         }
