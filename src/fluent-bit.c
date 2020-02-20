@@ -987,6 +987,9 @@ int main(int argc, char **argv)
         flb_banner();
     }
 
+    /* Program name */
+    flb_config_set_program_name(config, argv[0]);
+
     /* Validate config file */
 #ifndef FLB_HAVE_STATIC_CONF
     if (cfg_file) {
