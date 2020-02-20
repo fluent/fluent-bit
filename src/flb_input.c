@@ -142,6 +142,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->data     = data;
         instance->threaded = FLB_FALSE;
         instance->storage  = NULL;
+        instance->storage_type = -1;
         instance->log_level = -1;
 
         /* net */
@@ -282,6 +283,20 @@ int flb_input_set_property(struct flb_input_instance *ins,
         ins->host.ipv6 = flb_utils_bool(tmp);
         flb_sds_destroy(tmp);
     }
+    else if (prop_key_check("storage.type", k, len) == 0 && tmp) {
+        /* Set the storage type */
+        if (strcasecmp(tmp, "filesystem") == 0) {
+            ins->storage_type = CIO_STORE_FS;
+        }
+        else if (strcasecmp(tmp, "memory") == 0) {
+            ins->storage_type = CIO_STORE_MEM;
+        }
+        else {
+            flb_sds_destroy(tmp);
+            return -1;
+        }
+        flb_sds_destroy(tmp);
+    }
     else {
         /*
          * Create the property, we don't pass the value since we will
@@ -413,8 +428,10 @@ int flb_input_instance_init(struct flb_input_instance *ins,
         ret = flb_config_map_properties_check(ins->p->name,
                                               &ins->properties, ins->config_map);
         if (ret == -1) {
-            flb_helper("try the command: %s -i %s -h\n",
-                       config->program_name, ins->p->name);
+            if (config->program_name) {
+                flb_helper("try the command: %s -i %s -h\n",
+                           config->program_name, ins->p->name);
+            }
             flb_input_instance_destroy(ins);
             return -1;
         }

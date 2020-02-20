@@ -169,6 +169,9 @@ struct flb_input_instance {
     /* Reference to struct flb_storage_input context */
     void *storage;
 
+    /* Type of storage: CIO_STORE_FS (filesystem) or CIO_STORE_MEM (memory) */
+    int storage_type;
+
     /*
      * Buffers counter: it count the total of memory used by fixed and dynamic
      * messgage pack buffers used by the input plugin instance.
