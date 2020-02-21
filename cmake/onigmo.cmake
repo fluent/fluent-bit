@@ -8,7 +8,7 @@
 add_library(libonigmo STATIC IMPORTED GLOBAL)
 
 # Global Settings
-set(ONIGMO_SRC "${CMAKE_CURRENT_SOURCE_DIR}/lib/onigmo")
+set(ONIGMO_SRC "${PROJECT_SOURCE_DIR}/lib/onigmo")
 set(ONIGMO_DEST "${CMAKE_CURRENT_BINARY_DIR}")
 
 if(CMAKE_SIZEOF_VOID_P MATCHES 8)
