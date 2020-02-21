@@ -1000,7 +1000,12 @@ int flb_tail_file_to_event(struct flb_tail_file *file)
         return -1;
     }
 
-    if (flb_tail_file_name_cmp(name, file) != 0) {
+    /*
+     * flb_tail_target_file_name_cmp is a deeper compare than
+     * flb_tail_file_name_cmp. If applicable, it compares to the underlying
+     * real_name of the file.
+     */
+    if (flb_tail_target_file_name_cmp(name, file) != 0) {
         ret = stat(name, &st_rotated);
         if (ret == -1) {
             flb_free(name);

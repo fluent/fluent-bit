@@ -1,0 +1,65 @@
+# escape=`
+
+# BUILD
+ARG BASE_IMAGE=mcr.microsoft.com/windows/servercore:ltsc2019
+FROM $BASE_IMAGE as builder
+
+# Restore the default Windows shell for correct batch processing.
+SHELL ["cmd", "/S", "/C"]
+
+# Download the Visual Studio Build Tools bootstrapper.
+ADD https://aka.ms/vs/16/release/vs_buildtools.exe C:\Temp\vs_buildtools.exe
+
+# Use the latest release channel.
+ADD https://aka.ms/vs/16/release/channel C:\Temp\VisualStudio.chman
+
+# For help on command-line syntax:
+# https://docs.microsoft.com/en-us/visualstudio/install/use-command-line-parameters-to-install-visual-studio
+# Install MSVC C++ compiler and CMake.
+RUN C:\Temp\vs_buildtools.exe `
+    --quiet --wait --norestart --nocache `
+    --installPath C:\BuildTools `
+    --channelUri C:\Temp\VisualStudio.chman `
+    --installChannelUri C:\Temp\VisualStudio.chman `
+    --add Microsoft.VisualStudio.Workload.VCTools;includeRecommended `
+    || IF "%ERRORLEVEL%"=="3010" EXIT 0
+
+RUN powershell -command "iex (new-object net.webclient).downloadstring('https://get.scoop.sh'); `
+  scoop install winflexbison"
+
+ENV configuration=Release msvc="Visual Studio 16 2019"
+RUN setx /M PATH "%PATH%;C:\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin"
+
+COPY . /src
+
+WORKDIR /src/build
+
+# CACHE GENERATION
+RUN powershell -Command cmake -G "$ENV:msvc" -DCMAKE_BUILD_TYPE="$ENV:configuration" ../
+
+# COMPILE
+RUN powershell -Command cmake --build . --config "$ENV:configuration"
+
+# RUN
+FROM mcr.microsoft.com/windows/servercore:ltsc2019
+
+SHELL ["powershell", "-NoLogo", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
+
+COPY --from=builder `
+    /src/build/bin/Release/fluent-bit.exe `
+    /src/build/bin/Release/fluent-bit.dll `
+    /Windows/
+
+# Configuration files
+COPY conf/fluent-bit.conf `
+     conf/parsers.conf `
+     conf/parsers_java.conf `
+     conf/parsers_extra.conf `
+     conf/parsers_openstack.conf `
+     conf/parsers_cinder.conf `
+     conf/plugins.conf `
+     /fluent-bit/etc/
+
+RUN Invoke-WebRequest -OutFile vc_redist.x64.exe https://aka.ms/vs/15/release/vc_redist.x64.exe; Start-Process vc_redist.x64.exe -ArgumentList '/install /passive /norestart' -Wait; Remove-Item -Force vc_redist.x64.exe
+
+CMD ["fluent-bit","-i","dummy","-o","stdout"]
