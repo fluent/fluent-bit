@@ -66,9 +66,9 @@ static void flb_proxy_cb_flush(const void *data, size_t bytes,
 }
 
 
-static void flb_proxy_cb_exit(struct flb_output_plugin *instance,
-                              struct flb_plugin_proxy_context *context) 
+static int flb_proxy_cb_exit(void *data, struct flb_config *config)
 {
+    struct flb_output_plugin *instance = data;
     struct flb_plugin_proxy *proxy = (instance->proxy);
     void *inst;
 
@@ -79,7 +79,7 @@ static void flb_proxy_cb_exit(struct flb_output_plugin *instance,
 
     flb_debug("[GO] running exit callback");
 
-    plugin->cb_exit();
+    return plugin->cb_exit();
 }
 
 static int flb_proxy_register_output(struct flb_plugin_proxy *proxy,
