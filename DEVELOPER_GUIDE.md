@@ -285,13 +285,13 @@ Each plugin is a shared object which is [loaded into Fluent Bit](https://github.
 
 The input plugin structure is defined in [flb_input.h](https://github.com/fluent/fluent-bit/blob/master/include/fluent-bit/flb_input.h#L62). There are a number of functions which a plugin can implement, most only implement `cb_init`, `cb_collect`, and `cb_exit`.
 
-The [`"dummy"` input plugin](plugins/in_dummy) very simple and is an excellent example to review to understand more.
+The [`"dummy"` input plugin](plugins/in_dummy/in_dummy.c) is very simple and is an excellent example to review to understand more.
 
 #### Filter
 
 The structure for filter plugins is defined in [flb_filter.h](https://github.com/fluent/fluent-bit/blob/master/include/fluent-bit/flb_filter.h#L44). Each plugin must implement `cb_init`, `cb_filter`, and `cb_exit`.
 
-The [filter_record_modifier](plugins/filter_record_modifier) is a good example of a filter plugin.
+The [filter_record_modifier](plugins/filter_record_modifier/filter_modifier.c) is a good example of a filter plugin.
 
 Note that filter plugins can not asynchronously make HTTP requests. If your plugin needs to make a request, add the following code when you initialize your `flb_upstream`:
 
@@ -304,7 +304,7 @@ upstream->flags &= ~(FLB_IO_ASYNC);
 
 Output plugins are defined in [flb_output.h](https://github.com/fluent/fluent-bit/blob/master/include/fluent-bit/flb_output.h#L57). Each plugin must implement `cb_init`, `cb_flush`, and `cb_exit`.
 
-The [stdout plugin](plugins/out_stdout) is very simple; review its code to understand how output plugins work.
+The [stdout plugin](plugins/out_stdout/stdout.c) is very simple; review its code to understand how output plugins work.
 
 ### Testing
 
