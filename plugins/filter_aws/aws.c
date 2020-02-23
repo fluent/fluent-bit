@@ -47,16 +47,24 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
                        struct flb_config *config,
                        void *data)
 {
-    int use_v2 = FLB_TRUE;
+    int use_v2;
+    int ret;
     struct flb_filter_aws *ctx = NULL;
-    struct mk_list *head;
-    struct flb_kv *kv;
+    const char *tmp = NULL;
     (void) data;
 
     /* Create context */
     ctx = flb_calloc(1, sizeof(struct flb_filter_aws));
     if (!ctx) {
         flb_errno();
+        return -1;
+    }
+
+    /* Populate context with config map defaults and incoming properties */
+    ret = flb_filter_config_map_set(f_ins, (void *) ctx);
+    if (ret == -1) {
+        flb_plg_error(f_ins, "configuration error");
+        flb_free(ctx);
         return -1;
     }
 
@@ -69,19 +77,18 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
     ctx->instance_id = NULL;
     ctx->instance_id_len = 0;
 
-    /* Iterate all filter properties */
-    mk_list_foreach(head, &f_ins->properties) {
-        kv = mk_list_entry(head, struct flb_kv, _head);
-
-        if (strcasecmp(kv->key, "imds_version") == 0) {
-            if (strcasecmp(kv->val, "v1") == 0) {
-                use_v2 = FLB_FALSE;
-            }
-            else if (strcasecmp(kv->val, "v2") != 0) {
-                flb_plg_warn(ctx->ins, "Invalid value %s for config option "
-                             "'imds_version'. Valid values are 'v1' and 'v2'",
-                             kv->val);
-            }
+    use_v2 = FLB_TRUE;
+    tmp = flb_filter_get_property("imds_version", f_ins);
+    if (tmp != NULL) {
+        if (strcasecmp(tmp, "v1") == 0) {
+            use_v2 = FLB_FALSE;
+        }
+        else if (strcasecmp(tmp, "v2") != 0) {
+            flb_plg_error(ctx->ins, "Invalid value %s for config option "
+                          "'imds_version'. Valid values are 'v1' and 'v2'",
+                          tmp);
+            flb_free(ctx);
+            return -1;
         }
     }
 
@@ -418,11 +425,25 @@ static int cb_aws_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "imds_version", "v2",
+     0, FLB_FALSE, 0,
+     "Specifies which version of the EC2 instance metadata service"
+     " will be used: 'v1' or 'v2'. 'v2' may not work"
+     " if you run Fluent Bit in a container."
+    },
+
+    {0}
+};
+
 struct flb_filter_plugin filter_aws_plugin = {
     .name         = "aws",
     .description  = "Add AWS Metadata",
     .cb_init      = cb_aws_init,
     .cb_filter    = cb_aws_filter,
     .cb_exit      = cb_aws_exit,
+    .config_map   = config_map,
     .flags        = 0
 };
