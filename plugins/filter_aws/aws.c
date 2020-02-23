@@ -47,10 +47,9 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
                        struct flb_config *config,
                        void *data)
 {
-    int use_v2 = FLB_TRUE;
+    int use_v2;
     struct flb_filter_aws *ctx = NULL;
-    struct mk_list *head;
-    struct flb_kv *kv;
+    const char *tmp = NULL;
     (void) data;
 
     /* Create context */
@@ -69,19 +68,18 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
     ctx->instance_id = NULL;
     ctx->instance_id_len = 0;
 
-    /* Iterate all filter properties */
-    mk_list_foreach(head, &f_ins->properties) {
-        kv = mk_list_entry(head, struct flb_kv, _head);
-
-        if (strcasecmp(kv->key, "imds_version") == 0) {
-            if (strcasecmp(kv->val, "v1") == 0) {
-                use_v2 = FLB_FALSE;
-            }
-            else if (strcasecmp(kv->val, "v2") != 0) {
-                flb_plg_warn(ctx->ins, "Invalid value %s for config option "
-                             "'imds_version'. Valid values are 'v1' and 'v2'",
-                             kv->val);
-            }
+    use_v2 = FLB_TRUE;
+    tmp = flb_filter_get_property("imds_version", f_ins);
+    if (tmp != NULL) {
+        if (strcasecmp(tmp, "v1") == 0) {
+            use_v2 = FLB_FALSE;
+        }
+        else if (strcasecmp(tmp, "v2") != 0) {
+            flb_plg_error(ctx->ins, "Invalid value %s for config option "
+                          "'imds_version'. Valid values are 'v1' and 'v2'",
+                          tmp);
+            flb_free(ctx);
+            return -1;
         }
     }
 
