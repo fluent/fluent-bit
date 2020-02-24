@@ -123,9 +123,6 @@ void flb_tcp_conf_destroy(struct flb_out_tcp *ctx)
         flb_upstream_destroy(ctx->u);
     }
 
-    if (ctx->json_date_key) {
-        flb_sds_destroy(ctx->json_date_key);
-    }
     flb_free(ctx);
     ctx = NULL;
 }
