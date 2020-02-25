@@ -425,6 +425,42 @@ int flb_sp_cmd_stream_new(struct flb_sp_cmd *cmd, const char *stream_name)
     return 0;
 }
 
+int flb_sp_cmd_snapshot_new(struct flb_sp_cmd *cmd, const char *snapshot_name)
+{
+    const char *tmp;
+
+    cmd->stream_name = flb_sds_create(snapshot_name);
+    if (!cmd->stream_name) {
+        return -1;
+    }
+
+    tmp = flb_sp_cmd_stream_prop_get(cmd, "tag");
+    if (!tmp) {
+        cmd->status = FLB_SP_ERROR;
+        flb_error("[sp] tag for snapshot is required. Add WITH(tag = <TAG>) to the snapshot %s",
+                  snapshot_name);
+        return -1;
+    }
+
+    cmd->type = FLB_SP_CREATE_SNAPSHOT;
+
+    return 0;
+}
+
+int flb_sp_cmd_snapshot_flush_new(struct flb_sp_cmd *cmd, const char *snapshot_name)
+{
+    cmd->stream_name = flb_sds_cat(flb_sds_create("__flush_"),
+                                   snapshot_name, strlen(snapshot_name));
+
+    if (!cmd->stream_name) {
+        return -1;
+    }
+
+    cmd->type = FLB_SP_FLUSH_SNAPSHOT;
+
+    return 0;
+}
+
 int flb_sp_cmd_stream_prop_add(struct flb_sp_cmd *cmd, const char *key, const char *val)
 {
     struct flb_sp_cmd_prop *prop;
@@ -792,6 +828,11 @@ void flb_sp_cmd_condition_del(struct flb_sp_cmd *cmd)
         mk_list_del(&exp->_head);
         flb_free(exp);
     }
+}
+
+void flb_sp_cmd_limit_add(struct flb_sp_cmd *cmd, int limit)
+{
+    cmd->limit = limit;
 }
 
 /* Timeseries functions */

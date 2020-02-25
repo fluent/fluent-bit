@@ -111,6 +111,14 @@ int flb_sp_stream_create(const char *name, struct flb_sp_task *task,
         flb_input_set_property(in, "routable", tmp);
     }
 
+    /*
+     * Set storage type
+     */
+    tmp = flb_sp_cmd_stream_prop_get(task->cmd, "storage.type");
+    if (tmp) {
+        flb_input_set_property(in, "storage.type", tmp);
+    }
+
     /* Initialize instance */
     ret = flb_input_instance_init(in, sp->config);
     if (ret == -1) {
