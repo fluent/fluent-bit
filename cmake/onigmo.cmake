@@ -28,7 +28,7 @@ ExternalProject_Add(onigmo
   CONFIGURE_COMMAND ./configure ${AUTOCONF_HOST_OPT} --with-pic --disable-shared --enable-static --prefix=${ONIGMO_DEST}
   CFLAGS=-std=gnu99\ -Wall\ -pipe\ -Os\ -g0\ -s\ -fno-stack-protector\ -fomit-frame-pointer\ -DNDEBUG\ -U_FORTIFY_SOURCE
   BUILD_COMMAND $(MAKE)
-  INSTALL_COMMAND $(MAKE) install)
+  INSTALL_COMMAND $(MAKE) DESTDIR= install)
 else()
 ExternalProject_Add(onigmo
   BUILD_IN_SOURCE TRUE
@@ -38,7 +38,7 @@ ExternalProject_Add(onigmo
   CONFIGURE_COMMAND ./configure ${AUTOCONF_HOST_OPT} --with-pic --disable-shared --enable-static --prefix=${ONIGMO_DEST}
   CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
   BUILD_COMMAND $(MAKE)
-  INSTALL_COMMAND $(MAKE) install)
+  INSTALL_COMMAND $(MAKE) DESTDIR= install)
 endif()
 
 # Onigmo (Windows)
