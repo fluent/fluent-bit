@@ -61,6 +61,12 @@ struct cio_ctx {
     void (*log_cb)(void *, int, const char *, int, const char *);
 
     /*
+     * Internal counters
+     */
+    size_t total_chunks;      /* Total number of registered chunks */
+    size_t total_chunks_up;   /* Total number of chunks 'up' in memory */
+
+    /*
      * maximum open 'file' chunks: this limit helps where there are many
      * chunks in the filesystem and you don't need all of them up in
      * memory. For short, it restrict the open number of files and
