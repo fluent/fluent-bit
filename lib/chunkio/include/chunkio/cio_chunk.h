@@ -69,4 +69,10 @@ int cio_chunk_up_force(struct cio_chunk *ch);
 int cio_chunk_down(struct cio_chunk *ch);
 char *cio_version();
 
+/* Counters */
+size_t cio_chunk_counter_total_add(struct cio_ctx *ctx);
+size_t cio_chunk_counter_total_sub(struct cio_ctx *ctx);
+size_t cio_chunk_counter_total_up_add(struct cio_ctx *ctx);
+size_t cio_chunk_counter_total_up_sub(struct cio_ctx *ctx);
+
 #endif

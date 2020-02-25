@@ -248,6 +248,9 @@ static int munmap_file(struct cio_ctx *ctx, struct cio_chunk *ch)
     cf->data_size = 0;
     cf->alloc_size = 0;
 
+    /* Adjust counters */
+    cio_chunk_counter_total_up_sub(ctx);
+
     return 0;
 }
 
@@ -347,6 +350,9 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
     cf->st_content = cio_file_st_get_content(cf->map);
     cio_log_debug(ctx, "%s:%s mapped OK", ch->st->name, ch->name);
 
+    /* The mmap succeeded, adjust the counters */
+    cio_chunk_counter_total_up_add(ctx);
+
     return CIO_OK;
 }
 
@@ -407,32 +413,7 @@ int cio_file_read_prepare(struct cio_ctx *ctx, struct cio_chunk *ch)
  */
 static inline int open_and_up(struct cio_ctx *ctx)
 {
-    int total = 0;
-    struct mk_list *head;
-    struct mk_list *f_head;
-    struct cio_file *file;
-    struct cio_chunk *ch;
-    struct cio_stream *stream;
-
-    mk_list_foreach(head, &ctx->streams) {
-        stream = mk_list_entry(head, struct cio_stream, _head);
-
-        /* Skip memory streams, we only care about file type */
-        if (stream->type == CIO_STORE_MEM) {
-            continue;
-        }
-
-        mk_list_foreach(f_head, &stream->chunks) {
-            ch = mk_list_entry(f_head, struct cio_chunk, _head);
-            file = (struct cio_file *) ch->backend;
-
-            if (cio_file_is_up(NULL, file) == CIO_TRUE) {
-                total++;
-            }
-        }
-    }
-
-    if (total >= ctx->max_chunks_up) {
+    if (ctx->total_chunks_up >= ctx->max_chunks_up) {
         return CIO_FALSE;
     }
 
