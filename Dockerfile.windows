@@ -1,19 +1,19 @@
 # escape=`
 
-ARG WINDOWS_VERSION
+ARG WINDOWS_VERSION=ltsc2019
 
 #
 # Builder Image - Windows Server Core
-# Assemble the components required to run Fluent Bit
 #
 FROM mcr.microsoft.com/windows/servercore:$WINDOWS_VERSION as builder
 
 # The FLUENTBIT_VERSION ARG must be after the FROM instruction
-ARG FLUENTBIT_VERSION
+ARG FLUENTBIT_VERSION=1.3.8
 ARG IMAGE_CREATE_DATE
 ARG IMAGE_SOURCE_REVISION
 
-# Metadata as defined in OCI image spec annotations - https://github.com/opencontainers/image-spec/blob/master/annotations.md
+# Metadata as defined in OCI image spec annotations
+# https://github.com/opencontainers/image-spec/blob/master/annotations.md
 LABEL org.opencontainers.image.title="Fluent Bit" `
       org.opencontainers.image.description="Fluent Bit is an open source and multi-platform Log Processor and Forwarder which allows you to collect data/logs from different sources, unify and send them to multiple destinations. It's fully compatible with Docker and Kubernetes environments." `
       org.opencontainers.image.created=$IMAGE_CREATE_DATE `
@@ -26,40 +26,44 @@ LABEL org.opencontainers.image.title="Fluent Bit" `
       org.opencontainers.image.source="https://github.com/fluent/fluent-bit" `
       org.opencontainers.image.revision=$IMAGE_SOURCE_REVISION
 
+#
+# Basic setup
+#
 SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
 
 RUN Write-Host ('Creating folders'); `
-    New-Item -Type Directory -Path /installation; `
+    New-Item -Type Directory -Path /local; `
     New-Item -Type Directory -Path /fluent-bit;
 
-WORKDIR /installation
+WORKDIR /local
 
+#
+# Install Fluent Bit
+#
 RUN Write-Host ('Installing Fluent Bit'); `
     $majorminor = ([Version]::Parse("$env:FLUENTBIT_VERSION")).toString(2); `
-    $ProgressPreference = 'SilentlyContinue'; `
-    Invoke-WebRequest -Uri "http://fluentbit.io/releases/$($majorminor)/td-agent-bit-$($env:FLUENTBIT_VERSION)-win64.zip" -OutFile /installation/td-agent-bit-$($env:FLUENTBIT_VERSION)-win64.zip; `
-    $ProgressPreference = 'Continue'; `
-    Expand-Archive -Path /installation/td-agent-bit-$($env:FLUENTBIT_VERSION)-win64.zip -Destination /installation/fluent-bit; `
-    Move-Item -Path /installation/fluent-bit/*/* -Destination /fluent-bit/;
+    Invoke-WebRequest -Uri "https://fluentbit.io/releases/$($majorminor)/td-agent-bit-$($env:FLUENTBIT_VERSION)-win64.zip" -OutFile td-agent-bit.zip; `
+    Expand-Archive -Path td-agent-bit.zip -Destination /local/fluent-bit; `
+    Move-Item -Path /local/fluent-bit/*/* -Destination /fluent-bit/;
 
 #
 # Technique from https://github.com/StefanScherer/dockerfiles-windows/blob/master/mongo/3.6/Dockerfile
-# 
+#
+ADD https://aka.ms/vs/15/release/vc_redist.x64.exe /local/vc_redist.x64.exe
+
 RUN Write-Host ('Installing Visual C++ Redistributable Package'); `
-    $ProgressPreference = 'SilentlyContinue'; `
-    Invoke-WebRequest -Uri 'https://aka.ms/vs/16/release/vc_redist.x64.exe' -OutFile /installation/vc_redist.x64.exe; `
-    $ProgressPreference = 'Continue'; `
-    Start-Process /installation/vc_redist.x64.exe -ArgumentList '/install', '/quiet', '/norestart' -NoNewWindow -Wait; `
-    Copy-Item -Path /Windows/System32/msvcp140.dll -Destination /fluent-bit/bin; `
-    Copy-Item -Path /Windows/System32/vccorlib140.dll -Destination /fluent-bit/bin; `
-    Copy-Item -Path /Windows/System32/vcruntime140.dll -Destination /fluent-bit/bin;
+    Start-Process /local/vc_redist.x64.exe -ArgumentList '/install', '/quiet', '/norestart' -NoNewWindow -Wait; `
+    Copy-Item -Path /Windows/System32/msvcp140.dll -Destination /fluent-bit/bin/; `
+    Copy-Item -Path /Windows/System32/vccorlib140.dll -Destination /fluent-bit/bin/; `
+    Copy-Item -Path /Windows/System32/vcruntime140.dll -Destination /fluent-bit/bin/;
 
 #
 # Runtime Image - Windows Server Nano
-# Run Fluent Bit with appropriate configuration 
 #
-FROM mcr.microsoft.com/windows/nanoserver:$WINDOWS_VERSION as runtime
+FROM mcr.microsoft.com/windows/servercore:$WINDOWS_VERSION as runtime
 
 COPY --from=builder /fluent-bit /fluent-bit
 
-ENTRYPOINT ["c:\\fluent-bit\\bin\\fluent-bit.exe", "-c", "c:\\config\\fluent-bit.conf"]
+RUN setx /M PATH "%PATH%;C:\fluent-bit\bin"
+
+ENTRYPOINT ["fluent-bit.exe", "-i", "dummy", "-o", "stdout"]
