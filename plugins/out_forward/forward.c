@@ -637,6 +637,9 @@ static int forward_config_ha(const char *upstream_file,
         if (tmp && flb_utils_bool(tmp)) {
             fc->empty_shared_key = FLB_TRUE;
         }
+        else {
+            fc->empty_shared_key = FLB_FALSE;
+        }
 
         tmp = flb_upstream_node_get_property("shared_key", node);
         if (fc->empty_shared_key == FLB_TRUE) {
@@ -644,6 +647,9 @@ static int forward_config_ha(const char *upstream_file,
         }
         else if (tmp) {
             fc->shared_key = flb_sds_create(tmp);
+        }
+        else {
+            fc->shared_key = NULL;
         }
 
         tmp = flb_upstream_node_get_property("username", node);
@@ -675,6 +681,9 @@ static int forward_config_ha(const char *upstream_file,
         tmp = flb_upstream_node_get_property("time_as_integer", node);
         if (tmp) {
             fc->time_as_integer = flb_utils_bool(tmp);
+        }
+        else {
+            fc->time_as_integer = FLB_FALSE;
         }
 
         fc->require_ack_response = FLB_FALSE;
@@ -769,9 +778,6 @@ static int forward_config_simple(struct flb_forward *ctx,
     if (tmp && flb_utils_bool(tmp)) {
         fc->empty_shared_key = FLB_TRUE;
     }
-    else {
-        fc->empty_shared_key = FLB_FALSE;
-    }
 
     tmp = flb_output_get_property("shared_key", ins);
     if (fc->empty_shared_key) {
@@ -780,21 +786,18 @@ static int forward_config_simple(struct flb_forward *ctx,
     else if (tmp) {
         fc->shared_key = flb_sds_create(tmp);
     }
+    else {
+        fc->shared_key = NULL;
+    }
 
     tmp = flb_output_get_property("username", ins);
     if (tmp) {
         fc->username = tmp;
     }
-    else {
-        fc->username = "";
-    }
 
     tmp = flb_output_get_property("password", ins);
     if (tmp) {
         fc->password = tmp;
-    }
-    else {
-        fc->password = "";
     }
 
     /* Self Hostname */
@@ -802,16 +805,15 @@ static int forward_config_simple(struct flb_forward *ctx,
     if (tmp) {
         fc->self_hostname = flb_sds_create(tmp);
     }
+    else {
+        fc->self_hostname = flb_sds_create("localhost");
+    }
 
     /* Backward compatible timing mode */
-    fc->time_as_integer = FLB_FALSE;
     tmp = flb_output_get_property("time_as_integer", ins);
     if (tmp) {
         fc->time_as_integer = flb_utils_bool(tmp);
     }
-
-    fc->require_ack_response = FLB_FALSE;
-    fc->send_options = FLB_FALSE;
 
     /* send always options (with size) */
     tmp = flb_output_get_property("send_options", ins);
@@ -1135,12 +1137,12 @@ static struct flb_config_map config_map[] = {
     },
     {
      FLB_CONFIG_MAP_STR, "shared_key", NULL,
-     0, FLB_TRUE, offsetof(struct flb_forward_config, shared_key),
+     0, FLB_FALSE, 0,
      NULL
     },
     {
-     FLB_CONFIG_MAP_STR, "self_hostname", "localhost",
-     0, FLB_TRUE, offsetof(struct flb_forward_config, self_hostname),
+     FLB_CONFIG_MAP_STR, "self_hostname", NULL,
+     0, FLB_FALSE, 0,
      NULL
     },
     {
