@@ -1,65 +1,102 @@
 # escape=`
 
-# BUILD
-ARG BASE_IMAGE=mcr.microsoft.com/windows/servercore:ltsc2019
-FROM $BASE_IMAGE as builder
+ARG WINDOWS_VERSION=ltsc2019
 
-# Restore the default Windows shell for correct batch processing.
-SHELL ["cmd", "/S", "/C"]
+#
+# Builder Image - Windows Server Core
+#
+FROM mcr.microsoft.com/windows/servercore:$WINDOWS_VERSION as builder
 
-# Download the Visual Studio Build Tools bootstrapper.
-ADD https://aka.ms/vs/16/release/vs_buildtools.exe C:\Temp\vs_buildtools.exe
+# The FLUENTBIT_VERSION ARG must be after the FROM instruction
+ARG FLUENTBIT_VERSION
+ARG IMAGE_CREATE_DATE
+ARG IMAGE_SOURCE_REVISION
 
-# Use the latest release channel.
-ADD https://aka.ms/vs/16/release/channel C:\Temp\VisualStudio.chman
+# Metadata as defined in OCI image spec annotations
+# https://github.com/opencontainers/image-spec/blob/master/annotations.md
+LABEL org.opencontainers.image.title="Fluent Bit" `
+      org.opencontainers.image.description="Fluent Bit is an open source and multi-platform Log Processor and Forwarder which allows you to collect data/logs from different sources, unify and send them to multiple destinations. It's fully compatible with Docker and Kubernetes environments." `
+      org.opencontainers.image.created=$IMAGE_CREATE_DATE `
+      org.opencontainers.image.version=$FLUENTBIT_VERSION `
+      org.opencontainers.image.authors="Eduardo Silva <eduardo@treasure-data.com>" `
+      org.opencontainers.image.url="https://hub.docker.com/r/fluent/fluent-bit" `
+      org.opencontainers.image.documentation="https://docs.fluentbit.io/manual/" `
+      org.opencontainers.image.vendor="Fluent Organization" `
+      org.opencontainers.image.licenses="Apache-2.0" `
+      org.opencontainers.image.source="https://github.com/fluent/fluent-bit" `
+      org.opencontainers.image.revision=$IMAGE_SOURCE_REVISION
 
-# For help on command-line syntax:
-# https://docs.microsoft.com/en-us/visualstudio/install/use-command-line-parameters-to-install-visual-studio
-# Install MSVC C++ compiler and CMake.
-RUN C:\Temp\vs_buildtools.exe `
-    --quiet --wait --norestart --nocache `
-    --installPath C:\BuildTools `
-    --channelUri C:\Temp\VisualStudio.chman `
-    --installChannelUri C:\Temp\VisualStudio.chman `
-    --add Microsoft.VisualStudio.Workload.VCTools;includeRecommended `
-    || IF "%ERRORLEVEL%"=="3010" EXIT 0
-
-RUN powershell -command "iex (new-object net.webclient).downloadstring('https://get.scoop.sh'); `
-  scoop install winflexbison"
-
-ENV configuration=Release msvc="Visual Studio 16 2019"
+#
+# Basic setup
+#
 RUN setx /M PATH "%PATH%;C:\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin"
+RUN setx /M PATH "%PATH%;C:\WinFlexBison"
 
-COPY . /src
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
+
+RUN Write-Host ('Creating folders'); `
+    New-Item -Type Directory -Path /local; `
+    New-Item -Type Directory -Path /fluent-bit/bin;
+
+WORKDIR /local
+
+#
+# Install Visual Studio 2019
+#
+ADD https://aka.ms/vs/16/release/vs_buildtools.exe /local/vs_buildtools.exe
+ADD https://aka.ms/vs/16/release/channel /local/VisualStudio.chman
+
+RUN Start-Process /local/vs_buildtools.exe `
+    -ArgumentList '--quiet ', '--wait ', '--norestart ', '--nocache', `
+    '--installPath C:\BuildTools', `
+    '--channelUri C:\local\VisualStudio.chman', `
+    '--installChannelUri C:\local\VisualStudio.chman', `
+    '--add Microsoft.VisualStudio.Workload.VCTools', `
+    '--includeRecommended'  -NoNewWindow -Wait;
+
+#
+# Technique from https://github.com/StefanScherer/dockerfiles-windows/blob/master/mongo/3.6/Dockerfile
+#
+ADD https://aka.ms/vs/15/release/vc_redist.x64.exe /local/vc_redist.x64.exe
+
+RUN Write-Host ('Installing Visual C++ Redistributable Package'); `
+    Start-Process /local/vc_redist.x64.exe -ArgumentList '/install', '/quiet', '/norestart' -NoNewWindow -Wait; `
+    Copy-Item -Path /Windows/System32/msvcp140.dll -Destination /fluent-bit/bin/; `
+    Copy-Item -Path /Windows/System32/vccorlib140.dll -Destination /fluent-bit/bin/; `
+    Copy-Item -Path /Windows/System32/vcruntime140.dll -Destination /fluent-bit/bin/;
+
+#
+# Install winflexbison
+#
+ADD https://github.com/lexxmark/winflexbison/releases/download/v2.5.22/win_flex_bison-2.5.22.zip /local/win_flex_bison.zip
+
+RUN Expand-Archive /local/win_flex_bison.zip -Destination /WinFlexBison; `
+    Copy-Item -Path /WinFlexBison/win_bison.exe /WinFlexBison/bison.exe; `
+    Copy-Item -Path /WinFlexBison/win_flex.exe /WinFlexBison/flex.exe;
+
+#
+# Install Fluent Bit
+#
+COPY . /src/
 
 WORKDIR /src/build
 
-# CACHE GENERATION
-RUN powershell -Command cmake -G "$ENV:msvc" -DCMAKE_BUILD_TYPE="$ENV:configuration" ../
+RUN cmake -G "'Visual Studio 16 2019'" -DCMAKE_BUILD_TYPE=Release ../;
 
-# COMPILE
-RUN powershell -Command cmake --build . --config "$ENV:configuration"
+RUN cmake --build . --config Release;
 
-# RUN
-FROM mcr.microsoft.com/windows/servercore:ltsc2019
+RUN Copy-Item /src/build/bin/Release/fluent-bit.exe /fluent-bit/bin/; `
+    Copy-Item /src/build/bin/Release/fluent-bit.dll /fluent-bit/bin/; `
+    Copy-Item -Recurse /src/include /fluent-bit; `
+    Copy-Item -Recurse /src/conf /fluent-bit;
 
-SHELL ["powershell", "-NoLogo", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
+#
+# Runtime Image - Windows Server Nano
+#
+FROM mcr.microsoft.com/windows/servercore:$WINDOWS_VERSION as runtime
 
-COPY --from=builder `
-    /src/build/bin/Release/fluent-bit.exe `
-    /src/build/bin/Release/fluent-bit.dll `
-    /Windows/
+COPY --from=builder /fluent-bit /fluent-bit
 
-# Configuration files
-COPY conf/fluent-bit.conf `
-     conf/parsers.conf `
-     conf/parsers_java.conf `
-     conf/parsers_extra.conf `
-     conf/parsers_openstack.conf `
-     conf/parsers_cinder.conf `
-     conf/plugins.conf `
-     /fluent-bit/etc/
+RUN setx /M PATH "%PATH%;C:\fluent-bit\bin"
 
-RUN Invoke-WebRequest -OutFile vc_redist.x64.exe https://aka.ms/vs/15/release/vc_redist.x64.exe; Start-Process vc_redist.x64.exe -ArgumentList '/install /passive /norestart' -Wait; Remove-Item -Force vc_redist.x64.exe
-
-CMD ["fluent-bit","-i","dummy","-o","stdout"]
+ENTRYPOINT ["fluent-bit.exe", "-i", "dummy", "-o", "stdout"]
