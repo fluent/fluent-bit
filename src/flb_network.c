@@ -72,7 +72,8 @@ int flb_net_host_set(const char *plugin_name, struct flb_net_host *host, const c
         host->name = flb_sds_create_len(s, e - s);
         host->ipv6 = FLB_TRUE;
         s = e + 1;
-    } else {
+    }
+    else {
         e = s;
         while (!(*e == '\0' || *e == ':' || *e == '/')) {
             ++e;
@@ -83,6 +84,7 @@ int flb_net_host_set(const char *plugin_name, struct flb_net_host *host, const c
         host->name = flb_sds_create_len(s, e - s);
         s = e;
     }
+
     if (*s == ':') {
         host->port = atoi(++s);
     }
@@ -94,7 +96,7 @@ int flb_net_host_set(const char *plugin_name, struct flb_net_host *host, const c
     host->address = flb_sds_create(address);
 
     if (host->name) {
-        host->listen = host->name;
+        host->listen = flb_sds_create(host->name);
     }
 
     return 0;
