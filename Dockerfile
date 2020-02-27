@@ -15,7 +15,7 @@ RUN apt-get update && \
       make \
       wget \
       unzip \
-      libssl1.0-dev \
+      libssl-dev \
       libsasl2-dev \
       pkg-config \
       libsystemd-dev \
@@ -31,7 +31,6 @@ WORKDIR /tmp/src/build/
 RUN cmake -DFLB_DEBUG=Off \
           -DFLB_TRACE=Off \
           -DFLB_JEMALLOC=On \
-          -DFLB_BUFFERING=On \
           -DFLB_TLS=On \
           -DFLB_SHARED_LIB=Off \
           -DFLB_EXAMPLES=Off \
@@ -52,7 +51,7 @@ COPY conf/fluent-bit.conf \
      conf/plugins.conf \
      /fluent-bit/etc/
 
-FROM gcr.io/distroless/cc
+FROM gcr.io/distroless/cc-debian10:fd0d99e8c54d7d7b2f3dd29f5093d030d192cbbc
 LABEL maintainer="Eduardo Silva <eduardo@treasure-data.com>"
 LABEL Description="Fluent Bit docker image" Vendor="Fluent Organization" Version="1.1"
 
