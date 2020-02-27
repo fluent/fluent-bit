@@ -27,10 +27,10 @@
 /* Defines a host service and it properties */
 struct flb_net_host {
     int  ipv6;             /* IPv6 required ?      */
-    char *address;         /* Original address     */
+    flb_sds_t address;     /* Original address     */
     int   port;            /* TCP port             */
-    char *name;            /* Hostname             */
-    char *listen;          /* Listen interface     */
+    flb_sds_t name;        /* Hostname             */
+    flb_sds_t listen;      /* Listen interface     */
     struct flb_uri *uri;   /* Extra URI parameters */
 };
 
