@@ -149,7 +149,6 @@ int syslog_server_destroy(struct flb_syslog *ctx)
         }
     }
     else {
-        flb_free(ctx->listen);
         flb_free(ctx->port);
     }
 

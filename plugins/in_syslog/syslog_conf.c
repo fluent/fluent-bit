@@ -74,28 +74,11 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
 
     /* Check if TCP mode was requested */
     if (ctx->mode == FLB_SYSLOG_TCP || ctx->mode == FLB_SYSLOG_UDP) {
-        /* Listen interface */
-        if (!ins->host.listen) {
-            tmp = flb_input_get_property("listen", ins);
-            if (tmp) {
-                ctx->listen = flb_strdup(tmp);
-            }
-            else {
-                ctx->listen = flb_strdup("0.0.0.0");
-            }
-        }
-        else {
-            ctx->listen = flb_strdup(ins->host.listen);
-        }
-
-        /* port */
-        if (ins->host.port == 0) {
-            ctx->port = flb_strdup("5140");
-        }
-        else {
-            snprintf(port, sizeof(port) - 1, "%d", ins->host.port);
-            ctx->port = flb_strdup(port);
-        }
+        /* Listen interface (if not set, defaults to 0.0.0.0:5140) */
+        flb_input_net_default_listener("0.0.0.0", 5140, ins);
+        ctx->listen = ins->host.listen;
+        snprintf(port, sizeof(port) - 1, "%d", ins->host.port);
+        ctx->port = flb_strdup(port);
     }
 
     /* Unix socket path and permission */
