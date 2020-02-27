@@ -138,7 +138,8 @@ static int in_fw_init(struct flb_input_instance *ins,
         /* Create TCP server */
         ctx->server_fd = flb_net_server(ctx->tcp_port, ctx->listen);
         if (ctx->server_fd > 0) {
-            flb_plg_info(ctx->ins, "binding %s:%s", ctx->listen, ctx->tcp_port);
+            flb_plg_info(ctx->ins, "listening on %s:%s",
+                         ctx->listen, ctx->tcp_port);
         }
         else {
             flb_plg_error(ctx->ins, "could not bind address %s:%s. Aborting",
