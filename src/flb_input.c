@@ -86,6 +86,18 @@ static int collector_id(struct flb_input_instance *ins)
     return (collector->id + 1);
 }
 
+void flb_input_net_default_listener(const char *listen, int port,
+                                    struct flb_input_instance *ins)
+{
+    /* Set default network configuration */
+    if (!ins->host.listen) {
+        ins->host.listen = flb_sds_create(listen);
+    }
+    if (ins->host.port == 0) {
+        ins->host.port = port;
+    }
+}
+
 /* Create an input plugin instance */
 struct flb_input_instance *flb_input_new(struct flb_config *config,
                                          const char *input, void *data,
@@ -149,6 +161,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->host.name    = NULL;
         instance->host.address = NULL;
         instance->host.uri     = NULL;
+        instance->host.listen  = NULL;
         instance->host.ipv6    = FLB_FALSE;
 
         /* Initialize list heads */
@@ -342,8 +355,15 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
         flb_uri_destroy(ins->host.uri);
     }
 
-    flb_sds_destroy(ins->host.name);
-    flb_sds_destroy(ins->host.address);
+    if (ins->host.name) {
+        flb_sds_destroy(ins->host.name);
+    }
+    if (ins->host.address) {
+        flb_sds_destroy(ins->host.address);
+    }
+    if (ins->host.listen) {
+        flb_sds_destroy(ins->host.listen);
+    }
 
     /* release the tag if any */
     flb_sds_destroy(ins->tag);
