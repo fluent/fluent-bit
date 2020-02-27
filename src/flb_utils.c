@@ -49,7 +49,7 @@ void flb_utils_error(int err)
         msg = "Configuration file contains format errors";
         break;
     case FLB_ERR_CFG_FILE_STOP:
-        msg = "Configuration file contain errors";
+        msg = "Configuration file contains errors";
         break;
     case FLB_ERR_CFG_FLUSH:
         msg = "Invalid flush value";
