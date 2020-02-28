@@ -93,7 +93,6 @@ int flb_task_retry_reschedule(struct flb_task_retry *retry, struct flb_config *c
 
     task = retry->parent;
     seconds = flb_sched_request_create(config, retry, retry->attemps);
-    seconds = -1;
     if (seconds == -1) {
         /*
          * This is the worse case scenario: 'cannot re-schedule a retry'. If the Chunk
