@@ -53,7 +53,6 @@ int flb_tail_mult_create(struct flb_tail_config *ctx,
     struct flb_parser *parser;
     struct flb_kv *kv;
 
-    tmp = flb_input_get_property("multiline_flush", ins);
     if (ctx->multiline_flush <= 0) {
         ctx->multiline_flush = 1;
     }
