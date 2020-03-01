@@ -10,6 +10,7 @@ changes to Fluent Bit.
     - [HTTP Client](#http-client)
     - [Linked Lists](#linked-lists)
     - [Message Pack](#message-pack)
+- [Concurrency](#concurrency)
 - [Plugin API](#plugin-api)
     - [Input](#input)
     - [Filter](#filter)
@@ -277,6 +278,120 @@ static int cb_filter(const void *data, size_t bytes,
 ```
 
 Please also check out the message pack examples on the [msgpack-c GitHub repo](https://github.com/msgpack/msgpack-c).
+
+### Concurrency
+
+Fluent Bit uses ["coroutines"](https://en.wikipedia.org/wiki/Coroutine); a concurrent programming model in which subroutines can be paused and resumed. Co-routines are cooperative routines- instead of blocking, they cooperatively pass execution between each other. Coroutines are implemented as part of Fluent Bit's core network IO libraries. When a blocking network IO operation is made (for example, waiting for a response on a socket), a routine will cooperatively yield (pause itself) and pass execution to Fluent Bit engine, which will schedule (activate) other routines. Once the blocking IO operation is complete, the sleeping coroutine will be scheduled again (resumed). This model allows Fluent Bit to achieve performance benefits without the headaches that often come from having multiple active threads.
+
+This Fluent Bit engine consists of an event loop that is built upon [github.com/monkey/monkey](github.com/monkey/monkey). The monkey project is a server and library designed for low resource usage. It was primarily implemented by Eduardo Silva, who also created Fluent Bit.
+
+#### Coroutine Code: How does it work?
+
+To understand how this works, let's walkthrough an example in the code.
+
+The elasticsearch plugin makes an HTTP request to an elasticsearch cluster, when the following [line of code runs](https://github.com/fluent/fluent-bit/blob/1.3/plugins/out_es/es.c#L581):
+```c
+ret = flb_http_do(c, &b_sent);
+```
+
+This calls the http request function, in [`flb_http_client.c`, which makes a TCP write call](https://github.com/fluent/fluent-bit/blob/1.3/src/flb_http_client.c#L840):
+```c
+ret = flb_io_net_write(c->u_conn,
+                       c->body_buf, c->body_len,
+                       &bytes_body);
+```
+
+That activates code in Fluent Bit's core TCP library, which is where the coroutine magic happens. This code is in [flb_io.c](https://github.com/fluent/fluent-bit/blob/1.3/src/flb_io.c#L241). After opening a socket, the code inserts an item on the event loop:
+```c
+ret = mk_event_add(u->evl,
+                   u_conn->fd,
+                   FLB_ENGINE_EV_THREAD,
+                   MK_EVENT_WRITE, &u_conn->event);
+```
+
+This instructs the event loop to watch our socket's file descriptor. Then, [a few lines below, we yield back to the engine thread](https://github.com/fluent/fluent-bit/blob/1.3/src/flb_io.c#L304):
+```c
+/*
+ * Return the control to the parent caller, we need to wait for
+ * the event loop to get back to us.
+ */
+flb_thread_yield(th, FLB_FALSE);
+```
+
+Remember, only one thread is active at a time. If the current coroutine did not yield back to engine, it would monopolize execution until the socket IO operation was complete. Since IO operations may take a long time, we can increase performance by allowing another routine to perform work.
+
+The core routine in Fluent Bit is the engine in `flb_engine.c`. Here we can find the [code that will resume the elasticsearch plugin](https://github.com/fluent/fluent-bit/blob/1.3/src/flb_engine.c#L553) once it's IO operation is complete:
+```c
+if (event->type == FLB_ENGINE_EV_THREAD) {
+    struct flb_upstream_conn *u_conn;
+    struct flb_thread *th;
+
+    /*
+     * Check if we have some co-routine associated to this event,
+     * if so, resume the co-routine
+     */
+    u_conn = (struct flb_upstream_conn *) event;
+    th = u_conn->thread;
+    flb_trace("[engine] resuming thread=%p", th);
+    flb_thread_resume(th);
+}
+```
+
+This will return execution to the code right after the [flb_thread_yield](https://github.com/fluent/fluent-bit/blob/1.3/src/flb_io.c#L304) call in the IO library.
+
+#### Practical Advice: How coroutines will affect your code
+
+##### Filter Plugins
+
+Filter plugins do not support coroutines, consequently you must disable async mode if your filter makes an HTTP request:
+```c
+/* Remove async flag from upstream */
+upstream->flags &= ~(FLB_IO_ASYNC);
+```
+
+##### Output plugins
+
+Output plugins use coroutines. Plugins have a context structure which is available in all calls and can be used to store state. In general, you can write code without ever considering concurrency. This is because only one coroutine is active at a time. Thus, synchronization primitives like mutex locks or semaphores are not needed.
+
+There are some cases where you need to consider concurrency; consider the following code (this is fluent bit c pseudo-code, not a full example):
+
+```c
+/* output plugin flush method for sending records */
+static void cb_my_plugin_flush(...)
+{
+    /* context structure that allows the plugin to store state */
+    struct flb_my_plugin *ctx = out_context;
+    ...
+    /* write something to context */
+    ctx->flag = somevalue;
+
+    /* make an async http call */
+    ret = flb_http_do(c, &b_sent);
+
+    /*
+     * do something with the context flag; the value of flag is indeterminate
+     * because we just made an async call.
+     */
+    somecall(ctx->flag);
+}
+```
+
+When the http call is made, the current coroutine may be paused and another can be scheduled. That other coroutine may also call `cb_my_plugin_flush`. If that happens, the value of the `flag` on the context may be changed. This could potentially lead to a race condition when the first coroutine resumes. Consequently, you must be extremely careful when storing state on the context. In general, context values should be set when a plugin is initialized, and then should only be read from afterwards.
+
+Remember, if needed, you can ensure that an HTTP call is made synchronously by modifying your flb_upstream:
+
+```c
+/* Remove async flag from upstream */
+upstream->flags &= ~(FLB_IO_ASYNC);
+```
+
+This can be re-enabled at any time:
+
+```c
+/* re-enable async for future calls */
+upstream->flags |= FLB_IO_ASYNC;
+```
+
 
 ### Plugin API
 
