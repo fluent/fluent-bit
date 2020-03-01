@@ -15,6 +15,7 @@ changes to Fluent Bit.
     - [Filter](#filter)
     - [Output](#output)
 - [Testing](#testing)
+    - [Valgrind](#valgrind)
 - [Need more help?](#need-more-help)
 
 ### Libraries
@@ -155,7 +156,7 @@ static int example()
     struct item *an_item;
 
     len = strlen(characters);
-    
+
     /* construct a list */
     mk_list_init(&items);
 
@@ -333,6 +334,24 @@ Test sds_usage...                               [   OK   ]
 Test sds_printf...                              [   OK   ]
 SUCCESS: All unit tests have passed.
 ```
+
+#### Valgrind
+
+[Valgrind](https://valgrind.org/) is a tool that will help you detect and diagnose memory issues in your code. It will check for memory leaks and invalid memory accesses.
+
+To use it while developing, invoke it before Fluent Bit:
+
+```
+valgrind ./bin/fluent-bit {args for fluent bit}
+```
+
+Valgrind becomes especially powerful when you run it on your unit tests. We recommend writing unit tests that cover a large fraction of code paths in your contribution. You can then check your code for memory issues by invoking the test binaries with Valgrind:
+
+```
+$ valgrind ./bin/flb-rt-your-test
+```
+
+This will allow you to check for memory issues in code paths (ex error cases) which are hard to trigger through manual testing.
 
 ### Need more help?
 
