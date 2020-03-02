@@ -40,18 +40,6 @@ static inline int prop_cmp(const char *key, size_t keylen,
     return proplen >= keylen && strncmp(key, property, keylen) == 0;
 }
 
-static inline const char *strnchr(const char *s, char c, size_t len)
-{
-    while (len > 0) {
-        if (*s == c) {
-            return s;
-        }
-        s++;
-        len--;
-    }
-    return 0;
-}
-
 static inline void prop_not_allowed(const char *prop, struct flb_kube_meta *meta,
                                     struct flb_kube *ctx)
 {
