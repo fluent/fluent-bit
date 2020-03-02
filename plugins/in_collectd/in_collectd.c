@@ -88,7 +88,7 @@ static int in_collectd_init(struct flb_input_instance *in,
     if (in->host.port) {
         port = in->host.port;
     }
-    snprintf(ctx->port, sizeof(ctx->port), "%hu", port);
+    snprintf(ctx->port, sizeof(ctx->port), "%hu", (unsigned short) port);
 
     /* TypesDB */
     tmp = flb_input_get_property("typesdb", in);
