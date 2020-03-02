@@ -266,7 +266,7 @@ static int cb_statsd_init(struct flb_input_instance *ins,
     else {
         port = DEFAULT_PORT;
     }
-    snprintf(ctx->port, sizeof(ctx->port), "%hu", port);
+    snprintf(ctx->port, sizeof(ctx->port), "%hu", (unsigned short) port);
 
     /* Export plugin context */
     flb_input_set_context(ins, ctx);
