@@ -418,12 +418,6 @@ static inline bool kv_val_matches_regex(msgpack_object_kv * kv,
     return helper_msgpack_object_matches_regex(&kv->val, regex);
 }
 
-static inline bool kv_key_does_not_match_regex(msgpack_object_kv * kv,
-                                               struct flb_regex *regex)
-{
-    return !kv_key_matches_regex(kv, regex);
-}
-
 static inline bool kv_key_matches_regex_rule_key(msgpack_object_kv * kv,
                                                  struct modify_rule *rule)
 {
@@ -436,20 +430,6 @@ static inline bool kv_key_does_not_match_regex_rule_key(msgpack_object_kv *
                                                         *rule)
 {
     return !kv_key_matches_regex_rule_key(kv, rule);
-}
-
-static inline bool kv_key_matches_regex_rule_val(msgpack_object_kv * kv,
-                                                 struct modify_rule *rule)
-{
-    return kv_key_matches_regex(kv, rule->val_regex);
-}
-
-static inline bool kv_key_does_not_match_regex_rule_val(msgpack_object_kv *
-                                                        kv,
-                                                        struct modify_rule
-                                                        *rule)
-{
-    return !kv_key_matches_regex_rule_val(kv, rule);
 }
 
 static inline int map_count_keys_matching_regex(msgpack_object * map,
@@ -466,23 +446,10 @@ static inline int map_count_keys_matching_regex(msgpack_object * map,
     return count;
 }
 
-static inline int map_count_keys_not_matching_regex(msgpack_object * map,
-                                                    struct flb_regex *regex)
-{
-    int i;
-    int count = 0;
 
-    for (i = 0; i < map->via.map.size; i++) {
-        if (!kv_key_matches_regex(&map->via.map.ptr[i], regex)) {
-            count++;
-        }
-    }
-    return count;
-}
-
-//
-// Wildcard matchers
-//
+/*
+ * Wildcard matchers
+ */
 
 static inline bool helper_msgpack_object_matches_wildcard(msgpack_object *
                                                           obj, char *str,
@@ -509,18 +476,6 @@ static inline bool kv_key_matches_wildcard(msgpack_object_kv * kv,
     return helper_msgpack_object_matches_wildcard(&kv->key, str, len);
 }
 
-static inline bool kv_val_matches_wildcard(msgpack_object_kv * kv,
-                                           char *str, int len)
-{
-    return helper_msgpack_object_matches_wildcard(&kv->val, str, len);
-}
-
-static inline bool kv_key_does_not_match_wildcard(msgpack_object_kv * kv,
-                                                  char *str, int len)
-{
-    return !kv_key_matches_wildcard(kv, str, len);
-}
-
 static inline bool kv_key_matches_wildcard_rule_key(msgpack_object_kv * kv,
                                                     struct modify_rule *rule)
 {
@@ -535,20 +490,6 @@ static inline bool kv_key_does_not_match_wildcard_rule_key(msgpack_object_kv *
     return !kv_key_matches_wildcard_rule_key(kv, rule);
 }
 
-static inline bool kv_key_matches_wildcard_rule_val(msgpack_object_kv * kv,
-                                                    struct modify_rule *rule)
-{
-    return kv_key_matches_wildcard(kv, rule->val, rule->val_len);
-}
-
-static inline bool kv_key_does_not_match_wildcard_rule_val(msgpack_object_kv *
-                                                           kv,
-                                                           struct modify_rule
-                                                           *rule)
-{
-    return !kv_key_matches_wildcard_rule_val(kv, rule);
-}
-
 static inline int map_count_keys_matching_wildcard(msgpack_object * map,
                                                    char *str, int len)
 {
@@ -557,20 +498,6 @@ static inline int map_count_keys_matching_wildcard(msgpack_object * map,
 
     for (i = 0; i < map->via.map.size; i++) {
         if (kv_key_matches_wildcard(&map->via.map.ptr[i], str, len)) {
-            count++;
-        }
-    }
-    return count;
-}
-
-static inline int map_count_keys_not_matching_wildcard(msgpack_object * map,
-                                                       char *str, int len)
-{
-    int i;
-    int count = 0;
-
-    for (i = 0; i < map->via.map.size; i++) {
-        if (!kv_key_matches_wildcard(&map->via.map.ptr[i], str, len)) {
             count++;
         }
     }
@@ -616,12 +543,6 @@ static inline bool kv_val_matches_str(msgpack_object_kv * kv,
     return helper_msgpack_object_matches_str(&kv->val, str, len);
 }
 
-static inline bool kv_key_does_not_match_str(msgpack_object_kv * kv,
-                                             char *str, int len)
-{
-    return !kv_key_matches_str(kv, str, len);
-}
-
 static inline bool kv_key_matches_str_rule_key(msgpack_object_kv * kv,
                                                struct modify_rule *rule)
 {
@@ -641,13 +562,6 @@ static inline bool kv_key_matches_str_rule_val(msgpack_object_kv * kv,
     return kv_key_matches_str(kv, rule->val, rule->val_len);
 }
 
-static inline bool kv_key_does_not_match_str_rule_val(msgpack_object_kv * kv,
-                                                      struct modify_rule
-                                                      *rule)
-{
-    return !kv_key_matches_str_rule_val(kv, rule);
-}
-
 static inline int map_count_keys_matching_str(msgpack_object * map,
                                               char *str, int len)
 {
@@ -656,20 +570,6 @@ static inline int map_count_keys_matching_str(msgpack_object * map,
 
     for (i = 0; i < map->via.map.size; i++) {
         if (kv_key_matches_str(&map->via.map.ptr[i], str, len)) {
-            count++;
-        }
-    }
-    return count;
-}
-
-static inline int map_count_keys_not_matching_str(msgpack_object * map,
-                                                  char *str, int len)
-{
-    int i;
-    int count = 0;
-
-    for (i = 0; i < map->via.map.size; i++) {
-        if (!kv_key_matches_str(&map->via.map.ptr[i], str, len)) {
             count++;
         }
     }
@@ -702,23 +602,6 @@ static inline void map_pack_each_fn(msgpack_packer * packer,
             msgpack_pack_object(packer, map->via.map.ptr[i].val);
         }
     }
-}
-
-static inline int map_count_fn(msgpack_object * map,
-                               struct modify_rule *ctx,
-                               bool(*f) (msgpack_object_kv * kv,
-                                         struct modify_rule * ctx)
-    )
-{
-    int i;
-    int count = 0;
-
-    for (i = 0; i < map->via.map.size; i++) {
-        if ((*f) (&map->via.map.ptr[i], ctx)) {
-            count++;
-        }
-    }
-    return count;
 }
 
 static inline bool evaluate_condition_KEY_EXISTS(msgpack_object * map,
