@@ -34,6 +34,7 @@ struct flbgo_output_plugin {
     int (*cb_flush)(const void *, size_t, const char *);
     int (*cb_flush_ctx)(void *, const void *, size_t, char *);
     int (*cb_exit)();
+    int (*cb_exit_ctx)(void *);
 };
 
 int proxy_go_register(struct flb_plugin_proxy *proxy,

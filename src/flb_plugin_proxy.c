@@ -79,7 +79,12 @@ static int flb_proxy_cb_exit(void *data, struct flb_config *config)
 
     flb_debug("[GO] running exit callback");
 
-    return plugin->cb_exit();
+
+    if (plugin->cb_exit_ctx) {
+        return plugin->cb_exit_ctx(plugin->context->remote_context);
+    } else {
+        return plugin->cb_exit();
+    }
 }
 
 static int flb_proxy_register_output(struct flb_plugin_proxy *proxy,
