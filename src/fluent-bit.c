@@ -374,8 +374,23 @@ static void flb_help_plugin(int rc, struct flb_config *config, int type,
         else if (m->type == FLB_CONFIG_MAP_TIME) {
             printf("time");
         }
-        else if (m->type == FLB_CONFIG_MAP_CLIST) {
-            printf("comma delimited strings");
+        else if (flb_config_map_mult_type(m->type) == FLB_CONFIG_MAP_CLIST) {
+            len = flb_config_map_expected_values(m->type);
+            if (len == -1) {
+                printf("multiple comma delimited strings");
+            }
+            else {
+                printf("comma delimited strings (minimum %i)", len);
+            }
+        }
+        else if (flb_config_map_mult_type(m->type) == FLB_CONFIG_MAP_SLIST) {
+            len = flb_config_map_expected_values(m->type);
+            if (len == -1) {
+                printf("multiple space delimited strings");
+            }
+            else {
+                printf("space delimited strings (minimum %i)", len);
+            }
         }
         else if (m->type == FLB_CONFIG_MAP_STR_PREFIX) {
             printf("prefixed string");
