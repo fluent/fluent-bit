@@ -84,11 +84,25 @@ struct flb_config_map {
                                                               struct flb_config_map_val, \
                                                               _head))
 
+static inline int flb_config_map_mult_type(int type)
+{
+    if (type >= FLB_CONFIG_MAP_CLIST && type <= FLB_CONFIG_MAP_CLIST_4) {
+        return FLB_CONFIG_MAP_CLIST;
+    }
+
+    if (type >= FLB_CONFIG_MAP_SLIST && type <= FLB_CONFIG_MAP_SLIST_4) {
+        return FLB_CONFIG_MAP_SLIST;
+    }
+
+    return -1;
+}
+
 int flb_config_map_properties_check(char *context_name,
                                     struct mk_list *in_properties,
                                     struct mk_list *map);
 struct mk_list *flb_config_map_create(struct flb_config_map *map);
 void flb_config_map_destroy(struct mk_list *list);
+int flb_config_map_expected_values(int type);
 int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *context);
 
 #endif
