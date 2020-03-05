@@ -43,6 +43,46 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
     ctx->ins = ins;
     ctx->nb_additional_entries = 0;
 
+    tmp = flb_output_get_property("proxy", ins);
+    if (tmp) {
+        char *p;
+        char *addr;
+
+        addr = strstr(tmp, "//");
+        if (!addr) {
+            flb_datadog_conf_destroy(ctx);
+            return NULL;
+        }
+        addr += 2;              /* get right to the host section */
+        if (*addr == '[') {     /* IPv6 */
+            p = strchr(addr, ']');
+            if (!p) {
+                flb_datadog_conf_destroy(ctx);
+                return NULL;
+            }
+            ctx->proxy_host = flb_strndup(addr + 1, p - addr - 1);
+            p++;
+            if (*p == ':') {
+                p++;
+                ctx->proxy_port = atoi(p);
+            }
+        }
+        else {
+            /* Port lookup */
+            p = strchr(addr, ':');
+            if (p) {
+                p++;
+                ctx->proxy_port = atoi(p);
+                ctx->proxy_host = flb_strndup(addr, p - addr - 1);
+            }
+            else {
+                ctx->proxy_host = flb_strdup(addr);
+                ctx->proxy_port = 80;
+            }
+        }
+        ctx->proxy = tmp;
+    }
+
     /* use TLS ? */
     if (ins->use_tls == FLB_TRUE) {
         io_flags = FLB_IO_TLS;
@@ -166,7 +206,19 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
     flb_plg_debug(ctx->ins, "compress_gzip: %i", ctx->compress_gzip);
 
     /* Prepare an upstream handler */
-    upstream = flb_upstream_create(config, ctx->host, ctx->port, io_flags, &ins->tls);
+    if (ctx->proxy) {
+        flb_plg_trace(ctx->ins, "[out_datadog] Upstream Proxy=%s:%i",
+                      ctx->proxy_host, ctx->proxy_port);
+        upstream = flb_upstream_create(config,
+                                       ctx->proxy_host,
+                                       ctx->proxy_port,
+                                       io_flags,
+                                       &ins->tls);
+    }
+    else {
+        upstream = flb_upstream_create(config, ctx->host, ctx->port, io_flags, &ins->tls);
+    }
+
     if (!upstream) {
         flb_plg_error(ctx->ins, "cannot create Upstream context");
         flb_datadog_conf_destroy(ctx);
@@ -183,11 +235,14 @@ int flb_datadog_conf_destroy(struct flb_out_datadog *ctx)
         return -1;
     }
 
+    if (ctx->proxy_host) {
+        flb_free(ctx->proxy_host);
+    }
     if (ctx->scheme) {
         flb_sds_destroy(ctx->scheme);
     }
     if (ctx->host) {
-        flb_sds_destroy(ctx->host);
+        flb_free(ctx->host);
     }
     if (ctx->uri) {
         flb_sds_destroy(ctx->uri);
