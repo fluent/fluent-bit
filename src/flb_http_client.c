@@ -531,7 +531,7 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
     char *fmt_plain =                           \
         "%s %s HTTP/1.%i\r\n";
     char *fmt_proxy =                           \
-        "%s http://%s:%i/%s HTTP/1.%i\r\n"
+        "%s http://%s:%i%s HTTP/1.%i\r\n"
         "Proxy-Connection: KeepAlive\r\n";
 
     struct flb_http_client *c;
@@ -570,11 +570,10 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
         ret = snprintf(buf, FLB_HTTP_BUF_SIZE,
                        fmt_proxy,
                        str_method,
-                       flags & FLB_HTTP_10 ? 0 : 1,
                        host,
                        port,
-                       "",
-                       body_len);
+                       uri,
+                       flags & FLB_HTTP_10 ? 0 : 1);
     }
 
     if (ret == -1) {
@@ -1058,5 +1057,6 @@ void flb_http_client_destroy(struct flb_http_client *c)
     http_headers_destroy(c);
     flb_free(c->resp.data);
     flb_free(c->header_buf);
+    flb_free((void *)c->proxy.host);
     flb_free(c);
 }
