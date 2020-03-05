@@ -330,6 +330,10 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
         content_size = cio_file_st_get_content_size(cf->map, fs_size);
         if (content_size == -1) {
             cio_log_error(ctx, "invalid content size %s", cf->path);
+            munmap(cf->map, cf->alloc_size);
+            cf->map = NULL;
+            cf->data_size = 0;
+            cf->alloc_size = 0;
             return CIO_CORRUPTED;
         }
         cf->data_size = content_size;
@@ -344,6 +348,10 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
     if (ret == -1) {
         cio_log_error(ctx, "format check failed: %s/%s",
                       ch->st->name, ch->name);
+        munmap(cf->map, cf->alloc_size);
+        cf->map = NULL;
+        cf->data_size = 0;
+        cf->alloc_size = 0;
         return CIO_CORRUPTED;
     }
 
@@ -551,16 +559,18 @@ static int _cio_file_up(struct cio_chunk *ch, int enforced)
         return CIO_ERROR;
     }
 
-    /* Map content */
+    /*
+     * Map content:
+     *
+     * return values = CIO_OK, CIO_ERROR, CIO_CORRUPTED or CIO_RETRY
+     */
     ret = mmap_file(ch->ctx, ch, cf->fs_size);
-    if (ret == -1) {
+    if (ret == CIO_ERROR) {
         cio_log_error(ch->ctx, "[cio file] cannot map chunk: %s/%s",
                       ch->st->name, ch->name);
-        /* ret = CIO_OK, CIO_ERROR, CIO_CORRUPTED or CIO_RETRY */
-        return ret;
     }
 
-    return 0;
+    return ret;
 }
 
 /*

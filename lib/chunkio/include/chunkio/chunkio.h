@@ -72,7 +72,7 @@ struct cio_ctx {
      * memory. For short, it restrict the open number of files and
      * the amount of memory mapped.
      */
-    int max_chunks_up;
+    size_t max_chunks_up;
 
     /* streams */
     struct mk_list streams;
