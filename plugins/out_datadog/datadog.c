@@ -320,7 +320,7 @@ static void cb_datadog_flush(const void *data, size_t bytes,
     client = flb_http_client(upstream_conn, FLB_HTTP_POST, ctx->uri,
                              final_payload_buf, final_payload_size,
                              ctx->host, ctx->port,
-                             NULL, 0);
+                             ctx->proxy, 0);
     if (!client) {
         flb_upstream_conn_release(upstream_conn);
         FLB_OUTPUT_RETURN(FLB_ERROR);
