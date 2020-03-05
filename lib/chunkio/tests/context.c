@@ -53,8 +53,8 @@ static void test_context()
     ctx = cio_create("/tmp/", NULL, -1, flags);
     TEST_CHECK(ctx == NULL);
 
-    /* Invalid debug level 5 */
-    ctx = cio_create("/tmp/", NULL, 5, flags);
+    /* Invalid debug level 6 */
+    ctx = cio_create("/tmp/", NULL, 6, flags);
     TEST_CHECK(ctx == NULL);
 
     /* Valid context without callback */
