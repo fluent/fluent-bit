@@ -722,3 +722,7 @@ int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *
     u->flags |= flags;
     return 0;
 }
+
+void flb_output_return_non_inline(int x) {
+    flb_output_return_do(x);                                       
+}

@@ -1,0 +1,28 @@
+[package]
+name = "flb-plugin-out_rust_stdout"
+version = "0.1.0"
+authors = ["Yenlin Chen <3822365+hencrice@users.noreply.github.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+rust_binding={path="../rust_binding"}
+serde={version="~1.0", features = ["derive"]}
+rmp-serde="~0.14"
+
+[lib]
+ # Creates static lib to be liniked by the final fluent-bit executable:
+ # https://doc.rust-lang.org/reference/linkage.html
+crate-type=["staticlib"]
+
+# https://doc.rust-lang.org/cargo/reference/profiles.html
+[profile.dev]
+opt-level = 0
+panic = "unwind"
+debug = 2
+
+[profile.release]
+opt-level = 2
+panic = "unwind"
+debug = 1

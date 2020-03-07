@@ -1,0 +1,25 @@
+[package]
+name = "rust_binding"
+version = "0.1.0"
+authors = ["Yenlin Chen <3822365+hencrice@users.noreply.github.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[build-dependencies]
+bindgen = "~0.53"
+
+[lib]
+# https://doc.rust-lang.org/reference/linkage.html
+crate-type=["rlib"]
+
+# https://doc.rust-lang.org/cargo/reference/profiles.html
+[profile.dev]
+opt-level = 0
+panic = "unwind"
+debug = 2
+
+[profile.release]
+opt-level = 2
+panic = "unwind"
+debug = 1

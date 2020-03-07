@@ -1,0 +1,1 @@
+FLB_RUST_PLUGIN(out_rust_stdout)

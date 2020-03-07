@@ -507,6 +507,8 @@ static inline void flb_output_return_do(int x)
     flb_output_return_do(x);                                            \
     return
 
+void flb_output_return_non_inline(int x);
+
 static inline int flb_output_config_map_set(struct flb_output_instance *ins,
                                             void *context)
 {

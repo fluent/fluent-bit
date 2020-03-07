@@ -14,3 +14,5 @@ include/fluent-bit/conf/*.h
 init/fluent-bit.service
 lib/monkey/monkey.service
 lib/monkey/include/monkey/mk_core/mk_core_info.h
+plugins/*/target
+cio_version.h

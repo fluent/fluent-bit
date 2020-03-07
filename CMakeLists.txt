@@ -1,4 +1,5 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.13)
+cmake_policy(SET CMP0079 NEW)
 project(fluent-bit)
 
 # Fluent Bit Version
@@ -150,6 +151,7 @@ option(FLB_OUT_NULL           "Enable dev null output plugin"       Yes)
 option(FLB_OUT_FLOWCOUNTER    "Enable flowcount output plugin"      Yes)
 option(FLB_OUT_KAFKA          "Enable Kafka output plugin"           No)
 option(FLB_OUT_KAFKA_REST     "Enable Kafka Rest output plugin"     Yes)
+option(FLB_OUT_RUST_STDOUT    "Enable Rust stdout output plugin"    No)
 option(FLB_FILTER_AWS         "Enable aws filter"                   Yes)
 option(FLB_FILTER_GREP        "Enable grep filter"                  Yes)
 option(FLB_FILTER_MODIFY      "Enable modify filter"                Yes)
@@ -194,6 +196,7 @@ if(FLB_ALL)
   set(FLB_OUT_RETRY    1)
   set(FLB_OUT_TD       1)
   set(FLB_OUT_STDOUT   1)
+  set(FLB_OUT_RUST_STDOUT 1)
   set(FLB_OUT_LIB      1)
   set(FLB_OUT_FLOWCOUNTER 1)
 endif()
@@ -659,6 +662,74 @@ endif()
 add_subdirectory(include)
 add_subdirectory(plugins)
 add_subdirectory(src)
+
+# Build a Rust plugin crate (i.e. package) as a static library (to be linked into
+# the final fluent-bit executable)
+macro(FLB_RUST_PLUGIN crate_name)
+  if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+      set(CARGO_CMD cargo build)
+  else ()
+      set(CARGO_CMD cargo build --release)
+  endif ()
+
+  include(ExternalProject)
+  # Set default ExternalProject root directory
+  set_directory_properties(PROPERTIES EP_PREFIX ${CMAKE_BINARY_DIR}/Rust)
+
+  # retrieve the list of folders that contain all header files
+  get_directory_property(dirs INCLUDE_DIRECTORIES)
+  set(bindgen_includes "")
+  foreach(dir IN LISTS dirs)
+      set(bindgen_includes ${bindgen_includes} -I${dir})
+  endforeach()
+  # The bindgen_includes is a string that contains a list of ";" seperated values,
+  # so we want to replace all ";" with " ". Otherwise when we pass the bindgen_includes
+  # variable to the BUILD_COMMAND below, bash will interpret the ";" character as
+  # the end of the command, which is incorrect.
+  string(REPLACE ";" " " bindgen_includes "${bindgen_includes}")
+  message(STATUS, "Rust bindgen_includes: ${bindgen_includes}")
+
+  ExternalProject_Add(
+    flb-plugin-${crate_name}_target
+    DOWNLOAD_COMMAND ""
+    CONFIGURE_COMMAND ""
+    # ${CMAKE_COMMAND} -E is a portable way to launch an executable with certain environment variables set
+    BUILD_COMMAND ${CMAKE_COMMAND} -E env CARGO_TARGET_DIR=${CMAKE_ARCHIVE_OUTPUT_DIRECTORY} BINDGEN_HEADER_DIRS=${bindgen_includes} ${CARGO_CMD}
+    BINARY_DIR "${CMAKE_SOURCE_DIR}/plugins/${crate_name}"
+    # run cargo test on the rust-binding crate ane the plugin create ${crate_name}. The COMMAND keyword is roughly
+    # equivalent to && in bash
+    TEST_COMMAND ${CMAKE_COMMAND} -E env BINDGEN_HEADER_DIRS=${bindgen_includes} cargo test --lib --manifest-path "${CMAKE_SOURCE_DIR}/plugins/rust_binding/Cargo.toml" COMMAND ${CMAKE_COMMAND} -E env BINDGEN_HEADER_DIRS=${bindgen_includes} cargo test
+    INSTALL_COMMAND ""
+    LOG_BUILD ON
+    LOG_OUTPUT_ON_FAILURE ON)
+  add_sanitizers(flb-plugin-${crate_name}_target)
+
+  # import the static library built by the external project above as a dependency
+  # that can be referenced in cmake
+  add_library(flb-plugin-${crate_name} STATIC IMPORTED GLOBAL)
+  add_dependencies(flb-plugin-${crate_name} flb-plugin-${crate_name}_target)
+  if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(ARCHIVE_DEBUG ${CMAKE_ARCHIVE_OUTPUT_DIRECTORY}/debug/libflb_plugin_${crate_name}.a)
+    message(STATUS, "fluent-bit-bin will linked with ${ARCHIVE_DEBUG}") 
+    set_target_properties(flb-plugin-${crate_name}
+      PROPERTIES
+      IMPORTED_LOCATION ${ARCHIVE_DEBUG})
+  else ()
+    set(ARCHIVE_OPTIMIZED ${CMAKE_ARCHIVE_OUTPUT_DIRECTORY}/release/libflb_plugin_${crate_name}.a)
+    message(STATUS, "fluent-bit-bin will linked with ${ARCHIVE_OPTIMIZED}") 
+    set_target_properties(flb-plugin-${crate_name}
+      PROPERTIES
+      IMPORTED_LOCATION ${ARCHIVE_OPTIMIZED})
+  endif ()
+
+  # create a cmake rule so that the rust static library will be linked into the final
+  # fluent-bit executable.
+  add_dependencies(fluent-bit-bin flb-plugin-${crate_name})
+  target_link_libraries(fluent-bit-bin flb-plugin-${crate_name})
+endmacro()
+
+# Add Rust plugins here
+add_subdirectory(plugins/out_rust_stdout)
 
 if(FLB_EXAMPLES)
   add_subdirectory(examples)
