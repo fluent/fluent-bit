@@ -38,6 +38,253 @@
 #define AWS_SESSION_TOKEN              "AWS_SESSION_TOKEN"
 
 
+/*
+ * The standard credential provider chain:
+ * 1. Environment variables
+ * 2. Shared credentials file (AWS Profile)
+ * 3. EKS OIDC
+ * 4. EC2 IMDS
+ * 5. ECS HTTP credentials endpoint
+ *
+ * This provider will evaluate each provider in order, returning the result
+ * from the first provider that returns valid credentials.
+ *
+ * Note: Client code should use this provider by default.
+ */
+struct flb_aws_provider_chain {
+    struct mk_list sub_providers;
+
+    /*
+     * The standard chain provider picks the first successful provider and
+     * then uses it until a call to refresh is made.
+     */
+    struct flb_aws_provider *sub_provider;
+};
+
+/*
+ * Iterates through the chain and returns credentials from the first provider
+ * that successfully returns creds. Caches this provider on the implementation.
+ */
+struct flb_aws_credentials *get_from_chain(struct flb_aws_provider_chain
+                                           *implementation)
+{
+    struct flb_aws_provider *sub_provider = NULL;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_aws_credentials *creds = NULL;
+
+    /* find the first provider that produces a valid set of creds */
+    mk_list_foreach_safe(head, tmp, &implementation->sub_providers) {
+        sub_provider = mk_list_entry(head,
+                                     struct flb_aws_provider,
+                                     _head);
+        creds = sub_provider->provider_vtable->get_credentials(sub_provider);
+        if (creds) {
+            implementation->sub_provider = sub_provider;
+            return creds;
+        }
+    }
+
+    return NULL;
+}
+
+struct flb_aws_credentials *get_credentials_fn_standard_chain(struct
+                                                              flb_aws_provider
+                                                              *provider)
+{
+    struct flb_aws_credentials *creds = NULL;
+    struct flb_aws_provider_chain *implementation = provider->implementation;
+    struct flb_aws_provider *sub_provider = implementation->sub_provider;
+
+    if (sub_provider) {
+        return sub_provider->provider_vtable->get_credentials(sub_provider);
+    }
+
+    if (try_lock_provider(provider)) {
+        creds = get_from_chain(implementation);
+        unlock_provider(provider);
+        return creds;
+    }
+
+    /*
+     * We failed to lock the provider and sub_provider is unset. This means that
+     * another co-routine is selecting a provider from the chain.
+     */
+    flb_warn("[aws_credentials] No cached credentials are available and "
+             "a credential refresh is already in progress. The current "
+             "co-routine will retry.");
+    return NULL;
+}
+
+/*
+ * Client code should only call refresh if there has been an
+ * error from the AWS APIs indicating creds are expired/invalid.
+ * Refresh may change the current sub_provider.
+ */
+int refresh_fn_standard_chain(struct flb_aws_provider *provider)
+{
+    struct flb_aws_provider_chain *implementation = provider->implementation;
+    struct flb_aws_provider *sub_provider = NULL;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    int ret = -1;
+
+    if (try_lock_provider(provider)) {
+        /* find the first provider that indicates successful refresh */
+        mk_list_foreach_safe(head, tmp, &implementation->sub_providers) {
+            sub_provider = mk_list_entry(head,
+                                         struct flb_aws_provider,
+                                         _head);
+            ret = sub_provider->provider_vtable->refresh(sub_provider);
+            if (ret >= 0) {
+                implementation->sub_provider = sub_provider;
+                break;
+            }
+        }
+        unlock_provider(provider);
+    }
+
+    return ret;
+}
+
+void sync_fn_standard_chain(struct flb_aws_provider *provider)
+{
+    struct flb_aws_provider_chain *implementation = provider->implementation;
+    struct flb_aws_provider *sub_provider = NULL;
+    struct mk_list *tmp;
+    struct mk_list *head;
+
+    /* set all providers to sync mode */
+    mk_list_foreach_safe(head, tmp, &implementation->sub_providers) {
+        sub_provider = mk_list_entry(head,
+                                     struct flb_aws_provider,
+                                     _head);
+        sub_provider->provider_vtable->sync(sub_provider);
+    }
+}
+
+void async_fn_standard_chain(struct flb_aws_provider *provider)
+{
+    struct flb_aws_provider_chain *implementation = provider->implementation;
+    struct flb_aws_provider *sub_provider = NULL;
+    struct mk_list *tmp;
+    struct mk_list *head;
+
+    /* set all providers to async mode */
+    mk_list_foreach_safe(head, tmp, &implementation->sub_providers) {
+        sub_provider = mk_list_entry(head,
+                                     struct flb_aws_provider,
+                                     _head);
+        sub_provider->provider_vtable->async(sub_provider);
+    }
+}
+
+void destroy_fn_standard_chain(struct flb_aws_provider *provider) {
+    struct flb_aws_provider *sub_provider;
+    struct flb_aws_provider_chain *implementation;
+    struct mk_list *tmp;
+    struct mk_list *head;
+
+    implementation = provider->implementation;
+
+    if (implementation) {
+        mk_list_foreach_safe(head, tmp, &implementation->sub_providers) {
+            sub_provider = mk_list_entry(head, struct flb_aws_provider,
+                                         _head);
+            mk_list_del(&sub_provider->_head);
+            flb_aws_provider_destroy(sub_provider);
+        }
+
+        flb_free(implementation);
+    }
+}
+
+static struct flb_aws_provider_vtable standard_chain_provider_vtable = {
+    .get_credentials = get_credentials_fn_standard_chain,
+    .refresh = refresh_fn_standard_chain,
+    .destroy = destroy_fn_standard_chain,
+    .sync = sync_fn_standard_chain,
+    .async = async_fn_standard_chain,
+};
+
+struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
+                                                            *config,
+                                                            struct flb_tls *tls,
+                                                            char *region,
+                                                            char *proxy,
+                                                            struct
+                                                            flb_aws_client_generator
+                                                            *generator)
+{
+    struct flb_aws_provider *sub_provider;
+    struct flb_aws_provider *provider;
+    struct flb_aws_provider_chain *implementation;
+
+    provider = flb_calloc(1, sizeof(struct flb_aws_provider));
+
+    if (!provider) {
+        flb_errno();
+        return NULL;
+    }
+
+    implementation = flb_calloc(1, sizeof(struct flb_aws_provider_chain));
+
+    if (!implementation) {
+        flb_errno();
+        flb_free(provider);
+        return NULL;
+    }
+
+    provider->provider_vtable = &standard_chain_provider_vtable;
+    provider->implementation = implementation;
+
+    /* Create chain of providers */
+    mk_list_init(&implementation->sub_providers);
+
+    sub_provider = flb_aws_env_provider_create();
+    if (!sub_provider) {
+        /* Env provider will only fail creation if a memory alloc failed */
+        flb_aws_provider_destroy(provider);
+        return NULL;
+    }
+    flb_debug("[aws_credentials] Initialized Env Provider in standard chain");
+
+    mk_list_add(&sub_provider->_head, &implementation->sub_providers);
+
+    sub_provider = flb_profile_provider_create();
+    if (sub_provider) {
+        /* Profile provider can fail if HOME env var is not set */;
+        mk_list_add(&sub_provider->_head, &implementation->sub_providers);
+        flb_debug("[aws_credentials] Initialized AWS Profile Provider in "
+                  "standard chain");
+    }
+
+    sub_provider = flb_eks_provider_create(config, tls, region, proxy, generator);
+    if (sub_provider) {
+        /* EKS provider can fail if we are not running in k8s */;
+        mk_list_add(&sub_provider->_head, &implementation->sub_providers);
+        flb_debug("[aws_credentials] Initialized EKS Provider in standard chain");
+    }
+
+    sub_provider = flb_ec2_provider_create(config, generator);
+    if (!sub_provider) {
+        /* EC2 provider will only fail creation if a memory alloc failed */
+        flb_aws_provider_destroy(provider);
+        return NULL;
+    }
+    mk_list_add(&sub_provider->_head, &implementation->sub_providers);
+    flb_debug("[aws_credentials] Initialized Env Provider in standard chain");
+
+    sub_provider = flb_ecs_provider_create(config, generator);
+    if (sub_provider) {
+        /* ECS Provider will fail creation if we are not running in ECS */
+        mk_list_add(&sub_provider->_head, &implementation->sub_providers);
+        flb_debug("[aws_credentials] Initialized ECS Provider in standard chain");
+    }
+
+    return provider;
+}
+
 /* Environment Provider */
 struct flb_aws_credentials *get_credentials_fn_environment(struct
                                                            flb_aws_provider
