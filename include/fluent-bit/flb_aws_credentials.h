@@ -185,6 +185,15 @@ struct flb_aws_provider *flb_ecs_provider_create(struct flb_config *config,
                                                  flb_aws_client_generator
                                                  *generator);
 
+/*
+ * EC2 IMDS Provider
+ */
+struct flb_aws_provider *flb_ec2_provider_create(struct flb_config *config,
+                                                 struct
+                                                 flb_aws_client_generator
+                                                 *generator);
+
+
 
 /*
  * Helper functions
