@@ -53,11 +53,11 @@ if(FLB_AWS)
     ${UNIT_TESTS_FILES}
     aws_util.c
     aws_credentials.c
+    aws_credentials_ec2.c
     aws_credentials_sts.c
     aws_credentials_http.c
     )
 endif()
-
 
 set(UNIT_TESTS_DATA
   data/pack/json_single_map_001.json
