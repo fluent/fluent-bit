@@ -111,6 +111,7 @@ if(FLB_AWS)
     "aws/flb_aws_credentials_sts.c"
     "aws/flb_aws_credentials_ec2.c"
     "aws/flb_aws_credentials_http.c"
+    "aws/flb_aws_credentials_profile.c"
     )
 endif()
 
