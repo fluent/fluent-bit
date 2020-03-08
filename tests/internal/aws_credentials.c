@@ -243,6 +243,77 @@ static void test_credential_expiration()
     TEST_CHECK(exp_actual == exp_expected);
 }
 
+static void test_standard_chain_provider()
+{
+    struct flb_aws_provider *provider;
+    struct flb_aws_credentials *creds;
+    int ret;
+    struct flb_config *config;
+
+    /* set environment */
+    ret = setenv(AWS_ACCESS_KEY_ID, ACCESS_KEY, 1);
+    if (ret < 0) {
+        flb_errno();
+        return;
+    }
+    ret = setenv(AWS_SECRET_ACCESS_KEY, SECRET_KEY, 1);
+    if (ret < 0) {
+        flb_errno();
+        return;
+    }
+    ret = setenv(AWS_SESSION_TOKEN, TOKEN, 1);
+    if (ret < 0) {
+        flb_errno();
+        return;
+    }
+
+    config = flb_malloc(sizeof(struct flb_config));
+    if (!config) {
+        flb_errno();
+        return;
+    }
+
+    provider = flb_standard_chain_provider_create(config, NULL, "us-west-2",
+                                                  NULL,
+                                                  flb_aws_client_generator());
+    if (!provider) {
+        flb_errno();
+        return;
+    }
+
+    /* repeated calls to get credentials should return the same set */
+    creds = provider->provider_vtable->get_credentials(provider);
+    if (!creds) {
+        flb_errno();
+        return;
+    }
+    TEST_CHECK(strcmp(ACCESS_KEY, creds->access_key_id) == 0);
+    TEST_CHECK(strcmp(SECRET_KEY, creds->secret_access_key) == 0);
+    TEST_CHECK(strcmp(TOKEN, creds->session_token) == 0);
+
+    flb_aws_credentials_destroy(creds);
+
+    creds = provider->provider_vtable->get_credentials(provider);
+    if (!creds) {
+        flb_errno();
+        return;
+    }
+    TEST_CHECK(strcmp(ACCESS_KEY, creds->access_key_id) == 0);
+    TEST_CHECK(strcmp(SECRET_KEY, creds->secret_access_key) == 0);
+    TEST_CHECK(strcmp(TOKEN, creds->session_token) == 0);
+
+    flb_aws_credentials_destroy(creds);
+
+    /* refresh should return 0 (success) */
+    ret = provider->provider_vtable->refresh(provider);
+    TEST_CHECK(ret == 0);
+
+    unsetenv_credentials();
+
+    flb_aws_provider_destroy(provider);
+    flb_free(config);
+}
+
 TEST_LIST = {
     { "test_credential_expiration" , test_credential_expiration},
     { "environment_credential_provider" , test_environment_provider},
@@ -251,5 +322,6 @@ TEST_LIST = {
     test_environment_provider_only_access},
     { "environment_credential_provider_unset" ,
       test_environment_provider_unset},
+    { "test_standard_chain_provider" , test_standard_chain_provider},
     { 0 }
 };
