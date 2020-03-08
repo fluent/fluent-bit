@@ -103,6 +103,15 @@ if(FLB_SIGNV4 AND FLB_TLS)
     )
 endif()
 
+if(FLB_AWS)
+  set(src
+    ${src}
+    "aws/flb_aws_credentials.c"
+    "aws/flb_aws_credentials_sts.c"
+    "aws/flb_aws_util.c"
+    )
+endif()
+
 if(FLB_LUAJIT)
   set(src
     ${src}
