@@ -20,6 +20,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_aws_credentials.h>
 
 #ifdef FLB_HAVE_SIGNV4
 
@@ -32,9 +33,8 @@ flb_sds_t flb_signv4_uri_normalize_path(char *uri, size_t len);
 flb_sds_t flb_signv4_do(struct flb_http_client *c, int normalize_uri,
                         int amz_date,
                         time_t t_now,
-                        char *access_key,
                         char *region, char *service,
-                        char *secret_key, char *security_token);
+                        struct flb_aws_provider *provider);
 
 #endif
 #endif /* FLB_HAVE_SIGNV4 */

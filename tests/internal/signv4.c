@@ -38,6 +38,7 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_signv4.h>
+#include <fluent-bit/flb_aws_credentials.h>
 #include <monkey/mk_core.h>
 
 #include "flb_tests_internal.h"
@@ -46,9 +47,15 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <dirent.h>
+#include <stdlib.h>
 
 /* Test suite entry point */
 #define AWS_SUITE   FLB_TESTS_DATA_PATH "data/signv4/aws-sig-v4-test-suite/"
+
+/* Credentials Environment Variables */
+#define AWS_ACCESS_KEY_ID              "AWS_ACCESS_KEY_ID"
+#define AWS_SECRET_ACCESS_KEY          "AWS_SECRET_ACCESS_KEY"
+#define AWS_SESSION_TOKEN              "AWS_SESSION_TOKEN"
 
 struct request {
     int method_i;
@@ -543,12 +550,12 @@ static void aws_test_suite()
     char *access_key = NULL;
     char *service = NULL;
     char *secret_key = NULL;
-    char *security_token = NULL;
     flb_sds_t signature;
     struct mk_list *head;
     struct mk_list *tests;
     struct flb_config *config;
     struct aws_test *awt;
+    struct flb_aws_provider *provider;
 
     config = flb_malloc(sizeof(struct flb_config));
     if (!config) {
@@ -570,7 +577,23 @@ static void aws_test_suite()
     access_key = "AKIDEXAMPLE";
     service = "service";
     secret_key = "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY";
-    security_token = "";
+
+    /* credentials */
+    ret = setenv(AWS_ACCESS_KEY_ID, access_key, 1);
+    if (ret < 0) {
+        flb_errno();
+        return;
+    }
+    ret = setenv(AWS_SECRET_ACCESS_KEY, secret_key, 1);
+    if (ret < 0) {
+        flb_errno();
+        return;
+    }
+    provider = flb_aws_env_provider_create();
+    if (!provider) {
+        flb_errno();
+        return;
+    }
 
     /* Iterate tests and sign the requests */
     mk_list_foreach(head, tests) {
@@ -579,8 +602,8 @@ static void aws_test_suite()
         signature = flb_signv4_do(awt->c,
                                   FLB_TRUE,  /* normalize URI ? */
                                   FLB_FALSE, /* add x-amz-date header ? */
-                                  t, access_key,
-                                  region, service, secret_key, security_token);
+                                  t, region, service,
+                                  provider);
         TEST_CHECK(signature != NULL);
         if (signature) {
             ret = strncmp(awt->authz, signature, flb_sds_len(awt->authz));
@@ -600,6 +623,7 @@ static void aws_test_suite()
     }
 
     aws_tests_destroy(tests);
+    flb_aws_provider_destroy(provider);
     flb_free(config);
 }
 
