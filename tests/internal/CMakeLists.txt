@@ -62,6 +62,7 @@ if(FLB_AWS)
     aws_credentials_ec2.c
     aws_credentials_sts.c
     aws_credentials_http.c
+    aws_credentials_profile.c
     )
 endif()
 
