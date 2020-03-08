@@ -30,6 +30,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_aws_credentials.h>
 #include <mbedtls/sha256.h>
 
 #include <stdlib.h>
@@ -985,9 +986,8 @@ static flb_sds_t flb_signv4_add_authorization(struct flb_http_client *c,
 flb_sds_t flb_signv4_do(struct flb_http_client *c, int normalize_uri,
                         int amz_date_header,
                         time_t t_now,
-                        char *access_key,
                         char *region, char *service,
-                        char *secret_key, char *security_token)
+                        struct flb_aws_provider *provider)
 {
     char amzdate[32];
     char datestamp[32];
@@ -997,16 +997,26 @@ flb_sds_t flb_signv4_do(struct flb_http_client *c, int normalize_uri,
     flb_sds_t signature;
     flb_sds_t signed_headers;
     flb_sds_t auth_header;
+    struct flb_aws_credentials *creds;
+
+    creds = provider->provider_vtable->get_credentials(provider);
+    if (!creds) {
+        flb_error("[signv4] Provider returned no credentials, service=%s",
+                  service);
+        return NULL;
+    }
 
     gmt = flb_malloc(sizeof(struct tm));
     if (!gmt) {
         flb_errno();
+        flb_aws_credentials_destroy(creds);
         return NULL;
     }
 
     if (!gmtime_r(&t_now, gmt)) {
         flb_error("[signv4] error converting given unix timestamp");
         flb_free(gmt);
+        flb_aws_credentials_destroy(creds);
         return NULL;
     }
 
@@ -1018,15 +1028,17 @@ flb_sds_t flb_signv4_do(struct flb_http_client *c, int normalize_uri,
     signed_headers = flb_sds_create_size(256);
     if (!signed_headers) {
         flb_error("[signedv4] cannot allocate buffer for auth signed headers");
+        flb_aws_credentials_destroy(creds);
         return NULL;
     }
 
     cr = flb_signv4_canonical_request(c, normalize_uri,
                                       amz_date_header, amzdate,
-                                      security_token, &signed_headers);
+                                      creds->session_token, &signed_headers);
     if (!cr) {
         flb_error("[signv4] failed canonical request");
         flb_sds_destroy(signed_headers);
+        flb_aws_credentials_destroy(creds);
         return NULL;
     }
 
@@ -1037,28 +1049,32 @@ flb_sds_t flb_signv4_do(struct flb_http_client *c, int normalize_uri,
         flb_error("[signv4] failed string to sign");
         flb_sds_destroy(cr);
         flb_sds_destroy(signed_headers);
+        flb_aws_credentials_destroy(creds);
         return NULL;
     }
     flb_sds_destroy(cr);
 
     /* Task 3: calculate the signature */
-    signature = flb_signv4_calculate_signature(string_to_sign, datestamp, service,
-                                               region, secret_key);
+    signature = flb_signv4_calculate_signature(string_to_sign, datestamp,
+                                               service, region,
+                                               creds->secret_access_key);
     if (!signature) {
         flb_error("[signv4] failed calculate_string");
         flb_sds_destroy(signed_headers);
         flb_sds_destroy(string_to_sign);
+        flb_aws_credentials_destroy(creds);
         return NULL;
     }
     flb_sds_destroy(string_to_sign);
 
     /* Task 4: add signature to HTTP request */
     auth_header = flb_signv4_add_authorization(c,
-                                               access_key,
+                                               creds->access_key_id,
                                                datestamp, region, service,
                                                signed_headers, signature);
     flb_sds_destroy(signed_headers);
     flb_sds_destroy(signature);
+    flb_aws_credentials_destroy(creds);
 
     if (!auth_header) {
         flb_error("[signv4] error creating authorization header");
