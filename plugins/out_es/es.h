@@ -45,6 +45,7 @@ struct flb_elasticsearch {
 #ifdef FLB_HAVE_SIGNV4
     int has_aws_auth;
     char *aws_region;
+    struct flb_aws_provider *aws_provider;
 #endif
 
     /* HTTP Client Setup */
