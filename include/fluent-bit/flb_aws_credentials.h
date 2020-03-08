@@ -193,7 +193,10 @@ struct flb_aws_provider *flb_ec2_provider_create(struct flb_config *config,
                                                  flb_aws_client_generator
                                                  *generator);
 
-
+/*
+ * New AWS Profile provider, reads from the shared credentials file
+ */
+struct flb_aws_provider *flb_profile_provider_create();
 
 /*
  * Helper functions
