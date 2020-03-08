@@ -60,6 +60,7 @@ if(FLB_AWS)
     aws_util.c
     aws_credentials.c
     aws_credentials_sts.c
+    aws_credentials_http.c
     )
 endif()
 
