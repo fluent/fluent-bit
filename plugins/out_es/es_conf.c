@@ -49,9 +49,7 @@ int es_config_ha(const char *upstream_file,
     if (!ec) {
         flb_errno();
         flb_plg_error(ctx->ins, "failed config allocation");
-        flb_es_conf_destroy(ec);
-        flb_free(ctx);
-        return -1
+        return -1;
     }
 
     ctx->ha_mode = FLB_TRUE;
@@ -66,11 +64,10 @@ int es_config_ha(const char *upstream_file,
         node = mk_list_entry(head, struct flb_upstream_node, _head);
 
         /* Populate context with config map defaults and incoming properties */
-        ret = flb_output_config_map_set(ins, (void *) ec);
+        ret = flb_output_config_map_set(node, (void *) ec);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "configuration error");
             flb_es_conf_destroy(ec);
-            flb_free(ctx);
             return -1;
         }
 
@@ -94,6 +91,7 @@ int es_config_ha(const char *upstream_file,
         /* HTTP Payload (response) maximum buffer size (0 == unlimited) */
         if (ec->buffer_size == -1) {
             ec->buffer_size = 0;
+
         }
 
         /* Elasticsearch: Path */
@@ -111,15 +109,31 @@ int es_config_ha(const char *upstream_file,
             snprintf(ec->uri, sizeof(ec->uri) - 1, "%s/_bulk", path);
         }
 
-        /* Initialize and validate es_config context */
-        ret = mk_list_add(&ec->_head, &ctx->configs);
+#ifdef FLB_HAVE_SIGNV4
+        /* AWS Auth */
+        ec->has_aws_auth = FLB_FALSE;
+        tmp = flb_output_get_property("aws_auth", node);
+        if (tmp) {
+            if (strncasecmp(tmp, "On", 2) == 0) {
+                ec->has_aws_auth = FLB_TRUE;
+                flb_plg_warn(ctx->ins,
+                             "Enabled AWS Auth. Note: Amazon ElasticSearch "
+                             "Service support in Fluent Bit is experimental.");
 
-        if (ret == -1) {
-            if (ec) {
-                flb_es_conf_destroy(ec);
+                tmp = flb_output_get_property("aws_region", node);
+                if (!tmp) {
+                    flb_plg_error(ctx->ins,
+                                  "aws_auth enabled but aws_region not set");
+                    flb_es_conf_destroy(ctx);
+                    return NULL;
+                }
+                ec->aws_region = (char *) tmp;
             }
-            return -1;
         }
+#endif
+
+        /* Initialize and validate es_config context */
+        mk_list_add(&ec->_head, &ctx->configs);
 
         /* Set our elasticsearch_config context into the node */
         flb_upstream_node_set_data(ec, node);
@@ -148,7 +162,6 @@ int es_config_simple(struct flb_output_instance *ins,
     if (!ec) {
         return -1;
     }
-    ctx->ins = ins;
 
     if (uri) {
         if (uri->count >= 2) {
@@ -229,11 +242,11 @@ int es_config_simple(struct flb_output_instance *ins,
 
 #ifdef FLB_HAVE_SIGNV4
     /* AWS Auth */
-    ctx->has_aws_auth = FLB_FALSE;
+    ec->has_aws_auth = FLB_FALSE;
     tmp = flb_output_get_property("aws_auth", ins);
     if (tmp) {
         if (strncasecmp(tmp, "On", 2) == 0) {
-            ctx->has_aws_auth = FLB_TRUE;
+            ec->has_aws_auth = FLB_TRUE;
             flb_plg_warn(ctx->ins,
                          "Enabled AWS Auth. Note: Amazon ElasticSearch "
                          "Service support in Fluent Bit is experimental.");
@@ -245,16 +258,16 @@ int es_config_simple(struct flb_output_instance *ins,
                 flb_es_conf_destroy(ctx);
                 return NULL;
             }
-            ctx->aws_region = (char *) tmp;
+            ec->aws_region = (char *) tmp;
         }
     }
 #endif
 
     mk_list_add(&ec->_head, &ctx->configs);
 
-    flb_debug("[out_es] host=%s port=%i uri=%s index=%s type=%s",
-              ins->host.name, ins->host.port, ec->uri,
-              ec->index, ec->type);
+    flb_plg_debug(ctx->ins, "[out_es] host=%s port=%i uri=%s index=%s type=%s",
+                  ins->host.name, ins->host.port, ec->uri,
+                  ec->index, ec->type);
 
     return 0;
 }
