@@ -71,11 +71,11 @@ option(FLB_BACKTRACE           "Enable stacktrace support"    Yes)
 option(FLB_LUAJIT              "Enable Lua Scripting support" Yes)
 option(FLB_RECORD_ACCESSOR     "Enable record accessor"       Yes)
 option(FLB_SIGNV4              "Enable AWS Signv4 support"    Yes)
+option(FLB_AWS                 "Enable AWS support"           Yes)
 option(FLB_SYSTEM_STRPTIME     "Use strptime in system libc"  Yes)
 option(FLB_STATIC_CONF         "Build binary using static configuration")
 option(FLB_STREAM_PROCESSOR    "Enable Stream Processor"      Yes)
 option(FLB_CORO_STACK_SIZE     "Set coroutine stack size")
-
 # Metrics: Experimental Feature, disabled by default on 0.12 series
 # but enabled in the upcoming 0.13 release. Note that development
 # mode enable this feature.
@@ -377,6 +377,11 @@ endif()
 # Metrics
 if(FLB_METRICS)
   FLB_DEFINITION(FLB_HAVE_METRICS)
+endif()
+
+# AWS
+if (FLB_AWS)
+  FLB_DEFINITION(FLB_HAVE_AWS)
 endif()
 
 # Signv4
