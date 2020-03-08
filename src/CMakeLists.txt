@@ -106,9 +106,10 @@ endif()
 if(FLB_AWS)
   set(src
     ${src}
+    "aws/flb_aws_util.c"
     "aws/flb_aws_credentials.c"
     "aws/flb_aws_credentials_sts.c"
-    "aws/flb_aws_util.c"
+    "aws/flb_aws_credentials_http.c"
     )
 endif()
 
