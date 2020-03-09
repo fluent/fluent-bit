@@ -470,6 +470,7 @@ static int add_host_and_content_length(struct flb_http_client *c)
     flb_sds_t host;
     char *out_host;
     int out_port;
+    size_t size;
     struct flb_upstream *u = c->u_conn->u;
 
     if (!c->host) {
@@ -505,12 +506,13 @@ static int add_host_and_content_length(struct flb_http_client *c)
 
     /* Content-Length */
     if (c->body_len >= 0) {
-        tmp = flb_malloc(32);
+        size = 32;
+        tmp = flb_malloc(size);
         if (!tmp) {
             flb_errno();
             return -1;
         }
-        len = snprintf(tmp, 32, "%i", c->body_len);
+        len = snprintf(tmp, size - 1, "%i", c->body_len);
         flb_http_add_header(c, "Content-Length", 14, tmp, len);
         flb_free(tmp);
     }
