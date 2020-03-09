@@ -510,7 +510,7 @@ static int add_host_and_content_length(struct flb_http_client *c)
             flb_errno();
             return -1;
         }
-        len = snprintf(tmp, sizeof(tmp) - 1, "%i", c->body_len);
+        len = snprintf(tmp, 32, "%i", c->body_len);
         flb_http_add_header(c, "Content-Length", 14, tmp, len);
         flb_free(tmp);
     }
