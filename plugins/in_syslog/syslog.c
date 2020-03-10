@@ -27,6 +27,7 @@
 #include <msgpack.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
 
@@ -143,6 +144,42 @@ static int in_syslog_init(struct flb_input_instance *in,
     return 0;
 }
 
+static void in_syslog_pause(void *data, struct flb_config *config)
+{
+    struct flb_syslog *ctx = data;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct syslog_conn *conn;
+    int ret;
+
+    mk_list_foreach_safe(head, tmp, &ctx->connections) {
+        conn = mk_list_entry(head, struct syslog_conn, _head);
+        ret = mk_event_del(conn->ctx->evl, &conn->event);
+        if (ret == -1) {
+            flb_error("[in_syslog] could not pause connection %i", conn->fd);
+        }
+    }
+}
+
+static void in_syslog_resume(void *data, struct flb_config *config)
+{
+    struct flb_syslog *ctx = data;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct syslog_conn *conn;
+    int ret;
+
+    syslog_pack_pending_lines(ctx);
+
+    mk_list_foreach_safe(head, tmp, &ctx->connections) {
+        conn = mk_list_entry(head, struct syslog_conn, _head);
+        ret = mk_event_add(ctx->evl, conn->fd, FLB_ENGINE_EV_CUSTOM, MK_EVENT_READ, conn);
+        if (ret == -1) {
+            flb_error("[in_syslog] could not resume connection %i", conn->fd);
+        }
+    }
+}
+
 static int in_syslog_exit(void *data, struct flb_config *config)
 {
     struct flb_syslog *ctx = data;
@@ -162,6 +199,8 @@ struct flb_input_plugin in_syslog_plugin = {
     .cb_pre_run   = NULL,
     .cb_collect   = NULL,
     .cb_flush_buf = NULL,
+    .cb_pause     = in_syslog_pause,
+    .cb_resume    = in_syslog_resume,
     .cb_exit      = in_syslog_exit,
     .flags        = FLB_INPUT_NET
 };

@@ -46,10 +46,55 @@ static inline int pack_line(struct flb_syslog *ctx,
     flb_time_append_to_msgpack(time, &mp_pck, 0);
     msgpack_sbuffer_write(&mp_sbuf, data, data_size);
 
-    flb_input_chunk_append_raw(ctx->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    int append_ret = flb_input_chunk_append_raw(ctx->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
-    return 0;
+    return append_ret;
+}
+
+int syslog_drop_pending_lines(struct flb_syslog *ctx)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct syslog_pending_line *line_save;
+    int total = 0;
+
+    mk_list_foreach_safe(head, tmp, &ctx->pending_lines) {
+        line_save = mk_list_entry(head, struct syslog_pending_line, _head);
+        flb_trace("[in_syslog] dropping pending log len=%i", line_save->out_size);
+        total++;
+        mk_list_del(&line_save->_head);
+        flb_free(line_save->out_buf);
+        flb_free(line_save);
+    }
+    if (total > 0) {
+        flb_error("[in_syslog] dropped %i pending logs", total);
+    }
+    return total;
+}
+
+int syslog_pack_pending_lines(struct flb_syslog *ctx)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct syslog_pending_line *line_save;
+    int total = 0;
+
+    mk_list_foreach_safe(head, tmp, &ctx->pending_lines) {
+        line_save = mk_list_entry(head, struct syslog_pending_line, _head);
+        flb_trace("[in_syslog] resending pending log len=%i", line_save->out_size);
+        if (pack_line(ctx, &line_save->out_time, line_save->out_buf, line_save->out_size) == -1) {
+            /* The in-memory buffer is full, should trigger pause and wait for next resumption */
+            flb_debug("[in_syslog] resending pending log failed, stop after %i", total);
+            return -1;
+        }
+        total++;
+        mk_list_del(&line_save->_head);
+        flb_free(line_save->out_buf);
+        flb_free(line_save);
+    }
+    flb_debug("[in_syslog] resent %i pending logs", total);
+    return total;
 }
 
 int syslog_prot_process(struct syslog_conn *conn)
@@ -100,8 +145,16 @@ int syslog_prot_process(struct syslog_conn *conn)
         ret = flb_parser_do(ctx->parser, p, len,
                             &out_buf, &out_size, &out_time);
         if (ret >= 0) {
-            pack_line(ctx, &out_time, out_buf, out_size);
-            flb_free(out_buf);
+            if (pack_line(ctx, &out_time, out_buf, out_size) == -1) {
+                struct syslog_pending_line *line_save = flb_malloc(sizeof(struct syslog_pending_line));
+                line_save->out_buf = out_buf;
+                line_save->out_size = out_size;
+                line_save->out_time = out_time;
+                mk_list_add(&line_save->_head, &ctx->pending_lines);
+                flb_trace("[in_syslog] saving log until input resumption: len=%i", out_size);
+            } else {
+                flb_free(out_buf);
+            }
         }
         else {
             flb_plg_warn(ctx->ins, "error parsing log message with parser '%s'",

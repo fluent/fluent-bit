@@ -23,6 +23,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_time.h>
 
 /* Syslog modes */
 #define FLB_SYSLOG_UNIX_TCP  1
@@ -63,6 +64,16 @@ struct flb_syslog {
     struct mk_list connections;
     struct mk_event_loop *evl;
     struct flb_input_instance *ins;
+
+    struct mk_list pending_lines;
+};
+
+struct syslog_pending_line {
+    void *out_buf;
+    size_t out_size;
+    struct flb_time out_time;
+
+    struct mk_list _head;
 };
 
 #endif

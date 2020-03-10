@@ -46,6 +46,7 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
     ctx->ins = ins;
     ctx->buffer_data = NULL;
     mk_list_init(&ctx->connections);
+    mk_list_init(&ctx->pending_lines);
 
     /* Syslog mode: unix_udp, unix_tcp, tcp or udp */
     tmp = flb_input_get_property("mode", ins);
@@ -144,6 +145,8 @@ int syslog_conf_destroy(struct flb_syslog *ctx)
         ctx->buffer_data = NULL;
     }
     syslog_server_destroy(ctx);
+    syslog_pack_pending_lines(ctx);
+    syslog_drop_pending_lines(ctx);
     flb_free(ctx);
 
     return 0;
