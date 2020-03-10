@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_upstream_ha.h>
+#include <fluent-bit/flb_config_map.h>
 
 #include "es.h"
 #include "es_conf.h"
@@ -44,14 +45,6 @@ int es_config_ha(const char *upstream_file,
     struct flb_upstream_node *node;
     struct flb_elasticsearch_config *ec = NULL;
 
-    /* Allocate context */
-    ec = flb_calloc(1, sizeof(struct flb_elasticsearch_config));
-    if (!ec) {
-        flb_errno();
-        flb_plg_error(ctx->ins, "failed config allocation");
-        return -1;
-    }
-
     ctx->ha_mode = FLB_TRUE;
     ctx->ha = flb_upstream_ha_from_file(upstream_file, config);
     if (!ctx->ha) {
@@ -62,9 +55,16 @@ int es_config_ha(const char *upstream_file,
     /* Iterate nodes and create a forward_config context */
     mk_list_foreach(head, &ctx->ha->nodes) {
         node = mk_list_entry(head, struct flb_upstream_node, _head);
+        /* Allocate context */
+        ec = flb_calloc(1, sizeof(struct flb_elasticsearch_config));
+        if (!ec) {
+            flb_errno();
+            flb_plg_error(ctx->ins, "failed config allocation");
+            continue;
+        }
 
         /* Populate context with config map defaults and incoming properties */
-        ret = flb_output_config_map_set(node, (void *) ec);
+        ret = flb_output_config_map_set(ctx->ins, (void *) ec);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "configuration error");
             flb_es_conf_destroy(ec);
@@ -83,15 +83,19 @@ int es_config_ha(const char *upstream_file,
         if (f_index) {
             ec->index = flb_strdup(f_index->value); /* FIXME */
         }
-
+        else {
+            ec->index = flb_strdup(FLB_ES_DEFAULT_INDEX);
+        }
         if (f_type) {
             ec->type = flb_strdup(f_type->value); /* FIXME */
+        }
+        else {
+            ec->type = flb_strdup(FLB_ES_DEFAULT_TYPE);
         }
 
         /* HTTP Payload (response) maximum buffer size (0 == unlimited) */
         if (ec->buffer_size == -1) {
             ec->buffer_size = 0;
-
         }
 
         /* Elasticsearch: Path */
@@ -112,7 +116,7 @@ int es_config_ha(const char *upstream_file,
 #ifdef FLB_HAVE_SIGNV4
         /* AWS Auth */
         ec->has_aws_auth = FLB_FALSE;
-        tmp = flb_output_get_property("aws_auth", node);
+        tmp = flb_upstream_node_get_property("aws_auth", node);
         if (tmp) {
             if (strncasecmp(tmp, "On", 2) == 0) {
                 ec->has_aws_auth = FLB_TRUE;
@@ -120,14 +124,14 @@ int es_config_ha(const char *upstream_file,
                              "Enabled AWS Auth. Note: Amazon ElasticSearch "
                              "Service support in Fluent Bit is experimental.");
 
-                tmp = flb_output_get_property("aws_region", node);
+                tmp = flb_upstream_node_get_property("aws_region", node);
                 if (!tmp) {
                     flb_plg_error(ctx->ins,
                                   "aws_auth enabled but aws_region not set");
                     flb_es_conf_destroy(ctx);
                     return NULL;
                 }
-                ec->aws_region = (char *) tmp;
+                ec->aws_region = flb_strdup(tmp);
             }
         }
 #endif
@@ -174,7 +178,7 @@ int es_config_simple(struct flb_output_instance *ins,
     flb_output_net_default("127.0.0.1", 9200, ins);
 
     /* Populate context with config map defaults and incoming properties */
-    ret = flb_output_config_map_set(ins, (void *) ctx);
+    ret = flb_output_config_map_set(ins, (void *) ec);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "configuration error");
         flb_es_conf_destroy(ec);
@@ -203,7 +207,7 @@ int es_config_simple(struct flb_output_instance *ins,
     if (!upstream) {
         flb_plg_error(ctx->ins, "cannot create Upstream context");
         flb_es_conf_destroy(ec);
-	flb_free(ctx);
+        flb_free(ctx);
         return NULL;
     }
     ctx->u = upstream;
@@ -258,7 +262,7 @@ int es_config_simple(struct flb_output_instance *ins,
                 flb_es_conf_destroy(ctx);
                 return NULL;
             }
-            ec->aws_region = (char *) tmp;
+            ec->aws_region = flb_strdup(tmp);
         }
     }
 #endif
@@ -276,25 +280,6 @@ int flb_es_conf_destroy(struct flb_elasticsearch_config *ec)
 {
     if (!ec) {
         return 0;
-    }
-
-    flb_free(ec->index);
-    flb_free(ec->type);
-
-    flb_free(ec->http_user);
-    flb_free(ec->http_passwd);
-
-    flb_free(ec->logstash_prefix);
-    flb_free(ec->logstash_dateformat);
-    flb_free(ec->time_key);
-    flb_free(ec->time_key_format);
-
-    if (ec->include_tag_key) {
-        flb_free(ec->tag_key);
-    }
-
-    if (ec->logstash_prefix_key) {
-        flb_free(ec->logstash_prefix_key);
     }
 
     flb_free(ec);
