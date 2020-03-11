@@ -27,6 +27,8 @@
 #define DEFAULT_DUMMY_MESSAGE "{\"message\":\"dummy\"}"
 
 struct flb_dummy {
+    int samples;
+    int samples_count;
     char *dummy_message;
     int    dummy_message_len;
 

@@ -39,13 +39,19 @@ static int in_dummy_collect(struct flb_input_instance *ins,
 {
     size_t off = 0;
     size_t start = 0;
-    struct flb_dummy *ctx = in_context;
-    char *pack = ctx->ref_msgpack;
-    int pack_size = ctx->ref_msgpack_size;
+    char *pack;
+    int pack_size;
     msgpack_unpacked result;
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
+    struct flb_dummy *ctx = in_context;
 
+    if (ctx->samples > 0 && (ctx->samples_count >= ctx->samples)) {
+        return -1;
+    }
+
+    pack = ctx->ref_msgpack;
+    pack_size = ctx->ref_msgpack_size;
     msgpack_unpacked_init(&result);
 
     /* Initialize local msgpack buffer */
@@ -66,6 +72,9 @@ static int in_dummy_collect(struct flb_input_instance *ins,
     flb_input_chunk_append_raw(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
+    if (ctx->samples > 0) {
+        ctx->samples_count++;
+    }
     return 0;
 }
 
@@ -90,6 +99,12 @@ static int configure(struct flb_dummy *ctx,
     ctx->ref_msgpack = NULL;
 
     /* samples */
+    str = flb_input_get_property("samples", in);
+    if (str != NULL && atoi(str) >= 0) {
+        ctx->samples = atoi(str);
+    }
+
+    /* the message */
     str = flb_input_get_property("dummy", in);
     if (str != NULL) {
         ctx->dummy_message = flb_strdup(str);
@@ -146,6 +161,8 @@ static int in_dummy_init(struct flb_input_instance *in,
         return -1;
     }
     ctx->ins = in;
+    ctx->samples = 0;
+    ctx->samples_count = 0;
 
     /* Initialize head config */
     ret = configure(ctx, in, &tm);
