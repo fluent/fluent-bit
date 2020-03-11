@@ -365,8 +365,20 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map)
             }
 
             if (val->type == FLB_RA_STRING) {
-
+                if (flb_sds_cmp(val->val.string, rule->expect,
+                                flb_sds_len(rule->expect)) != 0) {
+                    json = flb_msgpack_to_json_str(size, &map);
+                    flb_plg_error(ctx->ins,
+                                  "exception on rule #%i 'key_val_eq', "
+                                  "key value '%s' is different than "
+                                  "expected: '%s'. Record content:\n%s",
+                                  n, val->val.string, rule->expect, json);
+                    free(json);
+                    flb_ra_key_value_destroy(val);
+                    return FLB_FALSE;
+                }
             }
+            flb_ra_key_value_destroy(val);
         }
         n++;
     }
