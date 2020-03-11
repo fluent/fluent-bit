@@ -560,7 +560,10 @@ int flb_engine_start(struct flb_config *config)
                         flb_engine_exit(config);
                     }
                     else {
-                        return flb_engine_shutdown(config);
+                        ret = config->exit_status_code;
+                        flb_engine_shutdown(config);
+                        config = NULL;
+                        return ret;
                     }
                 }
             }
@@ -651,4 +654,10 @@ int flb_engine_exit(struct flb_config *config)
     val = FLB_ENGINE_EV_STOP;
     ret = flb_pipe_w(config->ch_manager[1], &val, sizeof(uint64_t));
     return ret;
+}
+
+int flb_engine_exit_status(struct flb_config *config, int status)
+{
+    config->exit_status_code = status;
+    return flb_engine_exit(config);
 }

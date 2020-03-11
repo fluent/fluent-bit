@@ -55,6 +55,7 @@ int flb_engine_failed(struct flb_config *config);
 int flb_engine_flush(struct flb_config *config,
                      struct flb_input_plugin *in_force);
 int flb_engine_exit(struct flb_config *config);
+int flb_engine_exit_status(struct flb_config *config, int status);
 int flb_engine_shutdown(struct flb_config *config);
 int flb_engine_destroy_tasks(struct mk_list *tasks);
 
