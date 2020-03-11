@@ -124,6 +124,9 @@ struct flb_config {
     /* Environment */
     void *env;
 
+    /* Exit status code */
+    int exit_status_code;
+
     /* Workers: threads spawn using flb_worker_create() */
     struct mk_list workers;
 

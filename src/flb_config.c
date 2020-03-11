@@ -145,6 +145,7 @@ struct flb_config *flb_config_init()
     config->kernel       = flb_kernel_info();
     config->verbose      = 3;
     config->grace        = 5;
+    config->exit_status_code = 0;
 
 #ifdef FLB_HAVE_HTTP_SERVER
     config->http_ctx     = NULL;
