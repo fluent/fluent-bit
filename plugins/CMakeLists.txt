@@ -195,7 +195,9 @@ REGISTER_OUT_PLUGIN("out_gelf")
 
 # FILTERS
 # =======
-REGISTER_FILTER_PLUGIN("filter_stdout")
+REGISTER_FILTER_PLUGIN("filter_aws")
+REGISTER_FILTER_PLUGIN("filter_expect")
+REGISTER_FILTER_PLUGIN("filter_record_modifier")
 REGISTER_FILTER_PLUGIN("filter_rewrite_tag")
 REGISTER_FILTER_PLUGIN("filter_throttle")
 
@@ -211,8 +213,8 @@ if(FLB_LUAJIT)
   REGISTER_FILTER_PLUGIN("filter_lua")
 endif()
 
-REGISTER_FILTER_PLUGIN("filter_record_modifier")
-REGISTER_FILTER_PLUGIN("filter_aws")
+REGISTER_FILTER_PLUGIN("filter_stdout")
+
 
 # Register external input and output plugins
 if(EXT_IN_PLUGINS)
