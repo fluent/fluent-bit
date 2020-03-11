@@ -242,6 +242,17 @@ const char *flb_filter_get_property(const char *key,
     return flb_kv_get_key_value(key, &ins->properties);
 }
 
+void flb_filter_instance_exit(struct flb_filter_instance *ins,
+                              struct flb_config *config)
+{
+    struct flb_filter_plugin *p;
+
+    p = ins->p;
+    if (p->cb_exit && ins->context) {
+        p->cb_exit(ins->context, config);
+    }
+}
+
 /* Invoke exit call for the filter plugin */
 void flb_filter_exit(struct flb_config *config)
 {
@@ -253,12 +264,10 @@ void flb_filter_exit(struct flb_config *config)
     mk_list_foreach_safe(head, tmp, &config->filters) {
         ins = mk_list_entry(head, struct flb_filter_instance, _head);
         p = ins->p;
-
-        /* Check a exit callback */
-        if (p->cb_exit && ins->context) {
-            p->cb_exit(ins->context, config);
+        if (!p) {
+            continue;
         }
-
+        flb_filter_instance_exit(ins, config);
         flb_filter_instance_destroy(ins);
     }
 }
