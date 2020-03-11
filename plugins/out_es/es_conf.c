@@ -80,17 +80,20 @@ int es_config_ha(const char *upstream_file,
         }
 
         /* Set manual Index and Type */
-        if (f_index) {
-            ec->index = flb_strdup(f_index->value); /* FIXME */
+        tmp = flb_upstream_node_get_property("index", node);
+        if (tmp) {
+            ec->index = tmp;
         }
         else {
-            ec->index = flb_strdup(FLB_ES_DEFAULT_INDEX);
+            ec->index = FLB_ES_DEFAULT_INDEX;
         }
-        if (f_type) {
-            ec->type = flb_strdup(f_type->value); /* FIXME */
+
+        tmp = flb_upstream_node_get_property("type", node);
+        if (tmp) {
+            ec->type = tmp; 
         }
         else {
-            ec->type = flb_strdup(FLB_ES_DEFAULT_TYPE);
+            ec->type = FLB_ES_DEFAULT_TYPE;
         }
 
         /* HTTP Payload (response) maximum buffer size (0 == unlimited) */
@@ -131,7 +134,7 @@ int es_config_ha(const char *upstream_file,
                     flb_es_conf_destroy(ctx);
                     return NULL;
                 }
-                ec->aws_region = flb_strdup(tmp);
+                ec->aws_region = tmp; 
             }
         }
 #endif
@@ -215,15 +218,6 @@ int es_config_simple(struct flb_output_instance *ins,
     /* Set instance flags into upstream */
     flb_output_upstream_set(ctx->u, ins);
 
-    /* Set manual Index and Type */
-    if (f_index) {
-        ec->index = flb_strdup(f_index->value); /* FIXME */
-    }
-
-    if (f_type) {
-        ec->type = flb_strdup(f_type->value); /* FIXME */
-    }
-
     /* HTTP Payload (response) maximum buffer size (0 == unlimited) */
     if (ec->buffer_size == -1) {
         ec->buffer_size = 0;
@@ -262,7 +256,7 @@ int es_config_simple(struct flb_output_instance *ins,
                 flb_es_conf_destroy(ctx);
                 return NULL;
             }
-            ec->aws_region = flb_strdup(tmp);
+            ec->aws_region = tmp;
         }
     }
 #endif
