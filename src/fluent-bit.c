@@ -1065,9 +1065,9 @@ int main(int argc, char **argv)
     flb_output_prepare();
 
     ret = flb_engine_start(config);
-    if (ret == -1) {
+    if (ret == -1 && config) {
         flb_engine_shutdown(config);
     }
 
-    return 0;
+    return ret;
 }
