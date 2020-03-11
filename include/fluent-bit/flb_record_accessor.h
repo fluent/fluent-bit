@@ -42,4 +42,7 @@ int flb_ra_strcmp(struct flb_record_accessor *ra, msgpack_object map,
 int flb_ra_regex_match(struct flb_record_accessor *ra, msgpack_object map,
                        struct flb_regex *regex,
                        struct flb_regex_search *result);
+struct flb_ra_value *flb_ra_get_value_object(struct flb_record_accessor *ra,
+                                             msgpack_object map);
+
 #endif
