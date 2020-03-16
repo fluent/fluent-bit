@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/flb_aws_credentials.h>
+#include <fluent-bit/flb_output_plugin.h>
 
 #include <jsmn/jsmn.h>
 #include <stdlib.h>
@@ -220,7 +221,7 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
     ret = flb_http_do(c, &b_sent);
 
     if (ret != 0 || c->resp.status != 200) {
-        flb_error("[aws_client] %s: http_do=%i, HTTP Status: %i",
+        flb_debug("[aws_client] %s: http_do=%i, HTTP Status: %i",
                   aws_client->host, ret, c->resp.status);
     }
 
@@ -239,6 +240,31 @@ error:
         flb_http_client_destroy(c);
     }
     return NULL;
+}
+
+void flb_aws_print_error(char *response, size_t response_len,
+                              char *api, struct flb_output_instance *ins)
+{
+    flb_sds_t error;
+    flb_sds_t message;
+
+    error = flb_json_get_val(response, response_len, "__type");
+    if (!error) {
+        return;
+    }
+
+    message = flb_json_get_val(response, response_len, "message");
+    if (!message) {
+        /* just print the error */
+        flb_plg_error(ins, "%s API responded with error='%s'", api, error);
+    }
+    else {
+        flb_plg_error(ins, "%s API responded with error='%s', message='%s'",
+                      api, error, message);
+        flb_sds_destroy(message);
+    }
+
+    flb_sds_destroy(error);
 }
 
 /* parses AWS API error responses and returns the value of the __type field */

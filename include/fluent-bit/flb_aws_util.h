@@ -20,6 +20,9 @@
 #ifdef FLB_HAVE_AWS
 
 #ifndef FLB_AWS_UTIL_H
+
+#include <fluent-bit/flb_output.h>
+
 #define FLB_AWS_UTIL_H
 
 #define AWS_SERVICE_ENDPOINT_FORMAT            "%s.%s.amazonaws.com"
@@ -129,6 +132,14 @@ char *flb_aws_endpoint(char* service, char* region);
 flb_sds_t flb_aws_error(char *response, size_t response_len);
 
 /*
+ * Similar to 'flb_aws_error', except it prints the error type and message
+ * to the user in a error log.
+ * 'api' is the name of the API that was called; this is used in the error log.
+ */
+void flb_aws_print_error(char *response, size_t response_len,
+                         char *api, struct flb_output_instance *ins);
+
+/*
  * Parses the JSON and gets the value for 'key'
  */
 flb_sds_t flb_json_get_val(char *response, size_t response_len, char *key);
@@ -138,6 +149,7 @@ flb_sds_t flb_json_get_val(char *response, size_t response_len, char *key);
  */
 int flb_imds_request(struct flb_aws_client *client, char *metadata_path,
                      flb_sds_t *metadata, size_t *metadata_len);
+
 
 #endif
 #endif /* FLB_HAVE_AWS */
