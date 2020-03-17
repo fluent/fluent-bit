@@ -34,6 +34,12 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
     const char *api_key;
     const char *tmp;
 
+    int ret;
+    char *protocol = NULL;
+    char *host = NULL;
+    char *port = NULL;
+    char *uri = NULL;
+
     /* Start resource creation */
     ctx = flb_calloc(1, sizeof(struct flb_out_datadog));
     if (!ctx) {
@@ -45,42 +51,19 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
 
     tmp = flb_output_get_property("proxy", ins);
     if (tmp) {
-        char *p;
-        char *addr;
-
-        addr = strstr(tmp, "//");
-        if (!addr) {
+        ret = flb_utils_url_split(tmp, &protocol, &host, &port, &uri);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "could not parse proxy parameter: '%s'", tmp);
             flb_datadog_conf_destroy(ctx);
             return NULL;
         }
-        addr += 2;              /* get right to the host section */
-        if (*addr == '[') {     /* IPv6 */
-            p = strchr(addr, ']');
-            if (!p) {
-                flb_datadog_conf_destroy(ctx);
-                return NULL;
-            }
-            ctx->proxy_host = flb_strndup(addr + 1, p - addr - 1);
-            p++;
-            if (*p == ':') {
-                p++;
-                ctx->proxy_port = atoi(p);
-            }
-        }
-        else {
-            /* Port lookup */
-            p = strchr(addr, ':');
-            if (p) {
-                p++;
-                ctx->proxy_port = atoi(p);
-                ctx->proxy_host = flb_strndup(addr, p - addr - 1);
-            }
-            else {
-                ctx->proxy_host = flb_strdup(addr);
-                ctx->proxy_port = 80;
-            }
-        }
+
+        ctx->proxy_host = host;
+        ctx->proxy_port = atoi(port);
         ctx->proxy = tmp;
+        flb_free(protocol);
+        flb_free(port);
+        flb_free(uri);
     }
 
     /* use TLS ? */
