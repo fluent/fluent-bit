@@ -624,14 +624,13 @@ static void cb_es_flush(const void *data, size_t bytes,
 
         /* Get forward_config stored in node opaque data */
         ec = flb_upstream_node_get_data(node);
+        flb_plg_debug(ctx->ins, "trying node %s", node->name);
     }
     else {
         ec = mk_list_entry_first(&ctx->configs,
                                  struct flb_elasticsearch_config,
                                  _head);
     }
-
-    flb_plg_debug(ctx->ins, "trying node %s", node->name);
 
     /* Get upstream connection */
     if (ctx->ha_mode == FLB_TRUE) {
@@ -904,6 +903,11 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_BOOL, "trace_error", "false",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch_config, trace_error),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "upstream", NULL,
+     0, FLB_FALSE, 0,
      NULL
     },
 
