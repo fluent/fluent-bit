@@ -322,7 +322,7 @@ static int extract_hash(const char * im, int sz, const char ** out, int * outsz)
         return -1;
     }
 
-    colon = memrchr(im, ':', sz);
+    colon = memchr(im, ':', sz);
 
     if (colon == NULL) {
         return -1;
@@ -337,15 +337,11 @@ static int extract_hash(const char * im, int sz, const char ** out, int * outsz)
     }
 
     if (slash == NULL && (im + sz - colon) > 0) {
-        *out = colon + 1;
+        *out = im;
     }
 
-    if (slash != NULL) {
-        if ((colon - slash) < 0 && (im + sz - slash) > 0) {
-            *out = slash + 1;
-        } else if ((colon - slash) > 0 && (im + sz - colon) > 0) {
-            *out = colon + 1;
-        }
+    if (slash != NULL && (colon - slash) < 0 && (im + sz - slash) > 0) {
+        *out = slash + 1;
     }
 
     if (*out) {
