@@ -305,8 +305,9 @@ endif()
 # Binary / Executable
 if(FLB_BINARY)
   find_package (Threads)
-  add_executable(fluent-bit-bin fluent-bit.c)
+  add_executable(fluent-bit-bin fluent-bit.c flb_dump.c)
   add_sanitizers(fluent-bit-bin)
+
 
   if(FLB_STATIC_CONF)
     add_dependencies(fluent-bit-bin flb-static-conf)
@@ -321,6 +322,7 @@ if(FLB_BINARY)
   endif()
 
   if(FLB_BACKTRACE)
+    add_definitions(-DFLB_DUMP_STACKTRACE=1)
     target_link_libraries(fluent-bit-bin libbacktrace)
   endif()
 
