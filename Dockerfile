@@ -3,8 +3,8 @@ FROM debian:stretch as builder
 # Fluent Bit version
 ENV FLB_MAJOR 1
 ENV FLB_MINOR 3
-ENV FLB_PATCH 10
-ENV FLB_VERSION 1.3.10
+ENV FLB_PATCH 11
+ENV FLB_VERSION 1.3.11
 
 ENV DEBIAN_FRONTEND noninteractive
 
