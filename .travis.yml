@@ -1,4 +1,4 @@
-dist: xenial
+dist: bionic
 language: c
 # The leak sanitizer uses ptrace, which doesn't work under the
 # travis container infrastructure, so we enable 'sudo'
@@ -48,7 +48,7 @@ matrix:
         ci/do-ut || true
     - os: linux
       env: FLB_OPT="-DFLB_COVERAGE=On"
-      dist: xenial
+      dist: bionic
       sudo: true
       language: c
       compiler: gcc
@@ -60,7 +60,7 @@ matrix:
     - os: linux
       services:
         - docker
-      dist: xenial
+      dist: bionic
       sudo: true
       language: c
       compiler: gcc
