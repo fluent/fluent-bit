@@ -730,6 +730,18 @@ int flb_utils_write_str_buf(const char *str, size_t str_len, char **out, size_t 
     return 0;
 }
 
+static char *flb_copy_host(const char *string, int pos_init, int pos_end)
+{
+    if (string[pos_init] == '[') {            /* IPv6 */
+        if (string[pos_end-1] != ']')
+            return NULL;
+
+        return mk_string_copy_substr(string, pos_init + 1, pos_end - 1);
+    }
+    else
+        return mk_string_copy_substr(string, pos_init, pos_end);
+}
+
 int flb_utils_url_split(const char *in_url, char **out_protocol,
                         char **out_host, char **out_port, char **out_uri)
 {
@@ -771,7 +783,7 @@ int flb_utils_url_split(const char *in_url, char **out_protocol,
     }
 
     if (tmp) {
-        host = mk_string_copy_substr(p, 0, tmp - p);
+        host = flb_copy_host(p, 0, tmp - p);
         if (!host) {
             flb_errno();
             goto error;
@@ -792,11 +804,11 @@ int flb_utils_url_split(const char *in_url, char **out_protocol,
     else {
         tmp = strchr(p, '/');
         if (tmp) {
-            host = mk_string_copy_substr(p, 0, tmp - p);
+            host = flb_copy_host(p, 0, tmp - p);
             uri = flb_strdup(tmp);
         }
         else {
-            host = flb_strdup(p);
+            host = flb_copy_host(p, 0, strlen(p));
             uri = flb_strdup("/");
         }
     }

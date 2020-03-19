@@ -42,6 +42,11 @@
 
 struct flb_out_datadog {
 
+    /* Proxy */
+    const char *proxy;
+    char *proxy_host;
+    int proxy_port;
+
     /* Configuration */
     flb_sds_t scheme;
     flb_sds_t host;
