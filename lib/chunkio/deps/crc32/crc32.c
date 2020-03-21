@@ -2,8 +2,8 @@
  * \file
  * Functions and types for CRC checks.
  *
- * Generated on Tue Oct 30 22:09:40 2018
- * by pycrc v0.9.1, https://pycrc.org
+ * Generated on Wed Mar 18 12:41:20 2020
+ * by pycrc v0.9.2, https://pycrc.org
  * using the configuration:
  *  - Width         = 32
  *  - Poly          = 0x04c11db7
@@ -17,6 +17,8 @@
 #include "crc32.h"     /* include the header file generated with pycrc */
 #include <stdlib.h>
 #include <stdint.h>
+
+/* Patch by Fluent Bit Authors */
 #ifdef __APPLE__
 #  include <machine/endian.h>
 #  include <libkern/OSByteOrder.h>
@@ -34,8 +36,6 @@
 #else
 #  include <endian.h>
 #endif
-
-
 
 /**
  * Static table used for the table_driven implementation.
@@ -320,6 +320,14 @@ crc_t crc_update(crc_t crc, const void *data, size_t data_len)
 {
     const unsigned char *d = (const unsigned char *)data;
     unsigned int tbl_idx;
+
+    /* Align to a multiple of 8 bytes */
+    while (data_len && (((uintptr_t)(const void *)d) % 8 != 0)) {
+        tbl_idx = (crc ^ *d) & 0xff;
+        crc = (crc_table[0][tbl_idx] ^ (crc >> 8)) & 0xffffffff;
+        d++;
+        data_len--;
+    }
 
     const uint32_t *d32 = (const uint32_t *)d;
     while (data_len >= 8)

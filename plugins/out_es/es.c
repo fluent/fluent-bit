@@ -676,8 +676,10 @@ static void cb_es_flush(const void *data, size_t bytes,
                      * If trace_error is set, trace the actual
                      * input/output to Elasticsearch that caused the problem.
                      */
-                    flb_plg_error(ctx->ins, "error: Input\n%s\nOutput\n%s",
-                                  pack, c->resp.payload);
+                    flb_plg_debug(ctx->ins, "error caused by: Input\n%s\n",
+                                   pack);
+                    flb_plg_error(ctx->ins, "error: Output\n%s",
+                                  c->resp.payload);
                 }
                 goto retry;
             }

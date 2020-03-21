@@ -199,7 +199,7 @@ static struct flb_input_chunk *input_chunk_get(const char *tag, int tag_len,
     struct flb_input_chunk *ic = NULL;
 
     /* Try to find a current chunk context to append the data */
-    mk_list_foreach(head, &in->chunks) {
+    mk_list_foreach_r(head, &in->chunks) {
         ic = mk_list_entry(head, struct flb_input_chunk, _head);
         if (ic->busy == FLB_TRUE || cio_chunk_is_locked(ic->chunk)) {
             ic = NULL;
@@ -393,6 +393,7 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
 {
     int ret;
     int set_down = FLB_FALSE;
+    int min;
     size_t size;
     struct flb_input_chunk *ic;
     struct flb_storage_input *si;
@@ -471,7 +472,7 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
     size = cio_chunk_get_content_size(ic->chunk);
 
     /* Lock buffers where size > 2MB */
-    if (size > 2048000) {
+    if (size > FLB_INPUT_CHUNK_FS_MAX_SIZE) {
         cio_chunk_lock(ic->chunk);
     }
 
@@ -527,7 +528,20 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
     if (flb_input_chunk_is_overlimit(in) == FLB_TRUE &&
         si->type == CIO_STORE_FS) {
         if (cio_chunk_is_up(ic->chunk) == CIO_TRUE) {
-            cio_chunk_down(ic->chunk);
+            /*
+             * If we are already over limit, a sub-sequent data ingestion
+             * might need a Chunk to write data in. As an optimization we
+             * will put this Chunk down ONLY IF it has less than 1% of
+             * it capacity as available space, otherwise keep it 'up' so
+             * it available space can be used.
+             */
+            size = cio_chunk_get_content_size(ic->chunk);
+
+            /* Do we have less than 1% available ? */
+            min = (FLB_INPUT_CHUNK_FS_MAX_SIZE * 0.01);
+            if (FLB_INPUT_CHUNK_FS_MAX_SIZE - size < min) {
+                cio_chunk_down(ic->chunk);
+            }
         }
         return 0;
     }

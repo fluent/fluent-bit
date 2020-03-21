@@ -10,18 +10,19 @@ ENV DEBIAN_FRONTEND noninteractive
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-      build-essential \
-      cmake \
-      make \
-      wget \
-      unzip \
-      libssl-dev \
-      libsasl2-dev \
-      pkg-config \
-      libsystemd-dev \
-      zlib1g-dev \
-      flex \
-      bison
+    build-essential \
+    curl \
+    ca-certificates \
+    cmake \
+    make \
+    tar \
+    libssl-dev \
+    libsasl2-dev \
+    pkg-config \
+    libsystemd-dev \
+    zlib1g-dev \
+    flex \
+    bison 
 
 RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log /tmp/src/
 COPY . /tmp/src/
@@ -44,6 +45,7 @@ RUN install bin/fluent-bit /fluent-bit/bin/
 # Configuration files
 COPY conf/fluent-bit.conf \
      conf/parsers.conf \
+     conf/parsers_ambassador.conf \
      conf/parsers_java.conf \
      conf/parsers_extra.conf \
      conf/parsers_openstack.conf \

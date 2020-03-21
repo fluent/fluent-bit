@@ -559,8 +559,8 @@ endif()
 if(FLB_BACKTRACE)
   FLB_DEFINITION(FLB_HAVE_LIBBACKTRACE)
   ExternalProject_Add(backtrace
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-5a99ff7f/
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-5a99ff7f/configure ${AUTOCONF_HOST_OPT} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-ca0de05/
+    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-ca0de05/configure ${AUTOCONF_HOST_OPT} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
     BUILD_COMMAND $(MAKE)
     INSTALL_COMMAND $(MAKE) DESTDIR= install
     )

@@ -34,6 +34,12 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
     const char *api_key;
     const char *tmp;
 
+    int ret;
+    char *protocol = NULL;
+    char *host = NULL;
+    char *port = NULL;
+    char *uri = NULL;
+
     /* Start resource creation */
     ctx = flb_calloc(1, sizeof(struct flb_out_datadog));
     if (!ctx) {
@@ -42,6 +48,23 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
     }
     ctx->ins = ins;
     ctx->nb_additional_entries = 0;
+
+    tmp = flb_output_get_property("proxy", ins);
+    if (tmp) {
+        ret = flb_utils_url_split(tmp, &protocol, &host, &port, &uri);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "could not parse proxy parameter: '%s'", tmp);
+            flb_datadog_conf_destroy(ctx);
+            return NULL;
+        }
+
+        ctx->proxy_host = host;
+        ctx->proxy_port = atoi(port);
+        ctx->proxy = tmp;
+        flb_free(protocol);
+        flb_free(port);
+        flb_free(uri);
+    }
 
     /* use TLS ? */
     if (ins->use_tls == FLB_TRUE) {
@@ -166,7 +189,19 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
     flb_plg_debug(ctx->ins, "compress_gzip: %i", ctx->compress_gzip);
 
     /* Prepare an upstream handler */
-    upstream = flb_upstream_create(config, ctx->host, ctx->port, io_flags, &ins->tls);
+    if (ctx->proxy) {
+        flb_plg_trace(ctx->ins, "[out_datadog] Upstream Proxy=%s:%i",
+                      ctx->proxy_host, ctx->proxy_port);
+        upstream = flb_upstream_create(config,
+                                       ctx->proxy_host,
+                                       ctx->proxy_port,
+                                       io_flags,
+                                       &ins->tls);
+    }
+    else {
+        upstream = flb_upstream_create(config, ctx->host, ctx->port, io_flags, &ins->tls);
+    }
+
     if (!upstream) {
         flb_plg_error(ctx->ins, "cannot create Upstream context");
         flb_datadog_conf_destroy(ctx);
@@ -183,11 +218,14 @@ int flb_datadog_conf_destroy(struct flb_out_datadog *ctx)
         return -1;
     }
 
+    if (ctx->proxy_host) {
+        flb_free(ctx->proxy_host);
+    }
     if (ctx->scheme) {
         flb_sds_destroy(ctx->scheme);
     }
     if (ctx->host) {
-        flb_sds_destroy(ctx->host);
+        flb_free(ctx->host);
     }
     if (ctx->uri) {
         flb_sds_destroy(ctx->uri);

@@ -29,6 +29,8 @@
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_dump.h>
+#include <fluent-bit/flb_stacktrace.h>
 #include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_utils.h>
@@ -45,61 +47,7 @@
 #include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_parser.h>
 
-/* Libbacktrace support */
-#ifdef FLB_HAVE_LIBBACKTRACE
-#include <backtrace.h>
-#include <backtrace-supported.h>
 
-struct flb_stacktrace {
-    struct backtrace_state *state;
-    int error;
-    int line;
-};
-
-struct flb_stacktrace flb_st;
-
-static void flb_stacktrace_error_callback(void *data,
-                                          const char *msg, int errnum)
-{
-    struct flb_stacktrace *ctx = data;
-    fprintf(stderr, "ERROR: %s (%d)", msg, errnum);
-    ctx->error = 1;
-}
-
-static int flb_stacktrace_print_callback(void *data, uintptr_t pc,
-                                         const char *filename, int lineno,
-                                         const char *function)
-{
-    struct flb_stacktrace *p = data;
-
-    fprintf(stdout, "#%-2i 0x%-17lx in  %s() at %s:%d\n",
-            p->line,
-            (unsigned long) pc,
-            function == NULL ? "???" : function,
-            filename == NULL ? "???" : filename + sizeof(FLB_SOURCE_DIR),
-            lineno);
-    p->line++;
-    return 0;
-}
-
-static inline void flb_stacktrace_init(char *prog)
-{
-    memset(&flb_st, '\0', sizeof(struct flb_stacktrace));
-    flb_st.state = backtrace_create_state(prog,
-                                          BACKTRACE_SUPPORTS_THREADS,
-                                          flb_stacktrace_error_callback, NULL);
-}
-
-void flb_stacktrace_print()
-{
-    struct flb_stacktrace *ctx;
-
-    ctx = &flb_st;
-    backtrace_full(ctx->state, 3, flb_stacktrace_print_callback,
-                   flb_stacktrace_error_callback, ctx);
-}
-
-#endif
 
 #ifdef FLB_HAVE_MTRACE
 #include <mcheck.h>
@@ -421,6 +369,7 @@ static void flb_signal_handler(int signal)
 #endif
         flb_print_signal(SIGTERM);
         flb_print_signal(SIGSEGV);
+        flb_print_signal(SIGCONT);
     };
 
     /* Signal handlers */
@@ -444,6 +393,9 @@ static void flb_signal_handler(int signal)
         flb_stacktrace_print();
 #endif
         abort();
+    case SIGCONT:
+        flb_dump(config);
+        break;
     default:
         break;
     }
@@ -458,6 +410,7 @@ static void flb_signal_init()
 #endif
     signal(SIGTERM, &flb_signal_handler);
     signal(SIGSEGV, &flb_signal_handler);
+    signal(SIGCONT, &flb_signal_handler);
 }
 
 static int input_set_property(struct flb_input_instance *in, char *kv)

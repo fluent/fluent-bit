@@ -413,10 +413,50 @@ static void test_issue_51()
     cio_destroy(ctx);
 }
 
+/* ref: https://github.com/fluent/fluent-bit/2025 */
+static void test_issue_flb_2025()
+{
+    int i;
+    int ret;
+    int err;
+    int len;
+    char line[] = "this is a test line\n";
+    struct cio_ctx *ctx;
+    struct cio_chunk *chunk;
+    struct cio_stream *stream;
+
+    cio_utils_recursive_delete("tmp");
+
+    /* Create a temporal storage */
+    ctx = cio_create("tmp", log_cb, CIO_LOG_DEBUG, CIO_CHECKSUM);
+    stream = cio_stream_create(ctx, "test", CIO_STORE_FS);
+    chunk = cio_chunk_open(ctx, stream, "c", CIO_OPEN, 1000, &err);
+    TEST_CHECK(chunk != NULL);
+    if (!chunk) {
+        printf("cannot open chunk\n");
+        exit(1);
+    }
+
+    len = strlen(line);
+    for (i = 0; i < 1000; i++) {
+        ret = cio_chunk_write(chunk, line, len);
+        TEST_CHECK(ret == CIO_OK);
+
+        ret = cio_chunk_down(chunk);
+        TEST_CHECK(ret == CIO_OK);
+
+        ret = cio_chunk_up(chunk);
+        TEST_CHECK(ret == CIO_OK);
+    }
+
+    cio_destroy(ctx);
+}
+
 TEST_LIST = {
     {"fs_write",   test_fs_write},
     {"fs_checksum",  test_fs_checksum},
     {"fs_up_down", test_fs_up_down},
     {"issue_51",   test_issue_51},
+    {"issue_flb_2025", test_issue_flb_2025},
     { 0 }
 };

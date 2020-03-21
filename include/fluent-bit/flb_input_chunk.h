@@ -26,7 +26,17 @@
 #include <monkey/mk_core.h>
 #include <msgpack.h>
 
-#define FLB_INPUT_CHUNK_SIZE 262144  /* 256KB (hint) */
+/*
+ * This variable defines a 'hint' size for new Chunks created, this
+ * value is passed to Chunk I/O.
+ */
+#define FLB_INPUT_CHUNK_SIZE           262144  /* 256KB (hint) */
+
+/*
+ * Defines a maximum size for a Chunk in the file system: note that despite
+ * this is considered a limit, a Chunk size might get greater than this.
+ */
+#define FLB_INPUT_CHUNK_FS_MAX_SIZE   2048000  /* 2MB */
 
 struct flb_input_chunk {
     int busy;                       /* buffer is being flushed  */
