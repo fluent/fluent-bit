@@ -23,7 +23,7 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_time.h>
 
-#include <postgresql/libpq-fe.h>
+#include <libpq-fe.h>
 
 #define FLB_PGSQL_HOST "127.0.0.1"
 #define FLB_PGSQL_PORT 5432
