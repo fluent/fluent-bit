@@ -34,6 +34,7 @@
 
 #ifdef _WIN32
 #include <Windows.h>
+#include <strsafe.h>
 #define PATH_MAX MAX_PATH
 #endif
 
@@ -516,8 +517,13 @@ static int mk_rconf_read_glob(struct mk_rconf *conf, const char *path)
         /* Create a path (prefix + filename + suffix) */
         memcpy(buf, path, p0 - path + 1);
         buf[p0 - path + 1] = '\0';
-        strcat(buf, data.cFileName);
-        strcat(buf, p1);
+
+        if (FAILED(StringCchCatA(buf, MAX_PATH, data.cFileName))) {
+            continue;
+        }
+        if (FAILED(StringCchCatA(buf, MAX_PATH, p1))) {
+            continue;
+        }
 
         if (strchr(p1, '*')) {
             mk_rconf_read_glob(conf, buf); /* recursive */
