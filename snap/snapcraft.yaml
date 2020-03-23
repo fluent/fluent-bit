@@ -14,6 +14,7 @@ confinement: 'strict'
 apps:
   fluent-bit:
     command: bin/fluent-bit
+    daemon: simple
 
 parts:
   fluent-bit:
@@ -23,6 +24,7 @@ parts:
     stage-packages:
         - libsasl2-2
         - libssl1.1
+        - libpq5
     build-packages:
         - g++
         - make
@@ -32,9 +34,12 @@ parts:
         - bison
         - valgrind
         - libssl-dev
+        - libpq5
+        - postgresql-server-dev-all
     configflags:
         - -DFLB_DEBUG=On
         - -DFLB_OUT_KAFKA=On
         - -DFLB_JEMALLOC=On
         - -DFLB_EXAMPLES=OFF
         - -DFLB_SHARED_LIB=Off
+        - -DFLB_OUT_PGSQL=On
