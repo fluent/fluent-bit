@@ -632,6 +632,13 @@ static struct flb_config_map config_map[] = {
      "enable or disable verification of TLS peer certificate"
     },
 
+    /* TLS: set tls.vhost feature */
+    {
+     FLB_CONFIG_MAP_STR, "tls.vhost", NULL,
+     0, FLB_TRUE, offsetof(struct flb_kube, tls_vhost),
+     "set optional TLS virtual host"
+    },
+
     /* Merge structured record as independent keys */
     {
      FLB_CONFIG_MAP_BOOL, "merge_log", "false",

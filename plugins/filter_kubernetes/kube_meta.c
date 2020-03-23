@@ -913,7 +913,7 @@ static int flb_kube_network_init(struct flb_kube *ctx, struct flb_config *config
         }
         ctx->tls.context = flb_tls_context_new(ctx->tls_verify,
                                                ctx->tls_debug,
-                                               NULL, /* skip vhost */
+                                               ctx->tls_vhost,
                                                ctx->tls_ca_path,
                                                ctx->tls_ca_file,
                                                NULL, NULL, NULL);

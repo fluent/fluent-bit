@@ -120,6 +120,9 @@ struct flb_kube {
     char *tls_ca_path;
     char *tls_ca_file;
 
+    /* TLS virtual host (optional), set by configmap */
+    flb_sds_t tls_vhost;
+
     /* Kubernetes Namespace */
     char *namespace;
     size_t namespace_len;
