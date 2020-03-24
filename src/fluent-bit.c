@@ -363,19 +363,19 @@ static void flb_signal_handler(int signal)
     write(STDERR_FILENO, s, sizeof(s) - 1);
     switch (signal) {
         flb_print_signal(SIGINT);
-#ifndef _WIN32
+#ifndef FLB_SYSTEM_WINDOWS
         flb_print_signal(SIGQUIT);
         flb_print_signal(SIGHUP);
+        flb_print_signal(SIGCONT);
 #endif
         flb_print_signal(SIGTERM);
         flb_print_signal(SIGSEGV);
-        flb_print_signal(SIGCONT);
     };
 
     /* Signal handlers */
     switch (signal) {
     case SIGINT:
-#ifndef _WIN32
+#ifndef FLB_SYSTEM_WINDOWS
     case SIGQUIT:
     case SIGHUP:
 #endif
@@ -393,9 +393,11 @@ static void flb_signal_handler(int signal)
         flb_stacktrace_print();
 #endif
         abort();
+#ifndef FLB_SYSTEM_WINDOWS
     case SIGCONT:
         flb_dump(config);
         break;
+#endif
     default:
         break;
     }
@@ -404,13 +406,13 @@ static void flb_signal_handler(int signal)
 static void flb_signal_init()
 {
     signal(SIGINT,  &flb_signal_handler);
-#ifndef _WIN32
+#ifndef FLB_SYSTEM_WINDOWS
     signal(SIGQUIT, &flb_signal_handler);
     signal(SIGHUP,  &flb_signal_handler);
+    signal(SIGCONT, &flb_signal_handler);
 #endif
     signal(SIGTERM, &flb_signal_handler);
     signal(SIGSEGV, &flb_signal_handler);
-    signal(SIGCONT, &flb_signal_handler);
 }
 
 static int input_set_property(struct flb_input_instance *in, char *kv)
