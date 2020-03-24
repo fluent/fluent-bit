@@ -354,43 +354,43 @@ static int validate_severity_level(severity_t * s,
         const unsigned int str_size;
         const char * str;
     }   enum_mapping[] = {
-        {EMERGENCY, 9, "EMERGENCY"},
-        {EMERGENCY, 5, "EMERG"    },
+        {FLB_STD_EMERGENCY, 9, "EMERGENCY"},
+        {FLB_STD_EMERGENCY, 5, "EMERG"    },
 
-        {ALERT    , 1, "A"        },
-        {ALERT    , 5, "ALERT"    },
+        {FLB_STD_ALERT    , 1, "A"        },
+        {FLB_STD_ALERT    , 5, "ALERT"    },
 
-        {CRITICAL , 1, "C"        },
-        {CRITICAL , 1, "F"        },
-        {CRITICAL , 4, "CRIT"     },
-        {CRITICAL , 5, "FATAL"    },
-        {CRITICAL , 8, "CRITICAL" },
+        {FLB_STD_CRITICAL , 1, "C"        },
+        {FLB_STD_CRITICAL , 1, "F"        },
+        {FLB_STD_CRITICAL , 4, "CRIT"     },
+        {FLB_STD_CRITICAL , 5, "FATAL"    },
+        {FLB_STD_CRITICAL , 8, "CRITICAL" },
 
-        {ERROR    , 1, "E"        },
-        {ERROR    , 3, "ERR"      },
-        {ERROR    , 5, "ERROR"    },
-        {ERROR    , 6, "SEVERE"   },
+        {FLB_STD_ERROR    , 1, "E"        },
+        {FLB_STD_ERROR    , 3, "ERR"      },
+        {FLB_STD_ERROR    , 5, "ERROR"    },
+        {FLB_STD_ERROR    , 6, "SEVERE"   },
 
-        {WARNING  , 1, "W"        },
-        {WARNING  , 4, "WARN"     },
-        {WARNING  , 7, "WARNING"  },
+        {FLB_STD_WARNING  , 1, "W"        },
+        {FLB_STD_WARNING  , 4, "WARN"     },
+        {FLB_STD_WARNING  , 7, "WARNING"  },
 
-        {NOTICE   , 1, "N"        },
-        {NOTICE   , 6, "NOTICE"   },
+        {FLB_STD_NOTICE   , 1, "N"        },
+        {FLB_STD_NOTICE   , 6, "NOTICE"   },
 
-        {INFO     , 1, "I"        },
-        {INFO     , 4, "INFO"     },
+        {FLB_STD_INFO     , 1, "I"        },
+        {FLB_STD_INFO     , 4, "INFO"     },
 
-        {DEBUG    , 1, "D"        },
-        {DEBUG    , 5, "DEBUG"    },
-        {DEBUG    , 5, "TRACE"    },
-        {DEBUG    , 9, "TRACE_INT"},
-        {DEBUG    , 4, "FINE"     },
-        {DEBUG    , 5, "FINER"    },
-        {DEBUG    , 6, "FINEST"   },
-        {DEBUG    , 6, "CONFIG"   },
+        {FLB_STD_DEBUG    , 1, "D"        },
+        {FLB_STD_DEBUG    , 5, "DEBUG"    },
+        {FLB_STD_DEBUG    , 5, "TRACE"    },
+        {FLB_STD_DEBUG    , 9, "TRACE_INT"},
+        {FLB_STD_DEBUG    , 4, "FINE"     },
+        {FLB_STD_DEBUG    , 5, "FINER"    },
+        {FLB_STD_DEBUG    , 6, "FINEST"   },
+        {FLB_STD_DEBUG    , 6, "CONFIG"   },
 
-        {DEFAULT  , 7, "DEFAULT"  }
+        {FLB_STD_DEFAULT  , 7, "DEFAULT"  }
     };
 
     for (i = 0; i < sizeof (enum_mapping) / sizeof (enum_mapping[0]); ++i) {
