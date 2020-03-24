@@ -69,6 +69,7 @@ struct flb_stackdriver {
     /* other */
     flb_sds_t resource;
     flb_sds_t severity_key;
+    flb_sds_t logname_from_k8s_meta;
 
     /* oauth2 context */
     struct flb_oauth2 *o;

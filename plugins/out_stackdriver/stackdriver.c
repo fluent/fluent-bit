@@ -443,6 +443,51 @@ static int get_severity_level(severity_t * s, const msgpack_object * o,
     return -1;
 }
 
+static int from_k8s_metadata(const msgpack_object * o,
+                             flb_sds_t * container_name,
+                             flb_sds_t * namespace_name)
+{
+    msgpack_object tmp;
+    msgpack_object tmp_namespace;
+    msgpack_object tmp_container;
+
+    flb_sds_t k8s_key = flb_sds_create("kubernetes");
+    flb_sds_t namespace_key = flb_sds_create("namespace_name");
+    flb_sds_t container_key = flb_sds_create("container_name");
+
+    if (container_name == NULL || namespace_name == NULL) {
+        goto cleanup;
+    }
+
+    if (get_msgpack_obj(&tmp, o, k8s_key, flb_sds_len(k8s_key), MSGPACK_OBJECT_MAP) != 0) {
+        goto cleanup;
+    }
+
+    if (get_msgpack_obj(&tmp_namespace, &tmp, namespace_key,
+                        flb_sds_len(namespace_key), MSGPACK_OBJECT_STR) != 0) {
+        goto cleanup;
+    }
+
+    if (get_msgpack_obj(&tmp_container, &tmp, container_key,
+                        flb_sds_len(container_key), MSGPACK_OBJECT_STR) != 0) {
+        goto cleanup;
+    }
+
+    *container_name = flb_sds_create_len(tmp_container.via.str.ptr, tmp_container.via.str.size);
+    *namespace_name = flb_sds_create_len(tmp_namespace.via.str.ptr, tmp_namespace.via.str.size);
+
+    cleanup:
+    flb_sds_destroy(k8s_key);
+    flb_sds_destroy(namespace_key);
+    flb_sds_destroy(container_key);
+
+    if (*container_name != NULL && *namespace_name != NULL) {
+        return 0;
+    }
+
+    return -1;
+}
+
 static int stackdriver_format(const void *data, size_t bytes,
                               const char *tag, size_t tag_len,
                               char **out_data, size_t *out_size,
@@ -457,6 +502,9 @@ static int stackdriver_format(const void *data, size_t bytes,
     struct tm tm;
     struct flb_time tms;
     severity_t severity;
+    flb_sds_t container_name;
+    flb_sds_t namespace_name;
+
     msgpack_object *obj;
     msgpack_unpacked result;
     msgpack_sbuffer mp_sbuf;
@@ -564,8 +612,26 @@ static int stackdriver_format(const void *data, size_t bytes,
         msgpack_pack_object(&mp_pck, *obj);
 
         /* logName */
-        len = snprintf(path, sizeof(path) - 1,
-                       "projects/%s/logs/%s", ctx->project_id, tag);
+        if (ctx->logname_from_k8s_meta
+            && from_k8s_metadata(obj, &container_name, &namespace_name) == 0) {
+          len = snprintf(path, sizeof(path) - 1,
+                         "projects/%s/logs/%s_%s", ctx->project_id,
+                         namespace_name, container_name);
+        }
+        else {
+          len = snprintf(path, sizeof(path) - 1,
+                         "projects/%s/logs/%s", ctx->project_id, tag);
+        }
+
+        if (container_name != NULL) {
+            flb_sds_destroy(container_name);
+            container_name = NULL;
+        }
+
+        if (namespace_name != NULL) {
+            flb_sds_destroy(namespace_name);
+            namespace_name = NULL;
+        }
 
         msgpack_pack_str(&mp_pck, 7);
         msgpack_pack_str_body(&mp_pck, "logName", 7);
