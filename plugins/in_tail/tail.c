@@ -405,6 +405,13 @@ static struct flb_config_map config_map[] = {
      "wait period time in seconds to flush queued unfinished split lines."
 
     },
+#ifdef FLB_HAVE_REGEX
+    {
+     FLB_CONFIG_MAP_STR, "docker_mode_parser", NULL,
+     0, FLB_FALSE, 0,
+     "specify the parser name to fetch log first line for muliline log"
+    },
+#endif
     {
      FLB_CONFIG_MAP_STR, "path_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_tail_config, path_key),

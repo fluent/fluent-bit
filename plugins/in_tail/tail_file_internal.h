@@ -69,6 +69,7 @@ struct flb_tail_file {
     time_t dmode_flush_timeout; /* time when docker mode started         */
     flb_sds_t dmode_buf;        /* buffer for docker mode                */
     flb_sds_t dmode_lastline;   /* last incomplete line                  */
+    bool dmode_complete;        /* buffer contains completed log         */
 
     /* buffering */
     off_t parsed;

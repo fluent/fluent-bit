@@ -281,7 +281,7 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
         if (ctx->docker_mode) {
             ret = flb_tail_dmode_process_content(now, line, line_len,
                                                  &repl_line, &repl_line_len,
-                                                 file, ctx);
+                                                 file, ctx, out_sbuf, out_pck);
             if (ret >= 0) {
                 if (repl_line == line) {
                     repl_line = NULL;
@@ -290,9 +290,8 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
                     line = repl_line;
                     line_len = repl_line_len;
                 }
-                if (ret == 0) {
-                    goto go_next;
-                }
+                /* Skip normal parsers flow */
+                goto go_next;
             }
             else {
                 flb_tail_dmode_flush(out_sbuf, out_pck, file, ctx);
@@ -682,6 +681,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file->mult_skipping = FLB_FALSE;
     msgpack_sbuffer_init(&file->mult_sbuf);
     file->dmode_flush_timeout = 0;
+    file->dmode_complete = true;
     file->dmode_buf = flb_sds_create_size(ctx->docker_mode == FLB_TRUE ? 65536 : 0);
     file->dmode_lastline = flb_sds_create_size(ctx->docker_mode == FLB_TRUE ? 20000 : 0);
 #ifdef FLB_HAVE_SQLDB
