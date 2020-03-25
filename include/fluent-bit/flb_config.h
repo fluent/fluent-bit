@@ -176,6 +176,9 @@ struct flb_config {
     /* Co-routines */
     unsigned int coro_stack_size;
 
+    /* Upstream contexts created by plugins */
+    struct mk_list upstreams;
+
     /*
      * Input table-id: table to keep a reference of thread-IDs used by the
      * input plugins.

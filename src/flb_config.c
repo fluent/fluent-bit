@@ -185,6 +185,7 @@ struct flb_config *flb_config_init()
     mk_list_init(&config->outputs);
     mk_list_init(&config->proxies);
     mk_list_init(&config->workers);
+    mk_list_init(&config->upstreams);
 
     memset(&config->tasks_map, '\0', sizeof(config->tasks_map));
 
