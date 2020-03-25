@@ -223,17 +223,38 @@ int flb_plugin_load(char *path, struct flb_plugins *ctx,
     /* Detect plugin type and link it to the main context */
     if (is_input(plugin_stname) == FLB_TRUE) {
         type = FLB_PLUGIN_INPUT;
-        input = (struct flb_input_plugin *) symbol;
+        input = flb_malloc(sizeof(struct flb_input_plugin));
+        if (!input) {
+            flb_errno();
+            flb_free(plugin_stname);
+            dlclose(dso_handle);
+            return -1;
+        }
+        memcpy(input, symbol, sizeof(struct flb_input_plugin));
         mk_list_add(&input->_head, &config->in_plugins);
     }
     else if (is_filter(plugin_stname) == FLB_TRUE) {
         type = FLB_PLUGIN_FILTER;
-        filter = (struct flb_filter_plugin *) symbol;
+        filter = flb_malloc(sizeof(struct flb_filter_plugin));
+        if (!filter) {
+            flb_errno();
+            flb_free(plugin_stname);
+            dlclose(dso_handle);
+            return -1;
+        }
+        memcpy(filter, symbol, sizeof(struct flb_filter_plugin));
         mk_list_add(&filter->_head, &config->filter_plugins);
     }
     else if (is_output(plugin_stname) == FLB_TRUE) {
         type = FLB_PLUGIN_OUTPUT;
-        output = (struct flb_output_plugin *) symbol;
+        output = flb_malloc(sizeof(struct flb_output_plugin));
+        if (!output) {
+            flb_errno();
+            flb_free(plugin_stname);
+            dlclose(dso_handle);
+            return -1;
+        }
+        memcpy(output, symbol, sizeof(struct flb_output_plugin));
         mk_list_add(&output->_head, &config->out_plugins);
     }
     flb_free(plugin_stname);
