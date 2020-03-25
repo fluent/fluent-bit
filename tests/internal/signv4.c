@@ -555,6 +555,7 @@ static void aws_test_suite()
         flb_errno();
         return;
     }
+    mk_list_init(&config->upstreams);
 
     /* Get a list of tests */
     tests = aws_tests_create(config);
