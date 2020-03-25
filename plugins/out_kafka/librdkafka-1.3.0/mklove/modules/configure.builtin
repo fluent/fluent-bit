@@ -1,0 +1,69 @@
+#!/bin/bash
+#
+# mklove builtin checks and options
+# Sets:
+#  prefix, etc..
+
+
+mkl_option "Standard" prefix "--prefix=PATH" \
+    "Install arch-independent files in PATH" "/usr/local"
+mkl_option "Standard" exec_prefix "--exec-prefix=PATH" \
+    "Install arch-dependent files in PATH" "\$prefix"
+mkl_option "Standard" bindir "--bindir=PATH" "User executables" "\$exec_prefix/bin"
+mkl_option "Standard" sbindir "--sbindir=PATH" "System admin executables" \
+    "\$exec_prefix/sbin"
+mkl_option "Standard" libexecdir "--libexecdir=PATH" "Program executables" \
+    "\$exec_prefix/libexec"
+mkl_option "Standard" datadir "--datadir=PATH" "Read-only arch-independent data" \
+    "\$prefix/share"
+mkl_option "Standard" sysconfdir "--sysconfdir=PATH" "Configuration data" \
+    "\$prefix/etc"
+mkl_option "Standard" sharedstatedir "--sharedstatedir=PATH" \
+    "Modifiable arch-independent data" "\$prefix/com"
+mkl_option "Standard" localstatedir "--localstatedir=PATH" \
+    "Modifiable local state data" "\$prefix/var"
+mkl_option "Standard" runstatedir "--runstatedir=PATH" \
+    "Modifiable per-process data" "\$prefix/var/run"
+mkl_option "Standard" libdir "--libdir=PATH" "Libraries" "\$exec_prefix/lib"
+mkl_option "Standard" includedir "--includedir=PATH" "C/C++ header files" \
+    "\$prefix/include"
+mkl_option "Standard" infodir "--infodir=PATH" "Info documentation" "\$prefix/info"
+mkl_option "Standard" mandir "--mandir=PATH" "Manual pages" "\$prefix/man"
+
+mkl_option "Configure tool" "" "--list-modules" "List loaded mklove modules"
+mkl_option "Configure tool" "" "--list-checks" "List checks"
+mkl_option "Configure tool" env:MKL_FAILFATAL "--fail-fatal" "All failures are fatal"
+mkl_option "Configure tool" env:MKL_NOCACHE "--no-cache" "Dont use or generate config.cache"
+mkl_option "Configure tool" env:MKL_DEBUG "--debug" "Enable configure debugging"
+mkl_option "Configure tool" env:MKL_CLEAN "--clean" "Remove generated configure files"
+mkl_option "Configure tool" "" "--reconfigure" "Rerun configure with same arguments as last run"
+mkl_option "Configure tool" env:MKL_NO_DOWNLOAD "--no-download" "Disable downloads of required mklove modules"
+mkl_option "Configure tool" env:MKL_UPDATE_MODS "--update-modules" "Update modules from global repository"
+mkl_option "Configure tool" env:MKL_REPO_URL "--repo-url=URL_OR_PATH" "Override mklove modules repo URL" "$MKL_REPO_URL"
+mkl_option "Configure tool" "" "--help" "Show configure usage"
+
+
+# These autoconf compatibility options are ignored by mklove
+mkl_toggle_option "Compatibility" "mk:COMPAT_MAINT_MODE" "--enable-maintainer-mode" "Maintainer mode (no-op)"
+mkl_option "Compatibility" "mk:PROGRAM_PREFIX" "--program-prefix=PFX" "Program prefix (no-op)"
+mkl_option "Compatibility" "mk:COMPAT_DISABLE_DEP_TRACK" "--disable-dependency-tracking" "Disable dependency tracking (no-op)"
+mkl_option "Compatibility" "mk:COMPAT_DISABLE_SILENT_RULES" "--disable-silent-rules" "Verbose build output (no-op)"
+mkl_option "Compatibility" "mk:COMPAT_SILENT" "--silent" "Less verbose build output (no-op)"
+mkl_toggle_option "Compatibility" "mk:COMPAT_ENABLE_SHARED" "--enable-shared" "Build shared library (no-op)"
+
+
+mkl_option "Dependency"  env:MKL_INSTALL_DEPS "--install-deps" "Attempt to install missing dependencies"
+mkl_option "Dependency" env:MKL_SOURCE_DEPS_ONLY "--source-deps-only" "Only perform source builds of dependencies, not using any package managers"
+
+
+function checks {
+
+    if [[ ! -z $libdir ]]; then
+	mkl_mkvar_append "libdir" LDFLAGS "-L${libdir}"
+    fi
+
+    if [[ ! -z $includedir ]]; then
+	mkl_mkvar_append "includedir" CPPFLAGS "-I${includedir}"
+    fi
+
+}
