@@ -181,17 +181,10 @@ int flb_sosreport(struct flb_config *config)
     printf("Fluent Bit Enterprise - SOS Report\n");
     printf("==================================\n");
     printf("The following report aims to be used by Fluent Bit and Fluentd "
-           "Enterprise\nCustomers of Treasure Data. For more details visit:\n\n"
-           "    %shttps://fluentd.treasuredata.com%s\n\n", ANSI_BOLD, ANSI_RESET);
+           "community users.\n\n");
 
     /* Fluent Bit */
     printf("\n[Fluent Bit]\n");
-    printf("    Edition\t\t");
-#ifdef FLB_ENTERPRISE
-    printf("Enterprise\n");
-#else
-    printf("Community Edition\n");
-#endif
     printf("    Version\t\t%s\n", FLB_VERSION_STR);
     printf("    Built Flags\t\t%s\n", FLB_INFO_FLAGS);
     printf("\n");
