@@ -329,9 +329,18 @@ int net_io_tls_handshake(void *_u_conn, void *_th)
 
     struct flb_thread *th = _th;
 
+#ifdef FLB_HAVE_TLS
+    time_t now = time(NULL);
+    if (u->tls->handshake_timeout > 0) {
+        u_conn->tls_handshake_start = now;
+        u_conn->tls_handshake_timeout = now + u->tls->handshake_timeout;
+    }
+#endif
+
     session = flb_tls_session_new(u->tls->context);
     if (!session) {
-        flb_error("[io_tls] could not create tls session");
+        flb_error("[io_tls] could not create TLS session for %s:%i",
+                  u->tcp_host, u->tcp_port);
         return -1;
     }
     if (!u->tls->context->vhost) {
@@ -363,7 +372,6 @@ int net_io_tls_handshake(void *_u_conn, void *_th)
             flag = MK_EVENT_READ;
         }
         else {
-
         }
 
         /*
@@ -389,6 +397,12 @@ int net_io_tls_handshake(void *_u_conn, void *_th)
         mk_event_del(u->evl, &u_conn->event);
     }
     flb_trace("[io_tls] connection OK");
+
+#ifdef FLB_HAVE_TLS
+    u_conn->tls_handshake_start = -1;
+    u_conn->tls_handshake_timeout = -1;
+#endif
+
     return 0;
 
  error:

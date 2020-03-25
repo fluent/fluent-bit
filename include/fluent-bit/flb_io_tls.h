@@ -57,6 +57,9 @@ struct flb_tls_session {
 /* TLS instance, library context + active sessions */
 struct flb_tls {
     struct flb_tls_context *context;
+
+    /* Number of seconds to wait for a TLS handshake completion */
+    int handshake_timeout;
 };
 
 struct flb_tls_context *flb_tls_context_new(int verify,
