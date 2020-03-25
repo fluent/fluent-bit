@@ -332,9 +332,19 @@ static void in_winlog_resume(void *data, struct flb_config *config)
 static int in_winlog_exit(void *data, struct flb_config *config)
 {
     struct flb_in_winlog_config *ctx = data;
+
+    if (!ctx) {
+        return 0;
+    }
+
     winlog_close_all(ctx->active_channel);
+
+    if (ctx->db) {
+        flb_sqldb_close(ctx->db);
+    }
     flb_free(ctx->buf);
     flb_free(ctx);
+
     return 0;
 }
 
