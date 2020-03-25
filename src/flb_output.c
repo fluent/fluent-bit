@@ -124,6 +124,7 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
 
     flb_sds_destroy(ins->host.name);
     flb_sds_destroy(ins->host.address);
+    flb_sds_destroy(ins->host.listen);
     flb_sds_destroy(ins->match);
 
 #ifdef FLB_HAVE_REGEX
@@ -178,10 +179,11 @@ void flb_output_exit(struct flb_config *config)
         if (p->cb_exit) {
             if(!p->proxy) {
                 p->cb_exit(ins->context, config);
-            } else {
+            }
+            else {
                 p->cb_exit(p, ins->context);
             }
-        } 
+        }
 
         if (ins->upstream) {
             flb_upstream_destroy(ins->upstream);
@@ -326,20 +328,21 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         instance->flags |= FLB_IO_TLS;
     }
 
-    /* Keepalive */
+    /* Keepalive feature to reuse Upstream connections */
     instance->keepalive = FLB_FALSE;
     instance->keepalive_timeout = FLB_OUTPUT_KA_TIMEOUT;
 
 #ifdef FLB_HAVE_TLS
-    instance->tls.context    = NULL;
-    instance->tls_debug      = -1;
-    instance->tls_verify     = FLB_TRUE;
-    instance->tls_vhost      = NULL;
-    instance->tls_ca_path    = NULL;
-    instance->tls_ca_file    = NULL;
-    instance->tls_crt_file   = NULL;
-    instance->tls_key_file   = NULL;
-    instance->tls_key_passwd = NULL;
+    instance->tls.context           = NULL;
+    instance->tls.handshake_timeout = FLB_UPSTREAM_TLS_HANDSHAKE_TIMEOUT;
+    instance->tls_debug             = -1;
+    instance->tls_verify            = FLB_TRUE;
+    instance->tls_vhost             = NULL;
+    instance->tls_ca_path           = NULL;
+    instance->tls_ca_file           = NULL;
+    instance->tls_crt_file          = NULL;
+    instance->tls_key_file          = NULL;
+    instance->tls_key_passwd        = NULL;
 #endif
 
     if (plugin->flags & FLB_OUTPUT_NET) {
@@ -419,7 +422,7 @@ int flb_output_set_property(struct flb_output_instance *ins,
             ins->host.port = 0;
         }
     }
-    else if (prop_key_check("keepalive", k, len) == 0){
+    else if (prop_key_check("keepalive", k, len) == 0) {
         if (tmp) {
             ins->keepalive = flb_utils_bool(tmp);
             flb_sds_destroy(tmp);
@@ -428,7 +431,7 @@ int flb_output_set_property(struct flb_output_instance *ins,
             ins->keepalive = FLB_FALSE;
         }
     }
-    else if (prop_key_check("keepalive_timeout", k, len) == 0){
+    else if (prop_key_check("keepalive_timeout", k, len) == 0) {
         if (tmp) {
             ins->keepalive_timeout = atoi(tmp);
             flb_sds_destroy(tmp);
@@ -503,6 +506,10 @@ int flb_output_set_property(struct flb_output_instance *ins,
     }
     else if (prop_key_check("tls.key_passwd", k, len) == 0) {
         ins->tls_key_passwd = tmp;
+    }
+    else if (prop_key_check("tls.handshake_timeout", k, len) == 0 && tmp) {
+        ins->tls.handshake_timeout = atoi(tmp);
+        flb_sds_destroy(tmp);
     }
 #endif
     else {
