@@ -55,6 +55,7 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
     u->tls      = (struct flb_tls *) tls;
 #endif
 
+    mk_list_add(&u->_head, &config->upstreams);
     return u;
 }
 
@@ -138,6 +139,10 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
     conn->fd            = -1;
 #ifdef FLB_HAVE_TLS
     conn->tls_session   = NULL;
+
+    /* TLS handshake */
+    conn->tls_handshake_start = -1;
+    conn->tls_handshake_timeout = -1;
 #endif
     conn->ts_created = time(NULL);
     conn->ts_available = 0;
@@ -145,16 +150,17 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
 
     MK_EVENT_ZERO(&conn->event);
 
-    /* Start connection */
-    ret = flb_io_net_connect(conn, th);
-    if (ret == -1) {
-        flb_free(conn);
-        return NULL;
-    }
-
     /* Link new connection to the busy queue */
     mk_list_add(&conn->_head, &u->busy_queue);
     u->n_connections++;
+
+    /* Start connection */
+    ret = flb_io_net_connect(conn, th);
+    if (ret == -1) {
+        mk_list_del(&conn->_head);
+        flb_free(conn);
+        return NULL;
+    }
 
     if (conn->u->flags & FLB_IO_TCP_KA) {
         flb_debug("[upstream] KA connection #%i to %s:%i is connected",
@@ -212,6 +218,7 @@ int flb_upstream_destroy(struct flb_upstream *u)
     }
 
     flb_free(u->tcp_host);
+    mk_list_del(&u->_head);
     flb_free(u);
 
     return 0;
@@ -251,6 +258,11 @@ struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u)
         /* This connection works, let's move it to the busy queue */
         mk_list_del(&conn->_head);
         mk_list_add(&conn->_head, &u->busy_queue);
+
+        /* I/O Timeouts */
+        conn->tls_handshake_start = -1;
+        conn->tls_handshake_timeout = -1;
+
         flb_debug("[upstream] KA connection #%i to %s:%i has been assigned (recycled)",
                   conn->fd, u->tcp_host, u->tcp_port);
 
@@ -345,4 +357,41 @@ int flb_upstream_conn_release(struct flb_upstream_conn *conn)
 
     /* No keepalive connections must be destroyed */
     return destroy_conn(conn);
+}
+
+int flb_upstream_conn_timeouts(struct flb_config *ctx)
+{
+    time_t now;
+    struct mk_list *head;
+    struct mk_list *u_head;
+    struct flb_upstream *u;
+    struct flb_upstream_conn *u_conn;
+
+    now = time(NULL);
+    mk_list_foreach(head, &ctx->upstreams) {
+        u = mk_list_entry(head, struct flb_upstream, _head);
+#ifdef FLB_HAVE_TLS
+        /* Iterate every connection */
+        mk_list_foreach(u_head, &u->busy_queue) {
+            u_conn = mk_list_entry(u_head, struct flb_upstream_conn, _head);
+            if (u_conn->tls_handshake_timeout != -1 &&
+                u_conn->tls_handshake_timeout <= now) {
+                /*
+                 * Shutdown the connection, this is the safest way to indicate
+                 * that the socket cannot longer work and any co-routine on
+                 * waiting for I/O will receive the notification and trigger
+                 * the error to it caller.
+                 */
+                shutdown(u_conn->fd, SHUT_RDWR);
+
+                /* Notify the user */
+                flb_error("[upstream] TLS handshake to %s:%i timeout after "
+                          "%i seconds",
+                          u->tcp_host, u->tcp_port, u->tls->handshake_timeout);
+            }
+        }
+#endif
+    }
+
+    return 0;
 }
