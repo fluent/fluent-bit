@@ -741,7 +741,11 @@ static int forward_config_simple(struct flb_forward *ctx,
     fc->secured = FLB_FALSE;
 
     /* Set default values */
-    flb_output_config_map_set(ins, fc);
+    ret = flb_output_config_map_set(ins, fc);
+    if (ret == -1) {
+        flb_free(fc);
+        return -1;
+    }
 
     /* Check if TLS is enabled */
 #ifdef FLB_HAVE_TLS
