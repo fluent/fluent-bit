@@ -30,7 +30,7 @@ if (MSVC)
     SOURCE_DIR ${LUAJIT_SRC}/src
     CONFIGURE_COMMAND ""
     BUILD_COMMAND ./msvcbuild.bat static
-    INSTALL_COMMAND cmake -E copy lua51.lib "${LUAJIT_DEST}/lib/libluajit.lib")
+    INSTALL_COMMAND ${CMAKE_COMMAND} -E copy lua51.lib "${LUAJIT_DEST}/lib/libluajit.lib")
 endif()
 
 # Hook the buld definition to 'libluajit' target
