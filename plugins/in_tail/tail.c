@@ -410,8 +410,8 @@ static struct flb_config_map config_map[] = {
 
     },
     {
-     FLB_CONFIG_MAP_BOOL, "path_key", NULL,
-     0, FLB_TRUE, offsetof(struct flb_tail_config, docker_mode),
+     FLB_CONFIG_MAP_STR, "path_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_tail_config, path_key),
      "set the 'key' name where the name of monitored file will be appended."
     },
     {
