@@ -51,7 +51,7 @@ static inline int flb_tail_file_name_cmp(char *name,
 static inline int flb_tail_target_file_name_cmp(char *name,
                                                 struct flb_tail_file *file)
 {
-#if defined(__linux__)
+#if defined(__linux__) && defined(FLB_HAVE_INOTIFY)
     return strcmp(name, file->name);
 #elif defined(FLB_SYSTEM_WINDOWS)
     return _stricmp(name, file->real_name);
