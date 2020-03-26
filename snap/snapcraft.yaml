@@ -1,25 +1,25 @@
 name: fluent-bit
 base: core18
-version: '1.5.0'
 summary: High performance logs and stream processor
 description: |
   Fluent Bit is a high performance log processor and stream processor for Linux.
   It provides a flexible pluggable architecture to collect, enrich and deliver
   logs or metrics to multiple databases or cloud providers.
 license: 'Apache-2.0'
-icon: fluent-bit.svg
-grade: 'devel'
+icon: ./snap/fluent-bit.svg
+
+adopt-info: fluent-bit
 confinement: 'strict'
 
 apps:
   fluent-bit:
-    command: bin/fluent-bit
+    command: fluent-bit -c $SNAP/etc/fluent-bit/fluent-bit.conf
     daemon: simple
+    plugs: [network, network-bind]
 
 parts:
   fluent-bit:
-    source: https://github.com/fluent/fluent-bit
-    source-type: git
+    source: ./
     plugin: cmake
     stage-packages:
         - libsasl2-2
@@ -36,6 +36,7 @@ parts:
         - libssl-dev
         - libpq5
         - postgresql-server-dev-all
+        - git
     configflags:
         - -DFLB_DEBUG=On
         - -DFLB_OUT_KAFKA=On
@@ -43,3 +44,9 @@ parts:
         - -DFLB_EXAMPLES=OFF
         - -DFLB_SHARED_LIB=Off
         - -DFLB_OUT_PGSQL=On
+    override-pull: |
+      snapcraftctl pull
+      version="$(git rev-parse --abbrev-ref HEAD)"
+      [ -n "$(echo $version | grep 'master')" ] && grade=devel || grade=stable
+      snapcraftctl set-version "$version"
+      snapcraftctl set-grade "$grade"
