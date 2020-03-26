@@ -1,4 +1,4 @@
-![](fluentbit_logo.png)
+# ![logo](fluentbit_logo.png)
 
 Travis CI:
 [![Build Status](https://travis-ci.org/fluent/fluent-bit.svg?branch=master)](https://travis-ci.org/fluent/fluent-bit)
@@ -40,7 +40,7 @@ Fluent Bit runs on x86_64, x86, arm32v7 and arm64v8 architectures.
 
 > If your company uses Fluent Bit and is not listed, feel free to open a Github issue and we will add the logo.
 
-![](documentation/fluentbit_users.png)
+![users](documentation/fluentbit_users.png)
 
 ## [Documentation](https://docs.fluentbit.io)
 
@@ -55,10 +55,10 @@ Our official project documentation for [installation](https://docs.fluentbit.io/
 If you aim to build Fluent Bit from sources, you can go ahead and start with the following commands.
 
 ```bash
-$ cd build
-$ cmake ..
-$ make
-$ bin/fluent-bit -i cpu -o stdout -f 1
+cd build
+cmake ..
+make
+bin/fluent-bit -i cpu -o stdout -f 1
 ```
 
 If you are interested into more details, please refer to the [Build & Install](https://docs.fluentbit.io/manual/installation/sources/build-and-install) section.
@@ -74,15 +74,13 @@ We provide packages for most common Linux distributions:
 
 #### Linux / Docker Container Images
 
-Our Linux containers images are the most common deployment model, thousands of new installation happen every day, learn more about the available images and tags here:
-
-- https://docs.fluentbit.io/manual/installation/docker
+Our Linux containers images are the most common deployment model, thousands of
+new installation happen every day, learn more about the available images and
+tags [here](https://docs.fluentbit.io/manual/installation/docker).
 
 #### Windows Packages
 
-Fluent Bit is fully supported on Windows environments, get started with the following instructions:
-
-- https://docs.fluentbit.io/manual/installation/windows
+Fluent Bit is fully supported on Windows environments, get started with [these instructions](https://docs.fluentbit.io/manual/installation/windows).
 
 ### Plugins: Inputs, Filters and Outputs
 
@@ -162,10 +160,10 @@ If you are interested in contributing to Fluent bit with bug fixes, new features
 
 Feel free to join us on our Slack channel, Mailing List or IRC:
 
- - Slack: http://slack.fluentd.org (#fluent-bit channel)
- - Mailing List: https://groups.google.com/forum/#!forum/fluent-bit
- - Twitter: http://twitter.com/fluentbit
- - IRC: irc.freenode.net #fluent-bit 
+- [Slack](http://slack.fluentd.org) (#fluent-bit channel)
+- [Mailing List](https://groups.google.com/forum/#!forum/fluent-bit)
+- [Twitter](http://twitter.com/fluentbit)
+- [IRC](irc.freenode.net) #fluent-bit
 
 ## License
 
