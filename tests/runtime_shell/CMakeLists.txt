@@ -5,6 +5,7 @@ configure_file(
 
 set(UNIT_TESTS_SH
   in_dummy_expect.sh
+  in_tail_expect.sh
   )
 
 # Prepare list of unit tests
@@ -14,7 +15,8 @@ foreach(script ${UNIT_TESTS_SH})
     )
 
   set_tests_properties(${script} PROPERTIES ENVIRONMENT
-    "FLB_RUNTIME_SHELL_PATH=${CMAKE_CURRENT_SOURCE_DIR};\
+    "FLB_ROOT=${PROJECT_SOURCE_DIR};\
+FLB_RUNTIME_SHELL_PATH=${CMAKE_CURRENT_SOURCE_DIR};\
 FLB_RUNTIME_SHELL_CONF=${CMAKE_CURRENT_SOURCE_DIR}/conf;\
 FLB_BIN=${CMAKE_BINARY_DIR}/bin/fluent-bit"
     )
