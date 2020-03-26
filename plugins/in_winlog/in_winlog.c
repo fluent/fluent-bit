@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_kernel.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_sqldb.h>
 #include <sddl.h>
 #include "winlog.h"
 
