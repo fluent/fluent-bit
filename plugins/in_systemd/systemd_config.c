@@ -53,6 +53,7 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
         flb_errno();
         return NULL;
     }
+    ctx->ins = ins;
 
     /* Create the channel manager */
     ret = pipe(ctx->ch_manager);
@@ -99,7 +100,6 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
         return NULL;
     }
     ctx->fd = sd_journal_get_fd(ctx->j);
-    ctx->ins = ins;
 
     /* Tag settings */
     tmp = strchr(ins->tag, '*');
