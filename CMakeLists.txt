@@ -340,7 +340,7 @@ endif()
 
 # MK Core
 macro(MK_SET_OPTION option value)
-  set(${option} ${value} CACHE "" INTERNAL FORCE)
+  set(${option} ${value} CACHE INTERNAL "" FORCE)
 endmacro()
 MK_SET_OPTION(MK_SYSTEM_MALLOC  ON)
 MK_SET_OPTION(MK_DEBUG          ON)
