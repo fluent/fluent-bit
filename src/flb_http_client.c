@@ -907,7 +907,13 @@ int flb_http_basic_auth(struct flb_http_client *c,
      */
 
     len_u = strlen(user);
-    len_p = strlen(passwd);
+
+    if (passwd) {
+        len_p = strlen(passwd);
+    }
+    else {
+        len_p = 0;
+    }
 
     p = flb_malloc(len_u + len_p + 2);
     if (!p) {
