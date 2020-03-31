@@ -179,6 +179,7 @@ static int cb_rewrite_tag_init(struct flb_filter_instance *ins,
 {
     int ret;
     flb_sds_t tmp;
+    flb_sds_t emitter_name = NULL;
     struct flb_rewrite_tag *ctx;
     (void) data;
 
@@ -192,6 +193,37 @@ static int cb_rewrite_tag_init(struct flb_filter_instance *ins,
     ctx->config = config;
     mk_list_init(&ctx->rules);
 
+    /*
+     * Emitter name: every rewrite_tag instance needs an emitter input plugin,
+     * with that one is able to emit records. We use a unique instance so we
+     * can use the metrics interface.
+     *
+     * If not set, we define an emitter name
+     *
+     * Validate if the emitter_name has been set before to check with the
+     * config map. If is not set, do a manual set of the property, so we let the
+     * config map handle the memory allocation.
+     */
+    tmp = (char *) flb_filter_get_property("emitter_name", ins);
+    if (!tmp) {
+        emitter_name = flb_sds_create_size(64);
+        if (!emitter_name) {
+            flb_free(ctx);
+            return -1;
+        }
+
+        tmp = flb_sds_printf(&emitter_name, "emitter_for_%s", ins->name);
+        if (!tmp) {
+            flb_error("[filter rewrite_tag] cannot compose emitter_name");
+            flb_sds_destroy(emitter_name);
+            flb_free(ctx);
+            return -1;
+        }
+
+        flb_filter_set_property(ins, "emitter_name", emitter_name);
+        flb_sds_destroy(emitter_name);
+    }
+
     /* Set config_map properties in our local context */
     ret = flb_filter_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
@@ -201,24 +233,6 @@ static int cb_rewrite_tag_init(struct flb_filter_instance *ins,
 
     /* Set plugin context */
     flb_filter_set_context(ins, ctx);
-
-    /*
-     * Emitter name: every rewrite_tag instance needs an emitter input plugin, with
-     * that one is able to emit records. We use a unique instance so we can use
-     * the metrics interface.
-     *
-     * If not set, we define an emitter name
-     */
-    if (!ctx->emitter_name) {
-        ctx->emitter_name = flb_sds_create_size(64);
-        tmp = flb_sds_printf(&ctx->emitter_name, "emitter_for_%s", ins->name);
-        if (!tmp) {
-            flb_error("[filter rewrite_tag] cannot compose emitter_name");
-            flb_free(ctx);
-            return -1;
-        }
-        ctx->emitter_name = tmp;
-    }
 
     /* Process the configuration */
     ret = process_config(ctx);
@@ -409,6 +423,7 @@ static struct flb_config_map config_map[] = {
      FLB_FALSE, FLB_TRUE, offsetof(struct flb_rewrite_tag, emitter_name),
      NULL
     },
+
     /* EOF */
     {0}
 };
