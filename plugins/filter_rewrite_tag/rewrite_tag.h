@@ -40,6 +40,7 @@ struct rewrite_rule {
 /* Plugin context */
 struct flb_rewrite_tag {
     flb_sds_t emitter_name;                 /* emitter input plugin name */
+    flb_sds_t emitter_storage_type;         /* emitter storage type */
     struct mk_list rules;                   /* processed rules */
     struct mk_list *cm_rules;               /* config_map rules (only strings) */
     struct flb_input_instance *ins_emitter; /* emitter input plugin instance */
