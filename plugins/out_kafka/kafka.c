@@ -47,8 +47,23 @@ void cb_kafka_logger(const rd_kafka_t *rk, int level,
     struct flb_kafka *ctx;
 
     ctx = (struct flb_kafka *) rd_kafka_opaque(rk);
-    flb_plg_error(ctx->ins, "%s: %s",
-                  rk ? rd_kafka_name(rk) : NULL, buf);
+
+    if (level <= FLB_KAFKA_LOG_ERR) {
+        flb_plg_error(ctx->ins, "%s: %s",
+                      rk ? rd_kafka_name(rk) : NULL, buf);
+    }
+    else if (level == FLB_KAFKA_LOG_WARNING) {
+        flb_plg_warn(ctx->ins, "%s: %s",
+                     rk ? rd_kafka_name(rk) : NULL, buf);
+    }
+    else if (level == FLB_KAFKA_LOG_NOTICE || level == FLB_KAFKA_LOG_INFO) {
+        flb_plg_info(ctx->ins, "%s: %s",
+                     rk ? rd_kafka_name(rk) : NULL, buf);
+    }
+    else if (level == FLB_KAFKA_LOG_DEBUG) {
+        flb_plg_debug(ctx->ins, "%s: %s",
+                      rk ? rd_kafka_name(rk) : NULL, buf);
+    }
 }
 
 static int cb_kafka_init(struct flb_output_instance *ins,
