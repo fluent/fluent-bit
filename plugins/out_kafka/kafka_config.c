@@ -99,6 +99,9 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
         }
     }
 
+    /* Set our global opaque data (plugin context*/
+    rd_kafka_conf_set_opaque(ctx->conf, ctx);
+
     /* Callback: message delivery */
     rd_kafka_conf_set_dr_msg_cb(ctx->conf, cb_kafka_msg);
 

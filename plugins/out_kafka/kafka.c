@@ -28,41 +28,27 @@
 void cb_kafka_msg(rd_kafka_t *rk, const rd_kafka_message_t *rkmessage,
                   void *opaque)
 {
-    /*
-     * we have an issue when using the 'opaque' reference, I have opened a
-     * ticket with librdkafka team:
-     *
-     * https://github.com/edenhill/librdkafka/issues/2789
-     *
-     * struct flb_kafka *ctx = opaque;
-     *
-     *
-     */
+    struct flb_kafka *ctx = (struct flb_kafka *) opaque;
 
     if (rkmessage->err) {
-        flb_warn("[out_kafka] message delivery failed: %s",
-                 rd_kafka_err2str(rkmessage->err));
+        flb_plg_warn(ctx->ins, "message delivery failed: %s",
+                     rd_kafka_err2str(rkmessage->err));
     }
     else {
-        flb_debug("[out_kafka] message delivered (%zd bytes, "
-                  "partition %"PRId32")",
-                  rkmessage->len, rkmessage->partition);
+        flb_plg_debug(ctx->ins, "message delivered (%zd bytes, "
+                      "partition %"PRId32")",
+                      rkmessage->len, rkmessage->partition);
     }
 }
 
 void cb_kafka_logger(const rd_kafka_t *rk, int level,
                      const char *fac, const char *buf)
 {
-    /*
-     * FIXME:
-     *
-     * rdkafka logging callback seems not support opaque data types,
-     * this API migration will be pending until we get an update:
-     *
-     * https://github.com/edenhill/librdkafka/issues/2717
-     */
-    flb_error("[out_kafka] %s: %s",
-              rk ? rd_kafka_name(rk) : NULL, buf);
+    struct flb_kafka *ctx;
+
+    ctx = (struct flb_kafka *) rd_kafka_opaque(rk);
+    flb_plg_error(ctx->ins, "%s: %s",
+                  rk ? rd_kafka_name(rk) : NULL, buf);
 }
 
 static int cb_kafka_init(struct flb_output_instance *ins,
